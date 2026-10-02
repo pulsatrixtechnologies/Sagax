@@ -22,13 +22,14 @@ function fixture({ open = async () => true } = {}) {
 const settle = async () => { for (let i = 0; i < 5; i++) await Promise.resolve(); };
 
 test("the Cloud protocol is a fixed action without URL routing or credentials", () => {
-  assert.equal(CLOUD_DEEP_LINK, "openmausbot://cloud");
-  assert.equal(isCloudDeepLink("openmausbot://cloud"), true);
+  assert.equal(CLOUD_DEEP_LINK, "sagax://cloud");
+  assert.equal(isCloudDeepLink("sagax://cloud"), true);
+  assert.equal(isCloudDeepLink("openmausbot://cloud"), true, "the old scheme for one release");
   for (const value of [null, undefined, {}, ["openmausbot://cloud"], "", "openmausbot://cloud/", "openmausbot://cloud?", "openmausbot://cloud#",
     "openmausbot://cloud?code=ABCDE-FGHJK", "openmausbot://cloud#code=ABCD-EFGH-JKLM", "openmausbot://cloud?url=https://home.example",
     "openmausbot://cloud/pair", "openmausbot://user@cloud", "openmausbot://cloud:443", "openmausbot://cloud.evil", "openmausbot://CLOUD",
     "OPENMAUSBOT://cloud", "openmausbot:cloud", "openmausbot:///cloud", "https://cloud", " openmausbot://cloud", "openmausbot://cloud ",
-    "openmausbot://%63loud", "openmausbot://organization", "openmausbot://install?url=https://github.com/x/y"]) {
+    "openmausbot://%63loud", "openmausbot://organization", "sagax://cloud/", "sagax://cloud?code=X", "SAGAX://cloud", "sagax://organization", "openmausbot://install?url=https://github.com/x/y"]) {
     assert.equal(isCloudDeepLink(value), false, String(value));
   }
 });

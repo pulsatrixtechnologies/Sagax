@@ -8,7 +8,7 @@ import test from "node:test";
 const require = createRequire(import.meta.url);
 const {
   SIGN_IN_HANDOFF_TTL_MS, SYSTEM_SIGN_IN_TTL_MS, appHandlerPath, authReturnTarget, chooseReturnPath, createPendingSystemSignIn,
-  createSignInHandoff, desktopStartUrl, oidcLoginStartUrl, ownsScheme, redactedTarget, signInSupport, startLoopbackReturn,
+  createSignInHandoff, desktopStartUrl, oidcLoginStartUrl, ownsScheme, redactedTarget, sagaxReturnLink, signInSupport, startLoopbackReturn,
 } = require("./oidc-system-sign-in.cjs");
 
 const ORG = "https://bot.example.test";
@@ -48,11 +48,21 @@ test("the fallback decision: loopback first, the scheme only when this app owns 
 });
 
 test("what the server says it supports", () => {
-  assert.deepEqual(signInSupport({ identity: { kind: "perspicax", nativeReturn: true, loopbackReturn: true } }), { loopbackReturn: true, nativeReturn: true });
-  assert.deepEqual(signInSupport({ identity: { kind: "perspicax", nativeReturn: true } }), { loopbackReturn: false, nativeReturn: true });
-  assert.deepEqual(signInSupport({ identity: { kind: "other", nativeReturn: true, loopbackReturn: true } }), { loopbackReturn: false, nativeReturn: false });
-  assert.deepEqual(signInSupport({ identity: { kind: "perspicax", loopbackReturn: "true" } }), { loopbackReturn: false, nativeReturn: false });
-  assert.deepEqual(signInSupport(null), { loopbackReturn: false, nativeReturn: false });
+  assert.deepEqual(signInSupport({ identity: { kind: "perspicax", nativeReturn: true, loopbackReturn: true } }), { loopbackReturn: true, nativeReturn: true, sagaxReturn: false });
+  assert.deepEqual(signInSupport({ identity: { kind: "perspicax", nativeReturn: true } }), { loopbackReturn: false, nativeReturn: true, sagaxReturn: false });
+  assert.deepEqual(signInSupport({ identity: { kind: "other", nativeReturn: true, loopbackReturn: true } }), { loopbackReturn: false, nativeReturn: false, sagaxReturn: false });
+  assert.deepEqual(signInSupport({ identity: { kind: "perspicax", loopbackReturn: "true" } }), { loopbackReturn: false, nativeReturn: false, sagaxReturn: false });
+  assert.deepEqual(signInSupport(null), { loopbackReturn: false, nativeReturn: false, sagaxReturn: false });
+});
+
+test("a server that lists sagax among its native returns can end on sagax://auth", () => {
+  const identity = { kind: "perspicax", nativeReturn: true, loopbackReturn: true, nativeReturnSchemes: ["sagax", "openmausbot"] };
+  assert.equal(signInSupport({ identity }).sagaxReturn, true);
+  assert.equal(signInSupport({ identity: { ...identity, nativeReturn: false } }).sagaxReturn, false);
+  const back = sagaxReturnLink(ORG);
+  assert.equal(back, `sagax://auth?origin=${encodeURIComponent(ORG)}`);
+  assert.equal(new URL(desktopStartUrl(ORG, back)).searchParams.get("return"), back);
+  assert.deepEqual(parseAuthReturnLink(`${back}#code=${CREDENTIAL}`, state), { origin: ORG, code: CREDENTIAL });
 });
 
 test("this app owns openmausbot:// only when the system's handler is this exact copy", () => {

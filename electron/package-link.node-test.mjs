@@ -7,6 +7,7 @@ describe("BotMRR package deep links", () => {
   it("accepts a public GitHub package URL", () => {
     const target = "https://raw.githubusercontent.com/acme/bots/main/reddit-lead-miner.md";
     assert.equal(packageUrlFromDeepLink(`openmausbot://install?url=${encodeURIComponent(target)}`), target);
+    assert.equal(packageUrlFromDeepLink(`sagax://install?url=${encodeURIComponent(target)}`), target);
     assert.equal(packageUrlFromCommandLine(["Sagax", "--flag", `openmausbot://install?url=${encodeURIComponent(target)}`]), target);
   });
 

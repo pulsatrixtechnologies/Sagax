@@ -13,7 +13,9 @@ copyright: Copyright © 2026 Pulsatrix Technologies Inc.
 
 protocols:
   - name: Sagax package install
-    schemes: [openmausbot]
+    # sagax:// is primary; openmausbot:// stays registered for one release
+    # (links already sent, older servers, the phone apps).
+    schemes: [sagax, openmausbot]
 
 # In-app auto-update reads latest-mac.yml + the .zip (macOS) or latest.yml +
 # the NSIS .exe (Windows) from the PUBLIC releases in this source repo.

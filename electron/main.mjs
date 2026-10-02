@@ -26,7 +26,7 @@ import { activateExistingWindow, releaseSingleInstanceLock } from "./single-inst
 import { pollServerIdentity } from "./server-boot-probe.mjs";
 import { createServerSupervisor } from "./server-supervisor.mjs";
 import { packageUrlFromCommandLine, packageUrlFromDeepLink } from "./package-link.mjs";
-import { createOrganizationEntry, isOrganizationDeepLink, takeOrganizationDeepLink, organizationRestartIntent, withOrganizationRestartIntent, withoutOrganizationRestartIntent } from "./organization-entry.mjs";
+import { createOrganizationEntry, ORGANIZATION_DEEP_LINK, isOrganizationDeepLink, takeOrganizationDeepLink, organizationRestartIntent, withOrganizationRestartIntent, withoutOrganizationRestartIntent } from "./organization-entry.mjs";
 import { createOrgJoin, forgetDetail } from "./org-join.mjs";
 import { trafficLightsForSkin, windowChromeOptions } from "./window-chrome.mjs";
 import { createStartupScreen } from "./startup-screen.mjs";
@@ -86,7 +86,7 @@ import localOriginModule from "./local-origin.cjs";
 import { buildApplicationMenu } from "./menu.mjs";
 import { createComputerSharing, validateSharedFolders } from "./computer-sharing.mjs";
 import { acquireDataDirLease } from "./data-dir-lease.mjs";
-import { defaultDataDir } from "./legacy-names.mjs";
+import { defaultDataDir, URL_SCHEMES } from "./legacy-names.mjs";
 import { createManagedDesktopClient, createManagedDesktopRelay, createManagedDesktopStore } from "./managed-desktop.mjs";
 import { createCloudAccountClient, createCloudAccountStore } from "./cloud-account.mjs";
 import { cloudHomeConnectUrl, withCloudHome } from "./cloud-home.mjs";
@@ -360,13 +360,13 @@ async function serverSignInSupport(origin) {
   }
 }
 
-/** Whether openmausbot:// links reach this exact running copy of the app. */
-async function thisAppOwnsAuthScheme() {
-  const isDefault = app.isDefaultProtocolClient("openmausbot");
+/** Whether `scheme`:// links (sagax or openmausbot) reach this exact running copy of the app. */
+async function thisAppOwnsAuthScheme(scheme) {
+  const isDefault = app.isDefaultProtocolClient(scheme);
   let handlerPath = null;
   if (isDefault && (process.platform === "darwin" || process.platform === "win32")) {
     try {
-      handlerPath = (await app.getApplicationInfoForProtocol("openmausbot://auth"))?.path ?? null;
+      handlerPath = (await app.getApplicationInfoForProtocol(`${scheme}://auth`))?.path ?? null;
     } catch {
       handlerPath = null;
     }
@@ -438,7 +438,9 @@ async function startPulsatrixSignIn(_win, loginStart) {
       signInLog(`could not listen on 127.0.0.1 (${error?.code ?? "error"})`);
     }
   }
-  const owns = support.nativeReturn && !loopback ? await thisAppOwnsAuthScheme() : false;
+  // sagax:// first, when the server can end there; else openmausbot://.
+  const ownsSagax = support.sagaxReturn && !loopback ? await thisAppOwnsAuthScheme("sagax") : false;
+  const owns = ownsSagax || (support.nativeReturn && !loopback ? await thisAppOwnsAuthScheme("openmausbot") : false);
   if (attempt !== signInAttempt) {
     loopback?.cancel();
     return;
@@ -451,7 +453,7 @@ async function startPulsatrixSignIn(_win, loginStart) {
   });
   if (path === "unsupported") {
     loopback?.cancel();
-    signInLog(`${origin} cannot come back to this app (server loopback return: ${support.loopbackReturn}, this app owns openmausbot: ${owns})`);
+    signInLog(`${origin} cannot come back to this app (server loopback return: ${support.loopbackReturn}, this app owns sagax or openmausbot: ${owns})`);
     setSignInState({ status: "error", origin, error: "unsupported" });
     return;
   }
@@ -460,7 +462,7 @@ async function startPulsatrixSignIn(_win, loginStart) {
     loopback = null;
     pendingSystemSignIn.begin(origin);
   }
-  const url = oidcSignInModule.desktopStartUrl(origin, loopback?.returnTo);
+  const url = oidcSignInModule.desktopStartUrl(origin, loopback?.returnTo ?? (ownsSagax ? oidcSignInModule.sagaxReturnLink(origin) : undefined));
   const current = { origin, url, loopback };
   currentSignIn = current;
   setSignInState({ status: "waiting", origin });
@@ -491,7 +493,7 @@ async function startPulsatrixSignIn(_win, loginStart) {
 /** Handle an openmausbot://auth link. Returns whether it was one. The
  * credential is never logged. */
 function takeAuthReturnLink(rawUrl) {
-  if (typeof rawUrl !== "string" || !/^openmausbot:\/\/auth(?:[/?#]|$)/i.test(rawUrl)) return false;
+  if (typeof rawUrl !== "string" || !/^(?:sagax|openmausbot):\/\/auth(?:[/?#]|$)/i.test(rawUrl)) return false;
   const parsed = environmentsModule.parseAuthReturnLink(rawUrl, environmentsState);
   if (!parsed) {
     signInLog("ignored an openmausbot://auth link that does not name a saved server");
@@ -517,10 +519,10 @@ app.on("open-url", (event, url) => {
 });
 
 app.on("second-instance", (_event, commandLine) => {
-  const authReturn = Array.isArray(commandLine) ? commandLine.find((arg) => typeof arg === "string" && /^openmausbot:\/\/auth(?:[/?#]|$)/i.test(arg)) : undefined;
+  const authReturn = Array.isArray(commandLine) ? commandLine.find((arg) => typeof arg === "string" && /^(?:sagax|openmausbot):\/\/auth(?:[/?#]|$)/i.test(arg)) : undefined;
   if (authReturn && takeAuthReturnLink(authReturn)) return;
   if (takeOrganizationDeepLink(commandLine)) {
-    queueOrganizationEntry("openmausbot://organization");
+    queueOrganizationEntry(ORGANIZATION_DEEP_LINK);
     return;
   }
   if (cloudEntry.fromArgs(commandLine)) return;
@@ -2142,7 +2144,7 @@ function refreshApplicationMenu() {
       onSwitch: (id) => void workspaceMenuAction(() => switchEnvironment(id)),
       onAddFromClipboard: () => void addServerFromClipboard(),
       onConnect: () => void workspaceMenuAction(openWorkspaceSettings),
-      onOrganizationSignIn: () => queueOrganizationEntry("openmausbot://organization"),
+      onOrganizationSignIn: () => queueOrganizationEntry(ORGANIZATION_DEEP_LINK),
       onForget: (id) => void workspaceMenuAction(() => forgetEnvironment(id)),
       onOpenSettings: () => {
         if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send("app:open-settings");
@@ -3902,7 +3904,8 @@ app.whenReady().then(async () => {
     }
   }
   if (app.isPackaged) {
-    app.setAsDefaultProtocolClient("openmausbot");
+    // sagax:// is primary; openmausbot:// stays for one release (legacy-names.mjs).
+    for (const scheme of URL_SCHEMES) app.setAsDefaultProtocolClient(scheme);
     // Chromium adds this capability below JavaScript, so renderer requests
     // can mutate the local harness while a Full-access shell using curl
     // cannot impersonate the person operating the desktop app.

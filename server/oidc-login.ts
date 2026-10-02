@@ -75,6 +75,9 @@ export interface IdentityDescriptor {
    * (validLoopbackReturn), so the app that started the sign-in gets it back
    * whichever app owns openmausbot://. */
   loopbackReturn: true;
+  /** Schemes a native return may use: openmausbot://auth by default,
+   * sagax://auth when the desktop start names `return=<sagaxReturnLink>`. */
+  nativeReturnSchemes: readonly ["sagax", "openmausbot"];
 }
 
 /** The loopback return a desktop sign-in may name: http on 127.0.0.1 or
@@ -121,7 +124,7 @@ export function identityConfigFromEnv(env: NodeJS.ProcessEnv = process.env): Ide
 }
 
 export function identityDescriptor(config: IdentityConfig): IdentityDescriptor | undefined {
-  return config.kind === "perspicax" ? { kind: "perspicax", protocol: "oidc", issuer: config.issuer, loginPath: OIDC_START_PATH, nativeReturn: true, loopbackReturn: true } : undefined;
+  return config.kind === "perspicax" ? { kind: "perspicax", protocol: "oidc", issuer: config.issuer, loginPath: OIDC_START_PATH, nativeReturn: true, loopbackReturn: true, nativeReturnSchemes: ["sagax", "openmausbot"] } : undefined;
 }
 
 /** Session scopes for a Perspicax role (spec section 3). No claim is an
@@ -270,8 +273,15 @@ function parseClient(value: string | null): OidcClientKind | null {
   return value === "desktop" || value === "phone" ? value : null;
 }
 
+/** The sagax:// return a desktop start may name instead of a loopback
+ * listener. Compared exactly: it can only ever point back at this server. */
+export function sagaxReturnLink(publicOrigin: string): string {
+  return `sagax://auth?origin=${encodeURIComponent(publicOrigin)}`;
+}
+
 /** The link the desktop app receives from the system browser: its loopback
- * listener when the sign-in named one, else openmausbot://auth. The
+ * listener or sagax:// return when the sign-in named one, else
+ * openmausbot://auth (a desktop that predates sagax://). The
  * credential always rides in the fragment. */
 export function desktopReturnLink(publicOrigin: string, outcome: { code: string } | { error: string }, returnTo?: string): string {
   const fragment = "code" in outcome ? `#code=${outcome.code}` : `#error=${encodeURIComponent(outcome.error)}`;
@@ -460,7 +470,8 @@ export function createOidcLoginRoutes(deps: OidcLoginDeps) {
       // address that is not exactly a loopback listener, ends on /pair
       // (never on the address it named).
       const rawReturn = url.searchParams.get("return");
-      const returnTo = rawReturn === null ? undefined : validLoopbackReturn(rawReturn) ?? null;
+      const returnTo = rawReturn === null ? undefined
+        : rawReturn === sagaxReturnLink(origin) ? rawReturn : validLoopbackReturn(rawReturn) ?? null;
       if (returnTo === null || (returnTo && client !== "desktop")) {
         log("oidc sign-in refused: a return address that is not this desktop's loopback listener");
         fail(res, "return");
