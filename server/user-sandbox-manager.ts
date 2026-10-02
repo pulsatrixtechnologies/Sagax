@@ -46,6 +46,11 @@ export interface UserSandboxManagerOptions {
 
 export class UserSandboxManager {
   private readonly pending = new Map<string, number>();
+  /** One desktop open at a time per person (two at once raced on the VNC
+   * password file and one failed), and the passwords of the live views
+   * still open: a second view must not change them under the first. */
+  private readonly desktopOpens = new Map<string, Promise<unknown>>();
+  private readonly desktopViews = new Map<string, { passwords: { full: string; view: string }; open: number; openedAt: number }>();
   private info: SandboxdInfo | null = null;
   private timer: ReturnType<typeof setInterval> | null = null;
   readonly graceMs: number;
@@ -171,13 +176,46 @@ export class UserSandboxManager {
    * (controls the screen) and the view-only one. Only the owner's own
    * request reaches this (server/routes/desktop-viewer.ts). */
   async openDesktop(principalId: string): Promise<{ full: string; view: string }> {
-    const passwords = { full: vncPassword(), view: vncPassword() };
-    const result = await this.exec(principalId, {
+    const previous = this.desktopOpens.get(principalId) ?? Promise.resolve();
+    const next = previous.catch(() => {}).then(() => this.startDesktop(principalId));
+    this.desktopOpens.set(principalId, next);
+    try { return await next; }
+    finally { if (this.desktopOpens.get(principalId) === next) this.desktopOpens.delete(principalId); }
+  }
+
+  private async startDesktop(principalId: string): Promise<{ full: string; view: string }> {
+    // Fresh passwords for every open, unless a live view is still open or
+    // was just opened (still connecting): then the same ones, or that view
+    // would fail its next authentication.
+    const views = this.desktopViews.get(principalId);
+    const shared = views !== undefined && (views.open > 0 || this.now() - views.openedAt < DESKTOP_CONNECT_MS);
+    const passwords = shared ? views.passwords : { full: vncPassword(), view: vncPassword() };
+    const start = () => this.exec(principalId, {
       argv: ["sagax-desktop", "start"],
       env: { SAGAX_VNC_FULL: passwords.full, SAGAX_VNC_VIEW: passwords.view },
       timeoutSec: 30,
     });
-    if (result.exitCode !== 0) throw new UserSandboxUnavailable("The desktop of the server environment did not start.", "desktop_failed");
+    let result = await start();
+    // 127: no sagax-desktop, the environment runs an image from before the
+    // desktop. The person asked to see it: rebuild it from the current image
+    // (keeps /workspace) when no command runs there, then start again.
+    if (result.exitCode === 127) {
+      if (await this.busy(principalId) > 0) {
+        throw new UserSandboxUnavailable("The server environment predates the desktop. Update it from the Computer tab.", "outdated");
+      }
+      console.error("user-sandbox: an environment from an older image had no desktop; updating it from the current image");
+      await this.call(async () => {
+        await this.options.client.remove(this.keyFor(principalId), { keepWorkspace: true });
+        await this.options.client.ensure(this.keyFor(principalId));
+      });
+      result = await start();
+    }
+    if (result.exitCode !== 0) {
+      console.error(`user-sandbox: the desktop did not start (exit ${result.exitCode}): ${result.stderr.slice(-300).replace(/\s+/g, " ").trim()}`);
+      throw new UserSandboxUnavailable("The desktop of the server environment did not start.", result.exitCode === 127 ? "outdated" : "desktop_failed");
+    }
+    if (shared) views.openedAt = this.now();
+    else this.desktopViews.set(principalId, { passwords, open: 0, openedAt: this.now() });
     return passwords;
   }
 
@@ -186,7 +224,13 @@ export class UserSandboxManager {
   async desktopStream(principalId: string, options: { control: boolean }): Promise<Duplex> {
     this.refuseIfOut(principalId);
     try {
-      return await this.options.client.desktopStream(this.keyFor(principalId), options);
+      const stream = await this.options.client.desktopStream(this.keyFor(principalId), options);
+      const views = this.desktopViews.get(principalId);
+      if (views) {
+        views.open += 1;
+        stream.once("close", () => { views.open = Math.max(0, views.open - 1); });
+      }
+      return stream;
     } catch (error) {
       if (error instanceof SandboxdRequestError) throw new UserSandboxUnavailable(error.message, error.code);
       throw new UserSandboxUnavailable("The server environment could not be reached. Try again in a moment.", "unreachable");
@@ -279,6 +323,10 @@ export class UserSandboxManager {
 
 const VNC_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789";
 /** VNC authentication reads at most 8 characters. */
+/** How long a just-opened view has to connect before the next open may
+ * change the passwords. */
+const DESKTOP_CONNECT_MS = 30_000;
+
 function vncPassword(): string {
   let value = "";
   for (let index = 0; index < 8; index++) value += VNC_ALPHABET[randomInt(VNC_ALPHABET.length)];

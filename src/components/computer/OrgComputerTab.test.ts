@@ -11,6 +11,8 @@ import { localVmView, parseLocalVmAnswer, runtimeSummaryKey, type DesktopLocalVm
 import { formatBytes, powerState } from "@/lib/server-environment";
 import { OrgComputerSettings } from "../settings/OrgComputerSettings";
 import { activeComputer, OrgComputerTab, setupProgress } from "./OrgComputerTab";
+import { SandboxDesktopModal } from "./SandboxDesktopModal";
+import { WorksOnControl, worksOnTip } from "./WorksOnSetting";
 
 const SYSTEM = { os: "macOS 27.0.0", arch: "arm64", cpus: 16, cpuModel: "Apple M3 Max", cpuPercent: 90, memoryGb: 128, memoryUsedGb: 124.5, diskGb: 994, diskFreeGb: 410 };
 const bridge = (connected: boolean, place: "computer" | "server"): DesktopBridgeStatus => ({
@@ -24,23 +26,29 @@ const STALE = { name: "openmausbot-computer", state: "exited", managed: true, st
 describe("Computer tab on an organization server", () => {
   it("shows the server environment for Auto and Cloud, even with the person's computer connected", () => {
     for (const place of ["auto", "cloud"] as const) {
-      const markup = renderToStaticMarkup(createElement(OrgComputerTab, { bridge: bridge(true, "computer"), place, computerOff: false, botName: "Luna", onChangePlace: () => {} }));
+      const markup = renderToStaticMarkup(createElement(OrgComputerTab, { bridge: bridge(true, "computer"), place, computerOff: false, botName: "Luna" }));
       expect(markup).toContain('data-org-computer="user-sandbox"');
       expect(markup).toContain('data-computer-source="server"');
       expect(markup).toContain('aria-label="Screen controls"');
       expect(markup).toContain("Luna&#x27;s screen");
-      expect(markup).toContain(place === "auto" ? "Luna works on: Auto (Cloud)." : "Luna works on: Cloud (server environment).");
-      expect(markup).toContain(">Change<");
-      expect(markup).toContain(">Disk<");
-      expect(markup).toContain(">Memory<");
+      // Only the screen: no "works on" line, no description, usage folded.
+      expect(markup).not.toContain("works on:");
+      expect(markup).not.toContain("Your own isolated Linux machine");
+      expect(markup).not.toContain(">Change<");
+      expect(markup).toMatch(/data-usage-toggle[^>]*>|aria-expanded="false"[^>]*data-usage-toggle/);
+      expect(markup).toContain(">Details");
+      expect(markup).not.toContain(">Disk<");
+      expect(markup).not.toContain(">Memory<");
     }
   });
 
-  it("has no selector of its own: the bot's Works on decides", () => {
-    const markup = renderToStaticMarkup(createElement(OrgComputerTab, { bridge: bridge(true, "computer"), place: "auto", computerOff: false, botName: "Luna" }));
-    expect(markup).not.toContain('role="radiogroup"');
-    expect(markup).not.toContain("My computer (Local VM)");
-    expect(markup).not.toContain("Where this bot works");
+  it("draws the bot's Works on under the screen when the panel passes it", () => {
+    const bare = renderToStaticMarkup(createElement(OrgComputerTab, { bridge: bridge(true, "computer"), place: "auto", computerOff: false, botName: "Luna" }));
+    expect(bare).not.toContain('role="radiogroup"');
+    const markup = renderToStaticMarkup(createElement(OrgComputerTab, { bridge: bridge(true, "computer"), place: "auto", computerOff: false, botName: "Luna",
+      worksOn: createElement(WorksOnControl, { value: null, onChange: () => {}, disabled: {} }) }));
+    expect(markup.indexOf('role="radiogroup"')).toBeGreaterThan(markup.indexOf("data-computer-screen"));
+    expect(markup.indexOf('role="radiogroup"')).toBeLessThan(markup.indexOf("data-usage-toggle"));
   });
 
   it("shows the owner's stale Local VM as an error with Repair, never raw JSON", () => {
@@ -50,9 +58,8 @@ describe("Computer tab on an organization server", () => {
     expect(markup).toContain(">Error<");
     expect(markup).toContain(">Repair<");
     expect(markup).toContain("omb-org-mcp-Em133z");
-    expect(markup).toContain("Luna works on: Local VM.");
-    expect(markup).toContain("Your own computer (JeanChrophesMBP), through the Sagax app.");
-    expect(markup).toContain("124.5 GB of 128 GB");
+    expect(markup).not.toContain("Luna works on");
+    expect(markup).not.toContain("124.5 GB of 128 GB");
     expect(markup).not.toContain("localVms");
     expect(markup).not.toMatch(/\{&quot;|\{"/);
     expect(markup).not.toContain("<pre");
@@ -68,6 +75,54 @@ describe("Computer tab on an organization server", () => {
     const missing = renderToStaticMarkup(createElement(OrgComputerTab, { bridge: bridge(true, "computer"), place: "local", computerOff: false, botName: "Luna", initialLocal: status(null) }));
     expect(missing).toContain(">Off<");
     expect(missing).toContain("Set up in one click");
+  });
+});
+
+describe("the bot's Works on in the Computer tab", () => {
+  it("is one compact control with short labels, the meaning in each tooltip", () => {
+    const markup = renderToStaticMarkup(createElement(WorksOnControl, { value: "cloud", onChange: () => {}, disabled: {} }));
+    expect(markup).toContain(">Computer<");
+    expect(markup.match(/role="radio"/g)).toHaveLength(6);
+    for (const label of [">Auto<", ">Cloud<", ">Local VM<", ">This computer<", ">Browser<", ">Off<"]) expect(markup).toContain(label);
+    expect(markup).toMatch(/aria-checked="true"[^>]*data-works-on-choice="cloud"/);
+    expect(markup).toContain('title="Your own Linux machine on the organization server"');
+    // No long explanation box any more.
+    expect(markup).not.toContain("Cloud is your server environment.");
+    expect(markup).not.toContain("Auto (Cloud)");
+  });
+
+  it("explains a choice that cannot be picked in its tooltip", () => {
+    const markup = renderToStaticMarkup(createElement(WorksOnControl, { value: null, onChange: () => {}, disabled: { local: "Open the Sagax app on this computer" } }));
+    expect(markup).toMatch(/disabled=""[^>]*title="This computer is not available: Open the Sagax app on this computer"[^>]*data-works-on-choice="local"/);
+    expect(markup).toMatch(/aria-checked="true"[^>]*data-works-on-choice="auto"/);
+    expect(worksOnTip(null)).toBe("Chosen automatically: your server environment (Cloud)");
+  });
+});
+
+describe("taking control of the server environment desktop", () => {
+  const controls = { stop: () => {}, pause: () => {} };
+  it("opens large, with the name, the state, Release control, Play / Pause / Stop, full screen and close", () => {
+    const markup = renderToStaticMarkup(createElement(SandboxDesktopModal, { title: "Luna's screen", state: "running", controls, onClose: () => {} }));
+    expect(markup).toContain('role="dialog"');
+    expect(markup).toContain('aria-modal="true"');
+    expect(markup).toContain("h-[88vh] w-[92vw]");
+    expect(markup).toContain("Luna&#x27;s screen");
+    expect(markup).toContain('data-power="running"');
+    expect(markup).toContain("You have control");
+    expect(markup).toMatch(/data-takeover-control="release"[^>]*>.*Release control/);
+    expect(markup).toMatch(/aria-label="Pause"(?![^>]*disabled="")/);
+    expect(markup).toMatch(/aria-label="Stop"(?![^>]*disabled="")/);
+    expect(markup).toMatch(/aria-label="Start"[^>]*disabled=""/);
+    expect(markup).toContain('aria-label="Full screen"');
+    expect(markup).toMatch(/aria-label="Close and release control[^"]*"[^>]*data-takeover-close/);
+    // The live view inside asks for control (data-control="1").
+    expect(markup).toContain('data-control="1"');
+  });
+
+  it("keeps the small square view-only: its Take control opens the window", () => {
+    const square = renderToStaticMarkup(createElement(OrgComputerTab, { bridge: bridge(true, "computer"), place: "auto", computerOff: false, botName: "Luna" }));
+    expect(square).not.toContain('data-control="1"');
+    expect(square).not.toContain("data-sandbox-takeover");
   });
 });
 
