@@ -40,6 +40,9 @@ export interface OrgDirectoryEntry {
   teams?: { id: string; manager: boolean }[];
   /** Their Perspicax avatar as this server serves it, when they have one. */
   avatarUrl?: string;
+  /** A Perspicax service account (`kind: "service"`): never a person to
+   * write to (server/people-dms.ts). */
+  service?: true;
 }
 
 export interface OrgDirectoryTeam {
@@ -97,6 +100,12 @@ export interface RoutineDelegationRouteDeps {
   revoke(principalId: string): boolean;
 }
 
+/** `<issuer>/console/users/<sub>?tab=sagax`: the person's Sagax tab in the
+ * Perspicax console, where their routine delegation is revoked. */
+export function routineDelegationManageUrl(issuer: string, sub: string): string {
+  return `${issuer.replace(/\/+$/, "")}/console/users/${encodeURIComponent(sub)}?tab=sagax`;
+}
+
 /** The directory as principals, sorted by name then login. Only people the
  * directory lists are returned; each carries the principal it upserted. */
 export function orgDirectoryEntries(issuer: string, people: DirectoryPerson[], bySubject: (iss: string, sub: string) => Principal | null): OrgDirectoryEntry[] {
@@ -115,6 +124,7 @@ export function orgDirectoryEntries(issuer: string, people: DirectoryPerson[], b
       ...(email ? { email } : {}),
       role: person.role === "admin" ? "admin" : "member",
       disabled: person.status === "disabled",
+      ...(person.kind === "service" || person.type === "service" ? { service: true as const } : {}),
       teams: (principal.teams ?? []).map((team) => ({ id: team.id, manager: team.manager })),
     });
   }
@@ -173,7 +183,15 @@ export function createPerspicaxOrgRoutes(deps: PerspicaxOrgRouteDeps): RouteHand
         return json(res, 403, { error: "Routine delegation needs a person signed in with Pulsatrix.", code: "identity_perspicax" });
       }
       const routines = deps.routineDelegation;
-      if (method === "GET") return json(res, 200, { ...routines.status(principalId), suspended: routines.suspendedCount(principalId) });
+      if (method === "GET") {
+        return json(res, 200, {
+          ...routines.status(principalId),
+          suspended: routines.suspendedCount(principalId),
+          // Where the delegation is revoked: the person's Sagax tab in the
+          // Perspicax console (Members), keyed by their Perspicax id.
+          manageUrl: routineDelegationManageUrl(deps.issuer, auth.session.idp.sub),
+        });
+      }
       if (method === "DELETE") return json(res, 200, { revoked: routines.revoke(principalId) });
       const started = await routines.start({ principalId, sessionId: auth.session.id });
       if (!started.ok) return json(res, started.status, { error: started.error, code: started.code });

@@ -1105,6 +1105,35 @@ export async function callTool(name: string, args: Json, context: ToolCallContex
     const entry = typeof r.entry === "string" && r.entry ? ` Entry: ${r.entry}` : "";
     return { text: `Memory updated.${entry}${r.truncated ? " MEMORY.md exceeds the prompt load budget; keep it short and curated." : ""}` };
   }
+  if (name === "group_memory_update") {
+    if (!["append", "replace", "remove", "supersede"].includes(String(args.action))
+      || (args.action !== "remove" && (typeof args.text !== "string" || !args.text.trim()))
+      || (args.action !== "append" && (typeof args.old_text !== "string" || !args.old_text.trim()))) {
+      return { text: "Use group_memory_update action=append with text, replace or supersede with text and old_text, or remove with old_text.", isError: true };
+    }
+    if (turn.memoryRefusalsThisTurn >= MAX_MEMORY_REFUSALS_PER_TURN) {
+      return { text: `Memory updates are closed for the rest of this turn: ${MAX_MEMORY_REFUSALS_PER_TURN} were refused. Do not retry.`, isError: true };
+    }
+    const { body: r } = await apiResponse("/api/internal/group-memory", {
+      method: "POST",
+      body: JSON.stringify({
+        fromBotId: BOT_ID,
+        fromThreadId: THREAD_ID,
+        action: args.action,
+        text: args.text,
+        oldText: args.old_text,
+        ...(typeof args.until === "string" && args.until.trim() ? { until: args.until.trim() } : {}),
+      }),
+    });
+    if (r.error || r.ok !== true) {
+      turn.memoryRefusalsThisTurn += 1;
+      const recent = Array.isArray(r.recent) ? r.recent.filter((line) => typeof line === "string") : [];
+      const tail = r.code === "over-budget" && recent.length ? `\n\nMost recent entries, oldest first:\n${recent.join("\n")}` : "";
+      return { text: `${String(r.error ?? "Group memory update was not confirmed.")}${tail}`, isError: true };
+    }
+    const entry = typeof r.entry === "string" && r.entry ? ` Entry: ${r.entry}` : "";
+    return { text: `Group memory updated.${entry}` };
+  }
   if (name === "retry_thread") {
     const botId = String(args.bot_id ?? "").trim();
     const threadId = String(args.thread_id ?? "").trim();

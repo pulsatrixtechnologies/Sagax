@@ -1,9 +1,11 @@
 // The group's right side panel. It is the bot panel (BotSettingsDialog)
 // adapted to a group: the same docked shell, top bar, big avatar, name and
 // tab strip, so a group and a bot read as one design. Group-specific bodies
-// (members, responder, folder) come from GroupView, which owns their state.
+// (members on Details; responder and folder on Advanced, like a bot's own
+// folder) come from GroupView, which owns their state. Every group setting
+// lives here: there is no separate setup dialog.
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { PanelRight, Settings2 } from "lucide-react";
+import { PanelRight } from "lucide-react";
 
 import { useStore, type Bot, type Group } from "@/state/store";
 import { CIRCLE_BUTTON } from "@/lib/circle-button";
@@ -11,11 +13,14 @@ import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
 import { BotAvatar } from "./Avatar";
 import { ExportTranscriptMenu } from "./ExportTranscriptMenu";
+import { GroupMemoryTab } from "./GroupMemoryTab";
 import { inputCls } from "./bot-settings/field";
+import { InlineEditableText } from "./bot-settings/InlineEditableText";
+import { DescriptionInfo } from "./bot-settings/DescriptionInfo";
 import { useCaptionChrome, useMacInsetChrome } from "./DesktopCapabilities";
 import { normalizeState } from "@/lib/mascot";
 
-export const GROUP_PANEL_TABS = ["details", "instructions", "advanced"] as const;
+export const GROUP_PANEL_TABS = ["details", "instructions", "memory", "advanced"] as const;
 export type GroupPanelTab = (typeof GROUP_PANEL_TABS)[number];
 
 // The bot panel's width is the user's panel width: one remembered size.
@@ -33,7 +38,7 @@ function readSettingsWidth(): number {
 }
 
 const tabLabel = (tab: GroupPanelTab) =>
-  tab === "instructions" ? t("groupPanel.tab.instructions") : t(`botPanel.tab.${tab}`);
+  tab === "instructions" ? t("groupPanel.tab.instructions") : tab === "memory" ? t("groupPanel.tab.memory") : t(`botPanel.tab.${tab}`);
 
 /** Up to three member faces overlapped in a square, the group's avatar. */
 export function GroupAvatarStack({ members, size }: { members: Bot[]; size: number }) {
@@ -64,35 +69,35 @@ export function GroupPanel({
   group,
   members,
   details,
+  advanced,
   canEdit,
-  onOpenSetup,
+  readOnlyNote = false,
 }: {
   group: Group;
   members: Bot[];
-  /** Members, default responder and working folder, rendered by GroupView. */
+  /** People and bots, rendered by GroupView. */
   details: ReactNode;
-  /** Rename, instructions and setup need the owner's (admin) session. */
+  /** Default responder and working folder, rendered by GroupView; null for a remote client. */
+  advanced: ReactNode;
+  /** Rename and instructions: the group's owner, never a remote client. */
   canEdit: boolean;
-  onOpenSetup: () => void;
+  /** Organization server: someone else owns the group; say why it is read-only. */
+  readOnlyNote?: boolean;
 }) {
   const { dispatch } = useStore();
   const { padClass } = useCaptionChrome();
   const { macInset, browser } = useMacInsetChrome();
   const dialogRef = useRef<HTMLElement | null>(null);
   const [tab, setTab] = useState<GroupPanelTab>("details");
+  // A remote client edits neither the responder nor the folder: no Advanced tab.
+  const tabs: readonly GroupPanelTab[] = advanced == null ? GROUP_PANEL_TABS.filter((id) => id !== "advanced") : GROUP_PANEL_TABS;
   const [settingsWidth, setSettingsWidth] = useState(readSettingsWidth);
   const settingsResize = useRef<{ x: number; width: number; current: number } | null>(null);
-  const [name, setName] = useState(group.name);
   const [bulletin, setBulletin] = useState(group.bulletin);
-  useEffect(() => setName(group.name), [group.name]);
   useEffect(() => setBulletin(group.bulletin), [group.bulletin]);
 
   const closePanel = () => dispatch({ type: "toggleSettings", open: false });
-  const saveName = () => {
-    const next = name.trim();
-    if (!next || next === group.name) return setName(group.name);
-    dispatch({ type: "patchGroup", groupId: group.id, patch: { name: next } });
-  };
+  const saveName = (next: string) => dispatch({ type: "patchGroup", groupId: group.id, patch: { name: next } });
   const saveBulletin = () => {
     if (bulletin !== group.bulletin) dispatch({ type: "patchGroup", groupId: group.id, patch: { bulletin } });
   };
@@ -182,7 +187,26 @@ export function GroupPanel({
           <div className="py-3">
             <GroupAvatarStack members={members} size={112} />
           </div>
-          <span id="group-panel-title" className="mt-2 max-w-full truncate text-[17px] font-medium leading-6 text-ink">{group.name}</span>
+          {/* As on a bot: the name is edited where it shows (its owner),
+              and the (i) beside it reveals the group instructions. */}
+          <div className="mt-2 flex max-w-full items-center justify-center gap-0.5">
+            <InlineEditableText
+              id="group-panel-title"
+              value={group.name}
+              required
+              maxLength={100}
+              ariaLabel={t("botPanel.name.edit")}
+              onSave={canEdit ? saveName : undefined}
+              className="text-[17px] font-medium leading-6 text-ink"
+            />
+            <DescriptionInfo
+              value={group.bulletin}
+              label={t("groupPanel.instructions")}
+              emptyText={t("groupPanel.instructionsEmpty")}
+              placeholder={t("groupPanel.instructionsPlaceholder")}
+              onSave={canEdit ? (next) => dispatch({ type: "patchGroup", groupId: group.id, patch: { bulletin: next } }) : undefined}
+            />
+          </div>
           <span className="mt-0.5 max-w-full truncate text-[12px] leading-4 text-ink-secondary">
             {members.length === 1 ? t("groupPanel.botOne") : t("groupPanel.botMany", { count: members.length })}
           </span>
@@ -193,13 +217,13 @@ export function GroupPanel({
               const step = event.key === "ArrowRight" ? 1 : event.key === "ArrowLeft" ? -1 : 0;
               if (!step) return;
               event.preventDefault();
-              const next = GROUP_PANEL_TABS[(GROUP_PANEL_TABS.indexOf(tab) + step + GROUP_PANEL_TABS.length) % GROUP_PANEL_TABS.length]!;
+              const next = tabs[(tabs.indexOf(tab) + step + tabs.length) % tabs.length]!;
               setTab(next);
               event.currentTarget.querySelector<HTMLElement>(`[data-panel-tab="${next}"]`)?.focus();
             }}
             className="mt-4 flex max-w-full flex-wrap items-center justify-center gap-0.5"
           >
-            {GROUP_PANEL_TABS.map((id) => (
+            {tabs.map((id) => (
               <button
                 key={id}
                 type="button"
@@ -219,36 +243,20 @@ export function GroupPanel({
           </div>
         </div>
 
+        {readOnlyNote && (
+          <p role="note" className="mx-4 mb-3 rounded-lg bg-card px-3 py-2 text-[12px] text-ink-secondary">{t("groupPanel.ownerOnly")}</p>
+        )}
+
         {tab === "details" && (
           <div className="flex flex-col gap-6 px-4 pb-6 pt-2">
-            {canEdit && (
-              <div>
-                <label htmlFor={`group-name-${group.id}`} className="mb-1.5 block text-[13px] text-ink-secondary">{t("groupPanel.name")}</label>
-                <input
-                  id={`group-name-${group.id}`}
-                  className={inputCls}
-                  maxLength={100}
-                  value={name}
-                  onChange={(event) => setName(event.target.value)}
-                  onBlur={saveName}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter") event.currentTarget.blur();
-                    if (event.key === "Escape") {
-                      event.stopPropagation();
-                      setName(group.name);
-                    }
-                  }}
-                />
-              </div>
-            )}
             {details}
           </div>
         )}
 
         {tab === "instructions" && (
           <div className="flex flex-col gap-2 px-4 pb-6 pt-2">
-            <label htmlFor={`group-bulletin-${group.id}`} className="text-[13px] text-ink-secondary">{t("room.setup.instructions")}</label>
-            <p className="text-[12px] text-ink-secondary">{t("room.setup.instructionsDetail")}</p>
+            <label htmlFor={`group-bulletin-${group.id}`} className="text-[13px] text-ink-secondary">{t("groupPanel.instructions")}</label>
+            <p className="text-[12px] text-ink-secondary">{t("groupPanel.instructionsDetail")}</p>
             <textarea
               id={`group-bulletin-${group.id}`}
               value={bulletin}
@@ -256,24 +264,17 @@ export function GroupPanel({
               onChange={(event) => setBulletin(event.target.value)}
               onBlur={saveBulletin}
               rows={10}
-              placeholder={t("room.setup.instructionsPlaceholder")}
+              placeholder={t("groupPanel.instructionsPlaceholder")}
               className={cn(inputCls, "resize-y leading-relaxed")}
             />
           </div>
         )}
 
-        {tab === "advanced" && (
-          <div className="mx-4 mb-6 overflow-hidden rounded-xl border border-hairline-weak">
-            <button
-              type="button"
-              onClick={onOpenSetup}
-              disabled={!canEdit}
-              aria-haspopup="dialog"
-              className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-[13px] text-ink hover:bg-hover disabled:opacity-50"
-            >
-              <Settings2 size={15} className="shrink-0 text-ink-secondary" />
-              <span className="min-w-0 flex-1 truncate">{t("room.setup.open")}</span>
-            </button>
+        {tab === "memory" && <GroupMemoryTab groupId={group.id} />}
+
+        {tab === "advanced" && advanced != null && (
+          <div className="flex flex-col gap-4 px-4 pb-6 pt-2">
+            {advanced}
           </div>
         )}
       </div>

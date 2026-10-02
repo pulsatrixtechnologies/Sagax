@@ -1,12 +1,14 @@
 // A turn that could not run on an organization server (slice 3): the
 // engine is not installed, no credentials serve the turn, or the provider
-// refused the key. Shown to everyone who sees the thread. Since 2026-10-01
-// the person who speaks pays (the bot's owner for its routines): that person
-// gets what to do (sign in with their own subscription, add their key in
-// Perspicax, or ask an admin for the organization's key), an admin where the
-// organization's key lives. Slice 6: a routine paused because it cannot act
-// in its person's name; that person gets the button to reconnect their
-// routines.
+// refused the key. Since 2026-10-01 the person who speaks pays (the bot's
+// owner for its routines), and the server sends the card to that person only
+// (accessCardAudience in server/engine-access.ts): it speaks to them ("you"),
+// with what to do (sign in with their own subscription, add their key in
+// Perspicax) and, for an admin only, where the organization's key lives. The
+// third-person lines remain for a viewer the card is not about (a card the
+// server still shares: a refused organization key). Slice 6: a routine
+// paused because it cannot act in its person's name; that person gets the
+// button to reconnect their routines.
 import { useState } from "react";
 import { KeyRound } from "lucide-react";
 
@@ -31,7 +33,7 @@ export interface AccessCardLines {
   /** Where the viewer adds their own key (Perspicax console). */
   link?: { href: string; label: string };
   /** The viewer can sign in with their own subscription for this engine
-   * (Settings > Organization > My engines). */
+   * (Settings > Model providers > My subscriptions and keys). */
   signIn?: boolean;
   reconnect?: boolean;
 }
@@ -63,12 +65,15 @@ export function accessCardLines(access: WireAccessCard, viewer: AccessViewer): A
     };
   }
   const engine = access.engine;
-  // whose credentials the turn needed: the speaker, or the owner for a routine
-  const payer = access.payerPrincipalId ?? (access.payer === "owner" ? access.ownerPrincipalId : undefined);
+  // whose credentials the turn needed: the speaker, or the owner for a
+  // routine; a card from before payerPrincipalId is the owner's (as on the server)
+  const payer = access.payerPrincipalId || access.ownerPrincipalId;
   const mine = same(viewer.principalId, payer);
   const admin = viewer.admin ? { hint: t("access.noAccess.admin.orgKey") } : {};
+  // the person it is about, an admin: the organization's key is theirs to set too
+  const mineAdmin = viewer.admin ? { hint: t("access.noAccess.mine.admin") } : {};
   if (access.cause === "payer_disabled") {
-    if (access.routine || access.payer === "owner") return { text: t("access.payerDisabled.owner") };
+    if (access.routine || access.payer === "owner") return { text: t(mine ? "access.payerDisabled.routineMine" : "access.payerDisabled.owner") };
     return mine ? { text: t("access.payerDisabled.speaker") } : { text: t("access.noAccess.other", { engine }) };
   }
   const own = {
@@ -76,9 +81,11 @@ export function accessCardLines(access: WireAccessCard, viewer: AccessViewer): A
     ...(access.subscriptionSignIn ? { signIn: true } : {}),
   };
   if (access.routine) {
-    return { text: t("access.noAccess.routine", { engine }), ...(mine ? { hint: t("access.noAccess.routine.owner", { engine }), ...own } : admin) };
+    return mine
+      ? { text: t("access.noAccess.routineMine", { engine }), ...mineAdmin, ...own }
+      : { text: t("access.noAccess.routine", { engine }), ...admin };
   }
-  if (mine) return { text: t("access.noAccess.speaker", { engine }), hint: t("access.noAccess.speaker.hint", { engine }), ...own };
+  if (mine) return { text: t("access.noAccess.mine", { engine }), ...mineAdmin, ...own };
   return { text: t("access.noAccess.other", { engine }), ...admin };
 }
 

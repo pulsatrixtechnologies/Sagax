@@ -774,6 +774,19 @@ id).
   subscription", "Your key", "Owner's credentials", "Organization's key"),
   never the secret, and the usage rows carry `access` and
   `payerPrincipalId`.
+- **Access cards are private (2026-10-01).** A refused turn's card (no
+  access, a disabled payer, a routine whose owner has no credentials, the
+  engine not installed, a person's own key refused) and its notification
+  reach only the person it is about: the person who spoke, or the bot's
+  owner for its routines (a paused routine: the person it runs as and the
+  owner). The other members of a thread or room see the message and nothing
+  in place of the card, in the list, the live stream, search and export.
+  The card speaks to that person ("You don't have Claude access for this
+  message...") with **Sign in with my subscription** and **Add my key in
+  Perspicax**; an admin also reads where the organization's key lives. A
+  refused organization key stays visible to everyone (its provider words to
+  the owner and admins only). Cards stored before this are filtered when
+  read, from `payerPrincipalId`, else the bot's owner.
 - **Keys live in Perspicax.** A person saves their Anthropic or OpenAI key
   in the Perspicax console (`/console/pulsabot/keys`); Pulsa Bot reads it
   through the link for each turn, keeps it in memory 60 s at most and never

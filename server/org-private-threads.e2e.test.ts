@@ -10,6 +10,8 @@
 //   PT-2  a group chat with alice, bob and the bot: both read and write it,
 //         erin (not in it) gets nothing; removing bob closes it to him
 //   PT-3  the one-time migration ran and logged its counts only
+//   PT-4  only a group's owner changes its settings or deletes it; another
+//         person reads them and may leave; an admin may delete (moderation)
 import { spawn, type ChildProcess } from "node:child_process";
 import { chmodSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { request } from "node:http";
@@ -335,5 +337,59 @@ posixOnly("Perspicax organization: private threads with a shared bot, group chat
     expect((await api("GET", `/api/threads/${roomThread}/messages`, erin)).status).toBe(404);
     expect((await api("POST", `/api/groups/${roomId}/messages`, erin, { text: "still here?" })).status).toBe(404);
     expect((await api("GET", `/api/threads/${roomThread}/messages`, bob)).status).toBe(200);
+  }, 120_000);
+  it("PT-4: only the group's owner changes its settings; others may leave; an admin may delete it", async () => {
+    const bob = await signIn(BOB);
+    const erin = await signIn(ERIN);
+    const dave = await signIn(DAVE);
+    const room = await api("POST", "/api/groups", alice, {
+      name: "Owner rule", memberIds: [botId], humanIds: [ids.alice, ids.bob, ids.erin, ids.dave],
+      setup: { bulletin: "", defaultResponder: { kind: "mentions" } },
+    });
+    expect(room.status, room.text).toBe(201);
+    const roomId = room.body.group.id as string;
+    expect(room.body.group.ownerId).toBe(ids.alice);
+
+    // bob, erin and dave (an admin) are listed but do not own it
+    for (const [auth, patch] of [
+      [bob, { name: "Mine now" }],
+      [bob, { bulletin: "new rules" }],
+      [bob, { defaultResponder: { kind: "everyone" } }],
+      [bob, { humanIds: [ids.alice, ids.bob, ids.erin, ids.dave, ids.carol] }],
+      [erin, { memberIds: [] }],
+      [dave, { bulletin: "admin override" }],
+      [dave, { humanIds: [ids.alice, ids.bob, ids.dave] }],
+    ] as const) {
+      const refused = await api("PATCH", `/api/groups/${roomId}`, auth, patch);
+      expect(refused.status, JSON.stringify(patch)).toBe(403);
+      expect(refused.body.code).toBe("not_group_owner");
+    }
+    expect((await api("DELETE", `/api/groups/${roomId}`, erin)).status).toBe(403);
+    // marking it read stays everyone's
+    expect((await api("PATCH", `/api/groups/${roomId}`, bob, { unread: false })).status).toBe(200);
+
+    // the owner changes everything
+    const owned = await api("PATCH", `/api/groups/${roomId}`, alice, { name: "Owner rule 2", bulletin: "be brief", defaultResponder: { kind: "member", botId } });
+    expect(owned.status, owned.text).toBe(200);
+    expect(owned.body.group).toMatchObject({ name: "Owner rule 2", bulletin: "be brief", defaultResponder: { kind: "member", botId } });
+
+    // erin leaves on her own
+    const left = await api("PATCH", `/api/groups/${roomId}`, erin, { humanIds: [ids.alice, ids.bob, ids.dave] });
+    expect(left.status, left.text).toBe(200);
+    expect((await api("GET", `/api/threads/${room.body.group.threadId}/messages`, erin)).status).toBe(404);
+
+    // an organization admin may delete it for moderation
+    expect((await api("DELETE", `/api/groups/${roomId}`, dave)).status).toBe(200);
+
+    // an employee owns the group they create: picks its responder and deletes it
+    const bolt = await api("POST", "/api/bots", bob, { name: "Bolt owner rule" });
+    expect(bolt.status, bolt.text).toBe(201);
+    const mine = await api("POST", "/api/groups", bob, { name: "Bob's room", memberIds: [bolt.body.bot.id] });
+    expect(mine.status, mine.text).toBe(201);
+    expect(mine.body.group.ownerId).toBe(ids.bob);
+    expect((await api("PATCH", `/api/groups/${mine.body.group.id}`, bob, { defaultResponder: { kind: "mentions" } })).status).toBe(200);
+    // alice, an admin not listed in it, does not even see it
+    expect((await api("PATCH", `/api/groups/${mine.body.group.id}`, alice, { name: "not yours" })).status).toBe(404);
+    expect((await api("DELETE", `/api/groups/${mine.body.group.id}`, bob)).status).toBe(200);
   }, 120_000);
 });

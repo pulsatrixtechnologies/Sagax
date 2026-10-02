@@ -23,7 +23,8 @@ export function proOfferAvailable(account: CloudAccountState | null): boolean {
 }
 
 function useProOffer() {
-  const bridge = window.ogb?.remoteClient?.active ? undefined : window.ogb?.cloudAccount;
+  // No upstream Pro offer in Sagax (PRO_URL is empty): never shown.
+  const bridge = !PRO_URL || window.ogb?.remoteClient?.active ? undefined : window.ogb?.cloudAccount;
   const [account, setAccount] = useState<CloudAccountState | null>(null);
   useEffect(() => {
     if (!bridge) return;
@@ -38,6 +39,7 @@ function useProOffer() {
 
 export function ProLink({ onOpened }: { onOpened?: () => void }) {
   const [failed, setFailed] = useState(false);
+  if (!PRO_URL) return null;
   return <div>
     <button type="button" className="inline-flex min-h-9 items-center justify-center gap-1.5 rounded-lg bg-control px-3 py-1.5 text-[13px] font-medium text-ink hover:bg-raised-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus" onClick={() => {
       setFailed(false);

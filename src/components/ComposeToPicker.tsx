@@ -6,11 +6,15 @@ import { t } from "@/lib/i18n";
 import { isMacPlatform } from "@/lib/keyboard-shortcuts";
 import { viewerActorId, viewerCanCreateBots } from "@/lib/viewer";
 import { useStore, type Bot } from "@/state/store";
+import { useOrgPeople, type OrgDirectoryPerson } from "@/lib/perspicax-org";
+import { personAvatarSrc } from "@/lib/profile-management";
 import { BotAvatar } from "./Avatar";
+import { PersonAvatar } from "./MessageAuthor";
+import { personInitials } from "@/lib/people-dm";
 import { useCaptionChrome } from "./DesktopCapabilities";
 
 type ComposeMode = "browse" | "group";
-type ComposeRow = { kind: "create-bot" } | { kind: "create-group" } | { kind: "bot"; bot: Bot };
+type ComposeRow = { kind: "create-bot" } | { kind: "create-group" } | { kind: "bot"; bot: Bot } | { kind: "person"; person: OrgDirectoryPerson };
 
 function isExternalBot(bot: Bot, viewer: string): boolean {
   const owner = bot.ownerUserId?.trim().toLowerCase();
@@ -23,12 +27,27 @@ function matches(bot: Bot, query: string): boolean {
   return `${bot.name} ${bot.title} ${bot.description ?? ""}`.toLowerCase().includes(query);
 }
 
+/** The organization's people one may write to directly: active persons of
+ * the Perspicax directory, never a service account and never oneself. */
+export function composePeople(people: Iterable<OrgDirectoryPerson>, viewer: string, query: string): OrgDirectoryPerson[] {
+  const self = viewer.trim().toLowerCase();
+  return [...people].filter((person) => !person.disabled && !person.service && person.principalId.toLowerCase() !== self &&
+    (!query || `${person.name} ${person.login} ${person.email ?? ""}`.toLowerCase().includes(query)));
+}
+
 /** Rows under the To: field. Group mode keeps the confirm row, then the
- * bots. "New bot" is offered only when the server lets this viewer create one. */
-export function composeRows(mode: ComposeMode, bots: Bot[], canCreateBots = true): ComposeRow[] {
-  const people = bots.map((bot): ComposeRow => ({ kind: "bot", bot }));
-  if (mode === "group") return [{ kind: "create-group" }, ...people];
-  return [...(canCreateBots ? [{ kind: "create-bot" } as const] : []), { kind: "create-group" }, ...people];
+ * bots. "New bot" is offered only when the server lets this viewer create one.
+ * On an organization server the people follow the bots (browse mode only):
+ * choosing one opens the direct conversation with them. */
+export function composeRows(mode: ComposeMode, bots: Bot[], canCreateBots = true, people: OrgDirectoryPerson[] = []): ComposeRow[] {
+  const botRows = bots.map((bot): ComposeRow => ({ kind: "bot", bot }));
+  if (mode === "group") return [{ kind: "create-group" }, ...botRows];
+  return [
+    ...(canCreateBots ? [{ kind: "create-bot" } as const] : []),
+    { kind: "create-group" },
+    ...botRows,
+    ...people.map((person): ComposeRow => ({ kind: "person", person })),
+  ];
 }
 
 function KeyHint({ n }: { n: number }) {
@@ -61,7 +80,9 @@ export function ComposeToPicker({ onClose }: { onClose: () => void }) {
   const canCreateBots = viewerCanCreateBots(state.config);
   const q = query.trim().toLowerCase();
   const bots = state.bots.filter((bot) => !bot.hidden && !isExternalBot(bot, viewer) && matches(bot, q));
-  const rows = useMemo(() => composeRows(mode, bots, canCreateBots), [mode, bots, canCreateBots]);
+  const orgPeople = useOrgPeople();
+  const people = useMemo(() => composePeople(orgPeople.values(), viewer, q), [orgPeople, viewer, q]);
+  const rows = useMemo(() => composeRows(mode, bots, canCreateBots, people), [mode, bots, canCreateBots, people]);
   const active = rows.length ? Math.min(cursor, rows.length - 1) : 0;
 
   useEffect(() => setCursor(0), [q, mode]);
@@ -96,6 +117,11 @@ export function ComposeToPicker({ onClose }: { onClose: () => void }) {
       if (!picked.size) return;
       dispatch({ type: "createGroup", memberIds: [...picked] });
       track("room_created", { members: picked.size, context: false });
+      onCloseRef.current();
+      return;
+    }
+    if (row.kind === "person") {
+      dispatch({ type: "openPeopleDm", principalId: row.person.principalId });
       onCloseRef.current();
       return;
     }
@@ -269,6 +295,35 @@ export function ComposeToPicker({ onClose }: { onClose: () => void }) {
                 </button>
               );
             }
+            if (row.kind === "person") {
+              const person = row.person;
+              return (
+                <button
+                  key={`person:${person.principalId}`}
+                  id={`compose-row-${index}`}
+                  ref={selected ? activeRef : undefined}
+                  type="button"
+                  role="option"
+                  aria-selected={selected}
+                  data-compose-person={person.principalId}
+                  onMouseEnter={() => setCursor(index)}
+                  onClick={() => activate(row)}
+                  className={cn(
+                    "group flex w-full items-center gap-3 px-3 py-2 text-left text-[14px] text-ink",
+                    selected ? "bg-raised/80" : "hover:bg-raised/60",
+                  )}
+                >
+                  <PersonAvatar avatarUrl={personAvatarSrc(person.avatarUrl)} initials={personInitials(person.name || person.login)} size={28} />
+                  <span className="min-w-0 flex-1 truncate">{person.name || person.login}</span>
+                  <span className={cn("shrink-0 text-[13px] text-ink-secondary", selected ? "inline" : "hidden group-hover:inline")}>{t("compose.directMessage")}</span>
+                  {shortcut && (
+                    <span className={cn(selected ? "hidden" : "group-hover:hidden")}>
+                      <KeyHint n={shortcut} />
+                    </span>
+                  )}
+                </button>
+              );
+            }
             const bot = row.bot;
             const member = picked.has(bot.id);
             const hint = mode === "group"
@@ -305,7 +360,7 @@ export function ComposeToPicker({ onClose }: { onClose: () => void }) {
               </button>
             );
           })}
-          {q && bots.length === 0 && (
+          {q && bots.length === 0 && people.length === 0 && (
             <div className="px-3 py-2 text-[13px] text-ink-secondary">{t("sidebar.noMatch", { query: query.trim() })}</div>
           )}
           {!q && bots.length === 0 && (

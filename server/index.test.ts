@@ -1598,38 +1598,18 @@ describe("harness HTTP API", () => {
     }
   });
 
-  it("persists room setup and blocks the first message until it is finished", async () => {
+  it("opens a new room ready to use with no setup step", async () => {
     const bot = (await api("GET", "/api/bots")).body.bots[0];
     const created = await api("POST", "/api/groups", { name: "Setup probe", memberIds: [bot.id] });
     expect(created.status).toBe(201);
     const group = created.body.group;
     try {
-      expect(group).toMatchObject({ setupCompletedAt: null, setupSkippedAt: null, messages: [] });
-      const blocked = await api("POST", `/api/groups/${group.id}/messages`, { text: "before setup" });
-      expect(blocked.status).toBe(409);
-      expect((await api("GET", "/api/bots")).body.groups.find((candidate: { id: string }) => candidate.id === group.id).messages).toHaveLength(0);
-
-      const invalid = await api("PATCH", `/api/groups/${group.id}/setup`, {
-        action: "complete",
-        cwd: null,
-        bulletin: "",
-        defaultResponder: { kind: "member", botId: "missing" },
-      });
-      expect(invalid.status).toBe(400);
-
-      const completed = await api("PATCH", `/api/groups/${group.id}/setup`, {
-        action: "complete",
-        cwd: null,
-        bulletin: "shared brief",
-        defaultResponder: { kind: "member", botId: bot.id },
-      });
-      expect(completed.status).toBe(200);
-      expect(completed.body.group).toMatchObject({ bulletin: "shared brief", setupCompletedAt: expect.any(Number) });
-      expect((await api("GET", "/api/bots")).body.groups.find((candidate: { id: string }) => candidate.id === group.id)).toMatchObject({
-        bulletin: "shared brief",
-        setupSkippedAt: null,
-      });
+      expect(group).toMatchObject({ setupSkippedAt: null, messages: [] });
+      expect(group.setupCompletedAt).toEqual(expect.any(Number));
+      expect((await api("PATCH", `/api/groups/${group.id}/setup`, { action: "skip" })).status).toBe(404);
+      expect((await api("POST", `/api/groups/${group.id}/messages`, { text: "first message" })).status).toBe(202);
     } finally {
+      await api("POST", `/api/groups/${group.id}/interrupt`, {});
       await api("DELETE", `/api/groups/${group.id}`);
     }
   });
@@ -2541,7 +2521,6 @@ describe("harness HTTP API", () => {
     const foreign = (await api("POST", "/api/bots")).body.bot;
     const room = (await api("POST", "/api/groups", { name: "Reply room", memberIds: [bot.id] })).body.group;
     try {
-      await api("PATCH", `/api/groups/${room.id}/setup`, { action: "skip" });
       await api("PATCH", `/api/groups/${room.id}`, { defaultResponder: { kind: "mentions" } });
       expect((await api("POST", `/api/groups/${room.id}/messages`, { text: "First thought" })).status).toBe(202);
       let current = (await api("GET", "/api/bots?messages=20")).body.groups.find(
@@ -3345,7 +3324,6 @@ describe("harness HTTP API", () => {
         memberIds: [bot.id],
       })).body.group;
       roomId = room.id;
-      expect((await api("PATCH", `/api/groups/${room.id}/setup`, { action: "skip" })).status).toBe(200);
 
       rmSync(fakeClaudeDump, { force: true });
       expect((await api("POST", `/api/groups/${room.id}/messages`, { text: "hold the room turn" })).status).toBe(202);
@@ -3724,7 +3702,6 @@ describe("harness HTTP API", () => {
         memberIds: [bot.id, guardBot.id],
       })).body.group;
       roomId = room.id;
-      expect((await api("PATCH", `/api/groups/${room.id}/setup`, { action: "skip" })).status).toBe(200);
       expect((await api("PATCH", `/api/groups/${room.id}`, {
         defaultResponder: { kind: "mentions" },
       })).status).toBe(200);
@@ -4053,7 +4030,6 @@ describe("harness HTTP API", () => {
     })).body.group;
 
     try {
-      expect((await api("PATCH", `/api/groups/${room.id}/setup`, { action: "skip" })).status).toBe(200);
       const archivedBot = await api("PATCH", `/api/bots/${archived.id}`, {
         name: "Quill",
         hidden: true,
@@ -7609,7 +7585,7 @@ describe("harness HTTP API", () => {
   it("keeps skill authoring on by default and persists an explicit opt-out", async () => {
     const before = await api("GET", "/api/config");
     expect(before.status).toBe(200);
-    expect(before.body.features).toEqual({ browser: false, skillAuthoring: true, showToolCalls: false, routinesInConversation: false, sharedComputers: false, claudeUserMcp: false, autoRecall: true, llmThreadTitles: true });
+    expect(before.body.features).toEqual({ browser: false, skillAuthoring: true, showToolCalls: false, routinesInConversation: false, templates: false, connectedApps: false, sharedComputers: false, claudeUserMcp: false, autoRecall: true, llmThreadTitles: true });
     // the default is the absence of the key: nothing is written until the toggle is used
     const untouched = JSON.parse(readFileSync(join(home, ".sagax", "config.json"), "utf8"));
     expect(untouched.features?.skillAuthoring).toBeUndefined();
@@ -7621,7 +7597,7 @@ describe("harness HTTP API", () => {
       features: { skillAuthoring: false },
     });
     expect(saved.status).toBe(200);
-    expect(saved.body.features).toEqual({ browser: false, skillAuthoring: false, showToolCalls: false, routinesInConversation: false, sharedComputers: false, claudeUserMcp: false, autoRecall: true, llmThreadTitles: true });
+    expect(saved.body.features).toEqual({ browser: false, skillAuthoring: false, showToolCalls: false, routinesInConversation: false, templates: false, connectedApps: false, sharedComputers: false, claudeUserMcp: false, autoRecall: true, llmThreadTitles: true });
 
     const disk = JSON.parse(readFileSync(join(home, ".sagax", "config.json"), "utf8"));
     // Earlier browser coverage may have persisted its own toggle. Opting out
@@ -7631,7 +7607,20 @@ describe("harness HTTP API", () => {
     // the opt-out survives patches to sibling flags
     const tools = await api("PATCH", "/api/config", { features: { showToolCalls: true } });
     expect(tools.status).toBe(200);
-    expect(tools.body.features).toEqual({ browser: false, skillAuthoring: false, showToolCalls: true, routinesInConversation: false, sharedComputers: false, claudeUserMcp: false, autoRecall: true, llmThreadTitles: true });
+    expect(tools.body.features).toEqual({ browser: false, skillAuthoring: false, showToolCalls: true, routinesInConversation: false, templates: false, connectedApps: false, sharedComputers: false, claudeUserMcp: false, autoRecall: true, llmThreadTitles: true });
+
+    // Templates is an experimental opt-in, persisted like its siblings
+    const templates = await api("PATCH", "/api/config", { features: { templates: true } });
+    expect(templates.status).toBe(200);
+    expect(templates.body.features.templates).toBe(true);
+    expect(templates.body.features.showToolCalls).toBe(true);
+    expect((await api("PATCH", "/api/config", { features: { templates: false } })).body.features.templates).toBe(false);
+
+    // Connected apps is an experimental opt-in too (off by default)
+    const apps = await api("PATCH", "/api/config", { features: { connectedApps: true } });
+    expect(apps.status).toBe(200);
+    expect(apps.body.features.connectedApps).toBe(true);
+    expect((await api("PATCH", "/api/config", { features: { connectedApps: false } })).body.features.connectedApps).toBe(false);
 
     // an opted-out workspace refuses the skill routes a turn would otherwise reach
     const bot = (await api("POST", "/api/bots", {})).body.bot;
@@ -7969,7 +7958,6 @@ describe("harness HTTP API", () => {
       expect(browserSection.text).not.toMatch(/never type their (?:credentials|password)/i);
       if (target === "room") {
         room = (await api("POST", "/api/groups", { name: "Browser safety", memberIds: [bot.id] })).body.group;
-        expect((await api("PATCH", `/api/groups/${room.id}/setup`, { action: "skip" })).status).toBe(200);
       }
 
       rmSync(fakeClaudeDump, { force: true });
@@ -8043,7 +8031,6 @@ describe("harness HTTP API", () => {
       })).status).toBe(200);
       if (target === "room") {
         room = (await api("POST", "/api/groups", { name: "Computer paragraph", memberIds: [bot.id] })).body.group;
-        expect((await api("PATCH", `/api/groups/${room.id}/setup`, { action: "skip" })).status).toBe(200);
       }
       const messagesPath = room ? `/api/groups/${room.id}/messages` : `/api/bots/${bot.id}/messages`;
 
@@ -8526,8 +8513,6 @@ describe("harness HTTP API", () => {
       name: "Room timeout capture",
       memberIds: [botId],
     })).body.group;
-    const ready = await api("PATCH", `/api/groups/${room.id}/setup`, { action: "skip" });
-    expect(ready.status).toBe(200);
     try {
       const selected = await api("PATCH", `/api/bots/${botId}`, {
         modelSelection: { instanceId: "claude", model: "claude-sonnet-5" },
@@ -10257,7 +10242,6 @@ describe("harness HTTP API", () => {
         const room = await api("POST", "/api/groups", { name: "Memory policy race", memberIds: [botId] });
         expect(room.status).toBe(201);
         roomId = room.body.group.id;
-        expect((await api("PATCH", `/api/groups/${roomId}/setup`, { action: "skip" })).status).toBe(200);
       }
       connectorAccountsGate = gate;
       pending = api("PATCH", `/api/bots/${botId}`, { memoryEnabled: enabled, connectorTools: { gmail: { tools: "*" } } });
@@ -11428,16 +11412,14 @@ describe("message pages", () => {
    * assertions. */
   const seedRoom = async (count: number) => {
     const { body } = await api("GET", "/api/bots");
-    const created = await api("POST", "/api/groups", { name: "Paging", memberIds: [body.bots[0].id] });
+    // a mentions-only responder so no bot answers the probes
+    const created = await api("POST", "/api/groups", {
+      name: "Paging",
+      memberIds: [body.bots[0].id],
+      setup: { defaultResponder: { kind: "mentions" }, bulletin: "" },
+    });
     expect(created.status).toBe(201);
     const groupId = created.body.group.id;
-    // finish room setup with a mentions-only responder so no bot answers the probes
-    const quiet = await api("PATCH", `/api/groups/${groupId}/setup`, {
-      action: "complete",
-      defaultResponder: { kind: "mentions" },
-      bulletin: "",
-    });
-    expect(quiet.status).toBe(200);
 
     for (let i = 0; i < count; i++) {
       const posted = await api("POST", `/api/groups/${groupId}/messages`, { text: `page probe ${i}` });

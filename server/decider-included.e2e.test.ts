@@ -182,7 +182,6 @@ describe("Cloud Pro's included decision model", { timeout: 90_000 }, () => {
     const created = await api("POST", "/api/groups", { name: "Launch", memberIds: [bots.Maya!.id, bots.Theo!.id] });
     expect(created.body.group.defaultResponder).toEqual({ kind: "auto" });
     room = created.body.group;
-    expect((await api("PATCH", `/api/groups/${room.id}/setup`, { action: "complete", cwd: null, bulletin: "", defaultResponder: { kind: "auto" } })).status).toBe(200);
   });
 
   it("asks the relay who answers, at exactly <SAGAX_CLOUD_DECIDER_URL>/v1/systemone with the included token", async () => {

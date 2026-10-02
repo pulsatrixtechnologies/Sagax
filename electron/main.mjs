@@ -85,10 +85,11 @@ import oidcSignInModule from "./oidc-system-sign-in.cjs";
 import localOriginModule from "./local-origin.cjs";
 import { buildApplicationMenu } from "./menu.mjs";
 import { createComputerSharing, validateSharedFolders } from "./computer-sharing.mjs";
+import { createDesktopBridge } from "./desktop-bridge.mjs";
 import { acquireDataDirLease } from "./data-dir-lease.mjs";
 import { defaultDataDir, fetchEnvironmentDescriptor, URL_SCHEMES } from "./legacy-names.mjs";
 import { createManagedDesktopClient, createManagedDesktopRelay, createManagedDesktopStore } from "./managed-desktop.mjs";
-import { createCloudAccountClient, createCloudAccountStore } from "./cloud-account.mjs";
+import { CLOUD_SERVICES_ENABLED, createCloudAccountClient, createCloudAccountStore } from "./cloud-account.mjs";
 import { cloudHomeConnectUrl, withCloudHome } from "./cloud-home.mjs";
 import { createCloudEntry } from "./cloud-entry.mjs";
 import { cloudPageSenderAllowed, createCloudMove, parseCloudMoveStatus } from "./cloud-move.mjs";
@@ -787,6 +788,14 @@ import {
   stopCompanion,
 } from "./companion.mjs";
 import { createRoutineWakeHold, rememberRoutineWake, routineWakeSettings } from "./routine-wake.mjs";
+import { installFetchGuard, installSessionBlock } from "./upstream-hosts.mjs";
+
+// No request from this app reaches the original OpenMausBot services, the
+// upstream author's repositories or an analytics host: main's own fetch is
+// guarded here, every Electron session (windows, webviews, the updater's net
+// session) on creation and once ready (electron/upstream-hosts.mjs).
+installFetchGuard(globalThis);
+app.on("session-created", (created) => installSessionBlock(created, (line) => slog(`network: ${line}`)));
 
 /** IPC that controls this computer, its files, its logins or its updater is
  * answered only for the local server's UI (electron/local-origin.cjs). A
@@ -1276,6 +1285,7 @@ function syncPhoneSecretKey(proc) {
 
 function ensureCloudAccount() {
   if (cloudAccount) return cloudAccount;
+  if (!CLOUD_SERVICES_ENABLED) throw new Error("OMB Cloud is not available in Sagax.");
   if (!app.isPackaged || desktopRemoteAccess) throw new Error("OMB Cloud sign-in requires the local desktop app.");
   cloudAccount = createCloudAccountClient({
     store: createCloudAccountStore({ file: path.join(app.getPath("userData"), "cloud-account.bin"), encryption: {
@@ -2036,6 +2046,59 @@ function sharingController() {
   return computerSharing;
 }
 
+// ── desktop bridge (server mode) ────────────────────────────────────────
+// The organization server's bots, working for the person signed in here,
+// run their tools on this computer and their traffic leaves through it
+// (electron/desktop-bridge.mjs, server/desktop-bridge.ts). Only while this
+// app is locked to that server and signed in; the cookie and the bridge
+// secret never leave the main process.
+let desktopBridgeConnector = null;
+let bridgeBrowseSession = null;
+async function bridgeBrowse(url, screenshot, signal) {
+  // Its own in-memory session: no cookie of the person's own browsing, and
+  // never this app's own session with the server.
+  bridgeBrowseSession ??= session.fromPartition("sagax-bridge-browse");
+  const win = new BrowserWindow({ show: false, width: 1280, height: 900, webPreferences: { session: bridgeBrowseSession, offscreen: true, sandbox: true, contextIsolation: true, nodeIntegration: false, javascript: true } });
+  win.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+  const stop = () => { if (!win.isDestroyed()) win.destroy(); };
+  signal?.addEventListener("abort", stop, { once: true });
+  try {
+    await Promise.race([win.loadURL(url), new Promise((_, reject) => setTimeout(() => reject(new Error("The page took too long to load")), 30_000))]);
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    if (screenshot) {
+      const image = await win.webContents.capturePage();
+      return { content: [{ type: "image", data: image.toPNG().toString("base64"), mimeType: "image/png" }, { type: "text", text: `screenshot of ${url}` }] };
+    }
+    const html = String(await win.webContents.executeJavaScript("document.documentElement.outerHTML"));
+    return { content: [{ type: "text", text: html.length > 512 * 1024 ? `${html.slice(0, 512 * 1024)}\n[page shortened]` : html }] };
+  } finally {
+    signal?.removeEventListener("abort", stop);
+    stop();
+  }
+}
+function desktopBridge() {
+  desktopBridgeConnector ??= createDesktopBridge({
+    environment: () => serverModeEnvironment(environmentsState),
+    // main's own calls never go through the bundled-UI handler (bundled-ui.cjs)
+    fetch: (url, init) => session.defaultSession.fetch(url, { ...init, bypassCustomProtocolHandlers: true }),
+    cookieHeader: async (origin) => (await session.defaultSession.cookies.get({ url: origin })).map((cookie) => `${cookie.name}=${cookie.value}`).join("; "),
+    attachmentsDir: path.join(app.getPath("temp"), "Sagax", "attachments"),
+    // The app's own data (its cookies and grants) and the harness data dir
+    // never pass through the bridge; the person's credential stores neither.
+    protectedPaths: [app.getPath("userData"), desktopDataDir()],
+    activityFile: path.join(app.getPath("userData"), "desktop-bridge-activity.jsonl"),
+    // The person's own network: Chromium's stack, the OS proxy and the VPN.
+    fetchUrl: (url, init) => session.fromPartition("sagax-bridge-net").fetch(url, init),
+    resolveProxy: (url) => session.defaultSession.resolveProxy(url),
+    browse: bridgeBrowse,
+    cuaConnection: async () => {
+      const connection = await cuaReady.catch(() => null);
+      return connection?.mcpCommand ? connection : null;
+    },
+  });
+  return desktopBridgeConnector;
+}
+
 /** The verified Cloud sign-in, as lending needs it: never a renderer's word.
  * The machine's address is remembered for that account across the minute-by-
  * minute re-verification, so the lending controls do not blink out. */
@@ -2229,6 +2292,7 @@ function persistEnvironments(next) {
   writeEnvironments(next);
   environmentsState = next;
   syncBundledUi();
+  desktopBridge().sync();
   refreshApplicationMenu();
   if (mainWindow && !mainWindow.isDestroyed()) mainWindow.setTitle(workspaceWindowTitle(environmentsState, desktopRemoteAccess));
 }
@@ -2660,7 +2724,8 @@ function createWindow({ deferNavigation = false } = {}) {
       // renderer's remote-only feature gates. Keep the two facts independent:
       // upstream's origin boundary must not erase the client-mode marker.
       additionalArguments: [...desktopCompanionRendererArguments(rendererOrigin(), desktopRemoteAccess),
-        ...(app.isPackaged && !desktopRemoteAccess ? ["--omb-company-desktop=1"] : [])],
+        ...(app.isPackaged && !desktopRemoteAccess ? ["--omb-company-desktop=1"] : []),
+        ...(app.isPackaged && !desktopRemoteAccess && CLOUD_SERVICES_ENABLED ? ["--sagax-cloud=1"] : [])],
     },
   });
   mainWindow = win;
@@ -3854,6 +3919,7 @@ setCuaStateListener((connection) => {
 });
 
 app.whenReady().then(async () => {
+  installSessionBlock(session.defaultSession, (line) => slog(`network: ${line}`));
   // Cached-before-the-fix attachment responses outlive `no-store`: entries
   // stored under the old one-year immutable policy can replay to a second
   // identity in this profile without the visibility gate re-running. The
@@ -4056,16 +4122,22 @@ app.whenReady().then(async () => {
   // Device permissions (microphone, notifications, clipboard) are for the
   // local UI only; privileged capabilities (camera, geolocation, USB, MIDI,
   // serial) stay off. Client mode's loopback relay is the local UI.
+  // Voice mode in server mode: the bundled UI drawn on the organization
+  // server's origin (bundled-ui.cjs) may open the microphone, nothing else.
+  const microphoneOrigins = () => [bundledOrigin(environmentsState)];
   session.defaultSession.setPermissionRequestHandler((contents, permission, callback, details) => {
     const requesting = details?.requestingUrl ?? contents?.getURL?.() ?? "";
-    callback(appPermissionAllowed(permission, requesting, rendererOrigin(), details));
+    callback(appPermissionAllowed(permission, requesting, rendererOrigin(), details, { microphoneOrigins: microphoneOrigins() }));
   });
   session.defaultSession.setPermissionCheckHandler((contents, permission, requestingOrigin, details) => {
     const requesting = requestingOrigin || contents?.getURL?.() || "";
-    return appPermissionAllowed(permission, requesting, rendererOrigin(), details);
+    return appPermissionAllowed(permission, requesting, rendererOrigin(), details, { microphoneOrigins: microphoneOrigins() });
   });
   environmentsState = readEnvironments();
   syncBundledUi();
+  // Server mode: this app bridges the organization's bots to this computer
+  // for the signed-in person (electron/desktop-bridge.mjs).
+  desktopBridge().sync();
   // Maintainer grants never start while computer sharing is off: no poll
   // loop, no registration, no grant replay from disk. Lending to the person's
   // own Cloud is gated by their Cloud sign-in instead, so its saved grant
@@ -4158,6 +4230,7 @@ app.on("before-quit", (e) => {
   void cloudMove?.close();
   companyBackupController?.abort();
   computerSharing?.close();
+  desktopBridgeConnector?.close();
   lendingTray?.destroy();
   if (cuaCleanedUp) return;
   e.preventDefault();

@@ -46,7 +46,7 @@ function fixture() {
   } });
   store.appendMessage(active.threadId, { role: "user", kind: "text", text: "An image", attachments: [{ kind: "image", path: "/private/image.png", mime: "image/png" }] });
   const group = store.createGroup("Project room", [chief.id, scout.id], false, "Engineering", {
-    bulletin: "Build carefully", defaultResponder: { kind: "member", botId: chief.id }, completed: true,
+    bulletin: "Build carefully", defaultResponder: { kind: "member", botId: chief.id },
   });
   store.appendMessage(group.threadId, { role: "bot", kind: "text", text: "Room answer", from: { botId: scout.id, name: scout.name, color: scout.color }, peerPost: { unattended: true } });
   store.createGroupTask(group.id, "Second room task", false);

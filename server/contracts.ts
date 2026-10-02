@@ -7,6 +7,7 @@
 
 import type { ApprovalMode } from "../shared/approval-mode.ts";
 import type { EffortLevel } from "../shared/wire.ts";
+import type { HarnessCommand } from "../shared/harness-commands.ts";
 import type {
   DriverKind, InstanceId, ModelVariantOption, RuntimeEventListener, ThreadId, TurnId,
 } from "../shared/runtime-events.ts";
@@ -265,11 +266,34 @@ export interface SendTurnInput {
    * (integrations.custom["sagax-environment"]). Only a driver declaring
    * capabilities.withholdsHostTools may receive such a turn. */
   withholdHostTools?: boolean;
+  /** Organization server, desktop bridge: the engine's own network traffic
+   * (remote MCP servers, tool HTTP calls) leaves through the person's
+   * computer for this turn (server/desktop-egress.ts). The driver sets
+   * HTTP(S)_PROXY to `url` and NO_PROXY to its own model hosts plus
+   * `noProxy`, so the engine's model traffic never goes through it. */
+  networkProxy?: { url: string; noProxy: string[] };
   /** Keep the claude.ai connectors of the account this turn runs on (the
    * speaker's own Claude subscription, server/harness-connectors.ts). The
    * Claude driver then drops --strict-mcp-config only; other drivers ignore
    * it. Their tools ride the normal permission flow, never pre-allowed. */
   claudeAiConnectors?: boolean;
+  /** The person typed one of the engine's own slash commands
+   * (shared/harness-commands.ts): `text` is that command line, verbatim.
+   * Codex hands a skill's file with the text (`path`); Claude reads the
+   * leading slash itself. */
+  harnessCommand?: { name: string; args: string; path?: string };
+}
+
+/** What a bot's turns will load, for listing the engine's slash commands
+ * (ProviderInstance.listCommands): the same folder and isolation a turn
+ * gets, so the list holds only what a turn can run. */
+export interface HarnessCommandScope {
+  cwd?: string;
+  withholdHostTools?: boolean;
+  mcpFromUserConfig?: boolean;
+  /** The bot whose live sessions may add to the list (MCP prompts of its
+   * own servers, the terminal-only commands the CLI reports). */
+  botId?: string;
 }
 
 /** An MCP server this machine starts and talks to over stdio. */
@@ -603,6 +627,9 @@ export interface ProviderInstance {
    * separate from generateText so the UI never infers a security capability
    * from a generic helper that may expose prompts in argv or lack approvals. */
   reviewPermission?(prompt: string, signal?: AbortSignal): Promise<string>;
+  /** The engine's own slash commands for turns in this scope, read without
+   * a model call (shared/harness-commands.ts). */
+  listCommands?(scope: HarnessCommandScope): Promise<HarnessCommand[]>;
   dispose(): Promise<void>;
 }
 

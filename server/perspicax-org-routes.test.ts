@@ -59,6 +59,8 @@ describe("/api/org/routine-delegation", () => {
   it("serves a person signed in with Pulsatrix, and DELETE keeps answering {revoked:true}", async () => {
     const alice = session({ principalId: "pr_alice", idp: { iss: "https://px.example.test", sub: "A1", grantRef: "g1" } } as Partial<SessionRecord>);
     expect(await answer(alice)).toMatchObject({ status: 200, body: { state: "none", suspended: 0 } });
+    // where the person revokes it: their Sagax tab in the Perspicax console
+    expect((await answer(alice)).body).toMatchObject({ manageUrl: "https://px.example.test/console/users/A1?tab=sagax" });
     expect(await answer(alice, "DELETE")).toMatchObject({ status: 200, body: { revoked: true } });
   });
 });

@@ -8,6 +8,9 @@ import { ENVIRONMENT_PATHS, HEALTH_IDENTITY } from "../electron/legacy-names.mjs
 // First, before any module that could start a process: a Cloud home's
 // secrets off the launcher's pipe (cloud-secrets-boot.ts).
 import { BOOT_CLOUD_SECRETS } from "./cloud-secrets-boot.ts";
+// Then the upstream/analytics network block (network-guard.ts).
+import "./network-guard.ts";
+import { groupOwnerId, groupPatchOwnerRefusal, mayDeleteGroup, ownsGroup, type GroupActor } from "./group-ownership.ts";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { existsSync, readFileSync, realpathSync, rmSync, mkdirSync } from "node:fs";
@@ -31,6 +34,7 @@ import { SharedComputerControl } from "./shared-computer-control.ts";
 import { RoomHandoffs, type RoomHandoff } from "./room-handoffs.ts";
 import { assertRequestTarget, guardedRequestPath, requestConflict, requestNeedsInput, requestSourceForCard } from "./guarded-requests.ts";
 import { botAvatarUrlFromStoredPath } from "../shared/bot-avatar.ts";
+import { botPublicProfile, type BotPublicProfile } from "../shared/bot-public-profile.ts";
 import { BOT_PROFILE_LIMITS } from "../shared/bot-profile.ts";
 import { CLOUD_COMPUTER_BUSY_ERROR } from "../shared/computer-contention.ts";
 import {
@@ -164,6 +168,8 @@ import {
   saveConfig,
   showToolCallsEnabled,
   routinesInConversationEnabled,
+  connectedAppsEnabled,
+  templatesEnabled,
   claudeUserMcpEnabled,
   claudeAiConnectorsEnabled,
   skillAuthoringEnabled,
@@ -212,7 +218,7 @@ import { fleetAvailable, fleetRequest, fleetSocketPath } from "./fleet-client.ts
 import { entitled } from "./enterprise.ts";
 import { HOSTED_CONTRACT_HEADER, HOSTED_CONTRACT_METADATA, HOSTED_CONTRACT_VERSION } from "./hosted-contract.ts";
 import { describeSpawnFailure, execCli } from "./procs.ts";
-import { blockedTarget, buildNotification, buildSpendNotification, type Notification } from "./notify.ts";
+import { blockedTarget, buildNotification, buildSpendNotification, summarize, type Notification } from "./notify.ts";
 import {
   isModelVariant,
   TurnNotStartedError,
@@ -525,7 +531,11 @@ import { EmailOtpStore } from "./email-otp.ts";
 import { resolveMailSettings } from "./mail-config.ts";
 import { createCaptureMailer, createMailer, type Mailer } from "./mailer.ts";
 import { createMailSettingsRoutes } from "./mail-routes.ts";
+import { createVoiceModeRoutes } from "./voice-mode.ts";
+import * as grokVoice from "./tts/grok.ts";
 import { ClaudeAiConnectorInventory, claudeAiConnectorsForTurn, claudeAiConnectorsPrompt, createHarnessConnectorRoutes, runClaudeCli } from "./harness-connectors.ts";
+import { createHarnessCommandRoutes, HarnessCommandCatalog, harnessEngineFor, typedCommandForTurn, unavailableCommandError, type HarnessCommandSource } from "./harness-commands.ts";
+import type { HarnessCommandScope } from "./contracts.ts";
 import { ProviderAuthSessions } from "./provider-auth-sessions.ts";
 import {
   clearSessionCookie,
@@ -542,6 +552,7 @@ import {
   resolveLoopbackTrust,
   resolveRequestAuth,
   parseCookies,
+  isSameOrigin,
   serializeSessionCookie,
   sessionCookieName,
 } from "./request-auth.ts";
@@ -622,6 +633,11 @@ import { createBotPresetRoutes } from "./routes/bot-presets.ts";
 import { createUserPreferenceRoutes } from "./routes/user-preferences.ts";
 import { createUserPreferenceStore } from "./user-preferences.ts";
 import { createBotMemoryRoutes } from "./routes/bot-memory.ts";
+import { createBotActivityRoutes, type ActivityChildRef } from "./routes/bot-activity.ts";
+import { createGroupMemoryRoutes } from "./routes/group-memory.ts";
+import { createPeopleDmRoutes } from "./routes/people-dms.ts";
+import { isPeopleDmParticipant, otherPerson, peopleDmPatchRefusal, peopleDmRouteRefusal } from "./people-dms.ts";
+import { deleteGroupMemory, groupMemoryEnabled, groupMemorySystemPrompt, updateGroupMemory } from "./group-memory.ts";
 import type { OrgRecord } from "./org-record.ts";
 import { createOidcLoginRoutes, identityConfigFromEnv, identityDescriptor, INTERIM_SIGNIN_REFUSAL, isInterimSignInRoute, MANAGED_PROFILE_REFUSAL, oidcBindingCookie, oidcSessionFields, profileManagement, writesManagedProfile } from "./oidc-login.ts";
 import { OidcRelyingParty } from "./oidc-rp.ts";
@@ -635,14 +651,21 @@ import { PERSPICAX_UNAVAILABLE_WHY, PerspicaxMcp, perspicaxUnavailableRow, type 
 import { createPerspicaxOrgRoutes, orgDirectoryEntries, type PendingAdminApproval } from "./perspicax-org-routes.ts";
 import { createInterimAttachRoutes, INTERIM_WINDOW_DAYS, interimWindowUntil, windowWithDays } from "./interim-attach-routes.ts";
 import { createLinkedSubjectsRoute, createOrgExportRoute } from "./org-export.ts";
+import { createOrgBotForceRoutes } from "./org-bot-force.ts";
 import { createOrgImportRoute } from "./org-import-routes.ts";
 import { readSandboxdKey } from "./sandboxd-auth.ts";
 import { sandboxdClient } from "./user-sandbox-client.ts";
 import { UserSandboxManager, UserSandboxUnavailable, userSandboxSettingsFromEnv } from "./user-sandbox-manager.ts";
 import { createUserSandboxRoutes } from "./user-sandbox-routes.ts";
-import { resolveExecutionTarget, sandboxPrincipalForTurn, USER_SANDBOX_MCP_NAME } from "./user-sandbox-routing.ts";
+import { sandboxPrincipalForTurn, USER_SANDBOX_MCP_NAME } from "./user-sandbox-routing.ts";
 import { handleUserSandboxMcp } from "./user-sandbox-tools.ts";
-import { accessCardForViewer, adminApprovalDecision, engineAccessNotice, keyRefusedCard, memberBotAdminApproval, memberOwnedBot, resolveTurnSpeaker, routineLineage, speakerPrincipal, type EngineAccessRefusal, type TurnSpeaker } from "./engine-access.ts";
+import { DesktopBridges, resolveBotWorkplace, type DesktopBridgeOperation, type WorkplaceDecision } from "./desktop-bridge.ts";
+import { handleDesktopBridgeMcp } from "./desktop-bridge-tools.ts";
+import { attachDesktopTunnel, createBridgeAudit, createDesktopBridgeRoutes } from "./desktop-bridge-routes.ts";
+import { DesktopTunnels, startEgressProxy, type EgressProxy } from "./desktop-egress.ts";
+import { attachedFilesInText, attachmentChunks, attachmentIsTheirs, stageTurnAttachments, stagedName, SANDBOX_ATTACHMENTS_DIR, type StagingTarget, type TurnAttachedFile } from "./attachment-staging.ts";
+import { BOT_WORKPLACE_PREFERENCE, DESKTOP_BRIDGE_MCP_NAME, parseBotWorkplace, type BotWorkplace } from "../shared/bot-workplace.ts";
+import { accessCardAudience, accessCardForViewer, accessCardVisibleTo, adminApprovalDecision, engineAccessNotice, keyRefusedCard, memberBotAdminApproval, memberOwnedBot, resolveTurnSpeaker, routineLineage, speakerPrincipal, type EngineAccessRefusal, type TurnSpeaker } from "./engine-access.ts";
 import {
   channelTurnGate,
   createWorkerRoutes,
@@ -658,8 +681,8 @@ import {
   type Worker,
 } from "./workers.ts";
 import { createDeciderRoutes } from "./routes/decider.ts";
-import { createDesktopViewer, desktopViewerUrl } from "./routes/desktop-viewer.ts";
-import { localDesktopTarget, localVmViewerStatus, viewerTargetId } from "./desktop-viewer-targets.ts";
+import { createDesktopViewer, desktopViewerUrl, SANDBOX_VIEWER_TARGET } from "./routes/desktop-viewer.ts";
+import { localDesktopTarget, localVmViewerStatus, sandboxDesktopTarget, viewerTargetId } from "./desktop-viewer-targets.ts";
 import { createAntigravityLeftoverRoutes } from "./routes/antigravity-leftovers.ts";
 import { findAntigravityLeftovers, removeAntigravityLeftovers } from "./drivers/antigravity-temp.ts";
 
@@ -759,6 +782,43 @@ const userComputers = createUserComputerRouter([{
   owns: (person: string, computerId: string) => sharedComputers.list(person).some((computer) => computer.id === computerId),
   request: (person: string, operation: z.infer<typeof sharedComputerOperation>, active: () => boolean) => sharedComputers.request(operation, person, active),
 }]);
+/** The person a live session is signed in as right now (lowercased), or
+ * null when it ended: the desktop bridge re-reads it on every call, so a
+ * session that changed hands or ended never relays for anyone. */
+function liveSessionPerson(sessionId: string): string | null {
+  if (!sessions.isLive(sessionId)) return null;
+  return sessions.byId(sessionId)?.principalId?.trim().toLowerCase() || null;
+}
+// Organization server: each person's own desktop app bridges their computer
+// (server/desktop-bridge.ts): bots in their conversations run shell, files,
+// search, fetch, browser, computer use and Local VM there, and their network
+// traffic leaves through it (server/desktop-egress.ts).
+const desktopBridges = new DesktopBridges(liveSessionPerson);
+const desktopTunnels = new DesktopTunnels(liveSessionPerson);
+const bridgeAudit = createBridgeAudit(join(DATA_DIR, "desktop-bridge-audit.jsonl"));
+const userPreferenceStore = createUserPreferenceStore(DATA_DIR);
+/** A person's "where bots work" preference (shared/bot-workplace.ts). */
+function workplacePreference(person: string | null): BotWorkplace {
+  if (!person) return parseBotWorkplace(null);
+  try {
+    return parseBotWorkplace(userPreferenceStore.get(person).preferences[BOT_WORKPLACE_PREFERENCE]);
+  } catch {
+    return parseBotWorkplace(null);
+  }
+}
+/** What one turn decided about where its tools run, by thread, for the
+ * internal tool routes, attachment copies and the egress proxy. Removed with
+ * the turn's capabilities (revokeInternalCapabilityGeneration). */
+type TurnWorkplace = {
+  generation: string;
+  botId: string;
+  decision: WorkplaceDecision;
+  /** The speaker's own attachments still to copy where the tools run. */
+  staging: { target: StagingTarget; files: TurnAttachedFile[] } | null;
+};
+const turnWorkplaces = new Map<string, TurnWorkplace>();
+let egressProxy: EgressProxy | null = null;
+
 /** The person a shared-computer call provably acts for
  * (sharedComputerPrincipal), as the router reads a speaker. */
 function personSpeaker(principal: string | null): TurnSpeaker | undefined {
@@ -2331,11 +2391,13 @@ type InternalCapability = {
   threadId: string;
   generation: string;
   depth: number;
-  kind: "agents" | "connectors" | "computer" | "browser" | "hooks" | "phone" | "perspicax" | "sandbox";
+  kind: "agents" | "connectors" | "computer" | "browser" | "hooks" | "phone" | "perspicax" | "sandbox" | "desktop";
   /** Slice 5: the one Perspicax profile a "perspicax" capability relays for. */
   perspicaxProfile?: string;
   /** A "sandbox" capability: whose server environment it runs in. */
   sandboxPrincipalId?: string;
+  /** A "desktop" capability: whose own computer it reaches (desktop bridge). */
+  desktopPrincipalId?: string;
   skillAuthoring: boolean;
   createdBots: number;
   createdRooms?: number;
@@ -2461,11 +2523,13 @@ function revokeInternalCapabilityGeneration(threadId: string, generation: string
   if (activeInternalGenerationByThread.get(threadId) === generation) {
     activeInternalGenerationByThread.delete(threadId);
   }
+  if (turnWorkplaces.get(threadId)?.generation === generation) turnWorkplaces.delete(threadId);
   internalGenerationByProviderTurn.deleteGeneration(threadId, generation);
 }
 
 function revokeInternalCapabilitiesForThread(threadId: string): void {
   computerSelectionTurns.delete(threadId);
+  turnWorkplaces.delete(threadId);
   void perspicaxMcp?.endThread(threadId);
   const generation = activeInternalGenerationByThread.get(threadId);
   if (generation) revokeInternalCapabilityGeneration(threadId, generation);
@@ -2479,6 +2543,7 @@ function revokeInternalCapabilitiesForThread(threadId: string): void {
 
 function revokeAllInternalCapabilities(): void {
   computerSelectionTurns.clear();
+  turnWorkplaces.clear();
   if (perspicaxMcp) perspicaxEnding = perspicaxMcp.endAll();
   internalCapabilities.clear();
   // foreignTurns stays: a turn that is not provably the owner's can still
@@ -2570,6 +2635,13 @@ const phoneProxyPath = SPAWNED_PROXIES.phone;
 // in the packaged app process.execPath is Electron — run the proxy as node
 const AGENTS_NODE_FLAG = { ELECTRON_RUN_AS_NODE: "1" };
 
+/** Whether this bot may write the shared memory of this group: the group's
+ * memory is on, the bot is one of its bots, and the bot keeps notes at all
+ * (its own memory switch). Reading it needs only the group's switch. */
+function groupMemoryWritable(group: GroupRecord | undefined, botId: string): boolean {
+  return Boolean(group) && groupMemoryEnabled(group) && group!.memberIds.includes(botId) && store.bot(botId)?.memoryEnabled !== false;
+}
+
 function agentsIntegration(
   botId: string,
   threadId: string,
@@ -2607,6 +2679,9 @@ function agentsIntegration(
       SAGAX_OWN_THREAD_CREATION: ownThreadCreation ? "1" : "0",
       SAGAX_SKILL_AUTHORING_ENABLED: skillAuthoring ? "1" : "0",
       SAGAX_MEMORY_ENABLED: store.bot(botId)?.memoryEnabled === false ? "0" : "1",
+      // A room turn in a group whose shared memory is on gets
+      // group_memory_update (server/group-memory.ts); the route re-checks.
+      SAGAX_GROUP_MEMORY: groupMemoryWritable(store.groupByThread(threadId), botId) ? "1" : "0",
       // The shared-computer tools are advertised only while the workspace
       // gate is on; the routes behind them refuse regardless.
       SAGAX_SHARED_COMPUTERS_ENABLED: lendingEnabled() ? "1" : "0",
@@ -3341,19 +3416,153 @@ function userSandboxIntegration(botId: string, threadId: string, generation: str
   };
 }
 
-/** Mount the right person's environment when this turn's hands land there
- * (sandboxPrincipalForTurn). */
-function mountUserSandbox(
-  integrations: NonNullable<SendTurnInput["integrations"]>,
-  input: { botId: string; threadId: string; generation: string; desktopTargeted: boolean; customMcp: boolean; sandboxPrincipalId: string | null },
-): void {
-  const target = resolveExecutionTarget({
+/** The person's own computer for one turn (organization mode, desktop
+ * bridge): the same stdio proxy, as the "sagax-desktop" tool server, holding
+ * only a turn-scoped capability bound to that person. */
+function userDesktopIntegration(botId: string, threadId: string, generation: string, desktopPrincipalId: string) {
+  const token = mintInternalCapability({
+    botId, threadId, generation, depth: 0, kind: "desktop", skillAuthoring: false, createdBots: 0, openedThreads: 0, desktopPrincipalId,
+  });
+  return {
+    command: process.execPath,
+    args: [SPAWNED_PROXIES.userSandbox],
+    env: { ...AGENTS_NODE_FLAG, SAGAX_SANDBOX_TOKEN: token, SAGAX_HARNESS_URL: `http://127.0.0.1:${PORT}`, SAGAX_TOOL_SERVER: DESKTOP_BRIDGE_MCP_NAME },
+  };
+}
+
+/** Where this turn's tools run and for whom (server/desktop-bridge.ts
+ * resolveBotWorkplace), from the person's preference and whether their
+ * desktop app is connected right now. */
+function decideWorkplace(input: { desktopTargeted: boolean; routine: boolean; principal: string | null; personAsked: boolean }): WorkplaceDecision {
+  const principal = input.principal?.trim().toLowerCase() || null;
+  return resolveBotWorkplace({
     organization: IDENTITY.kind === "perspicax",
     sandboxConfigured: Boolean(userSandbox),
     desktopTargeted: input.desktopTargeted,
+    routine: input.routine,
+    principal,
+    personAsked: input.personAsked,
+    preference: workplacePreference(principal),
+    desktopConnected: desktopBridges.connected(principal),
   });
-  if (target === "user-sandbox" && input.customMcp && input.sandboxPrincipalId) {
-    integrations.custom = { ...integrations.custom, [USER_SANDBOX_MCP_NAME]: userSandboxIntegration(input.botId, input.threadId, input.generation, input.sandboxPrincipalId) };
+}
+
+/** The provider text for this turn with the speaker's own attachments
+ * pointed where the tools run (server/attachment-staging.ts). Another
+ * person's upload is left as is and never copied. */
+function workplaceTurnText(text: string, decision: WorkplaceDecision): { text: string; staging: TurnWorkplace["staging"] } {
+  if (IDENTITY.kind !== "perspicax") return { text, staging: null };
+  const person = decision.principal;
+  const files = attachedFilesInText(text, ATTACHMENTS_DIR).filter((file) => person && attachmentIsTheirs(person, attachmentReferences(file.file)));
+  if (!files.length) return { text, staging: null };
+  const desktop = decision.target === "user-desktop" ? desktopBridges.current(person) : null;
+  const target: StagingTarget | null = desktop
+    ? { kind: "user-desktop", attachmentsDir: desktop.attachmentsDir, platform: desktop.platform }
+    : decision.target === "user-sandbox" ? { kind: "user-sandbox" } : null;
+  const staged = stageTurnAttachments(text, files, target);
+  return { text: staged.text, staging: target && staged.staged.length ? { target, files: staged.staged } : null };
+}
+
+/** What the bot is told about where its tools run, when it matters: on the
+ * person's own computer, or in their server environment because their
+ * computer is not connected (the UI says so too). Provider text only. */
+function withWorkplaceNote(text: string, decision: WorkplaceDecision): string {
+  if (decision.target === "user-desktop" && decision.reason === "desktop") {
+    return `${text}\n\n<workplace>Your ${DESKTOP_BRIDGE_MCP_NAME} tools run on this person's own computer, through their Sagax desktop app: their files, apps, network and Local VM, as if you were on their machine.</workplace>`;
+  }
+  if (decision.fallback && decision.target === "user-sandbox") {
+    return `${text}\n\n<workplace>This person's computer is not connected (their Sagax desktop app is closed or signed out), so your tools run in their server environment instead. Their own files and local network are not reachable from there; tell them so if they ask for them.</workplace>`;
+  }
+  return text;
+}
+
+/** Every stored message naming an upload, with its person and time: the
+ * first one tells whose upload it is (attachmentIsTheirs). */
+function attachmentReferences(file: string): { person?: string; at: number }[] {
+  const out: { person?: string; at: number }[] = [];
+  for (const threadId of threadsUsingAttachment(file)) {
+    for (const message of store.messagesFor(threadId)) {
+      if (!message.text?.includes(file)) continue;
+      const person = message.role === "user" ? linePersonKey(message) : undefined;
+      out.push({ person: person?.trim().toLowerCase(), at: message.at });
+    }
+  }
+  return out;
+}
+
+/** The egress proxy for this turn, when its tools run on the person's
+ * computer and that computer's tunnel is up: the engine's own network
+ * traffic (remote MCP servers, tool HTTP calls) then leaves through it. */
+function turnNetworkProxy(threadId: string, botId: string, decision: WorkplaceDecision): { url: string; noProxy: string[] } | undefined {
+  const person = decision.principal;
+  if (decision.target !== "user-desktop" || !person || !egressProxy || !desktopTunnels.connected(person)) return undefined;
+  const url = egressProxy.urlFor({
+    person, botId, threadId,
+    active: () => {
+      const current = turnWorkplaces.get(threadId);
+      return Boolean(current && current.decision.target === "user-desktop" && current.decision.principal === person &&
+        activeInternalGenerationByThread.get(threadId) === current.generation);
+    },
+    network: () => workplacePreference(person).network,
+  });
+  const hosts = [process.env.SAGAX_PERSPICAX_ISSUER, process.env.ANTHROPIC_BASE_URL, process.env.OPENAI_BASE_URL]
+    .map((value) => { try { return value ? new URL(value).hostname : ""; } catch { return ""; } });
+  return { url, noProxy: hosts.filter(Boolean) };
+}
+
+/** Mount the right person's tools when this turn's hands land there: their
+ * own computer (desktop bridge) or their server environment. */
+function mountUserSandbox(
+  integrations: NonNullable<SendTurnInput["integrations"]>,
+  input: { botId: string; threadId: string; generation: string; customMcp: boolean; decision: WorkplaceDecision; staging: TurnWorkplace["staging"] },
+): void {
+  const { decision } = input;
+  turnWorkplaces.set(input.threadId, { generation: input.generation, botId: input.botId, decision, staging: input.staging });
+  if (!input.customMcp || !decision.principal) return;
+  if (decision.target === "user-sandbox") {
+    integrations.custom = { ...integrations.custom, [USER_SANDBOX_MCP_NAME]: userSandboxIntegration(input.botId, input.threadId, input.generation, decision.principal) };
+  } else if (decision.target === "user-desktop" && desktopBridges.connected(decision.principal)) {
+    integrations.custom = { ...integrations.custom, [DESKTOP_BRIDGE_MCP_NAME]: userDesktopIntegration(input.botId, input.threadId, input.generation, decision.principal) };
+  }
+}
+
+/** Copy the turn's pending attachments where its tools run, once, at its
+ * first tool call (nothing is created for a turn that never uses a tool). */
+async function stagePendingAttachments(threadId: string, generation: string): Promise<void> {
+  const workplace = turnWorkplaces.get(threadId);
+  if (!workplace?.staging || workplace.generation !== generation || !workplace.decision.principal) return;
+  const { target, files } = workplace.staging;
+  workplace.staging = null;
+  const person = workplace.decision.principal;
+  for (const file of files) {
+    try {
+      if (target.kind === "user-sandbox" && userSandbox) {
+        const path = `${SANDBOX_ATTACHMENTS_DIR}/${stagedName(file)}`;
+        // Linux keeps each environment string under 128 KiB: chunks of 48 KiB.
+        for (const chunk of attachmentChunks(file, 48 * 1024)) {
+          const result = await userSandbox.exec(person, {
+            argv: ["sh", "-c", chunk.offset === 0
+              ? 'mkdir -p -- "$(dirname -- "$SAGAX_PATH")" && printf %s "$SAGAX_CONTENT_B64" | base64 -d > "$SAGAX_PATH"'
+              : 'printf %s "$SAGAX_CONTENT_B64" | base64 -d >> "$SAGAX_PATH"'],
+            env: { SAGAX_PATH: path, SAGAX_CONTENT_B64: chunk.data.toString("base64") },
+            timeoutSec: 30,
+          });
+          if (result.exitCode !== 0) throw new Error(result.stderr.trim() || "copy failed");
+        }
+      } else if (target.kind === "user-desktop") {
+        const active = () => activeInternalGenerationByThread.get(threadId) === generation;
+        for (const chunk of attachmentChunks(file, 512 * 1024)) {
+          const result = await desktopBridges.request(person, {
+            action: "stage_file", name: stagedName(file), content: chunk.data.toString("base64"), encoding: "base64", offset: chunk.offset, final: chunk.final,
+          }, active) as { isError?: boolean; content?: { text?: string }[] } | null;
+          if (result?.isError) throw new Error(result.content?.[0]?.text ?? "copy failed");
+        }
+      }
+      bridgeAudit.record({ person, botId: workplace.botId, threadId, target: target.kind, kind: "tool", detail: `attachment ${stagedName(file)}`, ok: true });
+    } catch (error) {
+      bridgeAudit.record({ person, botId: workplace.botId, threadId, target: target.kind, kind: "tool", detail: `attachment ${stagedName(file)}`, ok: false, error: (error as Error).message });
+      console.error(`[omb-bridge] could not copy attachment ${file.file} to ${target.kind}: ${(error as Error).message}`);
+    }
   }
 }
 
@@ -4005,6 +4214,14 @@ principals.onDisabledChanged((person, disabled) => orgAudit({
   actor: { kind: "worker" },
 }));
 principals.localOperator(cfg.profile?.email);
+// One Primary Bot per person: the store learns who owns each bot (an
+// unrecorded owner is the operator), then the one-time migration from one
+// Chief of Staff per section runs (idempotent, so at every boot).
+store.botOwnerKey = (bot) => effectiveBotOwner(bot);
+{
+  const steppedDown = store.enforceOnePrimaryPerOwner();
+  if (steppedDown.length) console.log(`[primary-bot] one Primary Bot per person: ${steppedDown.length} former Chief(s) of Staff stepped down`);
+}
 // The per-person server environments (server/user-sandbox-manager.ts):
 // organization mode with a provisioner only. A person signed out by
 // Perspicax has theirs stopped now and deleted after the grace period.
@@ -4028,7 +4245,17 @@ if (userSandbox) {
     else userSandbox.personBack(person.id);
   });
 }
-ROUTES.push(createUserSandboxRoutes({ manager: () => userSandbox, organization: IDENTITY.kind === "perspicax" }));
+ROUTES.push(createUserSandboxRoutes({
+  manager: () => userSandbox,
+  organization: IDENTITY.kind === "perspicax",
+  turnRunning: (principalId) => {
+    const person = principalId.trim().toLowerCase();
+    for (const workplace of turnWorkplaces.values()) {
+      if (workplace.decision.target === "user-sandbox" && workplace.decision.principal === person) return true;
+    }
+    return false;
+  },
+}));
 // Slice 4: the Perspicax team names (who is in a team lives on each person).
 const orgTeams = new OrgTeams({ path: join(DATA_DIR, "org-teams.json") });
 /** Slice 4 (D10): each person's own engine sign-ins, organization mode. */
@@ -4263,9 +4490,9 @@ async function botOverview(bot: BotRecord): Promise<BotOverview> {
  * this too, but no provider dispatch or later permission callback relies on
  * persistence having been produced exclusively by that route. Delegation
  * uses the receiving bot's grant, never the sender's (approvalModeForOrigin) —
- * with one deliberate exception: a Chief of Staff with Full access makes the
+ * with one deliberate exception: a Primary Bot with Full access makes the
  * threads it delegates Full too (delegatedFullAccess), so the grant the
- * person gave the Chief covers the work the Chief hands out. */
+ * person gave the Primary Bot covers the work the Primary Bot hands out. */
 const approvalModeForTurn = (bot: BotRecord, peerInitiated = false, threadId = bot.threadId): ApprovalMode => {
   // A member's bot on an organization server never runs unasked (JC rule
   // until per-owner containers): its tasks' Custom or Full are Ask here.
@@ -4295,14 +4522,14 @@ function peerReviewRequired(bot: BotRecord, threadId: string): boolean {
   return Boolean(bot.approvePeerComms && !fullAccessForSource(bot.id, threadId));
 }
 
-/** Full access flows down a Chief of Staff's delegation. The person gave the
- * Chief Full access so its work runs without prompts; a teammate stopping
+/** Full access flows down a Primary Bot's delegation. The person gave the
+ * Primary Bot Full access so its work runs without prompts; a teammate stopping
  * that same work to ask defeats the grant — and in practice the person was
  * answering every one of those cards, all day, for the whole team. So a
- * teammate a Full-access Chief delegates to runs Full for that work: the
+ * teammate a Full-access Primary Bot delegates to runs Full for that work: the
  * recipient switches, whatever its own level says. The recipient's engine
  * has to implement Full (supportsApprovalMode); otherwise the work keeps the
- * recipient's own level, as before. Only a Chief passes access on — an
+ * recipient's own level, as before. Only a Primary Bot passes access on — an
  * ordinary bot's delegation still uses the recipient's setting. */
 function delegatedFullAccess(from: BotRecord, fromThreadId: string, target: BotRecord): boolean {
   return delegationInheritsFullAccess({
@@ -4323,11 +4550,11 @@ function grantDelegatedFullAccess(from: BotRecord, target: BotRecord, threadId: 
   store.appendMessage(threadId, {
     role: "bot",
     kind: "activity",
-    tool: { name: `Full access — delegated by ${from.name}, a Chief of Staff with Full access`, ok: true },
+    tool: { name: `Full access — delegated by ${from.name}, a Primary Bot with Full access`, ok: true },
   });
 }
 
-/** A room member's level for one turn. Work a Full-access Chief hands out
+/** A room member's level for one turn. Work a Full-access Primary Bot hands out
  * in a room runs Full for that turn: the room thread is shared, so the
  * level is not stored on it — it rides the handoff. */
 function roomTurnApprovalMode(bot: BotRecord, threadId: string, orchestration?: GroupTurnOrchestration): ApprovalMode {
@@ -4337,7 +4564,7 @@ function roomTurnApprovalMode(bot: BotRecord, threadId: string, orchestration?: 
   const source = handoff?.parentId ? roomHandoffs.nodes.get(handoff.parentId) : undefined;
   const from = source ? store.bot(source.botId) : undefined;
   // A member's bot on an organization server never runs Full, not even for
-  // a Full Chief's handoff (JC rule until per-owner containers).
+  // a Full Primary Bot's handoff (JC rule until per-owner containers).
   if (memberOwnedInOrg(bot)) return "ask";
   if (from && source && delegatedFullAccess(from, source.threadId, bot)) return "full";
   return approvalModeForTurn(bot, Boolean(orchestration?.roomHandoffId), threadId);
@@ -4845,7 +5072,7 @@ function groupIsWorking(group: GroupRecord): boolean {
   return Boolean(group.busyBotId) || Boolean(groupTurnOperations.get(group.id)?.size);
 }
 
-// The public and Chief room tools use the same synchronous validation and write.
+// The public and Primary Bot room tools use the same synchronous validation and write.
 // Keep authorization at each ingress; no internal caller gains public admin scope.
 function createChannel(value: unknown): GroupRecord {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
@@ -4872,7 +5099,7 @@ function createChannel(value: unknown): GroupRecord {
     }
   }
   let setup:
-    | { bulletin: string; defaultResponder: GroupDefaultResponder; completed: true }
+    | { bulletin: string; defaultResponder: GroupDefaultResponder }
     | undefined;
   if (body.setup !== undefined) {
     if (!body.setup || typeof body.setup !== "object" || Array.isArray(body.setup)) {
@@ -4887,7 +5114,7 @@ function createChannel(value: unknown): GroupRecord {
     }
     const responder = checkedGroupResponder(requested.defaultResponder, memberIds);
     if (!responder) throw Object.assign(new Error("invalid setup.defaultResponder"), { status: 400 });
-    setup = { bulletin: requested.bulletin, defaultResponder: responder, completed: true };
+    setup = { bulletin: requested.bulletin, defaultResponder: responder };
   }
   let humanIds: string[] | undefined;
   if (body.humanIds !== undefined) {
@@ -5027,7 +5254,7 @@ function updateChannel(groupId: string, value: unknown): GroupRecord {
   }
   // An admin's explicit "show this room to everyone its current bots allow":
   // the only way a room's floor widens (settleRoomFloor). Admin-only: a
-  // member's PATCH is limited to display fields, and a Chief's never has it.
+  // member's PATCH is limited to display fields, and a Primary Bot's never has it.
   const resetAudience = body.resetAudience !== undefined;
   if (resetAudience) {
     if (body.resetAudience !== true) throw Object.assign(new Error("resetAudience must be true"), { status: 400 });
@@ -5243,7 +5470,6 @@ function roomHandoffProblem(node: Pick<RoomHandoff, "groupId" | "threadId" | "bo
     return member && !canAccessTeam(speaker, member.section) && !coordinatorSupervises(member, speaker);
   });
   if (group && outsideSection(group, bot)) return "Destination room includes a member outside the agent's section";
-  if (group && roomSetupPending(group)) return "Destination room setup is unfinished";
   if (parent) {
     const from = store.bot(parent.botId);
     const source = parent.groupId ? store.group(parent.groupId) : undefined;
@@ -5454,7 +5680,38 @@ function publicGroupState(record: GroupRecord): WireGroup {
   const { installedPackage: _installedPackage, ...group } = record;
   let usage: WireGroup["usage"];
   try { usage = groupUsageReader.forThread(group.threadId); } catch { /* accounting must not block chat */ }
-  return { ...group, usage: usage ?? null, working: groupIsWorking(group) || [...roomHandoffs.nodes.values()].some(n => n.groupId === group.id && !["completed", "failed", "cancelled"].includes(n.status)) };
+  // Organization server: who owns the group's settings (null: its admins).
+  const owner = IDENTITY.kind === "perspicax" && !group.dm ? { ownerId: groupOwnerId(group) } : {};
+  return {
+    ...group, ...owner, usage: usage ?? null,
+    working: groupIsWorking(group) || [...roomHandoffs.nodes.values()].some(n => n.groupId === group.id && !["completed", "failed", "cancelled"].includes(n.status)),
+    memberProfiles: groupMemberProfiles(group),
+  };
+}
+
+/** Every bot in a room, as each person in it sees it (shared/bot-public-profile.ts). */
+function groupMemberProfiles(group: { memberIds: readonly string[] }): BotPublicProfile[] {
+  return group.memberIds.flatMap((id) => {
+    const bot = store.bot(id);
+    return bot ? [botPublicProfile(bot)] : [];
+  });
+}
+/** The public identity last announced per bot: a change (a rename, a new
+ * look) re-announces every room it is in, so each person there sees it. */
+const announcedProfiles = new Map<string, string>(store.bots.map((bot) => [bot.id, JSON.stringify(botPublicProfile(bot))]));
+function announceProfileChange(botId: string): void {
+  const bot = store.bot(botId);
+  if (!bot) {
+    announcedProfiles.delete(botId);
+    return;
+  }
+  const profile = JSON.stringify(botPublicProfile(bot));
+  const before = announcedProfiles.get(botId);
+  announcedProfiles.set(botId, profile);
+  if (before === undefined || before === profile) return;
+  for (const group of store.groups) {
+    if (group.memberIds.includes(botId)) broadcast({ kind: "group", group: publicGroupState(group) });
+  }
 }
 
 function beginGroupTurnOperation(
@@ -5973,7 +6230,7 @@ function guardedRequestSnapshot(botId: string, threadId: string, sendId: string)
 }
 
 /** A durable completion fence, not a replay queue. If the process dies while
- * a Chief is awaiting results, its earlier handoff must not become a final. */
+ * a Primary Bot is awaiting results, its earlier handoff must not become a final. */
 function settleTrackedRequest(threadId: string): void {
   const owner = directRequestOwners.get(threadId);
   const bot = store.botByThread(threadId);
@@ -6060,7 +6317,13 @@ function audienceChanged(): void {
 // Cloud boot can revoke sessions before routes are registered. Create the
 // viewer manager before installing any revocation callbacks.
 const desktopViewer = createDesktopViewer({
-  target: (id) => {
+  target: (id, auth) => {
+    if (id === SANDBOX_VIEWER_TARGET) {
+      // The caller's own server environment desktop, never anyone else's.
+      const principalId = auth.kind === "session" ? auth.session.principalId?.trim() : "";
+      if (IDENTITY.kind !== "perspicax" || !userSandbox || !principalId) return;
+      return sandboxDesktopTarget(userSandbox, principalId);
+    }
     if (id.startsWith("vps/")) {
       const botId = id.slice(4);
       if (store.bot(botId)?.cloudBackend !== "vps") return;
@@ -6191,6 +6454,10 @@ function broadcast(payload: Record<string, unknown>, options: { adminOnly?: bool
     if (deliverSseFrame(client, kind, out) === "disconnected") {
       sseClients.delete(client);
     }
+  }
+  if (kind === "bot" && payload.bot && typeof payload.bot === "object") {
+    const id = (payload.bot as { id?: unknown }).id;
+    if (typeof id === "string") announceProfileChange(id);
   }
 }
 
@@ -6461,8 +6728,32 @@ function scopeApprovalMessage<T>(threadId: string, message: T, viewer: ApprovalV
   }) as T;
 }
 
+/** Organization server (2026-10-01): an access card is private to the person
+ * it is about (accessCardAudience in ./engine-access.ts); every other member
+ * of the thread or room gets nothing in its place. Solo servers keep them. */
+function privateRowHidden(message: unknown, viewer: ApprovalViewer): boolean {
+  if (IDENTITY.kind !== "perspicax" || !message || typeof message !== "object") return false;
+  return !accessCardVisibleTo(message as Parameters<typeof accessCardVisibleTo>[0], viewer.userId);
+}
+
+/** The audience of a refused turn's notification: the access card's. */
+function accessNotificationAudience(access: WireAccessCard): { audience?: string[] } {
+  if (IDENTITY.kind !== "perspicax") return {};
+  const audience = accessCardAudience(access);
+  return audience ? { audience } : {};
+}
+
+/** Notify a refused turn to the access card's audience only. */
+function notifyAccess(notification: Notification | null, access: WireAccessCard): void {
+  notify(notification ? { ...notification, ...accessNotificationAudience(access) } : null);
+}
+
 function projectMessages<T>(threadId: string, messages: T[], viewer: ApprovalViewer): T[] {
   let changed = false;
+  if (messages.some((message) => privateRowHidden(message, viewer))) {
+    messages = messages.filter((message) => !privateRowHidden(message, viewer));
+    changed = true;
+  }
   const next = messages.map((message) => {
     const projected = scopeApprovalMessage(threadId, message, viewer);
     if (projected !== message) changed = true;
@@ -6503,6 +6794,7 @@ function scopeChannelApproval(
     const threadId = typeof payload.threadId === "string" ? payload.threadId : "";
     const message = payload.message;
     if (!threadId || !message || typeof message !== "object") return { action: "same" };
+    if (privateRowHidden(message, viewer)) return { action: "drop" };
     const next = scopeApprovalMessage(threadId, message, viewer);
     if (next === message) return { action: "same" };
     return { action: "replace", payload: { ...payload, message: next } };
@@ -6528,7 +6820,12 @@ function scopeChannelApproval(
   if (kind === "notify") {
     const notification = payload.notification;
     if (!notification || typeof notification !== "object") return { action: "same" };
-    const note = notification as { kind?: unknown; threadId?: unknown; botId?: unknown };
+    const note = notification as { kind?: unknown; threadId?: unknown; botId?: unknown; audience?: unknown };
+    // A refused turn's notification follows its access card: its person only.
+    if (Array.isArray(note.audience)) {
+      const viewerId = viewer.userId.toLowerCase();
+      return viewerId && note.audience.some((id) => typeof id === "string" && id.toLowerCase() === viewerId) ? { action: "same" } : { action: "drop" };
+    }
     if (note.kind !== "approval") return { action: "same" };
     const bot = approvalBot(note);
     if (!bot) return { action: "drop" };
@@ -6548,6 +6845,29 @@ function scopeChannelApproval(
   return { action: "same" };
 }
 
+/** A frame about a conversation between two people reaches those two only,
+ * whatever the stream (admin and loopback included). */
+function peopleDmFrameAllowed(payload: Record<string, unknown>, viewerId: string | undefined): boolean {
+  // A person-to-person notice also carries its recipient as `audience`
+  // (scopeChannelApproval keeps it to them).
+  const note = payload.kind === "notify" && payload.notification && typeof payload.notification === "object"
+    ? payload.notification as { threadId?: unknown }
+    : null;
+  const groupField = payload.group && typeof payload.group === "object" ? (payload.group as { id?: unknown }).id : undefined;
+  const groupId = typeof payload.groupId === "string" ? payload.groupId : typeof groupField === "string" ? groupField : undefined;
+  const event = payload.event && typeof payload.event === "object" ? (payload.event as { threadId?: unknown }).threadId : undefined;
+  const threadId = typeof payload.threadId === "string" ? payload.threadId : typeof event === "string" ? event : typeof note?.threadId === "string" ? note.threadId : undefined;
+  const group = (groupId ? store.group(groupId) : undefined) ?? (threadId ? store.groupByThread(threadId) : undefined);
+  if (!group?.peopleDm) {
+    // A frame that carries the record itself (a group just created) is
+    // judged by what it carries.
+    const carried = payload.group && typeof payload.group === "object" ? payload.group as { peopleDm?: unknown; humanIds?: unknown } : null;
+    if (carried?.peopleDm === true) return isPeopleDmParticipant({ peopleDm: true, humanIds: Array.isArray(carried.humanIds) ? carried.humanIds.filter((id): id is string => typeof id === "string") : [] }, viewerId);
+    return true;
+  }
+  return isPeopleDmParticipant(group, viewerId);
+}
+
 /** The frame a non-admin stream gets: the shared client frame, unless a bot
  * is restricted and this member may not see all of what the frame carries —
  * then narrowed (bot-visibility.ts), withdrawn, or nothing at all (null). */
@@ -6558,6 +6878,7 @@ function sseFrameFor(
   frame: string | null,
   clientFrame: string | null,
 ): string | null {
+  if (payload && !peopleDmFrameAllowed(payload, client.viewerId)) return null;
   if (payload) {
     const scoped = scopeChannelApproval(payload, approvalViewerOf(client));
     if (scoped.action === "drop") return null;
@@ -8543,12 +8864,14 @@ bus.subscribe((event: RuntimeEvent) => {
         keyBacked: driverKeyBacked(cfg, refusedInstance.driverKind, refusedInstance.instanceId) || keyVia(ranOn?.via),
         message: event.message, botId: bot.id, ownerPrincipalId: effectiveBotOwner(bot),
         engine: refusedInstance.displayName || refusedInstance.driverKind, redact: redactSecretsInText,
+        // a person's own key: the card is theirs alone (accessCardAudience)
+        ...(keyVia(ranOn?.via) && ranOn?.payerPrincipalId ? { payerPrincipalId: ranOn.payerPrincipalId } : {}),
       }) : null;
       // A turn on a person's own key (slice 4) also counts: that key is dropped at once.
       if (keyRefused && keyVia(ranOn?.via) && ranOn?.payerSub && ranOn.provider) perspicaxDirectory?.invalidate(ranOn.payerSub, ranOn.provider);
       if (keyRefused && bot) {
         pushMessage({ role: "bot", kind: "access", access: keyRefused });
-        notify(buildNotification("turn-failed", bot, event.threadId, engineAccessNotice("key_refused", keyRefused.engine), { avatarUrl: bot.avatarUrl }));
+        notifyAccess(buildNotification("turn-failed", bot, event.threadId, engineAccessNotice("key_refused", keyRefused.engine), { avatarUrl: bot.avatarUrl }), keyRefused);
       } else pushMessage({
         role: "bot",
         kind: "activity",
@@ -8651,7 +8974,7 @@ bus.subscribe((event: RuntimeEvent) => {
       const reply = lastReply.get(event.threadId) ?? "";
       lastReply.delete(event.threadId);
       // A run that broke — not one the person stopped, and not a routine's,
-      // which reports through its own failure path — is the Chief's to see.
+      // which reports through its own failure path — is the Primary Bot's to see.
       // A lazy computer-claim rejection already reported its failure and
       // interrupted the turn; Claude settles that interrupt as
       // exit_before_result, not "interrupted", so this generation's marker
@@ -8958,22 +9281,23 @@ function routineSuspended(routine: Routine, _run: RoutineRun | null, reason: Rou
   if (!bot) return;
   const group = routine.target === "room-goal" && routine.groupId ? store.group(routine.groupId) : undefined;
   const threadId = routineSourceOwner(routine)?.threadId ?? group?.threadId ?? bot.threadId;
+  const card: WireAccessCard = {
+    reason: "routine_delegation", engine: "", botId: bot.id, ownerPrincipalId: effectiveBotOwner(bot),
+    ...(runAs ? { runAsPrincipalId: runAs } : {}),
+    ...(runAsName ? { runAsName: runAsName.slice(0, 200) } : {}),
+    routineId: routine.id, routineName: redactSecretsInText(routine.name).slice(0, 200), suspendReason: reason,
+  };
   try {
     store.appendMessage(threadId, {
       role: "bot",
       kind: "access",
       from: { botId: bot.id, name: bot.name, color: bot.color },
-      access: {
-        reason: "routine_delegation", engine: "", botId: bot.id, ownerPrincipalId: effectiveBotOwner(bot),
-        ...(runAs ? { runAsPrincipalId: runAs } : {}),
-        ...(runAsName ? { runAsName: runAsName.slice(0, 200) } : {}),
-        routineId: routine.id, routineName: redactSecretsInText(routine.name).slice(0, 200), suspendReason: reason,
-      },
+      access: card,
     });
   } catch (error) {
     console.error(`routine: the pause card could not be written: ${error instanceof Error ? error.message : String(error)}`);
   }
-  notify(buildNotification("routine-failed", bot, threadId, `${redactSecretsInText(routine.name)}: paused, it cannot act in its person's name`));
+  notifyAccess(buildNotification("routine-failed", bot, threadId, `${redactSecretsInText(routine.name)}: paused, it cannot act in its person's name`), card);
 }
 /** Slice 6: the audit rows of routine delegations and paused routines. */
 function routineAudit(action: string, principalId: string | undefined, extra: { routine?: Pick<Routine, "id" | "name">; reason?: string; auth?: RequestAuth } = {}): void {
@@ -9089,12 +9413,12 @@ function wakeDelegationSource(source: BotRecord, threadId: string, targetName: s
   dispatchDelegationWake(source.id, threadId, targetName, failureReason, routineRunId);
 }
 
-// ── incidents: a broken run reaches the Chief of Staff ──────────────────
+// ── incidents: a broken run reaches the Primary Bot ──────────────────
 // A failed, stalled or unstartable run used to leave one chip in the thread
 // it died in and nothing anywhere else; the person found it hours later,
 // from a phone, by opening the desktop and reading every thread. The team
-// already has a role for this — the Chief coordinates the section — so the
-// incident becomes a turn of the Chief's, in its "Team incidents" thread,
+// already has a role for this — the Primary Bot coordinates the section — so the
+// incident becomes a turn of the Primary Bot's, in its "Team incidents" thread,
 // with a link to the broken thread and retry_thread to act on it. The person
 // reads one place. Policy in server/incidents.ts.
 const incidentLedger = new IncidentLedger();
@@ -9140,7 +9464,7 @@ function reportIncident(input: { kind: IncidentKind; bot: BotRecord; threadId: s
       ...(group ? { group: { id: group.id, name: group.name } } : {}),
     }));
   };
-  // no Chief on duty, or the Chief itself broke: the person is next
+  // no Primary Bot on duty, or the Primary Bot itself broke: the person is next
   if (!chief) {
     tellThePerson();
     return;
@@ -10158,7 +10482,7 @@ async function startTurn(
   // path-reading drivers retain the attachment tag as their compatibility route.
   const resolvedImages = extractTurnImages(text);
   const usesNativeImageInput = instance.adapter.capabilities.nativeImageInput === true;
-  const providerText = usesNativeImageInput ? resolvedImages.text : text;
+  let providerText = usesNativeImageInput ? resolvedImages.text : text;
   const turnImages = usesNativeImageInput ? resolvedImages.images : [];
   const commsDepth = opts?.commsDepth ?? 0;
   // Classify the turn where the peer paths' depth actually arrives: by the
@@ -10238,6 +10562,21 @@ async function startTurn(
   });
   // an automatic recovery re-enters with these options: same speaker
   opts = { ...opts, speaker };
+  // Organization server: where this turn's tools run, and for whom, decided
+  // once (server/desktop-bridge.ts); the speaker's own attachments are
+  // pointed there and small text ones given inline.
+  const turnPlace = decideWorkplace({
+    desktopTargeted: plan.computer === "local",
+    routine: routineLineage(speaker),
+    principal: sandboxPrincipalForTurn({
+      botOwnerPrincipalId: effectiveBotOwner(bot),
+      routine: routineLineage(speaker),
+      speakerPrincipalId: orgSpeakerPrincipal(bot, speaker),
+    }),
+    personAsked: !routineLineage(speaker) && Boolean(orgSpeakerPrincipal(bot, speaker)),
+  });
+  const placedText = opts.cardContinuation ? { text: providerText, staging: null } : workplaceTurnText(providerText, turnPlace);
+  providerText = withWorkplaceNote(placedText.text, turnPlace);
   // A compaction summarizes with the bot's engine too, so it is gated like
   // a turn, and so is a fresh delegated turn (a hop, as ask_bot's is); other
   // card continuations resume a turn already admitted.
@@ -10245,13 +10584,14 @@ async function startTurn(
   const accessRefusal = opts.cardContinuation && !opts.compactOnly && !freshHop ? null : orgEngineRefusal(bot, instance, speaker);
   if (accessRefusal) {
     const engine = engineDisplayName(instance);
+    const card = accessCardFor(bot, accessRefusal, engine);
     store.appendMessage(threadId, {
       role: "bot",
       kind: "access",
-      access: accessCardFor(bot, accessRefusal, engine),
+      access: card,
     });
     const notice = engineAccessNotice(accessRefusal.reason, engine, accessRefusal);
-    notify(buildNotification("turn-failed", bot, threadId, notice, { avatarUrl: bot.avatarUrl }));
+    notifyAccess(buildNotification("turn-failed", bot, threadId, notice, { avatarUrl: bot.avatarUrl }), card);
     console.error(`[omb-turn] bot=${botId} refused: ${accessRefusal.reason}${accessRefusal.cause ? `/${accessRefusal.cause}` : ""} (${instance.instanceId})`);
     opts?.coordination?.settle({ ok: false, text: notice });
     opts?.onDispatchError?.(notice);
@@ -10624,12 +10964,8 @@ async function startTurn(
       const wants = plan.computer;
       mountUserSandbox(integrations, {
         botId: bot.id, threadId, generation: dispatchClaimId,
-        desktopTargeted: wants === "local", customMcp: instance.adapter.capabilities.customMcp === true,
-        sandboxPrincipalId: sandboxPrincipalForTurn({
-          botOwnerPrincipalId: effectiveBotOwner(bot),
-          routine: routineLineage(speaker),
-          speakerPrincipalId: orgSpeakerPrincipal(bot, speaker),
-        }),
+        customMcp: instance.adapter.capabilities.customMcp === true,
+        decision: turnPlace, staging: placedText.staging,
       });
       // A place the organisation disallows, or a Cloud home never offers, is
       // refused before anything is prepared; Auto below simply skips them.
@@ -11112,6 +11448,9 @@ async function startTurn(
         liveBot &&
         plan.browser &&
         !(plan.computer === undefined && mountedComputer) &&
+        // On the person's computer, web pages open in their own browser
+        // (sagax-desktop browse), on their network, not on this server.
+        !(turnPlace.target === "user-desktop" && integrations.custom?.[DESKTOP_BRIDGE_MCP_NAME]) &&
         builtInBrowserEnabled(cfg) &&
         liveBot.browser !== false &&
         instance.adapter.capabilities.browserMcp === true
@@ -11245,12 +11584,31 @@ async function startTurn(
       // Slice 4: this turn's credentials (an owner key is read now).
       // (solo mode takes no extra await: its dispatch timing is unchanged)
       const turnAccess = IDENTITY.kind === "perspicax" ? await orgTurnAccess(threadId, bot, instance, speaker) : undefined;
+      // An engine slash command typed by a person (or set in a routine)
+      // reaches the engine verbatim (server/harness-commands.ts); a peer hop
+      // or a card continuation never runs one.
+      const typedCommand = !opts?.cardContinuation && commsDepth === 0
+        ? await typedCommandForTurn(resolvedImages.text, harnessCommandSource(bot, threadId, {
+          botId: bot.id,
+          ...(cwd ? { cwd } : {}),
+          ...(withholdHostToolsFor(instance) ? { withholdHostTools: true } : {}),
+          mcpFromUserConfig: claudeUserMcpEnabled(cfg) && !managedPolicy.restrictsMcp(),
+        }), harnessCommands)
+        : { kind: "none" as const };
+      if (!directTurnClaimIsCurrent(bot.id, dispatchClaimId, threadId)) throw new DirectTurnSetupCancelled("turn stopped during command lookup");
+      const engineCommand = typedCommand.kind === "engine" ? typedCommand : null;
+      // With no session to resume, the command runs in a new one that never
+      // saw the conversation: the next turn must still rebuild it, so the
+      // bookkeeping that would mark the context delivered is left for it.
+      const contextStillPending = Boolean(engineCommand && dispatchContext.sessionReset && transcript.length > 0 &&
+        !NATIVELY_REPLAYING_DRIVER_KINDS.includes(instance.driverKind));
       const dispatch = await guardTurnDispatch(instance.adapter.sendTurn({
         threadId,
         botId: bot.id,
         ...(turnAccess ? { access: turnAccess } : {}),
         startupRecovery: cfg.automaticRecovery?.enabled === true && !opts?.automaticRecoveryAttempted,
-        text: withRecalled(recalled, dispatchContext.turnText),
+        text: engineCommand ? engineCommand.engineText : withRecalled(recalled, dispatchContext.turnText),
+        ...(engineCommand ? { harnessCommand: { name: engineCommand.command.name, args: engineCommand.args, ...(engineCommand.command.path ? { path: engineCommand.command.path } : {}) } } : {}),
         refreshSystemPrompt: true,
         images: turnImages,
         approvalMode: approvalModeForTurn(bot, commsDepth > 0, threadId),
@@ -11263,8 +11621,8 @@ async function startTurn(
         // resume the wrong conversation and defeat the context bubble
         resumeCursor: dispatchContext.resumeCursor,
         sessionReset: dispatchContext.sessionReset,
-        ...(dispatchContext.recoveryText !== undefined ? { recoveryText: dispatchContext.recoveryText } : {}),
-        ...(dispatchContext.recoveryIsReplay ? { recoveryIsReplay: true } : {}),
+        ...(dispatchContext.recoveryText !== undefined && !engineCommand ? { recoveryText: dispatchContext.recoveryText } : {}),
+        ...(dispatchContext.recoveryIsReplay && !engineCommand ? { recoveryIsReplay: true } : {}),
         transcript,
         system: prompt.text,
         systemStable: prompt.stable,
@@ -11274,6 +11632,7 @@ async function startTurn(
         mentionTurn: tagged.length > 0,
         integrations,
         ...(withholdHostToolsFor(instance) ? { withholdHostTools: true } : {}),
+        ...(() => { const networkProxy = turnNetworkProxy(threadId, bot.id, turnPlace); return networkProxy ? { networkProxy } : {}; })(),
         mcpFromUserConfig: claudeUserMcpEnabled(cfg) && !managedPolicy.restrictsMcp(),
         claudeAiConnectors: claudeAiConnectorsFor(bot, instance, speaker, turnAccess?.via),
         cwd,
@@ -11300,13 +11659,13 @@ async function startTurn(
       }
       clearDirectTurnDispatch(threadId, dispatchClaimId);
       // dispatched: the rewind is spent, and the old cursors are dead
-      if (rewound) store.patchTask(bot.id, threadId, { rewound: false, resumeCursors: {} });
-      if (contextReset && record) store.patchTask(bot.id, threadId, { appliedCompactionId: record.id, contextFloor: undefined });
+      if (rewound && !contextStillPending) store.patchTask(bot.id, threadId, { rewound: false, resumeCursors: {} });
+      if (contextReset && record && !contextStillPending) store.patchTask(bot.id, threadId, { appliedCompactionId: record.id, contextFloor: undefined });
       // and this engine now owns the thread's most recent turn
       // Consume exactly the external-update generation this turn replayed.
       // If a newer delegated result landed during setup, its unique marker
       // differs and must survive so the next turn also receives that update.
-      if (!isExternalContextMarker(task.lastInstanceId) || task.lastInstanceId === externalContextMarker) {
+      if (!contextStillPending && (!isExternalContextMarker(task.lastInstanceId) || task.lastInstanceId === externalContextMarker)) {
         store.markTaskDispatched(bot.id, threadId, instanceId);
       }
       // a turn can settle before dispatch returns, and a poller started
@@ -11426,9 +11785,10 @@ async function startTurn(
         // The owner key went away between admission and dispatch: the same
         // card and notice a refusal at admission gives.
         const engine = engineDisplayName(instance);
-        store.appendMessage(threadId, { role: "bot", kind: "access", access: accessCardFor(bot, e.refusal, engine, e.detail) });
+        const card = accessCardFor(bot, e.refusal, engine, e.detail);
+        store.appendMessage(threadId, { role: "bot", kind: "access", access: card });
         message = engineAccessNotice(e.refusal.reason, engine, e.refusal);
-        notify(buildNotification("turn-failed", bot, threadId, message, { avatarUrl: bot.avatarUrl }));
+        notifyAccess(buildNotification("turn-failed", bot, threadId, message, { avatarUrl: bot.avatarUrl }), card);
       }
       settleDirectFollowup(dispatchClaimId, { ok: false, text: message });
       // The wait already wrote its failure resolution; keep all dispatch
@@ -11676,6 +12036,32 @@ async function stopBotForEmergencyApprovalDowngrade(botId: string): Promise<void
   await directStop;
 }
 
+/** An organization admin's "Forcer l'arrêt" (server/org-bot-force.ts):
+ * every running turn of the bot stops, in its own threads, its routine run
+ * and the room it is speaking in. Cancellation flags flip before any await. */
+async function forceStopBot(botId: string): Promise<void> {
+  const bot = store.bot(botId);
+  if (!bot) return;
+  const work: Array<Promise<unknown>> = [interruptAllDirectThreads(botId)];
+  // Its own routine run and a room goal it coordinates, each once.
+  const routineRuns = [routines?.activeBotRunForBot(bot.id), routines?.activeRunForBot(bot.id)]
+    .filter((run, index, all): run is NonNullable<typeof run> => Boolean(run) && all.findIndex((other) => other?.id === run!.id) === index);
+  for (const routineRun of routineRuns) {
+    if (routineRun.threadId) revokeInternalCapabilitiesForThread(routineRun.threadId);
+    cancelDirectTurnDispatch(bot.id, routineRun.threadId);
+    work.push(routines!.cancelRun(routineRun.id).then(() => { if (routineRun.threadId) closeOpenApprovals(routineRun.threadId); }));
+  }
+  const groupTurn = activeGroupTurnForBot(bot.id);
+  if (groupTurn) {
+    revokeInternalCapabilitiesForThread(groupTurn.threadId);
+    cancelGroupTurnOperations(groupTurn.group.id, groupTurn.threadId);
+    work.push(Promise.resolve(runningTurnInstance(bot, groupTurn.threadId)?.adapter.interruptTurn(groupTurn.threadId)).then(() => closeOpenApprovals(groupTurn.threadId)));
+  }
+  const results = await Promise.allSettled(work);
+  const failure = results.find((result): result is PromiseRejectedResult => result.status === "rejected");
+  if (failure) throw failure.reason;
+}
+
 // Load queued handoffs before scheduler recovery can fail an interrupted
 // run. Its failure callback can then durably drop that work immediately;
 // nothing dispatches until the listener is ready below.
@@ -11706,7 +12092,6 @@ routines = new RoutineManager({
     if (
       !group ||
       group.dm ||
-      roomSetupPending(group) ||
       !coordinator ||
       coordinator.hidden ||
       !group.memberIds.includes(coordinator.id)
@@ -12091,7 +12476,7 @@ async function deleteBotWithLifecycle(botId: string, revalidate: () => void = ()
         }
         const ownedBoatComputers = cloudInventory.instances.filter((instance) => instance.ownerBotId === bot.id);
 
-        // Revalidate a reviewed Chief-of-Staff request and establish the
+        // Revalidate a reviewed Primary Bot-of-Staff request and establish the
         // browser cleanup intent before the first irreversible provider
         // mutation. A stale review or damaged journal therefore leaves every
         // computer intact. Cross-provider rollback is impossible, so every
@@ -12162,7 +12547,7 @@ async function deleteBotWithLifecycle(botId: string, revalidate: () => void = ()
           localVmIdles.get(target.key)?.cancel();
           localVmIdles.delete(target.key);
           // Provider and local-computer teardown above can await for an
-          // arbitrary amount of time. A reviewed Chief deletion is bound to
+          // arbitrary amount of time. A reviewed Primary Bot deletion is bound to
           // the exact target profile it presented; re-check that receipt at
           // the final durable mutation boundary so a concurrent profile edit
           // cannot be erased under a stale approval.
@@ -12205,14 +12590,21 @@ const driverCapabilitiesFor = (instanceId: string) => {
   const instance = registry.get(instanceId);
   return instance ? { driverKind: instance.driverKind, agentsMcp: instance.adapter.capabilities.agentsMcp === true } : undefined;
 };
-/** A Chief may target one section peer; anyone else only itself. Shared by
+/** On an organization server a Primary Bot acts for its own person: it
+ * changes, sets up or deletes only bots of the same owner. A solo server has
+ * one owner. */
+function primaryBotSameOwner(from: { ownerUserId?: unknown }, target: { ownerUserId?: unknown }): boolean {
+  return IDENTITY.kind !== "perspicax" || effectiveBotOwner(from) === effectiveBotOwner(target);
+}
+/** A Primary Bot may target one section peer; anyone else only itself. Shared by
  * profile and default-model proposals, and re-checked at confirm. */
 const chiefPeerTargetRule = (noun: string) => (proposerBotId: string, targetBotId: string): string | null => {
   const proposer = store.bot(proposerBotId);
   const target = store.bot(targetBotId);
   if (!target) return "that bot no longer exists";
-  if (!proposer?.chiefOfStaff) return "only a section's Chief of Staff can change another bot's " + noun;
-  if (!canReachPeer(proposer, target)) return "that bot is not in a team this Chief is allowed to manage";
+  if (!proposer?.chiefOfStaff) return "only a Primary Bot can change another bot's " + noun;
+  if (!canReachPeer(proposer, target)) return "that bot is not in a team this Primary Bot is allowed to manage";
+  if (!primaryBotSameOwner(proposer, target)) return "that bot belongs to someone else; a Primary Bot changes only its own person's bots";
   return null;
 };
 /** Shared model validation for team-setup cards and propose_model: the
@@ -12235,14 +12627,14 @@ const profileRequests = new ProfileRequestService({
   store,
   autoApply: fullAccessForSource,
   canPersist: proposalPersistence,
-  // A Chief may change a section peer; anyone else only itself. Re-checked at confirm.
+  // A Primary Bot may change a section peer; anyone else only itself. Re-checked at confirm.
   validateTarget: chiefPeerTargetRule("profile"),
 });
 const modelRequests = new ModelRequestService({
   store,
   autoApply: fullAccessForSource,
   canPersist: proposalPersistence,
-  // Same authority rule as profile proposals: a Chief may name one section peer.
+  // Same authority rule as profile proposals: a Primary Bot may name one section peer.
   validateTarget: chiefPeerTargetRule("default model"),
   validateModel: validateModelProposal,
   driverCapabilities: driverCapabilitiesFor,
@@ -12251,14 +12643,15 @@ const tighteningRequests = new TighteningRequestService({
   store,
   autoApply: fullAccessForSource,
   canPersist: proposalPersistence,
-  // Same reach as a profile change: a Chief may tighten a section peer;
+  // Same reach as a profile change: a Primary Bot may tighten a section peer;
   // anyone else only itself. Re-checked at confirm.
   validateTarget: (proposerBotId, targetBotId) => {
     const proposer = store.bot(proposerBotId);
     const target = store.bot(targetBotId);
     if (!target) return "that bot no longer exists";
-    if (!proposer?.chiefOfStaff) return "only a section's Chief of Staff can change another bot's permissions";
-    if (!canReachPeer(proposer, target)) return "that bot is not in a team this Chief is allowed to manage";
+    if (!proposer?.chiefOfStaff) return "only a Primary Bot can change another bot's permissions";
+    if (!canReachPeer(proposer, target)) return "that bot is not in a team this Primary Bot is allowed to manage";
+    if (!primaryBotSameOwner(proposer, target)) return "that bot belongs to someone else; a Primary Bot changes only its own person's bots";
     return null;
   },
   // The card judges the effective mounts, so the snapshot resolves the same
@@ -12276,7 +12669,7 @@ const tighteningRequests = new TighteningRequestService({
 });
 const teamSetupTeams = () => [...new Set(["", ...readSections(), ...store.bots.map((bot) => sectionKey(bot.section)), ...store.groups.map((group) => sectionKey(group.section))])];
 const teamSetupRequests = new TeamSetupRequestService({
-  store, teams: teamSetupTeams, canAccessTeam, canPersist: proposalPersistence, maxBots: MAX_WORKSPACE_BOTS,
+  store, teams: teamSetupTeams, canAccessTeam, sameOwner: primaryBotSameOwner, canPersist: proposalPersistence, maxBots: MAX_WORKSPACE_BOTS,
   autoApply: fullAccessForSource,
   validateChange: (before, fields) => assertTeamComputerChangeIdle(before, { ...before, ...fields }),
   ownsThread: (botId, threadId) => Boolean(connectorThread(botId, threadId)),
@@ -12325,7 +12718,7 @@ function dispatchTeamSetupResume(entry: TeamSetupResumeEntry): void {
   const failed = (error: string) => {
     if (cancelled()) return;
     const current = store.messagesFor(request.threadId).find((item) => item.id === messageId);
-    if (current?.card) store.patchMessage(request.threadId, messageId, { card: { ...current.card, held: `The decision was recorded, but the Chief could not continue: ${redactSecretsInText(error).slice(0, 300)}` } });
+    if (current?.card) store.patchMessage(request.threadId, messageId, { card: { ...current.card, held: `The decision was recorded, but the Primary Bot could not continue: ${redactSecretsInText(error).slice(0, 300)}` } });
   };
   if (owner.group) {
     const groupId = owner.group.id;
@@ -12362,7 +12755,7 @@ async function resolveAndSendTeamSetup(res: ServerResponse, args: { botId: strin
   if (!card) return false;
   if (args.behavior === "allow" && !ownerReview) { json(res, 403, { error: "Approve team setup or deletion from the desktop app or a paired owner device. In a local browser, wait until every bot is idle." }); return true; }
   if (args.behavior === "allow" && !card.answered && !card.dismissed && !card.expired) {
-    // Confirmed Chief setup can move bots without the ordinary PATCH route.
+    // Confirmed Primary Bot setup can move bots without the ordinary PATCH route.
     // Keep that atomic Store operation behind the same shared-machine fence.
     for (const operation of card.teamSetupRequest!.operations) {
       const before = store.bot(operation.botId);
@@ -12637,7 +13030,7 @@ const webhooks = new WebhookManager({
   // delivery:"post" webhooks land in a dedicated "Updates" task, never
   // bot.threadId (the bot's currently-selected task) -- see
   // resolvePostThread below. Fixes
-  // https://github.com/milind-soni/OpenMausBot/issues/2071: a post used to
+  // upstream issue #2071: a post used to
   // land wherever the owner (or another automation) had last switched
   // that bot's selection, including a live conversation.
   post: (botId, threadId, text) => {
@@ -12903,7 +13296,7 @@ async function runGroupMemberTurn(
   }
   revokeInternalCapabilitiesForThread(threadId);
   spoken.add(botId);
-  // Must be the SAME resolver the readiness re-check uses below, or a Chief's
+  // Must be the SAME resolver the readiness re-check uses below, or a Primary Bot's
   // delegated Full elevation makes the two disagree by construction: every
   // such room turn then reads as "settings changed", retries once, and
   // settles as busy without ever dispatching.
@@ -12953,14 +13346,15 @@ async function runGroupMemberTurn(
     : orgEngineRefusal(bot, instance, roomSpeakerId ? { origin: "person", principalId: roomSpeakerId } : roomRoutineSpeaker(threadId) ?? { origin: "operator" });
   if (roomAccessRefusal) {
     const engine = engineDisplayName(instance);
+    const card = accessCardFor(bot, roomAccessRefusal, engine);
     store.appendMessage(threadId, {
       role: "bot",
       kind: "access",
       from: { botId: bot.id, name: bot.name, color: bot.color },
-      access: accessCardFor(bot, roomAccessRefusal, engine),
+      access: card,
     });
     const notice = engineAccessNotice(roomAccessRefusal.reason, engine, roomAccessRefusal);
-    notify(buildNotification("turn-failed", bot, threadId, notice, { avatarUrl: bot.avatarUrl }));
+    notifyAccess(buildNotification("turn-failed", bot, threadId, notice, { avatarUrl: bot.avatarUrl }), card);
     if (orchestration) {
       orchestration.result.outcome = "dispatch_failed";
       orchestration.result.replyText = "";
@@ -13066,13 +13460,29 @@ async function runGroupMemberTurn(
   const resolvedLatestImages = latestUser?.text && !cardContinuation && !latestInBurst
     ? extractTurnImages(latestUser.text)
     : { text: latestUser?.text ?? "", images: [] };
+  // Organization server: where this room turn's tools run (the person whose
+  // message it answers), and their own attachments pointed there.
+  const roomRoutine = !roomSpeakerId && roomRoutineSpeaker(threadId) !== null;
+  const roomPrincipal = sandboxPrincipalForTurn({
+    botOwnerPrincipalId: effectiveBotOwner(bot),
+    routine: roomRoutine,
+    speakerPrincipalId: roomSpeakerId,
+    roomCreatorPrincipalId: group.createdBy ?? group.humanIds?.[0],
+  });
+  let roomPlace = decideWorkplace({ desktopTargeted: false, routine: roomRoutine, principal: roomPrincipal, personAsked: Boolean(roomSpeakerId) });
+  const roomPlaced = latestUser && !cardContinuation && !latestInBurst && latestUser.sender?.id?.trim().toLowerCase() === roomPlace.principal
+    ? workplaceTurnText(usesNativeImageInput ? resolvedLatestImages.text : latestUser.text ?? "", roomPlace)
+    : { text: null, staging: null };
+  const latestOverride = roomPlaced.text !== null && roomPlaced.staging !== null
+    ? roomPlaced.text
+    : usesNativeImageInput ? resolvedLatestImages.text : null;
   const roomContext = serializeRoomContext(
     threadId,
     userName,
-    usesNativeImageInput && latestUser
+    latestUser && (usesNativeImageInput || latestOverride !== null)
       ? [
           ...burstOverrides,
-          ...(latestInBurst ? [] : [{ messageId: latestUser.id, text: resolvedLatestImages.text }]),
+          ...(latestInBurst || latestOverride === null ? [] : [{ messageId: latestUser.id, text: latestOverride }]),
         ]
       : undefined,
     bot.id,
@@ -13290,7 +13700,8 @@ async function runGroupMemberTurn(
   }
   // One place per room turn as well: a team computer reached on Auto means
   // no separate built-in browser.
-  if (roomPlan.browser && !(roomPlan.computer === undefined && roomTeamComputer)) {
+  if (roomPlan.browser && !(roomPlan.computer === undefined && roomTeamComputer) &&
+      !(roomPlace.target === "user-desktop" && integrations.custom?.[DESKTOP_BRIDGE_MCP_NAME])) {
     const selectedProfile = readyBot.browserProfile;
     const browser = await browserIntegration(readyBot.id, selectedProfile, { threadId, generation: internalGeneration });
     if (browser) integrations.browser = browser.integration;
@@ -13320,15 +13731,11 @@ async function runGroupMemberTurn(
   const roomSetupIsCurrent = () => !isCancelled?.() &&
     groupSpeakers.get(threadId) === roomSpeaker &&
     activeInternalGenerationByThread.get(threadId) === internalGeneration;
+  if (roomPlan.computer === "local") roomPlace = decideWorkplace({ desktopTargeted: true, routine: roomRoutine, principal: roomPrincipal, personAsked: Boolean(roomSpeakerId) });
   mountUserSandbox(integrations, {
     botId: readyBot.id, threadId, generation: internalGeneration,
-    desktopTargeted: roomPlan.computer === "local", customMcp: instance.adapter.capabilities.customMcp === true,
-    sandboxPrincipalId: sandboxPrincipalForTurn({
-      botOwnerPrincipalId: effectiveBotOwner(readyBot),
-      routine: !roomSpeakerId && roomRoutineSpeaker(threadId) !== null,
-      speakerPrincipalId: roomSpeakerId,
-      roomCreatorPrincipalId: readyGroup.createdBy ?? readyGroup.humanIds?.[0],
-    }),
+    customMcp: instance.adapter.capabilities.customMcp === true,
+    decision: roomPlace, staging: roomPlaced.staging,
   });
   if (!roomTeamComputer && roomPlan.computer === "local") {
     integrations.localComputer = await mountHostComputer(
@@ -13530,6 +13937,12 @@ async function runGroupMemberTurn(
     // mounted, exactly as the 1:1 path decides it: memory_update is on the
     // agents server, so a room turn with it must be told to use it too.
     { id: "memory", label: "Memory", text: roomMemory ? `\n${roomMemory.trim()}` : "" },
+    // The group's shared memory: every bot of the group reads it here; only
+    // explicit group_memory_update writes reach it (server/group-memory.ts).
+    { id: "group-memory", label: "Group memory", text: (() => {
+      const block = groupMemorySystemPrompt(readyGroup, { writes: Boolean(integrations.agents) && groupMemoryWritable(readyGroup, bot.id) });
+      return block ? `\n${block}` : "";
+    })() },
     { id: "skills", label: "Skills index", text: workspace ? skillsSystemPrompt(bot.id) : "" },
     { id: "skill-instructions", label: "Skill instructions", text: renderSkillInstructions(selectedSkills, { includeRoot: Boolean(workspace) }) },
     { id: "playbooks", label: "Playbooks", text: installedPlaybookInstructions(text, bot.playbooks) },
@@ -13657,6 +14070,7 @@ async function runGroupMemberTurn(
         cwd,
         integrations,
         ...(withholdHostToolsFor(instance) ? { withholdHostTools: true } : {}),
+        ...(() => { const networkProxy = turnNetworkProxy(threadId, readyBot.id, roomPlace); return networkProxy ? { networkProxy } : {}; })(),
         mcpFromUserConfig: claudeUserMcpEnabled(cfg) && !managedPolicy.restrictsMcp(),
         claudeAiConnectors: claudeAiConnectorsFor(readyBot, instance, roomSpeaker, roomTurnAccess?.via),
         ...(instance.instanceId === readyBot.modelSelection.instanceId
@@ -13692,9 +14106,10 @@ async function runGroupMemberTurn(
         let message = err instanceof Error ? err.message : "turn failed";
         if (err instanceof EngineAccessLost) {
           const engine = engineDisplayName(instance);
-          store.appendMessage(threadId, { role: "bot", kind: "access", from: { botId: bot.id, name: bot.name, color: bot.color }, access: accessCardFor(bot, err.refusal, engine, err.detail) });
+          const card = accessCardFor(bot, err.refusal, engine, err.detail);
+          store.appendMessage(threadId, { role: "bot", kind: "access", from: { botId: bot.id, name: bot.name, color: bot.color }, access: card });
           message = engineAccessNotice(err.refusal.reason, engine, err.refusal);
-          notify(buildNotification("turn-failed", bot, threadId, message, { avatarUrl: bot.avatarUrl }));
+          notifyAccess(buildNotification("turn-failed", bot, threadId, message, { avatarUrl: bot.avatarUrl }), card);
         } else store.appendMessage(threadId, {
           role: "bot",
           kind: "activity",
@@ -14284,9 +14699,6 @@ function startGroupTurn(
 ) {
   const group = store.group(groupId);
   if (!group) throw Object.assign(new Error("no such group"), { status: 404 });
-  if (roomSetupPending(group)) {
-    throw Object.assign(new Error("finish room setup before sending the first message"), { status: 409 });
-  }
   // Capture the chosen thread once. Manual sends use the active task; a
   // scheduled team goal supplies its detached background task explicitly.
   const threadId = options.threadId ?? group.threadId;
@@ -14644,7 +15056,7 @@ function sameCalendarRoster(group: GroupRecord, botIds: readonly string[]): bool
 
 function ensureCalendarCallRoom(call: CalendarCall): GroupRecord {
   const linked = call.roomId ? store.group(call.roomId) : undefined;
-  let group = linked && sameCalendarRoster(linked, call.botIds) && !roomSetupPending(linked)
+  let group = linked && sameCalendarRoster(linked, call.botIds)
     ? linked
     : undefined;
   // A call's room is a room like any other: one audience.
@@ -14653,7 +15065,6 @@ function ensureCalendarCallRoom(call: CalendarCall): GroupRecord {
   group ??= store.createGroup(call.name, call.botIds, false, undefined, {
     bulletin: "",
     defaultResponder: { kind: "everyone" },
-    completed: true,
   });
   if (call.roomId !== group.id) calendarCalls!.linkRoom(call.id, group.id);
   return group;
@@ -14681,19 +15092,6 @@ function deliverCalendarCall(call: CalendarCall, scheduledFor: number): void {
   const messages = [...threadIds].flatMap((threadId) => store.messagesFor(threadId));
   if (messages.some((message) => message.sendId === sendId)) return;
   startGroupTurn(group.id, text, undefined, sendId);
-}
-
-function roomSetupPending(group: GroupRecord): boolean {
-  const hasMarker =
-    Object.prototype.hasOwnProperty.call(group, "setupCompletedAt") ||
-    Object.prototype.hasOwnProperty.call(group, "setupSkippedAt");
-  return (
-    !group.dm &&
-    hasMarker &&
-    group.setupCompletedAt == null &&
-    group.setupSkippedAt == null &&
-    store.messagesFor(group.threadId).length === 0
-  );
 }
 
 function resolveReplyTarget(threadId: string, value: unknown): Message | undefined {
@@ -14835,12 +15233,6 @@ function roomPostEligibility(
       status: 403,
       error: `that room includes @${outsider.name}, who is outside your section — tell the user what you wanted to post there instead`,
     };
-  }
-  // A room whose setup the person has not finished has never been opened
-  // for business, and its first message decides whether setup still counts
-  // as pending. A bot must not be the one to settle that.
-  if (roomSetupPending(group)) {
-    return { ok: false, status: 409, error: "that room is still being set up — it cannot receive messages yet" };
   }
   return { ok: true };
 }
@@ -15794,6 +16186,8 @@ function configStatus() {
       skillAuthoring: skillAuthoringEnabled(cfg),
       showToolCalls: showToolCallsEnabled(cfg),
       routinesInConversation: routinesInConversationEnabled(cfg),
+      connectedApps: connectedAppsEnabled(cfg),
+      templates: templatesEnabled(cfg),
       browser: builtInBrowserEnabled(cfg),
       // Maintainer-only escape hatch, not a Settings toggle: the desktop
       // shell and the Settings UI read it so they offer nothing this server
@@ -16435,7 +16829,12 @@ const orgInstallStatuses = () => orgLibrary?.installStatuses() ?? new Map();
 ROUTES.push(createBotPresetRoutes({ presets: presetStore, orgStatuses: orgInstallStatuses }));
 // Server mode: a person's appearance, language, notifications and mascot
 // settings follow them across devices (shared/user-preferences.ts).
-ROUTES.push(createUserPreferenceRoutes({ store: createUserPreferenceStore(DATA_DIR), organization: () => IDENTITY.kind === "perspicax" }));
+ROUTES.push(createUserPreferenceRoutes({ store: userPreferenceStore, organization: () => IDENTITY.kind === "perspicax" }));
+ROUTES.push(createDesktopBridgeRoutes({
+  organization: () => IDENTITY.kind === "perspicax",
+  bridges: desktopBridges, tunnels: desktopTunnels, audit: bridgeAudit,
+  workplace: (person) => workplacePreference(person),
+}));
 // The bot-memory panel's routes (MEMORY.md, memory/ topics, journal); the
 // store lookups — the 404 precheck and journal thread titles — stay explicit.
 ROUTES.push(createBotMemoryRoutes({
@@ -16466,6 +16865,121 @@ ROUTES.push(createBotMemoryRoutes({
     broadcast({ kind: "config", ...configStatus() });
   },
 }));
+// What a bot is doing (server/routes/bot-activity.ts): its threads, the
+// work it handed other bots and its routine runs, as the viewer may read them.
+ROUTES.push(createBotActivityRoutes({
+  bot: (id) => store.bot(id),
+  tasks: (botId) => store.tasks(botId),
+  viewerId: (auth) => channelFilterViewerId(auth),
+  threadReadable: (botId, threadId, viewerId) => {
+    const bot = store.bot(botId);
+    return Boolean(bot) && botThreadReadable(bot!, threadId, viewerId, "thread.read");
+  },
+  threadWritable: (botId, threadId, viewerId) => {
+    const bot = store.bot(botId);
+    return Boolean(bot) && botThreadReadable(bot!, threadId, viewerId, "thread.post");
+  },
+  runs: (botId) => routines?.listRuns().filter((run) => run.botId === botId && run.target !== "room-goal") ?? [],
+  runSeen: (run, viewerId) => !viewerId || routineSeenBy(run, viewerId),
+  messages: (threadId, limit) => {
+    const page = store.messagesTail(threadId, limit);
+    return { messages: page.messages, hasMore: page.hasMore };
+  },
+  children: (botId, threadId) => activityChildren(botId, threadId),
+  personName: (principalId) => personDisplayName(principals.byId(principalId)) || "",
+  organization: () => IDENTITY.kind === "perspicax",
+}));
+/** The sub-agents a direct thread started: coordinate_bots work (room
+ * handoffs whose parent is this thread) and legacy delegations in flight. */
+function activityChildren(botId: string, threadId: string): ActivityChildRef[] {
+  const out: ActivityChildRef[] = [];
+  const seen = new Set<string>();
+  for (const node of roomHandoffs.nodes.values()) {
+    if (!node.parentId || node.groupId) continue;
+    const parent = roomHandoffs.nodes.get(node.parentId);
+    if (!parent || parent.threadId !== threadId || parent.botId !== botId) continue;
+    seen.add(node.threadId);
+    out.push({
+      botId: node.botId,
+      threadId: node.threadId,
+      title: store.taskByThread(node.botId, node.threadId)?.title || node.text.slice(0, 120),
+      status: node.status === "source" || node.status === "resume" ? "running" : node.status,
+      startedAt: node.startedAt ?? node.createdAt,
+    });
+  }
+  for (const watch of delegationWatch.values()) {
+    if (watch.sourceBotId !== botId || watch.sourceThreadId !== threadId || !watch.taskId || seen.has(watch.taskId)) continue;
+    out.push({
+      botId: watch.toBotId,
+      threadId: watch.taskId,
+      title: store.taskByThread(watch.toBotId, watch.taskId)?.title || watch.toBotName || "",
+      status: "running",
+      startedAt: watch.startedAtMs ?? Date.now(),
+    });
+  }
+  return out;
+}
+// A group's shared memory (server/routes/group-memory.ts): its people read
+// it, its owner edits it or switches it off.
+ROUTES.push(createGroupMemoryRoutes({
+  group: (id) => store.group(id),
+  canRead: (auth, group) => groupVisible(group as GroupRecord, channelViewerId(auth)),
+  isOwner: (auth, group) => groupOwnerCaller(auth, group as GroupRecord),
+  setEnabled: (groupId, enabled) => {
+    const group = store.patchGroup(groupId, { memoryEnabled: enabled ? undefined : false });
+    if (group) broadcast({ kind: "group", group: publicGroupState(group) });
+  },
+}));
+// Direct conversations between two people (server/people-dms.ts).
+ROUTES.push(createPeopleDmRoutes<GroupRecord>({
+  organization: () => IDENTITY.kind === "perspicax",
+  viewerId: (auth) => (auth.kind === "session" ? auth.session.principalId?.trim().toLowerCase() || undefined : undefined),
+  person: (ref) => {
+    const resolved = resolveOrgGrantee(ref);
+    if (!resolved.ok) return { ok: false, code: "unknown_person" };
+    const principal = principals.byId(resolved.id);
+    const listed = principal?.subject ? perspicaxDirectory?.directory()?.people.find((entry) => entry.sub === principal.subject!.sub) : undefined;
+    if (listed && (listed.kind === "service" || listed.type === "service")) return { ok: false, code: "service_account" };
+    return { ok: true, id: resolved.id, name: personDisplayName(principal) || listed?.login || "" };
+  },
+  displayName: (principalId) => personDisplayName(principals.byId(principalId)) || "",
+  groups: () => store.groups,
+  create: ({ a, b, name }) => store.createGroup(name, [], false, undefined, { defaultResponder: { kind: "mentions" } }, [a, b], { peopleDm: true, createdBy: a }),
+  project: (group) => ({ ...publicGroupState(group), messages: store.messagesFor(group.threadId) }),
+}));
+/** A person's message in a conversation between two people: it starts no
+ * turn, marks the conversation unread and notifies the other person only. */
+function sendPeopleDmMessage(group: GroupRecord, auth: RequestAuth, text: string, rawSendId: unknown, rawReplyTo: unknown) {
+  const threadId = group.threadId;
+  const sendId = parseSendId(typeof rawSendId === "string" ? rawSendId : undefined);
+  const replyTo = resolveReplyTarget(threadId, rawReplyTo);
+  if (sendId) {
+    const accepted = acceptedSendMatch(store.messagesFor(threadId), sendId, text, replyTo?.id);
+    if (accepted.kind === "conflict") throw Object.assign(new Error("sendId already belongs to another message"), { status: 409 });
+    if (accepted.kind === "match") return { ok: true as const, threadId, message: accepted.message };
+  }
+  const sender = messageSender(auth);
+  const message = store.appendMessage(threadId, { role: "user", kind: "text", text, replyToId: replyTo?.id, sendId, sender });
+  store.patchGroup(group.id, { unread: true });
+  const from = channelViewerId(auth);
+  const to = from ? otherPerson(group, from) : undefined;
+  if (to && sender) {
+    const avatarUrl = personAvatarUrl(principals.byId(from!));
+    broadcast({ kind: "notify", notification: {
+      kind: "message", botId: "", botName: sender.name, threadId, groupId: group.id,
+      title: sender.name, body: summarize(text), audience: [to], ...(avatarUrl ? { avatarUrl } : {}),
+    } satisfies Notification });
+  }
+  return { ok: true as const, threadId, message };
+}
+/** The owner of a group, as server/group-ownership.ts decides on an
+ * organization server (its creator, else its first person, else its
+ * admins); on a solo server the operator or an admin session. */
+function groupOwnerCaller(auth: RequestAuth, group: Pick<GroupRecord, "createdBy" | "humanIds">): boolean {
+  if (auth.kind === "loopback" && auth.trust === "service") return false;
+  if (IDENTITY.kind !== "perspicax") return auth.kind === "loopback" || auth.scopes.includes("admin");
+  return ownsGroup(group, groupActor(auth));
+}
 // The people of a solo server: its email sign-in list and the invitations
 // that add to it (server/org-routes.ts). A solo server has no organization
 // (slice 8), so the invitations are issued in the name of this server: the
@@ -16628,12 +17142,16 @@ function authzViewerFor(auth: RequestAuth): AuthzViewer | undefined {
 }
 /** channel.read on a room: listed people (by id or `team:`), and the members
  * of its shared section. */
-function groupVisible(group: { id?: unknown; humanIds?: string[]; section?: unknown }, viewerId: string | undefined): boolean {
+function groupVisible(group: { id?: unknown; humanIds?: string[]; section?: unknown; peopleDm?: boolean }, viewerId: string | undefined): boolean {
+  // A conversation between two people is theirs alone (server/people-dms.ts):
+  // not an admin's, a section's, nor the operator's at this computer.
+  if (group.peopleDm) return isPeopleDmParticipant(group, viewerId);
   if (!viewerId) return true;
   return seesChannel(group, viewerId, authzViewerFromId(viewerId), roomSectionAccess(group));
 }
 /** channel.post on a room (a read-only section member reads only). */
-function groupPostAllowed(group: { id?: unknown; humanIds?: string[]; section?: unknown }, viewerId: string | undefined): boolean {
+function groupPostAllowed(group: { id?: unknown; humanIds?: string[]; section?: unknown; peopleDm?: boolean }, viewerId: string | undefined): boolean {
+  if (group.peopleDm) return isPeopleDmParticipant(group, viewerId);
   if (!viewerId) return true;
   return canInChannel(authzViewerFromId(viewerId), "channel.post", { humanIds: group.humanIds ?? [], section: roomSectionAccess(group) });
 }
@@ -17159,7 +17677,16 @@ function refusePlacedBots(auth: RequestAuth, botIds: readonly unknown[], already
   return null;
 }
 
-function refuseHumanEdit(auth: RequestAuth, body: unknown, before: readonly string[] = []): string | null {
+/** Organization server: a person's request falls under the group owner rule
+ * (server/group-ownership.ts). The server's own services do not. */
+function groupOwnerRuleApplies(auth: RequestAuth): boolean {
+  return IDENTITY.kind === "perspicax" && !(auth.kind === "loopback" && auth.trust === "service");
+}
+function groupActor(auth: RequestAuth): GroupActor {
+  return { id: channelActorId(auth), email: actorEmail(auth), orgAdmin: channelActorRole(auth) === "admin" || channelActorRole(auth) === "owner" };
+}
+
+function refuseHumanEdit(auth: RequestAuth, body: unknown, before: readonly string[] = [], ownerChecked = false): string | null {
   if (!body || typeof body !== "object" || Array.isArray(body)) return null;
   if (!Object.prototype.hasOwnProperty.call(body, "humanIds")) return null;
   const after = (body as { humanIds?: unknown }).humanIds;
@@ -17171,6 +17698,8 @@ function refuseHumanEdit(auth: RequestAuth, body: unknown, before: readonly stri
       if (!/^[0-9A-Za-z]{1,64}$/.test(id) || !(orgTeams.has(id) || principals.membersOfTeam(id).length)) return "unknown team: choose a team from the organization directory";
     }
   }
+  // Organization server: the group's owner rule already decided (group-ownership.ts).
+  if (ownerChecked) return null;
   const role = channelActorRole(auth);
   if (role && canEditHumans(role)) return null;
   // A team manager changes the entries of their teams and members; adding
@@ -17438,7 +17967,7 @@ if (sectionChannels) {
     deleteSection: (name) => (teamComputers.forSection(name) ? "Unassign this section's computer before deleting it" : store.deleteSection(name)),
     moveBots: (name, add, remove) => {
       const result = store.updateTeamMembers(name, add, remove);
-      return result.ok ? undefined : result.reason === "chief-conflict" ? "A section can have only one Chief of Staff." : "One or more bots are unavailable";
+      return result.ok ? undefined : "One or more bots are unavailable";
     },
     botExists: (id) => Boolean(store.bot(id)),
     botSection: (id) => sectionKey(store.bot(id)?.section) || undefined,
@@ -17456,7 +17985,7 @@ if (sectionChannels) {
         const botIds = store.bots
           .filter((bot) => sectionKey(bot.section) === name && !bot.hidden && channels.accessForBot(name, { id: bot.id, ownerPrincipalId: effectiveBotOwner(bot) }))
           .map((bot) => bot.id);
-        return store.createGroup(name, botIds, false, name, { bulletin: "", defaultResponder: { kind: "everyone" }, completed: true }, []).id;
+        return store.createGroup(name, botIds, false, name, { bulletin: "", defaultResponder: { kind: "everyone" } }, []).id;
       } catch (error) {
         console.error(`sections: the conversation of a shared section could not be created: ${error instanceof Error ? error.message : String(error)}`);
         return null;
@@ -17585,6 +18114,32 @@ ROUTES.push(createOrgImportRoute({
   audit: (auth, details) => orgAudit({
     category: "org", action: "org.import", target: { kind: "server" }, after: { ...details }, actor: orgAuditActor(auth),
   }),
+}));
+// Admin force actions on any bot (Settings > Organization > Sharing).
+ROUTES.push(createOrgBotForceRoutes({
+  organization: IDENTITY.kind === "perspicax",
+  isAdmin: orgAdminCaller,
+  bot: (id) => {
+    const bot = store.bot(id);
+    return bot ? { id: bot.id, name: bot.name, ownerPrincipalId: botFacts(bot).ownerPrincipalId } : null;
+  },
+  actorId: actorPrincipalId,
+  stop: forceStopBot,
+  remove: (botId) => deleteBotWithLifecycle(botId),
+  audit: (auth, action, bot) => orgAudit({
+    category: "bot", action, target: { kind: "bot", id: bot.id, name: bot.name },
+    before: { ownerPrincipalId: bot.ownerPrincipalId }, actor: orgAuditActor(auth),
+  }),
+  notifyOwner: (bot, action, auth) => {
+    const admin = principals.byId(actorPrincipalId(auth));
+    const who = admin ? personDisplayName(admin) || "An admin" : "An admin";
+    notify({
+      kind: "admin-action", botId: bot.id, botName: bot.name, threadId: store.bot(bot.id)?.threadId ?? "",
+      title: action === "stop" ? `${bot.name} was stopped by an admin` : `${bot.name} was deleted by an admin`,
+      body: action === "stop" ? `${who} stopped all of its work.` : `${who} deleted this bot.`,
+      audience: [bot.ownerPrincipalId],
+    });
+  },
 }));
 if (IDENTITY.kind === "perspicax") {
   const issuer = IDENTITY.issuer;
@@ -17805,6 +18360,63 @@ ROUTES.push(createMailSettingsRoutes({
   callerEmail: actorEmail,
 }));
 
+// Voice mode (server/voice-mode.ts): xAI speech to text and text to speech
+// for the floating voice bar, with the speaker's own xAI key (Perspicax),
+// else the organization's (Settings > Connections). The key never leaves
+// the server; the spoken turn itself goes through the normal send route.
+ROUTES.push(createVoiceModeRoutes({
+  organization: IDENTITY.kind === "perspicax",
+  speaker: (auth) => {
+    if (auth.kind === "loopback" && auth.trust === "service") return null;
+    const principalId = actorPrincipalId(auth);
+    if (IDENTITY.kind !== "perspicax") return { principalId };
+    const person = principalId && isPrincipalId(principalId) ? principals.byId(principalId) : null;
+    if (!person) return { principalId: "" };
+    const sub = person.subject?.iss === IDENTITY.issuer ? person.subject.sub : undefined;
+    return { principalId, ...(sub ? { sub } : {}), ...(person.disabledAt !== undefined && person.disabledAt !== null ? { disabled: true } : {}) };
+  },
+  target: (auth, botId, threadId) => {
+    const bot = store.bot(botId);
+    if (!bot) return { status: 404, error: "no such bot" };
+    if (IDENTITY.kind === "perspicax") {
+      const viewerId = actorPrincipalId(auth);
+      const viewer = authzViewerFromId(viewerId);
+      if (!viewer || !canOnBot(viewer, "bot.use", botFacts(bot))) return { status: 404, error: "no such bot" };
+      if (threadId && (!store.taskByThread(bot.id, threadId) || !botThreadReadable(bot, threadId, viewerId, "thread.post"))) {
+        return { status: 404, error: "no such conversation" };
+      }
+      return { botId: bot.id, botName: bot.name, threadId: threadId ?? viewerThreadOf(bot, viewerId) ?? bot.threadId, ownerPrincipalId: effectiveBotOwner(bot) };
+    }
+    return { botId: bot.id, botName: bot.name, threadId: threadId ?? bot.threadId };
+  },
+  serverKey: () => cfg.xai?.key,
+  hasOwnKey: (sub) => perspicaxDirectory?.providerKeys(sub).includes("xai") ?? false,
+  resolveOwnKey: (sub) => perspicaxDirectory ? perspicaxDirectory.resolveProviderKey(sub, "xai") : Promise.resolve({ ok: false as const, error: "link" as const }),
+  keysUrl: () => perspicaxKeysUrl(),
+  isAdmin: (auth) => orgAdminCaller(auth),
+  xai: { listVoices: grokVoice.listVoices, synthesize: grokVoice.synthesize, transcribe: grokVoice.transcribe },
+  utterances: toUtterances,
+  recordUsage: (usage) => {
+    const bot = store.bot(usage.target.botId);
+    const row: UsageRow = {
+      at: new Date().toISOString(),
+      botId: usage.target.botId,
+      botName: usage.target.botName,
+      threadId: usage.target.threadId,
+      instanceId: "xaiVoice",
+      driverKind: "xai-voice",
+      model: usage.model,
+      input: usage.input,
+      output: 0,
+      costUsd: null,
+      trigger: usage.speaker.principalId && IDENTITY.kind === "perspicax" ? { kind: "user", principalId: usage.speaker.principalId } : { kind: "owner" },
+      ...(IDENTITY.kind === "perspicax" ? { access: usage.via, ...(bot ? { ownerPrincipalId: effectiveBotOwner(bot) } : {}) } : {}),
+      ...(usage.payerPrincipalId ? { payerPrincipalId: usage.payerPrincipalId } : {}),
+    };
+    noteSpend(DATA_DIR, row, appendUsage(DATA_DIR, row));
+  },
+}));
+
 // The caller's own claude.ai connectors, read through their own Claude
 // account (server/harness-connectors.ts); an admin can turn them off.
 const claudeAiInventory = new ClaudeAiConnectorInventory({ run: runClaudeCli });
@@ -17850,6 +18462,48 @@ ROUTES.push(createHarnessConnectorRoutes({
     return { cli, env, key: `instance:${instanceId}` };
   },
   inventory: claudeAiInventory,
+}));
+
+// The engines' own slash commands in the chat (server/harness-commands.ts):
+// listed by the engine itself in the folder and isolation the bot's turns
+// get, passed through verbatim when typed.
+const harnessCommands = new HarnessCommandCatalog();
+function harnessCommandSource(bot: BotRecord, threadId: string | undefined, scope?: HarnessCommandScope): HarnessCommandSource | null {
+  const instance = turnInstance(bot, undefined, threadId);
+  const engine = instance ? harnessEngineFor(instance.driverKind) : null;
+  if (!instance?.listCommands || !engine) return null;
+  const task = threadId ? store.taskByThread(bot.id, threadId) : undefined;
+  // the folder the thread's next turn runs in (see the pin in runTurn)
+  const cwd = task && task.cwd !== undefined ? task.cwd ?? undefined
+    : bot.cwd ?? (task && threadId && supportsWorkspaceFiles(instance.driverKind) ? ensureTaskWorkspace(bot.id, threadId) : undefined);
+  const list = instance.listCommands.bind(instance);
+  return {
+    botId: bot.id,
+    instanceId: instance.instanceId,
+    engine,
+    scope: scope ?? {
+      botId: bot.id,
+      ...(cwd ? { cwd } : {}),
+      ...(withholdHostToolsFor(instance) ? { withholdHostTools: true } : {}),
+      mcpFromUserConfig: claudeUserMcpEnabled(cfg) && !managedPolicy.restrictsMcp(),
+    },
+    list,
+  };
+}
+ROUTES.push(createHarnessCommandRoutes({
+  catalog: harnessCommands,
+  sourceFor: (auth, botId, threadId) => {
+    const bot = store.bot(botId);
+    if (!bot) return { status: 404, error: "no such bot" };
+    const viewerId = actorPrincipalId(auth);
+    if (threadId && !store.taskByThread(bot.id, threadId)) return { status: 404, error: "no such conversation" };
+    if (IDENTITY.kind === "perspicax") {
+      const viewer = authzViewerFromId(viewerId);
+      if (!viewer || !canOnBot(viewer, "bot.use", botFacts(bot))) return { status: 404, error: "no such bot" };
+      if (threadId && !botThreadReadable(bot, threadId, viewerId, "thread.post")) return { status: 404, error: "no such conversation" };
+    }
+    return harnessCommandSource(bot, threadId ?? (IDENTITY.kind === "perspicax" ? viewerThreadOf(bot, viewerId) : bot.threadId));
+  },
 }));
 
 // Invite links (/join#token=...): public like /api/auth/email/start, and
@@ -18513,6 +19167,17 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       const room = IDENTITY.kind === "perspicax" && method !== "GET" && method !== "HEAD" && !/^\/api\/groups\/[\w-]+\/read$/.test(path) ? roomOfSubject(subject) : null;
       if (room && !groupPostAllowed(room, viewerId)) return json(res, 403, { error: "you may read this channel, not change it", code: "read_only" });
     }
+    {
+      // A conversation between two people (server/people-dms.ts): only they
+      // reach it, loopback included, and it only takes messages.
+      const subject = pathSubject(path);
+      const dmRoom = roomOfSubject(subject);
+      if (subject && dmRoom?.peopleDm) {
+        if (!isPeopleDmParticipant(dmRoom, channelViewerId(auth))) return json(res, 404, { error: notFoundFor(subject) });
+        const refusal = peopleDmRouteRefusal(method, path);
+        if (refusal) return json(res, 400, { error: refusal, code: "people_dm" });
+      }
+    }
     beginAdminAudit(req, res, method, path, auth);
 
     if (method === "POST" && path === "/api/workspace-backup/restore" && teamComputers.list().some(computer => computer.section !== null)) {
@@ -18825,6 +19490,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         ? "phone"
         : path === "/api/internal/sandbox/mcp"
         ? "sandbox"
+        : path === "/api/internal/desktop/mcp"
+        ? "desktop"
         : path === "/api/internal/perspicax/mcp"
         ? "perspicax"
         : path.startsWith("/api/internal/connectors/")
@@ -18954,6 +19621,17 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           ? json(res, 201, { messageId: result.messageId })
           : json(res, result.status, { error: result.error });
       }
+      // A group's shared memory (server/group-memory.ts): only a bot of
+      // that group, speaking in it, while the group's memory is on.
+      if (method === "POST" && path === "/api/internal/group-memory") {
+        const room = store.groupByThread(internalCapability.threadId);
+        if (!room || !groupMemoryWritable(room, internalSender.id)) {
+          return json(res, 403, { error: "This conversation has no group memory you can write: it is not a group you are in, or its memory is off." });
+        }
+        const body = await readInternalBody();
+        const result = updateGroupMemory(room.id, { action: body.action, text: body.text, oldText: body.oldText, ...(body.until !== undefined ? { until: body.until } : {}) }, { source: memorySource() });
+        return json(res, result.ok ? 200 : result.code === "conflict" ? 409 : result.code === "over-budget" ? 413 : 400, result);
+      }
       // Notes written from a room fewer people can see than this bot would
       // carry that room's words to everyone who can see the bot.
       if ((path === "/api/internal/memory" || path === "/api/internal/memory/log") && method === "POST") {
@@ -19021,6 +19699,12 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         const ownerId = internalCapability.sandboxPrincipalId;
         if (!ownerId) return json(res, 403, { error: "this capability has no server environment" });
         try {
+          if (rpcMethod === "tools/call") await stagePendingAttachments(internalCapability.threadId, internalCapability.generation);
+          // The bot's own "no computer" setting holds on the environment's desktop too.
+          const toolName = (frame?.params as { name?: unknown } | undefined)?.name;
+          if (rpcMethod === "tools/call" && (toolName === "computer_use" || toolName === "computer_list_tools") && store.bot(internalCapability.botId)?.computer === "off") {
+            return json(res, 200, { result: { content: [{ type: "text", text: "This bot has no computer. Change its Computer setting to use the screen." }], isError: true } });
+          }
           const result = await handleUserSandboxMcp(rpcMethod, frame?.params, {
             exec: (input) => userSandbox.exec(ownerId, input),
             overQuota: () => userSandbox.workspaceOverQuota(ownerId),
@@ -19031,6 +19715,42 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           if (error instanceof UserSandboxUnavailable) return json(res, 200, { result: { content: [{ type: "text", text: error.message }], isError: true } });
           const status = (error as { status?: number }).status;
           return json(res, status === 400 || status === 404 ? status : 502, { error: error instanceof Error ? error.message : "the server environment failed" });
+        }
+      }
+      if (method === "POST" && path === "/api/internal/desktop/mcp") {
+        // The person's own computer through their desktop app (organization
+        // mode). The bearer names whose computer (fixed at mount); the hub
+        // reaches only that person's own connected desktop.
+        if (IDENTITY.kind !== "perspicax") return json(res, 404, { error: "unknown internal endpoint" });
+        const frame = await readInternalBody() as { method?: unknown; params?: unknown } | null;
+        const rpcMethod = typeof frame?.method === "string" ? frame.method : "";
+        const person = internalCapability.desktopPrincipalId;
+        if (!person) return json(res, 403, { error: "this capability has no computer" });
+        const active = () => internalCapabilityIsActive(internalCapability);
+        try {
+          if (rpcMethod === "tools/call") await stagePendingAttachments(internalCapability.threadId, internalCapability.generation);
+          const result = await handleDesktopBridgeMcp(rpcMethod, frame?.params, async (operation: DesktopBridgeOperation) => {
+            // The bot's own "no computer" setting holds on the person's screen too.
+            if ((operation.action === "computer_tools" || operation.action === "computer_call") && store.bot(internalCapability.botId)?.computer === "off") {
+              throw new Error("This bot has no computer. Change its Computer setting to use the screen.");
+            }
+            const detail = operation.action === "fetch_url" || operation.action === "browse"
+              ? `${operation.action} ${(() => { try { return new URL(operation.url ?? "").host; } catch { return ""; } })()}`
+              : operation.action;
+            try {
+              const answer = await desktopBridges.request(person, operation, active);
+              bridgeAudit.record({ person, botId: internalCapability.botId, threadId: internalCapability.threadId, target: "user-desktop", kind: "tool", detail, ok: (answer as { isError?: boolean } | null)?.isError !== true });
+              return answer;
+            } catch (error) {
+              bridgeAudit.record({ person, botId: internalCapability.botId, threadId: internalCapability.threadId, target: "user-desktop", kind: "tool", detail, ok: false, error: (error as Error).message });
+              throw error;
+            }
+          });
+          requireActiveInternalCapability();
+          return json(res, 200, { result });
+        } catch (error) {
+          const status = (error as { status?: number }).status;
+          return json(res, status === 400 || status === 404 ? status : 502, { error: error instanceof Error ? error.message : "your computer could not be reached" });
         }
       }
       if (method === "POST" && path === "/api/internal/phone/claim") {
@@ -19085,7 +19805,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         const sender = internalSender;
         // title/description included so the caller can judge the team (who
         // does what, who has no job description yet). Every bot reads this
-        // now, not just the Chief, so it answers the same reachability
+        // now, not just the Primary Bot, so it answers the same reachability
         // question the roster does — same peers, same order.
         const bots = reachablePeers(store.bots, sender)
           .map((b) => {
@@ -19499,18 +20219,18 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       }
       if (method === "GET" && path === "/api/internal/team-setup-catalog") {
         let chief = store.bot(internalCapability.botId)!;
-        if (!chief.chiefOfStaff || chief.hidden) return json(res, 403, { error: "Only an active Chief may plan team setup" });
+        if (!chief.chiefOfStaff || chief.hidden) return json(res, 403, { error: "Only an active Primary Bot may plan team setup" });
         const instances = await registry.describe();
         requireActiveInternalCapability();
         chief = store.bot(internalCapability.botId)!;
-        if (!chief.chiefOfStaff || chief.hidden) return json(res, 403, { error: "Only an active Chief may plan team setup" });
+        if (!chief.chiefOfStaff || chief.hidden) return json(res, 403, { error: "Only an active Primary Bot may plan team setup" });
         return json(res, 200, {
           teams: teamSetupTeams().filter((name) => canAccessTeam(chief, name)),
           bots: store.bots.filter((bot) => !bot.hidden && canAccessTeam(chief, bot.section) && (bot.id === chief.id || peerAllowed(chief, bot)))
             .map((bot) => ({ id: bot.id, name: bot.name, title: bot.title, section: bot.section ?? "", modelSelection: bot.modelSelection, chiefOfStaff: Boolean(bot.chiefOfStaff) })),
           instances: instances.map((instance) => ({ instanceId: instance.instanceId, driverKind: instance.driverKind, displayName: instance.displayName,
             state: instance.snapshot.state, models: instance.models, effortLevels: instance.capabilities?.effortLevels ?? [] })),
-          scope: "Bot model defaults apply to groups and new threads; existing threads retain their models. Full Access applies requested team setup immediately; other modes return a review card. Existing unauthorized teams remain outside this Chief's scope.",
+          scope: "Bot model defaults apply to groups and new threads; existing threads retain their models. Full Access applies requested team setup immediately; other modes return a review card. Existing unauthorized teams remain outside this Primary Bot's scope.",
         });
       }
       if (method === "POST" && path === "/api/internal/team-setup-requests") {
@@ -19518,7 +20238,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         if (!parsed.success) return json(res, 400, { error: "Invalid team setup request" });
         const chief = store.bot(internalCapability.botId)!;
         const owner = connectorThread(chief.id, internalCapability.threadId);
-        if (!owner) return json(res, 403, { error: "Source conversation no longer belongs to the Chief" });
+        if (!owner) return json(res, 403, { error: "Source conversation no longer belongs to the Primary Bot" });
         const proposed = await teamSetupRequests.submit({ botId: chief.id, threadId: internalCapability.threadId, plan: parsed.data.plan,
           canCommit: () => internalCapabilityIsActive(internalCapability),
           ...(owner.group ? { from: { botId: chief.id, name: chief.name, color: chief.color } } : {}) });
@@ -19532,7 +20252,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         if (!parsed.success) return json(res, 400, { error: "An exact bot id and deletion reason are required" });
         const chief = store.bot(internalCapability.botId)!;
         const owner = connectorThread(chief.id, internalCapability.threadId);
-        if (!owner) return json(res, 403, { error: "Source conversation no longer belongs to the Chief" });
+        if (!owner) return json(res, 403, { error: "Source conversation no longer belongs to the Primary Bot" });
         const proposed = await teamSetupRequests.submitDeletion({ botId: chief.id, threadId: internalCapability.threadId, targetBotId: parsed.data.targetBotId, reason: parsed.data.reason,
           canCommit: () => internalCapabilityIsActive(internalCapability),
           ...(owner.group ? { from: { botId: chief.id, name: chief.name, color: chief.color } } : {}) });
@@ -20100,15 +20820,15 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           await new Promise((wake) => setTimeout(wake, 500));
         }
       }
-      // A Chief resumes a teammate's broken thread (server/incidents.ts): the
+      // A Primary Bot resumes a teammate's broken thread (server/incidents.ts): the
       // same thread, its conversation and files, one more turn, with a line
-      // saying who asked and why. Chief-only, for a teammate it can reach,
+      // saying who asked and why. Primary Bot-only, for a teammate it can reach,
       // never a room (coordinate there) and never a thread still running.
       if (method === "POST" && path === "/api/internal/retry-thread") {
         const body = await readInternalBody();
         const from = internalSender;
         const fromThreadId = internalCapability.threadId;
-        if (!from.chiefOfStaff || from.hidden) return json(res, 403, { error: "only a Chief of Staff can retry a teammate's thread" });
+        if (!from.chiefOfStaff || from.hidden) return json(res, 403, { error: "only a Primary Bot can retry a teammate's thread" });
         // `toBotId`/`toThreadId`: the guard above reads bare botId/threadId as
         // the caller's own identity, the way every internal route does.
         const botId = typeof body.toBotId === "string" ? body.toBotId : "";
@@ -20117,7 +20837,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         const target = store.bot(botId);
         if (!target || target.id === from.id) return json(res, 404, { error: "no such teammate" });
         if (target.hidden || !canAccessTeam(from, target.section) || !peerAllowed(from, target)) {
-          return json(res, 403, { error: "that bot is not on this Chief's team — call list_bots for the ones you can reach" });
+          return json(res, 403, { error: "that bot is not on this Primary Bot's team — call list_bots for the ones you can reach" });
         }
         if (store.groupByThread(threadId)) return json(res, 400, { error: "that is a room thread — use coordinate_bots in the room instead" });
         const task = store.taskByThread(target.id, threadId);
@@ -20127,7 +20847,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         }
         requireActiveInternalCapability();
         const unattended = isUnattended(from.id, fromThreadId);
-        const text = `[Retry requested by ${from.name}, your Chief of Staff, after this thread's last run stopped.${note ? ` Note from ${from.name}: ${note}` : ""} Continue the request above from where it stopped and finish it. If the same problem comes back, say exactly what is blocking and stop.]`;
+        const text = `[Retry requested by ${from.name}, your Primary Bot, after this thread's last run stopped.${note ? ` Note from ${from.name}: ${note}` : ""} Continue the request above from where it stopped and finish it. If the same problem comes back, say exactly what is blocking and stop.]`;
         try {
           await startTurn(target.id, text, { threadId, unattended, peerAsk: { botId: from.id, name: from.name, ...(unattended ? { unattended: true } : {}) }, speaker: peerSpeaker(from.id, fromThreadId) });
         } catch (error) {
@@ -20263,7 +20983,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           const destination = groupId ? store.group(groupId) : undefined;
           if (groupId && !destination) return json(res, 404, { error: "No such room; use list_room_targets." });
           // A slot may carry a teammate's name instead of its id — the
-          // roster shows both, list_bots shows both, and a Chief reading its
+          // roster shows both, list_bots shows both, and a Primary Bot reading its
           // prompt reaches for the name. A unique reachable name resolves;
           // anything else is refused with the id or name the caller sent
           // and the way to the real ids (peer-roster.ts).
@@ -20717,7 +21437,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           return json(res, 403, { error: "source conversation does not belong to sender" });
         }
         if (!chief.chiefOfStaff) {
-          return json(res, 403, { error: "only a section's Chief of Staff can create operator bots" });
+          return json(res, 403, { error: "only a Primary Bot can create operator bots" });
         }
         if (internalCapability.createdBots >= 4) {
           return json(res, 429, { error: "you can create at most 4 bots in one turn" });
@@ -20759,7 +21479,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         }
         // Discovery can yield; check current authority and capacity again before writing.
         if (store.bot(chief.id) !== chief || chief.hidden || !chief.chiefOfStaff || !connectorThread(chief.id, fromThreadId)) {
-          return json(res, 403, { error: "only an active Chief of Staff can create operator bots" });
+          return json(res, 403, { error: "only an active Primary Bot can create operator bots" });
         }
         if (internalCapability.createdBots >= 4) return json(res, 429, { error: "you can create at most 4 bots in one turn" });
         if (store.bots.length >= MAX_WORKSPACE_BOTS) return json(res, 409, { error: `this workspace is limited to ${MAX_WORKSPACE_BOTS} bots` });
@@ -20781,7 +21501,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
             section: chief.section,
             ownerUserId: creatingBotOwnerId(auth),
             ...(cwd !== undefined ? { cwd } : {}),
-            // exactly the Chief's audience: a restricted Chief never makes a bot everyone sees
+            // exactly the Primary Bot's audience: a restricted Primary Bot never makes a bot everyone sees
             ...(chief.visibility ? { visibility: chief.visibility } : {}),
           },
           { seedMessages: false },
@@ -20806,7 +21526,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         const body = await readInternalBody();
         const chief = store.bot(internalCapability.botId)!;
         if (chief.hidden || !chief.chiefOfStaff || !connectorThread(chief.id, internalCapability.threadId)) {
-          return json(res, 403, { error: "only an active section Chief of Staff can manage rooms" });
+          return json(res, 403, { error: "only an active Primary Bot can manage rooms" });
         }
         if (!body || typeof body !== "object" || Array.isArray(body)) {
           return json(res, 400, { error: "room request must be a JSON object" });
@@ -20817,7 +21537,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           return json(res, 403, { error: "peer approval is required; ask the user to make this room change" });
         }
         // Section labels are a permission boundary, not bot-owned organization.
-        // A Chief may not recruit excluded peers or acquire a foreign transcript.
+        // A Primary Bot may not recruit excluded peers or acquire a foreign transcript.
         const allowedIds = new Set([chief.id, ...reachablePeers(store.bots, chief).map((bot) => bot.id)]);
         const allowedRoster = (ids: string[]) => ids.includes(chief.id) && ids.every((id) => allowedIds.has(id));
         if (body.section !== undefined && (typeof body.section !== "string" || sectionKey(body.section) !== sectionKey(chief.section))) {
@@ -20841,7 +21561,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
             name: redactSecretsInText(parsed.data.name), memberIds, section: chief.section,
             setup: {
               bulletin: redactSecretsInText(parsed.data.bulletin ?? ""),
-              // The Chief leads; on Auto it is the fallback when the decision model is unsure.
+              // The Primary Bot leads; on Auto it is the fallback when the decision model is unsure.
               defaultResponder: deciderReady(cfg, "roomRouting") ? { kind: "auto", fallbackBotId: chief.id } : { kind: "member", botId: chief.id },
             },
           });
@@ -20873,7 +21593,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           }
           const next = action === "add_members" ? [...new Set([...room.memberIds, ...memberIds])]
             : action === "remove_members" ? room.memberIds.filter((id) => !memberIds.includes(id)) : memberIds;
-          if (!allowedRoster(next)) return json(res, 403, { error: "keep yourself in the room; only the user can remove its managing Chief" });
+          if (!allowedRoster(next)) return json(res, 403, { error: "keep yourself in the room; only the user can remove its managing Primary Bot" });
           patch.memberIds = next;
         }
         const updated = updateChannel(room.id, patch);
@@ -22051,7 +22771,10 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (threadId && !currentVisible.thread(threadId)) return json(res, 404, { error: "no such conversation" });
       const searchViewerId = channelFilterViewerId(current.auth);
       const hits = found
-        .filter((hit) => currentVisible.thread(hit.threadId) && searchHitVisibleNow(hit.threadId, searchViewerId))
+        .filter((hit) => currentVisible.thread(hit.threadId) && searchHitVisibleNow(hit.threadId, searchViewerId)
+          // the index holds text and tool rows only; an access card that ever
+          // matched would still reach its own person only
+          && (hit.kind !== "access" || !privateRowHidden(store.messagesFor(hit.threadId).find((row) => row.id === hit.messageId), viewerForApproval(current.auth!))))
         .slice(0, limit)
         .map((hit) => {
           const bot = store.botByThread(hit.threadId);
@@ -22512,42 +23235,6 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         presets: imported.presets ?? [],
       });
     }
-    m = path.match(/^\/api\/groups\/([\w-]+)\/setup$/);
-    if (m && method === "PATCH") {
-      const group = store.group(m[1]);
-      if (!group) return json(res, 404, { error: "no such room" });
-      if (group.dm) return json(res, 400, { error: "direct-message channels do not have room setup" });
-      const body = await readBody(req);
-      if (body.action !== "complete" && body.action !== "skip") {
-        return json(res, 400, { error: "action must be complete or skip" });
-      }
-      if (group.setupCompletedAt != null || group.setupSkippedAt != null) {
-        return json(res, 200, { group: publicGroupState(group) });
-      }
-      if (store.messagesFor(group.threadId).length > 0) {
-        return json(res, 409, { error: "room setup must be finished before the first message" });
-      }
-
-      const patch: Partial<Pick<GroupRecord, "cwd" | "defaultResponder" | "bulletin" | "setupCompletedAt" | "setupSkippedAt">> = {};
-      if (body.action === "complete") {
-        const checked = validateBotCwd(body.cwd ?? null);
-        if (!checked.ok) return json(res, 400, { error: checked.error });
-        if (typeof body.bulletin !== "string") return json(res, 400, { error: "bulletin must be a string" });
-        if (body.bulletin.length > 12_000) return json(res, 400, { error: "bulletin must be at most 12000 characters" });
-        const responder = checkedGroupResponder(body.defaultResponder, group.memberIds);
-        if (!responder) return json(res, 400, { error: "invalid default responder" });
-        patch.cwd = checked.cwd ?? undefined;
-        patch.defaultResponder = responder;
-        patch.bulletin = body.bulletin;
-        patch.setupCompletedAt = Date.now();
-      } else {
-        patch.setupSkippedAt = Date.now();
-      }
-      const updated = store.patchGroup(m[1], patch);
-      if (!updated) return json(res, 404, { error: "no such room" });
-      return json(res, 200, { group: publicGroupState(updated) });
-    }
-
     // ── channel tasks: separate conversations for the same team ────────
 
 
@@ -22706,16 +23393,31 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     if (m && method === "PATCH") {
       const body = await readBody(req);
       const existingGroup = store.group(m[1]);
+      if (existingGroup?.peopleDm) {
+        const field = peopleDmPatchRefusal(body);
+        if (field) return json(res, 400, { error: `a conversation between two people cannot change "${field}"`, code: "people_dm" });
+      }
       // A bot-to-bot dm keeps its existing member refusal. Placement checks
       // apply only when this patch adds a bot to a channel.
       if (existingGroup && !existingGroup.dm && Array.isArray(body?.memberIds)) {
         const placed = refusePlacedBots(auth, body.memberIds, new Set(existingGroup.memberIds));
         if (placed) return json(res, 403, { error: placed });
       }
-      const humans = refuseHumanEdit(auth, body, existingGroup?.humanIds ?? []);
+      // Organization server: only the group's owner changes its settings;
+      // anyone listed may still leave it (server/group-ownership.ts).
+      const ownerRule = Boolean(existingGroup && !existingGroup.dm && groupOwnerRuleApplies(auth));
+      if (existingGroup && ownerRule) {
+        const refusal = groupPatchOwnerRefusal(existingGroup, body, groupActor(auth), (botId) => {
+          const bot = store.bot(botId);
+          return bot ? effectiveBotOwner(bot) : undefined;
+        });
+        if (refusal) return json(res, 403, { error: refusal, code: "not_group_owner" });
+      }
+      const humans = refuseHumanEdit(auth, body, existingGroup?.humanIds ?? [], ownerRule);
       if (humans) return json(res, humans.startsWith("unknown team") ? 400 : 403, { error: humans });
       if (auth.kind === "session" && !auth.scopes.includes("admin")) {
-        const field = clientGroupPatchViolation(body);
+        // The owner of an organization group also picks its default responder.
+        const field = clientGroupPatchViolation(body, ownerRule ? ["defaultResponder"] : []);
         if (field) return json(res, 403, { error: `forbidden: this session may rename or mark a room, not change "${field}" (needs the admin scope)` });
       }
       const movesSection = existingGroup && body && typeof body === "object" && !Array.isArray(body) && "section" in body;
@@ -22746,6 +23448,12 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     if (m && method === "DELETE") {
       const group = store.group(m[1]);
       if (!group) return json(res, 404, { error: "no such room" });
+      if (groupOwnerRuleApplies(auth) && !group.dm) {
+        // The owner, or an organization admin moderating.
+        if (!mayDeleteGroup(group, groupActor(auth))) return json(res, 403, { error: "forbidden: only the group's owner can delete it", code: "not_group_owner" });
+      } else if (auth.kind === "session" && !auth.scopes.includes("admin")) {
+        return json(res, 403, { error: "forbidden: deleting a channel needs the admin scope" });
+      }
       if (phoneSecretSubmissions.hasGroup(group.id)) {
         return json(res, 409, { error: "this channel is securely saving a credential — try again when it finishes" });
       }
@@ -22761,6 +23469,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       }
       routines!.disableForGroup(group.id);
       store.deleteGroup(group.id);
+      deleteGroupMemory(group.id);
       rejectDeletedThreadSkillStages(stagedSkillCleanups);
       return json(res, 200, { ok: true });
     }
@@ -22778,6 +23487,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (IDENTITY.kind === "perspicax" && !groupPostAllowed(group, channelViewerId(auth))) {
         return json(res, 403, { error: "you may read this channel, not post in it", code: "read_only" });
       }
+      if (group.peopleDm) return json(res, 202, sendPeopleDmMessage(group, auth, text, body.sendId, body.replyToId));
       if (body.mode !== undefined && body.mode !== "chat" && body.mode !== "goal") {
         return json(res, 400, { error: "mode must be chat or goal" });
       }
@@ -23134,8 +23844,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       }
       const result = store.updateTeamMembers(section, parsed.data.addBotIds, parsed.data.removeBotIds);
       if (!result.ok) return json(res, result.reason === "unavailable" ? 404 : 409, { error:
-        result.reason === "chief-conflict" ? "A team can have only one Chief of Staff. Change the Chief before moving this bot."
-          : result.reason === "membership-changed" ? "Team membership changed. Reopen the dialog and try again."
+        result.reason === "membership-changed" ? "Team membership changed. Reopen the dialog and try again."
           : "One or more bots are unavailable" });
       return json(res, 200, { sections: store.sections, bots: result.bots.map(wireBot) });
     }
@@ -23156,11 +23865,6 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       }
       const result = store.setBotsSection(botIds, name);
       if (!result.ok) {
-        if (result.reason === "chief-conflict") {
-          return json(res, 409, {
-            error: "A team can have only one Chief of Staff. Choose one Chief or use a team without one.",
-          });
-        }
         return json(res, 404, { error: "one or more bots are unavailable" });
       }
       return json(res, 200, { section: name, sections: store.sections, bots: result.bots.map(wireBot) });
@@ -23255,7 +23959,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       }
       if (settings.managedSections?.length) {
         if (!settings.chiefOfStaff || settings.managedSections.some(name => name !== "" && !store.sections.includes(name))) {
-          return json(res, 400, { error: "Only a Chief may manage existing additional teams" });
+          return json(res, 400, { error: "Only a Primary Bot may manage existing additional teams" });
         }
         if (body.acknowledgePeerScope !== true) return json(res, 400, { error: "Confirm additional team access (acknowledgePeerScope)" });
         if (auth.kind === "loopback" && !DESKTOP_MANAGED && store.bots.some(bot => bot.busy)) {
@@ -23364,9 +24068,9 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (settings.chiefOfStaff) {
         try {
           store.patchBot(bot.id, { managedSections: settings.managedSections ?? [] });
-          store.setChiefOfStaff(bot.id);
+          store.setPrimaryBot(bot.id);
         } catch {
-          warnings.push("Bot created; review its Chief of Staff setting before delegating work.");
+          warnings.push("Bot created; review its Primary Bot setting before delegating work.");
         }
       }
       for (const routine of createdRoutines) if (routine.enabled) {
@@ -23554,6 +24258,24 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       const visible = wireBot(updated);
       broadcast({ kind: "bot", bot: visible });
       return json(res, 200, { bot: visible });
+    }
+    // Make a bot its owner's Primary Bot (the star in the sidebar). One per
+    // person: the store hands the role over from the person's previous one.
+    // Only the owner chooses theirs; on a solo server the operator's admin
+    // sessions too. An organization admin has no override on someone else's.
+    m = path.match(/^\/api\/bots\/([\w-]+)\/primary$/);
+    if (m && method === "POST") {
+      const target = store.bot(m[1]);
+      if (!target) return json(res, 404, { error: "no such bot" });
+      const actor = actorPrincipalId(auth).trim().toLowerCase();
+      const owner = effectiveBotOwner(target);
+      const soloAdmin = IDENTITY.kind !== "perspicax" && (auth.kind !== "session" || auth.scopes.includes("admin"));
+      if (!soloAdmin && (!actor || owner !== actor)) {
+        return json(res, 403, { error: "Only this bot's owner can make it their Primary Bot", code: "not_bot_owner" });
+      }
+      const changed = store.setPrimaryBot(target.id);
+      if (changed === null) return json(res, 404, { error: "no such bot" });
+      return json(res, 200, { bot: wireBot(store.bot(target.id)!), changed: changed.map((bot) => bot.id) });
     }
     m = path.match(/^\/api\/bots\/([\w-]+)$/);
     if (m && method === "PATCH") {
@@ -23805,7 +24527,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         patch.cwd = checked.cwd ?? undefined;
       }
       if (body.hidden === true && existingBot?.chiefOfStaff && body.chiefOfStaff !== false) {
-        return json(res, 400, { error: "choose another Chief of Staff before hiding this bot" });
+        return json(res, 400, { error: "choose another Primary Bot before hiding this bot" });
       }
       // the permission fields decide what runs unattended, so they are
       // type-checked rather than copied through: a string alwaysAllow would
@@ -23937,18 +24659,18 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         const sections = [...new Set(parsed.data)];
         const newSections = sections.filter(section => !(existingBot?.managedSections ?? []).includes(section));
         if (newSections.some(section => section !== "" && !store.sections.includes(section))) {
-          return json(res, 400, { error: "Create the named team before giving a Chief access to it" });
+          return json(res, 400, { error: "Create the named team before giving a Primary Bot access to it" });
         }
         if (sections.length && !(body.chiefOfStaff === true || (existingBot?.chiefOfStaff && body.chiefOfStaff !== false))) {
-          return json(res, 400, { error: "Only a Chief of Staff can be given access to additional teams" });
+          return json(res, 400, { error: "Only a Primary Bot can be given access to additional teams" });
         }
         if (newSections.length && body.acknowledgePeerScope !== true) {
-          return json(res, 400, { error: "Confirm which additional teams this Chief may work with (acknowledgePeerScope)" });
+          return json(res, 400, { error: "Confirm which additional teams this Primary Bot may work with (acknowledgePeerScope)" });
         }
         patch.managedSections = sections;
       }
       // Removing the role revokes its grants, rather than leaving dormant
-      // authority to return if this bot is elected Chief again later.
+      // authority to return if this bot is elected Primary Bot again later.
       if (body.chiefOfStaff === false) patch.managedSections = [];
       // Who may see this bot on a workspace several people share
       // (bot-visibility.ts): "everyone" (the default), "admins", or
@@ -24027,11 +24749,6 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           closeOpenApprovals(groupTurn.threadId);
         }
       }
-      const chiefMovedSections =
-        Boolean(existingBot?.chiefOfStaff) &&
-        body.chiefOfStaff !== false &&
-        section !== undefined &&
-        sectionKey(existingBot?.section) !== sectionKey(section);
       let bot: BotRecord | null;
       const freshBrowserBot = store.bot(m[1]);
       // Connector validation and runtime revocation can yield after the first
@@ -24101,10 +24818,9 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           void forgetTemporaryBrowser(bot.id).catch((error) => console.warn("temporary browser cleanup failed", error));
         }
       }
-      const chiefChanges =
-        body.chiefOfStaff === true || chiefMovedSections
-          ? store.setChiefOfStaff(bot.id)
-          : [];
+      // A Primary Bot is one per person, not per section: moving it to
+      // another team keeps the role.
+      const chiefChanges = body.chiefOfStaff === true ? store.setPrimaryBot(bot.id) : [];
       if (chiefChanges === null) return json(res, 404, { error: "no such bot" });
       if (beforeProfile) {
         const now = store.bot(bot.id)!;
@@ -24533,6 +25249,12 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       const threadId = routeThreadId(bot, body.threadId);
       const notYours = cloudGuestSendRefusal(auth, threadId);
       if (notYours) return json(res, 403, { error: notYours });
+      // An engine command the chat cannot run is refused before it is
+      // recorded (server/harness-commands.ts).
+      if (text.startsWith("/")) {
+        const typed = await typedCommandForTurn(extractTurnImages(text).text, harnessCommandSource(bot, threadId), harnessCommands);
+        if (typed.kind === "unavailable") return json(res, 409, unavailableCommandError(typed));
+      }
       // Who this message is from, for the ledger. It is captured here and
       // travels with the message: into the turn it starts, or into the queue
       // until it drains. A message steered into someone else's running turn
@@ -27528,6 +28250,31 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
 
 const server = createServer(handleRequest);
 desktopViewer.attach(server, handleRequest);
+/** The desktop bridge's network tunnel (organization mode): the WebSocket a
+ * person's desktop app opens, checked against their live session and the
+ * desktop's own secret before any byte is relayed. */
+const desktopTunnelDeps = {
+  organization: () => IDENTITY.kind === "perspicax",
+  session: (req: IncomingMessage) => {
+    const token = parseCookies(req.headers.cookie).get(SESSION_COOKIE);
+    const record = token ? sessions.authenticate(token) : null;
+    const person = record ? liveSessionPerson(record.id) : null;
+    return record && person ? { id: record.id, person } : null;
+  },
+  sameOrigin: (req: IncomingMessage) => isSameOrigin(req),
+  bridgeOwner: (id: string, session: string, secret: string) => desktopBridges.owns(id, session, secret),
+  tunnels: desktopTunnels,
+};
+attachDesktopTunnel(server, desktopTunnelDeps);
+if (IDENTITY.kind === "perspicax") {
+  egressProxy = await startEgressProxy({
+    tunnels: desktopTunnels,
+    audit: (entry) => bridgeAudit.record({
+      person: entry.person, botId: entry.botId, threadId: entry.threadId, target: entry.via === "desktop" ? "user-desktop" : "direct",
+      kind: "network", detail: `${entry.host}:${entry.port}`, ok: entry.ok, error: entry.error,
+    }),
+  });
+}
 
 calendarCalls.start();
 
@@ -27704,6 +28451,7 @@ if (TUNNEL_SOCKET) {
   if (process.platform !== "win32") rmSync(TUNNEL_SOCKET, { force: true });
   tunnelListener = createServer(handleRequest);
   desktopViewer.attach(tunnelListener, handleRequest);
+  attachDesktopTunnel(tunnelListener, desktopTunnelDeps);
   tunnelListener.listen(TUNNEL_SOCKET, () => {
     console.log(`openmausbot tunnel listener on ${TUNNEL_SOCKET}`);
   });
@@ -27720,6 +28468,9 @@ const gracefulShutdown = createGracefulShutdown({
       // any cleanup function reaches an await.
       revokeAllInternalCapabilities();
       sharedComputers.close();
+      desktopBridges.close();
+      desktopTunnels.close();
+      void egressProxy?.close();
       sharedComputerControl.close();
       browserLive.closeAll();
       desktopViewer.closeAll();

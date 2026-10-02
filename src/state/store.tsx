@@ -18,6 +18,7 @@ import type { TurnDigest } from "../../shared/digest";
 import type { ModelVariantOption, RuntimeEvent } from "../../shared/runtime-events";
 import type { MausColor, MausMotion } from "@/lib/mascot";
 import type { BotAvatarCrop } from "../../shared/bot-avatar";
+import type { BotPublicProfile } from "../../shared/bot-public-profile";
 import { approvalModeFor, type ApprovalMode } from "../../shared/approval-mode";
 import type { MascotBodyId } from "../../shared/mascot-bodies";
 import type { MascotSkinId } from "../../shared/mascot-skins";
@@ -245,12 +246,19 @@ export interface Group {
   createdAt: number;
   /** auto-created bot⇄bot channel (ask_bot exchanges mirror here) */
   dm?: boolean;
+  /** A direct conversation between two people (server/people-dms.ts). */
+  peopleDm?: boolean;
+  /** The group's shared memory; absent = on. */
+  memoryEnabled?: boolean;
   busyBotId?: string | null;
   /** when the busy member's turn started — the group-side twin of a task's
    * turnStartedAt; stamped by the server when the speaker claims the turn */
   turnStartedAt?: number | null;
   /** True for the whole orchestrated run, including hand-offs between members. */
   working?: boolean;
+  /** Every bot in the room as each person in it sees it, whoever owns it
+   * (shared/bot-public-profile.ts): read through groupMemberBots. */
+  memberProfiles?: BotPublicProfile[];
   /** the room's shared desk — where member turns run their shell tools,
    * overriding each member's own folder; absent = each member's own */
   cwd?: string;
@@ -261,7 +269,10 @@ export interface Group {
   pinnedMessageId?: string;
   /** sidebar section heading this room is filed under (shared with bots) */
   section?: string;
-  /** New user-created rooms remain in setup until Save or Skip. */
+  /** Organization server: who owns the settings (null: its admins). Absent
+   * on a solo server (src/lib/group-owner.ts). */
+  ownerId?: string | null;
+  /** Set at creation: rooms have no pending setup step any more. */
   setupCompletedAt?: number | null;
   setupSkippedAt?: number | null;
   /** Separate conversations in this channel. DMs deliberately stay on one
@@ -377,6 +388,9 @@ export interface TaskUsage {
 }
 
 export interface Bot {
+  /** A bot the viewer knows only from a room it is in (groupMemberBots):
+   * its name and look, nothing else; it cannot be opened. */
+  publicProfile?: true;
   waitingForTeammates?: boolean;
   id: string;
   threadId: string;
@@ -698,7 +712,7 @@ export interface ConfigStatus {
   /** UI language override; "" (or absent) follows the system language. */
   language?: string;
   /** Opt-in flags. Absent means off. */
-  features?: { skillAuthoring: boolean; showToolCalls?: boolean; browser?: boolean; sharedComputers?: boolean; claudeUserMcp?: boolean; llmThreadTitles?: boolean };
+  features?: { skillAuthoring: boolean; showToolCalls?: boolean; browser?: boolean; sharedComputers?: boolean; claudeUserMcp?: boolean; llmThreadTitles?: boolean; routinesInConversation?: boolean; templates?: boolean };
   /** First-run progress: whether the welcome tour was finished and which
    * one-time hints were dismissed. Server-owned so it follows the workspace. */
   onboarding?: OnboardingStatus;
@@ -1145,6 +1159,9 @@ export type Action =
   | { type: "groupPatched"; group: Partial<Group> & { id: string } }
   | { type: "groupDeleted"; groupId: string }
   | { type: "createGroup"; memberIds: string[]; name?: string; section?: string }
+  /** Open (or create) the direct conversation with another person of the
+   * organization (server/people-dms.ts). */
+  | { type: "openPeopleDm"; principalId: string }
   | {
       type: "sendGroup";
       groupId: string;
@@ -1487,7 +1504,7 @@ export function reducer(state: AppState, action: Action): AppState {
     case "hydrate": {
       const known = (id: string) => action.bots.some((b) => b.id === id) || action.groups.some((g) => g.id === id);
       const selectedId =
-        state.selectedId && known(state.selectedId) ? state.selectedId : (action.bots[0]?.id ?? "");
+        state.selectedId && known(state.selectedId) ? state.selectedId : (action.bots[0]?.id ?? action.groups.find((g) => !g.dm)?.id ?? "");
       const hydrated = {
         ...state,
         bots: action.bots.map((bot) => {
@@ -1643,7 +1660,7 @@ export function reducer(state: AppState, action: Action): AppState {
     }
     case "groupDeleted": {
       const groups = state.groups.filter((g) => g.id !== action.groupId);
-      const selectedId = state.selectedId === action.groupId ? (state.bots[0]?.id ?? "") : state.selectedId;
+      const selectedId = state.selectedId === action.groupId ? (state.bots[0]?.id ?? groups.find((g) => !g.dm)?.id ?? "") : state.selectedId;
       return { ...state, groups, selectedId };
     }
     case "instances":
@@ -2381,6 +2398,7 @@ export function reducer(state: AppState, action: Action): AppState {
     case "reorderProjects":
     case "interrupt":
     case "createGroup":
+    case "openPeopleDm":
     case "deleteGroup":
     case "interruptGroup":
     case "steerGroupQueued":
@@ -3090,7 +3108,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           if (action.notice) setTimeout(() => rawDispatch({ type: "notice", notice: null }), 6000);
           break;
         case "createRoutine":
-          api("/api/routines", { method: "POST", body: JSON.stringify(action.input) }).catch(showError);
+          api("/api/routines", { method: "POST", body: JSON.stringify(action.input) })
+            // loaded on use: routine-delegation.ts imports this module
+            .then(() => void import("@/lib/routine-delegation").then((module) => module.ensureRoutineDelegation()).catch(() => {}))
+            .catch(showError);
           break;
         case "updateRoutine":
           api(`/api/routines/${action.routineId}`, {
@@ -3446,6 +3467,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
                 : {}),
             }),
           })
+            .then(({ group }) => {
+              rawDispatch({ type: "groupPatched", group });
+              rawDispatch({ type: "select", id: group.id });
+            })
+            .catch(showError);
+          break;
+        case "openPeopleDm":
+          api(`/api/people-dms`, { method: "POST", body: JSON.stringify({ principalId: action.principalId }) })
             .then(({ group }) => {
               rawDispatch({ type: "groupPatched", group });
               rawDispatch({ type: "select", id: group.id });

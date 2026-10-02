@@ -98,6 +98,7 @@ import {
 } from "@/lib/routines";
 import { api, openNotificationTarget, useStore, type Bot, type Group } from "@/state/store";
 import { viewerCanCreateBots } from "@/lib/viewer";
+import { ensureRoutineDelegation } from "@/lib/routine-delegation";
 
 const HOUR_HEIGHT = 64;
 const DAY_CHIP_LABELS = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
@@ -148,14 +149,7 @@ function activeRoomMembers(group: Group | undefined, bots: Bot[]): Bot[] {
 }
 
 function roomCanRunGoal(group: Group): boolean {
-  if (group.dm) return false;
-  const hasSetupMarker =
-    Object.prototype.hasOwnProperty.call(group, "setupCompletedAt") ||
-    Object.prototype.hasOwnProperty.call(group, "setupSkippedAt");
-  return !hasSetupMarker ||
-    group.setupCompletedAt != null ||
-    group.setupSkippedAt != null ||
-    (group.messages?.length ?? 0) > 0;
+  return !group.dm;
 }
 
 function preferredRoomLead(group: Group | undefined, bots: Bot[], preferredId?: string): Bot | undefined {
@@ -555,6 +549,9 @@ function EventEditor({
           body: JSON.stringify(input),
         });
         dispatch({ type: "routinePatched", routine: response.routine });
+        // Organization server: the first routine asks Perspicax once to let
+        // routines act in the person's name (allowed by default).
+        if (!existingRoutine) void ensureRoutineDelegation();
       } else {
         if (recurrence === "interval" || isCronChoice(recurrence)) throw new Error("Choose a supported call schedule.");
         const nextSchedule = makeCalendarSchedule(recurrence, at, weekdays);
@@ -1070,6 +1067,7 @@ function QuickComposer({
           } satisfies RoutineInput),
         });
         onSavedRoutine(response.routine);
+        void ensureRoutineDelegation();
       } else {
         const response = await api("/api/calendar-calls", {
           method: "POST",

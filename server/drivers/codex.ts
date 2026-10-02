@@ -1,5 +1,6 @@
 import { codexToolSurfaceArgs } from "./codex-tool-surface.ts";
 import { CODEX_WITHHELD_APPROVAL, codexHostToolArgs, codexHostToolRequest } from "./host-tools.ts";
+import { networkProxyEnvironment } from "./network-proxy.ts";
 // Codex driver — upstream CodexDriver skeleton over agentcal's
 // drivers/codex.js runtime: the official `codex` CLI headless over its
 // app-server JSON-RPC protocol (newline-delimited JSON on stdio).
@@ -16,6 +17,7 @@ import { createHash } from "node:crypto";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { codexConfigMcpServerNames, mountedMcpServerName } from "./codex-mcp-names.ts";
+import { probeCodexSkills } from "./harness-command-probe.ts";
 
 import { DATA_DIR, stripWorkspaceCredentialEnv } from "../config.ts";
 import { hostedWorkspaceConfigured } from "../enterprise.ts";
@@ -791,6 +793,9 @@ export const CodexDriver: ProviderDriver<CodexConfig> = {
       const launchAttempt = async (attempt: number): Promise<void> => {
         const env = childEnv();
         if (planToken) env.SAGAX_CHATGPT_TOKEN = planToken;
+        // Desktop bridge: this turn's network traffic leaves through the
+        // person's computer (never the model traffic: NO_PROXY).
+        if (turn.networkProxy) Object.assign(env, networkProxyEnvironment(turn.networkProxy, env));
         // An organization owner key (codexAccessLaunch) wins over a ChatGPT
         // plan sign-in, which wins over a managed or local provider.
         const launch = codexAccessLaunch(env, turn.access);
@@ -1644,7 +1649,10 @@ export const CodexDriver: ProviderDriver<CodexConfig> = {
         let startedModel: string | null = null;
         let resumedNativeThread = false;
         let rebuiltFromReplay = false;
-        let promptText = turn.text;
+        // A skill the person picked as a slash command: Codex reads it as
+        // `$name` with the skill's file (shared/harness-commands.ts).
+        const skill = turn.harnessCommand?.path ? turn.harnessCommand : undefined;
+        let promptText = skill ? `$${skill.name}${skill.args ? ` ${skill.args}` : ""}` : turn.text;
         if (cursor) {
           const resumeThread = () => request("thread/resume", {
             threadId: cursor,
@@ -1732,6 +1740,7 @@ export const CodexDriver: ProviderDriver<CodexConfig> = {
         }
         emit({ ...base(threadId, turnId), type: "session.started", sessionId: codexThreadId, model: startedModel ?? turn.model ?? null, ...(rebuiltFromReplay ? { rebuilt: true } : {}) });
         const turnInput = [
+          ...(skill?.path ? [{ type: "skill" as const, name: skill.name, path: skill.path }] : []),
           ...(promptText ? [{ type: "text" as const, text: promptText }] : []),
           ...(turn.images ?? []).map((image) => ({ type: "localImage" as const, path: image.path })),
         ];
@@ -1932,6 +1941,14 @@ export const CodexDriver: ProviderDriver<CodexConfig> = {
         return () => listeners.delete(listener);
       },
     },
+    // The skills a turn in this folder can use, from Codex itself.
+    listCommands: (scope) => probeCodexSkills({
+      cli: config.cli,
+      args: ["app-server"],
+      env: childEnv() as NodeJS.ProcessEnv,
+      cwd: scope.cwd ?? homedir(),
+      clientVersion: serverVersion(),
+    }),
     dispose: async () => {
       disposed = true;
       planGeneration++;

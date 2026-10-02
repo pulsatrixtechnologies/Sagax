@@ -54,6 +54,8 @@ export interface FakeDirectoryPerson {
   role: "admin" | "manager" | "employee";
   status: "active" | "disabled";
   locale: string | null;
+  /** Perspicax's user type; a service account never signs in. */
+  kind?: "person" | "service";
   /** Slice 4: provider names this person keeps a key for. */
   provider_keys?: string[];
   /** Slice 5: the MCP profile ids this person holds (else profilesBySub). */

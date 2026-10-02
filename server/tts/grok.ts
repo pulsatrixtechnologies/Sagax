@@ -11,6 +11,8 @@ const voicesSchema = z.object({
   })),
 });
 
+const sttSchema = z.object({ text: z.string(), language: z.string().optional() });
+
 function refusal(status: number): string {
   if (status === 401 || status === 403) return "xAI rejected the key or its TTS permissions. Check the xAI key in Settings.";
   if (status === 402) return "The xAI account needs credits to generate speech.";
@@ -49,11 +51,22 @@ export async function listVoices(key: string): Promise<Voice[]> {
   }));
 }
 
-export async function synthesize(text: string, voiceId: string, key: string): Promise<Audio> {
+/** Voice mode's choices for one utterance (shared/voice-mode.ts): xAI
+ * takes `speed` from 0.7 to 1.5 and a BCP-47 `language` or "auto". */
+export interface SynthesizeOptions {
+  speed?: number;
+  language?: string;
+}
+
+export async function synthesize(text: string, voiceId: string | undefined, key: string, options: SynthesizeOptions = {}): Promise<Audio> {
+  const body: Record<string, unknown> = { text, language: options.language || "auto", output_format: { codec: "mp3" } };
+  // no voice: xAI's default voice
+  if (voiceId) body.voice_id = voiceId;
+  if (typeof options.speed === "number" && options.speed !== 1) body.speed = options.speed;
   const response = await request("/tts", {
     method: "POST",
     headers: { authorization: `Bearer ${key}`, "content-type": "application/json", accept: "audio/mpeg" },
-    body: JSON.stringify({ text, voice_id: voiceId, language: "auto", output_format: { codec: "mp3" } }),
+    body: JSON.stringify(body),
     signal: AbortSignal.timeout(60_000),
   });
   const mime = (response.headers.get("content-type") ?? "").split(";")[0].trim().toLowerCase();
@@ -69,4 +82,22 @@ export async function synthesize(text: string, voiceId: string, key: string): Pr
   }
   if (!bytes.byteLength) throw new Error("Grok returned empty audio. Try again.");
   return { bytes, mime: "audio/mpeg" };
+}
+
+/** Speech to text (POST /v1/stt, multipart): one recorded turn. `language`
+ * is a hint; without it xAI detects the language. */
+export async function transcribe(audio: Uint8Array, mime: string, key: string, language?: string): Promise<{ text: string; language?: string }> {
+  const form = new FormData();
+  const name = mime === "audio/wav" ? "turn.wav" : mime === "audio/webm" ? "turn.webm" : "turn.ogg";
+  form.append("file", new Blob([new Uint8Array(audio)], { type: mime }), name);
+  if (language) form.append("language", language);
+  const response = await request("/stt", {
+    method: "POST",
+    headers: { authorization: `Bearer ${key}`, accept: "application/json" },
+    body: form,
+    signal: AbortSignal.timeout(60_000),
+  });
+  const parsed = sttSchema.safeParse(await response.json().catch(() => null));
+  if (!parsed.success) throw new Error("Grok returned an invalid transcript. Try again later.");
+  return { text: parsed.data.text, ...(parsed.data.language ? { language: parsed.data.language } : {}) };
 }

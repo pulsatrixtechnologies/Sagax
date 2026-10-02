@@ -306,6 +306,13 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   // with the feature off these paths are as unlisted as any other, so a
   // client session is refused exactly the way an unknown route refuses it.
   { methods: ["POST"], path: /^\/api\/shared-computers\/(?:connect|[\w-]+\/(?:poll|lease|result|disconnect))$/, feature: "sharedComputers" },
+  // Organization server: the person's own desktop app bridges their computer
+  // (server/desktop-bridge-routes.ts). The handler answers the session's own
+  // person only, binds poll/results to a private desktop secret, and 404s on
+  // a solo server.
+  { methods: ["POST"], path: /^\/api\/desktop-bridge\/(?:connect|[0-9a-f-]{36}\/(?:poll|lease|result|disconnect|system))$/ },
+  { methods: ["GET"], path: /^\/api\/me\/desktop-bridge$/ },
+  { methods: ["POST"], path: /^\/api\/me\/desktop-bridge\/local-vm$/ },
   // Organization server (SAGAX_IDENTITY=perspicax): a member pairs their own
   // phone or computer. The handler binds the code to the member's person and
   // clamps its scopes to the session's own.
@@ -330,6 +337,9 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   // a conversation's files (the bot panel's Files tab): the list and one file by id
   { methods: ["GET"], path: /^\/api\/threads\/[\w-]+\/files$/ },
   { methods: ["GET"], path: /^\/api\/threads\/[\w-]+\/files\/[a-f0-9]{24}$/ },
+  // what a bot is doing (the bot panel's Coding list): narrowed to the
+  // viewer's own threads and the routines they may see (routes/bot-activity.ts)
+  { methods: ["GET"], path: /^\/api\/bots\/[\w-]+\/activity(?:\/item)?$/ },
   // chat, one to one
   { methods: ["POST"], path: /^\/api\/bots\/[\w-]+\/messages$/ },
   { methods: ["POST"], path: /^\/api\/bots\/[\w-]+\/messages\/[\w-]+\/edit$/ },
@@ -343,6 +353,7 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   { methods: ["POST"], path: /^\/api\/bots\/[\w-]+\/tasks\/[\w-]+\/title$/ }, // Regenerate title: a rename by the bot's own engine
   { methods: ["PATCH"], path: /^\/api\/bots\/[\w-]+\/profile$/ },
   { methods: ["PATCH"], path: /^\/api\/bots\/[\w-]+$/ }, // display fields only, or the owner's own bot: see clientBotPatchViolation
+  { methods: ["POST"], path: /^\/api\/bots\/[\w-]+\/primary$/ }, // the person's own bot only: the handler checks the owner
   // An organization member's own bots: the handler requires a member or
   // admin role, limits the fields (memberBotFieldViolation) and, for a
   // delete, that the session owns the bot.
@@ -368,6 +379,13 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   { methods: ["POST"], path: /^\/api\/groups\/[\w-]+\/tasks$/ },
   { methods: ["POST", "PATCH", "DELETE"], path: /^\/api\/groups\/[\w-]+\/tasks\/[\w-]+$/ },
   { methods: ["PATCH"], path: /^\/api\/groups\/[\w-]+$/ }, // display fields only: see clientGroupPatchViolation
+  // a group's shared memory: its people read, its owner edits (server/routes/group-memory.ts)
+  { methods: ["GET", "PUT"], path: /^\/api\/groups\/[\w-]+\/memory$/ },
+  // a direct conversation with another person of the organization (server/people-dms.ts)
+  { methods: ["POST"], path: /^\/api\/people-dms$/ },
+  // Organization server: a group's owner deletes it (server/group-ownership.ts);
+  // the route refuses a client session anywhere else.
+  { methods: ["DELETE"], path: /^\/api\/groups\/[\w-]+$/ },
   { methods: ["POST"], path: /^\/api\/threads\/[\w-]+\/messages\/[\w-]+\/reactions$/ },
   // attachments
   { methods: ["POST"], path: /^\/api\/attachments$/ },
@@ -377,6 +395,9 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   { methods: ["GET"], path: /^\/api\/tts\/voices$/ },
   { methods: ["POST"], path: /^\/api\/tts\/prepare$/ },
   { methods: ["POST"], path: /^\/api\/tts\/speak$/ },
+  // voice mode (server/voice-mode.ts): the speaker's own turn on a bot they may use; never the key
+  { methods: ["GET"], path: /^\/api\/bots\/[\w-]+\/voice\/(?:status|voices)$/ },
+  { methods: ["POST"], path: /^\/api\/bots\/[\w-]+\/voice\/(?:prepare|speak|transcribe)$/ },
   // routines: a scheduled message; the input carries no cwd or permission field
   { methods: ["GET"], path: /^\/api\/routines$/ },
   { methods: ["POST"], path: /^\/api\/routines$/ },
@@ -421,12 +442,20 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   // The caller's own server environment (user-sandbox): status and reset.
   { methods: ["GET"], path: /^\/api\/me\/server-environment$/, feature: "orgDirectory" },
   { methods: ["POST"], path: /^\/api\/me\/server-environment\/reset$/, feature: "orgDirectory" },
+  { methods: ["POST"], path: /^\/api\/me\/server-environment\/power$/, feature: "orgDirectory" },
+  { methods: ["GET"], path: /^\/api\/me\/server-environment\/stats$/, feature: "orgDirectory" },
+  // The live view of the caller's own server environment desktop: the route
+  // builds the target from the session's principal (routes/desktop-viewer.ts).
+  { methods: ["GET"], path: /^\/api\/desktop-viewer\/sandbox\/me(?:\/websockify)?$/, feature: "orgDirectory" },
   { methods: ["POST"], path: /^\/api\/me\/engines\/[\w.-]+\/login\/(?:start|complete|cancel|sign-out)$/, feature: "orgDirectory" },
   { methods: ["GET"], path: /^\/api\/me\/engines\/[\w.-]+\/login\/status$/, feature: "orgDirectory" },
   // The caller's own claude.ai connectors (server/harness-connectors.ts):
   // names and statuses of their own account only. The admin switch
   // (PUT /api/harness-connectors/settings) stays admin.
   { methods: ["GET"], path: /^\/api\/me\/harness-connectors$/ },
+  // The engine's own slash commands for a bot the caller may use
+  // (server/harness-commands.ts): names, descriptions and hints only.
+  { methods: ["GET"], path: /^\/api\/bots\/[\w-]+\/harness-commands$/ },
   // Slice 6: the caller's own routine delegation (allow, status, revoke).
   { methods: ["GET", "POST", "DELETE"], path: /^\/api\/org\/routine-delegation$/, feature: "orgDirectory" },
   // Slice 8: a person copies their own bots from a solo Sagax (the handler
@@ -476,9 +505,9 @@ export function memberBotFieldViolation(body: unknown): string | null {
 /** Same for a room: name, reading state, and the roster. humanIds and
  * memberIds are not refused here. canEditHumans and canPlaceBot decide them. */
 const CLIENT_GROUP_PATCH_FIELDS = new Set(["name", "bulletin", "unread", "pinnedMessageId", "section", "humanIds", "memberIds"]);
-export function clientGroupPatchViolation(body: unknown): string | null {
+export function clientGroupPatchViolation(body: unknown, extra: readonly string[] = []): string | null {
   if (!body || typeof body !== "object" || Array.isArray(body)) return "body";
-  for (const key of Object.keys(body)) if (!CLIENT_GROUP_PATCH_FIELDS.has(key)) return key;
+  for (const key of Object.keys(body)) if (!CLIENT_GROUP_PATCH_FIELDS.has(key) && !extra.includes(key)) return key;
   return null;
 }
 

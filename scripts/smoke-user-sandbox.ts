@@ -122,7 +122,7 @@ async function main(): Promise<void> {
     check("public internet reachable", /^(200|30\d)/.test(internet.stdout.trim()), internet.stdout.trim());
 
     const pids = await run("cat /sys/fs/cgroup/pids.max /sys/fs/cgroup/memory.max 2>/dev/null");
-    check("pids and memory limits in the cgroup", pids.stdout.includes("256") && pids.stdout.includes(String(512 * 1024 * 1024)), pids.stdout.trim().replace(/\n/g, " "));
+    check("pids and memory limits in the cgroup", pids.stdout.includes(String(config.limits.pidsLimit)) && pids.stdout.includes(String(512 * 1024 * 1024)), pids.stdout.trim().replace(/\n/g, " "));
     const inspected = JSON.parse(execFileSync("docker", ["inspect", names.container], { encoding: "utf8" }))[0];
     check("docker inspect: read-only, unprivileged, no binds, own network",
       inspected.HostConfig.ReadonlyRootfs === true && inspected.HostConfig.Privileged === false && (inspected.HostConfig.Binds ?? []).length === 0

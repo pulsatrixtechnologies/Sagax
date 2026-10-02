@@ -26,6 +26,8 @@ import { customMcpServers,
   threadEventLogRetentionDays,
   showToolCallsEnabled,
   routinesInConversationEnabled,
+  connectedAppsEnabled,
+  templatesEnabled,
   saveConfig,
   skillAuthoringEnabled,
   sharedComputersEnabled,
@@ -581,6 +583,16 @@ describe("configuration boundaries", () => {
       features: { routinesInConversation: true },
     });
     expect(routinesInConversationEnabled({ features: { routinesInConversation: true } })).toBe(true);
+    expect(connectedAppsEnabled({})).toBe(false);
+    expect(parseConfigPatch({ features: { connectedApps: true } })).toEqual({ features: { connectedApps: true } });
+    expect(connectedAppsEnabled({ features: { connectedApps: true } })).toBe(true);
+  });
+
+  it("keeps the sidebar's Templates entry off unless the experimental option is on", () => {
+    expect(templatesEnabled({})).toBe(false);
+    expect(parseConfigPatch({ features: { templates: true } })).toEqual({ features: { templates: true } });
+    expect(templatesEnabled({ features: { templates: false } })).toBe(false);
+    expect(templatesEnabled({ features: { templates: true } })).toBe(true);
   });
 
   it("keeps tool-call chips off by default and accepts an explicit opt-in", () => {

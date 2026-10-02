@@ -7,8 +7,8 @@ import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { FLOATING_LIVELINESS, floatingBotPrefs, setFloatingFlyAway, setFloatingLiveliness, subscribeFloatingBots, type FloatingLiveliness } from "@/lib/floating-bots";
 import { Archive, Coins, FlaskConical, KeyRound, Mail, Monitor, Palette, ScrollText, Search, TabletSmartphone, Terminal, User, Users, X, Building2, Zap } from "lucide-react";
 import { api, useStore, type AppSettingsSection, type ConfigStatus } from "@/state/store";
-import { analyticsEnabled, setAnalyticsEnabled } from "@/lib/analytics";
-import { browserAvailable, browserUnavailableReason, builtInBrowserEnabled, routinesInConversationEnabled, showToolCallsEnabled, skillAuthoringEnabled } from "@/lib/feature-flags";
+import { browserAvailable, browserUnavailableReason, builtInBrowserEnabled, connectedAppsEnabled, routinesInConversationEnabled, showToolCallsEnabled, skillAuthoringEnabled, templatesEnabled } from "@/lib/feature-flags";
+import { usePerspicaxOrg } from "@/lib/perspicax-org";
 import { localeChoices, type LocaleKey } from "@/locales";
 import { t } from "@/lib/i18n";
 import { withTourReset } from "@/lib/guided-tour";
@@ -73,7 +73,7 @@ export const SECTIONS: Array<{
   icon: typeof User;
   keywords: string[];
 }> = [
-  { id: "general", labelKey: "settings.section.general", icon: User, keywords: ["profile", "name", "email", "about me", "about", "suggestions", "suggested", "memory", "analytics", "updates", "effort", "new bots", "reasoning", "threads", "parallel", "concurrency", "cleanup", "retention", "event log", "event-log", "log size", "automatic recovery", "backup model", "fallback", "routines", "conversation", "schedule"] },
+  { id: "general", labelKey: "settings.section.general", icon: User, keywords: ["profile", "name", "email", "about me", "about", "suggestions", "suggested", "memory", "updates", "effort", "new bots", "reasoning", "threads", "parallel", "concurrency", "cleanup", "retention", "event log", "event-log", "log size", "automatic recovery", "backup model", "fallback", "routines", "conversation", "schedule"] },
   { id: "organization", labelKey: "settings.section.organization", icon: Building2, keywords: ["company", "organization", "organisation", "sign in", "enroll", "managed", "models", "disconnect", "workspace", "cloud", "hosted", "vps", "server", "servers", "connect", "pair", "switch", "local"] },
   { id: "cloudAccount", labelKey: "settings.section.cloudAccount", icon: User, keywords: ["cloud", "account", "personal", "sign in", "pro", "subscription", "billing"] },
   { id: "appearance", labelKey: "settings.section.appearance", icon: Palette, keywords: ["skin", "theme", "appearance", "tools", "tool calls", "threads", "show threads", "hide threads", "sidebar", "density", "compact", "comfortable", "avatars", "display", "run", "this run", "run card", "commands", "notifications", "sound", "sounds", "mute", "silent", "chime", "mascot", "owl", "desktop", "fly", "floating"] },
@@ -82,7 +82,7 @@ export const SECTIONS: Array<{
   { id: "decisionModel", labelKey: "settings.section.decisionModel", icon: Zap, keywords: ["decision", "jev", "typesafe", "routing", "auto", "rooms", "who answers"] },
   { id: "engines", labelKey: "settings.section.engines", icon: Terminal, keywords: ["models", "model providers", "engines", "claude", "codex", "grok", "providers", "cli", "sign in", "subscription"] },
   { id: "companion", labelKey: "settings.section.companion", icon: TabletSmartphone, keywords: ["companion", "device", "phone", "desktop", "client", "host", "pair", "pairing", "mobile", "https", "secure", "tailscale", "wifi", "remote", "advanced", "domain", "dns", "self-hosted", "server", "caddy"] },
-  { id: "computer", labelKey: "settings.section.computer", icon: Monitor, keywords: ["vm", "virtual", "desktop"] },
+  { id: "computer", labelKey: "settings.section.computer", icon: Monitor, keywords: ["computer", "local vm", "vm", "virtual", "desktop", "ordinateur"] },
   { id: "usage", labelKey: "settings.section.usage", icon: Coins, keywords: ["tokens", "cost", "billing"] },
   { id: "people", labelKey: "settings.section.people", icon: Users, keywords: ["people", "users", "invite", "sign in", "members", "admins", "access"] },
   { id: "mail", labelKey: "settings.section.mail", icon: Mail, keywords: ["email", "mail", "courriel", "smtp", "sendgrid", "twilio", "sender", "invitations", "sign-in codes"] },
@@ -109,6 +109,13 @@ export function cardsMatching(query: string): string[] {
   return Object.entries(CARD_KEYWORDS)
     .filter(([, words]) => words.some((word) => word.includes(query)))
     .map(([id]) => id);
+}
+
+/** Sections an organization server (Perspicax) leaves out: its mail is
+ * managed in the Perspicax admin console. A solo server keeps Email: it
+ * sends its own sign-in codes and invitations. */
+export function organizationHidesSection(id: AppSettingsSection, organization: boolean): boolean {
+  return organization && id === "mail";
 }
 
 export function sectionMatches(section: (typeof SECTIONS)[number], query: string): boolean {
@@ -320,10 +327,28 @@ function UpdatesRow() {
   );
 }
 
-/** Usage analytics, on by default and switchable here. Naming what is sent
- * matters more than the switch: people who cannot see the scope assume the
- * worst, and the worst — conversation text — is exactly what this never
- * sends (autocapture is off; see lib/analytics.ts). */
+/** Opt-in to pre-release versions. Updates only ever come from Sagax's own
+ * GitHub releases (electron/update-feed.mjs); this only widens the channel. */
+function PrereleaseRow() {
+  const s = useUpdaterState();
+  const setPrereleases = window.ogb?.updater?.setPrereleases;
+  if (!setPrereleases) return null;
+  const on = s?.allowPrerelease === true;
+  return (
+    <SettingRow
+      title={t("settings.updates.prerelease.title")}
+      subtitle={t("settings.updates.prerelease.short")}
+      help={t("settings.updates.prerelease.subtitle")}
+    >
+      <Switch
+        checked={on}
+        aria-label={t("settings.updates.prerelease.aria")}
+        onClick={() => void setPrereleases(!on)}
+      />
+    </SettingRow>
+  );
+}
+
 /** The effort every new bot starts with. The server skips a level the new
  * bot's engine does not offer, and a bot's own choice always wins. */
 function NewBotEffortRow() {
@@ -370,23 +395,6 @@ function NewBotEffortRow() {
           </option>
         ))}
       </select>
-    </SettingRow>
-  );
-}
-
-function AnalyticsRow() {
-  const [on, setOn] = useState(analyticsEnabled);
-  return (
-    <SettingRow title={t("settings.analytics.title")} subtitle={t("settings.analytics.short")} help={t("settings.analytics.subtitle")}>
-      <Switch
-        checked={on}
-        aria-label={t("settings.analytics.aria")}
-        onClick={() => {
-          const next = !on;
-          setAnalyticsEnabled(next);
-          setOn(next);
-        }}
-      />
     </SettingRow>
   );
 }
@@ -691,13 +699,15 @@ function ExperimentalFeaturesRow() {
   const { state, dispatch } = useStore();
   const skillAuthoring = skillAuthoringEnabled(state.config);
   const browser = builtInBrowserEnabled(state.config);
+  const templates = templatesEnabled(state.config);
+  const connectedApps = connectedAppsEnabled(state.config);
   const desktopBrowser = browserAvailable(state.config);
   const browserInstallable = state.config?.browserEngine?.installable === true;
   const browserBlockedOnWindows = window.ogb?.platform === "win32" && !desktopBrowser && !browserInstallable;
-  const [saving, setSaving] = useState<"skillAuthoring" | "browser" | null>(null);
+  const [saving, setSaving] = useState<"skillAuthoring" | "browser" | "templates" | "connectedApps" | null>(null);
   const [error, setError] = useState("");
 
-  const toggle = async (feature: "skillAuthoring" | "browser", next: boolean) => {
+  const toggle = async (feature: "skillAuthoring" | "browser" | "templates" | "connectedApps", next: boolean) => {
     if (saving) return;
     setSaving(feature);
     setError("");
@@ -720,7 +730,7 @@ function ExperimentalFeaturesRow() {
       cardId="experimental.features"
       title={t("settings.experimental.title")}
       subtitle={t("settings.experimental.subtitle")}
-      summary={t("settings.card.countOn", { count: Number(skillAuthoring) + Number(browser), total: 2 })}
+      summary={t("settings.card.countOn", { count: Number(skillAuthoring) + Number(browser) + Number(templates) + Number(connectedApps), total: 4 })}
     >
       <div className="flex items-center justify-between gap-4">
         <div className="min-w-0">
@@ -755,6 +765,36 @@ function ExperimentalFeaturesRow() {
           aria-label={t("settings.experimental.browserAria")}
           disabled={saving !== null || (!browser && !desktopBrowser && !browserInstallable)}
           onClick={() => void toggle("browser", !browser)}
+          className="disabled:cursor-wait disabled:opacity-50"
+        />
+      </div>
+      <div className="mt-4 flex items-center justify-between gap-4 border-t border-hairline/30 pt-4" data-experimental-templates>
+        <div className="min-w-0">
+          <div className="text-[14px] font-medium text-ink">{t("settings.experimental.templates")}</div>
+          <div className="mt-0.5 text-[12px] leading-relaxed text-ink-secondary">
+            {t("settings.experimental.templatesDetail")}
+          </div>
+        </div>
+        <Switch
+          checked={templates}
+          aria-label={t("settings.experimental.templatesAria")}
+          disabled={saving !== null}
+          onClick={() => void toggle("templates", !templates)}
+          className="disabled:cursor-wait disabled:opacity-50"
+        />
+      </div>
+      <div className="mt-4 flex items-center justify-between gap-4 border-t border-hairline/30 pt-4" data-experimental-connected-apps>
+        <div className="min-w-0">
+          <div className="text-[14px] font-medium text-ink">{t("settings.experimental.connectedApps")}</div>
+          <div className="mt-0.5 text-[12px] leading-relaxed text-ink-secondary">
+            {t("settings.experimental.connectedAppsDetail")}
+          </div>
+        </div>
+        <Switch
+          checked={connectedApps}
+          aria-label={t("settings.experimental.connectedAppsAria")}
+          disabled={saving !== null}
+          onClick={() => void toggle("connectedApps", !connectedApps)}
           className="disabled:cursor-wait disabled:opacity-50"
         />
       </div>
@@ -849,6 +889,10 @@ export function SettingsModal() {
   // Server mode: this app shows its organization's server only (src/lib/launch.ts).
   const serverMode = useServerMode();
   const lockedServer = serverMode?.active ? serverMode : null;
+  // An organization server (Perspicax): the desktop locked to one, or a
+  // page whose server answers GET /api/org as Perspicax.
+  const perspicaxOrg = usePerspicaxOrg();
+  const organization = Boolean(lockedServer) || perspicaxOrg !== null;
   const soloDesktop = !remoteActive && Boolean(launchBridges(window.ogb)) && state.config?.onboarding?.launchMode !== "server";
   // A request for Settings > Organization (the Server menu, a deep link) on
   // a desktop with no server opens the launch screen on Server instead.
@@ -875,6 +919,7 @@ export function SettingsModal() {
     // how the server sends sign-in codes and invitations: its admins and
     // the operator, on the desktop and on the web
     .filter((entry) => entry.id !== "mail" || ownerOrAdmin === true)
+    .filter((entry) => !organizationHidesSection(entry.id, organization))
     // the activity log belongs to a workspace served to a browser, and to its admins
     .filter((entry) => entry.id !== "activity" || (servedPage() && ownerOrAdmin === true));
   const visibleSections = availableSections.filter((entry) => sectionMatches(entry, q));
@@ -1053,7 +1098,6 @@ export function SettingsModal() {
                 <div className="rounded-[14px] border-[0.5px] border-border py-1">
                   <LanguageRow />
                   <NewBotEffortRow />
-                  <AnalyticsRow />
                   <DefaultBotSettings />
                 </div>
                 {!remoteActive && (
@@ -1077,6 +1121,7 @@ export function SettingsModal() {
                 <div className="rounded-[14px] border-[0.5px] border-border py-1">
                   {!remoteActive && <ReplayTourRow />}
                   <UpdatesRow />
+                  <PrereleaseRow />
                   <DiagnosticsRow />
                 </div>
               </>
@@ -1144,7 +1189,7 @@ export function SettingsModal() {
                     </details>
                   </div>
                 </Card>
-                <Card
+                {connectedAppsEnabled(state.config) && <Card
                   collapsible
                   cardId="connections.apps"
                   defaultOpen={false}
@@ -1158,7 +1203,7 @@ export function SettingsModal() {
                   summary={configuredSummary(state.config, ["composio"])}
                 >
                   <ApiKeyRow section="composio" />
-                </Card>
+                </Card>}
                 <Card
                   collapsible
                   cardId="connections.integrations"

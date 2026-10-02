@@ -1,7 +1,7 @@
 import { track } from "@/lib/analytics";
 import { useCallback, useEffect, useMemo, useRef, useState, type SetStateAction } from "react";
-import { ArrowUp, BookOpen, Clock, Mic, Paperclip, Square, Target, Users, X } from "lucide-react";
-import { useStore, visibleMessages, currentTaskBot, type Bot, type Group, type Message } from "@/state/store";
+import { ArrowUp, Clock, Mic, Paperclip, Square, Target, Users, X } from "lucide-react";
+import { api, useStore, visibleMessages, currentTaskBot, type Bot, type Group, type Message } from "@/state/store";
 import { cn } from "@/lib/cn";
 import { useMenuMotion } from "./MenuMotion";
 import { activeLocale, t } from "@/lib/i18n";
@@ -73,11 +73,17 @@ import { useRetroSkin } from "./RetroChromeHost";
 import { mentionChoicesForQuery } from "@/lib/mentions";
 import { serializeThreadRefs, threadTokenFromPaste, threadTokenSpacing } from "@/lib/thread-refs";
 import {
+  composerCommandMenu,
   composerSlashTrigger,
+  engineCommandInsertion,
   goalTextFromComposer,
   replaceComposerSlashTrigger,
+  type ComposerMenuItem,
   type ComposerSlashCommand,
 } from "@/lib/composer-commands";
+import { useHarnessCommands } from "@/lib/harness-commands";
+import { ComposerCommandMenu } from "./ComposerCommandMenu";
+import { WorkplaceNotice } from "./WorkplaceNotice";
 
 /** The active @mention query at the caret: the text between an `@` that
  * starts a word and the caret. null = no mention being typed. */
@@ -107,7 +113,6 @@ export function Composer({
   onClearReply,
   onConsumeReply,
   onRestoreReply,
-  locked: setupLocked = false,
 }: {
   bot?: Bot;
   group?: Group;
@@ -117,11 +122,9 @@ export function Composer({
   onClearReply?: () => void;
   onConsumeReply?: () => void;
   onRestoreReply?: (message: Message, threadId: string) => void;
-  /** New rooms keep the composer inert until their setup is saved or skipped. */
-  locked?: boolean;
 }) {
   const bot = profile ? currentTaskBot(profile) : undefined;
-  const locked = setupLocked || Boolean(bot?.awaitingThreadSnapshot);
+  const locked = Boolean(bot?.awaitingThreadSnapshot);
   const { state, dispatch } = useStore();
   const ownerOrAdmin = useOwnerOrAdmin();
   const { threads, currentBotId } = useThreadRefs();
@@ -306,7 +309,11 @@ export function Composer({
   // ── Slash commands and @mentions ─────────────────────────────────────
   const slash = composerSlashTrigger(text, caret);
   const locale = activeLocale();
-  const commandCandidates = useMemo(() => {
+  // The engine's own commands (Claude Code, Codex) for a 1:1 conversation,
+  // read the first time "/" is typed there (src/lib/harness-commands.ts).
+  const engineCommands = useHarnessCommands(api, !group ? bot?.id : undefined, threadId || undefined, Boolean(slash) && !group);
+  const commandListRef = useRef<HTMLDivElement>(null);
+  const commandCandidates = useMemo((): ComposerMenuItem[] => {
     if (!slash || slash.start === dismissedSlashAt) return [];
     const supportsAgents = (candidate?: Bot) =>
       Boolean(
@@ -338,14 +345,8 @@ export function Composer({
       label: "/setup",
       description: t("composer.command.setupDesc"),
     });
-    const query = slash.query.toLowerCase();
-    return available.filter(
-      (command) =>
-        !query ||
-        command.id.startsWith(query) ||
-        command.description.toLowerCase().includes(query),
-    );
-  }, [slash, dismissedSlashAt, group, members, bot, state.config, state.instances, locale]);
+    return composerCommandMenu(available, group ? [] : engineCommands.answer?.commands ?? [], slash.query);
+  }, [slash, dismissedSlashAt, group, members, bot, state.config, state.instances, locale, engineCommands.answer]);
   const commandPickerOpen = commandCandidates.length > 0;
 
   // Tag another bot; the agent reaches it via ask_bot.
@@ -372,6 +373,13 @@ export function Composer({
   );
 
   useEffect(() => {
+    if (!commandPickerOpen) return;
+    commandListRef.current
+      ?.querySelector<HTMLElement>(`[data-command-index="${highlight}"]`)
+      ?.scrollIntoView({ block: "nearest" });
+  }, [highlight, commandPickerOpen]);
+
+  useEffect(() => {
     if (!mentionPickerOpen) return;
     mentionListRef.current
       ?.querySelector<HTMLElement>(`[data-mention-index="${highlight}"]`)
@@ -393,14 +401,19 @@ export function Composer({
     });
   };
 
-  const pickCommand = (command: ComposerSlashCommand) => {
-    if (!slash) return;
-    const replacement = command.id === "learn" ? "/learn " : command.id === "setup" ? "/setup " : "";
+  const pickCommand = (item: ComposerMenuItem | undefined) => {
+    if (!slash || !item) return;
+    // What the chat cannot run stays listed, with its reason, but inserts nothing.
+    if (item.kind === "engine" && item.unavailable) return;
+    const command = item.kind === "sagax" ? item.command : null;
+    const replacement = item.kind === "engine"
+      ? engineCommandInsertion(item)
+      : command?.id === "learn" ? "/learn " : command?.id === "setup" ? "/setup " : "";
     const next = replaceComposerSlashTrigger(text, slash, replacement);
     editText(next.text);
     setCaret(next.caret);
     setDismissedSlashAt(slash.start);
-    setChannelMode(command.id === "goal" ? "goal" : "chat");
+    setChannelMode(command?.id === "goal" ? "goal" : "chat");
     requestAnimationFrame(() => {
       inputRef.current?.focus();
       inputRef.current?.setSelectionRange(next.caret, next.caret);
@@ -803,6 +816,7 @@ export function Composer({
         </div>
       )}
       <div className="pointer-events-auto relative w-full">
+        <WorkplaceNotice />
         {failedSends.map((failed) => (
           <div
             key={failed.id}
@@ -832,44 +846,17 @@ export function Composer({
           </div>
         ))}
         {commandMotion.shown && (
-          <div
-            role="listbox"
-            aria-label={t("composer.commands.aria")}
-            className={cn("absolute bottom-full left-2 z-20 mb-2 w-80 overflow-hidden rounded-xl border border-hairline/40 bg-raised shadow-lg", commandMotion.className)} {...commandMotion.exitProps}
-          >
-            <div className="border-b border-hairline/20 px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.08em] text-ink-secondary">
-              {t("composer.commands.title")}
-            </div>
-            {commandCandidates.map((command, index) => (
-              <button
-                key={command.id}
-                type="button"
-                role="option"
-                aria-selected={index === highlight}
-                onMouseDown={(event) => event.preventDefault()}
-                onClick={() => pickCommand(command)}
-                onMouseEnter={() => setHighlight(index)}
-                className={cn(
-                  "flex w-full items-center gap-3 px-3 py-2.5 text-left",
-                  index === highlight ? "bg-raised-hover" : "",
-                )}
-              >
-                <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-accent/10 text-accent">
-                  {command.id === "goal" ? (
-                    <Target size={15} aria-hidden="true" />
-                  ) : (
-                    <BookOpen size={15} aria-hidden="true" />
-                  )}
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block text-[14px] font-medium text-accent">{command.label}</span>
-                  <span className="block truncate text-xs text-ink-secondary">
-                    {command.description}
-                  </span>
-                </span>
-              </button>
-            ))}
-          </div>
+          <ComposerCommandMenu
+            listRef={commandListRef}
+            className={commandMotion.className}
+            exitProps={commandMotion.exitProps}
+            items={commandCandidates}
+            highlight={highlight}
+            loading={!group && engineCommands.loading}
+            onRefresh={!group && engineCommands.answer?.available ? engineCommands.refresh : undefined}
+            onPick={pickCommand}
+            onHighlight={setHighlight}
+          />
         )}
         {mentionMotion.shown && (
           <div
@@ -1140,9 +1127,7 @@ export function Composer({
           disabled={Boolean(approval) || locked}
           aria-busy={bot?.awaitingThreadSnapshot || undefined}
           placeholder={
-            setupLocked
-              ? t("composer.placeholder.locked")
-              : approval
+            approval
               ? t("composer.placeholder.approval")
               : attachmentPending
               ? t("composer.placeholder.attaching")

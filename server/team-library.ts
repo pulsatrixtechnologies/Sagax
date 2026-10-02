@@ -1,10 +1,24 @@
 import { parseJson, type JsonValue } from "./schema.ts";
+import { isBlockedUrl } from "../electron/upstream-hosts.mjs";
 import { isBotPackage, parseBotPackage, parsePackageDocument, type PackageDocument, type ParsedBotPackage } from "./bot-package.ts";
 import { parseTeamManifest, type ParsedTeamManifest } from "./team-manifest.ts";
 
 export const TEAM_LIBRARY_REPOSITORY = "https://github.com/pulsatrixtechnologies/pulsa-bot";
-export const TEAM_LIBRARY_RAW_ROOT = "https://raw.githubusercontent.com/milind-soni/openmausbot-teams/main";
-export const TEAM_LIBRARY_CATALOG_URL = `${TEAM_LIBRARY_RAW_ROOT}/catalog.json`;
+/** Where the shared team catalog lives. The original project's catalog (the
+ * upstream author's GitHub) is never fetched: empty unless SAGAX_TEAM_LIBRARY_URL
+ * names an HTTPS root of ours, and then the library is an empty catalog with
+ * no request at all. */
+export function teamLibraryRoot(env: NodeJS.ProcessEnv = process.env): string {
+  const raw = (env.SAGAX_TEAM_LIBRARY_URL ?? "").trim().replace(/\/+$/, "");
+  if (!raw) return "";
+  try {
+    const url = new URL(raw);
+    if (url.protocol !== "https:" || url.username || url.password || url.search || url.hash || isBlockedUrl(url.href)) return "";
+    return url.href.replace(/\/+$/, "");
+  } catch {
+    return "";
+  }
+}
 
 const MAX_CATALOG_BYTES = 256_000;
 const MAX_MANIFEST_BYTES = 1_000_000;
@@ -152,8 +166,9 @@ async function fetchText(url: string, maxBytes: number, fetcher: Fetcher): Promi
   return raw;
 }
 
-export async function fetchTeamCatalog(fetcher: Fetcher = fetch): Promise<TeamCatalog> {
-  return parseTeamCatalog(await fetchJson(TEAM_LIBRARY_CATALOG_URL, MAX_CATALOG_BYTES, fetcher));
+export async function fetchTeamCatalog(fetcher: Fetcher = fetch, root = teamLibraryRoot()): Promise<TeamCatalog> {
+  if (!root) return { format: "openmaus.catalog", version: 1, repositoryUrl: TEAM_LIBRARY_REPOSITORY, teams: [] };
+  return parseTeamCatalog(await fetchJson(`${root}/catalog.json`, MAX_CATALOG_BYTES, fetcher));
 }
 
 export type ParsedShareableTeam = ParsedTeamManifest | ParsedBotPackage | PackageDocument;
@@ -172,12 +187,12 @@ async function fetchShareable(url: string, fetcher: Fetcher): Promise<ParsedShar
     : parseShareable(await fetchJson(url, MAX_MANIFEST_BYTES, fetcher));
 }
 
-export async function fetchLibraryTeam(slug: string, fetcher: Fetcher = fetch): Promise<ParsedShareableTeam> {
+export async function fetchLibraryTeam(slug: string, fetcher: Fetcher = fetch, root = teamLibraryRoot()): Promise<ParsedShareableTeam> {
   if (!/^[a-z0-9][a-z0-9-]*$/.test(slug)) throw new Error("That team name is invalid");
-  const catalog = await fetchTeamCatalog(fetcher);
+  const catalog = await fetchTeamCatalog(fetcher, root);
   const entry = catalog.teams.find((team) => team.slug === slug);
   if (!entry) throw Object.assign(new Error("That library team was not found"), { status: 404 });
-  return fetchShareable(`${TEAM_LIBRARY_RAW_ROOT}/${entry.package ?? entry.manifest}`, fetcher);
+  return fetchShareable(`${root}/${entry.package ?? entry.manifest}`, fetcher);
 }
 
 function safeSegment(value: string): boolean {

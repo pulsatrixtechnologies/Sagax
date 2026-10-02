@@ -7,6 +7,7 @@
 // step.
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ANCHOR_EFFECTS, currentStep, stepNumber, TOUR_STEPS, withTourFinished, type TourEffect, type TourStep } from "@/lib/guided-tour";
+import { connectedAppsEnabled } from "@/lib/feature-flags";
 import { t } from "@/lib/i18n";
 import type { MausState } from "@/lib/mascot";
 import { hintSeenPatch } from "@/lib/onboarding";
@@ -67,6 +68,7 @@ export function GuidedTour() {
     setFailed(false);
   }, [state.tourOpen]);
 
+  const appsOn = connectedAppsEnabled(state.config);
   const run = useCallback(
     (effect: TourEffect | undefined) => {
       switch (effect) {
@@ -85,7 +87,9 @@ export function GuidedTour() {
           return;
         }
         case "openApps":
-          if (!press("nav-apps")) dispatch({ type: "togglePlugins", open: true });
+          // Connected apps switched off (experimental): nothing to open, and
+          // the two apps steps skip themselves.
+          if (!press("nav-apps") && appsOn) dispatch({ type: "togglePlugins", open: true });
           return;
         case "closeApps":
           dispatch({ type: "togglePlugins", open: false });
@@ -100,7 +104,7 @@ export function GuidedTour() {
           return;
       }
     },
-    [dispatch, state.computerOpen],
+    [dispatch, state.computerOpen, appsOn],
   );
 
   const save = useCallback(

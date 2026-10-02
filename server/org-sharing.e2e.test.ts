@@ -332,14 +332,44 @@ posixOnly("Perspicax organization, slice 3: directory, sharing with a user, acce
     const room = await api("POST", "/api/groups", alice, { name: "Pay questions", memberIds: [shared.id], humanIds: [aliceId, bobId],
       setup: { bulletin: "", defaultResponder: { kind: "everyone" } } });
     expect(room.status, room.text).toBe(201);
+    const roomThread = room.body.group.threadId as string;
+    const aliceRoomStream = await openStream(alice);
+    const bobRoomStream = await openStream(bob);
     const posted = await api("POST", `/api/groups/${room.body.group.id}/messages`, bob, { text: "room ping" });
     expect(posted.status, posted.text).toBe(202);
     const roomCard = await waitFor(async () => {
-      const got = await api("GET", `/api/threads/${room.body.group.threadId}/messages`, bob);
+      const got = await api("GET", `/api/threads/${roomThread}/messages`, bob);
       return (got.body.messages as Array<{ kind: string; access?: unknown }> | undefined)?.find((m) => m.kind === "access") ?? null;
     });
-    expect(roomCard.access).toMatchObject({ reason: "no_access", botId: shared.id });
+    expect(roomCard.access).toMatchObject({ reason: "no_access", botId: shared.id, payerPrincipalId: bobId });
     expect(readFileSync(dump, "utf8")).toBe(before);
+    // 2026-10-01: bob's card is his alone. Alice, in the same room, sees his
+    // message and nothing in place of the card: not in the list, the room,
+    // the live stream, the export or search.
+    await waitFor(async () => bobRoomStream.text().includes('"kind":"access"'));
+    await waitFor(async () => bobRoomStream.text().includes("turn-failed"));
+    await sleep(300);
+    const aliceRoom = await api("GET", `/api/threads/${roomThread}/messages`, alice);
+    expect(aliceRoom.status, aliceRoom.text).toBe(200);
+    expect((aliceRoom.body.messages as Array<{ kind: string; text?: string }>).some((m) => m.text === "room ping")).toBe(true);
+    expect((aliceRoom.body.messages as Array<{ kind: string }>).some((m) => m.kind === "access")).toBe(false);
+    const aliceGroups = await api("GET", "/api/groups", alice);
+    expect(JSON.stringify(aliceGroups.body)).not.toContain('"kind":"access"');
+    expect(aliceRoomStream.text()).toContain("room ping");
+    expect(aliceRoomStream.text()).not.toContain('"kind":"access"');
+    expect(aliceRoomStream.text()).not.toContain("turn-failed");
+    aliceRoomStream.close();
+    bobRoomStream.close();
+    const aliceExport = await api("GET", `/api/threads/${roomThread}/export?format=json`, alice);
+    expect(aliceExport.status).toBe(200);
+    expect((aliceExport.body.messages as Array<{ kind: string }>).some((m) => m.kind === "access")).toBe(false);
+    const bobExport = await api("GET", `/api/threads/${roomThread}/export?format=json`, bob);
+    expect((bobExport.body.messages as Array<{ kind: string }>).some((m) => m.kind === "access")).toBe(true);
+    for (const q of ["Claude", "access", "subscription"]) {
+      const found = await api("GET", `/api/search?q=${q}&threadId=${roomThread}`, alice);
+      expect(found.status, found.text).toBe(200);
+      expect((found.body.hits as Array<{ kind: string }>).some((hit) => hit.kind === "access")).toBe(false);
+    }
 
     const ghost = await createBot(alice, "Ghost", "ghost");
     expect((await api("POST", `/api/bots/${ghost.id}/messages`, alice, { text: "hello?" })).status).toBe(202);
@@ -410,6 +440,8 @@ posixOnly("Perspicax organization, slice 3: directory, sharing with a user, acce
     expect(minted.status).toBe(201);
     const token = ((await minted.json()) as { token: string }).token;
     const aliceCards = (await accessCards(alice, shared.id)).length;
+    const refusals = () => log.split(`bot=${shared.id} refused: no_access`).length;
+    const refusedBefore = refusals();
     const hop = await fetch(`${BASE}/api/internal/ask-bot`, {
       method: "POST",
       headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
@@ -417,8 +449,11 @@ posixOnly("Perspicax organization, slice 3: directory, sharing with a user, acce
     });
     const hopText = await hop.text();
     expect(hop.status, hopText).toBe(200);
-    await waitFor(async () => (await accessCards(alice, shared.id)).length > aliceCards);
+    // the hop speaks for bob (Bee's owner): refused, and the card is bob's,
+    // never shown to alice in her thread with Xavier
+    await waitFor(async () => refusals() > refusedBefore);
     await sleep(300);
+    expect((await accessCards(alice, shared.id)).length).toBe(aliceCards);
     expect(promptsNow()).not.toContain("hop from bee");
   }, 60_000);
 

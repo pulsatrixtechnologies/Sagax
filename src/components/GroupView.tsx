@@ -2,10 +2,9 @@
 // carry the personality; avatars inside the room stay still so a busy group
 // does not become a wall of competing motion. Plain messages go to the room's
 // default responder; @mentions override that routing.
-import { createPortal } from "react-dom";
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { activeLocale, t } from "@/lib/i18n";
-import { ArrowDown, Check, ChevronDown, ChevronRight, FolderOpen, Loader2, MessageSquareReply, PanelRight, Pin, PinOff, Settings2, X } from "lucide-react";
+import { ArrowDown, ChevronDown, ChevronRight, FolderOpen, MessageSquareReply, PanelRight, Pin, PinOff, X } from "lucide-react";
 import {
   api,
   useStore,
@@ -26,7 +25,9 @@ import { showToolCallsEnabled } from "@/lib/feature-flags";
 import { CompactionChip, DigestChip, TurnAccessChip } from "./DigestChip";
 import { roomActivityVisible } from "@/lib/room-activity";
 import { viewerActorId } from "@/lib/viewer";
-import { RoomPersonLabel } from "./MessageAuthor";
+import { viewerIsOrgAdmin, viewerOwnsGroup } from "@/lib/group-owner";
+import { PersonAvatar, RoomPersonLabel } from "./MessageAuthor";
+import { peopleDmPeer } from "@/lib/people-dm";
 import { continuesRun, roomAuthor, runCorners } from "@/lib/room-authors";
 import type { OrgDirectoryPerson } from "@/lib/perspicax-org";
 import { StatusActivityRow } from "@/components/StatusActivityRow";
@@ -37,7 +38,6 @@ import { CitationSelectionToolbar, SentCitations } from "./CitationUI";
 import { Composer } from "./Composer";
 import { ChatFindBar } from "./ChatFindBar";
 import { GroupTaskPicker } from "./TaskPicker";
-import { GroupUsageChip } from "./GroupUsageChip";
 import { ExportTranscriptMenu } from "./ExportTranscriptMenu";
 import { ReplyQuote } from "./ReplyQuote";
 import { ConnectorCard } from "./ConnectorCard";
@@ -66,7 +66,6 @@ import { groupActivityRuns, isStatusActivity } from "@/lib/activity-runs";
 import { ActivityRun } from "./ActivityRun";
 import { useDesktopCapabilities, useCaptionChrome, useMacInsetChrome } from "./DesktopCapabilities";
 import { cn } from "@/lib/cn";
-import { useMenuMotion } from "./MenuMotion";
 import { useFocusMessage } from "@/lib/focus-message";
 import { shortPath } from "@/lib/short-path";
 import { BOTTOM_FOLLOW_THRESHOLD, shouldResumeBottomFollow, useBottomFollowResize } from "@/lib/bottom-follow";
@@ -88,6 +87,8 @@ import { latestReply, type TranscriptSnapshot } from "@/lib/transcript-announcer
 import { pendingApprovals } from "./PendingApproval";
 import { TranscriptAnnouncer } from "./TranscriptAnnouncer";
 import { channelHumanRow, useOrgPeople } from "@/lib/perspicax-org";
+import { groupMemberBots } from "@/lib/group-members";
+import { botPublicProfile } from "../../shared/bot-public-profile";
 import { personAvatarSrc } from "@/lib/profile-management";
 
 function dayLabel(at: number): string {
@@ -327,7 +328,7 @@ export const Transcript = memo(function Transcript({
               <AccessCard
                 access={m.access}
                 viewer={{ principalId: state.config?.viewer?.principalId ?? null, admin: state.config?.viewer?.role === "admin" || state.config?.viewer?.role === "owner" }}
-                onSignIn={() => dispatch({ type: "toggleAppSettings", open: true, section: "organization" })}
+                onSignIn={() => dispatch({ type: "toggleAppSettings", open: true, section: "engines" })}
               />
             </div>
           ) : m.kind === "goal.run" ? (
@@ -493,7 +494,7 @@ export function RoutedByLine({ routedBy }: { routedBy: NonNullable<Message["rout
   );
 }
 
-export function DefaultResponderSelect({ group, members }: { group: Group; members: Bot[] }) {
+export function DefaultResponderSelect({ group, members, disabled = false }: { group: Group; members: Bot[]; disabled?: boolean }) {
   const { state, dispatch } = useStore();
   const jevOn = jevRoomRoutingOn(state.config);
   const responder = effectiveDefaultResponder(group, members);
@@ -525,6 +526,7 @@ export function DefaultResponderSelect({ group, members }: { group: Group; membe
       <select
         aria-label={t("room.responder.aria")}
         value={value}
+        disabled={disabled}
         onChange={(event) => change(event.target.value)}
         className="h-8 w-full appearance-none truncate rounded-lg border border-hairline/40 bg-raised/60 py-1 pl-3 pr-7 text-[12.5px] font-medium text-ink outline-none hover:bg-raised focus:border-accent"
       >
@@ -557,7 +559,7 @@ export function DefaultResponderSelect({ group, members }: { group: Group; membe
  * under a room that already worked somewhere). The PATCH is made directly
  * rather than through patchGroup: the server validates the path and a
  * rejected folder must not stick in local state. */
-function RoomWorkingFolder({ group }: { group: Group }) {
+function RoomWorkingFolder({ group, disabled = false, adminOnlyNote = false }: { group: Group; disabled?: boolean; adminOnlyNote?: boolean }) {
   const { capabilities } = useDesktopCapabilities();
   const home = capabilities.host.homeDir;
   const [draft, setDraft] = useState<string | null>(null);
@@ -589,14 +591,19 @@ function RoomWorkingFolder({ group }: { group: Group }) {
     <div className="rounded-xl bg-card p-4">
       <div className="text-[15px] font-medium text-ink">{t("room.folder.title")}</div>
       <div className="mt-0.5 text-[13px] text-ink-secondary">{t("room.folder.detail")}</div>
-      {locked ? (
+      {locked || disabled ? (
         <div className="mt-3">
           <div className="truncate rounded-lg border border-hairline/40 bg-inset px-3 py-2 font-mono text-[12.5px] text-ink" title={shownCwd}>
             {shownCwd ? shortPath(shownCwd, home) : <span className="text-ink-secondary">{t("room.folder.own")}</span>}
           </div>
-          <div className="mt-2 text-[12px] text-ink-secondary">
-            {t("room.folder.locked")}
-          </div>
+          {!locked && adminOnlyNote && (
+            <div className="mt-2 text-[12px] text-ink-secondary">{t("groupPanel.folderAdminOnly")}</div>
+          )}
+          {locked && (
+            <div className="mt-2 text-[12px] text-ink-secondary">
+              {t("room.folder.locked")}
+            </div>
+          )}
         </div>
       ) : canPick ? (
         <div className="mt-3 flex items-center gap-2">
@@ -637,508 +644,14 @@ function RoomWorkingFolder({ group }: { group: Group }) {
   );
 }
 
-type RoomSetupFields = {
-  setupPending?: boolean;
-  setupRequired?: boolean;
-  setupState?: "required" | "completed" | "skipped";
-  setupCompletedAt?: number | string | null;
-  setupSkippedAt?: number | string | null;
-};
-
-type RoomResponderMode = "lead" | "everyone" | "mentions" | "auto";
-
-function setupResponderMode(responder: GroupDefaultResponder): RoomResponderMode {
-  return responder.kind === "member" ? "lead" : responder.kind;
-}
-
-export function roomNeedsSetup(group: Group): boolean {
-  if (group.dm || group.messages.length > 0) return false;
-  // SAFETY: setup fields are additive server metadata; the existing Group shape remains valid when absent.
-  const marker = group as Group & RoomSetupFields;
-  const hasSetupMarker =
-    Object.prototype.hasOwnProperty.call(marker, "setupCompletedAt") ||
-    Object.prototype.hasOwnProperty.call(marker, "setupSkippedAt");
-  // Legacy empty rooms omit both keys and remain immediately usable.
-  if (!hasSetupMarker) return false;
-  if (
-    marker.setupPending === false ||
-    marker.setupRequired === false ||
-    marker.setupState === "completed" ||
-    marker.setupState === "skipped" ||
-    marker.setupCompletedAt != null ||
-    marker.setupSkippedAt != null
-  ) {
-    return false;
-  }
-  return true;
-}
-
-/** Group setup as a modal dialog. `first` is the pending setup of a new
- * group: Skip and Escape record a skip so the group is usable right away.
- * `edit` reopens the same fields later: Escape and Cancel only close. */
-export function RoomSetupDialog({
-  group,
-  members,
-  mode,
-  onClose,
-}: {
-  group: Group;
-  members: Bot[];
-  mode: "first" | "edit";
-  onClose: () => void;
-}) {
+export function GroupView({ group: stored }: { group: Group }) {
+  // A direct conversation between two people (server/people-dms.ts) runs on
+  // the single-thread path of a bot-to-bot channel: no panel, no tasks. It
+  // reads as the other person.
+  const group = useMemo(() => (stored.peopleDm ? { ...stored, dm: true } : stored), [stored]);
   const { state, dispatch } = useStore();
-  const jevOn = jevRoomRoutingOn(state.config);
-  const dialogRef = useRef<HTMLDivElement>(null);
-  const [folder, setFolder] = useState(group.cwd ?? "");
-  const [behavior, setBehavior] = useState<RoomResponderMode>(setupResponderMode(group.defaultResponder));
-  const [leadId, setLeadId] = useState(
-    group.defaultResponder.kind === "member" ? group.defaultResponder.botId
-      : group.defaultResponder.kind === "auto" && group.defaultResponder.fallbackBotId ? group.defaultResponder.fallbackBotId
-        : members[0]?.id ?? "",
-  );
-  const [instructions, setInstructions] = useState(group.bulletin);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [leadPickerOpen, setLeadPickerOpen] = useState(false);
-  const leadMotion = useMenuMotion(behavior === "lead" && leadPickerOpen);
-  const leadPickerRef = useRef<HTMLDivElement>(null);
-  const selectedLead = members.find((member) => member.id === leadId) ?? members[0];
-
-  useEffect(() => {
-    if (!leadPickerOpen) return;
-    const closeOnOutsideClick = (event: PointerEvent) => {
-      if (!leadPickerRef.current?.contains(event.target as Node)) setLeadPickerOpen(false);
-    };
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setLeadPickerOpen(false);
-    };
-    document.addEventListener("pointerdown", closeOnOutsideClick);
-    document.addEventListener("keydown", closeOnEscape);
-    return () => {
-      document.removeEventListener("pointerdown", closeOnOutsideClick);
-      document.removeEventListener("keydown", closeOnEscape);
-    };
-  }, [leadPickerOpen]);
-
-  const responder = (): GroupDefaultResponder => {
-    if (behavior === "everyone") return { kind: "everyone" };
-    if (behavior === "mentions") return { kind: "mentions" };
-    // The lead picked above stays on as Auto's fallback.
-    if (behavior === "auto") return members.some((member) => member.id === leadId) ? { kind: "auto", fallbackBotId: leadId } : { kind: "auto" };
-    return members.some((member) => member.id === leadId)
-      ? { kind: "member", botId: leadId }
-      : group.defaultResponder;
-  };
-
-  const finish = async (action: "complete" | "skip") => {
-    setLeadPickerOpen(false);
-    if (mode === "edit") {
-      if (action === "skip") return onClose();
-      return saveEdits();
-    }
-    setSaving(true);
-    setError(null);
-    try {
-      const payload =
-        action === "skip"
-          ? { action }
-          : {
-              action,
-              cwd: folder.trim() || null,
-              defaultResponder: responder(),
-              bulletin: instructions,
-            };
-      const result = await api(`/api/groups/${group.id}/setup`, {
-        method: "PATCH",
-        body: JSON.stringify(payload),
-      });
-      const now = Date.now();
-      const nextGroup = {
-        ...(result.group ?? group),
-        id: group.id,
-        setupPending: false,
-        ...(action === "skip" ? { setupSkippedAt: now } : { setupCompletedAt: now }),
-      };
-      dispatch({ type: "groupPatched", group: nextGroup });
-      onClose();
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  // Reopened after setup: send only what changed through the ordinary group
-  // patch (the setup endpoint is one-shot and ignores a second call).
-  const saveEdits = async () => {
-    const patch: Record<string, unknown> = {};
-    const cwd = folder.trim() || null;
-    if (cwd !== (group.cwd ?? null)) patch.cwd = cwd;
-    const nextResponder = responder();
-    if (JSON.stringify(nextResponder) !== JSON.stringify(group.defaultResponder)) patch.defaultResponder = nextResponder;
-    if (instructions !== group.bulletin) patch.bulletin = instructions;
-    if (Object.keys(patch).length === 0) return onClose();
-    setSaving(true);
-    setError(null);
-    try {
-      const result = await api(`/api/groups/${group.id}`, { method: "PATCH", body: JSON.stringify(patch) });
-      dispatch({ type: "groupPatched", group: { ...(result.group ?? { ...group, ...patch }), id: group.id } });
-      onClose();
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const dismiss = () => {
-    if (saving) return;
-    void finish("skip");
-  };
-  const dismissRef = useRef(dismiss);
-  dismissRef.current = dismiss;
-  const leadPickerOpenRef = useRef(leadPickerOpen);
-  leadPickerOpenRef.current = leadPickerOpen;
-
-  useEffect(() => {
-    const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    const first = dialogRef.current?.querySelector<HTMLElement>("form input, form textarea");
-    (first ?? dialogRef.current)?.focus();
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        // The lead picker owns the first Escape.
-        if (leadPickerOpenRef.current) return;
-        event.preventDefault();
-        dismissRef.current();
-        return;
-      }
-      if (event.key !== "Tab") return;
-      const focusable = [...(dialogRef.current?.querySelectorAll<HTMLElement>(
-        'button:not([disabled]), input:not([disabled]), textarea:not([disabled]), [href], [tabindex]:not([tabindex="-1"])',
-      ) ?? [])];
-      if (focusable.length === 0) {
-        event.preventDefault();
-        dialogRef.current?.focus();
-        return;
-      }
-      const head = focusable[0];
-      const tail = focusable[focusable.length - 1];
-      if (event.shiftKey && (document.activeElement === head || !dialogRef.current?.contains(document.activeElement))) {
-        event.preventDefault();
-        tail.focus();
-      } else if (!event.shiftKey && (document.activeElement === tail || !dialogRef.current?.contains(document.activeElement))) {
-        event.preventDefault();
-        head.focus();
-      }
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => {
-      window.removeEventListener("keydown", onKeyDown);
-      previousFocus?.focus();
-    };
-  }, []);
-
-  const pickFolder = async () => {
-    const chosen = await window.ogb?.pickFolder?.(folder || group.cwd);
-    if (chosen) setFolder(chosen);
-  };
-
-  const content = (
-    <div
-      data-testid="room-setup-overlay"
-      className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 sm:items-center sm:p-6"
-      onMouseDown={(event) => {
-        // A stray click must not skip a pending setup; only reopened edits close.
-        if (event.target === event.currentTarget && mode === "edit") dismiss();
-      }}
-    >
-    <div
-      ref={dialogRef}
-      role="dialog"
-      aria-modal="true"
-      data-testid="room-setup"
-      aria-labelledby="room-setup-title"
-      aria-describedby="room-setup-detail"
-      tabIndex={-1}
-      className="animate-pop-in flex max-h-[calc(100dvh-1rem)] w-full flex-col overflow-hidden rounded-t-[20px] border border-border bg-elevated outline-none sm:max-h-[min(820px,calc(100dvh-3rem))] sm:max-w-[680px] sm:rounded-[14px]"
-    >
-      <header className="flex items-start justify-between gap-3 border-b border-hairline/40 px-5 pb-4 pt-5 sm:px-7 sm:pt-6">
-        <div className="flex min-w-0 items-start gap-3">
-          <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-accent text-accent-ink" aria-hidden="true"><Settings2 size={17} /></span>
-          <div className="min-w-0">
-            <h2 id="room-setup-title" className="truncate text-[17px] font-semibold tracking-tight text-ink">{t("room.setup.title", { name: group.name })}</h2>
-            <p id="room-setup-detail" className="mt-1 max-w-[560px] text-[13px] leading-relaxed text-ink-secondary">
-              {t("room.setup.detail")}
-            </p>
-          </div>
-        </div>
-        <button
-          type="button"
-          onClick={dismiss}
-          disabled={saving}
-          aria-label={t("common.close")}
-          className="flex size-8 shrink-0 items-center justify-center rounded-full text-ink-tertiary hover:bg-ink/10 hover:text-ink-secondary disabled:opacity-50"
-        >
-          <X size={18} />
-        </button>
-      </header>
-      <form
-        className="min-h-0 flex-1 space-y-5 overflow-y-auto px-5 py-5 sm:px-7 sm:py-6"
-        onSubmit={(event) => {
-          event.preventDefault();
-          void finish("complete");
-        }}
-      >
-        <label className="block">
-          <span className="text-[13px] font-semibold text-ink">{t("room.folder.title")}</span>
-          <span className="mt-1 block text-[12px] text-ink-secondary">{t("room.setup.folderDetail")}</span>
-          <div className="mt-2 flex gap-2">
-            <input
-              value={folder}
-              onChange={(event) => setFolder(event.target.value)}
-              placeholder={t("room.folder.own")}
-              className="min-w-0 flex-1 rounded-xl border border-hairline/50 bg-inset px-3 py-2.5 font-mono text-[12.5px] text-ink placeholder:text-ink-secondary focus:border-accent focus:outline-none"
-            />
-            {window.ogb?.pickFolder && (
-              <button
-                type="button"
-                onClick={() => void pickFolder()}
-                disabled={saving}
-                className="flex shrink-0 items-center gap-1.5 rounded-xl border border-hairline/50 bg-raised px-3 py-2 text-[13px] font-medium text-ink hover:bg-raised-hover disabled:opacity-50"
-              >
-                <FolderOpen size={14} /> Choose
-              </button>
-            )}
-          </div>
-        </label>
-
-        <fieldset className="block">
-          <legend className="text-[13px] font-semibold text-ink">{t("room.responder.aria")}</legend>
-          <p className="mt-1 text-[12px] text-ink-secondary">{t("room.setup.responderDetail")}</p>
-          <div role="radiogroup" aria-label={t("room.responder.aria")} className="mt-2 grid gap-2 sm:grid-cols-2">
-            <button
-              type="button"
-              role="radio"
-              aria-checked={behavior === "auto"}
-              onClick={() => {
-                setBehavior("auto");
-                setLeadPickerOpen(false);
-              }}
-              disabled={saving}
-              className={cn(
-                "flex min-h-[72px] w-full cursor-pointer flex-col items-start justify-between rounded-2xl border px-3 py-3 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 disabled:cursor-not-allowed disabled:opacity-50",
-                behavior === "auto"
-                  ? "border-accent bg-accent/10 text-ink ring-1 ring-accent/30"
-                  : "border-hairline/50 bg-inset text-ink-secondary hover:border-hairline hover:bg-raised",
-              )}
-            >
-              <span className="flex items-center gap-2 text-[13px] font-semibold">
-                <span
-                  className={cn(
-                    "flex size-4 shrink-0 items-center justify-center rounded-full border",
-                    behavior === "auto" ? "border-accent bg-accent" : "border-ink-secondary/60",
-                  )}
-                >
-                  {behavior === "auto" && <span className="size-1.5 rounded-full bg-white" />}
-                </span>
-                {jevOn ? t("room.responder.autoOption") : t("room.responder.autoOptionOff")}
-              </span>
-              <span className="ml-6 mt-2 text-[11.5px] text-ink-secondary">
-                {jevOn ? t("room.setup.autoDetail") : t("room.setup.autoDetailOff")}
-              </span>
-            </button>
-
-            <div ref={leadPickerRef} className="relative min-w-0">
-              <button
-                type="button"
-                role="radio"
-                aria-checked={behavior === "lead"}
-                aria-haspopup="listbox"
-                aria-expanded={behavior === "lead" && leadPickerOpen}
-                onClick={() => {
-                  setBehavior("lead");
-                  setLeadPickerOpen((open) => !open);
-                }}
-                disabled={saving}
-                className={cn(
-                  "flex min-h-[72px] w-full flex-col items-start justify-between rounded-2xl border px-3 py-3 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 disabled:cursor-not-allowed disabled:opacity-50",
-                  behavior === "lead"
-                    ? "border-accent bg-accent/10 text-ink ring-1 ring-accent/30"
-                    : "border-hairline/50 bg-inset text-ink-secondary hover:border-hairline hover:bg-raised",
-                )}
-              >
-                <span className="flex w-full items-center justify-between gap-2">
-                  <span className="flex items-center gap-2 text-[13px] font-semibold">
-                    <span
-                      className={cn(
-                        "flex size-4 shrink-0 items-center justify-center rounded-full border",
-                        behavior === "lead" ? "border-accent bg-accent" : "border-ink-secondary/60",
-                      )}
-                    >
-                      {behavior === "lead" && <span className="size-1.5 rounded-full bg-white" />}
-                    </span>
-                    {t("room.behavior.lead")}
-                  </span>
-                  <ChevronDown
-                    size={14}
-                    aria-hidden="true"
-                    className={cn("shrink-0 text-ink-secondary transition-transform", leadPickerOpen && "rotate-180")}
-                  />
-                </span>
-                <span className="ml-6 mt-2 truncate text-[11.5px] text-ink-secondary">
-                  {selectedLead?.name ?? t("room.behavior.chooseTeammate")}
-                </span>
-              </button>
-              {leadMotion.shown && (
-                <div
-                  role="listbox"
-                  aria-label={t("room.behavior.chooseLead")}
-                  className={cn("absolute left-0 top-full z-30 mt-2 w-72 max-w-[calc(100vw-3rem)] overflow-hidden rounded-2xl border border-hairline/60 bg-panel shadow-2xl shadow-black/20", leadMotion.className)} {...leadMotion.exitProps}
-                >
-                  <div className="border-b border-hairline/40 px-3 py-2.5">
-                    <div className="text-[12.5px] font-semibold text-ink">{t("room.behavior.chooseLead")}</div>
-                    <div className="mt-0.5 text-[11.5px] text-ink-secondary">{t("room.behavior.chooseLeadDetail")}</div>
-                  </div>
-                  <div className="max-h-48 overflow-y-auto p-1.5">
-                    {members.map((member) => {
-                      const selected = member.id === leadId;
-                      return (
-                        <button
-                          key={member.id}
-                          type="button"
-                          role="option"
-                          aria-selected={selected}
-                          onClick={() => {
-                            setLeadId(member.id);
-                            setLeadPickerOpen(false);
-                          }}
-                          className={cn(
-                            "flex w-full items-center gap-2 rounded-xl px-2.5 py-2 text-left transition",
-                            selected ? "bg-accent/10" : "hover:bg-raised",
-                          )}
-                        >
-                          <BotAvatar
-                            bot={member}
-                            state={normalizeState(member.mascotExpression) ?? "happy"}
-                            size={24}
-                            animated={false}
-                          />
-                          <span className="min-w-0 flex-1">
-                            <span className="block truncate text-[13px] font-medium text-ink">{member.name}</span>
-                            <span className="block truncate text-[11px] text-ink-secondary">{member.title}</span>
-                          </span>
-                          {selected && <Check size={15} className="shrink-0 text-accent" />}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-            </div>
-
-            <button
-              type="button"
-              role="radio"
-              aria-checked={behavior === "everyone"}
-              onClick={() => {
-                setBehavior("everyone");
-                setLeadPickerOpen(false);
-              }}
-              disabled={saving}
-              className={cn(
-                "flex min-h-[72px] w-full flex-col items-start justify-between rounded-2xl border px-3 py-3 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 disabled:cursor-not-allowed disabled:opacity-50",
-                behavior === "everyone"
-                  ? "border-accent bg-accent/10 text-ink ring-1 ring-accent/30"
-                  : "border-hairline/50 bg-inset text-ink-secondary hover:border-hairline hover:bg-raised",
-              )}
-            >
-              <span className="flex items-center gap-2 text-[13px] font-semibold">
-                <span
-                  className={cn(
-                    "flex size-4 shrink-0 items-center justify-center rounded-full border",
-                    behavior === "everyone" ? "border-accent bg-accent" : "border-ink-secondary/60",
-                  )}
-                >
-                  {behavior === "everyone" && <span className="size-1.5 rounded-full bg-white" />}
-                </span>
-                {t("room.responder.everyoneOption")}
-              </span>
-              <span className="ml-6 mt-2 text-[11.5px] text-ink-secondary">{t("room.setup.allMembers")}</span>
-            </button>
-
-            <button
-              type="button"
-              role="radio"
-              aria-checked={behavior === "mentions"}
-              onClick={() => {
-                setBehavior("mentions");
-                setLeadPickerOpen(false);
-              }}
-              disabled={saving}
-              className={cn(
-                "flex min-h-[72px] w-full flex-col items-start justify-between rounded-2xl border px-3 py-3 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 disabled:cursor-not-allowed disabled:opacity-50",
-                behavior === "mentions"
-                  ? "border-accent bg-accent/10 text-ink ring-1 ring-accent/30"
-                  : "border-hairline/50 bg-inset text-ink-secondary hover:border-hairline hover:bg-raised",
-              )}
-            >
-              <span className="flex items-center gap-2 text-[13px] font-semibold">
-                <span
-                  className={cn(
-                    "flex size-4 shrink-0 items-center justify-center rounded-full border",
-                    behavior === "mentions" ? "border-accent bg-accent" : "border-ink-secondary/60",
-                  )}
-                >
-                  {behavior === "mentions" && <span className="size-1.5 rounded-full bg-white" />}
-                </span>
-                {t("room.responder.mentionsOption")}
-              </span>
-              <span className="ml-6 mt-2 text-[11.5px] text-ink-secondary">{t("room.setup.onlyMentioned")}</span>
-            </button>
-          </div>
-        </fieldset>
-
-        <label className="block">
-          <span className="text-[13px] font-semibold text-ink">{t("room.setup.instructions")}</span>
-          <span className="mt-1 block text-[12px] text-ink-secondary">{t("room.setup.instructionsDetail")}</span>
-          <textarea
-            value={instructions}
-            onChange={(event) => setInstructions(event.target.value)}
-            rows={5}
-            placeholder={t("room.setup.instructionsPlaceholder")}
-            className="mt-2 w-full resize-y rounded-xl border border-hairline/50 bg-inset px-3 py-2.5 text-[13px] leading-relaxed text-ink placeholder:text-ink-secondary focus:border-accent focus:outline-none"
-          />
-        </label>
-
-        {error && <div role="alert" className="rounded-xl border border-danger/30 bg-danger/10 px-3 py-2 text-[12.5px] text-danger">{error}</div>}
-        <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-between">
-          <button
-            type="button"
-            onClick={() => void finish("skip")}
-            disabled={saving}
-            className="rounded-xl px-3 py-2 text-left text-[13px] text-ink-secondary hover:bg-raised hover:text-ink disabled:opacity-50"
-          >
-            {mode === "first" ? t("room.setup.skip") : t("common.cancel")}
-          </button>
-          <button
-            type="submit"
-            disabled={saving}
-            className="flex items-center justify-center gap-2 rounded-xl bg-accent px-4 py-2.5 text-[13px] font-semibold text-accent-ink hover:brightness-110 disabled:opacity-50"
-          >
-            {saving && <Loader2 size={14} className="animate-spin" />}
-            {mode === "first" ? t("room.setup.save") : t("common.save")}
-          </button>
-        </div>
-      </form>
-    </div>
-    </div>
-  );
-  return createPortal(content, document.body);
-}
-
-export function GroupView({ group }: { group: Group }) {
-  const { state, dispatch } = useStore();
+  const directPeople = useOrgPeople();
+  const peer = peopleDmPeer(stored, viewerActorId(state.config), directPeople);
   const remoteClient = window.ogb?.remoteClient?.active === true;
   const [remoteActor, setRemoteActor] = useState<{ id: string; role: "owner" | "admin" | "member" | null }>({ id: "", role: null });
   useEffect(() => {
@@ -1204,10 +717,8 @@ export function GroupView({ group }: { group: Group }) {
     return () => window.removeEventListener("keydown", onFind);
   }, []);
 
-  const members = useMemo(
-    () => group.memberIds.map((id) => state.bots.find((b) => b.id === id)).filter((b): b is Bot => Boolean(b)),
-    [group.memberIds, state.bots],
-  );
+  // Every bot in the room, someone else's included (its public profile).
+  const members = useMemo(() => groupMemberBots(group, state.bots), [group, state.bots]);
   const orgPeople = useOrgPeople();
   const viewerEmail = state.config?.profile?.email?.trim().toLowerCase() || "";
   const viewerName = state.config?.profile?.name?.trim() || viewerEmail || "Vous";
@@ -1215,6 +726,24 @@ export function GroupView({ group }: { group: Group }) {
   // the remote client's own lookup, else the operator.
   const viewer = state.config?.viewer;
   const viewerId = viewerActorId(state.config);
+  // Organization server: only the group's owner edits its settings; the
+  // others read them and may leave (src/lib/group-owner.ts).
+  const ownsRoom = viewerOwnsGroup(group, state.config);
+  const editable = !remoteClient && ownsRoom;
+  // The working folder touches the host or sandbox filesystem: on an
+  // organization server it stays an admin's, even for the group's owner.
+  const folderEditable = group.ownerId === undefined || viewerIsOrgAdmin(state.config);
+  const viewerListed = (group.humanIds ?? []).some((id) => {
+    const entry = id.trim().toLowerCase();
+    return entry === viewerId || (Boolean(viewerEmail) && entry === viewerEmail);
+  });
+  const leaveGroup = () => {
+    const humanIds = (group.humanIds ?? []).filter((id) => {
+      const entry = id.trim().toLowerCase();
+      return entry !== viewerId && !(viewerEmail && entry === viewerEmail);
+    });
+    dispatch({ type: "patchGroup", groupId: group.id, patch: { humanIds } });
+  };
   // On an organization server each person reads as their Perspicax display
   // name with their avatar (the directory); elsewhere the stored id, as before.
   const viewerAvatar = personAvatarSrc(state.config?.profile?.avatarUrl);
@@ -1228,7 +757,7 @@ export function GroupView({ group }: { group: Group }) {
         // list knows them; otherwise the directory label (teams, user: ids).
         const row = channelHumanRow(id.replace(/^user:/, ""), orgPeople);
         const known = row.label !== row.id;
-        return { ...row, id, label: known ? row.label : groupHumanLabel(id, orgDirectory), removable: true };
+        return { ...row, id, label: known ? row.label : groupHumanLabel(id, orgDirectory), removable: ownsRoom };
       }),
   ];
   const actorId = viewer ? viewerId : remoteClient ? remoteActor.id : viewerId;
@@ -1236,13 +765,13 @@ export function GroupView({ group }: { group: Group }) {
     actorRole: viewer ? viewer.role : remoteClient ? remoteActor.role : "owner",
     actorId,
     bots: state.bots,
+    ownsRoom,
+    memberIds: group.memberIds,
   });
+  // Your own bots: a member who does not own the room still brings them in
+  // and takes them out (server/group-ownership.ts).
+  const ownBotIds = new Set(state.bots.filter((bot) => actorId !== "" && (bot.ownerUserId ?? "").trim().toLowerCase() === actorId).map((bot) => bot.id));
   const speaker = members.find((b) => b.id === group.busyBotId);
-  const setupPending = !remoteClient && roomNeedsSetup(group);
-  // Reopened from the header after the first setup; a pending setup is
-  // always shown and closes by saving or skipping.
-  const [setupOpen, setSetupOpen] = useState(false);
-  useEffect(() => setSetupOpen(false), [group.id]);
 
   // Mascot stays while a member works; the finished reply pops in above it.
   const lastGroupMessage = group.messages.at(-1);
@@ -1334,7 +863,7 @@ export function GroupView({ group }: { group: Group }) {
     followRef.current = next;
     setFollow(next);
   }, []);
-  useBottomFollowResize(scrollRef, transcriptRef, followRef, setupPending ? null : transcriptKey);
+  useBottomFollowResize(scrollRef, transcriptRef, followRef, transcriptKey);
 
   useEffect(() => setBottomFollow(true), [group.id, setBottomFollow]);
 
@@ -1453,15 +982,6 @@ export function GroupView({ group }: { group: Group }) {
     <main className="app-glow relative flex h-full min-w-0 flex-1 bg-app">
       <div className="flex min-w-0 flex-1 flex-col">
       <GroupCallOverlay group={group} members={members} />
-      {(setupPending || setupOpen) && (
-        <RoomSetupDialog
-          key={group.id}
-          group={group}
-          members={members}
-          mode={setupPending ? "first" : "edit"}
-          onClose={() => setSetupOpen(false)}
-        />
-      )}
       {membersOpen && !remoteClient && !group.dm && (
         <ManageMembersPanel group={group} onClose={closeMembers} triggerRef={membersTriggerRef} />
       )}
@@ -1481,8 +1001,8 @@ export function GroupView({ group }: { group: Group }) {
         <div className="absolute left-1/2 top-1/2 flex max-w-[50%] -translate-x-1/2 -translate-y-1/2 items-center gap-2" style={headerNoDragStyle}>
           {group.dm ? (
             <span className="flex min-w-0 items-center gap-2 rounded-full border-[0.5px] border-hairline-weak bg-elevated py-[7.5px] pl-[7.5px] pr-[13.5px]">
-              <GroupAvatarStack members={members} size={24} />
-              <span className="truncate text-[14px] font-medium leading-5 text-ink">{group.name}</span>
+              {peer ? <PersonAvatar avatarUrl={peer.avatarUrl} initials={peer.initials} size={24} /> : <GroupAvatarStack members={members} size={24} />}
+              <span className="truncate text-[14px] font-medium leading-5 text-ink">{peer?.name ?? group.name}</span>
             </span>
           ) : (
             <button
@@ -1508,8 +1028,7 @@ export function GroupView({ group }: { group: Group }) {
             messages={group.messages}
             isGroup
           />}
-          {!setupPending && !group.dm && <GroupTaskPicker group={group} />}
-          <GroupUsageChip usage={group.usage} />
+          {!group.dm && <GroupTaskPicker group={group} />}
           {group.dm && memberMauses}
           {!group.dm && !panelOpen && <button
             type="button"
@@ -1527,7 +1046,7 @@ export function GroupView({ group }: { group: Group }) {
       {findOpen && <ChatFindBar threadId={group.threadId} onClose={() => setFindOpen(false)} />}
 
       {/* An Auto room answers like lead mode while the decision model is off: say so, once. */}
-      {!setupPending && !group.dm && !remoteClient && state.config && group.defaultResponder.kind === "auto" && !jevRoomRoutingOn(state.config) && (
+      {!group.dm && !remoteClient && state.config && group.defaultResponder.kind === "auto" && !jevRoomRoutingOn(state.config) && (
         <div className="w-full px-5">
           <p data-testid="room-jev-off" className="mb-1 px-2 text-[12px] text-ink-secondary">
             {t("room.responder.jevOffHint", { name: defaultResponderName(group, members) ?? t("room.responder.leadFallback") })}{" "}
@@ -1543,7 +1062,7 @@ export function GroupView({ group }: { group: Group }) {
       )}
 
       {/* Bulletin: one pinned line; click to edit */}
-      {!setupPending && <div className="w-full px-5">
+      {!stored.peopleDm && <div className="w-full px-5">
         {bulletinOpen ? (
           <div className="mb-1 rounded-lg border border-hairline/40 bg-panel p-2">
             <textarea
@@ -1565,9 +1084,9 @@ export function GroupView({ group }: { group: Group }) {
           </div>
         ) : (
           <button
-            disabled={remoteClient}
-            onClick={() => { if (!remoteClient) setBulletinOpen(true); }}
-            className={cn("mb-1 flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left", !remoteClient && "hover:bg-raised/40")}
+            disabled={!editable}
+            onClick={() => { if (editable) setBulletinOpen(true); }}
+            className={cn("mb-1 flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left", editable && "hover:bg-raised/40")}
             title={t("room.bulletin.title")}
           >
             <Pin size={12} className="shrink-0 text-ink-secondary" />
@@ -1755,7 +1274,6 @@ export function GroupView({ group }: { group: Group }) {
         key={group.threadId}
         group={group}
         members={members}
-        locked={setupPending}
         replyTo={replyTo}
         onClearReply={clearReply}
         onConsumeReply={consumeReply}
@@ -1775,8 +1293,8 @@ export function GroupView({ group }: { group: Group }) {
           key={`panel:${group.id}`}
           group={group}
           members={members}
-          canEdit={!remoteClient}
-          onOpenSetup={() => setSetupOpen(true)}
+          canEdit={editable}
+          readOnlyNote={!remoteClient && !ownsRoom}
           details={
             <>
               <section>
@@ -1822,10 +1340,13 @@ export function GroupView({ group }: { group: Group }) {
                   part="bots"
                   humans={[]}
                   bots={group.memberIds.map((id) => {
-                    const bot = state.bots.find((item) => item.id === id);
-                    return { id, name: bot?.name || id, title: bot?.title, color: bot?.color, avatarUrl: bot?.avatarUrl, mascotBody: bot?.mascotBody };
+                    const bot = members.find((item) => item.id === id);
+                    // The owner removes any bot; anyone else only their own.
+                    const removable = ownsRoom || ownBotIds.has(id);
+                    return bot ? { ...botPublicProfile(bot), name: bot.name || id, removable } : { id, name: id, removable };
                   })}
                   {...roster}
+                  addBotLabel={ownsRoom ? undefined : "Ajouter mon robot"}
                   onRemoveBot={(id) => {
                     dispatch({ type: "patchGroup", groupId: group.id, patch: { memberIds: group.memberIds.filter((memberId) => memberId !== id) } });
                   }}
@@ -1838,7 +1359,7 @@ export function GroupView({ group }: { group: Group }) {
                     });
                   }}
                 />
-                {!remoteClient && !setupPending && (
+                {editable && (
                   <button
                     ref={membersTriggerRef}
                     type="button"
@@ -1849,19 +1370,30 @@ export function GroupView({ group }: { group: Group }) {
                   </button>
                 )}
               </section>
-              {!remoteClient && !setupPending && (
-                <section>
-                  <h3 className="mb-1.5 text-[13px] text-ink-secondary">{t("room.responder.aria")}</h3>
-                  <DefaultResponderSelect group={group} members={members} />
-                </section>
-              )}
-              {!remoteClient && !setupPending && (
-                <section>
-                  <h3 className="mb-1.5 text-[13px] text-ink-secondary">{t("room.folder.title")}</h3>
-                  <RoomWorkingFolder group={group} />
-                </section>
+              {!remoteClient && !ownsRoom && viewerListed && (
+                <button
+                  type="button"
+                  onClick={leaveGroup}
+                  className="self-start rounded-lg px-3 py-2 text-[13px] text-danger hover:bg-hover"
+                >
+                  {t("groupPanel.leave")}
+                </button>
               )}
             </>
+          }
+          advanced={
+            remoteClient ? null : (
+              <>
+                <section>
+                  <h3 className="mb-1.5 text-[13px] text-ink-secondary">{t("room.responder.aria")}</h3>
+                  <DefaultResponderSelect group={group} members={members} disabled={!ownsRoom} />
+                </section>
+                <section>
+                  <h3 className="mb-1.5 text-[13px] text-ink-secondary">{t("room.folder.title")}</h3>
+                  <RoomWorkingFolder group={group} disabled={!ownsRoom || !folderEditable} adminOnlyNote={ownsRoom && !folderEditable} />
+                </section>
+              </>
+            )
           }
         />
       )}

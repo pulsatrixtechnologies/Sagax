@@ -27,6 +27,7 @@ export function serverEnvironmentStateText(status: ServerEnvironmentStatus | nul
   switch (status.state) {
     case "running": return t("serverEnvironment.running");
     case "stopped": return t("serverEnvironment.stopped");
+    case "paused": return t("serverEnvironment.paused");
     case "missing": return t("serverEnvironment.missing");
     default: return t("serverEnvironment.unavailable");
   }
@@ -102,6 +103,14 @@ export function MyServerEnvironment({
               ) : null}
             </dl>
             <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                className="ui-button min-h-[44px] md:min-h-0"
+                disabled={Boolean(status.pendingDeletionAt) || status.state === "unavailable"}
+                onClick={() => { window.open(`/desktop-viewer#${new URLSearchParams({ target: "sandbox/me" })}`, "_blank", "noopener"); }}
+              >
+                {t("sandboxDesktop.show")}
+              </button>
               <button
                 type="button"
                 className="ui-button min-h-[44px] text-danger md:min-h-0"

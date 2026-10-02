@@ -16,7 +16,8 @@ import { usePushToTalk } from "@/lib/push-to-talk";
 import { useStore, type Bot, type Group, type Message } from "@/state/store";
 import { cn } from "@/lib/cn";
 import { BotAvatar } from "./Avatar";
-import { CallTargetButton } from "./CallView";
+import { CallTargetButton, useOrganizationCall } from "./CallView";
+import { VoiceModeCallButton } from "./voice-mode/VoiceModeCallButton";
 import { isRoutineApproval, isSkillApproval, pendingApprovals, spokenApprovalPrompt } from "./PendingApproval";
 
 const YES = /^(yes|yeah|yep|yup|sure|ok|okay|go ahead|do it|allow|approve|approved|fine|please do)\b/i;
@@ -26,7 +27,12 @@ const CALL_ENDPOINT_MS = 850;
 type Phase = "listening" | "sending" | "working" | "speaking";
 
 export function GroupCallButton({ group, members }: { group: Group; members: Bot[] }) {
+  // a room on an organization server: voice mode talks to one bot at a time
+  const organization = useOrganizationCall();
   if (group.dm) return null;
+  if (organization) {
+    return <VoiceModeCallButton targetId={group.id} targetName={group.name} group onStart={() => {}} />;
+  }
   return (
     <CallTargetButton
       targetId={group.id}
@@ -110,7 +116,7 @@ function GroupCall({ group, members }: { group: Group; members: Bot[] }) {
   }, []);
 
   const hush = useCallback(() => {
-    void window.ogb?.speechStop();
+    void window.ogb?.speechStop?.();
   }, []);
 
   const listen = useCallback(() => {
@@ -119,7 +125,7 @@ function GroupCall({ group, members }: { group: Group; members: Bot[] }) {
     setSpeakingMemberId(null);
     setHeard("");
     setNote(null);
-    void window.ogb?.speechStart({ endpointMs: CALL_ENDPOINT_MS }).catch(() => {
+    void window.ogb?.speechStart?.({ endpointMs: CALL_ENDPOINT_MS }).catch(() => {
       if (alive.current && currentCall() === group.id) {
         setNote("The microphone couldn't start. Check Microphone and Speech Recognition access.");
       }
@@ -324,7 +330,7 @@ function GroupCall({ group, members }: { group: Group; members: Bot[] }) {
     return () => {
       offTranscript();
       offEnd();
-      void window.ogb?.speechStop();
+      void window.ogb?.speechStop?.();
     };
     // Live busy/card changes are handled below without restarting native capture.
     // eslint-disable-next-line react-hooks/exhaustive-deps

@@ -4,23 +4,26 @@
 // (read-only: the speaker's subscription, their key, then the organization's
 // key; the org key switch was retired on 2026-10-01), and, for admins, the
 // server commands waiting for an admin.
-// Slice 4 adds My engines (for everyone) and Sharing in the organization
-// (the bots whose sharing the viewer administers); slice 6 adds Routines in
-// my name (the routine delegation).
+// Slice 4 adds Sharing in the organization (the bots whose sharing the
+// viewer administers; an admin can force-stop or force-delete any of them);
+// slice 6 adds Routines in my name (the routine delegation, allowed by
+// default and revoked in Perspicax: a read-only status here).
+// Since 2026-10-01 a person's own engine sign-in (My engines) lives in
+// Settings > Model providers, and "Bring bots from a solo Sagax" is hidden
+// (the desktop's join flow still copies bots through POST /api/org/import).
 // People, teams and invitations live in Perspicax, never here.
 import { useEffect, useState } from "react";
 import { ExternalLink } from "lucide-react";
 
 import { activeLocale, t } from "@/lib/i18n";
 import type { PerspicaxOrg } from "@/lib/perspicax-org";
-import { api, useStore } from "@/state/store";
+import { api } from "@/state/store";
 import { Card } from "./SettingsPrimitives";
-import { MyEngines } from "./settings/MyEngines";
 import { MyRoutineDelegation } from "./settings/MyRoutineDelegation";
 import { MyServerEnvironment } from "./settings/MyServerEnvironment";
 import { OrgSharing } from "./settings/OrgSharing";
-import { OrgImportDialog } from "./OrgImportDialog";
 import { InterimPeople } from "./settings/InterimPeople";
+import { BotWorkplaceSettings } from "./settings/BotWorkplaceSettings";
 
 interface PendingAdminApproval {
   botId: string;
@@ -54,13 +57,10 @@ export function PerspicaxOrgSettings({ org, onChanged }: { org: PerspicaxOrg; on
   const admin = org.viewerRole === "admin";
   const [approvals, setApprovals] = useState<PendingAdminApproval[] | null>(null);
   const [answering, setAnswering] = useState<string | null>(null);
-  const [importing, setImporting] = useState(false);
   const interim = org.settings.interimAttach;
   const [interimShown, setInterimShown] = useState(false);
   const interimVisible = showInterimCard(admin, interim, interimShown);
   useEffect(() => { if (interimVisible) setInterimShown(true); }, [interimVisible]);
-  const { state: store } = useStore();
-  const canCreateBots = store.config?.viewer?.canCreateBots !== false;
 
   const loadApprovals = async () => {
     if (!admin) return;
@@ -118,20 +118,11 @@ export function PerspicaxOrgSettings({ org, onChanged }: { org: PerspicaxOrg; on
           </div>
         </div>
       </Card>
-      {canCreateBots && (
-        <Card cardId="organization.orgImport" title={t("orgImport.title")} summary={t("orgImport.summary")}>
-          <div className="flex flex-col gap-2 text-[13px]">
-            <p className="text-ink-secondary">{t("orgImport.intro")}</p>
-            <button type="button" className="ui-button w-fit" onClick={() => setImporting(true)}>{t("orgImport.choose")}</button>
-          </div>
-        </Card>
-      )}
-      {importing && <OrgImportDialog onClose={() => setImporting(false)} />}
       {interimVisible && interim?.until ? <InterimPeople until={interim.until} onChanged={onChanged} /> : null}
-      <MyEngines issuer={org.org.identity.issuer} />
-      <MyRoutineDelegation />
+      <MyRoutineDelegation issuer={org.org.identity.issuer} />
+      <BotWorkplaceSettings />
       <MyServerEnvironment />
-      <OrgSharing />
+      <OrgSharing admin={admin} />
       {admin && (
         <Card cardId="organization.adminApprovals" title={t("organization.adminApprovals.title")} summary={approvals?.length ? String(approvals.length) : ""}>
           {!approvals?.length ? (

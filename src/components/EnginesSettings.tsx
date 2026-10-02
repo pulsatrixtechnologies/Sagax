@@ -17,6 +17,10 @@ import { EngineSetup, EngineUpdateNotice, EngineWarningNotice } from "./EngineSe
 import { AddClaudeAccount, ClaudeAccountSettings } from "./ClaudeAccountSettings";
 import { AddChatGptAccount, CodexAccountSettings } from "./CodexAccountSettings";
 import { AntigravityFreeSpace } from "./AntigravityFreeSpace";
+import { MyEngines } from "./settings/MyEngines";
+import { HarnessConnectorsSection } from "./HarnessConnectorsSection";
+import { usePerspicaxOrg } from "@/lib/perspicax-org";
+import { connectedAppsEnabled } from "@/lib/feature-flags";
 
 interface ProbeResult {
   ok: boolean;
@@ -354,6 +358,9 @@ export function EnginesSettings() {
   // neither unless an override was set. Including them keeps a Reset-able row
   // (and a Set CLI… path) for engines the running build doesn't recognize.
   const rows = state.instances.filter((i) => i.readOnly || i.cli !== undefined || i.cliDefault !== undefined || i.snapshot.state === "unavailable");
+  // On an organization server each person signs in their own subscription
+  // here (it was Settings > Organization > My engines), never the server's.
+  const org = usePerspicaxOrg();
 
   return (
     <div className="flex min-w-0 flex-col gap-6 pb-2">
@@ -364,6 +371,11 @@ export function EnginesSettings() {
         </div>
         <RefreshEngines />
       </div>
+      {org && <MyEngines issuer={org.org.identity.issuer} />}
+      {/* The claude.ai connectors of the person's own Claude account live in
+          Connected apps; while that experiment is off, their read-only
+          status shows here, next to the Claude sign-in that brings them. */}
+      {!connectedAppsEnabled(state.config) && <HarnessConnectorsSection placement="settings" />}
       <EngineSections instances={rows} renderEngine={(instance) => <EngineRow instance={instance} />} />
       <div className="space-y-3 border-t border-hairline/40 pt-4">
         <AddClaudeAccount />

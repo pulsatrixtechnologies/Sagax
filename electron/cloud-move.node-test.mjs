@@ -296,7 +296,7 @@ const LOCAL = "http://127.0.0.1:48993";
 function preload({ remote = false, activation = false } = {}) {
   let bridge; const invoked = [];
   vm.runInNewContext(readFileSync(new URL("./preload.cjs", import.meta.url), "utf8"), {
-    process: { platform: "darwin", argv: [`--omb-local-origin=${LOCAL}`, "--omb-company-desktop=1"] },
+    process: { platform: "darwin", argv: [`--omb-local-origin=${LOCAL}`, "--omb-company-desktop=1", "--sagax-cloud=1"] },
     location: { origin: remote ? ORIGIN : LOCAL }, navigator: { userActivation: { isActive: activation } },
     TextEncoder, localStorage: { getItem: () => null },
     require: () => ({ webUtils: {}, contextBridge: { exposeInMainWorld: (_name, value) => { bridge = value; } },

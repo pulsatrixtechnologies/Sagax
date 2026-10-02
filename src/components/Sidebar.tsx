@@ -35,17 +35,21 @@ import {
 import { api, useStore, formatTime, visibleMessages, currentTaskBot, type AppState, type Bot, type Group } from "@/state/store";
 
 import { peerLine } from "@/lib/peer-message";
+import { viewerMayDeleteGroup, viewerOwnsGroup } from "@/lib/group-owner";
 import { viewerActorId } from "@/lib/viewer";
 import { liveActivityLabel } from "@/lib/live-activity";
-import { llmThreadTitlesEnabled } from "@/lib/feature-flags";
+import { connectedAppsEnabled, llmThreadTitlesEnabled, templatesEnabled } from "@/lib/feature-flags";
 
 import { BotAvatar, InitialsAvatar } from "./Avatar";
 import { stateForBot } from "@/lib/mascot";
 import { cn } from "@/lib/cn";
+import { CIRCLE_BUTTON } from "@/lib/circle-button";
 import { useHeldMenuMotion } from "./MenuMotion";
 import { lastNonReceipt } from "@/lib/receipts";
 import { t } from "@/lib/i18n";
-import { usePerspicaxOrg, type OrgSection } from "@/lib/perspicax-org";
+import { useOrgPeople, usePerspicaxOrg, type OrgSection } from "@/lib/perspicax-org";
+import { peopleDmPeer } from "@/lib/people-dm";
+import { PersonAvatar } from "./MessageAuthor";
 import { OrgSectionMenuItems, SectionNameInput, orgSectionMenuItems, type OrgSectionMenuActions } from "./OrgSectionMenu";
 import { SectionMembersDialog } from "./SectionMembersDialog";
 import { isRoutineProblemRun } from "@/lib/routines";
@@ -111,6 +115,7 @@ import { useShowThreads } from "@/lib/thread-preferences";
 import { botShowsUnread } from "@/lib/bot-unread";
 import { SidebarBotActivity, sidebarBotActivityTasks } from "./SidebarBotActivity";
 import { citationPreviewText } from "@/lib/citations";
+import { groupMemberBots } from "@/lib/group-members";
 
 
 
@@ -124,10 +129,19 @@ const SIDEBAR_DEFAULT_WIDTH = 280;
  * a touch larger so the 18px glyphs keep the rail's weight. */
 const SIDEBAR_ICON_BUTTON = "flex size-8 items-center justify-center rounded-lg text-sidebar-ink-secondary transition-colors hover:bg-sidebar-hover hover:text-sidebar-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60";
 
-/** The palette chord as this platform spells it, for the search field. */
-function paletteShortcutKeys(): string[] {
+/** The head's round search button: the header's 36px circle (share, panel),
+ * in the sidebar's own ink, with the same focus ring as its neighbours. */
+const SIDEBAR_SEARCH_BUTTON = cn(
+  CIRCLE_BUTTON,
+  "text-sidebar-ink-secondary hover:text-sidebar-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60",
+);
+
+/** The palette chord as this platform spells it: "⌘K" on macOS, "Ctrl+K"
+ * on Windows and Linux, for the search button's tooltip. */
+export function paletteShortcutLabel(isMac: boolean = isMacPlatform()): string {
   const item = SHORTCUT_GROUPS.flatMap((group) => group.items).find((entry) => entry.id === "command-palette");
-  return item ? shortcutKeysForPlatform(item) : ["⌘", "K"];
+  const keys = item ? shortcutKeysForPlatform(item, isMac) : isMac ? ["⌘", "K"] : ["Ctrl", "K"];
+  return keys.join(isMac ? "" : "+");
 }
 
 /** Fade the list's edges the way Grok Bot does: the top 28px once there is
@@ -284,10 +298,12 @@ export function GroupListItem({
   // quiet rows keep the line only while the room reports work in progress
   const groupStatus = Boolean(group.busyBotId) || Boolean(group.working);
   const roomBusy = groupStatus;
-  const members = group.memberIds
-    .map((id) => state.bots.find((b) => b.id === id))
-    .filter((b): b is Bot => Boolean(b));
+  const members = groupMemberBots(group, state.bots);
   const last = group.messages.at(-1);
+  // A direct conversation with a person reads as that person.
+  const orgPeople = useOrgPeople();
+  const peer = peopleDmPeer(group, viewerActorId(state.config), orgPeople);
+  const rowName = peer?.name ?? group.name;
   return (
     <>
     <div className="group relative">
@@ -298,13 +314,13 @@ export function GroupListItem({
       onClick={() => dispatch({ type: "select", id: group.id })}
       onContextMenu={(e) => {
         e.preventDefault();
-        onMenu({ groupId: group.id, x: e.clientX, y: e.clientY });
+        if (!peer) onMenu({ groupId: group.id, x: e.clientX, y: e.clientY });
       }}
       // the menu must be reachable without a pointer: Shift+F10, and the
       // dedicated ContextMenu key (whose native event carries no useful
       // coordinates) both open it centered on the row
       onKeyDown={(e) => {
-        if (e.key !== "ContextMenu" && !(e.shiftKey && e.key === "F10")) return;
+        if (peer || (e.key !== "ContextMenu" && !(e.shiftKey && e.key === "F10"))) return;
         e.preventDefault();
         const rect = e.currentTarget.getBoundingClientRect();
         onMenu({ groupId: group.id, x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 });
@@ -317,13 +333,16 @@ export function GroupListItem({
         density !== "icons" && (showThreads ? "pl-6" : "pl-2"),
         selected && !expanded ? "bg-sidebar-selected" : "hover:bg-sidebar-hover",
       )}
-      title={density === "icons" ? group.name : undefined}
-      aria-label={density === "icons" ? group.name : undefined}
+      title={density === "icons" ? rowName : undefined}
+      aria-label={density === "icons" ? rowName : undefined}
+      data-people-dm={peer ? peer.id : undefined}
     >
-      <StackedMauses members={members} density={density} />
+      {peer
+        ? <span className={cn("flex shrink-0 items-center justify-center", density === "icons" ? "size-12" : density === "compact" ? "size-7" : "size-9")}><PersonAvatar avatarUrl={peer.avatarUrl} initials={peer.initials} size={density === "icons" ? 44 : density === "compact" ? 28 : 36} /></span>
+        : <StackedMauses members={members} density={density} />}
       <div className={cn("min-w-0 flex-1", density === "icons" && "hidden")}>
         <div className="flex items-baseline justify-between gap-2">
-          <span className={cn("truncate text-[14px] leading-5 text-sidebar-ink", selected && !expanded ? "font-semibold" : "font-medium")}>{group.name}</span>
+          <span className={cn("truncate text-[14px] leading-5 text-sidebar-ink", selected && !expanded ? "font-semibold" : "font-medium")}>{rowName}</span>
           {selected && last && !expanded && <span className="shrink-0 text-[12px] leading-4 text-sidebar-ink-secondary">{formatTime(last.at)}</span>}
           {(expanded || (quiet && !groupStatus)) && group.unread && <span className="size-1.5 shrink-0 rounded-full bg-accent" aria-label={t("task.unreadMany")} />}
         </div>
@@ -340,7 +359,7 @@ export function GroupListItem({
       onClick={() => setThreadsOpen((open) => !open)} className="absolute left-0.5 top-1/2 flex size-5 -translate-y-1/2 items-center justify-center rounded text-sidebar-ink-secondary outline-none hover:text-sidebar-ink focus-visible:ring-1 focus-visible:ring-accent/60">
       <ChevronRight aria-hidden="true" size={12} className={cn("transition-transform", expanded && "rotate-90")} />
     </button>}
-    {!group.dm && density !== "icons" && <button type="button" disabled={roomBusy} aria-label={t("task.newShort")} title={t(roomBusy ? "task.newBusy" : "task.newShort")}
+    {!group.dm && !group.peopleDm && density !== "icons" && <button type="button" disabled={roomBusy} aria-label={t("task.newShort")} title={t(roomBusy ? "task.newBusy" : "task.newShort")}
       onClick={() => { setThreadsOpen(true); dispatch({ type: "newGroupTask", groupId: group.id }); }}
       className="pointer-events-none absolute right-1 top-1/2 flex size-7 -translate-y-1/2 items-center justify-center rounded text-sidebar-ink-secondary opacity-0 hover:bg-sidebar-hover hover:text-sidebar-ink disabled:opacity-40 group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100 max-md:pointer-events-auto max-md:opacity-70 touch:pointer-events-auto touch:opacity-70 touch:disabled:opacity-40"><Plus size={14} /></button>}
     </div>
@@ -440,6 +459,8 @@ function RoomContextMenu({
 
   if (!motion.shown || !group || !shown) return null;
   const isBotChat = Boolean(group.dm);
+  const ownsRoom = viewerOwnsGroup(group, state.config);
+  const mayDelete = viewerMayDeleteGroup(group, state.config);
   const saveRename = () => {
     const name = nextRename(group.name, draft);
     if (name) dispatch({ type: "patchGroup", groupId: group.id, patch: { name } });
@@ -454,7 +475,7 @@ function RoomContextMenu({
       style={{ top, left }}
       className={cn("fixed z-40 w-[228px] min-w-[200px] overflow-hidden rounded-xl border-[0.5px] border-border bg-elevated p-1.5 flex flex-col gap-0.5 text-[13px] leading-[18px]", motion.className)} {...motion.exitProps}
     >
-      {!remoteClient && (renaming ? (
+      {!remoteClient && ownsRoom && (renaming ? (
         <div className="flex items-center gap-1 px-0.5 py-0.5">
           <input
             autoFocus
@@ -528,7 +549,7 @@ function RoomContextMenu({
         <ClipboardCopy size={16} className="text-ink" />
         {t("sidebar.copyConversationId")}
       </button>
-      {!remoteClient && <button
+      {!remoteClient && mayDelete && <button
         onClick={() => {
           onClose();
           onDelete(group.id);
@@ -1849,7 +1870,7 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
     text: string;
     restoreBot?: { id: string; name: string };
   } | null>(null);
-  const paletteKeys = paletteShortcutKeys();
+  const searchTitle = `${t("sidebar.search")} (${paletteShortcutLabel()})`;
   // null on 404 and on any other failure, so the roster stays.
   // Chosen in Settings > Appearance or with the collapse button; one store.
   const density = useSidebarDensity();
@@ -2005,7 +2026,7 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
     ...sectionedRooms.map((group) => group.section!),
   ])];
   const teamOrder = (key: string) => key === "" ? -1 : teamNames.includes(key) ? teamNames.indexOf(key) : teamNames.length;
-  const teamMap = buildTeamMapSections(matchingBots, teamNames)
+  const teamMap = buildTeamMapSections(matchingBots, teamNames, { general: unsectionedRooms.length > 0 })
     .sort((a, b) => teamOrder(a.key) - teamOrder(b.key))
     .filter((team) => {
       if (team.key) return true;
@@ -2113,14 +2134,16 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
       attention: routineAttention,
       onSelect: () => dispatch({ type: "showRoutines" }),
     },
-    {
+    // Connected apps is experimental (Settings > Experimental features).
+    ...(connectedAppsEnabled(state.config) ? [{
       key: "plugins",
       tourId: "nav-apps",
       label: t("sidebar.nav.connectedApps"),
       icon: Puzzle,
       onSelect: () => dispatch({ type: "togglePlugins", open: true }),
-    },
-    ...(!remoteClient ? [{
+    }] : []),
+    // Experimental: hidden until Settings > Experimental features turns it on.
+    ...(!remoteClient && templatesEnabled(state.config) ? [{
       key: "templates",
       label: t("sidebar.teamLibrary"),
       icon: Library,
@@ -2157,8 +2180,8 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
       )}
     >
       {/* The head, like Perspicax's: the brand row (the Pulsatrix mark and the name, then
-          New and the collapse button) and a full-width search field that
-          opens the command palette. macOS owns inset traffic lights above the
+          the round search button that opens the command palette, New and the
+          collapse button). macOS owns inset traffic lights above the
           brand row; the whole head is the window's drag handle there and on
           Windows, with every control opted out. */}
       <div data-sidebar-head style={windowDragStyle} className="shrink-0">
@@ -2187,13 +2210,14 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
             </button>
             <button
               type="button"
+              data-sidebar-search
               onClick={openCommandPalette}
               aria-label={t("sidebar.searchAria")}
               aria-keyshortcuts={isMacPlatform() ? "Meta+K" : "Control+K"}
-              title={`${t("sidebar.searchAria")} (${paletteKeys.join(" ")})`}
-              className={SIDEBAR_ICON_BUTTON}
+              title={searchTitle}
+              className={SIDEBAR_SEARCH_BUTTON}
             >
-              <Search size={18} strokeWidth={1.75} />
+              <Search size={16} strokeWidth={1.75} aria-hidden="true" />
             </button>
             <button
               ref={importReturnRef}
@@ -2216,6 +2240,17 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
               </span>
               <span className="flex shrink-0 items-center gap-0.5" style={windowNoDragStyle}>
                 <button
+                  type="button"
+                  data-sidebar-search
+                  onClick={openCommandPalette}
+                  aria-label={t("sidebar.searchAria")}
+                  aria-keyshortcuts={isMacPlatform() ? "Meta+K" : "Control+K"}
+                  title={searchTitle}
+                  className={cn(SIDEBAR_SEARCH_BUTTON, "mr-1")}
+                >
+                  <Search size={16} strokeWidth={1.75} aria-hidden="true" />
+                </button>
+                <button
                   ref={importReturnRef}
                   type="button"
                   onClick={() => onCompose?.()}
@@ -2237,26 +2272,6 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
                   <PanelLeftClose size={18} strokeWidth={1.75} />
                 </button>
               </span>
-            </div>
-            <div className="pb-2 pl-2 pr-3 pt-1.5" style={windowNoDragStyle}>
-              {/* Looks like a field, opens the palette: bots, rooms and
-                  transcript hits live there, the same place ⌘K goes. */}
-              <button
-                type="button"
-                data-sidebar-search
-                onClick={openCommandPalette}
-                aria-label={t("sidebar.searchAria")}
-                aria-keyshortcuts={isMacPlatform() ? "Meta+K" : "Control+K"}
-                className="flex h-8 w-full items-center gap-2 rounded-lg border border-sidebar-hairline bg-sidebar-hover pl-2.5 pr-1.5 text-left text-sidebar-ink-secondary transition-colors hover:border-sidebar-ink-secondary/50 hover:text-sidebar-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
-              >
-                <Search size={14} strokeWidth={2} className="shrink-0" aria-hidden="true" />
-                <span className="min-w-0 flex-1 truncate text-[13px] leading-5">{t("sidebar.searchPlaceholder")}</span>
-                <span className="flex shrink-0 items-center gap-0.5" aria-hidden="true">
-                  {paletteKeys.map((key) => (
-                    <kbd key={key} className="flex h-4 min-w-4 items-center justify-center rounded-[5px] border border-sidebar-hairline bg-sidebar-hover px-1 font-sans text-[11px] leading-none text-sidebar-ink-secondary">{key}</kbd>
-                  ))}
-                </span>
-              </button>
             </div>
           </>
         )}

@@ -404,8 +404,8 @@ describe("independent bot tasks through the isolated control surface", () => {
     const botId = created.bot.id;
     const threadId = created.bot.activeTaskId;
     const group = (await api("POST", "/api/groups", { name: "Captured Group provider", memberIds: [botId] })).body.group;
-    expect((await api("PATCH", `/api/groups/${group.id}/setup`, {
-      action: "complete", cwd: null, bulletin: "", defaultResponder: { kind: "member", botId },
+    expect((await api("PATCH", `/api/groups/${group.id}`, {
+      defaultResponder: { kind: "member", botId },
     })).status).toBe(200);
     expect((await api("POST", `/api/groups/${group.id}/messages`, { text: "GROUP_MODEL_OWNER" })).status).toBe(202);
     await dump(models[0]);

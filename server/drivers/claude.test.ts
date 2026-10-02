@@ -529,6 +529,32 @@ describe("ClaudeDriver turns (fake CLI)", () => {
     }
   });
 
+  it("lists its slash commands in the turn's folder and isolation without a model call", async () => {
+    await create();
+    const commands = join(scratch, "commands.json");
+    const fixture = JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.url)), "..", "..", "shared", "fixtures", "claude-initialize-commands.json"), "utf8"));
+    writeFileSync(commands, JSON.stringify(fixture.response.response.commands));
+    const dump = join(scratch, "commands-dump.json");
+    const prompts = join(scratch, "prompts.jsonl");
+    process.env.FAKE_CLAUDE_COMMANDS = commands;
+    process.env.FAKE_CLAUDE_COMMANDS_DUMP = dump;
+    process.env.FAKE_CLAUDE_PROMPTS = prompts;
+    try {
+      const listed = await instance.listCommands?.({ cwd: scratch, botId: "b1" }) ?? [];
+      expect(listed.map((command) => command.name)).toContain("pulsatrix-flow:using-px-flow");
+      expect(listed.find((command) => command.name === "mcp__github__review_pr")?.group).toBe("mcp");
+      const seen = JSON.parse(readFileSync(dump, "utf8")) as { argv: string[]; cwd: string };
+      expect(realpathSync(seen.cwd)).toBe(realpathSync(scratch));
+      expect(seen.argv).toEqual(expect.arrayContaining(["-p", "--input-format", "stream-json", "--strict-mcp-config", "--setting-sources", "project"]));
+      expect(seen.argv).not.toContain("--model");
+      // no user message, so no turn and no model call
+      expect(existsSync(prompts)).toBe(false);
+    } finally {
+      delete process.env.FAKE_CLAUDE_COMMANDS;
+      delete process.env.FAKE_CLAUDE_COMMANDS_DUMP;
+    }
+  });
+
   it("normalizes a full turn into the canonical event sequence", async () => {
     await create();
     const { turnId } = await instance.adapter.sendTurn({ threadId: "t-happy", text: "hi", model: "claude-sonnet-5" });

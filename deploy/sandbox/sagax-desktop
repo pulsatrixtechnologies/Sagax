@@ -1,0 +1,170 @@
+#!/bin/bash
+# sagax-desktop: the on-demand desktop of a Sagax server environment
+# (docs/user-sandbox.md, "Desktop"). Nothing runs until a computer-use tool or
+# the person's live view asks for it, so plain shell turns stay light.
+#
+#   sagax-desktop start            start Xvnc, openbox (idempotent); with
+#                                  SAGAX_VNC_FULL and SAGAX_VNC_VIEW set, also
+#                                  replace the two VNC passwords
+#   sagax-desktop status           "running" or "stopped"
+#   sagax-desktop screenshot       JPEG of the screen, base64 on stdout
+#   sagax-desktop xdotool ARGS...  run xdotool on the desktop (fixed argv)
+#   sagax-desktop type             type $SAGAX_TEXT
+#   sagax-desktop open-url         open $SAGAX_URL in Chromium
+#   sagax-desktop relay            stdin/stdout <-> the VNC port (the live
+#                                  view's only path in: sandboxd attaches to
+#                                  this through docker exec)
+#
+# The VNC server listens on 127.0.0.1 inside this sandbox's own network
+# namespace only, and asks for a password: the full one controls the screen,
+# the view-only one only watches.
+set -euo pipefail
+
+export DISPLAY=:1
+STATE=/tmp/sagax-desktop
+RFB_PORT=5901
+WIDTH=1280
+HEIGHT=800
+
+log() { printf '%s\n' "$*" >&2; }
+
+running() {
+  pgrep -u "$(id -u)" -x Xvnc >/dev/null 2>&1 && [ -S /tmp/.X11-unix/X1 ]
+}
+
+random_password() {
+  # VNC authentication uses at most 8 characters.
+  head -c 64 /dev/urandom | tr -dc 'A-Za-z0-9' | head -c 8
+}
+
+write_passwords() {
+  local full="$1" view="$2"
+  mkdir -p "$STATE"
+  chmod 0700 "$STATE"
+  umask 077
+  printf '%s\n%s\n' "$full" "$view" | vncpasswd -f > "$STATE/passwd.new"
+  mv -f "$STATE/passwd.new" "$STATE/passwd"
+}
+
+start() {
+  mkdir -p "$STATE" /tmp/.X11-unix
+  chmod 0700 "$STATE"
+  chmod 1777 /tmp/.X11-unix 2>/dev/null || true
+  if [ -n "${SAGAX_VNC_FULL:-}" ] && [ -n "${SAGAX_VNC_VIEW:-}" ]; then
+    write_passwords "$SAGAX_VNC_FULL" "$SAGAX_VNC_VIEW"
+  elif [ ! -s "$STATE/passwd" ]; then
+    write_passwords "$(random_password)" "$(random_password)"
+  fi
+  if running; then
+    echo running
+    return 0
+  fi
+  rm -f /tmp/.X11-unix/X1 /tmp/.X1-lock
+  setsid Xvnc :1 \
+    -geometry "${WIDTH}x${HEIGHT}" -depth 24 \
+    -rfbport "$RFB_PORT" -localhost -interface 127.0.0.1 \
+    -nolisten tcp -SecurityTypes VncAuth -rfbauth "$STATE/passwd" \
+    -AlwaysShared -AcceptSetDesktopSize=0 \
+    >"$STATE/xvnc.log" 2>&1 </dev/null &
+  for _ in $(seq 1 50); do
+    if [ -S /tmp/.X11-unix/X1 ] && xdotool getdisplaygeometry >/dev/null 2>&1; then break; fi
+    sleep 0.1
+  done
+  if ! running; then
+    log "the desktop did not start"
+    tail -n 20 "$STATE/xvnc.log" >&2 || true
+    exit 1
+  fi
+  setsid openbox --sm-disable >"$STATE/openbox.log" 2>&1 </dev/null &
+  sleep 0.3
+  echo running
+}
+
+chromium_running() {
+  pgrep -u "$(id -u)" -f -- '--class=sagax-desktop-browser' >/dev/null 2>&1
+}
+
+browser() {
+  mkdir -p /workspace/.sagax
+  setsid chromium \
+    --class=sagax-desktop-browser \
+    --user-data-dir=/workspace/.sagax/chromium \
+    --no-sandbox --test-type --disable-dev-shm-usage --disable-gpu \
+    --no-first-run --no-default-browser-check --password-store=basic \
+    --disk-cache-dir=/tmp/sagax-desktop/chromium-cache --disk-cache-size=67108864 \
+    --window-position=0,0 --window-size="${WIDTH},${HEIGHT}" \
+    "$@" >"$STATE/chromium.log" 2>&1 </dev/null &
+}
+
+case "${1:-}" in
+  start)
+    start
+    ;;
+  status)
+    if running; then echo running; else echo stopped; fi
+    ;;
+  screenshot)
+    start >/dev/null
+    rm -f "$STATE/shot.jpg"
+    scrot -o -q 70 "$STATE/shot.jpg" >/dev/null 2>&1
+    base64 -w0 "$STATE/shot.jpg"
+    rm -f "$STATE/shot.jpg"
+    ;;
+  xdotool)
+    shift
+    start >/dev/null
+    exec xdotool "$@"
+    ;;
+  type)
+    start >/dev/null
+    exec xdotool type --clearmodifiers --delay 8 -- "${SAGAX_TEXT:-}"
+    ;;
+  open-url)
+    start >/dev/null
+    case "${SAGAX_URL:-}" in
+      http://*|https://*) ;;
+      *) log "only http and https addresses"; exit 2 ;;
+    esac
+    browser "$SAGAX_URL"
+    echo opened
+    ;;
+  browser|terminal|files)
+    start >/dev/null
+    case "$1" in
+      browser) browser ;;
+      terminal) setsid xterm -fa 'DejaVu Sans Mono' -fs 11 >/dev/null 2>&1 </dev/null & ;;
+      files) setsid pcmanfm /workspace >/dev/null 2>&1 </dev/null & ;;
+    esac
+    echo opened
+    ;;
+  relay)
+    running || { log "the desktop is not running"; exit 3; }
+    exec python3 -c '
+import os, socket, sys, threading
+sock = socket.create_connection(("127.0.0.1", int(sys.argv[1])), timeout=10)
+sock.settimeout(None)
+def upstream():
+    try:
+        while True:
+            data = os.read(0, 65536)
+            if not data:
+                break
+            sock.sendall(data)
+    finally:
+        try: sock.shutdown(socket.SHUT_WR)
+        except OSError: pass
+threading.Thread(target=upstream, daemon=True).start()
+out = sys.stdout.buffer
+while True:
+    data = sock.recv(65536)
+    if not data:
+        break
+    out.write(data)
+    out.flush()
+' "$RFB_PORT"
+    ;;
+  *)
+    log "usage: sagax-desktop start|status|screenshot|xdotool ARGS|type|open-url|browser|terminal|files|relay"
+    exit 2
+    ;;
+esac

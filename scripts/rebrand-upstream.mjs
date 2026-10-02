@@ -61,6 +61,12 @@ const SKIP_EXACT = new Set([
   "Dockerfile",
   "server/fleet.ts",
   "server/fleet.test.ts",
+  // the upstream block list and its checker name the old hosts on purpose
+  "electron/upstream-hosts.mjs",
+  "electron/upstream-hosts.d.mts",
+  "electron/upstream-hosts.node-test.mjs",
+  "scripts/check-no-phone-home.mjs",
+  "electron/no-phone-home.node-test.mjs",
   "server/fleet-cli.ts",
   "server/fleet-cli.test.ts",
   "server/fleet-cli-filesystem.test.ts",
@@ -125,6 +131,7 @@ const PROTECT = [
   re(`OpenMausBot(?: project| contributors| releases?\\b| version| Enterprise License|\\. The original)`),
   re(`Milind Soni and OpenMausBot`),
   re(`base stays OpenMausBot`),
+  re(`existing \`~/\\.${OLD}\``),
   re(`(?:originally published as|Not use the) OpenMausBot`),
   // lines that name the old spellings on purpose (where a value came from)
   re(`[^\\n]*(?:\\b[Oo]ld names?\\b|\\bor an old\\b|\\bthe old\\b|\\(or OMB_|moves? (?:from )?~/\\.${OLD}|Based on OpenMausBot|OpenMausBot \\(upstream\\)|"old-name")[^\\n]*`),

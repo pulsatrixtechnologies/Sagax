@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
-import { ChevronLeft, ChevronRight, Clipboard, Keyboard, Maximize, Minimize, Monitor, RefreshCw, Send, X, type LucideIcon } from "lucide-react";
+import { ChevronLeft, ChevronRight, Clipboard, Hand, Keyboard, Maximize, Minimize, Monitor, RefreshCw, Send, X, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/cn";
 import RFB from "@novnc/novnc";
 import { t } from "@/lib/i18n";
@@ -35,6 +35,15 @@ export function DesktopViewer() {
   const params = new URLSearchParams(hash.slice(1));
   const target = params.get("target");
   const threadId = params.get("threadId");
+  // The person's own server environment desktop: read-only unless they take
+  // control (the server hands the view-only VNC password by default).
+  const sandbox = target === "sandbox/me";
+  const control = sandbox && params.get("control") === "1";
+  const setControl = (value: boolean) => {
+    const next = new URLSearchParams(params);
+    if (value) next.set("control", "1"); else next.delete("control");
+    location.hash = next.toString();
+  };
 
   useEffect(() => {
     setClipboard("");
@@ -51,7 +60,7 @@ export function DesktopViewer() {
     setConnection("connecting");
     const connect = async () => {
       try {
-        if (!target || !/^(local\/(shared|bot-[a-f0-9]{64}|pool-\d+)|vps\/[\w-]+)$/.test(target)) return setConnection("invalid");
+        if (!target || !/^(local\/(shared|bot-[a-f0-9]{64}|pool-\d+)|vps\/[\w-]+|sandbox\/me)$/.test(target)) return setConnection("invalid");
         const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(30_000)]);
         if (target.startsWith("vps/")) {
           const query = threadId ? `?${new URLSearchParams({ threadId })}` : "";
@@ -62,19 +71,21 @@ export function DesktopViewer() {
           if (controller.signal.aborted) return;
         }
         const path = `/api/desktop-viewer/${target}`;
-        const response = await fetch(path, {
+        const query = control ? "?control=1" : "";
+        const response = await fetch(`${path}${query}`, {
           signal,
           credentials: "same-origin", cache: "no-store",
         });
         if (!response.ok) throw new Error("viewer unavailable");
         const config = await response.json();
         if (controller.signal.aborted) return;
-        const websocket = new URL(`${path}/websockify`, location.href);
+        const websocket = new URL(`${path}/websockify${query}`, location.href);
         websocket.protocol = location.protocol === "https:" ? "wss:" : "ws:";
         client = new RFB(screen.current!, websocket.href, {
           credentials: { password: config.password ?? "", username: "", target: "" },
         });
         rfb.current = client;
+        client.viewOnly = config.viewOnly === true;
         client.scaleViewport = true;
         client.background = "var(--color-inset)";
         client.focusOnClick = panelRef.current === null;
@@ -113,7 +124,7 @@ export function DesktopViewer() {
       window.removeEventListener("pageshow", restore);
       document.title = oldTitle;
     };
-  }, [target, threadId, attempt]);
+  }, [target, threadId, attempt, control]);
 
   useEffect(() => {
     if (rfb.current) {
@@ -155,6 +166,7 @@ export function DesktopViewer() {
             <span className={cn("absolute right-2 bottom-2 size-2 rounded-full ring-2 ring-panel", connected ? "bg-success" : "bg-warning")} />
           </div>
           <div className="my-1 h-px w-7 shrink-0 bg-hairline" />
+          {sandbox && <ViewerTool id="control" label={t(control ? "sandboxDesktop.releaseControl" : "sandboxDesktop.takeControl")} icon={Hand} active={control} onClick={() => setControl(!control)} />}
           <ViewerTool id="keyboard" label={t("desktopViewer.keyboard")} icon={Keyboard} disabled={!connected} active={panel === "keyboard"} expanded={panel === "keyboard"} onClick={() => togglePanel("keyboard")} />
           <ViewerTool id="clipboard" label={t("desktopViewer.clipboard")} icon={Clipboard} disabled={!connected} active={panel === "clipboard"} expanded={panel === "clipboard"} onClick={() => togglePanel("clipboard")} />
           {document.fullscreenEnabled && <ViewerTool id="fullscreen" label={t(fullscreen ? "desktopViewer.exitFullscreen" : "desktopViewer.fullscreen")} icon={fullscreen ? Minimize : Maximize} onClick={() => { void toggleFullscreen(); }} />}

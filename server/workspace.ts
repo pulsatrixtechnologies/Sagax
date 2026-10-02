@@ -399,10 +399,17 @@ function lineSpan(text: string, index: number, length: number): { start: number;
   return { start, end: newline === -1 ? text.length : newline };
 }
 
-/** One harness owns app-managed writes: no await occurs between reading the
- * latest file and its atomic replacement. This does not serialize arbitrary
- * shell writes by a full-access engine or an external editor. */
-export function updateMemory(botId: string, update: MemoryUpdate, opts: MemoryUpdateOptions = {}): MemoryUpdateResult {
+export type AppliedMemoryUpdate =
+  | { ok: true; next: string; bytes: number; entry?: string }
+  | { ok: false; error: string; code: "invalid" | "conflict" }
+  | MemoryBudgetRefusal;
+
+/** The text a memory file becomes after one update, or why it does not
+ * change. Pure: the caller reads the current text (seed already treated as
+ * empty) and writes `next`. Bot memory and a group's shared memory
+ * (server/group-memory.ts) both go through it, so their entries and budget
+ * rules are one rule. */
+export function applyMemoryUpdate(current: string, update: MemoryUpdate, opts: MemoryUpdateOptions = {}): AppliedMemoryUpdate {
   const needsText = update.action !== "remove";
   const needsOld = update.action !== "append";
   if (!["append", "replace", "remove", "supersede"].includes(update.action)
@@ -419,11 +426,6 @@ export function updateMemory(botId: string, update: MemoryUpdate, opts: MemoryUp
   // Scrubbed before it becomes an entry, so what the tool echoes back is
   // what landed in the file; writeMemoryFile scrubs again, harmlessly.
   const text = update.text === undefined ? undefined : redactSecretsInText(update.text);
-  const dir = ensureWorkspace(botId);
-  // Do not use readMemoryFile's editor-friendly missing/read-error fallback:
-  // a failed read must never turn into a successful overwrite of old notes.
-  const raw = readMemoryText(join(dir, "MEMORY.md"));
-  const current = raw === MEMORY_SEED ? "" : raw;
   const today = memoryDate(opts.now);
   // Every appended entry ends its own line; a file the person left without
   // a final newline gets one first, and one is never added twice.
@@ -494,8 +496,21 @@ export function updateMemory(botId: string, update: MemoryUpdate, opts: MemoryUp
       recent: recentEntries(current),
     };
   }
-  writeMemoryFile(botId, next);
-  return { ok: true, ...readMemoryFile(botId), bytes, entry };
+  return { ok: true, next, bytes, entry };
+}
+
+/** One harness owns app-managed writes: no await occurs between reading the
+ * latest file and its atomic replacement. This does not serialize arbitrary
+ * shell writes by a full-access engine or an external editor. */
+export function updateMemory(botId: string, update: MemoryUpdate, opts: MemoryUpdateOptions = {}): MemoryUpdateResult {
+  const dir = ensureWorkspace(botId);
+  // Do not use readMemoryFile's editor-friendly missing/read-error fallback:
+  // a failed read must never turn into a successful overwrite of old notes.
+  const raw = readMemoryText(join(dir, "MEMORY.md"));
+  const applied = applyMemoryUpdate(raw === MEMORY_SEED ? "" : raw, update, opts);
+  if (!applied.ok) return applied;
+  writeMemoryFile(botId, applied.next);
+  return { ok: true, ...readMemoryFile(botId), bytes: applied.bytes, entry: applied.entry };
 }
 
 /** The daily log lives beside the topic files, one file per day. It is

@@ -9,12 +9,19 @@ export type ToolExecutionTarget = "user-desktop" | "user-sandbox";
  * sync with USER_SANDBOX_MCP_NAME in server/user-sandbox-routing.ts. */
 export const USER_SANDBOX_SERVER = "sagax-environment";
 
+/** The MCP server the desktop bridge tools are mounted under (the person's
+ * own computer through their desktop app). Keep in sync with
+ * DESKTOP_BRIDGE_MCP_NAME in shared/bot-workplace.ts. */
+export const USER_DESKTOP_SERVER = "sagax-desktop";
+
+const fromServer = (name: string, server: string) =>
+  name.startsWith(`mcp__${server}__`) || name.startsWith(`${server}__`) || name.startsWith(`${server}_`);
+
 /** `mcp__sagax-environment__run_command`, `sagax-environment__run_command`
  * (desktop names) or pi's `sagax-environment_run_command`. */
 export function toolExecutionTarget(toolName: string, place?: string | null): ToolExecutionTarget | null {
   const name = toolName.toLowerCase();
-  if (name.startsWith(`mcp__${USER_SANDBOX_SERVER}__`) || name.startsWith(`${USER_SANDBOX_SERVER}__`) || name.startsWith(`${USER_SANDBOX_SERVER}_`)) {
-    return "user-sandbox";
-  }
+  if (fromServer(name, USER_SANDBOX_SERVER)) return "user-sandbox";
+  if (fromServer(name, USER_DESKTOP_SERVER)) return "user-desktop";
   return place === "local" ? "user-desktop" : null;
 }

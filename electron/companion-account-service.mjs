@@ -8,8 +8,13 @@ import {
   withManagedCompanionTunnelAccess,
   withoutManagedCompanionTunnelAccess,
 } from "./managed-companion-tunnel.mjs";
+import { isBlockedUrl } from "./upstream-hosts.mjs";
 
-export const DEFAULT_COMPANION_CONTROL_PLANE_URL = "https://accounts.openmausbot.com";
+// No hosted default: the original project's account service is never
+// contacted. Phone pairing through a
+// hosted relay, `serve --tunnel` and email sign-in stay off until an admin
+// sets SAGAX_CONTROL_PLANE_URL to a control plane of ours.
+export const DEFAULT_COMPANION_CONTROL_PLANE_URL = "";
 
 export const COMPANION_CLIENT_INSTANCE_FIELD = "companionClientInstanceId";
 export const COMPANION_ACCOUNT_TOKEN_FIELD = "companionAccountToken";
@@ -28,7 +33,7 @@ const DEFAULT_HEALTH_CACHE_MS = 30_000;
 const ownString = (document, field) =>
   typeof document?.[field] === "string" ? document[field] : "";
 
-/** Packaged builds have a safe hosted default. Development must opt into an
+/** No build has a hosted default (see above). An admin opts into an
  * exact HTTPS origin (or HTTP loopback Worker) so a contributor never sends
  * an OTP or bearer to an accidental host. An explicitly invalid override
  * disables the feature instead of silently falling back to production. */
@@ -37,7 +42,8 @@ export function resolveCompanionControlPlaneURL({
   environment = process.env,
 } = {}) {
   if (Object.hasOwn(environment, "SAGAX_CONTROL_PLANE_URL")) {
-    return normalizeControlPlaneURL(environment.SAGAX_CONTROL_PLANE_URL);
+    const configured = normalizeControlPlaneURL(environment.SAGAX_CONTROL_PLANE_URL);
+    return configured && !isBlockedUrl(configured) ? configured : "";
   }
   return isPackaged ? DEFAULT_COMPANION_CONTROL_PLANE_URL : "";
 }
