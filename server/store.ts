@@ -1262,6 +1262,9 @@ export class Store {
       defaultResponder?: GroupDefaultResponder;
     },
     humanIds?: string[],
+    /** A direct conversation between two people (server/people-dms.ts),
+     * set before the record is first emitted. */
+    extra?: { peopleDm?: true; createdBy?: string },
   ): GroupRecord {
     let acceptedHumans: string[] | undefined;
     if (humanIds !== undefined) {
@@ -1288,6 +1291,8 @@ export class Store {
       section,
     };
     if (acceptedHumans !== undefined) group.humanIds = acceptedHumans;
+    if (extra?.peopleDm) group.peopleDm = true;
+    if (extra?.createdBy) group.createdBy = extra.createdBy;
     if (!dm) {
       group.tasks = [{ threadId, title: UNTITLED_TASK, createdAt, updatedAt: createdAt }];
       // Rooms are usable from creation: there is no pending setup step.
@@ -1308,7 +1313,7 @@ export class Store {
     );
   }
 
-  patchGroup(id: string, patch: Partial<Pick<GroupRecord, "name" | "memberIds" | "humanIds" | "defaultResponder" | "bulletin" | "unread" | "busyBotId" | "cwd" | "pinnedMessageId" | "section" | "setupCompletedAt" | "setupSkippedAt" | "audienceFloor" | "installedPackage" | "createdBy">>): GroupRecord | null {
+  patchGroup(id: string, patch: Partial<Pick<GroupRecord, "name" | "memberIds" | "humanIds" | "defaultResponder" | "bulletin" | "unread" | "busyBotId" | "cwd" | "pinnedMessageId" | "section" | "setupCompletedAt" | "setupSkippedAt" | "audienceFloor" | "installedPackage" | "createdBy" | "peopleDm" | "memoryEnabled">>): GroupRecord | null {
     const group = this.group(id);
     if (!group) return null;
     if (Object.prototype.hasOwnProperty.call(patch, "humanIds")) {

@@ -72,7 +72,9 @@ export interface TeamBackupOptions {
 
 export function createTeamBackup(store: Store, routines: Routine[], name: string, options: TeamBackupOptions = {}): TeamBackup {
   const chosenBots = options.botIds ? store.bots.filter((bot) => options.botIds!.has(bot.id)) : store.bots;
-  const chosenGroups = options.groupIds ? store.groups.filter((group) => options.groupIds!.has(group.id)) : store.groups;
+  // A conversation between two people (server/people-dms.ts) is theirs
+  // alone: no backup or package ever carries it.
+  const chosenGroups = (options.groupIds ? store.groups.filter((group) => options.groupIds!.has(group.id)) : store.groups).filter((group) => !group.peopleDm);
   const botIds = new Set(chosenBots.map((bot) => bot.id));
   const text = options.scrub ?? ((value: string) => value);
   // Free text a person typed (a routine prompt, a room bulletin, a title)

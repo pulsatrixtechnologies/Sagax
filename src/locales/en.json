@@ -3962,5 +3962,19 @@
   "voiceMode.checking": "Checking voice mode with the server...",
   "voiceMode.checkFailed": "The server could not say whether voice mode is available: {error}",
   "voiceMode.groupUnavailable": "On an organization server, voice mode talks with one bot at a time: open a bot's conversation to call it.",
-  "voiceMode.openConnections": "Open Settings > Connections"
+  "voiceMode.openConnections": "Open Settings > Connections",
+  "compose.directMessage": "Direct message",
+  "groupPanel.tab.memory": "Memory",
+  "groupMemory.loading": "Loading the group memory…",
+  "groupMemory.title": "Group memory",
+  "groupMemory.detail": "Notes every bot of this group reads at each turn here, and writes when it learns something the whole group should keep. A bot's own memory stays private and never lands here on its own.",
+  "groupMemory.switch": "Let the bots of this group use its memory",
+  "groupMemory.readOnly": "Only the owner of this group can change its memory.",
+  "groupMemory.off": "Off: the bots neither read nor write it. The notes stay here.",
+  "groupMemory.placeholder": "- A fact the whole group should keep",
+  "groupMemory.empty": "Nothing yet.",
+  "groupMemory.conflict": "A bot changed the group memory while you were editing. Nothing was saved.",
+  "groupMemory.reload": "Reload",
+  "groupMemory.overwrite": "Overwrite with mine",
+  "groupMemory.save": "Save"
 }

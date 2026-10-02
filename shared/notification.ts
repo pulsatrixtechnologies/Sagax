@@ -20,7 +20,10 @@ export type NotifyKind =
   | "delegation-settled"
   /** The workspace crossed its monthly spend warning or reached its cap.
    * Sent to admins only, at most once per month for each. */
-  | "spend";
+  | "spend"
+  /** A person wrote to another in a direct conversation between people
+   * (server/people-dms.ts). Sent to the recipient only (`audience`); `botId` is empty. */
+  | "message";
 
 export interface Notification {
   kind: NotifyKind;

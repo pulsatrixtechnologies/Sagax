@@ -4,7 +4,7 @@
 // First, before any module that could start a process: a Cloud home's
 // secrets off the launcher's pipe (cloud-secrets-boot.ts).
 import { BOOT_CLOUD_SECRETS } from "./cloud-secrets-boot.ts";
-import { groupOwnerId, groupPatchOwnerRefusal, mayDeleteGroup, type GroupActor } from "./group-ownership.ts";
+import { groupOwnerId, groupPatchOwnerRefusal, mayDeleteGroup, ownsGroup, type GroupActor } from "./group-ownership.ts";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { existsSync, readFileSync, realpathSync, rmSync, mkdirSync } from "node:fs";
@@ -210,7 +210,7 @@ import { fleetAvailable, fleetRequest, fleetSocketPath } from "./fleet-client.ts
 import { entitled } from "./enterprise.ts";
 import { HOSTED_CONTRACT_HEADER, HOSTED_CONTRACT_METADATA, HOSTED_CONTRACT_VERSION } from "./hosted-contract.ts";
 import { describeSpawnFailure, execCli } from "./procs.ts";
-import { blockedTarget, buildNotification, buildSpendNotification, type Notification } from "./notify.ts";
+import { blockedTarget, buildNotification, buildSpendNotification, summarize, type Notification } from "./notify.ts";
 import {
   isModelVariant,
   TurnNotStartedError,
@@ -622,6 +622,10 @@ import { createBotPresetRoutes } from "./routes/bot-presets.ts";
 import { createUserPreferenceRoutes } from "./routes/user-preferences.ts";
 import { createUserPreferenceStore } from "./user-preferences.ts";
 import { createBotMemoryRoutes } from "./routes/bot-memory.ts";
+import { createGroupMemoryRoutes } from "./routes/group-memory.ts";
+import { createPeopleDmRoutes } from "./routes/people-dms.ts";
+import { isPeopleDmParticipant, otherPerson, peopleDmPatchRefusal, peopleDmRouteRefusal } from "./people-dms.ts";
+import { deleteGroupMemory, groupMemoryEnabled, groupMemorySystemPrompt, updateGroupMemory } from "./group-memory.ts";
 import type { OrgRecord } from "./org-record.ts";
 import { createOidcLoginRoutes, identityConfigFromEnv, identityDescriptor, INTERIM_SIGNIN_REFUSAL, isInterimSignInRoute, MANAGED_PROFILE_REFUSAL, oidcBindingCookie, oidcSessionFields, profileManagement, writesManagedProfile } from "./oidc-login.ts";
 import { OidcRelyingParty } from "./oidc-rp.ts";
@@ -2570,6 +2574,13 @@ const phoneProxyPath = SPAWNED_PROXIES.phone;
 // in the packaged app process.execPath is Electron — run the proxy as node
 const AGENTS_NODE_FLAG = { ELECTRON_RUN_AS_NODE: "1" };
 
+/** Whether this bot may write the shared memory of this group: the group's
+ * memory is on, the bot is one of its bots, and the bot keeps notes at all
+ * (its own memory switch). Reading it needs only the group's switch. */
+function groupMemoryWritable(group: GroupRecord | undefined, botId: string): boolean {
+  return Boolean(group) && groupMemoryEnabled(group) && group!.memberIds.includes(botId) && store.bot(botId)?.memoryEnabled !== false;
+}
+
 function agentsIntegration(
   botId: string,
   threadId: string,
@@ -2607,6 +2618,9 @@ function agentsIntegration(
       OMB_OWN_THREAD_CREATION: ownThreadCreation ? "1" : "0",
       OMB_SKILL_AUTHORING_ENABLED: skillAuthoring ? "1" : "0",
       OMB_MEMORY_ENABLED: store.bot(botId)?.memoryEnabled === false ? "0" : "1",
+      // A room turn in a group whose shared memory is on gets
+      // group_memory_update (server/group-memory.ts); the route re-checks.
+      OMB_GROUP_MEMORY: groupMemoryWritable(store.groupByThread(threadId), botId) ? "1" : "0",
       // The shared-computer tools are advertised only while the workspace
       // gate is on; the routes behind them refuse regardless.
       OMB_SHARED_COMPUTERS_ENABLED: lendingEnabled() ? "1" : "0",
@@ -6612,6 +6626,29 @@ function scopeChannelApproval(
   return { action: "same" };
 }
 
+/** A frame about a conversation between two people reaches those two only,
+ * whatever the stream (admin and loopback included). */
+function peopleDmFrameAllowed(payload: Record<string, unknown>, viewerId: string | undefined): boolean {
+  // A person-to-person notice also carries its recipient as `audience`
+  // (scopeChannelApproval keeps it to them).
+  const note = payload.kind === "notify" && payload.notification && typeof payload.notification === "object"
+    ? payload.notification as { threadId?: unknown }
+    : null;
+  const groupField = payload.group && typeof payload.group === "object" ? (payload.group as { id?: unknown }).id : undefined;
+  const groupId = typeof payload.groupId === "string" ? payload.groupId : typeof groupField === "string" ? groupField : undefined;
+  const event = payload.event && typeof payload.event === "object" ? (payload.event as { threadId?: unknown }).threadId : undefined;
+  const threadId = typeof payload.threadId === "string" ? payload.threadId : typeof event === "string" ? event : typeof note?.threadId === "string" ? note.threadId : undefined;
+  const group = (groupId ? store.group(groupId) : undefined) ?? (threadId ? store.groupByThread(threadId) : undefined);
+  if (!group?.peopleDm) {
+    // A frame that carries the record itself (a group just created) is
+    // judged by what it carries.
+    const carried = payload.group && typeof payload.group === "object" ? payload.group as { peopleDm?: unknown; humanIds?: unknown } : null;
+    if (carried?.peopleDm === true) return isPeopleDmParticipant({ peopleDm: true, humanIds: Array.isArray(carried.humanIds) ? carried.humanIds.filter((id): id is string => typeof id === "string") : [] }, viewerId);
+    return true;
+  }
+  return isPeopleDmParticipant(group, viewerId);
+}
+
 /** The frame a non-admin stream gets: the shared client frame, unless a bot
  * is restricted and this member may not see all of what the frame carries —
  * then narrowed (bot-visibility.ts), withdrawn, or nothing at all (null). */
@@ -6622,6 +6659,7 @@ function sseFrameFor(
   frame: string | null,
   clientFrame: string | null,
 ): string | null {
+  if (payload && !peopleDmFrameAllowed(payload, client.viewerId)) return null;
   if (payload) {
     const scoped = scopeChannelApproval(payload, approvalViewerOf(client));
     if (scoped.action === "drop") return null;
@@ -13599,6 +13637,12 @@ async function runGroupMemberTurn(
     // mounted, exactly as the 1:1 path decides it: memory_update is on the
     // agents server, so a room turn with it must be told to use it too.
     { id: "memory", label: "Memory", text: roomMemory ? `\n${roomMemory.trim()}` : "" },
+    // The group's shared memory: every bot of the group reads it here; only
+    // explicit group_memory_update writes reach it (server/group-memory.ts).
+    { id: "group-memory", label: "Group memory", text: (() => {
+      const block = groupMemorySystemPrompt(readyGroup, { writes: Boolean(integrations.agents) && groupMemoryWritable(readyGroup, bot.id) });
+      return block ? `\n${block}` : "";
+    })() },
     { id: "skills", label: "Skills index", text: workspace ? skillsSystemPrompt(bot.id) : "" },
     { id: "skill-instructions", label: "Skill instructions", text: renderSkillInstructions(selectedSkills, { includeRoot: Boolean(workspace) }) },
     { id: "playbooks", label: "Playbooks", text: installedPlaybookInstructions(text, bot.playbooks) },
@@ -16513,6 +16557,67 @@ ROUTES.push(createBotMemoryRoutes({
     broadcast({ kind: "config", ...configStatus() });
   },
 }));
+// A group's shared memory (server/routes/group-memory.ts): its people read
+// it, its owner edits it or switches it off.
+ROUTES.push(createGroupMemoryRoutes({
+  group: (id) => store.group(id),
+  canRead: (auth, group) => groupVisible(group as GroupRecord, channelViewerId(auth)),
+  isOwner: (auth, group) => groupOwnerCaller(auth, group as GroupRecord),
+  setEnabled: (groupId, enabled) => {
+    const group = store.patchGroup(groupId, { memoryEnabled: enabled ? undefined : false });
+    if (group) broadcast({ kind: "group", group: publicGroupState(group) });
+  },
+}));
+// Direct conversations between two people (server/people-dms.ts).
+ROUTES.push(createPeopleDmRoutes<GroupRecord>({
+  organization: () => IDENTITY.kind === "perspicax",
+  viewerId: (auth) => (auth.kind === "session" ? auth.session.principalId?.trim().toLowerCase() || undefined : undefined),
+  person: (ref) => {
+    const resolved = resolveOrgGrantee(ref);
+    if (!resolved.ok) return { ok: false, code: "unknown_person" };
+    const principal = principals.byId(resolved.id);
+    const listed = principal?.subject ? perspicaxDirectory?.directory()?.people.find((entry) => entry.sub === principal.subject!.sub) : undefined;
+    if (listed && (listed.kind === "service" || listed.type === "service")) return { ok: false, code: "service_account" };
+    return { ok: true, id: resolved.id, name: personDisplayName(principal) || listed?.login || "" };
+  },
+  displayName: (principalId) => personDisplayName(principals.byId(principalId)) || "",
+  groups: () => store.groups,
+  create: ({ a, b, name }) => store.createGroup(name, [], false, undefined, { defaultResponder: { kind: "mentions" } }, [a, b], { peopleDm: true, createdBy: a }),
+  project: (group) => ({ ...publicGroupState(group), messages: store.messagesFor(group.threadId) }),
+}));
+/** A person's message in a conversation between two people: it starts no
+ * turn, marks the conversation unread and notifies the other person only. */
+function sendPeopleDmMessage(group: GroupRecord, auth: RequestAuth, text: string, rawSendId: unknown, rawReplyTo: unknown) {
+  const threadId = group.threadId;
+  const sendId = parseSendId(typeof rawSendId === "string" ? rawSendId : undefined);
+  const replyTo = resolveReplyTarget(threadId, rawReplyTo);
+  if (sendId) {
+    const accepted = acceptedSendMatch(store.messagesFor(threadId), sendId, text, replyTo?.id);
+    if (accepted.kind === "conflict") throw Object.assign(new Error("sendId already belongs to another message"), { status: 409 });
+    if (accepted.kind === "match") return { ok: true as const, threadId, message: accepted.message };
+  }
+  const sender = messageSender(auth);
+  const message = store.appendMessage(threadId, { role: "user", kind: "text", text, replyToId: replyTo?.id, sendId, sender });
+  store.patchGroup(group.id, { unread: true });
+  const from = channelViewerId(auth);
+  const to = from ? otherPerson(group, from) : undefined;
+  if (to && sender) {
+    const avatarUrl = personAvatarUrl(principals.byId(from!));
+    broadcast({ kind: "notify", notification: {
+      kind: "message", botId: "", botName: sender.name, threadId, groupId: group.id,
+      title: sender.name, body: summarize(text), audience: [to], ...(avatarUrl ? { avatarUrl } : {}),
+    } satisfies Notification });
+  }
+  return { ok: true as const, threadId, message };
+}
+/** The owner of a group, as server/group-ownership.ts decides on an
+ * organization server (its creator, else its first person, else its
+ * admins); on a solo server the operator or an admin session. */
+function groupOwnerCaller(auth: RequestAuth, group: Pick<GroupRecord, "createdBy" | "humanIds">): boolean {
+  if (auth.kind === "loopback" && auth.trust === "service") return false;
+  if (IDENTITY.kind !== "perspicax") return auth.kind === "loopback" || auth.scopes.includes("admin");
+  return ownsGroup(group, groupActor(auth));
+}
 // The people of a solo server: its email sign-in list and the invitations
 // that add to it (server/org-routes.ts). A solo server has no organization
 // (slice 8), so the invitations are issued in the name of this server: the
@@ -16675,12 +16780,16 @@ function authzViewerFor(auth: RequestAuth): AuthzViewer | undefined {
 }
 /** channel.read on a room: listed people (by id or `team:`), and the members
  * of its shared section. */
-function groupVisible(group: { id?: unknown; humanIds?: string[]; section?: unknown }, viewerId: string | undefined): boolean {
+function groupVisible(group: { id?: unknown; humanIds?: string[]; section?: unknown; peopleDm?: boolean }, viewerId: string | undefined): boolean {
+  // A conversation between two people is theirs alone (server/people-dms.ts):
+  // not an admin's, a section's, nor the operator's at this computer.
+  if (group.peopleDm) return isPeopleDmParticipant(group, viewerId);
   if (!viewerId) return true;
   return seesChannel(group, viewerId, authzViewerFromId(viewerId), roomSectionAccess(group));
 }
 /** channel.post on a room (a read-only section member reads only). */
-function groupPostAllowed(group: { id?: unknown; humanIds?: string[]; section?: unknown }, viewerId: string | undefined): boolean {
+function groupPostAllowed(group: { id?: unknown; humanIds?: string[]; section?: unknown; peopleDm?: boolean }, viewerId: string | undefined): boolean {
+  if (group.peopleDm) return isPeopleDmParticipant(group, viewerId);
   if (!viewerId) return true;
   return canInChannel(authzViewerFromId(viewerId), "channel.post", { humanIds: group.humanIds ?? [], section: roomSectionAccess(group) });
 }
@@ -18627,6 +18736,17 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       const room = IDENTITY.kind === "perspicax" && method !== "GET" && method !== "HEAD" && !/^\/api\/groups\/[\w-]+\/read$/.test(path) ? roomOfSubject(subject) : null;
       if (room && !groupPostAllowed(room, viewerId)) return json(res, 403, { error: "you may read this channel, not change it", code: "read_only" });
     }
+    {
+      // A conversation between two people (server/people-dms.ts): only they
+      // reach it, loopback included, and it only takes messages.
+      const subject = pathSubject(path);
+      const dmRoom = roomOfSubject(subject);
+      if (subject && dmRoom?.peopleDm) {
+        if (!isPeopleDmParticipant(dmRoom, channelViewerId(auth))) return json(res, 404, { error: notFoundFor(subject) });
+        const refusal = peopleDmRouteRefusal(method, path);
+        if (refusal) return json(res, 400, { error: refusal, code: "people_dm" });
+      }
+    }
     beginAdminAudit(req, res, method, path, auth);
 
     if (method === "POST" && path === "/api/workspace-backup/restore" && teamComputers.list().some(computer => computer.section !== null)) {
@@ -19067,6 +19187,17 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         return result.ok
           ? json(res, 201, { messageId: result.messageId })
           : json(res, result.status, { error: result.error });
+      }
+      // A group's shared memory (server/group-memory.ts): only a bot of
+      // that group, speaking in it, while the group's memory is on.
+      if (method === "POST" && path === "/api/internal/group-memory") {
+        const room = store.groupByThread(internalCapability.threadId);
+        if (!room || !groupMemoryWritable(room, internalSender.id)) {
+          return json(res, 403, { error: "This conversation has no group memory you can write: it is not a group you are in, or its memory is off." });
+        }
+        const body = await readInternalBody();
+        const result = updateGroupMemory(room.id, { action: body.action, text: body.text, oldText: body.oldText, ...(body.until !== undefined ? { until: body.until } : {}) }, { source: memorySource() });
+        return json(res, result.ok ? 200 : result.code === "conflict" ? 409 : result.code === "over-budget" ? 413 : 400, result);
       }
       // Notes written from a room fewer people can see than this bot would
       // carry that room's words to everyone who can see the bot.
@@ -22787,6 +22918,10 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     if (m && method === "PATCH") {
       const body = await readBody(req);
       const existingGroup = store.group(m[1]);
+      if (existingGroup?.peopleDm) {
+        const field = peopleDmPatchRefusal(body);
+        if (field) return json(res, 400, { error: `a conversation between two people cannot change "${field}"`, code: "people_dm" });
+      }
       // A bot-to-bot dm keeps its existing member refusal. Placement checks
       // apply only when this patch adds a bot to a channel.
       if (existingGroup && !existingGroup.dm && Array.isArray(body?.memberIds)) {
@@ -22859,6 +22994,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       }
       routines!.disableForGroup(group.id);
       store.deleteGroup(group.id);
+      deleteGroupMemory(group.id);
       rejectDeletedThreadSkillStages(stagedSkillCleanups);
       return json(res, 200, { ok: true });
     }
@@ -22876,6 +23012,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (IDENTITY.kind === "perspicax" && !groupPostAllowed(group, channelViewerId(auth))) {
         return json(res, 403, { error: "you may read this channel, not post in it", code: "read_only" });
       }
+      if (group.peopleDm) return json(res, 202, sendPeopleDmMessage(group, auth, text, body.sendId, body.replyToId));
       if (body.mode !== undefined && body.mode !== "chat" && body.mode !== "goal") {
         return json(res, 400, { error: "mode must be chat or goal" });
       }

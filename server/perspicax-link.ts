@@ -103,6 +103,10 @@ const personSchema = z.object({
   email: z.string().max(320).nullable(),
   role: z.enum(["admin", "manager", "employee"]),
   status: z.enum(["active", "disabled"]),
+  /** Perspicax's user type (`person` or `service`); absent from an older
+   * Perspicax, which lists people only. */
+  kind: z.enum(["person", "service"]).optional(),
+  type: z.enum(["person", "service"]).optional(),
   locale: z.string().max(40).nullable().optional(),
   /** Slice 4: which model providers this person keeps a key for in
    * Perspicax (names only, never a key). */
