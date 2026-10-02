@@ -674,6 +674,8 @@ export interface WireGroup {
   /** The room's shared instructions. */
   bulletin: string;
   unread: boolean;
+  /** Kept in the home's pinned row (the phone's, like a bot's `pinned`). */
+  pinned?: boolean;
   createdAt: number;
   /** Organization server: the principal who created the room. A bot's
    * follow-up no person asked for runs in this person's server environment

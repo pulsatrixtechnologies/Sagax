@@ -365,6 +365,9 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   { methods: ["GET"], path: /^\/api\/bots\/[\w-]+\/(?:links|files)$/ },
   // Share as Template: a single-bot package without secrets (owner or admin).
   { methods: ["POST"], path: /^\/api\/bots\/[\w-]+\/export$/ },
+  // The bot's standing instructions for the profile's Instructions row
+  // (owner or admin, checked in the handler).
+  { methods: ["GET"], path: /^\/api\/bots\/[\w-]+\/soul$/ },
   // An organization member's own bots: the handler requires a member or
   // admin role, limits the fields (memberBotFieldViolation) and, for a
   // delete, that the session owns the bot.
@@ -502,7 +505,7 @@ export function memberBotFieldViolation(body: unknown): string | null {
 
 /** Same for a room: name, reading state, and the roster. humanIds and
  * memberIds are not refused here. canEditHumans and canPlaceBot decide them. */
-const CLIENT_GROUP_PATCH_FIELDS = new Set(["name", "bulletin", "unread", "pinnedMessageId", "section", "humanIds", "memberIds"]);
+const CLIENT_GROUP_PATCH_FIELDS = new Set(["name", "bulletin", "unread", "pinned", "pinnedMessageId", "section", "humanIds", "memberIds"]);
 export function clientGroupPatchViolation(body: unknown): string | null {
   if (!body || typeof body !== "object" || Array.isArray(body)) return "body";
   for (const key of Object.keys(body)) if (!CLIENT_GROUP_PATCH_FIELDS.has(key)) return key;

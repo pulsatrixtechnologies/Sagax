@@ -169,6 +169,23 @@ const ALLOWED: ReadonlyArray<{ method: string; path: RegExp }> = [
   { method: "GET", path: /^\/api\/mcp\/servers\/[a-z][a-z0-9_-]{0,31}\/oauth\/status$/ },
   // Account: a personal computer answers personal_server (the phone forgets the pairing).
   { method: "DELETE", path: /^\/api\/me$/ },
+  // The rest of the phone's screens, each held by the harness to the owner
+  // (or an admin) as for a server-paired phone: usage %, the bot's standing
+  // instructions, deleting a bot, the MCP servers listing (names, addresses
+  // and header names only, never values), a bot's saved command rules, the
+  // person's own preferences and server environment (an organization server
+  // only; a personal computer answers 404), and pinning a room.
+  { method: "GET", path: /^\/api\/usage$/ },
+  { method: "GET", path: /^\/api\/bots\/[\w-]+\/soul$/ },
+  { method: "DELETE", path: /^\/api\/bots\/[\w-]+$/ },
+  { method: "GET", path: /^\/api\/mcp\/servers$/ },
+  { method: "GET", path: /^\/api\/bots\/[\w-]+\/command-allowlist$/ },
+  { method: "DELETE", path: /^\/api\/bots\/[\w-]+\/command-allowlist\/[\w-]+$/ },
+  { method: "GET", path: /^\/api\/me\/preferences$/ },
+  { method: "PUT", path: /^\/api\/me\/preferences$/ },
+  { method: "GET", path: /^\/api\/me\/server-environment$/ },
+  { method: "POST", path: /^\/api\/me\/server-environment\/(?:reset|update)$/ },
+  { method: "PATCH", path: /^\/api\/groups\/[\w-]+$/ },
 
   // rooms — making one, and talking in one
   { method: "POST", path: /^\/api\/groups$/ },

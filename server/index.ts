@@ -236,7 +236,7 @@ import {
   type StoredRemoteMcpServer,
 } from "./mcp-registry.ts";
 import { probeMcpServer } from "./mcp-probe.ts";
-import { callbackPage, McpOAuthError, McpOAuthManager, McpOAuthVault, resolveVaultKey, type VaultKeySource } from "./mcp-oauth.ts";
+import { callbackPage, McpOAuthError, McpOAuthManager, McpOAuthVault, phoneOAuthReturns, phoneReturnLocation, resolveVaultKey, type VaultKeySource } from "./mcp-oauth.ts";
 import {
   GROUP_GOAL_MAX_TURNS,
   groupGoalAssignmentKey,
@@ -315,7 +315,7 @@ import {
 import { CLOUD_PERSONAL_REFUSAL, settleCloudOwnership, type CloudOwnership } from "./cloud-owner.ts";
 import { createCloudMoveRoutes } from "./cloud-move-http.ts";
 import { holdIncludedServices } from "./included-services.ts";
-import type { ProviderInstance } from "./contracts.ts";
+import type { ProviderInstance, RemoteMcpSpec } from "./contracts.ts";
 import { selectDefaultModelSelection, withNewBotEffort } from "./default-model-selection.ts";
 import { cancelPeerApprovalsFor, cancelPeerApprovalsForThread, dismissStalePeerCards, peerApprovalFailure, requestPeerApproval, resolvePeerComms, type ApprovalBus } from "./peer-approval.ts";
 import { peerDeliveryReceipt, type PeerDeliveryReceipt } from "./peer-delivery.ts";
@@ -621,6 +621,9 @@ import { createBotLibraryRoutes } from "./routes/bot-library.ts";
 import { createBotSettingsRoutes } from "./routes/bot-settings.ts";
 import { createAutoReviewRuleRoutes } from "./routes/auto-review-rules.ts";
 import { createComputerStatusRoutes, diskStateForFree } from "./routes/computer-status.ts";
+import { createPluginRoutes, pluginServerName, type InstalledPlugin } from "./routes/plugins.ts";
+import { createRegistrySearch } from "./plugin-registry.ts";
+import { PLUGIN_CATALOG } from "../shared/plugin-catalog.ts";
 import { diskSpace, folderBytes } from "./disk-usage.ts";
 import { autoReviewThreadMode, createBotSettingsStore, hostTimeZone } from "./bot-settings.ts";
 import { createComputerInputRoutes } from "./routes/computer-input.ts";
@@ -4980,6 +4983,10 @@ function updateChannel(groupId: string, value: unknown): GroupRecord {
   if (body.unread !== undefined) {
     if (typeof body.unread !== "boolean") throw Object.assign(new Error("unread must be true or false"), { status: 400 });
     patch.unread = body.unread;
+  }
+  if (body.pinned !== undefined) {
+    if (typeof body.pinned !== "boolean") throw Object.assign(new Error("pinned must be true or false"), { status: 400 });
+    patch.pinned = body.pinned || undefined;
   }
   if (body.memberIds !== undefined) {
     // A DM is the pair it was opened for; only real rooms have a roster.
@@ -15947,7 +15954,56 @@ async function probeMcpOAuth(names?: string[], force = false): Promise<void> {
 const mcpOAuthStartSchema = z.object({
   clientId: z.string().trim().min(1).max(512).regex(/^[\x21-\x7e]+$/, "The client ID has characters that are not allowed.").optional(),
   clientSecret: z.string().trim().max(2_048).regex(/^[\x21-\x7e]*$/, "The client secret has characters that are not allowed.").optional(),
+  // A phone's sign-in sheet: the app address the callback sends it back to
+  // (phoneOAuthReturns, exact match) and, through a paired phone's companion,
+  // the public origin the phone reached this computer on.
+  returnTo: z.string().max(512).optional(),
+  callbackOrigin: z.string().max(512).optional(),
 }).strict();
+
+/** The origin a companion-relayed sign-in may return through: https, or
+ * http on a tailnet name (ts.net), with no path, query or credentials. The
+ * code it carries is useless without the PKCE verifier this server keeps. */
+function phoneCallbackOrigin(value: string): string | null {
+  try {
+    const url = new URL(value);
+    if (url.username || url.password || (url.pathname !== "/" && url.pathname !== "") || url.search || url.hash) return null;
+    if (url.protocol === "https:" || (url.protocol === "http:" && url.hostname.endsWith(".ts.net"))) return url.origin;
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/** Start an MCP server's sign-in for this request: the desktop's browser
+ * flow, or a phone's sheet when the body names an app return address. */
+async function startMcpSignIn(req: IncomingMessage, auth: RequestAuth, name: string, server: RemoteMcpSpec, body: unknown):
+  Promise<{ status: number; body: Record<string, unknown> }> {
+  const input = mcpOAuthStartSchema.safeParse(body ?? {});
+  if (!input.success) return { status: 400, body: { error: input.error.issues[0]?.message ?? "Invalid sign-in request." } };
+  const { returnTo, callbackOrigin, ...client } = input.data;
+  if (returnTo !== undefined && !phoneOAuthReturns().includes(returnTo)) {
+    return { status: 400, body: { error: "returnTo is not an app address this server returns to.", code: "return_not_allowed" } };
+  }
+  let redirectUri = mcpOAuthRedirectUri(req);
+  if (callbackOrigin !== undefined) {
+    const origin = companionRequest(req, auth) && returnTo ? phoneCallbackOrigin(callbackOrigin) : null;
+    if (!origin) return { status: 400, body: { error: "callbackOrigin is only for a paired phone's sign-in, as an https origin.", code: "callback_origin" } };
+    redirectUri = `${origin}/api/mcp-oauth/callback`;
+  } else if (companionRequest(req, auth) && returnTo && !publicUrl()) {
+    // The browser on the phone cannot reach this computer's loopback address.
+    return { status: 409, body: { error: "Send the address the phone reaches this computer on (callbackOrigin).", code: "callback_unreachable" } };
+  }
+  try {
+    const started = await mcpOAuth.start(name, server, { redirectUri, ...client, ...(returnTo ? { returnTo } : {}) }, AbortSignal.timeout(15_000));
+    return { status: 200, body: { ...started, redirectUri } };
+  } catch (error) {
+    if (error instanceof McpOAuthError) {
+      return { status: 400, body: { error: error.message, ...(error.code ? { code: error.code } : {}), ...(error.code === "client_required" ? { redirectUri } : {}) } };
+    }
+    return { status: 502, body: { error: "The sign-in could not be started." } };
+  }
+}
 
 /** Where the authorization server sends the browser back: this server on
  * loopback, or its public address when the request came from elsewhere. */
@@ -16650,6 +16706,80 @@ ROUTES.push(createComputerStatusRoutes({
   sandbox: () => userSandbox,
   local: { status: localComputerSummary, update: () => localComputerLifecycle("update"), reset: () => localComputerLifecycle("reset") },
   mayManageLocal: (auth) => auth.kind === "loopback" ? auth.trust !== "service" : auth.scopes.includes("admin"),
+}));
+// Plugins (server/routes/plugins.ts): the curated catalog and the MCP
+// Registry, what is installed, and adding one with its sign-in.
+const pluginRegistry = createRegistrySearch();
+ROUTES.push(createPluginRoutes({
+  registry: pluginRegistry,
+  installed: async () => {
+    const remote = remoteMcpServers();
+    const plugins: InstalledPlugin[] = listMcpServers(cfg.mcpServers).flatMap((server): InstalledPlugin[] => {
+      if (!("url" in server)) return [];
+      const status = remote[server.name] ? mcpOAuth.status(server.name, remote[server.name]!) : undefined;
+      const entry = PLUGIN_CATALOG.find((candidate) => candidate.url === server.url);
+      let domain = "";
+      try { domain = new URL(server.url).hostname; } catch { /* listed servers have parsed URLs */ }
+      return [{ kind: "mcp", name: server.name, url: server.url, domain, enabled: server.enabled, auth: status?.auth ?? "none",
+        ...(entry ? { icon: entry.icon, catalogId: entry.id } : {}) }];
+    });
+    if (composio.connectorAvailability(cfg) === "configured") {
+      try {
+        const services = await Promise.race([
+          composio.connectedServices(cfg),
+          new Promise<never>((_, reject) => setTimeout(() => reject(new Error("timeout")), 4_000).unref()),
+        ]);
+        const cards = new Map((await Promise.race([
+          composio.listToolkits(cfg).then((listed) => listed.cards),
+          new Promise<[]>((resolve) => setTimeout(() => resolve([]), 2_000).unref()),
+        ]).catch(() => [])).map((card) => [card.slug, card]));
+        for (const [slug, state] of Object.entries(services)) {
+          if (!state.connected) continue;
+          const card = cards.get(slug);
+          plugins.push({ kind: "composio", slug, name: card?.label ?? slug, connected: true,
+            ...(card?.logo ? { logo: card.logo } : {}), ...(card?.domain ? { domain: card.domain } : {}) });
+        }
+      } catch { /* connected apps unreachable: the MCP servers still list */ }
+    }
+    return plugins;
+  },
+  mayInstall: (auth) => auth.kind === "loopback" ? auth.trust !== "service" : auth.scopes.includes("admin"),
+  install: async (listing, { req, auth, returnTo, callbackOrigin }) => {
+    const current = cfg.mcpServers ?? {};
+    const existing = listMcpServers(current).find((server) => "url" in server && server.url === listing.url);
+    let name = existing?.name;
+    if (!name) {
+      if (mcpConfigBusy) return { status: 409, body: { error: "MCP servers are already being updated." } };
+      mcpConfigBusy = true;
+      try {
+        if (Object.keys(current).length >= MAX_MCP_SERVERS) return { status: 400, body: { error: `You can add at most ${MAX_MCP_SERVERS} MCP servers.`, code: "too_many" } };
+        name = pluginServerName(listing, new Set(Object.keys(current)));
+        // On at once: a server that still needs its sign-in is never mounted
+        // for a turn (engineMcpServers), so nothing runs before it is ready.
+        const parsed = parseMcpServerMutation(name, { type: listing.transport, url: listing.url, enabled: true });
+        if (!parsed.ok) return { status: 400, body: { error: parsed.error } };
+        const refusal = mcpPolicyRefusal(name, parsed.server);
+        if (refusal) return { status: 403, body: { error: refusal, code: "managed_policy" } };
+        persistMcpServers({ ...current, [name]: parsed.server });
+        await mcpOAuth.forget(name).catch(() => undefined);
+      } finally {
+        mcpConfigBusy = false;
+      }
+      await probeMcpOAuth([name]);
+    }
+    const server = remoteMcpServers([name])[name];
+    if (!server) return { status: 500, body: { error: "The plugin could not be added." } };
+    const auth0 = mcpOAuth.status(name, server)?.auth ?? "none";
+    const answer: Record<string, unknown> = { name, alreadyInstalled: Boolean(existing), auth: auth0, servers: mcpServerResponse().servers };
+    if (auth0 === "required" || auth0 === "expired") {
+      const started = await startMcpSignIn(req, auth, name, server, {
+        ...(typeof returnTo === "string" ? { returnTo } : {}), ...(typeof callbackOrigin === "string" ? { callbackOrigin } : {}),
+      });
+      if (started.status === 200) answer.authorizationUrl = started.body.authorizationUrl;
+      else answer.signIn = started.body;
+    }
+    return { status: existing ? 200 : 201, body: answer };
+  },
 }));
 // The people of a solo server: its email sign-in list and the invitations
 // that add to it (server/org-routes.ts). A solo server has no organization
@@ -18400,6 +18530,13 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     // single-use `state` bound to the pending flow is the authorization.
     if (method === "GET" && path === "/api/mcp-oauth/callback") {
       const result = await mcpOAuth.callback(url.searchParams, AbortSignal.timeout(15_000));
+      // A phone's sign-in sheet ends on its app address (phoneOAuthReturns).
+      const phoneReturn = phoneReturnLocation(result);
+      if (phoneReturn) {
+        res.writeHead(302, { location: phoneReturn, "cache-control": "no-store", "referrer-policy": "no-referrer" });
+        res.end();
+        return;
+      }
       const page = callbackPage(result, typeof req.headers["accept-language"] === "string" ? req.headers["accept-language"] : undefined);
       res.writeHead(result.ok ? 200 : 400, {
         "content-type": "text/html; charset=utf-8",
@@ -22913,7 +23050,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       }
       const humans = refuseHumanEdit(auth, body, existingGroup?.humanIds ?? []);
       if (humans) return json(res, humans.startsWith("unknown team") ? 400 : 403, { error: humans });
-      if (auth.kind === "session" && !auth.scopes.includes("admin")) {
+      // A paired phone's companion edits a room like a member session does.
+      if ((auth.kind === "session" && !auth.scopes.includes("admin")) || companionRequest(req, auth)) {
         const field = clientGroupPatchViolation(body);
         if (field) return json(res, 403, { error: `forbidden: this session may rename or mark a room, not change "${field}" (needs the admin scope)` });
       }
@@ -24479,6 +24617,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     if (m && method === "GET") {
       const bot = store.bot(m[1]);
       if (!bot) return json(res, 404, { error: "no such bot" });
+      if (!ownerOrAdminOf(auth, bot)) return json(res, 403, { error: "forbidden: only the bot owner or an admin can read its instructions here" });
       const soul = bot.soul ?? "";
       const drift = readSoulDrift(bot.id, soul, bot.soulHash ?? "");
       return json(res, 200, {
@@ -26561,18 +26700,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (!managedPolicy.mcpAllowed(name, server.url)) {
         return json(res, 403, { error: mcpPolicyRefusal(name, server) ?? "Your organization has not approved this server.", code: "managed_policy" });
       }
-      const input = mcpOAuthStartSchema.safeParse(body ?? {});
-      if (!input.success) return json(res, 400, { error: input.error.issues[0]?.message ?? "Invalid sign-in request." });
-      const redirectUri = mcpOAuthRedirectUri(req);
-      try {
-        const started = await mcpOAuth.start(name, server, { redirectUri, ...input.data }, AbortSignal.timeout(15_000));
-        return json(res, 200, started);
-      } catch (error) {
-        if (error instanceof McpOAuthError) {
-          return json(res, 400, { error: error.message, ...(error.code ? { code: error.code } : {}), ...(error.code === "client_required" ? { redirectUri } : {}) });
-        }
-        return json(res, 502, { error: "The sign-in could not be started." });
-      }
+      const started = await startMcpSignIn(req, auth, name, server, body);
+      return json(res, started.status, started.body);
     }
 
     const mcpTest = /^\/api\/mcp\/servers\/([a-z][a-z0-9_-]{0,31})\/test$/.exec(path);

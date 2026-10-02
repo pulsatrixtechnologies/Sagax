@@ -201,7 +201,9 @@ describe("what it may not", () => {
   // and deleting a bot are the same path.
   it("allows a path only for the methods it was allowed for", () => {
     expect(allowed("GET", "/api/bots")).toBe(true);
-    expect(allowed("DELETE", "/api/bots/bot_123")).toBe(false);
+    // Deleting a bot crosses for the phone's profile (the harness checks the owner).
+    expect(allowed("DELETE", "/api/bots/bot_123")).toBe(true);
+    expect(allowed("PUT", "/api/bots/bot_123/soul")).toBe(false);
     expect(allowed("POST", "/api/threads/th_1/messages")).toBe(false);
     expect(allowed("GET", "/api/threads/th_1/messages/msg_2/file")).toBe(false);
     expect(allowed("POST", "/api/threads/th_1/messages/msg_2/file/extra")).toBe(false);
@@ -232,7 +234,10 @@ describe("what it may not", () => {
     expect(allowed("DELETE", "/api/connectors/slack/accounts/ca_123")).toBe(true);
     expect(allowed("DELETE", "/api/connectors/slack/accounts/../gmail")).toBe(false);
     expect(allowed("POST", "/api/bots/bot_123/secret-cards/msg_2/provided")).toBe(false);
-    expect(allowed("PATCH", "/api/groups/room-1")).toBe(false);
+    // A room's PATCH crosses for pinning and renaming; the harness holds a
+    // companion request to the member fields (clientGroupPatchViolation).
+    expect(allowed("PATCH", "/api/groups/room-1")).toBe(true);
+    expect(allowed("PUT", "/api/groups/room-1")).toBe(false);
   });
 
   // Patterns are anchored, so a path that merely starts right is still a
@@ -286,12 +291,19 @@ describe("iOS parity routes", () => {
       ["GET", "/api/plugins/search"], ["GET", "/api/plugins/installed"], ["POST", "/api/plugins/install"],
       ["POST", "/api/mcp/servers/notion/oauth/start"], ["GET", "/api/mcp/servers/notion/oauth/status"],
       ["DELETE", "/api/me"],
+      ["GET", "/api/usage"], ["GET", "/api/bots/bot_1/soul"], ["DELETE", "/api/bots/bot_1"], ["GET", "/api/mcp/servers"],
+      ["GET", "/api/bots/bot_1/command-allowlist"], ["DELETE", "/api/bots/bot_1/command-allowlist/0b1c-2d"],
+      ["GET", "/api/me/preferences"], ["PUT", "/api/me/preferences"],
+      ["GET", "/api/me/server-environment"], ["POST", "/api/me/server-environment/reset"], ["POST", "/api/me/server-environment/update"],
+      ["PATCH", "/api/groups/room_1"], ["POST", "/api/bots"],
       ["POST", "/api/bots/bot_1/computer/input"], ["GET", "/api/bots/bot_1/computer/clipboard"], ["PUT", "/api/bots/bot_1/computer/clipboard"],
     ] as const) expect(allowed(method, path), `${method} ${path}`).toBe(true);
     for (const [method, path] of [
       ["POST", "/api/auth/session"], ["DELETE", "/api/bots/bot_1/links"], ["GET", "/api/bots/bot_1/export"],
       ["DELETE", "/api/settings/bot"], ["POST", "/api/auto-review/rules"], ["POST", "/api/computer/status"],
-      ["POST", "/api/mcp/servers/notion/oauth/disconnect"], ["GET", "/api/mcp/servers"], ["GET", "/api/me"],
+      ["POST", "/api/mcp/servers/notion/oauth/disconnect"], ["POST", "/api/mcp/servers"], ["DELETE", "/api/mcp/servers/notion"], ["GET", "/api/me"],
+      ["POST", "/api/usage"], ["GET", "/api/usage.csv"], ["PATCH", "/api/bots/bot_1/soul"], ["POST", "/api/bots/bot_1/command-allowlist"],
+      ["DELETE", "/api/me/preferences"], ["DELETE", "/api/groups/room_1"], ["POST", "/api/me/server-environment/delete"],
       ["GET", "/api/bots/bot_1/computer/input"], ["POST", "/api/bots/bot_1/computer/clipboard"],
       ["GET", `/api/threads/th_1/files/${"a".repeat(24)}/extra`],
     ] as const) expect(allowed(method, path), `${method} ${path}`).toBe(false);
