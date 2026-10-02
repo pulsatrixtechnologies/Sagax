@@ -398,8 +398,10 @@ struct ChatView: View {
             if let screen = ParityLaunch.current?.screen {
                 if screen.opensComputer { showingComputer = true }
                 if screen.opensProfile {
-                    // a push while the chat's own push still animates is dropped
-                    try? await Task.sleep(nanoseconds: 900_000_000)
+                    // a push while the chat's own push still animates is
+                    // dropped; 0.9 s was too tight once a busy Debug build
+                    // settled the chat a little later
+                    try? await Task.sleep(nanoseconds: 1_500_000_000)
                     openProfile()
                 }
             }

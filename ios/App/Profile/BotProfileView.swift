@@ -593,7 +593,7 @@ struct BotProfileView: View {
                 menuOpen = true
             }
         case .routineDetail, .routineInstruction:
-            try? await Task.sleep(nanoseconds: 900_000_000)
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
             if let first = botRoutines.first(where: { $0.schedule.type == .cron }) ?? botRoutines.first {
                 parityRoutineInstruction = screen == .routineInstruction
                 openRoutine = first
