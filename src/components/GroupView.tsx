@@ -88,6 +88,8 @@ import { latestReply, type TranscriptSnapshot } from "@/lib/transcript-announcer
 import { pendingApprovals } from "./PendingApproval";
 import { TranscriptAnnouncer } from "./TranscriptAnnouncer";
 import { channelHumanRow, useOrgPeople } from "@/lib/perspicax-org";
+import { groupMemberBots } from "@/lib/group-members";
+import { botPublicProfile } from "../../shared/bot-public-profile";
 import { personAvatarSrc } from "@/lib/profile-management";
 
 function dayLabel(at: number): string {
@@ -1204,10 +1206,8 @@ export function GroupView({ group }: { group: Group }) {
     return () => window.removeEventListener("keydown", onFind);
   }, []);
 
-  const members = useMemo(
-    () => group.memberIds.map((id) => state.bots.find((b) => b.id === id)).filter((b): b is Bot => Boolean(b)),
-    [group.memberIds, state.bots],
-  );
+  // Every bot in the room, someone else's included (its public profile).
+  const members = useMemo(() => groupMemberBots(group, state.bots), [group, state.bots]);
   const orgPeople = useOrgPeople();
   const viewerEmail = state.config?.profile?.email?.trim().toLowerCase() || "";
   const viewerName = state.config?.profile?.name?.trim() || viewerEmail || "Vous";
@@ -1822,8 +1822,8 @@ export function GroupView({ group }: { group: Group }) {
                   part="bots"
                   humans={[]}
                   bots={group.memberIds.map((id) => {
-                    const bot = state.bots.find((item) => item.id === id);
-                    return { id, name: bot?.name || id, title: bot?.title, color: bot?.color, avatarUrl: bot?.avatarUrl, mascotBody: bot?.mascotBody };
+                    const bot = members.find((item) => item.id === id);
+                    return bot ? { ...botPublicProfile(bot), name: bot.name || id } : { id, name: id };
                   })}
                   {...roster}
                   onRemoveBot={(id) => {
