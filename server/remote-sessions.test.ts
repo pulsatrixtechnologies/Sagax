@@ -479,7 +479,15 @@ describe("pairing", () => {
     expect(paired.status).toBe(200);
     const h = (extra: Record<string, string> = {}) => remote("10.0.0.40", { authorization: `Bearer ${paired.body.token}`, ...extra });
     expect((await call("/api/bots", { headers: h() })).status).toBe(200);
-    for (const [method, path] of [["POST", "/api/cli-test"], ["GET", "/api/instances"], ["POST", "/api/webhooks"], ["GET", "/api/mcp/servers"], ["POST", "/api/local-computer/run"]] as const) {
+    // The engines catalogue is a client read, without the host's setup (clientInstanceView).
+    const catalogue = await call("/api/instances", { headers: h() });
+    expect(catalogue.status).toBe(200);
+    for (const instance of catalogue.body.instances) {
+      expect(instance.readOnly).toBe(true);
+      for (const key of ["cli", "cliCandidates", "install", "authentication", "claudeAccount"]) expect(instance).not.toHaveProperty(key);
+    }
+    expect((await call("/api/instances/claude", { method: "PATCH", headers: h(), body: "{}" })).status).toBe(403);
+    for (const [method, path] of [["POST", "/api/cli-test"], ["POST", "/api/webhooks"], ["GET", "/api/mcp/servers"], ["POST", "/api/local-computer/run"]] as const) {
       const r = await call(path, { method, headers: h(), body: method === "POST" ? "{}" : undefined });
       expect(r.status, `${method} ${path}`).toBe(403);
       expect(r.body.error, `${method} ${path}`).toContain("admin scope");
