@@ -44,10 +44,11 @@ describe("black bot color", () => {
 });
 
 describe("iOS MausPalette", () => {
-  // ios/App/MausAvatar.swift sits in the app target, out of reach of
-  // `swift test`, so its colour table is checked against MAUS_COLORS here.
+  // The phone's colour table (`MausColors.hex` in
+  // ios/Sources/CompanionCore/MascotLook.swift), checked against MAUS_COLORS.
   const here = dirname(fileURLToPath(import.meta.url));
-  const swift = readFileSync(join(here, "../../ios/App/MausAvatar.swift"), "utf8");
+  const source = readFileSync(join(here, "../../ios/Sources/CompanionCore/MascotLook.swift"), "utf8");
+  const swift = source.slice(source.indexOf("public enum MausColors"), source.indexOf("public static let ink"));
   const table = Object.fromEntries(
     [...swift.matchAll(/^\s*"([a-z]+)": "(#[0-9A-Fa-f]{6})",$/gm)].map((m) => [m[1], m[2]]),
   );
@@ -56,6 +57,10 @@ describe("iOS MausPalette", () => {
     expect(table.brown).toBe(MAUS_COLORS.brown);
     expect(table.amber).toBe(MAUS_COLORS.amber);
     expect(table.grey).toBe(MAUS_COLORS.grey);
+  });
+
+  it("carries every desktop colour", () => {
+    for (const name of Object.keys(MAUS_COLORS)) expect(table[name], name).toBeDefined();
   });
 
   it("has no colour that drifts from the desktop, apart from the phone's own black", () => {
