@@ -40,6 +40,9 @@ export interface OrgDirectoryEntry {
   teams?: { id: string; manager: boolean }[];
   /** Their Perspicax avatar as this server serves it, when they have one. */
   avatarUrl?: string;
+  /** A Perspicax service account (`kind: "service"`): never a person to
+   * write to (server/people-dms.ts). */
+  service?: true;
 }
 
 export interface OrgDirectoryTeam {
@@ -115,6 +118,7 @@ export function orgDirectoryEntries(issuer: string, people: DirectoryPerson[], b
       ...(email ? { email } : {}),
       role: person.role === "admin" ? "admin" : "member",
       disabled: person.status === "disabled",
+      ...(person.kind === "service" || person.type === "service" ? { service: true as const } : {}),
       teams: (principal.teams ?? []).map((team) => ({ id: team.id, manager: team.manager })),
     });
   }

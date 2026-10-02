@@ -38,6 +38,8 @@ export const USER_PREFERENCE_KEYS = [
   // where bots work for this person (organization server: their computer
   // through the desktop app, or their server environment; shared/bot-workplace.ts)
   "sagax.botWorkplace.v1",
+  // voice mode: the xAI voice, speed and language (shared/voice-mode.ts)
+  "omb.voiceMode.v1",
 ] as const;
 
 export type UserPreferenceKey = (typeof USER_PREFERENCE_KEYS)[number];

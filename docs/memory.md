@@ -14,6 +14,18 @@ and stop automatic daily turn logs. Existing files remain for review. A bot
 with filesystem access can still edit those files directly; use standing
 instructions to forbid that when memory must stay in another source of truth.
 
+## Group memory
+
+A group chat also has a memory of its own, shared by every bot in it: the
+group panel's **Memory** tab. Each bot of the group reads it at every turn in
+that group and adds to it with `group_memory_update` when it learns something
+the whole group should keep. It is separate from each bot's own memory:
+nothing from a bot's private notes reaches it unless the bot writes it there
+on purpose. The group's owner edits it or switches it off; the group's other
+people read it. It is stored under `group-memory/<groupId>/MEMORY.md` in the
+data folder, follows the same 200 lines / 24 KB budget, and is deleted with
+its group.
+
 ## Where it lives
 
 ```

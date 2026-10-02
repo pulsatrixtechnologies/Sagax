@@ -19,9 +19,12 @@ import { z } from "zod";
 export const MASCOT_CHARACTERS = ["owl", "shape", "trombi"] as const;
 export type MascotCharacter = (typeof MASCOT_CHARACTERS)[number];
 
-/** The original shapes, in the picker's order. */
-export const MASCOT_SHAPES = ["circle", "blob", "squircle", "pill", "triangle", "hexagon", "cloud", "drop"] as const;
+/** The original shapes, in the picker's order (the owner's reference grid, read left to right). */
+export const MASCOT_SHAPES = ["circle", "cloud", "squircle", "sparkle", "clover", "bean", "flower", "drop", "pill", "pick", "house", "star", "hexagon"] as const;
 export type MascotShape = (typeof MASCOT_SHAPES)[number];
+
+/** Shapes from the first set, renamed or replaced: a stored look keeps working. */
+export const LEGACY_SHAPES: Readonly<Record<string, MascotShape>> = { blob: "bean", triangle: "pick" };
 
 /** Skins for the original shapes; every one renders on every shape. */
 export const SHAPE_SKINS = ["plain", "glossy", "outline", "neon", "pastel", "night"] as const;
@@ -35,7 +38,7 @@ export const mascotLookSchema = z
   .object({
     character: z.enum(MASCOT_CHARACTERS),
     style: z.enum(["2d", "3d"]).optional(),
-    shape: z.enum(MASCOT_SHAPES).optional(),
+    shape: z.preprocess((value) => (typeof value === "string" && value in LEGACY_SHAPES ? LEGACY_SHAPES[value] : value), z.enum(MASCOT_SHAPES)).optional(),
     skins: z
       .object({
         shape: z.enum(SHAPE_SKINS).optional(),

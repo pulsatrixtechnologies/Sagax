@@ -45,13 +45,18 @@ export const CHARACTER_LABEL = {
 
 export const SHAPE_LABEL = {
   circle: "mascot.shape.circle",
-  blob: "mascot.shape.blob",
-  squircle: "mascot.shape.squircle",
-  pill: "mascot.shape.pill",
-  triangle: "mascot.shape.triangle",
-  hexagon: "mascot.shape.hexagon",
   cloud: "mascot.shape.cloud",
+  squircle: "mascot.shape.squircle",
+  sparkle: "mascot.shape.sparkle",
+  clover: "mascot.shape.clover",
+  bean: "mascot.shape.bean",
+  flower: "mascot.shape.flower",
   drop: "mascot.shape.drop",
+  pill: "mascot.shape.pill",
+  pick: "mascot.shape.pick",
+  house: "mascot.shape.house",
+  star: "mascot.shape.star",
+  hexagon: "mascot.shape.hexagon",
 } satisfies Record<MascotShape, LocaleKey>;
 
 export const SHAPE_SKIN_LABEL = {
@@ -124,7 +129,7 @@ export default function MascotLookEditor({ bot, disabled, onPatch, onOwlMove }: 
   const colors = (
     <>
       <div className={heading}>{t("mascot.color.title")}</div>
-      <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label={t("mascot.color.title")}>
+      <div className="flex flex-wrap gap-1" role="radiogroup" aria-label={t("mascot.color.title")}>
         {MAUS_COLOR_NAMES.map((color) => (
           <button
             key={color}
@@ -235,7 +240,8 @@ export default function MascotLookEditor({ bot, disabled, onPatch, onOwlMove }: 
       {look.character === "shape" && (
         <div data-character-options="shape">
           <div className={heading}>{t("floatingBots.mascot.shape")}</div>
-          <div className="grid grid-cols-8 gap-1" role="radiogroup" aria-label={t("floatingBots.mascot.shape")}>
+          {/* 13 shapes, 5-5-3 like the reference grid */}
+          <div className="grid grid-cols-5 gap-1" role="radiogroup" aria-label={t("floatingBots.mascot.shape")}>
             {SHAPE_CHOICES.map((shape) => (
               <button
                 key={shape}

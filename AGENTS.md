@@ -66,6 +66,35 @@ onboarding tests:
   it at `/api/people/<principalId>/avatar?v=<version>`. Without those
   Perspicax fields everyone keeps their initials.
 
+## Group memory and direct messages between people
+
+A user-created group keeps one shared memory (`server/group-memory.ts`,
+`DATA_DIR/group-memory/<groupId>/MEMORY.md`), separate from every bot's own
+workspace. Keep these rules, each covered by `server/group-memory.test.ts`,
+`server/group-memory.e2e.test.ts` or `server/people-dms.e2e.test.ts`:
+
+- Every bot of the group reads it in each room turn there (the
+  `group-memory` prompt section); a bot writes it only with
+  `group_memory_update` (`/api/internal/group-memory`: a bot of that group,
+  speaking in it, group memory on, the bot's own memory switch on). Nothing
+  moves between a bot's private memory and the group's on its own.
+- Entries, budget and expiry are the bot memory's (`applyMemoryUpdate`);
+  secrets are redacted on every write; it goes away with its group.
+- `GET/PUT /api/groups/<id>/memory`: the group's people read, its owner
+  (`ownsGroup` in `server/group-ownership.ts`; on a solo server the
+  operator or an admin session) edits it or switches it off (`memoryEnabled`). A removed member
+  gets 404 at once (the channel gate).
+
+On an organization server a person writes to another person through
+`POST /api/people-dms` (`server/people-dms.ts`): a group record with
+`peopleDm: true`, two `humanIds` and no bot. Only those two list, read,
+stream, search, export or write it (not an admin, a section, nor loopback);
+it stays people-only (no bot, task, rename, delete, folder or memory); a
+message starts no turn and notifies the other person only (`notify` kind
+`message` with `audience`). Backups and packages leave it out. The To:
+picker offers the directory's active persons (never `service` accounts,
+nor oneself).
+
 ## Launch flow (desktop)
 
 First run on the desktop app's own window opens the launch screen
@@ -141,6 +170,49 @@ local models are not offered. Tests: `ModelPicker.interaction.test.ts`,
 `src/lib/model-payers.test.ts`; real Electron: `scripts/verify-server-mode.ts`
 (org) and `pnpm exec electron scripts/smoke-approval-modes.cjs --model-ui-only`
 (solo).
+
+## Voice mode (xAI)
+
+The call button on a bot opens the floating voice bar
+(`src/components/voice-mode/`) when `GET /api/bots/<id>/voice/status` says
+xAI voice mode serves the person; otherwise a solo Mac keeps the older call
+(macOS dictation helper). Keep these rules, each covered by
+`server/voice-mode.test.ts`, `src/lib/voice-mode/voice-mode.test.ts`,
+`src/components/voice-mode/VoiceModeSettingsPanel.test.ts` or
+`electron/app-permissions.node-test.mjs`; real Electron in server mode with a
+fake xAI: `scripts/verify-voice-mode.ts`. Details: `docs/voice-mode-xai.md`.
+
+- The xAI key never reaches a client: the server proxies speech to text
+  (`/voice/transcribe`) and text to speech (`/voice/speak`, `/voice/voices`);
+  no route answers a key or a part of one.
+- Who pays (`resolveVoiceKey`): on an organization server the speaker's own
+  `xai` key in Perspicax, else the organization's (Settings > Connections),
+  else an access card in that person's bar only (the audience rule of every
+  access card, `accessCardAudience`: the speaker; the organization's key hint
+  only for an admin; never stored in a thread or sent as a live frame); a
+  disabled person is refused. Solo: the server's key. Each request is booked
+  with its `access`.
+- Every route names a bot the person may use (and a thread they may post
+  to); the spoken text goes through the normal send route, never a voice
+  route, so attribution and private threads stay those of a typed message.
+- The microphone is the window's own (`getUserMedia`), never the macOS
+  helper in voice mode, so Windows and server mode work. Electron grants the
+  organization server's bundled origin the microphone only
+  (`microphoneOrigins`). The bundled page has no dictation bridge: call
+  `window.ogb?.speechStop?.()`, never assume it.
+- Voice, Speed and Language live in `omb.voiceMode.v1` and travel with the
+  person (`shared/user-preferences.ts`).
+- On an organization server (the status says `organization: true`, or the
+  viewer is managed by Perspicax) the call button is
+  `VoiceModeCallButton`: the server decides (`/voice/status`, asked again at
+  every click while unavailable), and the legacy call gate ("Choose This
+  computer", macOS dictation) never shows. Unavailable shows the speaker's
+  access card (admin: the organization's key hint and "Open Settings >
+  Connections"), or the server's error with a retry; a room says voice mode
+  talks with one bot at a time. Tests: `VoiceModeCallButton.test.ts`,
+  `scripts/verify-voice-mode.ts` (no key, then the admin's key).
+
+A change to `server/voice-mode.ts` needs the server image redeployed.
 
 ## Floating bots and the desktop mascot
 
@@ -300,6 +372,50 @@ these rules, each covered by `server/harness-connectors.test.ts` or
   `PUT /api/harness-connectors/settings` (`config.harnessConnectors.claudeAi`).
 - Codex: ChatGPT connectors need Codex's own ChatGPT login, which Sagax's
   ChatGPT plan mode and API keys do not have, so Codex turns get none.
+
+## Group settings
+
+A group has no setup dialog and no pending setup state. Every group setting
+lives in its side panel (`src/components/GroupPanel.tsx`, the bot panel
+shell): Details holds the name, people and bots; Instructions holds the
+group instructions (`bulletin`); Advanced holds the default responder (a
+specific lead, Auto with Jev, everyone, or only when mentioned) and the
+working folder (empty means each bot's own folder). Keep these rules:
+
+- A new group is usable at once: `store.createGroup` stamps
+  `setupCompletedAt` at creation and the composer is never locked.
+- A group an older build left pending (`setupCompletedAt: null` and no
+  `setupSkippedAt`) is migrated to set up when the store loads.
+- There is no `PATCH /api/groups/:id/setup`; edits go through
+  `PATCH /api/groups/:id`. `POST /api/groups` still takes an optional
+  `setup` (`bulletin`, `defaultResponder`) to create a group in one call.
+- A remote client sees no Advanced tab and the instructions read-only.
+
+### Group owner (organization server)
+
+On an organization server (`OMB_IDENTITY=perspicax`) only a group's owner
+changes its settings (`server/group-ownership.ts`, client
+`src/lib/group-owner.ts`; covered by `server/group-ownership.test.ts` and
+PT-4 in `server/org-private-threads.e2e.test.ts`):
+
+- The owner is `createdBy`, else the first person in `humanIds`, else
+  nobody, and then the organization admins act as owner. The wire group
+  carries it as `ownerId` (absent on a solo server, where nothing changes).
+- Only the owner changes the name, instructions, working folder, default
+  responder, bots and people (`PATCH /api/groups/:id` answers 403
+  `not_group_owner`). Anyone listed may remove only themselves (leave),
+  and add or remove their own bots (never another person's, never a
+  reorder). The owner removes any bot or person.
+  Marking read, pins and section moves are not settings.
+- An admin has no override on content. `DELETE /api/groups/:id` is the
+  owner's, or an admin's for moderation (`channel.moderate` on a room in
+  `server/authz.ts`). A client-scope session may delete only there.
+- The owner of a client-scope session also picks the default responder.
+  The working folder keeps the admin scope (it touches the host or sandbox
+  filesystem): a non-admin owner sees it read-only with a note.
+- The panel shows the settings read-only to everyone else, with "Seul le
+  propriétaire du groupe peut modifier ces réglages", a Leave button,
+  "Ajouter mon robot" and a remove button on their own bots only.
 
 ## Upstream sync
 

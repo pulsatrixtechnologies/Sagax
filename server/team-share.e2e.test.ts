@@ -43,7 +43,7 @@ it("shares one team whole (minus chat history) and imports it back as new, inert
     await ok("PUT", `/api/bots/${lead.id}/memory/file`, { path: "MEMORY.md", text: "- Prefers short summaries.\n" });
     await ok("PUT", `/api/bots/${lead.id}/memory/file`, { path: "memory/pricing.md", text: "List price 49.\n" });
     const room = (await ok("POST", "/api/groups", { name: "Deal desk", memberIds: [lead.id, scout.id, outsider.id], section: "Sales desk" })).group;
-    await ok("PATCH", `/api/groups/${room.id}/setup`, { action: "complete", cwd: null, bulletin: "Cite sources.", defaultResponder: { kind: "member", botId: lead.id } });
+    await ok("PATCH", `/api/groups/${room.id}`, { bulletin: "Cite sources.", defaultResponder: { kind: "member", botId: lead.id } });
     await ok("POST", "/api/routines", { name: "Daily digest", prompt: "Summarize new leads.", botId: scout.id, enabled: true,
       schedule: { type: "daily", time: "09:00", weekdays: [1, 2, 3, 4, 5] }, durationMinutes: 30 });
     await ok("POST", "/api/routines", { name: "Weekly review", prompt: "Review the pipeline.", botId: lead.id, target: "room-goal", groupId: room.id, enabled: false,

@@ -15,6 +15,7 @@ import type { BotAvatarCrop } from "./bot-avatar.ts";
 import type { MascotBodyId } from "./mascot-bodies.ts";
 import type { MascotSkinId } from "./mascot-skins.ts";
 import type { MascotLook } from "./mascot-look.ts";
+import type { BotPublicProfile } from "./bot-public-profile.ts";
 import type { CredentialTargetId } from "./credential-request.ts";
 import type { TeamSetupRequest } from "./team-setup.ts";
 import type { RoutineRequestCardData } from "./routine-request.ts";
@@ -61,7 +62,7 @@ export type Surface = "cloud" | "vm" | "local" | "browser";
 
 export type MausColor =
   | "green" | "blue" | "red" | "orange" | "purple" | "cyan" | "pink"
-  | "yellow" | "teal" | "coral" | "white" | "black";
+  | "yellow" | "teal" | "coral" | "white" | "black" | "brown" | "amber" | "grey";
 
 /** The face a bot rests on, as one of the engine's state names. Kept as a
  * plain string rather than a union: bots saved under the app's earlier
@@ -675,8 +676,18 @@ export interface WireGroup {
    * follow-up no person asked for runs in this person's server environment
    * (server/user-sandbox-routing.ts). Absent on older rooms. */
   createdBy?: string;
+  /** Organization server: who owns the room's settings (its creator, else
+   * the first person listed; null when its organization admins do). Only
+   * the owner changes them (server/group-ownership.ts). Absent on a solo
+   * server. */
+  ownerId?: string | null;
   /** true for auto-created bot-bot channels. */
   dm?: boolean;
+  /** Organization server: a direct conversation between two people
+   * (`humanIds`), with no bot (server/people-dms.ts). Only those two read it. */
+  peopleDm?: boolean;
+  /** The group's shared memory (server/group-memory.ts); absent = on. */
+  memoryEnabled?: boolean;
   /** transient: the member currently running a turn. */
   busyBotId?: string | null;
   /** transient: when the busy member's turn started, for the elapsed
@@ -691,7 +702,7 @@ export interface WireGroup {
   pinnedMessageId?: string;
   /** sidebar section heading this room is filed under. */
   section?: string;
-  /** New user-created rooms start with setup pending. */
+  /** Set at creation: rooms have no pending setup step any more. */
   setupCompletedAt?: number | null;
   setupSkippedAt?: number | null;
   /** The narrowest audience this room has ever had (see
@@ -701,6 +712,10 @@ export interface WireGroup {
   /** True while any member (or hand-off) is mid-turn. Computed at
    * projection time, never persisted. */
   working: boolean;
+  /** Each bot in the room as every person in it sees it (name, label,
+   * look), whoever owns it: never its settings or other threads. Computed
+   * at projection time (shared/bot-public-profile.ts). */
+  memberProfiles?: BotPublicProfile[];
 }
 
 // ── live wire frames ───────────────────────────────────────────────────

@@ -91,7 +91,9 @@ const TASKS = new Set(["idle", "working", "waiting", "error"]);
 const LIVELINESS = new Set(["calm", "normal", "lively"]);
 const MAX_TOKENS = 1e9;
 const CHARACTERS = new Set(["owl", "shape", "trombi"]);
-const SHAPES = new Set(["circle", "blob", "squircle", "pill", "triangle", "hexagon", "cloud", "drop"]);
+const SHAPES = new Set(["circle", "cloud", "squircle", "sparkle", "clover", "bean", "flower", "drop", "pill", "pick", "house", "star", "hexagon"]);
+/** Shapes from the first set, renamed or replaced (shared/mascot-look.ts LEGACY_SHAPES). */
+const LEGACY_SHAPES = { blob: "bean", triangle: "pick" };
 const SHAPE_SKINS = new Set(["plain", "glossy", "outline", "neon", "pastel", "night"]);
 const TROMBI_SKINS = new Set(["classic", "gold", "neon", "retro98"]);
 
@@ -106,7 +108,7 @@ export function mascotLook(value) {
   return {
     character: value.character,
     ...(value.style === "2d" || value.style === "3d" ? { style: value.style } : {}),
-    ...(SHAPES.has(value.shape) ? { shape: value.shape } : {}),
+    ...(SHAPES.has(LEGACY_SHAPES[value.shape] ?? value.shape) ? { shape: LEGACY_SHAPES[value.shape] ?? value.shape } : {}),
     ...(Object.keys(cleanSkins).length ? { skins: cleanSkins } : {}),
   };
 }

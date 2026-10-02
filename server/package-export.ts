@@ -181,7 +181,7 @@ export function createBotPackageExport(input: {
 
   const roomKeys = new Set<string>();
   const rooms: NonNullable<BotPackageDefinition["rooms"]> = [];
-  for (const [index, group] of input.groups.filter((group) => !group.dm).entries()) {
+  for (const [index, group] of input.groups.filter((group) => !group.dm && !group.peopleDm).entries()) {
     const members = group.memberIds.flatMap((id) => idToKey.has(id) ? [idToKey.get(id)!] : []);
     if (!members.length) continue;
     const defaultResponder = packageRoomResponder(group.defaultResponder, idToKey, members);
@@ -682,7 +682,7 @@ export function createTeamPackageExport(input: TeamExportInput): TeamExportResul
     return agent;
   });
 
-  const groups = input.groups.filter((group) => !group.dm && teamOf(group.section) === team);
+  const groups = input.groups.filter((group) => !group.dm && !group.peopleDm && teamOf(group.section) === team);
   const roomKeys = stableKeys(groups, recorded?.rooms, () => undefined, "group-chat");
   const rooms: PackageRoom[] = [];
   const roomMembers = new Map<string, Set<string>>();

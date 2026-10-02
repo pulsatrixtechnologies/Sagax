@@ -42,8 +42,11 @@ export const EMPTY_TEAM_MAP_SNAPSHOT: TeamMapSnapshot = {
   running: [],
 };
 
-export function buildTeamMapSections<T extends TeamMapBot>(bots: T[], names: string[] = []): TeamMapSection<T>[] {
+export function buildTeamMapSections<T extends TeamMapBot>(bots: T[], names: string[] = [], options: { general?: boolean } = {}): TeamMapSection<T>[] {
   const sections = new Map<string, T[]>();
+  // General holds what has no section; the sidebar asks for it when only a
+  // room is there (someone with no bot of their own, added to a group).
+  if (options.general) sections.set("", []);
   for (const bot of bots) {
     if (bot.hidden) continue;
     const key = bot.section?.trim() || "";
