@@ -99,6 +99,7 @@ const PROTECT = [
   // file magic and key-derivation labels of data people already have
   re(`OMB-WORKSPACE-1`),
   re(`${OLD}-phone-credential-v1`),
+  re(`${"Open"}MausBot phone credential v1`),
   re(`${OLD_TLA}-install:v1`),
   re(`aos[._]${OLD}_status(?:\\.v1|\\.py)?`),
   // credential and token prefixes: issued and accepted by hand (legacy-names)
