@@ -83,12 +83,15 @@ export function inputCommands(events: readonly ComputerInputEvent[]): { ok: true
   for (const [index, event] of events.entries()) {
     switch (event.type) {
       case "move":
-        if (event.dx || event.dy) commands.push(`xdotool mousemove_relative --sync -- ${event.dx} ${event.dy}`);
+        // No --sync: xdotool then waits for the pointer to change, which never
+        // happens for a move to where it already is or past a screen edge,
+        // and the whole batch hangs until the backend's timeout.
+        if (event.dx || event.dy) commands.push(`xdotool mousemove_relative -- ${event.dx} ${event.dy}`);
         break;
       case "moveTo": {
         const x = Math.min(SCALE - 1, Math.round(event.x * SCALE));
         const y = Math.min(SCALE - 1, Math.round(event.y * SCALE));
-        commands.push(`eval "$(xdotool getdisplaygeometry --shell)" && xdotool mousemove --sync $((WIDTH*${x}/${SCALE})) $((HEIGHT*${y}/${SCALE}))`);
+        commands.push(`eval "$(xdotool getdisplaygeometry --shell)" && xdotool mousemove $((WIDTH*${x}/${SCALE})) $((HEIGHT*${y}/${SCALE}))`);
         break;
       }
       case "button": {

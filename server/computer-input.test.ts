@@ -52,8 +52,8 @@ describe("computer input events", () => {
     expect(built.ok).toBe(true);
     const commands = built.ok ? built.commands : [];
     expect(commands).toEqual([
-      "xdotool mousemove_relative --sync -- 3 -4",
-      'eval "$(xdotool getdisplaygeometry --shell)" && xdotool mousemove --sync $((WIDTH*99999/100000)) $((HEIGHT*25000/100000))',
+      "xdotool mousemove_relative -- 3 -4",
+      'eval "$(xdotool getdisplaygeometry --shell)" && xdotool mousemove $((WIDTH*99999/100000)) $((HEIGHT*25000/100000))',
       "xdotool mousedown 1",
       "xdotool click --repeat 1 --delay 30 4",
       "xdotool click --repeat 2 --delay 30 7",
@@ -92,5 +92,16 @@ describe("computer input events", () => {
 
   it("audits counts, never text", () => {
     expect(inputSummary([{ type: "text", text: "secret" }, { type: "move", dx: 1, dy: 1 }, { type: "move", dx: 1, dy: 1 }])).toEqual({ text: 1, move: 2 });
+  });
+  it("never waits on --sync for pointer moves (a move to where the pointer is, or past an edge, would hang the batch)", () => {
+    const built = inputCommands([
+      { type: "move", dx: -10_000, dy: 0 },
+      { type: "moveTo", x: 0.5, y: 0.5 },
+      { type: "moveTo", x: 0.5, y: 0.5 },
+    ]);
+    expect(built.ok).toBe(true);
+    const commands = built.ok ? built.commands : [];
+    expect(commands).toHaveLength(3);
+    for (const command of commands) expect(command).not.toContain("--sync");
   });
 });

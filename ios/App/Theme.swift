@@ -825,3 +825,42 @@ struct ThemeGalleryView: View {
     }
 }
 #endif
+
+// MARK: - Computer (13, 11)
+
+extension Theme {
+    /// The computer view (measure-chat-profile.md §2): everything on black.
+    enum Computer {
+        /// Glass on black reads #1F1F1F to #272727.
+        static let glassFill = Color(hex: 0x222222)
+        /// The small circles' top rim.
+        static let smallRim = Color(hex: 0x626262)
+        static let toastText = Color(hex: 0xF9F9F9)
+        static let toastIcon = Color(hex: 0xF8F8F8)
+        /// The frame's backdrop while no picture has arrived.
+        static let frameEmpty = Color(hex: 0x111111)
+        /// The frame: full width, 16:10, its top 76.7 pt under the bar's centre.
+        static let frameAspect: CGFloat = 1.6
+        static let frameTopFromBarCentre: CGFloat = 76.7
+        /// 24 pt mascot 13.7 pt after the back circle, the name 10.6 pt after it.
+        static let mascot: CGFloat = 24
+        static let mascotLeading: CGFloat = 13.7
+        static let nameLeading: CGFloat = 10.6
+        /// "?" and "..." are 12 pt apart.
+        static let trailingGap: CGFloat = 12
+        /// Clipboard / keyboard circles end 27.7 pt above the visible keyboard (its frame starts 9.7 pt higher).
+        static let buttonsBottom: CGFloat = 18
+        /// The trackpad toast: 250 x 55.3, 8 pt from the right edge, from
+        /// the top of the safe area; icon 30.3 pt in, label 14.7 pt after.
+        static let toastSize = CGSize(width: 250, height: 55.3)
+        static let toastTrailing: CGFloat = 8
+        static let toastIconLeading: CGFloat = 30.3
+        static let toastLabelGap: CGFloat = 14.7
+        static let toastFont = SwiftUI.Font.system(size: 14)
+        /// The "?" button seen through the toast: lens fill and glyph, and
+        /// its centre from the toast's leading edge.
+        static let toastLens = Color(hex: 0x363636)
+        static let toastLensGlyph = Color(hex: 0x8A8A8A)
+        static let toastLensCentre: CGFloat = 162
+    }
+}
