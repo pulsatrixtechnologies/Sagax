@@ -58,6 +58,9 @@ html[data-floating-bot] #root {
 
 .fb-root .fb-balloon {
   position: relative;
+  /* over the stage's empty room when brought next to the character (its
+     effects, z-index 3, still draw over it; the art never takes its clicks) */
+  z-index: 2;
   width: 288px;
   max-width: calc(100vw - 16px);
   margin-right: 4px;

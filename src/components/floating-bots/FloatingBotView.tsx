@@ -54,6 +54,8 @@ const OWL_SIZE = 120;
 /** The stage around it: big enough that no spin, flip, jump or spread wing is ever cut off (fit.ts). */
 const STAGE = mascotStage(OWL_SIZE);
 export const MASCOT_SIZE = { width: STAGE.width, height: STAGE.height } as const;
+/** The character's own box in the stage: the balloon may come right up to it. */
+const OWL_BOX = { left: STAGE.left, top: STAGE.top, size: OWL_SIZE } as const;
 
 /** A bot colour name or hex, as CSS (the parked badge wears it). */
 const owlHex = (color: string) => (MAUS_COLORS as Record<string, string>)[color] ?? (/^#[0-9a-fA-F]{3,8}$/.test(color) ? color : MAUS_COLORS.green);
@@ -585,6 +587,7 @@ export function FloatingBotView({ snapshot: given, onEvent, mover, interactive, 
           side={side}
           room={room}
           stage={STAGE}
+          owl={OWL_BOX}
           onReserve={onReserve}
           onEvent={onEvent}
           hover={hover}

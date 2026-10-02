@@ -6,6 +6,10 @@
 //  - stream: a reply streamed in 30 ms steps under three earlier exchanges;
 //  - drag: the mascot dragged with the balloon open (synthetic pointer);
 //  - resize: the balloon's grip dragged;
+//  - near: the balloon dragged by its header onto the mascot (from above,
+//    then from its left): the gap left to the character's box (at most 4 px,
+//    never over its face), and the clicks the window takes over transparent
+//    parts (none: they reach the apps behind);
 // counting window setBounds calls, position writes, dropped frames (rAF gaps)
 // and long tasks; then the balloon's background under two skins and Trombi.
 import { app, BrowserWindow, ipcMain, screen } from "electron";
@@ -20,8 +24,12 @@ const out = process.env.VERIFY_OUT;
 const wait = (ms) => new Promise((done) => setTimeout(done, ms));
 const BOT = "bot-verify";
 
-const counters = { setBounds: 0, setPosition: 0, writes: 0, lastBoundsAt: 0 };
+const counters = { setBounds: 0, setPosition: 0, writes: 0, lastBoundsAt: 0, ignoring: true };
 class CountedWindow extends BrowserWindow {
+  setIgnoreMouseEvents(ignore, ...rest) {
+    counters.ignoring = ignore;
+    return super.setIgnoreMouseEvents(ignore, ...rest);
+  }
   setBounds(...args) {
     counters.setBounds += 1;
     counters.lastBoundsAt = Date.now();
@@ -190,6 +198,69 @@ async function drag(win, selector, dx, dy, steps, perFrame = 1) {
   return { meanLagPx: Math.round(lag / steps), moved: { x: win.getBounds().x - start.x, y: win.getBounds().y - start.y } };
 }
 
+/** The balloon's box and the character's, in the page. */
+const boxes = (win) => js(win, `(() => {
+  const r = (q) => { const b = document.querySelector(q)?.getBoundingClientRect(); return b && { left: b.left, top: b.top, right: b.right, bottom: b.bottom }; };
+  return { balloon: r(".fb-balloon"), owl: r(".fb-body") };
+})()`);
+/** Does the window take a click here (page coordinates)? The page decides on the pointer's moves. */
+async function takesPointer(win, x, y) {
+  const b = win.getBounds();
+  win.webContents.sendInputEvent({ type: "mouseMove", x: Math.round(x), y: Math.round(y), globalX: b.x + Math.round(x), globalY: b.y + Math.round(y) });
+  await wait(120);
+  return !counters.ignoring;
+}
+
+async function measureNear(win) {
+  // docked first (the pin), then down onto the head
+  await js(win, `(() => { localStorage.removeItem("omb.floatingBots.balloon.v1"); return true; })()`);
+  update(snapshot());
+  await wait(500);
+  update(snapshot({ balloon: true, text: PARAGRAPH }));
+  await wait(900);
+  const docked = await boxes(win);
+  resetCounters();
+  await drag(win, ".fb-name", 0, 420, 40);
+  const above = await boxes(win);
+  const aboveMoves = moves();
+  // to its left, down beside it, then right up to its side
+  await drag(win, ".fb-name", -420, 0, 30);
+  await drag(win, ".fb-name", 0, 200, 30);
+  await drag(win, ".fb-name", 420, 0, 40);
+  const left = await boxes(win);
+  const face = (o) => ({ left: o.left + 12, top: o.top + 12, right: o.right - 12, bottom: o.bottom - 12 });
+  const covers = (a, f) => a.left < f.right && a.right > f.left && a.top < f.bottom && a.bottom > f.top;
+  // the transparent parts: the stage's empty corner, the room the balloon left above
+  const shot = path.join(path.dirname(out), "mascot-near.png");
+  fs.writeFileSync(shot, (await win.webContents.capturePage()).toPNG());
+  const size = await js(win, "({ w: innerWidth, h: innerHeight })");
+  const transparent = [
+    { x: size.w - 3, y: size.h - 3 },
+    { x: size.w - 3, y: 3 },
+    { x: Math.max(3, left.owl.right + 8), y: Math.max(3, left.owl.top - 30) },
+  ];
+  const through = [];
+  for (const point of transparent) through.push({ ...point, takes: await takesPointer(win, point.x, point.y) });
+  const overBalloon = await takesPointer(win, (left.balloon.left + left.balloon.right) / 2, (left.balloon.top + left.balloon.bottom) / 2);
+  const result = {
+    dockedGapPx: Math.round(docked.owl.top - docked.balloon.bottom),
+    fromAboveGapPx: Math.round(above.owl.top - above.balloon.bottom),
+    fromLeftGapPx: Math.round(left.owl.left - left.balloon.right),
+    coversFace: covers(above.balloon, face(above.owl)) || covers(left.balloon, face(left.owl)),
+    windowMovesDraggingBalloon: aboveMoves,
+    transparentTakesClicks: through.filter((p) => p.takes).length,
+    balloonTakesClicks: overBalloon,
+    screenshot: shot,
+  };
+  const ok = result.fromAboveGapPx <= 4 && result.fromLeftGapPx <= 4 && !result.coversFace && result.transparentTakesClicks === 0 && result.balloonTakesClicks;
+  if (!ok) throw new Error(`balloon near the mascot: ${JSON.stringify(result)}`);
+  // back to its docked spot for what follows
+  await js(win, `(() => { localStorage.removeItem("omb.floatingBots.balloon.v1"); return true; })()`);
+  update(snapshot());
+  await wait(400);
+  return result;
+}
+
 async function faceColors(win) {
   return js(win, `(() => {
     const face = document.querySelector(".fb-balloon-face");
@@ -290,6 +361,7 @@ app.whenReady().then(async () => {
     await startFrames(win);
     const resized = await drag(win, ".fb-grip", -140, -90, 60);
     report.resize = { steps: 60, windowMoves: moves(), positionWrites: counters.writes, ...resized, ...cpu(win), ...(await stopFrames(win)) };
+    report.near = await measureNear(win);
     report.events = brainEvents.filter((e) => e.channel === "floating-bots:event").map((e) => e.payload.event.type);
 
     // theme: the app's skin, live, and Trombi's own look
