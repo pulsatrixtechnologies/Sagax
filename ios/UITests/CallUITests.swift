@@ -178,9 +178,18 @@ final class CallUITests: XCTestCase {
         XCTAssertTrue(search.waitForExistence(timeout: 20))
         search.tap()
         let field = app.textFields["search-field"]
-        if field.waitForExistence(timeout: 5) { field.typeText(name) }
         let row = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'search-row.' AND label CONTAINS %@", name)).firstMatch
-        XCTAssertTrue(row.waitForExistence(timeout: 10), "\(name) in search")
+        // the fleet may still be hydrating when the field opens: type again
+        for attempt in 0..<3 where !row.exists {
+            guard field.waitForExistence(timeout: 5) else { break }
+            field.tap()
+            if attempt > 0, let typed = field.value as? String, !typed.isEmpty {
+                field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: typed.count))
+            }
+            field.typeText(name)
+            _ = row.waitForExistence(timeout: 8)
+        }
+        XCTAssertTrue(row.waitForExistence(timeout: 5), "\(name) in search")
         row.tap()
         XCTAssertTrue(app.buttons["composer-voice"].waitForExistence(timeout: 15))
     }
