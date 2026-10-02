@@ -68,7 +68,9 @@ function startServer(port, webhook) {
   const proc = spawn(process.execPath, ["--experimental-strip-types", join(ROOT, "server", "index.ts")], {
     cwd: ROOT,
     env: {
-      PATH: `${dirname(process.execPath)}:/usr/bin:/bin`,
+      // PARITY_SERVER_PATH adds directories (a container runtime for a real
+      // Local VM, for instance) for an end-to-end computer run.
+      PATH: [dirname(process.execPath), process.env.PARITY_SERVER_PATH, "/usr/bin", "/bin"].filter(Boolean).join(":"),
       HOME: home,
       USERPROFILE: home,
       OMB_DATA_DIR: join(home, ".openmausbot"),
