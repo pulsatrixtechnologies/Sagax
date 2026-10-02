@@ -1466,6 +1466,28 @@ describe("harness HTTP API", () => {
     }
   });
 
+  it("makes one Primary Bot per person through POST /api/bots/:id/primary", async () => {
+    const [first, second] = await Promise.all([api("POST", "/api/bots"), api("POST", "/api/bots")]).then(
+      (created) => created.map((response) => response.body.bot),
+    );
+    try {
+      const made = await api("POST", `/api/bots/${first.id}/primary`);
+      expect(made.status).toBe(200);
+      expect(made.body.bot).toMatchObject({ id: first.id, chiefOfStaff: true });
+      // Another team does not make a second one: the role moves.
+      expect((await api("PATCH", `/api/bots/${second.id}`, { section: "Elsewhere" })).status).toBe(200);
+      const moved = await api("POST", `/api/bots/${second.id}/primary`);
+      expect(moved.status).toBe(200);
+      expect(moved.body.changed).toEqual(expect.arrayContaining([first.id, second.id]));
+      const bots = (await api("GET", "/api/bots")).body.bots as Array<{ id: string; chiefOfStaff?: boolean }>;
+      expect(bots.filter((bot) => bot.chiefOfStaff).map((bot) => bot.id)).toEqual([second.id]);
+      expect((await api("POST", "/api/bots/missing-bot/primary")).status).toBe(404);
+    } finally {
+      await api("PATCH", `/api/bots/${second.id}`, { chiefOfStaff: false });
+      await Promise.all([first, second].map((bot) => api("DELETE", `/api/bots/${bot.id}`)));
+    }
+  });
+
   it("protects a team-goal lead and pauses the routine when its room is deleted", async () => {
     const [lead, other] = await Promise.all([api("POST", "/api/bots"), api("POST", "/api/bots")]).then(
       (created) => created.map((response) => response.body.bot),
