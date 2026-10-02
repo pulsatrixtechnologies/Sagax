@@ -86,7 +86,7 @@ import { createComputerSharing, validateSharedFolders } from "./computer-sharing
 import { createDesktopBridge } from "./desktop-bridge.mjs";
 import { acquireDataDirLease } from "./data-dir-lease.mjs";
 import { createManagedDesktopClient, createManagedDesktopRelay, createManagedDesktopStore } from "./managed-desktop.mjs";
-import { createCloudAccountClient, createCloudAccountStore } from "./cloud-account.mjs";
+import { CLOUD_SERVICES_ENABLED, createCloudAccountClient, createCloudAccountStore } from "./cloud-account.mjs";
 import { cloudHomeConnectUrl, withCloudHome } from "./cloud-home.mjs";
 import { createCloudEntry } from "./cloud-entry.mjs";
 import { cloudPageSenderAllowed, createCloudMove, parseCloudMoveStatus } from "./cloud-move.mjs";
@@ -768,6 +768,14 @@ import {
   stopCompanion,
 } from "./companion.mjs";
 import { createRoutineWakeHold, rememberRoutineWake, routineWakeSettings } from "./routine-wake.mjs";
+import { installFetchGuard, installSessionBlock } from "./upstream-hosts.mjs";
+
+// No request from this app reaches the original OpenMausBot services, the
+// upstream author's repositories or an analytics host: main's own fetch is
+// guarded here, every Electron session (windows, webviews, the updater's net
+// session) on creation and once ready (electron/upstream-hosts.mjs).
+installFetchGuard(globalThis);
+app.on("session-created", (created) => installSessionBlock(created, (line) => slog(`network: ${line}`)));
 
 /** IPC that controls this computer, its files, its logins or its updater is
  * answered only for the local server's UI (electron/local-origin.cjs). A
@@ -1257,6 +1265,7 @@ function syncPhoneSecretKey(proc) {
 
 function ensureCloudAccount() {
   if (cloudAccount) return cloudAccount;
+  if (!CLOUD_SERVICES_ENABLED) throw new Error("OMB Cloud is not available in Sagax.");
   if (!app.isPackaged || desktopRemoteAccess) throw new Error("OMB Cloud sign-in requires the local desktop app.");
   cloudAccount = createCloudAccountClient({
     store: createCloudAccountStore({ file: path.join(app.getPath("userData"), "cloud-account.bin"), encryption: {
@@ -2695,7 +2704,8 @@ function createWindow({ deferNavigation = false } = {}) {
       // renderer's remote-only feature gates. Keep the two facts independent:
       // upstream's origin boundary must not erase the client-mode marker.
       additionalArguments: [...desktopCompanionRendererArguments(rendererOrigin(), desktopRemoteAccess),
-        ...(app.isPackaged && !desktopRemoteAccess ? ["--omb-company-desktop=1"] : [])],
+        ...(app.isPackaged && !desktopRemoteAccess ? ["--omb-company-desktop=1"] : []),
+        ...(app.isPackaged && !desktopRemoteAccess && CLOUD_SERVICES_ENABLED ? ["--sagax-cloud=1"] : [])],
     },
   });
   mainWindow = win;
@@ -3889,6 +3899,7 @@ setCuaStateListener((connection) => {
 });
 
 app.whenReady().then(async () => {
+  installSessionBlock(session.defaultSession, (line) => slog(`network: ${line}`));
   // Cached-before-the-fix attachment responses outlive `no-store`: entries
   // stored under the old one-year immutable policy can replay to a second
   // identity in this profile without the visibility gate re-running. The

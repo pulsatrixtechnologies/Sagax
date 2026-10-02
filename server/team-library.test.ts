@@ -3,8 +3,8 @@ import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
 import {
-  TEAM_LIBRARY_CATALOG_URL,
-  TEAM_LIBRARY_RAW_ROOT,
+  fetchTeamCatalog,
+  teamLibraryRoot,
   fetchGithubTeam,
   fetchLibraryTeam,
   githubManifestUrls,
@@ -64,7 +64,20 @@ describe("team library", () => {
     expect(() => parseTeamCatalog(unsafe)).toThrow("safe catalog path");
   });
 
+  it("never fetches a catalog unless one of ours is configured", async () => {
+    const fetcher = vi.fn() as unknown as typeof fetch;
+    expect(teamLibraryRoot({})).toBe("");
+    expect(teamLibraryRoot({ SAGAX_TEAM_LIBRARY_URL: "https://raw.githubusercontent.com/milind-soni/openmausbot-teams/main" })).toBe("");
+    expect(teamLibraryRoot({ SAGAX_TEAM_LIBRARY_URL: "http://example.com/teams" })).toBe("");
+    expect(teamLibraryRoot({ SAGAX_TEAM_LIBRARY_URL: "https://raw.githubusercontent.com/pulsatrixtechnologies/teams/main/" }))
+      .toBe("https://raw.githubusercontent.com/pulsatrixtechnologies/teams/main");
+    await expect(fetchTeamCatalog(fetcher, "")).resolves.toMatchObject({ teams: [] });
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
   it("loads only the manifest selected by the trusted catalog", async () => {
+    const TEAM_LIBRARY_RAW_ROOT = "https://raw.githubusercontent.com/pulsatrixtechnologies/teams/main";
+    const TEAM_LIBRARY_CATALOG_URL = `${TEAM_LIBRARY_RAW_ROOT}/catalog.json`;
     const fetcher = vi.fn(async (url: string | URL | Request) => {
       const target = String(url);
       if (target === TEAM_LIBRARY_CATALOG_URL) return response(catalog);
@@ -72,7 +85,7 @@ describe("team library", () => {
       return response({}, 404);
     }) as unknown as typeof fetch;
 
-    const loaded = await fetchLibraryTeam("engineering", fetcher);
+    const loaded = await fetchLibraryTeam("engineering", fetcher, TEAM_LIBRARY_RAW_ROOT);
     if (loaded.format !== "openmaus.team") throw new Error("expected a legacy team");
     expect(loaded.team.name).toBe("Engineering");
     expect(fetcher).toHaveBeenCalledTimes(2);
