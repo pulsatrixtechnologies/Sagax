@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { DEFAULT_LOCAL_VM_IDLE_TIMEOUT_MINUTES } from "./config.ts";
 import { LocalVmIdleTimer } from "./local-vm-idle.ts";
 
 describe("LocalVmIdleTimer", () => {
@@ -12,6 +13,23 @@ describe("LocalVmIdleTimer", () => {
 
     idle.touch();
     await vi.advanceTimersByTimeAsync(999);
+    expect(suspend).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(suspend).toHaveBeenCalledOnce();
+  });
+
+  it("stops an unused Local VM after the 10 minute default, unless busy", async () => {
+    expect(DEFAULT_LOCAL_VM_IDLE_TIMEOUT_MINUTES).toBe(10);
+    const suspend = vi.fn(async () => {});
+    let busy = true;
+    const idle = new LocalVmIdleTimer(DEFAULT_LOCAL_VM_IDLE_TIMEOUT_MINUTES * 60_000, () => busy, suspend);
+
+    idle.touch();
+    await vi.advanceTimersByTimeAsync(10 * 60_000);
+    // A turn, an open viewer or a running command defers the stop.
+    expect(suspend).not.toHaveBeenCalled();
+    busy = false;
+    await vi.advanceTimersByTimeAsync(10 * 60_000 - 1);
     expect(suspend).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(1);
     expect(suspend).toHaveBeenCalledOnce();

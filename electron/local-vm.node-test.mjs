@@ -190,3 +190,71 @@ test("pause, resume and stop act on the person's VM only", async () => {
   await vm.power("stop");
   assert.ok(docker.calls.includes("docker stop openmausbot-computer"));
 });
+
+/** A fake clock: timers fire only when the test moves time forward. */
+function fakeClock() {
+  let time = 0; let seq = 0;
+  const timers = new Map();
+  const setTimer = (fn, ms) => { const id = ++seq; timers.set(id, { at: time + ms, fn }); return id; };
+  const clearTimer = id => { timers.delete(id); };
+  const advance = async ms => {
+    const end = time + ms;
+    for (;;) {
+      const next = [...timers.entries()].sort((a, b) => a[1].at - b[1].at).find(([, timer]) => timer.at <= end);
+      if (!next) break;
+      timers.delete(next[0]);
+      time = next[1].at;
+      next[1].fn();
+      for (let i = 0; i < 20; i++) await Promise.resolve();
+      await new Promise(resolve => setImmediate(resolve));
+    }
+    time = end;
+  };
+  return { now: () => time, setTimer, clearTimer, advance };
+}
+
+test("an unused Local VM stops (never deleted) after 10 minutes", async () => {
+  const docker = fakeDocker({ existing: container({ running: true }) });
+  const clock = fakeClock();
+  const vm = createLocalVm({ exec: docker.exec, dataDir: DATA, home: HOME, platform: "darwin", env: {}, exists: exists([]), ...clock });
+  assert.equal(vm.idleStopMs, 10 * 60_000);
+  const stops = () => docker.calls.filter(call => call.endsWith(" stop openmausbot-computer")).length;
+  await clock.advance(10 * 60_000 - 1);
+  assert.equal(stops(), 0);
+  await clock.advance(1);
+  assert.equal(stops(), 1);
+  assert.ok(!docker.calls.some(call => / rm /.test(` ${call} `)), "idle stop never removes the VM or its folder");
+});
+
+test("bot commands and an open screen view keep the Local VM running", async () => {
+  const docker = fakeDocker({ existing: container({ running: true }) });
+  const clock = fakeClock();
+  const vm = createLocalVm({ exec: docker.exec, dataDir: DATA, home: HOME, platform: "darwin", env: {}, exists: exists([]), ...clock });
+  const stops = () => docker.calls.filter(call => call.endsWith(" stop openmausbot-computer")).length;
+  await clock.advance(9 * 60_000);
+  await vm.exec(undefined, "true");
+  await clock.advance(9 * 60_000);
+  await vm.screenshot().catch(() => {});
+  await clock.advance(9 * 60_000);
+  assert.equal(stops(), 0);
+  // Status polls are not use: the window runs out from the last real use.
+  await vm.status();
+  await clock.advance(60_000);
+  assert.equal(stops(), 1);
+});
+
+test("a command still running defers the idle stop", async () => {
+  const docker = fakeDocker({ existing: container({ running: true }) });
+  let finish;
+  const exec = async (argv, options) => argv[1] === "exec" ? new Promise(resolve => { finish = () => resolve(ok("")); }) : docker.exec(argv, options);
+  const clock = fakeClock();
+  const vm = createLocalVm({ exec, dataDir: DATA, home: HOME, platform: "darwin", env: {}, exists: exists([]), ...clock });
+  const stops = () => docker.calls.filter(call => call.endsWith(" stop openmausbot-computer")).length;
+  const running = vm.exec(undefined, "sleep 1200");
+  await clock.advance(25 * 60_000);
+  assert.equal(stops(), 0);
+  finish();
+  await running;
+  await clock.advance(10 * 60_000);
+  assert.equal(stops(), 1);
+});

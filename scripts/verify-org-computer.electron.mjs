@@ -99,6 +99,8 @@ app.whenReady().then(async () => {
     await wait(3000);
     await shot("3-computer-view-only.png");
     check("view-only with Take control in the middle", await js(`Boolean(document.querySelector('[data-take-control]')) && document.querySelector('[data-sandbox-desktop]').dataset.control === "0"`));
+    check("no Running chip over the live screen", !(await js(`Boolean(document.querySelector('[data-computer-screen="running"] [data-power]'))`)));
+    check("the controls wait for hover intent", await js(`document.querySelector('[data-controls]')?.dataset.controls === "hidden"`));
     // Details shows the usage, which follows the start at once.
     await js(`document.querySelector('[data-usage-toggle]').click()`);
     const usage = await until("usage figures", async () => {
@@ -131,18 +133,21 @@ app.whenReady().then(async () => {
     await until("the square live again, view-only", () => js(`document.querySelector('[data-sandbox-desktop]')?.dataset.control === "0" && Boolean(document.querySelector('[data-sandbox-desktop="connected"]'))`), 40_000);
     check("closing the window released control", true);
 
-    // Works on: a compact control under the screen, not in More > Access.
-    const workson = await js(`document.querySelector('[data-works-on-setting]')?.innerText ?? ""`);
-    check("Works on is in the Computer tab with short labels", ["Auto", "Cloud", "Local VM", "This computer", "Browser", "Off"].every((label) => workson.includes(label)) && !workson.includes("Cloud is your server environment"), workson.replace(/\n/g, " | "));
-    const chosen = await js(`JSON.stringify({ checked: document.querySelector('[data-works-on-choice][aria-checked="true"]')?.dataset.worksOnChoice, active: document.activeElement?.dataset?.worksOnChoice ?? document.activeElement?.tagName, saved: document.querySelector("[data-works-on-setting]")?.dataset.worksOnSetting, tab: document.querySelector("[data-org-computer]")?.dataset.worksOn })`);
-    log(`Luna's Works on now: ${await computerOf()}`);
-    check("Works on marks Auto, the bot's setting", JSON.parse(chosen).checked === "auto", chosen);
-    await js(`document.querySelector('[data-works-on-setting]').scrollIntoView({ block: "center" })`);
-    await shot("5-works-on.png");
+    // Works on: its own item of More (Computer, between Access and Model),
+    // not under the screen and not in More > Access.
+    check("the Computer tab shows only the screen", !(await js(`Boolean(document.querySelector('[data-works-on-setting]'))`)));
     check("opened More", await click("button,[role=tab]", "^More$"));
     await wait(600);
-    await click("button,a,[role=button]", "^Access");
-    await wait(800);
+    const order = JSON.parse(await js(`JSON.stringify([...document.querySelectorAll('[data-bot-settings-section]')].map((b) => b.dataset.botSettingsSection))`));
+    check("More lists Computer between Access and Model", order.indexOf("worksOn") === order.indexOf("access") + 1 && order.indexOf("model") === order.indexOf("worksOn") + 1, order.join(", "));
+    await js(`document.querySelector('[data-bot-settings-section="worksOn"]').click()`);
+    await until("the Works on item", () => js(`Boolean(document.querySelector('[data-works-on-setting]'))`));
+    const workson = await js(`document.querySelector('[data-works-on-setting]')?.innerText ?? ""`);
+    check("Works on has short labels and a one-line hint", ["Auto", "Cloud", "Local VM", "This computer", "Browser", "Off"].every((label) => workson.includes(label)), workson.replace(/\n/g, " | "));
+    const chosen = await js(`JSON.stringify({ checked: document.querySelector('[data-works-on-choice][aria-checked="true"]')?.dataset.worksOnChoice, saved: document.querySelector("[data-works-on-setting]")?.dataset.worksOnSetting })`);
+    log(`Luna's Works on now: ${await computerOf()}`);
+    check("Works on marks Auto, the bot's setting", JSON.parse(chosen).checked === "auto", chosen);
+    await shot("5-works-on.png");
     check("More > Access has no Works on", !(await js(`Boolean(document.querySelector('[data-works-on-org]'))`)));
   } catch (error) {
     log(`error: ${error instanceof Error ? error.stack : String(error)}`);
