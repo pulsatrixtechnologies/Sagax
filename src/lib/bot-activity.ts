@@ -5,7 +5,6 @@ import type { LocaleKey } from "@/locales";
 import { t } from "@/lib/i18n";
 import {
   activityStatusActive,
-  BOT_ACTIVITY_WINDOW_MS,
   type BotActivityDetail,
   type BotActivityItem,
   type BotActivityList,
@@ -29,51 +28,120 @@ export async function loadBotActivity(api: Api, botId: string, options: { filter
   return { items: list.items ?? [], subagents: list.subagents ?? [] };
 }
 
-/** Coding shows its few newest jobs; See all opens the rest. */
-export const CODING_SHOWN = 4;
-/** Activity keeps finished work this long, then lets it go. */
-export const ACTIVITY_RECENT_MS = 24 * 60 * 60_000;
-export const ACTIVITY_RECENT_SHOWN = 5;
+/** A job that finishes stays this long in the panel ("Finished"), then
+ * goes: the panel shows live work only, past work is in the history. */
+export const FINISHED_LINGER_MS = 5_000;
+/** The last part of that time fades the card out. */
+export const FINISHED_FADE_MS = 700;
 
 function newestRunningFirst(a: BotActivityItem, b: BotActivityItem): number {
   return Number(activityStatusActive(b.status)) - Number(activityStatusActive(a.status)) || b.updatedAt - a.updatedAt;
 }
 
-/** Details > Coding: coding jobs only (the server's `coding`, never a
- * title), running ones first, from the last 7 days, the newest few. */
-export function codingPreview(items: readonly BotActivityItem[], now: number, limit = CODING_SHOWN): { shown: BotActivityItem[]; total: number } {
-  const since = now - BOT_ACTIVITY_WINDOW_MS;
-  const coding = items
-    .filter((item) => item.coding && item.kind !== "subagent" && (activityStatusActive(item.status) || item.updatedAt >= since))
-    .sort(newestRunningFirst);
-  return { shown: coding.slice(0, limit), total: coding.length };
+/** What the panel shows: running entries, plus those seen running that
+ * finished less than FINISHED_LINGER_MS ago (fading at the end). */
+export interface LiveView {
+  visible: (item: BotActivityItem) => boolean;
+  fading: (item: BotActivityItem) => boolean;
 }
 
-export interface ActivityGroups {
-  /** Running, waiting or queued: workflows (routine runs, work handed
-   * over), sub-agents and other background work that is not coding. */
-  running: BotActivityItem[];
-  /** Finished, failed or stopped in the last day, newest first. */
-  recent: BotActivityItem[];
+/** Follows the entries across fetches. An entry seen running and then
+ * settled stays FINISHED_LINGER_MS from the moment it was seen settled,
+ * then leaves; `onChange` fires when the fade starts and when it leaves.
+ * Entries already settled when first seen never show. */
+export class LiveActivity {
+  private readonly running = new Set<string>();
+  private readonly settled = new Map<string, number>();
+  private readonly timers = new Set<ReturnType<typeof setTimeout>>();
+
+  constructor(private readonly onChange: () => void, private readonly clock: () => number = Date.now) {}
+
+  update(items: readonly BotActivityItem[]): void {
+    const at = this.clock();
+    for (const item of items) {
+      if (activityStatusActive(item.status)) {
+        this.running.add(item.id);
+        this.settled.delete(item.id);
+      } else if (this.running.delete(item.id)) {
+        this.settled.set(item.id, at);
+        this.later(FINISHED_LINGER_MS - FINISHED_FADE_MS);
+        this.later(FINISHED_LINGER_MS);
+      }
+    }
+  }
+
+  view(): LiveView {
+    const at = this.clock();
+    const age = (item: BotActivityItem) => {
+      const since = this.settled.get(item.id);
+      return since === undefined ? undefined : at - since;
+    };
+    return {
+      visible: (item) => activityStatusActive(item.status) || (age(item) ?? Infinity) < FINISHED_LINGER_MS,
+      fading: (item) => !activityStatusActive(item.status) && (age(item) ?? 0) >= FINISHED_LINGER_MS - FINISHED_FADE_MS,
+    };
+  }
+
+  dispose(): void {
+    for (const timer of this.timers) clearTimeout(timer);
+    this.timers.clear();
+  }
+
+  private later(ms: number): void {
+    const timer = setTimeout(() => {
+      this.timers.delete(timer);
+      const at = this.clock();
+      for (const [id, since] of this.settled) if (at - since >= FINISHED_LINGER_MS) this.settled.delete(id);
+      this.onChange();
+    }, ms);
+    this.timers.add(timer);
+  }
+}
+
+const SHOW_ALL: LiveView = { visible: () => true, fading: () => false };
+
+/** Details > Coding: running coding jobs only (the server's `coding`, never
+ * a title), and those that just finished while they leave. */
+export function codingLive(items: readonly BotActivityItem[], live: LiveView = SHOW_ALL): BotActivityItem[] {
+  return items
+    .filter((item) => item.coding && item.kind !== "subagent" && live.visible(item))
+    .sort(newestRunningFirst);
 }
 
 /** Details > Activity: everything that is not a coding job, plus the
- * sub-agents this bot's threads started (coding or not). Empty groups mean
- * the section hides. */
-export function activityGroups(items: readonly BotActivityItem[], subagents: readonly BotActivityItem[], now: number, recentLimit = ACTIVITY_RECENT_SHOWN): ActivityGroups {
-  const since = now - ACTIVITY_RECENT_MS;
+ * sub-agents this bot's threads started (coding or not); running entries
+ * and those that just finished while they leave. */
+export function activityLive(items: readonly BotActivityItem[], subagents: readonly BotActivityItem[], live: LiveView = SHOW_ALL): BotActivityItem[] {
+  return uniqueItems([...items.filter((item) => !item.coding), ...subagents])
+    .filter((item) => live.visible(item))
+    .sort(newestRunningFirst);
+}
+
+function uniqueItems(items: readonly BotActivityItem[]): BotActivityItem[] {
   const seen = new Set<string>();
-  const all = [...items.filter((item) => !item.coding), ...subagents].filter((item) => {
+  return items.filter((item) => {
     if (seen.has(item.id)) return false;
     seen.add(item.id);
     return true;
   });
-  const running = all.filter((item) => activityStatusActive(item.status)).sort(newestRunningFirst);
-  const recent = all
-    .filter((item) => !activityStatusActive(item.status) && (item.endedAt ?? item.updatedAt) >= since)
-    .sort((a, b) => (b.endedAt ?? b.updatedAt) - (a.endedAt ?? a.updatedAt))
-    .slice(0, recentLimit);
-  return { running, recent };
+}
+
+export type HistoryStatus = "all" | "running" | "finished" | "failed";
+
+/** The history modal's list: newest first, by status and words. Failed
+ * includes stopped work. */
+export function historyItems(items: readonly BotActivityItem[], status: HistoryStatus, search: string): BotActivityItem[] {
+  const words = search.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  return uniqueItems(items)
+    .filter((item) => {
+      if (status === "running" && !activityStatusActive(item.status)) return false;
+      if (status === "finished" && item.status !== "finished") return false;
+      if (status === "failed" && item.status !== "failed" && item.status !== "stopped") return false;
+      if (!words.length) return true;
+      const text = [item.title, item.botName, item.startedBy?.name, item.currentStep].filter(Boolean).join(" ").toLowerCase();
+      return words.every((word) => text.includes(word));
+    })
+    .sort((a, b) => b.startedAt - a.startedAt);
 }
 
 /** One entry's detail, by its list id (`thread:<id>` or `run:<id>`). */
