@@ -6,10 +6,10 @@ import { launchVerificationServer, runControlOmb } from "./control-omb.ts";
 import { fixtureApi } from "./testing/preview-fixture.ts";
 import { verifiedNativeSearch } from "./testing/native-search-evidence.ts";
 
-const cli = process.env.OMB_VERIFY_CODEX_CLI;
-const auth = process.env.OMB_VERIFY_CODEX_AUTH;
-const output = process.env.OMB_VERIFY_OUTPUT;
-const models = (process.env.OMB_VERIFY_MODELS ?? "gpt-5.6-luna").split(",").map(model => model.trim()).filter(Boolean);
+const cli = process.env.SAGAX_VERIFY_CODEX_CLI;
+const auth = process.env.SAGAX_VERIFY_CODEX_AUTH;
+const output = process.env.SAGAX_VERIFY_OUTPUT;
+const models = (process.env.SAGAX_VERIFY_MODELS ?? "gpt-5.6-luna").split(",").map(model => model.trim()).filter(Boolean);
 if (!models.length) throw new Error("Choose at least one acceptance model.");
 if (!cli || !auth || !output) throw new Error("Supply explicit CLI, sign-in and output. Uses real model quota.");
 mkdirSync(output, { recursive: true });

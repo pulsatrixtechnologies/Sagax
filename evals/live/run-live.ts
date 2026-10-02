@@ -27,7 +27,7 @@ import {
   type LiveScenarioOutcome,
 } from "./types.ts";
 /** Tier 3, the opt-in runner. Everything that could touch a real model sits
- * behind the OMB_EVAL_LIVE=1 gate: with the gate closed the entrypoint
+ * behind the SAGAX_EVAL_LIVE=1 gate: with the gate closed the entrypoint
  * prints one skip line and exits 0, so CI and local runs stay offline by
  * default no matter how the eval task is invoked. */
 
@@ -35,21 +35,21 @@ const DEFAULT_OUT = join(dirname(fileURLToPath(import.meta.url)), "..", "reports
 const BASELINE_PATH = join(LIVE_BASELINES_DIR, "live-suite.json");
 
 export function loadLiveInstance(env: Record<string, string | undefined>): LiveInstance {
-  const inline = env.OMB_EVAL_LIVE_INSTANCE;
+  const inline = env.SAGAX_EVAL_LIVE_INSTANCE;
   if (inline !== undefined && inline.trim() !== "") {
     return liveInstanceSchema.parse(JSON.parse(inline));
   }
-  const path = env.OMB_EVAL_LIVE_CONFIG;
+  const path = env.SAGAX_EVAL_LIVE_CONFIG;
   if (path !== undefined && path.trim() !== "") {
     return liveInstanceSchema.parse(JSON.parse(readFileSync(path, "utf8")));
   }
   throw new Error(
-    "live tier is gated on (OMB_EVAL_LIVE=1) but no engine instance is configured; set OMB_EVAL_LIVE_INSTANCE (inline JSON) or OMB_EVAL_LIVE_CONFIG (path to instance JSON)",
+    "live tier is gated on (SAGAX_EVAL_LIVE=1) but no engine instance is configured; set SAGAX_EVAL_LIVE_INSTANCE (inline JSON) or SAGAX_EVAL_LIVE_CONFIG (path to instance JSON)",
   );
 }
 
 function passEnvNames(env: Record<string, string | undefined>): string[] {
-  return (env.OMB_EVAL_LIVE_PASS_ENV ?? "")
+  return (env.SAGAX_EVAL_LIVE_PASS_ENV ?? "")
     .split(/[:,]/)
     .map((name) => name.trim())
     .filter(Boolean);
@@ -120,7 +120,7 @@ async function runJudge(
 }
 
 export async function runLiveMain(args: string[]): Promise<number> {
-  if (process.env.OMB_EVAL_LIVE !== "1") {
+  if (process.env.SAGAX_EVAL_LIVE !== "1") {
     console.log(
       "live tier skipped: offline by default; set OMB_EVAL_LIVE=1 plus OMB_EVAL_LIVE_INSTANCE (or OMB_EVAL_LIVE_CONFIG) to run real-model smoke evals",
     );

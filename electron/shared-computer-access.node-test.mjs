@@ -45,7 +45,7 @@ function stubWorkspace() {
   const fetchImpl = async (url, init) => {
     const route = new URL(url).pathname;
     if (route === "/api/auth/session") return json({ kind: "session", id: sessionId });
-    if (route === "/.well-known/openmausbot/environment") return json({ environmentId, capabilities: { sharedComputers: true } });
+    if (route === "/.well-known/sagax/environment" || route === "/.well-known/openmausbot/environment") return json({ environmentId, capabilities: { sharedComputers: true } });
     const body = init?.body ? JSON.parse(init.body) : {};
     if (route === "/api/shared-computers/connect") { state.connected = body; return json({}); }
     if (route.endsWith("/poll")) {
@@ -239,15 +239,15 @@ process.stdout.write(JSON.stringify({jsonrpc:'2.0',id:m.id,result})+'\\n'); });`
 test("a protected directory spelled in another case is still refused", async t => {
   const { dir, folder, grant, run } = await fixture(t);
   if (!(await spellings(dir)).case) return t.skip("this filesystem is case-sensitive, so no case variant names the same directory");
-  await mkdir(path.join(dir, "OpenMausBot"));
-  await writeFile(path.join(dir, "OpenMausBot", "credentials.bin"), "credential blob");
-  grant.protectedPaths = [path.join(dir, "OpenMausBot")];
+  await mkdir(path.join(dir, "Sagax"));
+  await writeFile(path.join(dir, "Sagax", "credentials.bin"), "credential blob");
+  grant.protectedPaths = [path.join(dir, "Sagax")];
   folder.write = true;
-  await assert.rejects(run({ action: "read_file", path: "OpenMausBot/credentials.bin" }), /Desktop credentials/);
-  await assert.rejects(run({ action: "read_file", path: "openmausbot/credentials.bin" }), /Desktop credentials/);
-  await assert.rejects(run({ action: "read_file", path: "OPENMAUSBOT/credentials.bin" }), /Desktop credentials/);
-  await assert.rejects(run({ action: "list_files", path: "openmausbot" }), /Desktop credentials/);
-  await assert.rejects(run({ action: "write_file", path: "openmausbot/computer-sharing.json", content: "{}" }), /sharing settings/);
+  await assert.rejects(run({ action: "read_file", path: "Sagax/credentials.bin" }), /Desktop credentials/);
+  await assert.rejects(run({ action: "read_file", path: "sagax/credentials.bin" }), /Desktop credentials/);
+  await assert.rejects(run({ action: "read_file", path: "SAGAX/credentials.bin" }), /Desktop credentials/);
+  await assert.rejects(run({ action: "list_files", path: "sagax" }), /Desktop credentials/);
+  await assert.rejects(run({ action: "write_file", path: "sagax/computer-sharing.json", content: "{}" }), /sharing settings/);
 });
 
 test("a protected directory spelled in another Unicode normalization is still refused", async t => {

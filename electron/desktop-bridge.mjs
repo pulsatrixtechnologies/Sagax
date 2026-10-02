@@ -23,14 +23,53 @@ import { setTimeout as delay } from "node:timers/promises";
 import { assertOutsideProtected, createSharedCua, personalSecretPaths, protectedIdentities, sharedComputerError } from "./shared-computer-access.mjs";
 import { createLendingActivity } from "./lending-activity.mjs";
 import { openDesktopTunnel } from "./desktop-tunnel.mjs";
+import { createLocalVm } from "./local-vm.mjs";
+
+export { createLocalVm };
 
 const OUTPUT_LIMIT = 512 * 1024;
+const SYSTEM_REFRESH_MS = 30_000;
+
+const roundGb = (bytes, step = 0.5) => Math.round(bytes / 1024 ** 3 / step) * step;
+const OS_NAMES = { darwin: "macOS", win32: "Windows", linux: "Linux" };
+
+/** Coarse facts about this computer for the person's own Computer tab:
+ * OS and version, CPU model and count, CPU use (rounded to 5 %), memory and
+ * disk rounded to half a GiB. Nothing about files, apps or networks.
+ * `previous` is the last CPU sample, so the use covers the interval. */
+export async function systemInfo({ platform = process.platform, version = typeof process.getSystemVersion === "function" ? process.getSystemVersion() : os.release(), home = os.homedir(), previous = null, statfs = fs.statfs } = {}) {
+  const cpus = os.cpus();
+  const times = cpus.reduce((sum, cpu) => {
+    const total = Object.values(cpu.times).reduce((a, b) => a + b, 0);
+    return { idle: sum.idle + cpu.times.idle, total: sum.total + total };
+  }, { idle: 0, total: 0 });
+  let cpuPercent;
+  if (previous && times.total > previous.total) {
+    cpuPercent = Math.min(100, Math.max(0, Math.round(((1 - (times.idle - previous.idle) / (times.total - previous.total)) * 100) / 5) * 5));
+  }
+  const total = os.totalmem();
+  const info = {
+    os: `${OS_NAMES[platform] ?? "Linux"} ${String(version).split(/\s/)[0]}`.slice(0, 80),
+    arch: process.arch.slice(0, 20),
+    ...(cpus[0]?.model ? { cpuModel: cpus[0].model.replace(/\s+/g, " ").trim().slice(0, 80) } : {}),
+    cpus: Math.max(1, cpus.length),
+    ...(cpuPercent === undefined ? {} : { cpuPercent }),
+    memoryGb: roundGb(total),
+    memoryUsedGb: roundGb(Math.max(0, total - os.freemem())),
+  };
+  try {
+    const disk = await statfs(home);
+    info.diskGb = Math.round((disk.blocks * disk.bsize) / 1024 ** 3);
+    info.diskFreeGb = Math.round((disk.bavail * disk.bsize) / 1024 ** 3);
+  } catch { /* unknown */ }
+  return { info, sample: times };
+}
 const READ_DEFAULT = 256_000;
 const READ_MAX = 1_000_000;
 const WRITE_MAX = 1024 * 1024;
 const FETCH_MAX = 256 * 1024;
 const STAGE_MAX = 25 * 1024 * 1024;
-const ACTIONS = new Set(["run_command", "read_file", "write_file", "list_files", "search_files", "fetch_url", "browse", "computer_tools", "computer_call", "vm_status", "vm_start", "vm_run_command", "stage_file"]);
+const ACTIONS = new Set(["run_command", "read_file", "write_file", "list_files", "search_files", "fetch_url", "browse", "computer_tools", "computer_call", "vm_status", "vm_start", "vm_run_command", "vm_stop", "vm_pause", "vm_resume", "vm_setup", "vm_install", "vm_screenshot", "stage_file"]);
 const KEYS = new Set(["action", "path", "content", "encoding", "offset", "max_bytes", "command", "cwd", "timeout_seconds", "pattern", "glob", "url", "screenshot", "tool_name", "arguments", "container", "name", "final"]);
 const uuid = value => typeof value === "string" && /^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(value);
 const text = value => ({ content: [{ type: "text", text: typeof value === "string" ? value : JSON.stringify(value) }] });
@@ -70,7 +109,7 @@ export function commandEnvironment(env = process.env) {
   const out = {};
   for (const [key, value] of Object.entries(env)) {
     if (value === undefined) continue;
-    if (/^(OMB_|SAGAX_|ELECTRON_|OPENMAUSBOT_|CHROME_)/i.test(key)) continue;
+    if (/^(SAGAX_|SAGAX_|ELECTRON_|SAGAX_|CHROME_)/i.test(key)) continue;
     if (/(API_KEY|_TOKEN$|SECRET|PASSWORD|_KEY_FILE$)/i.test(key)) continue;
     out[key] = value;
   }
@@ -162,48 +201,6 @@ export async function searchFiles(root, { pattern, glob, protectedRoots, signal 
   return text(results.length ? `${results.join("\n")}${results.length >= 200 || visited >= 20_000 ? "\n[more results not shown]" : ""}` : "No matches.");
 }
 
-/** Local VM: the Sagax Linux desktop container(s) on this computer, by
- * their labels; nothing else is ever started or entered. */
-export function createLocalVm({ run = (argv, options) => runCommand("", { ...options, argv }) } = {}) {
-  let runtime;
-  const cli = async () => {
-    if (runtime !== undefined) return runtime;
-    for (const candidate of ["docker", "podman"]) {
-      const answer = await run([candidate, "version", "--format", "{{.Client.Version}}"], { timeoutSeconds: 15 }).catch(() => null);
-      if (answer && !answer.isError) { runtime = candidate; return runtime; }
-    }
-    runtime = null;
-    return runtime;
-  };
-  const list = async () => {
-    const tool = await cli();
-    if (!tool) throw new Error("No container runtime (Docker or Podman) on this computer, so there is no Local VM here.");
-    const answer = await run([tool, "ps", "-a", "--filter", "label=com.openmausbot.local-vm=1", "--format", "{{.Names}}\t{{.State}}"], { timeoutSeconds: 30 });
-    if (answer.isError) throw new Error("The container runtime did not answer.");
-    return answer.content[0].text.split("\n").map(line => line.trim()).filter(line => line && !line.startsWith("[exit")).map(line => { const [name, state] = line.split("\t"); return { name, state }; }).filter(entry => /^[\w.-]+$/.test(entry.name ?? ""));
-  };
-  const pick = async container => {
-    const all = await list();
-    if (!all.length) throw new Error("No Local VM exists on this computer yet. Create one from Sagax's Local VM settings on this computer.");
-    const chosen = container ? all.find(entry => entry.name === container) : all[0];
-    if (!chosen) throw new Error("That Local VM does not exist on this computer.");
-    return chosen;
-  };
-  return {
-    async status() { return text({ localVms: await list() }); },
-    async start(container) {
-      const tool = await cli(); const chosen = await pick(container);
-      if (/running/i.test(chosen.state ?? "")) return text(`${chosen.name} is already running`);
-      return run([tool, "start", chosen.name], { timeoutSeconds: 120 });
-    },
-    async exec(container, command, options) {
-      const tool = await cli(); const chosen = await pick(container);
-      if (!/running/i.test(chosen.state ?? "")) throw new Error(`${chosen.name} is not running; start it first`);
-      return run([tool, "exec", "-u", "cua", chosen.name, "bash", "-lc", command], options);
-    },
-  };
-}
-
 /** Run one operation on this computer. `deps` holds what only Electron or
  * the person's settings provide. */
 export async function executeBridgeOperation(operation, deps, signal) {
@@ -289,6 +286,12 @@ export async function executeBridgeOperation(operation, deps, signal) {
     }
     case "vm_status": return deps.localVm.status();
     case "vm_start": return deps.localVm.start(operation.container);
+    case "vm_stop": return deps.localVm.power("stop");
+    case "vm_pause": return deps.localVm.power("pause");
+    case "vm_resume": return deps.localVm.power("resume");
+    case "vm_setup": return deps.localVm.setup(operation.arguments?.spec);
+    case "vm_install": return deps.localVm.install(String(operation.arguments?.choice ?? ""));
+    case "vm_screenshot": return deps.localVm.screenshot();
     case "vm_run_command": return deps.localVm.exec(operation.container, operation.command, { timeoutSeconds: operation.timeout_seconds ?? 120, signal });
     case "stage_file": {
       const dir = deps.attachmentsDir;
@@ -382,6 +385,19 @@ export function createDesktopBridge({
           await preferences();
           const refresh = setInterval(() => void preferences(), 60_000);
           live.addEventListener("abort", () => clearInterval(refresh), { once: true });
+          // Coarse system facts for the person's Computer tab. An older
+          // server answers 404: nothing else depends on it.
+          let cpuSample = null;
+          const system = async () => {
+            try {
+              const { info, sample } = await systemInfo({ platform, previous: cpuSample });
+              cpuSample = sample;
+              await request(env, `/api/desktop-bridge/${id}/system`, info, live, secret);
+            } catch { /* optional */ }
+          };
+          void system();
+          const systemTimer = setInterval(() => void system(), SYSTEM_REFRESH_MS);
+          live.addEventListener("abort", () => clearInterval(systemTimer), { once: true });
           // The tunnel: the cookie and the secret ride its handshake only.
           const startTunnel = async () => {
             if (!WebSocketImpl || live.aborted) return;

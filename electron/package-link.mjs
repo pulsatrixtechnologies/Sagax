@@ -1,3 +1,5 @@
+import { isAppProtocol } from "./legacy-names.mjs";
+
 const ALLOWED_PACKAGE_HOSTS = new Set(["github.com", "www.github.com", "raw.githubusercontent.com"]);
 
 export function packageUrlFromDeepLink(rawValue) {
@@ -7,7 +9,7 @@ export function packageUrlFromDeepLink(rawValue) {
   } catch {
     return null;
   }
-  if (link.protocol !== "openmausbot:" || link.hostname !== "install") return null;
+  if (!isAppProtocol(link.protocol) || link.hostname !== "install") return null;
   const rawPackage = link.searchParams.get("url");
   if (!rawPackage) return null;
   let packageUrl;

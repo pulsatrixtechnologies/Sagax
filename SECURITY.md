@@ -25,7 +25,7 @@ You'll get a response as soon as possible, normally within a few days.
   guarded routes, so a bot's shell can post into an existing Full-access thread, or open one while
   shared Full access is on, and get Full-access work done without a card. A worker-only relay token
   is the planned fix.
-- API keys live in `~/.openmausbot/config.json` and are write-only through the API (`configured`
+- API keys live in `~/.sagax/config.json` and are write-only through the API (`configured`
   booleans out, never values). Any path that echoes a stored secret back — API response, SSE event,
   log line, argv visible in `ps` — is a vulnerability.
 - Agents run real CLIs (`claude`, `codex`) with the user's own privileges, and the permission broker

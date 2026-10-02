@@ -94,10 +94,13 @@ export function useBotSettingsDerived(bot: Bot) {
       ? "The built-in browser is switched off under App Settings → Experimental"
       : "This model cannot use the built-in browser";
   const sectionName = bot.section?.trim() || "General";
+  // One Primary Bot per person: the one this bot would take the role from.
+  const owner = bot.ownerUserId?.trim().toLowerCase() ?? "";
   const currentChief = state.bots.find(
     (candidate) =>
+      candidate.id !== bot.id &&
       candidate.chiefOfStaff &&
-      (candidate.section?.trim() || "") === (bot.section?.trim() || ""),
+      (candidate.ownerUserId?.trim().toLowerCase() ?? "") === owner,
   );
   const botRoutines = state.routines.filter((routine) => routine.botId === bot.id);
   const activeBotRoutines = botRoutines.filter((routine) => routine.enabled).length;

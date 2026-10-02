@@ -4,7 +4,7 @@ import { createServer } from "node:http";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createCloudAccountClient, createCloudAccountStore, cloudOrigin, CLOUD_ORIGIN } from "./cloud-account.mjs";
+import { createCloudAccountClient, createCloudAccountStore, cloudOrigin, CLOUD_ORIGIN, CLOUD_SERVICES_ENABLED } from "./cloud-account.mjs";
 
 const accessToken = `omc_${"T".repeat(43)}`;
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -45,9 +45,11 @@ async function fixture(t, options = {}) {
   return f;
 }
 
-test("Cloud origin is fixed; only explicit fixtures can use loopback", () => {
-  assert.equal(cloudOrigin(), CLOUD_ORIGIN);
-  for (const value of ["https://attacker.example.test", "http://127.0.0.1:1234", `${CLOUD_ORIGIN}/`, `${CLOUD_ORIGIN}/?paid=true`]) assert.throws(() => cloudOrigin(value));
+test("Sagax has no Cloud origin; only explicit fixtures can use loopback", () => {
+  assert.equal(CLOUD_ORIGIN, "");
+  assert.equal(CLOUD_SERVICES_ENABLED, false);
+  assert.throws(() => cloudOrigin(), /not available/);
+  for (const value of ["https://attacker.example.test", "http://127.0.0.1:1234", "https://cloud.openmausbot.com", "https://cloud.openmausbot.com/?paid=true"]) assert.throws(() => cloudOrigin(value));
   assert.equal(cloudOrigin("http://127.0.0.1:1234", true), "http://127.0.0.1:1234");
   assert.throws(() => cloudOrigin("https://attacker.example.test", true));
 });

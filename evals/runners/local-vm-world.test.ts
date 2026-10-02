@@ -2,11 +2,11 @@ import { describe, expect, it } from "vitest";
 import { scenarioSchema } from "../types.ts";
 import { runScenario } from "./run-scenario.ts";
 
-// Pins the gatesDir/OMB_DATA_DIR contract end to end. The server hot-loads
-// user skills from <OMB_DATA_DIR>/skills (index.ts), and installSkill writes
+// Pins the gatesDir/SAGAX_DATA_DIR contract end to end. The server hot-loads
+// user skills from <SAGAX_DATA_DIR>/skills (index.ts), and installSkill writes
 // to <parent-of-eval-gates>/skills, so eval-gates must sit under the data
 // dir. Before the fix this world passed <fixtureHome>/eval-gates while
-// OMB_DATA_DIR was <fixtureHome>/data: the skill installed fine and the run
+// SAGAX_DATA_DIR was <fixtureHome>/data: the skill installed fine and the run
 // stayed green, but the block never reached the system prompt.
 describe("localVm world installSkill", () => {
   it("lands user skills where the server hot-loads them", async () => {

@@ -9,10 +9,10 @@ prompt to a real model provider.
 Supply an absolute path to an independently verified OpenCode 1.18.31 binary:
 
 ```sh
-OMB_OPENCODE_E2E_CLI=/absolute/path/to/opencode pnpm exec vitest run server/opencode-variants.e2e.test.ts
+SAGAX_OPENCODE_E2E_CLI=/absolute/path/to/opencode pnpm exec vitest run server/opencode-variants.e2e.test.ts
 ```
 
-Without `OMB_OPENCODE_E2E_CLI`, Vitest reports this test as skipped. A skip does
+Without `SAGAX_OPENCODE_E2E_CLI`, Vitest reports this test as skipped. A skip does
 not verify the feature. The test performs no dependency installation or binary
 download. OpenCode 1.18.31 is required because this recipe exercises its ACP
 `default` effort option, which removes the explicit session variant override.

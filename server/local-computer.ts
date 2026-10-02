@@ -43,10 +43,10 @@ export function gatedLocalComputer(
       // this the MCP client relaunches OMB, whose single-instance handler
       // focuses the user's window, instead of starting the headless gate.
       ELECTRON_RUN_AS_NODE: "1",
-      OMB_CUA_COMMAND: connection.command,
-      OMB_CUA_ARGS: JSON.stringify(connection.args),
-      OMB_CONTROL_URL: control.url,
-      OMB_CONTROL_TOKEN: control.token,
+      SAGAX_CUA_COMMAND: connection.command,
+      SAGAX_CUA_ARGS: JSON.stringify(connection.args),
+      SAGAX_CONTROL_URL: control.url,
+      SAGAX_CONTROL_TOKEN: control.token,
     },
   };
 }
@@ -372,7 +372,7 @@ function firstPresentCuaDescriptor(candidates: string[]): string | null {
 
 export function readCuaConnection({
   platform = process.platform,
-  userData = process.env.OMB_USER_DATA,
+  userData = process.env.SAGAX_USER_DATA,
   home = homedir(),
   validateLinuxRuntime = validateLinuxDescriptorRuntime,
   validateLegacyRuntime = validateLegacyDescriptorRuntime,
@@ -412,7 +412,7 @@ export function readCuaConnection({
  * and only a private, well-formed macOS/Windows descriptor may supply text. */
 export function readCuaUnavailableReason({
   platform = process.platform,
-  userData = process.env.OMB_USER_DATA,
+  userData = process.env.SAGAX_USER_DATA,
   home = homedir(),
 }: {
   platform?: NodeJS.Platform;

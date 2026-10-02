@@ -8,8 +8,8 @@ import { performance, monitorEventLoopDelay } from "node:perf_hooks";
 import { setTimeout as delay, setImmediate } from "node:timers/promises";
 
 const directory = mkdtempSync(join(tmpdir(), "omb-maintenance-probe-"));
-const previousDataDir = process.env.OMB_DATA_DIR;
-process.env.OMB_DATA_DIR = directory;
+const previousDataDir = process.env.SAGAX_DATA_DIR;
+process.env.SAGAX_DATA_DIR = directory;
 const db = await import("../server/message-db.ts");
 const { Store } = await import("../server/store.ts");
 const memory = await import("../server/workspace.ts");
@@ -67,7 +67,7 @@ try {
   });
 } finally {
   db.closeMessageDb();
-  if (previousDataDir === undefined) delete process.env.OMB_DATA_DIR;
-  else process.env.OMB_DATA_DIR = previousDataDir;
+  if (previousDataDir === undefined) delete process.env.SAGAX_DATA_DIR;
+  else process.env.SAGAX_DATA_DIR = previousDataDir;
   rmSync(directory, { recursive: true, force: true });
 }

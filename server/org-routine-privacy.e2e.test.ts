@@ -62,17 +62,17 @@ async function start() {
     cwd: join(SERVER_DIR, ".."),
     env: {
       ...(process.env.PATH ? { PATH: process.env.PATH } : {}),
-      HOME: home, USERPROFILE: home, OMB_PORT: String(PORT), OMB_WEBHOOK_PORT: String(PORT + 1),
-      OMB_IDENTITY: "perspicax",
-      OMB_PERSPICAX_ISSUER: idp.issuer,
-      OMB_PUBLIC_URL: BASE,
-      OMB_PERSPICAX_LINK_FILE: join(home, "link", "pulsabot.json"),
-      OMB_PERSPICAX_DIRECTORY_SECONDS: "5",
-      OMB_ANTHROPIC_API_KEY: "sk-ant-test-org-key",
-      OMB_ORG_NAME: "Acme",
+      HOME: home, USERPROFILE: home, SAGAX_LOCAL_VM_TEST_NAMESPACE: process.env.SAGAX_LOCAL_VM_TEST_NAMESPACE ?? "", SAGAX_PORT: String(PORT), SAGAX_WEBHOOK_PORT: String(PORT + 1),
+      SAGAX_IDENTITY: "perspicax",
+      SAGAX_PERSPICAX_ISSUER: idp.issuer,
+      SAGAX_PUBLIC_URL: BASE,
+      SAGAX_PERSPICAX_LINK_FILE: join(home, "link", "pulsabot.json"),
+      SAGAX_PERSPICAX_DIRECTORY_SECONDS: "5",
+      SAGAX_ANTHROPIC_API_KEY: "sk-ant-test-org-key",
+      SAGAX_ORG_NAME: "Acme",
       // the operator at this computer (the serve CLI, the desktop app) may
       // make a pairing code without a session
-      OMB_LOOPBACK_TRUST: "owner",
+      SAGAX_LOOPBACK_TRUST: "owner",
     },
     stdio: ["ignore", "pipe", "pipe"],
   });
@@ -123,7 +123,7 @@ posixOnly("Perspicax organization: a member's routines stay with the people who 
     PORT = await freePortBlock([0, 1]);
     BASE = `http://127.0.0.1:${PORT}`;
     home = mkdtempSync(join(tmpdir(), "omb-org-routines-"));
-    const data = join(home, ".openmausbot");
+    const data = join(home, ".sagax");
     mkdirSync(data, { recursive: true });
     mkdirSync(join(home, "link"), { recursive: true, mode: 0o750 });
     writeFileSync(join(home, "link", "pulsabot.json"), JSON.stringify({

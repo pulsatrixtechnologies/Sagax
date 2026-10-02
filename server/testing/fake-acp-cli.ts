@@ -30,7 +30,7 @@
 //                     returns immediately, the peer runs after our turn)
 //                   | chief-delegate (delegates only for an ASSIGN_TO_PEER
 //                     prompt; ordinary follow-ups stay responsive)
-//                   | create-peer (a Chief creates a specialist, then delegates
+//                   | create-peer (a Primary Bot creates a specialist, then delegates
 //                     work to it through the returned id)
 //                   | echo-gated (reply by echoing the full prompt, and when
 //                     FAKE_ACP_GATE_FILE is set hold the turn open until that
@@ -248,12 +248,12 @@ const dumpEnv = Object.fromEntries(
     "ANTHROPIC_API_KEY",
     "XAI_API_KEY",
     "BOX_TOKEN",
-    "OMB_TTS_KEY",
-    "OMB_FISH_AUDIO_API_KEY",
-    "OMB_CLOUD_READY_TOKEN",
-    "OMB_CLOUD_BOOTSTRAP",
-    "OMB_LICENSE_KEY",
-    "OMB_INSTALLATION_CREDENTIAL",
+    "SAGAX_TTS_KEY",
+    "SAGAX_FISH_AUDIO_API_KEY",
+    "SAGAX_CLOUD_READY_TOKEN",
+    "SAGAX_CLOUD_BOOTSTRAP",
+    "SAGAX_LICENSE_KEY",
+    "SAGAX_INSTALLATION_CREDENTIAL",
     "FACTORY_API_KEY",
     "UNSLOTH_STUDIO_AUTH_TOKEN",
     "CURSOR_API_KEY",
@@ -272,7 +272,7 @@ const dumpEnv = Object.fromEntries(
     "OPENCODE_DISABLE_PROJECT_CONFIG",
     "GEMINI_API_KEY",
     "MISTRAL_API_KEY",
-    "OMB_ANTHROPIC_API_KEY",
+    "SAGAX_ANTHROPIC_API_KEY",
   ].flatMap((key) => (process.env[key] === undefined ? [] : [[key, process.env[key]]] as const)),
 );
 // pid rides along so a test can tell a respawned process (new pid, fresh

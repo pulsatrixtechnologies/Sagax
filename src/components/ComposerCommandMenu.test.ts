@@ -2,7 +2,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
-import { composerCommandMenu } from "@/lib/composer-commands";
+import { composerCommandMenu, composerGroupCommandMenu } from "@/lib/composer-commands";
 import { ComposerCommandMenu } from "./ComposerCommandMenu";
 
 describe("ComposerCommandMenu", () => {
@@ -27,5 +27,20 @@ describe("ComposerCommandMenu", () => {
     expect(markup).toContain("Needs the engine&#x27;s own terminal");
     expect(markup).not.toContain("Prompt bar color");
     expect(markup).toContain("Refresh engine commands");
+  });
+
+  it("lists a group's engine commands under each bot's name", () => {
+    const compact = { name: "compact", description: "Free up context", group: "engine" as const };
+    const items = composerGroupCommandMenu([{ id: "goal", label: "/goal", description: "Keep a team working" }], [
+      { bot: { id: "scout", name: "Scout" }, commands: [compact], mention: true },
+      { bot: { id: "pixel", name: "Pixel" }, commands: [compact, { name: "review", description: "Review", group: "plugins" }], mention: true },
+    ], "");
+    const markup = renderToStaticMarkup(createElement(ComposerCommandMenu, {
+      items, highlight: 0, loading: false, onPick: () => {}, onHighlight: () => {},
+    }));
+    for (const text of ["Sagax", "Scout", "Pixel", "/goal", "/compact", "/review"]) expect(markup).toContain(text);
+    // one heading per bot, never the engine groups
+    expect(markup.match(/>Pixel</g)?.length).toBe(1);
+    expect(markup).not.toContain(">Plugins<");
   });
 });

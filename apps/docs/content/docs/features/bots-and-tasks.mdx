@@ -29,17 +29,21 @@ A thread chooses its model in the chat header and its Ask/Auto setting inside th
 
 All the bot's threads share its saved memory and skills; they do not automatically receive every sibling transcript. Folders are not separate accounts or privacy boundaries. Bot profiles can carry different access preferences, but app organization is not an operating-system sandbox.
 
-Threads can converse independently, but a physical computer, browser session, or shared project folder cannot safely have two agents changing it at once. OpenMausBot reports contention instead of allowing overlapping managed actions. New local-agent threads use separate working folders by default; existing pinned folders are retained.
+Threads can converse independently, but a physical computer, browser session, or shared project folder cannot safely have two agents changing it at once. Sagax reports contention instead of allowing overlapping managed actions. New local-agent threads use separate working folders by default; existing pinned folders are retained.
 
 ## Groups and teams
 
 Groups are the conversations previously called channels or rooms. They let multiple bots share context. Use a group when several specialists need the same brief or should hand work to one another. Membership, instructions and thread history are retained. The existing multi-bot turn-taking behavior is unchanged.
 
-Existing sections keep their Chief of Staff assignments and bot communication rules. They are not thread folders. A Chief remains a bot role: it receives requests, delegates focused tasks, and summarizes the results.
+## Primary Bot
 
-Ask an existing Chief to appoint a bot as Chief of an authorized team, including a new team it creates. The combined setup shows the leadership change. In Ask mode, choose **Apply setup** or **Cancel**; Full Access applies it immediately. To replace a Chief, the plan must explicitly remove the old assignment and appoint the new Chief together. Each team has at most one Chief.
+Your **Primary Bot** (formerly Chief of Staff) is your main contact among your bots: it receives requests, delegates focused tasks to your other bots, and summarizes the results. It wears a small orange star on its avatar in the sidebar, the pickers, the team map and the chat header.
 
-The new Chief can coordinate and configure its own team. It does not inherit the creator's access to other teams or execution permissions. Removing a Chief assignment also removes that bot's additional managed-team access. Existing conversations and model selections remain intact.
+You have one Primary Bot (on an organization server, one per person, since bots belong to their owner). Right-click it in the sidebar and choose **Replace with different Bot** to pick another one in **Choose a primary Bot**: search, select one of your bots, then **Confirm**. On any other of your bots, **Make primary bot** hands the role over directly. The server keeps exactly one per person; the previous one steps down.
+
+Your Primary Bot can also hand the role over in a team setup plan: the plan must step it down and appoint the new one together. It coordinates its own team and the additional teams you allow in its settings. It does not inherit the creator's access to other teams or execution permissions. Stepping down also removes its additional managed-team access. Existing conversations and model selections remain intact.
+
+When you upgrade from a version with one Chief of Staff per team, each person keeps one: the General team's Chief, else the oldest. The teams the others led are added to its managed teams, so coordination still reaches them.
 
 ## Delegation
 

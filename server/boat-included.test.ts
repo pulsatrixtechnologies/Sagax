@@ -71,9 +71,9 @@ beforeEach(async () => {
   rejectCredentials = false;
   wakeOnResume = true;
   vi.stubEnv("BOX_TOKEN", undefined);
-  vi.stubEnv("OMB_BOX_API", `${base}/boat/api/box/v1`);
-  vi.stubEnv("OMB_CLOUD_BOAT_URL", `${base}/relay/api/box/v1`);
-  vi.stubEnv("OMB_CLOUD_BOAT_TOKEN", INCLUDED);
+  vi.stubEnv("SAGAX_BOX_API", `${base}/boat/api/box/v1`);
+  vi.stubEnv("SAGAX_CLOUD_BOAT_URL", `${base}/relay/api/box/v1`);
+  vi.stubEnv("SAGAX_CLOUD_BOAT_TOKEN", INCLUDED);
   boat ??= await import("./boat.ts");
   loadConfig ??= (await import("./config.ts")).loadConfig;
 });
@@ -139,7 +139,7 @@ describe("included Boat computers", () => {
     expect(boat.describeBoatAccount({})).toEqual({ configured: true, included: true });
     expect(boat.describeBoatAccount({ box: { token: "box_own" } })).toEqual({ configured: true });
     expect(JSON.stringify(boat.describeBoatAccount({}))).not.toContain(INCLUDED);
-    vi.stubEnv("OMB_CLOUD_BOAT_TOKEN", undefined);
+    vi.stubEnv("SAGAX_CLOUD_BOAT_TOKEN", undefined);
     expect(boat.boatConfigured({})).toBe(false);
     expect(boat.describeBoatAccount({})).toEqual({ configured: false });
   });

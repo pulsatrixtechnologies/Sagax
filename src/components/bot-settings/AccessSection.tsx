@@ -5,7 +5,7 @@
 // list, webhooks list, and always-allowed list (the first read-only view of
 // standing grants) are new.
 import { useEffect, useState } from "react";
-import { browserUnavailableReason, connectedAppsEnabled as connectedAppsFeatureEnabled } from "@/lib/feature-flags";
+import { boatComputerEnabled, browserUnavailableReason, connectedAppsEnabled as connectedAppsFeatureEnabled, vpsComputerEnabled } from "@/lib/feature-flags";
 import { ChevronDown, ChevronRight, FolderOpen, Plus } from "lucide-react";
 
 import { api, useStore, type Bot } from "@/state/store";
@@ -631,6 +631,8 @@ export function AccessSection({
               value={bot.cloudBackend ?? "box"}
               vpsSupported={canUseVps}
               organization={organization}
+              boat={state.config?.cloudHome === true || boatComputerEnabled(state.config)}
+              vps={vpsComputerEnabled(state.config)}
               onChange={(backend) => patch({ cloudBackend: backend })}
             />
             {!bot.computer && bot.cloudBackend === "vps" && (

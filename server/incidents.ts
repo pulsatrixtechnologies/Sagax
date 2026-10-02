@@ -1,12 +1,12 @@
-// When a bot's run breaks, its Chief of Staff hears about it.
+// When a bot's run breaks, its Primary Bot hears about it.
 //
 // A failed, stalled or unstartable run used to leave one chip in the thread
 // it died in and nothing anywhere else: the person found it hours later,
 // from a phone, by opening the desktop and reading every thread. The team
-// already has a role for exactly this — the Chief coordinates the section —
-// so an incident is delivered to the Chief as a turn of its own, with a
+// already has a role for exactly this — the Primary Bot coordinates the section —
+// so an incident is delivered to the Primary Bot as a turn of its own, with a
 // link to the thread and the means to act (retry_thread, delegate_bot), and
-// the person reads one place: the Chief's "Team incidents" thread.
+// the person reads one place: the Primary Bot's "Team incidents" thread.
 //
 // The policy here is pure so it can be read and tested on its own; the
 // harness (server/index.ts) supplies the store and starts the turns.
@@ -43,9 +43,9 @@ export const INCIDENTS_THREAD_TITLE = "Team incidents";
 
 const sectionKey = (section?: string): string => section?.trim() || "";
 
-/** The Chief responsible for a bot: the Chief of the bot's own section, else
- * a Chief the owner let coordinate that section. A Chief has no Chief — its
- * own failures are the person's to hear about — and a hidden Chief is not on
+/** The Primary Bot responsible for a bot: the Primary Bot of the bot's own section, else
+ * a Primary Bot the owner let coordinate that section. A Primary Bot has no Primary Bot — its
+ * own failures are the person's to hear about — and a hidden Primary Bot is not on
  * duty. */
 export function chiefForBot<T extends IncidentBot>(bots: readonly T[], bot: IncidentBot): T | null {
   if (bot.chiefOfStaff) return null;
@@ -55,7 +55,7 @@ export function chiefForBot<T extends IncidentBot>(bots: readonly T[], bot: Inci
     ?? null;
 }
 
-/** How many incidents one thread may raise before the Chief is told to
+/** How many incidents one thread may raise before the Primary Bot is told to
  * stop retrying and hand it to the person, and how many before the harness
  * stops raising them at all (a crash loop is one incident, not a storm). */
 export const INCIDENT_RETRY_LIMIT = 2;
@@ -65,7 +65,7 @@ export const INCIDENT_WINDOW_MS = 60 * 60_000;
 export interface IncidentCount {
   /** incidents on this thread inside the window, this one included */
   count: number;
-  /** the Chief may still retry */
+  /** the Primary Bot may still retry */
   mayRetry: boolean;
   /** nothing more is raised for this thread until the window passes */
   muted: boolean;
@@ -122,12 +122,12 @@ function whatHappened(incident: Incident): string {
   }
 }
 
-/** The one-line chip left in the incidents thread, before the Chief's turn. */
+/** The one-line chip left in the incidents thread, before the Primary Bot's turn. */
 export function incidentChip(incident: Incident): string {
   return `Incident: ${whatHappened(incident)}`;
 }
 
-/** The turn the Chief gets. Quoted text from the failed run is data, and
+/** The turn the Primary Bot gets. Quoted text from the failed run is data, and
  * the message says so up front, the way every bot-delivered line does. */
 export function incidentText(incident: Incident, count: IncidentCount): string {
   const lines = [

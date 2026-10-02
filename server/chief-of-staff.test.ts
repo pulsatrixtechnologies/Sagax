@@ -45,7 +45,7 @@ describe("chiefOfStaffSystemPrompt", () => {
   it("describes visible teammates, roles, and availability", () => {
     const prompt = chiefOfStaffSystemPrompt("chief", bots, true);
 
-    expect(prompt).toContain("Chief of Staff for the Work section");
+    expect(prompt).toContain("Your home team is the Work section");
     expect(prompt).toContain("Quill — Writer: Drafts concise copy (available)");
     expect(prompt).toContain("Patch — Engineer (working right now)");
     expect(prompt).not.toContain("Secret");
@@ -78,22 +78,22 @@ describe("chiefOfStaffSystemPrompt", () => {
     expect(prompt).not.toContain("End your turn after the proposal:");
   });
 
-  it("includes trusted OpenMaus status only when the Chief caller supplies it", () => {
-    const status = "TRUSTED OPENMAUSBOT STATUS\nfreshness=fresh; runtime_state=degraded";
+  it("includes trusted Sagax status only when the Chief caller supplies it", () => {
+    const status = "TRUSTED SAGAX STATUS\nfreshness=fresh; runtime_state=degraded";
 
     const chiefPrompt = chiefOfStaffSystemPrompt("chief", bots, true, status);
     const ordinaryPrompt = chiefOfStaffSystemPrompt("writer", bots, true);
 
     expect(chiefPrompt).toContain(status);
-    expect(ordinaryPrompt).not.toContain("TRUSTED OPENMAUSBOT STATUS");
+    expect(ordinaryPrompt).not.toContain("TRUSTED SAGAX STATUS");
   });
 
   it("pins legacy delegation guidance and shared staffing independently of the bounded chat coordinator", () => {
-    const prompt = chiefOfStaffSystemPrompt("chief", bots, true, "TRUSTED OPENMAUSBOT STATUS\nfreshness=fresh");
+    const prompt = chiefOfStaffSystemPrompt("chief", bots, true, "TRUSTED SAGAX STATUS\nfreshness=fresh");
 
     expect(prompt).toBe(
       [
-        "You are the Chief of Staff for the Work section. You are the user's primary contact for this section's team of bots.",
+        "You are the user's Primary Bot: their main contact among their bots, who coordinates the others. Your home team is the Work section.",
         "Own the outcome: understand the request, decide what to handle yourself, coordinate the right specialists when useful, and return one concise consolidated answer.",
         "Do not delegate trivial work merely to appear busy. Never invent a teammate's progress or result. Normal permission and approval rules still apply.",
         "Incidents: when a teammate's run fails, stalls or cannot start, Sagax reports it to you in your \"Team incidents\" thread with a link to the thread. Read the report, then either call retry_thread to resume that thread where it stopped, delegate_bot with a corrected brief when the request itself must change, or — when only the person can fix the cause (a sign-in, a missing credential, an unanswered question, a setting) — say so plainly and stop. Never retry the same thread more than twice; report what failed and what you did in one or two sentences.",
@@ -102,7 +102,7 @@ describe("chiefOfStaffSystemPrompt", () => {
         "Current Work section team:",
         "- Quill — Writer: Drafts concise copy (available) [id: writer]",
         "- Patch — Engineer (working right now) [id: coder]",
-        "TRUSTED OPENMAUSBOT STATUS",
+        "TRUSTED SAGAX STATUS",
         "freshness=fresh",
       ].join("\n"),
     );

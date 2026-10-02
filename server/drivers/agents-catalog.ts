@@ -42,18 +42,18 @@ export interface CatalogProfile {
 /** The profile a spawned proxy was given. Everything is off unless the
  * harness says "1". */
 export function catalogProfileFromEnv(env: NodeJS.ProcessEnv): CatalogProfile {
-  const externalRuntime = env.OMB_EXTERNAL_RUNTIME === "1";
+  const externalRuntime = env.SAGAX_EXTERNAL_RUNTIME === "1";
   return {
     externalRuntime,
-    coordinating: !externalRuntime && env.OMB_ROOM_TURN === "1",
-    ownThreadCreation: env.OMB_OWN_THREAD_CREATION === "1",
-    skillAuthoring: env.OMB_SKILL_AUTHORING_ENABLED === "1",
-    sharedComputers: env.OMB_SHARED_COMPUTERS_ENABLED === "1",
-    voiceNotes: env.OMB_VOICE_NOTES === "1",
-    cloudHome: env.OMB_CLOUD_HOME === "1",
-    memoryEnabled: env.OMB_MEMORY_ENABLED !== "0",
-    groupMemory: env.OMB_GROUP_MEMORY === "1",
-    botId: env.OMB_BOT_ID ?? "",
+    coordinating: !externalRuntime && env.SAGAX_ROOM_TURN === "1",
+    ownThreadCreation: env.SAGAX_OWN_THREAD_CREATION === "1",
+    skillAuthoring: env.SAGAX_SKILL_AUTHORING_ENABLED === "1",
+    sharedComputers: env.SAGAX_SHARED_COMPUTERS_ENABLED === "1",
+    voiceNotes: env.SAGAX_VOICE_NOTES === "1",
+    cloudHome: env.SAGAX_CLOUD_HOME === "1",
+    memoryEnabled: env.SAGAX_MEMORY_ENABLED !== "0",
+    groupMemory: env.SAGAX_GROUP_MEMORY === "1",
+    botId: env.SAGAX_BOT_ID ?? "",
   };
 }
 
@@ -422,7 +422,7 @@ const toolDefinitions = (externalRuntime: boolean) => [
   {
     name: "create_bot",
     description:
-      "Create a specialist bot in your section. Chief of Staff only. Omit modelSelection to use the workspace default, or choose exact IDs from list_team_setup. Connected apps and automatic approvals start disabled. Assign work through delegate_bot. Maximum four new bots per turn.",
+      "Create a specialist bot in your section. Primary Bot only. Omit modelSelection to use the workspace default, or choose exact IDs from list_team_setup. Connected apps and automatic approvals start disabled. Assign work through delegate_bot. Maximum four new bots per turn.",
     inputSchema: {
       type: "object",
       properties: {
@@ -444,12 +444,12 @@ const toolDefinitions = (externalRuntime: boolean) => [
   },
   {
     name: "list_team_setup",
-    description: "Chief of Staff only: list authorized teams, teammate IDs, and exact engine/model choices for team setup. Call before proposing configuration; never invent model IDs. Existing thread models are independent of bot defaults.",
+    description: "Primary Bot only: list authorized teams, teammate IDs, and exact engine/model choices for team setup. Call before proposing configuration; never invent model IDs. Existing thread models are independent of bot defaults.",
     inputSchema: { type: "object", additionalProperties: false, properties: {} },
   },
   {
     name: "propose_team_setup",
-    description: "Chief of Staff only: submit all requested specialist creation, profile/model configuration, Chief assignments, and authorized team moves in ONE combined plan. Use exact catalog engine/model IDs from list_team_setup. Combine all fields for each bot; use the same create key or botId to coalesce repeated entries. New teams must be named explicitly in newTeams and have a specialist in this plan; access is granted only to those new teams. Existing unauthorized teams cannot be included. Models change bot defaults for groups/new threads; existing threads and execution permissions stay unchanged. If review is pending, the decision and structured result automatically resume you once; do not ask again, poll, or repeat the proposal." + PROPOSAL_OUTCOME,
+    description: "Primary Bot only: submit all requested specialist creation, profile/model configuration, and authorized team moves in ONE combined plan. Use exact catalog engine/model IDs from list_team_setup. Combine all fields for each bot; use the same create key or botId to coalesce repeated entries. New teams must be named explicitly in newTeams and have a specialist in this plan; access is granted only to those new teams. Existing unauthorized teams cannot be included. Models change bot defaults for groups/new threads; existing threads and execution permissions stay unchanged. If review is pending, the decision and structured result automatically resume you once; do not ask again, poll, or repeat the proposal." + PROPOSAL_OUTCOME,
     inputSchema: {
       type: "object", additionalProperties: false,
       properties: {
@@ -463,7 +463,7 @@ const toolDefinitions = (externalRuntime: boolean) => [
             botId: { type: "string", description: "For update: exact existing bot ID from list_team_setup." },
             fields: { type: "object", additionalProperties: false, properties: {
               name: { type: "string", maxLength: 100 }, title: { type: "string", maxLength: 200 },
-              chiefOfStaff: { type: "boolean", description: "Appoint or remove this team's Chief. At most one Chief per team: explicitly demote the current Chief in the same plan when replacing them. Does not grant access to other teams or change execution permissions." },
+              chiefOfStaff: { type: "boolean", description: "Hand the Primary Bot role to this bot, or remove it. One Primary Bot per person: explicitly step the current Primary Bot down in the same plan when replacing it. Does not grant access to other teams or change execution permissions." },
               description: { type: "string", maxLength: 4000 }, soul: { type: "string", description: "Standing instructions; required with name/title/modelSelection for every new bot." },
               cwd: { type: "string", maxLength: 1024, description: "Create only: absolute path of the folder the new bot's tools read and write in. It must already exist. Leave it out for a private workspace." },
               section: { type: "string", maxLength: 60, description: "Exact authorized existing team, or a team explicitly named in newTeams. Empty string means General." },
@@ -478,7 +478,7 @@ const toolDefinitions = (externalRuntime: boolean) => [
   },
   {
     name: "propose_bot_deletion",
-    description: "Chief of Staff only: when the user explicitly asks to delete a named teammate, submit a separate deletion request for that exact bot. Deletion removes its conversations, memory, instructions, skills, and any computer owned only by it; generated project files and shared team computers remain. Running work or an unavailable computer provider can block deletion safely. Never delete yourself, substitute an archive, or put deletion into a setup batch. If review is pending, the decision and result resume you once." + PROPOSAL_OUTCOME,
+    description: "Primary Bot only: when the user explicitly asks to delete a named teammate, submit a separate deletion request for that exact bot. Deletion removes its conversations, memory, instructions, skills, and any computer owned only by it; generated project files and shared team computers remain. Running work or an unavailable computer provider can block deletion safely. Never delete yourself, substitute an archive, or put deletion into a setup batch. If review is pending, the decision and result resume you once." + PROPOSAL_OUTCOME,
     inputSchema: { type: "object", additionalProperties: false, properties: {
       bot_id: { type: "string", minLength: 1 }, reason: { type: "string", minLength: 1, maxLength: 500 },
     }, required: ["bot_id", "reason"] },
@@ -486,7 +486,7 @@ const toolDefinitions = (externalRuntime: boolean) => [
   {
     name: "create_room",
     description:
-      "Create a room in your own section when the user asks for one (maximum four per turn). Chiefs only. Choose active peers from list_bots; you are included automatically as the default responder. This creates no turns or messages. Section moves stay with the user. Follow the tool result under the effective access level; if permission is refused, ask the user to make the room change instead, without trying another route.",
+      "Create a room in your own section when the user asks for one (maximum four per turn). Primary Bots only. Choose active peers from list_bots; you are included automatically as the default responder. This creates no turns or messages. Section moves stay with the user. Follow the tool result under the effective access level; if permission is refused, ask the user to make the room change instead, without trying another route.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -511,7 +511,7 @@ const toolDefinitions = (externalRuntime: boolean) => [
   {
     name: "manage_room",
     description:
-      "Manage a room from list_rooms: rename it, change its bulletin, or add/remove/set members. Chiefs only, within your own section and allowed peers; keep yourself as a member. Busy rooms, pending approvals and team-goal leads are protected. You cannot move rooms or bots between sections. Follow the tool result under the effective access level; if the change is refused, report the blocker and ask the user to make the change instead, without trying another route.",
+      "Manage a room from list_rooms: rename it, change its bulletin, or add/remove/set members. Primary Bots only, within your own section and allowed peers; keep yourself as a member. Busy rooms, pending approvals and team-goal leads are protected. You cannot move rooms or bots between sections. Follow the tool result under the effective access level; if the change is refused, report the blocker and ask the user to make the change instead, without trying another route.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -590,7 +590,7 @@ const toolDefinitions = (externalRuntime: boolean) => [
   {
     name: "retry_thread",
     description:
-      "Chief of Staff only. Resume a teammate's thread whose last run failed, stalled or could not start — the one an incident report named — exactly where it stopped, keeping its conversation and files. The teammate gets a line saying you asked for the retry and why. Use it when the cause looks transient (a crash, a timeout, a busy service). Use delegate_bot with a corrected brief instead when the request itself needs to change, and tell the person instead when only they can fix the cause (a sign-in, a missing credential, an unanswered question). Never retry the same thread more than twice.",
+      "Primary Bot only. Resume a teammate's thread whose last run failed, stalled or could not start — the one an incident report named — exactly where it stopped, keeping its conversation and files. The teammate gets a line saying you asked for the retry and why. Use it when the cause looks transient (a crash, a timeout, a busy service). Use delegate_bot with a corrected brief instead when the request itself needs to change, and tell the person instead when only they can fix the cause (a sign-in, a missing credential, an unanswered question). Never retry the same thread more than twice.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -727,7 +727,7 @@ const toolDefinitions = (externalRuntime: boolean) => [
   {
     name: "propose_profile",
     description:
-      "Submit user-requested changes to your own name, title, description, standing instructions (SOUL.md), working folder (cwd), or your alert and voice toggles (notifications, speakReplies). Keep SOUL.md short — who you are and the rules you never break; put step-by-step procedure into a skill instead. A Chief of Staff may pass for_bot_id (from list_bots) for a requested change to another bot in its section." + PROPOSAL_OUTCOME,
+      "Submit user-requested changes to your own name, title, description, standing instructions (SOUL.md), working folder (cwd), or your alert and voice toggles (notifications, speakReplies). Keep SOUL.md short — who you are and the rules you never break; put step-by-step procedure into a skill instead. A Primary Bot may pass for_bot_id (from list_bots) for a requested change to another bot in its section." + PROPOSAL_OUTCOME,
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -752,7 +752,7 @@ const toolDefinitions = (externalRuntime: boolean) => [
         reason: { type: "string", minLength: 1, maxLength: 500, description: "One sentence the user will see explaining why." },
         for_bot_id: {
           type: "string",
-          description: "Chief of Staff only: the id of another bot in your section whose profile this changes. Omit to change your own.",
+          description: "Primary Bot only: the id of another bot in your section whose profile this changes. Omit to change your own.",
         },
       },
       required: ["reason"],
@@ -761,7 +761,7 @@ const toolDefinitions = (externalRuntime: boolean) => [
   {
     name: "propose_model",
     description:
-      "Submit a user-requested switch of this bot's default engine and model. Use the exact instance and model ids the person named, or for a Chief the ids from the team-setup catalog. The card warns about capabilities the switch gains or loses; existing threads keep their current models." + PROPOSAL_OUTCOME,
+      "Submit a user-requested switch of this bot's default engine and model. Use the exact instance and model ids the person named, or for a Primary Bot the ids from the team-setup catalog. The card warns about capabilities the switch gains or loses; existing threads keep their current models." + PROPOSAL_OUTCOME,
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -781,7 +781,7 @@ const toolDefinitions = (externalRuntime: boolean) => [
         reason: { type: "string", minLength: 1, maxLength: 500, description: "One sentence the user will see explaining why." },
         for_bot_id: {
           type: "string",
-          description: "Chief of Staff only: the id of another bot in your section whose default model this changes. Omit to change your own.",
+          description: "Primary Bot only: the id of another bot in your section whose default model this changes. Omit to change your own.",
         },
       },
       required: ["model_selection", "reason"],

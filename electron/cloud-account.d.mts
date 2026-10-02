@@ -28,6 +28,7 @@ export interface CloudAccountBridge {
 }
 
 export declare const CLOUD_ORIGIN: string;
+export declare const CLOUD_SERVICES_ENABLED: boolean;
 export declare function cloudOrigin(value?: string, fixture?: boolean): string;
 export interface CloudAccountStore {
   read(): Promise<unknown>;

@@ -13,7 +13,7 @@ import { isIP } from "node:net";
 import path from "node:path";
 
 export const DESKTOP_COMPANION_FIELD = "desktopCompanionRemote";
-const DEVICE_TOKEN = /^omb_[A-Za-z0-9_-]{43}$/;
+const DEVICE_TOKEN = /^(?:sgx|omb)_[A-Za-z0-9_-]{43}$/;
 const DEVICE_ID = /^[0-9a-f-]{36}$/i;
 const PAIRING_CODE = /^\d{6}$/;
 const MAX_ERROR_BYTES = 64 * 1024;
@@ -65,11 +65,11 @@ export function normalizeDesktopCompanionEndpoint(value) {
     return "";
   }
   const hostname = parsed.hostname.toLowerCase();
+  // Only a Tailscale MagicDNS address: the original project's hosted
+  // companion relays are never contacted.
   const tailscaleHttp = parsed.protocol === "http:" && hostname.endsWith(".ts.net");
-  const managedHttps =
-    parsed.protocol === "https:" && hostname.endsWith(".openmausbot.com");
   if (
-    (!tailscaleHttp && !managedHttps) ||
+    !tailscaleHttp ||
     parsed.username ||
     parsed.password ||
     (parsed.pathname !== "" && parsed.pathname !== "/") ||
@@ -131,7 +131,7 @@ export async function pairDesktopCompanion({
 }) {
   const endpoint = normalizeDesktopCompanionEndpoint(rawEndpoint);
   if (!endpoint) {
-    throw new Error("Enter the Sagax HTTPS companion address or full Tailscale name ending in .ts.net");
+    throw new Error("Enter the full Tailscale name of the companion, ending in .ts.net");
   }
   const code = String(rawCode ?? "").trim();
   if (!PAIRING_CODE.test(code)) throw new Error("Enter the six-digit code shown on the other computer");

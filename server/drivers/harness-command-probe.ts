@@ -87,7 +87,7 @@ export function probeClaudeCommands(input: CommandProbeInput): Promise<HarnessCo
 /** Codex's skills for `cwd`, through `codex app-server` started with `args`. */
 export function probeCodexSkills(input: CommandProbeInput & { clientVersion: string }): Promise<HarnessCommand[]> {
   return probe(input, [
-    { jsonrpc: "2.0", id: 1, method: "initialize", params: { clientInfo: { name: "openmausbot", title: "OpenMausBot", version: input.clientVersion } } },
+    { jsonrpc: "2.0", id: 1, method: "initialize", params: { clientInfo: { name: "openmausbot", title: "Sagax", version: input.clientVersion } } },
     { jsonrpc: "2.0", method: "initialized", params: {} },
     { jsonrpc: "2.0", id: 2, method: "skills/list", params: { cwds: [input.cwd] } },
   ], (message) => {

@@ -270,7 +270,7 @@ function reachesLines(facts: OverviewFacts): string[] {
     const scope = facts.bot.chiefOfStaff && facts.bot.managedSections?.length ? "its allowed teams" : "its section";
     lines.push(`Can talk to ${facts.sectionPeers} other bot${facts.sectionPeers === 1 ? "" : "s"} in ${scope}.`);
   }
-  if (facts.bot.chiefOfStaff) lines.push("Coordinates its section as Chief of Staff.");
+  if (facts.bot.chiefOfStaff) lines.push("Coordinates its section as Primary Bot.");
   if (facts.bot.chiefOfStaff && facts.bot.managedSections?.length) {
     lines.push(`May also coordinate these teams: ${facts.bot.managedSections.map(name => name || "General").join(", ")}.`);
   }

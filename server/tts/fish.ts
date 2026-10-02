@@ -2,7 +2,7 @@
 // receives only voice metadata and synthesized audio bytes.
 import type { FishTtsModel } from "../config.ts";
 
-const API = (process.env.OMB_FISH_AUDIO_API || "https://api.fish.audio").replace(/\/+$/, "");
+const API = (process.env.SAGAX_FISH_AUDIO_API || "https://api.fish.audio").replace(/\/+$/, "");
 /** Used when no model is saved, so existing setups keep their behavior. */
 export const DEFAULT_FISH_MODEL: FishTtsModel = "s2.1-pro";
 const MAX_ERROR_LENGTH = 240;

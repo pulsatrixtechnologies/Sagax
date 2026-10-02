@@ -2,11 +2,11 @@
 // discovery, desktop capture, and one pointer move inside an existing test VM.
 import { spawn } from "node:child_process";
 
-const runtime = process.env.OMB_CUA_RUNTIME || "docker";
-const container = process.env.OMB_CUA_CONTAINER;
-const socket = process.env.OMB_CUA_SOCKET || "/run/user/1000/openmausbot-cua.sock";
+const runtime = process.env.SAGAX_CUA_RUNTIME || "docker";
+const container = process.env.SAGAX_CUA_CONTAINER;
+const socket = process.env.SAGAX_CUA_SOCKET || "/run/user/1000/openmausbot-cua.sock";
 if (!container || !/^[a-zA-Z0-9_.-]+$/.test(container)) {
-  throw new Error("set OMB_CUA_CONTAINER to the explicitly created smoke container name");
+  throw new Error("set SAGAX_CUA_CONTAINER to the explicitly created smoke container name");
 }
 if (!['docker', 'podman', 'container'].includes(runtime)) throw new Error("unsupported container runtime");
 

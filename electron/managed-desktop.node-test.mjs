@@ -378,7 +378,7 @@ test("against an Admin without renewal or policies it behaves as before: no rene
 test("a lapsed Admin licence is not revocation: no sign-in loop, Company models unavailable, recovers by itself", async t => {
   let lapsed = false;
   const f = fixture(t, { saved: grant(), handler: (url, options) => lapsed && options.method !== "DELETE"
-    ? Response.json({ code: "admin_license_expired", error: "Your organization's OpenMaus Admin license has expired." }, { status: 503 }) : null });
+    ? Response.json({ code: "admin_license_expired", error: "Your organization's Sagax Admin license has expired." }, { status: 503 }) : null });
   await f.client.start(); lapsed = true;
   await f.client.refresh();
   assert.equal(f.client.state().status, "license-expired"); assert.equal(f.client.state().message, undefined);

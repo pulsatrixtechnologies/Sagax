@@ -324,7 +324,7 @@ export function companionPairingLink({
   if (
     !host ||
     !/^\d{6}$/.test(code) ||
-    !/^omb_pair_[A-Za-z0-9_-]{43}$/.test(token) ||
+    !/^(?:sgx|omb)_pair_[A-Za-z0-9_-]{43}$/.test(token) ||
     !Number.isInteger(port) ||
     port < 1 ||
     port > 65_535

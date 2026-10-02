@@ -9,7 +9,7 @@ export type NotifyKind =
   | "routine-failed"
   | "routine-deferred"
   | "turn-failed"
-  /** A run failed, stalled or could not start and no Chief of Staff was
+  /** A run failed, stalled or could not start and no Primary Bot was
    * there to take it: the person is the one who has to look. */
   | "incident"
   | "takeover"

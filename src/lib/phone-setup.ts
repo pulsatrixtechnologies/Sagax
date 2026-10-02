@@ -319,7 +319,7 @@ export function companionPairingOpenFailure(
   if (
     !pairing
     || pairing.token === previousToken
-    || !/^omb_pair_[A-Za-z0-9_-]{43}$/.test(pairing.token)
+    || !/^(?:sgx|omb)_pair_[A-Za-z0-9_-]{43}$/.test(pairing.token)
     || !/^\d{6}$/.test(pairing.code ?? "")
     || !Number.isFinite(pairing.expiresAt)
     || (pairing.expiresAt ?? 0) <= now

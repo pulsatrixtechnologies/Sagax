@@ -14,7 +14,7 @@ import type { SceneProps } from "./types";
 const CHANNELS_MS = 6000;
 
 const MEMBERS: Array<{ name: string; title: string; color: MausColor }> = [
-  { name: "Maus", title: "Chief of staff", color: "green" },
+  { name: "Maus", title: "Primary bot", color: "green" },
   { name: "Researcher", title: "Finds and checks facts", color: "blue" },
   { name: "Writer", title: "Drafts and edits", color: "orange" },
 ];

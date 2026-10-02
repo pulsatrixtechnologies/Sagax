@@ -11,7 +11,7 @@ export const USER_PREFERENCES_PATH = "/api/me/preferences";
 
 export interface UserPreferenceRouteDeps {
   store: UserPreferenceStore;
-  /** True on an organization server (OMB_IDENTITY=perspicax). */
+  /** True on an organization server (SAGAX_IDENTITY=perspicax). */
   organization: () => boolean;
 }
 

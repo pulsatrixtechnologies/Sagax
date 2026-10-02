@@ -149,9 +149,9 @@ describe("group memory routes", () => {
 describe("group_memory_update in the agents catalog", () => {
   it("is offered only to a room turn whose group memory is on", async () => {
     const { availableTools, catalogProfileFromEnv } = await import("./drivers/agents-catalog.ts");
-    const names = (env: NodeJS.ProcessEnv) => availableTools(catalogProfileFromEnv({ OMB_BOT_ID: "b1", OMB_ROOM_TURN: "1", ...env })).map((tool) => tool.name);
-    expect(names({ OMB_GROUP_MEMORY: "1" })).toContain("group_memory_update");
+    const names = (env: NodeJS.ProcessEnv) => availableTools(catalogProfileFromEnv({ SAGAX_BOT_ID: "b1", SAGAX_ROOM_TURN: "1", ...env })).map((tool) => tool.name);
+    expect(names({ SAGAX_GROUP_MEMORY: "1" })).toContain("group_memory_update");
     expect(names({})).not.toContain("group_memory_update");
-    expect(names({ OMB_GROUP_MEMORY: "0" })).not.toContain("group_memory_update");
+    expect(names({ SAGAX_GROUP_MEMORY: "0" })).not.toContain("group_memory_update");
   });
 });

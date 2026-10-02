@@ -87,8 +87,8 @@ const ClassifiedErrorDriver = createAcpDriver({
 });
 
 const CONTROL_PLANE_FIXTURE = {
-  OMB_CLOUD_READY_TOKEN: "ready-should-not-leak", OMB_CLOUD_BOOTSTRAP: "bootstrap-should-not-leak",
-  OMB_LICENSE_KEY: "license-should-not-leak", OMB_INSTALLATION_CREDENTIAL: "fleet-should-not-leak",
+  SAGAX_CLOUD_READY_TOKEN: "ready-should-not-leak", SAGAX_CLOUD_BOOTSTRAP: "bootstrap-should-not-leak",
+  SAGAX_LICENSE_KEY: "license-should-not-leak", SAGAX_INSTALLATION_CREDENTIAL: "fleet-should-not-leak",
 };
 
 describe("skipSubscriptionAuthForLocalInject", () => {
@@ -244,7 +244,7 @@ describe("ACP turns (fake CLI)", () => {
     delete process.env.CURSOR_API_KEY;
     delete process.env.CURSOR_AUTH_TOKEN;
     delete process.env.BOX_TOKEN;
-    delete process.env.OMB_TTS_KEY;
+    delete process.env.SAGAX_TTS_KEY;
     for (const name of Object.keys(CONTROL_PLANE_FIXTURE)) delete process.env[name];
     delete process.env.FAKE_ACP_MODELS;
     delete process.env.FAKE_ACP_MODEL_STICKS;
@@ -255,9 +255,9 @@ describe("ACP turns (fake CLI)", () => {
     delete process.env.FAKE_ACP_GROK_VERSION;
     delete process.env.FAKE_ACP_TOOL_MS;
     delete process.env.FAKE_ACP_DUMP_PROMPT;
-    delete process.env.OPENMAUS_ACP_PROMPT_IDLE_TIMEOUT_MS;
-    delete process.env.OMB_ACP_SESSION_IDLE_MS;
-    delete process.env.OMB_ACP_SESSION_IDLE_MIN_MS;
+    delete process.env.SAGAX_ACP_PROMPT_IDLE_TIMEOUT_MS;
+    delete process.env.SAGAX_ACP_SESSION_IDLE_MS;
+    delete process.env.SAGAX_ACP_SESSION_IDLE_MIN_MS;
     delete process.env.FAKE_ACP_LAUNCH_COUNT_FILE;
     recorder?.stop();
     await instance?.dispose();
@@ -624,7 +624,7 @@ describe("ACP turns (fake CLI)", () => {
     // workspace credentials with no CLI consumer at all — held by the
     // harness (env-injected at boot by the desktop shell), used in-process
     process.env.BOX_TOKEN = "box-should-not-leak";
-    process.env.OMB_TTS_KEY = "tts-should-not-leak";
+    process.env.SAGAX_TTS_KEY = "tts-should-not-leak";
     Object.assign(process.env, CONTROL_PLANE_FIXTURE);
 
     await instance.adapter.sendTurn({ threadId: "t-hygiene", text: "go" });
@@ -639,7 +639,7 @@ describe("ACP turns (fake CLI)", () => {
     expect(seen.env.CURSOR_API_KEY).toBeUndefined();
     expect(seen.env.CURSOR_AUTH_TOKEN).toBeUndefined();
     expect(seen.env.BOX_TOKEN).toBeUndefined();
-    expect(seen.env.OMB_TTS_KEY).toBeUndefined();
+    expect(seen.env.SAGAX_TTS_KEY).toBeUndefined();
     for (const name of Object.keys(CONTROL_PLANE_FIXTURE)) expect(seen.env[name]).toBeUndefined();
   });
 
@@ -657,7 +657,7 @@ describe("ACP turns (fake CLI)", () => {
         composio: {
           command: process.execPath,
           args: ["/tmp/connector-proxy.js"],
-          env: { OMB_CONNECTOR_UPSTREAM_URL: "http://127.0.0.1:8799/api/internal/connectors/mcp" },
+          env: { SAGAX_CONNECTOR_UPSTREAM_URL: "http://127.0.0.1:8799/api/internal/connectors/mcp" },
         },
       },
     });
@@ -666,7 +666,7 @@ describe("ACP turns (fake CLI)", () => {
       name: "composio",
       command: process.execPath,
       args: ["/tmp/connector-proxy.js"],
-      env: [{ name: "OMB_CONNECTOR_UPSTREAM_URL", value: "http://127.0.0.1:8799/api/internal/connectors/mcp" }],
+      env: [{ name: "SAGAX_CONNECTOR_UPSTREAM_URL", value: "http://127.0.0.1:8799/api/internal/connectors/mcp" }],
     });
   });
 
@@ -1250,7 +1250,7 @@ describe("ACP turns (fake CLI)", () => {
   });
 
   it("does not expire an agent while a person is answering an approval", async () => {
-    process.env.OPENMAUS_ACP_PROMPT_IDLE_TIMEOUT_MS = "150";
+    process.env.SAGAX_ACP_PROMPT_IDLE_TIMEOUT_MS = "150";
     await create(GrokAgentDriver, "permission");
     await instance.adapter.sendTurn({ threadId: "t-idle-approval", text: "go", approvalMode: "ask" });
     const opened = await recorder.until(e => e.type === "request.opened");
@@ -1265,7 +1265,7 @@ describe("ACP turns (fake CLI)", () => {
   // MOCA-260: a quiet `sleep` or build sends nothing while it runs, and the
   // guard used to stop the turn as if the agent had hung.
   it.each([GrokAgentDriver, QwenAgentDriver])("does not expire $driverKind while a tool it started is still running", async (driver) => {
-    process.env.OPENMAUS_ACP_PROMPT_IDLE_TIMEOUT_MS = "150";
+    process.env.SAGAX_ACP_PROMPT_IDLE_TIMEOUT_MS = "150";
     process.env.FAKE_ACP_TOOL_MS = "600";
     await create(driver, "slow-tool");
     await instance.adapter.sendTurn({ threadId: "t-slow-tool", text: "go" });
@@ -1275,7 +1275,7 @@ describe("ACP turns (fake CLI)", () => {
   });
 
   it.each([GrokAgentDriver, QwenAgentDriver])("still fails $driverKind when it goes silent once its tool has finished", async (driver) => {
-    process.env.OPENMAUS_ACP_PROMPT_IDLE_TIMEOUT_MS = "150";
+    process.env.SAGAX_ACP_PROMPT_IDLE_TIMEOUT_MS = "150";
     await create(driver, "stall-after-tool");
     await instance.adapter.sendTurn({ threadId: "t-stall-tool", text: "go" });
     expect(await recorder.until(e => e.type === "turn.completed")).toMatchObject({ ok: false, stopReason: "rpc_error" });
@@ -1284,7 +1284,7 @@ describe("ACP turns (fake CLI)", () => {
   });
 
   it("an agent that goes silent mid-answer is failed and closed by the prompt idle guard", async () => {
-    process.env.OPENMAUS_ACP_PROMPT_IDLE_TIMEOUT_MS = "150";
+    process.env.SAGAX_ACP_PROMPT_IDLE_TIMEOUT_MS = "150";
     await create(GrokAgentDriver, "stall-after-text");
     await instance.adapter.sendTurn({ threadId: "t-stall", text: "go" });
 
@@ -1292,7 +1292,7 @@ describe("ACP turns (fake CLI)", () => {
     expect(done).toMatchObject({ type: "turn.completed", ok: false, stopReason: "rpc_error" });
     const err = recorder.events.find((e) => e.type === "runtime.error");
     expect(err?.message).toMatch(/no tool running/i);
-    expect(err?.message).toContain("OPENMAUS_ACP_PROMPT_IDLE_TIMEOUT_MS");
+    expect(err?.message).toContain("SAGAX_ACP_PROMPT_IDLE_TIMEOUT_MS");
     // the streamed chunk reached the UI before the child went silent
     expect(recorder.events.some((e) => e.type === "content.delta")).toBe(true);
     expect(instance.adapter.hasSession("t-stall")).toBe(false);
@@ -1621,7 +1621,7 @@ describe("ACP turns (fake CLI)", () => {
     });
 
     it("acknowledges before a prompt timeout and never offers startup recovery afterward", async () => {
-      process.env.OPENMAUS_ACP_PROMPT_IDLE_TIMEOUT_MS = "100";
+      process.env.SAGAX_ACP_PROMPT_IDLE_TIMEOUT_MS = "100";
       await create(GrokAgentDriver, "stall-after-text");
       const ack = await instance.adapter.sendTurn({ threadId: "startup-prompt", text: "go", startupRecovery: true });
       expect(recorder.events.some((event) => event.type === "turn.completed")).toBe(false);
@@ -1824,8 +1824,8 @@ describe("ACP turns (fake CLI)", () => {
     it("closes the idle process and resumes on the next turn", async () => {
       // Ten seconds is the lowest window the floor allows now; exercise the
       // close at the floor itself and give the poll room past it.
-      process.env.OMB_ACP_SESSION_IDLE_MIN_MS = "10000";
-      process.env.OMB_ACP_SESSION_IDLE_MS = "10000";
+      process.env.SAGAX_ACP_SESSION_IDLE_MIN_MS = "10000";
+      process.env.SAGAX_ACP_SESSION_IDLE_MS = "10000";
       countFile = join(scratch, "launches");
       rpcFile = join(scratch, "rpc.json");
       process.env.FAKE_ACP_LAUNCH_COUNT_FILE = countFile;
@@ -1905,7 +1905,7 @@ describe("ACP turns (fake CLI)", () => {
       const integration = (token: string) => ({
         command: process.execPath,
         args: [FAKE_CLI],
-        env: { OMB_COMMS_TOKEN: token },
+        env: { SAGAX_COMMS_TOKEN: token },
       });
       const first = await instance.adapter.sendTurn({
         threadId: "t-pool-token",
@@ -1950,7 +1950,7 @@ describe("ACP turns (fake CLI)", () => {
         config: { cli: FAKE_CLI, fullAuto: false },
       });
       recorder = recordEvents(instance.adapter);
-      const integration = (token: string) => ({ command: process.execPath, args: [FAKE_CLI], env: { OMB_COMMS_TOKEN: token } });
+      const integration = (token: string) => ({ command: process.execPath, args: [FAKE_CLI], env: { SAGAX_COMMS_TOKEN: token } });
       const first = await instance.adapter.sendTurn({ threadId: "qwen-stop", text: "one", integrations: { agents: integration("one") } });
       await recorder.until((e) => e.type === "turn.completed" && e.turnId === first.turnId);
 
@@ -2008,7 +2008,7 @@ describe("ACP turns (fake CLI)", () => {
         return kill(child, timeout);
       });
       if (reason === "prompt stall") {
-        process.env.OPENMAUS_ACP_PROMPT_IDLE_TIMEOUT_MS = "100";
+        process.env.SAGAX_ACP_PROMPT_IDLE_TIMEOUT_MS = "100";
         process.env.FAKE_ACP_MODE = "stall-after-text";
       }
       instance = await QwenAgentDriver.create({
@@ -2017,7 +2017,7 @@ describe("ACP turns (fake CLI)", () => {
         config: { cli: FAKE_CLI, fullAuto: false },
       });
       recorder = recordEvents(instance.adapter);
-      const integration = (token: string) => ({ agents: { command: process.execPath, args: [FAKE_CLI], env: { OMB_COMMS_TOKEN: token } } });
+      const integration = (token: string) => ({ agents: { command: process.execPath, args: [FAKE_CLI], env: { SAGAX_COMMS_TOKEN: token } } });
       try {
         const first = await instance.adapter.sendTurn({ threadId: "qwen-retry", text: "one", integrations: integration("one") });
         expect(await recorder.until((e) => e.type === "turn.completed" && e.turnId === first.turnId))
@@ -2072,7 +2072,7 @@ describe("ACP turns (fake CLI)", () => {
       const integration = (token: string) => ({
         command: process.execPath,
         args: [FAKE_CLI],
-        env: { OMB_COMMS_TOKEN: token },
+        env: { SAGAX_COMMS_TOKEN: token },
       });
       const first = await instance.adapter.sendTurn({
         threadId: "t-pool-reject",

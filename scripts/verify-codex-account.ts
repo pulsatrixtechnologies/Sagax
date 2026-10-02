@@ -23,7 +23,7 @@ try {
   writeFileSync(wrapper, [
     "#!/usr/bin/env node",
     'import { appendFileSync, existsSync, unlinkSync } from "node:fs";',
-    `if (process.env.OMB_DEVICE_AUTH_FIXTURE !== "1" || process.env.HOME !== ${JSON.stringify(fixtureHome)} || process.env.CODEX_HOME !== ${JSON.stringify(codexDir)}) { throw new Error("Disposable Codex fixture environment required"); }`,
+    `if (process.env.SAGAX_DEVICE_AUTH_FIXTURE !== "1" || process.env.HOME !== ${JSON.stringify(fixtureHome)} || process.env.CODEX_HOME !== ${JSON.stringify(codexDir)}) { throw new Error("Disposable Codex fixture environment required"); }`,
     `appendFileSync(${JSON.stringify(commandLog)}, JSON.stringify(process.argv.slice(2)) + "\\n", { mode: 0o600 });`,
     'if (process.argv.slice(2).join(" ") === "logout") {',
     `  if (existsSync(${JSON.stringify(failLogoutMarker)})) { process.stderr.write("Offline fixture forced logout failure\\n"); process.exit(1); }`,
@@ -40,7 +40,7 @@ try {
   const config = JSON.parse(readFileSync(configPath, "utf8"));
   config.instances.codex = {
     driver: "codex", displayName: "Codex", config: { cli: wrapper },
-    environment: { HOME: fixtureHome, USERPROFILE: fixtureHome, CODEX_HOME: codexDir, OMB_DEVICE_AUTH_FIXTURE: "1", FAKE_CODEX_ACCOUNT_EMAIL: "ada@example.test" },
+    environment: { HOME: fixtureHome, USERPROFILE: fixtureHome, CODEX_HOME: codexDir, SAGAX_DEVICE_AUTH_FIXTURE: "1", FAKE_CODEX_ACCOUNT_EMAIL: "ada@example.test" },
   };
   writeFileSync(configPath, JSON.stringify(config, null, 2), { mode: 0o600 });
   await api("PUT", "/api/config", { defaultModelSelection: { instanceId: "codex", model: "gpt-6-astra" } });

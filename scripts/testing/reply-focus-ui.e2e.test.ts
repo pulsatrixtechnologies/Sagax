@@ -9,8 +9,8 @@ import { UI_TOOLS_DIR } from "./control-omb-ui.ts";
 
 const ROOT = fileURLToPath(new URL("../..", import.meta.url));
 const binary = resolveAgentBrowserBinary({ dataDir: UI_TOOLS_DIR, env: process.env });
-const enabled = process.env.OMB_UI_E2E === "1" || Boolean(binary);
-if (!enabled) console.info("skipping reply focus UI e2e: set OMB_UI_E2E=1 to install the pinned browser");
+const enabled = process.env.SAGAX_UI_E2E === "1" || Boolean(binary);
+if (!enabled) console.info("skipping reply focus UI e2e: set SAGAX_UI_E2E=1 to install the pinned browser");
 
 // MOCA-263: choosing Reply showed "Replying to …" but left the caret outside
 // the draft, so the reply could not be typed without clicking the box first.

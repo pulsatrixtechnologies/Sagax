@@ -7,6 +7,8 @@ import "./trombi.css";
 import { useId } from "react";
 import { cn } from "@/lib/cn";
 import { EYE_L, EYE_R, EYE_RADIUS, MARGIN, POSE_SHAPES, RULED, SHEET, WIRE, type TrombiPose } from "./trombi-art";
+import type { TrombiSkin } from "../../../shared/mascot-look";
+import { trombiPaint, trombiSkinLayers } from "../skin-fx/trombi-skins";
 
 export type { TrombiPose };
 
@@ -22,6 +24,10 @@ export interface TrombiProps {
   /** Accessible name; null hides the drawing from assistive tech. */
   label?: string | null;
   className?: string;
+  /** A bot's Trombi skin (skin-fx/trombi-skins.tsx); the assistant wears classic. */
+  skin?: TrombiSkin;
+  /** The skin's full effects (filters, moving light) or its still look. */
+  fxFull?: boolean;
 }
 
 function Eye({ side, center, pupil, clipId, fillId }: { side: "L" | "R"; center: readonly [number, number]; pupil: readonly [number, number]; clipId: string; fillId: string }) {
@@ -97,10 +103,12 @@ function Extras({ pose }: { pose: TrombiPose }) {
   return null;
 }
 
-export function Trombi({ pose, size = 110, still = false, label = "Trombi", className }: TrombiProps) {
+export function Trombi({ pose, size = 110, still = false, label = "Trombi", className, skin = "classic", fxFull = false }: TrombiProps) {
   const raw = useId().replace(/[^a-zA-Z0-9_-]/g, "");
   const id = (name: string) => `r98t${raw}${name}`;
   const shape = POSE_SHAPES[pose] ?? POSE_SHAPES.idle;
+  const paint = trombiPaint(skin, `r98t${raw}`);
+  const fx = trombiSkinLayers(skin, WIRE, id, fxFull);
   return (
     <svg
       className={cn("r98-trombi", `r98t-pose-${pose}`, still && "r98t-still", className)}
@@ -121,9 +129,9 @@ export function Trombi({ pose, size = 110, still = false, label = "Trombi", clas
           <stop offset="1" stopColor="#c9cfd7" />
         </radialGradient>
         <linearGradient id={id("paper")} x1="1" y1="0" x2="0" y2="1">
-          <stop offset="0" stopColor="#fff8c4" />
-          <stop offset="0.6" stopColor="#fdf1a6" />
-          <stop offset="1" stopColor="#f6e48a" />
+          <stop offset="0" stopColor={paint.paper[0]} />
+          <stop offset="0.6" stopColor={paint.paper[1]} />
+          <stop offset="1" stopColor={paint.paper[2]} />
         </linearGradient>
         <linearGradient id={id("curl")} gradientUnits="userSpaceOnUse" x1="150" y1="250" x2="250" y2="150">
           <stop offset="0" stopColor="#fff" stopOpacity="0" />
@@ -148,51 +156,58 @@ export function Trombi({ pose, size = 110, still = false, label = "Trombi", clas
         <clipPath id={id("clipR")}>
           <ellipse cx={EYE_R[0]} cy={EYE_R[1]} rx={EYE_RADIUS} ry={EYE_RADIUS} />
         </clipPath>
+        {fx.defs}
       </defs>
 
       <g data-part="paper">
         <path d={SHEET} fill="#000" opacity={0.18} filter={`url(#${id("soft")})`} transform="translate(3 6)" />
         <path d={SHEET} fill={`url(#${id("paper")})`} />
         <g clipPath={`url(#${id("sheet")})`}>
-          <path d={SHEET} fill={`url(#${id("curl")})`} />
-          <g fill="none" stroke="#9fb8a4" strokeWidth={1}>
+          {paint.curl && <path d={SHEET} fill={`url(#${id("curl")})`} />}
+          {fx.paper}
+          <g fill="none" stroke={paint.ruled} strokeWidth={1}>
             {RULED.map((line) => (
               <path key={line} d={line} />
             ))}
           </g>
-          <path d={MARGIN} stroke="#e08a8a" strokeWidth={0.9} fill="none" />
+          <path d={MARGIN} stroke={paint.margin} strokeWidth={0.9} fill="none" />
           <g transform="translate(94 317) matrix(1 0 -0.45 0.24 0 0) translate(-94 -317)">
             <path d={WIRE} fill="none" stroke="#3a3520" strokeWidth={15} strokeLinecap="round" opacity={0.28} filter={`url(#${id("soft")})`} />
           </g>
           <ellipse cx={96} cy={318} rx={50} ry={6} fill={`url(#${id("shadow")})`} />
         </g>
-        <path d={SHEET} fill="none" stroke="#c7b25a" strokeWidth={1.1} strokeLinejoin="round" />
-        <path d="M222 170 Q240 166 248 156 Q242 172 234 182 Z" fill="#fffbe0" stroke="#c7b25a" strokeWidth={1} strokeLinejoin="round" />
+        <path d={SHEET} fill="none" stroke={paint.edge} strokeWidth={1.1} strokeLinejoin="round" />
+        <path d="M222 170 Q240 166 248 156 Q242 172 234 182 Z" fill={paint.curl ? "#fffbe0" : paint.paper[0]} stroke={paint.edge} strokeWidth={1} strokeLinejoin="round" />
       </g>
 
+      <g className={fx.bodyClass}>
       <g className="r98t-body" data-part="body">
+        {fx.underWire}
         <g className="r98t-wire" data-part="wire" fill="none" strokeLinecap="round" strokeLinejoin="round">
-          <path d={WIRE} stroke="#39414c" strokeWidth={14} />
-          <path d={WIRE} stroke="#aab4bf" strokeWidth={11} />
-          <path d={WIRE} stroke="#77828f" strokeWidth={3.4} transform="translate(1.9 1.9)" />
-          <path d={WIRE} stroke="#f4f7fa" strokeWidth={2.6} transform="translate(-1.7 -1.7)" />
-          <path d={WIRE} stroke="#ffffff" strokeWidth={1.1} strokeDasharray="18 60 9 90" transform="translate(-1.8 -1.8)" />
+          <path d={WIRE} stroke={paint.outer} strokeWidth={14} />
+          <path d={WIRE} stroke={paint.main} strokeWidth={11} />
+          <path d={WIRE} stroke={paint.shade} strokeWidth={3.4} transform="translate(1.9 1.9)" />
+          <path d={WIRE} stroke={paint.hi} strokeWidth={2.6} transform="translate(-1.7 -1.7)" />
+          <path d={WIRE} stroke={paint.dash} strokeWidth={1.1} strokeDasharray="18 60 9 90" transform="translate(-1.8 -1.8)" />
           <circle cx={73} cy={65} r={2} fill="#fff" />
           <circle cx={137} cy={80} r={1.3} fill="#fff" opacity={0.8} />
           <circle cx={60} cy={297} r={1.7} fill="#fff" />
         </g>
+        {fx.overWire}
         <g className="r98t-face" data-part="face" transform={`rotate(${shape.tilt} 99 118)`}>
           <g className="r98t-eyes" data-part="eyes">
             <Eye side="L" center={EYE_L} pupil={shape.pupil} clipId={id("clipL")} fillId={id("eye")} />
             <Eye side="R" center={EYE_R} pupil={shape.pupil} clipId={id("clipR")} fillId={id("eye")} />
           </g>
           <g className="r98t-brows" data-part="brows">
-            <path className="r98t-brow" data-part="brow-L" d={shape.browL} fill="#1b1f27" stroke="#1b1f27" strokeWidth={1.6} strokeLinejoin="round" />
-            <path className="r98t-brow" data-part="brow-R" d={shape.browR} fill="#1b1f27" stroke="#1b1f27" strokeWidth={1.6} strokeLinejoin="round" />
+            <path className="r98t-brow" data-part="brow-L" d={shape.browL} fill={paint.brow} stroke={paint.brow} strokeWidth={1.6} strokeLinejoin="round" />
+            <path className="r98t-brow" data-part="brow-R" d={shape.browR} fill={paint.brow} stroke={paint.brow} strokeWidth={1.6} strokeLinejoin="round" />
           </g>
         </g>
       </g>
+      </g>
       <Extras pose={pose} />
+      {fx.around}
     </svg>
   );
 }

@@ -7,7 +7,7 @@
 // here, never read from the file. What the file may set is persona and
 // structure: names, standing instructions, looks, playbooks, skills (which
 // land switched off), group chats, routines (which land paused), the team
-// brief and Chief, starter notes, and connection SLOTS (an address and the
+// brief and Primary Bot, starter notes, and connection SLOTS (an address and the
 // names of values the person fills in later; never the values).
 //
 // `trust` is a function argument, never read from a request. The HTTP import
@@ -303,7 +303,7 @@ function runImport(source: ImportSource, options: PackageImportOptions, deps: Pa
         .map((value) => value.trim().toLowerCase()),
     );
     // Every template gets its own new section, numbered on collision. Never
-    // merge into an existing section (or replace its Chief).
+    // merge into an existing section (or replace its Primary Bot).
     section = takeImportName(teamName, existingSections, 60);
 
     // Connection slots first, so bots can be bound to exactly these servers.
@@ -516,7 +516,9 @@ function runImport(source: ImportSource, options: PackageImportOptions, deps: Pa
       }
     }
 
-    if (pkg?.team?.leader) store.setChiefOfStaff(botIds.get(pkg.team.leader)!);
+    // One Primary Bot per person: the leader becomes it only when the
+    // person has none (store.adoptImportedLeaders).
+    if (pkg?.team?.leader) store.adoptImportedLeaders([botIds.get(pkg.team.leader)!]);
     if (org && pkg?.team) {
       orgIndex.section = section;
       orgIndex.team.parts = pairs(TEAM_PARTS, {

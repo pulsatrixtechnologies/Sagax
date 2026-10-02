@@ -11,7 +11,7 @@ async function withMcp(script: string, test: (run: () => Promise<string>, dir: s
   const prompt = join(dir, "system.txt");
   const plan = join(dir, "plan.json");
   writeFileSync(config, JSON.stringify({ mcpServers: { agents: {
-    command: process.execPath, args: ["-e", script], env: { OMB_BOT_ID: "fixture", FIXTURE_HOME: dir },
+    command: process.execPath, args: ["-e", script], env: { SAGAX_BOT_ID: "fixture", FIXTURE_HOME: dir },
   } } }));
   writeFileSync(prompt, "Only this disposable test fixture.");
   writeFileSync(plan, JSON.stringify({ fixture: { reply: "Completed fixture" } }));

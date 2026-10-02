@@ -7,7 +7,7 @@ import { launchVerificationServer, runControlOmb } from "../scripts/control-omb.
 
 it("loads the group's memory into its room turns only", async () => {
   const fixture = await launchVerificationServer();
-  const env = { OPENMAUSBOT_URL: fixture.info.url };
+  const env = { SAGAX_URL: fixture.info.url };
   const api = async (method: string, path: string, body?: unknown) => {
     const response = await fetch(`${fixture.info.url}${path}`, {
       method, headers: { "content-type": "application/json" },

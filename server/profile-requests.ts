@@ -71,7 +71,7 @@ export interface ProfileRequestServiceOptions {
   /** Server-owned effective mode of the source conversation, never request input. */
   autoApply?: (botId: string, threadId: string) => boolean;
   canPersist?: (botId: string, threadId: string) => { ok: true } | { ok: false; status: number; error: string };
-  /** Chief targeting another bot: returns a refusal sentence or null. Checked at propose AND confirm. */
+  /** Primary Bot targeting another bot: returns a refusal sentence or null. Checked at propose AND confirm. */
   validateTarget?: (proposerBotId: string, targetBotId: string) => string | null;
 }
 

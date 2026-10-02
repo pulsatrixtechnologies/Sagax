@@ -22,7 +22,7 @@ describe("hostedCompanionUrl", () => {
       "https://maus.example#pair",
       "not a URL",
     ]) {
-      expect(() => hostedCompanionUrl(value)).toThrow(/OMB_COMPANION_HOSTED_URL/);
+      expect(() => hostedCompanionUrl(value)).toThrow(/SAGAX_COMPANION_HOSTED_URL/);
     }
   });
 });
