@@ -22172,6 +22172,13 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         await file.handle.close();
         return res.end();
       }
+      // The client may have gone while the file was opening: its "close"
+      // already fired, so nothing would ever close the handle, and Node
+      // fails the process when it collects an open FileHandle.
+      if (res.destroyed) {
+        await file.handle.close().catch(() => undefined);
+        return;
+      }
       const stream = file.handle.createReadStream({ start: 0, end: file.bytes - 1, autoClose: true });
       stream.on("error", () => res.destroy());
       res.on("close", () => stream.destroy());
@@ -22231,6 +22238,13 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (file.bytes === 0) {
         await file.handle.close();
         return res.end();
+      }
+      // The client may have gone while the file was opening: its "close"
+      // already fired, so nothing would ever close the handle, and Node
+      // fails the process when it collects an open FileHandle.
+      if (res.destroyed) {
+        await file.handle.close().catch(() => undefined);
+        return;
       }
       const stream = file.handle.createReadStream({ start: 0, end: file.bytes - 1, autoClose: true });
       stream.on("error", () => res.destroy());
