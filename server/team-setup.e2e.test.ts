@@ -87,7 +87,7 @@ it("Clive reviews multi-provider teams once, continues after each decision, and 
     } });
     const plan = { reason: "Set up Research, Engineering and Growth specialists as requested", newTeams: ["Research", "Engineering", "Growth"], operations: [
       build("Mira", "Research", selection(claude)), build("Patch", "Engineering", selection(codex)), build("Quill", "Growth", selection(claude)),
-      { action: "create", key: "Patch", fields: { title: "Implementation and verification engineer", chiefOfStaff: true } },
+      { action: "create", key: "Patch", fields: { title: "Implementation and verification engineer" } },
     ] };
     let token = await start("Clive, review this setup while you are working.");
     const stopped = await api("POST", "/api/internal/team-setup-requests", { plan }, 201, token);
@@ -112,7 +112,7 @@ it("Clive reviews multi-provider teams once, continues after each decision, and 
     const card = before.messages.find((message: any) => message.card?.requestId === proposed.requestId).card;
     expect(card.teamSetupRequest.operations).toHaveLength(3);
     expect(card.subtitle).toContain("Authorize @Clive");
-    expect(card.subtitle).toContain("Chief of Staff: No → Yes");
+    expect(card.subtitle).not.toContain("Primary Bot: No → Yes");
     // Origin is forgeable by an active bot shell: it cannot self-grant teams.
     await api("POST", `/api/threads/${chief.threadId}/respond`, { requestId: proposed.requestId, behavior: "allow" }, 403);
     expect(await setupBots()).toHaveLength(0);
@@ -138,7 +138,8 @@ it("Clive reviews multi-provider teams once, continues after each decision, and 
     const created = saved.filter((bot: any) => !initialBotIds.has(bot.id));
     expect(created.map((bot: any) => bot.name).sort()).toEqual(["Mira", "Patch", "Quill"]);
     const engineer = created.find((bot: any) => bot.name === "Patch");
-    expect(engineer).toMatchObject({ title: "Implementation and verification engineer", section: "Engineering", chiefOfStaff: true, modelSelection: selection(codex), approvalMode: "ask", autoApprove: false, composio: false });
+    expect(engineer.chiefOfStaff).toBeFalsy(); // one Primary Bot per person: Clive keeps it
+    expect(engineer).toMatchObject({ title: "Implementation and verification engineer", section: "Engineering", modelSelection: selection(codex), approvalMode: "ask", autoApprove: false, composio: false });
     expect(engineer.managedSections).toBeUndefined();
     expect(saved.find((bot: any) => bot.id === chief.id).managedSections).toEqual(expect.arrayContaining(plan.newTeams));
     await api("POST", `/api/threads/${chief.threadId}/respond`, { requestId: proposed.requestId, behavior: "allow" });
