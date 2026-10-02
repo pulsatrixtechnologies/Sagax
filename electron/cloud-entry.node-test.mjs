@@ -22,19 +22,20 @@ function fixture({ open = async () => true } = {}) {
 const settle = async () => { for (let i = 0; i < 5; i++) await Promise.resolve(); };
 
 test("the Cloud protocol is a fixed action without URL routing or credentials", () => {
-  assert.equal(CLOUD_DEEP_LINK, "openmausbot://cloud");
-  assert.equal(isCloudDeepLink("openmausbot://cloud"), true);
+  assert.equal(CLOUD_DEEP_LINK, "sagax://cloud");
+  assert.equal(isCloudDeepLink("sagax://cloud"), true);
+  assert.equal(isCloudDeepLink("openmausbot://cloud"), true, "the old scheme for one release");
   for (const value of [null, undefined, {}, ["openmausbot://cloud"], "", "openmausbot://cloud/", "openmausbot://cloud?", "openmausbot://cloud#",
     "openmausbot://cloud?code=ABCDE-FGHJK", "openmausbot://cloud#code=ABCD-EFGH-JKLM", "openmausbot://cloud?url=https://home.example",
     "openmausbot://cloud/pair", "openmausbot://user@cloud", "openmausbot://cloud:443", "openmausbot://cloud.evil", "openmausbot://CLOUD",
-    "OPENMAUSBOT://cloud", "openmausbot:cloud", "openmausbot:///cloud", "https://cloud", " openmausbot://cloud", "openmausbot://cloud ",
-    "openmausbot://%63loud", "openmausbot://organization", "openmausbot://install?url=https://github.com/x/y"]) {
+    "SAGAX://cloud", "openmausbot:cloud", "openmausbot:///cloud", "https://cloud", " openmausbot://cloud", "openmausbot://cloud ",
+    "openmausbot://%63loud", "openmausbot://organization", "sagax://cloud/", "sagax://cloud?code=X", "SAGAX://cloud", "sagax://organization", "openmausbot://install?url=https://github.com/x/y"]) {
     assert.equal(isCloudDeepLink(value), false, String(value));
   }
 });
 
 test("consuming a launch action prevents it replaying on a later restart without changing other arguments", () => {
-  const original = ["/Applications/OpenMausBot", "--profile=fixture", "openmausbot://cloud?ignored", "openmausbot://organization", "openmausbot://install/example"];
+  const original = ["/Applications/Sagax", "--profile=fixture", "openmausbot://cloud?ignored", "openmausbot://organization", "openmausbot://install/example"];
   const argv = [...original, "openmausbot://cloud", "openmausbot://cloud"];
   assert.equal(takeCloudDeepLink(argv), true);
   assert.deepEqual(argv, original);
@@ -44,9 +45,9 @@ test("consuming a launch action prevents it replaying on a later restart without
 
 test("a cold-start link waits until main can navigate, then opens exactly once", async () => {
   const h = fixture();
-  const argv = ["/Applications/OpenMausBot", "--fixture", "openmausbot://cloud"];
+  const argv = ["/Applications/Sagax", "--fixture", "openmausbot://cloud"];
   assert.equal(h.entry.fromLaunch(argv), true);
-  assert.deepEqual(argv, ["/Applications/OpenMausBot", "--fixture"]);
+  assert.deepEqual(argv, ["/Applications/Sagax", "--fixture"]);
   await settle();
   assert.deepEqual(h.calls, [], "no window exists to reveal or navigate yet");
   assert.equal(await h.entry.ready(), true);
@@ -57,7 +58,7 @@ test("a cold-start link waits until main can navigate, then opens exactly once",
 
 test("a launch without the link leaves nothing pending", async () => {
   const h = fixture();
-  assert.equal(h.entry.fromLaunch(["/Applications/OpenMausBot", "openmausbot://cloud/"]), false);
+  assert.equal(h.entry.fromLaunch(["/Applications/Sagax", "openmausbot://cloud/"]), false);
   assert.equal(await h.entry.ready(), false);
   assert.deepEqual(h.calls, []);
 });
@@ -78,11 +79,11 @@ test("once ready, open-url and a second instance open immediately and consume th
   assert.equal(h.entry.fromUrl("openmausbot://cloud"), true);
   await settle();
   assert.deepEqual(h.calls, ["reveal", "open"]);
-  const commandLine = ["C:\\OpenMausBot.exe", "--flag", "openmausbot://cloud"];
+  const commandLine = ["C:\\Sagax.exe", "--flag", "openmausbot://cloud"];
   assert.equal(h.entry.fromArgs(commandLine), true);
   await settle();
   assert.deepEqual(h.calls, ["reveal", "open", "reveal", "open"]);
-  assert.deepEqual(commandLine, ["C:\\OpenMausBot.exe", "--flag"]);
+  assert.deepEqual(commandLine, ["C:\\Sagax.exe", "--flag"]);
 });
 
 test("anything else is left to the other link handlers without revealing or opening", async () => {
@@ -110,7 +111,7 @@ test("a failed open is contained and a later link still opens", async () => {
 });
 
 test("a consumed launch link is not replayed by the companion or updater relaunch", () => {
-  const argv = ["/fixture/OpenMausBot", "--fixture", "openmausbot://cloud", "openmausbot://cloud?ignored"];
+  const argv = ["/fixture/Sagax", "--fixture", "openmausbot://cloud", "openmausbot://cloud?ignored"];
   takeCloudDeepLink(argv);
   const calls = [];
   runInNewContext(`${between("function relaunchAfterDesktopRemoteChange()", 'ipcMain.handle("desktop-remote:state"')}\nrelaunchAfterDesktopRemoteChange();`, {

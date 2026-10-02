@@ -38,12 +38,12 @@ if (!createBackgroundExecutable(readFileSync(binary)).equals(readFileSync(backgr
 // library lookup to exactly this path; verify the redirect is present, or the
 // packaged app would fall back to node_modules paths that do not exist.
 const bundledSource = readFileSync(bundle, "utf8");
-if (!bundledSource.includes("OPENMAUSBOT_CUA_SDK_LIBRARY")) {
-  console.error("staged cua-sdk.mjs lacks the OPENMAUSBOT_CUA_SDK_LIBRARY resolver patch — re-run pnpm build:cua:win");
+if (!bundledSource.includes("SAGAX_CUA_SDK_LIBRARY")) {
+  console.error("staged cua-sdk.mjs lacks the SAGAX_CUA_SDK_LIBRARY resolver patch — re-run pnpm build:cua:win");
   process.exit(1);
 }
 
-process.env.OPENMAUSBOT_CUA_SDK_LIBRARY = dll;
+process.env.SAGAX_CUA_SDK_LIBRARY = dll;
 process.env.CUA_DRIVER_RS_TELEMETRY_ENABLED = "0";
 const watchdog = setTimeout(() => {
   console.error("smoke:cua-win timed out");
@@ -62,11 +62,11 @@ public static class ConsoleProbe {
 }
 '@
 [ConsoleProbe]::FreeConsole() | Out-Null
-$attached = [ConsoleProbe]::AttachConsole([uint32]$env:OMB_SMOKE_DAEMON_PID)
+$attached = [ConsoleProbe]::AttachConsole([uint32]$env:SAGAX_SMOKE_DAEMON_PID)
 $failure = [Runtime.InteropServices.Marshal]::GetLastWin32Error()
 if ($attached) { [ConsoleProbe]::FreeConsole() | Out-Null; throw 'Background daemon has a console' }
 if ($failure -ne 6) { throw "Console probe failed with unexpected Windows error $failure" }
-`], { windowsHide: true, timeout: 10_000, env: { ...process.env, OMB_SMOKE_DAEMON_PID: String(pid) } });
+`], { windowsHide: true, timeout: 10_000, env: { ...process.env, SAGAX_SMOKE_DAEMON_PID: String(pid) } });
   console.log("Windows confirms the background daemon has no console");
 }
 

@@ -36,7 +36,7 @@ const profile = mkdtempSync(join(tmpdir(), "owl3d-electron-"));
 const electron = createRequire(import.meta.url)("electron");
 const code = await new Promise((done) => {
   const child = spawn(electron, [join(ROOT, "scripts", "verify-owl3d.electron.cjs"), `--user-data-dir=${profile}`], {
-    env: { ...process.env, VERIFY_ORIGIN: origin, VERIFY_OUT: out, OMB_DATA_DIR: join(profile, "data") },
+    env: { ...process.env, VERIFY_ORIGIN: origin, VERIFY_OUT: out, SAGAX_DATA_DIR: join(profile, "data") },
     stdio: ["ignore", "inherit", "inherit"],
   });
   child.on("exit", (status) => done(status ?? 1));

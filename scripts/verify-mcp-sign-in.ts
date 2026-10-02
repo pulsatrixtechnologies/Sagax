@@ -72,7 +72,7 @@ try {
   await command("wait", "--fn", "[...document.querySelectorAll('button')].some(b => b.textContent.trim() === 'Sign in')");
   // Simulate a blocked popup; the explicit reopen and paste UI must still work.
   await evaluate("window.open = () => null");
-  const evidence = resolve(process.env.OMB_UI_EVIDENCE_DIR ?? ".omb-scratch/mcp-oauth-evidence");
+  const evidence = resolve(process.env.SAGAX_UI_EVIDENCE_DIR ?? ".omb-scratch/mcp-oauth-evidence");
   mkdirSync(evidence, { recursive: true });
   await command("screenshot", join(evidence, "before.png"), "--full");
   await clickButton("Sign in");

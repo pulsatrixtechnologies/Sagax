@@ -43,8 +43,8 @@ it("creates and manages an own-section room through the mounted Chief MCP proxy"
       agents: z.object({ command: z.string(), args: z.array(z.string()), env: z.record(z.string(), z.string()) }),
     }) }) }).parse(JSON.parse(readFileSync(fixture.fixtureDumpPath, "utf8")));
     const mounted = mcpConfig.mcpServers.agents;
-    expect(mounted.env.OMB_BOT_ID).toBe(chief.id);
-    expect(mounted.env.OMB_HARNESS_URL).toBe(fixture.info.url);
+    expect(mounted.env.SAGAX_BOT_ID).toBe(chief.id);
+    expect(mounted.env.SAGAX_HARNESS_URL).toBe(fixture.info.url);
     proxy = spawn(mounted.command, mounted.args, {
       cwd: process.cwd(),
       env: { ...mounted.env, HOME: fixture.info.dataDir, USERPROFILE: fixture.info.dataDir, ...(process.env.SystemRoot ? { SystemRoot: process.env.SystemRoot } : {}) },

@@ -40,11 +40,11 @@ export const IMAGE_REPOSITORY = "localhost/openmausbot/cua-local-vm";
 export const IMAGE_LAYER_VERSION = "5";
 export const IMAGE_LAYER_LABEL = "com.openmausbot.image-layer";
 export const IMAGE = `${IMAGE_REPOSITORY}:driver-${CUA_DRIVER_VERSION}-v${IMAGE_LAYER_VERSION}`;
-/** A test run's own namespace (`OMB_LOCAL_VM_TEST_NAMESPACE`): its Local VM
+/** A test run's own namespace (`SAGAX_LOCAL_VM_TEST_NAMESPACE`): its Local VM
  * containers get a unique, labeled name, never the real one, so a test can
  * never leave behind (or reuse) the developer's `openmausbot-computer`.
  * Clean them up with `testLocalVmCleanupArgs`. */
-export const LOCAL_VM_TEST_NAMESPACE = localVmTestNamespace(process.env.OMB_LOCAL_VM_TEST_NAMESPACE);
+export const LOCAL_VM_TEST_NAMESPACE = localVmTestNamespace(process.env.SAGAX_LOCAL_VM_TEST_NAMESPACE);
 export const REAL_CONTAINER = "openmausbot-computer";
 export const CONTAINER = LOCAL_VM_TEST_NAMESPACE ? `openmausbot-test-${LOCAL_VM_TEST_NAMESPACE}-computer` : REAL_CONTAINER;
 /** Names the test run that created a container (only ever set in tests). */
@@ -147,14 +147,14 @@ export function workspaceIsTemporary(workspaceDir: string, temporaryRoot = tmpdi
 /** Why a Local VM may not be created for this folder: a real-named
  * container bound to the temp folder is a test's throwaway home, and it
  * breaks the person's Local VM once that folder is gone. Tests set
- * OMB_LOCAL_VM_TEST_NAMESPACE (their own names) instead. */
+ * SAGAX_LOCAL_VM_TEST_NAMESPACE (their own names) instead. */
 export function localVmFolderRefusal(
   target: Pick<LocalVmTarget, "workspaceDir">,
   namespace = LOCAL_VM_TEST_NAMESPACE,
   temporaryRoot = tmpdir(),
 ): string | null {
   if (namespace || !workspaceIsTemporary(target.workspaceDir, temporaryRoot)) return null;
-  return `Refusing to create the Local VM in a temporary folder (${target.workspaceDir}); set OMB_DATA_DIR to a durable folder`;
+  return `Refusing to create the Local VM in a temporary folder (${target.workspaceDir}); set SAGAX_DATA_DIR to a durable folder`;
 }
 
 export function localVmWorkspaceExists(target: LocalVmTarget): boolean {
@@ -1306,7 +1306,7 @@ export function containerComputerMcp(
     // through `ps` for the life of the bridge.
     env: {
       ELECTRON_RUN_AS_NODE: "1",
-      ...(control ? { OMB_CONTROL_URL: control.url, OMB_CONTROL_TOKEN: control.token } : {}),
+      ...(control ? { SAGAX_CONTROL_URL: control.url, SAGAX_CONTROL_TOKEN: control.token } : {}),
     },
   };
 }

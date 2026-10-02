@@ -18,6 +18,7 @@ import { readSessionState, type SessionState } from "../lib/session";
 import { canPairDevices } from "./ServerPairingCard";
 import { normalizeAccessEntry, withEntry, withoutEntry, type SignInLists } from "./SignInAccessCard";
 import { Card, cardCount } from "./SettingsPrimitives";
+import { fetchEnvironmentDescriptor } from "@/lib/environment-descriptor";
 
 export type Role = "admin" | "member";
 
@@ -229,7 +230,7 @@ export function PeopleSection() {
         api("/api/auth/sessions").catch(() => ({ sessions: [] })),
         api("/api/usage?groupBy=user").catch(() => ({ groups: [] })),
         api("/api/settings/custom-domain").catch(() => null),
-        fetch("/.well-known/openmausbot/environment").then((res) => (res.ok ? res.json() : null)).catch(() => null),
+        fetchEnvironmentDescriptor().then((res) => (res.ok ? res.json() : null)).catch(() => null),
       ]);
       const current: SignInLists = {
         admins: Array.isArray(config?.signIn?.admins) ? config.signIn.admins : [],

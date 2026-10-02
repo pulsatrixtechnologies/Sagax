@@ -1,6 +1,6 @@
 # Decision model
 
-OpenMausBot can use a fast decision model to pick things for your bots. It
+Sagax can use a fast decision model to pick things for your bots. It
 answers in a few hundred milliseconds for a fraction of a cent. It never does
 the work: the chosen bot still runs its own turn on its own engine. The first
 supported model is TypeSafe's [Jev](https://typesafe.ai).
@@ -50,7 +50,7 @@ it is used.
 ## What is logged
 
 Each call that reaches the model adds one row to
-`~/.openmausbot/decider-log/YYYY-MM.ndjson` (mode 0600). This is separate
+`~/.sagax/decider-log/YYYY-MM.ndjson` (mode 0600). This is separate
 from the approvals log in `decisions/`.
 
 ```json
@@ -67,13 +67,13 @@ The log stays on this machine: workspace backups leave it out.
 
 - **Desktop app:** in the operating system's encrypted store
   (`credentials.bin`), like the other workspace keys. The server receives it
-  as `OMB_JEV_API_KEY` at start-up; `config.json` keeps only an empty
+  as `SAGAX_JEV_API_KEY` at start-up; `config.json` keeps only an empty
   placeholder.
 - **Server or browser use:** in the server's own `config.json` (mode 0600),
-  under `decider.key`. `OMB_JEV_API_KEY` overrides it.
+  under `decider.key`. `SAGAX_JEV_API_KEY` overrides it.
 - **Cloud Pro:** decisions are included, with no key to paste. With no key of
   the person's own, the Cloud home uses its relay token
-  (`OMB_CLOUD_DECIDER_TOKEN`), sent only to the Admin's relay, never to Jev
+  (`SAGAX_CLOUD_DECIDER_TOKEN`), sent only to the Admin's relay, never to Jev
   or `baseUrl`, and only for room routing and the key check (other jobs need
   a key of the person's own). Settings says **Included with Cloud Pro**, and
   the master switch is on until someone switches it off. A key saved here
@@ -115,5 +115,5 @@ Settings UI. It must be https, or http to this machine only. Requests go to
 
 `server/decider/room-routing.eval.test.ts` replays 53 labelled room messages
 (`server/decider/fixtures/room-routing.json`) against the live model. It is
-skipped unless `OMB_JEV_LIVE_EVAL=1` is set with a key, and costs about
+skipped unless `SAGAX_JEV_LIVE_EVAL=1` is set with a key, and costs about
 $0.002 per run.

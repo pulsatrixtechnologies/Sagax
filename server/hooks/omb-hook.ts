@@ -5,11 +5,11 @@
 //
 //   1. It ALWAYS exits 0. A hook that fails or times out can block the
 //      agent's next step; the harness observing is never worth that.
-//   2. It has a hard budget (OMB_HOOK_TIMEOUT_MS, default 4000) below Claude
+//   2. It has a hard budget (SAGAX_HOOK_TIMEOUT_MS, default 4000) below Claude
 //      Code's own per-hook timeout, and speaks only to the loopback harness.
 //   3. It is dependency-free and does no work itself: it forwards the event
 //      to POST /api/internal/hook with the turn's capability token (read
-//      from OMB_HOOK_TOKEN_FILE at run time — the token rotates per turn
+//      from SAGAX_HOOK_TOKEN_FILE at run time — the token rotates per turn
 //      while the CLI process, and its environment, live on) and prints the
 //      harness's `hookSpecificOutput`, if any, for Claude Code to apply.
 //
@@ -17,11 +17,11 @@
 import { readFileSync } from "node:fs";
 
 const CONTEXT_EVENTS = new Set(["SessionStart", "UserPromptSubmit"]);
-const requestedBudget = Number(process.env.OMB_HOOK_TIMEOUT_MS);
+const requestedBudget = Number(process.env.SAGAX_HOOK_TIMEOUT_MS);
 const budgetMs = Number.isFinite(requestedBudget) && requestedBudget > 0 ? Math.min(requestedBudget, 4_000) : 4_000;
 const MAX_INPUT_BYTES = 1024 * 1024;
-const url = process.env.OMB_HOOK_URL ?? "";
-const tokenFile = process.env.OMB_HOOK_TOKEN_FILE ?? "";
+const url = process.env.SAGAX_HOOK_URL ?? "";
+const tokenFile = process.env.SAGAX_HOOK_TOKEN_FILE ?? "";
 
 const done = (out?: string) => {
   if (out === undefined) process.exit(0);

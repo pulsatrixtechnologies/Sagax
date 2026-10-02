@@ -1,6 +1,10 @@
 // Sagax server — the harness host. Clients hold no transports
 // (upstream rule): the React app dispatches typed commands over HTTP and
 // folds one SSE event stream; every provider process runs here.
+// First of all, SAGAX_* settings onto the names the code reads (step 1 of
+// the rename, electron/legacy-names.mjs).
+import "../electron/legacy-env-boot.mjs";
+import { ENVIRONMENT_PATHS, HEALTH_IDENTITY } from "../electron/legacy-names.mjs";
 // First, before any module that could start a process: a Cloud home's
 // secrets off the launcher's pipe (cloud-secrets-boot.ts).
 import { BOOT_CLOUD_SECRETS } from "./cloud-secrets-boot.ts";
@@ -126,7 +130,7 @@ import { buildRecall } from "./recall.ts";
 import { createMemoryUpkeep, upkeepEnabled } from "./memory-upkeep.ts";
 import { appendAboutMe, commitLearned, planLearned } from "./profile-learned.ts";
 import { canAccessTeam, canReachPeer, coordinatorSupervises, livePeerRoster, livePeerRosterBlock, peerAllowed, peerName, peerRosterSystemPrompt, peerStatus, peerStatusWords, reachablePeers, resolveTeammate, roomPeerRosterSystemPrompt, roomRosterLine, PEER_ACCESS_HELP } from "./peer-roster.ts";
-import { openMausStatusSystemPrompt } from "./openmaus-status-capsule.ts";
+import { sagaxStatusSystemPrompt } from "./openmaus-status-capsule.ts";
 import {
   containerComputerAction,
   containerComputerExists,
@@ -685,11 +689,11 @@ import { localDesktopTarget, localVmViewerStatus, sandboxDesktopTarget, viewerTa
 import { createAntigravityLeftoverRoutes } from "./routes/antigravity-leftovers.ts";
 import { findAntigravityLeftovers, removeAntigravityLeftovers } from "./drivers/antigravity-temp.ts";
 
-const PORT = Number(process.env.OMB_PORT || process.env.OGB_PORT || 8799);
-const WEBHOOK_PORT = Number(process.env.OMB_WEBHOOK_PORT || PORT + 1);
+const PORT = Number(process.env.SAGAX_PORT || process.env.OGB_PORT || 8799);
+const WEBHOOK_PORT = Number(process.env.SAGAX_WEBHOOK_PORT || PORT + 1);
 // Behind a proxy or tunnel, the base URL senders should use (docs/self-hosting.md).
-const WEBHOOK_PUBLIC_URL = process.env.OMB_WEBHOOK_PUBLIC_URL || undefined;
-const STATIC_DIR = process.env.OMB_STATIC_DIR || null;
+const WEBHOOK_PUBLIC_URL = process.env.SAGAX_WEBHOOK_PUBLIC_URL || undefined;
+const STATIC_DIR = process.env.SAGAX_STATIC_DIR || null;
 const MIME: Record<string, string> = {
   ".html": "text/html",
   ".js": "text/javascript",
@@ -734,11 +738,11 @@ if (existsSync(join(DATA_DIR, ".backups"))) {
 }
 const workspaceMaintenance = new WorkspaceBackupMaintenance();
 // Only after ensureDirs(): it performs the one-time rename of the legacy data
-// dir, which must not find a freshly created ~/.openmausbot already there.
+// dir, which must not find a freshly created ~/.sagax already there.
 // Remote clients (server/request-auth.ts, server/sessions.ts): a stable identity
 // for this server, the paired sessions, and the cookie the served UI uses.
 const ENVIRONMENT_ID = loadEnvironmentId(DATA_DIR);
-// Who signs people in here (OMB_IDENTITY): a solo server keeps its email
+// Who signs people in here (SAGAX_IDENTITY): a solo server keeps its email
 // sign-in list, invitations and mailer; an organization server signs people
 // in with Pulsatrix only (Perspicax owns accounts), so the list is empty
 // there and a legacy email session ends at its next request.
@@ -873,7 +877,7 @@ if (CLOUD_HOME) {
   // The signing secret is held in memory from here on, and a platform
   // gateway's settings are dropped: no engine or tool this server starts
   // inherits either. The person's own engines are the only way to a model.
-  delete process.env.OMB_CLOUD_BOOTSTRAP_SECRET;
+  delete process.env.SAGAX_CLOUD_BOOTSTRAP_SECRET;
   for (const key of CLOUD_IGNORED_KEYS) delete process.env[key];
   console.log(`cloud home ${CLOUD_HOME.machineId}: bots run on the engines the person signs in to here`);
   for (const warning of CLOUD_HOME.warnings) console.warn(`cloud home: ${warning}`);
@@ -891,26 +895,26 @@ const commandAllowlist = new CommandAllowlistStore(join(DATA_DIR, "command-allow
 const SESSION_COOKIE = sessionCookieName(PORT, ENVIRONMENT_ID);
 const HOSTED_WORKSPACE = hostedWorkspaceConfigured();
 let workspaceAccess: WorkspaceAccess | null = null;
-const DESKTOP_MANAGED = process.env.OMB_DESKTOP_PARENT === "1";
+const DESKTOP_MANAGED = process.env.SAGAX_DESKTOP_PARENT === "1";
 const SHARED_WORKSPACE_FULL_ACCESS = sharedWorkspaceFullAccessConfigured();
 const sharedWorkspaceFullAccessEnabled = () => SHARED_WORKSPACE_FULL_ACCESS && Boolean(workspaceAccess) && entitled("admin");
 // Who a loopback request without a session is (server/request-auth.ts
 // LoopbackTrust): the owner on a desktop or a one-person server; a service on
 // a shared workspace, where every bot's shell is a loopback caller too.
-// Organization sign-in (server/oidc-login.ts): OMB_IDENTITY=perspicax. A
+// Organization sign-in (server/oidc-login.ts): SAGAX_IDENTITY=perspicax. A
 // half-configured organization server stops here rather than fall back to
 // email codes.
 // An organization server is shared: loopback is a bot's shell, not an owner,
 // unless the operator says otherwise (spec section 8, request-auth.ts).
-const LOOPBACK = IDENTITY.kind === "perspicax" && !DESKTOP_MANAGED && process.env.OMB_LOOPBACK_TRUST === undefined
-  ? { trust: "service" as const, reason: "organization server (OMB_IDENTITY=perspicax)" as string, warning: undefined as string | undefined }
+const LOOPBACK = IDENTITY.kind === "perspicax" && !DESKTOP_MANAGED && process.env.SAGAX_LOOPBACK_TRUST === undefined
+  ? { trust: "service" as const, reason: "organization server (SAGAX_IDENTITY=perspicax)" as string, warning: undefined as string | undefined }
   : resolveLoopbackTrust({ desktopManaged: DESKTOP_MANAGED, hostedWorkspace: HOSTED_WORKSPACE, cloudHome: Boolean(CLOUD_HOME) });
 // `openmausbot serve` on a service-trust server hands the server it starts a
 // per-launch secret on stdin, then closes it (server/cli.ts). It opens only
 // the pairing route, for that CLI. Never an environment variable: every
 // engine this server starts inherits its environment.
 let cliOwnerToken: string | undefined;
-if (process.env.OMB_CLI_OWNER_STDIN === "1" && LOOPBACK.trust === "service" && process.stdin) {
+if (process.env.SAGAX_CLI_OWNER_STDIN === "1" && LOOPBACK.trust === "service" && process.stdin) {
   let received = "";
   process.stdin.setEncoding("utf8");
   process.stdin.on("error", () => { /* the CLI went away; no pairing through it */ });
@@ -921,13 +925,13 @@ if (process.env.OMB_CLI_OWNER_STDIN === "1" && LOOPBACK.trust === "service" && p
     if (received.includes("\n") && /^[A-Za-z0-9_-]{43}$/.test(line)) cliOwnerToken = line;
   });
 }
-delete process.env.OMB_CLI_OWNER_STDIN;
+delete process.env.SAGAX_CLI_OWNER_STDIN;
 // Empty is deliberately a deny-all bootstrap state. Only Electron's private
 // utility-process port can replace it with the per-launch owner capability.
 let desktopMutationToken: string | undefined = DESKTOP_MANAGED ? "" : undefined;
 let companionMutationToken: string | undefined = DESKTOP_MANAGED ? "" : undefined;
 // Where remote clients reach this server (a proxy's public address); pairing URLs use it.
-const FALLBACK_PUBLIC_URL = process.env.OMB_PUBLIC_URL?.trim().replace(/\/+$/, "") || null;
+const FALLBACK_PUBLIC_URL = process.env.SAGAX_PUBLIC_URL?.trim().replace(/\/+$/, "") || null;
 // 2026-10-01: the organization key switch is retired (engine-credentials.ts).
 dropRetiredOrganizationKeys();
 const cfg = loadConfig();
@@ -958,19 +962,19 @@ const customDomainVerifier = createCustomDomainVerifier({ environmentId: ENVIRON
 // as a plain cache key).
 const emailOtp = new EmailOtpStore();
 const mailResolved = () => resolveMailSettings({ file: cfg.mail, env: process.env });
-// OMB_MAIL_CAPTURE_FILE (test/e2e seam only): instead of sending, append
+// SAGAX_MAIL_CAPTURE_FILE (test/e2e seam only): instead of sending, append
 // each message as one JSON line to this file. Requires an explicit test
-// marker (VITEST, set by the test runner itself, or OMB_TEST_SEAMS=1 for a
+// marker (VITEST, set by the test runner itself, or SAGAX_TEST_SEAMS=1 for a
 // harness that does not inherit it) on top of a non-production NODE_ENV, so
 // a misconfigured deploy cannot silently stop sending real mail.
-const MAIL_CAPTURE_FILE = process.env.OMB_MAIL_CAPTURE_FILE;
-const mailCaptureFile = MAIL_CAPTURE_FILE && process.env.NODE_ENV !== "production" && (process.env.VITEST || process.env.OMB_TEST_SEAMS === "1")
+const MAIL_CAPTURE_FILE = process.env.SAGAX_MAIL_CAPTURE_FILE;
+const mailCaptureFile = MAIL_CAPTURE_FILE && process.env.NODE_ENV !== "production" && (process.env.VITEST || process.env.SAGAX_TEST_SEAMS === "1")
   ? MAIL_CAPTURE_FILE
   : undefined;
 if (MAIL_CAPTURE_FILE && !mailCaptureFile) {
-  console.warn("OMB_MAIL_CAPTURE_FILE is set but ignored (needs VITEST or OMB_TEST_SEAMS=1, and NODE_ENV other than production)");
+  console.warn("SAGAX_MAIL_CAPTURE_FILE is set but ignored (needs VITEST or SAGAX_TEST_SEAMS=1, and NODE_ENV other than production)");
 } else if (mailCaptureFile) {
-  console.warn(`OMB_MAIL_CAPTURE_FILE seam is active: mail is captured to ${mailCaptureFile} instead of being sent`);
+  console.warn(`SAGAX_MAIL_CAPTURE_FILE seam is active: mail is captured to ${mailCaptureFile} instead of being sent`);
 }
 let cachedMailerKey: string | null = null;
 let cachedMailer: Mailer | null = null;
@@ -2669,27 +2673,27 @@ function agentsIntegration(
     args: [agentsProxyPath],
     env: {
       ...AGENTS_NODE_FLAG,
-      OMB_HARNESS_URL: `http://127.0.0.1:${PORT}`,
-      OMB_BOT_ID: botId,
-      OMB_THREAD_ID: threadId,
-      OMB_COMMS_TOKEN: token,
-      OMB_TURN_DEPTH: String(depth),
-      OMB_ROOM_TURN: roomCoordination ? "1" : "0",
-      OMB_OWN_THREAD_CREATION: ownThreadCreation ? "1" : "0",
-      OMB_SKILL_AUTHORING_ENABLED: skillAuthoring ? "1" : "0",
-      OMB_MEMORY_ENABLED: store.bot(botId)?.memoryEnabled === false ? "0" : "1",
+      SAGAX_HARNESS_URL: `http://127.0.0.1:${PORT}`,
+      SAGAX_BOT_ID: botId,
+      SAGAX_THREAD_ID: threadId,
+      SAGAX_COMMS_TOKEN: token,
+      SAGAX_TURN_DEPTH: String(depth),
+      SAGAX_ROOM_TURN: roomCoordination ? "1" : "0",
+      SAGAX_OWN_THREAD_CREATION: ownThreadCreation ? "1" : "0",
+      SAGAX_SKILL_AUTHORING_ENABLED: skillAuthoring ? "1" : "0",
+      SAGAX_MEMORY_ENABLED: store.bot(botId)?.memoryEnabled === false ? "0" : "1",
       // A room turn in a group whose shared memory is on gets
       // group_memory_update (server/group-memory.ts); the route re-checks.
-      OMB_GROUP_MEMORY: groupMemoryWritable(store.groupByThread(threadId), botId) ? "1" : "0",
+      SAGAX_GROUP_MEMORY: groupMemoryWritable(store.groupByThread(threadId), botId) ? "1" : "0",
       // The shared-computer tools are advertised only while the workspace
       // gate is on; the routes behind them refuse regardless.
-      OMB_SHARED_COMPUTERS_ENABLED: lendingEnabled() ? "1" : "0",
+      SAGAX_SHARED_COMPUTERS_ENABLED: lendingEnabled() ? "1" : "0",
       // A Cloud home offers no this computer and no Local VM (cloud-home.ts),
       // so select_computer lists neither and vm_exec is not shown.
-      OMB_CLOUD_HOME: CLOUD_HOME ? "1" : "0",
+      SAGAX_CLOUD_HOME: CLOUD_HOME ? "1" : "0",
       // Same capability rule for voice: the tool is offered only when this
       // bot can actually speak, and the route re-checks on every call.
-      OMB_VOICE_NOTES: (() => {
+      SAGAX_VOICE_NOTES: (() => {
         const speaking = botForThread(botId, threadId) ?? store.bot(botId);
         return tts.voiceReady(cfg, speaking?.voice) && speaking?.voiceNotes !== false ? "1" : "0";
       })(),
@@ -2699,8 +2703,8 @@ function agentsIntegration(
 
 
 /** Engine lifecycle hooks (item 0.2): a turn-scoped bearer the engine's hook
- * helper presents on /api/internal/hook. OMB_HOOKS=0 turns the channel off. */
-const hooksEnabled = () => process.env.OMB_HOOKS !== "0";
+ * helper presents on /api/internal/hook. SAGAX_HOOKS=0 turns the channel off. */
+const hooksEnabled = () => process.env.SAGAX_HOOKS !== "0";
 function hooksIntegration(botId: string, threadId: string, generation: string): { url: string; token: string } {
   const token = mintInternalCapability({
     botId,
@@ -3385,7 +3389,7 @@ async function browserIntegration(botId: string, profile: string | undefined, tu
     kind: "browser", depth: 0, skillAuthoring: false, createdBots: 0, openedThreads: 0 });
   return { profile: partitionId, session, spec, integration: {
     command: process.execPath, args: [SPAWNED_PROXIES.browser], env: {
-      ...AGENTS_NODE_FLAG, OMB_BROWSER_TOKEN: token, OMB_HARNESS_URL: `http://127.0.0.1:${PORT}`,
+      ...AGENTS_NODE_FLAG, SAGAX_BROWSER_TOKEN: token, SAGAX_HARNESS_URL: `http://127.0.0.1:${PORT}`,
     },
   } };
 }
@@ -3411,7 +3415,7 @@ function userSandboxIntegration(botId: string, threadId: string, generation: str
   return {
     command: process.execPath,
     args: [SPAWNED_PROXIES.userSandbox],
-    env: { ...AGENTS_NODE_FLAG, OMB_SANDBOX_TOKEN: token, OMB_HARNESS_URL: `http://127.0.0.1:${PORT}` },
+    env: { ...AGENTS_NODE_FLAG, SAGAX_SANDBOX_TOKEN: token, SAGAX_HARNESS_URL: `http://127.0.0.1:${PORT}` },
   };
 }
 
@@ -3425,7 +3429,7 @@ function userDesktopIntegration(botId: string, threadId: string, generation: str
   return {
     command: process.execPath,
     args: [SPAWNED_PROXIES.userSandbox],
-    env: { ...AGENTS_NODE_FLAG, OMB_SANDBOX_TOKEN: token, OMB_HARNESS_URL: `http://127.0.0.1:${PORT}`, OMB_TOOL_SERVER: DESKTOP_BRIDGE_MCP_NAME },
+    env: { ...AGENTS_NODE_FLAG, SAGAX_SANDBOX_TOKEN: token, SAGAX_HARNESS_URL: `http://127.0.0.1:${PORT}`, SAGAX_TOOL_SERVER: DESKTOP_BRIDGE_MCP_NAME },
   };
 }
 
@@ -3504,7 +3508,7 @@ function turnNetworkProxy(threadId: string, botId: string, decision: WorkplaceDe
     },
     network: () => workplacePreference(person).network,
   });
-  const hosts = [process.env.OMB_PERSPICAX_ISSUER, process.env.ANTHROPIC_BASE_URL, process.env.OPENAI_BASE_URL]
+  const hosts = [process.env.SAGAX_PERSPICAX_ISSUER, process.env.ANTHROPIC_BASE_URL, process.env.OPENAI_BASE_URL]
     .map((value) => { try { return value ? new URL(value).hostname : ""; } catch { return ""; } });
   return { url, noProxy: hosts.filter(Boolean) };
 }
@@ -3593,11 +3597,11 @@ function phoneIntegration(botId: string, threadId: string, generation: string) {
   });
   const env: Record<string, string> = {
     ...AGENTS_NODE_FLAG,
-    OMB_PHONE_TOKEN: token,
-    OMB_HARNESS_URL: `http://127.0.0.1:${PORT}`,
+    SAGAX_PHONE_TOKEN: token,
+    SAGAX_HARNESS_URL: `http://127.0.0.1:${PORT}`,
   };
-  if (process.env.OMB_ADB_PATH) env.OMB_ADB_PATH = process.env.OMB_ADB_PATH;
-  if (process.env.OMB_RESOURCES_PATH) env.OMB_RESOURCES_PATH = process.env.OMB_RESOURCES_PATH;
+  if (process.env.SAGAX_ADB_PATH) env.SAGAX_ADB_PATH = process.env.SAGAX_ADB_PATH;
+  if (process.env.SAGAX_RESOURCES_PATH) env.SAGAX_RESOURCES_PATH = process.env.SAGAX_RESOURCES_PATH;
   if (process.env.PH_ANDROID_SERIAL) env.PH_ANDROID_SERIAL = process.env.PH_ANDROID_SERIAL;
   return { command: process.execPath, args: [phoneProxyPath], env };
 }
@@ -3675,11 +3679,11 @@ async function perspicaxTurnIntegration(input: {
       args: [perspicaxBridgePath],
       env: {
         ...AGENTS_NODE_FLAG,
-        OMB_HARNESS_URL: `http://127.0.0.1:${PORT}`,
-        OMB_PERSPICAX_TOKEN: token,
-        OMB_PERSPICAX_PROFILE: profile.profileId,
-        OMB_BOT_ID: live.id,
-        OMB_THREAD_ID: input.threadId,
+        SAGAX_HARNESS_URL: `http://127.0.0.1:${PORT}`,
+        SAGAX_PERSPICAX_TOKEN: token,
+        SAGAX_PERSPICAX_PROFILE: profile.profileId,
+        SAGAX_BOT_ID: live.id,
+        SAGAX_THREAD_ID: input.threadId,
       },
     };
   }
@@ -4352,7 +4356,7 @@ function previewSystemPrompt(bot: BotRecord) {
   });
   const peers = reachablePeers(store.bots, bot);
   const coordination = bot.chiefOfStaff
-    ? chiefOfStaffSystemPrompt(bot.id, store.bots, true, openMausStatusSystemPrompt())
+    ? chiefOfStaffSystemPrompt(bot.id, store.bots, true, sagaxStatusSystemPrompt())
     : peers.length > 0
       ? peerRosterSystemPrompt(peers)
       : "";
@@ -6410,7 +6414,7 @@ if (lendingMemory) {
  * correctly through its own Last-Event-ID with no client code at all. */
 const STREAM_ID = randomUUID().slice(0, 8);
 const REPLAY_MAX = 500;
-const configuredSseHeartbeatMs = Number(process.env.OMB_SSE_HEARTBEAT_MS);
+const configuredSseHeartbeatMs = Number(process.env.SAGAX_SSE_HEARTBEAT_MS);
 const SSE_HEARTBEAT_MS =
   Number.isFinite(configuredSseHeartbeatMs) && configuredSseHeartbeatMs > 0
     ? configuredSseHeartbeatMs
@@ -7147,16 +7151,16 @@ const repeats = new RepeatDetector({ thresholds: [5, 10, 20], maxKeysPerThread: 
 // left its bot busy forever. The watchdog stops a turn whose thread has emitted NOTHING for stallMs —
 // activity-based, so an hour-long turn that keeps streaming is never
 // touched, and turns parked on a human approval are exempt.
-const TURN_STALL_MS = Math.max(60_000, Number(process.env.OMB_TURN_STALL_MS) || 20 * 60_000);
+const TURN_STALL_MS = Math.max(60_000, Number(process.env.SAGAX_TURN_STALL_MS) || 20 * 60_000);
 /** How long ask_bot waits synchronously before the ask is converted into a
  * delegation claim ticket (the peer's turn keeps running either way). */
-const ASK_BOT_TIMEOUT_MS = Math.max(5_000, Number(process.env.OMB_ASK_BOT_TIMEOUT_MS) || 15_000);
+const ASK_BOT_TIMEOUT_MS = Math.max(5_000, Number(process.env.SAGAX_ASK_BOT_TIMEOUT_MS) || 15_000);
 // A room waits for a busy teammate instead of dropping them, but never
 // forever: a bot parked on a permission card in another chat is "busy" until
 // a human returns. Past this cap a goal's lead is told the teammate could not
 // free up and reassigns, and a chat round moves on with a chip that says so —
 // the wait ends as data, not as a dead room. Tests shrink it.
-const GROUP_GOAL_WAIT_MAX_MS = Math.max(1_000, Number(process.env.OMB_GOAL_WAIT_MAX_MS) || 30 * 60_000);
+const GROUP_GOAL_WAIT_MAX_MS = Math.max(1_000, Number(process.env.SAGAX_GOAL_WAIT_MAX_MS) || 30 * 60_000);
 // Reassigning around a busy teammate is bounded too: after this many
 // exhausted waits in one run the team is blocked on availability, not stuck.
 const GROUP_GOAL_MAX_WAIT_EXHAUSTIONS = 3;
@@ -7947,7 +7951,7 @@ async function mountBotVps(
   return {
     integration: {
       ...vpsMcp,
-      env: { ...vpsMcp.env, OMB_CONTROL_URL: vpsControl.url, OMB_CONTROL_TOKEN: vpsControl.token },
+      env: { ...vpsMcp.env, SAGAX_CONTROL_URL: vpsControl.url, SAGAX_CONTROL_TOKEN: vpsControl.token },
     },
   };
 }
@@ -10944,7 +10948,7 @@ async function startTurn(
         throw Object.assign(new Error("another thread is working in this project folder — wait for it to finish or choose a separate folder"), { status: 409, code: "workspace_busy" });
       }
       // Checkpoint explicit project folders, where a bot can overwrite the
-      // user's work. Its private OpenMaus workspace is app-owned and changes
+      // user's work. Its private Sagax workspace is app-owned and changes
       // on nearly every ordinary chat; snapshotting it would add hidden disk
       // and process overhead without a user project to restore.
       const checkpointCwd = cwd && cwd !== privateWorkspace ? cwd : undefined;
@@ -11404,7 +11408,7 @@ async function startTurn(
             bot.id,
             store.bots,
             Boolean(integrations.agents),
-            openMausStatusSystemPrompt(),
+            sagaxStatusSystemPrompt(),
             boundedCoordination,
           )
         : integrations.agents && sectionPeers.length > 0
@@ -16752,7 +16756,7 @@ const claudeUpdatesInFlight = new Set<string>();
  * Nothing frames the web UI: the desktop app shows it in its own window. */
 const PAGE_HEADERS = { "content-security-policy": "frame-ancestors 'none'", "x-frame-options": "DENY", "referrer-policy": "no-referrer" } as const;
 
-/** The built UI, when this process serves it (OMB_STATIC_DIR: set by the
+/** The built UI, when this process serves it (SAGAX_STATIC_DIR: set by the
  * desktop app and by the container image). Public by design: it is the same
  * bundle anyone can download, holds no secrets, and a remote browser must be
  * able to load /pair before it has a session. Returns false when there is
@@ -18263,7 +18267,7 @@ if (IDENTITY.kind === "perspicax") {
   }));
   ROUTES.push(createPerspicaxOrgRoutes({
     issuer,
-    orgName: process.env.OMB_ORG_NAME?.trim().slice(0, 120) || "Pulsatrix",
+    orgName: process.env.SAGAX_ORG_NAME?.trim().slice(0, 120) || "Pulsatrix",
     directory: () => perspicaxDirectory,
     bySubject: (iss, sub) => principals.bySubject(iss, sub),
     viewerRole: (auth) => (orgAdminCaller(auth) ? "admin" : "member"),
@@ -18442,7 +18446,7 @@ if (IDENTITY.kind !== "perspicax") ROUTES.push(createSoloOrgRoutes({
 
 // Settings > Email (server/mail-routes.ts): the mail transport of a solo
 // server, admin only. Saved fields go to config.json's `mail` block and win
-// over the OMB_MAIL_* environment; an organization server answers 403
+// over the SAGAX_MAIL_* environment; an organization server answers 403
 // identity_perspicax (Perspicax sends its mail).
 ROUTES.push(createMailSettingsRoutes({
   organization: IDENTITY.kind === "perspicax",
@@ -18634,7 +18638,7 @@ let idpVaultKey: ReturnType<typeof resolveIdpVaultKey> | null = null;
 // One vault holds the sign-in grants and the routine delegations (slice 6).
 const idpVault = oidcRp ? new IdpGrantVault(DATA_DIR, () => (idpVaultKey ??= resolveIdpVaultKey(DATA_DIR))) : null;
 // Slice 6, fix 2: every revocation at Perspicax is durable and paced by the
-// relying party's budget (OMB_PERSPICAX_TOKEN_BUDGET); pending ones resume here.
+// relying party's budget (SAGAX_PERSPICAX_TOKEN_BUDGET); pending ones resume here.
 const idpRevocations = oidcRp
   ? new RevocationQueue({
     dataDir: DATA_DIR,
@@ -18653,7 +18657,7 @@ const idpSessions = oidcRp && idpVault
     rp: oidcRp,
     sessions,
     principals,
-    refreshAfterMs: refreshAfterMs(process.env.OMB_OIDC_REFRESH_AFTER_SECONDS),
+    refreshAfterMs: refreshAfterMs(process.env.SAGAX_OIDC_REFRESH_AFTER_SECONDS),
     teamNames: (teams) => { orgTeams.mergeFromClaims(teams); },
     ...(idpRevocations ? { revocations: idpRevocations } : {}),
   })
@@ -18663,7 +18667,7 @@ if (oidcRp && idpVault) {
     vault: idpVault,
     rp: oidcRp,
     principals,
-    renewMs: routineRenewMs(process.env.OMB_ROUTINE_RENEW_SECONDS),
+    renewMs: routineRenewMs(process.env.SAGAX_ROUTINE_RENEW_SECONDS),
     ...(idpRevocations ? { revocations: idpRevocations } : {}),
     onEnded: routineConsentEnded,
     onActive: (principalId) => { routines?.resumeFor(principalId, (routine) => effectiveRunAs({ botId: routine.botId })); },
@@ -18691,11 +18695,11 @@ if (idpSessions) {
   }, IDP_SWEEP_INTERVAL_MS).unref();
 }
 // The Perspicax directory (slice 3): read with the link token Perspicax
-// writes to OMB_PERSPICAX_LINK_FILE. Keeps the principals current and logs
+// writes to SAGAX_PERSPICAX_LINK_FILE. Keeps the principals current and logs
 // out people Perspicax disabled or deleted, even when no back-channel push
 // arrived. Without the file, sign-in works and the share picker is empty.
-if (IDENTITY.kind === "perspicax" && oidcRp && idpSessions && process.env.OMB_PERSPICAX_LINK_FILE?.trim()) {
-  const intervalMs = directoryIntervalMs(process.env.OMB_PERSPICAX_DIRECTORY_SECONDS);
+if (IDENTITY.kind === "perspicax" && oidcRp && idpSessions && process.env.SAGAX_PERSPICAX_LINK_FILE?.trim()) {
+  const intervalMs = directoryIntervalMs(process.env.SAGAX_PERSPICAX_DIRECTORY_SECONDS);
   let version = "0.0.0";
   try {
     version = String((JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")) as { version?: unknown }).version ?? version);
@@ -18706,7 +18710,7 @@ if (IDENTITY.kind === "perspicax" && oidcRp && idpSessions && process.env.OMB_PE
   perspicaxDirectory = new PerspicaxDirectory({
     issuer: IDENTITY.issuer,
     serverBase: oidcRp.serverOrigin(),
-    linkFile: process.env.OMB_PERSPICAX_LINK_FILE.trim(),
+    linkFile: process.env.SAGAX_PERSPICAX_LINK_FILE.trim(),
     expect: { issuer: IDENTITY.issuer, publicOrigin: IDENTITY.publicOrigin, clientId: IDENTITY.clientId },
     principals,
     teamNames: orgTeams,
@@ -18943,7 +18947,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     // code into a session. Everything else needs the loopback owner or a
     // paired session with the right scope.
     if (method === "GET" && !path.startsWith("/api/") && !path.startsWith("/.well-known/") && serveStatic(res, path)) return;
-    if (method === "GET" && path === "/.well-known/openmausbot/environment") {
+    // The new path and the old one (kept for one release, legacy-names.mjs).
+    if (method === "GET" && ENVIRONMENT_PATHS.includes(path)) {
       return json(res, 200, environmentDescriptor({ environmentId: ENVIRONMENT_ID, desktopManaged: DESKTOP_MANAGED, emailSignIn: !HOSTED_WORKSPACE && !CLOUD_HOME && IDENTITY.kind === "solo" && emailSignIn.enabled(), sharedComputers: lendingEnabled(), identity: identityDescriptor(IDENTITY) }));
     }
     // The browser lands here after an MCP server's sign-in. Public: the
@@ -18961,7 +18966,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       res.end(page.html);
       return;
     }
-    const domainCheck = /^\/\.well-known\/openmausbot\/domain-check\/([a-f0-9]{64})$/.exec(path);
+    const domainCheck = /^\/\.well-known\/(?:sagax|openmausbot)\/domain-check\/([a-f0-9]{64})$/.exec(path);
     if (method === "GET" && domainCheck) {
       res.setHeader("cache-control", "no-store");
       const challenge = customDomainVerifier.challenge(domainCheck[1]);
@@ -19140,7 +19145,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     // A stranger learns only the app name; pid (the desktop boot probe keys
     // on it) and the static flag stay behind the gate below.
     if (method === "GET" && path === "/api/health" && !gate.auth) {
-      return json(res, 200, { app: "openmausbot" });
+      return json(res, 200, { ...HEALTH_IDENTITY });
     }
     // The brand is public too: the sign-in page must carry the deployment's
     // name and icon before anyone has a session, and it holds nothing secret.
@@ -19401,7 +19406,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         serverName,
         hint: base
           ? null
-          : "this server has no public address to put in a link: set OMB_PUBLIC_URL, or open /pair on the address you use and type the code",
+          : "this server has no public address to put in a link: set SAGAX_PUBLIC_URL, or open /pair on the address you use and type the code",
       });
     }
     if (method === "GET" && path === "/api/auth/pairing") return json(res, 200, { pairings: sessions.openPairings(), publicUrl: publicUrl() });
@@ -19520,7 +19525,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     // library, so a test relays one here instead. Like the capability route
     // below, it exists only when the launcher sets its high-entropy key.
     if (method === "POST" && path === "/api/testing/org-library") {
-      const expected = Buffer.from(process.env.OMB_TEST_ORG_LIBRARY_KEY ?? "");
+      const expected = Buffer.from(process.env.SAGAX_TEST_ORG_LIBRARY_KEY ?? "");
       const header = req.headers["x-openmausbot-test-org-library"];
       const actual = Buffer.from(Array.isArray(header) ? "" : String(header ?? ""));
       if (expected.length < 32 || actual.length !== expected.length || !timingSafeEqual(actual, expected) || !orgLibrary) {
@@ -19532,7 +19537,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       return json(res, applied.ok ? 200 : 400, { ...applied, report: orgLibrary.lastReport() });
     }
     if (method === "POST" && path === "/api/testing/internal-capability") {
-      const expected = process.env.OMB_TEST_INTERNAL_CAPABILITY_KEY ?? "";
+      const expected = process.env.SAGAX_TEST_INTERNAL_CAPABILITY_KEY ?? "";
       const actual = Array.isArray(req.headers["x-openmausbot-test-capability"])
         ? ""
         : String(req.headers["x-openmausbot-test-capability"] ?? "");
@@ -23061,7 +23066,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           ? body.name.trim()
           : profileName
             ? `${profileName}'s Team`
-            : "My OpenMaus Team";
+            : "My Sagax Team";
       const memberIds = store.bots.filter((bot) => !bot.hidden).map((bot) => bot.id);
       if ((body.format === "backup" ? store.bots.length : memberIds.length) === 0) return json(res, 400, { error: "Create a bot before exporting your team" });
       try {
@@ -26672,8 +26677,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         // Slice 7: /api/org/admin/* answers the Perspicax console.
         ...(IDENTITY.kind === "perspicax" ? { orgAdminApi: 1 } : {}),
       };
-      if (detail === "app") return json(res, 200, { app: "openmausbot" });
-      if (detail === "capabilities") return json(res, 200, { app: "openmausbot", capabilities });
+      if (detail === "app") return json(res, 200, { ...HEALTH_IDENTITY });
+      if (detail === "capabilities") return json(res, 200, { ...HEALTH_IDENTITY, capabilities });
       // The engines installed on this server (slice 3, D16), from the CLI
       // probes: refreshed here when stale, within a bounded wait.
       const stale = !engineProbes.size || [...engineProbes.values()].some((probe) => Date.now() - probe.at > ENGINE_PROBE_TTL_MS)
@@ -26684,7 +26689,9 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       const engines = [...engineProbes.values()]
         .map(({ instanceId, driver, installed, version }) => ({ instanceId, driver, installed, ...(version ? { version } : {}) }))
         .sort((a, b) => a.instanceId.localeCompare(b.instanceId));
-      return json(res, 200, { app: "openmausbot", pid: process.pid, static: Boolean(STATIC_DIR), capabilities, engines });
+      // app: "openmausbot" stays one release beside product: "sagax" (deployed
+      // health checks grep the body for it; legacy-names.mjs HEALTH_IDENTITY).
+      return json(res, 200, { ...HEALTH_IDENTITY, pid: process.pid, static: Boolean(STATIC_DIR), capabilities, engines });
     }
     // The bots' browser engine: install it on this machine (agent-browser +
     // a Chrome for Testing, a one-time download), or ask how that is going.
@@ -26984,7 +26991,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           // The official local OAuth callback terminates on this machine,
           // not a phone or the browser visiting a remotely hosted workspace.
           if (instance.authenticationMethod === "browser-pkce" && (isProxied(req) || !isLoopbackHost(req.socket.remoteAddress))) {
-            return json(res, 403, { error: "Continue with ChatGPT on the computer running OpenMausBot. Hosted Pro sign-in requires OpenAI's hosted-app approval." });
+            return json(res, 403, { error: "Continue with ChatGPT on the computer running Sagax. Hosted Pro sign-in requires OpenAI's hosted-app approval." });
           }
           const started = await providerAuthSessions.start(instance, owner);
           // Revocation can arrive while the CLI is obtaining a device code.
@@ -28582,7 +28589,7 @@ server.listen(PORT, "127.0.0.1", () => {
 // Nothing changes about the loopback bind above. Requests arriving here have
 // no peer address, which request-auth treats as "through a proxy": a session
 // is required, never loopback trust, whatever headers the request carries.
-const TUNNEL_SOCKET = process.env.OMB_TUNNEL_SOCKET?.trim() || null;
+const TUNNEL_SOCKET = process.env.SAGAX_TUNNEL_SOCKET?.trim() || null;
 let tunnelListener: ReturnType<typeof createServer> | null = null;
 if (TUNNEL_SOCKET) {
   if (process.platform !== "win32") rmSync(TUNNEL_SOCKET, { force: true });

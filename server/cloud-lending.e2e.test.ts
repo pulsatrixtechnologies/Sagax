@@ -49,7 +49,7 @@ async function api(method: string, path: string, options: { body?: unknown; toke
 }
 
 async function adminPairing(): Promise<string> {
-  const body = JSON.stringify({ label: "OpenMausBot app (Cloud)", ttlSeconds: 300 });
+  const body = JSON.stringify({ label: "Sagax app (Cloud)", ttlSeconds: 300 });
   const timestamp = String(Math.floor(Date.now() / 1000)), nonce = randomBytes(16).toString("base64url");
   const response = await fetch(`${base}/api/cloud/pairing`, { method: "POST", headers: {
     host: HOST, "x-forwarded-for": "203.0.113.9", "x-forwarded-proto": "https", "content-type": "application/json",
@@ -67,7 +67,7 @@ async function adminPairing(): Promise<string> {
 async function leftBehind(of: { threadIds?: string[]; routineIds?: string[] }) {
   for (const proxy of proxies.splice(0)) proxy.kill();
   await waitForExit(child, { signal: "SIGTERM" });
-  markLeftBehind(join(home, ".openmausbot"), of);
+  markLeftBehind(join(home, ".sagax"), of);
   await boot();
 }
 
@@ -101,7 +101,7 @@ async function proxyFor(start: () => Promise<void>) {
 
 beforeAll(async () => {
   home = mkdtempSync(join(tmpdir(), "omb-cloud-lending-"));
-  const dataDir = join(home, ".openmausbot");
+  const dataDir = join(home, ".sagax");
   mkdirSync(dataDir, { recursive: true });
   const cli = join(home, "fixture-claude.mjs");
   writeFileSync(cli, `#!/usr/bin/env node
@@ -128,15 +128,15 @@ await import(${JSON.stringify(pathToFileURL(join(SERVER_DIR, "testing", "fake-cl
 let port = 0;
 /** Start (or restart) the Cloud home on its data directory. */
 async function boot() {
-  const dataDir = join(home, ".openmausbot");
+  const dataDir = join(home, ".sagax");
   const offlinePrelude = `data:text/javascript,${encodeURIComponent('const real = globalThis.fetch; globalThis.fetch = async (url, init) => String(url).startsWith("http://127.0.0.1:") ? real(url, init) : new Response("offline fixture", { status: 503 });')}`;
   child = spawn(process.execPath, ["--import", offlinePrelude, join(SERVER_DIR, "index.ts")], {
     cwd: join(SERVER_DIR, ".."),
     env: {
       PATH: process.env.PATH, ...(process.env.SystemRoot ? { SystemRoot: process.env.SystemRoot } : {}),
-      HOME: home, USERPROFILE: home, OMB_LOCAL_VM_TEST_NAMESPACE: process.env.OMB_LOCAL_VM_TEST_NAMESPACE ?? "", OMB_DATA_DIR: dataDir, OMB_PORT: String(port), OMB_WEBHOOK_PORT: String(port + 1),
-      OMB_CLOUD_ROLE: "home", OMB_CLOUD_MACHINE_ID: "3f9c2a4e-8b1d-4c6e-9a7f-2d5e8c1b0a93", OMB_CLOUD_ADMIN_URL: "https://cloud.example.test",
-      OMB_CLOUD_BOOTSTRAP_SECRET: secret, OMB_PUBLIC_URL: `https://${HOST}`,
+      HOME: home, USERPROFILE: home, SAGAX_LOCAL_VM_TEST_NAMESPACE: process.env.SAGAX_LOCAL_VM_TEST_NAMESPACE ?? "", SAGAX_DATA_DIR: dataDir, SAGAX_PORT: String(port), SAGAX_WEBHOOK_PORT: String(port + 1),
+      SAGAX_CLOUD_ROLE: "home", SAGAX_CLOUD_MACHINE_ID: "3f9c2a4e-8b1d-4c6e-9a7f-2d5e8c1b0a93", SAGAX_CLOUD_ADMIN_URL: "https://cloud.example.test",
+      SAGAX_CLOUD_BOOTSTRAP_SECRET: secret, SAGAX_PUBLIC_URL: `https://${HOST}`,
     },
     stdio: ["ignore", "pipe", "pipe"],
   });
@@ -349,15 +349,15 @@ it("on a Cloud home the owner's answer to an options card is recorded as the own
   const made = (await api("POST", "/api/bots", { token: owner, body: { name: "Watcher", modelSelection: { instanceId: "claude", model: "claude-sonnet-5" } } })).body.bot;
   for (const proxy of proxies.splice(0)) proxy.kill();
   await waitForExit(child, { signal: "SIGTERM" });
-  const botsFile = join(home, ".openmausbot", "bots.json");
+  const botsFile = join(home, ".sagax", "bots.json");
   writeFileSync(botsFile, readFileSync(botsFile, "utf8").replaceAll(made.id, WATCHER_OPTIONS_CARD_BOT_ID));
   await boot();
   // The Watcher's own turn posts a card through its turn capability.
   const agents = await agentsFor(async () => {
     expect((await api("POST", `/api/bots/${WATCHER_OPTIONS_CARD_BOT_ID}/messages`, { token: owner, body: { text: "Check the build." } })).status).toBe(202);
   });
-  const posted = await fetch(`${agents.env.OMB_HARNESS_URL}/api/internal/options-card`, {
-    method: "POST", headers: { authorization: `Bearer ${agents.env.OMB_COMMS_TOKEN}`, "content-type": "application/json" },
+  const posted = await fetch(`${agents.env.SAGAX_HARNESS_URL}/api/internal/options-card`, {
+    method: "POST", headers: { authorization: `Bearer ${agents.env.SAGAX_COMMS_TOKEN}`, "content-type": "application/json" },
     body: JSON.stringify({ title: "Deploy now?", subtitle: "The build is green.", options: ["Yes", "No"] }),
   });
   expect(posted.status, await posted.clone().text()).toBe(201);

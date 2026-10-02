@@ -36,7 +36,7 @@ not one that also holds things you would not hand to the agent.
 Sagax connects only through a named alias in your `~/.ssh/config` — you type the alias into
 App Settings → Connections, nothing else. Every bot action becomes a `docker exec` over SSH, so the app
 supplies connection sharing and fail-fast timeouts itself: it runs each VPS command through its own
-`ssh_config` (under `~/.openmausbot/ssh/`) that includes your file first and fills in `ControlMaster`,
+`ssh_config` (under `~/.sagax/ssh/`) that includes your file first and fills in `ControlMaster`,
 `ControlPersist`, keepalives and a connect timeout wherever your alias leaves them unset. Anything your
 alias sets wins. Startup, previews, bot tools and their connection probes use the same settings.
 For long data-directory paths, the app keeps its control socket in a private, user-owned directory
@@ -79,7 +79,7 @@ host is unknown simply fails until you have done this once.
 - **Firewall the VPS to SSH only**, ideally from your IP. Nothing Sagax does needs any other inbound
   port open, so anything else open is pure attack surface.
 - **Nothing sensitive is stored.** The only thing Sagax persists is the alias name itself
-  (`~/.openmausbot/config.json`); keys, passphrases, and agent state stay with SSH. The alias is also kept
+  (`~/.sagax/config.json`); keys, passphrases, and agent state stay with SSH. The alias is also kept
   off paired phones — the companion reports configured-or-not, never the name.
 - The container itself runs hardened: capabilities dropped, private network/IPC/cgroup namespaces, no host
   mounts, and memory/CPU/pid limits. A container missing any of that — including one someone created under

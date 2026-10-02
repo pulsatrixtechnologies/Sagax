@@ -97,7 +97,7 @@ async function until<T>(check: () => T | undefined, ms = 5_000): Promise<T | und
 posixOnly("an organization member's identity and bots", () => {
   beforeAll(async () => {
     home = mkdtempSync(join(tmpdir(), "omb-member-identity-"));
-    const data = join(home, ".openmausbot");
+    const data = join(home, ".sagax");
     mkdirSync(data, { recursive: true });
     writeFileSync(join(data, "config.json"), JSON.stringify({
       profile: { name: OWNER_NAME, email: OWNER_EMAIL, aboutMe: OWNER_ABOUT },
@@ -121,11 +121,11 @@ posixOnly("an organization member's identity and bots", () => {
       env: {
         ...(process.env.PATH ? { PATH: process.env.PATH } : {}),
         ...(process.env.SystemRoot ? { SystemRoot: process.env.SystemRoot } : {}),
-        HOME: home, USERPROFILE: home, OMB_LOCAL_VM_TEST_NAMESPACE: process.env.OMB_LOCAL_VM_TEST_NAMESPACE ?? "", OMB_PORT: String(PORT), OMB_WEBHOOK_PORT: String(PORT + 1),
-        OMB_IDENTITY: "perspicax", OMB_PERSPICAX_ISSUER: idp.issuer, OMB_PUBLIC_URL: BASE,
-        OMB_PERSPICAX_LINK_FILE: join(home, "link", "pulsabot.json"),
+        HOME: home, USERPROFILE: home, SAGAX_LOCAL_VM_TEST_NAMESPACE: process.env.SAGAX_LOCAL_VM_TEST_NAMESPACE ?? "", SAGAX_PORT: String(PORT), SAGAX_WEBHOOK_PORT: String(PORT + 1),
+        SAGAX_IDENTITY: "perspicax", SAGAX_PERSPICAX_ISSUER: idp.issuer, SAGAX_PUBLIC_URL: BASE,
+        SAGAX_PERSPICAX_LINK_FILE: join(home, "link", "pulsabot.json"),
         // The operator at this computer, as on a desktop or a one-person server.
-        OMB_LOOPBACK_TRUST: "owner",
+        SAGAX_LOOPBACK_TRUST: "owner",
       },
       stdio: ["ignore", "pipe", "pipe"],
     });

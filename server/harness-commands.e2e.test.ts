@@ -16,7 +16,7 @@ const jsonl = (path: string) => existsSync(path)
 
 it("lists the engine's commands and passes a typed one through verbatim", async () => {
   const session = await launchVerificationServer({ ...process.env, FAKE_CLAUDE_VERSION: "2.1.287" });
-  const cli = (...args: string[]) => runControlOmb(args, { env: { OPENMAUSBOT_URL: session.info.url } }) as Promise<any>;
+  const cli = (...args: string[]) => runControlOmb(args, { env: { SAGAX_URL: session.info.url } }) as Promise<any>;
   const api = (path: string, body?: unknown, method = "POST") =>
     request(path, body === undefined ? {} : { method, body: JSON.stringify(body) }, session.info.url) as Promise<any>;
   try {

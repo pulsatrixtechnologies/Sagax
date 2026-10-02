@@ -226,7 +226,7 @@ export class BrowserRuntime {
   private closeBrowser: CloseBrowser;
 
   constructor({ closeBrowser, ...options }: Partial<BrowserRuntime["options"]> & { closeBrowser?: CloseBrowser } = {}) {
-    const budget = Number(process.env.OMB_BROWSER_RESULT_BUDGET);
+    const budget = Number(process.env.SAGAX_BROWSER_RESULT_BUDGET);
     this.options = { requestTimeoutMs: 120_000, takeoverTimeoutMs: 15_000, idleMs: 60_000, maxPending: 16, resultBudget: Number.isFinite(budget) && budget > 0 ? budget : DEFAULT_BROWSER_RESULT_BUDGET, ...options };
     this.closeBrowser = closeBrowser ?? (async () => false);
   }
@@ -473,7 +473,7 @@ export class BrowserRuntime {
     gate.closing = true;
     this.changed(gate);
     try {
-      if (!await closeBrowser()) throw new Error("The browser could not be closed. Ask the person to press Restart in the Browser panel of OpenMausBot on their computer, or to restart OpenMausBot.");
+      if (!await closeBrowser()) throw new Error("The browser could not be closed. Ask the person to press Restart in the Browser panel of Sagax on their computer, or to restart Sagax.");
       await this.clients.get(session)?.client.stop();
       await this.clients.get(session)?.client.stop(); // see restart()
       gate.uncertain = false;

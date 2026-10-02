@@ -21,11 +21,11 @@ import {
 
 type Json = Record<string, unknown>;
 
-const UPSTREAM = process.env.OMB_CONNECTOR_UPSTREAM_URL ?? "";
-const HARNESS = process.env.OMB_HARNESS_URL ?? "http://127.0.0.1:8799";
-const BOT_ID = process.env.OMB_BOT_ID ?? "";
-const THREAD_ID = process.env.OMB_THREAD_ID ?? "";
-const TOKEN = process.env.OMB_CONNECTOR_TOKEN ?? process.env.OMB_COMMS_TOKEN ?? "";
+const UPSTREAM = process.env.SAGAX_CONNECTOR_UPSTREAM_URL ?? "";
+const HARNESS = process.env.SAGAX_HARNESS_URL ?? "http://127.0.0.1:8799";
+const BOT_ID = process.env.SAGAX_BOT_ID ?? "";
+const THREAD_ID = process.env.SAGAX_THREAD_ID ?? "";
+const TOKEN = process.env.SAGAX_CONNECTOR_TOKEN ?? process.env.SAGAX_COMMS_TOKEN ?? "";
 // The bot's effective tool grants, or null when the harness sent none —
 // legacy bots, oversized allowlists, anything unreadable. null means the
 // upstream list is relayed verbatim; the harness still judges every call.
@@ -37,7 +37,7 @@ const RELAY_TIMEOUT_MS = 10 * 60_000;
 
 function parsedHeaders(): Record<string, string> {
   try {
-    const value: unknown = JSON.parse(process.env.OMB_CONNECTOR_UPSTREAM_HEADERS ?? "{}");
+    const value: unknown = JSON.parse(process.env.SAGAX_CONNECTOR_UPSTREAM_HEADERS ?? "{}");
     if (!value || typeof value !== "object" || Array.isArray(value)) return {};
     return Object.fromEntries(
       Object.entries(value).filter((entry): entry is [string, string] => typeof entry[1] === "string"),

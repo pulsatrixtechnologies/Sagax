@@ -109,7 +109,7 @@ export function commandEnvironment(env = process.env) {
   const out = {};
   for (const [key, value] of Object.entries(env)) {
     if (value === undefined) continue;
-    if (/^(OMB_|SAGAX_|ELECTRON_|OPENMAUSBOT_|CHROME_)/i.test(key)) continue;
+    if (/^(SAGAX_|SAGAX_|ELECTRON_|SAGAX_|CHROME_)/i.test(key)) continue;
     if (/(API_KEY|_TOKEN$|SECRET|PASSWORD|_KEY_FILE$)/i.test(key)) continue;
     out[key] = value;
   }

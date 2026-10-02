@@ -1,4 +1,4 @@
-// Trims models.dev's api.json down to what OpenMausBot needs and drops
+// Trims models.dev's api.json down to what Sagax needs and drops
 // anything unsafe to hand to OpenCode. Both the build script that makes the
 // bundled snapshot (scripts/build-model-catalog.mjs) and the runtime refresh
 // (catalog.ts) run their data through trimModelsDevCatalog, so a catalog
@@ -62,7 +62,7 @@ export type CatalogProviders = Record<string, CatalogProvider>;
 export type StoredCatalogModel = Omit<CatalogModel, "id" | "tool_call">;
 export type StoredCatalogProviders = Record<string, Omit<CatalogProvider, "models"> & { models: Record<string, StoredCatalogModel> }>;
 
-/** The file format of both the bundled snapshot and OpenMausBot's own cache. */
+/** The file format of both the bundled snapshot and Sagax's own cache. */
 export interface ModelCatalogDocument {
   schema: typeof MODEL_CATALOG_SCHEMA;
   /** When this data was last known to match models.dev (ISO 8601). */

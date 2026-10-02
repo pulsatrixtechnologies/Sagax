@@ -23,39 +23,39 @@ const directory = () => { const value = mkdtempSync(join(tmpdir(), "omb-cloud-ho
 const secret = "S".repeat(43);
 const machineId = "3f9c2a4e-8b1d-4c6e-9a7f-2d5e8c1b0a93";
 const contract = (extra: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv => ({
-  OMB_CLOUD_ROLE: "home", OMB_CLOUD_MACHINE_ID: machineId, OMB_CLOUD_ADMIN_URL: "https://cloud.example.test",
-  OMB_PUBLIC_URL: "https://omb-u-1a2b3c4d5e6f.fly.dev", OMB_CLOUD_BOOTSTRAP_SECRET: secret, ...extra,
+  SAGAX_CLOUD_ROLE: "home", SAGAX_CLOUD_MACHINE_ID: machineId, SAGAX_CLOUD_ADMIN_URL: "https://cloud.example.test",
+  SAGAX_PUBLIC_URL: "https://omb-u-1a2b3c4d5e6f.fly.dev", SAGAX_CLOUD_BOOTSTRAP_SECRET: secret, ...extra,
 });
 // A platform gateway's settings, as an Admin from before Cloud Pro dropped
 // included AI wrote them. A Cloud home ignores them.
 const token = `omb_cloudai_${"t".repeat(43)}`;
 const gatewayUrl = "https://cloud.example.test/api/cloud/gateway/g0123456789abcdef0123456789abcd";
-const withGateway = (extra: NodeJS.ProcessEnv = {}) => contract({ OMB_HOSTED_MODEL_URL: gatewayUrl, OMB_HOSTED_MODEL_TOKEN: token,
-  OMB_HOSTED_MODELS: JSON.stringify({ anthropic: ["claude-sonnet-5"], openai: ["gpt-5.6-sol"], openrouter: ["anthropic/claude-sonnet-5"] }), ...extra });
+const withGateway = (extra: NodeJS.ProcessEnv = {}) => contract({ SAGAX_HOSTED_MODEL_URL: gatewayUrl, SAGAX_HOSTED_MODEL_TOKEN: token,
+  SAGAX_HOSTED_MODELS: JSON.stringify({ anthropic: ["claude-sonnet-5"], openai: ["gpt-5.6-sol"], openrouter: ["anthropic/claude-sonnet-5"] }), ...extra });
 
 // ── boot contract ──────────────────────────────────────────────────────────
 
 it("is off on every ordinary server and desktop", () => {
   expect(cloudHomeConfigured({})).toBe(false);
   expect(cloudHomeConfiguration({})).toBeNull();
-  expect(cloudHomeConfiguration({ OMB_PUBLIC_URL: "https://selfhosted.example.test", OMB_HOSTED_MODELS: "{}" })).toBeNull();
+  expect(cloudHomeConfiguration({ SAGAX_PUBLIC_URL: "https://selfhosted.example.test", SAGAX_HOSTED_MODELS: "{}" })).toBeNull();
 });
 
 it("reads the Admin's contract", () => {
   expect(cloudHomeConfiguration(contract())).toEqual({
     machineId, adminOrigin: "https://cloud.example.test", publicOrigin: "https://omb-u-1a2b3c4d5e6f.fly.dev", bootstrapSecret: secret, warnings: [],
   });
-  expect(cloudHomeConfiguration(contract({ OMB_CLOUD_ADMIN_URL: "https://cloud.example.test/" }))!.adminOrigin).toBe("https://cloud.example.test");
+  expect(cloudHomeConfiguration(contract({ SAGAX_CLOUD_ADMIN_URL: "https://cloud.example.test/" }))!.adminOrigin).toBe("https://cloud.example.test");
 });
 
 it("ignores a platform gateway's settings with one warning, whatever they hold, and never serves them", () => {
   // Cloud Pro includes no AI: the person signs in with their own account or key.
   const all = cloudHomeConfiguration(withGateway())!;
   expect(Object.keys(all).sort()).toEqual(["adminOrigin", "bootstrapSecret", "machineId", "publicOrigin", "warnings"]);
-  expect(all.warnings).toEqual(["ignoring OMB_HOSTED_MODEL_URL, OMB_HOSTED_MODEL_TOKEN, OMB_HOSTED_MODELS: Cloud Pro includes no AI; people sign in with their own Claude or ChatGPT account, or an API key"]);
+  expect(all.warnings).toEqual(["ignoring SAGAX_HOSTED_MODEL_URL, SAGAX_HOSTED_MODEL_TOKEN, SAGAX_HOSTED_MODELS: Cloud Pro includes no AI; people sign in with their own Claude or ChatGPT account, or an API key"]);
   // Any one of them, valid or not, is ignored the same way instead of failing the machine.
-  for (const stray of [{ OMB_HOSTED_MODEL_TOKEN: token }, { OMB_HOSTED_MODEL_TOKEN: "sk-ant-api03-platform-key" }, { OMB_HOSTED_MODELS: "{not json" },
-    { OMB_HOSTED_MODEL_URL: "https://gateway.attacker.test/v1" }, { OMB_HOSTED_MODELS: "" }]) {
+  for (const stray of [{ SAGAX_HOSTED_MODEL_TOKEN: token }, { SAGAX_HOSTED_MODEL_TOKEN: "sk-ant-api03-platform-key" }, { SAGAX_HOSTED_MODELS: "{not json" },
+    { SAGAX_HOSTED_MODEL_URL: "https://gateway.attacker.test/v1" }, { SAGAX_HOSTED_MODELS: "" }]) {
     const config = cloudHomeConfiguration(contract(stray))!;
     expect(config.warnings).toEqual([expect.stringMatching(new RegExp(`^ignoring ${Object.keys(stray)[0]}: Cloud Pro includes no AI`))]);
     const value = Object.values(stray)[0];
@@ -63,33 +63,33 @@ it("ignores a platform gateway's settings with one warning, whatever they hold, 
   }
   // The exclusive workspace model policy stays off, so nothing routes to a gateway.
   expect(hostedModelPolicy(directory(), withGateway())).toBeNull();
-  expect(hostedModelPolicy(directory(), contract({ OMB_HOSTED_MODEL_TOKEN: `omb_workspace_${"t".repeat(43)}`, OMB_HOSTED_MODELS: "{}" }))).toBeNull();
+  expect(hostedModelPolicy(directory(), contract({ SAGAX_HOSTED_MODEL_TOKEN: `omb_workspace_${"t".repeat(43)}`, SAGAX_HOSTED_MODELS: "{}" }))).toBeNull();
   // Nothing the machine starts inherits them.
   expect(Object.keys(withoutIgnoredCloudKeys(withGateway())).filter((key) => (CLOUD_IGNORED_KEYS as readonly string[]).includes(key))).toEqual([]);
   expect(withoutIgnoredCloudKeys(withGateway())).toEqual(contract());
 });
 
 it.each<[string, NodeJS.ProcessEnv]>([
-  ["only one key", { OMB_CLOUD_MACHINE_ID: machineId }],
-  ["no role", { ...contract(), OMB_CLOUD_ROLE: undefined }],
-  ["the desktop role", contract({ OMB_CLOUD_ROLE: "desktop" })],
-  ["no public URL", { ...contract(), OMB_PUBLIC_URL: undefined }],
-  ["an http Admin", contract({ OMB_CLOUD_ADMIN_URL: "http://cloud.example.test" })],
-  ["an Admin URL with a path", contract({ OMB_CLOUD_ADMIN_URL: "https://cloud.example.test/api" })],
-  ["an Admin URL with credentials", contract({ OMB_CLOUD_ADMIN_URL: "https://user:pass@cloud.example.test" })],
-  ["an http public URL", contract({ OMB_PUBLIC_URL: "http://omb-u-1a2b3c4d5e6f.fly.dev" })],
-  ["a machine id with a slash", contract({ OMB_CLOUD_MACHINE_ID: "home/../x" })],
-  ["a short secret", contract({ OMB_CLOUD_BOOTSTRAP_SECRET: "S".repeat(42) })],
-  ["a secret with padding", contract({ OMB_CLOUD_BOOTSTRAP_SECRET: `${"S".repeat(42)}=` })],
-  ["the desktop app", contract({ OMB_DESKTOP_PARENT: "1" })],
-  ["a hosted team workspace too", contract({ OMB_ADMIN_URL: "https://cloud.example.test" })],
-  ["a hosted team workspace with a gateway", withGateway({ OMB_ADMIN_URL: "https://cloud.example.test", OMB_ADMIN_WORKSPACE: "acme", OMB_ADMIN_MEMBERSHIP: "portal" })],
+  ["only one key", { SAGAX_CLOUD_MACHINE_ID: machineId }],
+  ["no role", { ...contract(), SAGAX_CLOUD_ROLE: undefined }],
+  ["the desktop role", contract({ SAGAX_CLOUD_ROLE: "desktop" })],
+  ["no public URL", { ...contract(), SAGAX_PUBLIC_URL: undefined }],
+  ["an http Admin", contract({ SAGAX_CLOUD_ADMIN_URL: "http://cloud.example.test" })],
+  ["an Admin URL with a path", contract({ SAGAX_CLOUD_ADMIN_URL: "https://cloud.example.test/api" })],
+  ["an Admin URL with credentials", contract({ SAGAX_CLOUD_ADMIN_URL: "https://user:pass@cloud.example.test" })],
+  ["an http public URL", contract({ SAGAX_PUBLIC_URL: "http://omb-u-1a2b3c4d5e6f.fly.dev" })],
+  ["a machine id with a slash", contract({ SAGAX_CLOUD_MACHINE_ID: "home/../x" })],
+  ["a short secret", contract({ SAGAX_CLOUD_BOOTSTRAP_SECRET: "S".repeat(42) })],
+  ["a secret with padding", contract({ SAGAX_CLOUD_BOOTSTRAP_SECRET: `${"S".repeat(42)}=` })],
+  ["the desktop app", contract({ SAGAX_DESKTOP_PARENT: "1" })],
+  ["a hosted team workspace too", contract({ SAGAX_ADMIN_URL: "https://cloud.example.test" })],
+  ["a hosted team workspace with a gateway", withGateway({ SAGAX_ADMIN_URL: "https://cloud.example.test", SAGAX_ADMIN_WORKSPACE: "acme", SAGAX_ADMIN_MEMBERSHIP: "portal" })],
 ])("refuses to start with %s", (_why, env) => {
   expect(() => cloudHomeConfiguration(env)).toThrow(/Cloud home configuration is invalid/);
 });
 
 it("never echoes a secret or token in its refusal", () => {
-  for (const env of [contract({ OMB_CLOUD_BOOTSTRAP_SECRET: `${secret}!` }), withGateway({ OMB_CLOUD_BOOTSTRAP_SECRET: `${secret}!` })]) {
+  for (const env of [contract({ SAGAX_CLOUD_BOOTSTRAP_SECRET: `${secret}!` }), withGateway({ SAGAX_CLOUD_BOOTSTRAP_SECRET: `${secret}!` })]) {
     try { cloudHomeConfiguration(env); expect.unreachable(); }
     catch (error) { expect(String(error)).not.toContain(secret); expect(String(error)).not.toContain(token); }
   }
@@ -128,7 +128,7 @@ function fixture() {
   const sessions = new SessionRegistry({ file: join(root, "sessions.json"), now: () => now });
   const pairing = createCloudPairing({ secret, sessions, now: () => now });
   let counter = 0;
-  const sign = (body = JSON.stringify({ label: "OpenMausBot app (Cloud)", ttlSeconds: 300 }), options: { key?: string; at?: number; nonce?: string } = {}) => {
+  const sign = (body = JSON.stringify({ label: "Sagax app (Cloud)", ttlSeconds: 300 }), options: { key?: string; at?: number; nonce?: string } = {}) => {
     const timestamp = String(Math.floor((options.at ?? now) / 1000)), nonce = options.nonce ?? `nonce-${String(++counter).padStart(12, "0")}`;
     return { timestamp, nonce, signature: `v1=${cloudPairingSignature(options.key ?? secret, timestamp, nonce, body)}`, body: Buffer.from(body) };
   };
@@ -146,7 +146,7 @@ it("opens one ordinary pairing window for a correctly signed request", () => {
   expect(granted.body.credential).toMatch(/^omb_pair_[A-Za-z0-9_-]{43}$/);
   expect(granted.body.expiresAt).toBe(f.now() + 300_000);
   const paired = f.exchange(granted.body.code as string);
-  expect(paired).toMatchObject({ ok: true, session: { label: "OpenMausBot app (Cloud)", scopes: ["admin", "client"] } });
+  expect(paired).toMatchObject({ ok: true, session: { label: "Sagax app (Cloud)", scopes: ["admin", "client"] } });
 });
 
 it("matches the Admin's signature byte for byte", () => {
@@ -160,7 +160,7 @@ it("refuses a wrong key, a tampered request or a malformed signature, and counts
   const good = f.sign();
   const variants = [
     f.sign(undefined, { key: "W".repeat(43) }),
-    { ...good, body: Buffer.from(JSON.stringify({ label: "OpenMausBot app (Cloud)", ttlSeconds: 600 })) },
+    { ...good, body: Buffer.from(JSON.stringify({ label: "Sagax app (Cloud)", ttlSeconds: 600 })) },
     { ...good, nonce: "nonce-tampered-000" },
     { ...good, timestamp: String(Number(good.timestamp) + 1) },
     { ...good, signature: good.signature.slice(3) },
@@ -295,15 +295,15 @@ it("binds a fresh volume to its machine and refuses anyone else's data", () => {
 });
 
 it("gives the edge only its routing name and the server the contract, never a gateway's settings or a secret", () => {
-  const relay = { OMB_CLOUD_BOAT_TOKEN: `box_omb_${"b".repeat(43)}`, OMB_CLOUD_VOICE_TOKEN: `omb_voice_${"v".repeat(43)}`, OMB_CLOUD_DECIDER_TOKEN: `omb_decide_${"d".repeat(43)}` };
+  const relay = { SAGAX_CLOUD_BOAT_TOKEN: `box_omb_${"b".repeat(43)}`, SAGAX_CLOUD_VOICE_TOKEN: `omb_voice_${"v".repeat(43)}`, SAGAX_CLOUD_DECIDER_TOKEN: `omb_decide_${"d".repeat(43)}` };
   const config = cloudHomeConfiguration(withGateway())!;
   const { server, edge, secrets } = cloudHomeChildEnvironments(config, { ...withGateway(), ...relay, PATH: "/usr/bin" }, "/data");
-  expect(server).toMatchObject({ HOME: "/data", OMB_DATA_DIR: "/data/.openmausbot", OMB_PORT: "8799", OMB_WEBHOOK_PORT: "8800",
-    OMB_PUBLIC_URL: "https://omb-u-1a2b3c4d5e6f.fly.dev", OMB_WEBHOOK_PUBLIC_URL: "https://omb-u-1a2b3c4d5e6f.fly.dev", OMB_CLOUD_SECRETS_FD: "3" });
+  expect(server).toMatchObject({ HOME: "/data", SAGAX_DATA_DIR: "/data/.openmausbot", SAGAX_PORT: "8799", SAGAX_WEBHOOK_PORT: "8800",
+    SAGAX_PUBLIC_URL: "https://omb-u-1a2b3c4d5e6f.fly.dev", SAGAX_WEBHOOK_PUBLIC_URL: "https://omb-u-1a2b3c4d5e6f.fly.dev", SAGAX_CLOUD_SECRETS_FD: "3" });
   for (const key of CLOUD_IGNORED_KEYS) expect(server).not.toHaveProperty(key);
   expect(JSON.stringify(server)).not.toContain(token);
   // The secrets go over the pipe, never in the server's environment.
-  expect(secrets).toEqual({ OMB_CLOUD_BOOTSTRAP_SECRET: secret, ...relay });
+  expect(secrets).toEqual({ SAGAX_CLOUD_BOOTSTRAP_SECRET: secret, ...relay });
   for (const value of Object.values(secrets)) {
     expect(JSON.stringify(server)).not.toContain(value);
     expect(JSON.stringify(edge)).not.toContain(value);
@@ -317,19 +317,19 @@ it("gives the edge only its routing name and the server the contract, never a ga
 
 it("gives the server only an allow-listed environment: a secret added later, a test's key or anything unknown never reaches it", () => {
   const config = cloudHomeConfiguration(contract())!;
-  const env = { ...contract(), PATH: "/usr/bin", LANG: "C.UTF-8", LC_ALL: "C.UTF-8", NODE_ENV: "production", OMB_STATIC_DIR: "/app/dist",
-    OMB_CLOUD_BOAT_URL: "https://cloud.example.test/boat", OMB_TTS_DEFAULT_VOICE: "alloy",
-    OMB_CLOUD_FUTURE_SECRET: "later", OMB_TEST_CLOUD_LEFT_BEHIND_KEY: "k".repeat(43), FLY_API_TOKEN: "fly", SOME_TOKEN: "t", HOME: "/root" };
+  const env = { ...contract(), PATH: "/usr/bin", LANG: "C.UTF-8", LC_ALL: "C.UTF-8", NODE_ENV: "production", SAGAX_STATIC_DIR: "/app/dist",
+    SAGAX_CLOUD_BOAT_URL: "https://cloud.example.test/boat", SAGAX_TTS_DEFAULT_VOICE: "alloy",
+    SAGAX_CLOUD_FUTURE_SECRET: "later", SAGAX_TEST_CLOUD_LEFT_BEHIND_KEY: "k".repeat(43), FLY_API_TOKEN: "fly", SOME_TOKEN: "t", HOME: "/root" };
   const { server, dropped } = cloudHomeChildEnvironments(config, env, "/data");
-  expect(server).toMatchObject({ PATH: "/usr/bin", LANG: "C.UTF-8", LC_ALL: "C.UTF-8", NODE_ENV: "production", OMB_STATIC_DIR: "/app/dist",
-    OMB_CLOUD_ROLE: "home", OMB_CLOUD_MACHINE_ID: machineId, OMB_CLOUD_ADMIN_URL: "https://cloud.example.test",
-    OMB_CLOUD_BOAT_URL: "https://cloud.example.test/boat", OMB_TTS_DEFAULT_VOICE: "alloy", HOME: "/data" });
-  for (const name of ["OMB_CLOUD_FUTURE_SECRET", "OMB_TEST_CLOUD_LEFT_BEHIND_KEY", "FLY_API_TOKEN", "SOME_TOKEN"]) {
+  expect(server).toMatchObject({ PATH: "/usr/bin", LANG: "C.UTF-8", LC_ALL: "C.UTF-8", NODE_ENV: "production", SAGAX_STATIC_DIR: "/app/dist",
+    SAGAX_CLOUD_ROLE: "home", SAGAX_CLOUD_MACHINE_ID: machineId, SAGAX_CLOUD_ADMIN_URL: "https://cloud.example.test",
+    SAGAX_CLOUD_BOAT_URL: "https://cloud.example.test/boat", SAGAX_TTS_DEFAULT_VOICE: "alloy", HOME: "/data" });
+  for (const name of ["SAGAX_CLOUD_FUTURE_SECRET", "SAGAX_TEST_CLOUD_LEFT_BEHIND_KEY", "FLY_API_TOKEN", "SOME_TOKEN"]) {
     expect(server).not.toHaveProperty(name);
     expect(dropped).toContain(name);
   }
   // A secret is never even named as dropped: it goes over the pipe.
-  expect(dropped).not.toContain("OMB_CLOUD_BOOTSTRAP_SECRET");
+  expect(dropped).not.toContain("SAGAX_CLOUD_BOOTSTRAP_SECRET");
 });
 
 it("the root supervisor runs and trusts only root's code, never the volume's or anything maus could rewrite", () => {
@@ -364,9 +364,9 @@ it("ships an edge and a Fly template that keep the server private", () => {
   expect(fly).toMatch(/destination = "\/data"/);
   expect(fly).toMatch(/path = "\/api\/health"/);
   const env = /\[env\]([\s\S]*?)\n\[/.exec(fly)![1];
-  for (const secretKey of ["OMB_CLOUD_BOOTSTRAP_SECRET", "OMB_CLOUD_ADMIN_URL"]) expect(env).not.toMatch(new RegExp(`^\\s*${secretKey}\\s*=`, "m"));
+  for (const secretKey of ["SAGAX_CLOUD_BOOTSTRAP_SECRET", "SAGAX_CLOUD_ADMIN_URL"]) expect(env).not.toMatch(new RegExp(`^\\s*${secretKey}\\s*=`, "m"));
   // Cloud Pro includes no AI: the template sets no gateway.
-  expect(fly).not.toContain("OMB_HOSTED_");
+  expect(fly).not.toContain("SAGAX_HOSTED_");
 });
 
 it("starts the server again only when it asks to after a restore, and only a few times in a row", () => {
@@ -416,11 +416,11 @@ const parentEnviron = (pid) => process.platform === "linux"
 const child = spawnSync(process.execPath, ["-e", "process.stdout.write(JSON.stringify(process.env))"], { encoding: "utf8" });
 writeFileSync(${JSON.stringify(out)}, JSON.stringify({ secrets, env: process.env, own: parentEnviron(process.pid), child: child.stdout }));
 `);
-    const env: NodeJS.ProcessEnv = { PATH: process.env.PATH, ...(process.env.SystemRoot ? { SystemRoot: process.env.SystemRoot } : {}), OMB_CLOUD_SECRETS_FD: "3", VISIBLE_PROBE: "visible" };
-    const child = spawnWithSecrets(process.execPath, [script], env, { OMB_CLOUD_BOOTSTRAP_SECRET: secret, OMB_CLOUD_BOAT_TOKEN: "box_omb_probe-token" });
+    const env: NodeJS.ProcessEnv = { PATH: process.env.PATH, ...(process.env.SystemRoot ? { SystemRoot: process.env.SystemRoot } : {}), SAGAX_CLOUD_SECRETS_FD: "3", VISIBLE_PROBE: "visible" };
+    const child = spawnWithSecrets(process.execPath, [script], env, { SAGAX_CLOUD_BOOTSTRAP_SECRET: secret, SAGAX_CLOUD_BOAT_TOKEN: "box_omb_probe-token" });
     await new Promise((resolve) => child.once("exit", resolve));
     const seen = JSON.parse(readFileSync(out, "utf8"));
-    expect(seen.secrets).toEqual({ OMB_CLOUD_BOOTSTRAP_SECRET: secret, OMB_CLOUD_BOAT_TOKEN: "box_omb_probe-token" });
+    expect(seen.secrets).toEqual({ SAGAX_CLOUD_BOOTSTRAP_SECRET: secret, SAGAX_CLOUD_BOAT_TOKEN: "box_omb_probe-token" });
     // The probe works: it sees an ordinary variable…
     if (process.platform !== "win32") expect(seen.own).toContain("VISIBLE_PROBE=visible");
     // …and no secret, in the server's own starting environment, its live one or its child's.
@@ -429,7 +429,7 @@ writeFileSync(${JSON.stringify(out)}, JSON.stringify({ secrets, env: process.env
       expect(where).not.toContain("box_omb_probe-token");
     }
     // Nor does a child learn the pipe exists.
-    expect(seen.child).not.toContain("OMB_CLOUD_SECRETS_FD");
+    expect(seen.child).not.toContain("SAGAX_CLOUD_SECRETS_FD");
   } finally {
     await removeTempDir(dir);
   }

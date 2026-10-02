@@ -2,6 +2,7 @@
 // adds the shared transient-failure retry policy.
 import type { ProviderDriver } from "../contracts.ts";
 import { createOpenAIChatRuntime } from "./openai-chat.ts";
+import { currentEnvName, readEnvName } from "../../electron/legacy-names.mjs";
 
 const DRIVER_KIND = "grok";
 const DEFAULT_URL = "https://api.x.ai/v1";
@@ -27,7 +28,7 @@ function decodeConfig(raw: unknown): GrokConfig {
   return {
     ...(config.tools !== undefined ? { tools: config.tools as boolean } : {}),
     url: typeof config.url === "string" ? config.url : DEFAULT_URL,
-    apiKeyEnv: typeof config.apiKeyEnv === "string" ? config.apiKeyEnv : "XAI_API_KEY",
+    apiKeyEnv: typeof config.apiKeyEnv === "string" ? currentEnvName(config.apiKeyEnv) : "XAI_API_KEY",
   };
 }
 
@@ -40,7 +41,7 @@ export const GrokDriver: ProviderDriver<GrokConfig> = {
 
   async create(input) {
     const { config } = input;
-    const apiKey = input.environment[config.apiKeyEnv] ?? process.env[config.apiKeyEnv] ?? "";
+    const apiKey = readEnvName(config.apiKeyEnv, input.environment) ?? readEnvName(config.apiKeyEnv) ?? "";
     return createOpenAIChatRuntime({
       input,
       driverKind: DRIVER_KIND,

@@ -25,7 +25,7 @@ describe("cloudflared download retries", () => {
 
   function mockDownload() {
     vi.useFakeTimers();
-    vi.stubEnv("OMB_CLOUDFLARED_ARCHIVE_DIR", "");
+    vi.stubEnv("SAGAX_CLOUDFLARED_ARCHIVE_DIR", "");
     vi.spyOn(console, "warn").mockImplementation(() => {});
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);

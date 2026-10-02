@@ -69,7 +69,7 @@ How it works, following the MCP authorization spec (2025-06-18 and
 Limits: a turn that outlives its access token (commonly one hour) is not
 refreshed mid-turn; the next turn is. When you use Sagax from another
 computer, the callback goes to the server's public address (Settings,
-custom domain or `OMB_PUBLIC_URL`) if one is set, otherwise to
+custom domain or `SAGAX_PUBLIC_URL`) if one is set, otherwise to
 `127.0.0.1`, which only works in a browser on the server's own machine.
 Changing a server's address, or removing it, forgets its sign-in.
 
@@ -124,7 +124,7 @@ server is still this page or the bot project's `.mcp.json`.
 
 The switch drops the CLI flag `--strict-mcp-config` (Claude Code 1.0.60+)
 while keeping `--setting-sources project` (1.0.122+). The environment variable
-`OMB_CLAUDE_INHERIT_USER_CONFIG=1` on the Sagax process remains the full
+`SAGAX_CLAUDE_INHERIT_USER_CONFIG=1` on the Sagax process remains the full
 escape hatch back to the old launch: it restores everything, for every Claude
 bot, until you remove it. The harness also picks the session's compaction
 window with `--autocompact` (2.1.122+). Sagax reads `claude --version`
@@ -158,7 +158,7 @@ its engine list. Company Codex uses its own separate home, without your
 
 ## Advanced: edit the file
 
-The same registry lives in `~/.openmausbot/config.json`:
+The same registry lives in `~/.sagax/config.json`:
 
 ```json
 {
@@ -219,7 +219,7 @@ servers gets the enabled tools on its next task.
   `https://` address with no credentials in it; header names must be valid
   HTTP field names and values a single line.
 - **The result gate covers commands.** Oversized tool results from a stdio
-  server are trimmed before they reach the model (`OMB_MCP_RESULT_BUDGET`).
+  server are trimmed before they reach the model (`SAGAX_MCP_RESULT_BUDGET`).
   A URL server is contacted by the engine itself, so there is no process to
   stand between; its results arrive untrimmed.
 - `"enabled": false` parks an entry without deleting it.

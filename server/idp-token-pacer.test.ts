@@ -22,7 +22,7 @@ describe("TokenCallPacer", () => {
     expect(logs[1]).toBe("perspicax token budget: a refresh is deferred without a call (Perspicax rate limit pause; next slot in 60 s)");
   });
 
-  it("reads OMB_PERSPICAX_TOKEN_BUDGET as a whole number from 1 to 60, 45 otherwise", () => {
+  it("reads SAGAX_PERSPICAX_TOKEN_BUDGET as a whole number from 1 to 60, 45 otherwise", () => {
     expect(tokenBudget(undefined)).toBe(TOKEN_BUDGET_DEFAULT);
     expect(tokenBudget("")).toBe(45);
     expect(tokenBudget("20")).toBe(20);

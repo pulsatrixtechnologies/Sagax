@@ -19,7 +19,7 @@ export function appVersion(): string {
   return typeof __APP_VERSION__ === "string" ? __APP_VERSION__ : "dev";
 }
 
-/** Official OpenMausBot release this fork is based on. Stays on that line. */
+/** Official OpenMausBot (upstream) release this fork is based on. Stays on that line. */
 export function baseVersion(): string {
   return typeof __BASE_VERSION__ === "string" ? __BASE_VERSION__ : "dev";
 }

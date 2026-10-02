@@ -9,7 +9,7 @@ The principle: evaluate the harness, never the models. A scripted engine replays
     pnpm eval                     # all scenarios, JSON + markdown report under evals/reports/runs/
     pnpm eval --scenario lazy-computer-claim
     pnpm eval --golden            # tier 2: replay redacted golden threads against committed trace baselines
-    pnpm eval --live              # tier 3: opt-in live-model smoke (skips unless OMB_EVAL_LIVE=1)
+    pnpm eval --live              # tier 3: opt-in live-model smoke (skips unless SAGAX_EVAL_LIVE=1)
     pnpm typecheck && pnpm exec tsc -p evals/tsconfig.json   # evals are also typechecked standalone
     npx vitest run --config evals/vitest.config.ts   # the same scenarios as a test gate
 
@@ -55,9 +55,9 @@ The redaction step rewrites ids, names, and free text into stable synthetic plac
 
 Live-model runs never execute by default: `pnpm eval --live` prints one skip line and exits 0 unless the gate is open.
 
-    OMB_EVAL_LIVE=1 OMB_EVAL_LIVE_CONFIG=/path/to/instance.json pnpm eval --live
+    SAGAX_EVAL_LIVE=1 SAGAX_EVAL_LIVE_CONFIG=/path/to/instance.json pnpm eval --live
 
-The instance file (or inline `OMB_EVAL_LIVE_INSTANCE` JSON) uses the product's own instance shape — `instanceId`, `driver`, `model`, optional `config` and `environmentFrom` — so credential variables are copied from the launching shell (`OMB_EVAL_LIVE_PASS_ENV` lists names to forward) and never inlined. Thresholds live in the committed `evals/live/config.json`: minimum suite score, maximum drift from the last recorded baseline, and turn and judge timeouts. Scenarios run cheap real models with state-based waits, deterministic checks (`botReplied`, tool traces), and a versioned judge whose prompt files are pinned by sha256 in a manifest; drift against the gitignored `evals/live/baselines/` baseline fails the suite.
+The instance file (or inline `SAGAX_EVAL_LIVE_INSTANCE` JSON) uses the product's own instance shape — `instanceId`, `driver`, `model`, optional `config` and `environmentFrom` — so credential variables are copied from the launching shell (`SAGAX_EVAL_LIVE_PASS_ENV` lists names to forward) and never inlined. Thresholds live in the committed `evals/live/config.json`: minimum suite score, maximum drift from the last recorded baseline, and turn and judge timeouts. Scenarios run cheap real models with state-based waits, deterministic checks (`botReplied`, tool traces), and a versioned judge whose prompt files are pinned by sha256 in a manifest; drift against the gitignored `evals/live/baselines/` baseline fails the suite.
 
 ## Skill bench (alpha)
 

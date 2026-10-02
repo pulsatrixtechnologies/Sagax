@@ -29,11 +29,11 @@
 // Speaks raw JSON-RPC 2.0 over stdio (no MCP SDK — house style, matches
 // computer-proxy / permission-proxy). All state comes from env, injected by
 // the harness when it builds the integration:
-//   OMB_HARNESS_URL  base URL of the harness (http://127.0.0.1:8799)
-//   OMB_BOT_ID       the calling bot's id (excluded from list_bots; sender)
-//   OMB_COMMS_TOKEN  shared secret for the localhost-only internal endpoints
-//   OMB_TURN_DEPTH   this turn's comms depth (the harness refuses recursion)
-//   OMB_EXTERNAL_RUNTIME  "1" for a standing process: peer tools and polling only
+//   SAGAX_HARNESS_URL  base URL of the harness (http://127.0.0.1:8799)
+//   SAGAX_BOT_ID       the calling bot's id (excluded from list_bots; sender)
+//   SAGAX_COMMS_TOKEN  shared secret for the localhost-only internal endpoints
+//   SAGAX_TURN_DEPTH   this turn's comms depth (the harness refuses recursion)
+//   SAGAX_EXTERNAL_RUNTIME  "1" for a standing process: peer tools and polling only
 //
 // This file is the stdio front end only. What the tools are and which a turn
 // sees: agents-catalog.ts. What a call does: agents-call.ts. How the harness

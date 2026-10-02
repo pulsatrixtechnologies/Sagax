@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { DesktopWorkspaceSwitcher } from "../components/DesktopWorkspaceSwitcher";
 import { t } from "@/lib/i18n";
+import { fetchEnvironmentDescriptor } from "@/lib/environment-descriptor";
 
 import {
   defaultDeviceLabel,
@@ -145,7 +146,7 @@ export function PairPage({ initialCode, initialEmail = null, reason, autoSubmit 
   }, [finishing, initialCode, attemptId]);
 
   useEffect(() => {
-    void fetch("/.well-known/openmausbot/environment")
+    void fetchEnvironmentDescriptor()
       .then((r) => (r.ok ? r.json() : null))
       .then((d: EnvironmentDescriptor | null) => {
         setEnvironment(d);

@@ -13,7 +13,7 @@ pnpm bench:persistence --checkpoint-seed --paced --worker
 ```
 
 Each invocation creates and removes its own temporary data directory. Config
-is imported only after `OMB_DATA_DIR` points there. It seeds 50 threads with
+is imported only after `SAGAX_DATA_DIR` points there. It seeds 50 threads with
 1,000 approximately 1 KB messages each, then measures bursts of 1, 10 and 50
 sessions. Each session writes one message and publishes ten canonical text
 delta events per batch. The mixed scenario also performs five absent-query

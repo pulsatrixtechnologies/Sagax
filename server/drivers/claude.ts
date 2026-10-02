@@ -221,7 +221,7 @@ function claudeEnvironment(
  * to give a bot a server is the app's own `mcpServers` config or the bot
  * project's `.mcp.json`. */
 function inheritsUserConfig(env: NodeJS.ProcessEnv): boolean {
-  return env.OMB_CLAUDE_INHERIT_USER_CONFIG === "1";
+  return env.SAGAX_CLAUDE_INHERIT_USER_CONFIG === "1";
 }
 
 /** The Engines-page warning while the escape hatch is set. The flag is a
@@ -234,7 +234,7 @@ export function claudeInheritWarning(env: NodeJS.ProcessEnv): ProviderSnapshot["
   return {
     title: "Bots inherit this machine's Claude Code setup",
     message:
-      "OMB_CLAUDE_INHERIT_USER_CONFIG=1 is set on the Sagax process, so every Claude bot also loads this " +
+      "SAGAX_CLAUDE_INHERIT_USER_CONFIG=1 is set on the Sagax process, so every Claude bot also loads this " +
       "computer's own MCP servers, connectors, skills, hooks and personal CLAUDE.md on every turn — often thousands " +
       "of extra tokens per model call, and tools nobody gave the bot. Unless a bot genuinely needs a server from " +
       "your user-scope Claude config, remove the variable and restart; add the server under Settings → MCP servers " +
@@ -303,12 +303,12 @@ function projectMcpServers(cwd: string): Record<string, unknown> {
  * compaction to the CLI, which owns the session and already has a summarizer
  * for it; the harness only decides when it is worth paying for.
  *
- * OMB_CLAUDE_AUTOCOMPACT takes a token count, "auto" to hand the decision
+ * SAGAX_CLAUDE_AUTOCOMPACT takes a token count, "auto" to hand the decision
  * back to the CLI, or "off" to pass nothing at all. The CLI rejects a window
  * outside 100k-1M as a hard argument error, so a configured value is clamped
  * rather than passed through: a mistyped setting must not fail every turn. */
 export function autoCompactWindow(env: NodeJS.ProcessEnv): string | null {
-  const raw = (env.OMB_CLAUDE_AUTOCOMPACT ?? "").trim().toLowerCase();
+  const raw = (env.SAGAX_CLAUDE_AUTOCOMPACT ?? "").trim().toLowerCase();
   if (raw === "off") return null;
   if (raw === "auto") return "auto";
   const parsed = raw ? Number(raw) : DEFAULT_AUTOCOMPACT_TOKENS;
@@ -364,13 +364,13 @@ export const GUEST_CLAUDE_PERMISSIONS = {
  * parentheses (`Bash(git status)`, `mcp__ogb`). Control characters never pass. */
 const CLAUDE_RULE = /^[A-Za-z_][\w-]*(\([^\p{Cc}]+\))?$/u;
 
-/** The instance's standing allow rules (OMB_CLAUDE_ALLOW: a JSON list, or one
+/** The instance's standing allow rules (SAGAX_CLAUDE_ALLOW: a JSON list, or one
  * rule per line), set by the operator on the server. They ride in the private
  * --settings file, the one source --setting-sources project still reads besides
  * the bot's folder, so every bot of the instance gets them; a guest's confined
  * turn never does. A malformed value grants nothing. */
 export function instanceClaudeAllowRules(env: NodeJS.ProcessEnv = process.env): string[] {
-  const raw = env.OMB_CLAUDE_ALLOW?.trim();
+  const raw = env.SAGAX_CLAUDE_ALLOW?.trim();
   if (!raw) return [];
   let rules: unknown;
   if (raw.startsWith("[")) {
@@ -686,7 +686,7 @@ export function claudeHookSettings(helperPath: string): Record<string, unknown> 
   // expand inside double quotes on POSIX. Windows paths come through env
   // variables so their backslashes are not JSON-escaped into the command.
   const command = process.platform === "win32"
-    ? '"%OMB_HOOK_NODE%" "%OMB_HOOK_HELPER%"'
+    ? '"%SAGAX_HOOK_NODE%" "%SAGAX_HOOK_HELPER%"'
     : [process.execPath, helperPath].map(path => `'${path.replace(/'/g, "'\\''")}'`).join(" ");
   const entry = [{ matcher: "", hooks: [{ type: "command", command, timeout: 5 }] }];
   return { PostToolUse: entry, PreCompact: entry, SessionStart: entry, Stop: entry };
@@ -1202,7 +1202,7 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
     // Say it once where a headless or source run reads its logs; the Engines
     // page carries the same warning for the desktop (claudeInheritWarning).
     if (inheritsUserConfig(catalogEnv)) {
-      console.error(`claude (${instanceId}): OMB_CLAUDE_INHERIT_USER_CONFIG=1 — bots inherit this machine's Claude Code MCP servers, skills, hooks and CLAUDE.md on every turn; remove it unless a bot needs a user-scope server`);
+      console.error(`claude (${instanceId}): SAGAX_CLAUDE_INHERIT_USER_CONFIG=1 — bots inherit this machine's Claude Code MCP servers, skills, hooks and CLAUDE.md on every turn; remove it unless a bot needs a user-scope server`);
     }
     let models = config.managedModels ? { default: config.managedModels[0], options: config.managedModels.map(id => ({ id, label: id })) } : STATIC_CLAUDE_MODELS;
     const refreshModels = async () => {
@@ -1488,7 +1488,7 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
       if (replaysUserMessages) args.push("--replay-user-messages");
       const isolated = !inheritsUserConfig(turnEnvironment);
       // A guest's confined turn never gets anyone's connectors. Standing
-      // allow rules (OMB_CLAUDE_ALLOW) may name mcp__claude_ai_ tools; deny
+      // allow rules (SAGAX_CLAUDE_ALLOW) may name mcp__claude_ai_ tools; deny
       // rules still win, and nothing here pre-allows them.
       const keepsClaudeAiConnectors = turn.claudeAiConnectors === true && !turn.guestConfined;
       if (isolated) {
@@ -1669,10 +1669,10 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
       if (hooks && hookTokenPath) {
         mkdirSync(dirname(hookTokenPath), { recursive: true, mode: 0o700 });
         writeFileAtomic(hookTokenPath, hooks.token, { mode: 0o600 });
-        env.OMB_HOOK_URL = hooks.url;
-        env.OMB_HOOK_TOKEN_FILE = hookTokenPath;
-        env.OMB_HOOK_NODE = process.execPath;
-        env.OMB_HOOK_HELPER = HOOK_HELPER_PATH;
+        env.SAGAX_HOOK_URL = hooks.url;
+        env.SAGAX_HOOK_TOKEN_FILE = hookTokenPath;
+        env.SAGAX_HOOK_NODE = process.execPath;
+        env.SAGAX_HOOK_HELPER = HOOK_HELPER_PATH;
         // in the packaged app process.execPath is Electron — run the helper as node
         if (process.versions.electron) env.ELECTRON_RUN_AS_NODE = "1";
       }

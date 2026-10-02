@@ -42,18 +42,18 @@ export interface CatalogProfile {
 /** The profile a spawned proxy was given. Everything is off unless the
  * harness says "1". */
 export function catalogProfileFromEnv(env: NodeJS.ProcessEnv): CatalogProfile {
-  const externalRuntime = env.OMB_EXTERNAL_RUNTIME === "1";
+  const externalRuntime = env.SAGAX_EXTERNAL_RUNTIME === "1";
   return {
     externalRuntime,
-    coordinating: !externalRuntime && env.OMB_ROOM_TURN === "1",
-    ownThreadCreation: env.OMB_OWN_THREAD_CREATION === "1",
-    skillAuthoring: env.OMB_SKILL_AUTHORING_ENABLED === "1",
-    sharedComputers: env.OMB_SHARED_COMPUTERS_ENABLED === "1",
-    voiceNotes: env.OMB_VOICE_NOTES === "1",
-    cloudHome: env.OMB_CLOUD_HOME === "1",
-    memoryEnabled: env.OMB_MEMORY_ENABLED !== "0",
-    groupMemory: env.OMB_GROUP_MEMORY === "1",
-    botId: env.OMB_BOT_ID ?? "",
+    coordinating: !externalRuntime && env.SAGAX_ROOM_TURN === "1",
+    ownThreadCreation: env.SAGAX_OWN_THREAD_CREATION === "1",
+    skillAuthoring: env.SAGAX_SKILL_AUTHORING_ENABLED === "1",
+    sharedComputers: env.SAGAX_SHARED_COMPUTERS_ENABLED === "1",
+    voiceNotes: env.SAGAX_VOICE_NOTES === "1",
+    cloudHome: env.SAGAX_CLOUD_HOME === "1",
+    memoryEnabled: env.SAGAX_MEMORY_ENABLED !== "0",
+    groupMemory: env.SAGAX_GROUP_MEMORY === "1",
+    botId: env.SAGAX_BOT_ID ?? "",
   };
 }
 

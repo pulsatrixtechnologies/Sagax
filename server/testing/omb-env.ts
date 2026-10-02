@@ -1,6 +1,6 @@
 // Keeping a test's children honest about Sagax configuration.
 //
-// A shell that already exports OMB_* or OPENMAUSBOT_* — a Sagax-hosted
+// A shell that already exports SAGAX_* (or an old OMB_*, OPENMAUSBOT_* name) — a Sagax-hosted
 // terminal, or a server running in another window — leaks those values into
 // every child a suite spawns and into modules that snapshot process.env at
 // import time. The suite then asserts against a "configured" runtime the test
@@ -8,14 +8,16 @@
 // exactly the keys it means to set, on top of a base that carries no
 // Sagax configuration at all.
 
-const AMBIENT_PREFIXES = ["OMB_", "OPENMAUSBOT_"] as const;
+import { ENV_PREFIX, LEGACY_ENV_PREFIXES } from "../../electron/legacy-names.mjs";
 
-/** True for keys owned by the Sagax runtime (`OMB_*`, `OPENMAUSBOT_*`). */
+const AMBIENT_PREFIXES = [ENV_PREFIX, ...LEGACY_ENV_PREFIXES] as const;
+
+/** True for keys owned by the Sagax runtime (`SAGAX_*` and the old prefixes). */
 export function isAmbientOmbKey(key: string): boolean {
   return AMBIENT_PREFIXES.some((prefix) => key.startsWith(prefix));
 }
 
-/** Copy `env` without any `OMB_*` / `OPENMAUSBOT_*` keys. */
+/** Copy `env` without any `SAGAX_*` (or old-prefix) keys. */
 export function stripOmbEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   const clean: NodeJS.ProcessEnv = {};
   for (const [key, value] of Object.entries(env)) {

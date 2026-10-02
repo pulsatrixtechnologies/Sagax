@@ -3,7 +3,7 @@
 // (about $0.002 a run: 53 calls of ~700 input tokens at $0.042/M), so it runs
 // only when asked:
 //
-//   OMB_JEV_LIVE_EVAL=1 OMB_JEV_API_KEY=… npx vitest run server/decider/room-routing.eval.test.ts --reporter=default
+//   SAGAX_JEV_LIVE_EVAL=1 SAGAX_JEV_API_KEY=… npx vitest run server/decider/room-routing.eval.test.ts --reporter=default
 //
 // (--reporter=default keeps the printed summary visible where vitest would
 // otherwise pick a quieter reporter, such as under a coding agent.)
@@ -27,13 +27,13 @@ interface Fixture {
   items: Array<{ id: string; set: string; room: string; from?: string; recent?: RoomRoutingInput["recent"]; message: string; gold: string[] }>;
 }
 
-const LIVE = process.env.OMB_JEV_LIVE_EVAL === "1";
-const KEY = process.env.OMB_JEV_API_KEY || process.env.TYPESAFE_API_KEY || "";
+const LIVE = process.env.SAGAX_JEV_LIVE_EVAL === "1";
+const KEY = process.env.SAGAX_JEV_API_KEY || process.env.TYPESAFE_API_KEY || "";
 const PRICE_PER_M_INPUT = 0.042;
 
 describe.skipIf(!LIVE)("room routing, live", () => {
   it("routes the bench's room messages", { timeout: 180_000 }, async () => {
-    expect(KEY, "set OMB_JEV_API_KEY (or TYPESAFE_API_KEY) for the live eval").not.toBe("");
+    expect(KEY, "set SAGAX_JEV_API_KEY (or TYPESAFE_API_KEY) for the live eval").not.toBe("");
     const fixture = JSON.parse(readFileSync(join(import.meta.dirname, "fixtures", "room-routing.json"), "utf8")) as Fixture;
     const real = createDecider({ config: () => ({ decider: { enabled: true, key: KEY, jobs: { roomRouting: true } } }) });
     const rows: Array<{ id: string; set: string; gold: string[]; route: RoomRoute; answer?: DeciderResult<ChoiceAnswer> }> = [];

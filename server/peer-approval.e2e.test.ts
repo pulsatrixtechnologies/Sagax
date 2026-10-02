@@ -46,7 +46,7 @@ it("preserves peer approval expiry through real HTTP responses and durable deleg
     await waitForExit(fixture.child, { signal: "SIGTERM" });
     const env = verificationServerEnvironment({ ...process.env, FAKE_CLAUDE_MODE: "slow",
       FAKE_CLAUDE_SLOW_FINISH_GATE: gate }, dataDir, Number(new URL(url).port));
-    env.OMB_TEST_PEER_APPROVAL = "1";
+    env.SAGAX_TEST_PEER_APPROVAL = "1";
     const log = openSync(logPath, "a", 0o600);
     child = spawn(process.execPath, ["--import", new URL("./testing/peer-approval-hooks.mjs", import.meta.url).href,
       fileURLToPath(new URL("./index.ts", import.meta.url))], {
@@ -71,7 +71,7 @@ it("preserves peer approval expiry through real HTTP responses and durable deleg
     }, { timeout: 15_000 }).toBe(true);
     let token = "";
     await expect.poll(() => {
-      try { token = JSON.parse(readFileSync(fixture.fixtureDumpPath, "utf8")).mcpConfig.mcpServers.agents.env.OMB_COMMS_TOKEN; }
+      try { token = JSON.parse(readFileSync(fixture.fixtureDumpPath, "utf8")).mcpConfig.mcpServers.agents.env.SAGAX_COMMS_TOKEN; }
       catch { return false; }
       return Boolean(token);
     }, { timeout: 15_000 }).toBe(true);
@@ -131,7 +131,7 @@ it("preserves peer approval expiry through real HTTP responses and durable deleg
     const other = (await cli("new-bot", "--name", "Second approval target")).bot;
     await cli("send", "--bot", from.id, "--task", from.threadId, "--text", "Check the completed handoff and request two teammates.");
     await expect.poll(() => {
-      try { token = JSON.parse(readFileSync(fixture.fixtureDumpPath, "utf8")).mcpConfig.mcpServers.agents.env.OMB_COMMS_TOKEN; }
+      try { token = JSON.parse(readFileSync(fixture.fixtureDumpPath, "utf8")).mcpConfig.mcpServers.agents.env.SAGAX_COMMS_TOKEN; }
       catch { return false; }
       return Boolean(token);
     }, { timeout: 15_000 }).toBe(true);

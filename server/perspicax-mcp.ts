@@ -68,7 +68,7 @@ export interface PerspicaxMcpLink {
 }
 
 export interface PerspicaxMcpOptions {
-  /** OMB_PERSPICAX_ISSUER; a speaker's subject must come from it. */
+  /** SAGAX_PERSPICAX_ISSUER; a speaker's subject must come from it. */
   issuer: string;
   /** The link client, or null while this server is not linked (solo mode, no
    * link file): nothing mounts then. */

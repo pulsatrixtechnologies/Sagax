@@ -187,7 +187,7 @@ describe("cloudflared binary resolution", () => {
         appPath: "/checkout",
         platform: "linux",
         arch: "x64",
-        environment: { OMB_CLOUDFLARED_PATH: "./untrusted-cloudflared" },
+        environment: { SAGAX_CLOUDFLARED_PATH: "./untrusted-cloudflared" },
         exists: () => true,
       }),
     ).toBeNull();

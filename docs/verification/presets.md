@@ -43,7 +43,7 @@ the standing instructions, then checks:
   organization's cannot (`409`).
 
 A second test in the same file goes through the organization library itself
-(`OMB_TEST_ORG_LIBRARY_KEY` and `POST /api/testing/org-library`, as in
+(`SAGAX_TEST_ORG_LIBRARY_KEY` and `POST /api/testing/org-library`, as in
 [org-library.md](org-library.md)): the library fixture relayed in a catalog
 and added from the shelf answers with its preset, `state.json` records it
 under the install's `presets` with its release hash, New bot offers it under
@@ -78,7 +78,7 @@ pnpm exec vitest run server/presets.test.ts server/routes/bot-presets.test.ts se
 
 ```sh
 pnpm exec vitest run src/lib/bot-presets.test.ts src/components/SharePresetDialog.test.ts src/lib/team-import.test.ts src/lib/team-share.test.ts src/components/ShareTeamDialog.test.ts src/components/NewBotDialog.test.ts src/lib/create-configured-bot.test.ts
-OMB_UI_E2E=1 pnpm exec vitest run scripts/testing/presets-ui.e2e.test.ts --silent=false
+SAGAX_UI_E2E=1 pnpm exec vitest run scripts/testing/presets-ui.e2e.test.ts --silent=false
 ```
 
 The first command covers the New bot grouping, the draft fields a preset
@@ -101,7 +101,7 @@ renderer smoke job next to the Share team recipe.
 
 On macOS (arm64) against disposable fixtures only: `pnpm typecheck`,
 `pnpm lint`, `pnpm i18n:check`, every command above (including the
-headless-renderer run with `OMB_UI_E2E=1`), `server/team-share.e2e.test.ts`,
+headless-renderer run with `SAGAX_UI_E2E=1`), `server/team-share.e2e.test.ts`,
 `server/team-package-skills.e2e.test.ts`, `server/bot-package.test.ts`,
 `server/index.test.ts`, `server/request-auth.test.ts`,
 `server/new-bot-defaults.test.ts`, `server/new-bot-defaults.e2e.test.ts`,
@@ -176,7 +176,7 @@ Run on macOS (arm64) against disposable fixtures only: `pnpm typecheck`,
 `server/routes/bot-presets.test.ts`, `server/package-import.test.ts`,
 `server/package-export.test.ts`, `server/presets.e2e.test.ts`,
 `server/team-share.e2e.test.ts`, `scripts/testing/verification-docs.test.ts`
-and the presets headless-renderer recipe (`OMB_UI_E2E=1`).
+and the presets headless-renderer recipe (`SAGAX_UI_E2E=1`).
 Mutation-checked (each broken, the named test seen failing, restored):
 `installStatuses()` reading the file instead of memory; no stamp, a wrong
 `w` hash, and no `via` marker; preset-made bots' stamps counted toward the

@@ -1,10 +1,11 @@
-// openmausbot://cloud: "Open in the app" on the person's Cloud page
+// sagax://cloud (and openmausbot://cloud for one release): "Open in the app" on the person's Cloud page
 // (docs/cloud-pro.md). Like openmausbot://organization it is an action, not a
 // router: it never carries an address, code or credential. Main answers it by
 // opening Settings → OMB Cloud, which signs in or connects from there.
-export const CLOUD_DEEP_LINK = "openmausbot://cloud";
+export const CLOUD_DEEP_LINK = "sagax://cloud";
+export const LEGACY_CLOUD_DEEP_LINK = "openmausbot://cloud";
 
-export const isCloudDeepLink = value => value === CLOUD_DEEP_LINK;
+export const isCloudDeepLink = value => value === CLOUD_DEEP_LINK || value === LEGACY_CLOUD_DEEP_LINK;
 export function takeCloudDeepLink(argv) {
   let found = false;
   // Relaunch uses process.argv again. Consume only this one-shot action,

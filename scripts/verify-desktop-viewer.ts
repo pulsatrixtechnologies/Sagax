@@ -1,5 +1,5 @@
 // Full server + built viewer + synthetic Docker/RFB, in disposable homes.
-// Build first, then run with explicit OMB_AGENT_BROWSER_PATH and
+// Build first, then run with explicit SAGAX_AGENT_BROWSER_PATH and
 // AGENT_BROWSER_EXECUTABLE_PATH if reusing installed browser binaries.
 import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -97,7 +97,7 @@ process.on('SIGTERM',()=>{fs.appendFileSync(log,'close ');process.exit(0)});
   assert.equal(status.viewer_url.includes("password"), false);
   const matchingBackgrounds = "getComputedStyle(document.querySelector('#screen > div')).backgroundColor === getComputedStyle(document.querySelector('main')).backgroundColor";
   assert.equal(await evaluate(matchingBackgrounds), true);
-  const evidenceDir = process.env.OMB_UI_EVIDENCE_DIR ? resolve(root, process.env.OMB_UI_EVIDENCE_DIR) : dirname(fixture.info.logPath);
+  const evidenceDir = process.env.SAGAX_UI_EVIDENCE_DIR ? resolve(root, process.env.SAGAX_UI_EVIDENCE_DIR) : dirname(fixture.info.logPath);
   mkdirSync(evidenceDir, { recursive: true });
   const desktopScreenshot = join(evidenceDir, `viewer-${process.pid}-desktop.png`);
   await command("wait", "--fn", "document.getAnimations().every(a => a.playState !== 'running')");

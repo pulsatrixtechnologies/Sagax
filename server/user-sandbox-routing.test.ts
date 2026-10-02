@@ -189,7 +189,7 @@ describe("no VM per bot in organization mode", () => {
   it("reads a saved per-bot Local VM mode as shared on an organization server", async () => {
     const { localVmMode } = await import("./config.ts");
     const cfg = { localVm: { mode: "per-bot" } } as Parameters<typeof localVmMode>[0];
-    expect(localVmMode(cfg, { OMB_IDENTITY: "perspicax" })).toBe("shared");
+    expect(localVmMode(cfg, { SAGAX_IDENTITY: "perspicax" })).toBe("shared");
     expect(localVmMode(cfg, {})).toBe("per-bot");
   });
 });
