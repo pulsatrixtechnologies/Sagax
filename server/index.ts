@@ -9,6 +9,7 @@ import { createHash, randomBytes, randomUUID, timingSafeEqual } from "node:crypt
 import { existsSync, readFileSync, realpathSync, rmSync, mkdirSync } from "node:fs";
 import { writeFileAtomic } from "./atomic.ts";
 import { rm as removeDirectory } from "node:fs/promises";
+import { hostname, userInfo } from "node:os";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { ToolResults, TOOL_RESULT_MAX_CHARS } from "./tool-results.ts";
 import { extname, join } from "node:path";
@@ -622,6 +623,7 @@ import { createBotSettingsRoutes } from "./routes/bot-settings.ts";
 import { createAutoReviewRuleRoutes } from "./routes/auto-review-rules.ts";
 import { createComputerStatusRoutes, diskStateForFree } from "./routes/computer-status.ts";
 import { createPluginRoutes, pluginServerName, type InstalledPlugin } from "./routes/plugins.ts";
+import { createAccountRoutes } from "./routes/account.ts";
 import { createRegistrySearch } from "./plugin-registry.ts";
 import { PLUGIN_CATALOG } from "../shared/plugin-catalog.ts";
 import { diskSpace, folderBytes } from "./disk-usage.ts";
@@ -16526,7 +16528,8 @@ const orgInstallStatuses = () => orgLibrary?.installStatuses() ?? new Map();
 ROUTES.push(createBotPresetRoutes({ presets: presetStore, orgStatuses: orgInstallStatuses }));
 // Server mode: a person's appearance, language, notifications and mascot
 // settings follow them across devices (shared/user-preferences.ts).
-ROUTES.push(createUserPreferenceRoutes({ store: createUserPreferenceStore(DATA_DIR), organization: () => IDENTITY.kind === "perspicax" }));
+const userPreferences = createUserPreferenceStore(DATA_DIR);
+ROUTES.push(createUserPreferenceRoutes({ store: userPreferences, organization: () => IDENTITY.kind === "perspicax" }));
 // The bot-memory panel's routes (MEMORY.md, memory/ topics, journal); the
 // store lookups — the 404 precheck and journal thread titles — stay explicit.
 ROUTES.push(createBotMemoryRoutes({
@@ -16779,6 +16782,32 @@ ROUTES.push(createPluginRoutes({
       else answer.signIn = started.body;
     }
     return { status: existing ? 200 : 201, body: answer };
+  },
+}));
+// Account deletion (server/routes/account.ts): Perspicax has no deletion
+// endpoint for a linked server yet, so perspicaxDeletion stays null and the
+// route answers 501 perspicax_deletion_unavailable without deleting anything.
+ROUTES.push(createAccountRoutes({
+  organization: () => IDENTITY.kind === "perspicax",
+  perspicaxDeletion: null,
+  deletePersonData: async (principalId) => {
+    const person = principalId.trim().toLowerCase();
+    let bots = 0;
+    let threads = 0;
+    for (const bot of [...store.bots]) {
+      if (recordedBotOwner(bot) === person) {
+        if ((await deleteBotWithLifecycle(bot.id)).status === 200) bots++;
+        continue;
+      }
+      for (const task of store.tasks(bot.id)) {
+        if (task.ownerPrincipalId === person && store.deleteTask(bot.id, task.threadId)) threads++;
+      }
+    }
+    await userSandbox?.removeNow(principalId).catch((error: unknown) => console.warn(`account deletion: server environment not removed: ${String(error)}`));
+    userPreferences.remove(principalId);
+    botSettings.forgetPerson(principalId);
+    for (const session of sessions.list()) if (session.principalId === principalId) sessions.revoke(session.id);
+    return { bots, threads };
   },
 }));
 // The people of a solo server: its email sign-in list and the invitations
@@ -17414,6 +17443,14 @@ function botEditsNeedOwner(auth: RequestAuth): boolean {
  * an organization server through a session (a browser, the desktop app or a
  * phone signed in with Pulsatrix). The operator at the server's own console
  * (loopback) keeps the local profile, as before. */
+/** A personal computer as its paired phone shows it (the account card): its
+ * owner's name from Settings > General, else the operating system's user,
+ * and the computer's name. Never an email address. */
+function computerOwnerFields(): { name: string; computerName: string } {
+  let osUser = "";
+  try { osUser = userInfo().username; } catch { /* no passwd entry */ }
+  return { name: cfg.profile?.name?.trim() || osUser || "Owner", computerName: hostname() };
+}
 /** The display name and avatar of a signed-in person, for
  * GET /api/auth/session (the id_token name alone may be missing). */
 function sessionPersonFields(principalId: string | undefined): { name?: string; avatarUrl?: string } {
@@ -18872,7 +18909,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         res,
         200,
         auth.kind === "loopback"
-          ? { kind: "loopback", scopes: auth.scopes, environmentId: ENVIRONMENT_ID, ...(auth.trust ? { trust: auth.trust } : {}) }
+          ? { kind: "loopback", scopes: auth.scopes, environmentId: ENVIRONMENT_ID, ...(auth.trust ? { trust: auth.trust } : { ...computerOwnerFields() }) }
           : {
               kind: "session",
               id: auth.session.id,
@@ -18901,6 +18938,9 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
               // Perspicax's, read-only here (the UI asks, never guesses)
               ...(profileManagedFor(auth) ? PROFILE_MANAGEMENT : {}),
               ...sessionPersonFields(auth.session.principalId),
+              // A personal server's own devices (a paired phone): who owns
+              // this computer, by name only (never an address).
+              ...(IDENTITY.kind === "solo" && !auth.session.idp && viewerIsOperator(auth) ? computerOwnerFields() : {}),
             },
       );
     }
