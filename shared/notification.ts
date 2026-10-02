@@ -36,5 +36,9 @@ export interface Notification {
    * already works off `threadId` alone; this is what lets a client say which
    * room, and stack a room's banners together instead of under the bot. */
   groupId?: string;
+  /** Organization server: the only principals this notification reaches
+   * (a refused turn's access card is private to its person). Absent: everyone
+   * who sees the bot. */
+  audience?: string[];
 }
 

@@ -3,13 +3,16 @@
 import { Plus, X } from "lucide-react";
 
 import type { MausColor } from "@/lib/mascot";
-import { BotAvatar, InitialsAvatar } from "./Avatar";
+import { BotAvatar, InitialsAvatar, type BotAvatarProps } from "./Avatar";
 
 export function channelRosterActions(input: {
   actorRole: "owner" | "admin" | "member" | null;
   actorId: string;
   bots: { id: string; ownerUserId?: string }[];
+  /** Organization server: false when someone else owns the group. */
+  ownsRoom?: boolean;
 }): { canAddHuman: boolean; canAddBot: boolean } {
+  if (input.ownsRoom === false) return { canAddHuman: false, canAddBot: false };
   const actor = input.actorId.trim().toLowerCase();
   const canAddHuman = input.actorRole === "owner" || input.actorRole === "admin";
   const canAddBot = actor !== "" && input.bots.some((bot) => (bot.ownerUserId ?? "").trim().toLowerCase() === actor);
@@ -24,7 +27,8 @@ function initialsFor(label: string): string {
 
 export function ChannelMembers(props: {
   humans: { id: string; label?: string; detail?: string; avatarUrl?: string; removable?: boolean }[];
-  bots: { id: string; name: string; title?: string; color?: string; avatarUrl?: string | null; mascotBody?: string | null }[];
+  /** Each bot with its look (BotAvatar's fields), so a bot reads the same here as in the chat. */
+  bots: Array<{ id: string; name: string; title?: string; color?: string } & Omit<BotAvatarProps["bot"], "name" | "color">>;
   canAddHuman: boolean;
   canAddBot: boolean;
   onAddHuman?: () => void;
@@ -84,12 +88,7 @@ export function ChannelMembers(props: {
           {props.bots.map((bot) => (
             <li key={bot.id} className="flex items-center gap-3 border-b border-hairline/30 px-3 py-2 last:border-b-0">
               <BotAvatar
-                bot={{
-                  name: bot.name,
-                  color: (bot.color ?? "green") as MausColor,
-                  avatarUrl: bot.avatarUrl,
-                  mascotBody: bot.mascotBody as never,
-                }}
+                bot={{ ...bot, color: (bot.color ?? "green") as MausColor }}
                 size={32}
                 state="idle"
                 animated={false}

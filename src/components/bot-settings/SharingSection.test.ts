@@ -9,6 +9,7 @@ import { grantCandidates, myTurnsText, turnAccessLabel, levelAllowed, perspicaxK
 import { orgSectionMenuItems } from "../OrgSectionMenu";
 import { grantEditable, levelLabel } from "./GrantEditor";
 import { AccessCard, accessCardLines } from "../AccessCard";
+import { setLocale } from "@/lib/i18n";
 import { PerspicaxOrgSettings, perspicaxConsoleUrl, showInterimCard } from "../PerspicaxOrgSettings";
 
 const OWNER = "pr_00000000-0000-4000-8000-0000000000a0";
@@ -83,26 +84,55 @@ describe("SharingSection", () => {
 describe("the access card", () => {
   const card = { reason: "no_access" as const, engine: "Claude", botId: "bot-1", ownerPrincipalId: OWNER };
   const KEYS = "https://px.example.test/console/pulsabot/keys";
-  it("2026-10-01: the person who spoke gets what to do; others why; an admin where the org key lives", () => {
+  it("2026-10-01: the card speaks to the person who spoke, with what to do; the org key hint for an admin only", () => {
     const bobs = { ...card, payer: "speaker" as const, payerPrincipalId: BOB, cause: "no_credentials" as const, keysUrl: KEYS, subscriptionSignIn: true as const };
     expect(accessCardLines(bobs, { principalId: BOB, admin: false })).toEqual({
-      text: "No Claude access for your turn.",
-      hint: "Sign in with your own Claude subscription or add your key in Perspicax. Or ask an admin to set the organization's key.",
+      text: "You don't have Claude access for this message: connect your Claude subscription or add your key in Perspicax.",
       link: { href: KEYS, label: "Add my key in Perspicax" },
       signIn: true,
     });
-    // the owner watching bob's turn: not their credentials to give
+    // bob is an admin: the same, and where the organization's key lives
+    expect(accessCardLines(bobs, { principalId: BOB, admin: true })).toEqual({
+      text: "You don't have Claude access for this message: connect your Claude subscription or add your key in Perspicax.",
+      hint: "As an admin, you can also set the organization's key in Settings > Connections.",
+      link: { href: KEYS, label: "Add my key in Perspicax" },
+      signIn: true,
+    });
+    // the server sends bob's card to bob only; any other viewer (a card the
+    // server still shares) gets the third-person line
     expect(accessCardLines(bobs, { principalId: OWNER, admin: false })).toEqual({ text: "No Claude access for this turn: the person who spoke needs their own subscription or key, or the organization's key." });
-    expect(accessCardLines(bobs, { principalId: ERIN, admin: true }).hint).toBe("A key in Settings > Connections serves as the organization's key.");
-    // a card from before the change names nobody
-    expect(accessCardLines(card, { principalId: OWNER, admin: false })).toEqual({ text: "No Claude access for this turn: the person who spoke needs their own subscription or key, or the organization's key." });
+    // a card from before payerPrincipalId is the owner's, as on the server
+    expect(accessCardLines({ ...card, keysUrl: KEYS }, { principalId: OWNER, admin: false })).toEqual({
+      text: "You don't have Claude access for this message: connect your Claude subscription or add your key in Perspicax.",
+      link: { href: KEYS, label: "Add my key in Perspicax" },
+    });
+  });
+
+  it("says it in French, tutoiement, for the person it is about", () => {
+    setLocale("fr");
+    try {
+      const bobs = { ...card, payer: "speaker" as const, payerPrincipalId: BOB, keysUrl: KEYS, subscriptionSignIn: true as const };
+      expect(accessCardLines(bobs, { principalId: BOB, admin: false }).text).toBe("Tu n'as pas d'accès Claude pour ce message : connecte ton abonnement Claude ou ajoute ta clé dans Perspicax.");
+      expect(accessCardLines(bobs, { principalId: BOB, admin: false }).hint).toBeUndefined();
+      expect(accessCardLines(bobs, { principalId: BOB, admin: true }).hint).toBe("Comme admin, tu peux aussi configurer la clé de l'organisation dans Paramètres > Connexions.");
+      const markup = renderToStaticMarkup(createElement(AccessCard, { access: bobs, viewer: { principalId: BOB, admin: false }, onSignIn: () => {} }));
+      expect(markup).toContain("Me connecter avec mon abonnement");
+      expect(markup).toContain("Ajouter ma clé dans Perspicax");
+    } finally {
+      setLocale("en");
+    }
   });
 
   it("a routine's card goes to the owner, whose credentials it runs on", () => {
     const routine = { ...card, payer: "owner" as const, payerPrincipalId: OWNER, routine: true as const, cause: "no_credentials" as const, keysUrl: KEYS, subscriptionSignIn: true as const };
-    expect(accessCardLines(routine, { principalId: OWNER, admin: false })).toMatchObject({ hint: "Sign in with your own Claude subscription or add your key in Perspicax.", signIn: true, link: { href: KEYS } });
+    expect(accessCardLines(routine, { principalId: OWNER, admin: false })).toEqual({
+      text: "Your routine can't run: you don't have Claude access. Connect your Claude subscription or add your key in Perspicax.",
+      signIn: true, link: { href: KEYS, label: "Add my key in Perspicax" },
+    });
+    expect(accessCardLines(routine, { principalId: OWNER, admin: true }).hint).toBe("As an admin, you can also set the organization's key in Settings > Connections.");
     expect(accessCardLines(routine, { principalId: BOB, admin: false })).toEqual({ text: "This routine can't run: it uses its owner's credentials, and there is no Claude subscription, key or organization key for it." });
     expect(accessCardLines({ ...routine, cause: "payer_disabled" }, { principalId: BOB, admin: false })).toEqual({ text: "This bot's owner is disabled: their routines can't run." });
+    expect(accessCardLines({ ...routine, cause: "payer_disabled" }, { principalId: OWNER, admin: false })).toEqual({ text: "Your account is disabled: your routines can't run." });
     expect(accessCardLines({ ...card, payer: "speaker", payerPrincipalId: BOB, cause: "payer_disabled" }, { principalId: BOB, admin: false })).toEqual({ text: "Your account is disabled: this turn can't run." });
   });
 

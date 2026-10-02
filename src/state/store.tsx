@@ -18,6 +18,7 @@ import type { TurnDigest } from "../../shared/digest";
 import type { ModelVariantOption, RuntimeEvent } from "../../shared/runtime-events";
 import type { MausColor, MausMotion } from "@/lib/mascot";
 import type { BotAvatarCrop } from "../../shared/bot-avatar";
+import type { BotPublicProfile } from "../../shared/bot-public-profile";
 import { approvalModeFor, type ApprovalMode } from "../../shared/approval-mode";
 import type { MascotBodyId } from "../../shared/mascot-bodies";
 import type { MascotSkinId } from "../../shared/mascot-skins";
@@ -251,6 +252,9 @@ export interface Group {
   turnStartedAt?: number | null;
   /** True for the whole orchestrated run, including hand-offs between members. */
   working?: boolean;
+  /** Every bot in the room as each person in it sees it, whoever owns it
+   * (shared/bot-public-profile.ts): read through groupMemberBots. */
+  memberProfiles?: BotPublicProfile[];
   /** the room's shared desk — where member turns run their shell tools,
    * overriding each member's own folder; absent = each member's own */
   cwd?: string;
@@ -261,7 +265,10 @@ export interface Group {
   pinnedMessageId?: string;
   /** sidebar section heading this room is filed under (shared with bots) */
   section?: string;
-  /** New user-created rooms remain in setup until Save or Skip. */
+  /** Organization server: who owns the settings (null: its admins). Absent
+   * on a solo server (src/lib/group-owner.ts). */
+  ownerId?: string | null;
+  /** Set at creation: rooms have no pending setup step any more. */
   setupCompletedAt?: number | null;
   setupSkippedAt?: number | null;
   /** Separate conversations in this channel. DMs deliberately stay on one
@@ -377,6 +384,9 @@ export interface TaskUsage {
 }
 
 export interface Bot {
+  /** A bot the viewer knows only from a room it is in (groupMemberBots):
+   * its name and look, nothing else; it cannot be opened. */
+  publicProfile?: true;
   waitingForTeammates?: boolean;
   id: string;
   threadId: string;
@@ -1487,7 +1497,7 @@ export function reducer(state: AppState, action: Action): AppState {
     case "hydrate": {
       const known = (id: string) => action.bots.some((b) => b.id === id) || action.groups.some((g) => g.id === id);
       const selectedId =
-        state.selectedId && known(state.selectedId) ? state.selectedId : (action.bots[0]?.id ?? "");
+        state.selectedId && known(state.selectedId) ? state.selectedId : (action.bots[0]?.id ?? action.groups.find((g) => !g.dm)?.id ?? "");
       const hydrated = {
         ...state,
         bots: action.bots.map((bot) => {
@@ -1643,7 +1653,7 @@ export function reducer(state: AppState, action: Action): AppState {
     }
     case "groupDeleted": {
       const groups = state.groups.filter((g) => g.id !== action.groupId);
-      const selectedId = state.selectedId === action.groupId ? (state.bots[0]?.id ?? "") : state.selectedId;
+      const selectedId = state.selectedId === action.groupId ? (state.bots[0]?.id ?? groups.find((g) => !g.dm)?.id ?? "") : state.selectedId;
       return { ...state, groups, selectedId };
     }
     case "instances":

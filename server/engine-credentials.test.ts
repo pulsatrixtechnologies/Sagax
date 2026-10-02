@@ -41,7 +41,9 @@ describe("resolveEngineAccess: the person who speaks pays", () => {
   });
 
   it("an engine that is not installed wins over everything", () => {
-    expect(resolveEngineAccess(input({ signedIn: [`${OWNER}/claudeAgent`], keys: ["SUB-OWNER/anthropic"], keyBacked: true, instance: { ...CLAUDE, installed: false } }))).toEqual({ ok: false, reason: "engine_missing" });
+    expect(resolveEngineAccess(input({ signedIn: [`${OWNER}/claudeAgent`], keys: ["SUB-OWNER/anthropic"], keyBacked: true, instance: { ...CLAUDE, installed: false } }))).toEqual({ ok: false, reason: "engine_missing", payer: "owner", payerPrincipalId: OWNER });
+    // the card names whose turn it was, so it reaches that person only
+    expect(resolveEngineAccess(input({ speaker: { origin: "person", principalId: BOB }, instance: { ...CLAUDE, installed: false } }))).toEqual({ ok: false, reason: "engine_missing", payer: "speaker", payerPrincipalId: BOB });
   });
 
   // The decision table: speaker (owner, someone shared with) x what that

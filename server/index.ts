@@ -4,6 +4,7 @@
 // First, before any module that could start a process: a Cloud home's
 // secrets off the launcher's pipe (cloud-secrets-boot.ts).
 import { BOOT_CLOUD_SECRETS } from "./cloud-secrets-boot.ts";
+import { groupOwnerId, groupPatchOwnerRefusal, mayDeleteGroup, type GroupActor } from "./group-ownership.ts";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { existsSync, readFileSync, realpathSync, rmSync, mkdirSync } from "node:fs";
@@ -27,6 +28,7 @@ import { SharedComputerControl } from "./shared-computer-control.ts";
 import { RoomHandoffs, type RoomHandoff } from "./room-handoffs.ts";
 import { assertRequestTarget, guardedRequestPath, requestConflict, requestNeedsInput, requestSourceForCard } from "./guarded-requests.ts";
 import { botAvatarUrlFromStoredPath } from "../shared/bot-avatar.ts";
+import { botPublicProfile, type BotPublicProfile } from "../shared/bot-public-profile.ts";
 import { BOT_PROFILE_LIMITS } from "../shared/bot-profile.ts";
 import { CLOUD_COMPUTER_BUSY_ERROR } from "../shared/computer-contention.ts";
 import {
@@ -640,7 +642,7 @@ import { UserSandboxManager, UserSandboxUnavailable, userSandboxSettingsFromEnv 
 import { createUserSandboxRoutes } from "./user-sandbox-routes.ts";
 import { resolveExecutionTarget, sandboxPrincipalForTurn, USER_SANDBOX_MCP_NAME } from "./user-sandbox-routing.ts";
 import { handleUserSandboxMcp } from "./user-sandbox-tools.ts";
-import { accessCardForViewer, adminApprovalDecision, engineAccessNotice, keyRefusedCard, memberBotAdminApproval, memberOwnedBot, resolveTurnSpeaker, routineLineage, speakerPrincipal, type EngineAccessRefusal, type TurnSpeaker } from "./engine-access.ts";
+import { accessCardAudience, accessCardForViewer, accessCardVisibleTo, adminApprovalDecision, engineAccessNotice, keyRefusedCard, memberBotAdminApproval, memberOwnedBot, resolveTurnSpeaker, routineLineage, speakerPrincipal, type EngineAccessRefusal, type TurnSpeaker } from "./engine-access.ts";
 import {
   channelTurnGate,
   createWorkerRoutes,
@@ -4870,7 +4872,7 @@ function createChannel(value: unknown): GroupRecord {
     }
   }
   let setup:
-    | { bulletin: string; defaultResponder: GroupDefaultResponder; completed: true }
+    | { bulletin: string; defaultResponder: GroupDefaultResponder }
     | undefined;
   if (body.setup !== undefined) {
     if (!body.setup || typeof body.setup !== "object" || Array.isArray(body.setup)) {
@@ -4885,7 +4887,7 @@ function createChannel(value: unknown): GroupRecord {
     }
     const responder = checkedGroupResponder(requested.defaultResponder, memberIds);
     if (!responder) throw Object.assign(new Error("invalid setup.defaultResponder"), { status: 400 });
-    setup = { bulletin: requested.bulletin, defaultResponder: responder, completed: true };
+    setup = { bulletin: requested.bulletin, defaultResponder: responder };
   }
   let humanIds: string[] | undefined;
   if (body.humanIds !== undefined) {
@@ -5241,7 +5243,6 @@ function roomHandoffProblem(node: Pick<RoomHandoff, "groupId" | "threadId" | "bo
     return member && !canAccessTeam(speaker, member.section) && !coordinatorSupervises(member, speaker);
   });
   if (group && outsideSection(group, bot)) return "Destination room includes a member outside the agent's section";
-  if (group && roomSetupPending(group)) return "Destination room setup is unfinished";
   if (parent) {
     const from = store.bot(parent.botId);
     const source = parent.groupId ? store.group(parent.groupId) : undefined;
@@ -5452,7 +5453,38 @@ function publicGroupState(record: GroupRecord): WireGroup {
   const { installedPackage: _installedPackage, ...group } = record;
   let usage: WireGroup["usage"];
   try { usage = groupUsageReader.forThread(group.threadId); } catch { /* accounting must not block chat */ }
-  return { ...group, usage: usage ?? null, working: groupIsWorking(group) || [...roomHandoffs.nodes.values()].some(n => n.groupId === group.id && !["completed", "failed", "cancelled"].includes(n.status)) };
+  // Organization server: who owns the group's settings (null: its admins).
+  const owner = IDENTITY.kind === "perspicax" && !group.dm ? { ownerId: groupOwnerId(group) } : {};
+  return {
+    ...group, ...owner, usage: usage ?? null,
+    working: groupIsWorking(group) || [...roomHandoffs.nodes.values()].some(n => n.groupId === group.id && !["completed", "failed", "cancelled"].includes(n.status)),
+    memberProfiles: groupMemberProfiles(group),
+  };
+}
+
+/** Every bot in a room, as each person in it sees it (shared/bot-public-profile.ts). */
+function groupMemberProfiles(group: { memberIds: readonly string[] }): BotPublicProfile[] {
+  return group.memberIds.flatMap((id) => {
+    const bot = store.bot(id);
+    return bot ? [botPublicProfile(bot)] : [];
+  });
+}
+/** The public identity last announced per bot: a change (a rename, a new
+ * look) re-announces every room it is in, so each person there sees it. */
+const announcedProfiles = new Map<string, string>(store.bots.map((bot) => [bot.id, JSON.stringify(botPublicProfile(bot))]));
+function announceProfileChange(botId: string): void {
+  const bot = store.bot(botId);
+  if (!bot) {
+    announcedProfiles.delete(botId);
+    return;
+  }
+  const profile = JSON.stringify(botPublicProfile(bot));
+  const before = announcedProfiles.get(botId);
+  announcedProfiles.set(botId, profile);
+  if (before === undefined || before === profile) return;
+  for (const group of store.groups) {
+    if (group.memberIds.includes(botId)) broadcast({ kind: "group", group: publicGroupState(group) });
+  }
 }
 
 function beginGroupTurnOperation(
@@ -6190,6 +6222,10 @@ function broadcast(payload: Record<string, unknown>, options: { adminOnly?: bool
       sseClients.delete(client);
     }
   }
+  if (kind === "bot" && payload.bot && typeof payload.bot === "object") {
+    const id = (payload.bot as { id?: unknown }).id;
+    if (typeof id === "string") announceProfileChange(id);
+  }
 }
 
 function approvalHostOf(bot: BotRecord): BotHost {
@@ -6459,8 +6495,32 @@ function scopeApprovalMessage<T>(threadId: string, message: T, viewer: ApprovalV
   }) as T;
 }
 
+/** Organization server (2026-10-01): an access card is private to the person
+ * it is about (accessCardAudience in ./engine-access.ts); every other member
+ * of the thread or room gets nothing in its place. Solo servers keep them. */
+function privateRowHidden(message: unknown, viewer: ApprovalViewer): boolean {
+  if (IDENTITY.kind !== "perspicax" || !message || typeof message !== "object") return false;
+  return !accessCardVisibleTo(message as Parameters<typeof accessCardVisibleTo>[0], viewer.userId);
+}
+
+/** The audience of a refused turn's notification: the access card's. */
+function accessNotificationAudience(access: WireAccessCard): { audience?: string[] } {
+  if (IDENTITY.kind !== "perspicax") return {};
+  const audience = accessCardAudience(access);
+  return audience ? { audience } : {};
+}
+
+/** Notify a refused turn to the access card's audience only. */
+function notifyAccess(notification: Notification | null, access: WireAccessCard): void {
+  notify(notification ? { ...notification, ...accessNotificationAudience(access) } : null);
+}
+
 function projectMessages<T>(threadId: string, messages: T[], viewer: ApprovalViewer): T[] {
   let changed = false;
+  if (messages.some((message) => privateRowHidden(message, viewer))) {
+    messages = messages.filter((message) => !privateRowHidden(message, viewer));
+    changed = true;
+  }
   const next = messages.map((message) => {
     const projected = scopeApprovalMessage(threadId, message, viewer);
     if (projected !== message) changed = true;
@@ -6501,6 +6561,7 @@ function scopeChannelApproval(
     const threadId = typeof payload.threadId === "string" ? payload.threadId : "";
     const message = payload.message;
     if (!threadId || !message || typeof message !== "object") return { action: "same" };
+    if (privateRowHidden(message, viewer)) return { action: "drop" };
     const next = scopeApprovalMessage(threadId, message, viewer);
     if (next === message) return { action: "same" };
     return { action: "replace", payload: { ...payload, message: next } };
@@ -6526,7 +6587,12 @@ function scopeChannelApproval(
   if (kind === "notify") {
     const notification = payload.notification;
     if (!notification || typeof notification !== "object") return { action: "same" };
-    const note = notification as { kind?: unknown; threadId?: unknown; botId?: unknown };
+    const note = notification as { kind?: unknown; threadId?: unknown; botId?: unknown; audience?: unknown };
+    // A refused turn's notification follows its access card: its person only.
+    if (Array.isArray(note.audience)) {
+      const viewerId = viewer.userId.toLowerCase();
+      return viewerId && note.audience.some((id) => typeof id === "string" && id.toLowerCase() === viewerId) ? { action: "same" } : { action: "drop" };
+    }
     if (note.kind !== "approval") return { action: "same" };
     const bot = approvalBot(note);
     if (!bot) return { action: "drop" };
@@ -8541,12 +8607,14 @@ bus.subscribe((event: RuntimeEvent) => {
         keyBacked: driverKeyBacked(cfg, refusedInstance.driverKind, refusedInstance.instanceId) || keyVia(ranOn?.via),
         message: event.message, botId: bot.id, ownerPrincipalId: effectiveBotOwner(bot),
         engine: refusedInstance.displayName || refusedInstance.driverKind, redact: redactSecretsInText,
+        // a person's own key: the card is theirs alone (accessCardAudience)
+        ...(keyVia(ranOn?.via) && ranOn?.payerPrincipalId ? { payerPrincipalId: ranOn.payerPrincipalId } : {}),
       }) : null;
       // A turn on a person's own key (slice 4) also counts: that key is dropped at once.
       if (keyRefused && keyVia(ranOn?.via) && ranOn?.payerSub && ranOn.provider) perspicaxDirectory?.invalidate(ranOn.payerSub, ranOn.provider);
       if (keyRefused && bot) {
         pushMessage({ role: "bot", kind: "access", access: keyRefused });
-        notify(buildNotification("turn-failed", bot, event.threadId, engineAccessNotice("key_refused", keyRefused.engine), { avatarUrl: bot.avatarUrl }));
+        notifyAccess(buildNotification("turn-failed", bot, event.threadId, engineAccessNotice("key_refused", keyRefused.engine), { avatarUrl: bot.avatarUrl }), keyRefused);
       } else pushMessage({
         role: "bot",
         kind: "activity",
@@ -8956,22 +9024,23 @@ function routineSuspended(routine: Routine, _run: RoutineRun | null, reason: Rou
   if (!bot) return;
   const group = routine.target === "room-goal" && routine.groupId ? store.group(routine.groupId) : undefined;
   const threadId = routineSourceOwner(routine)?.threadId ?? group?.threadId ?? bot.threadId;
+  const card: WireAccessCard = {
+    reason: "routine_delegation", engine: "", botId: bot.id, ownerPrincipalId: effectiveBotOwner(bot),
+    ...(runAs ? { runAsPrincipalId: runAs } : {}),
+    ...(runAsName ? { runAsName: runAsName.slice(0, 200) } : {}),
+    routineId: routine.id, routineName: redactSecretsInText(routine.name).slice(0, 200), suspendReason: reason,
+  };
   try {
     store.appendMessage(threadId, {
       role: "bot",
       kind: "access",
       from: { botId: bot.id, name: bot.name, color: bot.color },
-      access: {
-        reason: "routine_delegation", engine: "", botId: bot.id, ownerPrincipalId: effectiveBotOwner(bot),
-        ...(runAs ? { runAsPrincipalId: runAs } : {}),
-        ...(runAsName ? { runAsName: runAsName.slice(0, 200) } : {}),
-        routineId: routine.id, routineName: redactSecretsInText(routine.name).slice(0, 200), suspendReason: reason,
-      },
+      access: card,
     });
   } catch (error) {
     console.error(`routine: the pause card could not be written: ${error instanceof Error ? error.message : String(error)}`);
   }
-  notify(buildNotification("routine-failed", bot, threadId, `${redactSecretsInText(routine.name)}: paused, it cannot act in its person's name`));
+  notifyAccess(buildNotification("routine-failed", bot, threadId, `${redactSecretsInText(routine.name)}: paused, it cannot act in its person's name`), card);
 }
 /** Slice 6: the audit rows of routine delegations and paused routines. */
 function routineAudit(action: string, principalId: string | undefined, extra: { routine?: Pick<Routine, "id" | "name">; reason?: string; auth?: RequestAuth } = {}): void {
@@ -10243,13 +10312,14 @@ async function startTurn(
   const accessRefusal = opts.cardContinuation && !opts.compactOnly && !freshHop ? null : orgEngineRefusal(bot, instance, speaker);
   if (accessRefusal) {
     const engine = engineDisplayName(instance);
+    const card = accessCardFor(bot, accessRefusal, engine);
     store.appendMessage(threadId, {
       role: "bot",
       kind: "access",
-      access: accessCardFor(bot, accessRefusal, engine),
+      access: card,
     });
     const notice = engineAccessNotice(accessRefusal.reason, engine, accessRefusal);
-    notify(buildNotification("turn-failed", bot, threadId, notice, { avatarUrl: bot.avatarUrl }));
+    notifyAccess(buildNotification("turn-failed", bot, threadId, notice, { avatarUrl: bot.avatarUrl }), card);
     console.error(`[omb-turn] bot=${botId} refused: ${accessRefusal.reason}${accessRefusal.cause ? `/${accessRefusal.cause}` : ""} (${instance.instanceId})`);
     opts?.coordination?.settle({ ok: false, text: notice });
     opts?.onDispatchError?.(notice);
@@ -11424,9 +11494,10 @@ async function startTurn(
         // The owner key went away between admission and dispatch: the same
         // card and notice a refusal at admission gives.
         const engine = engineDisplayName(instance);
-        store.appendMessage(threadId, { role: "bot", kind: "access", access: accessCardFor(bot, e.refusal, engine, e.detail) });
+        const card = accessCardFor(bot, e.refusal, engine, e.detail);
+        store.appendMessage(threadId, { role: "bot", kind: "access", access: card });
         message = engineAccessNotice(e.refusal.reason, engine, e.refusal);
-        notify(buildNotification("turn-failed", bot, threadId, message, { avatarUrl: bot.avatarUrl }));
+        notifyAccess(buildNotification("turn-failed", bot, threadId, message, { avatarUrl: bot.avatarUrl }), card);
       }
       settleDirectFollowup(dispatchClaimId, { ok: false, text: message });
       // The wait already wrote its failure resolution; keep all dispatch
@@ -11704,7 +11775,6 @@ routines = new RoutineManager({
     if (
       !group ||
       group.dm ||
-      roomSetupPending(group) ||
       !coordinator ||
       coordinator.hidden ||
       !group.memberIds.includes(coordinator.id)
@@ -12951,14 +13021,15 @@ async function runGroupMemberTurn(
     : orgEngineRefusal(bot, instance, roomSpeakerId ? { origin: "person", principalId: roomSpeakerId } : roomRoutineSpeaker(threadId) ?? { origin: "operator" });
   if (roomAccessRefusal) {
     const engine = engineDisplayName(instance);
+    const card = accessCardFor(bot, roomAccessRefusal, engine);
     store.appendMessage(threadId, {
       role: "bot",
       kind: "access",
       from: { botId: bot.id, name: bot.name, color: bot.color },
-      access: accessCardFor(bot, roomAccessRefusal, engine),
+      access: card,
     });
     const notice = engineAccessNotice(roomAccessRefusal.reason, engine, roomAccessRefusal);
-    notify(buildNotification("turn-failed", bot, threadId, notice, { avatarUrl: bot.avatarUrl }));
+    notifyAccess(buildNotification("turn-failed", bot, threadId, notice, { avatarUrl: bot.avatarUrl }), card);
     if (orchestration) {
       orchestration.result.outcome = "dispatch_failed";
       orchestration.result.replyText = "";
@@ -13690,9 +13761,10 @@ async function runGroupMemberTurn(
         let message = err instanceof Error ? err.message : "turn failed";
         if (err instanceof EngineAccessLost) {
           const engine = engineDisplayName(instance);
-          store.appendMessage(threadId, { role: "bot", kind: "access", from: { botId: bot.id, name: bot.name, color: bot.color }, access: accessCardFor(bot, err.refusal, engine, err.detail) });
+          const card = accessCardFor(bot, err.refusal, engine, err.detail);
+          store.appendMessage(threadId, { role: "bot", kind: "access", from: { botId: bot.id, name: bot.name, color: bot.color }, access: card });
           message = engineAccessNotice(err.refusal.reason, engine, err.refusal);
-          notify(buildNotification("turn-failed", bot, threadId, message, { avatarUrl: bot.avatarUrl }));
+          notifyAccess(buildNotification("turn-failed", bot, threadId, message, { avatarUrl: bot.avatarUrl }), card);
         } else store.appendMessage(threadId, {
           role: "bot",
           kind: "activity",
@@ -14282,9 +14354,6 @@ function startGroupTurn(
 ) {
   const group = store.group(groupId);
   if (!group) throw Object.assign(new Error("no such group"), { status: 404 });
-  if (roomSetupPending(group)) {
-    throw Object.assign(new Error("finish room setup before sending the first message"), { status: 409 });
-  }
   // Capture the chosen thread once. Manual sends use the active task; a
   // scheduled team goal supplies its detached background task explicitly.
   const threadId = options.threadId ?? group.threadId;
@@ -14642,7 +14711,7 @@ function sameCalendarRoster(group: GroupRecord, botIds: readonly string[]): bool
 
 function ensureCalendarCallRoom(call: CalendarCall): GroupRecord {
   const linked = call.roomId ? store.group(call.roomId) : undefined;
-  let group = linked && sameCalendarRoster(linked, call.botIds) && !roomSetupPending(linked)
+  let group = linked && sameCalendarRoster(linked, call.botIds)
     ? linked
     : undefined;
   // A call's room is a room like any other: one audience.
@@ -14651,7 +14720,6 @@ function ensureCalendarCallRoom(call: CalendarCall): GroupRecord {
   group ??= store.createGroup(call.name, call.botIds, false, undefined, {
     bulletin: "",
     defaultResponder: { kind: "everyone" },
-    completed: true,
   });
   if (call.roomId !== group.id) calendarCalls!.linkRoom(call.id, group.id);
   return group;
@@ -14679,19 +14747,6 @@ function deliverCalendarCall(call: CalendarCall, scheduledFor: number): void {
   const messages = [...threadIds].flatMap((threadId) => store.messagesFor(threadId));
   if (messages.some((message) => message.sendId === sendId)) return;
   startGroupTurn(group.id, text, undefined, sendId);
-}
-
-function roomSetupPending(group: GroupRecord): boolean {
-  const hasMarker =
-    Object.prototype.hasOwnProperty.call(group, "setupCompletedAt") ||
-    Object.prototype.hasOwnProperty.call(group, "setupSkippedAt");
-  return (
-    !group.dm &&
-    hasMarker &&
-    group.setupCompletedAt == null &&
-    group.setupSkippedAt == null &&
-    store.messagesFor(group.threadId).length === 0
-  );
 }
 
 function resolveReplyTarget(threadId: string, value: unknown): Message | undefined {
@@ -14833,12 +14888,6 @@ function roomPostEligibility(
       status: 403,
       error: `that room includes @${outsider.name}, who is outside your section — tell the user what you wanted to post there instead`,
     };
-  }
-  // A room whose setup the person has not finished has never been opened
-  // for business, and its first message decides whether setup still counts
-  // as pending. A bot must not be the one to settle that.
-  if (roomSetupPending(group)) {
-    return { ok: false, status: 409, error: "that room is still being set up — it cannot receive messages yet" };
   }
   return { ok: true };
 }
@@ -17157,7 +17206,16 @@ function refusePlacedBots(auth: RequestAuth, botIds: readonly unknown[], already
   return null;
 }
 
-function refuseHumanEdit(auth: RequestAuth, body: unknown, before: readonly string[] = []): string | null {
+/** Organization server: a person's request falls under the group owner rule
+ * (server/group-ownership.ts). The server's own services do not. */
+function groupOwnerRuleApplies(auth: RequestAuth): boolean {
+  return IDENTITY.kind === "perspicax" && !(auth.kind === "loopback" && auth.trust === "service");
+}
+function groupActor(auth: RequestAuth): GroupActor {
+  return { id: channelActorId(auth), email: actorEmail(auth), orgAdmin: channelActorRole(auth) === "admin" || channelActorRole(auth) === "owner" };
+}
+
+function refuseHumanEdit(auth: RequestAuth, body: unknown, before: readonly string[] = [], ownerChecked = false): string | null {
   if (!body || typeof body !== "object" || Array.isArray(body)) return null;
   if (!Object.prototype.hasOwnProperty.call(body, "humanIds")) return null;
   const after = (body as { humanIds?: unknown }).humanIds;
@@ -17169,6 +17227,8 @@ function refuseHumanEdit(auth: RequestAuth, body: unknown, before: readonly stri
       if (!/^[0-9A-Za-z]{1,64}$/.test(id) || !(orgTeams.has(id) || principals.membersOfTeam(id).length)) return "unknown team: choose a team from the organization directory";
     }
   }
+  // Organization server: the group's owner rule already decided (group-ownership.ts).
+  if (ownerChecked) return null;
   const role = channelActorRole(auth);
   if (role && canEditHumans(role)) return null;
   // A team manager changes the entries of their teams and members; adding
@@ -17454,7 +17514,7 @@ if (sectionChannels) {
         const botIds = store.bots
           .filter((bot) => sectionKey(bot.section) === name && !bot.hidden && channels.accessForBot(name, { id: bot.id, ownerPrincipalId: effectiveBotOwner(bot) }))
           .map((bot) => bot.id);
-        return store.createGroup(name, botIds, false, name, { bulletin: "", defaultResponder: { kind: "everyone" }, completed: true }, []).id;
+        return store.createGroup(name, botIds, false, name, { bulletin: "", defaultResponder: { kind: "everyone" } }, []).id;
       } catch (error) {
         console.error(`sections: the conversation of a shared section could not be created: ${error instanceof Error ? error.message : String(error)}`);
         return null;
@@ -22104,7 +22164,10 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (threadId && !currentVisible.thread(threadId)) return json(res, 404, { error: "no such conversation" });
       const searchViewerId = channelFilterViewerId(current.auth);
       const hits = found
-        .filter((hit) => currentVisible.thread(hit.threadId) && searchHitVisibleNow(hit.threadId, searchViewerId))
+        .filter((hit) => currentVisible.thread(hit.threadId) && searchHitVisibleNow(hit.threadId, searchViewerId)
+          // the index holds text and tool rows only; an access card that ever
+          // matched would still reach its own person only
+          && (hit.kind !== "access" || !privateRowHidden(store.messagesFor(hit.threadId).find((row) => row.id === hit.messageId), viewerForApproval(current.auth!))))
         .slice(0, limit)
         .map((hit) => {
           const bot = store.botByThread(hit.threadId);
@@ -22565,42 +22628,6 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         presets: imported.presets ?? [],
       });
     }
-    m = path.match(/^\/api\/groups\/([\w-]+)\/setup$/);
-    if (m && method === "PATCH") {
-      const group = store.group(m[1]);
-      if (!group) return json(res, 404, { error: "no such room" });
-      if (group.dm) return json(res, 400, { error: "direct-message channels do not have room setup" });
-      const body = await readBody(req);
-      if (body.action !== "complete" && body.action !== "skip") {
-        return json(res, 400, { error: "action must be complete or skip" });
-      }
-      if (group.setupCompletedAt != null || group.setupSkippedAt != null) {
-        return json(res, 200, { group: publicGroupState(group) });
-      }
-      if (store.messagesFor(group.threadId).length > 0) {
-        return json(res, 409, { error: "room setup must be finished before the first message" });
-      }
-
-      const patch: Partial<Pick<GroupRecord, "cwd" | "defaultResponder" | "bulletin" | "setupCompletedAt" | "setupSkippedAt">> = {};
-      if (body.action === "complete") {
-        const checked = validateBotCwd(body.cwd ?? null);
-        if (!checked.ok) return json(res, 400, { error: checked.error });
-        if (typeof body.bulletin !== "string") return json(res, 400, { error: "bulletin must be a string" });
-        if (body.bulletin.length > 12_000) return json(res, 400, { error: "bulletin must be at most 12000 characters" });
-        const responder = checkedGroupResponder(body.defaultResponder, group.memberIds);
-        if (!responder) return json(res, 400, { error: "invalid default responder" });
-        patch.cwd = checked.cwd ?? undefined;
-        patch.defaultResponder = responder;
-        patch.bulletin = body.bulletin;
-        patch.setupCompletedAt = Date.now();
-      } else {
-        patch.setupSkippedAt = Date.now();
-      }
-      const updated = store.patchGroup(m[1], patch);
-      if (!updated) return json(res, 404, { error: "no such room" });
-      return json(res, 200, { group: publicGroupState(updated) });
-    }
-
     // ── channel tasks: separate conversations for the same team ────────
 
 
@@ -22765,10 +22792,18 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         const placed = refusePlacedBots(auth, body.memberIds, new Set(existingGroup.memberIds));
         if (placed) return json(res, 403, { error: placed });
       }
-      const humans = refuseHumanEdit(auth, body, existingGroup?.humanIds ?? []);
+      // Organization server: only the group's owner changes its settings;
+      // anyone listed may still leave it (server/group-ownership.ts).
+      const ownerRule = Boolean(existingGroup && !existingGroup.dm && groupOwnerRuleApplies(auth));
+      if (existingGroup && ownerRule) {
+        const refusal = groupPatchOwnerRefusal(existingGroup, body, groupActor(auth));
+        if (refusal) return json(res, 403, { error: refusal, code: "not_group_owner" });
+      }
+      const humans = refuseHumanEdit(auth, body, existingGroup?.humanIds ?? [], ownerRule);
       if (humans) return json(res, humans.startsWith("unknown team") ? 400 : 403, { error: humans });
       if (auth.kind === "session" && !auth.scopes.includes("admin")) {
-        const field = clientGroupPatchViolation(body);
+        // The owner of an organization group also picks its default responder.
+        const field = clientGroupPatchViolation(body, ownerRule ? ["defaultResponder"] : []);
         if (field) return json(res, 403, { error: `forbidden: this session may rename or mark a room, not change "${field}" (needs the admin scope)` });
       }
       const movesSection = existingGroup && body && typeof body === "object" && !Array.isArray(body) && "section" in body;
@@ -22799,6 +22834,12 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     if (m && method === "DELETE") {
       const group = store.group(m[1]);
       if (!group) return json(res, 404, { error: "no such room" });
+      if (groupOwnerRuleApplies(auth) && !group.dm) {
+        // The owner, or an organization admin moderating.
+        if (!mayDeleteGroup(group, groupActor(auth))) return json(res, 403, { error: "forbidden: only the group's owner can delete it", code: "not_group_owner" });
+      } else if (auth.kind === "session" && !auth.scopes.includes("admin")) {
+        return json(res, 403, { error: "forbidden: deleting a channel needs the admin scope" });
+      }
       if (phoneSecretSubmissions.hasGroup(group.id)) {
         return json(res, 409, { error: "this channel is securely saving a credential — try again when it finishes" });
       }
