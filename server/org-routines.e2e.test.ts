@@ -144,7 +144,7 @@ const runThread = (runId: string) => {
 /** The access cards stored in a thread, whoever they are for (read from
  * the message store, not through a viewer). */
 const storedAccessCards = (threadId: string): NonNullable<Message["access"]>[] => {
-  const db = new DatabaseSync(join(home, ".openmausbot", "messages.db"), { readOnly: true });
+  const db = new DatabaseSync(join(home, ".sagax", "messages.db"), { readOnly: true });
   try {
     const rows = db.prepare("SELECT json FROM messages WHERE thread_id = ? AND kind = 'access'").all(threadId) as Array<{ json: string }>;
     return rows.map((row) => (JSON.parse(row.json) as Message).access!).filter(Boolean);
