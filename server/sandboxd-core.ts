@@ -3,6 +3,8 @@
 // key: created on first need, started on demand, stopped after an idle
 // period, removed on request. Every object it touches carries its labels and
 // its deployment instance; anything else with a matching name is refused.
+import type { Duplex } from "node:stream";
+
 import type { DockerApi } from "./sandboxd-docker.ts";
 import {
   SANDBOX_INSTANCE_LABEL,
@@ -69,12 +71,16 @@ const MAX_EXEC_ENV_BYTES = 1_500_000;
 const MAX_CONCURRENT_EXECS = 4;
 const USAGE_TTL_MS = 60_000;
 const CAPACITY_IDLE_GRACE_MS = 60_000;
+/** Live views of one person's desktop open at once (windows, reconnects). */
+export const MAX_DESKTOP_STREAMS = 4;
+const CONTROL_TOUCH_MS = 30_000;
 
 export class SandboxService {
   private readonly lastUsed = new Map<string, number>();
   private readonly busy = new Map<string, number>();
   private readonly usage = new Map<string, { bytes: number; at: number }>();
   private readonly locks = new Map<string, Promise<void>>();
+  private readonly desktopStreams = new Map<string, number>();
   egress: EgressPolicyState;
 
   private readonly docker: DockerApi;
@@ -317,6 +323,47 @@ export class SandboxService {
       this.touch(key);
       void this.refreshUsage(key).catch(() => {});
     }
+  }
+
+  /** The live view: a byte stream to the desktop's VNC port, which listens
+   * on 127.0.0.1 inside the sandbox only. Never starts anything: the
+   * sandbox and its desktop must already run (the Sagax server starts them
+   * through exec when the owner opens the view). A view in control counts
+   * as use, so the sandbox does not idle out under the person's hands; a
+   * view that only watches does not keep it alive. */
+  async desktopStream(key: string, options: { control: boolean }): Promise<Duplex> {
+    this.checkKey(key);
+    const names = sandboxNames(key);
+    const container = await this.docker.inspectContainer(names.container);
+    if (container && !this.owned(container.labels, key)) throw new SandboxError(409, "conflict", "a container with this name is not managed by this provisioner");
+    if (!container?.running) throw new SandboxError(409, "not_running", "the server environment is stopped");
+    const open = this.desktopStreams.get(key) ?? 0;
+    if (open >= MAX_DESKTOP_STREAMS) throw new SandboxError(429, "busy", "too many live views of this desktop are open");
+    this.desktopStreams.set(key, open + 1);
+    let stream: Duplex;
+    try {
+      stream = await this.docker.execStream(names.container, {
+        Cmd: ["sagax-desktop", "relay"], User: `${SANDBOX_UID}:${SANDBOX_UID}`, Env: [], WorkingDir: SANDBOX_WORKSPACE,
+      });
+    } catch (error) {
+      this.releaseDesktopStream(key);
+      throw error;
+    }
+    let released = false;
+    const timer = options.control ? setInterval(() => this.touch(key), CONTROL_TOUCH_MS) : null;
+    timer?.unref?.();
+    if (options.control) this.touch(key);
+    stream.once("close", () => {
+      if (timer) clearInterval(timer);
+      if (!released) { released = true; this.releaseDesktopStream(key); }
+    });
+    return stream;
+  }
+
+  private releaseDesktopStream(key: string): void {
+    const left = (this.desktopStreams.get(key) ?? 1) - 1;
+    if (left > 0) this.desktopStreams.set(key, left);
+    else this.desktopStreams.delete(key);
   }
 
   /** Measure /workspace at most once a minute (soft quota). */

@@ -1,13 +1,13 @@
 // The provisioner API: only the Sagax server (holder of the shared key) can
 // call it, every request is signed over method, path and body, replays are
 // refused, and the only addressable thing is a per-person sandbox key.
-import { createServer, type Server } from "node:http";
+import { createServer, request, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { SANDBOXD_AUTH_HEADER, SandboxdVerifier, signSandboxdRequest } from "./sandboxd-auth.ts";
 import { SandboxService } from "./sandboxd-core.ts";
-import { createSandboxdHandler } from "./sandboxd.ts";
+import { createSandboxdHandler, createSandboxdUpgradeHandler } from "./sandboxd.ts";
 import { FakeDocker } from "./testing/fake-docker.ts";
 import { sandboxdClient, SandboxdRequestError } from "./user-sandbox-client.ts";
 import { sandboxKeyForPrincipal, sandboxdConfigFromEnv } from "./user-sandbox-spec.ts";
@@ -19,13 +19,16 @@ const sandboxKey = sandboxKeyForPrincipal("default", "pr_00000000-0000-4000-8000
 let server: Server;
 let base: string;
 let docker: FakeDocker;
+let service: SandboxService;
 
 beforeEach(async () => {
   docker = new FakeDocker();
   const config = sandboxdConfigFromEnv({ SAGAX_SANDBOX_IMAGE: "sagax-sandbox:test" });
-  const service = new SandboxService(docker, config);
+  service = new SandboxService(docker, config);
   await service.installEgressPolicy();
-  server = createServer(createSandboxdHandler(service, new SandboxdVerifier(KEY)));
+  const verifier = new SandboxdVerifier(KEY);
+  server = createServer(createSandboxdHandler(service, verifier));
+  server.on("upgrade", createSandboxdUpgradeHandler(service, verifier));
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 });
@@ -110,5 +113,60 @@ describe("sandboxd authorization", () => {
     expect(() => sandboxdClient("https://sandboxd:8791", () => KEY)).toThrow();
     expect(() => sandboxdClient("http://user:pw@sandboxd:8791", () => KEY)).toThrow();
     expect(() => sandboxdClient("http://sandboxd:8791/v1", () => KEY)).toThrow();
+  });
+});
+
+/** A raw upgrade to the live view's stream, as the Sagax server sends it. */
+function upgradeDesktop(path: string, header?: string): Promise<{ status: number; body: string }> {
+  return new Promise((resolve, reject) => {
+    const req = request(`${base}${path}`, {
+      method: "POST",
+      headers: { connection: "Upgrade", upgrade: "sagax-rfb", ...(header === undefined ? {} : { [SANDBOXD_AUTH_HEADER]: header }) },
+    });
+    req.on("upgrade", (res, socket) => { socket.destroy(); resolve({ status: res.statusCode ?? 0, body: "" }); });
+    req.on("response", (res) => {
+      let body = "";
+      res.on("data", (chunk) => { body += chunk; });
+      res.on("end", () => resolve({ status: res.statusCode ?? 0, body }));
+    });
+    req.on("error", reject);
+    req.end();
+  });
+}
+
+describe("sandboxd live view stream", () => {
+  const path = `/v1/sandboxes/${sandboxKey}/desktop`;
+
+  it("refuses an unsigned or replayed upgrade and never opens anything", async () => {
+    expect((await upgradeDesktop(path)).status).toBe(401);
+    const signed = signSandboxdRequest(KEY, "POST", path, "");
+    await service.ensure(sandboxKey);
+    expect((await upgradeDesktop(path, signed)).status).toBe(101);
+    expect((await upgradeDesktop(path, signed)).status).toBe(401);
+    expect((await upgradeDesktop(`${path}?control=1`, signed)).status).toBe(401);
+  });
+
+  it("never starts a stopped environment", async () => {
+    expect((await upgradeDesktop(path, signSandboxdRequest(KEY, "POST", path, ""))).status).toBe(409);
+    expect(docker.containers.size).toBe(0);
+  });
+
+  it("relays bytes to the desktop of that one sandbox, as uid 1000", async () => {
+    await service.ensure(sandboxKey);
+    const stream = await sandboxdClient(base, () => KEY).desktopStream(sandboxKey, { control: false });
+    const banner = await new Promise<string>((resolve) => stream.once("data", (chunk: Buffer) => resolve(chunk.toString())));
+    expect(banner).toBe("RFB 003.008\n");
+    stream.write("hello");
+    const echo = await new Promise<string>((resolve) => stream.once("data", (chunk: Buffer) => resolve(chunk.toString())));
+    expect(echo).toBe("echo:hello");
+    stream.destroy();
+    const relay = docker.execs.at(-1)!;
+    expect(relay.name).toBe(`sagax-user-${sandboxKey}`);
+    expect(relay.exec).toMatchObject({ Cmd: ["sagax-desktop", "relay"], User: "1000:1000" });
+  });
+
+  it("answers the client with the provisioner's refusal code", async () => {
+    await expect(sandboxdClient(base, () => KEY).desktopStream(sandboxKey, { control: true }))
+      .rejects.toMatchObject({ status: 409, code: "not_running" });
   });
 });

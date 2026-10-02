@@ -4,7 +4,9 @@
 // A person signed out by Perspicax (back-channel logout, disabled, removed)
 // has their environment stopped at once and deleted after a grace period; a
 // person back in before it ends keeps it. Pending deletions survive restarts.
+import { randomInt } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
+import type { Duplex } from "node:stream";
 
 import { writeFileAtomic } from "./atomic.ts";
 import type { SandboxExecInput, SandboxExecOutput, SandboxStatus } from "./sandboxd-core.ts";
@@ -128,6 +130,33 @@ export class UserSandboxManager {
     }
   }
 
+  /** Open the person's desktop for their live view: start the sandbox and its
+   * desktop when needed and set two fresh VNC passwords, the full one
+   * (controls the screen) and the view-only one. Only the owner's own
+   * request reaches this (server/routes/desktop-viewer.ts). */
+  async openDesktop(principalId: string): Promise<{ full: string; view: string }> {
+    const passwords = { full: vncPassword(), view: vncPassword() };
+    const result = await this.exec(principalId, {
+      argv: ["sagax-desktop", "start"],
+      env: { SAGAX_VNC_FULL: passwords.full, SAGAX_VNC_VIEW: passwords.view },
+      timeoutSec: 30,
+    });
+    if (result.exitCode !== 0) throw new UserSandboxUnavailable("The desktop of the server environment did not start.", "desktop_failed");
+    return passwords;
+  }
+
+  /** The live view's byte stream to the desktop's VNC port. Never starts a
+   * stopped environment. */
+  async desktopStream(principalId: string, options: { control: boolean }): Promise<Duplex> {
+    this.refuseIfOut(principalId);
+    try {
+      return await this.options.client.desktopStream(this.keyFor(principalId), options);
+    } catch (error) {
+      if (error instanceof SandboxdRequestError) throw new UserSandboxUnavailable(error.message, error.code);
+      throw new UserSandboxUnavailable("The server environment could not be reached. Try again in a moment.", "unreachable");
+    }
+  }
+
   async workspaceOverQuota(principalId: string): Promise<boolean> {
     try {
       return (await this.options.client.status(this.keyFor(principalId))).overQuota;
@@ -193,6 +222,14 @@ export class UserSandboxManager {
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
   }
+}
+
+const VNC_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789";
+/** VNC authentication reads at most 8 characters. */
+function vncPassword(): string {
+  let value = "";
+  for (let index = 0; index < 8; index++) value += VNC_ALPHABET[randomInt(VNC_ALPHABET.length)];
+  return value;
 }
 
 /** The manager this server runs, or null when organization mode or the

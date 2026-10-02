@@ -669,8 +669,8 @@ import {
   type Worker,
 } from "./workers.ts";
 import { createDeciderRoutes } from "./routes/decider.ts";
-import { createDesktopViewer, desktopViewerUrl } from "./routes/desktop-viewer.ts";
-import { localDesktopTarget, localVmViewerStatus, viewerTargetId } from "./desktop-viewer-targets.ts";
+import { createDesktopViewer, desktopViewerUrl, SANDBOX_VIEWER_TARGET } from "./routes/desktop-viewer.ts";
+import { localDesktopTarget, localVmViewerStatus, sandboxDesktopTarget, viewerTargetId } from "./desktop-viewer-targets.ts";
 import { createAntigravityLeftoverRoutes } from "./routes/antigravity-leftovers.ts";
 import { findAntigravityLeftovers, removeAntigravityLeftovers } from "./drivers/antigravity-temp.ts";
 
@@ -6287,7 +6287,13 @@ function audienceChanged(): void {
 // Cloud boot can revoke sessions before routes are registered. Create the
 // viewer manager before installing any revocation callbacks.
 const desktopViewer = createDesktopViewer({
-  target: (id) => {
+  target: (id, auth) => {
+    if (id === SANDBOX_VIEWER_TARGET) {
+      // The caller's own server environment desktop, never anyone else's.
+      const principalId = auth.kind === "session" ? auth.session.principalId?.trim() : "";
+      if (IDENTITY.kind !== "perspicax" || !userSandbox || !principalId) return;
+      return sandboxDesktopTarget(userSandbox, principalId);
+    }
     if (id.startsWith("vps/")) {
       const botId = id.slice(4);
       if (store.bot(botId)?.cloudBackend !== "vps") return;

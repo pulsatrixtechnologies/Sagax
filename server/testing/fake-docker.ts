@@ -1,5 +1,7 @@
 // An in-memory DockerApi for the sandbox provisioner tests: records every
 // create body so the tests can assert what would reach a real daemon.
+import { Duplex } from "node:stream";
+
 import type { ContainerSummary, DockerApi, ExecRequest, ExecResult } from "../sandboxd-docker.ts";
 
 export class FakeDocker implements DockerApi {
@@ -66,6 +68,21 @@ export class FakeDocker implements DockerApi {
     if (!this.containers.get(name)?.running) throw new Error("container not running");
     this.execs.push({ name, exec });
     return this.execResult(exec);
+  }
+  /** The desktop relay: greets like a VNC server, then echoes what it gets
+   * prefixed with "echo:". Every stream opened is kept for the tests. */
+  streams: Duplex[] = [];
+  async execStream(name: string, exec: ExecRequest) {
+    if (!this.containers.get(name)?.running) throw new Error("container not running");
+    this.execs.push({ name, exec });
+    const stream: Duplex = new Duplex({
+      read() {},
+      write(chunk: Buffer, _encoding, callback) { stream.push(Buffer.concat([Buffer.from("echo:"), chunk])); callback(); },
+      final(callback) { stream.push(null); callback(); },
+    });
+    stream.push(Buffer.from("RFB 003.008\n"));
+    this.streams.push(stream);
+    return stream;
   }
   async runOnce(name: string) {
     this.calls.push(`helper ${name}`);

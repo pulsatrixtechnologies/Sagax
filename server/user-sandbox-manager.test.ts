@@ -30,6 +30,7 @@ function inProcessClient(): SandboxdClient {
     stop: (key) => service.stop(key),
     remove: (key, options) => service.remove(key, options),
     exec: (key, input) => service.exec(key, input),
+    desktopStream: (key, options) => service.desktopStream(key, options),
   };
 }
 
@@ -115,6 +116,7 @@ describe("UserSandboxManager", () => {
       info: () => Promise.reject(new Error("down")), status: () => Promise.reject(new Error("down")),
       ensure: () => Promise.reject(new Error("down")), stop: () => Promise.reject(new Error("down")),
       remove: () => Promise.reject(new Error("down")), exec: () => Promise.reject(new Error("down")),
+      desktopStream: () => Promise.reject(new Error("down")),
     };
     const m = new UserSandboxManager({ client: down, instance: "default", stateFile: join(dir, "x.json") });
     expect((await m.status(ALICE)).state).toBe("unavailable");

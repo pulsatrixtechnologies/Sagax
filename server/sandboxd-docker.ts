@@ -2,6 +2,7 @@
 // provisioner container mounts. Small on purpose: the calls the sandbox
 // lifecycle needs and nothing that could build an arbitrary container.
 import { request } from "node:http";
+import { Duplex } from "node:stream";
 
 export interface ExecRequest {
   Cmd: string[];
@@ -42,6 +43,10 @@ export interface DockerApi {
   createVolume(spec: Record<string, unknown>): Promise<void>;
   removeVolume(name: string): Promise<void>;
   exec(name: string, exec: ExecRequest, maxBytes: number): Promise<ExecResult>;
+  /** One exec whose stdin and stdout stay open as a byte stream (the live
+   * view's relay to the desktop's VNC port, inside the sandbox). stdout is
+   * demultiplexed; stderr is dropped. Ending the stream closes the exec. */
+  execStream(name: string, exec: ExecRequest): Promise<Duplex>;
   /** Create, run to completion, collect output and remove a one-shot
    * container (the egress policy helper only). */
   runOnce(name: string, spec: Record<string, unknown>, timeoutMs: number): Promise<{ exitCode: number; output: string }>;
@@ -90,6 +95,24 @@ export function demuxDockerStream(chunks: Buffer, maxBytes: number): { stdout: B
     }
   }
   return { stdout: Buffer.concat(out), stderr: Buffer.concat(err), truncated };
+}
+
+/** Docker's multiplexed attach stream, decoded as it arrives: each frame is
+ * an 8-byte header (stream id, 3 zero bytes, big-endian size) and a payload.
+ * Only stdout (1) is passed on. */
+export function dockerStreamDemuxer(onStdout: (chunk: Buffer) => void): (chunk: Buffer) => void {
+  let pending: Buffer = Buffer.alloc(0);
+  return (chunk) => {
+    pending = pending.length ? Buffer.concat([pending, chunk]) : chunk;
+    while (pending.length >= 8) {
+      const size = pending.readUInt32BE(4);
+      if (pending.length < 8 + size) break;
+      const stream = pending[0];
+      const payload = pending.subarray(8, 8 + size);
+      pending = pending.subarray(8 + size);
+      if (stream === 1 && payload.length) onStdout(Buffer.from(payload));
+    }
+  };
 }
 
 /** The daemon's own API version, so the client works from Docker 24 (1.43)
@@ -232,6 +255,43 @@ export function dockerApi(socketPath: string, pinnedVersion?: string): DockerApi
         await new Promise((resolve) => setTimeout(resolve, 100));
       }
       return { exitCode, stdout: streams.stdout, stderr: streams.stderr, truncated: streams.truncated || started.truncated };
+    },
+    async execStream(name, exec) {
+      const created = await json("POST", `/containers/${safeName(name)}/exec`, {
+        AttachStdin: true, AttachStdout: true, AttachStderr: false, Tty: false, Privileged: false, ...exec,
+      });
+      const id = String(created.Id ?? "");
+      if (!/^[a-f0-9]{64}$/.test(id)) throw new Error("Docker returned no exec id");
+      version ??= negotiateVersion(socketPath);
+      const apiVersion = await version;
+      const payload = Buffer.from(JSON.stringify({ Detach: false, Tty: false }));
+      const socket = await new Promise<import("node:net").Socket>((resolve, reject) => {
+        const req = request({
+          socketPath, method: "POST", path: `/${apiVersion}/exec/${id}/start`, timeout: 30_000,
+          headers: { "content-type": "application/json", "content-length": payload.length, connection: "Upgrade", upgrade: "tcp" },
+        });
+        req.on("upgrade", (_res, upgraded, head) => {
+          upgraded.setTimeout(0);
+          if (head.length) upgraded.unshift(head);
+          resolve(upgraded);
+        });
+        req.on("response", (res) => { res.resume(); reject(new DockerError(res.statusCode ?? 0, `Docker exec attach failed (${res.statusCode})`)); });
+        req.on("timeout", () => req.destroy(new Error("Docker request timed out")));
+        req.on("error", reject);
+        req.end(payload);
+      });
+      const stream = new Duplex({
+        write(chunk: Buffer, _encoding, callback) { socket.write(chunk, callback); },
+        final(callback) { socket.end(); callback(); },
+        read() { socket.resume(); },
+        destroy(error, callback) { socket.destroy(); callback(error); },
+      });
+      const demux = dockerStreamDemuxer((chunk) => { if (!stream.push(chunk)) socket.pause(); });
+      socket.on("data", demux);
+      socket.on("end", () => stream.push(null));
+      socket.on("close", () => { if (!stream.destroyed) stream.destroy(); });
+      socket.on("error", (error) => stream.destroy(error));
+      return stream;
     },
     async runOnce(name, spec, timeoutMs) {
       await json("DELETE", `/containers/${safeName(name)}?force=1`, undefined, [204, 404]);

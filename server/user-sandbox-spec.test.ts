@@ -74,11 +74,11 @@ describe("container isolation", () => {
 
   it("applies CPU, memory (no swap), pids, tmpfs and file size limits", () => {
     const host = spec().HostConfig;
-    expect(host.Memory).toBe(1024 * 1024 * 1024);
+    expect(host.Memory).toBe(1536 * 1024 * 1024);
     expect(host.MemorySwap).toBe(host.Memory);
     expect(host.NanoCpus).toBe(1_000_000_000);
-    expect(host.PidsLimit).toBe(256);
-    expect((host.Tmpfs as Record<string, string>)["/tmp"]).toContain(`size=${256 * 1024 * 1024}`);
+    expect(host.PidsLimit).toBe(512);
+    expect((host.Tmpfs as Record<string, string>)["/tmp"]).toContain(`size=${512 * 1024 * 1024}`);
     expect(host.Ulimits).toContainEqual({ Name: "fsize", Soft: 512 * 1024 * 1024, Hard: 512 * 1024 * 1024 });
     expect(host.OomScoreAdj).toBeGreaterThan(0);
   });
@@ -162,8 +162,9 @@ describe("network policy", () => {
 });
 
 describe("configuration", () => {
-  it("defaults fit an 8 GiB host with several people", () => {
-    expect(config.maxRunning).toBe(3);
+  it("defaults fit an 8 GiB host with a desktop in every running environment", () => {
+    expect(config.maxRunning).toBe(2);
+    expect(config.limits.memoryBytes).toBeGreaterThanOrEqual(1536 * 1024 ** 2);
     expect(config.limits.memoryBytes * config.maxRunning).toBeLessThanOrEqual(3 * 1024 ** 3);
     expect(config.idleStopMs).toBe(15 * 60_000);
     expect(config.requireEgressPolicy).toBe(true);
