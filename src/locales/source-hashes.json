@@ -5325,7 +5325,9 @@
       "mascot.color.group.deep": "c54e3625467b4fdecbd75968fc2fa16fff1e6ad1359e37d32604cadcc8947d5e",
       "mascot.color.group.neon": "618484e2c549451830e2b2c19b498d90b4fc8d206174f13c43ed058e6470ee2f",
       "mascot.color.group.neutral": "1c6ac69f1e5db9c36e9f549d72ef77d23ceab19c557a7eb3a27c7f06f4484b44",
-      "mascot.color.use": "3f11f6227ed5a14383e5eecbedc6de2de19a3d4a3d2dfb17475fc9ce9743d138"
+      "mascot.color.use": "3f11f6227ed5a14383e5eecbedc6de2de19a3d4a3d2dfb17475fc9ce9743d138",
+      "settings.card.workspaces": "2018b2ac86a6ac44aa9ee20897c5fbc0fc5bee444ebf55fa3bd46900d815db32",
+      "settings.card.workspacesOne": "9d528b1e755e4a145647e868aacc6cfb92c07f5bfefcc89af464ffccf499565e"
     },
     "hi": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",
