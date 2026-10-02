@@ -22,7 +22,6 @@ import type { PerspicaxOrg } from "@/lib/perspicax-org";
 import { api } from "@/state/store";
 import { Card } from "./SettingsPrimitives";
 import { MyRoutineDelegation } from "./settings/MyRoutineDelegation";
-import { MyServerEnvironment } from "./settings/MyServerEnvironment";
 import { OrgSharing } from "./settings/OrgSharing";
 import { InterimPeople } from "./settings/InterimPeople";
 import { BotWorkplaceSettings } from "./settings/BotWorkplaceSettings";
@@ -124,7 +123,6 @@ export function PerspicaxOrgSettings({ org, onChanged }: { org: PerspicaxOrg; on
       {interimVisible && interim?.until ? <InterimPeople until={interim.until} onChanged={onChanged} /> : null}
       <MyRoutineDelegation issuer={org.org.identity.issuer} />
       <BotWorkplaceSettings />
-      <MyServerEnvironment />
       <OrgSharing admin={admin} />
       {admin && <OrgFullAccessPolicy initial={org.settings.allowFullAccess !== false} onChanged={onChanged} />}
       {admin && (

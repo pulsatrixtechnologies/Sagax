@@ -40,7 +40,20 @@ export const IMAGE_REPOSITORY = "localhost/openmausbot/cua-local-vm";
 export const IMAGE_LAYER_VERSION = "5";
 export const IMAGE_LAYER_LABEL = "com.openmausbot.image-layer";
 export const IMAGE = `${IMAGE_REPOSITORY}:driver-${CUA_DRIVER_VERSION}-v${IMAGE_LAYER_VERSION}`;
-export const CONTAINER = "openmausbot-computer";
+/** A test run's own namespace (`OMB_LOCAL_VM_TEST_NAMESPACE`): its Local VM
+ * containers get a unique, labeled name, never the real one, so a test can
+ * never leave behind (or reuse) the developer's `openmausbot-computer`.
+ * Clean them up with `testLocalVmCleanupArgs`. */
+export const LOCAL_VM_TEST_NAMESPACE = localVmTestNamespace(process.env.OMB_LOCAL_VM_TEST_NAMESPACE);
+export const REAL_CONTAINER = "openmausbot-computer";
+export const CONTAINER = LOCAL_VM_TEST_NAMESPACE ? `openmausbot-test-${LOCAL_VM_TEST_NAMESPACE}-computer` : REAL_CONTAINER;
+/** Names the test run that created a container (only ever set in tests). */
+export const TEST_RUN_LABEL = "com.openmausbot.test-run";
+/** The host folder a Local VM was created for. A container whose label or
+ * bind mount names another folder (or one that no longer exists) belongs to
+ * another data dir, e.g. a test's deleted temp home: it is recreated, never
+ * started as is. */
+export const WORKSPACE_PATH_LABEL = "com.openmausbot.workspace-path";
 export const MANAGED_LABEL = "com.openmausbot.local-vm";
 export const DRIVER_LABEL = "com.openmausbot.cua-driver";
 export const BASE_IMAGE_LABEL = "com.openmausbot.cua-base";
@@ -111,6 +124,39 @@ export function poolLocalVmTarget(seat: number): LocalVmTarget {
 }
 
 /** Only provisioning creates this durable directory; idle removal keeps it. */
+export function localVmTestNamespace(value: string | undefined): string {
+  const namespace = (value ?? "").trim().toLowerCase();
+  return /^[a-z0-9][a-z0-9-]{0,39}$/.test(namespace) ? namespace : "";
+}
+
+/** argv (after the runtime) listing every container a test namespace made. */
+export function testLocalVmListArgs(namespace: string): string[] {
+  return ["ps", "-aq", "--filter", `label=${TEST_RUN_LABEL}=${namespace}`];
+}
+
+/** Whether a workspace folder lies in this machine's temporary directory: a
+ * Local VM bound there outlives the folder (a test's throwaway home), and
+ * Docker then refuses to start it ("bind source path does not exist"). */
+export function workspaceIsTemporary(workspaceDir: string, temporaryRoot = tmpdir()): boolean {
+  const strip = (value: string) => resolve(value).replace(/^\/private(?=\/)/, "");
+  const root = strip(temporaryRoot);
+  const dir = strip(workspaceDir);
+  return dir === root || dir.startsWith(`${root}/`) || dir.startsWith(`${root}\\`);
+}
+
+/** Why a Local VM may not be created for this folder: a real-named
+ * container bound to the temp folder is a test's throwaway home, and it
+ * breaks the person's Local VM once that folder is gone. Tests set
+ * OMB_LOCAL_VM_TEST_NAMESPACE (their own names) instead. */
+export function localVmFolderRefusal(
+  target: Pick<LocalVmTarget, "workspaceDir">,
+  namespace = LOCAL_VM_TEST_NAMESPACE,
+  temporaryRoot = tmpdir(),
+): string | null {
+  if (namespace || !workspaceIsTemporary(target.workspaceDir, temporaryRoot)) return null;
+  return `Refusing to create the Local VM in a temporary folder (${target.workspaceDir}); set OMB_DATA_DIR to a durable folder`;
+}
+
 export function localVmWorkspaceExists(target: LocalVmTarget): boolean {
   try {
     return lstatSync(target.workspaceDir, { throwIfNoEntry: false })?.isDirectory() === true;
@@ -914,7 +960,10 @@ export function containerRunArgs(
     `${WORKSPACE_LABEL}=1`,
     "--label",
     `${TARGET_LABEL}=${target.label}`,
+    "--label",
+    `${WORKSPACE_PATH_LABEL}=${target.workspaceDir}`,
   );
+  if (LOCAL_VM_TEST_NAMESPACE) common.push("--label", `${TEST_RUN_LABEL}=${LOCAL_VM_TEST_NAMESPACE}`);
   if (runtime === "container") {
     // Apple container already places each Linux container in a lightweight VM.
     common.push(
@@ -1034,6 +1083,9 @@ export async function containerComputerAction(
       { status: 409 },
     );
   }
+
+  const folderRefusal = action === "run" ? localVmFolderRefusal(target) : null;
+  if (folderRefusal) throw Object.assign(new Error(folderRefusal), { status: 409 });
 
   if (action === "pull") {
     await prepareManagedImage(runtime, runner);
@@ -1310,5 +1362,55 @@ export function setupCommands(
     stop: command(["stop", target.containerName]),
     remove: command(["rm", runtime === "container" ? "--force" : "-f", target.containerName]),
     view: target.viewerPort ? `http://127.0.0.1:${target.viewerPort}/vnc.html` : "",
+  };
+}
+
+/** Placeholders the desktop app fills in (electron/local-vm.mjs): its own
+ * data dir's workspace and a fresh viewer password, never sent to a server. */
+export const DESKTOP_WORKSPACE_PLACEHOLDER = "__SAGAX_WORKSPACE__";
+export const DESKTOP_PASSWORD_PLACEHOLDER = "__SAGAX_VNC_PW__";
+
+export interface LocalVmDesktopSpec {
+  version: 1;
+  container: string;
+  image: string;
+  baseImage: string;
+  imageLabels: Record<string, string>;
+  dockerfile: string;
+  run: { docker: string[]; podman: string[] };
+}
+
+/** What a person's desktop app needs to create the Local VM on their own
+ * computer in server mode (POST /api/me/desktop-bridge/local-vm, "setup"):
+ * the same image and the same hardened `run` this server would use, with the
+ * desktop's folder and password left as placeholders. One source of truth,
+ * so a desktop never builds a VM this server's checks would reject. */
+export function localVmDesktopSpec(): LocalVmDesktopSpec {
+  const target: LocalVmTarget = { ...SHARED_LOCAL_VM_TARGET, containerName: REAL_CONTAINER, workspaceDir: DESKTOP_WORKSPACE_PLACEHOLDER };
+  const strip = (args: string[]) => {
+    // A test namespace never reaches a person's desktop.
+    const out: string[] = [];
+    for (let index = 0; index < args.length; index++) {
+      if (args[index] === "--label" && args[index + 1]?.startsWith(`${TEST_RUN_LABEL}=`)) { index++; continue; }
+      out.push(args[index]!);
+    }
+    return out;
+  };
+  return {
+    version: 1,
+    container: REAL_CONTAINER,
+    image: IMAGE,
+    baseImage: BASE_IMAGE,
+    imageLabels: {
+      [MANAGED_LABEL]: "1",
+      [DRIVER_LABEL]: CUA_DRIVER_VERSION,
+      [BASE_IMAGE_LABEL]: BASE_IMAGE_DIGEST,
+      [IMAGE_LAYER_LABEL]: IMAGE_LAYER_VERSION,
+    },
+    dockerfile: managedImageDockerfile(),
+    run: {
+      docker: strip(containerRunArgs("docker", DESKTOP_PASSWORD_PLACEHOLDER, target)),
+      podman: strip(containerRunArgs("podman", DESKTOP_PASSWORD_PLACEHOLDER, target)),
+    },
   };
 }

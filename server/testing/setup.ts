@@ -23,6 +23,10 @@ delete process.env.HERMES_HOME;
 // wholesale, and "it is safe because of a line in another file" is not the
 // footing that delete should stand on.
 process.env.OMB_COMPANION_DIR = join(home, ".openmausbot-companion");
+// Local VM containers made by tests carry the run's namespace, never the
+// real name (server/testing/global-setup.ts sets it; this is the fallback
+// for a file run some other way).
+process.env.OMB_LOCAL_VM_TEST_NAMESPACE ||= `t${process.pid.toString(36)}-solo`;
 
 // Product code follows navigator.language, which makes English assertions
 // depend on the developer or CI host locale. Keep the shared default stable;

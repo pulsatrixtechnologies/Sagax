@@ -488,6 +488,40 @@ someone else's thread shows no request text. Tests:
 `server/routes/bot-activity.test.ts`, `ActivitySection.test.ts`,
 `InlineEditableText.test.ts`, `BotSettingsDialog.caption.test.ts`.
 
+## Computer tab and Local VM on an organization server
+
+The Computer tab (`src/components/computer/OrgComputerTab.tsx`) draws the
+solo screen: one rounded screen (`ComputerScreen.tsx`) with Play / Pause /
+Stop on it and "<Bot>'s screen" below, the "Where this bot works" selector
+(the person's `sagax.botWorkplace.v1`, with the reason the current computer
+is used) and a usage panel. States are words (Off, Starting, Running, Paused,
+Error); never show the desktop's raw answer. Settings > Computer holds the
+same choice, the Local VM card and the compact server environment card
+(`settings/OrgComputerSettings.tsx`); Settings > Organization no longer has
+the server environment. VPS Computer and Boat Computer are experimental
+flags (`features.vpsComputer`, `features.boatComputer`, off): off hides
+their cards, the Cloud place and backend choices. Tests:
+`OrgComputerTab.test.ts`, `experimental-computers.test.ts`.
+
+The Local VM in server mode lives on the person's computer
+(`electron/local-vm.mjs`, `POST /api/me/desktop-bridge/local-vm`):
+
+- Runtime detection runs on the desktop (Docker Desktop, OrbStack, Colima,
+  Rancher Desktop, Podman; bare PATH, sockets, `docker context`), never on
+  the organization server.
+- A container whose bind mount or `com.openmausbot.workspace-path` label
+  names another folder, or one that no longer exists, is stale: never
+  started, recreated by setup on `<data>/vm-home` (the old folder is kept).
+- Setup (one click) uses the server's recipe (`localVmDesktopSpec`), which
+  the desktop checks (`validLocalVmSpec`) before running it. Nothing is
+  installed without the person's click and an OS dialog.
+- Tests never create a container under the real name: vitest sets
+  `OMB_LOCAL_VM_TEST_NAMESPACE` (`server/testing/global-setup.ts`), names
+  become `openmausbot-test-<ns>-computer`, labeled and removed at the end;
+  a real-named VM is refused in the temp folder (`localVmFolderRefusal`).
+  Tests: `electron/local-vm.node-test.mjs`, `server/local-vm-hygiene.test.ts`,
+  `server/desktop-bridge-local-vm.test.ts`.
+
 ## Group settings
 
 A group has no setup dialog and no pending setup state. Every group setting

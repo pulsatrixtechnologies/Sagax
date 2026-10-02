@@ -109,11 +109,16 @@ test("fetch_url fetches from this computer's network", async () => {
 
 test("Local VM: only labelled Sagax containers", async () => {
   const calls = [];
-  const vm = createLocalVm({ run: async argv => {
+  const vm = createLocalVm({ dataDir: "/Users/ada/.openmausbot", platform: "linux", env: { PATH: "/usr/bin" }, exists: file => file === "/Users/ada/.openmausbot/vm-home", exec: async argv => {
     calls.push(argv.join(" "));
-    if (argv[1] === "version") return { content: [{ type: "text", text: "27.0\n[exit 0]" }] };
-    if (argv[1] === "ps") return { content: [{ type: "text", text: "openmausbot-computer\trunning\n[exit 0]" }] };
-    return { content: [{ type: "text", text: "Linux\n[exit 0]" }] };
+    if (argv[1] === "version") return { code: 0, stdout: "27.0\n", stderr: "" };
+    if (argv[1] === "info") return { code: 0, stdout: "Docker Desktop\n", stderr: "" };
+    if (argv[1] === "context") return { code: 0, stdout: "unix:///Users/ada/.docker/run/docker.sock\n", stderr: "" };
+    if (argv[1] === "ps") return { code: 0, stdout: "openmausbot-computer\trunning\n", stderr: "" };
+    if (argv[1] === "inspect") return argv[2] === "openmausbot-computer"
+      ? { code: 0, stdout: JSON.stringify([{ Name: "/openmausbot-computer", State: { Running: true }, Config: { Labels: { "com.openmausbot.local-vm": "1" } }, Mounts: [{ Type: "bind", Source: "/Users/ada/.openmausbot/vm-home" }] }]), stderr: "" }
+      : { code: 1, stdout: "", stderr: "no such container" };
+    return { code: 0, stdout: "Linux\n", stderr: "" };
   } });
   assert.match((await vm.status()).content[0].text, /openmausbot-computer/);
   await vm.exec(undefined, "uname");

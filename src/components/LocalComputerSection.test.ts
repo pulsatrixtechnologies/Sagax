@@ -542,7 +542,11 @@ describe("Settings → Computers on an OMB Cloud home", () => {
   const cards = () => [...renderToStaticMarkup(createElement(LocalComputerSection)).matchAll(/<button type="button" aria-expanded="[a-z]+"[^>]*><span class="shrink-0">([^<]+)<\/span>/g)].map((match) => match[1]);
 
   it("sets up a Local VM on a desktop or self-hosted server", () => {
-    expect(cards()).toEqual(expect.arrayContaining(["Cloud computers", "Local VM", "Setup"]));
+    expect(cards()).toEqual(expect.arrayContaining(["Local VM", "Setup"]));
+    // Boat Computer is experimental: its card shows only when switched on.
+    expect(cards()).not.toContain("Cloud computers");
+    storeFixture.config = { features: { skillAuthoring: true, boatComputer: true } };
+    expect(cards()).toContain("Cloud computers");
   });
 
   it("shows no Local VM, and no steps to install one, where it cannot exist", () => {

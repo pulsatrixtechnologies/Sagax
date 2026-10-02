@@ -81,7 +81,7 @@ function startServer(home: string, port: number, env: Record<string, string>) {
     cwd: join(SERVER_DIR, ".."),
     env: {
       ...(process.env.PATH ? { PATH: process.env.PATH } : {}),
-      HOME: home, USERPROFILE: home, OMB_PORT: String(port), OMB_WEBHOOK_PORT: String(port + 1), ...env,
+      HOME: home, USERPROFILE: home, OMB_LOCAL_VM_TEST_NAMESPACE: process.env.OMB_LOCAL_VM_TEST_NAMESPACE ?? "", OMB_PORT: String(port), OMB_WEBHOOK_PORT: String(port + 1), ...env,
     },
     stdio: ["ignore", "pipe", "pipe"],
   });
