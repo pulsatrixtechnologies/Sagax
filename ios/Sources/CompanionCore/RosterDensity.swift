@@ -114,7 +114,7 @@ public struct CompactBotRow: Equatable, Sendable {
     public let status: RosterRowStatus
     /// Threads behind the "› N" control.
     public let threadCount: Int
-    /// The Chief of Staff crown after the name.
+    /// The Primary Bot's orange star after the name.
     public let showsChiefBadge: Bool
     /// The comfortable row's rule, exactly: the bot's own unread flag,
     /// hidden while its conversation is busy — which the harness also

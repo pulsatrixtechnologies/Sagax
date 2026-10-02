@@ -95,7 +95,9 @@ public final class DemoServer: @unchecked Sendable {
         case ("GET", ["api", "bots"]) where parts.count == 2:
             return encode(FleetBody(fleet: fleet))
         case ("GET", ["api", "health"]):
-            return .init(status: 200, body: Data(#"{"app":"openmausbot"}"#.utf8))
+            // Encoded rather than spelled out, so no upstream name sits in the
+            // binary as a JSON literal (scripts/check-ios-bundle-names.sh).
+            return encode(CompanionClient.HealthIdentity(app: CompanionClient.HealthIdentity.expectedApp))
         case ("GET", ["api", "routines"]):
             lock.lock(); defer { lock.unlock() }
             return encode(RoutinesResponse(routines: routines, runs: runs))

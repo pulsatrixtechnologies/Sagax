@@ -35,7 +35,7 @@ struct DemoFixture {
             return value
         }
 
-        let atlas = bot("atlas", "Atlas", "Chief of Staff", "Keeps the team on track and writes the weekly plan.", color: "blue", section: "Launch", extra: ["chiefOfStaff": true, "pinned": true], task: "Weekly plan", messages: [
+        let atlas = bot("atlas", "Atlas", "", "Keeps the team on track and writes the weekly plan.", color: "blue", section: "Launch", extra: ["chiefOfStaff": true, "pinned": true], task: "Weekly plan", messages: [
             text("atlas-1", "user", 95, "What should the team focus on this week?"),
             text("atlas-2", "bot", 94, "Three things, in order:\n\n- **Ship the iOS beta** to internal testers (Scout is waiting on your approval).\n- **Finish the onboarding screens** with Pixel.\n- **Keep the release build green**: Forge is running the checks now.\n\nI'll send you a summary on Friday.", parent: "atlas-1"),
         ])

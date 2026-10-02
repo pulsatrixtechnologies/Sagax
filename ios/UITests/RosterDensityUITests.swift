@@ -17,10 +17,10 @@ final class RosterDensityUITests: XCTestCase {
         // Groups are rows, made from the "+" on their title.
         XCTAssertTrue(app.buttons["chat-row.roster-general"].exists)
         XCTAssertTrue(app.buttons["new-group"].exists)
-        // The Chief of Staff wears the crown right after its name.
-        let crown = app.buttons["chat-row.roster-atlas"].descendants(matching: .any)["chief-badge"]
-        XCTAssertTrue(crown.exists)
-        XCTAssertEqual(crown.label, "Chief of Staff")
+        // The Primary Bot wears the orange star right after its name.
+        let star = app.buttons["chat-row.roster-atlas"].descendants(matching: .any)["primary-bot-badge"]
+        XCTAssertTrue(star.exists)
+        XCTAssertEqual(star.label, "Primary Bot")
         recordScreenshot("Compact roster by default", in: app)
     }
 

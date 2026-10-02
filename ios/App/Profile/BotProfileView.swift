@@ -68,9 +68,7 @@ struct BotProfileView: View {
 
     private var current: Bot { session.state.bot(bot.id) ?? bot }
     private var role: String {
-        let title = current.title.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !title.isEmpty { return title }
-        return current.chiefOfStaff == true ? String(localized: "Admin") : ""
+        current.displayRole
     }
     private var botRoutines: [Routine] {
         routines.filter { $0.botId == bot.id }.sorted { $0.createdAt < $1.createdAt }

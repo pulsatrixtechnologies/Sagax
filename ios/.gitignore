@@ -10,3 +10,5 @@ App/Sagax.entitlements
 ShareExtension/Info.plist
 ShareExtension/SagaxShareExtension.entitlements
 Widgets/SagaxWidgets.entitlements
+# xcodebuild -derivedDataPath build/dd (CI and local checks)
+build/

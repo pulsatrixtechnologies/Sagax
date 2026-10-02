@@ -1261,7 +1261,7 @@ extension ChatListView {
 
     // MARK: Pinned
 
-    /// The Chief of Staff (when it has no section), pinned bots, then
+    /// The Primary Bot (when it has no section), pinned bots, then
     /// pinned groups.
     private var pinnedChats: [Chat] {
         var chats: [Chat] = []

@@ -143,24 +143,24 @@
         }
       }
     },
-    "Chief of Staff": {
+    "Primary Bot": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Chief of Staff"
+            "value": "Primary Bot"
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Chef de cabinet"
+            "value": "Robot principal"
           }
         },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
-            "value": "Chefe de gabinete"
+            "value": "Robô principal"
           }
         }
       }

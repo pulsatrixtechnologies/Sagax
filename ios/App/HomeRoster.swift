@@ -107,7 +107,7 @@ struct HomeAccountButton: View {
     }
 
     /// Without a photo or a name, the paired computer's own mascot: its
-    /// Chief of Staff when it has one.
+    /// Primary Bot when it has one.
     private var fallbackBot: Bot? {
         guard session.account?.name == nil, session.account?.email == nil else { return nil }
         return session.state.bots.first { $0.chiefOfStaff == true && $0.hidden != true }
@@ -150,11 +150,8 @@ struct HomePinnedCell: View {
                     .foregroundStyle(Theme.textSecondaryHome)
                     .lineLimit(1)
                 if case let .bot(bot) = chat, bot.chiefOfStaff == true {
-                    Image(systemName: "crown.fill")
-                        .font(.system(size: 9))
-                        .foregroundStyle(MausPalette.color("yellow"))
+                    PrimaryBotBadge(size: 10)
                         .padding(.leading, -4)
-                        .accessibilityLabel(Text("Chief of Staff"))
                 }
                 if chat.unread && !chat.busy {
                     Circle()
@@ -262,7 +259,7 @@ struct HomeChatRow: View {
     }
 
     private var role: String {
-        if case let .bot(bot) = chat { return bot.title }
+        if case let .bot(bot) = chat { return bot.displayRole }
         return ""
     }
 
@@ -274,11 +271,7 @@ struct HomeChatRow: View {
                     .foregroundStyle(Theme.textPrimary)
                     .lineLimit(1)
                 if case let .bot(bot) = chat, bot.chiefOfStaff == true {
-                    Image(systemName: "crown.fill")
-                        .font(.system(size: 11))
-                        .foregroundStyle(MausPalette.color("yellow"))
-                        .accessibilityLabel(Text("Chief of Staff"))
-                        .accessibilityIdentifier("chief-badge")
+                    PrimaryBotBadge(size: 12)
                 }
             }
             .layoutPriority(2)

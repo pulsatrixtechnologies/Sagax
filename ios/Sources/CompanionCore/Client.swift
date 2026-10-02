@@ -848,7 +848,10 @@ public struct CompanionClient: Sendable {
         }
     }
 
-    private struct HealthIdentity: Decodable {
+    struct HealthIdentity: Codable {
+        /// The health body's `app` value every server answers with (a wire
+        /// identifier, see ios/README.md "Legacy wire identifiers").
+        static let expectedApp = "openmausbot"
         let app: String
     }
 
@@ -861,7 +864,7 @@ public struct CompanionClient: Sendable {
             guard !Task.isCancelled,
                   let http = response as? HTTPURLResponse,
                   (200...299).contains(http.statusCode),
-                  try JSONDecoder().decode(HealthIdentity.self, from: data).app == "openmausbot"
+                  try JSONDecoder().decode(HealthIdentity.self, from: data).app == HealthIdentity.expectedApp
             else { return false }
             return true
         } catch {

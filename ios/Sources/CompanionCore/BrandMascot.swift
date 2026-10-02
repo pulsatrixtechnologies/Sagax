@@ -11,7 +11,7 @@ public enum BrandMascot: Equatable, Sendable {
     case sagaxOwl
     case primary(Bot)
 
-    /// The Primary Bot of a fleet: the visible bot marked Chief of Staff.
+    /// The Primary Bot of a fleet: the visible bot marked `chiefOfStaff` (the wire name).
     public static func primaryBot(in bots: [Bot]) -> Bot? {
         bots.first { $0.chiefOfStaff == true && $0.hidden != true }
     }
