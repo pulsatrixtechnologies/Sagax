@@ -98,7 +98,7 @@ async function createBot(auth: Auth, name: string): Promise<{ id: string; thread
 
 /** A person's own Claude subscription, signed in, with their own commands. */
 function subscribe(principalId: string, commands: string[]): string {
-  const dir = join(home, ".openmausbot", "principals", principalId, "claude");
+  const dir = join(home, ".sagax", "principals", principalId, "claude");
   mkdirSync(dir, { recursive: true, mode: 0o700 });
   writeFileSync(join(dir, ".pulsabot-login.json"), JSON.stringify({ at: Date.now() }), { mode: 0o600 });
   writeFileSync(join(dir, "fake-commands.json"), JSON.stringify(commands.map((name) => ({ name, description: `${name} skill`, argumentHint: "" }))));
@@ -154,7 +154,7 @@ posixOnly("Perspicax organization: engine slash commands per speaker", () => {
     PORT = await freePortBlock([0, 1]);
     BASE = `http://127.0.0.1:${PORT}`;
     home = mkdtempSync(join(tmpdir(), "omb-org-commands-"));
-    const data = join(home, ".openmausbot");
+    const data = join(home, ".sagax");
     mkdirSync(data, { recursive: true });
     mkdirSync(join(home, "link"), { recursive: true, mode: 0o750 });
     writeFileSync(join(home, "link", "pulsabot.json"), JSON.stringify({
@@ -233,7 +233,7 @@ posixOnly("Perspicax organization: engine slash commands per speaker", () => {
     }
     const shared = probeDirs().slice(before + 2);
     expect(shared).toHaveLength(1);
-    expect(shared[0] ?? "").not.toContain(join(".openmausbot", "principals"));
+    expect(shared[0] ?? "").not.toContain(join(".sagax", "principals"));
 
     // the 1:1 route is the speaker's too: bob on alice's bot, his own thread
     const own = await api("POST", `/api/bots/${x.id}/tasks`, people.bob, { title: "Bob's own" });
