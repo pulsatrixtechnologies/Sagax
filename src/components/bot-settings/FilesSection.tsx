@@ -315,7 +315,15 @@ export function FilesBrowser({ threadId, files, error, onRetry, onJump, initialF
 
   const all = useMemo(() => files ?? [], [files]);
   const counts = useMemo(() => countByFilter(all, { origin, search }), [all, origin, search]);
-  const shown = useMemo(() => visibleFiles(all, { filter, origin, search, sort }), [all, filter, origin, search, sort]);
+  // Only kinds that have files get a chip, and the row shows only when there
+  // is something to choose between (two kinds or more); the selected chip stays.
+  const visibleFilters = useMemo(() => {
+    const kinds = FILE_FILTERS.filter((id) => id !== "all" && (counts[id] > 0 || filter === id));
+    return kinds.length >= 2 ? (["all", ...kinds] as const satisfies readonly string[]) : [];
+  }, [counts, filter]);
+  // With no chips on screen the list is never narrowed by a hidden filter.
+  const activeFilter: FileFilter = visibleFilters.length > 0 ? filter : "all";
+  const shown = useMemo(() => visibleFiles(all, { filter: activeFilter, origin, search, sort }), [all, activeFilter, origin, search, sort]);
   // Grid suits pictures; a chosen view sticks.
   const view = pickedView ?? (filter === "image" || filter === "video" ? "grid" : "list");
   const images = useMemo(() => shown.filter((file) => file.available && classifyFile(file) === "image"), [shown]);
@@ -382,7 +390,7 @@ export function FilesBrowser({ threadId, files, error, onRetry, onJump, initialF
   const selectClass = "min-w-0 flex-1 rounded-lg border border-hairline-weak bg-elevated px-2 py-1.5 text-[12.5px] text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/60";
   const emptyText = search.trim()
     ? t("botPanel.files.noMatch", { query: search.trim() })
-    : t(`botPanel.files.empty.${filter}`);
+    : t(`botPanel.files.empty.${activeFilter}`);
 
   return (
     <div className="flex flex-col gap-3" data-files-section>
@@ -425,8 +433,8 @@ export function FilesBrowser({ threadId, files, error, onRetry, onJump, initialF
         </div>
       </div>
 
-      <div role="group" aria-label={t("botPanel.files.filterAria")} className="flex flex-wrap gap-1.5">
-        {FILE_FILTERS.map((id) => (
+      {visibleFilters.length > 0 && <div role="group" aria-label={t("botPanel.files.filterAria")} className="flex flex-wrap gap-1.5">
+        {visibleFilters.map((id) => (
           <button
             key={id}
             type="button"
@@ -441,7 +449,7 @@ export function FilesBrowser({ threadId, files, error, onRetry, onJump, initialF
             <span className={cn("tabular-nums", filter === id ? "text-app/70" : "text-ink-tertiary")}>{counts[id]}</span>
           </button>
         ))}
-      </div>
+      </div>}
 
       <div className="flex items-center gap-2">
         <select value={origin} onChange={(event) => setOrigin(event.target.value as FileOrigin)} aria-label={t("botPanel.files.originAria")} className={selectClass}>

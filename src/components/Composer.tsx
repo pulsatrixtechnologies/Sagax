@@ -1,6 +1,6 @@
 import { track } from "@/lib/analytics";
 import { useCallback, useEffect, useMemo, useRef, useState, type SetStateAction } from "react";
-import { ArrowUp, Clock, Mic, Paperclip, Square, Target, TriangleAlert, Users, X } from "lucide-react";
+import { ArrowUp, Clock, Mic, Paperclip, Square, Target, Users, X } from "lucide-react";
 import { api, useStore, visibleMessages, currentTaskBot, type Bot, type Group, type Message } from "@/state/store";
 import { fullAccessNeedsConfirmation, orgFullAccessFor } from "@/lib/full-access";
 import { usePerspicaxOrg } from "@/lib/perspicax-org";
@@ -61,7 +61,7 @@ import {
 } from "@/lib/composer-attachments";
 import { normalizeState } from "@/lib/mascot";
 import { goalCoordinatorForComposer, groupComposerHint, jevRoomRoutingOn, roomRespondersForComposer } from "@/lib/group-routing";
-import { PendingApprovalActions, PendingApprovalPanel, pendingApprovals } from "./PendingApproval";
+import { PendingApprovalBox, pendingApprovals, type Pending } from "./PendingApproval";
 import { useDesktopCapabilities } from "./DesktopCapabilities";
 import { ReplyQuote } from "./ReplyQuote";
 import { useThreadRefs } from "./ThreadRefs";
@@ -71,6 +71,10 @@ import {
   doubleEnterSteerWindowExpiresAt,
   doubleEnterSteersQueue,
 } from "./ComposerQueuedMessages";
+import { BusySendChooser, moveBusyChoice } from "./BusySendChooser";
+import { useParallelApprovals } from "./parallel-approvals";
+import { useBusySendPreference } from "@/lib/busy-send";
+import { suggestBusySendMode, type BusySendMode } from "../../shared/parallel-tasks";
 import { skillAuthoringEnabled } from "@/lib/feature-flags";
 import { useRetroSkin } from "./RetroChromeHost";
 import { mentionChoicesForQuery } from "@/lib/mentions";
@@ -156,16 +160,26 @@ export function Composer({
   const composerTask = profile?.tasks?.find((task) => task.threadId === threadId);
   // the VISIBLE branch only — an approval left on a branch you edited away
   // from must not keep blocking the composer
-  const approvals = pendingApprovals(group ? group.messages : bot ? visibleMessages(bot) : []);
+  // this conversation's own, then those its parallel tasks wait on
+  const parallelApprovals = useParallelApprovals(group ? undefined : bot);
+  const approvals = [...pendingApprovals(group ? group.messages : bot ? visibleMessages(bot) : []), ...parallelApprovals];
   const approval = approvals[0];
-  const approvalBot = group
-    ? members?.find((member) => member.id === approval?.message.from?.botId) ??
+  const approvalBotFor = (pending: Pending) => group
+    ? members?.find((member) => member.id === pending.message.from?.botId) ??
       members?.find((member) => member.id === group.busyBotId)
     : bot;
   const busyName = group
     ? (members?.find((b) => b.id === group.busyBotId)?.name ??
       (group.working ? t("composer.busy.team") : t("composer.busy.aBot")))
     : (bot?.name ?? t("composer.busy.theBot"));
+  // A send while this 1:1 conversation works: join, parallel task or after
+  // (shared/parallel-tasks.ts). "ask" offers the choice; null = closed.
+  const busySendPreference = useBusySendPreference();
+  const offersBusyChoice = Boolean(bot && !group && busy);
+  const [busyChoice, setBusyChoice] = useState<BusySendMode | null>(null);
+  useEffect(() => {
+    if (!offersBusyChoice) setBusyChoice(null);
+  }, [offersBusyChoice]);
   // Per-thread draft: switching bots unmounts this component, so both the
   // text and its attachment chips have to outlive it (see lib/drafts).
   const draftId = group
@@ -562,7 +576,6 @@ export function Composer({
   const viewerId = state.config?.viewer?.principalId ?? null;
   const orgFullAccess = orgFullAccessFor(perspicaxOrg, modeBot, viewerId);
   const fullAccessAvailable = trustedThreadAccess || orgFullAccess === "allowed";
-  const modeIsFull = Boolean(modeBot && approvalModeFor(modeBot) === "full");
   const uploadImage = useCallback(async (file: File): Promise<Attachment | null> => {
     const optimistic = optimisticImageAttachment(file);
     if (!optimistic) return null;
@@ -659,7 +672,7 @@ export function Composer({
       dispatch({ type: "send", botId: bot.id, ...retry });
     }
   };
-  const send = () => {
+  const send = (chosen?: BusySendMode) => {
     // The Hibou 98 easter egg: the secret command toggles the retro owl and
     // is never sent to anyone.
     if (consumeRetroCommand(text, attachments.length)) {
@@ -679,6 +692,17 @@ export function Composer({
     // stays machine-readable in the stored send and the model's context
     const body = composeMessage(serializeThreadRefs(effectiveText, threads, currentBotId), attachments);
     if (!body) return;
+    // While this conversation works, the person says what the message does,
+    // or their default does.
+    let busyMode: BusySendMode | undefined;
+    if (offersBusyChoice) {
+      busyMode = chosen ?? (busySendPreference === "ask" ? undefined : busySendPreference);
+      if (!busyMode) {
+        setBusyChoice(suggestBusySendMode(body));
+        return;
+      }
+    }
+    setBusyChoice(null);
     const sentDraft: ComposerDraftSnapshot = {
       draftId,
       revision: draftRevision(draftId),
@@ -711,6 +735,7 @@ export function Composer({
         sendId: sentDraft.sendId,
         replyToId: replyTo?.id,
         threadId,
+        ...(busyMode ? { busyMode } : {}),
         onError: () => restoreDraft(sentDraft),
       });
       track("message_sent", { driver: bot.modelSelection?.instanceId, queued: busy && !canSteer });
@@ -946,22 +971,13 @@ export function Composer({
         {/* An approval takes over the composer: you answer it before you
             can type again, so a waiting bot is impossible to miss. */}
         {approval && (
-          <div className="mb-2 overflow-hidden rounded-2xl border border-accent/40 bg-card">
-            {/* locale: the panel is memoized and its other props do not
-                change with the language — see MessagesList in ChatView */}
-            <PendingApprovalPanel
-              pending={approval}
-              count={approvals.length}
-              index={0}
-              locale={activeLocale()}
-            />
-            <PendingApprovalActions
-              pending={approval}
-              threadId={threadId}
-              bot={approvalBot}
-              onCancelTurn={interruptTurn}
-            />
-          </div>
+          <PendingApprovalBox
+            approvals={approvals}
+            threadId={threadId}
+            botFor={approvalBotFor}
+            onCancelTurn={interruptTurn}
+            locale={activeLocale()}
+          />
         )}
         {replyTo && (
           <div className="mb-2 px-1">
@@ -984,6 +1000,15 @@ export function Composer({
           onPendingChange={(pending) => changeDraftAttachmentPending(draftId, pending)}
           uploadImage={uploadImage}
         />
+        {busyChoice && offersBusyChoice && (
+          <BusySendChooser
+            highlighted={busyChoice}
+            onHighlight={setBusyChoice}
+            onPick={(mode) => send(mode)}
+            onClose={() => setBusyChoice(null)}
+            name={busyName}
+          />
+        )}
         <QueuedComposerMessages
           items={queuedMessages}
           onSteer={canSteerQueued ? steerQueued : undefined}
@@ -1076,17 +1101,6 @@ export function Composer({
                   onManageCommandAllowlist={ownerOrAdmin === true ? () => setCommandAllowlistTarget({ botId: modeBot.id, botName: modeBot.name, threadId: modeBot.threadId }) : undefined}
                 />
               )}
-              {modeBot && approvalEngine && !remoteClient && modeIsFull && (
-                <span
-                  role="status"
-                  data-full-access-badge
-                  title={t("approvalMode.full.badgeTitle")}
-                  className="flex h-6 shrink-0 items-center gap-1 rounded-full border border-danger/35 bg-danger/10 px-2 text-[11px] font-medium text-danger"
-                >
-                  <TriangleAlert size={12} aria-hidden="true" />
-                  {t("approvalMode.full.badge")}
-                </span>
-              )}
               {modeBot && !remoteClient && (
                 <PlaceChip
                   bot={modeBot}
@@ -1154,6 +1168,23 @@ export function Composer({
                 return;
               }
             }
+            if (busyChoice) {
+              if (e.key === "ArrowRight" || e.key === "ArrowDown" || e.key === "ArrowLeft" || e.key === "ArrowUp") {
+                e.preventDefault();
+                setBusyChoice(moveBusyChoice(busyChoice, e.key === "ArrowRight" || e.key === "ArrowDown" ? 1 : -1));
+                return;
+              }
+              if (e.key === "Escape") {
+                e.preventDefault();
+                setBusyChoice(null);
+                return;
+              }
+              if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+                e.preventDefault();
+                send(busyChoice);
+                return;
+              }
+            }
             // an empty composer + ArrowUp = edit your last message (like a chat app)
             if (e.key === "ArrowUp" && !hasContent && onEditLast) {
               e.preventDefault();
@@ -1191,6 +1222,8 @@ export function Composer({
               ? t("composer.placeholder.attaching")
               : recording
               ? t("composer.placeholder.listening")
+              : offersBusyChoice && busySendPreference === "ask"
+                ? t("composer.placeholder.busyChoice", { name: busyName })
               : busy && canSteer
                 ? pendingCount > 0
                   ? t("composer.placeholder.steerQueued", { name: busyName })
@@ -1246,7 +1279,7 @@ export function Composer({
         {group && <GroupCallButton group={group} members={members ?? []} />}
         {(hasContent || retroSkin) && !locked && (
           <button
-            onClick={send}
+            onClick={() => send()}
             disabled={attachmentPending || !hasContent}
             data-r98-send={retroSkin ? "" : undefined}
             aria-label={

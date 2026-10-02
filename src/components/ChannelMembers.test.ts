@@ -155,3 +155,18 @@ describe("a room's people on an organization server", () => {
     expect(html).toContain("Ajouter mon robot");
   });
 });
+
+describe("ChannelMembers person rows", () => {
+  it("makes each person a button that opens their panel when asked", () => {
+    const html = renderToStaticMarkup(createElement(ChannelMembers, {
+      humans: [{ id: "pr_ada", label: "Ada Example" }],
+      bots: [],
+      canAddHuman: false,
+      canAddBot: false,
+      onOpenHuman: () => {},
+    }));
+    expect(html).toContain('data-open-person="pr_ada"');
+    const plain = renderToStaticMarkup(createElement(ChannelMembers, { humans: [{ id: "pr_ada", label: "Ada Example" }], bots: [], canAddHuman: false, canAddBot: false }));
+    expect(plain).not.toContain("data-open-person");
+  });
+});

@@ -10,6 +10,8 @@ import { cn } from "@/lib/cn";
 import { t, tFromServer } from "@/lib/i18n";
 import type { LocaleKey } from "@/locales";
 import { SkillRequestPreview } from "@/components/SkillRequestPreview";
+import { ApprovalHeading, TechnicalDetails } from "@/components/ApprovalParts";
+import { describeApproval, isTechnicalText, parseToolId, type ApprovalRisk, type ToolHints } from "@/lib/approval-describe";
 
 interface ToolLabels {
   [tool: string]: LocaleKey;
@@ -48,11 +50,12 @@ export function approvalCardOutcome(card: OptionCardData): string | undefined {
   return t("approval.status.allowed");
 }
 
-/** The tool's own name is noise to a human: mcp__ogb__computer_batch is
- * "computer batch", Bash is "run a command". */
-export function toolLabel(tool?: string): string {
+/** The tool's own name is noise to a human: Bash is "run a command",
+ * mcp__perspicax_pulsatrix_flow_jc__cw_psa_schedule__query is "view the
+ * schedule in ConnectWise PSA". `input` (the card's JSON arguments) lets a
+ * generic tool (cw_psa__write) say what it writes. */
+export function toolLabel(tool?: string, input?: string, hints?: ToolHints): string {
   if (!tool) return t("approval.tool.takeAction");
-  const bare = tool.replace(/^mcp__[^_]+__/, "").replace(/_/g, " ");
   const nice: ToolLabels = {
     Bash: "approval.tool.runCommand",
     Read: "approval.tool.readFile",
@@ -82,7 +85,44 @@ export function toolLabel(tool?: string): string {
     tool: "approval.tool.useTool",
   };
   const key = nice[tool];
-  return key ? t(key) : bare;
+  if (key) return t(key);
+  const { server, name } = parseToolId(tool);
+  if (!server) return name.replace(/_/g, " ");
+  const described = describeApproval(tool, input, hints);
+  const action = described.action ?? name.replace(/_+/g, " ");
+  return described.product ? t("approval.phrase.inProduct", { action, product: described.product }) : action;
+}
+
+/** What the card shows for a plain tool approval (not a proposal): a
+ * title, a short summary, a risk chip, and the raw bits for the collapsed
+ * technical details. A command or URL stays visible: it is what runs. */
+export interface ToolApprovalView {
+  title: string;
+  summary?: string;
+  risk?: ApprovalRisk;
+  /** a command, URL or question: readable as is, shown under the title */
+  plain?: string;
+  server?: string;
+  /** arguments for the details (pretty JSON when they are JSON) */
+  args?: string;
+}
+
+export function toolApprovalView(card: OptionCardData, botName?: string): ToolApprovalView {
+  const input = card.toolInput ?? card.subtitle;
+  const described = describeApproval(card.tool, input, card.toolHints);
+  const action = toolLabel(card.tool, input, card.toolHints);
+  const title = botName
+    ? t("approval.card.namedWantsTo", { name: botName, action })
+    : t("approval.card.wantsTo", { action });
+  const technical = isTechnicalText(card.subtitle);
+  return {
+    title,
+    summary: described.summary,
+    risk: described.risk,
+    plain: technical || !card.subtitle?.trim() ? undefined : card.subtitle,
+    server: described.server,
+    args: described.argsJson ?? (technical ? card.subtitle : undefined),
+  };
 }
 
 export function ApprovalCard({
@@ -125,43 +165,52 @@ export function ApprovalCard({
         })
     : undefined;
 
+  const isProposal = isRoutineRequest || isSkillRequest || isProfileRequest || isTeamSetup;
+  const view = isProposal ? undefined : toolApprovalView(card, bot?.name);
+  const proposalTitle = isTeamSetup
+    ? card.title
+    : profileHeader ?? (bot
+      ? t("approval.card.namedWantsTo", { name: bot.name, action: toolLabel(displayTool) })
+      : t("approval.card.wantsTo", { action: toolLabel(displayTool) }));
+  const open = !settled && !expired;
+
   return (
     <div
-      data-tour={settled || expired ? undefined : "approval"}
+      data-tour={open ? "approval" : undefined}
       className={cn(
-        "w-full max-w-[840px] rounded-2xl border bg-card p-4",
-        settled || expired ? "border-hairline/30 opacity-70" : "border-accent/40",
+        "w-full max-w-[840px] rounded-2xl border bg-card px-4 py-3",
+        open ? "border-accent/40" : "border-hairline/30 opacity-80",
       )}
     >
-      <div className="flex items-baseline justify-between gap-3">
-        <div className="text-[15px] font-semibold text-ink">
-          {isTeamSetup ? card.title : profileHeader ?? (
-            <>
-              {bot
-                ? t("approval.card.namedWantsTo", { name: bot.name, action: toolLabel(displayTool) })
-                : t("approval.card.wantsTo", { action: toolLabel(displayTool) })}
-            </>
-          )}
-        </div>
-        {displayTool && !isTeamSetup && <span className="shrink-0 font-mono text-[11px] text-ink-secondary">{displayTool}</span>}
-      </div>
+      <ApprovalHeading
+        bot={bot}
+        title={view ? view.title : proposalTitle}
+        summary={view?.summary}
+        risk={view?.risk}
+      />
 
-      {/* what, exactly */}
-      <pre
-        tabIndex={0}
-        aria-label={
-          isRoutineRequest
-            ? t("approval.aria.routineDetails")
-            : isSkillRequest
-              ? t("approval.aria.skillDetails")
-              : isProfileRequest
-                ? t("approval.aria.profileChange")
-                : t("approval.aria.details")
-        }
-        className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-inset px-3 py-2 font-mono text-[12.5px] leading-relaxed text-ink"
-      >
-        {card.subtitle}
-      </pre>
+      {/* a proposal's text is what you confirm; a tool's command or URL is
+          what runs. Raw JSON arguments stay behind the technical details. */}
+      {(isProposal || view?.plain) && (
+        <pre
+          tabIndex={0}
+          aria-label={
+            isRoutineRequest
+              ? t("approval.aria.routineDetails")
+              : isSkillRequest
+                ? t("approval.aria.skillDetails")
+                : isProfileRequest
+                  ? t("approval.aria.profileChange")
+                  : t("approval.aria.details")
+          }
+          className={cn(
+            "mt-2 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-inset px-3 py-2 font-mono text-[12.5px] leading-relaxed text-ink",
+            isProposal ? "max-h-40" : "max-h-24",
+          )}
+        >
+          {isProposal ? card.subtitle : view?.plain}
+        </pre>
+      )}
 
       {card.skillRequest && <SkillRequestPreview request={card.skillRequest} />}
 
@@ -172,8 +221,10 @@ export function ApprovalCard({
       )}
 
       {/* The decision lives in the composer (one place to answer, and it
-          can't be scrolled past); here we only record what happened. */}
-      <div className="mt-3 flex items-center gap-1.5 text-[13px] text-ink-secondary">
+          can't be scrolled past); here we only record what happened. The
+          technical details join the record once it is settled, so an open
+          request is never shown twice in full. */}
+      <div className="mt-2 flex items-center gap-1.5 text-[13px] text-ink-secondary">
         {outcome ? (
           <>
             {settled === "allow" && !expired ? <Check size={14} className="text-success" /> : <X size={14} />} {outcome}
@@ -181,7 +232,7 @@ export function ApprovalCard({
         ) : (
           <>
             <ShieldCheck size={14} className="text-accent" />
-            {isRoutineRequest || isSkillRequest || isProfileRequest || isTeamSetup
+            {isProposal
               ? t("approval.status.waitingConfirmation")
               : card.adminApproval
                 ? t("approval.waitingForAdmin")
@@ -189,6 +240,9 @@ export function ApprovalCard({
           </>
         )}
       </div>
+      {view && !open && (view.args || card.tool) && (
+        <TechnicalDetails tool={card.tool} server={view.server} args={view.args} />
+      )}
     </div>
   );
 }

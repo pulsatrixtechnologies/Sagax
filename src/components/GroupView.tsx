@@ -475,7 +475,7 @@ export const Transcript = memo(function Transcript({
             {!user && m.from && newCluster && !(m.kind === "activity" && m.comm) && (
               <ClusterLabel bot={memberOf(m.from.botId)} name={m.from.name} color={m.from.color} />
             )}
-            {person && newCluster && <RoomPersonLabel name={person.name} initials={person.initials} avatarUrl={person.avatarUrl} />}
+            {person && newCluster && <RoomPersonLabel name={person.name} initials={person.initials} avatarUrl={person.avatarUrl} personId={person.personId} onOpen={(personId) => dispatch({ type: "openPersonPanel", personId })} />}
             {row}
           </div>
         );
@@ -999,10 +999,23 @@ export function GroupView({ group: stored }: { group: Group }) {
         )}
       >
         <div className="absolute left-1/2 top-1/2 flex max-w-[50%] -translate-x-1/2 -translate-y-1/2 items-center gap-2" style={headerNoDragStyle}>
-          {group.dm ? (
+          {peer ? (
+            // A person: their name opens their panel, the way a bot's does.
+            <button
+              type="button"
+              data-open-person={peer.id}
+              onClick={() => dispatch({ type: "openPersonPanel", personId: state.personPanelId === peer.id ? null : peer.id })}
+              className="flex min-w-0 items-center gap-2 rounded-full border-[0.5px] border-hairline-weak bg-elevated py-[7.5px] pl-[7.5px] pr-[13.5px] transition-colors duration-[120ms] hover:bg-elevated-hover"
+              title={t("personPanel.open", { name: peer.name })}
+              aria-label={t("personPanel.open", { name: peer.name })}
+            >
+              <PersonAvatar avatarUrl={peer.avatarUrl} initials={peer.initials} size={24} />
+              <span className="truncate text-[14px] font-medium leading-5 text-ink">{peer.name}</span>
+            </button>
+          ) : group.dm ? (
             <span className="flex min-w-0 items-center gap-2 rounded-full border-[0.5px] border-hairline-weak bg-elevated py-[7.5px] pl-[7.5px] pr-[13.5px]">
-              {peer ? <PersonAvatar avatarUrl={peer.avatarUrl} initials={peer.initials} size={24} /> : <GroupAvatarStack members={members} size={24} />}
-              <span className="truncate text-[14px] font-medium leading-5 text-ink">{peer?.name ?? group.name}</span>
+              <GroupAvatarStack members={members} size={24} />
+              <span className="truncate text-[14px] font-medium leading-5 text-ink">{group.name}</span>
             </span>
           ) : (
             <button
@@ -1263,7 +1276,7 @@ export function GroupView({ group: stored }: { group: Group }) {
           }}
           aria-label={t("chat.jumpToLatestAria")}
           className="animate-pop-in absolute left-1/2 z-10 flex -translate-x-1/2 items-center gap-1.5 rounded-full border border-hairline/40 bg-raised px-3 py-1.5 text-[12.5px] text-ink shadow-lg hover:bg-raised-hover"
-          style={{ bottom: composerDock.height }}
+          style={{ bottom: composerDock.height + 16 }}
         >
           <ArrowDown size={13} /> {t("chat.jumpToLatest")}
         </button>
@@ -1303,6 +1316,7 @@ export function GroupView({ group: stored }: { group: Group }) {
                   part="humans"
                   humans={channelHumans}
                   bots={[]}
+                  onOpenHuman={perspicaxOrg ? (id) => dispatch({ type: "openPersonPanel", personId: id.replace(/^user:/, "") }) : undefined}
                   {...roster}
                   onAddHuman={() => {
                     if (perspicaxOrg) {

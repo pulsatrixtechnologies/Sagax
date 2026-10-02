@@ -16,6 +16,7 @@ import {
 } from "react";
 import type { BotVisibility, CardAnswerer, CloudBackend, ConnectorToolGrant, EffortLevel, InstalledPackageMetadata, ServerFrame, GroupThreadUsage, SteerQueueReason } from "../../shared/wire";
 import type { TurnDigest } from "../../shared/digest";
+import type { BusySendMode, ParallelTaskRef, TaskParallelOf } from "../../shared/parallel-tasks";
 import type { ModelVariantOption, RuntimeEvent } from "../../shared/runtime-events";
 import type { MausColor, MausMotion } from "@/lib/mascot";
 import type { BotAvatarCrop } from "../../shared/bot-avatar";
@@ -108,6 +109,11 @@ export interface OptionCardData {
   /** the narrow grant "always allow" remembers, e.g. "Bash:git" */
   allowKey?: string;
   allowSession?: boolean;
+  /** A permission ask's full arguments as redacted JSON, shown only in
+   * the card's collapsed technical details. */
+  toolInput?: string;
+  /** MCP tool annotations, when the provider passes them on. */
+  toolHints?: { readOnly?: boolean; destructive?: boolean };
   /** Exact provider command eligible for a durable, folder-scoped allow. */
   commandAllowlist?: { command: string; cwd: string; providerInstanceId: string };
   approvalScope?: "local-computer";
@@ -214,6 +220,8 @@ export interface Message {
   comm?: { groupId: string; threadId?: string; withBotId: string; withName: string; withColor: MausColor };
   /** thread chips: "Opened thread #Title on Bot" linking to that thread */
   threadRef?: { botId: string; threadId: string; title: string };
+  /** A parallel task this line belongs to (shared/parallel-tasks.ts). */
+  parallelTask?: ParallelTaskRef;
   /** sent while the bot was mid-turn; auto-sends when the turn settles.
    * Rendered only while the bot is busy, so a flag stranded by a server
    * restart never shows a promise nothing will keep. */
@@ -343,6 +351,8 @@ export interface Task {
   /** set when a bot (not the person) started this thread — its own or a
    * teammate's; the sidebar shows a quiet "opened by <name>" under the title */
   openedBy?: ThreadOpener;
+  /** A parallel task: the conversation and request it answers. */
+  parallelOf?: TaskParallelOf;
   /** set when a bot closed this thread with close_thread; the sidebar folds
    * it out of the default list (still under "show all", never deleted) and
    * the server clears it when a new turn starts there */
@@ -669,7 +679,7 @@ export interface ConfigStatus {
   rooms: { turnTimeoutMinutes: number };
   /** Workspace defaults for new bots; absent effort = no level is sent. */
   newBots?: { effort?: EffortLevel };
-  threads?: { maxConcurrentPerBot: number; eventLogMaxBytes?: number; eventLogRetentionDays?: number };
+  threads?: { maxConcurrentPerBot: number; maxParallelPerPerson?: number; eventLogMaxBytes?: number; eventLogRetentionDays?: number };
   automaticRecovery?: { enabled: boolean; backup?: ModelSelection };
   localVm: { mode: "shared" | "per-bot" | "pool"; maxInstances: number; idleTimeoutMinutes?: number };
   opencodeGo?: { configured: boolean };
@@ -985,6 +995,9 @@ export interface AppState {
   webhookAttempts: WebhookAttempt[];
   webhookIngress: WebhookIngressStatus | null;
   settingsOpen: boolean;
+  /** The person whose details fill the right panel (principal id), or null.
+   * Shares the right slot with bot settings, the computer and app settings. */
+  personPanelId: string | null;
   pluginsOpen: boolean;
   /** Which tab the Plugins panel opens on; "mcp" when a bot's tools
    * sent the user there to add a server. */
@@ -1211,8 +1224,12 @@ export type Action =
       threadId?: string;
       /** said on a voice call (Message.voiceCall): the turn is a phone turn */
       voiceCall?: { callId: string; interrupted?: boolean; language?: string };
+      /** while the conversation works: join, run in parallel or wait
+       * (shared/parallel-tasks.ts); absent = join (the server default) */
+      busyMode?: BusySendMode;
       onError?: () => void;
     }
+  | { type: "stopParallelTask"; botId: string; threadId: string }
   | { type: "pendingQueued"; threadId: string; queueId: string; text: string; reason?: SteerQueueReason }
   | { type: "consumePendingQueued"; threadId: string; queueId: string }
   | { type: "cancelQueued"; botId: string; queueId: string; threadId?: string; onCancelled?: () => void }
@@ -1287,6 +1304,7 @@ export type Action =
   | { type: "notice"; notice: AppState["notice"] }
   | { type: "revealThread"; threadId: string }
   | { type: "toggleSettings"; open?: boolean; section?: BotSettingsSection; botId?: string }
+  | { type: "openPersonPanel"; personId: string | null }
   /** Open a bot's panel on Details with one Coding activity item shown
    * (`run:<routineRunId>` or `thread:<threadId>`), e.g. from the owner's
    * notification of a routine run refused in another person's thread. */
@@ -1515,6 +1533,21 @@ function optimisticUserMessage(
  * "Open in the app"); that view then signs in or connects by itself. */
 export const CLOUD_LINK_SETTINGS = { type: "toggleAppSettings", open: true, section: "cloudAccount", cloudLink: true } as const satisfies Action;
 
+/** The right panel follows the selection, the way the bot panel does: with
+ * a person's or a bot's panel open, selecting a direct conversation with a
+ * person shows that person, and selecting a bot or a group shows its own
+ * panel. With no panel open, nothing opens. */
+export function panelFollowsSelection(state: Pick<AppState, "personPanelId" | "settingsOpen" | "groups" | "config">, id: string): Partial<Pick<AppState, "personPanelId" | "settingsOpen">> {
+  if (!state.personPanelId && !state.settingsOpen) return {};
+  const group = state.groups.find((candidate) => candidate.id === id);
+  if (group?.peopleDm) {
+    const me = state.config?.viewer?.principalId?.trim().toLowerCase();
+    const other = (group.humanIds ?? []).find((human) => human.trim().toLowerCase() !== me);
+    return other ? { personPanelId: other, settingsOpen: false } : {};
+  }
+  return state.personPanelId ? { personPanelId: null, settingsOpen: !group?.dm } : {};
+}
+
 export function reducer(state: AppState, action: Action): AppState {
   if (action.type === "messageAdded" || action.type === "messagePatched" || action.type === "threadActive" || action.type === "optimisticMessageRemoved") {
     const owner = state.bots.find((bot) => (bot.threadId !== action.threadId || bot.awaitingThreadSnapshot) && bot.tasks?.some((task) => task.threadId === action.threadId));
@@ -1602,6 +1635,7 @@ export function reducer(state: AppState, action: Action): AppState {
         activeView: "routines",
         routinesFocus: { section: action.section, view: action.view, botId: action.botId, routineId: action.routineId, runStatus: action.runStatus, nonce: state.routinesFocus.nonce + 1 },
         settingsOpen: false,
+        personPanelId: null,
         computerOpen: false,
         inspectorOpen: false,
         appSettingsOpen: false,
@@ -1704,6 +1738,7 @@ export function reducer(state: AppState, action: Action): AppState {
       if (state.groups.some((g) => g.id === action.id)) {
         return {
           ...state,
+          ...panelFollowsSelection(state, action.id),
           activeView: "chat",
           selectedId: action.id,
           botSettingsSection: action.id !== state.selectedId ? "overview" : state.botSettingsSection,
@@ -1714,6 +1749,7 @@ export function reducer(state: AppState, action: Action): AppState {
         withMascotMotion(
           {
             ...state,
+            ...panelFollowsSelection(state, action.id),
             activeView: "chat",
             selectedId: action.id,
             botSettingsSection: action.id !== state.selectedId ? "overview" : state.botSettingsSection,
@@ -2054,6 +2090,11 @@ export function reducer(state: AppState, action: Action): AppState {
         error: action.message,
       };
     // bot settings, the computer panel, and app settings share the right slot
+    case "openPersonPanel": {
+      const personId = action.personId?.trim() || null;
+      if (!personId) return state.personPanelId === null ? state : { ...state, personPanelId: null };
+      return { ...state, personPanelId: personId, settingsOpen: false, computerOpen: false, inspectorOpen: false, appSettingsOpen: false };
+    }
     case "toggleSettings": {
       if (action.botId !== undefined && !state.bots.some((bot) => bot.id === action.botId && !bot.hidden)) return state;
       const selectedId = action.botId ?? state.selectedId;
@@ -2068,6 +2109,7 @@ export function reducer(state: AppState, action: Action): AppState {
         // Mascot / bare open omits `section` → accordion stays fully collapsed.
         // Deep links expand that row even when the panel is already open.
         botSettingsExpandAccordion: open ? action.section !== undefined : false,
+        personPanelId: open ? null : state.personPanelId,
         // Settings and the computer panel share one slot. Opening settings
         // closes the computer view; its gear opens settings again.
         computerOpen: open ? false : state.computerOpen,
@@ -2122,6 +2164,7 @@ export function reducer(state: AppState, action: Action): AppState {
       return {
         ...state,
         computerOpen: open,
+        personPanelId: open ? null : state.personPanelId,
         settingsOpen: open ? false : state.settingsOpen,
         inspectorOpen: open ? false : state.inspectorOpen,
         appSettingsOpen: open ? false : state.appSettingsOpen,
@@ -2132,6 +2175,7 @@ export function reducer(state: AppState, action: Action): AppState {
       return {
         ...state,
         inspectorOpen: open,
+        personPanelId: open ? null : state.personPanelId,
         settingsOpen: open ? false : state.settingsOpen,
         computerOpen: open ? false : state.computerOpen,
         appSettingsOpen: open ? false : state.appSettingsOpen,
@@ -2144,6 +2188,7 @@ export function reducer(state: AppState, action: Action): AppState {
         appSettingsOpen: open,
         appSettingsSection: action.section ?? state.appSettingsSection,
         appSettingsCloudLink: action.cloudLink && open ? state.appSettingsCloudLink + 1 : 0,
+        personPanelId: open ? null : state.personPanelId,
         settingsOpen: open ? false : state.settingsOpen,
         computerOpen: open ? false : state.computerOpen,
         inspectorOpen: open ? false : state.inspectorOpen,
@@ -2276,6 +2321,8 @@ export function reducer(state: AppState, action: Action): AppState {
       else delete pendingQueued[action.threadId];
       return { ...state, pendingQueued, consumedQueueIds: rememberConsumedQueueId(state.consumedQueueIds, action.queueId) };
     }
+    case "stopParallelTask":
+      return state;
     case "cancelQueued": {
       const bot = state.bots.find((candidate) => candidate.id === action.botId);
       if (!bot) return state;
@@ -2479,6 +2526,7 @@ export const initialState: AppState = {
   webhookAttempts: [],
   webhookIngress: null,
   settingsOpen: false,
+  personPanelId: null,
   pluginsOpen: false,
   pluginsSurface: "apps",
   newBotOpen: false,
@@ -3252,7 +3300,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           void waitForExecutionSettings(botBeforeSend ? [botBeforeSend] : [], threadId)
             .then(() => api(`/api/bots/${action.botId}/messages`, {
                 method: "POST",
-                body: JSON.stringify({ text: action.text, replyToId: action.replyToId, threadId, sendId, ...(voiceCall ? { voiceCall } : {}) }),
+                body: JSON.stringify({ text: action.text, replyToId: action.replyToId, threadId, sendId, ...(voiceCall ? { voiceCall } : {}), ...(action.busyMode ? { busyMode: action.busyMode } : {}) }),
               }))
             .then((body) => {
               if (body?.message && typeof body.threadId === "string") {
@@ -3286,6 +3334,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             });
           break;
         }
+        case "stopParallelTask":
+          api(`/api/bots/${action.botId}/parallel/${action.threadId}/stop`, { method: "POST", body: "{}" }).catch(showError);
+          break;
         case "editMessage": {
           const threadId =
             action.threadId ?? stateRef.current.bots.find((bot) => bot.id === action.botId)?.threadId;

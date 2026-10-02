@@ -274,13 +274,32 @@ app.whenReady().then(async () => {
   const ttsAfter = (await xaiRequests()).filter((r) => r.path === "/v1/tts" && r.json?.output_format?.codec === "pcm").length;
   check("the rest of the cut answer was not synthesized again", ttsAfter <= 3, `${ttsAfter} sentence request(s)`);
 
-  // Hold: silence both ways, then resume.
+  // Hold (in the pill's settings card): silence both ways, then resume.
+  await click("[data-voice-gear]");
   await click("[data-voice-hold]");
   const held = await until("on hold", async () => win.webContents.executeJavaScript(`document.querySelector("[data-voice-bar]")?.dataset.voicePhase === "held"`), 5_000).catch(() => false);
   check("hold puts the call on hold", held);
   await click("[data-voice-hold]");
   const resumed = await until("resumed", async () => win.webContents.executeJavaScript(`document.querySelector("[data-voice-bar]")?.dataset.voicePhase !== "held"`), 5_000).catch(() => false);
   check("resume takes it off hold", resumed);
+  // Escape closes the expanded card.
+  await win.webContents.executeJavaScript(`document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })); true`);
+  const closed = await until("the card to close", async () => win.webContents.executeJavaScript(`document.querySelector("[data-voice-bar]")?.dataset.voicePanel === "none"`), 3_000).catch(() => false);
+  check("Escape folds the card back into the pill", closed);
+
+  // The pill: centered at the top of the chat, under the name chip, never clipped.
+  const pillBox = () => win.webContents.executeJavaScript(`(() => {
+    const pill = document.querySelector("[data-voice-pill]")?.getBoundingClientRect();
+    const column = document.querySelector("[data-voice-call-dock]")?.parentElement?.getBoundingClientRect();
+    const chip = document.querySelector(".content-topbar button")?.getBoundingClientRect();
+    if (!pill || !column || !chip) return null;
+    return { left: pill.left - column.left, right: column.right - pill.right, top: pill.top, chipBottom: chip.bottom, center: Math.abs((pill.left + pill.right) / 2 - (column.left + column.right) / 2), height: pill.height };
+  })()`);
+  const checkPill = async (label) => {
+    const box = await pillBox();
+    check(`${label}: the pill is centered under the name chip, compact, with at least 12px each side`, Boolean(box) && box.center <= 2 && box.left >= 11.5 && box.right >= 11.5 && box.top >= box.chipBottom && box.height <= 50, JSON.stringify(box));
+  };
+  await checkPill("wide");
 
   const other = (await xaiRequests()).filter((r) => !["/v1/tts", "/v1/tts/voices", "/v1/stt"].includes(r.path));
   check("xAI was never asked to answer (only speech to text and text to speech)", other.length === 0, JSON.stringify(other.map((r) => r.path)));
@@ -290,23 +309,35 @@ app.whenReady().then(async () => {
   const page = await win.webContents.executeJavaScript(`JSON.stringify({ html: document.documentElement.outerHTML, local: { ...localStorage }, session: { ...sessionStorage } })`);
   check("the xAI key is nowhere in the page", !page.includes(fakeKey.slice(8, 20)));
 
-  if (process.env.VERIFY_SHOT_DIR) {
-    const { mkdirSync, writeFileSync } = await import("node:fs");
-    mkdirSync(process.env.VERIFY_SHOT_DIR, { recursive: true });
-    // The bar in the layout, wide then in a narrow window (about 530px).
-    writeFileSync(path.join(process.env.VERIFY_SHOT_DIR, "voice-bar-wide.png"), (await win.webContents.capturePage()).toPNG());
-    const [width, height] = win.getContentSize();
-    win.setContentSize(530, height);
+  // Narrow window (about 530px): the pill still fits, waveform first to give.
+  const [width, height] = win.getContentSize();
+  const shotDir = process.env.VERIFY_SHOT_DIR;
+  const { mkdirSync, writeFileSync } = await import("node:fs");
+  if (shotDir) mkdirSync(shotDir, { recursive: true });
+  const shoot = async (name) => {
+    if (!shotDir) return;
+    await wait(500);
+    writeFileSync(path.join(shotDir, name), (await win.webContents.capturePage()).toPNG());
+  };
+  for (const [size, w] of [["wide", width], ["narrow", 530]]) {
+    win.setContentSize(w, height);
     await wait(600);
-    writeFileSync(path.join(process.env.VERIFY_SHOT_DIR, "voice-bar-narrow.png"), (await win.webContents.capturePage()).toPNG());
-    win.setContentSize(width, height);
-    await wait(400);
+    if (size === "narrow") await checkPill("narrow (530px)");
+    await shoot(`voice-pill-${size}-collapsed.png`);
+    await click("[data-voice-transcript-toggle]");
+    const lines = await win.webContents.executeJavaScript(`[...document.querySelectorAll("[data-voice-line]")].map((el) => el.dataset.voiceLine)`);
+    check(`${size}: the transcript opens as bubbles, the person on the right, the bot on the left`, lines.includes("you") && lines.includes("bot"), JSON.stringify(lines));
+    await shoot(`voice-pill-${size}-transcript.png`);
     await click("[data-voice-gear]");
-    await click('[data-voice-list="voice"]');
-    await wait(600);
-    writeFileSync(path.join(process.env.VERIFY_SHOT_DIR, "voice-bar.png"), (await win.webContents.capturePage()).toPNG());
-    await click("[data-voice-gear]");
+    const panel = await win.webContents.executeJavaScript(`document.querySelector("[data-voice-bar]")?.dataset.voicePanel`);
+    check(`${size}: Settings swaps the card to Voice, Speed and Language`, panel === "settings", String(panel));
+    await shoot(`voice-pill-${size}-settings.png`);
+    await win.webContents.executeJavaScript(`document.body.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true })); true`);
+    const outside = await until("a click outside to close the card", async () => win.webContents.executeJavaScript(`document.querySelector("[data-voice-bar]")?.dataset.voicePanel === "none"`), 3_000).catch(() => false);
+    check(`${size}: a click outside folds the card back`, outside);
   }
+  win.setContentSize(width, height);
+  await wait(300);
 
   // End: the bar goes away.
   await click("[data-voice-end]");

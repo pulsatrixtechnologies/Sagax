@@ -8,6 +8,7 @@
  * server/store.ts; the wire projection is typed so a new server field
  * fails compilation until it is either declared here or explicitly listed
  * as server-private. */
+import type { ParallelTaskRef, TaskParallelOf } from "./parallel-tasks.ts";
 import type { ApprovalMode } from "./approval-mode.ts";
 import type { CommandAllowlistCandidate } from "./command-allowlist.ts";
 import type { TurnDigest } from "./digest.ts";
@@ -130,6 +131,8 @@ export interface WireTask {
   routineRunId?: string;
   /** Set when a bot, not a person, opened this thread. */
   openedBy?: TaskOpenedBy;
+  /** A parallel task: the conversation and request it answers. */
+  parallelOf?: TaskParallelOf;
   /** Organization server: the person this 1:1 thread belongs to (who
    * started it; a routine's runAs; else the bot owner when absent). Only
    * they read or write it (server/thread-privacy.ts). */
@@ -483,6 +486,8 @@ export interface WireMessage {
     fullResult?: boolean;
     /** Files the call wrote, as the tool named them (see thread-files.ts). */
     files?: string[];
+    /** A call a sub-agent made: the item id of the call that started it. */
+    parentItemId?: string;
   };
   /** user messages sent INTO a running turn (capabilities.queueing). */
   steered?: boolean;
@@ -554,6 +559,9 @@ export interface WireMessage {
   threadRef?: { botId: string; threadId: string; title: string };
   /** user messages waiting in the steer-queue while the bot is mid-turn. */
   queued?: boolean;
+  /** A parallel task this line belongs to (shared/parallel-tasks.ts): the
+   * person's request, its live card, or its result. */
+  parallelTask?: ParallelTaskRef;
   /** steer-queue entry this drained user line came from. */
   queueId?: string;
 }
@@ -585,6 +593,11 @@ export interface OptionCardData {
   allowKey?: string;
   /** the provider can remember an allow for the rest of its session. */
   allowSession?: boolean;
+  /** A permission ask's full arguments as redacted JSON, shown only in
+   * the card's collapsed technical details. */
+  toolInput?: string;
+  /** MCP tool annotations, when the provider passes them on. */
+  toolHints?: { readOnly?: boolean; destructive?: boolean };
   /** Exact native command offered for an owner/admin to remember. */
   commandAllowlist?: CommandAllowlistCandidate;
   /** Local actions never share remembered grants with cloud/tool approvals. */

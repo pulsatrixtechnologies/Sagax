@@ -1,10 +1,11 @@
 import { Children, createElement, isValidElement, type ReactElement, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { initialState, type Bot, type ConfigStatus } from "@/state/store";
 import { composeRows } from "./ComposeToPicker";
 
-const fixture = vi.hoisted(() => ({ dispatch: vi.fn(), bots: [] as Bot[], config: null as ConfigStatus | null }));
+const fixture = vi.hoisted(() => ({ dispatch: vi.fn(), bots: [] as Bot[], config: null as ConfigStatus | null, showThreads: true }));
+vi.mock("@/lib/thread-preferences", () => ({ useShowThreads: () => fixture.showThreads }));
 vi.mock("./DesktopCapabilities", () => ({
   useCaptionChrome: () => ({ dragStyle: undefined, noDragStyle: undefined, controlsShiftStyle: undefined }),
 }));
@@ -65,6 +66,7 @@ describe("ComposeToPicker", () => {
     fixture.dispatch.mockReset();
     rendered.find((node) => node.props["data-compose-bot"] === "aurora")?.props.onClick?.();
     expect(fixture.dispatch).toHaveBeenCalledWith({ type: "newTask", botId: "aurora" });
+    expect(html).toContain("New thread");
     fixture.dispatch.mockReset();
     rendered.find((node) => node.props["data-compose-action"] === "create-group")?.props.onClick?.();
     expect(fixture.dispatch).not.toHaveBeenCalled();
@@ -86,6 +88,51 @@ describe("ComposeToPicker", () => {
     fixture.config = null;
     expect(render()).toContain("Create new Bot");
     expect(composeRows("browse", [], false).map((row) => row.kind)).toEqual(["create-group"]);
+  });
+
+  describe("with threads off (Settings > Appearance)", () => {
+    const pick = (bot: Bot) => {
+      fixture.bots = [bot];
+      fixture.dispatch.mockReset();
+      const close = vi.fn();
+      let tree!: ReturnType<typeof ComposeToPicker>;
+      const html = renderToStaticMarkup(createElement(() => { tree = ComposeToPicker({ onClose: close }); return tree; }));
+      return { html, close, rendered: nodes(tree) };
+    };
+    afterEach(() => { fixture.showThreads = true; });
+
+    it("opens the bot's existing conversation like the sidebar row, never a new thread", () => {
+      fixture.showThreads = false;
+      const { html, close, rendered } = pick(person("vega", "Vega", {
+        threadId: "main",
+        tasks: [{ threadId: "main", title: "Main", createdAt: 1, updatedAt: 50 }, { threadId: "older", title: "Older", createdAt: 2, updatedAt: 10 }],
+      }));
+      expect(html).toContain("Open chat");
+      expect(html).not.toContain("New thread");
+      rendered.find((node) => node.props["data-compose-bot"] === "vega")?.props.onClick?.();
+      expect(fixture.dispatch).toHaveBeenCalledExactlyOnceWith({ type: "select", id: "vega" });
+      expect(close).toHaveBeenCalled();
+    });
+
+    it("leads back to the latest conversation when the open thread is an untouched extra", () => {
+      fixture.showThreads = false;
+      const { rendered } = pick(person("vega", "Vega", {
+        threadId: "extra",
+        tasks: [{ threadId: "main", title: "Main", createdAt: 1, updatedAt: 50 }, { threadId: "extra", title: "Untitled", createdAt: 60, updatedAt: 60 }],
+      }));
+      rendered.find((node) => node.props["data-compose-bot"] === "vega")?.props.onClick?.();
+      expect(fixture.dispatch.mock.calls).toEqual([[{ type: "select", id: "vega" }], [{ type: "switchTask", botId: "vega", threadId: "main" }]]);
+      expect(fixture.dispatch).not.toHaveBeenCalledWith(expect.objectContaining({ type: "newTask" }));
+    });
+
+    it("keeps Create group chat as the group entry", () => {
+      fixture.showThreads = false;
+      const { html, rendered } = pick(person("vega", "Vega"));
+      expect(html).toContain("Create group chat");
+      rendered.find((node) => node.props["data-compose-action"] === "create-group")?.props.onClick?.();
+      expect(fixture.dispatch).not.toHaveBeenCalled();
+      expect(composeRows("browse", [person("vega", "Vega")]).map((row) => row.kind)).toEqual(["create-bot", "create-group", "bot"]);
+    });
   });
 
   it("puts the group confirm row ahead of the bots", () => {

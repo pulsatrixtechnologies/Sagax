@@ -13,7 +13,7 @@ export const RUN_GAP_MS = 5 * 60_000;
 
 export type RoomAuthor =
   | { kind: "self"; key: "self" }
-  | { kind: "person"; key: string; name: string; initials: string; avatarUrl?: string }
+  | { kind: "person"; key: string; name: string; initials: string; avatarUrl?: string; personId?: string }
   | { kind: "bot"; key: string }
   | { kind: "none"; key: string };
 
@@ -69,6 +69,8 @@ export function roomAuthor(
       key: `person:${id || other.toLowerCase()}`,
       name,
       initials: personInitials(name),
+      // a person of the directory: their name opens the person panel
+      ...(person ? { personId: person.principalId } : {}),
       ...(avatarUrl ? { avatarUrl } : {}),
     };
   }

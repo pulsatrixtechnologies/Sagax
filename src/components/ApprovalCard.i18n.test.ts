@@ -78,9 +78,9 @@ describe("German approval cards", () => {
     }));
 
     expect(markup).toContain('aria-label="Ausstehende Freigabe"');
-    expect(markup).toContain("Ausstehende Freigabe");
     expect(markup).toContain("2 von 3");
-    expect(markup).toContain("Befehlsfreigabe angefordert");
+    // the human title, not the old "command approval requested" label
+    expect(markup).toContain("Möchte einen Befehl ausführen");
     expect(markup).toContain('aria-label="Details zur Freigabe prüfen"');
   });
 
@@ -188,9 +188,8 @@ describe("Brazilian Portuguese approval cards", () => {
     }));
 
     expect(markup).toContain('aria-label="Aprovação pendente"');
-    expect(markup).toContain("Aprovação pendente");
     expect(markup).toContain("2 de 3");
-    expect(markup).toContain("Aprovação de comando solicitada");
+    expect(markup).toContain("Quer executar um comando");
     expect(markup).toContain('aria-label="Detalhes da aprovação para revisar"');
   });
 

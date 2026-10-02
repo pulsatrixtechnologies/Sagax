@@ -189,6 +189,13 @@ posixOnly("organization server: the desktop bridge", () => {
               { server: "sagax-desktop", tool: "run_command", arguments: { command: "hostname" }, when: "run it" },
               { server: "sagax-environment", tool: "run_command", arguments: { command: "hostname" }, when: "run it" },
               { server: "sagax-desktop", tool: "local_vm", arguments: { action: "create" }, when: "create the local vm" },
+              // Auto: the bot moves to her computer, then back to the cloud.
+              { server: "sagax-computer", tool: "computer_select", arguments: { target: "this_computer", reason: "her files are on her Mac" }, when: "sur mon mac" },
+              { server: "sagax-environment", tool: "run_command", arguments: { command: "hostname" }, when: "sur mon mac" },
+              { server: "sagax-desktop", tool: "run_command", arguments: { command: "hostname" }, when: "sur mon mac" },
+              { server: "sagax-computer", tool: "computer_select", arguments: { target: "cloud", reason: "scraping" }, when: "sur mon mac" },
+              { server: "sagax-desktop", tool: "list_files", arguments: {}, when: "sur mon mac" },
+              { server: "sagax-environment", tool: "list_files", arguments: {}, when: "sur mon mac" },
             ]),
             FAKE_CLAUDE_MCP_DUMP: mcpDump,
             FAKE_CLAUDE_PROMPTS: prompts,
@@ -334,11 +341,55 @@ posixOnly("organization server: the desktop bridge", () => {
     expect(reply).toContain("mcp:read_file:ok");
     expect(reply).toContain("proxy:none");
     expect(dump().servers).toEqual(expect.arrayContaining(["sagax-environment"]));
-    expect(dump().servers).not.toContain("sagax-desktop");
+    // Her desktop tools are mounted beside it for computer_select, but the
+    // turn starts in the cloud: the attachment is read there.
+    expect(dump().calls.find((call) => call.tool === "read_file" && call.server === "sagax-desktop")).toMatchObject({ ok: false });
+    expect(dump().calls.find((call) => call.tool === "read_file" && call.server === "sagax-environment")).toMatchObject({ ok: true });
     expect(lastPrompt()).toMatch(/\/workspace\/attachments\/[0-9a-f]{8}-notes\.md/);
     const copies = docker.execs.filter((entry) => entry.exec.Env.some((value) => /^SAGAX_PATH=\/workspace\/attachments\/[0-9a-f]{8}-notes\.md$/.test(value)));
     expect(copies.length).toBeGreaterThan(0);
     expect(desktop.operations.length).toBe(before);
+  }, 120_000);
+
+  it("Auto: the bot switches to her computer and back to the cloud mid-turn, each switch audited", async () => {
+    expect((await api("PATCH", `/api/bots/${aliceBot.id}`, alice, { computer: null })).status).toBe(200);
+    const before = desktop.operations.length;
+    await turn(alice, aliceBot, "liste mes fichiers sur mon mac puis continue dans le cloud");
+    const { servers, calls } = dump();
+    expect(servers).toEqual(expect.arrayContaining(["sagax-computer", "sagax-environment", "sagax-desktop"]));
+    const [toMac, envWhileMac, desktopRun, toCloud, desktopWhileCloud, envList] = calls;
+    expect(toMac).toMatchObject({ server: "sagax-computer", tool: "computer_select", ok: true });
+    expect(toMac!.text).toContain("Now working on their own computer");
+    expect(envWhileMac).toMatchObject({ server: "sagax-environment", ok: false });
+    expect(envWhileMac!.text).toContain("computer_select with target cloud");
+    expect(desktopRun).toMatchObject({ server: "sagax-desktop", ok: true, text: "desktop:run_command" });
+    expect(toCloud).toMatchObject({ tool: "computer_select", ok: true });
+    expect(desktopWhileCloud).toMatchObject({ server: "sagax-desktop", ok: false });
+    expect(envList).toMatchObject({ server: "sagax-environment", ok: true });
+    // only the one call made while she was selected reached her computer
+    expect(desktop.operations.slice(before).map((operation) => operation.action)).toEqual(["run_command"]);
+    expect(lastPrompt()).toContain("This bot's Works on is Auto");
+    const activity = (await api("GET", "/api/admin-activity?what=computer", alice)).body.entries as Array<{ action: string; after: Record<string, unknown>; before: Record<string, unknown>; who: string; target: { id: string } }>;
+    const switches = activity.filter((entry) => entry.action === "computer.switch" && entry.target.id === aliceBot.id).reverse();
+    expect(switches.map((entry) => [entry.before.computer, entry.after.computer, entry.after.reason])).toEqual([
+      ["cloud", "this_computer", "her files are on her Mac"],
+      ["this_computer", "cloud", "scraping"],
+    ]);
+    expect(switches[0]!.who).toBe("Alice");
+  }, 120_000);
+
+  it("a fixed Works on stays fixed: computer_select reports it", async () => {
+    expect((await api("PATCH", `/api/bots/${aliceBot.id}`, alice, { computer: "cloud" })).status).toBe(200);
+    const before = desktop.operations.length;
+    await turn(alice, aliceBot, "liste mes fichiers sur mon mac");
+    const { servers, calls } = dump();
+    expect(servers).not.toContain("sagax-desktop");
+    expect(calls[0]).toMatchObject({ tool: "computer_select", ok: false });
+    expect(calls[0]!.text).toContain("fixed to Cloud (server environment)");
+    expect(calls.find((call) => call.server === "sagax-environment" && call.tool === "run_command")).toMatchObject({ ok: true });
+    expect(desktop.operations.length).toBe(before);
+    expect(lastPrompt()).not.toContain("Works on is Auto");
+    expect((await api("PATCH", `/api/bots/${aliceBot.id}`, alice, { computer: null })).status).toBe(200);
   }, 120_000);
 
   it("refuses another person's session on Alice's desktop (poll, tunnel)", async () => {

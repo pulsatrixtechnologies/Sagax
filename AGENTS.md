@@ -275,11 +275,13 @@ local models are not offered. Tests: `ModelPicker.interaction.test.ts`,
 
 ## Voice mode (xAI)
 
-The call button on a bot opens the voice call bar
-(`src/components/voice-mode/`), a slim in-call banner docked at the top of
-the chat column (`VoiceCallDock`, first in ChatView's banner stack; it
-pushes the thread down, never floats over it; layout pinned by
-`VoiceModeBar.layout.test.ts`), when `GET /api/bots/<id>/voice/status` says
+The call button on a bot opens the voice call pill
+(`src/components/voice-mode/`), a compact pill centered at the top of the
+chat column under the name chip (`VoiceCallDock`, first in ChatView's banner
+stack: collapsed it keeps its own 48px row, never covering a message;
+Settings or Transcript expand it into a card over the thread that closes on
+Escape or a click outside; hold lives in the settings card; states pinned
+by `VoiceModeBar.layout.test.ts`), when `GET /api/bots/<id>/voice/status` says
 xAI voice mode serves the person; otherwise a solo Mac keeps the older call
 (macOS dictation helper). Keep these rules, each covered by
 `server/voice-mode.test.ts`, `src/lib/voice-mode/voice-mode.test.ts`,
@@ -490,6 +492,20 @@ it. Keep these rules, each covered by `server/desktop-bridge*.test.ts`,
   Routines use the owner's desktop only when the bot works on it, it is
   connected AND the owner allowed it (off by default). Rooms: the person
   whose message triggered the turn; a follow-up nobody asked for never.
+- Auto picks per step (2026-10-02, `server/auto-computer.ts`): an Auto turn
+  starts in the server environment as above, and also mounts
+  `sagax-computer` (`computer_select`, target `cloud`, `this_computer` or
+  `local_vm`, plus a reason) and, when the person's app is connected now (a
+  routine: and the owner allowed routines on it), `sagax-desktop` beside
+  `sagax-environment`. The selection (`TurnWorkplace.auto`) gates every
+  later call of the turn (`autoComputerToolRefusal`: Local VM allows only the
+  `local_vm` tool) and resets with each message; the egress proxy still
+  follows the turn's start. A fixed Works on gets the tool too and it
+  answers that the setting is fixed. Each switch is `computer.switch` in the
+  admin activity log (person, bot, from, to, reason); the transcript shows a
+  "Working on" chip. Claude pre-allows only `mcp__sagax-computer`. Rooms are
+  unchanged. Tests: `server/auto-computer.test.ts`,
+  `server/desktop-bridge.e2e.test.ts`.
 - A bridge is bound to the person of the session that registered it and to
   a secret only the desktop's main process holds; every poll, result and the
   tunnel re-check that the session is live and still that person. A turn's
@@ -646,6 +662,76 @@ of that thread. The owner's notification of such a run names no thread, only
 `server/routes/bot-activity.test.ts`, `server/activity-coding.test.ts`, `ActivitySection.test.ts`,
 `InlineEditableText.test.ts`, `BotSettingsDialog.caption.test.ts`,
 `server/org-routines.e2e.test.ts` (owner pays).
+
+## Parallel tasks (sending while the bot works, 2026-10-02)
+
+A message sent to a busy 1:1 conversation carries `busyMode`
+(`shared/parallel-tasks.ts`): `steer` joins the running turn (the default,
+live steer or the queue), `after` waits in the queue, `parallel` runs it as
+its own task. The composer offers the three (`BusySendChooser`, suggested
+choice by `suggestBusySendMode`, Enter picks) unless the person set a
+default in Settings > Parallel threads (`sagax.busySend.v1`, synced per
+person). Keep these rules, each covered by `server/parallel-tasks.test.ts`,
+`server/parallel-tasks.e2e.test.ts` or `src/components/parallel-tasks.ui.test.ts`:
+
+- A parallel task is a thread of the same bot (`TaskRecord.parallelOf`,
+  never a TASK_PATCH_FIELD): its own engine session, the conversation's
+  model, approval level and owner (private threads), the asker's payer
+  (trigger and speaker of the send). Its first prompt is a brief
+  (`parallelBrief`): who asked, recent lines of the conversation as context,
+  never another parallel request.
+- Working folder: a worktree of the conversation's git repository on
+  `sagax/parallel-<id>` (`prepareParallelWorkspace`, under
+  `DATA_DIR/parallel-worktrees`); otherwise its own private task folder,
+  reading the conversation's project folder only. Two turns never share a
+  folder (the workspace resource refuses the second).
+- The conversation shows the request line (`parallelTask.role: request`),
+  a live card (`card`: state from the task's busy/activity, Stop, Open) and,
+  when the first turn settles, the answer as a reply to the request
+  (`result`, `settleParallelTask`, once: `reportedAt`). Later turns in the
+  task's own thread stay there. A done task closes (`closedBy`), a failed
+  or stopped one stays.
+- Limits: `threads.maxParallelPerPerson` (default 3) running per person per
+  bot; more queue (`parallelTaskBlocked` in the drain), past twice the
+  limit waiting a send answers 409 `parallel_limit`. The bot's thread limit
+  still applies. A task of a task is refused (`parallel_nested`).
+- Stop one: `POST /api/bots/:id/parallel/:threadId/stop` (client scope,
+  thread.post), or Stop in its thread; either reads as stopped.
+- Approvals stay in the task's thread and are answered there; the
+  conversation's approval stepper lists them tagged with the task
+  (`useParallelApprovals`, `Pending.threadId`), and its cancel stops that
+  task only.
+- The bot may fork itself: `start_thread` with `report_back: true` on itself.
+- Org: `task.parallel_start` and `task.parallel_settle` in the admin
+  activity log. Routines are unaffected (no busyMode).
+- Activity lists a parallel task once (its own entry, `parallel: true`) and
+  as a child of its conversation. The detail names steps in words
+  (`src/lib/activity-steps.ts`, reusing the approval naming), keeps the raw
+  id under Technical details, nests a Claude sub-agent's calls under its
+  Agent step (`tool.parentItemId` from `parent_tool_use_id`) with its
+  request and report, and a running task takes a message (steer). Claude's
+  own sub-agents cannot be steered or stopped apart from their turn.
+
+## Person panel and hidden sidebar entries
+
+A person of the organization opens in the right panel like a bot
+(`src/components/PersonPanel.tsx`, store `personPanelId`, action
+`openPersonPanel`): from a direct conversation's header or context menu, a
+group's person label, the group's People list and another person's name in
+a bot chat. It shows only the directory's fields (name, login, email,
+avatar, role, teams), the groups the viewer shares with them, their bots the
+viewer already sees, Message, Hide/Show, and for an admin "Manage in
+Perspicax": `GET /api/org/directory` adds `manageUrl`
+(`<issuer>/console/users/<sub>`) for admins only. Nothing from a private
+thread. Hiding is per person and view-only (`src/lib/sidebar-hidden.ts`,
+key `sagax.sidebarHidden.v1`, synced by `/api/me/preferences` on an
+organization server): bots by id, groups by id, people by principal; still
+reached by search, the palette and the To: picker; a "Hidden (N)" row and
+Settings > Appearance show them back. A new unread message unhides people
+and groups by default, bots only when the person turns it on. Archive stays
+the bot-wide action. Tests: `src/lib/sidebar-hidden*.test.ts`,
+`src/lib/person-panel.test.ts`, `PersonPanel.test.ts`,
+`src/state/person-panel.reducer.test.ts`.
 
 ## Computer tab and Local VM on an organization server
 
