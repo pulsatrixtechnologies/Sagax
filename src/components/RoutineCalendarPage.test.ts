@@ -119,7 +119,7 @@ describe("routine setup", () => {
     expect(html).not.toContain("data-routine-run-on");
   });
   it("offers the Boat runner only behind the experimental Boat flag", () => {
-    fixture.state = { ...fixture.state!, config: { ...(fixture.state!.config ?? {}), features: { boatComputer: true }, box: { configured: false } } as unknown as AppState["config"] };
+    fixture.state = { ...fixture.state!, config: { ...fixture.state!.config, features: { boatComputer: true }, box: { configured: false } } as unknown as AppState["config"] };
     expect(editorMarkup()).toContain("Boat-hosted agent");
   });
 });
