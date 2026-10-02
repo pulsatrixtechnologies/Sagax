@@ -263,10 +263,10 @@ posixOnly("Perspicax organization: a member's own engines and read-only bots", (
     const chief = await createBot(uma, "Uma Chief", "claude");
     expect((await api("POST", `/api/bots/${chief.id}/primary`, uma, {})).status).toBe(200);
 
-    const tokenOf = async () => {
+    const tokenOf = async (): Promise<string> => {
       if (existsSync(dump)) unlinkSync(dump);
       expect((await api("POST", `/api/bots/${chief.id}/messages`, uma, { text: "prepare a specialist" })).status).toBe(202);
-      const dumped = await waitFor(() => {
+      return waitFor(async () => {
         try {
           const token = (JSON.parse(readFileSync(dump, "utf8")) as { mcpConfig?: { mcpServers?: { agents?: { env?: { SAGAX_COMMS_TOKEN?: string } } } } })
             .mcpConfig?.mcpServers?.agents?.env?.SAGAX_COMMS_TOKEN;
@@ -275,7 +275,6 @@ posixOnly("Perspicax organization: a member's own engines and read-only bots", (
           return null;
         }
       }, 20_000);
-      return dumped;
     };
     const createSpecialist = async (token: string, name: string) => {
       const res = await fetch(`${BASE}/api/internal/create-bot`, {
