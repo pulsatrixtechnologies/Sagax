@@ -10,6 +10,7 @@ import { CIRCLE_BUTTON } from "@/lib/circle-button";
 import { ExportTranscriptMenu } from "./ExportTranscriptMenu";
 import type { BotOverview } from "@/lib/bot-overview-types";
 import { cn } from "@/lib/cn";
+import { useShowInspectorButton } from "@/lib/inspector-preferences";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { BOT_SECTIONS } from "./bot-settings/sections";
 import { useBotSettingsDerived } from "./bot-settings/useBotSettingsDerived";
@@ -68,6 +69,7 @@ function readSettingsWidth(): number {
 }
 
 export function BotSettingsDialog({ bot, onOpenVmWorkspace }: { bot: Bot; onOpenVmWorkspace?: (botId: string) => void }) {
+  const showInspector = useShowInspectorButton();
   const { state, dispatch, flushBotPatches } = useStore();
   const { padClass } = useCaptionChrome();
   const { macInset, browser } = useMacInsetChrome();
@@ -434,7 +436,7 @@ export function BotSettingsDialog({ bot, onOpenVmWorkspace }: { bot: Bot; onOpen
           ) : <span />}
           <div className="flex items-center gap-2">
             <ExportTranscriptMenu title={bot.name} messages={visibleMessages(bot)} botName={bot.name} />
-            <button
+            {showInspector && <button
               type="button"
               onClick={() => dispatch({ type: "toggleInspector", open: true })}
               aria-label={t("chat.inspector")}
@@ -442,7 +444,7 @@ export function BotSettingsDialog({ bot, onOpenVmWorkspace }: { bot: Bot; onOpen
               className={CIRCLE_BUTTON}
             >
               <Bug size={18} strokeWidth={1.75} />
-            </button>
+            </button>}
             <button
               type="button"
               onClick={closePanel}

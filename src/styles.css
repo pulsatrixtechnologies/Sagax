@@ -2216,22 +2216,36 @@ button:disabled.bg-danger {
   background-color: color-mix(in srgb, var(--color-accent) 35%, transparent);
 }
 
-/* "Paid with" stays out of the way: it shows while the pointer is on its
-   reply (the message row just above it) or on the chip itself, and for
-   keyboard focus. */
+/* "Paid with" stays out of the way and never moves the conversation: the
+   chip takes no height, sits just under its reply, and fades in after the
+   pointer has rested on that reply (or the chip) for 2 seconds; keyboard
+   focus shows it at once. */
 [data-testid="turn-access-chip"] {
+  position: relative;
+  height: 0;
+  overflow: visible;
   opacity: 0;
-  max-height: 0;
-  overflow: hidden;
-  transition: opacity 120ms ease, max-height 120ms ease;
+  pointer-events: none;
+  transition: opacity 120ms ease 0s;
+}
+[data-testid="turn-access-chip"] > * {
+  position: absolute;
+  top: 2px;
+  left: 0;
+  z-index: 5;
 }
 [data-mid]:hover > [data-testid="turn-access-chip"],
 [data-mid]:hover + [data-mid] > [data-testid="turn-access-chip"],
-[data-mid]:focus-within > [data-testid="turn-access-chip"],
 [data-mid]:hover + [data-mid] [data-testid="turn-access-chip"],
 [data-mid]:hover [data-testid="turn-access-chip"] {
   opacity: 1;
-  max-height: 40px;
+  pointer-events: auto;
+  transition: opacity 160ms ease 2s;
+}
+[data-mid]:focus-within > [data-testid="turn-access-chip"] {
+  opacity: 1;
+  pointer-events: auto;
+  transition: opacity 120ms ease 0s;
 }
 @media (prefers-reduced-motion: reduce) {
   [data-testid="turn-access-chip"] { transition: none; }
