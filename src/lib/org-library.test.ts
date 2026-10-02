@@ -99,7 +99,7 @@ describe("the preview and the provenance line", () => {
     const preview = orgPackagePreview(team);
     expect(preview).toMatchObject({ kind: "package", version: 2, name: "Sales desk", members: expect.arrayContaining([{ name: "Scout", title: "Prospect researcher" }]) });
     const shown = text(renderToStaticMarkup(createElement(TeamImportDetails, { pending: preview, importedNames: preview.members.map((member) => member.name), org: true })));
-    expect(shown).toContain("Included skills — switched on");
+    expect(shown).toContain("Included skills (switched on)");
     expect(shown).toContain("Skills arrive switched on and routines paused");
     expect(shown).not.toContain("added switched off");
 
