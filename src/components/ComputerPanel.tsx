@@ -52,6 +52,9 @@ import {
 import { t } from "@/lib/i18n";
 import type { LocaleKey } from "@/locales";
 import { requestSettingsCard } from "./SettingsPrimitives";
+import { SandboxDesktopView } from "./SandboxDesktopView";
+import { useDesktopBridgeStatus } from "@/lib/desktop-bridge";
+import { showsSandboxDesktop } from "@/lib/sandbox-desktop";
 
 /** Keep local failure copy translatable while it remains in panel state. */
 class LocalizedPanelError extends Error {
@@ -403,6 +406,8 @@ export function ComputerPanel({
   const cloudSupported = cloudBackend === "vps"
     ? vpsSupported
     : Boolean(cloudRunner(state.instances, bot.modelSelection.instanceId));
+  const bridgeStatus = useDesktopBridgeStatus();
+  const sandboxScreen = showsSandboxDesktop(bridgeStatus, bot.computer);
   const botRoutines = state.routines
     .filter((routine) => routine.botId === bot.id)
     .sort((a, b) => Number(b.enabled) - Number(a.enabled) || (a.nextRunAt ?? Infinity) - (b.nextRunAt ?? Infinity));
@@ -1158,7 +1163,7 @@ export function ComputerPanel({
     error: t("computer.phase.error"),
   } satisfies Record<Exclude<Phase, "ready" | "local" | "vm">, string>;
 
-  const body = (
+  const deviceBody = (
       <div className={embedded ? "pb-5" : "flex-1 overflow-y-auto px-5 pb-5"}>
           {/* Screen preview */}
           <div className="mb-1.5 mt-2 flex items-center justify-between text-[13px] text-ink-secondary">
@@ -1513,6 +1518,17 @@ export function ComputerPanel({
         )}
       </div>
   );
+
+  // Organization server, bots working in the person's server environment:
+  // the screen is that environment's desktop (src/lib/sandbox-desktop.ts).
+  const body = sandboxScreen ? (
+    <div className={embedded ? "pb-5" : "flex-1 overflow-y-auto px-5 pb-5"}>
+      <SandboxDesktopView />
+      {!embedded && <div className="mt-6">
+        <RoutinesSection key={bot.id} bot={bot} routines={botRoutines} runs={state.routineRuns} defaultRunOn={cloudRoutineReady ? "cloud" : "maus"} />
+      </div>}
+    </div>
+  ) : deviceBody;
 
   return (
     <>

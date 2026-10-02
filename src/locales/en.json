@@ -3997,5 +3997,19 @@
   "botWorkplace.activity.failed": "failed",
   "botWorkplace.notice.fallback": "Your computer is not connected: I'm using your server environment.",
   "botWorkplace.notice.computer": "Bots work on your computer.",
-  "botWorkplace.notice.computerTraffic": "Bots work on your computer; their network traffic goes through it."
+  "botWorkplace.notice.computerTraffic": "Bots work on your computer; their network traffic goes through it.",
+  "sandboxDesktop.title": "Desktop of your server environment",
+  "sandboxDesktop.help": "Bots working for you in your server environment use this desktop for computer use. Only you can see it. Show it to watch them live.",
+  "sandboxDesktop.show": "Show the desktop",
+  "sandboxDesktop.connecting": "Starting the desktop…",
+  "sandboxDesktop.watching": "Watching, read-only",
+  "sandboxDesktop.controlling": "You have control",
+  "sandboxDesktop.takeControl": "Take control",
+  "sandboxDesktop.releaseControl": "Hand back control",
+  "sandboxDesktop.stopped": "The desktop stopped (your server environment went idle). Show it again to restart it.",
+  "sandboxDesktop.unavailable": "The desktop is not available right now. Try again in a moment.",
+  "sandboxDesktop.busy": "Every server environment slot is in use. Try again in a few minutes.",
+  "sandboxDesktop.closed": "Your server environment is closed.",
+  "sandboxDesktop.openWindow": "Open in a window",
+  "sandboxDesktop.screen": "Server environment desktop"
 }

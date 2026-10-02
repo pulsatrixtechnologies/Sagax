@@ -2346,5 +2346,19 @@
   "botWorkplace.activity.failed": "échec",
   "botWorkplace.notice.fallback": "Votre ordinateur n'est pas connecté : j'utilise votre environnement serveur",
   "botWorkplace.notice.computer": "Les robots travaillent sur votre ordinateur.",
-  "botWorkplace.notice.computerTraffic": "Les robots travaillent sur votre ordinateur; leur trafic réseau passe par lui."
+  "botWorkplace.notice.computerTraffic": "Les robots travaillent sur votre ordinateur; leur trafic réseau passe par lui.",
+  "sandboxDesktop.title": "Bureau de votre environnement serveur",
+  "sandboxDesktop.help": "Les robots qui travaillent pour vous dans votre environnement serveur utilisent ce bureau pour contrôler l'ordinateur. Vous seul pouvez le voir. Affichez-le pour les regarder travailler en direct.",
+  "sandboxDesktop.show": "Afficher le bureau",
+  "sandboxDesktop.connecting": "Démarrage du bureau…",
+  "sandboxDesktop.watching": "En lecture seule",
+  "sandboxDesktop.controlling": "Vous avez le contrôle",
+  "sandboxDesktop.takeControl": "Prendre le contrôle",
+  "sandboxDesktop.releaseControl": "Rendre la main",
+  "sandboxDesktop.stopped": "Le bureau s'est arrêté (votre environnement serveur était inactif). Affichez-le de nouveau pour le redémarrer.",
+  "sandboxDesktop.unavailable": "Le bureau n'est pas disponible pour le moment. Réessayez dans un instant.",
+  "sandboxDesktop.busy": "Toutes les places d'environnement serveur sont occupées. Réessayez dans quelques minutes.",
+  "sandboxDesktop.closed": "Votre environnement serveur est fermé.",
+  "sandboxDesktop.openWindow": "Ouvrir dans une fenêtre",
+  "sandboxDesktop.screen": "Bureau de l'environnement serveur"
 }
