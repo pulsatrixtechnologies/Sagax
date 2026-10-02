@@ -697,6 +697,9 @@ const MIME: Record<string, string> = {
   ".ico": "image/x-icon",
   ".json": "application/json",
   ".woff2": "font/woff2",
+  ".mjs": "text/javascript",
+  ".wasm": "application/wasm",
+  ".onnx": "application/octet-stream",
 };
 
 ensureDirs();
@@ -6313,6 +6316,8 @@ function audienceChanged(): void {
 // Cloud boot can revoke sessions before routes are registered. Create the
 // viewer manager before installing any revocation callbacks.
 const desktopViewer = createDesktopViewer({
+  // voice mode's live call (server/voice-mode.ts GET /voice/listen)
+  acceptsUpgrade: (path) => /^\/api\/bots\/[\w-]+\/voice\/listen$/.test(path),
   target: (id, auth) => {
     if (id === SANDBOX_VIEWER_TARGET) {
       // The caller's own server environment desktop, never anyone else's.
@@ -18405,7 +18410,15 @@ ROUTES.push(createVoiceModeRoutes({
   resolveOwnKey: (sub) => perspicaxDirectory ? perspicaxDirectory.resolveProviderKey(sub, "xai") : Promise.resolve({ ok: false as const, error: "link" as const }),
   keysUrl: () => perspicaxKeysUrl(),
   isAdmin: (auth) => orgAdminCaller(auth),
-  xai: { listVoices: grokVoice.listVoices, synthesize: grokVoice.synthesize, transcribe: grokVoice.transcribe },
+  xai: {
+    listVoices: grokVoice.listVoices,
+    synthesize: grokVoice.synthesize,
+    transcribe: grokVoice.transcribe,
+    synthesizeStream: grokVoice.synthesizeStream,
+    openTranscription: (key, options, handlers) => grokVoice.openTranscriptionStream(key, options, handlers),
+    warm: (key) => void grokVoice.listVoices(key).catch(() => {}),
+  },
+  upgrade: (req) => desktopViewer.upgradeOf(req),
   utterances: toUtterances,
   recordUsage: (usage) => {
     const bot = store.bot(usage.target.botId);

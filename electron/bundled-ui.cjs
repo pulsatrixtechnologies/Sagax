@@ -40,6 +40,7 @@ const MIME = {
   ".otf": "font/otf",
   ".glb": "model/gltf-binary",
   ".wasm": "application/wasm",
+  ".onnx": "application/octet-stream",
   ".mp3": "audio/mpeg",
   ".wav": "audio/wav",
   ".ogg": "audio/ogg",

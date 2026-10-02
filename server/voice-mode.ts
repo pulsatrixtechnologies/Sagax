@@ -6,6 +6,15 @@
 //   POST /api/bots/<id>/voice/prepare     {text} -> {utterances}
 //   POST /api/bots/<id>/voice/speak       {text, voice?, speed?, language?, threadId?} -> audio/mpeg
 //   POST /api/bots/<id>/voice/transcribe  raw audio/wav (?language=&threadId=) -> {text}
+//   POST /api/bots/<id>/voice/stream      {text, voice?, speed?, language?, threadId?} -> raw PCM as xAI makes it
+//   GET  /api/bots/<id>/voice/listen      WebSocket (?language=&threadId=): PCM frames in, transcripts out
+//
+// A live call (src/lib/voice-mode/call.ts) uses the last two: the person's
+// audio streams to xAI's streaming speech to text while they speak, and each
+// sentence of the bot's answer is synthesized as soon as the bot has written
+// it, its audio streamed back while xAI produces it. xAI is only ears and a
+// voice here, never the one who answers: no route calls a chat, responses or
+// realtime agent endpoint of xAI (server/voice-mode.test.ts checks it).
 //
 // The microphone and the speaker are the person's own (the desktop app or a
 // browser); what they say goes to the bot as an ordinary message through the
@@ -28,6 +37,7 @@
 // hides the others) and, when given, a thread they may post to. Each speak
 // and transcribe is recorded in the usage ledger with `access` (the via).
 import type { IncomingMessage } from "node:http";
+import type { Duplex } from "node:stream";
 
 import {
   VOICE_ID,
@@ -43,12 +53,20 @@ import {
   type VoiceModeVia,
 } from "../shared/voice-mode.ts";
 import { accessCardVisibleTo } from "./engine-access.ts";
+import { isSameOrigin } from "./request-auth.ts";
+import { websocketAccept } from "./ws-bridge.ts";
+import { webSocketSession } from "./ws-session.ts";
+import type { SynthesizeOptions, TranscriptEvent, TranscriptionHandlers, TranscriptionStream } from "./tts/grok.ts";
 import type { ProviderKeyResult } from "./perspicax-link.ts";
 import type { RequestAuth } from "./request-auth.ts";
 import { PASS, type RouteHandler } from "./routes/table.ts";
 import type { Audio, Voice } from "./tts/elevenlabs.ts";
 
-const ROUTE = /^\/api\/bots\/([\w-]+)\/voice\/(status|voices|prepare|speak|transcribe)$/;
+const ROUTE = /^\/api\/bots\/([\w-]+)\/voice\/(status|voices|prepare|speak|transcribe|stream|listen)$/;
+type Action = "status" | "voices" | "prepare" | "speak" | "transcribe" | "stream" | "listen";
+/** The most audio one live call may stream (16 kHz 16-bit mono: 2 hours). */
+export const VOICE_LISTEN_MAX_BYTES = 16_000 * 2 * 60 * 60 * 2;
+const LISTEN_READY_MS = 8_000;
 const THREAD_ID = /^[\w-]{1,128}$/;
 /** Requests per person per minute (speak, transcribe and voices together). */
 export const VOICE_MODE_RATE = { max: 120, windowMs: 60_000 } as const;
@@ -103,7 +121,17 @@ export interface VoiceModeDeps {
     listVoices(key: string): Promise<Voice[]>;
     synthesize(text: string, voice: string | undefined, key: string, options: { speed?: number; language?: string }): Promise<Audio>;
     transcribe(audio: Uint8Array, mime: string, key: string, language?: string): Promise<{ text: string }>;
+    /** POST /v1/tts with raw PCM out, streamed as xAI produces it. */
+    synthesizeStream?(text: string, voice: string | undefined, key: string, options: SynthesizeOptions, signal?: AbortSignal): Promise<{ body: ReadableStream<Uint8Array>; sampleRate: number }>;
+    /** wss://api.x.ai/v1/stt: streaming speech to text for one call. */
+    openTranscription?(key: string, options: { language?: string; endpointingMs?: number }, handlers: TranscriptionHandlers): TranscriptionStream;
+    /** Open a pooled connection to xAI's speech endpoint at the start of a
+     * call, so the first sentence of the first answer skips the TLS handshake. */
+    warm?(key: string): void;
   };
+  /** The upgraded socket of a WebSocket request (routes/desktop-viewer.ts
+   * attach runs upgrades through the same authentication as HTTP). */
+  upgrade?(req: IncomingMessage): { socket: Duplex; head: Buffer; release(): void } | undefined;
   utterances(text: string): string[];
   recordUsage(usage: VoiceUsage): void;
   now?: () => number;
@@ -177,8 +205,84 @@ function scrub(message: string, key: string): string {
   return out.length > 300 ? `${out.slice(0, 300)}...` : out;
 }
 
+type Usage = (model: VoiceUsage["model"], input: number) => void;
+type Json = (res: import("node:http").ServerResponse, status: number, body: unknown) => unknown;
+
+/** What the listen socket says to the page (JSON text frames). */
+export type ListenFrame =
+  | { type: "ready" }
+  | { type: "transcript"; text: string; final: boolean; speechFinal: boolean }
+  | { type: "error"; message: string };
+
 export function createVoiceModeRoutes(deps: VoiceModeDeps): RouteHandler {
   const now = deps.now ?? Date.now;
+
+  /** GET /voice/listen: one live call's streaming speech to text. The page
+   * sends 16 kHz 16-bit PCM frames while the person speaks (its own voice
+   * activity detector decides when) and `{"type":"finalize"}` when they
+   * stop; xAI's transcripts come back as they are made. The key stays here. */
+  async function listen(req: IncomingMessage, res: import("node:http").ServerResponse, url: URL, json: Json, key: string, usage: Usage): Promise<void> {
+    const upgrade = deps.upgrade?.(req);
+    if (!upgrade || !deps.xai.openTranscription) { json(res, 426, { error: "WebSocket upgrade required" }); return; }
+    // a WebSocket is not bound by CORS: only this origin's own page may open one
+    if (!isSameOrigin(req)) { json(res, 403, { error: "forbidden" }); return; }
+    const wsKey = req.headers["sec-websocket-key"];
+    if (req.headers.upgrade?.toLowerCase() !== "websocket" || req.headers["sec-websocket-version"] !== "13"
+      || typeof wsKey !== "string" || !/^[A-Za-z0-9+/]{22}==$/.test(wsKey)) {
+      json(res, 400, { error: "Invalid WebSocket handshake" });
+      return;
+    }
+    const language = url.searchParams.get("language") ?? "auto";
+    if (!isVoiceModeLanguage(language)) { json(res, 400, { error: "unknown language" }); return; }
+    let session: ReturnType<typeof webSocketSession> | null = null;
+    let heard = 0;
+    let total = 0;
+    const book = () => {
+      if (heard > 0) usage("grok-stt", heard);
+      heard = 0;
+    };
+    const send = (frame: ListenFrame) => session?.sendText(JSON.stringify(frame));
+    deps.xai.warm?.(key);
+    const upstream = deps.xai.openTranscription(key, { language: sttLanguage(language) }, {
+      onTranscript: (event: TranscriptEvent) => send({ type: "transcript", text: event.text, final: event.final, speechFinal: event.speechFinal }),
+      onError: (message) => send({ type: "error", message: scrub(message, key) }),
+      onClose: () => { book(); session?.close(1011); },
+    });
+    const opened = await Promise.race([
+      upstream.ready.then(() => true, () => false),
+      new Promise<boolean>((resolve) => setTimeout(() => resolve(false), LISTEN_READY_MS).unref()),
+    ]);
+    const { socket } = upgrade;
+    if (!opened || socket.destroyed) {
+      upstream.close();
+      if (!socket.destroyed) json(res, 502, { error: "Grok speech to text is not reachable. Try again." });
+      return;
+    }
+    upgrade.release();
+    const head = upgrade.head;
+    res.detachSocket(socket as import("node:net").Socket);
+    socket.write(`HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ${websocketAccept(wsKey)}\r\n\r\n`);
+    session = webSocketSession(socket, {
+      onBinary: (data) => {
+        total += data.byteLength;
+        if (total > VOICE_LISTEN_MAX_BYTES) { session?.close(1009); return; }
+        heard += data.byteLength;
+        upstream.send(new Uint8Array(data));
+      },
+      onText: (text) => {
+        let message: { type?: unknown } | null = null;
+        try { message = JSON.parse(text) as { type?: unknown }; } catch { /* ignored */ }
+        if (message?.type === "finalize") {
+          upstream.finalize();
+          book();
+        }
+      },
+      onClose: () => { book(); upstream.close(); },
+    });
+    if (head.length) socket.unshift(head);
+    send({ type: "ready" });
+  }
+
   const hits = new Map<string, number[]>();
   const limited = (who: string): boolean => {
     const at = now();
@@ -196,17 +300,18 @@ export function createVoiceModeRoutes(deps: VoiceModeDeps): RouteHandler {
   return async ({ req, res, url, path, method, auth, json, readBody }) => {
     const match = ROUTE.exec(path);
     if (!match) return PASS;
-    const [, botId, action] = match as unknown as [string, string, "status" | "voices" | "prepare" | "speak" | "transcribe"];
+    const [, botId, action] = match as unknown as [string, string, Action];
     res.setHeader("cache-control", "no-store");
-    const expected = action === "status" || action === "voices" ? "GET" : "POST";
+    const expected = action === "status" || action === "voices" || action === "listen" ? "GET" : "POST";
     if (method !== expected) return json(res, 405, { error: "method not allowed" });
 
     const speaker = deps.speaker(auth);
     if (!speaker || (deps.organization && !speaker.principalId)) return json(res, 403, { error: "sign in as a person first", code: "sign_in" });
 
-    const body = action === "prepare" || action === "speak" ? await readBody(req).catch(() => null) : null;
-    if ((action === "prepare" || action === "speak") && (!body || typeof body !== "object")) return json(res, 400, { error: "a JSON body is required" });
-    const rawThread = action === "transcribe" ? url.searchParams.get("threadId") ?? undefined : (body as Record<string, unknown> | null)?.threadId;
+    const jsonBody = action === "prepare" || action === "speak" || action === "stream";
+    const body = jsonBody ? await readBody(req).catch(() => null) : null;
+    if (jsonBody && (!body || typeof body !== "object")) return json(res, 400, { error: "a JSON body is required" });
+    const rawThread = action === "transcribe" || action === "listen" ? url.searchParams.get("threadId") ?? undefined : (body as Record<string, unknown> | null)?.threadId;
     if (rawThread !== undefined && rawThread !== null && (typeof rawThread !== "string" || !THREAD_ID.test(rawThread))) return json(res, 400, { error: "threadId must be a task id" });
     const target = deps.target(auth, botId, typeof rawThread === "string" ? rawThread : undefined);
     if ("status" in target) return json(res, target.status, { error: target.error });
@@ -238,15 +343,20 @@ export function createVoiceModeRoutes(deps: VoiceModeDeps): RouteHandler {
       }
     }
 
-    const usage = (model: VoiceUsage["model"], input: number) => deps.recordUsage({
+    const usage: Usage = (model, input) => deps.recordUsage({
       target, speaker, via: resolved.via, model, input,
       ...(resolved.payerPrincipalId ? { payerPrincipalId: resolved.payerPrincipalId } : {}),
     });
 
-    if (action === "speak") {
+    if (action === "listen") return listen(req, res, url, json, resolved.key, usage);
+
+    if (action === "speak" || action === "stream") {
       const record = body as Record<string, unknown>;
-      const text = String(record.text ?? "").trim();
-      if (!text) return json(res, 400, { error: "text required" });
+      const raw = String(record.text ?? "").trim();
+      if (!raw) return json(res, 400, { error: "text required" });
+      // a live call sends the bot's own sentence: made speakable here, like /prepare
+      const text = action === "stream" ? deps.utterances(raw).join(" ").trim() : raw;
+      if (action === "stream" && raw.length > VOICE_MODE_MAX_TEXT * 4) return json(res, 413, { error: `voice sentences are limited to ${VOICE_MODE_MAX_TEXT * 4} characters` });
       if (text.length > VOICE_MODE_MAX_TEXT) return json(res, 413, { error: `voice utterances are limited to ${VOICE_MODE_MAX_TEXT} characters` });
       const voice = record.voice === undefined || record.voice === "" ? undefined : record.voice;
       if (voice !== undefined && (typeof voice !== "string" || !VOICE_ID.test(voice))) return json(res, 400, { error: "voice must be an xAI voice id" });
@@ -256,6 +366,35 @@ export function createVoiceModeRoutes(deps: VoiceModeDeps): RouteHandler {
       }
       const language = record.language === undefined ? "auto" : record.language;
       if (!isVoiceModeLanguage(language)) return json(res, 400, { error: "unknown language" });
+      if (action === "stream") {
+        // nothing to say once made speakable (a code block, a link): silence
+        if (!text) { res.writeHead(204, { "cache-control": "no-store" }); res.end(); return; }
+        if (!deps.xai.synthesizeStream) return json(res, 404, { error: "streaming speech is not available" });
+        const controller = new AbortController();
+        res.once("close", () => controller.abort());
+        let audio: { body: ReadableStream<Uint8Array>; sampleRate: number };
+        try {
+          audio = await deps.xai.synthesizeStream(text, voice as string | undefined, resolved.key, { speed, language: ttsLanguage(language) }, controller.signal);
+        } catch (error) {
+          return json(res, 502, { error: scrub(error instanceof Error ? error.message : String(error), resolved.key) });
+        }
+        usage("grok-tts", text.length);
+        res.writeHead(200, { "content-type": "audio/pcm", "x-voice-sample-rate": String(audio.sampleRate), "cache-control": "no-store" });
+        // flush every chunk at once: the first one is the first thing heard
+        res.flushHeaders?.();
+        try {
+          for await (const chunk of audio.body as unknown as AsyncIterable<Uint8Array>) {
+            if (res.destroyed) break;
+            res.write(Buffer.from(chunk));
+          }
+        } catch {
+          // the person interrupted (aborted), or xAI cut the stream: what was heard stays heard
+        } finally {
+          controller.abort();
+          if (!res.destroyed) res.end();
+        }
+        return;
+      }
       try {
         const audio = await deps.xai.synthesize(text, voice, resolved.key, { speed, language: ttsLanguage(language) });
         usage("grok-tts", text.length);
