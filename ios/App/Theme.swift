@@ -75,6 +75,19 @@ enum Theme {
     static let routinePaused = Color(hex: 0xD65555)
     static let selectionRing = Color(hex: 0x545356)
 
+    // MARK: Chat (measure-chat-profile.md §1)
+    /// The assistant bubble is a card: #202020, no tail.
+    static let bubbleAssistant = Color(hex: 0x202020)
+    /// Your own words: one step lighter than the assistant card, same family.
+    static let bubbleUser = Color(hex: 0x2E2E30)
+    /// "Today 4:53 PM" between stretches of conversation.
+    static let chatTimestamp = Color(hex: 0x555557)
+    /// The 5 pt list dot inside a bubble.
+    static let bulletDot = Color(hex: 0x5F5E61)
+    /// The composer's placeholder and its mic glyph.
+    static let composerPlaceholder = Color(hex: 0x6B6B6E)
+    static let composerMic = Color(hex: 0xA3A2AA)
+
     // MARK: Type (SF Pro at the measured sizes; no Dynamic Type)
     enum Font {
         /// Chat bubble, profile rows, composer: 14 regular, 18.1 line pitch.
@@ -125,6 +138,34 @@ enum Theme {
         static let menuRadius: CGFloat = 28
         /// The top scroll-edge fade runs over the header height.
         static let scrollEdgeHeight: CGFloat = 80
+    }
+
+    /// The chat screen (02), in points.
+    enum Chat {
+        /// Assistant bubble: x 16 to 349 on a 402 pt screen.
+        static let bubbleLeading: CGFloat = 16
+        /// The far side keeps 53 pt free: 16 pt margin plus this spacer.
+        static let bubbleTrailingGap: CGFloat = 37
+        static let bubblePaddingH: CGFloat = 14
+        static let bubblePaddingV: CGFloat = 10
+        /// Extra space between paragraphs and list items.
+        static let paragraphSpacing: CGFloat = 9.21
+        /// Bullet: 5 pt dot 5 pt in from the text column, text at +26.
+        static let bulletDot: CGFloat = 5
+        static let bulletDotInset: CGFloat = 5
+        static let bulletIndent: CGFloat = 26
+        /// Name capsule: 12 pt leading, 24 pt mascot, 10 pt gap, 15 pt trailing.
+        static let capsuleMascot: CGFloat = 24
+        /// Composer row: 29.3 pt from the screen edges, 30 pt above the bottom.
+        static let composerInset: CGFloat = 29.3
+        /// The "+" circle starts at x 29.7.
+        static let composerLeading: CGFloat = 29.7
+        static let composerBottom: CGFloat = 30
+        static let composerGap: CGFloat = 9.6
+        /// The white voice / send capsule inside the field.
+        static let voiceCapsule = CGSize(width: 36, height: 28)
+        /// The fade under the top bar ends here (screen y).
+        static let edgeFadeEnd: CGFloat = 130
     }
 
     /// Circle-fit radii from the measurements, converted to `.continuous`.
@@ -240,6 +281,10 @@ struct GlassCircleButton: View {
     var size: Size = .large
     var fill: Color = Theme.glassFill
     var accessibilityLabel: LocalizedStringKey?
+    /// A measured glyph size and optical offset, when a screen's reference
+    /// differs from the size default.
+    var glyphSize: CGFloat?
+    var glyphOffset: CGSize = .zero
     let action: () -> Void
 
     var body: some View {
@@ -248,8 +293,9 @@ struct GlassCircleButton: View {
             action()
         } label: {
             Image(systemName: systemImage)
-                .font(.system(size: size.glyph, weight: .medium))
+                .font(.system(size: glyphSize ?? size.glyph, weight: .medium))
                 .foregroundStyle(Theme.textPrimary)
+                .offset(glyphOffset)
                 .frame(width: size.rawValue, height: size.rawValue)
                 .contentShape(Circle())
         }

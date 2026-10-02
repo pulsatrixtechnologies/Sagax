@@ -499,6 +499,33 @@
           50
         ],
         "why": "scroll-edge area over an earlier bubble"
+      },
+      {
+        "rect": [
+          28,
+          54,
+          312,
+          14
+        ],
+        "why": "earlier bubble text under the top bar (placeholder)"
+      },
+      {
+        "rect": [
+          62,
+          68,
+          97.7,
+          44
+        ],
+        "why": "earlier bubble text between back and name capsule (placeholder)"
+      },
+      {
+        "rect": [
+          242.7,
+          68,
+          97.3,
+          44
+        ],
+        "why": "earlier bubble text between name capsule and computer (placeholder)"
       }
     ]
   },

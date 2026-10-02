@@ -156,22 +156,28 @@ const SOUL_ARA = [
   "Quand une décision dépasse ton rôle, demande avant d'agir.",
 ].join("\n");
 
+// Shaped like the reference reply: the same blocks and line counts at the
+// 305 pt text column (4, 1, then list items of 1, 5, 2 and 1 lines, then 5,
+// 6 and 3), with placeholder words.
 const ARA_REPLY = [
-  "Voici le point de la journée, en texte de remplacement pour l'écran de parité. Le dépôt est à jour sur `main` depuis le commit `2bb4f38`, et rien ne bloque la suite.",
+  "C'est fait et vérifié. Le commit `7c1e9a2` est sur `main` dans `fixture-workspace`, poussé à 16 h 41 HE, avec 212 fichiers dans un nouveau dossier `notes/`.",
   "",
-  "Ce qui a été fait :",
+  "Voici ce qu'il y a dedans :",
   "",
-  "- Les trois tâches ouvertes de la semaine ont été relues et classées par priorité, avec une note courte pour chacune.",
-  "- Le fichier `README` décrit maintenant l'installation en quatre étapes, sans dépendance cachée.",
-  "- Les essais automatiques passent tous sur la branche principale, et le temps total reste sous les deux minutes.",
+  "- Les 14 gabarits au complet.",
+  "- Les 22 bots, chacun avec son profil, ses réglages, son identifiant et ses images. Pour les bots qui en ont, il y a aussi leur mémoire propre (10 bots) et leurs routines (7 bots).",
+  "- La mémoire partagée de l'équipe, classée par bot.",
+  "- Un `README` qui explique la structure.",
   "",
-  "Ce qui reste à décider :",
+  "Avant de pousser, j'ai scanné les fichiers pour trouver des secrets. Aucun jeton ni mot de passe réel n'est sorti ; les seules alertes étaient de faux exemples de clés dans les tests d'un skill Calendrier. Le dépôt est privé.",
   "",
-  "- Garder le rythme mensuel pour le balayage des compétences, ou passer à un rythme hebdomadaire pendant le trimestre.",
-  "- Choisir qui relit le prochain lot de modifications avant la mise en production de lundi.",
+  "Il y a trois choses que j'ai volontairement laissées de côté : les fichiers de secrets et les cookies, les bases de conversations et transcriptions (environ 140 Mo, qui peuvent contenir des infos sensibles), et les pièces jointes. Pour le dépôt `doc-placeholder-mcp`, il était déjà à jour sur le NAS.",
   "",
-  "Je peux préparer un résumé plus détaillé ou ouvrir un fil séparé pour chaque point, selon ce qui t'aide le plus.",
+  "Veux-tu que je refasse cette sauvegarde automatiquement chaque semaine, par exemple le dimanche soir?",
 ].join("\n");
+
+// The bot's earlier answer, scrolled under the top bar in the reference.
+const ARA_EARLIER = "Je m'en occupe. Je vérifie d'abord qu'il n'y a aucun secret dans les fichiers, ensuite je pousse tout dans `fixture-workspace`.";
 
 const PREVIEWS = {
   helios: "Le rapport hebdomadaire est prêt, je l'envoie à l'équipe ce soir.",
@@ -331,8 +337,9 @@ function seedTranscripts(dataDir, seeded) {
       file("budget-trimestre.csv", "text/csv", "poste,montant\nexemple,0\n"),
       file("notes-reunion.txt", "text/plain", "Notes de remplacement.\n"),
     ] },
-    { role: "user", at: today(16, 53), text: "Fais-moi le point de la journée." },
-    { role: "bot", at: today(16, 53) + 30_000, text: ARA_REPLY },
+    { role: "user", at: today(16, 4), text: "Fais une sauvegarde du dossier de travail." },
+    { role: "bot", at: today(16, 5), text: ARA_EARLIER },
+    { role: "bot", at: today(16, 53), text: ARA_REPLY },
   ]);
 
   // Aurora: last message carries an attachment, 3:41 PM.
