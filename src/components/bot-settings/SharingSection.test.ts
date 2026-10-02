@@ -176,22 +176,19 @@ describe("Settings > Organization on a Perspicax server", () => {
     expect(markup).not.toContain("data-my-engines");
     expect(markup).toContain("Routines in my name");
   });
-  it("gives an admin Force stop and Force delete on every bot, and a member neither", async () => {
+  it("gives an admin the force actions menu on every bot, and a member none (OrgSharing.test.ts has the rest)", async () => {
     const { OrgSharing } = await import("../settings/OrgSharing");
     const bots = [{ id: "b1", name: "Atlas", ownerPrincipalId: BOB, ownerName: "Bob", engine: { instanceId: "claude", driver: "claudeAgent" }, grants: [] }];
     const asAdmin = renderToStaticMarkup(createElement(OrgSharing, { initial: bots, admin: true }));
     expect(asAdmin).toContain('data-org-bot-force="b1"');
-    expect(asAdmin).toContain("Force stop");
-    expect(asAdmin).toContain("Force delete");
+    expect(asAdmin).toContain("Admin actions for Atlas");
     const asMember = renderToStaticMarkup(createElement(OrgSharing, { initial: bots }));
     expect(asMember).toContain("Atlas");
-    expect(asMember).not.toContain("Force stop");
-    expect(asMember).not.toContain("Force delete");
+    expect(asMember).not.toContain("data-org-bot-force");
     setLocale("fr");
     try {
       const fr = renderToStaticMarkup(createElement(OrgSharing, { initial: bots, admin: true }));
-      expect(fr).toContain("Forcer l&#x27;arrêt");
-      expect(fr).toContain("Forcer la suppression");
+      expect(fr).toContain("Actions d&#x27;administration pour Atlas");
     } finally {
       setLocale("en");
     }

@@ -12032,6 +12032,17 @@ async function stopBotForEmergencyApprovalDowngrade(botId: string): Promise<void
   await directStop;
 }
 
+/** Whether the bot is working now: what forceStopBot would interrupt (a
+ * turn in one of its threads, its routine run, a room turn). */
+function botRunning(botId: string): boolean {
+  const bot = store.bot(botId);
+  if (!bot) return false;
+  if (store.tasks(botId).some((task) => task.busy || directTurnDispatchClaims.has(task.threadId) || roomHandoffs.activeDirect(task.threadId))) return true;
+  if (threadBusy(botId, bot.threadId)) return true;
+  if (routines?.activeBotRunForBot(botId) || routines?.activeRunForBot(botId)) return true;
+  return activeGroupTurnForBot(botId) !== null;
+}
+
 /** An organization admin's "Forcer l'arrêt" (server/org-bot-force.ts):
  * every running turn of the bot stops, in its own threads, its routine run
  * and the room it is speaking in. Cancellation flags flip before any await. */
@@ -17827,6 +17838,10 @@ if (IDENTITY.kind === "perspicax") {
         ...(bot.section ? { section: bot.section } : {}),
         engine: engineOfBot(bot),
         grants: wireGrants(shown ?? facts.grants, describeGrantTarget),
+        // Its public look (as a group shows it) and whether it is working
+        // now, so the list draws the avatar and the force-stop state.
+        look: botPublicProfile(bot),
+        running: botRunning(bot.id),
       }];
     });
     res.setHeader("cache-control", "no-store");

@@ -17,9 +17,9 @@ import { EngineSetup, EngineUpdateNotice, EngineWarningNotice } from "./EngineSe
 import { AddClaudeAccount, ClaudeAccountSettings } from "./ClaudeAccountSettings";
 import { AddChatGptAccount, CodexAccountSettings } from "./CodexAccountSettings";
 import { AntigravityFreeSpace } from "./AntigravityFreeSpace";
-import { MyEngines } from "./settings/MyEngines";
+import { ManageMyKeysLink, MyEngineAccess } from "./settings/MyEngines";
 import { HarnessConnectorsSection } from "./HarnessConnectorsSection";
-import { usePerspicaxOrg } from "@/lib/perspicax-org";
+import { myTurnsText, useMyEngines, usePerspicaxOrg, type MyEngine } from "@/lib/perspicax-org";
 import { connectedAppsEnabled } from "@/lib/feature-flags";
 
 interface ProbeResult {
@@ -204,7 +204,18 @@ function CustomPicker({ instance, cliDefault, onClose, onSaved }: {
   );
 }
 
-function EngineRow({ instance }: { instance: InstanceInfo }) {
+/** On an organization server, which engine cards to list: never one whose
+ * CLI is not installed on the server. */
+export function orgEngineRows(instances: InstanceInfo[], mine: readonly MyEngine[] | null): InstanceInfo[] {
+  if (!mine) return instances;
+  return instances.filter((instance) => mine.find((engine) => engine.instanceId === instance.instanceId)?.installed !== false);
+}
+
+/** `mine`: on an organization server, the signed-in person's own access to
+ * this engine. The card then shows who pays for their turns and their own
+ * subscription sign-in, never the server's account (which serves no one's
+ * turns there: server/engine-credentials.ts). */
+function EngineRow({ instance, mine }: { instance: InstanceInfo; mine?: MyEngine }) {
   const { refreshInstances } = useStore();
   const [open, setOpen] = useState(false);
   const cliMotion = useMenuMotion(open);
@@ -267,14 +278,15 @@ function EngineRow({ instance }: { instance: InstanceInfo }) {
   </EngineCard>;
 
   return (
-    <EngineCard instance={instance}>
+    <EngineCard instance={instance} personal={mine && { ready: mine.myTurns !== "none", line: myTurnsText(mine), turns: mine.myTurns }}>
       {policyNote}
+      {mine && <div className="mb-3"><MyEngineAccess engine={mine} /></div>}
       <ProviderIconPicker instance={instance} />
-      {!engineReady(instance) && <EngineSetup instance={instance} intent={instance.access === "custom" ? "inject" : "cloud"} unframed />}
+      {!mine && !engineReady(instance) && <EngineSetup instance={instance} intent={instance.access === "custom" ? "inject" : "cloud"} unframed />}
       {instance.snapshot.update && <EngineUpdateNotice update={instance.snapshot.update} instance={instance} className="mt-3" />}
       {instance.snapshot.warning && <EngineWarningNotice warning={instance.snapshot.warning} className="mt-3" />}
-      {instance.claudeAccount && <ClaudeAccountSettings instance={instance} />}
-      {engineReady(instance) && instance.snapshot.authenticated === true && (
+      {!mine && instance.claudeAccount && <ClaudeAccountSettings instance={instance} />}
+      {!mine && engineReady(instance) && instance.snapshot.authenticated === true && (
         instance.authentication?.method === "device-code" || instance.authentication?.method === "browser-pkce"
           ? <CodexAccountSettings instance={instance} />
           : instance.authentication?.method === "paste-code" && !instance.claudeAccount && (
@@ -359,8 +371,12 @@ export function EnginesSettings() {
   // (and a Set CLI… path) for engines the running build doesn't recognize.
   const rows = state.instances.filter((i) => i.readOnly || i.cli !== undefined || i.cliDefault !== undefined || i.snapshot.state === "unavailable");
   // On an organization server each person signs in their own subscription
-  // here (it was Settings > Organization > My engines), never the server's.
+  // here, on each engine's card (it was a separate "My subscriptions and
+  // keys" card until 2026-10-02), never the server's.
   const org = usePerspicaxOrg();
+  const myEngines = useMyEngines();
+  const mineOf = (instance: InstanceInfo) => (org ? myEngines?.find((engine) => engine.instanceId === instance.instanceId) : undefined);
+  const shown = org ? orgEngineRows(rows, myEngines) : rows;
 
   return (
     <div className="flex min-w-0 flex-col gap-6 pb-2">
@@ -369,14 +385,20 @@ export function EnginesSettings() {
           <h1 className="text-[22px] font-semibold tracking-tight text-ink">{t("settings.engines.title")}</h1>
           <p className="mt-2 max-w-lg text-[13px] leading-relaxed text-ink-secondary">{t("engines.library.intro")}</p>
         </div>
-        <RefreshEngines />
+        <div className="flex shrink-0 flex-wrap items-center gap-1">
+          {org && <ManageMyKeysLink issuer={org.org.identity.issuer} />}
+          <RefreshEngines />
+        </div>
       </div>
-      {org && <MyEngines issuer={org.org.identity.issuer} />}
       {/* The claude.ai connectors of the person's own Claude account live in
           Connected apps; while that experiment is off, their read-only
           status shows here, next to the Claude sign-in that brings them. */}
       {!connectedAppsEnabled(state.config) && <HarnessConnectorsSection placement="settings" />}
-      <EngineSections instances={rows} renderEngine={(instance) => <EngineRow instance={instance} />} />
+      <EngineSections
+        instances={shown}
+        renderEngine={(instance) => <EngineRow instance={instance} mine={mineOf(instance)} />}
+        isReady={(instance) => { const mine = mineOf(instance); return mine ? mine.myTurns !== "none" : engineReady(instance); }}
+      />
       <div className="space-y-3 border-t border-hairline/40 pt-4">
         <AddClaudeAccount />
         {state.instances.some((instance) => instance.snapshot.chatgptPlan && !instance.readOnly && !instance.snapshot.authenticationUnavailableReason) && <AddChatGptAccount />}
