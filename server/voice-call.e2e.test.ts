@@ -30,7 +30,7 @@ const usage: VoiceUsage[] = [];
 
 beforeAll(async () => {
   xai = await startFakeXaiVoice({ transcripts: ["first turn", "second turn"], sttFinalizeMs: 30, ttsFirstChunkMs: 40, ttsSeconds: 0.3 });
-  process.env.OMB_XAI_TTS_API = `${xai.url}/v1`;
+  process.env.SAGAX_XAI_TTS_API = `${xai.url}/v1`;
   const grok = await import("./tts/grok.ts");
   const { createVoiceModeRoutes } = await import("./voice-mode.ts");
   const viewer = createDesktopViewer({
