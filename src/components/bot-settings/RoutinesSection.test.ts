@@ -90,11 +90,15 @@ describe("RoutinesSection", () => {
     expect(markup).toContain("No schedules yet.");
   });
 
-  it("renders a capitalized schedule sentence and name for each routine", () => {
+  // The bot panel lists routines in the compact Sagax layout (1e6839895,
+  // d3fb98f22): name, state and a pause switch per row; the schedule, next
+  // run and latest result open in the routine's detail and the run logs.
+  it("renders each routine's name with its pause switch", () => {
     const markup = render([activeRoutine, pausedRoutine], []);
-    expect(markup).toContain("Every weekday at");
     expect(markup).toContain("Morning brief");
     expect(markup).toContain("Weekly digest");
+    expect(markup).toContain('aria-label="Pause"');
+    expect(markup).toContain('aria-label="Resume"');
   });
 
   it("chips an enabled routine Active and a disabled one Paused", () => {
@@ -103,28 +107,15 @@ describe("RoutinesSection", () => {
     expect(markup).toContain(">Paused<");
   });
 
-  it("shows the next run time for a routine that has one", () => {
-    const markup = render([activeRoutine], []);
-    expect(markup).toContain("Next Sep");
+  it("lists the active routine before the paused one", () => {
+    const markup = render([pausedRoutine, activeRoutine], []);
+    expect(markup.indexOf("Morning brief")).toBeLessThan(markup.indexOf("Weekly digest"));
   });
 
-  it("omits Next for a routine with no future run and shows nothing extra without a run history", () => {
-    const markup = render([pausedRoutine], []);
+  it("offers a new schedule and the bot's run logs from the header", () => {
+    const markup = render([activeRoutine], [finishedRun]);
+    expect(markup).toContain('aria-label="Create schedule"');
+    expect(markup).toContain('aria-label="Run logs"');
     expect(markup).not.toContain("Next ");
-    expect(markup).toContain("Not run yet");
-  });
-
-  it("shows the newest run's status without relying on completion order", () => {
-    const olderRun: RoutineRun = {
-      ...finishedRun,
-      id: "run-0",
-      status: "failed",
-      finishedAt: Date.UTC(2026, 8, 5, 9, 2),
-      createdAt: Date.UTC(2026, 8, 5, 9),
-    };
-    const markup = render([activeRoutine], [olderRun, finishedRun]);
-    expect(markup).toContain("Latest: Completed");
-    expect(markup).not.toContain("Latest: Failed");
-    expect(markup).toContain('aria-label="Run logs for Morning brief"');
   });
 });
