@@ -60,7 +60,11 @@ Sagax releases are built on a Mac, not by the workflows above:
    name), then notarize and staple each `.zip`/`.dmg`, re-zip and regenerate
    `latest-mac.yml` (`node scripts/regenerate-mac-feed.mjs`).
 3. Windows x64 + arm64: `pnpm package:fork:win:cross` (one NSIS installer for
-   both arches, two portable zips, `latest.yml`).
+   both arches, two portable zips, `latest.yml`). After-pack refuses a
+   package whose `.node` addons or `Sagax.exe` are not PE images for that
+   arch; recheck a built or downloaded package with
+   `node scripts/verify-win-natives.mjs <win-unpacked or unzipped dir> x64|arm64`.
+   Nothing here runs the app: a Windows launch is still needed before release.
 4. Gates: `scripts/smoke-browser-bundle.mjs` (live on the host arch,
    `--check-only` for the others) and `SAGAX_SMOKE_DIST=<resources>/server
    node scripts/smoke-packaged-server.mjs` for every package.

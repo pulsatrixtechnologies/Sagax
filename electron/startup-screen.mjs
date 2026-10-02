@@ -1,6 +1,12 @@
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
+// How long the loading screen spins before it admits startup is stuck and
+// offers "Open logs" and "Retry". Startup continues underneath.
+export const STARTUP_STALL_MS = 90_000;
+export const STALL_MESSAGE =
+  "Sagax is taking longer than usual to start its local server. The logs say what it is waiting for. Retry restarts Sagax.";
+
 export function startupScreenHtml(iconPath) {
   const icon = fs.readFileSync(iconPath).toString('base64');
   return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline'; script-src 'unsafe-inline'"><title>Sagax</title><style>
@@ -12,15 +18,31 @@ export function startupScreenHtml(iconPath) {
   .spinner{width:13px;height:13px;border-radius:50%;border:1.5px solid #ffffff21;border-top-color:#a6c9ff;animation:spin .9s linear infinite}
   button{position:absolute;right:13px;top:13px;width:30px;height:30px;display:grid;place-items:center;padding:0;color:#999da5;border:0;border-radius:7px;background:transparent;cursor:pointer;-webkit-app-region:no-drag}
   button:hover{color:#fff;background:#ffffff10}button:focus-visible{outline:2px solid #1686ff;outline-offset:2px}button svg{pointer-events:none}
+  .problem{display:none;flex-direction:column;align-items:center;gap:12px;max-width:340px;text-align:center;-webkit-app-region:no-drag}
+  .problem p{margin:0;color:#c9ccd2;font-size:12px;line-height:18px}
+  .actions{display:flex;gap:8px}.actions button{position:static;width:auto;height:auto;padding:6px 12px;color:#f5f5f5;border:1px solid #ffffff26;background:#ffffff0d;font:inherit;font-size:12px}
+  main.failed .status{display:none}main.failed .problem{display:flex}
   @keyframes spin{to{transform:rotate(360deg)}}@media(prefers-reduced-motion:reduce){.spinner{animation:none;border-color:#a6c9ff}}
-  </style></head><body><main><button aria-label="Close" onclick="window.startupScreen.close()"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button><img src="data:image/png;base64,${icon}" alt=""><h1>Sagax</h1><div class="status" role="status"><span class="spinner" aria-hidden="true"></span>Opening your workspace…</div></main></body></html>`;
+  </style></head><body><main><button aria-label="Close" onclick="window.startupScreen.close()"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button><img src="data:image/png;base64,${icon}" alt=""><h1>Sagax</h1><div class="status" role="status"><span class="spinner" aria-hidden="true"></span><span id="status-text">Opening your workspace…</span></div><div class="problem" role="alert"><p id="problem-text"></p><div class="actions"><button type="button" id="open-logs" onclick="window.startupScreen.openLogs()">Open logs</button><button type="button" id="retry" onclick="window.startupScreen.retry()">Retry</button></div></div></main><script>
+  window.startupScreen.onState(state => {
+    const main = document.querySelector('main');
+    if (state.status) document.getElementById('status-text').textContent = state.status;
+    if (state.problem) { document.getElementById('problem-text').textContent = state.problem; main.classList.add('failed'); }
+  });
+  </script></body></html>`;
 }
 
 export function createStartupScreen({
   BrowserWindow, iconPath, platform = process.platform, isQuitting, onQuit,
   onHide, isHidden = () => false, onShow, onFinished,
+  onOpenLogs, onRetry, stallAfterMs = STARTUP_STALL_MS,
 }) {
-  let disposed = false, revealed = false, fallback, resolveReady;
+  let disposed = false, revealed = false, fallback, stall, resolveReady;
+  let state = { status: null, problem: null };
+  const publish = () => {
+    if (disposed || splash.isDestroyed() || splash.webContents.isDestroyed?.()) return;
+    try { splash.webContents.send("startup-screen:state", state); } catch {}
+  };
   const ready = new Promise(resolve => { resolveReady = resolve; });
   const splash = new BrowserWindow({
     width: 440, height: 300, resizable: false, maximizable: false,
@@ -37,6 +59,7 @@ export function createStartupScreen({
     if (disposed) return;
     disposed = true;
     clearTimeout(fallback);
+    clearTimeout(stall);
     resolveReady();
     if (!splash.isDestroyed()) splash.destroy();
     onFinished?.();
@@ -50,10 +73,22 @@ export function createStartupScreen({
   // Renderer window.close() bypasses BrowserWindow's cancellable close path.
   // This dedicated, unprivileged bridge requests the native path instead.
   splash.webContents.on("ipc-message", (_event, channel) => {
-    if (channel === "startup-screen:close" && !disposed) splash.close();
+    if (disposed) return;
+    if (channel === "startup-screen:close") splash.close();
+    else if (channel === "startup-screen:open-logs") onOpenLogs?.();
+    else if (channel === "startup-screen:retry") onRetry?.();
   });
+  // The page may load after main already reported a phase or a failure.
+  splash.webContents.on("did-finish-load", publish);
   splash.once("ready-to-show", () => {
-    if (!disposed && !isQuitting()) { clearTimeout(fallback); splash.show(); resolveReady(); }
+    if (!disposed && !isQuitting()) {
+      clearTimeout(fallback); splash.show(); resolveReady();
+      // A spinner is never the only thing a person sees for long: if no
+      // workspace window takes over in time, say so and offer a way out,
+      // while startup keeps going underneath (it may still succeed).
+      stall = setTimeout(() => fail(STALL_MESSAGE), stallAfterMs);
+      stall.unref?.();
+    }
   });
   splash.on("show", () => onShow?.(splash));
   splash.once("closed", resolveReady);
@@ -64,7 +99,15 @@ export function createStartupScreen({
   fallback.unref?.();
   void splash.loadURL("data:text/html;charset=utf-8," + encodeURIComponent(startupScreenHtml(iconPath)))
     .catch(dispose);
+  const setStatus = (status) => { state = { ...state, status: String(status) }; publish(); };
+  const fail = (problem) => {
+    if (disposed) return;
+    clearTimeout(stall);
+    state = { ...state, problem: String(problem) };
+    publish();
+  };
   const attach = (win, { maximized = false } = {}) => {
+    clearTimeout(stall);
     const reveal = () => {
       if (revealed || win.isDestroyed() || isQuitting()) return;
       revealed = true;
@@ -100,5 +143,5 @@ export function createStartupScreen({
     fallback = setTimeout(reveal, 10_000);
     fallback.unref?.();
   };
-  return { ready, attach, dispose, window: splash };
+  return { ready, attach, dispose, setStatus, fail, window: splash };
 }

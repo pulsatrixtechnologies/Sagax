@@ -6,6 +6,7 @@ import {
   verifyCloudflaredExecutable,
 } from "./prepare-cloudflared.mjs";
 import { verifyBrowserBundle } from "./prepare-browser.mjs";
+import { verifyWindowsNatives } from "./verify-win-natives.mjs";
 
 async function requireRealDirectory(directory, mode = 0o755) {
   const details = await lstat(directory);
@@ -89,6 +90,17 @@ export default async function afterPack(context) {
     // Windows arm64 ships the x64 bundle (no arm64 build exists; x64 emulation).
     const browserArch = context.electronPlatformName === "win32" && arch === "arm64" ? "x64" : arch;
     await verifyBrowserBundle(browserRoot, `${context.electronPlatformName}-${browserArch}`);
+  }
+
+  if (context.electronPlatformName === "win32") {
+    // Cross-built from macOS: a host-built or other-arch addon would only
+    // fail on the user's machine, inside startup. Refuse to package it.
+    const arch = { 1: "x64", 3: "arm64" }[context.arch];
+    if (!arch) throw new Error(`Unsupported Windows package architecture: ${context.arch}`);
+    const { problems } = await verifyWindowsNatives(context.appOutDir, arch);
+    if (problems.length) {
+      throw new Error(`Windows ${arch} package has binaries for the wrong target:\n  ${problems.join("\n  ")}`);
+    }
   }
 
   if (context.electronPlatformName !== "linux") return;
