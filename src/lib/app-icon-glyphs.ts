@@ -17,22 +17,24 @@ const svg = (body: string, defs = "") =>
  */
 function shape(): string {
   const { d } = SHAPE_ART.circle;
-  // the circle is r 42 around (50, 50): about r 70 around (60, 92)
-  const scale = 1.67;
-  const cx = 60;
-  const cy = 92;
+  // the circle is r 42 around (50, 50): about r 77 around (71, 90), so its
+  // edge runs from the left side up to the top right and the dark ground
+  // stays in the top-left region
+  const scale = 77 / 42;
+  const cx = 71;
+  const cy = 90;
   // the Shapes eyes' proportions (about 1 : 2.2), large enough to read
-  const eyeW = EYES.rx * 2.4;
-  const eyeH = EYES.ry * 2.6;
+  const eyeW = EYES.rx * 2.6;
+  const eyeH = EYES.ry * 2.9;
   const eye = (x: number, y: number) =>
-    `<rect x="${x - eyeW / 2}" y="${y - eyeH / 2}" width="${eyeW}" height="${eyeH}" rx="${eyeW / 2}" fill="#0B0B0D" transform="rotate(-33 ${x} ${y})"/>`;
+    `<rect x="${x - eyeW / 2}" y="${y - eyeH / 2}" width="${eyeW}" height="${eyeH}" rx="${eyeW / 2}" fill="#0B0B0D" transform="rotate(-20 ${x} ${y})"/>`;
   return svg(
     `<rect width="100" height="100" fill="url(#bg)"/>` +
       `<path d="${d}" fill="url(#ball)" transform="translate(${cx - 50 * scale} ${cy - 50 * scale}) scale(${scale})"/>` +
-      eye(46, 61) +
-      eye(74, 47),
+      eye(47, 56) +
+      eye(73, 43),
     `<linearGradient id="bg" x1="0" y1="0" x2="1" y2="0.35"><stop offset="0" stop-color="#121214"/><stop offset="1" stop-color="#2F2F33"/></linearGradient>` +
-      `<radialGradient id="ball" cx="0.52" cy="0.3" r="0.62"><stop offset="0" stop-color="#FFFFFF"/><stop offset="0.35" stop-color="#F1F1F3"/><stop offset="0.75" stop-color="#CFCFD4"/><stop offset="1" stop-color="#9E9EA5"/></radialGradient>`,
+      `<radialGradient id="ball" cx="0.32" cy="0.26" r="0.6"><stop offset="0" stop-color="#FFFFFF"/><stop offset="0.35" stop-color="#F1F1F3"/><stop offset="0.75" stop-color="#CFCFD4"/><stop offset="1" stop-color="#9E9EA5"/></radialGradient>`,
   );
 }
 
