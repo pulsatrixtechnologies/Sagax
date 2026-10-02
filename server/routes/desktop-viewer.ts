@@ -51,6 +51,9 @@ interface Upgrade { socket: Socket; head: Buffer; release: () => void; close: ()
 export function createDesktopViewer(deps: {
   target: (id: string, auth: RequestAuth) => DesktopTarget | undefined;
   live: (auth: RequestAuth) => boolean;
+  /** Other WebSocket routes that run through the same gates (voice mode's
+   * live call, server/voice-mode.ts); they take their socket with upgradeOf. */
+  acceptsUpgrade?: (path: string) => boolean;
 }) {
   const upgrades = new Map<IncomingMessage, Upgrade>();
   let stopped = false;
@@ -72,7 +75,7 @@ export function createDesktopViewer(deps: {
       let path: string;
       try { path = new URL(req.url ?? "", "http://localhost").pathname; }
       catch { res.writeHead(400).end(); return; }
-      if (!ROUTE.exec(path)?.[2]) { res.writeHead(404).end(); return; }
+      if (!ROUTE.exec(path)?.[2] && !deps.acceptsUpgrade?.(path)) { res.writeHead(404).end(); return; }
       // Keep reading while auth/inspection awaits, so a closed tab's FIN is
       // observed. Bound and preserve any eagerly sent WebSocket bytes.
       const upgrade: Upgrade = { socket, head, release: () => socket.off("data", buffer), close: () => socket.destroy() };
@@ -228,6 +231,11 @@ export function createDesktopViewer(deps: {
 
   return {
     route, attach,
+    /** The pending upgrade of a request another route accepted (acceptsUpgrade). */
+    upgradeOf: (req: IncomingMessage) => {
+      const upgrade = upgrades.get(req);
+      return upgrade ? { socket: upgrade.socket, get head() { return upgrade.head; }, release: () => upgrade.release() } : undefined;
+    },
     closeForOwner: (owner: string) => { for (const upgrade of upgrades.values()) if (upgrade.owner === owner) upgrade.close(); },
     closeAll: () => {
       stopped = true;

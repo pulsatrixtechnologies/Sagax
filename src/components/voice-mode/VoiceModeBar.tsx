@@ -1,22 +1,26 @@
 // The floating voice bar (voice mode): the bot's name on top, its avatar,
-// a live waveform, then settings, transcript, mute and end. It sits above
-// the composer while the call is on and leaves the thread readable.
+// a live waveform of both sides (the bot above the line, the person below),
+// the call's state, then settings, transcript, hold, mute and end, like a
+// phone. It sits above the composer while the call is on and leaves the
+// thread readable.
 import { useCallback, useEffect, useRef, useState } from "react";
-import { MessageSquare, Mic, MicOff, Settings2, X } from "lucide-react";
+import { Hand, MessageSquare, Mic, MicOff, Pause, PhoneOff, Play, Settings2 } from "lucide-react";
 
 import { useStore, type Bot } from "@/state/store";
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
 import { speaker } from "@/lib/tts";
 import { fetchVoiceModeVoices, type VoiceOption } from "@/lib/voice-mode/api";
-import type { XaiSpeechEngine } from "@/lib/voice-mode/engine";
+import type { VoiceCall } from "@/lib/voice-mode/call";
+import type { CallPhase, CallState } from "@/lib/voice-mode/call-machine";
+import { notifyCallSettings, useCallSettings, writeCallSettings } from "@/lib/voice-mode/call-settings";
 import { useVoiceModeSettings, writeVoiceModeSettings } from "@/lib/voice-mode/settings";
+import { forgetVoiceprint } from "@/lib/voice-mode/speaker-id";
 import type { VoiceModeRefusalCause } from "../../../shared/voice-mode";
 import { BotAvatar } from "../Avatar";
 import { requestSettingsCard } from "../SettingsPrimitives";
-import { VoiceModeSettingsPanel, type VoiceModeList } from "./VoiceModeSettingsPanel";
-
-export type VoicePhase = "listening" | "sending" | "working" | "speaking";
+import type { CallMetrics } from "./LiveCall";
+import { VoiceModeSettingsPanel, type Enrollment, type VoiceModeList } from "./VoiceModeSettingsPanel";
 
 /** The access card of a refused voice turn: shown in the speaker's own bar
  * only (the audience of every access card), never in the thread. */
@@ -35,73 +39,105 @@ export function voiceAccessCardText(card: VoiceAccessCard): string[] {
 
 export interface VoiceModeBarProps {
   bot: Bot;
-  engine: XaiSpeechEngine;
-  phase: VoicePhase;
+  call: VoiceCall;
+  state: CallState;
+  /** the words recognized so far in the person's turn */
   heard: string;
+  /** the bot's sentence now audible */
   caption?: string;
   note: string | null;
-  error?: string;
+  /** a passing notice ("another voice was ignored") */
+  notice?: string | null;
   /** an access card: no xAI key serves this person */
   refusal: VoiceAccessCard | null;
-  transcript: Array<{ id: string; who: "you" | "bot"; text: string }>;
+  transcript: Array<{ id: string; who: "you" | "bot"; text: string; interrupted?: boolean }>;
+  metrics?: CallMetrics;
   onRetry(): void;
-  onInterrupt(): void;
   onEnd(): void;
 }
 
 const BARS = 28;
 
-/** Bars from the microphone while listening, a gentle motion while the bot speaks. */
-function Waveform({ engine, phase, muted }: { engine: XaiSpeechEngine; phase: VoicePhase; muted: boolean }) {
+/** What the bar says for each state of the call. Exported for tests. */
+export function phaseLabel(phase: CallPhase, botName: string, muted: boolean): string {
+  if (phase === "held") return t("voiceMode.phase.held");
+  if (muted) return t("voiceMode.muted");
+  switch (phase) {
+    case "connecting": return t("voiceMode.phase.connecting");
+    case "listening": return t("voiceMode.listening");
+    case "hearing": return t("voiceMode.phase.hearing");
+    case "thinking": return t("voiceMode.phase.thinking");
+    case "speaking": return botName;
+    case "interrupted": return t("voiceMode.phase.interrupted");
+    default: return "";
+  }
+}
+
+function amplitude(analyser: AnalyserNode | null, data: Uint8Array<ArrayBuffer>, bars: number): number[] {
+  if (!analyser) return Array.from({ length: bars }, () => 0);
+  analyser.getByteTimeDomainData(data);
+  const out: number[] = [];
+  const span = Math.floor(data.length / bars);
+  for (let i = 0; i < bars; i++) {
+    let peak = 0;
+    for (let j = i * span; j < (i + 1) * span; j++) peak = Math.max(peak, Math.abs((data[j] ?? 128) - 128) / 128);
+    out.push(Math.min(1, peak * 2.5));
+  }
+  return out;
+}
+
+/** Both sides of the call: the bot above the line (accent), the person below. */
+function Waveform({ call, state }: { call: VoiceCall; state: CallState }) {
   const canvas = useRef<HTMLCanvasElement>(null);
+  const quiet = state.phase === "held" || state.phase === "connecting";
+  const muted = state.muted;
   useEffect(() => {
     const element = canvas.current;
     const context = element?.getContext("2d");
     if (!element || !context) return;
     let frame = 0;
-    const data = new Uint8Array(512);
+    const data = new Uint8Array(1024);
     const draw = (time: number) => {
       const { width, height } = element;
+      const style = getComputedStyle(element);
       context.clearRect(0, 0, width, height);
-      context.fillStyle = getComputedStyle(element).color;
-      const analyser = engine.levels;
-      if (analyser && phase === "listening" && !muted) analyser.getByteTimeDomainData(data);
+      const { mic, bot } = call.analysers;
+      const theirs = quiet ? [] : amplitude(bot, data, BARS);
+      const mine = quiet || muted ? [] : amplitude(mic, data, BARS);
       const step = width / BARS;
+      const middle = height / 2;
       for (let i = 0; i < BARS; i++) {
-        let level: number;
-        if (muted) level = 0.04;
-        else if (phase === "listening" && analyser) {
-          const at = Math.floor((i / BARS) * data.length);
-          level = Math.min(1, (Math.abs((data[at] ?? 128) - 128) / 128) * 4);
-        } else if (phase === "speaking") {
-          level = 0.25 + 0.55 * Math.abs(Math.sin(time / 180 + i * 0.6)) * Math.abs(Math.cos(time / 410 + i * 0.23));
-        } else {
-          level = 0.08 + 0.06 * Math.abs(Math.sin(time / 600 + i * 0.4));
-        }
-        const bar = Math.max(2, level * height);
+        const idle = 0.04 + (quiet ? 0 : 0.03 * Math.abs(Math.sin(time / 700 + i * 0.5)));
+        const up = Math.max(idle, theirs[i] ?? 0) * middle;
+        const down = Math.max(idle, mine[i] ?? 0) * middle;
         const x = i * step + step * 0.2;
-        context.globalAlpha = 0.85;
-        context.fillRect(x, (height - bar) / 2, step * 0.6, bar);
+        context.globalAlpha = 0.9;
+        context.fillStyle = style.getPropertyValue("--color-accent") || style.color;
+        context.fillRect(x, middle - up, step * 0.6, Math.max(1, up));
+        context.fillStyle = style.color;
+        context.globalAlpha = muted ? 0.25 : 0.7;
+        context.fillRect(x, middle, step * 0.6, Math.max(1, down));
       }
       frame = requestAnimationFrame(draw);
     };
     frame = requestAnimationFrame(draw);
     return () => cancelAnimationFrame(frame);
-  }, [engine, phase, muted]);
+  }, [call, quiet, muted]);
   return <canvas ref={canvas} width={220} height={36} className="h-9 w-full min-w-0 flex-1 text-ink" aria-hidden="true" />;
 }
 
 export function VoiceModeBar(props: VoiceModeBarProps) {
-  const { bot, engine, phase, heard, caption, note, error, refusal, transcript, onRetry, onInterrupt, onEnd } = props;
+  const { bot, call, state, heard, caption, note, notice, refusal, transcript, metrics, onRetry, onEnd } = props;
   const { dispatch } = useStore();
   const settings = useVoiceModeSettings();
-  const [muted, setMuted] = useState(engine.muted);
+  const callSettings = useCallSettings();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [transcriptOpen, setTranscriptOpen] = useState(false);
   const [list, setList] = useState<VoiceModeList | null>(null);
   const [voices, setVoices] = useState<VoiceOption[] | null>(null);
   const [voicesError, setVoicesError] = useState<string | null>(null);
   const [previewing, setPreviewing] = useState<{ id: string; loading: boolean } | null>(null);
+  const [enrollment, setEnrollment] = useState<Enrollment>(call.enrolled ? { state: "enrolled" } : { state: "none" });
 
   useEffect(() => {
     if (!settingsOpen || voices !== null) return;
@@ -115,12 +151,6 @@ export function VoiceModeBar(props: VoiceModeBarProps) {
     return () => controller.abort();
   }, [bot.id, settingsOpen, voices]);
 
-  const toggleMute = useCallback(() => {
-    const next = !engine.muted;
-    engine.setMuted(next);
-    setMuted(next);
-  }, [engine]);
-
   const preview = useCallback(
     (voiceId: string) => {
       if (previewing?.id === voiceId) {
@@ -128,7 +158,7 @@ export function VoiceModeBar(props: VoiceModeBarProps) {
         setPreviewing(null);
         return;
       }
-      onInterrupt();
+      call.interrupt();
       setPreviewing({ id: voiceId, loading: true });
       const label = voices?.find((voice) => voice.id === voiceId)?.label ?? voiceId;
       const unsubscribe = speaker.subscribe((snapshot) => {
@@ -141,22 +171,43 @@ export function VoiceModeBar(props: VoiceModeBarProps) {
           setPreviewing((current) => (current?.id === voiceId ? null : current));
         });
     },
-    [bot.id, onInterrupt, previewing, settings, voices],
+    [bot.id, call, previewing, settings, voices],
   );
 
-  const status = muted
-    ? t("voiceMode.muted")
-    : phase === "listening"
-      ? t("voiceMode.listening")
-      : phase === "sending"
-        ? t("voiceMode.oneMoment")
-        : phase === "speaking"
-          ? bot.name
-          : t("voiceMode.working");
-  const line = phase === "listening" ? heard : caption;
+  const enroll = useCallback(() => {
+    setEnrollment({ state: "recording", share: 0 });
+    void call.enroll((share) => setEnrollment({ state: "recording", share })).then((ok) => {
+      setEnrollment(ok ? { state: "enrolled" } : { state: "failed" });
+      if (ok) writeCallSettings({ onlyMyVoice: true });
+      notifyCallSettings();
+    });
+  }, [call]);
+
+  const forget = useCallback(() => {
+    forgetVoiceprint();
+    call.forgetVoice();
+    setEnrollment({ state: "none" });
+    notifyCallSettings();
+  }, [call]);
+
+  const muted = state.muted;
+  const held = state.phase === "held";
+  const status = phaseLabel(state.phase, bot.name, muted);
+  const line = state.phase === "hearing" || state.phase === "interrupted" ? heard : state.phase === "speaking" ? caption : "";
+  const push = callSettings.input === "push";
 
   return (
-    <div className="pointer-events-none absolute inset-x-0 bottom-28 z-30 flex justify-center px-4" data-voice-bar>
+    <div
+      className="pointer-events-none absolute inset-x-0 bottom-28 z-30 flex justify-center px-4"
+      data-voice-bar
+      data-voice-phase={state.phase}
+      data-voice-first-audio-ms={metrics?.firstAudioMs}
+      data-voice-sent-ms={metrics?.sentMs}
+      data-voice-duck-ms={metrics?.duckMs}
+      data-voice-bargein-ms={metrics?.bargeInMs}
+      data-voice-endpoint-ms={call.endpointMs}
+      data-voice-models={call.modelsReady ? "on-device" : "level"}
+    >
       <div className="pointer-events-auto flex w-full max-w-[520px] flex-col items-center gap-1.5">
         <div className="rounded-full bg-panel/95 px-3 py-0.5 text-[12.5px] font-medium text-ink shadow-md ring-1 ring-hairline/50">{bot.name}</div>
         <div className="w-full rounded-2xl bg-panel/95 p-2 shadow-2xl ring-1 ring-hairline/50 backdrop-blur">
@@ -170,6 +221,11 @@ export function VoiceModeBar(props: VoiceModeBarProps) {
               onOpen={setList}
               onChange={(patch) => writeVoiceModeSettings(patch)}
               onPreview={preview}
+              call={callSettings}
+              enrollment={enrollment}
+              onCallChange={(patch) => writeCallSettings(patch)}
+              onEnroll={enroll}
+              onForget={forget}
             />
           )}
           {transcriptOpen && (
@@ -178,9 +234,10 @@ export function VoiceModeBar(props: VoiceModeBarProps) {
                 <div className="text-ink-tertiary">{t("voiceMode.transcriptEmpty")}</div>
               ) : (
                 transcript.map((entry) => (
-                  <div key={entry.id} className={cn("py-0.5", entry.who === "you" ? "text-ink-secondary" : "text-ink")}>
+                  <div key={entry.id} className={cn("py-0.5", entry.who === "you" ? "text-ink-secondary" : "text-ink")} data-voice-interrupted={entry.interrupted ? "" : undefined}>
                     <span className="mr-1.5 font-medium">{entry.who === "you" ? t("voiceMode.you") : bot.name}</span>
                     {entry.text}
+                    {entry.interrupted && <span className="ml-1.5 rounded bg-raised px-1 text-[11px] text-ink-tertiary">{t("voiceMode.interruptedMark")}</span>}
                   </div>
                 ))
               )}
@@ -218,9 +275,9 @@ export function VoiceModeBar(props: VoiceModeBarProps) {
               )}
             </div>
           )}
-          {(note || error) && !refusal && (
-            <div className="mb-2 flex items-center justify-between gap-2 rounded-xl bg-warning/10 px-3 py-1.5 text-[12.5px] text-warning">
-              <span>{note ?? error}</span>
+          {(note || notice) && !refusal && (
+            <div className={cn("mb-2 flex items-center justify-between gap-2 rounded-xl px-3 py-1.5 text-[12.5px]", note ? "bg-warning/10 text-warning" : "bg-raised/60 text-ink-secondary")} role={note ? "alert" : "status"}>
+              <span>{note ?? notice}</span>
               {note && (
                 <button type="button" onClick={onRetry} className="shrink-0 rounded-full border border-warning/40 px-2.5 py-0.5 text-[12px] hover:bg-warning/10">
                   {t("voiceMode.retry")}
@@ -228,16 +285,43 @@ export function VoiceModeBar(props: VoiceModeBarProps) {
               )}
             </div>
           )}
-          <div className="flex items-center gap-2">
-            <button type="button" onClick={phase === "speaking" ? onInterrupt : undefined} className="shrink-0 rounded-full" aria-label={phase === "speaking" ? t("voiceMode.interrupt") : bot.name}>
-              <BotAvatar bot={bot} size={36} state={phase === "listening" ? "listening" : phase === "speaking" ? "sending" : phase === "sending" ? "thinking" : "working"} />
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={state.botAudible ? () => call.interrupt() : undefined}
+              className="shrink-0 rounded-full"
+              aria-label={state.botAudible ? t("voiceMode.interrupt") : bot.name}
+            >
+              <BotAvatar
+                bot={bot}
+                size={36}
+                state={state.phase === "listening" || state.phase === "hearing" ? "listening" : state.phase === "speaking" ? "sending" : state.phase === "thinking" || state.phase === "interrupted" ? "thinking" : "working"}
+              />
             </button>
             <div className="flex min-w-0 flex-1 flex-col">
-              <Waveform engine={engine} phase={phase} muted={muted} />
-              <div className="truncate px-1 text-[11.5px] text-ink-tertiary" aria-live="polite">
+              <Waveform call={call} state={state} />
+              <div className="truncate px-1 text-[11.5px] text-ink-tertiary" aria-live="polite" data-voice-status>
                 {line ? <span className="text-ink-secondary">{line}</span> : status}
               </div>
             </div>
+            {push && (
+              <button
+                type="button"
+                aria-label={t("voiceMode.pushToTalk")}
+                title={t("voiceMode.pushHint")}
+                data-voice-ptt
+                disabled={muted || held}
+                onPointerDown={(event) => {
+                  event.currentTarget.setPointerCapture(event.pointerId);
+                  call.pushToTalk(true);
+                }}
+                onPointerUp={() => call.pushToTalk(false)}
+                onPointerCancel={() => call.pushToTalk(false)}
+                className={cn("flex size-9 shrink-0 items-center justify-center rounded-full text-ink-secondary hover:bg-raised hover:text-ink disabled:opacity-40", state.phase === "hearing" && "bg-accent text-accent-ink")}
+              >
+                <Hand size={17} />
+              </button>
+            )}
             <button
               type="button"
               aria-label={t("voiceMode.settings")}
@@ -262,10 +346,20 @@ export function VoiceModeBar(props: VoiceModeBarProps) {
             </button>
             <button
               type="button"
+              aria-label={held ? t("voiceMode.resume") : t("voiceMode.hold")}
+              aria-pressed={held}
+              data-voice-hold
+              onClick={() => (held ? call.resume() : call.hold())}
+              className={cn("flex size-9 shrink-0 items-center justify-center rounded-full hover:bg-raised", held ? "bg-raised text-warning" : "text-ink-secondary hover:text-ink")}
+            >
+              {held ? <Play size={16} /> : <Pause size={16} />}
+            </button>
+            <button
+              type="button"
               aria-label={muted ? t("voiceMode.unmute") : t("voiceMode.mute")}
               aria-pressed={muted}
               data-voice-mute
-              onClick={toggleMute}
+              onClick={() => call.setMuted(!muted)}
               className={cn("flex size-9 shrink-0 items-center justify-center rounded-full hover:bg-raised", muted ? "bg-raised text-danger" : "text-ink-secondary hover:text-ink")}
             >
               {muted ? <MicOff size={17} /> : <Mic size={17} />}
@@ -277,7 +371,7 @@ export function VoiceModeBar(props: VoiceModeBarProps) {
               onClick={onEnd}
               className="flex size-9 shrink-0 items-center justify-center rounded-full bg-danger text-white hover:brightness-110"
             >
-              <X size={17} />
+              <PhoneOff size={16} />
             </button>
           </div>
         </div>
