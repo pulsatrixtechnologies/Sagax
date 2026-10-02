@@ -1,13 +1,40 @@
 // Minimal white glyphs for dark app icons: original Sagax artwork (our own
 // spark and cube geometry, not another company's mark), drawn as standalone
 // SVG so the picker can paint them through the system template. Each sits in
-// a 0 0 100 100 box. The white Shape icon is the Shapes circle itself, drawn
-// by ShapeMascot (app-icon-choices.ts).
+// a 0 0 100 100 box. The white Shape icon is the Shapes circle itself (its
+// outline and its eye proportions from shape-art.ts), large and shaded.
+import { EYES, SHAPE_ART } from "@/components/shape-art";
 
-export type AppIconGlyph = "spark" | "cube";
+export type AppIconGlyph = "shape" | "spark" | "cube";
 
 const svg = (body: string, defs = "") =>
   `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="512" height="512"><defs>${defs}</defs>${body}</svg>`;
+
+/**
+ * The Shapes circle as a big glossy sphere rising from the bottom right,
+ * cropped by the tile, its two eyes long dark capsules leaning together,
+ * on a near-black diagonal ground. Fills the whole body (fit "cover").
+ */
+function shape(): string {
+  const { d } = SHAPE_ART.circle;
+  // the circle is r 42 around (50, 50): about r 70 around (60, 92)
+  const scale = 1.67;
+  const cx = 60;
+  const cy = 92;
+  // the Shapes eyes' proportions (about 1 : 2.2), large enough to read
+  const eyeW = EYES.rx * 2.4;
+  const eyeH = EYES.ry * 2.6;
+  const eye = (x: number, y: number) =>
+    `<rect x="${x - eyeW / 2}" y="${y - eyeH / 2}" width="${eyeW}" height="${eyeH}" rx="${eyeW / 2}" fill="#0B0B0D" transform="rotate(-33 ${x} ${y})"/>`;
+  return svg(
+    `<rect width="100" height="100" fill="url(#bg)"/>` +
+      `<path d="${d}" fill="url(#ball)" transform="translate(${cx - 50 * scale} ${cy - 50 * scale}) scale(${scale})"/>` +
+      eye(46, 61) +
+      eye(74, 47),
+    `<linearGradient id="bg" x1="0" y1="0" x2="1" y2="0.35"><stop offset="0" stop-color="#121214"/><stop offset="1" stop-color="#2F2F33"/></linearGradient>` +
+      `<radialGradient id="ball" cx="0.52" cy="0.3" r="0.62"><stop offset="0" stop-color="#FFFFFF"/><stop offset="0.35" stop-color="#F1F1F3"/><stop offset="0.75" stop-color="#CFCFD4"/><stop offset="1" stop-color="#9E9EA5"/></radialGradient>`,
+  );
+}
 
 /** A spark of ten tapered rays, long and short in turn, around a small core. */
 function spark(): string {
@@ -42,7 +69,7 @@ function cube(): string {
   );
 }
 
-const GLYPHS: Record<AppIconGlyph, () => string> = { spark, cube };
+const GLYPHS: Record<AppIconGlyph, () => string> = { shape, spark, cube };
 
 /** The glyph as SVG markup. */
 export function appIconGlyphSvg(glyph: AppIconGlyph): string {

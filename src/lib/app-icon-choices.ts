@@ -59,8 +59,8 @@ export const APP_ICON_CHOICES: readonly AppIconChoice[] = [
   { id: "shape:sparkle", labelKey: "mascot.shape.sparkle", background: ["#FDFEFF", "#DCE5F2"], art: { kind: "shape", shape: "sparkle", skin: "glossy", color: "blue" }, fit: "contain" },
   { id: "shape:flower", labelKey: "mascot.shape.flower", background: ["#FFF5F8", "#F4D2DD"], art: { kind: "shape", shape: "flower", skin: "pastel", color: "pink" }, fit: "contain" },
   // minimal white glyphs on dark plates
-  // the Shapes circle itself (ShapeMascot), white with its two dark eyes
-  { id: "shape:circle-white", labelKey: "settings.appIcon.glyph.blob", background: ["#3B3B40", "#141416"], art: { kind: "shape", shape: "circle", skin: "plain", color: "white" }, fit: "contain", rotate: -12, fill: 1.08 },
+  // the Shapes circle itself as a big white sphere, cropped by the tile
+  { id: "glyph:shape", labelKey: "settings.appIcon.glyph.blob", background: ["#121214", "#2F2F33"], art: { kind: "glyph", glyph: "shape" }, fit: "cover" },
   { id: "glyph:spark", labelKey: "settings.appIcon.glyph.spark", background: ["#22305A", "#0A1024"], art: { kind: "glyph", glyph: "spark" }, fit: "contain" },
   { id: "glyph:cube", labelKey: "settings.appIcon.glyph.cube", background: ["#34353A", "#0E0F11"], art: { kind: "glyph", glyph: "cube" }, fit: "contain" },
   { id: "trombi:classic", labelKey: "floatingBots.mascot.trombi", background: ["#13A0A0", "#006666"], art: { kind: "trombi", skin: "classic" }, fit: "contain" },

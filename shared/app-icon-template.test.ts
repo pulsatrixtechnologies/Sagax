@@ -11,6 +11,7 @@ import {
 } from "./app-icon-template";
 import { appIconHintKey, appIconTargets, APP_ICON_CHOICES, DEFAULT_APP_ICON_ID, primaryBotChoice, UPLOAD_APP_ICON } from "../src/lib/app-icon-choices";
 import { appIconGlyphSvg } from "../src/lib/app-icon-glyphs";
+import { SHAPE_ART } from "../src/components/shape-art";
 
 const bounds = (points: Array<[number, number]>) => ({
   minX: Math.min(...points.map((p) => p[0])),
@@ -120,13 +121,14 @@ describe("app icon choices", () => {
   });
 
   it("draws the white glyphs as standalone SVG", () => {
-    for (const glyph of ["spark", "cube"] as const) {
+    for (const glyph of ["shape", "spark", "cube"] as const) {
       const markup = appIconGlyphSvg(glyph);
       expect(markup).toMatch(/^<svg xmlns="http:\/\/www.w3.org\/2000\/svg" viewBox="0 0 100 100"/);
       expect(markup).not.toMatch(/NaN|undefined/);
     }
-    // the white Shape is the Shapes circle itself, drawn by ShapeMascot
-    expect(APP_ICON_CHOICES.find((choice) => choice.id === "shape:circle-white")?.art).toEqual({ kind: "shape", shape: "circle", skin: "plain", color: "white" });
+    // the white Shape is the Shapes circle's own outline, with two eyes
+    expect(appIconGlyphSvg("shape")).toContain(SHAPE_ART.circle.d);
+    expect(appIconGlyphSvg("shape").match(/<rect x=/g)).toHaveLength(2);
     expect(appIconGlyphSvg("spark").match(/<path/g)).toHaveLength(10);
   });
 
