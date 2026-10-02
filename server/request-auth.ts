@@ -557,7 +557,8 @@ export function resolveRequestAuth(req: IncomingMessage, options: ResolveOptions
   const ticket = path === options.streamPath ? options.url.searchParams.get("ticket") : null;
   let session: SessionRecord | null = null;
   let via: "bearer" | "cookie" | "ticket" | null = null;
-  if (bearer?.startsWith("omb_sess_")) {
+  // sgx_sess_, or omb_sess_ issued before Sagax (valid until it expires)
+  if (bearer?.startsWith("sgx_sess_") || bearer?.startsWith("omb_sess_")) {
     session = options.sessions.authenticate(bearer);
     via = "bearer";
   } else if (ticket) {

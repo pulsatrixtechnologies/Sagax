@@ -93,7 +93,7 @@ async function waitFor<T>(read: () => Promise<T | null | undefined | false>, ms 
 /** An open /api/events stream: everything it received so far, and whether the server ended it. */
 async function openStream(auth: Auth): Promise<{ text: () => string; ended: Promise<void>; close: () => void }> {
   const { body } = await api("POST", "/api/auth/stream-ticket", auth);
-  expect(body.ticket).toMatch(/^omb_tick_/);
+  expect(body.ticket).toMatch(/^sgx_tick_/);
   return new Promise((resolve, reject) => {
     let received = "";
     const req = request(`${BASE}/api/events?ticket=${encodeURIComponent(body.ticket)}`, { headers: { accept: "text/event-stream" } }, (res) => {

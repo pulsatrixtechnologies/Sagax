@@ -67,7 +67,7 @@ beforeAll(async () => {
   const opened = await api("POST", "/api/auth/pairing", { label: "Desktop fixture", scopes: ["client"] });
   expect(opened.status).toBe(200);
   pairing = (await api("POST", "/api/auth/pair", { code: opened.body.code })).body;
-  expect(pairing.token).toMatch(/^omb_sess_/);
+  expect(pairing.token).toMatch(/^sgx_sess_/);
   connector = createComputerSharing({
     file: grantFile, environments: () => [env], cuaConnection: async () => null,
     enabled: async () => localSharingEnabled,

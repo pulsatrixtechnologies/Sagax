@@ -92,9 +92,9 @@ export function takePairingCodeFromLocation(): string | null {
 }
 
 /** A pairing credential the desktop app received from "Sign in with
- * Pulsatrix" in the system browser: exactly `omb_pair_` and 43 base64url
+ * Pulsatrix" in the system browser: exactly `omb_pair_` (or `sgx_pair_`) and 43 base64url
  * characters. */
-const SIGN_IN_CREDENTIAL = /^omb_pair_[A-Za-z0-9_-]{43}$/;
+const SIGN_IN_CREDENTIAL = /^(?:sgx|omb)_pair_[A-Za-z0-9_-]{43}$/;
 
 /** Read `#code=<c>` and, for a sign-in credential only, `&auto=1` (the
  * desktop app opens /pair#code=<c>&auto=1 after the system browser handed
@@ -126,7 +126,7 @@ export function takePairingFromLocation(loc: Pick<Location, "hash" | "pathname" 
  * renders, and never shown. */
 export function takeBrowserSignInFromLocation(): string | null {
   if (!/[#&]signin=/.test(location.hash)) return null;
-  const m = /[#&]signin=(omb_pair_[A-Za-z0-9_-]{43})(?:&|$)/.exec(location.hash);
+  const m = /[#&]signin=((?:sgx|omb)_pair_[A-Za-z0-9_-]{43})(?:&|$)/.exec(location.hash);
   history.replaceState(null, "", location.pathname + location.search);
   return m ? m[1] : null;
 }

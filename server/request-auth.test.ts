@@ -1,5 +1,6 @@
 import type { IncomingMessage } from "node:http";
-import { mkdtempSync, rmSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -224,6 +225,22 @@ describe("resolveRequestAuth", () => {
     const foreignOrigin = resolve({ host: "127.0.0.1:8799", origin: "https://evil.example" });
     expect(foreignOrigin.status).toBe(403);
     expect(foreignOrigin.error).toBe("forbidden: cross-origin request");
+  });
+
+  it("issues sgx_sess_ bearers and still accepts an omb_sess_ one issued before Sagax", () => {
+    const issued = sessions.issue({ label: "browser", scopes: ["admin", "client"] });
+    expect(issued.token).toMatch(/^sgx_sess_/);
+    expect(resolve({ host: "bots.example.com", authorization: `Bearer ${issued.token}` }).auth?.kind).toBe("session");
+    // an older token: same record, as written by a server that issued omb_sess_
+    const legacy = `omb_sess_${"L".repeat(43)}`;
+    const file = join(dir, "sessions.json");
+    const stored = JSON.parse(readFileSync(file, "utf8"));
+    const records = Array.isArray(stored) ? stored : stored.sessions;
+    records[0].tokenHash = createHash("sha256").update(legacy).digest("hex");
+    writeFileSync(file, JSON.stringify(stored));
+    sessions = new SessionRegistry({ file });
+    expect(resolve({ host: "bots.example.com", authorization: `Bearer ${legacy}` }).auth?.kind).toBe("session");
+    expect(resolve({ host: "bots.example.com", authorization: `Bearer ${issued.token}` })).toMatchObject({ auth: null, status: 401 });
   });
 
   it("rejects revoked email cookies, bearers and tickets without falling back to loopback ownership", () => {

@@ -116,7 +116,7 @@ const backchannel = (token: string) => fetch(`${BASE}/api/auth/oidc/backchannel-
 /** Open /api/events with a stream ticket; resolves `ended` when the server closes it. */
 async function openStream(auth: Auth): Promise<{ ended: Promise<void> }> {
   const { body } = await api("POST", "/api/auth/stream-ticket", auth);
-  expect(body.ticket).toMatch(/^omb_tick_/);
+  expect(body.ticket).toMatch(/^sgx_tick_/);
   return new Promise((resolve, reject) => {
     const req = request(`${BASE}/api/events?ticket=${encodeURIComponent(body.ticket)}`, { headers: { accept: "text/event-stream" } }, (res) => {
       expect(res.statusCode).toBe(200);

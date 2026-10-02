@@ -63,6 +63,8 @@ test("a server that lists sagax among its native returns can end on sagax://auth
   assert.equal(back, `sagax://auth?origin=${encodeURIComponent(ORG)}`);
   assert.equal(new URL(desktopStartUrl(ORG, back)).searchParams.get("return"), back);
   assert.deepEqual(parseAuthReturnLink(`${back}#code=${CREDENTIAL}`, state), { origin: ORG, code: CREDENTIAL });
+  const next = CREDENTIAL.replace(/^omb_/, "sgx_");
+  assert.deepEqual(parseAuthReturnLink(`${back}#code=${next}`, state), { origin: ORG, code: next }, "sgx_pair_ is accepted too");
 });
 
 test("this app owns openmausbot:// only when the system's handler is this exact copy", () => {

@@ -30,7 +30,7 @@ const http = require("node:http");
 const OIDC_START_PATH = "/auth/oidc/start";
 const SYSTEM_SIGN_IN_TTL_MS = 10 * 60_000;
 const LOOPBACK_MAX_BODY_BYTES = 2048;
-const CREDENTIAL = /^omb_pair_[A-Za-z0-9_-]{20,128}$/;
+const CREDENTIAL = /^(?:sgx|omb)_pair_[A-Za-z0-9_-]{20,128}$/;
 const ERROR_CODE = /^[a-z0-9_]{1,64}$/;
 
 function activeOrigin(state) {

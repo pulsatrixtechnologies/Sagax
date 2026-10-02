@@ -74,7 +74,7 @@ function parseHostedWorkspaceLink(input) {
   }
 }
 
-const SIGN_IN_CREDENTIAL = /^omb_pair_[A-Za-z0-9_-]{43}$/;
+const SIGN_IN_CREDENTIAL = /^(?:sgx|omb)_pair_[A-Za-z0-9_-]{43}$/;
 const SIGN_IN_ERROR = /^[a-z_]{1,40}$/;
 
 /** "Sign in with Pulsatrix" in the system browser comes back as

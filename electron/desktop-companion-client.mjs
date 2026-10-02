@@ -13,7 +13,7 @@ import { isIP } from "node:net";
 import path from "node:path";
 
 export const DESKTOP_COMPANION_FIELD = "desktopCompanionRemote";
-const DEVICE_TOKEN = /^omb_[A-Za-z0-9_-]{43}$/;
+const DEVICE_TOKEN = /^(?:sgx|omb)_[A-Za-z0-9_-]{43}$/;
 const DEVICE_ID = /^[0-9a-f-]{36}$/i;
 const PAIRING_CODE = /^\d{6}$/;
 const MAX_ERROR_BYTES = 64 * 1024;
