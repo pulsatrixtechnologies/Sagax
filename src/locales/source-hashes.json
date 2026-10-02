@@ -5208,7 +5208,10 @@
       "primaryBot.empty": "31044111abd176bfc5278b58461faee649e0706ba5219fbbb51c820c1095821d",
       "primaryBot.noMatch": "4918be631d704ba6bf6566e509ba7536d9bd28261d0e2c57eae610138bd10ec4",
       "primaryBot.confirm": "eebdd24a77d9ad32222660c07777163bf5f6732df2b172351f3f8d5783e4f529",
-      "primaryBot.made": "fd58a2e0d7b5e8c5755fe05f2a9f824c568576edd059220f7988613af1306eed"
+      "primaryBot.made": "fd58a2e0d7b5e8c5755fe05f2a9f824c568576edd059220f7988613af1306eed",
+      "settings.sidebarLogo.title": "448dce5265449658d6bc797498730aca5ae3aa56661493ff409cee95abe9b8c6",
+      "settings.sidebarLogo.subtitle": "54fe34812f80398ead8f0565feb1bb06ed1b048dc37220caadf2ad62d3adc232",
+      "settings.sidebarLogo.show": "080056d98854872f0c77e281baff36cf3b85157f3620a29cf0d5fa4314085402"
     },
     "hi": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",
