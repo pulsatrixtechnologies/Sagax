@@ -11,6 +11,8 @@ class Window extends EventEmitter {
     super(); this.options = options; this.destroyed = false; this.visible = false;
     this.webContents = new EventEmitter();
     this.webContents.executeJavaScript = async () => {};
+    this.webContents.sent = [];
+    this.webContents.send = (channel, value) => this.webContents.sent.push([channel, value]);
   }
   setMenu() {}
   loadURL() { queueMicrotask(() => this.emit("ready-to-show")); return Promise.resolve(); }
@@ -149,4 +151,50 @@ test("without a Windows tray or on another platform splash close quits", async (
     splash.window.emit("close", { preventDefault() {} });
     assert.deepEqual(calls, ["quit"]); splash.dispose();
   }
+});
+
+test("a startup that never yields a workspace shows Open logs and Retry instead of spinning forever", async t => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const actions = [];
+  const { splash } = fixture({ stallAfterMs: 90_000,
+    onOpenLogs: () => actions.push("open-logs"), onRetry: () => actions.push("retry") });
+  await flush(); await splash.ready;
+  splash.setStatus("Starting the local server…");
+  t.mock.timers.tick(89_999);
+  assert.deepEqual(splash.window.webContents.sent.at(-1), ["startup-screen:state",
+    { status: "Starting the local server…", problem: null }]);
+  t.mock.timers.tick(1);
+  const [channel, state] = splash.window.webContents.sent.at(-1);
+  assert.equal(channel, "startup-screen:state");
+  assert.match(state.problem, /taking longer than usual/);
+  assert.equal(splash.window.destroyed, false);
+  splash.window.webContents.emit("ipc-message", {}, "startup-screen:open-logs");
+  splash.window.webContents.emit("ipc-message", {}, "startup-screen:retry");
+  assert.deepEqual(actions, ["open-logs", "retry"]);
+  // A page that (re)loads after the failure still receives it.
+  splash.window.webContents.sent.length = 0;
+  splash.window.webContents.emit("did-finish-load");
+  assert.match(splash.window.webContents.sent[0][1].problem, /taking longer than usual/);
+  splash.dispose();
+});
+
+test("a workspace that arrives in time cancels the stall notice", async t => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const { splash, win } = fixture({ stallAfterMs: 1_000 });
+  await flush(); await splash.ready;
+  splash.attach(win);
+  t.mock.timers.tick(1_000);
+  assert.equal(splash.window.webContents.sent.some(([, state]) => state.problem), false);
+  win.webContents.emit("did-finish-load"); await flush();
+  assert.equal(win.visible, true);
+});
+
+test("the loading page renders the failure actions behind the bridge", async () => {
+  const { startupScreenHtml } = await import("./startup-screen.mjs");
+  const html = startupScreenHtml(iconPath);
+  assert.match(html, /window\.startupScreen\.openLogs\(\)/);
+  assert.match(html, /window\.startupScreen\.retry\(\)/);
+  assert.match(html, /window\.startupScreen\.onState/);
+  // The close button stays first: scripts/verify-startup-tray.mjs clicks it.
+  assert.ok(html.indexOf('aria-label="Close"') < html.indexOf('id="open-logs"'));
 });
