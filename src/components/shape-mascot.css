@@ -1,4 +1,4 @@
-/* The original mascot shapes (ShapeMascot.tsx) and Trombi as an avatar:
+/* The mascot shapes (ShapeMascot.tsx) and Trombi as an avatar:
    a slow breath, a blink every few seconds, a bounce while working. */
 
 .shape-mascot-live .shape-body {
@@ -15,14 +15,8 @@
   animation: shape-blink 4.2s ease-in-out infinite;
 }
 
-/* Trombi's skins, over his own drawing */
-.trombi-skin-gold svg {
-  filter: sepia(0.9) saturate(2.4) hue-rotate(-12deg) brightness(1.04);
-}
-.trombi-skin-neon svg {
-  filter: drop-shadow(0 0 3px #5ff) drop-shadow(0 0 6px #f5f) saturate(1.6);
-}
-.trombi-skin-retro98 svg {
+/* Trombi's Retro 98 skin, over his own drawing (the others paint him: skin-fx/trombi-skins.tsx) */
+.trombi-skin-retro98 svg.r98-trombi {
   filter: grayscale(0.35) contrast(1.15);
 }
 
