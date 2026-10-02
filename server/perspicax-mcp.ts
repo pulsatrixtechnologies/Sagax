@@ -84,6 +84,10 @@ export interface PerspicaxMcpOptions {
   delegationRefused?(principalId: string): void;
   /** The bot's current profile ids (undefined: the bot is gone). */
   botProfiles(botId: string): readonly string[] | undefined;
+  /** The thread is on a live voice call: a turn's tokens are kept for its
+   * next turn instead of revoked, so the call's tools stay mounted from turn
+   * to turn without a new exchange (server/voice-call-session.ts). */
+  keepWarm?(threadId: string): boolean;
   /** Pulsa Bot's version, sent in `clientInfo`. */
   version: string;
   fetch?: typeof fetch;
@@ -121,6 +125,11 @@ export interface PerspicaxRelayAnswer {
 }
 
 const key = (threadId: string, generation: string, profileId: string) => `${threadId}\u0000${generation}\u0000${profileId}`;
+const warmKey = (threadId: string, profileId: string, principalId: string, source: Entry["source"]) =>
+  `${threadId}\u0000${profileId}\u0000${principalId}\u0000${source}`;
+/** A refusal worth one more try a moment later. */
+const TRANSIENT = new Set(["unreachable", "rate_limited"]);
+const RETRY_EXCHANGE_MS = 400;
 
 type Json = Record<string, unknown>;
 
@@ -179,6 +188,8 @@ export class PerspicaxMcp {
   private readonly now: () => number;
   private readonly log: (line: string) => void;
   private readonly entries = new Map<string, Entry>();
+  /** tokens a call keeps between turns (keepWarm), by thread, profile and speaker */
+  private readonly warm = new Map<string, Entry>();
 
   constructor(options: PerspicaxMcpOptions) {
     this.options = options;
@@ -223,13 +234,48 @@ export class PerspicaxMcp {
       return plan;
     }
     const who = { iss: subject.iss, sub: subject.sub };
+    // On a live call, the tokens of the call's last turn are still good:
+    // reuse them rather than exchange again for every sentence (a call's
+    // quick turns hit Perspicax's rate limit, and a refused exchange left
+    // the profile out of that turn: tools gone, then back).
+    let need = known;
+    const keepWarm = this.options.keepWarm?.(input.threadId) === true;
+    // the call ended (or expired) without saying so: its kept tokens go
+    if (!keepWarm) void this.endWarm(input.threadId);
+    if (keepWarm) {
+      need = [];
+      for (const profileId of known) {
+        const at = warmKey(input.threadId, profileId, principalId, source);
+        const kept = this.warm.get(at);
+        if (kept && !kept.ended && kept.botId === input.bot.id && kept.expiresAt - this.now() >= PERSPICAX_TOKEN_MIN_LIFE_MS) {
+          this.warm.delete(at);
+          kept.generation = input.generation;
+          const previous = this.entries.get(key(input.threadId, input.generation, profileId));
+          if (previous && previous !== kept) void this.revoke(previous.token);
+          this.entries.set(key(input.threadId, input.generation, profileId), kept);
+          const profile = catalog.get(profileId)!;
+          plan.mounted.push({ profileId, slug: profile.slug, name: profile.name || profile.slug || profileId });
+          this.log(`perspicax mcp: profile ${profileId} kept for the call's next turn`);
+        } else need.push(profileId);
+      }
+      if (!need.length) return plan;
+    }
     let signIn = await this.subjectFor(source, principalId, who);
     if (!signIn.ok) {
-      refuse(known, signIn.error === "unreachable" || signIn.error === "rate_limited" ? signIn.error : source === "delegation" ? "no_delegation" : "no_session");
+      refuse(need, signIn.error === "unreachable" || signIn.error === "rate_limited" ? signIn.error : source === "delegation" ? "no_delegation" : "no_session");
       return plan;
     }
-    const exchangeAll = (token: string) => Promise.all(known.map(async (profileId) => ({ profileId, result: await link.exchangeToken(token, profileId) })));
+    const exchangeAll = (token: string, ids: readonly string[] = need) => Promise.all(ids.map(async (profileId) => ({ profileId, result: await link.exchangeToken(token, profileId) })));
     let results = await exchangeAll(signIn.token);
+    // a refusal that may pass a moment later (unreachable, rate limited) is
+    // tried once more before the profile is left out of the turn
+    const transient = results.filter(({ result }) => !result.ok && TRANSIENT.has(result.error)).map(({ profileId }) => profileId);
+    if (transient.length) {
+      this.log(`perspicax mcp: exchange for ${transient.join(", ")} refused for now; retrying once`);
+      await new Promise((resolve) => setTimeout(resolve, RETRY_EXCHANGE_MS));
+      const again = await exchangeAll(signIn.token, transient);
+      results = results.map((entry) => again.find((retry) => retry.profileId === entry.profileId) ?? entry);
+    }
     if (source === "delegation" && results.some(({ result }) => !result.ok && result.error === "subject")) {
       // The cached delegation token was refused (revoked from the console,
       // for one): drop it and renew once now. A live family mounts the tools
@@ -342,23 +388,43 @@ export class PerspicaxMcp {
   /** The turn's generation ended: revoke every token it holds and close its
    * MCP sessions (best effort). */
   async endGeneration(threadId: string, generation: string): Promise<void> {
-    const prefix = `${threadId}\u0000${generation}\u0000`;
+    await this.retire(`${threadId}\u0000${generation}\u0000`, threadId);
+  }
+
+  /** The call on this thread ended: the tokens it kept are revoked. */
+  async endWarm(threadId: string): Promise<void> {
+    const prefix = `${threadId}\u0000`;
     const done: Promise<unknown>[] = [];
-    for (const [at, entry] of this.entries) {
+    for (const [at, entry] of this.warm) {
       if (!at.startsWith(prefix)) continue;
-      this.entries.delete(at);
+      this.warm.delete(at);
       done.push(this.close(entry));
     }
     await Promise.all(done);
   }
 
-  /** Every generation of a thread (stop, delete). */
+  /** Every generation of a thread (stop, delete, the backstop before a new
+   * turn). On a live call its tokens are kept for the call's next turn. */
   async endThread(threadId: string): Promise<void> {
-    const prefix = `${threadId}\u0000`;
+    const keep = this.options.keepWarm?.(threadId) === true;
+    await Promise.all([this.retire(`${threadId}\u0000`, threadId), ...(keep ? [] : [this.endWarm(threadId)])]);
+  }
+
+  /** End the entries under `prefix`: kept for a live call's next turn
+   * (prepareTurn takes them over), revoked otherwise. */
+  private async retire(prefix: string, threadId: string): Promise<void> {
     const done: Promise<unknown>[] = [];
+    const keep = this.options.keepWarm?.(threadId) === true;
     for (const [at, entry] of this.entries) {
       if (!at.startsWith(prefix)) continue;
       this.entries.delete(at);
+      if (keep && !entry.ended && entry.expiresAt - this.now() >= PERSPICAX_TOKEN_MIN_LIFE_MS) {
+        const warm = warmKey(entry.threadId, entry.profileId, entry.principalId, entry.source);
+        const previous = this.warm.get(warm);
+        if (previous && previous !== entry) done.push(this.close(previous));
+        this.warm.set(warm, entry);
+        continue;
+      }
       done.push(this.close(entry));
     }
     await Promise.all(done);
@@ -366,15 +432,16 @@ export class PerspicaxMcp {
 
   /** Shutdown: revoke everything. */
   async endAll(): Promise<void> {
-    const all = [...this.entries.values()];
+    const all = [...this.entries.values(), ...this.warm.values()];
     this.entries.clear();
+    this.warm.clear();
     await Promise.all(all.map((entry) => this.close(entry)));
   }
 
   /** The person is out (back-channel logout, directory): every token of
    * theirs is revoked now, and their running turns' calls end. */
   forgetSubject(iss: string, sub: string): void {
-    for (const entry of this.entries.values()) {
+    for (const entry of [...this.entries.values(), ...this.warm.values()]) {
       if (entry.subject.iss === iss && entry.subject.sub === sub) this.end(entry);
     }
   }
@@ -382,7 +449,7 @@ export class PerspicaxMcp {
   /** Slice 6: the person's routine delegation ended: every token exchanged
    * from it is revoked now, and those turns' calls end. */
   forgetPrincipal(principalId: string): void {
-    for (const entry of this.entries.values()) {
+    for (const entry of [...this.entries.values(), ...this.warm.values()]) {
       if (entry.source === "delegation" && entry.principalId === principalId) this.end(entry);
     }
   }

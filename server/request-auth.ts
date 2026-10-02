@@ -301,6 +301,12 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   { methods: ["GET", "PUT"], path: /^\/api\/me\/preferences$/ },
   // the desktop's look on a personal computer, for the phone's "Same as my computer"
   { methods: ["GET", "PUT"], path: /^\/api\/me\/appearance$/ },
+  // own achievements (server/routes/achievements.ts: the session's person only),
+  // and the points colleagues chose to show
+  { methods: ["GET"], path: /^\/api\/me\/achievements$/ },
+  { methods: ["POST"], path: /^\/api\/me\/achievements\/events$/ },
+  { methods: ["PUT"], path: /^\/api\/me\/achievements\/settings$/ },
+  { methods: ["GET"], path: /^\/api\/achievements\/public$/ },
   // The bot settings of the phone's Settings sheet (auto-review default, time
   // zone): the person's own on an organization server; on a solo server the
   // handler lets only the owner change the server's.
@@ -439,7 +445,7 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   { methods: ["POST"], path: /^\/api\/tts\/speak$/ },
   // voice mode (server/voice-mode.ts): the speaker's own turn on a bot they may use; never the key
   { methods: ["GET"], path: /^\/api\/bots\/[\w-]+\/voice\/(?:status|voices|listen)$/ },
-  { methods: ["POST"], path: /^\/api\/bots\/[\w-]+\/voice\/(?:prepare|speak|transcribe|stream)$/ },
+  { methods: ["POST"], path: /^\/api\/bots\/[\w-]+\/voice\/(?:prepare|speak|transcribe|stream|call)$/ },
   // routines: a scheduled message; the input carries no cwd or permission field
   { methods: ["GET"], path: /^\/api\/routines$/ },
   { methods: ["POST"], path: /^\/api\/routines$/ },

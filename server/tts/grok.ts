@@ -148,6 +148,19 @@ export interface TranscriptEvent {
   final: boolean;
   /** the speaker stopped (endpointing or Smart Turn) */
   speechFinal: boolean;
+  /** xAI's confidence in a chunk (0..1), when it reports one: the frame's
+   * own, else the lowest of its words' */
+  confidence?: number;
+}
+
+function transcriptConfidence(frame: Record<string, unknown>): number | undefined {
+  const own = frame.confidence;
+  if (typeof own === "number" && Number.isFinite(own)) return Math.min(1, Math.max(0, own));
+  if (!Array.isArray(frame.words)) return undefined;
+  const scores = frame.words
+    .map((word) => (word && typeof word === "object" ? (word as Record<string, unknown>).confidence : undefined))
+    .filter((score): score is number => typeof score === "number" && Number.isFinite(score));
+  return scores.length ? Math.min(1, Math.max(0, Math.min(...scores))) : undefined;
 }
 
 export interface TranscriptionStream {
@@ -219,10 +232,12 @@ export function openTranscriptionStream(
     try { frame = JSON.parse(event.data) as Record<string, unknown>; } catch { return; }
     if (frame.type === "transcript.created") resolveReady();
     else if (frame.type === "transcript.partial" || frame.type === "transcript.done") {
+      const confidence = transcriptConfidence(frame);
       handlers.onTranscript({
         text: typeof frame.text === "string" ? frame.text : "",
         final: frame.type === "transcript.done" || frame.is_final === true,
         speechFinal: frame.type === "transcript.done" || frame.speech_final === true,
+        ...(confidence !== undefined ? { confidence } : {}),
       });
     } else if (frame.type === "error") {
       // xAI's message may echo request details; never pass it on verbatim

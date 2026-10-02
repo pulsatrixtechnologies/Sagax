@@ -3,6 +3,7 @@
 // host when that list changes. Everything that draws or talks (the floating
 // character, its balloon, the desktop windows' brain) lives behind a dynamic
 // import in src/components/floating-bots, fetched only once a bot floats.
+import { reportAchievement } from "./achievements";
 
 export interface FloatingBotEntry {
   id: string;
@@ -92,6 +93,7 @@ export function floatBot(botId: string, storage?: FloatingStorage): boolean {
   if (list.some((entry) => entry.id === botId)) return true;
   if (list.length >= MAX_FLOATING_BOTS) return false;
   commit([...list, { id: botId, top: true }], storage);
+  reportAchievement("mascot.floated");
   return true;
 }
 

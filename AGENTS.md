@@ -168,6 +168,24 @@ onboarding tests:
   it at `/api/people/<principalId>/avatar?v=<version>`. Without those
   Perspicax fields everyone keeps their initials.
 
+## Settings layout: one card level, sub-pages for long settings
+
+Settings draws one level of card: what sits inside a card is flat (no
+bordered box in a bordered box; `ManagedProfileIdentity flat` in General).
+A setting too long for a card gets a sub-page instead of a growing card
+(`src/components/SettingsSubPage.tsx`): the section shows a
+`SettingsSubPageRow` (title, one-line summary, Edit) and the page replaces
+the section with a back arrow and the breadcrumb "General > About me".
+Back, the breadcrumb and Escape return to the section (Escape is taken in
+the capture phase, so it never closes Settings from a sub-page). The open
+page is `appSettingsSubPage` in the store (`toggleAppSettings` with
+`subPage`; any other navigation clears it); register a page in `SUB_PAGES`
+in `SettingsModal.tsx`. About me is the first: a full-height editor that
+saves as you type, a character count (24,000 max, `server/config.ts`), a
+short guide with an outline, and the block bots read
+(`userProfileSystemPrompt`). Tests: `src/components/SettingsSubPage.test.ts`,
+`src/components/SettingsModal.serverMode.test.ts`.
+
 ## Group memory and direct messages between people
 
 A user-created group keeps one shared memory (`server/group-memory.ts`,
@@ -217,8 +235,11 @@ Server mode (the launch screen's Server) is exclusive: `serverModeId` in
 organization server. While it is set nothing switches to Local or another
 server (`withActive`, `switchEnvironment`, `requireNotServerMode`), the
 packaged app starts no local server, and the only way out is `leaveServerMode`
-in `electron/main.mjs` (Settings > General > Server > Change, Server > Change
-server…), which signs out and returns to the launch screen. Tests:
+in `electron/main.mjs` (Settings > General > Server > Sign out, Server > Change
+server…), which asks in a native dialog ("Sign out of <name>?"), signs out
+and returns to the launch screen. That Server card names the server's
+address in bold, the organization and the signed-in person
+(`ServerModeCard`, test `src/components/SettingsModal.serverMode.test.ts`). Tests:
 `electron/server-mode.node-test.mjs`, `electron/environments.node-test.mjs`.
 
 An organization server (`org: true`, set by org-join after its probe) is
@@ -386,7 +407,34 @@ Electron restart (no HMR); launch-test them before committing.
   wander, no flight while its bot works), draws at 30 fps at most and the
   skin's loops rest. Measure with `node scripts/verify-mascot-chat.mjs`
   (isolated real Electron: open latency, window moves, clipped and dropped
-  frames, mascot jumps, position writes, theme).
+  frames, mascot jumps, position writes, the balloon's gap to the
+  character and click-through of the transparent parts, theme).
+- The balloon has no shield: dragged by its header it comes right up to
+  the character from any side (over the stage's empty room, touching its
+  box), never over its face (`clampBalloon` in `Balloon.tsx`). Only the part
+  of its offset away from the mascot grows the window; the part toward it is
+  a `translate` inside the window it has. It sits above the art (z-index 2),
+  under the effects (z-index 3).
+- Voice calls with the mascot reuse the app's call, never a second one: the
+  engine (`LiveCallEngine`) runs once in the app page (`CallEngineHost` in
+  App, for the bot `useOnCall()` names) and publishes the call
+  (`src/lib/voice-mode/live-call-store.ts`); the app's pill (`LiveCall`) and
+  the mascot only show and drive it. The mascot's call button (balloon header,
+  `hints.call`, and the menu's "call") starts that same call for its bot
+  (`mascot-call.ts`, `runMascotCallEvent`): one call at a time across app and
+  mascots (`lib/call.ts`). The brain sends `snapshot.call` (`FloatingCall`)
+  and the levels on their own channel (`floating-bots:level`, 20 Hz, rounded);
+  the window draws `MascotCall.tsx` (the pill under the mascot's feet, inside
+  the stage's room; the card where the balloon goes) and the mascot bounces
+  (`--fb-voice`) and leans in (`data-call`), never under reduced motion. The
+  microphone is the app page's (its permission), never the mascot window's.
+  Main sanitizes `call`, its events and their settings patches. Measured in
+  `verify-mascot-chat.mjs` (call leg); the app's call: `verify-voice-mode.ts`.
+- The desktop mascot's menu (right click, long press, the menu key) is main's
+  native menu, popped exactly at the pointer (`floating-bots:menu`,
+  `menuPopupPoint`: the page's CSS pixels times its zoom, kept inside the work
+  area of the display under it); the drawn `.fb-menu` stays for the in-app
+  overlay and an older preload.
 - The balloon wears the app's theme: the brain sends `theme` (the skin and
   the brand accent, `theme.ts`, followed live) and the window stamps it;
   Trombi keeps its Hibou 98 balloon whatever the theme.
@@ -868,6 +916,38 @@ PT-4 in `server/org-private-threads.e2e.test.ts`):
 - The panel shows the settings read-only to everyone else, with "Seul le
   propriétaire du groupe peut modifier ces réglages", a Leave button,
   "Ajouter mon robot" and a remove button on their own bots only.
+
+## Achievements (2026-10-02)
+
+Catalog `shared/achievements-catalog.ts` (pure data, ids never renamed),
+engine `shared/achievements.ts`, store `server/achievements.ts` (one
+`achievements.json`, per person on an organization server, the local
+operator on a solo server), routes `server/routes/achievements.ts`, app
+`src/lib/achievements.ts` and `src/components/achievements/`. Keep these
+rules, each covered by `shared/achievements-catalog.test.ts`,
+`server/achievements.test.ts`, `src/lib/achievements.test.ts`,
+`src/lib/achievement-toasts.test.ts` or `achievements-ui.test.ts`:
+
+- Server events come from the server's own hooks only (a request's method
+  and path in `achievementRequestEvents`, a send in `achievementSendEvents`,
+  live frames in `observeAchievementFrame`); `POST /api/me/achievements/events`
+  takes client events only. Events are rate limited, an event id counts
+  once, an achievement unlocks once.
+- By default only the owl and the shapes with their Common skins are
+  usable. Trombi unlocks only from its command (`/hibou98`, or a device that
+  already found it). Every skin above Common and Bunbu is the reward of
+  exactly one achievement. On first use a person keeps every character and
+  skin their bots wear (`grandfatheredFromBots`); what a bot wears now is
+  never shown locked. Locks are in the editor and app icon picker only; the
+  server never refuses a look.
+- A server without the routes (404) locks nothing.
+- The unlock frame (`kind: "achievements"`, `audience`) reaches that
+  person's streams only (`achievementFrameAllowed`). Nobody reads another
+  person's record; `/api/achievements/public` lists only the points of people
+  who turned on "Show my points to colleagues". Unlock percentages show only
+  with five people or more.
+- The toast never shows while the person types, one at a time, its chime
+  follows Notification sounds, and reduced motion stills it.
 
 ## Primary Bot (formerly Chief of Staff)
 

@@ -39,7 +39,7 @@ import { VoiceModeCallButton } from "./voice-mode/VoiceModeCallButton";
 import { nativeSpeechEngine, type SpeechEngine } from "@/lib/voice-mode/engine";
 import { t } from "@/lib/i18n";
 import type { VoiceModeStatus } from "../../shared/voice-mode";
-import { LiveCall } from "./voice-mode/LiveCall";
+import { LiveCall, LiveCallEngine } from "./voice-mode/LiveCall";
 
 import { NO, YES } from "@/lib/voice-mode/answers";
 
@@ -249,6 +249,19 @@ export function CallTargetButton({
       )}
     </div>
   );
+}
+
+/** Voice mode's call engine, once for the whole window: it runs the call of
+ * the bot on the line whatever the app shows (another bot, settings) and
+ * whoever started it (the app's call button or the desktop mascot). The
+ * app's pill and the mascot's only show it (live-call-store.ts). */
+export function CallEngineHost() {
+  const { state } = useStore();
+  const id = useOnCall();
+  const bot = id ? state.bots.find((candidate) => candidate.id === id) : undefined;
+  const voiceMode = useVoiceModeStatus(bot?.id ?? "");
+  if (!bot || voiceMode?.available !== true) return null;
+  return <LiveCallEngine key={bot.id} bot={bot} />;
 }
 
 /** The older call's full overlay. Voice mode docks its bar at the top of

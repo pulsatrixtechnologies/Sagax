@@ -1,14 +1,19 @@
+// About me: free text every bot receives with each turn, private or group
+// (server/system-prompt.ts userProfileSystemPrompt). Settings > General shows
+// one row with its first line; the editor is the sub-page General > About me
+// (src/components/SettingsSubPage.tsx): a full-height field that saves as you
+// type, a character count, a short guide, and the block bots receive.
 import { useEffect, useState, useSyncExternalStore } from "react";
-import { CircleHelp } from "lucide-react";
 import { api, useStore, type ConfigStatus } from "@/state/store";
-import { t } from "@/lib/i18n";
+import { activeLocale, t } from "@/lib/i18n";
 import { createAboutMeDraft } from "./about-me-draft";
+
+/** The server's limit (server/config.ts profile.aboutMe). */
+export const ABOUT_ME_MAX = 24_000;
 
 const drafts = new WeakMap<object, ReturnType<typeof createAboutMeDraft>>();
 
-/** `inCard`: the surrounding collapsible card already names the field and
- * explains it, so the visible label and help popover step aside. */
-export function AboutMeSettings({ inCard = false }: { inCard?: boolean } = {}) {
+function useAboutMeDraft() {
   const { state, dispatch } = useStore();
   const confirmed = state.config?.profile?.aboutMe ?? "";
   let controller = drafts.get(dispatch);
@@ -21,38 +26,111 @@ export function AboutMeSettings({ inCard = false }: { inCard?: boolean } = {}) {
     });
     drafts.set(dispatch, controller);
   }
-  const { value, status } = useSyncExternalStore(controller.subscribe, controller.getSnapshot, controller.getSnapshot);
+  const snapshot = useSyncExternalStore(controller.subscribe, controller.getSnapshot, controller.getSnapshot);
   const { flush } = controller;
   useEffect(() => { controller.confirm(confirmed); }, [controller, confirmed]);
+  // Leaving the page (back, another section, closing Settings) saves now.
   useEffect(() => () => { void flush(); }, [flush]);
+  return { controller, dispatch, ...snapshot };
+}
 
+/** The first non-empty line, for the row on General; "Not set" when empty. */
+export function aboutMeFirstLine(aboutMe: string | undefined): string {
+  const line = (aboutMe ?? "").split("\n").map((entry) => entry.trim()).find(Boolean);
+  return line ? line.replace(/^#+\s*/, "") : t("settings.card.notSet");
+}
+
+/** "1,234 / 24,000 characters" in the active language's digits. */
+export function aboutMeCount(length: number): string {
+  let format = (value: number) => String(value);
+  try {
+    const numbers = new Intl.NumberFormat(activeLocale());
+    format = (value) => numbers.format(value);
+  } catch {
+    /* an unknown locale keeps plain digits */
+  }
+  return t("settings.aboutMe.count", { count: format(length), max: format(ABOUT_ME_MAX) });
+}
+
+/** What a bot receives, as the person can read it: the heading the system
+ * prompt uses, then the text; empty when there is nothing to send. */
+export function aboutMeBotPreview(aboutMe: string): string {
+  const text = aboutMe.trim();
+  return text ? `About the user (shared with all bots):\n${text}` : "";
+}
+
+/** The outline "Insert an outline" adds: after the text, or alone. */
+export function withOutline(aboutMe: string, outline: string): string {
+  const base = aboutMe.replace(/\s+$/, "");
+  return (base ? `${base}\n\n${outline}` : outline).slice(0, ABOUT_ME_MAX);
+}
+
+function SaveStatus({ status, onRetry }: { status: string; onRetry: () => void }) {
   return (
-    <div className="flex flex-col gap-2">
-      {inCard ? <label htmlFor="profile-about-me" className="sr-only">{t("settings.profile.aboutMe")}</label> : <div className="flex items-center gap-2">
-        <label htmlFor="profile-about-me" className="text-[13px] text-ink">{t("settings.profile.aboutMe")}</label>
-        <details className="group relative">
-          <summary title={t("settings.profile.aboutMeHelp")} aria-label={t("settings.profile.aboutMeHelp")}
-            className="flex size-6 cursor-pointer list-none items-center justify-center rounded-md text-ink-secondary hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/70 [&::-webkit-details-marker]:hidden">
-            <CircleHelp size={14} aria-hidden="true" />
-          </summary>
-          <p className="absolute left-0 z-30 mt-1 w-56 rounded-xl border border-hairline bg-panel p-3 text-[12px] text-ink-secondary shadow-xl">
-            {t("settings.profile.aboutMeHelp")}
-          </p>
-        </details>
-      </div>}
-      <textarea id="profile-about-me" value={value} rows={5} maxLength={24_000}
-        onChange={(event) => controller.edit(event.target.value)}
-        onBlur={() => void flush()}
-        className="min-h-[96px] w-full resize-y rounded-lg border border-hairline/40 bg-transparent px-3 py-2 text-[13px] text-ink focus:outline-none"
-      />
-      <LearnedFacts onChanged={(aboutMe) => { controller.confirm(aboutMe); dispatch({ type: "profileSaved", profile: { aboutMe } }); }} />
-      <div className="min-h-4 text-[12px]" role="status">
-        {status === "saving" && <span className="text-ink-secondary">{t("settings.profile.saving")}</span>}
-        {status === "saved" && <span className="text-success">{t("settings.profile.saved")}</span>}
-        {status === "error" && <span className="text-danger">{t("settings.profile.saveError")} {" "}
-          <button type="button" onClick={() => void flush()} className="underline">{t("settings.profile.retry")}</button>
-        </span>}
+    <span role="status" className="min-w-0 truncate">
+      {status === "saving" && <span className="text-ink-secondary">{t("settings.profile.saving")}</span>}
+      {status === "saved" && <span className="text-success">{t("settings.profile.saved")}</span>}
+      {status === "idle" && <span className="text-ink-secondary">{t("settings.aboutMe.autosave")}</span>}
+      {status === "error" && <span className="text-danger">{t("settings.profile.saveError")}{" "}
+        <button type="button" onClick={onRetry} className="underline">{t("settings.profile.retry")}</button>
+      </span>}
+    </span>
+  );
+}
+
+/** Settings > General > About me: the full-height editor. */
+export function AboutMeEditor() {
+  const { controller, dispatch, value, status } = useAboutMeDraft();
+  const preview = aboutMeBotPreview(value);
+  const tips = ["settings.aboutMe.tipWho", "settings.aboutMe.tipAnswers", "settings.aboutMe.tipContext", "settings.aboutMe.tipNever"] as const;
+  return (
+    <div data-about-me-editor className="flex min-h-0 flex-1 flex-col gap-4 md:flex-row">
+      <div className="flex min-h-[300px] min-w-0 flex-1 flex-col gap-2">
+        <p className="text-[13px] leading-[18px] text-ink-secondary">{t("settings.profile.aboutMeHelp")}</p>
+        <div className="flex min-h-[240px] flex-1 flex-col rounded-[14px] border-[0.5px] border-border focus-within:border-border-strong">
+          <label htmlFor="profile-about-me" className="sr-only">{t("settings.profile.aboutMe")}</label>
+          <textarea
+            id="profile-about-me"
+            value={value}
+            maxLength={ABOUT_ME_MAX}
+            autoFocus
+            placeholder={t("settings.aboutMe.placeholder")}
+            onChange={(event) => controller.edit(event.target.value)}
+            onBlur={() => void controller.flush()}
+            className="min-h-0 w-full flex-1 resize-none rounded-t-[14px] bg-transparent px-3.5 py-3 text-[13.5px] leading-[20px] text-ink placeholder:text-ink-secondary focus:outline-none"
+          />
+          <div className="flex shrink-0 items-center justify-between gap-3 border-t-[0.5px] border-border px-3.5 py-2 text-[12px]">
+            <SaveStatus status={status} onRetry={() => void controller.flush()} />
+            <span data-about-me-count className="shrink-0 tabular-nums text-ink-secondary">{aboutMeCount(value.length)}</span>
+          </div>
+        </div>
+        <LearnedFacts onChanged={(aboutMe) => { controller.confirm(aboutMe); dispatch({ type: "profileSaved", profile: { aboutMe } }); }} />
       </div>
+      <aside className="flex shrink-0 flex-col gap-4 md:w-[230px]">
+        <section aria-labelledby="about-me-guide">
+          <h3 id="about-me-guide" className="text-[13px] font-semibold text-ink">{t("settings.aboutMe.guideTitle")}</h3>
+          <ul className="mt-1.5 flex list-disc flex-col gap-1 pl-4 text-[12.5px] leading-[17px] text-ink-secondary">
+            {tips.map((key) => <li key={key}>{t(key)}</li>)}
+          </ul>
+          <p className="mt-2 text-[12px] leading-[17px] text-ink-secondary">{t("settings.aboutMe.markdown")}</p>
+          <button
+            type="button"
+            onClick={() => controller.edit(withOutline(value, t("settings.aboutMe.outline")))}
+            className="ui-button mt-2"
+          >
+            {t("settings.aboutMe.insertOutline")}
+          </button>
+        </section>
+        <section aria-labelledby="about-me-preview">
+          <h3 id="about-me-preview" className="text-[13px] font-semibold text-ink">{t("settings.aboutMe.previewTitle")}</h3>
+          <p className="mt-1 text-[12px] leading-[17px] text-ink-secondary">{t("settings.aboutMe.previewNote")}</p>
+          {preview ? (
+            <pre data-about-me-preview className="mt-2 max-h-[260px] overflow-auto whitespace-pre-wrap break-words rounded-lg bg-inset px-3 py-2 font-mono text-[11.5px] leading-[16px] text-ink">{preview}</pre>
+          ) : (
+            <p data-about-me-preview className="mt-2 rounded-lg bg-inset px-3 py-2 text-[12px] text-ink-secondary">{t("settings.aboutMe.previewEmpty")}</p>
+          )}
+        </section>
+      </aside>
     </div>
   );
 }

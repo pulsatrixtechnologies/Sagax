@@ -20,6 +20,9 @@
 // Each character keeps its own skin, so switching and back finds it again.
 // Loaded lazily with the popover.
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { Lock } from "lucide-react";
+import { characterLock, lockHint, reportAchievement, skinLock, useUnlocks, type LockInfo } from "@/lib/achievements";
+import "@/components/achievements/achievements.css";
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
 import type { LocaleKey } from "@/locales";
@@ -252,20 +255,27 @@ function SegmentedTabs<T extends string>({ label, items, value, onChange, idPref
 }
 
 /** A skin's card: its animated preview, its name and its rarity, shimmering above Common. */
-function SkinCard({ tier, label, checked, disabled, onSelect, data, children }: { tier: SkinTier; label: string; checked: boolean; disabled?: boolean; onSelect: () => void; data: Record<string, string>; children: ReactNode }) {
+function SkinCard({ tier, label, checked, disabled, onSelect, data, lock, children }: { tier: SkinTier; label: string; checked: boolean; disabled?: boolean; onSelect: () => void; data: Record<string, string>; lock?: LockInfo; children: ReactNode }) {
   const tierLabel = t(SKIN_TIER_LABEL[tier]);
+  // a locked skin shows what unlocks it, and its progress when partial
+  const locked = Boolean(lock?.locked) && !checked;
+  const hint = locked && lock ? lockHint(lock) : "";
   return (
     <button
       type="button"
       role="radio"
       disabled={disabled}
       aria-checked={checked}
-      aria-label={`${label}, ${tierLabel}`}
-      title={`${label} (${tierLabel})`}
+      aria-disabled={locked || undefined}
+      aria-label={locked ? `${label}, ${tierLabel}. ${hint}` : `${label}, ${tierLabel}`}
+      title={locked ? `${label} (${tierLabel})\n${hint}` : `${label} (${tierLabel})`}
       data-tier={tier}
+      data-locked={locked ? "" : undefined}
       {...data}
-      onClick={onSelect}
-      className={cn(card, "skin-card h-[70px] gap-0 pt-1", checked && on)}
+      onClick={() => {
+        if (!locked) onSelect();
+      }}
+      className={cn(card, "skin-card h-[70px] gap-0 pt-1", checked && on, locked && "cursor-not-allowed")}
     >
       <span className="grid size-[40px] place-items-center" aria-hidden="true">
         {children}
@@ -274,7 +284,20 @@ function SkinCard({ tier, label, checked, disabled, onSelect, data, children }: 
       <span className="skin-tier" data-tier={tier} aria-hidden="true">
         {tierLabel}
       </span>
+      {locked && <LockBadge lock={lock!} />}
     </button>
+  );
+}
+
+/** The lock on a locked card, and a thin bar when the achievement is under way. */
+function LockBadge({ lock }: { lock: LockInfo }) {
+  const item = lock.item;
+  const partial = item && !item.unlockedAt && item.target > 1 && item.current > 0 && !(lock.achievement?.hidden) ? item.current / item.target : null;
+  return (
+    <>
+      <span className="unlock-lock" aria-hidden="true"><Lock size={9} strokeWidth={2.6} /></span>
+      {partial !== null && <span className="unlock-progress" aria-hidden="true" data-unlock-progress=""><span style={{ width: `${Math.round(partial * 100)}%` }} /></span>}
+    </>
   );
 }
 
@@ -283,7 +306,7 @@ function SkinCard({ tier, label, checked, disabled, onSelect, data, children }: 
  * skin's rarity and follows it when it changes elsewhere (Reset); only the
  * open tab's cards are drawn, so the popover animates a handful at most.
  */
-function SkinPicker<S extends string>({ skins, tierOf, selected, labelOf, idPrefix, dataKey, disabled, onSelect, preview }: { skins: readonly S[]; tierOf: Readonly<Record<S, SkinTier>>; selected: S; labelOf: (skin: S) => string; idPrefix: string; dataKey: string; disabled?: boolean; onSelect: (skin: S) => void; preview: (skin: S) => ReactNode }) {
+function SkinPicker<S extends string>({ skins, tierOf, selected, labelOf, idPrefix, dataKey, disabled, onSelect, preview, lockOf }: { skins: readonly S[]; tierOf: Readonly<Record<S, SkinTier>>; selected: S; labelOf: (skin: S) => string; idPrefix: string; dataKey: string; disabled?: boolean; onSelect: (skin: S) => void; preview: (skin: S) => ReactNode; lockOf?: (skin: S) => LockInfo }) {
   const tabs = skinTierTabs(skins, tierOf);
   const [tab, setTab] = useState<SkinTier>(() => skinTabFor(selected, skins, tierOf));
   const followed = useRef(selected);
@@ -308,7 +331,7 @@ function SkinPicker<S extends string>({ skins, tierOf, selected, labelOf, idPref
       <div id={`${idPrefix}-panel`} role="tabpanel" aria-labelledby={`${idPrefix}-tab-${open.tier}`} data-skin-panel={open.tier}>
         <div className="grid grid-cols-5 gap-1.5" role="radiogroup" aria-label={t("mascot.skin.title")}>
           {open.skins.map((skin) => (
-            <SkinCard key={skin} tier={tierOf[skin]} label={labelOf(skin)} checked={selected === skin} disabled={disabled} data={{ [dataKey]: skin }} onSelect={() => onSelect(skin)}>
+            <SkinCard key={skin} tier={tierOf[skin]} label={labelOf(skin)} checked={selected === skin} disabled={disabled} data={{ [dataKey]: skin }} lock={lockOf?.(skin)} onSelect={() => onSelect(skin)}>
               {preview(skin)}
             </SkinCard>
           ))}
@@ -365,9 +388,15 @@ function ColorPicker({ color, disabled, onSelect }: { color: MausColor; disabled
   );
 }
 
-export default function MascotLookEditor({ bot, disabled, onPatch, onOwlMove, onMove }: MascotLookEditorProps) {
+export default function MascotLookEditor({ bot, disabled, onPatch: savePatch, onOwlMove, onMove }: MascotLookEditorProps) {
   const look = completeMascotLook(bot.mascotLook);
   const owlSkin = botMascotSkin(bot.mascotSkin);
+  // what this person unlocked (src/lib/achievements.ts); what the bot wears now always stays
+  const unlocks = useUnlocks();
+  const onPatch = (patch: MascotLookPatch) => {
+    savePatch(patch);
+    reportAchievement("bot.customized", { key: patch.mascotLook?.character ?? look.character });
+  };
   const setLook = (next: Partial<MascotLook>) => onPatch({ mascotLook: { ...look, ...next, skins: { ...look.skins, ...next.skins } } });
 
   const colors = <ColorPicker color={bot.color} disabled={disabled} onSelect={(color) => onPatch({ color })} />;
@@ -382,23 +411,34 @@ export default function MascotLookEditor({ bot, disabled, onPatch, onOwlMove, on
       {/* the character row, full width: the bot's avatar above is the preview */}
       <SectionHead title={t("mascot.character.title")} />
       <div className="grid grid-cols-2 gap-1.5" role="radiogroup" aria-label={t("mascot.character.title")} data-character-row="">
-        {MASCOTS.map((option) => (
-          <button
-            key={option.id}
-            type="button"
-            role="radio"
-            disabled={disabled}
-            aria-checked={look.character === option.id}
-            data-character-option={option.id}
-            onClick={() => setLook({ character: option.id })}
-            className={cn(card, "h-[46px] flex-row gap-2 px-2", look.character === option.id && on)}
-          >
-            <span className="grid size-8 shrink-0 place-items-center overflow-hidden" aria-hidden="true">
-              <option.Thumb color={bot.color} skin={owlSkin} look={{ ...look, character: option.id }} size={30} />
-            </span>
-            <span className="truncate text-[11.5px] leading-4 text-ink">{t(CHARACTER_LABEL[option.id])}</span>
-          </button>
-        ))}
+        {MASCOTS.map((option) => {
+          const lock = look.character === option.id ? { locked: false } : characterLock(unlocks, option.id);
+          const hint = lockHint(lock);
+          return (
+            <button
+              key={option.id}
+              type="button"
+              role="radio"
+              disabled={disabled}
+              aria-checked={look.character === option.id}
+              aria-disabled={lock.locked || undefined}
+              aria-label={lock.locked ? `${t(CHARACTER_LABEL[option.id])}. ${hint}` : undefined}
+              title={hint || undefined}
+              data-character-option={option.id}
+              data-locked={lock.locked ? "" : undefined}
+              onClick={() => {
+                if (!lock.locked) setLook({ character: option.id });
+              }}
+              className={cn(card, "relative h-[46px] flex-row gap-2 px-2", look.character === option.id && on, lock.locked && "cursor-not-allowed")}
+            >
+              <span className="grid size-8 shrink-0 place-items-center overflow-hidden" aria-hidden="true">
+                <option.Thumb color={bot.color} skin={owlSkin} look={{ ...look, character: option.id }} size={30} />
+              </span>
+              <span className="truncate text-[11.5px] leading-4 text-ink">{t(CHARACTER_LABEL[option.id])}</span>
+              {lock.locked && <LockBadge lock={lock} />}
+            </button>
+          );
+        })}
       </div>
 
       {look.character === "owl" && (
@@ -414,6 +454,7 @@ export default function MascotLookEditor({ bot, disabled, onPatch, onOwlMove, on
             dataKey="data-mascot-skin-option"
             disabled={disabled}
             onSelect={(skin) => onPatch({ mascotSkin: skin })}
+            lockOf={(skin) => (skin === owlSkin ? { locked: false } : skinLock(unlocks, "owl", skin))}
             preview={(skin) => <MausAvatar color={bot.color} skin={skin} state="idle" size={38} animated={false} skinAnimated trackPointer={false} />}
           />
           <SectionHead title={t("floatingBots.mascot.style")} />
@@ -469,6 +510,7 @@ export default function MascotLookEditor({ bot, disabled, onPatch, onOwlMove, on
             dataKey="data-shape-skin-option"
             disabled={disabled}
             onSelect={(skin) => setLook({ skins: { ...look.skins, shape: skin } })}
+            lockOf={(skin) => skinLock(unlocks, "shape", skin)}
             preview={(skin) => <ShapeMascot shape={look.shape} skin={skin} color={bot.color} size={38} detail="full" label={null} />}
           />
         </div>
@@ -486,6 +528,7 @@ export default function MascotLookEditor({ bot, disabled, onPatch, onOwlMove, on
             dataKey="data-trombi-skin-option"
             disabled={disabled}
             onSelect={(skin) => setLook({ skins: { ...look.skins, trombi: skin } })}
+            lockOf={(skin) => skinLock(unlocks, "trombi", skin)}
             preview={(skin) => <SkinnedTrombi skin={skin} pose="idle" size={40} width={30} detail="full" label={null} />}
           />
         </div>
@@ -504,6 +547,7 @@ export default function MascotLookEditor({ bot, disabled, onPatch, onOwlMove, on
             dataKey="data-bunbu-skin-option"
             disabled={disabled}
             onSelect={(skin) => setLook({ skins: { ...look.skins, bunbu: skin } })}
+            lockOf={(skin) => skinLock(unlocks, "bunbu", skin)}
             preview={(skin) => <BunbuMascot skin={skin} color={bot.color} size={38} detail="full" label={null} />}
           />
         </div>

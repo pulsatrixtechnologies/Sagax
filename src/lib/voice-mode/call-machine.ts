@@ -122,11 +122,11 @@ export function step(state: CallState, event: CallEvent): { state: CallState; ef
         if (state.botBusy) effects.push({ type: "interrupt-bot" });
         return next({ phase: "interrupted", botAudible: false, ducked: false });
       }
-      if (state.botBusy) {
-        // talking while the bot works: the new words replace its running turn
-        effects.push({ type: "interrupt-bot" });
-        return next({ phase: "interrupted" });
-      }
+      // Talking while the bot works (not speaking): the words join its
+      // running turn when they are sent (a steer), like a message typed
+      // while it works. Stopping the turn here dropped the request it was
+      // working on: the bot was then told it had been cut, and that request
+      // never got an answer.
       return next({ phase: "hearing" });
     case "speech-end":
       if (state.phase !== "hearing" && state.phase !== "interrupted") return { state, effects };

@@ -301,6 +301,28 @@ posixOnly("Perspicax organization, slice 5: MCP for the person who speaks", () =
     expect(idp.exchangeRevoked.filter((t) => t === exchanges[0]!.token)).toHaveLength(1);
   }, 90_000);
 
+  it("a voice call keeps bob's Perspicax tools from turn to turn: one exchange, revoked when the call ends", async () => {
+    const bob = await signIn(BOB);
+    const threadId = await ownThread(bob, x.id);
+    const callId = "call-orgmcp-000001";
+    const started = await api("POST", `/api/bots/${x.id}/voice/call`, bob, { threadId, callId, state: "start" });
+    expect(started.status, started.text).toBe(200);
+    const exchangesBefore = idp.exchanges.length;
+    expect(await turn(bob, x, "first thing on the call")).toContain("mcp:api_list:ok");
+    expect(await turn(bob, x, "second thing on the call")).toContain("mcp:api_list:ok");
+    expect(await turn(bob, x, "third thing on the call")).toContain("mcp:api_list:ok");
+    const exchanges = idp.exchanges.slice(exchangesBefore);
+    // the call's quick turns share one token: no exchange per sentence
+    expect(exchanges.map((e) => ({ sub: e.sub, profile: e.profile, ok: e.ok }))).toEqual([{ sub: BOB.sub, profile: PROFILE.id, ok: true }]);
+    expect(idp.exchangeRevoked).not.toContain(exchanges[0]!.token);
+    // the words were marked as said on the call (typed path, server state)
+    const users = (await threadMessages(bob, threadId)).filter((m: any) => m.role === "user" && String(m.text).endsWith("on the call"));
+    expect(users.map((m: any) => m.voiceCall?.callId)).toEqual([callId, callId, callId]);
+    const ended = await api("POST", `/api/bots/${x.id}/voice/call`, bob, { threadId, callId, state: "end" });
+    expect(ended.status, ended.text).toBe(200);
+    await waitFor(async () => idp.exchangeRevoked.includes(exchanges[0]!.token!), 10_000);
+  }, 120_000);
+
   it("T1: no sign-in or Perspicax token reaches the engine's argv, environment or MCP configuration", async () => {
     const engine = JSON.parse(readFileSync(dump, "utf8")) as { argv: string[]; env: Record<string, string>; mcpConfig: unknown; systemPrompt: string };
     const seen = JSON.stringify([engine.argv, engine.env, engine.mcpConfig, engine.systemPrompt, readFileSync(mcpDump, "utf8")]);

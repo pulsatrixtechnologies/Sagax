@@ -241,6 +241,27 @@ it("offers a message steered into a running turn to the next turn once, marked a
   expect(f.prompt(f.turns().at(-1))).not.toContain("STEERED_MID_TURN");
 }), 60_000);
 
+// A CLI that echoes what a model call took in (--replay-user-messages,
+// 2.1.282) says the steer was read: the next turn never offers it again. On
+// a voice call that re-offer made the bot answer the same words twice.
+it("never offers again a steered message the engine said it took in", () => fixture(async (f) => {
+  await warmUp(f);
+  f.plan[f.chief.id] = { reply: "Working", gateFile: f.gate("turn") };
+  await f.send("Start on the report.");
+  await expect.poll(() => f.launches().length, { timeout: 15_000 }).toBe(2);
+  expect((await f.send("STEERED_AND_ECHOED also cover costs")).steered).toBe(true);
+  f.open(f.gate("turn"));
+  await f.wait();
+
+  f.plan[f.chief.id] = { reply: "Covered" };
+  await f.send("Is it done?");
+  await f.wait();
+  expect(f.launches().at(-1).resume).not.toBeNull();
+  const next = f.prompt(f.turns().at(-1));
+  expect(next).not.toContain("STEERED_AND_ECHOED");
+  expect(next).not.toContain("you may already have it");
+}, { env: { FAKE_CLAUDE_VERSION: "2.1.282" } }), 60_000);
+
 it("offers the results again when the return turn fails before the provider acts on it", () => fixture(async (f) => {
   await warmUp(f);
   f.plan[f.lead.id] = { reply: "UNACCEPTED_RESULT" };

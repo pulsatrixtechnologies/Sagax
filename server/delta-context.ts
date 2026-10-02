@@ -23,6 +23,8 @@ export interface ContextMessage {
   /** written into a turn that was already running: that turn may have read it
    * before it ended, and no provider says whether it did */
   steered?: boolean;
+  /** a person's words said on a voice call (Message.voiceCall) */
+  spoken?: boolean;
 }
 
 /** What one native session has been handed on a task. */
@@ -114,7 +116,7 @@ export function renderUnseen(unseen: readonly UnseenMessage[]): { block: string;
       "",
       ...(deferred > 0 ? [`(${deferred} older unseen message${deferred === 1 ? " is" : "s are"} not shown in this turn.)`, ""] : []),
       ...(earlier > 0 ? [`(The first ${earlier === 1 ? "message is" : `${earlier} messages are`} older than messages you have already seen.)`, ""] : []),
-      ...shown.map((m) => `${m.role === "user" ? "User" : "Assistant"}${m.steered ? " (sent while an earlier turn was running; you may already have it)" : ""}: ${m.text}`),
+      ...shown.map((m) => `${m.role === "user" ? "User" : "Assistant"}${m.spoken ? " (said on the phone call)" : ""}${m.steered ? " (sent while an earlier turn was running; you may already have it)" : ""}: ${m.text}`),
     ].join("\n");
   };
   let taken = 0;
@@ -232,6 +234,12 @@ interface PendingHandoff extends Handoff {
   stopped: boolean;
   /** messages written into the running turn */
   steers: string[];
+  /** steer ids given to the engine, with the messages each carried */
+  steerIds: Map<string, string[]>;
+  /** steer ids the engine said a model call took in */
+  takenIn: Set<string>;
+  /** steered messages the engine took in: received, never offered again */
+  confirmed: string[];
 }
 
 /** Turn events that show the provider working on the prompt. Error narration
@@ -258,6 +266,7 @@ export class Handoffs {
   begin(threadId: string, claimId: string, handoff: Handoff): void {
     this.pending.set(threadId, {
       ...handoff, claimId, dispatched: false, replaced: false, rebuilt: false, accepted: false, stopped: false, steers: [],
+      steerIds: new Map(), takenIn: new Set(), confirmed: [],
     });
   }
 
@@ -285,14 +294,21 @@ export class Handoffs {
     return this.pending.get(threadId);
   }
 
-  /** A message written into the running turn. No provider reports reading
-   * one, and output may come from the model call already running, so it is
-   * never counted as received: the next turn offers it again, marked, unless
-   * the person stops this turn. */
-  steered(threadId: string, target: object | undefined, instanceId: string | undefined, messageId: string): void {
+  /** A message written into the running turn. Most providers never report
+   * reading one, and output may come from the model call already running,
+   * so it is not counted as received: the next turn offers it again,
+   * marked, unless the person stops this turn. A provider that says a model
+   * call took it in (`steer.received` with the `steerId` it was steered
+   * with) has it: it is counted received when the turn completes, and never
+   * offered again (a spoken utterance used to come back on the next turn as
+   * a message "you may already have", and was answered twice). */
+  steered(threadId: string, target: object | undefined, instanceId: string | undefined, messageId: string, steerId?: string): void {
     const pending = this.pending.get(threadId);
     if (!pending || pending !== target || pending.instanceId !== instanceId) return;
     pending.steers.push(messageId);
+    if (!steerId) return;
+    if (pending.takenIn.has(steerId)) pending.confirmed.push(messageId);
+    else pending.steerIds.set(steerId, [...(pending.steerIds.get(steerId) ?? []), messageId]);
   }
 
   /** The person pressed Stop: what they sent into this turn is withdrawn. */
@@ -313,6 +329,16 @@ export class Handoffs {
     const pending = this.pending.get(event.threadId);
     if (!pending?.dispatched || event.providerInstanceId !== pending.instanceId) return;
     if (pending.turnId && event.turnId && event.turnId !== pending.turnId) return;
+    if (event.type === "steer.received") {
+      // the echo can beat the steer's own acknowledgement: remember either way
+      pending.takenIn.add(event.steerId);
+      const messageIds = pending.steerIds.get(event.steerId);
+      if (messageIds) {
+        pending.steerIds.delete(event.steerId);
+        pending.confirmed.push(...messageIds);
+      }
+      return;
+    }
     if (event.type === "session.started") {
       if (!event.sessionId || event.sessionId === pending.session || pending.accepted) return;
       pending.session = event.sessionId;
@@ -330,7 +356,7 @@ export class Handoffs {
     if (event.type !== "turn.completed") return;
     this.pending.delete(event.threadId);
     const turnId = event.turnId ?? pending.turnId;
-    if (pending.accepted && turnId) this.add(event.threadId, pending, this.store.replies(event.threadId, turnId));
+    if (pending.accepted && turnId) this.add(event.threadId, pending, [...this.store.replies(event.threadId, turnId), ...pending.confirmed]);
     this.settle(event.threadId, pending);
   }
 
