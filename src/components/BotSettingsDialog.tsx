@@ -22,6 +22,7 @@ import { MemorySection } from "./bot-settings/MemorySection";
 import { RoutinesSection } from "./bot-settings/RoutinesSection";
 import { AccessSection } from "./bot-settings/AccessSection";
 import { ModelSection } from "./bot-settings/ModelSection";
+import { WorksOnSetting } from "./computer/WorksOnSetting";
 import { PermissionsSection } from "./bot-settings/PermissionsSection";
 import { VoiceSection } from "./bot-settings/VoiceSection";
 import { HistorySection, type HistoryRow } from "./bot-settings/HistorySection";
@@ -118,7 +119,9 @@ export function BotSettingsDialog({ bot, onOpenVmWorkspace }: { bot: Bot; onOpen
     .filter((entry) => entry.id !== "slack" || slackUrl !== null)
     .filter((entry) => entry.id !== "visibility" || (servedPage() && ownerOrAdmin === true && perspicaxOrg === null))
     .filter((entry) => entry.id !== "sharing" || perspicaxOrg !== null)
-    .filter((entry) => entry.id !== "perspicax" || perspicaxOrg !== null);
+    .filter((entry) => entry.id !== "perspicax" || perspicaxOrg !== null)
+    // On an organization server Works on is its own item (Access keeps it elsewhere).
+    .filter((entry) => entry.id !== "worksOn" || perspicaxOrg !== null);
   const visibleSections = sections.filter((entry) => sectionMatches(entry, q));
 
   const [overview, setOverview] = useState<BotOverview | null>(null);
@@ -334,6 +337,8 @@ export function BotSettingsDialog({ bot, onOpenVmWorkspace }: { bot: Bot; onOpen
         return <RoutinesSection bot={bot} routines={derived.botRoutines} runs={state.routineRuns} />;
       case "access":
         return <AccessSection bot={bot} derived={derived} />;
+      case "worksOn":
+        return <WorksOnSetting bot={bot} />;
       case "model":
         return <ModelSection bot={bot} />;
       case "permissions":

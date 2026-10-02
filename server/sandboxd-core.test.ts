@@ -91,6 +91,17 @@ describe("sandbox lifecycle", () => {
     expect(docker.calls.filter((call) => call.startsWith("create"))).toHaveLength(1);
   });
 
+  it("stops an unused sandbox after the 10 minute default", async () => {
+    const { service, advance } = setup();
+    await service.installEgressPolicy();
+    await service.exec(alice, { argv: ["true"] });
+    advance(10 * 60_000 - 1);
+    expect(await service.sweepIdle()).toEqual([]);
+    advance(2);
+    expect(await service.sweepIdle()).toEqual([alice]);
+    expect((await service.status(alice)).state).toBe("stopped");
+  });
+
   it("counts a sandbox first seen running after a provisioner restart from now", async () => {
     const { docker, service, advance } = setup();
     await service.installEgressPolicy();
