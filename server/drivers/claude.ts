@@ -1233,21 +1233,28 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
         );
       });
     const listeners = new Set<RuntimeEventListener>();
-    // The slash commands each bot's latest live session reported in `init`.
+    // The slash commands each bot's latest live session reported in `init`,
+    // per bot and account (a person's subscription may add their own
+    // claude.ai connectors' prompts, never shown to anyone else).
     const liveCommands = new Map<string, { names: string[]; terminal: string[] }>();
+    const liveCommandsKey = (botId: string, identity: string | undefined) => `${botId}\u0000${identity ?? ""}`;
     /** The engine's slash commands for a bot's turns: a short process with
-     * the turn's folder and isolation answers `initialize` (no model call),
-     * then what the bot's live session reported is layered in. */
+     * the turn's folder, isolation and account (the speaker's own
+     * subscription on an organization server) answers `initialize` (no
+     * model call), then what the bot's live session reported is layered in. */
     const listCommands = async (scope: HarnessCommandScope): Promise<HarnessCommand[]> => {
-      const env = environment();
+      const access = scope.access?.via === "subscription" ? scope.access : undefined;
+      const env = environment(undefined, access);
       const args: string[] = [];
       if (!inheritsUserConfig(env)) {
-        if (!scope.mcpFromUserConfig && claudeCliSupports(cliVersion, "--strict-mcp-config")) args.push("--strict-mcp-config");
+        // a turn keeping its claude.ai connectors drops --strict-mcp-config too
+        const strict = !scope.mcpFromUserConfig && !scope.claudeAiConnectors;
+        if (strict && claudeCliSupports(cliVersion, "--strict-mcp-config")) args.push("--strict-mcp-config");
         if (claudeCliSupports(cliVersion, "--setting-sources")) args.push("--setting-sources", "project");
-        env.ENABLE_CLAUDEAI_MCP_SERVERS = "false";
+        if (!scope.mcpFromUserConfig && !scope.claudeAiConnectors) env.ENABLE_CLAUDEAI_MCP_SERVERS = "false";
       }
       const listed = await probeClaudeCommands({ cli: config.cli, args, env, cwd: scope.cwd ?? homedir() });
-      const live = scope.botId ? liveCommands.get(scope.botId) : undefined;
+      const live = scope.botId ? liveCommands.get(liveCommandsKey(scope.botId, access?.identity)) : undefined;
       if (!live) return listed;
       const known = new Set(listed.map((command) => command.name));
       const merged = [...listed, ...normalizeClaudeCommands(live.names.filter((name) => !known.has(name)))];
@@ -2018,7 +2025,8 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
               // commands only a terminal can run (listCommands merges them).
               const liveBot = session.turn?.input.botId;
               if (liveBot && Array.isArray(o.slash_commands)) {
-                liveCommands.set(liveBot, {
+                const liveAccess = session.turn?.input.access;
+                liveCommands.set(liveCommandsKey(liveBot, liveAccess?.via === "subscription" ? liveAccess.identity : undefined), {
                   names: o.slash_commands.filter((name: unknown): name is string => typeof name === "string"),
                   terminal: Array.isArray(o.terminal_slash_commands) ? o.terminal_slash_commands.filter((name: unknown): name is string => typeof name === "string") : [],
                 });

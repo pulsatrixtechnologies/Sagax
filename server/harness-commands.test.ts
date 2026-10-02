@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { HarnessCommand } from "../shared/harness-commands.ts";
 import {
+  commandListAccess,
   createHarnessCommandRoutes,
   HarnessCommandCatalog,
   harnessEngineFor,
@@ -44,6 +45,38 @@ describe("HarnessCommandCatalog", () => {
     now += 500;
     expect((await catalog.read(a)).commands).toEqual(COMMANDS);
     await expect(catalog.read(source(async () => { throw new Error("no"); }, "/new"))).rejects.toThrow("no");
+  });
+});
+
+describe("a speaker's own list (organization server)", () => {
+  it("is cached per bot and person only where the person changes it", async () => {
+    const catalog = new HarnessCommandCatalog();
+    const list = vi.fn(async () => COMMANDS);
+    const as = (scope: Partial<HarnessCommandSource["scope"]>) => ({ ...source(list), scope: { botId: "b1", cwd: "/bots/b1", ...scope } });
+    const alice = { via: "subscription" as const, identity: "subscription:alice", claudeConfigDir: "/data/principals/alice/claude" };
+    const bob = { via: "subscription" as const, identity: "subscription:bob", claudeConfigDir: "/data/principals/bob/claude" };
+    await catalog.read(as({ access: alice, claudeAiConnectors: true }));
+    await catalog.read(as({ access: alice, claudeAiConnectors: true }));
+    expect(list).toHaveBeenCalledTimes(1);
+    await catalog.read(as({ access: bob, claudeAiConnectors: true }));
+    expect(list).toHaveBeenCalledTimes(2);
+    // speakers on a key or the organization's access share the server's list
+    await catalog.read(as({}));
+    await catalog.read(as({}));
+    expect(list).toHaveBeenCalledTimes(3);
+    expect(catalog.cached(as({ access: alice, claudeAiConnectors: true }))).toBeDefined();
+    expect(catalog.cached(as({ access: alice }))).toBeUndefined();
+  });
+
+  it("keeps a person's subscription and drops every key", () => {
+    expect(commandListAccess({ via: "subscription", identity: "subscription:p1", claudeConfigDir: "/d/p1/claude" }))
+      .toEqual({ via: "subscription", identity: "subscription:p1", claudeConfigDir: "/d/p1/claude" });
+    expect(commandListAccess({ via: "subscription", identity: "subscription:p1", codexHome: "/d/p1/codex", environment: { X: "y" } }))
+      .toEqual({ via: "subscription", identity: "subscription:p1", codexHome: "/d/p1/codex" });
+    expect(commandListAccess({ via: "speaker-key", identity: "speaker-key:p1:f", environment: { ANTHROPIC_API_KEY: "sk-ant-test-fake" } })).toBeUndefined();
+    expect(commandListAccess({ via: "org-key", identity: "org-key" })).toBeUndefined();
+    expect(commandListAccess({ via: "subscription", identity: "subscription:p1" })).toBeUndefined();
+    expect(commandListAccess(undefined)).toBeUndefined();
   });
 });
 
@@ -115,12 +148,23 @@ describe("GET /api/bots/:id/harness-commands", () => {
     expect(seen).toEqual(["b1:t-1"]);
   });
 
+  it("lists a group member's commands for that group", async () => {
+    const seen: string[] = [];
+    const answer = await call("/api/bots/b1/harness-commands?threadId=gt-1&groupId=g-1", (_auth, botId, threadId, groupId) => {
+      seen.push(`${botId}:${threadId}:${groupId}`);
+      return source();
+    });
+    expect(answer.status).toBe(200);
+    expect(seen).toEqual(["b1:gt-1:g-1"]);
+  });
+
   it("answers a refusal, an engine without commands, and a failed read", async () => {
     expect((await call("/api/bots/b1/harness-commands", () => ({ status: 404, error: "no such bot" }))).status).toBe(404);
     expect((await call("/api/bots/b1/harness-commands", () => null)).body).toEqual({ available: false, reason: "not_supported", commands: [] });
     expect((await call("/api/bots/b1/harness-commands", () => source(async () => { throw new Error("x"); }))).body)
       .toEqual({ available: false, reason: "unavailable", engine: "claude", commands: [] });
     expect((await call("/api/bots/b1/harness-commands?threadId=../x", () => source())).status).toBe(400);
+    expect((await call("/api/bots/b1/harness-commands?groupId=../x", () => source())).status).toBe(400);
     expect((await call("/api/bots/b1/harness-commands", () => source(), "POST")).status).toBe(405);
     expect((await call("/api/bots/b1/other", () => source())).passed).toBe(true);
   });

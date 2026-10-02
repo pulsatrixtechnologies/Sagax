@@ -549,8 +549,33 @@ describe("ClaudeDriver turns (fake CLI)", () => {
       expect(seen.argv).not.toContain("--model");
       // no user message, so no turn and no model call
       expect(existsSync(prompts)).toBe(false);
+      expect((seen as unknown as { env: Record<string, string | null> }).env.ENABLE_CLAUDEAI_MCP_SERVERS).toBe("false");
     } finally {
       delete process.env.FAKE_CLAUDE_COMMANDS;
+      delete process.env.FAKE_CLAUDE_COMMANDS_DUMP;
+    }
+  });
+
+  it("lists a speaker's commands from their own subscription, with their claude.ai connectors", async () => {
+    await create();
+    const dump = join(scratch, "commands-dump.json");
+    const login = join(scratch, "principals", "p1", "claude");
+    process.env.FAKE_CLAUDE_COMMANDS_DUMP = dump;
+    try {
+      await instance.listCommands?.({ cwd: scratch, botId: "b1", access: { via: "subscription", identity: "subscription:p1", claudeConfigDir: login }, claudeAiConnectors: true });
+      const own = JSON.parse(readFileSync(dump, "utf8")) as { argv: string[]; env: Record<string, string | null> };
+      expect(own.env.CLAUDE_CONFIG_DIR).toBe(login);
+      // a turn keeping the connectors drops both switches; the listing too
+      expect(own.env.ENABLE_CLAUDEAI_MCP_SERVERS).toBeNull();
+      expect(own.argv).not.toContain("--strict-mcp-config");
+      expect(own.argv).toEqual(expect.arrayContaining(["--setting-sources", "project"]));
+      // a key is not an account: the server's own directory lists
+      await instance.listCommands?.({ cwd: scratch, botId: "b1", access: { via: "speaker-key", identity: "speaker-key:p1:abc", environment: { ANTHROPIC_API_KEY: "sk-ant-test-fake" } } });
+      const keyed = JSON.parse(readFileSync(dump, "utf8")) as { argv: string[]; env: Record<string, string | null> };
+      expect(keyed.env.CLAUDE_CONFIG_DIR).not.toBe(login);
+      expect(keyed.env.ENABLE_CLAUDEAI_MCP_SERVERS).toBe("false");
+      expect(keyed.argv).toContain("--strict-mcp-config");
+    } finally {
       delete process.env.FAKE_CLAUDE_COMMANDS_DUMP;
     }
   });

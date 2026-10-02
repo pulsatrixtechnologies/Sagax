@@ -536,7 +536,8 @@ import { createMailSettingsRoutes } from "./mail-routes.ts";
 import { createVoiceModeRoutes } from "./voice-mode.ts";
 import * as grokVoice from "./tts/grok.ts";
 import { ClaudeAiConnectorInventory, claudeAiConnectorsForTurn, claudeAiConnectorsPrompt, createHarnessConnectorRoutes, runClaudeCli } from "./harness-connectors.ts";
-import { createHarnessCommandRoutes, HarnessCommandCatalog, harnessEngineFor, typedCommandForTurn, unavailableCommandError, type HarnessCommandSource } from "./harness-commands.ts";
+import { commandListAccess, createHarnessCommandRoutes, HarnessCommandCatalog, harnessEngineFor, typedCommandForTurn, unavailableCommandError, type HarnessCommandSource } from "./harness-commands.ts";
+import { groupCommandTarget, resolveTypedCommand, type CommandResolution, type GroupCommandRoute } from "../shared/harness-commands.ts";
 import type { HarnessCommandScope } from "./contracts.ts";
 import { ProviderAuthSessions } from "./provider-auth-sessions.ts";
 import {
@@ -11604,10 +11605,14 @@ async function startTurn(
       // or a card continuation never runs one.
       const typedCommand = !opts?.cardContinuation && commsDepth === 0
         ? await typedCommandForTurn(resolvedImages.text, harnessCommandSource(bot, threadId, {
-          botId: bot.id,
-          ...(cwd ? { cwd } : {}),
-          ...(withholdHostToolsFor(instance) ? { withholdHostTools: true } : {}),
-          mcpFromUserConfig: claudeUserMcpEnabled(cfg) && !managedPolicy.restrictsMcp(),
+          scope: {
+            botId: bot.id,
+            ...(cwd ? { cwd } : {}),
+            ...(withholdHostToolsFor(instance) ? { withholdHostTools: true } : {}),
+            mcpFromUserConfig: claudeUserMcpEnabled(cfg) && !managedPolicy.restrictsMcp(),
+          },
+          speaker,
+          ...(turnAccess ? { access: turnAccess } : {}),
         }), harnessCommands)
         : { kind: "none" as const };
       if (!directTurnClaimIsCurrent(bot.id, dispatchClaimId, threadId)) throw new DirectTurnSetupCancelled("turn stopped during command lookup");
@@ -14081,11 +14086,36 @@ async function runGroupMemberTurn(
     // explicit, disclosed session_search, never automatically
     const roomRecalled = cardContinuation ? "" : autoRecallPrompt(bot, threadId, resolvedLatestImages.text, { conversations: false, userName });
     const roomSpeaker: TurnSpeaker = roomSpeakerId ? { origin: "person", principalId: roomSpeakerId } : roomRoutineSpeaker(threadId) ?? { origin: "operator" };
-    const sendRoomTurn = (roomTurnAccess: TurnAccess | undefined) => instance.adapter.sendTurn({
+    // The person's engine command for this member (shared/harness-commands.ts
+    // groupCommandTarget): it reaches the engine verbatim, like in a 1:1.
+    const roomCommandRoute = hop === 0 && !cardContinuation && !orchestration && latestUser?.text
+      ? groupEngineCommandRoute(readyGroup, latestUser.text, readyGroup.memberIds.map((id) => store.bot(id)).filter((member): member is BotRecord => Boolean(member && !member.hidden)), latestUser.channelMode, operation?.queuedQueueIds?.length ?? 0)
+      : null;
+    const roomCommandFor = async (roomTurnAccess: TurnAccess | undefined): Promise<CommandResolution> => {
+      if (roomCommandRoute?.botId !== readyBot.id) return { kind: "none" };
+      const typed = await typedCommandForTurn(extractTurnImages(roomCommandRoute.commandText).text, harnessCommandSource(readyBot, threadId, {
+        scope: {
+          botId: readyBot.id,
+          ...(cwd ? { cwd } : {}),
+          ...(withholdHostToolsFor(instance) ? { withholdHostTools: true } : {}),
+          mcpFromUserConfig: claudeUserMcpEnabled(cfg) && !managedPolicy.restrictsMcp(),
+        },
+        speaker: roomSpeaker,
+        ...(roomTurnAccess ? { access: roomTurnAccess } : {}),
+        group: readyGroup,
+      }), harnessCommands);
+      if (typed.kind === "unavailable") throw new Error(unavailableCommandError(typed).error);
+      return typed;
+    };
+    const sendRoomTurn = async (roomTurnAccess: TurnAccess | undefined) => {
+      const roomCommand = await roomCommandFor(roomTurnAccess);
+      const engineCommand = roomCommand.kind === "engine" ? roomCommand : null;
+      return instance.adapter.sendTurn({
         threadId,
         botId: readyBot.id,
         ...(roomTurnAccess ? { access: roomTurnAccess } : {}),
-        text: withRecalled(roomRecalled, text),
+        text: engineCommand ? engineCommand.engineText : withRecalled(roomRecalled, text),
+        ...(engineCommand ? { harnessCommand: { name: engineCommand.command.name, args: engineCommand.args, ...(engineCommand.command.path ? { path: engineCommand.command.path } : {}) } } : {}),
         refreshSystemPrompt: true,
         images: turnImages,
         approvalMode: auditFullAccessTurn(readyBot, threadId, roomTurnApprovalMode(readyBot, threadId, orchestration)),
@@ -14103,6 +14133,7 @@ async function runGroupMemberTurn(
           ? memberTurnSelection(readyBot.modelSelection)
           : { model: instance.models.default }),
       });
+    };
     guardTurnDispatch(IDENTITY.kind === "perspicax" ? orgTurnAccess(threadId, readyBot, instance, roomSpeaker).then(sendRoomTurn) : sendRoomTurn(undefined), () => abandoned || Boolean(isCancelled?.()), async () => {
         // Stop may have landed while the adapter was authenticating, before
         // it had an active process for the first interrupt to reach. Now that
@@ -14696,6 +14727,9 @@ async function runGroupGoalOperation(args: {
 type StartGroupTurnOptions = {
   /** Run against an existing background room task instead of the active UI task. */
   threadId?: string;
+  /** The engine command this message is, as the send resolved it (null: it
+   * is none). Left out, the cached list of the target bot decides. */
+  commandRoute?: GroupCommandRoute | null;
   /** Internal routine goals choose their lead explicitly rather than by @mention/default. */
   goalCoordinatorBotId?: string;
   /** Correlates a room goal card with its durable RoutineRun receipt. */
@@ -14713,6 +14747,46 @@ type StartGroupTurnOptions = {
    * responders are routed and titled on. */
   queuedGroup?: ChannelQueueItem[];
 };
+
+/** A group message that is an engine command for ONE member
+ * (shared/harness-commands.ts groupCommandTarget): its leading mention, else
+ * the group's lead, and only when that bot's engine lists commands. A goal,
+ * a bot-to-bot channel or a burst of several queued lines is never one. */
+function groupEngineCommandRoute(
+  group: Pick<GroupRecord, "dm" | "defaultResponder">,
+  text: string,
+  members: readonly BotRecord[],
+  channelMode: "chat" | "goal" | undefined,
+  burstLines = 0,
+): GroupCommandRoute | null {
+  if (group.dm || channelMode === "goal" || burstLines > 1) return null;
+  const route = groupCommandTarget(text, members, group.defaultResponder);
+  const target = route ? members.find((member) => member.id === route.botId) : undefined;
+  const instance = target ? turnInstance(target) : null;
+  if (!route || !instance?.listCommands || !harnessEngineFor(instance.driverKind)) return null;
+  return route;
+}
+
+/** groupEngineCommandRoute, kept only when the target bot's engine lists the
+ * name (its last list for this speaker, without reading it again): a
+ * `/word` the engine does not know is an ordinary room message, routed by
+ * its mentions like any other. */
+function cachedGroupEngineCommandRoute(
+  group: GroupRecord,
+  threadId: string,
+  text: string,
+  members: readonly BotRecord[],
+  channelMode: "chat" | "goal" | undefined,
+  burstLines: number,
+  speaker: TurnSpeaker,
+): GroupCommandRoute | null {
+  const route = groupEngineCommandRoute(group, text, members, channelMode, burstLines);
+  const target = route ? members.find((member) => member.id === route.botId) : undefined;
+  if (!route || !target) return null;
+  const source = harnessCommandSource(target, threadId, { group, speaker });
+  const commands = source ? harnessCommands.cached(source)?.commands ?? [] : [];
+  return resolveTypedCommand(extractTurnImages(route.commandText).text, commands).kind === "engine" ? route : null;
+}
 
 function startGroupTurn(
   groupId: string,
@@ -14812,6 +14886,13 @@ function startGroupTurn(
     });
   }
   let responders = roomResponders(text, members, group.defaultResponder);
+  // An engine command reaches one bot only: the one it starts by naming,
+  // else the lead (never everyone named in its arguments). Only a name that
+  // bot's engine lists is one; any other `/word` is routed like any message.
+  const commandRoute = options.commandRoute !== undefined
+    ? options.commandRoute
+    : cachedGroupEngineCommandRoute(group, threadId, text, availableMembers, channelMode, queuedGroup?.length ?? 0, options.sender?.id ? { origin: "person", principalId: options.sender.id } : { origin: "operator" });
+  if (commandRoute) responders = availableMembers.filter((member) => member.id === commandRoute.botId);
   const explicitlyMentionedLead = roomResponders(text, availableMembers, { kind: "mentions" })[0];
   const goalCoordinator = channelMode === "goal"
     ? requestedGoalCoordinator ?? explicitlyMentionedLead ?? selectGroupGoalCoordinator(availableMembers, group.defaultResponder)
@@ -14871,7 +14952,7 @@ function startGroupTurn(
   // Auto with nobody addressed: the responders above are only the fallback
   // until the decision model answers, in the async round below. The append
   // and this function's return stay synchronous either way.
-  const autoRoute = autoCandidate && !goalCoordinator && availableMembers.length > 1 &&
+  const autoRoute = autoCandidate && !goalCoordinator && !commandRoute && availableMembers.length > 1 &&
     roomResponders(text, availableMembers, { kind: "mentions" }).length === 0;
 
   // The snippet is only the fallback name here too. The member about to
@@ -16485,6 +16566,10 @@ class EngineAccessLost extends Error {
     if (detail) this.detail = detail;
   }
 }
+/** A person's own engine login directory (their subscription). */
+function principalLoginDir(principalId: string, driver: "claudeAgent" | "codex"): string {
+  return engineLogins?.loginDir(principalId, driver) ?? join(DATA_DIR, "principals", principalId, driver === "claudeAgent" ? "claude" : "codex");
+}
 /** Slice 4: the credentials of one turn on an organization server, fetched
  * at dispatch; undefined in solo mode. Throws EngineAccessLost. */
 async function orgTurnAccess(threadId: string, bot: BotRecord, instance: { instanceId: string; driverKind: string }, speaker: TurnSpeaker): Promise<TurnAccess | undefined> {
@@ -16494,7 +16579,7 @@ async function orgTurnAccess(threadId: string, bot: BotRecord, instance: { insta
     dataDir: DATA_DIR,
     resolveKey: (sub, provider) => perspicaxDirectory ? perspicaxDirectory.resolveProviderKey(sub, provider) : Promise.resolve({ ok: false as const, error: "link" as const }),
     invalidate: (sub, provider) => perspicaxDirectory?.invalidate(sub, provider),
-    loginDir: (principalId, driver) => engineLogins?.loginDir(principalId, driver) ?? join(DATA_DIR, "principals", principalId, driver === "claudeAgent" ? "claude" : "codex"),
+    loginDir: principalLoginDir,
   });
   if (!outcome.ok) throw new EngineAccessLost(outcome.plan ? orgRefusalOf(outcome.plan) : { reason: outcome.reason }, outcome.detail);
   const provider = providerOfDriver(instance.driverKind) ?? undefined;
@@ -18568,41 +18653,115 @@ ROUTES.push(createHarnessConnectorRoutes({
 // listed by the engine itself in the folder and isolation the bot's turns
 // get, passed through verbatim when typed.
 const harnessCommands = new HarnessCommandCatalog();
-function harnessCommandSource(bot: BotRecord, threadId: string | undefined, scope?: HarnessCommandScope): HarnessCommandSource | null {
-  const instance = turnInstance(bot, undefined, threadId);
+/** What makes the list the SPEAKER's (server/harness-commands.ts): on an
+ * organization server their own subscription (from the turn's access, else
+ * the planned one, never a key read), and whether the turn keeps the
+ * claude.ai connectors of that account. */
+function harnessCommandAccount(
+  bot: BotRecord,
+  instance: { instanceId: string; driverKind: string },
+  speaker: TurnSpeaker,
+  access?: TurnAccess,
+): Pick<HarnessCommandScope, "access" | "claudeAiConnectors"> {
+  let listing = commandListAccess(access);
+  let via = access?.via;
+  if (IDENTITY.kind === "perspicax" && !access) {
+    const plan = resolveEngineAccess(orgEngineInput(bot, instance, speaker));
+    if (plan.ok) {
+      via = plan.via;
+      const payer = plan.payerPrincipalId;
+      if (plan.via === "subscription" && payer && subscriptionDriver(instance.driverKind)) {
+        const dir = principalLoginDir(payer, instance.driverKind);
+        listing = { via: "subscription", identity: `subscription:${payer}`, ...(instance.driverKind === "claudeAgent" ? { claudeConfigDir: dir } : { codexHome: dir }) };
+      }
+    }
+  }
+  const connectors = claudeAiConnectorsFor(bot, instance, speaker, via);
+  return { ...(listing ? { access: listing } : {}), ...(connectors ? { claudeAiConnectors: true } : {}) };
+}
+/** The folder a group's turn runs in for this member, without pinning it
+ * (the pin happens at the first turn, see runGroupMemberTurn). */
+function groupCommandCwd(bot: BotRecord, instance: { driverKind: string }, group: GroupRecord, threadId: string): string | undefined {
+  if (!supportsWorkspaceFiles(instance.driverKind)) return undefined;
+  const pinned = group.dm ? group.pinnedCwd : store.groupTaskByThread(group.id, threadId)?.pinnedCwd;
+  return (pinned !== undefined ? pinned : group.cwd) ?? ensureWorkspace(bot.id);
+}
+interface HarnessCommandSourceOptions {
+  /** A turn's own scope (its folder and isolation). */
+  scope?: HarnessCommandScope;
+  /** Whose list it is: their subscription and connectors (organization). */
+  speaker?: TurnSpeaker;
+  /** The turn's materialized access, when there is one already. */
+  access?: TurnAccess;
+  /** The bot as a member of this group (`threadId` is the group's). */
+  group?: GroupRecord;
+}
+function harnessCommandSource(bot: BotRecord, threadId: string | undefined, options: HarnessCommandSourceOptions = {}): HarnessCommandSource | null {
+  const instance = options.group ? turnInstance(bot) : turnInstance(bot, undefined, threadId);
   const engine = instance ? harnessEngineFor(instance.driverKind) : null;
   if (!instance?.listCommands || !engine) return null;
-  const task = threadId ? store.taskByThread(bot.id, threadId) : undefined;
-  // the folder the thread's next turn runs in (see the pin in runTurn)
-  const cwd = task && task.cwd !== undefined ? task.cwd ?? undefined
-    : bot.cwd ?? (task && threadId && supportsWorkspaceFiles(instance.driverKind) ? ensureTaskWorkspace(bot.id, threadId) : undefined);
+  let cwd: string | undefined;
+  if (options.group) cwd = threadId ? groupCommandCwd(bot, instance, options.group, threadId) : undefined;
+  else {
+    const task = threadId ? store.taskByThread(bot.id, threadId) : undefined;
+    // the folder the thread's next turn runs in (see the pin in runTurn)
+    cwd = task && task.cwd !== undefined ? task.cwd ?? undefined
+      : bot.cwd ?? (task && threadId && supportsWorkspaceFiles(instance.driverKind) ? ensureTaskWorkspace(bot.id, threadId) : undefined);
+  }
   const list = instance.listCommands.bind(instance);
+  const account = options.speaker ? harnessCommandAccount(bot, instance, options.speaker, options.access) : {};
   return {
     botId: bot.id,
     instanceId: instance.instanceId,
     engine,
-    scope: scope ?? {
-      botId: bot.id,
-      ...(cwd ? { cwd } : {}),
-      ...(withholdHostToolsFor(instance) ? { withholdHostTools: true } : {}),
-      mcpFromUserConfig: claudeUserMcpEnabled(cfg) && !managedPolicy.restrictsMcp(),
+    scope: {
+      ...(options.scope ?? {
+        botId: bot.id,
+        ...(cwd ? { cwd } : {}),
+        ...(withholdHostToolsFor(instance) ? { withholdHostTools: true } : {}),
+        mcpFromUserConfig: claudeUserMcpEnabled(cfg) && !managedPolicy.restrictsMcp(),
+      }),
+      ...account,
     },
     list,
   };
 }
+/** Whose command list a request reads: the signed-in person, else the
+ * operator at this computer. */
+function harnessCommandSpeaker(auth: RequestAuth): TurnSpeaker {
+  const viewerId = actorPrincipalId(auth);
+  return viewerId ? { origin: "person", principalId: viewerId } : { origin: "operator" };
+}
 ROUTES.push(createHarnessCommandRoutes({
   catalog: harnessCommands,
-  sourceFor: (auth, botId, threadId) => {
+  sourceFor: (auth, botId, threadId, groupId) => {
     const bot = store.bot(botId);
     if (!bot) return { status: 404, error: "no such bot" };
     const viewerId = actorPrincipalId(auth);
+    const speaker = harnessCommandSpeaker(auth);
+    if (groupId) {
+      // A member of a group the caller posts in: its commands for that group.
+      // Listing starts the engine (a CLI run on the caller's subscription),
+      // so it takes channel.post like the send does, not only channel.read.
+      const group = store.group(groupId);
+      if (!group || group.peopleDm || !group.memberIds.includes(bot.id)) return { status: 404, error: "no such group" };
+      if (IDENTITY.kind === "perspicax") {
+        const channelViewer = channelViewerId(auth);
+        if (!groupVisible(group, channelViewer)) return { status: 404, error: "no such group" };
+        if (!groupPostAllowed(group, channelViewer)) return { status: 403, error: "you may read this channel, not post in it" };
+      }
+      const groupThread = threadId ?? group.threadId;
+      const ownsThread = group.dm ? group.threadId === groupThread : Boolean(store.groupTaskByThread(group.id, groupThread));
+      if (!ownsThread) return { status: 404, error: "no such conversation" };
+      return harnessCommandSource(bot, groupThread, { group, speaker });
+    }
     if (threadId && !store.taskByThread(bot.id, threadId)) return { status: 404, error: "no such conversation" };
     if (IDENTITY.kind === "perspicax") {
       const viewer = authzViewerFromId(viewerId);
       if (!viewer || !canOnBot(viewer, "bot.use", botFacts(bot))) return { status: 404, error: "no such bot" };
       if (threadId && !botThreadReadable(bot, threadId, viewerId, "thread.post")) return { status: 404, error: "no such conversation" };
     }
-    return harnessCommandSource(bot, threadId ?? (IDENTITY.kind === "perspicax" ? viewerThreadOf(bot, viewerId) : bot.threadId));
+    return harnessCommandSource(bot, threadId ?? (IDENTITY.kind === "perspicax" ? viewerThreadOf(bot, viewerId) : bot.threadId), { speaker });
   },
 }));
 
@@ -23611,6 +23770,17 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (!ownsThread) {
         return json(res, 409, { error: "the channel switched tasks before it could receive the message" });
       }
+      // An engine command for one member that the chat cannot run is refused
+      // before it is recorded, like in a 1:1 (server/harness-commands.ts).
+      const commandRoute = groupEngineCommandRoute(group, text, group.memberIds.map((id) => store.bot(id)).filter((member): member is BotRecord => Boolean(member && !member.hidden)), channelMode);
+      const commandBot = commandRoute ? store.bot(commandRoute.botId) : undefined;
+      // Only a command that bot's engine lists narrows the responders.
+      let engineCommandRoute: GroupCommandRoute | null = null;
+      if (commandRoute && commandBot) {
+        const typed = await typedCommandForTurn(extractTurnImages(commandRoute.commandText).text, harnessCommandSource(commandBot, threadId, { group, speaker: harnessCommandSpeaker(auth) }), harnessCommands);
+        if (typed.kind === "unavailable") return json(res, 409, unavailableCommandError(typed));
+        if (typed.kind === "engine") engineCommandRoute = commandRoute;
+      }
       const sendId = parseSendId(body.sendId);
       const replyTo = resolveReplyTarget(threadId, body.replyToId);
       // Who is this "user"? On a headless server loopback is the owner by
@@ -23673,7 +23843,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
             });
             return { ok: true as const, queued: true as const, queueId: queued.id, threadId };
           }
-          const message = startGroupTurn(current.id, text, replyTo, sendId, channelMode, undefined, { via, sender: messageSender(auth), trigger });
+          const message = startGroupTurn(current.id, text, replyTo, sendId, channelMode, undefined, { via, sender: messageSender(auth), trigger, commandRoute: engineCommandRoute });
           return { ok: true as const, threadId, message };
         },
       );
@@ -25378,7 +25548,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       // An engine command the chat cannot run is refused before it is
       // recorded (server/harness-commands.ts).
       if (text.startsWith("/")) {
-        const typed = await typedCommandForTurn(extractTurnImages(text).text, harnessCommandSource(bot, threadId), harnessCommands);
+        const typed = await typedCommandForTurn(extractTurnImages(text).text, harnessCommandSource(bot, threadId, { speaker: harnessCommandSpeaker(auth) }), harnessCommands);
         if (typed.kind === "unavailable") return json(res, 409, unavailableCommandError(typed));
       }
       // Who this message is from, for the ledger. It is captured here and

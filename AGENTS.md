@@ -450,8 +450,8 @@ these rules, each covered by `server/harness-connectors.test.ts` or
 
 ## Engine slash commands in the chat
 
-Typing "/" in a 1:1 conversation lists Sagax's own commands and the bot
-engine's (`shared/harness-commands.ts`, `server/harness-commands.ts`,
+Typing "/" in a conversation or a group lists Sagax's own commands and
+the bot engine's (`shared/harness-commands.ts`, `server/harness-commands.ts`,
 `src/components/ComposerCommandMenu.tsx`). Keep these rules, each covered by
 `shared/harness-commands.test.ts`, `server/harness-commands.test.ts`,
 `server/harness-commands.e2e.test.ts` or the driver tests:
@@ -470,6 +470,28 @@ engine's (`shared/harness-commands.ts`, `server/harness-commands.ts`,
   engine's is `/engine:<name>`. What the chat cannot run (terminal-only, or
   managed by Sagax: model, effort, sessions, approvals, MCP) is listed dimmed
   with its reason and refused at send (409).
+- In a group (not a bot-to-bot channel, not a goal) a command is for ONE
+  bot (`groupCommandTarget`): the bot the message starts by mentioning
+  (`@Scout /compact ...`), else the lead when the group answers with one
+  member. Only that bot answers (mentions in the arguments add nobody) and
+  it gets the command verbatim, not the room context. Only a name that
+  bot's engine lists narrows the responders: any other `/word` is an
+  ordinary message, routed by its mentions. The "/" menu lists the
+  commands under each bot's name (`?groupId=` on the route, which needs
+  `channel.post` on the room: a read-only member is refused, since listing
+  starts the engine); a group that names no single bot (everyone, Auto,
+  mentions only) lists every active member, each with its share of the
+  menu (`groupMenuLimitPerBot`), and a pick inserts `@Name /command`.
+- On an organization server the list is the SPEAKER's
+  (`harnessCommandAccount`): their own subscription's login directory
+  (their user skills and plugins, Codex `CODEX_HOME`) and the claude.ai
+  connectors their turn keeps. Cached per bot and person (the access
+  identity) only where it changes the list; a key, the organization's or
+  the server's access share the server's list (`commandListAccess` never
+  carries a key). Live session additions are kept per bot and account.
+  The client caches the lists per viewer (`src/lib/harness-commands.ts`):
+  another person signing in to the same tab never sees the last one's.
+  Covered end to end by `server/org-harness-commands.e2e.test.ts`.
 - `scripts/smoke-harness-commands.ts` checks the real CLIs.
 
 ## Bot panel

@@ -1944,14 +1944,19 @@ export const CodexDriver: ProviderDriver<CodexConfig> = {
         return () => listeners.delete(listener);
       },
     },
-    // The skills a turn in this folder can use, from Codex itself.
-    listCommands: (scope) => probeCodexSkills({
-      cli: config.cli,
-      args: ["app-server"],
-      env: childEnv() as NodeJS.ProcessEnv,
-      cwd: scope.cwd ?? homedir(),
-      clientVersion: serverVersion(),
-    }),
+    // The skills a turn in this folder can use, from Codex itself; with the
+    // speaker's own subscription, from their CODEX_HOME (their user skills).
+    listCommands: (scope) => {
+      const env = childEnv();
+      if (scope.access?.via === "subscription") codexAccessLaunch(env, scope.access);
+      return probeCodexSkills({
+        cli: config.cli,
+        args: ["app-server"],
+        env: env as NodeJS.ProcessEnv,
+        cwd: scope.cwd ?? homedir(),
+        clientVersion: serverVersion(),
+      });
+    },
     dispose: async () => {
       disposed = true;
       planGeneration++;
