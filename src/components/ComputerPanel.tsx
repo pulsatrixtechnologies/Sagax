@@ -1524,8 +1524,10 @@ export function ComputerPanel({
     <div className={embedded ? "pb-5" : "flex-1 overflow-y-auto px-5 pb-5"}>
       <OrgComputerTab
         bridge={bridgeStatus}
-        place={bot.computer ?? "auto"}
-        computerOff={bot.computer === "off"}
+        // The conversation's own place (its pin, else Works on), not the
+        // server's Auto guess, which knows no server environment.
+        place={livePlace}
+        computerOff={livePlace === "off"}
         botName={bot.name}
         onChangePlace={() => dispatch({ type: "toggleSettings", botId: bot.id, section: "access", open: true })}
       />

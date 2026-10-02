@@ -41,6 +41,12 @@ const LOCAL_FRAME_MS = 4_000;
 
 export type ComputerSource = "local" | "server";
 
+/** The screen tells the usage panel beside it that the environment changed
+ * (started, paused, stopped, its view connected), so the figures follow at
+ * once instead of at the next slow poll. */
+const SERVER_ENVIRONMENT_CHANGED = "sagax:server-environment-changed";
+const announceServerEnvironment = () => { window.dispatchEvent(new Event(SERVER_ENVIRONMENT_CHANGED)); };
+
 /** Which computer this bot uses, from its Works on, and why (one sentence). */
 export function activeComputer(bridge: DesktopBridgeStatus, place: EffectivePlace): { source: ComputerSource; reason: "cloud" | "computer" | "notConnected" | "none" } {
   const computer = orgComputerFor(place);
@@ -112,6 +118,7 @@ export function ServerComputerScreen({ caption, initial = null }: { caption: str
   const [error, setError] = useState("");
   const load = useCallback(async () => {
     try { setStatus(await loadServerEnvironment()); } catch { setStatus({ configured: true, state: "unavailable" }); }
+    announceServerEnvironment();
   }, []);
   useEffect(() => { if (!initial) void load(); }, [load, initial]);
 
@@ -125,7 +132,7 @@ export function ServerComputerScreen({ caption, initial = null }: { caption: str
         if (!window.confirm(t("orgComputer.confirmRunning"))) return;
         next = await powerServerEnvironment(action, true);
       }
-      if (next) setStatus(next);
+      if (next) { setStatus(next); announceServerEnvironment(); }
     } catch {
       setError(t("orgComputer.actionFailed"));
       await load();
@@ -289,7 +296,9 @@ export function UsagePanel() {
     // screen above, and a usage panel frozen on its first answer kept
     // showing "?" next to a running desktop.
     const timer = window.setInterval(() => void load(), running ? STATS_REFRESH_MS : STATS_IDLE_REFRESH_MS);
-    return () => { controller.abort(); window.clearInterval(timer); };
+    const changed = () => void load();
+    window.addEventListener(SERVER_ENVIRONMENT_CHANGED, changed);
+    return () => { controller.abort(); window.clearInterval(timer); window.removeEventListener(SERVER_ENVIRONMENT_CHANGED, changed); };
   }, [visible, running]);
   const live = stats?.state === "running";
   return (
