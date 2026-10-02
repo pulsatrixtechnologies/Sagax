@@ -22,8 +22,8 @@ export function ShapeEyes({ face, color, mood, look }: { face: [number, number];
     const x = face[0] + dx;
     const y = face[1] + dy;
     const transform = `rotate(${EYES.tilt} ${x} ${y})`;
-    if (mood === "sleeping") return <path key={key} d={`M${x - 4} ${y + 1}q4 3.4 8 0`} transform={transform} fill="none" stroke={color} strokeWidth={2.4} strokeLinecap="round" />;
-    if (mood === "happy") return <path key={key} d={`M${x - 4} ${y + 1}q4 -4.6 8 0`} transform={transform} fill="none" stroke={color} strokeWidth={2.6} strokeLinecap="round" />;
+    if (mood === "sleeping") return <path key={key} d={`M${x - 5.5} ${y + 1}q5.5 4.6 11 0`} transform={transform} fill="none" stroke={color} strokeWidth={3.2} strokeLinecap="round" />;
+    if (mood === "happy") return <path key={key} d={`M${x - 5.5} ${y + 2}q5.5 -6 11 0`} transform={transform} fill="none" stroke={color} strokeWidth={3.4} strokeLinecap="round" />;
     return <ellipse key={key} className="shape-eye" cx={x} cy={y + look} rx={EYES.rx} ry={EYES.ry} transform={transform} fill={color} />;
   };
   return (
