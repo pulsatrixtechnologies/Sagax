@@ -86,4 +86,4 @@ if (!result.ok) {
   console.error(`packaged launch FAILED (${seconds} s): ${result.reason}\n--- app output (tail) ---\n${output.slice(-4000)}`);
   process.exit(1);
 }
-console.log(`packaged launch ok in ${seconds} s${values["user-data-copy"] ? " (copied userData)" : " (fresh userData)"}: ${result.detail.location} health=${result.detail.health?.ok ?? "?"}`);
+console.log(`packaged launch ok in ${seconds} s${values["user-data-copy"] ? " (copied userData)" : " (fresh userData)"}: ${result.detail.location} product=${result.detail.health?.product ?? "?"}`);
