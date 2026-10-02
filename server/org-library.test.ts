@@ -615,8 +615,8 @@ describe("adding from the shelf", () => {
     // The leader is the importer's last write; the app stops right after it,
     // before the index is saved.
     let crash: string | null = null;
-    const setChief = app.store.setChiefOfStaff.bind(app.store);
-    vi.spyOn(app.store, "setChiefOfStaff").mockImplementation((...args) => {
+    const setChief = app.store.setPrimaryBot.bind(app.store);
+    vi.spyOn(app.store, "setPrimaryBot").mockImplementation((...args) => {
       const changed = setChief(...args);
       crash ??= snapshot();
       return changed;

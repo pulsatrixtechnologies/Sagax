@@ -4202,6 +4202,14 @@ principals.onDisabledChanged((person, disabled) => orgAudit({
   actor: { kind: "worker" },
 }));
 principals.localOperator(cfg.profile?.email);
+// One Primary Bot per person: the store learns who owns each bot (an
+// unrecorded owner is the operator), then the one-time migration from one
+// Chief of Staff per section runs (idempotent, so at every boot).
+store.botOwnerKey = (bot) => effectiveBotOwner(bot);
+{
+  const steppedDown = store.enforceOnePrimaryPerOwner();
+  if (steppedDown.length) console.log(`[primary-bot] one Primary Bot per person: ${steppedDown.length} former Chief(s) of Staff stepped down`);
+}
 // The per-person server environments (server/user-sandbox-manager.ts):
 // organization mode with a provisioner only. A person signed out by
 // Perspicax has theirs stopped now and deleted after the grace period.
@@ -4460,9 +4468,9 @@ async function botOverview(bot: BotRecord): Promise<BotOverview> {
  * this too, but no provider dispatch or later permission callback relies on
  * persistence having been produced exclusively by that route. Delegation
  * uses the receiving bot's grant, never the sender's (approvalModeForOrigin) —
- * with one deliberate exception: a Chief of Staff with Full access makes the
+ * with one deliberate exception: a Primary Bot with Full access makes the
  * threads it delegates Full too (delegatedFullAccess), so the grant the
- * person gave the Chief covers the work the Chief hands out. */
+ * person gave the Primary Bot covers the work the Primary Bot hands out. */
 const approvalModeForTurn = (bot: BotRecord, peerInitiated = false, threadId = bot.threadId): ApprovalMode => {
   // A member's bot on an organization server never runs unasked (JC rule
   // until per-owner containers): its tasks' Custom or Full are Ask here.
@@ -4492,14 +4500,14 @@ function peerReviewRequired(bot: BotRecord, threadId: string): boolean {
   return Boolean(bot.approvePeerComms && !fullAccessForSource(bot.id, threadId));
 }
 
-/** Full access flows down a Chief of Staff's delegation. The person gave the
- * Chief Full access so its work runs without prompts; a teammate stopping
+/** Full access flows down a Primary Bot's delegation. The person gave the
+ * Primary Bot Full access so its work runs without prompts; a teammate stopping
  * that same work to ask defeats the grant — and in practice the person was
  * answering every one of those cards, all day, for the whole team. So a
- * teammate a Full-access Chief delegates to runs Full for that work: the
+ * teammate a Full-access Primary Bot delegates to runs Full for that work: the
  * recipient switches, whatever its own level says. The recipient's engine
  * has to implement Full (supportsApprovalMode); otherwise the work keeps the
- * recipient's own level, as before. Only a Chief passes access on — an
+ * recipient's own level, as before. Only a Primary Bot passes access on — an
  * ordinary bot's delegation still uses the recipient's setting. */
 function delegatedFullAccess(from: BotRecord, fromThreadId: string, target: BotRecord): boolean {
   return delegationInheritsFullAccess({
@@ -4520,11 +4528,11 @@ function grantDelegatedFullAccess(from: BotRecord, target: BotRecord, threadId: 
   store.appendMessage(threadId, {
     role: "bot",
     kind: "activity",
-    tool: { name: `Full access — delegated by ${from.name}, a Chief of Staff with Full access`, ok: true },
+    tool: { name: `Full access — delegated by ${from.name}, a Primary Bot with Full access`, ok: true },
   });
 }
 
-/** A room member's level for one turn. Work a Full-access Chief hands out
+/** A room member's level for one turn. Work a Full-access Primary Bot hands out
  * in a room runs Full for that turn: the room thread is shared, so the
  * level is not stored on it — it rides the handoff. */
 function roomTurnApprovalMode(bot: BotRecord, threadId: string, orchestration?: GroupTurnOrchestration): ApprovalMode {
@@ -4534,7 +4542,7 @@ function roomTurnApprovalMode(bot: BotRecord, threadId: string, orchestration?: 
   const source = handoff?.parentId ? roomHandoffs.nodes.get(handoff.parentId) : undefined;
   const from = source ? store.bot(source.botId) : undefined;
   // A member's bot on an organization server never runs Full, not even for
-  // a Full Chief's handoff (JC rule until per-owner containers).
+  // a Full Primary Bot's handoff (JC rule until per-owner containers).
   if (memberOwnedInOrg(bot)) return "ask";
   if (from && source && delegatedFullAccess(from, source.threadId, bot)) return "full";
   return approvalModeForTurn(bot, Boolean(orchestration?.roomHandoffId), threadId);
@@ -5042,7 +5050,7 @@ function groupIsWorking(group: GroupRecord): boolean {
   return Boolean(group.busyBotId) || Boolean(groupTurnOperations.get(group.id)?.size);
 }
 
-// The public and Chief room tools use the same synchronous validation and write.
+// The public and Primary Bot room tools use the same synchronous validation and write.
 // Keep authorization at each ingress; no internal caller gains public admin scope.
 function createChannel(value: unknown): GroupRecord {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
@@ -5224,7 +5232,7 @@ function updateChannel(groupId: string, value: unknown): GroupRecord {
   }
   // An admin's explicit "show this room to everyone its current bots allow":
   // the only way a room's floor widens (settleRoomFloor). Admin-only: a
-  // member's PATCH is limited to display fields, and a Chief's never has it.
+  // member's PATCH is limited to display fields, and a Primary Bot's never has it.
   const resetAudience = body.resetAudience !== undefined;
   if (resetAudience) {
     if (body.resetAudience !== true) throw Object.assign(new Error("resetAudience must be true"), { status: 400 });
@@ -6200,7 +6208,7 @@ function guardedRequestSnapshot(botId: string, threadId: string, sendId: string)
 }
 
 /** A durable completion fence, not a replay queue. If the process dies while
- * a Chief is awaiting results, its earlier handoff must not become a final. */
+ * a Primary Bot is awaiting results, its earlier handoff must not become a final. */
 function settleTrackedRequest(threadId: string): void {
   const owner = directRequestOwners.get(threadId);
   const bot = store.botByThread(threadId);
@@ -8938,7 +8946,7 @@ bus.subscribe((event: RuntimeEvent) => {
       const reply = lastReply.get(event.threadId) ?? "";
       lastReply.delete(event.threadId);
       // A run that broke — not one the person stopped, and not a routine's,
-      // which reports through its own failure path — is the Chief's to see.
+      // which reports through its own failure path — is the Primary Bot's to see.
       // A lazy computer-claim rejection already reported its failure and
       // interrupted the turn; Claude settles that interrupt as
       // exit_before_result, not "interrupted", so this generation's marker
@@ -9377,12 +9385,12 @@ function wakeDelegationSource(source: BotRecord, threadId: string, targetName: s
   dispatchDelegationWake(source.id, threadId, targetName, failureReason, routineRunId);
 }
 
-// ── incidents: a broken run reaches the Chief of Staff ──────────────────
+// ── incidents: a broken run reaches the Primary Bot ──────────────────
 // A failed, stalled or unstartable run used to leave one chip in the thread
 // it died in and nothing anywhere else; the person found it hours later,
 // from a phone, by opening the desktop and reading every thread. The team
-// already has a role for this — the Chief coordinates the section — so the
-// incident becomes a turn of the Chief's, in its "Team incidents" thread,
+// already has a role for this — the Primary Bot coordinates the section — so the
+// incident becomes a turn of the Primary Bot's, in its "Team incidents" thread,
 // with a link to the broken thread and retry_thread to act on it. The person
 // reads one place. Policy in server/incidents.ts.
 const incidentLedger = new IncidentLedger();
@@ -9428,7 +9436,7 @@ function reportIncident(input: { kind: IncidentKind; bot: BotRecord; threadId: s
       ...(group ? { group: { id: group.id, name: group.name } } : {}),
     }));
   };
-  // no Chief on duty, or the Chief itself broke: the person is next
+  // no Primary Bot on duty, or the Primary Bot itself broke: the person is next
   if (!chief) {
     tellThePerson();
     return;
@@ -12395,7 +12403,7 @@ async function deleteBotWithLifecycle(botId: string, revalidate: () => void = ()
         }
         const ownedBoatComputers = cloudInventory.instances.filter((instance) => instance.ownerBotId === bot.id);
 
-        // Revalidate a reviewed Chief-of-Staff request and establish the
+        // Revalidate a reviewed Primary Bot-of-Staff request and establish the
         // browser cleanup intent before the first irreversible provider
         // mutation. A stale review or damaged journal therefore leaves every
         // computer intact. Cross-provider rollback is impossible, so every
@@ -12466,7 +12474,7 @@ async function deleteBotWithLifecycle(botId: string, revalidate: () => void = ()
           localVmIdles.get(target.key)?.cancel();
           localVmIdles.delete(target.key);
           // Provider and local-computer teardown above can await for an
-          // arbitrary amount of time. A reviewed Chief deletion is bound to
+          // arbitrary amount of time. A reviewed Primary Bot deletion is bound to
           // the exact target profile it presented; re-check that receipt at
           // the final durable mutation boundary so a concurrent profile edit
           // cannot be erased under a stale approval.
@@ -12509,14 +12517,21 @@ const driverCapabilitiesFor = (instanceId: string) => {
   const instance = registry.get(instanceId);
   return instance ? { driverKind: instance.driverKind, agentsMcp: instance.adapter.capabilities.agentsMcp === true } : undefined;
 };
-/** A Chief may target one section peer; anyone else only itself. Shared by
+/** On an organization server a Primary Bot acts for its own person: it
+ * changes, sets up or deletes only bots of the same owner. A solo server has
+ * one owner. */
+function primaryBotSameOwner(from: { ownerUserId?: unknown }, target: { ownerUserId?: unknown }): boolean {
+  return IDENTITY.kind !== "perspicax" || effectiveBotOwner(from) === effectiveBotOwner(target);
+}
+/** A Primary Bot may target one section peer; anyone else only itself. Shared by
  * profile and default-model proposals, and re-checked at confirm. */
 const chiefPeerTargetRule = (noun: string) => (proposerBotId: string, targetBotId: string): string | null => {
   const proposer = store.bot(proposerBotId);
   const target = store.bot(targetBotId);
   if (!target) return "that bot no longer exists";
-  if (!proposer?.chiefOfStaff) return "only a section's Chief of Staff can change another bot's " + noun;
-  if (!canReachPeer(proposer, target)) return "that bot is not in a team this Chief is allowed to manage";
+  if (!proposer?.chiefOfStaff) return "only a Primary Bot can change another bot's " + noun;
+  if (!canReachPeer(proposer, target)) return "that bot is not in a team this Primary Bot is allowed to manage";
+  if (!primaryBotSameOwner(proposer, target)) return "that bot belongs to someone else; a Primary Bot changes only its own person's bots";
   return null;
 };
 /** Shared model validation for team-setup cards and propose_model: the
@@ -12539,14 +12554,14 @@ const profileRequests = new ProfileRequestService({
   store,
   autoApply: fullAccessForSource,
   canPersist: proposalPersistence,
-  // A Chief may change a section peer; anyone else only itself. Re-checked at confirm.
+  // A Primary Bot may change a section peer; anyone else only itself. Re-checked at confirm.
   validateTarget: chiefPeerTargetRule("profile"),
 });
 const modelRequests = new ModelRequestService({
   store,
   autoApply: fullAccessForSource,
   canPersist: proposalPersistence,
-  // Same authority rule as profile proposals: a Chief may name one section peer.
+  // Same authority rule as profile proposals: a Primary Bot may name one section peer.
   validateTarget: chiefPeerTargetRule("default model"),
   validateModel: validateModelProposal,
   driverCapabilities: driverCapabilitiesFor,
@@ -12555,14 +12570,15 @@ const tighteningRequests = new TighteningRequestService({
   store,
   autoApply: fullAccessForSource,
   canPersist: proposalPersistence,
-  // Same reach as a profile change: a Chief may tighten a section peer;
+  // Same reach as a profile change: a Primary Bot may tighten a section peer;
   // anyone else only itself. Re-checked at confirm.
   validateTarget: (proposerBotId, targetBotId) => {
     const proposer = store.bot(proposerBotId);
     const target = store.bot(targetBotId);
     if (!target) return "that bot no longer exists";
-    if (!proposer?.chiefOfStaff) return "only a section's Chief of Staff can change another bot's permissions";
-    if (!canReachPeer(proposer, target)) return "that bot is not in a team this Chief is allowed to manage";
+    if (!proposer?.chiefOfStaff) return "only a Primary Bot can change another bot's permissions";
+    if (!canReachPeer(proposer, target)) return "that bot is not in a team this Primary Bot is allowed to manage";
+    if (!primaryBotSameOwner(proposer, target)) return "that bot belongs to someone else; a Primary Bot changes only its own person's bots";
     return null;
   },
   // The card judges the effective mounts, so the snapshot resolves the same
@@ -12580,7 +12596,7 @@ const tighteningRequests = new TighteningRequestService({
 });
 const teamSetupTeams = () => [...new Set(["", ...readSections(), ...store.bots.map((bot) => sectionKey(bot.section)), ...store.groups.map((group) => sectionKey(group.section))])];
 const teamSetupRequests = new TeamSetupRequestService({
-  store, teams: teamSetupTeams, canAccessTeam, canPersist: proposalPersistence, maxBots: MAX_WORKSPACE_BOTS,
+  store, teams: teamSetupTeams, canAccessTeam, sameOwner: primaryBotSameOwner, canPersist: proposalPersistence, maxBots: MAX_WORKSPACE_BOTS,
   autoApply: fullAccessForSource,
   validateChange: (before, fields) => assertTeamComputerChangeIdle(before, { ...before, ...fields }),
   ownsThread: (botId, threadId) => Boolean(connectorThread(botId, threadId)),
@@ -12629,7 +12645,7 @@ function dispatchTeamSetupResume(entry: TeamSetupResumeEntry): void {
   const failed = (error: string) => {
     if (cancelled()) return;
     const current = store.messagesFor(request.threadId).find((item) => item.id === messageId);
-    if (current?.card) store.patchMessage(request.threadId, messageId, { card: { ...current.card, held: `The decision was recorded, but the Chief could not continue: ${redactSecretsInText(error).slice(0, 300)}` } });
+    if (current?.card) store.patchMessage(request.threadId, messageId, { card: { ...current.card, held: `The decision was recorded, but the Primary Bot could not continue: ${redactSecretsInText(error).slice(0, 300)}` } });
   };
   if (owner.group) {
     const groupId = owner.group.id;
@@ -12666,7 +12682,7 @@ async function resolveAndSendTeamSetup(res: ServerResponse, args: { botId: strin
   if (!card) return false;
   if (args.behavior === "allow" && !ownerReview) { json(res, 403, { error: "Approve team setup or deletion from the desktop app or a paired owner device. In a local browser, wait until every bot is idle." }); return true; }
   if (args.behavior === "allow" && !card.answered && !card.dismissed && !card.expired) {
-    // Confirmed Chief setup can move bots without the ordinary PATCH route.
+    // Confirmed Primary Bot setup can move bots without the ordinary PATCH route.
     // Keep that atomic Store operation behind the same shared-machine fence.
     for (const operation of card.teamSetupRequest!.operations) {
       const before = store.bot(operation.botId);
@@ -13207,7 +13223,7 @@ async function runGroupMemberTurn(
   }
   revokeInternalCapabilitiesForThread(threadId);
   spoken.add(botId);
-  // Must be the SAME resolver the readiness re-check uses below, or a Chief's
+  // Must be the SAME resolver the readiness re-check uses below, or a Primary Bot's
   // delegated Full elevation makes the two disagree by construction: every
   // such room turn then reads as "settings changed", retries once, and
   // settles as busy without ever dispatching.
@@ -17822,7 +17838,7 @@ if (sectionChannels) {
     deleteSection: (name) => (teamComputers.forSection(name) ? "Unassign this section's computer before deleting it" : store.deleteSection(name)),
     moveBots: (name, add, remove) => {
       const result = store.updateTeamMembers(name, add, remove);
-      return result.ok ? undefined : result.reason === "chief-conflict" ? "A section can have only one Chief of Staff." : "One or more bots are unavailable";
+      return result.ok ? undefined : "One or more bots are unavailable";
     },
     botExists: (id) => Boolean(store.bot(id)),
     botSection: (id) => sectionKey(store.bot(id)?.section) || undefined,
@@ -19586,7 +19602,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         const sender = internalSender;
         // title/description included so the caller can judge the team (who
         // does what, who has no job description yet). Every bot reads this
-        // now, not just the Chief, so it answers the same reachability
+        // now, not just the Primary Bot, so it answers the same reachability
         // question the roster does — same peers, same order.
         const bots = reachablePeers(store.bots, sender)
           .map((b) => {
@@ -20000,18 +20016,18 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       }
       if (method === "GET" && path === "/api/internal/team-setup-catalog") {
         let chief = store.bot(internalCapability.botId)!;
-        if (!chief.chiefOfStaff || chief.hidden) return json(res, 403, { error: "Only an active Chief may plan team setup" });
+        if (!chief.chiefOfStaff || chief.hidden) return json(res, 403, { error: "Only an active Primary Bot may plan team setup" });
         const instances = await registry.describe();
         requireActiveInternalCapability();
         chief = store.bot(internalCapability.botId)!;
-        if (!chief.chiefOfStaff || chief.hidden) return json(res, 403, { error: "Only an active Chief may plan team setup" });
+        if (!chief.chiefOfStaff || chief.hidden) return json(res, 403, { error: "Only an active Primary Bot may plan team setup" });
         return json(res, 200, {
           teams: teamSetupTeams().filter((name) => canAccessTeam(chief, name)),
           bots: store.bots.filter((bot) => !bot.hidden && canAccessTeam(chief, bot.section) && (bot.id === chief.id || peerAllowed(chief, bot)))
             .map((bot) => ({ id: bot.id, name: bot.name, title: bot.title, section: bot.section ?? "", modelSelection: bot.modelSelection, chiefOfStaff: Boolean(bot.chiefOfStaff) })),
           instances: instances.map((instance) => ({ instanceId: instance.instanceId, driverKind: instance.driverKind, displayName: instance.displayName,
             state: instance.snapshot.state, models: instance.models, effortLevels: instance.capabilities?.effortLevels ?? [] })),
-          scope: "Bot model defaults apply to groups and new threads; existing threads retain their models. Full Access applies requested team setup immediately; other modes return a review card. Existing unauthorized teams remain outside this Chief's scope.",
+          scope: "Bot model defaults apply to groups and new threads; existing threads retain their models. Full Access applies requested team setup immediately; other modes return a review card. Existing unauthorized teams remain outside this Primary Bot's scope.",
         });
       }
       if (method === "POST" && path === "/api/internal/team-setup-requests") {
@@ -20019,7 +20035,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         if (!parsed.success) return json(res, 400, { error: "Invalid team setup request" });
         const chief = store.bot(internalCapability.botId)!;
         const owner = connectorThread(chief.id, internalCapability.threadId);
-        if (!owner) return json(res, 403, { error: "Source conversation no longer belongs to the Chief" });
+        if (!owner) return json(res, 403, { error: "Source conversation no longer belongs to the Primary Bot" });
         const proposed = await teamSetupRequests.submit({ botId: chief.id, threadId: internalCapability.threadId, plan: parsed.data.plan,
           canCommit: () => internalCapabilityIsActive(internalCapability),
           ...(owner.group ? { from: { botId: chief.id, name: chief.name, color: chief.color } } : {}) });
@@ -20033,7 +20049,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         if (!parsed.success) return json(res, 400, { error: "An exact bot id and deletion reason are required" });
         const chief = store.bot(internalCapability.botId)!;
         const owner = connectorThread(chief.id, internalCapability.threadId);
-        if (!owner) return json(res, 403, { error: "Source conversation no longer belongs to the Chief" });
+        if (!owner) return json(res, 403, { error: "Source conversation no longer belongs to the Primary Bot" });
         const proposed = await teamSetupRequests.submitDeletion({ botId: chief.id, threadId: internalCapability.threadId, targetBotId: parsed.data.targetBotId, reason: parsed.data.reason,
           canCommit: () => internalCapabilityIsActive(internalCapability),
           ...(owner.group ? { from: { botId: chief.id, name: chief.name, color: chief.color } } : {}) });
@@ -20601,15 +20617,15 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           await new Promise((wake) => setTimeout(wake, 500));
         }
       }
-      // A Chief resumes a teammate's broken thread (server/incidents.ts): the
+      // A Primary Bot resumes a teammate's broken thread (server/incidents.ts): the
       // same thread, its conversation and files, one more turn, with a line
-      // saying who asked and why. Chief-only, for a teammate it can reach,
+      // saying who asked and why. Primary Bot-only, for a teammate it can reach,
       // never a room (coordinate there) and never a thread still running.
       if (method === "POST" && path === "/api/internal/retry-thread") {
         const body = await readInternalBody();
         const from = internalSender;
         const fromThreadId = internalCapability.threadId;
-        if (!from.chiefOfStaff || from.hidden) return json(res, 403, { error: "only a Chief of Staff can retry a teammate's thread" });
+        if (!from.chiefOfStaff || from.hidden) return json(res, 403, { error: "only a Primary Bot can retry a teammate's thread" });
         // `toBotId`/`toThreadId`: the guard above reads bare botId/threadId as
         // the caller's own identity, the way every internal route does.
         const botId = typeof body.toBotId === "string" ? body.toBotId : "";
@@ -20618,7 +20634,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         const target = store.bot(botId);
         if (!target || target.id === from.id) return json(res, 404, { error: "no such teammate" });
         if (target.hidden || !canAccessTeam(from, target.section) || !peerAllowed(from, target)) {
-          return json(res, 403, { error: "that bot is not on this Chief's team — call list_bots for the ones you can reach" });
+          return json(res, 403, { error: "that bot is not on this Primary Bot's team — call list_bots for the ones you can reach" });
         }
         if (store.groupByThread(threadId)) return json(res, 400, { error: "that is a room thread — use coordinate_bots in the room instead" });
         const task = store.taskByThread(target.id, threadId);
@@ -20628,7 +20644,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         }
         requireActiveInternalCapability();
         const unattended = isUnattended(from.id, fromThreadId);
-        const text = `[Retry requested by ${from.name}, your Chief of Staff, after this thread's last run stopped.${note ? ` Note from ${from.name}: ${note}` : ""} Continue the request above from where it stopped and finish it. If the same problem comes back, say exactly what is blocking and stop.]`;
+        const text = `[Retry requested by ${from.name}, your Primary Bot, after this thread's last run stopped.${note ? ` Note from ${from.name}: ${note}` : ""} Continue the request above from where it stopped and finish it. If the same problem comes back, say exactly what is blocking and stop.]`;
         try {
           await startTurn(target.id, text, { threadId, unattended, peerAsk: { botId: from.id, name: from.name, ...(unattended ? { unattended: true } : {}) }, speaker: peerSpeaker(from.id, fromThreadId) });
         } catch (error) {
@@ -20764,7 +20780,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           const destination = groupId ? store.group(groupId) : undefined;
           if (groupId && !destination) return json(res, 404, { error: "No such room; use list_room_targets." });
           // A slot may carry a teammate's name instead of its id — the
-          // roster shows both, list_bots shows both, and a Chief reading its
+          // roster shows both, list_bots shows both, and a Primary Bot reading its
           // prompt reaches for the name. A unique reachable name resolves;
           // anything else is refused with the id or name the caller sent
           // and the way to the real ids (peer-roster.ts).
@@ -21218,7 +21234,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           return json(res, 403, { error: "source conversation does not belong to sender" });
         }
         if (!chief.chiefOfStaff) {
-          return json(res, 403, { error: "only a section's Chief of Staff can create operator bots" });
+          return json(res, 403, { error: "only a Primary Bot can create operator bots" });
         }
         if (internalCapability.createdBots >= 4) {
           return json(res, 429, { error: "you can create at most 4 bots in one turn" });
@@ -21260,7 +21276,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         }
         // Discovery can yield; check current authority and capacity again before writing.
         if (store.bot(chief.id) !== chief || chief.hidden || !chief.chiefOfStaff || !connectorThread(chief.id, fromThreadId)) {
-          return json(res, 403, { error: "only an active Chief of Staff can create operator bots" });
+          return json(res, 403, { error: "only an active Primary Bot can create operator bots" });
         }
         if (internalCapability.createdBots >= 4) return json(res, 429, { error: "you can create at most 4 bots in one turn" });
         if (store.bots.length >= MAX_WORKSPACE_BOTS) return json(res, 409, { error: `this workspace is limited to ${MAX_WORKSPACE_BOTS} bots` });
@@ -21282,7 +21298,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
             section: chief.section,
             ownerUserId: creatingBotOwnerId(auth),
             ...(cwd !== undefined ? { cwd } : {}),
-            // exactly the Chief's audience: a restricted Chief never makes a bot everyone sees
+            // exactly the Primary Bot's audience: a restricted Primary Bot never makes a bot everyone sees
             ...(chief.visibility ? { visibility: chief.visibility } : {}),
           },
           { seedMessages: false },
@@ -21307,7 +21323,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         const body = await readInternalBody();
         const chief = store.bot(internalCapability.botId)!;
         if (chief.hidden || !chief.chiefOfStaff || !connectorThread(chief.id, internalCapability.threadId)) {
-          return json(res, 403, { error: "only an active section Chief of Staff can manage rooms" });
+          return json(res, 403, { error: "only an active Primary Bot can manage rooms" });
         }
         if (!body || typeof body !== "object" || Array.isArray(body)) {
           return json(res, 400, { error: "room request must be a JSON object" });
@@ -21318,7 +21334,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           return json(res, 403, { error: "peer approval is required; ask the user to make this room change" });
         }
         // Section labels are a permission boundary, not bot-owned organization.
-        // A Chief may not recruit excluded peers or acquire a foreign transcript.
+        // A Primary Bot may not recruit excluded peers or acquire a foreign transcript.
         const allowedIds = new Set([chief.id, ...reachablePeers(store.bots, chief).map((bot) => bot.id)]);
         const allowedRoster = (ids: string[]) => ids.includes(chief.id) && ids.every((id) => allowedIds.has(id));
         if (body.section !== undefined && (typeof body.section !== "string" || sectionKey(body.section) !== sectionKey(chief.section))) {
@@ -21342,7 +21358,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
             name: redactSecretsInText(parsed.data.name), memberIds, section: chief.section,
             setup: {
               bulletin: redactSecretsInText(parsed.data.bulletin ?? ""),
-              // The Chief leads; on Auto it is the fallback when the decision model is unsure.
+              // The Primary Bot leads; on Auto it is the fallback when the decision model is unsure.
               defaultResponder: deciderReady(cfg, "roomRouting") ? { kind: "auto", fallbackBotId: chief.id } : { kind: "member", botId: chief.id },
             },
           });
@@ -21374,7 +21390,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           }
           const next = action === "add_members" ? [...new Set([...room.memberIds, ...memberIds])]
             : action === "remove_members" ? room.memberIds.filter((id) => !memberIds.includes(id)) : memberIds;
-          if (!allowedRoster(next)) return json(res, 403, { error: "keep yourself in the room; only the user can remove its managing Chief" });
+          if (!allowedRoster(next)) return json(res, 403, { error: "keep yourself in the room; only the user can remove its managing Primary Bot" });
           patch.memberIds = next;
         }
         const updated = updateChannel(room.id, patch);
@@ -23625,8 +23641,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       }
       const result = store.updateTeamMembers(section, parsed.data.addBotIds, parsed.data.removeBotIds);
       if (!result.ok) return json(res, result.reason === "unavailable" ? 404 : 409, { error:
-        result.reason === "chief-conflict" ? "A team can have only one Chief of Staff. Change the Chief before moving this bot."
-          : result.reason === "membership-changed" ? "Team membership changed. Reopen the dialog and try again."
+        result.reason === "membership-changed" ? "Team membership changed. Reopen the dialog and try again."
           : "One or more bots are unavailable" });
       return json(res, 200, { sections: store.sections, bots: result.bots.map(wireBot) });
     }
@@ -23647,11 +23662,6 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       }
       const result = store.setBotsSection(botIds, name);
       if (!result.ok) {
-        if (result.reason === "chief-conflict") {
-          return json(res, 409, {
-            error: "A team can have only one Chief of Staff. Choose one Chief or use a team without one.",
-          });
-        }
         return json(res, 404, { error: "one or more bots are unavailable" });
       }
       return json(res, 200, { section: name, sections: store.sections, bots: result.bots.map(wireBot) });
@@ -23746,7 +23756,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       }
       if (settings.managedSections?.length) {
         if (!settings.chiefOfStaff || settings.managedSections.some(name => name !== "" && !store.sections.includes(name))) {
-          return json(res, 400, { error: "Only a Chief may manage existing additional teams" });
+          return json(res, 400, { error: "Only a Primary Bot may manage existing additional teams" });
         }
         if (body.acknowledgePeerScope !== true) return json(res, 400, { error: "Confirm additional team access (acknowledgePeerScope)" });
         if (auth.kind === "loopback" && !DESKTOP_MANAGED && store.bots.some(bot => bot.busy)) {
@@ -23855,9 +23865,9 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (settings.chiefOfStaff) {
         try {
           store.patchBot(bot.id, { managedSections: settings.managedSections ?? [] });
-          store.setChiefOfStaff(bot.id);
+          store.setPrimaryBot(bot.id);
         } catch {
-          warnings.push("Bot created; review its Chief of Staff setting before delegating work.");
+          warnings.push("Bot created; review its Primary Bot setting before delegating work.");
         }
       }
       for (const routine of createdRoutines) if (routine.enabled) {
@@ -24045,6 +24055,24 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       const visible = wireBot(updated);
       broadcast({ kind: "bot", bot: visible });
       return json(res, 200, { bot: visible });
+    }
+    // Make a bot its owner's Primary Bot (the star in the sidebar). One per
+    // person: the store hands the role over from the person's previous one.
+    // Only the owner chooses theirs; on a solo server the operator's admin
+    // sessions too. An organization admin has no override on someone else's.
+    m = path.match(/^\/api\/bots\/([\w-]+)\/primary$/);
+    if (m && method === "POST") {
+      const target = store.bot(m[1]);
+      if (!target) return json(res, 404, { error: "no such bot" });
+      const actor = actorPrincipalId(auth).trim().toLowerCase();
+      const owner = effectiveBotOwner(target);
+      const soloAdmin = IDENTITY.kind !== "perspicax" && (auth.kind !== "session" || auth.scopes.includes("admin"));
+      if (!soloAdmin && (!actor || owner !== actor)) {
+        return json(res, 403, { error: "Only this bot's owner can make it their Primary Bot", code: "not_bot_owner" });
+      }
+      const changed = store.setPrimaryBot(target.id);
+      if (changed === null) return json(res, 404, { error: "no such bot" });
+      return json(res, 200, { bot: wireBot(store.bot(target.id)!), changed: changed.map((bot) => bot.id) });
     }
     m = path.match(/^\/api\/bots\/([\w-]+)$/);
     if (m && method === "PATCH") {
@@ -24296,7 +24324,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         patch.cwd = checked.cwd ?? undefined;
       }
       if (body.hidden === true && existingBot?.chiefOfStaff && body.chiefOfStaff !== false) {
-        return json(res, 400, { error: "choose another Chief of Staff before hiding this bot" });
+        return json(res, 400, { error: "choose another Primary Bot before hiding this bot" });
       }
       // the permission fields decide what runs unattended, so they are
       // type-checked rather than copied through: a string alwaysAllow would
@@ -24428,18 +24456,18 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         const sections = [...new Set(parsed.data)];
         const newSections = sections.filter(section => !(existingBot?.managedSections ?? []).includes(section));
         if (newSections.some(section => section !== "" && !store.sections.includes(section))) {
-          return json(res, 400, { error: "Create the named team before giving a Chief access to it" });
+          return json(res, 400, { error: "Create the named team before giving a Primary Bot access to it" });
         }
         if (sections.length && !(body.chiefOfStaff === true || (existingBot?.chiefOfStaff && body.chiefOfStaff !== false))) {
-          return json(res, 400, { error: "Only a Chief of Staff can be given access to additional teams" });
+          return json(res, 400, { error: "Only a Primary Bot can be given access to additional teams" });
         }
         if (newSections.length && body.acknowledgePeerScope !== true) {
-          return json(res, 400, { error: "Confirm which additional teams this Chief may work with (acknowledgePeerScope)" });
+          return json(res, 400, { error: "Confirm which additional teams this Primary Bot may work with (acknowledgePeerScope)" });
         }
         patch.managedSections = sections;
       }
       // Removing the role revokes its grants, rather than leaving dormant
-      // authority to return if this bot is elected Chief again later.
+      // authority to return if this bot is elected Primary Bot again later.
       if (body.chiefOfStaff === false) patch.managedSections = [];
       // Who may see this bot on a workspace several people share
       // (bot-visibility.ts): "everyone" (the default), "admins", or
@@ -24518,11 +24546,6 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           closeOpenApprovals(groupTurn.threadId);
         }
       }
-      const chiefMovedSections =
-        Boolean(existingBot?.chiefOfStaff) &&
-        body.chiefOfStaff !== false &&
-        section !== undefined &&
-        sectionKey(existingBot?.section) !== sectionKey(section);
       let bot: BotRecord | null;
       const freshBrowserBot = store.bot(m[1]);
       // Connector validation and runtime revocation can yield after the first
@@ -24592,10 +24615,9 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           void forgetTemporaryBrowser(bot.id).catch((error) => console.warn("temporary browser cleanup failed", error));
         }
       }
-      const chiefChanges =
-        body.chiefOfStaff === true || chiefMovedSections
-          ? store.setChiefOfStaff(bot.id)
-          : [];
+      // A Primary Bot is one per person, not per section: moving it to
+      // another team keeps the role.
+      const chiefChanges = body.chiefOfStaff === true ? store.setPrimaryBot(bot.id) : [];
       if (chiefChanges === null) return json(res, 404, { error: "no such bot" });
       if (beforeProfile) {
         const now = store.bot(bot.id)!;

@@ -33,7 +33,7 @@ export async function deliverFullAccessApproval(
 /** Full access is the person's explicit grant to this receiving bot, including
  * delegated work. It never inherits the sender's mode or elevates another bot
  * — with the one exception below (delegationInheritsFullAccess), applied
- * where a Chief's delegated thread is created rather than here.
+ * where a Primary Bot's delegated thread is created rather than here.
  * Custom is a provider-config choice rather than an app Full-access grant, so
  * peer-started Custom turns use Auto. Provider support and grant confirmation
  * are checked by the caller. */
@@ -42,9 +42,9 @@ export function approvalModeForOrigin(mode: ApprovalMode, origin: { peerInitiate
   return mode;
 }
 
-/** Whether work a bot hands to a teammate runs with Full access. Only a Chief
+/** Whether work a bot hands to a teammate runs with Full access. Only a Primary Bot
  * of Staff passes access on, and only the Full access the person gave it for
- * the conversation it is delegating from: the Chief exists to get the team's
+ * the conversation it is delegating from: the Primary Bot exists to get the team's
  * work done without the person answering every card, and a teammate stopping
  * that work to ask defeats the grant. The recipient's engine has to implement
  * Full, or the work keeps the recipient's own level. A bot never elevates

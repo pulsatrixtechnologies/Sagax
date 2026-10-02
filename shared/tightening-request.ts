@@ -1,7 +1,7 @@
 /**
  * Durable payload carried by a tightening card (propose_tightening).
  *
- * Authority reductions a bot may propose for itself or (for a Chief) a
+ * Authority reductions a bot may propose for itself or (for a Primary Bot) a
  * section peer. Direction is enforced by shape: the intents cannot express
  * an escalation — approvalMode targets stop below full and custom, the
  * booleans only carry their tightening value, and the list fields only
@@ -54,7 +54,7 @@ export interface TighteningRequestCardData {
   /** The proposing conversation; authority is fixed here. */
   botId: string;
   threadId: string;
-  /** Whose authority is reduced: the proposer, or a section peer named by a Chief. */
+  /** Whose authority is reduced: the proposer, or a section peer named by a Primary Bot. */
   targetBotId: string;
   targetName: string;
   createdAt: number;

@@ -1,4 +1,4 @@
-// propose_model: a bot (or a Chief, for a section peer) proposes changing
+// propose_model: a bot (or a Primary Bot, for a section peer) proposes changing
 // one bot's default engine/model. Mirrors profile-requests.ts — same card
 // shape, same propose/confirm split, same fail-closed confirm — but the
 // change commits through Store.applyModelDefault, which stamps tasks
@@ -53,7 +53,7 @@ export interface ModelRequestServiceOptions {
   /** Server-owned effective mode of the source conversation, never request input. */
   autoApply?: (botId: string, threadId: string) => boolean;
   canPersist?: (botId: string, threadId: string) => { ok: true } | { ok: false; status: number; error: string };
-  /** Chief targeting another bot: returns a refusal sentence or null. Checked at propose AND confirm. */
+  /** Primary Bot targeting another bot: returns a refusal sentence or null. Checked at propose AND confirm. */
   validateTarget?: (proposerBotId: string, targetBotId: string) => string | null;
   /** Full model validation (structure, catalog, approval compatibility): a refusal sentence or null. Re-run at confirm. */
   validateModel?: (selection: ModelSelection, current: BotRecord) => string | null;
@@ -263,7 +263,7 @@ export class ModelRequestService {
     }
     if (card.answered) return { claimed: true, state: "already_settled", behavior: card.answered };
     // Cross-bot cards re-check authority on every allow, before any settle
-    // path can run: a proposer who lost Chief rights must not confirm, even
+    // path can run: a proposer who lost Primary Bot rights must not confirm, even
     // when the requested selection is already live. Card level, not inside
     // the try, so the crash-recovery catch cannot recast a refusal as an
     // applied change.
