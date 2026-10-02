@@ -21,6 +21,10 @@ public struct BotPatch: Encodable, Equatable, Sendable {
     public var soul: String?
     public var title: String?
     public var name: String?
+    /// The character and its look; a client session may set it (display field).
+    public var mascotLook: MascotLook?
+    /// The owl's special edition.
+    public var mascotSkin: MascotSkin?
 
     public init(
         pinned: Bool? = nil,
@@ -28,7 +32,9 @@ public struct BotPatch: Encodable, Equatable, Sendable {
         notifications: Bool? = nil,
         soul: String? = nil,
         title: String? = nil,
-        name: String? = nil
+        name: String? = nil,
+        mascotLook: MascotLook? = nil,
+        mascotSkin: MascotSkin? = nil
     ) {
         self.pinned = pinned
         self.color = color
@@ -36,10 +42,13 @@ public struct BotPatch: Encodable, Equatable, Sendable {
         self.soul = soul
         self.title = title
         self.name = name
+        self.mascotLook = mascotLook
+        self.mascotSkin = mascotSkin
     }
 
     public var isEmpty: Bool {
         pinned == nil && color == nil && notifications == nil && soul == nil && title == nil && name == nil
+            && mascotLook == nil && mascotSkin == nil
     }
 }
 
@@ -152,9 +161,12 @@ public struct AuthSession: Decodable, Equatable, Sendable {
     public var name: String?
     public var principalId: String?
     public var role: String?
+    /// The person's photo, when the server knows one: an absolute URL or an
+    /// app-owned `/api/attachments/...` path.
+    public var avatarUrl: String?
 
     private enum CodingKeys: String, CodingKey {
-        case kind, id, label, scopes, expiresAt, environmentId, email, owner, name, principalId, role
+        case kind, id, label, scopes, expiresAt, environmentId, email, owner, name, principalId, role, avatarUrl, picture
     }
 
     public init(from decoder: Decoder) throws {
@@ -171,6 +183,8 @@ public struct AuthSession: Decodable, Equatable, Sendable {
         name = try? values.decodeIfPresent(String.self, forKey: .name)
         principalId = try? values.decodeIfPresent(String.self, forKey: .principalId)
         role = try? values.decodeIfPresent(String.self, forKey: .role)
+        let avatar = (try? values.decodeIfPresent(String.self, forKey: .avatarUrl)) ?? (try? values.decodeIfPresent(String.self, forKey: .picture))
+        avatarUrl = avatar.flatMap { $0.trimmingCharacters(in: .whitespaces).isEmpty ? nil : $0 }
     }
 
     public var isAdmin: Bool { scopes.contains("admin") }

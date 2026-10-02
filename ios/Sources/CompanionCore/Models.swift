@@ -548,6 +548,9 @@ public struct Bot: Codable, Hashable, Identifiable, Sendable {
     public var avatarZoom: Double?
     public var avatarFocusX: Double?
     public var avatarFocusY: Double?
+    /// The first line of the bot's standing instructions, for search
+    /// subtitles. Older servers omit it.
+    public var instructionsLead: String?
 
     /// The look the renderers draw: the stored one, or the owl.
     public var resolvedMascotLook: CompleteMascotLook {
@@ -744,6 +747,8 @@ public struct Room: Codable, Hashable, Identifiable, Sendable {
     public var tasks: [BotTask]?
     public var messages: [Message]?
     public var hasMore: Bool?
+    /// Pinned to the home row. Older servers have no group pins and omit it.
+    public var pinned: Bool?
 }
 
 // MARK: - Responses
@@ -762,13 +767,17 @@ public struct Fleet: Decodable, Sendable {
     /// Held sends for every bot thread, the same snapshot the
     /// bot.queued frames carry. Older computers omit it.
     public var botQueuedMessages: [String: [QueuedSend]]?
+    /// The sidebar sections in the server's order (`store.sections`), the
+    /// order the desktop shows them in. Older computers omit it.
+    public var sections: [String]?
 
-    private enum CodingKeys: String, CodingKey { case bots, groups, botQueuedMessages }
+    private enum CodingKeys: String, CodingKey { case bots, groups, botQueuedMessages, sections }
 
-    public init(bots: [Bot], groups: [Room], botQueuedMessages: [String: [QueuedSend]]? = nil) {
+    public init(bots: [Bot], groups: [Room], botQueuedMessages: [String: [QueuedSend]]? = nil, sections: [String]? = nil) {
         self.bots = bots
         self.groups = groups
         self.botQueuedMessages = botQueuedMessages
+        self.sections = sections
     }
 
     public init(from decoder: Decoder) throws {
@@ -781,6 +790,7 @@ public struct Fleet: Decodable, Sendable {
             [String: [Lossy<QueuedSend>]].self,
             forKey: .botQueuedMessages
         ))??.mapValues { list in list.compactMap(\.value) }
+        sections = (try? container.decodeIfPresent([String].self, forKey: .sections)) ?? nil
     }
 }
 
