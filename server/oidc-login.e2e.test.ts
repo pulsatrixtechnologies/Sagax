@@ -1,6 +1,6 @@
 // "Sign in with Pulsatrix" through the real server, against a local fake
 // OpenID Connect provider (server/testing/fake-oidc-provider.ts) shaped like
-// Perspicax slice 1. The server runs with OMB_IDENTITY=perspicax:
+// Perspicax slice 1. The server runs with SAGAX_IDENTITY=perspicax:
 //
 //   - the environment descriptor advertises the sign-in and no email codes;
 //   - /auth/oidc/start -> provider -> /auth/oidc/callback sets a Sagax
@@ -83,10 +83,10 @@ async function start() {
     cwd: join(SERVER_DIR, ".."),
     env: {
       ...(process.env.PATH ? { PATH: process.env.PATH } : {}),
-      HOME: home, USERPROFILE: home, OMB_PORT: String(PORT), OMB_WEBHOOK_PORT: String(PORT + 1),
-      OMB_IDENTITY: "perspicax",
-      OMB_PERSPICAX_ISSUER: idp.issuer,
-      OMB_PUBLIC_URL: BASE,
+      HOME: home, USERPROFILE: home, SAGAX_PORT: String(PORT), SAGAX_WEBHOOK_PORT: String(PORT + 1),
+      SAGAX_IDENTITY: "perspicax",
+      SAGAX_PERSPICAX_ISSUER: idp.issuer,
+      SAGAX_PUBLIC_URL: BASE,
     },
     stdio: ["ignore", "pipe", "pipe"],
   });
@@ -104,7 +104,7 @@ async function start() {
   }
 }
 
-posixOnly("Sign in with Pulsatrix (OMB_IDENTITY=perspicax)", () => {
+posixOnly("Sign in with Pulsatrix (SAGAX_IDENTITY=perspicax)", () => {
   beforeAll(async () => {
     chmodSync(FAKE_CLI, 0o755);
     idp = await startFakeOidcProvider({ user: ADMIN });

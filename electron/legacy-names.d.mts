@@ -4,10 +4,12 @@ type Fs = typeof import("node:fs");
 export declare const ENV_PREFIX: "SAGAX_";
 export declare const LEGACY_ENV_PREFIX: "OMB_";
 export declare const LEGACY_ENV_PREFIXES: readonly string[];
-export declare const ENV_BRIDGED_MARKER: "OMB_INTERNAL_ENV_BRIDGED";
+export declare const ENV_BRIDGED_MARKER: "SAGAX_INTERNAL_ENV_BRIDGED";
 export declare function legacyEnvName(name: string): string;
 export declare function settingOfLegacyEnv(variable: string): string | null;
 export declare function readEnv(name: string, env?: Env): string | undefined;
+export declare function currentEnvName(name: string): string;
+export declare function readEnvName(name: string | undefined, env?: Env): string | undefined;
 export declare function bridgeLegacyEnv(env?: Env, options?: { warn?: (line: string) => void }): string[];
 
 export declare const DATA_FOLDER: ".sagax";

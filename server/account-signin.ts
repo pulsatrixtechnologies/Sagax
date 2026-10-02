@@ -21,8 +21,8 @@ export interface SignInAllowList {
   members: string[];
 }
 
-export const ADMIN_EMAILS_ENV = "OMB_SIGNIN_EMAILS";
-export const MEMBER_EMAILS_ENV = "OMB_SIGNIN_MEMBER_EMAILS";
+export const ADMIN_EMAILS_ENV = "SAGAX_SIGNIN_EMAILS";
+export const MEMBER_EMAILS_ENV = "SAGAX_SIGNIN_MEMBER_EMAILS";
 
 /** Commas, spaces or newlines between entries; case does not matter. */
 export function parseAllowList(value: string | undefined | null): string[] {
@@ -69,7 +69,7 @@ export function createEmailSignIn(options: {
   const controlPlane = (): ControlPlaneClient => {
     if (client) return client;
     const url = resolveCompanionControlPlaneURL({ isPackaged: true, environment: env });
-    if (!url) throw new Error("OMB_CONTROL_PLANE_URL is set but is not an https address");
+    if (!url) throw new Error("SAGAX_CONTROL_PLANE_URL is set but is not an https address");
     client = createControlPlaneClient({ baseURL: url, fetchImpl: options.fetchImpl });
     return client;
   };

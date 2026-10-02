@@ -24,7 +24,7 @@ const api = async (method: string, path: string, body?: unknown) => {
 };
 const start = async () => {
   child = spawn(process.execPath, [join(root, "server", "index.ts")], {
-    cwd: root, env: { ...process.env, HOME: home, USERPROFILE: home, OMB_PORT: String(port) },
+    cwd: root, env: { ...process.env, HOME: home, USERPROFILE: home, SAGAX_PORT: String(port) },
     stdio: ["ignore", "pipe", "pipe"],
   });
   stderr = "";

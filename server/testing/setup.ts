@@ -1,5 +1,5 @@
 // Vitest setup — every test file gets a throwaway home directory so
-// DATA_DIR (~/.openmausbot) never touches the real one. os.homedir()
+// DATA_DIR (~/.sagax) never touches the real one. os.homedir()
 // reads HOME (POSIX) / USERPROFILE (Windows) at call time, and this file
 // runs before any test module imports server/config.ts.
 import { mkdtempSync } from "node:fs";
@@ -8,13 +8,15 @@ import { join } from "node:path";
 import { afterAll, afterEach } from "vitest";
 
 import { removeTempDir } from "./cleanup.ts";
+// Old names in the developer's shell (OMB_DATA_DIR) become SAGAX_* first, so
+// the deletes below catch them too.
+import "../../electron/legacy-env-boot.mjs";
 
 const home = mkdtempSync(join(tmpdir(), "omb-test-home-"));
 process.env.HOME = home;
 process.env.USERPROFILE = home;
-// OMB_DATA_DIR is an intentional production override, but tests must never
+// SAGAX_DATA_DIR is an intentional production override, but tests must never
 // let it escape the throwaway home they are about to delete.
-delete process.env.OMB_DATA_DIR;
 delete process.env.SAGAX_DATA_DIR;
 // Do not let a developer's Hermes global config path leak into per-test homes.
 delete process.env.HERMES_HOME;
@@ -23,7 +25,7 @@ delete process.env.HERMES_HOME;
 // Named explicitly all the same: the device tests delete this directory
 // wholesale, and "it is safe because of a line in another file" is not the
 // footing that delete should stand on.
-process.env.OMB_COMPANION_DIR = join(home, ".openmausbot-companion");
+process.env.SAGAX_COMPANION_DIR = join(home, ".openmausbot-companion");
 
 // Product code follows navigator.language, which makes English assertions
 // depend on the developer or CI host locale. Keep the shared default stable;

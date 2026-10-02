@@ -99,10 +99,10 @@ beforeAll(async () => {
       ...(process.env.SystemRoot ? { SystemRoot: process.env.SystemRoot } : {}),
       HOME: home,
       USERPROFILE: home,
-      OMB_PORT: String(port),
-      OMB_WEBHOOK_PORT: String(port + 1),
-      OMB_STATIC_DIR: staticDir,
-      OMB_TEST_INTERNAL_CAPABILITY_KEY: TEST_CAPABILITY_KEY,
+      SAGAX_PORT: String(port),
+      SAGAX_WEBHOOK_PORT: String(port + 1),
+      SAGAX_STATIC_DIR: staticDir,
+      SAGAX_TEST_INTERNAL_CAPABILITY_KEY: TEST_CAPABILITY_KEY,
     },
     stdio: ["ignore", "pipe", "pipe"],
   });
@@ -287,7 +287,7 @@ describe("chat rooms wait for a member busy elsewhere", { timeout: 45_000 }, () 
       const readToken = (): string | undefined => {
         try {
           const dump = JSON.parse(readFileSync(penDump, "utf8"));
-          const value: unknown = dump?.mcpConfig?.mcpServers?.agents?.env?.OMB_COMMS_TOKEN;
+          const value: unknown = dump?.mcpConfig?.mcpServers?.agents?.env?.SAGAX_COMMS_TOKEN;
           return typeof value === "string" && value ? value : undefined;
         } catch {
           // not written yet, or mid-write

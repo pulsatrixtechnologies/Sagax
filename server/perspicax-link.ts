@@ -29,11 +29,11 @@ const SERVER_ID = /^[0-9a-z]{1,64}$/;
 const LINK_KEYS = ["client_id", "issuer", "link_token", "origin", "server_id", "version"];
 
 export interface LinkExpectation {
-  /** OMB_PERSPICAX_ISSUER, as configured. */
+  /** SAGAX_PERSPICAX_ISSUER, as configured. */
   issuer: string;
-  /** OMB_PUBLIC_URL, this server's public origin. */
+  /** SAGAX_PUBLIC_URL, this server's public origin. */
   publicOrigin: string;
-  /** The OIDC client id (OMB_OIDC_CLIENT_ID, default pulsa-bot). */
+  /** The OIDC client id (SAGAX_OIDC_CLIENT_ID, default pulsa-bot). */
   clientId: string;
 }
 
@@ -213,9 +213,9 @@ export type ExchangeResult =
   | { ok: false; error: "not_held" | "subject" | "link" | "rate_limited" | "unreachable" };
 
 export interface PerspicaxDirectoryOptions {
-  /** OMB_PERSPICAX_ISSUER: the subjects' `iss`. */
+  /** SAGAX_PERSPICAX_ISSUER: the subjects' `iss`. */
   issuer: string;
-  /** Where the directory is fetched: OMB_PERSPICAX_INTERNAL_URL, else the
+  /** Where the directory is fetched: SAGAX_PERSPICAX_INTERNAL_URL, else the
    * issuer's origin. */
   serverBase: string;
   linkFile: string;
@@ -804,12 +804,12 @@ export class PerspicaxDirectory {
   }
 }
 
-/** OMB_PERSPICAX_DIRECTORY_SECONDS: an integer from 5 to 3600, default 300. */
+/** SAGAX_PERSPICAX_DIRECTORY_SECONDS: an integer from 5 to 3600, default 300. */
 export function directoryIntervalMs(value: string | undefined): number {
   if (value === undefined || value.trim() === "") return 300_000;
   const parsed = Number(value);
   if (!Number.isInteger(parsed) || parsed < 5 || parsed > 3600) {
-    throw new Error("OMB_PERSPICAX_DIRECTORY_SECONDS must be a whole number of seconds from 5 to 3600.");
+    throw new Error("SAGAX_PERSPICAX_DIRECTORY_SECONDS must be a whole number of seconds from 5 to 3600.");
   }
   return parsed * 1000;
 }

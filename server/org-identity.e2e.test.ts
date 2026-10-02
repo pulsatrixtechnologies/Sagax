@@ -52,7 +52,7 @@ async function start() {
     env: {
       ...(process.env.PATH ? { PATH: process.env.PATH } : {}),
       ...(process.env.SystemRoot ? { SystemRoot: process.env.SystemRoot } : {}),
-      HOME: home, USERPROFILE: home, OMB_PORT: String(PORT), OMB_WEBHOOK_PORT: String(PORT + 1),
+      HOME: home, USERPROFILE: home, SAGAX_PORT: String(PORT), SAGAX_WEBHOOK_PORT: String(PORT + 1),
     },
     stdio: ["ignore", "pipe", "pipe"],
   });
@@ -289,9 +289,9 @@ posixOnly("slice 8: a solo server keeps email sign-in, without an organization",
       env: {
         ...(process.env.PATH ? { PATH: process.env.PATH } : {}),
         ...(process.env.SystemRoot ? { SystemRoot: process.env.SystemRoot } : {}),
-        HOME: home2, USERPROFILE: home2, OMB_PORT: String(port), OMB_WEBHOOK_PORT: String(port + 1),
+        HOME: home2, USERPROFILE: home2, SAGAX_PORT: String(port), SAGAX_WEBHOOK_PORT: String(port + 1),
         // Mail is captured, never sent (server/index.ts test seam).
-        OMB_MAIL_CAPTURE_FILE: join(home2, "mail.jsonl"), OMB_TEST_SEAMS: "1", NODE_ENV: "test",
+        SAGAX_MAIL_CAPTURE_FILE: join(home2, "mail.jsonl"), SAGAX_TEST_SEAMS: "1", NODE_ENV: "test",
       },
       stdio: ["ignore", "pipe", "pipe"],
     });

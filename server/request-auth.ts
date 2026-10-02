@@ -91,8 +91,8 @@ export function serviceAllowed(method: string, path: string): boolean {
  *
  * A packaged desktop keeps `owner`: its mutations already need Electron's
  * per-launch capability, and only its owner uses the machine. Elsewhere the
- * operator may set OMB_LOOPBACK_TRUST=owner|service. Without it a hosted
- * workspace (any OMB_ADMIN_* setting, even an incomplete one) defaults to
+ * operator may set SAGAX_LOOPBACK_TRUST=owner|service. Without it a hosted
+ * workspace (any SAGAX_ADMIN_* setting, even an incomplete one) defaults to
  * `service` — shared-workspace Full access is only honoured there, so it needs
  * no rule of its own — and a headless self-hosted server keeps `owner`. A
  * value that is neither fails closed. */
@@ -105,25 +105,25 @@ export function resolveLoopbackTrust(input: {
    * machine (a bot's shell). Always `service`, whatever the setting. */
   cloudHome?: boolean;
 }): { trust: LoopbackTrust; reason: string; warning?: string } {
-  const raw = (input.env ?? process.env).OMB_LOOPBACK_TRUST;
+  const raw = (input.env ?? process.env).SAGAX_LOOPBACK_TRUST;
   const requested = raw?.trim().toLowerCase();
   if (input.cloudHome) {
-    return { trust: "service", reason: "OMB Cloud home", ...(raw !== undefined && requested !== "service" ? { warning: "OMB_LOOPBACK_TRUST is ignored on an OMB Cloud home: a local request is always a service" } : {}) };
+    return { trust: "service", reason: "OMB Cloud home", ...(raw !== undefined && requested !== "service" ? { warning: "SAGAX_LOOPBACK_TRUST is ignored on an OMB Cloud home: a local request is always a service" } : {}) };
   }
   if (input.desktopManaged) {
-    return { trust: "owner", reason: "desktop app", ...(raw !== undefined ? { warning: "OMB_LOOPBACK_TRUST is ignored in the desktop app" } : {}) };
+    return { trust: "owner", reason: "desktop app", ...(raw !== undefined ? { warning: "SAGAX_LOOPBACK_TRUST is ignored in the desktop app" } : {}) };
   }
   if (requested === "owner" || requested === "service") {
     return {
       trust: requested,
-      reason: "OMB_LOOPBACK_TRUST",
+      reason: "SAGAX_LOOPBACK_TRUST",
       ...(requested === "owner" && input.hostedWorkspace
-        ? { warning: "OMB_LOOPBACK_TRUST=owner on a shared workspace: every bot's shell can change settings and approve cards as the owner" }
+        ? { warning: "SAGAX_LOOPBACK_TRUST=owner on a shared workspace: every bot's shell can change settings and approve cards as the owner" }
         : {}),
     };
   }
   if (raw !== undefined && requested !== "") {
-    return { trust: "service", reason: "OMB_LOOPBACK_TRUST", warning: `OMB_LOOPBACK_TRUST="${raw.replace(/[^\w.-]/g, "").slice(0, 40)}" is not owner or service; using service` };
+    return { trust: "service", reason: "SAGAX_LOOPBACK_TRUST", warning: `SAGAX_LOOPBACK_TRUST="${raw.replace(/[^\w.-]/g, "").slice(0, 40)}" is not owner or service; using service` };
   }
   if (input.hostedWorkspace) return { trust: "service", reason: "hosted workspace" };
   return { trust: "owner", reason: "self-hosted default" };
@@ -306,7 +306,7 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   // with the feature off these paths are as unlisted as any other, so a
   // client session is refused exactly the way an unknown route refuses it.
   { methods: ["POST"], path: /^\/api\/shared-computers\/(?:connect|[\w-]+\/(?:poll|lease|result|disconnect))$/, feature: "sharedComputers" },
-  // Organization server (OMB_IDENTITY=perspicax): a member pairs their own
+  // Organization server (SAGAX_IDENTITY=perspicax): a member pairs their own
   // phone or computer. The handler binds the code to the member's person and
   // clamps its scopes to the session's own.
   { methods: ["POST"], path: /^\/api\/auth\/pairing$/, feature: "orgPairing" },
@@ -395,7 +395,7 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   // The organization (Perspicax on an organization server; a solo server
   // answers 404 no_organization).
   { methods: ["GET"], path: /^\/api\/org$/ },
-  // Organization server (OMB_IDENTITY=perspicax): the people a bot owner may
+  // Organization server (SAGAX_IDENTITY=perspicax): the people a bot owner may
   // share with, from the Perspicax directory. Names, logins and addresses
   // only. PATCH /api/org/settings stays admin.
   { methods: ["GET"], path: /^\/api\/org\/directory$/, feature: "orgDirectory" },

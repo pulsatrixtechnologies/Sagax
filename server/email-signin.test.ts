@@ -1,7 +1,7 @@
 // End to end: a hosted server with a sign-in allow-list lets a remote browser
 // sign in with a code the server emails itself (server/account-signin.ts,
 // server/email-otp.ts) and ends up with the same cookie session a pairing
-// code would give. OMB_MAIL_CAPTURE_FILE (server/index.ts) stands in for a
+// code would give. SAGAX_MAIL_CAPTURE_FILE (server/index.ts) stands in for a
 // real mail provider: the spawned server appends each message it would have
 // sent as a JSON line instead, and this file reads the code back from there.
 import { spawn, type ChildProcess } from "node:child_process";
@@ -127,15 +127,15 @@ beforeAll(async () => {
       ...(process.env.SystemRoot ? { SystemRoot: process.env.SystemRoot } : {}),
       HOME: home,
       USERPROFILE: home,
-      OMB_PORT: String(PORT),
-      OMB_WEBHOOK_PORT: String(PORT + 1),
-      OMB_STATIC_DIR: staticDir,
-      OMB_PUBLIC_URL: `https://${HOST}`,
-      OMB_ENVIRONMENT_LABEL: "agentada",
-      OMB_BROWSER_CONNECTION: join(home, "browser-test-connection.json"),
-      OMB_MAIL_CAPTURE_FILE: captureFile,
-      OMB_TEST_SEAMS: "1",
-      OMB_SSE_HEARTBEAT_MS: "50",
+      SAGAX_PORT: String(PORT),
+      SAGAX_WEBHOOK_PORT: String(PORT + 1),
+      SAGAX_STATIC_DIR: staticDir,
+      SAGAX_PUBLIC_URL: `https://${HOST}`,
+      SAGAX_ENVIRONMENT_LABEL: "agentada",
+      SAGAX_BROWSER_CONNECTION: join(home, "browser-test-connection.json"),
+      SAGAX_MAIL_CAPTURE_FILE: captureFile,
+      SAGAX_TEST_SEAMS: "1",
+      SAGAX_SSE_HEARTBEAT_MS: "50",
     },
     stdio: ["ignore", "pipe", "pipe"],
   });

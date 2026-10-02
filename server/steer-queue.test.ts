@@ -678,7 +678,7 @@ describe("steer-queue e2e (fake ACP fleet)", () => {
     const env: NodeJS.ProcessEnv = {
       HOME: home,
       USERPROFILE: home,
-      OMB_PORT: String(PORT),
+      SAGAX_PORT: String(PORT),
     };
     if (process.env.PATH) env.PATH = process.env.PATH;
     // Without SystemRoot, winsock fails to initialize in the child.

@@ -92,7 +92,7 @@ posixOnly("work digest e2e (every fake engine)", () => {
     };
     writeFileSync(join(home, ".sagax", "config.json"), JSON.stringify({ instances }));
 
-    const env: NodeJS.ProcessEnv = { HOME: home, USERPROFILE: home, OMB_PORT: String(PORT) };
+    const env: NodeJS.ProcessEnv = { HOME: home, USERPROFILE: home, SAGAX_PORT: String(PORT) };
     if (process.env.PATH) env.PATH = process.env.PATH;
     child = spawn(process.execPath, [join(SERVER_DIR, "index.ts")], {
       cwd: join(SERVER_DIR, ".."),

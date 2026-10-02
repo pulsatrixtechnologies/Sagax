@@ -49,7 +49,7 @@ async function api(method: string, path: string, options: { body?: unknown; toke
 
 /** The Admin's signed pairing: it only works when the server got the secret. */
 async function adminPairing(): Promise<string> {
-  const body = JSON.stringify({ label: "OpenMausBot app (Cloud)", ttlSeconds: 300 });
+  const body = JSON.stringify({ label: "Sagax app (Cloud)", ttlSeconds: 300 });
   const timestamp = String(Math.floor(Date.now() / 1000)), nonce = randomBytes(16).toString("base64url");
   const response = await fetch(`${base}/api/cloud/pairing`, { method: "POST", headers: {
     host: HOST, "x-forwarded-for": "203.0.113.9", "x-forwarded-proto": "https", "content-type": "application/json",
@@ -124,11 +124,11 @@ syncBuiltinESMExports();
   boot = async () => {
     child = spawnWithSecrets(process.execPath, ["--import", offlinePrelude, "--import", pathToFileURL(spawnWatch).href, join(SERVER_DIR, "index.ts")], {
       PATH: process.env.PATH, ...(process.env.SystemRoot ? { SystemRoot: process.env.SystemRoot } : {}),
-      HOME: home, USERPROFILE: home, OMB_DATA_DIR: dataDir, OMB_PORT: String(port), OMB_WEBHOOK_PORT: String(port + 1),
-      OMB_CLOUD_ROLE: "home", OMB_CLOUD_MACHINE_ID: "3f9c2a4e-8b1d-4c6e-9a7f-2d5e8c1b0a93", OMB_CLOUD_ADMIN_URL: "https://cloud.example.test",
-      OMB_PUBLIC_URL: `https://${HOST}`, OMB_CLOUD_BOAT_URL: "https://cloud.example.test/api/cloud/services/boat/api/box/v1",
-      OMB_CLOUD_SECRETS_FD: "3",
-    }, { OMB_CLOUD_BOOTSTRAP_SECRET: secret, OMB_CLOUD_BOAT_TOKEN: relayToken });
+      HOME: home, USERPROFILE: home, SAGAX_DATA_DIR: dataDir, SAGAX_PORT: String(port), SAGAX_WEBHOOK_PORT: String(port + 1),
+      SAGAX_CLOUD_ROLE: "home", SAGAX_CLOUD_MACHINE_ID: "3f9c2a4e-8b1d-4c6e-9a7f-2d5e8c1b0a93", SAGAX_CLOUD_ADMIN_URL: "https://cloud.example.test",
+      SAGAX_PUBLIC_URL: `https://${HOST}`, SAGAX_CLOUD_BOAT_URL: "https://cloud.example.test/api/cloud/services/boat/api/box/v1",
+      SAGAX_CLOUD_SECRETS_FD: "3",
+    }, { SAGAX_CLOUD_BOOTSTRAP_SECRET: secret, SAGAX_CLOUD_BOAT_TOKEN: relayToken });
     (child.stdout as NodeJS.ReadableStream | null)?.on("data", (chunk) => { log += chunk; });
     const deadline = Date.now() + 20_000;
     for (;;) {
@@ -201,7 +201,7 @@ it("no engine a bot runs finds the Cloud's secrets: not in its own environment, 
   await expect.poll(() => existsSync(probeOf("claude")), { timeout: 15_000 }).toBe(true);
   const probe = JSON.parse(readFileSync(probeOf("claude"), "utf8")) as { parent: string; own: string };
   // The probe reads the server's environment for real…
-  if (process.platform !== "win32") expect(probe.parent).toContain("OMB_CLOUD_MACHINE_ID=3f9c2a4e");
+  if (process.platform !== "win32") expect(probe.parent).toContain("SAGAX_CLOUD_MACHINE_ID=3f9c2a4e");
   // …and finds no secret there, nor in the engine's own.
   for (const where of [probe.parent, probe.own]) {
     expect(where).not.toContain(secret);

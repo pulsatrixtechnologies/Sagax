@@ -118,8 +118,8 @@ posixOnly("a steered message does not lift the unattended mark on its own", () =
         ...(process.env.PATH ? { PATH: process.env.PATH } : {}),
         HOME: home,
         USERPROFILE: home,
-        OMB_PORT: String(port),
-        OMB_WEBHOOK_PORT: String(port + 1),
+        SAGAX_PORT: String(port),
+        SAGAX_WEBHOOK_PORT: String(port + 1),
         // the broker falls back to os.tmpdir() under a deep HOME; the child
         // has to agree with this process about where that is
         TMPDIR: tmpdir(),

@@ -53,33 +53,40 @@ test("readEnv prefers SAGAX_ and falls back to the old name", () => {
   assert.equal(readEnv("PORT", {}), undefined);
 });
 
-test("bridgeLegacyEnv moves SAGAX_ onto the old names and warns once about old names", () => {
-  const env = { SAGAX_DATA_DIR: "/new", OMB_DATA_DIR: "/old", OMB_PORT: "9", OPENMAUSBOT_TOKEN: "t", SAGAX_URL: "http://u", PATH: "/bin" };
+test("bridgeLegacyEnv moves the old names onto SAGAX_ and warns once about them", () => {
+  const env = { SAGAX_DATA_DIR: "/new", OMB_DATA_DIR: "/old", OMB_PORT: "9", OPENMAUSBOT_TOKEN: "t", OPENMAUS_ACP_INIT_TIMEOUT_MS: "5", PATH: "/bin" };
   const lines = [];
   const used = bridgeLegacyEnv(env, { warn: (line) => lines.push(line) });
-  assert.deepEqual(used, ["OMB_PORT", "OPENMAUSBOT_TOKEN"], "OMB_DATA_DIR had a SAGAX_ value, so it was not the one used");
-  assert.equal(env.OMB_DATA_DIR, "/new");
-  assert.equal(env.OPENMAUSBOT_URL, "http://u");
-  assert.equal(env.SAGAX_DATA_DIR, undefined, "one authoritative name for children");
+  assert.deepEqual(used, ["OMB_PORT", "OPENMAUSBOT_TOKEN", "OPENMAUS_ACP_INIT_TIMEOUT_MS"], "OMB_DATA_DIR had a SAGAX_ value, so it was not the one used");
+  assert.equal(env.SAGAX_DATA_DIR, "/new", "the new name wins");
+  assert.equal(env.SAGAX_PORT, "9");
+  assert.equal(env.SAGAX_TOKEN, "t");
+  assert.equal(env.SAGAX_ACP_INIT_TIMEOUT_MS, "5");
+  for (const old of ["OMB_DATA_DIR", "OMB_PORT", "OPENMAUSBOT_TOKEN", "OPENMAUS_ACP_INIT_TIMEOUT_MS"]) {
+    assert.equal(env[old], undefined, `${old}: one authoritative name for children`);
+  }
   assert.equal(env.PATH, "/bin");
   assert.equal(env[ENV_BRIDGED_MARKER], "1");
   assert.equal(lines.length, 1);
-  assert.match(lines[0], /OMB_PORT, OPENMAUSBOT_TOKEN/);
+  assert.match(lines[0], /OMB_PORT, OPENMAUSBOT_TOKEN, OPENMAUS_ACP_INIT_TIMEOUT_MS/);
 });
 
-test("bridgeLegacyEnv leaves native SAGAX_ names alone and a bridged child silent", () => {
+test("bridgeLegacyEnv leaves SAGAX_ names alone and a bridged child silent", () => {
   const env = { SAGAX_SANDBOX_IMAGE: "img", SAGAX_DEFAULT_SERVER: "https://s", OMB_PORT: "9", [ENV_BRIDGED_MARKER]: "1" };
   const lines = [];
   bridgeLegacyEnv(env, { warn: (line) => lines.push(line) });
   assert.equal(env.SAGAX_SANDBOX_IMAGE, "img");
-  assert.equal(env.OMB_SANDBOX_IMAGE, undefined);
   assert.equal(env.SAGAX_DEFAULT_SERVER, "https://s");
+  assert.equal(env.SAGAX_PORT, "9");
+  assert.equal(env.OMB_PORT, undefined);
   assert.deepEqual(lines, [], "the parent already warned");
 });
 
-test("bridgeLegacyEnv ignores internal capabilities", () => {
+test("bridgeLegacyEnv leaves internal capabilities where they are", () => {
   const lines = [];
-  bridgeLegacyEnv({ OPENMAUSBOT_INTERNAL_DATA_DIR_LEASE: "v1:1:x" }, { warn: (line) => lines.push(line) });
+  const env = { OPENMAUSBOT_INTERNAL_DATA_DIR_LEASE: "v1:1:x" };
+  bridgeLegacyEnv(env, { warn: (line) => lines.push(line) });
+  assert.equal(env.OPENMAUSBOT_INTERNAL_DATA_DIR_LEASE, "v1:1:x", "the lease keeps its name (data-dir-lease.mjs)");
   assert.deepEqual(lines, []);
 });
 

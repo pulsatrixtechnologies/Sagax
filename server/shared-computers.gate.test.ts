@@ -90,9 +90,9 @@ beforeAll(async () => {
       ...(process.env.SystemRoot ? { SystemRoot: process.env.SystemRoot } : {}),
       HOME: home,
       USERPROFILE: home,
-      OMB_PORT: String(PORT),
-      OMB_WEBHOOK_PORT: String(WEBHOOK_PORT),
-      OMB_TEST_INTERNAL_CAPABILITY_KEY: TEST_CAPABILITY_KEY,
+      SAGAX_PORT: String(PORT),
+      SAGAX_WEBHOOK_PORT: String(WEBHOOK_PORT),
+      SAGAX_TEST_INTERNAL_CAPABILITY_KEY: TEST_CAPABILITY_KEY,
     },
     stdio: ["ignore", "pipe", "pipe"],
   });

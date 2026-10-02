@@ -7,7 +7,7 @@ import { ensureDirs } from "../config.ts";
 import type { ProviderInstance, RuntimeEvent } from "../contracts.ts";
 import { recordEvents, type EventRecorder } from "../testing/events.ts";
 import { BoatAgentDriver } from "./boatagent.ts";
-import { OMB_ASK_TOOL } from "../../shared/ask-question.ts";
+import { SAGAX_ASK_TOOL } from "../../shared/ask-question.ts";
 
 const BOAT = "boat-1";
 const PROMPT = "p1";
@@ -227,7 +227,7 @@ describe("BoatAgentDriver turns (fake API)", () => {
     const opened = (await recorder.until((e) => e.type === "request.opened")) as Extract<RuntimeEvent, { type: "request.opened" }>;
     expect(opened).toMatchObject({
       requestType: "question",
-      tool: OMB_ASK_TOOL,
+      tool: SAGAX_ASK_TOOL,
       summary: "Ship the release?",
       choices: ["Ship now", "Wait"],
       origin: "output",
@@ -446,9 +446,9 @@ describe("BoatAgentDriver credential and base URL", () => {
   beforeEach(() => {
     ensureDirs();
     vi.stubEnv("BOX_TOKEN", undefined);
-    vi.stubEnv("OMB_BOX_API", undefined);
-    vi.stubEnv("OMB_CLOUD_BOAT_URL", RELAY);
-    vi.stubEnv("OMB_CLOUD_BOAT_TOKEN", INCLUDED);
+    vi.stubEnv("SAGAX_BOX_API", undefined);
+    vi.stubEnv("SAGAX_CLOUD_BOAT_URL", RELAY);
+    vi.stubEnv("SAGAX_CLOUD_BOAT_TOKEN", INCLUDED);
     seen = [];
     const previous = globalThis.fetch;
     globalThis.fetch = (async (input: string | URL, init?: RequestInit) => {
@@ -504,7 +504,7 @@ describe("BoatAgentDriver credential and base URL", () => {
   });
 
   it("is unavailable with neither an own token nor an included one", async () => {
-    vi.stubEnv("OMB_CLOUD_BOAT_TOKEN", undefined);
+    vi.stubEnv("SAGAX_CLOUD_BOAT_TOKEN", undefined);
     instance = await BoatAgentDriver.create({ instanceId: "computer", displayName: "Computer", environment: {}, enabled: true, config: { pollMs: 0 } });
     expect(await instance.snapshot()).toMatchObject({ state: "unavailable" });
     expect(seen).toEqual([]);

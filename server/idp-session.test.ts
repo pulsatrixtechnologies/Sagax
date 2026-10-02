@@ -71,23 +71,23 @@ describe("the grant vault", () => {
     expect(readFileSync(join(dir, IDP_VAULT_FILE), "utf8")).toBe("garbage");
   });
 
-  it("takes its key from OMB_IDP_VAULT_KEY, OMB_IDP_VAULT_KEY_FILE or a 0600 file beside the data", () => {
-    expect(resolveIdpVaultKey(dir, { OMB_IDP_VAULT_KEY: KEY.toUpperCase() })).toEqual({ kind: "key", key: Buffer.from(KEY, "hex") });
-    expect(resolveIdpVaultKey(dir, { OMB_IDP_VAULT_KEY: "short" }).kind).toBe("unavailable");
-    expect(resolveIdpVaultKey(dir, { OMB_DESKTOP_PARENT: "1" }).kind).toBe("unavailable");
+  it("takes its key from SAGAX_IDP_VAULT_KEY, SAGAX_IDP_VAULT_KEY_FILE or a 0600 file beside the data", () => {
+    expect(resolveIdpVaultKey(dir, { SAGAX_IDP_VAULT_KEY: KEY.toUpperCase() })).toEqual({ kind: "key", key: Buffer.from(KEY, "hex") });
+    expect(resolveIdpVaultKey(dir, { SAGAX_IDP_VAULT_KEY: "short" }).kind).toBe("unavailable");
+    expect(resolveIdpVaultKey(dir, { SAGAX_DESKTOP_PARENT: "1" }).kind).toBe("unavailable");
     const keyFile = join(dir, "elsewhere", "grants.key");
-    const fromFile = resolveIdpVaultKey(dir, { OMB_IDP_VAULT_KEY_FILE: keyFile });
+    const fromFile = resolveIdpVaultKey(dir, { SAGAX_IDP_VAULT_KEY_FILE: keyFile });
     expect(fromFile.kind).toBe("key");
     expect(readFileSync(keyFile, "utf8").trim()).toMatch(/^[0-9a-f]{64}$/);
     writeFileSync(keyFile, "not a key");
-    expect(resolveIdpVaultKey(dir, { OMB_IDP_VAULT_KEY_FILE: keyFile }).kind).toBe("unavailable");
+    expect(resolveIdpVaultKey(dir, { SAGAX_IDP_VAULT_KEY_FILE: keyFile }).kind).toBe("unavailable");
     const first = resolveIdpVaultKey(dir, {});
     const second = resolveIdpVaultKey(dir, {});
     expect(first).toEqual(second);
     if (process.platform !== "win32") expect(statSync(join(dir, IDP_KEY_FILE)).mode & 0o777).toBe(0o600);
   });
 
-  it("reads OMB_OIDC_REFRESH_AFTER_SECONDS as 1 to 3000, else the default", () => {
+  it("reads SAGAX_OIDC_REFRESH_AFTER_SECONDS as 1 to 3000, else the default", () => {
     expect(refreshAfterMs(undefined)).toBe(DEFAULT_REFRESH_AFTER_SECONDS * 1000);
     expect(refreshAfterMs("1")).toBe(1000);
     expect(refreshAfterMs("3000")).toBe(3_000_000);

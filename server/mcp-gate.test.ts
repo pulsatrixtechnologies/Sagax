@@ -46,9 +46,9 @@ describe("mcp-gate", () => {
       stdio: ["pipe", "pipe", "pipe"],
       env: {
         ...process.env,
-        OMB_GATE_NAME: "shop",
-        OMB_GATE_SPILL_DIR: join(scratch, "spill"),
-        OMB_GATE_UPSTREAM: JSON.stringify({
+        SAGAX_GATE_NAME: "shop",
+        SAGAX_GATE_SPILL_DIR: join(scratch, "spill"),
+        SAGAX_GATE_UPSTREAM: JSON.stringify({
           command: process.execPath,
           args: [upstreamJs],
           env: { SCRIPT: script, UPSTREAM_ONLY: "yes" },
@@ -143,7 +143,7 @@ describe("mcp-gate", () => {
 
   it("honours a budget the harness sets", async () => {
     const products = Array.from({ length: 300 }, (_, i) => ({ id: `p${i}`, blurb: "x".repeat(300) }));
-    start({ content: [{ type: "text", text: JSON.stringify({ products }) }], structuredContent: undefined }, { OMB_GATE_BUDGET: "2000" });
+    start({ content: [{ type: "text", text: JSON.stringify({ products }) }], structuredContent: undefined }, { SAGAX_GATE_BUDGET: "2000" });
     const text = (await call("search_products")).result.content[0].text;
     expect(text.length).toBeLessThan(2_400);
   });
@@ -154,7 +154,7 @@ describe("mcp-gate", () => {
     await nextLine();
     // proven by the upstream having started at all: it reads SCRIPT from the
     // env the gate passed through. Gate-only keys must not reach it.
-    expect(JSON.parse(JSON.stringify(process.env.OMB_GATE_UPSTREAM ?? null))).toBe(null);
+    expect(JSON.parse(JSON.stringify(process.env.SAGAX_GATE_UPSTREAM ?? null))).toBe(null);
   });
 
   it("spawns an upstream named as a bare command on PATH", async () => {
@@ -170,8 +170,8 @@ describe("mcp-gate", () => {
       stdio: ["pipe", "pipe", "pipe"],
       env: {
         ...process.env,
-        OMB_GATE_NAME: "shop",
-        OMB_GATE_UPSTREAM: JSON.stringify({ command: "node", args: [upstreamJs], env: { SCRIPT: script } }),
+        SAGAX_GATE_NAME: "shop",
+        SAGAX_GATE_UPSTREAM: JSON.stringify({ command: "node", args: [upstreamJs], env: { SCRIPT: script } }),
       },
     }) as ChildProcessWithoutNullStreams;
     createInterface({ input: gate.stdout }).on("line", (line) => {

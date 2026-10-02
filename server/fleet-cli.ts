@@ -358,8 +358,8 @@ export function planFleetAction(input: FleetInput, deps: FleetDeps): FleetStep[]
       assertManagedWorkspace(workspace);
       const models = managedOpenRouterModels(input.openrouterModels);
       const env = deps.readText(posix.join(layout.instancesDir, `${input.slug}.env`)) ?? "";
-      const portal = /^OMB_ADMIN_URL=(.+)$/m.exec(env)?.[1];
-      if (!portal || !env.split("\n").includes(`OMB_ADMIN_WORKSPACE=${input.slug}`)) throw new Error("workspace has no trusted portal configuration; operator recovery is required");
+      const portal = /^SAGAX_ADMIN_URL=(.+)$/m.exec(env)?.[1];
+      if (!portal || !env.split("\n").includes(`SAGAX_ADMIN_WORKSPACE=${input.slug}`)) throw new Error("workspace has no trusted portal configuration; operator recovery is required");
       try { const url = new URL(portal); if (url.protocol !== "https:" || url.origin !== portal) throw new Error(); }
       catch { throw new Error("workspace portal configuration is invalid; operator recovery is required"); }
       const file = posix.join(workspaceHome(layout, input.slug), ".config", "opencode", "opencode.json");

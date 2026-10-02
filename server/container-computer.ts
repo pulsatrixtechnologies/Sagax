@@ -1254,7 +1254,7 @@ export function containerComputerMcp(
     // through `ps` for the life of the bridge.
     env: {
       ELECTRON_RUN_AS_NODE: "1",
-      ...(control ? { OMB_CONTROL_URL: control.url, OMB_CONTROL_TOKEN: control.token } : {}),
+      ...(control ? { SAGAX_CONTROL_URL: control.url, SAGAX_CONTROL_TOKEN: control.token } : {}),
     },
   };
 }

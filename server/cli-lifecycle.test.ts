@@ -10,7 +10,7 @@ const mocks = vi.hoisted(() => ({
   // the fleet path is off in these tests: no credential in the environment
   fleetCredential: vi.fn(() => null),
   fleetAccess: vi.fn(),
-  FLEET_CREDENTIAL_ENV: "OMB_INSTALLATION_CREDENTIAL",
+  FLEET_CREDENTIAL_ENV: "SAGAX_INSTALLATION_CREDENTIAL",
   denyLogOpen: false,
   spawn: vi.fn(),
   tailscaleStatus: vi.fn(), tailscaleServe: vi.fn(), tailscaleServeOff: vi.fn(),
@@ -169,7 +169,7 @@ describe("CLI startup lifecycle", () => {
     writeFileSync(join(dataDir, "openmausbot-server.lease"), JSON.stringify({
       version: 1, pid: process.pid, host: hostname(), token: workspaceId, createdAt: Date.now(),
     }));
-    vi.stubEnv("OMB_DATA_DIR", process.env.OMB_DATA_DIR);
+    vi.stubEnv("SAGAX_DATA_DIR", process.env.SAGAX_DATA_DIR);
     for (const stream of [process.stdin, process.stdout]) Object.defineProperty(stream, "isTTY", { value: true, configurable: true });
     vi.stubGlobal("fetch", vi.fn(async (url: string | URL | Request) => String(url).endsWith("/api/health")
       ? Response.json({ app: "openmausbot", pid: childPid })
@@ -231,10 +231,10 @@ describe("CLI startup lifecycle", () => {
       if (address === `http://127.0.0.1:${options.port}/api/auth/pairing`) {
         expect(init?.method).toBe("POST");
         expect(JSON.parse(String(init?.body))).toEqual({ label: "Android", scopes: ["client"] });
-        // A server started without OMB_PUBLIC_URL: it mints the credential but
+        // A server started without SAGAX_PUBLIC_URL: it mints the credential but
         // cannot name itself, so it returns no links at all. The CLI was told
         // the public address with --public-url and must build both from that.
-        return Response.json({ code, url: null, expiresAt, credential, serverName: "fixture", hint: "set OMB_PUBLIC_URL" });
+        return Response.json({ code, url: null, expiresAt, credential, serverName: "fixture", hint: "set SAGAX_PUBLIC_URL" });
       }
       expect(address).toMatch(/\/\.well-known\/sagax\/environment$/);
       expect(init?.method).not.toBe("POST");

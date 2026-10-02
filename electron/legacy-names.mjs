@@ -2,10 +2,9 @@
 // honored for one release. One module for Electron main, the server and the
 // CLI (the server imports it from here, like data-dir-lease.mjs).
 //
-// Step 1 of the rename (this file): the new names are accepted and preferred
-// everywhere a person or another program can supply one, while the code
-// itself still reads its old internal names. Step 2 (the mass rename) flips
-// the internal names to the new ones; see the notes at each section.
+// The code reads the new names (SAGAX_*). The old ones are still accepted
+// from outside (a person's shell, a compose file, an older deployment) and
+// moved onto the new names once, at the start of every entry point.
 import nodeFs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -32,14 +31,11 @@ const OPENMAUSBOT_NAMES = Object.freeze([
 /** Settings whose old name was OPENMAUS_<NAME>. */
 const OPENMAUS_NAMES = Object.freeze(["ACP_", "OPENAI_COMPAT_IDLE_TIMEOUT_MS", "STATUS_CACHE_PATH"]);
 
-/** SAGAX_* names that were born with the new prefix and have no old twin:
- * the sandbox daemon's settings and a build-time default. Never bridged. */
-const NATIVE_ENV = /^SAGAX_(?:SANDBOX|DEFAULT_SERVER$|DOCKER_GID$)/;
 /** Process-internal capabilities, not settings a person sets. */
-const INTERNAL_ENV = /^(?:OMB|OPENMAUSBOT|OPENMAUS)_INTERNAL_/;
+const INTERNAL_ENV = /^(?:OMB|OPENMAUSBOT|OPENMAUS|SAGAX)_INTERNAL_/;
 /** Set once a process has bridged, so a child it spawns does not warn about
  * the old names its parent set for it. */
-export const ENV_BRIDGED_MARKER = "OMB_INTERNAL_ENV_BRIDGED";
+export const ENV_BRIDGED_MARKER = "SAGAX_INTERNAL_ENV_BRIDGED";
 
 const matches = (list, name) => list.some((entry) => (entry.endsWith("_") ? name.startsWith(entry) : name === entry));
 
@@ -64,16 +60,36 @@ export function readEnv(name, env = process.env) {
   return current !== undefined ? current : env[legacyEnvName(name)];
 }
 
+/** The name the code reads for a variable name that may be an old one
+ * (a provider's `apiKeyEnv` saved before the rename): OMB_X becomes SAGAX_X,
+ * anything else is returned as is. */
+export function currentEnvName(name) {
+  if (typeof name !== "string" || INTERNAL_ENV.test(name)) return name;
+  const setting = settingOfLegacyEnv(name);
+  return setting === null ? name : `${ENV_PREFIX}${setting}`;
+}
+
+/** The value of a variable named by data (saved configs, an instance's own
+ * environment), whichever of its new or old name holds it; the given name first. */
+export function readEnvName(name, env = process.env) {
+  if (typeof name !== "string" || !name) return undefined;
+  if (env[name] !== undefined) return env[name];
+  const current = currentEnvName(name);
+  if (current !== name) return env[current];
+  if (name.startsWith(ENV_PREFIX) && !INTERNAL_ENV.test(name)) return env[legacyEnvName(name.slice(ENV_PREFIX.length))];
+  return undefined;
+}
+
 /**
- * Make SAGAX_* reach the code that, in step 1, still reads the old names.
+ * Make the old names reach the code, which reads SAGAX_*.
  * Called once, first thing, by every entry point (legacy-env-boot.mjs).
  *
- * For each SAGAX_<NAME> (other than the native ones) the value moves to the
- * old name, overriding it, and SAGAX_<NAME> is removed. Removing it keeps one
- * name authoritative in children: a parent that later sets OMB_<NAME> on
- * purpose for a child (Electron does, for its server) must not be overridden
- * there by a SAGAX_<NAME> inherited from the person's shell. Step 2 reverses
- * the direction (old names move to SAGAX_*), once the code reads SAGAX_*.
+ * For each old variable (OMB_<NAME>, or its OPENMAUSBOT_/OPENMAUS_ twin) the
+ * value moves to SAGAX_<NAME> unless that is already set (the new name wins),
+ * and the old variable is removed. Removing it keeps one name authoritative
+ * in children: a child bridges again, and an old name left behind would come
+ * back over a SAGAX_<NAME> its parent removed or changed on purpose.
+ * Internal capabilities (the data folder lease) keep their names.
  *
  * Warns once, listing the old names a person set without a SAGAX_ value.
  * Returns those names.
@@ -82,15 +98,14 @@ export function bridgeLegacyEnv(env = process.env, { warn = (line) => console.wa
   const inherited = env[ENV_BRIDGED_MARKER] === "1";
   const legacyUsed = [];
   for (const key of Object.keys(env)) {
-    if (key === ENV_BRIDGED_MARKER || INTERNAL_ENV.test(key)) continue;
+    if (INTERNAL_ENV.test(key)) continue;
     const name = settingOfLegacyEnv(key);
-    if (name !== null && env[`${ENV_PREFIX}${name}`] === undefined) legacyUsed.push(key);
-  }
-  for (const key of Object.keys(env)) {
-    if (!key.startsWith(ENV_PREFIX) || NATIVE_ENV.test(key)) continue;
-    const name = key.slice(ENV_PREFIX.length);
-    if (!name) continue;
-    env[legacyEnvName(name)] = env[key];
+    if (name === null) continue;
+    const current = `${ENV_PREFIX}${name}`;
+    if (env[current] === undefined) {
+      legacyUsed.push(key);
+      env[current] = env[key];
+    }
     delete env[key];
   }
   env[ENV_BRIDGED_MARKER] = "1";

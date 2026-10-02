@@ -35,8 +35,8 @@ export function createHarnessClient(baseUrl: string, token: string): HarnessClie
 }
 
 /** The client a spawned proxy was given:
- *   OMB_HARNESS_URL  base URL of the harness (http://127.0.0.1:8799)
- *   OMB_COMMS_TOKEN  the capability token for the internal endpoints */
+ *   SAGAX_HARNESS_URL  base URL of the harness (http://127.0.0.1:8799)
+ *   SAGAX_COMMS_TOKEN  the capability token for the internal endpoints */
 export function harnessClientFromEnv(env: NodeJS.ProcessEnv): HarnessClient {
-  return createHarnessClient(env.OMB_HARNESS_URL ?? "http://127.0.0.1:8799", env.OMB_COMMS_TOKEN ?? "");
+  return createHarnessClient(env.SAGAX_HARNESS_URL ?? "http://127.0.0.1:8799", env.SAGAX_COMMS_TOKEN ?? "");
 }

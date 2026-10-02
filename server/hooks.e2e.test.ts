@@ -3,7 +3,7 @@
 // file. A PostToolUse hook delivers the full tool result to the harness,
 // which spills it to a private file, attaches it to the tool's activity row,
 // and lets the turn's digest claim full evidence. A forged bearer is refused.
-// With OMB_HOOKS=0 the driver registers nothing and the digest says so.
+// With SAGAX_HOOKS=0 the driver registers nothing and the digest says so.
 //
 // Same POSIX gating as branching.test.ts (the fake CLI is a shebang script).
 import { spawn, type ChildProcess } from "node:child_process";
@@ -74,7 +74,7 @@ function harness(label: string, serverEnv: Record<string, string>, instanceEnv: 
         },
       },
     }));
-    const env: NodeJS.ProcessEnv = { HOME: home, USERPROFILE: home, OMB_PORT: String(PORT), ...serverEnv };
+    const env: NodeJS.ProcessEnv = { HOME: home, USERPROFILE: home, SAGAX_PORT: String(PORT), ...serverEnv };
     if (process.env.PATH) env.PATH = process.env.PATH;
     child = spawn(process.execPath, [join(SERVER_DIR, "index.ts")], { cwd: join(SERVER_DIR, ".."), env, stdio: ["ignore", "pipe", "pipe"] });
     child.stderr!.on("data", (c) => (stderr += c));
@@ -174,8 +174,8 @@ posixOnly("engine hooks e2e: compaction", () => {
   }, 90_000);
 });
 
-posixOnly("engine hooks e2e with OMB_HOOKS=0", () => {
-  const h = harness("off", { OMB_HOOKS: "0" });
+posixOnly("engine hooks e2e with SAGAX_HOOKS=0", () => {
+  const h = harness("off", { SAGAX_HOOKS: "0" });
 
   it("registers nothing: rows keep only previews and the digest says so", async () => {
     const bot = await h.runTurn();

@@ -12,7 +12,7 @@ vi.mock("node:child_process", async (importOriginal) => {
   return {
     ...childProcess,
     spawn(command: string, args: readonly string[], options: SpawnOptions) {
-      const dataDir = options.env?.OMB_DATA_DIR;
+      const dataDir = options.env?.SAGAX_DATA_DIR;
       if (!dataDir || !args.includes(join(process.cwd(), "server", "index.ts"))) {
         throw new Error("Expected the isolated verification server");
       }

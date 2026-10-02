@@ -16,36 +16,36 @@ import { PrincipalRegistry } from "./principals.ts";
 import { SessionRegistry } from "./sessions.ts";
 import { startFakeOidcProvider, type FakeOidcProvider } from "./testing/fake-oidc-provider.ts";
 
-describe("OMB_IDENTITY", () => {
+describe("SAGAX_IDENTITY", () => {
   it("is solo unless set to perspicax", () => {
     expect(identityConfigFromEnv({})).toEqual({ kind: "solo" });
-    expect(identityConfigFromEnv({ OMB_IDENTITY: "solo" })).toEqual({ kind: "solo" });
+    expect(identityConfigFromEnv({ SAGAX_IDENTITY: "solo" })).toEqual({ kind: "solo" });
     expect(identityDescriptor({ kind: "solo" })).toBeUndefined();
-    expect(() => identityConfigFromEnv({ OMB_IDENTITY: "okta" })).toThrow(/not supported/);
+    expect(() => identityConfigFromEnv({ SAGAX_IDENTITY: "okta" })).toThrow(/not supported/);
   });
 
   it("derives the redirect URI from the public origin and defaults the client id", () => {
-    const config = identityConfigFromEnv({ OMB_IDENTITY: "perspicax", OMB_PERSPICAX_ISSUER: "https://px.example.test/", OMB_PUBLIC_URL: "https://bot.example.test/" });
+    const config = identityConfigFromEnv({ SAGAX_IDENTITY: "perspicax", SAGAX_PERSPICAX_ISSUER: "https://px.example.test/", SAGAX_PUBLIC_URL: "https://bot.example.test/" });
     expect(config).toEqual({ kind: "perspicax", issuer: "https://px.example.test", clientId: "pulsa-bot", publicOrigin: "https://bot.example.test", redirectUri: "https://bot.example.test/auth/oidc/callback" });
     expect(identityDescriptor(config)).toEqual({ kind: "perspicax", protocol: "oidc", issuer: "https://px.example.test", loginPath: "/auth/oidc/start", nativeReturn: true, loopbackReturn: true, nativeReturnSchemes: ["sagax", "openmausbot"] });
-    expect(identityConfigFromEnv({ OMB_IDENTITY: "perspicax", OMB_PERSPICAX_ISSUER: "http://localhost:18787", OMB_PUBLIC_URL: "http://localhost:18788", OMB_OIDC_CLIENT_ID: "other" }))
+    expect(identityConfigFromEnv({ SAGAX_IDENTITY: "perspicax", SAGAX_PERSPICAX_ISSUER: "http://localhost:18787", SAGAX_PUBLIC_URL: "http://localhost:18788", SAGAX_OIDC_CLIENT_ID: "other" }))
       .toMatchObject({ clientId: "other", redirectUri: "http://localhost:18788/auth/oidc/callback" });
   });
 
   it("refuses to start half configured or over plain http off this machine", () => {
-    expect(() => identityConfigFromEnv({ OMB_IDENTITY: "perspicax", OMB_PUBLIC_URL: "https://bot.example.test" })).toThrow(/OMB_PERSPICAX_ISSUER/);
-    expect(() => identityConfigFromEnv({ OMB_IDENTITY: "perspicax", OMB_PERSPICAX_ISSUER: "http://px.example.test", OMB_PUBLIC_URL: "https://bot.example.test" })).toThrow(/OMB_PERSPICAX_ISSUER/);
-    expect(() => identityConfigFromEnv({ OMB_IDENTITY: "perspicax", OMB_PERSPICAX_ISSUER: "https://px.example.test" })).toThrow(/OMB_PUBLIC_URL/);
-    expect(() => identityConfigFromEnv({ OMB_IDENTITY: "perspicax", OMB_PERSPICAX_ISSUER: "https://px.example.test", OMB_PUBLIC_URL: "http://bot.example.test" })).toThrow(/OMB_PUBLIC_URL/);
-    expect(() => identityConfigFromEnv({ OMB_IDENTITY: "perspicax", OMB_PERSPICAX_ISSUER: "https://px.example.test", OMB_PUBLIC_URL: "https://bot.example.test/app" })).toThrow(/OMB_PUBLIC_URL/);
+    expect(() => identityConfigFromEnv({ SAGAX_IDENTITY: "perspicax", SAGAX_PUBLIC_URL: "https://bot.example.test" })).toThrow(/SAGAX_PERSPICAX_ISSUER/);
+    expect(() => identityConfigFromEnv({ SAGAX_IDENTITY: "perspicax", SAGAX_PERSPICAX_ISSUER: "http://px.example.test", SAGAX_PUBLIC_URL: "https://bot.example.test" })).toThrow(/SAGAX_PERSPICAX_ISSUER/);
+    expect(() => identityConfigFromEnv({ SAGAX_IDENTITY: "perspicax", SAGAX_PERSPICAX_ISSUER: "https://px.example.test" })).toThrow(/SAGAX_PUBLIC_URL/);
+    expect(() => identityConfigFromEnv({ SAGAX_IDENTITY: "perspicax", SAGAX_PERSPICAX_ISSUER: "https://px.example.test", SAGAX_PUBLIC_URL: "http://bot.example.test" })).toThrow(/SAGAX_PUBLIC_URL/);
+    expect(() => identityConfigFromEnv({ SAGAX_IDENTITY: "perspicax", SAGAX_PERSPICAX_ISSUER: "https://px.example.test", SAGAX_PUBLIC_URL: "https://bot.example.test/app" })).toThrow(/SAGAX_PUBLIC_URL/);
   });
 
   it("takes an optional internal origin for server-to-server calls (http allowed, no path)", () => {
-    const base = { OMB_IDENTITY: "perspicax", OMB_PERSPICAX_ISSUER: "https://px.example.test", OMB_PUBLIC_URL: "https://bot.example.test" };
-    expect(identityConfigFromEnv({ ...base, OMB_PERSPICAX_INTERNAL_URL: "http://perspicax:8787/" })).toMatchObject({ internalBase: "http://perspicax:8787" });
+    const base = { SAGAX_IDENTITY: "perspicax", SAGAX_PERSPICAX_ISSUER: "https://px.example.test", SAGAX_PUBLIC_URL: "https://bot.example.test" };
+    expect(identityConfigFromEnv({ ...base, SAGAX_PERSPICAX_INTERNAL_URL: "http://perspicax:8787/" })).toMatchObject({ internalBase: "http://perspicax:8787" });
     expect(identityConfigFromEnv(base)).not.toHaveProperty("internalBase");
-    expect(() => identityConfigFromEnv({ ...base, OMB_PERSPICAX_INTERNAL_URL: "http://perspicax:8787/api" })).toThrow(/OMB_PERSPICAX_INTERNAL_URL/);
-    expect(() => identityConfigFromEnv({ ...base, OMB_PERSPICAX_INTERNAL_URL: "ftp://perspicax" })).toThrow(/OMB_PERSPICAX_INTERNAL_URL/);
+    expect(() => identityConfigFromEnv({ ...base, SAGAX_PERSPICAX_INTERNAL_URL: "http://perspicax:8787/api" })).toThrow(/SAGAX_PERSPICAX_INTERNAL_URL/);
+    expect(() => identityConfigFromEnv({ ...base, SAGAX_PERSPICAX_INTERNAL_URL: "ftp://perspicax" })).toThrow(/SAGAX_PERSPICAX_INTERNAL_URL/);
   });
 });
 
@@ -125,7 +125,7 @@ describe("interim sign-in routes on an organization server", () => {
 
 describe("a person's profile on an organization server", () => {
   it("is managed by Perspicax, edited in the issuer console's /console/me", () => {
-    const org = identityConfigFromEnv({ OMB_IDENTITY: "perspicax", OMB_PERSPICAX_ISSUER: "https://pulsatrix.mcp.goxcloud.ca", OMB_PUBLIC_URL: "https://bot.pulsatrix.mcp.goxcloud.ca" });
+    const org = identityConfigFromEnv({ SAGAX_IDENTITY: "perspicax", SAGAX_PERSPICAX_ISSUER: "https://pulsatrix.mcp.goxcloud.ca", SAGAX_PUBLIC_URL: "https://bot.pulsatrix.mcp.goxcloud.ca" });
     expect(profileManagement(org)).toEqual({ profileManagedBy: "perspicax", profileManageUrl: "https://pulsatrix.mcp.goxcloud.ca/console/me" });
   });
 

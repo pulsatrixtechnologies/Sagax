@@ -62,8 +62,8 @@ async function start(env: NodeJS.ProcessEnv = {}) {
     env: {
       ...(process.env.PATH ? { PATH: process.env.PATH } : {}),
       ...(process.env.SystemRoot ? { SystemRoot: process.env.SystemRoot } : {}),
-      HOME: home, USERPROFILE: home, OMB_PORT: String(PORT), OMB_WEBHOOK_PORT: String(PORT + 1),
-      OMB_TEST_INTERNAL_CAPABILITY_KEY: CAPABILITY_KEY, ...env,
+      HOME: home, USERPROFILE: home, SAGAX_PORT: String(PORT), SAGAX_WEBHOOK_PORT: String(PORT + 1),
+      SAGAX_TEST_INTERNAL_CAPABILITY_KEY: CAPABILITY_KEY, ...env,
     },
     stdio: ["ignore", "pipe", "pipe"],
   });
@@ -245,8 +245,8 @@ posixOnly("who may answer a card on a shared workspace", () => {
   it("lets a session-less local service decline but never approve under service trust", async () => {
     const bot = await makeBot("Serviced");
     await waitForExit(child, { signal: "SIGTERM" });
-    await start({ OMB_LOOPBACK_TRUST: "service" });
-    expect(log).toContain("local requests: service trust (OMB_LOOPBACK_TRUST)");
+    await start({ SAGAX_LOOPBACK_TRUST: "service" });
+    expect(log).toContain("local requests: service trust (SAGAX_LOOPBACK_TRUST)");
     const requestId = await cardFrom(bot, bot.threadId, ADA);
 
     const approve = await api("POST", `/api/threads/${bot.threadId}/respond`, { requestId, behavior: "allow" });

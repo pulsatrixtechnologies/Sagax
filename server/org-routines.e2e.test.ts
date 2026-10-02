@@ -43,7 +43,7 @@ const ALICE: FakeOidcUser = { sub: "01J9S6ALICE00000000000000A", email: "alice@e
 const BOB: FakeOidcUser = { sub: "01J9S6BOB000000000000000B", email: "bob@example.test", name: "Bob", preferred_username: "bob", role: "employee" };
 const CAROL: FakeOidcUser = { sub: "01J9S6CAROL00000000000000C", email: "carol@example.test", name: "Carol", preferred_username: "carol", role: "employee" };
 const PROFILE = { id: "01J9S6PROFILEDISPATCH00001", slug: "dispatch", name: "Dispatch", description: "Tickets and schedules" };
-/** The renewal window of this server (OMB_ROUTINE_RENEW_SECONDS). */
+/** The renewal window of this server (SAGAX_ROUTINE_RENEW_SECONDS). */
 const RENEW_SECONDS = 45;
 
 let PORT = 0;
@@ -155,14 +155,14 @@ async function start() {
     cwd: join(SERVER_DIR, ".."),
     env: {
       ...(process.env.PATH ? { PATH: process.env.PATH } : {}),
-      HOME: home, USERPROFILE: home, OMB_PORT: String(PORT), OMB_WEBHOOK_PORT: String(PORT + 1),
-      OMB_IDENTITY: "perspicax",
-      OMB_PERSPICAX_ISSUER: idp.issuer,
-      OMB_PUBLIC_URL: BASE,
-      OMB_PERSPICAX_LINK_FILE: join(home, "link", "pulsabot.json"),
-      OMB_PERSPICAX_DIRECTORY_SECONDS: "5",
-      OMB_ROUTINE_RENEW_SECONDS: String(RENEW_SECONDS),
-      OMB_ORG_NAME: "Acme",
+      HOME: home, USERPROFILE: home, SAGAX_PORT: String(PORT), SAGAX_WEBHOOK_PORT: String(PORT + 1),
+      SAGAX_IDENTITY: "perspicax",
+      SAGAX_PERSPICAX_ISSUER: idp.issuer,
+      SAGAX_PUBLIC_URL: BASE,
+      SAGAX_PERSPICAX_LINK_FILE: join(home, "link", "pulsabot.json"),
+      SAGAX_PERSPICAX_DIRECTORY_SECONDS: "5",
+      SAGAX_ROUTINE_RENEW_SECONDS: String(RENEW_SECONDS),
+      SAGAX_ORG_NAME: "Acme",
     },
     stdio: ["ignore", "pipe", "pipe"],
   });

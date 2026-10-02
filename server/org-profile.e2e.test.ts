@@ -88,10 +88,10 @@ posixOnly("a person's name and avatar on an organization server", () => {
       cwd: join(SERVER_DIR, ".."),
       env: {
         ...(process.env.PATH ? { PATH: process.env.PATH } : {}),
-        HOME: home, USERPROFILE: home, OMB_PORT: String(PORT), OMB_WEBHOOK_PORT: String(PORT + 1),
-        OMB_IDENTITY: "perspicax", OMB_PERSPICAX_ISSUER: idp.issuer, OMB_PUBLIC_URL: BASE,
-        OMB_PERSPICAX_LINK_FILE: join(home, "link", "pulsabot.json"),
-        OMB_PERSPICAX_DIRECTORY_SECONDS: "5",
+        HOME: home, USERPROFILE: home, SAGAX_PORT: String(PORT), SAGAX_WEBHOOK_PORT: String(PORT + 1),
+        SAGAX_IDENTITY: "perspicax", SAGAX_PERSPICAX_ISSUER: idp.issuer, SAGAX_PUBLIC_URL: BASE,
+        SAGAX_PERSPICAX_LINK_FILE: join(home, "link", "pulsabot.json"),
+        SAGAX_PERSPICAX_DIRECTORY_SECONDS: "5",
       },
       stdio: ["ignore", "pipe", "pipe"],
     });

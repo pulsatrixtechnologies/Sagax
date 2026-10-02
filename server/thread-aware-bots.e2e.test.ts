@@ -67,8 +67,8 @@ const promptsOf = (threadId: string): any[] => {
 /** The live per-turn token of a held turn — the only credential the
  * internal endpoints accept, and the one a real tool call would carry. */
 const liveToken = async (threadId: string): Promise<Record<string, string>> => {
-  await expect.poll(() => dumpOf(threadId)?.mcpConfig?.mcpServers?.agents?.env?.OMB_COMMS_TOKEN, { timeout: 15_000 }).toBeTruthy();
-  return { authorization: `Bearer ${dumpOf(threadId)!.mcpConfig.mcpServers.agents.env.OMB_COMMS_TOKEN}` };
+  await expect.poll(() => dumpOf(threadId)?.mcpConfig?.mcpServers?.agents?.env?.SAGAX_COMMS_TOKEN, { timeout: 15_000 }).toBeTruthy();
+  return { authorization: `Bearer ${dumpOf(threadId)!.mcpConfig.mcpServers.agents.env.SAGAX_COMMS_TOKEN}` };
 };
 /** Hold a fresh turn open on a bot's own thread and hand back its live
  * token. A wake that lands on that thread cannot start while this turn
@@ -179,7 +179,7 @@ beforeAll(async () => {
     "if (at >= 0) {",
     "  try {",
     '    const servers = JSON.parse(readFileSync(process.argv[at + 1], "utf8")).mcpServers ?? {};',
-    "    for (const server of Object.values(servers)) thread ??= server?.env?.OMB_THREAD_ID ?? null;",
+    "    for (const server of Object.values(servers)) thread ??= server?.env?.SAGAX_THREAD_ID ?? null;",
     "  } catch {}",
     "}",
     "const relay = new PassThrough();",
@@ -232,9 +232,9 @@ beforeAll(async () => {
       ...(process.env.SystemRoot ? { SystemRoot: process.env.SystemRoot } : {}),
       HOME: home,
       USERPROFILE: home,
-      OMB_PORT: String(port),
-      OMB_WEBHOOK_PORT: String(port + 1),
-      OMB_TEST_INTERNAL_CAPABILITY_KEY: TEST_CAPABILITY_KEY,
+      SAGAX_PORT: String(port),
+      SAGAX_WEBHOOK_PORT: String(port + 1),
+      SAGAX_TEST_INTERNAL_CAPABILITY_KEY: TEST_CAPABILITY_KEY,
     },
     stdio: ["ignore", "pipe", "pipe"],
   });

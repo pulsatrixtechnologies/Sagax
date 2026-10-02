@@ -1,6 +1,6 @@
 // "Sign in with Pulsatrix": the organization server's OpenID Connect login.
 //
-// OMB_IDENTITY=perspicax turns it on. The server then:
+// SAGAX_IDENTITY=perspicax turns it on. The server then:
 //   - answers GET /auth/oidc/start (302 to the Perspicax authorize page) and
 //     GET /auth/oidc/callback (code exchange and id_token check in
 //     server/oidc-rp.ts, then a Sagax session cookie and 302 to /);
@@ -23,13 +23,13 @@
 //     browser never sends to any server and so never reaches a log.
 //
 // Configuration (environment only, read once at boot):
-//   OMB_IDENTITY=perspicax
-//   OMB_PERSPICAX_ISSUER   issuer URL, e.g. https://px.example.com
-//   OMB_OIDC_CLIENT_ID     client id, default "pulsa-bot"
-//   OMB_PUBLIC_URL         this server's public origin; the redirect URI is
-//                          <OMB_PUBLIC_URL>/auth/oidc/callback and the login
+//   SAGAX_IDENTITY=perspicax
+//   SAGAX_PERSPICAX_ISSUER   issuer URL, e.g. https://px.example.com
+//   SAGAX_OIDC_CLIENT_ID     client id, default "pulsa-bot"
+//   SAGAX_PUBLIC_URL         this server's public origin; the redirect URI is
+//                          <SAGAX_PUBLIC_URL>/auth/oidc/callback and the login
 //                          access token's resource is this origin.
-//   OMB_PERSPICAX_INTERNAL_URL  optional origin (http or https, any host)
+//   SAGAX_PERSPICAX_INTERNAL_URL  optional origin (http or https, any host)
 //                          where this server reaches Perspicax from inside
 //                          the deployment: discovery, JWKS, token, revoke and
 //                          directory calls go there (slice 3).
@@ -98,12 +98,12 @@ export function validLoopbackReturn(value: string | null | undefined): string | 
 /** Read the identity mode from the environment. A half-configured
  * organization server refuses to start rather than fall back to email codes. */
 export function identityConfigFromEnv(env: NodeJS.ProcessEnv = process.env): IdentityConfig {
-  const mode = env.OMB_IDENTITY?.trim().toLowerCase();
+  const mode = env.SAGAX_IDENTITY?.trim().toLowerCase();
   if (!mode || mode === "solo") return { kind: "solo" };
-  if (mode !== "perspicax") throw new Error(`OMB_IDENTITY="${mode.replace(/[^\w.-]/g, "").slice(0, 40)}" is not supported; use perspicax or leave it unset.`);
-  const issuer = validIssuer(env.OMB_PERSPICAX_ISSUER ?? "");
-  if (!issuer) throw new Error("OMB_IDENTITY=perspicax needs OMB_PERSPICAX_ISSUER: the Perspicax https URL (http only on this machine).");
-  const publicUrl = env.OMB_PUBLIC_URL?.trim().replace(/\/+$/, "");
+  if (mode !== "perspicax") throw new Error(`SAGAX_IDENTITY="${mode.replace(/[^\w.-]/g, "").slice(0, 40)}" is not supported; use perspicax or leave it unset.`);
+  const issuer = validIssuer(env.SAGAX_PERSPICAX_ISSUER ?? "");
+  if (!issuer) throw new Error("SAGAX_IDENTITY=perspicax needs SAGAX_PERSPICAX_ISSUER: the Perspicax https URL (http only on this machine).");
+  const publicUrl = env.SAGAX_PUBLIC_URL?.trim().replace(/\/+$/, "");
   let publicOrigin: string;
   try {
     const url = new URL(publicUrl ?? "");
@@ -112,13 +112,13 @@ export function identityConfigFromEnv(env: NodeJS.ProcessEnv = process.env): Ide
     if (url.pathname !== "/" || url.search || url.hash || url.username || url.password) throw new Error("path");
     publicOrigin = url.origin;
   } catch {
-    throw new Error("OMB_IDENTITY=perspicax needs OMB_PUBLIC_URL: this server's public https origin (http only on this machine), with no path.");
+    throw new Error("SAGAX_IDENTITY=perspicax needs SAGAX_PUBLIC_URL: this server's public https origin (http only on this machine), with no path.");
   }
-  const clientId = env.OMB_OIDC_CLIENT_ID?.trim() || DEFAULT_OIDC_CLIENT_ID;
+  const clientId = env.SAGAX_OIDC_CLIENT_ID?.trim() || DEFAULT_OIDC_CLIENT_ID;
   let internalBase: string | undefined;
-  if (env.OMB_PERSPICAX_INTERNAL_URL?.trim()) {
-    internalBase = validInternalBase(env.OMB_PERSPICAX_INTERNAL_URL) ?? undefined;
-    if (!internalBase) throw new Error("OMB_PERSPICAX_INTERNAL_URL must be an http or https origin with no path, e.g. http://perspicax:8787.");
+  if (env.SAGAX_PERSPICAX_INTERNAL_URL?.trim()) {
+    internalBase = validInternalBase(env.SAGAX_PERSPICAX_INTERNAL_URL) ?? undefined;
+    if (!internalBase) throw new Error("SAGAX_PERSPICAX_INTERNAL_URL must be an http or https origin with no path, e.g. http://perspicax:8787.");
   }
   return { kind: "perspicax", issuer, clientId, publicOrigin, redirectUri: `${publicOrigin}${OIDC_CALLBACK_PATH}`, ...(internalBase ? { internalBase } : {}) };
 }

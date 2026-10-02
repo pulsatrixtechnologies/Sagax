@@ -1,5 +1,5 @@
 // `openmausbot serve` on a server that trusts local requests only as a
-// service (OMB_LOOPBACK_TRUST=service). The real CLI starts the real server
+// service (SAGAX_LOOPBACK_TRUST=service). The real CLI starts the real server
 // in a disposable home: the server refuses session-less local admin requests,
 // yet the CLI that started it still prints a pairing code through the secret
 // it handed the server on stdin, and keeps running. Separate CLI commands
@@ -27,7 +27,7 @@ let output = "";
 const environment = () => ({
   ...(process.env.PATH ? { PATH: process.env.PATH } : {}),
   ...(process.env.SystemRoot ? { SystemRoot: process.env.SystemRoot } : {}),
-  HOME: home, USERPROFILE: home, OMB_WEBHOOK_PORT: String(PORT + 1), OMB_LOOPBACK_TRUST: "service",
+  HOME: home, USERPROFILE: home, SAGAX_WEBHOOK_PORT: String(PORT + 1), SAGAX_LOOPBACK_TRUST: "service",
 });
 const cli = async (args: string[]) => {
   try {
@@ -61,7 +61,7 @@ describe.skipIf(process.platform === "win32")("openmausbot serve under service l
   });
 
   it("prints a pairing code for the CLI that started the server and keeps running", async () => {
-    expect(output).toContain("local requests: service trust (OMB_LOOPBACK_TRUST)");
+    expect(output).toContain("local requests: service trust (SAGAX_LOOPBACK_TRUST)");
     expect(output).toMatch(/pairing code: {2}[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}/);
     expect(output).not.toContain("no pairing code");
     expect(serve.exitCode).toBeNull();

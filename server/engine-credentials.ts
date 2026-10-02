@@ -207,7 +207,7 @@ export async function materializeEngineAccess(input: EngineCredentialInput, plan
         access: {
           via: plan.via,
           identity,
-          environment: { OMB_OWNER_OPENAI_API_KEY: result.key },
+          environment: { SAGAX_OWNER_OPENAI_API_KEY: result.key },
           codexHome: join(deps.dataDir, "principals", payer, "codex-key"),
           codexOwnerKey: true,
         },

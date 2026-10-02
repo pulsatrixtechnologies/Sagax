@@ -268,7 +268,7 @@ describe("legacy routine comms e2e (fake ACP fleet)", () => {
     const env: NodeJS.ProcessEnv = {
       HOME: home,
       USERPROFILE: home,
-      OMB_PORT: String(PORT),
+      SAGAX_PORT: String(PORT),
       // Keep the production ask budget: the gated-peer test verifies the
       // caller is released promptly without a test-only timeout override.
     };

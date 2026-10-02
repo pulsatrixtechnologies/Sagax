@@ -53,7 +53,7 @@ export async function userSandboxProxyRequest(frame: unknown, connection: { url:
 }
 
 function run(): void {
-  const connection = { url: process.env.OMB_HARNESS_URL ?? "", token: process.env.OMB_SANDBOX_TOKEN ?? "" };
+  const connection = { url: process.env.SAGAX_HARNESS_URL ?? "", token: process.env.SAGAX_SANDBOX_TOKEN ?? "" };
   let input = Buffer.alloc(0);
   let pending = 0;
   const output = (message: unknown) => {

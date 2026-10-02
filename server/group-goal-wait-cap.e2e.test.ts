@@ -85,11 +85,11 @@ beforeAll(async () => {
       ...(process.env.SystemRoot ? { SystemRoot: process.env.SystemRoot } : {}),
       HOME: home,
       USERPROFILE: home,
-      OMB_PORT: String(port),
-      OMB_WEBHOOK_PORT: String(port + 1),
-      OMB_STATIC_DIR: staticDir,
+      SAGAX_PORT: String(port),
+      SAGAX_WEBHOOK_PORT: String(port + 1),
+      SAGAX_STATIC_DIR: staticDir,
       // seconds, not minutes: the point of this file is the cap firing
-      OMB_GOAL_WAIT_MAX_MS: "1500",
+      SAGAX_GOAL_WAIT_MAX_MS: "1500",
     },
     stdio: ["ignore", "pipe", "pipe"],
   });

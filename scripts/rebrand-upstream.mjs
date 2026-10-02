@@ -59,9 +59,17 @@ const SKIP_EXACT = new Set([
   // existing volumes and hosts keep them; rename with a migration of their own
   "Dockerfile",
   "server/fleet.ts",
+  "server/fleet.test.ts",
   "server/cloud-home-start.ts",
+  "server/cloud-home-start.test.ts",
+  // compose files read an operator's own .env (OMB_* interpolation)
+  "compose.yaml",
+  "compose.mail-test.yaml",
+  ".env.example",
 ]);
-const SKIP_PREFIX = ["third_party/", ".git/", "node_modules/", "deploy/"];
+/** Vendored code, deployed configuration and the native apps (renamed with a
+ * store release of their own). */
+const SKIP_PREFIX = ["third_party/", ".git/", "node_modules/", "deploy/", "ios/", "android/"];
 
 const re = (source, flags = "g") => new RegExp(source, flags);
 
@@ -100,37 +108,33 @@ const PROTECT = [
   re(`\\bapp\\b[^\\n]{0,8}"${OLD}"`),
   // an engine's own environment variable
   re(`HERMES_${OLD_SHORT.toUpperCase()}_[A-Z_]+`),
+  // the data folder lease capability and the migration breadcrumb (legacy-names)
+  re(`${OLD.toUpperCase()}_INTERNAL_DATA_DIR_LEASE`),
+  re(`MOVED_FROM_${OLD.toUpperCase()}`),
+  // the native projects, not renamed with the rest (ios/, android/)
+  re(`OpenMausCompanion[A-Za-z]*`),
 ];
 
 /** Kept verbatim in the native apps only (keychain services, log subsystems). */
 const PROTECT_NATIVE = [re(`com\\.${OLD}\\.[A-Za-z0-9.-]+`)];
 
-/** [pattern, replacement], in order. */
+/** [pattern, replacement], in order. Only the product name and the
+ * environment variables: lowercase identifiers (storage keys, headers, IPC
+ * channels, labels, the `openmausbot` command, host paths) are wire or
+ * stored names and stay (AGENTS.md, "Legacy names kept for compatibility"). */
 const RULES = [
   [re(`OpenMausBot Pro`), "Sagax Pro"],
-  [re(`\\bOMB Cloud\\b`), "Sagax Cloud"],
+  [re(`\\b([Aa])n (?=OpenMaus)`), "$1 "],
   [re(`${OLD.toUpperCase()}_`), "SAGAX_"],
   [re(`${OLD_SHORT.toUpperCase()}_`), "SAGAX_"],
   [re(`${OLD.toUpperCase()}`), "SAGAX"],
+  [re(`(?<![A-Za-z0-9_])OMB_`), "SAGAX_"],
+  [re(`(?<=\\\\[nt])OMB_`), "SAGAX_"],
   [re(`OpenMausBot`), "Sagax"],
   [re(`Openmausbot`), "Sagax"],
   [re(`OpenMaus`), "Sagax"],
   [re(`openMaus(?=[A-Z])`), "sagax"],
-  [re(`${OLD}://`), "sagax://"],
-  [re(`/\\.well-known/${OLD}/`), "/.well-known/sagax/"],
-  [re(`com\\.${OLD}\\.app\\.desktop`), "com.pulsatrix.sagax.desktop"],
-  [re(`com\\.${OLD}\\.`), "com.pulsatrix.sagax."],
-  [re(`com/${OLD}/`), "com/pulsatrix/sagax/"],
-  [re(OLD), "sagax"],
-  [re(`${OLD_SHORT}(?![a-z])`), "sagax"],
-  [re(`(?<![A-Za-z0-9_])OMB_`), "SAGAX_"],
-  [re(`(?<=\\\\[nt])OMB_`), "SAGAX_"],
-  [re(`(?<![A-Za-z0-9])OMB(?![A-Za-z0-9_])`), "Sagax"],
-  [re(`${OLD_TLA}backup`), "sagaxbackup"],
-  [re(`${OLD_TLA}fake`), "sagaxfake"],
-  [re(`(?<![A-Za-z0-9])${OLD_TLA}(?![a-z])`), "sagax"],
-  [re(`(?<=[a-z0-9])Omb(?![a-z])`), "Sagax"],
-  [re(`(?<![A-Za-z0-9])Omb(?=[A-Z])`), "Sagax"],
+  [re(`~/\\.${OLD}(?![A-Za-z0-9-])`), "~/.sagax"],
 ];
 
 function protectedSpans(text, patterns) {
@@ -174,10 +178,13 @@ function skipped(file) {
 
 function main(argv) {
   const write = argv.includes("--write");
+  // --only a/,b/ limits the pass to those path prefixes (one category at a time)
+  const onlyAt = argv.indexOf("--only");
+  const only = onlyAt >= 0 ? argv[onlyAt + 1].split(",") : null;
   let changedFiles = 0;
   const moves = [];
   for (const file of trackedFiles()) {
-    if (skipped(file)) continue;
+    if (skipped(file) || (only && !only.some((prefix) => file.startsWith(prefix)))) continue;
     const path = join(ROOT, file);
     let buffer;
     try { buffer = readFileSync(path); } catch { continue; }

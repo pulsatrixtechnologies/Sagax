@@ -145,12 +145,12 @@ beforeAll(async () => {
       ...(process.env.SystemRoot ? { SystemRoot: process.env.SystemRoot } : {}),
       HOME: home,
       USERPROFILE: home,
-      OMB_PORT: String(port),
-      OMB_WEBHOOK_PORT: String(port + 1),
+      SAGAX_PORT: String(port),
+      SAGAX_WEBHOOK_PORT: String(port + 1),
       // the question-card test leaves its peer turn open on purpose; keep the
       // synchronous ask from parking for the production four minutes
-      OMB_ASK_BOT_TIMEOUT_MS: "6000",
-      OMB_TEST_INTERNAL_CAPABILITY_KEY: TEST_CAPABILITY_KEY,
+      SAGAX_ASK_BOT_TIMEOUT_MS: "6000",
+      SAGAX_TEST_INTERNAL_CAPABILITY_KEY: TEST_CAPABILITY_KEY,
     },
     stdio: ["ignore", "pipe", "pipe"],
   });

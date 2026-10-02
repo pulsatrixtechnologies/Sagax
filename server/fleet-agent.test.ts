@@ -103,9 +103,9 @@ describe.skipIf(process.platform === "win32")("fleet agent over its socket", () 
     expect(created).toMatchObject({ status: 200, body: { ok: true, log: [expect.stringContaining("https://acme.agentada.cc is ready")] } });
     expect(m.calls).toContain("useradd --system --create-home --home-dir " + join(root, "var/lib/openmausbot/acme") + " --shell /usr/sbin/nologin --user-group omb-acme");
     expect(JSON.parse(m.files.get(join(root, "var/lib/openmausbot/acme/.openmausbot/config.json"))!)).toMatchObject({ anthropic: { key: "sk-ant-fixture", url: "https://admin.example.test/api/gateway/acme/anthropic" }, budgets: { monthlyUsd: 40 } });
-    expect(m.files.get(join(root, "etc/openmausbot/instances/acme.env"))).toContain("OMB_LICENSE_KEY=omb1.k");
-    expect(m.files.get(join(root, "etc/openmausbot/instances/acme.env"))).toContain("OMB_ADMIN_URL=https://admin.example.test");
-    expect(m.files.get(join(root, "etc/openmausbot/instances/acme.env"))).toContain("OMB_ADMIN_WORKSPACE=acme");
+    expect(m.files.get(join(root, "etc/openmausbot/instances/acme.env"))).toContain("SAGAX_LICENSE_KEY=omb1.k");
+    expect(m.files.get(join(root, "etc/openmausbot/instances/acme.env"))).toContain("SAGAX_ADMIN_URL=https://admin.example.test");
+    expect(m.files.get(join(root, "etc/openmausbot/instances/acme.env"))).toContain("SAGAX_ADMIN_WORKSPACE=acme");
 
     // The fixture's ledger is summarized by the mocked unprivileged-usage seam.
     // The filesystem suite exercises the real privilege-dropped child.

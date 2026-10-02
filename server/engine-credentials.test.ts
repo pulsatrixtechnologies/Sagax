@@ -157,7 +157,7 @@ describe("materializeEngineAccess", () => {
   it("runs Codex on the payer's OpenAI key from an empty home of their own", async () => {
     const inp = input({ instance: CODEX, keys: ["SUB-OWNER/openai"] });
     const out = await materializeEngineAccess(inp, resolveEngineAccess(inp), deps({ ok: true, key: "sk-test-openai-000000000001", fingerprint: "fp2" }));
-    expect(out).toMatchObject({ ok: true, access: { via: "owner-key", identity: `owner-key:${OWNER}:fp2`, environment: { OMB_OWNER_OPENAI_API_KEY: "sk-test-openai-000000000001" }, codexHome: `/data/principals/${OWNER}/codex-key`, codexOwnerKey: true } });
+    expect(out).toMatchObject({ ok: true, access: { via: "owner-key", identity: `owner-key:${OWNER}:fp2`, environment: { SAGAX_OWNER_OPENAI_API_KEY: "sk-test-openai-000000000001" }, codexHome: `/data/principals/${OWNER}/codex-key`, codexOwnerKey: true } });
     const bobs = input({ speaker: bob, instance: CODEX, keys: ["SUB-BOB/openai"] });
     expect(await materializeEngineAccess(bobs, resolveEngineAccess(bobs), deps({ ok: true, key: "sk-test-openai-000000000002", fingerprint: "fp3" }))).toMatchObject({ ok: true, access: { via: "speaker-key", codexHome: `/data/principals/${BOB_PID}/codex-key`, codexOwnerKey: true } });
   });

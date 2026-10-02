@@ -22,9 +22,9 @@ function usableMilliseconds(raw: string | undefined): number | null {
 }
 
 /** The idle policy for one harness. The per-harness names that preceded the
- *  unified ones (OMB_CLAUDE_SESSION_IDLE_*, OMB_ACP_SESSION_IDLE_*) win when
+ *  unified ones (SAGAX_CLAUDE_SESSION_IDLE_*, SAGAX_ACP_SESSION_IDLE_*) win when
  *  both are set, so a harness-specific override keeps working alongside a
- *  global OMB_SESSION_IDLE_MS / OMB_SESSION_IDLE_MIN_MS; the unified names
+ *  global SAGAX_SESSION_IDLE_MS / SAGAX_SESSION_IDLE_MIN_MS; the unified names
  *  are the default for harnesses that did not set their own. A delay that is
  *  not a positive finite number of at most 2^31-1 ms is validated away before
  *  the floor applies — the old arithmetic coerced Infinity and larger values
@@ -39,12 +39,12 @@ export function sessionIdlePolicy(
   const minimumMs = Math.max(
     MINIMUM_IDLE_MS,
     usableMilliseconds(
-      env[`OMB_${driverPrefix}_SESSION_IDLE_MIN_MS`] ?? env.OMB_SESSION_IDLE_MIN_MS,
+      env[`SAGAX_${driverPrefix}_SESSION_IDLE_MIN_MS`] ?? env.SAGAX_SESSION_IDLE_MIN_MS,
     ) ?? 0,
   );
   const configured =
     usableMilliseconds(
-      env[`OMB_${driverPrefix}_SESSION_IDLE_MS`] ?? env.OMB_SESSION_IDLE_MS,
+      env[`SAGAX_${driverPrefix}_SESSION_IDLE_MS`] ?? env.SAGAX_SESSION_IDLE_MS,
     ) ?? DEFAULT_IDLE_MS;
   return { idleMs: Math.max(minimumMs, configured), minimumMs };
 }

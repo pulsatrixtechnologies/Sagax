@@ -76,8 +76,8 @@ posixOnly("routine failure notification wiring", () => {
     const env: NodeJS.ProcessEnv = {
       HOME: home,
       USERPROFILE: home,
-      OMB_PORT: String(PORT),
-      OMB_WEBHOOK_PORT: String(WEBHOOK_PORT),
+      SAGAX_PORT: String(PORT),
+      SAGAX_WEBHOOK_PORT: String(WEBHOOK_PORT),
     };
     if (process.env.PATH) env.PATH = process.env.PATH;
     if (process.env.SystemRoot) env.SystemRoot = process.env.SystemRoot;

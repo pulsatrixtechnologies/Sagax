@@ -1,4 +1,4 @@
-// Config + data dirs. One file, ~/.openmausbot/config.json, env fallbacks:
+// Config + data dirs. One file, ~/.sagax/config.json, env fallbacks:
 //   { "xai": {"key":"xai-…"}, "composio": {"apiKey":"ak_…"}, "box": {"token":"…"},
 //     "instances": { "<instanceId>": {"driver":"grok", …} } }
 import { readFileSync, mkdirSync, existsSync, renameSync } from "node:fs";
@@ -18,7 +18,7 @@ import { isRemoteMcpServer, parseStoredMcpServer } from "./mcp-registry.ts";
 import { parseJson, schemaIssue, type JsonObject, type JsonValue } from "./schema.ts";
 import { CLOUD_SEAT_IDLE_STOP_MS } from "./cloud-overflow.ts";
 import { cloudHomeConfigured } from "./cloud-home.ts";
-import { defaultDataDir } from "../electron/legacy-names.mjs";
+import { currentEnvName, defaultDataDir } from "../electron/legacy-names.mjs";
 
 const optionalText = z.string().optional();
 const SSH_ALIAS = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/;
@@ -416,7 +416,7 @@ const appConfigSchema = z.object({
   // config.json that still has it loads, the key is dropped on read and
   // never written back. A solo server keeps its email sign-in list,
   // invitations and mail transport (above and below).
-  /** Organization server settings (OMB_IDENTITY=perspicax, slice 3). The
+  /** Organization server settings (SAGAX_IDENTITY=perspicax, slice 3). The
    * slice 3 switch `memberBotsUseOrgKey` was retired on 2026-10-01 (the
    * organization's key now serves whenever an admin set one,
    * engine-credentials.ts): an older config.json that still has it loads,
@@ -443,7 +443,7 @@ const appConfigSchema = z.object({
   /** Mail transport for server-issued sign-in codes and invitations
    * (server/mail-config.ts, server/mailer.ts). Saved by Settings > Email
    * (server/mail-routes.ts), never by a generic config patch; a saved field
-   * wins over its OMB_MAIL_* environment default. */
+   * wins over its SAGAX_MAIL_* environment default. */
   mail: z.object({
     provider: z.enum(["smtp", "sendgrid", "twilio"]).optional(),
     from: optionalText,
@@ -599,7 +599,7 @@ const appConfigSchema = z.object({
   }).strict().optional(),
   threads: threadsConfigSchema.optional(),
   /** The authorization decision log (server/decision-log.ts): days of month
-   * files kept, at least; OMB_DECISION_RETENTION_DAYS wins when set. */
+   * files kept, at least; SAGAX_DECISION_RETENTION_DAYS wins when set. */
   decisions: z.object({ retentionDays: z.number().int().min(1).max(3650).optional() }).strict().optional(),
   /** #1655 cloud-overflow settings. perSecondCostUsd is the operator's own
    * verified rate: with no price configured the feature stays inert rather
@@ -880,7 +880,7 @@ export function localVmMode(cfg: AppConfig, env: NodeJS.ProcessEnv = process.env
   // Organization mode never runs a VM per bot: each person has one server
   // environment (server/user-sandbox-routing.ts). A saved per-bot choice
   // from before reads as shared there.
-  return mode === "per-bot" && env.OMB_IDENTITY?.trim().toLowerCase() === "perspicax" ? "shared" : mode;
+  return mode === "per-bot" && env.SAGAX_IDENTITY?.trim().toLowerCase() === "perspicax" ? "shared" : mode;
 }
 
 export function localVmMaxInstances(cfg: AppConfig): number {
@@ -940,7 +940,7 @@ export function builtInBrowserEnabled(cfg: AppConfig, env: NodeJS.ProcessEnv = p
  *
  * Deliberately NOT a Settings toggle: this is a maintainer-only escape hatch
  * for an unfinished feature, not a user preference. Someone who needs it
- * enables it by hand in `~/.openmausbot/config.json`
+ * enables it by hand in `~/.sagax/config.json`
  * (`{"features": {"sharedComputers": true}}`) and restarts the server. */
 export function sharedComputersEnabled(cfg: AppConfig): boolean {
   return cfg.features?.sharedComputers === true;
@@ -963,7 +963,7 @@ export function claudeUserMcpEnabled(cfg: AppConfig): boolean {
 
 /** Opt-in generated titles for new bot threads: a cheap provider one-shot
  * names the row instead of the first-message snippet. Off until enabled by
- * hand in ~/.openmausbot/config.json
+ * hand in ~/.sagax/config.json
  * (`{"features": {"llmThreadTitles": true}}`); a one-shot that fails or
  * answers anything unusable leaves the snippet untouched. */
 export function llmThreadTitlesEnabled(cfg: AppConfig): boolean {
@@ -976,7 +976,7 @@ export function llmThreadTitlesEnabled(cfg: AppConfig): boolean {
  * re-claims directly inside a reclaim window (default 10 minutes) while
  * yielding to a seat another turn already holds. Off unless an explicit
  * `true` — bake it as a maintainer-only flag first, exactly like
- * sharedComputers: enable by hand in ~/.openmausbot/config.json
+ * sharedComputers: enable by hand in ~/.sagax/config.json
  * (`{"features": {"computerClaimIdleRelease": true}}`) and restart. */
 export function computerClaimIdleReleaseEnabled(cfg: AppConfig): boolean {
   return cfg.features?.computerClaimIdleRelease === true;
@@ -988,7 +988,7 @@ export function computerClaimIdleReleaseEnabled(cfg: AppConfig): boolean {
  * explicit per-conversation consent or a configured allowlist thread may
  * start the machine, which then hard-stops after an idle window. Off
  * unless an explicit `true`, like computerClaimIdleRelease: enable by
- * hand in ~/.openmausbot/config.json
+ * hand in ~/.sagax/config.json
  * (`{"features": {"cloudOverflow": true}, "cloudOverflow": {"perSecondCostUsd": 0.0004}}`)
  * and restart. */
 export function cloudOverflowEnabled(cfg: AppConfig): boolean {
@@ -1042,10 +1042,10 @@ export function providerReloadKeys(patch: object): string[] {
   return Object.keys(patch).filter((key) => !FLEET_NEUTRAL_KEYS.has(key));
 }
 
-// OMB_DATA_DIR (SAGAX_DATA_DIR) isolates test/soak rigs from the user's real
+// SAGAX_DATA_DIR (or OMB_DATA_DIR) isolates test/soak rigs from the user's real
 // fleet. The default is ~/.sagax; a first start moves ~/.openmausbot there
 // unless a running copy still holds it (electron/legacy-names.mjs).
-export const DATA_DIR = process.env.OMB_DATA_DIR ?? defaultDataDir({ home: homedir() });
+export const DATA_DIR = process.env.SAGAX_DATA_DIR ?? defaultDataDir({ home: homedir() });
 const LEGACY_DATA_DIR = join(homedir(), ".opengrokbot");
 export const EVENTS_DIR = join(DATA_DIR, "events");
 export const NATIVE_DIR = join(DATA_DIR, "native");
@@ -1134,12 +1134,12 @@ export function loadConfig(): AppConfig {
   // never the workspace key, so an operator's stray variable cannot flip
   // every Claude bot onto pay-as-you-go billing.
   cfg.anthropic = { ...cfg.anthropic };
-  if (process.env.OMB_ANTHROPIC_API_KEY !== undefined) cfg.anthropic.key = process.env.OMB_ANTHROPIC_API_KEY;
-  if (process.env.OMB_ANTHROPIC_API_URL !== undefined) cfg.anthropic.url = process.env.OMB_ANTHROPIC_API_URL;
+  if (process.env.SAGAX_ANTHROPIC_API_KEY !== undefined) cfg.anthropic.key = process.env.SAGAX_ANTHROPIC_API_KEY;
+  if (process.env.SAGAX_ANTHROPIC_API_URL !== undefined) cfg.anthropic.url = process.env.SAGAX_ANTHROPIC_API_URL;
   cfg.openai = { ...cfg.openai };
-  if (process.env.OMB_OPENAI_API_KEY !== undefined) cfg.openai.key = process.env.OMB_OPENAI_API_KEY;
+  if (process.env.SAGAX_OPENAI_API_KEY !== undefined) cfg.openai.key = process.env.SAGAX_OPENAI_API_KEY;
   cfg.openrouter = { ...cfg.openrouter };
-  if (process.env.OMB_OPENROUTER_API_KEY !== undefined) cfg.openrouter.key = process.env.OMB_OPENROUTER_API_KEY;
+  if (process.env.SAGAX_OPENROUTER_API_KEY !== undefined) cfg.openrouter.key = process.env.SAGAX_OPENROUTER_API_KEY;
   cfg.openaiCompat = { ...cfg.openaiCompat };
   if (process.env.OPENAI_COMPAT_API_KEY !== undefined) cfg.openaiCompat.key = process.env.OPENAI_COMPAT_API_KEY;
   if (process.env.OPENAI_COMPAT_URL !== undefined) cfg.openaiCompat.url = process.env.OPENAI_COMPAT_URL;
@@ -1153,24 +1153,24 @@ export function loadConfig(): AppConfig {
   cfg.opencodeGo = { ...cfg.opencodeGo };
   if (process.env.OPENCODE_API_KEY !== undefined) cfg.opencodeGo.apiKey = process.env.OPENCODE_API_KEY;
   cfg.tts = { ...cfg.tts };
-  if (process.env.OMB_TTS_KEY !== undefined) cfg.tts.key = process.env.OMB_TTS_KEY;
+  if (process.env.SAGAX_TTS_KEY !== undefined) cfg.tts.key = process.env.SAGAX_TTS_KEY;
   // A preset ElevenLabs voice (Cloud Pro sets one) is only a default: a voice or
   // another speech provider the person picked in Settings always wins.
-  const presetVoice = process.env.OMB_TTS_DEFAULT_VOICE?.trim();
+  const presetVoice = process.env.SAGAX_TTS_DEFAULT_VOICE?.trim();
   if (presetVoice && !cfg.tts.voice?.trim() && (cfg.tts.provider ?? "elevenlabs") === "elevenlabs") cfg.tts.voice = presetVoice;
-  if (process.env.OMB_FISH_AUDIO_API_KEY !== undefined) cfg.tts.fishKey = process.env.OMB_FISH_AUDIO_API_KEY;
+  if (process.env.SAGAX_FISH_AUDIO_API_KEY !== undefined) cfg.tts.fishKey = process.env.SAGAX_FISH_AUDIO_API_KEY;
   cfg.decider = { ...cfg.decider };
-  if (process.env.OMB_JEV_API_KEY !== undefined) cfg.decider.key = process.env.OMB_JEV_API_KEY;
+  if (process.env.SAGAX_JEV_API_KEY !== undefined) cfg.decider.key = process.env.SAGAX_JEV_API_KEY;
   cfg.imageGen = { ...cfg.imageGen };
-  if (process.env.OMB_OPENAI_IMAGE_KEY !== undefined) cfg.imageGen.key = process.env.OMB_OPENAI_IMAGE_KEY;
-  if (process.env.OMB_CUSTOM_IMAGE_KEY !== undefined) cfg.imageGen.customApiKey = process.env.OMB_CUSTOM_IMAGE_KEY;
+  if (process.env.SAGAX_OPENAI_IMAGE_KEY !== undefined) cfg.imageGen.key = process.env.SAGAX_OPENAI_IMAGE_KEY;
+  if (process.env.SAGAX_CUSTOM_IMAGE_KEY !== undefined) cfg.imageGen.customApiKey = process.env.SAGAX_CUSTOM_IMAGE_KEY;
   // The sign-in allow-list: env is how a headless box or a container is
   // bootstrapped before anyone can reach Settings.
   const splitEmails = (value: string) => value.split(/[,\s]+/).map((entry) => entry.trim().toLowerCase()).filter(Boolean);
-  if (process.env.OMB_SIGNIN_EMAILS !== undefined || process.env.OMB_SIGNIN_MEMBER_EMAILS !== undefined) {
+  if (process.env.SAGAX_SIGNIN_EMAILS !== undefined || process.env.SAGAX_SIGNIN_MEMBER_EMAILS !== undefined) {
     cfg.signIn = { ...cfg.signIn };
-    if (process.env.OMB_SIGNIN_EMAILS !== undefined) cfg.signIn.admins = splitEmails(process.env.OMB_SIGNIN_EMAILS);
-    if (process.env.OMB_SIGNIN_MEMBER_EMAILS !== undefined) cfg.signIn.members = splitEmails(process.env.OMB_SIGNIN_MEMBER_EMAILS);
+    if (process.env.SAGAX_SIGNIN_EMAILS !== undefined) cfg.signIn.admins = splitEmails(process.env.SAGAX_SIGNIN_EMAILS);
+    if (process.env.SAGAX_SIGNIN_MEMBER_EMAILS !== undefined) cfg.signIn.members = splitEmails(process.env.SAGAX_SIGNIN_MEMBER_EMAILS);
   }
   return cfg;
 }
@@ -1186,18 +1186,18 @@ export function syncCredentialEnv(patch: Partial<Omit<AppConfig, "threads" | "ne
   const secrets: Array<[value: string | undefined, name: string]> = [
     [patch.xai?.key, "XAI_API_KEY"],
     [patch.mistral?.key, "MISTRAL_API_KEY"],
-    [patch.anthropic?.key, "OMB_ANTHROPIC_API_KEY"],
+    [patch.anthropic?.key, "SAGAX_ANTHROPIC_API_KEY"],
     [patch.openaiCompat?.key, "OPENAI_COMPAT_API_KEY"],
-    [patch.openai?.key, "OMB_OPENAI_API_KEY"],
-    [patch.openrouter?.key, "OMB_OPENROUTER_API_KEY"],
+    [patch.openai?.key, "SAGAX_OPENAI_API_KEY"],
+    [patch.openrouter?.key, "SAGAX_OPENROUTER_API_KEY"],
     [patch.composio?.apiKey, "COMPOSIO_API_KEY"],
     [patch.box?.token, "BOX_TOKEN"],
     [patch.opencodeGo?.apiKey, "OPENCODE_API_KEY"],
-    [patch.tts?.key, "OMB_TTS_KEY"],
-    [patch.tts?.fishKey, "OMB_FISH_AUDIO_API_KEY"],
-    [patch.decider?.key, "OMB_JEV_API_KEY"],
-    [patch.imageGen?.key, "OMB_OPENAI_IMAGE_KEY"],
-    [patch.imageGen?.customApiKey, "OMB_CUSTOM_IMAGE_KEY"],
+    [patch.tts?.key, "SAGAX_TTS_KEY"],
+    [patch.tts?.fishKey, "SAGAX_FISH_AUDIO_API_KEY"],
+    [patch.decider?.key, "SAGAX_JEV_API_KEY"],
+    [patch.imageGen?.key, "SAGAX_OPENAI_IMAGE_KEY"],
+    [patch.imageGen?.customApiKey, "SAGAX_CUSTOM_IMAGE_KEY"],
   ];
   for (const [value, name] of secrets) {
     if (value === undefined) continue;
@@ -1208,7 +1208,7 @@ export function syncCredentialEnv(patch: Partial<Omit<AppConfig, "threads" | "ne
   // must follow the same set-when-truthy / delete-when-cleared rule as keys.
   const settings: Array<[value: string | undefined, name: string]> = [
     [patch.openaiCompat?.url, "OPENAI_COMPAT_URL"],
-    [patch.anthropic?.url, "OMB_ANTHROPIC_API_URL"],
+    [patch.anthropic?.url, "SAGAX_ANTHROPIC_API_URL"],
     [patch.openaiCompat?.model, "OPENAI_COMPAT_MODEL"],
     [patch.openaiCompat?.provider, "OPENAI_COMPAT_PROVIDER"],
   ];
@@ -1227,61 +1227,62 @@ export function syncCredentialEnv(patch: Partial<Omit<AppConfig, "threads" | "ne
 export const WORKSPACE_CREDENTIAL_ENV = [
   "XAI_API_KEY",
   "MISTRAL_API_KEY",
-  "OMB_ANTHROPIC_API_KEY",
-  "OMB_ANTHROPIC_API_URL",
-  "OMB_HOSTED_MODEL_TOKEN",
-  "OMB_HOSTED_MODELS",
+  "SAGAX_ANTHROPIC_API_KEY",
+  "SAGAX_ANTHROPIC_API_URL",
+  "SAGAX_HOSTED_MODEL_TOKEN",
+  "SAGAX_HOSTED_MODELS",
   "OPENAI_COMPAT_API_KEY",
   "OPENAI_COMPAT_URL",
-  "OMB_OPENAI_API_KEY",
-  "OMB_OPENROUTER_API_KEY",
+  "SAGAX_OPENAI_API_KEY",
+  "SAGAX_OPENROUTER_API_KEY",
   "BOX_TOKEN",
   "OPENCODE_API_KEY",
-  "OMB_TTS_KEY",
-  "OMB_FISH_AUDIO_API_KEY",
-  "OMB_JEV_API_KEY",
-  "OMB_OPENAI_IMAGE_KEY",
-  "OMB_CUSTOM_IMAGE_KEY",
+  "SAGAX_TTS_KEY",
+  "SAGAX_FISH_AUDIO_API_KEY",
+  "SAGAX_JEV_API_KEY",
+  "SAGAX_OPENAI_IMAGE_KEY",
+  "SAGAX_CUSTOM_IMAGE_KEY",
   "COMPOSIO_API_KEY",
-  "OMB_COMPOSIO_BROKER_TOKEN",
+  "SAGAX_COMPOSIO_BROKER_TOKEN",
   // The key of the encrypted MCP sign-in vault (server/mcp-oauth.ts).
-  "OMB_MCP_OAUTH_KEY",
+  "SAGAX_MCP_OAUTH_KEY",
   // Cloud Pro's included Boat, voice and decision relay tokens
   // (included-services.ts), used only in-process by the Boat, voice and
   // decider modules.
-  "OMB_CLOUD_BOAT_TOKEN",
-  "OMB_CLOUD_VOICE_TOKEN",
-  "OMB_CLOUD_DECIDER_TOKEN",
+  "SAGAX_CLOUD_BOAT_TOKEN",
+  "SAGAX_CLOUD_VOICE_TOKEN",
+  "SAGAX_CLOUD_DECIDER_TOKEN",
   // Harness-private filesystem hints are not credentials themselves, but
   // exposing them to a shell-capable agent points straight at app-owned
   // state. The built-in browser master is delivered privately in memory.
-  "OMB_BROWSER_CONNECTION",
-  "OMB_USER_DATA",
+  "SAGAX_BROWSER_CONNECTION",
+  "SAGAX_USER_DATA",
 ] as const;
 
 /** Secrets of whoever operates this server, not of the workspace: the license
  * key, a fleet container's installation credential, and everything a hosting
- * control plane injects under `OMB_CLOUD_` (the readiness token, the bootstrap
+ * control plane injects under `SAGAX_CLOUD_` (the readiness token, the bootstrap
  * document and its gateway token). Only this process reads them. The prefix
- * ends in an underscore on purpose: `OMB_CLOUDFLARED_PATH` is not one of them.
+ * ends in an underscore on purpose: `SAGAX_CLOUDFLARED_PATH` is not one of them.
  * What an engine is meant to receive arrives under another name through its
  * instance environment (the hosted model token as ANTHROPIC_API_KEY or
- * OPENMAUSBOT_COMPANY_API_KEY), so nothing here is ever an engine's input.
+ * SAGAX_COMPANY_API_KEY), so nothing here is ever an engine's input.
  * The Perspicax link settings belong here too: the link file holds the
  * server's link token, and an engine that learnt its path (or the issuer to
  * use it with) could read it as the same user. */
 export const CONTROL_PLANE_ENV = [
-  "OMB_LICENSE_KEY", "OMB_INSTALLATION_CREDENTIAL",
-  "OMB_PERSPICAX_LINK_FILE", "OMB_PERSPICAX_ISSUER", "OMB_PERSPICAX_INTERNAL_URL",
+  "SAGAX_LICENSE_KEY", "SAGAX_INSTALLATION_CREDENTIAL",
+  "SAGAX_PERSPICAX_LINK_FILE", "SAGAX_PERSPICAX_ISSUER", "SAGAX_PERSPICAX_INTERNAL_URL",
 ] as const;
-export const CONTROL_PLANE_ENV_PREFIX = "OMB_CLOUD_";
+export const CONTROL_PLANE_ENV_PREFIX = "SAGAX_CLOUD_";
 
 /** Drop every control-plane secret from a child-process env (in place). No
  * driver allowlist re-admits these. Names compare case-insensitively because
  * Windows environments do. */
 export function stripControlPlaneEnv(env: Record<string, string | undefined>): void {
   for (const key of Object.keys(env)) {
-    const name = key.toUpperCase();
+    // an old name (OMB_CLOUD_*) still in a child env is the same secret
+    const name = currentEnvName(key.toUpperCase());
     if (name.startsWith(CONTROL_PLANE_ENV_PREFIX) || (CONTROL_PLANE_ENV as readonly string[]).includes(name)) delete env[key];
   }
 }
@@ -1290,6 +1291,10 @@ export function stripControlPlaneEnv(env: Record<string, string | undefined>): v
  * child-process env (in place). */
 export function stripWorkspaceCredentialEnv(env: Record<string, string | undefined>): void {
   for (const key of WORKSPACE_CREDENTIAL_ENV) delete env[key];
+  // and the same credentials under their old names (OMB_ANTHROPIC_API_KEY)
+  for (const key of Object.keys(env)) {
+    if ((WORKSPACE_CREDENTIAL_ENV as readonly string[]).includes(currentEnvName(key))) delete env[key];
+  }
   stripControlPlaneEnv(env);
 }
 
@@ -1323,7 +1328,7 @@ export function onConfigSaved(listener: (before: JsonObject, after: JsonObject) 
   return () => { configSaveListeners.delete(listener); };
 }
 
-/** Merge a partial config into ~/.openmausbot/config.json (secrets never
+/** Merge a partial config into ~/.sagax/config.json (secrets never
  * echoed back — callers report configured-or-not booleans only). */
 /** Remove the organization keys retired on 2026-10-01 (memberBotsUseOrgKey)
  * from config.json, once, at start. True when the file changed. */
@@ -1637,9 +1642,9 @@ function injectedEnvironment(cfg: AppConfig, instanceId: string, driver: string)
   // OpenAI-compatible key and URL belong to every other openai-compat
   // instance ("Other" in Settings).
   if (driver === "openai-compat" && instanceId === OPENAI_API_INSTANCE) {
-    if (cfg.openai?.key) environment.set("OMB_OPENAI_API_KEY", cfg.openai.key);
+    if (cfg.openai?.key) environment.set("SAGAX_OPENAI_API_KEY", cfg.openai.key);
   } else if (driver === "openai-compat" && instanceId === OPENROUTER_API_INSTANCE) {
-    if (cfg.openrouter?.key) environment.set("OMB_OPENROUTER_API_KEY", cfg.openrouter.key);
+    if (cfg.openrouter?.key) environment.set("SAGAX_OPENROUTER_API_KEY", cfg.openrouter.key);
   } else {
     if (driver === "openai-compat" && cfg.openaiCompat?.key)
       environment.set("OPENAI_COMPAT_API_KEY", cfg.openaiCompat.key);
@@ -1659,7 +1664,7 @@ const DRIVER_CREDENTIAL_VARIABLES: Record<string, readonly string[]> = {
   claudeAgent: ["ANTHROPIC_API_KEY"],
   mistral: ["MISTRAL_API_KEY"],
   grok: ["XAI_API_KEY"],
-  "openai-compat": ["OPENAI_COMPAT_API_KEY", "OMB_OPENAI_API_KEY", "OMB_OPENROUTER_API_KEY"],
+  "openai-compat": ["OPENAI_COMPAT_API_KEY", "SAGAX_OPENAI_API_KEY", "SAGAX_OPENROUTER_API_KEY"],
   opencodeGo: ["OPENCODE_API_KEY"],
 };
 
@@ -1686,7 +1691,7 @@ export const CLAUDE_API_INSTANCE = "claudeApi";
 const API_KEY_FLEET: InstanceConfigMap = {
   [OPENAI_API_INSTANCE]: {
     driver: "openai-compat", displayName: "OpenAI", access: "api", icon: { kind: "preset", preset: "openai" },
-    config: { url: "https://api.openai.com/v1", apiKeyEnv: "OMB_OPENAI_API_KEY", catalog: "openai" },
+    config: { url: "https://api.openai.com/v1", apiKeyEnv: "SAGAX_OPENAI_API_KEY", catalog: "openai" },
   },
   [CLAUDE_API_INSTANCE]: {
     driver: "claudeAgent", displayName: "Claude (API key)", access: "api", icon: { kind: "preset", preset: "anthropic" },
@@ -1695,7 +1700,7 @@ const API_KEY_FLEET: InstanceConfigMap = {
   [XAI_API_INSTANCE]: { driver: "grok", displayName: "xAI", access: "api", icon: { kind: "preset", preset: "xai" } },
   [OPENROUTER_API_INSTANCE]: {
     driver: "openai-compat", displayName: "OpenRouter", access: "api", icon: { kind: "preset", preset: "openrouter" },
-    config: { url: "https://openrouter.ai/api/v1", apiKeyEnv: "OMB_OPENROUTER_API_KEY" },
+    config: { url: "https://openrouter.ai/api/v1", apiKeyEnv: "SAGAX_OPENROUTER_API_KEY" },
   },
 };
 

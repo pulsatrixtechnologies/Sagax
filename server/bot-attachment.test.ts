@@ -6,7 +6,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 // attachments.ts reads DATA_DIR at import time.
 const DATA_ROOT = mkdtempSync(join(tmpdir(), "omb-bot-attachment-"));
-process.env.OMB_DATA_DIR = join(DATA_ROOT, "data");
+process.env.SAGAX_DATA_DIR = join(DATA_ROOT, "data");
 const { attachForTurn, guestWorkspaceToHost, saveBotAttachment } = await import("./bot-attachment.ts");
 const { ATTACHMENTS_DIR } = await import("./attachments.ts");
 

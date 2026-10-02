@@ -55,8 +55,8 @@ async function start() {
     env: {
       ...(process.env.PATH ? { PATH: process.env.PATH } : {}),
       ...(process.env.SystemRoot ? { SystemRoot: process.env.SystemRoot } : {}),
-      HOME: home, USERPROFILE: home, OMB_PORT: String(PORT), OMB_WEBHOOK_PORT: String(PORT + 1),
-      OMB_TEST_INTERNAL_CAPABILITY_KEY: CAPABILITY_KEY,
+      HOME: home, USERPROFILE: home, SAGAX_PORT: String(PORT), SAGAX_WEBHOOK_PORT: String(PORT + 1),
+      SAGAX_TEST_INTERNAL_CAPABILITY_KEY: CAPABILITY_KEY,
     },
     stdio: ["ignore", "pipe", "pipe"],
   });

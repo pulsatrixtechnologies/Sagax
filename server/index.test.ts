@@ -1042,7 +1042,7 @@ beforeAll(async () => {
     const spawn = childProcess.spawn;
     const base = ${JSON.stringify(home)};
     childProcess.spawn = function(command, args, options) {
-      if (command !== process.env.OMB_AGENT_BROWSER_PATH) return spawn(command, args, options);
+      if (command !== process.env.SAGAX_AGENT_BROWSER_PATH) return spawn(command, args, options);
       const program = 'const fs = require("node:fs"); const path = require("node:path"); '
         + 'const base = ' + JSON.stringify(base) + '; '
         + 'fs.appendFileSync(path.join(base, "browser-calls.jsonl"), JSON.stringify({args: process.argv.slice(1), session: process.env.AGENT_BROWSER_SESSION}) + "\\\\n"); '
@@ -1060,24 +1060,24 @@ beforeAll(async () => {
       ...(process.env.SystemRoot ? { SystemRoot: process.env.SystemRoot } : {}),
       HOME: home,
       USERPROFILE: home,
-      OMB_PORT: String(PORT),
-      OMB_WEBHOOK_PORT: String(WEBHOOK_PORT),
-      OMB_EXTRA_PATH: fakeDockerDir,
-      OMB_BOX_API: `http://127.0.0.1:${boatStubPort}`,
-      OMB_COMPOSIO_API: `http://127.0.0.1:${boatStubPort}/api/v3.1`,
-      OMB_COMPOSIO_TOOLKITS_API: `http://127.0.0.1:${boatStubPort}/api/v3`,
+      SAGAX_PORT: String(PORT),
+      SAGAX_WEBHOOK_PORT: String(WEBHOOK_PORT),
+      SAGAX_EXTRA_PATH: fakeDockerDir,
+      SAGAX_BOX_API: `http://127.0.0.1:${boatStubPort}`,
+      SAGAX_COMPOSIO_API: `http://127.0.0.1:${boatStubPort}/api/v3.1`,
+      SAGAX_COMPOSIO_TOOLKITS_API: `http://127.0.0.1:${boatStubPort}/api/v3`,
       // Managed connected-apps broker on the stub, so relayed MCP frames are
       // observable without any network. A project key set through the config
       // API still wins over this, exactly as in production.
-      OMB_COMPOSIO_BROKER_URL: `http://127.0.0.1:${boatStubPort}/broker`,
-      OMB_COMPOSIO_BROKER_TOKEN: "a".repeat(64),
-      OMB_STATIC_DIR: staticDir,
+      SAGAX_COMPOSIO_BROKER_URL: `http://127.0.0.1:${boatStubPort}/broker`,
+      SAGAX_COMPOSIO_BROKER_TOKEN: "a".repeat(64),
+      SAGAX_STATIC_DIR: staticDir,
       // The bots' browser engine: a stand-in binary the fake engine CLIs never
       // run; the turn only has to mount it.
-      OMB_AGENT_BROWSER_PATH: join(home, "fake-agent-browser"),
+      SAGAX_AGENT_BROWSER_PATH: join(home, "fake-agent-browser"),
       // Production uses 15s. Keep the real timer path while making the
       // browser-visible heartbeat assertion fast and deterministic.
-      OMB_SSE_HEARTBEAT_MS: "50",
+      SAGAX_SSE_HEARTBEAT_MS: "50",
       FAKE_CLAUDE_MODE: "hang",
       FAKE_CLAUDE_DUMP: fakeClaudeDump,
       // the one-shot text helper fails by default (its reply file is
@@ -1087,7 +1087,7 @@ beforeAll(async () => {
       FAKE_CLAUDE_TEXT_DUMP: oneShotTextDump,
       // the real CLI runs Manual for these even when asked for auto
       FAKE_CLAUDE_AUTO_UNAVAILABLE_MODELS: "claude-haiku-4-5",
-      OMB_TEST_INTERNAL_CAPABILITY_KEY: TEST_CAPABILITY_KEY,
+      SAGAX_TEST_INTERNAL_CAPABILITY_KEY: TEST_CAPABILITY_KEY,
     },
     stdio: ["ignore", "pipe", "pipe"],
   });
@@ -1334,9 +1334,9 @@ describe("harness HTTP API", () => {
       env: {
         ...(process.env.PATH ? { PATH: process.env.PATH } : {}),
         ...(process.env.SystemRoot ? { SystemRoot: process.env.SystemRoot } : {}),
-        OMB_DATA_DIR: join(home, ".sagax"),
-        OMB_PORT: String(contenderPort),
-        OMB_STATIC_DIR: staticDir,
+        SAGAX_DATA_DIR: join(home, ".sagax"),
+        SAGAX_PORT: String(contenderPort),
+        SAGAX_STATIC_DIR: staticDir,
       },
       stdio: ["ignore", "ignore", "pipe"],
     });
@@ -2070,11 +2070,11 @@ describe("harness HTTP API", () => {
       const dump = z.object({
         mcpConfig: z.object({
           mcpServers: z.object({
-            agents: z.object({ env: z.object({ OMB_COMMS_TOKEN: z.string() }) }),
+            agents: z.object({ env: z.object({ SAGAX_COMMS_TOKEN: z.string() }) }),
           }),
         }),
       }).parse(await readJsonFileWhenReady(fakeClaudeDump));
-      expect(dump.mcpConfig.mcpServers.agents.env.OMB_COMMS_TOKEN).toMatch(/^[a-f0-9]{48}$/);
+      expect(dump.mcpConfig.mcpServers.agents.env.SAGAX_COMMS_TOKEN).toMatch(/^[a-f0-9]{48}$/);
       expect((await api("POST", `/api/bots/${chief.id}/interrupt`)).status).toBe(200);
 
       const createOperator = async (fromThreadId: string, name: string, fromBotId = chief.id) => {
@@ -3164,13 +3164,13 @@ describe("harness HTTP API", () => {
         ...(process.env.SystemRoot ? { SystemRoot: process.env.SystemRoot } : {}),
         HOME: isolatedHome,
         USERPROFILE: isolatedHome,
-        OMB_PORT: String(isolatedPort),
-        OMB_WEBHOOK_PORT: String(isolatedPort + 1),
-        OMB_STATIC_DIR: isolatedStatic,
-        OMB_BOX_API: `http://127.0.0.1:${boatStubPort}`,
+        SAGAX_PORT: String(isolatedPort),
+        SAGAX_WEBHOOK_PORT: String(isolatedPort + 1),
+        SAGAX_STATIC_DIR: isolatedStatic,
+        SAGAX_BOX_API: `http://127.0.0.1:${boatStubPort}`,
         FAKE_CLAUDE_MODE: "hang",
         // seconds, not minutes: the point of this file is the cap firing
-        OMB_GOAL_WAIT_MAX_MS: "2000",
+        SAGAX_GOAL_WAIT_MAX_MS: "2000",
       },
       stdio: ["ignore", "pipe", "pipe"],
     });
@@ -4704,9 +4704,9 @@ describe("harness HTTP API", () => {
         ...(process.env.SystemRoot ? { SystemRoot: process.env.SystemRoot } : {}),
         HOME: isolatedHome,
         USERPROFILE: isolatedHome,
-        OMB_PORT: String(isolatedPort),
-        OMB_WEBHOOK_PORT: String(isolatedPort + 1),
-        OMB_STATIC_DIR: isolatedStatic,
+        SAGAX_PORT: String(isolatedPort),
+        SAGAX_WEBHOOK_PORT: String(isolatedPort + 1),
+        SAGAX_STATIC_DIR: isolatedStatic,
         FAKE_CLAUDE_MODE: "hang",
         FAKE_CLAUDE_DUMP: join(isolatedHome, "fake-claude-dump.json"),
       },
@@ -4849,7 +4849,7 @@ describe("harness HTTP API", () => {
     expect(markdownExport.body.markdown).toContain("Give this file to your Chief of Staff");
     expect(markdownExport.body.markdown).not.toMatch(/Archived|autoApprove|alwaysAllow|modelSelection|threadId/);
     expect((await api("GET", "/api/bots")).body.groups).toHaveLength(roomsBefore);
-    expect((await api("POST", "/api/teams/export", {})).body.team.name).toBe("My OpenMaus Team");
+    expect((await api("POST", "/api/teams/export", {})).body.team.name).toBe("My Sagax Team");
 
     const stream = await openSse(`${BASE}/api/events`);
     try {
@@ -5396,9 +5396,9 @@ describe("harness HTTP API", () => {
       rmSync(fakeClaudeDump, { force: true });
       expect((await api("POST", `/api/bots/${bot.id}/messages`, { text: "stay active" })).status).toBe(202);
       const dump = await readJsonFileWhenReady<{
-        mcpConfig: { mcpServers: { agents: { env: { OMB_COMMS_TOKEN: string } } } };
+        mcpConfig: { mcpServers: { agents: { env: { SAGAX_COMMS_TOKEN: string } } } };
       }>(fakeClaudeDump);
-      const token = dump.mcpConfig.mcpServers.agents.env.OMB_COMMS_TOKEN;
+      const token = dump.mcpConfig.mcpServers.agents.env.SAGAX_COMMS_TOKEN;
       const requested = await fetch(`${BASE}/api/internal/request-credential`, {
         method: "POST",
         headers: {
@@ -5662,7 +5662,7 @@ describe("harness HTTP API", () => {
                   : null;
                 if (!patch) throw new Error("unsupported test credential target");
                 const response = await fetch(
-                  "http://127.0.0.1:" + process.env.OMB_PORT + "/api/config?secretStorage=external",
+                  "http://127.0.0.1:" + process.env.SAGAX_PORT + "/api/config?secretStorage=external",
                   {
                     method: "PUT",
                     headers: { "content-type": "application/json" },
@@ -5700,12 +5700,12 @@ describe("harness HTTP API", () => {
           ...(process.env.SystemRoot ? { SystemRoot: process.env.SystemRoot } : {}),
           HOME: isolatedHome,
           USERPROFILE: isolatedHome,
-          OMB_PORT: String(isolatedPort),
-          OMB_WEBHOOK_PORT: String(isolatedPort + 1),
-          OMB_STATIC_DIR: isolatedStatic,
+          SAGAX_PORT: String(isolatedPort),
+          SAGAX_WEBHOOK_PORT: String(isolatedPort + 1),
+          SAGAX_STATIC_DIR: isolatedStatic,
           FAKE_CLAUDE_MODE: "hang",
           FAKE_CLAUDE_DUMP: isolatedDump,
-          OMB_TEST_INTERNAL_CAPABILITY_KEY: TEST_CAPABILITY_KEY,
+          SAGAX_TEST_INTERNAL_CAPABILITY_KEY: TEST_CAPABILITY_KEY,
         },
         stdio: ["ignore", "pipe", "pipe"],
       },
@@ -7991,8 +7991,8 @@ describe("harness HTTP API", () => {
       const browser = dump.mcpConfig.mcpServers.browser;
       expect(browser.command).toBe(process.execPath);
       expect(browser.args).toEqual([expect.stringMatching(/browser-proxy\.(?:ts|js|mjs)$/)]);
-      expect(browser.env.OMB_BROWSER_TOKEN).toEqual(expect.any(String));
-      expect(browser.env.OMB_HARNESS_URL).toBe(BASE);
+      expect(browser.env.SAGAX_BROWSER_TOKEN).toEqual(expect.any(String));
+      expect(browser.env.SAGAX_HARNESS_URL).toBe(BASE);
       // Only the server-owned proxy knows native sessions and saved-login keys.
       expect(browser.env.AGENT_BROWSER_SESSION).toBeUndefined();
       expect(browser.env.AGENT_BROWSER_RESTORE).toBeUndefined();
@@ -8178,15 +8178,15 @@ describe("harness HTTP API", () => {
           ...(process.env.SystemRoot ? { SystemRoot: process.env.SystemRoot } : {}),
           HOME: isolatedHome,
           USERPROFILE: isolatedHome,
-          OMB_PORT: String(isolatedPort),
-          OMB_WEBHOOK_PORT: String(isolatedPort + 1),
-          OMB_STATIC_DIR: isolatedStatic,
+          SAGAX_PORT: String(isolatedPort),
+          SAGAX_WEBHOOK_PORT: String(isolatedPort + 1),
+          SAGAX_STATIC_DIR: isolatedStatic,
           // A real agent-browser picked up from PATH cannot even name its
           // daemon socket under this long fixture HOME (macOS caps socket
           // paths at 103 bytes); its erasure can never be confirmed, so the
           // committed entry must keep retrying rather than ACK. No engine
           // means no saved state to erase, and replay takes the no-engine ACK.
-          OMB_AGENT_BROWSER_PATH: join(isolatedHome, "missing-agent-browser"),
+          SAGAX_AGENT_BROWSER_PATH: join(isolatedHome, "missing-agent-browser"),
           FAKE_CLAUDE_MODE: "hang",
           FAKE_CLAUDE_DUMP: join(isolatedHome, "fake-claude-dump.json"),
         },
@@ -8651,9 +8651,9 @@ describe("harness HTTP API", () => {
       expect((await api("POST", `/api/groups/${room.id}/messages`, { text: "start the lead" })).status).toBe(202);
       const firstDump = await readJsonFileWhenReady<{
         pid: number;
-        mcpConfig: { mcpServers: { agents: { env: { OMB_COMMS_TOKEN: string } } } };
+        mcpConfig: { mcpServers: { agents: { env: { SAGAX_COMMS_TOKEN: string } } } };
       }>(fakeClaudeDump);
-      expect(firstDump.mcpConfig.mcpServers.agents.env.OMB_COMMS_TOKEN).toMatch(/^[a-f0-9]{48}$/);
+      expect(firstDump.mcpConfig.mcpServers.agents.env.SAGAX_COMMS_TOKEN).toMatch(/^[a-f0-9]{48}$/);
       const token = await mintTestCapability(BASE, second.id, room.threadId);
 
       const requested = await fetch(`${BASE}/api/internal/request-credential`, {
@@ -8761,9 +8761,9 @@ describe("harness HTTP API", () => {
       rmSync(fakeClaudeDump, { force: true });
       expect((await api("POST", `/api/bots/${bot.id}/messages`, { text: "prepare a routine" })).status).toBe(202);
       const dump = await readJsonFileWhenReady<{
-        mcpConfig: { mcpServers: { agents: { env: { OMB_COMMS_TOKEN: string } } } };
+        mcpConfig: { mcpServers: { agents: { env: { SAGAX_COMMS_TOKEN: string } } } };
       }>(fakeClaudeDump);
-      expect(dump.mcpConfig.mcpServers.agents.env.OMB_COMMS_TOKEN).toMatch(/^[a-f0-9]{48}$/);
+      expect(dump.mcpConfig.mcpServers.agents.env.SAGAX_COMMS_TOKEN).toMatch(/^[a-f0-9]{48}$/);
       expect((await api("POST", `/api/bots/${bot.id}/interrupt`)).status).toBe(200);
       await expect.poll(async () => {
         const state = (await api("GET", "/api/bots")).body;
@@ -9630,9 +9630,9 @@ describe("harness HTTP API", () => {
       rmSync(fakeClaudeDump, { force: true });
       expect((await api("POST", `/api/bots/${bot.id}/messages`, { text: "prepare a skill" })).status).toBe(202);
       const dump = await readJsonFileWhenReady<{
-        mcpConfig: { mcpServers: { agents: { env: { OMB_COMMS_TOKEN: string } } } };
+        mcpConfig: { mcpServers: { agents: { env: { SAGAX_COMMS_TOKEN: string } } } };
       }>(fakeClaudeDump);
-      expect(dump.mcpConfig.mcpServers.agents.env.OMB_COMMS_TOKEN).toMatch(/^[a-f0-9]{48}$/);
+      expect(dump.mcpConfig.mcpServers.agents.env.SAGAX_COMMS_TOKEN).toMatch(/^[a-f0-9]{48}$/);
       const token = await mintTestCapability(BASE, bot.id, bot.threadId, { skillAuthoring: true });
       const internalHeaders = {
         authorization: `Bearer ${token}`,
@@ -10811,7 +10811,7 @@ describe("bot memory API", () => {
       })).status).toBe(202);
       const dump = await readJsonFileWhenReady<{
         systemPrompt?: string;
-        mcpConfig: { mcpServers: { agents: { env: { OMB_COMMS_TOKEN: string } } } };
+        mcpConfig: { mcpServers: { agents: { env: { SAGAX_COMMS_TOKEN: string } } } };
       }>(fakeClaudeDump);
       expect(dump.systemPrompt ?? "").toContain("session_search");
       // Internal calls are authorised by a capability bound to one bot and one

@@ -113,7 +113,7 @@ posixOnly("usage attribution e2e", () => {
     );
     child = spawn(process.execPath, [join(SERVER_DIR, "index.ts")], {
       cwd: join(SERVER_DIR, ".."),
-      env: { ...(process.env.PATH ? { PATH: process.env.PATH } : {}), HOME: home, USERPROFILE: home, OMB_PORT: String(PORT) },
+      env: { ...(process.env.PATH ? { PATH: process.env.PATH } : {}), HOME: home, USERPROFILE: home, SAGAX_PORT: String(PORT) },
       stdio: ["ignore", "pipe", "pipe"],
     });
     child.stderr!.on("data", (c) => (stderr += c));

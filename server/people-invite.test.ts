@@ -4,7 +4,7 @@
 // the same requests Settings → People sends, invites a member, promotes them
 // and removes them, immediately ending their account sessions. Everything
 // the People card reads answers in the shape it renders.
-// OMB_MAIL_CAPTURE_FILE (server/index.ts) stands in for a real mail
+// SAGAX_MAIL_CAPTURE_FILE (server/index.ts) stands in for a real mail
 // provider: the spawned server appends each message as a JSON line instead
 // of sending it, and this file reads the sign-in code back from there.
 import { spawn, type ChildProcess } from "node:child_process";
@@ -136,14 +136,14 @@ beforeAll(async () => {
       ...(process.env.SystemRoot ? { SystemRoot: process.env.SystemRoot } : {}),
       HOME: home,
       USERPROFILE: home,
-      OMB_PORT: String(port),
-      OMB_WEBHOOK_PORT: String(port + 1),
-      OMB_STATIC_DIR: staticDir,
-      OMB_PUBLIC_URL: `https://${HOST}`,
-      OMB_ENVIRONMENT_LABEL: "acme",
-      OMB_BROWSER_CONNECTION: join(home, "browser-test-connection.json"),
-      OMB_MAIL_CAPTURE_FILE: captureFile,
-      OMB_TEST_SEAMS: "1",
+      SAGAX_PORT: String(port),
+      SAGAX_WEBHOOK_PORT: String(port + 1),
+      SAGAX_STATIC_DIR: staticDir,
+      SAGAX_PUBLIC_URL: `https://${HOST}`,
+      SAGAX_ENVIRONMENT_LABEL: "acme",
+      SAGAX_BROWSER_CONNECTION: join(home, "browser-test-connection.json"),
+      SAGAX_MAIL_CAPTURE_FILE: captureFile,
+      SAGAX_TEST_SEAMS: "1",
     },
     stdio: ["ignore", "pipe", "pipe"],
   });

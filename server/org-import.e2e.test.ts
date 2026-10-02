@@ -81,7 +81,7 @@ function startServer(home: string, port: number, env: Record<string, string>) {
     cwd: join(SERVER_DIR, ".."),
     env: {
       ...(process.env.PATH ? { PATH: process.env.PATH } : {}),
-      HOME: home, USERPROFILE: home, OMB_PORT: String(port), OMB_WEBHOOK_PORT: String(port + 1), ...env,
+      HOME: home, USERPROFILE: home, SAGAX_PORT: String(port), SAGAX_WEBHOOK_PORT: String(port + 1), ...env,
     },
     stdio: ["ignore", "pipe", "pipe"],
   });
@@ -128,8 +128,8 @@ posixOnly("slice 8: copy a solo Sagax's bots into an organization", () => {
     }), { mode: 0o640 });
     await Promise.all([
       startServer(orgHome, PORT, {
-        OMB_IDENTITY: "perspicax", OMB_PERSPICAX_ISSUER: idp.issuer, OMB_PUBLIC_URL: ORG,
-        OMB_PERSPICAX_LINK_FILE: join(orgHome, "link", "pulsabot.json"), OMB_PERSPICAX_DIRECTORY_SECONDS: "5", OMB_ORG_NAME: "Acme",
+        SAGAX_IDENTITY: "perspicax", SAGAX_PERSPICAX_ISSUER: idp.issuer, SAGAX_PUBLIC_URL: ORG,
+        SAGAX_PERSPICAX_LINK_FILE: join(orgHome, "link", "pulsabot.json"), SAGAX_PERSPICAX_DIRECTORY_SECONDS: "5", SAGAX_ORG_NAME: "Acme",
       }),
       startServer(soloHome, PORT + 2, {}),
     ]);

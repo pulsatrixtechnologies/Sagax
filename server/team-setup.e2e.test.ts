@@ -54,7 +54,7 @@ it("Clive reviews multi-provider teams once, continues after each decision, and 
         return JSON.parse(readFileSync(fixture.fixtureDumpPath, "utf8")).pid !== previousPid;
       }, { timeout: 15_000 }).toBe(true);
       const dump = JSON.parse(readFileSync(fixture.fixtureDumpPath, "utf8")); previousPid = dump.pid;
-      return dump.mcpConfig.mcpServers.agents.env.OMB_COMMS_TOKEN as string;
+      return dump.mcpConfig.mcpServers.agents.env.SAGAX_COMMS_TOKEN as string;
     };
     const finish = async () => {
       writeFileSync(gate, "finish");
@@ -184,7 +184,7 @@ it("Clive reviews multi-provider teams once, continues after each decision, and 
     const groupDump = JSON.parse(readFileSync(fixture.fixtureDumpPath, "utf8")); previousPid = groupDump.pid;
     const groupStopped = await api("POST", "/api/internal/team-setup-requests", { plan: { reason: "Check room Stop", operations: [
       build("NoRestart", "Operations", selection(claude)),
-    ] } }, 201, groupDump.mcpConfig.mcpServers.agents.env.OMB_COMMS_TOKEN);
+    ] } }, 201, groupDump.mcpConfig.mcpServers.agents.env.SAGAX_COMMS_TOKEN);
     await api("POST", `/api/threads/${room.activeTaskId}/respond`, { requestId: groupStopped.requestId, behavior: "deny" });
     await stopWithoutResume(groupStopped.requestId, room.activeTaskId, "--channel", room.id);
     expect((await state()).some((bot: any) => bot.name === "NoRestart")).toBe(false);

@@ -16,7 +16,7 @@
 //   paired from a signed-in session follows the person's other grants after
 //   its creator logs out, and ends with the last one.
 //
-// OMB_OIDC_REFRESH_AFTER_SECONDS=1 makes every grant due after a second.
+// SAGAX_OIDC_REFRESH_AFTER_SECONDS=1 makes every grant due after a second.
 import { spawn, type ChildProcess } from "node:child_process";
 import { createHash } from "node:crypto";
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
@@ -134,12 +134,12 @@ async function start() {
     cwd: join(SERVER_DIR, ".."),
     env: {
       ...(process.env.PATH ? { PATH: process.env.PATH } : {}),
-      HOME: home, USERPROFILE: home, OMB_PORT: String(PORT), OMB_WEBHOOK_PORT: String(PORT + 1),
-      OMB_IDENTITY: "perspicax",
-      OMB_PERSPICAX_ISSUER: idp.issuer,
-      OMB_PUBLIC_URL: BASE,
-      OMB_OIDC_REFRESH_AFTER_SECONDS: "1",
-      OMB_CLI_OWNER_STDIN: "1",
+      HOME: home, USERPROFILE: home, SAGAX_PORT: String(PORT), SAGAX_WEBHOOK_PORT: String(PORT + 1),
+      SAGAX_IDENTITY: "perspicax",
+      SAGAX_PERSPICAX_ISSUER: idp.issuer,
+      SAGAX_PUBLIC_URL: BASE,
+      SAGAX_OIDC_REFRESH_AFTER_SECONDS: "1",
+      SAGAX_CLI_OWNER_STDIN: "1",
     },
     stdio: ["pipe", "pipe", "pipe"],
   });

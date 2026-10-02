@@ -14,24 +14,24 @@ describe("decider config", () => {
   beforeEach(() => {
     rmSync(DATA_DIR, { recursive: true, force: true });
     mkdirSync(DATA_DIR, { recursive: true });
-    delete process.env.OMB_JEV_API_KEY;
+    delete process.env.SAGAX_JEV_API_KEY;
   });
-  afterEach(() => { delete process.env.OMB_JEV_API_KEY; });
+  afterEach(() => { delete process.env.SAGAX_JEV_API_KEY; });
 
   it("saving decision-model settings never reloads the engine fleet", () => {
     expect(providerReloadKeys({ decider: { enabled: true, key: KEY, jobs: { roomRouting: false } } })).toEqual([]);
   });
 
   it("engines never inherit the key, nor Cloud Pro's included token", () => {
-    const childEnv: Record<string, string | undefined> = { OMB_JEV_API_KEY: KEY, OMB_CLOUD_DECIDER_TOKEN: "omb_decide_included", PATH: "/usr/bin" };
+    const childEnv: Record<string, string | undefined> = { SAGAX_JEV_API_KEY: KEY, SAGAX_CLOUD_DECIDER_TOKEN: "omb_decide_included", PATH: "/usr/bin" };
     stripWorkspaceCredentialEnv(childEnv);
     expect(childEnv).toEqual({ PATH: "/usr/bin" });
   });
 
   it("on Cloud Pro, a key in the environment is the person's own and wins over the included decisions", async () => {
     const relay = "https://cloud.example.test/api/cloud/services/decider";
-    vi.stubEnv("OMB_CLOUD_DECIDER_URL", relay);
-    vi.stubEnv("OMB_CLOUD_DECIDER_TOKEN", "omb_decide_included");
+    vi.stubEnv("SAGAX_CLOUD_DECIDER_URL", relay);
+    vi.stubEnv("SAGAX_CLOUD_DECIDER_TOKEN", "omb_decide_included");
     try {
       const fetchImpl = vi.fn<typeof fetch>(async () => new Response(JSON.stringify({ answers: { answer: { type: "noul", noul: 0.9 } } })));
       const decider = createDecider({ config: loadConfig, fetch: fetchImpl });
@@ -39,7 +39,7 @@ describe("decider config", () => {
       expect(describeDecider(loadConfig())).toMatchObject({ configured: true, included: true, enabled: true });
       await decider.testKey();
       // the desktop hands the saved key over as env: now it is the one in use
-      process.env.OMB_JEV_API_KEY = KEY;
+      process.env.SAGAX_JEV_API_KEY = KEY;
       saveConfig({ decider: { enabled: true } });
       expect(describeDecider(loadConfig())).toEqual({ provider: "jev", configured: true, enabled: true, jobs: { roomRouting: true } });
       await decider.testKey();
@@ -53,12 +53,12 @@ describe("decider config", () => {
 
   it("the env key wins over the file, and a save keeps the env in step", () => {
     writeFileSync(join(DATA_DIR, "config.json"), JSON.stringify({ decider: { enabled: true, key: "" } }));
-    process.env.OMB_JEV_API_KEY = KEY;
+    process.env.SAGAX_JEV_API_KEY = KEY;
     expect(loadConfig().decider?.key).toBe(KEY);
     syncCredentialEnv({ decider: { key: "tsk_new" } });
-    expect(process.env.OMB_JEV_API_KEY).toBe("tsk_new");
+    expect(process.env.SAGAX_JEV_API_KEY).toBe("tsk_new");
     syncCredentialEnv({ decider: { key: "" } });
-    expect(process.env.OMB_JEV_API_KEY).toBeUndefined();
+    expect(process.env.SAGAX_JEV_API_KEY).toBeUndefined();
   });
 
   it("saving a key persists the switch and the room job on, merged into the section", () => {

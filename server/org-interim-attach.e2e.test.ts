@@ -59,7 +59,7 @@ async function waitFor<T>(read: () => Promise<T | null | undefined | false>, ms 
 async function start(env: Record<string, string>) {
   child = spawn(process.execPath, [join(SERVER_DIR, "index.ts")], {
     cwd: join(SERVER_DIR, ".."),
-    env: { ...(process.env.PATH ? { PATH: process.env.PATH } : {}), HOME: home, USERPROFILE: home, OMB_PORT: String(PORT), OMB_WEBHOOK_PORT: String(PORT + 1), ...env },
+    env: { ...(process.env.PATH ? { PATH: process.env.PATH } : {}), HOME: home, USERPROFILE: home, SAGAX_PORT: String(PORT), SAGAX_WEBHOOK_PORT: String(PORT + 1), ...env },
     stdio: ["ignore", "pipe", "pipe"],
   });
   child.stdout!.on("data", (c) => (log += c));
@@ -127,8 +127,8 @@ posixOnly("slice 8: people from before Perspicax are attached by an admin, never
       version: 1, issuer: idp.issuer, client_id: "pulsa-bot", server_id: idp.serverId, origin: BASE, link_token: idp.linkToken,
     }), { mode: 0o640 });
     await start({
-      OMB_IDENTITY: "perspicax", OMB_PERSPICAX_ISSUER: idp.issuer, OMB_PUBLIC_URL: BASE,
-      OMB_PERSPICAX_LINK_FILE: join(home, "link", "pulsabot.json"), OMB_PERSPICAX_DIRECTORY_SECONDS: "5", OMB_ORG_NAME: "Acme",
+      SAGAX_IDENTITY: "perspicax", SAGAX_PERSPICAX_ISSUER: idp.issuer, SAGAX_PUBLIC_URL: BASE,
+      SAGAX_PERSPICAX_LINK_FILE: join(home, "link", "pulsabot.json"), SAGAX_PERSPICAX_DIRECTORY_SECONDS: "5", SAGAX_ORG_NAME: "Acme",
     });
     alice = await signIn(ALICE);
     mallory = await signIn(MALLORY);

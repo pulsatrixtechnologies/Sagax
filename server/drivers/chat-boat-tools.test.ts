@@ -32,7 +32,7 @@ beforeAll(async () => {
   const address = server.address();
   if (!address || typeof address === "string") throw new Error("fixture did not bind");
   origin = `http://127.0.0.1:${address.port}`;
-  vi.stubEnv("OMB_BOX_API", origin);
+  vi.stubEnv("SAGAX_BOX_API", origin);
   mount = (await import("./chat-mcp-tools.ts")).mountChatTools;
   integrations = { computer: { kind: "box", boxId: "bx_23456789", token: "synthetic-box-key", control: { url: origin + "/control", token: "synthetic-control-key" } } };
 });

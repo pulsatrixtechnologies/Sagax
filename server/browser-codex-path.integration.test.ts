@@ -66,8 +66,8 @@ describe.skipIf(process.platform === "win32")("Codex browser turns with a minima
     child = spawn(process.execPath, [join(SERVER_DIR, "index.ts")], {
       cwd: join(SERVER_DIR, ".."),
       env: {
-        PATH: FINDER_PATH, HOME: home, OMB_DATA_DIR: data, OMB_PORT: String(port),
-        OMB_AGENT_BROWSER_PATH: browser, VITEST: "1",
+        PATH: FINDER_PATH, HOME: home, SAGAX_DATA_DIR: data, SAGAX_PORT: String(port),
+        SAGAX_AGENT_BROWSER_PATH: browser, VITEST: "1",
       },
       stdio: ["ignore", "pipe", "pipe"],
     });
@@ -116,7 +116,7 @@ describe.skipIf(process.platform === "win32")("Codex browser turns with a minima
     // process receives no shared profile key or direct browser command.
     expect(dump.argv).toContain(`mcp_servers.browser.command=${JSON.stringify(process.execPath)}`);
     expect(dump.argv.some((arg: string) => arg.startsWith("mcp_servers.browser.args=") && arg.includes("browser-proxy.ts"))).toBe(true);
-    expect(dump.env.OMB_BROWSER_TOKEN).toBeTruthy();
+    expect(dump.env.SAGAX_BROWSER_TOKEN).toBeTruthy();
     expect(dump.env.AGENT_BROWSER_SESSION).toBeUndefined();
     expect(dump.env.AGENT_BROWSER_ENCRYPTION_KEY).toBeUndefined();
     expect(dump.calls.some((call: any) => call.method === "turn/start")).toBe(true);

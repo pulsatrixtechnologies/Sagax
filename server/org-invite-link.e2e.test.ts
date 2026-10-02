@@ -74,10 +74,10 @@ posixOnly("org invite links", () => {
       env: {
         ...(process.env.PATH ? { PATH: process.env.PATH } : {}),
         ...(process.env.SystemRoot ? { SystemRoot: process.env.SystemRoot } : {}),
-        HOME: home, USERPROFILE: home, OMB_PORT: String(PORT), OMB_WEBHOOK_PORT: String(PORT + 1),
-        OMB_MAIL_PROVIDER: "sendgrid", OMB_MAIL_FROM: "bot@gox.ca", OMB_SENDGRID_API_KEY: "test-key",
-        OMB_MAIL_CAPTURE_FILE: captureFile, OMB_TEST_SEAMS: "1",
-        OMB_PUBLIC_URL: "https://pulsa.gox.ca", OMB_ENVIRONMENT_LABEL: "GOX",
+        HOME: home, USERPROFILE: home, SAGAX_PORT: String(PORT), SAGAX_WEBHOOK_PORT: String(PORT + 1),
+        SAGAX_MAIL_PROVIDER: "sendgrid", SAGAX_MAIL_FROM: "bot@gox.ca", SAGAX_SENDGRID_API_KEY: "test-key",
+        SAGAX_MAIL_CAPTURE_FILE: captureFile, SAGAX_TEST_SEAMS: "1",
+        SAGAX_PUBLIC_URL: "https://pulsa.gox.ca", SAGAX_ENVIRONMENT_LABEL: "GOX",
       },
       stdio: ["ignore", "pipe", "pipe"],
     });

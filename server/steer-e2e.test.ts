@@ -138,7 +138,7 @@ posixOnly("mid-turn steering e2e", () => {
     );
     child = spawn(process.execPath, [join(SERVER_DIR, "index.ts")], {
       cwd: join(SERVER_DIR, ".."),
-      env: { ...(process.env.PATH ? { PATH: process.env.PATH } : {}), HOME: home, USERPROFILE: home, OMB_PORT: String(PORT) },
+      env: { ...(process.env.PATH ? { PATH: process.env.PATH } : {}), HOME: home, USERPROFILE: home, SAGAX_PORT: String(PORT) },
       stdio: ["ignore", "pipe", "pipe"],
     });
     child.stderr!.on("data", (c) => (stderr += c));
@@ -230,7 +230,7 @@ posixOnly("mid-turn steering e2e", () => {
         return false;
       }
     }, "the fake's spawn dump");
-    const token = dump.mcpConfig.mcpServers.agents.env.OMB_COMMS_TOKEN as string;
+    const token = dump.mcpConfig.mcpServers.agents.env.SAGAX_COMMS_TOKEN as string;
     expect(token).toMatch(/^[a-f0-9]{48}$/);
     const internalTools = async () =>
       (await fetch(`${BASE}/api/internal/agents`, { headers: { authorization: `Bearer ${token}` } })).status;

@@ -35,7 +35,7 @@ posixOnly("Local VM Cua MCP bridge", () => {
         process.execPath,
         [fileURLToPath(new URL("./container-mcp.ts", import.meta.url)), "docker", CONTAINER, CUA_SOCKET],
         {
-          env: { ...process.env, OMB_EXTRA_PATH: bin, NODE_NO_WARNINGS: "1" },
+          env: { ...process.env, SAGAX_EXTRA_PATH: bin, NODE_NO_WARNINGS: "1" },
           stdio: ["pipe", "pipe", "pipe"],
         },
       );
@@ -84,7 +84,7 @@ posixOnly("Local VM Cua MCP bridge", () => {
         process.execPath,
         [fileURLToPath(new URL("./container-mcp.ts", import.meta.url)), "docker", CONTAINER, CUA_SOCKET],
         {
-          env: { ...process.env, OMB_EXTRA_PATH: bin, NODE_NO_WARNINGS: "1" },
+          env: { ...process.env, SAGAX_EXTRA_PATH: bin, NODE_NO_WARNINGS: "1" },
           stdio: ["pipe", "pipe", "pipe"],
         },
       );

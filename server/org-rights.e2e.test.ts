@@ -127,17 +127,17 @@ async function start() {
     cwd: join(SERVER_DIR, ".."),
     env: {
       ...(process.env.PATH ? { PATH: process.env.PATH } : {}),
-      HOME: home, USERPROFILE: home, OMB_PORT: String(PORT), OMB_WEBHOOK_PORT: String(PORT + 1),
-      OMB_IDENTITY: "perspicax",
-      OMB_PERSPICAX_ISSUER: idp.issuer,
-      OMB_PUBLIC_URL: BASE,
-      OMB_PERSPICAX_LINK_FILE: join(home, "link", "pulsabot.json"),
+      HOME: home, USERPROFILE: home, SAGAX_PORT: String(PORT), SAGAX_WEBHOOK_PORT: String(PORT + 1),
+      SAGAX_IDENTITY: "perspicax",
+      SAGAX_PERSPICAX_ISSUER: idp.issuer,
+      SAGAX_PUBLIC_URL: BASE,
+      SAGAX_PERSPICAX_LINK_FILE: join(home, "link", "pulsabot.json"),
       // the directory refreshes at boot and at every sign-in only, so each
       // path (directory, refreshed id_token) is proven on its own
-      OMB_PERSPICAX_DIRECTORY_SECONDS: "3600",
-      OMB_OIDC_REFRESH_AFTER_SECONDS: "2",
-      OMB_ANTHROPIC_API_KEY: ORG_KEY,
-      OMB_ORG_NAME: "Acme",
+      SAGAX_PERSPICAX_DIRECTORY_SECONDS: "3600",
+      SAGAX_OIDC_REFRESH_AFTER_SECONDS: "2",
+      SAGAX_ANTHROPIC_API_KEY: ORG_KEY,
+      SAGAX_ORG_NAME: "Acme",
     },
     stdio: ["ignore", "pipe", "pipe"],
   });
@@ -179,7 +179,7 @@ posixOnly("Perspicax organization, slice 4: rights, teams, owner keys, sections"
     writeFileSync(join(data, "config.json"), JSON.stringify({
       instances: {
         claude: { driver: "claudeAgent", environment: { FAKE_CLAUDE_DUMP: dump }, config: { cli: FAKE_CLAUDE, fullAuto: true } },
-        codex: { driver: "codex", environment: { OMB_DEVICE_AUTH_FIXTURE: "1" }, config: { cli: FAKE_CODEX_LOGIN } },
+        codex: { driver: "codex", environment: { SAGAX_DEVICE_AUTH_FIXTURE: "1" }, config: { cli: FAKE_CODEX_LOGIN } },
       },
     }));
     await start();
