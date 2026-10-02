@@ -52,9 +52,8 @@ import {
 import { t } from "@/lib/i18n";
 import type { LocaleKey } from "@/locales";
 import { requestSettingsCard } from "./SettingsPrimitives";
-import { SandboxDesktopView } from "./SandboxDesktopView";
+import { OrgComputerTab } from "./computer/OrgComputerTab";
 import { useDesktopBridgeStatus } from "@/lib/desktop-bridge";
-import { showsSandboxDesktop } from "@/lib/sandbox-desktop";
 
 /** Keep local failure copy translatable while it remains in panel state. */
 class LocalizedPanelError extends Error {
@@ -407,7 +406,6 @@ export function ComputerPanel({
     ? vpsSupported
     : Boolean(cloudRunner(state.instances, bot.modelSelection.instanceId));
   const bridgeStatus = useDesktopBridgeStatus();
-  const sandboxScreen = showsSandboxDesktop(bridgeStatus, bot.computer);
   const botRoutines = state.routines
     .filter((routine) => routine.botId === bot.id)
     .sort((a, b) => Number(b.enabled) - Number(a.enabled) || (a.nextRunAt ?? Infinity) - (b.nextRunAt ?? Infinity));
@@ -1519,11 +1517,12 @@ export function ComputerPanel({
       </div>
   );
 
-  // Organization server, bots working in the person's server environment:
-  // the screen is that environment's desktop (src/lib/sandbox-desktop.ts).
-  const body = sandboxScreen ? (
+  // Organization server (a desktop bridge status exists): the computer is
+  // the person's server environment or their own PC, never this bot's own
+  // (src/components/computer/OrgComputerTab.tsx).
+  const body = bridgeStatus ? (
     <div className={embedded ? "pb-5" : "flex-1 overflow-y-auto px-5 pb-5"}>
-      <SandboxDesktopView />
+      <OrgComputerTab bridge={bridgeStatus} computerOff={bot.computer === "off"} botName={bot.name} />
       {!embedded && <div className="mt-6">
         <RoutinesSection key={bot.id} bot={bot} routines={botRoutines} runs={state.routineRuns} defaultRunOn={cloudRoutineReady ? "cloud" : "maus"} />
       </div>}

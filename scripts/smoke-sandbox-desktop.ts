@@ -111,7 +111,7 @@ async function main(): Promise<void> {
     };
 
     const plain = await callUserSandboxTool("run_command", { command: "pgrep -x Xvnc || echo none" }, tools);
-    check("a plain shell turn starts no desktop", /^none/.test(textOf(plain)), textOf(plain).split("\n")[0]);
+    check("a plain shell turn starts no desktop", textOf(plain).startsWith("none"), textOf(plain).split("\n")[0]);
 
     const shot = await computer("screenshot");
     save("1-empty.jpg", shot);

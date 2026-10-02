@@ -4225,7 +4225,17 @@ if (userSandbox) {
     else userSandbox.personBack(person.id);
   });
 }
-ROUTES.push(createUserSandboxRoutes({ manager: () => userSandbox, organization: IDENTITY.kind === "perspicax" }));
+ROUTES.push(createUserSandboxRoutes({
+  manager: () => userSandbox,
+  organization: IDENTITY.kind === "perspicax",
+  turnRunning: (principalId) => {
+    const person = principalId.trim().toLowerCase();
+    for (const workplace of turnWorkplaces.values()) {
+      if (workplace.decision.target === "user-sandbox" && workplace.decision.principal === person) return true;
+    }
+    return false;
+  },
+}));
 // Slice 4: the Perspicax team names (who is in a team lives on each person).
 const orgTeams = new OrgTeams({ path: join(DATA_DIR, "org-teams.json") });
 /** Slice 4 (D10): each person's own engine sign-ins, organization mode. */

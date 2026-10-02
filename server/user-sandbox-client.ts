@@ -4,7 +4,7 @@ import { request } from "node:http";
 import type { Duplex } from "node:stream";
 
 import { signSandboxdRequest, SANDBOXD_AUTH_HEADER } from "./sandboxd-auth.ts";
-import type { SandboxExecInput, SandboxExecOutput, SandboxStatus } from "./sandboxd-core.ts";
+import type { SandboxExecInput, SandboxExecOutput, SandboxStats, SandboxStatus } from "./sandboxd-core.ts";
 import { SANDBOX_KEY_RE } from "./user-sandbox-spec.ts";
 
 export interface SandboxdInfo {
@@ -29,6 +29,9 @@ export interface SandboxdClient {
   status(key: string): Promise<SandboxStatus>;
   ensure(key: string): Promise<SandboxStatus>;
   stop(key: string): Promise<SandboxStatus>;
+  pause(key: string): Promise<SandboxStatus>;
+  resume(key: string): Promise<SandboxStatus>;
+  stats(key: string): Promise<SandboxStats>;
   remove(key: string, options?: { keepWorkspace?: boolean }): Promise<SandboxStatus>;
   exec(key: string, input: SandboxExecInput): Promise<SandboxExecOutput>;
   /** A byte stream to the VNC port of this sandbox's desktop (the live
@@ -73,6 +76,9 @@ export function sandboxdClient(baseUrl: string, key: () => string, fetchImpl: ty
     status: (sandboxKey) => call<SandboxStatus>("GET", keyPath(sandboxKey)),
     ensure: (sandboxKey) => call<SandboxStatus>("POST", keyPath(sandboxKey, "/ensure"), {}, 180_000),
     stop: (sandboxKey) => call<SandboxStatus>("POST", keyPath(sandboxKey, "/stop"), {}),
+    pause: (sandboxKey) => call<SandboxStatus>("POST", keyPath(sandboxKey, "/pause"), {}),
+    resume: (sandboxKey) => call<SandboxStatus>("POST", keyPath(sandboxKey, "/resume"), {}),
+    stats: (sandboxKey) => call<SandboxStats>("GET", keyPath(sandboxKey, "/stats"), undefined, 30_000),
     remove: (sandboxKey, options = {}) => call<SandboxStatus>("DELETE", keyPath(sandboxKey, options.keepWorkspace ? "?keepWorkspace=1" : "")),
     exec: (sandboxKey, input) => call<SandboxExecOutput>("POST", keyPath(sandboxKey, "/exec"), input, ((input.timeoutSec ?? 120) + 60) * 1000),
     desktopStream: (sandboxKey, options) => new Promise<Duplex>((resolve, reject) => {

@@ -9,7 +9,7 @@ import { existsSync, readFileSync } from "node:fs";
 import type { Duplex } from "node:stream";
 
 import { writeFileAtomic } from "./atomic.ts";
-import type { SandboxExecInput, SandboxExecOutput, SandboxStatus } from "./sandboxd-core.ts";
+import type { SandboxExecInput, SandboxExecOutput, SandboxStats, SandboxStatus } from "./sandboxd-core.ts";
 import type { SandboxdClient, SandboxdInfo } from "./user-sandbox-client.ts";
 import { SandboxdRequestError } from "./user-sandbox-client.ts";
 import { sandboxKeyForPrincipal } from "./user-sandbox-spec.ts";
@@ -128,6 +128,42 @@ export class UserSandboxManager {
       if (error instanceof SandboxdRequestError) throw new UserSandboxUnavailable(error.message, error.code);
       throw new UserSandboxUnavailable("The server environment could not be reached. Try again in a moment.", "unreachable");
     }
+  }
+
+  private async call<T>(work: () => Promise<T>): Promise<T> {
+    try {
+      return await work();
+    } catch (error) {
+      if (error instanceof SandboxdRequestError) throw new UserSandboxUnavailable(error.message, error.code);
+      throw new UserSandboxUnavailable("The server environment could not be reached. Try again in a moment.", "unreachable");
+    }
+  }
+
+  /** The power controls of the person's own Computer tab. Start creates or
+   * starts it (and resumes a paused one); shutdown stops it and keeps
+   * /workspace; pause freezes it (bots are refused until resumed). */
+  async power(principalId: string, action: "start" | "shutdown" | "pause" | "resume"): Promise<UserSandboxView> {
+    if (action !== "shutdown") this.refuseIfOut(principalId);
+    const key = this.keyFor(principalId);
+    await this.call(async () => {
+      if (action === "shutdown") return this.options.client.stop(key);
+      if (action === "pause") return this.options.client.pause(key);
+      if (action === "resume") return this.options.client.resume(key);
+      const current = await this.options.client.status(key);
+      return current.state === "paused" ? this.options.client.resume(key) : this.options.client.ensure(key);
+    });
+    return this.status(principalId);
+  }
+
+  /** Commands in flight in the person's environment right now. */
+  async busy(principalId: string): Promise<number> {
+    try { return (await this.options.client.status(this.keyFor(principalId))).busy; } catch { return 0; }
+  }
+
+  /** The usage panel: CPU, memory, disk and OS of the person's own
+   * environment. Starts nothing. */
+  stats(principalId: string): Promise<SandboxStats> {
+    return this.call(() => this.options.client.stats(this.keyFor(principalId)));
   }
 
   /** Open the person's desktop for their live view: start the sandbox and its

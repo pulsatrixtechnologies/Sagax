@@ -17,12 +17,10 @@ export function sandboxViewerProblem(status: number): SandboxViewerProblem {
   return "unavailable";
 }
 
-/** Whether this bot's computer use runs on the person's server environment
+/** Whether the person's bots do computer work on their server environment
  * desktop right now: an organization server (a bridge status exists) where
- * the person chose the server, or their computer is not connected, and the
- * bot has a computer at all. */
-export function showsSandboxDesktop(bridge: DesktopBridgeStatus | null, computer: string | undefined): boolean {
+ * the person chose the server, or their computer is not connected. */
+export function showsSandboxDesktop(bridge: DesktopBridgeStatus | null): boolean {
   if (!bridge) return false;
-  if (computer === "off" || computer === "browser") return false;
   return bridge.workplace.place === "server" || !bridge.connected;
 }

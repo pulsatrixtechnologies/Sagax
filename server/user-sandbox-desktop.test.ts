@@ -14,10 +14,12 @@ import { sandboxDesktopTarget } from "./desktop-viewer-targets.ts";
 import { json, readBody } from "./harness/http.ts";
 import { requiredScope, resolveRequestAuth } from "./request-auth.ts";
 import { createDesktopViewer, SANDBOX_VIEWER_TARGET } from "./routes/desktop-viewer.ts";
-import { SandboxError, SandboxService } from "./sandboxd-core.ts";
+import { PASS } from "./routes/table.ts";
+import { createUserSandboxRoutes } from "./user-sandbox-routes.ts";
+import { SandboxService } from "./sandboxd-core.ts";
 import { SessionRegistry } from "./sessions.ts";
 import { FakeDocker } from "./testing/fake-docker.ts";
-import { SandboxdRequestError, type SandboxdClient } from "./user-sandbox-client.ts";
+import { inProcessSandboxdClient } from "./testing/in-process-sandboxd.ts";
 import { UserSandboxManager } from "./user-sandbox-manager.ts";
 import { sandboxNames, sandboxdConfigFromEnv } from "./user-sandbox-spec.ts";
 import { callUserSandboxTool, handleUserSandboxMcp, sandboxComputerExec, SANDBOX_COMPUTER_TOOLS } from "./user-sandbox-tools.ts";
@@ -74,6 +76,7 @@ describe("live view of the server environment desktop", () => {
   let alice: string;
   let bob: string;
   let adminWithoutPerson: string;
+  let turnRunning: string | null;
   const peers = new Set<Duplex>();
 
   beforeEach(async () => {
@@ -81,15 +84,7 @@ describe("live view of the server environment desktop", () => {
     docker = new FakeDocker();
     service = new SandboxService(docker, sandboxdConfigFromEnv({ SAGAX_SANDBOX_IMAGE: "sagax-sandbox:test" }));
     await service.installEgressPolicy();
-    const client: SandboxdClient = {
-      info: async () => ({ instance: "default", egress: service.egress, maxRunning: 2, idleMinutes: 15 }),
-      status: (key) => service.status(key), ensure: (key) => service.ensure(key), stop: (key) => service.stop(key),
-      remove: (key, options) => service.remove(key, options), exec: (key, input) => service.exec(key, input),
-      // As over HTTP: the provisioner's refusal arrives with its code.
-      desktopStream: (key, options) => service.desktopStream(key, options).catch((error: unknown) => {
-        throw error instanceof SandboxError ? new SandboxdRequestError(error.status, error.code, error.message) : error;
-      }),
-    };
+    const client = inProcessSandboxdClient(service, 2);
     manager = new UserSandboxManager({ client, instance: "default", stateFile: join(dir, "deletions.json") });
     sessions = new SessionRegistry({ file: join(dir, "sessions.json") });
     alice = sessions.issue({ label: "Alice", scopes: ["client"], principalId: ALICE }).token;
@@ -103,11 +98,15 @@ describe("live view of the server environment desktop", () => {
       },
       live: (auth) => auth.kind === "loopback" || sessions.isLive(auth.session.id),
     });
+    turnRunning = null;
+    const sandboxRoutes = createUserSandboxRoutes({ manager: () => manager, organization: true, turnRunning: (person) => person === turnRunning });
     const handle = async (req: Parameters<typeof resolveRequestAuth>[0], res: Parameters<typeof json>[0]) => {
       const url = new URL(req.url!, "http://localhost");
       const gate = resolveRequestAuth(req, { sessions, cookieName: "s", url, streamPath: "/api/events", loopbackTrust: "service", features: { orgDirectory: true } });
       if (!gate.auth) return json(res, gate.status, { error: gate.error });
-      await viewer.route({ req, res, url, path: url.pathname, method: req.method!, auth: gate.auth, json, readBody });
+      const context = { req, res, url, path: url.pathname, method: req.method!, auth: gate.auth, json, readBody };
+      if (await sandboxRoutes(context) !== PASS) return;
+      await viewer.route(context);
     };
     app = createServer((req, res) => void handle(req, res));
     viewer.attach(app, handle);
@@ -228,6 +227,59 @@ describe("live view of the server environment desktop", () => {
     const closed = new Promise((resolve) => socket.once("close", resolve));
     docker.streams.at(-1)!.destroy();
     await closed;
+  });
+
+  const post = (path: string, token: string, body: unknown) => new Promise<{ status: number; body: Record<string, unknown> }>((resolve, reject) => {
+    const text = JSON.stringify(body);
+    const req = request({ hostname: "127.0.0.1", port, path, method: "POST", headers: { ...remote, cookie: `s=${token}`, "content-type": "application/json", "content-length": Buffer.byteLength(text) } }, (res) => {
+      let answer = "";
+      res.on("data", (chunk) => { answer += chunk; });
+      res.on("end", () => resolve({ status: res.statusCode!, body: JSON.parse(answer || "{}") as Record<string, unknown> }));
+    });
+    req.once("error", reject);
+    req.end(text);
+  });
+
+  it("powers the caller's own environment: start, pause, resume, shut down keeping /workspace", async () => {
+    expect((await post("/api/me/server-environment/power", alice, { action: "start" })).body.state).toBe("running");
+    expect((await post("/api/me/server-environment/power", alice, { action: "pause" })).body.state).toBe("paused");
+    // Paused: bots are refused, the live view too, until resumed.
+    await expect(manager.exec(ALICE, { argv: ["true"] })).rejects.toMatchObject({ code: "paused" });
+    expect((await open("/api/desktop-viewer/sandbox/me/websockify", alice)).status).toBe(409);
+    expect((await post("/api/me/server-environment/power", alice, { action: "start" })).body.state).toBe("running");
+    expect((await post("/api/me/server-environment/power", alice, { action: "shutdown" })).body.state).toBe("stopped");
+    expect(docker.volumes.has(sandboxNames(manager.keyFor(ALICE)).volume)).toBe(true);
+    // Only Alice's container was ever touched.
+    expect([...docker.containers.keys()]).toEqual([sandboxNames(manager.keyFor(ALICE)).container]);
+    expect((await post("/api/me/server-environment/power", alice, { action: "reboot" })).status).toBe(400);
+  });
+
+  it("asks to confirm a shutdown or pause while a bot works there", async () => {
+    await post("/api/me/server-environment/power", alice, { action: "start" });
+    turnRunning = ALICE;
+    const refused = await post("/api/me/server-environment/power", alice, { action: "shutdown" });
+    expect(refused).toMatchObject({ status: 409, body: { code: "confirm_running" } });
+    expect((await post("/api/me/server-environment/power", alice, { action: "pause" })).status).toBe(409);
+    expect((await post("/api/me/server-environment/power", bob, { action: "start" })).status).toBe(200);
+    expect((await post("/api/me/server-environment/power", alice, { action: "shutdown", confirm: true })).body.state).toBe("stopped");
+  });
+
+  it("reports the caller's own usage: CPU against its quota, memory, disk and OS", async () => {
+    docker.execResult = (exec) => exec.Cmd.includes("du") ? { exitCode: 0, stdout: Buffer.from("1048576\t/workspace"), stderr: Buffer.alloc(0), truncated: false }
+      : exec.Cmd.join(" ").includes("os-release") ? { exitCode: 0, stdout: Buffer.from("Debian GNU/Linux 12 (bookworm)\naarch64\n"), stderr: Buffer.alloc(0), truncated: false }
+        : { exitCode: 0, stdout: Buffer.from("ok"), stderr: Buffer.alloc(0), truncated: false };
+    const off = await get("/api/me/server-environment/stats", alice);
+    expect(off.body).toMatchObject({ state: "missing", cpuPercent: null, memoryBytes: null });
+    expect(docker.containers.size).toBe(0);
+    await post("/api/me/server-environment/power", alice, { action: "start" });
+    const stats = await get("/api/me/server-environment/stats", alice);
+    expect(stats.body).toMatchObject({
+      state: "running", cpuPercent: 25, memoryBytes: 300 * 1024 * 1024, memoryLimitBytes: 1536 * 1024 * 1024,
+      workspaceBytes: 1048576, os: "Debian GNU/Linux 12 (bookworm)", arch: "aarch64", image: "sagax-sandbox:test",
+    });
+    expect((await get("/api/me/server-environment/stats", bob)).body.state).toBe("missing");
+    expect(requiredScope("POST", "/api/me/server-environment/power", { orgDirectory: true })).toBe("client");
+    expect(requiredScope("GET", "/api/me/server-environment/stats", { orgDirectory: true })).toBe("client");
   });
 });
 

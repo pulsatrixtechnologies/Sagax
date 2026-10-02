@@ -1,6 +1,6 @@
 // sagax-sandboxd: the sandbox provisioner. A separate, minimal service and
 // the ONLY component that holds the Docker socket. Its API is narrow: ensure,
-// stop, delete, exec and status for sandboxes addressed by an opaque PERSON
+// stop, pause, resume, delete, exec, stats and status for sandboxes addressed by an opaque PERSON
 // key (never a bot), over signed requests only the Sagax server can make
 // (server/sandboxd-auth.ts). It cannot build an arbitrary container: every
 // create body comes from sandboxContainerSpec() and must pass
@@ -61,13 +61,16 @@ export function createSandboxdHandler(service: SandboxService, verifier: Sandbox
         return send(res, 200, { instance: service.config.instance, egress: service.egress, maxRunning: service.config.maxRunning, idleMinutes: service.config.idleStopMs / 60_000 });
       }
       if (method === "GET" && url.pathname === "/v1/sandboxes") return send(res, 200, { sandboxes: await service.list() });
-      const match = /^\/v1\/sandboxes\/([a-f0-9]{32})(?:\/(ensure|stop|exec))?$/.exec(url.pathname);
+      const match = /^\/v1\/sandboxes\/([a-f0-9]{32})(?:\/(ensure|stop|exec|pause|resume|stats))?$/.exec(url.pathname);
       if (!match) return send(res, 404, { error: "not found" });
       const key = match[1]!;
       const action = match[2];
       if (method === "GET" && !action) return send(res, 200, await service.status(key));
       if (method === "POST" && action === "ensure") return send(res, 200, await service.ensure(key));
       if (method === "POST" && action === "stop") return send(res, 200, await service.stop(key));
+      if (method === "POST" && action === "pause") return send(res, 200, await service.pause(key));
+      if (method === "POST" && action === "resume") return send(res, 200, await service.resume(key));
+      if (method === "GET" && action === "stats") return send(res, 200, await service.stats(key));
       if (method === "DELETE" && !action) {
         return send(res, 200, await service.remove(key, { keepWorkspace: url.searchParams.get("keepWorkspace") === "1" }));
       }

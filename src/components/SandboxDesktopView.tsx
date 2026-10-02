@@ -6,7 +6,7 @@
 // starts until the person asks to see it, and the view closes when the
 // environment idles out.
 import { useEffect, useRef, useState } from "react";
-import RFB from "@novnc/novnc";
+import type RFB from "@novnc/novnc";
 import { ExternalLink, Eye, Hand, Loader2, Monitor, RefreshCw } from "lucide-react";
 
 import { t } from "@/lib/i18n";
@@ -31,10 +31,12 @@ export function SandboxDesktopView() {
         const response = await fetch(path, { credentials: "same-origin", cache: "no-store", signal: AbortSignal.any([controller.signal, AbortSignal.timeout(45_000)]) });
         if (!response.ok) { setState(sandboxViewerProblem(response.status)); return; }
         const config = await response.json() as { password?: string; viewOnly?: boolean };
+        // noVNC loads only when the person asks to see the desktop.
+        const { default: Rfb } = await import("@novnc/novnc");
         if (controller.signal.aborted || !screen.current) return;
         const websocket = new URL(sandboxViewerPath(control, true), location.href);
         websocket.protocol = location.protocol === "https:" ? "wss:" : "ws:";
-        client = new RFB(screen.current, websocket.href, { credentials: { password: config.password ?? "", username: "", target: "" } });
+        client = new Rfb(screen.current, websocket.href, { credentials: { password: config.password ?? "", username: "", target: "" } });
         client.viewOnly = config.viewOnly !== false;
         client.scaleViewport = true;
         client.background = "var(--color-inset)";

@@ -27,6 +27,7 @@ export function serverEnvironmentStateText(status: ServerEnvironmentStatus | nul
   switch (status.state) {
     case "running": return t("serverEnvironment.running");
     case "stopped": return t("serverEnvironment.stopped");
+    case "paused": return t("serverEnvironment.paused");
     case "missing": return t("serverEnvironment.missing");
     default: return t("serverEnvironment.unavailable");
   }

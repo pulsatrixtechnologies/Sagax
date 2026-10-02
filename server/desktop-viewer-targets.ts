@@ -37,7 +37,7 @@ export function localDesktopTarget(target: LocalVmTarget, deps: {
 
 const unavailable = (error: unknown) => {
   const code = error instanceof UserSandboxUnavailable ? error.code : "";
-  const status = code === "person_out" ? 403 : code === "not_running" ? 409 : code === "capacity" || code === "busy" ? 429 : 502;
+  const status = code === "person_out" ? 403 : code === "not_running" || code === "paused" ? 409 : code === "capacity" || code === "busy" ? 429 : 502;
   return Object.assign(new Error("Server environment desktop unavailable"), { status, code });
 };
 

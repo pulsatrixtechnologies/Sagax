@@ -20,10 +20,35 @@ export interface ExecResult {
 
 export interface ContainerSummary {
   name: string;
+  /** Running or paused: it holds its memory either way. */
   running: boolean;
+  /** Frozen by `docker pause` (Docker reports it running too). */
+  paused?: boolean;
   labels: Record<string, string>;
   /** Docker's own State.StartedAt, ms. */
   startedAt?: number;
+}
+
+export interface ContainerStats {
+  /** CPU used over the sample, in CPUs (1.0 = one full CPU). */
+  cpus: number;
+  /** Memory in use, page cache that can be reclaimed left out. */
+  memoryBytes: number;
+  memoryLimitBytes: number;
+}
+
+/** CPUs used between two samples of Docker's stats, and memory without the
+ * reclaimable page cache (cgroup v2 inactive_file, v1 total_inactive_file). */
+export function statsFromDocker(raw: Record<string, unknown>): ContainerStats {
+  const cpu = (raw.cpu_stats ?? {}) as { cpu_usage?: { total_usage?: number }; system_cpu_usage?: number; online_cpus?: number };
+  const pre = (raw.precpu_stats ?? {}) as { cpu_usage?: { total_usage?: number }; system_cpu_usage?: number };
+  const cpuDelta = (cpu.cpu_usage?.total_usage ?? 0) - (pre.cpu_usage?.total_usage ?? 0);
+  const systemDelta = (cpu.system_cpu_usage ?? 0) - (pre.system_cpu_usage ?? 0);
+  const online = cpu.online_cpus ?? 1;
+  const cpus = cpuDelta > 0 && systemDelta > 0 ? (cpuDelta / systemDelta) * online : 0;
+  const memory = (raw.memory_stats ?? {}) as { usage?: number; limit?: number; stats?: Record<string, number> };
+  const cache = memory.stats?.inactive_file ?? memory.stats?.total_inactive_file ?? 0;
+  return { cpus, memoryBytes: Math.max(0, (memory.usage ?? 0) - cache), memoryLimitBytes: memory.limit ?? 0 };
 }
 
 export interface DockerApi {
@@ -34,6 +59,10 @@ export interface DockerApi {
   createContainer(name: string, spec: Record<string, unknown>): Promise<void>;
   startContainer(name: string): Promise<void>;
   stopContainer(name: string, timeoutSeconds: number): Promise<void>;
+  pauseContainer(name: string): Promise<void>;
+  unpauseContainer(name: string): Promise<void>;
+  /** One sample of the container's CPU and memory (Docker's stats API). */
+  containerStats(name: string): Promise<ContainerStats>;
   removeContainer(name: string): Promise<void>;
   inspectNetwork(name: string): Promise<{ labels: Record<string, string>; subnets: string[] } | null>;
   listNetworks(labels: Record<string, string>): Promise<{ name: string; subnets: string[] }[]>;
@@ -194,11 +223,12 @@ export function dockerApi(socketPath: string, pinnedVersion?: string): DockerApi
   };
   const summary = (raw: Record<string, unknown>): ContainerSummary => {
     const config = (raw.Config ?? {}) as { Labels?: Record<string, string> };
-    const state = (raw.State ?? {}) as { Running?: boolean; StartedAt?: string };
+    const state = (raw.State ?? {}) as { Running?: boolean; Paused?: boolean; StartedAt?: string };
     const started = state.StartedAt ? Date.parse(state.StartedAt) : NaN;
     return {
       name: String(raw.Name ?? "").replace(/^\//, ""),
       running: state.Running === true,
+      ...(state.Paused === true ? { paused: true } : {}),
       labels: config.Labels ?? {},
       ...(Number.isFinite(started) && started > 0 ? { startedAt: started } : {}),
     };
@@ -217,11 +247,19 @@ export function dockerApi(socketPath: string, pinnedVersion?: string): DockerApi
     inspectContainer: (name) => orNull(async () => summary(await json("GET", `/containers/${safeName(name)}/json`))),
     async listContainers(labels) {
       const rows = await json("GET", `/containers/json?all=1&filters=${labelFilter(labels)}`) as unknown as { Names?: string[]; State?: string; Labels?: Record<string, string> }[];
-      return rows.map((row) => ({ name: (row.Names?.[0] ?? "").replace(/^\//, ""), running: row.State === "running", labels: row.Labels ?? {} }));
+      return rows.map((row) => ({
+        name: (row.Names?.[0] ?? "").replace(/^\//, ""),
+        running: row.State === "running" || row.State === "paused",
+        ...(row.State === "paused" ? { paused: true } : {}),
+        labels: row.Labels ?? {},
+      }));
     },
     async createContainer(name, spec) { await json("POST", `/containers/create?name=${safeName(name)}`, spec); },
     async startContainer(name) { await json("POST", `/containers/${safeName(name)}/start`, undefined, [204, 304]); },
     async stopContainer(name, timeoutSeconds) { await json("POST", `/containers/${safeName(name)}/stop?t=${Math.max(0, Math.floor(timeoutSeconds))}`, undefined, [204, 304, 404]); },
+    async pauseContainer(name) { await json("POST", `/containers/${safeName(name)}/pause`, undefined, [204, 304]); },
+    async unpauseContainer(name) { await json("POST", `/containers/${safeName(name)}/unpause`, undefined, [204, 304]); },
+    async containerStats(name) { return statsFromDocker(await json("GET", `/containers/${safeName(name)}/stats?stream=false`)); },
     async removeContainer(name) { await json("DELETE", `/containers/${safeName(name)}?force=1&v=0`, undefined, [204, 404]); },
     inspectNetwork: (name) => orNull(async () => {
       const raw = await json("GET", `/networks/${safeName(name)}`);

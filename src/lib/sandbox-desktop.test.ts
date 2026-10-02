@@ -9,12 +9,10 @@ const bridge = (connected: boolean, place: "computer" | "server"): DesktopBridge
 
 describe("server environment desktop in the Computer panel", () => {
   it("shows only where bots work in the server environment", () => {
-    expect(showsSandboxDesktop(null, "auto")).toBe(false);
-    expect(showsSandboxDesktop(bridge(true, "computer"), "auto")).toBe(false);
-    expect(showsSandboxDesktop(bridge(false, "computer"), "auto")).toBe(true);
-    expect(showsSandboxDesktop(bridge(true, "server"), "local")).toBe(true);
-    expect(showsSandboxDesktop(bridge(false, "server"), "off")).toBe(false);
-    expect(showsSandboxDesktop(bridge(false, "server"), "browser")).toBe(false);
+    expect(showsSandboxDesktop(null)).toBe(false);
+    expect(showsSandboxDesktop(bridge(true, "computer"))).toBe(false);
+    expect(showsSandboxDesktop(bridge(false, "computer"))).toBe(true);
+    expect(showsSandboxDesktop(bridge(true, "server"))).toBe(true);
   });
 
   it("asks for the caller's own desktop only, control on request", () => {

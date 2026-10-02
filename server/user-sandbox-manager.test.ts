@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { SandboxService } from "./sandboxd-core.ts";
 import { FakeDocker } from "./testing/fake-docker.ts";
+import { inProcessSandboxdClient } from "./testing/in-process-sandboxd.ts";
 import type { SandboxdClient } from "./user-sandbox-client.ts";
 import { UserSandboxManager, userSandboxSettingsFromEnv } from "./user-sandbox-manager.ts";
 import { sandboxNames, sandboxdConfigFromEnv } from "./user-sandbox-spec.ts";
@@ -23,15 +24,7 @@ let service: SandboxService;
 
 /** The real provisioner logic behind an in-process client. */
 function inProcessClient(): SandboxdClient {
-  return {
-    info: async () => ({ instance: "default", egress: service.egress, maxRunning: 3, idleMinutes: 15 }),
-    status: (key) => service.status(key),
-    ensure: (key) => service.ensure(key),
-    stop: (key) => service.stop(key),
-    remove: (key, options) => service.remove(key, options),
-    exec: (key, input) => service.exec(key, input),
-    desktopStream: (key, options) => service.desktopStream(key, options),
-  };
+  return inProcessSandboxdClient(service);
 }
 
 function manager(graceMs = 72 * HOUR) {
@@ -116,7 +109,8 @@ describe("UserSandboxManager", () => {
       info: () => Promise.reject(new Error("down")), status: () => Promise.reject(new Error("down")),
       ensure: () => Promise.reject(new Error("down")), stop: () => Promise.reject(new Error("down")),
       remove: () => Promise.reject(new Error("down")), exec: () => Promise.reject(new Error("down")),
-      desktopStream: () => Promise.reject(new Error("down")),
+      desktopStream: () => Promise.reject(new Error("down")), pause: () => Promise.reject(new Error("down")),
+      resume: () => Promise.reject(new Error("down")), stats: () => Promise.reject(new Error("down")),
     };
     const m = new UserSandboxManager({ client: down, instance: "default", stateFile: join(dir, "x.json") });
     expect((await m.status(ALICE)).state).toBe("unavailable");

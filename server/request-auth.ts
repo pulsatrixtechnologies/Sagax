@@ -310,8 +310,9 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   // (server/desktop-bridge-routes.ts). The handler answers the session's own
   // person only, binds poll/results to a private desktop secret, and 404s on
   // a solo server.
-  { methods: ["POST"], path: /^\/api\/desktop-bridge\/(?:connect|[0-9a-f-]{36}\/(?:poll|lease|result|disconnect))$/ },
+  { methods: ["POST"], path: /^\/api\/desktop-bridge\/(?:connect|[0-9a-f-]{36}\/(?:poll|lease|result|disconnect|system))$/ },
   { methods: ["GET"], path: /^\/api\/me\/desktop-bridge$/ },
+  { methods: ["POST"], path: /^\/api\/me\/desktop-bridge\/local-vm$/ },
   // Organization server (OMB_IDENTITY=perspicax): a member pairs their own
   // phone or computer. The handler binds the code to the member's person and
   // clamps its scopes to the session's own.
@@ -437,6 +438,8 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   // The caller's own server environment (user-sandbox): status and reset.
   { methods: ["GET"], path: /^\/api\/me\/server-environment$/, feature: "orgDirectory" },
   { methods: ["POST"], path: /^\/api\/me\/server-environment\/reset$/, feature: "orgDirectory" },
+  { methods: ["POST"], path: /^\/api\/me\/server-environment\/power$/, feature: "orgDirectory" },
+  { methods: ["GET"], path: /^\/api\/me\/server-environment\/stats$/, feature: "orgDirectory" },
   // The live view of the caller's own server environment desktop: the route
   // builds the target from the session's principal (routes/desktop-viewer.ts).
   { methods: ["GET"], path: /^\/api\/desktop-viewer\/sandbox\/me(?:\/websockify)?$/, feature: "orgDirectory" },
