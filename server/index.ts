@@ -628,7 +628,7 @@ import { createRegistrySearch } from "./plugin-registry.ts";
 import { PLUGIN_CATALOG } from "../shared/plugin-catalog.ts";
 import { diskSpace, folderBytes } from "./disk-usage.ts";
 import { autoReviewThreadMode, createBotSettingsStore, hostTimeZone } from "./bot-settings.ts";
-import { createComputerInputRoutes } from "./routes/computer-input.ts";
+import { createComputerInputRoutes, createVmScreenshotRoute } from "./routes/computer-input.ts";
 import { createUserPreferenceRoutes } from "./routes/user-preferences.ts";
 import { createUserPreferenceStore } from "./user-preferences.ts";
 import { createBotMemoryRoutes } from "./routes/bot-memory.ts";
@@ -16597,6 +16597,19 @@ ROUTES.push(createBotLibraryRoutes<BotRecord>({
 // the computer panel shows, driven through the same command path its own
 // backend already uses; the person must hold control.
 const computerInputAudited = new Map<string, number>();
+// A Local VM bot's frame for the phone's viewer (cloud bots answer in the
+// computer route chain below).
+ROUTES.push(createVmScreenshotRoute<BotRecord>({
+  bot: (id) => store.bot(id) ?? undefined,
+  isLocalVm: (bot) => bot.computer === "vm" && !inheritedTeamComputer(bot),
+  mayDrive: ownerOrAdminOf,
+  refusal: () => hostComputerRefusal(),
+  frame: async (bot) => {
+    const target = localVmTargetForStatus(bot.id, bot.threadId);
+    localVmIdleFor(target).touch();
+    return containerComputerFrame(undefined, undefined, target);
+  },
+}));
 ROUTES.push(createComputerInputRoutes<BotRecord>({
   bot: (id) => store.bot(id) ?? undefined,
   mayDrive: ownerOrAdminOf,

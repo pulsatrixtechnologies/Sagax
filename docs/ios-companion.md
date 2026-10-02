@@ -360,7 +360,9 @@ hold answers 409 `no_control` (or `control_lease` when another lease holds
 it); a bot with no desktop answers 404 `no_computer`. Events become
 `xdotool`/`xclip` lines run through the backend's own command path (the
 Boat, a team Boat, the VPS container, the Local VM), the same tools the bot
-itself drives. Typed text is base64 inside the command, never interpolated.
+itself drives. Typed text is base64 inside the command, never interpolated. The Local VM image ships xdotool and xclip for this (image layer 6). While in
+control the phone refreshes the picture with `POST /api/bots/:id/computer/screenshot`
+(`{ png, format }`), which also answers for a Local VM bot (owner or admin).
 Each batch is audited as counts by event type (`computer.input`, at most one
 admin-activity row per person and bot a minute); clipboard reads and writes
 as byte counts. Through the companion these routes ride the per-phone desktop

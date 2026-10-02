@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { json, readBody } from "../harness/http.ts";
 import { requiredScope, type RequestAuth } from "../request-auth.ts";
-import { createComputerInputRoutes, type ComputerInputRouteDeps, type ControlState } from "./computer-input.ts";
+import { createComputerInputRoutes, createVmScreenshotRoute, type ComputerInputRouteDeps, type ControlState } from "./computer-input.ts";
 import { dispatchRoutes } from "./table.ts";
 
 type Bot = { id: string };
@@ -92,5 +92,59 @@ describe("computer input routes", () => {
     expect(write.scripts.join("\n")).toContain(Buffer.from("from the phone").toString("base64"));
     expect((await send(write.base, "/api/bots/scout/computer/clipboard", "PUT", { text: "x".repeat(20_000) })).status).toBe(400);
     expect((await send((await serve({ control: "free" })).base, "/api/bots/scout/computer/clipboard", "GET")).status).toBe(409);
+  });
+});
+
+describe("Local VM screenshots for the phone", () => {
+  type VmBot = { id: string; computer: string };
+  async function serveVm(options: { mayDrive?: boolean; refusal?: string; fail?: boolean } = {}) {
+    const frames: string[] = [];
+    const route = createVmScreenshotRoute<VmBot>({
+      bot: (id) => ({ vm: { id, computer: "vm" }, boat: { id, computer: "cloud" } } as Record<string, VmBot>)[id],
+      isLocalVm: (bot) => bot.computer === "vm",
+      mayDrive: () => options.mayDrive ?? true,
+      refusal: () => options.refusal,
+      frame: async (bot) => {
+        if (options.fail) throw Object.assign(new Error("the Local VM is not running"), { status: 409 });
+        frames.push(bot.id);
+        return { png: "iVBORw0KGgo=", format: "png" };
+      },
+    });
+    const server = createServer(async (req, res) => {
+      const url = new URL(req.url ?? "/", "http://localhost");
+      if (!await dispatchRoutes([route], { req, res, url, path: url.pathname, method: req.method ?? "GET", auth: OWNER, json, readBody })) json(res, 404, { from: "inline" });
+    });
+    servers.push(server);
+    await new Promise<void>((ready) => server.listen(0, "127.0.0.1", ready));
+    return { frames, base: `http://127.0.0.1:${(server.address() as AddressInfo).port}` };
+  }
+
+  it("answers a VM bot's screenshot with its frame", async () => {
+    const { base, frames } = await serveVm();
+    const res = await send(base, "/api/bots/vm/computer/screenshot", "POST", {});
+    expect(res.status).toBe(200);
+    expect(res.headers.get("cache-control")).toBe("private, no-store");
+    expect(await res.json()).toEqual({ png: "iVBORw0KGgo=", format: "png" });
+    expect(frames).toEqual(["vm"]);
+  });
+
+  it("leaves cloud bots and unknown bots to the computer route chain", async () => {
+    const { base, frames } = await serveVm();
+    expect(await (await send(base, "/api/bots/boat/computer/screenshot", "POST", {})).json()).toEqual({ from: "inline" });
+    expect(await (await send(base, "/api/bots/ghost/computer/screenshot", "POST", {})).json()).toEqual({ from: "inline" });
+    expect(frames).toEqual([]);
+  });
+
+  it("refuses forms, strangers and an organization server", async () => {
+    expect((await fetch((await serveVm()).base + "/api/bots/vm/computer/screenshot", { method: "POST" })).status).toBe(415);
+    expect((await send((await serveVm({ mayDrive: false })).base, "/api/bots/vm/computer/screenshot", "POST", {})).status).toBe(403);
+    const refused = await send((await serveVm({ refusal: "not here" })).base, "/api/bots/vm/computer/screenshot", "POST", {});
+    expect(refused.status).toBe(404);
+    expect(await refused.json()).toMatchObject({ code: "no_computer" });
+  });
+
+  it("passes a stopped VM's refusal through", async () => {
+    const res = await send((await serveVm({ fail: true })).base, "/api/bots/vm/computer/screenshot", "POST", {});
+    expect(res.status).toBe(409);
   });
 });

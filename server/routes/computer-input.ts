@@ -131,3 +131,43 @@ export function createComputerInputRoutes<B>(deps: ComputerInputRouteDeps<B>): R
     }
   };
 }
+
+// ── screenshots of a Local VM bot ─────────────────────────────────────────
+// POST /api/bots/:id/computer/screenshot answers for cloud computers further
+// down (server/index.ts). A bot whose computer is the Local VM gets its frame
+// here, in the same `{ png, format }` shape, so the phone's viewer can refresh
+// the picture while the person drives it. Every other bot passes through.
+
+export interface VmScreenshotRouteDeps<B> {
+  bot: (id: string) => B | undefined;
+  /** True when this bot's computer is a Local VM this server may show. */
+  isLocalVm: (bot: B) => boolean;
+  mayDrive: (auth: RequestAuth, bot: B) => boolean;
+  /** The organization-server refusal, when this server never runs a VM. */
+  refusal: () => string | undefined;
+  frame: (bot: B) => Promise<{ png: string; format: string }>;
+}
+
+const SCREENSHOT_ROUTE = /^\/api\/bots\/([\w-]+)\/computer\/screenshot$/;
+
+export function createVmScreenshotRoute<B>(deps: VmScreenshotRouteDeps<B>): RouteHandler {
+  return async ({ req, res, path, method, auth, json }) => {
+    const m = SCREENSHOT_ROUTE.exec(path);
+    if (!m || method !== "POST") return PASS;
+    const bot = deps.bot(m[1]!);
+    if (!bot || !deps.isLocalVm(bot)) return PASS;
+    if (!String(req.headers["content-type"] ?? "").toLowerCase().startsWith("application/json")) {
+      return json(res, 415, { error: "content-type must be application/json" });
+    }
+    if (!deps.mayDrive(auth, bot)) return json(res, 403, { error: "forbidden: only the bot owner or an admin can see its computer" });
+    const refusal = deps.refusal();
+    if (refusal) return json(res, 404, { error: refusal, code: "no_computer" });
+    res.setHeader("cache-control", "private, no-store");
+    try {
+      return json(res, 200, await deps.frame(bot));
+    } catch (error) {
+      const failed = failure(error);
+      return json(res, failed.status, failed.body);
+    }
+  };
+}

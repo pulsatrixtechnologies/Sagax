@@ -93,4 +93,15 @@ describe("computer input events", () => {
   it("audits counts, never text", () => {
     expect(inputSummary([{ type: "text", text: "secret" }, { type: "move", dx: 1, dy: 1 }, { type: "move", dx: 1, dy: 1 }])).toEqual({ text: 1, move: 2 });
   });
+  it("never waits on --sync for pointer moves (a move to where the pointer is, or past an edge, would hang the batch)", () => {
+    const built = inputCommands([
+      { type: "move", dx: -10_000, dy: 0 },
+      { type: "moveTo", x: 0.5, y: 0.5 },
+      { type: "moveTo", x: 0.5, y: 0.5 },
+    ]);
+    expect(built.ok).toBe(true);
+    const commands = built.ok ? built.commands : [];
+    expect(commands).toHaveLength(3);
+    for (const command of commands) expect(command).not.toContain("--sync");
+  });
 });
