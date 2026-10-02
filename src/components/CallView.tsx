@@ -17,7 +17,7 @@
 // every activity chip the harness narrates (`tool.spoken`) is read aloud as
 // it happens, which is why waiting feels like listening to someone work
 // rather than listening to nothing.
-import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { AudioLines, Loader2, PhoneOff, X } from "lucide-react";
 
 import { useStore, visibleMessages, type Bot } from "@/state/store";
@@ -33,6 +33,12 @@ import { isRoutineApproval, isSkillApproval, pendingApprovals, spokenApprovalPro
 import { track } from "@/lib/analytics";
 import { useDesktopCapabilities } from "./DesktopCapabilities";
 import { callCapabilityHelp } from "@/lib/call-capability";
+import { useVoiceModeStatus } from "@/lib/voice-mode/api";
+import { nativeSpeechEngine, XaiSpeechEngine, type SpeechEngine } from "@/lib/voice-mode/engine";
+import { readVoiceModeSettings } from "@/lib/voice-mode/settings";
+import { t } from "@/lib/i18n";
+import type { VoiceModeStatus } from "../../shared/voice-mode";
+import { VoiceModeBar } from "./voice-mode/VoiceModeBar";
 
 /** Spoken answers to a permission card. Anything else is read as a reply
  * to the bot, not as consent — an approval must never be granted by a
@@ -44,6 +50,7 @@ type Phase = "listening" | "sending" | "working" | "speaking";
 const CALL_ENDPOINT_MS = 850;
 
 export function CallButton({ bot }: { bot: Bot }) {
+  const voiceMode = useVoiceModeStatus(bot.id);
   return (
     <CallTargetButton
       targetId={bot.id}
@@ -51,7 +58,8 @@ export function CallButton({ bot }: { bot: Bot }) {
       voices={[bot.voice]}
       setupBotId={bot.id}
       requireExplicitVoices={false}
-      onStart={() => track("call_started", { driver: bot.modelSelection?.instanceId })}
+      voiceMode={voiceMode}
+      onStart={() => track("call_started", { driver: bot.modelSelection?.instanceId, ...(voiceMode?.available ? { voice: "xai" } : {}) })}
     />
   );
 }
@@ -62,6 +70,7 @@ export function CallTargetButton({
   voices,
   setupBotId,
   requireExplicitVoices,
+  voiceMode,
   onStart,
 }: {
   targetId: string;
@@ -71,22 +80,34 @@ export function CallTargetButton({
   setupBotId?: string;
   /** Rooms cannot rely on one workspace fallback for multiple speakers. */
   requireExplicitVoices: boolean;
+  /** Voice mode with xAI (server/voice-mode.ts): when available it carries
+   * the call on any desktop (macOS, Windows) or browser, without the macOS
+   * dictation helper. */
+  voiceMode?: VoiceModeStatus | null;
   onStart: () => void;
 }) {
   const { state, dispatch } = useStore();
   const { capabilities, ready: capabilitiesReady } = useDesktopCapabilities();
   const active = useOnCall() === targetId;
-  const capabilityHelp = capabilitiesReady
+  const xaiVoice = voiceMode?.available === true;
+  const nativeHelp = capabilitiesReady
     ? callCapabilityHelp(capabilities, Boolean(window.ogb?.speechStart))
     : null;
-  const supported = capabilitiesReady && !capabilityHelp;
+  // No key for voice mode and no dictation here either: say what voice mode needs.
+  const capabilityHelp = xaiVoice
+    ? null
+    : nativeHelp && voiceMode && !voiceMode.available
+      ? { label: t("voiceMode.unavailableLabel"), reason: t("voiceMode.unavailableReason") }
+      : nativeHelp;
+  const supported = xaiVoice || (capabilitiesReady && !capabilityHelp);
   const localVoice = localSystemVoiceActive();
-  const configured = localVoice || Boolean(state.config?.tts?.configured);
+  const configured = xaiVoice || localVoice || Boolean(state.config?.tts?.configured);
   const everyTargetHasVoice = voices.length > 0 && voices.every((voice) => Boolean(voice));
   const voiceReady =
+    xaiVoice ||
     localVoice ||
     (configured && (requireExplicitVoices ? everyTargetHasVoice : Boolean(state.config?.tts?.ready || everyTargetHasVoice)));
-  const unavailable = !active && (!capabilitiesReady || !supported || !voiceReady);
+  const unavailable = !active && ((!capabilitiesReady && !xaiVoice) || !supported || !voiceReady);
   const voiceSetupRequired = capabilitiesReady && supported && !voiceReady;
   const [helpOpen, setHelpOpen] = useState(false);
   const helpMotion = useMenuMotion(Boolean(unavailable && helpOpen));
@@ -95,7 +116,9 @@ export function CallTargetButton({
   const helpId = useId();
   const label = active
     ? `Hang up on ${targetName}`
-    : !capabilitiesReady
+    : xaiVoice
+      ? t("voiceMode.start", { name: targetName })
+      : !capabilitiesReady
       ? "Checking call availability"
       : !supported
         ? capabilityHelp?.label ?? "Call unavailable"
@@ -105,7 +128,9 @@ export function CallTargetButton({
             ? "Pick a voice in an agent profile to make calls"
             : `Call ${targetName}`;
 
-  const reason = !capabilitiesReady
+  const reason = xaiVoice
+    ? ""
+    : !capabilitiesReady
     ? "Checking whether this device can make calls."
     : capabilityHelp
       ? capabilityHelp.reason
@@ -209,18 +234,32 @@ export function CallTargetButton({
 
 export function CallOverlay({ bot }: { bot: Bot }) {
   const active = useOnCall() === bot.id;
+  const voiceMode = useVoiceModeStatus(bot.id);
   if (!active) return null;
-  return <Call bot={bot} />;
+  return <Call bot={bot} xaiVoice={voiceMode?.available === true} />;
 }
 
-function Call({ bot }: { bot: Bot }) {
+function Call({ bot, xaiVoice }: { bot: Bot; xaiVoice: boolean }) {
   const { dispatch } = useStore();
   const speech = useSpeech();
   const initialPhase: Phase = bot.busy ? "working" : "listening";
   const [phase, setPhase] = useState<Phase>(initialPhase);
   const [heard, setHeard] = useState("");
   const [note, setNote] = useState<string | null>(null);
-  const pushToTalk = usePushToTalk(bot.id, phase === "listening", () => {
+  const [refusal, setRefusal] = useState<{ message: string; keysUrl?: string } | null>(null);
+  const threadRef = useRef(bot.threadId);
+  threadRef.current = bot.threadId;
+  // Voice mode: this window's microphone and xAI (server/voice-mode.ts),
+  // the same on macOS and Windows; else the macOS dictation helper. Chosen
+  // once per call: switching ears mid-call would drop a turn.
+  const xai = useMemo(
+    () => (xaiVoice ? new XaiSpeechEngine({ botId: bot.id, threadId: () => threadRef.current, language: () => readVoiceModeSettings().language }) : null),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [bot.id],
+  );
+  const engine: SpeechEngine = xai ?? nativeSpeechEngine;
+  useEffect(() => () => void xai?.close(), [xai]);
+  const pushToTalk = usePushToTalk(bot.id, phase === "listening" && !xai, () => {
     setNote("Push to talk couldn't start. Check Microphone and Speech Recognition access.");
   });
 
@@ -266,20 +305,20 @@ function Call({ bot }: { bot: Bot }) {
   }, []);
 
   const hush = useCallback(() => {
-    void window.ogb?.speechStop();
-  }, []);
+    void engine.stop();
+  }, [engine]);
 
   const listen = useCallback(() => {
     if (!alive.current || currentCall() !== bot.id) return;
     move("listening");
     setHeard("");
     setNote(null);
-    void window.ogb?.speechStart({ endpointMs: CALL_ENDPOINT_MS }).catch(() => {
-      if (alive.current && currentCall() === bot.id) {
+    void engine.start({ endpointMs: CALL_ENDPOINT_MS }).catch(() => {
+      if (alive.current && currentCall() === bot.id && !xai) {
         setNote("The microphone couldn't start. Check Microphone and Speech Recognition access.");
       }
     });
-  }, [bot.id, move]);
+  }, [bot.id, engine, move, xai]);
 
   /** Speak, with the microphone closed for the duration (see the header
    * comment — an open mic during playback is a feedback loop). */
@@ -291,10 +330,14 @@ function Call({ bot }: { bot: Bot }) {
       // never observe an old "listening" phase and reopen the mic.
       move("speaking");
       hush();
-      await speaker.speak(text, { botId: bot.id, voiceId: bot.voice });
+      await speaker.speak(text, {
+        botId: bot.id,
+        voiceId: bot.voice,
+        ...(xai ? { voiceMode: { settings: readVoiceModeSettings(), threadId: threadRef.current } } : {}),
+      });
       return alive.current && currentCall() === bot.id && sayGeneration.current === mine;
     },
-    [bot.id, bot.voice, hush, move],
+    [bot.id, bot.voice, hush, move, xai],
   );
 
   const sayThenListen = useCallback(
@@ -322,9 +365,8 @@ function Call({ bot }: { bot: Bot }) {
 
   // ── the microphone ───────────────────────────────────────────────────
   useEffect(() => {
-    const bridge = window.ogb;
-    if (!bridge) return;
-    const offTranscript = bridge.onSpeechTranscript((line) => {
+    if (!xai && !window.ogb) return;
+    const offTranscript = engine.onTranscript((line) => {
       if (!alive.current || currentCall() !== bot.id || phaseRef.current !== "listening") return;
       if (line.error) {
         setNote("Dictation stopped unexpectedly. Check Microphone and Speech Recognition access.");
@@ -399,8 +441,22 @@ function Call({ bot }: { bot: Bot }) {
       move("sending");
       dispatch({ type: "send", botId: bot.id, text: said, threadId: bot.threadId });
     });
-    const offEnd = bridge.onSpeechEnd(({ code, reason }) => {
+    const offEnd = engine.onEnd(({ code, reason }) => {
       if (!alive.current || currentCall() !== bot.id) return;
+      if (xai && code === 1) {
+        if (reason === "voice_no_access") {
+          setRefusal({ message: xai.refusal?.message ?? t("voiceMode.unavailableReason"), keysUrl: xai.refusal?.keysUrl });
+          return;
+        }
+        setNote(
+          reason === "mic-denied"
+            ? t("voiceMode.micDenied")
+            : reason === "mic-unavailable"
+              ? t("voiceMode.micUnavailable")
+              : t("voiceMode.transcribeFailed"),
+        );
+        return;
+      }
       if (code === 2) {
         setNote("Calls need macOS dictation, which isn't available here yet.");
         return;
@@ -426,12 +482,12 @@ function Call({ bot }: { bot: Bot }) {
     return () => {
       offTranscript();
       offEnd();
-      void window.ogb?.speechStop();
+      void engine.stop();
     };
     // busy/approval are intentionally initial snapshots. Their live changes
     // are handled below without tearing down native event listeners.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bot.id, bot.threadId, dispatch, hush, listen, move, sayThenListen]);
+  }, [bot.id, bot.threadId, dispatch, engine, hush, listen, move, sayThenListen, xai]);
 
   // ── narrate the work, speak the answer, read the approvals ───────────
   useEffect(() => {
@@ -552,6 +608,37 @@ function Call({ bot }: { bot: Bot }) {
         : phase === "speaking"
           ? bot.name
           : "Working";
+
+  if (xai) {
+    const transcript = messages
+      .filter((m) => m.kind === "text" && m.text?.trim())
+      .slice(-8)
+      .map((m) => ({ id: m.id, who: m.role === "user" ? ("you" as const) : ("bot" as const), text: m.text!.trim() }));
+    return (
+      <VoiceModeBar
+        bot={bot}
+        engine={xai}
+        phase={phase}
+        heard={heard}
+        caption={speech.caption}
+        note={note}
+        error={speech.error}
+        refusal={refusal}
+        transcript={transcript}
+        onRetry={() => {
+          setRefusal(null);
+          listen();
+        }}
+        onInterrupt={() => {
+          if (!speaker.isSpeaking()) return;
+          sayGeneration.current += 1;
+          speaker.stop();
+          listen();
+        }}
+        onEnd={() => endCall(bot.id)}
+      />
+    );
+  }
 
   return (
     <div className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-6 bg-app/95 backdrop-blur-sm">

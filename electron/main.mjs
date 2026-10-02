@@ -4035,13 +4035,16 @@ app.whenReady().then(async () => {
   // Device permissions (microphone, notifications, clipboard) are for the
   // local UI only; privileged capabilities (camera, geolocation, USB, MIDI,
   // serial) stay off. Client mode's loopback relay is the local UI.
+  // Voice mode in server mode: the bundled UI drawn on the organization
+  // server's origin (bundled-ui.cjs) may open the microphone, nothing else.
+  const microphoneOrigins = () => [bundledOrigin(environmentsState)];
   session.defaultSession.setPermissionRequestHandler((contents, permission, callback, details) => {
     const requesting = details?.requestingUrl ?? contents?.getURL?.() ?? "";
-    callback(appPermissionAllowed(permission, requesting, rendererOrigin(), details));
+    callback(appPermissionAllowed(permission, requesting, rendererOrigin(), details, { microphoneOrigins: microphoneOrigins() }));
   });
   session.defaultSession.setPermissionCheckHandler((contents, permission, requestingOrigin, details) => {
     const requesting = requestingOrigin || contents?.getURL?.() || "";
-    return appPermissionAllowed(permission, requesting, rendererOrigin(), details);
+    return appPermissionAllowed(permission, requesting, rendererOrigin(), details, { microphoneOrigins: microphoneOrigins() });
   });
   environmentsState = readEnvironments();
   syncBundledUi();
