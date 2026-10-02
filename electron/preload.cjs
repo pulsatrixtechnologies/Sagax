@@ -54,7 +54,7 @@ const REMOTE_SAFE = new Set(["platform", "getCapabilities", "onCapabilitiesChang
 // every one of these channels again (local-origin.cjs desktopUiOnly, and
 // sharingUiOnly for the server-mode server only). Nothing that reads this
 // computer's files, screen, logins or secrets is handed to the page.
-const BUNDLED_EXTRA = new Set(["floatingBots", "retroAssistant", "windowControls", "onOpenAppSettings", "openExternal", "confirm", "updater", "serverMode", "computerSharing"]);
+const BUNDLED_EXTRA = new Set(["floatingBots", "retroAssistant", "windowControls", "onOpenAppSettings", "openExternal", "confirm", "updater", "serverMode", "computerSharing", "appIcon"]);
 let bundledPage = false;
 // main.mjs always answers this channel: a sendSync nobody answers would
 // block this page for good (a test harness must answer it too).
@@ -240,6 +240,14 @@ const bridge = {
   /** Tell the window which skin the page wears, so the native chrome the
    * renderer cannot paint (the Windows caption-button overlay) matches. */
   applySkin: (skin) => ipcRenderer.invoke("desktop:skin", skin),
+  /** The person's custom app icon (Settings > Appearance): the page sends
+   * the PNGs it drew through the system template; main keeps and shows
+   * them on the Dock (macOS) or the windows and taskbar (Windows). */
+  appIcon: {
+    get: () => ipcRenderer.invoke("app-icon:get"),
+    set: (request) => ipcRenderer.invoke("app-icon:set", request),
+    reset: () => ipcRenderer.invoke("app-icon:reset"),
+  },
   /** The renderer-drawn Windows caption buttons: minimize / restore /
    * maximize / close, plus live maximize state so the glyph can flip. */
   windowControls: {
