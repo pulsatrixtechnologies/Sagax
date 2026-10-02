@@ -27,6 +27,7 @@ import { SharedComputerControl } from "./shared-computer-control.ts";
 import { RoomHandoffs, type RoomHandoff } from "./room-handoffs.ts";
 import { assertRequestTarget, guardedRequestPath, requestConflict, requestNeedsInput, requestSourceForCard } from "./guarded-requests.ts";
 import { botAvatarUrlFromStoredPath } from "../shared/bot-avatar.ts";
+import { botPublicProfile, type BotPublicProfile } from "../shared/bot-public-profile.ts";
 import { BOT_PROFILE_LIMITS } from "../shared/bot-profile.ts";
 import { CLOUD_COMPUTER_BUSY_ERROR } from "../shared/computer-contention.ts";
 import {
@@ -5450,7 +5451,36 @@ function publicGroupState(record: GroupRecord): WireGroup {
   const { installedPackage: _installedPackage, ...group } = record;
   let usage: WireGroup["usage"];
   try { usage = groupUsageReader.forThread(group.threadId); } catch { /* accounting must not block chat */ }
-  return { ...group, usage: usage ?? null, working: groupIsWorking(group) || [...roomHandoffs.nodes.values()].some(n => n.groupId === group.id && !["completed", "failed", "cancelled"].includes(n.status)) };
+  return {
+    ...group, usage: usage ?? null,
+    working: groupIsWorking(group) || [...roomHandoffs.nodes.values()].some(n => n.groupId === group.id && !["completed", "failed", "cancelled"].includes(n.status)),
+    memberProfiles: groupMemberProfiles(group),
+  };
+}
+
+/** Every bot in a room, as each person in it sees it (shared/bot-public-profile.ts). */
+function groupMemberProfiles(group: { memberIds: readonly string[] }): BotPublicProfile[] {
+  return group.memberIds.flatMap((id) => {
+    const bot = store.bot(id);
+    return bot ? [botPublicProfile(bot)] : [];
+  });
+}
+/** The public identity last announced per bot: a change (a rename, a new
+ * look) re-announces every room it is in, so each person there sees it. */
+const announcedProfiles = new Map<string, string>(store.bots.map((bot) => [bot.id, JSON.stringify(botPublicProfile(bot))]));
+function announceProfileChange(botId: string): void {
+  const bot = store.bot(botId);
+  if (!bot) {
+    announcedProfiles.delete(botId);
+    return;
+  }
+  const profile = JSON.stringify(botPublicProfile(bot));
+  const before = announcedProfiles.get(botId);
+  announcedProfiles.set(botId, profile);
+  if (before === undefined || before === profile) return;
+  for (const group of store.groups) {
+    if (group.memberIds.includes(botId)) broadcast({ kind: "group", group: publicGroupState(group) });
+  }
 }
 
 function beginGroupTurnOperation(
@@ -6187,6 +6217,10 @@ function broadcast(payload: Record<string, unknown>, options: { adminOnly?: bool
     if (deliverSseFrame(client, kind, out) === "disconnected") {
       sseClients.delete(client);
     }
+  }
+  if (kind === "bot" && payload.bot && typeof payload.bot === "object") {
+    const id = (payload.bot as { id?: unknown }).id;
+    if (typeof id === "string") announceProfileChange(id);
   }
 }
 

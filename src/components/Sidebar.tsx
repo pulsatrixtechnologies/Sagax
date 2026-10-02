@@ -111,6 +111,7 @@ import { useShowThreads } from "@/lib/thread-preferences";
 import { botShowsUnread } from "@/lib/bot-unread";
 import { SidebarBotActivity, sidebarBotActivityTasks } from "./SidebarBotActivity";
 import { citationPreviewText } from "@/lib/citations";
+import { groupMemberBots } from "@/lib/group-members";
 
 
 
@@ -284,9 +285,7 @@ export function GroupListItem({
   // quiet rows keep the line only while the room reports work in progress
   const groupStatus = Boolean(group.busyBotId) || Boolean(group.working);
   const roomBusy = groupStatus;
-  const members = group.memberIds
-    .map((id) => state.bots.find((b) => b.id === id))
-    .filter((b): b is Bot => Boolean(b));
+  const members = groupMemberBots(group, state.bots);
   const last = group.messages.at(-1);
   return (
     <>
@@ -2005,7 +2004,7 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
     ...sectionedRooms.map((group) => group.section!),
   ])];
   const teamOrder = (key: string) => key === "" ? -1 : teamNames.includes(key) ? teamNames.indexOf(key) : teamNames.length;
-  const teamMap = buildTeamMapSections(matchingBots, teamNames)
+  const teamMap = buildTeamMapSections(matchingBots, teamNames, { general: unsectionedRooms.length > 0 })
     .sort((a, b) => teamOrder(a.key) - teamOrder(b.key))
     .filter((team) => {
       if (team.key) return true;
