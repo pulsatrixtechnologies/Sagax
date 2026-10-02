@@ -1,0 +1,89 @@
+// Launch the PACKAGED desktop app and require its main window to load the
+// local server within 60 s. 0.4.0 shipped a startup that threw before
+// createWindow(): every server smoke passed while the app spun forever on its
+// startup screen. Run it on the host arch before notarizing.
+//
+//   node scripts/smoke-packaged-launch.mjs --app release/mac-arm64/Sagax.app
+//   node scripts/smoke-packaged-launch.mjs --app ... --user-data-copy "<an existing userData folder>"
+//
+// Everything runs in a disposable HOME, userData and data folder. With
+// --user-data-copy the folder is COPIED first (caches and locks left out);
+// the original is only read. The built-in SAGAX_SMOKE_TEST hook prints
+// "[smoke] renderer-ready" once the window's renderer reached the server.
+import { spawn, spawnSync } from "node:child_process";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { basename, join, resolve } from "node:path";
+import { parseArgs } from "node:util";
+
+const { values } = parseArgs({
+  options: { app: { type: "string" }, "user-data-copy": { type: "string" }, timeout: { type: "string", default: "60" } },
+});
+if (!values.app) throw new Error("Usage: node scripts/smoke-packaged-launch.mjs --app <Sagax.app | Sagax.exe> [--user-data-copy DIR] [--timeout 60]");
+const app = resolve(values.app);
+const executable = app.endsWith(".app") ? join(app, "Contents", "MacOS", basename(app, ".app")) : app;
+if (!existsSync(executable)) throw new Error(`No packaged executable at ${executable}`);
+
+const SKIP = new Set(["Cache", "Code Cache", "GPUCache", "DawnGraphiteCache", "DawnWebGPUCache", "blob_storage", "Crashpad",
+  "SingletonLock", "SingletonCookie", "SingletonSocket", "lockfile"]);
+const scratch = mkdtempSync(join(tmpdir(), "sagax-launch-smoke-"));
+const home = join(scratch, "home");
+const userData = join(scratch, "userData");
+const dataDir = join(scratch, "data");
+mkdirSync(home, { recursive: true });
+mkdirSync(dataDir, { recursive: true });
+if (values["user-data-copy"]) {
+  const source = resolve(values["user-data-copy"]);
+  cpSync(source, userData, { recursive: true, filter: (from) => !SKIP.has(basename(from)) || from === source });
+} else mkdirSync(userData, { recursive: true });
+
+const timeoutMs = Number(values.timeout) * 1000;
+const args = [`--user-data-dir=${userData}`];
+if (process.platform === "darwin") args.push("--use-mock-keychain");
+if (process.platform === "linux") args.push("--password-store=basic");
+const child = spawn(executable, args, {
+  detached: process.platform !== "win32",
+  stdio: ["ignore", "pipe", "pipe"],
+  env: {
+    ...process.env,
+    HOME: home,
+    USERPROFILE: process.platform === "win32" ? home : process.env.USERPROFILE,
+    SAGAX_DATA_DIR: dataDir,
+    SAGAX_SMOKE_TEST: "1",
+    SAGAX_SMOKE_CUA: "0",
+  },
+});
+
+let output = "";
+const started = Date.now();
+const result = await new Promise((done) => {
+  const timer = setTimeout(() => done({ ok: false, reason: `no main window renderer within ${values.timeout} s` }), timeoutMs);
+  for (const stream of [child.stdout, child.stderr]) {
+    stream.setEncoding("utf8");
+    stream.on("data", (chunk) => {
+      output += chunk;
+      const ready = output.match(/\[smoke\] renderer-ready (\{.*\})\r?\n/);
+      const failed = output.match(/\[smoke\] renderer-failed (.*)\r?\n/);
+      if (ready) { clearTimeout(timer); done({ ok: true, detail: JSON.parse(ready[1]) }); }
+      else if (failed) { clearTimeout(timer); done({ ok: false, reason: `renderer failed: ${failed[1]}` }); }
+    });
+  }
+  child.on("exit", (code, signal) => { clearTimeout(timer); done({ ok: false, reason: `app exited (${code ?? signal}) before its main window loaded` }); });
+});
+
+function stop() {
+  if (child.exitCode !== null || child.signalCode !== null) return;
+  if (process.platform === "win32") spawnSync("taskkill", ["/pid", String(child.pid), "/T", "/F"]);
+  else { try { process.kill(-child.pid, "SIGTERM"); } catch {} }
+}
+stop();
+await new Promise((r) => setTimeout(r, 3000));
+if (process.platform !== "win32") { try { process.kill(-child.pid, "SIGKILL"); } catch {} }
+rmSync(scratch, { recursive: true, force: true, maxRetries: 5, retryDelay: 500 });
+
+const seconds = ((Date.now() - started) / 1000).toFixed(1);
+if (!result.ok) {
+  console.error(`packaged launch FAILED (${seconds} s): ${result.reason}\n--- app output (tail) ---\n${output.slice(-4000)}`);
+  process.exit(1);
+}
+console.log(`packaged launch ok in ${seconds} s${values["user-data-copy"] ? " (copied userData)" : " (fresh userData)"}: ${result.detail.location} product=${result.detail.health?.product ?? "?"}`);

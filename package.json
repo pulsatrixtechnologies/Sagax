@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.1.92",
   "baseVersion": "0.1.92",
-  "forkVersion": "0.4.0",
+  "forkVersion": "0.4.1",
   "description": "Pulsatrix Sagax: a local-first chat app for running a team of AI agents.",
   "homepage": "https://github.com/pulsatrixtechnologies/sagax",
   "repository": {
@@ -66,6 +66,7 @@
     "build:cloudflared": "node scripts/prepare-cloudflared.mjs",
     "build:browser": "node scripts/prepare-browser.mjs",
     "smoke:browser": "node scripts/smoke-browser-bundle.mjs",
+    "smoke:launch": "node scripts/smoke-packaged-launch.mjs",
     "build:cua:linux": "node scripts/prepare-cua-linux.mjs",
     "build:cua:linux:offline": "node scripts/prepare-cua-linux.mjs --offline",
     "build:updater": "node scripts/bundle-updater.mjs",

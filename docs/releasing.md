@@ -68,6 +68,10 @@ Sagax releases are built on a Mac, not by the workflows above:
 4. Gates: `scripts/smoke-browser-bundle.mjs` (live on the host arch,
    `--check-only` for the others) and `SAGAX_SMOKE_DIST=<resources>/server
    node scripts/smoke-packaged-server.mjs` for every package.
+   Before notarizing, launch the packaged app on the host arch:
+   `pnpm smoke:launch --app release/mac-arm64/Sagax.app`, and again with
+   `--user-data-copy` pointing at an existing userData folder (it is copied,
+   never modified). Both must load the main window within 60 s.
 5. `gh release create pulsa-vX.Y.Z` with every installer, zip, blockmap and
    both feeds, as a full release.
 

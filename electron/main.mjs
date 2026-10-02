@@ -4103,7 +4103,8 @@ app.whenReady().then(async () => {
   }
   if (app.isPackaged) {
     // sagax:// is primary; openmausbot:// stays for one release (legacy-names.mjs).
-    for (const scheme of URL_SCHEMES) app.setAsDefaultProtocolClient(scheme);
+    // A packaged launch smoke must not take sagax:// away from the installed app.
+    if (process.env.SAGAX_SMOKE_TEST !== "1") for (const scheme of URL_SCHEMES) app.setAsDefaultProtocolClient(scheme);
     // Chromium adds this capability below JavaScript, so renderer requests
     // can mutate the local harness while a Full-access shell using curl
     // cannot impersonate the person operating the desktop app.
