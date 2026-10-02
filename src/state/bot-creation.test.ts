@@ -142,6 +142,13 @@ describe("setup navigation", () => {
     expect(reducer(reopened, { type: "botCreationPending", on: false })).toMatchObject({ newBotOpen: true, botCreationPending: false });
   });
 
+  it("never opens New bot for a viewer the server lets create none (a read-only person)", () => {
+    const readOnly = { ...initialState, config: { viewer: { operator: false, principalId: null, email: "", name: "", role: "member", canCreateBots: false, botsReadOnly: true } } } as unknown as typeof initialState;
+    expect(reducer(readOnly, { type: "toggleNewBot", open: true }).newBotOpen).toBe(false);
+    expect(reducer(readOnly, { type: "toggleNewBot" }).newBotOpen).toBe(false);
+    expect(reducer(initialState, { type: "toggleNewBot", open: true }).newBotOpen).toBe(true);
+  });
+
   it("opens one modal with exclusive keyboard ownership", () => {
     const start = { ...initialState, settingsOpen: true, appSettingsOpen: true, pluginsOpen: true, shortcutsOpen: true, computerOpen: true };
     const next = reducer(start, { type: "toggleNewBot", open: true });

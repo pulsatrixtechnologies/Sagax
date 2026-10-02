@@ -4272,5 +4272,8 @@
   "voiceMode.call.enrollFailed": "Not enough speech was heard. Try again somewhere quieter.",
   "voiceMode.call.forget": "Forget my voice",
   "voiceMode.call.earcons": "Call sounds",
-  "voiceMode.call.voiceIsolation": "On a Mac, Control Center > Mic Mode > Voice Isolation filters the room even more."
+  "voiceMode.call.voiceIsolation": "On a Mac, Control Center > Mic Mode > Voice Isolation filters the room even more.",
+  "bots.readOnly.notice": "Your administrator lets you use shared bots only.",
+  "myEngines.memberIntro": "Sign in with your own Claude or Codex subscription, or add your keys in Perspicax. Your turns on every bot, yours or shared with you, use them; nobody else sees them.",
+  "myEngines.noneOnServer": "No model provider is installed on this server yet. Ask your administrator."
 }

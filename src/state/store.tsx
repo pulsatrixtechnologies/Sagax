@@ -747,6 +747,9 @@ export interface ConfigViewer {
   role: "owner" | "admin" | "member" | null;
   /** The server lets this viewer create a bot. */
   canCreateBots: boolean;
+  /** Organization server: a Perspicax admin lets this person use shared
+   * bots only (no creating, editing or owning a bot). */
+  botsReadOnly?: true;
   /** The operator's name, for their lines that carry no sender. */
   operatorName?: string;
   /** Organization server: Perspicax owns this person's name and email
@@ -2089,7 +2092,7 @@ export function reducer(state: AppState, action: Action): AppState {
     case "botCreationPending":
       return { ...state, botCreationPending: action.on };
     case "toggleNewBot": {
-      const open = action.open ?? !state.newBotOpen;
+      const open = (action.open ?? !state.newBotOpen) && state.config?.viewer?.canCreateBots !== false;
       return {
         ...state, newBotOpen: open,
         ...(open ? { settingsOpen: false, appSettingsOpen: false, pluginsOpen: false, shortcutsOpen: false } : {}),

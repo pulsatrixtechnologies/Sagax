@@ -17,6 +17,10 @@ export interface ViewerIdentity {
   role: OrgRole | null;
   /** Whether this server lets them create a bot (POST /api/bots). */
   canCreateBots: boolean;
+  /** Organization server: a Perspicax admin made this person read-only in
+   * Sagax (`sagax_bots: use`). They use the bots shared with them and
+   * create, edit or own none. Absent otherwise. */
+  botsReadOnly?: true;
   /** The operator's display name, for lines the operator sent without a
    * named sender. Only set for someone who is not the operator. */
   operatorName?: string;

@@ -5340,7 +5340,10 @@
       "orgComputer.why.cloud": "d42a83e5f52948a53e1febe25e9fb9b234e5b8d3204692393df28c42d9bd4c9d",
       "orgComputer.why.computer": "6db5460e0adcc9364b4b746a7a540374f8dc682bea6d85018721222e4240211f",
       "orgComputer.why.none": "7e73a13862d570c593c217d7f3fa21ef1ce54cb54e8412f96dc85710647ecb96",
-      "sandboxDesktop.controlHint": "91ad3a652718fc5ef548e205f038bc736c5208c14607472b2cdad168b802c1d3"
+      "sandboxDesktop.controlHint": "91ad3a652718fc5ef548e205f038bc736c5208c14607472b2cdad168b802c1d3",
+      "bots.readOnly.notice": "64d445b6ddf3bf13dfbbbce81d37605bd9c2ecebff7c993d085dbcdf4757f28b",
+      "myEngines.memberIntro": "05a61e93ae490f7e0c4ec65a698ac347777a77760f89f0ecfe8f81221483dd37",
+      "myEngines.noneOnServer": "74b4665e7ea436fa7077903d2c61e8b2e0d4c7536d6ea23fc3794570d2f9b369"
     },
     "hi": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",

@@ -16,6 +16,18 @@ export function viewerCanCreateBots(config: ConfigStatus | null | undefined): bo
   return config?.viewer?.canCreateBots ?? true;
 }
 
+/** Organization server: a Perspicax admin lets this person use the bots
+ * shared with them only (Perspicax `sagax_bots: use`). */
+export function viewerBotsReadOnly(config: ConfigStatus | null | undefined): boolean {
+  return config?.viewer?.botsReadOnly === true;
+}
+
+/** Organization server: a member (not an admin, not the operator) reads
+ * the server's engines without its own account or install details. */
+export function viewerIsOrgMember(config: ConfigStatus | null | undefined): boolean {
+  return config?.viewer?.role === "member";
+}
+
 /** The name to show above a person's line, or null when the line is your
  * own. A line with a sender is theirs; a line without one was sent by the
  * operator at the server's computer. */

@@ -76,6 +76,24 @@ Covered by `src/components/SettingsModal.orgCleanup.test.ts`,
   "Manage my keys in Perspicax" link; no separate "My subscriptions and
   keys" card, no engine missing from the server, never the server's own
   account (it serves no one's turns there).
+- A member (not an admin) reads `GET /api/instances` (client scope on an
+  organization server, `memberInstanceView`): the engines and their models
+  without the server's account, sign-in, CLI paths or install details, so
+  Settings > Model providers and the model picker draw for them. Their
+  cards hold only their own access (`data-member-engine`); changing an
+  engine stays admin. Before 2026-10-02 that route was admin-only and a
+  member saw an empty Model providers page, hence no sign-in
+  (`server/org-member-access.e2e.test.ts` MA-1, MA-2).
+- Bot rights come from Perspicax (1.8.6, `sagax_bots` on each directory
+  person, set by an admin on the person's sheet; default and absent mean
+  `manage`). `use` makes the person read-only (`personBotsReadOnly`,
+  `viewer.botsReadOnly`): `POST /api/bots` and `/api/org/import` answer 403
+  `org_bots_read_only`, every bot level they hold reads as `use`
+  (`botLevel`, their own bots included), so no edit, delete, grant or
+  routine; they still talk to the bots shared with them (speaker pays). An
+  organization admin is never narrowed. The UI hides New bot and says
+  "Votre administrateur vous permet d'utiliser les robots partagés
+  seulement" (`bots.readOnly.notice`; MA-3, `server/authz.test.ts`).
 - Routines in my name is read-only: allowed by default, revoked in the
   Perspicax console (`manageUrl`, `/console/me/access#sagax`). Perspicax has no
   silent authorization, so `ensureRoutineDelegation` starts the consent once,

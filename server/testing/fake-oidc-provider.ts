@@ -60,6 +60,9 @@ export interface FakeDirectoryPerson {
   provider_keys?: string[];
   /** Slice 5: the MCP profile ids this person holds (else profilesBySub). */
   profiles?: string[];
+  /** Perspicax 1.8.6: "use" when an admin made this person read-only in
+   * Sagax (shared bots only); absent from an older Perspicax. */
+  sagax_bots?: "manage" | "use";
   /** Slice 6: set to leave the field out (an older Perspicax); else the
    * provider reports the live delegation family of this person. */
   omitRoutineDelegation?: boolean;

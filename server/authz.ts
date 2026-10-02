@@ -40,6 +40,10 @@ export interface Viewer {
   orgAdmin: boolean;
   teams: TeamRef[];
   disabled: boolean;
+  /** Organization server: a Perspicax admin let this person use shared
+   * bots only (`sagax_bots: use`): every bot level they hold, their own
+   * bots included, reads as `use` (botLevel). Never set for an admin. */
+  botsReadOnly?: boolean;
 }
 
 export interface BotGrant {
@@ -147,6 +151,11 @@ export function sectionRole(viewer: Viewer, section: SectionAccess): SectionRole
 
 /** A viewer's level on a bot (decision D3), or null. */
 export function botLevel(input: { viewer: Viewer } & BotFacts): Level | "owner" | null {
+  const level = heldBotLevel(input);
+  return level && input.viewer.botsReadOnly && !input.viewer.orgAdmin ? "use" : level;
+}
+
+function heldBotLevel(input: { viewer: Viewer } & BotFacts): Level | "owner" | null {
   const { viewer } = input;
   if (viewer.disabled) return null;
   if (key(input.ownerPrincipalId) === key(viewer.principalId)) return "owner";

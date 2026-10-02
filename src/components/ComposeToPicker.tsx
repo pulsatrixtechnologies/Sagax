@@ -4,7 +4,7 @@ import { track } from "@/lib/analytics";
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
 import { isMacPlatform } from "@/lib/keyboard-shortcuts";
-import { viewerActorId, viewerCanCreateBots } from "@/lib/viewer";
+import { viewerActorId, viewerBotsReadOnly, viewerCanCreateBots } from "@/lib/viewer";
 import { isViewersPrimaryBot } from "@/lib/primary-bot";
 import { useStore, type Bot } from "@/state/store";
 import { useOrgPeople, type OrgDirectoryPerson } from "@/lib/perspicax-org";
@@ -79,6 +79,7 @@ export function ComposeToPicker({ onClose }: { onClose: () => void }) {
 
   const viewer = viewerActorId(state.config);
   const canCreateBots = viewerCanCreateBots(state.config);
+  const botsReadOnly = viewerBotsReadOnly(state.config);
   const q = query.trim().toLowerCase();
   const bots = state.bots.filter((bot) => !bot.hidden && !isExternalBot(bot, viewer) && matches(bot, q));
   const orgPeople = useOrgPeople();
@@ -244,6 +245,9 @@ export function ComposeToPicker({ onClose }: { onClose: () => void }) {
           aria-label={t("compose.placeholder")}
           className="pointer-events-auto absolute left-3 top-2 z-10 max-h-[min(440px,70vh)] w-[min(440px,calc(100%-1.5rem))] overflow-y-auto rounded-xl border border-hairline/50 bg-menu py-1.5 shadow-2xl shadow-black/50"
         >
+          {botsReadOnly && (
+            <p role="note" data-bots-read-only className="px-3 py-2 text-[12.5px] leading-snug text-ink-secondary">{t("bots.readOnly.notice")}</p>
+          )}
           {rows.map((row, index) => {
             const shortcut = index < 9 ? index + 1 : undefined;
             const selected = index === active;

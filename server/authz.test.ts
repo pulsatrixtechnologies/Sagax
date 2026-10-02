@@ -69,6 +69,15 @@ describe("botLevel", () => {
     expect(botLevel({ viewer: viewer(DAVE), ...facts })).toBeNull();
   });
 
+  it("a read-only person (Perspicax sagax_bots use) holds use at most, their own bots included; never an admin", () => {
+    const facts = bot([grant(`user:${BOB}`, "manage"), grant(`user:${CAROL}`, "use")]);
+    expect(botLevel({ viewer: viewer(ALICE, { botsReadOnly: true }), ...facts })).toBe("use");
+    expect(botLevel({ viewer: viewer(BOB, { botsReadOnly: true }), ...facts })).toBe("use");
+    expect(botLevel({ viewer: viewer(CAROL, { botsReadOnly: true }), ...facts })).toBe("use");
+    expect(botLevel({ viewer: viewer(DAVE, { botsReadOnly: true }), ...facts })).toBeNull();
+    expect(botLevel({ viewer: viewer(ALICE, { botsReadOnly: true, orgAdmin: true }), ...facts })).toBe("owner");
+  });
+
   it("a disabled person has nothing, even as owner", () => {
     expect(botLevel({ viewer: viewer(ALICE, { disabled: true }), ...bot([]) })).toBeNull();
     expect(botLevel({ viewer: viewer(BOB, { disabled: true }), ...bot([grant(`user:${BOB}`, "manage")]) })).toBeNull();
