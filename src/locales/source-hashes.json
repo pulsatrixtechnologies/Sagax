@@ -5560,7 +5560,10 @@
       "botPanel.history.status.running": "f4ccae29e1bb0c20a124570a1b43f4347ea94bba9f84ffdfddd9c7445b126128",
       "botPanel.history.status.finished": "7804f7a79a9eee323b6e89d3f8287c7d36076f4d76291646295f435b0dec736e",
       "botPanel.history.status.failed": "031a8f0f659df890dfd53c92e45295b0f14c997185bae46e168831e403b273f7",
-      "botPanel.history.search": "49c266baaaa70981ea188fa714d5c40cf13830d786a861c9943ae0d26a7f3fe9"
+      "botPanel.history.search": "49c266baaaa70981ea188fa714d5c40cf13830d786a861c9943ae0d26a7f3fe9",
+      "settings.inspectorButton.title": "16acdca1d45e5688c19be676798542bdeba83cb47869180b9f1c195d93f29c07",
+      "settings.inspectorButton.subtitle": "58bf005e9e7cbab35a16c9aea075780de087f3511942d00d4a53232aed83840a",
+      "settings.inspectorButton.show": "c7e153a4bac8e9fd5cb0d88156f8eee01f4739505c7688ad57e54ecc24fbee76"
     },
     "hi": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",
