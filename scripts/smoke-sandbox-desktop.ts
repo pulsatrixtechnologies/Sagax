@@ -121,7 +121,8 @@ async function main(): Promise<void> {
     check("screen size", textOf(await computer("get_screen_size")) === '{"width":1280,"height":800}');
 
     const vnc = await callUserSandboxTool("run_command", { command: "cat /proc/net/tcp | awk 'NR>1 && $4==\"0A\" {print $2}'" }, tools);
-    check("VNC listens on 127.0.0.1:5901 inside the sandbox only", textOf(vnc).split("\n")[0]!.trim() === "0100007F:170D", textOf(vnc).split("\n")[0]);
+    const listeners = textOf(vnc).split("\n").map((line) => line.trim()).filter((line) => /^[0-9A-F]{8}:[0-9A-F]{4}$/.test(line));
+    check("VNC listens on 127.0.0.1:5901 inside the sandbox only", listeners.includes("0100007F:170D") && listeners.filter((line) => line.endsWith(":170D")).length === 1, listeners.join(" "));
     const inspected = JSON.parse(execFileSync("docker", ["inspect", names.container], { encoding: "utf8" }))[0];
     check("no published port, read-only root, no capabilities", Object.keys(inspected.NetworkSettings.Ports ?? {}).length === 0
       && inspected.HostConfig.ReadonlyRootfs === true && JSON.stringify(inspected.HostConfig.CapAdd ?? []) === "[]"
@@ -148,6 +149,18 @@ async function main(): Promise<void> {
     const memory = execFileSync("docker", ["stats", "--no-stream", "--format", "{{.MemUsage}} pids={{.PIDs}}", names.container], { encoding: "utf8" }).trim();
     check("desktop with Chromium fits the memory limit", true, memory);
 
+    // The Computer tab's usage panel and power controls, on real Docker.
+    const stats = await manager.stats(person);
+    check("stats: CPU against the quota, memory, disk and OS", stats.state === "running" && stats.cpuPercent !== null && (stats.memoryBytes ?? 0) > 50 * 1024 ** 2
+      && stats.memoryLimitBytes === config.limits.memoryBytes && /Debian/.test(stats.os ?? "") && Boolean(stats.arch),
+      `cpu ${stats.cpuPercent}%, mem ${Math.round((stats.memoryBytes ?? 0) / 1024 ** 2)} MiB of ${Math.round(stats.memoryLimitBytes / 1024 ** 2)}, ${stats.os} ${stats.arch}, ${stats.image}`);
+    check("pause freezes it", (await manager.power(person, "pause")).state === "paused");
+    const refused = await manager.exec(person, { argv: ["true"] }).then(() => "ran", (error: { code?: string }) => error.code ?? "error");
+    check("a paused environment refuses bot work", refused === "paused", refused);
+    check("resume", (await manager.power(person, "resume")).state === "running");
+    const after = await callUserSandboxTool("run_command", { command: "pgrep -x Xvnc >/dev/null && echo desktop-alive" }, tools);
+    check("the desktop survives pause and resume", textOf(after).startsWith("desktop-alive"));
+
     // The live view, through a local server: session auth, the real route,
     // the RFB stream through the provisioner.
     const sessions = new SessionRegistry({ file: join(scratch, "sessions.json") });
@@ -172,9 +185,9 @@ async function main(): Promise<void> {
     const appPort = await freePort();
     await new Promise<void>((resolve) => app!.listen(appPort, "127.0.0.1", resolve));
     const origin = `http://127.0.0.1:${appPort}`;
-    const config = await fetch(`${origin}/api/desktop-viewer/sandbox/me`, { headers: { cookie: `s=${owner}`, origin } });
-    const body = await config.json() as { password?: string; viewOnly?: boolean };
-    check("owner opens the live view, read-only by default", config.status === 200 && body.viewOnly === true && /^[A-Za-z0-9]{8}$/.test(body.password ?? ""));
+    const viewerConfig = await fetch(`${origin}/api/desktop-viewer/sandbox/me`, { headers: { cookie: `s=${owner}`, origin } });
+    const body = await viewerConfig.json() as { password?: string; viewOnly?: boolean };
+    check("owner opens the live view, read-only by default", viewerConfig.status === 200 && body.viewOnly === true && /^[A-Za-z0-9]{8}$/.test(body.password ?? ""));
     const control = await (await fetch(`${origin}/api/desktop-viewer/sandbox/me?control=1`, { headers: { cookie: `s=${owner}`, origin } })).json() as { password?: string; viewOnly?: boolean };
     check("take control hands the other password", control.viewOnly === false && control.password !== body.password);
     const ws = new WebSocket(`ws://127.0.0.1:${appPort}/api/desktop-viewer/sandbox/me/websockify`, { headers: { cookie: `s=${owner}`, origin } } as unknown as string[]);

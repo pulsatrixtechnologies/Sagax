@@ -306,6 +306,18 @@ Keep these rules, each covered by `server/user-sandbox*.test.ts`,
   parameter properties in these files.
 - `scripts/smoke-user-sandbox.ts` proves isolation on a real Docker host and
   removes everything it creates.
+- The environment's desktop (`deploy/sandbox/sagax-desktop`, Xvnc on
+  127.0.0.1 inside the sandbox only) starts on demand: computer use
+  (`computer_list_tools`, `computer_use`, fixed argv, never a shell line) or
+  the owner's live view. The view (`/api/desktop-viewer/sandbox/me`) is built
+  from the caller's own session principal, never an id; read-only by default
+  (view-only VNC password), `?control=1` for control; its WebSocket starts
+  nothing and reaches the VNC port only through the provisioner's signed
+  upgrade (`/v1/sandboxes/<key>/desktop`). The Computer tab's power and usage
+  routes (`/api/me/server-environment/power|stats`) act on the caller's own
+  environment only; shutdown and pause under a running turn need `confirm`.
+  Tests: `server/user-sandbox-desktop.test.ts`, `server/sandboxd.test.ts`;
+  Docker: `scripts/smoke-sandbox-desktop.ts`.
 
 ## Desktop bridge (organization mode)
 

@@ -40,8 +40,9 @@ rather than the creator's: the work they asked for and its files stay
 together, and nothing they wrote moves into someone else's environment.
 
 Code: `server/user-sandbox-routing.ts` (targets, owner), `server/user-sandbox-tools.ts`
-(`run_command`, `read_file`, `write_file`, `list_files`, `browse`, mounted as the
-MCP server `sagax-environment`), `server/user-sandbox-manager.ts` (lifecycle on
+(`run_command`, `read_file`, `write_file`, `list_files`, `browse`,
+`computer_list_tools`, `computer_use`, mounted as the MCP server
+`sagax-environment`), `server/user-sandbox-manager.ts` (lifecycle on
 the Sagax side), `server/sandboxd*.ts` (the provisioner), `server/user-sandbox-spec.ts`
 (the exact container, network and egress policy).
 
@@ -57,7 +58,8 @@ the Sagax side), `server/sandboxd*.ts` (the provisioner), `server/user-sandbox-s
   and `sagax-user=<key>`.
 - **Idle stop:** after `SAGAX_SANDBOX_IDLE_MINUTES` without a command (default
   15). The next call starts it again; `/workspace` persists.
-- **Capacity:** at most `SAGAX_SANDBOX_MAX_RUNNING` run at once (default 3). A
+- **Capacity:** at most `SAGAX_SANDBOX_MAX_RUNNING` run at once (default 2; a
+  paused one counts, it keeps its memory). A
   new one stops the least recently used idle one, or the call is refused with a
   clear message when every running environment is in use.
 - **Sign-out:** when Perspicax signs a person out (back-channel logout,
@@ -67,6 +69,62 @@ the Sagax side), `server/sandboxd*.ts` (the provisioner), `server/user-sandbox-s
   `user-sandbox-deletions.json` in the data folder and survive restarts.
 - **Reset:** Settings > Organization > Your server environment > Reset deletes
   it, `/workspace` included, and creates a fresh one, after a confirmation.
+
+## Desktop
+
+Each environment can show a small Linux desktop (1280x800): Xvnc (an X
+server with its VNC server), openbox, Chromium, xterm and pcmanfm, driven by
+`/usr/local/bin/sagax-desktop` in the image. Nothing of it runs until it is
+needed: a plain shell turn starts no X server.
+
+- **Computer use:** bots get the desktop bridge's shape, `computer_list_tools`
+  then `computer_use` with `screenshot` (JPEG), `get_screen_size`, `click`,
+  `move`, `drag`, `type_text`, `key_press`, `scroll` and `open_url` (the cloud
+  computer's vocabulary). Each call is one exec of a fixed `sagax-desktop`
+  argv (xdotool, scrot), never a shell line; text and addresses travel in
+  `SAGAX_*` variables. The first call starts the desktop. Where it runs
+  follows "Where bots work" and the routine rules above: the person's own
+  computer when that is the target, else this desktop. A bot whose Computer
+  setting is off gets no computer use here either.
+- **VNC:** listens on `127.0.0.1:5901` inside the sandbox's own network
+  namespace only and asks for a password (VncAuth only). Two passwords: the
+  full one controls the screen, the view-only one only watches; both are
+  replaced each time the owner opens the view.
+- **Live view:** `GET /api/desktop-viewer/sandbox/me` (and its
+  `/websockify` WebSocket), the Computer tab and the full-window viewer. The
+  target is built from the caller's own session principal: there is no id
+  that names another person's desktop, an admin or the server's console has
+  none, and a person signed out by Perspicax is refused. Opening the view
+  starts the environment and its desktop and hands the view-only password;
+  "Prendre le contrôle" (`?control=1`) hands the full one. The WebSocket never
+  starts anything: the Sagax server frames the RFB bytes itself
+  (`server/ws-bridge.ts`) and reaches the VNC port only through the
+  provisioner, a signed HTTP upgrade (`/v1/sandboxes/<key>/desktop`) spliced
+  to a `docker exec` relay inside that one sandbox. No port is published, no
+  network path opens between Sagax and a sandbox. A view in control counts as
+  use; a view that only watches does not keep the environment alive, and it
+  closes when the environment idles out or is paused.
+
+### Computer tab (organization server)
+
+The bot panel's Computer tab (`src/components/computer/OrgComputerTab.tsx`)
+shows where the person's bots do computer work right now:
+
+- **Server environment:** its state (Off, Starting, Running, Paused), Start,
+  Shut down (keeps `/workspace`), Pause (`docker pause`: bots and the live
+  view are refused until Resume) and Resume; the live desktop; and a usage
+  panel refreshed every 5 s while visible (disk used of the quota, CPU as a
+  share of its own quota, memory used of the limit, OS and image tag).
+  `POST /api/me/server-environment/power` and `GET
+  /api/me/server-environment/stats`, the caller's own environment only.
+  Shutting down or pausing while a bot works there answers
+  `confirm_running` until the person confirms.
+- **Their own computer** (desktop bridge): "Votre ordinateur", connected or
+  not, and coarse facts the desktop app sends every 30 s (OS and version,
+  architecture, CPU model, count and use rounded to 5 %, memory and disk
+  rounded; `POST /api/desktop-bridge/<id>/system`). No shutdown or pause. Its
+  Local VM, when it has one: status and start
+  (`POST /api/me/desktop-bridge/local-vm`).
 
 ## Security model
 
@@ -136,13 +194,13 @@ driver's flags (no model request) and checks its tool list has no `Bash`.
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `SAGAX_SANDBOX_MEMORY_MB` | 1024 | per environment, no swap |
+| `SAGAX_SANDBOX_MEMORY_MB` | 1536 | per environment, no swap (the desktop with Chromium measured about 260 MiB) |
 | `SAGAX_SANDBOX_CPUS` | 1 | per environment |
-| `SAGAX_SANDBOX_PIDS` | 256 | per environment |
-| `SAGAX_SANDBOX_TMP_MB` | 256 | tmpfs `/tmp` |
+| `SAGAX_SANDBOX_PIDS` | 512 | per environment (Chromium's processes and threads count) |
+| `SAGAX_SANDBOX_TMP_MB` | 512 | tmpfs `/tmp` (counts against memory only when used) |
 | `SAGAX_SANDBOX_DISK_MB` | 2048 | soft quota on `/workspace` |
 | `SAGAX_SANDBOX_MAX_FILE_MB` | 512 | largest single file |
-| `SAGAX_SANDBOX_MAX_RUNNING` | 3 | running at once (about 3 GiB at most) |
+| `SAGAX_SANDBOX_MAX_RUNNING` | 2 | running or paused at once (3 GiB at most) |
 | `SAGAX_SANDBOX_IDLE_MINUTES` | 15 | idle stop |
 | `SAGAX_SANDBOX_DELETE_GRACE_HOURS` | 72 | delete after sign-out (Sagax side) |
 | `SAGAX_SANDBOX_SUBNET_POOL` | `10.213.0.0/16` | must not overlap the VNet or other Docker networks |
@@ -171,6 +229,17 @@ deletes it, with its egress rules):
 docker build -f deploy/sandbox/Dockerfile -t sagax-sandbox:smoke-userenv .
 node --experimental-strip-types scripts/smoke-user-sandbox.ts
 ```
+
+The desktop (computer use, Chromium, the live view through the real viewer
+route, pause, resume and usage) has its own smoke test:
+
+```bash
+docker build -f deploy/sandbox/Dockerfile -t sagax-sandbox:smoke-desktop .
+node --experimental-strip-types scripts/smoke-sandbox-desktop.ts [--shots <dir>]
+```
+
+The image with the desktop is about 397 MB (arm64), 38.5 MB more than
+without it; `--build-arg WITH_DESKTOP=0` leaves it out.
 
 Settings > Local VM no longer offers a VM per bot on an organization server,
 and a bot's cloud backend cannot be a per-bot VPS there (409 `org_user_sandbox`).

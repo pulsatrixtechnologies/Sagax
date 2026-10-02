@@ -48,3 +48,55 @@ the contract between the two repositories.
 - The labels `com.pulsatrix.sagax.sandbox.instance=<instance>` and
   `sagax-user=<key>` (the README's cleanup commands filter on them).
 - The log line `egress policy enforced` (the bootstrap waits for it).
+
+## Desktop in the server environment (Sagax PR feat/sandbox-desktop)
+
+Patch to make on the Perspicax side (`pulsatrix-v3`, `infra/`), not in this
+repository. Nothing changes in the security model: the sandbox spec, the
+egress helper and the provisioner's mounts stay as they are.
+
+1. **Image.** `build-push.sh` keeps building `deploy/sandbox/Dockerfile`; it
+   now carries the desktop (Xvnc, openbox, xdotool, scrot, xterm, pcmanfm)
+   and `/usr/local/bin/sagax-desktop`. About 397 MB, 38.5 MB more. Build both
+   architectures as today. The bootstrap preflight's 3 GiB free under
+   `/var/lib/docker` still holds.
+2. **`sagax-sandboxd` environment** (`infra/runtime/docker-compose.yml`). The
+   code defaults moved to a desktop per environment; if the compose or the
+   bootstrap's `.env` pins the old values, change them (or drop them to take
+   the defaults):
+
+   | Variable | Old | New |
+   |---|---|---|
+   | `SAGAX_SANDBOX_MEMORY_MB` | 1024 | 1536 |
+   | `SAGAX_SANDBOX_MAX_RUNNING` | 3 | 2 |
+   | `SAGAX_SANDBOX_PIDS` | 256 | 512 |
+   | `SAGAX_SANDBOX_TMP_MB` | 256 | 512 |
+
+   A full house is then 2 x 1.5 GiB = 3 GiB on the 8 GiB VM, as before. A
+   paused environment counts against `SAGAX_SANDBOX_MAX_RUNNING` (it keeps its
+   memory). `mem_limit: 192m` on the provisioner stays: each live view is one
+   spliced `docker exec` stream.
+3. **Caddy.** The live view is a WebSocket on the Sagax origin:
+   `GET /api/desktop-viewer/sandbox/me/websockify` (and the JSON
+   `GET /api/desktop-viewer/sandbox/me`). Caddy's `reverse_proxy` passes
+   WebSocket upgrades by default; check the Sagax site block:
+   - no `path` matcher or `respond` that drops `/api/desktop-viewer/*`;
+   - no `header_up -Connection` / `-Upgrade` and no `transport http {
+     versions h2c }` on that upstream (an upgrade needs HTTP/1.1);
+   - no `read_timeout` / `write_timeout` shorter than a working session on
+     that upstream (the stream stays open while the person watches; Sagax
+     closes it when the environment idles out, about 15 minutes);
+   - keep `Origin` and `Host` as sent (the route refuses a cross-origin
+     request).
+   No new route to the provisioner or to any sandbox: the Sagax server reaches
+   the VNC port through the provisioner on `sagax-sandbox-control`, as for
+   every other call.
+4. **Desktop app traffic.** The desktop app now posts coarse system facts to
+   `POST /api/desktop-bridge/<id>/system` every 30 s and the Computer tab calls
+   `POST /api/me/desktop-bridge/local-vm`; both are ordinary JSON calls on the
+   Sagax origin.
+5. **Health.** Unchanged: the bootstrap still waits for `egress policy
+   enforced`. To check a deploy: open a bot's Computer tab as a member,
+   "Afficher le bureau", then `docker ps --filter label=sagax-user` shows one
+   container per person who opened it, and `docker stats` stays under 1.5 GiB
+   each.
