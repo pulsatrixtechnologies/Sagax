@@ -2114,7 +2114,7 @@
   "orgJoin.joinAndCopy": "Rejoindre et copier",
   "orgJoin.working": "En cours...",
   "orgJoin.download": "Télécharger le fichier de copie",
-  "orgJoin.downloadHelp": "Gardez ce fichier comme copie de vos bots. Pour les apporter dans votre organisation, ouvrez ce Sagax dans l'app de bureau Sagax et utilisez Rejoindre et copier.",
+  "orgJoin.downloadHelp": "Gardez ce fichier comme copie ou sauvegarde de ces bots. La copie de bots dans une organisation se fait seulement depuis le Sagax local d'une app de bureau Sagax, dans Paramètres > Organisation > Rejoindre et copier.",
   "orgJoin.exportFailed": "La copie n'a pas pu être préparée.",
   "orgJoin.badAddress": "Entrez une adresse https, ou http://localhost sur cet ordinateur.",
   "orgJoin.joinFailed": "Impossible de rejoindre ce serveur. Vérifiez l'adresse : ce doit être un Sagax connecté avec Pulsatrix.",
