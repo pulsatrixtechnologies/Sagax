@@ -12,7 +12,16 @@ import { createBackgroundExecutable } from "./cua-windows-background.mjs";
 // Stages both Windows architectures the installer ships: x64 and arm64
 // (dist-native/cua-win32-<arch>). An executable of the other architecture is
 // never run here; its pinned release digest and PE machine type vouch for it.
-if (process.platform !== "win32") throw new Error("prepare-cua-win requires Windows");
+// SAGAX_WIN_CROSS=1 stages from macOS or Linux for an electron-builder cross
+// build: neither executable is run there, so both are accepted only from the
+// pinned release digest and their PE machine type, like the foreign arch on
+// Windows.
+const cross = process.platform !== "win32";
+if (cross && process.env.SAGAX_WIN_CROSS !== "1") {
+  throw new Error("prepare-cua-win requires Windows (or SAGAX_WIN_CROSS=1 for a cross build)");
+}
+/** Whether this host can run a Windows executable of `arch`. */
+const runsHere = (arch) => !cross && arch === process.arch;
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const run = promisify(execFile);
@@ -69,7 +78,7 @@ function peMachine(bytes) {
 async function acceptable(candidate, arch, pinned) {
   if (!candidate || !existsSync(candidate)) return false;
   if (peMachine(await readFile(candidate)) !== RELEASES[arch].machine) return false;
-  if (arch === process.arch) return (await binaryVersion(candidate)) === expectedVersion;
+  if (runsHere(arch)) return (await binaryVersion(candidate)) === expectedVersion;
   return pinned;
 }
 
@@ -97,7 +106,8 @@ async function officialBinary(arch) {
   }
   const archive = join(cache, release.file);
   await writeFile(archive, bytes);
-  await run("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command",
+  if (cross) await run("unzip", ["-q", "-o", archive, "-d", cache], { timeout: 60_000 });
+  else await run("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command",
     "Expand-Archive -LiteralPath $env:SAGAX_CUA_ARCHIVE -DestinationPath $env:SAGAX_CUA_EXTRACT"], {
     env: { ...process.env, SAGAX_CUA_ARCHIVE: archive, SAGAX_CUA_EXTRACT: cache },
     timeout: 60_000,
@@ -113,7 +123,7 @@ async function officialBinary(arch) {
 async function stageArch(arch) {
   const stage = join(root, "dist-native", `cua-win32-${arch}`);
   let binary;
-  if (process.env.CUA_DRIVER_PATH && arch === process.arch) {
+  if (process.env.CUA_DRIVER_PATH && runsHere(arch)) {
     const suppliedVersion = await binaryVersion(process.env.CUA_DRIVER_PATH);
     if (suppliedVersion !== expectedVersion) {
       throw new Error(
@@ -136,7 +146,7 @@ async function stageArch(arch) {
     }
   }
 
-  if (arch === process.arch && (await binaryVersion(binary)) !== expectedVersion) {
+  if (runsHere(arch) && (await binaryVersion(binary)) !== expectedVersion) {
     throw new Error(`CUA executable must match SDK ${expectedVersion}`);
   }
   const details = await stat(binary);
