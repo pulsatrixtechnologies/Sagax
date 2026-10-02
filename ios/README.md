@@ -230,6 +230,15 @@ the host computer remain unreachable through the companion.
 - **No optimistic state.** Actions call the harness and let the event stream
   deliver the result. A phone that draws its own version of what just happened
   is a phone that disagrees with the laptop.
+- **Bunbu is desktop-only for now (known gap).** The desktop's fourth
+  character (`bunbu`, `shared/mascot-look.ts`, drawn by `src/components/BunbuMascot.tsx`
+  from the SVG parts in `src/components/bunbu-art.ts`) is not ported to
+  `CompanionCore` yet: `MascotLook` decodes an unknown character as the owl,
+  so a Bunbu bot shows as the owl in the bot's color on the phone, and the
+  phone's character editor does not offer it. Saving a look from the phone's
+  editor replaces the Bunbu look. Porting it means a `bunbu` case, a
+  `BunbuSkin` enum (twelve ids, same rarities), the parts as `SVGPath`s and a
+  `BunbuMascotView`; the art is plain paths, so it ports like the shapes did.
 - **Messaging-app shape, not settings-list shape.** Mascot faces at roster size,
   the bot's role beside its name (quiet text in compact, a chip in
   comfortable), timestamps that say "Yesterday"

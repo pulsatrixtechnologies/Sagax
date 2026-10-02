@@ -23,6 +23,7 @@ import { botMascotLook, completeMascotLook, type MascotLook } from "../../shared
 import { ShapeMascot, type ShapeMood } from "./ShapeMascot";
 import type { TrombiPose } from "./retro-assistant/Trombi";
 import { SkinnedTrombi } from "./skin-fx/SkinnedTrombi";
+import { BunbuMascot, type BunbuMood } from "./BunbuMascot";
 import type { FxMoveRequest } from "./skin-fx/skin-fx";
 
 /** Kept for API compatibility (the preview page reads them); the owl ignores both. */
@@ -180,7 +181,7 @@ export type BotAvatarProps = Omit<MausAvatarProps, "color"> & {
 
 /** The Primary Bot mark: orange circle, white star, bottom-right. */
 export function PrimaryBotBadge({ size, ringClassName = "ring-panel", label }: { size: number; ringClassName?: string; label?: string }) {
-  const badge = Math.max(10, Math.round(size * 0.42));
+  const badge = Math.min(18, Math.max(10, Math.round(size * 0.28)));
   return (
     <span
       data-testid="primary-bot-badge"
@@ -218,14 +219,24 @@ export function trombiPoseFor(state: MausState | undefined): TrombiPose {
   return "idle";
 }
 
+/** Bunbu's face for the app's mascot states (listening perks its ears, speaking moves its grin). */
+export function bunbuMoodFor(state: MausState | undefined): BunbuMood {
+  if (state === "listening" || state === "dictating") return "listening";
+  if (state === "notifying") return "speaking";
+  return shapeMoodFor(state);
+}
+
 /**
- * The bot's character, when it is not the owl: one of the shapes or Trombi, in the bot's look. Every bot avatar in the app comes through
+ * The bot's character, when it is not the owl: one of the shapes, Trombi or Bunbu, in the bot's look. Every bot avatar in the app comes through
  * BotAvatar, so this is where a character change shows everywhere.
  */
 function CharacterAvatar({ look, color, size, state, animated = true, label, move }: { look: MascotLook; color: MausColor; size: number; state?: MausState; animated?: boolean; label?: string | null; move?: FxMoveRequest | null }) {
   const full = completeMascotLook(look);
   if (full.character === "shape") {
     return <ShapeMascot shape={full.shape} skin={full.skins.shape} color={color} size={size} mood={shapeMoodFor(state)} animated={animated} move={move} moveBody label={label ?? null} />;
+  }
+  if (full.character === "bunbu") {
+    return <BunbuMascot skin={full.skins.bunbu} color={color} size={size} mood={bunbuMoodFor(state)} animated={animated} move={move} moveBody label={label ?? null} />;
   }
   return <SkinnedTrombi skin={full.skins.trombi} pose={trombiPoseFor(state)} size={size} width={Math.round(size * 0.78)} animated={animated} move={move} moveBody label={label ?? null} />;
 }

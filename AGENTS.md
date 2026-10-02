@@ -393,10 +393,19 @@ Electron restart (no HMR); launch-test them before committing.
 - Main retries a page that fails to load, reloads a dead or silent one, keeps
   a state sent before its window exists, and logs the page's errors; the
   window falls back to the plain owl rather than drawing nothing.
-- The character (owl, original shape, Trombi) and its look live with the bot
+- The character (owl, original shape, Trombi, Bunbu) and its look live with the bot
   (`bot.mascotLook`, `shared/mascot-look.ts`, validated by the server), chosen
   in the avatar popover (`MascotLookEditor.tsx`) and drawn by `BotAvatar` for
   every bot avatar in the app; never draw a bot's mascot outside `BotAvatar`.
+- Bunbu is an original character of ours (a collectible-vinyl little monster:
+  long paddle ears, gumdrop body, five small teeth, a tummy heart). It is
+  inspired by the designer-toy genre, never a copy of an existing one: keep
+  its silhouette, name and palette our own (no Labubu or Pop Mart design,
+  name, logo or packaging). Its parts are SVG paths in `bunbu-art.ts`
+  (`BunbuMascot.tsx`), its skins in `skin-fx/bunbu-skins.tsx` (shared
+  finishes from `shape-skins.tsx` plus Plush and Velvet); its signature ear
+  flop is the `ruffle` clip (the registry's `moveLabels`). iOS shows the owl
+  for it until ported (`ios/README.md`).
 - Bot colors live in `shared/mascot-colors.ts` (palettes Vivid, Pastel, Deep,
   Neon, Neutral; the original fifteen ids keep their values) and every skin,
   the owl's included (`OWL_SKIN_TIER`, `LEGACY_OWL_SKINS`), has a rarity. The

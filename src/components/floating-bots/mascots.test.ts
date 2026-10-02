@@ -30,13 +30,13 @@ describe("a bot's character and its look", () => {
     expect(botMascotLook(undefined)).toEqual({ character: "owl" });
     expect(botMascotLook({ character: "shape", shape: "rocket" })).toEqual({ character: "owl" });
     expect(botMascotLook({ character: "trombi", skins: { trombi: "gold" } })).toEqual({ character: "trombi", skins: { trombi: "gold" } });
-    expect(completeMascotLook({ character: "shape" })).toEqual({ character: "shape", style: "2d", shape: "circle", skins: { shape: "plain", trombi: "classic" } });
+    expect(completeMascotLook({ character: "shape" })).toEqual({ character: "shape", style: "2d", shape: "circle", skins: { shape: "plain", trombi: "classic", bunbu: "plain" } });
   });
 
   it("keeps each character's own skin when switching and back", () => {
     const look = completeMascotLook({ character: "shape", skins: { shape: "neon", trombi: "retro98" } });
     const trombi = { ...look, character: "trombi" as const };
-    expect(completeMascotLook({ ...trombi, character: "shape" }).skins).toEqual({ shape: "neon", trombi: "retro98" });
+    expect(completeMascotLook({ ...trombi, character: "shape" }).skins).toEqual({ shape: "neon", trombi: "retro98", bunbu: "plain" });
   });
 
   it("draws every shape, with every skin, with two eyes", () => {
@@ -107,7 +107,7 @@ describe("a bot's character and its look", () => {
 
 describe("the mascot registry", () => {
   it("lists each character once, with a renderer, a thumbnail and its capabilities", () => {
-    expect(MASCOTS.map((entry) => entry.id)).toEqual(["owl", "shape", "trombi"]);
+    expect(MASCOTS.map((entry) => entry.id)).toEqual(["owl", "shape", "trombi", "bunbu"]);
     for (const entry of MASCOTS) {
       expect(typeof entry.Render).toBe("function");
       expect(typeof entry.Thumb).toBe("function");
