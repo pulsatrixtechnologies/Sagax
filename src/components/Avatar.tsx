@@ -13,6 +13,7 @@ import {
   useState,
 } from "react";
 import { type MausColor, type MausMotion, type MausState } from "@/lib/mascot";
+import { t } from "@/lib/i18n";
 import { OWL_BEAT_MS, owlBeatForMotion, owlStateForMaus } from "@/lib/owl/owl-state";
 import { OwlAvatar, type OwlAvatarHandle } from "./OwlAvatar";
 import { botAvatarProfile, clampAvatarFocus, clampAvatarZoom, type BotAvatarCrop } from "../../shared/bot-avatar";
@@ -161,7 +162,33 @@ export type BotAvatarProps = Omit<MausAvatarProps, "color"> & {
     /** The bot's character (owl, original shape, Trombi); absent means the owl. */
     mascotLook?: MascotLook | null;
   };
+  /** Mark this avatar as its person's Primary Bot: a small orange circle with
+   * a white star at the bottom-right corner. Lists pass it (sidebar,
+   * pickers, team map, chat header); a transcript does not. */
+  primary?: boolean;
+  /** The ring around the star, in the colour of what the avatar sits on. */
+  primaryRingClassName?: string;
 };
+
+/** The Primary Bot mark: orange circle, white star, bottom-right. */
+export function PrimaryBotBadge({ size, ringClassName = "ring-panel", label }: { size: number; ringClassName?: string; label?: string }) {
+  const badge = Math.max(10, Math.round(size * 0.42));
+  return (
+    <span
+      data-testid="primary-bot-badge"
+      role={label ? "img" : undefined}
+      aria-label={label}
+      aria-hidden={label ? undefined : true}
+      title={label}
+      className={`pointer-events-none absolute -bottom-0.5 -right-0.5 flex items-center justify-center rounded-full bg-orange-500 text-white ring-2 ${ringClassName}`}
+      style={{ width: badge, height: badge }}
+    >
+      <svg viewBox="0 0 24 24" width={Math.round(badge * 0.66)} height={Math.round(badge * 0.66)} fill="currentColor" aria-hidden="true">
+        <path d="M12 2.6l2.83 5.73 6.33.92-4.58 4.46 1.08 6.3L12 17.03l-5.66 2.98 1.08-6.3-4.58-4.46 6.33-.92z" />
+      </svg>
+    </span>
+  );
+}
 
 /** A shape's mood for the app's mascot states. */
 export function shapeMoodFor(state: MausState | undefined): ShapeMood {
@@ -231,7 +258,18 @@ export function resolveBotAvatarOutcome(params: {
  * values and images that fail to load both fall back to the animated mascot,
  * so an old/corrupt profile can never leave a broken-image icon in the app.
  */
-export function BotAvatar({ bot, size = 44, label, ...mascotProps }: BotAvatarProps) {
+export function BotAvatar({ primary, primaryRingClassName, ...props }: BotAvatarProps) {
+  if (!primary) return <BotAvatarImage {...props} />;
+  const size = props.size ?? 44;
+  return (
+    <span className="relative inline-flex shrink-0" style={{ width: size, height: size }} data-primary-bot="">
+      <BotAvatarImage {...props} />
+      <PrimaryBotBadge size={size} ringClassName={primaryRingClassName} label={t("primaryBot.badge")} />
+    </span>
+  );
+}
+
+function BotAvatarImage({ bot, size = 44, label, ...mascotProps }: Omit<BotAvatarProps, "primary" | "primaryRingClassName">) {
   const profile = botAvatarProfile(bot);
   const [imageFailed, setImageFailed] = useState(false);
 
