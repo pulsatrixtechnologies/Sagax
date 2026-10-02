@@ -675,8 +675,8 @@ import {
   type Worker,
 } from "./workers.ts";
 import { createDeciderRoutes } from "./routes/decider.ts";
-import { createDesktopViewer, desktopViewerUrl } from "./routes/desktop-viewer.ts";
-import { localDesktopTarget, localVmViewerStatus, viewerTargetId } from "./desktop-viewer-targets.ts";
+import { createDesktopViewer, desktopViewerUrl, SANDBOX_VIEWER_TARGET } from "./routes/desktop-viewer.ts";
+import { localDesktopTarget, localVmViewerStatus, sandboxDesktopTarget, viewerTargetId } from "./desktop-viewer-targets.ts";
 import { createAntigravityLeftoverRoutes } from "./routes/antigravity-leftovers.ts";
 import { findAntigravityLeftovers, removeAntigravityLeftovers } from "./drivers/antigravity-temp.ts";
 
@@ -4231,7 +4231,17 @@ if (userSandbox) {
     else userSandbox.personBack(person.id);
   });
 }
-ROUTES.push(createUserSandboxRoutes({ manager: () => userSandbox, organization: IDENTITY.kind === "perspicax" }));
+ROUTES.push(createUserSandboxRoutes({
+  manager: () => userSandbox,
+  organization: IDENTITY.kind === "perspicax",
+  turnRunning: (principalId) => {
+    const person = principalId.trim().toLowerCase();
+    for (const workplace of turnWorkplaces.values()) {
+      if (workplace.decision.target === "user-sandbox" && workplace.decision.principal === person) return true;
+    }
+    return false;
+  },
+}));
 // Slice 4: the Perspicax team names (who is in a team lives on each person).
 const orgTeams = new OrgTeams({ path: join(DATA_DIR, "org-teams.json") });
 /** Slice 4 (D10): each person's own engine sign-ins, organization mode. */
@@ -6293,7 +6303,13 @@ function audienceChanged(): void {
 // Cloud boot can revoke sessions before routes are registered. Create the
 // viewer manager before installing any revocation callbacks.
 const desktopViewer = createDesktopViewer({
-  target: (id) => {
+  target: (id, auth) => {
+    if (id === SANDBOX_VIEWER_TARGET) {
+      // The caller's own server environment desktop, never anyone else's.
+      const principalId = auth.kind === "session" ? auth.session.principalId?.trim() : "";
+      if (IDENTITY.kind !== "perspicax" || !userSandbox || !principalId) return;
+      return sandboxDesktopTarget(userSandbox, principalId);
+    }
     if (id.startsWith("vps/")) {
       const botId = id.slice(4);
       if (store.bot(botId)?.cloudBackend !== "vps") return;
@@ -19661,6 +19677,11 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         if (!ownerId) return json(res, 403, { error: "this capability has no server environment" });
         try {
           if (rpcMethod === "tools/call") await stagePendingAttachments(internalCapability.threadId, internalCapability.generation);
+          // The bot's own "no computer" setting holds on the environment's desktop too.
+          const toolName = (frame?.params as { name?: unknown } | undefined)?.name;
+          if (rpcMethod === "tools/call" && (toolName === "computer_use" || toolName === "computer_list_tools") && store.bot(internalCapability.botId)?.computer === "off") {
+            return json(res, 200, { result: { content: [{ type: "text", text: "This bot has no computer. Change its Computer setting to use the screen." }], isError: true } });
+          }
           const result = await handleUserSandboxMcp(rpcMethod, frame?.params, {
             exec: (input) => userSandbox.exec(ownerId, input),
             overQuota: () => userSandbox.workspaceOverQuota(ownerId),

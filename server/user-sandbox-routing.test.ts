@@ -76,9 +76,9 @@ function recorder(result: Partial<SandboxExecOutput> = {}, overQuota = false) {
 }
 
 describe("environment tools", () => {
-  it("lists the five tools", async () => {
+  it("lists the shell, file, browser and computer-use tools", async () => {
     const listed = await handleUserSandboxMcp("tools/list", {}, recorder().exec) as { tools: { name: string }[] };
-    expect(listed.tools.map((tool) => tool.name)).toEqual(["run_command", "read_file", "write_file", "list_files", "browse"]);
+    expect(listed.tools.map((tool) => tool.name)).toEqual(["run_command", "read_file", "write_file", "list_files", "browse", "computer_list_tools", "computer_use"]);
   });
 
   it("runs a command through bash in the sandbox and reports the exit code", async () => {

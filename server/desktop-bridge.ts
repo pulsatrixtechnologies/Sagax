@@ -41,6 +41,22 @@ export const desktopBridgeRegistration = z.object({
 }).strict();
 export type DesktopBridgeRegistration = z.infer<typeof desktopBridgeRegistration>;
 
+/** Coarse facts about the person's own computer for their Computer tab
+ * (OS, CPU, memory, disk), sent by the desktop app now and then. Rounded on
+ * the desktop; nothing that identifies files, apps or networks. */
+export const desktopSystemInfo = z.object({
+  os: z.string().min(1).max(80).regex(NO_CONTROL),
+  arch: z.string().min(1).max(20).regex(NO_CONTROL),
+  cpuModel: z.string().max(80).regex(NO_CONTROL).optional(),
+  cpus: z.number().int().min(1).max(1024),
+  cpuPercent: z.number().int().min(0).max(100).optional(),
+  memoryGb: z.number().min(0).max(65536),
+  memoryUsedGb: z.number().min(0).max(65536).optional(),
+  diskGb: z.number().min(0).max(1_000_000).optional(),
+  diskFreeGb: z.number().min(0).max(1_000_000).optional(),
+}).strict();
+export type DesktopSystemInfo = z.infer<typeof desktopSystemInfo>;
+
 export const DESKTOP_BRIDGE_ACTIONS = [
   "run_command", "read_file", "write_file", "list_files", "search_files", "fetch_url", "browse",
   "computer_tools", "computer_call", "vm_status", "vm_start", "vm_run_command", "stage_file",
@@ -82,10 +98,10 @@ export function desktopBridgeCapability(action: DesktopBridgeAction): keyof Desk
   }
 }
 
-export type DesktopBridgeStatus = { id: string; name: string; platform: string; online: boolean; busy: boolean; lastSeenAt: number; capabilities: DesktopBridgeRegistration["capabilities"] };
+export type DesktopBridgeStatus = { id: string; name: string; platform: string; online: boolean; busy: boolean; lastSeenAt: number; capabilities: DesktopBridgeRegistration["capabilities"]; system?: DesktopSystemInfo };
 
 type Job = { id: string; operation: DesktopBridgeOperation; active: () => boolean; sent: boolean; resolve: (result: unknown) => void; reject: (error: Error) => void; timer: NodeJS.Timeout };
-type Bridge = { registration: DesktopBridgeRegistration; session: string; person: string; secret: string; seen: number; connectedAt: number; jobs: Map<string, Job>; wake?: () => void };
+type Bridge = { registration: DesktopBridgeRegistration; session: string; person: string; secret: string; seen: number; connectedAt: number; jobs: Map<string, Job>; wake?: () => void; system?: DesktopSystemInfo };
 
 const failure = (message: string, status = 409, code?: string) => Object.assign(new Error(message), { status, ...(code ? { code } : {}) });
 const normalize = (value: string | null | undefined) => value?.trim().toLowerCase() || null;
@@ -200,7 +216,14 @@ export class DesktopBridges {
     return [...this.bridges.values()].filter(entry => entry.person === key).map(entry => ({
       id: entry.registration.id, name: entry.registration.name, platform: entry.registration.platform,
       online: this.online(entry), busy: entry.jobs.size > 0, lastSeenAt: entry.seen, capabilities: { ...entry.registration.capabilities },
+      ...(entry.system ? { system: { ...entry.system } } : {}),
     }));
+  }
+
+  /** The desktop's coarse system facts, for its own person only. */
+  setSystem(id: string, session: string, secret: string, system: DesktopSystemInfo): void {
+    const entry = this.authorize(id, session, secret);
+    entry.system = system;
   }
 
   /** `listening`: the desktop's request is still open. A poll the desktop
