@@ -186,6 +186,9 @@ posixOnly("usage attribution e2e", () => {
     expect(ledger(bot.id)[0].trigger).toEqual(owner);
 
     await waitFor(async () => (await getBot(bot.id)).messages.some((m: any) => m.text === "person's follow-up"), "the queued turn to start");
+    // same race as the owner's turn: the follow-up is recorded before its
+    // prompt reaches the engine, and an interrupt in that gap stops nothing
+    await waitFor(() => acpPrompts() > prompts + 1, "the queued prompt to reach the engine");
     await api("POST", `/api/bots/${bot.id}/interrupt`);
     await waitFor(() => ledger(bot.id).length === 2, "the queued turn to be booked");
     expect(ledger(bot.id)[1].trigger).toEqual(person);
