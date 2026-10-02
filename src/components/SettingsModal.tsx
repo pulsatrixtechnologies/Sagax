@@ -64,6 +64,7 @@ import { setShowThreads, useShowThreads } from "@/lib/thread-preferences";
 import { parseSidebarDensity, setSidebarDensity, SIDEBAR_DENSITIES, useSidebarDensity, type SidebarDensity } from "@/lib/sidebar-preferences";
 import { setShowRunCard, useShowRunCard } from "@/lib/run-card-preferences";
 import { setShowSidebarLogo, useShowSidebarLogo } from "@/lib/sidebar-logo-preferences";
+import { setShowInspectorButton, useShowInspectorButton } from "@/lib/inspector-preferences";
 import { effectiveLanguage, setLanguageChoice, useLanguageChoice } from "@/lib/language-preference";
 
 // `labelKey`, not a label: t() reads the active pack when it is called, so a
@@ -598,6 +599,19 @@ function ShowThreadsRow() {
         checked={enabled}
         aria-label={t("settings.threadDisplay.show")}
         onClick={() => setShowThreads(!enabled)}
+      />
+    </SettingRow>
+  );
+}
+
+function InspectorButtonRow() {
+  const enabled = useShowInspectorButton();
+  return (
+    <SettingRow title={t("settings.inspectorButton.title")} subtitle={t("settings.inspectorButton.subtitle")}>
+      <Switch
+        checked={enabled}
+        aria-label={t("settings.inspectorButton.show")}
+        onClick={() => setShowInspectorButton(!enabled)}
       />
     </SettingRow>
   );
@@ -1187,6 +1201,7 @@ export function SettingsModal() {
                   <FontRow />
                   <SidebarDensityRow />
                   <SidebarLogoRow />
+                  <InspectorButtonRow />
                   <ShowThreadsRow />
                   <SidebarHiddenSettings />
                   <NotificationSoundsRow />

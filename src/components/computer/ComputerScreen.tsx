@@ -3,11 +3,18 @@
 // monitor icon and its state when it does not), Play / Pause / Stop on the
 // screen itself, and "<Bot>'s screen" below. The two computers it can show
 // (ServerComputerScreen, LocalComputerScreen) only feed it a state.
-import type { ReactNode } from "react";
+//
+// The screen stays clean: no "Running" chip over a live screen (a chip only
+// for a state the screen does not make obvious), and the controls over it
+// (Play / Pause / Stop here, Take control in SandboxDesktopView) show on
+// intent only (src/lib/hover-intent.ts), through `data-controls` on the
+// screen, except Play on a machine that is off: it is the only action.
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { AlertTriangle, Loader2, Monitor, Pause, Play, Square } from "lucide-react";
 
 import { cn } from "@/lib/cn";
 import type { ScreenState } from "@/lib/desktop-local-vm";
+import { HoverIntent } from "@/lib/hover-intent";
 import { t } from "@/lib/i18n";
 
 export interface ScreenControls {
@@ -21,6 +28,30 @@ export interface ScreenAction { label: string; onClick: () => void; primary?: bo
 
 export function screenStateLabel(state: ScreenState): string {
   return t(`computerScreen.state.${state}`);
+}
+
+/** A state chip only where the screen does not already say it: a live
+ * running screen is obviously running. */
+export function showsStateChip(state: ScreenState): boolean {
+  return state !== "running";
+}
+
+/** The controls over the screen are always shown on a machine that is off
+ * (Play is the only thing to do), else on intent. */
+export function controlsAlwaysShown(state: ScreenState): boolean {
+  return state === "off";
+}
+
+/** Classes of a control that shows only while the screen's controls are
+ * revealed (data-controls="shown" on the screen). */
+export const REVEALED_CONTROL = "opacity-0 pointer-events-none transition-opacity duration-200 focus-visible:opacity-100 group-data-[controls=shown]/screen:pointer-events-auto group-data-[controls=shown]/screen:opacity-100";
+
+function useControlsRevealed(): [boolean, HoverIntent | null] {
+  const [revealed, setRevealed] = useState(false);
+  const intent = useRef<HoverIntent | null>(null);
+  if (intent.current === null && typeof window !== "undefined") intent.current = new HoverIntent(setRevealed);
+  useEffect(() => () => intent.current?.dispose(), []);
+  return [revealed, intent.current];
 }
 
 export function ComputerScreen({
@@ -40,9 +71,18 @@ export function ComputerScreen({
 }) {
   const showLive = Boolean(live) && (state === "running" || state === "paused");
   const Icon = state === "starting" ? Loader2 : state === "error" ? AlertTriangle : Monitor;
+  const [revealed, intent] = useControlsRevealed();
+  const shown = revealed || controlsAlwaysShown(state);
   return (
     <figure className="m-0 flex flex-col gap-1.5" data-computer-screen={state} data-computer-source={source}>
-      <div className="group relative flex aspect-[16/10] w-full items-center justify-center overflow-hidden rounded-2xl border border-hairline bg-card">
+      <div
+        data-controls={shown ? "shown" : "hidden"}
+        onPointerEnter={(event) => intent?.pointerEnter(event.pointerType)}
+        onPointerLeave={(event) => intent?.pointerLeave(event.pointerType)}
+        onPointerDown={(event) => intent?.pointerDown(event.pointerType)}
+        onFocus={() => intent?.focusIn()}
+        onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) intent?.focusOut(); }}
+        className="group/screen relative flex aspect-[16/10] w-full items-center justify-center overflow-hidden rounded-2xl border border-hairline bg-card">
         {showLive ? live : (
           <div className="flex max-w-[85%] flex-col items-center gap-2 text-center text-ink-secondary">
             <Icon size={28} aria-hidden="true" className={cn(state === "starting" && "animate-spin", state === "error" && "text-warning")} />
@@ -60,13 +100,15 @@ export function ComputerScreen({
             )}
           </div>
         )}
-        <span data-power={state} className={cn(
-          "pointer-events-none absolute left-2 top-2 flex items-center gap-1.5 rounded-full bg-black/55 px-2 py-0.5 text-[11px] text-white",
-        )}>
-          <span aria-hidden="true" className={cn("size-1.5 rounded-full", state === "running" ? "bg-success" : state === "paused" || state === "starting" ? "bg-warning" : state === "error" ? "bg-danger" : "bg-white/50")} />
-          {screenStateLabel(state)}
-        </span>
-        <div role="group" aria-label={t("computerScreen.controls")} className="absolute bottom-2 left-1/2 flex -translate-x-1/2 items-center gap-1 rounded-full bg-black/60 p-1 shadow-sm">
+        {showsStateChip(state) && (
+          <span data-power={state} className="pointer-events-none absolute left-2 top-2 flex items-center gap-1.5 rounded-full bg-black/55 px-2 py-0.5 text-[11px] text-white">
+            <span aria-hidden="true" className={cn("size-1.5 rounded-full", state === "paused" || state === "starting" ? "bg-warning" : state === "error" ? "bg-danger" : "bg-white/50")} />
+            {screenStateLabel(state)}
+          </span>
+        )}
+        <div role="group" aria-label={t("computerScreen.controls")} data-screen-controls={shown ? "shown" : "hidden"}
+          className={cn("absolute bottom-2 left-1/2 flex -translate-x-1/2 items-center gap-1 rounded-full bg-black/60 p-1 shadow-sm transition-opacity duration-200",
+            shown ? "opacity-100" : "pointer-events-none opacity-0")}>
           <ScreenButton icon={Play} label={state === "paused" ? t("computerScreen.resume") : t("computerScreen.play")}
             onClick={state === "paused" ? controls.resume : controls.play} busy={busy} />
           <ScreenButton icon={Pause} label={t("computerScreen.pause")} onClick={controls.pause} busy={busy} />

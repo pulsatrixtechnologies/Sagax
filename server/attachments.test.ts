@@ -47,6 +47,10 @@ const {
   ATTACHMENTS_MAX_BYTES,
   ATTACHMENT_PARTIAL_MAX_AGE_MS,
   FILE_MAX_BYTES,
+  ARCHIVE_MAX_BYTES,
+  isArchiveAttachment,
+  maxBytesForAttachment,
+  maxBytesForFileMime,
   IMAGE_MAX_BYTES,
   __resetAttachmentAccountingForTests,
   cleanupStaleAttachmentPartials,
@@ -506,11 +510,16 @@ describe("shared files", () => {
     resetDir();
   });
 
-  it("allows useful document mimes but not executables, archives, or active markup", () => {
+  it("allows useful document and archive mimes but not executables or active markup", () => {
     expect(extensionForFileMime("text/plain; charset=utf-8")).toBe(".txt");
     expect(extensionForFileMime("application/pdf")).toBe(".pdf");
     expect(extensionForFileMime("application/vnd.openxmlformats-officedocument.wordprocessingml.document")).toBe(".docx");
-    expect(extensionForFileMime("application/zip")).toBeNull();
+    expect(extensionForFileMime("application/zip")).toBe(".zip");
+    expect(extensionForFileMime("application/x-zip-compressed")).toBe(".zip");
+    expect(extensionForFileMime("application/x-tar")).toBe(".tar");
+    expect(extensionForFileMime("application/gzip")).toBe(".tgz");
+    expect(extensionForFileMime("application/x-7z-compressed")).toBe(".7z");
+    expect(extensionForFileMime("application/x-rar-compressed")).toBeNull();
     expect(extensionForFileMime("application/x-msdownload")).toBeNull();
     expect(extensionForFileMime("application/octet-stream")).toBeNull();
     expect(extensionForFileMime("text/html")).toBeNull();
@@ -523,7 +532,10 @@ describe("shared files", () => {
     expect(() => sanitizeSharedFileName("../../secret.txt", "text/plain")).toThrow(/filename, not a path/);
     expect(() => sanitizeSharedFileName("..\\..\\secret.txt", "text/plain")).toThrow(/filename, not a path/);
     expect(() => sanitizeSharedFileName("..%2F..%2Fsecret.txt", "text/plain")).toThrow(/filename, not a path/);
-    expect(() => sanitizeSharedFileName("notes.txt", "application/zip")).toThrow(/supported document/);
+    expect(() => sanitizeSharedFileName("notes.txt", "application/x-msdownload")).toThrow(/supported document/);
+    expect(sanitizeSharedFileName("project.zip", "application/zip")).toBe("project.zip");
+    expect(sanitizeSharedFileName("src.tar.gz", "application/gzip")).toBe("src.tar.gz");
+    expect(sanitizeSharedFileName("src.tgz", "application/gzip")).toBe("src.tgz");
   });
 
   it("streams a file under a generated name with private permissions", async () => {
@@ -572,6 +584,21 @@ describe("shared files", () => {
     }
     await expect(saveFile(tooLarge(), "large.pdf", "application/pdf")).rejects.toMatchObject({ status: 413 });
     expect(readdirSync(ATTACHMENTS_DIR)).toEqual([]);
+  });
+
+  it("gives archives their own larger per-file ceiling", async () => {
+    expect(maxBytesForFileMime("application/zip")).toBe(ARCHIVE_MAX_BYTES);
+    expect(maxBytesForFileMime("application/pdf")).toBe(FILE_MAX_BYTES);
+    expect(maxBytesForAttachment("/x/0b5a3c1e-0000-4000-8000-000000000000.tgz")).toBe(ARCHIVE_MAX_BYTES);
+    expect(isArchiveAttachment("a.docx")).toBe(false);
+    async function* overDocumentLimit() {
+      yield Buffer.alloc(FILE_MAX_BYTES + 1);
+    }
+    const saved = await saveFile(overDocumentLimit(), "big.zip", "application/zip");
+    expect(saved).toMatchObject({ name: "big.zip", bytes: FILE_MAX_BYTES + 1 });
+    expect(saved.path).toMatch(/\.zip$/);
+    await expect(saveFile(overDocumentLimit(), "big.zip", "application/zip", { expectedBytes: ARCHIVE_MAX_BYTES + 1 }))
+      .rejects.toMatchObject({ status: 413 });
   });
 
   it("deduplicates concurrent and later file retries by upload ID", async () => {

@@ -11,8 +11,10 @@ import { useEffect, useRef, useState } from "react";
 import type RFB from "@novnc/novnc";
 import { ExternalLink, Eye, Hand, Loader2, Monitor, RefreshCw } from "lucide-react";
 
+import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
 import { sandboxViewerPath, sandboxViewerProblem, type SandboxViewerProblem } from "@/lib/sandbox-desktop";
+import { REVEALED_CONTROL } from "./computer/ComputerScreen";
 
 type ViewState = "idle" | "connecting" | "connected" | "stopped" | SandboxViewerProblem;
 
@@ -88,14 +90,14 @@ export function SandboxDesktopView({ onConnected, embedded = false, onTakeContro
 
   if (embedded) {
     return (
-      <div data-sandbox-desktop={state} data-control={control ? "1" : "0"} className="group/desk absolute inset-0">
+      <div data-sandbox-desktop={state} data-control={control ? "1" : "0"} className="absolute inset-0">
         <div ref={screen} role="application" aria-label={t("sandboxDesktop.screen")} className="h-full w-full" />
         {live && !control && controlled === undefined && (
           // View-only: one button in the middle of the screen to take the
           // wheel (the server then refuses the bots' clicks there).
           <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
             <button type="button" onClick={onTakeControl ?? toggleControl} data-take-control
-              className="pointer-events-auto flex min-h-[44px] items-center gap-2 rounded-full bg-black/65 px-4 py-2 text-[13px] font-medium text-white shadow-md backdrop-blur-sm transition-opacity hover:bg-black/80 md:min-h-0 md:opacity-80 md:group-hover/desk:opacity-100 focus-visible:opacity-100 touch:opacity-100">
+              className={cn("flex min-h-[44px] items-center gap-2 rounded-full bg-black/65 px-4 py-2 text-[13px] font-medium text-white shadow-md backdrop-blur-sm hover:bg-black/80 md:min-h-0", REVEALED_CONTROL)}>
               <Hand size={15} aria-hidden="true" />
               {t("sandboxDesktop.takeControl")}
             </button>

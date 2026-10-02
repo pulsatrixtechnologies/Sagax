@@ -58,7 +58,7 @@ the Sagax side), `server/sandboxd*.ts` (the provisioner), `server/user-sandbox-s
   named `sagax-user-<key>` and labelled `com.pulsatrix.sagax.sandbox.user=<key>`
   and `sagax-user=<key>`.
 - **Idle stop:** after `SAGAX_SANDBOX_IDLE_MINUTES` without a command (default
-  15). The next call starts it again; `/workspace` persists.
+  10). The next call starts it again; `/workspace` persists.
 - **New image:** a stopped environment created from another image than
   `SAGAX_SANDBOX_IMAGE` (an earlier deploy) is recreated from the current one
   when it starts again, keeping `/workspace` and its network. A running one
@@ -110,7 +110,8 @@ needed: a plain shell turn starts no X server.
   none, and a person signed out by Perspicax is refused. Opening the view
   starts the environment and its desktop and hands the view-only password;
   "Prendre le contrôle" (`?control=1`, a button in the middle of the Computer
-  tab's screen) opens the desktop large (92vw by 88vh, letterboxed) and hands
+  tab's screen, shown like Play / Pause / Stop only after the pointer rests
+  on the screen about 2 s, on keyboard focus or on a tap) opens the desktop large (92vw by 88vh, letterboxed) and hands
   the full one there, while the tab's square stays view-only; while such a
   view is open, the bots' `computer_use` there is refused, never queued
   (`server/sandbox-control.ts`), and "Rendre le contrôle" or closing the
@@ -142,7 +143,10 @@ shows where the person's bots do computer work right now:
   architecture, CPU model, count and use rounded to 5 %, memory and disk
   rounded; `POST /api/desktop-bridge/<id>/system`). No shutdown or pause. Its
   Local VM, when it has one: status and start
-  (`POST /api/me/desktop-bridge/local-vm`).
+  (`POST /api/me/desktop-bridge/local-vm`). The desktop app stops that Local
+  VM after 10 minutes unused (no bot command or computer call, no open view
+  of its screen, no command still running); `vm-home` is kept
+  (`electron/local-vm.mjs`, `LOCAL_VM_IDLE_STOP_MS`).
 
 ## Security model
 
@@ -219,7 +223,7 @@ driver's flags (no model request) and checks its tool list has no `Bash`.
 | `SAGAX_SANDBOX_DISK_MB` | 2048 | soft quota on `/workspace` |
 | `SAGAX_SANDBOX_MAX_FILE_MB` | 512 | largest single file |
 | `SAGAX_SANDBOX_MAX_RUNNING` | 2 | running or paused at once (3 GiB at most) |
-| `SAGAX_SANDBOX_IDLE_MINUTES` | 15 | idle stop |
+| `SAGAX_SANDBOX_IDLE_MINUTES` | 10 | idle stop |
 | `SAGAX_SANDBOX_DELETE_GRACE_HOURS` | 72 | delete after sign-out (Sagax side) |
 | `SAGAX_SANDBOX_SUBNET_POOL` | `10.213.0.0/16` | must not overlap the VNet or other Docker networks |
 | `SAGAX_SANDBOX_EGRESS_DENY` | empty | extra CIDRs to block |
