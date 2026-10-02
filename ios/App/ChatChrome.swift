@@ -136,6 +136,9 @@ struct VoiceWaveformGlyph: Shape {
 struct ComposerVoiceSendButton: View {
     let canSend: Bool
     let busy: Bool
+    /// This chat is on a call: the capsule hangs up (the desktop's red
+    /// call button).
+    var onCall = false
     let send: () -> Void
     let voice: () -> Void
 
@@ -145,7 +148,12 @@ struct ComposerVoiceSendButton: View {
             canSend ? send() : voice()
         } label: {
             ZStack {
-                if canSend {
+                if onCall && !canSend {
+                    Image(systemName: "phone.down.fill")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(Color.white)
+                        .transition(.scale.combined(with: .opacity))
+                } else if canSend {
                     Image(systemName: "arrow.up")
                         .font(.system(size: 15, weight: .bold))
                         .transition(.scale.combined(with: .opacity))
@@ -156,15 +164,16 @@ struct ComposerVoiceSendButton: View {
             }
             .foregroundStyle(Color.black)
             .frame(width: Theme.Chat.voiceCapsule.width, height: Theme.Chat.voiceCapsule.height)
-            .background(Color.white, in: Capsule())
+            .background(onCall && !canSend ? Color(red: 0.89, green: 0.27, blue: 0.27) : Color.white, in: Capsule())
             .opacity(busy ? 0.5 : 1)
             .contentShape(Capsule())
         }
         .buttonStyle(.plain)
         .disabled(busy)
         .animation(.easeOut(duration: 0.15), value: canSend)
-        .accessibilityLabel(canSend ? Text(String(localized: "Send")) : Text(String(localized: "Start voice mode")))
-        .accessibilityIdentifier(canSend ? "composer-send" : "composer-voice")
+        .animation(.easeOut(duration: 0.15), value: onCall)
+        .accessibilityLabel(canSend ? Text(String(localized: "Send")) : onCall ? Text(String(localized: "End call")) : Text(String(localized: "Start voice mode")))
+        .accessibilityIdentifier(canSend ? "composer-send" : onCall ? "composer-end-call" : "composer-voice")
     }
 }
 

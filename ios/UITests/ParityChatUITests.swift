@@ -47,6 +47,9 @@ final class ParityChatUITests: XCTestCase {
             "-companion.prefs.islandIntro", "never",
             "-companion.onboarding.welcomeSeen", "YES",
             "-companion.onboarding.notificationsSeen", "YES",
+            // a call here never asks for the simulator's microphone
+            "-callInjectAudio", URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("CallAudio/bot").path,
+            "-callCaptureSpeech",
         ]
         if let environment = session.environmentId { arguments += ["-parityEnvironment", environment] }
         app.launchArguments = arguments
@@ -74,7 +77,7 @@ final class ParityChatUITests: XCTestCase {
     }
 
     /// The name capsule opens the profile; the computer circle the computer;
-    /// the white capsule voice mode.
+    /// the white capsule a call (voice mode), and again hangs up.
     @MainActor
     func testTopBarAndVoiceOpenTheirScreens() throws {
         let app = try launchChat()
@@ -94,11 +97,12 @@ final class ParityChatUITests: XCTestCase {
         XCTAssertTrue(app.buttons["composer-voice"].waitForExistence(timeout: 10))
 
         app.buttons["composer-voice"].tap()
-        let close = app.buttons["Close Walkie"]
-        XCTAssertTrue(close.waitForExistence(timeout: 10), "voice mode (Walkie)")
+        let pill = app.descendants(matching: .any)["call-pill"]
+        XCTAssertTrue(pill.waitForExistence(timeout: 10), "voice mode: the call pill")
         attach("Voice mode from the white capsule", app)
-        close.tap()
-        XCTAssertTrue(app.buttons["chat-name"].waitForExistence(timeout: 10))
+        app.buttons["composer-end-call"].tap()
+        XCTAssertTrue(app.buttons["composer-voice"].waitForExistence(timeout: 10), "hung up")
+        XCTAssertTrue(app.buttons["chat-name"].exists)
     }
 
     /// Threads and slash commands moved into the "+" sheet; threads also

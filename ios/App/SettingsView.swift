@@ -557,7 +557,7 @@ struct AdvancedSettingsView: View {
                 Button {
                     showingWalkieVoice = true
                 } label: {
-                    Label { Text("Walkie voice") } icon: { SettingsIcon(symbol: "waveform", color: .green) }
+                    Label { Text("Call voice") } icon: { SettingsIcon(symbol: "waveform", color: .green) }
                 }
                 .foregroundStyle(.primary)
             }

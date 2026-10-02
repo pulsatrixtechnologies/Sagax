@@ -138,6 +138,20 @@ public final class LiveCallEngine {
         return await withCheckedContinuation { speechWaiters.append($0) }
     }
 
+    /// Queue a whole text at once, without waiting for it to be heard (a
+    /// room's member, whose speaker is set just before).
+    public func speakNow(_ text: String) {
+        if state.phase == .held || state.phase == .ended { return }
+        for sentence in SentenceStream().finish(text) { enqueue(sentence) }
+    }
+
+    /// The answer is complete: queue what the stream had not reached, now.
+    public func replyDoneNow(_ text: String) {
+        let stream = reply ?? SentenceStream()
+        reply = nil
+        for sentence in stream.finish(SpokenText.spokenPart(text)) { enqueue(sentence) }
+    }
+
     private func enqueue(_ text: String) {
         if state.phase == .held || state.phase == .ended { return }
         player.enqueue(text)

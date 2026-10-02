@@ -355,6 +355,26 @@ final class LiveCallEngineTests: XCTestCase {
         XCTAssertEqual(sent.first?.1, true, "the turn is marked interrupted")
     }
 
+    /// A real recording (a French question said by a voice): one turn,
+    /// heard from its first word and ended by the pause after it.
+    func testARecordedQuestionIsExactlyOneTurn() async throws {
+        let url = try XCTUnwrap(Bundle.module.url(forResource: "call-question", withExtension: "wav", subdirectory: "Fixtures")
+            ?? Bundle.module.url(forResource: "call-question", withExtension: "wav"))
+        let wav = try XCTUnwrap(CallWav.decode(Data(contentsOf: url)))
+        XCTAssertEqual(wav.sampleRate, 16_000)
+        transcriber.words = "Bonjour Ara, où en est le projet cette semaine?"
+        silence(30)
+        var samples = wav.samples
+        samples += [Float](repeating: 0.0004, count: 16_000) // a second of quiet room
+        var phases: [CallPhase] = []
+        engine.events.state = { phases.append($0.phase) }
+        stride(from: 0, to: samples.count - 511, by: 512).forEach { engine.frame(Array(samples[$0..<($0 + 512)])) }
+        await settle()
+        XCTAssertEqual(sent.map(\.0), ["Bonjour Ara, où en est le projet cette semaine?"], "one turn, not one per word")
+        XCTAssertEqual(phases.filter { $0 == .hearing }.count, 1)
+        XCTAssertEqual(transcriber.discarded, 0, "no noise was taken for speech")
+    }
+
     func testMutedFramesAreIgnored() async {
         engine.setMuted(true)
         transcriber.words = "secret"
