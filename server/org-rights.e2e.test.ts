@@ -127,7 +127,7 @@ async function start() {
     cwd: join(SERVER_DIR, ".."),
     env: {
       ...(process.env.PATH ? { PATH: process.env.PATH } : {}),
-      HOME: home, USERPROFILE: home, SAGAX_PORT: String(PORT), SAGAX_WEBHOOK_PORT: String(PORT + 1),
+      HOME: home, USERPROFILE: home, SAGAX_LOCAL_VM_TEST_NAMESPACE: process.env.SAGAX_LOCAL_VM_TEST_NAMESPACE ?? "", SAGAX_PORT: String(PORT), SAGAX_WEBHOOK_PORT: String(PORT + 1),
       SAGAX_IDENTITY: "perspicax",
       SAGAX_PERSPICAX_ISSUER: idp.issuer,
       SAGAX_PUBLIC_URL: BASE,
@@ -276,6 +276,11 @@ posixOnly("Perspicax organization, slice 4: rights, teams, owner keys, sections"
     expect([403, 404]).toContain((await api("GET", `/api/threads/${x.threadId}/messages`, mia)).status);
     const listed = (await api("GET", "/api/org/bots", mia)).body.bots as Array<{ id: string; grants: Array<{ target: string }> }>;
     expect(listed.find((b) => b.id === x.id)?.grants.map((g) => g.target)).toEqual([`team:${TEAM_T}`]);
+    // the list carries the bot's public look and whether it works now, nothing more of it
+    const shownX = listed.find((b) => b.id === x.id) as unknown as { look?: Record<string, unknown>; running?: unknown };
+    expect(shownX.running).toBe(false);
+    expect(typeof shownX.look?.color).toBe("string");
+    expect(Object.keys(shownX.look ?? {}).every((key) => ["id", "name", "title", "color", "avatarUrl", "avatarCrop", "avatarZoom", "avatarFocusX", "avatarFocusY", "mascotBody", "mascotSkin", "mascotLook"].includes(key))).toBe(true);
     expect((await api("PUT", `/api/bots/${x.id}/grants`, mia, { target: `team:${TEAM_T}`, level: "run" })).status).toBe(403);
     // she never opens what she administers: no entry for herself, on a bot,
     // a section or a room that lists her team

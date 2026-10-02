@@ -17,6 +17,8 @@ import { Star } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
 import { useOwnerOrAdmin } from "@/lib/use-owner-or-admin";
+import { fullAccessNeedsConfirmation, orgFullAccessFor } from "@/lib/full-access";
+import { usePerspicaxOrg } from "@/lib/perspicax-org";
 import { api, useStore, type Bot } from "@/state/store";
 import type { ApprovalMode } from "../../../shared/approval-mode";
 import { ApprovalModeSelector } from "../ApprovalModeSelector";
@@ -54,8 +56,19 @@ export function PermissionsSection({
       .then((response) => dispatch({ type: "botPatched", bot: response.bot }))
       .catch((error: unknown) => setPrimaryError(error instanceof Error ? error.message : String(error)));
   };
+  // Organization server: the owner sets Full as the bot's default (its new
+  // threads and routines) over HTTP while the organization allows it.
+  const perspicaxOrg = usePerspicaxOrg();
+  const viewerId = state.config?.viewer?.principalId ?? null;
+  const orgFullAccess = draft ? undefined : orgFullAccessFor(perspicaxOrg, bot, viewerId);
   const setApprovalMode = (mode: ApprovalMode) => {
     if (bot.busy || mode === approvalMode) return;
+    if (mode === "full" && orgFullAccess !== undefined) {
+      if (orgFullAccess !== "allowed") return;
+      if (fullAccessNeedsConfirmation(bot, viewerId, true)) setFullAccessTarget(bot.id);
+      else dispatch({ type: "updateBot", botId: bot.id, patch: { approvalMode: "full", organizationFullAccess: true } });
+      return;
+    }
     if (mode === "full") {
       setAllThreads(true);
       setFullAccessTarget(bot.id);
@@ -152,6 +165,7 @@ export function PermissionsSection({
             wide
             disabled={Boolean(bot.busy)}
             trustedModesAvailable={trustedModesAvailable}
+            orgFullAccess={orgFullAccess}
             onManageCommandAllowlist={!draft && ownerOrAdmin === true ? () => setCommandAllowlistTarget({ botId: bot.id, botName: bot.name }) : undefined}
           />
         </div>
@@ -184,13 +198,18 @@ export function PermissionsSection({
       />
       <FullAccessWarning
         open={fullAccessTarget !== null}
+        scope={orgFullAccess !== undefined ? "organization" : "bot"}
         allThreads={allThreads}
-        onAllThreadsChange={draft ? undefined : setAllThreads}
+        onAllThreadsChange={draft || orgFullAccess !== undefined ? undefined : setAllThreads}
         onCancel={() => setFullAccessTarget(null)}
         onConfirm={() => {
           const target = fullAccessTarget;
           setFullAccessTarget(null);
           if (!target) return;
+          if (orgFullAccess !== undefined) {
+            dispatch({ type: "updateBot", botId: target, patch: { approvalMode: "full", confirmFullAccess: true, organizationFullAccess: true } });
+            return;
+          }
           dispatch({ type: "updateBot", botId: target, patch: { approvalMode: "full", confirmFullAccess: true, applyToAllThreads: allThreads } });
         }}
       />

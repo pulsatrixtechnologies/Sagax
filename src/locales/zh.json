@@ -432,7 +432,6 @@
   "approvalMode.auto.chip": "自动",
   "approvalMode.full.label": "完全访问",
   "approvalMode.full.chip": "完全访问",
-  "approvalMode.full.desc": "对电脑的完全访问（风险较高）",
   "approvalMode.custom.label": "自定义 (config.toml)",
   "approvalMode.custom.chip": "自定义",
   "approvalMode.custom.desc": "使用 config.toml 中定义的权限",

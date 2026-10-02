@@ -7,7 +7,7 @@ import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { FLOATING_LIVELINESS, floatingBotPrefs, setFloatingFlyAway, setFloatingLiveliness, subscribeFloatingBots, type FloatingLiveliness } from "@/lib/floating-bots";
 import { Archive, Coins, FlaskConical, KeyRound, Mail, Monitor, Palette, ScrollText, Search, TabletSmartphone, Terminal, User, Users, X, Building2, Zap } from "lucide-react";
 import { api, useStore, type AppSettingsSection, type ConfigStatus } from "@/state/store";
-import { browserAvailable, browserUnavailableReason, builtInBrowserEnabled, connectedAppsEnabled, routinesInConversationEnabled, showToolCallsEnabled, skillAuthoringEnabled, templatesEnabled } from "@/lib/feature-flags";
+import { browserAvailable, browserUnavailableReason, builtInBrowserEnabled, boatComputerEnabled, connectedAppsEnabled, routinesInConversationEnabled, showToolCallsEnabled, skillAuthoringEnabled, templatesEnabled, vpsComputerEnabled } from "@/lib/feature-flags";
 import { usePerspicaxOrg } from "@/lib/perspicax-org";
 import { localeChoices, type LocaleKey } from "@/locales";
 import { t } from "@/lib/i18n";
@@ -61,6 +61,7 @@ import { setNotificationSounds, useNotificationSounds } from "@/lib/notification
 import { setShowThreads, useShowThreads } from "@/lib/thread-preferences";
 import { parseSidebarDensity, setSidebarDensity, SIDEBAR_DENSITIES, useSidebarDensity, type SidebarDensity } from "@/lib/sidebar-preferences";
 import { setShowRunCard, useShowRunCard } from "@/lib/run-card-preferences";
+import { setShowSidebarLogo, useShowSidebarLogo } from "@/lib/sidebar-logo-preferences";
 import { effectiveLanguage, setLanguageChoice, useLanguageChoice } from "@/lib/language-preference";
 
 // `labelKey`, not a label: t() reads the active pack when it is called, so a
@@ -600,6 +601,19 @@ function ShowThreadsRow() {
   );
 }
 
+function SidebarLogoRow() {
+  const enabled = useShowSidebarLogo();
+  return (
+    <SettingRow title={t("settings.sidebarLogo.title")} subtitle={t("settings.sidebarLogo.subtitle")}>
+      <Switch
+        checked={enabled}
+        aria-label={t("settings.sidebarLogo.show")}
+        onClick={() => setShowSidebarLogo(!enabled)}
+      />
+    </SettingRow>
+  );
+}
+
 function RunCardRow() {
   const enabled = useShowRunCard();
   return (
@@ -695,19 +709,23 @@ function ToolCallsRow() {
   );
 }
 
+type ExperimentalFeature = "skillAuthoring" | "browser" | "templates" | "connectedApps" | "vpsComputer" | "boatComputer";
+
 function ExperimentalFeaturesRow() {
   const { state, dispatch } = useStore();
   const skillAuthoring = skillAuthoringEnabled(state.config);
   const browser = builtInBrowserEnabled(state.config);
   const templates = templatesEnabled(state.config);
   const connectedApps = connectedAppsEnabled(state.config);
+  const vpsComputer = vpsComputerEnabled(state.config);
+  const boatComputer = boatComputerEnabled(state.config);
   const desktopBrowser = browserAvailable(state.config);
   const browserInstallable = state.config?.browserEngine?.installable === true;
   const browserBlockedOnWindows = window.ogb?.platform === "win32" && !desktopBrowser && !browserInstallable;
-  const [saving, setSaving] = useState<"skillAuthoring" | "browser" | "templates" | "connectedApps" | null>(null);
+  const [saving, setSaving] = useState<ExperimentalFeature | null>(null);
   const [error, setError] = useState("");
 
-  const toggle = async (feature: "skillAuthoring" | "browser" | "templates" | "connectedApps", next: boolean) => {
+  const toggle = async (feature: ExperimentalFeature, next: boolean) => {
     if (saving) return;
     setSaving(feature);
     setError("");
@@ -730,7 +748,7 @@ function ExperimentalFeaturesRow() {
       cardId="experimental.features"
       title={t("settings.experimental.title")}
       subtitle={t("settings.experimental.subtitle")}
-      summary={t("settings.card.countOn", { count: Number(skillAuthoring) + Number(browser) + Number(templates) + Number(connectedApps), total: 4 })}
+      summary={t("settings.card.countOn", { count: Number(skillAuthoring) + Number(browser) + Number(templates) + Number(connectedApps) + Number(vpsComputer) + Number(boatComputer), total: 6 })}
     >
       <div className="flex items-center justify-between gap-4">
         <div className="min-w-0">
@@ -798,6 +816,21 @@ function ExperimentalFeaturesRow() {
           className="disabled:cursor-wait disabled:opacity-50"
         />
       </div>
+      {([["vpsComputer", vpsComputer], ["boatComputer", boatComputer]] as const).map(([feature, on]) => (
+        <div key={feature} className="mt-4 flex items-center justify-between gap-4 border-t border-hairline/30 pt-4" data-experimental-feature={feature}>
+          <div className="min-w-0">
+            <div className="text-[14px] font-medium text-ink">{t(`settings.experimental.${feature}`)}</div>
+            <div className="mt-0.5 text-[12px] leading-relaxed text-ink-secondary">{t(`settings.experimental.${feature}Detail`)}</div>
+          </div>
+          <Switch
+            checked={on}
+            aria-label={t(`settings.experimental.${feature}`)}
+            disabled={saving !== null}
+            onClick={() => void toggle(feature, !on)}
+            className="disabled:cursor-wait disabled:opacity-50"
+          />
+        </div>
+      ))}
       {error ? <p role="alert" className="mt-2 text-[12px] text-danger">{error}</p> : null}
     </Card>
   );
@@ -1141,6 +1174,7 @@ export function SettingsModal() {
                 <div className="rounded-[14px] border-[0.5px] border-border py-1">
                   <FontRow />
                   <SidebarDensityRow />
+                  <SidebarLogoRow />
                   <ShowThreadsRow />
                   <NotificationSoundsRow />
                   <FloatingFlyAwayRow />
@@ -1212,8 +1246,8 @@ export function SettingsModal() {
                   summary={configuredSummary(state.config, ["box", "vps", "opencodeGo"])}
                 >
                   <div className="flex flex-col gap-4">
-                    <ApiKeyRow section="box" />
-                    <VpsConnection />
+                    {(state.config?.cloudHome === true || boatComputerEnabled(state.config)) && <ApiKeyRow section="box" />}
+                    {vpsComputerEnabled(state.config) && <VpsConnection />}
                     <ApiKeyRow section="opencodeGo" />
                     <p className="-mt-2 text-[11.5px] leading-relaxed text-ink-secondary">
                       {/* {command} marks where the code chip goes, so a translator can move it */}

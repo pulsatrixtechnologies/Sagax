@@ -8,7 +8,7 @@ import { setLocale, t } from "@/lib/i18n";
 import type { SidebarDensity } from "@/lib/sidebar-preferences";
 import { StoreProvider } from "@/state/store";
 
-const fixture = vi.hoisted(() => ({ density: "comfortable" as SidebarDensity, templates: undefined as boolean | undefined, connectedApps: undefined as boolean | undefined }));
+const fixture = vi.hoisted(() => ({ showLogo: true, density: "comfortable" as SidebarDensity, templates: undefined as boolean | undefined, connectedApps: undefined as boolean | undefined }));
 
 vi.mock("@/lib/sidebar-preferences", async (importOriginal) => ({
   ...await importOriginal<typeof import("@/lib/sidebar-preferences")>(),
@@ -26,6 +26,11 @@ vi.mock("@/state/store", async (importOriginal) => {
     },
   };
 });
+
+vi.mock("@/lib/sidebar-logo-preferences", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@/lib/sidebar-logo-preferences")>(),
+  useShowSidebarLogo: () => fixture.showLogo,
+}));
 
 import { paletteShortcutLabel, Sidebar } from "./Sidebar";
 
@@ -97,6 +102,18 @@ describe("sidebar header", () => {
     const html = render();
     expect(html).toContain(">Connected apps</span>");
     expect(html).toContain(">Team map</span>");
+  });
+
+  it("hides the brand row when the sidebar logo is turned off, keeping search and New", () => {
+    expect(render()).toContain("data-sidebar-brand");
+    fixture.showLogo = false;
+    try {
+      const html = render();
+      expect(html).not.toContain("data-sidebar-brand");
+      expect(html).toContain("data-sidebar-search");
+    } finally {
+      fixture.showLogo = true;
+    }
   });
 
   it("spells the palette chord per platform", () => {

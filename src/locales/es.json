@@ -432,7 +432,6 @@
   "approvalMode.auto.chip": "Auto",
   "approvalMode.full.label": "Acceso total",
   "approvalMode.full.chip": "Acceso total",
-  "approvalMode.full.desc": "Acceso total al equipo (riesgo elevado)",
   "approvalMode.custom.label": "Personalizado (config.toml)",
   "approvalMode.custom.chip": "Personalizado",
   "approvalMode.custom.desc": "Usa los permisos definidos en config.toml",

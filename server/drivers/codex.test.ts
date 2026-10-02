@@ -563,6 +563,22 @@ describe("CodexDriver turns (fake app-server)", () => {
     },
   );
 
+  // Organization server (host tools withheld): Full never asks and stays
+  // read-only on the server; Ask stays read-only and asking.
+  it.each([
+    ["full", "never", "codexHostToolFull"],
+    ["ask", "on-request", "codexHostToolAsk"],
+  ] as const)("maps %s on an organization server to %s with a read-only server sandbox", async (approvalMode, approvalPolicy, name) => {
+    await create();
+    const dump = join(scratch, `${name}.json`);
+    process.env.FAKE_CODEX_DUMP = dump;
+    await instance.adapter.sendTurn({ threadId: `t-${name}`, text: "continue", approvalMode, withholdHostTools: true });
+    await recorder.until((event) => event.type === "turn.completed");
+    const calls = JSON.parse(readFileSync(dump, "utf8")).calls as Array<{ method: string; params: Record<string, unknown> }>;
+    expect(calls.find((call) => call.method === "thread/start")?.params).toMatchObject({ approvalPolicy, sandbox: "read-only" });
+    expect(calls.find((call) => call.method === "turn/start")?.params).toMatchObject({ approvalPolicy, sandboxPolicy: { type: "readOnly" } });
+  });
+
   it.each([false, true])("preserves the complete resolved sandbox (resumed=%s)", async (resumed) => {
     await create({ mode: "resume" });
     const dump = join(scratch, "resolved-sandbox.json");

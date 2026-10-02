@@ -88,7 +88,7 @@ async function boot(asCloud: boolean) {
   child = spawn(process.execPath, ["--import", offlinePrelude, join(SERVER_DIR, "index.ts")], {
     cwd: join(SERVER_DIR, ".."),
     env: {
-      PATH: process.env.PATH, HOME: home, USERPROFILE: home, SAGAX_DATA_DIR: dataDir, SAGAX_PORT: String(port), SAGAX_WEBHOOK_PORT: String(port + 1),
+      PATH: process.env.PATH, HOME: home, USERPROFILE: home, SAGAX_LOCAL_VM_TEST_NAMESPACE: process.env.SAGAX_LOCAL_VM_TEST_NAMESPACE ?? "", SAGAX_DATA_DIR: dataDir, SAGAX_PORT: String(port), SAGAX_WEBHOOK_PORT: String(port + 1),
       ...(asCloud ? {
         SAGAX_CLOUD_ROLE: "home", SAGAX_CLOUD_MACHINE_ID: "3f9c2a4e-8b1d-4c6e-9a7f-2d5e8c1b0a93", SAGAX_CLOUD_ADMIN_URL: "https://cloud.example.test",
         SAGAX_CLOUD_BOOTSTRAP_SECRET: secret, SAGAX_PUBLIC_URL: `https://${HOST}`,

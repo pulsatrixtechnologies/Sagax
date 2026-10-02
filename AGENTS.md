@@ -49,8 +49,12 @@ Covered by `src/components/SettingsModal.orgCleanup.test.ts`,
   off hides the sidebar entry, the Settings > API keys card and the tour's
   apps steps. The claude.ai connectors status then shows in Settings > Model
   providers (`HarnessConnectorsSection placement="settings"`).
-- A person's own subscription sign-in lives in Settings > Model providers
-  (`MyEngines`, organization server only), no longer under Organization.
+- A person's own access lives on each engine card of Settings > Model
+  providers (organization server only, 2026-10-02): who pays for their
+  turns, their own Claude/Codex subscription sign-in (`MyEngineAccess`), one
+  "Manage my keys in Perspicax" link; no separate "My subscriptions and
+  keys" card, no engine missing from the server, never the server's own
+  account (it serves no one's turns there).
 - Routines in my name is read-only: allowed by default, revoked in the
   Perspicax console (`manageUrl`, the person's Sagax tab). Perspicax has no
   silent authorization, so `ensureRoutineDelegation` starts the consent once,
@@ -60,6 +64,38 @@ Covered by `src/components/SettingsModal.orgCleanup.test.ts`,
   the bot's name): admin scope, `orgAdminCaller`, audited
   (`bot.force_stop`, `bot.force_delete`), the owner notified (`admin-action`,
   `audience` the owner). A solo server answers 403 `identity_perspicax`.
+- Sharing in the organization is one compact row per bot (avatar, owner,
+  sharing count, running or idle from `/api/org/bots` `look`/`running`);
+  the grants open inline, the force actions sit in an admin-only row menu
+  and their result is a toast (`src/components/settings/OrgSharing.test.ts`).
+
+## Full access (organization mode, 2026-10-01)
+
+On a solo server Full access is granted only through the packaged desktop
+app's private channel. On an organization server the bot's owner grants it
+over HTTP (`server/org-full-access.ts`, client `src/lib/full-access.ts`).
+Keep these rules, each covered by `server/org-full-access.test.ts`,
+`server/org-full-access.e2e.test.ts`, `server/org-sharing.e2e.test.ts` (S3-7),
+the driver tests or `src/components/ApprovalModeSelector.fullAccess.test.ts`:
+
+- Only the bot's owner, signed in (a session principal), grants Full:
+  `PATCH /api/bots/<id>/tasks/<thread>` (a thread) or `PATCH /api/bots/<id>`
+  with `{ approvalMode: "full", confirmFullAccess }` alone (the default, for
+  new threads and routines). The first grant needs `confirmFullAccess: true`;
+  the server keeps `fullAccessConsent` on the bot so later grants skip it.
+- Settings > Organization > Allow full access (`organization.allowFullAccess`,
+  admin only, on by default, `PATCH /api/org/settings`). Off: grants answer
+  403 `org_full_access_disabled`, a send to a Full thread is refused with the
+  same code, and stored Full runs as Ask (`approvalModeForTurn`).
+- A turn runs Full only while the policy is on and the consent is the bot's
+  current owner's: a routine (run as the owner) gets Full only when that
+  owner set it on that bot. Custom stays refused for members' bots.
+- Full never lifts a hard limit: host tools stay withheld
+  (`withholdHostTools`: Claude `bypassPermissions` with the host tools in
+  `--disallowedTools`; Codex `never` with a read-only server sandbox),
+  private threads, egress and payer rules are unchanged.
+- Mode changes (`approval.mode`), Full turns (`approval.full_access_turn`)
+  and the policy (`org.settings`) go to the admin activity log.
 
 ## Profile on an organization server
 
@@ -451,6 +487,40 @@ seen without its thread has no steps or thread link, and a sub-agent on
 someone else's thread shows no request text. Tests:
 `server/routes/bot-activity.test.ts`, `ActivitySection.test.ts`,
 `InlineEditableText.test.ts`, `BotSettingsDialog.caption.test.ts`.
+
+## Computer tab and Local VM on an organization server
+
+The Computer tab (`src/components/computer/OrgComputerTab.tsx`) draws the
+solo screen: one rounded screen (`ComputerScreen.tsx`) with Play / Pause /
+Stop on it and "<Bot>'s screen" below, the "Where this bot works" selector
+(the person's `sagax.botWorkplace.v1`, with the reason the current computer
+is used) and a usage panel. States are words (Off, Starting, Running, Paused,
+Error); never show the desktop's raw answer. Settings > Computer holds the
+same choice, the Local VM card and the compact server environment card
+(`settings/OrgComputerSettings.tsx`); Settings > Organization no longer has
+the server environment. VPS Computer and Boat Computer are experimental
+flags (`features.vpsComputer`, `features.boatComputer`, off): off hides
+their cards, the Cloud place and backend choices. Tests:
+`OrgComputerTab.test.ts`, `experimental-computers.test.ts`.
+
+The Local VM in server mode lives on the person's computer
+(`electron/local-vm.mjs`, `POST /api/me/desktop-bridge/local-vm`):
+
+- Runtime detection runs on the desktop (Docker Desktop, OrbStack, Colima,
+  Rancher Desktop, Podman; bare PATH, sockets, `docker context`), never on
+  the organization server.
+- A container whose bind mount or `com.openmausbot.workspace-path` label
+  names another folder, or one that no longer exists, is stale: never
+  started, recreated by setup on `<data>/vm-home` (the old folder is kept).
+- Setup (one click) uses the server's recipe (`localVmDesktopSpec`), which
+  the desktop checks (`validLocalVmSpec`) before running it. Nothing is
+  installed without the person's click and an OS dialog.
+- Tests never create a container under the real name: vitest sets
+  `OMB_LOCAL_VM_TEST_NAMESPACE` (`server/testing/global-setup.ts`), names
+  become `openmausbot-test-<ns>-computer`, labeled and removed at the end;
+  a real-named VM is refused in the temp folder (`localVmFolderRefusal`).
+  Tests: `electron/local-vm.node-test.mjs`, `server/local-vm-hygiene.test.ts`,
+  `server/desktop-bridge-local-vm.test.ts`.
 
 ## Group settings
 

@@ -1,5 +1,5 @@
 import { codexToolSurfaceArgs } from "./codex-tool-surface.ts";
-import { CODEX_WITHHELD_APPROVAL, codexHostToolArgs, codexHostToolRequest } from "./host-tools.ts";
+import { CODEX_WITHHELD_APPROVAL, CODEX_WITHHELD_FULL_APPROVAL, codexHostToolArgs, codexHostToolRequest } from "./host-tools.ts";
 import { networkProxyEnvironment } from "./network-proxy.ts";
 // Codex driver — upstream CodexDriver skeleton over agentcal's
 // drivers/codex.js runtime: the official `codex` CLI headless over its
@@ -1631,7 +1631,10 @@ export const CodexDriver: ProviderDriver<CodexConfig> = {
         }
         // Organization server: read-only and asking, every command or write
         // is then a request the handler below declines.
-        if (withholdHostTools) approvalParams = structuredClone(CODEX_WITHHELD_APPROVAL) as unknown as CodexApprovalParams;
+        // Full access there: never ask, still read-only on the server.
+        if (withholdHostTools) {
+          approvalParams = structuredClone(approvalMode === "full" ? CODEX_WITHHELD_FULL_APPROVAL : CODEX_WITHHELD_APPROVAL) as unknown as CodexApprovalParams;
+        }
         // Codex's `never` means "do not ask to escalate", not "grant every
         // requested permission". Only the user's explicit Sagax Full
         // mode may synthesize approvals; Custom must preserve the sandbox

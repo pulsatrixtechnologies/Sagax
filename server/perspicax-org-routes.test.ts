@@ -17,7 +17,7 @@ function answer(auth: RequestAuth, method = "GET") {
     directory: () => null,
     bySubject: () => null,
     viewerRole: () => "member",
-    settings: () => ({ orgKeyConfigured: false }),
+    settings: () => ({ orgKeyConfigured: false, allowFullAccess: true }),
     pendingAdminApprovals: () => [],
     routineDelegation: {
       status: () => ({ state: "none" }),

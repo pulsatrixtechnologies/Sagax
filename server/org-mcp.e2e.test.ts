@@ -115,6 +115,10 @@ async function start() {
       SAGAX_PERSPICAX_DIRECTORY_SECONDS: "5",
       SAGAX_ANTHROPIC_API_KEY: ORG_KEY,
       SAGAX_ORG_NAME: "Acme",
+      // Its temp HOME once left an `openmausbot-computer` bound to a deleted
+      // folder on a developer's Mac: any Local VM this server makes carries
+      // the run's namespace instead (server/testing/local-vm-namespace.ts).
+      ...(process.env.SAGAX_LOCAL_VM_TEST_NAMESPACE ? { SAGAX_LOCAL_VM_TEST_NAMESPACE: process.env.SAGAX_LOCAL_VM_TEST_NAMESPACE } : {}),
     },
     stdio: ["ignore", "pipe", "pipe"],
   });

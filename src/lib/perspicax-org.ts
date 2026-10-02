@@ -15,7 +15,12 @@ export interface PerspicaxOrg {
   /** orgKeyConfigured: the server has a key for at least one engine (the
    * organization's key, used automatically after the speaker's own
    * subscription and key, 2026-10-01). */
-  settings: { orgKeyConfigured?: boolean; interimAttach?: { until: number | null; people: number } };
+  settings: {
+    orgKeyConfigured?: boolean;
+    interimAttach?: { until: number | null; people: number };
+    /** Whether bots may run with Full access (absent: allowed). */
+    allowFullAccess?: boolean;
+  };
 }
 
 export interface OrgDirectoryPerson {

@@ -86,6 +86,7 @@ import localOriginModule from "./local-origin.cjs";
 import { buildApplicationMenu } from "./menu.mjs";
 import { createComputerSharing, validateSharedFolders } from "./computer-sharing.mjs";
 import { createDesktopBridge } from "./desktop-bridge.mjs";
+import { createLocalVm } from "./local-vm.mjs";
 import { acquireDataDirLease } from "./data-dir-lease.mjs";
 import { defaultDataDir, fetchEnvironmentDescriptor, URL_SCHEMES } from "./legacy-names.mjs";
 import { createManagedDesktopClient, createManagedDesktopRelay, createManagedDesktopStore } from "./managed-desktop.mjs";
@@ -2095,6 +2096,23 @@ function desktopBridge() {
       const connection = await cuaReady.catch(() => null);
       return connection?.mcpCommand ? connection : null;
     },
+    // The Local VM on this computer, bound to this app's own data dir; an
+    // install happens only after the person confirms here, in an OS dialog.
+    localVm: createLocalVm({
+      dataDir: desktopDataDir(),
+      home: app.getPath("home"),
+      openExternal: (url) => shell.openExternal(url),
+      confirm: async ({ product, method }) => {
+        const window = mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined;
+        const message = method === "brew" ? `Install ${product} with Homebrew?` : `Open the ${product} download page?`;
+        const detail = method === "brew"
+          ? `Sagax runs "brew install --cask ${product.toLowerCase()}" on this computer. ${product} runs the Local VM, an isolated Linux desktop for your bots. macOS may ask for your password.`
+          : `${product} runs the Local VM, an isolated Linux desktop for your bots. Install it, open it once, then come back and choose Set up in one click.`;
+        const options = { type: "question", buttons: ["Continue", "Cancel"], defaultId: 0, cancelId: 1, message, detail };
+        const answer = window ? await dialog.showMessageBox(window, options) : await dialog.showMessageBox(options);
+        return answer.response === 0;
+      },
+    }),
   });
   return desktopBridgeConnector;
 }

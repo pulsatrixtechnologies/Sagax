@@ -88,7 +88,7 @@ beforeAll(async () => {
       PATH: process.env.PATH,
       ...(process.env.PATHEXT ? { PATHEXT: process.env.PATHEXT } : {}),
       ...(process.env.SystemRoot ? { SystemRoot: process.env.SystemRoot } : {}),
-      HOME: home, USERPROFILE: home, SAGAX_DATA_DIR: dataDir, SAGAX_PORT: String(port), SAGAX_WEBHOOK_PORT: String(port + 1),
+      HOME: home, USERPROFILE: home, SAGAX_LOCAL_VM_TEST_NAMESPACE: process.env.SAGAX_LOCAL_VM_TEST_NAMESPACE ?? "", SAGAX_DATA_DIR: dataDir, SAGAX_PORT: String(port), SAGAX_WEBHOOK_PORT: String(port + 1),
       SAGAX_BOX_API: `${stubBase}/boat/api/box/v1`,
       SAGAX_CLOUD_BOAT_URL: `${stubBase}/relay/api/box/v1`,
       SAGAX_CLOUD_BOAT_TOKEN: INCLUDED,

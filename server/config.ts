@@ -310,6 +310,12 @@ const featureConfigSchema = z.object({
   /** Templates in the sidebar's bottom menu (the team library). Off unless
    * explicitly enabled; a package install link still opens the library. */
   templates: z.boolean().optional(),
+  /** VPS Computer (a bot's computer on the person's own VPS): Settings card,
+   * bot pickers. Off unless explicitly enabled (experimental). */
+  vpsComputer: z.boolean().optional(),
+  /** Boat Computer (a cloud computer, "Boat"): Settings card, bot pickers,
+   * team map. Off unless explicitly enabled (experimental). */
+  boatComputer: z.boolean().optional(),
   /** Experimental built-in browser. Off until explicitly enabled; each bot
    * also has its own switch. */
   browser: z.boolean().optional(),
@@ -433,6 +439,10 @@ const appConfigSchema = z.object({
      * (server/interim-attach-routes.ts), written at the first organization
      * start that found any. */
     interimAttach: z.object({ since: z.number().finite().nonnegative(), days: z.number().int().min(0).max(90) }).optional(),
+    /** Whether bots of the organization may run with Full access
+     * (server/org-full-access.ts). Absent means allowed; an admin turns it
+     * off in Settings > Organization. */
+    allowFullAccess: z.boolean().optional(),
   }).optional(),
   /** When stored person references became principal ids (server/identity-migration.ts). */
   identityMigratedAt: z.number().optional(),
@@ -645,7 +655,7 @@ export interface AppConfig {
   signIn?: { admins?: string[]; members?: string[] };
 
   /** Organization server settings (slice 3); see appConfigSchema. */
-  organization?: { interimAttach?: { since: number; days: number } };
+  organization?: { interimAttach?: { since: number; days: number }; allowFullAccess?: boolean };
   /** When stored person references became principal ids (server/identity-migration.ts). */
   identityMigratedAt?: number;
   /** When every bot thread got its owner (server/thread-privacy.ts). */
@@ -708,7 +718,7 @@ export interface AppConfig {
    * seats shared by all conversations, with per-thread affinity (#1654). */
   localVm?: { mode?: "shared" | "per-bot" | "pool"; maxInstances?: number; idleTimeoutMinutes?: number };
   /** Opt-in product experiments. Every flag defaults to disabled. */
-  features?: { skillAuthoring?: boolean; showToolCalls?: boolean; browser?: boolean; sharedComputers?: boolean; claudeUserMcp?: boolean; llmThreadTitles?: boolean; autoRecall?: boolean; computerClaimIdleRelease?: boolean; cloudOverflow?: boolean; routinesInConversation?: boolean; connectedApps?: boolean; templates?: boolean };
+  features?: { skillAuthoring?: boolean; showToolCalls?: boolean; browser?: boolean; sharedComputers?: boolean; claudeUserMcp?: boolean; llmThreadTitles?: boolean; autoRecall?: boolean; computerClaimIdleRelease?: boolean; cloudOverflow?: boolean; routinesInConversation?: boolean; connectedApps?: boolean; templates?: boolean; vpsComputer?: boolean; boatComputer?: boolean };
   /** #1655: consented cloud overflow for local computer waits. The cost is
    * the operator's own per-second rate; unset keeps the feature inert. */
   cloudOverflow?: { perSecondCostUsd?: number; idleStopMs?: number; allowlistedThreads?: string[] };
@@ -936,6 +946,14 @@ export function connectedAppsEnabled(cfg: AppConfig): boolean {
 }
 
 /** The sidebar's Templates entry. Off by default (experimental). */
+export function vpsComputerEnabled(cfg: AppConfig): boolean {
+  return cfg.features?.vpsComputer === true;
+}
+
+export function boatComputerEnabled(cfg: AppConfig): boolean {
+  return cfg.features?.boatComputer === true;
+}
+
 export function templatesEnabled(cfg: AppConfig): boolean {
   return cfg.features?.templates === true;
 }

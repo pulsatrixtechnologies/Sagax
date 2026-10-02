@@ -434,7 +434,6 @@
   "approvalMode.auto.chip": "自動",
   "approvalMode.full.label": "フルアクセス",
   "approvalMode.full.chip": "フルアクセス",
-  "approvalMode.full.desc": "コンピューターへのフルアクセス（リスク高）",
   "approvalMode.custom.label": "カスタム (config.toml)",
   "approvalMode.custom.chip": "カスタム",
   "approvalMode.custom.desc": "config.toml で定義した権限を使います",

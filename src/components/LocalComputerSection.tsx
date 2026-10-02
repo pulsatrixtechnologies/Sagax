@@ -20,6 +20,9 @@ import { Card, CommandLine, cardCount } from "./SettingsPrimitives";
 import { MacLocalControl } from "./MacLocalControl";
 import { cn } from "@/lib/cn";
 import { useStore } from "@/state/store";
+import { boatComputerEnabled, vpsComputerEnabled } from "@/lib/feature-flags";
+import { useDesktopBridgeStatus } from "@/lib/desktop-bridge";
+import { OrgComputerSettings } from "./settings/OrgComputerSettings";
 
 type Action = "pull" | "run" | "start" | "stop" | "remove" | "recreate";
 
@@ -949,7 +952,15 @@ export function LocalVmIdleTimeoutSetting({
 export function LocalComputerSection() {
   // An OMB Cloud home has no Local VM (shared/cloud-home.ts): it neither
   // checks for one nor explains how to set one up.
-  const cloudHome = useStore().state.config?.cloudHome === true;
+  const { state: storeState } = useStore();
+  const cloudHome = storeState.config?.cloudHome === true;
+  // Experimental (Settings > Experimental features): off hides the cards.
+  const boatOn = cloudHome || boatComputerEnabled(storeState.config);
+  const vpsOn = vpsComputerEnabled(storeState.config);
+  // An organization server (a desktop bridge status exists): the Local VM is
+  // the one on the person's own computer, set up through their desktop app,
+  // and their server environment sits beside it (OrgComputerSettings).
+  const orgBridge = useDesktopBridgeStatus();
   const [status, setStatus] = useState<Status | null>(null);
   const [loading, setLoading] = useState(true);
   const [pending, setPending] = useState<Action | null>(null);
@@ -1383,7 +1394,9 @@ export function LocalComputerSection() {
   return (
     <>
       <p role="status" aria-live="polite" aria-atomic="true" className="sr-only">{announcement}</p>
-      <CloudComputersCard
+      {orgBridge && <OrgComputerSettings bridge={orgBridge} />}
+
+      {boatOn && <CloudComputersCard
         instances={cloudInventory}
         configured={cloudConfigured}
         loading={cloudLoading}
@@ -1393,9 +1406,9 @@ export function LocalComputerSection() {
         onRefresh={() => setCloudRefreshKey((key) => key + 1)}
         onSleep={(instance) => void actOnCloudComputer("sleep", instance)}
         onDelete={(instance) => void actOnCloudComputer("delete", instance)}
-      />
+      />}
 
-      <VpsComputersCard
+      {vpsOn && <VpsComputersCard
         instances={vpsInventory}
         configured={vpsConfigured}
         sshAlias={vpsSshAlias}
@@ -1405,11 +1418,11 @@ export function LocalComputerSection() {
         unavailableReason={vpsUnavailableReason}
         onRefresh={() => setVpsRefreshKey((key) => key + 1)}
         onRemove={(instance) => void removeVpsComputer(instance)}
-      />
+      />}
 
       <MacLocalControl />
 
-      {!cloudHome && <>
+      {!cloudHome && !orgBridge && <>
       <Card
         collapsible
         cardId="computer.main"

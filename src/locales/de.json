@@ -525,7 +525,6 @@
   "approvalMode.auto.chip": "Auto",
   "approvalMode.full.label": "Voller Zugriff",
   "approvalMode.full.chip": "Voller Zugriff",
-  "approvalMode.full.desc": "Voller Computerzugriff (erhöhtes Risiko)",
   "approvalMode.custom.label": "Benutzerdefiniert (config.toml)",
   "approvalMode.custom.chip": "Benutzerdef.",
   "approvalMode.custom.desc": "Nutzt die in config.toml definierten Berechtigungen",

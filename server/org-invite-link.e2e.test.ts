@@ -74,7 +74,7 @@ posixOnly("org invite links", () => {
       env: {
         ...(process.env.PATH ? { PATH: process.env.PATH } : {}),
         ...(process.env.SystemRoot ? { SystemRoot: process.env.SystemRoot } : {}),
-        HOME: home, USERPROFILE: home, SAGAX_PORT: String(PORT), SAGAX_WEBHOOK_PORT: String(PORT + 1),
+        HOME: home, USERPROFILE: home, SAGAX_LOCAL_VM_TEST_NAMESPACE: process.env.SAGAX_LOCAL_VM_TEST_NAMESPACE ?? "", SAGAX_PORT: String(PORT), SAGAX_WEBHOOK_PORT: String(PORT + 1),
         SAGAX_MAIL_PROVIDER: "sendgrid", SAGAX_MAIL_FROM: "bot@gox.ca", SAGAX_SENDGRID_API_KEY: "test-key",
         SAGAX_MAIL_CAPTURE_FILE: captureFile, SAGAX_TEST_SEAMS: "1",
         SAGAX_PUBLIC_URL: "https://pulsa.gox.ca", SAGAX_ENVIRONMENT_LABEL: "GOX",

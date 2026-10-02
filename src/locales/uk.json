@@ -665,7 +665,6 @@
   "approvalMode.auto.desc": "Використовує автоматичну перевірку провайдера, щоб погоджувати рутинні дії і питати про інші",
   "approvalMode.full.label": "Повний доступ",
   "approvalMode.full.chip": "Повний доступ",
-  "approvalMode.full.desc": "Повний доступ до комп'ютера (підвищений ризик)",
   "approvalMode.custom.label": "Власний (config.toml)",
   "approvalMode.custom.chip": "Власний",
   "approvalMode.custom.desc": "Використовує дозволи, визначені в config.toml",

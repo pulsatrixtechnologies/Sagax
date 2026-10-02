@@ -143,8 +143,11 @@ describe("AccessSection Works on", () => {
   const places = (markup: string) => [...markup.matchAll(/>(Auto|Cloud|Local VM|This computer|Browser|Off)<\/button>/g)].map((match) => match[1]);
 
   it("offers this computer and a Local VM on a desktop or self-hosted server", () => {
-    expect(places(render(makeBot()))).toEqual(["Auto", "Cloud", "Local VM", "This computer", "Browser", "Off"]);
+    // Cloud (Boat or VPS Computer) is experimental and off by default.
+    expect(places(render(makeBot()))).toEqual(["Auto", "Local VM", "This computer", "Browser", "Off"]);
     fixture.config = { cloudHome: false } as Partial<ConfigStatus>;
+    expect(places(render(makeBot()))).toEqual(["Auto", "Local VM", "This computer", "Browser", "Off"]);
+    fixture.config = { cloudHome: false, features: { skillAuthoring: true, boatComputer: true } } as Partial<ConfigStatus>;
     expect(places(render(makeBot()))).toEqual(["Auto", "Cloud", "Local VM", "This computer", "Browser", "Off"]);
   });
 

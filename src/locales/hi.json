@@ -432,7 +432,6 @@
   "approvalMode.auto.chip": "ऑटो",
   "approvalMode.full.label": "पूर्ण पहुँच",
   "approvalMode.full.chip": "पूर्ण पहुँच",
-  "approvalMode.full.desc": "कंप्यूटर तक पूरी पहुँच (जोखिम अधिक)",
   "approvalMode.custom.label": "कस्टम (config.toml)",
   "approvalMode.custom.chip": "कस्टम",
   "approvalMode.custom.desc": "config.toml में तय की गई अनुमतियाँ इस्तेमाल करता है",

@@ -79,6 +79,9 @@ describe("the places a conversation can be pinned to", () => {
   afterEach(() => { fixture.config = null; });
 
   it("reaches this computer and a Local VM on a desktop or self-hosted server", () => {
+    // Cloud only while Boat Computer (or VPS Computer for a VPS bot) is on.
+    expect(availability()).toMatchObject({ cloud: false, vm: true, local: true });
+    fixture.config = { features: { skillAuthoring: true, boatComputer: true } };
     expect(availability()).toMatchObject({ cloud: true, vm: true, local: true });
   });
 
