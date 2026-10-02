@@ -1,6 +1,9 @@
 // Sagax server — the harness host. Clients hold no transports
 // (upstream rule): the React app dispatches typed commands over HTTP and
 // folds one SSE event stream; every provider process runs here.
+// First of all, SAGAX_* settings onto the names the code reads (step 1 of
+// the rename, electron/legacy-names.mjs).
+import "../electron/legacy-env-boot.mjs";
 // First, before any module that could start a process: a Cloud home's
 // secrets off the launcher's pipe (cloud-secrets-boot.ts).
 import { BOOT_CLOUD_SECRETS } from "./cloud-secrets-boot.ts";

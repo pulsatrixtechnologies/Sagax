@@ -15,6 +15,7 @@ process.env.USERPROFILE = home;
 // OMB_DATA_DIR is an intentional production override, but tests must never
 // let it escape the throwaway home they are about to delete.
 delete process.env.OMB_DATA_DIR;
+delete process.env.SAGAX_DATA_DIR;
 // Do not let a developer's Hermes global config path leak into per-test homes.
 delete process.env.HERMES_HOME;
 // The companion keeps its paired devices in its own directory, and resolves
