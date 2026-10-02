@@ -3,9 +3,9 @@
 // desktop's. Launch with `-mascotGallery owl|shape|trombi|group`; the same
 // pages are rendered from the desktop components by
 // `ios/parity/mascot-gallery.render.ts`, with the same layout.
+import SwiftUI
 #if DEBUG
 import CompanionCore
-import SwiftUI
 import UIKit
 
 struct MascotGalleryView: View {
