@@ -360,7 +360,8 @@ export function BotProfileAvatarCard({
 
   return (
     <div className="relative">
-      <div className="flex justify-center py-3">
+      {/* room above for a move's jump and effects: the panel scrolls, so anything past its top is cut by a straight edge */}
+      <div className="flex justify-center pb-3 pt-6">
         <button
           ref={anchor}
           type="button"

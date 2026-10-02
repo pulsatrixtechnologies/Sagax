@@ -169,22 +169,15 @@ export function shapeSkinLayers(skin: ShapeSkin, d: string, hex: string, uid: st
   switch (skin) {
     case "outline": {
       // ink: a crisp line that boils (three hand-drawn takes swapped four times a second) over a holographic halo
-      const foil = (
-        <g mask={url("inkmask")}>
-          <g className="fx-foil">
-            <rect x={-60} y={-10} width={220} height={120} fill={url("rainbow")} />
-          </g>
-        </g>
-      );
+      // the halo is the outline itself stroked in the rainbow: no mask over a
+      // moving rectangle (its edges leaked through as straight lines)
+      const foil = <path d={d} fill="none" stroke={url("rainbow")} strokeWidth={8.4} strokeLinejoin="round" />;
       return {
         ...none,
         ownEdge: full,
         defs: (
           <>
             <Rainbow id={id("rainbow")} period={60} angle={0} />
-            <mask id={id("inkmask")} maskUnits="userSpaceOnUse" x={-10} y={-10} width={120} height={120}>
-              <path d={d} fill="none" stroke="#fff" strokeWidth={8.4} strokeLinejoin="round" />
-            </mask>
             {full &&
               [1, 2, 3].map((seed) => (
                 <filter key={seed} id={id(`boil${seed}`)} x="-10%" y="-10%" width="120%" height="120%">
@@ -209,9 +202,7 @@ export function shapeSkinLayers(skin: ShapeSkin, d: string, hex: string, uid: st
             ))}
           </>
         ) : (
-          <g mask={url("inkmask")} opacity={0.75}>
-            <rect x={-10} y={-10} width={120} height={120} fill={url("rainbow")} />
-          </g>
+          <path d={d} fill="none" stroke={url("rainbow")} strokeWidth={8.4} strokeLinejoin="round" opacity={0.75} />
         ),
       };
     }
@@ -402,9 +393,6 @@ export function shapeSkinLayers(skin: ShapeSkin, d: string, hex: string, uid: st
             </linearGradient>
             <Rainbow id={id("foil")} period={50} angle={45} />
             <Rainbow id={id("foil2")} period={70} angle={-30} />
-            <mask id={id("rim")} maskUnits="userSpaceOnUse" x={-10} y={-10} width={120} height={120}>
-              <path d={d} fill="none" stroke="#fff" strokeWidth={3.2} strokeLinejoin="round" />
-            </mask>
           </>
         ),
         inner: (
@@ -422,11 +410,8 @@ export function shapeSkinLayers(skin: ShapeSkin, d: string, hex: string, uid: st
         ),
         edge: (
           <>
-            <g mask={url("rim")}>
-              <g className={full ? "fx-foil" : undefined}>
-                <rect x={-60} y={-10} width={220} height={120} fill={url("foil")} />
-              </g>
-            </g>
+            {/* the iridescent rim: the outline stroked in the foil, never a mask over a moving rectangle (its edges leaked through as straight lines) */}
+            <path d={d} fill="none" stroke={url("foil")} strokeWidth={3.2} strokeLinejoin="round" />
             <path d={d} fill="none" stroke="#ffffff" strokeWidth={0.9} strokeLinejoin="round" />
           </>
         ),
