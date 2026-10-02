@@ -339,7 +339,7 @@ public struct SkinPalette: Equatable, Sendable {
             textPrimary: t.ink, textSecondary: t.inkSecondary, textSecondaryHome: t.inkSecondary,
             textTertiary: quiet, textDisabled: quiet.opacity(0.7),
             placeholder: quiet, chevron: quiet, iconGrey: t.inkSecondary,
-            addedText: quiet, showMore: t.inkSecondary,
+            addedText: t.inkSecondary, showMore: t.inkSecondary,
             accent: t.accent, accentText: t.accentText, accentInk: t.accentInk,
             unreadDot: t.accentBorder, caret: t.focus, focus: t.focus,
             toggleOn: t.accent, toggleOff: t.control, toggleKnob: SkinColor(0xFFFFFF),

@@ -172,7 +172,7 @@ struct NewGroupSheet: View {
                             .lineLimit(1)
                             .padding(.horizontal, 8)
                             .frame(height: 26)
-                            .background(Theme.blue, in: Capsule())
+                            .background(Theme.accent, in: Capsule())
                     }
                     .buttonStyle(.plain)
                     .fixedSize()

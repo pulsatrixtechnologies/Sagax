@@ -535,6 +535,11 @@ private struct PluginPill: View {
             .background(Theme.pill, in: Capsule())
         }
         .buttonStyle(.plain)
-        .disabled(installed || busy)
+        // Black and Dim keep the measured, dimmed "Added"; the other skins
+        // keep it readable (a disabled plain button fades its label below
+        // 3:1 on a light pill) and refuse the tap instead.
+        .disabled(Theme.keepsReference && (installed || busy))
+        .allowsHitTesting(!(installed || busy))
+        .accessibilityAddTraits(installed || busy ? .isStaticText : [])
     }
 }

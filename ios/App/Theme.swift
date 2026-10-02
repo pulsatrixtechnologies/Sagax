@@ -57,8 +57,11 @@ enum Theme {
     /// phone's own skins), and the skin's token everywhere else. For the few
     /// parity surfaces whose measured colour is not one of the tokens.
     static func parity(_ reference: Color, _ themed: @autoclosure () -> Color) -> Color {
-        palette.id == .black || palette.id == .dim ? reference : themed()
+        keepsReference ? reference : themed()
     }
+
+    /// True on Black and Dim, the phone's own measured skins.
+    static var keepsReference: Bool { palette.id == .black || palette.id == .dim }
 
     /// A bot's colour used as text: unchanged on a dark skin, deepened on a
     /// light one until it reads on the skin's cards (4.5:1).
@@ -119,8 +122,10 @@ enum Theme {
     static var toggleOn: Color { palette.toggleOn.color }
     static var toggleOff: Color { palette.toggleOff.color }
     static var toggleKnob: Color { palette.toggleKnob.color }
-    /// The accent fill (#2D6DE7 on Black).
-    static var blue: Color { palette.accent.color }
+    /// Links and action text ("Upload", "Add routine", action rows): #2D6DE7
+    /// on Black and Dim as measured, the skin's accent text elsewhere (the
+    /// accent fill can be too dark or too light to read as text: Dusk's plum).
+    static var blue: Color { palette.id == .black || palette.id == .dim ? palette.accent.color : palette.accentText.color }
     static var accent: Color { palette.accent.color }
     /// Ink on an accent fill.
     static var accentInk: Color { palette.accentInk.color }
