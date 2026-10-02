@@ -292,6 +292,7 @@ export class VoiceCall {
   /** Say a whole text (a prompt, a narration chip, a settled answer).
    * Resolves true once heard, false when cut. */
   say(text: string): Promise<boolean> {
+    if (this.state.phase === "held" || this.state.phase === "ended") return Promise.resolve(false);
     const stream = new SentenceStream();
     const sentences = stream.finish(text);
     for (const sentence of sentences) this.enqueue(sentence);
