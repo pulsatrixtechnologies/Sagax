@@ -8100,6 +8100,9 @@ function turnProvider(bot: BotRecord, runOn?: RoutineRunOn, threadId?: string): 
   const wants = turnSurfacePlan(bot, runOn, threadId).computer;
   if (wants !== undefined && wants !== "cloud") return null;
   if (registry.get(bot.modelSelection.instanceId)?.adapter.capabilities.remoteAgent === true) return "box";
+  // Organization server: Cloud is the person's server environment, reached
+  // through the turn's workplace, never a Boat or VPS of this server.
+  if (IDENTITY.kind === "perspicax") return null;
   return bot.cloudBackend === "vps" ? "vps" : wants === "cloud" ? "box" : null;
 }
 

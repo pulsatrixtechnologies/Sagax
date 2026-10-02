@@ -261,6 +261,8 @@ posixOnly("organization server: the desktop bridge", () => {
   });
 
   it("reads the attached file on the speaker's own computer, and the engine's HTTP leaves through it", async () => {
+    // The bot's Works on decides: Local VM is the person's own computer.
+    expect((await api("PATCH", `/api/bots/${aliceBot.id}`, alice, { computer: "vm" })).status).toBe(200);
     const file = await upload(alice, "README.md", README);
     const reply = await turn(alice, aliceBot, `read the attachment\n\n<attached-file path="${file.path}" name="README.md" />`);
     expect(reply).toContain("mcp:read_file:ok");
@@ -310,6 +312,7 @@ posixOnly("organization server: the desktop bridge", () => {
   }, 120_000);
 
   it("never reaches Alice's computer for a teammate talking to her bot", async () => {
+    expect((await api("PATCH", `/api/bots/${aliceBot.id}`, alice, { computer: null })).status).toBe(200);
     expect((await api("PUT", `/api/bots/${aliceBot.id}/grants`, alice, { target: `user:${ids.bob}`, level: "use" })).status).toBe(200);
     const bobView = ((await api("GET", "/api/bots", bob)).body.bots as Array<{ id: string; threadId: string }>).find((bot) => bot.id === aliceBot.id)!;
     const before = desktop.operations.length;
@@ -321,8 +324,10 @@ posixOnly("organization server: the desktop bridge", () => {
     expect(desktop.operations.length).toBe(before);
   }, 120_000);
 
-  it("the server environment when the person chose it, with the attachment copied to /workspace/attachments", async () => {
-    expect((await api("PUT", "/api/me/preferences", alice, { preferences: { "sagax.botWorkplace.v1": JSON.stringify({ place: "server", routines: false, network: "all" }) } })).status).toBe(200);
+  it("the server environment for Auto even with the desktop connected, with the attachment copied to /workspace/attachments", async () => {
+    // The old per-person switch says "my computer"; Auto still means Cloud.
+    expect((await api("PUT", "/api/me/preferences", alice, { preferences: { "sagax.botWorkplace.v1": JSON.stringify({ place: "computer", routines: false, network: "all" }) } })).status).toBe(200);
+    expect((await api("GET", "/api/me/desktop-bridge", alice)).body.connected).toBe(true);
     const file = await upload(alice, "notes.md", "server side notes\n");
     const before = desktop.operations.length;
     const reply = await turn(alice, aliceBot, `read the attachment\n\n<attached-file path="${file.path}" name="notes.md" />`);
@@ -334,7 +339,6 @@ posixOnly("organization server: the desktop bridge", () => {
     const copies = docker.execs.filter((entry) => entry.exec.Env.some((value) => /^SAGAX_PATH=\/workspace\/attachments\/[0-9a-f]{8}-notes\.md$/.test(value)));
     expect(copies.length).toBeGreaterThan(0);
     expect(desktop.operations.length).toBe(before);
-    expect((await api("PUT", "/api/me/preferences", alice, { preferences: { "sagax.botWorkplace.v1": JSON.stringify({ place: "computer", routines: false, network: "all" }) } })).status).toBe(200);
   }, 120_000);
 
   it("refuses another person's session on Alice's desktop (poll, tunnel)", async () => {
@@ -346,12 +350,18 @@ posixOnly("organization server: the desktop bridge", () => {
     await expect(tunnel.ready).rejects.toThrow();
   });
 
-  it("falls back to the server environment when the desktop is not connected, and says why", async () => {
+  it("says the person's computer is not connected when the bot works there, and never falls back silently", async () => {
+    expect((await api("PATCH", `/api/bots/${aliceBot.id}`, alice, { computer: "vm" })).status).toBe(200);
     await desktop.close();
     await waitFor(async () => (await api("GET", "/api/me/desktop-bridge", alice)).body.connected === false);
+    await turn(alice, aliceBot, "run it");
+    expect(dump().servers).not.toContain("sagax-desktop");
+    expect(dump().servers).not.toContain("sagax-environment");
+    expect(lastPrompt()).toContain("Sagax desktop app is not connected");
+    // Cloud: the server environment.
+    expect((await api("PATCH", `/api/bots/${aliceBot.id}`, alice, { computer: "cloud" })).status).toBe(200);
     const reply = await turn(alice, aliceBot, "run it");
     expect(reply).toContain("mcp:run_command:ok");
     expect(dump().servers).toContain("sagax-environment");
-    expect(lastPrompt()).toContain("computer is not connected");
   }, 120_000);
 });
