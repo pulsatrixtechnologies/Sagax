@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { harnessCommandsPath, loadHarnessCommands, resetHarnessCommandCache } from "./harness-commands";
+import { harnessCommandsPath, loadHarnessCommands, resetHarnessCommandCache, type HarnessCommandsAnswer } from "./harness-commands";
 
 const answer = { available: true, engine: "claude" as const, commands: [{ name: "compact", description: "Compact", group: "engine" as const }] };
 
@@ -39,5 +39,19 @@ describe("loadHarnessCommands", () => {
     await loadHarnessCommands(fetcher, "b1", "t1", { now: 0, groupId: "g1" });
     expect(fetcher).toHaveBeenCalledTimes(2);
     expect(fetcher).toHaveBeenLastCalledWith("/api/bots/b1/harness-commands?threadId=t1&groupId=g1");
+  });
+  it("never hands one person's list to the next person in the same tab", async () => {
+    const alice: HarnessCommandsAnswer = { ...answer, commands: [{ name: "alice-skill", description: "", group: "plugins" }] };
+    const fetcher = vi.fn(async (): Promise<HarnessCommandsAnswer> => alice);
+    await loadHarnessCommands(fetcher, "b1", "t1", { now: 0, viewerId: "alice" });
+    fetcher.mockImplementation(async () => answer);
+    expect(await loadHarnessCommands(fetcher, "b1", "t1", { now: 1, viewerId: "bob" })).toEqual(answer);
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    // back to the first person: their list is read again, not kept from before
+    await loadHarnessCommands(fetcher, "b1", "t1", { now: 2, viewerId: "alice" });
+    expect(fetcher).toHaveBeenCalledTimes(3);
+    // signed out
+    await loadHarnessCommands(fetcher, "b1", "t1", { now: 3, viewerId: null });
+    expect(fetcher).toHaveBeenCalledTimes(4);
   });
 });

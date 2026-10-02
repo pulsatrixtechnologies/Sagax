@@ -8,6 +8,7 @@ import {
   composerSlashTrigger,
   engineCommandInsertion,
   groupCommandTargets,
+  groupMenuLimitPerBot,
   goalTextFromComposer,
   replaceComposerSlashTrigger,
   type ComposerSlashCommand,
@@ -139,5 +140,26 @@ describe("group slash commands (per bot)", () => {
     if (lead.kind !== "engine") throw new Error("engine item expected");
     expect(engineCommandInsertion(lead)).toBe("/compact ");
     expect(lead.bot).toEqual({ id: "scout", name: "Scout" });
+  });
+
+  it("gives every bot of a group its share of the menu", () => {
+    const many = (prefix: string): HarnessCommand[] => Array.from({ length: 45 }, (_, index) => ({
+      name: `${prefix}-${String(index).padStart(2, "0")}`,
+      description: "",
+      group: index % 2 ? "plugins" : "engine",
+    }));
+    const bots = ["scout", "pixel", "atlas"];
+    const items = composerGroupCommandMenu([], bots.map((id) => ({
+      bot: { id, name: id },
+      commands: many(id),
+      mention: true,
+    })), "");
+    const perBot = groupMenuLimitPerBot(3);
+    expect(perBot).toBeGreaterThan(0);
+    for (const id of bots) {
+      expect(items.filter((item) => composerMenuSection(item) === `bot:${id}`)).toHaveLength(perBot);
+    }
+    expect(groupMenuLimitPerBot(1)).toBeGreaterThanOrEqual(45);
+    expect(groupMenuLimitPerBot(40)).toBe(8);
   });
 });

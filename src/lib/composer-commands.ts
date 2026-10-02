@@ -181,17 +181,30 @@ export interface GroupEngineCommands {
   mention: boolean;
 }
 
+/** The fewest rows a bot keeps in a group's "/" menu, however many bots. */
+const GROUP_MENU_MIN_PER_BOT = 8;
+
+/** How many of its engine commands each bot shows in a group's "/" menu:
+ * the menu's room shared evenly, so a bot listing many commands never
+ * crowds out the bots after it. */
+export function groupMenuLimitPerBot(bots: number): number {
+  if (bots <= 0) return 0;
+  return Math.max(GROUP_MENU_MIN_PER_BOT, Math.floor(MENU_LIMIT / bots));
+}
+
 /** A group's "/" menu: Sagax's commands, then each bot's engine commands
- * under that bot's name, ranked as in a 1:1. */
+ * under that bot's name, ranked as in a 1:1 and capped per bot. */
 export function composerGroupCommandMenu(
   sagax: readonly ComposerSlashCommand[],
   sets: readonly GroupEngineCommands[],
   query: string,
 ): ComposerMenuItem[] {
   const items: ComposerMenuItem[] = composerCommandMenu(sagax, [], query);
+  const perBot = groupMenuLimitPerBot(sets.length);
   for (const set of sets) {
-    if (items.length >= MENU_LIMIT) break;
+    let shown = 0;
     for (const item of composerCommandMenu([], set.commands, query)) {
+      if (shown >= perBot) break;
       if (item.kind !== "engine") continue;
       items.push({
         ...item,
@@ -199,7 +212,7 @@ export function composerGroupCommandMenu(
         bot: set.bot,
         ...(set.mention ? { mentionPrefix: `@${set.bot.name} ` } : {}),
       });
-      if (items.length >= MENU_LIMIT) break;
+      shown += 1;
     }
   }
   return items;

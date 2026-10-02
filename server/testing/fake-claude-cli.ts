@@ -913,10 +913,19 @@ process.stdin.on("data", (c) => {
     // FAKE_CLAUDE_COMMANDS: path of a JSON array of commands to answer with.
     // FAKE_CLAUDE_COMMANDS_DUMP: path to write {argv, cwd, env} of that
     // launch (env: the account and connector switches only, no secret).
+    // FAKE_CLAUDE_COMMANDS_LOG: path to append that same line to (one per
+    // launch). A `fake-commands.json` in CLAUDE_CONFIG_DIR adds that
+    // account's own commands (its user skills and plugins).
     const control = prompt && typeof prompt === "object" && !Array.isArray(prompt) ? prompt as Record<string, any> : null;
     if (control?.type === "control_request" && control.request?.subtype === "initialize") {
-      if (process.env.FAKE_CLAUDE_COMMANDS_DUMP) writeFileSync(process.env.FAKE_CLAUDE_COMMANDS_DUMP, JSON.stringify({ argv, cwd: process.cwd(), env: { CLAUDE_CONFIG_DIR: process.env.CLAUDE_CONFIG_DIR ?? null, ENABLE_CLAUDEAI_MCP_SERVERS: process.env.ENABLE_CLAUDEAI_MCP_SERVERS ?? null } }));
-      const commands = process.env.FAKE_CLAUDE_COMMANDS ? JSON.parse(readFileSync(process.env.FAKE_CLAUDE_COMMANDS, "utf8")) : [{ name: "compact", description: "Compact", argumentHint: "", builtin: true }];
+      const probe = JSON.stringify({ argv, cwd: process.cwd(), env: { CLAUDE_CONFIG_DIR: process.env.CLAUDE_CONFIG_DIR ?? null, ENABLE_CLAUDEAI_MCP_SERVERS: process.env.ENABLE_CLAUDEAI_MCP_SERVERS ?? null } });
+      if (process.env.FAKE_CLAUDE_COMMANDS_DUMP) writeFileSync(process.env.FAKE_CLAUDE_COMMANDS_DUMP, probe);
+      if (process.env.FAKE_CLAUDE_COMMANDS_LOG) appendFileSync(process.env.FAKE_CLAUDE_COMMANDS_LOG, `${probe}\n`);
+      const accountCommands = process.env.CLAUDE_CONFIG_DIR ? join(process.env.CLAUDE_CONFIG_DIR, "fake-commands.json") : "";
+      const commands = [
+        ...(process.env.FAKE_CLAUDE_COMMANDS ? JSON.parse(readFileSync(process.env.FAKE_CLAUDE_COMMANDS, "utf8")) : [{ name: "compact", description: "Compact", argumentHint: "", builtin: true }]),
+        ...(accountCommands && existsSync(accountCommands) ? JSON.parse(readFileSync(accountCommands, "utf8")) : []),
+      ];
       out({ type: "control_response", response: { subtype: "success", request_id: control.request_id, response: { commands } } });
       continue;
     }

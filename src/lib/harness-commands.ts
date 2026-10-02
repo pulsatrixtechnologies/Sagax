@@ -17,6 +17,18 @@ type Fetcher = (path: string) => Promise<HarnessCommandsAnswer>;
 const TTL_MS = 5 * 60_000;
 const cache = new Map<string, { at: number; answer: HarnessCommandsAnswer }>();
 const inflight = new Map<string, Promise<HarnessCommandsAnswer>>();
+/** Whose lists the cache holds. On an organization server a list is the
+ * signed-in person's own (their skills, plugins and connector prompts), so
+ * another person in the same tab never gets it. */
+let cachedViewer: string | null = null;
+
+function forViewer(viewerId: string | null | undefined): void {
+  const viewer = viewerId ?? null;
+  if (viewer === cachedViewer) return;
+  cache.clear();
+  inflight.clear();
+  cachedViewer = viewer;
+}
 
 export function harnessCommandsPath(botId: string, threadId: string | undefined, refresh = false, groupId?: string): string {
   const params = new URLSearchParams();
@@ -33,9 +45,10 @@ export function loadHarnessCommands(
   fetcher: Fetcher,
   botId: string,
   threadId: string | undefined,
-  options: { refresh?: boolean; now?: number; groupId?: string } = {},
+  options: { refresh?: boolean; now?: number; groupId?: string; viewerId?: string | null } = {},
 ): Promise<HarnessCommandsAnswer> {
-  const key = `${botId}:${threadId ?? ""}:${options.groupId ?? ""}`;
+  forViewer(options.viewerId);
+  const key = `${options.viewerId ?? ""}:${botId}:${threadId ?? ""}:${options.groupId ?? ""}`;
   const now = options.now ?? Date.now();
   const cached = cache.get(key);
   if (!options.refresh && cached && now - cached.at < TTL_MS) return Promise.resolve(cached.answer);
@@ -58,10 +71,11 @@ export function loadHarnessCommands(
   return work;
 }
 
-/** Test seam: forget every cached list. */
+/** Forget every cached list (a sign-in, a sign-out, tests). */
 export function resetHarnessCommandCache(): void {
   cache.clear();
   inflight.clear();
+  cachedViewer = null;
 }
 
 /** The engine commands of a 1:1 conversation, loaded once `wanted` turns
@@ -71,6 +85,7 @@ export function useHarnessCommands(
   botId: string | undefined,
   threadId: string | undefined,
   wanted: boolean,
+  viewerId?: string | null,
 ): { answer: HarnessCommandsAnswer | null; loading: boolean; refresh: () => void } {
   const [answer, setAnswer] = useState<HarnessCommandsAnswer | null>(null);
   const [loading, setLoading] = useState(false);
@@ -78,12 +93,12 @@ export function useHarnessCommands(
   const [refreshing, setRefreshing] = useState(false);
   useEffect(() => {
     setAnswer(null);
-  }, [botId, threadId]);
+  }, [botId, threadId, viewerId]);
   useEffect(() => {
     if (!botId || (!wanted && !refreshing)) return;
     let live = true;
     setLoading(true);
-    void loadHarnessCommands(fetcher, botId, threadId, { refresh: refreshing }).then((next) => {
+    void loadHarnessCommands(fetcher, botId, threadId, { refresh: refreshing, viewerId }).then((next) => {
       if (!live) return;
       setAnswer(next);
       setLoading(false);
@@ -93,7 +108,7 @@ export function useHarnessCommands(
       live = false;
       setLoading(false);
     };
-  }, [fetcher, botId, threadId, wanted, refreshing, generation]);
+  }, [fetcher, botId, threadId, wanted, refreshing, generation, viewerId]);
   const refresh = useCallback(() => {
     setRefreshing(true);
     setGeneration((value) => value + 1);
@@ -109,13 +124,14 @@ export interface GroupHarnessCommands {
 /** A group's engine commands, per member in `botIds` (the targets of the
  * "/" being typed), loaded once `wanted` turns true. Each list is the
  * server's for this person (their own subscription, on an organization
- * server), cached per bot. */
+ * server), cached per bot and viewer. */
 export function useGroupHarnessCommands(
   fetcher: Fetcher,
   botIds: readonly string[],
   groupId: string | undefined,
   threadId: string | undefined,
   wanted: boolean,
+  viewerId?: string | null,
 ): { lists: GroupHarnessCommands[]; loading: boolean; refresh: () => void } {
   const [lists, setLists] = useState<GroupHarnessCommands[]>([]);
   const [loading, setLoading] = useState(false);
@@ -124,14 +140,14 @@ export function useGroupHarnessCommands(
   const ids = botIds.join(",");
   useEffect(() => {
     setLists([]);
-  }, [groupId, threadId]);
+  }, [groupId, threadId, viewerId]);
   useEffect(() => {
     const wantedIds = ids ? ids.split(",") : [];
     if (!groupId || !wantedIds.length || (!wanted && !refreshing)) return;
     let live = true;
     setLoading(true);
     void Promise.all(wantedIds.map((botId) =>
-      loadHarnessCommands(fetcher, botId, threadId, { refresh: refreshing, groupId }).then((answer) => ({ botId, answer })),
+      loadHarnessCommands(fetcher, botId, threadId, { refresh: refreshing, groupId, viewerId }).then((answer) => ({ botId, answer })),
     )).then((next) => {
       if (!live) return;
       setLists(next);
@@ -142,7 +158,7 @@ export function useGroupHarnessCommands(
       live = false;
       setLoading(false);
     };
-  }, [fetcher, ids, groupId, threadId, wanted, refreshing, generation]);
+  }, [fetcher, ids, groupId, threadId, wanted, refreshing, generation, viewerId]);
   const refresh = useCallback(() => {
     setRefreshing(true);
     setGeneration((value) => value + 1);

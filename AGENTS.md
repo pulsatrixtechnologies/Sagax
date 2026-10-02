@@ -474,10 +474,14 @@ the bot engine's (`shared/harness-commands.ts`, `server/harness-commands.ts`,
   bot (`groupCommandTarget`): the bot the message starts by mentioning
   (`@Scout /compact ...`), else the lead when the group answers with one
   member. Only that bot answers (mentions in the arguments add nobody) and
-  it gets the command verbatim, not the room context. The "/" menu lists
-  the commands under each bot's name (`?groupId=` on the route); a group
-  that names no single bot (everyone, Auto, mentions only) lists every
-  active member and a pick inserts `@Name /command`.
+  it gets the command verbatim, not the room context. Only a name that
+  bot's engine lists narrows the responders: any other `/word` is an
+  ordinary message, routed by its mentions. The "/" menu lists the
+  commands under each bot's name (`?groupId=` on the route, which needs
+  `channel.post` on the room: a read-only member is refused, since listing
+  starts the engine); a group that names no single bot (everyone, Auto,
+  mentions only) lists every active member, each with its share of the
+  menu (`groupMenuLimitPerBot`), and a pick inserts `@Name /command`.
 - On an organization server the list is the SPEAKER's
   (`harnessCommandAccount`): their own subscription's login directory
   (their user skills and plugins, Codex `CODEX_HOME`) and the claude.ai
@@ -485,6 +489,9 @@ the bot engine's (`shared/harness-commands.ts`, `server/harness-commands.ts`,
   identity) only where it changes the list; a key, the organization's or
   the server's access share the server's list (`commandListAccess` never
   carries a key). Live session additions are kept per bot and account.
+  The client caches the lists per viewer (`src/lib/harness-commands.ts`):
+  another person signing in to the same tab never sees the last one's.
+  Covered end to end by `server/org-harness-commands.e2e.test.ts`.
 - `scripts/smoke-harness-commands.ts` checks the real CLIs.
 
 ## Bot panel

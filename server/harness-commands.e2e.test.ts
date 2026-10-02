@@ -88,6 +88,19 @@ it("lists the engine's commands and passes a typed one through verbatim", async 
     expect(roomTurns).toEqual(["/compact keep what @Commander planned"]);
     expect((await roomReplies()).map((message: any) => message.from?.botId)).toEqual([helper.id]);
     await expect(api(`/api/groups/${group.id}/messages`, { text: "@Helper /model opus" })).rejects.toThrow(/managed by Sagax/);
+
+    // A `/word` the bot's engine does not list is an ordinary message: the
+    // mentions in it are routed as usual and the bot gets the room text.
+    const repliesBefore = (await roomReplies()).length;
+    const turnsBefore = sent().length;
+    await api(`/api/groups/${group.id}/messages`, { text: "@Commander /hi can you and @Helper look" });
+    for (let tries = 0; tries < 300 && (await roomReplies()).length < repliesBefore + 2; tries++) await new Promise((resolve) => setTimeout(resolve, 100));
+    const plain = (await roomReplies()).slice(repliesBefore).map((message: any) => message.from?.botId);
+    expect(plain.sort()).toEqual([bot.id, helper.id].sort());
+    const plainTurns = sent().slice(turnsBefore);
+    expect(plainTurns).toHaveLength(2);
+    expect(plainTurns).not.toContain("/hi can you and @Helper look");
+    expect(plainTurns.every((turn) => turn.includes("/hi can you and @Helper look"))).toBe(true);
   } finally {
     await session.close();
   }

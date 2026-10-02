@@ -320,7 +320,10 @@ export function Composer({
   const locale = activeLocale();
   // The engine's own commands (Claude Code, Codex) for a 1:1 conversation,
   // read the first time "/" is typed there (src/lib/harness-commands.ts).
-  const engineCommands = useHarnessCommands(api, !group ? bot?.id : undefined, threadId || undefined, Boolean(slash) && !group);
+  // On an organization server the list is the signed-in person's own, so the
+  // cache is theirs too.
+  const commandViewerId = state.config?.viewer?.principalId ?? null;
+  const engineCommands = useHarnessCommands(api, !group ? bot?.id : undefined, threadId || undefined, Boolean(slash) && !group, commandViewerId);
   // In a group: the commands of the bot(s) the command would reach, per bot.
   const groupSlashOpen = Boolean(groupSlash);
   const groupSlashBotId = groupSlash?.botId;
@@ -328,7 +331,7 @@ export function Composer({
     () => groupSlashOpen && group ? groupCommandTargets({ botId: groupSlashBotId }, members ?? [], group.defaultResponder) : [],
     [groupSlashOpen, groupSlashBotId, group, members],
   );
-  const groupEngineCommands = useGroupHarnessCommands(api, groupTargets.map((target) => target.bot.id), group && !group.dm ? group.id : undefined, threadId || undefined, groupSlashOpen);
+  const groupEngineCommands = useGroupHarnessCommands(api, groupTargets.map((target) => target.bot.id), group && !group.dm ? group.id : undefined, threadId || undefined, groupSlashOpen, commandViewerId);
   const commandListRef = useRef<HTMLDivElement>(null);
   const commandCandidates = useMemo((): ComposerMenuItem[] => {
     if (!slash || slash.start === dismissedSlashAt) return [];

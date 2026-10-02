@@ -533,7 +533,7 @@ import { createVoiceModeRoutes } from "./voice-mode.ts";
 import * as grokVoice from "./tts/grok.ts";
 import { ClaudeAiConnectorInventory, claudeAiConnectorsForTurn, claudeAiConnectorsPrompt, createHarnessConnectorRoutes, runClaudeCli } from "./harness-connectors.ts";
 import { commandListAccess, createHarnessCommandRoutes, HarnessCommandCatalog, harnessEngineFor, typedCommandForTurn, unavailableCommandError, type HarnessCommandSource } from "./harness-commands.ts";
-import { groupCommandTarget, type CommandResolution, type GroupCommandRoute } from "../shared/harness-commands.ts";
+import { groupCommandTarget, resolveTypedCommand, type CommandResolution, type GroupCommandRoute } from "../shared/harness-commands.ts";
 import type { HarnessCommandScope } from "./contracts.ts";
 import { ProviderAuthSessions } from "./provider-auth-sessions.ts";
 import {
@@ -14723,6 +14723,9 @@ async function runGroupGoalOperation(args: {
 type StartGroupTurnOptions = {
   /** Run against an existing background room task instead of the active UI task. */
   threadId?: string;
+  /** The engine command this message is, as the send resolved it (null: it
+   * is none). Left out, the cached list of the target bot decides. */
+  commandRoute?: GroupCommandRoute | null;
   /** Internal routine goals choose their lead explicitly rather than by @mention/default. */
   goalCoordinatorBotId?: string;
   /** Correlates a room goal card with its durable RoutineRun receipt. */
@@ -14758,6 +14761,27 @@ function groupEngineCommandRoute(
   const instance = target ? turnInstance(target) : null;
   if (!route || !instance?.listCommands || !harnessEngineFor(instance.driverKind)) return null;
   return route;
+}
+
+/** groupEngineCommandRoute, kept only when the target bot's engine lists the
+ * name (its last list for this speaker, without reading it again): a
+ * `/word` the engine does not know is an ordinary room message, routed by
+ * its mentions like any other. */
+function cachedGroupEngineCommandRoute(
+  group: GroupRecord,
+  threadId: string,
+  text: string,
+  members: readonly BotRecord[],
+  channelMode: "chat" | "goal" | undefined,
+  burstLines: number,
+  speaker: TurnSpeaker,
+): GroupCommandRoute | null {
+  const route = groupEngineCommandRoute(group, text, members, channelMode, burstLines);
+  const target = route ? members.find((member) => member.id === route.botId) : undefined;
+  if (!route || !target) return null;
+  const source = harnessCommandSource(target, threadId, { group, speaker });
+  const commands = source ? harnessCommands.cached(source)?.commands ?? [] : [];
+  return resolveTypedCommand(extractTurnImages(route.commandText).text, commands).kind === "engine" ? route : null;
 }
 
 function startGroupTurn(
@@ -14859,8 +14883,11 @@ function startGroupTurn(
   }
   let responders = roomResponders(text, members, group.defaultResponder);
   // An engine command reaches one bot only: the one it starts by naming,
-  // else the lead (never everyone named in its arguments).
-  const commandRoute = groupEngineCommandRoute(group, text, availableMembers, channelMode, queuedGroup?.length ?? 0);
+  // else the lead (never everyone named in its arguments). Only a name that
+  // bot's engine lists is one; any other `/word` is routed like any message.
+  const commandRoute = options.commandRoute !== undefined
+    ? options.commandRoute
+    : cachedGroupEngineCommandRoute(group, threadId, text, availableMembers, channelMode, queuedGroup?.length ?? 0, options.sender?.id ? { origin: "person", principalId: options.sender.id } : { origin: "operator" });
   if (commandRoute) responders = availableMembers.filter((member) => member.id === commandRoute.botId);
   const explicitlyMentionedLead = roomResponders(text, availableMembers, { kind: "mentions" })[0];
   const goalCoordinator = channelMode === "goal"
@@ -18709,10 +18736,16 @@ ROUTES.push(createHarnessCommandRoutes({
     const viewerId = actorPrincipalId(auth);
     const speaker = harnessCommandSpeaker(auth);
     if (groupId) {
-      // A member of a group the caller reads: its commands for that group.
+      // A member of a group the caller posts in: its commands for that group.
+      // Listing starts the engine (a CLI run on the caller's subscription),
+      // so it takes channel.post like the send does, not only channel.read.
       const group = store.group(groupId);
       if (!group || group.peopleDm || !group.memberIds.includes(bot.id)) return { status: 404, error: "no such group" };
-      if (IDENTITY.kind === "perspicax" && !groupVisible(group, channelViewerId(auth))) return { status: 404, error: "no such group" };
+      if (IDENTITY.kind === "perspicax") {
+        const channelViewer = channelViewerId(auth);
+        if (!groupVisible(group, channelViewer)) return { status: 404, error: "no such group" };
+        if (!groupPostAllowed(group, channelViewer)) return { status: 403, error: "you may read this channel, not post in it" };
+      }
       const groupThread = threadId ?? group.threadId;
       const ownsThread = group.dm ? group.threadId === groupThread : Boolean(store.groupTaskByThread(group.id, groupThread));
       if (!ownsThread) return { status: 404, error: "no such conversation" };
@@ -23736,9 +23769,12 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       // before it is recorded, like in a 1:1 (server/harness-commands.ts).
       const commandRoute = groupEngineCommandRoute(group, text, group.memberIds.map((id) => store.bot(id)).filter((member): member is BotRecord => Boolean(member && !member.hidden)), channelMode);
       const commandBot = commandRoute ? store.bot(commandRoute.botId) : undefined;
+      // Only a command that bot's engine lists narrows the responders.
+      let engineCommandRoute: GroupCommandRoute | null = null;
       if (commandRoute && commandBot) {
         const typed = await typedCommandForTurn(extractTurnImages(commandRoute.commandText).text, harnessCommandSource(commandBot, threadId, { group, speaker: harnessCommandSpeaker(auth) }), harnessCommands);
         if (typed.kind === "unavailable") return json(res, 409, unavailableCommandError(typed));
+        if (typed.kind === "engine") engineCommandRoute = commandRoute;
       }
       const sendId = parseSendId(body.sendId);
       const replyTo = resolveReplyTarget(threadId, body.replyToId);
@@ -23802,7 +23838,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
             });
             return { ok: true as const, queued: true as const, queueId: queued.id, threadId };
           }
-          const message = startGroupTurn(current.id, text, replyTo, sendId, channelMode, undefined, { via, sender: messageSender(auth), trigger });
+          const message = startGroupTurn(current.id, text, replyTo, sendId, channelMode, undefined, { via, sender: messageSender(auth), trigger, commandRoute: engineCommandRoute });
           return { ok: true as const, threadId, message };
         },
       );
