@@ -143,7 +143,7 @@ export function createCloudMove({ localRequest, pairHome, fetchImpl = fetch, tem
       body: JSON.stringify({ code: grant.code, label: "Move to Cloud" }), signal: AbortSignal.any([signal, AbortSignal.timeout(30_000)]),
     });
     const body = await readJson(response);
-    if (!response.ok || typeof body?.token !== "string" || !body.token.startsWith("omb_sess_")) fail("cloud_unavailable", "This app could not sign in to your Cloud for the move. Try again.");
+    if (!response.ok || typeof body?.token !== "string" || !/^(?:sgx|omb)_sess_/.test(body.token)) fail("cloud_unavailable", "This app could not sign in to your Cloud for the move. Try again.");
     return { origin: grant.origin, token: body.token };
   }
   async function closeSession(session) {

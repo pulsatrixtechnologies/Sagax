@@ -146,9 +146,9 @@ describe("configuration boundaries", () => {
     expect(parseStoredConfig({ imageGen: { key: "legacy" } }).imageGen).toEqual({ key: "legacy" });
     expect(() => parseConfigPatch({ imageGen: { provider: "unknown" } })).toThrow("provider");
     expect(() => parseConfigPatch({ imageGen: { customUrl: "https://user:secret@router.example/v1" } })).toThrow("customUrl");
-    const childEnv = { OMB_CUSTOM_IMAGE_KEY: "must-not-reach-bot" };
+    const childEnv = { SAGAX_CUSTOM_IMAGE_KEY: "must-not-reach-bot" };
     stripWorkspaceCredentialEnv(childEnv);
-    expect(childEnv).not.toHaveProperty("OMB_CUSTOM_IMAGE_KEY");
+    expect(childEnv).not.toHaveProperty("SAGAX_CUSTOM_IMAGE_KEY");
   });
   it("persists a custom domain but excludes it from generic config patches", () => {
     expect(parseStoredConfig({ customDomain: "https://bots.example.com" })).toEqual({ customDomain: "https://bots.example.com" });
@@ -536,9 +536,9 @@ describe("configuration boundaries", () => {
     expect(builtInBrowserEnabled({ features: { browser: true } })).toBe(true);
     // An OMB Cloud home skips the welcome that turns it on, so there it is on
     // until the person turns it off; any other server is unchanged.
-    const cloudHome = { OMB_CLOUD_ROLE: "home", OMB_CLOUD_MACHINE_ID: "3f9c2a4e-8b1d-4c6e-9a7f-2d5e8c1b0a93" };
+    const cloudHome = { SAGAX_CLOUD_ROLE: "home", SAGAX_CLOUD_MACHINE_ID: "3f9c2a4e-8b1d-4c6e-9a7f-2d5e8c1b0a93" };
     expect(builtInBrowserEnabled({}, {})).toBe(false);
-    expect(builtInBrowserEnabled({}, { OMB_PUBLIC_URL: "https://selfhosted.example.test" })).toBe(false);
+    expect(builtInBrowserEnabled({}, { SAGAX_PUBLIC_URL: "https://selfhosted.example.test" })).toBe(false);
     expect(builtInBrowserEnabled({}, cloudHome)).toBe(true);
     expect(builtInBrowserEnabled({ features: { skillAuthoring: true } }, cloudHome)).toBe(true);
     expect(builtInBrowserEnabled({ features: { browser: false } }, cloudHome)).toBe(false);
@@ -807,8 +807,8 @@ describe("default fleet", () => {
   });
 
   it.each([
-    ["openai", "OMB_OPENAI_API_KEY", "https://api.openai.com/v1"],
-    ["openrouter", "OMB_OPENROUTER_API_KEY", "https://openrouter.ai/api/v1"],
+    ["openai", "SAGAX_OPENAI_API_KEY", "https://api.openai.com/v1"],
+    ["openrouter", "SAGAX_OPENROUTER_API_KEY", "https://openrouter.ai/api/v1"],
   ])("respects same-driver endpoint and credential overrides for %s", (id, keyEnv, defaultUrl) => {
     const workspace = { openai: { key: "openai-WORKSPACE" }, openrouter: { key: "openrouter-WORKSPACE" } };
     for (const config of [
@@ -1070,12 +1070,12 @@ describe("credential env narrowing", () => {
       openaiCompat: { key: "SECRET-COMPAT", url: "https://api.groq.com/openai/v1", model: "llama" },
     };
     const instances = instanceConfigs(cfg);
-    expect(instances.openai.environment).toEqual({ OMB_OPENAI_API_KEY: "SECRET-OPENAI" });
-    expect(instances.openrouter.environment).toEqual({ OMB_OPENROUTER_API_KEY: "SECRET-OPENROUTER" });
+    expect(instances.openai.environment).toEqual({ SAGAX_OPENAI_API_KEY: "SECRET-OPENAI" });
+    expect(instances.openrouter.environment).toEqual({ SAGAX_OPENROUTER_API_KEY: "SECRET-OPENROUTER" });
     expect(instances.openaiCompat.environment).toEqual({ OPENAI_COMPAT_API_KEY: "SECRET-COMPAT", OPENAI_COMPAT_URL: "https://api.groq.com/openai/v1" });
     // the workspace OpenAI-compatible URL and model never reach them either
-    expect(instances.openai.config).toEqual({ url: "https://api.openai.com/v1", apiKeyEnv: "OMB_OPENAI_API_KEY", catalog: "openai" });
-    expect(instances.openrouter.config).toEqual({ url: "https://openrouter.ai/api/v1", apiKeyEnv: "OMB_OPENROUTER_API_KEY" });
+    expect(instances.openai.config).toEqual({ url: "https://api.openai.com/v1", apiKeyEnv: "SAGAX_OPENAI_API_KEY", catalog: "openai" });
+    expect(instances.openrouter.config).toEqual({ url: "https://openrouter.ai/api/v1", apiKeyEnv: "SAGAX_OPENROUTER_API_KEY" });
     expect(instances.openai.access).toBe("api");
   });
 
@@ -1098,7 +1098,7 @@ describe("credential env narrowing", () => {
       openaiCompat: { key: "SECRET-COMPAT", url: "https://api.groq.com/openai/v1" },
       instances: { claude: { driver: "claudeAgent" }, openai: { driver: "openai-compat", displayName: "OpenAI" } },
     });
-    expect(instances.openai.config).toEqual({ url: "https://api.openai.com/v1", apiKeyEnv: "OMB_OPENAI_API_KEY", catalog: "openai" });
+    expect(instances.openai.config).toEqual({ url: "https://api.openai.com/v1", apiKeyEnv: "SAGAX_OPENAI_API_KEY", catalog: "openai" });
     expect(instances.openai.environment).toEqual({});
   });
 
@@ -1186,9 +1186,9 @@ describe("credential env preference", () => {
     "OPENAI_COMPAT_PROVIDER",
     "BOX_TOKEN",
     "OPENCODE_API_KEY",
-    "OMB_TTS_KEY",
-    "OMB_FISH_AUDIO_API_KEY",
-    "OMB_OPENAI_IMAGE_KEY",
+    "SAGAX_TTS_KEY",
+    "SAGAX_FISH_AUDIO_API_KEY",
+    "SAGAX_OPENAI_IMAGE_KEY",
     "COMPOSIO_API_KEY",
   ] as const;
   let saved: Record<string, string | undefined>;
@@ -1224,9 +1224,9 @@ describe("credential env preference", () => {
     process.env.XAI_API_KEY = "env-xai";
     process.env.BOX_TOKEN = "env-box";
     process.env.OPENCODE_API_KEY = "env-ocg";
-    process.env.OMB_TTS_KEY = "env-tts";
-    process.env.OMB_FISH_AUDIO_API_KEY = "env-fish";
-    process.env.OMB_OPENAI_IMAGE_KEY = "env-image";
+    process.env.SAGAX_TTS_KEY = "env-tts";
+    process.env.SAGAX_FISH_AUDIO_API_KEY = "env-fish";
+    process.env.SAGAX_OPENAI_IMAGE_KEY = "env-image";
     const cfg = loadConfig();
     expect(cfg.xai).toEqual({ key: "env-xai", url: "https://api.example.test/v1" });
     expect(cfg.box).toEqual({ token: "env-box" });
@@ -1236,7 +1236,7 @@ describe("credential env preference", () => {
   });
 
   it("uses a preset voice only when the person has not chosen one or another provider", () => {
-    process.env.OMB_TTS_DEFAULT_VOICE = " preset-voice ";
+    process.env.SAGAX_TTS_DEFAULT_VOICE = " preset-voice ";
     expect(loadConfig().tts?.voice).toBe("preset-voice");
     writeFileSync(join(DATA_DIR, "config.json"), JSON.stringify({ tts: { voice: "chosen" } }));
     expect(loadConfig().tts?.voice).toBe("chosen");
@@ -1248,12 +1248,12 @@ describe("credential env preference", () => {
 
   it("never takes Cloud Pro's included tokens for the person's own keys, in config or an engine's environment", () => {
     const included = {
-      OMB_CLOUD_BOAT_URL: "https://cloud.example.test/api/cloud/services/boat/api/box/v1",
-      OMB_CLOUD_BOAT_TOKEN: "box_omb_included-relay-token",
-      OMB_CLOUD_VOICE_URL: "https://cloud.example.test/api/cloud/services/voice/v1",
-      OMB_CLOUD_VOICE_TOKEN: "omb_voice_included-relay-token",
-      OMB_CLOUD_DECIDER_URL: "https://cloud.example.test/api/cloud/services/decider",
-      OMB_CLOUD_DECIDER_TOKEN: "omb_decide_included-relay-token",
+      SAGAX_CLOUD_BOAT_URL: "https://cloud.example.test/api/cloud/services/boat/api/box/v1",
+      SAGAX_CLOUD_BOAT_TOKEN: "box_omb_included-relay-token",
+      SAGAX_CLOUD_VOICE_URL: "https://cloud.example.test/api/cloud/services/voice/v1",
+      SAGAX_CLOUD_VOICE_TOKEN: "omb_voice_included-relay-token",
+      SAGAX_CLOUD_DECIDER_URL: "https://cloud.example.test/api/cloud/services/decider",
+      SAGAX_CLOUD_DECIDER_TOKEN: "omb_decide_included-relay-token",
     };
     for (const [name, value] of Object.entries(included)) vi.stubEnv(name, value);
     try {
@@ -1265,13 +1265,13 @@ describe("credential env preference", () => {
       saveConfig({ tts: { voice: "chosen" }, box: { token: "" }, decider: { enabled: true, jobs: { roomRouting: true } } });
       const disk = readFileSync(join(DATA_DIR, "config.json"), "utf8");
       const runtime = JSON.stringify([loadConfig(), instanceConfigs(loadConfig()), persistableInstanceConfigs(loadConfig())]);
-      for (const token of [included.OMB_CLOUD_BOAT_TOKEN, included.OMB_CLOUD_VOICE_TOKEN, included.OMB_CLOUD_DECIDER_TOKEN]) {
+      for (const token of [included.SAGAX_CLOUD_BOAT_TOKEN, included.SAGAX_CLOUD_VOICE_TOKEN, included.SAGAX_CLOUD_DECIDER_TOKEN]) {
         expect(disk).not.toContain(token);
         expect(runtime).not.toContain(token);
       }
       // The person's own keys, from the environment here, are theirs as ever.
       process.env.BOX_TOKEN = "box_own";
-      process.env.OMB_TTS_KEY = "sk-own";
+      process.env.SAGAX_TTS_KEY = "sk-own";
       expect(loadConfig()).toMatchObject({ box: { token: "box_own" }, tts: { key: "sk-own" } });
       expect(instanceConfigs(loadConfig()).computer?.environment).toEqual({ BOX_TOKEN: "box_own" });
     } finally {
@@ -1541,16 +1541,16 @@ describe("credential env preference", () => {
     expect(process.env.XAI_API_KEY).toBe("just-saved");
     expect(process.env.COMPOSIO_API_KEY).toBe("ak_just_saved");
     expect(process.env.BOX_TOKEN).toBeUndefined();
-    expect(process.env.OMB_TTS_KEY).toBeUndefined();
-    expect(process.env.OMB_FISH_AUDIO_API_KEY).toBeUndefined();
+    expect(process.env.SAGAX_TTS_KEY).toBeUndefined();
+    expect(process.env.SAGAX_FISH_AUDIO_API_KEY).toBeUndefined();
   });
 
   it("syncCredentialEnv updates Fish Audio without replacing ElevenLabs", () => {
-    process.env.OMB_TTS_KEY = "eleven-kept";
-    process.env.OMB_FISH_AUDIO_API_KEY = "fish-old";
+    process.env.SAGAX_TTS_KEY = "eleven-kept";
+    process.env.SAGAX_FISH_AUDIO_API_KEY = "fish-old";
     syncCredentialEnv({ tts: { fishKey: "fish-new" } });
-    expect(process.env.OMB_TTS_KEY).toBe("eleven-kept");
-    expect(process.env.OMB_FISH_AUDIO_API_KEY).toBe("fish-new");
+    expect(process.env.SAGAX_TTS_KEY).toBe("eleven-kept");
+    expect(process.env.SAGAX_FISH_AUDIO_API_KEY).toBe("fish-new");
   });
 
   it("syncCredentialEnv keeps model and provider env in step with a save", () => {
@@ -1596,21 +1596,21 @@ describe("workspace credential env strip", () => {
 
   it("keeps a hosted tenant's control-plane secrets out of every child env, and only those", () => {
     // What the hosting control plane and a fleet put in the server's
-    // environment. `OMB_CLOUD_FUTURE_SECRET` stands for a name added later.
+    // environment. `SAGAX_CLOUD_FUTURE_SECRET` stands for a name added later.
     const operator = {
-      OMB_CLOUD_READY_TOKEN: "ready", OMB_CLOUD_BOOTSTRAP: "bootstrap", OMB_CLOUD_GATEWAY_TOKEN: "gateway",
-      OMB_CLOUD_MODELS: "models", OMB_CLOUD_REVISION: "revision", OMB_CLOUD_FUTURE_SECRET: "later",
-      OMB_LICENSE_KEY: "license", OMB_INSTALLATION_CREDENTIAL: "fleet", omb_cloud_ready_token: "windows-spelling",
-      OMB_PERSPICAX_LINK_FILE: "/run/pulsabot/link.json", OMB_PERSPICAX_ISSUER: "https://px.example.test",
-      OMB_PERSPICAX_INTERNAL_URL: "http://perspicax:8787",
+      SAGAX_CLOUD_READY_TOKEN: "ready", SAGAX_CLOUD_BOOTSTRAP: "bootstrap", SAGAX_CLOUD_GATEWAY_TOKEN: "gateway",
+      SAGAX_CLOUD_MODELS: "models", SAGAX_CLOUD_REVISION: "revision", SAGAX_CLOUD_FUTURE_SECRET: "later",
+      SAGAX_LICENSE_KEY: "license", SAGAX_INSTALLATION_CREDENTIAL: "fleet", omb_cloud_ready_token: "windows-spelling", OMB_LICENSE_KEY: "old-name",
+      SAGAX_PERSPICAX_LINK_FILE: "/run/pulsabot/link.json", SAGAX_PERSPICAX_ISSUER: "https://px.example.test",
+      SAGAX_PERSPICAX_INTERNAL_URL: "http://perspicax:8787",
     };
     // What an engine deliberately receives (server/hosted-models.ts passes the
     // hosted model token as the provider key), plus look-alike names.
     const engine = {
       PATH: "/usr/bin", ANTHROPIC_API_KEY: "hosted-token", ANTHROPIC_AUTH_TOKEN: "hosted-token",
-      ANTHROPIC_BASE_URL: "https://admin.example.test/api/gateway/w/anthropic", OPENMAUSBOT_COMPANY_API_KEY: "hosted-token",
-      OMB_MANAGED_CODEX_TOKEN: "hosted-token", CODEX_HOME: "/data/codex", OMB_HOOK_TOKEN_FILE: "/data/hook-tokens/a.token",
-      OMB_CLOUDFLARED_PATH: "/usr/local/bin/cloudflared", OMB_CLOUD: "not-prefixed", MY_OMB_CLOUD_NOTE: "user",
+      ANTHROPIC_BASE_URL: "https://admin.example.test/api/gateway/w/anthropic", SAGAX_COMPANY_API_KEY: "hosted-token",
+      SAGAX_MANAGED_CODEX_TOKEN: "hosted-token", CODEX_HOME: "/data/codex", SAGAX_HOOK_TOKEN_FILE: "/data/hook-tokens/a.token",
+      SAGAX_CLOUDFLARED_PATH: "/usr/local/bin/cloudflared", SAGAX_CLOUD: "not-prefixed", MY_OMB_CLOUD_NOTE: "user",
     };
     for (const strip of [stripControlPlaneEnv, stripWorkspaceCredentialEnv]) {
       const env: Record<string, string | undefined> = { ...operator, ...engine };
@@ -1623,16 +1623,16 @@ describe("workspace credential env strip", () => {
     // These secrets have no per-driver ACP allowlist entry anywhere — they are
     // consumed in-process (Computer driver / voice module), never by a CLI
     expect(WORKSPACE_CREDENTIAL_ENV).toContain("BOX_TOKEN");
-    expect(WORKSPACE_CREDENTIAL_ENV).toContain("OMB_TTS_KEY");
+    expect(WORKSPACE_CREDENTIAL_ENV).toContain("SAGAX_TTS_KEY");
     // Cloud Pro's included relay tokens (the server also drops them from its
     // own environment at startup; included-services.ts)
-    expect(WORKSPACE_CREDENTIAL_ENV).toContain("OMB_CLOUD_BOAT_TOKEN");
-    expect(WORKSPACE_CREDENTIAL_ENV).toContain("OMB_CLOUD_VOICE_TOKEN");
-    expect(WORKSPACE_CREDENTIAL_ENV).toContain("OMB_CLOUD_DECIDER_TOKEN");
-    expect(WORKSPACE_CREDENTIAL_ENV).toContain("OMB_FISH_AUDIO_API_KEY");
-    expect(WORKSPACE_CREDENTIAL_ENV).toContain("OMB_OPENAI_IMAGE_KEY");
-    expect(WORKSPACE_CREDENTIAL_ENV).toContain("OMB_BROWSER_CONNECTION");
-    expect(WORKSPACE_CREDENTIAL_ENV).toContain("OMB_USER_DATA");
+    expect(WORKSPACE_CREDENTIAL_ENV).toContain("SAGAX_CLOUD_BOAT_TOKEN");
+    expect(WORKSPACE_CREDENTIAL_ENV).toContain("SAGAX_CLOUD_VOICE_TOKEN");
+    expect(WORKSPACE_CREDENTIAL_ENV).toContain("SAGAX_CLOUD_DECIDER_TOKEN");
+    expect(WORKSPACE_CREDENTIAL_ENV).toContain("SAGAX_FISH_AUDIO_API_KEY");
+    expect(WORKSPACE_CREDENTIAL_ENV).toContain("SAGAX_OPENAI_IMAGE_KEY");
+    expect(WORKSPACE_CREDENTIAL_ENV).toContain("SAGAX_BROWSER_CONNECTION");
+    expect(WORKSPACE_CREDENTIAL_ENV).toContain("SAGAX_USER_DATA");
   });
 });
 

@@ -47,7 +47,7 @@ test("paths are absolute or the person's home; attachment names are one file", (
 });
 
 test("commands get no Sagax, Electron or credential variables", () => {
-  const env = commandEnvironment({ PATH: "/bin", HOME: "/h", OMB_PORT: "1", SAGAX_X: "1", ELECTRON_RUN_AS_NODE: "1", OPENAI_API_KEY: "k", GITHUB_TOKEN: "t", LANG: "C" });
+  const env = commandEnvironment({ PATH: "/bin", HOME: "/h", SAGAX_PORT: "1", SAGAX_X: "1", ELECTRON_RUN_AS_NODE: "1", OPENAI_API_KEY: "k", GITHUB_TOKEN: "t", LANG: "C" });
   assert.deepEqual(Object.keys(env).sort(), ["HOME", "LANG", "PATH"]);
 });
 

@@ -1,5 +1,6 @@
 import type { IncomingMessage } from "node:http";
-import { mkdtempSync, rmSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -224,6 +225,22 @@ describe("resolveRequestAuth", () => {
     const foreignOrigin = resolve({ host: "127.0.0.1:8799", origin: "https://evil.example" });
     expect(foreignOrigin.status).toBe(403);
     expect(foreignOrigin.error).toBe("forbidden: cross-origin request");
+  });
+
+  it("issues sgx_sess_ bearers and still accepts an omb_sess_ one issued before Sagax", () => {
+    const issued = sessions.issue({ label: "browser", scopes: ["admin", "client"] });
+    expect(issued.token).toMatch(/^sgx_sess_/);
+    expect(resolve({ host: "bots.example.com", authorization: `Bearer ${issued.token}` }).auth?.kind).toBe("session");
+    // an older token: same record, as written by a server that issued omb_sess_
+    const legacy = `omb_sess_${"L".repeat(43)}`;
+    const file = join(dir, "sessions.json");
+    const stored = JSON.parse(readFileSync(file, "utf8"));
+    const records = Array.isArray(stored) ? stored : stored.sessions;
+    records[0].tokenHash = createHash("sha256").update(legacy).digest("hex");
+    writeFileSync(file, JSON.stringify(stored));
+    sessions = new SessionRegistry({ file });
+    expect(resolve({ host: "bots.example.com", authorization: `Bearer ${legacy}` }).auth?.kind).toBe("session");
+    expect(resolve({ host: "bots.example.com", authorization: `Bearer ${issued.token}` })).toMatchObject({ auth: null, status: 401 });
   });
 
   it("rejects revoked email cookies, bearers and tickets without falling back to loopback ownership", () => {
@@ -576,17 +593,17 @@ describe("loopback trust: owner on one person's machine, service on a shared wor
       resolveLoopbackTrust({ env, desktopManaged: false, hostedWorkspace: false, ...flags });
     expect(pick({})).toEqual({ trust: "owner", reason: "self-hosted default" });
     expect(pick({}, { hostedWorkspace: true })).toEqual({ trust: "service", reason: "hosted workspace" });
-    expect(pick({ OMB_LOOPBACK_TRUST: "service" })).toEqual({ trust: "service", reason: "OMB_LOOPBACK_TRUST" });
-    expect(pick({ OMB_LOOPBACK_TRUST: " Service " }).trust).toBe("service");
-    const forced = pick({ OMB_LOOPBACK_TRUST: "owner" }, { hostedWorkspace: true });
+    expect(pick({ SAGAX_LOOPBACK_TRUST: "service" })).toEqual({ trust: "service", reason: "SAGAX_LOOPBACK_TRUST" });
+    expect(pick({ SAGAX_LOOPBACK_TRUST: " Service " }).trust).toBe("service");
+    const forced = pick({ SAGAX_LOOPBACK_TRUST: "owner" }, { hostedWorkspace: true });
     expect(forced.trust).toBe("owner");
     expect(forced.warning).toMatch(/shared workspace/);
-    const typo = pick({ OMB_LOOPBACK_TRUST: "own3r\n" });
+    const typo = pick({ SAGAX_LOOPBACK_TRUST: "own3r\n" });
     expect(typo.trust).toBe("service");
     expect(typo.warning).toMatch(/not owner or service/);
     expect(typo.warning).not.toContain("\n");
-    expect(pick({ OMB_LOOPBACK_TRUST: "" }).trust).toBe("owner");
-    const desktop = pick({ OMB_LOOPBACK_TRUST: "service" }, { desktopManaged: true, hostedWorkspace: true });
+    expect(pick({ SAGAX_LOOPBACK_TRUST: "" }).trust).toBe("owner");
+    const desktop = pick({ SAGAX_LOOPBACK_TRUST: "service" }, { desktopManaged: true, hostedWorkspace: true });
     expect(desktop.trust).toBe("owner");
     expect(desktop.warning).toMatch(/ignored in the desktop app/);
   });
@@ -594,8 +611,8 @@ describe("loopback trust: owner on one person's machine, service on a shared wor
   it("is always service on an OMB Cloud home, where a local request is only ever a process on the machine", () => {
     const pick = (env: NodeJS.ProcessEnv) => resolveLoopbackTrust({ env, desktopManaged: false, hostedWorkspace: false, cloudHome: true });
     expect(pick({})).toEqual({ trust: "service", reason: "OMB Cloud home" });
-    expect(pick({ OMB_LOOPBACK_TRUST: "service" })).toEqual({ trust: "service", reason: "OMB Cloud home" });
-    const forced = pick({ OMB_LOOPBACK_TRUST: "owner" });
+    expect(pick({ SAGAX_LOOPBACK_TRUST: "service" })).toEqual({ trust: "service", reason: "OMB Cloud home" });
+    const forced = pick({ SAGAX_LOOPBACK_TRUST: "owner" });
     expect(forced.trust).toBe("service");
     expect(forced.warning).toMatch(/ignored on an OMB Cloud home/);
   });
@@ -648,7 +665,7 @@ describe("what GET /api/health tells a caller (spec section 4 bis)", () => {
   });
 });
 
-describe("organization pairing (OMB_IDENTITY=perspicax, slice 2)", () => {
+describe("organization pairing (SAGAX_IDENTITY=perspicax, slice 2)", () => {
   it("lets a member open a pairing code only on an organization server", () => {
     expect(requiredScope("POST", "/api/auth/pairing")).toBe("admin");
     expect(requiredScope("POST", "/api/auth/pairing", { orgPairing: false })).toBe("admin");
@@ -659,7 +676,7 @@ describe("organization pairing (OMB_IDENTITY=perspicax, slice 2)", () => {
   });
 });
 
-describe("organization sharing routes (OMB_IDENTITY=perspicax, slice 3)", () => {
+describe("organization sharing routes (SAGAX_IDENTITY=perspicax, slice 3)", () => {
   it("opens the directory to members only on an organization server", () => {
     expect(requiredScope("GET", "/api/org/directory")).toBe("admin");
     expect(requiredScope("GET", "/api/org/directory", { orgDirectory: true })).toBe("client");

@@ -209,7 +209,7 @@ These routes use admin scope, like import.
 
 Fixtures have no Electron parent. For tests, `POST /api/testing/org-library
 {library}` relays a catalog instead. The route exists only when the server
-starts with `OMB_TEST_ORG_LIBRARY_KEY`, and the request carries that key in
+starts with `SAGAX_TEST_ORG_LIBRARY_KEY`, and the request carries that key in
 `x-openmausbot-test-org-library`. Production never sets the key.
 
 ## Not in this version

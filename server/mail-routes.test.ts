@@ -63,7 +63,7 @@ const READY: MailSettings = { provider: "twilio", from: "bot@gox.ca", twilio: { 
 
 describe("GET /api/mail/settings", () => {
   it("never returns a secret, saved or from the environment, not even a fragment", async () => {
-    const h = harness({ initial: READY, env: { OMB_SENDGRID_API_KEY: ENV_SECRET, OMB_SMTP_PASSWORD: ENV_SECRET } });
+    const h = harness({ initial: READY, env: { SAGAX_SENDGRID_API_KEY: ENV_SECRET, SAGAX_SMTP_PASSWORD: ENV_SECRET } });
     const out = await h.call({ method: "GET", path: "/api/mail/settings" });
     expect(out.status).toBe(200);
     const text = JSON.stringify(out.body);
@@ -127,7 +127,7 @@ describe("PUT /api/mail/settings", () => {
   });
 
   it("reverts a field to the server's value with null", async () => {
-    const h = harness({ initial: { provider: "smtp", from: "ui@gox.ca" }, env: { OMB_MAIL_FROM: "env@gox.ca" } });
+    const h = harness({ initial: { provider: "smtp", from: "ui@gox.ca" }, env: { SAGAX_MAIL_FROM: "env@gox.ca" } });
     const out = await h.call({ method: "PUT", path: "/api/mail/settings", body: { from: null } });
     expect(out.status).toBe(200);
     expect(h.saved()).toEqual({ provider: "smtp" });

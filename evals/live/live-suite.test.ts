@@ -138,7 +138,7 @@ describe("live instance loading", () => {
   const instance = { instanceId: "local", driver: "ollama", config: {}, model: "qwen3:1.7b" };
 
   it("reads inline JSON", () => {
-    expect(loadLiveInstance({ OMB_EVAL_LIVE_INSTANCE: JSON.stringify(instance) })).toMatchObject({
+    expect(loadLiveInstance({ SAGAX_EVAL_LIVE_INSTANCE: JSON.stringify(instance) })).toMatchObject({
       instanceId: "local",
       model: "qwen3:1.7b",
     });
@@ -147,7 +147,7 @@ describe("live instance loading", () => {
   it("reads a config path", () => {
     const path = join(mkdtempSync(join(tmpdir(), "live-instance-")), "instance.json");
     writeFileSync(path, JSON.stringify(instance));
-    expect(loadLiveInstance({ OMB_EVAL_LIVE_CONFIG: path })).toMatchObject({ instanceId: "local" });
+    expect(loadLiveInstance({ SAGAX_EVAL_LIVE_CONFIG: path })).toMatchObject({ instanceId: "local" });
   });
 
   it("fails closed with neither source set", () => {
@@ -156,15 +156,15 @@ describe("live instance loading", () => {
 });
 
 describe("live gate", () => {
-  const previous = process.env.OMB_EVAL_LIVE;
+  const previous = process.env.SAGAX_EVAL_LIVE;
 
   afterEach(() => {
-    if (previous === undefined) delete process.env.OMB_EVAL_LIVE;
-    else process.env.OMB_EVAL_LIVE = previous;
+    if (previous === undefined) delete process.env.SAGAX_EVAL_LIVE;
+    else process.env.SAGAX_EVAL_LIVE = previous;
   });
 
   it("is off by default: runLiveMain skips without touching any model", async () => {
-    delete process.env.OMB_EVAL_LIVE;
+    delete process.env.SAGAX_EVAL_LIVE;
     await expect(runLiveMain([])).resolves.toBe(0);
   });
 });

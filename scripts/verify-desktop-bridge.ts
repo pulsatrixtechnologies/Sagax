@@ -1,5 +1,5 @@
 // Real-Electron check of the desktop bridge in server mode. A second local
-// server plays the organization server (OMB_IDENTITY=perspicax, a fake
+// server plays the organization server (SAGAX_IDENTITY=perspicax, a fake
 // Pulsatrix sign-in, a fake provisioner for server environments, the fake
 // Claude CLI). The Electron side runs the app's own connector
 // (electron/desktop-bridge.mjs) in a real main process, with Electron's own
@@ -98,9 +98,9 @@ let serverLog = "";
 const server: ChildProcess = spawn(process.execPath, ["--experimental-strip-types", join(ROOT, "server", "index.ts")], {
   cwd: ROOT,
   env: {
-    PATH: process.env.PATH ?? "", HOME: home, USERPROFILE: home, OMB_PORT: String(port), OMB_WEBHOOK_PORT: String(port + 1),
-    OMB_IDENTITY: "perspicax", OMB_PERSPICAX_ISSUER: idp.issuer, OMB_PUBLIC_URL: origin,
-    OMB_PERSPICAX_LINK_FILE: join(home, "link", "pulsabot.json"), OMB_ANTHROPIC_API_KEY: "sk-ant-test-org-key-000000", OMB_ORG_NAME: "Acme",
+    PATH: process.env.PATH ?? "", HOME: home, USERPROFILE: home, SAGAX_PORT: String(port), SAGAX_WEBHOOK_PORT: String(port + 1),
+    SAGAX_IDENTITY: "perspicax", SAGAX_PERSPICAX_ISSUER: idp.issuer, SAGAX_PUBLIC_URL: origin,
+    SAGAX_PERSPICAX_LINK_FILE: join(home, "link", "pulsabot.json"), SAGAX_ANTHROPIC_API_KEY: "sk-ant-test-org-key-000000", SAGAX_ORG_NAME: "Acme",
     SAGAX_SANDBOXD_URL: `http://127.0.0.1:${(provisioner.address() as AddressInfo).port}`,
     SAGAX_SANDBOXD_KEY_FILE: join(home, "sandboxd-key"), SAGAX_SANDBOX_INSTANCE: INSTANCE,
   },

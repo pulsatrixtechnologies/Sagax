@@ -9,7 +9,7 @@ import { ROOM_ROUTING_INSTRUCTIONS, ROOM_ROUTING_STATE_KEYS } from "./room-routi
 import type { DeciderQuestion, DeciderSeam } from "./types.ts";
 
 /** The Settings key check's fixed request. */
-export const KEY_CHECK_STATE = { purpose: "OpenMausBot is checking that a decision-model key works." };
+export const KEY_CHECK_STATE = { purpose: "Sagax is checking that a decision-model key works." };
 export const KEY_CHECK_QUESTION = "Is this a connection check?";
 
 /** The relay's caps: the whole request body, and the state as JSON. Both

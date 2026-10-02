@@ -12,9 +12,9 @@ import { UI_TOOLS_DIR } from "./control-omb-ui.ts";
 
 const ROOT = fileURLToPath(new URL("../..", import.meta.url));
 const binary = resolveAgentBrowserBinary({ dataDir: UI_TOOLS_DIR, env: process.env });
-const forced = process.env.OMB_UI_E2E === "1";
+const forced = process.env.SAGAX_UI_E2E === "1";
 const enabled = forced || Boolean(binary);
-if (!enabled) console.log("skipping bot tools UI e2e: no agent-browser; set OMB_UI_E2E=1 to install the pinned release");
+if (!enabled) console.log("skipping bot tools UI e2e: no agent-browser; set SAGAX_UI_E2E=1 to install the pinned release");
 const LAUNCH_TIMEOUT_MS = forced && !binary ? 600_000 : 180_000;
 
 interface FixtureInfo { ui: string; url: string; dataDir: string; logPath: string }

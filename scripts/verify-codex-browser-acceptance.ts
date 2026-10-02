@@ -5,12 +5,12 @@ import { join, resolve } from "node:path";
 import { launchVerificationServer, runControlOmb } from "./control-omb.ts";
 import { fixtureApi } from "./testing/preview-fixture.ts";
 
-const cli = process.env.OMB_VERIFY_CODEX_CLI;
-const auth = process.env.OMB_VERIFY_CODEX_AUTH;
-const binaryPath = process.env.OMB_VERIFY_BROWSER_BINARY;
-const executablePath = process.env.OMB_VERIFY_BROWSER_CHROME;
-const output = process.env.OMB_VERIFY_OUTPUT;
-const models = (process.env.OMB_VERIFY_MODELS ?? "gpt-5.6-luna").split(",").map(model => model.trim()).filter(Boolean);
+const cli = process.env.SAGAX_VERIFY_CODEX_CLI;
+const auth = process.env.SAGAX_VERIFY_CODEX_AUTH;
+const binaryPath = process.env.SAGAX_VERIFY_BROWSER_BINARY;
+const executablePath = process.env.SAGAX_VERIFY_BROWSER_CHROME;
+const output = process.env.SAGAX_VERIFY_OUTPUT;
+const models = (process.env.SAGAX_VERIFY_MODELS ?? "gpt-5.6-luna").split(",").map(model => model.trim()).filter(Boolean);
 if (!models.length) throw new Error("Choose at least one acceptance model.");
 if (!cli || !auth || !binaryPath || !executablePath || !output) throw new Error("Set explicit CLI, sign-in, browser binaries and output directory. Uses real model quota.");
 mkdirSync(output, { recursive: true });

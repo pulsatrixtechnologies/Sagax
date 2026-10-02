@@ -98,7 +98,7 @@ user namespaces, its bundled browser can still report `No usable sandbox`. Insta
 do not add `--no-sandbox`, disable AppArmor globally, or allowlist arbitrary executables under your home
 directory. See [Chromium's explanation of the Ubuntu restriction](https://chromium.googlesource.com/chromium/src/+/main/docs/security/apparmor-userns-restrictions.md).
 
-Application data remains local in `~/.openmausbot`. Electron browser data and window state use the normal XDG
+Application data remains local in `~/.sagax`. Electron browser data and window state use the normal XDG
 configuration directory (`~/.config/openmausbot` unless the environment overrides it).
 
 ## Develop the desktop shell
@@ -136,7 +136,7 @@ It also probes the login shell in the background. If a CLI still is not detected
 path before launching the app from a terminal and verify it there:
 
 ```sh
-OMB_EXTRA_PATH=/your/custom/bin ./release/Pulsa Bot-*-x86_64.AppImage
+SAGAX_EXTRA_PATH=/your/custom/bin ./release/Pulsa Bot-*-x86_64.AppImage
 ```
 
 Restart Sagax after installing or signing in to a CLI.
@@ -235,7 +235,7 @@ contract without activating it in a packaged app. Only a real-seat acceptance ma
 ### An agent CLI is missing
 
 Run the CLI directly in a terminal, finish its sign-in flow, then restart Sagax. If it lives outside the
-common directories above, use `OMB_EXTRA_PATH` while testing and report the install location so it can be
+common directories above, use `SAGAX_EXTRA_PATH` while testing and report the install location so it can be
 considered for automatic discovery.
 
 ### A bot needs computer tools

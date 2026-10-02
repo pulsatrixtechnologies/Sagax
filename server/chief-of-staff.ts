@@ -18,7 +18,7 @@ export function chiefOfStaffSystemPrompt(
   chiefId: string,
   bots: ChiefTeamMember[],
   canDelegate: boolean,
-  trustedOpenMausStatus = "",
+  trustedSagaxStatus = "",
   boundedCoordination = false,
 ): string {
   const chief = bots.find((bot) => bot.id === chiefId);
@@ -65,6 +65,6 @@ export function chiefOfStaffSystemPrompt(
     canDelegate ? "When the user asks you to assemble or configure a team, use list_team_setup for the exact authorized teams, bot IDs and model catalog, then propose_team_setup once with all named specialists and their profile/model changes. Include new teams explicitly; the plan covers their creation and your access. Existing thread models and other bots' execution permissions stay unchanged. Follow the tool result: granted Full Access may apply the plan immediately; after an applied result, continue already-requested work without another confirmation. Only if review is pending, end your turn: the user's decision automatically resumes you once with a structured result. Report failed or cancelled results honestly. Do not ask for another yes, poll, or repeat the proposal. After successful setup, use the available coordination tools for already requested work. Use create_bot only for a single specialist when no combined setup was requested. For explicitly requested bot deletion, use propose_bot_deletion separately and follow its applied or pending result too. Do not create duplicate or unnecessary bots." : "",
     chief?.managedSections?.length ? "Reachable teammates in your allowed teams:" : `Current ${sectionName} section team:`,
     roster,
-    trustedOpenMausStatus,
+    trustedSagaxStatus,
   ].filter(Boolean).join("\n");
 }

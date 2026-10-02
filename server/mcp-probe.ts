@@ -123,7 +123,7 @@ async function probeRemoteMcpServer(
 }
 
 /** Start one stdio server long enough to prove the MCP handshake and list its
- * tools. It is always reaped, never inherits OpenMaus credentials, and never
+ * tools. It is always reaped, never inherits Sagax credentials, and never
  * returns child stderr or environment values to the renderer. */
 function probeStdioMcpServer(
   server: StoredStdioMcpServer,

@@ -141,7 +141,7 @@ export abstract class BaseWorld {
       }
       case "installSkill": {
         // Every world passes gatesDir = <dataRoot>/eval-gates, so its parent
-        // is the server's OMB_DATA_DIR; skills/ under it is exactly where
+        // is the server's SAGAX_DATA_DIR; skills/ under it is exactly where
         // the server hot-loads user skills on every turn.
         const root = join(dirname(this.gatesDir), "skills", step.skill.id);
         mkdirSync(root, { recursive: true });

@@ -4,7 +4,7 @@
 import { newLocalVmTestNamespace, removeTestLocalVms } from "./local-vm-namespace.ts";
 
 export default function setup() {
-  const namespace = process.env.OMB_LOCAL_VM_TEST_NAMESPACE || newLocalVmTestNamespace();
-  process.env.OMB_LOCAL_VM_TEST_NAMESPACE = namespace;
+  const namespace = process.env.SAGAX_LOCAL_VM_TEST_NAMESPACE || newLocalVmTestNamespace();
+  process.env.SAGAX_LOCAL_VM_TEST_NAMESPACE = namespace;
   return async () => { await removeTestLocalVms(namespace); };
 }

@@ -25,7 +25,7 @@ in the manual editor remain possible. Existing routines are never removed.
 
 ```sh
 pnpm exec vitest run shared/routine-schedule.test.ts server/routine-cron.e2e.test.ts server/routine-requests.test.ts server/routines.test.ts server/routines-startup.test.ts src/components/routines/cron-editor.test.ts src/lib/routine-calendar.test.ts src/lib/schedule-label.test.ts server/bot-package.test.ts server/package-export.test.ts
-OMB_UI_E2E=1 pnpm exec vitest run scripts/testing/cron-routines-ui.e2e.test.ts
+SAGAX_UI_E2E=1 pnpm exec vitest run scripts/testing/cron-routines-ui.e2e.test.ts
 ```
 
 ## Launch the isolated renderer
@@ -223,7 +223,7 @@ rotated.
 
 What Sagax does:
 
-- **Its own budget.** `OMB_PERSPICAX_TOKEN_BUDGET` (a whole number from 1 to
+- **Its own budget.** `SAGAX_PERSPICAX_TOKEN_BUDGET` (a whole number from 1 to
   60, default 45) caps Sagax's token and revocation calls per rolling minute
   (`server/idp-token-pacer.ts`). A code exchange always goes (someone waits at
   the browser). A refresh waits at most 5 s for a slot, else it is deferred as
@@ -273,7 +273,7 @@ Who reaches `/api/org/routine-delegation` (GET, POST, DELETE):
 |---|---|
 | Organization server, service loopback trust (the default), no session | 403 from the auth gate: "forbidden: on this shared server a local request without a session may only use the service routes; ..." |
 | A session that expired or was revoked | 401 from the auth gate: "unauthorized: this session has expired or was revoked; ..." |
-| `OMB_LOOPBACK_TRUST=owner`, loopback without a session | 401 `{code:"session_required"}` from the route |
+| `SAGAX_LOOPBACK_TRUST=owner`, loopback without a session | 401 `{code:"session_required"}` from the route |
 | A session without a principal or provider account, or a solo server | 403 `identity_perspicax` |
 
 ```sh

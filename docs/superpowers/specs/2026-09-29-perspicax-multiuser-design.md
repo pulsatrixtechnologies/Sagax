@@ -19,7 +19,7 @@ Succès de la première tranche: JC ouvre `https://bot.<domaine>`, clique « Se 
 - Pas de fédération externe (Entra, Google) dans Perspicax: il reste le seul IdP de l'organisation. Pulsa Bot, lui, parle OIDC standard et accepterait un autre IdP, sans que ce soit testé ni promis.
 - Pas de multi-utilisateur sans Perspicax. Un `pulsa serve` sans IdP est solo: une personne, ses appareils.
 - Pas de courriel d'identité émis par Pulsa Bot en mode organisation.
-- Pas de PR, d'issue ni de push vers OpenMausBot. Tout reste chez `pulsatrixtechnologies`.
+- Pas de PR, d'issue ni de push vers Sagax. Tout reste chez `pulsatrixtechnologies`.
 - Pas de console Pulsa Bot dupliquée: la console Perspicax gère l'organisation, l'app Pulsa Bot gère les bots.
 
 ### Les deux modes
@@ -32,7 +32,7 @@ Le mode appartient à un **serveur** Pulsa Bot, pas à l'installation.
 | Identité | l'opérateur local (`principals.ts`, `local: true`) | le compte Perspicax (`iss` + `sub`) |
 | Appareils supplémentaires | codes d'appairage (`sessions.ts`, `openPairing`) | codes d'appairage liés au principal qui les crée, ou connexion OIDC native |
 | Onboarding | garde l'étape « passer » (`src/components/onboarding/WelcomeFlow.tsx`) | l'étape Organisation propose « Rejoindre un serveur Perspicax » |
-| Réglage qui l'active | rien | `OMB_IDENTITY=perspicax` plus le lien (section 6) |
+| Réglage qui l'active | rien | `SAGAX_IDENTITY=perspicax` plus le lien (section 6) |
 
 L'app de bureau garde toujours son harness local en solo. Un serveur d'organisation s'ajoute comme un **environnement** de plus (`electron/environments.cjs`: l'app charge l'interface du serveur distant, la session vit dans le cookie HttpOnly de ce serveur). Être dans une organisation, c'est donc avoir un environnement de plus, pas changer d'installation.
 
@@ -79,7 +79,7 @@ Retiré en mode organisation, parce que Perspicax le couvre:
 |---|---|
 | liens d'invitation `/join#token` (`org-routes.ts`, `org-record.ts::issueInvite`, `src/pair/JoinPage.tsx`) | un compte créé par un admin dans Perspicax |
 | codes par courriel (`email-otp.ts`, `account-signin.ts`) | la connexion Perspicax |
-| rôles de l'annuaire d'organisation (`org-directory.ts::roleOf`, `OMB_SIGNIN_EMAILS`) | le claim `role` |
+| rôles de l'annuaire d'organisation (`org-directory.ts::roleOf`, `SAGAX_SIGNIN_EMAILS`) | le claim `role` |
 | liste des personnes de l'organisation (`org-routes.ts`, `OrgPerson`, Réglages > Organisation) | l'annuaire de Perspicax, lu par le lien, et ses pages Personnes et Équipes |
 | mailer d'identité (`mailer.ts`, `mail-config.ts`, `compose.mail-test.yaml`) | rien à envoyer: le compte naît dans Perspicax |
 | propriétaire d'organisation unique (`org-record.ts`, `ownerUserId`) | les admins Perspicax |
@@ -162,7 +162,7 @@ Le principal de `server/principals.ts` reste la personne. On ajoute:
 | Code d'appairage sans principal | gardé (l'opérateur) | refusé, sauf le code d'amorçage admin avant le lien (section 6) |
 | Code par courriel (`email-otp.ts`, `account-signin.ts` serveur et control plane) | retiré: rien à envoyer à une seule personne | refusé, comme `HOSTED_WORKSPACE` le fait déjà (`index.ts:14647`) |
 | Invitations `/join#token` (`org-routes.ts`, `org-record.ts::issueInvite`, `src/pair/JoinPage.tsx`) | retirées | remplacées par un compte créé par un admin dans Perspicax |
-| Liste d'accueil `OMB_SIGNIN_EMAILS` (`config.ts:1064`) | retirée | remplacée par les claims |
+| Liste d'accueil `SAGAX_SIGNIN_EMAILS` (`config.ts:1064`) | retirée | remplacée par les claims |
 | Mailer SMTP / SendGrid (`mailer.ts`, `mail-config.ts`) | retiré (seuls usages: connexion et invitations, `index.ts:14584`) | non utilisé |
 
 ## 3. Autorisation
@@ -267,7 +267,7 @@ Une routine qui tourne pendant que son propriétaire est hors ligne n'a pas de j
 Aujourd'hui un jeton OAuth MCP part dans les en-têtes de la configuration MCP de l'engine (`engineMcpServers`, `index.ts:13977`, puis `withAuthHeaders`): il est lisible par le processus de l'engine et par un shell en accès complet. Pour Perspicax on reprend le patron de `server/connector-proxy.ts` (le pont Composio: « credentials never pass through its transcript »):
 
 - L'engine voit un serveur MCP **stdio**, `server/perspicax-mcp-bridge.ts`, pour chaque profil du bot. Tous les engines (Claude, Codex, Pi, ACP) savent parler stdio.
-- Le pont ne reçoit aucun jeton en argument ni en variable: il demande au harness, en loopback, avec la capacité du tour (même mécanique que `OMB_CONNECTOR_TOKEN`), un jeton pour `(tour, profil)`. Le harness fait l'échange, garde le jeton en mémoire, le rend au pont, et le révoque à la fin du tour (`revoke_access_token`, `lib.rs:1765`, fait pour ces jetons internes).
+- Le pont ne reçoit aucun jeton en argument ni en variable: il demande au harness, en loopback, avec la capacité du tour (même mécanique que `SAGAX_CONNECTOR_TOKEN`), un jeton pour `(tour, profil)`. Le harness fait l'échange, garde le jeton en mémoire, le rend au pont, et le révoque à la fin du tour (`revoke_access_token`, `lib.rs:1765`, fait pour ces jetons internes).
 - Le pont relaie en Streamable HTTP vers `https://px.x/mcp?profile=<slug>`; `tools/list` est déjà filtré par Perspicax selon les scopes.
 - Risque résiduel, écrit tel quel: pendant un tour, un shell du bot qui lit la capacité du tour peut demander le même jeton au harness. Il n'obtient que les profils de ce bot, pour la personne de ce tour, jusqu'à la fin du tour, et chaque appel est au journal de Perspicax.
 
@@ -374,11 +374,11 @@ Elle vit dans le dépôt privé (`pulsatrix-v3/deploy/docker-compose.pulsabot.ym
 | `pulsabot` | `pulsa-bot-server:<version>`, construite avec `ENGINES="@anthropic-ai/claude-code @openai/codex"` (liste explicite, section 4 bis) | serveur de coordination et exécution de tous les tours; son Caddy latéral actuel (`network_mode: service:omb`, `deploy/local/Caddyfile`) reste pour garder la règle d'hôte loopback |
 | `caddy` | `caddy:2.11.x` | arête: deux sites, `px.<domaine>` vers `perspicax:8787`, `bot.<domaine>` vers le Caddy de `pulsabot`. Deux noms parce que les deux produits utilisent `/api/*`. |
 
-L'exposition réseau (DNS, Tailscale, tunnel, LAN) reste au propriétaire: la compose publie par défaut sur `127.0.0.1`, comme `compose.yaml` de Pulsa Bot (`OMB_BIND_ADDRESS`).
+L'exposition réseau (DNS, Tailscale, tunnel, LAN) reste au propriétaire: la compose publie par défaut sur `127.0.0.1`, comme `compose.yaml` de Pulsa Bot (`SAGAX_BIND_ADDRESS`).
 
 Volumes: `perspicax-config` (`gateway.db`, `state/vault.key`, `state/local_oauth/`, sauvegardes), `pulsabot-data` (`/data`: état, dossiers des bots, connexions des CLI par principal), `link` (un seul fichier, section suivante), `caddy-data`, `caddy-config`.
 
-Variables: côté Perspicax `PXC_CONFIG_DIR`, `PXC_VAULT_KEY` ou le fichier de clé, `PXC_PULSABOT_ORIGIN=https://bot.<domaine>` et `PXC_PULSABOT_INTERNAL_URL=http://pulsabot:80` (nouveaux). Côté Pulsa Bot `OMB_PUBLIC_URL=https://bot.<domaine>`, `OMB_IDENTITY=perspicax`, `OMB_PERSPICAX_ISSUER=https://px.<domaine>`, `OMB_PERSPICAX_LINK_FILE=/link/pulsabot.json` (nouveaux), `OMB_IDP_VAULT_KEY_FILE` (secret Docker).
+Variables: côté Perspicax `PXC_CONFIG_DIR`, `PXC_VAULT_KEY` ou le fichier de clé, `PXC_PULSABOT_ORIGIN=https://bot.<domaine>` et `PXC_PULSABOT_INTERNAL_URL=http://pulsabot:80` (nouveaux). Côté Pulsa Bot `SAGAX_PUBLIC_URL=https://bot.<domaine>`, `SAGAX_IDENTITY=perspicax`, `SAGAX_PERSPICAX_ISSUER=https://px.<domaine>`, `SAGAX_PERSPICAX_LINK_FILE=/link/pulsabot.json` (nouveaux), `SAGAX_IDP_VAULT_KEY_FILE` (secret Docker).
 
 ### Premier démarrage
 
@@ -481,7 +481,7 @@ Chacune se livre seule, avec ses tests, dans l'ordre. Les tranches Perspicax pas
 
 1. **Connexion Perspicax, bout à bout.**
    Perspicax: P1, P2, P3 (claims de base: `sub`, `email`, `name`, `preferred_username`, `role`; `teams` peut attendre la tranche 4), P5 (JWKS, découverte), P6 pour une origine donnée par `PXC_PULSABOT_ORIGIN`.
-   Pulsa Bot: `oidc-rp.ts`, `/auth/oidc/start` et `/callback`, `forSubject`, session avec `principalId`, `role` vers scopes (`admin` donne `["admin", "client"]`, les autres `["client"]`), bouton sur `/pair`, descripteur `identity`, refus du courriel et des invitations quand `OMB_IDENTITY=perspicax`. Bureau: flux dans la fenêtre. Téléphone: QR d'appairage lié au principal (existant).
+   Pulsa Bot: `oidc-rp.ts`, `/auth/oidc/start` et `/callback`, `forSubject`, session avec `principalId`, `role` vers scopes (`admin` donne `["admin", "client"]`, les autres `["client"]`), bouton sur `/pair`, descripteur `identity`, refus du courriel et des invitations quand `SAGAX_IDENTITY=perspicax`. Bureau: flux dans la fenêtre. Téléphone: QR d'appairage lié au principal (existant).
    Engine: l'image construite avec Claude Code et Codex; accès par la connexion ou la clé posée par l'admin dans Réglages > Connections (existant); A est admin dans cette tranche.
    Preuve: une compose de développement avec les deux; un compte Perspicax créé par la CLI se connecte au web de Pulsa Bot; `GET /api/auth/session` montre le principal, le courriel et le rôle; le jeton de connexion est refusé par `/mcp` (401); scénario A ci-dessous.
 2. **Cycle de vie de la session.** Rafraîchissement, `/oauth/revoke`, déconnexion, canal arrière et P8, navigateur système sur le bureau, OIDC natif sur le téléphone.

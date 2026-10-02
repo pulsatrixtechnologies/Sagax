@@ -43,8 +43,8 @@ function processIsAlive(pid: number): boolean {
 }
 
 const CONTROL_PLANE_FIXTURE = {
-  OMB_CLOUD_READY_TOKEN: "ready-should-not-leak", OMB_CLOUD_BOOTSTRAP: "bootstrap-should-not-leak",
-  OMB_LICENSE_KEY: "license-should-not-leak", OMB_INSTALLATION_CREDENTIAL: "fleet-should-not-leak",
+  SAGAX_CLOUD_READY_TOKEN: "ready-should-not-leak", SAGAX_CLOUD_BOOTSTRAP: "bootstrap-should-not-leak",
+  SAGAX_LICENSE_KEY: "license-should-not-leak", SAGAX_INSTALLATION_CREDENTIAL: "fleet-should-not-leak",
 };
 
 describe("CodexDriver.decodeConfig", () => {
@@ -109,7 +109,7 @@ describe("CodexDriver turns (fake app-server)", () => {
       instanceId: "codex-test",
       displayName: "Codex Test",
       environment: {
-        ...(opts.managed ? { HOME: scratch, USERPROFILE: scratch, CODEX_HOME: join(scratch, ".codex"), OPENMAUSBOT_COMPANY_API_KEY: "synthetic-company-fixture" } : {}),
+        ...(opts.managed ? { HOME: scratch, USERPROFILE: scratch, CODEX_HOME: join(scratch, ".codex"), SAGAX_COMPANY_API_KEY: "synthetic-company-fixture" } : {}),
         ...opts.environment,
       },
       enabled: true,
@@ -161,7 +161,7 @@ describe("CodexDriver turns (fake app-server)", () => {
     delete process.env.FAKE_CODEX_INTERRUPT_GRACE_MS;
     delete process.env.OPENAI_API_KEY;
     delete process.env.BOX_TOKEN;
-    delete process.env.OMB_TTS_KEY;
+    delete process.env.SAGAX_TTS_KEY;
     for (const name of Object.keys(CONTROL_PLANE_FIXTURE)) delete process.env[name];
     recorder?.stop();
     await instance?.dispose();
@@ -375,7 +375,7 @@ describe("CodexDriver turns (fake app-server)", () => {
     // workspace credentials the harness may hold (env-injected at boot by
     // the desktop shell) must never ride into the CLI child
     process.env.BOX_TOKEN = "box-should-not-leak";
-    process.env.OMB_TTS_KEY = "tts-should-not-leak";
+    process.env.SAGAX_TTS_KEY = "tts-should-not-leak";
     Object.assign(process.env, CONTROL_PLANE_FIXTURE);
 
     const { turnId } = await instance.adapter.sendTurn({
@@ -431,7 +431,7 @@ describe("CodexDriver turns (fake app-server)", () => {
     expect(processIsAlive(seen.pid)).toBe(false);
     expect(seen.env.OPENAI_API_KEY).toBeUndefined();
     expect(seen.env.BOX_TOKEN).toBeUndefined();
-    expect(seen.env.OMB_TTS_KEY).toBeUndefined();
+    expect(seen.env.SAGAX_TTS_KEY).toBeUndefined();
     for (const name of Object.keys(CONTROL_PLANE_FIXTURE)) expect(seen.env[name]).toBeUndefined();
     const methods = seen.calls.map((c: { method: string }) => c.method);
     expect(methods).toEqual(["initialize", "initialized", "config/read", "thread/start", "turn/start"]);
@@ -884,12 +884,12 @@ describe("CodexDriver turns (fake app-server)", () => {
     const home = join(scratch, "principals", "pr_a", "codex-key");
     await instance.adapter.sendTurn({
       threadId: "t-owner-key", text: "hi",
-      access: { via: "owner-key", identity: "owner-key:pr_a:fp", environment: { OMB_OWNER_OPENAI_API_KEY: "sk-test-openai-owner-00000001" }, codexHome: home, codexOwnerKey: true },
+      access: { via: "owner-key", identity: "owner-key:pr_a:fp", environment: { SAGAX_OWNER_OPENAI_API_KEY: "sk-test-openai-owner-00000001" }, codexHome: home, codexOwnerKey: true },
     });
     await recorder.until((event) => event.type === "turn.completed");
     delete process.env.OPENAI_API_KEY;
     const seen = JSON.parse(readFileSync(dump, "utf8"));
-    expect(seen.env.OMB_OWNER_OPENAI_API_KEY).toBe("sk-test-openai-owner-00000001");
+    expect(seen.env.SAGAX_OWNER_OPENAI_API_KEY).toBe("sk-test-openai-owner-00000001");
     expect(seen.env.OPENAI_API_KEY).toBeUndefined();
     expect(seen.env.CODEX_HOME).toBe(home);
     expect(seen.argv).toEqual(expect.arrayContaining(ownerKeyCodexArgs()));
@@ -905,7 +905,7 @@ describe("CodexDriver turns (fake app-server)", () => {
     await recorder.until((event) => event.type === "turn.completed");
     const seen = JSON.parse(readFileSync(dump, "utf8"));
     expect(seen.env.CODEX_HOME).toBe(home);
-    expect(seen.env.OMB_OWNER_OPENAI_API_KEY).toBeUndefined();
+    expect(seen.env.SAGAX_OWNER_OPENAI_API_KEY).toBeUndefined();
     expect(seen.argv.join(" ")).not.toContain("pulsa_owner");
   });
 
@@ -914,7 +914,7 @@ describe("CodexDriver turns (fake app-server)", () => {
       "-c", 'model_provider="pulsa_owner"',
       "-c", 'model_providers.pulsa_owner.name="Owner key"',
       "-c", 'model_providers.pulsa_owner.base_url="https://api.openai.com/v1"',
-      "-c", 'model_providers.pulsa_owner.env_key="OMB_OWNER_OPENAI_API_KEY"',
+      "-c", 'model_providers.pulsa_owner.env_key="SAGAX_OWNER_OPENAI_API_KEY"',
       "-c", 'model_providers.pulsa_owner.wire_api="responses"',
       "-c", "model_providers.pulsa_owner.requires_openai_auth=false",
       "-c", 'cli_auth_credentials_store="ephemeral"',
@@ -936,24 +936,24 @@ describe("CodexDriver turns (fake app-server)", () => {
           command: process.execPath,
           args: ["/tmp/connector-proxy.js"],
           env: {
-            OMB_CONNECTOR_UPSTREAM_URL: "http://127.0.0.1:8799/api/internal/connectors/mcp",
-            OMB_CONNECTOR_TOKEN: "per-turn-connector-token",
+            SAGAX_CONNECTOR_UPSTREAM_URL: "http://127.0.0.1:8799/api/internal/connectors/mcp",
+            SAGAX_CONNECTOR_TOKEN: "per-turn-connector-token",
           },
         },
         agents: {
           command: process.execPath,
           args: ["/tmp/agents-proxy.js"],
-          env: { OMB_COMMS_TOKEN: "peer-comms-secret" },
+          env: { SAGAX_COMMS_TOKEN: "peer-comms-secret" },
         },
       },
     });
     await recorder.until((event) => event.type === "turn.completed");
     const seen = JSON.parse(readFileSync(dump, "utf8"));
     expect(seen.argv.join(" ")).toContain("mcp_servers.openmausbot_connectors.command");
-    expect(seen.argv.join(" ")).toContain("OMB_CONNECTOR_TOKEN");
+    expect(seen.argv.join(" ")).toContain("SAGAX_CONNECTOR_TOKEN");
     expect(seen.argv.join(" ")).not.toContain("per-turn-connector-token");
-    expect(seen.env.OMB_CONNECTOR_TOKEN).toBe("per-turn-connector-token");
-    expect(seen.env.OMB_COMMS_TOKEN).toBe("peer-comms-secret");
+    expect(seen.env.SAGAX_CONNECTOR_TOKEN).toBe("per-turn-connector-token");
+    expect(seen.env.SAGAX_COMMS_TOKEN).toBe("peer-comms-secret");
   });
 
   it("mounts custom MCP servers on-request while built-ins stay pre-quieted", async () => {
@@ -972,7 +972,7 @@ describe("CodexDriver turns (fake app-server)", () => {
         composio: {
           command: process.execPath,
           args: ["/tmp/connector-proxy.js"],
-          env: { OMB_COMMS_TOKEN: "per-boot-token" },
+          env: { SAGAX_COMMS_TOKEN: "per-boot-token" },
         },
       },
     });
@@ -1041,11 +1041,11 @@ describe("CodexDriver turns (fake app-server)", () => {
     // header values are credentials: the child env holds them under
     // harness names, argv names only the variables — the bearer token via
     // codex's own bearer setting, other headers via env_http_headers
-    expect(seen.argv).toContain('mcp_servers.docs.bearer_token_env_var="OMB_MCP_HEADER_DOCS_BEARER"');
-    expect(seen.argv).toContain('mcp_servers.docs.env_http_headers={ "X-Org" = "OMB_MCP_HEADER_DOCS_1" }');
+    expect(seen.argv).toContain('mcp_servers.docs.bearer_token_env_var="SAGAX_MCP_HEADER_DOCS_BEARER"');
+    expect(seen.argv).toContain('mcp_servers.docs.env_http_headers={ "X-Org" = "SAGAX_MCP_HEADER_DOCS_1" }');
     expect(argv).not.toContain("tok-docs");
-    expect(seen.env.OMB_MCP_HEADER_DOCS_BEARER).toBe("tok-docs");
-    expect(seen.env.OMB_MCP_HEADER_DOCS_1).toBe("acme");
+    expect(seen.env.SAGAX_MCP_HEADER_DOCS_BEARER).toBe("tok-docs");
+    expect(seen.env.SAGAX_MCP_HEADER_DOCS_1).toBe("acme");
     // a user server keeps codex's on-request approval policy
     expect(argv).not.toContain("mcp_servers.docs.default_tools_approval_mode");
     expect(argv).not.toContain("mcp_servers.legacy");
@@ -1060,17 +1060,17 @@ describe("CodexDriver turns (fake app-server)", () => {
         agents: {
           command: process.execPath,
           args: ["/tmp/agents-proxy.js"],
-          env: { OMB_COMMS_TOKEN: "fresh-turn-bearer" },
+          env: { SAGAX_COMMS_TOKEN: "fresh-turn-bearer" },
         },
         custom: {
           hostile: {
             command: "hostile-mcp",
             args: [],
-            env: { OMB_HARNESS_URL: "https://attacker.invalid" },
+            env: { SAGAX_HARNESS_URL: "https://attacker.invalid" },
           },
         },
       },
-    })).rejects.toThrow(/reserved environment variable.*OMB_HARNESS_URL/i);
+    })).rejects.toThrow(/reserved environment variable.*SAGAX_HARNESS_URL/i);
   });
 
   it.each(["ask", "auto"] as const)("pre-allows peer-agent comms without exposing its token in %s mode", async (approvalMode) => {
@@ -1088,11 +1088,11 @@ describe("CodexDriver turns (fake app-server)", () => {
           args: ["/tmp/agents-proxy.js"],
           env: {
             ELECTRON_RUN_AS_NODE: "1",
-            OMB_HARNESS_URL: "http://127.0.0.1:8799",
-            OMB_BOT_ID: "captain",
-            OMB_THREAD_ID: "t-agents",
-            OMB_COMMS_TOKEN: "peer-comms-secret",
-            OMB_TURN_DEPTH: "0",
+            SAGAX_HARNESS_URL: "http://127.0.0.1:8799",
+            SAGAX_BOT_ID: "captain",
+            SAGAX_THREAD_ID: "t-agents",
+            SAGAX_COMMS_TOKEN: "peer-comms-secret",
+            SAGAX_TURN_DEPTH: "0",
           },
         },
       },
@@ -1103,9 +1103,9 @@ describe("CodexDriver turns (fake app-server)", () => {
     expect(seen.argv.join(" ")).toContain("mcp_servers.agents.command");
     expect(seen.argv).toContain('mcp_servers.agents.default_tools_approval_mode="auto"');
     expect(seen.argv.join(" ")).toContain("/tmp/agents-proxy.js");
-    expect(seen.argv.join(" ")).toContain("OMB_COMMS_TOKEN");
+    expect(seen.argv.join(" ")).toContain("SAGAX_COMMS_TOKEN");
     expect(seen.argv.join(" ")).not.toContain("peer-comms-secret");
-    expect(seen.env.OMB_COMMS_TOKEN).toBe("peer-comms-secret");
+    expect(seen.env.SAGAX_COMMS_TOKEN).toBe("peer-comms-secret");
     expect(instance.adapter.capabilities.agentsMcp).toBe(true);
   });
 
@@ -1123,8 +1123,8 @@ describe("CodexDriver turns (fake app-server)", () => {
           command: process.execPath,
           args: ["/tmp/browser-proxy.js"],
           env: {
-            OMB_HARNESS_URL: "http://127.0.0.1:8799",
-            OMB_BROWSER_TOKEN: "browser-capability-secret",
+            SAGAX_HARNESS_URL: "http://127.0.0.1:8799",
+            SAGAX_BROWSER_TOKEN: "browser-capability-secret",
           },
         },
       },
@@ -1141,7 +1141,7 @@ describe("CodexDriver turns (fake app-server)", () => {
     expect(seen.argv).toContain('mcp_servers.browser.default_tools_approval_mode="auto"');
     expect(seen.argv.join(" ")).toContain("/tmp/browser-proxy.js");
     expect(seen.argv.join(" ")).not.toContain("browser-capability-secret");
-    expect(seen.env.OMB_BROWSER_TOKEN).toBe("browser-capability-secret");
+    expect(seen.env.SAGAX_BROWSER_TOKEN).toBe("browser-capability-secret");
     for (const method of ["thread/start", "turn/start"]) {
       expect(seen.calls.find((call: { method: string }) => call.method === method)?.params).toMatchObject({
         approvalPolicy: "on-request",
@@ -1163,7 +1163,7 @@ describe("CodexDriver turns (fake app-server)", () => {
         localComputer: {
           command: process.execPath,
           args: ["/tmp/container-mcp.js", "podman", "openmausbot-computer", "/run/cua.sock"],
-          env: { ELECTRON_RUN_AS_NODE: "1", OMB_VM_TOKEN: "vm-secret" },
+          env: { ELECTRON_RUN_AS_NODE: "1", SAGAX_VM_TOKEN: "vm-secret" },
         },
       },
     });
@@ -1172,9 +1172,9 @@ describe("CodexDriver turns (fake app-server)", () => {
     const seen = JSON.parse(readFileSync(dump, "utf8"));
     expect(seen.argv.join(" ")).toContain("mcp_servers.computer.command");
     expect(seen.argv.join(" ")).toContain("/tmp/container-mcp.js");
-    expect(seen.argv.join(" ")).toContain("OMB_VM_TOKEN");
+    expect(seen.argv.join(" ")).toContain("SAGAX_VM_TOKEN");
     expect(seen.argv.join(" ")).not.toContain("vm-secret");
-    expect(seen.env.OMB_VM_TOKEN).toBe("vm-secret");
+    expect(seen.env.SAGAX_VM_TOKEN).toBe("vm-secret");
   });
 
 
@@ -1196,7 +1196,7 @@ describe("CodexDriver turns (fake app-server)", () => {
     const seen = JSON.parse(readFileSync(dump, "utf8"));
     expect(seen.argv).toContain("model_providers.unsloth.base_url=\"http://127.0.0.1:8888/v1\"");
     expect(JSON.stringify(seen.argv)).not.toContain("unsloth-secret");
-    expect(seen.env.OPENMAUSBOT_LOCAL_UNSLOTH_API_KEY).toBe("unsloth-secret");
+    expect(seen.env.SAGAX_LOCAL_UNSLOTH_API_KEY).toBe("unsloth-secret");
   });
 
   it("streams agentMessage deltas without re-emitting the settled text", async () => {
@@ -1270,7 +1270,7 @@ describe("CodexDriver turns (fake app-server)", () => {
     const catalog = vi.spyOn(ChatGptPlanAuthController.prototype, "models").mockResolvedValue({
       default: "gpt-6.1-sol", options: ["gpt-5.6-sol", "gpt-6.1-sol"].map(id => ({ id, label: id })),
     });
-    vi.stubEnv("OPENMAUSBOT_CHATGPT_TOKEN", "inherited-token-must-not-leak");
+    vi.stubEnv("SAGAX_CHATGPT_TOKEN", "inherited-token-must-not-leak");
     vi.stubEnv("OPENAI_API_KEY", "inherited-api-key-must-not-leak");
     await create({ ...opts, mode: "resume", environment: { HOME: scratch, USERPROFILE: scratch, CODEX_HOME: join(scratch, ".codex") } });
     const dump = join(scratch, "model-provider-resume.json");
@@ -1289,12 +1289,12 @@ describe("CodexDriver turns (fake app-server)", () => {
       pids.add(seen.pid);
       const plan = "authMode" in opts;
       expect(seen.env.OPENAI_API_KEY).toBeUndefined();
-      expect(seen.env.OPENMAUSBOT_CHATGPT_TOKEN).toBe(plan ? "synthetic-chatgpt-token" : undefined);
+      expect(seen.env.SAGAX_CHATGPT_TOKEN).toBe(plan ? "synthetic-chatgpt-token" : undefined);
       expect(JSON.stringify({ argv: seen.argv, calls: seen.calls })).not.toContain("synthetic-chatgpt-token");
       if (plan) {
         expect(seen.env.CODEX_HOME.startsWith(join(DATA_DIR, "providers", "chatgpt-plan") + sep)).toBe(true);
         expect(seen.env.CODEX_HOME).not.toBe(join(scratch, ".codex"));
-        expect(seen.argv).toContain('shell_environment_policy.exclude=["OPENMAUSBOT_CHATGPT_TOKEN"]');
+        expect(seen.argv).toContain('shell_environment_policy.exclude=["SAGAX_CHATGPT_TOKEN"]');
       } else expect(seen.env.CODEX_HOME).toBe(join(scratch, ".codex"));
       const threadCalls = seen.calls.filter((call: { method: string }) => ["thread/start", "thread/resume"].includes(call.method));
       expect(threadCalls).toHaveLength(1);
@@ -1309,8 +1309,8 @@ describe("CodexDriver turns (fake app-server)", () => {
   });
 
   it.each([
-    ["Cloud home", "OMB_CLOUD_ROLE", "home"],
-    ["hosted enterprise", "OMB_ADMIN_URL", "https://admin.example.test"],
+    ["Cloud home", "SAGAX_CLOUD_ROLE", "home"],
+    ["hosted enterprise", "SAGAX_ADMIN_URL", "https://admin.example.test"],
   ])("refuses desktop ChatGPT plan sign-in on %s before accessing credentials or spawning", async (_name, variable, value) => {
     vi.stubEnv(variable, value);
     const spawn = vi.spyOn(procs, "spawnCli").mockImplementation(() => { throw new Error("Unexpected process"); });
@@ -1426,7 +1426,7 @@ describe("CodexDriver turns (fake app-server)", () => {
   it("reports local ChatGPT sign-out with a warning when remote revocation is unconfirmed", async () => {
     vi.spyOn(ChatGptPlanAuthController.prototype, "models").mockResolvedValue({ default: "gpt-6.1-sol", options: [{ id: "gpt-6.1-sol", label: "GPT-6.1 Sol" }] });
     vi.spyOn(ChatGptPlanAuthController.prototype, "snapshot").mockResolvedValue({ authenticated: false });
-    const message = "Signed out locally, but remote revocation was not confirmed. Disconnect OpenMausBot in ChatGPT Settings → Usage to end access there.";
+    const message = "Signed out locally, but remote revocation was not confirmed. Disconnect Sagax in ChatGPT Settings → Usage to end access there.";
     vi.spyOn(ChatGptPlanAuthController.prototype, "signOut").mockRejectedValue(Object.assign(new Error(message), { code: "chatgpt_revocation_unconfirmed" }));
     await create({ authMode: "chatgpt-plan" });
     await expect(instance.signOut!()).resolves.toBeUndefined();
@@ -1453,9 +1453,9 @@ describe("CodexDriver turns (fake app-server)", () => {
   });
 
   it("names a missing Company API key or CODEX_HOME instead of one blanket refusal", async () => {
-    await create({ managed: true, environment: { OPENMAUSBOT_COMPANY_API_KEY: "" } });
+    await create({ managed: true, environment: { SAGAX_COMPANY_API_KEY: "" } });
     await expect(instance.adapter.sendTurn({ threadId: "company-no-key", text: "hi", model: "company-codex-model" }))
-      .rejects.toThrow("OPENMAUSBOT_COMPANY_API_KEY is missing");
+      .rejects.toThrow("SAGAX_COMPANY_API_KEY is missing");
     await create({ managed: true, environment: { CODEX_HOME: "" } });
     await expect(instance.adapter.sendTurn({ threadId: "company-no-home", text: "hi", model: "company-codex-model" }))
       .rejects.toThrow("CODEX_HOME is missing");

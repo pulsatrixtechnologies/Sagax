@@ -31,7 +31,7 @@ it("confirms alert and voice proposals, expires stale cards, and supersedes cred
     await control("send", "--bot", bot.id, "--task", bot.threadId, "--text", "Review my profile preferences.");
     let token = "";
     await expect.poll(() => {
-      try { token = JSON.parse(readFileSync(fixture.fixtureDumpPath, "utf8")).mcpConfig.mcpServers.agents.env.OMB_COMMS_TOKEN; }
+      try { token = JSON.parse(readFileSync(fixture.fixtureDumpPath, "utf8")).mcpConfig.mcpServers.agents.env.SAGAX_COMMS_TOKEN; }
       catch { return false; }
       return Boolean(token);
     }, { timeout: 15_000 }).toBe(true);
@@ -54,7 +54,7 @@ it("confirms alert and voice proposals, expires stale cards, and supersedes cred
     await control("send", "--bot", bot.id, "--task", bot.threadId, "--text", "Propose fresh preferences after the old cards expired.");
     await expect.poll(() => JSON.parse(readFileSync(fixture.fixtureDumpPath, "utf8")).pid,
       { timeout: 15_000 }).not.toBe(previousPid);
-    token = JSON.parse(readFileSync(fixture.fixtureDumpPath, "utf8")).mcpConfig.mcpServers.agents.env.OMB_COMMS_TOKEN;
+    token = JSON.parse(readFileSync(fixture.fixtureDumpPath, "utf8")).mcpConfig.mcpServers.agents.env.SAGAX_COMMS_TOKEN;
     const toggle = await propose({ notifications: false, speakReplies: true });
     const credential = (reason: string) => api("POST", "/api/internal/request-credential", {
       fromBotId: bot.id, fromThreadId: bot.threadId, credentialId: "openaiImageApiKey", reason,

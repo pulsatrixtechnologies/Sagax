@@ -93,7 +93,7 @@ async function waitFor<T>(read: () => Promise<T | null | undefined | false>, ms 
 /** An open /api/events stream: everything it received so far, and whether the server ended it. */
 async function openStream(auth: Auth): Promise<{ text: () => string; ended: Promise<void>; close: () => void }> {
   const { body } = await api("POST", "/api/auth/stream-ticket", auth);
-  expect(body.ticket).toMatch(/^omb_tick_/);
+  expect(body.ticket).toMatch(/^sgx_tick_/);
   return new Promise((resolve, reject) => {
     let received = "";
     const req = request(`${BASE}/api/events?ticket=${encodeURIComponent(body.ticket)}`, { headers: { accept: "text/event-stream" } }, (res) => {
@@ -124,15 +124,15 @@ async function start() {
     cwd: join(SERVER_DIR, ".."),
     env: {
       ...(process.env.PATH ? { PATH: process.env.PATH } : {}),
-      HOME: home, USERPROFILE: home, OMB_LOCAL_VM_TEST_NAMESPACE: process.env.OMB_LOCAL_VM_TEST_NAMESPACE ?? "", OMB_PORT: String(PORT), OMB_WEBHOOK_PORT: String(PORT + 1),
-      OMB_IDENTITY: "perspicax",
-      OMB_PERSPICAX_ISSUER: idp.issuer,
-      OMB_PUBLIC_URL: BASE,
-      OMB_PERSPICAX_LINK_FILE: join(home, "link", "pulsabot.json"),
-      OMB_PERSPICAX_DIRECTORY_SECONDS: "5",
-      OMB_ANTHROPIC_API_KEY: ORG_KEY,
-      OMB_ORG_NAME: "Acme",
-      OMB_TEST_INTERNAL_CAPABILITY_KEY: TEST_CAPABILITY_KEY,
+      HOME: home, USERPROFILE: home, SAGAX_LOCAL_VM_TEST_NAMESPACE: process.env.SAGAX_LOCAL_VM_TEST_NAMESPACE ?? "", SAGAX_PORT: String(PORT), SAGAX_WEBHOOK_PORT: String(PORT + 1),
+      SAGAX_IDENTITY: "perspicax",
+      SAGAX_PERSPICAX_ISSUER: idp.issuer,
+      SAGAX_PUBLIC_URL: BASE,
+      SAGAX_PERSPICAX_LINK_FILE: join(home, "link", "pulsabot.json"),
+      SAGAX_PERSPICAX_DIRECTORY_SECONDS: "5",
+      SAGAX_ANTHROPIC_API_KEY: ORG_KEY,
+      SAGAX_ORG_NAME: "Acme",
+      SAGAX_TEST_INTERNAL_CAPABILITY_KEY: TEST_CAPABILITY_KEY,
     },
     stdio: ["ignore", "pipe", "pipe"],
   });
@@ -164,7 +164,7 @@ posixOnly("Perspicax organization, slice 3: directory, sharing with a user, acce
     PORT = await freePortBlock([0, 1]);
     BASE = `http://127.0.0.1:${PORT}`;
     home = mkdtempSync(join(tmpdir(), "omb-org-sharing-"));
-    const data = join(home, ".openmausbot");
+    const data = join(home, ".sagax");
     mkdirSync(data, { recursive: true });
     mkdirSync(join(home, "link"), { recursive: true, mode: 0o750 });
     writeFileSync(join(home, "link", "pulsabot.json"), JSON.stringify({
@@ -231,7 +231,7 @@ posixOnly("Perspicax organization, slice 3: directory, sharing with a user, acce
     expect(Array.isArray((await api("GET", "/api/health", bob)).body.engines)).toBe(true);
     const bare = await api("GET", "/api/health");
     expect(bare.status).toBe(200);
-    expect(bare.body).toEqual({ app: "openmausbot" });
+    expect(bare.body).toEqual({ app: "openmausbot", product: "sagax" });
   });
 
   it("S3-4 (B): shared with bob, answered with the org key; dave sees none of it", async () => {
@@ -396,7 +396,7 @@ posixOnly("Perspicax organization, slice 3: directory, sharing with a user, acce
     // runs on her own Claude subscription (the server's sign-ins no longer
     // serve an admin, 2026-10-01): the marker a finished sign-in leaves.
     const aliceId = (await api("GET", "/api/auth/session", alice)).body.principalId as string;
-    const aliceLogin = join(home, ".openmausbot", "principals", aliceId, "claude");
+    const aliceLogin = join(home, ".sagax", "principals", aliceId, "claude");
     mkdirSync(aliceLogin, { recursive: true, mode: 0o700 });
     writeFileSync(join(aliceLogin, ".pulsabot-login.json"), JSON.stringify({ at: Date.now() }), { mode: 0o600 });
     const held = await createBot(alice, "Holder", "stuck");
@@ -512,7 +512,7 @@ posixOnly("Perspicax organization, slice 3: directory, sharing with a user, acce
     const respond = (auth: Auth, requestId: string, extra: Record<string, unknown> = {}) =>
       api("POST", `/api/threads/${wren.threadId}/respond`, auth, { requestId, behavior: "allow", ...extra });
     try {
-      const data = realpathSync(join(home, ".openmausbot"));
+      const data = realpathSync(join(home, ".sagax"));
       // the shared Claude settings (a hook there runs on every bot's next turn)
       const settings = await ask("Write", { file_path: join(data, ".claude", "settings.json"), content: "{\"hooks\":{}}" });
       expect(settings.card.adminApproval).toBe(true);

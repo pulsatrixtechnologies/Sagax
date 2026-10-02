@@ -2,8 +2,8 @@
 // historical MausAvatar API so no call site changes. The bot's color is the
 // owl's plumage; the app's MausState vocabulary and one-shot MausMotion beats
 // are translated to the owl's six states by src/lib/owl/owl-state.ts. A bot
-// may wear another character instead (bot.mascotLook: one of the original
-// shapes, or Trombi), drawn by BotAvatar for every bot avatar in the app.
+// may wear another character instead (bot.mascotLook: one of the shapes, or
+// Trombi), drawn by BotAvatar for every bot avatar in the app.
 import {
   forwardRef,
   memo,
@@ -21,7 +21,9 @@ import type { MascotBodyId } from "../../shared/mascot-bodies";
 import type { MascotSkinId } from "../../shared/mascot-skins";
 import { botMascotLook, completeMascotLook, type MascotLook } from "../../shared/mascot-look";
 import { ShapeMascot, type ShapeMood } from "./ShapeMascot";
-import { Trombi, type TrombiPose } from "./retro-assistant/Trombi";
+import type { TrombiPose } from "./retro-assistant/Trombi";
+import { SkinnedTrombi } from "./skin-fx/SkinnedTrombi";
+import type { FxMoveRequest } from "./skin-fx/skin-fx";
 
 /** Kept for API compatibility (the preview page reads them); the owl ignores both. */
 export const EYE_SCALE = 1.12;
@@ -159,9 +161,11 @@ export type BotAvatarProps = Omit<MausAvatarProps, "color"> & {
     avatarFocusY?: number;
     mascotBody?: MascotBodyId | null;
     mascotSkin?: MascotSkinId | null;
-    /** The bot's character (owl, original shape, Trombi); absent means the owl. */
+    /** The bot's character (owl, shape, Trombi); absent means the owl. */
     mascotLook?: MascotLook | null;
   };
+  /** A one-shot move of a shape or Trombi (the avatar popover's Moves): its body motion and its skin's effect. */
+  characterMove?: FxMoveRequest | null;
   /** Mark this avatar as its person's Primary Bot: a small orange circle with
    * a white star at the bottom-right corner. Lists pass it (sidebar,
    * pickers, team map, chat header); a transcript does not. */
@@ -211,20 +215,15 @@ export function trombiPoseFor(state: MausState | undefined): TrombiPose {
 }
 
 /**
- * The bot's character, when it is not the owl: one of the original shapes or
- * Trombi, in the bot's look. Every bot avatar in the app comes through
+ * The bot's character, when it is not the owl: one of the shapes or Trombi, in the bot's look. Every bot avatar in the app comes through
  * BotAvatar, so this is where a character change shows everywhere.
  */
-function CharacterAvatar({ look, color, size, state, animated = true, label }: { look: MascotLook; color: MausColor; size: number; state?: MausState; animated?: boolean; label?: string | null }) {
+function CharacterAvatar({ look, color, size, state, animated = true, label, move }: { look: MascotLook; color: MausColor; size: number; state?: MausState; animated?: boolean; label?: string | null; move?: FxMoveRequest | null }) {
   const full = completeMascotLook(look);
   if (full.character === "shape") {
-    return <ShapeMascot shape={full.shape} skin={full.skins.shape} color={color} size={size} mood={shapeMoodFor(state)} animated={animated} label={label ?? null} />;
+    return <ShapeMascot shape={full.shape} skin={full.skins.shape} color={color} size={size} mood={shapeMoodFor(state)} animated={animated} move={move} moveBody label={label ?? null} />;
   }
-  return (
-    <span className={`trombi-avatar trombi-skin-${full.skins.trombi} inline-flex shrink-0 items-end justify-center`} style={{ width: size, height: size }} role={label ? "img" : undefined} aria-label={label ?? undefined}>
-      <Trombi pose={trombiPoseFor(state)} size={Math.round(size * 0.78)} still={!animated} label={null} />
-    </span>
-  );
+  return <SkinnedTrombi skin={full.skins.trombi} pose={trombiPoseFor(state)} size={size} width={Math.round(size * 0.78)} animated={animated} move={move} moveBody label={label ?? null} />;
 }
 
 export type BotAvatarOutcome = "flatImage" | "gradientMascot";
@@ -269,7 +268,7 @@ export function BotAvatar({ primary, primaryRingClassName, ...props }: BotAvatar
   );
 }
 
-function BotAvatarImage({ bot, size = 44, label, ...mascotProps }: Omit<BotAvatarProps, "primary" | "primaryRingClassName">) {
+function BotAvatarImage({ bot, size = 44, label, characterMove, ...mascotProps }: Omit<BotAvatarProps, "primary" | "primaryRingClassName">) {
   const profile = botAvatarProfile(bot);
   const [imageFailed, setImageFailed] = useState(false);
 
@@ -283,7 +282,7 @@ function BotAvatarImage({ bot, size = 44, label, ...mascotProps }: Omit<BotAvata
 
   const look = botMascotLook(bot.mascotLook);
   if (outcome !== "flatImage" && look.character !== "owl") {
-    return <CharacterAvatar look={look} color={bot.color} size={size} state={mascotProps.state} animated={mascotProps.animated} label={label ?? bot.name} />;
+    return <CharacterAvatar look={look} color={bot.color} size={size} state={mascotProps.state} animated={mascotProps.animated} label={label ?? bot.name} move={characterMove} />;
   }
   if (outcome !== "flatImage") {
     return (

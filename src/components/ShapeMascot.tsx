@@ -1,14 +1,20 @@
-// The original mascot shapes: a soft body in the bot's color with two small
-// eyes, in thirteen shapes (shared/mascot-look.ts, shape-art.ts) and six skins. Pure SVG and
-// CSS, so it costs nothing in the sidebar and the chat. It blinks, breathes,
-// looks up while thinking and bounces while working; reduced motion keeps it
-// still. The desktop mascot draws the same shapes and moves them itself.
+// The mascot shapes: a soft body in the bot's color with two small eyes, in
+// thirteen shapes (shared/mascot-look.ts, shape-art.ts) and thirteen skins,
+// four everyday and nine premium (skin-fx/shape-skins.tsx). Pure SVG and CSS.
+// Small avatars draw a skin's still look (no filter, nothing moving), so the
+// sidebar and the chat cost nothing; larger ones play its idle effect, its
+// equip animation and its move effects. It blinks, breathes, looks up while
+// thinking and bounces while working; reduced motion keeps it still. The
+// desktop mascot draws the same component and moves it itself.
 import "./shape-mascot.css";
-import { useId } from "react";
+import { useId, useRef } from "react";
 import { MAUS_COLORS } from "@/lib/mascot";
 import { cn } from "@/lib/cn";
-import { MASCOT_SHAPES, SHAPE_SKINS, type MascotShape, type ShapeSkin } from "../../shared/mascot-look";
+import { MASCOT_SHAPES, SHAPE_SKIN_TIER, SHAPE_SKINS, type MascotShape, type ShapeSkin, type SkinTier } from "../../shared/mascot-look";
 import { EYES, SHAPE_ART } from "./shape-art";
+import { shapeSkinBase, shapeSkinLayers, tint, type ShapeSkinBase } from "./skin-fx/shape-skins";
+import { EquipFx, MoveFx } from "./skin-fx/SkinFx";
+import { fxDetail, fxPalette, useEquipBurst, useFxVisibility, useMoveBurst, useReducedMotion, type FxDetail, type FxMoveRequest } from "./skin-fx/skin-fx";
 
 export { SHAPE_ART, EYES } from "./shape-art";
 
@@ -45,54 +51,67 @@ export interface ShapeMascotProps {
   mood?: ShapeMood;
   /** Off draws a still frame (thumbnails, reduced motion). */
   animated?: boolean;
+  /** The skin's full effects or its cheap still look; by default full when animated and large enough (FX_FULL_MIN). */
+  detail?: FxDetail;
+  /** A one-shot move to show: its effect (and, with moveBody, the body's own motion). */
+  move?: FxMoveRequest | null;
+  /** The body plays the move itself (app avatars); the desktop mascot moves the body on its own. */
+  moveBody?: boolean;
   label?: string | null;
   className?: string;
 }
 
 const hexOf = (color: string) => (MAUS_COLORS as Record<string, string>)[color] ?? (/^#[0-9a-fA-F]{6}$/.test(color) ? color : MAUS_COLORS.green);
 
-/** Mixes a hex color toward white (amount 0..1). */
-export function tint(hex: string, amount: number): string {
-  const n = Number.parseInt(hex.slice(1), 16);
-  const mix = (c: number) => Math.round(c + (255 - c) * amount);
-  return `#${[(n >> 16) & 255, (n >> 8) & 255, n & 255].map((c) => mix(c).toString(16).padStart(2, "0")).join("")}`;
+export { tint };
+
+/** How a skin paints a shape: its base fill, outline, eyes, tier and effect family. */
+export function shapeSkinPaint(skin: ShapeSkin, hex: string): ShapeSkinBase & { tier: SkinTier } {
+  const known = SHAPE_SKINS.includes(skin) ? skin : "plain";
+  return { ...shapeSkinBase(known, hex), tier: SHAPE_SKIN_TIER[known] };
 }
 
-/** How a skin paints a shape: its fill, its outline, its eyes, and an optional glow or shine. */
-export function shapeSkinPaint(skin: ShapeSkin, hex: string): { fill: string; stroke: string | null; strokeWidth: number; eyes: string; glow: string | null; shine: boolean } {
-  switch (skin) {
-    case "glossy":
-      return { fill: hex, stroke: null, strokeWidth: 0, eyes: "#1b1f27", glow: null, shine: true };
-    case "outline":
-      return { fill: tint(hex, 0.92), stroke: hex, strokeWidth: 6, eyes: "#1b1f27", glow: null, shine: false };
-    case "neon":
-      return { fill: "#14161c", stroke: tint(hex, 0.15), strokeWidth: 4, eyes: tint(hex, 0.35), glow: tint(hex, 0.1), shine: false };
-    case "pastel":
-      return { fill: tint(hex, 0.55), stroke: null, strokeWidth: 0, eyes: "#3a3f4b", glow: null, shine: false };
-    case "night":
-      return { fill: "#1c2236", stroke: hex, strokeWidth: 2.5, eyes: "#f6f1e8", glow: null, shine: false };
-    default:
-      return { fill: hex, stroke: null, strokeWidth: 0, eyes: "#1b1f27", glow: null, shine: false };
-  }
-}
-
-export function ShapeMascot({ shape = "circle", skin = "plain", color, size = 44, mood = "idle", animated = true, label = null, className }: ShapeMascotProps) {
+export function ShapeMascot({ shape = "circle", skin = "plain", color, size = 44, mood = "idle", animated = true, detail, move, moveBody = false, label = null, className }: ShapeMascotProps) {
   const art = SHAPE_ART[MASCOT_SHAPES.includes(shape) ? shape : "circle"];
-  const paint = shapeSkinPaint(SHAPE_SKINS.includes(skin) ? skin : "plain", hexOf(color));
+  const known: ShapeSkin = SHAPE_SKINS.includes(skin) ? skin : "plain";
+  const hex = hexOf(color);
+  const paint = shapeSkinPaint(known, hex);
+  const reduced = useReducedMotion();
+  const full = fxDetail(size, animated, detail) === "full";
+  const live = full && !reduced;
   const uid = `shape-${useId().replace(/[^a-zA-Z0-9_-]/g, "")}`;
+  const layers = shapeSkinLayers(known, art.d, hex, uid, full);
+  const root = useRef<HTMLSpanElement>(null);
+  useFxVisibility(root, live);
+  const equip = useEquipBurst(known, live);
+  const burst = useMoveBurst(move, live);
   const look = mood === "thinking" ? -3 : 0;
+  const palette = fxPalette(paint.fx, hex);
   return (
     <span
-      className={cn("shape-mascot inline-flex shrink-0", animated && `shape-mascot-live shape-mood-${mood}`, className)}
+      ref={root}
+      className={cn("shape-mascot relative inline-flex shrink-0", animated && `shape-mascot-live shape-mood-${mood}`, live && "skin-fx-live", className)}
       style={{ width: size, height: size }}
       data-shape={shape}
-      data-shape-skin={skin}
+      data-shape-skin={known}
+      data-skin-tier={paint.tier}
+      data-fx={full ? "full" : "static"}
       role={label ? "img" : undefined}
       aria-label={label ?? undefined}
       aria-hidden={label ? undefined : true}
     >
-      <svg viewBox="0 0 100 100" width={size} height={size} style={{ overflow: "visible", display: "block" }}>
+      <svg
+        viewBox="0 0 100 100"
+        width={size}
+        height={size}
+        className={cn(burst && moveBody && `fx-body-move fx-body-${burst.move}`, equip && "fx-equip-pop")}
+        key={burst && moveBody ? burst.key : undefined}
+        style={{ overflow: "visible", display: "block" }}
+      >
         <defs>
+          <clipPath id={`${uid}-body`}>
+            <path d={art.d} />
+          </clipPath>
           {paint.shine && (
             <radialGradient id={`${uid}-shine`} cx="0.32" cy="0.26" r="0.75">
               <stop offset="0" stopColor="#ffffff" stopOpacity="0.55" />
@@ -100,29 +119,26 @@ export function ShapeMascot({ shape = "circle", skin = "plain", color, size = 44
               <stop offset="1" stopColor="#000000" stopOpacity="0.18" />
             </radialGradient>
           )}
-          {paint.glow && (
-            <filter id={`${uid}-glow`} x="-30%" y="-30%" width="160%" height="160%">
-              <feGaussianBlur stdDeviation="2.4" result="blur" />
-              <feMerge>
-                <feMergeNode in="blur" />
-                <feMergeNode in="SourceGraphic" />
-              </feMerge>
-            </filter>
-          )}
+          {layers.defs}
         </defs>
+        {layers.under}
         <g className="shape-body">
           <path
             d={art.d}
-            fill={paint.fill}
-            stroke={paint.stroke ?? undefined}
-            strokeWidth={paint.stroke ? paint.strokeWidth : undefined}
+            fill={layers.fill}
+            stroke={!layers.ownEdge && paint.stroke ? paint.stroke : undefined}
+            strokeWidth={!layers.ownEdge && paint.stroke ? paint.strokeWidth : undefined}
             strokeLinejoin="round"
-            filter={paint.glow ? `url(#${uid}-glow)` : undefined}
           />
           {paint.shine && <path d={art.d} fill={`url(#${uid}-shine)`} />}
+          {layers.inner && <g clipPath={`url(#${uid}-body)`}>{layers.inner}</g>}
+          {layers.edge}
           <ShapeEyes face={art.face} color={paint.eyes} mood={mood} look={look} />
         </g>
+        {layers.around && <g className="skin-fx-around">{layers.around}</g>}
       </svg>
+      {equip && <EquipFx key={equip} palette={palette} uid={`${uid}-eq`} />}
+      {burst && <MoveFx key={burst.key} move={burst.move} palette={palette} uid={`${uid}-mv`} path={art.d} />}
     </span>
   );
 }

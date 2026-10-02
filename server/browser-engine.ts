@@ -220,7 +220,7 @@ interface BrowserLookupOptions {
 }
 
 function packagedBrowser(options: BrowserLookupOptions) {
-  const resources = (options.env ?? process.env).OMB_RESOURCES_PATH;
+  const resources = (options.env ?? process.env).SAGAX_RESOURCES_PATH;
   if (!resources) return null;
   try {
     return browserBundlePaths(join(resolve(resources), "browser-engine"), `${options.platform ?? process.platform}-${options.arch ?? process.arch}`);
@@ -233,13 +233,13 @@ function completePackage(bundle: NonNullable<ReturnType<typeof packagedBrowser>>
   return [bundle.manifest, bundle.engine, bundle.chrome, bundle.licenses].every(exists);
 }
 
-/** OMB_AGENT_BROWSER_PATH, then the complete desktop bundle, pinned download, then
+/** SAGAX_AGENT_BROWSER_PATH, then the complete desktop bundle, pinned download, then
  * PATH (a package or image that installed it globally). */
 export function resolveAgentBrowserBinary(options: BrowserLookupOptions = {}): string | null {
   const env = options.env ?? process.env;
   const platform = options.platform ?? process.platform;
   const exists = options.exists ?? existsSync;
-  const override = env.OMB_AGENT_BROWSER_PATH?.trim();
+  const override = env.SAGAX_AGENT_BROWSER_PATH?.trim();
   if (override) return resolve(override) && exists(resolve(override)) ? resolve(override) : null;
   const bundle = packagedBrowser(options);
   if (bundle && exists(bundle.directory)) return completePackage(bundle, exists) ? bundle.engine : null;

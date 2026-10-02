@@ -21,8 +21,8 @@ try {
 
 // The who-is-driving pair rides in env, not argv — argv is world-readable
 // through `ps`, and the token guards a loopback endpoint.
-const controlUrl = process.env.OMB_CONTROL_URL ?? "";
-const controlToken = process.env.OMB_CONTROL_TOKEN ?? "";
+const controlUrl = process.env.SAGAX_CONTROL_URL ?? "";
+const controlToken = process.env.SAGAX_CONTROL_TOKEN ?? "";
 const ssh = prepareVpsSsh(DATA_DIR, augmentedPath());
 
 runMcpBridge({

@@ -1,6 +1,6 @@
 // Router and API-key setup lives under Settings → Connections: searching for
 // what people call it has to find it, and OpenCode's own sign-in is named
-// there for providers OpenMaus has no field for.
+// there for providers Sagax has no field for.
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";

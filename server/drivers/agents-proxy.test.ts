@@ -451,13 +451,13 @@ beforeAll(async () => {
       // on where the test happens to run. +05:30 also keeps the half-hour
       // offset visible in the times.
       TZ: "Asia/Kolkata",
-      OMB_HARNESS_URL: `http://127.0.0.1:${stubPort}`,
-      OMB_BOT_ID: "bot-asker",
-      OMB_THREAD_ID: "thread-asker-routine",
-      OMB_COMMS_TOKEN: TOKEN,
-      OMB_TURN_DEPTH: "0",
-      OMB_SKILL_AUTHORING_ENABLED: "1",
-      OMB_SHARED_COMPUTERS_ENABLED: "1",
+      SAGAX_HARNESS_URL: `http://127.0.0.1:${stubPort}`,
+      SAGAX_BOT_ID: "bot-asker",
+      SAGAX_THREAD_ID: "thread-asker-routine",
+      SAGAX_COMMS_TOKEN: TOKEN,
+      SAGAX_TURN_DEPTH: "0",
+      SAGAX_SKILL_AUTHORING_ENABLED: "1",
+      SAGAX_SHARED_COMPUTERS_ENABLED: "1",
     },
     stdio: ["pipe", "pipe", "inherit"],
   });
@@ -2073,10 +2073,10 @@ describe("standing external runtime", () => {
 
   beforeAll(async () => {
     external = spawn(process.execPath, [PROXY], {
-      env: { ...childEnv(), OMB_HARNESS_URL: `http://127.0.0.1:${stubPort}`, OMB_BOT_ID: "bot-asker",
-        OMB_THREAD_ID: "thread-asker-routine", OMB_COMMS_TOKEN: TOKEN, OMB_TURN_DEPTH: "0",
-        OMB_EXTERNAL_RUNTIME: "1", OMB_ROOM_TURN: "1", OMB_OWN_THREAD_CREATION: "1",
-        OMB_SKILL_AUTHORING_ENABLED: "1", OMB_SHARED_COMPUTERS_ENABLED: "1" },
+      env: { ...childEnv(), SAGAX_HARNESS_URL: `http://127.0.0.1:${stubPort}`, SAGAX_BOT_ID: "bot-asker",
+        SAGAX_THREAD_ID: "thread-asker-routine", SAGAX_COMMS_TOKEN: TOKEN, SAGAX_TURN_DEPTH: "0",
+        SAGAX_EXTERNAL_RUNTIME: "1", SAGAX_ROOM_TURN: "1", SAGAX_OWN_THREAD_CREATION: "1",
+        SAGAX_SKILL_AUTHORING_ENABLED: "1", SAGAX_SHARED_COMPUTERS_ENABLED: "1" },
       stdio: ["pipe", "pipe", "inherit"],
     });
     let buffer = "";
@@ -2173,13 +2173,13 @@ describe("with computer sharing off (the default)", () => {
     gated = spawn(process.execPath, [PROXY], {
       env: {
         ...childEnv(),
-        OMB_HARNESS_URL: `http://127.0.0.1:${stubPort}`,
-        OMB_BOT_ID: "bot-asker",
-        OMB_THREAD_ID: "thread-asker-routine",
-        OMB_COMMS_TOKEN: TOKEN,
-        OMB_TURN_DEPTH: "0",
-        OMB_SKILL_AUTHORING_ENABLED: "1",
-        // deliberately no OMB_SHARED_COMPUTERS_ENABLED
+        SAGAX_HARNESS_URL: `http://127.0.0.1:${stubPort}`,
+        SAGAX_BOT_ID: "bot-asker",
+        SAGAX_THREAD_ID: "thread-asker-routine",
+        SAGAX_COMMS_TOKEN: TOKEN,
+        SAGAX_TURN_DEPTH: "0",
+        SAGAX_SKILL_AUTHORING_ENABLED: "1",
+        // deliberately no SAGAX_SHARED_COMPUTERS_ENABLED
       },
       stdio: ["pipe", "pipe", "inherit"],
     });
@@ -2241,12 +2241,12 @@ describe("coordinate_bots arguments (room turn)", () => {
     room = spawn(process.execPath, [PROXY], {
       env: {
         ...childEnv(),
-        OMB_HARNESS_URL: `http://127.0.0.1:${stubPort}`,
-        OMB_BOT_ID: "bot-asker",
-        OMB_THREAD_ID: "thread-asker-routine",
-        OMB_COMMS_TOKEN: TOKEN,
-        OMB_TURN_DEPTH: "0",
-        OMB_ROOM_TURN: "1",
+        SAGAX_HARNESS_URL: `http://127.0.0.1:${stubPort}`,
+        SAGAX_BOT_ID: "bot-asker",
+        SAGAX_THREAD_ID: "thread-asker-routine",
+        SAGAX_COMMS_TOKEN: TOKEN,
+        SAGAX_TURN_DEPTH: "0",
+        SAGAX_ROOM_TURN: "1",
       },
       stdio: ["pipe", "pipe", "inherit"],
     });

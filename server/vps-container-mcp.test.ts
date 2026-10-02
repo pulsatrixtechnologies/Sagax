@@ -23,7 +23,7 @@ function runBridge(bin: string, input: string) {
         vpsContainerName("bridge-test"),
       ],
       {
-        env: { ...process.env, OMB_EXTRA_PATH: bin, NODE_NO_WARNINGS: "1" },
+        env: { ...process.env, SAGAX_EXTRA_PATH: bin, NODE_NO_WARNINGS: "1" },
         stdio: ["pipe", "pipe", "pipe"],
       },
     );

@@ -44,7 +44,7 @@ const ALICE: FakeOidcUser = { sub: "01J9S6ALICE00000000000000A", email: "alice@e
 const BOB: FakeOidcUser = { sub: "01J9S6BOB000000000000000B", email: "bob@example.test", name: "Bob", preferred_username: "bob", role: "employee" };
 const CAROL: FakeOidcUser = { sub: "01J9S6CAROL00000000000000C", email: "carol@example.test", name: "Carol", preferred_username: "carol", role: "employee" };
 const PROFILE = { id: "01J9S6PROFILEDISPATCH00001", slug: "dispatch", name: "Dispatch", description: "Tickets and schedules" };
-/** The renewal window of this server (OMB_ROUTINE_RENEW_SECONDS). */
+/** The renewal window of this server (SAGAX_ROUTINE_RENEW_SECONDS). */
 const RENEW_SECONDS = 45;
 
 let PORT = 0;
@@ -132,7 +132,7 @@ async function cardsFor(auth: Auth, threadId: string, routineId: string): Promis
   return messages.filter((m) => m.kind === "access" && m.access?.reason === "routine_delegation" && m.access.routineId === routineId);
 }
 /** The scheduler's file, read while nobody is signed in. */
-const onDisk = () => JSON.parse(readFileSync(join(home, ".openmausbot", "routines.json"), "utf8")) as {
+const onDisk = () => JSON.parse(readFileSync(join(home, ".sagax", "routines.json"), "utf8")) as {
   routines: Array<{ id: string; botId?: string; runAs?: string; suspended?: { reason: string } }>;
   runs: Array<Run & { resultsThreadId?: string; threadId?: string }>;
 };
@@ -144,7 +144,7 @@ const runThread = (runId: string) => {
 /** The access cards stored in a thread, whoever they are for (read from
  * the message store, not through a viewer). */
 const storedAccessCards = (threadId: string): NonNullable<Message["access"]>[] => {
-  const db = new DatabaseSync(join(home, ".openmausbot", "messages.db"), { readOnly: true });
+  const db = new DatabaseSync(join(home, ".sagax", "messages.db"), { readOnly: true });
   try {
     const rows = db.prepare("SELECT json FROM messages WHERE thread_id = ? AND kind = 'access'").all(threadId) as Array<{ json: string }>;
     return rows.map((row) => (JSON.parse(row.json) as Message).access!).filter(Boolean);
@@ -154,7 +154,7 @@ const storedAccessCards = (threadId: string): NonNullable<Message["access"]>[] =
 };
 /** Every usage row the server booked (server/usage-ledger.ts). */
 const usageRows = () => {
-  const dir = join(home, ".openmausbot", "usage");
+  const dir = join(home, ".sagax", "usage");
   if (!existsSync(dir)) return [];
   return readdirSync(dir).filter((name) => name.endsWith(".jsonl")).sort().flatMap((name) => readFileSync(join(dir, name), "utf8").split("\n").filter(Boolean).map((line) => JSON.parse(line) as {
     access?: string; payerPrincipalId?: string; ownerPrincipalId?: string; trigger?: { kind: string; routineId?: string; runAsPrincipalId?: string; principalId?: string };
@@ -167,14 +167,14 @@ async function start() {
     cwd: join(SERVER_DIR, ".."),
     env: {
       ...(process.env.PATH ? { PATH: process.env.PATH } : {}),
-      HOME: home, USERPROFILE: home, OMB_LOCAL_VM_TEST_NAMESPACE: process.env.OMB_LOCAL_VM_TEST_NAMESPACE ?? "", OMB_PORT: String(PORT), OMB_WEBHOOK_PORT: String(PORT + 1),
-      OMB_IDENTITY: "perspicax",
-      OMB_PERSPICAX_ISSUER: idp.issuer,
-      OMB_PUBLIC_URL: BASE,
-      OMB_PERSPICAX_LINK_FILE: join(home, "link", "pulsabot.json"),
-      OMB_PERSPICAX_DIRECTORY_SECONDS: "5",
-      OMB_ROUTINE_RENEW_SECONDS: String(RENEW_SECONDS),
-      OMB_ORG_NAME: "Acme",
+      HOME: home, USERPROFILE: home, SAGAX_LOCAL_VM_TEST_NAMESPACE: process.env.SAGAX_LOCAL_VM_TEST_NAMESPACE ?? "", SAGAX_PORT: String(PORT), SAGAX_WEBHOOK_PORT: String(PORT + 1),
+      SAGAX_IDENTITY: "perspicax",
+      SAGAX_PERSPICAX_ISSUER: idp.issuer,
+      SAGAX_PUBLIC_URL: BASE,
+      SAGAX_PERSPICAX_LINK_FILE: join(home, "link", "pulsabot.json"),
+      SAGAX_PERSPICAX_DIRECTORY_SECONDS: "5",
+      SAGAX_ROUTINE_RENEW_SECONDS: String(RENEW_SECONDS),
+      SAGAX_ORG_NAME: "Acme",
     },
     stdio: ["ignore", "pipe", "pipe"],
   });
@@ -211,7 +211,7 @@ posixOnly("Perspicax organization, slice 6: routines in their person's name", ()
     PORT = await freePortBlock([0, 1]);
     BASE = `http://127.0.0.1:${PORT}`;
     home = mkdtempSync(join(tmpdir(), "omb-org-routines-"));
-    const data = join(home, ".openmausbot");
+    const data = join(home, ".sagax");
     mkdirSync(data, { recursive: true });
     mkdirSync(join(home, "link"), { recursive: true, mode: 0o750 });
     writeFileSync(join(home, "link", "pulsabot.json"), JSON.stringify({
@@ -293,7 +293,7 @@ posixOnly("Perspicax organization, slice 6: routines in their person's name", ()
     if (existsSync(dump)) rmSync(dump);
     const exchangesBefore = idp.exchanges.length;
     const refreshesBefore = idp.refreshes.length;
-    const run = await waitFor(async () => existsSync(join(home, ".openmausbot", "routines.json")) &&
+    const run = await waitFor(async () => existsSync(join(home, ".sagax", "routines.json")) &&
       onDisk().runs.find((r) => r.routineId === r1 && ["completed", "failed"].includes(r.status)), 60_000);
     expect(run.status, run.error).toBe("completed");
     expect(run.runAs).toBe(ids.alice);
@@ -379,7 +379,7 @@ posixOnly("Perspicax organization, slice 6: routines in their person's name", ()
     expect((await routineOf(bob, r2))?.suspended).toBeUndefined();
     // bob has his own subscription and key: they never pay for the bot's routine
     idp.providerKeys.set(`${BOB.sub}/anthropic`, BOB_KEY);
-    const bobLogin = join(home, ".openmausbot", "principals", ids.bob!, "claude");
+    const bobLogin = join(home, ".sagax", "principals", ids.bob!, "claude");
     mkdirSync(bobLogin, { recursive: true, mode: 0o700 });
     writeFileSync(join(bobLogin, ".pulsabot-login.json"), JSON.stringify({ at: Date.now() }), { mode: 0o600 });
     bob = await signIn(BOB);
@@ -506,7 +506,7 @@ posixOnly("Perspicax organization, slice 6: routines in their person's name", ()
         else if (stat.isFile() && /pxl[ro]1\./.test(readFileSync(path, "latin1"))) hits.push(path);
       }
     };
-    walk(join(home, ".openmausbot"));
+    walk(join(home, ".sagax"));
     if (existsSync(dump)) walk(dirname(dump));
     expect(hits.filter((path) => !path.startsWith(join(home, "link")))).toEqual([]);
     expect(log).not.toMatch(/pxl[ro]1\./);

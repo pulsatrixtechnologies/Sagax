@@ -32,7 +32,7 @@ const executables = [
   path.join(root, "release", "linux-unpacked", "openmausbot"),
   path.join(root, "release", appImage),
 ];
-if (process.env.OMB_SMOKE_INSTALLED_DEB === "1") {
+if (process.env.SAGAX_SMOKE_INSTALLED_DEB === "1") {
   executables.push("/opt/Sagax/openmausbot");
 }
 
@@ -47,8 +47,8 @@ for (const executable of executables) {
       env: {
         ...process.env,
         XDG_RUNTIME_DIR: runtimeDirectory,
-        OMB_SMOKE_BUNDLED_CUA: "1",
-        OMB_SMOKE_EXECUTABLE: executable,
+        SAGAX_SMOKE_BUNDLED_CUA: "1",
+        SAGAX_SMOKE_EXECUTABLE: executable,
       },
       stdio: "inherit",
     },
@@ -76,9 +76,9 @@ if (process.exitCode === undefined) {
       env: {
         ...process.env,
         XDG_RUNTIME_DIR: runtimeDirectory,
-        OMB_SMOKE_BUNDLED_CUA: "1",
-        OMB_SMOKE_SIGNAL_SHUTDOWN: "1",
-        OMB_SMOKE_EXECUTABLE: path.join(root, "release", appImage),
+        SAGAX_SMOKE_BUNDLED_CUA: "1",
+        SAGAX_SMOKE_SIGNAL_SHUTDOWN: "1",
+        SAGAX_SMOKE_EXECUTABLE: path.join(root, "release", appImage),
       },
       stdio: "inherit",
     },
@@ -105,8 +105,8 @@ if (process.exitCode === undefined) {
       env: {
         ...process.env,
         XDG_RUNTIME_DIR: runtimeDirectory,
-        OMB_SMOKE_HARD_DEATH: "1",
-        OMB_SMOKE_EXECUTABLE: path.join(root, "release", "linux-unpacked", "openmausbot"),
+        SAGAX_SMOKE_HARD_DEATH: "1",
+        SAGAX_SMOKE_EXECUTABLE: path.join(root, "release", "linux-unpacked", "openmausbot"),
       },
       stdio: "inherit",
     },
@@ -141,8 +141,8 @@ if (process.exitCode === undefined) for (const lane of [
       env: {
         ...process.env,
         XDG_RUNTIME_DIR: runtimeDirectory,
-        OMB_SMOKE_WAYLAND: lane.wayland ? "1" : "0",
-        OMB_SMOKE_LINUX_CUA_BLOCKED: lane.blocked ? "1" : "0",
+        SAGAX_SMOKE_WAYLAND: lane.wayland ? "1" : "0",
+        SAGAX_SMOKE_LINUX_CUA_BLOCKED: lane.blocked ? "1" : "0",
       },
       stdio: "inherit",
     },

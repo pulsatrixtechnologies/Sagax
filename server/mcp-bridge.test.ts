@@ -113,8 +113,8 @@ describe("runLivenessProbe", () => {
   it("uses the bridge's explicit environment for its transport probe", async () => {
     await expect(runLivenessProbe({
       command: process.execPath,
-      args: ["-e", "process.exit(process.env.OMB_TEST_BRIDGE_ENV === 'shared-ssh' ? 0 : 1)"],
-    }, 1_000, { ...process.env, OMB_TEST_BRIDGE_ENV: "shared-ssh" })).resolves.toBe(true);
+      args: ["-e", "process.exit(process.env.SAGAX_TEST_BRIDGE_ENV === 'shared-ssh' ? 0 : 1)"],
+    }, 1_000, { ...process.env, SAGAX_TEST_BRIDGE_ENV: "shared-ssh" })).resolves.toBe(true);
   });
 
   it("maps exit status to liveness and treats an unspawnable probe as dead", async () => {

@@ -125,15 +125,15 @@ export function parseAskQuestions(input: unknown): AskQuestion[] | null {
  * pause mid-run, so the questions ride the final output and OMB parses them
  * at settle. The block is model-authored — untrusted input like any tool
  * call — so its body runs through parseAskQuestions and the same caps. */
-const OMB_ASK_FENCE = /(^|\n)[ \t]{0,3}(`{3,}|~{3,})[ \t]*omb-ask[ \t]*\r?\n([\s\S]*?)\r?\n[ \t]{0,3}\2[ \t]*(?=\r?\n|$)/;
-const OMB_ASK_FENCE_GLOBAL = new RegExp(OMB_ASK_FENCE.source, OMB_ASK_FENCE.flags + "g");
+const SAGAX_ASK_FENCE = /(^|\n)[ \t]{0,3}(`{3,}|~{3,})[ \t]*omb-ask[ \t]*\r?\n([\s\S]*?)\r?\n[ \t]{0,3}\2[ \t]*(?=\r?\n|$)/;
+const SAGAX_ASK_FENCE_GLOBAL = new RegExp(SAGAX_ASK_FENCE.source, SAGAX_ASK_FENCE.flags + "g");
 
 /** The questions inside the first fenced omb-ask block in an output, or
  * null when there is nothing worth showing (no fence, invalid JSON, or no
  * entry that parses as a question). The first fence wins: a second block
  * in the same output is ignored, not merged. */
 export function parseOmbAskQuestions(output: string): AskQuestion[] | null {
-  const match = OMB_ASK_FENCE.exec(output);
+  const match = SAGAX_ASK_FENCE.exec(output);
   if (!match) return null;
   try {
     return parseAskQuestions(JSON.parse(match[3]!));
@@ -146,8 +146,8 @@ export function parseOmbAskQuestions(output: string): AskQuestion[] | null {
  * reads the prose around the ask, never the raw protocol JSON. Text
  * without a block is returned untouched. */
 export function stripOmbAskBlock(output: string): string {
-  if (!OMB_ASK_FENCE.test(output)) return output;
-  return output.replace(OMB_ASK_FENCE_GLOBAL, "").replace(/\n{3,}/g, "\n\n").trim();
+  if (!SAGAX_ASK_FENCE.test(output)) return output;
+  return output.replace(SAGAX_ASK_FENCE_GLOBAL, "").replace(/\n{3,}/g, "\n\n").trim();
 }
 
 /** The prompt contract that teaches a model the turn-held ask transport: end
@@ -271,7 +271,7 @@ export const ASK_USER_TOOL_DEFINITION = {
 /** The synthetic tool string for an ask parsed out of model-authored final
  * output (the BoatAgent turn-held transport): there is no tool call to name,
  * but the event and the ASKS_A_PERSON backstop need one string. */
-export const OMB_ASK_TOOL = "omb-ask";
+export const SAGAX_ASK_TOOL = "omb-ask";
 
 /** The lead-in on a formatted answer. It exists for the model — the answer
  * is delivered on the deny channel, so it has to say what it is — and the

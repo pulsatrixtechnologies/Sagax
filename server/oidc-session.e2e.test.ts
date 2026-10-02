@@ -16,7 +16,7 @@
 //   paired from a signed-in session follows the person's other grants after
 //   its creator logs out, and ends with the last one.
 //
-// OMB_OIDC_REFRESH_AFTER_SECONDS=1 makes every grant due after a second.
+// SAGAX_OIDC_REFRESH_AFTER_SECONDS=1 makes every grant due after a second.
 import { spawn, type ChildProcess } from "node:child_process";
 import { createHash } from "node:crypto";
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
@@ -60,7 +60,7 @@ const CLI_OWNER = "cli-owner-token-0123456789abcdefghijklmnopq";
 const LEGACY_BEARER = "omb_sess_legacy-device-paired-before-the-organization-0001";
 /** A session as the server keeps it (sessions.json): the person behind it. */
 const storedSession = (id: string): { principalId?: string; scopes: string[] } | undefined => {
-  const doc = JSON.parse(readFileSync(join(home, ".openmausbot", "sessions.json"), "utf8")) as { sessions?: Array<{ id: string; principalId?: string; scopes: string[] }> };
+  const doc = JSON.parse(readFileSync(join(home, ".sagax", "sessions.json"), "utf8")) as { sessions?: Array<{ id: string; principalId?: string; scopes: string[] }> };
   return doc.sessions?.find((s) => s.id === id);
 };
 
@@ -116,7 +116,7 @@ const backchannel = (token: string) => fetch(`${BASE}/api/auth/oidc/backchannel-
 /** Open /api/events with a stream ticket; resolves `ended` when the server closes it. */
 async function openStream(auth: Auth): Promise<{ ended: Promise<void> }> {
   const { body } = await api("POST", "/api/auth/stream-ticket", auth);
-  expect(body.ticket).toMatch(/^omb_tick_/);
+  expect(body.ticket).toMatch(/^sgx_tick_/);
   return new Promise((resolve, reject) => {
     const req = request(`${BASE}/api/events?ticket=${encodeURIComponent(body.ticket)}`, { headers: { accept: "text/event-stream" } }, (res) => {
       expect(res.statusCode).toBe(200);
@@ -134,12 +134,12 @@ async function start() {
     cwd: join(SERVER_DIR, ".."),
     env: {
       ...(process.env.PATH ? { PATH: process.env.PATH } : {}),
-      HOME: home, USERPROFILE: home, OMB_LOCAL_VM_TEST_NAMESPACE: process.env.OMB_LOCAL_VM_TEST_NAMESPACE ?? "", OMB_PORT: String(PORT), OMB_WEBHOOK_PORT: String(PORT + 1),
-      OMB_IDENTITY: "perspicax",
-      OMB_PERSPICAX_ISSUER: idp.issuer,
-      OMB_PUBLIC_URL: BASE,
-      OMB_OIDC_REFRESH_AFTER_SECONDS: "1",
-      OMB_CLI_OWNER_STDIN: "1",
+      HOME: home, USERPROFILE: home, SAGAX_LOCAL_VM_TEST_NAMESPACE: process.env.SAGAX_LOCAL_VM_TEST_NAMESPACE ?? "", SAGAX_PORT: String(PORT), SAGAX_WEBHOOK_PORT: String(PORT + 1),
+      SAGAX_IDENTITY: "perspicax",
+      SAGAX_PERSPICAX_ISSUER: idp.issuer,
+      SAGAX_PUBLIC_URL: BASE,
+      SAGAX_OIDC_REFRESH_AFTER_SECONDS: "1",
+      SAGAX_CLI_OWNER_STDIN: "1",
     },
     stdio: ["pipe", "pipe", "pipe"],
   });
@@ -165,7 +165,7 @@ posixOnly("Sign in with Pulsatrix, slice 2: the session lives on the provider's 
     PORT = await freePortBlock([0, 1]);
     BASE = `http://127.0.0.1:${PORT}`;
     home = mkdtempSync(join(tmpdir(), "omb-oidc-session-"));
-    const data = join(home, ".openmausbot");
+    const data = join(home, ".sagax");
     mkdirSync(data, { recursive: true });
     const now = Date.now();
     writeFileSync(join(data, "sessions.json"), JSON.stringify({ version: 1, sessions: [{
