@@ -7,7 +7,8 @@
 //     session cookie, and /api/auth/session names the principal, the email
 //     and the role;
 //   - scenario A (spec section 10): an admin signed in this way creates a bot
-//     on the server and gets its answer from the (fake) engine; a second
+//     on the server and gets its answer from the (fake) engine, on the
+//     organization key (the person who speaks pays, 2026-10-01); a second
 //     browser of the same person reads the same thread;
 //   - an employee gets a client session only; a replayed callback, a foreign
 //     browser and a role the server does not know are refused;
@@ -25,6 +26,11 @@ import { freePortBlock } from "./testing/ports.ts";
 
 const SERVER_DIR = dirname(fileURLToPath(import.meta.url));
 const FAKE_CLI = join(SERVER_DIR, "testing", "fake-acp-cli.ts");
+const FAKE_CLAUDE = join(SERVER_DIR, "testing", "fake-claude-cli.ts");
+// The organization key (Settings > Connections). Since 2026-10-01 the person
+// who speaks pays: the server's own sign-ins no longer serve an admin's bot,
+// so scenario A's turn runs on this key (org-sharing covers the refusals).
+const ORG_KEY = "sk-ant-test-org-key";
 const posixOnly = describe.skipIf(process.platform === "win32");
 const ADMIN = { sub: "01J9ADMIN0000000000000000A", email: "Alice@Example.test", name: "Alice Admin", preferred_username: "alice", role: "admin" };
 const EMPLOYEE = { sub: "01J9EMPLOYEE00000000000000B", email: "bob@example.test", name: "Bob", preferred_username: "bob", role: "employee" };
@@ -87,6 +93,7 @@ async function start() {
       OMB_IDENTITY: "perspicax",
       OMB_PERSPICAX_ISSUER: idp.issuer,
       OMB_PUBLIC_URL: BASE,
+      OMB_ANTHROPIC_API_KEY: ORG_KEY,
     },
     stdio: ["ignore", "pipe", "pipe"],
   });
@@ -107,6 +114,7 @@ async function start() {
 posixOnly("Sign in with Pulsatrix (OMB_IDENTITY=perspicax)", () => {
   beforeAll(async () => {
     chmodSync(FAKE_CLI, 0o755);
+    chmodSync(FAKE_CLAUDE, 0o755);
     idp = await startFakeOidcProvider({ user: ADMIN });
     PORT = await freePortBlock([0, 1]);
     BASE = `http://127.0.0.1:${PORT}`;
@@ -114,7 +122,10 @@ posixOnly("Sign in with Pulsatrix (OMB_IDENTITY=perspicax)", () => {
     const data = join(home, ".openmausbot");
     mkdirSync(data, { recursive: true });
     writeFileSync(join(data, "config.json"), JSON.stringify({
-      instances: { grok: { driver: "grokAgent", config: { cli: FAKE_CLI, fullAuto: false } } },
+      instances: {
+        grok: { driver: "grokAgent", config: { cli: FAKE_CLI, fullAuto: false } },
+        claude: { driver: "claudeAgent", config: { cli: FAKE_CLAUDE, fullAuto: true } },
+      },
     }));
     await start();
   });
@@ -169,7 +180,7 @@ posixOnly("Sign in with Pulsatrix (OMB_IDENTITY=perspicax)", () => {
     expect(created.status, JSON.stringify(created.body)).toBe(201);
     ids.bot = created.body.bot.id;
     ids.thread = created.body.bot.threadId;
-    const patched = await api("PATCH", `/api/bots/${ids.bot}`, jar, { modelSelection: { instanceId: "grok", model: "fake-model" } });
+    const patched = await api("PATCH", `/api/bots/${ids.bot}`, jar, { modelSelection: { instanceId: "claude", model: "fake-model" } });
     expect(patched.status, JSON.stringify(patched.body)).toBe(200);
     const sent = await api("POST", `/api/bots/${ids.bot}/messages`, jar, { text: "Hello from Perspicax", threadId: ids.thread });
     expect(sent.status, JSON.stringify(sent.body)).toBe(202);
