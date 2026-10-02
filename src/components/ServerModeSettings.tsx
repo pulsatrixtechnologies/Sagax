@@ -1,14 +1,17 @@
 // Server mode in Settings (src/lib/launch.ts, electron/environments.cjs).
 // While the desktop app is locked to its organization's server, Settings >
 // General shows that server in place of "This computer", with the one way
-// out: Change, which signs out of the server (after a native confirmation)
-// and returns to the launch screen. Sections about this computer itself say
+// out: Sign out, which signs out of the server (after a native confirmation)
+// and returns to the launch screen. It names the server, the organization
+// and the signed-in person, so nobody wonders where they are. Sections about this computer itself say
 // they are managed by the organization rather than offering a local setup.
 import { useEffect, useState } from "react";
-import { Building2 } from "lucide-react";
+import { Building2, LogOut } from "lucide-react";
 import { t } from "@/lib/i18n";
 import { serverModeBridge } from "@/lib/launch";
 import { sharedComputersEnabled } from "@/lib/feature-flags";
+import { usePerspicaxOrg } from "@/lib/perspicax-org";
+import { managedProfile } from "@/lib/profile-management";
 import { useStore } from "@/state/store";
 import { ComputerSharingSettings } from "./ComputerSharingSettings";
 import { Card, SettingRow } from "./SettingsPrimitives";
@@ -37,10 +40,25 @@ function host(origin: string): string {
   }
 }
 
-/** Settings > General in server mode: the organization's server, and Change. */
+/** "Connected to <b>host</b>" with the address in bold, in any word order. */
+function ConnectedTo({ server }: { server: string }) {
+  const [before, after = ""] = t("settings.serverMode.connectedTo", { server: "\u0000" }).split("\u0000");
+  return <>{before}<strong className="font-semibold text-ink">{server}</strong>{after}</>;
+}
+
+/** Settings > General in server mode: which server, which organization,
+ * who is signed in, and Sign out. */
 export function ServerModeCard({ state }: { state: Extract<ServerModeState, { active: true }> }) {
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(false);
+  const store = useStore();
+  const org = usePerspicaxOrg();
+  const viewer = store.state.config?.viewer;
+  const managed = managedProfile(viewer);
+  const name = (managed?.name || viewer?.name || "").trim();
+  const email = (managed?.email || viewer?.email || "").trim();
+  const identity = name && email && name !== email ? `${name} (${email})` : name || email;
+  const organization = (org?.org.name || state.name || "").trim();
   const leave = () => {
     const bridge = serverModeBridge(window.ogb);
     if (!bridge || busy) return;
@@ -54,13 +72,16 @@ export function ServerModeCard({ state }: { state: Extract<ServerModeState, { ac
       <SettingRow
         title={t("settings.launch.title")}
         subtitle={<>
-          <span className="block">{t("settings.serverMode.connected", { server: host(state.origin) })}</span>
-          <span className="block">{t("settings.serverMode.botsOnServer")}</span>
+          <span data-server-connected className="block text-ink"><ConnectedTo server={host(state.origin)} /></span>
+          {organization && <span className="block">{t("settings.serverMode.organization", { name: organization })}</span>}
+          {identity && <span className="block">{t("settings.serverMode.signedInAs", { name: identity })}</span>}
+          <span className="mt-1 block">{t("settings.serverMode.signOutHelp")}</span>
         </>}
-        message={failed ? <p role="alert" className="text-danger">{t("settings.serverMode.leaveFailed")}</p> : null}
+        message={failed ? <p role="alert" className="text-danger">{t("settings.serverMode.signOutFailed")}</p> : null}
       >
-        <button type="button" onClick={leave} disabled={busy} className="ui-button">
-          {t("settings.launch.change")}
+        <button type="button" onClick={leave} disabled={busy} className="ui-button inline-flex items-center gap-1.5">
+          <LogOut size={13} aria-hidden="true" />
+          {t("settings.serverMode.signOut")}
         </button>
       </SettingRow>
     </div>

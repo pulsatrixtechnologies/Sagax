@@ -2478,7 +2478,7 @@ function switchEnvironment(id) {
  * only one this app shows (environments.cjs withServerMode). */
 let leavingServerMode = false;
 /** Leave server mode, the one way out (Settings > General > Server >
- * Change, or Server > Change server…): after a native confirmation, sign out
+ * Sign out, or Server > Change server…): after a native confirmation, sign out
  * of the server, forget it and its page data, and come back to this
  * computer's launch screen. Local bots, conversations and keys were never
  * touched and are as they were. A packaged app that ran no local server in
@@ -2490,10 +2490,10 @@ async function leaveServerMode() {
   try {
     const { response } = await dialog.showMessageBox(mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined, {
       type: "question",
-      buttons: ["Change server", "Cancel"],
+      buttons: ["Sign out", "Cancel"],
       defaultId: 1,
       cancelId: 1,
-      message: `Leave ${locked.name}?`,
+      message: `Sign out of ${locked.name}?`,
       detail: `This app signs out of ${new URL(locked.origin).host} and returns to the launch screen, where you choose No server or another server. Your bots stay on the server; nothing on this computer is changed.`,
     });
     if (response !== 0) return { left: false };

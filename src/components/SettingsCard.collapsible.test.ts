@@ -152,15 +152,16 @@ describe("collapsible settings card", () => {
 
 describe("collapsed card summaries", () => {
   it("summarizes About me, keys, cleanup, recovery and VM setup in one line each", async () => {
-    const { aboutMeSummary, configuredSummary, cardsMatching } = await import("./SettingsModal");
+    const { configuredSummary, cardsMatching } = await import("./SettingsModal");
+    const { aboutMeFirstLine } = await import("./AboutMeSettings");
     const { threadCleanupSummary } = await import("./ThreadCleanupSettings");
     const { recoverySummary } = await import("./AutomaticRecoverySettings");
     const { setupStep } = await import("./LocalComputerSection");
 
-    expect(aboutMeSummary(undefined)).toBe("Not set");
-    expect(aboutMeSummary("  \n")).toBe("Not set");
-    expect(aboutMeSummary("I run an MSP")).toBe("1 line");
-    expect(aboutMeSummary("One\n\nTwo\nThree")).toBe("3 lines");
+    expect(aboutMeFirstLine(undefined)).toBe("Not set");
+    expect(aboutMeFirstLine("  \n")).toBe("Not set");
+    expect(aboutMeFirstLine("I run an MSP")).toBe("I run an MSP");
+    expect(aboutMeFirstLine("\n## Who I am\nTwo\nThree")).toBe("Who I am");
 
     const config = { anthropic: { configured: true }, xai: { configured: false }, composio: { configured: true } } as never;
     expect(configuredSummary(config, ["anthropic", "openaiCompat", "xai", "mistral"])).toBe("1 of 4 set");
@@ -183,10 +184,10 @@ describe("collapsed card summaries", () => {
   });
 
   it("French summaries come from the pack", async () => {
-    const { aboutMeSummary } = await import("./SettingsModal");
+    const { aboutMeFirstLine } = await import("./AboutMeSettings");
     setLocale("fr");
-    expect(aboutMeSummary("a\nb")).toBe("2 lignes");
-    expect(aboutMeSummary("")).toBe("Non défini");
+    expect(aboutMeFirstLine("a\nb")).toBe("a");
+    expect(aboutMeFirstLine("")).toBe("Non défini");
   });
 });
 
@@ -212,21 +213,23 @@ describe("skin picker", () => {
 });
 
 describe("Settings → General, compact", () => {
-  it("renders About me and the advanced cards collapsed with their summaries", async () => {
+  it("renders the advanced cards collapsed and About me as a row to its own page", async () => {
     device();
     const { SettingsModal } = await import("./SettingsModal");
     const html = renderToStaticMarkup(createElement(StoreProvider, null, createElement(SettingsModal)));
-    for (const id of ["general.aboutMe", "general.roomTurns", "general.threads", "general.recovery", "general.threadCleanup"]) {
+    for (const id of ["general.roomTurns", "general.threads", "general.recovery", "general.threadCleanup"]) {
       expect(html).toContain(`data-settings-card="${id}" data-open="false"`);
     }
     expect(html).toContain(">Not set<");
     expect(html).toContain(">5 min per turn<");
     expect(html).toContain(">3 per bot<");
     // collapsed, not removed: the fields are still in the document
-    expect(html).toContain('id="profile-about-me"');
     expect(html).toContain('id="room-turn-timeout"');
-    // every card on the page is the collapsible kind, Profile included
+    // About me is edited on its sub-page; General shows its first line and Edit
+    expect(html).toContain('data-settings-card="general.aboutMe" data-settings-subpage-row');
+    expect(html).not.toContain('id="profile-about-me"');
+    // every other card on the page is the collapsible kind, Profile included
     expect(html).toContain('data-settings-card="general.profile" data-open="true"');
-    expect(html.match(/data-settings-card="[^"]*"(?! data-open)/g)).toBeNull();
+    expect(html.match(/data-settings-card="[^"]*"(?! data-open| data-settings-subpage-row)/g)).toBeNull();
   });
 });
