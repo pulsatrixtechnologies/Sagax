@@ -295,8 +295,9 @@ PT-4 in `server/org-private-threads.e2e.test.ts`):
 - An admin has no override on content. `DELETE /api/groups/:id` is the
   owner's, or an admin's for moderation (`channel.moderate` on a room in
   `server/authz.ts`). A client-scope session may delete only there.
-- The owner of a client-scope session also picks the default responder;
-  the working folder still needs the admin scope.
+- The owner of a client-scope session also picks the default responder.
+  The working folder keeps the admin scope (it touches the host or sandbox
+  filesystem): a non-admin owner sees it read-only with a note.
 - The panel shows the settings read-only to everyone else, with "Seul le
   propriétaire du groupe peut modifier ces réglages", and a Leave button.
 

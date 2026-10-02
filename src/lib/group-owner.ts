@@ -4,7 +4,8 @@
 import type { ConfigStatus, Group } from "@/state/store";
 import { viewerActorId } from "./viewer";
 
-function viewerIsOrgAdmin(config: ConfigStatus | null | undefined): boolean {
+/** Organization admin (or the server's operator). */
+export function viewerIsOrgAdmin(config: ConfigStatus | null | undefined): boolean {
   const role = config?.viewer?.role;
   return role === "admin" || role === "owner";
 }

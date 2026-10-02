@@ -27,6 +27,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
@@ -139,6 +140,17 @@ const onDisk = () => JSON.parse(readFileSync(join(home, ".openmausbot", "routine
 const runThread = (runId: string) => {
   const run = onDisk().runs.find((r) => r.id === runId);
   return run?.threadId ?? run?.resultsThreadId ?? "";
+};
+/** The access cards stored in a thread, whoever they are for (read from
+ * the message store, not through a viewer). */
+const storedAccessCards = (threadId: string): NonNullable<Message["access"]>[] => {
+  const db = new DatabaseSync(join(home, ".openmausbot", "messages.db"), { readOnly: true });
+  try {
+    const rows = db.prepare("SELECT json FROM messages WHERE thread_id = ? AND kind = 'access'").all(threadId) as Array<{ json: string }>;
+    return rows.map((row) => (JSON.parse(row.json) as Message).access!).filter(Boolean);
+  } finally {
+    db.close();
+  }
 };
 /** Every usage row the server booked (server/usage-ledger.ts). */
 const usageRows = () => {
@@ -424,11 +436,15 @@ posixOnly("Perspicax organization, slice 6: routines in their person's name", ()
     const refused = await runNow(bob, r2);
     expect(refused.status).toBe("failed");
     expect(existsSync(dump)).toBe(false);
-    // the run's thread is bob's (its runAs, private threads); alice is notified
+    // the run's thread is bob's (its runAs, private threads). 2026-10-01: the
+    // card is the owner's alone (her credentials are missing), so bob, who
+    // started the run, sees none; alice is notified
     const thread = runThread(refused.id);
-    const card = await waitFor(async () => (((await api("GET", `/api/threads/${thread}/messages`, bob)).body.messages ?? []) as Message[])
-      .findLast((m) => m.kind === "access" && m.access?.reason === "no_access") ?? null);
-    expect(card.access).toMatchObject({ payer: "owner", payerPrincipalId: ids.alice, routine: true, cause: "no_credentials" });
+    await waitFor(async () => log.includes(`refused: no_access/no_credentials`));
+    const stored = storedAccessCards(thread).findLast((access) => access.reason === "no_access");
+    expect(stored).toMatchObject({ payer: "owner", payerPrincipalId: ids.alice, routine: true, cause: "no_credentials" });
+    const bobView = ((await api("GET", `/api/threads/${thread}/messages`, bob)).body.messages ?? []) as Message[];
+    expect(bobView.some((m) => m.kind === "access" && m.access?.reason === "no_access")).toBe(false);
     // the key is back for what follows
     idp.providerKeys.set(`${ALICE.sub}/anthropic`, ALICE_KEY);
     alice = await signIn(ALICE);
@@ -473,9 +489,11 @@ posixOnly("Perspicax organization, slice 6: routines in their person's name", ()
     expect(refused.status).toBe("failed");
     expect(existsSync(dump)).toBe(false);
     const thread = runThread(refused.id);
-    const card = await waitFor(async () => (((await api("GET", `/api/threads/${thread}/messages`, bob)).body.messages ?? []) as Message[])
-      .findLast((m) => m.kind === "access" && m.access?.cause === "payer_disabled") ?? null);
-    expect(card.access).toMatchObject({ reason: "no_access", payer: "owner", payerPrincipalId: ids.alice, routine: true });
+    const stored = await waitFor(async () => storedAccessCards(thread).findLast((access) => access.cause === "payer_disabled") ?? null);
+    expect(stored).toMatchObject({ reason: "no_access", payer: "owner", payerPrincipalId: ids.alice, routine: true });
+    // the owner's card: bob, who started the run, does not get it
+    const bobView = ((await api("GET", `/api/threads/${thread}/messages`, bob)).body.messages ?? []) as Message[];
+    expect(bobView.some((m) => m.kind === "access" && m.access?.cause === "payer_disabled")).toBe(false);
   }, 60_000);
 
   it("never writes a refresh or access token in clear", () => {

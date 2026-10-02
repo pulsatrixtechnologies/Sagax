@@ -25,7 +25,7 @@ import { showToolCallsEnabled } from "@/lib/feature-flags";
 import { CompactionChip, DigestChip, TurnAccessChip } from "./DigestChip";
 import { roomActivityVisible } from "@/lib/room-activity";
 import { viewerActorId } from "@/lib/viewer";
-import { viewerOwnsGroup } from "@/lib/group-owner";
+import { viewerIsOrgAdmin, viewerOwnsGroup } from "@/lib/group-owner";
 import { RoomPersonLabel } from "./MessageAuthor";
 import { continuesRun, roomAuthor, runCorners } from "@/lib/room-authors";
 import type { OrgDirectoryPerson } from "@/lib/perspicax-org";
@@ -87,6 +87,8 @@ import { latestReply, type TranscriptSnapshot } from "@/lib/transcript-announcer
 import { pendingApprovals } from "./PendingApproval";
 import { TranscriptAnnouncer } from "./TranscriptAnnouncer";
 import { channelHumanRow, useOrgPeople } from "@/lib/perspicax-org";
+import { groupMemberBots } from "@/lib/group-members";
+import { botPublicProfile } from "../../shared/bot-public-profile";
 import { personAvatarSrc } from "@/lib/profile-management";
 
 function dayLabel(at: number): string {
@@ -557,7 +559,7 @@ export function DefaultResponderSelect({ group, members, disabled = false }: { g
  * under a room that already worked somewhere). The PATCH is made directly
  * rather than through patchGroup: the server validates the path and a
  * rejected folder must not stick in local state. */
-function RoomWorkingFolder({ group, disabled = false }: { group: Group; disabled?: boolean }) {
+function RoomWorkingFolder({ group, disabled = false, adminOnlyNote = false }: { group: Group; disabled?: boolean; adminOnlyNote?: boolean }) {
   const { capabilities } = useDesktopCapabilities();
   const home = capabilities.host.homeDir;
   const [draft, setDraft] = useState<string | null>(null);
@@ -594,6 +596,9 @@ function RoomWorkingFolder({ group, disabled = false }: { group: Group; disabled
           <div className="truncate rounded-lg border border-hairline/40 bg-inset px-3 py-2 font-mono text-[12.5px] text-ink" title={shownCwd}>
             {shownCwd ? shortPath(shownCwd, home) : <span className="text-ink-secondary">{t("room.folder.own")}</span>}
           </div>
+          {!locked && adminOnlyNote && (
+            <div className="mt-2 text-[12px] text-ink-secondary">{t("groupPanel.folderAdminOnly")}</div>
+          )}
           {locked && (
             <div className="mt-2 text-[12px] text-ink-secondary">
               {t("room.folder.locked")}
@@ -706,10 +711,8 @@ export function GroupView({ group }: { group: Group }) {
     return () => window.removeEventListener("keydown", onFind);
   }, []);
 
-  const members = useMemo(
-    () => group.memberIds.map((id) => state.bots.find((b) => b.id === id)).filter((b): b is Bot => Boolean(b)),
-    [group.memberIds, state.bots],
-  );
+  // Every bot in the room, someone else's included (its public profile).
+  const members = useMemo(() => groupMemberBots(group, state.bots), [group, state.bots]);
   const orgPeople = useOrgPeople();
   const viewerEmail = state.config?.profile?.email?.trim().toLowerCase() || "";
   const viewerName = state.config?.profile?.name?.trim() || viewerEmail || "Vous";
@@ -721,6 +724,9 @@ export function GroupView({ group }: { group: Group }) {
   // others read them and may leave (src/lib/group-owner.ts).
   const ownsRoom = viewerOwnsGroup(group, state.config);
   const editable = !remoteClient && ownsRoom;
+  // The working folder touches the host or sandbox filesystem: on an
+  // organization server it stays an admin's, even for the group's owner.
+  const folderEditable = group.ownerId === undefined || viewerIsOrgAdmin(state.config);
   const viewerListed = (group.humanIds ?? []).some((id) => {
     const entry = id.trim().toLowerCase();
     return entry === viewerId || (Boolean(viewerEmail) && entry === viewerEmail);
@@ -1325,8 +1331,8 @@ export function GroupView({ group }: { group: Group }) {
                   part="bots"
                   humans={[]}
                   bots={group.memberIds.map((id) => {
-                    const bot = state.bots.find((item) => item.id === id);
-                    return { id, name: bot?.name || id, title: bot?.title, color: bot?.color, avatarUrl: bot?.avatarUrl, mascotBody: bot?.mascotBody };
+                    const bot = members.find((item) => item.id === id);
+                    return bot ? { ...botPublicProfile(bot), name: bot.name || id } : { id, name: id };
                   })}
                   {...roster}
                   onRemoveBot={!ownsRoom ? undefined : (id) => {
@@ -1372,7 +1378,7 @@ export function GroupView({ group }: { group: Group }) {
                 </section>
                 <section>
                   <h3 className="mb-1.5 text-[13px] text-ink-secondary">{t("room.folder.title")}</h3>
-                  <RoomWorkingFolder group={group} disabled={!ownsRoom} />
+                  <RoomWorkingFolder group={group} disabled={!ownsRoom || !folderEditable} adminOnlyNote={ownsRoom && !folderEditable} />
                 </section>
               </>
             )
