@@ -354,6 +354,20 @@ personal computer the preferences and server-environment routes answer 404
 (they belong to an organization server); the phone uses
 `/api/settings/bot` and `/api/computer/*` there.
 
+**The computer's look.** Settings > Appearance > Same as my computer wears
+the computer's skin and font (`omb-skin`, `omb-font`, and the Hibou 98 keys
+`omb.retro98.on` / `omb.retro98.unlocked`). On an organization server the
+phone reads them from the person's `GET /api/me/preferences` and writes a new
+choice back with `PUT /api/me/preferences` (the whole record, read first). On
+a personal computer that route answers 404, and the phone uses
+`GET/PUT /api/me/appearance` instead (allowed through the companion):
+`{ stored, preferences: { "omb-skin"?, "omb-font"?, "omb.retro98.on"?,
+"omb.retro98.unlocked"? }, updatedAt }`, PUT `{ preferences }` replacing the
+record, unknown keys and values dropped (`shared/desktop-appearance.ts`). The
+desktop app keeps that record in step with what it wears and applies a look
+the phone wrote within a few seconds (`src/lib/desktop-appearance-sync.ts`);
+an organization server answers 404 there.
+
 **Remote input.** The phone takes control first (`POST /api/bots/:id/computer/control`
 `{ action: "take" }`, optionally with a `controlLeaseId`). Input without the
 hold answers 409 `no_control` (or `control_lease` when another lease holds

@@ -183,6 +183,9 @@ const ALLOWED: ReadonlyArray<{ method: string; path: RegExp }> = [
   { method: "DELETE", path: /^\/api\/bots\/[\w-]+\/command-allowlist\/[\w-]+$/ },
   { method: "GET", path: /^\/api\/me\/preferences$/ },
   { method: "PUT", path: /^\/api\/me\/preferences$/ },
+  // a personal computer's look (skin, font), for Settings > Appearance > Same as my computer
+  { method: "GET", path: /^\/api\/me\/appearance$/ },
+  { method: "PUT", path: /^\/api\/me\/appearance$/ },
   { method: "GET", path: /^\/api\/me\/server-environment$/ },
   { method: "POST", path: /^\/api\/me\/server-environment\/(?:reset|update)$/ },
   { method: "PATCH", path: /^\/api\/groups\/[\w-]+$/ },

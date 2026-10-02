@@ -631,6 +631,8 @@ import { autoReviewThreadMode, createBotSettingsStore, hostTimeZone } from "./bo
 import { createComputerInputRoutes, createVmScreenshotRoute } from "./routes/computer-input.ts";
 import { createUserPreferenceRoutes } from "./routes/user-preferences.ts";
 import { createUserPreferenceStore } from "./user-preferences.ts";
+import { createDesktopAppearanceRoutes } from "./routes/desktop-appearance.ts";
+import { createDesktopAppearanceStore } from "./desktop-appearance.ts";
 import { createBotMemoryRoutes } from "./routes/bot-memory.ts";
 import type { OrgRecord } from "./org-record.ts";
 import { createOidcLoginRoutes, identityConfigFromEnv, identityDescriptor, INTERIM_SIGNIN_REFUSAL, isInterimSignInRoute, MANAGED_PROFILE_REFUSAL, oidcBindingCookie, oidcSessionFields, profileManagement, writesManagedProfile } from "./oidc-login.ts";
@@ -16530,6 +16532,8 @@ ROUTES.push(createBotPresetRoutes({ presets: presetStore, orgStatuses: orgInstal
 // settings follow them across devices (shared/user-preferences.ts).
 const userPreferences = createUserPreferenceStore(DATA_DIR);
 ROUTES.push(createUserPreferenceRoutes({ store: userPreferences, organization: () => IDENTITY.kind === "perspicax" }));
+// A personal computer hands its look to the paired phone (shared/desktop-appearance.ts).
+ROUTES.push(createDesktopAppearanceRoutes({ store: createDesktopAppearanceStore(DATA_DIR), organization: () => IDENTITY.kind === "perspicax" }));
 // The bot-memory panel's routes (MEMORY.md, memory/ topics, journal); the
 // store lookups — the 404 precheck and journal thread titles — stay explicit.
 ROUTES.push(createBotMemoryRoutes({

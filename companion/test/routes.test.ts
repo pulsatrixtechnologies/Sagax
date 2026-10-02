@@ -294,6 +294,7 @@ describe("iOS parity routes", () => {
       ["GET", "/api/usage"], ["GET", "/api/bots/bot_1/soul"], ["DELETE", "/api/bots/bot_1"], ["GET", "/api/mcp/servers"],
       ["GET", "/api/bots/bot_1/command-allowlist"], ["DELETE", "/api/bots/bot_1/command-allowlist/0b1c-2d"],
       ["GET", "/api/me/preferences"], ["PUT", "/api/me/preferences"],
+      ["GET", "/api/me/appearance"], ["PUT", "/api/me/appearance"],
       ["GET", "/api/me/server-environment"], ["POST", "/api/me/server-environment/reset"], ["POST", "/api/me/server-environment/update"],
       ["PATCH", "/api/groups/room_1"], ["POST", "/api/bots"],
       ["POST", "/api/bots/bot_1/computer/input"], ["GET", "/api/bots/bot_1/computer/clipboard"], ["PUT", "/api/bots/bot_1/computer/clipboard"],
@@ -303,7 +304,7 @@ describe("iOS parity routes", () => {
       ["DELETE", "/api/settings/bot"], ["POST", "/api/auto-review/rules"], ["POST", "/api/computer/status"],
       ["POST", "/api/mcp/servers/notion/oauth/disconnect"], ["POST", "/api/mcp/servers"], ["DELETE", "/api/mcp/servers/notion"], ["GET", "/api/me"],
       ["POST", "/api/usage"], ["GET", "/api/usage.csv"], ["PATCH", "/api/bots/bot_1/soul"], ["POST", "/api/bots/bot_1/command-allowlist"],
-      ["DELETE", "/api/me/preferences"], ["DELETE", "/api/groups/room_1"], ["POST", "/api/me/server-environment/delete"],
+      ["DELETE", "/api/me/preferences"], ["DELETE", "/api/me/appearance"], ["POST", "/api/me/appearance"], ["DELETE", "/api/groups/room_1"], ["POST", "/api/me/server-environment/delete"],
       ["GET", "/api/bots/bot_1/computer/input"], ["POST", "/api/bots/bot_1/computer/clipboard"],
       ["GET", `/api/threads/th_1/files/${"a".repeat(24)}/extra`],
     ] as const) expect(allowed(method, path), `${method} ${path}`).toBe(false);

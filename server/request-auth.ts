@@ -299,6 +299,8 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   { methods: ["GET"], path: /^\/api\/auth\/session$/ },
   // own preferences (organization server; the handler answers the session's person only)
   { methods: ["GET", "PUT"], path: /^\/api\/me\/preferences$/ },
+  // the desktop's look on a personal computer, for the phone's "Same as my computer"
+  { methods: ["GET", "PUT"], path: /^\/api\/me\/appearance$/ },
   // The bot settings of the phone's Settings sheet (auto-review default, time
   // zone): the person's own on an organization server; on a solo server the
   // handler lets only the owner change the server's.
