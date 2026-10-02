@@ -44,6 +44,7 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
 HERE = Path(__file__).resolve().parent
+sys.dont_write_bytecode = True  # no __pycache__ beside diff.py
 sys.path.insert(0, str(HERE.parent))
 import diff as base  # noqa: E402  (ios/parity/diff.py: srgb_to_lab, ciede2000, heatmap)
 
@@ -52,6 +53,8 @@ OUT = HERE / "out"
 DIFF = OUT / "diff-ipad"
 NAME = re.compile(r"^(?:desktop|ipad)-(\d+)x(\d+)-(\d+)-(.+)$")
 MASCOT_DATA = ("data-shape=", "data-owl=", "data-owl-skin=", "data-trombi")
+# The bot panel's large mascot (2.5D owl, no data attribute) sits in these buttons.
+MASCOT_LABELS = ("Edit avatar", "Zoom avatar")
 
 
 def surface_of(rest: str) -> str:
@@ -73,7 +76,7 @@ def masks_for(stem: str, size: tuple[int, int], viewport: tuple[int, int], masks
     if dom:
         for box in dom.get("boxes", []):
             data = " ".join(box.get("data", []))
-            if any(key in data for key in MASCOT_DATA) or "trombi-avatar" in box.get("cls", ""):
+            if any(key in data for key in MASCOT_DATA) or "trombi-avatar" in (box.get("cls") or "") or box.get("label") in MASCOT_LABELS:
                 x, y, bw, bh = box["rect"]
                 rects.append((x - 2, y - 2, bw + 4, bh + 4))
                 derived += 1

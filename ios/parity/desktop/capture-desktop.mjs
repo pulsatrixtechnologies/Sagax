@@ -352,7 +352,8 @@ async function main() {
         },
       };
       const started = Date.now();
-      try {
+      // One retry: a capture can land on a remount (the store briefly gone).
+      for (let attempt = 1; attempt <= 2; attempt++) try {
         await loadApp(page, base, viewport, preset);
         await page.waitFor(`__parity.state().connected && __parity.state().bots.length >= 14`, { timeoutMs: 20_000, label: "fleet" });
         const ctx = context(page, viewport, fixture);
@@ -361,7 +362,7 @@ async function main() {
         if (result && result.skip) {
           index.skipped.push({ file, surface: item.name, viewport: viewport.id, reason: result.skip });
           log(`skip ${file}: ${result.skip}`);
-          continue;
+          break;
         }
         if (!item.surface.keepPointer) await ctx.moveAway();
         await settle(page, item.surface.settleMs ?? 0);
@@ -376,7 +377,9 @@ async function main() {
         const errors = page.console.filter((line) => !/Download the React DevTools|\[vite\]/.test(line));
         index.surfaces.push({ file, surface: item.name, viewport: viewport.id, skin: item.skin, note: item.surface.note, ms: Date.now() - started, ...(errors.length ? { console: errors.slice(0, 5) } : {}) });
         log(`${file} (${Date.now() - started} ms)`);
+        break;
       } catch (error) {
+        if (attempt < 2) { log(`retry ${file}: ${String(error.message ?? error).split("\n")[0]}`); continue; }
         index.skipped.push({ file, surface: item.name, viewport: viewport.id, reason: `error: ${String(error.message ?? error).split("\n")[0]}` });
         log(`FAILED ${file}: ${String(error.message ?? error).split("\n")[0]}`);
       }
