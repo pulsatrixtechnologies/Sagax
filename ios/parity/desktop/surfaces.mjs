@@ -7,6 +7,12 @@
 //   { skip: "why" } when the surface does not exist in this build/fixture.
 // - `phase` picks the server's first-run state (PHASES below).
 // - `skins: "all"` captures it once per skin (the main screen).
+// - `org: true`: exists only on an organization server; captured by the
+//   organization pass (capture-desktop.mjs --org, ios/parity/org-fixture.mjs)
+//   and left out of the solo pass.
+// - `served: true`: drawn as a page the server serves (a browser, or the
+//   desktop app on another server: the bridge without remoteClient), on the
+//   solo fixture; the section exists only there.
 //
 // Injected transcript messages (cards, markdown) exist only in the page's
 // store: nothing is written to the fixture server.
@@ -76,9 +82,17 @@ async function openPanel(ctx, section) {
   await ctx.sleep(400);
 }
 
-async function openSettings(ctx, section) {
+async function openSettings(ctx, section, { retries = 0 } = {}) {
   await ctx.dispatch({ type: "toggleAppSettings", open: true, section });
   await ctx.sleep(600);
+  // A section gated on an answer still on its way (who the viewer is, the
+  // edition) is not listed yet on the first render, and the page falls back
+  // to the first one: ask again once the answer is in.
+  for (let i = 0; i < retries && (await ctx.eval(`__parity.state().appSettingsSection ?? null`)) !== section; i++) {
+    await ctx.sleep(700);
+    await ctx.dispatch({ type: "toggleAppSettings", open: true, section });
+    await ctx.sleep(600);
+  }
   const shown = await ctx.eval(`(() => { const el = document.querySelector('[aria-current="page"]'); return el ? el.innerText.trim() : null; })()`);
   return shown;
 }
@@ -196,12 +210,20 @@ add({ id: "panel-computer", phase: "main", note: "bot panel: Computer tab",
   open: async (ctx) => { await ctx.dispatch({ type: "toggleComputer", open: true }); await ctx.sleep(900); } });
 add({ id: "panel-advanced", phase: "main", note: "bot panel: Advanced tab (searchable section list)",
   open: async (ctx) => { await openPanel(ctx); await ctx.click('[data-panel-tab="advanced"]'); await ctx.sleep(400); } });
+// Slack: a hosted workspace's link to its Admin; Shared with and Perspicax
+// tools: a server signed in with Perspicax (the organization pass draws all
+// three on one server). Who can see it: an admin on a served page of a
+// server that is not an organization's.
+const ADVANCED_WHERE = { slack: { org: true }, sharing: { org: true }, perspicax: { org: true }, visibility: { served: true } };
 for (const section of ["overview", "slack", "soul", "skills", "memory", "access", "model", "permissions", "voice", "visibility", "sharing", "perspicax", "history", "usage"]) {
-  add({ id: `panel-advanced-${section}`, phase: "main", note: `bot panel: Advanced > ${section}`,
+  const where = ADVANCED_WHERE[section] ?? {};
+  add({ id: `panel-advanced-${section}`, phase: "main", note: `bot panel: Advanced > ${section}${where.org ? " (organization server)" : where.served ? " (served page)" : ""}`, ...where,
     open: async (ctx) => {
       await openPanel(ctx);
       await ctx.click('[data-panel-tab="advanced"]');
       await ctx.sleep(300);
+      // these rows wait for the server's answer (the organization, the Slack link, the viewer)
+      if (where.org || where.served) await ctx.waitFor(`Boolean(document.querySelector('[data-bot-settings-section="${section}"]'))`, { timeoutMs: 8_000 }).catch(() => {});
       if (!(await ctx.exists(`[data-bot-settings-section="${section}"]`))) return { skip: `section ${section} not listed for this bot` };
       await ctx.click(`[data-bot-settings-section="${section}"]`);
       await ctx.sleep(900);
@@ -234,10 +256,18 @@ add({ id: "notice-thread-gone", phase: "main", note: "in-app notice (toast)",
 
 // settings, every section the local desktop page lists
 const SETTINGS = ["general", "organization", "cloudAccount", "appearance", "experimental", "connections", "decisionModel", "engines", "companion", "computer", "usage", "people", "mail", "activity", "backups", "workspaces"];
+// People (who signed in, managed in the organization's Admin) and Activity
+// (the admin log, with the fixture's own changes): an admin on the
+// organization server, where they have content (on the solo fixture both are
+// empty). Mail: the owner or an admin, known once the session answers.
+// Workspaces: the `admin` edition and a fleet agent (the organization
+// fixture's stub).
+const SETTINGS_WHERE = { people: { org: true }, activity: { org: true }, mail: {}, workspaces: { org: true } };
 for (const section of SETTINGS) {
-  add({ id: `settings-${section}`, phase: "main", note: `Settings > ${section}`,
+  const where = SETTINGS_WHERE[section];
+  add({ id: `settings-${section}`, phase: "main", note: `Settings > ${section}${where?.org ? " (organization server)" : where?.served ? " (served page)" : ""}`, ...where,
     open: async (ctx) => {
-      await openSettings(ctx, section);
+      await openSettings(ctx, section, { retries: where ? 6 : 0 });
       const current = await ctx.eval(`__parity.state().appSettingsSection ?? null`);
       if (current && current !== section) return { skip: `section ${section} not shown on this page (opened ${current})` };
       await ctx.sleep(500);

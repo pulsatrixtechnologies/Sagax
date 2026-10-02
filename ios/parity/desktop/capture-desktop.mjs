@@ -8,6 +8,7 @@
 //   node ios/parity/desktop/capture-desktop.mjs --no-skins --no-dom
 //   node ios/parity/desktop/capture-desktop.mjs --list          print the surface ids and exit
 //   node ios/parity/desktop/capture-desktop.mjs --viewport 1376x1032,1032x1376   any WxH (M-series iPad Pro sizes)
+//   node ios/parity/desktop/capture-desktop.mjs --org           the organization pass (or PARITY_ORG=1)
 //
 // Output (gitignored): ios/parity/desktop/refs/desktop-<W>x<H>-<NN>-<surface>.png
 // plus desktop-<W>x<H>-<NN>-<surface>.json (DOM measurements: computed styles
@@ -31,6 +32,14 @@
 // (the same actions its buttons dispatch) or real pointer/keyboard events,
 // waits for fonts and images, settles animations (finite ones finished,
 // infinite ones paused at their first frame) and hides the text caret.
+//
+// The organization pass (--org or PARITY_ORG=1) starts the fixture with
+// PARITY_ORG=1 (an organization server signed in through a stub Perspicax,
+// ios/parity/org-fixture.mjs), puts the admin's session cookie in the
+// browser, draws the page as the desktop app draws an organization server's
+// (the bridge's remote subset: no remoteClient) and captures only the
+// surfaces marked `org` in surfaces.mjs. It merges into refs/index.json; a
+// full solo run keeps the organization entries, and the other way round.
 import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
@@ -74,6 +83,7 @@ const only = opt("--only") ? new RegExp(opt("--only")) : null;
 const withSkins = !flag("--no-skins");
 const withDom = !flag("--no-dom");
 const keep = flag("--keep");
+const orgMode = flag("--org") || process.env.PARITY_ORG === "1";
 
 const log = (...m) => console.error("[desktop-refs]", ...m);
 
@@ -105,7 +115,7 @@ async function startFixture() {
   rmSync(join(OUT, "session.json"), { force: true });
   const proc = spawn(process.execPath, [join(HERE, "..", "fixture-server.mjs")], {
     cwd: ROOT,
-    env: { ...process.env, PARITY_OUT: OUT },
+    env: { ...process.env, PARITY_OUT: OUT, ...(orgMode ? { PARITY_ORG: "1" } : { PARITY_ORG: "" }) },
     stdio: ["ignore", "pipe", "pipe"],
   });
   children.push(proc);
@@ -142,13 +152,42 @@ async function startVite(apiPort) {
   throw new Error(`vite never answered:\n${out.slice(-3000)}`);
 }
 
-async function putConfig(server, patch) {
+/** The organization server takes changes from a signed-in person only. */
+function serverHeaders(fixture, server) {
+  return fixture.org ? { cookie: `${fixture.org.cookieName}=${fixture.org.cookieValue}`, origin: server } : {};
+}
+
+async function putConfig(fixture, patch) {
+  const server = fixture.server;
   const res = await fetch(`${server}/api/config`, {
     method: "PUT",
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json", ...serverHeaders(fixture, server) },
     body: JSON.stringify(patch),
   });
   if (!res.ok) throw new Error(`PUT /api/config -> ${res.status}: ${(await res.text()).slice(0, 300)}`);
+}
+
+/** On an organization server a person's preferences live on the server and
+ * win over the page's (src/lib/user-preferences-sync.ts): make the server's
+ * record the capture's preset, so the skin and density are the preset's. */
+async function putPreferences(fixture, localStorage) {
+  const server = fixture.server;
+  const preferences = Object.fromEntries(Object.entries(localStorage).filter(([, value]) => typeof value === "string"));
+  let res = await fetch(`${server}/api/me/preferences`, {
+    method: "PUT",
+    headers: { "content-type": "application/json", ...serverHeaders(fixture, server) },
+    body: JSON.stringify({ preferences }),
+  });
+  // Unknown keys are refused: keep the known ones and say so.
+  if (res.status === 400) {
+    const known = ["omb-skin", "openmausbot.sidebarDensity", "omb-language", "omb-show-threads"];
+    res = await fetch(`${server}/api/me/preferences`, {
+      method: "PUT",
+      headers: { "content-type": "application/json", ...serverHeaders(fixture, server) },
+      body: JSON.stringify({ preferences: Object.fromEntries(Object.entries(preferences).filter(([key]) => known.includes(key))) }),
+    });
+  }
+  if (!res.ok) throw new Error(`PUT /api/me/preferences -> ${res.status}: ${(await res.text()).slice(0, 300)}`);
 }
 
 // ── the page ────────────────────────────────────────────────────────────
@@ -256,7 +295,13 @@ function selectorExpr(selector) {
   })()`;
 }
 
-async function loadApp(page, base, viewport, preset) {
+async function loadApp(page, base, viewport, preset, fixture) {
+  if (fixture?.org) {
+    // The session "Sign in with Pulsatrix" minted for the admin (the
+    // fixture ran the flow): the browser holds it as the page's cookie.
+    await page.send("Network.setCookie", { name: fixture.org.cookieName, value: fixture.org.cookieValue, url: `${base}/`, httpOnly: true, sameSite: "Lax" });
+    await putPreferences(fixture, preset.localStorage);
+  }
   await page.send("Emulation.setDeviceMetricsOverride", {
     width: viewport.width, height: viewport.height, deviceScaleFactor: SCALE, mobile: false,
     screenWidth: viewport.width, screenHeight: viewport.height,
@@ -305,7 +350,8 @@ async function main() {
   log("starting the fixture server");
   const fixture = await startFixture();
   const apiPort = Number(new URL(fixture.endpoint).port);
-  log(`fixture ${fixture.endpoint} (server ${fixture.server})`);
+  log(`fixture ${fixture.endpoint} (server ${fixture.server})${fixture.org ? `, organization server signed in as ${fixture.org.viewer?.name}` : ""}`);
+  if (orgMode && !fixture.org) throw new Error("--org: the fixture did not start an organization server");
   const base = await startVite(apiPort);
   log(`renderer ${base}`);
   chrome = await launchChrome();
@@ -323,7 +369,9 @@ async function main() {
   const index = { capturedAt: new Date().toISOString(), scale: SCALE, viewports, surfaces: [], skipped: [] };
   const plan = [];
   for (const phase of PHASES) {
-    for (const surface of SURFACES.filter((s) => s.phase === phase.id)) {
+    // The organization pass draws only the surfaces that need that server;
+    // the solo pass all the others.
+    for (const surface of SURFACES.filter((s) => s.phase === phase.id && Boolean(s.org) === orgMode)) {
       const variants = surface.skins === "all" ? (withSkins ? SKIN_IDS : ["pulsatrix"]) : ["pulsatrix"];
       for (const skin of variants) {
         const name = skin === "pulsatrix" ? `${surface.nn}-${surface.id}` : `${surface.nn}-${surface.id}-skin-${skin}`;
@@ -334,12 +382,14 @@ async function main() {
   }
   log(`${plan.length} surfaces x ${viewports.length} viewports`);
 
+  // Entries say which fixture drew them when it was not the solo one.
+  const fixtureTag = orgMode ? { fixture: "org" } : {};
   let currentPhase = null;
   for (const item of plan) {
     if (item.phase !== currentPhase) {
       currentPhase = item.phase;
       log(`phase: ${currentPhase.id}`);
-      if (currentPhase.config) await putConfig(fixture.server, currentPhase.config);
+      if (currentPhase.config) await putConfig(fixture, currentPhase.config);
     }
     for (const viewport of viewports) {
       const file = `desktop-${viewport.id}-${item.name}`;
@@ -350,17 +400,21 @@ async function main() {
           "omb-language": item.surface.language ?? "en",
           ...item.surface.localStorage,
         },
+        // A page the server serves (the bridge's remote subset, without
+        // remoteClient): what the desktop app draws for an organization
+        // server, and what a browser on any server gets.
+        served: orgMode || item.surface.served === true,
       };
       const started = Date.now();
       // One retry: a capture can land on a remount (the store briefly gone).
       for (let attempt = 1; attempt <= 2; attempt++) try {
-        await loadApp(page, base, viewport, preset);
+        await loadApp(page, base, viewport, preset, fixture);
         await page.waitFor(`__parity.state().connected && __parity.state().bots.length >= 14`, { timeoutMs: 20_000, label: "fleet" });
         const ctx = context(page, viewport, fixture);
         await ctx.selectBot("Ara");
         const result = await item.surface.open(ctx);
         if (result && result.skip) {
-          index.skipped.push({ file, surface: item.name, viewport: viewport.id, reason: result.skip });
+          index.skipped.push({ file, surface: item.name, viewport: viewport.id, ...fixtureTag, reason: result.skip });
           log(`skip ${file}: ${result.skip}`);
           break;
         }
@@ -375,25 +429,34 @@ async function main() {
           writeFileSync(join(REFS, `${file}.json`), `${JSON.stringify(dom)}\n`);
         }
         const errors = page.console.filter((line) => !/Download the React DevTools|\[vite\]/.test(line));
-        index.surfaces.push({ file, surface: item.name, viewport: viewport.id, skin: item.skin, note: item.surface.note, ms: Date.now() - started, ...(errors.length ? { console: errors.slice(0, 5) } : {}) });
+        index.surfaces.push({ file, surface: item.name, viewport: viewport.id, skin: item.skin, note: item.surface.note, ...fixtureTag, ms: Date.now() - started, ...(errors.length ? { console: errors.slice(0, 5) } : {}) });
         log(`${file} (${Date.now() - started} ms)`);
         break;
       } catch (error) {
         if (attempt < 2) { log(`retry ${file}: ${String(error.message ?? error).split("\n")[0]}`); continue; }
-        index.skipped.push({ file, surface: item.name, viewport: viewport.id, reason: `error: ${String(error.message ?? error).split("\n")[0]}` });
+        index.skipped.push({ file, surface: item.name, viewport: viewport.id, ...fixtureTag, reason: `error: ${String(error.message ?? error).split("\n")[0]}` });
         log(`FAILED ${file}: ${String(error.message ?? error).split("\n")[0]}`);
       }
     }
   }
-  // A filtered run (--only, --viewport, --no-skins) updates its own entries
-  // in the existing index instead of replacing the whole list.
+  // A filtered run (--only, --viewport, --no-skins) and the organization
+  // pass update their own entries in the existing index instead of replacing
+  // the whole list. A full solo run replaces the solo entries and keeps the
+  // organization pass's (and drops the old solo skips of surfaces that now
+  // belong to the organization pass).
   const indexPath = join(REFS, "index.json");
-  if ((only || viewportFilter || !withSkins) && existsSync(indexPath)) {
+  if (existsSync(indexPath)) {
     const previous = JSON.parse(readFileSync(indexPath, "utf8"));
+    const partial = only || viewportFilter || !withSkins || orgMode;
     const redone = new Set([...index.surfaces, ...index.skipped].map((entry) => entry.file));
-    index.surfaces = [...previous.surfaces.filter((entry) => !redone.has(entry.file)), ...index.surfaces].sort((a, b) => a.file.localeCompare(b.file));
-    index.skipped = [...previous.skipped.filter((entry) => !redone.has(entry.file)), ...index.skipped].sort((a, b) => a.file.localeCompare(b.file));
-    index.viewports = previous.viewports;
+    const orgSurface = new Set(SURFACES.filter((s) => s.org).map((s) => `${s.nn}-${s.id}`));
+    const kept = (entry) => !redone.has(entry.file) && (partial || entry.fixture === "org") &&
+      // an older solo skip of an organization surface: the organization pass draws it now
+      !(entry.fixture !== "org" && orgSurface.has(entry.surface));
+    index.surfaces = [...previous.surfaces.filter(kept), ...index.surfaces].sort((a, b) => a.file.localeCompare(b.file));
+    index.skipped = [...previous.skipped.filter(kept), ...index.skipped].sort((a, b) => a.file.localeCompare(b.file));
+    if (partial) index.viewports = previous.viewports;
+    if (orgMode || previous.orgCapturedAt) index.orgCapturedAt = orgMode ? new Date().toISOString() : previous.orgCapturedAt;
   }
   index.notCaptured = NOT_CAPTURED;
   writeFileSync(indexPath, `${JSON.stringify(index, null, 2)}\n`);

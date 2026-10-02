@@ -17,6 +17,11 @@
 // this file paints anything. The macOS traffic lights are native and are not
 // drawn here either; the renderer reserves their strip (the masks cover it).
 //
+// With `__PARITY_PRESET__.served` the bridge is the subset the desktop app
+// gives a page another server serves (electron/preload.cjs REMOTE_SAFE: no
+// remoteClient), which is how it draws an organization server; the renderer
+// then takes its served-page paths (src/lib/desktop.ts servedPage).
+//
 // It also exposes `window.__parity` for the capture script: access to the
 // renderer's store (found through React's fiber on the shell element) and
 // localStorage presets (skin, sidebar density) passed in `__PARITY_PRESET__`.
@@ -54,6 +59,7 @@
     setUnreadCount: noop,
     applySkin: () => Promise.resolve(),
   };
+  if (preset.served) delete window.ogb.remoteClient;
 
   // ── store access for the capture script ────────────────────────────────
   function fiberOf(el) {
