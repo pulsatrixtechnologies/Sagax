@@ -197,15 +197,12 @@ describe("thread control placement", () => {
     expect(markup).not.toMatch(/class="[^"]*chat-text[^"\n]*bg-bubble-user/);
   });
 
-  it("keeps the Chief of Staff badge on one line instead of stacking a word per line", () => {
-    // #1871: the badge shrank with the name and wrapped "Chief / of / Staff",
-    // taller than the header row.
+  it("marks the Primary Bot with the orange star on the header avatar, not a label chip", () => {
     const markup = renderToStaticMarkup(createElement(ChatView, { bot: { ...bot, busy: false, chiefOfStaff: true } }));
-    const badge = /<span title="Chief of Staff" class="([^"]*)"><svg[^>]*lucide-crown[^]*?<\/svg> <span class="([^"]*)">Chief of Staff<\/span>/.exec(markup)!;
-    expect(badge[1].split(" ")).toEqual(expect.arrayContaining(["shrink-0", "whitespace-nowrap"]));
-    // In a narrow column it folds to the crown, so the name keeps the room;
-    // the label stays for screen readers and as the tooltip.
-    expect(badge[2].split(" ")).toContain("@max-4xl/chathead:sr-only");
+    expect(markup).toContain('data-testid="primary-bot-badge"');
+    expect(markup).not.toContain("lucide-crown");
+    expect(markup).not.toContain("Chief of Staff");
+    expect(renderToStaticMarkup(createElement(ChatView, { bot: { ...bot, busy: false } }))).not.toContain("primary-bot-badge");
   });
 
   it("keeps the selected thread's model in the composer and permissions inside the composer pill", () => {
