@@ -7,7 +7,7 @@ import type { RequestAuth } from "./request-auth.ts";
 import { PASS, type RouteContext } from "./routes/table.ts";
 import type { SandboxExecOutput } from "./sandboxd-core.ts";
 import type { UserSandboxManager } from "./user-sandbox-manager.ts";
-import { userSandboxProxyRequest } from "./user-sandbox-proxy.ts";
+import { restorePrefixedEnvironment, userSandboxProxyRequest } from "./user-sandbox-proxy.ts";
 import { createUserSandboxRoutes } from "./user-sandbox-routes.ts";
 import { resolveExecutionTarget, sandboxPrincipalForTurn, USER_SANDBOX_MCP_NAME } from "./user-sandbox-routing.ts";
 import { browsableUrl, callUserSandboxTool, handleUserSandboxMcp, type ToolExec } from "./user-sandbox-tools.ts";
@@ -122,6 +122,21 @@ describe("environment tools", () => {
 });
 
 describe("user-sandbox stdio proxy", () => {
+  it("reads its own capability from a driver-given prefix (Codex's shared environment)", () => {
+    const env: NodeJS.ProcessEnv = {
+      SAGAX_PROXY_ENV_PREFIX: "SAGAX_MCP_ENV_SAGAX_COMPUTER__",
+      SAGAX_MCP_ENV_SAGAX_COMPUTER__SAGAX_SANDBOX_TOKEN: "mine",
+      SAGAX_MCP_ENV_SAGAX_COMPUTER__SAGAX_TOOL_SERVER: "sagax-computer",
+      SAGAX_MCP_ENV_SAGAX_ENVIRONMENT__SAGAX_SANDBOX_TOKEN: "theirs",
+    };
+    restorePrefixedEnvironment(env);
+    expect(env.SAGAX_SANDBOX_TOKEN).toBe("mine");
+    expect(env.SAGAX_TOOL_SERVER).toBe("sagax-computer");
+    const plain: NodeJS.ProcessEnv = { SAGAX_SANDBOX_TOKEN: "direct" };
+    restorePrefixedEnvironment(plain);
+    expect(plain).toEqual({ SAGAX_SANDBOX_TOKEN: "direct" });
+  });
+
   it("answers initialize locally and forwards tools calls to the internal endpoint only", async () => {
     const seen: { url: string; auth: string | null }[] = [];
     const fakeFetch = (async (url: URL, init: RequestInit) => {
