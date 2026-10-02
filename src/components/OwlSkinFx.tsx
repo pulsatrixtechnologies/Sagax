@@ -12,9 +12,46 @@ import { OWL_GEOM, type OwlPath } from "@/lib/owl/owl-art";
 import {
   OWL_LIGHTNING_ARCS,
   OWL_LIGHTNING_CRAWL,
+  owlSkinAccent,
   type OwlSkinId,
   type OwlSkinLook,
 } from "@/lib/owl/owl-skins";
+import { fxPalette, type FxPalette } from "./skin-fx/skin-fx";
+
+/**
+ * The owl skin's equip and move effects (SkinFx.tsx): their particles,
+ * colors and trails, in the skin's own style.
+ */
+export function owlFxPalette(skin: OwlSkinId, hex: string): FxPalette {
+  switch (skin) {
+    case "snowy":
+      return { kind: "plain", a: "#FFFFFF", b: "#C9D6E4", glow: false, particle: "dot", trail: false };
+    case "barn":
+      return { kind: "plain", a: "#E8C48A", b: "#FBF3E6", glow: false, particle: "dot", trail: false };
+    case "carbon":
+      return { ...fxPalette("chrome", hex), a: "#C8D2E1", b: "#6B7280", trail: false };
+    case "gold":
+      return fxPalette("gold", hex);
+    case "frost":
+      return { kind: "crystal", a: "#CFF3FF", b: "#FFFFFF", glow: true, particle: "shard", trail: false };
+    case "neon":
+      return fxPalette("neon", owlSkinAccent(hex));
+    case "lightning":
+      return { kind: "neon", a: "#7DD3FC", b: "#FFFFFF", glow: true, particle: "streak", trail: true };
+    case "chrome":
+      return fxPalette("chrome", hex);
+    case "inferno":
+      return fxPalette("molten", hex);
+    case "holo":
+      return fxPalette("holo", hex);
+    case "galaxy":
+      return fxPalette("galaxy", hex);
+    case "spirit":
+      return { kind: "crystal", a: "#BFF8FF", b: "#FFFFFF", glow: true, particle: "dot", trail: true };
+    default:
+      return fxPalette("plain", hex);
+  }
+}
 
 export interface OwlSkinFxProps {
   skin: OwlSkinId;
@@ -81,6 +118,22 @@ const GLINTS: [number, number, number, number][] = [
   [58, 196, 0.8, 2.1],
 ];
 
+/** Stars on the galaxy owl's plumage: x, y, radius, twinkle delay (s; -1 stays still). */
+const GALAXY_STARS: [number, number, number, number][] = [
+  [70, 118, 2.2, 0], [96, 150, 1.4, -1], [62, 176, 2, 1.3], [104, 206, 1.6, -1], [80, 228, 2.4, 2.2],
+  [132, 92, 1.4, -1], [150, 170, 2, 0.7], [176, 210, 1.5, -1], [124, 236, 1.8, 1.8], [190, 120, 1.3, -1],
+  [116, 60, 1.6, 2.7], [158, 48, 1.2, -1],
+];
+
+/** Wisps rising off the spirit owl: x, y, width, delay. */
+const WISPS: [number, number, number, number][] = [
+  [64, 120, 9, 0],
+  [110, 40, 7, 1.4],
+  [196, 70, 8, 0.7],
+  [44, 196, 7, 2.1],
+  [214, 168, 9, 2.8],
+];
+
 /** Defs: the aura gradient, the silhouette clip, and per-skin paints. */
 export function OwlSkinDefs({ skin, look, uid, detail, silhouette }: OwlSkinFxProps) {
   const out: ReactNode[] = [];
@@ -122,11 +175,60 @@ export function OwlSkinDefs({ skin, look, uid, detail, silhouette }: OwlSkinFxPr
       </linearGradient>,
     );
   }
-  if (skin === "gold" || skin === "carbon" || skin === "frost") {
+  if (skin === "chrome") {
+    // a mirror finish: sky above, a dark horizon band, ground light below
+    out.push(
+      <linearGradient key="env" id={`${uid}-env`} x1="0" y1="0" x2="0.25" y2="1">
+        <stop offset="0" stopColor="#FFFFFF" stopOpacity={0.85} />
+        <stop offset="0.3" stopColor="#DCE6F2" stopOpacity={0.35} />
+        <stop offset="0.46" stopColor="#2B333D" stopOpacity={0.55} />
+        <stop offset="0.54" stopColor="#5B6878" stopOpacity={0.2} />
+        <stop offset="0.78" stopColor="#E8EEF5" stopOpacity={0.45} />
+        <stop offset="1" stopColor="#3A4450" stopOpacity={0.5} />
+      </linearGradient>,
+    );
+  }
+  if (skin === "holo") {
+    out.push(
+      <linearGradient key="foil" id={`${uid}-foil`} x1="0" y1="0" x2="128" y2="128" gradientUnits="userSpaceOnUse" spreadMethod="repeat">
+        <stop offset="0" stopColor="#FF9BE8" />
+        <stop offset="0.25" stopColor="#FFE9A3" />
+        <stop offset="0.5" stopColor="#9BF6FF" />
+        <stop offset="0.75" stopColor="#B6A4FF" />
+        <stop offset="1" stopColor="#FF9BE8" />
+      </linearGradient>,
+    );
+  }
+  if (skin === "galaxy") {
+    out.push(
+      <radialGradient key="nebA" id={`${uid}-nebA`} cx="0.5" cy="0.5" r="0.5">
+        <stop offset="0" stopColor="#D06BFF" stopOpacity={0.7} />
+        <stop offset="1" stopColor="#D06BFF" stopOpacity={0} />
+      </radialGradient>,
+      <radialGradient key="nebB" id={`${uid}-nebB`} cx="0.5" cy="0.5" r="0.5">
+        <stop offset="0" stopColor="#4FB8FF" stopOpacity={0.6} />
+        <stop offset="1" stopColor="#4FB8FF" stopOpacity={0} />
+      </radialGradient>,
+    );
+  }
+  if (skin === "spirit") {
+    out.push(
+      <linearGradient key="mist" id={`${uid}-mist`} x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stopColor="#FFFFFF" stopOpacity={0.5} />
+        <stop offset="0.55" stopColor="#E8FFFF" stopOpacity={0.12} />
+        <stop offset="1" stopColor="#7FF0FF" stopOpacity={0.35} />
+      </linearGradient>,
+      <radialGradient key="wisp" id={`${uid}-wisp`} cx="0.5" cy="0.5" r="0.5">
+        <stop offset="0" stopColor="#FFFFFF" stopOpacity={0.9} />
+        <stop offset="1" stopColor="#BFF8FF" stopOpacity={0} />
+      </radialGradient>,
+    );
+  }
+  if (skin === "gold" || skin === "carbon" || skin === "frost" || skin === "chrome" || skin === "holo") {
     out.push(
       <linearGradient key="band" id={`${uid}-band`} x1="0" y1="0" x2="1" y2="0">
         <stop offset="0" stopColor="#FFFFFF" stopOpacity={0} />
-        <stop offset="0.5" stopColor="#FFFFFF" stopOpacity={skin === "gold" ? 0.75 : 0.35} />
+        <stop offset="0.5" stopColor="#FFFFFF" stopOpacity={skin === "gold" || skin === "chrome" ? 0.75 : 0.35} />
         <stop offset="1" stopColor="#FFFFFF" stopOpacity={0} />
       </linearGradient>,
     );
@@ -181,7 +283,7 @@ export function OwlSkinDefs({ skin, look, uid, detail, silhouette }: OwlSkinFxPr
 /** Behind the whole owl: the aura, and the inferno's flames. */
 export function OwlSkinBack({ skin, look, uid, detail, silhouette }: OwlSkinFxProps) {
   if (skin === "none") return null;
-  const glow = detail && look.rim && (skin === "neon" || skin === "lightning" || skin === "inferno");
+  const glow = detail && look.rim && (skin === "neon" || skin === "lightning" || skin === "inferno" || skin === "spirit");
   return (
     <g data-part="skinBack" pointerEvents="none">
       {glow && (
@@ -245,6 +347,39 @@ export function OwlSkinPlumage({ skin, uid, detail }: OwlSkinFxProps) {
         </>
       );
       break;
+    case "chrome":
+      inner = <rect width={256} height={256} fill={`url(#${uid}-env)`} />;
+      break;
+    case "holo":
+      inner = (
+        <g className="owl-fx-foil" style={anim(7)}>
+          <rect x={-128} width={512} height={256} fill={`url(#${uid}-foil)`} opacity={0.55} />
+        </g>
+      );
+      break;
+    case "galaxy":
+      inner = (
+        <>
+          <g className="owl-fx-drift" style={anim(14)}>
+            <ellipse cx={90} cy={150} rx={70} ry={52} fill={`url(#${uid}-nebA)`} />
+            <ellipse cx={170} cy={200} rx={64} ry={46} fill={`url(#${uid}-nebB)`} />
+            <ellipse cx={140} cy={80} rx={52} ry={36} fill={`url(#${uid}-nebA)`} opacity={0.6} />
+          </g>
+          {GALAXY_STARS.map(([x, y, r, delay], i) =>
+            delay < 0 ? (
+              <circle key={i} cx={x} cy={y} r={r} fill="#FFFFFF" opacity={0.85} />
+            ) : (
+              <g key={i} transform={`translate(${x} ${y}) scale(${r / 4})`}>
+                <path className="owl-fx-twinkle" style={anim(2.6, delay)} d={SPARKLE} fill="#FFFFFF" />
+              </g>
+            ),
+          )}
+        </>
+      );
+      break;
+    case "spirit":
+      inner = <rect width={256} height={256} fill={`url(#${uid}-mist)`} className="owl-fx-pulse" style={anim(3.6)} />;
+      break;
     case "lightning":
       inner = OWL_LIGHTNING_CRAWL.map((arc, i) => (
         <g key={i} className="owl-fx-crackle" style={anim(arc.dur, arc.delay)} opacity={i === 0 ? 0.9 : 0}>
@@ -265,10 +400,10 @@ export function OwlSkinPlumage({ skin, uid, detail }: OwlSkinFxProps) {
 
 /** On the near wing, over its flat fill (so the paint follows the wing when it opens). */
 export function OwlSkinWing({ skin, uid, detail, wing }: OwlSkinFxProps & { wing: OwlPath[] }) {
-  if (!detail || (skin !== "gold" && skin !== "carbon")) return null;
-  const fill = skin === "gold" ? `url(#${uid}-metal)` : `url(#${uid}-weave)`;
+  if (!detail || (skin !== "gold" && skin !== "carbon" && skin !== "chrome" && skin !== "holo")) return null;
+  const fill = { gold: `url(#${uid}-metal)`, carbon: `url(#${uid}-weave)`, chrome: `url(#${uid}-env)`, holo: `url(#${uid}-foil)` }[skin];
   return (
-    <g data-part="skinWing" pointerEvents="none" opacity={skin === "carbon" ? 0.8 : 0.7}>
+    <g data-part="skinWing" pointerEvents="none" opacity={skin === "carbon" ? 0.8 : skin === "holo" ? 0.45 : 0.7}>
       {wing.map((p, i) => (
         <path key={i} d={p.d} fill={fill} />
       ))}
@@ -315,28 +450,50 @@ export function OwlSkinFront({ skin, uid, detail }: OwlSkinFxProps) {
           </g>
         </g>
       );
+    case "galaxy":
+      return (
+        <g data-part="skinFront" pointerEvents="none">
+          {GLINTS.map(([x, y, s, delay], i) => (
+            <g key={i} transform={`translate(${x} ${y}) scale(${s * 0.8})`}>
+              <path className="owl-fx-twinkle" style={anim(3.2, delay)} d={SPARKLE} fill="#D9CCFF" />
+            </g>
+          ))}
+        </g>
+      );
+    case "spirit":
+      return (
+        <g data-part="skinFront" pointerEvents="none">
+          {WISPS.map(([x, y, w, delay], i) => (
+            <g key={i} transform={`translate(${x} ${y})`}>
+              <ellipse className="owl-fx-wisp" style={anim(3.4 + (i % 3) * 0.5, delay)} rx={w} ry={w * 1.6} fill={`url(#${uid}-wisp)`} opacity={0} />
+            </g>
+          ))}
+        </g>
+      );
     case "gold":
     case "carbon":
     case "frost":
+    case "chrome":
+    case "holo":
       return (
         <g data-part="skinFront" pointerEvents="none">
           <g clipPath={clip}>
             <g transform="rotate(22 128 128)">
               <rect
                 className="owl-fx-sweep"
-                style={anim(skin === "gold" ? 3.2 : 4.6, skin === "gold" ? 0.4 : 1.2)}
+                style={anim(skin === "gold" || skin === "chrome" ? 3.2 : 4.6, skin === "gold" ? 0.4 : 1.2)}
                 x={70}
                 y={-80}
-                width={skin === "gold" ? 46 : 60}
+                width={skin === "gold" || skin === "chrome" ? 46 : 60}
                 height={420}
                 fill={`url(#${uid}-band)`}
               />
             </g>
           </g>
-          {skin === "gold" &&
+          {(skin === "gold" || skin === "chrome" || skin === "holo") &&
             GLINTS.map(([x, y, s, delay], i) => (
               <g key={i} transform={`translate(${x} ${y}) scale(${s})`}>
-                <path className="owl-fx-twinkle" style={anim(2.4, delay)} d={SPARKLE} fill="#FFF8DC" />
+                <path className="owl-fx-twinkle" style={anim(2.4, delay)} d={SPARKLE} fill={skin === "gold" ? "#FFF8DC" : skin === "holo" ? ["#FFB8F0", "#B8FBFF", "#FFF1B8"][i % 3] : "#FFFFFF"} />
               </g>
             ))}
           {skin === "frost" &&

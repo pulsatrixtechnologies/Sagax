@@ -53,12 +53,12 @@ describe("BotProfileAvatarCard", () => {
     }
   });
 
-  it("still offers every bot color for the mascot", () => {
-    const markup = renderEditor(makeBot());
+  it("still offers every bot color for the mascot, on its palette's tab", () => {
     for (const color of MAUS_COLOR_NAMES) {
-      expect(markup).toContain(`aria-label="Use ${color} mascot color"`);
+      const markup = renderEditor(makeBot({ color }));
+      expect(markup).toMatch(new RegExp(`aria-checked="true"[^>]*aria-label="Use ${color} mascot color"`));
     }
-    expect(markup).toMatch(/aria-checked="true"[^>]*aria-label="Use green mascot color"/);
+    expect(renderEditor(makeBot())).toMatch(/aria-checked="true"[^>]*aria-label="Use green mascot color"/);
   });
 
   it("offers zoom and drag framing for a custom image", () => {
@@ -89,24 +89,26 @@ describe("BotProfileAvatarCard", () => {
 });
 
 describe("BotProfileAvatarCard skins and moves", () => {
-  it("offers every skin with a live preview, none chosen by default", () => {
+  it("offers every skin with a live preview, by rarity, Classic chosen by default", () => {
     const markup = renderEditor(makeBot());
     expect(markup).toContain(">Skin<");
-    for (const skin of ["none", "lightning", "gold", "neon", "inferno", "frost", "carbon"]) {
+    for (const skin of ["none", "snowy", "barn", "carbon"]) {
       expect(markup).toContain(`data-mascot-skin-option="${skin}"`);
     }
-    expect(markup).toContain('aria-checked="true" aria-label="Use the None skin"');
-    expect(markup).toContain('aria-checked="false" aria-label="Use the Lightning skin"');
-    expect(markup).toContain('aria-label="Use the Ice skin"');
+    expect(markup).toContain('aria-checked="true" aria-label="Classic, Common"');
+    expect(markup).toContain('aria-checked="false" aria-label="Snowy, Common"');
+    const epic = renderEditor(makeBot({ mascotSkin: "lightning" }));
+    expect(epic).toContain('aria-checked="true" aria-label="Lightning, Epic"');
     // the previews play their effects without joining the frame loop
-    expect(markup).toMatch(/data-owl-skin="lightning" data-owl-fx="live"/);
+    expect(epic).toMatch(/data-owl-skin="lightning" data-owl-fx="live"/);
+    expect(renderEditor(makeBot({ mascotSkin: "frost" }))).toContain('aria-label="Ice, Rare"');
   });
 
   it("reflects a stored skin, and reads an unknown one as none", () => {
-    expect(renderEditor(makeBot({ mascotSkin: "gold" }))).toContain('aria-checked="true" aria-label="Use the Gold skin"');
+    expect(renderEditor(makeBot({ mascotSkin: "gold" }))).toContain('aria-checked="true" aria-label="Gold, Rare"');
     // SAFETY: a skin this build does not know can arrive from a newer client.
     expect(renderEditor(makeBot({ mascotSkin: "plasma" as Bot["mascotSkin"] }))).toContain(
-      'aria-checked="true" aria-label="Use the None skin"',
+      'aria-checked="true" aria-label="Classic, Common"',
     );
   });
 
@@ -126,7 +128,7 @@ describe("BotProfileAvatarCard skins and moves", () => {
   });
 
   it("offers black among the colors, outlined so it reads on a dark card", () => {
-    const markup = renderEditor(makeBot());
+    const markup = renderEditor(makeBot({ color: "black" }));
     expect(markup).toMatch(/aria-label="Use black mascot color"/);
     expect(markup).toContain("inset 0 0 0 1.5px");
   });

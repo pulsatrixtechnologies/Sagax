@@ -2076,6 +2076,47 @@ button:disabled.bg-danger {
 [data-owl-fx="live"] .owl-fx-glow-inferno {
   animation: owl-fx-pulse 1.3s ease-in-out infinite;
 }
+[data-owl-fx="live"] .owl-fx-aura-holo,
+[data-owl-fx="live"] .owl-fx-aura-galaxy,
+[data-owl-fx="live"] .owl-fx-aura-spirit,
+[data-owl-fx="live"] .owl-fx-glow-spirit {
+  animation: owl-fx-pulse 3.6s ease-in-out infinite;
+}
+/* the holographic foil slides across the plumage; the galaxy's nebula drifts;
+   the spirit's wisps rise and fade. Slow, soft and never flashing. */
+[data-owl-fx="live"] .owl-fx-foil {
+  animation-name: owl-fx-foil;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+}
+[data-owl-fx="live"] .owl-fx-drift {
+  animation-name: owl-fx-drift;
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
+  animation-direction: alternate;
+}
+[data-owl-fx="live"] .owl-fx-wisp {
+  animation-name: owl-fx-wisp;
+  animation-timing-function: ease-out;
+  animation-iteration-count: infinite;
+}
+.owl-fx-wisp {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+}
+@keyframes owl-fx-foil {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(128px); }
+}
+@keyframes owl-fx-drift {
+  0% { transform: translate(-10px, 4px); }
+  100% { transform: translate(12px, -6px); }
+}
+@keyframes owl-fx-wisp {
+  0% { transform: translate(0, 0) scale(0.6); opacity: 0; }
+  25% { opacity: 0.7; }
+  100% { transform: translate(4px, -48px) scale(1.15); opacity: 0; }
+}
 @keyframes owl-fx-crackle {
   0%, 30%, 100% { opacity: 0; }
   2% { opacity: 1; }

@@ -348,6 +348,12 @@ Electron restart (no HMR); launch-test them before committing.
   (`bot.mascotLook`, `shared/mascot-look.ts`, validated by the server), chosen
   in the avatar popover (`MascotLookEditor.tsx`) and drawn by `BotAvatar` for
   every bot avatar in the app; never draw a bot's mascot outside `BotAvatar`.
+- Bot colors live in `shared/mascot-colors.ts` (palettes Vivid, Pastel, Deep,
+  Neon, Neutral; the original fifteen ids keep their values) and every skin,
+  the owl's included (`OWL_SKIN_TIER`, `LEGACY_OWL_SKINS`), has a rarity. The
+  popover shows one palette and one rarity at a time (`editor-tabs.ts`,
+  covered by `editor-tabs.test.ts`); a renamed skin id goes in the legacy
+  table, never removed.
 - Per device:, the mood (`omb.floatingBots.mood.v1`, never punishing),
   and the settings "Fly away during tasks" and "Activity level"
   (`omb.floatingBots.prefs.v1`, Settings > Appearance and the right-click
