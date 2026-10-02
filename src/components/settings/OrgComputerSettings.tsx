@@ -1,5 +1,6 @@
-// Settings > Computer on an organization server: where this person's bots
-// work (one sentence and the switch), the Local VM on their own computer
+// Settings > Computer on an organization server: where bots work (one
+// sentence: each bot's Works on decides, Auto being the server environment),
+// the Local VM on their own computer
 // (found through their desktop app: which runtime, its state, "Set up in one
 // click" with visible steps, install offers) and their server environment
 // (one line, state, resources, Reset behind "..." with a confirmation, and
@@ -12,7 +13,7 @@ import { currentDesktop, type DesktopBridgeStatus } from "@/lib/desktop-bridge";
 import { installChoices, localVmProblemKey, localVmView, runtimeSummaryKey, type DesktopLocalVmStatus, type SetupStep } from "@/lib/desktop-local-vm";
 import { t } from "@/lib/i18n";
 import { loadServerEnvironment, resetServerEnvironment, type ServerEnvironmentStatus } from "@/lib/server-environment";
-import { ServerComputerScreen, WorkplaceSelector, useDesktopLocalVm, useWorkplacePlace } from "../computer/OrgComputerTab";
+import { ServerComputerScreen, useDesktopLocalVm } from "../computer/OrgComputerTab";
 import { screenStateLabel } from "../computer/ComputerScreen";
 import { Card } from "../SettingsPrimitives";
 import { serverEnvironmentStateText } from "./MyServerEnvironment";
@@ -23,12 +24,9 @@ export function OrgComputerSettings({ bridge, initialLocal = null, initialServer
   initialServer?: ServerEnvironmentStatus | null;
   confirm?: (text: string) => boolean;
 }) {
-  const [place, setPlace] = useWorkplacePlace(bridge);
   return (
     <>
-      <Card cardId="computer.orgWhere" title={t("orgComputer.where")} subtitle={t("orgComputer.whereHelp")}>
-        <WorkplaceSelector place={place} onChange={setPlace} bridge={bridge} />
-      </Card>
+      <Card cardId="computer.orgWhere" title={t("orgComputer.where")} subtitle={t("orgComputer.whereHelp")} />
       <LocalVmCard bridge={bridge} initial={initialLocal} confirm={confirm} />
       <ServerEnvironmentCard initial={initialServer} confirm={confirm} />
     </>

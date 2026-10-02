@@ -345,9 +345,8 @@ export type WorkplaceTarget = "user-desktop" | "user-sandbox" | "host" | "none";
 export type WorkplaceReason =
   | "solo"                    // a solo server: its own machine, unchanged
   | "desktop"                 // the person's connected desktop
-  | "pinned-desktop"          // the conversation is pinned to "This computer"
-  | "preference-server"       // the person chose their server environment
-  | "desktop-not-connected"   // they want their computer, it is not connected
+  | "pinned-desktop"          // Works on (or the pin) is their computer, not connected
+  | "server-default"          // Auto or Cloud: their server environment
   | "routine-not-allowed"     // a routine, and the owner did not allow their PC
   | "no-person"               // nobody asked: a room follow-up, ...
   | "unknown";                // nobody known at all
@@ -365,21 +364,23 @@ export interface WorkplaceDecision {
 /** Where one turn's shell, file and browser tools run on an organization
  * server, and for whom. Pure: tested on its own (desktop-bridge.test.ts).
  *
- * - Conversation (1:1, private thread, a teammate's bot): the SPEAKER's
- *   computer when their desktop app is connected and they did not choose
- *   their server environment; else their server environment.
- * - Room: the person whose message triggered the turn, the same way; a
- *   follow-up no person asked for never reaches anyone's computer.
+ * The bot's Works on (or the conversation's pin) decides, never a
+ * per-person switch (2026-10-02):
+ * - Auto and Cloud: the person's server environment (the default).
+ * - Local VM and This computer (`desktopTargeted`): the person's own
+ *   computer through their Sagax desktop app, when it is connected; else
+ *   nothing runs there and the bot is told why (reason "pinned-desktop").
+ * - Conversation (1:1, private thread, a teammate's bot): the SPEAKER's.
+ * - Room: the person whose message triggered the turn; a follow-up no
+ *   person asked for never reaches anyone's computer.
  * - Routine (runs as the bot owner, unattended): the owner's server
- *   environment, unless the owner's desktop is connected AND they allowed
- *   routines on their computer.
- * - A conversation pinned to "This computer" keeps the person's own
- *   computer (Share this computer, PR #18) and adds the bridge when it is
- *   connected. */
+ *   environment, unless the bot works on their computer, it is connected
+ *   AND they allowed routines on it. */
 export function resolveBotWorkplace(input: {
   organization: boolean;
   sandboxConfigured: boolean;
-  /** The conversation is pinned to the person's own computer. */
+  /** Works on (or the conversation's pin) is the person's own computer:
+   * Local VM or This computer. */
   desktopTargeted: boolean;
   /** The turn belongs to a routine (directly or through hops). */
   routine: boolean;
@@ -398,14 +399,12 @@ export function resolveBotWorkplace(input: {
     ({ target: input.sandboxConfigured && principal ? "user-sandbox" : "none", principal, reason, fallback });
   if (!principal) return { target: "none", principal: null, reason: "unknown", fallback: false };
   if (input.routine) {
-    if (input.desktopConnected && input.preference.routines && input.preference.place === "computer") {
+    if (input.desktopTargeted && input.desktopConnected && input.preference.routines) {
       return { target: "user-desktop", principal, reason: "desktop", fallback: false };
     }
     return server("routine-not-allowed");
   }
   if (!input.personAsked) return server("no-person");
-  if (input.desktopTargeted) return { target: "user-desktop", principal, reason: "pinned-desktop", fallback: false };
-  if (input.preference.place === "server") return server("preference-server");
-  if (input.desktopConnected) return { target: "user-desktop", principal, reason: "desktop", fallback: false };
-  return server("desktop-not-connected", true);
+  if (input.desktopTargeted) return { target: "user-desktop", principal, reason: input.desktopConnected ? "desktop" : "pinned-desktop", fallback: false };
+  return server("server-default");
 }

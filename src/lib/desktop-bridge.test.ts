@@ -10,11 +10,12 @@ import { BOT_WORKPLACE_PREFERENCE } from "../../shared/bot-workplace";
 const status = (connected: boolean): DesktopBridgeStatus => ({ connected, tunnel: connected, desktops: [], workplace: { place: "computer", routines: false, network: "all" }, activity: [] });
 
 describe("where bots work, as the app says it", () => {
-  it("says the server environment is used when the person's computer is not connected", () => {
-    expect(workplaceNotice(status(false), { place: "computer", routines: false, network: "all" })).toBe("fallback");
-    expect(workplaceNotice(status(true), { place: "computer", routines: false, network: "all" })).toBe("computer");
-    expect(workplaceNotice(status(false), { place: "server", routines: false, network: "all" })).toBeNull();
-    expect(workplaceNotice(null, { place: "computer", routines: false, network: "all" })).toBeNull();
+  it("speaks only when the bot works on the person's computer, and says when it is not connected", () => {
+    expect(workplaceNotice(status(false), "computer")).toBe("fallback");
+    expect(workplaceNotice(status(true), "computer")).toBe("computer");
+    expect(workplaceNotice(status(true), "server")).toBeNull();
+    expect(workplaceNotice(status(false), null)).toBeNull();
+    expect(workplaceNotice(null, "computer")).toBeNull();
   });
 
   it("a solo server has no bridge; a failure is not 'no bridge'", async () => {

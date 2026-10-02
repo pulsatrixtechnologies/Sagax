@@ -66,12 +66,14 @@ export function writeWorkplace(value: BotWorkplace, storage: Pick<Storage, "setI
   try { storage.setItem(BOT_WORKPLACE_PREFERENCE, serializeBotWorkplace(value)); } catch { /* storage refused */ }
 }
 
-/** What the composer says about where this person's bots work right now. */
+/** What the composer says about where this conversation's bot works: only
+ * when it works on the person's own computer (Local VM or This computer),
+ * on it or "not connected". Auto and Cloud use the server environment and
+ * need no notice (src/lib/place.ts orgComputerFor). */
 export type WorkplaceNoticeKind = "computer" | "fallback" | null;
 
-export function workplaceNotice(status: DesktopBridgeStatus | null, workplace: BotWorkplace): WorkplaceNoticeKind {
-  if (!status) return null;
-  if (workplace.place === "server") return null;
+export function workplaceNotice(status: DesktopBridgeStatus | null, computer: "server" | "computer" | null): WorkplaceNoticeKind {
+  if (!status || computer !== "computer") return null;
   return status.connected ? "computer" : "fallback";
 }
 

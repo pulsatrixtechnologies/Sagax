@@ -25,32 +25,31 @@ describe("where a turn's tools run (organization server)", () => {
   it("solo server: its own machine, unchanged", () => {
     expect(resolveBotWorkplace({ ...base, organization: false })).toMatchObject({ target: "host", reason: "solo" });
   });
-  it("conversation, desktop connected: the speaker's own computer (default preference)", () => {
-    expect(resolveBotWorkplace(base)).toEqual({ target: "user-desktop", principal: ADA, reason: "desktop", fallback: false });
+  it("Auto and Cloud: the speaker's server environment, even with their desktop connected", () => {
+    expect(resolveBotWorkplace(base)).toEqual({ target: "user-sandbox", principal: ADA, reason: "server-default", fallback: false });
+    expect(resolveBotWorkplace({ ...base, desktopConnected: false })).toMatchObject({ target: "user-sandbox", reason: "server-default" });
+    expect(resolveBotWorkplace({ ...base, sandboxConfigured: false })).toMatchObject({ target: "none" });
+    // The old per-person switch no longer decides.
+    expect(resolveBotWorkplace({ ...base, preference: { ...DEFAULT_BOT_WORKPLACE, place: "computer" } })).toMatchObject({ target: "user-sandbox" });
   });
-  it("conversation, desktop not connected: the server environment, and says it is a fallback", () => {
-    expect(resolveBotWorkplace({ ...base, desktopConnected: false })).toEqual({ target: "user-sandbox", principal: ADA, reason: "desktop-not-connected", fallback: true });
-    expect(resolveBotWorkplace({ ...base, desktopConnected: false, sandboxConfigured: false })).toMatchObject({ target: "none", fallback: true });
+  it("Local VM or This computer: the speaker's own computer, said when it is not connected", () => {
+    expect(resolveBotWorkplace({ ...base, desktopTargeted: true })).toEqual({ target: "user-desktop", principal: ADA, reason: "desktop", fallback: false });
+    expect(resolveBotWorkplace({ ...base, desktopTargeted: true, desktopConnected: false })).toMatchObject({ target: "user-desktop", reason: "pinned-desktop" });
   });
-  it("the person chose their server environment: never their computer", () => {
-    expect(resolveBotWorkplace({ ...base, preference: { ...DEFAULT_BOT_WORKPLACE, place: "server" } })).toMatchObject({ target: "user-sandbox", reason: "preference-server", fallback: false });
-  });
-  it("routines: the owner's sandbox unless their desktop is connected AND they allowed routines on it", () => {
-    const routine = { ...base, routine: true, personAsked: false };
+  it("routines: the owner's sandbox unless the bot works on their computer, it is connected AND they allowed routines on it", () => {
+    const routine = { ...base, routine: true, personAsked: false, desktopTargeted: true };
     expect(resolveBotWorkplace(routine)).toMatchObject({ target: "user-sandbox", reason: "routine-not-allowed" });
-    expect(resolveBotWorkplace({ ...routine, preference: { ...DEFAULT_BOT_WORKPLACE, routines: true } })).toMatchObject({ target: "user-desktop", reason: "desktop" });
-    expect(resolveBotWorkplace({ ...routine, preference: { ...DEFAULT_BOT_WORKPLACE, routines: true }, desktopConnected: false })).toMatchObject({ target: "user-sandbox" });
-    expect(resolveBotWorkplace({ ...routine, preference: { place: "server", routines: true, network: "all" } })).toMatchObject({ target: "user-sandbox" });
+    const allowed = { ...routine, preference: { ...DEFAULT_BOT_WORKPLACE, routines: true } };
+    expect(resolveBotWorkplace(allowed)).toMatchObject({ target: "user-desktop", reason: "desktop" });
+    expect(resolveBotWorkplace({ ...allowed, desktopConnected: false })).toMatchObject({ target: "user-sandbox" });
+    expect(resolveBotWorkplace({ ...allowed, desktopTargeted: false })).toMatchObject({ target: "user-sandbox" });
   });
   it("rooms: the person whose message triggered the turn; a follow-up nobody asked for never reaches a computer", () => {
-    expect(resolveBotWorkplace({ ...base, principal: BOB })).toMatchObject({ target: "user-desktop", principal: BOB });
-    expect(resolveBotWorkplace({ ...base, personAsked: false })).toMatchObject({ target: "user-sandbox", reason: "no-person" });
+    expect(resolveBotWorkplace({ ...base, principal: BOB, desktopTargeted: true })).toMatchObject({ target: "user-desktop", principal: BOB });
+    expect(resolveBotWorkplace({ ...base, personAsked: false, desktopTargeted: true })).toMatchObject({ target: "user-sandbox", reason: "no-person" });
   });
   it("nobody known: nothing at all", () => {
     expect(resolveBotWorkplace({ ...base, principal: null })).toMatchObject({ target: "none", principal: null });
-  });
-  it("a conversation pinned to This computer keeps the person's computer", () => {
-    expect(resolveBotWorkplace({ ...base, desktopTargeted: true, desktopConnected: false })).toMatchObject({ target: "user-desktop", reason: "pinned-desktop" });
   });
   it("the preference reads defensively", () => {
     expect(parseBotWorkplace(undefined)).toEqual({ place: "computer", routines: false, network: "all" });

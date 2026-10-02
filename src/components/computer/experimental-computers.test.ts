@@ -22,6 +22,11 @@ describe("VPS Computer and Boat Computer flags", () => {
     expect(boatComputerEnabled({ features: { boatComputer: true } })).toBe(true);
     // An OMB Cloud home keeps its Cloud place whatever the flags say.
     expect(placeOffered("cloud", { cloudHome: true })).toBe(true);
+    // On an organization server Cloud is the server environment: the flags
+    // never hide it, nor the local places.
+    for (const config of [null, {}, { features: { vpsComputer: true } }, { features: { boatComputer: true } }]) {
+      for (const place of ["cloud", "vm", "local", "browser"] as const) expect(placeOffered(place, config, true)).toBe(true);
+    }
   });
 
   it("offer only the switched-on backends in the Cloud picker", () => {

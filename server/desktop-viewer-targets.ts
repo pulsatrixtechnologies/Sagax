@@ -50,6 +50,9 @@ const unavailable = (error: unknown) => {
 export function sandboxDesktopTarget(
   manager: Pick<UserSandboxManager, "openDesktop" | "desktopStream" | "pendingDeletionAt">,
   principalId: string,
+  /** The person took control: bots' computer use there is refused while a
+   * control view stays open (returns the release). */
+  holdControl: (principalId: string) => () => void = () => () => {},
 ): DesktopTarget {
   const present = () => manager.pendingDeletionAt(principalId) === null;
   return {
@@ -57,7 +60,11 @@ export function sandboxDesktopTarget(
     allows: (auth) => auth.kind === "session" && auth.session.principalId?.trim() === principalId,
     async resolve({ upgrade, control }) {
       if (!present()) throw Object.assign(new Error("signed out"), { status: 403 });
-      const stream = () => manager.desktopStream(principalId, { control }).catch((error: unknown) => { throw unavailable(error); });
+      const stream = async () => {
+        const duplex = await manager.desktopStream(principalId, { control }).catch((error: unknown) => { throw unavailable(error); });
+        if (control) duplex.once("close", holdControl(principalId));
+        return duplex;
+      };
       if (upgrade) return { port: 0, password: null, live: present, stream };
       let passwords: { full: string; view: string };
       try { passwords = await manager.openDesktop(principalId); } catch (error) { throw unavailable(error); }

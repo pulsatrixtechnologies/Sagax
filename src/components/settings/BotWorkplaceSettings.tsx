@@ -1,8 +1,9 @@
-// Settings > Organization > Where bots work, on an organization server: the
-// person's own computer through this desktop app (default), or their server
-// environment; whether routines may use their computer; which destinations
-// bots may reach through it; and what bots recently did there
-// (src/lib/desktop-bridge.ts, server/desktop-bridge.ts).
+// Settings > Organization > Where bots work, on an organization server: each
+// bot's Works on decides (Auto and Cloud: the person's server environment;
+// Local VM and This computer: their own computer through this desktop app);
+// here, whether their computer is connected, whether routines may use it,
+// which destinations bots may reach through it, and what bots recently did
+// there (src/lib/desktop-bridge.ts, server/desktop-bridge.ts).
 import { useEffect, useState } from "react";
 
 import { activeLocale, t } from "@/lib/i18n";
@@ -22,7 +23,7 @@ export function activityLine(entry: DesktopBridgeActivity): string {
 export function BotWorkplaceSettings() {
   const status = useDesktopBridgeStatus(15_000);
   const [workplace, setWorkplace] = useState<BotWorkplace>(() => readWorkplace());
-  useEffect(() => { if (status?.workplace) setWorkplace(status.workplace); }, [status?.workplace?.place, status?.workplace?.routines, status?.workplace?.network]);
+  useEffect(() => { if (status?.workplace) setWorkplace(status.workplace); }, [status?.workplace?.routines, status?.workplace?.network]);
   if (!status) return null;
   const change = (next: Partial<BotWorkplace>) => {
     const value = { ...workplace, ...next };
@@ -30,48 +31,31 @@ export function BotWorkplaceSettings() {
     writeWorkplace(value);
   };
   const online = status.desktops.filter((desktop) => desktop.online);
-  const summary = workplace.place === "server"
-    ? t("botWorkplace.server")
-    : status.connected ? t("botWorkplace.computer") : t("botWorkplace.fallback");
+  const summary = status.connected ? t("orgComputer.connected") : t("orgComputer.notConnected");
   return (
     <Card cardId="organization.botWorkplace" title={t("botWorkplace.title")} summary={summary}>
-      <div className="flex flex-col gap-3 text-[13px]" data-bot-workplace={workplace.place} data-desktop-connected={status.connected ? "yes" : "no"}>
+      <div className="flex flex-col gap-3 text-[13px]" data-desktop-connected={status.connected ? "yes" : "no"}>
         <p className="text-[12px] leading-relaxed text-ink-secondary">{t("botWorkplace.help")}</p>
-        <fieldset className="flex flex-col gap-2">
-          <legend className="sr-only">{t("botWorkplace.title")}</legend>
-          <label className="flex min-h-[44px] items-center gap-2 md:min-h-0">
-            <input type="radio" name="bot-workplace" checked={workplace.place === "computer"} onChange={() => change({ place: "computer" })} />
-            <span>{t("botWorkplace.place.computer")}</span>
-          </label>
-          <label className="flex min-h-[44px] items-center gap-2 md:min-h-0">
-            <input type="radio" name="bot-workplace" checked={workplace.place === "server"} onChange={() => change({ place: "server" })} />
-            <span>{t("botWorkplace.place.server")}</span>
-          </label>
-        </fieldset>
         <p role="status" className={status.connected ? "text-ink" : "text-ink-secondary"}>
           {status.connected
             ? t("botWorkplace.connected", { name: online[0]?.name ?? "" })
             : t("botWorkplace.notConnected")}
         </p>
-        {workplace.place === "computer" && (
-          <>
-            <label className="flex min-h-[44px] items-center gap-2 md:min-h-0">
-              <input type="checkbox" checked={workplace.routines} onChange={(event) => change({ routines: event.target.checked })} />
-              <span>{t("botWorkplace.routines")}</span>
-            </label>
-            <fieldset className="flex flex-col gap-1">
-              <legend className="text-ink-secondary">{t("botWorkplace.network")}</legend>
-              <label className="flex min-h-[44px] items-center gap-2 md:min-h-0">
-                <input type="radio" name="bot-network" checked={workplace.network === "all"} onChange={() => change({ network: "all" })} />
-                <span>{t("botWorkplace.network.all")}</span>
-              </label>
-              <label className="flex min-h-[44px] items-center gap-2 md:min-h-0">
-                <input type="radio" name="bot-network" checked={workplace.network === "lan"} onChange={() => change({ network: "lan" })} />
-                <span>{t("botWorkplace.network.lan")}</span>
-              </label>
-            </fieldset>
-          </>
-        )}
+        <label className="flex min-h-[44px] items-center gap-2 md:min-h-0">
+          <input type="checkbox" checked={workplace.routines} onChange={(event) => change({ routines: event.target.checked })} />
+          <span>{t("botWorkplace.routines")}</span>
+        </label>
+        <fieldset className="flex flex-col gap-1">
+          <legend className="text-ink-secondary">{t("botWorkplace.network")}</legend>
+          <label className="flex min-h-[44px] items-center gap-2 md:min-h-0">
+            <input type="radio" name="bot-network" checked={workplace.network === "all"} onChange={() => change({ network: "all" })} />
+            <span>{t("botWorkplace.network.all")}</span>
+          </label>
+          <label className="flex min-h-[44px] items-center gap-2 md:min-h-0">
+            <input type="radio" name="bot-network" checked={workplace.network === "lan"} onChange={() => change({ network: "lan" })} />
+            <span>{t("botWorkplace.network.lan")}</span>
+          </label>
+        </fieldset>
         {status.activity.length > 0 && (
           <div className="flex flex-col gap-1">
             <span className="text-ink-secondary">{t("botWorkplace.activity")}</span>
