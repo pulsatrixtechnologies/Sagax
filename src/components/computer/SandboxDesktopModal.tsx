@@ -41,6 +41,7 @@ export function SandboxDesktopModal({ title, state, controls, busy = false, onCl
     // Capture phase on window: before the VNC canvas and before the panels
     // behind this window (their own Escape must not fire too).
     const capture = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
       const inScreen = event.target instanceof Node && Boolean(screen.current?.contains(event.target));
       if (takeoverKey(event, inScreen) !== "close") return;
       event.preventDefault();
