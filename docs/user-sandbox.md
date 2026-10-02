@@ -59,6 +59,12 @@ the Sagax side), `server/sandboxd*.ts` (the provisioner), `server/user-sandbox-s
   and `sagax-user=<key>`.
 - **Idle stop:** after `SAGAX_SANDBOX_IDLE_MINUTES` without a command (default
   15). The next call starts it again; `/workspace` persists.
+- **New image:** a stopped environment created from another image than
+  `SAGAX_SANDBOX_IMAGE` (an earlier deploy) is recreated from the current one
+  when it starts again, keeping `/workspace` and its network. A running one
+  is never replaced behind its owner's back, except when the owner opens the
+  desktop and it has none (`sagax-desktop` missing, exit 127) and no command
+  runs there; otherwise the view says to stop it and open the desktop again.
 - **Capacity:** at most `SAGAX_SANDBOX_MAX_RUNNING` run at once (default 2; a
   paused one counts, it keeps its memory). A
   new one stops the least recently used idle one, or the call is refused with a
@@ -93,7 +99,10 @@ needed: a plain shell turn starts no X server.
 - **VNC:** listens on `127.0.0.1:5901` inside the sandbox's own network
   namespace only and asks for a password (VncAuth only). Two passwords: the
   full one controls the screen, the view-only one only watches; both are
-  replaced each time the owner opens the view.
+  replaced each time the owner opens the view, unless a view is still open
+  or was opened in the last 30 s (then the same ones, so it keeps working).
+  Opens are serialized per person, and `sagax-desktop start` takes a lock:
+  two at once used to race on the password file and answer 502.
 - **Live view:** `GET /api/desktop-viewer/sandbox/me` (and its
   `/websockify` WebSocket), the Computer tab and the full-window viewer. The
   target is built from the caller's own session principal: there is no id
@@ -101,9 +110,11 @@ needed: a plain shell turn starts no X server.
   none, and a person signed out by Perspicax is refused. Opening the view
   starts the environment and its desktop and hands the view-only password;
   "Prendre le contrôle" (`?control=1`, a button in the middle of the Computer
-  tab's screen) hands the full one; while such a view is open, the bots'
-  `computer_use` there is refused, never queued (`server/sandbox-control.ts`),
-  and "Rendre le contrôle" hands it back. The WebSocket never
+  tab's screen) opens the desktop large (92vw by 88vh, letterboxed) and hands
+  the full one there, while the tab's square stays view-only; while such a
+  view is open, the bots' `computer_use` there is refused, never queued
+  (`server/sandbox-control.ts`), and "Rendre le contrôle" or closing the
+  window (Cmd/Ctrl+Shift+Esc, or Escape outside the screen) hands it back. The WebSocket never
   starts anything: the Sagax server frames the RFB bytes itself
   (`server/ws-bridge.ts`) and reaches the VNC port only through the
   provisioner, a signed HTTP upgrade (`/v1/sandboxes/<key>/desktop`) spliced

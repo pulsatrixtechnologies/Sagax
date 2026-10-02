@@ -5,7 +5,11 @@
    pause under [data-fx-paused] (off screen, hidden page) and stop under
    prefers-reduced-motion, which keeps every skin's still look. Nothing
    flashes: the neon flicker dips twice every five seconds, the ink boil and
-   the glitch swap equally bright frames, never more than 4 a second. */
+   the glitch swap equally bright frames, never more than 4 a second.
+   The foils (holographic, ink halo) glide back and forth, eased, over 7 to
+   10 seconds: a ping-pong has no seam, so a foil never jumps back to its
+   start the way a linear loop does when its travel misses the rainbow's
+   period. */
 
 .skin-fx-overlay {
   position: absolute;
@@ -38,9 +42,9 @@
 .skin-fx-live .fx-sweep-slow { animation-duration: 4.6s; }
 .skin-fx-live .fx-glint { animation: fx-glint 3.4s ease-in-out infinite; }
 .skin-fx-live .fx-twinkle { animation: fx-twinkle 2.8s ease-in-out infinite; }
-.skin-fx-live .fx-foil { animation: fx-foil 4s linear infinite; }
-.skin-fx-live .fx-foil-diag { animation: fx-foil-diag 6s linear infinite; }
-.skin-fx-live .fx-foil-rev { animation: fx-foil-rev 9s linear infinite; }
+.skin-fx-live .fx-foil { animation: fx-foil 7s ease-in-out infinite alternate; }
+.skin-fx-live .fx-foil-diag { animation: fx-foil-diag 8s ease-in-out infinite alternate; }
+.skin-fx-live .fx-foil-rev { animation: fx-foil-rev 10s ease-in-out infinite alternate; }
 .skin-fx-live .fx-neon-flicker { animation: fx-flicker 5s linear infinite; }
 .skin-fx-live .fx-neon-bloom { animation: fx-breathe-glow 3.2s ease-in-out infinite; }
 .skin-fx-live .fx-current { animation: fx-current 2.6s linear infinite; }
@@ -62,7 +66,7 @@
 /* Trombi's larger drawing (viewBox 310 x 380) */
 .skin-fx-live .fx-current-slow { animation-duration: 3.6s; }
 .skin-fx-live .fx-sweep-lg { animation-name: fx-sweep-lg; }
-.skin-fx-live .fx-foil-diag-lg { animation-name: fx-foil-diag-lg; animation-duration: 8s; }
+.skin-fx-live .fx-foil-diag-lg { animation-name: fx-foil-diag-lg; animation-duration: 9s; }
 .skin-fx-live .fx-ember-lg { animation-name: fx-ember-lg; }
 
 /* still look: one boil take, no flicker */

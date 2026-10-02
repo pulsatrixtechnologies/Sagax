@@ -256,6 +256,14 @@ export class SandboxService {
         return this.status(key);
       }
       await this.makeRoom(key);
+      // A stopped environment created from an older image (before a deploy)
+      // starts again from the current one: nothing runs in it, /workspace
+      // and the network stay. Otherwise it would miss what the new image
+      // brings (the desktop, sagax-desktop) until its owner reset it.
+      if (container && container.image && container.image !== this.config.image) {
+        await this.docker.removeContainer(names.container);
+        container = null;
+      }
       if (!container) {
         if (!(await this.docker.imageExists(this.config.image))) {
           throw new SandboxError(503, "image_missing", "the server environment image is not on this host");

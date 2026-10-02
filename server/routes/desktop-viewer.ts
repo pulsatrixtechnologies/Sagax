@@ -118,8 +118,11 @@ export function createDesktopViewer(deps: {
     try { connection = await target.resolve({ upgrade: Boolean(match[2]), control }); }
     catch (error) {
       const status = error && typeof error === "object" && "status" in error ? error.status : 502;
+      // Only the fixed reason codes of the targets (desktop-viewer-targets.ts),
+      // so the view can say what to do (an outdated environment).
+      const code = error && typeof error === "object" && "code" in error && typeof error.code === "string" && /^[a-z_]{1,32}$/.test(error.code) ? error.code : undefined;
       return json(res, typeof status === "number" && status >= 400 && status < 600 ? status : 502,
-        { error: "The desktop is not available. Open it again from Sagax." });
+        { error: "The desktop is not available. Open it again from Sagax.", ...(code ? { code } : {}) });
     }
     // Inspection may outlive a closed tab or the handshake deadline.
     if (res.destroyed || upgrade?.socket.destroyed) return;

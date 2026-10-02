@@ -174,17 +174,15 @@ describe("AccessSection Works on", () => {
     expect(places(render(makeBot()))).toEqual(["Auto", "Cloud computer", "Browser", "Off"]);
   });
 
-  it("offers Cloud (the server environment) on an organization server whatever the VPS and Boat flags say, and Auto means Cloud", () => {
+  it("has no Works on on an organization server: it lives in the bot's Computer tab", () => {
     fixture.organization = true;
     for (const features of FLAGS) {
       fixture.config = { features } as Partial<ConfigStatus>;
       const markup = render(makeBot());
-      expect(places(markup)).toEqual(["Auto (Cloud)", "Cloud (server environment)", "Local VM", "This computer", "Browser", "Off"]);
-      expect(markup).toContain("Now: Auto (Cloud).");
-      expect(markup).toContain("Cloud is your server environment.");
-      // No Boat or VPS backend picker on an organization server.
+      expect(places(markup)).toEqual([]);
+      expect(markup).not.toContain("Works on");
+      expect(markup).not.toContain("Cloud is your server environment.");
       expect(markup).not.toContain("Cloud backend");
-      expect(markup).not.toContain("Auto and cloud computers.");
     }
   });
 
@@ -192,8 +190,6 @@ describe("AccessSection Works on", () => {
     const markup = render(makeBot(), makeDerived({ localSelectable: false, localDisabledReason: "Local computer control requires the desktop app." }));
     expect(markup).toContain("This computer is not available: Local computer control requires the desktop app.");
     expect(markup).toContain("Browser is not available: The built-in browser needs the Sagax desktop app");
-    fixture.organization = true;
-    expect(render(makeBot(), makeDerived({ localSelectable: false, localDisabledReason: "Local computer control requires the desktop app." }))).toContain("This computer is not available");
   });
 
   it("explains Auto and cloud computers on a solo server only when a cloud computer can be chosen", () => {

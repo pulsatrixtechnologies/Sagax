@@ -565,7 +565,9 @@ export function AccessSection({
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="rounded-xl border border-hairline/40 p-4" data-works-on-org={organization ? "1" : "0"}>
+      {/* On an organization server Works on lives in the bot's Computer tab
+          (src/components/computer/WorksOnSetting.tsx). */}
+      {!organization && <div className="rounded-xl border border-hairline/40 p-4" data-works-on-org="0">
         <div className="text-[13px] font-medium text-ink">{t("computer.worksOn")}</div>
         <div className="mt-0.5 text-[13px] text-ink-secondary">
           {t(organization ? "worksOn.helpOrg" : "worksOn.help")}{bot.computer ? "" : ` ${t("worksOn.currentlyAuto", { place: t(placeLabelKey("auto", organization)) })}`}
@@ -627,12 +629,6 @@ export function AccessSection({
             {t("worksOn.offBody")}
           </div>
         )}
-        {organization && (!bot.computer || bot.computer === "cloud") && (
-          <div className="mt-3 rounded-lg bg-inset px-3 py-2.5 text-[11.5px] leading-relaxed text-ink-secondary" data-works-on-cloud-org>
-            <span className="font-medium text-ink">{t("worksOn.cloudOrgTitle")}</span>{" "}
-            {t("worksOn.cloudOrgBody")}
-          </div>
-        )}
         {!organization && (!bot.computer || bot.computer === "cloud") && (state.config?.cloudHome === true || cloudComputersOffered(state.config)) && (
           <>
             {!bot.computer && (
@@ -666,7 +662,7 @@ export function AccessSection({
             )}
           </>
         )}
-      </div>
+      </div>}
 
       <WorkingFolder bot={bot} />
 

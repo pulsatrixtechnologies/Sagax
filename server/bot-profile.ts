@@ -131,7 +131,7 @@ export function parseBotProfilePatch(input: BotProfilePatchInput, strict = false
       return { ok: false, error: `mascotBody must be ${options}` };
     }
     if (issue?.path[0] === "mascotLook") {
-      return { ok: false, error: "mascotLook must be { character: owl, shape or trombi, style, shape, skins }" };
+      return { ok: false, error: "mascotLook must be { character: owl, shape, trombi or bunbu, style, shape, skins }" };
     }
     if (issue?.path[0] === "mascotSkin") {
       const options = `${MASCOT_SKIN_IDS.slice(0, -1).join(", ")}, or ${MASCOT_SKIN_IDS.at(-1)}`;

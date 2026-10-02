@@ -43,13 +43,19 @@ write_passwords() {
   mkdir -p "$STATE"
   chmod 0700 "$STATE"
   umask 077
-  printf '%s\n%s\n' "$full" "$view" | vncpasswd -f > "$STATE/passwd.new"
-  mv -f "$STATE/passwd.new" "$STATE/passwd"
+  local next
+  next="$(mktemp "$STATE/passwd.XXXXXX")"
+  printf '%s\n%s\n' "$full" "$view" | vncpasswd -f > "$next"
+  mv -f "$next" "$STATE/passwd"
 }
 
 start() {
   mkdir -p "$STATE" /tmp/.X11-unix
   chmod 0700 "$STATE"
+  # One start at a time: two at once raced on the password file and could
+  # both launch Xvnc.
+  exec 9>"$STATE/start.lock"
+  flock -w 25 9 || { log "another start of the desktop is still running"; exit 1; }
   chmod 1777 /tmp/.X11-unix 2>/dev/null || true
   if [ -n "${SAGAX_VNC_FULL:-}" ] && [ -n "${SAGAX_VNC_VIEW:-}" ]; then
     write_passwords "$SAGAX_VNC_FULL" "$SAGAX_VNC_VIEW"
@@ -58,6 +64,7 @@ start() {
   fi
   if running; then
     session
+    exec 9>&-
     echo running
     return 0
   fi
@@ -67,7 +74,7 @@ start() {
     -rfbport "$RFB_PORT" -localhost -interface 127.0.0.1 \
     -nolisten tcp -SecurityTypes VncAuth -rfbauth "$STATE/passwd" \
     -AlwaysShared -AcceptSetDesktopSize=0 \
-    >"$STATE/xvnc.log" 2>&1 </dev/null &
+    >"$STATE/xvnc.log" 2>&1 </dev/null 9>&- &
   for _ in $(seq 1 50); do
     if [ -S /tmp/.X11-unix/X1 ] && xdotool getdisplaygeometry >/dev/null 2>&1; then break; fi
     sleep 0.1
@@ -78,6 +85,7 @@ start() {
     exit 1
   fi
   session
+  exec 9>&-
   sleep 0.3
   echo running
 }
@@ -87,13 +95,13 @@ start() {
 # watching never sees an empty black screen.
 session() {
   if ! pgrep -u "$(id -u)" -x openbox >/dev/null 2>&1; then
-    setsid openbox --sm-disable >"$STATE/openbox.log" 2>&1 </dev/null &
+    setsid openbox --sm-disable >"$STATE/openbox.log" 2>&1 </dev/null 9>&- &
   fi
   if [ ! -e "$STATE/background" ] && command -v hsetroot >/dev/null 2>&1; then
     hsetroot -add "#0b1220" -add "#16304f" -add "#1f4b6e" -gradient 160 >/dev/null 2>&1 && : > "$STATE/background"
   fi
   if ! pgrep -u "$(id -u)" -x tint2 >/dev/null 2>&1 && command -v tint2 >/dev/null 2>&1; then
-    setsid tint2 -c /etc/xdg/sagax/tint2rc >"$STATE/tint2.log" 2>&1 </dev/null &
+    setsid tint2 -c /etc/xdg/sagax/tint2rc >"$STATE/tint2.log" 2>&1 </dev/null 9>&- &
   fi
 }
 

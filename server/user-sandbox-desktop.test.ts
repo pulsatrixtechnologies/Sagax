@@ -169,6 +169,51 @@ describe("live view of the server environment desktop", () => {
     expect(control.body).toMatchObject({ viewOnly: false, password: envOf(lastStart()).SAGAX_VNC_FULL });
   });
 
+  it("rebuilds an environment from before the desktop when its owner opens the desktop, keeping /workspace", async () => {
+    // GOX 2026-10-02: an environment created on an image without
+    // sagax-desktop answered every open with a bare 502, "not available".
+    await get("/api/desktop-viewer/sandbox/me", alice);
+    const names = sandboxNames(manager.keyFor(ALICE));
+    docker.containers.get(names.container)!.spec.Image = "sagax-sandbox:before-the-desktop";
+    const noDesktop = () => docker.containers.get(names.container)!.spec.Image !== "sagax-sandbox:test";
+    docker.execResult = (exec) => ({ exitCode: exec.Cmd.includes("sagax-desktop") && noDesktop() ? 127 : 0, stdout: Buffer.from("running"), stderr: Buffer.alloc(0), truncated: false });
+    const starts = () => docker.execs.filter((entry) => entry.exec.Cmd.includes("sagax-desktop") && entry.exec.Cmd.includes("start")).length;
+    const before = starts();
+    const view = await get("/api/desktop-viewer/sandbox/me", alice);
+    expect(view.status).toBe(200);
+    expect(view.body.password).toBe(envOf(lastStart()).SAGAX_VNC_VIEW);
+    expect(docker.containers.get(names.container)!.spec.Image).toBe("sagax-sandbox:test");
+    expect(docker.volumes.has(names.volume)).toBe(true);
+    expect(starts() - before).toBe(2);
+  });
+
+  it("opens one desktop at a time per person, and two views opened together share their passwords", async () => {
+    // Two opens at once (the Computer tab and Settings, or a remount) raced
+    // on the password file in the sandbox and one answered 502; and each
+    // open changed the passwords under the other view.
+    const [first, second] = await Promise.all([get("/api/desktop-viewer/sandbox/me", alice), get("/api/desktop-viewer/sandbox/me", alice)]);
+    expect([first.status, second.status]).toEqual([200, 200]);
+    expect(second.body.password).toBe(first.body.password);
+    const starts = docker.execs.filter((entry) => entry.exec.Cmd.includes("sagax-desktop") && entry.exec.Cmd.includes("start"));
+    expect(new Set(starts.map((entry) => envOf(entry).SAGAX_VNC_VIEW)).size).toBe(1);
+    const control = await get("/api/desktop-viewer/sandbox/me?control=1", alice);
+    expect(control.body).toMatchObject({ viewOnly: false, password: envOf(lastStart()).SAGAX_VNC_FULL });
+    expect(envOf(lastStart()).SAGAX_VNC_VIEW).toBe(first.body.password);
+  });
+
+  it("says the environment is outdated, and leaves it alone, while a bot works in it", async () => {
+    await get("/api/desktop-viewer/sandbox/me", alice);
+    const key = manager.keyFor(ALICE);
+    const names = sandboxNames(key);
+    docker.containers.get(names.container)!.spec.Image = "sagax-sandbox:before-the-desktop";
+    docker.execResult = (exec) => ({ exitCode: exec.Cmd.includes("sagax-desktop") ? 127 : 0, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0), truncated: false });
+    (service as unknown as { busy: Map<string, number> }).busy.set(key, 1);
+    const view = await get("/api/desktop-viewer/sandbox/me", alice);
+    expect(view.status).toBe(409);
+    expect(view.body.code).toBe("outdated");
+    expect(docker.containers.get(names.container)!.spec.Image).toBe("sagax-sandbox:before-the-desktop");
+  });
+
   it("never reaches another person's desktop", async () => {
     await get("/api/desktop-viewer/sandbox/me", alice);
     const bobView = await get("/api/desktop-viewer/sandbox/me", bob);

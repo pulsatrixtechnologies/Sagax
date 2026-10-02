@@ -19,7 +19,8 @@ export class FakeDocker implements DockerApi {
   async imageExists(image: string) { return this.images.has(image); }
   async inspectContainer(name: string): Promise<ContainerSummary | null> {
     const found = this.containers.get(name);
-    return found ? { name, running: found.running, ...(found.paused ? { paused: true } : {}), labels: found.labels, startedAt: found.startedAt } : null;
+    const image = typeof found?.spec.Image === "string" ? { image: found.spec.Image } : {};
+    return found ? { name, running: found.running, ...(found.paused ? { paused: true } : {}), labels: found.labels, startedAt: found.startedAt, ...image } : null;
   }
   async listContainers(labels: Record<string, string>) {
     return [...this.containers].filter(([, value]) => Object.entries(labels).every(([key, want]) => value.labels[key] === want))

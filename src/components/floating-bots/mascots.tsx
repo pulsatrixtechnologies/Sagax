@@ -3,11 +3,12 @@
 // the desktop and as a thumbnail). Adding a character is adding an entry.
 // The same behavior state machine (behavior.ts) drives them all; each
 // renderer maps the clips it can show and degrades gracefully: the shapes
-// and Trombi have no wings, so a flight is a bouncing hop across. The
+// Trombi and Bunbu have no wings, so a flight is a bouncing hop across. The
 // character and its look come from the bot (bot.mascotLook); the desktop
 // draws a skin's full effects, and its move effects with each move.
 import { lazy, Suspense, useEffect, useId, useRef, useState, type ComponentType } from "react";
 import { MAUS_COLORS } from "@/lib/mascot";
+import type { LocaleKey } from "@/locales";
 import { owlSkinId } from "@/lib/owl/owl-skins";
 import { owlFxPalette } from "@/components/OwlSkinFx";
 import { EquipFx, MoveFx } from "@/components/skin-fx/SkinFx";
@@ -15,6 +16,7 @@ import { OwlAvatar } from "@/components/OwlAvatar";
 import { ShapeMascot, type ShapeMood } from "@/components/ShapeMascot";
 import type { TrombiPose } from "@/components/retro-assistant/Trombi";
 import { SkinnedTrombi } from "@/components/skin-fx/SkinnedTrombi";
+import { BUNBU_EARFLOP_CLIP, BunbuMascot, type BunbuAction, type BunbuMood } from "@/components/BunbuMascot";
 import { fxMoveFor, useEquipBurst, useMoveBurst, useReducedMotion, type FxMoveRequest } from "@/components/skin-fx/skin-fx";
 import { completeMascotLook, MASCOT_SHAPES, type MascotCharacter, type MascotLook, type MascotShape } from "../../../shared/mascot-look";
 import { createFrameSmoother, type MascotActivity, type MascotFrame } from "./behavior";
@@ -63,6 +65,8 @@ export interface MascotDefinition {
   paint: { colors: boolean; skins: boolean };
   /** The moves the avatar popover can preview for a character without wings (the owl keeps its wing moves). */
   moves: readonly MascotActivity[];
+  /** A move's own name for this character (Bunbu's ear flop is the ruffle clip). */
+  moveLabels?: Partial<Record<MascotActivity, LocaleKey>>;
   Render: ComponentType<MascotRenderProps>;
   Thumb: ComponentType<MascotThumbProps>;
 }
@@ -232,12 +236,57 @@ function TrombiThumb({ size, look }: MascotThumbProps) {
   return <SkinnedTrombi skin={look.skins.trombi} pose="idle" size={size} width={size * 0.8} animated={false} label={null} />;
 }
 
+/* -------------------------------------------------------------- Bunbu */
+
+/** Bunbu's face for a clip, and for the call's states: listening (alert) perks the ears, speaking moves the grin. */
+export function bunbuMoodFor(activity: MascotActivity, pose: FloatingPose): BunbuMood {
+  if (activity === "sleep" || activity === "yawn") return "sleeping";
+  if (["petted", "love", "celebrate", "dance", "jump", "wave", "spin", "backflip", "hop", "hopForward"].includes(activity)) return "happy";
+  if (activity === "working" || activity === "flyOut" || activity === "return") return "working";
+  if (activity === "think" || activity === "confused" || pose === "think") return "thinking";
+  if (activity === "hoot" || pose === "speak") return "speaking";
+  if (pose === "alert" || activity === "surprised" || activity === "startled") return "listening";
+  return "idle";
+}
+
+/** What Bunbu's ears and arms do for a clip: the owl's preening and wing clips are its ear flop. */
+export function bunbuActionFor(activity: MascotActivity): BunbuAction | null {
+  if (["ruffle", "preen", "wingStretch", "scratch", "shy"].includes(activity)) return "earflop";
+  if (activity === "wave" || activity === "hoot") return "wave";
+  if (activity === "drag") return "drag";
+  if (["fly", "flyOut", "return", "jump", "hop", "hopForward", "land"].includes(activity)) return "hop";
+  if (activity === "walk") return "walk";
+  return null;
+}
+
+function BunbuRender({ color, look, size, activity, pose, frame, fps, onHitTest }: MascotRenderProps) {
+  const move = useClipFx(activity);
+  return (
+    <Motion25D size={size} frame={frame} fps={fps} onHitTest={onHitTest}>
+      <BunbuMascot skin={look.skins.bunbu} color={color} size={size * 0.86} mood={bunbuMoodFor(activity, pose)} action={bunbuActionFor(activity)} detail="full" move={move} label={null} />
+    </Motion25D>
+  );
+}
+
+function BunbuThumb({ color, look, size }: MascotThumbProps) {
+  return <BunbuMascot skin={look.skins.bunbu} color={color} size={size} animated={false} label={null} />;
+}
+
 /* ----------------------------------------------------------- registry */
 
 export const MASCOTS: readonly MascotDefinition[] = [
   { id: "owl", capabilities: { walk: true, fly: true, wings: true, blink: true, turn: true, flip: true }, paint: { colors: true, skins: true }, moves: [], Render: OwlRender, Thumb: OwlThumb },
   { id: "shape", capabilities: { walk: true, fly: false, wings: false, blink: true, turn: true, flip: true }, paint: { colors: true, skins: true }, moves: ["wave", "dance", "jump", "hop", "love"], Render: ShapeRender, Thumb: ShapeThumb },
   { id: "trombi", capabilities: { walk: true, fly: false, wings: false, blink: false, turn: true, flip: true }, paint: { colors: false, skins: true }, moves: ["hop", "jump", "dance", "hoot"], Render: TrombiRender, Thumb: TrombiThumb },
+  {
+    id: "bunbu",
+    capabilities: { walk: true, fly: false, wings: false, blink: true, turn: true, flip: true },
+    paint: { colors: true, skins: true },
+    moves: ["wave", "dance", "jump", "hop", "love", BUNBU_EARFLOP_CLIP],
+    moveLabels: { [BUNBU_EARFLOP_CLIP]: "floatingBots.move.earFlop" },
+    Render: BunbuRender,
+    Thumb: BunbuThumb,
+  },
 ];
 
 export function mascotFor(look: Pick<MascotLook, "character"> | undefined): MascotDefinition {

@@ -352,7 +352,7 @@ export function OwlSkinPlumage({ skin, uid, detail }: OwlSkinFxProps) {
       break;
     case "holo":
       inner = (
-        <g className="owl-fx-foil" style={anim(7)}>
+        <g className="owl-fx-foil" style={anim(9)}>
           <rect x={-128} width={512} height={256} fill={`url(#${uid}-foil)`} opacity={0.55} />
         </g>
       );
