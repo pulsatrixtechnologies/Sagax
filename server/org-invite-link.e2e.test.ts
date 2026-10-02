@@ -65,7 +65,7 @@ async function until<T>(check: () => T | undefined, ms = 5_000): Promise<T | und
 posixOnly("org invite links", () => {
   beforeAll(async () => {
     home = mkdtempSync(join(tmpdir(), "omb-org-invite-link-"));
-    const data = join(home, ".openmausbot");
+    const data = join(home, ".sagax");
     mkdirSync(data, { recursive: true });
     writeFileSync(join(data, "config.json"), JSON.stringify({ profile: { name: "JC", email: "jc@gox.ca" } }));
     captureFile = join(home, "mail-capture.jsonl");
@@ -74,10 +74,10 @@ posixOnly("org invite links", () => {
       env: {
         ...(process.env.PATH ? { PATH: process.env.PATH } : {}),
         ...(process.env.SystemRoot ? { SystemRoot: process.env.SystemRoot } : {}),
-        HOME: home, USERPROFILE: home, OMB_PORT: String(PORT), OMB_WEBHOOK_PORT: String(PORT + 1),
-        OMB_MAIL_PROVIDER: "sendgrid", OMB_MAIL_FROM: "bot@gox.ca", OMB_SENDGRID_API_KEY: "test-key",
-        OMB_MAIL_CAPTURE_FILE: captureFile, OMB_TEST_SEAMS: "1",
-        OMB_PUBLIC_URL: "https://pulsa.gox.ca", OMB_ENVIRONMENT_LABEL: "GOX",
+        HOME: home, USERPROFILE: home, SAGAX_LOCAL_VM_TEST_NAMESPACE: process.env.SAGAX_LOCAL_VM_TEST_NAMESPACE ?? "", SAGAX_PORT: String(PORT), SAGAX_WEBHOOK_PORT: String(PORT + 1),
+        SAGAX_MAIL_PROVIDER: "sendgrid", SAGAX_MAIL_FROM: "bot@gox.ca", SAGAX_SENDGRID_API_KEY: "test-key",
+        SAGAX_MAIL_CAPTURE_FILE: captureFile, SAGAX_TEST_SEAMS: "1",
+        SAGAX_PUBLIC_URL: "https://pulsa.gox.ca", SAGAX_ENVIRONMENT_LABEL: "GOX",
       },
       stdio: ["ignore", "pipe", "pipe"],
     });
@@ -184,7 +184,7 @@ posixOnly("org invite links", () => {
     const org = await api("GET", "/api/org/invites");
     expect(org.body.people).toContainEqual({ id: ADA, role: "member", email: ADA });
     expect(org.body.pendingInvites).toEqual([]);
-    const config = JSON.parse(readFileSync(join(home, ".openmausbot", "config.json"), "utf8"));
+    const config = JSON.parse(readFileSync(join(home, ".sagax", "config.json"), "utf8"));
     expect(config.signIn.members).toEqual([ZARA, ADA]);
     const link = /token=([0-9a-f]+)/.exec(invite.body.link)![1]!;
     expect((await api("GET", `/api/org/invites/${link}/preview`, { headers: REMOTE })).body).toEqual({ status: "used" });

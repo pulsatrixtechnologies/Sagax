@@ -495,6 +495,9 @@ export interface Bot {
   visibility?: BotVisibility;
   /** Lowercased user id of the person who created this bot. */
   ownerUserId?: string;
+  /** Who confirmed the Full access warning for this bot, once
+   * (server/org-full-access.ts). */
+  fullAccessConsent?: { principalId: string; at: number };
   directGrants?: string[];
   /** Slice 4: grants with levels (user: or team: targets). */
   grants?: { target: string; level: "use" | "run" | "edit" | "manage"; by: string; at: number }[];
@@ -542,6 +545,9 @@ export function currentTaskBot(bot: Bot, threadId = bot.threadId): Bot {
 
 export type TaskUpdatePatch = Partial<Pick<Task, "modelSelection" | "approvalMode" | "autoApprove" | "pinnedMessageId">> & {
   confirmFullAccess?: boolean;
+  /** Organization server: the owner grants Full over HTTP; the server
+   * checks the policy, the owner and the one-time confirmation. */
+  organizationFullAccess?: boolean;
   acknowledgeLocalAuto?: boolean;
   updateBotDefault?: boolean;
   resetApprovalToAsk?: boolean;
@@ -555,7 +561,7 @@ export type TaskUpdatePatch = Partial<Pick<Task, "modelSelection" | "approvalMod
 };
 
 function taskPatchFields(patch: TaskUpdatePatch): Partial<Task> {
-  const { confirmFullAccess: _fullConsent, acknowledgeLocalAuto: _localAck, updateBotDefault: _modelDefault, resetApprovalToAsk, projectId, archivedAt, snoozedUntil, surface, pinned, ...fields } = patch;
+  const { confirmFullAccess: _fullConsent, organizationFullAccess: _orgFull, acknowledgeLocalAuto: _localAck, updateBotDefault: _modelDefault, resetApprovalToAsk, projectId, archivedAt, snoozedUntil, surface, pinned, ...fields } = patch;
   return { ...fields, ...(resetApprovalToAsk ? { approvalMode: "ask", autoApprove: false, alwaysAllow: [] } : {}),
     ...(projectId === undefined ? {} : { projectId: projectId ?? undefined }),
     ...(archivedAt === undefined ? {} : { archivedAt: archivedAt ?? undefined }),
@@ -714,7 +720,7 @@ export interface ConfigStatus {
   /** UI language override; "" (or absent) follows the system language. */
   language?: string;
   /** Opt-in flags. Absent means off. */
-  features?: { skillAuthoring: boolean; showToolCalls?: boolean; browser?: boolean; sharedComputers?: boolean; claudeUserMcp?: boolean; llmThreadTitles?: boolean; routinesInConversation?: boolean; templates?: boolean };
+  features?: { skillAuthoring: boolean; showToolCalls?: boolean; browser?: boolean; sharedComputers?: boolean; claudeUserMcp?: boolean; llmThreadTitles?: boolean; routinesInConversation?: boolean; templates?: boolean; connectedApps?: boolean; vpsComputer?: boolean; boatComputer?: boolean };
   /** First-run progress: whether the welcome tour was finished and which
    * one-time hints were dismissed. Server-owned so it follows the workspace. */
   onboarding?: OnboardingStatus;
@@ -2170,6 +2176,7 @@ export function reducer(state: AppState, action: Action): AppState {
         acknowledgeLocalAuto: _localAck,
         confirmFullAccess: _fullConfirmation,
         applyToAllThreads: _allThreads,
+        organizationFullAccess: _orgFull,
         computer,
         connectorTools,
         ...rest
@@ -2554,8 +2561,15 @@ export async function persistTaskApproval(
   bridge: TrustedApprovalBridge | undefined,
   request: (path: string, init?: RequestInit) => Promise<{ bot: BotAnnouncement }> = api,
 ): Promise<BotAnnouncement> {
-  const { approvalMode, autoApprove, confirmFullAccess, acknowledgeLocalAuto, ...ordinary } = patch;
+  const { approvalMode, autoApprove, confirmFullAccess, organizationFullAccess, acknowledgeLocalAuto, ...ordinary } = patch;
   const mode = approvalMode ?? (autoApprove === undefined ? undefined : autoApprove ? "auto" : "ask");
+  if (mode === "full" && organizationFullAccess === true) {
+    // Organization server: no desktop channel; the server decides (policy,
+    // owner, the one-time confirmation it remembers for the bot).
+    const result = await request(`/api/bots/${botId}/tasks/${threadId}`, { method: "PATCH",
+      body: JSON.stringify({ ...ordinary, approvalMode: "full", ...(confirmFullAccess === true ? { confirmFullAccess: true } : {}) }) });
+    return result.bot;
+  }
   if (mode === "full" && confirmFullAccess !== true) throw new Error("Confirm Full access for this thread first");
   if ((mode === "full" || mode === "custom") && !bridge) throw new Error("This approval change requires the packaged desktop app");
   if (mode && bridge) {
@@ -2584,8 +2598,19 @@ export async function persistBotUpdate(
     approvalMode,
     confirmFullAccess,
     applyToAllThreads,
+    organizationFullAccess,
     ...ordinaryPatch
   } = patch;
+  if (approvalMode === "full" && organizationFullAccess === true) {
+    // Organization server: ordinary fields first, then the Full grant alone
+    // (the server refuses anything riding along with it).
+    if (Object.keys(ordinaryPatch).length) {
+      await request(`/api/bots/${botId}`, { method: "PATCH", body: JSON.stringify(ordinaryPatch), signal });
+    }
+    const result = await request(`/api/bots/${botId}`, { method: "PATCH", signal,
+      body: JSON.stringify({ approvalMode: "full", ...(confirmFullAccess === true ? { confirmFullAccess: true } : {}) }) });
+    return result.bot;
+  }
   const trustedMode = approvalMode === "full" || approvalMode === "custom"
     ? approvalMode
     : null;

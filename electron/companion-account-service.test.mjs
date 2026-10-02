@@ -109,23 +109,23 @@ describe("Companion account service", () => {
     expect(resolveCompanionControlPlaneURL({ isPackaged: true, environment: {} })).toBe("");
     expect(resolveCompanionControlPlaneURL({
       isPackaged: true,
-      environment: { OMB_CONTROL_PLANE_URL: "https://accounts.openmausbot.com" },
+      environment: { SAGAX_CONTROL_PLANE_URL: "https://accounts.openmausbot.com" },
     })).toBe("");
     expect(resolveCompanionControlPlaneURL({
       isPackaged: true,
-      environment: { OMB_CONTROL_PLANE_URL: "https://accounts.example.com/" },
+      environment: { SAGAX_CONTROL_PLANE_URL: "https://accounts.example.com/" },
     })).toBe("https://accounts.example.com");
     expect(resolveCompanionControlPlaneURL({
       isPackaged: false,
-      environment: { OMB_CONTROL_PLANE_URL: "http://127.0.0.1:8787/" },
+      environment: { SAGAX_CONTROL_PLANE_URL: "http://127.0.0.1:8787/" },
     })).toBe("http://127.0.0.1:8787");
     expect(resolveCompanionControlPlaneURL({
       isPackaged: true,
-      environment: { OMB_CONTROL_PLANE_URL: "http://accounts.openmausbot.com" },
+      environment: { SAGAX_CONTROL_PLANE_URL: "http://accounts.openmausbot.com" },
     })).toBe("");
     expect(resolveCompanionControlPlaneURL({
       isPackaged: true,
-      environment: { OMB_CONTROL_PLANE_URL: new String("https://accounts.openmausbot.com") },
+      environment: { SAGAX_CONTROL_PLANE_URL: new String("https://accounts.openmausbot.com") },
     })).toBe("");
     expect(resolveCompanionControlPlaneURL({ isPackaged: false, environment: {} })).toBe("");
   });

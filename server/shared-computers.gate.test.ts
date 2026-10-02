@@ -78,9 +78,9 @@ beforeAll(async () => {
   WEBHOOK_PORT = base + 1;
   BASE = `http://127.0.0.1:${PORT}`;
   home = mkdtempSync(join(tmpdir(), "omb-shared-computer-gate-"));
-  mkdirSync(join(home, ".openmausbot"), { recursive: true });
+  mkdirSync(join(home, ".sagax"), { recursive: true });
   // No `features` block at all: the shipped default.
-  writeFileSync(join(home, ".openmausbot", "config.json"), JSON.stringify({
+  writeFileSync(join(home, ".sagax", "config.json"), JSON.stringify({
     instances: { claude: { driver: "claudeAgent", displayName: "Gate fixture", config: { cli: FAKE_CLAUDE_CLI } } },
   }));
   child = spawn(process.execPath, [join(SERVER_DIR, "index.ts")], {
@@ -90,9 +90,9 @@ beforeAll(async () => {
       ...(process.env.SystemRoot ? { SystemRoot: process.env.SystemRoot } : {}),
       HOME: home,
       USERPROFILE: home,
-      OMB_PORT: String(PORT),
-      OMB_WEBHOOK_PORT: String(WEBHOOK_PORT),
-      OMB_TEST_INTERNAL_CAPABILITY_KEY: TEST_CAPABILITY_KEY,
+      SAGAX_PORT: String(PORT),
+      SAGAX_WEBHOOK_PORT: String(WEBHOOK_PORT),
+      SAGAX_TEST_INTERNAL_CAPABILITY_KEY: TEST_CAPABILITY_KEY,
     },
     stdio: ["ignore", "pipe", "pipe"],
   });

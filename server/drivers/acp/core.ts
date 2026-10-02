@@ -9,8 +9,8 @@
 // (initialize, authenticate) and the native session are established once,
 // and later turns prompt the live session directly instead of paying the
 // full handshake per message. The pool mirrors the Claude driver: a session
-// closes after OMB_ACP_SESSION_IDLE_MS of quiet (default 10 minutes, floored
-// by OMB_ACP_SESSION_IDLE_MIN_MS default 10s), when the spawn contract
+// closes after SAGAX_ACP_SESSION_IDLE_MS of quiet (default 10 minutes, floored
+// by SAGAX_ACP_SESSION_IDLE_MIN_MS default 10s), when the spawn contract
 // changes, when the child crashes, when an interrupt's cancel goes
 // unanswered, and on stopAll/dispose. A resume cursor left by an earlier
 // session resumes through session/load|resume when the process had to
@@ -365,10 +365,10 @@ export interface AcpSupport {
 }
 
 const envOr = (key: string, fallback: number): number => Number(process.env[key] ?? fallback);
-const INIT_TIMEOUT = envOr("OPENMAUS_ACP_INIT_TIMEOUT_MS", 300_000);
-const SESSION_CONFIG_TIMEOUT = envOr("OPENMAUS_ACP_SESSION_CONFIG_TIMEOUT_MS", 300_000); // configureSession's per-request default
-const NEW_SESSION_TIMEOUT = envOr("OPENMAUS_ACP_NEW_SESSION_TIMEOUT_MS", 300_000);
-const LOAD_SESSION_TIMEOUT = envOr("OPENMAUS_ACP_LOAD_SESSION_TIMEOUT_MS", 120_000); // history replay on a long thread is slow
+const INIT_TIMEOUT = envOr("SAGAX_ACP_INIT_TIMEOUT_MS", 300_000);
+const SESSION_CONFIG_TIMEOUT = envOr("SAGAX_ACP_SESSION_CONFIG_TIMEOUT_MS", 300_000); // configureSession's per-request default
+const NEW_SESSION_TIMEOUT = envOr("SAGAX_ACP_NEW_SESSION_TIMEOUT_MS", 300_000);
+const LOAD_SESSION_TIMEOUT = envOr("SAGAX_ACP_LOAD_SESSION_TIMEOUT_MS", 120_000); // history replay on a long thread is slow
 /** ACP agents may compact their own history without telling the client;
  * re-send the full prompt after this many bare turns as a backstop. */
 const ACP_PROMPT_RE_ANCHOR_TURNS = 8;
@@ -380,7 +380,7 @@ const ACP_PROMPT_RE_ANCHOR_TURNS = 8;
 // disables the guard, restoring the pre-fix "hang until the user cancels"
 // behavior.
 const promptIdleTimeoutMs = (): number => {
-  const raw = process.env.OPENMAUS_ACP_PROMPT_IDLE_TIMEOUT_MS;
+  const raw = process.env.SAGAX_ACP_PROMPT_IDLE_TIMEOUT_MS;
   if (raw === undefined) return 180_000;
   const ms = Number(raw);
   return Number.isFinite(ms) && ms > 0 ? ms : 0;
@@ -1877,7 +1877,7 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
               undefined,
               promptIdleMs,
               `${DRIVER_KIND} sent nothing for ${Math.round(promptIdleMs / 1000)} s with no tool running, so the turn was stopped as stuck. ` +
-                "Send the message again to retry. On a self-hosted server, OPENMAUS_ACP_PROMPT_IDLE_TIMEOUT_MS sets this limit (0 turns it off).",
+                "Send the message again to retry. On a self-hosted server, SAGAX_ACP_PROMPT_IDLE_TIMEOUT_MS sets this limit (0 turns it off).",
               );
             if (pendingSplitReceipt) {
               // session/prompt resolving is the acceptance boundary: a

@@ -6,6 +6,7 @@ import { randomBytes, randomUUID } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
 import { createSharedCua, executeSharedOperation, personalSecretPaths, sharedComputerError } from "./shared-computer-access.mjs";
 import { createLendingActivity, describeSharedOperation } from "./lending-activity.mjs";
+import { ENVIRONMENT_PATH, LEGACY_ENVIRONMENT_PATH } from "./legacy-names.mjs";
 
 const uuid = value => typeof value === "string" && /^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(value);
 const DATA_VOLUME = "/System/Volumes/Data";
@@ -198,7 +199,7 @@ export function createComputerSharing({ file, fetch: fetchImpl, environments, cu
     return json;
   };
   const describe = async env => {
-    const [auth, descriptor] = await Promise.all([request(env, "/api/auth/session"), request(env, "/.well-known/openmausbot/environment")])
+    const [auth, descriptor] = await Promise.all([request(env, "/api/auth/session"), request(env, ENVIRONMENT_PATH).catch(error => error.status === 404 ? request(env, LEGACY_ENVIRONMENT_PATH) : Promise.reject(error))])
       .catch(error => { throw error.status === 401 || error.status === 403 ? Object.assign(error, { problem: "connect-first" }) : error; });
     if (auth.kind !== "session" || !uuid(auth.id) || !uuid(descriptor.environmentId)) throw Object.assign(new Error("Complete server pairing or sign-in first"), { problem: "connect-first" });
     if (descriptor.capabilities?.sharedComputers !== true) throw new Error("Update this server to enable computer sharing");

@@ -5,9 +5,9 @@
 // keeps refreshing it:
 //
 //   - one grant per sign-in, in an AES-256-GCM vault beside the data
-//     (idp-grants.enc, key from OMB_IDP_VAULT_KEY, OMB_IDP_VAULT_KEY_FILE or
+//     (idp-grants.enc, key from SAGAX_IDP_VAULT_KEY, SAGAX_IDP_VAULT_KEY_FILE or
 //     a 0600 idp-grants.key), never in sessions.json, never logged;
-//   - on use, at most every OMB_OIDC_REFRESH_AFTER_SECONDS, the grant is
+//   - on use, at most every SAGAX_OIDC_REFRESH_AFTER_SECONDS, the grant is
 //     refreshed in the background (one flight per grant): a refusal puts the
 //     person out like a back-channel logout that never arrived (every session
 //     and paired device of theirs ends), a transient failure keeps the
@@ -44,7 +44,7 @@ export const DEFAULT_REFRESH_AFTER_SECONDS = 3000;
  * only the window in which a crash could leave it unbound. */
 export const IDP_WEB_BIND_MS = 60_000;
 
-/** OMB_OIDC_REFRESH_AFTER_SECONDS: a whole number from 1 to 3000, else the
+/** SAGAX_OIDC_REFRESH_AFTER_SECONDS: a whole number from 1 to 3000, else the
  * default (a typo is not silently turned into a policy). */
 export function refreshAfterMs(value: string | undefined): number {
   const seconds = Number(value);
@@ -87,20 +87,20 @@ export function isSessionGrant(grant: Pick<IdpGrant, "kind">): boolean {
 const vaultSchema = z.object({ version: z.literal(1), grants: z.record(z.string(), grantSchema) });
 type VaultDocument = z.infer<typeof vaultSchema>;
 
-/** Where the grant vault's key comes from: OMB_IDP_VAULT_KEY (64 hex), else
- * the file OMB_IDP_VAULT_KEY_FILE names, else <data>/idp-grants.key created
+/** Where the grant vault's key comes from: SAGAX_IDP_VAULT_KEY (64 hex), else
+ * the file SAGAX_IDP_VAULT_KEY_FILE names, else <data>/idp-grants.key created
  * 0600. A desktop child without the environment key must not invent one. */
 export function resolveIdpVaultKey(dataDir: string, env: NodeJS.ProcessEnv = process.env): VaultKeySource {
-  const fromEnv = env.OMB_IDP_VAULT_KEY?.trim().toLowerCase();
+  const fromEnv = env.SAGAX_IDP_VAULT_KEY?.trim().toLowerCase();
   if (fromEnv) {
     return HEX_KEY.test(fromEnv)
       ? { kind: "key", key: Buffer.from(fromEnv, "hex") }
-      : { kind: "unavailable", reason: "OMB_IDP_VAULT_KEY must be 64 hexadecimal characters." };
+      : { kind: "unavailable", reason: "SAGAX_IDP_VAULT_KEY must be 64 hexadecimal characters." };
   }
-  if (env.OMB_DESKTOP_PARENT === "1") {
+  if (env.SAGAX_DESKTOP_PARENT === "1") {
     return { kind: "unavailable", reason: "The sign-in grant store has no key on this launch." };
   }
-  const configured = env.OMB_IDP_VAULT_KEY_FILE?.trim();
+  const configured = env.SAGAX_IDP_VAULT_KEY_FILE?.trim();
   const file = configured || join(dataDir, IDP_KEY_FILE);
   try {
     const existing = readFileSync(file, "utf8").trim().toLowerCase();

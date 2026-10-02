@@ -7,7 +7,7 @@ pnpm build
 node --experimental-strip-types scripts/verify-desktop-viewer.ts
 ```
 
-To reuse installed browser tools, set `OMB_AGENT_BROWSER_PATH` and
+To reuse installed browser tools, set `SAGAX_AGENT_BROWSER_PATH` and
 `AGENT_BROWSER_EXECUTABLE_PATH` explicitly. The fixture prints its temporary
 data directory and persistent server log. It launches the standard fake-engine
 server, synthetic Docker/SSH executables restricted to the fixture, and
@@ -20,7 +20,7 @@ recipe does not cover Windows. It is a manual smoke command, not part of
 
 The fixture reuses the shared HTTP and browser helpers. Keyboard and clipboard
 checks wait for received RFB events, with bounded waits. Set
-`OMB_UI_EVIDENCE_DIR` to retain screenshots in a chosen directory, as in the
+`SAGAX_UI_EVIDENCE_DIR` to retain screenshots in a chosen directory, as in the
 other renderer recipes; otherwise they stay beside the printed server log.
 
 The script pairs the browser through the real HTTP API, follows the same

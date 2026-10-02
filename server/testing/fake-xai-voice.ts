@@ -8,7 +8,7 @@
 // It records what each request carried (never answering with the key) so a
 // check can prove the voice, speed and language the person picked reached
 // xAI, and that the audio was a WAV turn. Point the server at it with
-// OMB_XAI_TTS_API=<url>/v1.
+// SAGAX_XAI_TTS_API=<url>/v1.
 import { createServer, type Server } from "node:http";
 
 import { WebSocketServer } from "ws";

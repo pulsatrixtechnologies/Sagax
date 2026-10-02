@@ -50,14 +50,14 @@ function fixture() {
 function runHook(appRoot) {
   return spawnSync("/bin/sh", [hook], {
     encoding: "utf8",
-    env: { ...process.env, OPENMAUSBOT_POSTINSTALL_TEST_ROOT: appRoot },
+    env: { ...process.env, SAGAX_POSTINSTALL_TEST_ROOT: appRoot },
   });
 }
 
 function runRemoveHook(appRoot, operation = "remove") {
   return spawnSync("/bin/sh", [removeHook, operation], {
     encoding: "utf8",
-    env: { ...process.env, OPENMAUSBOT_POSTINSTALL_TEST_ROOT: appRoot },
+    env: { ...process.env, SAGAX_POSTINSTALL_TEST_ROOT: appRoot },
   });
 }
 

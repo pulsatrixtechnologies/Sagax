@@ -6,12 +6,12 @@ import { agentsAllowedTools } from "./claude.ts";
 
 describe("agents MCP pre-allow", () => {
   it("is the whole server while computer sharing is off", () => {
-    expect(agentsAllowedTools({ OMB_BOT_ID: "b1" })).toEqual(["mcp__agents"]);
+    expect(agentsAllowedTools({ SAGAX_BOT_ID: "b1" })).toEqual(["mcp__agents"]);
     expect(agentsAllowedTools(undefined)).toEqual(["mcp__agents"]);
   });
 
   it("names each tool but shared_computer while it is on", () => {
-    const allowed = agentsAllowedTools({ OMB_BOT_ID: "b1", OMB_SHARED_COMPUTERS_ENABLED: "1" });
+    const allowed = agentsAllowedTools({ SAGAX_BOT_ID: "b1", SAGAX_SHARED_COMPUTERS_ENABLED: "1" });
     expect(allowed).not.toContain("mcp__agents");
     expect(allowed).not.toContain("mcp__agents__shared_computer");
     expect(allowed).toContain("mcp__agents__list_shared_computers");

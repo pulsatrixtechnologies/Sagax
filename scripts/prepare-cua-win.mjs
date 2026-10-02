@@ -64,8 +64,8 @@ async function officialBinary() {
   const archive = join(cache, release.file);
   await writeFile(archive, bytes);
   await run("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command",
-    "Expand-Archive -LiteralPath $env:OMB_CUA_ARCHIVE -DestinationPath $env:OMB_CUA_EXTRACT"], {
-    env: { ...process.env, OMB_CUA_ARCHIVE: archive, OMB_CUA_EXTRACT: cache },
+    "Expand-Archive -LiteralPath $env:SAGAX_CUA_ARCHIVE -DestinationPath $env:SAGAX_CUA_EXTRACT"], {
+    env: { ...process.env, SAGAX_CUA_ARCHIVE: archive, SAGAX_CUA_EXTRACT: cache },
     timeout: 60_000,
     windowsHide: true,
   });
@@ -147,7 +147,7 @@ await build({
 });
 // Same redirect as prepare-cua.mjs: the SDK resolves its native library
 // through @ubjs at runtime; patch the bundled resolver so
-// OPENMAUSBOT_CUA_SDK_LIBRARY (set by electron/cua.mjs to the staged DLL)
+// SAGAX_CUA_SDK_LIBRARY (set by electron/cua.mjs to the staged DLL)
 // wins over the node_modules lookups that do not exist in the packaged app.
 const bundledSource = await readFile(bundle, "utf8");
 const resolverPattern = /function resolveLibPath\d*\(opts\) \{/g;
@@ -159,7 +159,7 @@ await writeFile(
   bundle,
   bundledSource.replace(
     resolverPattern,
-    `${resolvers[0]}\n      if (process.env.OPENMAUSBOT_CUA_SDK_LIBRARY) return resolveOverride(opts.crateName, process.env.OPENMAUSBOT_CUA_SDK_LIBRARY);`,
+    `${resolvers[0]}\n      if (process.env.SAGAX_CUA_SDK_LIBRARY) return resolveOverride(opts.crateName, process.env.SAGAX_CUA_SDK_LIBRARY);`,
   ),
 );
 

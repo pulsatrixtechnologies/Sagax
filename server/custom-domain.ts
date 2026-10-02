@@ -65,7 +65,7 @@ export function isPublicDomainAddress(address: string): boolean {
  * does not identify the server where the customer's HTTPS proxy runs. */
 export function customDomainIpv4(
   interfaces = networkInterfaces(),
-  configured = process.env.OMB_PUBLIC_IPV4,
+  configured = process.env.SAGAX_PUBLIC_IPV4,
 ): string | null {
   if (configured?.trim()) {
     const address = configured.trim();

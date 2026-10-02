@@ -174,7 +174,7 @@ const managedBoatNameForFixture = (botId: string): string => {
   // process has a different HOME from the isolated server, so derive the
   // provider fixture row from that server's durable id rather than importing
   // the process-local boatNameFor value.
-  const environmentId = readFileSync(join(home, ".openmausbot", "environment-id"), "utf8").trim();
+  const environmentId = readFileSync(join(home, ".sagax", "environment-id"), "utf8").trim();
   const environmentScope = createHash("sha256").update(environmentId).digest("hex").slice(0, 12);
   const botPrefix = botId.slice(0, 8).toLowerCase().replace(/[^a-z0-9]/g, "") || "bot";
   const botHash = createHash("sha256").update(botId).digest("hex").slice(0, 6);
@@ -333,7 +333,7 @@ const readJsonFileWhenReady = async <T = unknown>(file: string, timeout = 5_000)
 };
 
 const storedMessageCount = (threadId: string): number => {
-  const db = new DatabaseSync(join(home, ".openmausbot", "messages.db"), { readOnly: true });
+  const db = new DatabaseSync(join(home, ".sagax", "messages.db"), { readOnly: true });
   try {
     const row = z.object({ count: z.number() }).parse(
       db.prepare("SELECT COUNT(*) AS count FROM messages WHERE thread_id = ?").get(threadId),
@@ -376,9 +376,9 @@ beforeAll(async () => {
   oneShotTextDump = join(home, "fake-claude-one-shot-dump.json");
   const fakeDockerDir = join(home, "fake-docker-bin");
   const fakeDockerProgram = join(fakeDockerDir, "docker-empty.mjs");
-  fakeDockerFixture = join(home, ".openmausbot", "fake-unmanaged-container");
-  fakeVpsFixture = join(home, ".openmausbot", "fake-vps-container.json");
-  fakeDockerLog = join(home, ".openmausbot", "fake-docker-calls.log");
+  fakeDockerFixture = join(home, ".sagax", "fake-unmanaged-container");
+  fakeVpsFixture = join(home, ".sagax", "fake-vps-container.json");
+  fakeDockerLog = join(home, ".sagax", "fake-docker-calls.log");
   mkdirSync(fakeDockerDir, { recursive: true });
   writeFileSync(fakeDockerProgram, [
     'import { appendFileSync, existsSync, readFileSync, rmSync } from "node:fs";',
@@ -429,12 +429,12 @@ beforeAll(async () => {
     chmodSync(join(fakeDockerDir, "docker"), 0o755);
   }
   // a fleet of exactly one unknown driver: no CLI probes, no network
-  mkdirSync(join(home, ".openmausbot"), { recursive: true });
+  mkdirSync(join(home, ".sagax"), { recursive: true });
   mkdirSync(join(staticDir, "assets"), { recursive: true });
   writeFileSync(join(staticDir, "index.html"), "<!doctype html><title>Packaged Sagax</title>");
   writeFileSync(join(staticDir, "assets", "smoke.css"), "body { color: white; }");
   writeFileSync(
-    join(home, ".openmausbot", "config.json"),
+    join(home, ".sagax", "config.json"),
     JSON.stringify({
       // generated titles are opt-in; this suite turns them on because it
       // owns the one-shot's reply file (FAKE_CLAUDE_TEXT_FILE below)
@@ -453,7 +453,7 @@ beforeAll(async () => {
     }),
   );
   writeFileSync(
-    join(home, ".openmausbot", "groups.json"),
+    join(home, ".sagax", "groups.json"),
     JSON.stringify([
       {
         id: "test-dm",
@@ -523,10 +523,10 @@ beforeAll(async () => {
     ]),
   );
 
-  const linkedWorkspace = join(home, ".openmausbot", "workspaces", "test-bot-a");
+  const linkedWorkspace = join(home, ".sagax", "workspaces", "test-bot-a");
   const linkedFile = join(linkedWorkspace, "phone report.md");
   const linkedImage = join(linkedWorkspace, "preview.png");
-  const privateAttachments = join(home, ".openmausbot", "attachments");
+  const privateAttachments = join(home, ".sagax", "attachments");
   const userAttachment = join(privateAttachments, "shared-notes.pdf");
   const generatedImage = join(privateAttachments, "generated.png");
   mkdirSync(linkedWorkspace, { recursive: true });
@@ -536,7 +536,7 @@ beforeAll(async () => {
   writeFileSync(generatedImage, "generated image bytes");
   writeFileSync(userAttachment, "%PDF shared from the phone\n", { mode: 0o600 });
   writeFileSync(
-    join(home, ".openmausbot", "messages-test-linked-file-room-thread.json"),
+    join(home, ".sagax", "messages-test-linked-file-room-thread.json"),
     JSON.stringify({
       activeLeafId: "user-outside-file-message",
       messages: [
@@ -605,7 +605,7 @@ beforeAll(async () => {
   // Goal orchestration is process-local. This durable card simulates either
   // a manual or scheduled goal whose process exited before it could settle.
   writeFileSync(
-    join(home, ".openmausbot", "messages-test-goal-restart-thread.json"),
+    join(home, ".sagax", "messages-test-goal-restart-thread.json"),
     JSON.stringify({
       activeLeafId: "settled-routine-goal-card",
       messages: [
@@ -649,7 +649,7 @@ beforeAll(async () => {
     }),
   );
   writeFileSync(
-    join(home, ".openmausbot", "routines.json"),
+    join(home, ".sagax", "routines.json"),
     JSON.stringify({
       version: 1,
       routines: [],
@@ -679,7 +679,7 @@ beforeAll(async () => {
   // A room transcript carrying an approval that outlived its turn: the card
   // is durable, but busyBotId is in-memory only and never survives a restart.
   writeFileSync(
-    join(home, ".openmausbot", "messages-test-stranded-room-thread.json"),
+    join(home, ".sagax", "messages-test-stranded-room-thread.json"),
     JSON.stringify({
       activeLeafId: "stranded-card",
       messages: [
@@ -706,7 +706,7 @@ beforeAll(async () => {
   // A room holding an approval nobody has answered yet, so "Cancel turn"
   // has something open to close.
   writeFileSync(
-    join(home, ".openmausbot", "messages-test-cancel-room-thread.json"),
+    join(home, ".sagax", "messages-test-cancel-room-thread.json"),
     JSON.stringify({
       activeLeafId: "cancel-card",
       messages: [
@@ -1042,7 +1042,7 @@ beforeAll(async () => {
     const spawn = childProcess.spawn;
     const base = ${JSON.stringify(home)};
     childProcess.spawn = function(command, args, options) {
-      if (command !== process.env.OMB_AGENT_BROWSER_PATH) return spawn(command, args, options);
+      if (command !== process.env.SAGAX_AGENT_BROWSER_PATH) return spawn(command, args, options);
       const program = 'const fs = require("node:fs"); const path = require("node:path"); '
         + 'const base = ' + JSON.stringify(base) + '; '
         + 'fs.appendFileSync(path.join(base, "browser-calls.jsonl"), JSON.stringify({args: process.argv.slice(1), session: process.env.AGENT_BROWSER_SESSION}) + "\\\\n"); '
@@ -1060,24 +1060,24 @@ beforeAll(async () => {
       ...(process.env.SystemRoot ? { SystemRoot: process.env.SystemRoot } : {}),
       HOME: home,
       USERPROFILE: home,
-      OMB_PORT: String(PORT),
-      OMB_WEBHOOK_PORT: String(WEBHOOK_PORT),
-      OMB_EXTRA_PATH: fakeDockerDir,
-      OMB_BOX_API: `http://127.0.0.1:${boatStubPort}`,
-      OMB_COMPOSIO_API: `http://127.0.0.1:${boatStubPort}/api/v3.1`,
-      OMB_COMPOSIO_TOOLKITS_API: `http://127.0.0.1:${boatStubPort}/api/v3`,
+      SAGAX_PORT: String(PORT),
+      SAGAX_WEBHOOK_PORT: String(WEBHOOK_PORT),
+      SAGAX_EXTRA_PATH: fakeDockerDir,
+      SAGAX_BOX_API: `http://127.0.0.1:${boatStubPort}`,
+      SAGAX_COMPOSIO_API: `http://127.0.0.1:${boatStubPort}/api/v3.1`,
+      SAGAX_COMPOSIO_TOOLKITS_API: `http://127.0.0.1:${boatStubPort}/api/v3`,
       // Managed connected-apps broker on the stub, so relayed MCP frames are
       // observable without any network. A project key set through the config
       // API still wins over this, exactly as in production.
-      OMB_COMPOSIO_BROKER_URL: `http://127.0.0.1:${boatStubPort}/broker`,
-      OMB_COMPOSIO_BROKER_TOKEN: "a".repeat(64),
-      OMB_STATIC_DIR: staticDir,
+      SAGAX_COMPOSIO_BROKER_URL: `http://127.0.0.1:${boatStubPort}/broker`,
+      SAGAX_COMPOSIO_BROKER_TOKEN: "a".repeat(64),
+      SAGAX_STATIC_DIR: staticDir,
       // The bots' browser engine: a stand-in binary the fake engine CLIs never
       // run; the turn only has to mount it.
-      OMB_AGENT_BROWSER_PATH: join(home, "fake-agent-browser"),
+      SAGAX_AGENT_BROWSER_PATH: join(home, "fake-agent-browser"),
       // Production uses 15s. Keep the real timer path while making the
       // browser-visible heartbeat assertion fast and deterministic.
-      OMB_SSE_HEARTBEAT_MS: "50",
+      SAGAX_SSE_HEARTBEAT_MS: "50",
       FAKE_CLAUDE_MODE: "hang",
       FAKE_CLAUDE_DUMP: fakeClaudeDump,
       // the one-shot text helper fails by default (its reply file is
@@ -1087,7 +1087,7 @@ beforeAll(async () => {
       FAKE_CLAUDE_TEXT_DUMP: oneShotTextDump,
       // the real CLI runs Manual for these even when asked for auto
       FAKE_CLAUDE_AUTO_UNAVAILABLE_MODELS: "claude-haiku-4-5",
-      OMB_TEST_INTERNAL_CAPABILITY_KEY: TEST_CAPABILITY_KEY,
+      SAGAX_TEST_INTERNAL_CAPABILITY_KEY: TEST_CAPABILITY_KEY,
     },
     stdio: ["ignore", "pipe", "pipe"],
   });
@@ -1291,7 +1291,7 @@ describe("harness HTTP API", () => {
       req.end();
     });
     expect(probe.status).toBe(200);
-    expect(probe.body).toEqual({ app: "openmausbot" });
+    expect(probe.body).toEqual({ app: "openmausbot", product: "sagax" });
     // the brand is public too: the sign-in page is branded before anyone has a session
     const brand = await new Promise<{ status: number; body: unknown }>((resolve, reject) => {
       const req = request({ hostname: "127.0.0.1", port: PORT, path: "/api/brand", headers: { host: "example.com" } }, (res) => {
@@ -1334,9 +1334,9 @@ describe("harness HTTP API", () => {
       env: {
         ...(process.env.PATH ? { PATH: process.env.PATH } : {}),
         ...(process.env.SystemRoot ? { SystemRoot: process.env.SystemRoot } : {}),
-        OMB_DATA_DIR: join(home, ".openmausbot"),
-        OMB_PORT: String(contenderPort),
-        OMB_STATIC_DIR: staticDir,
+        SAGAX_DATA_DIR: join(home, ".sagax"),
+        SAGAX_PORT: String(contenderPort),
+        SAGAX_STATIC_DIR: staticDir,
       },
       stdio: ["ignore", "ignore", "pipe"],
     });
@@ -2072,11 +2072,11 @@ describe("harness HTTP API", () => {
       const dump = z.object({
         mcpConfig: z.object({
           mcpServers: z.object({
-            agents: z.object({ env: z.object({ OMB_COMMS_TOKEN: z.string() }) }),
+            agents: z.object({ env: z.object({ SAGAX_COMMS_TOKEN: z.string() }) }),
           }),
         }),
       }).parse(await readJsonFileWhenReady(fakeClaudeDump));
-      expect(dump.mcpConfig.mcpServers.agents.env.OMB_COMMS_TOKEN).toMatch(/^[a-f0-9]{48}$/);
+      expect(dump.mcpConfig.mcpServers.agents.env.SAGAX_COMMS_TOKEN).toMatch(/^[a-f0-9]{48}$/);
       expect((await api("POST", `/api/bots/${chief.id}/interrupt`)).status).toBe(200);
 
       const createOperator = async (fromThreadId: string, name: string, fromBotId = chief.id) => {
@@ -2694,7 +2694,7 @@ describe("harness HTTP API", () => {
       expect((await api("PATCH", "/api/config", { browserProfiles: [{ id, name: "Cleanup fixture" }] })).status).toBe(200);
       expect((await api("PATCH", `/api/bots/${bot.id}`, { browserProfile: id })).status).toBe(200);
     }
-    const key = join(home, ".openmausbot", "browser-engine-key");
+    const key = join(home, ".sagax", "browser-engine-key");
     const backup = `${key}.fixture-backup`;
     const failureMarker = join(home, "browser-clear-fails");
     const hadKey = existsSync(key);
@@ -2704,7 +2704,7 @@ describe("harness HTTP API", () => {
     } else {
       writeFileSync(failureMarker, "fail");
     }
-    const journal = () => JSON.parse(readFileSync(join(home, ".openmausbot", "browser-cleanups.json"), "utf8")) as Array<{ id: string; phase: string }>;
+    const journal = () => JSON.parse(readFileSync(join(home, ".sagax", "browser-cleanups.json"), "utf8")) as Array<{ id: string; phase: string }>;
     try {
       const deleted = target === "bot"
         ? await api("DELETE", `/api/bots/${bot.id}`)
@@ -2890,7 +2890,7 @@ describe("harness HTTP API", () => {
       expect(await record()).toMatchObject({ id: requestId, name: "Build machine", section: null, problem: expect.stringMatching(/fixture refused create/) });
       expect(managedBoatCreateBodies).toHaveLength(1);
       expect(managedBoatCreateBodies[0]).toMatchObject({ noEnv: true });
-      const persisted = JSON.parse(readFileSync(join(home, ".openmausbot", "team-computers.json"), "utf8"));
+      const persisted = JSON.parse(readFileSync(join(home, ".sagax", "team-computers.json"), "utf8"));
       expect(persisted.computers).toContainEqual(expect.objectContaining({ id: requestId, name: "Build machine", section: null }));
       expect((await api("POST", "/api/team-computers", { requestId, name: "Different machine", acknowledgeCost: true })).status).toBe(409);
       expect((await api("POST", `/api/team-computers/${requestId}/provision`, {})).status).toBe(400);
@@ -2931,7 +2931,7 @@ describe("harness HTTP API", () => {
       expect((await api("PATCH", `/api/team-computers/${requestId}`, { section, acknowledgeSharedAccess: true })).status).toBe(200);
       expect(await record()).toMatchObject({ id: requestId, section, state: "idle" });
       expect((await api("GET", "/api/bots?messages=0")).body.bots.find((entry: { id: string }) => entry.id === bot.id)).toMatchObject({ computer: "off", section });
-      const saved = JSON.parse(readFileSync(join(home, ".openmausbot", "team-computers.json"), "utf8"));
+      const saved = JSON.parse(readFileSync(join(home, ".sagax", "team-computers.json"), "utf8"));
       expect(saved.computers).toContainEqual(expect.objectContaining({ id: requestId, section }));
       expect((await api("POST", `/api/team-computers/${requestId}/join`, {})).status).toBe(409);
       expect((await api("POST", `/api/team-computers/${requestId}/control`, { action: "take" })).status).toBe(200);
@@ -3144,7 +3144,7 @@ describe("harness HTTP API", () => {
     // test exists to make the ceiling fire, so it boots its own server with a
     // seconds-scale cap against the same shared Boat stub.
     const isolatedHome = mkdtempSync(join(tmpdir(), "omb-computer-wait-giveup-"));
-    const isolatedData = join(isolatedHome, ".openmausbot");
+    const isolatedData = join(isolatedHome, ".sagax");
     const isolatedStatic = join(isolatedHome, "static");
     const isolatedPort = await freePortBlock([0, 1]);
     mkdirSync(join(isolatedStatic, "assets"), { recursive: true });
@@ -3165,13 +3165,13 @@ describe("harness HTTP API", () => {
         ...(process.env.SystemRoot ? { SystemRoot: process.env.SystemRoot } : {}),
         HOME: isolatedHome,
         USERPROFILE: isolatedHome,
-        OMB_PORT: String(isolatedPort),
-        OMB_WEBHOOK_PORT: String(isolatedPort + 1),
-        OMB_STATIC_DIR: isolatedStatic,
-        OMB_BOX_API: `http://127.0.0.1:${boatStubPort}`,
+        SAGAX_PORT: String(isolatedPort),
+        SAGAX_WEBHOOK_PORT: String(isolatedPort + 1),
+        SAGAX_STATIC_DIR: isolatedStatic,
+        SAGAX_BOX_API: `http://127.0.0.1:${boatStubPort}`,
         FAKE_CLAUDE_MODE: "hang",
         // seconds, not minutes: the point of this file is the cap firing
-        OMB_GOAL_WAIT_MAX_MS: "2000",
+        SAGAX_GOAL_WAIT_MAX_MS: "2000",
       },
       stdio: ["ignore", "pipe", "pipe"],
     });
@@ -4190,8 +4190,8 @@ describe("harness HTTP API", () => {
     // same way the voice-note route does, under a generated-style name.
     const audio = Buffer.from("0123456789abcdefghij");
     const audioName = "voice-note-range-fixture.mp3";
-    mkdirSync(join(home, ".openmausbot", "attachments"), { recursive: true });
-    writeFileSync(join(home, ".openmausbot", "attachments", audioName), audio);
+    mkdirSync(join(home, ".sagax", "attachments"), { recursive: true });
+    writeFileSync(join(home, ".sagax", "attachments", audioName), audio);
     const size = audio.byteLength;
 
     const bounded = await fetch(`${BASE}/api/attachments/${audioName}`, { headers: { range: "bytes=2-7" } });
@@ -4645,7 +4645,7 @@ describe("harness HTTP API", () => {
 
   it("keeps Full and Custom bots on Codex when the paired model route changes providers", async () => {
     const isolatedHome = mkdtempSync(join(tmpdir(), "omb-trusted-mode-model-"));
-    const isolatedData = join(isolatedHome, ".openmausbot");
+    const isolatedData = join(isolatedHome, ".sagax");
     const isolatedStatic = join(isolatedHome, "static");
     const isolatedPort = await freePortBlock([0, 1]);
     mkdirSync(join(isolatedStatic, "assets"), { recursive: true });
@@ -4684,9 +4684,9 @@ describe("harness HTTP API", () => {
         ...(process.env.SystemRoot ? { SystemRoot: process.env.SystemRoot } : {}),
         HOME: isolatedHome,
         USERPROFILE: isolatedHome,
-        OMB_PORT: String(isolatedPort),
-        OMB_WEBHOOK_PORT: String(isolatedPort + 1),
-        OMB_STATIC_DIR: isolatedStatic,
+        SAGAX_PORT: String(isolatedPort),
+        SAGAX_WEBHOOK_PORT: String(isolatedPort + 1),
+        SAGAX_STATIC_DIR: isolatedStatic,
         FAKE_CLAUDE_MODE: "hang",
         FAKE_CLAUDE_DUMP: join(isolatedHome, "fake-claude-dump.json"),
       },
@@ -4829,7 +4829,7 @@ describe("harness HTTP API", () => {
     expect(markdownExport.body.markdown).toContain("Give this file to your Primary Bot");
     expect(markdownExport.body.markdown).not.toMatch(/Archived|autoApprove|alwaysAllow|modelSelection|threadId/);
     expect((await api("GET", "/api/bots")).body.groups).toHaveLength(roomsBefore);
-    expect((await api("POST", "/api/teams/export", {})).body.team.name).toBe("My OpenMaus Team");
+    expect((await api("POST", "/api/teams/export", {})).body.team.name).toBe("My Sagax Team");
 
     const stream = await openSse(`${BASE}/api/events`);
     try {
@@ -5376,9 +5376,9 @@ describe("harness HTTP API", () => {
       rmSync(fakeClaudeDump, { force: true });
       expect((await api("POST", `/api/bots/${bot.id}/messages`, { text: "stay active" })).status).toBe(202);
       const dump = await readJsonFileWhenReady<{
-        mcpConfig: { mcpServers: { agents: { env: { OMB_COMMS_TOKEN: string } } } };
+        mcpConfig: { mcpServers: { agents: { env: { SAGAX_COMMS_TOKEN: string } } } };
       }>(fakeClaudeDump);
-      const token = dump.mcpConfig.mcpServers.agents.env.OMB_COMMS_TOKEN;
+      const token = dump.mcpConfig.mcpServers.agents.env.SAGAX_COMMS_TOKEN;
       const requested = await fetch(`${BASE}/api/internal/request-credential`, {
         method: "POST",
         headers: {
@@ -5566,7 +5566,7 @@ describe("harness HTTP API", () => {
       // database write lock, so the append fails mid-request. The fresh card
       // is appended before any supersede write, so this failure must leave
       // the first card pending and actionable.
-      const lockDb = new DatabaseSync(join(home, ".openmausbot", "messages.db"));
+      const lockDb = new DatabaseSync(join(home, ".sagax", "messages.db"));
       lockDb.exec("BEGIN IMMEDIATE");
       try {
         const failed = await request("needed for the second task");
@@ -5594,7 +5594,7 @@ describe("harness HTTP API", () => {
 
   it("keeps credential-card ownership stable while an encrypted phone save is in flight", async () => {
     const isolatedHome = mkdtempSync(join(tmpdir(), "omb-phone-secret-races-"));
-    const isolatedData = join(isolatedHome, ".openmausbot");
+    const isolatedData = join(isolatedHome, ".sagax");
     const isolatedStatic = join(isolatedHome, "static");
     const isolatedGate = join(isolatedHome, "credential-gate");
     const isolatedPort = await freePortBlock([0, 1]);
@@ -5642,7 +5642,7 @@ describe("harness HTTP API", () => {
                   : null;
                 if (!patch) throw new Error("unsupported test credential target");
                 const response = await fetch(
-                  "http://127.0.0.1:" + process.env.OMB_PORT + "/api/config?secretStorage=external",
+                  "http://127.0.0.1:" + process.env.SAGAX_PORT + "/api/config?secretStorage=external",
                   {
                     method: "PUT",
                     headers: { "content-type": "application/json" },
@@ -5680,12 +5680,12 @@ describe("harness HTTP API", () => {
           ...(process.env.SystemRoot ? { SystemRoot: process.env.SystemRoot } : {}),
           HOME: isolatedHome,
           USERPROFILE: isolatedHome,
-          OMB_PORT: String(isolatedPort),
-          OMB_WEBHOOK_PORT: String(isolatedPort + 1),
-          OMB_STATIC_DIR: isolatedStatic,
+          SAGAX_PORT: String(isolatedPort),
+          SAGAX_WEBHOOK_PORT: String(isolatedPort + 1),
+          SAGAX_STATIC_DIR: isolatedStatic,
           FAKE_CLAUDE_MODE: "hang",
           FAKE_CLAUDE_DUMP: isolatedDump,
-          OMB_TEST_INTERNAL_CAPABILITY_KEY: TEST_CAPABILITY_KEY,
+          SAGAX_TEST_INTERNAL_CAPABILITY_KEY: TEST_CAPABILITY_KEY,
         },
         stdio: ["ignore", "pipe", "pipe"],
       },
@@ -6733,7 +6733,7 @@ describe("harness HTTP API", () => {
         (candidate: { id: string }) => candidate.id === botId,
       );
       expect(bot).not.toHaveProperty("voice");
-      const disk = JSON.parse(readFileSync(join(home, ".openmausbot", "config.json"), "utf8"));
+      const disk = JSON.parse(readFileSync(join(home, ".sagax", "config.json"), "utf8"));
       expect(disk.tts).toMatchObject({ provider, voice: "" });
     } finally {
       if (botId) await api("DELETE", `/api/bots/${botId}`).catch(() => undefined);
@@ -6756,7 +6756,7 @@ describe("harness HTTP API", () => {
       expect(away.body.tts).not.toHaveProperty("fishModel");
       const back = await api("PUT", "/api/config", { tts: { provider: "fish" } });
       expect(back.body.tts).toMatchObject({ provider: "fish", fishModel: "s2.1-pro-free" });
-      const disk = JSON.parse(readFileSync(join(home, ".openmausbot", "config.json"), "utf8"));
+      const disk = JSON.parse(readFileSync(join(home, ".sagax", "config.json"), "utf8"));
       expect(disk.tts).toMatchObject({ provider: "fish", fishModel: "s2.1-pro-free" });
     } finally {
       await api("PUT", "/api/config", { tts: { provider: "elevenlabs", voice: "", fishModel: "s2.1-pro" } }).catch(() => undefined);
@@ -6765,7 +6765,7 @@ describe("harness HTTP API", () => {
 
   it("does not switch voice providers when per-agent voices cannot be cleared", async () => {
     let botId = "";
-    const botsPath = join(home, ".openmausbot", "bots.json");
+    const botsPath = join(home, ".sagax", "bots.json");
     const backupPath = `${botsPath}.voice-switch-test`;
     let blocked = false;
     try {
@@ -6858,7 +6858,7 @@ describe("harness HTTP API", () => {
       expect(rotated.status).toBe(200);
       expect(rotated.body.box).toEqual({ configured: true });
       if (provisioned) {
-        const journal = readFileSync(join(home, ".openmausbot", "box-create-requests.json"), "utf8");
+        const journal = readFileSync(join(home, ".sagax", "box-create-requests.json"), "utf8");
         expect(journal).toContain(managedBoatCreateId);
       }
     } finally {
@@ -6891,7 +6891,7 @@ describe("harness HTTP API", () => {
       managedBoatRows = [];
       managedBoatCreatedIds.delete(managedBoatCreateId);
       expect((await api("PUT", "/api/config", { box: { token: "" } })).status).toBe(200);
-      const journal = JSON.parse(readFileSync(join(home, ".openmausbot", "box-create-requests.json"), "utf8"));
+      const journal = JSON.parse(readFileSync(join(home, ".sagax", "box-create-requests.json"), "utf8"));
       expect(journal.requests.some((entry: { botId?: string }) => entry.botId === bot.id)).toBe(false);
 
       // A stale receipt used to make this impossible: the new token was asked
@@ -7101,7 +7101,7 @@ describe("harness HTTP API", () => {
 
     const enabled = await api("PATCH", "/api/mcp/servers/fixture", { enabled: true });
     expect(enabled.body.servers[0].enabled).toBe(true);
-    const disk = JSON.parse(readFileSync(join(home, ".openmausbot", "config.json"), "utf8"));
+    const disk = JSON.parse(readFileSync(join(home, ".sagax", "config.json"), "utf8"));
     expect(disk.mcpServers.fixture.env).toEqual({ FIXTURE_TOKEN: secret, NEXT: "fresh" });
 
     const reserved = await api("POST", "/api/mcp/servers", { name: "computer", command: "evil" });
@@ -7137,7 +7137,7 @@ describe("harness HTTP API", () => {
       expect(updated.status).toBe(200);
       expect(updated.body.servers[0]).toMatchObject({ type: "sse", headerKeys: ["Authorization", "X-Org"], enabled: true });
       expect(JSON.stringify(updated.body)).not.toContain(secret);
-      const disk = JSON.parse(readFileSync(join(home, ".openmausbot", "config.json"), "utf8"));
+      const disk = JSON.parse(readFileSync(join(home, ".sagax", "config.json"), "utf8"));
       expect(disk.mcpServers.docs).toEqual({ type: "sse", url: fake.url, headers: { Authorization: secret, "X-Org": "acme" }, enabled: true });
 
       const bad = await api("POST", "/api/mcp/servers", { name: "nowhere", url: "docs.example/mcp" });
@@ -7191,7 +7191,7 @@ describe("harness HTTP API", () => {
       expect(tested.body).toEqual({ ok: true, tools: [{ name: "read_notes", description: "Read saved notes" }] });
       expect(fake.mcpAuthorizations.at(-1)).toBe(`Bearer ${access}`);
 
-      const disk = readFileSync(join(home, ".openmausbot", "config.json"), "utf8");
+      const disk = readFileSync(join(home, ".sagax", "config.json"), "utf8");
       for (const text of [disk, JSON.stringify(listed.body), JSON.stringify(tested.body)]) {
         expect(text).not.toContain(access);
         expect(text).not.toMatch(/fake-refresh-/);
@@ -7269,7 +7269,7 @@ describe("harness HTTP API", () => {
     const after = await api("GET", "/api/config");
     expect(after.body.rooms).toEqual({ turnTimeoutMinutes: 20 });
 
-    const disk = JSON.parse(readFileSync(join(home, ".openmausbot", "config.json"), "utf8"));
+    const disk = JSON.parse(readFileSync(join(home, ".sagax", "config.json"), "utf8"));
     expect(disk.rooms).toEqual({ turnTimeoutMinutes: 20 });
 
     await api("PUT", "/api/config", { rooms: { turnTimeoutMinutes: 5 } });
@@ -7517,7 +7517,7 @@ describe("harness HTTP API", () => {
         soul: "Record text.",
       })).status).toBe(200);
       // An edit made directly to the mirror file, bypassing the app entirely.
-      writeFileSync(join(home, ".openmausbot", "bots", bot.id, "SOUL.md"), "File text.");
+      writeFileSync(join(home, ".sagax", "bots", bot.id, "SOUL.md"), "File text.");
       rmSync(fakeClaudeDump, { force: true });
       expect((await api("POST", `/api/bots/${bot.id}/messages`, { text: "hello" })).status).toBe(202);
       const seen = await readJsonFileWhenReady<{ systemPrompt?: string }>(fakeClaudeDump, 15_000);
@@ -7589,9 +7589,9 @@ describe("harness HTTP API", () => {
   it("keeps skill authoring on by default and persists an explicit opt-out", async () => {
     const before = await api("GET", "/api/config");
     expect(before.status).toBe(200);
-    expect(before.body.features).toEqual({ browser: false, skillAuthoring: true, showToolCalls: false, routinesInConversation: false, templates: false, connectedApps: false, sharedComputers: false, claudeUserMcp: false, autoRecall: true, llmThreadTitles: true });
+    expect(before.body.features).toEqual({ browser: false, skillAuthoring: true, showToolCalls: false, routinesInConversation: false, templates: false, vpsComputer: false, boatComputer: false, connectedApps: false, sharedComputers: false, claudeUserMcp: false, autoRecall: true, llmThreadTitles: true });
     // the default is the absence of the key: nothing is written until the toggle is used
-    const untouched = JSON.parse(readFileSync(join(home, ".openmausbot", "config.json"), "utf8"));
+    const untouched = JSON.parse(readFileSync(join(home, ".sagax", "config.json"), "utf8"));
     expect(untouched.features?.skillAuthoring).toBeUndefined();
     // computer sharing has no toggle at all: only a hand-edited config.json
     // can set it, so the shipped default is reported off and never written
@@ -7601,9 +7601,9 @@ describe("harness HTTP API", () => {
       features: { skillAuthoring: false },
     });
     expect(saved.status).toBe(200);
-    expect(saved.body.features).toEqual({ browser: false, skillAuthoring: false, showToolCalls: false, routinesInConversation: false, templates: false, connectedApps: false, sharedComputers: false, claudeUserMcp: false, autoRecall: true, llmThreadTitles: true });
+    expect(saved.body.features).toEqual({ browser: false, skillAuthoring: false, showToolCalls: false, routinesInConversation: false, templates: false, vpsComputer: false, boatComputer: false, connectedApps: false, sharedComputers: false, claudeUserMcp: false, autoRecall: true, llmThreadTitles: true });
 
-    const disk = JSON.parse(readFileSync(join(home, ".openmausbot", "config.json"), "utf8"));
+    const disk = JSON.parse(readFileSync(join(home, ".sagax", "config.json"), "utf8"));
     // Earlier browser coverage may have persisted its own toggle. Opting out
     // of skill authoring must preserve those sibling settings, not erase them.
     expect(disk.features).toEqual({ ...untouched.features, skillAuthoring: false });
@@ -7611,7 +7611,7 @@ describe("harness HTTP API", () => {
     // the opt-out survives patches to sibling flags
     const tools = await api("PATCH", "/api/config", { features: { showToolCalls: true } });
     expect(tools.status).toBe(200);
-    expect(tools.body.features).toEqual({ browser: false, skillAuthoring: false, showToolCalls: true, routinesInConversation: false, templates: false, connectedApps: false, sharedComputers: false, claudeUserMcp: false, autoRecall: true, llmThreadTitles: true });
+    expect(tools.body.features).toEqual({ browser: false, skillAuthoring: false, showToolCalls: true, routinesInConversation: false, templates: false, vpsComputer: false, boatComputer: false, connectedApps: false, sharedComputers: false, claudeUserMcp: false, autoRecall: true, llmThreadTitles: true });
 
     // Templates is an experimental opt-in, persisted like its siblings
     const templates = await api("PATCH", "/api/config", { features: { templates: true } });
@@ -7983,8 +7983,8 @@ describe("harness HTTP API", () => {
       const browser = dump.mcpConfig.mcpServers.browser;
       expect(browser.command).toBe(process.execPath);
       expect(browser.args).toEqual([expect.stringMatching(/browser-proxy\.(?:ts|js|mjs)$/)]);
-      expect(browser.env.OMB_BROWSER_TOKEN).toEqual(expect.any(String));
-      expect(browser.env.OMB_HARNESS_URL).toBe(BASE);
+      expect(browser.env.SAGAX_BROWSER_TOKEN).toEqual(expect.any(String));
+      expect(browser.env.SAGAX_HARNESS_URL).toBe(BASE);
       // Only the server-owned proxy knows native sessions and saved-login keys.
       expect(browser.env.AGENT_BROWSER_SESSION).toBeUndefined();
       expect(browser.env.AGENT_BROWSER_RESTORE).toBeUndefined();
@@ -8105,7 +8105,7 @@ describe("harness HTTP API", () => {
   }, 60_000);
   it("reconciles a committed crash-stale bot reference before ACK and profile-id reuse", async () => {
     const isolatedHome = mkdtempSync(join(tmpdir(), "omb-browser-cleanup-restart-"));
-    const isolatedData = join(isolatedHome, ".openmausbot");
+    const isolatedData = join(isolatedHome, ".sagax");
     const isolatedStatic = join(isolatedHome, "static");
     const isolatedPort = await freePortBlock([0, 1]);
     mkdirSync(join(isolatedStatic, "assets"), { recursive: true });
@@ -8169,15 +8169,15 @@ describe("harness HTTP API", () => {
           ...(process.env.SystemRoot ? { SystemRoot: process.env.SystemRoot } : {}),
           HOME: isolatedHome,
           USERPROFILE: isolatedHome,
-          OMB_PORT: String(isolatedPort),
-          OMB_WEBHOOK_PORT: String(isolatedPort + 1),
-          OMB_STATIC_DIR: isolatedStatic,
+          SAGAX_PORT: String(isolatedPort),
+          SAGAX_WEBHOOK_PORT: String(isolatedPort + 1),
+          SAGAX_STATIC_DIR: isolatedStatic,
           // A real agent-browser picked up from PATH cannot even name its
           // daemon socket under this long fixture HOME (macOS caps socket
           // paths at 103 bytes); its erasure can never be confirmed, so the
           // committed entry must keep retrying rather than ACK. No engine
           // means no saved state to erase, and replay takes the no-engine ACK.
-          OMB_AGENT_BROWSER_PATH: join(isolatedHome, "missing-agent-browser"),
+          SAGAX_AGENT_BROWSER_PATH: join(isolatedHome, "missing-agent-browser"),
           FAKE_CLAUDE_MODE: "hang",
           FAKE_CLAUDE_DUMP: join(isolatedHome, "fake-claude-dump.json"),
         },
@@ -8223,7 +8223,7 @@ describe("harness HTTP API", () => {
         browserProfiles: [{ id: "client", name: "Client" }],
       })).status).toBe(200);
       expect((await api("PATCH", `/api/bots/${bot.id}`, { browserProfile: "client" })).body.bot.browserProfile).toBe("client");
-      const config = JSON.parse(readFileSync(join(home, ".openmausbot", "config.json"), "utf8"));
+      const config = JSON.parse(readFileSync(join(home, ".sagax", "config.json"), "utf8"));
       const profile = config.browserProfiles.find((entry: { id: string }) => entry.id === "client");
       rmSync(join(home, "browser-calls.jsonl"), { force: true });
       expect((await api("PATCH", "/api/config", { browserProfiles: [] })).status).toBe(200);
@@ -8373,7 +8373,7 @@ describe("harness HTTP API", () => {
     expect(invalid.status).toBe(400);
     expect(invalid.body.error).toContain("localVm.maxInstances");
 
-    const disk = JSON.parse(readFileSync(join(home, ".openmausbot", "config.json"), "utf8"));
+    const disk = JSON.parse(readFileSync(join(home, ".sagax", "config.json"), "utf8"));
     expect(disk.localVm).toEqual({ mode: "per-bot", maxInstances: 5 });
     await api("PATCH", "/api/config", { localVm: { mode: "shared", maxInstances: 2 } });
   });
@@ -8397,7 +8397,7 @@ describe("harness HTTP API", () => {
       expect((await api("GET", "/api/config")).body.localVm.idleTimeoutMinutes).toBe(30);
       expect((await api("GET", "/api/local-computer")).body.idle_timeout_ms).toBe(30 * 60_000);
 
-      const disk = JSON.parse(readFileSync(join(home, ".openmausbot", "config.json"), "utf8"));
+      const disk = JSON.parse(readFileSync(join(home, ".sagax", "config.json"), "utf8"));
       expect(disk.localVm).toMatchObject({ idleTimeoutMinutes: 30 });
 
       // A mode change keeps the configured window rather than resetting it.
@@ -8640,9 +8640,9 @@ describe("harness HTTP API", () => {
       expect((await api("POST", `/api/groups/${room.id}/messages`, { text: "start the lead" })).status).toBe(202);
       const firstDump = await readJsonFileWhenReady<{
         pid: number;
-        mcpConfig: { mcpServers: { agents: { env: { OMB_COMMS_TOKEN: string } } } };
+        mcpConfig: { mcpServers: { agents: { env: { SAGAX_COMMS_TOKEN: string } } } };
       }>(fakeClaudeDump);
-      expect(firstDump.mcpConfig.mcpServers.agents.env.OMB_COMMS_TOKEN).toMatch(/^[a-f0-9]{48}$/);
+      expect(firstDump.mcpConfig.mcpServers.agents.env.SAGAX_COMMS_TOKEN).toMatch(/^[a-f0-9]{48}$/);
       const token = await mintTestCapability(BASE, second.id, room.threadId);
 
       const requested = await fetch(`${BASE}/api/internal/request-credential`, {
@@ -8750,9 +8750,9 @@ describe("harness HTTP API", () => {
       rmSync(fakeClaudeDump, { force: true });
       expect((await api("POST", `/api/bots/${bot.id}/messages`, { text: "prepare a routine" })).status).toBe(202);
       const dump = await readJsonFileWhenReady<{
-        mcpConfig: { mcpServers: { agents: { env: { OMB_COMMS_TOKEN: string } } } };
+        mcpConfig: { mcpServers: { agents: { env: { SAGAX_COMMS_TOKEN: string } } } };
       }>(fakeClaudeDump);
-      expect(dump.mcpConfig.mcpServers.agents.env.OMB_COMMS_TOKEN).toMatch(/^[a-f0-9]{48}$/);
+      expect(dump.mcpConfig.mcpServers.agents.env.SAGAX_COMMS_TOKEN).toMatch(/^[a-f0-9]{48}$/);
       expect((await api("POST", `/api/bots/${bot.id}/interrupt`)).status).toBe(200);
       await expect.poll(async () => {
         const state = (await api("GET", "/api/bots")).body;
@@ -9287,7 +9287,7 @@ describe("harness HTTP API", () => {
   });
 
   it("keeps a proposed profile change inert until its card is confirmed, then records history", async () => {
-    const soulFileOf = (botId: string) => join(home, ".openmausbot", "bots", botId, "SOUL.md");
+    const soulFileOf = (botId: string) => join(home, ".sagax", "bots", botId, "SOUL.md");
     const bot = (await api("POST", "/api/bots", { name: "Scout" })).body.bot;
     try {
       await api("PATCH", `/api/bots/${bot.id}`, { modelSelection: { instanceId: "claude", model: "claude-sonnet-5" } });
@@ -9619,9 +9619,9 @@ describe("harness HTTP API", () => {
       rmSync(fakeClaudeDump, { force: true });
       expect((await api("POST", `/api/bots/${bot.id}/messages`, { text: "prepare a skill" })).status).toBe(202);
       const dump = await readJsonFileWhenReady<{
-        mcpConfig: { mcpServers: { agents: { env: { OMB_COMMS_TOKEN: string } } } };
+        mcpConfig: { mcpServers: { agents: { env: { SAGAX_COMMS_TOKEN: string } } } };
       }>(fakeClaudeDump);
-      expect(dump.mcpConfig.mcpServers.agents.env.OMB_COMMS_TOKEN).toMatch(/^[a-f0-9]{48}$/);
+      expect(dump.mcpConfig.mcpServers.agents.env.SAGAX_COMMS_TOKEN).toMatch(/^[a-f0-9]{48}$/);
       const token = await mintTestCapability(BASE, bot.id, bot.threadId, { skillAuthoring: true });
       const internalHeaders = {
         authorization: `Bearer ${token}`,
@@ -9753,7 +9753,7 @@ describe("harness HTTP API", () => {
       );
       const skillPath = join(
         home,
-        ".openmausbot",
+        ".sagax",
         "workspaces",
         bot.id,
         ".agents",
@@ -9809,7 +9809,7 @@ describe("harness HTTP API", () => {
       // composer behind a proposal that can no longer be applied.
       const missingStage = await stage("reviewed-skill-missing-stage");
       writeFileSync(
-        join(home, ".openmausbot", "skill-state", bot.id, "staged.json"),
+        join(home, ".sagax", "skill-state", bot.id, "staged.json"),
         `${JSON.stringify({ writes: {} }, null, 2)}\n`,
       );
       expect(await api("POST", `/api/threads/${bot.threadId}/respond`, {
@@ -9914,7 +9914,7 @@ describe("harness HTTP API", () => {
     expect(saved.body.profile).toEqual({ name: "External Store", email: "", aboutMe: "" });
     expect(JSON.stringify(saved.body)).not.toContain("ak_good");
 
-    const disk = JSON.parse(readFileSync(join(home, ".openmausbot", "config.json"), "utf8"));
+    const disk = JSON.parse(readFileSync(join(home, ".sagax", "config.json"), "utf8"));
     expect(disk.composio).toMatchObject({ apiKey: "", sessionId: "trs_config_test" });
     expect(disk.opencodeGo).toEqual({ apiKey: "" });
     expect(disk.profile).toEqual({ name: "External Store" });
@@ -10304,7 +10304,7 @@ describe("harness HTTP API", () => {
   });
 
   it.skipIf(process.platform === "win32")("stores the credentials file with owner-only permissions", () => {
-    expect(statSync(join(home, ".openmausbot", "config.json")).mode & 0o777).toBe(0o600);
+    expect(statSync(join(home, ".sagax", "config.json")).mode & 0o777).toBe(0o600);
   });
 
   it("stores and echoes the user profile (not write-only, unlike keys)", async () => {
@@ -10364,7 +10364,7 @@ describe("harness HTTP API", () => {
     expect((await api("DELETE", `/api/webhooks/${created.body.webhook.id}`)).status).toBe(200);
     expect((await api("GET", "/api/webhooks")).body.webhooks).toHaveLength(0);
     if (process.platform !== "win32") {
-      expect(statSync(join(home, ".openmausbot", "webhooks.json")).mode & 0o777).toBe(0o600);
+      expect(statSync(join(home, ".sagax", "webhooks.json")).mode & 0o777).toBe(0o600);
     }
   });
 
@@ -10406,9 +10406,9 @@ describe("harness HTTP API", () => {
         openaiConfigured: true, xaiConfigured: false, customKeyConfigured: true });
       for (const secret of ["openai-avatar-fixture", "custom-avatar-fixture"]) {
         expect(JSON.stringify(saved.body)).not.toContain(secret);
-        expect(readFileSync(join(home, ".openmausbot", "config.json"), "utf8")).not.toContain(secret);
+        expect(readFileSync(join(home, ".sagax", "config.json"), "utf8")).not.toContain(secret);
       }
-      const disk = JSON.parse(readFileSync(join(home, ".openmausbot", "config.json"), "utf8"));
+      const disk = JSON.parse(readFileSync(join(home, ".sagax", "config.json"), "utf8"));
       expect(disk.imageGen).toMatchObject({ key: "", customApiKey: "", provider: "custom" });
 
       const preset = await api("PUT", "/api/config", { imageGen: { provider: "openai" } });
@@ -10553,7 +10553,7 @@ describe("bot memory API", () => {
       req.end();
     });
 
-  const workspaceOf = (botId: string) => join(home, ".openmausbot", "workspaces", botId);
+  const workspaceOf = (botId: string) => join(home, ".sagax", "workspaces", botId);
 
   it("lets a bot attach a file it made, and serves it only through that message", async () => {
     const bot = (await api("POST", "/api/bots", {})).body.bot;
@@ -10799,7 +10799,7 @@ describe("bot memory API", () => {
       })).status).toBe(202);
       const dump = await readJsonFileWhenReady<{
         systemPrompt?: string;
-        mcpConfig: { mcpServers: { agents: { env: { OMB_COMMS_TOKEN: string } } } };
+        mcpConfig: { mcpServers: { agents: { env: { SAGAX_COMMS_TOKEN: string } } } };
       }>(fakeClaudeDump);
       expect(dump.systemPrompt ?? "").toContain("session_search");
       // Internal calls are authorised by a capability bound to one bot and one
@@ -11093,7 +11093,7 @@ describe("bot memory API", () => {
       // as leaked content and not depend on what happens to exist
       mkdirSync(workspaceOf(bot.id), { recursive: true });
       writeFileSync(join(workspaceOf(bot.id), "MEMORY.md"), "TOP-SECRET-MARKER memory");
-      writeFileSync(join(home, ".openmausbot", "secret.md"), "TOP-SECRET-MARKER sibling");
+      writeFileSync(join(home, ".sagax", "secret.md"), "TOP-SECRET-MARKER sibling");
 
       for (const name of [
         "..%2F..%2Fsecret.md", // encoded slashes
@@ -11118,7 +11118,7 @@ describe("bot memory API", () => {
     }
   });
 
-  const soulFileOf = (botId: string) => join(home, ".openmausbot", "bots", botId, "SOUL.md");
+  const soulFileOf = (botId: string) => join(home, ".sagax", "bots", botId, "SOUL.md");
 
   it("round-trips soul through both PATCH routes and mirrors it to SOUL.md", async () => {
     const bot = (await api("POST", "/api/bots")).body.bot;
@@ -11141,12 +11141,12 @@ describe("bot memory API", () => {
     } finally {
       await api("DELETE", `/api/bots/${bot.id}`);
     }
-    expect(existsSync(join(home, ".openmausbot", "bots", bot.id))).toBe(false);
+    expect(existsSync(join(home, ".sagax", "bots", bot.id))).toBe(false);
   });
 
   it("keeps mixed-request runtime revocations effective when profile persistence fails", async () => {
     const bot = (await api("POST", "/api/bots", { name: "Mixed profile safety" })).body.bot;
-    const botsFile = join(home, ".openmausbot", "bots.json");
+    const botsFile = join(home, ".sagax", "bots.json");
     let saved: string | undefined;
     try {
       expect((await api("PATCH", `/api/bots/${bot.id}`, { soul: "old", browser: true, browserProfile: "guest" })).status).toBe(200);
@@ -11264,7 +11264,7 @@ describe("bot memory API", () => {
 
   it("refuses redacted history restores without changing SOUL and still restores exact safe text", async () => {
     const bot = (await api("POST", "/api/bots", { name: "Redacted history" })).body.bot;
-    const file = join(home, ".openmausbot", "bots", bot.id, "history.ndjson");
+    const file = join(home, ".sagax", "bots", bot.id, "history.ndjson");
     const exact = "  Be brief.\n\nKeep this whitespace.  \n";
     const current = "Current instructions.";
     try {
@@ -11588,7 +11588,7 @@ describe("message pages", () => {
 
   it("downloads only a file linked by the exact stored bot message", async () => {
     const threadId = "test-linked-file-room-thread";
-    const linkedFile = join(home, ".openmausbot", "workspaces", "test-bot-a", "phone report.md");
+    const linkedFile = join(home, ".sagax", "workspaces", "test-bot-a", "phone report.md");
     const response = await fetch(
       `${BASE}/api/threads/${threadId}/messages/linked-file-message/file`,
       {
@@ -11615,7 +11615,7 @@ describe("message pages", () => {
     expect((await api(
       "POST",
       `/api/threads/${threadId}/messages/linked-file-message/file`,
-      { path: join(home, ".openmausbot", "workspaces", "test-bot-a", "other.md") },
+      { path: join(home, ".sagax", "workspaces", "test-bot-a", "other.md") },
     )).status).toBe(403);
     expect((await fetch(`${BASE}/api/threads/${threadId}/messages/no-such-message/file`, {
       method: "POST",
@@ -11625,7 +11625,7 @@ describe("message pages", () => {
   });
 
   it("downloads a structured generated image from an image-only reply", async () => {
-    const image = join(home, ".openmausbot", "attachments", "generated.png");
+    const image = join(home, ".sagax", "attachments", "generated.png");
     const response = await fetch(`${BASE}/api/threads/test-linked-file-room-thread/messages/generated-image-message/file`, {
       method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ path: image }),
     });
@@ -11635,17 +11635,17 @@ describe("message pages", () => {
   });
 
   it("confines structured generated images to their message and private image files", async () => {
-    const image = join(home, ".openmausbot", "attachments", "generated.png");
+    const image = join(home, ".sagax", "attachments", "generated.png");
     const route = (id: string) => `/api/threads/test-linked-file-room-thread/messages/${id}/file`;
     expect((await api("POST", route("prose-file-message"), { path: image })).status).toBe(403);
-    expect((await api("POST", route("generated-image-message"), { path: join(home, ".openmausbot", "attachments", "other.png") })).status).toBe(403);
-    expect((await api("POST", route("outside-generated-image-message"), { path: join(home, ".openmausbot", "workspaces", "test-bot-a", "preview.png") })).status).toBe(403);
-    expect((await api("POST", route("not-image-attachment-message"), { path: join(home, ".openmausbot", "attachments", "shared-notes.pdf") })).status).toBe(415);
+    expect((await api("POST", route("generated-image-message"), { path: join(home, ".sagax", "attachments", "other.png") })).status).toBe(403);
+    expect((await api("POST", route("outside-generated-image-message"), { path: join(home, ".sagax", "workspaces", "test-bot-a", "preview.png") })).status).toBe(403);
+    expect((await api("POST", route("not-image-attachment-message"), { path: join(home, ".sagax", "attachments", "shared-notes.pdf") })).status).toBe(415);
   });
 
   it("downloads an image rendered by the exact stored bot message", async () => {
     const threadId = "test-linked-file-room-thread";
-    const linkedImage = join(home, ".openmausbot", "workspaces", "test-bot-a", "preview.png");
+    const linkedImage = join(home, ".sagax", "workspaces", "test-bot-a", "preview.png");
     const response = await fetch(`${BASE}/api/threads/${threadId}/messages/linked-image-message/file`, {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -11679,7 +11679,7 @@ describe("message pages", () => {
 
   it("downloads an exact user attachment only from the private attachment store", async () => {
     const threadId = "test-linked-file-room-thread";
-    const shared = join(home, ".openmausbot", "attachments", "shared-notes.pdf");
+    const shared = join(home, ".sagax", "attachments", "shared-notes.pdf");
     const response = await fetch(
       `${BASE}/api/threads/${threadId}/messages/user-attached-file-message/file`,
       {
@@ -11705,12 +11705,12 @@ describe("message pages", () => {
     expect((await api(
       "POST",
       `/api/threads/${threadId}/messages/user-attached-file-message/file`,
-      { path: join(home, ".openmausbot", "attachments", "different.pdf") },
+      { path: join(home, ".sagax", "attachments", "different.pdf") },
     )).status).toBe(403);
     expect((await api(
       "POST",
       `/api/threads/${threadId}/messages/user-outside-file-message/file`,
-      { path: join(home, ".openmausbot", "workspaces", "test-bot-a", "phone report.md") },
+      { path: join(home, ".sagax", "workspaces", "test-bot-a", "phone report.md") },
     )).status).toBe(403);
   });
 
@@ -11897,13 +11897,13 @@ describe("resumable event stream", () => {
 
 describe("instance CLI override API", () => {
   it("round-trips bounded per-instance icons without changing the driver", async () => {
-    const before = JSON.parse(readFileSync(join(home, ".openmausbot", "config.json"), "utf8"));
+    const before = JSON.parse(readFileSync(join(home, ".sagax", "config.json"), "utf8"));
     const preset = await api("PATCH", "/api/instances/ghost/icon", { icon: { kind: "preset", preset: "deepseek" } });
     expect(preset.status).toBe(200);
     expect(preset.body.instances.find((i: any) => i.instanceId === "ghost")).toMatchObject({
       driverKind: "not-a-real-driver", icon: { kind: "preset", preset: "deepseek" },
     });
-    const savedPreset = JSON.parse(readFileSync(join(home, ".openmausbot", "config.json"), "utf8"));
+    const savedPreset = JSON.parse(readFileSync(join(home, ".sagax", "config.json"), "utf8"));
     expect(savedPreset.instances.ghost.icon).toEqual({ kind: "preset", preset: "deepseek" });
     expect(savedPreset.instances.claude).toEqual(before.instances.claude);
 
@@ -11920,7 +11920,7 @@ describe("instance CLI override API", () => {
     const reset = await api("PATCH", "/api/instances/ghost/icon", { icon: null });
     expect(reset.status).toBe(200);
     expect(reset.body.instances.find((i: any) => i.instanceId === "ghost").icon).toBeUndefined();
-    expect(JSON.parse(readFileSync(join(home, ".openmausbot", "config.json"), "utf8")).instances.ghost.icon).toBeUndefined();
+    expect(JSON.parse(readFileSync(join(home, ".sagax", "config.json"), "utf8")).instances.ghost.icon).toBeUndefined();
   });
 
   it("round-trips a set, clear, and rejects bad input", async () => {

@@ -100,7 +100,7 @@ describe("cloud computer provisioning cleanup", () => {
     });
     await new Promise<void>((resolve) => api.listen(0, "127.0.0.1", resolve));
     const port = (api.address() as any).port;
-    vi.stubEnv("OMB_BOX_API", `http://127.0.0.1:${port}/api/box/v1`);
+    vi.stubEnv("SAGAX_BOX_API", `http://127.0.0.1:${port}/api/box/v1`);
     vi.resetModules();
     ({ provisionBoat } = await import("./boat.ts"));
   });

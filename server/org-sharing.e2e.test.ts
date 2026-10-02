@@ -11,7 +11,7 @@
 //         org key switch is gone since 2026-10-01) or no installed engine
 //         gives an access card to the person who spoke, no turn
 //   S3-6b F on every path a person reaches: a queued send, an edit, a bot hop
-//   S3-7  a member's bot never gets full access
+//   S3-7  Full access on a member's bot is its owner's, confirmed once
 //   S3-7b its cards that reach past its own workspace (a shell command, a
 //         write to the shared Claude settings, a read of the config) wait for
 //         an organization admin; a file inside its workspace is the owner's
@@ -93,7 +93,7 @@ async function waitFor<T>(read: () => Promise<T | null | undefined | false>, ms 
 /** An open /api/events stream: everything it received so far, and whether the server ended it. */
 async function openStream(auth: Auth): Promise<{ text: () => string; ended: Promise<void>; close: () => void }> {
   const { body } = await api("POST", "/api/auth/stream-ticket", auth);
-  expect(body.ticket).toMatch(/^omb_tick_/);
+  expect(body.ticket).toMatch(/^sgx_tick_/);
   return new Promise((resolve, reject) => {
     let received = "";
     const req = request(`${BASE}/api/events?ticket=${encodeURIComponent(body.ticket)}`, { headers: { accept: "text/event-stream" } }, (res) => {
@@ -124,15 +124,15 @@ async function start() {
     cwd: join(SERVER_DIR, ".."),
     env: {
       ...(process.env.PATH ? { PATH: process.env.PATH } : {}),
-      HOME: home, USERPROFILE: home, OMB_PORT: String(PORT), OMB_WEBHOOK_PORT: String(PORT + 1),
-      OMB_IDENTITY: "perspicax",
-      OMB_PERSPICAX_ISSUER: idp.issuer,
-      OMB_PUBLIC_URL: BASE,
-      OMB_PERSPICAX_LINK_FILE: join(home, "link", "pulsabot.json"),
-      OMB_PERSPICAX_DIRECTORY_SECONDS: "5",
-      OMB_ANTHROPIC_API_KEY: ORG_KEY,
-      OMB_ORG_NAME: "Acme",
-      OMB_TEST_INTERNAL_CAPABILITY_KEY: TEST_CAPABILITY_KEY,
+      HOME: home, USERPROFILE: home, SAGAX_LOCAL_VM_TEST_NAMESPACE: process.env.SAGAX_LOCAL_VM_TEST_NAMESPACE ?? "", SAGAX_PORT: String(PORT), SAGAX_WEBHOOK_PORT: String(PORT + 1),
+      SAGAX_IDENTITY: "perspicax",
+      SAGAX_PERSPICAX_ISSUER: idp.issuer,
+      SAGAX_PUBLIC_URL: BASE,
+      SAGAX_PERSPICAX_LINK_FILE: join(home, "link", "pulsabot.json"),
+      SAGAX_PERSPICAX_DIRECTORY_SECONDS: "5",
+      SAGAX_ANTHROPIC_API_KEY: ORG_KEY,
+      SAGAX_ORG_NAME: "Acme",
+      SAGAX_TEST_INTERNAL_CAPABILITY_KEY: TEST_CAPABILITY_KEY,
     },
     stdio: ["ignore", "pipe", "pipe"],
   });
@@ -164,7 +164,7 @@ posixOnly("Perspicax organization, slice 3: directory, sharing with a user, acce
     PORT = await freePortBlock([0, 1]);
     BASE = `http://127.0.0.1:${PORT}`;
     home = mkdtempSync(join(tmpdir(), "omb-org-sharing-"));
-    const data = join(home, ".openmausbot");
+    const data = join(home, ".sagax");
     mkdirSync(data, { recursive: true });
     mkdirSync(join(home, "link"), { recursive: true, mode: 0o750 });
     writeFileSync(join(home, "link", "pulsabot.json"), JSON.stringify({
@@ -231,14 +231,14 @@ posixOnly("Perspicax organization, slice 3: directory, sharing with a user, acce
     expect(Array.isArray((await api("GET", "/api/health", bob)).body.engines)).toBe(true);
     const bare = await api("GET", "/api/health");
     expect(bare.status).toBe(200);
-    expect(bare.body).toEqual({ app: "openmausbot" });
+    expect(bare.body).toEqual({ app: "openmausbot", product: "sagax" });
   });
 
   it("S3-4 (B): shared with bob, answered with the org key; dave sees none of it", async () => {
     // The organization's key serves by itself (2026-10-01): bob has no
     // subscription and no key of his own. Slice 8: the settings also carry
     // the interim attach window (none here).
-    expect((await api("GET", "/api/org", alice)).body.settings).toEqual({ orgKeyConfigured: true, interimAttach: { until: null, people: 0 } });
+    expect((await api("GET", "/api/org", alice)).body.settings).toEqual({ orgKeyConfigured: true, allowFullAccess: true, interimAttach: { until: null, people: 0 } });
     shared = await createBot(alice, "Xavier", "claude");
     const refusals = [
       await api("POST", `/api/bots/${shared.id}/direct-grants`, alice, { userId: "bob@example.test" }),
@@ -396,7 +396,7 @@ posixOnly("Perspicax organization, slice 3: directory, sharing with a user, acce
     // runs on her own Claude subscription (the server's sign-ins no longer
     // serve an admin, 2026-10-01): the marker a finished sign-in leaves.
     const aliceId = (await api("GET", "/api/auth/session", alice)).body.principalId as string;
-    const aliceLogin = join(home, ".openmausbot", "principals", aliceId, "claude");
+    const aliceLogin = join(home, ".sagax", "principals", aliceId, "claude");
     mkdirSync(aliceLogin, { recursive: true, mode: 0o700 });
     writeFileSync(join(aliceLogin, ".pulsabot-login.json"), JSON.stringify({ at: Date.now() }), { mode: 0o600 });
     const held = await createBot(alice, "Holder", "stuck");
@@ -457,26 +457,28 @@ posixOnly("Perspicax organization, slice 3: directory, sharing with a user, acce
     expect(promptsNow()).not.toContain("hop from bee");
   }, 60_000);
 
-  it("S3-7: a member's bot never gets full access, even from an admin", async () => {
+  it("S3-7: Full access on a member's bot is its owner's choice, confirmed once; Custom never", async () => {
     const erin = await signIn(ERIN);
     const created = await api("POST", "/api/bots", erin, { name: "Zed" });
     expect(created.status, created.text).toBe(201);
     const zed = created.body.bot;
     expect(zed.ownerUserId).toBe((await api("GET", "/api/auth/session", erin)).body.principalId);
     // an admin reaches a member's Direct only when it is shared with them
-    expect((await api("PATCH", `/api/bots/${zed.id}`, alice, { approvalMode: "full" })).status).toBe(404);
+    expect((await api("PATCH", `/api/bots/${zed.id}`, alice, { approvalMode: "custom" })).status).toBe(404);
     const aliceId = (await api("GET", "/api/auth/session", alice)).body.principalId;
     expect((await api("POST", `/api/bots/${zed.id}/direct-grants`, erin, { userId: aliceId })).status).toBe(200);
-    // the member owner asking Full or Custom gets the org rule, not a field refusal
-    const ownFull = await api("PATCH", `/api/bots/${zed.id}`, erin, { approvalMode: "full" });
-    expect(ownFull.status, ownFull.text).toBe(409);
-    expect(ownFull.body.code).toBe("member_bot_full_access");
+    // Custom stays the org rule (2026-10-01: Full follows org-full-access.ts)
     expect((await api("PATCH", `/api/bots/${zed.id}`, erin, { approvalMode: "custom" })).body.code).toBe("member_bot_full_access");
+    // Full: the owner must confirm the warning once for this bot
+    const unconfirmed = await api("PATCH", `/api/bots/${zed.id}`, erin, { approvalMode: "full" });
+    expect(unconfirmed.status, unconfirmed.text).toBe(409);
+    expect(unconfirmed.body.code).toBe("full_access_confirm_required");
     // any other approval level stays outside a member's fields
     expect((await api("PATCH", `/api/bots/${zed.id}`, erin, { approvalMode: "auto" })).status).toBe(403);
-    const full = await api("PATCH", `/api/bots/${zed.id}`, alice, { approvalMode: "full" });
-    expect(full.status, full.text).toBe(409);
-    expect(full.body.code).toBe("member_bot_full_access");
+    // an admin is not the owner: never Full on someone else's bot
+    const full = await api("PATCH", `/api/bots/${zed.id}`, alice, { approvalMode: "full", confirmFullAccess: true });
+    expect(full.status, full.text).toBe(403);
+    expect(full.body.code).toBe("full_access_owner_only");
     expect((await api("PATCH", `/api/bots/${zed.id}`, alice, { approvalMode: "custom" })).body.code).toBe("member_bot_full_access");
     expect((await api("GET", "/api/org/approvals", alice)).body).toEqual({ approvals: [] });
     expect((await api("GET", "/api/org/approvals", erin)).status).toBe(403);
@@ -510,7 +512,7 @@ posixOnly("Perspicax organization, slice 3: directory, sharing with a user, acce
     const respond = (auth: Auth, requestId: string, extra: Record<string, unknown> = {}) =>
       api("POST", `/api/threads/${wren.threadId}/respond`, auth, { requestId, behavior: "allow", ...extra });
     try {
-      const data = realpathSync(join(home, ".openmausbot"));
+      const data = realpathSync(join(home, ".sagax"));
       // the shared Claude settings (a hook there runs on every bot's next turn)
       const settings = await ask("Write", { file_path: join(data, ".claude", "settings.json"), content: "{\"hooks\":{}}" });
       expect(settings.card.adminApproval).toBe(true);

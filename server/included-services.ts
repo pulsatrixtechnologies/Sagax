@@ -4,15 +4,15 @@
 // The Admin relays each on its own accounts, so its provider keys never reach
 // this machine; each Cloud home gets its own relay tokens:
 //
-//   OMB_CLOUD_BOAT_URL    + OMB_CLOUD_BOAT_TOKEN     the Boat relay, ending in /api/box/v1
-//   OMB_CLOUD_VOICE_URL   + OMB_CLOUD_VOICE_TOKEN    the ElevenLabs relay, ending in /v1
-//   OMB_CLOUD_DECIDER_URL + OMB_CLOUD_DECIDER_TOKEN  the Jev relay, a Jev base URL
+//   SAGAX_CLOUD_BOAT_URL    + SAGAX_CLOUD_BOAT_TOKEN     the Boat relay, ending in /api/box/v1
+//   SAGAX_CLOUD_VOICE_URL   + SAGAX_CLOUD_VOICE_TOKEN    the ElevenLabs relay, ending in /v1
+//   SAGAX_CLOUD_DECIDER_URL + SAGAX_CLOUD_DECIDER_TOKEN  the Jev relay, a Jev base URL
 //
 // An included token is only a fallback. The person's own key (Settings, or
-// BOX_TOKEN / OMB_TTS_KEY / OMB_JEV_API_KEY) always wins, and removing it
+// BOX_TOKEN / SAGAX_TTS_KEY / SAGAX_JEV_API_KEY) always wins, and removing it
 // falls back again, so the credential is resolved on every request, never
 // cached. The relay knows only our account, so each credential goes to one
-// place: an own key to the provider (OMB_BOX_API / OMB_ELEVENLABS_API /
+// place: an own key to the provider (SAGAX_BOX_API / SAGAX_ELEVENLABS_API /
 // decider.baseUrl when set, for dev and tests), an included token to its
 // relay. An included token is never written to config.json, never reported
 // to a client, and never the saved key Settings verifies, rotates or clears.
@@ -21,7 +21,7 @@ import { JEV_DEFAULT_BASE_URL } from "./decider/jev.ts";
 export const BOAT_API_DEFAULT = "https://ascii.dev/api/box/v1";
 export const ELEVENLABS_API_DEFAULT = "https://api.elevenlabs.io/v1";
 /** Also on WORKSPACE_CREDENTIAL_ENV (config.ts). */
-export const INCLUDED_TOKEN_ENV = ["OMB_CLOUD_BOAT_TOKEN", "OMB_CLOUD_VOICE_TOKEN", "OMB_CLOUD_DECIDER_TOKEN"] as const;
+export const INCLUDED_TOKEN_ENV = ["SAGAX_CLOUD_BOAT_TOKEN", "SAGAX_CLOUD_VOICE_TOKEN", "SAGAX_CLOUD_DECIDER_TOKEN"] as const;
 
 export interface ServiceCredential {
   token: string;
@@ -44,10 +44,10 @@ function includedService(url: string | undefined, token: string | undefined): Se
 }
 
 const includedFrom = (env: NodeJS.ProcessEnv): Included => ({
-  boat: includedService(env.OMB_CLOUD_BOAT_URL, env.OMB_CLOUD_BOAT_TOKEN),
-  voice: includedService(env.OMB_CLOUD_VOICE_URL, env.OMB_CLOUD_VOICE_TOKEN),
+  boat: includedService(env.SAGAX_CLOUD_BOAT_URL, env.SAGAX_CLOUD_BOAT_TOKEN),
+  voice: includedService(env.SAGAX_CLOUD_VOICE_URL, env.SAGAX_CLOUD_VOICE_TOKEN),
   // A Jev base URL as it is: the decider adds /v1/systemone, the relay's one route.
-  decider: includedService(env.OMB_CLOUD_DECIDER_URL, env.OMB_CLOUD_DECIDER_TOKEN),
+  decider: includedService(env.SAGAX_CLOUD_DECIDER_URL, env.SAGAX_CLOUD_DECIDER_TOKEN),
 });
 
 let held: Included | null = null;
@@ -71,9 +71,9 @@ function resolve(own: string | undefined, providerApi: string, included: Service
   return included;
 }
 
-export const boatProviderApi = (env: NodeJS.ProcessEnv = process.env): string => env.OMB_BOX_API || BOAT_API_DEFAULT;
+export const boatProviderApi = (env: NodeJS.ProcessEnv = process.env): string => env.SAGAX_BOX_API || BOAT_API_DEFAULT;
 export const elevenLabsProviderApi = (env: NodeJS.ProcessEnv = process.env): string =>
-  env.OMB_ELEVENLABS_API || ELEVENLABS_API_DEFAULT;
+  env.SAGAX_ELEVENLABS_API || ELEVENLABS_API_DEFAULT;
 
 /** The Boat credential in use: the person's own token, else the included one. */
 export function boatCredential(own: string | undefined, env: NodeJS.ProcessEnv = process.env): ServiceCredential | null {
@@ -86,7 +86,7 @@ export function voiceCredential(own: string | undefined, env: NodeJS.ProcessEnv 
 }
 
 /** The decision model's credential in use: the person's own Jev key (saved,
- * or OMB_JEV_API_KEY) with their `decider.baseUrl` or Jev's own, else the
+ * or SAGAX_JEV_API_KEY) with their `decider.baseUrl` or Jev's own, else the
  * included token with the relay. `api` is a Jev base URL. */
 export function deciderCredential(
   own: string | undefined,

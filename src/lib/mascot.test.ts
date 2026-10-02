@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 import { MAUS_COLORS, MAUS_COLOR_NAMES, mausInk, stateForBot, swatchStyle } from "./mascot";
@@ -37,5 +40,28 @@ describe("black bot color", () => {
   it("outlines only the black swatch", () => {
     expect(swatchStyle("black").boxShadow).toContain("inset");
     expect(swatchStyle("green")).toEqual({ backgroundColor: MAUS_COLORS.green });
+  });
+});
+
+describe("iOS MausPalette", () => {
+  // ios/App/MausAvatar.swift sits in the app target, out of reach of
+  // `swift test`, so its colour table is checked against MAUS_COLORS here.
+  const here = dirname(fileURLToPath(import.meta.url));
+  const swift = readFileSync(join(here, "../../ios/App/MausAvatar.swift"), "utf8");
+  const table = Object.fromEntries(
+    [...swift.matchAll(/^\s*"([a-z]+)": "(#[0-9A-Fa-f]{6})",$/gm)].map((m) => [m[1], m[2]]),
+  );
+
+  it("carries brown, amber and grey with the desktop values", () => {
+    expect(table.brown).toBe(MAUS_COLORS.brown);
+    expect(table.amber).toBe(MAUS_COLORS.amber);
+    expect(table.grey).toBe(MAUS_COLORS.grey);
+  });
+
+  it("has no colour that drifts from the desktop, apart from the phone's own black", () => {
+    for (const [name, hex] of Object.entries(table)) {
+      if (name === "black") continue;
+      expect(hex, name).toBe(MAUS_COLORS[name as keyof typeof MAUS_COLORS]);
+    }
   });
 });

@@ -62,7 +62,7 @@ describe("Perspicax MCP bridge", () => {
         response.end(JSON.stringify({ jsonrpc: "2.0", id: frame.id, result: { tools: [{ name: "api_list" }] } }));
       });
     });
-    const lines = start({ OMB_HARNESS_URL: harness, OMB_PERSPICAX_TOKEN: "turn-capability", OMB_PERSPICAX_PROFILE: "P1", OMB_BOT_ID: "bot1", OMB_THREAD_ID: "th1" });
+    const lines = start({ SAGAX_HARNESS_URL: harness, SAGAX_PERSPICAX_TOKEN: "turn-capability", SAGAX_PERSPICAX_PROFILE: "P1", SAGAX_BOT_ID: "bot1", SAGAX_THREAD_ID: "th1" });
     child!.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" })}\n`);
     child!.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id: 7, method: "tools/list" })}\n`);
     expect(await nextJson(lines)).toEqual({ jsonrpc: "2.0", id: 7, result: { tools: [{ name: "api_list" }] } });
@@ -82,11 +82,11 @@ describe("Perspicax MCP bridge", () => {
         response.end(JSON.stringify({ error: "unauthorized" }));
       });
     });
-    const lines = start({ OMB_HARNESS_URL: harness, OMB_PERSPICAX_TOKEN: "expired", OMB_PERSPICAX_PROFILE: "P1" });
+    const lines = start({ SAGAX_HARNESS_URL: harness, SAGAX_PERSPICAX_TOKEN: "expired", SAGAX_PERSPICAX_PROFILE: "P1" });
     child!.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "api_list" } })}\n`);
     expect(await nextJson(lines)).toEqual({ jsonrpc: "2.0", id: 1, error: { code: -32000, message: "Perspicax is unavailable" } });
     child!.kill("SIGKILL");
-    const closed = start({ OMB_HARNESS_URL: "http://127.0.0.1:9", OMB_PERSPICAX_TOKEN: "x", OMB_PERSPICAX_PROFILE: "P1" });
+    const closed = start({ SAGAX_HARNESS_URL: "http://127.0.0.1:9", SAGAX_PERSPICAX_TOKEN: "x", SAGAX_PERSPICAX_PROFILE: "P1" });
     child!.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id: "a", method: "tools/list" })}\n`);
     expect(await nextJson(closed)).toEqual({ jsonrpc: "2.0", id: "a", error: { code: -32000, message: "Perspicax is unavailable" } });
   });

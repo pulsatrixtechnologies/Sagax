@@ -12,6 +12,7 @@
 // A remote page can therefore read nothing local except the one copy the
 // person staged for that exact origin, and delete only bots it imported,
 // after a native confirmation.
+import { fetchEnvironmentDescriptor } from "./legacy-names.mjs";
 
 export const STAGE_TTL_MS = 30 * 60_000;
 export const PROBE_TIMEOUT_MS = 5_000;
@@ -116,9 +117,9 @@ export function createOrgJoin(deps) {
       const origin = new URL(link.origin).origin;
       let descriptor;
       try {
-        const response = await deps.fetch(`${origin}/.well-known/openmausbot/environment`, {
+        const response = await fetchEnvironmentDescriptor(origin, {
           redirect: "error", credentials: "omit", cache: "no-store", signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
-        });
+        }, deps.fetch);
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         descriptor = await response.json();
       } catch {

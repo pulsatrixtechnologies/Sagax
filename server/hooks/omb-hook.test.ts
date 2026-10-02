@@ -55,7 +55,7 @@ describe("omb-hook helper", () => {
     const context = "A long restored note 🐭\n".repeat(20_000);
     const body = field === "context" ? { context } : { hookSpecificOutput: { hookEventName: "SessionStart", additionalContext: context } };
     const url = await listen((_req, res) => res.end(JSON.stringify(body)));
-    const result = await run(JSON.stringify({ hook_event_name: "SessionStart" }), { OMB_HOOK_URL: url, OMB_HOOK_TOKEN_FILE: tokenFile });
+    const result = await run(JSON.stringify({ hook_event_name: "SessionStart" }), { SAGAX_HOOK_URL: url, SAGAX_HOOK_TOKEN_FILE: tokenFile });
     expect(result.code).toBe(0);
     expect(result.stdout).toBe(field === "context" ? context : JSON.stringify(body));
     expect(result.stderr).toBe("");
@@ -64,7 +64,7 @@ describe("omb-hook helper", () => {
   it("does not forward oversized hook input", async () => {
     let requests = 0;
     const url = await listen((_req, res) => { requests++; res.end("{}"); });
-    const result = await run(JSON.stringify({ hook_event_name: "PostToolUse", tool_response: "x".repeat(1024 * 1024) }), { OMB_HOOK_URL: url, OMB_HOOK_TOKEN_FILE: tokenFile });
+    const result = await run(JSON.stringify({ hook_event_name: "PostToolUse", tool_response: "x".repeat(1024 * 1024) }), { SAGAX_HOOK_URL: url, SAGAX_HOOK_TOKEN_FILE: tokenFile });
     expect(result.code).toBe(0);
     expect(result.stdout).toBe("");
     expect(requests).toBe(0);
@@ -74,14 +74,14 @@ describe("omb-hook helper", () => {
     let forwarded = 0;
     const destination = await listen((_req, res) => { forwarded++; res.end("{}"); });
     const url = await listen((_req, res) => { res.writeHead(307, { location: destination }); res.end(); });
-    const result = await run(JSON.stringify({ hook_event_name: "PostToolUse", tool_response: "private output" }), { OMB_HOOK_URL: url, OMB_HOOK_TOKEN_FILE: tokenFile });
+    const result = await run(JSON.stringify({ hook_event_name: "PostToolUse", tool_response: "private output" }), { SAGAX_HOOK_URL: url, SAGAX_HOOK_TOKEN_FILE: tokenFile });
     expect(result.code).toBe(0);
     expect(result.stdout).toBe("");
     expect(forwarded).toBe(0);
   });
 
   it("exits 0 quietly on garbage input and no harness", async () => {
-    const r = run("not json at all", { OMB_HOOK_URL: "http://127.0.0.1:1", OMB_HOOK_TOKEN_FILE: tokenFile });
+    const r = run("not json at all", { SAGAX_HOOK_URL: "http://127.0.0.1:1", SAGAX_HOOK_TOKEN_FILE: tokenFile });
     const result = await r;
     expect(result.code).toBe(0);
     expect(result.stdout).toBe("");
@@ -99,7 +99,7 @@ describe("omb-hook helper", () => {
       });
     });
     const payload = { hook_event_name: "PostToolUse", session_id: "s1", tool_name: "Bash", tool_use_id: "tu-1", tool_input: { command: "ls" }, tool_response: "a\nb" };
-    const result = await run(JSON.stringify(payload), { OMB_HOOK_URL: url, OMB_HOOK_TOKEN_FILE: tokenFile });
+    const result = await run(JSON.stringify(payload), { SAGAX_HOOK_URL: url, SAGAX_HOOK_TOKEN_FILE: tokenFile });
     expect(result.code).toBe(0);
     expect(seen).toHaveLength(1);
     expect(seen[0]!.auth).toBe("Bearer secret-token-123");
@@ -109,7 +109,7 @@ describe("omb-hook helper", () => {
 
   it("gives up within its budget when the harness never answers, still exiting 0", async () => {
     const url = await listen(() => { /* never respond */ });
-    const result = await run(JSON.stringify({ hook_event_name: "Stop" }), { OMB_HOOK_URL: url, OMB_HOOK_TOKEN_FILE: tokenFile, OMB_HOOK_TIMEOUT_MS: "800" });
+    const result = await run(JSON.stringify({ hook_event_name: "Stop" }), { SAGAX_HOOK_URL: url, SAGAX_HOOK_TOKEN_FILE: tokenFile, SAGAX_HOOK_TIMEOUT_MS: "800" });
     expect(result.code).toBe(0);
     expect(result.stdout).toBe("");
     expect(result.ms).toBeLessThan(5_000);
@@ -117,7 +117,7 @@ describe("omb-hook helper", () => {
 
   it("prints nothing when the harness returns no hookSpecificOutput", async () => {
     const url = await listen((_req, res) => { res.setHeader("content-type", "application/json"); res.end(JSON.stringify({ ok: true })); });
-    const result = await run(JSON.stringify({ hook_event_name: "PostToolUse", tool_use_id: "x" }), { OMB_HOOK_URL: url, OMB_HOOK_TOKEN_FILE: tokenFile });
+    const result = await run(JSON.stringify({ hook_event_name: "PostToolUse", tool_use_id: "x" }), { SAGAX_HOOK_URL: url, SAGAX_HOOK_TOKEN_FILE: tokenFile });
     expect(result.code).toBe(0);
     expect(result.stdout).toBe("");
   }, 15_000);
@@ -129,7 +129,7 @@ describe("omb-hook helper: SessionStart context", () => {
       res.setHeader("content-type", "application/json");
       res.end(JSON.stringify({ ok: true, context: "[What Dev did in an earlier turn: tools: Bash ×3 · files: changed retry.ts]" }));
     });
-    const result = await run(JSON.stringify({ hook_event_name: "SessionStart", source: "compact", session_id: "s1" }), { OMB_HOOK_URL: url, OMB_HOOK_TOKEN_FILE: tokenFile });
+    const result = await run(JSON.stringify({ hook_event_name: "SessionStart", source: "compact", session_id: "s1" }), { SAGAX_HOOK_URL: url, SAGAX_HOOK_TOKEN_FILE: tokenFile });
     expect(result.code).toBe(0);
     expect(result.stdout).toBe("[What Dev did in an earlier turn: tools: Bash ×3 · files: changed retry.ts]");
   }, 15_000);
@@ -139,7 +139,7 @@ describe("omb-hook helper: SessionStart context", () => {
       res.setHeader("content-type", "application/json");
       res.end(JSON.stringify({ ok: true, context: "should not be printed" }));
     });
-    const result = await run(JSON.stringify({ hook_event_name: "PostToolUse", tool_use_id: "t" }), { OMB_HOOK_URL: url, OMB_HOOK_TOKEN_FILE: tokenFile });
+    const result = await run(JSON.stringify({ hook_event_name: "PostToolUse", tool_use_id: "t" }), { SAGAX_HOOK_URL: url, SAGAX_HOOK_TOKEN_FILE: tokenFile });
     expect(result.code).toBe(0);
     expect(result.stdout).toBe("");
   }, 15_000);

@@ -21,7 +21,7 @@ export interface ForceBot {
 }
 
 export interface OrgBotForceDeps {
-  /** An organization server (`OMB_IDENTITY=perspicax`). */
+  /** An organization server (`SAGAX_IDENTITY=perspicax`). */
   organization: boolean;
   isAdmin(auth: RequestAuth): boolean;
   bot(id: string): ForceBot | null;

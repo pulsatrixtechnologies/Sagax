@@ -36,7 +36,7 @@ export const UI_TOOLS_DIR = join(ROOT, ".omb-scratch", "verify-tools");
 export const UI_MUTATING = new Set(["click", "type", "press", "flag", "eval"]);
 
 const ENTRIES = {
-  threads: { entry: "/scripts/testing/threads-preview.tsx", route: "/__threads.html", title: "Isolated OpenMaus Chat" },
+  threads: { entry: "/scripts/testing/threads-preview.tsx", route: "/__threads.html", title: "Isolated Sagax Chat" },
 } as const satisfies Record<string, Parameters<typeof mountPreview>[1]>;
 const FAKE_MODES = ["happy", "exit-early", "hang", "malformed", "stream", "not-logged-in", "slow", "background-result"];
 const SEEDED_BOT = "Pepper";
@@ -159,7 +159,7 @@ export function installedChrome(toolsDir = UI_TOOLS_DIR, platform: NodeJS.Platfo
   return null;
 }
 
-/** OMB_AGENT_BROWSER_PATH, then the tools directory, then PATH; otherwise the
+/** SAGAX_AGENT_BROWSER_PATH, then the tools directory, then PATH; otherwise the
  * pinned download, verified by size and SHA-256. Chrome follows the same rule
  * with AGENT_BROWSER_EXECUTABLE_PATH. Both land once under UI_TOOLS_DIR. */
 export async function ensureUiBrowser(

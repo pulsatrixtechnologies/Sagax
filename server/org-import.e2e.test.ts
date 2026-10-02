@@ -81,7 +81,7 @@ function startServer(home: string, port: number, env: Record<string, string>) {
     cwd: join(SERVER_DIR, ".."),
     env: {
       ...(process.env.PATH ? { PATH: process.env.PATH } : {}),
-      HOME: home, USERPROFILE: home, OMB_PORT: String(port), OMB_WEBHOOK_PORT: String(port + 1), ...env,
+      HOME: home, USERPROFILE: home, SAGAX_LOCAL_VM_TEST_NAMESPACE: process.env.SAGAX_LOCAL_VM_TEST_NAMESPACE ?? "", SAGAX_PORT: String(port), SAGAX_WEBHOOK_PORT: String(port + 1), ...env,
     },
     stdio: ["ignore", "pipe", "pipe"],
   });
@@ -98,7 +98,7 @@ function startServer(home: string, port: number, env: Record<string, string>) {
 }
 
 function auditRows(): Array<{ action: string; actor?: unknown; target?: unknown; after?: Record<string, unknown> }> {
-  const dir = join(orgHome, ".openmausbot", "admin-activity");
+  const dir = join(orgHome, ".sagax", "admin-activity");
   let files: string[] = [];
   try { files = readdirSync(dir); } catch { return []; }
   return files.flatMap((file) => readFileSync(join(dir, file), "utf8").split("\n").filter(Boolean).map((line) => JSON.parse(line)));
@@ -121,15 +121,15 @@ posixOnly("slice 8: copy a solo Sagax's bots into an organization", () => {
     SOLO = `http://127.0.0.1:${PORT + 2}`;
     orgHome = mkdtempSync(join(tmpdir(), "omb-org-import-org-"));
     soloHome = mkdtempSync(join(tmpdir(), "omb-org-import-solo-"));
-    mkdirSync(join(orgHome, ".openmausbot"), { recursive: true });
+    mkdirSync(join(orgHome, ".sagax"), { recursive: true });
     mkdirSync(join(orgHome, "link"), { recursive: true, mode: 0o750 });
     writeFileSync(join(orgHome, "link", "pulsabot.json"), JSON.stringify({
       version: 1, issuer: idp.issuer, client_id: "pulsa-bot", server_id: idp.serverId, origin: ORG, link_token: idp.linkToken,
     }), { mode: 0o640 });
     await Promise.all([
       startServer(orgHome, PORT, {
-        OMB_IDENTITY: "perspicax", OMB_PERSPICAX_ISSUER: idp.issuer, OMB_PUBLIC_URL: ORG,
-        OMB_PERSPICAX_LINK_FILE: join(orgHome, "link", "pulsabot.json"), OMB_PERSPICAX_DIRECTORY_SECONDS: "5", OMB_ORG_NAME: "Acme",
+        SAGAX_IDENTITY: "perspicax", SAGAX_PERSPICAX_ISSUER: idp.issuer, SAGAX_PUBLIC_URL: ORG,
+        SAGAX_PERSPICAX_LINK_FILE: join(orgHome, "link", "pulsabot.json"), SAGAX_PERSPICAX_DIRECTORY_SECONDS: "5", SAGAX_ORG_NAME: "Acme",
       }),
       startServer(soloHome, PORT + 2, {}),
     ]);
@@ -150,8 +150,8 @@ posixOnly("slice 8: copy a solo Sagax's bots into an organization", () => {
     boltId = bolt.body.bot.id;
     const soul = await call(SOLO, "PATCH", `/api/bots/${atlasId}`, undefined, { description: `deploy key ${SECRET}` });
     expect(soul.status, soul.text).toBe(200);
-    mkdirSync(join(soloHome, ".openmausbot", "workspaces", atlasId), { recursive: true, mode: 0o700 });
-    writeFileSync(join(soloHome, ".openmausbot", "workspaces", atlasId, "MEMORY.md"), "Remember the deploy window is Friday.\n", { mode: 0o600 });
+    mkdirSync(join(soloHome, ".sagax", "workspaces", atlasId), { recursive: true, mode: 0o700 });
+    writeFileSync(join(soloHome, ".sagax", "workspaces", atlasId, "MEMORY.md"), "Remember the deploy window is Friday.\n", { mode: 0o600 });
     const room = await call(SOLO, "POST", "/api/groups", undefined, { name: "Atlas and Bolt", memberIds: [atlasId, boltId] });
     expect(room.status, room.text).toBe(201);
     const routine = await call(SOLO, "POST", "/api/routines", undefined, { name: "Hourly", prompt: "check", botId: atlasId, enabled: true, schedule: { type: "interval", everyMinutes: 60, anchorAt: 0 } });

@@ -39,7 +39,7 @@ describe("approval mode selector", () => {
       {
         mode: "full",
         label: "Full access",
-        description: "Full computer access (elevated risk)",
+        description: "Runs commands and edits files without asking. Use only with bots you trust.",
       },
       {
         mode: "custom",

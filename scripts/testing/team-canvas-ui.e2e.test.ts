@@ -11,8 +11,8 @@ import { fixtureApi } from "./preview-fixture.ts";
 
 const ROOT = fileURLToPath(new URL("../..", import.meta.url));
 const binary = resolveAgentBrowserBinary({ dataDir: UI_TOOLS_DIR, env: process.env });
-const enabled = process.env.OMB_UI_E2E === "1" || Boolean(binary);
-if (!enabled) console.info("skipping team canvas UI e2e: set OMB_UI_E2E=1 to install the pinned browser");
+const enabled = process.env.SAGAX_UI_E2E === "1" || Boolean(binary);
+if (!enabled) console.info("skipping team canvas UI e2e: set SAGAX_UI_E2E=1 to install the pinned browser");
 
 type BotRecord = {
   id: string; name: string; title?: string; section?: string; threadId: string;

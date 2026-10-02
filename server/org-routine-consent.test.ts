@@ -195,7 +195,7 @@ describe("routine delegations (slice 6)", () => {
     expect(consents.principalsWithConsent()).toEqual([]);
   });
 
-  it("reads OMB_ROUTINE_RENEW_SECONDS as 1 to 600, else 10 minutes", () => {
+  it("reads SAGAX_ROUTINE_RENEW_SECONDS as 1 to 600, else 10 minutes", () => {
     expect(routineRenewMs(undefined)).toBe(ROUTINE_CONSENT_RENEW_MS);
     expect(routineRenewMs("20")).toBe(20_000);
     for (const bad of ["0", "601", "1.5", "x", ""]) expect(routineRenewMs(bad)).toBe(ROUTINE_CONSENT_RENEW_MS);

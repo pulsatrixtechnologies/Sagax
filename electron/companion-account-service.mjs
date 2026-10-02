@@ -13,7 +13,7 @@ import { isBlockedUrl } from "./upstream-hosts.mjs";
 // No hosted default: the original project's account service is never
 // contacted. Phone pairing through a
 // hosted relay, `serve --tunnel` and email sign-in stay off until an admin
-// sets OMB_CONTROL_PLANE_URL to a control plane of ours.
+// sets SAGAX_CONTROL_PLANE_URL to a control plane of ours.
 export const DEFAULT_COMPANION_CONTROL_PLANE_URL = "";
 
 export const COMPANION_CLIENT_INSTANCE_FIELD = "companionClientInstanceId";
@@ -41,8 +41,8 @@ export function resolveCompanionControlPlaneURL({
   isPackaged,
   environment = process.env,
 } = {}) {
-  if (Object.hasOwn(environment, "OMB_CONTROL_PLANE_URL")) {
-    const configured = normalizeControlPlaneURL(environment.OMB_CONTROL_PLANE_URL);
+  if (Object.hasOwn(environment, "SAGAX_CONTROL_PLANE_URL")) {
+    const configured = normalizeControlPlaneURL(environment.SAGAX_CONTROL_PLANE_URL);
     return configured && !isBlockedUrl(configured) ? configured : "";
   }
   return isPackaged ? DEFAULT_COMPANION_CONTROL_PLANE_URL : "";

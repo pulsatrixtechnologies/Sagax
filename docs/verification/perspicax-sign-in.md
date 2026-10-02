@@ -1,9 +1,9 @@
 # Sign in with Pulsatrix (Perspicax OpenID Connect)
 
-An organization server (`OMB_IDENTITY=perspicax`, see
+An organization server (`SAGAX_IDENTITY=perspicax`, see
 [self-hosting](../self-hosting.md#sign-in-with-pulsatrix-organization-server))
 signs people in with Perspicax. Two levels of proof, both isolated: nothing
-touches the user's app, `~/.openmausbot`, or a live Perspicax.
+touches the user's app, `~/.sagax`, or a live Perspicax.
 
 ## Against a fake provider (automated)
 
@@ -54,9 +54,9 @@ Then an isolated Sagax with a temporary home and the fake engine:
 ```sh
 H=$(mktemp -d); mkdir -p $H/.openmausbot
 echo '{"instances":{"grok":{"driver":"grokAgent","config":{"cli":"'$PWD'/server/testing/fake-acp-cli.ts","fullAuto":false}}}}' > $H/.openmausbot/config.json
-env -i PATH="$PATH" HOME=$H OMB_PORT=18788 OMB_WEBHOOK_PORT=18789 \
-  OMB_IDENTITY=perspicax OMB_PERSPICAX_ISSUER=http://localhost:18787 \
-  OMB_PUBLIC_URL=http://localhost:18788 node server/index.ts
+env -i PATH="$PATH" HOME=$H SAGAX_PORT=18788 SAGAX_WEBHOOK_PORT=18789 \
+  SAGAX_IDENTITY=perspicax SAGAX_PERSPICAX_ISSUER=http://localhost:18787 \
+  SAGAX_PUBLIC_URL=http://localhost:18788 node server/index.ts
 ```
 
 Open `http://localhost:18788/pair`, choose **Sign in with Pulsatrix**, enter
@@ -111,7 +111,7 @@ family, and signs back-channel logout tokens; `disable(sub)`,
   back-channel route (405, wrong content type, oversized body, every forged
   token, 200 once then a replay refused).
 - `server/oidc-session.e2e.test.ts` (real server, fake provider, fake engine,
-  `OMB_OIDC_REFRESH_AFTER_SECONDS=1`): S2-1 refresh and rotation, S2-2 a role
+  `SAGAX_OIDC_REFRESH_AFTER_SECONDS=1`): S2-1 refresh and rotation, S2-2 a role
   change narrows the session, S2-3 a back-channel logout ends the sessions
   and the open event stream at once, S2-5 logout revokes the grant, S2-6
   forged and replayed logout tokens, S2-7 the desktop return link redeemed
@@ -128,9 +128,9 @@ Perspicax should post to another address, its internal URL:
 
 ```sh
 PXC_PULSABOT_ORIGIN=http://localhost:18788 pulsatrix-connector --config-dir $PX serve
-env -i PATH="$PATH" HOME=$H OMB_PORT=18788 OMB_WEBHOOK_PORT=18789 \
-  OMB_IDENTITY=perspicax OMB_PERSPICAX_ISSUER=http://localhost:18787 \
-  OMB_PUBLIC_URL=http://localhost:18788 OMB_OIDC_REFRESH_AFTER_SECONDS=5 node server/index.ts
+env -i PATH="$PATH" HOME=$H SAGAX_PORT=18788 SAGAX_WEBHOOK_PORT=18789 \
+  SAGAX_IDENTITY=perspicax SAGAX_PERSPICAX_ISSUER=http://localhost:18787 \
+  SAGAX_PUBLIC_URL=http://localhost:18788 SAGAX_OIDC_REFRESH_AFTER_SECONDS=5 node server/index.ts
 ```
 
 Then, with users `alice` (admin), `bob` (employee) and `carol` (admin) and an
@@ -240,7 +240,7 @@ and `directoryTeams`, and `setDirectoryStatus(sub, status)`.
   key_refused card and who sees its detail, and who answers a server
   command of a member's bot.
 - `server/org-sharing.e2e.test.ts` (real server, fake provider, fake Claude
-  CLI with `OMB_ANTHROPIC_API_KEY` and `FAKE_CLAUDE_DUMP`): S3-3 the
+  CLI with `SAGAX_ANTHROPIC_API_KEY` and `FAKE_CLAUDE_DUMP`): S3-3 the
   directory before and after a sign-in, S3-11 the engines in the
   authenticated health (an admin and a member read them; a session-less
   local caller, which on an organization server is any bot's shell, gets
@@ -261,11 +261,11 @@ example Perspicax 19071 and Pulsa Bot 19072:
 S=$(mktemp -d)
 PXC_PULSABOT_ORIGIN=http://localhost:19072 PXC_PULSABOT_LINK_FILE=$S/link/pulsabot.json \
   pulsatrix-connector --config-dir $PX serve
-env -i PATH="$PATH" HOME=$S/pbhome OMB_PORT=19072 OMB_WEBHOOK_PORT=19073 \
-  OMB_IDENTITY=perspicax OMB_PERSPICAX_ISSUER=http://localhost:19071 \
-  OMB_PUBLIC_URL=http://localhost:19072 OMB_OIDC_REFRESH_AFTER_SECONDS=5 \
-  OMB_PERSPICAX_LINK_FILE=$S/link/pulsabot.json OMB_PERSPICAX_DIRECTORY_SECONDS=5 \
-  OMB_ANTHROPIC_API_KEY=sk-ant-test-org-key FAKE_CLAUDE_DUMP=$S/claude-dump.json node server/index.ts
+env -i PATH="$PATH" HOME=$S/pbhome SAGAX_PORT=19072 SAGAX_WEBHOOK_PORT=19073 \
+  SAGAX_IDENTITY=perspicax SAGAX_PERSPICAX_ISSUER=http://localhost:19071 \
+  SAGAX_PUBLIC_URL=http://localhost:19072 SAGAX_OIDC_REFRESH_AFTER_SECONDS=5 \
+  SAGAX_PERSPICAX_LINK_FILE=$S/link/pulsabot.json SAGAX_PERSPICAX_DIRECTORY_SECONDS=5 \
+  SAGAX_ANTHROPIC_API_KEY=sk-ant-test-org-key FAKE_CLAUDE_DUMP=$S/claude-dump.json node server/index.ts
 ```
 
 with `config.json` instances `claude` (claudeAgent, `cli` =
@@ -346,12 +346,12 @@ disabled person).
 
 Isolated instances only. Build `pulsatrix-connector` from the slice 4 head,
 ports for example Perspicax 19081 and Pulsa Bot 19082 (webhook 19083), and
-start Pulsa Bot as in slice 3 with `OMB_PORT=19082`,
-`OMB_PERSPICAX_ISSUER=http://localhost:19081`,
-`OMB_ANTHROPIC_API_KEY=sk-ant-test-org-key-000000` and
+start Pulsa Bot as in slice 3 with `SAGAX_PORT=19082`,
+`SAGAX_PERSPICAX_ISSUER=http://localhost:19081`,
+`SAGAX_ANTHROPIC_API_KEY=sk-ant-test-org-key-000000` and
 `FAKE_CLAUDE_DUMP=$S/claude-dump.json`; `config.json` instances `claude`
 (fake Claude CLI), `codex` (fake Codex, login CLI
-`server/testing/fake-codex-login-cli.ts` with `OMB_DEVICE_AUTH_FIXTURE=1`)
+`server/testing/fake-codex-login-cli.ts` with `SAGAX_DEVICE_AUTH_FIXTURE=1`)
 and `ghost` (`/nonexistent/claude`). Accounts: alice (admin), bob, carol
 (member of team T), dave (team U), mia (manager of T), erin. Then walk
 S4-1 to S4-15 of the slice 4 plan: the teams claim, alice's key saved in
@@ -471,7 +471,7 @@ The fake provider now issues routine delegation families
 (`scope` with `pulsabot:routines`, a refresh token that survives the
 person's sign-outs), lists `routine_delegation` per person in the
 directory, and revokes a family from its fake console.
-`OMB_ROUTINE_RENEW_SECONDS` shortens the renewal window for tests.
+`SAGAX_ROUTINE_RENEW_SECONDS` shortens the renewal window for tests.
 
 - `server/org-routine-consent.test.ts`: one delegation per person (a new
   consent revokes the previous one), the renewal reused for its window and
@@ -486,7 +486,7 @@ directory, and revokes a family from its fake console.
   401 and who gets 403 on `/api/org/routine-delegation` (the gate's 403 for a
   session-less local request under service trust, its 401 for an expired or
   revoked session, the route's 401 `session_required` under
-  `OMB_LOOPBACK_TRUST=owner`, 403 `identity_perspicax` for a session without
+  `SAGAX_LOOPBACK_TRUST=owner`, 403 `identity_perspicax` for a session without
   a principal or on a solo server) is tabled in `docs/verification/routines.md`
   ("Slice 6: rate limits at Perspicax"), with the rate limit behavior and the
   durable revocation queue.
@@ -535,7 +535,7 @@ Spec sections 5 and 8. Sagax answers the Perspicax console at
 `/api/org/admin/*` (`server/org-admin-routes.ts`), before the auth gate and
 before loopback trust: the only credential is a console assertion Perspicax
 signs per proxied request (ES256 with the OIDC key, header typ
-`pulsabot-console+jwt`, `aud` = this server's `OMB_PUBLIC_URL` origin,
+`pulsabot-console+jwt`, `aud` = this server's `SAGAX_PUBLIC_URL` origin,
 `act.sub = "console"`, `exp - iat <= 120`, a `jti` kept until exp + 60 s, at
 most 10,000). A session cookie is ignored there and a loopback request
 without an assertion is 401. Every answer carries `X-Sagax-Admin-Api: 1` and
@@ -657,7 +657,7 @@ node --test electron/org-join.node-test.mjs
 - Email stays solo (decision: "Garder le courriel en solo"): a solo server
   keeps `POST /api/auth/email/start|verify` for its sign-in list, the mailer
   (SMTP, SendGrid, Twilio, Settings > Email saved in `config.json` over the
-  `OMB_MAIL_*` defaults, `*_FILE` secrets), Settings > People and its invitations (`/api/org/invites*`, the
+  `SAGAX_MAIL_*` defaults, `*_FILE` secrets), Settings > People and its invitations (`/api/org/invites*`, the
   `/join` page), issued in the server's own name. Solo `POST`/`PATCH
   /api/org` answer 410 `interim_org_removed`, `GET /api/org` 404
   `no_organization`; an old `config.json` `org` key is ignored. An
@@ -668,9 +668,9 @@ node --test electron/org-join.node-test.mjs
 
 ### Against a real Perspicax (manual, isolated instances only)
 
-Never `~/.openmausbot`, the live app or a production Perspicax. Build
+Never `~/.sagax`, the live app or a production Perspicax. Build
 Perspicax from the current head (`bind = "127.0.0.1:19191"`), start an
-organization Sagax on 19192 (`OMB_IDENTITY=perspicax`, its own data
+organization Sagax on 19192 (`SAGAX_IDENTITY=perspicax`, its own data
 directory) and a solo Sagax on 19194 (its own data directory, fake engine).
 
 1. Solo, Settings > Organization: "Join a Perspicax server" only (no create

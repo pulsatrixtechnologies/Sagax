@@ -184,11 +184,11 @@ describe("WebhookManager", () => {
     expect(h.posted).toHaveLength(0);
   });
 
-  // OpenMausBot#2071: a delivery:"post" webhook used to land in
+  // Sagax#2071: a delivery:"post" webhook used to land in
   // bot.threadId, the bot's CURRENTLY SELECTED task -- so a background
   // brief/alert could land inside whatever live conversation the owner (or
   // another automation) happened to have open at delivery time.
-  it("gives a delivery:\"post\" webhook one stable dedicated thread, independent of the bot's live selection, and it survives a restart (OpenMausBot#2071)", () => {
+  it("gives a delivery:\"post\" webhook one stable dedicated thread, independent of the bot's live selection, and it survives a restart (Sagax#2071)", () => {
     const h = harness();
     const { webhook, secret } = h.manager.create({ name: "Brief", prompt: "", botId: "maus-1", delivery: "post" });
 

@@ -45,7 +45,7 @@ it("reports a crashed run to the Chief, who retries it from the incidents thread
       'import { existsSync, readFileSync } from "node:fs";',
       'import { join } from "node:path";',
       'const at = process.argv.indexOf("--mcp-config");',
-      'const thread = at < 0 ? "probe" : JSON.parse(readFileSync(process.argv[at + 1], "utf8")).mcpServers?.agents?.env?.OMB_THREAD_ID ?? "probe";',
+      'const thread = at < 0 ? "probe" : JSON.parse(readFileSync(process.argv[at + 1], "utf8")).mcpServers?.agents?.env?.SAGAX_THREAD_ID ?? "probe";',
       // Ada's run crashes until the flag appears; every other real turn is
       // held open by a gate so tokens stay live and timing is deterministic.
       `process.env.FAKE_CLAUDE_MODE = thread === "probe" ? "happy" : thread === ${JSON.stringify(ada.activeTaskId)} && !existsSync(${JSON.stringify(fixedFlag)}) ? "exit-early" : "slow";`,
@@ -78,7 +78,7 @@ it("reports a crashed run to the Chief, who retries it from the incidents thread
     expect(reportLine?.peerAsk).toMatchObject({ botId: ada.id, name: "Ada", unattended: true });
 
     // From that turn the Chief resumes Ada's thread; the cause is fixed by now.
-    const token = chiefRun.mcpConfig.mcpServers.agents.env.OMB_COMMS_TOKEN;
+    const token = chiefRun.mcpConfig.mcpServers.agents.env.SAGAX_COMMS_TOKEN;
     writeFileSync(fixedFlag, "fixed");
     const retry = { fromBotId: chief.id, fromThreadId: incidents.threadId, toBotId: ada.id, toThreadId: ada.activeTaskId };
     expect(await api("POST", "/api/internal/retry-thread", { ...retry, note: "The service was down; try again." }, token, 200)).toMatchObject({ started: true });
@@ -100,7 +100,7 @@ it("reports a crashed run to the Chief, who retries it from the incidents thread
 
     // Only a Chief may retry: Ada's own token is refused.
     const adaRun = JSON.parse(readFileSync(file(ada.activeTaskId, "json"), "utf8"));
-    const adaToken = adaRun.mcpConfig.mcpServers.agents.env.OMB_COMMS_TOKEN;
+    const adaToken = adaRun.mcpConfig.mcpServers.agents.env.SAGAX_COMMS_TOKEN;
     const refused = await fetch(`${url}/api/internal/retry-thread`, {
       method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${adaToken}` },
       body: JSON.stringify({ fromBotId: ada.id, fromThreadId: ada.activeTaskId, toBotId: chief.id, toThreadId: incidents.threadId }),

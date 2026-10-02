@@ -9,7 +9,7 @@ import { join } from 'node:path';
 import { createInterface } from 'node:readline';
 import { once } from 'node:events';
 const root = mkdtempSync(join(tmpdir(), 'omb-native-instructions-'));
-process.env.OMB_DATA_DIR = join(root, 'omb');
+process.env.SAGAX_DATA_DIR = join(root, 'omb');
 const { codexDeveloperInstructions, syncCodexInstructions } = await import('../server/drivers/codex-instructions.ts');
 const captures = [];
 const server = createServer(async (req, res) => {

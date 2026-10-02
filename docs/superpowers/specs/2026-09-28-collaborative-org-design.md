@@ -20,10 +20,10 @@ Rendre Pulsa Bot collaboratif de bout en bout, comme Buzz (block/buzz):
 ## Background (état au 2026-09-28)
 
 - Une personne est une chaîne: l'email, sinon `session.userId`, sinon `session.id` (`server/index.ts` `channelActorId`). L'opérateur local est `cfg.profile.email` ou la chaîne `"local-owner"`.
-- La connexion par email passe par un control plane externe (OTP). Par défaut c'est `accounts.openmausbot.com`, celui d'OpenMausBot (`electron/companion-account-service.mjs`).
+- La connexion par email passe par un control plane externe (OTP). Par défaut c'est `accounts.openmausbot.com`, celui d'Sagax (`electron/companion-account-service.mjs`).
 - Une organisation par serveur, dans `config.json` (`cfg.org`, `cfg.invites`). Les rôles viennent de la liste `cfg.signIn` (admins, members). Cette même liste donne le scope de session: un admin d'organisation est aussi admin complet du serveur.
 - Une session créée par code d'appairage n'a ni email ni userId. `channelViewerId` la traite comme l'opérateur local: elle voit tous les channels. C'est un trou.
-- Trois couches de visibilité se chevauchent: rôles, `humanIds` et `directGrants`, puis `bot.visibility` hérité d'OpenMausBot.
+- Trois couches de visibilité se chevauchent: rôles, `humanIds` et `directGrants`, puis `bot.visibility` hérité d'Sagax.
 - Les routines tournent déjà dans le harness du serveur, avec des accès fournisseurs communs à tout le serveur. Elles n'ont pas de propriétaire.
 - Les workers sont une ébauche: registre en mémoire, pas d'exécuteur.
 
@@ -97,7 +97,7 @@ Tout passe par une seule fonction `can(principal, action, resource)`. Elle sert 
 - Le serveur émet lui-même les codes à usage unique (OTP) de connexion et les liens d'invitation.
 - Fournisseurs: `smtp` (hôte, port, TLS, utilisateur, mot de passe, adresse d'expédition) ou `sendgrid` (clé API Twilio SendGrid, adresse d'expédition). Un seul actif à la fois.
 - Deux façons de configurer, au choix de l'opérateur:
-  - **Docker:** variables d'environnement dans `.env` ou `compose.yaml`, lues au démarrage. `OMB_MAIL_PROVIDER` (`smtp` ou `sendgrid`), `OMB_MAIL_FROM`; pour SMTP `OMB_SMTP_HOST`, `OMB_SMTP_PORT`, `OMB_SMTP_SECURE` (`tls`, `starttls` ou `none`), `OMB_SMTP_USER`, `OMB_SMTP_PASSWORD`; pour SendGrid `OMB_SENDGRID_API_KEY`. Chaque secret accepte aussi une variante `_FILE` (chemin d'un Docker secret).
+  - **Docker:** variables d'environnement dans `.env` ou `compose.yaml`, lues au démarrage. `SAGAX_MAIL_PROVIDER` (`smtp` ou `sendgrid`), `SAGAX_MAIL_FROM`; pour SMTP `SAGAX_SMTP_HOST`, `SAGAX_SMTP_PORT`, `SAGAX_SMTP_SECURE` (`tls`, `starttls` ou `none`), `SAGAX_SMTP_USER`, `SAGAX_SMTP_PASSWORD`; pour SendGrid `SAGAX_SENDGRID_API_KEY`. Chaque secret accepte aussi une variante `_FILE` (chemin d'un Docker secret).
   - **Web:** les réglages du serveur, par un admin. Les secrets sont en écriture seule, comme les autres clés de l'app.
 - Priorité: une valeur venue de l'environnement gagne. Le réglage web l'affiche en lecture seule, avec la mention « configuré par Docker ». Les champs absents de l'environnement restent modifiables sur le web.
 - Un bouton « Envoyer un courriel de test » valide la configuration, d'où qu'elle vienne.

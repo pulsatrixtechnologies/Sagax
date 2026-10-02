@@ -25,19 +25,19 @@ const providerFor = { claude: "anthropic", codex: "openai", opencode: "openroute
  * A Cloud home never routes to a model gateway: it ignores both inputs
  * (cloud-home.ts), and its person signs in with their own engines. */
 export function hostedModelPolicy(dataDirectory: string, env: NodeJS.ProcessEnv = process.env) {
-  if (env.OMB_HOSTED_MODELS === undefined && env.OMB_HOSTED_MODEL_TOKEN === undefined) return null;
+  if (env.SAGAX_HOSTED_MODELS === undefined && env.SAGAX_HOSTED_MODEL_TOKEN === undefined) return null;
   if (cloudHomeConfigured(env)) return null;
   const hosted = hostedWorkspaceConfiguration(env);
-  if (!hosted?.portalMembership || env.OMB_DESKTOP_PARENT === "1" || !/^omb_workspace_[A-Za-z0-9_-]{43}$/.test(env.OMB_HOSTED_MODEL_TOKEN ?? "")) {
+  if (!hosted?.portalMembership || env.SAGAX_DESKTOP_PARENT === "1" || !/^omb_workspace_[A-Za-z0-9_-]{43}$/.test(env.SAGAX_HOSTED_MODEL_TOKEN ?? "")) {
     throw new Error("Hosted model access requires complete portal-managed configuration.");
   }
   let catalog: HostedCatalog;
   try {
-    if (!env.OMB_HOSTED_MODELS || env.OMB_HOSTED_MODELS.length > 65536) throw new Error();
-    catalog = catalogSchema.parse(JSON.parse(env.OMB_HOSTED_MODELS));
+    if (!env.SAGAX_HOSTED_MODELS || env.SAGAX_HOSTED_MODELS.length > 65536) throw new Error();
+    catalog = catalogSchema.parse(JSON.parse(env.SAGAX_HOSTED_MODELS));
   } catch { throw new Error("Invalid hosted model catalog."); }
   for (const key of ["anthropic", "openai", "openrouter"] as const) catalog[key] = [...new Set(catalog[key])];
-  const token = env.OMB_HOSTED_MODEL_TOKEN!;
+  const token = env.SAGAX_HOSTED_MODEL_TOKEN!;
   const base = `${hosted.admin.origin}/api/gateway/${hosted.workspace}`;
   const assigned = (id: string): string[] => Object.hasOwn(providerFor, id) ? catalog[providerFor[id as keyof typeof providerFor]] : [];
   const allows = (selection: ModelSelection) => assigned(selection.instanceId).includes(selection.model);
@@ -83,7 +83,7 @@ export function hostedModelPolicy(dataDirectory: string, env: NodeJS.ProcessEnv 
       // Saved instance commands are tenant-editable personal configuration.
       // Only the operator may replace the bundled executables (also how an
       // isolated verification fixture supplies its synthetic native engines).
-      const cli = (name: "CLAUDE" | "CODEX") => env[`OMB_HOSTED_${name}_CLI`]?.trim() || name.toLowerCase();
+      const cli = (name: "CLAUDE" | "CODEX") => env[`SAGAX_HOSTED_${name}_CLI`]?.trim() || name.toLowerCase();
       if (catalog.anthropic.length) configs.claude = {
         driver: "claudeAgent", displayName: "Company · Claude",
         config: { cli: cli("CLAUDE"), managed: true, managedModels: catalog.anthropic, configDir: home("claude") },
@@ -95,12 +95,12 @@ export function hostedModelPolicy(dataDirectory: string, env: NodeJS.ProcessEnv 
       if (catalog.openai.length) configs.codex = {
         driver: "codex", displayName: "Company · Codex",
         config: { cli: cli("CODEX"), managed: { url: `${base}/openai/v1`, models: catalog.openai } },
-        environment: { OPENMAUSBOT_COMPANY_API_KEY: token, CODEX_HOME: home("codex") },
+        environment: { SAGAX_COMPANY_API_KEY: token, CODEX_HOME: home("codex") },
       };
       if (catalog.openrouter.length) configs.opencode = {
         driver: "openai-compat", displayName: "Company · OpenRouter",
-        config: { url: `${base}/openrouter/v1`, apiKeyEnv: "OPENMAUSBOT_COMPANY_API_KEY", provider: "", model: catalog.openrouter[0], managedModels: catalog.openrouter },
-        environment: { OPENMAUSBOT_COMPANY_API_KEY: token },
+        config: { url: `${base}/openrouter/v1`, apiKeyEnv: "SAGAX_COMPANY_API_KEY", provider: "", model: catalog.openrouter[0], managedModels: catalog.openrouter },
+        environment: { SAGAX_COMPANY_API_KEY: token },
       };
       return configs;
     },

@@ -30,8 +30,8 @@ const port = await freePortBlock([0, 1]);
 if (RESERVED.includes(port) || RESERVED.includes(port + 1)) throw new Error("reserved port, run again");
 const origin = `http://127.0.0.1:${port}`;
 const home = mkdtempSync(join(tmpdir(), "omb-verify-servermode-"));
-mkdirSync(join(home, ".openmausbot"), { recursive: true });
-writeFileSync(join(home, ".openmausbot", "config.json"), "{}");
+mkdirSync(join(home, ".sagax"), { recursive: true });
+writeFileSync(join(home, ".sagax", "config.json"), "{}");
 // The server's own page: what a remote environment used to show.
 const decoy = mkdtempSync(join(tmpdir(), "omb-verify-servermode-decoy-"));
 writeFileSync(join(decoy, "index.html"), "<!doctype html><title>SERVER IMAGE UI</title><p>served by the server</p>");
@@ -39,8 +39,8 @@ let serverLog = "";
 const server: ChildProcess = spawn(process.execPath, ["--experimental-strip-types", join(ROOT, "server", "index.ts")], {
   cwd: ROOT,
   env: {
-    PATH: process.env.PATH ?? "", HOME: home, USERPROFILE: home, OMB_PORT: String(port), OMB_WEBHOOK_PORT: String(port + 1),
-    OMB_STATIC_DIR: decoy, OMB_IDENTITY: "perspicax", OMB_PERSPICAX_ISSUER: idp.issuer, OMB_PUBLIC_URL: origin,
+    PATH: process.env.PATH ?? "", HOME: home, USERPROFILE: home, SAGAX_PORT: String(port), SAGAX_WEBHOOK_PORT: String(port + 1),
+    SAGAX_STATIC_DIR: decoy, SAGAX_IDENTITY: "perspicax", SAGAX_PERSPICAX_ISSUER: idp.issuer, SAGAX_PUBLIC_URL: origin,
   },
   stdio: ["ignore", "pipe", "pipe"],
 });

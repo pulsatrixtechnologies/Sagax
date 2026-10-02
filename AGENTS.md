@@ -29,7 +29,7 @@ the mail of a solo server. Keep these rules, each covered by a test in
 - `POST /api/mail/test` takes no fields, sends only to the caller's own
   address and is rate limited.
 - Saved values live in `config.json`'s `mail` block through `saveConfig`
-  (never a generic `PUT /api/config` patch) and win over `OMB_MAIL_*`, which
+  (never a generic `PUT /api/config` patch) and win over `SAGAX_MAIL_*`, which
   only provides defaults.
 - A sender always has a name (default `Sagax`); Twilio refuses one without.
 - Tests and fixtures use fake credentials only.
@@ -69,9 +69,37 @@ Covered by `src/components/SettingsModal.orgCleanup.test.ts`,
   the grants open inline, the force actions sit in an admin-only row menu
   and their result is a toast (`src/components/settings/OrgSharing.test.ts`).
 
+## Full access (organization mode, 2026-10-01)
+
+On a solo server Full access is granted only through the packaged desktop
+app's private channel. On an organization server the bot's owner grants it
+over HTTP (`server/org-full-access.ts`, client `src/lib/full-access.ts`).
+Keep these rules, each covered by `server/org-full-access.test.ts`,
+`server/org-full-access.e2e.test.ts`, `server/org-sharing.e2e.test.ts` (S3-7),
+the driver tests or `src/components/ApprovalModeSelector.fullAccess.test.ts`:
+
+- Only the bot's owner, signed in (a session principal), grants Full:
+  `PATCH /api/bots/<id>/tasks/<thread>` (a thread) or `PATCH /api/bots/<id>`
+  with `{ approvalMode: "full", confirmFullAccess }` alone (the default, for
+  new threads and routines). The first grant needs `confirmFullAccess: true`;
+  the server keeps `fullAccessConsent` on the bot so later grants skip it.
+- Settings > Organization > Allow full access (`organization.allowFullAccess`,
+  admin only, on by default, `PATCH /api/org/settings`). Off: grants answer
+  403 `org_full_access_disabled`, a send to a Full thread is refused with the
+  same code, and stored Full runs as Ask (`approvalModeForTurn`).
+- A turn runs Full only while the policy is on and the consent is the bot's
+  current owner's: a routine (run as the owner) gets Full only when that
+  owner set it on that bot. Custom stays refused for members' bots.
+- Full never lifts a hard limit: host tools stay withheld
+  (`withholdHostTools`: Claude `bypassPermissions` with the host tools in
+  `--disallowedTools`; Codex `never` with a read-only server sandbox),
+  private threads, egress and payer rules are unchanged.
+- Mode changes (`approval.mode`), Full turns (`approval.full_access_turn`)
+  and the policy (`org.settings`) go to the admin activity log.
+
 ## Profile on an organization server
 
-On an organization server (`OMB_IDENTITY=perspicax`) a signed-in person's
+On an organization server (`SAGAX_IDENTITY=perspicax`) a signed-in person's
 name and email belong to Perspicax. Keep these rules, each covered by a test
 in `server/member-identity.e2e.test.ts`, `server/org-identity.e2e.test.ts`,
 `server/org-profile.e2e.test.ts`, `server/oidc-login.test.ts` or the
@@ -166,7 +194,7 @@ anything touching this computer stays `localOnly`. Tests:
 `electron/bundled-ui.node-test.mjs`; real Electron:
 `scripts/verify-server-mode.ts`.
 
-On an organization server (`OMB_IDENTITY=perspicax`) bots never use the
+On an organization server (`SAGAX_IDENTITY=perspicax`) bots never use the
 server's own machine: `ManagedDesktopPolicy` refuses `thisComputer` and
 `localVm` there (`HOST_COMPUTER_REFUSAL`, every claim passes
 `bindTurnComputer`), and the Local VM create/start routes refuse with
@@ -320,7 +348,7 @@ window of its own (passkeys and password managers live in the browser).
 `electron/oidc-system-sign-in.cjs` own it; there is no in-app sign-in
 window, do not add one back. Return paths, in order: a one-shot loopback
 listener on `127.0.0.1` (ephemeral port, random state path, exact Host and
-Origin, ten-minute timeout, closed after use), then `openmausbot://auth` only
+Origin, ten-minute timeout, closed after use), then `sagax://auth` (or `openmausbot://auth`) only
 when this exact running copy owns the scheme and the server advertises
 `nativeReturn`, else an error on `/pair`. The server side is
 `validLoopbackReturn` in `server/oidc-login.ts` (loopback IP literals with a
@@ -437,8 +465,8 @@ these rules, each covered by `server/harness-connectors.test.ts` or
 
 ## Engine slash commands in the chat
 
-Typing "/" in a 1:1 conversation lists Sagax's own commands and the bot
-engine's (`shared/harness-commands.ts`, `server/harness-commands.ts`,
+Typing "/" in a conversation or a group lists Sagax's own commands and
+the bot engine's (`shared/harness-commands.ts`, `server/harness-commands.ts`,
 `src/components/ComposerCommandMenu.tsx`). Keep these rules, each covered by
 `shared/harness-commands.test.ts`, `server/harness-commands.test.ts`,
 `server/harness-commands.e2e.test.ts` or the driver tests:
@@ -457,6 +485,28 @@ engine's (`shared/harness-commands.ts`, `server/harness-commands.ts`,
   engine's is `/engine:<name>`. What the chat cannot run (terminal-only, or
   managed by Sagax: model, effort, sessions, approvals, MCP) is listed dimmed
   with its reason and refused at send (409).
+- In a group (not a bot-to-bot channel, not a goal) a command is for ONE
+  bot (`groupCommandTarget`): the bot the message starts by mentioning
+  (`@Scout /compact ...`), else the lead when the group answers with one
+  member. Only that bot answers (mentions in the arguments add nobody) and
+  it gets the command verbatim, not the room context. Only a name that
+  bot's engine lists narrows the responders: any other `/word` is an
+  ordinary message, routed by its mentions. The "/" menu lists the
+  commands under each bot's name (`?groupId=` on the route, which needs
+  `channel.post` on the room: a read-only member is refused, since listing
+  starts the engine); a group that names no single bot (everyone, Auto,
+  mentions only) lists every active member, each with its share of the
+  menu (`groupMenuLimitPerBot`), and a pick inserts `@Name /command`.
+- On an organization server the list is the SPEAKER's
+  (`harnessCommandAccount`): their own subscription's login directory
+  (their user skills and plugins, Codex `CODEX_HOME`) and the claude.ai
+  connectors their turn keeps. Cached per bot and person (the access
+  identity) only where it changes the list; a key, the organization's or
+  the server's access share the server's list (`commandListAccess` never
+  carries a key). Live session additions are kept per bot and account.
+  The client caches the lists per viewer (`src/lib/harness-commands.ts`):
+  another person signing in to the same tab never sees the last one's.
+  Covered end to end by `server/org-harness-commands.e2e.test.ts`.
 - `scripts/smoke-harness-commands.ts` checks the real CLIs.
 
 ## Bot panel
@@ -474,6 +524,40 @@ seen without its thread has no steps or thread link, and a sub-agent on
 someone else's thread shows no request text. Tests:
 `server/routes/bot-activity.test.ts`, `ActivitySection.test.ts`,
 `InlineEditableText.test.ts`, `BotSettingsDialog.caption.test.ts`.
+
+## Computer tab and Local VM on an organization server
+
+The Computer tab (`src/components/computer/OrgComputerTab.tsx`) draws the
+solo screen: one rounded screen (`ComputerScreen.tsx`) with Play / Pause /
+Stop on it and "<Bot>'s screen" below, the "Where this bot works" selector
+(the person's `sagax.botWorkplace.v1`, with the reason the current computer
+is used) and a usage panel. States are words (Off, Starting, Running, Paused,
+Error); never show the desktop's raw answer. Settings > Computer holds the
+same choice, the Local VM card and the compact server environment card
+(`settings/OrgComputerSettings.tsx`); Settings > Organization no longer has
+the server environment. VPS Computer and Boat Computer are experimental
+flags (`features.vpsComputer`, `features.boatComputer`, off): off hides
+their cards, the Cloud place and backend choices. Tests:
+`OrgComputerTab.test.ts`, `experimental-computers.test.ts`.
+
+The Local VM in server mode lives on the person's computer
+(`electron/local-vm.mjs`, `POST /api/me/desktop-bridge/local-vm`):
+
+- Runtime detection runs on the desktop (Docker Desktop, OrbStack, Colima,
+  Rancher Desktop, Podman; bare PATH, sockets, `docker context`), never on
+  the organization server.
+- A container whose bind mount or `com.openmausbot.workspace-path` label
+  names another folder, or one that no longer exists, is stale: never
+  started, recreated by setup on `<data>/vm-home` (the old folder is kept).
+- Setup (one click) uses the server's recipe (`localVmDesktopSpec`), which
+  the desktop checks (`validLocalVmSpec`) before running it. Nothing is
+  installed without the person's click and an OS dialog.
+- Tests never create a container under the real name: vitest sets
+  `OMB_LOCAL_VM_TEST_NAMESPACE` (`server/testing/global-setup.ts`), names
+  become `openmausbot-test-<ns>-computer`, labeled and removed at the end;
+  a real-named VM is refused in the temp folder (`localVmFolderRefusal`).
+  Tests: `electron/local-vm.node-test.mjs`, `server/local-vm-hygiene.test.ts`,
+  `server/desktop-bridge-local-vm.test.ts`.
 
 ## Group settings
 
@@ -496,7 +580,7 @@ working folder (empty means each bot's own folder). Keep these rules:
 
 ### Group owner (organization server)
 
-On an organization server (`OMB_IDENTITY=perspicax`) only a group's owner
+On an organization server (`SAGAX_IDENTITY=perspicax`) only a group's owner
 changes its settings (`server/group-ownership.ts`, client
 `src/lib/group-owner.ts`; covered by `server/group-ownership.test.ts` and
 PT-4 in `server/org-private-threads.e2e.test.ts`):
@@ -550,6 +634,45 @@ name `chiefOfStaff` (`shared/wire.ts`); everything a person reads says
   different Bot" (opens `PrimaryBotPicker`, "Choose a primary Bot") on it and
   "Make primary bot" on the viewer's other bots.
 
+## Legacy names kept for compatibility
+
+The product is Sagax and the code reads `SAGAX_*`. These old spellings stay
+on purpose; `scripts/rebrand-upstream.mjs` (PROTECT, SKIP) knows them, so run
+it after an upstream merge instead of renaming by hand.
+
+- Environment: an old `OMB_*`, `OPENMAUSBOT_*` or `OPENMAUS_*` variable is
+  moved onto `SAGAX_*` at start for one release (`bridgeLegacyEnv`; names
+  saved as data go through `currentEnvName`/`readEnvName`). The fleet unit
+  template and instance env files (`server/fleet.ts`), `cloud-home-start.ts`,
+  the `Dockerfile`, the compose files, `.env.example` and `deploy/` still
+  write `OMB_*`: installed units and operators' `.env` files use them.
+- Data: `~/.sagax` (an old `~/.openmausbot` moves there once), but the lease
+  `openmausbot-server.lease`, `.openmausbot-server-child`, the container path
+  `/data/.openmausbot` and `~/.openmausbot-companion` keep their names.
+- Identity: `appId` `com.openmausbot.app` and `desktopName` (auto-update
+  signature, Windows install id), the package.json `name` and the
+  `openmausbot` command (`server/openmausbot.ts`, `dist-server/openmausbot.js`,
+  named by installed service units).
+- Links: both schemes `sagax://` and `openmausbot://`, both
+  `/.well-known/sagax/` and `/.well-known/openmausbot/`, and the health body's
+  `app: "openmausbot"` beside `product: "sagax"`.
+- Tokens: `sgx_` is issued and `omb_` still accepted; pairing codes stay
+  `omb_pair_` (released phone apps check it); other `omb_*` prefixes (cookies,
+  relay tokens) are wire values.
+- Wire and stored names: `x-openmausbot-*`/`x-omb-*` headers, storage keys and
+  IPC channels (`openmausbot:`, `openmausbot.`, `omb.`, `omb-`), file formats
+  (`openmaus.*`, `.openmaus.json`, `.ombbackup`, `OMB-WORKSPACE-1`), the
+  `omb-ask` block, `com.openmausbot.*` container and launchd labels,
+  `_openmausbot._tcp`, MCP server names, systemd units and host paths
+  (`/etc/openmausbot`, `/var/lib/openmausbot`), the upstream's hosted
+  domains (`*.openmausbot.com`).
+- Stored field names that predate a rename of their own, such as a bot's
+  `chiefOfStaff` (the Primary Bot, see above).
+- The native apps (`ios/`, `android/`): bundle ids, keychain services and
+  package names change only with a store release of their own.
+- Legal and history: `LICENSE`, `NOTICE`, `CLA.md`, the README attribution,
+  About's "Based on OpenMausBot", "Where work goes" and "Upstream sync" below.
+
 ## Upstream sync
 
 Last sync: 2026-10-01, upstream `milind-soni/OpenMausBot` main at
@@ -563,6 +686,8 @@ Last sync: 2026-10-01, upstream `milind-soni/OpenMausBot` main at
 - On conflict our behavior wins and upstream improvements are layered in.
   Merge `src/locales/*.json` and `source-hashes.json` as a union of keys and
   run `pnpm i18n:check`.
+- Run `node scripts/rebrand-upstream.mjs` (a report), then `--write`, and
+  review the diff: upstream code comes back with the old names.
 - Run `pnpm install --frozen-lockfile`, typecheck, lint, the unit suites and
   `pnpm build`; compare failures with `origin/main` before pushing to
   `origin` only.
@@ -584,7 +709,7 @@ telemetry. Keep these rules, each covered by a test:
   domain, `posthog.com`, the upstream author's GitHub). Main guards its fetch
   and every Electron session; the server imports `server/network-guard.ts`
   first. Upstream defaults stay empty: Cloud (`CLOUD_ORIGIN`, bridges behind
-  `--sagax-cloud`), control plane (`OMB_CONTROL_PLANE_URL` of ours only),
+  `--sagax-cloud`), control plane (`SAGAX_CONTROL_PLANE_URL` of ours only),
   Admin portal, Pro link, team catalog (`SAGAX_TEAM_LIBRARY_URL`).
 - `pnpm check:no-phone-home` (run by `package:prepare` and
   `electron/no-phone-home.node-test.mjs`) fails when a bundle names a blocked

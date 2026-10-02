@@ -127,10 +127,10 @@ export const DELEGATION_TTL_MS = 24 * 60 * 60 * 1000;
  * stays busy for a whole day and the delegating bot hears nothing back. Past
  * this cap a still-blocked handoff expires with its own wording. Env-tunable
  * so tests (and patient teams) can shrink or stretch it. */
-const configuredBusyHoldMaxMs = Number(process.env.OMB_DELEGATION_BUSY_HOLD_MAX_MS);
+const configuredBusyHoldMaxMs = Number(process.env.SAGAX_DELEGATION_BUSY_HOLD_MAX_MS);
 export const DELEGATION_BUSY_HOLD_MAX_MS = Math.max(
   1_000,
-  Number.isFinite(configuredBusyHoldMaxMs) && process.env.OMB_DELEGATION_BUSY_HOLD_MAX_MS !== "" ? configuredBusyHoldMaxMs : 2 * 60 * 60 * 1000,
+  Number.isFinite(configuredBusyHoldMaxMs) && process.env.SAGAX_DELEGATION_BUSY_HOLD_MAX_MS !== "" ? configuredBusyHoldMaxMs : 2 * 60 * 60 * 1000,
 );
 
 let receipts: DelegationReceipt[] = [];

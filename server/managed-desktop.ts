@@ -35,7 +35,7 @@ interface ManagedDesktopOptions {
 }
 const signature = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
 const expiredMessage = "Company access has ended. Reconnect your organization or explicitly choose a personal model; personal billing will not be used automatically.";
-export const LICENSE_EXPIRED_MESSAGE = "Your organization's OpenMaus Admin license has expired. Contact your admin.";
+export const LICENSE_EXPIRED_MESSAGE = "Your organization's Sagax Admin license has expired. Contact your admin.";
 
 /** Validate only messages received over Electron's private utility-parent port.
  * Never expose this input to renderer HTTP or merge it into saved AppConfig.
@@ -83,11 +83,11 @@ export function companyInstanceConfigs(connection: ManagedDesktopConnection, run
     };
     if (provider.id === "openai") entries[id] = {
       driver: "codex", displayName, config: { managed: { url: `${base}/v1`, models: provider.models } },
-      environment: { OPENMAUSBOT_COMPANY_API_KEY: connection.token, CODEX_HOME: join(runtimeDirectory, id, "codex") },
+      environment: { SAGAX_COMPANY_API_KEY: connection.token, CODEX_HOME: join(runtimeDirectory, id, "codex") },
     };
     if (provider.id === "openrouter") entries[id] = {
-      driver: "openai-compat", displayName, config: { url: `${base}/v1`, apiKeyEnv: "OPENMAUSBOT_COMPANY_API_KEY", model: provider.models[0], provider: "" },
-      environment: { OPENMAUSBOT_COMPANY_API_KEY: connection.token },
+      driver: "openai-compat", displayName, config: { url: `${base}/v1`, apiKeyEnv: "SAGAX_COMPANY_API_KEY", model: provider.models[0], provider: "" },
+      environment: { SAGAX_COMPANY_API_KEY: connection.token },
     };
   }
   return entries;

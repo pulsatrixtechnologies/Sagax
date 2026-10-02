@@ -56,8 +56,8 @@ export const liveConfigSchema = z.object({
 export type LiveConfig = z.infer<typeof liveConfigSchema>;
 
 /** One real engine instance for the live tier, in the product's own
- * instance-config shape. Supplied via OMB_EVAL_LIVE_INSTANCE (inline JSON)
- * or OMB_EVAL_LIVE_CONFIG (path to a JSON file). "environmentFrom" names
+ * instance-config shape. Supplied via SAGAX_EVAL_LIVE_INSTANCE (inline JSON)
+ * or SAGAX_EVAL_LIVE_CONFIG (path to a JSON file). "environmentFrom" names
  * variables copied from the launching shell into the engine process so
  * keys never have to be inlined anywhere. */
 export const liveInstanceSchema = z.object({

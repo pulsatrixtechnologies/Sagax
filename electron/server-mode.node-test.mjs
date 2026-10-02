@@ -138,7 +138,7 @@ test("in server mode the bundled page sets what this computer lends to that serv
 
 test("server mode shares this computer by the organization server's own word, with no local seat to lease", () => {
   const refresh = section("async function refreshSharedComputersAllowed()", "/** Refuse a workspace sharing control");
-  assert.match(refresh, /const locked = serverModeEnvironment\(environmentsState\);\n  if \(locked\) \{\n    sharedComputersAllowed = await fetch\(`\$\{locked\.origin\}\/\.well-known\/openmausbot\/environment`/);
+  assert.match(refresh, /const locked = serverModeEnvironment\(environmentsState\);\n  if \(locked\) \{\n    sharedComputersAllowed = await fetchEnvironmentDescriptor\(locked\.origin, /);
   assert.match(refresh, /descriptor\?\.capabilities\?\.sharedComputers === true/);
   assert.match(source, /if \(serverModeEnvironment\(environmentsState\) && !serverReady\) return \{ renew: async \(\) => \{\}, release: async \(\) => \{\} \};/);
   for (const channel of ["sharing:state", "sharing:folder", "sharing:revoke", "sharing:save"]) {

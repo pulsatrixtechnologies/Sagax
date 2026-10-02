@@ -146,7 +146,7 @@ imports `electron`.
 - [ ] Write a failing API test that `/api/machine` reports the adapter's capabilities verbatim and carries no credential, no tunnel hostname, and no installation secret.
 - [ ] Write a failing test in `companion/test/routes.test.ts` that `GET /api/machine` is allowlisted for paired devices and that `POST` to it is refused — the companion is default-deny per method and path, and a new route is closed until someone opens it deliberately.
 - [ ] Run; expect FAIL.
-- [ ] Implement. `name` defaults to the OS hostname and is overridable by `OMB_MACHINE_NAME`, because three VPS boxes all called `localhost` is not a roster.
+- [ ] Implement. `name` defaults to the OS hostname and is overridable by `SAGAX_MACHINE_NAME`, because three VPS boxes all called `localhost` is not a roster.
 - [ ] Run; expect PASS.
 - [ ] Commit `feat(headless): expose machine identity and capabilities`.
 
@@ -188,7 +188,7 @@ imports `electron`.
 - Create: `docs/headless.md`, `build/openmausbot.service`, `build/com.openmausbot.serve.plist`
 - Modify: `README.md` (the Status section's honest note about always-on)
 
-- [ ] Write the systemd unit: `Type=simple`, `Restart=on-failure`, `RestartSec=5`, a dedicated non-root user, `StateDirectory=openmausbot`, and `ProtectSystem=strict` with `~/.openmausbot` as the only writable path.
+- [ ] Write the systemd unit: `Type=simple`, `Restart=on-failure`, `RestartSec=5`, a dedicated non-root user, `StateDirectory=openmausbot`, and `ProtectSystem=strict` with `~/.sagax` as the only writable path.
 - [ ] Write the launchd plist for a Mac mini left running, with `KeepAlive` and `RunAtLoad`.
 - [ ] Write `docs/headless.md`: install, register the installation, the agent CLIs the box needs installed and logged in, the capability table for a headless host, the credential-at-rest tradeoff from Task 1 stated plainly, and the firewall guidance — the companion port must not be exposed directly; use the managed tunnel or a tailnet.
 - [ ] Update the README Status line that currently says webhook triggers use a local receiver rather than an always-on hosted relay. It is about to be less true; say exactly how much less.

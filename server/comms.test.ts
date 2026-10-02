@@ -162,7 +162,7 @@ describe("legacy routine comms e2e (fake ACP fleet)", () => {
     }
     const antigravityProfile = join(
       home,
-      ".openmausbot",
+      ".sagax",
       "providers",
       "antigravity",
       createHash("sha256").update("geminiAsker").digest("hex"),
@@ -170,9 +170,9 @@ describe("legacy routine comms e2e (fake ACP fleet)", () => {
     );
     mkdirSync(antigravityProfile, { recursive: true });
     writeFileSync(join(antigravityProfile, "acp_token.json"), "{}\n");
-    mkdirSync(join(home, ".openmausbot"), { recursive: true });
+    mkdirSync(join(home, ".sagax"), { recursive: true });
     writeFileSync(
-      join(home, ".openmausbot", "config.json"),
+      join(home, ".sagax", "config.json"),
       JSON.stringify({
         instances: {
           // the ask-peer fleet: both bots run "ask-peer" so A can ask B
@@ -268,7 +268,7 @@ describe("legacy routine comms e2e (fake ACP fleet)", () => {
     const env: NodeJS.ProcessEnv = {
       HOME: home,
       USERPROFILE: home,
-      OMB_PORT: String(PORT),
+      SAGAX_PORT: String(PORT),
       // Keep the production ask budget: the gated-peer test verifies the
       // caller is released promptly without a test-only timeout override.
     };

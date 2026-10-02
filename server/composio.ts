@@ -19,11 +19,11 @@ import { serviceSlugFor, serviceSlugForCandidates } from "./connector-verdict.ts
 const DEFAULT_BACKEND_ORIGIN = "https://backend.composio.dev";
 
 function apiBase() {
-  return (process.env.OMB_COMPOSIO_API ?? `${DEFAULT_BACKEND_ORIGIN}/api/v3.1`).replace(/\/$/, "");
+  return (process.env.SAGAX_COMPOSIO_API ?? `${DEFAULT_BACKEND_ORIGIN}/api/v3.1`).replace(/\/$/, "");
 }
 
 function toolkitBase() {
-  return (process.env.OMB_COMPOSIO_TOOLKITS_API ?? `${DEFAULT_BACKEND_ORIGIN}/api/v3`).replace(/\/$/, "");
+  return (process.env.SAGAX_COMPOSIO_TOOLKITS_API ?? `${DEFAULT_BACKEND_ORIGIN}/api/v3`).replace(/\/$/, "");
 }
 
 const sessionResponseSchema = z.object({
@@ -200,8 +200,8 @@ export function setManagedBrokerAccess(access: unknown): void {
 
 function brokerAccess(): { url: string; token: string } | null {
   if (managedBrokerAccess !== undefined) return managedBrokerAccess;
-  const url = process.env.OMB_COMPOSIO_BROKER_URL?.trim();
-  const token = process.env.OMB_COMPOSIO_BROKER_TOKEN?.trim();
+  const url = process.env.SAGAX_COMPOSIO_BROKER_URL?.trim();
+  const token = process.env.SAGAX_COMPOSIO_BROKER_TOKEN?.trim();
   if (!url || !token) return null;
   if (!managedBrokerToken.test(token)) throw new Error("The connected-apps service token is invalid");
   return { url: normalizeManagedBrokerUrl(url), token };
@@ -275,7 +275,7 @@ export function configured(cfg: AppConfig): boolean {
   return connectionMode(cfg) !== "unavailable";
 }
 
-/** Three answers, not two. The desktop shell sets OMB_CREDENTIAL_STORE to
+/** Three answers, not two. The desktop shell sets SAGAX_CREDENTIAL_STORE to
  * "unavailable" when it could not read credentials.bin this launch; without
  * that signal an unreadable store is indistinguishable from a user who never
  * connected anything, and the UI wipes a list it should have kept. */
@@ -283,7 +283,7 @@ export type ConnectorAvailability = "configured" | "unconfigured" | "unreadable"
 
 export function connectorAvailability(
   cfg: AppConfig,
-  storeState: string | undefined = process.env.OMB_CREDENTIAL_STORE,
+  storeState: string | undefined = process.env.SAGAX_CREDENTIAL_STORE,
 ): ConnectorAvailability {
   if (configured(cfg)) return "configured";
   return storeState === "unavailable" ? "unreadable" : "unconfigured";
@@ -294,13 +294,13 @@ export function connectorAvailability(
  * build, a fixture, a fresh self-hosted server: the user has to add a key)
  * from the installed desktop app whose managed service has not answered
  * (something really is wrong). Only the packaged desktop app, the one child
- * started with OMB_DESKTOP_PARENT=1, registers with the managed service, so
+ * started with SAGAX_DESKTOP_PARENT=1, registers with the managed service, so
  * only there is a missing service an outage. */
 export type ConnectorSetup = "ready" | "needs-setup" | "service-unavailable";
 
 export function connectorSetup(
   cfg: AppConfig,
-  desktopManaged: boolean = process.env.OMB_DESKTOP_PARENT === "1",
+  desktopManaged: boolean = process.env.SAGAX_DESKTOP_PARENT === "1",
 ): ConnectorSetup {
   if (configured(cfg)) return "ready";
   return desktopManaged ? "service-unavailable" : "needs-setup";
@@ -611,15 +611,15 @@ export async function mcpIntegration(
       // The provider-facing bridge receives only this boot's loopback token.
       // Project/broker credentials stay in the harness process, so a coding
       // agent that prints its environment cannot export a durable secret.
-      OMB_CONNECTOR_UPSTREAM_URL: `${context.harnessUrl}/api/internal/connectors/mcp`,
-      OMB_CONNECTOR_UPSTREAM_HEADERS: JSON.stringify({ authorization: `Bearer ${context.commsToken}` }),
-      OMB_HARNESS_URL: context.harnessUrl,
+      SAGAX_CONNECTOR_UPSTREAM_URL: `${context.harnessUrl}/api/internal/connectors/mcp`,
+      SAGAX_CONNECTOR_UPSTREAM_HEADERS: JSON.stringify({ authorization: `Bearer ${context.commsToken}` }),
+      SAGAX_HARNESS_URL: context.harnessUrl,
       // Distinct from the agents proxy token: Codex flattens mounted MCP env
       // variables into one process environment, so a shared name would let
       // the later agents mount overwrite this connector-scoped capability.
-      OMB_CONNECTOR_TOKEN: context.commsToken,
-      OMB_BOT_ID: context.botId,
-      OMB_THREAD_ID: context.threadId,
+      SAGAX_CONNECTOR_TOKEN: context.commsToken,
+      SAGAX_BOT_ID: context.botId,
+      SAGAX_THREAD_ID: context.threadId,
       ...(allowlist?.env ? { [CONNECTOR_ALLOWED_TOOLS_ENV]: allowlist.env } : {}),
       ...(serviceSlugs?.env ? { [CONNECTOR_SERVICE_SLUGS_ENV]: serviceSlugs.env } : {}),
     },
