@@ -2594,7 +2594,7 @@
   "worksOn.section": "Ordinateur",
   "worksOn.sectionTip": "Où ce bot travaille. Cloud est votre environnement serveur ; VM locale et Cet ordinateur utilisent votre propre ordinateur par l'app Sagax.",
   "worksOn.short.cloud": "Cloud",
-  "worksOn.tip.autoOrg": "Choisi automatiquement : votre environnement serveur (Cloud)",
+  "worksOn.tip.autoOrg": "Commence dans votre environnement serveur (Cloud) ; le bot peut passer à votre ordinateur ou à la VM locale pour une étape quand l'app Sagax est connectée",
   "serverEnvironment.paused": "En pause",
   "orgComputer.serverOf": "Environnement serveur utilisé par {name}",
   "orgComputer.power": "Alimentation de l'environnement serveur",

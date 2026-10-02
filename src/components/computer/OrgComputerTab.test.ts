@@ -95,7 +95,7 @@ describe("the bot's Works on in the Computer tab", () => {
     const markup = renderToStaticMarkup(createElement(WorksOnControl, { value: null, onChange: () => {}, disabled: { local: "Open the Sagax app on this computer" } }));
     expect(markup).toMatch(/disabled=""[^>]*title="This computer is not available: Open the Sagax app on this computer"[^>]*data-works-on-choice="local"/);
     expect(markup).toMatch(/aria-checked="true"[^>]*data-works-on-choice="auto"/);
-    expect(worksOnTip(null)).toBe("Chosen automatically: your server environment (Cloud)");
+    expect(worksOnTip(null)).toMatch(/^Starts in your server environment \(Cloud\); the bot may switch/);
   });
 });
 
