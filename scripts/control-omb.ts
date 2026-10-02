@@ -386,6 +386,9 @@ export function verificationServerEnvironment(parentEnv: NodeJS.ProcessEnv, data
   if (parentEnv.OMB_TEST_FAIL_AUDIO_APPEND_ONCE) {
     childEnv.OMB_TEST_FAIL_AUDIO_APPEND_ONCE = parentEnv.OMB_TEST_FAIL_AUDIO_APPEND_ONCE;
   }
+  // No-phone-home e2e: where the fixture logs every outbound connection
+  // (server/testing/network-audit.mjs).
+  if (parentEnv.SAGAX_TEST_NETWORK_AUDIT) childEnv.SAGAX_TEST_NETWORK_AUDIT = parentEnv.SAGAX_TEST_NETWORK_AUDIT;
   return childEnv;
 }
 
@@ -466,6 +469,9 @@ export async function launchVerificationServer(
   const serverArgs = ["--experimental-strip-types"];
   if (childEnv.OMB_TEST_FAIL_AUDIO_APPEND_ONCE === "1") {
     serverArgs.push("--import", pathToFileURL(join(ROOT, "server", "testing", "fail-audio-append-once.mjs")).href);
+  }
+  if (childEnv.SAGAX_TEST_NETWORK_AUDIT) {
+    serverArgs.push("--import", pathToFileURL(join(ROOT, "server", "testing", "network-audit.mjs")).href);
   }
   serverArgs.push(join(ROOT, "server", "index.ts"));
   const child = spawn(process.execPath, serverArgs, {

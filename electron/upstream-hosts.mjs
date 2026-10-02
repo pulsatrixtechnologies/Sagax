@@ -60,6 +60,17 @@ function requestUrl(input) {
   return input?.url ?? "";
 }
 
+// A test audit (server/testing/network-audit.mjs) listens here to prove that
+// nothing even tried to reach a blocked host.
+const AUDIT = Symbol.for("sagax.networkAudit");
+export function reportBlocked(url) {
+  try {
+    globalThis[AUDIT]?.({ kind: "refused", host: hostOf(url) || String(url) });
+  } catch {
+    /* an audit must never change behavior */
+  }
+}
+
 export class BlockedHostError extends Error {
   constructor(url) {
     super(`Sagax does not contact ${hostOf(url) || "this address"}.`);
@@ -73,7 +84,10 @@ export function guardFetch(fetcher) {
   if (typeof fetcher !== "function" || fetcher.sagaxGuarded) return fetcher;
   const guarded = function sagaxGuardedFetch(input, init) {
     const url = requestUrl(input);
-    if (isBlockedUrl(url)) return Promise.reject(new BlockedHostError(url));
+    if (isBlockedUrl(url)) {
+      reportBlocked(url);
+      return Promise.reject(new BlockedHostError(url));
+    }
     return fetcher.call(this, input, init);
   };
   Object.defineProperty(guarded, "sagaxGuarded", { value: true });
@@ -106,7 +120,10 @@ export function installSessionBlock(session, log = () => {}) {
   if (!session?.webRequest || session.sagaxBlocked) return;
   session.webRequest.onBeforeRequest({ urls: blockedRequestPatterns() }, (details, callback) => {
     const cancel = isBlockedUrl(details.url);
-    if (cancel) log(`blocked request to ${hostOf(details.url)}`);
+    if (cancel) {
+      reportBlocked(details.url);
+      log(`blocked request to ${hostOf(details.url)}`);
+    }
     callback({ cancel });
   });
   try {

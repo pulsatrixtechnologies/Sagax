@@ -5,7 +5,7 @@
 import http from "node:http";
 import https from "node:https";
 
-import { BlockedHostError, installFetchGuard, isBlockedHost } from "../electron/upstream-hosts.mjs";
+import { BlockedHostError, installFetchGuard, isBlockedHost, reportBlocked } from "../electron/upstream-hosts.mjs";
 
 type RequestFn = typeof http.request;
 
@@ -26,7 +26,10 @@ function guardRequest<T extends RequestFn>(original: T): T {
   if ((original as { sagaxGuarded?: boolean }).sagaxGuarded) return original;
   const guarded = function (this: unknown, ...args: unknown[]) {
     const host = targetHost(args);
-    if (host && isBlockedHost(host)) throw new BlockedHostError(`https://${host}/`);
+    if (host && isBlockedHost(host)) {
+      reportBlocked(`https://${host}/`);
+      throw new BlockedHostError(`https://${host}/`);
+    }
     return (original as (...a: unknown[]) => unknown).apply(this, args);
   } as unknown as T;
   Object.defineProperty(guarded, "sagaxGuarded", { value: true });

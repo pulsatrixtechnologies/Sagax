@@ -10,3 +10,4 @@ export declare function guardFetch<T>(fetcher: T): T;
 export declare function installFetchGuard(scope?: { fetch?: unknown }): unknown;
 export declare function blockedRequestPatterns(): string[];
 export declare function installSessionBlock(session: unknown, log?: (line: string) => void): void;
+export declare function reportBlocked(url: string): void;
