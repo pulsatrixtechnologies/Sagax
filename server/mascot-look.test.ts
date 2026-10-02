@@ -21,4 +21,14 @@ describe("a bot's character is stored with the bot", () => {
     const reloaded = new Store(selection);
     expect(reloaded.bot(bot.id)?.mascotLook).toEqual({ character: "trombi", skins: { trombi: "retro98" } });
   });
+
+  it("stores a premium skin, and an older skin name under its current id", () => {
+    const store = new Store(selection);
+    const bot = store.createBot();
+    const parsed = parseBotProfilePatch({ mascotLook: { character: "shape", shape: "star", skins: { shape: "nebula", trombi: "molten" } } } as never);
+    if (!parsed.ok) throw new Error(parsed.error);
+    store.patchBotProfile(bot.id, parsed.patch);
+    expect(new Store(selection).bot(bot.id)?.mascotLook).toEqual({ character: "shape", shape: "star", skins: { shape: "galaxy", trombi: "molten" } });
+    expect(parseBotProfilePatch({ mascotLook: { character: "shape", skins: { shape: "plasma" } } } as never).ok).toBe(false);
+  });
 });
