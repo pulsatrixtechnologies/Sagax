@@ -6,7 +6,7 @@
 // server's own engine login is an admin setting in Settings and never
 // signed in from here.
 import { useState } from "react";
-import { Check, Circle, ExternalLink, Loader2, LogOut } from "lucide-react";
+import { Check, ChevronDown, Circle, ExternalLink, Loader2, LogOut } from "lucide-react";
 
 import { api } from "@/state/store";
 import { t } from "@/lib/i18n";
@@ -50,6 +50,11 @@ export function ModelPickerPayers({ engine, issuer, routine = false, onChanged }
     }
   };
 
+  // Collapsed by default; opens by itself when nothing can pay yet, so the
+  // sign-in or key step is never hidden.
+  const needsAction = !order.current && engine.installed;
+  const [open, setOpen] = useState(needsAction);
+
   const status = (id: PayerId, ready: boolean): string => {
     if (id === "subscription") return ready ? t("model.payer.signedIn") : t("model.payer.notSignedIn");
     if (id === "key") return ready ? t("model.payer.keySet") : t("model.payer.keyMissing");
@@ -64,8 +69,16 @@ export function ModelPickerPayers({ engine, issuer, routine = false, onChanged }
   );
 
   return (
-    <section data-model-payers aria-labelledby="model-payers-title" className="rounded-xl border border-hairline/40 bg-control/30 p-3">
-      <h3 id="model-payers-title" className="text-[12.5px] font-semibold text-ink">{t("model.payer.title")}</h3>
+    <section data-model-payers data-open={open} aria-labelledby="model-payers-title" className="rounded-xl border border-hairline/40 bg-control/30 p-3">
+      <button type="button" aria-expanded={open} aria-controls="model-payers-body" onClick={() => setOpen((value) => !value)}
+        className="flex w-full items-center gap-2 text-left">
+        <span className="flex min-w-0 flex-1 flex-col">
+          <h3 id="model-payers-title" className="text-[12.5px] font-semibold text-ink">{t("model.payer.title")}</h3>
+          {!open && <span data-my-turns={engine.myTurns} className="mt-0.5 truncate text-[11.5px] text-ink-secondary">{myTurnsText(engine)}</span>}
+        </span>
+        <ChevronDown size={14} aria-hidden="true" className={cn("shrink-0 text-ink-tertiary transition-transform", open && "rotate-180")} />
+      </button>
+      <div id="model-payers-body" hidden={!open}>
       <p className="mt-0.5 text-[11.5px] leading-relaxed text-ink-secondary">{t("model.payer.hint")}</p>
       <ol className="mt-2 flex flex-col gap-1.5">
         {order.rows.map((row, index) => {
@@ -110,6 +123,7 @@ export function ModelPickerPayers({ engine, issuer, routine = false, onChanged }
             : <CodexDeviceSignIn key={engine.instanceId} instanceId={engine.instanceId} base={loginBase} onSignedIn={onChanged} />}
         </div>
       )}
+      </div>
       {error && <p role="alert" className="mt-2 text-[12px] text-danger">{error}</p>}
     </section>
   );
