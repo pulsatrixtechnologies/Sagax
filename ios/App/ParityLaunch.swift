@@ -127,7 +127,7 @@ struct ParityScreenLauncher: ViewModifier {
                 launched = true
                 if screen.opensAraChat {
                     // Wait for the fleet, then push Ara's chat the way a deep link does.
-                    for _ in 0..<100 {
+                    for _ in 0..<150 {
                         if let ara = session.state.bots.first(where: { $0.name == "Ara" }) {
                             session.openChat(threadId: ara.threadId)
                             return
@@ -137,7 +137,7 @@ struct ParityScreenLauncher: ViewModifier {
                     return
                 }
                 if screen == .home { return }
-                for _ in 0..<50 where session.state.bots.isEmpty {
+                for _ in 0..<150 where session.state.bots.isEmpty {
                     try? await Task.sleep(nanoseconds: 100_000_000)
                 }
                 presented = screen

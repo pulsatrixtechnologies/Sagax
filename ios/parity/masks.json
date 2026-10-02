@@ -1,0 +1,973 @@
+{
+  "_comment": "Rects are [x, y, width, height] in points on the 402x874 pt screen (scaled to the image). Masks cover the status bar, every mascot frame (our characters differ by design; frames are checked for size and position separately) and regions whose text is placeholder content. Geometry comes from docs/superpowers/specs/assets/ios-visual-parity/measure-*.md.",
+  "_all": {
+    "rects": [
+      {
+        "rect": [
+          0,
+          0,
+          402,
+          54
+        ],
+        "why": "status bar"
+      }
+    ]
+  },
+  "01-home": {
+    "rects": [
+      {
+        "rect": [
+          23,
+          148,
+          88,
+          90
+        ],
+        "why": "pinned mascot / group composite"
+      },
+      {
+        "rect": [
+          157,
+          148,
+          88,
+          90
+        ],
+        "why": "pinned mascot / group composite"
+      },
+      {
+        "rect": [
+          291,
+          148,
+          88,
+          90
+        ],
+        "why": "pinned mascot / group composite"
+      },
+      {
+        "rect": [
+          21,
+          339.7,
+          46,
+          46
+        ],
+        "why": "row mascot 42"
+      },
+      {
+        "rect": [
+          82,
+          365.7,
+          298,
+          17
+        ],
+        "why": "preview line (placeholder text)"
+      },
+      {
+        "rect": [
+          320,
+          344.7,
+          60,
+          15
+        ],
+        "why": "time (relative to capture day)"
+      },
+      {
+        "rect": [
+          21,
+          419.7,
+          46,
+          46
+        ],
+        "why": "row mascot 42"
+      },
+      {
+        "rect": [
+          82,
+          445.7,
+          298,
+          17
+        ],
+        "why": "preview line (placeholder text)"
+      },
+      {
+        "rect": [
+          320,
+          424.7,
+          60,
+          15
+        ],
+        "why": "time (relative to capture day)"
+      },
+      {
+        "rect": [
+          21,
+          540.7,
+          46,
+          46
+        ],
+        "why": "row mascot 42"
+      },
+      {
+        "rect": [
+          82,
+          566.7,
+          298,
+          17
+        ],
+        "why": "preview line (placeholder text)"
+      },
+      {
+        "rect": [
+          320,
+          545.7,
+          60,
+          15
+        ],
+        "why": "time (relative to capture day)"
+      },
+      {
+        "rect": [
+          21,
+          620.7,
+          46,
+          46
+        ],
+        "why": "row mascot 42"
+      },
+      {
+        "rect": [
+          82,
+          646.7,
+          298,
+          17
+        ],
+        "why": "preview line (placeholder text)"
+      },
+      {
+        "rect": [
+          320,
+          625.7,
+          60,
+          15
+        ],
+        "why": "time (relative to capture day)"
+      },
+      {
+        "rect": [
+          21,
+          700.7,
+          46,
+          46
+        ],
+        "why": "row mascot 42"
+      },
+      {
+        "rect": [
+          82,
+          726.7,
+          298,
+          17
+        ],
+        "why": "preview line (placeholder text)"
+      },
+      {
+        "rect": [
+          320,
+          705.7,
+          60,
+          15
+        ],
+        "why": "time (relative to capture day)"
+      },
+      {
+        "rect": [
+          21,
+          780.7,
+          46,
+          46
+        ],
+        "why": "row mascot 42"
+      },
+      {
+        "rect": [
+          82,
+          806.7,
+          298,
+          17
+        ],
+        "why": "preview line (placeholder text)"
+      },
+      {
+        "rect": [
+          320,
+          785.7,
+          60,
+          15
+        ],
+        "why": "time (relative to capture day)"
+      },
+      {
+        "rect": [
+          21,
+          860.7,
+          46,
+          46
+        ],
+        "why": "row mascot 42"
+      },
+      {
+        "rect": [
+          82,
+          886.7,
+          298,
+          17
+        ],
+        "why": "preview line (placeholder text)"
+      },
+      {
+        "rect": [
+          320,
+          865.7,
+          60,
+          15
+        ],
+        "why": "time (relative to capture day)"
+      },
+      {
+        "rect": [
+          18,
+          68,
+          44,
+          44
+        ],
+        "why": "profile photo (generic in fixture)"
+      }
+    ]
+  },
+  "18-home-plus-menu": {
+    "rects": [
+      {
+        "rect": [
+          23,
+          148,
+          88,
+          90
+        ],
+        "why": "pinned mascot / group composite"
+      },
+      {
+        "rect": [
+          157,
+          148,
+          88,
+          90
+        ],
+        "why": "pinned mascot / group composite"
+      },
+      {
+        "rect": [
+          291,
+          148,
+          88,
+          90
+        ],
+        "why": "pinned mascot / group composite"
+      },
+      {
+        "rect": [
+          21,
+          339.7,
+          46,
+          46
+        ],
+        "why": "row mascot 42"
+      },
+      {
+        "rect": [
+          82,
+          365.7,
+          298,
+          17
+        ],
+        "why": "preview line (placeholder text)"
+      },
+      {
+        "rect": [
+          320,
+          344.7,
+          60,
+          15
+        ],
+        "why": "time (relative to capture day)"
+      },
+      {
+        "rect": [
+          21,
+          419.7,
+          46,
+          46
+        ],
+        "why": "row mascot 42"
+      },
+      {
+        "rect": [
+          82,
+          445.7,
+          298,
+          17
+        ],
+        "why": "preview line (placeholder text)"
+      },
+      {
+        "rect": [
+          320,
+          424.7,
+          60,
+          15
+        ],
+        "why": "time (relative to capture day)"
+      },
+      {
+        "rect": [
+          21,
+          540.7,
+          46,
+          46
+        ],
+        "why": "row mascot 42"
+      },
+      {
+        "rect": [
+          82,
+          566.7,
+          298,
+          17
+        ],
+        "why": "preview line (placeholder text)"
+      },
+      {
+        "rect": [
+          320,
+          545.7,
+          60,
+          15
+        ],
+        "why": "time (relative to capture day)"
+      },
+      {
+        "rect": [
+          21,
+          620.7,
+          46,
+          46
+        ],
+        "why": "row mascot 42"
+      },
+      {
+        "rect": [
+          82,
+          646.7,
+          298,
+          17
+        ],
+        "why": "preview line (placeholder text)"
+      },
+      {
+        "rect": [
+          320,
+          625.7,
+          60,
+          15
+        ],
+        "why": "time (relative to capture day)"
+      },
+      {
+        "rect": [
+          21,
+          700.7,
+          46,
+          46
+        ],
+        "why": "row mascot 42"
+      },
+      {
+        "rect": [
+          82,
+          726.7,
+          298,
+          17
+        ],
+        "why": "preview line (placeholder text)"
+      },
+      {
+        "rect": [
+          320,
+          705.7,
+          60,
+          15
+        ],
+        "why": "time (relative to capture day)"
+      },
+      {
+        "rect": [
+          21,
+          780.7,
+          46,
+          46
+        ],
+        "why": "row mascot 42"
+      },
+      {
+        "rect": [
+          82,
+          806.7,
+          298,
+          17
+        ],
+        "why": "preview line (placeholder text)"
+      },
+      {
+        "rect": [
+          320,
+          785.7,
+          60,
+          15
+        ],
+        "why": "time (relative to capture day)"
+      },
+      {
+        "rect": [
+          21,
+          860.7,
+          46,
+          46
+        ],
+        "why": "row mascot 42"
+      },
+      {
+        "rect": [
+          82,
+          886.7,
+          298,
+          17
+        ],
+        "why": "preview line (placeholder text)"
+      },
+      {
+        "rect": [
+          320,
+          865.7,
+          60,
+          15
+        ],
+        "why": "time (relative to capture day)"
+      },
+      {
+        "rect": [
+          18,
+          68,
+          44,
+          44
+        ],
+        "why": "profile photo"
+      }
+    ]
+  },
+  "02-chat": {
+    "rects": [
+      {
+        "rect": [
+          170,
+          77,
+          27,
+          27
+        ],
+        "why": "capsule mascot 24"
+      },
+      {
+        "rect": [
+          28,
+          170,
+          310,
+          598
+        ],
+        "why": "assistant bubble text (placeholder)"
+      },
+      {
+        "rect": [
+          0,
+          112,
+          402,
+          50
+        ],
+        "why": "scroll-edge area over an earlier bubble"
+      }
+    ]
+  },
+  "03-profile-info": {
+    "rects": [
+      {
+        "rect": [
+          150,
+          125,
+          102,
+          100
+        ],
+        "why": "profile mascot 84 + glow"
+      },
+      {
+        "rect": [
+          24,
+          441,
+          354,
+          252
+        ],
+        "why": "character editor (ours by design)"
+      }
+    ]
+  },
+  "07-profile-more-menu": {
+    "rects": [
+      {
+        "rect": [
+          150,
+          125,
+          102,
+          100
+        ],
+        "why": "profile mascot 84 + glow"
+      },
+      {
+        "rect": [
+          24,
+          441,
+          354,
+          252
+        ],
+        "why": "character editor (ours by design)"
+      }
+    ]
+  },
+  "04-profile-info-scrolled": {
+    "rects": [
+      {
+        "rect": [
+          76,
+          500,
+          280,
+          20
+        ],
+        "why": "routine subtitle 1"
+      },
+      {
+        "rect": [
+          76,
+          563,
+          280,
+          20
+        ],
+        "why": "routine subtitle 2"
+      }
+    ]
+  },
+  "05-routine-detail": {
+    "rects": [
+      {
+        "rect": [
+          240,
+          269,
+          130,
+          46
+        ],
+        "why": "next run value (relative to capture time)"
+      }
+    ]
+  },
+  "06-routine-instruction": {
+    "rects": [
+      {
+        "rect": [
+          30,
+          140,
+          345,
+          420
+        ],
+        "why": "instruction text (placeholder)"
+      }
+    ]
+  },
+  "08-profile-links": {
+    "rects": [
+      {
+        "rect": [
+          150,
+          125,
+          102,
+          100
+        ],
+        "why": "profile mascot 84"
+      },
+      {
+        "rect": [
+          70,
+          418,
+          285,
+          156
+        ],
+        "why": "link hosts and URLs (placeholder)"
+      }
+    ]
+  },
+  "09-profile-media": {
+    "rects": [
+      {
+        "rect": [
+          150,
+          125,
+          102,
+          100
+        ],
+        "why": "profile mascot 84"
+      },
+      {
+        "rect": [
+          24,
+          418,
+          354,
+          173
+        ],
+        "why": "media thumbnails (placeholder images)"
+      }
+    ]
+  },
+  "10-profile-files": {
+    "rects": [
+      {
+        "rect": [
+          150,
+          125,
+          102,
+          100
+        ],
+        "why": "profile mascot 84"
+      },
+      {
+        "rect": [
+          70,
+          418,
+          285,
+          139
+        ],
+        "why": "file names (placeholder)"
+      }
+    ]
+  },
+  "13-computer": {
+    "rects": [
+      {
+        "rect": [
+          75,
+          77,
+          27,
+          27
+        ],
+        "why": "mini mascot 24"
+      },
+      {
+        "rect": [
+          0,
+          166.7,
+          402,
+          251
+        ],
+        "why": "remote screen frame (live pixels)"
+      }
+    ]
+  },
+  "11-computer-trackpad-toast": {
+    "rects": [
+      {
+        "rect": [
+          75,
+          77,
+          27,
+          27
+        ],
+        "why": "mini mascot 24"
+      },
+      {
+        "rect": [
+          0,
+          166.7,
+          402,
+          251
+        ],
+        "why": "remote screen frame (live pixels)"
+      }
+    ]
+  },
+  "12-settings-top": {
+    "rects": [
+      {
+        "rect": [
+          0,
+          54,
+          402,
+          70
+        ],
+        "why": "home header behind the sheet (photo)"
+      },
+      {
+        "rect": [
+          40,
+          227,
+          40,
+          40
+        ],
+        "why": "profile photo"
+      },
+      {
+        "rect": [
+          86,
+          228,
+          250,
+          38
+        ],
+        "why": "name and email (placeholder)"
+      },
+      {
+        "rect": [
+          300,
+          285,
+          40,
+          35
+        ],
+        "why": "usage value"
+      }
+    ]
+  },
+  "14-settings-bottom": {
+    "rects": [
+      {
+        "rect": [
+          0,
+          54,
+          402,
+          70
+        ],
+        "why": "home header behind the sheet (photo)"
+      },
+      {
+        "rect": [
+          176,
+          791,
+          50,
+          50
+        ],
+        "why": "footer mascot (Sagax owl)"
+      },
+      {
+        "rect": [
+          140,
+          852,
+          122,
+          22
+        ],
+        "why": "app name (Sagax vs reference brand)"
+      }
+    ]
+  },
+  "15-plugins": {
+    "rects": [
+      {
+        "rect": [
+          226,
+          141,
+          151,
+          43
+        ],
+        "why": "installed capsule icons and count"
+      },
+      {
+        "rect": [
+          25,
+          250,
+          355,
+          624
+        ],
+        "why": "plugin catalog rows (our catalog)"
+      }
+    ]
+  },
+  "16-account": {
+    "rects": [
+      {
+        "rect": [
+          40,
+          214,
+          300,
+          66
+        ],
+        "why": "profile photo, name and email"
+      },
+      {
+        "rect": [
+          40,
+          330,
+          300,
+          42
+        ],
+        "why": "account email"
+      }
+    ]
+  },
+  "17-new-group-chat": {
+    "rects": [
+      {
+        "rect": [
+          20,
+          215,
+          38,
+          659
+        ],
+        "why": "row mascots 32"
+      }
+    ]
+  },
+  "19-search": {
+    "rects": [
+      {
+        "rect": [
+          20,
+          170,
+          48,
+          704
+        ],
+        "why": "row mascots 42"
+      },
+      {
+        "rect": [
+          82,
+          198.7,
+          298,
+          17
+        ],
+        "why": "instructions lead (placeholder)"
+      },
+      {
+        "rect": [
+          82,
+          278.7,
+          298,
+          17
+        ],
+        "why": "instructions lead (placeholder)"
+      },
+      {
+        "rect": [
+          82,
+          358.7,
+          298,
+          17
+        ],
+        "why": "instructions lead (placeholder)"
+      },
+      {
+        "rect": [
+          82,
+          438.7,
+          298,
+          17
+        ],
+        "why": "instructions lead (placeholder)"
+      },
+      {
+        "rect": [
+          82,
+          518.7,
+          298,
+          17
+        ],
+        "why": "instructions lead (placeholder)"
+      },
+      {
+        "rect": [
+          82,
+          598.7,
+          298,
+          17
+        ],
+        "why": "instructions lead (placeholder)"
+      },
+      {
+        "rect": [
+          82,
+          678.7,
+          298,
+          17
+        ],
+        "why": "instructions lead (placeholder)"
+      },
+      {
+        "rect": [
+          82,
+          758.7,
+          298,
+          17
+        ],
+        "why": "instructions lead (placeholder)"
+      },
+      {
+        "rect": [
+          82,
+          838.7,
+          298,
+          17
+        ],
+        "why": "instructions lead (placeholder)"
+      }
+    ]
+  },
+  "20-create-bot": {
+    "rects": [
+      {
+        "rect": [
+          125,
+          250,
+          152,
+          128
+        ],
+        "why": "preview mascot"
+      },
+      {
+        "rect": [
+          80,
+          515,
+          242,
+          125
+        ],
+        "why": "character/shape pickers (ours by design)"
+      },
+      {
+        "rect": [
+          45,
+          652,
+          312,
+          80
+        ],
+        "why": "colour swatches (our 12-colour palette)"
+      }
+    ]
+  },
+  "21-bot-computer": {
+    "rects": [
+      {
+        "rect": [
+          300,
+          427,
+          70,
+          45
+        ],
+        "why": "disk space value"
+      }
+    ]
+  }
+}
