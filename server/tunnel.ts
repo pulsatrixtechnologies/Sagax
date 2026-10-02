@@ -139,7 +139,7 @@ export function platformName(platform: NodeJS.Platform = process.platform): "dar
 export interface TunnelAccount {
   service: CompanionAccountService;
   credentials: TunnelCredentials;
-  /** "" when OMB_CONTROL_PLANE_URL is set to something unusable. */
+  /** "" when OMB_CONTROL_PLANE_URL is unset (Sagax has no hosted default) or unusable. */
   controlPlane: string;
 }
 
@@ -181,7 +181,7 @@ export function fleetCredential(env: NodeJS.ProcessEnv = process.env): string | 
 export async function fleetAccess(options: { credential: string; env?: NodeJS.ProcessEnv; fetchImpl?: typeof fetch }): Promise<ManagedTunnelAccess> {
   const env = options.env ?? process.env;
   const controlPlane = resolveCompanionControlPlaneURL({ isPackaged: true, environment: env });
-  if (!controlPlane) throw new Error("OMB_CONTROL_PLANE_URL is set but is not an https address");
+  if (!controlPlane) throw new Error("Set OMB_CONTROL_PLANE_URL to your control plane's https address (Sagax has no hosted default)");
   const client = createControlPlaneClient({ baseURL: controlPlane, fetchImpl: options.fetchImpl });
   try {
     const { endpoint, connectorToken } = await client.ensureEndpoint(options.credential);

@@ -1,13 +1,20 @@
 import { createManagedDesktopStore } from "./managed-desktop.mjs";
 import { CLOUD_MACHINE_CONNECTABLE, parseCloudSummary, parsePairingGrant } from "./cloud-home.mjs";
 
-export const CLOUD_ORIGIN = "https://cloud.openmausbot.com";
+import { isBlockedUrl } from "./upstream-hosts.mjs";
+
+// The original project's personal Cloud (cloud.openmausbot.com) is never
+// contacted. Empty means the Cloud account, Move to Cloud and lending are off:
+// main does not expose them to any page (--sagax-cloud) and no client starts.
+export const CLOUD_ORIGIN = "";
+export const CLOUD_SERVICES_ENABLED = Boolean(CLOUD_ORIGIN) && !isBlockedUrl(CLOUD_ORIGIN);
 const TOKEN = /^omc_[A-Za-z0-9_-]{43}$/;
 const CODE = /^[A-HJ-NP-Z2-9]{5}-[A-HJ-NP-Z2-9]{5}$/;
 const PRIVATE_CODE = /^[A-Za-z0-9_-]{43}$/;
 const REFRESH_MS = 60_000;
 // Never accept an address from the renderer. Tests explicitly inject loopback.
 export function cloudOrigin(value = CLOUD_ORIGIN, fixture = false) {
+  if (!value || isBlockedUrl(value)) throw new Error("OMB Cloud is not available in Sagax.");
   const url = new URL(value);
   if (value !== url.origin || (value !== CLOUD_ORIGIN && !(fixture && url.protocol === "http:" && ["127.0.0.1", "[::1]"].includes(url.hostname)))) {
     throw new Error("Invalid OMB Cloud address.");

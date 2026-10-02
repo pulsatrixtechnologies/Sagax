@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { isBlockedUrl } from "./upstream-hosts.mjs";
 import fs from "node:fs/promises";
 import { constants } from "node:fs";
 import path from "node:path";
@@ -81,6 +82,9 @@ export function createManagedDesktopRelay({ timeoutMs = 15_000 } = {}) {
 }
 export function managedPortalOrigin(value) {
   const url = new URL(value);
+  // The original project's hosted Admin (admin.openmausbot.com) is never
+  // contacted; only an organization's own portal (electron/upstream-hosts.mjs).
+  if (isBlockedUrl(url.href)) throw new Error("Enter the exact HTTPS address of your organization's Admin portal.");
   if (url.username || url.password || url.search || url.hash || url.pathname !== "/" ||
       !(url.protocol === "https:" || (url.protocol === "http:" && ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname)))) {
     throw new Error("Enter the exact HTTPS address of your organization's Admin portal.");
