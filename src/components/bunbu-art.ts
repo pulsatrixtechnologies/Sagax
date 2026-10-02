@@ -1,7 +1,7 @@
 // Bunbu's drawing, in a 0..100 box: our own collectible-vinyl little monster
 // (src/components/BunbuMascot.tsx). Original art made for Sagax: a single
 // gumdrop body (head and body in one piece, no face plate), two long upright
-// paddle ears, a curl of fur on top, big round eyes with two highlights, a
+// paddle ears, two wisps of fur on top, big round eyes with two highlights, a
 // small grin with five little pointy teeth, a heart on the tummy and chunky
 // arms and feet. Every part is its own path so a skin paints each one and
 // the ears and arms move on their own (the signature ear flop, the wave).
@@ -23,8 +23,8 @@ export const BUNBU_ART = {
   /** Chunky arms, a little oval each side; they pivot at the shoulder. */
   armLeft: { cx: 20.5, cy: 67, rx: 6, ry: 9.5, rotate: 22, pivot: [24, 60] as const },
   armRight: { cx: 79.5, cy: 67, rx: 6, ry: 9.5, rotate: -22, pivot: [76, 60] as const },
-  /** The curl of fur on top. */
-  tuft: "M47.5 31C46 26 50.5 23.5 53 26.2C54.6 28.2 52.4 30.4 50.6 29",
+  /** Two short wisps of fur on top. */
+  tuft: "M47.4 30.6Q47.6 26.6 50.4 25.6M50.6 30.4Q52 27.2 55 27",
   /** The eyes: centers and radii; the highlight sits up and to the left. */
   eyes: { left: [39, 51] as const, right: [61, 51] as const, rx: 6.2, ry: 7 },
   /** A small rounded nose. */

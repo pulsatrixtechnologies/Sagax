@@ -23,13 +23,17 @@ const VELVET_POOLS: [number, number, number, number, number][] = [
   [34, 44, 14, 9, -20], [66, 70, 16, 10, 25], [40, 80, 10, 6, 10], [70, 40, 9, 6, -30], [32, 14, 5, 10, -10], [68, 14, 5, 10, 10],
 ];
 
+/** Velvet is a deep jewel plum leaning toward the bot's color; its sheen is a warm pink. */
+const velvetDeep = (hex: string) => mix("#5b1640", hex, 0.22);
+const velvetSheen = (hex: string) => mix("#ff9ccf", hex, 0.25);
+
 export function bunbuSkinBase(skin: BunbuSkin, hex: string): ShapeSkinBase {
   switch (skin) {
     case "plush":
       return { fill: hex, stroke: null, strokeWidth: 0, eyes: eyeInkOn(hex), glow: null, shine: false, fx: "plain" };
     case "velvet": {
-      const deep = mix(hex, "#1a0b24", 0.55);
-      return { fill: deep, stroke: mix(hex, "#ffffff", 0.35), strokeWidth: 1.2, eyes: "#fdf3ff", glow: null, shine: false, fx: "velvet" };
+      const deep = velvetDeep(hex);
+      return { fill: deep, stroke: velvetSheen(hex), strokeWidth: 1.2, eyes: "#fdf3ff", glow: null, shine: false, fx: "velvet" };
     }
     default:
       return shapeSkinBase(skin as ShapeSkin, hex);
@@ -63,18 +67,18 @@ export function bunbuSkinLayers(skin: BunbuSkin, d: string, hex: string, uid: st
             <rect x={0} y={0} width={100} height={100} fill={url("soft")} />
             <g strokeWidth={1.1} strokeLinecap="round" fill="none">
               {FUR.map(([x, y, angle], i) => (
-                <path key={`${x}-${y}`} d={`M${x} ${y}l0 -3.2`} stroke={i % 2 ? dark : light} opacity={0.55} transform={`rotate(${angle} ${x} ${y})`} />
+                <path key={`${x}-${y}`} d={`M${x} ${y}l0 -3.6`} stroke={i % 2 ? dark : light} opacity={0.75} transform={`rotate(${angle} ${x} ${y})`} />
               ))}
             </g>
           </>
         ),
         // a fuzzy outline: the fill's own color in short round tufts
-        edge: <path d={d} fill="none" stroke={hex} strokeWidth={2.6} strokeLinecap="round" strokeDasharray="0.01 2.3" />,
+        edge: <path d={d} fill="none" stroke={mix(hex, "#000000", 0.08)} strokeWidth={3.2} strokeLinecap="round" strokeDasharray="0.01 2.6" />,
       };
     }
     case "velvet": {
-      const deep = mix(hex, "#1a0b24", 0.55);
-      const sheen = mix(hex, "#ffffff", 0.35);
+      const deep = velvetDeep(hex);
+      const sheen = velvetSheen(hex);
       return {
         ...none,
         ownEdge: true,
@@ -82,9 +86,9 @@ export function bunbuSkinLayers(skin: BunbuSkin, d: string, hex: string, uid: st
         defs: (
           <>
             <radialGradient id={id("velvet")} cx="0.42" cy="0.38" r="0.75">
-              <stop offset="0" stopColor={mix(hex, "#1a0b24", 0.2)} />
-              <stop offset="0.7" stopColor={deep} />
-              <stop offset="1" stopColor={mix(hex, "#0b0410", 0.75)} />
+              <stop offset="0" stopColor={mix(deep, "#ff9ccf", 0.28)} />
+              <stop offset="0.65" stopColor={deep} />
+              <stop offset="1" stopColor={mix(deep, "#0b0410", 0.6)} />
             </radialGradient>
             {full && <Blur id={id("rim")} deviation={2.2} />}
           </>

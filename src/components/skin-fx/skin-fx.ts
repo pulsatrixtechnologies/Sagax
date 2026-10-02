@@ -56,7 +56,7 @@ export function fxPalette(kind: FxKind, hex: string): FxPalette {
     case "glitch":
       return { kind, a: "#ff2bd6", b: "#22e6ff", glow: false, particle: "bit", trail: true };
     case "velvet":
-      return { kind, a: mix(hex, "#ffffff", 0.45), b: "#ffd9f2", glow: true, particle: "dot", trail: false };
+      return { kind, a: mix("#ff9ccf", hex, 0.25), b: "#ffe3f1", glow: true, particle: "dot", trail: false };
     case "retro":
       return { kind, a: "#000080", b: "#c0c0c0", glow: false, particle: "bit", trail: false };
     default:

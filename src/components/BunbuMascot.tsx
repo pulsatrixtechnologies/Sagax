@@ -62,7 +62,7 @@ export function bunbuSkinPaint(skin: BunbuSkin | string, hex: string) {
 /** The ears' inside: a soft pink on light finishes, a quiet glow on dark ones. */
 function innerEarPaint(fill: string, hex: string, dark: boolean): { fill: string; opacity: number } {
   if (dark) return { fill: mix(hex, "#ffffff", 0.5), opacity: 0.28 };
-  return { fill: mix(fill.startsWith("#") ? fill : hex, "#ffb4cf", 0.6), opacity: 0.85 };
+  return { fill: mix(fill.startsWith("#") ? fill : hex, "#f59ac0", 0.78), opacity: 0.9 };
 }
 
 /** A move request the body plays (fx-body-*) and its burst: the ear flop bursts like a hop. */
