@@ -4236,7 +4236,15 @@ app.whenReady().then(async () => {
   if (desktopShutdownStarted) return;
   if (app.isPackaged && !desktopRemoteAccess) void ensureManagedDesktop().start().then(() => companyBackupSchedule.start()).catch(() => {});
   // Fresh local use never makes a Cloud request; start only restores an existing grant.
-  if (app.isPackaged && !desktopRemoteAccess) cloudAccountStarted = ensureCloudAccount().start().catch(() => {});
+  // OMB Cloud is off in Sagax: ensureCloudAccount() throws synchronously then,
+  // and a throw here ended startup before the main window was created.
+  if (app.isPackaged && !desktopRemoteAccess && CLOUD_SERVICES_ENABLED) {
+    try {
+      cloudAccountStarted = ensureCloudAccount().start().catch(() => {});
+    } catch (error) {
+      slog(`cloud account restore skipped: ${error?.message ?? error}`);
+    }
+  }
   // The companion the user left on comes back without anyone finding the
   // toggle again — one attempt, after the harness port is settled, with the
   // exact options the IPC handler uses. A failure surfaces in companionState
