@@ -665,6 +665,9 @@ public struct Bot: Codable, Hashable, Identifiable, Sendable {
     public var ownerUserId: String? = nil
     /// Sections a Primary Bot manages beyond its own (owner-approved).
     public var managedSections: [String]? = nil
+    /// The bot's own Connected apps switch: false keeps the workspace's
+    /// connected apps from it. Absent means on.
+    public var composio: Bool? = nil
 
     /// The look the renderers draw: the stored one, or the owl.
     public var resolvedMascotLook: CompleteMascotLook {
@@ -1109,9 +1112,13 @@ public struct ModelCatalog: Codable, Hashable, Sendable {
 /// offer a reasoning control.
 public struct InstanceCapabilities: Codable, Hashable, Sendable {
     public var effortLevels: [String]?
+    /// The engine can mount the connected apps' tools (a bot's own switch
+    /// does nothing on an engine without it).
+    public var composioMcp: Bool?
 
-    public init(effortLevels: [String]? = nil) {
+    public init(effortLevels: [String]? = nil, composioMcp: Bool? = nil) {
         self.effortLevels = effortLevels
+        self.composioMcp = composioMcp
     }
 }
 
@@ -1718,6 +1725,8 @@ public struct ConnectorCard: Codable, Hashable, Identifiable, Sendable {
     public var blurb: String
     public var logo: String?
     public var domain: String?
+    /// A toolkit without OAuth: it ships included, there is nothing to connect.
+    public var noAuth: Bool? = nil
     public var id: String { slug }
 }
 
@@ -1738,6 +1747,13 @@ public struct ConnectorStatus: Codable, Hashable, Sendable {
     public var pending: Bool?
     public var status: String?
     public var accounts: [ConnectorAccount]?
+
+    public init(connected: Bool, pending: Bool? = nil, status: String? = nil, accounts: [ConnectorAccount]? = nil) {
+        self.connected = connected
+        self.pending = pending
+        self.status = status
+        self.accounts = accounts
+    }
 }
 
 public struct ConnectorCatalog: Codable, Sendable {
@@ -1745,6 +1761,24 @@ public struct ConnectorCatalog: Codable, Sendable {
     public var mode: String?
     public var source: String?
     public var cards: [ConnectorCard]
+    /// How complete the catalog is (`CatalogPagination` in PluginsPanel.tsx);
+    /// absent on a curated catalog and on older computers.
+    public var pagination: ConnectorCatalogPagination? = nil
+}
+
+public struct ConnectorCatalogPagination: Codable, Hashable, Sendable {
+    public var items: Int
+    public var totalItems: Int?
+    public var stalled: Bool
+    /// The server's stop reason, only when the walk stalled.
+    public var reason: String?
+
+    public init(items: Int, totalItems: Int? = nil, stalled: Bool, reason: String? = nil) {
+        self.items = items
+        self.totalItems = totalItems
+        self.stalled = stalled
+        self.reason = reason
+    }
 }
 
 public struct ConnectorStatuses: Codable, Sendable {
