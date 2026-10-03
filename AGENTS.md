@@ -88,12 +88,17 @@ Covered by `src/components/SettingsModal.orgCleanup.test.ts`,
   person, set by an admin on the person's sheet; default and absent mean
   `manage`). `use` makes the person read-only (`personBotsReadOnly`,
   `viewer.botsReadOnly`): `POST /api/bots` and `/api/org/import` answer 403
-  `org_bots_read_only`, every bot level they hold reads as `use`
-  (`botLevel`, their own bots included), so no edit, delete, grant or
-  routine; they still talk to the bots shared with them (speaker pays). An
-  organization admin is never narrowed. The UI hides New bot and says
-  "Votre administrateur vous permet d'utiliser les robots partagés
-  seulement" (`bots.readOnly.notice`; MA-3, `server/authz.test.ts`).
+  `org_bots_read_only`, and so do `POST /api/internal/create-bot`, team
+  setup and bot deletion (a Primary Bot must not create for a `use` owner).
+  `create_bot` stores the Primary Bot's person as owner (`recordedBotOwner`),
+  never the loopback caller (on an organization server that caller is a
+  service and would leave the specialist to the operator). Every bot level
+  they hold reads as `use` (`botLevel`, their own bots included), so no
+  edit, delete, grant or routine; they still talk to the bots shared with
+  them (speaker pays). An organization admin is never narrowed. The UI hides
+  New bot and says "Votre administrateur vous permet d'utiliser les robots
+  partagés seulement" (`bots.readOnly.notice`; MA-3, MA-4,
+  `server/authz.test.ts`).
 - Routines in my name is read-only: allowed by default, revoked in the
   Perspicax console (`manageUrl`, `/console/me/access#sagax`). Perspicax has no
   silent authorization, so `ensureRoutineDelegation` starts the consent once,
