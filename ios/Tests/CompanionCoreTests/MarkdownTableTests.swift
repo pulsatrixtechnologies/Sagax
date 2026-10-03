@@ -236,6 +236,12 @@ final class MarkdownTableTests: XCTestCase {
             return ""
         case let .table(table):
             return (table.headers + table.rows.flatMap { $0 }).joined(separator: "\n")
+        case let .callout(_, title, text):
+            return title + text
+        case let .image(image):
+            return image.alt + image.source
+        case let .footnotes(notes):
+            return notes.map(\.text).joined(separator: "\n")
         }
     }
 
