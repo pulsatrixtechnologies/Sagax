@@ -48,12 +48,15 @@ public struct SidecarRoutes: OptionSet, Hashable, Sendable {
     public static let primaryBot = SidecarRoutes(rawValue: 1 << 6)
     /// PATCH /api/bots/:id {voiceNotes} from the owner's phone (BA11).
     public static let voiceNotes = SidecarRoutes(rawValue: 1 << 7)
+    /// GET /api/me/achievements, POST events, PUT settings: the owner's own
+    /// achievements (ST9, D1).
+    public static let achievements = SidecarRoutes(rawValue: 1 << 8)
 
     /// What a sidecar of this release serves: all of the above (S1, D1, D3,
     /// and the voice engine route ship with this version of the desktop). An
     /// older desktop answers 403 and the view shows that error.
     public static let current: SidecarRoutes = [
-        .parallelStop, .roomMemory, .advancedPanel, .voiceEngine, .harnessCommands, .botActivity, .primaryBot, .voiceNotes,
+        .parallelStop, .roomMemory, .advancedPanel, .voiceEngine, .harnessCommands, .botActivity, .primaryBot, .voiceNotes, .achievements,
     ]
 }
 
@@ -179,6 +182,16 @@ public enum SurfaceFeature: String, CaseIterable, Hashable, Sendable {
     case orgRoutineDelegation
     /// Webhooks (AU17): host only, never on the phone.
     case webhooks
+
+    // Settings (WP12)
+    /// Settings > Achievements (ST9): the person's own record. Both gates
+    /// pass the routes; the remote client hides the page, D1 opens it.
+    case achievements
+    /// Settings > Organization (ST8): an organization server only.
+    case organizationSettings
+    /// Usage > History, `GET /api/usage?groupBy=` (ST10): admin scope on a
+    /// server; the owner's sidecar passes `GET /api/usage`.
+    case usageHistory
 }
 
 public struct SurfaceGate: Hashable, Sendable {
@@ -268,6 +281,12 @@ public struct SurfaceGate: Hashable, Sendable {
             return organization
         case .webhooks:
             return false
+        case .achievements:
+            return scope != .sidecar || sidecarRoutes.contains(.achievements)
+        case .organizationSettings:
+            return organization
+        case .usageHistory:
+            return scope != .serverClient
         }
     }
 }

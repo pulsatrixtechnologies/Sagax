@@ -2294,7 +2294,11 @@ final class Session: ObservableObject {
         guard let client else { return nil }
         do {
             if let original { return try await client.updateRoutine(original, input: input) }
-            return try await client.createRoutine(input)
+            let created = try await client.createRoutine(input)
+            // An organization server: the routines may need the person's
+            // consent to act in their name (AU19, Session+Settings.swift).
+            routineCreated()
+            return created
         } catch { actionError = error.localizedDescription; return nil }
     }
 
