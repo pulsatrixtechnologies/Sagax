@@ -171,34 +171,41 @@ struct DesktopAppGlow: View {
     @Environment(\.desktopTheme) private var theme
 
     var body: some View {
-        GeometryReader { geometry in
-            let size = geometry.size
-            ZStack {
-                theme.app
-                if theme.glow.0 > 0 {
-                    // ellipse 110 % x 62 % at 50 % 0, fading out by 70 %
-                    EllipticalGradient(
-                        colors: [theme.accent.opacity(theme.glow.0), theme.accent.opacity(0)],
-                        center: UnitPoint(x: 0.5, y: 0),
-                        startRadiusFraction: 0, endRadiusFraction: 0.7
-                    )
-                    .frame(width: size.width * 2.2, height: size.height * 1.24)
-                    .position(x: size.width / 2, y: 0)
-                    // ellipse 72 % x 44 % at 80 % 0, fading out by 68 %
-                    EllipticalGradient(
-                        colors: [theme.accent.opacity(theme.glow.1), theme.accent.opacity(0)],
-                        center: UnitPoint(x: 0.5, y: 0),
-                        startRadiusFraction: 0, endRadiusFraction: 0.68
-                    )
-                    .frame(width: size.width * 1.44, height: size.height * 0.88)
-                    .position(x: size.width * 0.8, y: 0)
+        let accent = theme.accent
+        let glow = theme.glow
+        return ZStack {
+            theme.app
+            if glow.0 > 0 {
+                Canvas { context, size in
+                    // radial-gradient(ellipse 110% 62% at 50% 0%, accent a, transparent 70%)
+                    Self.ellipse(&context, centre: CGPoint(x: size.width * 0.5, y: 0),
+                                 radii: CGSize(width: size.width * 1.10, height: size.height * 0.62),
+                                 color: accent, alpha: glow.0, end: 0.70)
+                    // radial-gradient(ellipse 72% 44% at 80% 0%, accent b, transparent 68%)
+                    Self.ellipse(&context, centre: CGPoint(x: size.width * 0.8, y: 0),
+                                 radii: CGSize(width: size.width * 0.72, height: size.height * 0.44),
+                                 color: accent, alpha: glow.1, end: 0.68)
                 }
             }
-            .frame(width: size.width, height: size.height)
-            .clipped()
         }
         .ignoresSafeArea()
         .allowsHitTesting(false)
+    }
+
+    /// One CSS elliptical gradient: a unit circle's radial gradient,
+    /// stretched to the ellipse's radii.
+    private static func ellipse(_ context: inout GraphicsContext, centre: CGPoint, radii: CGSize, color: Color, alpha: Double, end: CGFloat) {
+        var layer = context
+        layer.translateBy(x: centre.x, y: centre.y)
+        layer.scaleBy(x: radii.width, y: radii.height)
+        let gradient = Gradient(stops: [
+            .init(color: color.opacity(alpha), location: 0),
+            .init(color: color.opacity(0), location: end),
+        ])
+        layer.fill(
+            Path(ellipseIn: CGRect(x: -1, y: -1, width: 2, height: 2)),
+            with: .radialGradient(gradient, center: .zero, startRadius: 0, endRadius: 1)
+        )
     }
 }
 

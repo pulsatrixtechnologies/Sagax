@@ -50,11 +50,10 @@ struct DesktopSidebar: View {
 
     private var brandRow: some View {
         HStack(spacing: 0) {
-            Image("SagaxMark")
+            Image(theme.sidebarIsDark ? "PulsatrixMark-dark" : "PulsatrixMark-light")
                 .resizable()
-                .renderingMode(.template)
+                .renderingMode(.original)
                 .scaledToFit()
-                .foregroundStyle(theme.sidebarInk)
                 .frame(width: 22, height: 17)
                 .padding(.leading, 16)
             Text(verbatim: "Sagax")
@@ -118,15 +117,11 @@ struct DesktopSidebar: View {
 
     // MARK: Pinned
 
-    /// The Primary Bot (when it has no section), pinned bots, then pinned
-    /// groups: the phone home's pinned grid, as the desktop's tiles.
+    /// The pinned bots, in the roster's order (`Sidebar.tsx` `pinnedBots`:
+    /// bots only; a pinned group stays in its section).
     private func pinnedChats(_ layout: SidebarLayout) -> [Chat] {
-        var chats: [Chat] = []
-        if let chief = layout.unsectionedChief { chats.append(.bot(chief)) }
-        chats += layout.pinnedBots.sorted { $0.createdAt < $1.createdAt }.map(Chat.bot)
-        let shown = Set((layout.sections.flatMap(\.channels) + layout.unsectionedChannels).map(\.id))
-        chats += session.state.rooms.filter { $0.dm != true && $0.pinned == true && shown.contains($0.id) }.map(Chat.room)
-        return chats
+        let pinned = Set(layout.pinnedBots.map(\.id))
+        return session.state.bots.filter { pinned.contains($0.id) }.map(Chat.bot)
     }
 
     // MARK: Sections
@@ -150,8 +145,10 @@ struct DesktopSidebar: View {
 
     private func chats(for id: String, in layout: SidebarLayout) -> [Chat] {
         if id == SidebarSectionID.general {
-            return layout.unsectionedBots.map(Chat.bot)
-                + layout.unsectionedChannels.filter { $0.pinned != true }.map(Chat.room)
+            let chief = layout.unsectionedChief.flatMap { $0.pinned == true ? nil : Chat.bot($0) }
+            return (chief.map { [$0] } ?? [])
+                + layout.unsectionedBots.filter { $0.pinned != true }.map(Chat.bot)
+                + layout.unsectionedChannels.map(Chat.room)
         }
         if id == SidebarSectionID.botChats {
             return layout.botChats.map(Chat.room)
@@ -160,7 +157,7 @@ struct DesktopSidebar: View {
               let section = layout.sections.first(where: { $0.name == name })
         else { return [] }
         return section.chiefs.map(Chat.bot)
-            + section.channels.filter { $0.pinned != true }.map(Chat.room)
+            + section.channels.map(Chat.room)
             + section.bots.map(Chat.bot)
     }
 

@@ -61,6 +61,10 @@ struct DesktopTheme: Equatable {
 
     static func == (a: DesktopTheme, b: DesktopTheme) -> Bool { a.skin == b.skin }
 
+    /// The sidebar is dark (Pulsatrix Light paints it navy): which brand mark
+    /// it carries (`PulsatrixMark.tsx`, on-dark / on-light).
+    var sidebarIsDark: Bool { dark || skin == .pulsatrixLight }
+
     // MARK: Fonts
 
     /// The skin's face at a desktop size. Sizes are fixed (the desktop's

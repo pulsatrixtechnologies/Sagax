@@ -247,6 +247,8 @@ private struct BotPanelDetails: View {
                         onOpen: { activityRoute = .detail($0) },
                         onHistory: { activityRoute = .history($0) }
                     )
+                    // the phone card keeps 24 pt margins; the panel body has its own 16
+                    .padding(.horizontal, -Theme.Profile.cardMargin)
                 }
                 sectionLabel("Routines")
                     .padding(.top, 20)

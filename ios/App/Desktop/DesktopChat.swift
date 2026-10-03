@@ -108,6 +108,13 @@ extension ChatView {
         }
     }
 
+    /// The desktop field's placeholder ("Message Ara").
+    var desktopPrompt: String {
+        if sendingMessage { return String(localized: "Sending…") }
+        if dictation.isListening { return String(localized: "Listening…") }
+        return String(localized: "Message \(PeopleDirectory.shared.name(current, session: session))")
+    }
+
     /// Export conversation (the desktop header's first button): Markdown,
     /// handed to the share sheet.
     func exportConversation() {
@@ -126,7 +133,7 @@ extension ChatView {
             composerAccessories
             AnyView(DesktopComposerPill(
                 draft: $draft,
-                prompt: composerPrompt,
+                prompt: desktopPrompt,
                 focused: $composerFocused,
                 canSend: canSend,
                 busy: preparingAttachments || sendingMessage,
