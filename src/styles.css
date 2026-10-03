@@ -1411,6 +1411,64 @@ body {
   }
 }
 
+/* Glass bars (GlassScrollFrame): the sidebar's head and foot and the chat
+   header float over their scroller, which runs on underneath them. The glass
+   is a layer behind the bar's own controls: the tint of the surface the bar
+   sits on, so at rest the bar reads as that surface, over a blur of whatever
+   scrolls beneath. Its inner edge fades out across --glass-edge, so content
+   melts into the glass instead of meeting a hard line. The layer is a
+   pseudo-element, so the bar itself never becomes a containing block for
+   the fixed-position menus it opens. */
+.glass-bar {
+  --glass-edge: 20px;
+  isolation: isolate;
+}
+.glass-bar::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background: color-mix(in srgb, var(--glass-tint, var(--color-panel)) 55%, transparent);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  backdrop-filter: blur(24px) saturate(180%);
+}
+.glass-bar[data-glass-bar="top"]::before {
+  mask-image: linear-gradient(to bottom, black calc(100% - var(--glass-edge)), transparent);
+}
+.glass-bar[data-glass-bar="bottom"]::before {
+  mask-image: linear-gradient(to top, black calc(100% - var(--glass-edge)), transparent);
+}
+/* The frame publishes its bars' heights. Rows rest clear of the glass,
+   keyboard focus scrolls them clear, and the scrollbar runs only between the
+   bars (a bar over it would swallow the drag). */
+.glass-scroller {
+  scroll-padding-top: var(--glass-top, 0px);
+  scroll-padding-bottom: var(--glass-bottom, 0px);
+}
+.glass-scroller::-webkit-scrollbar-track {
+  margin-top: var(--glass-top, 0px);
+  margin-bottom: var(--glass-bottom, 0px);
+}
+.glass-scroller-content {
+  padding-top: var(--glass-top, 0px);
+  padding-bottom: var(--glass-bottom, 0px);
+}
+@media (prefers-reduced-transparency: reduce) {
+  .glass-bar::before {
+    background: var(--glass-tint, var(--color-panel));
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+@media (forced-colors: active) {
+  .glass-bar::before {
+    background: Canvas;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+
 /* Keep focus visible after components clear the browser outline. These
    unlayered rules outrank Tailwind utilities without needing !important. */
 :focus-visible {

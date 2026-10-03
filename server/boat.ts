@@ -146,14 +146,11 @@ export type BoatTurnLifecycleAction = "attach" | "provision" | "wake" | "none";
  * attach an already-ready Boat, but only explicit Cloud may create or wake. */
 export function boatTurnLifecycleAction({
   explicitCloud,
-  canMount,
   state,
 }: {
   explicitCloud: boolean;
-  canMount: boolean;
   state: string | null;
 }): BoatTurnLifecycleAction {
-  if (!canMount) return "none";
   if (state && READY.has(state)) return "attach";
   if (!explicitCloud) return "none";
   return state ? "wake" : "provision";
@@ -969,7 +966,9 @@ export async function findBoat(cfg: AppConfig, botId: string) {
   if (cachedId) {
     let direct: Awaited<ReturnType<typeof boatJson>> | null = null;
     try {
-      direct = await boatJson(cfg, `/boxes/${cachedId}`);
+      // Bounded like every other Boat read: a relay that accepts the
+      // connection and stalls must not hold a turn's setup for minutes.
+      direct = await boatJson(cfg, `/boxes/${cachedId}`, { signal: AbortSignal.timeout(20_000) });
     } catch {
       // A direct read can fail while the account listing still succeeds.
       // Fall through to the authoritative paginated lookup before deciding.

@@ -16,6 +16,7 @@ import { placeOffered } from "@/lib/place";
 import { boatComputerEnabled } from "@/lib/feature-flags";
 import { TeamCanvas } from "./TeamCanvas";
 import { TeamDialog } from "./TeamDialog";
+import { TeamMemoryDialog } from "./TeamMemoryDialog";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { t } from "@/lib/i18n";
 import { CanvasComputers } from "./CanvasComputers";
@@ -262,6 +263,7 @@ export function TeamMapPage() {
   const [error, setError] = useState<string | null>(null);
   const [refreshError, setRefreshError] = useState<string | null>(null);
   const [contextEditor, setContextEditor] = useState<{ section: string; label: string } | null>(null);
+  const [memoryEditor, setMemoryEditor] = useState<{ section: string; label: string } | null>(null);
   const [teamEditor, setTeamEditor] = useState<{ section?: string; rename?: boolean } | null>(null);
   const [deletingTeam, setDeletingTeam] = useState<string | null>(null);
   const [computersOpen, setComputersOpen] = useState(false);
@@ -363,6 +365,7 @@ export function TeamMapPage() {
         onTeamComputer={() => setComputersOpen(true)}
         onComputerDrop={(id, section) => { if (!remoteClient) { setComputersOpen(true); setComputerDrop({ id, section }); } }}
         onInstructions={(section, label) => setContextEditor({ section, label })}
+        onMemory={(section, label) => setMemoryEditor({ section, label })}
         onEditTeam={(section, rename) => setTeamEditor({ section, rename })}
         onDeleteTeam={setDeletingTeam}
         isEmpty={(key) => ![...state.bots, ...state.groups].some((record) => record.section?.trim() === key)} />
@@ -382,6 +385,7 @@ export function TeamMapPage() {
         />
       )}
       {teamEditor && <TeamDialog {...teamEditor} onClose={() => setTeamEditor(null)} />}
+      {memoryEditor && <TeamMemoryDialog key={memoryEditor.section} {...memoryEditor} onClose={() => setMemoryEditor(null)} />}
       <ConfirmDialog open={pendingMove !== null} tone="neutral" title={`Move ${pendingMove?.bot.name ?? "bot"} to ${pendingMove?.destination || "General"}?`}
         body="This changes the bot's home team and shared instructions, not just its position. Its conversations and model stay with it. To arrange visually, drag within the same team."
         confirmLabel="Move bot" onCancel={cancelMove} onConfirm={() => {

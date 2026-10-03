@@ -195,6 +195,10 @@ stream closure and fallback through disposable HTTP endpoints.
 The [iOS transcript checks](ios-transcript.md) cover completed-turn folds,
 Hidden activity, and compact webhook messages using bundled offline data.
 
+The [iOS responsiveness checks](ios-responsiveness.md) exercise ordinary chat
+typing and navigation during a synthetic busy-fleet stream, plus batched
+delivery, compact off-main widget writes and bounded Markdown parse reuse.
+
 The [Android thread checks](android-threads.md) cover the Compose thread tree,
 local selection, draft isolation and installable preview APK.
 

@@ -115,24 +115,25 @@ describe("independent bot tasks through the isolated control surface", () => {
       status: "waiting-on-user", statusText: "waiting on the user", busy: true,
     });
     const queued = await internal(token, "POST", "/api/internal/coordinate-bots", {
-      botIds: [peer.id], requestKey: "mailbox-review", message: "MAILBOX_REVIEW: check the release notes.",
+      botIds: [peer.id], message: "MAILBOX_REVIEW: check the release notes.",
     });
     expect(queued.status).toBe(200);
-    expect(queued.body.accepted).toHaveLength(1);
-    const requestId = queued.body.accepted[0].requestId;
+    const requestId = queued.body.receipts[0].requestId;
     // The receipt is the sender's honest answer at send time: this peer is
     // queued behind its open approval card, so nothing has been delivered.
     expect(queued.body.receipts).toEqual([{
       botId: peer.id,
       botName: "Mailbox Peer",
       outcome: "queued",
-      detail: "handed to the coordinator; the teammate's turn has not started yet",
-      requestId,
+      detail: "sent to \"@Mailbox Chief · work\"; it runs after anything still running there",
+      requestId: expect.any(String),
+      threadId: expect.any(String),
     }]);
     const handoff = () => JSON.parse(readFileSync(join(session.info.dataDir, "room-handoffs.json"), "utf8"))
       .find((node: any) => node.id === requestId);
     const peerThread = handoff().threadId;
     expect(peerThread).not.toBe(peer.activeTaskId);
+    expect(queued.body.receipts[0].threadId).toBe(peerThread);
     // The open approval keeps fresh work queued across a tick, spare slot or
     // not. Ending the source turn does not release it. #1589 admits a spare
     // slot only beside a sibling that is running, not beside this card.

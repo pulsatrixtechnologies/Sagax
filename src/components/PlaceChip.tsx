@@ -1,6 +1,7 @@
 import { Check } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/cn";
+import { cloudEngineOf } from "@/lib/remote-desktop";
 import { useMenuMotion } from "./MenuMotion";
 import { boatComputerEnabled, browserAvailable, builtInBrowserEnabled, vpsComputerEnabled } from "@/lib/feature-flags";
 import { t } from "@/lib/i18n";
@@ -9,6 +10,7 @@ import { instanceSupportsLocalComputer, localComputerSelectable } from "@/lib/lo
 import { effectivePlace, PLACES, placeLabelKey, placeOffered, type Place } from "@/lib/place";
 import { usePerspicaxOrg } from "@/lib/perspicax-org";
 import { useStore, type Bot, type Task } from "@/state/store";
+import { canWorkOnCloud } from "../../shared/cloud-computer";
 import { useDesktopCapabilities } from "./DesktopCapabilities";
 import { PlaceIcon } from "./PlaceIcon";
 
@@ -29,6 +31,7 @@ export function usePlaceAvailability(bot: Bot): PlaceAvailability {
   const instance = state.instances.find((candidate) => candidate.instanceId === bot.modelSelection.instanceId);
   const computerMcp = instance?.capabilities?.computerMcp === true;
   const boxAgent = instance?.driverKind === "boxAgent";
+  const backend = bot.cloudBackend === "vps" ? "vps" : "box";
   // Places the enrolled organisation disallows, or this server never
   // offers (an OMB Cloud home), are not reachable.
   const allowed = state.config?.managedPolicy?.computers ?? { thisComputer: true, localVm: true, box: true, vps: true };
@@ -39,8 +42,10 @@ export function usePlaceAvailability(bot: Bot): PlaceAvailability {
   // experimental VPS and Boat flags have nothing to do with either.
   if (organization) return { cloud: true, vm: allowed.localVm, local, browser };
   return {
-    cloud: (bot.cloudBackend === "vps" ? computerMcp && !boxAgent : computerMcp || boxAgent) && (bot.cloudBackend === "vps" ? allowed.vps : allowed.box)
-      && (state.config?.cloudHome === true || (bot.cloudBackend === "vps" ? vpsComputerEnabled(state.config) : boatComputerEnabled(state.config))),
+    // the server's cloud rule (shared/cloud-computer.ts), behind Sagax's
+    // experimental VPS and Boat flags (always offered on a Cloud home)
+    cloud: canWorkOnCloud(cloudEngineOf(instance), backend) && allowed[backend]
+      && (state.config?.cloudHome === true || (backend === "vps" ? vpsComputerEnabled(state.config) : boatComputerEnabled(state.config))),
     vm: Boolean(instance?.snapshot?.state === "available" && computerMcp && !boxAgent) && allowed.localVm && placeOffered("vm", state.config),
     local: local && placeOffered("local", state.config),
     browser,

@@ -83,6 +83,7 @@ describe("BotAvatar's two avatar outcomes", () => {
     });
     expect(markup).toContain("scale(2)");
     expect(markup).toContain("25% 75%");
+    expect(markup).toContain("border-radius:50%");
   });
 
   it("renders a flat cropped image for circle/rounded/square, with no mascot at all", () => {
@@ -93,6 +94,7 @@ describe("BotAvatar's two avatar outcomes", () => {
 
   it("shows the image as it is, with no mascot face painted on it", () => {
     const markup = renderBot({ avatarUrl: "/api/attachments/cat.webp", avatarCrop: "square" });
+    expect(markup).toContain("border-radius:0");
     expect(markup).toContain("<img");
     expect(markup).not.toContain("<image");
     expect(markup).not.toContain("radialGradient");

@@ -226,8 +226,7 @@ export class BrowserRuntime {
   private closeBrowser: CloseBrowser;
 
   constructor({ closeBrowser, ...options }: Partial<BrowserRuntime["options"]> & { closeBrowser?: CloseBrowser } = {}) {
-    const budget = Number(process.env.SAGAX_BROWSER_RESULT_BUDGET);
-    this.options = { requestTimeoutMs: 120_000, takeoverTimeoutMs: 15_000, idleMs: 60_000, maxPending: 16, resultBudget: Number.isFinite(budget) && budget > 0 ? budget : DEFAULT_BROWSER_RESULT_BUDGET, ...options };
+    this.options = { requestTimeoutMs: 120_000, takeoverTimeoutMs: 15_000, idleMs: 60_000, maxPending: 16, resultBudget: DEFAULT_BROWSER_RESULT_BUDGET, ...options };
     this.closeBrowser = closeBrowser ?? (async () => false);
   }
 

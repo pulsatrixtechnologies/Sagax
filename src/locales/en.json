@@ -2558,7 +2558,7 @@
   "computer.err.browserEngine": "This model cannot use the built-in browser",
   "computer.err.localEngine": "This model cannot control this computer. Choose Claude or an ACP model provider.",
   "computer.err.vmEngine": "This model cannot use the Local VM. Choose Claude or an ACP model provider.",
-  "computer.err.cloudEngine": "This model cannot use cloud computer tools. Choose Claude, an ACP model provider, or the Computer provider.",
+  "computer.err.cloudEngine": "This model can't use a computer. Choose another model, or set Works on to Auto.",
   "computer.err.vpsEngine": "This model cannot use a self-hosted VPS. Choose Claude or an ACP model provider, or switch the cloud backend to Boat.",
   "computer.err.vmNotReady": "The Local VM is not ready",
   "computer.err.vmOpenSettings": "{problem}. Open Settings → Local VM.",
@@ -5069,5 +5069,12 @@
   "organization.github.title": "GitHub OAuth App (Connect GitHub)",
   "organization.github.clientId": "Client ID",
   "organization.github.fromEnvironment": "Set by the server (SAGAX_GITHUB_CLIENT_ID). A value here replaces it.",
-  "organization.github.hint": "Create an OAuth App at github.com/settings/developers (or your organization's), turn on Enable Device Flow, and paste its client ID. Without it, people paste a personal access token."
+  "organization.github.hint": "Create an OAuth App at github.com/settings/developers (or your organization's), turn on Enable Device Flow, and paste its client ID. Without it, people paste a personal access token.",
+  "approval.held.outbound": "This sends something on your behalf, so it always asks first.",
+  "remote.devices.allowBrowser": "Allow browser control",
+  "remote.devices.allowBrowserDetail": "View and control signed-in browser sessions from this device.",
+  "remote.devices.browserAria": "Browser control access for {name}",
+  "backup.restartDesktop": "Your backup is ready. Restart Sagax to finish restoring it. Closing this window will not restart the server.",
+  "backup.restartAction": "Restart and restore",
+  "backup.restartFailed": "Could not restart Sagax. Fully quit the app and reopen it to finish restoring."
 }

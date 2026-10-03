@@ -1,34 +1,12 @@
-// Agent-to-agent comms MCP proxy — spawned as an MCP server inside a bot's
-// agent process (via the "agents" integration). Exposes peer, routine, and
-// skill tools routed back through the harness so the harness stays the
-// single owner of turns, permissions, and recursion limits. The coordination
-// tools are:
-//
-//   list_bots()                          → the other bots in this section + their status
-//   list_rooms()                         → the shared rooms this bot may post into
-//   post_to_room(group_id, message)      → put ONE message in a room; nobody's
-//                                          turn starts, so nobody replies
-//   ask_bot(bot_id, msg)                 → send msg to that bot, wait, return its reply
-//   delegate_bot(bot_id, msg, reason?)   → hand the task to a peer ASYNC: returns
-//                                          immediately, the peer runs after your
-//                                          current turn finishes, the result is
-//                                          delivered to the source conversation
-//   start_thread(title, msg, bot_id?)    → open a real thread — on yourself for
-//                                          separate work, or on a teammate as a
-//                                          handoff that runs on its own
-//   create_bot(name, role, instructions) → Primary Bots can add a specialist to
-//                                          their own section
-//   create_room / manage_room            → Primary Bots manage own-section rooms,
-//                                          never move bots or sections
-//   request_credential(id, reason?)       → show a secure, allowlisted key card
-//   list_routines()                       → inspect this bot's scheduled work
-//   propose_routine(...)                  → apply or request confirmation for a new routine
-//   propose_routine_action(...)           → apply or request confirmation for a routine change
-//   propose_profile(...)                  → apply or request confirmation for a profile change
+// The "agents" MCP server — spawned inside a bot's agent process (via the
+// "agents" integration). Exposes the teammate, room, routine, memory and
+// skill tools, each routed back through the harness so the harness stays the
+// single owner of turns, permissions, and recursion limits.
 //
 // Speaks raw JSON-RPC 2.0 over stdio (no MCP SDK — house style, matches
-// computer-proxy / permission-proxy). All state comes from env, injected by
-// the harness when it builds the integration:
+// permission-proxy). All state comes from env, injected by the harness when
+// it builds the integration (catalogProfileFromEnv and
+// toolCallContextFromEnv read it). The main ones:
 //   SAGAX_HARNESS_URL  base URL of the harness (http://127.0.0.1:8799)
 //   SAGAX_BOT_ID       the calling bot's id (excluded from list_bots; sender)
 //   SAGAX_COMMS_TOKEN  shared secret for the localhost-only internal endpoints
@@ -66,7 +44,7 @@ async function handle(msg: Json) {
       ok(id, {
         protocolVersion: (params.protocolVersion as string) ?? "2024-11-05",
         capabilities: { tools: {} },
-        serverInfo: { name: "opengrokbot-agents", version: "0.1.0" },
+        serverInfo: { name: "openmausbot-agents", version: "0.1.0" },
       });
       return;
     case "notifications/initialized":

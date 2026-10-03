@@ -156,3 +156,32 @@ describe("sidebar header", () => {
     expect(t("sidebar.search")).toBe("Rechercher");
   });
 });
+
+describe("sidebar glass head and foot", () => {
+  it.each(["comfortable", "compact", "icons"] as const)(
+    "puts the top row and search in the glass head, the places in the glass foot, and the list between at %s density",
+    (density) => {
+      fixture.density = density;
+      const html = render();
+      const at = (marker: string) => {
+        const index = html.indexOf(marker);
+        expect(index, marker).toBeGreaterThan(-1);
+        return index;
+      };
+      const head = at('data-glass-bar="top"');
+      const topRow = at("data-sidebar-top-row");
+      const search = at('aria-label="Search bots and messages"');
+      const list = at('class="glass-scroller ');
+      const foot = at('data-glass-bar="bottom"');
+      const places = at('data-sidebar-nav="routines"');
+      expect(head).toBeLessThan(topRow);
+      expect(topRow).toBeLessThan(search);
+      expect(search).toBeLessThan(list);
+      expect(list).toBeLessThan(foot);
+      expect(foot).toBeLessThan(places);
+      // One frame holds both bars, so the list scrolls under each of them.
+      expect(html.match(/data-glass-frame=""/g)).toHaveLength(1);
+      expect(at("data-glass-frame")).toBeLessThan(head);
+    },
+  );
+});

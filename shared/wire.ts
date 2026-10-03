@@ -86,6 +86,9 @@ export interface TaskOpenedBy {
    * durable conversation between two bots; "work" closes itself once its
    * result has been reported. */
   kind?: "pair" | "work";
+  /** The opener's own conversation this "work" thread was opened from.
+   * Everything that conversation later sends this bot continues here. */
+  threadId?: string;
   at: number;
 }
 
@@ -350,6 +353,10 @@ export interface WireBot {
    * false = none); an explicit `{}` grants no tools. Grants never travel in
    * shareable exports and imported bots always land with none. */
   connectorTools?: Record<string, ConnectorToolGrant>;
+  connectorScopes?: { apps: Record<string, "read" | "write"> };
+  outbound?: { policy: "ask" | "allow"; dailyCap: number };
+  /** Ordered backups used only by opt-in, pre-prompt startup recovery. */
+  fallback?: Array<{ instanceId: string; model: string }>;
   /** Whether this bot gets the app's built-in browser. */
   browser?: boolean;
   /** Memory upkeep: the harness captures facts from finished chats into
@@ -606,6 +613,8 @@ export interface WireMessage {
 }
 
 export interface OptionCardData {
+  outboundRequest?: { tool: string; app: string | null };
+  teamMemoryRequest?: { section: string; entryId: string; kind: string };
   title: string;
   subtitle: string;
   options: string[];

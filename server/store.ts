@@ -1708,7 +1708,7 @@ export class Store {
     const full: Message = { id: newId(), at: Date.now(), ...redactBotAuthored(message), parentId: anchorId };
     const children = t.messages.filter((m) => m.parentId === anchorId);
     t.messages.push(full);
-    mdb.appendMessage(threadId, full);
+    mdb.insertMessage(threadId, full); // the leaf stays where it was, in SQLite too
     if (full.kind === "screen") {
       for (const pruned of this.pruneScreenFrames(t)) {
         mdb.updateMessage(threadId, pruned);
@@ -2656,6 +2656,15 @@ export class Store {
 
   taskByThread(botId: string, threadId: string): TaskRecord | undefined {
     return this.bot(botId)?.tasks?.find((t) => t.threadId === threadId);
+  }
+
+  /** The thread `fromBotId` opened on this bot from its conversation
+   * `fromThreadId` with coordinate_bots: one per conversation and teammate,
+   * so whatever that conversation sends later continues it. A thread the
+   * person archived is left alone. */
+  workThread(botId: string, fromBotId: string, fromThreadId: string): TaskRecord | undefined {
+    return this.tasks(botId).find((t) => t.openedBy?.kind === "work" && t.openedBy.botId === fromBotId &&
+      t.openedBy.threadId === fromThreadId && t.archivedAt === undefined);
   }
 
   /** A turn gets an independent snapshot without changing the selected task

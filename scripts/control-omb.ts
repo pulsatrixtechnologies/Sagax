@@ -400,6 +400,12 @@ export function verificationServerEnvironment(parentEnv: NodeJS.ProcessEnv, data
   if (parentEnv.SAGAX_TEST_NETWORK_AUDIT) childEnv.SAGAX_TEST_NETWORK_AUDIT = parentEnv.SAGAX_TEST_NETWORK_AUDIT;
   // upstream Live calls are off in Sagax unless a check opts in
   if (parentEnv.SAGAX_LIVE_CALLS) childEnv.SAGAX_LIVE_CALLS = parentEnv.SAGAX_LIVE_CALLS;
+  // Desktop mode: the server runs as the desktop app runs it, and the owner
+  // capability the app would hand it is this one (see desktop-parent.mjs).
+  if (parentEnv.SAGAX_TEST_DESKTOP_OWNER_TOKEN) {
+    childEnv.SAGAX_TEST_DESKTOP_OWNER_TOKEN = parentEnv.SAGAX_TEST_DESKTOP_OWNER_TOKEN;
+    childEnv.SAGAX_DESKTOP_PARENT = "1";
+  }
   return childEnv;
 }
 
@@ -483,6 +489,9 @@ export async function launchVerificationServer(
   }
   if (childEnv.SAGAX_TEST_NETWORK_AUDIT) {
     serverArgs.push("--import", pathToFileURL(join(ROOT, "server", "testing", "network-audit.mjs")).href);
+  }
+  if (childEnv.SAGAX_TEST_DESKTOP_OWNER_TOKEN) {
+    serverArgs.push("--import", pathToFileURL(join(ROOT, "server", "testing", "desktop-parent.mjs")).href);
   }
   serverArgs.push(join(ROOT, "server", "index.ts"));
   const child = spawn(process.execPath, serverArgs, {
