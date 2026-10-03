@@ -1,0 +1,265 @@
+// What this pairing lets the app show: one place for every feature gate.
+//
+// The reference for a paired phone is the desktop remote client (spec
+// 2026-10-02-ipad-desktop-parity-design.md, "Rule for the iPad"): paired
+// through a desktop's sidecar, the app shows what the remote-client renderer
+// shows; paired with a server, what the served renderer shows for the
+// session's scope (client: `CLIENT_ALLOW` in server/request-auth.ts; admin:
+// everything). JC's decisions of 2026-10-03 (matrix, "JC's answers") add to
+// that: D1 the advanced bot panel on a sidecar for the owner, D2 message pin
+// everywhere, D3 room memory on the sidecar, D4 the phone's own extras (pin
+// bot, delete bot, framing) for the owner or an admin.
+//
+// A feature the gate refuses is hidden, never drawn disabled: a button the
+// computer can only answer 403 to is worse than no button.
+import Foundation
+
+/// How the phone is paired, from the connection and the server session.
+public enum PairingScope: String, Hashable, Sendable {
+    /// Through the desktop's companion sidecar (`companion/src/routes.ts`
+    /// `ALLOWED`): the remote-client surface, as the desktop's owner.
+    case sidecar
+    /// A server session without the admin scope (`CLIENT_ALLOW`).
+    case serverClient
+    /// A server session with the admin scope.
+    case serverAdmin
+}
+
+/// Sidecar routes that JC approved but that a given desktop may not serve
+/// yet (package S1 adds them to `ALLOWED`). Until the app knows the paired
+/// sidecar has one, the feature behind it stays hidden on sidecar pairings.
+public struct SidecarRoutes: OptionSet, Hashable, Sendable {
+    public let rawValue: Int
+    public init(rawValue: Int) { self.rawValue = rawValue }
+
+    /// POST /api/bots/:id/parallel/:t/stop (TH8).
+    public static let parallelStop = SidecarRoutes(rawValue: 1 << 0)
+    /// GET/PUT /api/groups/:id/memory (RM8, D3).
+    public static let roomMemory = SidecarRoutes(rawValue: 1 << 1)
+    /// The advanced bot panel's reads and owner edits (D1).
+    public static let advancedPanel = SidecarRoutes(rawValue: 1 << 2)
+    /// A sidecar-safe voice engine switch, replacing PUT /api/config (BA12).
+    public static let voiceEngine = SidecarRoutes(rawValue: 1 << 3)
+    /// GET /api/bots/:id/harness-commands, the engine's "/" list (CO9).
+    public static let harnessCommands = SidecarRoutes(rawValue: 1 << 4)
+    /// GET /api/bots/:id/activity[/item], what a bot is doing (BP10).
+    public static let botActivity = SidecarRoutes(rawValue: 1 << 5)
+    /// POST /api/bots/:id/primary, the owner's Primary Bot (SB28).
+    public static let primaryBot = SidecarRoutes(rawValue: 1 << 6)
+    /// PATCH /api/bots/:id {voiceNotes} from the owner's phone (BA11).
+    public static let voiceNotes = SidecarRoutes(rawValue: 1 << 7)
+
+    /// What a sidecar of this release serves: all of the above (S1, D1, D3,
+    /// and the voice engine route ship with this version of the desktop). An
+    /// older desktop answers 403 and the view shows that error.
+    public static let current: SidecarRoutes = [
+        .parallelStop, .roomMemory, .advancedPanel, .voiceEngine, .harnessCommands, .botActivity, .primaryBot, .voiceNotes,
+    ]
+}
+
+/// One gated surface. Named for what the person sees, with the matrix row
+/// (docs/superpowers/specs/2026-10-03-ios-feature-parity-matrix.md) beside it.
+public enum SurfaceFeature: String, CaseIterable, Hashable, Sendable {
+    // Chat and messages
+    /// Reply with a quote (CO2, MS8).
+    case replyQuote
+    /// Regenerate the last reply (MS5).
+    case regenerate
+    /// Speak a reply (MS4).
+    case speakReply
+    /// Emoji reactions (MS10).
+    case reactions
+    /// Pin a message, the pinned banner (MS9, RM17 pin; D2).
+    case messagePin
+    /// Inspector: run log, events, raw (MS24). Admin only.
+    case inspector
+
+    // Composer (WP3)
+    /// The engine's own slash commands in the "/" menu (CO9). Sidecars wait
+    /// on S1; Sagax's own commands (`/learn`, `/setup`, `/goal`) always show.
+    case engineCommands
+    /// The busy-send chooser: after, steer, parallel (CO15).
+    case busySendChoice
+    /// Steer a held send into the running turn (CO14, RM5).
+    case queueSteer
+    /// Compact the conversation (CO24).
+    case compactConversation
+    /// Stop a room's running turn (RM4).
+    case roomInterrupt
+    /// Paste an image or a long text as a chip (CO5).
+    case pasteAttachment
+    /// "@" and "#" suggestions above the field (CO11, CO12, RM9).
+    case composerSuggestions
+
+    // Cards
+    /// Connector card: status, resume, dismiss (CA10).
+    case connectorCard
+    /// Connector card: Connect (authorize). Client sessions wait on S2.
+    case connectorCardAuthorize
+    /// Parallel task card: Stop (TH8). Sidecars wait on S1.
+    case parallelTaskStop
+
+    // Bot panel
+    /// "What this bot does" (`GET /api/bots/:id/overview`, BA1): admin only
+    /// for a client session.
+    case botOverview
+    /// The workspace voice engine (BA12). `PUT /api/config` is refused by
+    /// every sidecar and is admin only on a server.
+    case voiceEngineSettings
+    /// Skills, memory, history, prompt preview, presets (D1, WP16).
+    case advancedBotPanel
+    /// The phone's extras beyond the remote client: pin bot, delete bot,
+    /// picture framing (D4).
+    case botOwnerExtras
+    /// New bot (SB31): `POST /api/bots` passes both gates.
+    case createBot
+    /// Connected apps (PL1): the sidecar allows connectors; a client
+    /// session does not.
+    case connectedApps
+    /// What the bot is doing: Activity card, history, detail, stop and
+    /// steer (BP10). Sidecars wait on S1.
+    case botActivity
+    /// Make or replace the Primary Bot (SB28): the handler checks the owner.
+    case primaryBot
+    /// The open chat's files with search, kinds, sort, copy path and show
+    /// in chat (BF1, BF3, BF4): both gates pass `GET /api/threads/:id/files`.
+    case threadFiles
+    /// Delete a routine from the bot profile (BP12).
+    case routineDelete
+    /// Per-bot usage (BP14): read from the bot's own threads.
+    case botUsage
+    /// Voice notes allowed (BA11): a member may not set it; the owner's
+    /// sidecar may (S1).
+    case voiceNotesSetting
+    /// Skin rarities, locks, style 2D / 3D and moves of the character
+    /// editor (BP6-BP8): the look fields pass every gate.
+    case characterExtras
+
+    // Threads
+    /// Thread folders: new, rename, icon, delete, reorder (SB19, SB20).
+    /// The sidecar serves the projects routes; a server keeps them for the
+    /// admin scope. Filing a thread in an existing folder (TH5) is a thread
+    /// edit every pairing may make.
+    case threadFolders
+
+    // Rooms
+    /// Room memory tab (RM8, D3). Sidecars wait on S1.
+    case roomMemory
+    /// Rename, move, edit instructions, members, who answers (RM14-RM19):
+    /// hidden by the remote client, a server admin's or an organization's.
+    case roomManagement
+    /// Delete a room (RM16).
+    case roomDelete
+
+    // Automations and organization
+    /// Cancel a queued, running or waiting run (AU8): both gates pass
+    /// `POST /api/routine-runs/:id/cancel`.
+    case routineRunCancel
+    /// Mark a run seen, mark all read, the unseen-failure badge (AU9).
+    case routineRunsSeen
+    /// The editor's advanced fields: window, end, overlap, results thread,
+    /// cron, team goal (AU12-AU14); `PATCH /api/routines/:id` passes both.
+    case routineAdvancedEditor
+    /// Routine attachments (AU14): uploaded through `POST /api/files`.
+    case routineAttachments
+    /// Scheduled calls (AU16). Admin only.
+    case scheduledCalls
+    /// Routines act in my name (AU19). Organization servers only.
+    case orgRoutineDelegation
+    /// Webhooks (AU17): host only, never on the phone.
+    case webhooks
+}
+
+public struct SurfaceGate: Hashable, Sendable {
+    public var scope: PairingScope
+    /// An organization server (people signed in with Pulsatrix).
+    public var organization: Bool
+    /// Approved sidecar routes the paired desktop is known to serve.
+    public var sidecarRoutes: SidecarRoutes
+
+    public init(scope: PairingScope, organization: Bool = false, sidecarRoutes: SidecarRoutes = .current) {
+        self.scope = scope
+        self.organization = organization
+        self.sidecarRoutes = sidecarRoutes
+    }
+
+    /// The gate for a live pairing. `account` (`GET /api/auth/session`)
+    /// marks an organization server by naming a principal.
+    public init(connection: Connection, account: AuthSession? = nil, sidecarRoutes: SidecarRoutes = .current) {
+        let scope: PairingScope
+        if !connection.pairedWithServer {
+            scope = .sidecar
+        } else if connection.serverScopes?.contains("admin") == true {
+            scope = .serverAdmin
+        } else {
+            scope = .serverClient
+        }
+        self.init(
+            scope: scope,
+            organization: connection.pairedWithServer && account?.principalId?.isEmpty == false,
+            sidecarRoutes: sidecarRoutes
+        )
+    }
+
+    /// Nothing paired: show nothing that needs a computer's consent.
+    public static let unpaired = SurfaceGate(scope: .serverClient)
+
+    public func allows(_ feature: SurfaceFeature) -> Bool {
+        switch feature {
+        case .replyQuote, .regenerate, .speakReply, .reactions, .messagePin, .connectorCard, .createBot:
+            return true
+        case .threadFiles, .routineDelete, .botUsage, .characterExtras:
+            return true
+        case .routineRunCancel, .routineRunsSeen, .routineAdvancedEditor, .routineAttachments:
+            return true
+        case .botActivity:
+            return scope != .sidecar || sidecarRoutes.contains(.botActivity)
+        case .primaryBot:
+            return scope != .sidecar || sidecarRoutes.contains(.primaryBot)
+        case .voiceNotesSetting:
+            switch scope {
+            case .serverAdmin: return true
+            case .serverClient: return false
+            case .sidecar: return sidecarRoutes.contains(.voiceNotes)
+            }
+        // Every composer route passes both gates (companion `ALLOWED`, server
+        // `CLIENT_ALLOW`); the remote client shows each of them.
+        case .busySendChoice, .queueSteer, .compactConversation, .roomInterrupt, .pasteAttachment, .composerSuggestions:
+            return true
+        case .engineCommands:
+            return scope != .sidecar || sidecarRoutes.contains(.harnessCommands)
+        case .inspector, .scheduledCalls:
+            return scope == .serverAdmin
+        case .connectorCardAuthorize, .botOverview, .connectedApps, .botOwnerExtras, .threadFolders:
+            return scope != .serverClient
+        case .parallelTaskStop:
+            return scope != .sidecar || sidecarRoutes.contains(.parallelStop)
+        case .voiceEngineSettings:
+            switch scope {
+            case .serverAdmin: return true
+            case .serverClient: return false
+            case .sidecar: return sidecarRoutes.contains(.voiceEngine)
+            }
+        case .advancedBotPanel:
+            switch scope {
+            case .serverAdmin: return true
+            case .serverClient: return false
+            case .sidecar: return sidecarRoutes.contains(.advancedPanel)
+            }
+        case .roomMemory:
+            return scope != .sidecar || sidecarRoutes.contains(.roomMemory)
+        case .roomManagement, .roomDelete:
+            return scope == .serverAdmin || (scope == .serverClient && organization)
+        case .orgRoutineDelegation:
+            return organization
+        case .webhooks:
+            return false
+        }
+    }
+}
+
+extension Connection {
+    /// This pairing's gate, without the organization flag (which needs the
+    /// signed-in session).
+    public var surfaceGate: SurfaceGate { SurfaceGate(connection: self) }
+}

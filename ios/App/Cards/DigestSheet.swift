@@ -4,6 +4,7 @@ import SwiftUI
 /// What a turn's digest opens onto: the tools, files and memory it
 /// touched, read down a list rather than across one run-on line.
 struct DigestSheet: View {
+    @Environment(\.themePalette) var themePalette
     let summary: DigestSummary
     @Environment(\.dismiss) private var dismiss
 

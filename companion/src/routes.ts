@@ -199,6 +199,12 @@ const ALLOWED: ReadonlyArray<{ method: string; path: RegExp }> = [
   // iOS visual parity (docs/ios-companion.md). Who is signed in (on a
   // personal computer: its owner's name, never an address).
   { method: "GET", path: /^\/api\/auth\/session$/ },
+  // The person's photo, when that session names one (`avatarUrl`, the
+  // versioned `/api/people/<id>/avatar?v=` of a server that knows the
+  // person's Perspicax avatar). The phone asks for nothing else under
+  // /api/people; a computer without one answers 404 and the phone keeps the
+  // initial.
+  { method: "GET", path: /^\/api\/people\/[\w-]{1,80}\/avatar$/ },
   // The owner's bot edits from the profile: the harness holds a companion
   // request to the member fields (look, framing, name, instructions,
   // notifications, model), never where the bot runs or what it may do.
@@ -238,9 +244,38 @@ const ALLOWED: ReadonlyArray<{ method: string; path: RegExp }> = [
   { method: "DELETE", path: /^\/api\/bots\/[\w-]+\/command-allowlist\/[\w-]+$/ },
   { method: "GET", path: /^\/api\/me\/preferences$/ },
   { method: "PUT", path: /^\/api\/me\/preferences$/ },
+  // a personal computer's look (skin, font), for Settings > Appearance > Same as my computer
+  { method: "GET", path: /^\/api\/me\/appearance$/ },
+  { method: "PUT", path: /^\/api\/me\/appearance$/ },
   { method: "GET", path: /^\/api\/me\/server-environment$/ },
   { method: "POST", path: /^\/api\/me\/server-environment\/(?:reset|update)$/ },
   { method: "PATCH", path: /^\/api\/groups\/[\w-]+$/ },
+
+  // Desktop remote-client parity (docs/ios-companion.md, "Same surface as
+  // the desktop remote client"). The Electron app paired to this host
+  // through this sidecar shows each of these and, until they were listed,
+  // got "no route" for them; the iPad follows the same renderer. None of
+  // them reaches settings, execution policy, credentials or the host.
+  //
+  // The deployment's public brand (name, icon, colours), also served to
+  // anyone without a session by the harness itself.
+  { method: "GET", path: /^\/api\/brand$/ },
+  // Steer: fold the queued words into the running turn instead of waiting.
+  // The same guards as cancelling that queued message (the thread must be
+  // the device's, the queue entry must exist); it never starts a turn.
+  { method: "POST", path: /^\/api\/bots\/[\w-]+\/queue\/[\w-]+\/steer$/ },
+  { method: "POST", path: /^\/api\/groups\/[\w-]+\/queue\/[\w-]+\/steer$/ },
+  // Regenerate a thread's title with the bot's own engine (the harness
+  // refuses it when generated titles are off or the engine cannot).
+  { method: "POST", path: /^\/api\/bots\/[\w-]+\/tasks\/[\w-]+\/title$/ },
+  // Thread folders: a name and an emoji that group one bot's threads. They
+  // own no settings, transcripts or working directories (the harness
+  // refuses any other field).
+  { method: "POST", path: /^\/api\/bots\/[\w-]+\/projects$/ },
+  { method: "PATCH", path: /^\/api\/bots\/[\w-]+\/projects\/[\w-]+$/ },
+  { method: "DELETE", path: /^\/api\/bots\/[\w-]+\/projects\/[\w-]+$/ },
+  // Automations > Mark all as read.
+  { method: "POST", path: /^\/api\/routine-runs\/seen-all$/ },
 
   // A bot's browser, watched and driven from the phone. Like the cloud
   // desktop above, the proxy applies a second per-device capability check
@@ -253,6 +288,63 @@ const ALLOWED: ReadonlyArray<{ method: string; path: RegExp }> = [
   // Its live desktop while a person holds the computer, relayed like the
   // VPS viewer and behind the same per-device capability.
   LOCAL_VM_JOIN_ROUTE,
+
+  // iOS feature parity, package S1 (docs/superpowers/specs/
+  // 2026-10-03-ios-feature-parity-matrix.md). Surfaces the remote-client
+  // renderer draws and that got "no route" here: the engine's own slash
+  // commands (names and hints only), stopping one parallel task (the
+  // harness checks the thread), what a bot is doing, its owner's Primary
+  // Bot star, the owner's own claude.ai connectors (names and statuses), and
+  // the bot computer's status (read-only: no provisioning, no power).
+  { method: "GET", path: /^\/api\/bots\/[\w-]+\/harness-commands$/ },
+  { method: "POST", path: /^\/api\/bots\/[\w-]+\/parallel\/[\w-]+\/stop$/ },
+  { method: "GET", path: /^\/api\/bots\/[\w-]+\/activity(?:\/item)?$/ },
+  { method: "POST", path: /^\/api\/bots\/[\w-]+\/primary$/ },
+  { method: "GET", path: /^\/api\/me\/harness-connectors$/ },
+  { method: "GET", path: /^\/api\/bots\/[\w-]+\/computer$/ },
+  // A room's shared memory (decision D3): its people read it, its owner
+  // edits it or switches it off (server/routes/group-memory.ts).
+  { method: "GET", path: /^\/api\/groups\/[\w-]+\/memory$/ },
+  { method: "PUT", path: /^\/api\/groups\/[\w-]+\/memory$/ },
+  // The voice engine, alone: one field of the host's voice settings, never
+  // a key or an address (server: PUT /api/tts/provider). PUT /api/config
+  // stays refused.
+  { method: "PUT", path: /^\/api\/tts\/provider$/ },
+
+  // The advanced bot panel for the computer's owner (decision D1): the
+  // same reads and edits the desktop's own renderer makes, nothing else.
+  // Still refused: approval mode, the working folder, the computer, MCP
+  // servers and access (the harness holds a companion bot PATCH to the
+  // member fields plus the memory switches), and opening the memory folder
+  // on the host's screen.
+  //   prompt preview, history of changes and restoring instructions
+  { method: "GET", path: /^\/api\/bots\/[\w-]+\/system-prompt$/ },
+  { method: "GET", path: /^\/api\/bots\/[\w-]+\/history$/ },
+  { method: "POST", path: /^\/api\/bots\/[\w-]+\/history\/rollback$/ },
+  //   skills: list, read, import (lands disabled), enable or disable, remove
+  { method: "GET", path: /^\/api\/bots\/[\w-]+\/skills$/ },
+  { method: "POST", path: /^\/api\/bots\/[\w-]+\/skills$/ },
+  { method: "GET", path: /^\/api\/bots\/[\w-]+\/skills\/[a-z0-9-]+$/ },
+  { method: "PATCH", path: /^\/api\/bots\/[\w-]+\/skills\/[a-z0-9-]+$/ },
+  { method: "DELETE", path: /^\/api\/bots\/[\w-]+\/skills\/[a-z0-9-]+$/ },
+  //   memory: overview, one file (read, save with its hash, delete), the
+  //   journal and its revert, upkeep status and a tidy pass
+  { method: "GET", path: /^\/api\/bots\/[\w-]+\/memory$/ },
+  { method: "GET", path: /^\/api\/bots\/[\w-]+\/memory\/file$/ },
+  { method: "PUT", path: /^\/api\/bots\/[\w-]+\/memory\/file$/ },
+  { method: "DELETE", path: /^\/api\/bots\/[\w-]+\/memory\/file$/ },
+  { method: "GET", path: /^\/api\/bots\/[\w-]+\/memory\/journal$/ },
+  { method: "POST", path: /^\/api\/bots\/[\w-]+\/memory\/journal\/[\w-]+\/revert$/ },
+  { method: "GET", path: /^\/api\/bots\/[\w-]+\/memory\/upkeep$/ },
+  { method: "POST", path: /^\/api\/bots\/[\w-]+\/memory\/tidy$/ },
+  //   New bot's starting roles (the list; creating one is POST /api/bots)
+  { method: "GET", path: /^\/api\/bot-presets$/ },
+  //   the owner's achievements (their own record, and colleagues' shown points)
+  { method: "GET", path: /^\/api\/me\/achievements$/ },
+  { method: "POST", path: /^\/api\/me\/achievements\/events$/ },
+  { method: "PUT", path: /^\/api\/me\/achievements\/settings$/ },
+  { method: "GET", path: /^\/api\/achievements\/public$/ },
+
   // rooms — making one, and talking in one
   { method: "POST", path: /^\/api\/groups$/ },
   { method: "POST", path: /^\/api\/groups\/[\w-]+\/messages$/ },
@@ -289,6 +381,15 @@ const ALLOWED: ReadonlyArray<{ method: string; path: RegExp }> = [
   { method: "GET", path: /^\/api\/tts\/voices$/ },
   { method: "POST", path: /^\/api\/tts\/prepare$/ },
   { method: "POST", path: /^\/api\/tts\/speak$/ },
+  // A live call (the phone's voice mode, ios/App/Call/): whether voice mode
+  // serves this bot, xAI's voice labels, a sentence of the bot's answer
+  // streamed as PCM, and a whole turn transcribed when the phone cannot
+  // recognize speech itself. The xAI key never leaves the harness. The
+  // listen socket stays desktop-only: it is same-origin by design.
+  { method: "GET", path: /^\/api\/bots\/[\w-]+\/voice\/(?:status|voices)$/ },
+  // The call's start, keep-alive and end (POST /voice/call): every send to
+  // the thread while it lasts is a call turn.
+  { method: "POST", path: /^\/api\/bots\/[\w-]+\/voice\/(?:prepare|speak|transcribe|stream|call)$/ },
 
   // Live calls: the phone holds its own WebRTC audio to OpenAI; the Mac
   // creates the session (the key never leaves it) and runs the call.

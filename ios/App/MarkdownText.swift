@@ -14,6 +14,7 @@ import UIKit
 import CompanionCore
 
 private struct OptionalIdentifier: ViewModifier {
+    @Environment(\.themePalette) var themePalette
     let identifier: String?
 
     func body(content: Content) -> some View {
@@ -26,6 +27,7 @@ private struct OptionalIdentifier: ViewModifier {
 }
 
 struct MarkdownText: View {
+    @Environment(\.themePalette) var themePalette
     let source: String
     /// Draws a caret after the last block. The streaming bubble sets this so
     /// the live reply and the settled one are the same view with the same
@@ -36,16 +38,24 @@ struct MarkdownText: View {
     /// bubbles pass `message-<id>-scroll`. Streaming and file preview pass nil.
     var scrollIdentifier: String? = nil
     var openLink: ((URL) -> OpenURLAction.Result)?
+    /// @mentions of these peers are tinted (MS21), as the desktop's
+    /// `remarkMentions` does; links and code spans are left alone.
+    var mentions: [MentionPeer] = []
+    var mentionEveryone = false
 
     init(
         source: String,
         caret: Bool = false,
         scrollIdentifier: String? = nil,
+        mentions: [MentionPeer] = [],
+        mentionEveryone: Bool = false,
         openLink: ((URL) -> OpenURLAction.Result)? = nil
     ) {
         self.source = source
         self.caret = caret
         self.scrollIdentifier = scrollIdentifier
+        self.mentions = mentions
+        self.mentionEveryone = mentionEveryone
         self.openLink = openLink
     }
 
@@ -99,12 +109,12 @@ struct MarkdownText: View {
         case let .quote(text):
             HStack(alignment: .top, spacing: 8) {
                 RoundedRectangle(cornerRadius: 1.5)
-                    .fill(Color.secondary.opacity(0.4))
+                    .fill(Theme.parity(Color.secondary.opacity(0.4), Theme.hairline))
                     .frame(width: 3)
                 inline(text, tail: tail)
                     .font(Theme.Font.body)
                     .lineSpacing(Theme.bodyLineSpacing)
-                    .foregroundStyle(Color.secondary)
+                    .foregroundStyle(Theme.parity(Color.secondary, Theme.textSecondary))
             }
             .fixedSize(horizontal: false, vertical: true)
 
@@ -113,7 +123,7 @@ struct MarkdownText: View {
                 if let language, !language.isEmpty {
                     Text(language)
                         .font(.system(size: 11, weight: .medium, design: .monospaced))
-                        .foregroundStyle(Color.secondary)
+                        .foregroundStyle(Theme.parity(Color.secondary, Theme.textSecondary))
                 }
                 // Horizontal scroll rather than wrapping: wrapped code is
                 // harder to read than code you have to push sideways, and
@@ -129,7 +139,7 @@ struct MarkdownText: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(Color.secondary.opacity(0.14))
+                    .fill(Theme.parity(Color.secondary.opacity(0.14), Theme.inset))
             )
 
         case .rule:
@@ -145,13 +155,13 @@ struct MarkdownText: View {
             if let number {
                 Text("\(number).")
                     .font(Theme.Font.body)
-                    .foregroundStyle(Color.secondary)
+                    .foregroundStyle(Theme.parity(Color.secondary, Theme.textSecondary))
                     .frame(minWidth: 16, alignment: .trailing)
             }
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Image(systemName: checked ? "checkmark.square.fill" : "square")
                     .font(Theme.Font.body)
-                    .foregroundStyle(Color.secondary)
+                    .foregroundStyle(Theme.parity(Color.secondary, Theme.textSecondary))
                 inline(text, tail: tail).font(Theme.Font.body).lineSpacing(Theme.bodyLineSpacing)
             }
             .accessibilityElement(children: .ignore)
@@ -330,6 +340,7 @@ struct MarkdownText: View {
             for run in attributed.runs where run.inlinePresentationIntent?.contains(.code) == true {
                 attributed[run.range].font = Theme.Font.code
             }
+            MentionTint.apply(to: &attributed, peers: mentions, everyone: mentionEveryone)
             rendered = Text(attributed)
         } else {
             rendered = Text(text)
@@ -341,6 +352,6 @@ struct MarkdownText: View {
     /// rather than touching it. Empty when not streaming — an empty `Text`
     /// concatenated in costs nothing and keeps the callers branch-free.
     private func caretText(_ tail: Bool) -> Text {
-        tail ? Text("\u{2007}▍").foregroundColor(Color.secondary) : Text("")
+        tail ? Text("\u{2007}▍").foregroundColor(Theme.parity(Color.secondary, Theme.textSecondary)) : Text("")
     }
 }

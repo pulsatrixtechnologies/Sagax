@@ -10,6 +10,7 @@ import UIKit
 
 /// Back circle and an inline 14 pt medium title 16.7 pt after it.
 struct RoutineTitleBar<Trailing: View>: View {
+    @Environment(\.themePalette) var themePalette
     let title: String
     let back: () -> Void
     @ViewBuilder var trailing: () -> Trailing
@@ -34,6 +35,7 @@ struct RoutineTitleBar<Trailing: View>: View {
 
 /// A pushed screen on the routine grid: the title bar over scrolling cards.
 struct RoutineScreen<Content: View, Trailing: View>: View {
+    @Environment(\.themePalette) var themePalette
     let title: String
     @ViewBuilder var trailing: () -> Trailing
     @ViewBuilder var content: () -> Content
@@ -55,13 +57,13 @@ struct RoutineScreen<Content: View, Trailing: View>: View {
         .navigationBarBackButtonHidden(true)
         .background(SwipeBackBridge())
         .persistentSystemOverlays(.hidden)
-        .preferredColorScheme(.dark)
     }
 }
 
 // MARK: - Routine detail (05)
 
 struct RoutineDetailView: View {
+    @Environment(\.themePalette) var themePalette
     @State var routine: Routine
     /// The parity harness opens the instruction straight away (06).
     var showsInstruction = false
@@ -72,6 +74,9 @@ struct RoutineDetailView: View {
     @State private var showingInstruction = false
     @State private var editing = false
     @State private var saving = false
+    @State private var confirmingDelete = false
+    @State private var openRun: RoutineRun?
+    @Environment(\.dismiss) private var dismissScreen
 
     private let margin = Theme.Profile.routineMargin
 
@@ -79,6 +84,23 @@ struct RoutineDetailView: View {
         RoutineScreen(title: routine.name) {
             GlassCircleButton(systemImage: "pencil", accessibilityLabel: "Edit routine", glyphSize: 17) { editing = true }
                 .chatGlassRim(Circle())
+                // BP12: a long press offers Delete, as the desktop's routine
+                // panel does beside Pause and Edit (RoutinesSection.tsx)
+                .contextMenu {
+                    Button(String(localized: "Edit routine"), systemImage: "pencil") { editing = true }
+                    // AU15: the results thread, as the desktop's routine
+                    // details offer it (EventDetails "Open results thread").
+                    if let results = RoutineResults.openTarget(for: routine, bots: session.state.bots, rooms: session.state.rooms) {
+                        Button(String(localized: "Open results thread"), systemImage: "arrow.up.right.square") {
+                            Task { await session.openNotification(results) }
+                        }
+                        .accessibilityIdentifier("routine-open-results")
+                    }
+                    if session.surfaceGate.allows(.routineDelete) {
+                        Button(String(localized: "Delete routine"), systemImage: "trash", role: .destructive) { confirmingDelete = true }
+                            .accessibilityIdentifier("routine-delete")
+                    }
+                }
                 .accessibilityIdentifier("routine-edit")
         } content: {
             ProfileCard(margin: margin) {
@@ -103,7 +125,7 @@ struct RoutineDetailView: View {
                 ProfileRow(title: Text("Next run"), height: Theme.Profile.row) {
                     Text(verbatim: RoutineWording.nextRun(routine))
                         .font(Theme.Font.body)
-                        .foregroundStyle(Color(hex: 0x9C9BA0))
+                        .foregroundStyle(Theme.parity(Color(hex: 0x9C9BA0), Theme.textSecondary))
                         .padding(.trailing, 18.7)
                         .accessibilityIdentifier("routine-next-run")
                 }
@@ -133,7 +155,22 @@ struct RoutineDetailView: View {
                 } else {
                     ForEach(Array(runs.prefix(20).enumerated()), id: \.element.id) { index, run in
                         if index > 0 { ProfileDivider(leading: Theme.Profile.textInset) }
-                        RunHistoryRow(run: run)
+                        // AU8, AU9: a run opens its detail (seen on open,
+                        // Cancel run); a long press cancels a live one.
+                        Button {
+                            Haptics.selection()
+                            openRun = run
+                        } label: {
+                            RunHistoryRow(run: run, unseen: session.surfaceGate.allows(.routineRunsSeen) && run.isUnseenProblem)
+                        }
+                        .buttonStyle(.plain)
+                        .contextMenu {
+                            if run.isActive && session.surfaceGate.allows(.routineRunCancel) {
+                                Button(String(localized: "Cancel run"), systemImage: "xmark", role: .destructive) {
+                                    Task { await cancel(run) }
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -143,6 +180,26 @@ struct RoutineDetailView: View {
         }
         .sheet(isPresented: $editing) {
             RoutineEditorView(routine: routine) { await reload() }
+        }
+        .sheet(item: $openRun) { run in
+            RoutineRunDetailView(run: run, routine: routine) { updated in
+                runs = RoutineRunLog.replacing(runs, with: [updated])
+            }
+        }
+        .confirmationDialog(
+            String(localized: "Delete \(routine.name)?"),
+            isPresented: $confirmingDelete,
+            titleVisibility: .visible
+        ) {
+            Button(String(localized: "Delete routine"), role: .destructive) {
+                Task {
+                    guard await session.deleteRoutine(routine) else { return }
+                    await onChange()
+                    dismissScreen()
+                }
+            }
+        } message: {
+            Text("Past run receipts remain available.")
         }
         .task {
             await reload()
@@ -163,6 +220,12 @@ struct RoutineDetailView: View {
         }
     }
 
+    private func cancel(_ run: RoutineRun) async {
+        if let updated = await session.cancelRoutineRun(run) {
+            runs = RoutineRunLog.replacing(runs, with: [updated])
+        }
+    }
+
     private func reload() async {
         let loaded = await session.loadRoutines()
         if let fresh = loaded.routines.first(where: { $0.id == routine.id }) { routine = fresh }
@@ -173,18 +236,28 @@ struct RoutineDetailView: View {
 
 /// One past run: when it was due and how it went.
 private struct RunHistoryRow: View {
+    @Environment(\.themePalette) var themePalette
     let run: RoutineRun
+    /// A failed or missed run nobody opened: the red dot (AU9).
+    var unseen = false
 
     var body: some View {
         ProfileRow(
             title: Text(Date(timeIntervalSince1970: (run.startedAt ?? run.scheduledFor) / 1_000).formatted(date: .abbreviated, time: .shortened)),
             height: Theme.Profile.row
         ) {
-            Text(verbatim: status)
-                .font(Theme.Font.body)
-                .foregroundStyle(Theme.textSecondary)
-                .padding(.trailing, 18.7)
+            HStack(spacing: 6) {
+                if unseen {
+                    Circle().fill(Theme.danger).frame(width: 6, height: 6)
+                        .accessibilityLabel(Text("Unseen failure"))
+                }
+                Text(verbatim: status)
+                    .font(Theme.Font.body)
+                    .foregroundStyle(Theme.textSecondary)
+            }
+            .padding(.trailing, 18.7)
         }
+        .contentShape(Rectangle())
         
         .accessibilityIdentifier("routine-run.\(run.id)")
     }
@@ -197,6 +270,7 @@ private struct RunHistoryRow: View {
         case "failed": String(localized: "Failed")
         case "missed": String(localized: "Missed")
         case "cancelled": String(localized: "Cancelled")
+        case "queued": String(localized: "Queued")
         default: run.status.capitalized
         }
     }
@@ -206,6 +280,7 @@ private struct RunHistoryRow: View {
 
 /// A long text in one card: 14 pt on the chat's 18.1 pt pitch, 18 pt in.
 struct TextCardBody: View {
+    @Environment(\.themePalette) var themePalette
     let text: String
 
     var body: some View {
@@ -225,6 +300,7 @@ struct TextCardBody: View {
 }
 
 struct TextCardView: View {
+    @Environment(\.themePalette) var themePalette
     let title: String
     let text: String
 
@@ -239,6 +315,7 @@ struct TextCardView: View {
 
 /// The soul, read from the server; the owner or an admin edits it in place.
 struct InstructionView: View {
+    @Environment(\.themePalette) var themePalette
     let bot: Bot
     @EnvironmentObject private var session: Session
     @State private var soul: String?
@@ -322,6 +399,7 @@ struct InstructionView: View {
 /// Pinch to zoom and drag to move the picture in its frame; saved as
 /// `avatarZoom` and `avatarFocusX/Y`.
 struct PictureFramingSheet: View {
+    @Environment(\.themePalette) var themePalette
     let bot: Bot
     let save: (Double, Double, Double) -> Void
 
@@ -384,7 +462,6 @@ struct PictureFramingSheet: View {
                 }
             }
         }
-        .preferredColorScheme(.dark)
         .task {
             if let data = await session.avatarData(for: bot) { image = UIImage(data: data) }
         }

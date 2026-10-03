@@ -10,6 +10,7 @@ import SwiftUI
 import CompanionCore
 
 struct ChatListView: View {
+    @Environment(\.themePalette) var themePalette
     @EnvironmentObject private var session: Session
     @State private var query = ""
     @AppStorage(PrefKey.activityDetail) private var activityDetail = ActivityDetail.full.rawValue
@@ -22,7 +23,6 @@ struct ChatListView: View {
     @State private var searching = false
     @State private var searchOpen = false
     @State private var showingUpdates = false
-    @State private var showingWalkie = false
     @State private var showingNewGroup = false
     @State private var showingNewSection = false
     @State private var showingPlusMenu = false
@@ -34,6 +34,8 @@ struct ChatListView: View {
     @State private var collapsedFolders = Set<String>()
     @State private var creatingThreads = Set<String>()
     @State private var managingThreads: Chat?
+    /// The shared thread and folder menus (Features/Threads) for every row.
+    @StateObject private var threadActions = ThreadActions()
     @FocusState private var searchFocused: Bool
 
     /// Space between the header's glass buttons and whatever the list
@@ -76,9 +78,6 @@ struct ChatListView: View {
                 if ProcessInfo.processInfo.arguments.contains("-open-new-section") {
                     showingNewSection = true
                 }
-                if ProcessInfo.processInfo.arguments.contains("-open-walkie") {
-                    showingWalkie = true
-                }
                 if ProcessInfo.processInfo.arguments.contains("-open-first"),
                    path.isEmpty, let first = chats.first {
                     path.append(first.chat)
@@ -91,13 +90,6 @@ struct ChatListView: View {
                     path.append(chat)
                 }
             }
-            .fullScreenCover(isPresented: $showingWalkie) {
-                WalkieView { chat in
-                    showingWalkie = false
-                    path.append(chat)
-                }
-                .environmentObject(session)
-            }
             .sheet(isPresented: $showingNewSection) {
                 NewSectionSheet()
             }
@@ -107,6 +99,13 @@ struct ChatListView: View {
                     managingThreads = nil
                     path.append(Chat.bot(bot))
                 }
+            }
+            .environmentObject(threadActions)
+            .threadActionsPresenter(threadActions)
+            .onValueChange(of: threadActions.created?.threadId) { threadId in
+                guard let created = threadActions.created, threadId != nil else { return }
+                threadActions.created = nil
+                path.append(Chat.bot(created))
             }
             .task(id: query) {
                 let expected = query
@@ -229,10 +228,10 @@ struct ChatListView: View {
             VStack(spacing: 2) {
                 Text("Threads")
                     .font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(Color.primary)
+                    .foregroundStyle(Theme.textPrimary)
                 Text(headerSubtitle)
                     .font(.system(size: 13))
-                    .foregroundStyle(Color.secondary)
+                    .foregroundStyle(Theme.parity(Color.secondary, Theme.textSecondary))
                     .lineLimit(1)
             }
 
@@ -241,7 +240,7 @@ struct ChatListView: View {
             NavigationLink { SettingsView() } label: {
                 Image(systemName: "gearshape")
                     .font(.system(size: 18, weight: .medium))
-                    .foregroundStyle(Color.primary)
+                    .foregroundStyle(Theme.textPrimary)
                     .frame(width: 44, height: 44)
             }
             .buttonStyle(.plain)
@@ -386,7 +385,7 @@ struct ChatListView: View {
                 } label: {
                     Image(systemName: "plus")
                         .font(.body.weight(.medium))
-                        .foregroundStyle(Color.secondary)
+                        .foregroundStyle(Theme.parity(Color.secondary, Theme.textSecondary))
                         .frame(width: 44, height: 44)
                         .contentShape(Rectangle())
                 }
@@ -556,7 +555,7 @@ struct ChatListView: View {
                     HStack(spacing: 8) {
                         Image(systemName: "magnifyingglass")
                             .font(.system(size: 15, weight: .semibold))
-                            .foregroundStyle(Color.secondary)
+                            .foregroundStyle(Theme.parity(Color.secondary, Theme.textSecondary))
                         TextField("Search threads", text: $query)
                             .font(.system(size: 17))
                             .submitLabel(.search)
@@ -566,7 +565,7 @@ struct ChatListView: View {
                             Button {
                                 query = ""
                             } label: {
-                                Image(systemName: "xmark.circle.fill").foregroundStyle(Color.secondary)
+                                Image(systemName: "xmark.circle.fill").foregroundStyle(Theme.parity(Color.secondary, Theme.textSecondary))
                             }
                             .buttonStyle(.plain)
                         }
@@ -581,7 +580,7 @@ struct ChatListView: View {
                         searchFocused = false
                     }
                     .font(.system(size: 17))
-                    .foregroundStyle(Color.primary)
+                    .foregroundStyle(Theme.textPrimary)
                     .padding(.horizontal, 16)
                     .frame(height: 52)
                     .glassCapsule()
@@ -603,9 +602,12 @@ struct ChatListView: View {
             updatesButton
                 .frame(width: 180)
             searchButton
-            walkieButton
             if session.canAdminister {
                 sectionButton
+            }
+            // `POST /api/bots` passes both gates (SB31): a client session
+            // may make a bot even though it cannot file sections.
+            if session.surfaceGate.allows(.createBot) {
                 newBotButton
             }
         }
@@ -616,7 +618,6 @@ struct ChatListView: View {
             updatesButton
                 .frame(minWidth: 148)
             searchButton
-            walkieButton
             // Creating bots and sections needs the admin scope on a server;
             // a chat-only phone is not shown buttons the server would refuse.
             if session.canAdminister {
@@ -627,7 +628,7 @@ struct ChatListView: View {
                 } label: {
                     Image(systemName: "plus")
                         .font(.system(size: 20, weight: .medium))
-                        .foregroundStyle(Color.primary)
+                        .foregroundStyle(Theme.textPrimary)
                         .frame(width: 48, height: 48)
                         .contentShape(Circle())
                 }
@@ -653,15 +654,6 @@ struct ChatListView: View {
             searchFocused = true
         }
         .accessibilityLabel("Search")
-    }
-
-    /// Walkie: hold-to-talk with every agent's state at a glance.
-    private var walkieButton: some View {
-        GlassButton(systemImage: "waveform", size: 48, weight: .semibold) {
-            Haptics.selection()
-            showingWalkie = true
-        }
-        .accessibilityLabel("Walkie")
     }
 
     private var sectionButton: some View {
@@ -754,7 +746,7 @@ struct ChatListView: View {
             .font(density == .compact ? .footnote.weight(.semibold) : .system(size: 13, weight: .semibold))
             .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
             .tracking(0.4)
-            .foregroundStyle(Color.secondary)
+            .foregroundStyle(Theme.parity(Color.secondary, Theme.textSecondary))
             .padding(.horizontal, 20)
     }
 }
@@ -764,6 +756,7 @@ struct ChatListView: View {
 /// A room as a round tile: the first two members' mascots stacked, its name
 /// beneath. `nil` is the "make one" tile.
 struct GroupTile: View {
+    @Environment(\.themePalette) var themePalette
     let room: Room?
     @EnvironmentObject private var session: Session
 
@@ -771,30 +764,30 @@ struct GroupTile: View {
         VStack(spacing: 7) {
             ZStack {
                 if let room {
-                    Circle().fill(Color.secondary.opacity(0.14))
+                    Circle().fill(Theme.parity(Color.secondary, Theme.textSecondary).opacity(0.14))
                     GroupMascotView(members: memberBots(room), size: 52)
                     if room.unread {
                         Circle()
                             .fill(MausPalette.color("blue"))
                             .frame(width: 10, height: 10)
-                            .overlay(Circle().stroke(Color(uiColor: .systemBackground), lineWidth: 2))
+                            .overlay(Circle().stroke(Theme.parity(Color(uiColor: .systemBackground), Theme.bg), lineWidth: 2))
                             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
                             .padding(3)
                     }
                 } else {
                     Circle()
                         .strokeBorder(style: StrokeStyle(lineWidth: 1.5, dash: [4, 4]))
-                        .foregroundStyle(Color.secondary.opacity(0.6))
+                        .foregroundStyle(Theme.parity(Color.secondary, Theme.textSecondary).opacity(0.6))
                     Image(systemName: "plus")
                         .font(.system(size: 22, weight: .medium))
-                        .foregroundStyle(Color.secondary)
+                        .foregroundStyle(Theme.parity(Color.secondary, Theme.textSecondary))
                 }
             }
             .frame(width: 64, height: 64)
 
             Text(room?.name ?? "New group")
                 .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(room == nil ? Color.secondary : Color.primary)
+                .foregroundStyle(room == nil ? Theme.parity(Color.secondary, Theme.textSecondary) : Theme.textPrimary)
                 .lineLimit(1)
         }
         .frame(width: 76)
@@ -810,6 +803,7 @@ struct GroupTile: View {
 /// bot it belongs to, ready to jump straight there. Waiting outranks
 /// working, which outranks queued and unread — the same order as the tree.
 struct AttentionRow: View {
+    @Environment(\.themePalette) var themePalette
     let entry: AttentionThread
     /// Compact's rows follow Dynamic Type, and these grow with them, in the
     /// proportions they have at the default size. Comfortable's rows keep
@@ -850,18 +844,18 @@ struct AttentionRow: View {
                         .font(.system(size: titleSize, weight: .medium))
                 }
             }
-            .foregroundStyle(waiting ? Color.orange : queued ? Color.secondary : Color.accentColor)
+            .foregroundStyle(waiting ? Theme.parity(Color.orange, Theme.warning) : queued ? Theme.parity(Color.secondary, Theme.textSecondary) : Theme.parity(Color.accentColor, Theme.accent))
             .frame(width: markWidth)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(verbatim: entry.task.displayTitle)
                     .font(.system(size: titleSize, weight: .medium))
-                    .foregroundStyle(Color.primary)
+                    .foregroundStyle(Theme.textPrimary)
                     .lineLimit(titleWraps ? 3 : 1)
                     .fixedSize(horizontal: false, vertical: titleWraps)
                 Text("\(entry.botName) · \(statusText)")
                     .font(.system(size: detailSize))
-                    .foregroundStyle(Color.secondary)
+                    .foregroundStyle(Theme.parity(Color.secondary, Theme.textSecondary))
                     .lineLimit(1)
             }
             Spacer(minLength: 0)
@@ -875,6 +869,7 @@ struct AttentionRow: View {
 }
 
 struct ChatRow: View {
+    @Environment(\.themePalette) var themePalette
     let chat: Chat
     let preview: String
     let at: Double
@@ -903,7 +898,7 @@ struct ChatRow: View {
                     HStack(spacing: 8) {
                         Text(chat.name)
                             .font(.system(size: 17, weight: .semibold))
-                            .foregroundStyle(Color.primary)
+                            .foregroundStyle(Theme.textPrimary)
                             .lineLimit(1)
                             .layoutPriority(1)
 
@@ -911,29 +906,29 @@ struct ChatRow: View {
                         if !chat.subtitle.isEmpty {
                             Text(chat.subtitle)
                                 .font(.system(size: 13))
-                                .foregroundStyle(Color.secondary)
+                                .foregroundStyle(Theme.parity(Color.secondary, Theme.textSecondary))
                                 .lineLimit(1)
                                 .padding(.horizontal, 8)
                                 .padding(.vertical, 3)
-                                .background(Capsule().fill(Color.secondary.opacity(0.15)))
+                                .background(Capsule().fill(Theme.parity(Color.secondary, Theme.textSecondary).opacity(0.15)))
                         }
 
                         Spacer(minLength: 4)
 
                         Text(RelativeStamp.list(at))
                             .font(.system(size: 15))
-                            .foregroundStyle(Color.secondary)
+                            .foregroundStyle(Theme.parity(Color.secondary, Theme.textSecondary))
                             .fixedSize()
                         Image(systemName: "chevron.right")
                             .font(.system(size: 13, weight: .semibold))
-                            .foregroundStyle(Color.secondary.opacity(0.5))
+                            .foregroundStyle(Theme.parity(Color.secondary, Theme.textSecondary).opacity(0.5))
                     }
 
                     HStack(alignment: .top, spacing: 8) {
                         // one line for every bot, so the rows keep one rhythm
                         Text(preview.isEmpty ? " " : preview)
                             .font(.system(size: 15))
-                            .foregroundStyle(Color.secondary)
+                            .foregroundStyle(Theme.parity(Color.secondary, Theme.textSecondary))
                             .lineLimit(1)
 
                         Spacer(minLength: 0)
@@ -968,6 +963,7 @@ struct ChatRow: View {
 
 /// The floating pill: who is doing what right now, at a glance.
 struct UpdatesPill: View {
+    @Environment(\.themePalette) var themePalette
     let updates: [ChatUpdate]
     let action: () -> Void
 
@@ -996,18 +992,18 @@ struct UpdatesPill: View {
                         }
                     }
                     .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(updates.isEmpty ? Color.secondary : Color.primary)
+                    .foregroundStyle(updates.isEmpty ? Theme.parity(Color.secondary, Theme.textSecondary) : Theme.textPrimary)
                     .lineLimit(1)
 
                     Text(subline)
                         .font(.system(size: 12))
-                        .foregroundStyle(Color.secondary)
+                        .foregroundStyle(Theme.parity(Color.secondary, Theme.textSecondary))
                         .lineLimit(1)
                 }
                 Spacer(minLength: 0)
                 Image(systemName: "chevron.up")
                     .font(.system(size: 12, weight: .bold))
-                    .foregroundStyle(Color.secondary)
+                    .foregroundStyle(Theme.parity(Color.secondary, Theme.textSecondary))
             }
             .padding(.leading, updates.isEmpty ? 16 : 7)
             .padding(.trailing, 12)
@@ -1030,6 +1026,7 @@ struct UpdatesPill: View {
 
 /// Up to three mascots overlapping, the way a group of faces reads at a glance.
 struct MascotStack: View {
+    @Environment(\.themePalette) var themePalette
     let chats: [Chat]
     var size: CGFloat = 28
     var overlap: CGFloat = 12
@@ -1039,7 +1036,7 @@ struct MascotStack: View {
             ForEach(Array(chats.enumerated()), id: \.offset) { _, chat in
                 ChatAvatarView(chat: chat, size: size)
                     .padding(2)
-                    .background(Circle().fill(Color(uiColor: .systemBackground)))
+                    .background(Circle().fill(Theme.parity(Color(uiColor: .systemBackground), Theme.bg)))
             }
         }
     }
@@ -1047,6 +1044,7 @@ struct MascotStack: View {
 
 /// Connection state, shown only when it is not "fine".
 struct StatusBanner: View {
+    @Environment(\.themePalette) var themePalette
     @EnvironmentObject private var session: Session
 
     var body: some View {
@@ -1055,11 +1053,11 @@ struct StatusBanner: View {
             case .live, .unpaired:
                 EmptyView()
             case .connecting:
-                banner("Connecting…", systemImage: "arrow.triangle.2.circlepath", tint: .secondary)
+                banner("Connecting…", systemImage: "arrow.triangle.2.circlepath", tint: Theme.parity(Color.secondary, Theme.textSecondary))
             case let .offline(reason):
-                banner(reason, systemImage: "wifi.slash", tint: .orange)
+                banner(reason, systemImage: "wifi.slash", tint: Theme.parity(Color.orange, Theme.warning))
             case .unauthorized:
-                banner("This device was unpaired on the computer.", systemImage: "lock.slash", tint: .red)
+                banner("This device was unpaired on the computer.", systemImage: "lock.slash", tint: Theme.parity(Color.red, Theme.danger))
             }
         }
         .animation(.default, value: session.status)
@@ -1077,29 +1075,30 @@ struct StatusBanner: View {
 }
 
 struct SearchHitRow: View {
+    @Environment(\.themePalette) var themePalette
     let hit: SearchHit
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
             Image(systemName: hit.role == .user ? "person.fill" : "bubble.left.fill")
-                .foregroundStyle(Color.secondary)
+                .foregroundStyle(Theme.parity(Color.secondary, Theme.textSecondary))
                 .frame(width: 26, height: 26)
-                .background(Circle().fill(Color.secondary.opacity(0.13)))
+                .background(Circle().fill(Theme.parity(Color.secondary, Theme.textSecondary).opacity(0.13)))
 
             VStack(alignment: .leading, spacing: 4) {
                 HStack {
                     Text(hit.name).font(.system(size: 15, weight: .semibold))
                     if let task = hit.task, !task.isEmpty {
-                        Text(task).font(.system(size: 12)).foregroundStyle(Color.secondary)
+                        Text(task).font(.system(size: 12)).foregroundStyle(Theme.parity(Color.secondary, Theme.textSecondary))
                     }
                     Spacer()
                     Text(RelativeStamp.list(hit.at))
                         .font(.system(size: 12))
-                        .foregroundStyle(Color.secondary)
+                        .foregroundStyle(Theme.parity(Color.secondary, Theme.textSecondary))
                 }
                 Text(hit.snippet)
                     .font(.system(size: 14))
-                    .foregroundStyle(Color.secondary)
+                    .foregroundStyle(Theme.parity(Color.secondary, Theme.textSecondary))
                     .lineLimit(2)
                     .multilineTextAlignment(.leading)
             }
@@ -1157,7 +1156,7 @@ extension ChatListView {
             case .search?: showingSearch = true
             case .newGroupChat?: showingNewGroup = true
             case .createBot?: showingCreateBot = true
-            case .settingsTop?, .settingsBottom?, .plugins?, .account?, .botComputer?: showingSettings = true
+            case .settingsTop?, .settingsBottom?, .plugins?, .account?, .botComputer?, .appearance?: showingSettings = true
             default: break
             }
         }
@@ -1212,7 +1211,6 @@ extension ChatListView {
                 ) { chat in path.append(chat) }
             }
         }
-        .preferredColorScheme(.dark)
     }
 
     // MARK: Header
@@ -1243,11 +1241,6 @@ extension ChatListView {
             showingUpdates = true
         } label: {
             Label("Updates", systemImage: "bell")
-        }
-        Button {
-            showingWalkie = true
-        } label: {
-            Label("Walkie", systemImage: "waveform")
         }
         if session.canAdminister {
             Button {
@@ -1426,6 +1419,7 @@ extension ChatListView {
             } label: {
                 Label("Threads", systemImage: "list.bullet")
             }
+            BotThreadsMenu(bot: bot, actions: threadActions)
             if session.canAdminister {
                 Menu {
                     ForEach(session.state.sidebarSections.map(\.name).filter { $0 != bot.section }, id: \.self) { name in
@@ -1513,7 +1507,7 @@ extension ChatListView {
                 .zIndex(4)
             }
             if showingPlusMenu {
-                HomePlusMenu(canCreateBot: session.canAdminister) {
+                HomePlusMenu(canCreateBot: session.surfaceGate.allows(.createBot)) {
                     showingPlusMenu = false
                     showingCreateBot = true
                 } newGroup: {

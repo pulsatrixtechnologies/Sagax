@@ -1,6 +1,7 @@
 import SwiftUI
 
 public struct TypingIndicatorView: View {
+    @Environment(\.themePalette) var themePalette
     public let tintColor: Color
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     
@@ -21,7 +22,7 @@ public struct TypingIndicatorView: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
-        .background(Color.secondary.opacity(0.12))
+        .background(Theme.bubbleAssistant)
         .clipShape(Capsule())
     }
 

@@ -7,6 +7,7 @@ import SwiftUI
 /// computer; the phone sees only the model catalog, configured/not-configured
 /// status, and renderer-neutral profile operations.
 struct AgentProfileView: View {
+    @Environment(\.themePalette) var themePalette
     let bot: Bot
 
     @EnvironmentObject private var session: Session
@@ -134,7 +135,7 @@ struct AgentProfileView: View {
                             }
                         } else if instanceChoices.isEmpty {
                             Label("No model providers are available", systemImage: "exclamationmark.triangle")
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(Theme.parity(Color.secondary, Theme.textSecondary))
                         } else {
                             Picker("Provider", selection: $selectedInstanceID) {
                                 if !instances.contains(where: { $0.instanceId == selectedInstanceID }) {
@@ -171,11 +172,11 @@ struct AgentProfileView: View {
                             if current.busy == true {
                                 Label("Stop this bot before changing its model.", systemImage: "hourglass")
                                     .font(.footnote)
-                                    .foregroundStyle(.secondary)
+                                    .foregroundStyle(Theme.parity(Color.secondary, Theme.textSecondary))
                             } else if selectedInstance?.snapshot.isAvailable != true {
                                 Label("Choose an available provider to change this bot's model.", systemImage: "info.circle")
                                     .font(.footnote)
-                                    .foregroundStyle(.secondary)
+                                    .foregroundStyle(Theme.parity(Color.secondary, Theme.textSecondary))
                             }
 
                             Button("Apply model", systemImage: "checkmark") {
@@ -188,6 +189,7 @@ struct AgentProfileView: View {
                     } footer: {
                         Text("Provider accounts and API keys stay on your computer. Default sends no reasoning level and lets the provider decide.")
                     }
+                    .listRowBackground(Theme.parity(Color(uiColor: .secondarySystemGroupedBackground), Theme.card))
                 }
 
                 Section {
@@ -228,6 +230,7 @@ struct AgentProfileView: View {
                 } footer: {
                     Text("PNG, JPEG, GIF, or WebP, up to 10 MB. Images are stored on your paired computer and loaded with this device's pairing token.")
                 }
+                .listRowBackground(Theme.parity(Color(uiColor: .secondarySystemGroupedBackground), Theme.card))
 
                 if session.canAdminister {
                     Section {
@@ -244,13 +247,18 @@ struct AgentProfileView: View {
                              ? "Generation uses the shared image provider configured on your computer. No provider key is sent to or stored on this device."
                              : "To generate images, configure the shared image provider in Sagax on your computer. Provider keys cannot be added from this device.")
                     }
+                    .listRowBackground(Theme.parity(Color(uiColor: .secondarySystemGroupedBackground), Theme.card))
                 }
 
                 Section("Identity") {
-                    NavigationLink {
-                        BotOverviewView(bot: current)
-                    } label: {
-                        Label("What this bot does", systemImage: "list.bullet.rectangle")
+                    // `GET /api/bots/:id/overview` is admin only for a client
+                    // session (BA1): no link that can only fail.
+                    if session.surfaceGate.allows(.botOverview) {
+                        NavigationLink {
+                            BotOverviewView(bot: current)
+                        } label: {
+                            Label("What this bot does", systemImage: "list.bullet.rectangle")
+                        }
                     }
                     TextField("Name", text: $name)
                         .textInputAutocapitalization(.words)
@@ -259,46 +267,53 @@ struct AgentProfileView: View {
                         .lineLimit(3...8)
                     Toggle("Agent notifications", isOn: $notifications)
                 }
+                .listRowBackground(Theme.parity(Color(uiColor: .secondarySystemGroupedBackground), Theme.card))
 
                 Section {
-                    Picker("Voice engine", selection: $engine) {
-                        Text("ElevenLabs").tag(VoiceProvider.elevenlabs)
-                        Text("Fish Audio").tag(VoiceProvider.fish)
-                        Text("Built-in Mac voices")
-                            .tag(VoiceProvider.system)
-                            .disabled(!hostIsMac)
-                        Text("Chatterbox (local)").tag(VoiceProvider.chatterbox)
-                    }
-                    .disabled(switchingEngine)
-
-                    if usesChatterbox {
-                        TextField(
-                            "Chatterbox server address",
-                            text: $chatterboxURL,
-                            prompt: Text("http://127.0.0.1:4123")
-                        )
-                        .keyboardType(.URL)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                        TextField(
-                            "Chatterbox model",
-                            text: $chatterboxModel,
-                            prompt: Text("chatterbox-turbo")
-                        )
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                        Button {
-                            Task { await saveChatterboxServer() }
-                        } label: {
-                            HStack {
-                                Text("Save server")
-                                if savingServer { Spacer(); ProgressView() }
-                            }
+                    // The engine and the Chatterbox server are workspace
+                    // settings written with `PUT /api/config`, which every
+                    // sidecar refuses and a client session may not use
+                    // (BA12). Hidden until the pairing may write them.
+                    if canSetVoiceEngine {
+                        Picker("Voice engine", selection: $engine) {
+                            Text("ElevenLabs").tag(VoiceProvider.elevenlabs)
+                            Text("Fish Audio").tag(VoiceProvider.fish)
+                            Text("Built-in Mac voices")
+                                .tag(VoiceProvider.system)
+                                .disabled(!hostIsMac)
+                            Text("Chatterbox (local)").tag(VoiceProvider.chatterbox)
                         }
-                        .disabled(savingServer || chatterboxURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                        if let serverProblem {
-                            Label(serverProblem, systemImage: "exclamationmark.triangle")
-                                .foregroundStyle(Color.orange)
+                        .disabled(switchingEngine)
+
+                        if usesChatterbox {
+                            TextField(
+                                "Chatterbox server address",
+                                text: $chatterboxURL,
+                                prompt: Text("http://127.0.0.1:4123")
+                            )
+                            .keyboardType(.URL)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                            TextField(
+                                "Chatterbox model",
+                                text: $chatterboxModel,
+                                prompt: Text("chatterbox-turbo")
+                            )
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                            Button {
+                                Task { await saveChatterboxServer() }
+                            } label: {
+                                HStack {
+                                    Text("Save server")
+                                    if savingServer { Spacer(); ProgressView() }
+                                }
+                            }
+                            .disabled(savingServer || chatterboxURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                            if let serverProblem {
+                                Label(serverProblem, systemImage: "exclamationmark.triangle")
+                                    .foregroundStyle(Theme.parity(Color.orange, Theme.warning))
+                            }
                         }
                     }
 
@@ -330,17 +345,17 @@ struct AgentProfileView: View {
                         if !hasWorkspaceDefaultVoice, voice.isEmpty {
                             Label("Pick a voice for this agent before enabling speech.", systemImage: "info.circle")
                                 .font(.footnote)
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(Theme.parity(Color.secondary, Theme.textSecondary))
                         }
                     } else if usesSystemVoices {
                         Label("Built-in Mac voices are unavailable", systemImage: "speaker.slash")
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(Theme.parity(Color.secondary, Theme.textSecondary))
                     } else if !usesChatterbox {
                         Label(
                             usesFishAudio ? "Fish Audio is not configured" : "ElevenLabs is not configured",
                             systemImage: "speaker.slash"
                         )
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(Theme.parity(Color.secondary, Theme.textSecondary))
                     }
                 } header: {
                     Text("Voice")
@@ -352,9 +367,17 @@ struct AgentProfileView: View {
                         // `server/tts/index.ts` is reporting that this
                         // computer has no built-in voices to speak with.
                         if usesSystemVoices {
-                            Text("Built-in Mac voices need no key, and this computer has none available. Switch the voice engine above to ElevenLabs to keep using voice.")
+                            if canSetVoiceEngine {
+                                Text("Built-in Mac voices need no key, and this computer has none available. Switch the voice engine above to ElevenLabs to keep using voice.")
+                            } else {
+                                Text("Built-in Mac voices need no key, and this computer has none available. Switch the voice engine to ElevenLabs in Sagax on your computer to keep using voice.")
+                            }
                         } else if usesChatterbox {
-                            Text("Any OpenAI-compatible server running Chatterbox works, no key needed. Save its address and model id above.")
+                            if canSetVoiceEngine {
+                                Text("Any OpenAI-compatible server running Chatterbox works, no key needed. Save its address and model id above.")
+                            } else {
+                                Text("Any OpenAI-compatible server running Chatterbox works, no key needed. Set its address and model id in Sagax on your computer.")
+                            }
                         } else if usesFishAudio {
                             Text("Add the shared Fish Audio key in Sagax on your computer. The key is never returned to iOS.")
                         } else {
@@ -374,12 +397,19 @@ struct AgentProfileView: View {
                         Text("The voice choice belongs to this agent. Workspace default uses the shared voice selected on your computer.")
                     }
                 }
+                .listRowBackground(Theme.parity(Color(uiColor: .secondarySystemGroupedBackground), Theme.card))
+
+                // Usage, voice notes, Primary Bot (WP7: BP14, BA11, SB28)
+                BotPanelAdvancedSections(bot: current)
 
                 Section {
                     Button("Save profile changes") { Task { await save() } }
                         .disabled(busy || name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
+                .listRowBackground(Theme.parity(Color(uiColor: .secondarySystemGroupedBackground), Theme.card))
             }
+            .scrollContentBackground(.hidden)
+            .background(Theme.parity(Color(uiColor: .systemGroupedBackground), Theme.bg))
             .navigationTitle("Bot settings")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -418,8 +448,11 @@ struct AgentProfileView: View {
     /// secret, so it rides the ordinary config write; the voice list reloads
     /// because every engine offers different voices. A failed switch snaps
     /// the picker back to whatever the server still reports.
+    /// Whether this pairing may switch the workspace voice engine.
+    private var canSetVoiceEngine: Bool { session.surfaceGate.allows(.voiceEngineSettings) }
+
     private func switchEngine(to selected: VoiceProvider) async {
-        guard selected != (config?.voiceProvider ?? .elevenlabs) else { return }
+        guard canSetVoiceEngine, selected != (config?.voiceProvider ?? .elevenlabs) else { return }
         switchingEngine = true
         defer { switchingEngine = false }
         if let status = await session.setVoiceProvider(selected) {
@@ -443,6 +476,7 @@ struct AgentProfileView: View {
     }
 
     private func saveChatterboxServer() async {
+        guard canSetVoiceEngine else { return }
         let address = chatterboxURL.trimmingCharacters(in: .whitespacesAndNewlines)
         guard address.hasPrefix("http://") || address.hasPrefix("https://") else {
             serverProblem = String(localized: "The server address must start with http:// or https://.")

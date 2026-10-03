@@ -929,6 +929,57 @@ describe("RoutineManager", () => {
     expect(cleared?.schedule).toEqual({ type: "interval", everyMinutes: 60, anchorAt });
   });
 
+  // iOS parity S3 (AU13): the phone's editor sends name, prompt, bot, run
+  // location, enabled, a schedule without the interval's days, window or end
+  // date, the duration and the run limit, and nothing else. Every field it
+  // has no control for must come back as it was.
+  it("keeps every field a phone editor does not send (AU13)", () => {
+    const h = harness();
+    const anchorAt = new Date(2026, 7, 17, 8, 5).getTime();
+    const endsAt = new Date(2026, 9, 31, 23, 59).getTime();
+    const attachments = [{ id: "att-1", kind: "file" as const, name: "brief.md", path: "/tmp/brief.md", size: 12 }];
+    const routine = h.manager.create({
+      name: "Support hours check",
+      prompt: "Check the queue",
+      botId: "maus-1",
+      schedule: { type: "interval", everyMinutes: 30, anchorAt, weekdays: [1, 3, 5], window: { start: "09:00", end: "17:00" }, endsAt },
+      overlap: "queue",
+      continuity: true,
+      attachments,
+      timeoutMinutes: 20,
+    });
+    const phone = {
+      name: "Support hours check (phone)",
+      prompt: "Check the queue",
+      botId: "maus-1",
+      runOn: "maus" as const,
+      enabled: true,
+      schedule: { type: "interval" as const, everyMinutes: 60, anchorAt },
+      durationMinutes: 30,
+      timeoutMinutes: 20,
+    };
+    const edited = h.manager.update(routine.id, phone);
+    expect(edited).toMatchObject({
+      name: "Support hours check (phone)",
+      schedule: { type: "interval", everyMinutes: 60, anchorAt, weekdays: [1, 3, 5], window: { start: "09:00", end: "17:00" }, endsAt },
+      overlap: "queue",
+      continuity: true,
+      attachments,
+      timeoutMinutes: 20,
+      target: "bot",
+    });
+    // A second save from the phone (it read the routine back without the
+    // restrictions it does not model) changes nothing either.
+    expect(h.manager.update(routine.id, phone)?.schedule).toEqual(edited?.schedule);
+
+    // A room goal edited from the phone keeps its target and room.
+    const goal = h.manager.create({ name: "Room goal", prompt: "Plan the week", botId: "maus-1", target: "room-goal", groupId: "room",
+      schedule: { type: "daily", time: "09:00", weekdays: [1] } });
+    const goalEdited = h.manager.update(goal.id, { name: "Room goal (phone)", prompt: "Plan the week", botId: "maus-1", runOn: "maus",
+      enabled: true, schedule: { type: "daily", time: "09:30", weekdays: [1] }, durationMinutes: 30 });
+    expect(goalEdited).toMatchObject({ target: "room-goal", groupId: "room", schedule: { type: "daily", time: "09:30", weekdays: [1] } });
+  });
+
   it("rejects enabled intervals without a future run but allows them while disabled", () => {
     const now = new Date(2026, 7, 17, 8, 0, 0).getTime();
     const h = harness(now);

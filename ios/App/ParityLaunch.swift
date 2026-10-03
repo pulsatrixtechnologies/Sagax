@@ -15,7 +15,7 @@
 import SwiftUI
 import CompanionCore
 
-/// The 21 reference screens, plus the theme gallery.
+/// The 21 reference screens, plus Settings > Appearance and the theme gallery.
 enum ParityScreen: String, CaseIterable {
     case home = "01-home"
     case chat = "02-chat"
@@ -38,6 +38,8 @@ enum ParityScreen: String, CaseIterable {
     case search = "19-search"
     case createBot = "20-create-bot"
     case botComputer = "21-bot-computer"
+    /// Not a reference: Settings > Appearance, for the theme captures.
+    case appearance = "22-appearance"
     case themeGallery = "theme-gallery"
 
     /// Accepts the full name, the number ("02") or the name ("chat").
@@ -68,7 +70,7 @@ enum ParityScreen: String, CaseIterable {
     var opensFromHome: Bool {
         switch self {
         case .home, .homePlusMenu, .search, .newGroupChat, .createBot,
-             .settingsTop, .settingsBottom, .plugins, .account, .botComputer: true
+             .settingsTop, .settingsBottom, .plugins, .account, .botComputer, .appearance: true
         default: false
         }
     }
@@ -86,12 +88,135 @@ enum ParityScreen: String, CaseIterable {
     }
 }
 
+
+// MARK: - iPad: the desktop surfaces
+//
+// The iPad must look like the desktop app (src/, the Electron renderer). Its
+// references are captured from the renderer by ios/parity/desktop/
+// capture-desktop.mjs at the iPad viewports; ios/parity/desktop/capture-ipad.sh
+// launches the app with
+//
+//   -parityIPadScreen main          which desktop surface to draw (the ids below)
+//   -parityOrientation landscape    landscape | portrait: what the harness turned the
+//                                   device to (a UI test does it; iPadOS refuses
+//                                   programmatic rotation in its windowing mode)
+//   -paritySkin midnight            the desktop skin, for the main-skin-* references
+//
+// beside -parityEndpoint/-parityToken, and diffs the screenshot against
+// refs/desktop-<W>x<H>-<NN>-<id>.png. The ids are the desktop surface names
+// of ios/parity/desktop/surfaces.mjs (the NN prefix is only in file names),
+// in the same order; capture-ipad.sh refuses to run when the two lists
+// differ. A surface not built yet draws IPadParityPlaceholder, so the diff
+// measures the whole gap.
+enum IPadParityScreen: String, CaseIterable {
+    case onboardingWelcome = "onboarding-welcome"
+    case onboardingTour = "onboarding-tour"
+    case main = "main"
+    case mainCompact = "main-compact"
+    case mainCollapsed = "main-collapsed"
+    case mainThreads = "main-threads"
+    case sidebarRowHover = "sidebar-row-hover"
+    case sidebarBotMenu = "sidebar-bot-menu"
+    case sidebarBotContextMenu = "sidebar-bot-context-menu"
+    case sidebarSectionMenu = "sidebar-section-menu"
+    case sidebarProfileMenu = "sidebar-profile-menu"
+    case sidebarNewMenu = "sidebar-new-menu"
+    case newGroup = "new-group"
+    case searchPalette = "search-palette"
+    case searchPaletteQuery = "search-palette-query"
+    case chatTop = "chat-top"
+    case chatAttachments = "chat-attachments"
+    case chatMarkdown = "chat-markdown"
+    case chatApproval = "chat-approval"
+    case chatQuestion = "chat-question"
+    case chatMessageHover = "chat-message-hover"
+    case chatComposerDraft = "chat-composer-draft"
+    case chatComposerSlash = "chat-composer-slash"
+    case chatExportMenu = "chat-export-menu"
+    case chatModelPicker = "chat-model-picker"
+    case chatApprovalMode = "chat-approval-mode"
+    case chatWhereMenu = "chat-where-menu"
+    case chatFind = "chat-find"
+    case chatThreads = "chat-threads"
+    case inspector = "inspector"
+    case groupChat = "group-chat"
+    case groupPanel = "group-panel"
+    case panelDetails = "panel-details"
+    case panelAvatarEditor = "panel-avatar-editor"
+    case panelRoutines = "panel-routines"
+    case panelFiles = "panel-files"
+    case panelComputer = "panel-computer"
+    case panelAdvanced = "panel-advanced"
+    case panelAdvancedOverview = "panel-advanced-overview"
+    case panelAdvancedSlack = "panel-advanced-slack"
+    case panelAdvancedSoul = "panel-advanced-soul"
+    case panelAdvancedSkills = "panel-advanced-skills"
+    case panelAdvancedMemory = "panel-advanced-memory"
+    case panelAdvancedAccess = "panel-advanced-access"
+    case panelAdvancedModel = "panel-advanced-model"
+    case panelAdvancedPermissions = "panel-advanced-permissions"
+    case panelAdvancedVoice = "panel-advanced-voice"
+    case panelAdvancedVisibility = "panel-advanced-visibility"
+    case panelAdvancedSharing = "panel-advanced-sharing"
+    case panelAdvancedPerspicax = "panel-advanced-perspicax"
+    case panelAdvancedHistory = "panel-advanced-history"
+    case panelAdvancedUsage = "panel-advanced-usage"
+    case routinesCalendar = "routines-calendar"
+    case routinesList = "routines-list"
+    case routinesLogs = "routines-logs"
+    case teamMap = "team-map"
+    case templates = "templates"
+    case newBot = "new-bot"
+    case pluginsApps = "plugins-apps"
+    case pluginsMcp = "plugins-mcp"
+    case keyboardShortcuts = "keyboard-shortcuts"
+    case noticeThreadGone = "notice-thread-gone"
+    case settingsGeneral = "settings-general"
+    case settingsOrganization = "settings-organization"
+    case settingsCloudAccount = "settings-cloudAccount"
+    case settingsAppearance = "settings-appearance"
+    case settingsExperimental = "settings-experimental"
+    case settingsConnections = "settings-connections"
+    case settingsDecisionModel = "settings-decisionModel"
+    case settingsEngines = "settings-engines"
+    case settingsCompanion = "settings-companion"
+    case settingsComputer = "settings-computer"
+    case settingsUsage = "settings-usage"
+    case settingsPeople = "settings-people"
+    case settingsMail = "settings-mail"
+    case settingsActivity = "settings-activity"
+    case settingsBackups = "settings-backups"
+    case settingsWorkspaces = "settings-workspaces"
+    case settingsGeneralScrolled = "settings-general-scrolled"
+
+    /// Accepts the id, or a capture file stem ("03-main", "desktop-1366x1024-03-main").
+    init?(argument: String) {
+        let value = argument.lowercased()
+        if let exact = IPadParityScreen(rawValue: value) { self = exact; return }
+        guard let match = Self.allCases
+            .sorted(by: { $0.rawValue.count > $1.rawValue.count })
+            .first(where: { value.hasSuffix("-" + $0.rawValue) })
+        else { return nil }
+        self = match
+    }
+
+    /// Built for the iPad so far. Everything else routes to the placeholder.
+    var implemented: Bool { false }
+}
+
 #if DEBUG
 struct ParityLaunch {
     let endpoint: URL
     let token: String
     let environmentId: String?
     let screen: ParityScreen?
+    /// iPad desktop-parity launch (ios/parity/desktop/capture-ipad.sh).
+    var iPadScreen: IPadParityScreen? = nil
+    var orientation: String? = nil
+    var skin: String? = nil
+    /// `-parityChat NAME`: the chat screens open this bot instead of Ara
+    /// (the card lab of the WP2 UI tests).
+    var chatName: String? = nil
 
     static let current: ParityLaunch? = parse(ProcessInfo.processInfo.arguments)
 
@@ -108,7 +233,11 @@ struct ParityLaunch {
             endpoint: endpoint,
             token: token,
             environmentId: value("-parityEnvironment"),
-            screen: value("-parityScreen").flatMap(ParityScreen.init(argument:))
+            screen: value("-parityScreen").flatMap(ParityScreen.init(argument:)),
+            iPadScreen: value("-parityIPadScreen").flatMap(IPadParityScreen.init(argument:)),
+            orientation: value("-parityOrientation"),
+            skin: value("-paritySkin"),
+            chatName: value("-parityChat")
         )
     }
 
@@ -127,6 +256,7 @@ struct ParityLaunch {
 
 /// Opens the requested reference screen once the roster has arrived.
 struct ParityScreenLauncher: ViewModifier {
+    @Environment(\.themePalette) var themePalette
     @EnvironmentObject private var session: Session
     @State private var presented: ParityScreen?
     @State private var launched = false
@@ -138,9 +268,15 @@ struct ParityScreenLauncher: ViewModifier {
                 launched = true
                 if screen.opensAraChat {
                     // Wait for the fleet, then push Ara's chat the way a deep link does.
+                    let name = ParityLaunch.current?.chatName ?? "Ara"
                     for _ in 0..<150 {
-                        if let ara = session.state.bots.first(where: { $0.name == "Ara" }) {
+                        if let ara = session.state.bots.first(where: { $0.name == name }) {
                             session.openChat(threadId: ara.threadId)
+                            return
+                        }
+                        // a room by its name (the composer tests' Lab Room)
+                        if let room = session.state.rooms.first(where: { $0.name == name }) {
+                            session.openChat(threadId: room.threadId)
                             return
                         }
                         try? await Task.sleep(nanoseconds: 100_000_000)
@@ -185,9 +321,60 @@ struct ParityScreenLauncher: ViewModifier {
     }
 }
 
+/// Draws the requested desktop surface over the whole iPad window.
+struct IPadParityLauncher: ViewModifier {
+    @State private var presented: IPadParityScreen?
+
+    func body(content: Content) -> some View {
+        content
+            .task {
+                guard let screen = ParityLaunch.current?.iPadScreen else { return }
+                presented = screen
+            }
+            .fullScreenCover(item: $presented) { screen in
+                IPadParityRoot(screen: screen)
+            }
+    }
+}
+
+extension IPadParityScreen: Identifiable {
+    var id: String { rawValue }
+}
+
+/// The iPad surface for a desktop reference. Each case moves from the
+/// placeholder to its real view as the iPad UI is built.
+struct IPadParityRoot: View {
+    let screen: IPadParityScreen
+
+    var body: some View {
+        switch screen {
+        default:
+            IPadParityPlaceholder(screen: screen)
+        }
+    }
+}
+
+/// A desktop surface the iPad does not draw yet: the desktop's own app
+/// background (Pulsatrix skin, --color-app #030b17) and the surface id, so
+/// the diff reports the full distance to the reference.
+struct IPadParityPlaceholder: View {
+    let screen: IPadParityScreen
+
+    var body: some View {
+        ZStack {
+            Color(red: 3 / 255, green: 11 / 255, blue: 23 / 255).ignoresSafeArea()
+            Text(verbatim: "iPad parity placeholder: \(screen.rawValue)")
+                .font(.system(size: 13))
+                .foregroundStyle(Color(red: 154 / 255, green: 166 / 255, blue: 194 / 255))
+        }
+        .preferredColorScheme(.dark)
+    }
+}
+
 /// A screen that a later phase builds. Drawn on the theme background so the
 /// diff measures the gap honestly instead of comparing against the home.
 struct ParityPlaceholderView: View {
+    @Environment(\.themePalette) var themePalette
     let screen: ParityScreen
     let close: () -> Void
 
@@ -202,7 +389,6 @@ struct ParityPlaceholderView: View {
                 .foregroundStyle(Theme.textTertiary)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .preferredColorScheme(.dark)
     }
 }
 #endif
@@ -212,7 +398,9 @@ extension View {
     @ViewBuilder
     func parityLauncher() -> some View {
         #if DEBUG
-        if ParityLaunch.current != nil {
+        if ParityLaunch.current?.iPadScreen != nil {
+            modifier(IPadParityLauncher())
+        } else if ParityLaunch.current != nil {
             modifier(ParityScreenLauncher())
         } else {
             self

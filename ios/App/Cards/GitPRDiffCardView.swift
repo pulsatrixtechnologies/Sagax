@@ -1,12 +1,12 @@
 import SwiftUI
 
 public struct GitPRDiffCardView: View {
+    @Environment(\.themePalette) var themePalette
     public let filename: String
     public let diffText: String
     public let additions: Int
     public let deletions: Int
     
-    @Environment(\.colorScheme) private var colorScheme
     @State private var showDiff: Bool = true
     @State private var showAllLines: Bool = false
 
@@ -35,18 +35,17 @@ public struct GitPRDiffCardView: View {
     }
     
     public var body: some View {
-        let isDark = colorScheme == .dark
         
         VStack(alignment: .leading, spacing: 8) {
             // Header
             HStack(spacing: 6) {
                 Image(systemName: "arrow.triangle.pull")
                     .font(.system(size: 12, weight: .bold))
-                    .foregroundColor(Color(hex: "#22C55E"))
+                    .foregroundColor(Theme.success)
                 
                 Text(filename)
                     .font(.caption.weight(.bold))
-                    .foregroundColor(isDark ? Color(hex: "#F8FAFC") : Color(hex: "#0F172A"))
+                    .foregroundColor(Theme.textPrimary)
                     .lineLimit(1)
                 
                 Spacer()
@@ -55,14 +54,14 @@ public struct GitPRDiffCardView: View {
                 HStack(spacing: 4) {
                     Text("+\(additions)")
                         .font(.system(size: 10.5, weight: .bold, design: .monospaced))
-                        .foregroundColor(Color(hex: "#22C55E"))
+                        .foregroundColor(Theme.success)
                     Text("-\(deletions)")
                         .font(.system(size: 10.5, weight: .bold, design: .monospaced))
-                        .foregroundColor(Color(hex: "#EF4444"))
+                        .foregroundColor(Theme.danger)
                 }
                 .padding(.horizontal, 6)
                 .padding(.vertical, 2.5)
-                .background(isDark ? Color.white.opacity(0.08) : Color.black.opacity(0.04))
+                .background(Theme.cardRaised)
                 .clipShape(Capsule())
             }
             
@@ -82,7 +81,7 @@ public struct GitPRDiffCardView: View {
                                 .font(.caption2.weight(.semibold))
                             Spacer()
                         }
-                        .foregroundColor(isDark ? Color(hex: "#94A3B8") : Color(hex: "#64748B"))
+                        .foregroundColor(Theme.textSecondary)
                         .padding(.vertical, 2)
                     }
                     .buttonStyle(.plain)
@@ -91,12 +90,12 @@ public struct GitPRDiffCardView: View {
                         ScrollView(.horizontal, showsIndicators: false) {
                             VStack(alignment: .leading, spacing: 1) {
                                 ForEach(Array(visibleLines.enumerated()), id: \.offset) { _, line in
-                                    diffLineView(line, isDark: isDark)
+                                    diffLineView(line)
                                 }
                             }
                             .padding(6)
                         }
-                        .background(isDark ? Color.black.opacity(0.55) : Color(hex: "#0F172A"))
+                        .background(Theme.inset)
                         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                         .transition(.opacity.combined(with: .move(edge: .top)))
 
@@ -113,7 +112,7 @@ public struct GitPRDiffCardView: View {
                 }
             }
             
-            Divider().background(isDark ? Color.white.opacity(0.12) : Color.black.opacity(0.08))
+            Theme.hairline.frame(height: 1)
             
             // Footer Actions
             HStack(spacing: 8) {
@@ -125,7 +124,7 @@ public struct GitPRDiffCardView: View {
                         Text("Copy Diff")
                     }
                     .font(.caption2.weight(.medium))
-                    .foregroundColor(isDark ? Color(hex: "#94A3B8") : Color(hex: "#64748B"))
+                    .foregroundColor(Theme.textSecondary)
                 }
                 .buttonStyle(.plain)
                 
@@ -133,30 +132,17 @@ public struct GitPRDiffCardView: View {
             }
         }
         .padding(10)
-        .background(
-            LinearGradient(
-                colors: isDark ? [
-                    Color(hex: "#0D1117").opacity(0.96),
-                    Color(hex: "#161B22").opacity(0.92)
-                ] : [
-                    Color.white.opacity(0.96),
-                    Color(hex: "#F8FAFC").opacity(0.92)
-                ],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-        )
-        .background(.ultraThinMaterial)
+        .background(Theme.card)
         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .stroke(isDark ? Color.white.opacity(0.12) : Color.black.opacity(0.08), lineWidth: 0.75)
+                .stroke(Theme.hairline, lineWidth: 0.75)
         )
-        .shadow(color: Color.black.opacity(isDark ? 0.20 : 0.04), radius: 4, y: 1.5)
+        .shadow(color: Color.black.opacity(Theme.palette.isDark ? 0.20 : 0.04), radius: 4, y: 1.5)
     }
     
     @ViewBuilder
-    private func diffLineView(_ line: String, isDark: Bool) -> some View {
+    private func diffLineView(_ line: String) -> some View {
         let isAddition = line.hasPrefix("+") && !line.hasPrefix("+++")
         let isDeletion = line.hasPrefix("-") && !line.hasPrefix("---")
         let isHeader = line.hasPrefix("@@") || line.hasPrefix("diff")
@@ -164,16 +150,16 @@ public struct GitPRDiffCardView: View {
         Text(line)
             .font(.system(size: 10, design: .monospaced))
             .foregroundColor(
-                isAddition ? Color(hex: "#4ADE80") :
-                isDeletion ? Color(hex: "#F87171") :
-                isHeader ? Color(hex: "#38BDF8") :
-                Color(hex: "#E2E8F0")
+                isAddition ? Theme.success :
+                isDeletion ? Theme.danger :
+                isHeader ? Theme.accentText :
+                Theme.textPrimary
             )
             .padding(.horizontal, 4)
             .padding(.vertical, 1)
             .background(
-                isAddition ? Color(hex: "#22C55E").opacity(0.15) :
-                isDeletion ? Color(hex: "#EF4444").opacity(0.15) :
+                isAddition ? Theme.success.opacity(0.15) :
+                isDeletion ? Theme.danger.opacity(0.15) :
                 Color.clear
             )
             .clipShape(RoundedRectangle(cornerRadius: 2))

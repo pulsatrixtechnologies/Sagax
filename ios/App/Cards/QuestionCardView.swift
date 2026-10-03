@@ -15,6 +15,7 @@ import SwiftUI
 /// The answer text is built by `AskQuestionAnswer.format`, so an answer given
 /// here is byte-for-byte the one the Mac would have sent.
 struct QuestionCardView: View {
+    @Environment(\.themePalette) var themePalette
     let chat: Chat
     let message: Message
     @EnvironmentObject private var session: Session
@@ -60,20 +61,20 @@ struct QuestionCardView: View {
                 if card.questionRequest?.origin == "output" {
                     Text("Agent-composed question")
                         .font(.system(size: 12))
-                        .foregroundStyle(Color.secondary)
+                        .foregroundStyle(Theme.attentionSecondary)
                 }
                 if questions.count > 1 { tabs }
                 if let current {
                     Text(current.question)
                         .font(.system(size: 15))
-                        .foregroundStyle(Color.primary)
+                        .foregroundStyle(Theme.attentionText)
                         .textSelection(.enabled)
                         .fixedSize(horizontal: false, vertical: true)
                     if !settled {
                         if current.allowsMultiple {
                             Text("Choose all that apply")
                                 .font(.system(size: 12))
-                                .foregroundStyle(Color.secondary)
+                                .foregroundStyle(Theme.attentionSecondary)
                         }
                         choices(current)
                     }
@@ -88,7 +89,8 @@ struct QuestionCardView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
                 RoundedRectangle(cornerRadius: 22, style: .continuous)
-                    .fill(settled ? Color.secondary.opacity(0.13) : tint.opacity(0.12))
+                    .fill(settled ? Theme.card : Theme.attentionSurface)
+                    .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).fill(settled ? Color.clear : tint.opacity(0.08)))
             )
             .overlay {
                 RoundedRectangle(cornerRadius: 22, style: .continuous)
@@ -102,12 +104,12 @@ struct QuestionCardView: View {
         HStack(alignment: .firstTextBaseline) {
             Label("\(chat.name) has a question", systemImage: "questionmark.bubble.fill")
                 .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(settled ? Color.secondary : tint)
+                .foregroundStyle(settled ? Theme.attentionSecondary : Theme.readable(tint))
             Spacer(minLength: 8)
             if questions.count > 1, !settled {
                 Text("\(answeredCount) of \(questions.count)")
                     .font(.system(size: 12).monospacedDigit())
-                    .foregroundStyle(Color.secondary)
+                    .foregroundStyle(Theme.attentionSecondary)
             }
         }
     }
@@ -131,9 +133,9 @@ struct QuestionCardView: View {
                         .padding(.horizontal, 10)
                         .padding(.vertical, 5)
                         .background(
-                            Capsule().fill(position == index ? Color.secondary.opacity(0.22) : Color.clear)
+                            Capsule().fill(position == index ? Theme.cardRaised : Color.clear)
                         )
-                        .foregroundStyle(position == index ? Color.primary : Color.secondary)
+                        .foregroundStyle(position == index ? Theme.attentionText : Theme.attentionSecondary)
                     }
                     .buttonStyle(.plain)
                     .disabled(settled)
@@ -173,7 +175,7 @@ struct QuestionCardView: View {
             }
         }
         .background(
-            RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color.secondary.opacity(0.10))
+            RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Theme.cardRaised)
         )
     }
 
@@ -192,16 +194,16 @@ struct QuestionCardView: View {
             HStack(alignment: .top, spacing: 10) {
                 Image(systemName: marker(checked: checked, multi: multi))
                     .font(.system(size: 17))
-                    .foregroundStyle(checked ? tint : Color.secondary)
+                    .foregroundStyle(checked ? tint : Theme.attentionSecondary)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(label)
                         .font(.system(size: 15, weight: .medium))
-                        .foregroundStyle(Color.primary)
+                        .foregroundStyle(Theme.attentionText)
                         .fixedSize(horizontal: false, vertical: true)
                     if let detail, !detail.isEmpty {
                         Text(detail)
                             .font(.system(size: 13))
-                            .foregroundStyle(Color.secondary)
+                            .foregroundStyle(Theme.attentionSecondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
@@ -228,10 +230,10 @@ struct QuestionCardView: View {
         } label: {
             Text(questions.count > 1 ? "Submit answers" : "Submit answer")
                 .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(.white)
+                .foregroundStyle(complete ? Color.white : Theme.disabledCapsuleText)
                 .frame(maxWidth: .infinity)
                 .frame(height: 40)
-                .background(Capsule().fill(complete ? tint : Color.secondary.opacity(0.35)))
+                .background(Capsule().fill(complete ? Theme.readable(tint) : Theme.disabledCapsule))
         }
         .buttonStyle(.plain)
         .disabled(!complete || answering)
@@ -249,7 +251,7 @@ struct QuestionCardView: View {
         } icon: {
             Image(systemName: "checkmark.circle")
         }
-        .foregroundStyle(Color.secondary)
+        .foregroundStyle(Theme.attentionSecondary)
     }
 
     private func binding(forCustom position: Int) -> Binding<String> {

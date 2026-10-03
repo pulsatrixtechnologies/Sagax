@@ -17,6 +17,7 @@ enum SettingsRoute: Hashable {
 }
 
 struct SettingsView: View {
+    @Environment(\.themePalette) var themePalette
     @EnvironmentObject private var session: Session
     @StateObject private var model = SettingsModel()
     @StateObject private var navigator = SettingsNavigator()
@@ -73,6 +74,7 @@ struct SettingsView: View {
         case .plugins?: return .plugins
         case .account?: return .account
         case .botComputer?: return .botComputer
+        case .appearance?: return .appearance
         default: return nil
         }
 #else
@@ -105,14 +107,14 @@ extension EnvironmentValues {
 // MARK: - Root
 
 private struct SettingsRootPage: View {
+    @Environment(\.themePalette) var themePalette
     let close: (() -> Void)?
     let onConnect: (() -> Void)?
 
     @EnvironmentObject private var session: Session
     @EnvironmentObject private var model: SettingsModel
     @Environment(\.locale) private var locale
-    @AppStorage(PrefKey.appearanceMode) private var appearance = AppearanceMode.system.rawValue
-    @AppStorage(PrefKey.appearanceTone) private var tone = AppearanceTone.black.rawValue
+    @ObservedObject private var themes = ThemeStore.shared
     @AppStorage(PrefKey.language) private var language = AppLanguage.system.rawValue
     @AppStorage(PrefKey.haptics) private var haptics = true
     @State private var link: URL?
@@ -171,7 +173,6 @@ private struct SettingsRootPage: View {
                     }
             }
             .environmentObject(session)
-            .preferredColorScheme(.dark)
         }
         .sheet(item: Binding(get: { link.map(IdentifiedURL.init) }, set: { link = $0?.url })) { item in
             SafariSheet(url: item.url).ignoresSafeArea()
@@ -213,7 +214,7 @@ private struct SettingsRootPage: View {
 
     private var accountCard: some View {
         SettingsCard {
-            AccountCardRow(name: model.displayName, detail: model.detail, photo: model.photo, chevron: true) { push(.account) }
+            AccountCardRow(name: model.displayName, detail: model.detail, photo: session.accountPhoto, chevron: true) { push(.account) }
             if let percent = model.usagePercent {
                 CardHairline(leadingInset: SettingsMetrics.rowInset)
                 SettingsRow(title: "Usage", accessory: .valueChevron("\(percent)%"), height: 43.5, identifier: "settings-usage") { push(.usage) }
@@ -280,10 +281,15 @@ private struct SettingsRootPage: View {
         }
     }
 
+    /// "System · Black": how the skin is chosen, then the one worn now.
     private var appearanceValue: String {
-        let mode = AppearanceMode(rawValue: appearance) == .dark ? String(localized: "Dark") : String(localized: "System")
-        let shade = AppearanceTone(rawValue: tone) == .dim ? String(localized: "Dim") : String(localized: "Black")
-        return "\(mode) · \(shade)"
+        let mode: String
+        switch themes.effective.mode {
+        case .system: mode = String(localized: "System")
+        case .fixed: mode = String(localized: "Fixed")
+        case .computer: mode = String(localized: "Computer")
+        }
+        return "\(mode) · \(themePalette.id.name)"
     }
 
     private var linksCard: some View {
@@ -352,6 +358,7 @@ private struct SettingsRootPage: View {
 
 /// A route's page.
 struct SettingsRouteView: View {
+    @Environment(\.themePalette) var themePalette
     let route: SettingsRoute
     let onConnect: (() -> Void)?
     let closeSheet: (() -> Void)?
@@ -374,6 +381,7 @@ struct SettingsRouteView: View {
 
 /// Vertical space between cards.
 struct SettingsSpacer: View {
+    @Environment(\.themePalette) var themePalette
     let height: CGFloat
     init(_ height: CGFloat) { self.height = height }
     var body: some View { Color.clear.frame(height: height) }
@@ -382,6 +390,7 @@ struct SettingsSpacer: View {
 // MARK: - Usage
 
 struct UsageSettingsView: View {
+    @Environment(\.themePalette) var themePalette
     @EnvironmentObject private var model: SettingsModel
 
     var body: some View {
@@ -412,35 +421,8 @@ struct UsageSettingsView: View {
 
 // MARK: - Appearance, language, haptics
 
-struct AppearanceSettingsView: View {
-    @AppStorage(PrefKey.appearanceMode) private var appearance = AppearanceMode.system.rawValue
-    @AppStorage(PrefKey.appearanceTone) private var tone = AppearanceTone.black.rawValue
-
-    var body: some View {
-        SettingsPage(title: "Appearance") {
-            SettingsCard {
-                ForEach(Array(AppearanceMode.allCases.enumerated()), id: \.element) { index, mode in
-                    if index > 0 { CardHairline(leadingInset: SettingsMetrics.rowInset) }
-                    SettingsRow(title: mode.label, accessory: appearance == mode.rawValue ? .check : .none, identifier: "appearance.\(mode.rawValue)") {
-                        appearance = mode.rawValue
-                    }
-                }
-            }
-            SettingsSectionLabel(text: "Dark background")
-            SettingsCard {
-                ForEach(Array(AppearanceTone.allCases.enumerated()), id: \.element) { index, option in
-                    if index > 0 { CardHairline(leadingInset: SettingsMetrics.rowInset) }
-                    SettingsRow(title: option.label, accessory: tone == option.rawValue ? .check : .none, identifier: "tone.\(option.rawValue)") {
-                        tone = option.rawValue
-                    }
-                }
-            }
-            SettingsFooter(text: "System follows the phone; Dark keeps Sagax dark. Black is the deepest background, Dim a softer grey.")
-        }
-    }
-}
-
 struct LanguageSettingsView: View {
+    @Environment(\.themePalette) var themePalette
     @AppStorage(PrefKey.language) private var language = AppLanguage.system.rawValue
 
     var body: some View {
@@ -459,6 +441,7 @@ struct LanguageSettingsView: View {
 }
 
 struct HapticsSettingsView: View {
+    @Environment(\.themePalette) var themePalette
     @AppStorage(PrefKey.haptics) private var haptics = true
 
     var body: some View {
@@ -476,6 +459,7 @@ struct HapticsSettingsView: View {
 // MARK: - Advanced (the earlier settings, kept)
 
 struct AdvancedSettingsView: View {
+    @Environment(\.themePalette) var themePalette
     let onConnect: (() -> Void)?
     let closeSheet: (() -> Void)?
 
@@ -487,7 +471,7 @@ struct AdvancedSettingsView: View {
     @State private var showingWalkieVoice = false
 
     var body: some View {
-        Form {
+        ThemedForm {
             Section("Computer") {
                 if let connection = session.connection {
                     NavigationLink {
@@ -557,9 +541,9 @@ struct AdvancedSettingsView: View {
                 Button {
                     showingWalkieVoice = true
                 } label: {
-                    Label { Text("Walkie voice") } icon: { SettingsIcon(symbol: "waveform", color: .green) }
+                    Label { Text("Call voice") } icon: { SettingsIcon(symbol: "waveform", color: .green) }
                 }
-                .foregroundStyle(.primary)
+                .foregroundStyle(Theme.textPrimary)
             }
 
             if session.connection != nil {
@@ -569,16 +553,18 @@ struct AdvancedSettingsView: View {
                     } label: {
                         Label { Text("Updates") } icon: { SettingsIcon(symbol: "bell.badge.fill", color: .red) }
                     }
-                    .foregroundStyle(.primary)
+                    .foregroundStyle(Theme.textPrimary)
 
                     NavigationLink {
                         TasksRoutinesView()
                     } label: {
                         Label { Text("Threads & Routines") } icon: { SettingsIcon(symbol: "calendar.badge.clock", color: .orange) }
                     }
+                    .accessibilityIdentifier("settings-routines")
 
-                    // Composio accounts (Work, Personal, client accounts).
-                    if session.canAdminister {
+                    // Composio accounts (Work, Personal, client accounts):
+                    // the sidecar serves them, a client session does not (PL1).
+                    if session.surfaceGate.allows(.connectedApps) {
                         NavigationLink {
                             ConnectedAppsView()
                         } label: {
@@ -612,6 +598,7 @@ struct AdvancedSettingsView: View {
 }
 
 private struct ComputerSettingsRow: View {
+    @Environment(\.themePalette) var themePalette
     let name: Text
     let status: Text
     let connected: Bool
@@ -629,15 +616,15 @@ private struct ComputerSettingsRow: View {
 
             VStack(alignment: .leading, spacing: 3) {
                 name
-                    .foregroundStyle(.primary)
+                    .foregroundStyle(Theme.textPrimary)
                     .lineLimit(1)
                 HStack(spacing: 5) {
                     Circle()
-                        .fill(connected ? Color.green : Color.secondary)
+                        .fill(connected ? Theme.success : Theme.textSecondary)
                         .frame(width: 7, height: 7)
                     status
                         .font(.footnote)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Theme.textSecondary)
                         .lineLimit(1)
                 }
             }
@@ -648,6 +635,7 @@ private struct ComputerSettingsRow: View {
 }
 
 private struct SettingsIcon: View {
+    @Environment(\.themePalette) var themePalette
     let symbol: String
     let color: Color
 
@@ -662,6 +650,7 @@ private struct SettingsIcon: View {
 }
 
 struct ConnectedComputersView: View {
+    @Environment(\.themePalette) var themePalette
     @EnvironmentObject private var session: Session
     @State private var pendingRemoval: Connection?
 
@@ -678,7 +667,7 @@ struct ConnectedComputersView: View {
     }
 
     var body: some View {
-        List {
+        ThemedList {
             if let active = session.connection {
                 Section("Current computer") {
                     NavigationLink {
@@ -704,11 +693,11 @@ struct ConnectedComputersView: View {
                                 ProfileAvatar(name: computer.name, size: 38)
                                 VStack(alignment: .leading, spacing: 3) {
                                     Text(computer.name)
-                                        .foregroundStyle(.primary)
+                                        .foregroundStyle(Theme.textPrimary)
                                         .lineLimit(1)
                                     Text("Tap to switch")
                                         .font(.footnote)
-                                        .foregroundStyle(.secondary)
+                                        .foregroundStyle(Theme.textSecondary)
                                 }
                                 Spacer()
                                 Text("Use")
@@ -762,6 +751,7 @@ struct ConnectedComputersView: View {
 }
 
 struct ConnectionSecurityView: View {
+    @Environment(\.themePalette) var themePalette
     @EnvironmentObject private var session: Session
     @Environment(\.dismiss) private var dismiss
     @State private var confirmingSignOut = false
@@ -772,7 +762,7 @@ struct ConnectionSecurityView: View {
     @State private var refreshing = false
 
     var body: some View {
-        Form {
+        ThemedForm {
             if let connection = session.connection {
                 Section {
                     HStack(spacing: 14) {
@@ -786,7 +776,7 @@ struct ConnectionSecurityView: View {
                                 Image(systemName: session.status == .live ? "checkmark.circle.fill" : "circle.dotted")
                             }
                                 .font(.subheadline)
-                                .foregroundStyle(session.status == .live ? Color.green : Color.secondary)
+                                .foregroundStyle(session.status == .live ? Theme.success : Theme.textSecondary)
                         }
                     }
                     .padding(.vertical, 4)
@@ -807,7 +797,7 @@ struct ConnectionSecurityView: View {
                                 }
                             }
                             .font(.footnote.monospaced())
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(Theme.textSecondary)
 
                             HStack(spacing: 16) {
                                 Button(showingFullAddress ? "Hide full address" : "Show full address") {
@@ -836,7 +826,7 @@ struct ConnectionSecurityView: View {
                 Section("Troubleshooting") {
                     troubleshootingText
                         .font(.subheadline)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Theme.textSecondary)
 
                     Button {
                         refreshing = true

@@ -30,6 +30,7 @@ enum OrgServerMemory {
 }
 
 struct OrgSignInView: View {
+    @Environment(\.themePalette) var themePalette
     @EnvironmentObject private var session: Session
     @StateObject private var signIn = PulsatrixWebSignIn()
     @State private var address = OrgServerMemory.last

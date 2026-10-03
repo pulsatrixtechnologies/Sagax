@@ -117,8 +117,25 @@ public struct ThreadFile: Decodable, Hashable, Identifiable, Sendable {
     public var at: Double
     public var size: Int?
     public var available: Bool
+    /// Where the message named it (a host path, a URL or a bare name).
+    public var path: String
+    /// The resolved absolute path on the computer, while it is available.
+    public var localPath: String?
 
-    private enum CodingKeys: String, CodingKey { case id, messageId, source, name, mime, at, size, available }
+    private enum CodingKeys: String, CodingKey { case id, messageId, source, name, mime, at, size, available, path, localPath }
+
+    public init(id: String, messageId: String = "", source: Source, name: String, mime: String? = nil, at: Double, size: Int? = nil, available: Bool = true, path: String = "", localPath: String? = nil) {
+        self.id = id
+        self.messageId = messageId
+        self.source = source
+        self.name = name
+        self.mime = mime
+        self.at = at
+        self.size = size
+        self.available = available
+        self.path = path
+        self.localPath = localPath
+    }
 
     public init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
@@ -130,6 +147,8 @@ public struct ThreadFile: Decodable, Hashable, Identifiable, Sendable {
         at = try values.decodeIfPresent(Double.self, forKey: .at) ?? 0
         size = try values.decodeIfPresent(Int.self, forKey: .size)
         available = try values.decodeIfPresent(Bool.self, forKey: .available) ?? false
+        path = try values.decodeIfPresent(String.self, forKey: .path) ?? ""
+        localPath = try values.decodeIfPresent(String.self, forKey: .localPath)
     }
 
     /// Media tab when true, Files tab otherwise. Falls back to the extension
@@ -161,12 +180,17 @@ public struct AuthSession: Decodable, Equatable, Sendable {
     public var name: String?
     public var principalId: String?
     public var role: String?
-    /// The person's photo, when the server knows one: an absolute URL or an
-    /// app-owned `/api/attachments/...` path.
+    /// The person's photo, when the server knows one: the versioned
+    /// `/api/people/<id>/avatar?v=` route of their Perspicax avatar on an
+    /// organization server (or a stored `/api/attachments/...` picture).
+    /// Read through `avatar`; never an address to fetch as is.
     public var avatarUrl: String?
 
+    /// The photo this phone may request from its own server, or nil.
+    public var avatar: AccountAvatar? { AccountAvatar(avatarUrl) }
+
     private enum CodingKeys: String, CodingKey {
-        case kind, id, label, scopes, expiresAt, environmentId, email, owner, name, principalId, role, avatarUrl, picture
+        case kind, id, label, scopes, expiresAt, environmentId, email, owner, name, principalId, role, avatarUrl
     }
 
     public init(from decoder: Decoder) throws {
@@ -183,7 +207,9 @@ public struct AuthSession: Decodable, Equatable, Sendable {
         name = try? values.decodeIfPresent(String.self, forKey: .name)
         principalId = try? values.decodeIfPresent(String.self, forKey: .principalId)
         role = try? values.decodeIfPresent(String.self, forKey: .role)
-        let avatar = (try? values.decodeIfPresent(String.self, forKey: .avatarUrl)) ?? (try? values.decodeIfPresent(String.self, forKey: .picture))
+        // Only the server's own `avatarUrl`: an id_token `picture` names an
+        // address on Perspicax, which the phone never calls.
+        let avatar = try? values.decodeIfPresent(String.self, forKey: .avatarUrl)
         avatarUrl = avatar.flatMap { $0.trimmingCharacters(in: .whitespaces).isEmpty ? nil : $0 }
     }
 

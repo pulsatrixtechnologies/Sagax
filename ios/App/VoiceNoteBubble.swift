@@ -9,13 +9,13 @@ import SwiftUI
 /// holder is weak: a bubble scrolled out of the transcript releases itself.
 ///
 /// The session this coordinates is process-wide, so the arbiter is too:
-/// dictation and Walkie file through the same instance before they
+/// dictation and calls file through the same instance before they
 /// reconfigure the shared session for recording.
 @MainActor
 final class VoiceNoteCenter {
     static let shared = VoiceNoteCenter()
 
-    enum InputOwner: String { case dictation, walkie }
+    enum InputOwner: String { case dictation, call }
 
     private weak var current: VoiceNotePlayer?
     private var inputOwners: Set<InputOwner> = []
@@ -47,7 +47,7 @@ final class VoiceNoteCenter {
     }
 
     /// Claim the shared session for playback. Rejected while an input
-    /// owner holds it, so starting dictation or Walkie silences the
+    /// owner holds it, so starting dictation or a call silences the
     /// transcript instead of the two fighting over the route.
     func beginPlaybackSession() -> Bool {
         guard inputOwners.isEmpty else { return false }
@@ -56,7 +56,7 @@ final class VoiceNoteCenter {
     }
 
     /// Give the session back — but only if a voice-note player still owns
-    /// it. Deactivating while dictation or Walkie holds the session would
+    /// it. Deactivating while dictation or a call holds the session would
     /// end their capture.
     func endPlaybackSession() {
         guard ownsPlaybackSession else { return }
@@ -188,6 +188,7 @@ extension VoiceNotePlayer: AVAudioPlayerDelegate {
 /// behavior is this slice's contract. The transcript stays the message
 /// body; this bubble is the playable clip beside it.
 struct VoiceNoteBubble: View {
+    @Environment(\.themePalette) var themePalette
     let note: MessageVoiceNote
     var tint: Color = .accentColor
 
@@ -250,7 +251,7 @@ struct VoiceNoteBubble: View {
                 Text(timeText)
                     .font(.system(size: 11))
                     .monospacedDigit()
-                    .foregroundStyle(Color.secondary)
+                    .foregroundStyle(Theme.textSecondary)
                     .accessibilityIdentifier("voice-note-time")
             }
         }
@@ -258,7 +259,7 @@ struct VoiceNoteBubble: View {
         .padding(.vertical, 8)
         .background(
             RoundedRectangle(cornerRadius: 13, style: .continuous)
-                .fill(Color.secondary.opacity(0.13))
+                .fill(Theme.inset)
         )
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("voice-note")
@@ -304,7 +305,7 @@ struct VoiceNoteBubble: View {
             .font(.system(size: 12, weight: .semibold))
             .foregroundStyle(tint)
         }
-        .foregroundStyle(Color.secondary)
+        .foregroundStyle(Theme.textSecondary)
     }
 
     private static func clock(_ seconds: Double) -> String {

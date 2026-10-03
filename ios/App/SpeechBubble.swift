@@ -90,13 +90,12 @@ struct SpeechBubble: Shape {
 enum BubbleColor {
     /// What you said: the assistant card's family, one step lighter
     /// (reference 02 only shows the bot's side).
-    static let mine = Theme.bubbleUser
-    static let mineText = Color.white
+    static var mine: Color { Theme.bubbleUser }
+    static var mineText: Color { Theme.bubbleUserText }
 
-    /// What a bot said: the #202020 card on dark, a soft grey on light.
-    static let theirs = Color(uiColor: UIColor { trait in
-        trait.userInterfaceStyle == .dark
-            ? UIColor(red: 0x20 / 255, green: 0x20 / 255, blue: 0x20 / 255, alpha: 1)   // #202020
-            : UIColor(red: 0.914, green: 0.914, blue: 0.922, alpha: 1)   // #E9E9EB
-    })
+    /// What a bot said: the skin's assistant card (#202020 on Black). Read
+    /// from the skin, never from the phone's light or dark: a light phone
+    /// wearing a dark skin keeps the dark bubble with its light text.
+    static var theirs: Color { Theme.bubbleAssistant }
+    static var theirsText: Color { Theme.bubbleAssistantText }
 }

@@ -1,0 +1,16 @@
+{
+  "_comment": "Rects are [x, y, width, height] in points of the reference's viewport (CSS px = iPad pt), scaled to the image; width \"100%\" spans the viewport. Keys are desktop surface ids (surfaces.mjs) without the NN prefix; skin variants use their surface's key. Mascot frames and the focused field's caret are masked per capture from the reference's DOM dump (diff-ipad.py), so they are not listed here.",
+  "_all": {
+    "rects": [
+      {
+        "rect": [
+          0,
+          0,
+          "100%",
+          36
+        ],
+        "why": "desktop: the macOS hiddenInset title bar strip (traffic lights at 16,16 are drawn by macOS, the renderer reserves the 36 pt band); iPad: the iPadOS status bar. The iPad draws no fake title bar and keeps the band as its top inset."
+      }
+    ]
+  }
+}
