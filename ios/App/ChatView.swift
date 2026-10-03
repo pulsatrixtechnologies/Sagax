@@ -44,8 +44,17 @@ struct ChatView: View {
     @ObservedObject var call = CallController.shared
     @Environment(\.isPresented) var isPresented
     @Environment(\.openURL) var openURL
+    /// WP11: the Room info sheet (RM6), opened by a room's header.
+    @State var showingRoomInfo = false
+    /// The Room info's Threads row: the threads sheet once it has gone.
+    @State var roomInfoOpensThreads = false
     /// WP3: failed sends, pasted chips, the busy choice, Steer and the "/" menu.
     @StateObject var power = ComposerModel()
+    /// WP4: the find bar (MS11), the bottom follow and Jump to latest (MS14),
+    /// citations waiting for the next send (CO8).
+    @StateObject var finder = ChatFindModel()
+    @StateObject var follow = BottomFollow()
+    @StateObject var citations = CitationDrafts()
     @State var shareFile: ShareFile?
     @State var showingPhotoPicker = false
     @State var showingFileImporter = false
@@ -166,6 +175,23 @@ struct ChatView: View {
         .sheet(isPresented: $showingProfile) {
             if case let .bot(bot) = current { ChatProfileRoute.destination(for: bot) }
         }
+        .sheet(isPresented: $showingRoomInfo, onDismiss: {
+            if roomInfoOpensThreads {
+                roomInfoOpensThreads = false
+                showingTasks = true
+            }
+        }) {
+            if case let .room(room) = current {
+                RoomInfoSheet(roomId: room.id, openThreads: {
+                    roomInfoOpensThreads = true
+                    showingRoomInfo = false
+                }, onDeleted: {
+                    showingRoomInfo = false
+                    dismiss()
+                })
+                .environmentObject(session)
+            }
+        }
         .alert(
             call.unavailable?.title ?? "",
             isPresented: Binding(get: { call.unavailable != nil }, set: { if !$0 { call.unavailable = nil } }),
@@ -225,6 +251,9 @@ struct ChatView: View {
             if shown { dictation.stop() }
         }
         .onValueChange(of: showingTasks) { shown in
+            if shown { dictation.stop() }
+        }
+        .onValueChange(of: showingRoomInfo) { shown in
             if shown { dictation.stop() }
         }
         .onValueChange(of: showingProfile || pushingProfile) { shown in
@@ -308,6 +337,8 @@ struct ChatView: View {
             power.commandMenuForced = false
             power.busyChoice = nil
             showingPlus = false
+            finder.close()
+            follow.resume()
             // The local task picker changed threads. A download
             // started in the previous task must not open a sheet (or surface
             // its error) in the new one when the network reply arrives late.
@@ -434,6 +465,9 @@ struct ChatView: View {
                     .frame(maxWidth: CompanionLayout.chatWidth, alignment: .leading)
                     .frame(maxWidth: .infinity)
                     .environment(\.messageActions, messageActionContext)
+                    .environment(\.citeIntoComposer, citeIntoComposer)
+                    .environment(\.conversationGallery, conversationGallery)
+                    .background(BottomFollowProbe(model: follow))
                 }
                 // The transcript starts under the top bar and scrolls
                 // beneath it: a clear inset the height of the bar, then the
@@ -451,8 +485,18 @@ struct ChatView: View {
                         .ignoresSafeArea()
                 }
                 .overlay(alignment: .top) { pinnedBanner }
-                .overlay(alignment: .top) { headerBar }
+                .overlay(alignment: .top) { headerOrFindBar }
                 .overlay(alignment: .top) { callPill }
+                .overlay(alignment: .bottom) {
+                    if !follow.following, !transcript.isEmpty {
+                        JumpToLatestButton {
+                            follow.resume()
+                            withAnimation { proxy.scrollTo(Self.bottomId, anchor: .bottom) }
+                        }
+                        .padding(.bottom, 12)
+                    }
+                }
+                .animation(.snappy(duration: 0.2), value: follow.following)
                 .overlay(alignment: .top) { islandFace }
                 .task {
                     // grow, hold a beat, shrink — the face rides along
@@ -498,7 +542,11 @@ struct ChatView: View {
                 // message where `scrollAnchorCompat` cannot (iOS 16). On 17 the
                 // anchor has already put us there and this is a no-op.
                 .onValueChange(of: transcript.last?.id, initial: true) { _ in
-                    guard transcript.last != nil else { return }
+                    guard let last = transcript.last else { return }
+                    // Reading scrollback is not interrupted (MS14); your own
+                    // send takes you back to the end.
+                    if last.role == .user { follow.resume() }
+                    guard follow.following else { return }
                     withAnimation { proxy.scrollTo(Self.bottomId, anchor: .bottom) }
                 }
                 // Long markdown replies finish laying out after the first
@@ -516,7 +564,7 @@ struct ChatView: View {
                 // animation — animating every token turns a smooth stream
                 // into a stutter, because each scroll interrupts the last.
                 .onValueChange(of: session.state.streaming[threadId]?.count ?? 0) { length in
-                    guard length > 0 else { return }
+                    guard length > 0, follow.following else { return }
                     proxy.scrollTo(Self.bottomId, anchor: .bottom)
                 }
                 .task(id: session.focusedMessageId) {
@@ -524,6 +572,8 @@ struct ChatView: View {
                           messages.contains(where: { $0.id == messageId })
                     else { return }
                     revealedMessageId = messageId
+                    // A message picked by hand is read where it is.
+                    follow.pause()
                     // Materialize the lazy folded row first. Its target bubble
                     // scrolls itself into view once expansion has laid it out.
                     let folded = transcript.first { row in
@@ -609,7 +659,7 @@ struct ChatView: View {
 
     var canSend: Bool {
         (!draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !attachments.isEmpty
-            || !power.pastes(threadId).isEmpty)
+            || !power.pastes(threadId).isEmpty || !citations.citations(threadId).isEmpty)
             && !preparingAttachments && !sendingMessage
     }
 

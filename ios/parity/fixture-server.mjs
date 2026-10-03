@@ -41,7 +41,8 @@
 // PARITY_ORG=1 runs the same dataset on an organization server instead
 // (ios/parity/org-fixture.mjs): OMB_IDENTITY=perspicax against a local stub
 // identity provider, signed in as a placeholder admin. Without it nothing
-// below changes.
+// below changes. PARITY_ORG_PHONE=1 adds a phone bearer for that person
+// (the session file's token), for the synced sidebar UI tests (WP6).
 import { spawn } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
@@ -52,7 +53,7 @@ import { fileURLToPath } from "node:url";
 import { DatabaseSync } from "node:sqlite";
 import { randomUUID } from "node:crypto";
 import { deflateSync, crc32 } from "node:zlib";
-import { orgEnterpriseStub, orgServerEnv, seedOrg, signInOrg, startOrg, stopOrg } from "./org-fixture.mjs";
+import { orgEnterpriseStub, orgServerEnv, pairOrgPhone, seedOrg, signInOrg, startOrg, stopOrg } from "./org-fixture.mjs";
 // PARITY_CARDS=1: the interactive cards' lab for the WP2 UI tests (card-lab.mjs).
 import {
   CARD_LAB, cardLabHook, cardLabInstances, cardLabServerEnv, closeCardLab, seedCardLabBots,
@@ -62,6 +63,10 @@ import {
 import { composerLabHook } from "./composer-lab.mjs";
 // PARITY_ROUTINES=1: a desktop-made routine and its runs for the WP8 UI tests (routine-lab.mjs).
 import { ROUTINE_LAB, seedRoutineLab, seedRoutineLabRuns } from "./routine-lab.mjs";
+// PARITY_PLUGINS=1: connected apps, MCP sign-in and a bot without apps for the WP9 UI tests (plugin-lab.mjs).
+import {
+  PLUGIN_LAB, closePluginLab, pluginLabHook, pluginLabServerEnv, seedPluginLab, startPluginLabBroker,
+} from "./plugin-lab.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(HERE, "..", "..");
@@ -109,6 +114,8 @@ let child = null;
 let enterpriseStub = "";
 /** PARITY_CARDS=1: the connected-apps broker stub's port. */
 let cardLabBroker = 0;
+/** PARITY_PLUGINS=1: the plugins lab's broker stub's port. */
+let pluginLabBroker = 0;
 
 let orgEnv = null;
 
@@ -132,6 +139,7 @@ function startServer(port, webhook) {
       ...(enterpriseStub ? { OMB_ENTERPRISE_DIR: enterpriseStub, OMB_LICENSE_KEY: "parity-fixture" } : {}),
       ...(org ? orgServerEnv(org) : {}),
       ...(cardLabBroker ? cardLabServerEnv(cardLabBroker) : {}),
+      ...(pluginLabBroker ? pluginLabServerEnv(pluginLabBroker) : {}),
       TZ: process.env.TZ ?? Intl.DateTimeFormat().resolvedOptions().timeZone,
       ...orgEnv,
     },
@@ -570,6 +578,7 @@ function startComputerDouble(upstreamPort) {
     const url = new URL(req.url ?? "/", "http://fixture");
     if (await cardLabHook(req, res, url, `http://127.0.0.1:${upstreamPort}`, api)) return;
     if (await composerLabHook(req, res, url)) return;
+    if (await pluginLabHook(req, res, url)) return;
     if (url.pathname === "/__parity/computer") {
       if (req.method === "DELETE") {
         computerRecord.batches = [];
@@ -680,6 +689,7 @@ async function main() {
   }));
 
   if (CARD_LAB) cardLabBroker = await startCardLabBroker();
+  else if (PLUGIN_LAB) pluginLabBroker = await startPluginLabBroker();
   const { port, webhook } = await freePair();
   const base = `http://127.0.0.1:${port}`;
   console.error(`[parity] data ${home}`);
@@ -692,6 +702,7 @@ async function main() {
   const seeded = await seedThroughAPI(base);
   if (CARD_LAB) await seedCardLabBots(base, api);
   if (ROUTINE_LAB) await seedRoutineLab(base, api, seeded.ids);
+  if (PLUGIN_LAB) await seedPluginLab(base, api, ROOT, seeded.ids);
   await stopServer(child);
 
   seedTranscripts(dataDir, seeded);
@@ -720,6 +731,8 @@ async function main() {
     : org ? { token: null, environmentId: null, scopes: ["admin", "client"] }
     : await pair(base);
   if (org) await seedOrg(org, seeded, api);
+  // PARITY_ORG_PHONE=1: the phone signs in as the viewer (org-fixture.mjs).
+  if (org && process.env.PARITY_ORG_PHONE === "1") Object.assign(session, await pairOrgPhone(org));
   const front = ownerMode ? session.endpoint : COMPUTER_DOUBLE ? `http://127.0.0.1:${(await startComputerDouble(port)).port}` : base;
   if (COMPUTER_DOUBLE && !ownerMode) console.error(`[parity] computer double ${front} -> ${base}`);
   const fleet = await fetch(`${org ? base : front}/api/bots`, { headers: org ? { cookie: org.cookie } : { authorization: `Bearer ${session.token}` } }).then((r) => r.json());
@@ -844,6 +857,7 @@ async function mainOrg() {
 
 async function shutdown(code) {
   if (CARD_LAB) closeCardLab();
+  if (PLUGIN_LAB) await closePluginLab();
   await stopServer(child);
   await idp?.close().catch(() => {});
   await stopOrg(org);

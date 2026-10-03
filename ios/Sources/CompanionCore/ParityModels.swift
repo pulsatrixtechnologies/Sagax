@@ -25,6 +25,9 @@ public struct BotPatch: Encodable, Equatable, Sendable {
     public var mascotLook: MascotLook?
     /// The owl's special edition.
     public var mascotSkin: MascotSkin?
+    /// The bot's own Connected apps switch (PL6). Only an admin session may
+    /// send it: the sidecar and a client session refuse it.
+    public var composio: Bool?
 
     public init(
         pinned: Bool? = nil,
@@ -34,7 +37,8 @@ public struct BotPatch: Encodable, Equatable, Sendable {
         title: String? = nil,
         name: String? = nil,
         mascotLook: MascotLook? = nil,
-        mascotSkin: MascotSkin? = nil
+        mascotSkin: MascotSkin? = nil,
+        composio: Bool? = nil
     ) {
         self.pinned = pinned
         self.color = color
@@ -44,11 +48,12 @@ public struct BotPatch: Encodable, Equatable, Sendable {
         self.name = name
         self.mascotLook = mascotLook
         self.mascotSkin = mascotSkin
+        self.composio = composio
     }
 
     public var isEmpty: Bool {
         pinned == nil && color == nil && notifications == nil && soul == nil && title == nil && name == nil
-            && mascotLook == nil && mascotSkin == nil
+            && mascotLook == nil && mascotSkin == nil && composio == nil
     }
 }
 
@@ -320,6 +325,16 @@ public struct MCPServerListing: Decodable, Hashable, Identifiable, Sendable {
     public var auth: String?
     /// Set when an organization policy keeps this server from bots.
     public var managedBy: String?
+    /// A command server's arguments, and the names (never the values) of
+    /// its saved environment variables.
+    public var args: [String]? = nil
+    public var envKeys: [String]? = nil
+    /// A URL server's saved header names (never the values).
+    public var headerKeys: [String]? = nil
+    /// Why the last sign-in or refresh failed, in the server's words.
+    public var authError: String? = nil
+    /// Who signs the person in (a host), when the server knows.
+    public var authIssuer: String? = nil
 
     public var id: String { name }
     public var isRemote: Bool { url != nil }

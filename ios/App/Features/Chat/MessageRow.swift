@@ -23,6 +23,8 @@ struct MessageRow: View {
     /// View Source: this bot reply drawn as its markdown source.
     @State private var showingSource = false
     @Environment(\.messageActions) private var context
+    /// Cite in the Select Text sheet (CO8); nil where nothing can be sent.
+    @Environment(\.citeIntoComposer) private var citeIntoComposer
     @ObservedObject private var speaker = MessageSpeaker.shared
 
     private var versions: [Message] {
@@ -89,7 +91,7 @@ struct MessageRow: View {
             MessageMenu(
                 message: message,
                 chat: chat,
-                visibleText: message.webhookContent?.task ?? attachedContent.text,
+                visibleText: message.webhookContent?.task ?? Citations.split(attachedContent.text).display,
                 canReact: !isPendingEdit,
                 canEdit: message.role == .user
                     && message.kind == .text
@@ -118,7 +120,9 @@ struct MessageRow: View {
         } message: {
             Text("This creates a new version and continues from there.")
         }
-        .sheet(item: $selecting) { SelectableTextSheet(text: $0.text) }
+        .sheet(item: $selecting) {
+            SelectableTextSheet(text: $0.text, citation: CitationTarget(chat: chat, message: message, add: citeIntoComposer))
+        }
         .sheet(item: $digest) { DigestSheet(summary: $0) }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("message-\(message.id)")

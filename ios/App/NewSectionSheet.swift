@@ -66,6 +66,8 @@ struct NewSectionSheet: View {
     /// Sections allow one coordinator. Moving two Chiefs together, or moving
     /// one beside a different incumbent, must never silently remove a role.
     private var hasChiefConflict: Bool {
+        // personal sections hold any bots: the one-coordinator rule is the server's
+        if SidebarPrefsModel.shared.personal != nil { return false }
         let selectedChiefIDs = selectedBots
             .filter { $0.chiefOfStaff == true }
             .map(\.id)
@@ -569,6 +571,27 @@ struct NewSectionSheet: View {
         saveError = nil
         session.actionError = nil
         nameFocused = false
+
+        // An organization server's sections are the person's own (#101):
+        // they go in the synced preference, never on the server's bots.
+        if SidebarPrefsModel.shared.personal != nil {
+            let prefs = SidebarPrefsModel.shared
+            var failed: String?
+            for id in botIDs where failed == nil {
+                failed = prefs.assignPersonal(session, key: PersonalSections.itemKey(bot: id), to: section)
+            }
+            saving = false
+            if let failed {
+                saveError = failed
+                return
+            }
+            successFeedback += 1
+            lastCreatedName = section
+            selection.clear()
+            name = ""
+            step = .bots
+            return
+        }
 
         Task {
             let result = await session.assignSection(name: section, botIds: botIDs)

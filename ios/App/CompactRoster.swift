@@ -55,6 +55,11 @@ struct CompactBotEntry: View {
     @EnvironmentObject private var session: Session
     /// The shared thread and folder menus, mounted by the roster.
     @EnvironmentObject private var threadActions: ThreadActions
+    /// Settings > Appearance > Threads (WP6): off, no "› N" and no list.
+    @Environment(\.sidebarShowsThreads) private var showsThreads
+    /// The sidebar preferences and the section prompts (WP6).
+    @ObservedObject private var sidebarPrefs = SidebarPrefsModel.shared
+    @EnvironmentObject private var sectionActions: SidebarSectionActions
     @Environment(\.dynamicTypeSize) private var typeSize
     @ScaledMetric(relativeTo: .body) private var scaledFace = CompactRosterMetrics.face
     /// Wakes the list when a timed snooze ends, so the count and the list
@@ -76,7 +81,7 @@ struct CompactBotEntry: View {
         )
         VStack(alignment: .leading, spacing: 0) {
             rowLine(live, row)
-            if row.listsThreads(expanded: expanded, searching: searching) {
+            if showsThreads && row.listsThreads(expanded: expanded, searching: searching) {
                 threadList(live, row: row, queued: queued)
             }
         }
@@ -131,7 +136,7 @@ struct CompactBotEntry: View {
                     }
                 }
                 .padding(.leading, CompactRosterMetrics.leading)
-                .padding(.trailing, row.showsThreadControl ? 0 : CompactRosterMetrics.trailing)
+                .padding(.trailing, showsThreads && row.showsThreadControl ? 0 : CompactRosterMetrics.trailing)
                 .modifier(RowPadding())
                 .frame(minHeight: 44)
                 .contentShape(Rectangle())
@@ -140,18 +145,27 @@ struct CompactBotEntry: View {
             .contextMenu {
                 // A single-thread bot shows no thread list to end in "New
                 // thread", so the home list offers it here — for every bot.
-                Button { createThread(for: bot) } label: {
-                    Label("New thread", systemImage: "square.and.pencil")
+                if showsThreads {
+                    Button { createThread(for: bot) } label: {
+                        Label("New thread", systemImage: "square.and.pencil")
+                    }
+                    .disabled(creating)
+                    Button { manage(.bot(bot)) } label: {
+                        Label("Manage threads", systemImage: "list.bullet")
+                    }
                 }
-                .disabled(creating)
-                Button { manage(.bot(bot)) } label: {
-                    Label("Manage threads", systemImage: "list.bullet")
+                BotThreadsMenu(bot: bot, actions: threadActions, showsThreads: showsThreads)
+                let layout = sidebarPrefs.layout(session)
+                if layout.personal {
+                    PersonalSectionPicker(key: PersonalSections.itemKey(bot: bot.id), layout: layout, actions: sectionActions)
                 }
-                BotThreadsMenu(bot: bot, actions: threadActions)
+                Button { sidebarPrefs.hide(session, .bot, bot.id) } label: {
+                    Label("Hide from sidebar", systemImage: "eye.slash")
+                }
             }
             .accessibilityIdentifier("chat-row.\(bot.id)")
 
-            if row.showsThreadControl {
+            if showsThreads && row.showsThreadControl {
                 threadControl(bot, count: row.threadCount)
                     // the control's own padding lands its glyph on the
                     // 16pt edge that times in other rows end on

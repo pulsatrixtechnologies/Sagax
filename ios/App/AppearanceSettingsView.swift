@@ -54,6 +54,9 @@ struct AppearanceSettingsView: View {
                 fontRow(.serif, title: "Serif")
             }
             SettingsFooter(text: "Black is the phone's own look. The other skins are the computer's, with the same colours.")
+
+            // the thread switch and what is hidden from the home (WP6)
+            SidebarAppearanceSettings()
         }
         .task(id: selection.mode) {
             if selection.mode == .computer { await themes.refreshFromComputer(client: client) }

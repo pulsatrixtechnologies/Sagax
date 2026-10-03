@@ -48,12 +48,15 @@ public struct SidecarRoutes: OptionSet, Hashable, Sendable {
     public static let primaryBot = SidecarRoutes(rawValue: 1 << 6)
     /// PATCH /api/bots/:id {voiceNotes} from the owner's phone (BA11).
     public static let voiceNotes = SidecarRoutes(rawValue: 1 << 7)
+    /// GET /api/me/harness-connectors, the owner's claude.ai connectors (PL7).
+    public static let harnessConnectors = SidecarRoutes(rawValue: 1 << 8)
 
     /// What a sidecar of this release serves: all of the above (S1, D1, D3,
     /// and the voice engine route ship with this version of the desktop). An
     /// older desktop answers 403 and the view shows that error.
     public static let current: SidecarRoutes = [
         .parallelStop, .roomMemory, .advancedPanel, .voiceEngine, .harnessCommands, .botActivity, .primaryBot, .voiceNotes,
+        .harnessConnectors,
     ]
 }
 
@@ -73,6 +76,10 @@ public enum SurfaceFeature: String, CaseIterable, Hashable, Sendable {
     case messagePin
     /// Inspector: run log, events, raw (MS24). Admin only.
     case inspector
+    /// Find in this conversation, `GET /api/search?threadId=` (MS11).
+    case findInConversation
+    /// Quote selected text as a citation in the next message (CO8).
+    case citationQuote
 
     // Composer (WP3)
     /// The engine's own slash commands in the "/" menu (CO9). Sidecars wait
@@ -114,8 +121,24 @@ public enum SurfaceFeature: String, CaseIterable, Hashable, Sendable {
     /// New bot (SB31): `POST /api/bots` passes both gates.
     case createBot
     /// Connected apps (PL1): the sidecar allows connectors; a client
-    /// session does not.
+    /// session does not. Marketplace / Connected (PL2) and disconnecting
+    /// one account (PL4) ride the same routes.
     case connectedApps
+    /// "Allow <bot>" for a bot whose own Connected apps switch is off (PL6):
+    /// `PATCH /api/bots/:id {composio}`. The sidecar's phone fields and a
+    /// client session both refuse `composio` (what a bot may reach), so only
+    /// an admin session sees it.
+    case connectedAppsPerBot
+    /// MCP servers, read-only, with their sign-in and its status (PL8, PL9):
+    /// the sidecar serves the listing and the OAuth start and status; a
+    /// client session does not (admin).
+    case mcpServers
+    /// The owner's own claude.ai connectors, read-only (PL7). Sidecars wait
+    /// on S1; a client session reads its own.
+    case harnessConnectors
+    /// The server-wide switch for Claude connectors
+    /// (`PUT /api/harness-connectors/settings`): admin only.
+    case harnessConnectorsSetting
     /// What the bot is doing: Activity card, history, detail, stop and
     /// steer (BP10). Sidecars wait on S1.
     case botActivity
@@ -141,6 +164,13 @@ public enum SurfaceFeature: String, CaseIterable, Hashable, Sendable {
     /// admin scope. Filing a thread in an existing folder (TH5) is a thread
     /// edit every pairing may make.
     case threadFolders
+
+    // Sidebar (WP6)
+    /// Rename, add or remove bots, delete a server section (SB4): PATCH,
+    /// PUT and DELETE /api/sidebar-sections are admin only on a server and
+    /// refused by every sidecar. An organization server's sections are the
+    /// person's own instead (SB2), which every session may edit.
+    case sectionManagement
 
     // Rooms
     /// Room memory tab (RM8, D3). Sidecars wait on S1.
@@ -208,6 +238,9 @@ public struct SurfaceGate: Hashable, Sendable {
         switch feature {
         case .replyQuote, .regenerate, .speakReply, .reactions, .messagePin, .connectorCard, .createBot:
             return true
+        // Search and citations pass both gates; the remote client shows them.
+        case .findInConversation, .citationQuote:
+            return true
         case .threadFiles, .routineDelete, .botUsage, .characterExtras:
             return true
         case .routineRunCancel, .routineRunsSeen, .routineAdvancedEditor, .routineAttachments:
@@ -228,10 +261,14 @@ public struct SurfaceGate: Hashable, Sendable {
             return true
         case .engineCommands:
             return scope != .sidecar || sidecarRoutes.contains(.harnessCommands)
-        case .inspector, .scheduledCalls:
+        case .inspector, .scheduledCalls, .sectionManagement:
             return scope == .serverAdmin
-        case .connectorCardAuthorize, .botOverview, .connectedApps, .botOwnerExtras, .threadFolders:
+        case .connectorCardAuthorize, .botOverview, .connectedApps, .botOwnerExtras, .threadFolders, .mcpServers:
             return scope != .serverClient
+        case .connectedAppsPerBot, .harnessConnectorsSetting:
+            return scope == .serverAdmin
+        case .harnessConnectors:
+            return scope != .sidecar || sidecarRoutes.contains(.harnessConnectors)
         case .parallelTaskStop:
             return scope != .sidecar || sidecarRoutes.contains(.parallelStop)
         case .voiceEngineSettings:

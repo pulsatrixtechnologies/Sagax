@@ -12,6 +12,14 @@ import PhotosUI
 import SwiftUI
 import UniformTypeIdentifiers
 
+/// What a new routine starts with when it comes from a calendar slot.
+struct RoutineEditorSeed: Hashable {
+    var at: Date
+    var name = ""
+    var prompt = ""
+    var botId: String?
+}
+
 struct RoutineEditorView: View {
     @Environment(\.themePalette) var themePalette
     let routine: Routine?
@@ -41,16 +49,18 @@ struct RoutineEditorView: View {
     @State private var saving = false
 
     /// `presetBotId`: a new routine made from a bot's profile starts on that bot.
-    init(routine: Routine?, presetBotId: String? = nil, onSaved: @escaping () async -> Void) {
+    /// `seed`: a new routine from the Automations calendar ("More options"
+    /// of a slot) starts at that slot with what was typed there.
+    init(routine: Routine?, presetBotId: String? = nil, seed: RoutineEditorSeed? = nil, onSaved: @escaping () async -> Void) {
         self.routine = routine
         self.onSaved = onSaved
-        _name = State(initialValue: routine?.name ?? "")
-        _prompt = State(initialValue: routine?.prompt ?? "")
-        _botId = State(initialValue: routine?.botId ?? presetBotId ?? "")
+        _name = State(initialValue: routine?.name ?? seed?.name ?? "")
+        _prompt = State(initialValue: routine?.prompt ?? seed?.prompt ?? "")
+        _botId = State(initialValue: routine?.botId ?? seed?.botId ?? presetBotId ?? "")
         _target = State(initialValue: routine?.target ?? "bot")
         _groupId = State(initialValue: routine?.groupId ?? "")
         _runOn = State(initialValue: routine?.runLocation ?? .maus)
-        let seedAt = routine?.nextRunAt.map { Date(timeIntervalSince1970: $0 / 1_000) } ?? RoutineScheduleForm.nextHour()
+        let seedAt = routine?.nextRunAt.map { Date(timeIntervalSince1970: $0 / 1_000) } ?? seed?.at ?? RoutineScheduleForm.nextHour()
         _form = State(initialValue: RoutineScheduleForm(schedule: routine?.schedule, seedAt: seedAt))
         _duration = State(initialValue: routine?.durationMinutes ?? 30)
         _timeoutMinutes = State(initialValue: routine?.timeoutMinutes)
