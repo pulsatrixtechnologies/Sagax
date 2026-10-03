@@ -181,6 +181,9 @@ struct FilesTab: View {
     @Environment(\.themePalette) var themePalette
     let bot: Bot
     @ObservedObject var loader: LibraryLoader<BotLibraryFile>
+    /// This chat's files with search, kinds, sort, copy path and show in
+    /// chat (BF1, BF3, BF4); nil hides the link.
+    var onOpenThreadFiles: (() -> Void)?
     @EnvironmentObject private var session: Session
     @State private var previewing: IdentifiedURL?
     @State private var downloading: String?
@@ -214,6 +217,21 @@ struct FilesTab: View {
                 if page.hasMore { ShowMoreButton(loading: loader.loading) { loader.loadMore() } }
             } else {
                 LibraryEmptyState(loading: loader.loading || loader.page == nil && loader.problem == nil, problem: loader.problem, empty: Text("No files yet"))
+            }
+            if let onOpenThreadFiles {
+                Button {
+                    Haptics.selection()
+                    onOpenThreadFiles()
+                } label: {
+                    Label("Search this chat's files", systemImage: "magnifyingglass")
+                        .font(Theme.Profile.labelFont)
+                        .foregroundStyle(Theme.textTertiary)
+                        .frame(height: 36)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .padding(.top, 14)
+                .accessibilityIdentifier("profile-thread-files")
             }
         }
         .sheet(item: $previewing) { item in

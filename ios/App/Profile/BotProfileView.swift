@@ -57,6 +57,17 @@ struct BotProfileView: View {
     @State private var scrollToEnd = 0
     @State private var parityRoutineInstruction = false
 
+    // WP7: Activity, this chat's files, routine delete, skin locks, moves,
+    // Primary Bot (matrix rows BP6-BP10, BP12, BF1-BF4, SB28).
+    @StateObject private var activity: BotActivityModel
+    @State private var activityRoute: BotActivityRoute?
+    @State private var showingThreadFiles = false
+    @State private var deletingRoutine: Routine?
+    @State private var unlocks: MascotUnlocks = .nothingLocked
+    @State private var viewerId = "local-owner"
+    @State private var pickingPrimary = false
+    @State private var primaryWorking = false
+
     @StateObject private var links = LibraryLoader<BotLink>()
     @StateObject private var media = LibraryLoader<BotLibraryFile>()
     @StateObject private var files = LibraryLoader<BotLibraryFile>()
@@ -65,6 +76,7 @@ struct BotProfileView: View {
         self.bot = bot
         _draft = State(initialValue: CharacterDraft(bot: bot))
         _notifications = State(initialValue: bot.notifications)
+        _activity = StateObject(wrappedValue: BotActivityModel(botId: bot.id))
     }
 
     private var current: Bot { session.state.bot(bot.id) ?? bot }
@@ -94,8 +106,9 @@ struct BotProfileView: View {
                 .ignoresSafeArea()
                 .accessibilityIdentifier("profile-scroll")
                 .onValueChange(of: scrollToEnd) { _ in
-                    // 04: the routines card's top at y 477.7 of the 874 pt screen
-                    proxy.scrollTo("profile-routines-anchor", anchor: UnitPoint(x: 0.5, y: 477.4 / 874))
+                    // 04: the routines card's top at y 477.7 of the 874 pt screen (the
+                    // Activity card below keeps this from clamping at the end)
+                    proxy.scrollTo("profile-routines-anchor", anchor: UnitPoint(x: 0.5, y: 477.7 / 874))
                 }
             }
             ProfileTopFade().ignoresSafeArea()
@@ -145,6 +158,43 @@ struct BotProfileView: View {
         .sheet(isPresented: $editingRoutine) {
             RoutineEditorView(routine: nil, presetBotId: bot.id) { await loadRoutines() }
         }
+        .sheet(item: $activityRoute) { route in
+            BotActivitySheet(botId: bot.id, route: route, model: activity) { threadBotId, threadId in
+                activityRoute = nil
+                openThread(botId: threadBotId, threadId: threadId)
+            }
+        }
+        .sheet(isPresented: $showingThreadFiles) {
+            NavigationStack {
+                ThreadFilesView(threadId: bot.threadId) { file in
+                    showingThreadFiles = false
+                    showInChat(file)
+                }
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button(String(localized: "Done")) { showingThreadFiles = false }
+                    }
+                }
+            }
+        }
+        .sheet(isPresented: $pickingPrimary) {
+            PrimaryBotPicker(currentId: current.id, viewerId: viewerId) { _ in }
+        }
+        .confirmationDialog(
+            String(localized: "Delete \(deletingRoutine?.name ?? String(localized: "this routine"))?"),
+            isPresented: Binding(get: { deletingRoutine != nil }, set: { if !$0 { deletingRoutine = nil } }),
+            titleVisibility: .visible
+        ) {
+            Button(String(localized: "Delete routine"), role: .destructive) {
+                guard let routine = deletingRoutine else { return }
+                Task {
+                    if await session.deleteRoutine(routine) { await loadRoutines() }
+                    deletingRoutine = nil
+                }
+            }
+        } message: {
+            Text("Past run receipts remain available.")
+        }
         .sheet(item: $sharedFile) { file in
             ProfileShareSheet(items: [file.url])
         }
@@ -175,12 +225,19 @@ struct BotProfileView: View {
         .onValueChange(of: current.mascotSkin) { _ in syncDraft() }
         .onValueChange(of: current.notifications) { value in notifications = value }
         .task {
+            if session.surfaceGate.allows(.botActivity) { activity.start(client: session.profileClient) }
+            async let config = session.configStatus()
+            async let earned = session.profileClient?.mascotUnlocks()
             await loadRoutines()
+            viewerId = PrimaryBotRules.viewerId(config: await config)
+            if let earned = try? await earned { unlocks = earned }
             #if DEBUG
             await applyParityScreen()
             #endif
         }
         .onValueChange(of: tab) { selected in loadTab(selected) }
+        .onValueChange(of: BotActivityRules.signature(current.tasks)) { _ in Task { await activity.refresh() } }
+        .onDisappear { activity.stop() }
     }
 
     // MARK: Header
@@ -230,6 +287,20 @@ struct BotProfileView: View {
                     owlHandle.flourish(moves[nextWingMove % moves.count])
                     nextWingMove += 1
                 }
+                .contextMenu {
+                    // BP7, BP8: the character's moves and the owl's style
+                    CharacterMovesMenu(
+                        look: draft.complete,
+                        onMove: { owlHandle.flourish($0) },
+                        onStyle: { style in
+                            var next = draft
+                            var look = next.complete
+                            look.style = style
+                            next.look = look.stored
+                            saveLook(next)
+                        }
+                    )
+                }
                 .accessibilityIdentifier("profile-mascot")
                 .accessibilityAddTraits(.isButton)
             ProfileCard {
@@ -242,6 +313,19 @@ struct BotProfileView: View {
                     .frame(height: Theme.Profile.nameRow)
                     .contextMenu {
                         Button(String(localized: "Copy Bot ID"), systemImage: "person.text.rectangle") { copy(bot.id) }
+                        // SB28: the Primary Bot, as the desktop's bot menu offers it
+                        if session.surfaceGate.allows(.primaryBot) {
+                            switch PrimaryBotRules.menuAction(for: current, viewerId: viewerId) {
+                            case .make:
+                                Button(String(localized: "Make primary bot"), systemImage: "star") {
+                                    Task { await PrimaryBotActions.make(current.id, session: session, done: { _ in }, working: $primaryWorking) }
+                                }
+                            case .replace:
+                                Button(String(localized: "Replace with different Bot"), systemImage: "arrow.left.arrow.right") { pickingPrimary = true }
+                            case nil:
+                                EmptyView()
+                            }
+                        }
                     }
                     .accessibilityIdentifier("profile-name")
                 ProfileDivider(leading: Theme.Profile.textInset)
@@ -297,7 +381,11 @@ struct BotProfileView: View {
         case .info: infoTab
         case .links: LinksTab(bot: current, loader: links)
         case .media: MediaTab(bot: current, loader: media)
-        case .files: FilesTab(bot: current, loader: files)
+        case .files:
+            FilesTab(
+                bot: current, loader: files,
+                onOpenThreadFiles: session.surfaceGate.allows(.threadFiles) ? { showingThreadFiles = true } : nil
+            )
         }
     }
 
@@ -323,6 +411,7 @@ struct BotProfileView: View {
 
     private var infoTab: some View {
         VStack(spacing: 0) {
+            BotPanelNoticesView(bot: current)
             ProfileSectionLabel(text: "Character")
             characterCard
             ProfileFooter(text: "How this Bot's mark looks everywhere")
@@ -393,6 +482,21 @@ struct BotProfileView: View {
                 .accessibilityIdentifier("profile-share-template")
             }
             .padding(.top, 16.7)
+
+            // BP10: what the bot is doing, below the reference's cards. It
+            // starts under the fold of the scrolled Info tab (04, 07: the
+            // Share card ends 67 pt above the screen's bottom edge), so the
+            // reference screens keep their empty end.
+            if session.surfaceGate.allows(.botActivity) {
+                ProfileSectionLabel(text: "Activity")
+                    .padding(.top, 76)
+                BotActivityCard(
+                    bot: current,
+                    model: activity,
+                    onOpen: { activityRoute = .detail($0) },
+                    onHistory: { activityRoute = .history($0) }
+                )
+            }
         }
     }
 
@@ -407,7 +511,8 @@ struct BotProfileView: View {
                 onPhotoPicked: { data in Task { await uploadPicture(data) } },
                 onRemovePhoto: { Task { await edit(BotProfileEdit(avatarCrop: .mascot, avatarUrl: .clear)) } },
                 onGeneratePhoto: { generatePrompt = ""; askingGenerate = true },
-                onFramePhoto: { framing = true }
+                onFramePhoto: { framing = true },
+                unlocks: session.surfaceGate.allows(.characterExtras) ? unlocks : .nothingLocked
             )
             .frame(height: 252, alignment: .top)
             .clipped()
@@ -453,6 +558,12 @@ struct BotProfileView: View {
                     ) { ProfileChevronTrailing() }
                 }
                 .buttonStyle(.plain)
+                .contextMenu {
+                    // BP12: delete from the profile
+                    if session.surfaceGate.allows(.routineDelete) {
+                        Button(String(localized: "Delete routine"), systemImage: "trash", role: .destructive) { deletingRoutine = routine }
+                    }
+                }
                 .accessibilityIdentifier("profile-routine.\(routine.name)")
                 ProfileDivider()
             }
@@ -538,6 +649,32 @@ struct BotProfileView: View {
             sharedFile = IdentifiedURL(url: url)
         } catch {
             session.actionError = error.localizedDescription
+        }
+    }
+
+    /// Open an activity entry's thread: this chat is under the profile, so
+    /// the profile goes; another thread opens like a deep link.
+    private func openThread(botId: String, threadId: String) {
+        let here = threadId == bot.threadId
+        Task {
+            // the activity sheet closes first: a pop under a closing sheet is dropped
+            try? await Task.sleep(nanoseconds: 700_000_000)
+            dismiss()
+            guard !here else { return }
+            try? await Task.sleep(nanoseconds: 700_000_000)
+            session.openChat(threadId: threadId)
+        }
+    }
+
+    /// A file's message in the chat under the profile (FilesSection.tsx `jump`).
+    private func showInChat(_ file: ThreadFile) {
+        let threadId = bot.threadId
+        Task {
+            // the files sheet closes first: a pop under a closing sheet is dropped
+            try? await Task.sleep(nanoseconds: 700_000_000)
+            dismiss()
+            try? await Task.sleep(nanoseconds: 500_000_000)
+            await session.jump(to: file.messageId, inThread: threadId)
         }
     }
 

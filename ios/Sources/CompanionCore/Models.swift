@@ -658,6 +658,13 @@ public struct Bot: Codable, Hashable, Identifiable, Sendable {
     /// The first line of the bot's standing instructions, for search
     /// subtitles. Older servers omit it.
     public var instructionsLead: String?
+    /// Whether the bot may send spoken notes; on unless false.
+    public var voiceNotes: Bool? = nil
+    /// Who owns the bot (organization servers). Absent or "local-owner" is
+    /// the computer's own person.
+    public var ownerUserId: String? = nil
+    /// Sections a Primary Bot manages beyond its own (owner-approved).
+    public var managedSections: [String]? = nil
 
     /// The look the renderers draw: the stored one, or the owl.
     public var resolvedMascotLook: CompleteMascotLook {
@@ -1079,6 +1086,8 @@ public struct ProviderSnapshot: Codable, Hashable, Sendable {
     public var reason: String?
     public var authenticated: Bool?
     public var version: String?
+    /// "metered" or "subscription": how a cost figure is captioned.
+    public var billing: String? = nil
 
     public var isAvailable: Bool { state == "available" }
 }
@@ -1160,12 +1169,29 @@ public struct Profile: Codable, Hashable, Sendable {
     public var email: String
 }
 
+/// The person behind this session, as `GET /api/config` names them.
+public struct ConfigViewer: Codable, Hashable, Sendable {
+    public var principalId: String?
+    public var role: String?
+    /// The administrator lets this person use shared bots only.
+    public var botsReadOnly: Bool?
+
+    public init(principalId: String? = nil, role: String? = nil, botsReadOnly: Bool? = nil) {
+        self.principalId = principalId
+        self.role = role
+        self.botsReadOnly = botsReadOnly
+    }
+}
+
 public struct ConfigStatus: Codable, Sendable {
     public var composio: ConfigFlag?
     public var box: ConfigFlag?
     public var tts: ConfigFlag?
     public var imageGen: ConfigFlag?
     public var profile: Profile?
+    /// Who is asking (`ConfigStatus.viewer` in shared/wire.ts). Absent on
+    /// older computers.
+    public var viewer: ConfigViewer? = nil
 
     /// Whether synthesis is available on the paired computer. Deliberately
     /// provider-neutral: under ElevenLabs this is a key on file, while under

@@ -194,12 +194,15 @@ describe("scopes", () => {
 
   it("lets the owner's paired phone switch a bot's memory, and nothing a member may not set besides", () => {
     expect(companionBotFieldViolation({ memoryEnabled: false, memoryUpkeep: true, name: "Scout", soul: "x", modelSelection: {} })).toBeNull();
+    // the voice notes switch of the bot panel (row BA11)
+    expect(companionBotFieldViolation({ voiceNotes: false })).toBeNull();
     for (const field of ["approvalMode", "cwd", "computer", "mcpServers", "autoApprove", "browserProfile", "visibility", "hidden"]) {
       expect(companionBotFieldViolation({ memoryEnabled: true, [field]: "x" }), field).toBe(field);
     }
     expect(companionBotFieldViolation([])).toBe("body");
     // a member session still may not
     expect(memberBotFieldViolation({ memoryEnabled: false })).toBe("memoryEnabled");
+    expect(memberBotFieldViolation({ voiceNotes: false })).toBe("voiceNotes");
   });
 
   it("opens the engines catalogue to client sessions behind a feature only", () => {

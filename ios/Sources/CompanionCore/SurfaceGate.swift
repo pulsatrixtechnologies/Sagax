@@ -42,11 +42,19 @@ public struct SidecarRoutes: OptionSet, Hashable, Sendable {
     public static let voiceEngine = SidecarRoutes(rawValue: 1 << 3)
     /// GET /api/bots/:id/harness-commands, the engine's "/" list (CO9).
     public static let harnessCommands = SidecarRoutes(rawValue: 1 << 4)
+    /// GET /api/bots/:id/activity[/item], what a bot is doing (BP10).
+    public static let botActivity = SidecarRoutes(rawValue: 1 << 5)
+    /// POST /api/bots/:id/primary, the owner's Primary Bot (SB28).
+    public static let primaryBot = SidecarRoutes(rawValue: 1 << 6)
+    /// PATCH /api/bots/:id {voiceNotes} from the owner's phone (BA11).
+    public static let voiceNotes = SidecarRoutes(rawValue: 1 << 7)
 
     /// What a sidecar of this release serves: all of the above (S1, D1, D3,
     /// and the voice engine route ship with this version of the desktop). An
     /// older desktop answers 403 and the view shows that error.
-    public static let current: SidecarRoutes = [.parallelStop, .roomMemory, .advancedPanel, .voiceEngine, .harnessCommands]
+    public static let current: SidecarRoutes = [
+        .parallelStop, .roomMemory, .advancedPanel, .voiceEngine, .harnessCommands, .botActivity, .primaryBot, .voiceNotes,
+    ]
 }
 
 /// One gated surface. Named for what the person sees, with the matrix row
@@ -108,6 +116,24 @@ public enum SurfaceFeature: String, CaseIterable, Hashable, Sendable {
     /// Connected apps (PL1): the sidecar allows connectors; a client
     /// session does not.
     case connectedApps
+    /// What the bot is doing: Activity card, history, detail, stop and
+    /// steer (BP10). Sidecars wait on S1.
+    case botActivity
+    /// Make or replace the Primary Bot (SB28): the handler checks the owner.
+    case primaryBot
+    /// The open chat's files with search, kinds, sort, copy path and show
+    /// in chat (BF1, BF3, BF4): both gates pass `GET /api/threads/:id/files`.
+    case threadFiles
+    /// Delete a routine from the bot profile (BP12).
+    case routineDelete
+    /// Per-bot usage (BP14): read from the bot's own threads.
+    case botUsage
+    /// Voice notes allowed (BA11): a member may not set it; the owner's
+    /// sidecar may (S1).
+    case voiceNotesSetting
+    /// Skin rarities, locks, style 2D / 3D and moves of the character
+    /// editor (BP6-BP8): the look fields pass every gate.
+    case characterExtras
 
     // Rooms
     /// Room memory tab (RM8, D3). Sidecars wait on S1.
@@ -165,6 +191,18 @@ public struct SurfaceGate: Hashable, Sendable {
         switch feature {
         case .replyQuote, .regenerate, .speakReply, .reactions, .messagePin, .connectorCard, .createBot:
             return true
+        case .threadFiles, .routineDelete, .botUsage, .characterExtras:
+            return true
+        case .botActivity:
+            return scope != .sidecar || sidecarRoutes.contains(.botActivity)
+        case .primaryBot:
+            return scope != .sidecar || sidecarRoutes.contains(.primaryBot)
+        case .voiceNotesSetting:
+            switch scope {
+            case .serverAdmin: return true
+            case .serverClient: return false
+            case .sidecar: return sidecarRoutes.contains(.voiceNotes)
+            }
         // Every composer route passes both gates (companion `ALLOWED`, server
         // `CLIENT_ALLOW`); the remote client shows each of them.
         case .busySendChoice, .queueSteer, .compactConversation, .roomInterrupt, .pasteAttachment, .composerSuggestions:

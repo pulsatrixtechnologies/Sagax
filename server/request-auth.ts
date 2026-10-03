@@ -575,9 +575,10 @@ export function memberBotFieldViolation(body: unknown): string | null {
 
 /** What the computer owner's paired phone (through the companion sidecar)
  * may set on a bot: a member's fields, plus the advanced panel's memory
- * switches (decision D1 of the iOS parity matrix). Never where the bot runs,
- * what it may reach or how much it may do unasked. */
-const COMPANION_BOT_FIELDS = new Set([...MEMBER_BOT_FIELDS, "memoryEnabled", "memoryUpkeep"]);
+ * switches (decision D1 of the iOS parity matrix) and whether it may send
+ * voice notes (row BA11). Never where the bot runs, what it may reach or how
+ * much it may do unasked. */
+const COMPANION_BOT_FIELDS = new Set([...MEMBER_BOT_FIELDS, "memoryEnabled", "memoryUpkeep", "voiceNotes"]);
 export function companionBotFieldViolation(body: unknown): string | null {
   if (!body || typeof body !== "object" || Array.isArray(body)) return "body";
   for (const key of Object.keys(body)) if (!COMPANION_BOT_FIELDS.has(key)) return key;

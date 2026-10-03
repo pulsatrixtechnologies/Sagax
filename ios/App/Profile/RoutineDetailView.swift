@@ -74,6 +74,8 @@ struct RoutineDetailView: View {
     @State private var showingInstruction = false
     @State private var editing = false
     @State private var saving = false
+    @State private var confirmingDelete = false
+    @Environment(\.dismiss) private var dismissScreen
 
     private let margin = Theme.Profile.routineMargin
 
@@ -81,6 +83,15 @@ struct RoutineDetailView: View {
         RoutineScreen(title: routine.name) {
             GlassCircleButton(systemImage: "pencil", accessibilityLabel: "Edit routine", glyphSize: 17) { editing = true }
                 .chatGlassRim(Circle())
+                // BP12: a long press offers Delete, as the desktop's routine
+                // panel does beside Pause and Edit (RoutinesSection.tsx)
+                .contextMenu {
+                    Button(String(localized: "Edit routine"), systemImage: "pencil") { editing = true }
+                    if session.surfaceGate.allows(.routineDelete) {
+                        Button(String(localized: "Delete routine"), systemImage: "trash", role: .destructive) { confirmingDelete = true }
+                            .accessibilityIdentifier("routine-delete")
+                    }
+                }
                 .accessibilityIdentifier("routine-edit")
         } content: {
             ProfileCard(margin: margin) {
@@ -145,6 +156,21 @@ struct RoutineDetailView: View {
         }
         .sheet(isPresented: $editing) {
             RoutineEditorView(routine: routine) { await reload() }
+        }
+        .confirmationDialog(
+            String(localized: "Delete \(routine.name)?"),
+            isPresented: $confirmingDelete,
+            titleVisibility: .visible
+        ) {
+            Button(String(localized: "Delete routine"), role: .destructive) {
+                Task {
+                    guard await session.deleteRoutine(routine) else { return }
+                    await onChange()
+                    dismissScreen()
+                }
+            }
+        } message: {
+            Text("Past run receipts remain available.")
         }
         .task {
             await reload()

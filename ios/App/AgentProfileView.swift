@@ -399,6 +399,9 @@ struct AgentProfileView: View {
                 }
                 .listRowBackground(Theme.parity(Color(uiColor: .secondarySystemGroupedBackground), Theme.card))
 
+                // Usage, voice notes, Primary Bot (WP7: BP14, BA11, SB28)
+                BotPanelAdvancedSections(bot: current)
+
                 Section {
                     Button("Save profile changes") { Task { await save() } }
                         .disabled(busy || name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
