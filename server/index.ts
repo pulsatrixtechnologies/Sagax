@@ -130,7 +130,7 @@ import {
 import * as composio from "./composio.ts";
 import { connectorCallFromFrame, connectorRefusalText, connectorUnrecognizedText, evaluateConnectorTools } from "./connector-verdict.ts";
 import { chiefOfStaffSystemPrompt } from "./chief-of-staff.ts";
-import { buildRecall } from "./recall.ts";
+import { buildRecall, CALL_RECALL_BUDGET, type RecallBudget } from "./recall.ts";
 import { createMemoryUpkeep, upkeepEnabled } from "./memory-upkeep.ts";
 import { appendAboutMe, commitLearned, planLearned } from "./profile-learned.ts";
 import { canAccessTeam, canReachPeer, coordinatorSupervises, livePeerRoster, livePeerRosterBlock, peerAllowed, peerName, peerRosterSystemPrompt, peerStatus, peerStatusWords, reachablePeers, resolveTeammate, roomPeerRosterSystemPrompt, roomRosterLine, PEER_ACCESS_HELP } from "./peer-roster.ts";
@@ -554,6 +554,7 @@ import { createMailSettingsRoutes } from "./mail-routes.ts";
 import { createVoiceModeRoutes } from "./voice-mode.ts";
 import { parseVoiceCallMeta, voiceCallSection, voiceCallSteerPrompt, voiceCallTurnPrompt } from "./voice-call-prompt.ts";
 import { VoiceCallSessions } from "./voice-call-session.ts";
+import { VoiceLatencyLog } from "./voice-latency.ts";
 import { unansweredCallMessage, VOICE_CALL_WATCHDOG_MS, voiceCallRecoveryPrompt } from "./voice-call-watchdog.ts";
 import * as grokVoice from "./tts/grok.ts";
 import { ClaudeAiConnectorInventory, claudeAiConnectorsForTurn, claudeAiConnectorsPrompt, createHarnessConnectorRoutes, runClaudeCli } from "./harness-connectors.ts";
@@ -1879,7 +1880,7 @@ function recentWorkSources(bot: BotRecord) {
  * turn the person started — because a message from another bot, a webhook
  * or a room must not be able to pull a private chat into its reply. The
  * conversations are the ones session_search would search, minus this one. */
-function autoRecallPrompt(bot: BotRecord, threadId: string, message: string, opts: { conversations: boolean; userName: string }): string {
+function autoRecallPrompt(bot: BotRecord, threadId: string, message: string, opts: { conversations: boolean; userName: string; budget?: RecallBudget }): string {
   if (bot.memoryEnabled === false || !autoRecallEnabled(cfg)) return "";
   const roomByThread = new Map<string, GroupRecord>();
   if (opts.conversations) {
@@ -1910,6 +1911,7 @@ function autoRecallPrompt(bot: BotRecord, threadId: string, message: string, opt
         return id === bot.threadId ? "your main chat" : "an earlier chat";
       },
       author: (hit) => (hit.role === "user" ? hit.peer ?? opts.userName : hit.from ?? bot.name),
+      ...(opts.budget ? { budget: opts.budget } : {}),
     });
     if (recalled) console.log(`auto-recall: ${bot.name} (${bot.id}) got ${recalled.notes} note and ${recalled.conversations} conversation passage(s) in ${threadId}`);
     return recalled?.text ?? "";
@@ -8798,6 +8800,8 @@ bus.subscribe((event: RuntimeEvent) => {
     };
     broadcast({ kind: "runtime", event: publicAssistantEvent });
   }
+  if (event.type === "content.delta" && event.streamKind === "assistant_text") voiceLatency.mark(event.threadId, "firstToken");
+  else if (event.type === "turn.completed") voiceLatency.settled(event.threadId);
   const privateImageEvent = event.type === "item.completed" && event.itemType === "assistant_image";
   // The durable message patch below is the public frame. Sending raw base64
   // through runtime SSE would multiply large bytes across every app window.
@@ -9963,6 +9967,8 @@ async function compactConversation(input: {
 
 /** Threads on a live voice call (server/voice-call-session.ts). */
 const voiceCalls = new VoiceCallSessions();
+/** Each call turn's server stages, logged under its utterance id (server/voice-latency.ts). */
+const voiceLatency = new VoiceLatencyLog();
 
 const handoffs = new Handoffs({
   order: (threadId) => store.activePath(threadId).filter(isContextMessage).map((m) => m.id),
@@ -11166,6 +11172,9 @@ async function startTurn(
   // A voice call turn gets the hidden phone-call instruction; the first
   // written turn after a call is told the call ended. Only a person's own
   // turn: a continuation or a peer hop is not said on the phone.
+  // The thread is on a live call (server/voice-call-session.ts): the engine
+  // stays warm between turns and the turn's context stays short.
+  const onCall = Boolean(voiceCalls.active(threadId)) && !opts?.commsDepth && !userMessage.peerAsk;
   const voiceCallText = opts?.cardContinuation || opts?.commsDepth || userMessage.peerAsk
     ? ""
     : voiceCallSection(
@@ -12174,7 +12183,8 @@ async function startTurn(
         { id: "section-context", label: "Section context", text: sectionContextSystemPrompt(bot.section) },
         // what the bot said lately in its other conversations, so a task
         // never redoes — or forgets — what another one already did
-        { id: "recent", label: "Recent work", text: recentWorkPrompt(recentWorkFor(bot, threadId, { userName: botUserName(bot) })) },
+        // not on a call: a phone turn stays short (docs/voice-mode-xai.md, "Latency")
+        { id: "recent", label: "Recent work", text: onCall ? "" : recentWorkPrompt(recentWorkFor(bot, threadId, { userName: botUserName(bot) })) },
         { id: "memory", label: "Memory", text: memorySystemPrompt(bot.id, { managedWrites: Boolean(integrations.agents), fileTools: worksInWorkspace, enabled: bot.memoryEnabled !== false }) },
         { id: "skills", label: "Skills index", text: privateWorkspace ? skillsSystemPrompt(bot.id) : "" },
         { id: "skill-instructions", label: "Skill instructions", text: skillInstructions },
@@ -12190,9 +12200,12 @@ async function startTurn(
       // it changes, and recall changes nearly every turn.
       const recalled = autoRecallPrompt(bot, threadId, resolvedImages.text, {
         // a routine run starts fresh by design, and a webhook is untrusted:
-        // neither pulls earlier conversations in
-        conversations: commsDepth === 0 && !coordinationNode && !opts?.automationSource && !opts?.unattended,
+        // neither pulls earlier conversations in. A call turn takes a
+        // couple of notes, never other conversations: what the engine
+        // reads before it can answer is the pause the person hears.
+        conversations: commsDepth === 0 && !coordinationNode && !opts?.automationSource && !opts?.unattended && !onCall,
         userName: botUserName(bot),
+        ...(onCall ? { budget: CALL_RECALL_BUDGET } : {}),
       });
       runningTurnEngines.set(threadId, instance);
       // The prompt carries the soul as saved now. If it changed during setup,
@@ -12238,10 +12251,13 @@ async function startTurn(
       // bookkeeping that would mark the context delivered is left for it.
       const contextStillPending = Boolean(engineCommand && dispatchContext.sessionReset && transcript.length > 0 &&
         !NATIVELY_REPLAYING_DRIVER_KINDS.includes(instance.driverKind));
+      voiceLatency.mark(threadId, "dispatch");
       const dispatch = await guardTurnDispatch(instance.adapter.sendTurn({
         threadId,
         botId: bot.id,
         ...(turnAccess ? { access: turnAccess } : {}),
+        // on a live call the engine process stays warm from turn to turn
+        ...(onCall ? { keepWarm: true } : {}),
         startupRecovery: cfg.automaticRecovery?.enabled === true && !opts?.automaticRecoveryAttempted,
         text: engineCommand ? engineCommand.engineText : withRecalled(recalled, dispatchContext.turnText),
         ...(engineCommand ? { harnessCommand: { name: engineCommand.command.name, args: engineCommand.args, ...(engineCommand.command.path ? { path: engineCommand.command.path } : {}) } } : {}),
@@ -12280,6 +12296,7 @@ async function startTurn(
         retireProviderTurn(dispatch.value.turnId);
         throw new DirectTurnSetupCancelled("turn stopped during provider setup");
       }
+      voiceLatency.mark(threadId, "engine", { warm: dispatch.value.reused === true });
       const requestOwner = directRequestOwners.get(threadId);
       if (requestOwner?.generation === dispatchClaimId && dispatch.value.turnId) {
         if (requestOwner.turnId && requestOwner.turnId !== dispatch.value.turnId) requestOwner.messageId = undefined;
@@ -26792,6 +26809,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (voiceCall?.utteranceId && sendId) {
         const claim = voiceCalls.claimUtterance(threadId, voiceCall.callId, voiceCall.utteranceId, sendId);
         if (!claim.first) sendId = claim.sendId;
+        else voiceLatency.received(threadId, voiceCall.utteranceId);
       }
       const replyTo = resolveReplyTarget(threadId, body.replyToId);
       // What a send to a busy conversation does (shared/parallel-tasks.ts):

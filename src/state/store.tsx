@@ -1235,6 +1235,8 @@ export type Action =
        * (shared/parallel-tasks.ts); absent = join (the server default) */
       busyMode?: BusySendMode;
       onError?: () => void;
+      /** the server took the message (its receipt came back) */
+      onSent?: () => void;
     }
   | { type: "stopParallelTask"; botId: string; threadId: string }
   | { type: "pendingQueued"; threadId: string; queueId: string; text: string; reason?: SteerQueueReason }
@@ -3314,6 +3316,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
                 body: JSON.stringify({ text: action.text, replyToId: action.replyToId, threadId, sendId, ...(voiceCall ? { voiceCall } : {}), ...(busyMode ? { busyMode } : {}) }),
               }))
             .then((body) => {
+              action.onSent?.();
               if (body?.message && typeof body.threadId === "string") {
                 rawDispatch({ type: "messageAdded", threadId: body.threadId, message: body.message });
               }

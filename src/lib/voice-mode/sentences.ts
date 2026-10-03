@@ -7,8 +7,8 @@
 // space or a line break (not a decimal "3.5", not an abbreviation "e.g."
 // or "M."), a blank line, or the end of a list item. Text inside a code
 // fence is skipped (the server's speakable text drops code anyway). The first
-// sentence may be cut early at a comma once it is long, to start speaking
-// sooner; later short sentences are joined to the next one, so a reply of
+// sentence may be cut early at a comma once it has about six words, to start
+// speaking sooner; later short sentences are joined to the next one, so a reply of
 // many short lines is not many requests.
 
 import { speakableSentence } from "./spoken";
@@ -37,7 +37,9 @@ export class SentenceStream {
 
   constructor(options: SentenceStreamOptions = {}) {
     this.minChars = options.minChars ?? 28;
-    this.firstClauseChars = options.firstClauseChars ?? 90;
+    // about six words: the first clause is spoken while the rest is written
+    // (docs/voice-mode-xai.md, "Latency")
+    this.firstClauseChars = options.firstClauseChars ?? 36;
     this.maxChars = options.maxChars ?? 380;
   }
 

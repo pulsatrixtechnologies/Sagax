@@ -4425,6 +4425,8 @@
   "voiceMode.call.enrollFailed": "Not enough speech was heard. Try again somewhere quieter.",
   "voiceMode.call.forget": "Forget my voice",
   "voiceMode.call.earcons": "Call sounds",
+  "voiceMode.call.thinkingCue": "Soft tone while a slow answer is coming",
+  "voiceMode.call.latency": "Last answer: first audio {total} ms after you stopped",
   "voiceMode.call.voiceIsolation": "On a Mac, Control Center > Mic Mode > Voice Isolation filters the room even more.",
   "bots.readOnly.notice": "Your administrator lets you use shared bots only.",
   "myEngines.memberIntro": "Sign in with your own Claude or Codex subscription, or add your keys in Perspicax. Your turns on every bot, yours or shared with you, use them; nobody else sees them.",

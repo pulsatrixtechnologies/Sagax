@@ -390,6 +390,16 @@ fake xAI: `scripts/verify-voice-mode.ts`. Details: `docs/voice-mode-xai.md`.
   talks with one bot at a time. Tests: `VoiceModeCallButton.test.ts`,
   `scripts/verify-voice-mode.ts` (no key, then the admin's key).
 
+- Latency (`docs/voice-mode-xai.md`, "Latency"): every call turn is timed
+  under its `utteranceId` on the page (`latency.ts`) and on the server
+  (`server/voice-latency.ts`, `[voice-latency]` lines). A thread on a call
+  passes `keepWarm` to the engine: the Claude driver keeps one process for
+  the call, the per-turn comms token in a file (`SAGAX_COMMS_TOKEN_FILE`),
+  never in the spawn contract. Do not put a per-turn value in a pooled
+  process's contract: it relaunches the engine on every turn. Tests:
+  `server/voice-call-latency.e2e.test.ts`, `call.test.ts` ("latency"),
+  bench `scripts/voice-latency-bench.ts`.
+
 A change to `server/voice-mode.ts` needs the server image redeployed.
 
 ## Floating bots and the desktop mascot
