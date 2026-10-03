@@ -20557,6 +20557,7 @@ ROUTES.push(createDirectGrantRoutes({
     return store.setBotGrants(id, next);
   },
   actorId: channelActorId,
+  botsReadOnly: (actorId) => personBotsReadOnly(actorId),
   // Called only once the actor owns the bot: resolving an email may create
   // its principal. Anything that is not a principal id or an account email
   // is refused.

@@ -352,4 +352,24 @@ posixOnly("Perspicax organization: a member's own engines and read-only bots", (
     expect(restored.status, restored.text).toBe(200);
     expect(restored.body.bot.approvalMode).toBe("full");
   }, 90_000);
+
+  it("MA-6: sagax_bots use cannot add or remove a direct grant", async () => {
+    setUma("manage");
+    let uma = await signInUntil(UMA, (viewer) => viewer.botsReadOnly !== true && viewer.canCreateBots === true);
+    const own = await createBot(uma, "Uma Shares", "claude");
+    const added = await api("POST", `/api/bots/${own.id}/direct-grants`, uma, { userId: ids.bob });
+    expect(added.status, added.text).toBe(200);
+    expect(added.body.directGrants).toContain(ids.bob);
+
+    setUma("use");
+    uma = await signInUntil(UMA, (viewer) => viewer.botsReadOnly === true);
+    const again = await api("POST", `/api/bots/${own.id}/direct-grants`, uma, { userId: ids.bob });
+    expect(again.status, again.text).toBe(403);
+    expect(again.body.error).toBe(READ_ONLY);
+    const removed = await api("DELETE", `/api/bots/${own.id}/direct-grants/${encodeURIComponent(ids.bob)}`, uma);
+    expect(removed.status, removed.text).toBe(403);
+    expect(removed.body.error).toBe(READ_ONLY);
+    const stored = ((await api("GET", "/api/bots", uma)).body.bots as Array<{ id: string; directGrants?: string[] }>).find((bot) => bot.id === own.id);
+    expect(stored?.directGrants).toContain(ids.bob);
+  }, 90_000);
 });
