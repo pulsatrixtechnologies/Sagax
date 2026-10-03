@@ -200,8 +200,17 @@ enum IPadParityScreen: String, CaseIterable {
         self = match
     }
 
-    /// Built for the iPad so far. Everything else routes to the placeholder.
-    var implemented: Bool { false }
+    /// Built for the iPad so far (the desktop shell draws them itself).
+    /// Everything else routes to the placeholder.
+    var implemented: Bool {
+        switch self {
+        case .main, .panelDetails: true
+        default: false
+        }
+    }
+
+    /// The bot panel is open on this surface.
+    var opensBotPanel: Bool { self == .panelDetails }
 }
 
 #if DEBUG
@@ -328,7 +337,7 @@ struct IPadParityLauncher: ViewModifier {
     func body(content: Content) -> some View {
         content
             .task {
-                guard let screen = ParityLaunch.current?.iPadScreen else { return }
+                guard let screen = ParityLaunch.current?.iPadScreen, !screen.implemented else { return }
                 presented = screen
             }
             .fullScreenCover(item: $presented) { screen in

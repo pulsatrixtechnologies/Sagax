@@ -194,7 +194,9 @@ enum Theme {
     /// Hibou 98 (a touch smaller, as Tahoma sets tighter).
     static func font(_ size: CGFloat, _ weight: SwiftUI.Font.Weight = .regular) -> SwiftUI.Font {
         switch ThemeRuntime.typeface {
-        case .system: return .system(size: size, weight: weight)
+        case .system:
+            if ThemeRuntime.desktopFace { return DesktopFonts.geist(size, weight) }
+            return .system(size: size, weight: weight)
         case .serif: return .system(size: size, weight: weight, design: .serif)
         case .retro:
             let bold = weight == .semibold || weight == .bold || weight == .heavy || weight == .black

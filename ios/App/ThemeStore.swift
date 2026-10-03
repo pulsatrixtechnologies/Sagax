@@ -14,6 +14,10 @@ import WidgetKit
 enum ThemeRuntime {
     static var palette: SkinPalette = .black
     static var typeface: SkinTypeface = .system
+    /// iPad: the skin's desktop face (Geist on Pulsatrix) for the system
+    /// typeface, so the phone surfaces the iPad shows read like the desktop.
+    /// Always false on the iPhone.
+    static var desktopFace = false
 }
 
 private struct ThemePaletteKey: EnvironmentKey {
@@ -68,6 +72,12 @@ final class ThemeStore: ObservableObject {
                 computerSkin: skin(PrefKey.themeComputerSkin),
                 computerFont: defaults.string(forKey: PrefKey.themeComputerFont).flatMap(SkinFontChoice.init(rawValue:))
             )
+        } else if UIDevice.current.userInterfaceIdiom == .pad,
+                  defaults.string(forKey: PrefKey.appearanceMode) == nil,
+                  defaults.string(forKey: PrefKey.appearanceTone) == nil {
+            // An iPad that never chose a look wears the desktop's default
+            // (Pulsatrix) in dark, as the desktop app it mirrors does.
+            selection = ThemeSelection(mode: .system, darkSkin: .pulsatrix)
         } else {
             // The earlier System / Dark and Black / Dim, carried over once.
             selection = ThemeSelection.migrating(
@@ -230,6 +240,8 @@ struct ThemeRoot: ViewModifier {
         let typeface = store.typeface(deviceDark: scheme == .dark)
         ThemeRuntime.palette = palette
         ThemeRuntime.typeface = typeface
+        ThemeRuntime.desktopFace = UIDevice.current.userInterfaceIdiom == .pad
+            && DesktopTheme.of(palette.id).face == .geist && DesktopFonts.available
         return content
             .environment(\.themePalette, palette)
             .modifier(ThemeTint(palette: palette))

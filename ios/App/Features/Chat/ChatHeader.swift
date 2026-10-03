@@ -114,6 +114,11 @@ extension ChatView {
     /// sheet). `ChatProfileRoute` decides what the profile is and how it is
     /// presented.
     func openProfile() {
+        // iPad desktop shell: the bot's profile is the docked panel.
+        if let desktopChat, case .bot = current {
+            desktopChat.showPanel(.details)
+            return
+        }
         guard case .bot = current else {
             // A conversation with a person opens their sheet (RM21), the
             // way the desktop's header name does.
