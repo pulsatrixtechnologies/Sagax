@@ -12,7 +12,11 @@
 //
 // Reads need use on the bot; every change needs its owner or manage (an
 // organization admin too). Member scope (request-auth.ts CLIENT_ALLOW).
+// Perspicax `sagax_integrations: off` (server/person-integrations.ts): the
+// listing says `managedByAdmin: true` with `canChange: false`, and every
+// change answers 403 `org_integrations_admin_only`, even on their own bot.
 import type { BotPluginError, BotPlugins, MarketplacePolicy } from "../bot-plugins.ts";
+import { INTEGRATIONS_ADMIN_ONLY } from "../person-integrations.ts";
 import type { RequestAuth } from "../request-auth.ts";
 import { PASS, type RouteHandler } from "./table.ts";
 
@@ -23,6 +27,8 @@ export interface BotPluginRouteDeps<B extends { id: string }> {
   mayChange: (auth: RequestAuth, bot: B) => boolean;
   /** Who acts: their own GitHub connection reads a private marketplace. */
   actor: (auth: RequestAuth) => string | undefined;
+  /** An admin manages this person's plugins (never an organization admin). */
+  managedByAdmin?: (auth: RequestAuth) => boolean;
   policy: () => MarketplacePolicy | undefined;
   /** Whether the bot's engine loads plugins (Claude Code only). */
   engineLoadsPlugins: (bot: B) => boolean;
@@ -45,17 +51,20 @@ export function createBotPluginRoutes<B extends { id: string }>(deps: BotPluginR
     const bot = deps.bot(botId!);
     if (!bot || !deps.mayRead(auth, bot)) return json(res, 404, { error: "no such bot" });
     res.setHeader("cache-control", "private, no-store");
+    const managedByAdmin = deps.managedByAdmin?.(auth) === true;
     const listing = () => ({
       marketplaces: deps.plugins.listMarketplaces(bot.id),
       plugins: deps.plugins.listPlugins(bot.id),
       policy: deps.policy() ?? { mode: "any" },
       engine: { loadsPlugins: deps.engineLoadsPlugins(bot) },
-      canChange: deps.mayChange(auth, bot),
+      canChange: !managedByAdmin && deps.mayChange(auth, bot),
+      ...(managedByAdmin ? { managedByAdmin: true } : {}),
     });
     if (!section && !key) {
       if (method !== "GET") return json(res, 405, { error: "GET only" });
       return json(res, 200, listing());
     }
+    if (managedByAdmin) return json(res, 403, { ...INTEGRATIONS_ADMIN_ONLY });
     if (!deps.mayChange(auth, bot)) return json(res, 403, { error: "Only the bot's owner, or someone who manages it, can change its plugins.", code: "plugins_owner_only" });
     const body = method === "DELETE" || update ? null : await (async () => {
       if (!/^application\/json\b/i.test(String(req.headers["content-type"] ?? ""))) return undefined;

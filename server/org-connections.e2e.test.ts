@@ -16,6 +16,11 @@
 //   OC-5  plugins: a marketplace and a plugin on the owner's bot, loaded with
 //         --plugin-dir, hooks stripped; use is read-only; the admin's list
 //   OC-6  skills: a member adds a skill to their own bot
+//   OC-7  Perspicax sagax_integrations manage (the default): a member does
+//         the whole flow with no admin, on a bot someone shared at manage
+//   OC-8  sagax_integrations off: the member's changes answer 403
+//         org_integrations_admin_only, the viewer and the listings say an
+//         admin manages them, and what they had keeps working
 import { execFileSync, spawn, type ChildProcess } from "node:child_process";
 import { createServer, type IncomingMessage, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
@@ -45,6 +50,7 @@ const GITHUB_TOKEN = "gho_fake_device_token_bob_000000";
 const ALICE: FakeOidcUser = { sub: "01J9OCALICE0000000000000A", email: "alice@example.test", name: "Alice", preferred_username: "alice", role: "admin", teams: [] };
 const BOB: FakeOidcUser = { sub: "01J9OCBOB00000000000000B", email: "bob@example.test", name: "Bob", preferred_username: "bob", role: "employee", teams: [] };
 const UMA: FakeOidcUser = { sub: "01J9OCUMA00000000000000U", email: "uma@example.test", name: "Uma", preferred_username: "uma", role: "employee", teams: [] };
+const RITA: FakeOidcUser = { sub: "01J9OCRITA0000000000000R", email: "rita@example.test", name: "Rita", preferred_username: "rita", role: "employee", teams: [] };
 
 function hasGit(): boolean {
   try { execFileSync("git", ["--version"], { stdio: "ignore" }); return true; } catch { return false; }
@@ -185,6 +191,7 @@ posixOnly("organization: a person's own GitHub, MCP servers, plugins and skills"
   let alice: Auth;
   let bob: Auth;
   let uma: Auth;
+  let rita: Auth;
   const ids: Record<string, string> = {};
   let bobBot: { id: string; threadId: string };
 
@@ -199,7 +206,7 @@ posixOnly("organization: a person's own GitHub, MCP servers, plugins and skills"
     await startFakeGithub();
     oauth = await startFakeOAuthMcp({ registration: true });
     idp = await startFakeOidcProvider({ user: ALICE });
-    idp.directoryPeople = [ALICE, BOB, UMA].map((user) => idp.personOf(user));
+    idp.directoryPeople = [ALICE, BOB, UMA, RITA].map((user) => idp.personOf(user));
     PORT = await freePortBlock([0, 1]);
     BASE = `http://127.0.0.1:${PORT}`;
     home = mkdtempSync(join(tmpdir(), "omb-org-connections-"));
@@ -260,9 +267,10 @@ posixOnly("organization: a person's own GitHub, MCP servers, plugins and skills"
     alice = await signIn(ALICE);
     bob = await signIn(BOB);
     uma = await signIn(UMA);
+    rita = await signIn(RITA);
     const people = await waitFor(async () => {
       const got = (await api("GET", "/api/org/directory", alice)).body.people as Array<{ principalId: string; login: string }> | undefined;
-      return got && got.length === 3 ? got : null;
+      return got && got.length === 4 ? got : null;
     });
     for (const person of people) ids[person.login] = person.principalId;
     bobBot = await createBot(bob, "Bobby");
@@ -397,4 +405,94 @@ posixOnly("organization: a person's own GitHub, MCP servers, plugins and skills"
     expect((await api("GET", `/api/bots/${bobBot.id}/skills`, uma)).status).toBe(200);
     expect((await api("DELETE", `/api/bots/${bobBot.id}/skills/greet`, uma)).status).toBe(403);
   });
+
+  it("OC-7: sagax_integrations manage: a member does the whole flow with no admin, on a bot shared with them at manage", async () => {
+    expect((await api("GET", "/api/config", uma)).body.viewer.integrationsManagedByAdmin).toBeUndefined();
+    // GitHub by a pasted token, then the GitHub MCP with it and a token server
+    const connected = await api("POST", "/api/me/github/token", uma, { token: GITHUB_TOKEN });
+    expect(connected.status, connected.text).toBe(200);
+    expect(connected.body.github).toMatchObject({ state: "connected", login: "bob-gh", via: "token" });
+    const gh = await api("POST", "/api/me/mcp/servers", uma, { name: "github", url: `${oauth.base}/github-mcp`, auth: "github" });
+    expect(gh.status, gh.text).toBe(201);
+    const tok = await api("POST", "/api/me/mcp/servers", uma, { name: "tracker", url: `${oauth.base}/tracker-mcp`, auth: "token", token: "t-uma-000" });
+    expect(tok.status, tok.text).toBe(201);
+    const mine = await api("GET", "/api/me/connections", uma);
+    expect(mine.body.managedByAdmin).toBe(false);
+    expect(mine.body.servers.map((server: { name: string }) => server.name).sort()).toEqual(["github", "tracker"]);
+    // Bob lets Uma manage his bot: she adds the marketplace, installs, adds a skill
+    expect((await api("PUT", `/api/bots/${bobBot.id}/grants`, bob, { target: `user:${ids.uma}`, level: "manage" })).status).toBe(200);
+    expect((await api("GET", `/api/bots/${bobBot.id}/plugins`, uma)).body.canChange).toBe(true);
+    const market = await api("POST", `/api/bots/${bobBot.id}/plugins/marketplaces`, uma, { source: "acme/tools" });
+    expect(market.status, market.text).toBe(201);
+    const installed = await api("POST", `/api/bots/${bobBot.id}/plugins/install`, uma, { marketplace: "acme-tools", plugin: "reviewer" });
+    expect(installed.status, installed.text).toBe(201);
+    const text = "---\nname: triage\ndescription: Triage issues\n---\nTriage.";
+    const skill = await api("POST", `/api/bots/${bobBot.id}/skill-template`, uma, { name: "triage", description: "Triage issues", text, source: "template", enabled: true });
+    expect(skill.status, skill.text).toBe(201);
+    expect((await api("PATCH", `/api/bots/${bobBot.id}/skills/triage`, uma, { enabled: false })).status).toBe(200);
+    expect((await api("DELETE", `/api/bots/${bobBot.id}/skills/triage`, uma)).status).toBe(200);
+    expect((await api("PUT", `/api/bots/${bobBot.id}/grants`, bob, { target: `user:${ids.uma}`, level: "use" })).status).toBe(200);
+  }, 120_000);
+
+  it("OC-8: sagax_integrations off: 403 org_integrations_admin_only, a notice, and what she had keeps working", async () => {
+    // while she may: her own bot, a server of her own, a skill on her bot
+    const ritaBot = await createBot(rita, "Rita's");
+    const own = await api("POST", "/api/me/mcp/servers", rita, { name: "ritas", url: `${oauth.base}/rita-mcp`, auth: "token", token: "t-rita-000" });
+    expect(own.status, own.text).toBe(201);
+    const text = "---\nname: notes\ndescription: Take notes\n---\nTake notes.";
+    expect((await api("POST", `/api/bots/${ritaBot.id}/skill-template`, rita, { name: "notes", description: "Take notes", text, source: "template", enabled: true })).status).toBe(201);
+
+    // an admin turns it off in Perspicax; the directory brings it here
+    idp.directoryPeople = idp.directoryPeople.map((person) => (person.sub === RITA.sub ? { ...person, sagax_integrations: "off" as const } : person));
+    await waitFor(async () => (await api("GET", "/api/config", rita)).body.viewer?.integrationsManagedByAdmin === true, 30_000);
+
+    // Mes connexions: listed, read-only; every change refused
+    const listed = await api("GET", "/api/me/connections", rita);
+    expect(listed.status).toBe(200);
+    expect(listed.body.managedByAdmin).toBe(true);
+    expect(listed.body.servers.map((server: { name: string }) => server.name)).toEqual(["ritas"]);
+    for (const [method, path, body] of [
+      ["POST", "/api/me/mcp/servers", { name: "github", url: `${oauth.base}/github-mcp`, auth: "github" }],
+      ["PATCH", "/api/me/mcp/servers/ritas", { enabled: false }],
+      ["DELETE", "/api/me/mcp/servers/ritas", undefined],
+      ["POST", "/api/me/github/device", {}],
+      ["POST", "/api/me/github/token", { token: GITHUB_TOKEN }],
+    ] as const) {
+      const refused = await api(method, path, rita, body);
+      expect(refused.status, `${method} ${path}: ${refused.text}`).toBe(403);
+      expect(refused.body.code).toBe("org_integrations_admin_only");
+    }
+    // plugins and skills on her own bot: read, never changed
+    const plugins = await api("GET", `/api/bots/${ritaBot.id}/plugins`, rita);
+    expect(plugins.body).toMatchObject({ canChange: false, managedByAdmin: true });
+    for (const [method, path, body] of [
+      ["POST", `/api/bots/${ritaBot.id}/plugins/marketplaces`, { source: "acme/tools" }],
+      ["POST", `/api/bots/${ritaBot.id}/plugins/install`, { marketplace: "acme-tools", plugin: "reviewer" }],
+      ["POST", `/api/bots/${ritaBot.id}/skill-template`, { name: "more", description: "More", text: "---\nname: more\ndescription: More\n---\nMore.", source: "template", enabled: true }],
+      ["POST", `/api/bots/${ritaBot.id}/skills`, { source: "acme/tools" }],
+      ["PATCH", `/api/bots/${ritaBot.id}/skills/notes`, { enabled: false }],
+      ["DELETE", `/api/bots/${ritaBot.id}/skills/notes`, undefined],
+    ] as const) {
+      const refused = await api(method, path, rita, body);
+      expect(refused.status, `${method} ${path}: ${refused.text}`).toBe(403);
+      expect(refused.body.code).toBe("org_integrations_admin_only");
+    }
+    expect((await api("GET", `/api/bots/${ritaBot.id}/skills`, rita)).body.skills.map((entry: { name: string }) => entry.name)).toContain("notes");
+    // what she had keeps working: her server still mounts for her turn
+    await turn(rita, ritaBot, "anything");
+    const engine = JSON.parse(readFileSync(engineDump, "utf8")) as { mcpConfig: { mcpServers: Record<string, { headers?: Record<string, string> }> } };
+    expect(engine.mcpConfig.mcpServers.ritas?.headers?.Authorization).toBe("Bearer t-rita-000");
+    // an organization admin is never narrowed by the field
+    idp.directoryPeople = idp.directoryPeople.map((person) => (person.sub === ALICE.sub ? { ...person, sagax_integrations: "off" as const } : person));
+    await sleep(6_000);
+    expect((await api("GET", "/api/me/connections", alice)).body.managedByAdmin).toBe(false);
+    expect((await api("GET", "/api/config", alice)).body.viewer.integrationsManagedByAdmin).toBeUndefined();
+
+    // manage again: she changes them herself
+    idp.directoryPeople = idp.directoryPeople.map((person) => (person.sub === RITA.sub ? { ...person, sagax_integrations: "manage" as const } : person));
+    await waitFor(async () => (await api("GET", "/api/config", rita)).body.viewer && !(await api("GET", "/api/config", rita)).body.viewer.integrationsManagedByAdmin, 30_000);
+    expect((await api("DELETE", "/api/me/mcp/servers/ritas", rita)).status).toBe(200);
+    expect((await api("POST", `/api/bots/${ritaBot.id}/plugins/marketplaces`, rita, { source: "acme/tools" })).status).toBe(201);
+    expect((await api("POST", `/api/bots/${ritaBot.id}/plugins/install`, rita, { marketplace: "acme-tools", plugin: "reviewer" })).status).toBe(201);
+  }, 150_000);
 });

@@ -124,6 +124,10 @@ const personSchema = z.object({
    * their own Sagax bots (`manage`, the default) or only use the bots
    * shared with them (`use`). Absent from an older Perspicax: manage. */
   sagax_bots: z.enum(["manage", "use"]).optional().catch(undefined),
+  /** Perspicax migration 0046: whether this person manages their own
+   * plugins, skills and MCP servers in Sagax (`manage`, the default) or an
+   * admin does (`off`). Absent from an older Perspicax: manage. */
+  sagax_integrations: z.enum(["manage", "off"]).optional().catch(undefined),
   routine_delegation: z.object({
     consented_at: z.string().max(40),
     renewed_at: z.string().max(40),
@@ -353,6 +357,15 @@ export class PerspicaxDirectory {
   botRights(sub: string): "manage" | "use" {
     const person = this.data?.people.find((entry) => entry.sub === sub);
     return person?.sagax_bots === "use" ? "use" : "manage";
+  }
+
+  /** Whether this subject manages their own plugins, skills and MCP servers
+   * (Perspicax `sagax_integrations`): `off` only when the last directory
+   * says so, else `manage` (the default, an older Perspicax, or before the
+   * first directory). */
+  integrationRights(sub: string): "manage" | "off" {
+    const person = this.data?.people.find((entry) => entry.sub === sub);
+    return person?.sagax_integrations === "off" ? "off" : "manage";
   }
 
   /** Slice 5: every MCP profile Perspicax lists, sorted by id ([] before the

@@ -306,6 +306,22 @@ describe("PerspicaxDirectory, slice 4: teams and owner keys", () => {
     expect(h.sync.providerKeys("NOBODY")).toEqual([]);
   });
 
+  it("reads sagax_integrations per person: off only when said, manage otherwise (Perspicax 0046)", async () => {
+    const h = harness(withTeams([
+      person("ALICE", { sagax_integrations: "off" }),
+      person("BOB", { sagax_integrations: "manage" }),
+      person("CAROL"),
+      person("DAN", { sagax_integrations: "bogus" as never }),
+    ], []));
+    expect(h.sync.integrationRights("ALICE")).toBe("manage");
+    await h.sync.refresh();
+    expect(h.sync.integrationRights("ALICE")).toBe("off");
+    expect(h.sync.integrationRights("BOB")).toBe("manage");
+    expect(h.sync.integrationRights("CAROL")).toBe("manage");
+    expect(h.sync.integrationRights("DAN")).toBe("manage");
+    expect(h.sync.integrationRights("NOBODY")).toBe("manage");
+  });
+
   it("botRights is use only when the last directory says so, else manage", async () => {
     const h = harness(directoryOf([
       person("BOB", { sagax_bots: "use" }),

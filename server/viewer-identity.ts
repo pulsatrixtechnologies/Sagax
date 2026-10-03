@@ -21,6 +21,10 @@ export interface ViewerIdentity {
    * Sagax (`sagax_bots: use`). They use the bots shared with them and
    * create, edit or own none. Absent otherwise. */
   botsReadOnly?: true;
+  /** Organization server: a Perspicax admin manages this person's plugins,
+   * skills and MCP servers (`sagax_integrations: off`); what they have stays
+   * usable, read-only (server/person-integrations.ts). */
+  integrationsManagedByAdmin?: true;
   /** The operator's display name, for lines the operator sent without a
    * named sender. Only set for someone who is not the operator. */
   operatorName?: string;
