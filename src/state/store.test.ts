@@ -2269,11 +2269,11 @@ describe("activity panel", () => {
     expect(reducer(open, { type: "toggleComputer", open: true }).activityOpen).toBe(false);
   });
 
-  it("opening bot settings closes activity without changing the other panels", () => {
+  it("opening bot settings closes activity (and, in Sagax, the computer panel that shares its slot)", () => {
     const open = { ...initialState, activityOpen: true, computerOpen: true };
     const next = reducer(open, { type: "toggleSettings", open: true });
     expect(next.activityOpen).toBe(false);
-    expect(next.computerOpen).toBe(true);
+    expect(next.computerOpen).toBe(false);
   });
 
   it("switching to routines or the team map closes the activity panel", () => {

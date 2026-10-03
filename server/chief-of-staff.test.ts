@@ -92,8 +92,6 @@ describe("chiefOfStaffSystemPrompt", () => {
         "Current Work section team:",
         "- Quill — Writer: Drafts concise copy (available) [id: writer]",
         "- Patch — Engineer (working right now) [id: coder]",
-        "TRUSTED SAGAX STATUS",
-        "freshness=fresh",
       ].join("\n"),
     );
   });
