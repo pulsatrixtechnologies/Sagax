@@ -666,6 +666,64 @@ it. Keep these rules, each covered by `server/desktop-bridge*.test.ts`,
 A change under `server/` needs the server image redeployed; under `electron/`
 a desktop rebuild.
 
+## A person's own connections, plugins and skills (organization mode, 2026-10-02)
+
+Owner report: on GOX nobody could add the GitHub MCP, log into GitHub or
+install plugins. Why: the server-wide MCP list was admin-only, hidden with
+Connected apps, shared one token by all and ran commands on the host;
+`claude plugin ...` typed by a bot hit the host Bash denial whatever
+`SAGAX_CLAUDE_ALLOW` said; skills routes were admin-only; the environment
+had no gh. Keep these rules, each covered by `server/org-connections.e2e.test.ts`
+(OC-1 to OC-6), `server/person-connections.test.ts`,
+`server/github-connect.test.ts`, `server/bot-plugins.test.ts`,
+`server/sandbox-stdio-mcp.test.ts`, `server/sandboxd.test.ts` or
+`src/components/settings/MyConnectionsSettings.test.ts`:
+
+- Settings > Mes connexions (organization server only,
+  `organizationHidesSection`): `/api/me/connections`, `/api/me/github/*`,
+  `/api/me/mcp/servers/*` (`server/routes/person-connections.ts`), the
+  session's person only, member scope (CLIENT_ALLOW, `orgDirectory`).
+- One encrypted file per person (`principals/<pid>/connections.enc`,
+  AES-256-GCM with the mcp-oauth vault key; `server/person-connections.ts`)
+  holds their own MCP servers and GitHub token; their OAuth sign-ins live in
+  their own `principals/<pid>/mcp-oauth.enc` (one `McpOAuthManager` per
+  person, `ownsState` routes `/api/mcp-oauth/callback` to it). No answer
+  carries a token.
+- A personal server mounts for the turn's person only (`mountPersonalMcp`:
+  the speaker, the owner for a routine; the workplace decision's person),
+  never under a name already taken, never while it needs a sign-in, a token
+  or GitHub. A remote one must resolve to a public address (checked at add
+  and, cached, at mount; `SAGAX_PERSONAL_MCP_ALLOW_PRIVATE=1` is for a lab or
+  a test only). A command runs in the person's server environment through
+  `sagax-stdio` (`server/sandbox-stdio-mcp.ts`, sandboxd's signed stdio
+  stream), never on the host; without server environments it is refused.
+- A server-wide MCP command is never added (403 `org_host_command`) nor
+  mounted (`withoutHostCommands`) on an organization server.
+- Connecter GitHub (`server/github-connect.ts`): the device flow of the
+  organization's GitHub OAuth App (`SAGAX_GITHUB_CLIENT_ID`, or
+  `organization.githubClientId` from Settings > Organization), else a pasted
+  token. The token goes into the person's environment for gh and git
+  (`githubSandboxArgv`, through `SAGAX_GH_TOKEN`, never the argv), into their
+  personal servers with auth `github`, and into Sagax's own fetches for them
+  (private skills, private marketplaces).
+- Plugins (`server/bot-plugins.ts`, `/api/bots/:id/plugins/*`): per bot, the
+  owner or a person with manage changes them, use reads. Sagax clones the
+  marketplace (git with the actor's GitHub token in an extra header, only the
+  server's proxy, certificate and git config variables), copies a plugin
+  without links, hooks, `.mcp.json`, `.lsp.json`, `bin/` or those manifest
+  keys, and a Claude turn (and its "/" list) loads each enabled one with
+  `--plugin-dir`. `organization.pluginMarketplaces` (any by default, or a
+  list of owner/repo, owner/* or https URLs; PATCH `/api/org/settings`)
+  applies to marketplaces and to a plugin's own repository.
+- Skills routes (`/api/bots/:id/skills*`, `skill-template`) are member scope
+  on an organization server: use reads, owner or manage changes; an import
+  from a private repository reads with the person's GitHub connection.
+- Library tab: Files | Skills | Plugins (`bot-settings/LibraryTab.tsx`).
+
+A change under `server/` needs the server image redeployed (sandboxd is the
+same image); `deploy/sandbox/Dockerfile` (gh, node, npm) needs the sandbox
+image rebuilt.
+
 ## Connectors from the person's own Claude account
 
 Sagax builds no GitHub, Outlook or Calendar integration of its own: a Claude

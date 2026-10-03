@@ -20,6 +20,7 @@ import { SlackSection } from "./bot-settings/SlackSection";
 import { useSlackManagementUrl } from "./bot-settings/useSlackManagement";
 import { SoulSection } from "./bot-settings/SoulSection";
 import { SkillsSection } from "./bot-settings/SkillsSection";
+import { LibraryTab } from "./bot-settings/LibraryTab";
 import { MemorySection } from "./bot-settings/MemorySection";
 import { RoutinesSection } from "./bot-settings/RoutinesSection";
 import { AccessSection } from "./bot-settings/AccessSection";
@@ -33,7 +34,6 @@ import { VisibilitySection } from "./bot-settings/VisibilitySection";
 import { SharingSection } from "./bot-settings/SharingSection";
 import { PerspicaxSection } from "./bot-settings/PerspicaxSection";
 import { usePerspicaxOrg } from "@/lib/perspicax-org";
-import { FilesSection } from "./bot-settings/FilesSection";
 import { isMoreSection, PANEL_TABS, tabForSection, type PanelTab } from "./bot-settings/panel-tabs";
 import { ActivitySection } from "./bot-settings/ActivitySection";
 import { InlineEditableText } from "./bot-settings/InlineEditableText";
@@ -554,7 +554,7 @@ export function BotSettingsDialog({ bot, onOpenVmWorkspace }: {
             </div>
           )}
 
-          {tab === "library" && <div className="px-4 pb-6 pt-2"><FilesSection bot={bot} /></div>}
+          {tab === "library" && <LibraryTab bot={bot} />}
 
           {tab === "computer" && (
             <div className="px-4 pt-2">

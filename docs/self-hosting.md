@@ -1220,6 +1220,15 @@ an optional pattern is dropped, and a malformed list grants nothing. Prefer
 exact commands over `:*` wildcards on a server many people share. Restart the
 server after a change; a running bot takes the new rules at its next launch.
 
+On an organization server, plugins and skills do not go through a bot's
+shell at all: the bot's owner adds a marketplace and installs plugins in
+the bot panel (Library > Plugins, `server/bot-plugins.ts`); Sagax fetches the
+marketplace itself and loads each plugin with `--plugin-dir`, without its
+hooks or MCP servers. The organization's admin may keep a list of allowed
+marketplaces (Settings > Organization > Plugins et GitHub; any by default).
+`SAGAX_CLAUDE_ALLOW` rules for `claude plugin ...` are therefore not needed
+there.
+
 An allow rule never overrides a denial. Rules only go into
 `permissions.allow`; they never remove a tool from `--disallowedTools` or from
 a deny list, and in Claude Code a deny always wins over an allow. On an

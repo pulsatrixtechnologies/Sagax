@@ -344,6 +344,8 @@ export const CLAUDE_FLAG_FLOORS = {
   // A guest's turn on a Cloud home (GUEST_CLAUDE_TOOLS): 2.1.248 takes
   // --restricted, 2.1.257 honours blockReadsOutsideWorkingDirectories.
   "--restricted": [2, 1, 257],
+  // A bot's Claude Code plugins (server/bot-plugins.ts).
+  "--plugin-dir": [2, 0, 0],
 } as const satisfies Record<string, ClaudeCliVersion>;
 
 /** The only built-in tools a guest's turn on a Cloud home gets
@@ -1271,6 +1273,7 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
         if (claudeCliSupports(cliVersion, "--setting-sources")) args.push("--setting-sources", "project");
         if (!scope.mcpFromUserConfig && !scope.claudeAiConnectors) env.ENABLE_CLAUDEAI_MCP_SERVERS = "false";
       }
+      if (claudeCliSupports(cliVersion, "--plugin-dir")) for (const dir of scope.pluginDirs ?? []) args.push("--plugin-dir", dir);
       const listed = await probeClaudeCommands({ cli: config.cli, args, env, cwd: scope.cwd ?? homedir() });
       const live = scope.botId ? liveCommands.get(liveCommandsKey(scope.botId, access?.identity)) : undefined;
       if (!live) return listed;
@@ -1546,6 +1549,11 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
         // user-scope servers, skills and hooks out.
         if (!turn.mcpFromUserConfig && !keepsClaudeAiConnectors && claudeCliSupports(cliVersion, "--strict-mcp-config")) args.push("--strict-mcp-config");
         if (claudeCliSupports(cliVersion, "--setting-sources")) args.push("--setting-sources", "project");
+      }
+      // The bot's plugins (server/bot-plugins.ts): skills, commands and
+      // agents only, loaded for this session. A guest's confined turn gets none.
+      if (!turn.guestConfined && claudeCliSupports(cliVersion, "--plugin-dir")) {
+        for (const dir of turn.pluginDirs ?? []) args.push("--plugin-dir", dir);
       }
       const compactWindow = autoCompactWindow(turnEnvironment);
       if (compactWindow && cliHasAutocompact === true) {
