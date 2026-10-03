@@ -19,6 +19,8 @@ struct TaskManagerView: View {
     @State private var isMutating = false
     @State private var errorMessage: String?
     @FocusState private var renameFocused: Bool
+    /// The shared thread and folder menus (Features/Threads).
+    @StateObject private var actions = ThreadActions()
 
     private var current: Chat {
         switch chat {
@@ -57,6 +59,7 @@ struct TaskManagerView: View {
                     Section("Rename thread") {
                         TextField("Thread title", text: $title)
                             .focused($renameFocused)
+                            .autocorrectionDisabled()
                             .submitLabel(.done)
                             .onSubmit { saveRename(taskToRename) }
                             .disabled(isMutating)
@@ -114,6 +117,26 @@ struct TaskManagerView: View {
                     }
                 }
                 ToolbarItem(placement: .primaryAction) {
+                    if !isSelecting, case let .bot(bot) = current, session.surfaceGate.allows(.threadFolders) {
+                        Menu {
+                            Button { actions.newFolder(for: bot) } label: {
+                                Label("New folder", systemImage: "folder.badge.plus")
+                            }
+                            .accessibilityIdentifier("new-folder")
+                            if bot.folders.count > 1 {
+                                Button { actions.reorderFolders(of: bot) } label: {
+                                    Label("Reorder folders", systemImage: "arrow.up.arrow.down")
+                                }
+                                .accessibilityIdentifier("reorder-folders")
+                            }
+                        } label: {
+                            Label("Folders", systemImage: "folder")
+                        }
+                        .disabled(isMutating)
+                        .accessibilityIdentifier("folders-menu")
+                    }
+                }
+                ToolbarItem(placement: .primaryAction) {
                     if !isSelecting {
                         Button("New thread", systemImage: "plus") {
                             perform { await create() }
@@ -137,6 +160,18 @@ struct TaskManagerView: View {
         }
         .onValueChange(of: tasks.map(\.threadId)) { liveIDs in
             selectedThreadIDs.formIntersection(liveIDs)
+        }
+        .threadActionsPresenter(actions, presentsRename: false, presentsDelete: false, presentsErrors: false)
+        .onValueChange(of: actions.error) { error in
+            guard let error else { return }
+            errorMessage = error
+            actions.error = nil
+        }
+        .onValueChange(of: actions.created?.threadId) { threadId in
+            guard let threadId else { return }
+            actions.created = nil
+            onSelectThread(threadId)
+            dismiss()
         }
         .interactiveDismissDisabled(isMutating)
         .confirmationDialog(
@@ -207,7 +242,7 @@ struct TaskManagerView: View {
             // the bottom — unless they demand attention again, in which case
             // they resurface in the rows above, exactly like the tree.
             let searching = !search.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            let groups = bot.threadGroups(matching: search, includingClosed: true)
+            let groups = bot.threadGroups(matching: search, includingClosed: true, includingEmptyFolders: true)
             let archived = searching ? [] : bot.threadGroups(includingClosed: true)
                 .flatMap(\.tasks)
                 .filter { $0.isArchived && $0.pinned != true && !$0.demandsAttention() && $0.threadId != bot.threadId }
@@ -218,25 +253,19 @@ struct TaskManagerView: View {
                     let rows = searching ? group.tasks : group.tasks.filter {
                         $0.pinned == true || !$0.isArchived || $0.demandsAttention() || $0.threadId == bot.threadId
                     }
-                    if !rows.isEmpty {
+                    if !rows.isEmpty || group.project != nil {
                         Section {
                             ForEach(rows, id: \.threadId) { task in
                                 threadButton(task)
                             }
-                            if group.tasks.isEmpty {
-                                Text("No threads in this folder")
+                            if let project = group.project, bot.folderThreads(project.id).isEmpty {
+                                Text("No threads yet")
                                     .foregroundStyle(Theme.textSecondary)
+                                    .accessibilityIdentifier("folder-empty.\(project.id)")
                             }
                         } header: {
                             if let project = group.project {
-                                HStack(spacing: 5) {
-                                    if let emoji = project.emoji, !emoji.isEmpty {
-                                        Text(verbatim: emoji)
-                                    } else {
-                                        Image(systemName: "folder")
-                                    }
-                                    Text(verbatim: project.name)
-                                }
+                                folderHeader(project, of: bot)
                             } else {
                                 Text(bot.projects?.isEmpty == false ? "Unfiled" : "Threads")
                             }
@@ -310,48 +339,14 @@ struct TaskManagerView: View {
             .disabled(isMutating || (!current.isBot && current.busy && task.threadId != current.threadId))
             .accessibilityIdentifier("thread-\(task.threadId)")
             .contextMenu {
-                Button("Rename", systemImage: "pencil") { beginRename(task) }
-                    .disabled(isMutating)
-                Button {
-                    togglePin(task)
-                } label: {
-                    Label(task.pinned == true ? "Unpin" : "Pin", systemImage: task.pinned == true ? "pin.slash" : "pin")
+                ThreadMenu(
+                    task: task,
+                    plan: actions.plan(for: task, owner: current, in: session),
+                    folders: current.botFolders,
+                    regenerating: actions.regenerating.contains(task.threadId)
+                ) { action in
+                    menuAction(action, on: task)
                 }
-                .disabled(isMutating)
-                if current.isBot {
-                    Menu {
-                        Button("Until new activity") { perform { await snooze(task, until: 0) } }
-                            .disabled(taskIsWorking(task))
-                        Button("Until 6 PM") {
-                            perform { await snooze(task, until: ThreadSnoozePreset.tonight()) }
-                        }
-                        .disabled(taskIsWorking(task))
-                        Button("Until 9 AM tomorrow") {
-                            perform { await snooze(task, until: ThreadSnoozePreset.tomorrowMorning()) }
-                        }
-                        .disabled(taskIsWorking(task))
-                    } label: {
-                        Label("Snooze", systemImage: "moon.zzz")
-                    }
-                    .disabled(isMutating || taskIsWorking(task))
-                    if task.isSnoozed() {
-                        Button("Stop snoozing", systemImage: "bell") {
-                            perform { await snooze(task, until: nil) }
-                        }
-                        .disabled(isMutating)
-                    }
-                    Button {
-                        toggleArchive(task)
-                    } label: {
-                        Label(
-                            task.isArchived ? "Unarchive" : "Archive",
-                            systemImage: task.isArchived ? "arrow.uturn.backward" : "archivebox"
-                        )
-                    }
-                    .disabled(isMutating || task.isWorking)
-                }
-                Button("Delete", systemImage: "trash", role: .destructive) { taskToDelete = task }
-                    .disabled(!canDelete(task))
             }
             .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                 Button(role: .destructive) { taskToDelete = task } label: {
@@ -385,6 +380,57 @@ struct TaskManagerView: View {
             }
         }
     }
+    /// A folder's header: its icon and name, its thread count, its closed
+    /// status, and the folder menu (the desktop's folder row).
+    private func folderHeader(_ project: BotProject, of bot: Bot) -> some View {
+        let threads = bot.folderThreads(project.id)
+        return HStack(spacing: 5) {
+            if let emoji = project.emoji, !emoji.isEmpty {
+                Text(verbatim: emoji)
+            } else {
+                Image(systemName: "folder")
+            }
+            Text(verbatim: project.name)
+            Text("\(threads.count)")
+                .foregroundStyle(Theme.textSecondary)
+                .monospacedDigit()
+            FolderStatusMark(status: FolderStatus(threads))
+            Spacer(minLength: 0)
+            Menu {
+                FolderMenu(folder: project, plan: actions.folderPlan(project, of: bot, in: session)) { action in
+                    actions.perform(action, folder: project, of: session.state.bot(bot.id) ?? bot, session: session)
+                }
+            } label: {
+                Image(systemName: "ellipsis")
+                    .frame(width: 32, height: 28)
+                    .contentShape(Rectangle())
+            }
+            .disabled(isMutating || isSelecting)
+            .accessibilityLabel("Actions for \(project.name) folder")
+            .accessibilityIdentifier("folder-menu.\(project.id)")
+        }
+    }
+
+    /// The shared thread menu, with this sheet's own rename row, delete
+    /// confirmation and busy lock.
+    private func menuAction(_ action: ThreadMenuAction, on task: BotTask) {
+        switch action {
+        case .rename:
+            beginRename(task)
+        case .delete:
+            taskToDelete = task
+        case .copyLink, .regenerateTitle:
+            actions.perform(action, on: ThreadTarget(task: task, owner: current), session: session)
+        default:
+            perform {
+                guard await actions.write(action, on: ThreadTarget(task: task, owner: current), session: session) else {
+                    showError("Couldn't update the thread. Try again.")
+                    return
+                }
+            }
+        }
+    }
+
     private func canSelectForBulkDelete(_ task: BotTask) -> Bool {
         tasks.count > 1 && task.threadId != current.threadId && !task.isWorking
             && (current.isBot || !current.busy)
@@ -392,13 +438,6 @@ struct TaskManagerView: View {
 
     private func canDelete(_ task: BotTask) -> Bool {
         !isMutating && tasks.count > 1 && (current.isBot ? !task.isWorking : !current.busy)
-    }
-
-    /// The desktop disables thread actions while a reply is in flight; the
-    /// wire can carry the flag or the activity alone. Stop-snoozing stays
-    /// available, exactly as there.
-    private func taskIsWorking(_ task: BotTask) -> Bool {
-        task.busy == true || task.activity == "working"
     }
 
     private func beginRename(_ task: BotTask) {
@@ -509,14 +548,6 @@ struct TaskManagerView: View {
         }
         taskToRename = nil
         renameFocused = false
-    }
-
-    private func snooze(_ task: BotTask, until snoozedUntil: Double?) async {
-        guard case let .bot(bot) = current else { return }
-        guard await session.snoozeTask(task, for: bot, snoozedUntil: snoozedUntil) else {
-            showError("Couldn't change the snooze. Try again.")
-            return
-        }
     }
 
     private func delete(_ task: BotTask) async {

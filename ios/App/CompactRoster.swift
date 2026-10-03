@@ -53,6 +53,8 @@ struct CompactBotEntry: View {
     let manage: (Chat) -> Void
 
     @EnvironmentObject private var session: Session
+    /// The shared thread and folder menus, mounted by the roster.
+    @EnvironmentObject private var threadActions: ThreadActions
     @Environment(\.dynamicTypeSize) private var typeSize
     @ScaledMetric(relativeTo: .body) private var scaledFace = CompactRosterMetrics.face
     /// Wakes the list when a timed snooze ends, so the count and the list
@@ -145,6 +147,7 @@ struct CompactBotEntry: View {
                 Button { manage(.bot(bot)) } label: {
                     Label("Manage threads", systemImage: "list.bullet")
                 }
+                BotThreadsMenu(bot: bot, actions: threadActions)
             }
             .accessibilityIdentifier("chat-row.\(bot.id)")
 
@@ -228,7 +231,8 @@ struct CompactBotEntry: View {
         // A name match lists everything; otherwise only what matched.
         let groups = bot.threadGroups(
             matching: bot.name.localizedCaseInsensitiveContains(query) ? "" : query,
-            queuedThreadIds: queued
+            queuedThreadIds: queued,
+            includingEmptyFolders: true
         )
         let labelsUnfiled = groups.labelsUnfiledThreads
         return VStack(alignment: .leading, spacing: 0) {
@@ -237,6 +241,12 @@ struct CompactBotEntry: View {
                     folderHeader(folder)
                     if searching || !collapsedFolders.contains(folderKey(folder)) {
                         threadLines(group.tasks, bot: bot)
+                        if bot.folderThreads(folder.id).isEmpty {
+                            Text("No threads yet")
+                                .font(.footnote)
+                                .foregroundStyle(Theme.parity(Color.secondary, Theme.textSecondary))
+                                .frame(minHeight: 32)
+                        }
                     }
                 } else {
                     if labelsUnfiled {
@@ -258,6 +268,7 @@ struct CompactBotEntry: View {
 
     private func folderHeader(_ folder: BotProject) -> some View {
         let open = searching || !collapsedFolders.contains(folderKey(folder))
+        let live = session.state.bot(bot.id) ?? bot
         return Button {
             let key = folderKey(folder)
             if collapsedFolders.contains(key) { collapsedFolders.remove(key) } else { collapsedFolders.insert(key) }
@@ -270,9 +281,13 @@ struct CompactBotEntry: View {
                 }
                 Text(verbatim: folder.name)
                     .lineLimit(1)
+                Text("\(live.folderThreads(folder.id).count)")
+                    .monospacedDigit()
+                    .opacity(0.6)
                 Image(systemName: "chevron.right")
                     .font(.caption2.weight(.semibold))
                     .rotationEffect(.degrees(open ? 90 : 0))
+                if !open { FolderStatusMark(status: FolderStatus(live.folderThreads(folder.id))) }
                 Spacer(minLength: 0)
             }
             .font(.footnote.weight(.medium))
@@ -281,6 +296,7 @@ struct CompactBotEntry: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .folderMenu(folder, of: live, actions: threadActions, session: session)
         .disabled(searching)
         .accessibilityLabel(Text(verbatim: folder.name))
         .accessibilityValue(open ? "Expanded" : "Collapsed")
@@ -310,14 +326,7 @@ struct CompactBotEntry: View {
                     )
                 }
                 .buttonStyle(.plain)
-                .contextMenu {
-                    Button {
-                        let pinned = task.pinned != true
-                        Task { await session.setTaskPinned(task, pinned: pinned, in: .bot(bot)) }
-                    } label: {
-                        Label(task.pinned == true ? "Unpin" : "Pin", systemImage: task.pinned == true ? "pin.slash" : "pin")
-                    }
-                }
+                .threadMenu(task, owner: .bot(bot), actions: threadActions, session: session)
                 .accessibilityIdentifier("thread.\(task.threadId)")
             }
         }

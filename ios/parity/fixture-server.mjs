@@ -51,6 +51,12 @@ const ROOT = join(HERE, "..", "..");
 const OUT = process.env.PARITY_OUT ?? join(HERE, "out");
 const once = process.argv.includes("--once");
 const ORG = process.env.PARITY_ORG === "1";
+// PARITY_THREAD_TITLES=1 turns on generated thread titles (config
+// features.llmThreadTitles) with the fake engine's one-shot reply read from
+// a file, so the thread menu's "Regenerate title" runs end to end (WP5's UI
+// tests). Off by default: the reference captures never see it.
+const THREAD_TITLES = process.env.PARITY_THREAD_TITLES === "1";
+const PARITY_GENERATED_TITLE = "Fixture generated title";
 /** Organization fixture: the stub provider and the admin's session cookie. */
 let org = null;
 
@@ -100,6 +106,7 @@ function startServer(port, webhook) {
       OMB_PORT: String(port),
       OMB_WEBHOOK_PORT: String(webhook),
       FAKE_CLAUDE_MODE: "happy",
+      ...(THREAD_TITLES ? { FAKE_CLAUDE_TEXT_FILE: join(home, "thread-title.txt") } : {}),
       // Settings > Usage reads the monthly budget, an enterprise feature: a
       // stub layer (written by main()) grants "budgets" and nothing else.
       ...(enterpriseStub ? { OMB_ENTERPRISE_DIR: enterpriseStub, OMB_LICENSE_KEY: "parity-fixture" } : {}),
@@ -628,6 +635,7 @@ async function main() {
   const dataDir = join(home, ".openmausbot");
   mkdirSync(dataDir, { recursive: true });
   enterpriseStub = join(home, "enterprise-stub");
+  if (THREAD_TITLES) writeFileSync(join(home, "thread-title.txt"), PARITY_GENERATED_TITLE);
   writeEnterpriseStub(enterpriseStub);
   if (ORG) {
     org = await startOrg(home);
@@ -638,6 +646,7 @@ async function main() {
     budgets: { monthlyUsd: 100 },
     imageGen: { provider: "custom", customUrl: `http://127.0.0.1:${await startImageStub()}/v1`, customModel: "parity-stub" },
     mcpServers: teamMcpServers(),
+    ...(THREAD_TITLES ? { features: { llmThreadTitles: true } } : {}),
     instances: {
       claude: {
         driver: "claudeAgent",
