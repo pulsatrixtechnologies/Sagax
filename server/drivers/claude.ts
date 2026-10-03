@@ -1316,6 +1316,16 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
        * began the turn. The acceptance boundary for --resume: before it,
        * nothing was submitted and the turn has caused nothing. */
       sawInit: boolean;
+      /** Set while this process was started for a call warm and no user
+       * turn owns it yet. Init is recorded; every other event is dropped
+       * until a real turn attaches. */
+      idleWarm?: boolean;
+      /** The warm that owns this idle process. A replaced call's abort
+       * closes the process only while this token still matches. */
+      warmToken?: string;
+      /** Model from init, so a real turn can publish session.started when
+       * init arrived during the warm and the CLI does not re-announce it. */
+      sessionModel?: string | null;
       /** the permission mode `init` says the session actually runs in. The
        * CLI takes `--permission-mode auto` for any model and starts in
        * "default" without a word when auto mode is unavailable (Haiku 4.5,
@@ -1401,6 +1411,22 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
       s.idleTimer = setTimeout(() => closeSession(threadId, "idle"), SESSION_IDLE_MS);
       s.idleTimer.unref?.();
     };
+    /** Park a pooled process with no user turn. A later warm of the same
+     * session bumps warmToken, so this signal's abort cannot close it. */
+    const holdWarm = (threadId: string, session: Session, token: string, signal?: AbortSignal) => {
+      session.idleWarm = true;
+      session.warmToken = token;
+      session.turn = null;
+      if (signal?.aborted) {
+        closeSession(threadId, "call ended");
+        return;
+      }
+      signal?.addEventListener("abort", () => {
+        const live = sessions.get(threadId);
+        if (live === session && !live.turn && live.warmToken === token) closeSession(threadId, "call ended");
+      }, { once: true });
+      armIdle(threadId);
+    };
     const writeUser = (s: Session, threadId: string, promptMsg: ClaudeUserMessage): Promise<boolean> => {
       if (!s.child.stdin.writable || s.child.stdin.destroyed) return Promise.resolve(false);
       return new Promise((resolve) => {
@@ -1447,6 +1473,12 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
       // logical turn's stop handle in `active` while it sets up, so Stop is
       // never a silent no-op between two CLI processes of the same turn.
       const relaunch = logicalTurnId !== undefined;
+      // A warm must not steal a process a real turn already owns, and an
+      // aborted warm must not open files or spawn. Both return before any
+      // broker or temp file exists.
+      if (turn.warmOnly === true && (turn.warmSignal?.aborted || (active.has(threadId) && !relaunch))) {
+        return { turnId: logicalTurnId ?? newId() };
+      }
       if (active.has(threadId) && !relaunch) throw new Error("a turn is already running on this thread");
       // A bot-level mode is authoritative for this turn. In particular, an
       // old provider instance may still be configured with
@@ -1791,8 +1823,29 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
       // the harness wants resumed. Clearing a cursor alone does not opt out
       // of legacy reuse: an explicit rebuild must discard the idle context.
       const live = sessions.get(threadId);
+      const dropUnusedMcp = () => {
+        if (!mcpConfigPath) return;
+        try {
+          rmSync(dirname(mcpConfigPath), { recursive: true, force: true });
+        } catch {}
+        mcpConfigPath = null;
+      };
       if (!turn.sessionReset && live && !live.turn && !live.closing && live.child.exitCode === null && live.argsKey === argsKey && (!sessionId || sessionId === live.sessionId)) {
         if (live.idleTimer) clearTimeout(live.idleTimer);
+        // A second warm of the same call keeps the process and writes nothing.
+        if (turn.warmOnly === true) {
+          dropUnusedMcp();
+          holdWarm(threadId, live, turnId, turn.warmSignal);
+          return { turnId, reused: true };
+        }
+        // Attach before any await so a hangup abort cannot close a process
+        // this turn now owns. Init that arrived during the warm is published
+        // once here: a cancelled warm never emits, so it cannot overwrite a
+        // resume cursor, and a CLI that already announced init does not have
+        // to announce it again.
+        const publishWarmInit = live.idleWarm === true && live.sawInit && Boolean(live.sessionId);
+        live.idleWarm = false;
+        live.warmToken = undefined;
         live.turn = { turnId, input: turn, retryAbort, settled: false, sawStreamDelta: false, pendingSteers: new Set(), deferred: null, continuationGrace: null, continuationSilence: null };
         active.set(threadId, { stop: () => {
           if (live.turn) live.turn.stopRequested = true;
@@ -1802,6 +1855,9 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
           stopSession(live);
         }, turnId, broker: live.broker });
         emit({ ...base(threadId, turnId), type: "turn.started" });
+        if (publishWarmInit && live.sessionId) {
+          emit({ ...base(threadId, turnId), type: "session.started", sessionId: live.sessionId, model: live.sessionModel ?? null });
+        }
         const volatile = turn.systemVolatile ?? "";
         const message = volatile === live.volatile && !turn.mentionTurn
           ? promptMsg
@@ -1830,6 +1886,11 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
         return { turnId, reused: true };
       }
       if (live) {
+        // A real turn owns the process. A warm must not close it.
+        if (turn.warmOnly === true && live.turn) {
+          dropUnusedMcp();
+          return { turnId };
+        }
         // A relaunch costs the engine's whole cold start (on a call, most of
         // the pause before the answer): say which fields of the spawn
         // contract changed (names only, never values).
@@ -1972,6 +2033,11 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
         emit({ ...base(threadId, turnId), type: "turn.completed", ok: false, stopReason: "interrupted", cost: null });
         return { turnId };
       }
+      // The call ended while this warm was still building its config.
+      if (turn.warmOnly === true && turn.warmSignal?.aborted) {
+        cleanupUnownedLaunch();
+        return { turnId };
+      }
 
       let child: ReturnType<typeof spawnCli>;
       try {
@@ -1997,7 +2063,11 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
         sawInit: false,
         nativePermissionMode: null,
         replaysUserMessages,
-        turn: { turnId, input: turn, retryAbort, settled: false, sawStreamDelta: false, pendingSteers: new Set(), deferred: null, continuationGrace: null, continuationSilence: null },
+        // A warm has no turn from the start, so a fast init cannot emit
+        // under a phantom turn id.
+        turn: turn.warmOnly === true ? null : { turnId, input: turn, retryAbort, settled: false, sawStreamDelta: false, pendingSteers: new Set(), deferred: null, continuationGrace: null, continuationSilence: null },
+        idleWarm: turn.warmOnly === true,
+        warmToken: turn.warmOnly === true ? turnId : undefined,
         idleTimer: null,
         closing: false,
         stderr: "",
@@ -2082,6 +2152,32 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
         // A stdin message echoed back (--replay-user-messages) carries its
         // images again: keep their bytes out of the log, as when it was sent.
         appendNative(threadId, { dir: "in", source: "claude.sdk.message", msg: o?.type === "user" && o.isReplay === true && o.message ? diagnosticClaudeUserMessage(o) : o });
+        // A warm process has no user turn. Record init (the resume cursor is
+        // published only when a real turn attaches) and drop everything else,
+        // so a call warm never writes a transcript row.
+        if (session.idleWarm && !session.turn) {
+          if (o?.type === "system" && o.subtype === "init") {
+            const tools: unknown[] = Array.isArray(o.tools) ? o.tools : [];
+            if (turn.guestConfined && (o.permissionMode !== "default" || tools.some((tool) => typeof tool === "string" && GUEST_FORBIDDEN_TOOLS.has(tool)))) {
+              session.closing = true;
+              stopSession(session);
+              return;
+            }
+            session.sawInit = true;
+            const liveBot = turn.botId;
+            if (liveBot && Array.isArray(o.slash_commands)) {
+              const liveAccess = turn.access;
+              liveCommands.set(liveCommandsKey(liveBot, liveAccess?.via === "subscription" ? liveAccess.identity : undefined), {
+                names: o.slash_commands.filter((name: unknown): name is string => typeof name === "string"),
+                terminal: Array.isArray(o.terminal_slash_commands) ? o.terminal_slash_commands.filter((name: unknown): name is string => typeof name === "string") : [],
+              });
+            }
+            session.nativePermissionMode = typeof o.permissionMode === "string" ? o.permissionMode : null;
+            if (typeof o.session_id === "string") session.sessionId = o.session_id;
+            if (typeof o.model === "string") session.sessionModel = o.model;
+          }
+          return;
+        }
         // The continuation a held result waits for has spoken: any frame
         // after its `init` — status, thinking, text, its own result. The
         // echo of its own message is not speech: it comes before the call.
@@ -2353,6 +2449,11 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
       });
 
       child.on("error", (e) => {
+        // A warm has no turn to fail in the thread. Close the idle process.
+        if (session.idleWarm && !session.turn) {
+          closeSession(threadId, "spawn error");
+          return;
+        }
         emit({ ...base(threadId, currentTurnId()), type: "runtime.error", ...describeSpawnFailure(e, config.cli) });
         settle(false, "spawn_error");
       });
@@ -2578,6 +2679,12 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
         retryAbort.abort();
         stopSession(session);
       };
+      // The process is up and idle. No turn.started, no user message, and
+      // the thread does not look busy (hasSession reads `active`).
+      if (turn.warmOnly === true) {
+        holdWarm(threadId, session, turnId, turn.warmSignal);
+        return { turnId };
+      }
       active.set(threadId, { stop, turnId, broker });
       emit({ ...base(threadId, turnId), type: "turn.started" });
 
@@ -2782,6 +2889,9 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
           // when an old instance was configured with bypassPermissions.
           localComputerMcp: true,
           hooks: true,
+          // A call can start this process before the first utterance, with
+          // stdin open and no prompt, so the first spoken turn reuses it.
+          warmSession: true,
         },
         sendTurn,
         steer,
@@ -2796,6 +2906,13 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
           return behavior === "allow" ? "allowed-once" : behavior === "answer" ? "answered" : "rejected";
         },
         hasSession: (threadId) => active.has(threadId),
+        releaseWarmSession: (threadId) => {
+          const live = sessions.get(threadId);
+          // A running turn owns the process. Hangup closes only an idle one,
+          // including the process kept warm between call turns.
+          if (!live || live.turn || live.closing) return;
+          closeSession(threadId, "call ended");
+        },
         stopAll: async () => {
           for (const { stop } of active.values()) stop();
           for (const threadId of Array.from(sessions.keys())) closeSession(threadId, "stopAll");
