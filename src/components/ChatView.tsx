@@ -354,6 +354,7 @@ function Bubble({
   const user = message.role === "user" && !peer;
   const mentionPeers = useMemo(() => state.bots.filter((peer) => peer.id !== bot.id), [state.bots, bot.id]);
   const [expanded, setExpanded] = useState(false);
+  const focusedSearch = state.focusMessage?.threadId === bot.threadId && state.focusMessage.messageId === message.id && Boolean(state.focusMessage.matchText);
   const [viewRaw, setViewRaw] = useState(false);
   const speech = useSpeech();
   const speaking = speech.messageId === message.id && speech.status !== "idle";
@@ -379,6 +380,9 @@ function Bubble({
     (user ? hasAttachments : generatedPaths.length + linkedFiles.length > 0);
   const collapsible =
     user && !webhookView && !expanded && (visibleText.length > USER_COLLAPSE_CHARS || visibleText.split("\n").length > USER_COLLAPSE_LINES);
+  useEffect(() => {
+    if (focusedSearch && collapsible) setExpanded(true);
+  }, [focusedSearch, collapsible, state.focusMessage?.nonce]);
 
   if (user && editing && !webhookView && !hasAttachments) {
     return (
@@ -450,6 +454,7 @@ function Bubble({
           </MessageActions>
         )}
         <div
+          data-chat-bubble
           className={cn(
             "rounded-[18px] text-[13px] leading-5",
             // tables, diagrams, charts, widgets and email drafts need room;
@@ -518,6 +523,11 @@ function Bubble({
                 <div className="mt-1 text-[11px] text-ink-tertiary" title={t("chat.sentMidTurnHint")}>
                   {t("chat.sentMidTurn")}
                 </div>
+              )}
+              {message.via === "call" && (
+                <span className="mt-1 text-[11px] text-ink-tertiary" title={t("chat.viaCall")}>
+                  {t("chat.viaCall")}
+                </span>
               )}
               {collapsible && (
                 <button onClick={() => setExpanded(true)} className="mt-1 text-[12.5px] text-ink-secondary hover:text-ink">

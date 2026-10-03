@@ -44,6 +44,8 @@ import { customMcpServers,
   browserEngineAttachCdpUrl,
   withInstanceCli,
   WORKSPACE_CREDENTIAL_ENV,
+  liveSettingsFor,
+  LIVE_IDLE_MINUTES_DEFAULT,
   type AppConfig,
 } from "./config.ts";
 
@@ -543,7 +545,6 @@ describe("configuration boundaries", () => {
     expect(builtInBrowserEnabled({}, cloudHome)).toBe(true);
     expect(builtInBrowserEnabled({ features: { skillAuthoring: true } }, cloudHome)).toBe(true);
     expect(builtInBrowserEnabled({ features: { browser: false } }, cloudHome)).toBe(false);
-    expect(builtInBrowserEnabled({ features: { browser: true } }, cloudHome)).toBe(true);
     // named browser profiles: the list is the unit, ids are partition-safe
     expect(parseConfigPatch({ browserProfiles: [{ id: "work", name: " Work " }] })).toEqual({
       browserProfiles: [{ id: "work", name: "Work" }],
@@ -1757,6 +1758,58 @@ describe("customMcpServers with url entries", () => {
     expect(customMcpServers(cfg)).toEqual({
       docs: { type: "sse", url: "https://docs.example/sse", headers: { Authorization: "Bearer t" } },
       notes: { command: "npx", args: [], env: {} },
+    });
+  });
+});
+
+describe("live settings", () => {
+  it("defaults to a 5 minute idle hang-up and reading typed replies", () => {
+    expect(LIVE_IDLE_MINUTES_DEFAULT).toBe(5);
+    expect(liveSettingsFor({} as AppConfig)).toEqual({ configured: false, voice: "", readTypedReplies: true, idleMinutes: 5 });
+  });
+  it("reports saved values and never the key", () => {
+    const settings = liveSettingsFor({ live: { key: "sk-test", voice: "sol", readTypedReplies: false, idleMinutes: 12 } } as AppConfig);
+    expect(settings).toEqual({ configured: true, voice: "sol", readTypedReplies: false, idleMinutes: 12 });
+    expect(JSON.stringify(settings)).not.toContain("sk-test");
+  });
+  it("accepts idle minutes from 1 to 60 only", () => {
+    expect(() => parseConfigPatch({ live: { idleMinutes: 0 } })).toThrow();
+    expect(() => parseConfigPatch({ live: { idleMinutes: 61 } })).toThrow();
+    expect(() => parseConfigPatch({ live: { idleMinutes: 2.5 } })).toThrow();
+    expect(parseConfigPatch({ live: { idleMinutes: 60, readTypedReplies: false } })).toMatchObject({ live: { idleMinutes: 60, readTypedReplies: false } });
+  });
+  it("does not reload providers for live changes", () => {
+    expect(providerReloadKeys({ live: { idleMinutes: 3 } } as never)).toEqual([]);
+  });
+
+  describe("saving settings from PATCH /api/live/settings", () => {
+    const path = join(DATA_DIR, "config.json");
+    let envKey: string | undefined;
+    beforeEach(() => {
+      envKey = process.env.SAGAX_OPENAI_LIVE_KEY;
+      delete process.env.SAGAX_OPENAI_LIVE_KEY;
+      mkdirSync(DATA_DIR, { recursive: true });
+      rmSync(path, { force: true });
+    });
+    afterEach(() => {
+      if (envKey === undefined) delete process.env.SAGAX_OPENAI_LIVE_KEY;
+      else process.env.SAGAX_OPENAI_LIVE_KEY = envKey;
+      rmSync(path, { force: true });
+    });
+
+    it("keeps the Live key when only settings change", () => {
+      saveConfig({ live: { key: "sk-keep" } });
+      saveConfig({ live: { idleMinutes: 9 } });
+      expect(loadConfig().live).toMatchObject({ key: "sk-keep", idleMinutes: 9 });
+    });
+
+    it("keeps a key from the desktop credential store, which reaches the harness as env", () => {
+      // the desktop leaves an empty tombstone in the file and hands the key over as env
+      saveConfig({ live: { key: "" } });
+      process.env.SAGAX_OPENAI_LIVE_KEY = "sk-from-keychain";
+      saveConfig({ live: { readTypedReplies: false, voice: "cedar" } });
+      expect(loadConfig().live).toEqual({ key: "sk-from-keychain", readTypedReplies: false, voice: "cedar" });
+      expect(JSON.parse(readFileSync(path, "utf8")).live).toEqual({ key: "", readTypedReplies: false, voice: "cedar" });
     });
   });
 });

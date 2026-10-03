@@ -64,6 +64,7 @@ import { cn } from "@/lib/cn";
 import { setNotificationSounds, useNotificationSounds } from "@/lib/notification-preferences";
 import { setShowThreads, useShowThreads } from "@/lib/thread-preferences";
 import { parseSidebarDensity, setSidebarDensity, SIDEBAR_DENSITIES, useSidebarDensity, type SidebarDensity } from "@/lib/sidebar-preferences";
+import { currentPhonePairingTarget } from "@/lib/phone-pairing";
 import { setShowRunCard, useShowRunCard } from "@/lib/run-card-preferences";
 import { setShowSidebarLogo, useShowSidebarLogo } from "@/lib/sidebar-logo-preferences";
 import { setShowInspectorButton, useShowInspectorButton } from "@/lib/inspector-preferences";
@@ -927,6 +928,9 @@ export function SettingsModal() {
   const { state, dispatch } = useStore();
   const retroSkin = useRetroSkin();
   const remoteActive = window.ogb?.remoteClient?.active === true;
+  // "Connect your phone" focuses the pairing this window can do: this
+  // computer's phone flow, or the server's pairing code.
+  const computerPairs = currentPhonePairingTarget(state.config?.cloudHome === true) === "computer";
   const section: AppSettingsSection =
     (remoteActive && !["appearance", "organization"].includes(state.appSettingsSection)) || state.appSettingsSection === "remote"
       ? "companion"
@@ -1332,10 +1336,10 @@ export function SettingsModal() {
                     a remote client of a hosted workspace: its requests carry that server's session, and
                     Settings there is the only place that server's phones can be paired from (MOCA-84).
                     The server decides who may act — an owner or an admin session — not this gate. */}
-                <ServerPairingCard cloudHome={state.config?.cloudHome === true} />
+                <ServerPairingCard cloudHome={state.config?.cloudHome === true} focusRequest={computerPairs ? 0 : state.appSettingsPhonePairing} />
                 {lockedServer
                   ? <ManagedByOrganization cardId="companion.managed" title={t("remote.desktopOnly.title", { app: brand().name })} />
-                  : !remoteActive && <CompanionSection profileEmail={state.config?.profile?.email} />}
+                  : !remoteActive && <CompanionSection profileEmail={state.config?.profile?.email} focusRequest={computerPairs ? state.appSettingsPhonePairing : 0} />}
               </>
             )}
 

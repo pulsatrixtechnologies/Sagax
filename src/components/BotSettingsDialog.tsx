@@ -69,7 +69,12 @@ function readSettingsWidth(): number {
   return SETTINGS_DEFAULT_WIDTH;
 }
 
-export function BotSettingsDialog({ bot, onOpenVmWorkspace }: { bot: Bot; onOpenVmWorkspace?: (botId: string) => void }) {
+export function BotSettingsDialog({ bot, onOpenVmWorkspace }: {
+  bot: Bot;
+  onOpenVmWorkspace?: (botId: string) => void;
+  /** Accepted for upstream callers; this panel is a resizable column. */
+  overlay?: boolean;
+}) {
   const showInspector = useShowInspectorButton();
   const { state, dispatch, flushBotPatches } = useStore();
   const { padClass } = useCaptionChrome();

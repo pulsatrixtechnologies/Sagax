@@ -68,7 +68,7 @@ try {
       PATH: process.env.PATH ?? "", HOME: home, USERPROFILE: home, SAGAX_PORT: String(port), SAGAX_WEBHOOK_PORT: String(port + 1),
       SAGAX_STATIC_DIR: join(ROOT, "dist"), SAGAX_IDENTITY: "perspicax", SAGAX_PERSPICAX_ISSUER: idp.issuer, SAGAX_PUBLIC_URL: origin,
       SAGAX_SANDBOXD_URL: `http://127.0.0.1:${sandboxdPort}`, SAGAX_SANDBOXD_KEY_FILE: keyFile, SAGAX_SANDBOX_INSTANCE: instance,
-      OMB_LOCAL_VM_TEST_NAMESPACE: instance,
+      SAGAX_LOCAL_VM_TEST_NAMESPACE: instance,
     },
     stdio: ["ignore", "pipe", "pipe"],
   });

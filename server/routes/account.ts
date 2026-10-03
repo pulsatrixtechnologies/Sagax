@@ -1,6 +1,6 @@
 // DELETE /api/me: the phone's Account > Delete Account (iOS parity, 16).
 //
-// Organization server (OMB_IDENTITY=perspicax): the account is the person's
+// Organization server (SAGAX_IDENTITY=perspicax): the account is the person's
 // Perspicax account. With { confirm: true } the server asks Perspicax to
 // delete it, then deletes the person's Sagax data: the bots they own (with
 // their threads, memory and computers), their own threads on other bots,
