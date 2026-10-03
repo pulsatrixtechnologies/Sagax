@@ -23,6 +23,15 @@ extension ChatView {
     }
 
     func openLink(_ url: URL, from message: Message) -> OpenURLAction.Result {
+        // A thread reference ("#Title" sent as its canonical link, WP3).
+        if let ref = ThreadRefs.parse(url.absoluteString) {
+            if let botId = ref.botId, session.state.bot(botId) != nil {
+                openThread(ThreadRef(botId: botId, threadId: ref.threadId, title: ""))
+            } else if ref.threadId != threadId {
+                session.openChat(threadId: ref.threadId)
+            }
+            return .handled
+        }
         guard let target = LocalMessageLink.resolve(url) else {
             fileOpenError = "This link can't be opened securely."
             return .handled

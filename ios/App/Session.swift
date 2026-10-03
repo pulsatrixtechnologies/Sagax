@@ -1303,6 +1303,12 @@ final class Session: ObservableObject {
         return cancelled
     }
 
+    /// Held sends the computer folded into the running turn (Steer): their
+    /// rows go, exactly as when their messages arrive on the stream.
+    func retireQueued(_ queueIds: [String], threadId: String) {
+        for queueId in queueIds { state.consumeQueued(queueId: queueId, threadId: threadId) }
+    }
+
     /// Run Claude Code's updater for one engine instance on the computer.
     /// Returns the version it now reports. Throws with the harness's own
     /// message (already written for people) so the card can show it; an

@@ -1,15 +1,32 @@
-// The strips above the composer field: held sends, progress, errors, the
-// slash-command HUD or quick replies, and the pending attachments. One seam
-// for the strips the parity packages add (reply quote, find bar, suggestions:
-// WP1, WP3, WP4); drawn exactly as when they were inline in the composer.
+// The strips above the composer field: failed sends, held sends, progress,
+// errors, the "/" menu, "@"/"#" suggestions or quick replies, the pending
+// attachments and pastes, the busy-send choice. One seam for the strips the
+// parity packages add (reply quote, find bar, suggestions: WP1, WP3, WP4).
 import SwiftUI
 import CompanionCore
 
 extension ChatView {
     @ViewBuilder
     var composerAccessories: some View {
+        ForEach(power.failedSends(threadId)) { failure in
+            FailedSendBanner(
+                failure: failure,
+                retrying: power.retrying.contains(failure.id),
+                retry: { retry(failure) },
+                dismiss: { withAnimation(.easeInOut(duration: 0.15)) { power.forget(failure) } }
+            )
+            .transition(.move(edge: .bottom).combined(with: .opacity))
+        }
+
         if !heldSends.isEmpty {
-            QueuedSendList(sends: heldSends, edit: editQueued) { send in
+            QueuedSendList(
+                sends: heldSends,
+                isRoom: !current.isBot,
+                steering: power.steering.contains(threadId),
+                steerInterrupts: canSteerLive == false,
+                steer: canSteerHeld ? { steerHeld() } : nil,
+                edit: editQueued
+            ) { send in
                 Task { await session.cancelQueued(send, threadId: threadId, in: current) }
             }
             .transition(.move(edge: .bottom).combined(with: .opacity))
@@ -71,28 +88,22 @@ extension ChatView {
                 .padding(.horizontal, 4)
         }
 
-        if showCommandHUD {
-            CommandSkillHUDView(
-                text: $draft,
-                isVisible: $showCommandHUD,
-                commands: current.isBot
-                    ? CommandSkillHUDView.defaultCommands
-                    : CommandSkillHUDView.defaultCommands.filter {
-                        $0.id != "computer" && (current.supportsTasks || $0.id != "tasks")
-                    },
-                accentColor: MausPalette.color(current.color)
-            ) { command in
-                switch command.id {
-                case "computer":
-                    draft = ""
-                    showingComputer = true
-                case "tasks":
-                    draft = ""
-                    showingTasks = true
-                default: submit(command.command)
-                }
-            }
+        let menuItems = slashMenuItems
+        let suggestions = suggestionItems
+        if slashContext != nil, !menuItems.isEmpty || power.loadingCommands {
+            ComposerCommandMenuView(
+                items: menuItems,
+                loading: power.loadingCommands,
+                accent: MausPalette.color(current.color),
+                refresh: commandTargets.contains { power.commands(botId: $0.member.id, threadId: threadId, groupId: current.isBot ? nil : current.id)?.available == true }
+                    ? { Task { await loadCommands(refresh: true) } } : nil,
+                close: closeCommandMenu,
+                pick: pickCommand
+            )
             .transition(.move(edge: .bottom).combined(with: .opacity))
+        } else if !suggestions.isEmpty {
+            SuggestionStrip(items: suggestions, pick: pickSuggestion)
+                .transition(.opacity)
         } else if composerFocused && draft.isEmpty && attachments.isEmpty && !current.busy
                     && !hasPendingApproval && !storedChips.isEmpty {
             // Quick replies while the keyboard is up: the resting
@@ -101,6 +112,23 @@ extension ChatView {
                 submit(chip.prompt)
             }
             .transition(.opacity)
+        }
+
+        let pastes = power.pastes(threadId)
+        if !pastes.isEmpty {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(alignment: .top, spacing: 8) {
+                    ForEach(pastes) { paste in
+                        PastedTextChip(paste: paste, display: { displayPaste(paste) }) {
+                            guard !sendingMessage else { return }
+                            power.remove(paste, threadId: threadId)
+                        }
+                    }
+                }
+                .padding(.horizontal, 2)
+            }
+            .scrollClipDisabledCompat()
+            .transition(.move(edge: .bottom).combined(with: .opacity))
         }
 
         if !attachments.isEmpty {
@@ -123,5 +151,15 @@ extension ChatView {
         approvalDock
 
         replyStrip
+
+        if let choice = openBusyChoice {
+            BusySendChooserView(
+                name: busyName,
+                highlighted: choice,
+                pick: { submit(busyMode: $0) },
+                close: { withAnimation(.easeInOut(duration: 0.15)) { power.busyChoice = nil } }
+            )
+            .transition(.move(edge: .bottom).combined(with: .opacity))
+        }
     }
 }

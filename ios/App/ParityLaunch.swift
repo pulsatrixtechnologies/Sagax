@@ -274,6 +274,11 @@ struct ParityScreenLauncher: ViewModifier {
                             session.openChat(threadId: ara.threadId)
                             return
                         }
+                        // a room by its name (the composer tests' Lab Room)
+                        if let room = session.state.rooms.first(where: { $0.name == name }) {
+                            session.openChat(threadId: room.threadId)
+                            return
+                        }
                         try? await Task.sleep(nanoseconds: 100_000_000)
                     }
                     return

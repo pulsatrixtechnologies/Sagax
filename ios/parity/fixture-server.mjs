@@ -40,6 +40,8 @@ import {
   CARD_LAB, cardLabHook, cardLabInstances, cardLabServerEnv, closeCardLab, seedCardLabBots,
   seedCardLabTranscripts, startCardLabBroker,
 } from "./card-lab.mjs";
+// The composer lab for the WP3 UI tests: refuses sends on request (composer-lab.mjs).
+import { composerLabHook } from "./composer-lab.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(HERE, "..", "..");
@@ -537,6 +539,7 @@ function startComputerDouble(upstreamPort) {
   const server = createHttpServer(async (req, res) => {
     const url = new URL(req.url ?? "/", "http://fixture");
     if (await cardLabHook(req, res, url, `http://127.0.0.1:${upstreamPort}`, api)) return;
+    if (await composerLabHook(req, res, url)) return;
     if (url.pathname === "/__parity/computer") {
       if (req.method === "DELETE") {
         computerRecord.batches = [];

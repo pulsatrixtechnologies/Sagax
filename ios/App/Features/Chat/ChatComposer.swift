@@ -5,7 +5,11 @@ import CompanionCore
 import UIKit
 
 extension ChatView {
-    func submit(_ explicitText: String? = nil) {
+    /// Send the draft (or a quick reply's words). While a one-to-one
+    /// conversation works, the send first asks what it should do (after,
+    /// steer, parallel) unless `busyMode` already says; a failed send is
+    /// kept above the field with Retry (WP3).
+    func submit(_ explicitText: String? = nil, busyMode chosen: BusySendMode? = nil) {
         // This also cancels an in-flight permission prompt before it can
         // open the microphone after the message has already been sent.
         dictation.stop()
@@ -13,38 +17,75 @@ extension ChatView {
         let text = (explicitText ?? draftAtSend).trimmingCharacters(in: .whitespacesAndNewlines)
         let outgoingAttachments = attachments
         let chatAtSend = current
+        let pastesAtSend = explicitText == nil ? power.pastes(chatAtSend.threadId) : []
         let replyAtSend = session.surfaceGate.allows(.replyQuote) ? replyTo : nil
-        guard !text.isEmpty || !outgoingAttachments.isEmpty,
+        guard !text.isEmpty || !outgoingAttachments.isEmpty || !pastesAtSend.isEmpty,
               !preparingAttachments,
               !sendingMessage
         else { return }
         // "/hibou98" alone toggles Hibou 98 and is never sent, as on the
         // desktop (src/lib/retro98.ts).
-        if outgoingAttachments.isEmpty, text.lowercased() == "/hibou98" {
+        if outgoingAttachments.isEmpty, pastesAtSend.isEmpty, text.lowercased() == "/hibou98" {
             draft = ""
             Haptics.selection()
             ThemeStore.shared.toggleRetro(client: session.settingsClient)
             return
         }
+        // A room's typed "/goal …" runs as a bounded team goal.
+        var words = text
+        var goal = false
+        if case let .room(room) = chatAtSend, room.dm != true, let goalText = goalTextFromComposer(text) {
+            guard !goalText.isEmpty || !outgoingAttachments.isEmpty || !pastesAtSend.isEmpty else { return }
+            words = goalText
+            goal = true
+        }
+        // Resolvable "#Title" runs leave as canonical links, then the pastes.
+        let requestText = PastedText.compose(
+            ThreadRefs.serialize(words, threads: session.threadRefCandidates, currentBotId: chatAtSend.id),
+            pastes: pastesAtSend
+        )
+        var busyMode: BusySendMode?
+        if BusySendChoice.offered(for: chatAtSend), session.surfaceGate.allows(.busySendChoice) {
+            guard let chosen else {
+                withAnimation(.easeInOut(duration: 0.15)) {
+                    power.busyChoice = (chatAtSend.threadId, BusySendChoice.suggest(requestText))
+                }
+                return
+            }
+            busyMode = chosen
+        }
+        power.busyChoice = nil
         sendingMessage = true
         attachmentError = nil
-        showCommandHUD = false
+        power.commandMenuForced = false
         showingPlus = false
+        let options = SendOptions(replyToId: replyAtSend?.id, busyMode: busyMode, goal: goal)
         Task {
             let sent = await session.send(
-                text: text,
+                text: requestText,
                 attachments: outgoingAttachments,
                 to: chatAtSend,
-                options: SendOptions(replyToId: replyAtSend?.id)
+                options: options
             )
             sendingMessage = false
             guard sent else {
-                let failure = session.actionError ?? "Couldn't send this message. Try again."
-                if threadId == chatAtSend.threadId { attachmentError = failure }
-                else { threadDrafts[chatAtSend.threadId]?.error = failure }
+                let failure = session.actionError ?? String(localized: "Couldn't send this message. Try again.")
                 session.actionError = nil
+                // Kept with Retry; the words also stay in the field, so
+                // either sends them (the same send id: never twice).
+                power.remember(FailedSend(
+                    text: text, requestText: requestText, attachments: outgoingAttachments,
+                    replyToId: replyAtSend?.id, busyMode: busyMode, goal: goal,
+                    threadId: chatAtSend.threadId, error: failure
+                ))
                 return
             }
+            // A send that went through settles an earlier failure of the
+            // same words.
+            for failed in power.failedSends(chatAtSend.threadId) where failed.requestText == requestText {
+                power.forget(failed)
+            }
+            power.clearPastes(pastesAtSend.map(\.id), threadId: chatAtSend.threadId)
             // The quote was sent: it leaves with the words, unless another
             // one was picked while the send was in flight.
             if threadId != chatAtSend.threadId {
@@ -57,9 +98,8 @@ extension ChatView {
                 }
                 return
             }
-            // HUD commands expand `/diff` into a longer prompt. Compare with
-            // what was actually in the field at tap time, not the expanded
-            // text, so the command clears without erasing a newer edit.
+            // Compare with what was actually in the field at tap time, not
+            // the sent text, so the send clears without erasing a newer edit.
             if draft == draftAtSend {
                 draft = ""
             }
@@ -85,6 +125,7 @@ extension ChatView {
         Task {
             guard await session.cancelQueued(send, threadId: targetThread, in: chat) else { return }
             if threadId == targetThread {
+                power.pasteCheckSuppressed = true
                 draft = send.editDraft(keeping: draft)
                 composerFocused = true
             } else {
@@ -147,9 +188,9 @@ extension ChatView {
                             !dictation.isListening && !dictation.isStarting
                                 && !preparingAttachments && !sendingMessage
                         )
-                        .onValueChange(of: draft) { value in
+                        .onValueChangePair(of: draft) { old, new in
                             withAnimation(.easeInOut(duration: 0.15)) {
-                                showCommandHUD = value.hasPrefix("/")
+                                draftChanged(from: old, to: new)
                             }
                         }
                         // The software keyboard's Return inserts a newline,
@@ -157,7 +198,7 @@ extension ChatView {
                         // hardware Return still sends, Shift-Return breaks
                         // the line. onKeyPress never sees the software
                         // keyboard, so this cannot turn its Return into a send.
-                        .onHardwareReturn { submit() }
+                        .onHardwareReturn { submit(busyMode: openBusyChoice) }
 
                     Button {
                         composerFocused = false
@@ -197,6 +238,12 @@ extension ChatView {
         .padding(.bottom, composerFocused ? 8 : Theme.Chat.composerBottom)
         .frame(maxWidth: CompanionLayout.chatWidth)
         .frame(maxWidth: .infinity)
+        // the "/" menu reads the engine's commands once it opens
+        .task(id: commandLoadKey) { await loadCommands() }
+        // Steer needs to know whether the running engine takes words live
+        .task(id: heldSends.isEmpty) {
+            if !heldSends.isEmpty { await power.load(botIds: [], threadId: nil, groupId: nil, session: session) }
+        }
     }
 
     var composerPrompt: String {

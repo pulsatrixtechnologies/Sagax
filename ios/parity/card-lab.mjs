@@ -25,7 +25,12 @@
 //   POST /__parity/cards/asks         {asks:[{tool,input}]} -> {requestIds}
 //   POST /__parity/cards/parallel     {title} -> {threadId}
 //   POST /__parity/cards/connect      {slug} -> the broker reports it connected
-import { existsSync, readFileSync, rmSync } from "node:fs";
+//
+// For the composer tests (WP3) the holding engine also lists a lab slash
+// command (FAKE_CLAUDE_COMMANDS) and records every prompt it is sent
+// (FAKE_CLAUDE_PROMPTS, served as `prompts`), and a room ("Lab Room") is led
+// by Room Lab on the same engine, so a room turn holds still too.
+import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer as createHttpServer } from "node:http";
 import { connect } from "node:net";
 import { join } from "node:path";
@@ -39,7 +44,9 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const lab = {
   bots: {},
+  room: null,
   dumpPath: "",
+  promptsPath: "",
   socketPath: null,
   sockets: [],
   answers: {},
@@ -84,11 +91,20 @@ export function cardLabServerEnv(brokerPort) {
 /** The engine instance whose turns hold still while the lab asks. */
 export function cardLabInstances(root, dataDir) {
   lab.dumpPath = join(dataDir, "card-lab-dump.json");
+  lab.promptsPath = join(dataDir, "card-lab-prompts.jsonl");
+  const commandsPath = join(dataDir, "card-lab-commands.json");
+  writeFileSync(commandsPath, JSON.stringify([
+    { name: "compact", description: "Compact", argumentHint: "" },
+    { name: "parity-check", description: "Laboratoire : une commande de remplacement", argumentHint: "[note]" },
+  ]));
   return {
     asks: {
       driver: "claudeAgent",
       displayName: "Card lab engine",
-      environment: { FAKE_CLAUDE_MODE: "hang", FAKE_CLAUDE_DUMP: lab.dumpPath },
+      environment: {
+        FAKE_CLAUDE_MODE: "hang", FAKE_CLAUDE_DUMP: lab.dumpPath,
+        FAKE_CLAUDE_PROMPTS: lab.promptsPath, FAKE_CLAUDE_COMMANDS: commandsPath,
+      },
       config: { cli: join(root, "server", "testing", "fake-claude-cli.ts") },
     },
   };
@@ -104,6 +120,8 @@ const LAB_BOTS = [
   { key: "quiz", name: "Quiz Lab", instance: "claude" },
   // a failed turn as the last row
   { key: "retry", name: "Retry Lab", instance: "claude" },
+  // Lab Room's lead: the holding engine, apart from Card Lab's own turns
+  { key: "room", name: "Room Lab", instance: "asks" },
 ];
 
 export async function seedCardLabBots(base, api) {
@@ -118,6 +136,12 @@ export async function seedCardLabBots(base, api) {
     await api(base, "PATCH", `/api/bots/${bot.id}/tasks/${bot.threadId}`, { approvalMode: "ask" }).catch(() => {});
     lab.bots[spec.key] = { id: bot.id, threadId: bot.threadId, name: spec.name };
   }
+  // A room led by Room Lab: its turns hold still, for Steer and Interrupt.
+  const created = await api(base, "POST", "/api/groups", { name: "Lab Room", memberIds: [lab.bots.room.id] });
+  const room = created.group ?? created.room ?? created;
+  await api(base, "PATCH", `/api/groups/${room.id}`, { defaultResponder: { kind: "member", botId: lab.bots.room.id } })
+    .catch((error) => console.error(`[parity] lab room responder: ${error.message}`));
+  lab.room = { id: room.id, threadId: room.threadId, name: "Lab Room" };
   return lab.bots;
 }
 
@@ -239,7 +263,10 @@ export async function cardLabHook(req, res, url, base, api) {
   if (!CARD_LAB) return send(404, { error: "start the fixture with PARITY_CARDS=1" }), true;
   try {
     if (req.method === "GET" && url.pathname === "/__parity/cards") {
-      send(200, { bots: lab.bots, answers: lab.answers, asks: lab.asks, broker: lab.broker });
+      const prompts = existsSync(lab.promptsPath)
+        ? readFileSync(lab.promptsPath, "utf8").split("\n").filter(Boolean)
+        : [];
+      send(200, { bots: lab.bots, room: lab.room, answers: lab.answers, asks: lab.asks, broker: lab.broker, prompts });
     } else if (req.method === "POST" && url.pathname === "/__parity/cards/asks") {
       const body = await readJson(req);
       await ensureTurn(base, api);

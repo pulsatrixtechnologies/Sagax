@@ -40,11 +40,13 @@ public struct SidecarRoutes: OptionSet, Hashable, Sendable {
     public static let advancedPanel = SidecarRoutes(rawValue: 1 << 2)
     /// A sidecar-safe voice engine switch, replacing PUT /api/config (BA12).
     public static let voiceEngine = SidecarRoutes(rawValue: 1 << 3)
+    /// GET /api/bots/:id/harness-commands, the engine's "/" list (CO9).
+    public static let harnessCommands = SidecarRoutes(rawValue: 1 << 4)
 
     /// What a sidecar of this release serves: all of the above (S1, D1, D3,
     /// and the voice engine route ship with this version of the desktop). An
     /// older desktop answers 403 and the view shows that error.
-    public static let current: SidecarRoutes = [.parallelStop, .roomMemory, .advancedPanel, .voiceEngine]
+    public static let current: SidecarRoutes = [.parallelStop, .roomMemory, .advancedPanel, .voiceEngine, .harnessCommands]
 }
 
 /// One gated surface. Named for what the person sees, with the matrix row
@@ -63,6 +65,23 @@ public enum SurfaceFeature: String, CaseIterable, Hashable, Sendable {
     case messagePin
     /// Inspector: run log, events, raw (MS24). Admin only.
     case inspector
+
+    // Composer (WP3)
+    /// The engine's own slash commands in the "/" menu (CO9). Sidecars wait
+    /// on S1; Sagax's own commands (`/learn`, `/setup`, `/goal`) always show.
+    case engineCommands
+    /// The busy-send chooser: after, steer, parallel (CO15).
+    case busySendChoice
+    /// Steer a held send into the running turn (CO14, RM5).
+    case queueSteer
+    /// Compact the conversation (CO24).
+    case compactConversation
+    /// Stop a room's running turn (RM4).
+    case roomInterrupt
+    /// Paste an image or a long text as a chip (CO5).
+    case pasteAttachment
+    /// "@" and "#" suggestions above the field (CO11, CO12, RM9).
+    case composerSuggestions
 
     // Cards
     /// Connector card: status, resume, dismiss (CA10).
@@ -146,6 +165,12 @@ public struct SurfaceGate: Hashable, Sendable {
         switch feature {
         case .replyQuote, .regenerate, .speakReply, .reactions, .messagePin, .connectorCard, .createBot:
             return true
+        // Every composer route passes both gates (companion `ALLOWED`, server
+        // `CLIENT_ALLOW`); the remote client shows each of them.
+        case .busySendChoice, .queueSteer, .compactConversation, .roomInterrupt, .pasteAttachment, .composerSuggestions:
+            return true
+        case .engineCommands:
+            return scope != .sidecar || sidecarRoutes.contains(.harnessCommands)
         case .inspector, .scheduledCalls:
             return scope == .serverAdmin
         case .connectorCardAuthorize, .botOverview, .connectedApps, .botOwnerExtras:

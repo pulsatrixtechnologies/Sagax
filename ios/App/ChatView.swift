@@ -42,7 +42,8 @@ struct ChatView: View {
     @State var pushingProfile = false
     @State var showingWalkie = false
     @AppStorage("walkie.target") var walkieTarget = ""
-    @State var showCommandHUD = false
+    /// WP3: failed sends, pasted chips, the busy choice, Steer and the "/" menu.
+    @StateObject var power = ComposerModel()
     @State var shareFile: ShareFile?
     @State var showingPhotoPicker = false
     @State var showingFileImporter = false
@@ -286,12 +287,15 @@ struct ChatView: View {
             dictation.stop()
             threadDrafts[previous] = ComposerSnapshot(text: draft, attachments: attachments, error: attachmentError, replyTo: replyTo)
             let restored = threadDrafts.removeValue(forKey: next) ?? ComposerSnapshot()
+            // another thread's draft coming back is not a paste
+            power.pasteCheckSuppressed = restored.text != draft
             draft = restored.text
             attachments = restored.attachments
             attachmentError = restored.error
             replyTo = restored.replyTo
             selectedPhotos = []
-            showCommandHUD = false
+            power.commandMenuForced = false
+            power.busyChoice = nil
             showingPlus = false
             // The local task picker changed threads. A download
             // started in the previous task must not open a sheet (or surface
@@ -582,7 +586,8 @@ struct ChatView: View {
     }
 
     var canSend: Bool {
-        (!draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !attachments.isEmpty)
+        (!draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !attachments.isEmpty
+            || !power.pastes(threadId).isEmpty)
             && !preparingAttachments && !sendingMessage
     }
 

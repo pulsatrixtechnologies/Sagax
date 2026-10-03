@@ -1,7 +1,9 @@
 // The composer's "+" sheet and its action list: the one registry new chat
-// actions are added to (WP3), drawn exactly as before the split.
+// actions are added to, drawn exactly as before the split. WP3 adds Paste,
+// the real "/" menu, Compact and a room's Interrupt.
 import SwiftUI
 import CompanionCore
+import UIKit
 
 extension ChatView {
     // MARK: - The + sheet
@@ -17,37 +19,11 @@ extension ChatView {
                     .ignoresSafeArea()
                     .onTapGesture { withAnimation(.snappy(duration: 0.28)) { showingPlus = false } }
 
-                VStack(spacing: 0) {
-                    ForEach(plusActions) { action in
-                        Button {
-                            withAnimation(.snappy(duration: 0.28)) { showingPlus = false }
-                            action.run()
-                        } label: {
-                            HStack(spacing: 16) {
-                                Image(systemName: action.systemImage)
-                                    .font(.system(size: 20, weight: .medium))
-                                    .foregroundStyle(action.destructive ? Theme.destructiveMenu : Theme.textPrimary)
-                                    .frame(width: 44, height: 44)
-                                    .background(Circle().fill(Theme.textPrimary.opacity(0.10)))
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(action.title)
-                                        .font(.system(size: 19, weight: .medium))
-                                        .foregroundStyle(action.destructive ? Theme.destructiveMenu : Theme.textPrimary)
-                                    Text(action.subtitle)
-                                        .font(.system(size: 13))
-                                        .foregroundStyle(Theme.textSecondary)
-                                }
-                                Spacer(minLength: 0)
-                            }
-                            .padding(.horizontal, 18)
-                            .frame(height: 64)
-                            .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                        .disabled(action.disabled)
-                        .opacity(action.disabled ? 0.45 : 1)
-                        .accessibilityIdentifier("plus-\(action.id)")
-                    }
+                // Every action fits on a tall phone; on a shorter one (or with
+                // larger text) the list scrolls instead of leaving the screen.
+                ViewThatFits(in: .vertical) {
+                    plusActionList
+                    ScrollView(showsIndicators: false) { plusActionList }
                 }
                 .padding(.vertical, 10)
                 .frame(maxWidth: CompanionLayout.chatWidth, alignment: .leading)
@@ -59,6 +35,41 @@ extension ChatView {
                 .transition(.move(edge: .bottom).combined(with: .opacity))
             }
             .transition(.opacity)
+        }
+    }
+
+    var plusActionList: some View {
+        VStack(spacing: 0) {
+            ForEach(plusActions) { action in
+                Button {
+                    withAnimation(.snappy(duration: 0.28)) { showingPlus = false }
+                    action.run()
+                } label: {
+                    HStack(spacing: 16) {
+                        Image(systemName: action.systemImage)
+                            .font(.system(size: 20, weight: .medium))
+                            .foregroundStyle(action.destructive ? Theme.destructiveMenu : Theme.textPrimary)
+                            .frame(width: 44, height: 44)
+                            .background(Circle().fill(Theme.textPrimary.opacity(0.10)))
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(action.title)
+                                .font(.system(size: 19, weight: .medium))
+                                .foregroundStyle(action.destructive ? Theme.destructiveMenu : Theme.textPrimary)
+                            Text(action.subtitle)
+                                .font(.system(size: 13))
+                                .foregroundStyle(Theme.textSecondary)
+                        }
+                        Spacer(minLength: 0)
+                    }
+                    .padding(.horizontal, 18)
+                    .frame(height: 64)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .disabled(action.disabled)
+                .opacity(action.disabled ? 0.45 : 1)
+                .accessibilityIdentifier("plus-\(action.id)")
+            }
         }
     }
 
@@ -84,15 +95,21 @@ extension ChatView {
                 id: "files", systemImage: "paperclip", title: "Choose File",
                 subtitle: "Add a document from Files", disabled: !canAddAttachment
             ) { showingFileImporter = true },
-            PlusAction(
-                id: "commands", systemImage: "command",
-                title: LocalizedStringKey(String(localized: "Slash commands")),
-                subtitle: LocalizedStringKey(String(localized: "Diff, retry, steer and more")),
-                disabled: preparingAttachments || sendingMessage
-            ) {
-                withAnimation(.spring(response: 0.3, dampingFraction: 0.75)) { showCommandHUD = true }
-            },
         ]
+        if session.surfaceGate.allows(.pasteAttachment), UIPasteboard.general.hasImages || UIPasteboard.general.hasStrings {
+            out.append(PlusAction(
+                id: "paste", systemImage: "doc.on.clipboard", title: "Paste",
+                subtitle: "Add the copied image or text", disabled: !canAddAttachment
+            ) { pasteFromClipboard() })
+        }
+        out.append(PlusAction(
+            id: "commands", systemImage: "command",
+            title: LocalizedStringKey(String(localized: "Slash commands")),
+            subtitle: LocalizedStringKey(String(localized: "Engine commands, /learn, /setup and more")),
+            disabled: preparingAttachments || sendingMessage
+        ) {
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.75)) { openCommandMenu() }
+        })
         if case let .bot(bot) = current {
             out.append(PlusAction(
                 id: "task", systemImage: "plus.square.on.square", title: "New thread",
@@ -110,6 +127,14 @@ extension ChatView {
                 id: "settings", systemImage: "gearshape", title: "Bot settings",
                 subtitle: "Model, profile, voice and notifications"
             ) { openProfile() })
+            if session.surfaceGate.allows(.compactConversation) {
+                out.append(PlusAction(
+                    id: "compact", systemImage: "rectangle.compress.vertical", title: "Compact conversation",
+                    subtitle: "Summarize the context to free room", disabled: current.busy || hasPendingApproval
+                ) { Task {
+                    if await session.compact(bot: bot) { Haptics.impact(.light) }
+                } })
+            }
             out.append(PlusAction(
                 id: "computer", systemImage: "display", title: "Watch computer",
                 subtitle: "Live view of what \(bot.name) is doing"
@@ -156,6 +181,13 @@ extension ChatView {
                 id: "stop", systemImage: "stop.fill", title: "Interrupt",
                 subtitle: "Stop the current turn", destructive: true
             ) { Task { await session.interrupt(bot: bot) } })
+        }
+        if current.busy, case let .room(room) = current, session.surfaceGate.allows(.roomInterrupt) {
+            let thread = threadId
+            out.append(PlusAction(
+                id: "stop", systemImage: "stop.fill", title: "Interrupt",
+                subtitle: "Stop the current turn", destructive: true
+            ) { Task { await session.interrupt(room: room, threadId: thread) } })
         }
         return out
     }
