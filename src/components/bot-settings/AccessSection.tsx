@@ -23,6 +23,7 @@ import { ConfirmDialog } from "../ConfirmDialog";
 import { LocalComputerAutoWarning } from "../LocalComputerAutoWarning";
 import { Switch } from "../SettingsPrimitives";
 import { ProposalStatus } from "./ProposalStatus";
+import { ToolSelectionCard } from "./ToolSelectionCard";
 import { preloadConnectedApps, type ConnectorInventory } from "../PluginsPanel";
 import {
   classifyConnectorTool,
@@ -720,6 +721,7 @@ export function AccessSection({
       </div>}
 
       <McpServersCard bot={bot} patch={patch} />
+      <ToolSelectionCard key={bot.id} bot={bot} engineKind={derived.engine?.driverKind} />
 
       {browserFeature && <div className="flex items-center justify-between gap-4 rounded-xl border border-hairline/40 p-4">
         <div>
@@ -730,7 +732,7 @@ export function AccessSection({
                 ? "Not available on this Windows machine yet: install the browser engine with `openmausbot browser install`."
                 : browserUnavailableReason(state.config)
               : !browserFeature
-                ? "The built-in browser is switched off under App Settings → Experimental."
+                ? "The built-in browser is switched off under App Settings → Computers."
                 : !canUseBrowser
                   ? "This bot's current model cannot use the built-in browser."
                   : bot.computer === "off"

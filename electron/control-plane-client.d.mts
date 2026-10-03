@@ -4,7 +4,9 @@ export declare class ControlPlaneError extends Error {
   readonly code: string;
   readonly status: number;
   readonly requestId: string;
-  constructor(code: string, status?: number, requestId?: string);
+  /** Server-requested delay from a Retry-After header, or 0. */
+  readonly retryAfterMs: number;
+  constructor(code: string, status?: number, requestId?: string, retryAfterMs?: number);
 }
 
 export declare function normalizeControlPlaneURL(value: unknown): string;
@@ -53,6 +55,7 @@ export interface ControlPlaneClient {
     appVersion?: string;
   }): Promise<{ installation: ControlPlaneInstallation; credential: string; credentialExpiresAt: number | null }>;
   ensureEndpoint(installationCredential: string): Promise<{ endpoint: ControlPlaneEndpoint; connectorToken: string }>;
+  getEndpoint(installationCredential: string): Promise<{ url: string; status: string } | null>;
   deleteEndpoint(installationCredential: string): Promise<void>;
   revokeInstallation(accountToken: string, installationId: string): Promise<void>;
   signOut(accountToken: string): Promise<void>;

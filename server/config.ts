@@ -10,7 +10,7 @@ import { normalizeImageGenerationUrl, type ImageGenerationConfig } from "../shar
 
 import { writeFileAtomic } from "./atomic.ts";
 import { newBotDefaultsSchema, type NewBotDefaults } from "./new-bot-defaults.ts";
-import { EFFORT_LEVELS, type EffortLevel } from "../shared/wire.ts";
+import { EFFORT_LEVELS, type EffortLevel, type LiveSettings } from "../shared/wire.ts";
 import { isModelVariant, type InstanceConfigMap, type ModelSelection } from "./contracts.ts";
 import { PROVIDER_ICON_PRESETS, providerIconError } from "../shared/provider-icon.ts";
 import type { McpServerSpec } from "./contracts.ts";
@@ -349,6 +349,10 @@ const featureConfigSchema = z.object({
    * consent card or a configured allowlist — never a silent Auto default.
    * Off until baked; see cloudOverflowEnabled for how to enable it by hand. */
   cloudOverflow: z.boolean().optional(),
+  /** Opt-in shared skills library: one store at the data dir that bots
+   * read by assignment instead of per-workspace copies. Off until
+   * explicitly enabled — see skillsLibraryEnabled. */
+  skillsLibrary: z.boolean().optional(),
 });
 /** First-run progress. Kept in the workspace config rather than a browser so
  * it survives cleared site data and is shared by every paired client. Hint
@@ -501,6 +505,7 @@ const appConfigSchema = z.object({
     phone: z.enum(["ios", "android"]).optional(),
   }).optional(),
   mistral: z.object({ key: optionalText }).optional(),
+  cerebras: z.object({ key: optionalText }).optional(),
   xai: z.object({ key: optionalText, url: optionalText }).optional(),
   /** Anthropic API key for Claude Code billed per token, handed only to
    * Claude instances; `url` only for a proxy or a test double. Never a
@@ -588,6 +593,15 @@ const appConfigSchema = z.object({
       .refine((value) => !value || /^https?:\/\//i.test(value), "the decision model address must start with http:// or https://")
       .optional(),
     jobs: z.object({ roomRouting: z.boolean().optional() }).optional(),
+  }).optional(),
+  /** Live calls: an OpenAI project key for GPT-Live, kept apart from every
+   * other OpenAI credential so a Live call never bills an image or engine key
+   * the user did not hand to it. `voice` is a GPT-Live built-in voice name. */
+  live: z.object({
+    key: optionalText,
+    voice: z.string().trim().max(40).regex(/^[a-z]*$/, "a Live voice is a lowercase built-in voice name").optional(),
+    readTypedReplies: z.boolean().optional(),
+    idleMinutes: z.number().int().min(1).max(60).optional(),
   }).optional(),
   /** Avatar provider credentials stay separate; choosing a router never reuses a cloud key. */
   imageGen: z.object({
@@ -709,6 +723,7 @@ export interface AppConfig {
   language?: string;
   xai?: { key?: string; url?: string };
   mistral?: { key?: string };
+  cerebras?: { key?: string };
   /** `everyClaudeBot`: the key runs every Claude bot instead of its login.
    * Unset means true, which is how a key behaved before it had its own
    * `claudeApi` instance; a key first saved from Settings sets false. */
@@ -729,6 +744,7 @@ export interface AppConfig {
   /** The decision model; see the schema above and server/decider. */
   decider?: { enabled?: boolean; provider?: "jev" | "off"; key?: string; baseUrl?: string; jobs?: { roomRouting?: boolean } };
   imageGen?: ImageGenerationConfig;
+  live?: { key?: string; voice?: string; readTypedReplies?: boolean; idleMinutes?: number };
   profile?: { name?: string; email?: string; aboutMe?: string; avatarUrl?: string };
   rooms?: { turnTimeoutMinutes: number; handoffLifetimeMinutes?: number; handoffMinRunwayMinutes?: number; handoffHardCapMinutes?: number };
   threads?: { maxConcurrentPerBot: number; maxParallelPerPerson?: number; eventLogMaxBytes?: number; eventLogRetentionDays?: number };
@@ -739,7 +755,7 @@ export interface AppConfig {
    * seats shared by all conversations, with per-thread affinity (#1654). */
   localVm?: { mode?: "shared" | "per-bot" | "pool"; maxInstances?: number; idleTimeoutMinutes?: number };
   /** Opt-in product experiments. Every flag defaults to disabled. */
-  features?: { skillAuthoring?: boolean; showToolCalls?: boolean; browser?: boolean; sharedComputers?: boolean; claudeUserMcp?: boolean; llmThreadTitles?: boolean; autoRecall?: boolean; computerClaimIdleRelease?: boolean; cloudOverflow?: boolean; routinesInConversation?: boolean; connectedApps?: boolean; templates?: boolean; vpsComputer?: boolean; boatComputer?: boolean };
+  features?: { skillAuthoring?: boolean; showToolCalls?: boolean; browser?: boolean; sharedComputers?: boolean; claudeUserMcp?: boolean; llmThreadTitles?: boolean; autoRecall?: boolean; computerClaimIdleRelease?: boolean; cloudOverflow?: boolean; routinesInConversation?: boolean; connectedApps?: boolean; templates?: boolean; vpsComputer?: boolean; boatComputer?: boolean; skillsLibrary?: boolean };
   /** #1655: consented cloud overflow for local computer waits. The cost is
    * the operator's own per-second rate; unset keeps the feature inert. */
   cloudOverflow?: { perSecondCostUsd?: number; idleStopMs?: number; allowlistedThreads?: string[] };
@@ -872,6 +888,26 @@ export function browserEngineAttachCdpUrl(cfg: AppConfig): string | null {
 
 export function roomTurnTimeoutMinutes(cfg: AppConfig): number {
   return cfg.rooms?.turnTimeoutMinutes ?? DEFAULT_ROOM_TURN_TIMEOUT_MINUTES;
+}
+
+export const LIVE_IDLE_MINUTES_DEFAULT = 5;
+
+/** Non-secret Live settings. The key only shows up as `configured`. */
+/** Upstream's Live calls (OpenAI realtime) are off unless the server runs with
+ * SAGAX_LIVE_CALLS=1: Sagax's own voice call engine is the call path. */
+export function liveCallsEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
+  return env.SAGAX_LIVE_CALLS === "1";
+}
+
+export function liveSettingsFor(cfg: AppConfig, env: NodeJS.ProcessEnv = process.env): LiveSettings {
+  const minutes = cfg.live?.idleMinutes;
+  return {
+    enabled: liveCallsEnabled(env),
+    configured: Boolean(cfg.live?.key?.trim()),
+    voice: cfg.live?.voice ?? "",
+    readTypedReplies: cfg.live?.readTypedReplies ?? true,
+    idleMinutes: Number.isInteger(minutes) && minutes! >= 1 && minutes! <= 60 ? minutes! : LIVE_IDLE_MINUTES_DEFAULT,
+  };
 }
 
 export interface RoomHandoffLimitsMs {
@@ -1072,6 +1108,14 @@ export function cloudOverflowIdleStopMs(cfg: AppConfig): number {
 export function cloudOverflowAllowlistedThreads(cfg: AppConfig): Set<string> {
   return new Set(cfg.cloudOverflow?.allowlistedThreads ?? []);
 }
+/** Opt-in shared skills library (skills lane S1): one store at the data dir
+ * that bots reference by assignment instead of per-workspace copies. Off
+ * unless enabled by hand in ~/.sagax/config.json
+ * (`{"features": {"skillsLibrary": true}}`); while off, every skills
+ * surface keeps today's byte-identical per-bot behavior. */
+export function skillsLibraryEnabled(cfg: AppConfig): boolean {
+  return cfg.features?.skillsLibrary === true;
+ }
 
 /** Config sections no provider driver reads. A write that touches only
  * these must not rebuild the fleet: rebuilding disposes every engine child
@@ -1085,6 +1129,7 @@ export const FLEET_NEUTRAL_KEYS: ReadonlySet<string> = new Set([
   // no engine reads it: the harness asks it before a turn starts
   "decider",
   "imageGen",
+  "live",
   "vps",
   "rooms",
   "threads",
@@ -1189,6 +1234,8 @@ export function loadConfig(): AppConfig {
   // shadow the save until the next launch.
   cfg.mistral = { ...cfg.mistral };
   if (process.env.MISTRAL_API_KEY !== undefined) cfg.mistral.key = process.env.MISTRAL_API_KEY;
+  cfg.cerebras = { ...cfg.cerebras };
+  if (process.env.CEREBRAS_API_KEY !== undefined) cfg.cerebras.key = process.env.CEREBRAS_API_KEY;
   cfg.xai = { ...cfg.xai };
   if (process.env.XAI_API_KEY !== undefined) cfg.xai.key = process.env.XAI_API_KEY;
   // Deliberately not ANTHROPIC_API_KEY: a key in the server's own env is
@@ -1222,6 +1269,8 @@ export function loadConfig(): AppConfig {
   if (process.env.SAGAX_FISH_AUDIO_API_KEY !== undefined) cfg.tts.fishKey = process.env.SAGAX_FISH_AUDIO_API_KEY;
   cfg.decider = { ...cfg.decider };
   if (process.env.SAGAX_JEV_API_KEY !== undefined) cfg.decider.key = process.env.SAGAX_JEV_API_KEY;
+  cfg.live = { ...cfg.live };
+  if (process.env.SAGAX_OPENAI_LIVE_KEY !== undefined) cfg.live.key = process.env.SAGAX_OPENAI_LIVE_KEY;
   cfg.imageGen = { ...cfg.imageGen };
   if (process.env.SAGAX_OPENAI_IMAGE_KEY !== undefined) cfg.imageGen.key = process.env.SAGAX_OPENAI_IMAGE_KEY;
   if (process.env.SAGAX_CUSTOM_IMAGE_KEY !== undefined) cfg.imageGen.customApiKey = process.env.SAGAX_CUSTOM_IMAGE_KEY;
@@ -1247,6 +1296,7 @@ export function syncCredentialEnv(patch: Partial<Omit<AppConfig, "threads" | "ne
   const secrets: Array<[value: string | undefined, name: string]> = [
     [patch.xai?.key, "XAI_API_KEY"],
     [patch.mistral?.key, "MISTRAL_API_KEY"],
+    [patch.cerebras?.key, "CEREBRAS_API_KEY"],
     [patch.anthropic?.key, "SAGAX_ANTHROPIC_API_KEY"],
     [patch.openaiCompat?.key, "OPENAI_COMPAT_API_KEY"],
     [patch.openai?.key, "SAGAX_OPENAI_API_KEY"],
@@ -1259,6 +1309,7 @@ export function syncCredentialEnv(patch: Partial<Omit<AppConfig, "threads" | "ne
     [patch.decider?.key, "SAGAX_JEV_API_KEY"],
     [patch.imageGen?.key, "SAGAX_OPENAI_IMAGE_KEY"],
     [patch.imageGen?.customApiKey, "SAGAX_CUSTOM_IMAGE_KEY"],
+    [patch.live?.key, "SAGAX_OPENAI_LIVE_KEY"],
   ];
   for (const [value, name] of secrets) {
     if (value === undefined) continue;
@@ -1288,6 +1339,7 @@ export function syncCredentialEnv(patch: Partial<Omit<AppConfig, "threads" | "ne
 export const WORKSPACE_CREDENTIAL_ENV = [
   "XAI_API_KEY",
   "MISTRAL_API_KEY",
+  "CEREBRAS_API_KEY",
   "SAGAX_ANTHROPIC_API_KEY",
   "SAGAX_ANTHROPIC_API_URL",
   "SAGAX_HOSTED_MODEL_TOKEN",
@@ -1303,6 +1355,7 @@ export const WORKSPACE_CREDENTIAL_ENV = [
   "SAGAX_JEV_API_KEY",
   "SAGAX_OPENAI_IMAGE_KEY",
   "SAGAX_CUSTOM_IMAGE_KEY",
+  "SAGAX_OPENAI_LIVE_KEY",
   "COMPOSIO_API_KEY",
   "SAGAX_COMPOSIO_BROKER_TOKEN",
   // The key of the encrypted MCP sign-in vault (server/mcp-oauth.ts).
@@ -1375,6 +1428,7 @@ export const PROVIDER_CREDENTIAL_ENV = [
   "OPENCODE_API_KEY",
   "XAI_API_KEY",
   "MISTRAL_API_KEY",
+  "CEREBRAS_API_KEY",
   "CURSOR_API_KEY",
   "CURSOR_AUTH_TOKEN",
 ] as const;
@@ -1429,7 +1483,7 @@ export function saveConfig(
   // back after we have successfully recognized the legacy list.
   const storedProfiles = storedBrowserProfilesSchema.safeParse(disk.browserProfiles);
   if (storedProfiles.success) disk.browserProfiles = storedProfiles.data;
-  for (const key of ["xai", "anthropic", "mistral", "openai", "openrouter", "openaiCompat", "composio", "box", "opencodeGo", "tts", "decider", "imageGen", "profile", "rooms", "threads", "context", "memory", "localVm", "features", "cloudOverflow", "budgets", "billing", "decisions", "onboarding", "browserEngine", "newBots"] as const) {
+  for (const key of ["xai", "anthropic", "mistral", "cerebras", "openai", "openrouter", "openaiCompat", "composio", "box", "opencodeGo", "tts", "decider", "imageGen", "live", "profile", "rooms", "threads", "context", "memory", "localVm", "features", "cloudOverflow", "budgets", "billing", "decisions", "onboarding", "browserEngine", "newBots"] as const) {
     const section = checkedPatch[key];
     if (!section) continue;
     const current = jsonObjectSchema.safeParse(disk[key]);
@@ -1670,6 +1724,8 @@ export function instanceOwnsRouting(
         || ownUrl(routingDefaults?.url || cfg.openaiCompat?.url || process.env.OPENAI_COMPAT_URL || "https://openrouter.ai/api/v1");
     case "mistral":
       return own(entry.environment?.MISTRAL_API_KEY) || ownUrl("https://api.mistral.ai/v1");
+    case "cerebras":
+      return own(entry.environment?.CEREBRAS_API_KEY) || ownUrl("https://api.cerebras.ai/v1");
     case "grok":
       return own(entry.environment?.XAI_API_KEY) || (own(config.apiKeyEnv) && config.apiKeyEnv !== "XAI_API_KEY")
         || ownUrl("https://api.x.ai/v1", cfg.xai?.url);
@@ -1687,6 +1743,7 @@ export function instanceOwnsRouting(
 function injectedEnvironment(cfg: AppConfig, instanceId: string, driver: string): Map<string, string> {
   const environment = new Map<string, string>();
   if (driver === "mistral" && cfg.mistral?.key) environment.set("MISTRAL_API_KEY", cfg.mistral.key);
+  if (driver === "cerebras" && cfg.cerebras?.key) environment.set("CEREBRAS_API_KEY", cfg.cerebras.key);
   if (driver === "grok" && cfg.xai?.key) environment.set("XAI_API_KEY", cfg.xai.key);
   // Grok Build never runs on it in solo mode (acp/grok.ts strips it); on an
   // organization server it is the organization's key for Grok Build, after
@@ -1804,6 +1861,7 @@ export function instanceConfigs(cfg: AppConfig): InstanceConfigMap {
     computer: { driver: "boxAgent" },
     openaiCompat: { driver: "openai-compat" },
     mistral: { driver: "mistral" },
+    cerebras: { driver: "cerebras" },
     ...API_KEY_FLEET,
     qwen: { driver: "qwenAgent" },
     hermes: { driver: "hermesAgent" },
@@ -1822,6 +1880,7 @@ export function instanceConfigs(cfg: AppConfig): InstanceConfigMap {
     cursor: { driver: "cursorAgent" },
     openaiCompat: { driver: "openai-compat" },
     mistral: { driver: "mistral" },
+    cerebras: { driver: "cerebras" },
     ...API_KEY_FLEET,
     ...CUSTOM_ONLY,
   } as const;

@@ -18,7 +18,20 @@
     "ALLOWED_ORIGINS": "",
     "CLOUDFLARE_ACCOUNT_ID": "0c92969a82eb9e173b013a7e7a02333d",
     "CLOUDFLARE_ZONE_ID": "bae08399bb6f96eb7266c65ac0057eee",
-    "COMPANION_HOST_SUFFIX": "openmausbot.com"
+    "COMPANION_HOST_SUFFIX": "openmausbot.com",
+    // Managed endpoint capacity (see README "Tunnel capacity and idle
+    // reclaim"). The limits only drive the 90% usage alert and /healthz;
+    // they never block provisioning on their own.
+    "SAGAX_TUNNEL_LIMIT": "1000",
+    "SAGAX_DNS_RECORD_LIMIT": "1000",
+    // "on" marks idle tunnels for cleanup; "observe" only logs candidates.
+    "SAGAX_TUNNEL_RECLAIM": "on",
+    // Days a tunnel must have been offline (and its installation quiet)
+    // before reclaim. Never-connected tunnels use a fixed seven days.
+    "SAGAX_TUNNEL_OFFLINE_RECLAIM_DAYS": "14",
+    // Cleanup rows per five-minute cron run. 20 needs Workers Paid; use 4 on
+    // Workers Free (50 subrequests per invocation).
+    "SAGAX_CLEANUP_SWEEP_LIMIT": "4"
   },
   "secrets": {
     "required": ["BETTER_AUTH_SECRET", "CLOUDFLARE_API_TOKEN"]

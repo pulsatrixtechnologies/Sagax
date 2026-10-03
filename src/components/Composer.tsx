@@ -10,6 +10,7 @@ import { activeLocale, t } from "@/lib/i18n";
 import { consumeRetroCommand, retroSignal } from "@/lib/retro98";
 import { reportAchievement } from "@/lib/achievements";
 import { useOwnerOrAdmin } from "@/lib/use-owner-or-admin";
+import { useAdvancedMode } from "@/lib/interface-mode";
 import {
   draftRevision,
   appendDraftAttachments,
@@ -143,6 +144,9 @@ export function Composer({
   const ownerOrAdmin = useOwnerOrAdmin();
   const { threads, currentBotId } = useThreadRefs();
   const { capabilities } = useDesktopCapabilities();
+  // Simple leaves where a conversation works to its bot's Works on (Auto by
+  // default); pinning a place per conversation is an Advanced control.
+  const advanced = useAdvancedMode();
   const remoteClient = window.ogb?.remoteClient?.active === true;
   // Unified target: a 1:1 bot thread or a room. In a room the @ picker
   // offers members plus @everyone; explicit mentions override the room's
@@ -1047,8 +1051,11 @@ export function Composer({
             data-composer-backdrop
             className="pointer-events-none absolute -left-[50vw] -right-[50vw] -bottom-4 top-1/2 bg-app"
           />
-        <div data-tour="composer" className="relative z-[1] min-h-11 rounded-[22px] border-[0.5px] border-border bg-composer px-2 py-1.5 shadow-[0_2px_8px_-1px_#0000000d,0_1px_2px_#00000008,0_0_0_1px_#e4e4e40a] transition-colors hover:border-border-strong focus-within:border-border-strong">
-        <div className="flex items-end gap-1">
+        {/* One row while it fits: chips, editor, mic. Below the container
+            width where the chips and the placeholder cannot share a line,
+            the editor takes a full line of its own above the chips. */}
+        <div data-tour="composer" className="@container/composer relative z-[1] min-h-11 rounded-[22px] border-[0.5px] border-border bg-composer px-2 py-1.5 shadow-[0_2px_8px_-1px_#0000000d,0_1px_2px_#00000008,0_0_0_1px_#e4e4e40a] transition-colors hover:border-border-strong focus-within:border-border-strong">
+        <div data-composer-row className="flex items-end gap-1 @max-[30rem]/composer:flex-wrap">
           <input
             ref={fileInput}
             type="file"
@@ -1061,7 +1068,7 @@ export function Composer({
             }}
           />
           {!locked && (
-            <div className="flex items-center gap-1">
+            <div className="flex flex-wrap items-center gap-1">
               <button
                 type="button"
                 onClick={() => fileInput.current?.click()}
@@ -1116,7 +1123,7 @@ export function Composer({
                   onManageCommandAllowlist={ownerOrAdmin === true ? () => setCommandAllowlistTarget({ botId: modeBot.id, botName: modeBot.name, threadId: modeBot.threadId }) : undefined}
                 />
               )}
-              {modeBot && !remoteClient && (
+              {modeBot && !remoteClient && advanced && (
                 <PlaceChip
                   bot={modeBot}
                   task={composerTask}
@@ -1128,6 +1135,7 @@ export function Composer({
             </div>
           )}
           <MentionTextarea
+          wrapperClassName="@max-[30rem]/composer:order-first @max-[30rem]/composer:basis-full"
           inputRef={inputRef}
           peers={group ? members ?? [] : state.bots.filter((member) => member.id !== bot?.id)}
           everyone={Boolean(group && !group.dm)}
@@ -1259,7 +1267,7 @@ export function Composer({
           aria-label={t("composer.placeholder.bot", { name: group ? group.name : (bot?.name ?? "") })}
             className="block max-h-[7.5rem] min-h-6 w-full resize-none overflow-y-auto bg-transparent chat-input-text px-1 py-1.5 placeholder:text-ink-secondary focus:outline-none"
           />
-          <div className="flex items-center gap-1">
+          <div data-composer-actions className="flex items-center gap-1 @max-[30rem]/composer:ml-auto">
           {bot && !group && !remoteClient && (
             <ModelPicker inComposer key={bot.threadId} bot={bot} threadId={threadId} />
           )}

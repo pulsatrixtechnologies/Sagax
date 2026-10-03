@@ -29,6 +29,7 @@ import {
   containerRunArgs,
   dockerSecurityIsHardened,
   localVmRecreatableOnDemand,
+  localVmResumable,
   localVmWorkspaceExists,
   managedImageDockerfile,
   perBotLocalVmTarget,
@@ -120,8 +121,7 @@ function readyInspect(overrides: Record<string, unknown> = {}) {
       },
       State: { Running: true },
       Image: "sha256:managed-image-id",
-      // the full hardened HostConfig the stricter shared check now demands:
-      // unprivileged, private IPC/cgroup namespaces, pinned shm, no devices
+      // Unprivileged, private IPC/cgroup namespaces, no devices.
       HostConfig: {
         Memory: 4 * 1024 * 1024 * 1024,
         MemorySwap: 4 * 1024 * 1024 * 1024,
@@ -284,12 +284,27 @@ describe("containerComputerStatus", () => {
     )).toBe(false);
   });
 
-  it.each(["no", "unless-stopped"] as const)("does not extend Docker/VPS capabilities with restart policy %s", (restartPolicy) => {
+  it.each(["no", "always", "on-failure", "unless-stopped"])("does not extend Docker/VPS capabilities with restart policy %s", (restartPolicy) => {
     const config = JSON.parse(readyInspect())[0].HostConfig;
     config.RestartPolicy.Name = restartPolicy;
-    expect(dockerSecurityIsHardened(config, { restartPolicy })).toBe(true);
+    expect(dockerSecurityIsHardened(config, { restartPolicy: "any" })).toBe(true);
     config.CapAdd.push("CAP_SYS_CHROOT");
-    expect(dockerSecurityIsHardened(config, { restartPolicy })).toBe(false);
+    expect(dockerSecurityIsHardened(config, { restartPolicy: "any" })).toBe(false);
+  });
+
+  it.each([
+    { Memory: 1024 ** 3, MemorySwap: 2 * 1024 ** 3, NanoCpus: 4_000_000_000, PidsLimit: 1024, ShmSize: 1024 ** 3, OomKillDisable: true },
+    { Memory: 0, MemorySwap: -1, NanoCpus: 0, PidsLimit: -1, ShmSize: 64 * 1024 ** 2, OomKillDisable: null },
+  ])("accepts operator-selected resources in the shared isolation check: %j", (resources) => {
+    const config = { ...JSON.parse(readyInspect())[0].HostConfig, ...resources };
+    expect(dockerSecurityIsHardened(config)).toBe(true);
+    expect(podmanSecurityIsHardened(config, ["CAP_SETGID", "CAP_SETUID", "CAP_SYS_CHROOT"], ["CAP_SETGID", "CAP_SETUID", "CAP_SYS_CHROOT"])).toBe(true);
+  });
+
+  it.each(["always", "on-failure", "unless-stopped"])("keeps Local VM lifecycle under app control with restart policy %s", (restartPolicy) => {
+    const config = JSON.parse(readyInspect())[0].HostConfig;
+    config.RestartPolicy.Name = restartPolicy;
+    expect(dockerSecurityIsHardened(config)).toBe(false);
   });
 
   it("keeps per-bot identities, workspaces, and ephemeral viewer ports separate", async () => {
@@ -443,6 +458,7 @@ describe("containerComputerStatus", () => {
       { CgroupnsMode: "host" },
       { SecurityOpt: ["seccomp=unconfined"] },
       { DeviceRequests: [{ Driver: "nvidia" }] },
+      { AutoRemove: true },
       { RestartPolicy: { Name: "always", MaximumRetryCount: 0 } },
     ]) {
       const fake = runner({
@@ -836,17 +852,23 @@ describe("containerComputerAction", () => {
     expect(fake.calls.some((call) => call.startsWith("docker run "))).toBe(false);
   });
 
-  it("never starts a stopped desktop because its stale X lock makes resume unsafe", async () => {
+  it("resumes a compatible stopped desktop without removing it", async () => {
     const fake = runner({
       "/usr/bin/which docker": "docker\n",
       "/usr/bin/which podman": new Error("missing"),
       "docker info --format {{.ServerVersion}}": "29\n",
       [`docker image inspect ${IMAGE}`]: preparedImageInspect(),
-      [`docker inspect ${CONTAINER}`]: readyInspect({ State: { Running: false } }),
+      [`docker inspect ${CONTAINER}`]: readyInspect({ State: { Running: false, FinishedAt: "2026-10-01T12:00:00Z" } }),
+      [`docker start ${CONTAINER}`]: CONTAINER,
     });
 
-    await expect(containerComputerAction("start", fake.run, "linux")).rejects.toThrow("cannot safely resume");
-    expect(fake.calls).not.toContain(`docker start ${CONTAINER}`);
+    const stopped = await containerComputerStatus(fake.run, "linux");
+    expect(localVmResumable(stopped)).toBe(true);
+    expect(stopped.resumable).toBe(true);
+    expect(stopped.stopped_at).toBe("2026-10-01T12:00:00Z");
+    await containerComputerAction("start", fake.run, "linux");
+    expect(fake.calls).toContain(`docker start ${CONTAINER}`);
+    expect(fake.calls.some(call => call.includes(" rm ") || call.includes(" run "))).toBe(false);
   });
 });
 
@@ -895,8 +917,8 @@ describe("setupCommands", () => {
     expect(command).toContain("VNC_PW=CHANGE_ME");
   });
 
-  it("does not suggest docker start for an image that must be recreated", () => {
-    expect(setupCommands("docker", "linux").start).toBeNull();
+  it("offers a start command for a stopped compatible desktop", () => {
+    expect(setupCommands("docker", "linux").start).toBe(`docker start ${CONTAINER}`);
   });
 
   it("limits resources and retains only the sandbox supervisor's identity-switch caps", () => {
@@ -986,7 +1008,7 @@ describe("localVmRecreatableOnDemand", () => {
     expect(localVmRecreatableOnDemand(status)).toBe(true);
   });
 
-  it("leaves a stopped container alone, because it is asked to be recreated not started", async () => {
+  it("does not recreate an existing stopped container", async () => {
     const target = SHARED_LOCAL_VM_TARGET;
     const detail = JSON.parse(readyInspect())[0];
     detail.State = { Running: false, Status: "exited" };
@@ -1034,11 +1056,30 @@ describe("Auto's Local VM eligibility", () => {
   it("attaches a ready desktop or one whose prepared image can be recreated, and nothing else", () => {
     expect(autoLocalVmAttachable({ ...base, ready: true, container: "running" })).toBe(true);
     expect(autoLocalVmAttachable(base)).toBe(true);
-    // never a first-time setup, a stopped image that cannot resume, or a dead daemon
+    // Never a first-time setup, an unverified stopped image, or a dead daemon
     expect(autoLocalVmAttachable({ ...base, image: false })).toBe(false);
     expect(autoLocalVmAttachable({ ...base, daemonUp: false })).toBe(false);
     expect(autoLocalVmAttachable({ ...base, container: "stopped" })).toBe(false);
     expect(autoLocalVmAttachable({ ...base, runtime: null })).toBe(false);
     expect(autoLocalVmAttachable({ ...base, create_supported: false })).toBe(false);
+  });
+});
+
+describe("Local VM resume safety", () => {
+  it.each([
+    { Config: { Image: "foreign" } },
+    { HostConfig: { Privileged: true } },
+    { Mounts: [] },
+    { State: { Running: true } },
+  ])("refuses an incompatible, unsafe, or running desktop: %j", async patch => {
+    const fake = runner({
+      "/usr/bin/which docker": "docker\n",
+      "docker info --format {{.ServerVersion}}": "29\n",
+      [`docker image inspect ${IMAGE}`]: preparedImageInspect(),
+      [`docker inspect ${CONTAINER}`]: readyInspect({ State: { Running: false }, ...patch }),
+    });
+    expect((await containerComputerStatus(fake.run, "linux")).resumable).toBe(false);
+    await expect(containerComputerAction("start", fake.run, "linux")).rejects.toThrow();
+    expect(fake.calls).not.toContain(`docker start ${CONTAINER}`);
   });
 });

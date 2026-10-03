@@ -1,10 +1,11 @@
 import { env } from "cloudflare:workers";
 import { createExecutionContext, createScheduledController, waitOnExecutionContext } from "cloudflare:test";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { CloudflareAPI, CloudflareAPIError, type CloudflareFetch } from "../src/cloudflare-api";
 import { createAuth } from "../src/auth";
 import { readConfig } from "../src/config";
+import { cleanupEndpointRow } from "../src/endpoints";
 import { createWorker } from "../src/index";
 
 const BASE_URL = "https://auth.openmausbot.test";
@@ -37,13 +38,16 @@ async function call(worker: TestWorker, path: string, options: CallOptions = {})
   return response;
 }
 
-async function runScheduledCleanup(worker: TestWorker): Promise<void> {
+async function runScheduledCleanup(
+  worker: TestWorker,
+  vars: Record<string, string> = {},
+): Promise<void> {
   const controller = createScheduledController({
     cron: "*/5 * * * *",
     scheduledTime: Date.now(),
   });
   const ctx = createExecutionContext();
-  await worker.scheduled(controller, env, ctx);
+  await worker.scheduled(controller, { ...env, ...vars } as Env, ctx);
   await waitOnExecutionContext(ctx);
 }
 
@@ -77,8 +81,13 @@ async function createInstallation(worker: TestWorker, accountToken: string, clie
 }
 
 interface FakeTunnel {
+  configSrc?: string;
+  conns_active_at?: string | null;
+  conns_inactive_at?: string | null;
+  created_at?: string;
   id: string;
   name: string;
+  status?: string;
 }
 
 interface FakeDNSRecord {
@@ -100,6 +109,21 @@ function jsonResult(result: unknown, status = 200): Response {
   return Response.json({ errors: [], messages: [], result, success: true }, { status });
 }
 
+function jsonPage(result: unknown[], page: number, perPage: number, totalCount: number): Response {
+  return Response.json({
+    errors: [],
+    messages: [],
+    result,
+    result_info: { count: result.length, page, per_page: perPage, total_count: totalCount },
+    success: true,
+  });
+}
+
+function tunnelJSON(tunnel: FakeTunnel) {
+  const { configSrc, ...fields } = tunnel;
+  return { ...fields, config_src: configSrc ?? "cloudflare", deleted_at: null };
+}
+
 function jsonNotFound(): Response {
   return Response.json({
     errors: [{ code: 1_003, message: "not found" }],
@@ -115,7 +139,13 @@ class FakeCloudflare {
   readonly dns = new Map<string, FakeDNSRecord>();
   readonly failures = new Set<string>();
   readonly failuresAfterApply = new Set<string>();
+  /** Provider error codes returned (HTTP 400) for an operation. */
+  readonly providerErrors = new Map<string, number>();
+  readonly rateLimited = new Set<string>();
+  readonly afterHooks = new Map<string, () => void>();
   readonly tunnels = new Map<string, FakeTunnel>();
+  dnsTotalCount: number | null = null;
+  tunnelTotalCount: number | null = null;
   private counter = 1;
   private gate: Gate | null = null;
 
@@ -138,6 +168,23 @@ class FakeCloudflare {
       this.markGateEntered();
       await gate.wait;
     }
+    if (this.rateLimited.has(operation)) {
+      return Response.json({
+        errors: [{ code: 971, message: "Please wait and consider throttling your request speed" }],
+        messages: [],
+        result: null,
+        success: false,
+      }, { status: 429 });
+    }
+    const providerError = this.providerErrors.get(operation);
+    if (providerError !== undefined) {
+      return Response.json({
+        errors: [{ code: providerError, message: "quota" }],
+        messages: [],
+        result: null,
+        success: false,
+      }, { status: 400 });
+    }
     if (this.failures.has(operation)) {
       return Response.json({
         errors: [{ code: 10_000, message: `${CONNECTOR_TOKEN} must stay redacted` }],
@@ -156,6 +203,7 @@ class FakeCloudflare {
   }
 
   private after(operation: string): void {
+    this.afterHooks.get(operation)?.();
     if (this.failuresAfterApply.has(operation)) {
       throw new Error(`simulated ambiguous ${operation} result`);
     }
@@ -174,20 +222,27 @@ class FakeCloudflare {
       url: url.toString(),
     });
 
+    if (method === "GET" && url.pathname.endsWith("/cfd_tunnel") && !url.searchParams.has("name")) {
+      const failed = await this.before("scan_tunnels");
+      if (failed) return failed;
+      const page = Number(url.searchParams.get("page") ?? "1");
+      const perPage = Number(url.searchParams.get("per_page") ?? "20");
+      const all = [...this.tunnels.values()];
+      const slice = all.slice((page - 1) * perPage, page * perPage).map(tunnelJSON);
+      return jsonPage(slice, page, perPage, this.tunnelTotalCount ?? all.length);
+    }
     if (method === "GET" && url.pathname.endsWith("/cfd_tunnel")) {
       const failed = await this.before("list_tunnels");
       if (failed) return failed;
       const tunnel = this.tunnels.get(url.searchParams.get("name") ?? "");
-      return jsonResult(tunnel
-        ? [{ ...tunnel, config_src: "cloudflare", deleted_at: null }]
-        : []);
+      return jsonResult(tunnel ? [tunnelJSON(tunnel)] : []);
     }
     if (method === "GET" && /\/cfd_tunnel\/[^/]+$/.test(url.pathname)) {
+      const failed = await this.before("get_tunnel");
+      if (failed) return failed;
       const id = url.pathname.split("/").at(-1);
       const tunnel = [...this.tunnels.values()].find((candidate) => candidate.id === id);
-      return tunnel
-        ? jsonResult({ ...tunnel, config_src: "cloudflare", deleted_at: null })
-        : jsonNotFound();
+      return tunnel ? jsonResult(tunnelJSON(tunnel)) : jsonNotFound();
     }
     if (method === "POST" && url.pathname.endsWith("/cfd_tunnel")) {
       const failed = await this.before("create_tunnel");
@@ -195,10 +250,17 @@ class FakeCloudflare {
       if (!body || typeof body !== "object" || !("name" in body) || typeof body.name !== "string") {
         throw new Error("unexpected tunnel body");
       }
-      const tunnel = { id: this.nextTunnelId(), name: body.name };
+      const tunnel: FakeTunnel = {
+        conns_active_at: null,
+        conns_inactive_at: null,
+        created_at: new Date().toISOString(),
+        id: this.nextTunnelId(),
+        name: body.name,
+        status: "inactive",
+      };
       this.tunnels.set(tunnel.name, tunnel);
       this.after("create_tunnel");
-      return jsonResult({ ...tunnel, config_src: "cloudflare", deleted_at: null });
+      return jsonResult(tunnelJSON(tunnel));
     }
     if (method === "PUT" && url.pathname.endsWith("/configurations")) {
       const failed = await this.before("configure_tunnel");
@@ -207,6 +269,13 @@ class FakeCloudflare {
       this.configurations.set(tunnelId, body);
       if (!body || typeof body !== "object" || !("config" in body)) throw new Error("unexpected config body");
       return jsonResult({ config: body.config });
+    }
+    if (method === "GET" && url.pathname.endsWith("/dns_records") && !url.searchParams.has("name.exact")) {
+      const failed = await this.before("count_dns");
+      if (failed) return failed;
+      const perPage = Number(url.searchParams.get("per_page") ?? "100");
+      const all = [...this.dns.values()];
+      return jsonPage(all.slice(0, perPage), 1, perPage, this.dnsTotalCount ?? all.length);
     }
     if (method === "GET" && url.pathname.endsWith("/dns_records")) {
       const failed = await this.before("list_dns");
@@ -275,6 +344,7 @@ class FakeCloudflare {
       for (const [name, record] of this.dns) {
         if (record.id === id) this.dns.delete(name);
       }
+      this.after("delete_dns");
       return Response.json({ result: { id } });
     }
     if (method === "DELETE" && url.pathname.includes("/cfd_tunnel/")) {
@@ -288,6 +358,20 @@ class FakeCloudflare {
     }
     throw new Error(`unexpected Cloudflare request: ${method} ${url.pathname}`);
   };
+}
+
+function isCapacityRead(entry: { method: string; url: string }): boolean {
+  const url = new URL(entry.url);
+  return entry.method === "GET" && (
+    (url.pathname.endsWith("/cfd_tunnel") && !url.searchParams.has("name"))
+    || (url.pathname.endsWith("/dns_records") && !url.searchParams.has("name.exact"))
+  );
+}
+
+/** Provider calls made by provisioning or cleanup, excluding the cron's
+ * two read-only capacity requests. */
+function cleanupCalls(cloudflare: FakeCloudflare) {
+  return cloudflare.calls.filter((entry) => !isCapacityRead(entry));
 }
 
 describe("Cloudflare API response contracts", () => {
@@ -848,7 +932,7 @@ describe("managed companion endpoints", () => {
     });
     expect(response.status).toBe(503);
     expect(cloudflare.calls.some((entry) => entry.method === "DELETE")).toBe(false);
-    expect(cloudflare.tunnels.get(stableName)).toEqual({
+    expect(cloudflare.tunnels.get(stableName)).toMatchObject({
       id: tunnel.id,
       name: "repurposed-tunnel",
     });
@@ -912,11 +996,11 @@ describe("managed companion endpoints", () => {
     vi.restoreAllMocks();
   });
 
-  it("bounds each scheduled cleanup sweep beneath the free-plan external subrequest limit", async () => {
+  it("bounds each scheduled cleanup sweep by the configured row limit", async () => {
     const cloudflare = new FakeCloudflare();
     const worker = createWorker(cloudflare.fetch);
     const now = Date.now();
-    await env.DB.batch(Array.from({ length: 5 }, (_, index) => {
+    await env.DB.batch(Array.from({ length: 25 }, (_, index) => {
       const opaque = index.toString(16).padStart(32, "0");
       const hostname = `c-${opaque}.openmausbot.test`;
       const tunnelName = `omb-c-${opaque}`;
@@ -942,16 +1026,31 @@ describe("managed companion endpoints", () => {
         now - index,
       );
     }));
-
-    await runScheduledCleanup(worker);
-    const counts = await env.DB.prepare(
+    const counts = async () => (await env.DB.prepare(
       "SELECT status, COUNT(*) AS count FROM installation_endpoints GROUP BY status ORDER BY status",
-    ).all<{ count: number; status: string }>();
-    expect(counts.results).toEqual([
+    ).all<{ count: number; status: string }>()).results;
+
+    // Workers Free deployments set SAGAX_CLEANUP_SWEEP_LIMIT=4: forty cleanup
+    // calls plus the two capacity reads stay under 50 subrequests.
+    await runScheduledCleanup(worker, { SAGAX_CLEANUP_SWEEP_LIMIT: "4" });
+    expect(await counts()).toEqual([
       { count: 4, status: "deleted" },
+      { count: 21, status: "deleting" },
+    ]);
+    expect(cleanupCalls(cloudflare)).toHaveLength(40);
+    expect(cloudflare.calls.filter(isCapacityRead)).toHaveLength(2);
+
+    // On Workers Paid (SAGAX_CLEANUP_SWEEP_LIMIT=20, the code default) a run
+    // processes twenty rows at ten calls each: about 200 of the token's 1,200
+    // requests per five minutes. wrangler.jsonc ships 4 until Paid is confirmed.
+    cloudflare.calls.length = 0;
+    await runScheduledCleanup(worker, { SAGAX_CLEANUP_SWEEP_LIMIT: "20" });
+    expect(await counts()).toEqual([
+      { count: 24, status: "deleted" },
       { count: 1, status: "deleting" },
     ]);
-    expect(cloudflare.calls).toHaveLength(40);
+    expect(cleanupCalls(cloudflare)).toHaveLength(200);
+    expect(cloudflare.calls.filter(isCapacityRead)).toHaveLength(2);
   });
 
   it("backs off scheduled cleanup retries and flags old rows for operator attention", async () => {
@@ -975,7 +1074,7 @@ describe("managed companion endpoints", () => {
     const logged = vi.spyOn(console, "error").mockImplementation(() => undefined);
 
     await runScheduledCleanup(worker);
-    expect(cloudflare.calls).toHaveLength(0);
+    expect(cleanupCalls(cloudflare)).toHaveLength(0);
     expect(logged).not.toHaveBeenCalled();
 
     await env.DB.prepare(
@@ -983,7 +1082,7 @@ describe("managed companion endpoints", () => {
     ).bind(now - 16 * 60 * 1_000, "orphan-backoff").run();
     await runScheduledCleanup(worker);
 
-    expect(cloudflare.calls).toHaveLength(2);
+    expect(cleanupCalls(cloudflare)).toHaveLength(2);
     const row = await env.DB.prepare(
       "SELECT status, cleanup_attempts FROM installation_endpoints WHERE installation_id = ?",
     ).bind("orphan-backoff").first<{ cleanup_attempts: number; status: string }>();
@@ -1041,5 +1140,648 @@ describe("managed companion endpoints", () => {
     expect(response.status).toBe(503);
     expect(await response.text()).toBe('{"error":"misconfigured"}');
     expect(cloudflare.calls).toHaveLength(0);
+  });
+});
+
+const DAY_MS = 24 * 60 * 60 * 1_000;
+const iso = (ms: number) => new Date(ms).toISOString();
+
+interface EndpointState {
+  dns_record_id: string | null;
+  hostname: string;
+  last_error_code: string | null;
+  reclaim_requested_at: number | null;
+  status: string;
+  tunnel_id: string | null;
+  tunnel_name: string;
+}
+
+async function endpointState(installationId: string): Promise<EndpointState> {
+  const row = await env.DB.prepare(
+    `SELECT status, tunnel_id, tunnel_name, hostname, dns_record_id, reclaim_requested_at, last_error_code
+       FROM installation_endpoints WHERE installation_id = ?`,
+  ).bind(installationId).first<EndpointState>();
+  if (!row) throw new Error("endpoint row missing");
+  return row;
+}
+
+async function provisioned(
+  worker: TestWorker,
+  cloudflare: FakeCloudflare,
+  accountToken: string,
+  clientInstanceId: string,
+) {
+  const installation = await createInstallation(worker, accountToken, clientInstanceId);
+  const response = await call(worker, "/v1/installations/self/endpoint", {
+    method: "POST",
+    token: installation.credential,
+  });
+  expect(response.status).toBe(200);
+  const payload = await response.json<{ endpoint: { url: string } }>();
+  const id = installation.installation.id;
+  const state = await endpointState(id);
+  const tunnel = cloudflare.tunnels.get(state.tunnel_name);
+  if (!tunnel) throw new Error("fake tunnel missing");
+  return { credential: installation.credential, id, state, tunnel, url: payload.endpoint.url };
+}
+
+/** Make an installation and its endpoint look untouched for `ageMs`. */
+async function quiet(installationId: string, ageMs: number): Promise<void> {
+  const at = Date.now() - ageMs;
+  await env.DB.batch([
+    env.DB.prepare("UPDATE installations SET created_at = ?, last_seen_at = ? WHERE id = ?")
+      .bind(at, at, installationId),
+    env.DB.prepare(
+      `UPDATE installation_endpoints
+          SET created_at = ?, updated_at = ?, last_reconciled_at = ?
+        WHERE installation_id = ?`,
+    ).bind(at, at, at, installationId),
+  ]);
+}
+
+function neverRan(tunnel: FakeTunnel, createdDaysAgo: number): void {
+  Object.assign(tunnel, {
+    conns_active_at: null,
+    conns_inactive_at: null,
+    created_at: iso(Date.now() - createdDaysAgo * DAY_MS),
+    status: "inactive",
+  });
+}
+
+function offlineFor(tunnel: FakeTunnel, days: number): void {
+  Object.assign(tunnel, {
+    conns_active_at: null,
+    conns_inactive_at: iso(Date.now() - days * DAY_MS),
+    created_at: iso(Date.now() - 90 * DAY_MS),
+    status: "down",
+  });
+}
+
+function connected(tunnel: FakeTunnel, status = "healthy"): void {
+  Object.assign(tunnel, {
+    conns_active_at: iso(Date.now() - 60 * DAY_MS),
+    conns_inactive_at: null,
+    created_at: iso(Date.now() - 90 * DAY_MS),
+    status,
+  });
+}
+
+function deleteURLs(cloudflare: FakeCloudflare): string[] {
+  return cloudflare.calls.filter((entry) => entry.method === "DELETE").map((entry) => entry.url);
+}
+
+function loggedJSON(spy: { mock: { calls: unknown[][] } }, message: string): Array<Record<string, unknown>> {
+  return spy.mock.calls
+    .flat()
+    .filter((entry): entry is string => typeof entry === "string" && entry.includes(message))
+    .map((entry) => JSON.parse(entry) as Record<string, unknown>)
+    .filter((entry) => entry.message === message);
+}
+
+describe("idle tunnel reclaim", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("reclaims idle tunnels through verified cleanup and leaves live or recently seen ones alone", async () => {
+    const cloudflare = new FakeCloudflare();
+    const worker = createWorker(cloudflare.fetch);
+    const owner = await signIn(worker, "reclaim-owner@example.com");
+    const neverConnected = await provisioned(worker, cloudflare, owner.token, "reclaim-never");
+    const offline = await provisioned(worker, cloudflare, owner.token, "reclaim-offline");
+    const healthy = await provisioned(worker, cloudflare, owner.token, "reclaim-healthy");
+    const degraded = await provisioned(worker, cloudflare, owner.token, "reclaim-degraded");
+    const recentlyDown = await provisioned(worker, cloudflare, owner.token, "reclaim-recent-down");
+    const recentlySeen = await provisioned(worker, cloudflare, owner.token, "reclaim-recent-seen");
+    const recentlyReconciled = await provisioned(worker, cloudflare, owner.token, "reclaim-recent-reconcile");
+    const mismatched = await provisioned(worker, cloudflare, owner.token, "reclaim-mismatch");
+    const all = [
+      neverConnected, offline, healthy, degraded, recentlyDown, recentlySeen, recentlyReconciled, mismatched,
+    ];
+    for (const each of all) await quiet(each.id, 30 * DAY_MS);
+    neverRan(neverConnected.tunnel, 8);
+    offlineFor(offline.tunnel, 22);
+    connected(healthy.tunnel);
+    connected(degraded.tunnel, "degraded");
+    offlineFor(recentlyDown.tunnel, 10);
+    neverRan(recentlySeen.tunnel, 30);
+    neverRan(recentlyReconciled.tunnel, 30);
+    neverRan(mismatched.tunnel, 30);
+    // The stored ID no longer names the listed tunnel: ownership is unproven.
+    await env.DB.prepare("UPDATE installation_endpoints SET tunnel_id = ? WHERE installation_id = ?")
+      .bind("70000000-0000-4000-8000-000000000001", mismatched.id).run();
+    // The app checked in an hour ago, or reconciled its endpoint yesterday.
+    await env.DB.prepare("UPDATE installations SET last_seen_at = ? WHERE id = ?")
+      .bind(Date.now() - 60 * 60 * 1_000, recentlySeen.id).run();
+    await env.DB.prepare("UPDATE installation_endpoints SET updated_at = ? WHERE installation_id = ?")
+      .bind(Date.now() - DAY_MS, recentlyReconciled.id).run();
+    cloudflare.calls.length = 0;
+    const logged = vi.spyOn(console, "log").mockImplementation(() => undefined);
+
+    await runScheduledCleanup(worker);
+
+    for (const reclaimed of [neverConnected, offline]) {
+      expect(await endpointState(reclaimed.id)).toMatchObject({
+        dns_record_id: null,
+        status: "deleted",
+        tunnel_id: null,
+      });
+      expect(cloudflare.tunnels.has(reclaimed.state.tunnel_name)).toBe(false);
+      expect(cloudflare.dns.has(reclaimed.state.hostname)).toBe(false);
+    }
+    const deletes = deleteURLs(cloudflare);
+    expect(deletes).toHaveLength(4);
+    for (const kept of [healthy, degraded, recentlyDown, recentlySeen, recentlyReconciled, mismatched]) {
+      expect(await endpointState(kept.id)).toMatchObject({ reclaim_requested_at: null, status: "ready" });
+      expect(cloudflare.tunnels.has(kept.state.tunnel_name)).toBe(true);
+      expect(cloudflare.dns.has(kept.state.hostname)).toBe(true);
+      expect(deletes.some((url) => url.includes(kept.tunnel.id))).toBe(false);
+      expect(deletes.some((url) => url.includes(kept.state.dns_record_id ?? "missing"))).toBe(false);
+    }
+    const [scan] = loggedJSON(logged, "managed endpoint tunnel scan");
+    expect(scan).toMatchObject({
+      eligible: 2,
+      // Provider-idle, but recently seen, recently reconciled, or mismatched.
+      idle: { never_connected: 4, offline: 1 },
+      managed: 8,
+      marked: 2,
+      reclaimMode: "on",
+      unmatched: 0,
+    });
+    expect(loggedJSON(logged, "managed endpoint cleanup sweep")[0]).toMatchObject({ deleted: 2 });
+    logged.mockRestore();
+
+    // The installation was never signed out. Its next reconcile gets a fresh
+    // tunnel behind the same hostname, so a paired phone keeps its address.
+    await expect((await call(worker, "/v1/installations/self/endpoint", {
+      token: neverConnected.credential,
+    })).json()).resolves.toEqual({ endpoint: null });
+    const returned = await call(worker, "/v1/installations/self/endpoint", {
+      method: "POST",
+      token: neverConnected.credential,
+    });
+    expect(returned.status).toBe(200);
+    const payload = await returned.json<{ connectorToken: string; endpoint: { url: string } }>();
+    expect(payload.endpoint.url).toBe(neverConnected.url);
+    expect(payload.connectorToken).toBe(CONNECTOR_TOKEN);
+    const recreated = cloudflare.tunnels.get(neverConnected.state.tunnel_name);
+    expect(recreated?.id).toBeDefined();
+    expect(recreated?.id).not.toBe(neverConnected.tunnel.id);
+    expect(await endpointState(neverConnected.id)).toMatchObject({
+      reclaim_requested_at: null,
+      status: "ready",
+      tunnel_id: recreated?.id,
+    });
+  });
+
+  it("only logs candidates in observe mode and bounds marks per run", async () => {
+    const cloudflare = new FakeCloudflare();
+    const worker = createWorker(cloudflare.fetch);
+    const owner = await signIn(worker, "reclaim-observe@example.com");
+    const idle = await provisioned(worker, cloudflare, owner.token, "reclaim-observe");
+    await quiet(idle.id, 30 * DAY_MS);
+    neverRan(idle.tunnel, 30);
+    cloudflare.calls.length = 0;
+    const logged = vi.spyOn(console, "log").mockImplementation(() => undefined);
+
+    await runScheduledCleanup(worker, { SAGAX_TUNNEL_RECLAIM: "observe" });
+
+    expect(await endpointState(idle.id)).toMatchObject({ reclaim_requested_at: null, status: "ready" });
+    expect(deleteURLs(cloudflare)).toHaveLength(0);
+    expect(loggedJSON(logged, "managed endpoint tunnel scan")[0]).toMatchObject({
+      eligible: 1,
+      idle: { never_connected: 1, offline: 0 },
+      marked: 0,
+      reclaimMode: "observe",
+    });
+    logged.mockRestore();
+  });
+
+  it("never touches tunnels it cannot tie to an endpoint row", async () => {
+    const cloudflare = new FakeCloudflare();
+    const worker = createWorker(cloudflare.fetch);
+    const stale = iso(Date.now() - 90 * DAY_MS);
+    cloudflare.tunnels.set("omb-c-ffffffffffffffffffffffffffffffff", {
+      created_at: stale,
+      id: "40000000-0000-4000-8000-000000000001",
+      name: "omb-c-ffffffffffffffffffffffffffffffff",
+      status: "inactive",
+    });
+    cloudflare.tunnels.set("another-service", {
+      configSrc: "local",
+      conns_inactive_at: stale,
+      created_at: stale,
+      id: "40000000-0000-4000-8000-000000000002",
+      name: "another-service",
+      status: "down",
+    });
+    // Over one scan page of unrelated tunnels: the cursor walks and wraps.
+    for (let index = 0; index < 130; index += 1) {
+      const name = `team-tunnel-${index}`;
+      cloudflare.tunnels.set(name, {
+        id: `50000000-0000-4000-8000-${index.toString(16).padStart(12, "0")}`,
+        name,
+        status: "healthy",
+      });
+    }
+    const logged = vi.spyOn(console, "log").mockImplementation(() => undefined);
+
+    await runScheduledCleanup(worker);
+    const page = async () => (await env.DB.prepare(
+      "SELECT scan_page, tunnel_count FROM managed_endpoint_capacity WHERE id = 1",
+    ).first<{ scan_page: number; tunnel_count: number }>());
+    expect(await page()).toEqual({ scan_page: 2, tunnel_count: 132 });
+    await runScheduledCleanup(worker);
+    expect(await page()).toEqual({ scan_page: 1, tunnel_count: 132 });
+
+    expect(deleteURLs(cloudflare)).toHaveLength(0);
+    expect(cloudflare.tunnels.size).toBe(132);
+    const scans = loggedJSON(logged, "managed endpoint tunnel scan");
+    expect(scans.map((scan) => [scan.page, scan.returned, scan.managed, scan.unmatched])).toEqual([
+      [1, 100, 1, 1],
+      [2, 32, 0, 0],
+    ]);
+    logged.mockRestore();
+  });
+
+  it("never deletes a row its owner took back after the sweep chose it", async () => {
+    const cloudflare = new FakeCloudflare();
+    const worker = createWorker(cloudflare.fetch);
+    const owner = await signIn(worker, "reclaim-race@example.com");
+    const taken = await provisioned(worker, cloudflare, owner.token, "reclaim-race");
+    await quiet(taken.id, 30 * DAY_MS);
+    const markedAt = Date.now() - 60_000;
+    await env.DB.prepare(
+      `UPDATE installation_endpoints
+          SET status = 'deleting', reclaim_requested_at = ?, delete_requested_at = ?
+        WHERE installation_id = ?`,
+    ).bind(markedAt, markedAt, taken.id).run();
+    // The sweep has chosen the row. Before it claims it, the owner's app
+    // provisions again and takes the row back.
+    const back = await call(worker, "/v1/installations/self/endpoint", { method: "POST", token: taken.credential });
+    expect(back.status).toBe(200);
+    expect(await endpointState(taken.id)).toMatchObject({ status: "ready" });
+    cloudflare.calls.length = 0;
+
+    const outcome = await cleanupEndpointRow(env, readConfig(env), taken.id, cloudflare.fetch, "race-test", true);
+
+    expect(outcome.result).toBe("skipped");
+    expect(await endpointState(taken.id)).toMatchObject({ status: "ready" });
+    expect(cloudflare.calls.filter((call) => call.method === "DELETE")).toHaveLength(0);
+  });
+
+  it("cancels a pending reclaim when the tunnel reconnects or the installation checks in", async () => {
+    const cloudflare = new FakeCloudflare();
+    const worker = createWorker(cloudflare.fetch);
+    const owner = await signIn(worker, "reclaim-cancel@example.com");
+    const reconnected = await provisioned(worker, cloudflare, owner.token, "reclaim-reconnected");
+    const checkedIn = await provisioned(worker, cloudflare, owner.token, "reclaim-checked-in");
+    const revoked = await provisioned(worker, cloudflare, owner.token, "reclaim-revoked");
+    for (const each of [reconnected, checkedIn, revoked]) await quiet(each.id, 30 * DAY_MS);
+    // Marked by an earlier run (or by hand: migration 0006 backfills the
+    // marker onto operator-marked rows of active installations).
+    const markedAt = Date.now() - 60_000;
+    for (const each of [reconnected, checkedIn, revoked]) {
+      await env.DB.prepare(
+        `UPDATE installation_endpoints
+            SET status = 'deleting', reclaim_requested_at = ?, delete_requested_at = ?
+          WHERE installation_id = ?`,
+      ).bind(markedAt, markedAt, each.id).run();
+    }
+    connected(reconnected.tunnel);
+    neverRan(checkedIn.tunnel, 30);
+    await env.DB.prepare("UPDATE installations SET last_seen_at = ? WHERE id = ?")
+      .bind(Date.now(), checkedIn.id).run();
+    // Revocation always wins, even over a live connector.
+    connected(revoked.tunnel);
+    await env.DB.prepare("UPDATE installations SET revoked_at = ? WHERE id = ?")
+      .bind(Date.now(), revoked.id).run();
+    cloudflare.calls.length = 0;
+    vi.spyOn(console, "log").mockImplementation(() => undefined);
+
+    await runScheduledCleanup(worker);
+
+    for (const kept of [reconnected, checkedIn]) {
+      expect(await endpointState(kept.id)).toMatchObject({
+        dns_record_id: kept.state.dns_record_id,
+        reclaim_requested_at: null,
+        status: "ready",
+        tunnel_id: kept.tunnel.id,
+      });
+      expect(cloudflare.tunnels.has(kept.state.tunnel_name)).toBe(true);
+      expect(cloudflare.dns.has(kept.state.hostname)).toBe(true);
+    }
+    expect(deleteURLs(cloudflare).some((url) => (
+      url.includes(reconnected.tunnel.id) || url.includes(checkedIn.tunnel.id)
+    ))).toBe(false);
+    expect(await endpointState(revoked.id)).toMatchObject({ status: "deleted", tunnel_id: null });
+    expect(cloudflare.tunnels.has(revoked.state.tunnel_name)).toBe(false);
+    vi.restoreAllMocks();
+  });
+
+  it("stops a reclaim that is already underway when the tunnel reconnects mid-cleanup", async () => {
+    const cloudflare = new FakeCloudflare();
+    const worker = createWorker(cloudflare.fetch);
+    const owner = await signIn(worker, "reclaim-midway@example.com");
+    const midway = await provisioned(worker, cloudflare, owner.token, "reclaim-midway");
+    await quiet(midway.id, 30 * DAY_MS);
+    neverRan(midway.tunnel, 30);
+    // The connector comes back between the DNS delete and the tunnel delete.
+    cloudflare.afterHooks.set("delete_dns", () => connected(midway.tunnel));
+    vi.spyOn(console, "log").mockImplementation(() => undefined);
+
+    await runScheduledCleanup(worker);
+
+    expect(cloudflare.tunnels.get(midway.state.tunnel_name)?.id).toBe(midway.tunnel.id);
+    expect(deleteURLs(cloudflare).some((url) => url.includes(midway.tunnel.id))).toBe(false);
+    expect(await endpointState(midway.id)).toMatchObject({
+      dns_record_id: null,
+      last_error_code: "reclaim_cancelled",
+      reclaim_requested_at: null,
+      status: "error",
+      tunnel_id: midway.tunnel.id,
+    });
+
+    // The next reconcile adopts the surviving tunnel and restores its DNS.
+    cloudflare.afterHooks.clear();
+    const tunnelCreates = () => cloudflare.calls.filter((entry) => (
+      entry.method === "POST" && new URL(entry.url).pathname.endsWith("/cfd_tunnel")
+    )).length;
+    const createsBefore = tunnelCreates();
+    const repaired = await call(worker, "/v1/installations/self/endpoint", {
+      method: "POST",
+      token: midway.credential,
+    });
+    expect(repaired.status).toBe(200);
+    expect(tunnelCreates()).toBe(createsBefore);
+    expect(cloudflare.dns.get(midway.state.hostname)?.content).toBe(`${midway.tunnel.id}.cfargotunnel.com`);
+    vi.restoreAllMocks();
+  });
+
+  it("lets a returning installation take back a pending reclaim but not an owner deletion", async () => {
+    const cloudflare = new FakeCloudflare();
+    const worker = createWorker(cloudflare.fetch);
+    const owner = await signIn(worker, "reclaim-return@example.com");
+    const reclaimed = await provisioned(worker, cloudflare, owner.token, "reclaim-return");
+    const ownerDeleting = await provisioned(worker, cloudflare, owner.token, "owner-deleting");
+    const now = Date.now();
+    await env.DB.prepare(
+      `UPDATE installation_endpoints
+          SET status = 'deleting', reclaim_requested_at = ?, delete_requested_at = ?
+        WHERE installation_id = ?`,
+    ).bind(now, now, reclaimed.id).run();
+    await env.DB.prepare(
+      `UPDATE installation_endpoints
+          SET status = 'deleting', delete_requested_at = ?
+        WHERE installation_id = ?`,
+    ).bind(now, ownerDeleting.id).run();
+    cloudflare.calls.length = 0;
+
+    const back = await call(worker, "/v1/installations/self/endpoint", {
+      method: "POST",
+      token: reclaimed.credential,
+    });
+    expect(back.status).toBe(200);
+    await expect(back.json()).resolves.toMatchObject({ endpoint: { url: reclaimed.url } });
+    expect(await endpointState(reclaimed.id)).toMatchObject({
+      reclaim_requested_at: null,
+      status: "ready",
+      tunnel_id: reclaimed.tunnel.id,
+    });
+    expect(cloudflare.calls.some((entry) => entry.method === "POST" || entry.method === "DELETE")).toBe(false);
+
+    const blocked = await call(worker, "/v1/installations/self/endpoint", {
+      method: "POST",
+      token: ownerDeleting.credential,
+    });
+    expect(blocked.status).toBe(409);
+    expect(await endpointState(ownerDeleting.id)).toMatchObject({ status: "deleting" });
+  });
+
+  it("lets the owner delete an endpoint that has a pending reclaim, even if it reconnected", async () => {
+    const cloudflare = new FakeCloudflare();
+    const worker = createWorker(cloudflare.fetch);
+    const owner = await signIn(worker, "reclaim-owner-delete@example.com");
+    const endpoint = await provisioned(worker, cloudflare, owner.token, "reclaim-owner-delete");
+    await quiet(endpoint.id, 30 * DAY_MS);
+    const markedAt = Date.now() - 60_000;
+    await env.DB.prepare(
+      `UPDATE installation_endpoints
+          SET status = 'deleting', reclaim_requested_at = ?, delete_requested_at = ?
+        WHERE installation_id = ?`,
+    ).bind(markedAt, markedAt, endpoint.id).run();
+    connected(endpoint.tunnel);
+
+    const deleted = await call(worker, "/v1/installations/self/endpoint", {
+      method: "DELETE",
+      token: endpoint.credential,
+    });
+    expect(deleted.status).toBe(204);
+    expect(await endpointState(endpoint.id)).toMatchObject({
+      dns_record_id: null,
+      reclaim_requested_at: null,
+      status: "deleted",
+      tunnel_id: null,
+    });
+    expect(cloudflare.tunnels.has(endpoint.state.tunnel_name)).toBe(false);
+  });
+
+  it("stops starting cleanup rows once Cloudflare rate-limits the token", async () => {
+    const cloudflare = new FakeCloudflare();
+    const worker = createWorker(cloudflare.fetch);
+    const now = Date.now();
+    await env.DB.batch(Array.from({ length: 12 }, (_, index) => {
+      const opaque = (index + 0x100).toString(16).padStart(32, "0");
+      return env.DB.prepare(
+        `INSERT INTO installation_endpoints
+          (installation_id, hostname, tunnel_name, status, delete_requested_at, created_at, updated_at)
+         VALUES (?, ?, ?, 'deleting', ?, ?, ?)`,
+      ).bind(`orphan-limited-${index}`, `c-${opaque}.openmausbot.test`, `omb-c-${opaque}`, now, now, now);
+    }));
+    cloudflare.rateLimited.add("list_tunnels");
+    const logged = vi.spyOn(console, "log").mockImplementation(() => undefined);
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    await runScheduledCleanup(worker);
+
+    const attempted = await env.DB.prepare(
+      `SELECT COUNT(*) AS count, MIN(last_error_code) AS code
+         FROM installation_endpoints WHERE cleanup_attempts > 0`,
+    ).first<{ code: string; count: number }>();
+    expect(attempted?.count).toBeGreaterThan(0);
+    expect(attempted?.count).toBeLessThanOrEqual(5);
+    expect(attempted?.code).toBe("cf_rate_limited");
+    expect(loggedJSON(logged, "managed endpoint cleanup sweep")[0]).toMatchObject({ rateLimited: true });
+    vi.restoreAllMocks();
+  });
+});
+
+describe("managed endpoint provider capacity", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("reports an exhausted tunnel quota as endpoint_capacity and answers locally while it lasts", async () => {
+    const cloudflare = new FakeCloudflare();
+    const worker = createWorker(cloudflare.fetch);
+    const owner = await signIn(worker, "capacity-owner@example.com");
+    const established = await provisioned(worker, cloudflare, owner.token, "capacity-established");
+    const first = await createInstallation(worker, owner.token, "capacity-first");
+    const second = await createInstallation(worker, owner.token, "capacity-second");
+    cloudflare.providerErrors.set("create_tunnel", 1_045);
+    const logged = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    const rejected = await call(worker, "/v1/installations/self/endpoint", {
+      method: "POST",
+      token: first.credential,
+    });
+    expect(rejected.status).toBe(503);
+    expect(rejected.headers.get("retry-after")).toBe("600");
+    await expect(rejected.json()).resolves.toEqual({ error: "endpoint_capacity" });
+    expect(await endpointState(first.installation.id)).toMatchObject({
+      last_error_code: "cf_api_1045",
+      status: "error",
+      tunnel_id: null,
+    });
+    expect(loggedJSON(logged, "managed endpoint reconcile failed")[0]).toMatchObject({
+      capacity: true,
+      errorCode: "cf_api_1045",
+    });
+
+    // A second new allocation is answered without touching the shared API.
+    const callsBefore = cloudflare.calls.length;
+    const deferred = await call(worker, "/v1/installations/self/endpoint", {
+      method: "POST",
+      token: second.credential,
+    });
+    expect(deferred.status).toBe(503);
+    await expect(deferred.json()).resolves.toEqual({ error: "endpoint_capacity" });
+    expect(cloudflare.calls.length).toBe(callsBefore);
+
+    // An installation that already holds a tunnel still reconciles normally.
+    expect((await call(worker, "/v1/installations/self/endpoint", {
+      method: "POST",
+      token: established.credential,
+    })).status).toBe(200);
+
+    const health = await call(worker, "/healthz");
+    const healthBody = await health.json<{ capacity: { providerRejectedAt: number | null; status: string } }>();
+    expect(healthBody.capacity.status).toBe("full");
+    expect(healthBody.capacity.providerRejectedAt).toEqual(expect.any(Number));
+
+    // Cleanup that frees a resource reopens allocation before the gate expires.
+    cloudflare.providerErrors.clear();
+    const now = Date.now();
+    cloudflare.tunnels.set(`omb-c-${"e".repeat(32)}`, {
+      id: "60000000-0000-4000-8000-000000000001",
+      name: `omb-c-${"e".repeat(32)}`,
+    });
+    await env.DB.prepare(
+      `INSERT INTO installation_endpoints
+        (installation_id, hostname, tunnel_name, status, delete_requested_at, created_at, updated_at)
+       VALUES ('orphan-capacity', ?, ?, 'deleting', ?, ?, ?)`,
+    ).bind(`c-${"e".repeat(32)}.openmausbot.test`, `omb-c-${"e".repeat(32)}`, now, now, now).run();
+    vi.spyOn(console, "log").mockImplementation(() => undefined);
+    await runScheduledCleanup(worker);
+    const gate = await env.DB.prepare(
+      "SELECT capacity_rejected_at FROM managed_endpoint_capacity WHERE id = 1",
+    ).first<{ capacity_rejected_at: number | null }>();
+    expect(gate?.capacity_rejected_at).toBeNull();
+    expect((await call(worker, "/v1/installations/self/endpoint", {
+      method: "POST",
+      token: second.credential,
+    })).status).toBe(200);
+    vi.restoreAllMocks();
+  });
+
+  it("treats the DNS record quota as capacity and keeps other failures as endpoint_unavailable", async () => {
+    const cloudflare = new FakeCloudflare();
+    const worker = createWorker(cloudflare.fetch);
+    const owner = await signIn(worker, "capacity-dns@example.com");
+    const dnsFull = await createInstallation(worker, owner.token, "capacity-dns");
+    const other = await createInstallation(worker, owner.token, "capacity-other");
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    cloudflare.providerErrors.set("create_dns", 81_045);
+    const rejected = await call(worker, "/v1/installations/self/endpoint", {
+      method: "POST",
+      token: dnsFull.credential,
+    });
+    expect(rejected.status).toBe(503);
+    await expect(rejected.json()).resolves.toEqual({ error: "endpoint_capacity" });
+    // The tunnel this attempt created was rolled back rather than left idle.
+    expect(cloudflare.tunnels.size).toBe(0);
+
+    cloudflare.providerErrors.clear();
+    await env.DB.prepare(
+      "UPDATE managed_endpoint_capacity SET capacity_rejected_at = NULL WHERE id = 1",
+    ).run();
+    cloudflare.failures.add("create_tunnel");
+    const unavailable = await call(worker, "/v1/installations/self/endpoint", {
+      method: "POST",
+      token: other.credential,
+    });
+    expect(unavailable.status).toBe(502);
+    await expect(unavailable.json()).resolves.toEqual({ error: "endpoint_unavailable" });
+    const gate = await env.DB.prepare(
+      "SELECT capacity_rejected_at FROM managed_endpoint_capacity WHERE id = 1",
+    ).first<{ capacity_rejected_at: number | null }>();
+    expect(gate?.capacity_rejected_at).toBeNull();
+    vi.restoreAllMocks();
+  });
+
+  it("alerts above 90% of the configured limits and reports usage in /healthz without secrets", async () => {
+    const cloudflare = new FakeCloudflare();
+    const worker = createWorker(cloudflare.fetch);
+    cloudflare.tunnelTotalCount = 950;
+    cloudflare.dnsTotalCount = 400;
+    const errors = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    vi.spyOn(console, "log").mockImplementation(() => undefined);
+
+    await runScheduledCleanup(worker);
+    const alerts = loggedJSON(errors, "managed endpoint capacity high");
+    expect(alerts).toEqual([expect.objectContaining({
+      alert: "managed_endpoint_capacity",
+      full: false,
+      limit: 1000,
+      resource: "tunnels",
+      thresholdPercent: 90,
+      usagePercent: 95,
+      used: 950,
+    })]);
+
+    const response = await call(worker, "/healthz");
+    expect(response.status).toBe(200);
+    const text = await response.text();
+    expect(JSON.parse(text)).toMatchObject({
+      ok: true,
+      service: "openmausbot-control-plane",
+      capacity: {
+        checkedAt: expect.any(Number),
+        dnsRecords: { limit: 1000, used: 400 },
+        providerRejectedAt: null,
+        reclaim: { mode: "on", pending: 0 },
+        status: "high",
+        tunnels: { limit: 1000, used: 950 },
+      },
+    });
+    for (const secret of [env.CLOUDFLARE_API_TOKEN, env.CLOUDFLARE_ACCOUNT_ID, env.CLOUDFLARE_ZONE_ID]) {
+      expect(text).not.toContain(secret);
+    }
+
+    // A raised limit silences the alert; reaching it reports full.
+    errors.mockClear();
+    await runScheduledCleanup(worker, { SAGAX_TUNNEL_LIMIT: "2000" });
+    expect(loggedJSON(errors, "managed endpoint capacity high")).toEqual([]);
+    cloudflare.tunnelTotalCount = 1000;
+    cloudflare.dnsTotalCount = 990;
+    await runScheduledCleanup(worker);
+    expect(loggedJSON(errors, "managed endpoint capacity high")).toEqual([
+      expect.objectContaining({ full: true, resource: "tunnels", used: 1000 }),
+      expect.objectContaining({ full: false, resource: "dns_records", used: 990 }),
+    ]);
+    const full = await (await call(worker, "/healthz")).json<{ capacity: { status: string } }>();
+    expect(full.capacity.status).toBe("full");
+    vi.restoreAllMocks();
   });
 });

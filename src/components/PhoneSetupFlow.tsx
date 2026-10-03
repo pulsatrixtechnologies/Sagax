@@ -997,6 +997,7 @@ export function PhoneSetupFlowView({
         </p>
         <ValuePoints />
         <button
+          data-phone-pairing-action
           onClick={c.start}
           disabled={!c.state || c.busy || c.accountBusy}
           className={compactHeader

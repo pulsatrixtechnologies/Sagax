@@ -7,6 +7,7 @@ import {
 import { bootstrapBrand } from "./lib/brand";
 import { applySkin, readSkin } from "./lib/skins";
 import { applyFont, readFont } from "./lib/fonts";
+import { settleAdvancedModeDefault } from "./lib/interface-mode";
 import { BrowserSignInPage } from "./pair/BrowserSignInPage";
 import { PairPage } from "./pair/PairPage";
 import { rememberOpenThreadHash } from "./lib/open-thread-hash";
@@ -31,6 +32,9 @@ if (floatingBot) document.documentElement.dataset.floatingBot = "";
 // Slice 7: an "Open in Sagax" link survives the sign-in (/pair, Perspicax).
 rememberOpenThreadHash();
 
+// Simple vs Advanced is decided first: applySkin below writes omb-skin, which
+// would otherwise make every fresh install look like an existing one.
+settleAdvancedModeDefault();
 applySkin(readSkin());
 applyFont(readFont());
 

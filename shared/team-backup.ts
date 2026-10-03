@@ -2,6 +2,7 @@ import { z } from "zod";
 import { MASCOT_COLOR_NAMES } from "./mascot-colors.ts";
 
 import { CONNECTOR_SLUG_PATTERN, CONNECTOR_TOOL_NAME_PATTERN } from "./wire.ts";
+import { parseToolScope, type ToolScope } from "./tool-scope.ts";
 
 export const MAX_TEAM_BACKUP_BYTES = 50 * 1024 * 1024;
 export const TEAM_BACKUP_CONTENTS = "Bot profiles, instructions, sections, rooms, playbooks, routines, each bot's memory (MEMORY.md, topic notes and daily logs) and conversation text (all tasks and branches).";
@@ -107,6 +108,8 @@ const backupSchema = z.object({
     hidden: z.boolean(),
     playbooks: z.array(playbook).max(200),
     connectorTools: connectorTools.optional(),
+    toolScope: z.custom<ToolScope>((value) => value !== undefined && parseToolScope(value).ok, "Invalid tool selection")
+      .transform((value) => { const parsed = parseToolScope(value); return parsed.ok ? parsed.scope! : value; }).optional(),
     memory: memory.optional(),
   })).min(1).max(200),
   groups: z.array(z.preprocess(knownRoomResponder, z.object({

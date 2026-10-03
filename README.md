@@ -278,13 +278,13 @@ server"). For a solo server on a VPS, see
 
 Most settings live in the app (Settings). The server also reads environment
 variables. Names start with `SAGAX_`; the old `OMB_*`, `OPENMAUSBOT_*` and
-`OPENMAUS_*` names are still read and moved onto `SAGAX_*` at start, for one
+`SAGAX_*` names are still read and moved onto `SAGAX_*` at start, for one
 release. Some deployment files (`.env.example`, `compose.yaml`, `deploy/`)
-still use the `OMB_*` names on purpose.
+still use the `SAGAX_*` names on purpose.
 
 | Variable | Default | What it does |
 |---|---|---|
-| `SAGAX_DATA_DIR` | `~/.sagax` | Where bots, conversations and settings live. An old `~/.openmausbot` moves there on first start. |
+| `SAGAX_DATA_DIR` | `~/.sagax` | Where bots, conversations and settings live. An old `~/.sagax` moves there on first start. |
 | `SAGAX_PORT` | `8799` | Port of the Sagax server (127.0.0.1). |
 | `SAGAX_WEBHOOK_PORT` | `SAGAX_PORT` + 1 | Port of the webhook receiver for routines. |
 | `SAGAX_PUBLIC_URL` | none | The server's public address, used in links and sign-in. |
@@ -362,11 +362,11 @@ bundling it, needs a license from Pulsatrix Technologies inc. See
 
 Sagax is based on OpenMausBot, Copyright 2026 Milind Soni and OpenMausBot
 contributors, under the [Apache License 2.0](LICENSE-APACHE). The parts that
-come unchanged from OpenMausBot stay under Apache 2.0; the changes and
+come unchanged from Sagax stay under Apache 2.0; the changes and
 additions made by Pulsatrix Technologies inc. are under the PolyForm
 Noncommercial License only. Copies published before 2026-10-02 under Apache
-2.0 keep that license. The OpenMausBot notices are kept in [NOTICE](NOTICE).
-The OpenMausBot name and mascot are trademarks of Milind Soni and are not this
+2.0 keep that license. The Sagax notices are kept in [NOTICE](NOTICE).
+The Sagax name and mascot are trademarks of Milind Soni and are not this
 product's name. The source-available `enterprise/` directory of the original
 project is not part of this tree.
 

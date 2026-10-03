@@ -125,7 +125,7 @@ implicitly download a new release.
 
 ## Connect ChatGPT from the browser
 
-An owner-paired browser can connect an installed Codex CLI without opening a
+A browser paired with Full access can connect an installed Codex CLI without opening a
 terminal: **Settings → Engines → Codex → Connect ChatGPT**. OMB starts
 `codex login --device-auth` on the server and shows a one-time code. Choose
 **Open ChatGPT sign-in**, enter the code on OpenAI's page, and complete sign-in
@@ -152,7 +152,7 @@ pulled away; finish or cancel it first.
 ## Connect a custom domain in Settings
 
 For a self-hosted server, open **Settings → Remote access → Connect your
-domain** from an owner-paired browser. This is an address-setting and verification
+domain** from a browser paired with Full access. This is an address-setting and verification
 flow, not a DNS or hosting service. Enter the domain to see a compact DNS record
 with copy buttons for **Type**, **Name / Host**, and **Value / IP**. The full
 hostname is shown; providers that already append the DNS zone need only the
@@ -322,7 +322,7 @@ Like `opencode` in a terminal, it reads provider keys from its environment
 providers' models, billed to that key. It does so only where the server's
 environment is one person's own: never on an OMB Cloud home, a hosted team
 workspace, an organisation-managed desktop, or a server whose sign-in list
-lets other people in (members, more than one admin, or a whole domain).
+lets other people in (users, more than one admin, or a whole domain).
 Providers added with `opencode auth login` work everywhere.
 
 ## Many client workspaces on one server
@@ -486,7 +486,7 @@ makes you the owner.)
 
 Every bot's shell runs on the server as the same user, so every bot is a
 loopback caller too. On a server one person uses that is fine: the bots are
-theirs. On a workspace several people share it is not: a member could ask a
+theirs. On a workspace several people share it is not: a user could ask a
 bot to `curl` the local API and change settings, keys, MCP servers or
 webhooks as the owner. The server therefore decides at start-up how far a
 loopback request **without a session** is trusted, and logs it:
@@ -537,12 +537,12 @@ everything the Slack worker does, and on a shared workspace that is a real
 gap: it can post into any bot's thread through the guarded route, including
 an existing Full-access thread (`expectedApprovalMode: "full"`), and while
 shared Full access is on it can open new Full-access threads. Either way the
-work runs with Full access and no card, so a member who can talk to a bot
+work runs with Full access and no card, so a user who can talk to a bot
 can get Full access through it. It can also stop a request and decline a
 card. It cannot approve a card, change settings, keys, people or sessions,
 or loosen a bot's permissions. The planned fix is a relay token that only
 the Slack worker holds, so these routes stop answering session-less loopback
-at all; until then, turn shared Full access on only where every member may
+at all; until then, turn shared Full access on only where every user may
 have Full access. Files the server's user owns (`config.json`, the engine's
 environment) are also still readable from a bot's shell; that needs a
 second user for engines, a separate change.
@@ -977,7 +977,7 @@ npx openmausbot access list
 ```
 
 An entry is an address or `@domain` (everyone at that domain). Admins get
-the same access as a pairing code from `openmausbot serve`; members get the
+the same access as a pairing code from `openmausbot serve`; users get the
 chat-only scope, the same as `openmausbot pair --client`. The same lists live
 in `config.json` under `signIn.admins` and `signIn.members` and can be changed
 through the settings API without a restart; the environment variables win
@@ -1109,17 +1109,17 @@ shorten the window, extend it up to 90 days, or close it now.
 
 Approval cards are the provider's own (see the approval modes); Sagax
 adds none. On a workspace several people share — portal membership, or an
-email sign-in list that names members — it narrows only whose answer counts,
+email sign-in list that names users — it narrows only whose answer counts,
 and only when the card can be traced to a person:
 
-- a card for a request a member sent, or in a thread a member opened, is
+- a card for a request a user sent, or in a thread a user opened, is
   theirs to answer (admins and the owner may answer any card);
 - a thread a bot opened while working on someone's request (a delegated or
   coordinated job) is traced back to that person, so the cards of work done
   for them are theirs too;
 - a card that names nobody — sent by the owner on this machine, by a
   routine or webhook, from Slack (until Slack passes the asker through), or
-  in a thread from before this existed — may be answered by any member, as
+  in a thread from before this existed — may be answered by any user, as
   before;
 - a session-less local caller under `service` trust may only decline.
 
@@ -1142,14 +1142,14 @@ is never shown to everyone first. Over the API it is `visibility`:
   addresses and `@domain` entries, plus admins.
 
 It is access control, not an approval step, and it applies at once. For a
-member who may not see a bot, the server answers the bot, its threads and
+user who may not see a bot, the server answers the bot, its threads and
 their messages, images, exports, reactions, cards, sends, routines, runs and
 attachments exactly as it answers an id that does not exist (404), and leaves
 the bot out of the bot list, search results, routines, webhooks, the team map
-and the live event stream. Every bot a member is sent, by any route, comes
+and the live event stream. Every bot a user is sent, by any route, comes
 without its audience list or the ids of teammates they cannot see. When an
-admin changes a bot's audience, every member's open app reconnects and
-reloads exactly what that person may now see (a member who was away and
+admin changes a bot's audience, every user's open app reconnects and
+reloads exactly what that person may now see (a user who was away and
 resumes from an older point gets the same fresh load); admins' apps are left
 alone.
 
@@ -1160,7 +1160,7 @@ alone.
   is already in a room, the change is allowed and the room narrows to the
   people who can see all its bots. A room also keeps the narrowest audience
   it has ever had (its floor): taking the restricted bot out, deleting it,
-  or widening it again never shows the transcript to more people. A member
+  or widening it again never shows the transcript to more people. A user
   sees a room only if they can see every bot in it and the floor admits
   them. Such a room stays out of the recall, recent-work brief and daily
   memory log of any bot more people can see, and that bot cannot write
@@ -1171,7 +1171,7 @@ alone.
   its bots allow** (`PATCH /api/groups/:id` with `{"resetAudience": true}`),
   which resets the floor to what the room's current bots allow and is
   recorded in the admin activity log.
-- **Teams.** A team (sidebar section) is listed to a member only when it
+- **Teams.** A team (sidebar section) is listed to a user only when it
   holds a bot or room they can see.
 - **Bots working together.** A bot reaches a teammate (asks, delegations,
   its roster and `list_bots`, @mentions, a Chief's team) only when exactly
@@ -1183,11 +1183,11 @@ alone.
 - **Who sees everything.** Admin sessions, the owner on this machine, and a
   session-less local service (the Slack worker under `service` trust) see
   every bot. A pairing-code device with no email sees only bots everyone
-  can see. Members never receive a bot's audience list.
+  can see. Users never receive a bot's audience list.
 - **Files.** An attachment is refused only when everything that uses it —
-  a message in a thread, a bot's picture — is hidden from that member. A
+  a message in a thread, a bot's picture — is hidden from that user. A
   file nothing uses yet (someone's own upload) is served; its name is random.
-- **Not covered.** Words already quoted into a conversation a member can
+- **Not covered.** Words already quoted into a conversation a user can
   see (an earlier delegation, a message copied by hand, or something a bot
   wrote into its own memory files with its file tools while it shared a room
   with a restricted bot) stay there. A bot's
@@ -1195,7 +1195,7 @@ alone.
   decided in your organization's Admin: whoever may message a bot's Slack
   app reaches that bot there.
 
-The desktop app has no member sessions and does not show this setting;
+The desktop app has no chat-only user sessions and does not show this setting;
 nothing there changes.
 
 On the Workspaces screen, creating a client workspace shows the same kind of
