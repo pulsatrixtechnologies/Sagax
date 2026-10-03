@@ -60,7 +60,7 @@ struct ThreadActionsPresenter: ViewModifier {
             }
             .overlay(alignment: .bottom) {
                 if let notice = actions.notice {
-                    Text(notice)
+                    Text(verbatim: notice)
                         .font(.subheadline.weight(.medium))
                         .padding(.horizontal, 16)
                         .padding(.vertical, 10)

@@ -64,7 +64,7 @@ final class ThreadActions: ObservableObject {
     /// The last failure, in the computer's words when it gave some.
     @Published var error: String?
     /// A short confirmation ("Link copied").
-    @Published private(set) var notice: LocalizedStringKey?
+    @Published private(set) var notice: String?
     /// The computer generates thread titles (`features.llmThreadTitles`).
     @Published private(set) var generatedTitles = false
     /// A thread created from a folder menu, for the host to open.
@@ -256,12 +256,19 @@ final class ThreadActions: ObservableObject {
         session.actionError = nil
     }
 
-    private func show(_ text: LocalizedStringKey) {
+    /// How long a confirmation stays up. Long enough to read after the
+    /// context menu has folded away (two seconds was mostly spent on the
+    /// menu's own dismissal).
+    private static let noticeSeconds: UInt64 = 3
+
+    private func show(_ text: String.LocalizationValue) {
+        let message = String(localized: text)
         Haptics.selection()
+        UIAccessibility.post(notification: .announcement, argument: message)
         noticeTask?.cancel()
-        withAnimation { notice = text }
+        withAnimation { notice = message }
         noticeTask = Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            try? await Task.sleep(nanoseconds: Self.noticeSeconds * 1_000_000_000)
             guard !Task.isCancelled else { return }
             withAnimation { self.notice = nil }
         }

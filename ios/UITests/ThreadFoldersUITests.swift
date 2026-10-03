@@ -110,15 +110,29 @@ final class ThreadFoldersUITests: XCTestCase {
 
     // MARK: Helpers
 
+    /// The sheet's list is lazy: a row off screen does not exist yet. A
+    /// move files a thread under a folder, which may be above or below.
+    @MainActor
+    private func reveal(_ element: XCUIElement, in app: XCUIApplication, _ what: String) {
+        let list = app.collectionViews.firstMatch
+        for step in 0..<10 where !element.waitForExistence(timeout: 1) || !element.isHittable {
+            if step < 4 { list.swipeUp() } else { list.swipeDown() }
+        }
+        XCTAssertTrue(element.waitForExistence(timeout: 10), what)
+    }
+
     @MainActor
     private func threadMenu(_ threadId: String, in app: XCUIApplication) {
         let row = app.buttons["thread-\(threadId)"]
-        // The sheet's list is lazy: a row below the fold does not exist yet.
-        for _ in 0..<5 where !row.waitForExistence(timeout: 2) || !row.isHittable {
-            app.collectionViews.firstMatch.swipeUp()
-        }
-        XCTAssertTrue(row.waitForExistence(timeout: 10), "thread row \(threadId)")
+        reveal(row, in: app, "thread row \(threadId)")
         row.press(forDuration: 1.2)
+    }
+
+    @MainActor
+    private func folderMenu(_ folderId: String, in app: XCUIApplication) {
+        let menu = app.buttons["folder-menu.\(folderId)"]
+        reveal(menu, in: app, "folder menu \(folderId)")
+        menu.tap()
     }
 
     @MainActor
@@ -185,7 +199,15 @@ final class ThreadFoldersUITests: XCTestCase {
         let created = try api("POST", "/api/bots/\(araId)/tasks", ["title": "WP5 thread \(suffix)"]) as? [String: Any]
         let tasks = (created?["bot"] as? [String: Any])?["tasks"] as? [[String: Any]] ?? []
         let threadId = try XCTUnwrap(tasks.first { $0["title"] as? String == "WP5 thread \(suffix)" }?["threadId"] as? String)
-        let current = try XCTUnwrap(ara["threadId"] as? String)
+        // A title is generated from a conversation, and a thread this test
+        // created has none: take Ara's oldest thread (the fixture's seeded
+        // conversation) and give it a title the result must replace.
+        let araTasks = ara["tasks"] as? [[String: Any]] ?? []
+        let current = try XCTUnwrap(araTasks
+            .filter { !(($0["title"] as? String ?? "").hasPrefix("WP5 thread")) }
+            .min { ($0["createdAt"] as? Double ?? .infinity) < ($1["createdAt"] as? Double ?? .infinity) }?["threadId"] as? String,
+            "a thread with a conversation")
+        try api("PATCH", "/api/bots/\(araId)/tasks/\(current)", ["title": "WP5 regenerate \(suffix)"])
 
         let app = openAraThreads()
 
@@ -216,7 +238,7 @@ final class ThreadFoldersUITests: XCTestCase {
         try eventually("thread renamed") { try task(threadId, of: "Ara")?["title"] as? String == "WP5 thread \(suffix) renamed" }
 
         // Folder settings: a new name and a preset icon.
-        app.buttons["folder-menu.\(firstId)"].tap()
+        folderMenu(firstId, in: app)
         tapMenuItem("Folder settings", in: app)
         let name = app.textFields["folder-name"]
         XCTAssertTrue(name.waitForExistence(timeout: 5))
@@ -231,7 +253,7 @@ final class ThreadFoldersUITests: XCTestCase {
         // Reorder: the first saved folder moves down.
         let before = try folders(of: "Ara").compactMap { $0["id"] as? String }
         XCTAssertEqual(Array(before.suffix(2)), [firstId, secondId])
-        app.buttons["folder-menu.\(firstId)"].tap()
+        folderMenu(firstId, in: app)
         tapMenuItem("Move folder down", in: app)
         try eventually("folder order saved") {
             Array(try folders(of: "Ara").compactMap { $0["id"] as? String }.suffix(2)) == [secondId, firstId]
@@ -257,7 +279,7 @@ final class ThreadFoldersUITests: XCTestCase {
         }
 
         // Delete the folder: its thread stays, out of any folder.
-        app.buttons["folder-menu.\(firstId)"].tap()
+        folderMenu(firstId, in: app)
         tapMenuItem("Folder settings", in: app)
         let delete = app.buttons["folder-delete"]
         XCTAssertTrue(delete.waitForExistence(timeout: 5))
@@ -268,6 +290,8 @@ final class ThreadFoldersUITests: XCTestCase {
             let kept = try task(threadId, of: "Ara")
             return gone && kept != nil && (kept?["projectId"] == nil || kept?["projectId"] is NSNull)
         }
+        // Leave the fixture as found for the next run.
+        try api("DELETE", "/api/bots/\(araId)/projects/\(secondId)")
     }
 
     /// The bot row's long press: Mark as Unread and Copy conversation ID.
