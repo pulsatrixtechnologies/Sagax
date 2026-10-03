@@ -29,6 +29,24 @@ final class CallAudioIO: @unchecked Sendable {
     private var captureConverter: AVAudioConverter?
     private let frameFormat = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: CallAudio.sampleRate, channels: 1, interleaved: false)!
     private(set) var capturing = false
+    private var offlineClock: Timer?
+
+    /// Manual rendering, in real time: 20 ms of output every 20 ms, measured
+    /// like the hardware output's tap.
+    private func renderOffline() {
+        let frames = AVAudioFrameCount(playFormat.sampleRate * 0.02)
+        guard let buffer = AVAudioPCMBuffer(pcmFormat: engine.manualRenderingFormat, frameCapacity: frames) else { return }
+        offlineClock = Timer.scheduledTimer(withTimeInterval: 0.02, repeats: true) { [weak self] _ in
+            guard let self, self.running else { return }
+            guard (try? self.engine.renderOffline(frames, to: buffer)) == .success,
+                  let data = buffer.floatChannelData?[0] else { return }
+            var sum: Float = 0
+            let count = Int(buffer.frameLength)
+            for i in 0..<count { sum += data[i] * data[i] }
+            let level = count > 0 ? (sum / Float(count)).squareRoot() : 0
+            self.lock.withLock { self._outputLevel = level }
+        }
+    }
     private(set) var running = false
 
     /// 32 ms frames of 16 kHz audio, on the main actor.
@@ -54,9 +72,15 @@ final class CallAudioIO: @unchecked Sendable {
     }
 
     /// Start the engine. `capture` false (an injected recording in tests):
-    /// the speaker only.
-    func start(capture: Bool) throws {
+    /// the speaker only. `offline` (tests): the engine renders on its own
+    /// clock (manual rendering) instead of through the audio hardware, so a
+    /// test never waits on the audio server; the voice node, its schedule,
+    /// its completions and its clock work exactly as on a call.
+    func start(capture: Bool, offline: Bool = false) throws {
         guard !running else { return }
+        if offline {
+            try engine.enableManualRenderingMode(.offline, format: playFormat, maximumFrameCount: 4_096)
+        }
         engine.attach(voice)
         engine.attach(tones)
         engine.connect(voice, to: engine.mainMixerNode, format: playFormat)
@@ -74,6 +98,15 @@ final class CallAudioIO: @unchecked Sendable {
             capturing = true
         }
         let mixer = engine.mainMixerNode
+        if offline {
+            engine.prepare()
+            try engine.start()
+            voice.play()
+            tones.play()
+            running = true
+            renderOffline()
+            return
+        }
         mixer.installTap(onBus: 0, bufferSize: 1024, format: mixer.outputFormat(forBus: 0)) { [weak self] buffer, _ in
             guard let self, let data = buffer.floatChannelData?[0] else { return }
             var sum: Float = 0
@@ -92,6 +125,14 @@ final class CallAudioIO: @unchecked Sendable {
     func stop() {
         guard running else { return }
         running = false
+        offlineClock?.invalidate()
+        offlineClock = nil
+        if engine.isInManualRenderingMode {
+            voice.stop()
+            tones.stop()
+            engine.stop()
+            return
+        }
         voice.stop()
         tones.stop()
         engine.mainMixerNode.removeTap(onBus: 0)
@@ -105,7 +146,7 @@ final class CallAudioIO: @unchecked Sendable {
 
     /// Restart after a route or configuration change (AirPods in or out).
     func restart() {
-        guard running else { return }
+        guard running, !engine.isInManualRenderingMode else { return }
         let capture = capturing
         stop()
         engine.reset()

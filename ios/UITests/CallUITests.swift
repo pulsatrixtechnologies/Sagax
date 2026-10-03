@@ -190,7 +190,10 @@ final class CallUITests: XCTestCase {
             _ = row.waitForExistence(timeout: 8)
         }
         XCTAssertTrue(row.waitForExistence(timeout: 5), "\(name) in search")
-        row.tap()
+        // the keyboard may cover the row: put it away first
+        if !row.isHittable, field.exists { field.typeText("\n") }
+        if !row.isHittable { app.swipeDown(velocity: .slow) }
+        if row.isHittable { row.tap() } else { row.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.2)).tap() }
         XCTAssertTrue(app.buttons["composer-voice"].waitForExistence(timeout: 15))
     }
 

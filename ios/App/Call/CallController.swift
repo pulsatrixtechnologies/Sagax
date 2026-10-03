@@ -272,11 +272,13 @@ final class CallController: ObservableObject {
             }
         } else {
             callKit = nil
-            do {
-                try CallAudioIO.configureSession()
-                try AVAudioSession.sharedInstance().setActive(true)
-            } catch {
-                note = String(localized: "No microphone could be opened. Check that one is connected and not in use.")
+            if !injecting {
+                do {
+                    try CallAudioIO.configureSession()
+                    try AVAudioSession.sharedInstance().setActive(true)
+                } catch {
+                    note = String(localized: "No microphone could be opened. Check that one is connected and not in use.")
+                }
             }
             activateDevices()
         }
@@ -303,7 +305,9 @@ final class CallController: ObservableObject {
         guard let io, let engine, !devicesStarted, target != nil else { return }
         devicesStarted = true
         do {
-            try io.start(capture: !injecting)
+            // a test call (recordings in, voice captured) renders offline:
+            // it never waits on the audio server
+            try io.start(capture: !injecting, offline: injecting)
         } catch {
             note = String(localized: "No microphone could be opened. Check that one is connected and not in use.")
             engine.failed()
@@ -336,10 +340,11 @@ final class CallController: ObservableObject {
         #endif
         let io = self.io
         let wasCallKit = fromSystem
+        let injected = injecting
         // the end tone first
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) {
             io?.stop()
-            if !wasCallKit { try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation) }
+            if !wasCallKit, !injected { try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation) }
             VoiceNoteCenter.shared.endInputOwnership(.call)
         }
         engine = nil
