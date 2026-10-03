@@ -59,9 +59,6 @@ function buildSetupPrompt(profileAside: string, cwd?: string): string {
   );
 }
 
-/** The setup block naming skill_manage, for a turn with skill authoring on. */
-export const SETUP_PROMPT = buildSetupPrompt(SKILL_MANAGE_ASIDE);
-
 export function setupSystemPrompt(active: boolean, options?: { skills?: boolean; cwd?: string }): string {
   if (!active) return "";
   return buildSetupPrompt(options?.skills ? SKILL_MANAGE_ASIDE : NO_SKILL_MANAGE_ASIDE, options?.cwd);

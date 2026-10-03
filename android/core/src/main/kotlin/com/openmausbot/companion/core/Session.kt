@@ -137,6 +137,15 @@ class Session(
 
     private var registry = ConnectionRegistry()
     private var client: CompanionClient? = null
+
+    /**
+     * A browser-live transport on the route the session is already using.
+     *
+     * Exposed rather than the client itself: the browser screen needs exactly
+     * this and nothing else, and handing out the client would let any caller
+     * reach every route the companion has.
+     */
+    fun browserLive(): BrowserLiveTransport? = client?.browserLive()
     private var token: String? = null
     private var rotation = CandidateRotation(emptyList())
     private var streamJob: Job? = null
@@ -1566,6 +1575,14 @@ class Session(
 
     suspend fun interrupt(bot: Bot) {
         perform { it.interrupt(bot.id, bot.threadId) }
+    }
+
+    /** Stop the turn running in this conversation: a bot's thread or a room. */
+    suspend fun interrupt(chat: Chat) {
+        when (chat) {
+            is Chat.BotChat -> interrupt(chat.bot)
+            is Chat.RoomChat -> perform { it.interruptRoom(chat.room.id, chat.room.threadId) }
+        }
     }
 
     suspend fun cloudDesktop(forBot: Bot): URI {

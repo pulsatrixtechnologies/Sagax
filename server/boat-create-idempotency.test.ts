@@ -252,11 +252,12 @@ describe("Boat create idempotency", () => {
     const {
       beginBoatCreate,
       boatCreateRecoverySnapshot,
-      hasUnresolvedBoatCreate,
       rememberCreatedBoat,
       resolveBoatCreate,
       retireDeletedBoatCreate,
     } = await import("./boat-create-idempotency.ts");
+    const hasUnresolvedBoatCreate = (owner: string) =>
+      boatCreateRecoverySnapshot().some((record) => record.botId === owner && !record.resolved);
     const botId = "deletion-guard-bot";
     const attempt = beginBoatCreate(botId, JSON.stringify({ ttlSeconds: 7_200, noEnv: true }));
 
@@ -291,9 +292,10 @@ describe("Boat create idempotency", () => {
       adoptResolvedBoat,
       beginBoatCreate,
       boatCreateRecoverySnapshot,
-      hasUnresolvedBoatCreate,
       retireDeletedBoatCreate,
     } = await import("./boat-create-idempotency.ts");
+    const hasUnresolvedBoatCreate = (owner: string) =>
+      boatCreateRecoverySnapshot().some((record) => record.botId === owner && !record.resolved);
     const boxId = "bx_56789abc";
     const botId = "legacy-journal-owner";
     try {
@@ -325,7 +327,7 @@ describe("Boat create idempotency", () => {
     const requestBody = JSON.stringify({ ttlSeconds: 7_200, noEnv: true });
     const source = `
       const journal = await import(${JSON.stringify(JOURNAL_MODULE_URL)});
-      journal.hasUnresolvedBoatCreate("multiprocess-primer");
+      journal.boatCreateRecoverySnapshot();
       process.stdout.write("ready\\n");
       process.stdin.once("data", () => {
         const result = journal.beginBoatCreate("multiprocess-bot", ${JSON.stringify(requestBody)});

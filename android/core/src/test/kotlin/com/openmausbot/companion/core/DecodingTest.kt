@@ -168,6 +168,27 @@ class DecodingTest {
     }
 
     @Test
+    fun aRoomWorkingWithoutASpeakerCanStillBeStopped() {
+        // busyBotId names only the member holding the turn. While the run
+        // routes, or waits on a member busy elsewhere, the room is `working`
+        // with no speaker; the desktop's Stop shows then, and so must the
+        // phone's (MOCA-148). `busy` keeps its old meaning.
+        val room = CompanionJson.decodeFromString<Room>(
+            """{"id":"r","threadId":"rt","name":"Team","memberIds":["b1"],
+              "defaultResponder":{"kind":"mentions"},"bulletin":"","unread":false,"createdAt":1,
+              "busyBotId":null,"working":true,"tasks":[{"threadId":"other","title":"Other","createdAt":1}]}""",
+        )
+        assertEquals(true, room.working)
+        assertFalse(Chat.RoomChat(room).busy)
+        assertTrue(Chat.RoomChat(room).canStop)
+        assertFalse(Chat.RoomChat(room.copy(working = false)).canStop)
+        assertTrue(Chat.RoomChat(room.copy(working = false, busyBotId = "b1")).canStop)
+        // A sibling thread opened directly does not inherit the room-wide run.
+        val sibling = CompanionState(rooms = listOf(room)).chat(ChatTarget.Room("r", "other"))
+        assertFalse(assertNotNull(sibling).canStop)
+    }
+
+    @Test
     fun pendingApprovalIsActionableAndAnsweredOrDismissedIsNot() {
         val message = CompanionJson.decodeFromString<Message>(
             """{"id":"m1","role":"bot","kind":"options","at":1786742413762,
@@ -191,6 +212,21 @@ class DecodingTest {
         assertFalse(card.shouldRememberPermission(" deny "))
         assertFalse(card.copy(answered = "Allow").isPending)
         assertFalse(card.copy(dismissed = true).isPending)
+    }
+
+    @Test
+    fun anExpiredProposalIsNotPending() {
+        // The shape the computer leaves when a routine, profile or team setup
+        // proposal goes stale: no answer, no dismissal, no options. Counting it
+        // as pending left a "waiting on you" card with nothing to tap (MOCA-282).
+        val message = CompanionJson.decodeFromString<Message>(
+            """{"id":"m2","role":"bot","kind":"options","at":1786742413762,
+              "card":{"title":"Create routine?","subtitle":"Every morning at 8","options":[],"requestId":"req-2","tool":"create_routine",
+              "expired":true,"held":"This proposal changed after it was made."}}""",
+        )
+        val card = assertNotNull(message.card)
+        assertEquals(true, card.expired)
+        assertFalse(card.isPending, "nothing can answer an expired proposal")
     }
 
     @Test

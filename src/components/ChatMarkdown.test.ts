@@ -326,14 +326,19 @@ it("requests both code palettes for skin-aware highlighting", async () => {
   const codeToHtml = vi.fn().mockResolvedValue("<pre>dual palette</pre>");
   vi.doMock("shiki", () => ({ codeToHtml }));
   const cleanup: ReturnType<React.EffectCallback>[] = [];
+  // effects stay captured, so each static render is a fresh first frame
+  const fence = createElement(ChatMarkdown, { text: "```text\nPalette regression sample\n```" });
   try {
-    renderToStaticMarkup(createElement(ChatMarkdown, { text: "```text\nPalette regression sample\n```" }));
-    for (const callback of effects) cleanup.push(callback());
+    expect(renderToStaticMarkup(fence)).not.toContain("dual palette");
+    for (const callback of effects.splice(0)) cleanup.push(callback());
     await vi.waitFor(() => expect(codeToHtml).toHaveBeenCalledWith("Palette regression sample", {
       lang: "text",
       themes: { light: "github-light-default", dark: "github-dark-default" },
       defaultColor: "light-dark()",
     }));
+    // a remount (revisiting the thread) paints the cached highlight at once,
+    // never plain text first
+    await vi.waitFor(() => expect(renderToStaticMarkup(fence)).toContain("dual palette"));
   } finally {
     for (const close of cleanup) if (typeof close === "function") close();
     effect.mockImplementation(originalUseEffect);
@@ -824,8 +829,9 @@ it("renders mermaid strictly and serves repeat views from cache", async () => {
     expect(render).toHaveBeenCalledWith(expect.any(String), "flowchart LR\n  Ship-->Sea");
 
     // a settled remount (revisiting the thread, a skin flip) re-renders from
-    // cache: still exactly one real mermaid render for this source
-    renderToStaticMarkup(createElement(ChatMarkdown, { text: fence }));
+    // cache: the diagram is in its first frame, and still exactly one real
+    // mermaid render for this source
+    expect(renderToStaticMarkup(createElement(ChatMarkdown, { text: fence }))).toContain("<svg>sea lanes</svg>");
     for (const callback of effects.splice(0)) cleanup.push(callback());
     await Promise.resolve();
     expect(render).toHaveBeenCalledTimes(1);

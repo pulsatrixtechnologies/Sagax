@@ -37,6 +37,13 @@ describe("Full access delivery", () => {
 });
 
 describe("autoVerdict", () => {
+  it("never uses a saved command grant to silently send on the person's behalf", () => {
+    for (const mode of ["ask", "edits", "auto", "custom"] as const) {
+      expect(autoVerdict(mode, "mcp__composio__GMAIL_SEND_DRAFT", { commandAllowed: true })).toEqual({ approve: null, source: "outbound-guard" });
+    }
+    // Native Full still belongs to the provider; Composio's relay enforces its independent gate.
+    expect(autoVerdict("full", "GMAIL_SEND_EMAIL").source).toBe("full-access");
+  });
   it("applies an explicit exact command grant without changing Full or answering questions/elevations", () => {
     for (const mode of ["ask", "edits", "auto", "custom"] as const) {
       expect(autoVerdict(mode, "Bash", { commandAllowed: true }).source).toBe("command-allowlist");

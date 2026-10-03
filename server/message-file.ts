@@ -286,17 +286,12 @@ function safeDisplayName(value: string): string {
 }
 
 /**
- * Confirm that a stored user message carries the requested attachment as an
- * exact standalone transport tag. Plain prose, inline examples, fenced code,
- * and near-matching paths do not grant access. The HTTP route pairs this
- * message capability with ATTACHMENTS_DIR containment, so this can never
- * become an arbitrary host-file reader.
+ * The user-facing name of the requested attachment when a stored user
+ * message carries it as an exact standalone transport tag, else null. Plain
+ * prose, inline examples, fenced code, and near-matching paths do not grant
+ * access. The HTTP route pairs this message capability with ATTACHMENTS_DIR
+ * containment, so this can never become an arbitrary host-file reader.
  */
-export function messageReferencesAttachment(text: string, requested: string): boolean {
-  return messageAttachmentName(text, requested) !== null;
-}
-
-/** Return the user-facing name carried by an authorised attachment tag. */
 export function messageAttachmentName(text: string, requested: string): string | null {
   let wanted: string;
   try {

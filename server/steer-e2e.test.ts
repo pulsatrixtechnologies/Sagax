@@ -466,14 +466,21 @@ posixOnly("mid-turn steering e2e", () => {
     const queued = await person("POST", `/api/bots/${created.id}/messages`, { text: "second" });
     expect(queued.status).toBe(202);
     expect(queued.body.queued).toBe(true);
+    // The receipt is the only place a held message exists for a client:
+    // it is off the transcript by design, so a client that wants to show
+    // it, cancel it, or retire it later needs both of these.
+    expect(typeof queued.body.queueId).toBe("string");
+    expect(queued.body.threadId).toBe(created.threadId);
     expect((await getBot(created.id)).messages.some((m: any) => m.text === "second")).toBe(false);
     await api("POST", `/api/bots/${created.id}/interrupt`);
     await waitFor(
       async () => (await getBot(created.id)).messages.some((m: any) => m.text === "second"),
       "the queued message to begin its turn",
     );
+    const drained = (await getBot(created.id)).messages.find((m: any) => m.text === "second");
+    expect(drained.queueId).toBe(queued.body.queueId);
     // the drained line is still the paired person's, not the profile name's
-    expect((await getBot(created.id)).messages.find((m: any) => m.text === "second").sender).toEqual(PAIRED);
+    expect(drained.sender).toEqual(PAIRED);
     await api("POST", `/api/bots/${created.id}/interrupt`);
     await waitFor(async () => (await getBot(created.id)).busy === false, "the queued turn to settle");
   }, 30_000);

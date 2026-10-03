@@ -349,9 +349,31 @@ function trustedAuthUrl(value: string | undefined, slug: string): string {
   return url.toString();
 }
 
+/** Composio's own hosts are always trusted. A backend the operator pointed
+ * the app at explicitly (SAGAX_COMPOSIO_API — a dev or test stub) may hand back
+ * a Session on its own origin, since the API itself was already trusted that
+ * far; any other host is refused. */
+export function trustedSessionMcpUrl(value: string): boolean {
+  let mcp: URL;
+  try {
+    mcp = new URL(value);
+  } catch {
+    return false;
+  }
+  if (mcp.protocol === "https:" && (mcp.hostname === "composio.dev" || mcp.hostname.endsWith(".composio.dev"))) return true;
+  if (mcp.protocol !== "https:" && !(mcp.protocol === "http:" && ["localhost", "127.0.0.1", "[::1]"].includes(mcp.hostname))) return false;
+  const override = process.env.SAGAX_COMPOSIO_API;
+  if (!override) return false;
+  try {
+    return new URL(override).origin === mcp.origin;
+  } catch {
+    return false;
+  }
+}
+
 function parseSessionResponse(session: SessionResponse): SessionResponse {
   const mcp = new URL(session.mcp.url);
-  if (mcp.protocol !== "https:" || (mcp.hostname !== "composio.dev" && !mcp.hostname.endsWith(".composio.dev"))) {
+  if (!trustedSessionMcpUrl(session.mcp.url)) {
     throw new Error("Composio returned an untrusted Session MCP URL");
   }
   return { ...session, mcp: { ...session.mcp, url: mcp.toString() } };
@@ -630,6 +652,7 @@ export async function relayMcp(
   cfg: AppConfig,
   payload: JsonValue,
   transportSessionId?: string,
+  beforeSend?: () => void,
 ): Promise<{ status: number; bytes: Uint8Array; contentType: string; transportSessionId?: string }> {
   const apiKey = projectApiKey(cfg);
   let url: string;
@@ -660,6 +683,9 @@ export async function relayMcp(
   if (forwardedTransportSessionId) {
     headers.set("mcp-session-id", forwardedTransportSessionId);
   }
+  // Session discovery can await network I/O. Turn authority and mutable
+  // permissions must be checked after it, immediately before dispatch.
+  beforeSend?.();
   const response = await fetch(url, {
     method: "POST",
     headers,

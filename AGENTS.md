@@ -1146,7 +1146,7 @@ it after an upstream merge instead of renaming by hand.
 ## Upstream sync
 
 Last sync: 2026-10-03, upstream `milind-soni/OpenMausBot` main at
-`ff01be8a` (0.1.94) merged into Sagax; `baseVersion` follows it. To repeat:
+`04a8bef8` (0.1.95) merged into Sagax; `baseVersion` follows it. To repeat:
 
 - Keep the `upstream` remote fetch-only (`git remote set-url --push
   upstream no_push`). Never push, open a pull request or file an issue

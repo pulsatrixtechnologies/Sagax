@@ -11,11 +11,11 @@ import {
   messageAttachmentName,
   messageFileRoots,
   messageImageTargetAt,
-  messageReferencesAttachment,
   messageReferencesFile,
   openMessageFile,
 } from "./message-file.ts";
 
+const referencesAttachment = (text: string, requested: string) => messageAttachmentName(text, requested) !== null;
 const suite = mkdtempSync(join(tmpdir(), "omb-message-file-"));
 const workspace = join(suite, "workspace");
 const outside = join(suite, "outside");
@@ -187,15 +187,15 @@ describe("message-linked files", () => {
 
   it("matches only exact standalone attachment tags", () => {
     const path = "/app/attachments/report & notes.pdf";
-    expect(messageReferencesAttachment(
+    expect(referencesAttachment(
       '<attached-file path="/app/attachments/report &amp; notes.pdf" />',
       path,
     )).toBe(true);
-    expect(messageReferencesAttachment(
+    expect(referencesAttachment(
       'A note\n<attached-image path="/app/attachments/report &amp; notes.pdf" name="report.pdf" />\n',
       path,
     )).toBe(true);
-    expect(messageReferencesAttachment(`<attached-file path="${path}" />`, "/app/attachments/other.pdf"))
+    expect(referencesAttachment(`<attached-file path="${path}" />`, "/app/attachments/other.pdf"))
       .toBe(false);
 
     for (const text of [
@@ -213,7 +213,7 @@ describe("message-linked files", () => {
       `<attached-file path="${path}" extra="yes" />`,
       `<attached-file path="${path}">`,
     ]) {
-      expect(messageReferencesAttachment(text, path), text).toBe(false);
+      expect(referencesAttachment(text, path), text).toBe(false);
     }
   });
 

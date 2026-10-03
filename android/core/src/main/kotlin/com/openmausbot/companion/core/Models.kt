@@ -89,8 +89,14 @@ data class OptionCard(
      * question card would read "answer" instead of the reply.
      */
     val answeredText: String? = null,
+    /**
+     * Terminal: the proposal went stale while open. The computer clears its
+     * options and nothing can answer it; a fresh proposal is needed.
+     */
+    val expired: Boolean? = null,
 ) {
-    val isPending: Boolean get() = requestId != null && answered == null && dismissed != true
+    val isPending: Boolean get() =
+        requestId != null && answered == null && dismissed != true && expired != true
     val isPermission: Boolean get() = tool != null
 
     /**
@@ -496,6 +502,11 @@ data class Room(
     /** Desktop sidebar section. Missing or blank means the built-in Channels area. */
     val section: String? = null,
     val busyBotId: String? = null,
+    /**
+     * True for the whole orchestrated run — routing, members queued behind a
+     * busy speaker, hand-offs — not just while [busyBotId] names a speaker.
+     */
+    val working: Boolean? = null,
     /** Independent user conversations in this channel. DMs omit this field. */
     val tasks: List<BotTask>? = null,
     val messages: List<Message>? = null,

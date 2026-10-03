@@ -805,6 +805,7 @@ import {
   companionPairing,
   companionRefreshTailscale,
   companionCloudDesktopAccess,
+  companionBrowserControlAccess,
   companionRevoke,
   companionRunning,
   companionState,
@@ -3475,7 +3476,6 @@ ipcMain.handle("perm:open-settings", localOnly("perm:open-settings", (_event, pa
 }));
 
 ipcMain.handle("desktop:relaunch", localOnly("desktop:relaunch", (event) => {
-  if (process.platform !== "darwin") return false;
   requireMainWindowSender(event);
   relaunchAfterDesktopRemoteChange();
   return true;
@@ -3532,6 +3532,9 @@ ipcMain.handle("companion:pairing", localOnly("companion:pairing", (_event, open
 ipcMain.handle("companion:cloud-desktop", localOnly("companion:cloud-desktop", (_event, deviceId, allowed) =>
   companionCloudDesktopAccess(deviceId, Boolean(allowed)).then(() => desktopCompanionState()),
 ));
+ipcMain.handle("companion:browser-control", localOnly("companion:browser-control", (_event, deviceId, allowed) =>
+  companionBrowserControlAccess(deviceId, Boolean(allowed)).then(() => desktopCompanionState()),
+));
 ipcMain.handle("companion:revoke", localOnly("companion:revoke", (_event, deviceId) =>
   companionRevoke(deviceId).then(() => desktopCompanionState()),
 ));
@@ -3549,12 +3552,15 @@ function publicDesktopRemoteState() {
 
 function requireMainWindowSender(event) {
   const sender = BrowserWindow.fromWebContents(event.sender);
-  if (!sender || sender !== mainWindow || sender.isDestroyed()) {
+  if (!sender || sender !== mainWindow || sender.isDestroyed() ||
+      !event.senderFrame || event.senderFrame !== event.sender.mainFrame) {
     throw new Error("The desktop client window is unavailable");
   }
 }
 
 function relaunchAfterDesktopRemoteChange() {
+  if (desktopShutdownStarted) return;
+  desktopShutdownStarted = true;
   const timer = setTimeout(() => {
     // Electron's default uses its original native argv, not the JS array
     // from which we consumed the one-shot organisation action.

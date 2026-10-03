@@ -22,6 +22,7 @@ import { PluginsPanel, preloadConnectedApps } from "@/components/PluginsPanel";
 import { TriggersPanel } from "@/components/TriggersPanel";
 import { RemoteDesktopPanel } from "@/components/remote-desktop-panel";
 import { InspectorPanel } from "@/components/InspectorPanel";
+import { ActivityPanel } from "@/components/ActivityPanel";
 import { SettingsModal } from "@/components/SettingsModal";
 import { WorkspaceBackupRecovery } from "@/components/WorkspaceBackupSettings";
 import { UpdateBanner } from "@/components/UpdateBanner";
@@ -271,6 +272,7 @@ function Shell({ viewer }: { viewer: WelcomeViewer | null }) {
     state.settingsOpen ||
     state.computerOpen ||
     state.inspectorOpen ||
+    state.activityOpen ||
     state.appSettingsOpen ||
     state.pluginsOpen ||
     state.triggersOpen;
@@ -418,6 +420,7 @@ function Shell({ viewer }: { viewer: WelcomeViewer | null }) {
         <RemoteDesktopPanel key={`computer:${bot.id}`} bot={bot} />
       )}
       {!remoteClient && state.inspectorOpen && bot && <InspectorPanel key={bot.threadId} bot={bot} />}
+      {!remoteClient && state.activityOpen && bot && <ActivityPanel key={`activity:${bot.id}`} bot={bot} />}
       {state.appSettingsOpen && <SettingsModal />}
       {/* On the person's Cloud: its setup checklist, and after it Move to
           Cloud's one-time card on an empty Cloud (desktop app only). */}

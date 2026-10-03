@@ -617,3 +617,32 @@ it("a routine of the owner's not yet cleared for the Mac can't clear itself: its
   for (const active of (await api("GET", "/api/routines", { token: owner })).body.runs ?? []) await api("POST", `/api/routine-runs/${active.id}/cancel`, { token: owner });
   await idle(before.full, owner);
 }, 120_000);
+
+// The same server code runs a Cloud home, the desktop app and a VPS
+// (server/direct-coordination.e2e.test.ts covers those two): a follow-up from
+// one conversation continues the teammate's thread, behind the work in it.
+it("a follow-up from the same conversation continues the teammate's thread instead of opening a second one", async () => {
+  const owner = await adminPairing();
+  await settleAll(owner);
+  const chat = (await api("POST", `/api/bots/${before.lead.id}/tasks`, { token: owner, body: { title: "Ship it" } })).body.task.threadId;
+  // A teammate in its own folder: one project folder runs one thread at a time.
+  const writer = (await api("POST", "/api/bots", { token: owner, body: { name: "Writer", modelSelection: { instanceId: "held", model: "claude-sonnet-5" } } })).body.bot;
+  const writerTasks = async () => ((await api("GET", "/api/bots", { token: owner })).body.bots as any[]).find((bot) => bot.id === writer.id).tasks as any[];
+  const opened = (await writerTasks()).length;
+  const send = async (text: string, message: string) => {
+    await turn(async () => expect((await api("POST", `/api/bots/${before.lead.id}/messages`, { token: owner, body: { text, threadId: chat } })).status).toBe(202));
+    const result = await (await agentTools())("coordinate_bots", { bot_ids: [writer.id], message });
+    expect(JSON.stringify(result)).not.toContain("isError\":true");
+    return JSON.parse(result.content[0].text).receipts[0];
+  };
+  const first = await send("Get the writer drafting.", "Draft the launch post.");
+  expect(first).toMatchObject({ outcome: "queued", threadId: expect.any(String) });
+  await until(async () => (await writerTasks()).find((task) => task.threadId === first.threadId)?.busy === true, "the writer to start");
+  expect((await api("POST", `/api/bots/${before.lead.id}/interrupt`, { token: owner, body: { threadId: chat } })).status).toBe(200);
+  await until(async () => ((await api("GET", "/api/bots", { token: owner })).body.bots as any[]).find((bot) => bot.id === before.lead.id)?.busy === false, "the lead to stop");
+  const followUp = await send("Change of plan: keep it short.", "Keep the launch post under 100 words.");
+  expect(followUp).toMatchObject({ outcome: "queued", threadId: first.threadId });
+  expect(followUp.detail).toContain('sent to "@');
+  expect(await writerTasks()).toHaveLength(opened + 1);
+  await settleAll(owner);
+}, 60_000);

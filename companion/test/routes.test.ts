@@ -7,7 +7,7 @@
 // and the one that quietly stopped being true once before.
 import { describe, expect, it } from "vitest";
 
-import { denyReason, isCloudDesktopAccess, isCompanionNotice } from "../src/routes.ts";
+import { denyReason, isBrowserControlAccess, isCloudDesktopAccess, isCompanionNotice } from "../src/routes.ts";
 
 const ask = (method: string, path: string, authenticated = true) =>
   denyReason({ method, path, authenticated });
@@ -56,6 +56,14 @@ describe("what the app may do", () => {
     ["POST", "/api/bots/bot_123/always-allow"],
     ["POST", "/api/bots/bot_123/messages/msg_2/edit"],
     ["GET", "/api/bots/bot_123/overview"],
+    // Read-only: what the bot did, with the outcome (server/activity.ts).
+    ["GET", "/api/bots/bot_123/activity"],
+    // The section's shared team memory: read it, add an entry, answer or
+    // edit one, remove one. Content, not execution policy.
+    ["GET", "/api/team-memory"],
+    ["POST", "/api/team-memory"],
+    ["PATCH", "/api/team-memory/entry_1"],
+    ["DELETE", "/api/team-memory/entry_1"],
     ["POST", "/api/bots/bot_123/active-branch"],
     ["POST", "/api/bots/bot_123/compact"],
     ["POST", "/api/bots/bot_123/tasks"],
@@ -368,5 +376,35 @@ describe("iOS parity routes", () => {
     expect(denyReason({ method: "GET", path: "/api/mcp-oauth/callback", authenticated: false })).toBeNull();
     expect(denyReason({ method: "POST", path: "/api/mcp-oauth/callback", authenticated: false })?.status).toBe(401);
     expect(denyReason({ method: "GET", path: "/api/plugins/installed", authenticated: false })?.status).toBe(401);
+  });
+});
+
+describe("browser control", () => {
+  it("allows the live stream and the action channel, and nothing else under browser/", () => {
+    expect(allowed("GET", "/api/bots/b1/browser/live")).toBe(true);
+    expect(allowed("POST", "/api/bots/b1/browser/action")).toBe(true);
+    // The two verbs are not interchangeable: the stream is a GET and the
+    // action channel is a POST, and neither route answers the other's method.
+    expect(allowed("POST", "/api/bots/b1/browser/live")).toBe(false);
+    expect(allowed("GET", "/api/bots/b1/browser/action")).toBe(false);
+    // Anything else the harness may grow under this prefix stays closed.
+    expect(allowed("POST", "/api/bots/b1/browser/restart")).toBe(false);
+    expect(allowed("GET", "/api/bots/b1/browser")).toBe(false);
+  });
+
+  it("classifies exactly the two routes as needing the browser capability", () => {
+    expect(isBrowserControlAccess("GET", "/api/bots/b1/browser/live")).toBe(true);
+    expect(isBrowserControlAccess("POST", "/api/bots/b1/browser/action")).toBe(true);
+    expect(isBrowserControlAccess("GET", "/api/bots/b1/messages")).toBe(false);
+    // Driving a bot's signed-in browser is not the same permission as a
+    // throwaway cloud desktop, so the classifiers must not overlap.
+    expect(isBrowserControlAccess("POST", "/api/bots/b1/computer/join")).toBe(false);
+    expect(isCloudDesktopAccess("GET", "/api/bots/b1/browser/live")).toBe(false);
+  });
+
+  it("anchors the bot id so a traversal cannot reach another route", () => {
+    expect(allowed("GET", "/api/bots/b1/browser/live/../../config")).toBe(false);
+    expect(allowed("GET", "/api/bots/b1/browser/live?x=1")).toBe(false);
+    expect(isBrowserControlAccess("GET", "/api/bots/b1/browser/live/extra")).toBe(false);
   });
 });
