@@ -1519,6 +1519,7 @@
   "model.scope.botHint": "This thread, groups, and new threads. Other existing threads keep their model.",
   "model.org.noModels": "This provider lists no models on the organization server.",
   "model.org.localHidden": "Local models are not offered on an organization server: they would run on the server's machine, not yours.",
+  "model.org.hostTools": "{name} runs its own tools on the Sagax server. Choose an engine that works in your server environment.",
   "model.org.state.connected": "Connected",
   "model.org.state.signInRequired": "Sign-in required",
   "model.org.state.noAccess": "No access yet",

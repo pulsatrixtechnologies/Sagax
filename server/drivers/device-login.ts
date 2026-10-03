@@ -1,8 +1,9 @@
 // A person's own device-code sign-in for an engine CLI that has one and
 // keeps its login in a home we choose (organization server, D10):
 //
-//   Grok Build: `grok login --device-auth` with HOME=<dir>
-//               -> <dir>/.grok/auth.json
+//   Grok Build: `grok login --device-auth` with HOME=<dir> and
+//               GROK_HOME=<dir>/.grok -> <dir>/.grok/auth.json
+//               (GROK_HOME wins over a server-level home)
 //   Kimi Code:  `kimi login --region global` with KIMI_CODE_HOME=<dir>
 //               -> <dir>/credentials/kimi-code.json
 //
@@ -42,7 +43,7 @@ export const DEVICE_LOGIN_SPECS: Readonly<Record<DeviceLoginEngine, DeviceLoginS
   grokAgent: {
     label: "Grok",
     args: ["login", "--device-auth"],
-    homeEnv: (home) => ({ HOME: home }),
+    homeEnv: (home) => ({ HOME: home, GROK_HOME: join(home, ".grok") }),
     credentialFile: (home) => join(home, ".grok", "auth.json"),
     pages: [{ origin: "https://accounts.x.ai", path: "/oauth2/device" }],
   },

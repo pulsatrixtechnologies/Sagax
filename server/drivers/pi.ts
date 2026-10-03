@@ -64,6 +64,7 @@ import {
   mergeLocalInject,
 } from "./local-inject.ts";
 import { appendNative } from "./native.ts";
+import { piHostToolArgs } from "./host-tools.ts";
 import { canUseMcpServer, parseToolScope } from "../../shared/tool-scope.ts";
 import { gateServer, mcpStdioServer, resultBudget } from "../mcp-gate-config.ts";
 
@@ -641,7 +642,13 @@ export const PiDriver: ProviderDriver<PiConfig> = {
           throw err;
         }
       }
-      const childArgs = mcpTempDir ? [...PI_ARGS, "-e", SPAWNED_PROXIES.piMcpExtension] : PI_ARGS;
+      // `--no-extensions` still loads an explicit `-e`, so the Sagax MCP
+      // extension stays while the person's own pi extensions do not.
+      const childArgs = [
+        ...PI_ARGS,
+        ...piHostToolArgs(turn.withholdHostTools === true),
+        ...(mcpTempDir ? ["-e", SPAWNED_PROXIES.piMcpExtension] : []),
+      ];
 
       // spawnCli can throw synchronously (unresolvable CLI); if it does, the
       // 0600 temp file with the boat token / composio key / comms token must
@@ -1261,6 +1268,9 @@ export const PiDriver: ProviderDriver<PiConfig> = {
           // xhigh/max only land on models that expose them; pi rejects an
           // unsupported level and the turn keeps the engine default.
           effortLevels: EFFORT_LEVELS,
+          // The flags are added only when the turn sets withholdHostTools,
+          // which an organization server always does for this capability.
+          withholdsHostTools: true,
           // pi's RPC mode takes a mid-turn steer frame the runtime queues
           // into the running agent without aborting the current step.
           queueing: true,

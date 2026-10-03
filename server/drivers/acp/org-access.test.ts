@@ -18,18 +18,34 @@ describe("Grok Build", () => {
     const dir = home();
     const env: Record<string, string | undefined> = { HOME: "/data", GROK_HOME: "/data/.grok", XAI_API_KEY: "xai-server" };
     grokApplyAccess(env, { via: "subscription", identity: "subscription:p", engineHome: dir }, { XAI_API_KEY: "xai-org" });
-    expect(env).toEqual({ HOME: dir });
+    expect(env).toEqual({ HOME: dir, GROK_HOME: join(dir, ".grok") });
     expect(statSync(dir).mode & 0o777).toBe(0o700);
+    expect(statSync(join(dir, ".grok")).mode & 0o777).toBe(0o700);
   });
 
   it("a key turn runs on the payer's key in an empty home; an org-key turn on the instance's key", () => {
     const dir = home();
     const env: Record<string, string | undefined> = { HOME: "/data" };
     grokApplyAccess(env, { via: "speaker-key", identity: "speaker-key:p:f", environment: { XAI_API_KEY: "xai-bob" }, engineHome: dir }, { XAI_API_KEY: "xai-org" });
-    expect(env).toEqual({ HOME: dir, XAI_API_KEY: "xai-bob" });
-    const org: Record<string, string | undefined> = { HOME: "/data" };
+    expect(env).toEqual({ HOME: dir, GROK_HOME: join(dir, ".grok"), XAI_API_KEY: "xai-bob" });
+    const org: Record<string, string | undefined> = { HOME: "/data", GROK_HOME: "/data/.grok" };
     grokApplyAccess(org, { via: "org-key", identity: "org-key", engineHome: dir }, { XAI_API_KEY: "xai-org" });
-    expect(org.XAI_API_KEY).toBe("xai-org");
+    expect(org).toEqual({ HOME: dir, GROK_HOME: join(dir, ".grok"), XAI_API_KEY: "xai-org" });
+  });
+
+  it("never reuses another person's GROK_HOME", () => {
+    const a = home();
+    const b = home();
+    const envA: Record<string, string | undefined> = { HOME: "/data", GROK_HOME: "/server/.grok", XAI_API_KEY: "xai-server" };
+    const envB: Record<string, string | undefined> = { ...envA };
+    grokApplyAccess(envA, { via: "subscription", identity: "subscription:a", engineHome: a }, {});
+    grokApplyAccess(envB, { via: "subscription", identity: "subscription:b", engineHome: b }, {});
+    expect(envA.GROK_HOME).toBe(join(a, ".grok"));
+    expect(envB.HOME).toBe(b);
+    expect(envB.GROK_HOME).toBe(join(b, ".grok"));
+    expect(envA.GROK_HOME).not.toBe(envB.GROK_HOME);
+    expect(envA.XAI_API_KEY).toBeUndefined();
+    expect(envB.XAI_API_KEY).toBeUndefined();
   });
 
   it("authenticates with the cached token when there is one, else the unadvertised xai.api_key method for a key", () => {

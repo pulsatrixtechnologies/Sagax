@@ -712,10 +712,34 @@ describe("PiDriver turns (fake CLI)", () => {
     const extIndex = mcpRow!.argv.indexOf("-e");
     expect(extIndex).toBeGreaterThanOrEqual(0);
     expect(mcpRow!.argv[extIndex + 1]).toContain("pi-mcp-extension");
+    expect(mcpRow!.argv).not.toContain("--no-builtin-tools");
 
     const servers = mcpRow!.mcpConfig!.mcpServers!;
     // composio passes through verbatim as a stdio server
     expect(servers.composio).toMatchObject({ command: "node", args: ["connector-proxy.js"], env: { COMPOSIO_KEY: "ck" } });
+  });
+
+  it("withholds pi builtins on an organization turn and still loads the Sagax MCP extension", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "omb-pi-withhold-"));
+    const dump = join(dir, "dump.jsonl");
+    await create(undefined, { FAKE_PI_DUMP: dump });
+    expect(instance.adapter.capabilities.withholdsHostTools).toBe(true);
+    const { turnId } = await instance.adapter.sendTurn({
+      threadId: "t-withhold",
+      text: "hi",
+      withholdHostTools: true,
+      integrations: { composio: { command: "node", args: ["connector-proxy.js"], env: {} } },
+    });
+    await recorder.until((e) => e.type === "turn.completed" && e.turnId === turnId);
+    const rows = readFileSync(dump, "utf8").trim().split("\n").map((line) => JSON.parse(line) as { argv: string[] });
+    const argv = rows.find((row) => row.argv.includes("-e"))!.argv;
+    expect(argv).toContain("--no-builtin-tools");
+    expect(argv).toContain("--no-extensions");
+    const excluded = argv[argv.indexOf("--exclude-tools") + 1];
+    for (const name of ["read", "bash", "powershell", "edit", "write", "grep", "find", "ls"]) expect(excluded.split(",")).toContain(name);
+    const ext = argv.indexOf("-e");
+    expect(ext).toBeGreaterThan(argv.indexOf("--no-extensions"));
+    expect(argv[ext + 1]).toContain("pi-mcp-extension");
   });
 
   it("rides the toolUse auto-continue and only settles on the final end_turn", async () => {

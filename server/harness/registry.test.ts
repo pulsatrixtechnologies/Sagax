@@ -164,6 +164,15 @@ describe("ProviderRegistry", () => {
     expect((await registry.describe())[0].capabilities.approvalReview).toBe(true);
   });
 
+  it("reports whether an engine withholds its own host tools", async () => {
+    const fake = makeFakeDriver();
+    const registry = new ProviderRegistry([fake.driver]);
+    await registry.load({ a: { driver: "fake" } });
+    expect((await registry.describe())[0].capabilities.withholdsHostTools).toBe(false);
+    registry.get("a")!.adapter.capabilities.withholdsHostTools = true;
+    expect((await registry.describe())[0].capabilities.withholdsHostTools).toBe(true);
+  });
+
   it("refreshes a live model catalog only on an explicit provider action", async () => {
     const fake = makeFakeDriver();
     const registry = new ProviderRegistry([fake.driver]);

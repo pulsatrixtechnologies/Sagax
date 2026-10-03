@@ -3,7 +3,7 @@
 // (~/.grok/auth.json), NOT the xAI API key (that driver is drivers/grok.ts).
 // The generic protocol runtime lives in acp/core.ts; this file is only the
 // per-harness quirks. Verified against grok 1.0.0.
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { parse as parseYaml } from "yaml";
@@ -12,6 +12,7 @@ import type { ModelCatalog, TurnAccessInput } from "../../contracts.ts";
 import { harnessHome, splitCliString } from "../../env-path.ts";
 import { decodeInjectId, hostApiKey, localHost, mergeLocalInject } from "../local-inject.ts";
 import { createAcpDriver, type AcpSupport } from "./core.ts";
+import { grokHostToolArgs, grokOrgAgentProfile } from "../host-tools.ts";
 import { allowsTool, canUseMcpServer, narrowsNativeTools, parseToolScope } from "../../../shared/tool-scope.ts";
 
 export const STATIC_GROK_MODELS: ModelCatalog = {
@@ -196,9 +197,19 @@ export function grokApplyAccess(
   instanceEnvironment: Record<string, string> | undefined,
 ): void {
   if (access.engineHome) {
-    mkdirSync(access.engineHome, { recursive: true, mode: 0o700 });
+    // GROK_HOME wins over $HOME/.grok. Set it inside the person's directory
+    // so a server-level GROK_HOME cannot serve this turn. The login file
+    // stays at <home>/.grok/auth.json (device-login credentialFile).
+    const grokHome = join(access.engineHome, ".grok");
+    mkdirSync(grokHome, { recursive: true, mode: 0o700 });
+    try {
+      chmodSync(access.engineHome, 0o700);
+      chmodSync(grokHome, 0o700);
+    } catch {
+      /* filesystems without modes */
+    }
     env.HOME = access.engineHome;
-    delete env.GROK_HOME;
+    env.GROK_HOME = grokHome;
   }
   delete env.XAI_API_KEY;
   if (access.via === "subscription") return;
@@ -338,6 +349,9 @@ const support: AcpSupport = {
   // rejected level only logs and falls back. Offer the intersection shared
   // by every model in this driver's picker; notably, grok-4.5 rejects xhigh.
   effortLevels: ["low", "medium", "high"],
+  // Organization servers only spawn this driver when a turn sets
+  // withholdHostTools. spawnArgs and the ACP profile below do the withholding.
+  withholdsHostTools: true,
   defaultCli: "grok",
   nativeSource: "grok.acp",
   loginNote: "Grok CLI is not signed in — run `grok login` in a terminal",
@@ -368,21 +382,35 @@ const support: AcpSupport = {
   // residual requests still ask. Never replace it with bypassPermissions.
   // Verified: grok 1.0.3 --help and xai-org/grok-build@37949780,
   // crates/codegen/xai-grok-pager-bin/src/main.rs:1259-1273.
-  spawnArgs: (config, turn) => [
-    "--permission-mode",
-    config.fullAuto
-      ? "bypassPermissions"
-      : turn.approvalMode === "auto" ? "auto" : turn.approvalMode === "edits" ? "acceptEdits" : "default",
-    "agent",
-    ...(turn.toolScope !== undefined ? ["--no-leader"] : []),
-    ...(turn.model ? ["-m", turn.model] : []),
-    // long form on purpose: `--effort` is documented as an alias, and an
-    // alias is the part a CLI is free to rename
-    ...(turn.effort ? ["--reasoning-effort", turn.effort] : []),
-    "stdio",
-  ],
+  spawnArgs: (config, turn) => {
+    const withhold = turn.withholdHostTools === true;
+    return [
+      // Global flags. `--deny` does not strip the agent-stdio tool list;
+      // the session profile does. `--no-leader` is after `agent`: a shared
+      // leader ignores the profile and keeps the host tools.
+      ...grokHostToolArgs(withhold),
+      "--permission-mode",
+      config.fullAuto
+        ? "bypassPermissions"
+        : turn.approvalMode === "auto" ? "auto" : turn.approvalMode === "edits" ? "acceptEdits" : "default",
+      "agent",
+      ...(withhold || turn.toolScope !== undefined ? ["--no-leader"] : []),
+      ...(turn.model ? ["-m", turn.model] : []),
+      // long form on purpose: `--effort` is documented as an alias, and an
+      // alias is the part a CLI is free to rename
+      ...(turn.effort ? ["--reasoning-effort", turn.effort] : []),
+      "stdio",
+    ];
+  },
 
   toolScopeSessionParams: (turn, init, hasMcp, { config, env, cwd }) => {
+    if (turn.withholdHostTools === true) {
+      // Name-only profile, not the 1.0.41 toolConfig registry. A selected
+      // model is pinned here so configureSession does not call set_model,
+      // which can rebuild the harness and restore the default tools.
+      const profile = grokOrgAgentProfile(turn.toolScope, hasMcp);
+      return { _meta: { agentProfile: turn.model ? { ...profile, model: ensureGrokInjectSlug(turn.model, env) } : profile } };
+    }
     if (!narrowsNativeTools(turn.toolScope)) return {};
     const profile = grokToolScopeProfile(turn.toolScope, init, grokInheritedProfile(config.cli, env, cwd), hasMcp);
     // Establish on the selected model. Changing harnesses after session/new
@@ -424,6 +452,15 @@ const support: AcpSupport = {
       }
     }
     if (!turn.model) return;
+    if (turn.withholdHostTools === true && !narrowsNativeTools(turn.toolScope)) {
+      // The profile already names the model. set_model can drop that profile.
+      // A runtime that reports a different model fails closed; one that has
+      // not reported yet keeps the profile rather than rebuilding host tools.
+      if (currentModelId && currentModelId !== turn.model) {
+        throw new Error("Grok could not confirm the selected model without replacing its tool profile. Start a new conversation or choose a model with a supported Grok profile. No prompt was sent.");
+      }
+      return;
+    }
     if (narrowsNativeTools(turn.toolScope)) {
       if (currentModelId !== turn.model) {
         throw new Error("Grok could not confirm the selected model without replacing its tool profile. Start a new conversation or choose a model with a supported Grok profile. No prompt was sent.");
@@ -447,20 +484,21 @@ const support: AcpSupport = {
   transformEnv: (env) => {
     delete env.XAI_API_KEY;
   },
-  applyTurnEnv: (env, { toolScope }) => {
-    if (toolScope !== undefined) {
+  applyTurnEnv: (env, { toolScope, withholdHostTools }) => {
+    if (toolScope !== undefined || withholdHostTools === true) {
       // The verified runtime gives these local env switches priority over
       // account defaults, preventing an unfiltered managed gateway fallback.
       env.GROK_MANAGED_MCPS_ENABLED = "false";
       env.GROK_MANAGED_MCP_GATEWAY_TOOLS_ENABLED = "false";
-      if (narrowsNativeTools(toolScope)) {
-        if (env.GROK_AGENT && env.GROK_AGENT !== "grok-build") {
-          throw new Error("Grok's existing agent profile cannot be safely intersected with tool selection. Use a separate default Grok account.");
-        }
-        // A model's agent_type otherwise takes priority over ACP profiles.
-        // Preserve profile-file restrictions when intersecting them below.
-        env.GROK_AGENT = "grok-build";
+    }
+    if (withholdHostTools === true || (toolScope !== undefined && narrowsNativeTools(toolScope))) {
+      if (env.GROK_AGENT && env.GROK_AGENT !== "grok-build") {
+        throw new Error(withholdHostTools === true
+          ? "Grok's existing agent profile cannot be used on an organization server. Use the default Grok account."
+          : "Grok's existing agent profile cannot be safely intersected with tool selection. Use a separate default Grok account.");
       }
+      // A model's agent_type otherwise takes priority over ACP profiles.
+      env.GROK_AGENT = "grok-build";
     }
   },
 

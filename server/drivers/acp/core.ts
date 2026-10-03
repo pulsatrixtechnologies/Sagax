@@ -261,6 +261,9 @@ export interface AcpSupport {
    * describe() runs before any session exists, so there is no _meta to read
    * — eventually both should come from initialize's _meta.modelState. */
   effortLevels?: readonly EffortLevel[];
+  /** The spawned command and the session profile withhold this CLI's own
+   * shell, file and web tools when the turn sets withholdHostTools. */
+  withholdsHostTools?: boolean;
   /** Discover and select opaque model variants through ACP config options. */
   modelVariants?: boolean;
   /** Default CLI binary name if the instance config doesn't override it. */
@@ -360,7 +363,7 @@ export interface AcpSupport {
    *  snapshot share `transformEnv` and must not see a per-turn overlay. */
   applyTurnEnv?(
     env: Record<string, string | undefined>,
-    ctx: { model?: string; requestedModel?: string; fullAuto: boolean; botId?: string; cwd: string; toolScope?: SendTurnInput["toolScope"] },
+    ctx: { model?: string; requestedModel?: string; fullAuto: boolean; botId?: string; cwd: string; toolScope?: SendTurnInput["toolScope"]; withholdHostTools?: boolean },
   ): void;
   /** Organization server (SendTurnInput.access): point this one turn's child
    *  at the payer's own home and key, never the server's own login.
@@ -1574,6 +1577,7 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
         const resolvedModel = support.resolveTurnModel?.(turn.model, env);
         support.applyTurnEnv?.(env, {
           model: resolvedModel, requestedModel: turn.model, fullAuto: turnConfig.fullAuto === true, botId: turn.botId, cwd, toolScope: turn.toolScope,
+          withholdHostTools: turn.withholdHostTools === true,
         });
         // Rebound once, before the prompt, when a fallbackModel support swaps
         // a model this session does not offer for one it does.
@@ -1647,7 +1651,7 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
           launchedThisTurn = true;
           return opened;
         };
-        const sessionKey = JSON.stringify([mcpServers, turn.toolScope ?? null, inheritedScopeFingerprint]);
+        const sessionKey = JSON.stringify([mcpServers, turn.toolScope ?? null, inheritedScopeFingerprint, turn.withholdHostTools === true]);
 
         if (turn.sessionReset) {
           closeSession(threadId, "reset");
@@ -1864,8 +1868,10 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
               // http/sse never sees an entry it would refuse the session over
               const sessionServers = mcpServers.filter((server) =>
                 !("type" in server) || init?.agentCapabilities?.mcpCapabilities?.[server.type] === true);
-              const selectionParams = narrowsNativeTools(turn.toolScope)
-                ? support.toolScopeSessionParams!(turn, init, sessionServers.length > 0, { config: turnConfig, env, cwd }) : {};
+              // A withheld turn sends its profile even when the bot did not narrow
+              // native tools. Otherwise session/new would keep the CLI defaults.
+              const selectionParams = (narrowsNativeTools(turn.toolScope) || turn.withholdHostTools === true) && support.toolScopeSessionParams
+                ? support.toolScopeSessionParams(turn, init, sessionServers.length > 0, { config: turnConfig, env, cwd }) : {};
               let loaded = false;
               if (cursor) {
                 try {
@@ -2294,6 +2300,7 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
             // turn, which safely overrides a legacy instance fullAuto value.
             // Direct adapter calls that omit it still fail closed in sendTurn.
             localComputerMcp: true,
+            ...(support.withholdsHostTools ? { withholdsHostTools: true as const } : {}),
           },
           sendTurn,
           interruptTurn: async (threadId) => active.get(threadId)?.interrupt(),
