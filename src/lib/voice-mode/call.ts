@@ -31,7 +31,8 @@ import { SentenceStream } from "./sentences";
 import { spokenPart } from "./spoken";
 import { judge, readVoiceprint, saveVoiceprint, SpeakerEmbedder, voiceprintOf, type Voiceprint } from "./speaker-id";
 import { LiveTranscriber } from "./stt-stream";
-import { FRAME_MS, TurnDetector } from "./turns";
+import { FRAME_MS, incompleteClause, TurnDetector } from "./turns";
+import { formatTimeline, materiallyDifferent, type TurnMetrics } from "./latency";
 import { LevelVad, SileroVad, VAD_FRAME, type VoiceProbability } from "./vad";
 import type { VoiceModeSettings } from "../../../shared/voice-mode";
 
@@ -62,19 +63,18 @@ export function isNoiseFragment(text: string, confidence?: number): boolean {
   return word.length <= 5;
 }
 
-export interface TurnMetrics {
-  /** the person's last voiced frame (performance.now()) */
-  stoppedAt: number;
-  /** the turn detector ended the turn */
-  endedAt: number;
-  /** the words were ready */
-  transcribedAt?: number;
-  /** sent to the bot */
-  sentAt?: number;
-  /** the first sentence of the answer was handed to the voice */
-  firstSentenceAt?: number;
-  /** the first sample of the answer was audible */
-  firstAudioAt?: number;
+export type { TurnMetrics } from "./latency";
+
+/** After this long without the answer's voice (from the person's last
+ * word), a soft tone says the bot is on it (CallSettings.thinkingCue). */
+export const THINKING_CUE_MS = 1_200;
+
+/** A partial the turn may be sent on before speech to text's final words:
+ * two words or more, not an unfinished clause, and recognized after the
+ * person's last voiced frame (xAI had heard the end of it). */
+export function stablePartial(text: string, partialAt: number, stoppedAt: number): boolean {
+  const words = text.trim().split(/\s+/).filter(Boolean);
+  return words.length >= 2 && !incompleteClause(text) && partialAt >= stoppedAt;
 }
 
 export interface BargeInMetrics {
@@ -93,7 +93,7 @@ export interface VoiceCallEvents {
   /** an accepted turn: send it to the bot. `interrupted`: the person cut
    * the bot (talked over it, or over its running turn, or pressed
    * interrupt) since the last turn sent; the bot is told (Message.voiceCall). */
-  utterance(text: string, metrics: TurnMetrics, turn: { interrupted: boolean; cut?: PlaybackCut; continues?: boolean }): void;
+  utterance(text: string, metrics: TurnMetrics, turn: { interrupted: boolean; cut?: PlaybackCut; continues?: boolean; utteranceId: string }): void;
   /** stop the bot's running turn on the server */
   "interrupt-bot"(): void;
   /** the bot's speech was cut (barge-in, interrupt, hold, end), with what
@@ -123,6 +123,14 @@ export interface VoiceCallOptions {
   /** the enrolled voice (default: this computer's, from localStorage) */
   voiceprint?: Voiceprint | null;
   now?: () => number;
+  /** send a turn on its stable partial, before speech to text's final
+   * words, and send it again if they differ (default on) */
+  earlyStart?: boolean;
+  /** a new utterance id (default crypto.randomUUID) */
+  newId?: () => string;
+  /** each turn's timeline line, once its first audio plays (default: the
+   * console, only while localStorage "omb.voiceCall.debug" is "1") */
+  logTimeline?: (line: string) => void;
 }
 
 type Watchers = { [K in keyof VoiceCallEvents]: Set<VoiceCallEvents[K]> };
@@ -189,6 +197,11 @@ export class VoiceCall {
   private lastSent: { text: string; endedAt: number; botSpoke: boolean } | null = null;
   /** the turn being heard continues the last one (it was cut by a pause) */
   private continuing = false;
+  /** the words recognized so far in the turn being heard, and when */
+  private turnPartial = "";
+  private partialAt = 0;
+  /** the soft tone of a slow answer, armed when a turn is sent */
+  private cueTimer: ReturnType<typeof setTimeout> | null = null;
   private enrolling: { frames: Float32Array[]; levels: number[]; done: (frames: Float32Array[] | null) => void; until: number } | null = null;
   /** the on-device models loaded (else the level detector serves) */
   modelsReady = false;
@@ -203,7 +216,9 @@ export class VoiceCall {
       onSentenceStart: (text) => {
         if (this.turn && this.turn.firstAudioAt === undefined && this.turn.sentAt !== undefined) {
           this.turn.firstAudioAt = this.now();
+          this.disarmCue();
           this.emit("metrics", this.turn, this.bargeIn);
+          this.logTimeline(this.turn);
         }
         this.emit("caption", text);
         if (!this.state.botAudible) this.dispatch({ type: "bot-audio-start" });
@@ -219,6 +234,10 @@ export class VoiceCall {
     this.transcriber.onPartial((text) => {
       // the words so far move the endpoint: an unfinished clause waits longer
       if (this.turns.active) this.turns.hint(text);
+      if (this.turns.active || this.pushing || this.state.phase === "thinking") {
+        this.turnPartial = text;
+        this.partialAt = this.now();
+      }
       this.emit("partial", text);
     });
     if (this.voiceprint?.level) this.turns.nearLevel = this.voiceprint.level;
@@ -345,6 +364,7 @@ export class VoiceCall {
   /** The bot's answer while it is written: the whole text so far. */
   replyProgress(text: string): void {
     if (this.state.phase === "held" || this.state.phase === "ended") return;
+    if (this.turn && this.turn.sentAt !== undefined && this.turn.firstTokenAt === undefined && text.trim()) this.turn.firstTokenAt = this.now();
     this.reply ??= new SentenceStream();
     this.replyText = spokenPart(text);
     for (const sentence of this.reply.feed(this.replyText)) this.enqueue(sentence);
@@ -352,6 +372,7 @@ export class VoiceCall {
 
   /** The answer (or this block of it) is complete. */
   replyDone(text: string): Promise<boolean> {
+    if (this.turn && this.turn.sentAt !== undefined && this.turn.firstTokenAt === undefined && text.trim()) this.turn.firstTokenAt = this.now();
     const stream = this.reply ?? new SentenceStream();
     this.reply = null;
     const rest = stream.finish(spokenPart(text));
@@ -367,12 +388,17 @@ export class VoiceCall {
 
   private enqueue(text: string): void {
     if (this.state.phase === "held" || this.state.phase === "ended") return;
-    if (this.turn && this.turn.firstSentenceAt === undefined && this.turn.sentAt !== undefined) this.turn.firstSentenceAt = this.now();
+    const turn = this.turn;
+    const first = Boolean(turn && turn.firstSentenceAt === undefined && turn.sentAt !== undefined);
+    if (first) turn!.firstSentenceAt = this.now();
     const controller = new AbortController();
     const speech = this.o.speech ?? streamVoiceModeSpeech;
+    let audio = speech(this.o.botId, text, this.o.voice(), this.o.threadId(), controller.signal);
+    // the first sentence of an answer: when its first audio bytes arrive
+    if (first) audio = audio.then((spoken) => (spoken ? { ...spoken, body: firstChunk(spoken.body, () => { turn!.ttsFirstByteAt ??= this.now(); }) } : spoken));
     const sentence: Sentence = {
       text,
-      audio: speech(this.o.botId, text, this.o.voice(), this.o.threadId(), controller.signal),
+      audio,
       abort: () => controller.abort(),
     };
     sentence.audio.catch(() => {});
@@ -385,6 +411,7 @@ export class VoiceCall {
     if (this.o.settings().input !== "push" || this.state.muted || this.state.phase === "held") return;
     if (down && !this.pushing) {
       this.pushing = true;
+      this.turnPartial = "";
       this.transcriber.begin(this.preroll.slice(-3));
       this.turnLevel = { sum: 0, frames: 0 };
       this.dispatch({ type: "speech-candidate" });
@@ -577,6 +604,7 @@ export class VoiceCall {
     switch (event.type) {
       case "candidate":
         this.keepPreroll(frame);
+        this.turnPartial = "";
         this.transcriber.begin(this.preroll);
         this.preroll = [];
         this.turnLevel = { sum: level, frames: 1 };
@@ -593,7 +621,7 @@ export class VoiceCall {
         this.dispatch({ type: "speech-cancel" });
         return;
       case "end":
-        this.beginTurnMetrics(this.lastVoicedAt);
+        this.beginTurnMetrics(this.lastVoicedAt, event.early === true);
         this.dispatch({ type: "speech-end" });
         return;
     }
@@ -604,8 +632,44 @@ export class VoiceCall {
     if (this.preroll.length > PREROLL_FRAMES) this.preroll.shift();
   }
 
-  private beginTurnMetrics(stoppedAt: number): void {
-    this.turn = { stoppedAt, endedAt: this.now() };
+  private beginTurnMetrics(stoppedAt: number, earlyEnd = false): void {
+    this.disarmCue();
+    this.turn = { stoppedAt, endedAt: this.now(), ...(earlyEnd ? { earlyEnd: true } : {}) };
+  }
+
+  /** The server took the turn's send (LiveCall, from its receipt). */
+  accepted(utteranceId: string): void {
+    if (this.turn?.utteranceId === utteranceId && this.turn.acceptedAt === undefined) this.turn.acceptedAt = this.now();
+  }
+
+  /** A slow answer gets a soft tone at THINKING_CUE_MS after the person's
+   * last word, if nothing is audible by then. */
+  private armCue(turn: TurnMetrics): void {
+    this.disarmCue();
+    if (!this.o.settings().thinkingCue) return;
+    const wait = Math.max(0, THINKING_CUE_MS - (this.now() - turn.stoppedAt));
+    this.cueTimer = setTimeout(() => {
+      this.cueTimer = null;
+      if (this.turn !== turn || turn.firstAudioAt !== undefined || this.closed) return;
+      if (this.state.phase !== "thinking" || this.state.botAudible || this.player.busy) return;
+      turn.cueAt = this.now();
+      this.player.tone(THINKING_CUE, 0.035);
+    }, wait);
+  }
+
+  private disarmCue(): void {
+    if (this.cueTimer) clearTimeout(this.cueTimer);
+    this.cueTimer = null;
+  }
+
+  private logTimeline(turn: TurnMetrics): void {
+    const line = formatTimeline(turn);
+    if (this.o.logTimeline) return this.o.logTimeline(line);
+    try {
+      if (typeof localStorage !== "undefined" && localStorage.getItem("omb.voiceCall.debug") === "1") console.info(line);
+    } catch {
+      /* no storage: no log */
+    }
   }
 
   // ── the state machine's effects ────────────────────────────────────────
@@ -665,18 +729,22 @@ export class VoiceCall {
         this.emit("interrupt-bot");
         return;
       case "send": {
+        const utteranceId = this.newId();
         if (this.turn) {
           this.turn.sentAt = this.now();
+          this.turn.utteranceId = utteranceId;
           this.emit("metrics", this.turn, this.bargeIn);
+          this.armCue(this.turn);
         }
         const continues = this.continuing && this.lastSent !== null;
         const text = continues ? `${this.lastSent!.text} ${effect.text}` : effect.text;
         this.continuing = false;
         this.lastSent = { text, endedAt: this.turn?.endedAt ?? this.now(), botSpoke: false };
-        this.emit("utterance", text, this.turn ?? { stoppedAt: this.now(), endedAt: this.now() }, {
+        this.emit("utterance", text, this.turn ?? { stoppedAt: this.now(), endedAt: this.now(), utteranceId }, {
           interrupted: this.cutBot,
           ...(this.cutBot && this.lastCut ? { cut: this.lastCut } : {}),
           ...(continues ? { continues: true } : {}),
+          utteranceId,
         });
         this.cutBot = false;
         this.lastCut = null;
@@ -701,6 +769,7 @@ export class VoiceCall {
         this.preroll = [];
         return;
       case "release":
+        this.disarmCue();
         this.release();
         return;
     }
@@ -709,10 +778,40 @@ export class VoiceCall {
   private async finishTurn(): Promise<void> {
     const audio = this.transcriber.audio();
     const speechLevel = this.turnLevel.frames ? this.turnLevel.sum / this.turnLevel.frames : 0;
-    const [heard, verdict] = await Promise.all([this.transcriber.finishHeard(), this.verify(audio)]);
+    const final = this.transcriber.finishHeard();
+    // The words xAI already streamed are the sentence: send them now, not
+    // after the final's round trip; the final is checked when it comes.
+    const partial = this.turnPartial.trim();
+    const turn = this.turn;
+    if (this.o.earlyStart !== false && turn && stablePartial(partial, this.partialAt, turn.stoppedAt) && !isNoiseFragment(partial)) {
+      const verdict = await this.verify(audio);
+      if (this.closed) return;
+      if (!verdict) {
+        if (this.turn) this.turn.transcribedAt = this.now();
+        this.emit("rejected", "other-voice");
+        this.dispatch({ type: "utterance-rejected", reason: "other-voice" });
+        void final;
+        return;
+      }
+      if (this.state.phase === "thinking") {
+        turn.transcribedAt = this.now();
+        turn.earlyStart = true;
+        this.learnLevel(speechLevel);
+        this.dispatch({ type: "utterance", text: partial });
+        const heard = await final;
+        if (this.closed) return;
+        turn.finalAt = this.now();
+        if (heard.text.trim() && !isNoiseFragment(heard.text, heard.confidence) && materiallyDifferent(partial, heard.text)) this.reissue(turn, heard.text);
+        return;
+      }
+    }
+    const [heard, verdict] = await Promise.all([final, this.verify(audio)]);
     const text = heard.text;
     if (this.closed) return;
-    if (this.turn) this.turn.transcribedAt = this.now();
+    if (this.turn) {
+      this.turn.transcribedAt = this.now();
+      this.turn.finalAt = this.turn.transcribedAt;
+    }
     if (!verdict) {
       this.emit("rejected", "other-voice");
       this.dispatch({ type: "utterance-rejected", reason: "other-voice" });
@@ -724,12 +823,43 @@ export class VoiceCall {
       this.dispatch({ type: "utterance-rejected", reason: "empty" });
       return;
     }
-    // learn the person's level from accepted turns (far-field gate), slowly
+    this.learnLevel(speechLevel);
+    this.dispatch({ type: "utterance", text });
+  }
+
+  /** Learn the person's level from accepted turns (far-field gate), slowly. */
+  private learnLevel(speechLevel: number): void {
     if (speechLevel > 0 && this.verifying) {
       const known = this.turns.nearLevel;
       this.turns.nearLevel = known ? known * 0.8 + speechLevel * 0.2 : speechLevel;
     }
-    this.dispatch({ type: "utterance", text });
+  }
+
+  /** The turn was sent on its partial and the final words say something
+   * else: stop the answer to the partial (nothing of it is spoken) and send
+   * the final words as the complete version of it (voiceCall.continues). */
+  private reissue(turn: TurnMetrics, text: string): void {
+    // the person already said something else: that turn carries on
+    if (this.turn !== turn) return;
+    turn.reissued = true;
+    if (this.state.botBusy) this.emit("interrupt-bot");
+    if (this.player.busy || this.reply) {
+      void this.player.cancel();
+      this.player.resetLedger();
+      this.reply = null;
+      this.replyText = "";
+    }
+    const utteranceId = this.newId();
+    turn.utteranceId = utteranceId;
+    turn.firstTokenAt = undefined;
+    turn.firstSentenceAt = undefined;
+    turn.ttsFirstByteAt = undefined;
+    this.lastSent = { text, endedAt: turn.endedAt, botSpoke: false };
+    this.emit("utterance", text, turn, { interrupted: false, continues: true, utteranceId });
+  }
+
+  private newId(): string {
+    return this.o.newId?.() ?? (typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : `utt-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`);
   }
 
   /** True when the turn may be the person's (or no check is in force). */
@@ -743,6 +873,23 @@ export class VoiceCall {
       return true;
     }
   }
+}
+
+/** Two soft low notes: the bot is on it (a slow answer). */
+const THINKING_CUE: Array<{ hz: number; ms: number }> = [{ hz: 392, ms: 110 }, { hz: 523, ms: 150 }];
+
+/** The same audio, calling `seen` when its first bytes arrive. */
+function firstChunk(body: ReadableStream<Uint8Array>, seen: () => void): ReadableStream<Uint8Array> {
+  let first = true;
+  return body.pipeThrough(new TransformStream<Uint8Array, Uint8Array>({
+    transform(chunk, controller) {
+      if (first && chunk.byteLength) {
+        first = false;
+        seen();
+      }
+      controller.enqueue(chunk);
+    },
+  }));
 }
 
 const EARCONS: Record<Extract<CallEffect, { type: "earcon" }>["sound"], Array<{ hz: number; ms: number }>> = {

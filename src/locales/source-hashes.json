@@ -5458,6 +5458,8 @@
       "voiceMode.call.enrollFailed": "110205d4b5b7bf4be8affcf62ab7fbeeb59140f7363475900a3dcceb172a05d1",
       "voiceMode.call.forget": "7e3a992acce8320eb34706e991f52e2817d32ff60fa6f36310f7706ef889b96e",
       "voiceMode.call.earcons": "bd2597c633c6141c42af1a777acb8c921e91867a33969a9f58aefc5d71fb5982",
+      "voiceMode.call.thinkingCue": "398de6b7811c9c559ef7f6f039cbda7d09385a489e1a6dc757d025d831c8346c",
+      "voiceMode.call.latency": "9b9fc68c1456b6bc0d0418d6afdcb4192eff130e92fc97ec418338ecf8e5f12f",
       "voiceMode.call.voiceIsolation": "7939f77577fe06c317c82f5aa320c03706c7b2929e3c35a0c03615390850250f",
       "place.cloudOrg": "fb1927092ea27067b3e961bf0ddcb5e5538250f9794bd1ebeb85411ec0df3768",
       "place.autoOrg": "f87ebcba0f85148d97aa08ebcd8df952068253a21ff6dc39ca49667a1ac183ba",

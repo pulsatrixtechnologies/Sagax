@@ -7,6 +7,7 @@ import type { ReactNode } from "react";
 import { Check, ChevronDown, Loader2, Play, Square } from "lucide-react";
 
 import { CALL_PAUSES, type CallSettings } from "@/lib/voice-mode/call-settings";
+import { LATENCY_STAGES, type LatencyStage } from "@/lib/voice-mode/latency";
 
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
@@ -35,6 +36,9 @@ export interface VoiceModeSettingsPanelProps {
   onCallChange?(patch: Partial<CallSettings>): void;
   onEnroll?(): void;
   onForget?(): void;
+  /** the last answer's stages (ms), shown while the call's debug switch
+   * (localStorage "omb.voiceCall.debug") is on */
+  latency?: Partial<Record<LatencyStage | "total", number>> | null;
 }
 
 function Toggle({ label, checked, onChange, data }: { label: string; checked: boolean; onChange(next: boolean): void; data: string }) {
@@ -117,7 +121,21 @@ function CallSection({ call, enrollment, onCallChange, onEnroll, onForget }: Req
         )}
       </div>
       <Toggle label={t("voiceMode.call.earcons")} checked={call.earcons} data="earcons" onChange={(earcons) => onCallChange({ earcons })} />
+      <Toggle label={t("voiceMode.call.thinkingCue")} checked={call.thinkingCue} data="thinking-cue" onChange={(thinkingCue) => onCallChange({ thinkingCue })} />
       {mac && <p className="pb-1 text-[11.5px] leading-snug text-ink-tertiary">{t("voiceMode.call.voiceIsolation")}</p>}
+    </div>
+  );
+}
+
+/** The last answer's stages, stage ids and milliseconds (a debug view). */
+function LatencyLine({ latency }: { latency: NonNullable<VoiceModeSettingsPanelProps["latency"]> }) {
+  const stages = LATENCY_STAGES.filter((stage) => latency[stage] !== undefined);
+  return (
+    <div className="mt-1 border-t border-hairline/50 pt-1.5" data-voice-latency={latency.total ?? ""}>
+      <div className="text-[12px] text-ink-secondary">{t("voiceMode.call.latency", { total: latency.total ?? "?" })}</div>
+      <code className="block break-words pb-1 text-[11px] leading-snug text-ink-tertiary">
+        {stages.map((stage) => `${stage} ${latency[stage]}`).join(" \u00b7 ")}
+      </code>
     </div>
   );
 }
@@ -220,6 +238,9 @@ export function VoiceModeSettingsPanel(props: VoiceModeSettingsPanelProps) {
       )}
       {call && enrollment && onCallChange && onEnroll && onForget && (
         <CallSection call={call} enrollment={enrollment} onCallChange={onCallChange} onEnroll={onEnroll} onForget={onForget} />
+      )}
+      {props.latency && (
+        <LatencyLine latency={props.latency} />
       )}
     </div>
   );

@@ -24,15 +24,23 @@
 //   `incompleteMs` longer, so "give me a good prompt to" is not sent as is.
 // - The person's pace preference (`pause`: short, normal, patient) sets the
 //   range; the adaptation works inside it.
+// - A sentence that is clearly over ends sooner (`completeMs`): the words so
+//   far close with final punctuation ("what time is it?"), and the silence
+//   after them is confident (the VAD is sure nobody speaks, not just under
+//   its threshold). A pause inside a sentence never ends it early, and a
+//   person who goes on after it is joined back (call.ts CONTINUATION_MS).
 
 export const FRAME_MS = 32;
 
 /** The endpoint range for each pause preference (the call's settings). */
 export const PAUSE_PRESETS = {
-  short: { minEndpointMs: 420, endpointMs: 520, maxEndpointMs: 800, incompleteMs: 500 },
-  normal: { minEndpointMs: 560, endpointMs: 700, maxEndpointMs: 1_100, incompleteMs: 750 },
-  patient: { minEndpointMs: 800, endpointMs: 1_000, maxEndpointMs: 1_500, incompleteMs: 1_000 },
+  short: { minEndpointMs: 420, endpointMs: 520, maxEndpointMs: 800, incompleteMs: 500, completeMs: 288 },
+  normal: { minEndpointMs: 560, endpointMs: 700, maxEndpointMs: 1_100, incompleteMs: 750, completeMs: 352 },
+  patient: { minEndpointMs: 800, endpointMs: 1_000, maxEndpointMs: 1_500, incompleteMs: 1_000, completeMs: 576 },
 } as const;
+
+/** Under this voice probability a silent frame is a confident one. */
+export const QUIET_PROBABILITY = 0.15;
 
 export type PausePreset = keyof typeof PAUSE_PRESETS;
 
@@ -48,6 +56,17 @@ const CONTINUING_WORDS = new Set([
   "au", "aux", "pour", "avec", "dans", "sur", "en", "mon", "ma", "mes", "ton", "ta", "tes", "son", "sa", "ses",
   "notre", "votre", "leur", "si", "quand", "est", "c", "ce", "cette", "comme", "euh", "ben", "puis",
 ]);
+
+/** The words so far are a finished sentence: closed by final punctuation,
+ * at least two words, and not stopped on a word a sentence does not end on.
+ * The turn may end on a shorter, confident silence. */
+export function completeClause(text: string): boolean {
+  const trimmed = text.trim();
+  if (!/[.!?\u2026]["')\]]*$/.test(trimmed)) return false;
+  const words = trimmed.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").match(/[a-z0-9]+/g) ?? [];
+  // "Mr." or "e.g." alone, or a lone word: not a sentence to answer yet
+  return words.length >= 2 && !CONTINUING_WORDS.has(words.at(-1)!);
+}
 
 /** The words so far do not finish a sentence: wait longer before ending
  * the turn. Unknown words (no transcript yet) are not judged. */
@@ -83,6 +102,9 @@ export interface TurnOptions {
   incompleteMs?: number;
   /** share of nearLevel a voiced frame needs (far-field rejection) */
   nearShare?: number;
+  /** the endpoint once the words so far are a finished sentence and the
+   * silence is confident (0: never early) */
+  completeMs?: number;
 }
 
 export interface FrameInput {
@@ -104,7 +126,7 @@ export type TurnEvent =
   /** the candidate died out before `start`, or the turn was too short */
   | { type: "cancel" }
   /** the person stopped talking */
-  | { type: "end"; speechMs: number; endpointMs: number };
+  | { type: "end"; speechMs: number; endpointMs: number; early?: boolean };
 
 type State = "idle" | "candidate" | "speaking";
 
@@ -121,6 +143,10 @@ export class TurnDetector {
   private endpoint: number;
   /** the current turn's words so far do not finish a sentence */
   private unfinished = false;
+  /** the current turn's words so far are a finished sentence */
+  private complete = false;
+  /** consecutive confidently silent frames (ms) */
+  private quietMs = 0;
 
   constructor(options: TurnOptions = {}) {
     this.o = {
@@ -136,6 +162,7 @@ export class TurnDetector {
       maxTurnMs: 45_000,
       nearShare: 0.22,
       incompleteMs: 0,
+      completeMs: 0,
       ...options,
     };
     this.endpoint = this.o.endpointMs;
@@ -164,6 +191,14 @@ export class TurnDetector {
   /** The words recognized so far in this turn (the streaming transcript). */
   hint(text: string): void {
     this.unfinished = this.state === "idle" ? false : incompleteClause(text);
+    this.complete = this.state === "idle" ? false : completeClause(text);
+  }
+
+  /** The silence that ends the current turn early, when its words are a
+   * finished sentence (else null). */
+  get earlyEndpointMs(): number | null {
+    if (!this.complete || !this.o.completeMs) return null;
+    return Math.min(this.endpoint, this.o.completeMs);
   }
 
   get speaking(): boolean {
@@ -193,6 +228,8 @@ export class TurnDetector {
     this.longestPauseMs = 0;
     this.bargeIn = false;
     this.unfinished = false;
+    this.complete = false;
+    this.quietMs = 0;
   }
 
   private voiced(frame: FrameInput): boolean {
@@ -244,18 +281,23 @@ export class TurnDetector {
     if (voiced) {
       if (this.silenceMs > 0) this.longestPauseMs = Math.max(this.longestPauseMs, this.silenceMs);
       this.silenceMs = 0;
+      this.quietMs = 0;
       this.speechMs += frameMs;
     } else {
       this.silenceMs += frameMs;
+      this.quietMs = frame.probability < QUIET_PROBABILITY ? this.quietMs + frameMs : 0;
     }
-    if (this.silenceMs >= this.effectiveEndpointMs || this.turnMs >= this.o.maxTurnMs) {
+    const early = this.earlyEndpointMs;
+    const endsEarly = early !== null && this.quietMs >= early && this.silenceMs < this.effectiveEndpointMs;
+    if (endsEarly || this.silenceMs >= this.effectiveEndpointMs || this.turnMs >= this.o.maxTurnMs) {
       const speechMs = this.speechMs;
-      const endpointMs = this.effectiveEndpointMs;
+      const endpointMs = endsEarly ? early : this.effectiveEndpointMs;
       const longest = this.longestPauseMs;
       this.reset();
       if (speechMs < this.o.minTurnMs) return { type: "cancel" };
-      this.adapt(longest);
-      return { type: "end", speechMs, endpointMs };
+      // an early end says nothing about the person's pauses: no adaptation
+      if (!endsEarly) this.adapt(longest);
+      return { type: "end", speechMs, endpointMs, ...(endsEarly ? { early: true } : {}) };
     }
     return null;
   }

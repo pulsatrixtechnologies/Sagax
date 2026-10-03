@@ -2741,6 +2741,8 @@
   "voiceMode.call.enrollFailed": "Pas assez de parole entendue. Réessayez dans un endroit plus calme.",
   "voiceMode.call.forget": "Oublier ma voix",
   "voiceMode.call.earcons": "Sons d'appel",
+  "voiceMode.call.thinkingCue": "Tonalité douce quand une réponse tarde",
+  "voiceMode.call.latency": "Dernière réponse : première parole {total} ms après la fin de votre phrase",
   "voiceMode.call.voiceIsolation": "Sur un Mac, Centre de contrôle > Mode micro > Isolation de la voix filtre encore mieux la pièce.",
   "place.cloudOrg": "Infonuagique (environnement serveur)",
   "place.autoOrg": "Auto (infonuagique)",
