@@ -57,15 +57,15 @@ const CONTINUING_WORDS = new Set([
   "notre", "votre", "leur", "si", "quand", "est", "c", "ce", "cette", "comme", "euh", "ben", "puis",
 ]);
 
-/** The words so far are a finished sentence: closed by final punctuation,
- * at least two words, and not stopped on a word a sentence does not end on.
- * The turn may end on a shorter, confident silence. */
+/** The words so far are a finished sentence: closed by final punctuation
+ * (the recognizer's own judgment: "what my next meeting is?" ends on "is")
+ * and at least two words. The turn may end on a shorter, confident silence. */
 export function completeClause(text: string): boolean {
   const trimmed = text.trim();
   if (!/[.!?\u2026]["')\]]*$/.test(trimmed)) return false;
   const words = trimmed.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").match(/[a-z0-9]+/g) ?? [];
-  // "Mr." or "e.g." alone, or a lone word: not a sentence to answer yet
-  return words.length >= 2 && !CONTINUING_WORDS.has(words.at(-1)!);
+  // "Mr." alone, or a lone word: not a sentence to answer yet
+  return words.length >= 2;
 }
 
 /** The words so far do not finish a sentence: wait longer before ending

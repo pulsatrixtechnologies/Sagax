@@ -31,7 +31,7 @@ import { SentenceStream } from "./sentences";
 import { spokenPart } from "./spoken";
 import { judge, readVoiceprint, saveVoiceprint, SpeakerEmbedder, voiceprintOf, type Voiceprint } from "./speaker-id";
 import { LiveTranscriber } from "./stt-stream";
-import { FRAME_MS, incompleteClause, TurnDetector } from "./turns";
+import { completeClause, FRAME_MS, incompleteClause, TurnDetector } from "./turns";
 import { formatTimeline, materiallyDifferent, type TurnMetrics } from "./latency";
 import { LevelVad, SileroVad, VAD_FRAME, type VoiceProbability } from "./vad";
 import type { VoiceModeSettings } from "../../../shared/voice-mode";
@@ -70,11 +70,12 @@ export type { TurnMetrics } from "./latency";
 export const THINKING_CUE_MS = 1_200;
 
 /** A partial the turn may be sent on before speech to text's final words:
- * two words or more, not an unfinished clause, and recognized after the
+ * two words or more, not an unfinished clause, and either closed by the
+ * recognizer as a sentence (final punctuation) or recognized after the
  * person's last voiced frame (xAI had heard the end of it). */
 export function stablePartial(text: string, partialAt: number, stoppedAt: number): boolean {
   const words = text.trim().split(/\s+/).filter(Boolean);
-  return words.length >= 2 && !incompleteClause(text) && partialAt >= stoppedAt;
+  return words.length >= 2 && !incompleteClause(text) && (partialAt >= stoppedAt || completeClause(text));
 }
 
 export interface BargeInMetrics {
