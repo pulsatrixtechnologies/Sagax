@@ -134,13 +134,18 @@
 //                      before it exits: a CLI that is slow to stop, as one
 //                      can be on Windows, where taskkill is asynchronous.
 //   FAKE_CLAUDE_MODE=voice a spoken answer with a real CLI's timing
-//                      (docs/voice-mode-xai.md, "Latency"): the process's
-//                      first turn waits FAKE_CLAUDE_COLD_MS before `init`
-//                      (process boot, MCP servers, the session read back),
-//                      every turn waits FAKE_CLAUDE_FIRST_TOKEN_MS before its
-//                      first text delta (the model's time to first token),
-//                      then streams FAKE_CLAUDE_VOICE_REPLY word by word,
-//                      FAKE_CLAUDE_TOKEN_MS apart, and settles. No tool call.
+//                      (docs/voice-mode-xai.md, "Latency"): the process
+//                      waits FAKE_CLAUDE_COLD_MS at boot, before any prompt
+//                      (process boot, MCP servers, the session read back).
+//                      A prompt that arrives during that wait pays only what
+//                      remains. Every turn waits FAKE_CLAUDE_FIRST_TOKEN_MS
+//                      before its first text delta (the model's time to
+//                      first token), then streams FAKE_CLAUDE_VOICE_REPLY
+//                      word by word, FAKE_CLAUDE_TOKEN_MS apart, and settles.
+//                      No tool call.
+//   FAKE_CLAUDE_LAUNCH_LOG path to append one JSON line {pid, at} when a
+//                      pooled process (--input-format) starts, before any
+//                      prompt. Absent: nothing is written.
 //
 // Keep this file dependency-free — it runs as a bare `node` subprocess.
 import { spawn, spawnSync } from "node:child_process";
@@ -366,6 +371,21 @@ if (["text", "json"].includes(argAfter("--output-format") ?? "")) {
     replyText(reply);
   }
   replyText("fake generated text\n");
+}
+
+// Voice mode pays its cold start at process boot, not on the first prompt.
+// A version probe, a help listing, and a one-shot text call exit above and
+// never start this timer. The timer is armed before the stdin listener so
+// it runs while the process is still starting.
+const voiceBoot: Promise<void> = mode === "voice"
+  ? new Promise((resolve) => { setTimeout(resolve, Math.max(0, Number(process.env.FAKE_CLAUDE_COLD_MS) || 0)); })
+  : Promise.resolve();
+if (process.env.FAKE_CLAUDE_LAUNCH_LOG && argv.includes("--input-format")) {
+  try {
+    appendFileSync(process.env.FAKE_CLAUDE_LAUNCH_LOG, `${JSON.stringify({ pid: process.pid, at: Date.now() })}\n`);
+  } catch {
+    /* the test path can disappear while the process starts */
+  }
 }
 
 // Line-driven, like the real CLI under --input-format stream-json: each user
@@ -704,13 +724,11 @@ const playTurn = (prompt: JsonValue, late = false) => {
   playReply(prompt, "");
 };
 
-let voiceTurns = 0;
 const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, Math.max(0, ms)));
-/** FAKE_CLAUDE_MODE=voice: one turn with a real CLI's timing, streamed. */
+/** FAKE_CLAUDE_MODE=voice: one turn with a real CLI's timing, streamed.
+ * The cold start already began at process boot (voiceBoot). */
 async function playVoiceTurn(prompt: JsonValue): Promise<void> {
-  const first = voiceTurns === 0;
-  voiceTurns += 1;
-  if (first) await pause(Number(process.env.FAKE_CLAUDE_COLD_MS) || 0);
+  await voiceBoot;
   out({ type: "system", subtype: "init", session_id: sessionId, model, permissionMode, tools });
   replay(prompt);
   await pause(Number(process.env.FAKE_CLAUDE_FIRST_TOKEN_MS) || 0);
