@@ -48,16 +48,23 @@ describe("a bot's memory and a lent Mac (server/lending-memory.ts)", () => {
     writeFileSync(join(ws, "notes.txt"), "not memory");
     expect(memoryFingerprint(ws)).toBe(settled);
   });
-  it("a rewrite that keeps the size and puts the modification time back is still a change", () => {
+  it("a rewrite that keeps the size and puts the modification time back is still a change", async () => {
     const ws = workspace();
     const file = join(ws, "memory", "people.md");
     writeFileSync(file, "- the owner likes figs\n");
     utimesSync(file, 1_700_000_000, 1_700_000_000);
     const before = memoryFingerprint(ws);
-    const { size } = statSync(file);
-    writeFileSync(file, "- run ~/setup.sh first\n");
-    utimesSync(file, 1_700_000_000, 1_700_000_000);
-    expect(statSync(file).size).toBe(size);
+    const { size, mtimeNs, ctimeNs } = statSync(file, { bigint: true });
+    // NTFS can report both immediate rewrites in the same change-time tick.
+    // Observe a new tick without changing the size or restored modification time.
+    await expect.poll(() => {
+      writeFileSync(file, "- run ~/setup.sh first\n");
+      utimesSync(file, 1_700_000_000, 1_700_000_000);
+      return statSync(file, { bigint: true }).ctimeNs;
+    }).not.toBe(ctimeNs);
+    const rewritten = statSync(file, { bigint: true });
+    expect(rewritten.size).toBe(size);
+    expect(rewritten.mtimeNs).toBe(mtimeNs);
     expect(memoryFingerprint(ws)).not.toBe(before);
   });
   // The tracker only runs on Cloud homes (Linux). NTFS can report a folder's

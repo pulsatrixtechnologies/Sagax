@@ -276,6 +276,59 @@ createServer(socket => socket.end()).listen(port, '127.0.0.1');
     } finally { rmSync(marker, { force: true }); }
   });
 
+  it.each([
+    {
+      settings: "customized resources and operator restart",
+      computer: "cloud" as const,
+      hostConfig: {
+        Memory: 8 * 1024 * 1024 * 1024, MemorySwap: 16 * 1024 * 1024 * 1024,
+        NanoCpus: 3_000_000_000, PidsLimit: 1024, ShmSize: 1024 * 1024 * 1024,
+        OomKillDisable: true, RestartPolicy: { Name: "on-failure", MaximumRetryCount: 3 },
+      },
+    },
+    {
+      settings: "unlimited resources and legacy restart no",
+      computer: null,
+      hostConfig: {
+        Memory: 0, MemorySwap: -1, NanoCpus: 0, PidsLimit: 0, ShmSize: 64 * 1024 * 1024,
+        OomKillDisable: false, RestartPolicy: { Name: "no", MaximumRetryCount: 0 },
+      },
+    },
+  ])("reuses the existing VPS with $settings through status and turn routing", async ({ computer, hostConfig }) => {
+    expect((await api("PUT", "/api/config", { vps: { sshAlias: "production-vps" } })).status).toBe(200);
+    const bot = (await api("POST", "/api/bots")).body.bot;
+    const template = join(dirname(dockerLog), "container.json.tpl");
+    const original = readFileSync(template, "utf8");
+    const container = JSON.parse(original);
+    Object.assign(container[0].HostConfig, hostConfig);
+    const configured = JSON.stringify(container);
+    writeFileSync(template, configured);
+    writeFileSync(gateFile, "open");
+    rmSync(`${acpDump}.mcp.json`, { force: true });
+    const offset = readFileSync(dockerLog, "utf8").length;
+    try {
+      expect((await api("PATCH", `/api/bots/${bot.id}`, {
+        computer, cloudBackend: "vps", modelSelection: { instanceId: "vps", model: "fake-model" },
+      })).status).toBe(200);
+      const status = await api("GET", `/api/bots/${bot.id}/computer`);
+      expect(status.status).toBe(200);
+      expect(status.body).toMatchObject({ backend: "vps", ready: true, security: "hardened", container: "running" });
+      expect((await api("POST", `/api/bots/${bot.id}/messages`, { text: "Use the existing VPS desktop" })).status).toBe(202);
+      await until(async () => {
+        const saved = await botById(bot.id);
+        return !saved.busy && saved.messages.some((message: any) => message.text?.startsWith("echo: "));
+      }, "the turn on the customized VPS");
+      const mounted = JSON.parse(readFileSync(`${acpDump}.mcp.json`, "utf8"));
+      expect(mounted.find((tool: any) => tool.name === "computer")?.args).toContain(CONTAINER_ID);
+      const calls = readFileSync(dockerLog, "utf8").slice(offset);
+      expect(calls).not.toMatch(/ssh:\/\/production-vps (run|start|stop|rm|pull|build|update) /);
+      expect(readFileSync(template, "utf8")).toBe(configured);
+    } finally {
+      await api("POST", `/api/bots/${bot.id}/interrupt`, {});
+      writeFileSync(template, original);
+    }
+  }, 30_000);
+
   it("shares a canceled preview with retries and opens control without racing destructive actions", async () => {
     expect((await api("PUT", "/api/config", { vps: { sshAlias: "production-vps" } })).status).toBe(200);
     const bot = (await api("POST", "/api/bots")).body.bot;
@@ -657,9 +710,11 @@ createServer(socket => socket.end()).listen(port, '127.0.0.1');
           held: true, helpOpen: false,
           blockedReason: "Another thread is using this computer. This call was not performed. Pause computer work until that thread finishes, then take a fresh screenshot before acting.",
         });
-        await until(async () => (await activities(refill.threadId)).includes(
-          "Waiting for its turn on this computer — TCPR operator is running Queue check. Starts automatically when that finishes.",
-        ), "the wait chip naming the holder");
+        // The chip may carry its queue position and, once the resource has
+        // wait history, an estimate suffix (#1652). The holder it names is
+        // the fact under test here, so the shape stays pinned around it.
+        const waitChip = /^Waiting for its turn on this computer(?: — \d+(?:st|nd|rd|th) in queue)? — TCPR operator is running Queue check\. Starts automatically when that finishes(?:; recent waits here have taken [^.]+)?\.$/;
+        await until(async () => (await activities(refill.threadId)).some((name) => waitChip.test(name)), "the wait chip naming the holder");
 
         // both turns finish; the wait resolves as free-and-continuing or as
         // stopped (with the duration it waited), depending on which turn

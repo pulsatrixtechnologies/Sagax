@@ -4,6 +4,12 @@ import { pipeline } from "node:stream/promises";
 import { fileURLToPath } from "node:url";
 import { defaultDataDir } from "./legacy-names.mjs";
 
+export function revealDownloadWhenDone(item, reveal) {
+  item.once("done", (_event, state) => {
+    if (state === "completed") reveal(item.getSavePath());
+  });
+}
+
 function normalizeSourcePath(rawPath) {
   if (typeof rawPath !== "string" || !rawPath.trim()) {
     throw new Error("A file path is required");

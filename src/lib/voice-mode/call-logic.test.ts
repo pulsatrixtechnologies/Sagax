@@ -7,7 +7,7 @@ import { describe, expect, it } from "vitest";
 import { INITIAL_CALL, step, type CallEffect, type CallEvent, type CallState } from "./call-machine";
 import { EchoGuard } from "./echo";
 import { SentenceStream } from "./sentences";
-import { FRAME_MS, incompleteClause, PAUSE_PRESETS, TurnDetector, type TurnEvent } from "./turns";
+import { completeClause, FRAME_MS, incompleteClause, PAUSE_PRESETS, TurnDetector, type TurnEvent } from "./turns";
 
 function run(events: CallEvent[], from: CallState = INITIAL_CALL) {
   let state = from;
@@ -310,5 +310,55 @@ describe("sentences while the bot writes", () => {
     const stream = new SentenceStream();
     stream.feed("First block is long enough. ");
     expect(stream.feed("New. ")).toEqual(["New."]);
+  });
+});
+
+describe("a finished sentence ends sooner (docs/voice-mode-xai.md, Latency)", () => {
+  const frames = (ms: number) => Math.round(ms / FRAME_MS);
+
+  it("knows a sentence the recognizer closed", () => {
+    expect(completeClause("What time is it in Tokyo?")).toBe(true);
+    expect(completeClause("Can you remind me what my next meeting is?")).toBe(true);
+    expect(completeClause("Quelle heure est-il à Montréal ?")).toBe(true);
+    expect(completeClause("What time is it")).toBe(false);
+    expect(completeClause("Thanks.")).toBe(false);
+    expect(completeClause("Mr.")).toBe(false);
+  });
+
+  it("ends on the preset's short confident silence, never on an uncertain one, and does not adapt from it", () => {
+    const detector = new TurnDetector();
+    detector.setPause("normal");
+    const before = detector.endpointMs;
+    const start = feed(detector, [{ p: 0.9, n: frames(900) }]);
+    expect(start.some((event) => event.type === "start")).toBe(true);
+    detector.hint("What time is it in Tokyo?");
+    const events = feed(detector, [{ p: 0.05, n: frames(400) }]);
+    const end = events.find((event) => event.type === "end");
+    expect(end).toMatchObject({ type: "end", early: true, endpointMs: PAUSE_PRESETS.normal.completeMs });
+    expect(detector.endpointMs).toBe(before);
+
+    // the same words, but the VAD is not sure it is silence (a breath, a murmur)
+    const unsure = new TurnDetector();
+    unsure.setPause("normal");
+    feed(unsure, [{ p: 0.9, n: frames(900) }]);
+    unsure.hint("What time is it in Tokyo?");
+    expect(feed(unsure, [{ p: 0.25, n: frames(400) }]).some((event) => event.type === "end")).toBe(false);
+    const late = feed(unsure, [{ p: 0.25, n: frames(400) }]).find((event) => event.type === "end");
+    expect(late).toMatchObject({ type: "end" });
+    expect((late as { early?: boolean }).early).toBeUndefined();
+
+    // not a finished sentence: the full endpoint
+    const open = new TurnDetector();
+    open.setPause("normal");
+    feed(open, [{ p: 0.9, n: frames(900) }]);
+    open.hint("give me a good prompt");
+    expect(feed(open, [{ p: 0.05, n: frames(400) }]).some((event) => event.type === "end")).toBe(false);
+  });
+
+  it("speaks the first clause of an answer once it has about six words", () => {
+    const stream = new SentenceStream();
+    expect(stream.feed("The weather in Montreal is sunny today, with a high")).toEqual(["The weather in Montreal is sunny today,"]);
+    // a short opening clause waits for more
+    expect(new SentenceStream().feed("Well, it is sunny")).toEqual([]);
   });
 });

@@ -137,6 +137,7 @@ describe("scopes", () => {
       ["POST", "/api/bots/x/projects"], ["PATCH", "/api/bots/x/projects/order"], ["DELETE", "/api/bots/x/projects/p"],
       ["POST", "/api/sidebar-sections"], ["GET", "/api/bots/x/overview"], ["GET", "/api/usage"],
       ["POST", "/api/bots/x/computer/exec"], ["POST", "/api/bots/x/computer/join"], ["POST", "/api/local-computer/run"],
+      ["POST", "/api/bots/x/local-computer/join"], ["POST", "/api/bots/x/local-computer/screenshot"],
       ["GET", "/api/computers/boxes"], ["POST", "/api/computers/boxes/bx_23456789/delete"],
       ["POST", "/api/webhooks"], ["POST", "/api/webhooks/w/rotate"], ["POST", "/api/bots/x/skills"], ["PATCH", "/api/bots/x/skills/s"],
       ["PATCH", "/api/bots/x/model"], ["POST", "/api/teams/import"], ["GET", "/api/teams/scout"],
@@ -144,6 +145,9 @@ describe("scopes", () => {
       ["POST", "/api/bots/x/checkpoints/restore"], ["GET", "/api/mcp/servers"], ["POST", "/api/mcp/servers"], ["POST", "/api/connectors/slack/authorize"],
       ["POST", "/api/bots/x/slack-management"], ["GET", "/api/bots/x/slack-management/extra"],
       ["PUT", "/api/config"], ["POST", "/api/auth/pairing"], ["GET", "/api/auth/sessions"], ["DELETE", "/api/auth/sessions/abc"],
+      // Live calls spend the owner's OpenAI key and reach any bot: admins only
+      ["POST", "/api/live/session"], ["POST", "/api/live/call/end"], ["GET", "/api/live/call"], ["PATCH", "/api/live/settings"],
+      ["POST", "/api/live/device-revoked"],
       ["POST", "/api/auth/pair"], // handled before the gate; the gate itself never grants it
       ["POST", "/api/org"], ["POST", "/api/org/invites"], ["GET", "/api/org/invites"],
       ["GET", "/api/mail/settings"], ["PUT", "/api/mail/settings"], ["POST", "/api/mail/test"], // mail transport: admin only
@@ -262,6 +266,11 @@ describe("resolveRequestAuth", () => {
       ["POST", "/api/internal/anything"], ["GET", "/api/auth/sessions"],
       ["POST", "/api/not-yet-supported"],
     ]) expect(check(method, path).auth, path).toBeNull();
+    // The companion's own notice that it unpaired a phone: not on the phone
+    // allowlist, but the relay's private token opens it; a forged one does not.
+    expect(check("POST", "/api/live/device-revoked").auth?.kind).toBe("loopback");
+    for (const overrides of forged) expect(check("POST", "/api/live/device-revoked", overrides).auth).toBeNull();
+    expect(check("GET", "/api/live/device-revoked").auth).toBeNull();
   });
 
   function pairedToken(scopes: Array<"admin" | "client"> = ["admin", "client"]): string {

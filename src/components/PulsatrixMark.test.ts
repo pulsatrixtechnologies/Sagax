@@ -32,7 +32,7 @@ describe("Pulsatrix owl mark", () => {
   });
 
   it("shows the dark-ground file on the navy and dark rails, the light-ground one on light rails", () => {
-    const light = new Set(["atelier", "lagoon", "linen", "daylight", "retro98"]);
+    const light = new Set(["atelier", "lagoon", "linen", "daylight", "retro98", "meadow"]);
     for (const id of SKIN_IDS) {
       const body = css.match(new RegExp(`\\[data-skin="${id}"\\]\\s*\\{([^}]*)\\}`))?.[1] ?? "";
       const onDark = light.has(id) ? "none" : "inline-block";

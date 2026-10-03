@@ -36,6 +36,8 @@ export interface CompanionAccountService {
   retry(): Promise<CompanionAccountState>;
   signOut(): Promise<CompanionAccountState>;
   restore(): Promise<CompanionAccountState>;
+  /** Cancels background recovery timers (autoRecover only). */
+  dispose(): void;
 }
 
 export declare function createCompanionAccountService(options: {
@@ -53,4 +55,12 @@ export declare function createCompanionAccountService(options: {
   companionIsOn?: () => boolean;
   now?: () => number;
   healthCacheMs?: number;
+  autoRecover?: boolean;
+  setTimer?: (callback: () => void, milliseconds: number) => unknown;
+  clearTimer?: (handle: unknown) => void;
+  random?: () => number;
+  autoRetryBaseMs?: number;
+  autoRetryMaxMs?: number;
+  endpointCheckIntervalMs?: number;
+  firstEndpointCheckMs?: number;
 }): CompanionAccountService;

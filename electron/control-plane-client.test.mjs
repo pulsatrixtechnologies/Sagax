@@ -311,4 +311,61 @@ describe("control-plane desktop client", () => {
       ControlPlaneError,
     );
   });
+
+  it("reads the endpoint without a connector token and maps a removed endpoint to null", async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse({ endpoint: null }))
+      .mockResolvedValueOnce(jsonResponse({
+        endpoint: { url: "https://c-opaque.openmausbot.com", hostname: "c-opaque.openmausbot.com", status: "deleting" },
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        endpoint: { url: "https://c-opaque.openmausbot.com", status: "renamed-by-a-future-server" },
+      }))
+      .mockResolvedValueOnce(jsonResponse({ endpoint: { url: "http://c-opaque.openmausbot.com" } }));
+    const client = createControlPlaneClient({ baseURL: "https://accounts.openmausbot.com", fetchImpl });
+
+    await expect(client.getEndpoint(INSTALL)).resolves.toBeNull();
+    await expect(client.getEndpoint(INSTALL)).resolves.toEqual({
+      url: "https://c-opaque.openmausbot.com",
+      status: "deleting",
+    });
+    await expect(client.getEndpoint(INSTALL)).resolves.toEqual({
+      url: "https://c-opaque.openmausbot.com",
+      status: "unknown",
+    });
+    await expect(client.getEndpoint(INSTALL)).rejects.toMatchObject({ code: "invalid_response" });
+    const [url, init] = fetchImpl.mock.calls[0];
+    expect(url).toBe("https://accounts.openmausbot.com/v1/installations/self/endpoint");
+    expect(init.method).toBe("GET");
+    expect(init.headers.get("authorization")).toBe(`Bearer ${INSTALL}`);
+    await expect(client.getEndpoint(ACCOUNT)).rejects.toMatchObject({ code: "signed_out", status: 401 });
+  });
+
+  it("carries a capacity error code and the server's Retry-After delay", async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse({ error: "endpoint_capacity" }, {
+        status: 503,
+        headers: { "retry-after": "600", "x-request-id": "44444444-4444-4444-8444-444444444444" },
+      }))
+      .mockResolvedValueOnce(jsonResponse({ error: "endpoint_capacity" }, {
+        status: 503,
+        headers: { "retry-after": "Wed, 21 Oct 2026 07:28:00 GMT" },
+      }));
+    const client = createControlPlaneClient({ baseURL: "https://accounts.openmausbot.com", fetchImpl });
+
+    const first = await client.ensureEndpoint(INSTALL).catch((error) => error);
+    expect(first).toBeInstanceOf(ControlPlaneError);
+    expect(first).toMatchObject({
+      code: "endpoint_capacity",
+      status: 503,
+      retryAfterMs: 600_000,
+      requestId: "44444444-4444-4444-8444-444444444444",
+    });
+    await expect(client.ensureEndpoint(INSTALL)).rejects.toMatchObject({
+      code: "endpoint_capacity",
+      retryAfterMs: 0,
+    });
+  });
 });

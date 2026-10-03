@@ -383,6 +383,13 @@ export function verificationServerEnvironment(parentEnv: NodeJS.ProcessEnv, data
   // A test's key for relaying an organization library into the fixture
   // (POST /api/testing/org-library); the route does not exist without it.
   if (parentEnv.SAGAX_TEST_ORG_LIBRARY_KEY) childEnv.SAGAX_TEST_ORG_LIBRARY_KEY = parentEnv.SAGAX_TEST_ORG_LIBRARY_KEY;
+  // Live calls against server/testing/fake-openai-live.ts only: a loopback
+  // URL, and a key that only ever reaches that fake.
+  const liveUrl = parentEnv.SAGAX_OPENAI_LIVE_URL?.trim() ?? "";
+  if (/^http:\/\/127\.0\.0\.1:\d{1,5}$/.test(liveUrl)) {
+    childEnv.SAGAX_OPENAI_LIVE_URL = liveUrl;
+    if (parentEnv.SAGAX_OPENAI_LIVE_KEY) childEnv.SAGAX_OPENAI_LIVE_KEY = parentEnv.SAGAX_OPENAI_LIVE_KEY;
+  }
   // Voice-note e2e fault injection: arms the one-shot audio-append failure
   // prelude inside the fixture server (see fail-audio-append-once.mjs).
   if (parentEnv.SAGAX_TEST_FAIL_AUDIO_APPEND_ONCE) {
@@ -391,6 +398,8 @@ export function verificationServerEnvironment(parentEnv: NodeJS.ProcessEnv, data
   // No-phone-home e2e: where the fixture logs every outbound connection
   // (server/testing/network-audit.mjs).
   if (parentEnv.SAGAX_TEST_NETWORK_AUDIT) childEnv.SAGAX_TEST_NETWORK_AUDIT = parentEnv.SAGAX_TEST_NETWORK_AUDIT;
+  // upstream Live calls are off in Sagax unless a check opts in
+  if (parentEnv.SAGAX_LIVE_CALLS) childEnv.SAGAX_LIVE_CALLS = parentEnv.SAGAX_LIVE_CALLS;
   return childEnv;
 }
 

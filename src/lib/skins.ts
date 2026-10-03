@@ -16,6 +16,7 @@ export const SKIN_IDS = [
   "dusk",
   "daylight",
   "retro98",
+  "meadow",
 ] as const;
 export type SkinId = (typeof SKIN_IDS)[number];
 
@@ -40,6 +41,7 @@ export const SKINS: readonly Skin[] = [
   { id: "dusk", name: "Dusk", tagline: "Muted plum after dark, calm and low-key." },
   { id: "daylight", name: "Daylight", tagline: "Midnight in reverse. Near-white, ink-black bubbles." },
   { id: "retro98", name: "Hibou 98", tagline: "Bevelled grey windows on a teal desktop, straight out of the late 90s.", secret: true },
+  { id: "meadow", name: "Meadow", tagline: "Fresh white with a calm green." },
 ];
 
 /** The skins the picker shows: every public one, plus the secret ones this device unlocked. */

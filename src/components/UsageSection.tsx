@@ -8,6 +8,7 @@ import { Card, cardCount } from "./SettingsPrimitives";
 import { t } from "@/lib/i18n";
 import { botUsage, cachedUsageNote, costCaption, formatTokens, formatUsd, hasFiniteCost, headlineTokens, sumUsage, tokensColumnLabel, usageDetail } from "@/lib/usage";
 import { UsageHistory } from "./UsageHistory";
+import { PlanUsage } from "./PlanUsage";
 
 export function UsageSection() {
   const { state } = useStore();
@@ -31,6 +32,7 @@ export function UsageSection() {
 
   return (
     <>
+    <PlanUsage />
     <Card
       collapsible
       cardId="usage.bots"

@@ -200,11 +200,14 @@ export function avatarContentType(bytes: Uint8Array): AvatarImage["contentType"]
 export const PROVIDER_KEY_TIMEOUT_MS = 5_000;
 export const PROVIDER_KEY_MAX_BYTES = 8 * 1024;
 export const PROVIDER_KEY_CACHE_MS = 60_000;
-export type ModelProvider = "anthropic" | "openai";
-/** A key a person keeps in Perspicax: an engine's provider, or `xai`, which
- * serves voice mode only (server/voice-mode.ts), never an engine. */
-export type KeyProvider = ModelProvider | "xai";
-const MODEL_PROVIDERS: readonly KeyProvider[] = ["anthropic", "openai", "xai"];
+/** A key a person keeps in Perspicax ("Mes clés de modèle"), by provider:
+ * anthropic (Claude Code, pi), openai (Codex, pi), xai (Grok Build, pi and
+ * voice mode, server/voice-mode.ts), google (Gemini CLI, pi) and moonshot
+ * (Kimi Code, pi). Perspicax 1.8 lists the first three; google and moonshot
+ * are read as soon as its directory lists them (server/engine-credentials.ts). */
+export type ModelProvider = "anthropic" | "openai" | "xai" | "google" | "moonshot";
+export type KeyProvider = ModelProvider;
+export const MODEL_PROVIDERS: readonly ModelProvider[] = ["anthropic", "openai", "xai", "google", "moonshot"];
 export type ProviderKeyResult =
   | { ok: true; key: string; fingerprint: string }
   | { ok: false; error: "no_key" | "user_inactive" | "unreachable" | "link" };

@@ -170,3 +170,49 @@ describe("sandboxd live view stream", () => {
       .rejects.toMatchObject({ status: 409, code: "not_running" });
   });
 });
+
+describe("sandboxd MCP server stream (a person's own command)", () => {
+  it("starts the environment and runs the command as uid 1000 with its own variables", async () => {
+    const stream = await sandboxdClient(base, () => KEY).stdioStream(sandboxKey, { argv: ["npx", "-y", "server-github"], env: { GITHUB_TOKEN: "t" } });
+    const first = await new Promise<string>((resolve) => stream.once("data", (chunk: Buffer) => resolve(chunk.toString())));
+    expect(first).toBe("RFB 003.008\n");
+    stream.write("{\"jsonrpc\":\"2.0\"}\n");
+    const echo = await new Promise<string>((resolve) => stream.once("data", (chunk: Buffer) => resolve(chunk.toString())));
+    expect(echo).toBe("echo:{\"jsonrpc\":\"2.0\"}\n");
+    stream.destroy();
+    const relay = docker.execs.at(-1)!;
+    expect(relay.name).toBe(`sagax-user-${sandboxKey}`);
+    expect(relay.exec).toMatchObject({ Cmd: ["npx", "-y", "server-github"], User: "1000:1000", Env: ["GITHUB_TOKEN=t"], WorkingDir: "/workspace" });
+  });
+
+  it("refuses a command that does not match the signed digest", async () => {
+    const path = `/v1/sandboxes/${sandboxKey}/stdio?digest=${"0".repeat(64)}`;
+    const answer = await new Promise<string>((resolve, reject) => {
+      const req = request(`${base}${path}`, { method: "POST", headers: { connection: "Upgrade", upgrade: "sagax-stdio", [SANDBOXD_AUTH_HEADER]: signSandboxdRequest(KEY, "POST", path, "") } });
+      req.on("upgrade", (_res, socket) => {
+        let text = "";
+        socket.on("data", (chunk: Buffer) => { text += chunk.toString(); });
+        socket.on("end", () => resolve(text));
+        socket.write("{\"argv\":[\"sh\"]}\n");
+      });
+      req.on("response", () => reject(new Error("no upgrade")));
+      req.on("error", reject);
+      req.end();
+    });
+    expect(JSON.parse(answer.trim())).toMatchObject({ sagaxStdioError: "unauthorized" });
+    expect(docker.execs).toEqual([]);
+  });
+
+  it("refuses an unsigned upgrade and variables that describe the environment", async () => {
+    const path = `/v1/sandboxes/${sandboxKey}/stdio?digest=${"0".repeat(64)}`;
+    const refused = await new Promise<number>((resolve, reject) => {
+      const req = request(`${base}${path}`, { method: "POST", headers: { connection: "Upgrade", upgrade: "sagax-stdio" } });
+      req.on("response", (res) => { res.resume(); resolve(res.statusCode ?? 0); });
+      req.on("upgrade", (res, socket) => { socket.destroy(); resolve(res.statusCode ?? 0); });
+      req.on("error", reject);
+      req.end();
+    });
+    expect(refused).toBe(401);
+    await expect(service.stdioStream(sandboxKey, { argv: ["sh"], env: { PATH: "/tmp" } })).rejects.toMatchObject({ code: "bad_stdio" });
+  });
+});

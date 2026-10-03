@@ -10,7 +10,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-import type { ModelCatalog } from "../../contracts.ts";
+import type { ModelCatalog, TurnAccessInput } from "../../contracts.ts";
 import { decodeInjectId, hostApiKey, LOCAL_HOSTS, localHost, mergeLocalInject } from "../local-inject.ts";
 import { createAcpDriver, type AcpSupport } from "./core.ts";
 
@@ -496,6 +496,52 @@ function readKimiModelCatalog(env: Record<string, string | undefined>): ModelCat
   return { default: STATIC_KIMI_MODELS.default, options };
 }
 
+/** The model a Moonshot API key runs (an organization server's key turn):
+ * written once into the payer's own Kimi home with the key's variable name,
+ * never the key (verified against kimi-code 2.1.1: `api_key_env` passes the
+ * ACP auth gate). */
+export const KIMI_MOONSHOT_MODEL = "moonshot/kimi-k3";
+const KIMI_KEY_MARK = "SAGAX_KIMI_MOONSHOT_KEY";
+const KIMI_MOONSHOT_CONFIG = [
+  `default_model = ${quoteToml(KIMI_MOONSHOT_MODEL)}`,
+  "",
+  "[providers.moonshot]",
+  `type = "kimi"`,
+  `base_url = "https://api.moonshot.ai/v1"`,
+  `api_key_env = "MOONSHOT_API_KEY"`,
+  "",
+  `[models.${quoteTomlKey(KIMI_MOONSHOT_MODEL)}]`,
+  `provider = "moonshot"`,
+  `model = "kimi-k3"`,
+  "max_context_size = 262144",
+  "",
+].join("\n");
+
+/** Organization server: one turn's credentials (SendTurnInput.access). The
+ * payer's own KIMI_CODE_HOME (their `kimi login`, or a key home holding only
+ * the Moonshot provider), and for a key, that key. */
+export function kimiApplyAccess(env: Record<string, string | undefined>, access: TurnAccessInput): void {
+  delete env.MOONSHOT_API_KEY;
+  delete env.KIMI_API_KEY;
+  delete env[KIMI_KEY_MARK];
+  if (!access.engineHome) return;
+  mkdirSync(access.engineHome, { recursive: true, mode: 0o700 });
+  env.KIMI_CODE_HOME = access.engineHome;
+  if (access.via === "subscription") return;
+  const key = access.environment?.MOONSHOT_API_KEY;
+  if (!key) return;
+  const path = join(access.engineHome, "config.toml");
+  let current = "";
+  try {
+    current = readFileSync(path, "utf8");
+  } catch {
+    current = "";
+  }
+  if (current !== KIMI_MOONSHOT_CONFIG) writeFileSync(path, KIMI_MOONSHOT_CONFIG, { mode: 0o600 });
+  env.MOONSHOT_API_KEY = key;
+  env[KIMI_KEY_MARK] = "1";
+}
+
 const support: AcpSupport = {
   driverKind: "kimiAgent",
   displayName: "Kimi",
@@ -522,7 +568,9 @@ const support: AcpSupport = {
 
   // -m is a global commander option and must precede the `acp` subcommand
   // (verified against 0.29.1).
-  resolveTurnModel: (model, env) => (model ? ensureKimiInjectAlias(model, env) : model),
+  // A Moonshot key turn runs the key's model whatever the subscription
+  // alias the picker shows (kimi-code/* needs the Kimi Code login).
+  resolveTurnModel: (model, env) => (env[KIMI_KEY_MARK] ? KIMI_MOONSHOT_MODEL : model ? ensureKimiInjectAlias(model, env) : model),
   spawnArgs: (_config, turn) => {
     const model = turn.model;
     return [...(model ? ["-m", model] : []), "acp"];
@@ -540,6 +588,7 @@ const support: AcpSupport = {
   applyTurnEnv: (env, { requestedModel }) => {
     applyKimiLocalModelEnv(env, requestedModel);
   },
+  applyAccess: (env, access) => kimiApplyAccess(env, access),
 
   // The only advertised authMethod is {id:"login", type:"terminal"} — a
   // device-code flow that cannot be driven over ACP. Never pick it; ride
@@ -548,7 +597,7 @@ const support: AcpSupport = {
   authFailure: "continue",
   // Match the child CLI's own data-root precedence. A custom instance HOME or
   // KIMI_CODE_HOME must not be checked against the server user's home instead.
-  isAuthenticated: (env) => existsSync(credentialsPath(env)),
+  isAuthenticated: (env) => existsSync(credentialsPath(env)) || Boolean(env[KIMI_KEY_MARK] && env.MOONSHOT_API_KEY),
 
   buildPromptText: (turn) => (turn.system ? `${turn.system}\n\n${turn.text}` : turn.text),
 };

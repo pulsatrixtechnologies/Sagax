@@ -32,6 +32,10 @@
   box-decoration-break: clone;
   -webkit-box-decoration-break: clone;
 }
+::highlight(search-result-text) {
+  color: var(--color-ink);
+  background-color: color-mix(in srgb, var(--color-accent) 35%, transparent);
+}
 .mention-editor-mirror {
   /* Match the native textarea's direction independently for each paragraph. */
   unicode-bidi: plaintext;
@@ -946,6 +950,63 @@
   color-scheme: light;
 }
 
+/* ── Meadow ───────────────────────────────────────────────────────────────
+   A fresh light look: a white page, a sidebar washed in the faintest
+   green, mint for the selected row and a calm green accent. Like Daylight,
+   your own bubble is the one dark surface (green-black), so it gets the same
+   @scope treatment further down. The brand green #1f8a52 carries white at
+   only 4.3:1, so the filled accent is one step deeper; the brand green stays
+   as the accent border.
+   ───────────────────────────────────────────────────────────────────────── */
+[data-skin="meadow"] {
+  --app-glow: none;
+  --code-color-scheme: light;
+  --color-app: #ffffff;           /* the thread */
+  --color-panel: #f6f8f6;         /* sidebar */
+  --color-sidebar: #f6f8f6;              /* = panel: unchanged */
+  --color-sidebar-ink: #0f1a13;
+  --color-sidebar-ink-secondary: #4d5a52;
+  --color-sidebar-hover: #e9eeea;
+  --color-sidebar-selected: #d6efdf;
+  --color-sidebar-hairline: #b8c4bb;      /* clears 1.5:1 on the sidebar */
+  --sidebar-mark-on-dark: none;
+  --sidebar-mark-on-light: inline-block; /* a light rail: the navy-bar mark */
+  --color-raised: #e9eeea;
+  --color-raised-hover: #d6efdf;  /* the selected row, mint */
+  --color-card: #f1f5f2;          /* what a bot says */
+  --color-inset: #e7ece8;         /* the search field */
+  --color-control: #dce3de;       /* a chip on a card */
+  --color-hairline: #c9d3cc;
+
+  --color-ink: #0f1a13;
+  --color-ink-secondary: #4d5a52;
+  --color-ink-tertiary: #4f5c54;
+
+  --color-accent: #1a7a48;
+  --color-accent-border: #1f8a52;
+  --color-accent-text: #176b3f;
+  --color-focus: #1a7a48;
+  --color-accent-ink: #ffffff;
+  --color-composer: #ffffff;
+  --color-composer-ring: #e3e9e4;
+  --color-menu: #ffffff;
+  --color-bubble-user: #0f1a13;   /* your own messages, inverted */
+  --color-bubble-user-ink: #ffffff;
+
+  --color-success: #1a7a48;
+  --color-danger: #c02b3a;
+  --color-danger-ink: #ffffff;
+  --color-success-ink: #ffffff;
+  --color-warning: #8a5a00;
+  --color-scrollbar: #c3cdc6;
+  --color-maus-line: #5a675f;
+
+  --font-sans: "Inter", -apple-system, blinkmacsystemfont, "SF Pro Text",
+    "Segoe UI", system-ui, sans-serif;
+  --radius-lg: 10px;
+  --radius-xl: 16px;
+}
+
 /* Shiki emits both palettes so cached blocks follow the nearest skin without
    re-tokenizing. Scope the scheme to code; native controls keep their styling. */
 .chat-md .shiki {
@@ -972,6 +1033,20 @@
   .chat-md .chat-heading-anchor {
     transition: none;
   }
+}
+
+/* Keep KaTeX's formula layout intact, but scroll long formulas inside the
+   bubble instead of letting them overflow it. */
+.chat-md .katex-display {
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.chat-md :not(.katex-display) > .katex {
+  display: inline-block;
+  max-width: 100%;
+  overflow-x: auto;
+  vertical-align: middle;
 }
 
 /* Plain-text message bodies (user turns, webhook tasks, error fallbacks) are
@@ -1256,6 +1331,83 @@ body {
   @media (prefers-reduced-motion: reduce) {
     .ui-button,
     .ui-icon-button { transition: none; }
+  }
+}
+
+/* Liquid glass: the surface for centred pop-ups (Settings, Apps, Triggers).
+   Every value is derived from the active skin's own tokens, so each of the
+   nine skins gets a glass of its own colour and no skin block changes. The
+   app behind stays visible, blurred, through a light scrim. Unlayered so a
+   leftover `bg-panel` on the same element cannot win. */
+.glass-surface {
+  background: color-mix(in srgb, var(--color-menu) 62%, transparent);
+  -webkit-backdrop-filter: blur(28px) saturate(170%);
+  backdrop-filter: blur(28px) saturate(170%);
+  border: 1px solid color-mix(in srgb, var(--color-ink) 10%, transparent);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, white 16%, transparent),
+    inset 0 0 0 1px color-mix(in srgb, white 4%, transparent),
+    0 24px 64px -12px color-mix(in srgb, black 45%, transparent),
+    0 2px 8px color-mix(in srgb, black 12%, transparent);
+}
+/* Where a glass pop-up sits: inside the window less a safe area. The top
+   inset clears the macOS traffic lights and the Windows caption buttons
+   (--glass-popup-top, set from lib/glass-popup.ts); 24px elsewhere. The pane
+   is min(1040px, 100% - 48px) wide and min(760px, 100% - top - 24px) tall:
+   the padding takes the insets off, so 100% here is what is left. */
+.glass-popup-frame {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--glass-popup-top, 24px) 24px 24px;
+}
+.glass-popup {
+  width: min(1040px, 100%);
+  height: min(760px, 100%);
+  min-height: 0;
+}
+/* Cards and rails sitting on the glass: a second, thinner pane. */
+.glass-card {
+  background: color-mix(in srgb, var(--color-card) 60%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-ink) 8%, transparent);
+}
+/* Existing pages dropped onto glass (every Settings page) keep their markup;
+   their solid cards turn into the same thinner pane. */
+.glass-surface .bg-card {
+  background-color: color-mix(in srgb, var(--color-card) 60%, transparent);
+}
+.glass-rail {
+  background: color-mix(in srgb, var(--color-app) 22%, transparent);
+}
+/* Behind a glass pop-up: dim a little and blur, never black out. */
+.glass-scrim {
+  background: color-mix(in srgb, black 28%, transparent);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+}
+@media (prefers-reduced-transparency: reduce) {
+  .glass-surface {
+    background: var(--color-menu);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+  .glass-card,
+  .glass-surface .bg-card { background: var(--color-card); }
+  .glass-rail { background: var(--color-app); }
+  .glass-scrim {
+    background: color-mix(in srgb, black 50%, transparent);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+@media (forced-colors: active) {
+  .glass-surface,
+  .glass-card {
+    background: Canvas;
+    border-color: CanvasText;
   }
 }
 
@@ -2007,6 +2159,30 @@ body {
     --color-danger-ink: #070707;
     --color-success: #63b58a;
     --color-success-ink: #070707;
+  }
+}
+
+/* Meadow's own bubble is green-black on white: the same inverted context as
+   Daylight's, tuned to the green ink. */
+@scope ([data-skin="meadow"]) to ([data-skin]) {
+  .bg-bubble-user {
+    --color-ink: #ffffff;
+    --color-ink-secondary: #c3d6ca;
+    --color-ink-tertiary: #a9bfb1;
+    --color-panel: #142219;
+    --color-inset: #1b2b21;
+    --color-raised: #2a3b30;
+    --color-raised-hover: #35493c;
+    --color-control: #2a3b30;
+    --color-hairline: #5f7266;
+    --color-accent: #7fdca8;
+    --color-accent-text: #7fdca8;
+    --color-accent-ink: #0f1a13;
+    --color-focus: #7fdca8;
+    --color-danger: #ff7788;
+    --color-danger-ink: #0f1a13;
+    --color-success: #7fdca8;
+    --color-success-ink: #0f1a13;
   }
 }
 
