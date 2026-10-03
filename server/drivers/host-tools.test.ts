@@ -3,7 +3,7 @@
 // requests declined.
 import { describe, expect, it } from "vitest";
 
-import { CLAUDE_HOST_TOOLS, CODEX_WITHHELD_APPROVAL, claudeDisallowedTools, codexHostToolArgs, codexHostToolRequest } from "./host-tools.ts";
+import { CLAUDE_HOST_TOOLS, CODEX_WITHHELD_APPROVAL, GROK_MCP_TOOLS, PI_HOST_TOOLS, claudeDisallowedTools, codexHostToolArgs, codexHostToolRequest, grokHostToolArgs, grokOrgAgentProfile, piHostToolArgs } from "./host-tools.ts";
 
 describe("Claude Code host tools", () => {
   it("denies shell, file and fetch built-ins, keeping configured denials", () => {
@@ -36,5 +36,42 @@ describe("Codex host tools", () => {
     }
     expect(codexHostToolRequest("mcpServer/elicitation/request")).toBe(false);
     expect(codexHostToolRequest("item/tool/requestUserInput")).toBe(false);
+  });
+});
+
+describe("Grok host tools", () => {
+  it("keeps only the MCP tools in the ACP profile, even when a scope allows a host tool", () => {
+    const profile = grokOrgAgentProfile(undefined, true);
+    expect(profile.injectDefaultTools).toBe(false);
+    expect(profile.tools).toEqual([...GROK_MCP_TOOLS]);
+    for (const name of ["run_terminal_command", "read_file", "write", "grep", "web_search", "web_fetch", "spawn_subagent", "bash"]) {
+      expect(profile.disallowedTools).toContain(name);
+      expect(profile.tools).not.toContain(name);
+    }
+    const narrowed = grokOrgAgentProfile({ allow: ["native:read_file", "native:search_tool", "native:use_tool"] }, false);
+    expect(narrowed.tools).toEqual(["search_tool", "use_tool"]);
+    expect(narrowed.disallowedTools).toContain("read_file");
+    expect(() => grokOrgAgentProfile({ allow: ["native:read_file"] }, true)).toThrow(/search_tool/);
+  });
+
+  it("adds deny flags and does not pretend --tools or --sandbox remove tools", () => {
+    expect(grokHostToolArgs(false)).toEqual([]);
+    const args = grokHostToolArgs(true);
+    expect(args).toContain("--no-subagents");
+    expect(args).toContain("--disable-web-search");
+    expect(args).toContain("--deny");
+    expect(args).not.toContain("--sandbox");
+    expect(args).not.toContain("--tools");
+    expect(args).not.toContain("--disallowed-tools");
+  });
+});
+
+describe("pi host tools", () => {
+  it("drops builtins and discovered extensions only on a withheld turn", () => {
+    expect(piHostToolArgs(false)).toEqual([]);
+    const args = piHostToolArgs(true);
+    expect(args[0]).toBe("--no-builtin-tools");
+    expect(args).toContain("--no-extensions");
+    expect(args[args.indexOf("--exclude-tools") + 1].split(",")).toEqual([...PI_HOST_TOOLS]);
   });
 });
