@@ -538,6 +538,7 @@
   "model.scope.botHint": "Ce fil, les groupes et les nouveaux fils. Les autres fils existants gardent leur modèle.",
   "model.org.noModels": "Ce fournisseur n’a aucun modèle sur le serveur de l’organisation.",
   "model.org.localHidden": "Les modèles locaux ne sont pas offerts sur un serveur d’organisation : ils tourneraient sur la machine du serveur, pas la vôtre.",
+  "model.org.hostTools": "{name} exécute ses propres outils sur le serveur Sagax. Choisissez un moteur qui fonctionne dans votre environnement serveur.",
   "model.org.state.connected": "Connecté",
   "model.org.state.signInRequired": "Connexion requise",
   "model.org.state.noAccess": "Aucun accès pour l’instant",

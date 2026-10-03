@@ -1461,5 +1461,6 @@
   "personPanel.connections.confirm.action": "Remover",
   "personPanel.connections.created": "Adicionado em {date}",
   "personPanel.connections.lastUsed": "Último uso {date}",
-  "personPanel.connections.removeError": "Não foi possível remover a conexão."
+  "personPanel.connections.removeError": "Não foi possível remover a conexão.",
+  "model.org.hostTools": "{name} executa as próprias ferramentas no servidor Sagax. Escolha um mecanismo que funcione no seu ambiente de servidor."
 }

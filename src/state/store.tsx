@@ -935,6 +935,9 @@ export interface InstanceInfo {
     /** This engine can answer a bounded review prompt without changing the
      * bot's active conversation. */
     approvalReview?: boolean;
+    /** Its own shell, file and web tools stay off the Sagax server. An
+     * organization server offers only these engines. */
+    withholdsHostTools?: boolean;
   };
   /** `custom` agents sit below the rail divider — no subscription catalog. */
   access?: "subscription" | "custom" | "api";

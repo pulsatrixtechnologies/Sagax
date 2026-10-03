@@ -1447,5 +1447,6 @@
   "personPanel.connections.confirm.action": "हटाएँ",
   "personPanel.connections.created": "जोड़ा गया {date}",
   "personPanel.connections.lastUsed": "पिछली बार {date}",
-  "personPanel.connections.removeError": "कनेक्शन हटाया नहीं जा सका।"
+  "personPanel.connections.removeError": "कनेक्शन हटाया नहीं जा सका।",
+  "model.org.hostTools": "{name} Sagax सर्वर पर अपने टूल चलाता है. ऐसा इंजन चुनें जो आपके सर्वर वातावरण में काम करे."
 }

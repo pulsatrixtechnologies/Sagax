@@ -1987,5 +1987,6 @@
   "personPanel.connections.confirm.action": "Вилучити",
   "personPanel.connections.created": "Додано {date}",
   "personPanel.connections.lastUsed": "Востаннє {date}",
-  "personPanel.connections.removeError": "Не вдалося вилучити з’єднання."
+  "personPanel.connections.removeError": "Не вдалося вилучити з’єднання.",
+  "model.org.hostTools": "{name} запускає власні інструменти на сервері Sagax. Оберіть рушій, який працює у вашому серверному середовищі."
 }

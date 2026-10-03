@@ -1465,5 +1465,6 @@
   "personPanel.connections.confirm.action": "Entfernen",
   "personPanel.connections.created": "Hinzugefügt {date}",
   "personPanel.connections.lastUsed": "Zuletzt verwendet {date}",
-  "personPanel.connections.removeError": "Die Verbindung konnte nicht entfernt werden."
+  "personPanel.connections.removeError": "Die Verbindung konnte nicht entfernt werden.",
+  "model.org.hostTools": "{name} führt eigene Tools auf dem Sagax-Server aus. Wählen Sie eine Engine, die in Ihrer Serverumgebung funktioniert."
 }

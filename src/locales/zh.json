@@ -2352,5 +2352,6 @@
   "personPanel.connections.confirm.action": "移除",
   "personPanel.connections.created": "添加于 {date}",
   "personPanel.connections.lastUsed": "上次使用 {date}",
-  "personPanel.connections.removeError": "无法移除连接。"
+  "personPanel.connections.removeError": "无法移除连接。",
+  "model.org.hostTools": "{name} 会在 Sagax 服务器上运行自己的工具。请选择能在你的服务器环境中工作的引擎。"
 }
