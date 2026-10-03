@@ -110,6 +110,13 @@ extension ChatView {
         ) {
             withAnimation(.spring(response: 0.3, dampingFraction: 0.75)) { openCommandMenu() }
         })
+        if session.surfaceGate.allows(.findInConversation) {
+            out.append(PlusAction(
+                id: "find", systemImage: "magnifyingglass",
+                title: LocalizedStringKey(String(localized: "Find in conversation")),
+                subtitle: LocalizedStringKey(String(localized: "Search this thread's messages"))
+            ) { openFind() })
+        }
         if case let .bot(bot) = current {
             out.append(PlusAction(
                 id: "task", systemImage: "plus.square.on.square", title: "New thread",

@@ -18,14 +18,16 @@ extension ChatView {
         let outgoingAttachments = attachments
         let chatAtSend = current
         let pastesAtSend = explicitText == nil ? power.pastes(chatAtSend.threadId) : []
+        // Quoted selections (CO8) go with the typed words, not a quick reply.
+        let citationsAtSend = explicitText == nil ? citations.citations(chatAtSend.threadId) : []
         let replyAtSend = session.surfaceGate.allows(.replyQuote) ? replyTo : nil
-        guard !text.isEmpty || !outgoingAttachments.isEmpty || !pastesAtSend.isEmpty,
+        guard !text.isEmpty || !outgoingAttachments.isEmpty || !pastesAtSend.isEmpty || !citationsAtSend.isEmpty,
               !preparingAttachments,
               !sendingMessage
         else { return }
         // "/hibou98" alone toggles Hibou 98 and is never sent, as on the
         // desktop (src/lib/retro98.ts).
-        if outgoingAttachments.isEmpty, pastesAtSend.isEmpty, text.lowercased() == "/hibou98" {
+        if outgoingAttachments.isEmpty, pastesAtSend.isEmpty, citationsAtSend.isEmpty, text.lowercased() == "/hibou98" {
             draft = ""
             Haptics.selection()
             ThemeStore.shared.toggleRetro(client: session.settingsClient)
@@ -35,15 +37,16 @@ extension ChatView {
         var words = text
         var goal = false
         if case let .room(room) = chatAtSend, room.dm != true, let goalText = goalTextFromComposer(text) {
-            guard !goalText.isEmpty || !outgoingAttachments.isEmpty || !pastesAtSend.isEmpty else { return }
+            guard !goalText.isEmpty || !outgoingAttachments.isEmpty || !pastesAtSend.isEmpty || !citationsAtSend.isEmpty else { return }
             words = goalText
             goal = true
         }
-        // Resolvable "#Title" runs leave as canonical links, then the pastes.
-        let requestText = PastedText.compose(
+        // Resolvable "#Title" runs leave as canonical links, then the
+        // pastes, then the citations (their blocks are never trimmed).
+        let requestText = Citations.compose(PastedText.compose(
             ThreadRefs.serialize(words, threads: session.threadRefCandidates, currentBotId: chatAtSend.id),
             pastes: pastesAtSend
-        )
+        ), citations: citationsAtSend)
         var busyMode: BusySendMode?
         if BusySendChoice.offered(for: chatAtSend), session.surfaceGate.allows(.busySendChoice) {
             guard let chosen else {
@@ -86,6 +89,7 @@ extension ChatView {
                 power.forget(failed)
             }
             power.clearPastes(pastesAtSend.map(\.id), threadId: chatAtSend.threadId)
+            citations.clear(citationsAtSend.map(\.id), threadId: chatAtSend.threadId)
             // The quote was sent: it leaves with the words, unless another
             // one was picked while the send was in flight.
             if threadId != chatAtSend.threadId {

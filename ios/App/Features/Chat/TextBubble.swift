@@ -82,6 +82,9 @@ struct TextBubble: View {
                     WebhookMessageBody(content: webhook)
                 } else if mine {
                     let shared = attachedContent
+                    // Quotes this message carries (CO8): its own words, then
+                    // the citations as chips.
+                    let cited = Citations.split(shared.text)
                     ForEach(Array(shared.attachments.enumerated()), id: \.offset) { _, attachment in
                         TranscriptAttachmentView(
                             attachment: attachment,
@@ -89,9 +92,9 @@ struct TextBubble: View {
                             messageId: message.id
                         )
                     }
-                    if !shared.text.isEmpty {
-                        let collapsible = MessageCollapse.isLong(shared.text)
-                        Text(MentionTint.attributed(shared.text, peers: context.mentionPeers, everyone: context.mentionEveryone))
+                    if !cited.display.isEmpty {
+                        let collapsible = MessageCollapse.isLong(cited.display)
+                        Text(MentionTint.attributed(cited.display, peers: context.mentionPeers, everyone: context.mentionEveryone))
                             .font(Theme.Font.body)
                             .lineSpacing(Theme.bodyLineSpacing)
                             .foregroundStyle(BubbleColor.mineText)
@@ -116,6 +119,15 @@ struct TextBubble: View {
                                 .buttonStyle(.plain)
                                 .accessibilityIdentifier("collapse-\(message.id)")
                         }
+                    }
+                    SentCitations(citations: cited.citations) { citation in
+                        // `onNavigate`: only a message of this conversation.
+                        guard citation.source.threadId == chat.threadId,
+                              context.lookup(citation.source.messageId) != nil,
+                              let jump = context.jump
+                        else { return false }
+                        jump(citation.source.messageId)
+                        return true
                     }
                 } else if showingSource, let source = message.text, !source.isEmpty {
                     RawMarkdownView(text: source)

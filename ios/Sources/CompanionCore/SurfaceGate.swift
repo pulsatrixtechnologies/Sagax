@@ -73,6 +73,10 @@ public enum SurfaceFeature: String, CaseIterable, Hashable, Sendable {
     case messagePin
     /// Inspector: run log, events, raw (MS24). Admin only.
     case inspector
+    /// Find in this conversation, `GET /api/search?threadId=` (MS11).
+    case findInConversation
+    /// Quote selected text as a citation in the next message (CO8).
+    case citationQuote
 
     // Composer (WP3)
     /// The engine's own slash commands in the "/" menu (CO9). Sidecars wait
@@ -207,6 +211,9 @@ public struct SurfaceGate: Hashable, Sendable {
     public func allows(_ feature: SurfaceFeature) -> Bool {
         switch feature {
         case .replyQuote, .regenerate, .speakReply, .reactions, .messagePin, .connectorCard, .createBot:
+            return true
+        // Search and citations pass both gates; the remote client shows them.
+        case .findInConversation, .citationQuote:
             return true
         case .threadFiles, .routineDelete, .botUsage, .characterExtras:
             return true

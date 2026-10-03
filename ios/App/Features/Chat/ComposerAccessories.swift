@@ -1,7 +1,8 @@
 // The strips above the composer field: failed sends, held sends, progress,
 // errors, the "/" menu, "@"/"#" suggestions or quick replies, the pending
 // attachments and pastes, the busy-send choice. One seam for the strips the
-// parity packages add (reply quote, find bar, suggestions: WP1, WP3, WP4).
+// parity packages add (reply quote, find bar, suggestions: WP1, WP3, WP4;
+// WP4's citation chips sit above the pastes).
 import SwiftUI
 import CompanionCore
 
@@ -112,6 +113,30 @@ extension ChatView {
                 submit(chip.prompt)
             }
             .transition(.opacity)
+        }
+
+        // Quoted selections waiting for this send (CO8, WP4).
+        let quoted = citations.citations(threadId)
+        if !quoted.isEmpty {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(quoted) { citation in
+                        let thread = threadId
+                        CitationChip(
+                            citation: citation,
+                            onChange: { citations.replace($0, threadId: thread) },
+                            onRemove: {
+                                guard !sendingMessage else { return }
+                                citations.remove(citation.id, threadId: thread)
+                            }
+                        )
+                    }
+                }
+                .padding(.horizontal, 2)
+            }
+            .scrollClipDisabledCompat()
+            .accessibilityIdentifier("composer-citations")
+            .transition(.move(edge: .bottom).combined(with: .opacity))
         }
 
         let pastes = power.pastes(threadId)
