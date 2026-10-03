@@ -165,8 +165,22 @@ struct MessageRow: View {
 
     @ViewBuilder
     private var content: some View {
+        // A card projected for someone who is not its approval audience
+        // (OwnerWait.tsx): who it waits on, or who settled it. No controls.
+        if message.ownerWait != nil {
+            OwnerWaitView(message: message)
+        } else {
+            kindContent
+        }
+    }
+
+    @ViewBuilder
+    private var kindContent: some View {
         switch message.kind {
         case .text:
+            if let ref = message.parallelTask, ref.part == .result {
+                ParallelResultLabel(ref: ref)
+            }
             TextBubble(message: message, chat: chat, tailed: endsRun, showingSource: showingSource, openLink: openLink)
         case .options:
             // A structured ask draws its own card: its answers are the
@@ -178,15 +192,28 @@ struct MessageRow: View {
             }
         case .secret:
             if let secret = message.secret {
-                CredentialRequestCardView(chat: chat, message: message, secret: secret)
+                // A decline that resumed leaves nothing to show (SecretRequestCard.tsx).
+                if !SecretCardRules.isHidden(secret) {
+                    CredentialRequestCardView(chat: chat, message: message, secret: secret)
+                }
             } else if let text = message.text, !text.isEmpty {
                 TextBubble(message: message, chat: chat, tailed: endsRun, openLink: openLink)
             }
         case .activity:
-            ActivityChip(
-                tool: message.tool, threadRef: message.threadRef, openThread: openThread,
-                outputIsProse: message.isTeammateReport
-            )
+            if let ref = message.parallelTask, ref.isCard {
+                ParallelTaskCardView(chat: chat, message: message, ref: ref, openThread: openThread)
+            } else {
+                ActivityChip(
+                    tool: message.tool, threadRef: message.threadRef, openThread: openThread,
+                    outputIsProse: message.isTeammateReport
+                )
+            }
+            // A failed turn on the conversation's last row: Retry sends the
+            // last user line again (ChatView.tsx ErrorRow).
+            if retryable, case let .bot(bot) = chat {
+                ErrorRetryButton { await session.regenerate(for: bot) }
+                    .accessibilityIdentifier("error-retry-\(message.id)")
+            }
             // A turn that failed because Claude Code is too old for the
             // model: offer to run the updater for the engine this thread uses.
             if message.tool?.claudeUpdate == true, case let .bot(bot) = chat {
@@ -224,10 +251,25 @@ struct MessageRow: View {
                 // is written for exactly this reader.
                 TextBubble(message: message, chat: chat, tailed: endsRun, openLink: openLink)
             }
-        case .unknown, .connector, .access, .goalRun:
-            // The connector, access and goal-run cards draw as their text
-            // until their card views land (WP2), as they did while they
-            // decoded as `unknown`.
+        case .connector:
+            if let connector = message.connector, session.surfaceGate.allows(.connectorCard) {
+                ConnectorCardView(chat: chat, message: message, connector: connector)
+            } else if let text = message.text, !text.isEmpty {
+                TextBubble(message: message, chat: chat, tailed: endsRun, openLink: openLink)
+            }
+        case .access:
+            if let access = message.access {
+                AccessCardView(access: access)
+            } else if let text = message.text, !text.isEmpty {
+                TextBubble(message: message, chat: chat, tailed: endsRun, openLink: openLink)
+            }
+        case .goalRun:
+            if let run = message.goalRun {
+                GoalRunCardView(run: run)
+            } else if let text = message.text, !text.isEmpty {
+                TextBubble(message: message, chat: chat, tailed: endsRun, openLink: openLink)
+            }
+        case .unknown:
             // A message kind from a newer computer. Almost everything the
             // harness sends carries `text`, so showing it is usually the
             // whole message and always better than a gap in the transcript.
@@ -237,6 +279,16 @@ struct MessageRow: View {
                 TextBubble(message: message, chat: chat, tailed: endsRun, openLink: openLink)
             }
         }
+    }
+
+    /// This failed turn is the conversation's last row and its bot is idle.
+    private var retryable: Bool {
+        guard ErrorRowRules.isError(message), case let .bot(bot) = chat else { return false }
+        return ErrorRowRules.retryableErrorId(
+            in: session.state.visibleTranscript(forThread: chat.threadId),
+            busy: bot.busy == true,
+            pendingId: session.state.pendingEdits[chat.threadId]?.placeholderId
+        ) == message.id
     }
 
     /// A run thread is opened by the same route an "Opened thread" chip

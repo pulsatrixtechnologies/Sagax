@@ -120,6 +120,8 @@ extension ChatView {
             .transition(.move(edge: .bottom).combined(with: .opacity))
         }
 
+        approvalDock
+
         replyStrip
     }
 }

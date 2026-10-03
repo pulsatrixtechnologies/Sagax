@@ -35,18 +35,53 @@ struct CardView: View {
 
     private var tint: Color { MausPalette.color(chat.color) }
 
+    /// A permission ask is answered in the approval dock above the composer
+    /// (PendingApproval.tsx); its card here only records what is asked and,
+    /// once settled, what happened (ApprovalCard.tsx).
+    private var answeredInDock: Bool { message.card?.isPermission == true }
+
+    /// A first-run quiz goes once picked, dismissed or talked past.
+    private var hidden: Bool {
+        OptionCardRules.hidesOnboardingCard(message, in: session.state.visibleTranscript(forThread: chat.threadId))
+    }
+
     var body: some View {
-        if let card = message.card {
+        if let card = message.card, !hidden {
             VStack(alignment: .leading, spacing: 10) {
-                if card.isPending {
+                if card.isPending && !answeredInDock {
                     Label("\(chat.name) is waiting on you", systemImage: "hand.raised.fill")
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(Theme.readable(tint))
                 }
-                Text(card.title)
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(Theme.attentionText)
-                    .fixedSize(horizontal: false, vertical: true)
+                HStack(alignment: .top, spacing: 8) {
+                    Text(card.title)
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(Theme.attentionText)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if canDismiss(card) {
+                        Spacer(minLength: 4)
+                        // OptionCard.tsx's X: a quiz is put away, a live
+                        // question declined (never denied).
+                        Button {
+                            Haptics.selection()
+                            answering = true
+                            Task {
+                                await session.dismissOptionCard(message, in: chat)
+                                answering = false
+                            }
+                        } label: {
+                            Image(systemName: "xmark")
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundStyle(Theme.attentionSecondary)
+                                .frame(width: 28, height: 28)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(answering)
+                        .accessibilityLabel(Text("Dismiss"))
+                        .accessibilityIdentifier("card-dismiss-\(message.id)")
+                    }
+                }
                 if !card.subtitle.isEmpty {
                     Text(card.subtitle)
                         .font(.system(size: 15))
@@ -97,7 +132,12 @@ struct CardView: View {
                         .foregroundStyle(Theme.warning)
                 }
 
-                if card.isPending {
+                if card.isPending && answeredInDock {
+                    Label(waitingLine(card), systemImage: "checkmark.shield")
+                        .font(.system(size: 13))
+                        .foregroundStyle(Theme.attentionSecondary)
+                        .accessibilityIdentifier("card-waiting-\(message.id)")
+                } else if card.isPending {
                     HStack(spacing: 8) {
                         ForEach(card.options, id: \.self) { option in
                             Button {
@@ -127,32 +167,12 @@ struct CardView: View {
                     }
                     .padding(.top, 2)
 
-                    // The grant key comes from the card. The phone never
-                    // derives its own, so it cannot permit something subtly
-                    // wider than the computer would have. The same goes for
-                    // the answer: it is one of the options the card offered,
-                    // never a string invented here.
-                    if card.allowKey != nil, let allow = allowChoice, case let .bot(bot) = chat {
-                        Button("Always allow this tool") {
-                            Haptics.selection()
-                            answering = true
-                            Task {
-                                await session.alwaysAllow(bot: bot, card: card)
-                                await session.answer(
-                                    chat: chat,
-                                    card: card,
-                                    choice: allow,
-                                    rememberingPermission: false
-                                )
-                                answering = false
-                            }
-                        }
-                        .font(.system(size: 12))
+                } else if answeredInDock, let outcome = ApprovalOutcome.of(card) {
+                    Label(Self.outcomeText(outcome), systemImage: outcome == .allowed || card.answered == "allow" ? "checkmark.circle" : "xmark.circle")
+                        .font(.system(size: 14))
                         .foregroundStyle(Theme.attentionSecondary)
-                        .frame(maxWidth: .infinity)
-                        .disabled(answering)
-                    }
-                } else if let answered = card.answered {
+                        .accessibilityIdentifier("card-outcome-\(message.id)")
+                } else if let answered = card.answeredText ?? card.answered {
                     Label(answered, systemImage: "checkmark.circle")
                         .font(.system(size: 14))
                         .foregroundStyle(Theme.attentionSecondary)
@@ -169,6 +189,40 @@ struct CardView: View {
                 RoundedRectangle(cornerRadius: 22, style: .continuous)
                     .strokeBorder(card.isPending ? tint : .clear, lineWidth: 1.5)
             }
+        }
+    }
+
+    /// The X shows on a card still open that the dock does not own.
+    private func canDismiss(_ card: OptionCard) -> Bool {
+        !answeredInDock && card.answered == nil && card.dismissed != true && card.expired != true
+    }
+
+    private func waitingLine(_ card: OptionCard) -> String {
+        if card.adminApproval == true && !session.canAdminister {
+            return String(localized: "This command runs on the server: waiting for an admin to approve it.")
+        }
+        return ApprovalDockRules.isProposal(card)
+            ? String(localized: "Waiting for your confirmation below")
+            : String(localized: "Waiting for your answer below")
+    }
+
+    static func outcomeText(_ outcome: ApprovalOutcome) -> String {
+        switch outcome {
+        case .expired: String(localized: "Expired. Ask for a fresh proposal")
+        case .allowed: String(localized: "Allowed")
+        case .denied: String(localized: "Denied")
+        case .cancelled: String(localized: "Cancelled")
+        case .routineScheduled: String(localized: "Routine scheduled")
+        case .routineUpdated: String(localized: "Routine updated")
+        case .routinePaused: String(localized: "Routine paused")
+        case .routineResumed: String(localized: "Routine resumed")
+        case .routineRunQueued: String(localized: "Routine run queued")
+        case .routineDeleted: String(localized: "Routine deleted")
+        case .skillEnabled: String(localized: "Skill enabled")
+        case .skillUpdated: String(localized: "Skill updated")
+        case .profileUpdated: String(localized: "Profile updated")
+        case .teamSetupApplied: String(localized: "Team setup applied")
+        case .botDeleted: String(localized: "Bot deleted")
         }
     }
 }

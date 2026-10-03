@@ -308,6 +308,14 @@ public func transcriptRows(_ messages: [Message], detail: ActivityDetail) -> [Tr
             continue
         }
         if hiddenIDs.contains(message.id) { continue }
+        // A parallel task's live card and a failed turn are not receipts:
+        // the desktop draws them whatever the tool-call setting says, and
+        // never folds them into a run (they carry Stop, Open and Retry).
+        if message.parallelTask?.isCard == true || ErrorRowRules.isError(message) {
+            flush()
+            rows.append(.message(message))
+            continue
+        }
         if detail == .hidden && isActivityReceipt(message) { continue }
         // A turn that touched nothing leaves a digest with nothing to show;
         // an empty row would still cost the transcript a gap.

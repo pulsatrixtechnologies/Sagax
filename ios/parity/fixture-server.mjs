@@ -35,6 +35,11 @@ import { DatabaseSync } from "node:sqlite";
 import { randomUUID } from "node:crypto";
 import { deflateSync, crc32 } from "node:zlib";
 import { orgEnterpriseStub, orgServerEnv, seedOrg, signInOrg, startOrg, stopOrg } from "./org-fixture.mjs";
+// PARITY_CARDS=1: the interactive cards' lab for the WP2 UI tests (card-lab.mjs).
+import {
+  CARD_LAB, cardLabHook, cardLabInstances, cardLabServerEnv, closeCardLab, seedCardLabBots,
+  seedCardLabTranscripts, startCardLabBroker,
+} from "./card-lab.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(HERE, "..", "..");
@@ -74,6 +79,8 @@ async function freePair() {
 let home = "";
 let child = null;
 let enterpriseStub = "";
+/** PARITY_CARDS=1: the connected-apps broker stub's port. */
+let cardLabBroker = 0;
 
 function startServer(port, webhook) {
   const log = join(OUT, "server.log");
@@ -93,6 +100,7 @@ function startServer(port, webhook) {
       // stub layer (written by main()) grants "budgets" and nothing else.
       ...(enterpriseStub ? { OMB_ENTERPRISE_DIR: enterpriseStub, OMB_LICENSE_KEY: "parity-fixture" } : {}),
       ...(org ? orgServerEnv(org) : {}),
+      ...(cardLabBroker ? cardLabServerEnv(cardLabBroker) : {}),
       TZ: process.env.TZ ?? Intl.DateTimeFormat().resolvedOptions().timeZone,
     },
     stdio: ["ignore", "pipe", "pipe"],
@@ -528,6 +536,7 @@ function startComputerDouble(upstreamPort) {
   };
   const server = createHttpServer(async (req, res) => {
     const url = new URL(req.url ?? "/", "http://fixture");
+    if (await cardLabHook(req, res, url, `http://127.0.0.1:${upstreamPort}`, api)) return;
     if (url.pathname === "/__parity/computer") {
       if (req.method === "DELETE") {
         computerRecord.batches = [];
@@ -630,9 +639,11 @@ async function main() {
         displayName: "Fixture engine",
         config: { cli: join(ROOT, "server", "testing", "fake-claude-cli.ts") },
       },
+      ...(CARD_LAB ? cardLabInstances(ROOT, dataDir) : {}),
     },
   }));
 
+  if (CARD_LAB) cardLabBroker = await startCardLabBroker();
   const { port, webhook } = await freePair();
   const base = `http://127.0.0.1:${port}`;
   console.error(`[parity] data ${home}`);
@@ -643,9 +654,11 @@ async function main() {
   await waitHealthy(base, child);
   if (org) await signInOrg(org);
   const seeded = await seedThroughAPI(base);
+  if (CARD_LAB) await seedCardLabBots(base, api);
   await stopServer(child);
 
   seedTranscripts(dataDir, seeded);
+  if (CARD_LAB) seedCardLabTranscripts(dataDir);
   seedCommandRules(dataDir, seeded);
 
   child = startServer(port, webhook);
@@ -680,6 +693,7 @@ async function main() {
 }
 
 async function shutdown(code) {
+  if (CARD_LAB) closeCardLab();
   await stopServer(child);
   await stopOrg(org);
   if (home) rmSync(home, { recursive: true, force: true });

@@ -214,6 +214,9 @@ struct ParityLaunch {
     var iPadScreen: IPadParityScreen? = nil
     var orientation: String? = nil
     var skin: String? = nil
+    /// `-parityChat NAME`: the chat screens open this bot instead of Ara
+    /// (the card lab of the WP2 UI tests).
+    var chatName: String? = nil
 
     static let current: ParityLaunch? = parse(ProcessInfo.processInfo.arguments)
 
@@ -233,7 +236,8 @@ struct ParityLaunch {
             screen: value("-parityScreen").flatMap(ParityScreen.init(argument:)),
             iPadScreen: value("-parityIPadScreen").flatMap(IPadParityScreen.init(argument:)),
             orientation: value("-parityOrientation"),
-            skin: value("-paritySkin")
+            skin: value("-paritySkin"),
+            chatName: value("-parityChat")
         )
     }
 
@@ -264,8 +268,9 @@ struct ParityScreenLauncher: ViewModifier {
                 launched = true
                 if screen.opensAraChat {
                     // Wait for the fleet, then push Ara's chat the way a deep link does.
+                    let name = ParityLaunch.current?.chatName ?? "Ara"
                     for _ in 0..<150 {
-                        if let ara = session.state.bots.first(where: { $0.name == "Ara" }) {
+                        if let ara = session.state.bots.first(where: { $0.name == name }) {
                             session.openChat(threadId: ara.threadId)
                             return
                         }

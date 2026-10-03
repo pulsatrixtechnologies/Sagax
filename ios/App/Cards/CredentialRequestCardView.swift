@@ -22,6 +22,10 @@ struct CredentialRequestCardView: View {
     @State private var submitting = false
     @State private var submitted = false
     @State private var submissionError: String?
+    /// "Not now" and "Try again" (SecretRequestCard.tsx): their own state,
+    /// since neither touches the credential.
+    @State private var cardActionRunning = false
+    @State private var cardActionError: String?
 
     private struct RequestIdentity: Equatable {
         let connectionID: String?
@@ -113,13 +117,39 @@ struct CredentialRequestCardView: View {
                     .background(tint.opacity(0.13), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
 
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(label)
-                        .font(.system(size: 16, weight: .semibold))
+                    HStack(spacing: 6) {
+                        Text(label)
+                            .font(.system(size: 16, weight: .semibold))
+                        if secret.superseded == true {
+                            Text("Superseded")
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundStyle(Theme.warning)
+                                .padding(.horizontal, 7)
+                                .padding(.vertical, 2)
+                                .background(Theme.warning.opacity(0.15), in: Capsule())
+                        }
+                    }
                     Text("Requested by \(requester)")
                         .font(.system(size: 12.5))
                         .foregroundStyle(Theme.textSecondary)
                 }
                 Spacer(minLength: 0)
+                if SecretCardRules.canDismiss(secret), !submitting, !submitted {
+                    Button {
+                        Haptics.selection()
+                        runCardAction { await session.dismissSecretCard(message, in: chat) }
+                    } label: {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(Theme.textSecondary)
+                            .frame(width: 28, height: 28)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(cardActionRunning)
+                    .accessibilityLabel(Text("Not now"))
+                    .accessibilityIdentifier("secret-dismiss-\(message.id)")
+                }
             }
 
             if let description = visible(secret.description) {
@@ -129,7 +159,12 @@ struct CredentialRequestCardView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
 
-            if secret.provided == true {
+            if secret.superseded == true {
+                Label("This request was replaced by a newer one for the same key. Use the newest card to provide it.", systemImage: "xmark.circle")
+                    .font(.system(size: 13))
+                    .foregroundStyle(Theme.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else if secret.provided == true {
                 VStack(alignment: .leading, spacing: 8) {
                     Label(
                         secret.resumed == true ? "Saved securely. The task resumed." : "Saved securely on your computer.",
@@ -150,8 +185,8 @@ struct CredentialRequestCardView: View {
                     }
                 }
             } else if secret.dismissed == true {
-                Label("Not provided", systemImage: "xmark.circle")
-                    .foregroundStyle(Theme.textSecondary)
+                Label("Continuing without this credential failed", systemImage: "xmark.circle")
+                    .foregroundStyle(Theme.danger)
             } else if submitted {
                 Label("Encrypted and saved on your computer", systemImage: "checkmark.shield.fill")
                     .foregroundStyle(Theme.success)
@@ -260,6 +295,28 @@ struct CredentialRequestCardView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
 
+            if SecretCardRules.canRetryResume(secret), preparedSubmission == nil {
+                Button {
+                    Haptics.selection()
+                    runCardAction { await session.resumeSecretCard(message, in: chat) }
+                } label: {
+                    HStack(spacing: 7) {
+                        if cardActionRunning { ProgressView() } else { Image(systemName: "arrow.clockwise") }
+                        Text("Try again")
+                    }
+                    .font(.system(size: 13, weight: .semibold))
+                }
+                .disabled(cardActionRunning)
+                .accessibilityIdentifier("secret-resume-\(message.id)")
+            }
+
+            if let cardActionError = visible(cardActionError) {
+                Label(cardActionError, systemImage: "exclamationmark.triangle.fill")
+                    .font(.system(size: 12.5))
+                    .foregroundStyle(Theme.danger)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
             if let error = visible(secret.error) {
                 Label(error, systemImage: "exclamationmark.triangle.fill")
                     .font(.system(size: 12.5))
@@ -284,7 +341,12 @@ struct CredentialRequestCardView: View {
             RoundedRectangle(cornerRadius: 22, style: .continuous)
                 .strokeBorder(secret.isPending ? tint.opacity(0.65) : Color.clear, lineWidth: 1.25)
         }
-        .accessibilityElement(children: canEnterOnPhone ? .contain : .combine)
+        // Combined while it is only a status; its own buttons (entry, Not now,
+        // Try again) must stay reachable, so then it contains them.
+        .accessibilityElement(
+            children: canEnterOnPhone || SecretCardRules.canDismiss(secret) || SecretCardRules.canRetryResume(secret)
+                ? .contain : .combine
+        )
         .accessibilityLabel("\(label). \(accessibilityStatus)")
         .onAppear {
             preparedSubmission = session.preparedCredential(
@@ -376,6 +438,15 @@ struct CredentialRequestCardView: View {
             activeSubmissionID = nil
             submissionTask = nil
             submitting = false
+        }
+    }
+
+    private func runCardAction(_ action: @escaping () async -> String?) {
+        cardActionRunning = true
+        cardActionError = nil
+        Task { @MainActor in
+            cardActionError = await action()
+            cardActionRunning = false
         }
     }
 

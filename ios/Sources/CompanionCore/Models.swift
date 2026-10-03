@@ -64,11 +64,36 @@ public struct OptionCard: Codable, Hashable, Sendable {
     /// the behavior once the harness settles a live ask, so without this a
     /// settled question card would read "answer" instead of the reply.
     public var answeredText: String? = nil
+    /// Terminal: the proposal went stale while open. Nothing can answer it
+    /// and no client may offer its options (`OptionCardData.expired`).
+    public var expired: Bool? = nil
+    /// Catalog key for `held` when it is one of the fixed notes.
+    public var heldCode: String? = nil
+    /// The provider can remember an allow for the rest of its session
+    /// ("Always allow this session").
+    public var allowSession: Bool? = nil
+    /// A permission ask's full arguments as redacted JSON.
+    public var toolInput: String? = nil
+    /// MCP tool annotations, when the provider passes them on.
+    public var toolHints: ToolHints? = nil
+    /// The exact native command an owner or admin may remember
+    /// ("Always allow this command").
+    public var commandAllowlist: CommandAllowlistCandidate? = nil
+    /// Organization server: a server command of a member's bot that only an
+    /// organization admin answers. Never remembered.
+    public var adminApproval: Bool? = nil
+    /// Durable proposals. Only their presence matters to the phone: a
+    /// proposal is confirmed or cancelled, never remembered or batched.
+    public var routineRequest: ProposalRequestMarker? = nil
+    public var profileRequest: ProposalRequestMarker? = nil
+    public var modelRequest: ProposalRequestMarker? = nil
+    public var tighteningRequest: ProposalRequestMarker? = nil
+    public var teamSetupRequest: ProposalRequestMarker? = nil
 
     /// A card is actionable while it is unanswered and still has a request
     /// behind it. Everything else is transcript.
     public var isPending: Bool {
-        requestId != nil && answered == nil && dismissed != true
+        requestId != nil && answered == nil && dismissed != true && expired != true
     }
 
     /// Permission cards carry a tool; questions do not.
@@ -159,6 +184,12 @@ public struct ThreadRef: Codable, Hashable, Sendable {
     public var botId: String
     public var threadId: String
     public var title: String
+
+    public init(botId: String, threadId: String, title: String) {
+        self.botId = botId
+        self.threadId = threadId
+        self.title = title
+    }
 }
 
 /// A credential request created by the desktop for one paused task.
@@ -176,8 +207,10 @@ public struct SecretRequestCardData: Codable, Hashable, Sendable {
     public var dismissed: Bool?
     public var resumed: Bool?
     public var error: String?
+    /// A newer request for the same key replaced this one.
+    public var superseded: Bool? = nil
 
-    public var isPending: Bool { provided != true && dismissed != true }
+    public var isPending: Bool { provided != true && dismissed != true && superseded != true }
 }
 
 public struct Sender: Codable, Hashable, Sendable {
