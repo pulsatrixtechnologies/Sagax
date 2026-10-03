@@ -1,6 +1,11 @@
 import CompanionCore
 import SwiftUI
 
+// Settings > Workspace > Threads & Routines: the routines and their run logs
+// (matrix AU5-AU10), the phone's view of the desktop's Automations page
+// (src/components/RoutineCalendarPage.tsx RoutinesPage, routines/RoutineList.tsx,
+// routines/RoutineLogs.tsx). Toolbar: the unseen-failure badge, then a menu
+// with the bot filter and Mark all as read.
 struct TasksRoutinesView: View {
     @Environment(\.themePalette) var themePalette
     @EnvironmentObject private var session: Session
@@ -8,83 +13,98 @@ struct TasksRoutinesView: View {
     @State private var runs: [RoutineRun] = []
     @State private var editor: RoutineEditorTarget?
     @State private var deleting: Routine?
+    @State private var openRun: RoutineRun?
     @State private var loading = true
+    @State private var section: RoutinesSection = .routines
+    @State private var botFilter = RoutineBotFilter()
+    @State private var routineFilter: String?
+    @State private var statusFilter: RoutineRunStatusFilter = .all
+    @State private var query = ""
+    @State private var logLimit = 50
+
+    enum RoutinesSection: Hashable { case routines, logs }
+
+    private var seenAllowed: Bool { session.surfaceGate.allows(.routineRunsSeen) }
+    private var visibleBots: [Bot] { session.state.bots.filter { $0.hidden != true } }
+    private var unseenFailures: Int { RoutineRunLog.unseenProblems(runs) }
+    private var filteredRuns: [RoutineRun] {
+        RoutineRunLog.filter(botFilter.runs(runs), bots: session.state.bots, routineId: routineFilter, status: statusFilter, query: query)
+    }
 
     var body: some View {
         ThemedList {
             Section {
-                VStack(alignment: .leading, spacing: 8) {
-                    Label("Thread = one conversation and result", systemImage: "bubble.left.and.text.bubble.right")
-                    Label("Routine = scheduled work with one results thread", systemImage: "calendar.badge.clock")
+                Picker("Show", selection: $section) {
+                    Text("Routines").tag(RoutinesSection.routines)
+                    Text("Run logs").tag(RoutinesSection.logs)
                 }
-                .font(.subheadline)
-            } footer: {
-                Text("No cron syntax. Every run uses the agent's existing model, tools, permissions, computer, and connected apps. Times follow the paired computer's local timezone.")
+                .pickerStyle(.segmented)
+                .listRowBackground(Color.clear)
+                .listRowInsets(EdgeInsets())
+                .accessibilityIdentifier("routines-section")
             }
-
-            Section("Routines") {
-                if routines.isEmpty && !loading {
-                    EmptyStateView("No routines", systemImage: "calendar.badge.plus", description: Text("Schedule recurring or one-time agent work."))
-                }
-                ForEach(routines) { routine in
-                    let canToggle = routine.canToggle()
-                    RoutineRow(routine: routine, bot: session.state.bot(routine.botId))
-                        .contentShape(Rectangle())
-                        .onTapGesture { editor = .edit(routine) }
-                        .swipeActions(edge: .leading, allowsFullSwipe: true) {
-                            if canToggle {
-                                Button(routine.enabled ? "Pause" : "Resume") {
-                                    Task { await toggle(routine) }
-                                }
-                                .tint(routine.enabled ? .orange : .green)
-                            }
-                        }
-                        .swipeActions(edge: .trailing) {
-                            Button("Delete", role: .destructive) { deleting = routine }
-                            Button("Run now") { Task { await runNow(routine) } }.tint(.blue)
-                        }
-                        .contextMenu {
-                            Button("Run now", systemImage: "play.fill") { Task { await runNow(routine) } }
-                            if canToggle {
-                                Button(routine.enabled ? "Pause" : "Resume", systemImage: routine.enabled ? "pause" : "play") {
-                                    Task { await toggle(routine) }
-                                }
-                            }
-                            Button("Edit", systemImage: "pencil") { editor = .edit(routine) }
-                            Button("Delete", systemImage: "trash", role: .destructive) { deleting = routine }
-                        }
-                }
-            }
-
-            Section("Run receipts") {
-                if runs.isEmpty && !loading {
-                    Text("Completed, waiting, failed, and manually started runs appear here.")
-                        .foregroundStyle(Theme.textSecondary)
-                }
-                ForEach(runs.sorted(by: { $0.scheduledFor > $1.scheduledFor }).prefix(50)) { run in
-                    RoutineRunRow(run: run, bot: session.state.bot(run.botId))
-                }
-            }
-
-            Section {
-                Label("Computer only", systemImage: "lock.desktopcomputer")
-                    .foregroundStyle(Theme.textSecondary)
-            } header: {
-                Text("Webhooks")
-            } footer: {
-                Text("Creating or rotating a webhook changes an internet-reachable trigger and signing secret, so webhook management remains on the paired computer. Webhook run receipts still appear above.")
-            }
+            if section == .routines { routinesContent } else { logsContent }
         }
         .navigationTitle("Threads & Routines")
+        .modifier(LogsSearch(active: section == .logs, query: $query, limit: $logLimit))
         .toolbar {
+            if seenAllowed && unseenFailures > 0 {
+                ToolbarItem(placement: .primaryAction) {
+                    Button {
+                        section = .logs
+                        statusFilter = .problems
+                        routineFilter = nil
+                    } label: {
+                        Label { Text("Open problem run logs") } icon: { Image(systemName: "exclamationmark.circle") }
+                            .labelStyle(.iconOnly)
+                            .overlay(alignment: .topTrailing) {
+                                Text(verbatim: "\(unseenFailures)")
+                                    .font(.caption2.weight(.semibold))
+                                    .foregroundStyle(Theme.dangerInk)
+                                    .padding(.horizontal, 4)
+                                    .background(Capsule().fill(Theme.danger))
+                                    .offset(x: 8, y: -6)
+                            }
+                    }
+                    .tint(Theme.danger)
+                    .accessibilityValue(Text(verbatim: "\(unseenFailures)"))
+                    .accessibilityIdentifier("routines-problems-badge")
+                }
+            }
+            ToolbarItem(placement: .primaryAction) {
+                Menu {
+                    Picker(selection: $botFilter) {
+                        Text("All bots").tag(RoutineBotFilter())
+                        ForEach(visibleBots) { bot in Text(verbatim: bot.name).tag(RoutineBotFilter(botId: bot.id)) }
+                    } label: {
+                        Label("Filter by bot", systemImage: "line.3.horizontal.decrease.circle")
+                    }
+                    .pickerStyle(.menu)
+                    if seenAllowed {
+                        Button("Mark all as read", systemImage: "checkmark.circle") {
+                            Task { await markAllSeen() }
+                        }
+                        .accessibilityIdentifier("routines-mark-all-seen")
+                    }
+                } label: {
+                    Label("Automation menu", systemImage: botFilter.botId == nil ? "ellipsis.circle" : "line.3.horizontal.decrease.circle.fill")
+                }
+                .accessibilityIdentifier("routines-menu")
+            }
             ToolbarItem(placement: .primaryAction) {
                 Button("New routine", systemImage: "plus") { editor = .new }
             }
         }
         .task { await reload() }
         .refreshable { await reload() }
+        .onValueChange(of: botFilter) { _ in routineFilter = nil }
         .sheet(item: $editor) { target in
             RoutineEditorView(routine: target.routine) { await reload() }
+        }
+        .sheet(item: $openRun) { run in
+            RoutineRunDetailView(run: run, routine: routines.first { $0.id == run.routineId }) { updated in
+                runs = RoutineRunLog.replacing(runs, with: [updated])
+            }
         }
         .confirmationDialog(
             "Delete \(deleting?.name ?? "this routine")?",
@@ -103,10 +123,144 @@ struct TasksRoutinesView: View {
         }
     }
 
+    // MARK: Routines
+
+    @ViewBuilder
+    private var routinesContent: some View {
+        Section {
+            VStack(alignment: .leading, spacing: 8) {
+                Label("Thread = one conversation and result", systemImage: "bubble.left.and.text.bubble.right")
+                Label("Routine = scheduled work with one results thread", systemImage: "calendar.badge.clock")
+            }
+            .font(.subheadline)
+            .foregroundStyle(Theme.textPrimary)
+        } footer: {
+            Text("Every run uses the agent's existing model, tools, permissions, computer, and connected apps. Times follow the paired computer's local timezone.")
+        }
+
+        Section("Routines") {
+            let shown = botFilter.routines(routines)
+            if shown.isEmpty && !loading {
+                EmptyStateView("No routines", systemImage: "calendar.badge.plus", description: Text("Schedule recurring or one-time agent work."))
+            }
+            ForEach(shown) { routine in
+                let canToggle = routine.canToggle()
+                RoutineRow(
+                    routine: routine, bot: session.state.bot(routine.botId),
+                    unseenFailure: seenAllowed && runs.contains { $0.routineId == routine.id && $0.isUnseenProblem }
+                )
+                .contentShape(Rectangle())
+                .onTapGesture { editor = .edit(routine) }
+                .swipeActions(edge: .leading, allowsFullSwipe: true) {
+                    if canToggle {
+                        Button(routine.enabled ? "Pause" : "Resume") {
+                            Task { await toggle(routine) }
+                        }
+                        .tint(routine.enabled ? Theme.warning : Theme.success)
+                    }
+                }
+                .swipeActions(edge: .trailing) {
+                    Button("Delete", role: .destructive) { deleting = routine }
+                    Button("Run now") { Task { await runNow(routine) } }.tint(Theme.accent)
+                }
+                .contextMenu {
+                    Button("Run now", systemImage: "play.fill") { Task { await runNow(routine) } }
+                    if canToggle {
+                        Button(routine.enabled ? "Pause" : "Resume", systemImage: routine.enabled ? "pause" : "play") {
+                            Task { await toggle(routine) }
+                        }
+                    }
+                    Button("Edit", systemImage: "pencil") { editor = .edit(routine) }
+                    Button("Run logs", systemImage: "doc.text") {
+                        routineFilter = routine.id
+                        statusFilter = .all
+                        section = .logs
+                    }
+                    if let results = RoutineResults.openTarget(for: routine, bots: session.state.bots, rooms: session.state.rooms) {
+                        Button("Open results thread", systemImage: "arrow.up.right.square") {
+                            Task { await session.openNotification(results) }
+                        }
+                    }
+                    Button("Delete", systemImage: "trash", role: .destructive) { deleting = routine }
+                }
+                .accessibilityIdentifier("routines-row.\(routine.name)")
+            }
+        }
+
+        Section {
+            Label("Computer only", systemImage: "lock.desktopcomputer")
+                .foregroundStyle(Theme.textSecondary)
+        } header: {
+            Text("Webhooks")
+        } footer: {
+            Text("Creating or rotating a webhook changes an internet-reachable trigger and signing secret, so webhook management remains on the paired computer. Webhook run receipts still appear in Run logs.")
+        }
+    }
+
+    // MARK: Logs
+
+    @ViewBuilder
+    private var logsContent: some View {
+        Section {
+            Picker(selection: Binding(get: { statusFilter }, set: { statusFilter = $0; logLimit = 50 })) {
+                ForEach(RoutineRunStatusFilter.allCases, id: \.self) { filter in
+                    Text(verbatim: RoutineRunWording.status(filter)).tag(filter)
+                }
+            } label: {
+                Text("Filter runs by status")
+            }
+            .accessibilityIdentifier("routines-status-filter")
+            if routineFilter != nil {
+                HStack {
+                    Text("Showing one routine's runs.").foregroundStyle(Theme.textSecondary)
+                    Spacer()
+                    Button("Show all routines") { routineFilter = nil }
+                        .buttonStyle(.borderless)
+                }
+                .font(.footnote)
+            }
+        } footer: {
+            Text("Recent saved runs across your bots. Open a run for its result, error, and execution thread.")
+        }
+
+        Section("Run logs") {
+            let shown = filteredRuns
+            if shown.isEmpty && !loading {
+                Text(runs.isEmpty ? "No runs recorded yet. Results will appear here after a routine starts." : "No runs match these filters.")
+                    .foregroundStyle(Theme.textSecondary)
+                    .accessibilityIdentifier("routines-logs-empty")
+            }
+            ForEach(shown.prefix(logLimit)) { run in
+                Button { openRun = run } label: {
+                    RoutineLogRow(run: run, bot: session.state.bot(run.botId), showsUnseen: seenAllowed)
+                }
+                .buttonStyle(.plain)
+                .contextMenu {
+                    if let target = NotificationTarget(botId: run.botId, threadId: run.executionThreadId ?? run.threadId) {
+                        Button("Open thread", systemImage: "arrow.up.right.square") {
+                            Task { await session.openNotification(target) }
+                        }
+                    }
+                    if run.isActive && session.surfaceGate.allows(.routineRunCancel) {
+                        Button("Cancel run", systemImage: "xmark", role: .destructive) {
+                            Task { await cancel(run) }
+                        }
+                        .accessibilityIdentifier("routine-run-cancel-menu")
+                    }
+                }
+            }
+            if shown.count > logLimit {
+                Button("Show more runs") { logLimit += 50 }
+            }
+        }
+    }
+
+    // MARK: Actions
+
     private func reload() async {
         loading = true
         let loaded = await session.loadRoutines()
-        routines = loaded.routines.sorted { ($0.nextRunAt ?? .greatestFiniteMagnitude) < ($1.nextRunAt ?? .greatestFiniteMagnitude) }
+        routines = loaded.routines.sorted(by: Routine.listOrder)
         runs = loaded.runs
         loading = false
     }
@@ -121,6 +275,34 @@ struct TasksRoutinesView: View {
         _ = await session.runRoutine(routine)
         await reload()
     }
+
+    private func cancel(_ run: RoutineRun) async {
+        if let updated = await session.cancelRoutineRun(run) {
+            runs = RoutineRunLog.replacing(runs, with: [updated])
+        }
+    }
+
+    private func markAllSeen() async {
+        let updated = await session.markAllRoutineRunsSeen()
+        runs = RoutineRunLog.replacing(runs, with: updated)
+    }
+}
+
+/// `.searchable` only while the logs show (AU10).
+private struct LogsSearch: ViewModifier {
+    let active: Bool
+    @Binding var query: String
+    @Binding var limit: Int
+
+    func body(content: Content) -> some View {
+        if active {
+            content
+                .searchable(text: $query, prompt: Text("Search run logs"))
+                .onValueChange(of: query) { _ in limit = 50 }
+        } else {
+            content
+        }
+    }
 }
 
 private enum RoutineEditorTarget: Identifiable {
@@ -134,6 +316,7 @@ private struct RoutineRow: View {
     @Environment(\.themePalette) var themePalette
     let routine: Routine
     let bot: Bot?
+    var unseenFailure = false
 
     var body: some View {
         let canToggle = routine.canToggle()
@@ -141,365 +324,24 @@ private struct RoutineRow: View {
             if let bot { BotMascotView(bot: bot, size: 42, state: routine.enabled ? .idle : .sleeping, animated: false) }
             else { Image(systemName: "calendar.badge.exclamationmark").frame(width: 42, height: 42) }
             VStack(alignment: .leading, spacing: 3) {
-                Text(routine.name).font(.headline)
+                Text(routine.name).font(.headline).foregroundStyle(Theme.textPrimary)
                 ((bot.map { Text(verbatim: $0.name) } ?? Text("Deleted agent"))
-                    + Text(verbatim: " · \(routine.schedule.summary) · ")
-                    + Text(LocalizedStringKey(routine.runLocation.label)))
+                    + Text(verbatim: " · \(RoutineWording.schedule(routine.schedule)) · ")
+                    + Text(LocalizedStringKey(routine.isTeamGoal ? "Team goal" : routine.runLocation.label)))
                     .font(.caption).foregroundStyle(Theme.textSecondary).lineLimit(2)
             }
             Spacer()
+            if unseenFailure {
+                Circle().fill(Theme.danger).frame(width: 8, height: 8)
+                    .accessibilityLabel(Text("Unseen failure"))
+                    .accessibilityIdentifier("routines-row-unseen.\(routine.name)")
+            }
             if !routine.enabled {
                 Image(systemName: canToggle ? "pause.circle.fill" : "checkmark.circle.fill")
                     .foregroundStyle(canToggle ? Theme.warning : Theme.textSecondary)
                     .accessibilityLabel(canToggle ? "Paused" : "Completed")
             }
         }
-    }
-}
-
-private struct RoutineRunRow: View {
-    @Environment(\.themePalette) var themePalette
-    let run: RoutineRun
-    let bot: Bot?
-    @EnvironmentObject private var session: Session
-
-    var body: some View {
-        DisclosureGroup {
-            VStack(alignment: .leading, spacing: 8) {
-                if let output = run.output, !output.isEmpty { Text(output).textSelection(.enabled) }
-                if let error = run.error, !error.isEmpty { Text(error).foregroundStyle(Theme.danger).textSelection(.enabled) }
-                if run.status == "waiting" { Text("This thread is waiting for your answer.").foregroundStyle(Theme.warning) }
-                if let threadId = run.threadId,
-                   let target = NotificationTarget(botId: run.botId, threadId: threadId) {
-                    Button("Open thread", systemImage: "arrow.up.right.square") {
-                        Task { await session.openNotification(target) }
-                    }
-                }
-            }
-            .font(.subheadline)
-        } label: {
-            HStack {
-                Image(systemName: run.status.symbol).foregroundStyle(run.status.tint)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(run.routineName)
-                    ((bot.map { Text(verbatim: $0.name) } ?? Text("Deleted agent"))
-                        + Text(verbatim: " · \(Date(timeIntervalSince1970: run.scheduledFor / 1_000).formatted(date: .abbreviated, time: .shortened))"))
-                        .font(.caption).foregroundStyle(Theme.textSecondary)
-                }
-                Spacer()
-                Text(run.status == "waiting" ? "Needs you" : run.status.capitalized)
-                    .font(.caption).foregroundStyle(run.status.tint)
-            }
-        }
-    }
-}
-
-struct RoutineEditorView: View {
-    @Environment(\.themePalette) var themePalette
-    let routine: Routine?
-    let onSaved: () async -> Void
-
-    @EnvironmentObject private var session: Session
-    @Environment(\.dismiss) private var dismiss
-    @State private var name: String
-    @State private var prompt: String
-    @State private var botId: String
-    @State private var runOn: RoutineRunLocation
-    @State private var runAvailability: RoutineRunAvailability?
-    @State private var availabilityLoaded: Bool
-    @State private var kind: RoutineSchedule.Kind
-    @State private var onceAt: Date
-    @State private var dailyTime: Date
-    @State private var weekdays: Set<Int>
-    @State private var intervalAnchor: Date
-    @State private var intervalPreset: Int
-    @State private var customIntervalMinutes: Int?
-    @State private var duration: Int
-    @State private var timeoutMinutes: Int?
-    @State private var intervalTimeoutDefaultApplied: Bool
-    @State private var advancedExpanded: Bool
-    @State private var saving = false
-
-    /// `presetBotId`: a new routine made from a bot's profile starts on that bot.
-    init(routine: Routine?, presetBotId: String? = nil, onSaved: @escaping () async -> Void) {
-        self.routine = routine
-        self.onSaved = onSaved
-        _name = State(initialValue: routine?.name ?? "")
-        _prompt = State(initialValue: routine?.prompt ?? "")
-        _botId = State(initialValue: routine?.botId ?? presetBotId ?? "")
-        _runOn = State(initialValue: routine?.runLocation ?? .maus)
-        _runAvailability = State(initialValue: nil)
-        _availabilityLoaded = State(initialValue: false)
-        _kind = State(initialValue: routine?.schedule.type ?? .daily)
-        _onceAt = State(initialValue: routine?.schedule.at.map { Date(timeIntervalSince1970: $0 / 1_000) } ?? Date().addingTimeInterval(3_600))
-        let parts = (routine?.schedule.time ?? "09:00").split(separator: ":").compactMap { Int($0) }
-        let time = Calendar.current.date(bySettingHour: parts.first ?? 9, minute: parts.count > 1 ? parts[1] : 0, second: 0, of: Date()) ?? Date()
-        _dailyTime = State(initialValue: time)
-        _weekdays = State(initialValue: Set(routine?.schedule.weekdays ?? [1, 2, 3, 4, 5]))
-        _intervalAnchor = State(initialValue: routine?.schedule.anchorAt.map { Date(timeIntervalSince1970: Double($0) / 1_000) } ?? Date().addingTimeInterval(15 * 60))
-        let everyMinutes = routine?.schedule.everyMinutes ?? 15
-        _intervalPreset = State(initialValue: Self.intervalPresets.contains(everyMinutes) ? everyMinutes : 0)
-        _customIntervalMinutes = State(initialValue: everyMinutes)
-        let duration = routine?.durationMinutes ?? 30
-        _duration = State(initialValue: duration)
-        let timeoutMinutes = routine?.timeoutMinutes
-        _timeoutMinutes = State(initialValue: timeoutMinutes)
-        _intervalTimeoutDefaultApplied = State(initialValue: routine != nil)
-        _advancedExpanded = State(initialValue: timeoutMinutes != nil && timeoutMinutes != 30)
-    }
-
-    var body: some View {
-        NavigationStack {
-            ThemedForm {
-                Section("Work") {
-                    TextField("Routine name", text: $name)
-                    Picker("Agent", selection: $botId) {
-                        Text("Choose an agent").tag("")
-                        ForEach(session.state.bots.filter { $0.hidden != true }) { bot in Text(bot.name).tag(bot.id) }
-                    }
-                    TextField("What should the agent do?", text: $prompt, axis: .vertical).lineLimit(4...10)
-                }
-
-                Section {
-                    Picker("Run location", selection: $runOn) {
-                        Label("This computer", systemImage: "laptopcomputer")
-                            .tag(RoutineRunLocation.maus)
-                        Label("Cloud VM", systemImage: "cloud")
-                            .tag(RoutineRunLocation.cloud)
-                            .rowSelectionDisabled(!cloudSelectable)
-                    }
-                    .pickerStyle(.inline)
-
-                    if !availabilityLoaded {
-                        ProgressView("Checking Cloud VM availability…")
-                    } else if runAvailability == nil {
-                        Label("Cloud VM status is unavailable", systemImage: "exclamationmark.triangle")
-                            .foregroundStyle(Theme.textSecondary)
-                    }
-                } header: {
-                    Text("Where does it run?")
-                } footer: {
-                    if runOn == .maus {
-                        Text("Uses this agent's selected model and computer setting on the paired computer.")
-                    } else if runAvailability?.cloudReady == true {
-                        Text("Runs the agent and its tools inside its Boat virtual machine. The VM wakes automatically for each run; keep Sagax running so its scheduler can launch the job.")
-                    } else {
-                        Text("This existing Cloud VM choice is preserved, but it cannot run until the paired computer has a configured Boat API key and an available Boat agent.")
-                    }
-                }
-
-                Section {
-                    Picker("Repeats", selection: $kind) {
-                        if kind == .unknown {
-                            Text("Newer schedule").tag(RoutineSchedule.Kind.unknown)
-                                .rowSelectionDisabled()
-                        }
-                        if kind == .cron {
-                            Text("Cron").tag(RoutineSchedule.Kind.cron)
-                                .rowSelectionDisabled()
-                        }
-                        Text("One time").tag(RoutineSchedule.Kind.once)
-                        Text("Selected days").tag(RoutineSchedule.Kind.daily)
-                        Text("Every X minutes").tag(RoutineSchedule.Kind.interval)
-                    }
-                    if kind == .once {
-                        DatePicker("Run", selection: $onceAt, in: Date()...)
-                    } else if kind == .daily {
-                        DatePicker("Time", selection: $dailyTime, displayedComponents: .hourAndMinute)
-                        HStack {
-                            ForEach(0..<7) { day in
-                                Button(Self.dayLetters[day]) {
-                                    if weekdays.contains(day) { weekdays.remove(day) } else { weekdays.insert(day) }
-                                }
-                                .buttonStyle(.bordered)
-                                .tint(weekdays.contains(day) ? Theme.accent : Theme.textSecondary)
-                                .accessibilityLabel(Self.dayNames[day])
-                            }
-                        }
-                    } else if kind == .interval {
-                        HStack(spacing: 5) {
-                            Text(intervalPreset == 0 ? "Runs on" : "Runs every")
-                            Menu {
-                                ForEach(Self.intervalPresets, id: \.self) { minutes in
-                                    Button("\(minutes) minutes") {
-                                        intervalPreset = minutes
-                                    }
-                                }
-                                Divider()
-                                Button("Custom interval…") {
-                                    intervalPreset = 0
-                                }
-                            } label: {
-                                HStack(spacing: 3) {
-                                    Text(intervalPreset == 0 ? "a custom interval" : "\(intervalPreset)")
-                                        .fontWeight(.semibold)
-                                    Image(systemName: "chevron.up.chevron.down")
-                                        .font(.caption2)
-                                }
-                            }
-                            .accessibilityLabel("How often this routine runs")
-                            .accessibilityValue(intervalFrequencyAccessibilityValue)
-                            if intervalPreset != 0 {
-                                Text("minutes")
-                            }
-                            Spacer(minLength: 0)
-                        }
-                        if intervalPreset == 0 {
-                            HStack {
-                                Text("Set the interval to")
-                                TextField("5–1,440", value: $customIntervalMinutes, format: .number)
-                                    .keyboardType(.numberPad)
-                                    .multilineTextAlignment(.trailing)
-                                    .frame(minWidth: 72)
-                                    .accessibilityLabel("Custom interval in minutes")
-                                Text("minutes")
-                                    .foregroundStyle(Theme.textSecondary)
-                            }
-                            if selectedIntervalMinutes == nil {
-                                Text("Enter a whole number from 5 to 1,440 minutes.")
-                                    .font(.footnote)
-                                    .foregroundStyle(Theme.danger)
-                            }
-                        }
-                        DatePicker("Starting", selection: $intervalAnchor)
-                    } else {
-                        Label(
-                            "This routine uses a schedule added by a newer Sagax. Choose One time, Selected days, or Every X minutes before saving.",
-                            systemImage: "exclamationmark.triangle"
-                        )
-                        .font(.footnote)
-                        .foregroundStyle(Theme.textSecondary)
-                    }
-                } header: {
-                    Text("Schedule")
-                } footer: {
-                    if kind == .interval {
-                        Text("Each occurrence starts with fresh context. Results collect in one thread, and full run logs remain available. If the previous run is still active, the next occurrence is skipped instead of queued.")
-                    } else {
-                        Text("Each occurrence starts with fresh context. Results collect in one thread, and full run logs remain available. No cron syntax is used.")
-                    }
-                }
-
-                Section {
-                    DisclosureGroup(isExpanded: $advancedExpanded) {
-                        Picker("Stop if still running after", selection: $timeoutMinutes) {
-                            Text("No limit").tag(nil as Int?)
-                            ForEach(Self.timeoutOptions, id: \.self) { minutes in
-                                Text(Self.durationLabel(minutes)).tag(Optional(minutes))
-                            }
-                        }
-                    } label: {
-                        timeoutMinutes.map { Text("Advanced · \(Self.durationLabel($0)) run limit") } ?? Text("Advanced · no run limit")
-                    }
-                } footer: {
-                    if advancedExpanded {
-                        Text("Optional. The clock starts when work actually begins and does not control how often the routine starts.")
-                    }
-                }
-            }
-            .navigationTitle(routine == nil ? "New routine" : "Edit routine")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") { Task { await save() } }
-                        .disabled(
-                            saving || kind == .unknown
-                                || name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                                || prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                                || botId.isEmpty
-                                || (kind == .daily && weekdays.isEmpty)
-                                || (kind == .interval && selectedIntervalMinutes == nil)
-                        )
-                }
-            }
-            .onAppear { if botId.isEmpty { botId = session.state.bots.first(where: { $0.hidden != true })?.id ?? "" } }
-            .onValueChange(of: kind) { nextKind in
-                guard nextKind == .interval, !intervalTimeoutDefaultApplied else { return }
-                timeoutMinutes = timeoutMinutes ?? 30
-                intervalTimeoutDefaultApplied = true
-            }
-            .task {
-                runAvailability = await session.loadRoutineRunAvailability()
-                availabilityLoaded = true
-            }
-        }
-    }
-
-    private var cloudSelectable: Bool {
-        runAvailability?.canSelect(.cloud, preserving: runOn) ?? (runOn == .cloud)
-    }
-
-    private var selectedIntervalMinutes: Int? {
-        let minutes = intervalPreset == 0 ? customIntervalMinutes : intervalPreset
-        guard let minutes, (5...1_440).contains(minutes) else { return nil }
-        return minutes
-    }
-
-    private var intervalFrequencyAccessibilityValue: String {
-        intervalPreset == 0 ? "Custom interval" : "Every \(intervalPreset) minutes"
-    }
-
-    private func save() async {
-        guard kind != .unknown else {
-            session.actionError = "Choose a supported schedule before saving this routine."
-            return
-        }
-        saving = true
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.calendar = Calendar(identifier: .gregorian)
-        formatter.timeZone = .current
-        formatter.dateFormat = "HH:mm"
-        let schedule: RoutineSchedule
-        switch kind {
-        case .once:
-            schedule = .once(at: onceAt)
-        case .daily:
-            schedule = .daily(time: formatter.string(from: dailyTime), weekdays: weekdays.sorted())
-        case .interval:
-            guard let minutes = selectedIntervalMinutes else {
-                session.actionError = "Choose an interval from 5 to 1,440 minutes."
-                saving = false
-                return
-            }
-            let anchor = Calendar.current.date(bySetting: .second, value: 0, of: intervalAnchor)
-                ?? intervalAnchor
-            schedule = .interval(everyMinutes: minutes, anchorAt: anchor)
-        case .cron:
-            // Cron is edited on the computer; the phone keeps it as it is.
-            guard let routine, routine.schedule.type == .cron else {
-                saving = false
-                return
-            }
-            schedule = routine.schedule
-        case .unknown:
-            saving = false
-            return
-        }
-        let input = RoutineInput(
-            name: String(name.trimmingCharacters(in: .whitespacesAndNewlines).prefix(80)),
-            prompt: String(prompt.trimmingCharacters(in: .whitespacesAndNewlines).prefix(20_000)),
-            botId: botId, runOn: runOn.rawValue, enabled: routine?.enabled,
-            schedule: schedule, durationMinutes: duration,
-            timeoutMinutes: timeoutMinutes, clearTimeout: timeoutMinutes == nil
-        )
-        if await session.saveRoutine(input, original: routine) != nil {
-            await onSaved()
-            dismiss()
-        }
-        saving = false
-    }
-
-    private static let dayLetters = ["S", "M", "T", "W", "T", "F", "S"]
-    fileprivate static let dayNames = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
-    private static let intervalPresets = [5, 10, 15, 30, 60]
-    private static let timeoutOptions = stride(from: 5, through: 240, by: 5).map { $0 }
-
-    private static func durationLabel(_ minutes: Int) -> String {
-        if minutes < 60 { return "\(minutes) min" }
-        if minutes % 60 == 0 { return "\(minutes / 60) hr" }
-        return "\(minutes / 60) hr \(minutes % 60) min"
     }
 }
 
@@ -512,52 +354,3 @@ private extension RoutineRunLocation {
     }
 }
 
-private extension RoutineSchedule {
-    var summary: String {
-        switch type {
-        case .once:
-            guard let at else { return "One time · date unavailable" }
-            return Date(timeIntervalSince1970: at / 1_000).formatted(date: .abbreviated, time: .shortened)
-        case .unknown:
-            return "Newer schedule"
-        case .cron:
-            return cronDisplay ?? "Cron"
-        case .interval:
-            guard let everyMinutes else { return "Interval unavailable" }
-            let cadence = "Every \(everyMinutes) min"
-            guard let anchorAt else { return cadence }
-            let start = Date(timeIntervalSince1970: Double(anchorAt) / 1_000)
-                .formatted(date: .abbreviated, time: .shortened)
-            return "\(cadence) · starting \(start)"
-        case .daily:
-            break
-        }
-        let dayText: String
-        let values = weekdays ?? []
-        if values.count == 7 { dayText = "Every day" }
-        else if values == [1, 2, 3, 4, 5] { dayText = "Weekdays" }
-        else { dayText = values.compactMap { (0..<7).contains($0) ? RoutineEditorView.dayNames[$0].prefix(3) : nil }.joined(separator: ", ") }
-        return "\(dayText) at \(time ?? "—")"
-    }
-}
-
-private extension String {
-    var symbol: String {
-        switch self {
-        case "running": "play.circle.fill"
-        case "completed": "checkmark.circle.fill"
-        case "waiting": "hand.raised.circle.fill"
-        case "failed", "missed": "exclamationmark.triangle.fill"
-        case "cancelled": "xmark.circle.fill"
-        default: "clock.fill"
-        }
-    }
-    var tint: Color {
-        switch self {
-        case "completed": Theme.success
-        case "waiting": Theme.warning
-        case "failed", "missed": Theme.danger
-        default: Theme.textSecondary
-        }
-    }
-}

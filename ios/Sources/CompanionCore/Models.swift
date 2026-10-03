@@ -1458,6 +1458,14 @@ public struct RoutineAttachment: Codable, Hashable, Sendable {
     public var name: String
     public var path: String
     public var size: Int
+
+    public init(id: String, kind: String, name: String, path: String, size: Int) {
+        self.id = id
+        self.kind = kind
+        self.name = name
+        self.path = path
+        self.size = size
+    }
 }
 
 /// `Routine.runAs` in `shared/routines.ts` (organization server).
@@ -1520,6 +1528,28 @@ public struct RoutineRun: Codable, Hashable, Identifiable, Sendable {
     public var error: String?
     public var createdAt: Double
     public var seenAt: Double?
+    /// A short, redacted question or approval reason while waiting.
+    public var attention: String? = nil
+    /// "bot" or "room-goal"; absent on older computers.
+    public var target: String? = nil
+    /// A team goal's outcome (`RoutineGoalStatus`).
+    public var goalStatus: String? = nil
+    public var groupId: String? = nil
+    /// The room task a team-goal run works in.
+    public var executionThreadId: String? = nil
+    public var sourceThreadId: String? = nil
+    public var resultsThreadId: String? = nil
+    public var attachments: [RoutineAttachment]? = nil
+}
+
+/// Where a routine posts its dated results (`ResultsDestination.tsx`).
+public enum RoutineResultsDestination: Hashable, Sendable {
+    /// "Keep current destination": the field is left out.
+    case keep
+    /// "Create a dedicated results thread": null.
+    case newThread
+    /// An existing conversation of the bot.
+    case thread(String)
 }
 
 public struct RoutineInput: Encodable, Sendable {
@@ -1534,11 +1564,26 @@ public struct RoutineInput: Encodable, Sendable {
     public var timeoutMinutes: Int?
     /// Explicitly writes JSON null when `timeoutMinutes` is nil.
     public var clearTimeout: Bool
+    /// "bot" or "room-goal"; nil leaves it out (an older editor).
+    public var target: String?
+    /// The team goal's room; ignored for a bot task.
+    public var groupId: String?
+    /// "skip" or "queue"; nil leaves it out.
+    public var overlap: String?
+    /// The files each run receives; nil leaves them out.
+    public var attachments: [RoutineAttachment]?
+    public var results: RoutineResultsDestination
+    /// The editor wrote the whole schedule, the interval's days, window and
+    /// end date included: an absent one is cleared (null), not kept.
+    public var completeSchedule: Bool
 
     public init(
         name: String, prompt: String, botId: String, runOn: String = "maus",
         enabled: Bool? = nil, schedule: RoutineSchedule, durationMinutes: Int = 30,
-        timeoutMinutes: Int? = nil, clearTimeout: Bool = false
+        timeoutMinutes: Int? = nil, clearTimeout: Bool = false,
+        target: String? = nil, groupId: String? = nil, overlap: String? = nil,
+        attachments: [RoutineAttachment]? = nil, results: RoutineResultsDestination = .keep,
+        completeSchedule: Bool = false
     ) {
         self.name = name
         self.prompt = prompt
@@ -1549,6 +1594,12 @@ public struct RoutineInput: Encodable, Sendable {
         self.durationMinutes = durationMinutes
         self.timeoutMinutes = timeoutMinutes
         self.clearTimeout = clearTimeout
+        self.target = target
+        self.groupId = groupId
+        self.overlap = overlap
+        self.attachments = attachments
+        self.results = results
+        self.completeSchedule = completeSchedule
     }
 
     private enum CodingKeys: String, CodingKey {

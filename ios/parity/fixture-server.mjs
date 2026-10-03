@@ -42,6 +42,8 @@ import {
 } from "./card-lab.mjs";
 // The composer lab for the WP3 UI tests: refuses sends on request (composer-lab.mjs).
 import { composerLabHook } from "./composer-lab.mjs";
+// PARITY_ROUTINES=1: a desktop-made routine and its runs for the WP8 UI tests (routine-lab.mjs).
+import { ROUTINE_LAB, seedRoutineLab, seedRoutineLabRuns } from "./routine-lab.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(HERE, "..", "..");
@@ -658,10 +660,12 @@ async function main() {
   if (org) await signInOrg(org);
   const seeded = await seedThroughAPI(base);
   if (CARD_LAB) await seedCardLabBots(base, api);
+  if (ROUTINE_LAB) await seedRoutineLab(base, api, seeded.ids);
   await stopServer(child);
 
   seedTranscripts(dataDir, seeded);
   if (CARD_LAB) seedCardLabTranscripts(dataDir);
+  if (ROUTINE_LAB) seedRoutineLabRuns(dataDir);
   seedCommandRules(dataDir, seeded);
 
   child = startServer(port, webhook);

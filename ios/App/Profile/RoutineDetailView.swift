@@ -75,6 +75,7 @@ struct RoutineDetailView: View {
     @State private var editing = false
     @State private var saving = false
     @State private var confirmingDelete = false
+    @State private var openRun: RoutineRun?
     @Environment(\.dismiss) private var dismissScreen
 
     private let margin = Theme.Profile.routineMargin
@@ -87,6 +88,14 @@ struct RoutineDetailView: View {
                 // panel does beside Pause and Edit (RoutinesSection.tsx)
                 .contextMenu {
                     Button(String(localized: "Edit routine"), systemImage: "pencil") { editing = true }
+                    // AU15: the results thread, as the desktop's routine
+                    // details offer it (EventDetails "Open results thread").
+                    if let results = RoutineResults.openTarget(for: routine, bots: session.state.bots, rooms: session.state.rooms) {
+                        Button(String(localized: "Open results thread"), systemImage: "arrow.up.right.square") {
+                            Task { await session.openNotification(results) }
+                        }
+                        .accessibilityIdentifier("routine-open-results")
+                    }
                     if session.surfaceGate.allows(.routineDelete) {
                         Button(String(localized: "Delete routine"), systemImage: "trash", role: .destructive) { confirmingDelete = true }
                             .accessibilityIdentifier("routine-delete")
@@ -146,7 +155,22 @@ struct RoutineDetailView: View {
                 } else {
                     ForEach(Array(runs.prefix(20).enumerated()), id: \.element.id) { index, run in
                         if index > 0 { ProfileDivider(leading: Theme.Profile.textInset) }
-                        RunHistoryRow(run: run)
+                        // AU8, AU9: a run opens its detail (seen on open,
+                        // Cancel run); a long press cancels a live one.
+                        Button {
+                            Haptics.selection()
+                            openRun = run
+                        } label: {
+                            RunHistoryRow(run: run, unseen: session.surfaceGate.allows(.routineRunsSeen) && run.isUnseenProblem)
+                        }
+                        .buttonStyle(.plain)
+                        .contextMenu {
+                            if run.isActive && session.surfaceGate.allows(.routineRunCancel) {
+                                Button(String(localized: "Cancel run"), systemImage: "xmark", role: .destructive) {
+                                    Task { await cancel(run) }
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -156,6 +180,11 @@ struct RoutineDetailView: View {
         }
         .sheet(isPresented: $editing) {
             RoutineEditorView(routine: routine) { await reload() }
+        }
+        .sheet(item: $openRun) { run in
+            RoutineRunDetailView(run: run, routine: routine) { updated in
+                runs = RoutineRunLog.replacing(runs, with: [updated])
+            }
         }
         .confirmationDialog(
             String(localized: "Delete \(routine.name)?"),
@@ -191,6 +220,12 @@ struct RoutineDetailView: View {
         }
     }
 
+    private func cancel(_ run: RoutineRun) async {
+        if let updated = await session.cancelRoutineRun(run) {
+            runs = RoutineRunLog.replacing(runs, with: [updated])
+        }
+    }
+
     private func reload() async {
         let loaded = await session.loadRoutines()
         if let fresh = loaded.routines.first(where: { $0.id == routine.id }) { routine = fresh }
@@ -203,17 +238,26 @@ struct RoutineDetailView: View {
 private struct RunHistoryRow: View {
     @Environment(\.themePalette) var themePalette
     let run: RoutineRun
+    /// A failed or missed run nobody opened: the red dot (AU9).
+    var unseen = false
 
     var body: some View {
         ProfileRow(
             title: Text(Date(timeIntervalSince1970: (run.startedAt ?? run.scheduledFor) / 1_000).formatted(date: .abbreviated, time: .shortened)),
             height: Theme.Profile.row
         ) {
-            Text(verbatim: status)
-                .font(Theme.Font.body)
-                .foregroundStyle(Theme.textSecondary)
-                .padding(.trailing, 18.7)
+            HStack(spacing: 6) {
+                if unseen {
+                    Circle().fill(Theme.danger).frame(width: 6, height: 6)
+                        .accessibilityLabel(Text("Unseen failure"))
+                }
+                Text(verbatim: status)
+                    .font(Theme.Font.body)
+                    .foregroundStyle(Theme.textSecondary)
+            }
+            .padding(.trailing, 18.7)
         }
+        .contentShape(Rectangle())
         
         .accessibilityIdentifier("routine-run.\(run.id)")
     }
@@ -226,6 +270,7 @@ private struct RunHistoryRow: View {
         case "failed": String(localized: "Failed")
         case "missed": String(localized: "Missed")
         case "cancelled": String(localized: "Cancelled")
+        case "queued": String(localized: "Queued")
         default: run.status.capitalized
         }
     }

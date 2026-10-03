@@ -2314,6 +2314,44 @@ final class Session: ObservableObject {
         catch { actionError = error.localizedDescription; return false }
     }
 
+    /// Cancel run (AU8): the run as the computer now has it.
+    func cancelRoutineRun(_ run: RoutineRun) async -> RoutineRun? {
+        guard let client else { return nil }
+        do { return try await client.cancelRoutineRun(id: run.id) }
+        catch { actionError = error.localizedDescription; return nil }
+    }
+
+    /// Opening a failed or missed run acknowledges it (AU9).
+    func markRoutineRunSeen(_ run: RoutineRun) async -> RoutineRun? {
+        guard let client else { return nil }
+        do { return try await client.markRoutineRunSeen(id: run.id) }
+        catch { actionError = error.localizedDescription; return nil }
+    }
+
+    /// "Mark all as read" (AU9): the runs it changed.
+    func markAllRoutineRunsSeen() async -> [RoutineRun] {
+        guard let client else { return [] }
+        do { return try await client.markAllRoutineRunsSeen() }
+        catch { actionError = error.localizedDescription; return [] }
+    }
+
+    /// A routine attachment (AU14): the file goes to the computer, the
+    /// routine keeps its path there.
+    func uploadRoutineAttachment(data: Data, name: String, mime: String, image: Bool) async -> RoutineAttachment? {
+        guard let client else { return nil }
+        do {
+            if image {
+                let path = try await client.uploadImage(data: data, mime: mime)
+                return RoutineAttachment(id: UUID().uuidString, kind: "image", name: name, path: path, size: data.count)
+            }
+            let file = try await client.uploadFile(data: data, name: name, mime: mime)
+            return RoutineAttachment(id: UUID().uuidString, kind: "file", name: file.name, path: file.path, size: data.count)
+        } catch {
+            actionError = error.localizedDescription
+            return nil
+        }
+    }
+
     // MARK: - Notification navigation
 
     func openNotification(_ target: NotificationTarget) async {

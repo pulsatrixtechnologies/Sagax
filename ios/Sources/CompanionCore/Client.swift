@@ -1365,7 +1365,7 @@ public struct CompanionClient: Sendable {
             throw APIError.transport("Choose a supported schedule before saving this routine.")
         }
         return try await send(
-            try makeRequest("POST", "/api/routines", body: Self.routineBody(input)),
+            try makeRequest("POST", "/api/routines", body: RoutinePatch.createBody(input)),
             as: RoutineResponse.self
         ).routine
     }
@@ -1375,7 +1375,7 @@ public struct CompanionClient: Sendable {
             throw APIError.transport("Choose a supported schedule before saving this routine.")
         }
         return try await send(
-            try makeRequest("PATCH", "/api/routines/\(id)", body: Self.routineBody(input)),
+            try makeRequest("PATCH", "/api/routines/\(id)", body: RoutinePatch.createBody(input)),
             as: RoutineResponse.self
         ).routine
     }
@@ -1410,18 +1410,6 @@ public struct CompanionClient: Sendable {
 
     public func deleteRoutine(id: String) async throws {
         try await send(try makeRequest("DELETE", "/api/routines/\(id)"))
-    }
-
-    private static func routineBody(_ input: RoutineInput) -> [String: Any] {
-        var body: [String: Any] = [
-            "name": input.name, "prompt": input.prompt, "botId": input.botId,
-            "runOn": input.runOn, "schedule": RoutinePatch.scheduleBody(input.schedule),
-            "durationMinutes": input.durationMinutes,
-        ]
-        if let timeoutMinutes = input.timeoutMinutes { body["timeoutMinutes"] = timeoutMinutes }
-        else if input.clearTimeout { body["timeoutMinutes"] = NSNull() }
-        if let enabled = input.enabled { body["enabled"] = enabled }
-        return body
     }
 
     /// Make a room. The harness names it after the first member when `name`

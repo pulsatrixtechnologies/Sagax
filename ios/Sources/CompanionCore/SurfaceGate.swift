@@ -145,6 +145,16 @@ public enum SurfaceFeature: String, CaseIterable, Hashable, Sendable {
     case roomDelete
 
     // Automations and organization
+    /// Cancel a queued, running or waiting run (AU8): both gates pass
+    /// `POST /api/routine-runs/:id/cancel`.
+    case routineRunCancel
+    /// Mark a run seen, mark all read, the unseen-failure badge (AU9).
+    case routineRunsSeen
+    /// The editor's advanced fields: window, end, overlap, results thread,
+    /// cron, team goal (AU12-AU14); `PATCH /api/routines/:id` passes both.
+    case routineAdvancedEditor
+    /// Routine attachments (AU14): uploaded through `POST /api/files`.
+    case routineAttachments
     /// Scheduled calls (AU16). Admin only.
     case scheduledCalls
     /// Routines act in my name (AU19). Organization servers only.
@@ -192,6 +202,8 @@ public struct SurfaceGate: Hashable, Sendable {
         case .replyQuote, .regenerate, .speakReply, .reactions, .messagePin, .connectorCard, .createBot:
             return true
         case .threadFiles, .routineDelete, .botUsage, .characterExtras:
+            return true
+        case .routineRunCancel, .routineRunsSeen, .routineAdvancedEditor, .routineAttachments:
             return true
         case .botActivity:
             return scope != .sidecar || sidecarRoutes.contains(.botActivity)
