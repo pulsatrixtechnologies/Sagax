@@ -313,6 +313,9 @@ export interface HarnessCommandScope {
   /** The turn keeps the claude.ai connectors of the account it runs on
    * (server/harness-connectors.ts), so their MCP prompts are listed. */
   claudeAiConnectors?: boolean;
+  /** The bot's Claude Code plugins (server/bot-plugins.ts): their commands
+   * and skills are listed. */
+  pluginDirs?: string[];
 }
 
 /** An MCP server this machine starts and talks to over stdio. */

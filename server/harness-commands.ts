@@ -57,10 +57,11 @@ export class HarnessCommandCatalog {
   }
 
   private key(source: HarnessCommandSource): string {
-    const { cwd, withholdHostTools, mcpFromUserConfig, access, claudeAiConnectors } = source.scope;
+    const { cwd, withholdHostTools, mcpFromUserConfig, access, claudeAiConnectors, pluginDirs } = source.scope;
     // per bot and, where it changes the list, per person: a subscription's
-    // login directory and the claude.ai connectors of that account
-    return JSON.stringify([source.botId, source.instanceId, cwd ?? null, Boolean(withholdHostTools), Boolean(mcpFromUserConfig), access?.identity ?? null, Boolean(claudeAiConnectors)]);
+    // login directory and the claude.ai connectors of that account; and the
+    // bot's plugins (their commands and skills)
+    return JSON.stringify([source.botId, source.instanceId, cwd ?? null, Boolean(withholdHostTools), Boolean(mcpFromUserConfig), access?.identity ?? null, Boolean(claudeAiConnectors), pluginDirs ?? []]);
   }
 
   /** The last list read for this source, at any age. */

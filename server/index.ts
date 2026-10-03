@@ -20096,6 +20096,7 @@ function harnessCommandSource(bot: BotRecord, threadId: string | undefined, opti
         ...(cwd ? { cwd } : {}),
         ...(withholdHostToolsFor(instance) ? { withholdHostTools: true } : {}),
         mcpFromUserConfig: claudeUserMcpEnabled(cfg) && !managedPolicy.restrictsMcp(),
+        ...pluginDirsFor(bot, instance),
       }),
       ...account,
     },
