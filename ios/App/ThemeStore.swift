@@ -81,7 +81,7 @@ final class ThemeStore: ObservableObject {
         if let index = arguments.firstIndex(of: "-paritySkin"), index + 1 < arguments.count {
             let value = arguments[index + 1]
             if value == "system" {
-                launchOverride = ThemeSelection(mode: .system)
+                launchOverride = ThemeSelection(mode: .system, lightSkin: ThemeSelection.suggestedLight)
             } else if let skin = SkinID(rawValue: value) {
                 launchOverride = ThemeSelection(mode: .fixed, fixedSkin: skin)
                 if skin.secret { retroUnlocked = true }

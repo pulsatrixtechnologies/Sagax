@@ -78,6 +78,11 @@ final class SkinsTests: XCTestCase {
 
     func testSelection() {
         var s = ThemeSelection()
+        XCTAssertEqual(s.mode, .system, "Settings reads System · Black")
+        XCTAssertEqual(s.skin(deviceDark: false), .black, "the default is the reference look, Black, on a light phone too")
+        XCTAssertEqual(s.skin(deviceDark: true), .black)
+        XCTAssertTrue(s.pinsAppearance, "Black twice pins the window dark: status bar and keyboard match the references")
+        s.lightSkin = ThemeSelection.suggestedLight
         XCTAssertEqual(s.skin(deviceDark: true), .black)
         XCTAssertEqual(s.skin(deviceDark: false), .pulsatrixLight)
         XCTAssertFalse(s.pinsAppearance)
@@ -96,10 +101,15 @@ final class SkinsTests: XCTestCase {
     }
 
     func testMigration() {
-        XCTAssertEqual(ThemeSelection.migrating(appearanceMode: "dark", tone: "dim").skin(deviceDark: false), .dim)
-        let system = ThemeSelection.migrating(appearanceMode: "system", tone: "black")
+        XCTAssertEqual(ThemeSelection.migrating(appearanceMode: nil, tone: nil).skin(deviceDark: false), .black, "never chose: Black")
+        let dark = ThemeSelection.migrating(appearanceMode: "dark", tone: "dim")
+        XCTAssertEqual(dark.mode, .fixed)
+        XCTAssertEqual(dark.skin(deviceDark: false), .dim)
+        let system = ThemeSelection.migrating(appearanceMode: "system", tone: "dim")
         XCTAssertEqual(system.mode, .system)
-        XCTAssertEqual(system.skin(deviceDark: true), .black)
+        XCTAssertEqual(system.skin(deviceDark: true), .dim)
+        XCTAssertEqual(system.skin(deviceDark: false), .dim, "the earlier System wore its tone on a light phone too")
+        XCTAssertTrue(system.pinsAppearance)
         XCTAssertEqual(ThemeSelection.migrating(appearanceMode: nil, tone: nil), ThemeSelection())
     }
 
@@ -123,7 +133,7 @@ final class SkinsTests: XCTestCase {
 
     func testSharedDefaults() throws {
         let defaults = try XCTUnwrap(UserDefaults(suiteName: "skins-tests-\(UUID().uuidString)"))
-        XCTAssertEqual(SharedThemeKeys.skin(in: defaults, deviceDark: false), .pulsatrixLight)
+        XCTAssertEqual(SharedThemeKeys.skin(in: defaults, deviceDark: false), .black, "nothing written yet: the default, Black")
         var s = ThemeSelection(lightSkin: .atelier, darkSkin: .dusk)
         SharedThemeKeys.write(s, resolvedFixed: nil, to: defaults)
         XCTAssertEqual(SharedThemeKeys.skin(in: defaults, deviceDark: false), .atelier)

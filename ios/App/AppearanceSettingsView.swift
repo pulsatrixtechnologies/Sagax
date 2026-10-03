@@ -27,7 +27,7 @@ struct AppearanceSettingsView: View {
             switch selection.mode {
             case .system:
                 SettingsSectionLabel(text: "Light")
-                skinGrid(SkinID.visible(retroUnlocked: themes.retroUnlocked, active: selection.lightSkin).filter { !$0.isDark }, selected: selection.lightSkin, slot: "light")
+                skinGrid(lightChoices, selected: selection.lightSkin, slot: "light")
                 SettingsSectionLabel(text: "Dark")
                 skinGrid(SkinID.visible(retroUnlocked: themes.retroUnlocked, active: selection.darkSkin).filter(\.isDark), selected: selection.darkSkin, slot: "dark")
             case .fixed:
@@ -79,6 +79,13 @@ struct AppearanceSettingsView: View {
         }
     }
 
+    /// The light slot: every light skin, plus the dark skin the pair already
+    /// wears (the default is Black twice: Black on a light phone too).
+    private var lightChoices: [SkinID] {
+        SkinID.visible(retroUnlocked: themes.retroUnlocked, active: selection.lightSkin)
+            .filter { !$0.isDark || $0 == selection.lightSkin || $0 == selection.darkSkin }
+    }
+
     /// Two previews a row. Not lazy: thirteen cards at most, and every one
     /// exists for VoiceOver and the UI tests as soon as the page does.
     private func skinGrid(_ skins: [SkinID], selected: SkinID, slot: String) -> some View {
@@ -92,8 +99,10 @@ struct AppearanceSettingsView: View {
                                 themes.choose(skin, client: client)
                             } else if slot == "fixed" {
                                 themes.update { $0.fixedSkin = skin }
+                            } else if slot == "light" {
+                                themes.update { $0.lightSkin = skin }
                             } else {
-                                themes.update { skin.isDark ? ($0.darkSkin = skin) : ($0.lightSkin = skin) }
+                                themes.update { $0.darkSkin = skin }
                             }
                         }
                     }

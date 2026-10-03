@@ -259,9 +259,10 @@ final class SettingsUITests: XCTestCase {
         setSkin("black", in: app)
         XCTAssertTrue(eventually(5) { self.homeBackground(app) == 0x141414 }, "home background \(String(homeBackground(app), radix: 16))")
 
-        // Following the phone: Black on a dark simulator, Pulsatrix Light on a light one.
+        // Following the phone with the default pair, Black twice: Black on a
+        // dark simulator and on a light one alike.
         setSkin(nil, in: app)
-        XCTAssertTrue(eventually(5) { [0x141414, 0xEEF2F8].contains(self.homeBackground(app)) }, "home background \(String(homeBackground(app), radix: 16))")
+        XCTAssertTrue(eventually(5) { self.homeBackground(app) == 0x141414 }, "home background \(String(homeBackground(app), radix: 16))")
     }
 
     /// Picking a skin redraws everything at once, the page doing the picking

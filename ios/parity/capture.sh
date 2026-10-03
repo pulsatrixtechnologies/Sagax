@@ -21,6 +21,10 @@
 # app is built for the simulator with CODE_SIGNING_ALLOWED=NO: the DEBUG
 # parity launch keeps the bearer in memory, so the Keychain entitlement that
 # pairing needs (see ios/TESTING.md, stage 3) is not involved.
+#
+# References 12 and 14 show Notifications on: the system grants that once per
+# simulator, so on a new PARITY_DEVICE run SettingsUITests/
+# testNotificationsSwitchAsksTheSystem on it once before capturing.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"

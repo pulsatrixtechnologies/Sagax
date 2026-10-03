@@ -502,8 +502,13 @@ public struct ThemeSelection: Equatable, Sendable {
     public var computerSkin: SkinID?
     public var computerFont: SkinFontChoice?
 
-    public static let defaultLight: SkinID = .pulsatrixLight
+    /// The default pair is Black twice: "System · Black", the reference look,
+    /// whatever the phone's own appearance. A light skin for a light phone is
+    /// a choice made in Settings > Appearance.
+    public static let defaultLight: SkinID = .black
     public static let defaultDark: SkinID = .black
+    /// The light skin offered first when a person picks a light look.
+    public static let suggestedLight: SkinID = .pulsatrixLight
 
     public init(
         mode: ThemeMode = .system,
@@ -537,16 +542,24 @@ public struct ThemeSelection: Equatable, Sendable {
     }
 
     /// True when the skin does not depend on the phone's appearance: the
-    /// window is then forced to that skin's own light or dark.
+    /// window (status bar, keyboard) is then forced to that skin's own light
+    /// or dark. A system pair that names the same skin twice (the default,
+    /// Black and Black) pins too, so a light phone looks like a dark one.
     public var pinsAppearance: Bool {
-        mode == .fixed || (mode == .computer && computerSkin != nil)
+        switch mode {
+        case .fixed: return true
+        case .system: return lightSkin == darkSkin
+        case .computer: return computerSkin != nil || lightSkin == darkSkin
+        }
     }
 
     /// The earlier Settings > Appearance (System / Dark and Black / Dim).
+    /// That app had no light look: System and Dark both wore the tone, so the
+    /// tone becomes both halves of the pair. Never chosen: the default.
     public static func migrating(appearanceMode: String?, tone: String?) -> ThemeSelection {
-        let dark: SkinID = tone == "dim" ? .dim : .black
-        if appearanceMode == "dark" { return ThemeSelection(mode: .fixed, fixedSkin: dark, darkSkin: dark) }
-        return ThemeSelection(mode: .system, fixedSkin: dark, darkSkin: dark)
+        let shade: SkinID = tone == "dim" ? .dim : .black
+        if appearanceMode == "dark" { return ThemeSelection(mode: .fixed, fixedSkin: shade, lightSkin: shade, darkSkin: shade) }
+        return ThemeSelection(mode: .system, fixedSkin: shade, lightSkin: shade, darkSkin: shade)
     }
 }
 
@@ -609,11 +622,11 @@ public enum SharedThemeKeys {
     /// The skin to draw with, from the shared defaults and the drawing
     /// context's appearance.
     public static func skin(in defaults: UserDefaults?, deviceDark: Bool) -> SkinID {
-        guard let defaults else { return deviceDark ? .black : .pulsatrixLight }
+        guard let defaults else { return deviceDark ? ThemeSelection.defaultDark : ThemeSelection.defaultLight }
         let mode = defaults.string(forKey: Self.mode).flatMap(ThemeMode.init(rawValue:)) ?? .system
         let read = { (key: String, fallback: SkinID) in defaults.string(forKey: key).flatMap(SkinID.init(rawValue:)) ?? fallback }
         if mode != .system, let fixed = defaults.string(forKey: Self.fixed).flatMap(SkinID.init(rawValue:)) { return fixed }
-        return deviceDark ? read(Self.dark, .black) : read(Self.light, .pulsatrixLight)
+        return deviceDark ? read(Self.dark, ThemeSelection.defaultDark) : read(Self.light, ThemeSelection.defaultLight)
     }
 
     public static func write(_ selection: ThemeSelection, resolvedFixed: SkinID?, to defaults: UserDefaults?) {
