@@ -105,6 +105,18 @@ export class SandboxStdioRelay {
     session.stream.destroy();
   }
 
+  /** The latest frame of one person's open session, for an admin's list. */
+  lastUsed(principalId: string, server?: string): number | undefined {
+    let latest: number | undefined;
+    for (const [key, session] of this.sessions) {
+      if (session.closed) continue;
+      const [person, , , name] = key.split("\u0000");
+      if (person !== principalId || (server && name !== server)) continue;
+      if (latest === undefined || session.lastUsed > latest) latest = session.lastUsed;
+    }
+    return latest;
+  }
+
   /** Every session of one person (they removed or changed a server, or signed out). */
   closePerson(principalId: string, server?: string): void {
     for (const [key, session] of this.sessions) {

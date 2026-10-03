@@ -683,7 +683,8 @@ Connected apps, shared one token by all and ran commands on the host;
 `claude plugin ...` typed by a bot hit the host Bash denial whatever
 `SAGAX_CLAUDE_ALLOW` said; skills routes were admin-only; the environment
 had no gh. Keep these rules, each covered by `server/org-connections.e2e.test.ts`
-(OC-1 to OC-8), `server/person-connections.test.ts`,
+(OC-1 to OC-9), `server/person-connections.test.ts`,
+`server/org-person-connections.test.ts`,
 `server/github-connect.test.ts`, `server/bot-plugins.test.ts`,
 `server/sandbox-stdio-mcp.test.ts`, `server/sandboxd.test.ts` or
 `src/components/settings/MyConnectionsSettings.test.ts`:
@@ -754,9 +755,24 @@ had no gh. Keep these rules, each covered by `server/org-connections.e2e.test.ts
   (`engineIntegrationCommand`; a courtesy, the boundary is that a turn loads
   only what Sagax keeps); `/plugin` and `/mcp` are managed for everyone. An
   organization admin is never narrowed and changes a person's bot plugins
-  and skills for them. Tests: `server/person-integrations.test.ts`,
-  `server/perspicax-link.test.ts`, OC-7 and OC-8,
-  `MyConnectionsSettings.test.ts`.
+  and skills for them.
+- An organization admin lists and removes another person's connections
+  (`GET /api/org/people/<principalId>/connections` and
+  `POST .../connections/revoke`, `server/org-person-connections.ts`): admin
+  scope, `orgAdminCaller` (a service loopback is not an admin), not in
+  `CLIENT_ALLOW`. A solo server answers 403 `identity_perspicax`. The list
+  names MCP servers (hostname or command only), the GitHub connection
+  (login, never a pending `userCode`) and plugins on bots that person owns,
+  with kind, created date and last stdio use when a session is open. No
+  token, env value, argument, header name or path. Remove deletes the
+  stored credential, forgets that server's OAuth entry, stops the stdio
+  child (`closePerson`) and writes `connections.revoke` (category `people`)
+  only when something was removed. One target that is missing is 404 with
+  no audit; remove-all of nothing is 200 and no audit.
+  Tests: `server/person-integrations.test.ts`,
+  `server/perspicax-link.test.ts`, `server/org-person-connections.test.ts`,
+  OC-7, OC-8 and OC-9, `MyConnectionsSettings.test.ts`,
+  `PersonConnectionsSection.test.ts`.
 
 A change under `server/` needs the server image redeployed (sandboxd is the
 same image); `deploy/sandbox/Dockerfile` (gh, node, npm) needs the sandbox

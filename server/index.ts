@@ -699,7 +699,7 @@ import { createComputerStatusRoutes, diskStateForFree } from "./routes/computer-
 import { createPluginRoutes, pluginServerName, type InstalledPlugin } from "./routes/plugins.ts";
 import { createAccountRoutes } from "./routes/account.ts";
 import { createRegistrySearch } from "./plugin-registry.ts";
-import { BotPlugins, marketplacePolicySchema, normalizePolicyEntry, type MarketplacePolicy } from "./bot-plugins.ts";
+import { BotPluginError, BotPlugins, marketplacePolicySchema, normalizePolicyEntry, type MarketplacePolicy } from "./bot-plugins.ts";
 import { createBotPluginRoutes } from "./routes/bot-plugins.ts";
 import { GithubConnect, githubAuthorizedFetch, githubGitEnvironment, githubSandboxArgv } from "./github-connect.ts";
 import { parsePersonalMcpInput, personalAuthHeaders, personalMcpHostRefusal, personalMcpPrivateAllowed, PersonConnections, PersonConnectionsError, principalDir, type PersonalMcpServer } from "./person-connections.ts";
@@ -737,6 +737,7 @@ import { orgFullAccessAllowed, orgFullAccessGrantRefusal, orgFullAccessHolds, OR
 import { createInterimAttachRoutes, INTERIM_WINDOW_DAYS, interimWindowUntil, windowWithDays } from "./interim-attach-routes.ts";
 import { createLinkedSubjectsRoute, createOrgExportRoute } from "./org-export.ts";
 import { createOrgBotForceRoutes } from "./org-bot-force.ts";
+import { createOrgPersonConnectionRoutes } from "./org-person-connections.ts";
 import { createOrgImportRoute } from "./org-import-routes.ts";
 import { readSandboxdKey } from "./sandboxd-auth.ts";
 import { sandboxdClient } from "./user-sandbox-client.ts";
@@ -20698,6 +20699,54 @@ ROUTES.push(createOrgBotForceRoutes({
       audience: [bot.ownerPrincipalId],
     });
   },
+}));
+// An organization admin lists and revokes one person's own connections.
+ROUTES.push(createOrgPersonConnectionRoutes({
+  organization: IDENTITY.kind === "perspicax",
+  isAdmin: orgAdminCaller,
+  person: (id) => {
+    const found = principals.byId(id);
+    return found ? { id: found.id } : null;
+  },
+  paused: personIntegrationsOff,
+  githubStatus: (id) => githubConnect.status(id, personGithub(id)),
+  servers: (id) => personConnections.servers(id),
+  lastUsed: (id, server) => stdioRelay.lastUsed(id, server),
+  plugins: (id) => store.bots.flatMap((bot) => {
+    if (effectiveBotOwner(bot) !== id) return [];
+    const installed = botPlugins.listPlugins(bot.id);
+    return installed.length ? [{ botId: bot.id, botName: bot.name, plugins: installed }] : [];
+  }),
+  stopMcp: (id, server) => stdioRelay.closePerson(id, server),
+  removeMcp: async (id, name) => {
+    if (!personConnections.remove(id, name)) return false;
+    stdioRelay.closePerson(id, name);
+    await personOAuth(id).forget(name).catch(() => undefined);
+    return true;
+  },
+  disconnectGithub: async (id) => {
+    const status = githubConnect.status(id, personGithub(id));
+    if (status.state !== "connected" && status.state !== "pending") return { removed: false };
+    const login = status.state === "connected" ? status.login : undefined;
+    githubConnect.disconnect(id);
+    await syncGithubToSandbox(id, null);
+    return { removed: true, ...(login ? { login } : {}) };
+  },
+  removePlugin: async (id, botId, key) => {
+    const bot = store.bot(botId);
+    if (!bot || effectiveBotOwner(bot) !== id) return false;
+    try {
+      await botPlugins.uninstall(botId, key);
+      return true;
+    } catch (error) {
+      if (error instanceof BotPluginError && error.code === "not_found") return false;
+      throw error;
+    }
+  },
+  audit: (auth, principalId, removed) => orgAudit({
+    category: "people", action: "connections.revoke", target: { kind: "person", id: principalId },
+    after: { removed }, actor: orgAuditActor(auth),
+  }),
 }));
 if (IDENTITY.kind === "perspicax") {
   const issuer = IDENTITY.issuer;

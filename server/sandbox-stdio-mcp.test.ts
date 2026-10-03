@@ -60,7 +60,11 @@ describe("SandboxStdioRelay", () => {
     await relay.relay({ ...base, principalId: "pr_b", frame: { jsonrpc: "2.0", id: 1, method: "initialize", params: {} } });
     expect(opened.map((entry) => entry.principalId)).toEqual(["pr_a", "pr_b"]);
     expect(relay.size).toBe(2);
+    expect(relay.lastUsed("pr_a", "tools")).toEqual(expect.any(Number));
+    expect(relay.lastUsed("pr_a", "other")).toBeUndefined();
+    expect(relay.lastUsed("pr_nobody")).toBeUndefined();
     relay.closePerson("pr_a");
+    expect(relay.lastUsed("pr_a", "tools")).toBeUndefined();
     expect(relay.size).toBe(1);
     relay.stop();
   });
