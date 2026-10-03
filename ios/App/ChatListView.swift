@@ -35,6 +35,8 @@ struct ChatListView: View {
     @State private var collapsedFolders = Set<String>()
     @State private var creatingThreads = Set<String>()
     @State private var managingThreads: Chat?
+    /// The shared thread and folder menus (Features/Threads) for every row.
+    @StateObject private var threadActions = ThreadActions()
     @FocusState private var searchFocused: Bool
 
     /// Space between the header's glass buttons and whatever the list
@@ -108,6 +110,13 @@ struct ChatListView: View {
                     managingThreads = nil
                     path.append(Chat.bot(bot))
                 }
+            }
+            .environmentObject(threadActions)
+            .threadActionsPresenter(threadActions)
+            .onValueChange(of: threadActions.created?.threadId) { threadId in
+                guard let created = threadActions.created, threadId != nil else { return }
+                threadActions.created = nil
+                path.append(Chat.bot(created))
             }
             .task(id: query) {
                 let expected = query
@@ -1437,6 +1446,7 @@ extension ChatListView {
             } label: {
                 Label("Threads", systemImage: "list.bullet")
             }
+            BotThreadsMenu(bot: bot, actions: threadActions)
             if session.canAdminister {
                 Menu {
                     ForEach(session.state.sidebarSections.map(\.name).filter { $0 != bot.section }, id: \.self) { name in
