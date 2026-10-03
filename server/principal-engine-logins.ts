@@ -130,6 +130,12 @@ export class PrincipalEngineLogins {
           delete env.XAI_API_KEY;
           delete env.MOONSHOT_API_KEY;
           delete env.KIMI_API_KEY;
+          if (driver === "grokAgent") {
+            // GROK_HOME outranks $HOME/.grok. A copied server GROK_HOME must
+            // not win over the overlay the device login applies next.
+            env.HOME = dir;
+            env.GROK_HOME = join(dir, ".grok");
+          }
         }
         return env;
       };
