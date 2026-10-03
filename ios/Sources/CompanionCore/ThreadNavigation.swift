@@ -79,10 +79,15 @@ extension Bot {
     ///   client's queue state. A closed or archived thread with a held send
     ///   stays in the list the way a running one does — activity strings
     ///   never say this, because the harness reports queues out-of-band.
+    /// - Parameter includingEmptyFolders: keep a folder with nothing listed
+    ///   in it, the way the desktop's thread tree always draws every folder
+    ///   (an empty one says "No threads yet"). A search still drops a folder
+    ///   whose name and threads do not match.
     public func threadGroups(
         matching query: String = "",
         includingClosed: Bool = false,
-        queuedThreadIds: Set<String> = []
+        queuedThreadIds: Set<String> = [],
+        includingEmptyFolders: Bool = false
     ) -> [BotThreadGroup] {
         let search = query.trimmingCharacters(in: .whitespacesAndNewlines)
         let threads: [BotTask]
@@ -113,7 +118,7 @@ extension Bot {
             : savedProjects
         var groups = folderProjects.compactMap { project -> BotThreadGroup? in
             let filed = ordered.filter { $0.projectId == project.id }
-            return filed.isEmpty ? nil : BotThreadGroup(project: project, tasks: filed)
+            return filed.isEmpty && !includingEmptyFolders ? nil : BotThreadGroup(project: project, tasks: filed)
         }
         let unfiled = ordered.filter { task in
             task.projectId.map { !projectIDs.contains($0) } ?? true
@@ -125,6 +130,7 @@ extension Bot {
         guard !search.isEmpty else { return groups }
         return groups.compactMap { group in
             if group.project?.name.localizedStandardContains(search) == true { return group }
+            guard !group.tasks.isEmpty else { return nil }
             let matches = group.tasks.filter { $0.displayTitle.localizedStandardContains(search) }
             return matches.isEmpty ? nil : BotThreadGroup(project: group.project, tasks: matches)
         }

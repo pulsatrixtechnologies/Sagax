@@ -135,6 +135,13 @@ public enum SurfaceFeature: String, CaseIterable, Hashable, Sendable {
     /// editor (BP6-BP8): the look fields pass every gate.
     case characterExtras
 
+    // Threads
+    /// Thread folders: new, rename, icon, delete, reorder (SB19, SB20).
+    /// The sidecar serves the projects routes; a server keeps them for the
+    /// admin scope. Filing a thread in an existing folder (TH5) is a thread
+    /// edit every pairing may make.
+    case threadFolders
+
     // Rooms
     /// Room memory tab (RM8, D3). Sidecars wait on S1.
     case roomMemory
@@ -223,7 +230,7 @@ public struct SurfaceGate: Hashable, Sendable {
             return scope != .sidecar || sidecarRoutes.contains(.harnessCommands)
         case .inspector, .scheduledCalls:
             return scope == .serverAdmin
-        case .connectorCardAuthorize, .botOverview, .connectedApps, .botOwnerExtras:
+        case .connectorCardAuthorize, .botOverview, .connectedApps, .botOwnerExtras, .threadFolders:
             return scope != .serverClient
         case .parallelTaskStop:
             return scope != .sidecar || sidecarRoutes.contains(.parallelStop)
