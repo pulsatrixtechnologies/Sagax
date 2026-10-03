@@ -10,11 +10,15 @@
 // any remote MCP server; a local command runs in the person's server
 // environment (server/sandbox-stdio-mcp.ts), never on the Sagax host.
 import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
+import type { LookupAddress } from "node:dns";
+import { lookup as dnsLookup } from "node:dns/promises";
+import { isIP } from "node:net";
 import { mkdirSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { z } from "zod";
 
 import { writeFileAtomic } from "./atomic.ts";
+import { isPublicDomainAddress } from "./custom-domain.ts";
 import { isHarnessOwnedMcpEnvName, mcpServerNameError } from "./mcp-registry.ts";
 import type { VaultKeySource } from "./mcp-oauth.ts";
 
@@ -98,14 +102,46 @@ export function principalDir(dataDir: string, principalId: string): string {
   return join(dataDir, "principals", principalId);
 }
 
-function urlError(value: string): string | null {
+/** A lab or a test only (SAGAX_PERSONAL_MCP_ALLOW_PRIVATE=1): a personal
+ * server may then be http and on a private or loopback address. Never on a
+ * shared server: the engine connects from the Sagax host, so a private
+ * address would reach the host's own neighbours. */
+export function personalMcpPrivateAllowed(env: NodeJS.ProcessEnv = process.env): boolean {
+  return env.SAGAX_PERSONAL_MCP_ALLOW_PRIVATE === "1";
+}
+
+/** Why the engine must not connect to this address from the Sagax host
+ * (a private, loopback, link-local or reserved destination), or null. */
+export async function personalMcpHostRefusal(
+  url: string,
+  options: { allowPrivate?: boolean; lookup?: (hostname: string) => Promise<LookupAddress[]> } = {},
+): Promise<string | null> {
+  if (options.allowPrivate) return null;
+  let hostname: string;
+  try { hostname = new URL(url).hostname.replace(/^\[|\]$/g, ""); } catch { return "That address is not valid."; }
+  let addresses: string[];
+  if (isIP(hostname)) addresses = [hostname];
+  else {
+    try {
+      addresses = (await (options.lookup ?? ((name) => dnsLookup(name, { all: true, verbatim: true })))(hostname)).map((entry) => entry.address);
+    } catch {
+      return `The name ${hostname} could not be resolved from the server.`;
+    }
+  }
+  if (!addresses.length || addresses.some((address) => !isPublicDomainAddress(address))) {
+    return "A personal MCP server must be on the public internet: this address is private to the server's network.";
+  }
+  return null;
+}
+
+function urlError(value: string, allowPrivate = false): string | null {
   let parsed: URL;
   try {
     parsed = new URL(value);
   } catch {
     return "Use a full address, like https://example.com/mcp.";
   }
-  if (parsed.protocol !== "https:") return "A personal MCP server must use https://.";
+  if (parsed.protocol !== "https:" && !(allowPrivate && parsed.protocol === "http:")) return "A personal MCP server must use https://.";
   if (parsed.username || parsed.password) return "Put credentials in the token, not in the address.";
   return null;
 }
@@ -131,14 +167,14 @@ export const personalMcpInputSchema = z.union([
 export type PersonalMcpInput = z.infer<typeof personalMcpInputSchema>;
 
 /** Validate one new personal server, or say why not. */
-export function parsePersonalMcpInput(input: unknown, now = Date.now()): { name: string; server: PersonalMcpServer } {
+export function parsePersonalMcpInput(input: unknown, now = Date.now(), allowPrivate = false): { name: string; server: PersonalMcpServer } {
   const parsed = personalMcpInputSchema.safeParse(input);
   if (!parsed.success) throw new PersonConnectionsError("Send { name, url, auth } for a remote server or { name, command, args } for a command.", "invalid_server");
   const value = parsed.data;
   const nameError = mcpServerNameError(value.name);
   if (nameError) throw new PersonConnectionsError(nameError, "invalid_name");
   if ("url" in value) {
-    const bad = urlError(value.url);
+    const bad = urlError(value.url, allowPrivate);
     if (bad) throw new PersonConnectionsError(bad, "invalid_url");
     const auth = value.auth ?? (value.token ? "token" : "none");
     const headerName = value.headerName || undefined;

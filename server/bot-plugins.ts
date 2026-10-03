@@ -310,10 +310,16 @@ export function copySanitizedPlugin(from: string, to: string, marketplaceEntry?:
 
 export type GitRunner = (args: string[], options: { cwd?: string; env: Record<string, string>; timeoutMs: number }) => Promise<void>;
 
+/** What git may read from the server's own environment: its proxy and
+ * certificate settings and the operator's git config, nothing else (the
+ * server's keys never reach it). */
+const GIT_PASSTHROUGH = ["PATH", "HOME", "HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy", "NO_PROXY", "no_proxy", "SSL_CERT_FILE", "SSL_CERT_DIR", "GIT_SSL_CAINFO", "GIT_CONFIG_GLOBAL"] as const;
+
 export const runGit: GitRunner = (args, options) => new Promise((resolvePromise, reject) => {
+  const passthrough = Object.fromEntries(GIT_PASSTHROUGH.flatMap((key) => (process.env[key] ? [[key, process.env[key]!]] : [])));
   execFile("git", args, {
     cwd: options.cwd,
-    env: { PATH: process.env.PATH ?? "/usr/bin:/bin", HOME: process.env.HOME ?? "/tmp", ...options.env },
+    env: { PATH: "/usr/bin:/bin", HOME: "/tmp", ...passthrough, ...options.env },
     timeout: options.timeoutMs,
     maxBuffer: 1024 * 1024,
   }, (error, _stdout, stderr) => {

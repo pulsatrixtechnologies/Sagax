@@ -96,3 +96,15 @@ describe("PersonConnections", () => {
     expect(() => principalDir("/data", "..")).toThrow(PersonConnectionsError);
   });
 });
+
+describe("personalMcpHostRefusal", () => {
+  it("refuses private, loopback and metadata addresses, by literal or by name", async () => {
+    const { personalMcpHostRefusal } = await import("./person-connections.ts");
+    expect(await personalMcpHostRefusal("https://169.254.169.254/mcp")).toBeTruthy();
+    expect(await personalMcpHostRefusal("https://127.0.0.1/mcp")).toBeTruthy();
+    expect(await personalMcpHostRefusal("https://[::1]/mcp")).toBeTruthy();
+    expect(await personalMcpHostRefusal("https://internal.example/mcp", { lookup: async () => [{ address: "10.0.0.5", family: 4 }] })).toBeTruthy();
+    expect(await personalMcpHostRefusal("https://api.githubcopilot.com/mcp/", { lookup: async () => [{ address: "140.82.112.21", family: 4 }] })).toBeNull();
+    expect(await personalMcpHostRefusal("http://127.0.0.1:9/mcp", { allowPrivate: true })).toBeNull();
+  });
+});

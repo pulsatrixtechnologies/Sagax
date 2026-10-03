@@ -665,7 +665,7 @@ import { createRegistrySearch } from "./plugin-registry.ts";
 import { BotPlugins, marketplacePolicySchema, normalizePolicyEntry, type MarketplacePolicy } from "./bot-plugins.ts";
 import { createBotPluginRoutes } from "./routes/bot-plugins.ts";
 import { GithubConnect, githubAuthorizedFetch, githubGitEnvironment, githubSandboxArgv } from "./github-connect.ts";
-import { parsePersonalMcpInput, personalAuthHeaders, PersonConnections, PersonConnectionsError, principalDir, type PersonalMcpServer } from "./person-connections.ts";
+import { parsePersonalMcpInput, personalAuthHeaders, personalMcpHostRefusal, personalMcpPrivateAllowed, PersonConnections, PersonConnectionsError, principalDir, type PersonalMcpServer } from "./person-connections.ts";
 import { createPersonConnectionRoutes } from "./routes/person-connections.ts";
 import { SandboxStdioRelay, StdioRelayError } from "./sandbox-stdio-mcp.ts";
 import { PERSONAL_STDIO_TOOL_SERVER } from "./user-sandbox-proxy.ts";
@@ -4637,6 +4637,15 @@ async function personalServerListing(principalId: string) {
     };
   });
 }
+const personalHostChecks = new Map<string, { at: number; refused: boolean }>();
+async function personalHostRefusalCached(url: string): Promise<boolean> {
+  const seen = personalHostChecks.get(url);
+  if (seen && Date.now() - seen.at < 5 * 60_000) return seen.refused;
+  const refused = Boolean(await personalMcpHostRefusal(url, { allowPrivate: personalMcpPrivateAllowed() }));
+  if (personalHostChecks.size > 500) personalHostChecks.clear();
+  personalHostChecks.set(url, { at: Date.now(), refused });
+  return refused;
+}
 /** A person's own command, relayed to their server environment for one turn. */
 function personalStdioIntegration(botId: string, threadId: string, generation: string, principalId: string, server: string) {
   const token = mintInternalCapability({
@@ -4671,6 +4680,9 @@ async function mountPersonalMcp(
     }
     let headers = personalAuthHeaders(server, github);
     if (headers === null) continue;
+    // Checked again at each mount (cached): a name that now resolves to a
+    // private address is not handed to the engine on this host.
+    if (await personalHostRefusalCached(server.url)) continue;
     if (server.auth === "oauth") {
       const manager = personOAuth(principalId);
       const spec = { [name]: personalRemoteSpec(server) };
@@ -4700,7 +4712,11 @@ ROUTES.push(createPersonConnectionRoutes({
   servers: {
     list: personalServerListing,
     add: async (principalId, body) => {
-      const { name, server } = parsePersonalMcpInput(body);
+      const { name, server } = parsePersonalMcpInput(body, Date.now(), personalMcpPrivateAllowed());
+      if (server.kind === "remote") {
+        const hostRefusal = await personalMcpHostRefusal(server.url, { allowPrivate: personalMcpPrivateAllowed() });
+        if (hostRefusal) throw new PersonConnectionsError(hostRefusal, "private_address");
+      }
       if (PERSONAL_MCP_RESERVED_PREFIX.test(name)) throw new PersonConnectionsError("That name is reserved by Sagax. Choose another one.", "invalid_name");
       if (server.kind === "stdio" && !userSandbox) {
         throw new PersonConnectionsError("This server has no server environments, so a command cannot run for you here. Add a remote server (an https address) instead.", "no_environment", 409);
