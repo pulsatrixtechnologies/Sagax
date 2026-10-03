@@ -320,8 +320,10 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   { methods: ["GET"], path: /^\/api\/computer\/status$/ },
   { methods: ["POST"], path: /^\/api\/computer\/(?:update|reset)$/ },
   // Plugin catalog (reads: names, descriptions, icons; no secrets). Installing
-  // one changes the server's MCP servers and stays admin.
+  // one changes the server's MCP servers: the handler lets through an admin
+  // or this computer's own person (clientSessionIsComputerOwner), nobody else.
   { methods: ["GET"], path: /^\/api\/plugins\/(?:search|installed)$/ },
+  { methods: ["POST"], path: /^\/api\/plugins\/install$/ },
   { methods: ["POST"], path: /^\/api\/auth\/stream-ticket$/ },
   { methods: ["POST"], path: /^\/api\/auth\/logout$/ },
   // Own outbound desktop connector, additionally bound to a private secret.
@@ -400,6 +402,13 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   // (owner or admin, checked in the handler).
   { methods: ["GET"], path: /^\/api\/bots\/[\w-]+\/soul$/ },
   { methods: ["POST"], path: /^\/api\/bots\/[\w-]+\/primary$/ }, // the person's own bot only: the handler checks the owner
+  // What the bot does, can reach and won't do (the profile's "What this bot
+  // does"): the handler lets a client session read it for a bot it owns.
+  { methods: ["GET"], path: /^\/api\/bots\/[\w-]+\/overview$/ },
+  // A bot's saved command rules: its owner (or this computer's own person)
+  // reads and removes them; adding one stays admin (the handler decides).
+  { methods: ["GET"], path: /^\/api\/bots\/[\w-]+\/command-allowlist$/ },
+  { methods: ["DELETE"], path: /^\/api\/bots\/[\w-]+\/command-allowlist\/[\w-]+$/ },
   // An organization member's own bots: the handler requires a member or
   // admin role, limits the fields (memberBotFieldViolation) and, for a
   // delete, that the session owns the bot.
@@ -415,6 +424,11 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   { methods: ["POST"], path: /^\/api\/bots\/[\w-]+\/secret-cards\/[\w-]+\/(?:resume|dismiss)$/ },
   { methods: ["GET"], path: /^\/api\/bots\/[\w-]+\/connector-cards\/[\w-]+\/status$/ },
   { methods: ["POST"], path: /^\/api\/bots\/[\w-]+\/connector-cards\/[\w-]+\/(?:resume|dismiss)$/ },
+  // Connect the app a card asks for (iOS parity S2). It signs an account into
+  // the server's own connected apps, so the handler lets through only the
+  // bot's owner on a personal server or this computer's own person
+  // (clientSessionIsComputerOwner), never on an organization server.
+  { methods: ["POST"], path: /^\/api\/bots\/[\w-]+\/connector-cards\/[\w-]+\/authorize$/ },
   { methods: ["POST"], path: /^\/api\/bots\/[\w-]+\/always-allow$/ }, // must match a pending card
   // rooms
   { methods: ["GET", "POST"], path: /^\/api\/groups$/ },
@@ -557,6 +571,38 @@ export function memberBotFieldViolation(body: unknown): string | null {
   if (!body || typeof body !== "object" || Array.isArray(body)) return "body";
   for (const key of Object.keys(body)) if (!MEMBER_BOT_FIELDS.has(key)) return key;
   return null;
+}
+
+/** What the computer owner's paired phone (through the companion sidecar)
+ * may set on a bot: a member's fields, plus the advanced panel's memory
+ * switches (decision D1 of the iOS parity matrix). Never where the bot runs,
+ * what it may reach or how much it may do unasked. */
+const COMPANION_BOT_FIELDS = new Set([...MEMBER_BOT_FIELDS, "memoryEnabled", "memoryUpkeep"]);
+export function companionBotFieldViolation(body: unknown): string | null {
+  if (!body || typeof body !== "object" || Array.isArray(body)) return "body";
+  for (const key of Object.keys(body)) if (!COMPANION_BOT_FIELDS.has(key)) return key;
+  return null;
+}
+
+/** Whether a session is this computer's own person, for the few client-scope
+ * routes that act on the server itself (plugin install, connecting an app
+ * from a card, a bot's saved command rules). An admin session is; on a
+ * personal server (not an organization server, not a Cloud home, where the
+ * owner holds admin and everyone else is a guest) a client session is only
+ * when it is bound to the operator: their principal, or their address. A
+ * session with neither, like a chat-only pairing, is not proof. */
+export function clientSessionIsComputerOwner(
+  auth: RequestAuth,
+  context: { organization: boolean; cloudHome: boolean; localPrincipalId: string; operatorEmail?: string },
+): boolean {
+  if (auth.kind === "loopback") return auth.trust !== "service";
+  if (auth.scopes.includes("admin")) return true;
+  if (context.organization || context.cloudHome) return false;
+  const principalId = auth.session.principalId?.trim();
+  if (principalId) return principalId === context.localPrincipalId;
+  const email = auth.session.email?.trim().toLowerCase();
+  const operator = context.operatorEmail?.trim().toLowerCase();
+  return Boolean(email && operator && email === operator);
 }
 
 /** Same for a room: name, reading state, and the roster. humanIds and
