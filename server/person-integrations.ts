@@ -8,11 +8,16 @@
 // manage, without an admin.
 //
 // `off`: an admin manages them. Every change above answers 403
-// `org_integrations_admin_only`; what the person already has keeps working
-// (their servers still mount for their turns, their GitHub connection still
-// reaches their environment, the bots' plugins and skills still load), and
-// the UI shows it read-only with a short notice. An organization admin is
-// never narrowed, and a solo server never reads the field.
+// `org_integrations_admin_only`. What the person already saved stays (an
+// admin can turn `manage` back on), and it stops being usable at once:
+// their servers are not mounted, a running MCP child is stopped, their
+// GitHub token is taken out of their environment, and their bots' plugins
+// are not loaded. Skills already on a bot still load. The UI shows the
+// saved list read-only with a short notice. Signing in again to a server
+// they already have is still allowed, so a token can be refreshed for when
+// an admin turns use back on; it does not mount the server while `off`.
+// An organization admin is never narrowed, and a solo server never reads
+// the field.
 //
 // The engine's own plugin and MCP commands are refused for their turns too:
 // `/plugin`, `/plugins`, `/mcp` and `/reload-*` typed in the chat are
@@ -29,6 +34,17 @@ export const INTEGRATIONS_ADMIN_ONLY = {
   error: "Your administrator manages plugins and MCP servers.",
   code: "org_integrations_admin_only",
 } as const;
+
+/** Effective right: an organization admin is never narrowed, and only an
+ * explicit `off` pauses everyone else. Absent and `manage` both mean manage. */
+export function effectiveIntegrationRights(orgAdmin: boolean, field: "manage" | "off" | undefined): "manage" | "off" {
+  return orgAdmin || field !== "off" ? "manage" : "off";
+}
+
+/** Saved connections of a non-admin whose right is `off`: kept, not usable. */
+export function integrationsPaused(input: { rights: "manage" | "off"; orgAdmin: boolean }): boolean {
+  return input.rights === "off" && !input.orgAdmin;
+}
 
 /** The tool text a refused `run_command` returns. */
 export const INTEGRATIONS_ADMIN_ONLY_COMMAND =

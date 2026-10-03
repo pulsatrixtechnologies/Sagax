@@ -23,7 +23,8 @@ export interface MyConnections {
   /** This server gives each person a server environment (commands run there). */
   sandbox: boolean;
   /** Perspicax `sagax_integrations: off`: an admin manages this person's
-   * connections; they stay usable, read-only (only a sign-in again). */
+   * connections. They stay saved and are not usable (only a sign-in again,
+   * which does not mount the server until an admin turns use back on). */
   managedByAdmin?: boolean;
 }
 

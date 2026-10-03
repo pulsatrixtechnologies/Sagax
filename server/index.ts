@@ -4715,6 +4715,12 @@ function personGithub(principalId: string | null | undefined) {
   if (!principalId) return undefined;
   try { return personConnections.github(principalId.trim().toLowerCase()); } catch { return undefined; }
 }
+/** The connection a turn, a clone or a private skill may use. `sagax_integrations: off`
+ * keeps the saved token (the person still sees it) and hands none of it out. */
+function usablePersonGithub(principalId: string | null | undefined) {
+  if (!principalId || personIntegrationsOff(principalId)) return undefined;
+  return personGithub(principalId);
+}
 /** The organization's GitHub OAuth App for the device flow (Settings >
  * Organization, else SAGAX_GITHUB_CLIENT_ID). A client id is public. */
 function githubClientId(): string | undefined {
@@ -4741,6 +4747,12 @@ async function syncGithubForTurn(principalId: string, generation: string): Promi
   if (githubSyncedGenerations.has(key)) return;
   githubSyncedGenerations.add(key);
   if (githubSyncedGenerations.size > 2_000) githubSyncedGenerations.delete(githubSyncedGenerations.values().next().value!);
+  // Off: take the token out of the environment once per turn. The saved
+  // connection stays, so turning the cap back on puts it back.
+  if (personIntegrationsOff(principalId)) {
+    await syncGithubToSandbox(principalId, null);
+    return;
+  }
   const connection = personGithub(principalId);
   if (connection) await syncGithubToSandbox(principalId, connection);
 }
@@ -4756,7 +4768,7 @@ function pluginMarketplacePolicy(): MarketplacePolicy | undefined {
 }
 const botPlugins = new BotPlugins({
   dataDir: DATA_DIR,
-  gitEnvironment: (actor) => githubGitEnvironment(personGithub(actor)?.token),
+  gitEnvironment: (actor) => githubGitEnvironment(usablePersonGithub(actor)?.token),
   policy: pluginMarketplacePolicy,
 });
 const stdioRelay = new SandboxStdioRelay({
@@ -4821,6 +4833,12 @@ async function mountPersonalMcp(
 ): Promise<void> {
   if (IDENTITY.kind !== "perspicax" || !input.customMcp || !input.principal) return;
   const principalId = input.principal.trim().toLowerCase();
+  // Saved servers stay; an admin turned use off, so this turn mounts none
+  // and a child already running for them stops.
+  if (personIntegrationsOff(principalId)) {
+    stdioRelay.closePerson(principalId);
+    return;
+  }
   let servers: Record<string, PersonalMcpServer>;
   try { servers = personConnections.servers(principalId); } catch { return; }
   const github = personGithub(principalId);
@@ -4910,8 +4928,10 @@ function botLoadsPlugins(bot: { modelSelection: { instanceId: string } }): boole
   return registry.get(bot.modelSelection.instanceId)?.driverKind === "claudeAgent";
 }
 /** The bot's enabled plugins for a Claude turn (`--plugin-dir`). */
-function pluginDirsFor(bot: { id: string }, instance: { driverKind: string }): { pluginDirs?: string[] } {
+function pluginDirsFor(bot: { id: string; ownerUserId?: unknown }, instance: { driverKind: string }): { pluginDirs?: string[] } {
   if (instance.driverKind !== "claudeAgent") return {};
+  // The owner's cap is off: the plugins stay installed and are not loaded.
+  if (personIntegrationsOff(effectiveBotOwner(bot))) return {};
   const dirs = botPlugins.pluginDirs(bot.id);
   return dirs.length ? { pluginDirs: dirs } : {};
 }
@@ -21303,6 +21323,17 @@ if (IDENTITY.kind === "perspicax" && oidcRp && idpSessions && process.env.SAGAX_
       const ended = routineConsents?.reconcile(present, fetchStartedAt) ?? 0;
       if (ended) console.log(`perspicax directory: ${ended} routine delegation(s) ended in Perspicax`);
     },
+    // sagax_integrations flipped: stop use at once, or put GitHub back.
+    // Saved connections are not deleted. MCP and plugins mount on the next turn.
+    onIntegrationRights: (principalId, rights) => {
+      if (rights === "off") {
+        stdioRelay.closePerson(principalId);
+        void syncGithubToSandbox(principalId, null);
+        return;
+      }
+      const connection = personGithub(principalId);
+      if (connection) void syncGithubToSandbox(principalId, connection);
+    },
     version,
   });
   perspicaxDirectory.start(intervalMs);
@@ -22538,6 +22569,13 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
             ? { message: { jsonrpc: "2.0", id: frame.id, result: { content: [{ type: "text", text: message }], isError: true } } }
             : { message: { jsonrpc: "2.0", id: frame.id, error: { code: -32603, message } } };
         };
+        // The cap flipped after this turn mounted the server: do not relay,
+        // and stop the child that already has the credential.
+        if (personIntegrationsOff(person)) {
+          stdioRelay.closePerson(person, name);
+          await syncGithubForTurn(person, internalCapability.generation);
+          return json(res, 200, answerError("This MCP server is paused. An administrator turned this person's own connections off."));
+        }
         let server: PersonalMcpServer | undefined;
         try { server = personConnections.servers(person)[name]; } catch { server = undefined; }
         if (!server || server.kind !== "stdio" || !server.enabled) return json(res, 200, answerError("This MCP server was removed or turned off in Settings > Mes connexions."));
@@ -28240,7 +28278,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       const parsed = z.object({ source: z.string().min(1).max(2000) }).safeParse(await readBody(req));
       if (!parsed.success) return json(res, 400, { error: "source must be a GitHub or skills.sh URL, or owner/repo" });
       // A private repository reads with the person's own GitHub connection.
-      const fetched = await fetchSkillFromSource(parsed.data.source, githubAuthorizedFetch(personGithub(sessionPrincipal(auth))?.token));
+      const fetched = await fetchSkillFromSource(parsed.data.source, githubAuthorizedFetch(usablePersonGithub(sessionPrincipal(auth))?.token));
       if ("error" in fetched) return json(res, 422, { error: fetched.error });
       const results = fetched.skills.map((skill) => installSkill(m![1]!, skill.source, skill.files));
       const installed = results.filter((entry): entry is Exclude<typeof entry, { error: string }> => !("error" in entry));

@@ -683,7 +683,7 @@ Connected apps, shared one token by all and ran commands on the host;
 `claude plugin ...` typed by a bot hit the host Bash denial whatever
 `SAGAX_CLAUDE_ALLOW` said; skills routes were admin-only; the environment
 had no gh. Keep these rules, each covered by `server/org-connections.e2e.test.ts`
-(OC-1 to OC-6), `server/person-connections.test.ts`,
+(OC-1 to OC-8), `server/person-connections.test.ts`,
 `server/github-connect.test.ts`, `server/bot-plugins.test.ts`,
 `server/sandbox-stdio-mcp.test.ts`, `server/sandboxd.test.ts` or
 `src/components/settings/MyConnectionsSettings.test.ts`:
@@ -732,13 +732,20 @@ had no gh. Keep these rules, each covered by `server/org-connections.e2e.test.ts
   `sagax_integrations` on each directory person, set by an admin on the
   person's Sagax tab; default and absent mean `manage`;
   `server/person-integrations.ts`, `personIntegrationsOff`,
-  `integrationsLocked`). `manage`: everything above, with no admin. `off`:
-  `/api/me/mcp/servers*` (add, toggle, remove, sign out), `/api/me/github*`,
-  every plugin change and every skill change answer 403
+  `integrationsLocked`, `effectiveIntegrationRights`). `manage`: everything
+  above, with no admin. `off`: the same change routes answer 403
   `org_integrations_admin_only`, even on their own bot; only a sign-in again
-  to a server they already have passes. What they have keeps working (their
-  servers mount, their GitHub reaches their environment, the bots' plugins
-  and skills load) and reads as such: `managedByAdmin` on
+  to a server they already have passes (`oauth/start` does not mount it).
+  Use stops at once and the saved credentials stay, so turning the cap back
+  to `manage` mounts them on the next turn: `mountPersonalMcp` closes that
+  person's stdio sessions and adds nothing, `syncGithubForTurn` and
+  `usablePersonGithub` drop the token from the environment and from Sagax's
+  own fetches, and `pluginDirsFor` passes no `--plugin-dir`. Skills already
+  on a bot still load. The directory callback `onIntegrationRights` fires
+  only when the effective right changes (an organization admin stays
+  `manage` even when the field is `off`; a disabled person is skipped; a 304
+  does not re-fire) and closes stdio and clears or restores the GitHub
+  sandbox token. The person's own screen still reads `managedByAdmin` on
   `/api/me/connections` and on the plugins listing (`canChange: false`),
   `viewer.integrationsManagedByAdmin`, edit controls hidden under "Votre
   administrateur gère les plugins et les serveurs MCP"

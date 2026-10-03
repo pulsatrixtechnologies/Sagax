@@ -15,7 +15,8 @@
 // Perspicax `sagax_integrations: off` (server/person-integrations.ts): the
 // listing says `managedByAdmin: true` and every change answers 403
 // `org_integrations_admin_only`, except signing in again to a server the
-// person already has (`oauth/start`), which only keeps it working.
+// person already has (`oauth/start`), so a token can be refreshed for when
+// an admin turns use back on. While the cap is off the server is not mounted.
 //
 // Only a signed-in person, only for themselves (the session's principal,
 // never an id from the request), only on an organization server. Member
