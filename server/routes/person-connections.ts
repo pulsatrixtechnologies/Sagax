@@ -12,6 +12,11 @@
 //   POST   /api/me/mcp/servers/:name/oauth/start      { authorizationUrl, redirectUri }
 //   POST   /api/me/mcp/servers/:name/oauth/disconnect
 //
+// Perspicax `sagax_integrations: off` (server/person-integrations.ts): the
+// listing says `managedByAdmin: true` and every change answers 403
+// `org_integrations_admin_only`, except signing in again to a server the
+// person already has (`oauth/start`), which only keeps it working.
+//
 // Only a signed-in person, only for themselves (the session's principal,
 // never an id from the request), only on an organization server. Member
 // scope (request-auth.ts CLIENT_ALLOW). No answer carries a token.
@@ -19,6 +24,7 @@ import type { IncomingMessage } from "node:http";
 
 import type { GithubStatus } from "../github-connect.ts";
 import type { PersonalMcpListing } from "../person-connections.ts";
+import { INTEGRATIONS_ADMIN_ONLY } from "../person-integrations.ts";
 import type { RequestAuth } from "../request-auth.ts";
 import { PASS, type RouteHandler } from "./table.ts";
 
@@ -30,6 +36,8 @@ export interface PersonalServerAuth {
 
 export interface PersonConnectionRouteDeps {
   organization: () => boolean;
+  /** An admin manages this person's MCP servers and GitHub connection. */
+  managedByAdmin?: (auth: RequestAuth) => boolean;
   sandboxConfigured: () => boolean;
   github: {
     status: (principalId: string) => GithubStatus;
@@ -75,11 +83,15 @@ export function createPersonConnectionRoutes(deps: PersonConnectionRouteDeps): R
       if (!/^application\/json\b/i.test(String(req.headers["content-type"] ?? ""))) throw Object.assign(new Error("content-type must be application/json"), { status: 415 });
       return readBody(req);
     };
+    const managedByAdmin = deps.managedByAdmin?.(auth) === true;
     try {
       if (path === "/api/me/connections") {
         if (method !== "GET") return json(res, 405, { error: "GET only" });
-        return json(res, 200, { github: deps.github.status(principalId), servers: await deps.servers.list(principalId), sandbox: deps.sandboxConfigured() });
+        return json(res, 200, { github: deps.github.status(principalId), servers: await deps.servers.list(principalId), sandbox: deps.sandboxConfigured(), managedByAdmin });
       }
+      // Everything below changes the person's connections; an admin keeps
+      // them. Signing in again to a server they already have keeps it working.
+      if (managedByAdmin && !(method === "POST" && path.endsWith("/oauth/start"))) return json(res, 403, { ...INTEGRATIONS_ADMIN_ONLY });
       if (path === "/api/me/github/device") {
         if (method !== "POST") return json(res, 405, { error: "POST only" });
         return json(res, 200, await deps.github.startDevice(principalId) as Record<string, unknown>);

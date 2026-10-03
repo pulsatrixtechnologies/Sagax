@@ -724,6 +724,28 @@ had no gh. Keep these rules, each covered by `server/org-connections.e2e.test.ts
   on an organization server: use reads, owner or manage changes; an import
   from a private repository reads with the person's GitHub connection.
 - Library tab: Files | Skills | Plugins (`bot-settings/LibraryTab.tsx`).
+- Who manages them comes from Perspicax (migration 0046,
+  `sagax_integrations` on each directory person, set by an admin on the
+  person's Sagax tab; default and absent mean `manage`;
+  `server/person-integrations.ts`, `personIntegrationsOff`,
+  `integrationsLocked`). `manage`: everything above, with no admin. `off`:
+  `/api/me/mcp/servers*` (add, toggle, remove, sign out), `/api/me/github*`,
+  every plugin change and every skill change answer 403
+  `org_integrations_admin_only`, even on their own bot; only a sign-in again
+  to a server they already have passes. What they have keeps working (their
+  servers mount, their GitHub reaches their environment, the bots' plugins
+  and skills load) and reads as such: `managedByAdmin` on
+  `/api/me/connections` and on the plugins listing (`canChange: false`),
+  `viewer.integrationsManagedByAdmin`, edit controls hidden under "Votre
+  administrateur gère les plugins et les serveurs MCP"
+  (`integrations.managedByAdmin`). `run_command` in their environment
+  refuses the engines' plugin, MCP and extension subcommands
+  (`engineIntegrationCommand`; a courtesy, the boundary is that a turn loads
+  only what Sagax keeps); `/plugin` and `/mcp` are managed for everyone. An
+  organization admin is never narrowed and changes a person's bot plugins
+  and skills for them. Tests: `server/person-integrations.test.ts`,
+  `server/perspicax-link.test.ts`, OC-7 and OC-8,
+  `MyConnectionsSettings.test.ts`.
 
 A change under `server/` needs the server image redeployed (sandboxd is the
 same image); `deploy/sandbox/Dockerfile` (gh, node, npm) needs the sandbox

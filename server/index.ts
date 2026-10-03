@@ -744,6 +744,7 @@ import { UserSandboxManager, UserSandboxUnavailable, userSandboxSettingsFromEnv 
 import { createUserSandboxRoutes } from "./user-sandbox-routes.ts";
 import { sandboxPrincipalForTurn, USER_SANDBOX_MCP_NAME } from "./user-sandbox-routing.ts";
 import { handleUserSandboxMcp } from "./user-sandbox-tools.ts";
+import { INTEGRATIONS_ADMIN_ONLY, INTEGRATIONS_ADMIN_ONLY_COMMAND, engineIntegrationCommand } from "./person-integrations.ts";
 import { SANDBOX_CONTROL_REFUSAL, SandboxControlHolds } from "./sandbox-control.ts";
 import { DesktopBridges, resolveBotWorkplace, type DesktopBridgeOperation, type WorkplaceDecision } from "./desktop-bridge.ts";
 import { handleDesktopBridgeMcp } from "./desktop-bridge-tools.ts";
@@ -4848,6 +4849,7 @@ async function mountPersonalMcp(
 }
 ROUTES.push(createPersonConnectionRoutes({
   organization: () => IDENTITY.kind === "perspicax",
+  managedByAdmin: integrationsLocked,
   sandboxConfigured: () => Boolean(userSandbox),
   github: {
     status: (principalId) => githubConnect.status(principalId, personGithub(principalId)),
@@ -4926,6 +4928,7 @@ ROUTES.push(createBotPluginRoutes<BotRecord>({
     return level === "owner" || level === "manage" || orgAdminCaller(auth);
   },
   actor: (auth) => sessionPrincipal(auth) ?? undefined,
+  managedByAdmin: integrationsLocked,
   policy: pluginMarketplacePolicy,
   engineLoadsPlugins: botLoadsPlugins,
   changed: (bot, action, detail, auth) => {
@@ -20063,6 +20066,24 @@ function ownerBotsReadOnly(bot: { ownerUserId?: unknown }): boolean {
 }
 /** The refusal a read-only person gets on anything that creates or changes a bot. */
 const BOTS_READ_ONLY = { error: "org_bots_read_only", message: "Your administrator lets you use shared bots only." } as const;
+/** Organization server: a Perspicax admin manages this person's plugins,
+ * skills and MCP servers (`sagax_integrations: off` in the directory,
+ * Perspicax migration 0046; server/person-integrations.ts). Never an
+ * organization admin, the operator, or anyone on a solo server. */
+function personIntegrationsOff(principalId: string | undefined | null): boolean {
+  if (IDENTITY.kind !== "perspicax" || !principalId || !isPrincipalId(principalId)) return false;
+  const person = principals.byId(principalId);
+  if (!person || person.local === true || person.orgRole === "admin") return false;
+  const sub = person.subject?.iss === IDENTITY.issuer ? person.subject.sub : undefined;
+  return Boolean(sub) && perspicaxDirectory?.integrationRights(sub!) === "off";
+}
+/** A signed-in person whose plugins, skills and MCP servers an admin
+ * manages: every change to them answers 403 `org_integrations_admin_only`.
+ * An organization admin session is never narrowed. */
+function integrationsLocked(auth: RequestAuth): boolean {
+  if (auth.kind !== "session" || orgAdminCaller(auth)) return false;
+  return personIntegrationsOff(auth.session.principalId);
+}
 /** A chat-scoped session acting on a bot it owns (and may still create
  * bots): the only non-admin case that edits or deletes a bot. */
 function memberOwnsBot(auth: RequestAuth, bot: { ownerUserId?: unknown }): boolean {
@@ -20136,6 +20157,7 @@ function viewerIdentity(auth: RequestAuth): ViewerIdentity | null {
     // sync), else the address, else the login
     operator: false, principalId, email, name: personDisplayName({ ...person, email }), role, canCreateBots,
     ...(personBotsReadOnly(principalId) ? { botsReadOnly: true as const } : {}),
+    ...(personIntegrationsOff(principalId) ? { integrationsManagedByAdmin: true as const } : {}),
     operatorName: cfg.profile?.name?.trim() || "",
     ...managed,
     ...(avatarUrl ? { avatarUrl } : {}),
@@ -22482,6 +22504,9 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           const result = await handleUserSandboxMcp(rpcMethod, frame?.params, {
             exec: (input) => userSandbox.exec(ownerId, input),
             overQuota: () => userSandbox.workspaceOverQuota(ownerId),
+            // An admin manages this person's plugins and MCP servers: the
+            // engines' own plugin and MCP commands do not run for them.
+            commandRefusal: (command) => (personIntegrationsOff(ownerId) && engineIntegrationCommand(command) ? INTEGRATIONS_ADMIN_ONLY_COMMAND : null),
           });
           requireActiveInternalCapability();
           return json(res, 200, { result });
@@ -28155,6 +28180,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       const level = viewerBotLevel(auth, target);
       if (level === null && !orgAdminCaller(auth)) return { status: 404, body: { error: "no such bot" } };
       if (change && level !== "owner" && level !== "manage" && !orgAdminCaller(auth)) return { status: 403, body: { error: "Only the bot's owner, or someone who manages it, can change its skills.", code: "skills_owner_only" } };
+      // Perspicax `sagax_integrations: off`: an admin manages their skills.
+      if (change && integrationsLocked(auth)) return { status: 403, body: { ...INTEGRATIONS_ADMIN_ONLY } };
       return null;
     };
     {

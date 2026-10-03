@@ -12,6 +12,8 @@ import { useEffect, useRef, useState } from "react";
 import { useStore, type Bot } from "@/state/store";
 import { useBotEditor } from "./BotEditorContext";
 import { skillAuthoringEnabled, skillsLibraryEnabled } from "@/lib/feature-flags";
+import { viewerIntegrationsManagedByAdmin } from "@/lib/viewer";
+import { IntegrationsManagedNotice } from "../settings/MyConnectionsSettings";
 import { Switch } from "../SettingsPrimitives";
 import { inputCls } from "./field";
 import { OrgSkillsCard } from "./OrgSkillsCard";
@@ -286,6 +288,9 @@ export function SkillsSection({ bot }: { bot: Bot }) {
   const { state } = useStore();
   const featureEnabled = skillAuthoringEnabled(state.config);
   const libraryOn = skillsLibraryEnabled(state.config);
+  // Perspicax `sagax_integrations: off`: an admin manages this person's
+  // skills; the bot's skills stay listed and in use, read-only.
+  const locked = viewerIntegrationsManagedByAdmin(state.config);
   const {
     skills, staged, loading, working, setWorking, error, setError, reviewing, setReviewing, refresh, toggle, enableReviewed,
     libraryPool, addFromLibrary, setAddFromLibrary, assignmentBusy, putAssignments, addToBot,
@@ -408,7 +413,9 @@ export function SkillsSection({ bot }: { bot: Bot }) {
           {featureEnabled ? t("skills.learned.hintOn") : t("skills.learned.hintOff")}
         </div>
 
-        {libraryOn ? (
+        {locked ? (
+          <div className="mt-3"><IntegrationsManagedNotice /></div>
+        ) : libraryOn ? (
           <div className="mt-3 flex flex-col gap-1.5">
             {libraryPool.length > 0 ? (
               <div className="flex items-center gap-2">
@@ -489,21 +496,25 @@ export function SkillsSection({ bot }: { bot: Bot }) {
                     <div className="mt-0.5 line-clamp-2 text-[11.5px] text-ink-secondary">{skill.description}</div>
                     <div className="mt-0.5 text-[10.5px] text-ink-secondary">Used when the bot decides it's relevant</div>
                   </button>
-                  <Switch
-                    checked={skill.enabled}
-                    aria-label={`${skill.enabled ? "Disable" : "Enable"} ${skill.name}`}
-                    disabled={Boolean(working)}
-                    onClick={() => void toggle(skill)}
-                  />
-                  <button
-                    aria-label={`Remove ${skill.name}`}
-                    title="Remove skill"
-                    disabled={Boolean(working)}
-                    onClick={() => void remove(skill)}
-                    className="flex size-8 shrink-0 items-center justify-center rounded-md text-ink-secondary hover:bg-danger/10 hover:text-danger disabled:opacity-40"
-                  >
-                    <Trash2 size={15} />
-                  </button>
+                  {!locked && (
+                    <>
+                      <Switch
+                        checked={skill.enabled}
+                        aria-label={`${skill.enabled ? "Disable" : "Enable"} ${skill.name}`}
+                        disabled={Boolean(working)}
+                        onClick={() => void toggle(skill)}
+                      />
+                      <button
+                        aria-label={`Remove ${skill.name}`}
+                        title="Remove skill"
+                        disabled={Boolean(working)}
+                        onClick={() => void remove(skill)}
+                        className="flex size-8 shrink-0 items-center justify-center rounded-md text-ink-secondary hover:bg-danger/10 hover:text-danger disabled:opacity-40"
+                      >
+                        <Trash2 size={15} />
+                      </button>
+                    </>
+                  )}
                 </div>
                 <div className="mt-1 truncate text-[10.5px] text-ink-secondary" title={skill.source}>Source: {skill.source}</div>
                 {skill.warnings.length > 0 && (
@@ -521,7 +532,7 @@ export function SkillsSection({ bot }: { bot: Bot }) {
         {error && <div role="alert" className="mt-2 text-[12px] text-danger">{error}</div>}
       </div>
 
-      <OrgSkillsCard bot={bot} onAdded={() => void refresh()} />
+      {!locked && <OrgSkillsCard bot={bot} onAdded={() => void refresh()} />}
 
       {reviewing && (
         <SkillReviewDialog
