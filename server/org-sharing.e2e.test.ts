@@ -237,8 +237,12 @@ posixOnly("Perspicax organization, slice 3: directory, sharing with a user, acce
   it("S3-4 (B): shared with bob, answered with the org key; dave sees none of it", async () => {
     // The organization's key serves by itself (2026-10-01): bob has no
     // subscription and no key of his own. Slice 8: the settings also carry
-    // the interim attach window (none here).
-    expect((await api("GET", "/api/org", alice)).body.settings).toEqual({ orgKeyConfigured: true, allowFullAccess: true, interimAttach: { until: null, people: 0 } });
+    // the interim attach window (none here). #117: the org's GitHub OAuth App
+    // (none) and the plugin marketplace policy (any, the default).
+    expect((await api("GET", "/api/org", alice)).body.settings).toEqual({
+      orgKeyConfigured: true, allowFullAccess: true, interimAttach: { until: null, people: 0 },
+      github: { clientId: null, fromEnvironment: false }, pluginMarketplaces: { mode: "any" },
+    });
     shared = await createBot(alice, "Xavier", "claude");
     const refusals = [
       await api("POST", `/api/bots/${shared.id}/direct-grants`, alice, { userId: "bob@example.test" }),
@@ -377,12 +381,14 @@ posixOnly("Perspicax organization, slice 3: directory, sharing with a user, acce
     expect(missing.access).toMatchObject({ reason: "engine_missing", botId: ghost.id });
 
     // 2026-10-01: the server's own sign-ins no longer serve an admin's own
-    // bot; an engine without a personal sign-in or key and no org key is refused
+    // bot; an engine with no sign-in or key of hers and no org key is refused
     const own = await createBot(alice, "Grokker", "grok");
     expect((await api("POST", `/api/bots/${own.id}/messages`, alice, { text: "ping" })).status).toBe(202);
     const ownCard = await waitFor(async () => (await botsOf(alice)).find((b) => b.id === own.id)?.messages.find((m) => m.kind === "access") ?? null);
     expect(ownCard.access).toMatchObject({ reason: "no_access", payer: "owner", cause: "no_credentials" });
-    expect(ownCard.access.subscriptionSignIn).toBeUndefined();
+    // #114: Grok Build has a personal sign-in (`grok login --device-auth`),
+    // so the card offers it to the person who has to act
+    expect(ownCard.access.subscriptionSignIn).toBe(true);
   }, 60_000);
 
   it("S3-6b (F): bob's queued send, his edit and his bot's ask_bot on alice's bot get the card, never a turn", async () => {
