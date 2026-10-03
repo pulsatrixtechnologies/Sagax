@@ -8149,7 +8149,7 @@ describe("harness HTTP API", () => {
 
       const sections = (await api("GET", `/api/bots/${bot.id}/system-prompt`)).body.sections as Array<{ id: string; text: string }>;
       const team = sections.find((section) => section.id === "coordination")?.text ?? "";
-      expect(team).toContain("You are the Chief of Staff for the Roster end section.");
+      expect(team).toContain("Your home team is the Roster end section.");
       expect(team.endsWith(roster)).toBe(true);
 
       rmSync(fakeClaudeDump, { force: true });
