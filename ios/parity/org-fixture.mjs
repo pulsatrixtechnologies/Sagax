@@ -276,9 +276,9 @@ async function seedPeopleDm(org, samId) {
   const cookie = await signIn(org);
   org.idp.user = signInUser(VIEWER);
   const as = async (method, path, body) => {
-    const res = await fetch(`${org.base}${path}`, {
-      method, headers: { "content-type": "application/json", cookie, origin: org.base }, body: JSON.stringify(body),
-    });
+    const init = { method, headers: { "content-type": "application/json", cookie, origin: org.base } };
+    if (body !== undefined) init.body = JSON.stringify(body);
+    const res = await fetch(`${org.base}${path}`, init);
     const text = await res.text();
     if (!res.ok) throw new Error(`${method} ${path} -> ${res.status}: ${text.slice(0, 300)}`);
     return text ? JSON.parse(text) : null;
