@@ -38,11 +38,14 @@ import type {
   TextGenerationOptions,
 } from "../contracts.ts";
 import { gateServer, resultBudget } from "../mcp-gate-config.ts";
+import { canUseMcpServer } from "../../shared/tool-scope.ts";
+import { assertToolScopeSupported } from "../../shared/tool-scope-support.ts";
 import { newEventId, newId, type TurnAccessInput } from "../contracts.ts";
 import { askInputDetail, askInputSummary, commandSummary, toolDetailPreview } from "../tool-summary.ts";
 import { filesField, writtenFilesFromToolInput } from "../thread-files.ts";
 import { classifyError, computeBackoff, interruptibleDelay, RETRY_MAX_ATTEMPTS } from "./retry.ts";
 import { sessionIdlePolicy } from "./session-idle.ts";
+import { contractChanges, withoutTurnTokens } from "./spawn-contract.ts";
 import { parseVersionTriple, versionAtLeast } from "./acp/core.ts";
 import {
   applyClaudeInject,
@@ -341,6 +344,8 @@ export const CLAUDE_FLAG_FLOORS = {
   // A guest's turn on a Cloud home (GUEST_CLAUDE_TOOLS): 2.1.248 takes
   // --restricted, 2.1.257 honours blockReadsOutsideWorkingDirectories.
   "--restricted": [2, 1, 257],
+  // A bot's Claude Code plugins (server/bot-plugins.ts).
+  "--plugin-dir": [2, 0, 0],
 } as const satisfies Record<string, ClaudeCliVersion>;
 
 /** The only built-in tools a guest's turn on a Cloud home gets
@@ -673,6 +678,13 @@ const steerSilenceScale = () => fakeTimerScale("FAKE_CLAUDE_STEER_SILENCE_SCALE"
 
 /** Where the hook helper reads this thread's current turn token. Stable per
  * thread (so the CLI's environment can name it once) and private. */
+/** Where a warm (call) session's agents proxy reads the current turn's
+ * comms token: per thread, 0600, rewritten every turn. */
+export function commsTokenFile(threadId: string, botId?: string): string {
+  const digest = createHash("sha256").update(`${botId ?? ""}\0${threadId}`).digest("hex").slice(0, 24);
+  return join(DATA_DIR, "comms-tokens", `${digest}.token`);
+}
+
 export function hookTokenFile(threadId: string, botId?: string): string {
   const digest = createHash("sha256").update(`${botId ?? ""}\0${threadId}`).digest("hex").slice(0, 24);
   return join(DATA_DIR, "hook-tokens", `${digest}.token`);
@@ -1222,11 +1234,18 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
     // harness snapshots every instance whenever it describes them — app
     // load, the Engines page, and right after `claude update`, which is
     // exactly when the answer changes — so a turn normally finds it filled.
-    // Most turns before any snapshot assume a current CLI. A coordinated
-    // turn checks first because the snapshot-refresh flag is newer than the
+    // Most flags before any snapshot assume a current CLI; autocompact
+    // requires confirmed help support. A coordinated turn checks first
+    // because the snapshot-refresh flag is newer than the
     // other context controls and an unknown flag would reject that request.
     let cliVersion: ClaudeCliVersion | null = null;
     let cliVersionChecked = false;
+    // Whether `claude --help` lists --autocompact, read once per CLI version
+    // by snapshot(). The flag is not in every build above its version floor
+    // (2.1.129 rejects it), so the listing wins over the floor; null until
+    // probed, or when the probe fails.
+    let cliHasAutocompact: boolean | null = null;
+    let cliHelpVersion: string | null = null;
     const readCliVersion = (env: NodeJS.ProcessEnv): Promise<string | null> =>
       new Promise((resolve) => {
         execCli(config.cli, ["--version"], { timeout: 8000, env }, (err, stdout) =>
@@ -1254,6 +1273,7 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
         if (claudeCliSupports(cliVersion, "--setting-sources")) args.push("--setting-sources", "project");
         if (!scope.mcpFromUserConfig && !scope.claudeAiConnectors) env.ENABLE_CLAUDEAI_MCP_SERVERS = "false";
       }
+      if (claudeCliSupports(cliVersion, "--plugin-dir")) for (const dir of scope.pluginDirs ?? []) args.push("--plugin-dir", dir);
       const listed = await probeClaudeCommands({ cli: config.cli, args, env, cwd: scope.cwd ?? homedir() });
       const live = scope.botId ? liveCommands.get(liveCommandsKey(scope.botId, access?.identity)) : undefined;
       if (!live) return listed;
@@ -1280,6 +1300,8 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
       systemPromptPath: string | null;
       /** the spawn contract — a different one means a fresh process */
       argsKey: string;
+      /** the same contract as an object, to name what changed on a relaunch */
+      contract?: unknown;
       /** the MCP servers it was launched with (names), for the relaunch log */
       mcpNames?: string[];
       /** the volatile half of the system prompt this process was launched
@@ -1411,6 +1433,7 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
     const retryState = new Map<string, { attempt: number; cancelled: boolean; rebuilt?: boolean }>();
 
     const sendTurn = async (turn: SendTurnInput, logicalTurnId?: string) => {
+      turn = { ...turn, toolScope: assertToolScopeSupported(DRIVER_KIND, turn.toolScope) };
       if (config.managedModels && (!turn.model || !config.managedModels.includes(turn.model))) throw new Error("This model is not assigned to this workspace.");
       if (config.requireApiKey && !input.environment.ANTHROPIC_API_KEY) throw new Error(NO_ANTHROPIC_KEY);
       if (config.managed && (!turn.model || turn.model.includes("::") || !config.configDir ||
@@ -1482,7 +1505,7 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
         args.push("--disallowedTools", disallowedTools.join(","));
       }
       const turnEnvironment = environment();
-      if ((turn.refreshSystemPrompt || turn.guestConfined) && !cliVersionChecked) {
+      if ((turn.refreshSystemPrompt || turn.guestConfined || turn.toolScope !== undefined) && !cliVersionChecked) {
         const version = await readCliVersion(turnEnvironment);
         if (version) {
           cliVersion = parseClaudeCliVersion(version);
@@ -1499,8 +1522,12 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
       const isolated = !inheritsUserConfig(turnEnvironment);
       // A guest's confined turn never gets anyone's connectors. Standing
       // allow rules (SAGAX_CLAUDE_ALLOW) may name mcp__claude_ai_ tools; deny
-      // rules still win, and nothing here pre-allows them.
-      const keepsClaudeAiConnectors = turn.claudeAiConnectors === true && !turn.guestConfined;
+      // rules still win, and nothing here pre-allows them. A turn with an
+      // owner's tool selection gets only the selected servers, never them.
+      const keepsClaudeAiConnectors = turn.claudeAiConnectors === true && !turn.guestConfined && turn.toolScope === undefined;
+      if (turn.toolScope !== undefined && (!isolated || turn.mcpFromUserConfig || cliVersion === null || !claudeCliSupports(cliVersion, "--strict-mcp-config"))) {
+        throw new Error("Claude cannot confirm a restricted MCP configuration for this account. Disable inherited Claude MCP servers and use a current, identifiable Claude CLI before using tool selection.");
+      }
       if (isolated) {
         // A bot gets the tools and instructions its owner gave it, not
         // whatever this machine's Claude Code happens to be set up with.
@@ -1523,8 +1550,13 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
         if (!turn.mcpFromUserConfig && !keepsClaudeAiConnectors && claudeCliSupports(cliVersion, "--strict-mcp-config")) args.push("--strict-mcp-config");
         if (claudeCliSupports(cliVersion, "--setting-sources")) args.push("--setting-sources", "project");
       }
+      // The bot's plugins (server/bot-plugins.ts): skills, commands and
+      // agents only, loaded for this session. A guest's confined turn gets none.
+      if (!turn.guestConfined && claudeCliSupports(cliVersion, "--plugin-dir")) {
+        for (const dir of turn.pluginDirs ?? []) args.push("--plugin-dir", dir);
+      }
       const compactWindow = autoCompactWindow(turnEnvironment);
-      if (compactWindow && claudeCliSupports(cliVersion, "--autocompact")) {
+      if (compactWindow && cliHasAutocompact === true) {
         args.push("--autocompact", compactWindow);
       }
       // An old pair conversation can still carry its first assignment in
@@ -1574,6 +1606,15 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
         // Coordination is foundational, not an optional deferred lookup.
         // Claude waits for always-loaded tools before building the prompt.
         mcpServers.agents = { ...turn.integrations.agents, alwaysLoad: true };
+        // On a call the process is kept from turn to turn: the turn's comms
+        // token (new every turn) rides a file the proxy reads on each call,
+        // and leaves the spawn contract (warmTurnTokens below).
+        if (turn.keepWarm && turn.integrations.agents.env?.SAGAX_COMMS_TOKEN) {
+          const tokenPath = commsTokenFile(threadId, botId);
+          mkdirSync(dirname(tokenPath), { recursive: true, mode: 0o700 });
+          writeFileAtomic(tokenPath, turn.integrations.agents.env.SAGAX_COMMS_TOKEN, { mode: 0o600 });
+          mcpServers.agents = { ...turn.integrations.agents, env: { ...turn.integrations.agents.env, SAGAX_COMMS_TOKEN_FILE: tokenPath }, alwaysLoad: true };
+        }
         allowed.push(...agentsAllowedTools(turn.integrations.agents.env));
       }
       if (turn.integrations?.phone) {
@@ -1638,10 +1679,13 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
       // permission broker, computer, browser, agents, dweb) are already
       // bounded and are deliberately left alone.
       const budget = resultBudget(turnEnvironment);
-      for (const name of botOwned) {
-        const gated = gateServer({ name, server: mcpServers[name], threadId, budget, nodeEnv: NODE_ENV_FLAG });
-        if (gated) mcpServers[name] = gated;
+      for (const name of turn.toolScope === undefined ? botOwned : Object.keys(mcpServers)) {
+        if (!canUseMcpServer(turn.toolScope, name)) { delete mcpServers[name]; continue; }
+        const gated = gateServer({ name, server: mcpServers[name], threadId, budget: botOwned.has(name) ? budget : 0, nodeEnv: NODE_ENV_FLAG, toolScope: turn.toolScope });
+        if (gated) mcpServers[name] = { ...gated, ...((mcpServers[name] as { alwaysLoad?: unknown })?.alwaysLoad === true ? { alwaysLoad: true } : {}) };
       }
+      // an allowed name is mcp__<server> or mcp__<server>__<tool> (agentsAllowedTools)
+      allowed.splice(0, allowed.length, ...allowed.filter((name) => Object.hasOwn(mcpServers, name.slice("mcp__".length).split("__")[0])));
       // Keep ask_user available even in Full access. Native bypass skips
       // permission prompts, not questions requiring a person's answer.
       let broker: Awaited<ReturnType<typeof createPermissionBroker>> | undefined;
@@ -1649,7 +1693,8 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
       if (permissionMode !== "bypassPermissions") {
         args.push("--permission-prompt-tool", "mcp__ogb__approve");
       }
-      mcpServers.ogb = { command: process.execPath, args: [PERM_PROXY_PATH, socketPath], env: { ...NODE_ENV_FLAG }, alwaysLoad: true };
+      const permissionEnv = { ...NODE_ENV_FLAG, ...(turn.toolScope !== undefined ? { SAGAX_PERMISSION_TOOL_SCOPE: JSON.stringify(turn.toolScope) } : {}) };
+      mcpServers.ogb = { command: process.execPath, args: [PERM_PROXY_PATH, socketPath], env: permissionEnv, alwaysLoad: true };
       allowed.push("mcp__ogb");
       // A guest's turn pre-allows only the harness's own tools: anything
       // else (the browser can open a file: address) asks the owner first.
@@ -1713,12 +1758,15 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
       // paths. Their contents are represented directly in the key instead.
       const privateFileFlags = new Set(["--mcp-config", "--settings"]);
       const keyArgs = args.filter((a, i) => !privateFileFlags.has(a) && !privateFileFlags.has(args[i - 1] ?? ""));
-      const argsKey = JSON.stringify({
+      const contract = {
         args: keyArgs,
         // the volatile half is deliberately absent: it must not respawn a
         // healthy session (see Session.volatile)
         system: turn.systemStable ?? turn.system ?? null,
-        mcpServers,
+        // a call's turns share one process: their per-turn tokens are not
+        // part of what makes a process (they ride a file, see above)
+        mcpServers: turn.keepWarm ? withoutTurnTokens(mcpServers) : mcpServers,
+        warm: turn.keepWarm === true,
         cwd,
         model: injected.model ?? null,
         base: env.ANTHROPIC_BASE_URL ?? null,
@@ -1734,7 +1782,8 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
           settings: authSettings,
           env: Object.fromEntries(CLAUDE_ACCOUNT_ENV_KEYS.map((key) => [key, env[key]])),
         })).digest("hex"),
-      });
+      };
+      const argsKey = JSON.stringify(contract);
 
       // Reuse the live process when it is idle, unchanged, and is the session
       // the harness wants resumed. Clearing a cursor alone does not opt out
@@ -1776,9 +1825,17 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
             rmSync(dirname(mcpConfigPath), { recursive: true, force: true });
           } catch {}
         }
-        return { turnId };
+        return { turnId, reused: true };
       }
       if (live) {
+        // A relaunch costs the engine's whole cold start (on a call, most of
+        // the pause before the answer): say which fields of the spawn
+        // contract changed (names only, never values).
+        if (!turn.sessionReset) {
+          const why = live.argsKey !== argsKey ? `spawn contract changed (${live.contract ? contractChanges(live.contract, contract).join(", ") : "unknown"})`
+            : live.child.exitCode !== null ? "process exited" : live.closing ? "process closing" : live.turn ? "a turn is running" : "another session";
+          console.warn(`claude (${instanceId}): thread ${threadId} relaunch: ${why}`);
+        }
         // A relaunch reconnects every MCP server: say which ones changed, so
         // tools that come and go between turns can be traced.
         if (!turn.sessionReset && live.mcpNames) {
@@ -1886,7 +1943,7 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
           // the base path: the nonce is not part of the spawn contract, and a
           // retained session keeps its own broker object anyway.
           if (broker.socketPath !== socketPath && mcpConfigPath) {
-            mcpServers.ogb = { command: process.execPath, args: [PERM_PROXY_PATH, broker.socketPath], env: { ...NODE_ENV_FLAG }, alwaysLoad: true };
+            mcpServers.ogb = { command: process.execPath, args: [PERM_PROXY_PATH, broker.socketPath], env: permissionEnv, alwaysLoad: true };
           }
         }
 
@@ -1931,6 +1988,7 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
         mcpConfigPath,
         systemPromptPath,
         argsKey,
+        contract,
         mcpNames: Object.keys(mcpServers),
         volatile: turn.systemVolatile ?? "",
         sessionId: sessionId ?? newSessionId,
@@ -2566,6 +2624,13 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
       if (!version) return { state: "unavailable", reason: `\`${config.cli}\` CLI not found` };
       cliVersion = parseClaudeCliVersion(version);
       cliVersionChecked = true;
+      if (version !== cliHelpVersion) {
+        const help = await new Promise<string | null>((resolve) => {
+          execCli(config.cli, ["--help"], { timeout: 8000, env }, (err, stdout) => resolve(err ? null : stdout));
+        });
+        cliHasAutocompact = help === null ? null : /^\s*--autocompact\b/m.test(help);
+        cliHelpVersion = version;
+      }
       const update = claudeCliUpdate(version, config.cli);
       const warning = claudeInheritWarning(env);
       if (config.requireApiKey) {

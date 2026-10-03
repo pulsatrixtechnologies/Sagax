@@ -108,7 +108,7 @@ describe("VoiceModeSettingsPanel", () => {
 });
 
 describe("the live call's settings in the panel", () => {
-  const call = { input: "auto" as const, onlyMyVoice: true, earcons: true, pause: "normal" as const };
+  const call = { input: "auto" as const, onlyMyVoice: true, earcons: true, thinkingCue: true, pause: "normal" as const };
 
   it("offers hands-free or push to talk, Only my voice with its enrollment, and call sounds", () => {
     const markup = html(props({ call, enrollment: { state: "none" }, onCallChange: vi.fn(), onEnroll: vi.fn(), onForget: vi.fn() }));

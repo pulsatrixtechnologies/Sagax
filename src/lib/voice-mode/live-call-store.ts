@@ -8,6 +8,7 @@ import { useSyncExternalStore } from "react";
 
 import type { VoiceCall } from "./call";
 import type { CallState } from "./call-machine";
+import type { stageDurations } from "./latency";
 
 export interface LiveCallTranscriptLine {
   id: string;
@@ -23,6 +24,9 @@ export interface LiveCallMetrics {
   sentMs?: number;
   duckMs?: number;
   bargeInMs?: number;
+  /** the last answered turn's stages (latency.ts stageDurations) */
+  stages?: ReturnType<typeof stageDurations>;
+  utteranceId?: string;
 }
 
 export interface LiveCallData {

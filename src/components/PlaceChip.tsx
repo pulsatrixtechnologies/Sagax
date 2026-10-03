@@ -54,9 +54,10 @@ const ORG_DESCRIPTION: Record<Place, LocaleKey> = {
   cloud: "computer.dest.cloudOrgDesc", vm: "computer.dest.vmOrgDesc", local: "computer.dest.localOrgDesc", browser: "computer.dest.browserDesc",
 };
 
-/** Where this conversation works, always visible beside the send button.
- * Shows the effective place (the conversation's pin, else the bot's Works
- * on), pulses while a turn is acting there, and pins another place for this
+/** Where this conversation works, beside the send button in Advanced mode
+ * (Simple leaves every conversation on its bot's Works on). Shows the
+ * effective place (the conversation's pin, else the bot's Works on), pulses
+ * while a turn is acting there, and pins another place for this
  * conversation only. No confirmation card: choosing is the whole gesture. */
 export function PlaceChip({ bot, task, live, disabled = false, onPin, initialOpen = false }: {
   bot: Bot;
@@ -91,6 +92,10 @@ export function PlaceChip({ bot, task, live, disabled = false, onPin, initialOpe
 
   const choose = (surface: Place | null) => { setOpen(false); if (surface !== (task?.surface ?? null)) onPin(surface); };
   const botDefault = bot.computer ?? "auto";
+  // A bot on Auto offers Auto itself as the unpinned default, rather than
+  // "follow this bot's setting" spelled out to end in the same word. On an
+  // organization server the row keeps saying what Auto means (Cloud).
+  const followsAuto = botDefault === "auto" && !organization;
 
   return (
     <div className="relative flex items-center" ref={wrapperRef}>
@@ -126,8 +131,10 @@ export function PlaceChip({ bot, task, live, disabled = false, onPin, initialOpe
             >
               <PlaceIcon place={botDefault} size={16} className="mt-px shrink-0 text-ink" aria-hidden="true" />
               <span className="min-w-0 flex-1">
-                <span className="block text-[13px] leading-[18px] text-ink">{t("place.followBot")}</span>
-                <span className="block text-[12px] leading-4 text-ink-tertiary">{t("place.followBotDetail", { place: t(placeLabelKey(botDefault, organization)) })}</span>
+                <span className="block text-[13px] leading-[18px] text-ink">{followsAuto ? t("place.auto") : t("place.followBot")}</span>
+                <span className="block text-[12px] leading-4 text-ink-tertiary">
+                  {followsAuto ? t("place.autoDetail") : t("place.followBotDetail", { place: t(placeLabelKey(botDefault, organization)) })}
+                </span>
               </span>
               {!pinned && <Check size={14} className="mt-0.5 shrink-0 text-ink" aria-hidden="true" />}
             </button>

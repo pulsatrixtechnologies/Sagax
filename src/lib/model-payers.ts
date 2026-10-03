@@ -26,9 +26,10 @@ export interface PayerOrder {
 
 type EngineFacts = Pick<MyEngine, "installed" | "subscription" | "myKey" | "orgKey" | "myTurns"> & { driver: string };
 
-/** Drivers whose provider key a person can keep in Perspicax. */
-function keyProviderDriver(driver: string): boolean {
-  return driver === "claudeAgent" || driver === "codex";
+/** Drivers whose provider key a person can keep in Perspicax
+ * (server/engine-credentials.ts providersOfDriver). */
+export function keyProviderDriver(driver: string): boolean {
+  return ["claudeAgent", "codex", "grokAgent", "geminiAgent", "kimiAgent", "piAgent"].includes(driver);
 }
 
 export function payerOrder(engine: EngineFacts): PayerOrder {

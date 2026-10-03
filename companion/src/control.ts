@@ -40,6 +40,10 @@ export interface ControlOptions {
   /** Terminate every authenticated event stream and viewer relay session
    * owned by a device whose access changed or was revoked. */
   disconnectDevice?: (deviceId: string) => void;
+  /** A device was revoked (not merely changed): tell the harness, which
+   * sees a phone's requests as this computer's own, so it can end the Live
+   * call that phone holds. */
+  revoked?: (deviceId: string) => void;
   /** Re-read Tailscale after the sidecar has started. People commonly install,
    * sign in, or enable Tailscale while Sagax is already running. */
   refreshTailscale?: () => Promise<void>;
@@ -324,6 +328,7 @@ export function createControlServer(options: ControlOptions): Server {
     if (revoke && method === "DELETE") {
       if (!options.devices.revoke(revoke[1])) return json(res, 404, { error: "no such device" });
       options.disconnectDevice?.(revoke[1]);
+      options.revoked?.(revoke[1]);
       return json(res, 200, companionState(options));
     }
     return json(res, 404, { error: `no route: ${method} ${path}` });

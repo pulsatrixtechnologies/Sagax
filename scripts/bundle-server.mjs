@@ -74,6 +74,7 @@ const ENTRY_POINTS = [
   "connector-proxy.ts",
   "perspicax-mcp-bridge.ts",
   "mcp-gate.ts",
+  "mcp-remote-proxy.ts",
   "browser-proxy.ts",
   "user-sandbox-proxy.ts",
   // the sandbox provisioner service (deploy/docker-compose.sandbox.yml)
@@ -159,12 +160,11 @@ const catalogSnapshot = join(root, "dist-server", "model-catalog", "models-dev.s
 mkdirSync(dirname(catalogSnapshot), { recursive: true });
 copyFileSync(join(server, "model-catalog", "models-dev.snapshot.json"), catalogSnapshot);
 
-// pi-mcp-extension.ts is NOT an Sagax entry point: it is loaded by the
-// external `pi` process (pi's own jiti), which resolves its
-// @earendil-works/pi-coding-agent and typebox imports from pi's install. Ship
-// it verbatim as .ts so the packaged app has it too — never bundle it, or
-// esbuild would inline pi's packages and the extension would stop loading.
+// Pi loads this through its own jiti and supplies TypeBox. Inline our local
+// policy module so the extension also works without the source checkout;
+// keep the Pi-owned dependency external and retain the .ts loading contract.
 const piMcpExtSrc = join(server, "drivers", "pi-mcp-extension.ts");
 const piMcpExtDest = join(root, "dist-server", "drivers", "pi-mcp-extension.ts");
 mkdirSync(dirname(piMcpExtDest), { recursive: true });
-copyFileSync(piMcpExtSrc, piMcpExtDest);
+await build({ entryPoints: [piMcpExtSrc], outfile: piMcpExtDest, bundle: true,
+  platform: "node", target: "node24", format: "esm", external: ["typebox"], });

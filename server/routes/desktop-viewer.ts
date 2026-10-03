@@ -17,6 +17,8 @@ export const SANDBOX_VIEWER_TARGET = "sandbox/me";
 const HANDSHAKE_MS = 10_000;
 const RECHECK_MS = 5_000;
 const WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
+const BOT_ID = /^[\w-]+$/;
+const CONTROL_LEASE = /^[A-Za-z0-9_-]{16,120}$/;
 
 /** Providers resolve a managed loopback endpoint, never a browser-supplied URL. */
 export interface DesktopConnection {
@@ -46,7 +48,7 @@ export function desktopViewerUrl(target: string, threadId?: string): string {
   return `/desktop-viewer#${params}`;
 }
 
-interface Upgrade { socket: Socket; head: Buffer; release: () => void; close: () => void; owner?: string }
+interface Upgrade { socket: Socket; head: Buffer; release: () => void; close: () => void; owner?: string; botId?: string }
 
 export function createDesktopViewer(deps: {
   target: (id: string, auth: RequestAuth) => DesktopTarget | undefined;
@@ -54,6 +56,12 @@ export function createDesktopViewer(deps: {
   /** Other WebSocket routes that run through the same gates (voice mode's
    * live call, server/voice-mode.ts); they take their socket with upgradeOf. */
   acceptsUpgrade?: (path: string) => boolean;
+  /** Bind a viewer to a control lease: a phone driving the Local VM directly,
+   * without the companion sidecar. Answers nothing unless `controlLeaseId`
+   * holds `botId`'s computer right now and the target is that computer;
+   * otherwise a probe that says whether the lease still holds. Shared and pool
+   * targets are refused because a bot hold cannot reserve their desktop. */
+  lease?: (id: string, botId: string, controlLeaseId: string, threadId?: string) => (() => boolean) | undefined;
 }) {
   const upgrades = new Map<IncomingMessage, Upgrade>();
   let stopped = false;
@@ -97,7 +105,7 @@ export function createDesktopViewer(deps: {
     });
   }
 
-  const route: RouteHandler = async ({ req, res, path, method, auth, json }) => {
+  const route: RouteHandler = async ({ req, res, url, path, method, auth, json }) => {
     const match = ROUTE.exec(path);
     if (!match) return PASS;
     res.setHeader("cache-control", "private, no-store");
@@ -107,6 +115,29 @@ export function createDesktopViewer(deps: {
     // person's own server environment is theirs alone (target.allows).
     const sandbox = match[1] === SANDBOX_VIEWER_TARGET;
     if ((!sandbox && !auth.scopes.includes("admin")) || !isSameOrigin(req)) return json(res, 403, { error: "forbidden" });
+    // A viewer bound to a control lease: both names or neither, well formed,
+    // and holding before anything is inspected. Checked again with every
+    // liveness pass, so handing back closes the desktop within seconds. The
+    // conversation, when named, picks the VM seat the join picked.
+    const botId = url.searchParams.get("botId");
+    const controlLeaseId = url.searchParams.get("controlLeaseId");
+    const threadId = url.searchParams.get("threadId") ?? undefined;
+    if ((botId === null) !== (controlLeaseId === null)) {
+      return json(res, 400, { error: "botId and controlLeaseId go together" });
+    }
+    if (botId !== null && (sandbox || !BOT_ID.test(botId) || !CONTROL_LEASE.test(controlLeaseId!) || !deps.lease
+      || (threadId !== undefined && !BOT_ID.test(threadId)))) {
+      return json(res, 400, { error: "botId, threadId or controlLeaseId is not valid" });
+    }
+    if (botId === null && threadId !== undefined) return json(res, 400, { error: "threadId needs botId and controlLeaseId" });
+    // Do not let a saved or constructed socket URL bypass the join refusal:
+    // a bot's control lease does not exclude other users of a shared desktop.
+    if (botId !== null && (match[1] === "local/shared" || match[1].startsWith("local/pool-"))) {
+      return json(res, 409, { error: "Phone control requires a per-bot Local VM. Select per-bot mode in Settings → Computers." });
+    }
+    const bound = botId === null ? undefined : deps.lease!(match[1], botId, controlLeaseId!, threadId);
+    if (botId !== null && !bound) return json(res, 409, { error: "Take control of this computer first" });
+    const holds = () => bound?.() ?? true;
     const target = deps.target(match[1], auth);
     if (!target) return json(res, 404, { error: "Desktop not found" });
     if (!(target.allows ?? ((who: RequestAuth) => who.scopes.includes("admin")))(auth)) return json(res, 403, { error: "forbidden" });
@@ -114,6 +145,7 @@ export function createDesktopViewer(deps: {
     try { control = new URL(req.url ?? "", "http://localhost").searchParams.get("control") === "1"; } catch { /* no query */ }
     const upgrade = upgrades.get(req);
     if (upgrade && auth.kind === "session") upgrade.owner = auth.session.id;
+    if (upgrade && botId !== null) upgrade.botId = botId;
     let connection: DesktopConnection;
     try { connection = await target.resolve({ upgrade: Boolean(match[2]), control }); }
     catch (error) {
@@ -128,6 +160,7 @@ export function createDesktopViewer(deps: {
     if (res.destroyed || upgrade?.socket.destroyed) return;
     const live = () => deps.live(auth) && deps.target(match[1], auth)?.key === target.key && (connection.live?.() ?? true);
     if (!live()) return json(res, 401, { error: "Viewer access expired" });
+    if (!holds()) return json(res, 409, { error: "Take control of this computer first" });
     if (!connection.stream && (!Number.isInteger(connection.port) || connection.port < 1 || connection.port > 65535)) {
       return json(res, 409, { error: "The desktop viewer is not available." });
     }
@@ -138,7 +171,7 @@ export function createDesktopViewer(deps: {
       || typeof key !== "string" || !/^[A-Za-z0-9+/]{22}==$/.test(key)) {
       return json(res, 400, { error: "Invalid WebSocket handshake" });
     }
-    if (connection.stream) { await bridgeStream(connection, upgrade, res, json, key, live); return; }
+    if (connection.stream) { await bridgeStream(connection, upgrade, res, json, key, () => live() && holds()); return; }
     // Fixed host and path, port from an inspected managed container. Never
     // forward cookies, bearer tokens, query parameters or forwarded headers.
     const upstream = request({
@@ -173,7 +206,7 @@ export function createDesktopViewer(deps: {
     upstream.once("response", (answer) => { answer.resume(); fail(); });
     upstream.once("upgrade", (answer, remote, remoteHead) => {
       const accept = createHash("sha1").update(key + WS_GUID).digest("base64");
-      if (!live() || socket.destroyed || answer.headers["sec-websocket-accept"] !== accept
+      if (!live() || !holds() || socket.destroyed || answer.headers["sec-websocket-accept"] !== accept
         || answer.headers.upgrade?.toLowerCase() !== "websocket") {
         remote.destroy(); fail(); return;
       }
@@ -190,7 +223,7 @@ export function createDesktopViewer(deps: {
       socket.pipe(remote).pipe(socket);
       connection.touch?.();
       recheck = setInterval(() => {
-        if (!live()) upgrade.close();
+        if (!live() || !holds()) upgrade.close();
         else connection.touch?.();
       }, RECHECK_MS);
       recheck.unref();
@@ -239,7 +272,20 @@ export function createDesktopViewer(deps: {
       const upgrade = upgrades.get(req);
       return upgrade ? { socket: upgrade.socket, get head() { return upgrade.head; }, release: () => upgrade.release() } : undefined;
     },
-    closeForOwner: (owner: string) => { for (const upgrade of upgrades.values()) if (upgrade.owner === owner) upgrade.close(); },
+    /** Close a session's viewers: all of them (sign-out, revocation), or only
+     * those it opened under a lease on one bot (that bot's hand-back). */
+    closeForOwner: (owner: string, botId?: string) => {
+      let closed = 0;
+      for (const upgrade of upgrades.values()) {
+        if (upgrade.owner !== owner || (botId !== undefined && upgrade.botId !== botId)) continue;
+        // A viewer already closed stays listed until its socket's close
+        // event, which arrives later on Windows: not closed or counted again.
+        if (upgrade.socket.destroyed) continue;
+        upgrade.close();
+        closed++;
+      }
+      return closed;
+    },
     closeAll: () => {
       stopped = true;
       for (const upgrade of upgrades.values()) upgrade.close();

@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useEffect, useRef } from "react";
 import { t } from "@/lib/i18n";
 import {
   Cloud,
@@ -20,6 +20,7 @@ import {
   usePhoneSetupController,
 } from "./PhoneSetupFlow";
 import { companionPairingMode } from "../lib/phone-setup";
+import { revealPhonePairing } from "../lib/phone-pairing";
 import { ConnectionDetail } from "./ConnectionDetail";
 import { Card, requestSettingsCard, Switch, cardCount } from "./SettingsPrimitives";
 import { brand } from "../lib/brand";
@@ -134,10 +135,20 @@ const endpointHost = (url: string): string => {
   }
 };
 
-export function CompanionSection({ profileEmail = "" }: { profileEmail?: string }) {
+/** `focusRequest` counts up when "Connect your phone" opened Settings here:
+ * the phone flow scrolls into view with focus on Pair your phone. */
+export function CompanionSection({ profileEmail = "", focusRequest = 0 }: { profileEmail?: string; focusRequest?: number }) {
   const c = usePhoneSetupController(profileEmail);
   const state = c.state;
   const pairingFlow = useRef<HTMLDivElement>(null);
+  const revealed = useRef(0);
+  const loaded = Boolean(state);
+  // The flow is drawn once the companion's state is read; reveal it then,
+  // once per request. Any other Settings navigation ends the request (0).
+  useEffect(() => {
+    if (!focusRequest) revealed.current = 0;
+    else if (revealed.current !== focusRequest && revealPhonePairing(pairingFlow.current)) revealed.current = focusRequest;
+  }, [focusRequest, loaded]);
   // An enrolled organisation can turn remote access off; the desktop refuses
   // new pairing and turning the companion on. Existing devices are listed as before.
   const managedPolicy = useStore().state.config?.managedPolicy;
@@ -188,7 +199,7 @@ export function CompanionSection({ profileEmail = "" }: { profileEmail?: string 
   return (
     <div className="flex flex-col gap-4">
       {remoteBlocked && <p role="status" className="text-[13px] leading-relaxed text-ink-secondary">{remoteBlocked}</p>}
-      <div ref={pairingFlow} tabIndex={-1} className="scroll-mt-4 focus:outline-none">
+      <div ref={pairingFlow} tabIndex={-1} data-phone-pairing="computer" className="scroll-mt-4 focus:outline-none">
         <Card
           collapsible
           cardId="companion.phone"

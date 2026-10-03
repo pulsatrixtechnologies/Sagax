@@ -137,6 +137,8 @@ export function ApprovalCard({
   if (!card) return null;
   const settled = card.answered;
   const expired = card.expired === true;
+  // decided by voice on a Live call rather than tapped
+  const byVoice = card.answeredBy?.via === "call" ? <span className="text-ink-tertiary">· {t("approval.status.byVoice")}</span> : null;
   const isRoutineRequest = Boolean(card.routineRequest);
   const isSkillRequest = Boolean(card.skillRequest);
   const isProfileRequest = Boolean(card.profileRequest);
@@ -228,6 +230,7 @@ export function ApprovalCard({
         {outcome ? (
           <>
             {settled === "allow" && !expired ? <Check size={14} className="text-success" /> : <X size={14} />} {outcome}
+            {byVoice}
           </>
         ) : (
           <>

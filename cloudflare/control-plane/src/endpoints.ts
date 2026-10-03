@@ -8,6 +8,15 @@ import {
 import type { ControlPlaneConfig } from "./config";
 import { errorResponse, HTTPError, json } from "./http";
 import { requireInstallation } from "./installations";
+import { idleTunnelReason } from "./tunnel-activity";
+import {
+  CAPACITY_RETRY_AFTER_SECONDS,
+  capacityRejectionActive,
+  clearCapacityRejection,
+  idlePolicy,
+  isCapacityErrorCode,
+  recordCapacityRejection,
+} from "./tunnel-capacity";
 
 type EndpointStatus = "pending" | "provisioning" | "ready" | "deleting" | "deleted" | "error";
 
@@ -26,6 +35,7 @@ interface EndpointRow {
   last_error_code: string | null;
   cleanup_attempts: number;
   last_cleanup_attempt_at: number | null;
+  reclaim_requested_at: number | null;
   created_at: number;
   updated_at: number;
 }
@@ -40,9 +50,10 @@ const ENDPOINT_ACTION_WINDOW_MS = 60 * 60 * 1_000;
 const ENDPOINT_RECONCILE_LIMIT = 20;
 const ENDPOINT_DELETE_LIMIT = 30;
 // A cleanup can make at most ten external Cloudflare API calls when it must
-// rediscover both provider IDs. Four concurrent candidates stay below the
-// Workers Free plan's 50-external-subrequest ceiling and six-connection limit.
-const CLEANUP_SWEEP_LIMIT = 4;
+// rediscover both provider IDs. The per-run row count is configuration
+// (SAGAX_CLEANUP_SWEEP_LIMIT, see config.ts); rows run at most five at a time so
+// they stay inside the Workers limit of six connections awaiting headers.
+const CLEANUP_CONCURRENCY = 5;
 const CLEANUP_BACKOFF_1_MS = 5 * 60 * 1_000;
 const CLEANUP_BACKOFF_2_MS = 15 * 60 * 1_000;
 const CLEANUP_BACKOFF_3_MS = 60 * 60 * 1_000;
@@ -85,7 +96,8 @@ async function endpointRow(env: Env, installationId: string): Promise<EndpointRo
     `SELECT installation_id, hostname, tunnel_name, tunnel_id, dns_record_id,
             status, generation, lease_owner, lease_expires_at,
             last_reconciled_at, delete_requested_at, last_error_code,
-            cleanup_attempts, last_cleanup_attempt_at, created_at, updated_at
+            cleanup_attempts, last_cleanup_attempt_at, reclaim_requested_at,
+            created_at, updated_at
        FROM installation_endpoints
       WHERE installation_id = ?`,
   ).bind(installationId).first<EndpointRow>();
@@ -141,10 +153,25 @@ async function claimEndpoint(
   env: Env,
   row: EndpointRow,
   nextStatus: "deleting" | "provisioning",
+  { keepReclaim = false }: { keepReclaim?: boolean } = {},
 ): Promise<ClaimedEndpoint | null> {
   const now = Date.now();
   const leaseOwner = crypto.randomUUID();
-  const deletingGuard = nextStatus === "provisioning" ? "AND status != 'deleting'" : "";
+  // An owner-requested deletion is final. An idle reclaim is not: a returning
+  // installation may take its row back by provisioning before the sweep has
+  // removed anything.
+  const deletingGuard = nextStatus === "provisioning"
+    ? "AND (status != 'deleting' OR reclaim_requested_at IS NOT NULL)"
+    // The sweep's claim: only a row still marked for deletion, or one whose
+    // installation was revoked or removed. A row its owner took back (by
+    // provisioning again) after the sweep chose it is left alone.
+    : keepReclaim
+      ? `AND (status = 'deleting' OR NOT EXISTS (
+           SELECT 1 FROM installations i
+            WHERE i.id = installation_endpoints.installation_id
+              AND i.revoked_at IS NULL
+         ))`
+      : "";
   const result = await env.DB.prepare(
     `UPDATE installation_endpoints
         SET status = ?, generation = generation + 1,
@@ -152,7 +179,15 @@ async function claimEndpoint(
             delete_requested_at = CASE WHEN ? = 'deleting' THEN COALESCE(delete_requested_at, ?) ELSE NULL END,
             cleanup_attempts = CASE WHEN ? = 'deleting' THEN cleanup_attempts + 1 ELSE 0 END,
             last_cleanup_attempt_at = CASE WHEN ? = 'deleting' THEN ? ELSE NULL END,
-            last_error_code = NULL
+            last_error_code = NULL,
+            reclaim_requested_at = CASE
+              WHEN ? = 'deleting' AND ? = 1 AND EXISTS (
+                SELECT 1 FROM installations i
+                 WHERE i.id = installation_endpoints.installation_id
+                   AND i.revoked_at IS NULL
+              ) THEN reclaim_requested_at
+              ELSE NULL
+            END
       WHERE installation_id = ?
         AND (lease_expires_at IS NULL OR lease_expires_at <= ?)
         ${deletingGuard}`,
@@ -166,6 +201,8 @@ async function claimEndpoint(
     nextStatus,
     nextStatus,
     now,
+    nextStatus,
+    keepReclaim ? 1 : 0,
     row.installation_id,
     now,
   ).run();
@@ -299,10 +336,62 @@ async function failClaim(
   ).run();
 }
 
+/** Undo an idle reclaim whose tunnel came back. Resources that are still
+ * intact return to 'ready'; if the DNS record was already removed the row
+ * becomes a retryable 'error' that the next provisioning call repairs. */
+async function cancelReclaim(env: Env, claim: ClaimedEndpoint): Promise<void> {
+  const result = await env.DB.prepare(
+    `UPDATE installation_endpoints
+        SET status = CASE
+              WHEN tunnel_id IS NOT NULL AND dns_record_id IS NOT NULL THEN 'ready'
+              ELSE 'error'
+            END,
+            last_error_code = CASE
+              WHEN tunnel_id IS NOT NULL AND dns_record_id IS NOT NULL THEN NULL
+              ELSE 'reclaim_cancelled'
+            END,
+            reclaim_requested_at = NULL, delete_requested_at = NULL,
+            cleanup_attempts = 0, last_cleanup_attempt_at = NULL,
+            lease_owner = NULL, lease_expires_at = NULL, updated_at = ?
+      WHERE installation_id = ? AND generation = ? AND lease_owner = ?`,
+  ).bind(Date.now(), claim.row.installation_id, claim.row.generation, claim.leaseOwner).run();
+  if (result.meta.changes === 0) throw new EndpointOperationError("lease_lost");
+}
+
+/** Re-evaluated with fresh provider state before each destructive call of an
+ * idle reclaim. A revoked or vanished owner no longer protects its tunnel. */
+async function reclaimStillAllowed(
+  env: Env,
+  config: ControlPlaneConfig,
+  claim: ClaimedEndpoint,
+  tunnel: CloudflareTunnel,
+): Promise<boolean> {
+  const installation = await env.DB.prepare(
+    `SELECT revoked_at, last_seen_at FROM installations WHERE id = ?`,
+  ).bind(claim.row.installation_id).first<{ last_seen_at: number | null; revoked_at: number | null }>();
+  if (!installation || installation.revoked_at !== null) return true;
+  if (
+    installation.last_seen_at !== null
+    && installation.last_seen_at > (claim.row.reclaim_requested_at ?? 0)
+  ) {
+    return false;
+  }
+  return idleTunnelReason(tunnel.activity, Date.now(), idlePolicy(config)) !== null;
+}
+
 function busyResponse(): Response {
   const response = errorResponse(409, "endpoint_busy");
   const headers = new Headers(response.headers);
   headers.set("retry-after", "2");
+  return new Response(response.body, { status: response.status, headers });
+}
+
+/** The provider's tunnel or DNS record quota is exhausted. This is distinct
+ * from `endpoint_unavailable` so the desktop can say so and retry later. */
+function capacityResponse(): Response {
+  const response = errorResponse(503, "endpoint_capacity");
+  const headers = new Headers(response.headers);
+  headers.set("retry-after", String(CAPACITY_RETRY_AFTER_SECONDS));
   return new Response(response.body, { status: response.status, headers });
 }
 
@@ -601,15 +690,18 @@ async function reconcileClaim(
   }
 }
 
+type DeleteOutcome = "cancelled" | "deleted";
+
 async function deleteClaim(
   env: Env,
   config: ControlPlaneConfig,
   claim: ClaimedEndpoint,
   fetcher: CloudflareFetch,
-): Promise<void> {
+): Promise<DeleteOutcome> {
   const api = new CloudflareAPI(config.cloudflare, fetcher);
   let tunnelId = claim.row.tunnel_id;
   let dnsRecordId = claim.row.dns_record_id;
+  const idleReclaim = claim.row.reclaim_requested_at !== null;
 
   try {
     if (!tunnelId) {
@@ -647,7 +739,15 @@ async function deleteClaim(
     // Validate the complete resource set before the first delete. Persisted
     // provider IDs are only hints: the hostname/CNAME and stable tunnel name
     // must still agree, otherwise cleanup retains metadata for an operator.
-    if (tunnelId) await verifiedTunnelForCleanup(env, claim, api, tunnelId);
+    if (tunnelId) {
+      const tunnel = await verifiedTunnelForCleanup(env, claim, api, tunnelId);
+      // An idle reclaim never removes anything from a tunnel that has
+      // reconnected, or whose installation checked in, since it was marked.
+      if (idleReclaim && tunnel && !(await reclaimStillAllowed(env, config, claim, tunnel))) {
+        await cancelReclaim(env, claim);
+        return "cancelled";
+      }
+    }
     const dnsRecord = dnsRecordId && tunnelId
       ? await verifiedDNSForCleanup(env, claim, api, tunnelId, dnsRecordId)
       : null;
@@ -657,6 +757,15 @@ async function deleteClaim(
 
     if (dnsRecordId) {
       if (dnsRecord) {
+        // Check again right before the first destructive call: the tunnel may
+        // have reconnected while the DNS record was being verified.
+        if (idleReclaim && tunnelId) {
+          const current = await verifiedTunnelForCleanup(env, claim, api, tunnelId);
+          if (current && !(await reclaimStillAllowed(env, config, claim, current))) {
+            await cancelReclaim(env, claim);
+            return "cancelled";
+          }
+        }
         await renewClaim(env, claim);
         await api.deleteDNSRecord(dnsRecordId);
       }
@@ -666,6 +775,10 @@ async function deleteClaim(
     if (tunnelId) {
       const tunnel = await verifiedTunnelForCleanup(env, claim, api, tunnelId);
       if (tunnel) {
+        if (idleReclaim && !(await reclaimStillAllowed(env, config, claim, tunnel))) {
+          await cancelReclaim(env, claim);
+          return "cancelled";
+        }
         await renewClaim(env, claim);
         await api.deleteTunnel(tunnelId);
       }
@@ -673,6 +786,7 @@ async function deleteClaim(
       await updateClaimedResources(env, claim, tunnelId, dnsRecordId);
     }
     await finishClaim(env, claim, "deleted");
+    return "deleted";
   } catch (error) {
     const operationCode = errorCode(error);
     try {
@@ -706,6 +820,16 @@ export async function provisionManagedEndpoint(
     installation.installation_id,
     config.cloudflare.companionHostSuffix,
   );
+  if (row.tunnel_id === null && await capacityRejectionActive(env).catch(() => false)) {
+    // Cloudflare refused a new tunnel or DNS record moments ago. Answer
+    // locally instead of spending the shared API budget on a sure failure.
+    console.log(JSON.stringify({
+      message: "managed endpoint allocation deferred",
+      requestId,
+      errorCode: "endpoint_capacity",
+    }));
+    return capacityResponse();
+  }
   const claim = await claimEndpoint(env, row, "provisioning");
   if (!claim) return busyResponse();
 
@@ -713,11 +837,18 @@ export async function provisionManagedEndpoint(
     const result = await reconcileClaim(env, config, claim, fetcher);
     return json({ endpoint: endpointJSON(result.row), connectorToken: result.connectorToken });
   } catch (error) {
+    const code = errorCode(error);
+    const capacity = isCapacityErrorCode(code);
     console.error(JSON.stringify({
       message: "managed endpoint reconcile failed",
       requestId,
-      errorCode: errorCode(error),
+      errorCode: code,
+      capacity,
     }));
+    if (capacity) {
+      await recordCapacityRejection(env, code).catch(() => undefined);
+      return capacityResponse();
+    }
     throw new HTTPError(502, "endpoint_unavailable");
   }
 }
@@ -751,6 +882,39 @@ export async function deleteManagedEndpoint(
   }
 }
 
+interface CleanupOutcome {
+  errorCode?: string;
+  result: DeleteOutcome | "failed" | "skipped";
+}
+
+/** One sweep step for one installation. Exported for the race test. */
+export async function cleanupEndpointRow(
+  env: Env,
+  config: ControlPlaneConfig,
+  installationId: string,
+  fetcher: CloudflareFetch,
+  requestId: string,
+  keepReclaim: boolean,
+): Promise<CleanupOutcome> {
+  const row = await endpointRow(env, installationId);
+  if (!row || row.status === "deleted") return { result: "skipped" };
+  const claim = await claimEndpoint(env, row, "deleting", { keepReclaim });
+  if (!claim) return { result: "skipped" };
+  try {
+    return { result: await deleteClaim(env, config, claim, fetcher) };
+  } catch (error) {
+    const code = errorCode(error);
+    console.error(JSON.stringify({
+      message: "revoked installation endpoint cleanup pending",
+      requestId,
+      errorCode: code,
+    }));
+    return { errorCode: code, result: "failed" };
+  }
+}
+
+/** Owner-initiated cleanup (installation revocation). It never honours an
+ * idle-reclaim cancellation: revocation always removes the endpoint. */
 export async function cleanupEndpointForInstallation(
   env: Env,
   config: ControlPlaneConfig,
@@ -758,19 +922,15 @@ export async function cleanupEndpointForInstallation(
   fetcher: CloudflareFetch,
   requestId: string,
 ): Promise<void> {
-  const row = await endpointRow(env, installationId);
-  if (!row || row.status === "deleted") return;
-  const claim = await claimEndpoint(env, row, "deleting");
-  if (!claim) return;
-  try {
-    await deleteClaim(env, config, claim, fetcher);
-  } catch (error) {
-    console.error(JSON.stringify({
-      message: "revoked installation endpoint cleanup pending",
-      requestId,
-      errorCode: errorCode(error),
-    }));
-  }
+  await cleanupEndpointRow(env, config, installationId, fetcher, requestId, false);
+}
+
+export interface CleanupSweepSummary {
+  cancelled: number;
+  candidates: number;
+  deleted: number;
+  failed: number;
+  rateLimited: boolean;
 }
 
 export async function sweepManagedEndpointCleanup(
@@ -778,7 +938,7 @@ export async function sweepManagedEndpointCleanup(
   config: ControlPlaneConfig,
   fetcher: CloudflareFetch,
   requestId: string,
-): Promise<number> {
+): Promise<CleanupSweepSummary> {
   const now = Date.now();
   const candidates = await env.DB.prepare(
     `SELECT e.installation_id, e.cleanup_attempts, e.delete_requested_at, e.last_error_code
@@ -812,7 +972,7 @@ export async function sweepManagedEndpointCleanup(
     now - CLEANUP_BACKOFF_3_MS,
     now - CLEANUP_BACKOFF_4_MS,
     now - CLEANUP_BACKOFF_MAX_MS,
-    CLEANUP_SWEEP_LIMIT,
+    config.capacity.cleanupSweepLimit,
   ).all<{
     cleanup_attempts: number;
     delete_requested_at: number | null;
@@ -836,22 +996,58 @@ export async function sweepManagedEndpointCleanup(
     }));
   }
 
-  await Promise.all(candidates.results.map(async (candidate) => {
-    try {
-      await cleanupEndpointForInstallation(
-        env,
-        config,
-        candidate.installation_id,
-        fetcher,
-        requestId,
-      );
-    } catch {
-      console.error(JSON.stringify({
-        message: "managed endpoint cleanup candidate failed",
-        requestId,
-        errorCode: "endpoint_internal",
-      }));
+  const summary: CleanupSweepSummary = {
+    cancelled: 0,
+    candidates: candidates.results.length,
+    deleted: 0,
+    failed: 0,
+    rateLimited: false,
+  };
+  let next = 0;
+  const worker = async () => {
+    while (!summary.rateLimited && next < candidates.results.length) {
+      const candidate = candidates.results[next];
+      next += 1;
+      if (!candidate) break;
+      try {
+        const outcome = await cleanupEndpointRow(
+          env,
+          config,
+          candidate.installation_id,
+          fetcher,
+          requestId,
+          true,
+        );
+        if (outcome.result === "deleted") summary.deleted += 1;
+        else if (outcome.result === "cancelled") summary.cancelled += 1;
+        else if (outcome.result === "failed") summary.failed += 1;
+        // The API limit is shared with every desktop's provisioning call.
+        // Stop starting new work this run once Cloudflare pushes back.
+        if (outcome.errorCode === "cf_rate_limited") summary.rateLimited = true;
+      } catch {
+        summary.failed += 1;
+        console.error(JSON.stringify({
+          message: "managed endpoint cleanup candidate failed",
+          requestId,
+          errorCode: "endpoint_internal",
+        }));
+      }
     }
-  }));
-  return candidates.results.length;
+  };
+  await Promise.all(Array.from(
+    { length: Math.min(CLEANUP_CONCURRENCY, candidates.results.length) },
+    worker,
+  ));
+
+  if (summary.deleted > 0) {
+    await clearCapacityRejection(env).catch(() => undefined);
+  }
+  if (summary.candidates > 0) {
+    console.log(JSON.stringify({
+      message: "managed endpoint cleanup sweep",
+      requestId,
+      ...summary,
+    }));
+  }
+  return summary;
 }

@@ -7,9 +7,26 @@ const cloudflareResourceIdSchema = z.string().regex(/^[0-9a-f]{32}$/i);
 const emailSchema = z.email().max(254);
 const originsSchema = z.string();
 
+export type TunnelReclaimMode = "on" | "observe";
+
+export interface CapacityConfig {
+  /** Scheduled cleanup rows processed per cron run. */
+  cleanupSweepLimit: number;
+  /** Zone DNS record quota used for the usage alert. */
+  dnsRecordLimit: number;
+  /** A tunnel offline for at least this long (and an installation that has
+   * been quiet as long) may be reclaimed. Never below seven days. */
+  offlineReclaimMs: number;
+  /** `observe` evaluates and logs reclaim candidates without marking any. */
+  reclaimMode: TunnelReclaimMode;
+  /** Account tunnel quota used for the usage alert. */
+  tunnelLimit: number;
+}
+
 export interface ControlPlaneConfig {
   authBaseURL: string;
   allowedOrigins: ReadonlySet<string>;
+  capacity: CapacityConfig;
   cloudflare: {
     accountId: string;
     apiToken: string;
@@ -17,6 +34,82 @@ export interface ControlPlaneConfig {
     zoneId: string;
   };
   emailFrom: string;
+}
+
+const DAY_MS = 24 * 60 * 60 * 1_000;
+export const DEFAULT_TUNNEL_LIMIT = 1_000;
+export const DEFAULT_DNS_RECORD_LIMIT = 1_000;
+export const DEFAULT_OFFLINE_RECLAIM_DAYS = 21;
+export const MIN_OFFLINE_RECLAIM_DAYS = 7;
+// Each cleanup makes at most ten Cloudflare API calls. Twenty rows plus the
+// two capacity reads stay near 200 calls per five-minute run: well under the
+// 1,200-requests-per-five-minutes API token limit and the Workers Paid
+// 10,000-subrequest invocation limit. Lower this to 4 on Workers Free, whose
+// invocation limit is 50 subrequests.
+export const DEFAULT_CLEANUP_SWEEP_LIMIT = 20;
+export const MAX_CLEANUP_SWEEP_LIMIT = 50;
+
+function boundedIntegerVar(
+  value: unknown,
+  label: string,
+  fallback: number,
+  minimum: number,
+  maximum: number,
+): number {
+  if (value === undefined || value === null || value === "") return fallback;
+  const text = typeof value === "number" ? String(value) : value;
+  const parsed = typeof text === "string" && /^[0-9]{1,9}$/.test(text.trim()) ? Number(text.trim()) : Number.NaN;
+  if (!Number.isSafeInteger(parsed) || parsed < minimum || parsed > maximum) {
+    // A tuning value must never take sign-in and pairing down: use the default.
+    console.error(JSON.stringify({ message: "invalid capacity setting; using the default", setting: label, minimum, maximum, fallback }));
+    return fallback;
+  }
+  return parsed;
+}
+
+function reclaimMode(value: unknown): TunnelReclaimMode {
+  // Unset or invalid: observe only. Reclaiming is switched on deliberately.
+  if (value === "on" || value === "observe") return value;
+  if (value !== undefined && value !== null && value !== "") {
+    console.error(JSON.stringify({ message: "invalid SAGAX_TUNNEL_RECLAIM; observing only", allowed: ["on", "observe"] }));
+  }
+  return "observe";
+}
+
+/** Optional tuning variables. Each has a safe default so an older deployment
+ * configuration without them keeps working. */
+export function readCapacityConfig(env: Partial<Record<string, unknown>>): CapacityConfig {
+  return {
+    cleanupSweepLimit: boundedIntegerVar(
+      env.SAGAX_CLEANUP_SWEEP_LIMIT,
+      "SAGAX_CLEANUP_SWEEP_LIMIT",
+      DEFAULT_CLEANUP_SWEEP_LIMIT,
+      1,
+      MAX_CLEANUP_SWEEP_LIMIT,
+    ),
+    dnsRecordLimit: boundedIntegerVar(
+      env.SAGAX_DNS_RECORD_LIMIT,
+      "SAGAX_DNS_RECORD_LIMIT",
+      DEFAULT_DNS_RECORD_LIMIT,
+      1,
+      10_000_000,
+    ),
+    offlineReclaimMs: boundedIntegerVar(
+      env.SAGAX_TUNNEL_OFFLINE_RECLAIM_DAYS,
+      "SAGAX_TUNNEL_OFFLINE_RECLAIM_DAYS",
+      DEFAULT_OFFLINE_RECLAIM_DAYS,
+      MIN_OFFLINE_RECLAIM_DAYS,
+      365,
+    ) * DAY_MS,
+    reclaimMode: reclaimMode(env.SAGAX_TUNNEL_RECLAIM),
+    tunnelLimit: boundedIntegerVar(
+      env.SAGAX_TUNNEL_LIMIT,
+      "SAGAX_TUNNEL_LIMIT",
+      DEFAULT_TUNNEL_LIMIT,
+      1,
+      10_000_000,
+    ),
+  };
 }
 
 function exactHTTPSOrigin(value: string, label: string): string {
@@ -89,9 +182,12 @@ export function readConfig(env: Env): ControlPlaneConfig {
     throw new Error("COMPANION_HOST_SUFFIX must be a lowercase DNS suffix");
   }
 
+  const capacity = readCapacityConfig(env as unknown as Partial<Record<string, unknown>>);
+
   return {
     authBaseURL,
     allowedOrigins,
+    capacity,
     cloudflare: {
       accountId: env.CLOUDFLARE_ACCOUNT_ID,
       apiToken: env.CLOUDFLARE_API_TOKEN,

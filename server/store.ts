@@ -9,6 +9,7 @@ import { z } from "zod";
 
 import { writeFileAtomic } from "./atomic.ts";
 import { applyHumanIds } from "./channel-membership.ts";
+import { parseToolScope, toolScopeWidens } from "../shared/tool-scope.ts";
 import { ensureSections, readSections, changeEmptySection } from "./section-context.ts";
 import type { TeamComputers } from "./team-computers.ts";
 import { removeBotFolder, soulFile, soulHash, writeSoulMirror } from "./bot-folder.ts";
@@ -77,9 +78,9 @@ export function isProjectEmoji(value: unknown): value is string {
 }
 
 /** One task = one conversation with its own context. Extends the shared
- * wire shape; the extras below are server-private bookkeeping the wire
- * projection (toWireTask) strips. */
-export interface TaskRecord extends WireTask {
+ * wire shape, less the fields the wire projection (toWireTask) derives; the
+ * extras below are server-private bookkeeping that projection strips. */
+export interface TaskRecord extends Omit<WireTask, TaskWireDerivedKeys> {
   /** provider-native continuation per instance, for THIS task only */
   resumeCursors: Record<string, unknown>;
   /** which instance dispatched the most recent turn. A cursor alone can't
@@ -96,7 +97,8 @@ export interface TaskRecord extends WireTask {
   /** Who pinned this conversation's surface: "user" when a person chose it
    * (composer chip or thread setting), "auto" when a turn recorded where
    * it landed. Absent means legacy/unknown: it may be a person's choice,
-   * so only positively identified auto pins yield to Works on changes. */
+   * so only positively identified auto pins yield to Works on changes.
+   * Clients see only whether a pin is an auto pin (WireTask.surfaceAuto). */
   surfaceSource?: "user" | "auto";
 }
 
@@ -104,7 +106,9 @@ export interface TaskRecord extends WireTask {
  * the exactness assertion below fails to compile when either side drifts,
  * so a new server field forces a decision — wire-visible or private here. */
 export type TaskWirePrivateKeys = "resumeCursors" | "lastInstanceId" | "handedMessages" | "appliedCompactionId" | "contextFloor" | "lastContextModel" | "surfaceSource";
-export type TaskWireProjection = Pick<TaskRecord, Exclude<keyof TaskRecord, TaskWirePrivateKeys>>;
+/** WireTask fields computed by toWireTask and never stored on a TaskRecord. */
+export type TaskWireDerivedKeys = "surfaceAuto";
+export type TaskWireProjection = Pick<TaskRecord, Exclude<keyof TaskRecord, TaskWirePrivateKeys>> & Pick<WireTask, TaskWireDerivedKeys>;
 type AssertExact<A, B> = [A] extends [B] ? ([B] extends [A] ? true : never) : never;
 type AssertSameKeys<A, B> = [keyof A] extends [keyof B] ? ([keyof B] extends [keyof A] ? true : never) : never;
 /** Structural exactness alone lets an optional extra field through (a type
@@ -117,8 +121,10 @@ export const taskWireProjectionIsExact: TaskWireProjectionIsExact = true;
 export function toWireTask(task: TaskRecord): WireTask {
   const { resumeCursors: _resumeCursors, lastInstanceId: _lastInstanceId, handedMessages: _handedMessages,
     appliedCompactionId: _appliedCompactionId, contextFloor: _contextFloor, lastContextModel: _lastContextModel,
-    surfaceSource: _surfaceSource, ...wire } = task;
-  return wire;
+    surfaceSource, ...wire } = task;
+  // Who pinned stays private. A client learns only whether the pin is the
+  // machine's own record, so it never presents one as the person's choice.
+  return surfaceSource === "auto" && wire.surface !== undefined ? { ...wire, surfaceAuto: true } : wire;
 }
 
 const TASK_PATCH_FIELDS = [
@@ -385,6 +391,8 @@ export interface BotRecord extends Omit<WireBot, "avatarUrl" | "tasks"> {
     threadId?: string;
     /** Composer grant: leave the bot default and other threads unchanged. */
     threadOnly?: true;
+    /** Copy the saved bot default onto threadId, including standing approvals. */
+    refreshPermissions?: true;
     /** Explicit bot-wide grant, including existing threads. */
     allThreads?: true;
   };
@@ -397,6 +405,9 @@ export interface BotRecord extends Omit<WireBot, "avatarUrl" | "tasks"> {
   /** Organization library only: each part's release and written hashes
    * (server/package-parts.ts), for the later automatic update. */
   packageBase?: Partial<Record<AgentPart, PartPair>>;
+  /** Skills library (features.skillsLibrary): names of library skills
+   * assigned to this bot. Server-private until the Skills UI ships. */
+  assignedSkills?: string[];
   /** Slice 5 (organization server): the Perspicax MCP profiles this bot
    * mounts, by profile id. Each person who speaks uses their own access;
    * changed only through /api/bots/:id/perspicax, never PATCH, never in a
@@ -423,7 +434,7 @@ export function cleanBotPerspicax(value: unknown): BotPerspicax | undefined {
  * WireTask[], avatarUrl is coerced to always-present). The exactness
  * assertion fails to compile when either side drifts, so a new server
  * field forces a decision — wire-visible or private here. */
-export type BotWirePrivateKeys = "resumeCursors" | "tasks" | "avatarUrl" | "approvalGrant" | "lastProfileRequestId" | "lastTighteningRequestId" | "lastTeamSetupReceipt" | "packageBase" | "perspicax";
+export type BotWirePrivateKeys = "resumeCursors" | "tasks" | "avatarUrl" | "approvalGrant" | "lastProfileRequestId" | "lastTighteningRequestId" | "lastTeamSetupReceipt" | "packageBase" | "perspicax" | "assignedSkills";
 export type BotWireProjection = Pick<BotRecord, Exclude<keyof BotRecord, BotWirePrivateKeys>>;
 export type BotWireProjectionIsExact = AssertExact<Omit<WireBot, "avatarUrl" | "tasks">, BotWireProjection> & AssertSameKeys<Omit<WireBot, "avatarUrl" | "tasks">, BotWireProjection>;
 export const botWireProjectionIsExact: BotWireProjectionIsExact = true;
@@ -681,8 +692,13 @@ export class Store {
     this.completeNewBotSelection = completeNewBotSelection;
     mkdirSync(DATA_DIR, { recursive: true });
     for (const file of [BOTS_FILE, GROUPS_FILE]) tightenRegistryFile(file);
+    // Whether the bot list is the real one. Room repair below trusts it to
+    // say which members no longer exist; an unreadable file must never read
+    // as "every member was deleted".
+    let botsLoaded = false;
     try {
       this.bots = JSON.parse(readFileSync(BOTS_FILE, "utf8"));
+      botsLoaded = Array.isArray(this.bots);
     } catch {
       this.bots = [];
     }
@@ -833,9 +849,17 @@ export class Store {
         botsMigrated = true;
       }
     }
+    const botIds = new Set(this.bots.map((b) => b.id));
     for (const g of this.groups) {
       g.busyBotId = null;
       delete g.turnStartedAt;
+      // A deleted bot used to stay a member for good: counted on the room's
+      // Save button and refused by the roster check on every save (MOCA-264).
+      // Bot-to-bot channels keep their pair; they are not edited as rooms.
+      if (botsLoaded && !g.dm && g.memberIds.some((id) => !botIds.has(id))) {
+        g.memberIds = g.memberIds.filter((id) => botIds.has(id));
+        groupsMigrated = true;
+      }
       const normalized = normalizeGroupDefaultResponder(g.defaultResponder, g.memberIds, Boolean(g.dm));
       if (JSON.stringify(normalized) !== JSON.stringify(g.defaultResponder)) groupsMigrated = true;
       g.defaultResponder = normalized;
@@ -1816,7 +1840,7 @@ export class Store {
     profile: Partial<
       Pick<
         BotRecord,
-        "name" | "title" | "description" | "soul" | "color" | "mascotExpression" | "mascotBody" | "mascotSkin" | "modelSelection" | "section" | "cwd" | "visibility" | "ownerUserId"
+        "name" | "title" | "description" | "soul" | "color" | "mascotExpression" | "mascotBody" | "mascotSkin" | "modelSelection" | "section" | "cwd" | "visibility" | "ownerUserId" | "toolScope"
       >
     > = {},
     opts: {
@@ -1825,6 +1849,8 @@ export class Store {
       seedMessages?: boolean;
     } = {},
   ): BotRecord {
+    const toolScope = parseToolScope(profile.toolScope);
+    if (!toolScope.ok) throw new Error(toolScope.error);
     this.rememberSections([profile.section]);
     const name = profile.name?.trim() || pickBotName(this.bots.map((b) => b.name));
     const section = sectionKey(profile.section);
@@ -1843,6 +1869,7 @@ export class Store {
       ...(profile.mascotSkin && profile.mascotSkin !== "none" ? { mascotSkin: profile.mascotSkin } : {}),
       // Restricted from its first frame: no one else is ever told it exists.
       ...(profile.visibility && profile.visibility !== "everyone" ? { visibility: structuredClone(profile.visibility) } : {}),
+      ...(toolScope.scope ? { toolScope: toolScope.scope } : {}),
       unread: false,
       modelSelection: this.newBotSelection(profile.modelSelection),
       resumeCursors: {},
@@ -1863,8 +1890,10 @@ export class Store {
       activity: "idle",
       busy: false,
     }];
+    // Persist the selection in the first record, before publishing the bot
+    // or starting its greeting. An interrupted creation cannot inherit tools.
+    this.saveBots([bot, ...this.bots]);
     this.bots.unshift(bot);
-    this.saveBots();
     // The folder exists from the first moment, so the user can open
     // SOUL.md before the bot has said a word. The record is canonical: a
     // mirror-write failure must never fail bot creation.
@@ -2003,6 +2032,19 @@ export class Store {
     this.saveBots(nextBots);
     this.bots = nextBots;
     this.legacyActivities.delete(id);
+    // A deleted bot leaves every room it was in, and a room it led falls back
+    // to its next member. Bot-to-bot channels keep their pair.
+    const rooms = this.groups.filter((g) => !g.dm && g.memberIds.includes(id));
+    for (const g of rooms) {
+      g.memberIds = g.memberIds.filter((member) => member !== id);
+      if (g.busyBotId === id) { g.busyBotId = null; delete g.turnStartedAt; }
+      g.defaultResponder = normalizeGroupDefaultResponder(g.defaultResponder, g.memberIds, false);
+    }
+    if (rooms.length) {
+      // Bot removal is already durable. Finish erasing its data even if this
+      // write fails; startup repair removes these stale memberships later.
+      try { this.saveGroups(); } catch (error) { console.warn("store: room cleanup will retry on restart", error); }
+    }
     // every task's transcript goes with the bot, not just the open one
     for (const threadId of new Set([bot.threadId, ...(bot.tasks ?? []).map((t) => t.threadId)])) {
       this.deleteThreadRecord(threadId);
@@ -2023,6 +2065,7 @@ export class Store {
     // The bot folder (SOUL.md mirror) is the bot's too.
     removeBotFolder(id);
     this.emit({ type: "bot.deleted", botId: id });
+    for (const g of rooms) this.emit({ type: "group", groupId: g.id });
     return true;
   }
 
@@ -2057,6 +2100,17 @@ export class Store {
       if (!parsed.ok) throw new Error(parsed.error);
       patch = { ...patch, connectorTools: parsed.grants };
     }
+    if (Object.hasOwn(patch, "toolScope")) {
+      const parsed = parseToolScope(patch.toolScope);
+      if (!parsed.ok) throw new Error(parsed.error);
+      patch = { ...patch, toolScope: parsed.scope };
+    }
+    const wideningToolScope = Object.hasOwn(patch, "toolScope") && toolScopeWidens(bot.toolScope, patch.toolScope);
+    const nextToolScope = patch.toolScope;
+    if (wideningToolScope) {
+      patch = { ...patch };
+      delete patch.toolScope;
+    }
     // Runtime revocations must become effective in memory even when disk is
     // unavailable. Profile edits use the separate atomic path below.
     Object.assign(bot, patch);
@@ -2069,7 +2123,12 @@ export class Store {
       }
       bot.unread = bot.tasks!.some(taskCountsAsBotUnread);
     }
-    this.saveBots();
+    if (wideningToolScope) {
+      // New authority becomes live only after its durable save succeeds.
+      // Other runtime revocations above still take effect on a failed write.
+      this.saveBots(this.bots.map((candidate) => candidate === bot ? { ...bot, toolScope: nextToolScope } : candidate));
+      bot.toolScope = nextToolScope;
+    } else this.saveBots();
     this.emit({ type: "bot", botId: id });
     return bot;
   }
@@ -2712,6 +2771,23 @@ export class Store {
     Object.assign(bot, patch, { approvalGrant: undefined });
     this.emit({ type: "bot", botId });
     return bot;
+  }
+
+  /** Copy this bot's saved approval level and standing approvals onto one
+   * thread. A new thread already gets them; this is how an existing
+   * conversation catches up. Other threads, the transcript, and the bot
+   * default stay put. A grant that has not committed yet is ignored, so a
+   * refresh cannot copy the temporary Ask mask. */
+  refreshTaskPermissions(botId: string, threadId: string): TaskRecord | null {
+    const bot = this.bot(botId);
+    const task = this.taskByThread(botId, threadId);
+    if (!bot || !task) return null;
+    const mode = approvalModeFor({ ...bot, approvalGrant: undefined });
+    const alwaysAllow = structuredClone(bot.alwaysAllow ?? []);
+    const autoApprove = mode === "auto";
+    const sameAllow = JSON.stringify(task.alwaysAllow ?? []) === JSON.stringify(alwaysAllow);
+    if (task.approvalMode === mode && task.autoApprove === autoApprove && sameAllow) return task;
+    return this.patchTask(botId, threadId, { approvalMode: mode, autoApprove, alwaysAllow });
   }
 
   private mirrorActiveTask(bot: BotRecord, task: TaskRecord) {

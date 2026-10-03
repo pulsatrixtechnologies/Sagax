@@ -10,6 +10,7 @@
  * as server-private. */
 import type { ParallelTaskRef, TaskParallelOf } from "./parallel-tasks.ts";
 import type { ApprovalMode } from "./approval-mode.ts";
+import type { ToolScope } from "./tool-scope.ts";
 import type { CommandAllowlistCandidate } from "./command-allowlist.ts";
 import type { TurnDigest } from "./digest.ts";
 import type { BotAvatarCrop } from "./bot-avatar.ts";
@@ -70,8 +71,11 @@ export type MausColor = MascotColorName;
  * ten-face vocabulary still carry those names. */
 export type MausExpression = string;
 
-/** What the bot is doing right now, as the harness sees it. */
-export type BotActivity = "working" | "waiting-on-you" | "idle" | "no-signal" | "dead";
+/** What the bot is doing right now, as the harness sees it. `parked.computer`
+ * is task-level only (ADR-2, #1651): a thread whose turn settled at the
+ * computer wait ceiling and resumes when the seat frees. It never elevates
+ * the bot-level activity and never counts as busy. */
+export type BotActivity = "working" | "waiting-on-you" | "idle" | "no-signal" | "dead" | "parked.computer";
 
 /** The bot that opened a thread on itself or a teammate. */
 export interface TaskOpenedBy {
@@ -170,6 +174,12 @@ export interface WireTask {
   turnStartedAt?: number;
   /** Where this conversation works when pinned; absent = follow the bot. */
   surface?: Surface;
+  /** The pin above is the machine's own record (where an Auto turn landed,
+   * or the bot's select_computer choice), not a person's, so the next Works
+   * on change moves it. Derived at projection from the server-private
+   * provenance and never stored; absent on a person's pin and on a pin from
+   * before the server recorded who set it. */
+  surfaceAuto?: true;
   /** what this task has spent, banked once per turn */
   usage?: TaskUsage;
   /** the folder this task's turns run in, pinned on its first turn. */
@@ -349,6 +359,8 @@ export interface WireBot {
   memoryUpkeep?: boolean;
   /** Which of the app-wide MCP servers this bot mounts, by name. */
   mcpServers?: string[];
+  /** Owner-selected original tool identities. An empty allowlist permits none. */
+  toolScope?: ToolScope;
   /** Id of a named browser profile; absent = the bot's own private session. */
   browserProfile?: string;
   /** Public, package-authored playbooks installed for this bot. */
@@ -396,13 +408,17 @@ export interface ResolvedSender {
 /** Who answered a card: a signed-in person (named as their messages are), the
  * owner on this machine, or a session-less local caller on a shared server
  * (`worker`: the Slack worker, or any other process on that machine). */
-export type CardAnswerer =
+export type CardAnswerer = (
   /** `person`: the answering session's opaque person key, recorded on an OMB
    * Cloud home only, where it decides whether an answer came from the owner
    * (server/cloud-lending.ts). */
   | { kind: "session"; name: string; person?: string }
   | { kind: "loopback" }
-  | { kind: "worker" };
+  | { kind: "worker" }
+) & {
+  /** "call": decided by voice on a Live call, not tapped. */
+  via?: "call";
+};
 
 export interface WireAccessCard {
   /** `routine_delegation` (slice 6): an organization routine paused because
@@ -513,8 +529,14 @@ export interface WireMessage {
    * a new request. The text is stored enveloped exactly as injected, so any
    * later reader sees the sender and the not-steering framing. */
   aside?: boolean;
-  /** A user-role message that arrived through the server's HTTP API. */
-  via?: "api";
+  /** A user-role message that arrived through the server's HTTP API
+   * ("api"), or a request a person spoke on a Live call ("call"). */
+  via?: "api" | "call";
+  /** A user line an external interface relayed through the guarded send
+   * route (the Slack worker, for someone else, as this computer): nobody
+   * typed it in one of this workspace's clients. A Live call never reads it
+   * back as what the caller typed. */
+  relayed?: boolean;
   /** Which person sent this user message, when the workspace has more than
    * one. The server authenticates per person but used to attribute every
    * user turn to the single profile name, so on a shared or paired instance
@@ -587,6 +609,8 @@ export interface OptionCardData {
   title: string;
   subtitle: string;
   options: string[];
+  /** Distinguishes a provider question from an approval after its live run ends. */
+  requestType?: "permission" | "question";
   answered?: string;
   /** What was actually answered, when the answer is words rather than a
    * verdict. */
@@ -636,6 +660,43 @@ export interface OptionCardData {
   skillRequest?: SkillRequestCardData;
   /** A provider's structured question set. */
   questionRequest?: QuestionRequestCardData;
+}
+
+/** Which app holds the microphone of a Live call. Self-declared; for display and logs only. */
+export type LiveClient = "desktop" | "ios" | "android";
+export type LiveCallStatus = "connecting" | "live" | "ending" | "ended";
+/** Why a call ended. "signed-out": the sign-in or paired phone that started
+ * it was signed out, revoked or unpaired. A client that does not know a
+ * reason shows the call's `error` text, or plain "Call ended.". */
+export type LiveEndReason =
+  | "hung-up" | "idle" | "expired" | "content" | "remote-hangup" | "connection-lost"
+  | "sideband-lost" | "deleted" | "shutdown" | "signed-out" | "error";
+
+/** The one Live call a harness runs. Never carries the key or any speech. */
+export interface LiveCallState {
+  callId: string;
+  botId: string;
+  threadId: string;
+  client: LiveClient;
+  voice: string;
+  /** epoch ms when the session was created */
+  startedAt: number;
+  status: LiveCallStatus;
+  endReason?: LiveEndReason;
+  /** short, user-facing; present when the call ended on a problem */
+  error?: string;
+}
+
+/** Non-secret Live settings, as GET /api/config and PATCH /api/live/settings report them. */
+export interface LiveSettings {
+  /** Live calls are off in Sagax unless the server runs with SAGAX_LIVE_CALLS=1
+   * (our own voice call engine is the call path); off, every /api/live route
+   * answers 404 and no OpenAI session can start. */
+  enabled: boolean;
+  configured: boolean;
+  voice: string;
+  readTypedReplies: boolean;
+  idleMinutes: number;
 }
 
 export interface ConnectorCardData {
@@ -778,6 +839,30 @@ export type SteerQueueReason = "capacity" | "group-turn";
  * `bot.queued` frame carries them: threadId → queued items. */
 export type BotQueuedMessages = Record<string, Array<{ queueId: string; text: string; reason?: SteerQueueReason }>>;
 
+/** Skills library (features.skillsLibrary) browse surface: one row per
+ * library entry, with the bots currently assigned to it. Version comes
+ * from the org package stamp when one exists; locally imported skills
+ * carry null. */
+export interface SkillsLibrarySkillWire {
+  name: string;
+  description: string;
+  source: string;
+  enabled: boolean;
+  tags: string[];
+  version: string | null;
+  importedAt: string;
+  license?: string;
+  compatibility?: string;
+  warnings: string[];
+  assignedBots: Array<{ id: string; name: string }>;
+}
+
+/** PUT body for a bot's assignment list: the full list, applied
+ * idempotently. */
+export interface BotAssignedSkillsWire {
+  skills: string[];
+}
+
 export type ServerFrame =
   | { kind: "sections"; sections: string[] }
   | { kind: "bot.queued"; queues: BotQueuedMessages }
@@ -801,6 +886,7 @@ export type ServerFrame =
   | { kind: "bot.deleted"; botId: string }
   /** A person's own unlocks (server/achievements.ts), to their streams only. */
   | { kind: "achievements"; audience: string; unlocked: Array<{ id: string; points: number; unlockedAt: number }> }
+  | { kind: "live.call"; botId: string; threadId: string; call: LiveCallState | null }
   /** The config status object spread flat into the frame; its full typing
    * is the deferred client-model extraction (see j1-phase-bc-progress). */
   | ({ kind: "config" } & Record<string, unknown>);

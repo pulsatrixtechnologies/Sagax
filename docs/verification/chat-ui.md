@@ -123,7 +123,7 @@ real fixture health check and verifies that clicking a deliberately missing
 control fails. The card remains collapsible; the old execution timeline is no
 longer shown above chat.
 
-For activity detail, click **Inspector → Run Log**. It shows the selected
+For activity detail, click **More → Inspector → Run Log**. It shows the selected
 conversation's recorded commands, statuses and timestamps; command previews
 may be shortened. **Events** and **Raw** retain the underlying technical views.
 The recipe checks tab switching and saves `run-log.png` alongside `chat-ui.png`.
@@ -131,6 +131,13 @@ The recipe checks tab switching and saves `run-log.png` alongside `chat-ui.png`.
 not chat text or raw protocol data. Review copied logs before sharing: automatic
 redaction is best effort. Neither this log nor a successful command proves an
 unasserted user outcome.
+
+`scripts/testing/usage-details-ui.e2e.test.ts` checks the header's **More** menu,
+usage breakdown, clipboard success and refusal, and responsive geometry at
+390, 800, 1100 and 1600 px. It checks that opening bot settings folds the sidebar
+without changing its saved density and closing settings restores it. Evidence
+includes screenshots and a `.usage-details.json` next to the fixture log.
+These are renderer checks, not native Windows caption-button verification.
 
 It runs when an agent-browser binary resolves and is skipped with a printed
 reason otherwise; `SAGAX_UI_E2E=1` forces the verified download. The `ui-smoke`
@@ -212,6 +219,22 @@ until agent-browser no longer lists it), then the preview, then the fixture,
 and removes only its data directory; the server log stays at the printed path
 and the tools directory keeps the downloads. Every verb refuses a handle whose
 launch has stopped.
+
+## Live key prompt cancellation
+
+With a fresh `ui launch` handle in `$H`, run the delayed-key-save regression:
+
+```sh
+pnpm control:omb ui eval --ui "$H" --js "$(cat scripts/testing/live-key-lifecycle.js)"
+```
+
+It submits the real key form, then dismisses it or switches chats by keyboard-style
+activation before the synthetic save resolves. Both results must show
+`oldPromptDetached: true`, `microphoneStarts: 0`, and `phase: "idle"`. The script
+clears only the disposable fixture's Live key, stubs credential saving and media,
+and restores the bridge and call mode in `finally`. It never saves a real key or
+opens the microphone; it does not prove real-audio acceptance. Stop the launcher
+as described above.
 
 ## Queued edits and Claude update recovery
 
