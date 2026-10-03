@@ -19894,6 +19894,11 @@ function personBotsReadOnly(principalId: string | undefined | null): boolean {
   const sub = person.subject?.iss === IDENTITY.issuer ? person.subject.sub : undefined;
   return Boolean(sub) && perspicaxDirectory?.botRights(sub!) === "use";
 }
+/** The person this bot belongs to may only use shared bots. Their Primary
+ * Bot must not create, set up or delete (the same door as POST /api/bots). */
+function ownerBotsReadOnly(bot: { ownerUserId?: unknown }): boolean {
+  return personBotsReadOnly(effectiveBotOwner(bot));
+}
 /** The refusal a read-only person gets on anything that creates or changes a bot. */
 const BOTS_READ_ONLY = { error: "org_bots_read_only", message: "Your administrator lets you use shared bots only." } as const;
 /** A chat-scoped session acting on a bot it owns (and may still create
@@ -22928,6 +22933,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         const parsed = z.object({ fromBotId: z.string().optional(), fromThreadId: z.string().optional(), plan: z.unknown() }).strict().safeParse(await readInternalBody());
         if (!parsed.success) return json(res, 400, { error: "Invalid team setup request" });
         const chief = store.bot(internalCapability.botId)!;
+        if (ownerBotsReadOnly(chief)) return json(res, 403, BOTS_READ_ONLY);
         const owner = connectorThread(chief.id, internalCapability.threadId);
         if (!owner) return json(res, 403, { error: "Source conversation no longer belongs to the Primary Bot" });
         const proposed = await teamSetupRequests.submit({ botId: chief.id, threadId: internalCapability.threadId, plan: parsed.data.plan,
@@ -22942,6 +22948,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         const parsed = z.object({ fromBotId: z.string().optional(), fromThreadId: z.string().optional(), targetBotId: z.string().min(1), reason: z.string().trim().min(1).max(500) }).strict().safeParse(await readInternalBody());
         if (!parsed.success) return json(res, 400, { error: "An exact bot id and deletion reason are required" });
         const chief = store.bot(internalCapability.botId)!;
+        if (ownerBotsReadOnly(chief)) return json(res, 403, BOTS_READ_ONLY);
         const owner = connectorThread(chief.id, internalCapability.threadId);
         if (!owner) return json(res, 403, { error: "Source conversation no longer belongs to the Primary Bot" });
         const proposed = await teamSetupRequests.submitDeletion({ botId: chief.id, threadId: internalCapability.threadId, targetBotId: parsed.data.targetBotId, reason: parsed.data.reason,
@@ -24153,6 +24160,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         if (!chief.chiefOfStaff) {
           return json(res, 403, { error: "only a Primary Bot can create operator bots" });
         }
+        if (ownerBotsReadOnly(chief)) return json(res, 403, BOTS_READ_ONLY);
         if (internalCapability.createdBots >= 4) {
           return json(res, 429, { error: "you can create at most 4 bots in one turn" });
         }
@@ -24195,6 +24203,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         if (store.bot(chief.id) !== chief || chief.hidden || !chief.chiefOfStaff || !connectorThread(chief.id, fromThreadId)) {
           return json(res, 403, { error: "only an active Primary Bot can create operator bots" });
         }
+        if (ownerBotsReadOnly(chief)) return json(res, 403, BOTS_READ_ONLY);
         if (internalCapability.createdBots >= 4) return json(res, 429, { error: "you can create at most 4 bots in one turn" });
         if (store.bots.length >= MAX_WORKSPACE_BOTS) return json(res, 409, { error: `this workspace is limited to ${MAX_WORKSPACE_BOTS} bots` });
         const duplicate = store.bots.find(
@@ -24213,7 +24222,11 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
             description: instructions,
             modelSelection: selection,
             section: chief.section,
-            ownerUserId: creatingBotOwnerId(auth),
+            // The request is the agents proxy on loopback: auth is not the
+            // person. On an organization server that would store no owner
+            // and the specialist would fall to the operator. Same as
+            // applyTeamSetup: the Primary Bot's person owns the new bot.
+            ...(recordedBotOwner(chief) ? { ownerUserId: recordedBotOwner(chief) } : {}),
             ...(cwd !== undefined ? { cwd } : {}),
             // exactly the Primary Bot's audience: a restricted Primary Bot never makes a bot everyone sees
             ...(chief.visibility ? { visibility: chief.visibility } : {}),
