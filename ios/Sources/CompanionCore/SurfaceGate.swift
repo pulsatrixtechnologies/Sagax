@@ -219,6 +219,19 @@ public enum SurfaceFeature: String, CaseIterable, Hashable, Sendable {
     /// Usage > History, `GET /api/usage?groupBy=` (ST10): admin scope on a
     /// server; the owner's sidecar passes `GET /api/usage`.
     case usageHistory
+
+    // Team map and people (WP15)
+    /// The Team map, read-only (TM1): `GET /api/team-map` passes both gates
+    /// and the remote client shows the page. Arranging a bot inside its own
+    /// team (TM2) is kept on the phone and goes with it.
+    case teamMap
+    /// Move a bot to another team from the Team map (`POST
+    /// /api/sidebar-sections`): the remote client never offers it
+    /// (`canManage` is false) and a client session may not file bots.
+    case teamMapMove
+    /// The person sheet, people's names on room lines, and direct
+    /// conversations between people (RM21, RM22): organization servers only.
+    case people
 }
 
 public struct SurfaceGate: Hashable, Sendable {
@@ -326,6 +339,12 @@ public struct SurfaceGate: Hashable, Sendable {
             return organization
         case .usageHistory:
             return scope != .serverClient
+        case .teamMap:
+            return true
+        case .teamMapMove:
+            return scope == .serverAdmin
+        case .people:
+            return organization
         }
     }
 }

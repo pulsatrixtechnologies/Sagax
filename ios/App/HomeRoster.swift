@@ -126,6 +126,7 @@ struct HomePinnedCell: View {
     var state: MausState = .idle
 
     @EnvironmentObject private var session: Session
+    @ObservedObject private var people = PeopleDirectory.shared
 
     var body: some View {
         VStack(spacing: 0) {
@@ -134,17 +135,21 @@ struct HomePinnedCell: View {
                 case let .bot(bot):
                     BotMascotView(bot: bot, size: HomeMetrics.pinnedMascot, state: state, animated: state.showsActivity)
                 case let .room(room):
-                    GroupMascotView(
-                        members: room.memberIds.compactMap { session.state.bot($0) },
-                        size: HomeMetrics.pinnedMascot,
-                        background: Theme.bg
-                    )
+                    if let peer = people.peer(room, session: session) {
+                        PersonAvatar(initials: peer.initials, size: HomeMetrics.pinnedMascot)
+                    } else {
+                        GroupMascotView(
+                            members: room.memberIds.compactMap { session.state.bot($0) },
+                            size: HomeMetrics.pinnedMascot,
+                            background: Theme.bg
+                        )
+                    }
                 }
             }
             .frame(width: HomeMetrics.pinnedMascot, height: HomeMetrics.pinnedMascot)
 
             HStack(spacing: HomeMetrics.unreadGap) {
-                Text(verbatim: chat.name)
+                Text(verbatim: people.name(chat, session: session))
                     .font(.system(size: 11.65))
                     .foregroundStyle(Theme.textSecondaryHome)
                     .lineLimit(1)
@@ -226,6 +231,7 @@ struct HomeChatRow: View {
     var state: MausState = .idle
 
     @EnvironmentObject private var session: Session
+    @ObservedObject private var people = PeopleDirectory.shared
 
     var body: some View {
         HStack(alignment: .top, spacing: 0) {
@@ -234,11 +240,15 @@ struct HomeChatRow: View {
                 case let .bot(bot):
                     BotMascotView(bot: bot, size: HomeMetrics.rowMascot, state: state, animated: state.showsActivity)
                 case let .room(room):
-                    GroupMascotView(
-                        members: room.memberIds.compactMap { session.state.bot($0) },
-                        size: HomeMetrics.rowMascot,
-                        background: Theme.bg
-                    )
+                    if let peer = people.peer(room, session: session) {
+                        PersonAvatar(initials: peer.initials, size: HomeMetrics.rowMascot)
+                    } else {
+                        GroupMascotView(
+                            members: room.memberIds.compactMap { session.state.bot($0) },
+                            size: HomeMetrics.rowMascot,
+                            background: Theme.bg
+                        )
+                    }
                 }
             }
             .frame(width: HomeMetrics.rowMascot, height: HomeMetrics.rowMascot)
@@ -267,7 +277,7 @@ struct HomeChatRow: View {
     private var nameLine: some View {
         HStack(spacing: 7.5) {
             HStack(spacing: 5) {
-                Text(verbatim: chat.name)
+                Text(verbatim: people.name(chat, session: session))
                     .font(HomeMetrics.name)
                     .foregroundStyle(Theme.textPrimary)
                     .lineLimit(1)
@@ -362,6 +372,9 @@ struct HomeChatRow: View {
 struct HomePlusMenu: View {
     @Environment(\.themePalette) var themePalette
     var canCreateBot: Bool
+    /// WP15 (RM22): "Message a person", on an organization server only, so
+    /// the reference menu (18) keeps its two rows elsewhere.
+    var messagePerson: (() -> Void)? = nil
     let newBot: () -> Void
     let newGroup: () -> Void
     let dismiss: () -> Void
@@ -378,12 +391,16 @@ struct HomePlusMenu: View {
                 }
                 item(Text("New Group Chat"), action: newGroup)
                     .accessibilityIdentifier("plus-menu.new-group")
+                if let messagePerson {
+                    item(Text("Message a person"), action: messagePerson)
+                        .accessibilityIdentifier("plus-menu.message-person")
+                }
             }
             // item centres 28 and 63.8 pt down (reference 18, measured on
             // the text)
             .padding(.top, 10.08)
             .padding(.bottom, 9.59)
-            .frame(width: 250.67, height: 91.33, alignment: .topLeading)
+            .frame(width: 250.67, height: 91.33 + (messagePerson == nil ? 0 : 35.83), alignment: .topLeading)
             .background(alignment: .topLeading) { searchUnderGlass }
             .themeGlass(RoundedRectangle(cornerRadius: Theme.continuous(31.5), style: .continuous), fill: Theme.parity(Color(hex: 0x323232), Theme.menuGlass), interactive: false)
             .padding(.trailing, 7.7)

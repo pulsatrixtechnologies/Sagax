@@ -253,6 +253,9 @@ export async function seedOrg(org, seeded, api) {
   org.idp.user = signInUser(VIEWER);
   const id = (login) => people.find((p) => p.login === login)?.principalId;
   org.viewer.principalId = id(VIEWER.preferred_username) ?? null;
+  // PARITY_PEOPLE=1 (WP15 UI tests): Sam has written to the viewer once,
+  // a direct conversation between two people (server/people-dms.ts).
+  if (process.env.PARITY_PEOPLE === "1") await seedPeopleDm(org, id("sam.rivera")).catch((error) => console.error(`[parity] people dm: ${error.message}`));
   const ara = seeded.ids.ara.id;
   const grants = [
     [`user:${id("sam.rivera")}`, "manage"],
@@ -264,6 +267,25 @@ export async function seedOrg(org, seeded, api) {
   }
   await api(base, "PUT", `/api/bots/${ara}/perspicax`, { profiles: [PROFILES[0].id, PROFILES[1].id] })
     .catch((error) => console.error(`[parity] perspicax profiles: ${error.message}`));
+}
+
+/** As Sam: open the conversation with the viewer and say hello in it. */
+async function seedPeopleDm(org, samId) {
+  if (!samId || !org.viewer.principalId) throw new Error("the directory has no Sam or no viewer");
+  org.idp.user = signInUser(PEOPLE[1]);
+  const cookie = await signIn(org);
+  org.idp.user = signInUser(VIEWER);
+  const as = async (method, path, body) => {
+    const init = { method, headers: { "content-type": "application/json", cookie, origin: org.base } };
+    if (body !== undefined) init.body = JSON.stringify(body);
+    const res = await fetch(`${org.base}${path}`, init);
+    const text = await res.text();
+    if (!res.ok) throw new Error(`${method} ${path} -> ${res.status}: ${text.slice(0, 300)}`);
+    return text ? JSON.parse(text) : null;
+  };
+  const { group } = await as("POST", "/api/people-dms", { principalId: org.viewer.principalId });
+  await as("POST", `/api/groups/${group.id}/messages`, { text: "Hello from Sam (parity people fixture)" });
+  console.error(`[parity] people dm ${group.id} seeded`);
 }
 
 export async function stopOrg(org) {

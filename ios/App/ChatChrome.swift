@@ -36,6 +36,8 @@ struct ChatNameCapsule: View {
     /// Hidden while the island intro is carrying the face.
     var mascotHidden = false
     let open: () -> Void
+    @EnvironmentObject private var session: Session
+    @ObservedObject private var people = PeopleDirectory.shared
 
     var body: some View {
         Button {
@@ -51,7 +53,7 @@ struct ChatNameCapsule: View {
                     background: Theme.glassFill
                 )
                 .opacity(mascotHidden ? 0 : 1)
-                Text(chat.name)
+                Text(verbatim: people.name(chat, session: session))
                     .font(Theme.Font.bodyMedium)
                     .foregroundStyle(Theme.textPrimary)
                     .lineLimit(1)

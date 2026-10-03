@@ -27,6 +27,11 @@ struct ChatListView: View {
     @State private var showingNewSection = false
     /// WP10: the Automations page (AU1), from a long press on "+".
     @State private var showingAutomations = false
+    /// WP15: the Team map (TM1), from a long press on "+".
+    @State private var showingTeamMap = false
+    /// WP15: "Message a person" (RM22), organization servers only.
+    @State private var showingMessagePerson = false
+    @ObservedObject private var people = PeopleDirectory.shared
     @State private var showingPlusMenu = false
     @State private var showingSearch = false
     @State private var showingCreateBot = false
@@ -59,7 +64,7 @@ struct ChatListView: View {
 
     var body: some View {
         NavigationStack(path: $path) {
-            homeContent
+            AnyView(homeContent)
             .toolbar(.hidden, for: .navigationBar)
             .navigationDestination(for: Chat.self) { ChatView(chat: $0) }
             .onValueChange(of: session.notificationChat) { chat in
@@ -108,6 +113,20 @@ struct ChatListView: View {
             .sheet(isPresented: $showingAutomations) {
                 AutomationsSheet()
             }
+            .sheet(isPresented: $showingTeamMap) {
+                TeamMapSheet { chat in
+                    showingTeamMap = false
+                    path.append(chat)
+                }
+            }
+            .sheet(isPresented: $showingMessagePerson) {
+                MessagePersonSheet { chat in
+                    showingMessagePerson = false
+                    path.append(chat)
+                }
+            }
+            // the person sheet (RM21), from a room line, a row or a header
+            .personSheetPresenter { chat in path.append(chat) }
             .sheet(item: $managingThreads) { chat in
                 TaskManagerView(chat: chat) { threadId in
                     guard let bot = session.state.bot(forThread: threadId) else { return }
@@ -1184,15 +1203,16 @@ extension ChatListView {
     var homeContent: some View {
         Group {
             if density == .standard {
-                standardHome
+                AnyView(standardHome)
             } else {
-                legacyHome
+                AnyView(legacyHome)
             }
         }
-        .overlay { homeOverlays }
+        .overlay { AnyView(homeOverlays) }
         .task(id: session.connection?.id) {
             await session.loadAccount()
             await sidebarPrefs.load(session)
+            await people.load(session)
         }
 #if DEBUG
         .task {
@@ -1227,6 +1247,9 @@ extension ChatListView {
         sidebarPrefs.toggleCollapsed(session, id)
     }
 
+    // The home's sub-trees are type-erased: since the parity packages, their
+    // concrete SwiftUI type nests deep enough that resolving it at launch
+    // overflowed the main thread's stack on iPad (TestFlight build 6).
     private var standardHome: some View {
         ZStack(alignment: .top) {
             Theme.bg.ignoresSafeArea()
@@ -1239,10 +1262,10 @@ extension ChatListView {
                     if pinnedChats.isEmpty {
                         Color.clear.frame(height: 12)
                     } else {
-                        pinnedGrid
+                        AnyView(pinnedGrid)
                             .padding(.top, HomeMetrics.pinnedTop - HomeMetrics.headerTop - HomeMetrics.headerHeight - 8)
                     }
-                    standardSections
+                    AnyView(standardSections)
                 }
                 .padding(.bottom, 32)
             }
@@ -1261,7 +1284,7 @@ extension ChatListView {
                     )
                 }
             }
-            standardHeader
+            AnyView(standardHeader)
         }
         .overlay(alignment: .top) {
             if CompanionLayout.supportsIslandPresentation {
@@ -1286,7 +1309,7 @@ extension ChatListView {
                 withAnimation(.spring(response: 0.32, dampingFraction: 0.82)) { showingPlusMenu = true }
             }
             .opacity(showingPlusMenu ? 0 : 1)
-            .contextMenu { plusLongPressMenu }
+            .contextMenu { AnyView(plusLongPressMenu) }
             .accessibilityIdentifier("home-plus")
         }
         .padding(.horizontal, Theme.Metric.screenEdge)
@@ -1308,6 +1331,14 @@ extension ChatListView {
                 Label("Automations", systemImage: "calendar.badge.clock")
             }
             .accessibilityIdentifier("home-plus-automations")
+        }
+        if session.connection != nil, session.surfaceGate.allows(.teamMap) {
+            Button {
+                showingTeamMap = true
+            } label: {
+                Label("Team map", systemImage: "point.3.connected.trianglepath.dotted")
+            }
+            .accessibilityIdentifier("home-plus-team-map")
         }
         if session.canAdminister || layout.personal {
             Button {
@@ -1622,7 +1653,13 @@ extension ChatListView {
                 .zIndex(4)
             }
             if showingPlusMenu {
-                HomePlusMenu(canCreateBot: session.surfaceGate.allows(.createBot)) {
+                HomePlusMenu(
+                    canCreateBot: session.surfaceGate.allows(.createBot),
+                    messagePerson: session.surfaceGate.allows(.people) ? {
+                        showingPlusMenu = false
+                        showingMessagePerson = true
+                    } : nil
+                ) {
                     showingPlusMenu = false
                     createBotSection = nil
                     showingCreateBot = true
