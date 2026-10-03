@@ -76,12 +76,12 @@ public extension CompanionClient {
     }
 
     /// `GET /api/me/preferences` (organization servers).
-    func preferences() async throws -> UserPreferences {
+    public func preferences() async throws -> UserPreferences {
         try await send(makeRequest("GET", "/api/me/preferences"), as: UserPreferences.self)
     }
 
     /// `PUT /api/me/preferences`: replaces the person's record with these keys.
-    func putPreferences(_ preferences: [String: String]) async throws -> UserPreferences {
+    public func putPreferences(_ preferences: [String: String]) async throws -> UserPreferences {
         try await send(
             makeRequest("PUT", "/api/me/preferences", encodedBody: UserPreferencesBody(preferences: preferences)),
             as: UserPreferences.self

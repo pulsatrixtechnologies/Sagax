@@ -258,6 +258,15 @@ const ALLOWED: ReadonlyArray<{ method: string; path: RegExp }> = [
   { method: "GET", path: /^\/api\/tts\/voices$/ },
   { method: "POST", path: /^\/api\/tts\/prepare$/ },
   { method: "POST", path: /^\/api\/tts\/speak$/ },
+  // A live call (the phone's voice mode, ios/App/Call/): whether voice mode
+  // serves this bot, xAI's voice labels, a sentence of the bot's answer
+  // streamed as PCM, and a whole turn transcribed when the phone cannot
+  // recognize speech itself. The xAI key never leaves the harness. The
+  // listen socket stays desktop-only: it is same-origin by design.
+  { method: "GET", path: /^\/api\/bots\/[\w-]+\/voice\/(?:status|voices)$/ },
+  // The call's start, keep-alive and end (POST /voice/call): every send to
+  // the thread while it lasts is a call turn.
+  { method: "POST", path: /^\/api\/bots\/[\w-]+\/voice\/(?:prepare|speak|transcribe|stream|call)$/ },
 
   // Routines create ordinary tasks using an existing agent configuration.
   // Webhook management remains explicitly denied below.

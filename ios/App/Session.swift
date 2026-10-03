@@ -1882,6 +1882,36 @@ final class Session: ObservableObject {
         await perform { try await $0.interrupt(botId: bot.id, threadId: bot.threadId) }
     }
 
+    // MARK: - Live calls (App/Call/)
+
+    /// The live client for a call's voice routes. Nil offline.
+    var callClient: CompanionClient? { client }
+
+    /// A turn said on a live call: the ordinary send to the bot's thread,
+    /// marked as a call turn (`voiceCall`) like the desktop's. False when
+    /// the computer refused it (the reason is in `actionError`).
+    func sendCallTurn(_ text: String, to bot: Bot, threadId: String, voiceCall: VoiceCallMeta) async -> Bool {
+        let connectionID = client?.connection.id
+        var receipt: SendReceipt?
+        var sent = false
+        await perform {
+            receipt = try await $0.send(text: text, toBot: bot.id, threadId: threadId, voiceCall: voiceCall)
+            sent = true
+        }
+        if sent, client?.connection.id == connectionID { rememberQueuedSend(from: receipt, text: text) }
+        return sent
+    }
+
+    /// Stop a room's running turn (a barge-in on a group call).
+    func interrupt(room: Room) async {
+        await perform(quietly: true) { try await $0.interrupt(roomId: room.id) }
+    }
+
+    /// Interrupt quietly: a call's barge-in on a turn that may have just ended.
+    func interruptQuietly(botId: String, threadId: String) async {
+        await perform(quietly: true) { try await $0.interrupt(botId: botId, threadId: threadId) }
+    }
+
     /// The live client for the computer viewer's input, clipboard and control
     /// calls (ComputerView), which handle their own refusals. Nil offline.
     var computerClient: CompanionClient? { client }

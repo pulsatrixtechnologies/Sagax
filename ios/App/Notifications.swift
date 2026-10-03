@@ -26,6 +26,8 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
     }
 
     func deliver(_ notification: NotificationFrame, sequence: Int?) {
+        // the conversation on a live call is heard, not buzzed
+        if CallQuiet.shared.silences(threadId: notification.threadId) { return }
         let content = UNMutableNotificationContent()
         content.title = notification.title
         content.body = notification.body
@@ -54,6 +56,9 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
         willPresent notification: UNNotification,
         withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
     ) {
+        // nothing for the conversation on a live call: no banner, no sound
+        let threadId = notification.request.content.userInfo["threadId"] as? String
+        if CallQuiet.shared.silences(threadId: threadId) { return completionHandler([]) }
         completionHandler([.banner, .list, .sound, .badge])
     }
 

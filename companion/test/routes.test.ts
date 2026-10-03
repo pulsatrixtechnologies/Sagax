@@ -92,6 +92,14 @@ describe("what the app may do", () => {
     ["GET", "/api/tts/voices"],
     ["POST", "/api/tts/prepare"],
     ["POST", "/api/tts/speak"],
+    // a live call (voice mode)
+    ["GET", "/api/bots/bot_123/voice/status"],
+    ["GET", "/api/bots/bot_123/voice/voices"],
+    ["POST", "/api/bots/bot_123/voice/prepare"],
+    ["POST", "/api/bots/bot_123/voice/speak"],
+    ["POST", "/api/bots/bot_123/voice/stream"],
+    ["POST", "/api/bots/bot_123/voice/transcribe"],
+    ["POST", "/api/bots/bot_123/voice/call"],
     ["GET", "/api/routines"],
     ["POST", "/api/routines"],
     ["PATCH", "/api/routines/routine_1"],
@@ -118,6 +126,15 @@ describe("what the app may do", () => {
 });
 
 describe("what it may not", () => {
+  it("keeps a call's voice routes to their own methods, and the listen socket on the desktop", () => {
+    expect(ask("GET", "/api/bots/bot_123/voice/listen")?.status).toBe(404);
+    expect(ask("POST", "/api/bots/bot_123/voice/status")?.status).toBe(404);
+    expect(ask("GET", "/api/bots/bot_123/voice/stream")?.status).toBe(404);
+    expect(ask("POST", "/api/bots/bot_123/voice/other")?.status).toBe(404);
+    expect(ask("GET", "/api/bots/bot_123/voice/call")?.status).toBe(404);
+    expect(ask("POST", "/api/bots/bot_123/voice/stream", false)?.status).toBe(401);
+  });
+
   it("refuses host configuration, and says where it happens", () => {
     for (const [method, path] of [
       ["PUT", "/api/config"],

@@ -184,6 +184,20 @@ describe("scopes", () => {
     expect(JSON.stringify(view)).not.toMatch(/owner@|\/opt\/bin|\/Users\/owner|claude login|claude update/);
   });
 
+  it("gives a paired phone's live call every voice mode route it uses, and nothing more", () => {
+    // ios/Sources/CompanionCore/VoiceCall/ClientVoiceMode.swift: status, voices,
+    // a sentence streamed as PCM, a whole turn transcribed, and the call turn's send
+    for (const [method, path] of [
+      ["GET", "/api/bots/x/voice/status"], ["GET", "/api/bots/x/voice/voices"],
+      ["POST", "/api/bots/x/voice/stream"], ["POST", "/api/bots/x/voice/transcribe"],
+      ["POST", "/api/bots/x/voice/speak"], ["POST", "/api/bots/x/voice/prepare"], ["POST", "/api/bots/x/voice/call"],
+      ["POST", "/api/bots/x/messages"], ["POST", "/api/bots/x/interrupt"], ["POST", "/api/groups/g/interrupt"],
+    ] as const) expect(requiredScope(method, path), `${method} ${path}`).toBe("client");
+    for (const [method, path] of [
+      ["POST", "/api/bots/x/voice/status"], ["GET", "/api/bots/x/voice/stream"], ["POST", "/api/bots/x/voice/other"],
+    ] as const) expect(requiredScope(method, path), `${method} ${path}`).toBe("admin");
+  });
+
   it("limits a client's bot and room edits to display fields, naming the field it refused", () => {
     expect(clientBotPatchViolation({ unread: true })).toBeNull();
     expect(clientBotPatchViolation({ pinned: true, color: "green" })).toBeNull();

@@ -34,8 +34,10 @@ struct ChatView: View {
     @State private var showingPlus = false
     @State private var showingProfile = false
     @State private var pushingProfile = false
-    @State private var showingWalkie = false
-    @AppStorage("walkie.target") private var walkieTarget = ""
+    /// The live call (the composer's white capsule): the desktop's voice mode.
+    @ObservedObject private var call = CallController.shared
+    @Environment(\.isPresented) private var isPresented
+    @Environment(\.openURL) private var openURL
     @State private var showCommandHUD = false
     @State private var shareFile: ShareFile?
     @State private var showingPhotoPicker = false
@@ -153,14 +155,17 @@ struct ChatView: View {
         .sheet(isPresented: $showingProfile) {
             if case let .bot(bot) = current { ChatProfileRoute.destination(for: bot) }
         }
-        .fullScreenCover(isPresented: $showingWalkie) {
-            WalkieView { chat in
-                showingWalkie = false
-                // Walkie hands back the chat it wants open: this one stays,
-                // another one is pushed from the home the way a deep link is.
-                if chat.threadId != threadId { session.openChat(threadId: chat.threadId) }
+        .alert(
+            call.unavailable?.title ?? "",
+            isPresented: Binding(get: { call.unavailable != nil }, set: { if !$0 { call.unavailable = nil } }),
+            presenting: call.unavailable
+        ) { unavailable in
+            if let url = unavailable.keysUrl {
+                Button(String(localized: "Add my xAI key")) { openURL(url) }
             }
-            .environmentObject(session)
+            Button(String(localized: "OK"), role: .cancel) {}
+        } message: { unavailable in
+            Text(unavailable.lines.joined(separator: "\n"))
         }
         .sheet(item: $shareFile) { file in
             ActivityShareSheet(items: [file.url])
@@ -195,6 +200,12 @@ struct ChatView: View {
             dictation.stop()
             resetFilePreview()
             cancelThreadOpen()
+            // Leaving the conversation hangs up, as on the desktop; a profile
+            // or the computer pushed over it keeps the call.
+            let chat = current
+            DispatchQueue.main.async {
+                if !isPresented, call.isOnCall(chat) { call.end() }
+            }
         }
         .onValueChange(of: scenePhase) { phase in
             if phase != .active { dictation.stop() }
@@ -208,8 +219,8 @@ struct ChatView: View {
         .onValueChange(of: showingProfile || pushingProfile) { shown in
             if shown { dictation.stop() }
         }
-        .onValueChange(of: showingWalkie) { shown in
-            if shown { dictation.stop() }
+        .onValueChange(of: call.active) { onCall in
+            if onCall { dictation.stop() }
         }
         .onValueChange(of: showingPlus) { shown in
             if shown { dictation.stop() }
@@ -411,13 +422,17 @@ struct ChatView: View {
                 // The transcript starts under the top bar and scrolls
                 // beneath it: a clear inset the height of the bar, then the
                 // fade and the glass controls float over the content.
-                .safeAreaInset(edge: .top, spacing: 0) { Color.clear.frame(height: Self.topBarHeight) }
+                .safeAreaInset(edge: .top, spacing: 0) {
+                    // voice mode's pill keeps its own row under the name capsule
+                    Color.clear.frame(height: Self.topBarHeight + (callPillShown ? Self.callPillRow : 0))
+                }
                 .overlay(alignment: .top) {
                     ChatTopEdgeFade()
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                         .ignoresSafeArea()
                 }
                 .overlay(alignment: .top) { headerBar }
+                .overlay(alignment: .top) { callPill }
                 .overlay(alignment: .top) { islandFace }
                 .task {
                     // grow, hold a beat, shrink — the face rides along
@@ -523,6 +538,12 @@ struct ChatView: View {
         .ignoresSafeArea(.container, edges: .bottom)
         .background(Theme.bg.ignoresSafeArea())
         .overlay(alignment: .bottom) { plusSheet }
+        .overlay { groupCall }
+#if DEBUG
+        .overlay(alignment: .bottomLeading) {
+            if CallDebug.injecting && call.active { CallDebugPanel(call: call).padding(.leading, 2).padding(.bottom, 120) }
+        }
+#endif
         .toolbar(.hidden, for: .navigationBar)
         .navigationBarBackButtonHidden(true)
         // Hiding the bar above also disarms the system edge-swipe back
@@ -653,12 +674,45 @@ struct ChatView: View {
         }
     }
 
-    /// Voice mode: Walkie, aimed at this bot.
+    /// Voice mode: a live call with this bot or room (the desktop's call
+    /// button in the composer). Pressed again on a call, it hangs up.
     private func startVoiceMode() {
         dictation.stop()
         composerFocused = false
-        if case let .bot(bot) = current { walkieTarget = bot.id }
-        showingWalkie = true
+        let chat = current
+        if call.isOnCall(chat) {
+            call.end()
+            return
+        }
+        Haptics.impact(.medium)
+        Task { await call.start(chat, session: session) }
+    }
+
+    /// The row voice mode's pill takes under the name capsule.
+    static let callPillRow: CGFloat = 56
+
+    private var callPillShown: Bool {
+        if case .bot = current { return call.isOnCall(current) }
+        return false
+    }
+
+    @ViewBuilder
+    private var callPill: some View {
+        if case let .bot(bot) = current, call.isOnCall(current) {
+            CallPillView(bot: bot, call: call)
+                .padding(.horizontal, 12)
+                .padding(.top, Self.topBarHeight + 4)
+                .frame(maxWidth: .infinity)
+                .transition(.move(edge: .top).combined(with: .opacity))
+        }
+    }
+
+    @ViewBuilder
+    private var groupCall: some View {
+        if case let .room(room) = current, call.isOnCall(current) {
+            GroupCallOverlay(room: room, call: call)
+                .transition(.opacity)
+        }
     }
 
     /// The island greeting: the face grows in the island, then shrinks into
@@ -1402,6 +1456,7 @@ struct ChatView: View {
                     ComposerVoiceSendButton(
                         canSend: canSend,
                         busy: preparingAttachments || sendingMessage,
+                        onCall: call.isOnCall(current),
                         send: { submit() },
                         voice: startVoiceMode
                     )
