@@ -18070,7 +18070,9 @@ function activityChildren(botId: string, threadId: string): ActivityChildRef[] {
 // it, its owner edits it or switches it off.
 ROUTES.push(createGroupMemoryRoutes({
   group: (id) => store.group(id),
-  canRead: (auth, group) => groupVisible(group as GroupRecord, channelViewerId(auth)),
+  // The same filter as GET /api/groups: a personal server's paired phone
+  // (a session without a principal) sees the operator's rooms.
+  canRead: (auth, group) => groupVisible(group as GroupRecord, channelFilterViewerId(auth)),
   isOwner: (auth, group) => groupOwnerCaller(auth, group as GroupRecord),
   setEnabled: (groupId, enabled) => {
     const group = store.patchGroup(groupId, { memoryEnabled: enabled ? undefined : false });

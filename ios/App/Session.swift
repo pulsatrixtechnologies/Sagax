@@ -2266,6 +2266,8 @@ final class Session: ObservableObject {
     /// Fold a bot the profile just saved, or drop one it deleted.
     func applyProfileBot(_ bot: Bot) { state.apply(.bot(bot)) }
     func applyBotDeleted(_ botId: String) { state.apply(.botDeleted(botId: botId)) }
+    func applyRoom(_ room: Room) { state.apply(.room(room)) }
+    func applyRoomDeleted(_ groupId: String) { state.apply(.roomDeleted(groupId: groupId)) }
 
     func loadRoutines() async -> (routines: [Routine], runs: [RoutineRun]) {
         guard let client else { return ([], []) }

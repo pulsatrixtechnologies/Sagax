@@ -42,6 +42,8 @@ struct ChatListView: View {
     @ObservedObject private var sidebarPrefs = SidebarPrefsModel.shared
     /// The section header menu's prompts.
     @StateObject private var sectionActions = SidebarSectionActions()
+    /// WP11: the room row menu's prompts (rename, move, delete, copy).
+    @StateObject private var roomActions = RoomActions()
     @FocusState private var searchFocused: Bool
 
     /// Space between the header's glass buttons and whatever the list
@@ -129,6 +131,7 @@ struct ChatListView: View {
                 sidebarPrefs.unhideNewMessages(session)
                 sidebarPrefs.seedIfNeeded(session)
             }
+            .roomActionsPresenter(roomActions)
             .onValueChange(of: threadActions.created?.threadId) { threadId in
                 guard let created = threadActions.created, threadId != nil else { return }
                 threadActions.created = nil
@@ -1554,14 +1557,9 @@ extension ChatListView {
                     Label("Threads", systemImage: "list.bullet")
                 }
             }
-            if layout.personal, room.dm != true, room.peopleDm != true {
-                PersonalSectionPicker(key: PersonalSections.itemKey(group: room.id), layout: layout, actions: sectionActions)
-            }
-            Button {
-                sidebarPrefs.hide(session, room: room)
-            } label: {
-                Label("Hide from sidebar", systemImage: "eye.slash")
-            }
+            // rename, move (the person's own sections on an organization
+            // server), copy ID, Hide from sidebar, delete: the desktop's order
+            RoomRowMenu(room: room, actions: roomActions, personalLayout: layout.personal ? layout : nil, sectionActions: sectionActions)
         }
     }
 

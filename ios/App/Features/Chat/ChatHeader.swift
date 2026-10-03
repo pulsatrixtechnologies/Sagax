@@ -96,6 +96,11 @@ extension ChatView {
                 Label(String(localized: "Profile"), systemImage: "person.crop.circle")
             }
         }
+        if case let .room(room) = current, room.dm != true {
+            Button { showingRoomInfo = true } label: {
+                Label(String(localized: "Group info"), systemImage: "info.circle")
+            }
+        }
     }
 
     /// The name capsule opens the profile (rooms: their threads or the +
@@ -103,7 +108,14 @@ extension ChatView {
     /// presented.
     func openProfile() {
         guard case .bot = current else {
-            if current.supportsTasks { showingTasks = true } else { showingPlus = true }
+            // A team room opens its Room info (RM6); Threads is a row there.
+            if case let .room(room) = current, room.dm != true {
+                showingRoomInfo = true
+            } else if current.supportsTasks {
+                showingTasks = true
+            } else {
+                showingPlus = true
+            }
             return
         }
         switch ChatProfileRoute.presentation {
