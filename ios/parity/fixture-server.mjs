@@ -63,6 +63,8 @@ import {
 import { composerLabHook } from "./composer-lab.mjs";
 // PARITY_ROUTINES=1: a desktop-made routine and its runs for the WP8 UI tests (routine-lab.mjs).
 import { ROUTINE_LAB, seedRoutineLab, seedRoutineLabRuns } from "./routine-lab.mjs";
+// PARITY_RICH=1: a bot whose transcript holds every rich block, for the WP14 UI tests (rich-lab.mjs).
+import { RICH_LAB, seedRichLabBot, seedRichLabTranscript } from "./rich-lab.mjs";
 // PARITY_PLUGINS=1: connected apps, MCP sign-in and a bot without apps for the WP9 UI tests (plugin-lab.mjs).
 import {
   PLUGIN_LAB, closePluginLab, pluginLabHook, pluginLabServerEnv, seedPluginLab, startPluginLabBroker,
@@ -80,6 +82,24 @@ const ORG = process.env.PARITY_ORG === "1";
 // tests). Off by default: the reference captures never see it.
 const THREAD_TITLES = process.env.PARITY_THREAD_TITLES === "1";
 const PARITY_GENERATED_TITLE = "Fixture generated title";
+// PARITY_PRESETS=1 offers one imported preset in New bot (WP13's UI tests):
+// written into the preset store between the passes, as an import leaves it
+// (server/presets.ts). Off by default: the reference captures never see it.
+const PRESETS = process.env.PARITY_PRESETS === "1";
+export const PARITY_PRESET = {
+  id: "fixture-analyst", key: "analyst", name: "Fixture Analyst", packageName: "Fixture Pack", release: "1.0.0",
+  bot: { name: "Analyst", title: "Data analyst", description: "Reads the numbers and reports.", soul: "Placeholder: cite every figure.", appearance: { color: "purple" } },
+};
+function seedPresets(dataDir) {
+  const dir = join(dataDir, "org-library");
+  mkdirSync(dir, { recursive: true });
+  const { id, key, name, packageName, release, bot } = PARITY_PRESET;
+  writeFileSync(join(dir, "presets.json"), JSON.stringify({
+    version: 1,
+    presets: [{ id, source: "file", installId: "fixture-install", packageId: "fixture-pack", packageName, release, key, name, bot, addedAt: Date.now() }],
+    content: { "fixture-install": { skills: [], playbooks: [] } },
+  }, null, 2));
+}
 /** Organization fixture: the stub provider and the admin's session cookie. */
 let org = null;
 
@@ -703,11 +723,13 @@ async function main() {
   if (CARD_LAB) await seedCardLabBots(base, api);
   if (ROUTINE_LAB) await seedRoutineLab(base, api, seeded.ids);
   if (PLUGIN_LAB) await seedPluginLab(base, api, ROOT, seeded.ids);
+  if (RICH_LAB) await seedRichLabBot(base, api);
   await stopServer(child);
 
   seedTranscripts(dataDir, seeded);
   if (CARD_LAB) seedCardLabTranscripts(dataDir);
   if (ROUTINE_LAB) seedRoutineLabRuns(dataDir);
+  if (RICH_LAB) seedRichLabTranscript(dataDir, png);
   seedCommandRules(dataDir, seeded);
   const ownerMode = process.env.PARITY_OWNER === "1";
   if (ownerMode) {
@@ -717,6 +739,7 @@ async function main() {
       avatar: { version: "parityowner01", data: png(96, 96, ORG_AVATAR_RGB, { band: false }).toString("base64") },
     }), { mode: 0o600 });
   }
+  if (PRESETS) seedPresets(dataDir);
 
   child = startServer(port, webhook);
   await waitHealthy(base, child);

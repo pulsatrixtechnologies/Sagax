@@ -137,7 +137,8 @@ struct TextBubble: View {
                         source: message.text ?? "",
                         scrollIdentifier: "message-\(message.id)-scroll",
                         mentions: context.mentionPeers,
-                        mentionEveryone: context.mentionEveryone
+                        mentionEveryone: context.mentionEveryone,
+                        attachmentScope: (chat.threadId, message.id)
                     ) { url in
                         openLink(url, message)
                     }

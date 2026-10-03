@@ -92,6 +92,9 @@ struct ChatView: View {
     @AppStorage(PrefKey.islandSeen) var islandSeen = ""
     @AppStorage(PrefKey.activityDetail) var activityDetail = ActivityDetail.full.rawValue
     @AppStorage(PrefKey.quickReplies) var quickReplies = ""
+    /// The run card above the composer (ST4, WP14 `RunCardView`).
+    @AppStorage(RunCardPreference.key) var showRunCard = true
+    @ObservedObject var runCardDismissals = RunCardDismissals.shared
 
     init(chat: Chat) {
         self.chat = chat

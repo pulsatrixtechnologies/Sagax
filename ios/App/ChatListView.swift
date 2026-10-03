@@ -30,6 +30,8 @@ struct ChatListView: View {
     @State private var showingPlusMenu = false
     @State private var showingSearch = false
     @State private var showingCreateBot = false
+    /// The team a "New bot here" chose (NB3); nil from the + menu.
+    @State private var createBotSection: String?
     @State private var showingSettings = false
     @AppStorage(CollapsedSections.key) private var collapsedRaw = "[]"
     @State private var expandedBots = Set<String>()
@@ -1424,6 +1426,21 @@ extension ChatListView {
                         }
                         .disabled(!hasVisibleBots)
                     }
+                    // NB3: a new bot that starts in this team (the desktop's
+                    // Manage team > New bot). Server teams only: an
+                    // organization's sections are the person's own.
+                    if let named, layout?.personal != true, session.surfaceGate.allows(.createBot), session.surfaceGate.allows(.createBotTeam) {
+                        Button {
+                            Task { @MainActor in
+                                try? await Task.sleep(nanoseconds: 350_000_000)
+                                createBotSection = named
+                                showingCreateBot = true
+                            }
+                        } label: {
+                            Label("New bot here", systemImage: "plus.circle")
+                        }
+                        .accessibilityIdentifier("section-new-bot")
+                    }
                     if let layout, let id = HomeSectionKey.sectionID(for: key) {
                         SidebarSectionMenu(name: named, sectionID: id, layout: layout, actions: sectionActions, prefs: sidebarPrefs)
                     }
@@ -1574,7 +1591,7 @@ extension ChatListView {
                 .zIndex(1)
             }
             if showingCreateBot {
-                CreateBotSheet(close: { showingCreateBot = false }) { bot in
+                CreateBotSheet(section: createBotSection, close: { showingCreateBot = false }) { bot in
                     showingCreateBot = false
                     path.append(Chat.bot(bot))
                 }
@@ -1607,6 +1624,7 @@ extension ChatListView {
             if showingPlusMenu {
                 HomePlusMenu(canCreateBot: session.surfaceGate.allows(.createBot)) {
                     showingPlusMenu = false
+                    createBotSection = nil
                     showingCreateBot = true
                 } newGroup: {
                     showingPlusMenu = false

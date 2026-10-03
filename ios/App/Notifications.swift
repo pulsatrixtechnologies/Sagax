@@ -31,7 +31,8 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
         let content = UNMutableNotificationContent()
         content.title = notification.title
         content.body = notification.body
-        content.sound = .default
+        // Settings > Haptics > Notification sounds: off keeps the banner.
+        content.sound = NotificationSounds.isEnabled ? .default : nil
         content.categoryIdentifier = notification.isBlocking ? "SAGAX_APPROVAL" : "SAGAX_UPDATE"
         content.threadIdentifier = notification.threadId
         content.userInfo = [
@@ -59,7 +60,7 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
         // nothing for the conversation on a live call: no banner, no sound
         let threadId = notification.request.content.userInfo["threadId"] as? String
         if CallQuiet.shared.silences(threadId: threadId) { return completionHandler([]) }
-        completionHandler([.banner, .list, .sound, .badge])
+        completionHandler(NotificationSounds.isEnabled ? [.banner, .list, .sound, .badge] : [.banner, .list, .badge])
     }
 
     func userNotificationCenter(

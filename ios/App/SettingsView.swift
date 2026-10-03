@@ -173,6 +173,7 @@ private struct SettingsRootPage: View {
                     }
             }
             .environmentObject(session)
+            .environmentObject(model)
         }
         .sheet(item: Binding(get: { link.map(IdentifiedURL.init) }, set: { link = $0?.url })) { item in
             SafariSheet(url: item.url).ignoresSafeArea()
@@ -392,6 +393,7 @@ struct SettingsSpacer: View {
 struct UsageSettingsView: View {
     @Environment(\.themePalette) var themePalette
     @EnvironmentObject private var model: SettingsModel
+    @EnvironmentObject private var session: Session
 
     var body: some View {
         SettingsPage(title: "Usage") {
@@ -411,6 +413,11 @@ struct UsageSettingsView: View {
             SettingsFooter(text: model.usage?.budget?.exceeded == true
                 ? "The monthly budget is used up. Bots pause new paid work until next month or until the budget is raised on the computer."
                 : "Spending on paid engines this month, against the budget set on the computer.")
+            // What each bot spent (ST10), then the History for an admin.
+            UsageByBotSection()
+            if session.surfaceGate.allows(.usageHistory) {
+                UsageHistorySection()
+            }
         }
     }
 
@@ -452,6 +459,7 @@ struct HapticsSettingsView: View {
                 SettingsRow(title: "Off", accessory: haptics ? .none : .check, identifier: "haptics.off") { haptics = false }
             }
             SettingsFooter(text: "Small taps when you press buttons, switch options and send.")
+            NotificationSoundsCard()
         }
     }
 }
@@ -469,111 +477,18 @@ struct AdvancedSettingsView: View {
     @AppStorage(PrefKey.rosterDensity) private var rosterDensity = RosterDensity.default.rawValue
     @State private var showingUpdates = false
     @State private var showingWalkieVoice = false
+    /// Settings search (ST11): any page, by name or keyword.
+    @State private var query = ""
 
     var body: some View {
         ThemedForm {
-            Section("Computer") {
-                if let connection = session.connection {
-                    NavigationLink {
-                        ConnectedComputersView()
-                    } label: {
-                        ComputerSettingsRow(
-                            name: Text(verbatim: connection.name),
-                            status: computerStatusText,
-                            connected: session.status == .live
-                        )
-                    }
-                } else {
-                    Button {
-                        onConnect?()
-                    } label: {
-                        ComputerSettingsRow(name: Text("Connect a computer"), status: Text("Not connected"), connected: false)
-                    }
-                    .disabled(onConnect == nil)
-                }
-            }
-
-            Section {
-                Picker(selection: $activityDetail) {
-                    ForEach(ActivityDetail.allCases, id: \.rawValue) { level in
-                        Text(LocalizedStringKey(level.label)).tag(level.rawValue)
-                    }
-                } label: {
-                    Label { Text("Activity") } icon: { SettingsIcon(symbol: "wrench.and.screwdriver.fill", color: .purple) }
-                }
-
-                Picker(selection: $islandIntro) {
-                    ForEach(IslandIntro.allCases, id: \.rawValue) { option in
-                        Text(LocalizedStringKey(option.label)).tag(option.rawValue)
-                    }
-                } label: {
-                    Label { Text("Bot intro animation") } icon: { SettingsIcon(symbol: "sparkles", color: .pink) }
-                }
-
-                NavigationLink {
-                    QuickRepliesEditor()
-                } label: {
-                    Label { Text("Quick Replies") } icon: { SettingsIcon(symbol: "bolt.fill", color: .yellow) }
-                }
-            } header: {
-                Text("Chat")
-            } footer: {
-                Text(LocalizedStringKey(ActivityDetail(rawValue: activityDetail)?.caption ?? ""))
-            }
-
-            Section {
-                Picker(selection: Binding(
-                    get: { RosterDensity(stored: rosterDensity) },
-                    set: { rosterDensity = $0.rawValue }
-                )) {
-                    ForEach(RosterDensity.allCases, id: \.self) { density in
-                        Text(LocalizedStringKey(density.label)).tag(density)
-                    }
-                } label: {
-                    Label { Text("List density") } icon: { SettingsIcon(symbol: "list.bullet", color: .indigo) }
-                }
-                .accessibilityIdentifier("list-density")
-            } footer: {
-                Text(LocalizedStringKey(RosterDensity(stored: rosterDensity).caption))
-            }
-
-            Section("Voice") {
-                Button {
-                    showingWalkieVoice = true
-                } label: {
-                    Label { Text("Call voice") } icon: { SettingsIcon(symbol: "waveform", color: .green) }
-                }
-                .foregroundStyle(Theme.textPrimary)
-            }
-
-            if session.connection != nil {
-                Section("Workspace") {
-                    Button {
-                        showingUpdates = true
-                    } label: {
-                        Label { Text("Updates") } icon: { SettingsIcon(symbol: "bell.badge.fill", color: .red) }
-                    }
-                    .foregroundStyle(Theme.textPrimary)
-
-                    NavigationLink {
-                        TasksRoutinesView()
-                    } label: {
-                        Label { Text("Threads & Routines") } icon: { SettingsIcon(symbol: "calendar.badge.clock", color: .orange) }
-                    }
-                    .accessibilityIdentifier("settings-routines")
-
-                    // Composio accounts (Work, Personal, client accounts):
-                    // the sidecar serves them, a client session does not (PL1).
-                    if session.surfaceGate.allows(.connectedApps) {
-                        NavigationLink {
-                            ConnectedAppsView()
-                        } label: {
-                            Label { Text("Connected Apps") } icon: { SettingsIcon(symbol: "link", color: .blue) }
-                        }
-                    }
-                }
+            if query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                sections
+            } else {
+                SettingsSearchResults(query: query, closeSheet: closeSheet)
             }
         }
+        .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: Text("Search"))
         .navigationTitle("Advanced")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(.visible, for: .navigationBar)
@@ -590,6 +505,140 @@ struct AdvancedSettingsView: View {
             WalkieVoiceSheet(onSample: {})
         }
     }
+
+    @ViewBuilder
+    private var sections: some View {
+        Section("Computer") {
+            if let connection = session.connection {
+                NavigationLink {
+                    ConnectedComputersView()
+                } label: {
+                    ComputerSettingsRow(
+                        name: Text(verbatim: connection.name),
+                        status: computerStatusText,
+                        connected: session.status == .live
+                    )
+                }
+            } else {
+                Button {
+                    onConnect?()
+                } label: {
+                    ComputerSettingsRow(name: Text("Connect a computer"), status: Text("Not connected"), connected: false)
+                }
+                .disabled(onConnect == nil)
+            }
+        }
+
+        Section {
+            Picker(selection: $activityDetail) {
+                ForEach(ActivityDetail.allCases, id: \.rawValue) { level in
+                    Text(LocalizedStringKey(level.label)).tag(level.rawValue)
+                }
+            } label: {
+                Label { Text("Activity") } icon: { SettingsIcon(symbol: "wrench.and.screwdriver.fill", color: .purple) }
+            }
+
+            Picker(selection: $islandIntro) {
+                ForEach(IslandIntro.allCases, id: \.rawValue) { option in
+                    Text(LocalizedStringKey(option.label)).tag(option.rawValue)
+                }
+            } label: {
+                Label { Text("Bot intro animation") } icon: { SettingsIcon(symbol: "sparkles", color: .pink) }
+            }
+
+            NavigationLink {
+                QuickRepliesEditor()
+            } label: {
+                Label { Text("Quick Replies") } icon: { SettingsIcon(symbol: "bolt.fill", color: .yellow) }
+            }
+        } header: {
+            Text("Chat")
+        } footer: {
+            Text(LocalizedStringKey(ActivityDetail(rawValue: activityDetail)?.caption ?? ""))
+        }
+
+        Section {
+            Picker(selection: Binding(
+                get: { RosterDensity(stored: rosterDensity) },
+                set: { rosterDensity = $0.rawValue }
+            )) {
+                ForEach(RosterDensity.allCases, id: \.self) { density in
+                    Text(LocalizedStringKey(density.label)).tag(density)
+                }
+            } label: {
+                Label { Text("List density") } icon: { SettingsIcon(symbol: "list.bullet", color: .indigo) }
+            }
+            .accessibilityIdentifier("list-density")
+        } footer: {
+            Text(LocalizedStringKey(RosterDensity(stored: rosterDensity).caption))
+        }
+
+        Section("Voice") {
+            Button {
+                showingWalkieVoice = true
+            } label: {
+                Label { Text("Call voice") } icon: { SettingsIcon(symbol: "waveform", color: .green) }
+            }
+            .foregroundStyle(Theme.textPrimary)
+        }
+
+        if session.connection != nil {
+            Section("Workspace") {
+                Button {
+                    showingUpdates = true
+                } label: {
+                    Label { Text("Updates") } icon: { SettingsIcon(symbol: "bell.badge.fill", color: .red) }
+                }
+                .foregroundStyle(Theme.textPrimary)
+
+                NavigationLink {
+                    TasksRoutinesView()
+                } label: {
+                    Label { Text("Threads & Routines") } icon: { SettingsIcon(symbol: "calendar.badge.clock", color: .orange) }
+                }
+                .accessibilityIdentifier("settings-routines")
+
+                // Composio accounts (Work, Personal, client accounts):
+                // the sidecar serves them, a client session does not (PL1).
+                if session.surfaceGate.allows(.connectedApps) {
+                    NavigationLink {
+                        ConnectedAppsView()
+                    } label: {
+                        Label { Text("Connected Apps") } icon: { SettingsIcon(symbol: "link", color: .blue) }
+                    }
+                }
+            }
+        }
+
+        // WP12: the person's achievements (ST9), the organization (ST8,
+        // AU19) and About (ST12).
+        Section("Sagax") {
+            if session.connection != nil, session.surfaceGate.allows(.achievements), achievements.status != .unavailable {
+                NavigationLink {
+                    AchievementsPage()
+                } label: {
+                    Label { Text("Achievements") } icon: { SettingsIcon(symbol: "trophy.fill", color: .orange) }
+                }
+                .accessibilityIdentifier("settings-achievements")
+            }
+            if session.surfaceGate.allows(.organizationSettings) {
+                NavigationLink {
+                    OrganizationSettingsPage()
+                } label: {
+                    Label { Text("Organization") } icon: { SettingsIcon(symbol: "building.2.fill", color: .teal) }
+                }
+                .accessibilityIdentifier("settings-organization")
+            }
+            NavigationLink {
+                AboutPage()
+            } label: {
+                Label { Text("About") } icon: { SettingsIcon(symbol: "info.circle.fill", color: .gray) }
+            }
+            .accessibilityIdentifier("settings-about")
+        }
+    }
+
+    @ObservedObject private var achievements = AchievementStore.shared
 
     private var computerStatusText: Text {
         guard session.connections.count > 1 else { return session.status.settingsText }

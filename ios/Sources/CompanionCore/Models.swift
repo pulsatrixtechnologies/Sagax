@@ -153,6 +153,9 @@ public struct ToolActivity: Codable, Hashable, Sendable {
     /// characters) so it can be read without opening the teammate's thread.
     /// Previews still read `name`: the chip label is the summary.
     public var output: String?
+    /// The driver's one-line summary: for a shell step, the command itself.
+    /// The run card (`verify-steps.ts` `commandOf`) reads its steps here.
+    public var summary: String?
 
     /// The output worth expanding the chip for; nil when there is none.
     public var expandableOutput: String? {
@@ -365,6 +368,9 @@ public struct Message: Codable, Hashable, Identifiable, Sendable {
     public var state: String? = nil
     /// Whose approval a projected card waits on.
     public var ownerName: String? = nil
+    /// `kind == .digest`: the structured digest; the phone reads which
+    /// credentials paid for the turn from it (`DigestChip.tsx` TurnAccessChip).
+    public var digest: MessageDigest? = nil
 
     public var date: Date { Date(timeIntervalSince1970: at / 1000) }
 
@@ -1184,11 +1190,14 @@ public struct ConfigViewer: Codable, Hashable, Sendable {
     public var role: String?
     /// The administrator lets this person use shared bots only.
     public var botsReadOnly: Bool?
+    /// Whether this person may make bots; absent on an older server (yes).
+    public var canCreateBots: Bool?
 
-    public init(principalId: String? = nil, role: String? = nil, botsReadOnly: Bool? = nil) {
+    public init(principalId: String? = nil, role: String? = nil, botsReadOnly: Bool? = nil, canCreateBots: Bool? = nil) {
         self.principalId = principalId
         self.role = role
         self.botsReadOnly = botsReadOnly
+        self.canCreateBots = canCreateBots
     }
 }
 

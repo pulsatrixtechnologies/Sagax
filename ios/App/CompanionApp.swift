@@ -41,6 +41,8 @@ struct CompanionApp: App {
                 .id(language)
                 // Settings > App > Appearance: the skin, everywhere (ThemeStore.swift).
                 .themeRoot()
+                // Settings > Achievements: reads, reports and unlock banners (ST9).
+                .achievementsHost(session)
                 .onAppear {
                     SagaxSharedInbox.removeDirectories(olderThan: 60 * 60)
                     session.connect()
