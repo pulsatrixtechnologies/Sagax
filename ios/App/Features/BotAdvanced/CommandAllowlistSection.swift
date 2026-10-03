@@ -68,7 +68,6 @@ struct CommandAllowlistSection: View {
                         Button(String(localized: "Remove command"), role: .destructive) { Task { await remove(rule) } }
                             .disabled(saving != nil)
                     }
-                    .accessibilityIdentifier("allowlist-rule.\(rule.id)")
                 }
             }
         } header: {

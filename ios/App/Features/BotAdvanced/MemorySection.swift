@@ -444,7 +444,6 @@ struct BotMemorySection: View {
                 .foregroundStyle(Theme.textSecondary)
             }
         }
-        .accessibilityIdentifier("memory-journal.\(row.id)")
     }
 
     private func createTopic() {
@@ -555,7 +554,6 @@ struct BotMemoryEditor: View {
                             .disabled(model.saving)
                             .accessibilityIdentifier("memory-conflict-overwrite")
                     }
-                    .accessibilityIdentifier("memory-conflict")
                 }
                 Section {
                     if editing.readOnly {

@@ -76,7 +76,6 @@ struct BotHistorySection: View {
                     .foregroundStyle(Theme.textSecondary)
             }
         }
-        .accessibilityIdentifier("history-row.\(row.id)")
         .swipeActions(edge: .trailing) {
             if row.restorable, revision != nil, !rollingBack {
                 Button(String(localized: "Restore")) { target = row }.tint(Theme.accent)
