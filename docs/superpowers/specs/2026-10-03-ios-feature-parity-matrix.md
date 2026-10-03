@@ -529,6 +529,9 @@ separate shell work of the 2026-10-02 spec; this document adds the feature work 
 - **D4. Beyond-RC features the iPhone already has** (bot pin, delete bot, framing, generate
   picture, export bot): keep (proposed); the spec rule would remove them.
 
+
+**JC's answers (2026-10-03):** D1 yes: open the advanced panel on the sidecar for the owner (reads and edits, tested routes). D2 yes: message pin on iPhone and iPad. D3 open the room memory route (GET/PUT) on the sidecar. D4 keep the iPhone extras (pin bot, delete bot, framing), owner or admin only.
+
 ## Build plan
 
 ### Principles
