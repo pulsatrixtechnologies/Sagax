@@ -53,6 +53,7 @@ function deps(overrides: Partial<LiveRouteDeps> = {}): LiveRouteDeps & { saved: 
   const call: LiveCallState = { callId: "c1", botId: "bot1", threadId: "t1", client: "desktop", voice: "marin", startedAt: 1, status: "connecting" };
   return {
     saved,
+    enabled: () => true,
     calls: {
       start: vi.fn(async () => ({ call, sdp: "answer" })),
       end: vi.fn(async (id: string) => (id === "c1" ? { ...call, status: "ended" as const, endReason: "hung-up" as const } : null)),
@@ -60,16 +61,31 @@ function deps(overrides: Partial<LiveRouteDeps> = {}): LiveRouteDeps & { saved: 
       deviceRevoked: vi.fn((device: string) => (device === "phone-1" ? { ...call, client: "ios" as const, status: "ending" as const } : null)),
     },
     resolveTarget: (botId, threadId) => (botId === "bot1" && (threadId ?? "t1") === "t1" ? { botId, botName: "Ada", threadId: threadId ?? "t1" } : null),
-    settings: () => ({ configured: true, voice: "marin", readTypedReplies: true, idleMinutes: 5 }),
+    settings: () => ({ enabled: true, configured: true, voice: "marin", readTypedReplies: true, idleMinutes: 5 }),
     saveSettings: vi.fn(async (patch: SettingsPatch): Promise<LiveSettings> => {
       saved.push(patch);
-      return { configured: true, voice: "marin", readTypedReplies: true, idleMinutes: 5, ...patch };
+      return { enabled: true, configured: true, voice: "marin", readTypedReplies: true, idleMinutes: 5, ...patch };
     }),
     ...overrides,
   };
 }
 
 describe("live routes", () => {
+  it("answers 404 on every route and starts nothing while Live calls are off (the Sagax default)", async () => {
+    const d = deps({ enabled: () => false });
+    for (const [method, path, body] of [
+      ["POST", "/api/live/session", { botId: "bot1", sdp: "v=0\r\n", client: "android" }],
+      ["POST", "/api/live/call/end", { callId: "c1" }],
+      ["GET", "/api/live/call", undefined],
+      ["POST", "/api/live/device-revoked", {}],
+      ["PATCH", "/api/live/settings", { voice: "ash" }],
+    ] as const) {
+      expect((await request(d, method, path, body, { "x-openmausbot-companion": "1" })).status, path).toBe(404);
+    }
+    expect(d.calls.start).not.toHaveBeenCalled();
+    expect(d.saved).toEqual([]);
+  });
+
   it("starts a call and returns the answer", async () => {
     const d = deps();
     const res = await request(d, "POST", "/api/live/session", { botId: "bot1", sdp: "v=0\r\n", client: "ios" });
@@ -142,7 +158,7 @@ describe("live routes", () => {
   });
   it("never answers with the key", async () => {
     const res = await request(deps(), "PATCH", "/api/live/settings", { voice: "cedar" });
-    expect(res).toEqual({ status: 200, body: { live: { configured: true, voice: "cedar", readTypedReplies: true, idleMinutes: 5 } } });
+    expect(res).toEqual({ status: 200, body: { live: { enabled: true, configured: true, voice: "cedar", readTypedReplies: true, idleMinutes: 5 } } });
   });
   it("passes other paths and methods", async () => {
     expect(await request(deps(), "GET", "/api/live/summary")).toEqual({ status: 404, body: { from: "inline routes" } });

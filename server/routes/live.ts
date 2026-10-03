@@ -13,6 +13,8 @@ import { LiveCallBusyError, type LiveCallController } from "../live-call-control
 import { PASS, type RouteContext, type RouteHandler } from "./table.ts";
 
 export interface LiveRouteDeps {
+  /** Off (the Sagax default): every /api/live route answers 404. */
+  enabled(): boolean;
   calls: Pick<LiveCallController, "start" | "end" | "current" | "deviceRevoked">;
   /** The bot and chat a call goes to; no threadId means the bot's current chat. Null when either is unknown. */
   resolveTarget(botId: string, threadId: string | undefined): { botId: string; botName: string; threadId: string } | null;
@@ -61,6 +63,8 @@ async function bodyOf(req: IncomingMessage, readBody: RouteContext["readBody"]):
 export function createLiveRoutes(deps: LiveRouteDeps): RouteHandler {
   return async ({ req, res, path, method, auth, json, readBody }) => {
     if (!path.startsWith("/api/live/")) return PASS;
+    // Sagax: Live calls are off unless the server opted in (SAGAX_LIVE_CALLS=1).
+    if (!deps.enabled()) return json(res, 404, { error: "Live calls are not available on this server." });
 
     if (method === "POST" && path === "/api/live/session") {
       const parsed = sessionBody.safeParse(await bodyOf(req, readBody));

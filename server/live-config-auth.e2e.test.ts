@@ -6,7 +6,7 @@ import type { LiveSettings } from "../shared/wire.ts";
 
 describe("Live credential config authorization", () => {
   it("refuses paired client replacement and clearing while preserving owner/admin settings writes", async () => {
-    const fixture = await launchVerificationServer();
+    const fixture = await launchVerificationServer({ ...process.env, SAGAX_LIVE_CALLS: "1" });
     const remote = { "x-forwarded-for": "198.51.100.18", "x-forwarded-proto": "https" };
     const api = async (method: string, path: string, body?: unknown, headers: Record<string, string> = {}) => {
       const response = await fetch(`${fixture.info.url}${path}`, {

@@ -107,6 +107,8 @@ posixOnly("Live call e2e", () => {
         SAGAX_WEBHOOK_PORT: String(port + 1),
         SAGAX_OPENAI_LIVE_URL: live.url,
         SAGAX_OPENAI_LIVE_KEY: LIVE_KEY,
+        // Live calls are off in Sagax unless the server opts in
+        SAGAX_LIVE_CALLS: "1",
       },
       stdio: ["ignore", "pipe", "pipe"],
     });

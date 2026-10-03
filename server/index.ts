@@ -214,6 +214,7 @@ import {
   onConfigSaved,
   driverKeyBacked,
   CLAUDE_API_INSTANCE,
+  liveCallsEnabled,
   liveSettingsFor,
 } from "./config.ts";
 import { sweepThreadEventLogs, type ThreadLogRetentionCandidate } from "./thread-retention.ts";
@@ -21008,7 +21009,11 @@ const liveCalls = new LiveCallController({
   },
   broadcast: (frame) => broadcast(frame, { adminOnly: true }),
   settings: () => ({ key: cfg.live?.key ?? "", ...liveSettingsFor(cfg) }),
-  createSession: ({ key, sdp, botId, threadId, voice }) => createLiveSession({ key, sdp, voice, bot: liveBotFor(botId), history: liveHistoryFor(threadId) }),
+  createSession: ({ key, sdp, botId, threadId, voice }) => {
+    // Defense in depth: no OpenAI session while Live calls are off (the routes already 404).
+    if (!liveCallsEnabled()) throw new Error("Live calls are not available on this server.");
+    return createLiveSession({ key, sdp, voice, bot: liveBotFor(botId), history: liveHistoryFor(threadId) });
+  },
   // Node's WebSocket (undici) accepts headers in its second argument.
   openSocket: (url, key) => new WebSocket(url, { headers: { authorization: `Bearer ${key}` } } as unknown as string[]) as unknown as LiveSocket,
   attachUrl: (sessionId) => liveAttachUrl(sessionId),
@@ -21020,6 +21025,7 @@ const liveCalls = new LiveCallController({
 // from the companion instead (POST /api/live/device-revoked).
 sessions.onSessionRevoked((sessionId) => liveCalls.sessionRevoked(sessionId));
 ROUTES.push(createLiveRoutes({
+  enabled: () => liveCallsEnabled(),
   calls: liveCalls,
   resolveTarget: (botId, threadId) => {
     const bot = store.bot(botId);

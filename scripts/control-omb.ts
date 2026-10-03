@@ -398,6 +398,8 @@ export function verificationServerEnvironment(parentEnv: NodeJS.ProcessEnv, data
   // No-phone-home e2e: where the fixture logs every outbound connection
   // (server/testing/network-audit.mjs).
   if (parentEnv.SAGAX_TEST_NETWORK_AUDIT) childEnv.SAGAX_TEST_NETWORK_AUDIT = parentEnv.SAGAX_TEST_NETWORK_AUDIT;
+  // upstream Live calls are off in Sagax unless a check opts in
+  if (parentEnv.SAGAX_LIVE_CALLS) childEnv.SAGAX_LIVE_CALLS = parentEnv.SAGAX_LIVE_CALLS;
   return childEnv;
 }
 

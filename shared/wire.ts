@@ -689,6 +689,10 @@ export interface LiveCallState {
 
 /** Non-secret Live settings, as GET /api/config and PATCH /api/live/settings report them. */
 export interface LiveSettings {
+  /** Live calls are off in Sagax unless the server runs with SAGAX_LIVE_CALLS=1
+   * (our own voice call engine is the call path); off, every /api/live route
+   * answers 404 and no OpenAI session can start. */
+  enabled: boolean;
   configured: boolean;
   voice: string;
   readTypedReplies: boolean;

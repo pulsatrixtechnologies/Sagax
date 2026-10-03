@@ -879,9 +879,16 @@ export function roomTurnTimeoutMinutes(cfg: AppConfig): number {
 export const LIVE_IDLE_MINUTES_DEFAULT = 5;
 
 /** Non-secret Live settings. The key only shows up as `configured`. */
-export function liveSettingsFor(cfg: AppConfig): LiveSettings {
+/** Upstream's Live calls (OpenAI realtime) are off unless the server runs with
+ * SAGAX_LIVE_CALLS=1: Sagax's own voice call engine is the call path. */
+export function liveCallsEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
+  return env.SAGAX_LIVE_CALLS === "1";
+}
+
+export function liveSettingsFor(cfg: AppConfig, env: NodeJS.ProcessEnv = process.env): LiveSettings {
   const minutes = cfg.live?.idleMinutes;
   return {
+    enabled: liveCallsEnabled(env),
     configured: Boolean(cfg.live?.key?.trim()),
     voice: cfg.live?.voice ?? "",
     readTypedReplies: cfg.live?.readTypedReplies ?? true,

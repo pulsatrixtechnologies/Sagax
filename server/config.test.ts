@@ -1765,11 +1765,13 @@ describe("customMcpServers with url entries", () => {
 describe("live settings", () => {
   it("defaults to a 5 minute idle hang-up and reading typed replies", () => {
     expect(LIVE_IDLE_MINUTES_DEFAULT).toBe(5);
-    expect(liveSettingsFor({} as AppConfig)).toEqual({ configured: false, voice: "", readTypedReplies: true, idleMinutes: 5 });
+    expect(liveSettingsFor({} as AppConfig, {})).toEqual({ enabled: false, configured: false, voice: "", readTypedReplies: true, idleMinutes: 5 });
+    // Sagax: off unless the server opts in
+    expect(liveSettingsFor({} as AppConfig, { SAGAX_LIVE_CALLS: "1" }).enabled).toBe(true);
   });
   it("reports saved values and never the key", () => {
-    const settings = liveSettingsFor({ live: { key: "sk-test", voice: "sol", readTypedReplies: false, idleMinutes: 12 } } as AppConfig);
-    expect(settings).toEqual({ configured: true, voice: "sol", readTypedReplies: false, idleMinutes: 12 });
+    const settings = liveSettingsFor({ live: { key: "sk-test", voice: "sol", readTypedReplies: false, idleMinutes: 12 } } as AppConfig, {});
+    expect(settings).toEqual({ enabled: false, configured: true, voice: "sol", readTypedReplies: false, idleMinutes: 12 });
     expect(JSON.stringify(settings)).not.toContain("sk-test");
   });
   it("accepts idle minutes from 1 to 60 only", () => {

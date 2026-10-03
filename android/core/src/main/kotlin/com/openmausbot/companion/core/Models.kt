@@ -874,6 +874,12 @@ object LiveCallStatusSerializer : KSerializer<LiveCallStatus> {
 /** Non-secret Live settings (`LiveSettings` in `shared/wire.ts`). The key never appears here. */
 @Serializable
 data class LiveSettings(
+    /**
+     * Sagax: upstream Live calls are off unless the computer runs with
+     * SAGAX_LIVE_CALLS=1 (its /api/live routes answer 404 otherwise). Absent on
+     * an older harness, which reads as off: the phone offers no Live call.
+     */
+    val enabled: Boolean = false,
     val configured: Boolean = false,
     val voice: String = "",
     val readTypedReplies: Boolean = true,

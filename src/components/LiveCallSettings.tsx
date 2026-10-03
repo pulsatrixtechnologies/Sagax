@@ -13,7 +13,7 @@ const IDLE_CHOICES = [1, 2, 3, 5, 10, 15, 30, 60];
  * focus back on the gear. */
 export function LiveCallSettings({ onClose }: { onClose: () => void }) {
   const { state, dispatch } = useStore();
-  const live: LiveSettings = state.config?.live ?? { configured: false, voice: "", readTypedReplies: true, idleMinutes: 5 };
+  const live: LiveSettings = state.config?.live ?? { enabled: false, configured: false, voice: "", readTypedReplies: true, idleMinutes: 5 };
   const [saving, setSaving] = useState(false);
   const [changingKey, setChangingKey] = useState(false);
   const [error, setError] = useState<string | null>(null);

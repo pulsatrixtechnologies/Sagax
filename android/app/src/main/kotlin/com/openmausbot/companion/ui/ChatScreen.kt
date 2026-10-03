@@ -228,6 +228,11 @@ private fun LoadedChat(
     val liveCalls = environment.liveCalls
     val liveCall by liveCalls.state.collectAsState()
     var showingLiveSettings by remember { mutableStateOf(false) }
+    // Sagax: the Live call button shows only when the computer turned Live
+    // calls on (SAGAX_LIVE_CALLS=1); off by default, our voice call engine is
+    // the call path.
+    var liveCallsEnabled by remember { mutableStateOf(false) }
+    LaunchedEffect(session) { liveCallsEnabled = session.liveSettings()?.enabled == true }
     // The call that waits on this phone's first-call disclosure.
     var pendingLiveCall by remember { mutableStateOf<PendingLiveCall?>(null) }
     fun startLiveCall(call: PendingLiveCall) =
@@ -996,7 +1001,7 @@ private fun LoadedChat(
                             if (liveCalls.disclosureDue) pendingLiveCall = call else startLiveCall(call)
                         }
                     },
-                    showCall = LiveCallRules.offersCall(liveCall, state.liveCall),
+                    showCall = liveCallsEnabled && LiveCallRules.offersCall(liveCall, state.liveCall),
                     // A bot's face and its name pill are both the door to its
                     // profile; a room has no profile, so its pill opens the same
                     // sheet the + does.
