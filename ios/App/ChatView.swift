@@ -41,6 +41,10 @@ struct ChatView: View {
     @State var showingProfile = false
     @State var pushingProfile = false
     @State var showingWalkie = false
+    /// WP11: the Room info sheet (RM6), opened by a room's header.
+    @State var showingRoomInfo = false
+    /// The Room info's Threads row: the threads sheet once it has gone.
+    @State var roomInfoOpensThreads = false
     @AppStorage("walkie.target") var walkieTarget = ""
     /// WP3: failed sends, pasted chips, the busy choice, Steer and the "/" menu.
     @StateObject var power = ComposerModel()
@@ -169,6 +173,23 @@ struct ChatView: View {
         .sheet(isPresented: $showingProfile) {
             if case let .bot(bot) = current { ChatProfileRoute.destination(for: bot) }
         }
+        .sheet(isPresented: $showingRoomInfo, onDismiss: {
+            if roomInfoOpensThreads {
+                roomInfoOpensThreads = false
+                showingTasks = true
+            }
+        }) {
+            if case let .room(room) = current {
+                RoomInfoSheet(roomId: room.id, openThreads: {
+                    roomInfoOpensThreads = true
+                    showingRoomInfo = false
+                }, onDeleted: {
+                    showingRoomInfo = false
+                    dismiss()
+                })
+                .environmentObject(session)
+            }
+        }
         .fullScreenCover(isPresented: $showingWalkie) {
             WalkieView { chat in
                 showingWalkie = false
@@ -219,6 +240,9 @@ struct ChatView: View {
             if shown { dictation.stop() }
         }
         .onValueChange(of: showingTasks) { shown in
+            if shown { dictation.stop() }
+        }
+        .onValueChange(of: showingRoomInfo) { shown in
             if shown { dictation.stop() }
         }
         .onValueChange(of: showingProfile || pushingProfile) { shown in

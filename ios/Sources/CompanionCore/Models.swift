@@ -841,6 +841,8 @@ public struct BotOverview: Codable, Hashable, Sendable {
 public struct GroupResponder: Codable, Hashable, Sendable {
     public var kind: String
     public var botId: String?
+    /// An Auto room's fallback: the lead it had (`GroupDefaultResponder`).
+    public var fallbackBotId: String?
 }
 
 public struct Room: Codable, Hashable, Identifiable, Sendable {
@@ -1183,6 +1185,14 @@ public struct ConfigViewer: Codable, Hashable, Sendable {
     }
 }
 
+public struct ConfigDecider: Codable, Hashable, Sendable {
+    public struct Jobs: Codable, Hashable, Sendable {
+        public var roomRouting: Bool?
+    }
+    public var enabled: Bool?
+    public var jobs: Jobs?
+}
+
 public struct ConfigStatus: Codable, Sendable {
     public var composio: ConfigFlag?
     public var box: ConfigFlag?
@@ -1192,6 +1202,14 @@ public struct ConfigStatus: Codable, Sendable {
     /// Who is asking (`ConfigStatus.viewer` in shared/wire.ts). Absent on
     /// older computers.
     public var viewer: ConfigViewer? = nil
+    /// The decision model (Jev) and its jobs; a room in Auto routes with it
+    /// only while `roomRouting` is on (`jevRoomRoutingOn`).
+    public var decider: ConfigDecider? = nil
+
+    /// `jevRoomRoutingOn`: an Auto room with Jev off answers like a lead room.
+    public var jevRoomRoutingOn: Bool {
+        decider?.enabled == true && decider?.jobs?.roomRouting == true
+    }
 
     /// Whether synthesis is available on the paired computer. Deliberately
     /// provider-neutral: under ElevenLabs this is a key on file, while under

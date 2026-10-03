@@ -37,6 +37,8 @@ struct ChatListView: View {
     @State private var managingThreads: Chat?
     /// The shared thread and folder menus (Features/Threads) for every row.
     @StateObject private var threadActions = ThreadActions()
+    /// WP11: the room row menu's prompts (rename, move, delete, copy).
+    @StateObject private var roomActions = RoomActions()
     @FocusState private var searchFocused: Bool
 
     /// Space between the header's glass buttons and whatever the list
@@ -113,6 +115,7 @@ struct ChatListView: View {
             }
             .environmentObject(threadActions)
             .threadActionsPresenter(threadActions)
+            .roomActionsPresenter(roomActions)
             .onValueChange(of: threadActions.created?.threadId) { threadId in
                 guard let created = threadActions.created, threadId != nil else { return }
                 threadActions.created = nil
@@ -1476,6 +1479,7 @@ extension ChatListView {
             } label: {
                 Label("Threads", systemImage: "list.bullet")
             }
+            RoomRowMenu(room: room, actions: roomActions)
         }
     }
 

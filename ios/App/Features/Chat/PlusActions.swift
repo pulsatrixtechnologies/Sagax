@@ -162,6 +162,18 @@ extension ChatView {
                 id: "tasks", systemImage: "square.stack", title: "Threads",
                 subtitle: "Switch, rename or remove one"
             ) { showingTasks = true })
+            // WP11 (RM11): the desktop's Goal chip. A typed "/goal …" sends
+            // as a bounded team goal; tapping again takes it back out.
+            out.append(PlusAction(
+                id: "goal", systemImage: "target",
+                title: LocalizedStringKey(String(localized: "Goal")),
+                subtitle: LocalizedStringKey(String(localized: "Finish together: the team keeps working until the goal is complete"))
+            ) { toggleRoomGoal() })
+            out.append(PlusAction(
+                id: "room-info", systemImage: "info.circle",
+                title: LocalizedStringKey(String(localized: "Group info")),
+                subtitle: LocalizedStringKey(String(localized: "Members, instructions, memory"))
+            ) { showingRoomInfo = true })
         }
         out.append(PlusAction(
             id: "share", systemImage: "doc.plaintext", title: "Share transcript",
