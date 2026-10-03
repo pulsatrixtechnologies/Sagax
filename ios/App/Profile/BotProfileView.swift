@@ -205,11 +205,17 @@ struct BotProfileView: View {
 
     private var menuItems: [GlassMenuItem] {
         [
-            GlassMenuItem(id: "copy-id", title: Text("Copy ID"), systemImage: "doc.on.doc") { copyID() },
+            // The open conversation's (thread) id, as the desktop's Copy ID
+            // copies (SB23): `bot` is the chat's projection onto the thread
+            // on screen, `current` the stored record. The bot's own id is a long press on its name, so the
+            // panel keeps reference 07's four rows.
+            GlassMenuItem(id: "copy-id", title: Text("Copy ID"), systemImage: "doc.on.doc") { copy(bot.threadId) },
             GlassMenuItem(id: "threads", title: Text("Threads"), systemImage: "bubble.left.and.bubble.right") { showingThreads = true },
             GlassMenuItem(id: "advanced", title: Text("Advanced"), systemImage: "slider.horizontal.3") { showingAdvanced = true },
+        ] + (session.surfaceGate.allows(.botOwnerExtras) ? [
+            // D4: an owner's or an admin's, not a client session's.
             GlassMenuItem(id: "delete", title: Text("Delete Bot"), systemImage: "trash", destructive: true) { confirmingDelete = true },
-        ]
+        ] : [])
     }
 
     // MARK: Identity
@@ -234,6 +240,9 @@ struct BotProfileView: View {
                     .padding(.horizontal, Theme.Profile.textInset)
                     .frame(maxWidth: .infinity)
                     .frame(height: Theme.Profile.nameRow)
+                    .contextMenu {
+                        Button(String(localized: "Copy Bot ID"), systemImage: "person.text.rectangle") { copy(bot.id) }
+                    }
                     .accessibilityIdentifier("profile-name")
                 ProfileDivider(leading: Theme.Profile.textInset)
                 Text(role)
@@ -532,8 +541,8 @@ struct BotProfileView: View {
         }
     }
 
-    private func copyID() {
-        UIPasteboard.general.string = bot.id
+    private func copy(_ id: String) {
+        UIPasteboard.general.string = id
         withAnimation { copiedToast = true }
         Task {
             try? await Task.sleep(nanoseconds: 1_400_000_000)

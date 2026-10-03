@@ -1,6 +1,72 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "Copy Bot ID": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copy Bot ID"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copier l'ID du bot"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copiar ID do bot"
+          }
+        }
+      }
+    },
+    "Built-in Mac voices need no key, and this computer has none available. Switch the voice engine to ElevenLabs in Sagax on your computer to keep using voice.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Built-in Mac voices need no key, and this computer has none available. Switch the voice engine to ElevenLabs in Sagax on your computer to keep using voice."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Les voix intégrées du Mac n'ont besoin d'aucune clé, et cet ordinateur n'en a aucune. Passez le moteur de voix à ElevenLabs dans Sagax sur votre ordinateur pour continuer à utiliser la voix."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "As vozes integradas do Mac não precisam de chave, e este computador não tem nenhuma. Mude o mecanismo de voz para ElevenLabs no Sagax do seu computador para continuar usando voz."
+          }
+        }
+      }
+    },
+    "Any OpenAI-compatible server running Chatterbox works, no key needed. Set its address and model id in Sagax on your computer.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Any OpenAI-compatible server running Chatterbox works, no key needed. Set its address and model id in Sagax on your computer."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tout serveur compatible OpenAI qui exécute Chatterbox fonctionne, sans clé. Réglez son adresse et l'identifiant du modèle dans Sagax sur votre ordinateur."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Qualquer servidor compatível com OpenAI rodando Chatterbox funciona, sem chave. Defina o endereço e o id do modelo no Sagax do seu computador."
+          }
+        }
+      }
+    },
     "List density": {
       "localizations": {
         "en": {

@@ -561,8 +561,9 @@ struct AdvancedSettingsView: View {
                         Label { Text("Threads & Routines") } icon: { SettingsIcon(symbol: "calendar.badge.clock", color: .orange) }
                     }
 
-                    // Composio accounts (Work, Personal, client accounts).
-                    if session.canAdminister {
+                    // Composio accounts (Work, Personal, client accounts):
+                    // the sidecar serves them, a client session does not (PL1).
+                    if session.surfaceGate.allows(.connectedApps) {
                         NavigationLink {
                             ConnectedAppsView()
                         } label: {

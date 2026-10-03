@@ -1,0 +1,162 @@
+// The composer's "+" sheet and its action list: the one registry new chat
+// actions are added to (WP3), drawn exactly as before the split.
+import SwiftUI
+import CompanionCore
+
+extension ChatView {
+    // MARK: - The + sheet
+
+    /// What the composer's + opens: a glass sheet of the things you can do
+    /// here, each with a line saying what it does. Rises above the composer;
+    /// tapping anywhere else, or the × the + became, puts it away.
+    @ViewBuilder
+    var plusSheet: some View {
+        if showingPlus {
+            ZStack(alignment: .bottom) {
+                Color.black.opacity(Theme.palette.isDark ? 0.35 : 0.2)
+                    .ignoresSafeArea()
+                    .onTapGesture { withAnimation(.snappy(duration: 0.28)) { showingPlus = false } }
+
+                VStack(spacing: 0) {
+                    ForEach(plusActions) { action in
+                        Button {
+                            withAnimation(.snappy(duration: 0.28)) { showingPlus = false }
+                            action.run()
+                        } label: {
+                            HStack(spacing: 16) {
+                                Image(systemName: action.systemImage)
+                                    .font(.system(size: 20, weight: .medium))
+                                    .foregroundStyle(action.destructive ? Theme.destructiveMenu : Theme.textPrimary)
+                                    .frame(width: 44, height: 44)
+                                    .background(Circle().fill(Theme.textPrimary.opacity(0.10)))
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(action.title)
+                                        .font(.system(size: 19, weight: .medium))
+                                        .foregroundStyle(action.destructive ? Theme.destructiveMenu : Theme.textPrimary)
+                                    Text(action.subtitle)
+                                        .font(.system(size: 13))
+                                        .foregroundStyle(Theme.textSecondary)
+                                }
+                                Spacer(minLength: 0)
+                            }
+                            .padding(.horizontal, 18)
+                            .frame(height: 64)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(action.disabled)
+                        .opacity(action.disabled ? 0.45 : 1)
+                        .accessibilityIdentifier("plus-\(action.id)")
+                    }
+                }
+                .padding(.vertical, 10)
+                .frame(maxWidth: CompanionLayout.chatWidth, alignment: .leading)
+                .glassSheet(cornerRadius: 30)
+                .padding(.horizontal, 12)
+                // above the composer row (30 pt bottom inset, 44 pt tall)
+                .padding(.bottom, Theme.Chat.composerBottom + Theme.Metric.glassLarge + 12)
+                .frame(maxWidth: .infinity)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+            .transition(.opacity)
+        }
+    }
+
+    struct PlusAction: Identifiable {
+        let id: String
+        let systemImage: String
+        let title: LocalizedStringKey
+        let subtitle: LocalizedStringKey
+        var destructive = false
+        var disabled = false
+        let run: () -> Void
+    }
+
+    var plusActions: [PlusAction] {
+        let canAddAttachment = attachments.count < AttachmentPolicy.maximumItems
+            && !preparingAttachments && !sendingMessage
+        var out: [PlusAction] = [
+            PlusAction(
+                id: "photos", systemImage: "photo.on.rectangle", title: "Photo Library",
+                subtitle: "Add a photo to this message", disabled: !canAddAttachment
+            ) { showingPhotoPicker = true },
+            PlusAction(
+                id: "files", systemImage: "paperclip", title: "Choose File",
+                subtitle: "Add a document from Files", disabled: !canAddAttachment
+            ) { showingFileImporter = true },
+            PlusAction(
+                id: "commands", systemImage: "command",
+                title: LocalizedStringKey(String(localized: "Slash commands")),
+                subtitle: LocalizedStringKey(String(localized: "Diff, retry, steer and more")),
+                disabled: preparingAttachments || sendingMessage
+            ) {
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.75)) { showCommandHUD = true }
+            },
+        ]
+        if case let .bot(bot) = current {
+            out.append(PlusAction(
+                id: "task", systemImage: "plus.square.on.square", title: "New thread",
+                subtitle: "Start a fresh thread with \(bot.name)"
+            ) { Task {
+                if let created = await session.createTask(for: bot, title: nil) {
+                    selectedThreadId = created.threadId
+                }
+            } })
+            out.append(PlusAction(
+                id: "tasks", systemImage: "square.stack", title: "Threads",
+                subtitle: "Switch, rename or remove one"
+            ) { showingTasks = true })
+            out.append(PlusAction(
+                id: "settings", systemImage: "gearshape", title: "Bot settings",
+                subtitle: "Model, profile, voice and notifications"
+            ) { openProfile() })
+            out.append(PlusAction(
+                id: "computer", systemImage: "display", title: "Watch computer",
+                subtitle: "Live view of what \(bot.name) is doing"
+            ) { showingComputer = true })
+            out.append(PlusAction(
+                id: "voice", systemImage: "waveform",
+                title: LocalizedStringKey(String(localized: "Voice mode")),
+                subtitle: LocalizedStringKey(String(localized: "Talk to \(bot.name) hands-free"))
+            ) { startVoiceMode() })
+        }
+        if case let .room(room) = current, room.dm != true {
+            out.append(PlusAction(
+                id: "task", systemImage: "plus.square.on.square", title: "New thread",
+                subtitle: "Start a fresh conversation in \(room.name)",
+                disabled: current.busy || hasPendingApproval
+            ) { Task { await session.createTask(for: room, title: nil) } })
+            out.append(PlusAction(
+                id: "tasks", systemImage: "square.stack", title: "Threads",
+                subtitle: "Switch, rename or remove one"
+            ) { showingTasks = true })
+        }
+        out.append(PlusAction(
+            id: "share", systemImage: "doc.plaintext", title: "Share transcript",
+            subtitle: "This thread as Markdown"
+        ) {
+            Task {
+                if let url = await session.export(threadId: current.threadId, format: "markdown") {
+                    shareFile = ShareFile(url: url)
+                }
+            }
+        })
+        out.append(PlusAction(
+            id: "share-json", systemImage: "curlybraces", title: "Share as JSON",
+            subtitle: "Structured transcript data"
+        ) {
+            Task {
+                if let url = await session.export(threadId: current.threadId, format: "json") {
+                    shareFile = ShareFile(url: url)
+                }
+            }
+        })
+        if current.busy, case let .bot(bot) = current {
+            out.append(PlusAction(
+                id: "stop", systemImage: "stop.fill", title: "Interrupt",
+                subtitle: "Stop the current turn", destructive: true
+            ) { Task { await session.interrupt(bot: bot) } })
+        }
+        return out
+    }
+}
