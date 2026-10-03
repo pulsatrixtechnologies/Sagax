@@ -52,15 +52,37 @@ const boundedSecret = (value, maximum = 8_192) =>
     ? value
     : null;
 
+const MAX_RETRY_AFTER_MS = 24 * 60 * 60 * 1_000;
+
 export class ControlPlaneError extends Error {
-  constructor(code, status = 0, requestId = "") {
+  constructor(code, status = 0, requestId = "", retryAfterMs = 0) {
     super(code);
     this.name = "ControlPlaneError";
     this.code = code;
     this.status = status;
     this.requestId = REQUEST_ID.test(requestId) ? requestId : "";
+    this.retryAfterMs =
+      Number.isSafeInteger(retryAfterMs) && retryAfterMs > 0
+        ? Math.min(retryAfterMs, MAX_RETRY_AFTER_MS)
+        : 0;
   }
 }
+
+/** Only the delay-seconds form is accepted; an HTTP date is ignored. */
+function retryAfterMilliseconds(value) {
+  const input = stringValue(value)?.trim() ?? "";
+  if (!/^[0-9]{1,6}$/.test(input)) return 0;
+  return Math.min(Number(input) * 1_000, MAX_RETRY_AFTER_MS);
+}
+
+const ENDPOINT_STATUSES = new Set([
+  "pending",
+  "provisioning",
+  "ready",
+  "deleting",
+  "deleted",
+  "error",
+]);
 
 function statusErrorCode(status) {
   if (status === 400 || status === 422) return "invalid_request";
@@ -216,6 +238,7 @@ export function createControlPlaneClient({
         code ?? statusErrorCode(response.status),
         response.status,
         response.headers.get("x-request-id") ?? "",
+        retryAfterMilliseconds(response.headers.get("retry-after")),
       );
     }
     if (!allowEmpty && !plainObject(payload)) {
@@ -372,6 +395,29 @@ export function createControlPlaneClient({
       const connectorToken = boundedSecret(payload.connectorToken, 16_384);
       if (!endpoint || !connectorToken) throw new ControlPlaneError("invalid_response");
       return { endpoint, connectorToken };
+    },
+
+    /** The server's view of this installation's endpoint, or null when it
+     * has none (never allocated, or removed by owner cleanup or idle
+     * reclaim). Never returns or requests a connector token. */
+    async getEndpoint(installationCredential) {
+      if (
+        typeof installationCredential !== "string" ||
+        !INSTALLATION_CREDENTIAL.test(installationCredential)
+      ) {
+        throw new ControlPlaneError("signed_out", 401);
+      }
+      const { payload } = await request("/v1/installations/self/endpoint", {
+        token: installationCredential,
+      });
+      if (payload.endpoint === null) return null;
+      const endpoint = validatedEndpoint(payload.endpoint);
+      if (!endpoint) throw new ControlPlaneError("invalid_response");
+      const status = stringValue(plainObject(payload.endpoint)?.status);
+      return {
+        url: endpoint.url,
+        status: status !== null && ENDPOINT_STATUSES.has(status) ? status : "unknown",
+      };
     },
 
     async deleteEndpoint(installationCredential) {

@@ -12,16 +12,18 @@ const B = "pr_00000000-0000-4000-8000-00000000000b";
 
 function harness() {
   const dataDir = mkdtempSync(join(tmpdir(), "engine-logins-"));
-  const made: Array<{ driver: string; env: Record<string, string | undefined>; finish: () => Promise<void>; signedOut: boolean }> = [];
+  const made: Array<{ driver: string; home: string; env: Record<string, string | undefined>; finish: () => Promise<void>; signedOut: boolean }> = [];
   const logins = new PrincipalEngineLogins({
     dataDir,
     now: () => 42,
     instance: (id) => (id === "claude" ? { driver: "claudeAgent", cli: "claude", environment: { ANTHROPIC_API_KEY: "sk-ant-workspace" } }
       : id === "codex" ? { driver: "codex", cli: "codex" }
-        : id === "grok" ? { driver: "grokAgent", cli: "grok" } : null),
-    controller: ({ driver, environment, onAuthenticated }) => {
+        : id === "grok" ? { driver: "grokAgent", cli: "grok", environment: { XAI_API_KEY: "xai-workspace" } }
+          : id === "kimi" ? { driver: "kimiAgent", cli: "kimi" }
+            : id === "cursor" ? { driver: "cursorAgent", cli: "cursor-agent" } : null),
+    controller: ({ driver, home, environment, onAuthenticated }) => {
       let phase: ProviderAuthenticationStatus["phase"] = "waiting";
-      const record = { driver, env: environment(), finish: async () => { phase = "succeeded"; await onAuthenticated(); }, signedOut: false };
+      const record = { driver, home, env: environment(), finish: async () => { phase = "succeeded"; await onAuthenticated(); }, signedOut: false };
       made.push(record);
       const controller: LoginController = {
         start: async () => ({ flowId: `flow-${made.length}`, phase: "waiting", kind: "device", url: "https://example.test/device", code: "TEST-1" }) as never,
@@ -62,9 +64,22 @@ describe("PrincipalEngineLogins", () => {
     await logins.start(A, "claude", "session-a");
     expect(made[0]!.env.CLAUDE_CONFIG_DIR).toBe(join(dataDir, "principals", A, "claude"));
     expect(made[0]!.env.ANTHROPIC_API_KEY).toBeUndefined();
-    await expect(logins.start(A, "grok", "session-a")).rejects.toMatchObject({ status: 404 });
+    await expect(logins.start(A, "cursor", "session-a")).rejects.toMatchObject({ status: 404 });
     await expect(logins.start(A, "nope", "session-a")).rejects.toMatchObject({ status: 404 });
     expect(() => logins.loginDir("../etc", "codex")).toThrow();
+  });
+
+  it("Grok and Kimi sign in by device code into the person's own engine home, with no key", async () => {
+    const { dataDir, logins, made } = harness();
+    await logins.start(A, "grok", "session-a");
+    expect(made[0]).toMatchObject({ driver: "grokAgent", home: join(dataDir, "principals", A, "grok") });
+    expect(made[0]!.env.XAI_API_KEY).toBeUndefined();
+    await made[0]!.finish();
+    expect(logins.signedIn(A, "grokAgent")).toBe(true);
+    expect(logins.signedIn(B, "grokAgent")).toBe(false);
+    await logins.start(B, "kimi", "session-b");
+    expect(made[1]).toMatchObject({ driver: "kimiAgent", home: join(dataDir, "principals", B, "kimi") });
+    expect(statSync(made[1]!.home).mode & 0o777).toBe(0o700);
   });
 
   it("keeps flows per person and per session: another session cannot read or steal them", async () => {

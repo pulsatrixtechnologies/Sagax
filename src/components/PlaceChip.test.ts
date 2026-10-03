@@ -130,11 +130,11 @@ describe("the composer's place menu (regression: #54 left only Follow this bot's
 
   it("on a solo server hides only Cloud while both flags are off, never the local places", () => {
     fixture.config = FLAGS[0];
-    expect(menuItems()).toEqual(["Follow this bot&#x27;s setting", "Local VM", "This computer"]);
+    expect(menuItems()).toEqual(["Auto", "Local VM", "This computer"]);
     for (const config of FLAGS.slice(1)) {
       fixture.config = config;
       const items = menuItems(config.features.boatComputer ? {} : { cloudBackend: "vps" });
-      expect(items).toEqual(["Follow this bot&#x27;s setting", "Cloud computer", "Local VM", "This computer"]);
+      expect(items).toEqual(["Auto", "Cloud computer", "Local VM", "This computer"]);
     }
   });
 });

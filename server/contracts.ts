@@ -6,6 +6,7 @@
 // readable.
 
 import type { ApprovalMode } from "../shared/approval-mode.ts";
+import type { ToolScope } from "../shared/tool-scope.ts";
 import type { EffortLevel } from "../shared/wire.ts";
 import type { HarnessCommand } from "../shared/harness-commands.ts";
 import type {
@@ -122,6 +123,9 @@ export interface TurnAccessInput {
   claudeConfigDir?: string;
   codexHome?: string;
   codexOwnerKey?: boolean;
+  /** Grok Build, Kimi Code, Gemini CLI, pi: the payer's own home for the
+   * engine (HOME, KIMI_CODE_HOME, GEMINI_CLI_HOME, PI_CODING_AGENT_DIR). */
+  engineHome?: string;
 }
 
 export interface SendTurnInput {
@@ -141,6 +145,8 @@ export interface SendTurnInput {
   /** Per-bot approval policy, reasserted by providers on every turn so a
    * resumed native session cannot retain a stale, more permissive mode. */
   approvalMode?: ApprovalMode;
+  /** Fresh owner selection, independent of execution approval and resume state. */
+  toolScope?: ToolScope;
   /** A guest drives this turn on an OMB Cloud home: it runs with no shell
    * or command execution and reads nothing outside its own folder. Sent
    * only to a driver whose capabilities.guestTurns is "confined"; the harness
@@ -194,6 +200,11 @@ export interface SendTurnInput {
    * systemVolatile describes this turn even when its text is unchanged from
    * the previous turn, so digest-based delivery must not suppress the note. */
   mentionTurn?: boolean;
+  /** The thread is on a live voice call: keep the engine process warm from
+   * turn to turn. A driver that pools one process per thread hands per-turn
+   * credentials to it through files it rewrites each turn, so a new turn's
+   * token never forces a relaunch (docs/voice-mode-xai.md, "Latency"). */
+  keepWarm?: boolean;
   /** Coordinated teammate turns may resume a Claude conversation whose
    * earlier system prompt contained a different assignment. Refresh that
    * prompt when the provider supports it; the current brief also arrives
@@ -277,6 +288,10 @@ export interface SendTurnInput {
    * Claude driver then drops --strict-mcp-config only; other drivers ignore
    * it. Their tools ride the normal permission flow, never pre-allowed. */
   claudeAiConnectors?: boolean;
+  /** Claude Code plugins installed on the bot (server/bot-plugins.ts): one
+   * folder each, already stripped of hooks, MCP and LSP servers. The Claude
+   * driver loads each with --plugin-dir; other drivers ignore them. */
+  pluginDirs?: string[];
   /** The person typed one of the engine's own slash commands
    * (shared/harness-commands.ts): `text` is that command line, verbatim.
    * Codex hands a skill's file with the text (`path`); Claude reads the
@@ -301,6 +316,9 @@ export interface HarnessCommandScope {
   /** The turn keeps the claude.ai connectors of the account it runs on
    * (server/harness-connectors.ts), so their MCP prompts are listed. */
   claudeAiConnectors?: boolean;
+  /** The bot's Claude Code plugins (server/bot-plugins.ts): their commands
+   * and skills are listed. */
+  pluginDirs?: string[];
 }
 
 /** An MCP server this machine starts and talks to over stdio. */
@@ -323,6 +341,10 @@ export type McpServerSpec = StdioMcpSpec | RemoteMcpSpec;
 
 export interface TurnStartResult {
   turnId: TurnId;
+  /** The turn went to an engine process that was already running (no cold
+   * start). Reported by drivers that pool a process per thread; absent
+   * elsewhere. Diagnostics only (server/voice-latency.ts). */
+  reused?: boolean;
 }
 
 export interface ProviderAdapter {

@@ -4,10 +4,9 @@ import { createPortal } from "react-dom";
 import {
   Archive,
   BellDot,
-  CalendarDays,
   Check,
   ChevronRight,
-
+  CalendarDays,
   ClipboardCopy,
   ArrowLeftRight,
   Star,
@@ -17,8 +16,8 @@ import {
   FolderPlus,
   Library,
   Loader2,
-  Network,
   MoreHorizontal,
+  Network,
   Pencil,
   Pin,
   PinOff,
@@ -33,6 +32,7 @@ import {
   PictureInPicture2,
 } from "lucide-react";
 import { api, useStore, formatTime, visibleMessages, currentTaskBot, type AppState, type Bot, type Group } from "@/state/store";
+import { approvalModeFor } from "../../shared/approval-mode";
 
 import { peerLine } from "@/lib/peer-message";
 import { viewerMayDeleteGroup, viewerOwnsGroup } from "@/lib/group-owner";
@@ -77,6 +77,8 @@ import {
 import { isRoutineProblemRun } from "@/lib/routines";
 import type { LocaleKey } from "@/locales";
 import { ConfirmDialog } from "./ConfirmDialog";
+import { FullAccessWarning } from "./FullAccessWarning";
+import { LocalComputerAutoWarning } from "./LocalComputerAutoWarning";
 import { WorkingDots } from "./WorkingIndicator";
 import { nextRename } from "@/lib/rename";
 import { useDesktopCapabilities } from "./DesktopCapabilities";
@@ -244,6 +246,12 @@ interface MenuState {
   botId: string;
   x: number;
   y: number;
+}
+
+/** The same point the bot row's context menu and "more" button already use. */
+function openBotContextMenu(onMenu: (menu: MenuState) => void, botId: string, event: React.MouseEvent) {
+  event.preventDefault();
+  onMenu({ botId, x: event.clientX, y: event.clientY });
 }
 
 function groupPreview(group: Group, bots: Bot[]): string {
@@ -1214,6 +1222,7 @@ export function BotThreadList({ bot, selected, density = "comfortable", query = 
   const [folderDrop, setFolderDrop] = useState<{ id: string; place: "before" | "after" } | null>(null);
   const draggingFolder = useRef<string | null>(null);
   const [showAll, setShowAll] = useState(false);
+  const [permissionRefresh, setPermissionRefresh] = useState<{ threadId: string; kind: "full" | "local-auto" } | null>(null);
   const currentProjectId = tasks.find((task) => task.threadId === bot.threadId)?.projectId;
   useEffect(() => {
     if (selected && currentProjectId) setCollapsed((previous) => {
@@ -1251,7 +1260,20 @@ export function BotThreadList({ bot, selected, density = "comfortable", query = 
       onMove={(projectId) => dispatch({ type: "updateTask", botId: bot.id, threadId: task.threadId, patch: { projectId } })}
       onArchive={(archivedAt) => dispatch({ type: "updateTask", botId: bot.id, threadId: task.threadId, patch: { archivedAt } })}
       onPin={(pinned) => dispatch({ type: "updateTask", botId: bot.id, threadId: task.threadId, patch: { pinned } })}
-      onSnooze={(snoozedUntil) => dispatch({ type: "updateTask", botId: bot.id, threadId: task.threadId, patch: { snoozedUntil } })} />;
+      onSnooze={(snoozedUntil) => dispatch({ type: "updateTask", botId: bot.id, threadId: task.threadId, patch: { snoozedUntil } })}
+      onRefreshPermissions={() => {
+        const mode = approvalModeFor(bot);
+        const threadMode = approvalModeFor(thread);
+        if (mode === "full" && threadMode !== "full") {
+          setPermissionRefresh({ threadId: task.threadId, kind: "full" });
+          return;
+        }
+        if (mode === "auto" && bot.computer === "local" && threadMode !== "auto") {
+          setPermissionRefresh({ threadId: task.threadId, kind: "local-auto" });
+          return;
+        }
+        dispatch({ type: "refreshTaskPermissions", botId: bot.id, threadId: task.threadId });
+      }} />;
   };
   const ungrouped = visibleTasks.filter((task) => !projects.some((project) => project.id === task.projectId));
   const projectToEdit = projects.find((project) => project.id === editingProject);
@@ -1356,6 +1378,25 @@ export function BotThreadList({ bot, selected, density = "comfortable", query = 
       {projects.length > 0 && ungrouped.length > 0 && <div className="pl-6 pr-3 pb-1 pt-2 text-[10.5px] text-sidebar-ink-secondary/70">{t("task.list")}</div>}
       {ungrouped.map(renderThread)}
       {!query && !showAll && tasks.length > visibleTasks.length && <button type="button" onClick={() => setShowAll(true)} className="pl-6 pr-3 py-1.5 text-[11px] text-sidebar-ink-secondary hover:text-sidebar-ink">{t("task.showAll", { count: tasks.length })}</button>}
+      <FullAccessWarning
+        open={permissionRefresh?.kind === "full"}
+        scope="thread"
+        onCancel={() => setPermissionRefresh(null)}
+        onConfirm={() => {
+          const threadId = permissionRefresh?.threadId;
+          setPermissionRefresh(null);
+          if (threadId) dispatch({ type: "refreshTaskPermissions", botId: bot.id, threadId });
+        }}
+      />
+      <LocalComputerAutoWarning
+        open={permissionRefresh?.kind === "local-auto"}
+        onCancel={() => setPermissionRefresh(null)}
+        onConfirm={() => {
+          const threadId = permissionRefresh?.threadId;
+          setPermissionRefresh(null);
+          if (threadId) dispatch({ type: "refreshTaskPermissions", botId: bot.id, threadId, acknowledgeLocalAuto: true });
+        }}
+      />
       {projectToEdit && <BotProjectDialog bot={bot} project={projectToEdit} onClose={() => setEditingProject(null)} />}
       </>}
     </div>
@@ -1541,8 +1582,7 @@ export function BotListItem({
     </>
   );
   const onContextMenu = (event: React.MouseEvent) => {
-    event.preventDefault();
-    onMenu({ botId: bot.id, x: event.clientX, y: event.clientY });
+    openBotContextMenu(onMenu, bot.id, event);
   };
   // Threads off: an untouched extra thread never strands the person; the row
   // lands back on their latest conversation (see thread-home.ts).
@@ -2123,6 +2163,7 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
     document.addEventListener("keydown", closeOnEscape);
     return () => document.removeEventListener("keydown", closeOnEscape);
   }, [open, onClose, confirm, deletingRoom]);
+
 
   useEffect(() => {
     if (remoteClient) return;

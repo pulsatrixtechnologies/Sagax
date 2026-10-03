@@ -132,6 +132,7 @@ describe("UserSandboxManager", () => {
       remove: () => Promise.reject(new Error("down")), exec: () => Promise.reject(new Error("down")),
       desktopStream: () => Promise.reject(new Error("down")), pause: () => Promise.reject(new Error("down")),
       resume: () => Promise.reject(new Error("down")), stats: () => Promise.reject(new Error("down")),
+      stdioStream: () => Promise.reject(new Error("down")),
     };
     const m = new UserSandboxManager({ client: down, instance: "default", stateFile: join(dir, "x.json") });
     expect((await m.status(ALICE)).state).toBe("unavailable");

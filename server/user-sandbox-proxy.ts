@@ -64,8 +64,59 @@ export async function userSandboxProxyRequest(frame: unknown, connection: { url:
   }
 }
 
+/** The tool server name of a person's own MCP server command relayed to
+ * their server environment (server/sandbox-stdio-mcp.ts): every frame goes
+ * through as is, notifications included. */
+export const PERSONAL_STDIO_TOOL_SERVER = "sagax-stdio";
+const PERSONAL_STDIO_ENDPOINT = "/api/internal/personal-mcp";
+
+/** One frame of the relay: the server's answer for a request, nothing for a
+ * notification. Never throws: a failure answers the request. */
+export async function personalStdioRelayRequest(frame: unknown, connection: { url: string; token: string }, fetchImpl: typeof fetch = fetch): Promise<unknown | undefined> {
+  if (!frame || typeof frame !== "object" || Array.isArray(frame)) return failure(null, null, "Invalid request.", -32600);
+  const message = frame as { id?: RpcId; jsonrpc?: unknown; method?: unknown };
+  const isRequest = typeof message.method === "string" && message.id !== undefined && message.id !== null;
+  try {
+    const url = new URL(connection.url);
+    if (!connection.token || url.protocol !== "http:" || !["127.0.0.1", "localhost", "[::1]"].includes(url.hostname) || url.username || url.password || url.pathname !== "/" || url.search || url.hash) {
+      throw new Error("Your MCP server is not connected. Start a new bot turn from Sagax.");
+    }
+    const body = JSON.stringify({ message: frame });
+    if (Buffer.byteLength(body) > MAX_INPUT_BYTES) throw new Error("The request exceeded the size limit.");
+    const response = await fetchImpl(new URL(PERSONAL_STDIO_ENDPOINT, url), {
+      method: "POST", redirect: "error",
+      headers: { "content-type": "application/json", authorization: `Bearer ${connection.token}` },
+      body, signal: AbortSignal.timeout(720_000),
+    });
+    const payload = await response.json().catch(() => null) as { message?: unknown; error?: unknown } | null;
+    if (!response.ok || !payload) throw new Error(typeof payload?.error === "string" ? payload.error.slice(0, 2_000) : "Your MCP server is unavailable. Try again in a moment.");
+    return isRequest ? payload.message ?? failure(message.id ?? null, message.method, "Your MCP server gave no answer.") : undefined;
+  } catch (error) {
+    if (!isRequest) return undefined;
+    const detail = error instanceof Error && !/fetch failed|abort|timeout/i.test(error.message)
+      ? error.message : "The connection to your MCP server was interrupted. Check the result before repeating the action.";
+    return failure(message.id ?? null, message.method, detail);
+  }
+}
+
+/** Set by a driver that runs every MCP server from one shared environment
+ * (Codex): this proxy's variables then arrive under that prefix, so two
+ * proxies never read each other's capability. */
+export const PROXY_ENV_PREFIX_VARIABLE = "SAGAX_PROXY_ENV_PREFIX";
+
+/** Restore the plain variable names from a driver-given prefix. */
+export function restorePrefixedEnvironment(environment: NodeJS.ProcessEnv): void {
+  const prefix = environment[PROXY_ENV_PREFIX_VARIABLE];
+  if (!prefix) return;
+  for (const [key, value] of Object.entries(environment)) {
+    if (key.startsWith(prefix) && key.length > prefix.length && value !== undefined) environment[key.slice(prefix.length)] = value;
+  }
+}
+
 function run(): void {
+  restorePrefixedEnvironment(process.env);
   const named = process.env.SAGAX_TOOL_SERVER;
+  const personal = named === PERSONAL_STDIO_TOOL_SERVER;
   const connection = {
     url: process.env.SAGAX_HARNESS_URL ?? "", token: process.env.SAGAX_SANDBOX_TOKEN ?? "",
     server: named && Object.hasOwn(PROXIED_TOOL_SERVERS, named) ? named as ProxiedToolServer : "sagax-environment" as const,
@@ -95,7 +146,8 @@ function run(): void {
         continue;
       }
       pending++;
-      void userSandboxProxyRequest(frame, connection).then(output).finally(() => { pending--; });
+      const relayed = personal ? personalStdioRelayRequest(frame, connection) : userSandboxProxyRequest(frame, connection);
+      void relayed.then(output).finally(() => { pending--; });
     }
     if (input.length > MAX_INPUT_BYTES) { process.stdin.destroy(); process.exitCode = 1; }
   });

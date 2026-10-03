@@ -13,6 +13,9 @@ export interface CallSettings {
   onlyMyVoice: boolean;
   /** subtle tones for connect, interrupt, hold and end */
   earcons: boolean;
+  /** a soft tone when the answer is slow to start (over THINKING_CUE_MS
+   * after the person stopped), so the silence is not a dead line */
+  thinkingCue: boolean;
   /** how long a pause ends a turn: short (fast answers), normal, or
    * patient (the person thinks between phrases) */
   pause: CallPause;
@@ -21,7 +24,7 @@ export interface CallSettings {
 export type CallPause = "short" | "normal" | "patient";
 export const CALL_PAUSES: readonly CallPause[] = ["short", "normal", "patient"];
 
-export const DEFAULT_CALL_SETTINGS: CallSettings = { input: "auto", onlyMyVoice: true, earcons: true, pause: "normal" };
+export const DEFAULT_CALL_SETTINGS: CallSettings = { input: "auto", onlyMyVoice: true, earcons: true, thinkingCue: true, pause: "normal" };
 
 type Storage = Pick<globalThis.Storage, "getItem" | "setItem">;
 const watchers = new Set<() => void>();
@@ -41,6 +44,7 @@ export function cleanCallSettings(value: unknown): CallSettings {
     input: record.input === "push" ? "push" : "auto",
     onlyMyVoice: typeof record.onlyMyVoice === "boolean" ? record.onlyMyVoice : DEFAULT_CALL_SETTINGS.onlyMyVoice,
     earcons: typeof record.earcons === "boolean" ? record.earcons : DEFAULT_CALL_SETTINGS.earcons,
+    thinkingCue: typeof record.thinkingCue === "boolean" ? record.thinkingCue : DEFAULT_CALL_SETTINGS.thinkingCue,
     pause: CALL_PAUSES.includes(record.pause as CallPause) ? (record.pause as CallPause) : DEFAULT_CALL_SETTINGS.pause,
   };
 }

@@ -133,6 +133,14 @@
 //   FAKE_CLAUDE_EXIT_DELAY_MS ms this process keeps running after SIGTERM
 //                      before it exits: a CLI that is slow to stop, as one
 //                      can be on Windows, where taskkill is asynchronous.
+//   FAKE_CLAUDE_MODE=voice a spoken answer with a real CLI's timing
+//                      (docs/voice-mode-xai.md, "Latency"): the process's
+//                      first turn waits FAKE_CLAUDE_COLD_MS before `init`
+//                      (process boot, MCP servers, the session read back),
+//                      every turn waits FAKE_CLAUDE_FIRST_TOKEN_MS before its
+//                      first text delta (the model's time to first token),
+//                      then streams FAKE_CLAUDE_VOICE_REPLY word by word,
+//                      FAKE_CLAUDE_TOKEN_MS apart, and settles. No tool call.
 //
 // Keep this file dependency-free — it runs as a bare `node` subprocess.
 import { spawn, spawnSync } from "node:child_process";
@@ -256,6 +264,18 @@ if (argv[0] === "--version") {
   // FAKE_CLAUDE_VERSION lets a test stand in for an older CLI: the driver
   // withholds flags that version predates (CLAUDE_FLAG_FLOORS).
   process.stdout.write(`${process.env.FAKE_CLAUDE_VERSION ?? "2.1.232"} (Claude Code)\n`);
+  process.exit(0);
+}
+
+if (argv[0] === "--help") {
+  // Lists --autocompact in the option column like the real CLI, unless the
+  // fake stands in for a build without it: FAKE_CLAUDE_AUTOCOMPACT=0, or a
+  // version below the 2.1.122 floor.
+  const [maj = 0, min = 0, pat = 0] = (process.env.FAKE_CLAUDE_VERSION ?? "2.1.232").split(".").map(Number);
+  const has = process.env.FAKE_CLAUDE_AUTOCOMPACT !== "0" && (maj > 2 || (maj === 2 && (min > 1 || (min === 1 && pat >= 122))));
+  process.stdout.write(
+    `Usage: claude [options]\n\nOptions:\n  --model <model>  Model\n${has ? "  --autocompact <tokens>  Compaction window\n" : ""}  -h, --help  Display help\n`,
+  );
   process.exit(0);
 }
 
@@ -459,6 +479,13 @@ const finishIfDone = () => {
   if (stdinEnded) process.exit(0);
 };
 
+const finishTurn = () => {
+  runHooks("Stop", { stop_hook_active: false });
+  out({ type: "result", is_error: false, stop_reason: "end_turn", total_cost_usd: 0.01, usage: { input_tokens: 10, cache_read_input_tokens: 2, output_tokens: 5 } });
+  turnRunning = false;
+  finishIfDone();
+};
+
 const playTurn = (prompt: JsonValue, late = false) => {
   turnRunning = true;
   lateContinuation = late;
@@ -547,6 +574,11 @@ const playTurn = (prompt: JsonValue, late = false) => {
     }
   }
 
+  if (mode === "voice") {
+    void playVoiceTurn(prompt);
+    return;
+  }
+
   // the real CLI re-announces init on every turn of a live process
   out({ type: "system", subtype: "init", session_id: sessionId, model, permissionMode, tools });
 
@@ -596,14 +628,21 @@ const playTurn = (prompt: JsonValue, late = false) => {
     // permission broker while a turn is officially in flight. With
     // FAKE_CLAUDE_RELEASE, the turn ends normally once that file exists.
     const release = process.env.FAKE_CLAUDE_RELEASE;
+    const finishGate = process.env.FAKE_CLAUDE_FINISH_GATE;
     const held = setInterval(() => {
+      if (finishGate && existsSync(finishGate)) {
+        clearInterval(held);
+        out({ type: "assistant", message: { content: [{ type: "text", text: "fixture turn completed" }] } });
+        finishTurn();
+        return;
+      }
       if (!release || !existsSync(release)) return;
       clearInterval(held);
       out({ type: "assistant", message: { content: [{ type: "text", text: "released" }] } });
       out({ type: "result", is_error: false, stop_reason: "end_turn", usage: { input_tokens: 10, output_tokens: 5 } });
       turnRunning = false;
       finishIfDone();
-    }, 100);
+    }, finishGate ? 10 : 100);
     return;
   }
 
@@ -664,6 +703,31 @@ const playTurn = (prompt: JsonValue, late = false) => {
   }
   playReply(prompt, "");
 };
+
+let voiceTurns = 0;
+const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, Math.max(0, ms)));
+/** FAKE_CLAUDE_MODE=voice: one turn with a real CLI's timing, streamed. */
+async function playVoiceTurn(prompt: JsonValue): Promise<void> {
+  const first = voiceTurns === 0;
+  voiceTurns += 1;
+  if (first) await pause(Number(process.env.FAKE_CLAUDE_COLD_MS) || 0);
+  out({ type: "system", subtype: "init", session_id: sessionId, model, permissionMode, tools });
+  replay(prompt);
+  await pause(Number(process.env.FAKE_CLAUDE_FIRST_TOKEN_MS) || 0);
+  const reply = process.env.FAKE_CLAUDE_VOICE_REPLY || "Sure. It is sunny in Montreal today, with a high of twenty degrees and a light wind. Do you want the forecast for tomorrow too?";
+  const tokenMs = Number(process.env.FAKE_CLAUDE_TOKEN_MS) || 0;
+  const words = reply.match(/\S+\s*/g) ?? [reply];
+  for (const word of words) {
+    out({ type: "stream_event", event: { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: word } } });
+    if (tokenMs) await pause(tokenMs);
+  }
+  replaySteered();
+  out({ type: "assistant", message: { content: [{ type: "text", text: reply }], usage: { input_tokens: 10, output_tokens: 5 } } });
+  runningCost.total = Number((runningCost.total + 0.01).toFixed(2));
+  out({ type: "result", is_error: false, stop_reason: "end_turn", total_cost_usd: runningCost.total, usage: { input_tokens: 10, output_tokens: 5 } });
+  turnRunning = false;
+  finishIfDone();
+}
 
 type FakeMcpCall = { server: string; tool: string; arguments: Record<string, unknown>; when?: string };
 const fakeMcpCalls: FakeMcpCall[] | null = (() => {
@@ -735,12 +799,16 @@ async function proxyFetch(target: string): Promise<string> {
   });
 }
 
+// The real CLI reads --mcp-config once, at launch, and keeps its servers
+// for every turn of the process; the harness may remove the file after.
+let launchServers: Record<string, { command?: string; args?: string[]; env?: Record<string, string> }> | null = null;
 async function runFakeMcpCalls(calls: FakeMcpCall[], configPath: string | null): Promise<string> {
-  let servers: Record<string, { command?: string; args?: string[]; env?: Record<string, string> }> = {};
-  if (configPath) {
+  let servers: Record<string, { command?: string; args?: string[]; env?: Record<string, string> }> = launchServers ?? {};
+  if (configPath && !launchServers) {
     try {
       const config = JSON.parse(readFileSync(configPath, "utf8")) as { mcpServers?: typeof servers };
       servers = config.mcpServers ?? {};
+      launchServers = servers;
     } catch { /* no servers */ }
   }
   const matches = (pattern: string, name: string) => (pattern.endsWith("*") ? name.startsWith(pattern.slice(0, -1)) : name === pattern);

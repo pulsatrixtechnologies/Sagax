@@ -72,9 +72,7 @@ export type LifecycleAction = "pull" | "run" | "start" | "stop" | "remove";
 const INTERNAL_VIEWER_PORT = 6901;
 const HOST_VIEWER_PORT = 6080;
 const MEMORY_BYTES = 4 * 1024 * 1024 * 1024;
-const NANO_CPUS = 2_000_000_000;
 const PIDS_LIMIT = 512;
-const SHM_BYTES = 512 * 1024 * 1024;
 
 export interface LocalVmTarget {
   /** Stable, non-secret identity used for leases and caches. */
@@ -123,7 +121,7 @@ export function poolLocalVmTarget(seat: number): LocalVmTarget {
   };
 }
 
-/** Only provisioning creates this durable directory; idle removal keeps it. */
+/** Only provisioning creates this durable directory; idle shutdown keeps it. */
 export function localVmTestNamespace(value: string | undefined): string {
   const namespace = (value ?? "").trim().toLowerCase();
   return /^[a-z0-9][a-z0-9-]{0,39}$/.test(namespace) ? namespace : "";
@@ -371,6 +369,10 @@ export interface ContainerComputerStatus {
   persistence: "durable" | "unsafe" | "unknown";
   desktopReady: boolean;
   desktop_error: string | null;
+  /** Runtime timestamp used to match an idle-stop record, never an inferred cause. */
+  stopped_at?: string | null;
+  /** A stopped desktop whose only problem is that it is stopped. */
+  resumable: boolean;
   create_supported: boolean;
   ready: boolean;
   problem: string | null;
@@ -402,6 +404,7 @@ function emptyStatus(platform: NodeJS.Platform, target: LocalVmTarget): Containe
     desktopReady: false,
     desktop_error: null,
     create_supported: true,
+    resumable: false,
     ready: false,
     problem: "Install a supported container runtime first",
     image_ref: IMAGE,
@@ -417,21 +420,8 @@ function emptyStatus(platform: NodeJS.Platform, target: LocalVmTarget): Containe
   };
 }
 
-/** Whether a turn may recreate this Local VM itself instead of failing.
- *
- * True for exactly one state: the container is gone, and a plain `run` is all
- * that is needed to bring it back. That is what `LocalVmIdleTimer` leaves
- * behind — it removes an unused Local VM rather than pausing it — so a turn
- * arriving after an idle period should not have to send the person to App
- * Settings for a container the app itself deleted.
- *
- * Every other problem in `statusProblem` stays the person's call and returns
- * false here: no runtime, daemon down, image never prepared, `create_supported`
- * false, and any existing container — stale image, unmanaged, unsafe network,
- * security or persistence. A stopped container is excluded deliberately, since
- * `statusProblem` says this desktop image cannot safely resume and asks for a
- * recreate rather than a start.
- */
+/** Recreate a missing desktop when its image and runtime are already prepared.
+ * This also recovers desktops deleted by older versions' idle cleanup. */
 export function localVmRecreatableOnDemand(
   status: ContainerComputerStatus,
 ): status is ContainerComputerStatus & { runtime: Runtime } {
@@ -442,12 +432,30 @@ export function localVmRecreatableOnDemand(
     && status.create_supported;
 }
 
+/** Start only an existing, compatible desktop with the managed safety boundary.
+ * Fails closed on fields left "unknown" by a partial inspect, which
+ * `statusProblem` alone would let through. */
+export function localVmResumable(
+  status: ContainerComputerStatus,
+): status is ContainerComputerStatus & { runtime: Runtime } {
+  return Boolean(status.runtime) && status.daemonUp && status.image && status.container === "stopped"
+    && existingContainerProblem(status) === null
+    && status.network === "loopback" && status.security === "hardened" && status.persistence === "durable";
+}
+
+/** What a turn may do on its own to bring this Local VM up, if anything. */
+export function localVmWakeAction(status: ContainerComputerStatus): "run" | "start" | null {
+  if (localVmRecreatableOnDemand(status)) return "run";
+  if (localVmResumable(status)) return "start";
+  return null;
+}
+
 /** Whether Auto may attach this Local VM without a person choosing it: the
- * desktop is ready, or its image is prepared and the container can simply be
- * recreated after idling away. Anything else — no runtime, daemon down, image
+ * desktop is ready, a compatible stopped desktop can be started, or its image
+ * is prepared and a missing container can be recreated. Anything else — no runtime, daemon down, image
  * never prepared, an unmanaged or unsafe container — stays the person's call. */
 export function autoLocalVmAttachable(status: ContainerComputerStatus): boolean {
-  return status.ready === true || localVmRecreatableOnDemand(status);
+  return status.ready === true || localVmWakeAction(status) !== null;
 }
 
 function statusProblem(status: ContainerComputerStatus): string | null {
@@ -458,14 +466,21 @@ function statusProblem(status: ContainerComputerStatus): string | null {
     return "Per-bot Local VMs require Docker or Podman because Apple container requires a fixed host port";
   }
   if (status.container === "missing") return "Create the Local VM";
+  const existing = existingContainerProblem(status);
+  if (existing) return existing;
+  if (status.container === "stopped") return "The Local VM is stopped; start it to continue";
+  if (status.desktop_error) return `The Local VM desktop failed to start: ${status.desktop_error}`;
+  if (!status.desktopReady) return "The Local VM started, but Cua Driver is not ready yet";
+  return null;
+}
+
+/** Problems with an existing container that only a recreate fixes. */
+function existingContainerProblem(status: ContainerComputerStatus): string | null {
   if (!status.imageMatches) return "The existing Local VM uses an older desktop or Cua Driver; recreate it";
   if (!status.managed) return "The existing container was not created by Sagax; recreate it";
   if (status.network === "unsafe") return "The existing Local VM exposes its viewer publicly; recreate it";
   if (status.security === "unsafe") return "The existing Local VM is missing safety limits; recreate it";
   if (status.persistence === "unsafe") return "The existing Local VM is missing its durable folder; recreate it";
-  if (status.container === "stopped") return "This desktop image cannot safely resume; recreate the Local VM";
-  if (status.desktop_error) return `The Local VM desktop failed to start: ${status.desktop_error}`;
-  if (!status.desktopReady) return "The Local VM started, but Cua Driver is not ready yet";
   return null;
 }
 
@@ -640,11 +655,12 @@ export async function containerComputerStatus(
         }>;
         EffectiveCaps?: string[];
         BoundingCaps?: string[];
-        State?: { Running?: boolean };
+        State?: { Running?: boolean; FinishedAt?: string };
         Image?: string;
       }>;
       const detail = inspected[0];
       status.container = detail?.State?.Running ? "running" : "stopped";
+      status.stopped_at = status.container === "stopped" ? detail?.State?.FinishedAt ?? null : null;
       status.network = dockerPortsAreLocal(detail?.HostConfig?.PortBindings) ? "loopback" : "unsafe";
       status.viewer_port = dockerViewerPort(detail?.NetworkSettings?.Ports, target.viewerPort);
       status.imageMatches =
@@ -741,6 +757,7 @@ export async function containerComputerStatus(
 
   status.problem = statusProblem(status);
   status.ready = status.problem === null;
+  status.resumable = localVmResumable(status);
   return status;
 }
 
@@ -865,17 +882,13 @@ export interface DockerHardeningConfig {
   RestartPolicy?: { Name?: string; MaximumRetryCount?: number };
 }
 
-/** One hardening contract for both managed containers (Local VM here, the
- * BYO-VPS backend in vps-computer.ts): exact resource limits, no privilege,
- * no host namespaces or devices, no disabled security profiles. The only
- * runtime-specific capability exception is Podman's Firefox sandbox chroot.
- * Callers also differ on restart policy — the VPS
- * container must survive a reboot nobody is watching ("unless-stopped"),
- * while the Local VM must NOT auto-resume: its desktop leaves a stale X lock
- * on stop, so a restarted container is a broken one. */
+/** Shared isolation contract for Local VM and BYO-VPS containers. Resource
+ * budgets are creation defaults, not an isolation requirement. Podman alone
+ * needs chroot for Firefox's sandbox. Local VM starts stay controlled by
+ * OMB's idle policy; VPS restart policy belongs to the server operator. */
 export function dockerSecurityIsHardened(
   config: DockerHardeningConfig | undefined,
-  options: { restartPolicy?: "no" | "unless-stopped"; podmanBrowserSandbox?: boolean } = {},
+  options: { restartPolicy?: "no" | "unless-stopped" | "any"; podmanBrowserSandbox?: boolean } = {},
 ): boolean {
   if (!config) return false;
   const capDrop = (config.CapDrop ?? []).map((cap) => cap.toLowerCase());
@@ -885,27 +898,21 @@ export function dockerSecurityIsHardened(
   const unsafeSecurityOption = (config.SecurityOpt ?? []).some((option) => /(?:^|=)(?:unconfined|disable)$/i.test(option));
   const restartPolicy = config.RestartPolicy?.Name;
   const restartPolicyOk =
-    options.restartPolicy === "unless-stopped"
+    options.restartPolicy === "any" || (options.restartPolicy === "unless-stopped"
       ? restartPolicy === "unless-stopped"
-      : restartPolicy === undefined || restartPolicy === "" || restartPolicy === "no";
+      : restartPolicy === undefined || restartPolicy === "" || restartPolicy === "no");
   return (
-    config.Memory === MEMORY_BYTES &&
-    (config.MemorySwap ?? 0) === MEMORY_BYTES &&
-    (config.NanoCpus ?? 0) === NANO_CPUS &&
-    config.PidsLimit === PIDS_LIMIT &&
     capDrop.includes("all") &&
     capAdd.join(",") === (options.podmanBrowserSandbox ? "setgid,setuid,sys_chroot" : "setgid,setuid") &&
     config.Privileged === false &&
     !config.PidMode &&
     config.IpcMode === "private" &&
     !config.UTSMode &&
-    config.ShmSize === SHM_BYTES &&
     (!config.Devices || config.Devices.length === 0) &&
     (!config.DeviceRequests || config.DeviceRequests.length === 0) &&
     !unsafeSecurityOption &&
     !config.UsernsMode &&
     config.CgroupnsMode === "private" &&
-    config.OomKillDisable !== true &&
     config.AutoRemove !== true &&
     restartPolicyOk
   );
@@ -1074,10 +1081,8 @@ export async function containerComputerAction(
   if (action === "run" && !before.create_supported) {
     throw Object.assign(new Error(before.problem ?? "This runtime cannot create a per-bot Local VM"), { status: 409 });
   }
-  if (action === "start") {
-    throw Object.assign(new Error("This desktop image cannot safely resume; remove and recreate the Local VM"), {
-      status: 409,
-    });
+  if (action === "start" && !localVmResumable(before)) {
+    throw Object.assign(new Error(before.problem ?? "The Local VM is not stopped"), { status: 409 });
   }
   if (action === "stop" && before.container !== "running") {
     throw Object.assign(new Error("The Local VM is not running"), { status: 409 });
@@ -1366,7 +1371,7 @@ export function setupCommands(
       runtime === "container" && target.key !== SHARED_LOCAL_VM_TARGET.key
         ? null
         : command(containerRunArgs(runtime, "CHANGE_ME", target)),
-    start: null,
+    start: command(["start", target.containerName]),
     stop: command(["stop", target.containerName]),
     remove: command(["rm", runtime === "container" ? "--force" : "-f", target.containerName]),
     view: target.viewerPort ? `http://127.0.0.1:${target.viewerPort}/vnc.html` : "",

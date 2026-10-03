@@ -22,7 +22,12 @@ the URL, PID, data directory, and persistent log path, then stays attached to
 that exact child. The parent shell and the user's Sagax data are
 untouched. Only `FAKE_CLAUDE_*` variables cross from the launcher's
 environment into that child, so a recipe can script the fake engine's mode,
-replies and tool calls without writing a wrapper CLI.
+replies and tool calls without writing a wrapper CLI. Live calls add one
+exception: `SAGAX_OPENAI_LIVE_URL` crosses when it is a loopback
+`http://127.0.0.1:PORT` (the fake GPT-Live that
+`node --experimental-strip-types server/testing/fake-openai-live.ts` prints),
+and `SAGAX_OPENAI_LIVE_KEY` crosses only with it, so that key can only ever
+reach the fake.
 
 Pass the printed URL explicitly from a second terminal:
 
@@ -41,6 +46,7 @@ Use only mapped, tested commands:
 - [Conversation context compaction](context-compaction.md)
 - [Work summaries and engine hooks](digests.md)
 - [OpenAI-compatible structured tools](openai-tools.md)
+- [Per-bot tool selection and local-model checks](tool-selection.md)
 - [OpenCode model variants through ACP](opencode-variants.md)
 - [Bot setup, model scope, and file continuity](bot-continuity.md)
 - [Reviewed Chief team setup and scoped deletion](team-setup.md)
@@ -127,6 +133,9 @@ The [live browser fixture](browser-live.md) mounts the real Browser panel with
 an explicitly selected native engine and Chrome in a disposable home, covering
 watching, takeover, input, and profile switching.
 
+The [Local VM resume fixture](local-vm-resume.md) checks idle stop, restart
+recovery, guarded resume and the stopped-to-ready Computer panel flow.
+
 The [local computer launch regression](local-computer-launch.md) starts the
 host CUA gate through real Electron in a disposable home, without opening the
 desktop app or controlling the user's computer.
@@ -176,6 +185,10 @@ interrupting a newer request.
 The [iOS thread checks](ios-threads.md) cover the native thread tree, folder
 search and draft isolation using disposable simulators and an offline fixture.
 
+The [iOS Local VM view](ios-local-vm.md) pairs a disposable simulator with an
+isolated server, companion sidecar and synthetic Local VM to check on-demand
+stills and the per-device computer-access gate.
+
 The [Android stream recovery checks](android-stream-recovery.md) exercise early
 stream closure and fallback through disposable HTTP endpoints.
 
@@ -190,6 +203,10 @@ confirmation, manual codes, retries and saved-server identity validation.
 
 The [Android transcript checks](android-transcript.md) cover completed-turn
 folds, Hidden reasoning, and compact webhook messages through real Compose UI.
+
+The [Android Live call checks](android-live-calls.md) cover the `/api/live/*`
+client, the `live.call` frame, the call manager's state machine, the call bar,
+and an emulator smoke against the fixture and the fake GPT-Live.
 
 The [right-to-left fixture](bidi.md) checks per-block direction in bot replies
 and per-line direction in sent turns, with code pinned left-to-right.

@@ -16,6 +16,7 @@ import { myTurnsText, perspicaxKeysUrl, type MyEngine } from "@/lib/perspicax-or
 import { payerOrder, type PayerId } from "@/lib/model-payers";
 import { ClaudeSignIn } from "./ClaudeSignIn";
 import { CodexDeviceSignIn } from "./CodexDeviceSignIn";
+import { MyEngineAccess } from "./settings/MyEngines";
 
 const PAYER_LABEL: Record<PayerId, LocaleKey> = {
   subscription: "model.payer.subscription",
@@ -35,7 +36,7 @@ export function ModelPickerPayers({ engine, issuer, routine = false, onChanged }
   const [error, setError] = useState("");
   const order = payerOrder(engine);
   const loginBase = `/api/me/engines/${encodeURIComponent(engine.instanceId)}/login`;
-  const family = engine.driver === "claudeAgent" ? "Claude" : engine.driver === "codex" ? "OpenAI" : engine.displayName;
+  const family = engine.driver === "claudeAgent" ? "Claude" : engine.driver === "codex" ? "OpenAI" : engine.driver === "grokAgent" ? "Grok" : engine.driver === "kimiAgent" ? "Kimi" : engine.displayName;
 
   const signOut = async () => {
     setBusy(true);
@@ -120,7 +121,10 @@ export function ModelPickerPayers({ engine, issuer, routine = false, onChanged }
           <p className="mt-0.5 text-[11.5px] leading-relaxed text-ink-secondary">{t("model.payer.signInHint")}</p>
           {engine.driver === "claudeAgent"
             ? <ClaudeSignIn key={engine.instanceId} instanceId={engine.instanceId} base={loginBase} onSignedIn={onChanged} />
-            : <CodexDeviceSignIn key={engine.instanceId} instanceId={engine.instanceId} base={loginBase} onSignedIn={onChanged} />}
+            : engine.driver === "codex"
+              ? <CodexDeviceSignIn key={engine.instanceId} instanceId={engine.instanceId} base={loginBase} onSignedIn={onChanged} />
+              // Grok Build and Kimi Code: a device code on the provider's own page
+              : <MyEngineAccess key={engine.instanceId} engine={engine} onChanged={() => { void onChanged(); }} />}
         </div>
       )}
       </div>

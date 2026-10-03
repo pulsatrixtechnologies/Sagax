@@ -33,6 +33,10 @@ vi.mock("./DesktopCapabilities", () => ({ useDesktopCapabilities: () => ({}) }))
 vi.mock("@/lib/thread-preferences", async (original) => ({ ...await original<typeof import("@/lib/thread-preferences")>(),
   useShowThreads: () => true,
 }));
+vi.mock("@/lib/live-call-media", async (original) => {
+  const actual = await original<typeof import("@/lib/live-call-media")>();
+  return { ...actual, useLiveMedia: actual.liveMedia };
+});
 import { BotListItem } from "./Sidebar";
 
 const bot: Bot = {

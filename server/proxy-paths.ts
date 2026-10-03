@@ -45,6 +45,7 @@ export const SPAWNED_PROXIES = {
   connectors: resolveProxy("connector-proxy"),
   perspicax: resolveProxy("perspicax-mcp-bridge"),
   mcpGate: resolveProxy("mcp-gate"),
+  mcpRemote: resolveProxy("mcp-remote-proxy"),
   phone: resolveProxy("drivers/phone-proxy"),
   hook: resolveProxy("hooks/omb-hook"),
   // Loaded by the external `pi` process via `-e`, not by this server — but

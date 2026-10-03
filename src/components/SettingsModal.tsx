@@ -5,7 +5,7 @@
 import { useRetroSkin } from "./RetroChromeHost";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { FLOATING_LIVELINESS, floatingBotPrefs, setFloatingFlyAway, setFloatingLiveliness, subscribeFloatingBots, type FloatingLiveliness } from "@/lib/floating-bots";
-import { Archive, Coins, FlaskConical, KeyRound, Mail, Monitor, Palette, ScrollText, Search, TabletSmartphone, Terminal, Trophy, User, Users, X, Building2, Zap } from "lucide-react";
+import { Archive, Coins, FlaskConical, KeyRound, Mail, Monitor, Palette, Plug, ScrollText, Search, TabletSmartphone, Terminal, Trophy, User, Users, X, Building2, Zap } from "lucide-react";
 import { AchievementsPage } from "./achievements/AchievementsPage";
 import { api, useStore, type AppSettingsSection, type ConfigStatus } from "@/state/store";
 import { browserAvailable, browserUnavailableReason, builtInBrowserEnabled, boatComputerEnabled, connectedAppsEnabled, routinesInConversationEnabled, showToolCallsEnabled, skillAuthoringEnabled, templatesEnabled, vpsComputerEnabled } from "@/lib/feature-flags";
@@ -40,6 +40,7 @@ import { effortLabel } from "./ModelPicker";
 import { EFFORT_LEVELS, isEffortLevel } from "../../shared/wire";
 import { shortcutLabel } from "./ShortcutHint";
 import { UsageSection } from "./UsageSection";
+import { MyConnectionsSettings } from "./settings/MyConnectionsSettings";
 import { LicenseExpiryBanner } from "./LicenseExpiryBanner";
 import { WorkspacesSection, workspacesAvailable } from "./WorkspacesSection";
 import { SkinPicker } from "./SkinPicker";
@@ -64,6 +65,7 @@ import { cn } from "@/lib/cn";
 import { setNotificationSounds, useNotificationSounds } from "@/lib/notification-preferences";
 import { setShowThreads, useShowThreads } from "@/lib/thread-preferences";
 import { parseSidebarDensity, setSidebarDensity, SIDEBAR_DENSITIES, useSidebarDensity, type SidebarDensity } from "@/lib/sidebar-preferences";
+import { currentPhonePairingTarget } from "@/lib/phone-pairing";
 import { setShowRunCard, useShowRunCard } from "@/lib/run-card-preferences";
 import { setShowSidebarLogo, useShowSidebarLogo } from "@/lib/sidebar-logo-preferences";
 import { setShowInspectorButton, useShowInspectorButton } from "@/lib/inspector-preferences";
@@ -86,6 +88,7 @@ export const SECTIONS: Array<{
   { id: "achievements", labelKey: "settings.section.achievements", icon: Trophy, keywords: ["achievements", "trophies", "trophy", "points", "gamerscore", "level", "unlock", "succès", "trophées"] },
   { id: "experimental", labelKey: "settings.section.experimental", icon: FlaskConical, keywords: ["early", "preview", "learn", "skill", "authoring", "browser", "profiles"] },
   { id: "connections", labelKey: "settings.section.connections", icon: KeyRound, keywords: ["keys", "api", "api key", "api keys", "connections", "composio", "box", "xai", "mistral", "vps", "router", "openrouter", "base url", "openai", "anthropic", "groq", "opencode", "provider"] },
+  { id: "myConnections", labelKey: "settings.section.myConnections", icon: Plug, keywords: ["github", "mcp", "mcp servers", "connections", "connexions", "token", "oauth", "gh", "git", "my connections", "mes connexions", "server", "plugins"] },
   { id: "decisionModel", labelKey: "settings.section.decisionModel", icon: Zap, keywords: ["decision", "jev", "typesafe", "routing", "auto", "rooms", "who answers"] },
   { id: "engines", labelKey: "settings.section.engines", icon: Terminal, keywords: ["models", "model providers", "engines", "claude", "codex", "grok", "providers", "cli", "sign in", "subscription"] },
   { id: "companion", labelKey: "settings.section.companion", icon: TabletSmartphone, keywords: ["companion", "device", "phone", "desktop", "client", "host", "pair", "pairing", "mobile", "https", "secure", "tailscale", "wifi", "remote", "advanced", "domain", "dns", "self-hosted", "server", "caddy"] },
@@ -122,7 +125,8 @@ export function cardsMatching(query: string): string[] {
  * managed in the Perspicax admin console. A solo server keeps Email: it
  * sends its own sign-in codes and invitations. */
 export function organizationHidesSection(id: AppSettingsSection, organization: boolean): boolean {
-  return organization && id === "mail";
+  // Mes connexions is a person's own, on an organization server only.
+  return organization ? id === "mail" : id === "myConnections";
 }
 
 export function sectionMatches(section: (typeof SECTIONS)[number], query: string): boolean {
@@ -927,6 +931,9 @@ export function SettingsModal() {
   const { state, dispatch } = useStore();
   const retroSkin = useRetroSkin();
   const remoteActive = window.ogb?.remoteClient?.active === true;
+  // "Connect your phone" focuses the pairing this window can do: this
+  // computer's phone flow, or the server's pairing code.
+  const computerPairs = currentPhonePairingTarget(state.config?.cloudHome === true) === "computer";
   const section: AppSettingsSection =
     (remoteActive && !["appearance", "organization"].includes(state.appSettingsSection)) || state.appSettingsSection === "remote"
       ? "companion"
@@ -1332,16 +1339,17 @@ export function SettingsModal() {
                     a remote client of a hosted workspace: its requests carry that server's session, and
                     Settings there is the only place that server's phones can be paired from (MOCA-84).
                     The server decides who may act — an owner or an admin session — not this gate. */}
-                <ServerPairingCard cloudHome={state.config?.cloudHome === true} />
+                <ServerPairingCard cloudHome={state.config?.cloudHome === true} focusRequest={computerPairs ? 0 : state.appSettingsPhonePairing} />
                 {lockedServer
                   ? <ManagedByOrganization cardId="companion.managed" title={t("remote.desktopOnly.title", { app: brand().name })} />
-                  : !remoteActive && <CompanionSection profileEmail={state.config?.profile?.email} />}
+                  : !remoteActive && <CompanionSection profileEmail={state.config?.profile?.email} focusRequest={computerPairs ? state.appSettingsPhonePairing : 0} />}
               </>
             )}
 
             {section === "computer" && <LocalComputerSection />}
 
             {section === "usage" && <UsageSection />}
+            {section === "myConnections" && <MyConnectionsSettings />}
             {section === "people" && <PeopleSection />}
             {section === "mail" && <MailSettings />}
             {section === "activity" && <ActivitySection />}

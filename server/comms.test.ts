@@ -23,10 +23,11 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { mentionedBots, normalizeGroupDefaultResponder, roomResponders } from "./store.ts";
 import { removeTempDir, waitForExit } from "./testing/cleanup.ts";
+import { freePortBlock } from "./testing/ports.ts";
 
 const SERVER_DIR = dirname(fileURLToPath(import.meta.url));
 const FAKE_CLI = join(SERVER_DIR, "testing", "fake-acp-cli.ts");
-const PORT = 18800 + Math.floor(Math.random() * 10_000);
+const PORT = await freePortBlock([0, 1]);
 const BASE = `http://127.0.0.1:${PORT}`;
 
 describe("mentionedBots", () => {
@@ -104,6 +105,10 @@ describe("legacy routine comms e2e (fake ACP fleet)", () => {
   let gateFile = "";
   let stderr = "";
 
+  // The fake ACP engine writes each prompt it receives to <dump>.prompt.json.
+  const promptReached = async (dump: string, text: string): Promise<boolean> => {
+    try { return readFileSync(`${dump}.prompt.json`, "utf8").includes(text); } catch { return false; }
+  };
   const waitUntil = async (predicate: () => Promise<boolean>, timeout: number, what: string): Promise<void> => {
     const deadline = Date.now() + timeout;
     for (;;) {
@@ -250,7 +255,7 @@ describe("legacy routine comms e2e (fake ACP fleet)", () => {
           // a turn that remains busy until provider reload disposes it.
           helperHang: {
             driver: "grokAgent",
-            environment: { FAKE_ACP_MODE: "hang" },
+            environment: { FAKE_ACP_MODE: "hang", FAKE_ACP_DUMP: join(home, "helper-hang.json"), FAKE_ACP_DUMP_PROMPT: "1" },
             config: { cli: FAKE_CLI, fullAuto: true },
           },
           // a deterministic busy window: turns hold open until the gate
@@ -258,7 +263,7 @@ describe("legacy routine comms e2e (fake ACP fleet)", () => {
           // e2e frees the peer by writing the file).
           helperGate: {
             driver: "grokAgent",
-            environment: { FAKE_ACP_MODE: "echo-gated", FAKE_ACP_GATE_FILE: gateFile },
+            environment: { FAKE_ACP_MODE: "echo-gated", FAKE_ACP_GATE_FILE: gateFile, FAKE_ACP_DUMP: join(home, "helper-gate.json"), FAKE_ACP_DUMP_PROMPT: "1" },
             config: { cli: FAKE_CLI, fullAuto: true },
           },
         },
@@ -895,6 +900,9 @@ describe("legacy routine comms e2e (fake ACP fleet)", () => {
         const current = (await api("GET", "/api/bots?messages=0")).body.bots.find((b: any) => b.id === helper.id);
         return Boolean(current?.busy);
       }, 10_000, "helper never became busy behind the approval card");
+      // busy flips before the prompt reaches the engine; the reload below
+      // must release a turn that runs there, not one still in setup
+      await waitUntil(async () => promptReached(join(home, "helper-gate.json"), "hold until reload"), 20_000, "the held prompt never reached the engine");
       expect((await api("POST", `/api/bots/${asker.id}/respond`, {
         requestId: approvalCard.card.requestId,
         behavior: "allow",
@@ -1096,6 +1104,10 @@ describe("legacy routine comms e2e (fake ACP fleet)", () => {
         }
         await new Promise((r) => setTimeout(r, 250));
       }
+
+      // busy flips before the prompt reaches the engine; a reload in that gap
+      // stops the turn before dispatch, which is a different outcome
+      await waitUntil(async () => promptReached(join(home, "helper-hang.json"), "Delegated by @Asker"), 20_000, "the delegated prompt never reached the engine");
 
       // Any provider credential change rebuilds the fleet and settles busy
       // turns without relying on a provider turn.completed event.

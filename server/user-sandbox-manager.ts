@@ -9,7 +9,7 @@ import { existsSync, readFileSync } from "node:fs";
 import type { Duplex } from "node:stream";
 
 import { writeFileAtomic } from "./atomic.ts";
-import type { SandboxExecInput, SandboxExecOutput, SandboxStats, SandboxStatus } from "./sandboxd-core.ts";
+import type { SandboxExecInput, SandboxExecOutput, SandboxStats, SandboxStatus, SandboxStdioSpec } from "./sandboxd-core.ts";
 import type { SandboxdClient, SandboxdInfo } from "./user-sandbox-client.ts";
 import { SandboxdRequestError } from "./user-sandbox-client.ts";
 import { sandboxKeyForPrincipal } from "./user-sandbox-spec.ts";
@@ -235,6 +235,13 @@ export class UserSandboxManager {
       if (error instanceof SandboxdRequestError) throw new UserSandboxUnavailable(error.message, error.code);
       throw new UserSandboxUnavailable("The server environment could not be reached. Try again in a moment.", "unreachable");
     }
+  }
+
+  /** A person's own MCP server command, running in their environment,
+   * as a byte stream (server/sandbox-stdio-mcp.ts). Starts it when needed. */
+  async stdioStream(principalId: string, spec: SandboxStdioSpec): Promise<Duplex> {
+    this.refuseIfOut(principalId);
+    return this.call(() => this.options.client.stdioStream(this.keyFor(principalId), spec));
   }
 
   async workspaceOverQuota(principalId: string): Promise<boolean> {

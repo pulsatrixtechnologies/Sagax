@@ -25,9 +25,10 @@
 // NOTE: untested against a live `gemini` CLI on this machine (not installed);
 // the ACP flag + auth method ids follow the published Gemini CLI ACP contract
 // and should be re-verified end-to-end once the CLI is present.
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
+import type { TurnAccessInput } from "../../contracts.ts";
 import { userHome } from "../../env-path.ts";
 import { createAcpDriver, type AcpSupport } from "./core.ts";
 
@@ -82,6 +83,21 @@ export function geminiApprovalArgs(fullAuto: boolean, approvalMode: string | und
   return [];
 }
 
+/** Organization server: one turn's credentials (SendTurnInput.access). The
+ * payer's own Google key (Perspicax provider `google`) in an empty
+ * GEMINI_CLI_HOME of theirs, so the server's own ~/.gemini login and any
+ * server key never serve them. */
+export function geminiApplyAccess(env: Record<string, string | undefined>, access: TurnAccessInput): void {
+  delete env.GEMINI_API_KEY;
+  delete env.GOOGLE_API_KEY;
+  if (access.engineHome) {
+    mkdirSync(access.engineHome, { recursive: true, mode: 0o700 });
+    env.GEMINI_CLI_HOME = access.engineHome;
+  }
+  const key = access.environment?.GEMINI_API_KEY;
+  if (key) env.GEMINI_API_KEY = key;
+}
+
 const support: AcpSupport = {
   driverKind: "geminiAgent",
   displayName: "Gemini",
@@ -101,6 +117,7 @@ const support: AcpSupport = {
   // alias for older releases, but using it now emits a deprecation warning.
   spawnArgs: (config, turn) => ["--acp", ...geminiApprovalArgs(config.fullAuto, turn.approvalMode), ...(turn.model ? ["-m", turn.model] : [])],
   credentialEnv: ["GEMINI_API_KEY", "GOOGLE_API_KEY"],
+  applyAccess: (env, access) => geminiApplyAccess(env, access),
 
   pickAuthMethod: (methods) => {
     const ids = methods.map((m) => m.id).filter((id): id is string => typeof id === "string");
