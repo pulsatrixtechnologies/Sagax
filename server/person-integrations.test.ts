@@ -6,7 +6,7 @@ import type { AddressInfo } from "node:net";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { json, readBody } from "./harness/http.ts";
-import { engineIntegrationCommand, INTEGRATIONS_ADMIN_ONLY, INTEGRATIONS_ADMIN_ONLY_COMMAND } from "./person-integrations.ts";
+import { effectiveIntegrationRights, engineIntegrationCommand, INTEGRATIONS_ADMIN_ONLY, INTEGRATIONS_ADMIN_ONLY_COMMAND, integrationsPaused } from "./person-integrations.ts";
 import type { RequestAuth } from "./request-auth.ts";
 import { createBotPluginRoutes } from "./routes/bot-plugins.ts";
 import { createPersonConnectionRoutes } from "./routes/person-connections.ts";
@@ -164,6 +164,18 @@ describe("a bot's plugins with sagax_integrations", () => {
     expect((await send(base, "POST", "/api/bots/scout/plugins/marketplaces", { source: "acme/tools" })).status).toBe(201);
     expect((await send(base, "POST", "/api/bots/scout/plugins/install", { marketplace: "acme-tools", plugin: "reviewer" })).status).toBe(201);
     expect(calls).toEqual(["market", "install"]);
+  });
+});
+
+describe("sagax_integrations off pauses use and does not delete", () => {
+  it("pauses a member whose right is off, and never an admin", () => {
+    expect(integrationsPaused({ rights: "off", orgAdmin: false })).toBe(true);
+    expect(integrationsPaused({ rights: "off", orgAdmin: true })).toBe(false);
+    expect(integrationsPaused({ rights: "manage", orgAdmin: false })).toBe(false);
+    expect(effectiveIntegrationRights(false, "off")).toBe("off");
+    expect(effectiveIntegrationRights(true, "off")).toBe("manage");
+    expect(effectiveIntegrationRights(false, undefined)).toBe("manage");
+    expect(effectiveIntegrationRights(false, "manage")).toBe("manage");
   });
 });
 

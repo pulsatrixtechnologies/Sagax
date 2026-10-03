@@ -5,8 +5,9 @@
 // a command that runs in their server environment). Only for them: no other
 // person's bot turn ever gets these (server/routes/person-connections.ts).
 // When an admin manages them (Perspicax `sagax_integrations: off`), the
-// section is read-only under a short notice: what the person has keeps
-// working, and only a sign-in again to one of their servers is offered.
+// section is read-only under a short notice: what the person has stays
+// saved and is not usable, and only a sign-in again to one of their
+// servers is offered.
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { openExternalLink } from "@/lib/app-links";

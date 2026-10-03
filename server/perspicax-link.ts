@@ -18,6 +18,7 @@
 import { lstatSync, readFileSync } from "node:fs";
 import { z } from "zod";
 
+import { effectiveIntegrationRights } from "./person-integrations.ts";
 import type { Principal } from "./principals.ts";
 
 export const LINK_FILE_MAX_BYTES = 4 * 1024;
@@ -249,6 +250,11 @@ export interface PerspicaxDirectoryOptions {
    * holds a routine delegation (undefined: unknown), and when the fetch
    * started (RoutineConsents.reconcile). */
   onDelegations?: (present: (sub: string) => boolean | undefined, fetchStartedAt: number) => void;
+  /** `sagax_integrations` changed for an active person (effective right:
+   * an admin stays `manage`). Not fired on a 304, and not again while the
+   * right stays the same. The new right is passed in: `integrationRights`
+   * still reads the previous directory until this answer is stored. */
+  onIntegrationRights?: (principalId: string, rights: "manage" | "off") => void;
   /** Pulsa Bot's version, sent as X-Pulsabot-Version. */
   version: string;
   /** Slice 7: the link file was loaded, changed to another server id, or
@@ -832,10 +838,29 @@ export class PerspicaxDirectory {
       // fetch started is newer than this answer and stays.
       if (after.disabledAt !== undefined) this.options.principals.markEnabled?.(iss, person.sub, fetchStartedAt);
       if (before?.orgRole === "admin" && orgRole !== "admin") this.options.onRoleNarrowed(after.id);
+      this.reportIntegrationRights(person, before, after.id, orgRole);
     }
     for (const [sub, principal] of known) {
       if (listed.has(sub) || principal.disabledAt !== undefined) continue;
       this.options.onPersonOut(iss, sub);
+    }
+  }
+
+  /** Tell the server when an active person's effective `sagax_integrations`
+   * changed, so saved connections stop or start being usable without waiting
+   * for their next turn. A disabled person is logged out instead. */
+  private reportIntegrationRights(person: DirectoryPerson, before: Principal | undefined, principalId: string, orgRole: "admin" | "member"): void {
+    if (!this.options.onIntegrationRights) return;
+    const next = effectiveIntegrationRights(orgRole === "admin", person.sagax_integrations);
+    const previousListed = this.data?.people.find((entry) => entry.sub === person.sub);
+    const seenBefore = before !== undefined || previousListed !== undefined;
+    const previousRole = before ? before.orgRole === "admin" : previousListed?.role === "admin";
+    const previous = seenBefore ? effectiveIntegrationRights(previousRole, previousListed?.sagax_integrations) : "manage";
+    if (next === previous) return;
+    try {
+      this.options.onIntegrationRights(principalId, next);
+    } catch (error) {
+      this.log(`perspicax directory: integration rights could not be applied: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 }

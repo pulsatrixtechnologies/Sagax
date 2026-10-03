@@ -20,7 +20,9 @@
 //         the whole flow with no admin, on a bot someone shared at manage
 //   OC-8  sagax_integrations off: the member's changes answer 403
 //         org_integrations_admin_only, the viewer and the listings say an
-//         admin manages them, and what they had keeps working
+//         admin manages them, and what they saved stops being usable
+//   OC-9  an organization admin lists and revokes a person's connections;
+//         a member and an unsigned loopback are refused; no secret is returned
 import { execFileSync, spawn, type ChildProcess } from "node:child_process";
 import { createServer, type IncomingMessage, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
@@ -434,13 +436,19 @@ posixOnly("organization: a person's own GitHub, MCP servers, plugins and skills"
     expect((await api("PUT", `/api/bots/${bobBot.id}/grants`, bob, { target: `user:${ids.uma}`, level: "use" })).status).toBe(200);
   }, 120_000);
 
-  it("OC-8: sagax_integrations off: 403 org_integrations_admin_only, a notice, and what she had keeps working", async () => {
-    // while she may: her own bot, a server of her own, a skill on her bot
+  it("OC-8: sagax_integrations off: 403 org_integrations_admin_only, a notice, and what she saved stops being usable", async () => {
+    // while she may: her own bot, a server of her own, a skill and a plugin
     const ritaBot = await createBot(rita, "Rita's");
     const own = await api("POST", "/api/me/mcp/servers", rita, { name: "ritas", url: `${oauth.base}/rita-mcp`, auth: "token", token: "t-rita-000" });
     expect(own.status, own.text).toBe(201);
     const text = "---\nname: notes\ndescription: Take notes\n---\nTake notes.";
     expect((await api("POST", `/api/bots/${ritaBot.id}/skill-template`, rita, { name: "notes", description: "Take notes", text, source: "template", enabled: true })).status).toBe(201);
+    expect((await api("POST", `/api/bots/${ritaBot.id}/plugins/marketplaces`, rita, { source: "acme/tools" })).status).toBe(201);
+    expect((await api("POST", `/api/bots/${ritaBot.id}/plugins/install`, rita, { marketplace: "acme-tools", plugin: "reviewer" })).status).toBe(201);
+    await turn(rita, ritaBot, "before");
+    const before = JSON.parse(readFileSync(engineDump, "utf8")) as { argv: string[]; mcpConfig: { mcpServers: Record<string, { headers?: Record<string, string> }> } };
+    expect(before.mcpConfig.mcpServers.ritas?.headers?.Authorization).toBe("Bearer t-rita-000");
+    expect(before.argv).toContain("--plugin-dir");
 
     // an admin turns it off in Perspicax; the directory brings it here
     idp.directoryPeople = idp.directoryPeople.map((person) => (person.sub === RITA.sub ? { ...person, sagax_integrations: "off" as const } : person));
@@ -478,21 +486,74 @@ posixOnly("organization: a person's own GitHub, MCP servers, plugins and skills"
       expect(refused.body.code).toBe("org_integrations_admin_only");
     }
     expect((await api("GET", `/api/bots/${ritaBot.id}/skills`, rita)).body.skills.map((entry: { name: string }) => entry.name)).toContain("notes");
-    // what she had keeps working: her server still mounts for her turn
+    // saved, not usable: her server is not mounted and her plugin is not loaded
     await turn(rita, ritaBot, "anything");
-    const engine = JSON.parse(readFileSync(engineDump, "utf8")) as { mcpConfig: { mcpServers: Record<string, { headers?: Record<string, string> }> } };
-    expect(engine.mcpConfig.mcpServers.ritas?.headers?.Authorization).toBe("Bearer t-rita-000");
+    const engine = JSON.parse(readFileSync(engineDump, "utf8")) as { argv: string[]; mcpConfig: { mcpServers: Record<string, { headers?: Record<string, string> }> } };
+    expect(engine.mcpConfig.mcpServers.ritas).toBeUndefined();
+    expect(JSON.stringify(engine)).not.toContain("t-rita-000");
+    expect(engine.argv).not.toContain("--plugin-dir");
     // an organization admin is never narrowed by the field
     idp.directoryPeople = idp.directoryPeople.map((person) => (person.sub === ALICE.sub ? { ...person, sagax_integrations: "off" as const } : person));
     await sleep(6_000);
     expect((await api("GET", "/api/me/connections", alice)).body.managedByAdmin).toBe(false);
     expect((await api("GET", "/api/config", alice)).body.viewer.integrationsManagedByAdmin).toBeUndefined();
 
-    // manage again: she changes them herself
+    // manage again: the saved server and plugin are usable, and she can change them
     idp.directoryPeople = idp.directoryPeople.map((person) => (person.sub === RITA.sub ? { ...person, sagax_integrations: "manage" as const } : person));
     await waitFor(async () => (await api("GET", "/api/config", rita)).body.viewer && !(await api("GET", "/api/config", rita)).body.viewer.integrationsManagedByAdmin, 30_000);
+    await turn(rita, ritaBot, "back");
+    const restored = JSON.parse(readFileSync(engineDump, "utf8")) as { argv: string[]; mcpConfig: { mcpServers: Record<string, { headers?: Record<string, string> }> } };
+    expect(restored.mcpConfig.mcpServers.ritas?.headers?.Authorization).toBe("Bearer t-rita-000");
+    expect(restored.argv).toContain("--plugin-dir");
     expect((await api("DELETE", "/api/me/mcp/servers/ritas", rita)).status).toBe(200);
-    expect((await api("POST", `/api/bots/${ritaBot.id}/plugins/marketplaces`, rita, { source: "acme/tools" })).status).toBe(201);
-    expect((await api("POST", `/api/bots/${ritaBot.id}/plugins/install`, rita, { marketplace: "acme-tools", plugin: "reviewer" })).status).toBe(201);
-  }, 150_000);
+    expect((await api("PATCH", `/api/bots/${ritaBot.id}/plugins/reviewer@acme-tools`, rita, { enabled: false })).status).toBe(200);
+  }, 180_000);
+
+  it("OC-9: an admin lists and revokes a person's connections; a member cannot; nothing secret is returned", async () => {
+    const connections = `/api/org/people/${ids.bob}/connections`;
+    const listed = await api("GET", connections, alice);
+    expect(listed.status, listed.text).toBe(200);
+    // GitHub is the login (the display name is separate). A plugin is its key
+    // (`reviewer@acme-tools`), not the plugin's own name.
+    const labels = (listed.body.connections as Array<{ kind: string; name?: string; login?: string; key?: string }>).map((entry) =>
+      entry.kind === "github" ? entry.login : entry.kind === "plugin" ? entry.key : entry.name);
+    for (const name of ["bob-gh", "github", "notes", "mytools", "reviewer@acme-tools"]) expect(labels, listed.text).toContain(name);
+    for (const secret of [GITHUB_TOKEN, "k-123", "WDJB-MJHT", "t-uma-000"]) expect(listed.text).not.toContain(secret);
+    expect((await api("GET", connections, rita)).status).toBe(403);
+    expect((await api("POST", `${connections}/revoke`, bob, { all: true })).status).toBe(403);
+    const open = await fetch(`${BASE}${connections}`);
+    expect(open.status).toBe(403);
+
+    const one = await api("POST", `${connections}/revoke`, alice, { kind: "mcp", name: "mytools" });
+    expect(one.status, one.text).toBe(200);
+    expect(one.text).not.toContain("k-123");
+    const afterOne = await turn(bob, bobBot, "use my tools");
+    expect(afterOne).toContain("mcp:absent");
+    const engine = JSON.parse(readFileSync(engineDump, "utf8")) as { mcpConfig: { mcpServers: Record<string, unknown> } };
+    expect(engine.mcpConfig.mcpServers.mytools).toBeUndefined();
+    expect(engine.mcpConfig.mcpServers.notes).toBeTruthy();
+
+    const all = await api("POST", `${connections}/revoke`, alice, { all: true });
+    expect(all.status, all.text).toBe(200);
+    expect(all.text).not.toContain(GITHUB_TOKEN);
+    const cleared = await api("GET", connections, alice);
+    expect(cleared.body.connections).toEqual([]);
+    await turn(bob, bobBot, "again");
+    const gone = JSON.parse(readFileSync(engineDump, "utf8")) as { argv: string[]; mcpConfig: { mcpServers: Record<string, unknown> } };
+    for (const name of ["github", "notes", "mytools"]) expect(gone.mcpConfig.mcpServers[name]).toBeUndefined();
+    expect(JSON.stringify(gone)).not.toContain(GITHUB_TOKEN);
+    expect(gone.argv ?? []).not.toContain("--plugin-dir");
+    const mine = await api("GET", "/api/me/connections", bob);
+    expect(mine.body.servers).toEqual([]);
+    expect(mine.body.github.state).toBe("none");
+
+    const activity = await waitFor(async () => {
+      const rows = (await api("GET", "/api/admin-activity?what=people", alice)).body.entries as Array<{ action: string }> | undefined;
+      return rows?.some((entry) => entry.action === "connections.revoke") ? rows : null;
+    });
+    const text = JSON.stringify(activity);
+    expect(text).toContain("connections.revoke");
+    expect(text).not.toContain(GITHUB_TOKEN);
+    expect(text).not.toContain("k-123");
+  }, 180_000);
 });

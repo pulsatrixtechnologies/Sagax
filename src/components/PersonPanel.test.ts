@@ -45,14 +45,17 @@ describe("PersonPanel", () => {
     expect(html).toContain('data-person-action="message"');
     expect(html).toContain('data-person-action="hide"');
     expect(html).not.toContain("Manage in Perspicax");
+    expect(html).not.toContain('data-person-section="connections"');
   });
 
-  it("links an admin to the person's page in the Perspicax console", () => {
+  it("links an admin to the person's page in the Perspicax console and lists their connections", () => {
     fixture.role = "admin";
     const html = render();
     expect(html).toContain("data-person-manage");
     expect(html).toContain('href="https://px.example.test/console/users/u1"');
     expect(html).toContain("Manage in Perspicax");
+    expect(html).toContain('data-person-section="connections"');
+    expect(html).toContain("Loading connections…");
   });
 
   it("offers no Message to yourself and says when someone is not in the directory", () => {

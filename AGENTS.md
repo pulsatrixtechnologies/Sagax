@@ -683,7 +683,8 @@ Connected apps, shared one token by all and ran commands on the host;
 `claude plugin ...` typed by a bot hit the host Bash denial whatever
 `SAGAX_CLAUDE_ALLOW` said; skills routes were admin-only; the environment
 had no gh. Keep these rules, each covered by `server/org-connections.e2e.test.ts`
-(OC-1 to OC-6), `server/person-connections.test.ts`,
+(OC-1 to OC-9), `server/person-connections.test.ts`,
+`server/org-person-connections.test.ts`,
 `server/github-connect.test.ts`, `server/bot-plugins.test.ts`,
 `server/sandbox-stdio-mcp.test.ts`, `server/sandboxd.test.ts` or
 `src/components/settings/MyConnectionsSettings.test.ts`:
@@ -732,13 +733,20 @@ had no gh. Keep these rules, each covered by `server/org-connections.e2e.test.ts
   `sagax_integrations` on each directory person, set by an admin on the
   person's Sagax tab; default and absent mean `manage`;
   `server/person-integrations.ts`, `personIntegrationsOff`,
-  `integrationsLocked`). `manage`: everything above, with no admin. `off`:
-  `/api/me/mcp/servers*` (add, toggle, remove, sign out), `/api/me/github*`,
-  every plugin change and every skill change answer 403
+  `integrationsLocked`, `effectiveIntegrationRights`). `manage`: everything
+  above, with no admin. `off`: the same change routes answer 403
   `org_integrations_admin_only`, even on their own bot; only a sign-in again
-  to a server they already have passes. What they have keeps working (their
-  servers mount, their GitHub reaches their environment, the bots' plugins
-  and skills load) and reads as such: `managedByAdmin` on
+  to a server they already have passes (`oauth/start` does not mount it).
+  Use stops at once and the saved credentials stay, so turning the cap back
+  to `manage` mounts them on the next turn: `mountPersonalMcp` closes that
+  person's stdio sessions and adds nothing, `syncGithubForTurn` and
+  `usablePersonGithub` drop the token from the environment and from Sagax's
+  own fetches, and `pluginDirsFor` passes no `--plugin-dir`. Skills already
+  on a bot still load. The directory callback `onIntegrationRights` fires
+  only when the effective right changes (an organization admin stays
+  `manage` even when the field is `off`; a disabled person is skipped; a 304
+  does not re-fire) and closes stdio and clears or restores the GitHub
+  sandbox token. The person's own screen still reads `managedByAdmin` on
   `/api/me/connections` and on the plugins listing (`canChange: false`),
   `viewer.integrationsManagedByAdmin`, edit controls hidden under "Votre
   administrateur gère les plugins et les serveurs MCP"
@@ -747,9 +755,24 @@ had no gh. Keep these rules, each covered by `server/org-connections.e2e.test.ts
   (`engineIntegrationCommand`; a courtesy, the boundary is that a turn loads
   only what Sagax keeps); `/plugin` and `/mcp` are managed for everyone. An
   organization admin is never narrowed and changes a person's bot plugins
-  and skills for them. Tests: `server/person-integrations.test.ts`,
-  `server/perspicax-link.test.ts`, OC-7 and OC-8,
-  `MyConnectionsSettings.test.ts`.
+  and skills for them.
+- An organization admin lists and removes another person's connections
+  (`GET /api/org/people/<principalId>/connections` and
+  `POST .../connections/revoke`, `server/org-person-connections.ts`): admin
+  scope, `orgAdminCaller` (a service loopback is not an admin), not in
+  `CLIENT_ALLOW`. A solo server answers 403 `identity_perspicax`. The list
+  names MCP servers (hostname or command only), the GitHub connection
+  (login, never a pending `userCode`) and plugins on bots that person owns,
+  with kind, created date and last stdio use when a session is open. No
+  token, env value, argument, header name or path. Remove deletes the
+  stored credential, forgets that server's OAuth entry, stops the stdio
+  child (`closePerson`) and writes `connections.revoke` (category `people`)
+  only when something was removed. One target that is missing is 404 with
+  no audit; remove-all of nothing is 200 and no audit.
+  Tests: `server/person-integrations.test.ts`,
+  `server/perspicax-link.test.ts`, `server/org-person-connections.test.ts`,
+  OC-7, OC-8 and OC-9, `MyConnectionsSettings.test.ts`,
+  `PersonConnectionsSection.test.ts`.
 
 A change under `server/` needs the server image redeployed (sandboxd is the
 same image); `deploy/sandbox/Dockerfile` (gh, node, npm) needs the sandbox
@@ -917,11 +940,15 @@ A person of the organization opens in the right panel like a bot
 (`src/components/PersonPanel.tsx`, store `personPanelId`, action
 `openPersonPanel`): from a direct conversation's header or context menu, a
 group's person label, the group's People list and another person's name in
-a bot chat. It shows only the directory's fields (name, login, email,
+a bot chat. It shows the directory's fields (name, login, email,
 avatar, role, teams), the groups the viewer shares with them, their bots the
 viewer already sees, Message, Hide/Show, and for an admin "Manage in
 Perspicax": `GET /api/org/directory` adds `manageUrl`
-(`<issuer>/console/users/<sub>`) for admins only. Nothing from a private
+(`<issuer>/console/users/<sub>`) for admins only. An admin also sees
+Connections for a person who is in the directory
+(`PersonConnectionsSection`): each MCP server, the GitHub connection and
+the plugins on that person's bots, with Remove and Remove all behind a
+confirm dialog. A member does not see that section. Nothing from a private
 thread. Hiding is per person and view-only (`src/lib/sidebar-hidden.ts`,
 key `sagax.sidebarHidden.v1`, synced by `/api/me/preferences` on an
 organization server): bots by id, groups by id, people by principal; still
@@ -930,6 +957,7 @@ Settings > Appearance show them back. A new unread message unhides people
 and groups by default, bots only when the person turns it on. Archive stays
 the bot-wide action. Tests: `src/lib/sidebar-hidden*.test.ts`,
 `src/lib/person-panel.test.ts`, `PersonPanel.test.ts`,
+`PersonConnectionsSection.test.ts`,
 `src/state/person-panel.reducer.test.ts`.
 
 ## Sidebar sections are personal
