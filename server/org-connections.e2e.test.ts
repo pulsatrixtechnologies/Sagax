@@ -44,6 +44,7 @@ const INSTANCE = "oc";
 const GITHUB_TOKEN = "gho_fake_device_token_bob_000000";
 const ALICE: FakeOidcUser = { sub: "01J9OCALICE0000000000000A", email: "alice@example.test", name: "Alice", preferred_username: "alice", role: "admin", teams: [] };
 const BOB: FakeOidcUser = { sub: "01J9OCBOB00000000000000B", email: "bob@example.test", name: "Bob", preferred_username: "bob", role: "employee", teams: [] };
+const UMA: FakeOidcUser = { sub: "01J9OCUMA00000000000000U", email: "uma@example.test", name: "Uma", preferred_username: "uma", role: "employee", teams: [] };
 
 function hasGit(): boolean {
   try { execFileSync("git", ["--version"], { stdio: "ignore" }); return true; } catch { return false; }
@@ -183,6 +184,7 @@ function marketplaceRepo(root: string): string {
 posixOnly("organization: a person's own GitHub, MCP servers, plugins and skills", () => {
   let alice: Auth;
   let bob: Auth;
+  let uma: Auth;
   const ids: Record<string, string> = {};
   let bobBot: { id: string; threadId: string };
 
@@ -197,7 +199,7 @@ posixOnly("organization: a person's own GitHub, MCP servers, plugins and skills"
     await startFakeGithub();
     oauth = await startFakeOAuthMcp({ registration: true });
     idp = await startFakeOidcProvider({ user: ALICE });
-    idp.directoryPeople = [ALICE, BOB].map((user) => idp.personOf(user));
+    idp.directoryPeople = [ALICE, BOB, UMA].map((user) => idp.personOf(user));
     PORT = await freePortBlock([0, 1]);
     BASE = `http://127.0.0.1:${PORT}`;
     home = mkdtempSync(join(tmpdir(), "omb-org-connections-"));
@@ -257,9 +259,10 @@ posixOnly("organization: a person's own GitHub, MCP servers, plugins and skills"
     });
     alice = await signIn(ALICE);
     bob = await signIn(BOB);
+    uma = await signIn(UMA);
     const people = await waitFor(async () => {
       const got = (await api("GET", "/api/org/directory", alice)).body.people as Array<{ principalId: string; login: string }> | undefined;
-      return got && got.length === 2 ? got : null;
+      return got && got.length === 3 ? got : null;
     });
     for (const person of people) ids[person.login] = person.principalId;
     bobBot = await createBot(bob, "Bobby");
@@ -367,13 +370,13 @@ posixOnly("organization: a person's own GitHub, MCP servers, plugins and skills"
     expect(argv).toContain("--plugin-dir");
     expect(existsSync(join(dir, "skills", "review", "SKILL.md"))).toBe(true);
     expect(existsSync(join(dir, "hooks"))).toBe(false);
-    // a person the bot is shared with (use) reads, never changes
-    expect((await api("GET", `/api/bots/${bobBot.id}/plugins`, alice)).status).toBe(404);
-    expect((await api("PUT", `/api/bots/${bobBot.id}/grants`, bob, { target: `user:${ids.alice}`, level: "use" })).status).toBe(200);
-    const read = await api("GET", `/api/bots/${bobBot.id}/plugins`, alice);
+    // a member the bot is not shared with sees nothing; with use, reads only
+    expect((await api("GET", `/api/bots/${bobBot.id}/plugins`, uma)).status).toBe(404);
+    expect((await api("PUT", `/api/bots/${bobBot.id}/grants`, bob, { target: `user:${ids.uma}`, level: "use" })).status).toBe(200);
+    const read = await api("GET", `/api/bots/${bobBot.id}/plugins`, uma);
     expect(read.status, read.text).toBe(200);
     expect(read.body.canChange).toBe(false);
-    expect((await api("PATCH", `/api/bots/${bobBot.id}/plugins/reviewer@acme-tools`, alice, { enabled: false })).body.code).toBe("plugins_owner_only");
+    expect((await api("PATCH", `/api/bots/${bobBot.id}/plugins/reviewer@acme-tools`, uma, { enabled: false })).body.code).toBe("plugins_owner_only");
     // the admin keeps a list: acme/tools is no longer allowed
     const policy = await api("PATCH", "/api/org/settings", alice, { pluginMarketplaces: { mode: "list", allow: ["pulsatrixtechnologies/*"] } });
     expect(policy.status, policy.text).toBe(200);
@@ -391,6 +394,7 @@ posixOnly("organization: a person's own GitHub, MCP servers, plugins and skills"
     const listed = await api("GET", `/api/bots/${bobBot.id}/skills`, bob);
     expect(listed.body.skills.map((skill: { name: string }) => skill.name)).toContain("greet");
     // a person with use on it reads and cannot change
-    expect((await api("DELETE", `/api/bots/${bobBot.id}/skills/greet`, alice)).status).toBe(403);
+    expect((await api("GET", `/api/bots/${bobBot.id}/skills`, uma)).status).toBe(200);
+    expect((await api("DELETE", `/api/bots/${bobBot.id}/skills/greet`, uma)).status).toBe(403);
   });
 });

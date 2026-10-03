@@ -4764,13 +4764,14 @@ function pluginDirsFor(bot: { id: string }, instance: { driverKind: string }): {
 ROUTES.push(createBotPluginRoutes<BotRecord>({
   plugins: botPlugins,
   bot: (id) => store.bot(id) ?? undefined,
-  mayRead: (auth, bot) => viewerBotLevel(auth, bot) !== null,
-  // The owner, or a person who manages the bot (#65 rights). A solo
-  // server: the owner at this computer or an admin session.
+  mayRead: (auth, bot) => viewerBotLevel(auth, bot) !== null || orgAdminCaller(auth),
+  // The owner, or a person who manages the bot (#65 rights), or an
+  // organization admin (who could already change skills). A solo server:
+  // the owner at this computer or an admin session.
   mayChange: (auth, bot) => {
     if (IDENTITY.kind !== "perspicax") return auth.kind !== "session" || auth.scopes.includes("admin");
     const level = viewerBotLevel(auth, bot);
-    return level === "owner" || level === "manage";
+    return level === "owner" || level === "manage" || orgAdminCaller(auth);
   },
   actor: (auth) => sessionPrincipal(auth) ?? undefined,
   policy: pluginMarketplacePolicy,
@@ -26751,8 +26752,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (!target) return { status: 404, body: { error: "no such bot" } };
       if (IDENTITY.kind !== "perspicax") return null;
       const level = viewerBotLevel(auth, target);
-      if (level === null) return { status: 404, body: { error: "no such bot" } };
-      if (change && level !== "owner" && level !== "manage") return { status: 403, body: { error: "Only the bot's owner, or someone who manages it, can change its skills.", code: "skills_owner_only" } };
+      if (level === null && !orgAdminCaller(auth)) return { status: 404, body: { error: "no such bot" } };
+      if (change && level !== "owner" && level !== "manage" && !orgAdminCaller(auth)) return { status: 403, body: { error: "Only the bot's owner, or someone who manages it, can change its skills.", code: "skills_owner_only" } };
       return null;
     };
     {
