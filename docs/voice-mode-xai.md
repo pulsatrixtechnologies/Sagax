@@ -184,9 +184,14 @@ What keeps it short:
   servers, the session read back; measured from native logs). While the
   thread is on a call the turn carries `keepWarm`: the token rides a 0600
   per-thread file (`SAGAX_COMMS_TOKEN_FILE`, read on each request) and
-  leaves the contract, so only the call's first turn starts a process
-  (`server/voice-call-latency.e2e.test.ts`). Only Claude pools a process per
-  thread; Codex and the API drivers are unchanged.
+  leaves the contract. Claude starts that process when the call is accepted
+  (`POST /voice/call`), before the first utterance, and the first spoken
+  turn reuses it (`server/voice-call-latency.e2e.test.ts`). A hangup before
+  any turn closes the idle process. Codex and the API drivers are not warmed
+  this way: a Codex warm would be the ACP handshake and `session/new` before
+  `session/prompt`, which is not done here, so a Codex call's first spoken
+  turn still pays that handshake. API drivers cannot start without a prompt,
+  and no hidden prompt is sent.
 - **A finished sentence ends sooner.** When the streamed words close with
   final punctuation and the silence is confident (Silero under 0.15), the
   turn ends after 288, 352 or 576 ms (Short, Normal, Patient) instead of the

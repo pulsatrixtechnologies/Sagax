@@ -404,10 +404,15 @@ fake xAI: `scripts/verify-voice-mode.ts`. Details: `docs/voice-mode-xai.md`.
   (`server/voice-latency.ts`, `[voice-latency]` lines). A thread on a call
   passes `keepWarm` to the engine: the Claude driver keeps one process for
   the call, the per-turn comms token in a file (`SAGAX_COMMS_TOKEN_FILE`),
-  never in the spawn contract. Do not put a per-turn value in a pooled
+  never in the spawn contract. Claude starts that process when the call is
+  accepted (`POST /voice/call`); the first spoken turn reuses it. A hangup
+  before any turn closes the idle process. Codex and the API drivers are
+  not warmed this way (a Codex warm is the ACP handshake and `session/new`
+  before `session/prompt`, which is not done here, and no hidden prompt is
+  sent). Do not put a per-turn value in a pooled
   process's contract: it relaunches the engine on every turn. Tests:
-  `server/voice-call-latency.e2e.test.ts`, `call.test.ts` ("latency"),
-  bench `scripts/voice-latency-bench.ts`.
+  `server/voice-call-latency.e2e.test.ts`, `server/voice-call-warmup.test.ts`,
+  `call.test.ts` ("latency"), bench `scripts/voice-latency-bench.ts`.
 
 A change to `server/voice-mode.ts` needs the server image redeployed.
 

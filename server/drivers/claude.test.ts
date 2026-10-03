@@ -497,6 +497,11 @@ describe("ClaudeDriver turns (fake CLI)", () => {
     delete process.env.FAKE_CLAUDE_AUTO_UNAVAILABLE_MODELS;
     delete process.env.FAKE_CLAUDE_DUMP;
     delete process.env.FAKE_CLAUDE_PROMPTS;
+    delete process.env.FAKE_CLAUDE_COLD_MS;
+    delete process.env.FAKE_CLAUDE_FIRST_TOKEN_MS;
+    delete process.env.FAKE_CLAUDE_LAUNCH_LOG;
+    delete process.env.FAKE_CLAUDE_TOKEN_MS;
+    delete process.env.FAKE_CLAUDE_VOICE_REPLY;
     delete process.env.FAKE_CLAUDE_TRANSIENTS;
     delete process.env.FAKE_CLAUDE_PARTIAL_FAILS;
     delete process.env.FAKE_CLAUDE_STATE;
@@ -607,6 +612,105 @@ describe("ClaudeDriver turns (fake CLI)", () => {
     } finally {
       delete process.env.FAKE_CLAUDE_COMMANDS_DUMP;
     }
+  });
+
+  const launchLines = (path: string): Array<{ pid: number; at: number }> => existsSync(path)
+    ? readFileSync(path, "utf8").trim().split("\n").filter(Boolean).map((line) => JSON.parse(line) as { pid: number; at: number })
+    : [];
+  const processAlive = (pid: number) => {
+    try { process.kill(pid, 0); return true; } catch { return false; }
+  };
+
+  it("warms a call without a turn, reuses that process, and does not warm twice", async () => {
+    await create("voice");
+    expect(instance.adapter.capabilities.warmSession).toBe(true);
+    const launches = join(scratch, "launches.jsonl");
+    const prompts = join(scratch, "prompts.jsonl");
+    process.env.FAKE_CLAUDE_LAUNCH_LOG = launches;
+    process.env.FAKE_CLAUDE_PROMPTS = prompts;
+    const warm = { threadId: "t-warm", text: "", keepWarm: true, warmOnly: true };
+    const first = await instance.adapter.sendTurn(warm);
+    expect(first.reused).toBeUndefined();
+    await expect.poll(() => launchLines(launches).length, { timeout: 5_000 }).toBe(1);
+    expect(instance.adapter.hasSession("t-warm")).toBe(false);
+    expect(recorder.events.some((event) => event.type === "turn.started")).toBe(false);
+    expect(existsSync(prompts)).toBe(false);
+    const second = await instance.adapter.sendTurn(warm);
+    expect(second.reused).toBe(true);
+    expect(launchLines(launches)).toHaveLength(1);
+    const spoken = await instance.adapter.sendTurn({ threadId: "t-warm", text: "hello", keepWarm: true });
+    expect(spoken.reused).toBe(true);
+    await recorder.until((event) => event.type === "turn.completed" && event.turnId === spoken.turnId);
+    expect(launchLines(launches)).toHaveLength(1);
+    expect(readFileSync(prompts, "utf8").trim().split("\n").filter(Boolean)).toHaveLength(1);
+    expect(recorder.events.filter((event) => event.type === "turn.started")).toHaveLength(1);
+  });
+
+  it("pays the cold start at process boot, so a warmed first turn does not", async () => {
+    await create("voice");
+    process.env.FAKE_CLAUDE_COLD_MS = "400";
+    process.env.FAKE_CLAUDE_FIRST_TOKEN_MS = "50";
+    const coldStarted = Date.now();
+    const cold = await instance.adapter.sendTurn({ threadId: "t-cold", text: "hello", keepWarm: true });
+    await recorder.until((event) => event.type === "content.delta" && event.turnId === cold.turnId);
+    const coldMs = Date.now() - coldStarted;
+    expect(cold.reused).toBeUndefined();
+    expect(coldMs).toBeGreaterThanOrEqual(350);
+
+    const warmed = await instance.adapter.sendTurn({ threadId: "t-warmed", text: "", keepWarm: true, warmOnly: true });
+    expect(warmed.reused).toBeUndefined();
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    const warmStarted = Date.now();
+    const spoken = await instance.adapter.sendTurn({ threadId: "t-warmed", text: "hello", keepWarm: true });
+    await recorder.until((event) => event.type === "content.delta" && event.turnId === spoken.turnId);
+    const warmMs = Date.now() - warmStarted;
+    expect(spoken.reused).toBe(true);
+    expect(warmMs).toBeLessThan(300);
+  });
+
+  it("does not spawn when the warm is already cancelled", async () => {
+    await create("voice");
+    const launches = join(scratch, "launches.jsonl");
+    process.env.FAKE_CLAUDE_LAUNCH_LOG = launches;
+    const signal = new AbortController();
+    signal.abort();
+    const started = await instance.adapter.sendTurn({ threadId: "t-aborted", text: "", keepWarm: true, warmOnly: true, warmSignal: signal.signal });
+    expect(started.reused).toBeUndefined();
+    expect(existsSync(launches)).toBe(false);
+  });
+
+  it("closes the idle process when the call ends, and the next turn starts another", async () => {
+    await create("voice");
+    const launches = join(scratch, "launches.jsonl");
+    process.env.FAKE_CLAUDE_LAUNCH_LOG = launches;
+    const signal = new AbortController();
+    await instance.adapter.sendTurn({ threadId: "t-hangup", text: "", keepWarm: true, warmOnly: true, warmSignal: signal.signal });
+    await expect.poll(() => launchLines(launches).length, { timeout: 5_000 }).toBe(1);
+    const pid = launchLines(launches)[0]!.pid;
+    expect(processAlive(pid)).toBe(true);
+    signal.abort();
+    await expect.poll(() => processAlive(pid), { timeout: 5_000 }).toBe(false);
+    const again = await instance.adapter.sendTurn({ threadId: "t-hangup", text: "hello", keepWarm: true });
+    expect(again.reused).toBeUndefined();
+    await expect.poll(() => launchLines(launches).length, { timeout: 5_000 }).toBe(2);
+    await recorder.until((event) => event.type === "turn.completed" && event.turnId === again.turnId);
+  });
+
+  it("releaseWarmSession closes an idle warm process and leaves a running turn", async () => {
+    await create("voice");
+    const launches = join(scratch, "launches.jsonl");
+    process.env.FAKE_CLAUDE_LAUNCH_LOG = launches;
+    await instance.adapter.sendTurn({ threadId: "t-release", text: "", keepWarm: true, warmOnly: true });
+    await expect.poll(() => launchLines(launches).length, { timeout: 5_000 }).toBe(1);
+    const pid = launchLines(launches)[0]!.pid;
+    instance.adapter.releaseWarmSession?.("t-release");
+    await expect.poll(() => processAlive(pid), { timeout: 5_000 }).toBe(false);
+    const running = await instance.adapter.sendTurn({ threadId: "t-running", text: "hello", keepWarm: true });
+    await expect.poll(() => launchLines(launches).length, { timeout: 5_000 }).toBe(2);
+    const runningPid = launchLines(launches)[1]!.pid;
+    instance.adapter.releaseWarmSession?.("t-running");
+    expect(processAlive(runningPid)).toBe(true);
+    await recorder.until((event) => event.type === "turn.completed" && event.turnId === running.turnId);
   });
 
   it("normalizes a full turn into the canonical event sequence", async () => {

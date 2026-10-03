@@ -205,6 +205,16 @@ export interface SendTurnInput {
    * credentials to it through files it rewrites each turn, so a new turn's
    * token never forces a relaunch (docs/voice-mode-xai.md, "Latency"). */
   keepWarm?: boolean;
+  /** Start (or keep) the pooled engine process without a user turn. No
+   * prompt is written and no turn events are emitted. A call warms the
+   * process when it is accepted so the first spoken turn reuses it.
+   * Drivers that cannot start without a prompt leave `warmSession` unset
+   * and the harness does not send them this flag. */
+  warmOnly?: boolean;
+  /** Aborted when the call ends before that warm process is needed. The
+   * driver closes the idle process this warm started. A process a real
+   * turn already owns stays up. */
+  warmSignal?: AbortSignal;
   /** Coordinated teammate turns may resume a Claude conversation whose
    * earlier system prompt contained a different assignment. Refresh that
    * prompt when the provider supports it; the current brief also arrives
@@ -424,6 +434,10 @@ export interface ProviderAdapter {
      * execution, no reads outside its folder). Absent: such a turn is
      * refused. */
     guestTurns?: "confined";
+    /** True when sendTurn honours warmOnly: the pooled process starts, no
+     * prompt is written, and no turn is emitted. Absent: a warm is a no-op.
+     * No hidden prompt is sent to an engine that cannot start without one. */
+    warmSession?: boolean;
   };
   sendTurn(input: SendTurnInput): Promise<TurnStartResult>;
   interruptTurn(threadId: ThreadId, turnId?: TurnId): Promise<void>;
@@ -463,6 +477,9 @@ export interface ProviderAdapter {
    * them again on the next turn as a message "you may already have". */
   steer?(threadId: ThreadId, text: string, options?: { steerId?: string }): Promise<SteerOutcome>;
   hasSession(threadId: ThreadId): boolean;
+  /** Close an idle warm process on this thread. A process whose turn is
+   * already running is left alone. */
+  releaseWarmSession?(threadId: ThreadId): void;
   stopAll(): Promise<void>;
   onEvent(listener: RuntimeEventListener): () => void;
 }

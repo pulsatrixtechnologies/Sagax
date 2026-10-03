@@ -591,6 +591,7 @@ import { createMailSettingsRoutes } from "./mail-routes.ts";
 import { createVoiceModeRoutes } from "./voice-mode.ts";
 import { parseVoiceCallMeta, voiceCallSection, voiceCallSteerPrompt, voiceCallTurnPrompt } from "./voice-call-prompt.ts";
 import { VoiceCallSessions } from "./voice-call-session.ts";
+import { VoiceCallWarmup } from "./voice-call-warmup.ts";
 import { VoiceLatencyLog } from "./voice-latency.ts";
 import { unansweredCallMessage, VOICE_CALL_WATCHDOG_MS, voiceCallRecoveryPrompt } from "./voice-call-watchdog.ts";
 import * as grokVoice from "./tts/grok.ts";
@@ -2708,9 +2709,12 @@ function endForeignTurns(threadId: string, generation?: string): void {
   }
 }
 
-function revokeInternalCapabilityGeneration(threadId: string, generation: string): void {
+function revokeInternalCapabilityGeneration(threadId: string, generation: string): Promise<void> {
   // Slice 5: the turn's Perspicax MCP tokens go with its capabilities.
-  void perspicaxMcp?.endGeneration(threadId, generation);
+  // Callers that do not await keep the previous fire-and-forget behavior.
+  // A call warm awaits it so the tokens are in the warm map before the
+  // first spoken turn looks for them.
+  const retired = perspicaxMcp?.endGeneration(threadId, generation) ?? Promise.resolve();
   endForeignTurns(threadId, generation);
   if (guestDrivenTurns.get(threadId) === generation) guestDrivenTurns.delete(threadId);
   for (const [token, capability] of internalCapabilities) {
@@ -2723,6 +2727,7 @@ function revokeInternalCapabilityGeneration(threadId: string, generation: string
   }
   if (turnWorkplaces.get(threadId)?.generation === generation) turnWorkplaces.delete(threadId);
   internalGenerationByProviderTurn.deleteGeneration(threadId, generation);
+  return retired;
 }
 
 function revokeInternalCapabilitiesForThread(threadId: string): void {
@@ -2919,6 +2924,9 @@ type DirectTurnDispatchClaim = {
   botId: string;
   threadId: string;
   phase: "setup" | "dispatching";
+  /** A call warm. It must not make the thread look busy: the first utterance
+   * joins the process instead of queueing behind it. */
+  warm?: boolean;
 };
 class DirectTurnSetupCancelled extends Error {}
 /** The computer wait ceiling fired (ADR-2, #1651). The turn parks — settled
@@ -3323,8 +3331,15 @@ function botForThread(botId: string, threadId: string): BotRecord | null {
   return directTurnBots.get(threadId) ?? store.projectBotForTask(botId, threadId) ?? store.bot(botId);
 }
 
+/** A warm claim holds setup bookkeeping only. It does not occupy the thread:
+ * the first utterance must reach startTurn and join the warm process. */
+function directClaimOccupies(threadId: string): boolean {
+  const claim = directTurnDispatchClaims.get(threadId);
+  return Boolean(claim && claim.warm !== true);
+}
+
 function threadBusy(botId: string, threadId: string): boolean {
-  return store.taskByThread(botId, threadId)?.busy === true || directTurnDispatchClaims.has(threadId);
+  return store.taskByThread(botId, threadId)?.busy === true || directClaimOccupies(threadId);
 }
 
 /** Opt-in direct-chat parking (#1194): when this bot's person chose to queue
@@ -3349,7 +3364,7 @@ function recipientAwaitingPerson(botId: string, exceptThreadId: string): boolean
 }
 
 function hasDirectDispatch(botId: string): boolean {
-  return [...directTurnDispatchClaims.values()].some((claim) => claim.botId === botId);
+  return [...directTurnDispatchClaims.values()].some((claim) => claim.botId === botId && claim.warm !== true);
 }
 
 /** Exactly what startTurn admits for a direct thread: the landing thread
@@ -3561,7 +3576,9 @@ function shouldIgnoreProviderEvent(event: RuntimeEvent): boolean {
 
 function directTurnClaimIsCurrent(botId: string, claimId: string, threadId: string): boolean {
   const claim = directTurnDispatchClaims.get(threadId);
-  return claim?.id === claimId && claim.botId === botId && store.taskByThread(botId, threadId)?.busy === true;
+  if (claim?.id !== claimId || claim.botId !== botId) return false;
+  // A warm never sets the task busy. The claim itself admits the setup.
+  return claim.warm === true || store.taskByThread(botId, threadId)?.busy === true;
 }
 
 function directTurnClaimExists(botId: string, claimId: string, threadId: string): boolean {
@@ -3571,7 +3588,8 @@ function directTurnClaimExists(botId: string, claimId: string, threadId: string)
 
 function markDirectTurnDispatching(botId: string, claimId: string, threadId: string): boolean {
   if (!directTurnClaimIsCurrent(botId, claimId, threadId)) return false;
-  directTurnDispatchClaims.set(threadId, { id: claimId, botId, threadId, phase: "dispatching" });
+  const warm = directTurnDispatchClaims.get(threadId)?.warm === true;
+  directTurnDispatchClaims.set(threadId, { id: claimId, botId, threadId, phase: "dispatching", ...(warm ? { warm: true } : {}) });
   return true;
 }
 
@@ -4039,6 +4057,8 @@ async function perspicaxTurnIntegration(input: {
   speaker: TurnSpeaker;
   taken: readonly string[];
   from?: { botId: string; name: string; color: string };
+  /** A call warm builds the same prompt and mounts, and writes no activity row. */
+  quiet?: boolean;
 }): Promise<{ custom: Record<string, McpServerSpec>; prompt: string }> {
   const none = { custom: {}, prompt: "" };
   if (IDENTITY.kind !== "perspicax" || !perspicaxMcp) return none;
@@ -4107,6 +4127,7 @@ async function perspicaxTurnIntegration(input: {
   const byReason = new Map<PerspicaxUnavailableReason, string[]>();
   for (const entry of plan.unavailable) byReason.set(entry.reason, [...(byReason.get(entry.reason) ?? []), entry.name]);
   for (const [reason, names] of byReason) {
+    if (input.quiet) continue;
     store.appendMessage(input.threadId, {
       role: "bot",
       kind: "activity",
@@ -10604,6 +10625,14 @@ async function compactConversation(input: {
 
 /** Threads on a live voice call (server/voice-call-session.ts). */
 const voiceCalls = new VoiceCallSessions();
+const voiceWarmup = new VoiceCallWarmup();
+/** Close the idle engine a call warmed. A process a turn already owns stays. */
+function releaseWarmEngine(threadId: string): void {
+  const bot = store.botByThread(threadId);
+  if (!bot) return;
+  const live = store.projectBotForTask(bot.id, threadId) ?? bot;
+  registry.get(live.modelSelection.instanceId)?.adapter.releaseWarmSession?.(threadId);
+}
 /** Each call turn's server stages, logged under its utterance id (server/voice-latency.ts). */
 const voiceLatency = new VoiceLatencyLog();
 
@@ -11919,6 +11948,14 @@ async function startTurn(
     /** Queue receipts outlive the dispatch acknowledgment until this exact turn settles. */
     onTurnSettled?: () => void;
     coordination?: { id: string; resumed: boolean; settle: (outcome: { ok: boolean; text: string }) => void };
+    /** Start the engine for a call that was just accepted. No transcript
+     * row, no turn, no model prompt. The first spoken turn joins it. */
+    warmOnly?: boolean;
+    /** Aborted when that call ends before the warm is needed. */
+    warmSignal?: AbortSignal;
+    /** Fired once the warm has released its claim, whether or not the
+     * process is up. The call's first turn waits on this. */
+    onWarmSettled?: (ok: boolean) => void;
   },
 ) {
   workspaceMaintenance.assertAvailable();
@@ -11963,6 +12000,10 @@ async function startTurn(
   if (boatLifecycleBusyBots.has(botId)) {
     throw Object.assign(new Error("this bot's cloud computer is being changed — wait for it to finish"), { status: 409 });
   }
+  const warmOnly = opts?.warmOnly === true;
+  // The engine for a live call is already starting. This turn waits for it
+  // and reuses the process. The warm itself must not wait.
+  if (!warmOnly && voiceCalls.active(threadId)) await voiceWarmup.join(threadId);
   if (threadBusy(botId, threadId)) throw Object.assign(new Error("this thread is already working — interrupt it first"), { status: 409, code: "thread_busy" });
   if (activeGroupTurnForBot(botId)) {
     throw Object.assign(new Error("the bot is already working in a channel — wait for it to finish"), { status: 409, code: "thread_busy" });
@@ -12009,6 +12050,21 @@ async function startTurn(
   if (guestConfined && instance.adapter.capabilities.guestTurns !== "confined") {
     throw Object.assign(new Error(guestEngineRefusal(threadId)), { status: 409, code: "guest_engine" });
   }
+  // Codex and the API drivers cannot start without a prompt. Sending them
+  // an empty one would bill a turn and show it. Claude is the engine that
+  // can hold a process with stdin open and no model call.
+  if (warmOnly && instance.adapter.capabilities.warmSession !== true) {
+    console.error(`[voice-call] warm skipped: ${instance.driverKind}`);
+    opts?.onWarmSettled?.(false);
+    return {
+      id: `warm-${randomUUID()}`,
+      at: Date.now(),
+      role: "user" as const,
+      kind: "text" as const,
+      text: "",
+      ...(opts?.voiceCall ? { voiceCall: opts.voiceCall } : {}),
+    };
+  }
   // Resolve only transport tags from this newly submitted text. The original
   // string remains the durable message. Native-image providers get a
   // path-free prompt and bounded inputs instead of needing a Read tool;
@@ -12023,7 +12079,7 @@ async function startTurn(
   if (commsDepth > 0) markInternalTurn(threadId);
   else clearInternalTurn(threadId);
   // a task takes its name from the first thing you asked it to do
-  if (resolvedImages.text.trim() && !opts?.cardContinuation) {
+  if (!warmOnly && resolvedImages.text.trim() && !opts?.cardContinuation) {
     const titled = store.titleTaskFromFirstMessage(bot.id, resolvedImages.text, threadId);
     // The snippet is only the fallback name. A cheap one-shot may trade it
     // for a title a person would have typed, but never on a peer-opened
@@ -12045,7 +12101,8 @@ async function startTurn(
   const turnLineIds = new Set(opts?.excludeMessageIds ?? []);
   const spoken = opts?.via === "call" || opts?.userMessage?.via === "call" ||
     (turnLineIds.size > 0 && store.messagesFor(threadId).some((message) => turnLineIds.has(message.id) && message.via === "call"));
-  console.error(turnStartLogLine({
+  if (warmOnly) console.error(`[voice-call] warming thread ${threadId}`);
+  else console.error(turnStartLogLine({
     botId, text: resolvedImages.text, images: turnImages.length, depth: commsDepth, card: Boolean(opts?.cardContinuation), spoken,
   }));
   const instanceId = instance.instanceId;
@@ -12077,7 +12134,9 @@ async function startTurn(
     userMessage = edited;
   }
   if (!userMessage) {
-    userMessage = opts?.cardContinuation
+    userMessage = warmOnly
+      ? { id: `warm-${randomUUID()}`, at: Date.now(), role: "user", kind: "text", text: "", ...(opts?.voiceCall ? { voiceCall: opts.voiceCall } : {}) }
+      : opts?.cardContinuation
       ? { id: `card-${randomUUID()}`, at: Date.now(), role: "user", kind: "text", text }
       : store.appendMessage(threadId, {
           role: "user",
@@ -12145,6 +12204,11 @@ async function startTurn(
   const freshHop = Boolean(opts.coordination && !opts.coordination.resumed);
   const accessRefusal = opts.cardContinuation && !opts.compactOnly && !freshHop ? null : orgEngineRefusal(bot, instance, speaker);
   if (accessRefusal) {
+    if (warmOnly) {
+      console.error(`[voice-call] warm skipped: ${accessRefusal.reason}`);
+      opts?.onWarmSettled?.(false);
+      return userMessage;
+    }
     const engine = engineDisplayName(instance);
     const card = accessCardFor(bot, accessRefusal, engine);
     store.appendMessage(threadId, {
@@ -12166,7 +12230,7 @@ async function startTurn(
     : userMessage.id;
   // Admitted: every refusal above has passed and no other turn runs on this
   // thread, so this is the one moment the ledger's "who asked" may change.
-  if (opts?.trigger) turnTriggers.set(threadId, opts.trigger);
+  if (!warmOnly && opts?.trigger) turnTriggers.set(threadId, opts.trigger);
   // A fresh delegated turn (coordinate_bots) is a new hop on its thread:
   // it records its speaker so a hop it starts in turn carries the same one.
   if (!opts.cardContinuation || (opts.coordination && !opts.coordination.resumed)) {
@@ -12184,7 +12248,7 @@ async function startTurn(
   }
   // A card continuation neither starts nor ends the person's ask: it
   // resumes the turn their last message began, so that record stands.
-  if (!opts?.cardContinuation) {
+  if (!warmOnly && !opts?.cardContinuation) {
     if (commsDepth === 0 && opts?.automationSource === undefined && !opts?.unattended && !userMessage.peerAsk) {
       personAskAt.set(threadId, userMessage.at);
       // Continuing an old run as a normal conversation makes that task
@@ -12216,44 +12280,62 @@ async function startTurn(
     generations: requestGenerations, turnId: null, ...(opts?.automationSource ? { automation: opts.automationSource } : {}) });
   // On a Cloud home, a turn that is not provably the owner's leaves this
   // bot's memory "pending" until it ends (server/lending-memory.ts).
-  if (CLOUD_HOME && cloudHomeLendingRefusal(cloudLendingTurn({ botId, threadId, generation: dispatchClaimId })) !== null) noteForeignTurn(botId, threadId, dispatchClaimId);
+  if (!warmOnly && CLOUD_HOME && cloudHomeLendingRefusal(cloudLendingTurn({ botId, threadId, generation: dispatchClaimId })) !== null) noteForeignTurn(botId, threadId, dispatchClaimId);
   // An unknown control-plane wake may invalidate a prior final, but it must
   // never acquire authority by guessing the latest user as its origin.
   const pendingSource = requestMessageId ?? store.activePath(threadId).findLast(message => message.role === "user")?.id;
-  if (pendingSource) store.patchMessage(threadId, pendingSource, { requestPending: true });
-  if (opts?.coordination) directCoordinationSettlers.set(dispatchClaimId, opts.coordination.settle);
+  if (!warmOnly && pendingSource) store.patchMessage(threadId, pendingSource, { requestPending: true });
+  if (!warmOnly && opts?.coordination) directCoordinationSettlers.set(dispatchClaimId, opts.coordination.settle);
   // Ordinary sources need the same exact completion ownership as queued
   // follow-ups: any normal turn may ask teammates to coordinate work.
-  directFollowupSettlers.set(dispatchClaimId, { threadId, settle: opts?.onTurnSettled });
-  directTurnDispatchClaims.set(threadId, { id: dispatchClaimId, botId, threadId, phase: "setup" });
+  // A warm has no turn to settle.
+  if (!warmOnly) directFollowupSettlers.set(dispatchClaimId, { threadId, settle: opts?.onTurnSettled });
+  directTurnDispatchClaims.set(threadId, { id: dispatchClaimId, botId, threadId, phase: "setup", ...(warmOnly ? { warm: true } : {}) });
   directTurnBots.set(threadId, bot);
   beginInternalCapabilityGeneration(threadId, dispatchClaimId);
-  if (!opts?.computerSelectionContinuation && !opts?.cardContinuation && !opts?.automationSource && !opts?.unattended &&
-      !opts?.commsDepth && !opts?.coordination && !inheritedTeamComputer(bot) && bot.computer !== "off" && agentsMounted) {
+  // The surface paragraph is part of the stable prompt. A call warm has no
+  // saved user row, so it cannot register a selection, but the first spoken
+  // turn will. Predict that paragraph or the engine relaunches on the first
+  // words.
+  const maySelectComputer = !opts?.computerSelectionContinuation && !opts?.cardContinuation && !opts?.automationSource && !opts?.unattended &&
+      !opts?.commsDepth && !opts?.coordination && !inheritedTeamComputer(bot) && bot.computer !== "off" && agentsMounted;
+  if (!warmOnly && maySelectComputer) {
     const source = store.activePath(threadId).findLast(message => message.id === userMessage?.id && message.role === "user" && !message.peerAsk);
     if (source) computerSelectionTurns.set(threadId, { generation: dispatchClaimId, botId: bot.id, source, text });
   }
-  store.setTaskActivity(bot.id, threadId, "working");
-  // Watch from admission, not dispatch: a turn can wedge in setup — context
-  // compaction that never returns, a hung browser or VM mount — long before
-  // any provider event exists, and a watch armed only at dispatch never saw
-  // those. Every setup exit below settles or throws into the catch, which
-  // settles under the same generation ownership it already enforces.
-  watchdog.watch(threadId, bot.id);
-  // A closed thread that gets a new turn is open again: the person (or the
-  // opener) picked it back up, so its row returns to the sidebar and
-  // list_threads stops calling it closed. No-op on an open thread.
-  store.setTaskClosedBy(bot.id, threadId, null);
-  // The badge is "this bot answered you, and you have not looked yet". A
-  // person starting a turn has looked; a teammate's hop has not — the fold
-  // never re-marks an internal turn, so clearing here would silently spend
-  // a signal the person still owes a glance to.
-  if (commsDepth === 0) store.patchTask(bot.id, threadId, { unread: false });
-  turnUsage.delete(threadId);
-  turnContext.delete(threadId);
+  // A warm must not look like work: no busy flag, no watchdog, no reopen
+  // of a closed thread, no cleared badge. The first utterance joins it.
+  if (!warmOnly) {
+    store.setTaskActivity(bot.id, threadId, "working");
+    // Watch from admission, not dispatch: a turn can wedge in setup — context
+    // compaction that never returns, a hung browser or VM mount — long before
+    // any provider event exists, and a watch armed only at dispatch never saw
+    // those. Every setup exit below settles or throws into the catch, which
+    // settles under the same generation ownership it already enforces.
+    watchdog.watch(threadId, bot.id);
+    // A closed thread that gets a new turn is open again: the person (or the
+    // opener) picked it back up, so its row returns to the sidebar and
+    // list_threads stops calling it closed. No-op on an open thread.
+    store.setTaskClosedBy(bot.id, threadId, null);
+    // The badge is "this bot answered you, and you have not looked yet". A
+    // person starting a turn has looked; a teammate's hop has not — the fold
+    // never re-marks an internal turn, so clearing here would silently spend
+    // a signal the person still owes a glance to.
+    if (commsDepth === 0) store.patchTask(bot.id, threadId, { unread: false });
+    turnUsage.delete(threadId);
+    turnContext.delete(threadId);
+  }
 
   void (async () => {
+    let warmOk = false;
     try {
+      if (warmOnly && opts?.warmSignal?.aborted) {
+        instance.adapter.releaseWarmSession?.(threadId);
+        return;
+      }
+      // A call warm must not compact or rewrite the resume cursor. The first
+      // spoken turn decides that, and a reset discards this process.
+      if (!warmOnly) {
       // Readiness can wait on the network. Admit the task first so its busy
       // state, Stop action and watchdog own that wait just like VM setup.
       if (opts?.runOn === "cloud") {
@@ -12283,6 +12365,7 @@ async function startTurn(
         drainDelegationWakes();
         return;
       }
+      }
       // Keep the full branch order for delivery bookkeeping, but select actual
       // replay entries by bytes. A compacted prefix is represented by its record.
       const skipTranscript = new Set<string>([userMessage.id, ...(opts?.excludeMessageIds ?? [])]);
@@ -12303,7 +12386,7 @@ async function startTurn(
       const contextReset = selection.compacted > 0 && record?.id !== task.appliedCompactionId;
       // The record is durable even if a crash occurs before this bookkeeping.
       // A retry then sees the unapplied record again and rebuilds safely.
-      if (contextReset) store.patchTask(bot.id, threadId, { resumeCursors: {} });
+      if (contextReset && !warmOnly) store.patchTask(bot.id, threadId, { resumeCursors: {} });
 
       // After a rewind (edit / branch switch) the provider's native session
       // still contains the abandoned branch: start a fresh session instead of
@@ -12418,11 +12501,11 @@ async function startTurn(
 
       // The SOUL.md mirror is checked here, at dispatch, and only reported:
       // the prompt below reads bot.soul, never the file.
-      {
+      if (!warmOnly) {
         const drift = checkSoulDrift(bot.id, bot.soul ?? "", bot.soulHash ?? "");
         if (drift.drift !== Boolean(bot.soulDrift)) store.patchBot(bot.id, { soulDrift: drift.drift });
       }
-      if (dispatchContext.handoff) handoffs.begin(threadId, dispatchClaimId, dispatchContext.handoff);
+      if (!warmOnly && dispatchContext.handoff) handoffs.begin(threadId, dispatchClaimId, dispatchContext.handoff);
 
       const integrations: NonNullable<Parameters<typeof instance.adapter.sendTurn>[0]["integrations"]> = {};
       let browser: Awaited<ReturnType<typeof browserIntegration>> = null;
@@ -12456,7 +12539,7 @@ async function startTurn(
       // Slice 5: the bot's Perspicax profiles, as the person who speaks.
       let perspicaxPrompt = "";
       if (IDENTITY.kind === "perspicax" && instance.adapter.capabilities.customMcp === true && (store.bot(bot.id) ?? bot).perspicax?.profiles.length) {
-        const perspicax = await perspicaxTurnIntegration({ bot, threadId, generation: dispatchClaimId, speaker, taken: Object.keys(integrations.custom ?? {}) });
+        const perspicax = await perspicaxTurnIntegration({ bot, threadId, generation: dispatchClaimId, speaker, taken: Object.keys(integrations.custom ?? {}), ...(warmOnly ? { quiet: true } : {}) });
         if (Object.keys(perspicax.custom).length) integrations.custom = { ...integrations.custom, ...perspicax.custom };
         perspicaxPrompt = perspicax.prompt;
       }
@@ -12473,7 +12556,8 @@ async function startTurn(
       if (worksInWorkspace) {
         ensureWorkspace(bot.id);
         // baseline for the journal's turn-boundary diff (see the bus hook)
-        if (bot.memoryEnabled !== false) beginMemoryTurn(bot.id, threadId);
+        // A warm has no turn to journal. endMemoryTurn would close the previous one.
+        if (!warmOnly && bot.memoryEnabled !== false) beginMemoryTurn(bot.id, threadId);
       }
       const privateWorkspace = worksInWorkspace ? ensureTaskWorkspace(bot.id, threadId) : undefined;
       const skillInstructions = renderSkillInstructions(selectedSkills, {
@@ -12597,6 +12681,7 @@ async function startTurn(
           Boolean(liveTask && liveTask.surfaceSource !== "user");
       };
       const pinAutoSurface = (surface: Surface) => {
+        if (warmOnly) return;
         if (autoPinAllowed()) {
           store.patchTask(bot.id, threadId, { surface, surfaceSource: "auto" });
         }
@@ -13105,7 +13190,7 @@ async function startTurn(
       // that only mounted tools records nothing. The Computer engine's Boat
       // (its whole turn runs there) and the built-in browser (no seat to
       // claim) pin here.
-      if (autoPinAllowed()) {
+      if (!warmOnly && autoPinAllowed()) {
         const claimSlot = autoVmClaims.get(threadId);
         const pinsAtClaim = claimSlot?.owner.generation === resourceOwner.generation;
         const used = pinsAtClaim ? null : mountedComputer ?? (integrations.browser ? "browser" : null);
@@ -13140,7 +13225,7 @@ async function startTurn(
         { id: "files", label: "File locations", text: worksInWorkspace ? workspaceLocationsPrompt(bot.id, cwd, liveBot?.cwd ?? bot.cwd) : "" },
         { id: "computer", label: "Computer", text: computerPrompt(computerPromptKind) },
         { id: "team-computer", label: "Team computer", text: teamComputerPrompt(teamComputer) },
-        { id: "plan", label: "Surface", text: surfacePrompt({ computer: mountedComputer, browser: Boolean(integrations.browser) }, { pinned: plan.pinned, note: plan.note, canSelect: computerSelectionTurns.has(threadId), cloudHome: Boolean(CLOUD_HOME) }) },
+        { id: "plan", label: "Surface", text: surfacePrompt({ computer: mountedComputer, browser: Boolean(integrations.browser) }, { pinned: plan.pinned, note: plan.note, canSelect: computerSelectionTurns.has(threadId) || (warmOnly && maySelectComputer), cloudHome: Boolean(CLOUD_HOME) }) },
         { id: "cloud-home", label: "OMB Cloud", text: CLOUD_HOME ? cloudHomePrompt(Boolean(integrations.agents) && lendingEnabled()) : "" },
         // gated on the integration, not the key: the hint only goes to a
         // bot whose driver actually mounted the tools
@@ -13207,7 +13292,7 @@ async function startTurn(
       const dispatchedConfig = sessionConfig(liveBot?.soul ?? bot.soul);
       if (strictResume && !(opts?.cardContinuation && continuingRoutine) && dispatchedConfig !== plannedConfig) dispatchContext = decideContext(dispatchedConfig);
       // Before sendTurn: an adapter may emit the whole turn before it resolves.
-      handoffs.dispatching(threadId, dispatchClaimId, dispatchContext.handoff);
+      if (!warmOnly) handoffs.dispatching(threadId, dispatchClaimId, dispatchContext.handoff);
       // Slice 4: this turn's credentials (an owner key is read now).
       // (solo mode takes no extra await: its dispatch timing is unchanged)
       const turnAccess = IDENTITY.kind === "perspicax" ? await orgTurnAccess(threadId, bot, instance, speaker) : undefined;
@@ -13233,16 +13318,18 @@ async function startTurn(
       // bookkeeping that would mark the context delivered is left for it.
       const contextStillPending = Boolean(engineCommand && dispatchContext.sessionReset && transcript.length > 0 &&
         !NATIVELY_REPLAYING_DRIVER_KINDS.includes(instance.driverKind));
-      voiceLatency.mark(threadId, "dispatch");
+      if (!warmOnly) voiceLatency.mark(threadId, "dispatch");
       const dispatch = await guardTurnDispatch(instance.adapter.sendTurn({
         threadId,
         botId: bot.id,
         ...(turnAccess ? { access: turnAccess } : {}),
-        // on a live call the engine process stays warm from turn to turn
-        ...(onCall ? { keepWarm: true } : {}),
-        startupRecovery: cfg.automaticRecovery?.enabled === true &&
+        // on a live call the engine process stays warm from turn to turn.
+        // A warm uses the same flag so the first spoken turn's contract matches.
+        ...(onCall || warmOnly ? { keepWarm: true } : {}),
+        ...(warmOnly ? { warmOnly: true, ...(opts?.warmSignal ? { warmSignal: opts.warmSignal } : {}) } : {}),
+        startupRecovery: !warmOnly && cfg.automaticRecovery?.enabled === true &&
           (opts?.automaticRecoveryIndex ?? 0) < ((liveBot ?? bot).fallback?.length || (cfg.automaticRecovery.backup ? 1 : 0)),
-        text: engineCommand ? engineCommand.engineText : withRecalled(recalled, dispatchContext.turnText),
+        text: warmOnly ? "" : (engineCommand ? engineCommand.engineText : withRecalled(recalled, dispatchContext.turnText)),
         ...(engineCommand ? { harnessCommand: { name: engineCommand.command.name, args: engineCommand.args, ...(engineCommand.command.path ? { path: engineCommand.command.path } : {}) } } : {}),
         images: turnImages,
         approvalMode: auditFullAccessTurn(bot, threadId, approvalModeForTurn(bot, commsDepth > 0, threadId)),
@@ -13276,6 +13363,11 @@ async function startTurn(
       }), () => !directTurnClaimExists(bot.id, dispatchClaimId, threadId), async () => {
         await instance.adapter.interruptTurn(threadId).catch(() => {});
       });
+      if (warmOnly) {
+        if (dispatch.cancelled || opts?.warmSignal?.aborted) instance.adapter.releaseWarmSession?.(threadId);
+        else warmOk = true;
+        return;
+      }
       if (dispatch.cancelled) {
         retireProviderTurn(dispatch.value.turnId);
         throw new DirectTurnSetupCancelled("turn stopped during provider setup");
@@ -13333,6 +13425,11 @@ async function startTurn(
         drainDelegationWakes();
       }
     } catch (cause) {
+      if (warmOnly) {
+        console.error(`[voice-call] warm skipped: ${cause instanceof Error ? cause.name : "error"}`);
+        instance.adapter.releaseWarmSession?.(threadId);
+        return;
+      }
       let e = cause;
       // Only the driver can prove that a task was never submitted and its
       // old process is gone. A timeout/error string alone is not that proof.
@@ -13508,6 +13605,25 @@ async function startTurn(
       drainSecretResumes();
       drainTeamSetupResumes();
       drainDelegationWakes();
+    } finally {
+      if (warmOnly) {
+        try {
+          clearDirectTurnDispatch(threadId, dispatchClaimId);
+          await revokeInternalCapabilityGeneration(threadId, dispatchClaimId);
+          releaseTurnResources(resourceOwner);
+          if (runningTurnEngines.get(threadId) === instance) runningTurnEngines.delete(threadId);
+          if (directTurnBots.get(threadId) === bot) directTurnBots.delete(threadId);
+          if (directTurnGenerationByThread.get(threadId) === dispatchClaimId) directTurnGenerationByThread.delete(threadId);
+          if (directRequestOwners.get(threadId)?.generation === dispatchClaimId) directRequestOwners.delete(threadId);
+          if (computerSelectionTurns.get(threadId)?.generation === dispatchClaimId) computerSelectionTurns.delete(threadId);
+          handoffs.abandon(threadId, dispatchClaimId);
+        } catch (error) {
+          console.error(`[voice-call] warm skipped: ${error instanceof Error ? error.name : "error"}`);
+          warmOk = false;
+        }
+        opts?.onWarmSettled?.(warmOk);
+        drainQueuedSends();
+      }
     }
   })();
   return userMessage;
@@ -13723,7 +13839,7 @@ async function stopBotForEmergencyApprovalDowngrade(botId: string): Promise<void
 function botRunning(botId: string): boolean {
   const bot = store.bot(botId);
   if (!bot) return false;
-  if (store.tasks(botId).some((task) => task.busy || directTurnDispatchClaims.has(task.threadId) || roomHandoffs.activeDirect(task.threadId))) return true;
+  if (store.tasks(botId).some((task) => task.busy || directClaimOccupies(task.threadId) || roomHandoffs.activeDirect(task.threadId))) return true;
   if (threadBusy(botId, bot.threadId)) return true;
   if (routines?.activeBotRunForBot(botId) || routines?.activeRunForBot(botId)) return true;
   return activeGroupTurnForBot(botId) !== null;
@@ -14464,7 +14580,7 @@ const teamSetupRequests = new TeamSetupRequestService({
     const group = activeGroupTurnForBot(botId);
     const run = routines?.activeRunForBot(botId);
     return store.tasks(botId).some(task => task.threadId !== sourceThreadId && threadBusy(botId, task.threadId)) ||
-      [...directTurnDispatchClaims].some(([threadId, claim]) => threadId !== sourceThreadId && claim.botId === botId) ||
+      [...directTurnDispatchClaims].some(([threadId, claim]) => threadId !== sourceThreadId && claim.botId === botId && claim.warm !== true) ||
       Boolean(group && group.threadId !== sourceThreadId) || Boolean(run && run.threadId !== sourceThreadId);
   },
   validateModel: validateModelProposal,
@@ -21051,9 +21167,32 @@ ROUTES.push(createVoiceModeRoutes({
   upgrade: (req) => desktopViewer.upgradeOf(req),
   utterances: toUtterances,
   callSession: {
-    start: (target, callId, language) => voiceCalls.start(target.threadId, callId, language),
+    start: (target, callId, language, auth) => {
+      voiceCalls.start(target.threadId, callId, language);
+      if (!auth) return;
+      const bot = store.bot(target.botId);
+      if (!bot) return;
+      voiceWarmup.begin(target.threadId, callId, (signal) => new Promise<void>((resolve) => {
+        void startTurn(bot.id, "", {
+          threadId: target.threadId,
+          warmOnly: true,
+          warmSignal: signal,
+          speaker: speakerFor(auth),
+          voiceCall: { callId, ...(language && language !== "auto" ? { language } : {}) },
+          onWarmSettled: () => resolve(),
+        }).catch((error) => {
+          console.error(`[voice-call] warm skipped: ${error instanceof Error ? error.name : "error"}`);
+          resolve();
+        });
+      }));
+    },
     end: (target, callId) => {
-      if (voiceCalls.end(target.threadId, callId)) void perspicaxMcp?.endWarm(target.threadId);
+      // Drop the call first so a warm that is still retiring does not keep
+      // its Perspicax tokens. Then close the idle process.
+      if (!voiceCalls.end(target.threadId, callId)) return;
+      voiceWarmup.cancel(target.threadId, callId);
+      releaseWarmEngine(target.threadId);
+      void perspicaxMcp?.endWarm(target.threadId);
     },
   },
   recordUsage: (usage) => {

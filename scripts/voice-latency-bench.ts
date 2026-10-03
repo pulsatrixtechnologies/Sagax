@@ -14,6 +14,10 @@
 //   session read back, from native logs), BENCH_FIRST_TOKEN_MS (600: the
 //   model's first token), BENCH_STT_FINAL_MS (250), BENCH_TTS_FIRST_MS (300),
 //   BENCH_TLS_MS (150: a new connection to api.x.ai), BENCH_OUT (a JSON file).
+//
+// BENCH_COLD_MS starts when the call is accepted: the fake CLI waits it at
+// process boot. The first utterance pays only what remains. A short first
+// question can still overlap an unfinished cold start.
 import { spawn, type ChildProcess } from "node:child_process";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
