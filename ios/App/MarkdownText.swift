@@ -38,16 +38,24 @@ struct MarkdownText: View {
     /// bubbles pass `message-<id>-scroll`. Streaming and file preview pass nil.
     var scrollIdentifier: String? = nil
     var openLink: ((URL) -> OpenURLAction.Result)?
+    /// @mentions of these peers are tinted (MS21), as the desktop's
+    /// `remarkMentions` does; links and code spans are left alone.
+    var mentions: [MentionPeer] = []
+    var mentionEveryone = false
 
     init(
         source: String,
         caret: Bool = false,
         scrollIdentifier: String? = nil,
+        mentions: [MentionPeer] = [],
+        mentionEveryone: Bool = false,
         openLink: ((URL) -> OpenURLAction.Result)? = nil
     ) {
         self.source = source
         self.caret = caret
         self.scrollIdentifier = scrollIdentifier
+        self.mentions = mentions
+        self.mentionEveryone = mentionEveryone
         self.openLink = openLink
     }
 
@@ -332,6 +340,7 @@ struct MarkdownText: View {
             for run in attributed.runs where run.inlinePresentationIntent?.contains(.code) == true {
                 attributed[run.range].font = Theme.Font.code
             }
+            MentionTint.apply(to: &attributed, peers: mentions, everyone: mentionEveryone)
             rendered = Text(attributed)
         } else {
             rendered = Text(text)

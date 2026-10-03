@@ -599,6 +599,9 @@ public struct Bot: Codable, Hashable, Identifiable, Sendable {
     public var cloudBackend: String?
     public var speakReplies: Bool?
     public var voice: String?
+    /// The server's mirror of the active task's pinned message. Read
+    /// `pinnedMessageIdForShownThread`, which prefers the task's own pin.
+    public var pinnedMessageId: String? = nil
     public var mascotExpression: String?
     /// Which body from the mascot body catalog this bot wears. Absent (an
     /// older harness included) means the shipped `cursor` silhouette.

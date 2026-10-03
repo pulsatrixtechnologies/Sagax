@@ -13,6 +13,7 @@ extension ChatView {
         let text = (explicitText ?? draftAtSend).trimmingCharacters(in: .whitespacesAndNewlines)
         let outgoingAttachments = attachments
         let chatAtSend = current
+        let replyAtSend = session.surfaceGate.allows(.replyQuote) ? replyTo : nil
         guard !text.isEmpty || !outgoingAttachments.isEmpty,
               !preparingAttachments,
               !sendingMessage
@@ -33,7 +34,8 @@ extension ChatView {
             let sent = await session.send(
                 text: text,
                 attachments: outgoingAttachments,
-                to: chatAtSend
+                to: chatAtSend,
+                options: SendOptions(replyToId: replyAtSend?.id)
             )
             sendingMessage = false
             guard sent else {
@@ -43,7 +45,12 @@ extension ChatView {
                 session.actionError = nil
                 return
             }
+            // The quote was sent: it leaves with the words, unless another
+            // one was picked while the send was in flight.
             if threadId != chatAtSend.threadId {
+                if let replyAtSend, threadDrafts[chatAtSend.threadId]?.replyTo?.id == replyAtSend.id {
+                    threadDrafts[chatAtSend.threadId]?.replyTo = nil
+                }
                 if threadDrafts[chatAtSend.threadId]?.text == draftAtSend { threadDrafts[chatAtSend.threadId]?.text = "" }
                 if threadDrafts[chatAtSend.threadId]?.attachments.map(\.id) == outgoingAttachments.map(\.id) {
                     threadDrafts[chatAtSend.threadId]?.attachments = []
@@ -55,6 +62,9 @@ extension ChatView {
             // text, so the command clears without erasing a newer edit.
             if draft == draftAtSend {
                 draft = ""
+            }
+            if let replyAtSend, replyTo?.id == replyAtSend.id {
+                replyTo = nil
             }
             if attachments.map(\.id) == outgoingAttachments.map(\.id) {
                 attachments = []

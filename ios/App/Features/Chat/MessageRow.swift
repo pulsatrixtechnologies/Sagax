@@ -20,6 +20,10 @@ struct MessageRow: View {
     @State private var selecting: SelectableText?
     /// A digest chip's parts, and its sheet's presentation.
     @State private var digest: DigestSummary?
+    /// View Source: this bot reply drawn as its markdown source.
+    @State private var showingSource = false
+    @Environment(\.messageActions) private var context
+    @ObservedObject private var speaker = MessageSpeaker.shared
 
     private var versions: [Message] {
         session.state.versions(of: message, inThread: chat.threadId)
@@ -93,6 +97,7 @@ struct MessageRow: View {
                     && attachedContent.attachments.isEmpty
                     && !isPendingEdit,
                 editDisabled: session.state.pendingEdits[chat.threadId] != nil,
+                actions: actionSet,
                 selectText: { selecting = SelectableText(text: $0) },
                 edit: {
                     editingText = message.text ?? ""
@@ -119,11 +124,50 @@ struct MessageRow: View {
         .accessibilityIdentifier("message-\(message.id)")
     }
 
+    /// The desktop's message actions for this row (ChatView.tsx `Bubble`,
+    /// GroupView.tsx), each behind its gate and rule.
+    private var actionSet: MessageActionSet {
+        let gate = session.surfaceGate
+        var set = MessageActionSet()
+        guard !isPendingEdit else { return set }
+        let quotable = MessageActionRules.canQuote(message)
+        if quotable, gate.allows(.replyQuote), let reply = context.reply {
+            set.reply = { reply(message) }
+        }
+        // Rooms offer Reply and Pin only (GroupView.tsx); View Source, Read
+        // Aloud and Regenerate belong to a bot's own conversation.
+        if case let .bot(bot) = chat {
+            if MessageActionRules.canViewSource(message), message.kind == .text {
+                set.showingSource = showingSource
+                set.toggleSource = { showingSource.toggle() }
+            }
+            if MessageActionRules.canSpeak(message), gate.allows(.speakReply) {
+                let text = message.text ?? ""
+                let speaking = speaker.isSpeaking(message.id)
+                set.speaking = speaking
+                set.speak = speaking
+                    ? { speaker.stop() }
+                    : { speaker.speak(text, messageId: message.id, voiceId: bot.voice, session: session) }
+            }
+        }
+        if case let .bot(bot) = chat, gate.allows(.regenerate), context.regenerableMessageId == message.id {
+            set.regenerate = { Task { await session.regenerate(for: bot) } }
+        }
+        if quotable, gate.allows(.messagePin) {
+            let pinned = context.pinnedMessageId == message.id
+            set.pinned = pinned
+            let target = chat
+            set.togglePin = { Task { await session.setPinnedMessage(pinned ? nil : message.id, in: target) } }
+        }
+        if message.role == .bot, case .room = chat { set.routedBy = message.routedBy }
+        return set
+    }
+
     @ViewBuilder
     private var content: some View {
         switch message.kind {
         case .text:
-            TextBubble(message: message, chat: chat, tailed: endsRun, openLink: openLink)
+            TextBubble(message: message, chat: chat, tailed: endsRun, showingSource: showingSource, openLink: openLink)
         case .options:
             // A structured ask draws its own card: its answers are the
             // model's questions, not an allow/deny a tap could stand for.

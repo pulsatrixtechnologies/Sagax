@@ -119,5 +119,7 @@ extension ChatView {
             .scrollClipDisabledCompat()
             .transition(.move(edge: .bottom).combined(with: .opacity))
         }
+
+        replyStrip
     }
 }

@@ -8,7 +8,12 @@ struct TextBubble: View {
     let message: Message
     let chat: Chat
     var tailed = true
+    /// View Source: the bot's markdown as written, monospaced (MS3).
+    var showingSource = false
     let openLink: (URL, Message) -> OpenURLAction.Result
+    @Environment(\.messageActions) private var context
+    /// A long line of yours, opened with Show full message (MS19).
+    @State private var expanded = false
 
     private var attachedContent: AttachedMessageContent {
         AttachedMessageContent.parse(message.text ?? "")
@@ -48,6 +53,17 @@ struct TextBubble: View {
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(Theme.readable(MausPalette.color(speaker.color)))
                 }
+                // The message this one answers (MS8): tap to jump to it.
+                if let targetId = message.replyToId, let target = context.lookup(targetId) {
+                    ReplyQuote(
+                        message: target,
+                        fallbackName: chat.isBot ? chat.name : String(localized: "Bot"),
+                        compact: true,
+                        onJump: context.jump.map { jump in { jump(target.id) } }
+                    )
+                    .padding(.bottom, 4)
+                    .accessibilityIdentifier("reply-quote-\(message.id)")
+                }
                 ForEach(message.voiceNotes) { note in
                     VoiceNoteBubble(note: note, tint: MausPalette.color(chat.color))
                 }
@@ -74,17 +90,42 @@ struct TextBubble: View {
                         )
                     }
                     if !shared.text.isEmpty {
-                        Text(shared.text)
+                        let collapsible = MessageCollapse.isLong(shared.text)
+                        Text(MentionTint.attributed(shared.text, peers: context.mentionPeers, everyone: context.mentionEveryone))
                             .font(Theme.Font.body)
                             .lineSpacing(Theme.bodyLineSpacing)
                             .foregroundStyle(BubbleColor.mineText)
                             .textSelection(.enabled)
                             .fixedSize(horizontal: false, vertical: true)
+                            .modifier(CollapsedText(collapsed: collapsible && !expanded))
+                        // Sent into a running turn (MS20): the bot saw it
+                        // before its next step, inside the same turn.
+                        if message.steered == true {
+                            Text("sent mid-turn")
+                                .font(.system(size: 11))
+                                .foregroundStyle(Theme.textTertiary)
+                                .accessibilityHint(Text("Sent while the bot was working: it saw this before its next step, inside the same turn."))
+                                .accessibilityIdentifier("steered-\(message.id)")
+                        }
+                        if collapsible {
+                            Button { expanded.toggle() } label: {
+                                if expanded { Text("Show less") } else { Text("Show full message") }
+                            }
+                                .font(.system(size: 13))
+                                .foregroundStyle(Theme.textSecondary)
+                                .buttonStyle(.plain)
+                                .accessibilityIdentifier("collapse-\(message.id)")
+                        }
                     }
+                } else if showingSource, let source = message.text, !source.isEmpty {
+                    RawMarkdownView(text: source)
+                        .accessibilityIdentifier("raw-markdown-\(message.id)")
                 } else {
                     MarkdownText(
                         source: message.text ?? "",
-                        scrollIdentifier: "message-\(message.id)-scroll"
+                        scrollIdentifier: "message-\(message.id)-scroll",
+                        mentions: context.mentionPeers,
+                        mentionEveryone: context.mentionEveryone
                     ) { url in
                         openLink(url, message)
                     }
@@ -108,5 +149,80 @@ struct TextBubble: View {
 
             if !mine { Spacer(minLength: Theme.Chat.bubbleTrailingGap) }
         }
+    }
+}
+
+/// The desktop's `RawMarkdownView`: the source as written, monospaced, on an
+/// inset panel, selectable.
+struct RawMarkdownView: View {
+    @Environment(\.themePalette) var themePalette
+    let text: String
+
+    var body: some View {
+        Text(text)
+            .font(.system(size: 12.5, design: .monospaced))
+            .lineSpacing(3)
+            .foregroundStyle(Theme.textPrimary)
+            .textSelection(.enabled)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(12)
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(Theme.inset.opacity(0.5))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .strokeBorder(Theme.hairline.opacity(0.3), lineWidth: 1)
+            )
+    }
+}
+
+/// A long line of yours folded to the desktop's 160 pt behind a fade.
+private struct CollapsedText: ViewModifier {
+    let collapsed: Bool
+
+    func body(content: Content) -> some View {
+        if collapsed {
+            content
+                .frame(maxHeight: CGFloat(MessageCollapse.collapsedHeight), alignment: .top)
+                .clipped()
+                .mask(
+                    LinearGradient(
+                        stops: [.init(color: .black, location: 0.6), .init(color: .clear, location: 1)],
+                        startPoint: .top, endPoint: .bottom
+                    )
+                )
+        } else {
+            content
+        }
+    }
+}
+
+/// @mentions of known peers, tinted as the desktop's `.mention-highlight`:
+/// the peer's colour as a soft background and an underline.
+enum MentionTint {
+    static func apply(to attributed: inout AttributedString, peers: [MentionPeer], everyone: Bool) {
+        guard !peers.isEmpty || everyone else { return }
+        let plain = String(attributed.characters)
+        guard plain.contains("@") else { return }
+        for range in Mentions.ranges(in: plain, peers: peers, everyone: everyone) {
+            let start = attributed.characters.index(attributed.characters.startIndex, offsetBy: range.start)
+            let end = attributed.characters.index(start, offsetBy: range.end - range.start)
+            let span = start..<end
+            // Links and code keep their own look, as the remark plugin skips them.
+            if attributed[span].runs.contains(where: { $0.link != nil || $0.inlinePresentationIntent?.contains(.code) == true }) {
+                continue
+            }
+            let color = range.colorName.map(MausPalette.color) ?? Theme.textSecondary
+            attributed[span].backgroundColor = color.opacity(0.24)
+            attributed[span].underlineStyle = Text.LineStyle(pattern: .solid, color: color)
+        }
+    }
+
+    static func attributed(_ text: String, peers: [MentionPeer], everyone: Bool) -> AttributedString {
+        var attributed = AttributedString(text)
+        apply(to: &attributed, peers: peers, everyone: everyone)
+        return attributed
     }
 }

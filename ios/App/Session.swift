@@ -1157,7 +1157,8 @@ final class Session: ObservableObject {
     func send(
         text: String,
         attachments: [PendingMessageAttachment],
-        to chat: Chat
+        to chat: Chat,
+        options: SendOptions = SendOptions()
     ) async -> Bool {
         guard let client else {
             actionError = "This computer is offline."
@@ -1237,7 +1238,7 @@ final class Session: ObservableObject {
                 urls: [],
                 attachments: uploaded
             )
-            let receipt = try await client.send(text: message, to: destination, sendId: sendID)
+            let receipt = try await client.send(text: message, to: destination, sendId: sendID, options: options)
             // The send succeeded on the computer it was addressed to, so the
             // draft clears either way. Its queue row belongs to that computer,
             // and must not be drawn on one selected mid-upload.
@@ -2455,6 +2456,83 @@ final class Session: ObservableObject {
                 self.state.adoptEdit(fork, inThread: threadId, expectedPending: pending)
             }
         }
+    }
+
+    // MARK: - Message actions (WP1)
+
+    /// Regenerate: fork the newest user line with the same words, as the
+    /// desktop does (ChatView.tsx `regenerate`). The old answer stays
+    /// reachable through the version switcher.
+    func regenerate(for bot: Bot) async {
+        let messages = state.visibleTranscript(forThread: bot.threadId)
+        guard bot.busy != true,
+              let source = MessageActionRules.regenerateSource(
+                in: messages, pendingId: state.pendingEdits[bot.threadId]?.placeholderId
+              ),
+              let text = source.text
+        else { return }
+        await edit(source, for: bot, text: text)
+    }
+
+    /// Pin a message to the top of this conversation, or clear the pin with
+    /// nil. Bots pin per thread, rooms per room (the desktop's `updateTask`
+    /// and `patchGroup`). The row moves at once and comes back if the
+    /// computer refuses.
+    func setPinnedMessage(_ messageId: String?, in chat: Chat) async {
+        guard let client else { return }
+        switch chat {
+        case let .bot(bot):
+            let previous = state.bot(bot.id)?.tasks?.first { $0.threadId == bot.threadId }?.pinnedMessageId
+            setPinnedMessageLocally(messageId, botId: bot.id, threadId: bot.threadId)
+            do {
+                try await client.setPinnedMessage(botId: bot.id, threadId: bot.threadId, messageId: messageId)
+                await refresh()
+            } catch {
+                setPinnedMessageLocally(previous, botId: bot.id, threadId: bot.threadId)
+                actionError = error.localizedDescription
+            }
+        case let .room(room):
+            do {
+                let updated = try await client.setPinnedMessage(groupId: room.id, messageId: messageId)
+                if let index = state.rooms.firstIndex(where: { $0.id == room.id }) {
+                    state.rooms[index].pinnedMessageId = updated.pinnedMessageId
+                }
+            } catch { actionError = error.localizedDescription }
+        }
+    }
+
+    private func setPinnedMessageLocally(_ messageId: String?, botId: String, threadId: String) {
+        guard let botIndex = state.bots.firstIndex(where: { $0.id == botId }) else { return }
+        if var tasks = state.bots[botIndex].tasks, let taskIndex = tasks.firstIndex(where: { $0.threadId == threadId }) {
+            tasks[taskIndex].pinnedMessageId = messageId
+            state.bots[botIndex].tasks = tasks
+        }
+        if state.bots[botIndex].threadId == threadId { state.bots[botIndex].pinnedMessageId = messageId }
+    }
+
+    /// Scroll a conversation to one of its messages (a reply quote, the
+    /// pinned banner). A message outside the loaded page is fetched around
+    /// first, the way a search hit is.
+    func jump(to messageId: String, inThread threadId: String) async {
+        if !state.visibleTranscript(forThread: threadId).contains(where: { $0.id == messageId }), let client {
+            do {
+                let page = try await client.messages(threadId: threadId, around: messageId)
+                state.merge(page, intoThread: threadId)
+            } catch { actionError = error.localizedDescription; return }
+        }
+        focusedMessageId = messageId
+    }
+
+    /// The computer's voice for one message (`POST /api/tts/prepare`); nil
+    /// when the computer cannot be asked.
+    func prepareSpeech(text: String, voiceId: String?) async -> SpeechPreparation? {
+        guard let client else { return nil }
+        return try? await client.prepareSpeech(text: text, voiceId: voiceId)
+    }
+
+    func speechAudio(text: String, voiceId: String?) async throws -> Data {
+        guard let client else { throw APIError.transport("This computer is offline.") }
+        return try await client.speech(text: text, voiceId: voiceId)
     }
 
     func switchVersion(to message: Message, for bot: Bot) async {

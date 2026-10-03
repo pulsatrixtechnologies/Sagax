@@ -52,7 +52,11 @@ struct ChatView: View {
         var text = ""
         var attachments: [PendingMessageAttachment] = []
         var error: String?
+        /// The message a reply quotes, kept with its thread's draft.
+        var replyTo: Message?
     }
+    /// Reply (CO2): the message the next send quotes, drawn above the field.
+    @State var replyTo: Message?
     @State var threadDrafts: [String: ComposerSnapshot] = [:]
     @State var preparingAttachments = false
     @State var sendingMessage = false
@@ -280,11 +284,12 @@ struct ChatView: View {
         }
         .onValueChangePair(of: threadId) { previous, next in
             dictation.stop()
-            threadDrafts[previous] = ComposerSnapshot(text: draft, attachments: attachments, error: attachmentError)
+            threadDrafts[previous] = ComposerSnapshot(text: draft, attachments: attachments, error: attachmentError, replyTo: replyTo)
             let restored = threadDrafts.removeValue(forKey: next) ?? ComposerSnapshot()
             draft = restored.text
             attachments = restored.attachments
             attachmentError = restored.error
+            replyTo = restored.replyTo
             selectedPhotos = []
             showCommandHUD = false
             showingPlus = false
@@ -413,16 +418,20 @@ struct ChatView: View {
                     .padding(.top, 12)
                     .frame(maxWidth: CompanionLayout.chatWidth, alignment: .leading)
                     .frame(maxWidth: .infinity)
+                    .environment(\.messageActions, messageActionContext)
                 }
                 // The transcript starts under the top bar and scrolls
                 // beneath it: a clear inset the height of the bar, then the
                 // fade and the glass controls float over the content.
-                .safeAreaInset(edge: .top, spacing: 0) { Color.clear.frame(height: Self.topBarHeight) }
+                .safeAreaInset(edge: .top, spacing: 0) {
+                    Color.clear.frame(height: Self.topBarHeight + (pinnedPreview == nil ? 0 : Self.pinnedBannerHeight))
+                }
                 .overlay(alignment: .top) {
                     ChatTopEdgeFade()
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                         .ignoresSafeArea()
                 }
+                .overlay(alignment: .top) { pinnedBanner }
                 .overlay(alignment: .top) { headerBar }
                 .overlay(alignment: .top) { islandFace }
                 .task {

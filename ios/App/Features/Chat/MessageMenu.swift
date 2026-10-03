@@ -1,10 +1,27 @@
 // The long-press menu on a transcript message: reactions, Copy, Select Text,
-// Edit and retry. One seam for the message actions the parity packages add
-// (reply, regenerate, speak, view source, pin: WP1), shared by the iPhone's
-// context menu and the iPad's hover row. Items and order are unchanged from
-// the menu that lived inline in ChatView.swift.
+// then the desktop's message actions (WP1: View Source, Reply, Read Aloud,
+// Regenerate, Pin), Edit and retry, and the routed-by line of an Auto room.
+// One seam shared by the iPhone's context menu and the iPad's hover row: it
+// takes what each action does as closures and decides nothing about layout.
+// An action is passed as nil when this message or this pairing cannot do it
+// (MessageActionRules, SurfaceGate), and nil hides it: never drawn disabled.
 import SwiftUI
 import CompanionCore
+
+/// The message actions a row offers, already gated. Built by `MessageRow`.
+struct MessageActionSet {
+    var reply: (() -> Void)?
+    /// View source / hide source; `showingSource` says which.
+    var toggleSource: (() -> Void)?
+    var showingSource = false
+    var speak: (() -> Void)?
+    var speaking = false
+    var regenerate: (() -> Void)?
+    var togglePin: (() -> Void)?
+    var pinned = false
+    /// An Auto room picked this speaker (RM10).
+    var routedBy: RoutedBy?
+}
 
 struct MessageMenu: View {
     let message: Message
@@ -17,6 +34,7 @@ struct MessageMenu: View {
     let canEdit: Bool
     /// Another edit is in flight on this thread.
     let editDisabled: Bool
+    var actions = MessageActionSet()
     let selectText: (String) -> Void
     let edit: () -> Void
     @EnvironmentObject private var session: Session
@@ -45,6 +63,33 @@ struct MessageMenu: View {
                 selectText(visibleText)
             }
         }
+        if let toggle = actions.toggleSource {
+            if actions.showingSource {
+                Button("Hide Source", systemImage: "eye", action: toggle)
+            } else {
+                Button("View Source", systemImage: "chevron.left.forwardslash.chevron.right", action: toggle)
+            }
+        }
+        if let reply = actions.reply {
+            Button("Reply", systemImage: "arrowshape.turn.up.left", action: reply)
+        }
+        if let speak = actions.speak {
+            if actions.speaking {
+                Button("Stop Speaking", systemImage: "stop.fill", action: speak)
+            } else {
+                Button("Read Aloud", systemImage: "speaker.wave.2", action: speak)
+            }
+        }
+        if let regenerate = actions.regenerate {
+            Button("Regenerate", systemImage: "arrow.clockwise", action: regenerate)
+        }
+        if let togglePin = actions.togglePin {
+            if actions.pinned {
+                Button("Unpin", systemImage: "pin.slash", action: togglePin)
+            } else {
+                Button("Pin", systemImage: "pin", action: togglePin)
+            }
+        }
         // An attachment edit cannot faithfully reconstruct the upload.
         // Hiding this action is safer than silently dropping the file or
         // sending its computer-local transport path back as prose.
@@ -52,6 +97,11 @@ struct MessageMenu: View {
             Divider()
             Button("Edit and retry", systemImage: "pencil") { edit() }
                 .disabled(bot.busy == true || editDisabled)
+        }
+        if let routedBy = actions.routedBy {
+            Section {
+                Text("Picked by Jev · \(routedBy.percent)%")
+            }
         }
     }
 }
