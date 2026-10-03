@@ -26,10 +26,14 @@ import { serverVersion } from "../environment.ts";
 import { ChatGptPlanAuthController } from "./chatgpt-plan-auth.ts";
 import { describeSpawnFailure, execCli, killCliTree, spawnCli } from "../procs.ts";
 import { isHarnessOwnedMcpEnvName } from "../mcp-registry.ts";
+import { USER_SANDBOX_MCP_NAME } from "../user-sandbox-routing.ts";
+import { AUTO_COMPUTER_MCP_NAME } from "../auto-computer.ts";
+import { DESKTOP_BRIDGE_MCP_NAME } from "../../shared/bot-workplace.ts";
 
 import type {
   DriverCreateInput,
   McpServerSpec,
+  StdioMcpSpec,
   ProviderDriver,
   ProviderInstance,
   ProviderSnapshot,
@@ -579,6 +583,47 @@ export function codexNativeIncomingLogMessage(
   return message;
 }
 
+/** Sagax's own workplace proxies (server environment, desktop bridge,
+ * computer_select) reach a driver through integrations.custom, and each one
+ * carries its own capability under the same variable names
+ * (SAGAX_SANDBOX_TOKEN, SAGAX_TOOL_SERVER, ...). Codex runs every MCP server
+ * from one app-server environment, so those names would collide, and the
+ * reserved-name guard below refuses them outright. Such a server instead gets
+ * its variables under a prefix of its own, forwarded by name only, and the
+ * proxy restores the plain names at start (user-sandbox-proxy.ts). Only the
+ * prefix and ELECTRON_RUN_AS_NODE (needed before the process starts, never
+ * a secret) travel as values in argv. */
+const SAGAX_WORKPLACE_PROXIES = new Set([USER_SANDBOX_MCP_NAME, AUTO_COMPUTER_MCP_NAME, DESKTOP_BRIDGE_MCP_NAME]);
+/** Read by user-sandbox-proxy.ts (PROXY_ENV_PREFIX_VARIABLE there; the proxy
+ * is a standalone script, so the name is spelled in both places). */
+const PROXY_ENV_PREFIX_VARIABLE = "SAGAX_PROXY_ENV_PREFIX";
+function isSagaxWorkplaceProxy(name: string, server: McpServerSpec): boolean {
+  return !("url" in server) && SAGAX_WORKPLACE_PROXIES.has(name);
+}
+
+function mountSagaxWorkplaceProxy(
+  appServerArgs: string[],
+  env: Record<string, string | undefined>,
+  name: string,
+  server: StdioMcpSpec,
+): void {
+  const prefix = `mcp_servers.${name}`;
+  const stem = `SAGAX_MCP_ENV_${name.toUpperCase().replace(/[^A-Z0-9]/g, "_")}__`;
+  const forwarded: string[] = [];
+  const literal: Record<string, string> = { [PROXY_ENV_PREFIX_VARIABLE]: stem };
+  for (const [key, value] of Object.entries(server.env)) {
+    if (key === "ELECTRON_RUN_AS_NODE") { literal[key] = value; continue; }
+    env[`${stem}${key}`] = value;
+    forwarded.push(`${stem}${key}`);
+  }
+  appServerArgs.push(
+    "-c", `${prefix}.command=${JSON.stringify(server.command)}`,
+    "-c", `${prefix}.args=${JSON.stringify(server.args)}`,
+    "-c", `${prefix}.env=${tomlInlineTable(literal)}`,
+    "-c", `${prefix}.env_vars=${JSON.stringify(forwarded)}`,
+  );
+}
+
 function mountMcpServer(
   appServerArgs: string[],
   env: Record<string, string | undefined>,
@@ -776,7 +821,7 @@ export const CodexDriver: ProviderDriver<CodexConfig> = {
       // explicit mode, which takes precedence.
       const approvalMode: ApprovalMode = turn.approvalMode ?? (config.fullAuto ? "full" : "ask");
       for (const [name, server] of Object.entries(turn.integrations?.custom ?? {})) {
-        if ("url" in server) continue;
+        if ("url" in server || isSagaxWorkplaceProxy(name, server)) continue;
         const reserved = Object.keys(server.env).find(isHarnessOwnedMcpEnvName);
         if (reserved) {
           throw new Error(`Custom MCP server “${name}” cannot set reserved environment variable “${reserved}”`);
@@ -831,6 +876,10 @@ export const CodexDriver: ProviderDriver<CodexConfig> = {
           // left out here rather than mounted as something it is not
           if ("url" in server && server.type === "sse") {
             noteSkippedSseServer(name);
+            continue;
+          }
+          if (!("url" in server) && isSagaxWorkplaceProxy(name, server)) {
+            mountSagaxWorkplaceProxy(appServerArgs, env, name, server);
             continue;
           }
           const mountName = mountedMcpServerName(name, declaredInCodexConfig);

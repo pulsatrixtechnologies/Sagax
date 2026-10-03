@@ -15,9 +15,10 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { SessionRegistry } from "./sessions.ts";
 import { removeTempDir, waitForExit } from "./testing/cleanup.ts";
+import { freePortBlock } from "./testing/ports.ts";
 
 const SERVER_DIR = dirname(fileURLToPath(import.meta.url));
-const PORT = 28800 + Math.floor(Math.random() * 10_000);
+const PORT = await freePortBlock([0, 1]);
 const BASE = `http://127.0.0.1:${PORT}`;
 const posixOnly = describe.skipIf(process.platform === "win32");
 
@@ -281,7 +282,7 @@ posixOnly("slice 8: a solo server keeps email sign-in, without an organization",
     const paired = seeded.exchange({ code: pairing.code, label: "JC's phone", source: "test" });
     if (!paired.ok) throw new Error(paired.error);
     seeded.close();
-    const port = 28800 + Math.floor(Math.random() * 10_000);
+    const port = await freePortBlock([0, 1]);
     const base = `http://127.0.0.1:${port}`;
     let log2 = "";
     const child2 = spawn(process.execPath, [join(SERVER_DIR, "index.ts")], {

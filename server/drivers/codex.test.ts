@@ -1080,6 +1080,40 @@ describe("CodexDriver turns (fake app-server)", () => {
     expect(argv).not.toContain("mcp_servers.legacy");
   });
 
+  it("mounts Sagax's workplace proxies side by side, each with its own capability off argv", async () => {
+    await create();
+    const dump = join(scratch, "workplace-proxies.json");
+    process.env.FAKE_CODEX_DUMP = dump;
+    const proxy = (token: string, server?: string) => ({
+      command: process.execPath,
+      args: ["/tmp/user-sandbox-proxy.js"],
+      env: { ELECTRON_RUN_AS_NODE: "1", SAGAX_SANDBOX_TOKEN: token, SAGAX_HARNESS_URL: "http://127.0.0.1:1", ...(server ? { SAGAX_TOOL_SERVER: server } : {}) },
+    });
+
+    await instance.adapter.sendTurn({
+      threadId: "t-workplace-proxies",
+      text: "go",
+      integrations: {
+        custom: {
+          "sagax-environment": proxy("tok-environment"),
+          "sagax-computer": proxy("tok-computer", "sagax-computer"),
+        },
+      },
+    });
+    await recorder.until((event) => event.type === "turn.completed");
+    const seen = JSON.parse(readFileSync(dump, "utf8"));
+    const argv = seen.argv.join(" ");
+    expect(argv).not.toContain("tok-environment");
+    expect(argv).not.toContain("tok-computer");
+    expect(seen.argv).toContain('mcp_servers.sagax-computer.env={ "SAGAX_PROXY_ENV_PREFIX" = "SAGAX_MCP_ENV_SAGAX_COMPUTER__", "ELECTRON_RUN_AS_NODE" = "1" }');
+    expect(seen.env.SAGAX_MCP_ENV_SAGAX_ENVIRONMENT__SAGAX_SANDBOX_TOKEN).toBe("tok-environment");
+    expect(seen.env.SAGAX_MCP_ENV_SAGAX_COMPUTER__SAGAX_SANDBOX_TOKEN).toBe("tok-computer");
+    expect(seen.env.SAGAX_MCP_ENV_SAGAX_COMPUTER__SAGAX_TOOL_SERVER).toBe("sagax-computer");
+    // nothing lands under the plain names another server could read
+    expect(seen.env.SAGAX_SANDBOX_TOKEN).toBeUndefined();
+    expect(seen.env.SAGAX_TOOL_SERVER).toBeUndefined();
+  });
+
   it("does not let a custom MCP server capture a built-in capability variable", async () => {
     await create();
     await expect(instance.adapter.sendTurn({
