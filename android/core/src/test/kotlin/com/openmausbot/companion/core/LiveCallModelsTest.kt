@@ -77,7 +77,7 @@ class LiveCallModelsTest {
         val with = CompanionJson.decodeFromString<ConfigStatus>(
             """{"tts":{"configured":false},"live":{"configured":true,"voice":"marin","readTypedReplies":false,"idleMinutes":2}}""",
         )
-        assertEquals(LiveSettings(true, "marin", false, 2), with.live)
+        assertEquals(LiveSettings(configured = true, voice = "marin", readTypedReplies = false, idleMinutes = 2), with.live)
         val without = CompanionJson.decodeFromString<ConfigStatus>("""{"tts":{"configured":false}}""")
         assertNull(without.live)
     }
