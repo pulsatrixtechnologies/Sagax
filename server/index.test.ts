@@ -39,9 +39,9 @@ const SERVER_DIR = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(SERVER_DIR, "..");
 const FAKE_CLAUDE_CLI = join(SERVER_DIR, "testing", "fake-claude-cli.ts");
 const FAKE_MCP_SERVER = join(SERVER_DIR, "testing", "fake-mcp-server.ts");
-const PORT = 18800 + Math.floor(Math.random() * 10_000);
+const PORT = await freePortBlock([0, 1]);
 const BASE = `http://127.0.0.1:${PORT}`;
-const WEBHOOK_PORT = 39000 + Math.floor(Math.random() * 10_000);
+const WEBHOOK_PORT = await freePortBlock([0], 39_000, 10_000);
 const WEBHOOK_BASE = `http://127.0.0.1:${WEBHOOK_PORT}`;
 const TEST_CAPABILITY_KEY = "index-fixture-internal-capability";
 

@@ -61,11 +61,19 @@ function fixture(root: string): DatabaseSync {
   }
   return db;
 }
+// One salt and key for every forged payload: the product scrypt (N = 2^17) is
+// deliberately slow, and a test that forges many payloads would otherwise pay
+// for it twice per payload and time out on a loaded machine.
+let forgedKey: { salt: Buffer; key: Buffer } | undefined;
 function encryptedPayload(root: string, plaintext: Buffer): string {
-  const salt = randomBytes(16);
+  if (!forgedKey) {
+    const salt = randomBytes(16);
+    forgedKey = { salt, key: scryptSync(PASSWORD, salt, 32, { N: 131_072, r: 8, p: 1, maxmem: 256 * 1024 ** 2 }) };
+  }
+  const { salt, key } = forgedKey;
   const iv = randomBytes(12);
   const header = Buffer.concat([Buffer.from("OMB-WORKSPACE-1\n"), salt, iv]);
-  const cipher = createCipheriv("aes-256-gcm", scryptSync(PASSWORD, salt, 32, { N: 131_072, r: 8, p: 1, maxmem: 256 * 1024 ** 2 }), iv);
+  const cipher = createCipheriv("aes-256-gcm", key, iv);
   cipher.setAAD(header);
   const path = join(root, "malicious.ombbackup");
   writeFileSync(path, Buffer.concat([header, cipher.update(plaintext), cipher.final(), cipher.getAuthTag()]));
@@ -415,7 +423,7 @@ describe("encrypted full workspace backups", () => {
       const path = encryptedPayload(source, Buffer.concat([tarEntry("manifest.json", "File", JSON.stringify(manifest)), tarEntry("data", "Directory"), ...parents.map((parent) => tarEntry(`data/${parent}`, "Directory")), tarEntry(`data/${name}`, "File", content), Buffer.alloc(1024)]));
       await expect(stageWorkspaceBackup(directory(), path, { password: PASSWORD })).rejects.toThrow(/Unsafe|connection settings|webhook credentials/);
     }
-  });
+   }, 120_000); // 18 restores, each one real scrypt by design
 
   it("retains differently cased destination auth roots and refuses them in recovery journals", async () => {
     const source = directory();

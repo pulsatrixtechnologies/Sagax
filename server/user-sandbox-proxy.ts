@@ -64,7 +64,22 @@ export async function userSandboxProxyRequest(frame: unknown, connection: { url:
   }
 }
 
+/** Set by a driver that runs every MCP server from one shared environment
+ * (Codex): this proxy's variables then arrive under that prefix, so two
+ * proxies never read each other's capability. */
+export const PROXY_ENV_PREFIX_VARIABLE = "SAGAX_PROXY_ENV_PREFIX";
+
+/** Restore the plain variable names from a driver-given prefix. */
+export function restorePrefixedEnvironment(environment: NodeJS.ProcessEnv): void {
+  const prefix = environment[PROXY_ENV_PREFIX_VARIABLE];
+  if (!prefix) return;
+  for (const [key, value] of Object.entries(environment)) {
+    if (key.startsWith(prefix) && key.length > prefix.length && value !== undefined) environment[key.slice(prefix.length)] = value;
+  }
+}
+
 function run(): void {
+  restorePrefixedEnvironment(process.env);
   const named = process.env.SAGAX_TOOL_SERVER;
   const connection = {
     url: process.env.SAGAX_HARNESS_URL ?? "", token: process.env.SAGAX_SANDBOX_TOKEN ?? "",

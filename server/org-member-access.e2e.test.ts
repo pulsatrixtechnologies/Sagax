@@ -66,6 +66,17 @@ async function signIn(user: FakeOidcUser): Promise<Auth> {
   return { cookie: cookiePair(session!) };
 }
 
+/** A sign-in refreshes the directory, but fire and forget, and a call while
+ * one refresh runs joins it (perspicax-link.ts): the first session after a
+ * directory change can still carry the old rights. Sign in again until the
+ * viewer shows the change. */
+async function signInUntil(user: FakeOidcUser, ready: (viewer: Record<string, unknown>) => boolean): Promise<Auth> {
+  return waitFor(async () => {
+    const auth = await signIn(user);
+    return ready((await api("GET", "/api/config", auth)).body.viewer) ? auth : null;
+  });
+}
+
 async function waitFor<T>(read: () => Promise<T | null | undefined | false>, ms = 20_000): Promise<T> {
   const deadline = Date.now() + ms;
   for (;;) {
@@ -222,7 +233,7 @@ posixOnly("Perspicax organization: a member's own engines and read-only bots", (
     expect((await api("PUT", `/api/bots/${shared.id}/grants`, alice, { target: `user:${ids.uma}`, level: "edit" })).status).toBe(200);
 
     setUma("use");
-    uma = await signIn(UMA); // a sign-in refreshes the directory
+    uma = await signInUntil(UMA, (viewer) => viewer.botsReadOnly === true);
     const viewer = (await api("GET", "/api/config", uma)).body.viewer;
     expect(viewer).toMatchObject({ canCreateBots: false, botsReadOnly: true });
     const created = await api("POST", "/api/bots", uma, { name: "Nope" });
@@ -249,7 +260,7 @@ posixOnly("Perspicax organization: a member's own engines and read-only bots", (
     expect((await api("PATCH", `/api/bots/${shared.id}`, alice, { name: "Edited" })).status).toBe(200);
 
     setUma("manage");
-    uma = await signIn(UMA);
+    uma = await signInUntil(UMA, (viewer) => !viewer.botsReadOnly);
     expect((await api("GET", "/api/config", uma)).body.viewer).toMatchObject({ canCreateBots: true });
     expect((await api("GET", "/api/config", uma)).body.viewer.botsReadOnly).toBeFalsy();
     expect((await api("PATCH", `/api/bots/${shared.id}`, uma, { name: "Edited by Uma" })).status).toBe(200);
