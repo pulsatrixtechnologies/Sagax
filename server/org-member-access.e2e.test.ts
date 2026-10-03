@@ -311,4 +311,45 @@ posixOnly("Perspicax organization: a member's own engines and read-only bots", (
     expect(refused.body.error).toBe(READ_ONLY);
     expect((await api("GET", "/api/org/bots", alice)).body.bots.some((bot: { name: string }) => bot.name === "Uma Denied")).toBe(false);
   }, 90_000);
+
+  it("MA-5: sagax_bots use cannot grant Full access or change the bot's default model", async () => {
+    // Uma owns a bot from when she could manage one. Read-only must not
+    // raise its approval level or rewrite its default model. A thread title
+    // is conversation use and stays allowed. An admin is never narrowed.
+    setUma("manage");
+    let uma = await signInUntil(UMA, (viewer) => viewer.botsReadOnly !== true && viewer.canCreateBots === true);
+    const own = await createBot(uma, "Uma Full", "claude");
+
+    setUma("use");
+    uma = await signInUntil(UMA, (viewer) => viewer.botsReadOnly === true);
+    const botFull = await api("PATCH", `/api/bots/${own.id}`, uma, { approvalMode: "full", confirmFullAccess: true });
+    expect(botFull.status, botFull.text).toBe(403);
+    expect(botFull.body.error).toBe(READ_ONLY);
+    const threadFull = await api("PATCH", `/api/bots/${own.id}/tasks/${own.threadId}`, uma, { approvalMode: "full", confirmFullAccess: true });
+    expect(threadFull.status, threadFull.text).toBe(403);
+    expect(threadFull.body.error).toBe(READ_ONLY);
+    const changedDefault = await api("PATCH", `/api/bots/${own.id}/tasks/${own.threadId}`, uma, {
+      modelSelection: { instanceId: "codex", model: "fake-model" }, updateBotDefault: true,
+    });
+    expect(changedDefault.status, changedDefault.text).toBe(403);
+    expect(changedDefault.body.error).toBe(READ_ONLY);
+
+    const stored = ((await api("GET", "/api/bots", uma)).body.bots as Array<{ id: string; approvalMode?: string; fullAccessConsent?: unknown; modelSelection?: { instanceId: string } }>).find((bot) => bot.id === own.id);
+    expect(stored?.approvalMode).not.toBe("full");
+    expect(stored?.fullAccessConsent).toBeFalsy();
+    expect(stored?.modelSelection?.instanceId).toBe("claude");
+    expect((await api("PATCH", `/api/bots/${own.id}/tasks/${own.threadId}`, uma, { title: "Still mine" })).status).toBe(200);
+
+    idp.directoryPeople = idp.directoryPeople.map((person) => (person.sub === ALICE.sub ? { ...person, sagax_bots: "use" as const } : person));
+    alice = await signIn(ALICE);
+    const adminBot = await createBot(alice, "Alice Full", "claude");
+    const adminFull = await api("PATCH", `/api/bots/${adminBot.id}`, alice, { approvalMode: "full", confirmFullAccess: true });
+    expect(adminFull.status, adminFull.text).toBe(200);
+
+    setUma("manage");
+    uma = await signInUntil(UMA, (viewer) => viewer.botsReadOnly !== true);
+    const restored = await api("PATCH", `/api/bots/${own.id}`, uma, { approvalMode: "full", confirmFullAccess: true });
+    expect(restored.status, restored.text).toBe(200);
+    expect(restored.body.bot.approvalMode).toBe("full");
+  }, 90_000);
 });
