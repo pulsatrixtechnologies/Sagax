@@ -203,5 +203,6 @@ struct PersonSheetContent: View {
                 .textSelection(.enabled)
         }
         .font(.subheadline)
+        .accessibilityElement(children: .combine)
     }
 }

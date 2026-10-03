@@ -57,7 +57,7 @@ extension ChatView {
             ChatNameCapsule(chat: current, state: mascotState, mascotHidden: islandVisible) { openProfile() }
                 .frame(maxWidth: 230)
                 .contextMenu { nameCapsuleMenu }
-                .accessibilityLabel(Text(current.name))
+                .accessibilityLabel(Text(PeopleDirectory.shared.name(current, session: session)))
                 // The thread is no longer drawn in the header; VoiceOver
                 // (and the UI tests) still hear which one is open.
                 .accessibilityValue(Text(current.supportsTasks ? current.threadTitle : current.subtitle))

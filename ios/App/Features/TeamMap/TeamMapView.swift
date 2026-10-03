@@ -149,6 +149,7 @@ struct TeamMapContent: View {
                 Menu {
                     ForEach(others) { section in
                         Button(section.name) { model.requestMove(bot, to: section.key) }
+                            .accessibilityIdentifier("team-map-move-to-\(section.key.isEmpty ? "general" : section.key)")
                     }
                 } label: {
                     Label(String(localized: "Move to team"), systemImage: "person.2")
