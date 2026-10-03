@@ -139,7 +139,7 @@ class LiveCallClientTest {
         assertEquals("/api/live/settings", request.path)
         val body = CompanionJson.parseToJsonElement(request.body.readUtf8()).jsonObject
         assertEquals(setOf("readTypedReplies", "idleMinutes"), body.keys)
-        assertEquals(LiveSettings(true, "marin", false, 10), live)
+        assertEquals(LiveSettings(configured = true, voice = "marin", readTypedReplies = false, idleMinutes = 10), live)
     }
 
     private fun json(code: Int, body: String): MockResponse = MockResponse()

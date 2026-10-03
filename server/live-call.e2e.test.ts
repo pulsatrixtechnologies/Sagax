@@ -396,7 +396,9 @@ posixOnly("Live call e2e", () => {
       const lines = async (): Promise<Line[]> => ((await (await fetch(`${base}/api/threads/${bot.threadId}/messages`)).json()) as { messages: Line[] }).messages;
       const original = (await lines()).find((m) => m.card?.requestId)!;
       expect((await post(`/api/bots/${bot.id}/interrupt`, { threadId: bot.threadId })).status).toBe(200);
-      await expect.poll(() => isBusy(bot.id), { timeout: 5_000 }).toBe(false);
+      // The parked question turn settles about 5 s after the interrupt;
+      // Vitest 5 no longer grants a poll one last attempt past its timeout.
+      await expect.poll(() => isBusy(bot.id), { timeout: 15_000 }).toBe(false);
       live.emit(session.id, { type: "session.input_transcript.delta", delta: "Green", start_ms: 5_000, end_ms: 5_300 });
       live.emit(session.id, { type: "session.delegation.created", offset_ms: 5_400, delegation: { id: "del_late", target: "client" } });
       await expect.poll(async () => (await lines()).find((m) => m.id === original.id)?.card, { timeout: 5_000 }).toMatchObject({ answered: "answer", answeredText: "Green", answeredBy: { kind: "loopback", via: "call" } });

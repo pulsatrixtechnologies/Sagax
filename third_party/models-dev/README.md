@@ -6,7 +6,7 @@ models.dev catalog (`https://models.dev/api.json`), MIT License, Copyright (c)
 snapshot itself (`source.licenseText`).
 
 - Source: https://github.com/anomalyco/models.dev at commit
-  `7f91a155297c92203cc1111dac7f0ca42d478f22` (2026-09-30T05:32:26Z). The
+  `036a4f1d6ee01a0ed3f156077375a15087dd322f` (2026-10-03T12:34:20Z). The
   `api.json` used was checked to be identical in content to the catalog that
   commit generates.
 - Built with `node scripts/build-model-catalog.mjs --input api.json --commit

@@ -45,7 +45,7 @@ Requirements for building from source:
 
 - Ubuntu 24.04 LTS x86_64
 - Node.js 24 or newer
-- pnpm 10.33.0 (Corepack can install the version declared by the project)
+- pnpm 10.34.6 (Corepack can install the version declared by the project)
 
 ```sh
 git clone https://github.com/pulsatrixtechnologies/sagax.git

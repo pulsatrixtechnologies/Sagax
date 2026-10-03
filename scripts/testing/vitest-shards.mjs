@@ -17,6 +17,7 @@ import { mkdirSync, mkdtempSync, openSync, readFileSync, statSync, closeSync } f
 import { availableParallelism, tmpdir } from "node:os";
 import { join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { stripVTControlCharacters } from "node:util";
 
 import { balanceShards, isE2eTestFile, selectGroup } from "./test-groups.mjs";
 
@@ -54,13 +55,14 @@ function runShard(index, files, logsDir, extra) {
   const log = openSync(logPath, "w");
   const started = Date.now();
   const child = spawn(process.execPath, [VITEST, "run", "--reporter=dot", ...extra, ...files.map((file) => relative(ROOT, file))],
-    { cwd: ROOT, env: { ...process.env, FORCE_COLOR: "0" }, stdio: ["ignore", log, log] });
+    { cwd: ROOT, env: { ...process.env, FORCE_COLOR: "0", NO_COLOR: "1" }, stdio: ["ignore", log, log] });
   closeSync(log);
   return new Promise((done) => child.on("close", (code, signal) => done({ index, files: files.length, code: code ?? 1, signal, logPath, seconds: (Date.now() - started) / 1000 })));
 }
 
 function summarize(result) {
-  const text = readFileSync(result.logPath, "utf8");
+  // vitest 5 colors its summary even with FORCE_COLOR=0; strip any ANSI codes
+  const text = stripVTControlCharacters(readFileSync(result.logPath, "utf8"));
   const line = (label) => text.match(new RegExp(`^\\s*${label}\\s+(.+)$`, "m"))?.[1]?.trim() ?? "?";
   const failures = [...new Set([...text.matchAll(/^\s*FAIL\s+(.+)$/gm)].map((match) => match[1].trim()))];
   return { files: line("Test Files"), tests: line("Tests"), failures };

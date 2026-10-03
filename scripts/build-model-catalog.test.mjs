@@ -26,7 +26,7 @@ describe("model catalog snapshot", () => {
     expect(snapshotProblems(committed)).toEqual([]);
     expect(gzipSync(toLf(committed)).length).toBeLessThanOrEqual(MAX_GZIP_BYTES);
     const doc = JSON.parse(committed);
-    expect(doc.source).toMatchObject({ name: "models.dev", commit: "7f91a155297c92203cc1111dac7f0ca42d478f22", license: "MIT", licenseText });
+    expect(doc.source).toMatchObject({ name: "models.dev", commit: "036a4f1d6ee01a0ed3f156077375a15087dd322f", license: "MIT", licenseText });
   });
 
   it("is checked out with LF on every platform", () => {

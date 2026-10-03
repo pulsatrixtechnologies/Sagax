@@ -59,7 +59,7 @@ export function handOffDownloadedPackage(packageType) {
   return async (files) => {
     const target = stagedInstallFile(files);
     const command = packageInstallCommand(packageType, target);
-    clipboard.writeText(command);
+    await clipboard.writeText(command);
     return { command, terminalOpened: await openBlankTerminal() };
   };
 }

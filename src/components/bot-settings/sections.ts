@@ -22,11 +22,11 @@ import {
   Network,
   Plug,
   ShieldCheck,
-  Slack,
   Sparkles,
   User,
   Users,
 } from "lucide-react";
+import { Slack } from "../brand-icons";
 
 import type { BotSettingsSection } from "@/state/store";
 import type { LocaleKey } from "@/locales";
