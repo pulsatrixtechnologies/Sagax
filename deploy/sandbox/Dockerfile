@@ -11,7 +11,7 @@
 # iptables ships here only for the provisioner's one-shot egress policy helper
 # (host network, NET_ADMIN); a sandbox itself never has NET_ADMIN, so the
 # binary is inert there.
-FROM debian:bookworm-slim
+FROM debian:trixie-slim
 
 ARG WITH_BROWSER=1
 # The on-demand desktop (docs/user-sandbox.md, "Desktop"): Xvnc (an X server

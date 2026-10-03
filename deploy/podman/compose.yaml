@@ -33,7 +33,7 @@ services:
       start_period: 30s
       retries: 5
   caddy:
-    image: docker.io/library/caddy:2.11.4
+    image: docker.io/library/caddy:2.11.6
     restart: unless-stopped
     network_mode: host
     depends_on:
