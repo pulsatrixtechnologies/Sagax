@@ -194,6 +194,11 @@ export interface SendTurnInput {
    * systemVolatile describes this turn even when its text is unchanged from
    * the previous turn, so digest-based delivery must not suppress the note. */
   mentionTurn?: boolean;
+  /** The thread is on a live voice call: keep the engine process warm from
+   * turn to turn. A driver that pools one process per thread hands per-turn
+   * credentials to it through files it rewrites each turn, so a new turn's
+   * token never forces a relaunch (docs/voice-mode-xai.md, "Latency"). */
+  keepWarm?: boolean;
   /** Coordinated teammate turns may resume a Claude conversation whose
    * earlier system prompt contained a different assignment. Refresh that
    * prompt when the provider supports it; the current brief also arrives
@@ -323,6 +328,10 @@ export type McpServerSpec = StdioMcpSpec | RemoteMcpSpec;
 
 export interface TurnStartResult {
   turnId: TurnId;
+  /** The turn went to an engine process that was already running (no cold
+   * start). Reported by drivers that pool a process per thread; absent
+   * elsewhere. Diagnostics only (server/voice-latency.ts). */
+  reused?: boolean;
 }
 
 export interface ProviderAdapter {

@@ -133,6 +133,14 @@
 //   FAKE_CLAUDE_EXIT_DELAY_MS ms this process keeps running after SIGTERM
 //                      before it exits: a CLI that is slow to stop, as one
 //                      can be on Windows, where taskkill is asynchronous.
+//   FAKE_CLAUDE_MODE=voice a spoken answer with a real CLI's timing
+//                      (docs/voice-mode-xai.md, "Latency"): the process's
+//                      first turn waits FAKE_CLAUDE_COLD_MS before `init`
+//                      (process boot, MCP servers, the session read back),
+//                      every turn waits FAKE_CLAUDE_FIRST_TOKEN_MS before its
+//                      first text delta (the model's time to first token),
+//                      then streams FAKE_CLAUDE_VOICE_REPLY word by word,
+//                      FAKE_CLAUDE_TOKEN_MS apart, and settles. No tool call.
 //
 // Keep this file dependency-free — it runs as a bare `node` subprocess.
 import { spawn, spawnSync } from "node:child_process";
@@ -547,6 +555,11 @@ const playTurn = (prompt: JsonValue, late = false) => {
     }
   }
 
+  if (mode === "voice") {
+    void playVoiceTurn(prompt);
+    return;
+  }
+
   // the real CLI re-announces init on every turn of a live process
   out({ type: "system", subtype: "init", session_id: sessionId, model, permissionMode, tools });
 
@@ -665,6 +678,31 @@ const playTurn = (prompt: JsonValue, late = false) => {
   playReply(prompt, "");
 };
 
+let voiceTurns = 0;
+const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, Math.max(0, ms)));
+/** FAKE_CLAUDE_MODE=voice: one turn with a real CLI's timing, streamed. */
+async function playVoiceTurn(prompt: JsonValue): Promise<void> {
+  const first = voiceTurns === 0;
+  voiceTurns += 1;
+  if (first) await pause(Number(process.env.FAKE_CLAUDE_COLD_MS) || 0);
+  out({ type: "system", subtype: "init", session_id: sessionId, model, permissionMode, tools });
+  replay(prompt);
+  await pause(Number(process.env.FAKE_CLAUDE_FIRST_TOKEN_MS) || 0);
+  const reply = process.env.FAKE_CLAUDE_VOICE_REPLY || "Sure. It is sunny in Montreal today, with a high of twenty degrees and a light wind. Do you want the forecast for tomorrow too?";
+  const tokenMs = Number(process.env.FAKE_CLAUDE_TOKEN_MS) || 0;
+  const words = reply.match(/\S+\s*/g) ?? [reply];
+  for (const word of words) {
+    out({ type: "stream_event", event: { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: word } } });
+    if (tokenMs) await pause(tokenMs);
+  }
+  replaySteered();
+  out({ type: "assistant", message: { content: [{ type: "text", text: reply }], usage: { input_tokens: 10, output_tokens: 5 } } });
+  runningCost.total = Number((runningCost.total + 0.01).toFixed(2));
+  out({ type: "result", is_error: false, stop_reason: "end_turn", total_cost_usd: runningCost.total, usage: { input_tokens: 10, output_tokens: 5 } });
+  turnRunning = false;
+  finishIfDone();
+}
+
 type FakeMcpCall = { server: string; tool: string; arguments: Record<string, unknown>; when?: string };
 const fakeMcpCalls: FakeMcpCall[] | null = (() => {
   const raw = process.env.FAKE_CLAUDE_MCP_CALLS;
@@ -735,12 +773,16 @@ async function proxyFetch(target: string): Promise<string> {
   });
 }
 
+// The real CLI reads --mcp-config once, at launch, and keeps its servers
+// for every turn of the process; the harness may remove the file after.
+let launchServers: Record<string, { command?: string; args?: string[]; env?: Record<string, string> }> | null = null;
 async function runFakeMcpCalls(calls: FakeMcpCall[], configPath: string | null): Promise<string> {
-  let servers: Record<string, { command?: string; args?: string[]; env?: Record<string, string> }> = {};
-  if (configPath) {
+  let servers: Record<string, { command?: string; args?: string[]; env?: Record<string, string> }> = launchServers ?? {};
+  if (configPath && !launchServers) {
     try {
       const config = JSON.parse(readFileSync(configPath, "utf8")) as { mcpServers?: typeof servers };
       servers = config.mcpServers ?? {};
+      launchServers = servers;
     } catch { /* no servers */ }
   }
   const matches = (pattern: string, name: string) => (pattern.endsWith("*") ? name.startsWith(pattern.slice(0, -1)) : name === pattern);

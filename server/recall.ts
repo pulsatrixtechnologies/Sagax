@@ -103,6 +103,16 @@ export function renderRecall(passages: readonly RecallPassage[], maxChars = RECA
   return { text: lines.join("\n"), notes, conversations };
 }
 
+/** How much one turn may recall: notes kept and characters in all. */
+export interface RecallBudget {
+  notes: number;
+  chars: number;
+}
+
+/** A turn said on a live call: a couple of short notes, no conversations
+ * (the engine reads all of it before it can say a word). */
+export const CALL_RECALL_BUDGET: RecallBudget = { notes: 2, chars: 1_200 };
+
 export interface RecallInput {
   botId: string;
   /** The person's message as sent. */
@@ -114,6 +124,8 @@ export interface RecallInput {
   label: (threadId: string) => string;
   /** How a message's author reads: the person's name or the bot's. */
   author: (hit: RecallHit) => string;
+  /** Less than the default (a call turn: CALL_RECALL_BUDGET). */
+  budget?: RecallBudget;
 }
 
 const TOPIC_PASSAGE_CHARS = 600;
@@ -189,6 +201,6 @@ export function buildRecall(input: RecallInput): RecallResult | null {
   if (!query) return null;
   const topics = topicPassages(input.botId, query);
   const named = new Set(topics.map((passage) => passage.label));
-  const notes = [...topics, ...memoryPassages(input.botId, query).filter((passage) => !named.has(passage.label))].slice(0, MEMORY_HITS);
-  return renderRecall([...notes, ...conversationPassages(input, query)]);
+  const notes = [...topics, ...memoryPassages(input.botId, query).filter((passage) => !named.has(passage.label))].slice(0, input.budget?.notes ?? MEMORY_HITS);
+  return renderRecall([...notes, ...conversationPassages(input, query)], input.budget?.chars);
 }

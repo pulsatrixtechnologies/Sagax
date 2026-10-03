@@ -43,6 +43,7 @@ import { askInputDetail, askInputSummary, commandSummary, toolDetailPreview } fr
 import { filesField, writtenFilesFromToolInput } from "../thread-files.ts";
 import { classifyError, computeBackoff, interruptibleDelay, RETRY_MAX_ATTEMPTS } from "./retry.ts";
 import { sessionIdlePolicy } from "./session-idle.ts";
+import { contractChanges, withoutTurnTokens } from "./spawn-contract.ts";
 import { parseVersionTriple, versionAtLeast } from "./acp/core.ts";
 import {
   applyClaudeInject,
@@ -673,6 +674,13 @@ const steerSilenceScale = () => fakeTimerScale("FAKE_CLAUDE_STEER_SILENCE_SCALE"
 
 /** Where the hook helper reads this thread's current turn token. Stable per
  * thread (so the CLI's environment can name it once) and private. */
+/** Where a warm (call) session's agents proxy reads the current turn's
+ * comms token: per thread, 0600, rewritten every turn. */
+export function commsTokenFile(threadId: string, botId?: string): string {
+  const digest = createHash("sha256").update(`${botId ?? ""}\0${threadId}`).digest("hex").slice(0, 24);
+  return join(DATA_DIR, "comms-tokens", `${digest}.token`);
+}
+
 export function hookTokenFile(threadId: string, botId?: string): string {
   const digest = createHash("sha256").update(`${botId ?? ""}\0${threadId}`).digest("hex").slice(0, 24);
   return join(DATA_DIR, "hook-tokens", `${digest}.token`);
@@ -1280,6 +1288,8 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
       systemPromptPath: string | null;
       /** the spawn contract — a different one means a fresh process */
       argsKey: string;
+      /** the same contract as an object, to name what changed on a relaunch */
+      contract?: unknown;
       /** the MCP servers it was launched with (names), for the relaunch log */
       mcpNames?: string[];
       /** the volatile half of the system prompt this process was launched
@@ -1574,6 +1584,15 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
         // Coordination is foundational, not an optional deferred lookup.
         // Claude waits for always-loaded tools before building the prompt.
         mcpServers.agents = { ...turn.integrations.agents, alwaysLoad: true };
+        // On a call the process is kept from turn to turn: the turn's comms
+        // token (new every turn) rides a file the proxy reads on each call,
+        // and leaves the spawn contract (warmTurnTokens below).
+        if (turn.keepWarm && turn.integrations.agents.env?.SAGAX_COMMS_TOKEN) {
+          const tokenPath = commsTokenFile(threadId, botId);
+          mkdirSync(dirname(tokenPath), { recursive: true, mode: 0o700 });
+          writeFileAtomic(tokenPath, turn.integrations.agents.env.SAGAX_COMMS_TOKEN, { mode: 0o600 });
+          mcpServers.agents = { ...turn.integrations.agents, env: { ...turn.integrations.agents.env, SAGAX_COMMS_TOKEN_FILE: tokenPath }, alwaysLoad: true };
+        }
         allowed.push(...agentsAllowedTools(turn.integrations.agents.env));
       }
       if (turn.integrations?.phone) {
@@ -1713,12 +1732,15 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
       // paths. Their contents are represented directly in the key instead.
       const privateFileFlags = new Set(["--mcp-config", "--settings"]);
       const keyArgs = args.filter((a, i) => !privateFileFlags.has(a) && !privateFileFlags.has(args[i - 1] ?? ""));
-      const argsKey = JSON.stringify({
+      const contract = {
         args: keyArgs,
         // the volatile half is deliberately absent: it must not respawn a
         // healthy session (see Session.volatile)
         system: turn.systemStable ?? turn.system ?? null,
-        mcpServers,
+        // a call's turns share one process: their per-turn tokens are not
+        // part of what makes a process (they ride a file, see above)
+        mcpServers: turn.keepWarm ? withoutTurnTokens(mcpServers) : mcpServers,
+        warm: turn.keepWarm === true,
         cwd,
         model: injected.model ?? null,
         base: env.ANTHROPIC_BASE_URL ?? null,
@@ -1734,7 +1756,8 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
           settings: authSettings,
           env: Object.fromEntries(CLAUDE_ACCOUNT_ENV_KEYS.map((key) => [key, env[key]])),
         })).digest("hex"),
-      });
+      };
+      const argsKey = JSON.stringify(contract);
 
       // Reuse the live process when it is idle, unchanged, and is the session
       // the harness wants resumed. Clearing a cursor alone does not opt out
@@ -1776,9 +1799,17 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
             rmSync(dirname(mcpConfigPath), { recursive: true, force: true });
           } catch {}
         }
-        return { turnId };
+        return { turnId, reused: true };
       }
       if (live) {
+        // A relaunch costs the engine's whole cold start (on a call, most of
+        // the pause before the answer): say which fields of the spawn
+        // contract changed (names only, never values).
+        if (!turn.sessionReset) {
+          const why = live.argsKey !== argsKey ? `spawn contract changed (${live.contract ? contractChanges(live.contract, contract).join(", ") : "unknown"})`
+            : live.child.exitCode !== null ? "process exited" : live.closing ? "process closing" : live.turn ? "a turn is running" : "another session";
+          console.warn(`claude (${instanceId}): thread ${threadId} relaunch: ${why}`);
+        }
         // A relaunch reconnects every MCP server: say which ones changed, so
         // tools that come and go between turns can be traced.
         if (!turn.sessionReset && live.mcpNames) {
@@ -1931,6 +1962,7 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
         mcpConfigPath,
         systemPromptPath,
         argsKey,
+        contract,
         mcpNames: Object.keys(mcpServers),
         volatile: turn.systemVolatile ?? "",
         sessionId: sessionId ?? newSessionId,
