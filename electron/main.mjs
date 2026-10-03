@@ -2648,7 +2648,7 @@ function openWorkspaceSettings(computerId) {
 
 async function addServerFromClipboard() {
   try {
-    return await connectHostedWorkspace(clipboard.readText());
+    return await connectHostedWorkspace(await clipboard.readText());
   } catch (error) {
     await dialog.showMessageBox({ type: "info", message: "Could not connect to the server", detail: `${error.message}\nYou can also choose Connect to a server to enter an address in Settings.` });
     return false;
@@ -2822,9 +2822,9 @@ async function forgetEnvironment(id) {
  *
  * @param {Electron.BrowserWindow} win - Target browser window.
  * @param {Electron.ContextMenuParams} params - Context menu parameters from Electron.
- * @returns {void}
+ * @returns {Promise<void>}
  */
-function showContextMenu(win, params) {
+async function showContextMenu(win, params) {
   // nothing actionable here — no menu at all, rather than a wall of
   // disabled items
   if (!params.isEditable && !params.linkURL && !params.misspelledWord && !params.selectionText) return;
@@ -2840,7 +2840,7 @@ function showContextMenu(win, params) {
   }
   if (params.linkURL) {
     menuItems.push(
-      { label: "Copy Link", click: () => clipboard.writeText(params.linkURL) },
+      { label: "Copy Link", click: () => { void clipboard.writeText(params.linkURL); } },
       { type: "separator" },
     );
   }
@@ -2850,11 +2850,12 @@ function showContextMenu(win, params) {
     { type: "separator" },
     { label: "Cut", role: "cut", enabled: params.editFlags.canCut },
     { label: "Copy", role: "copy", enabled: params.editFlags.canCopy },
-    pasteMenuItem(params, clipboard, win.webContents),
+    await pasteMenuItem(params, clipboard, win.webContents),
     { label: "Paste and Match Style", role: "pasteAndMatchStyle", enabled: params.editFlags.canPaste },
     { type: "separator" },
     { label: "Select All", role: "selectAll", enabled: params.editFlags.canSelectAll },
   );
+  if (win.isDestroyed()) return;
   Menu.buildFromTemplate(menuItems).popup({ window: win, frame: params.frame });
 }
 
@@ -3015,7 +3016,7 @@ function createWindow({ deferNavigation = false } = {}) {
   // Native context menu for text inputs — without this, right-click does
   // nothing in the Electron window (no Cut/Copy/Paste/Select All).
   win.webContents.on("context-menu", (_event, params) => {
-    showContextMenu(win, params);
+    showContextMenu(win, params).catch((error) => slog(`context menu: ${error?.message ?? error}`));
   });
 
   // Packaged CI smoke hook. It validates the real renderer/preload bridge and
@@ -3211,7 +3212,7 @@ ipcMain.handle("screen:frame", localOnly("screen:frame", async () => {
 // Returns false when the renderer should show the clipboard fallback.
 ipcMain.handle("engine:open-terminal", localOnly("engine:open-terminal", async (_event, command) => {
   if (typeof command !== "string" || !command.trim()) return false;
-  clipboard.writeText(command);
+  await clipboard.writeText(command);
   return openBlankTerminal();
 }));
 
