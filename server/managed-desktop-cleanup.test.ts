@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import vm from "node:vm";
-import ts from "typescript";
+import { transpileTs } from "./testing/transpile.ts";
 import { expect, it } from "vitest";
 
 // Execute the actual cleanup functions without importing index.ts, which would
@@ -22,15 +22,13 @@ function section(start: string, end: string) {
   if (from < 0 || to <= from) throw new Error(`Cleanup test section moved: ${start}`);
   return source.slice(from, to);
 }
-const code = ts.transpileModule([
+const code = transpileTs([
   section("async function interruptDirectThread(", "/** Stop left teammates"),
   section("function releaseTurnResources(", "async function bindTurnComputer("),
   section("async function stopCompanyInstances(", "async function persistProviderInstance("),
-].join("\n"), { compilerOptions: { target: ts.ScriptTarget.ESNext } }).outputText;
-const reloadProvidersCode = ts.transpileModule(
-  section("async function reloadProviders()", "// Config writes rebuild the whole provider registry."),
-  { compilerOptions: { target: ts.ScriptTarget.ESNext } },
-).outputText;
+].join("\n"));
+const reloadProvidersCode = transpileTs(
+  section("async function reloadProviders()", "// Config writes rebuild the whole provider registry."));
 
 function deferred() {
   let resolve!: () => void;
@@ -234,10 +232,10 @@ it("queues the parked-computer resume drain only when a parked turn waits behind
 // park registers its resume before its interrupt lands, so a drain inside
 // that settle window sees the thread busy under the parked turn's own
 // generation and must keep the entry.
-const resumeDrainCode = ts.transpileModule([
+const resumeDrainCode = transpileTs([
   section("/** A turn parked at the computer wait ceiling", "function markComputerResumeFailed("),
   section("function drainComputerResumes(", "type SecretResumeEntry"),
-].join("\n"), { compilerOptions: { target: ts.ScriptTarget.ESNext } }).outputText;
+].join("\n"));
 
 function resumeDrainFixture() {
   const dispatched: string[] = [];
