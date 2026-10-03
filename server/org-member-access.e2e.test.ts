@@ -14,7 +14,7 @@
 //   MA-4  create_bot on the internal capability belongs to the Primary Bot's
 //         person (not the operator); sagax_bots "use" refuses that path too
 import { spawn, type ChildProcess } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -33,6 +33,7 @@ const ALICE: FakeOidcUser = { sub: "01J9MAALICE000000000000A", name: "Alice", pr
 const BOB: FakeOidcUser = { sub: "01J9MABOB0000000000000B", name: "Bob", preferred_username: "bob", role: "employee", teams: [] };
 const UMA: FakeOidcUser = { sub: "01J9MAUMA0000000000000U", name: "Uma", preferred_username: "uma", role: "employee", teams: [] };
 const READ_ONLY = "org_bots_read_only";
+const CAPABILITY_KEY = "org-member-access-fixture-capability";
 
 let PORT = 0;
 let BASE = "";
@@ -116,6 +117,7 @@ async function start() {
       SAGAX_OIDC_REFRESH_AFTER_SECONDS: "2",
       SAGAX_ANTHROPIC_API_KEY: ORG_KEY,
       SAGAX_ORG_NAME: "Acme",
+      SAGAX_TEST_INTERNAL_CAPABILITY_KEY: CAPABILITY_KEY,
     },
     stdio: ["ignore", "pipe", "pipe"],
   });
@@ -274,18 +276,16 @@ posixOnly("Perspicax organization: a member's own engines and read-only bots", (
     const chief = await createBot(uma, "Uma Chief", "claude");
     expect((await api("POST", `/api/bots/${chief.id}/primary`, uma, {})).status).toBe(200);
 
+    // A capability minted for the Primary Bot's thread, as the agents proxy
+    // holds during a turn (the fake turn ends before a dumped token is used).
     const tokenOf = async (): Promise<string> => {
-      if (existsSync(dump)) unlinkSync(dump);
-      expect((await api("POST", `/api/bots/${chief.id}/messages`, uma, { text: "prepare a specialist" })).status).toBe(202);
-      return waitFor(async () => {
-        try {
-          const token = (JSON.parse(readFileSync(dump, "utf8")) as { mcpConfig?: { mcpServers?: { agents?: { env?: { SAGAX_COMMS_TOKEN?: string } } } } })
-            .mcpConfig?.mcpServers?.agents?.env?.SAGAX_COMMS_TOKEN;
-          return token || null;
-        } catch {
-          return null;
-        }
-      }, 20_000);
+      const res = await fetch(`${BASE}/api/testing/internal-capability`, {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-openmausbot-test-capability": CAPABILITY_KEY },
+        body: JSON.stringify({ botId: chief.id, threadId: chief.threadId }),
+      });
+      expect(res.status).toBe(201);
+      return ((await res.json()) as { token: string }).token;
     };
     const createSpecialist = async (token: string, name: string) => {
       const res = await fetch(`${BASE}/api/internal/create-bot`, {
@@ -303,7 +303,6 @@ posixOnly("Perspicax organization: a member's own engines and read-only bots", (
     expect(made.status, JSON.stringify(made.body)).toBe(201);
     const orgBots = (await api("GET", "/api/org/bots", alice)).body.bots as Array<{ name: string; ownerPrincipalId: string }>;
     expect(orgBots.find((bot) => bot.name === "Uma Scout")?.ownerPrincipalId).toBe(ids.uma);
-    expect((await api("POST", `/api/bots/${chief.id}/interrupt`, uma)).status).toBe(200);
 
     setUma("use");
     uma = await signIn(UMA);
