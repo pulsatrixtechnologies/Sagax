@@ -598,7 +598,9 @@ const SAGAX_WORKPLACE_PROXIES = new Set([USER_SANDBOX_MCP_NAME, AUTO_COMPUTER_MC
  * is a standalone script, so the name is spelled in both places). */
 const PROXY_ENV_PREFIX_VARIABLE = "SAGAX_PROXY_ENV_PREFIX";
 function isSagaxWorkplaceProxy(name: string, server: McpServerSpec): boolean {
-  return !("url" in server) && SAGAX_WORKPLACE_PROXIES.has(name);
+  // A person's own MCP server command relayed to their server environment
+  // (server/sandbox-stdio-mcp.ts) is the same proxy under the person's name.
+  return !("url" in server) && (SAGAX_WORKPLACE_PROXIES.has(name) || server.env?.SAGAX_TOOL_SERVER === "sagax-stdio");
 }
 
 function mountSagaxWorkplaceProxy(

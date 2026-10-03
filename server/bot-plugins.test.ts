@@ -98,7 +98,7 @@ describe("BotPlugins", () => {
     const calls: Array<{ args: string[]; env: Record<string, string> }> = [];
     const plugins = new BotPlugins({
       dataDir: temp(), git: fakeGit({ "https://github.com/acme/tools.git": repo }, calls),
-      gitEnvironment: (actor) => (actor ? { GIT_CONFIG_COUNT: "1", ACTOR: actor } : {}), policy: () => undefined,
+      gitEnvironment: (actor): Record<string, string> => (actor ? { GIT_CONFIG_COUNT: "1", ACTOR: actor } : {}), policy: () => undefined,
     });
     const listing = await plugins.addMarketplace("bot-1", { source: "acme/tools" }, "pr_owner");
     expect(listing).toMatchObject({ name: "acme-tools", source: "acme/tools", description: "Acme's plugins" });

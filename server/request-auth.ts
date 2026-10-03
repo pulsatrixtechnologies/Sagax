@@ -460,6 +460,23 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   // owner, manage holders, organization admins, team managers).
   { methods: ["GET", "PUT"], path: /^\/api\/bots\/[\w-]+\/grants$/, feature: "orgDirectory" },
   { methods: ["DELETE"], path: /^\/api\/bots\/[\w-]+\/grants\/(?:(?:user%3A|user:)pr_[0-9a-f-]{36}|(?:team%3A|team:)[0-9A-Za-z]{1,64})$/i, feature: "orgDirectory" },
+  // A person's own connections (server/routes/person-connections.ts): their
+  // GitHub account and their own MCP servers, the session's person only.
+  { methods: ["GET"], path: /^\/api\/me\/connections$/, feature: "orgDirectory" },
+  { methods: ["POST"], path: /^\/api\/me\/github\/(?:device|token)$/, feature: "orgDirectory" },
+  { methods: ["DELETE"], path: /^\/api\/me\/github$/, feature: "orgDirectory" },
+  { methods: ["POST"], path: /^\/api\/me\/mcp\/servers$/, feature: "orgDirectory" },
+  { methods: ["PATCH", "DELETE"], path: /^\/api\/me\/mcp\/servers\/[a-z][a-z0-9_-]{0,31}$/, feature: "orgDirectory" },
+  { methods: ["POST"], path: /^\/api\/me\/mcp\/servers\/[a-z][a-z0-9_-]{0,31}\/oauth\/(?:start|disconnect)$/, feature: "orgDirectory" },
+  // A bot's skills and Claude Code plugins (Library): the handlers let a
+  // person who may use the bot read them and its owner or a manager change them.
+  { methods: ["GET", "POST"], path: /^\/api\/bots\/[\w-]+\/skills$/, feature: "orgDirectory" },
+  { methods: ["GET", "PATCH", "DELETE"], path: /^\/api\/bots\/[\w-]+\/skills\/[a-z0-9-]+$/, feature: "orgDirectory" },
+  { methods: ["POST"], path: /^\/api\/bots\/[\w-]+\/skill-template$/, feature: "orgDirectory" },
+  { methods: ["GET"], path: /^\/api\/bots\/[\w-]+\/plugins$/, feature: "orgDirectory" },
+  { methods: ["POST", "DELETE"], path: /^\/api\/bots\/[\w-]+\/plugins\/marketplaces(?:\/[A-Za-z0-9][A-Za-z0-9._-]{0,63}(?:\/update)?)?$/, feature: "orgDirectory" },
+  { methods: ["POST"], path: /^\/api\/bots\/[\w-]+\/plugins\/install$/, feature: "orgDirectory" },
+  { methods: ["PATCH", "DELETE"], path: /^\/api\/bots\/[\w-]+\/plugins\/[A-Za-z0-9][A-Za-z0-9._-]{0,63}(?:@|%40)[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/, feature: "orgDirectory" },
   // Slice 5: the Perspicax MCP profiles a bot mounts. server/bot-perspicax.ts
   // decides (use reads, edit changes, adding needs holding the profile).
   { methods: ["GET", "PUT"], path: /^\/api\/bots\/[\w-]+\/perspicax$/, feature: "orgDirectory" },
