@@ -395,11 +395,16 @@ public struct ModelSelection: Codable, Hashable, Sendable {
     /// Optional reasoning effort passed through to engines that support it.
     /// Older computers omit this field, which means the engine default.
     public var effort: String?
+    /// Explicit model-specific variant, for engines that offer variants
+    /// instead of effort levels (`capabilities.modelVariants`). Omitted
+    /// leaves the native session alone.
+    public var variant: String? = nil
 
-    public init(instanceId: String, model: String, effort: String? = nil) {
+    public init(instanceId: String, model: String, effort: String? = nil, variant: String? = nil) {
         self.instanceId = instanceId
         self.model = model
         self.effort = effort
+        self.variant = variant
     }
 }
 
@@ -674,6 +679,24 @@ public struct Bot: Codable, Hashable, Identifiable, Sendable {
     /// The bot's own Connected apps switch: false keeps the workspace's
     /// connected apps from it. Absent means on.
     public var composio: Bool? = nil
+    // The advanced panel's reads (WP16, BA5, BA6, BA14, BA15). Absent on an
+    // older computer, and each means the desktop's default.
+    /// The working folder; absent is the private bot folder.
+    public var cwd: String? = nil
+    /// The bot's own built-in browser switch; absent means on.
+    public var browser: Bool? = nil
+    /// The MCP servers it mounts; absent means every enabled one.
+    public var mcpServers: [String]? = nil
+    /// Memory on; absent means on.
+    public var memoryEnabled: Bool? = nil
+    /// Memory upkeep on; absent means on.
+    public var memoryUpkeep: Bool? = nil
+    /// Who can see it on a served workspace; absent is everyone.
+    public var visibility: BotVisibility? = nil
+    /// Its grants on an organization server (slice 4), and the older
+    /// person-only list.
+    public var grants: [BotGrantRecord]? = nil
+    public var directGrants: [String]? = nil
 
     /// The look the renderers draw: the stored one, or the owl.
     public var resolvedMascotLook: CompleteMascotLook {
@@ -885,6 +908,9 @@ public struct Room: Codable, Hashable, Identifiable, Sendable {
     public var ownerId: String? = nil
     /// Organization server: a direct conversation between two people.
     public var peopleDm: Bool? = nil
+    /// The narrowest audience the room ever had (a served workspace): it
+    /// never widens on its own (server/bot-visibility.ts).
+    public var audienceFloor: BotVisibility? = nil
     /// The room's shared memory; absent means on.
     public var memoryEnabled: Bool? = nil
     /// When the busy member's turn started.
@@ -1106,6 +1132,20 @@ public struct ProviderSnapshot: Codable, Hashable, Sendable {
 public struct ModelOption: Codable, Hashable, Identifiable, Sendable {
     public var id: String
     public var label: String
+    /// The reasoning variants this model offers, on an engine with
+    /// `capabilities.modelVariants`.
+    public var variants: [ModelVariantOption]? = nil
+}
+
+/// One reasoning variant of a model (`shared/runtime-events.ts`).
+public struct ModelVariantOption: Codable, Hashable, Identifiable, Sendable {
+    public var id: String
+    public var label: String
+
+    public init(id: String, label: String) {
+        self.id = id
+        self.label = label
+    }
 }
 
 public struct ModelCatalog: Codable, Hashable, Sendable {
@@ -1121,10 +1161,13 @@ public struct InstanceCapabilities: Codable, Hashable, Sendable {
     /// The engine can mount the connected apps' tools (a bot's own switch
     /// does nothing on an engine without it).
     public var composioMcp: Bool?
+    /// The engine takes a model-specific variant instead of an effort level.
+    public var modelVariants: Bool? = nil
 
-    public init(effortLevels: [String]? = nil, composioMcp: Bool? = nil) {
+    public init(effortLevels: [String]? = nil, composioMcp: Bool? = nil, modelVariants: Bool? = nil) {
         self.effortLevels = effortLevels
         self.composioMcp = composioMcp
+        self.modelVariants = modelVariants
     }
 }
 

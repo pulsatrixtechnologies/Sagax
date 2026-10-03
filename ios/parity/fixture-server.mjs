@@ -20,12 +20,17 @@
 // reads (ios/parity/out/session.json) carries the endpoint, the bearer and
 // the environment id the app is launched with.
 //
+// PARITY_OWNER=1 puts the real companion sidecar (companion/src/proxy.ts) in
+// front of the server with one paired device, the way an iPhone reaches its
+// owner's computer: session.json then names the sidecar and no environment,
+// so the app pairs as the owner's sidecar (decision D1's advanced panel).
+//
 // PARITY_ORG=1 runs the same dataset on an organization server instead
 // (ios/parity/org-fixture.mjs): OMB_IDENTITY=perspicax against a local stub
 // identity provider, signed in as a placeholder admin. Without it nothing
 // below changes. PARITY_ORG_PHONE=1 adds a phone bearer for that person
 // (the session file's token), for the synced sidebar UI tests (WP6).
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { createServer as createHttpServer, request as httpRequest } from "node:http";
@@ -710,6 +715,7 @@ async function main() {
   if (RICH_LAB) seedRichLabTranscript(dataDir, png);
   seedCommandRules(dataDir, seeded);
   if (PRESETS) seedPresets(dataDir);
+  if (process.env.PARITY_OWNER === "1" && !org) seedOwnerSkill(seeded);
 
   child = startServer(port, webhook);
   await waitHealthy(base, child);
@@ -720,13 +726,15 @@ async function main() {
   }).catch((error) => console.error(`[parity] bot settings: ${error.message}`));
   // A hosted workspace (the organization fixture's) refuses pairing codes:
   // the desktop capture uses the admin's cookie there instead.
-  const session = org ? { token: null, environmentId: null, scopes: ["admin", "client"] } : await pair(base);
+  const ownerMode = process.env.PARITY_OWNER === "1" && !org;
+  const session = ownerMode ? await startSidecar(port)
+    : org ? { token: null, environmentId: null, scopes: ["admin", "client"] } : await pair(base);
   if (org) await seedOrg(org, seeded, api);
   // PARITY_ORG_PHONE=1: the phone signs in as the viewer (org-fixture.mjs).
   if (org && process.env.PARITY_ORG_PHONE === "1") Object.assign(session, await pairOrgPhone(org));
-  const front = COMPUTER_DOUBLE ? `http://127.0.0.1:${(await startComputerDouble(port)).port}` : base;
-  if (COMPUTER_DOUBLE) console.error(`[parity] computer double ${front} -> ${base}`);
-  const fleet = await fetch(`${base}/api/bots`, { headers: org ? { cookie: org.cookie } : { authorization: `Bearer ${session.token}` } }).then((r) => r.json());
+  const front = ownerMode ? session.endpoint : COMPUTER_DOUBLE ? `http://127.0.0.1:${(await startComputerDouble(port)).port}` : base;
+  if (COMPUTER_DOUBLE && !ownerMode) console.error(`[parity] computer double ${front} -> ${base}`);
+  const fleet = await fetch(`${ownerMode ? front : base}/api/bots`, { headers: org ? { cookie: org.cookie } : { authorization: `Bearer ${session.token}` } }).then((r) => r.json());
   const record = {
     endpoint: front,
     server: base,
@@ -742,6 +750,39 @@ async function main() {
   console.error(`[parity] ready: ${record.bots} bots, session written to ${join(OUT, "session.json")}`);
   console.log(JSON.stringify({ endpoint: front, environmentId: record.environmentId, bots: record.bots }));
   if (once) await shutdown(0);
+}
+
+/** PARITY_OWNER=1: one imported skill on Ara, disabled as an import lands,
+ * through the server's own installer (server/skills.ts) while the server is
+ * stopped, for the advanced panel's Skills UI tests (WP16). */
+export const OWNER_SKILL = "fixture-check";
+function seedOwnerSkill(seeded) {
+  const skill = `---\nname: ${OWNER_SKILL}\ndescription: Placeholder skill that checks the fixture.\n---\n\nPlaceholder: run the fixture check and report.\n`;
+  const script = `import { installSkill } from ${JSON.stringify(join(ROOT, "server", "skills.ts"))};
+    const result = installSkill(${JSON.stringify(seeded.ids.ara.id)}, "parity/fixture", [{ path: "SKILL.md", content: ${JSON.stringify(skill)} }]);
+    if ("error" in result) { console.error(result.error); process.exit(1); }`;
+  const run = spawnSync(process.execPath, ["--experimental-strip-types", "--input-type=module", "-e", script], {
+    cwd: ROOT, env: { PATH: process.env.PATH, HOME: home, USERPROFILE: home, OMB_DATA_DIR: join(home, ".openmausbot") }, encoding: "utf8",
+  });
+  if (run.status !== 0) console.error(`[parity] owner skill: ${run.stderr}`);
+}
+
+// ── the companion sidecar (PARITY_OWNER=1) ─────────────────────────────
+// The real sidecar handler in front of the server, with one paired device.
+const SIDECAR_TOKEN = "parity_owner_device_token_0001";
+async function startSidecar(harnessPort) {
+  const { createProxyHandler } = await import("../../companion/src/proxy.ts");
+  const { createConnectedDeviceTracker } = await import("../../companion/src/connected-devices.ts");
+  const server = createHttpServer(createProxyHandler({
+    harnessPort,
+    authenticate: (token) => (token === SIDECAR_TOKEN ? { id: "parity-phone", cloudDesktopAccess: true } : null),
+    redeem: () => ({ error: "already paired" }),
+    serverName: () => "Parity computer",
+    connected: createConnectedDeviceTracker().open,
+  }));
+  const port = await new Promise((resolve) => server.listen(0, "127.0.0.1", () => resolve(server.address().port)));
+  console.error(`[parity] companion sidecar http://127.0.0.1:${port} -> ${harnessPort}`);
+  return { endpoint: `http://127.0.0.1:${port}`, token: SIDECAR_TOKEN, environmentId: null, scopes: ["admin", "client"] };
 }
 
 async function shutdown(code) {

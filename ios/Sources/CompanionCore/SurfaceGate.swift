@@ -118,6 +118,32 @@ public enum SurfaceFeature: String, CaseIterable, Hashable, Sendable {
     case voiceEngineSettings
     /// Skills, memory, history, prompt preview, presets (D1, WP16).
     case advancedBotPanel
+    /// The advanced panel's Access section with its switches (browser,
+    /// connected apps, MCP servers, always allowed): an admin session only.
+    /// Every other pairing reads it (BA6): the sidecar and a client session
+    /// refuse those fields.
+    case botAccessEdit
+    /// Who can see it (BA14): `PATCH {visibility}` is an admin's, and only
+    /// on a served workspace that is not an organization server (the
+    /// grants replace it there).
+    case botVisibility
+    /// Shared with (BA15) and Perspicax profiles (BA16): organization
+    /// servers only; the server decides who may change them.
+    case botSharing
+    case botPerspicax
+    /// The bot's Slack app in the organisation's Admin (BA17): a server
+    /// answers the link; the sidecar has no route.
+    case botSlack
+    /// Skills an organization package offers (BA4, OrgSkillsCard): admin.
+    case orgSkillsLibrary
+    /// Saved command rules (BA9): read and remove pass both gates (the
+    /// handler holds a client session to the bot's owner).
+    case commandAllowlist
+    /// Adding a command rule stays admin.
+    case commandAllowlistAdd
+    /// Duplicate a bot (BA19): `POST /api/bots` and a member-field PATCH;
+    /// a client session only on an organization server (its own bots).
+    case duplicateBot
     /// The phone's extras beyond the remote client: pin bot, delete bot,
     /// picture framing (D4).
     case botOwnerExtras
@@ -327,6 +353,18 @@ public struct SurfaceGate: Hashable, Sendable {
             }
         case .roomMemory:
             return scope != .sidecar || sidecarRoutes.contains(.roomMemory)
+        case .botAccessEdit, .orgSkillsLibrary, .commandAllowlistAdd:
+            return scope == .serverAdmin
+        case .botVisibility:
+            return scope == .serverAdmin && !organization
+        case .botSharing, .botPerspicax:
+            return organization
+        case .botSlack:
+            return scope != .sidecar
+        case .commandAllowlist:
+            return true
+        case .duplicateBot:
+            return scope != .serverClient || organization
         case .roomManagement, .roomDelete:
             return scope == .serverAdmin || (scope == .serverClient && organization)
         case .orgRoutineDelegation:

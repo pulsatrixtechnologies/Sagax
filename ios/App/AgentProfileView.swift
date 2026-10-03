@@ -41,6 +41,8 @@ struct AgentProfileView: View {
     @State private var busy = false
     @State private var player: AVAudioPlayer?
     @State private var baseline: ProfileFormSnapshot
+    @State private var selectedVariant: String?
+    @State private var slackURL: URL?
 
     init(bot: Bot) {
         self.bot = bot
@@ -54,6 +56,7 @@ struct AgentProfileView: View {
         _selectedInstanceID = State(initialValue: bot.currentTaskModelSelection.instanceId)
         _selectedModelID = State(initialValue: bot.currentTaskModelSelection.model)
         _selectedEffort = State(initialValue: bot.currentTaskModelSelection.effort)
+        _selectedVariant = State(initialValue: bot.currentTaskModelSelection.variant)
         _savedModel = State(initialValue: bot.currentTaskModelSelection)
         _baseline = State(initialValue: ProfileFormSnapshot(bot: bot))
     }
@@ -95,14 +98,25 @@ struct AgentProfileView: View {
         }
         return choices
     }
+    /// An engine with model variants takes a variant, never an effort (BA7).
+    private var usesVariants: Bool { selectedInstance?.capabilities?.modelVariants == true }
+    private var variantOptions: [ModelVariantOption]? {
+        ModelVariantRules.options(
+            for: ModelSelection(instanceId: selectedInstanceID, model: selectedModelID, variant: selectedVariant),
+            instances: instances
+        )
+    }
     private var effortLevels: [String] {
+        guard !usesVariants else { return [] }
         var seen = Set<String>()
         return (selectedInstance?.capabilities?.effortLevels ?? []).filter {
             !$0.isEmpty && seen.insert($0).inserted
         }
     }
     private var modelDraft: ModelSelection {
-        ModelSelection(instanceId: selectedInstanceID, model: selectedModelID, effort: selectedEffort)
+        usesVariants
+            ? ModelSelection(instanceId: selectedInstanceID, model: selectedModelID, variant: selectedVariant)
+            : ModelSelection(instanceId: selectedInstanceID, model: selectedModelID, effort: selectedEffort)
     }
     private var canApplyModel: Bool {
         guard modelsLoaded, current.busy != true,
@@ -122,7 +136,7 @@ struct AgentProfileView: View {
 
     var body: some View {
         NavigationStack {
-            Form {
+            ThemedForm {
                 // Changing the model and generating avatars need the admin scope
                 // on a server; a chat-only phone is not shown either.
                 if session.canAdminister {
@@ -135,7 +149,7 @@ struct AgentProfileView: View {
                             }
                         } else if instanceChoices.isEmpty {
                             Label("No model providers are available", systemImage: "exclamationmark.triangle")
-                                .foregroundStyle(Theme.parity(Color.secondary, Theme.textSecondary))
+                                .foregroundStyle(Theme.textSecondary)
                         } else {
                             Picker("Provider", selection: $selectedInstanceID) {
                                 if !instances.contains(where: { $0.instanceId == selectedInstanceID }) {
@@ -159,6 +173,16 @@ struct AgentProfileView: View {
                                 }
                             }
                             .disabled(selectedInstance?.snapshot.isAvailable != true)
+                            .onValueChange(of: selectedModelID) { model in
+                                // switching models never carries an opaque variant over
+                                // (`modelSelectionForPick`)
+                                if !(selectedInstanceID == savedModel.instanceId && model == savedModel.model) { selectedVariant = nil }
+                                else { selectedVariant = savedModel.variant }
+                            }
+
+                            if let variantOptions {
+                                ModelVariantPicker(options: variantOptions, saved: savedModel.variant, variant: $selectedVariant)
+                            }
 
                             if !effortLevels.isEmpty {
                                 Picker("Reasoning effort", selection: $selectedEffort) {
@@ -172,11 +196,11 @@ struct AgentProfileView: View {
                             if current.busy == true {
                                 Label("Stop this bot before changing its model.", systemImage: "hourglass")
                                     .font(.footnote)
-                                    .foregroundStyle(Theme.parity(Color.secondary, Theme.textSecondary))
+                                    .foregroundStyle(Theme.textSecondary)
                             } else if selectedInstance?.snapshot.isAvailable != true {
                                 Label("Choose an available provider to change this bot's model.", systemImage: "info.circle")
                                     .font(.footnote)
-                                    .foregroundStyle(Theme.parity(Color.secondary, Theme.textSecondary))
+                                    .foregroundStyle(Theme.textSecondary)
                             }
 
                             Button("Apply model", systemImage: "checkmark") {
@@ -189,8 +213,7 @@ struct AgentProfileView: View {
                     } footer: {
                         Text("Provider accounts and API keys stay on your computer. Default sends no reasoning level and lets the provider decide.")
                     }
-                    .listRowBackground(Theme.parity(Color(uiColor: .secondarySystemGroupedBackground), Theme.card))
-                }
+                                    }
 
                 Section {
                     HStack {
@@ -230,8 +253,7 @@ struct AgentProfileView: View {
                 } footer: {
                     Text("PNG, JPEG, GIF, or WebP, up to 10 MB. Images are stored on your paired computer and loaded with this device's pairing token.")
                 }
-                .listRowBackground(Theme.parity(Color(uiColor: .secondarySystemGroupedBackground), Theme.card))
-
+                
                 if session.canAdminister {
                     Section {
                         TextField("Art direction", text: $prompt, axis: .vertical)
@@ -247,8 +269,7 @@ struct AgentProfileView: View {
                              ? "Generation uses the shared image provider configured on your computer. No provider key is sent to or stored on this device."
                              : "To generate images, configure the shared image provider in Sagax on your computer. Provider keys cannot be added from this device.")
                     }
-                    .listRowBackground(Theme.parity(Color(uiColor: .secondarySystemGroupedBackground), Theme.card))
-                }
+                                    }
 
                 Section("Identity") {
                     // `GET /api/bots/:id/overview` is admin only for a client
@@ -266,9 +287,9 @@ struct AgentProfileView: View {
                     TextField("What this agent does", text: $description, axis: .vertical)
                         .lineLimit(3...8)
                     Toggle("Agent notifications", isOn: $notifications)
+                        .tint(Theme.toggleOn)
                 }
-                .listRowBackground(Theme.parity(Color(uiColor: .secondarySystemGroupedBackground), Theme.card))
-
+                
                 Section {
                     // The engine and the Chatterbox server are workspace
                     // settings written with `PUT /api/config`, which every
@@ -312,7 +333,7 @@ struct AgentProfileView: View {
                             .disabled(savingServer || chatterboxURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                             if let serverProblem {
                                 Label(serverProblem, systemImage: "exclamationmark.triangle")
-                                    .foregroundStyle(Theme.parity(Color.orange, Theme.warning))
+                                    .foregroundStyle(Theme.warning)
                             }
                         }
                     }
@@ -336,6 +357,7 @@ struct AgentProfileView: View {
                             }
                         }
                         Toggle("Speak replies", isOn: $speakReplies)
+                            .tint(Theme.toggleOn)
                             .disabled(!selectedVoiceCanSpeak)
                         Button("Preview voice", systemImage: "speaker.wave.2") {
                             Task { await previewVoice() }
@@ -345,17 +367,17 @@ struct AgentProfileView: View {
                         if !hasWorkspaceDefaultVoice, voice.isEmpty {
                             Label("Pick a voice for this agent before enabling speech.", systemImage: "info.circle")
                                 .font(.footnote)
-                                .foregroundStyle(Theme.parity(Color.secondary, Theme.textSecondary))
+                                .foregroundStyle(Theme.textSecondary)
                         }
                     } else if usesSystemVoices {
                         Label("Built-in Mac voices are unavailable", systemImage: "speaker.slash")
-                            .foregroundStyle(Theme.parity(Color.secondary, Theme.textSecondary))
+                            .foregroundStyle(Theme.textSecondary)
                     } else if !usesChatterbox {
                         Label(
                             usesFishAudio ? "Fish Audio is not configured" : "ElevenLabs is not configured",
                             systemImage: "speaker.slash"
                         )
-                            .foregroundStyle(Theme.parity(Color.secondary, Theme.textSecondary))
+                            .foregroundStyle(Theme.textSecondary)
                     }
                 } header: {
                     Text("Voice")
@@ -397,19 +419,18 @@ struct AgentProfileView: View {
                         Text("The voice choice belongs to this agent. Workspace default uses the shared voice selected on your computer.")
                     }
                 }
-                .listRowBackground(Theme.parity(Color(uiColor: .secondarySystemGroupedBackground), Theme.card))
-
+                
                 // Usage, voice notes, Primary Bot (WP7: BP14, BA11, SB28)
                 BotPanelAdvancedSections(bot: current)
+
+                // The advanced panel (WP16: BA2, BA4-BA6, BA9, BA14-BA19)
+                BotAdvancedRows(bot: current, slackURL: slackURL)
 
                 Section {
                     Button("Save profile changes") { Task { await save() } }
                         .disabled(busy || name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
-                .listRowBackground(Theme.parity(Color(uiColor: .secondarySystemGroupedBackground), Theme.card))
-            }
-            .scrollContentBackground(.hidden)
-            .background(Theme.parity(Color(uiColor: .systemGroupedBackground), Theme.bg))
+                            }
             .navigationTitle("Bot settings")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -430,6 +451,9 @@ struct AgentProfileView: View {
                 voices = loadedVoices
                 instances = loadedInstances
                 modelsLoaded = true
+                if session.surfaceGate.allows(.botSlack) {
+                    slackURL = await session.profileClient?.slackManagementURL(botId: bot.id)
+                }
                 if let loadedConfig, !loadedConfig.canSpeak(agentVoice: voice) {
                     speakReplies = false
                 }
@@ -537,6 +561,7 @@ struct AgentProfileView: View {
             selectedInstanceID = model.instanceId
             selectedModelID = model.model
             selectedEffort = model.effort
+            selectedVariant = model.variant
             savedModel = model
         }
     }
@@ -547,9 +572,11 @@ struct AgentProfileView: View {
             selectedModelID = savedModel.model
             let supported = instance.capabilities?.effortLevels ?? []
             selectedEffort = savedModel.effort.flatMap { supported.contains($0) ? $0 : nil }
+            selectedVariant = savedModel.variant
         } else {
             selectedModelID = instance.models.default
             selectedEffort = nil
+            selectedVariant = nil
         }
     }
 
