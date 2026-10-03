@@ -50,6 +50,7 @@ import type {
   RuntimeEventListener,
   SendTurnInput,
   SteerOutcome,
+  TurnAccessInput,
   TurnImageInput,
 } from "../contracts.ts";
 import { EFFORT_LEVELS } from "../../shared/wire.ts";
@@ -464,6 +465,39 @@ function piEnvironment(source: Record<string, string | undefined>): Record<strin
   return env;
 }
 
+/** The provider keys pi reads, as engine-credentials.ts PROVIDER_KEY_ENV
+ * hands them (Perspicax providers anthropic, openai, xai, google, moonshot). */
+export const PI_ACCESS_KEY_ENV = ["ANTHROPIC_API_KEY", "OPENAI_API_KEY", "XAI_API_KEY", "GEMINI_API_KEY", "MOONSHOT_API_KEY"] as const;
+
+/** Organization server: one turn's credentials (SendTurnInput.access), over
+ * an environment piEnvironment already stripped of every key: the payer's
+ * own PI_CODING_AGENT_DIR (never the server's ~/.pi/agent/auth.json) and
+ * the keys they keep in Perspicax. */
+export function piAccessEnvironment(env: Record<string, string | undefined>, access: TurnAccessInput | undefined): Record<string, string | undefined> {
+  if (!access) return env;
+  if (access.engineHome) {
+    mkdirSync(access.engineHome, { recursive: true, mode: 0o700 });
+    env.PI_CODING_AGENT_DIR = access.engineHome;
+  }
+  for (const name of PI_ACCESS_KEY_ENV) {
+    const value = access.environment?.[name];
+    if (value) env[name] = value;
+  }
+  return env;
+}
+
+/** On an organization server the server's own pi holds no key, and pi lists
+ * only the models of providers it has a key for: the catalog is read with a
+ * placeholder for every provider a person's key can serve, in a pi home of
+ * its own, so members can pick a model their own key then pays for. The
+ * placeholders never reach a turn (piEnvironment). */
+export function piCatalogEnvironment(env: Record<string, string | undefined>, orgServer: boolean): Record<string, string | undefined> {
+  if (!orgServer) return env;
+  const next: Record<string, string | undefined> = { ...env, PI_CODING_AGENT_DIR: join(tmpdir(), "sagax-pi-catalog") };
+  for (const name of PI_ACCESS_KEY_ENV) next[name] = "sagax-catalog-only";
+  return next;
+}
+
 export const PiDriver: ProviderDriver<PiConfig> = {
   driverKind: DRIVER_KIND,
   metadata: { displayName: "pi", supportsMultipleInstances: true, access: "custom" },
@@ -482,7 +516,7 @@ export const PiDriver: ProviderDriver<PiConfig> = {
 
   async create(input: DriverCreateInput<PiConfig>): Promise<ProviderInstance> {
     const { instanceId, config } = input;
-    const catalogEnv = piEnvironment({ ...process.env, ...input.environment });
+    const catalogEnv = piCatalogEnvironment(piEnvironment({ ...process.env, ...input.environment }), process.env.SAGAX_IDENTITY?.trim().toLowerCase() === "perspicax");
     let models = EMPTY;
     const readModels = async () => {
       let base = models;
@@ -598,11 +632,11 @@ export const PiDriver: ProviderDriver<PiConfig> = {
           return spawnCli(config.cli, childArgs, {
             stdio: ["pipe", "pipe", "pipe"],
             cwd: turn.cwd,
-            env: piEnvironment({
+            env: piAccessEnvironment(piEnvironment({
               ...process.env,
               ...input.environment,
               ...(mcpServers && mcpTempDir ? { SAGAX_MCP_CONFIG: join(mcpTempDir, "mcp.json") } : {}),
-            }),
+            }), turn.access),
           });
         } catch (err) {
           if (mcpTempDir) {

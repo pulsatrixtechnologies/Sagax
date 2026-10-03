@@ -58,6 +58,7 @@ import type {
   SendTurnInput,
   ProviderErrorCode,
   RequestOutcome,
+  TurnAccessInput,
   TurnImageInput,
 } from "../../contracts.ts";
 import { newEventId, newId, TurnNotStartedError } from "../../contracts.ts";
@@ -316,9 +317,19 @@ export interface AcpSupport {
     env: Record<string, string | undefined>,
     ctx: { model?: string; requestedModel?: string; fullAuto: boolean; botId?: string; cwd: string },
   ): void;
+  /** Organization server (SendTurnInput.access): point this one turn's child
+   *  at the payer's own home and key, never the server's own login.
+   *  `instanceEnvironment` holds the organization's key for an org-key turn.
+   *  Without this hook a support runs every access on its own environment. */
+  applyAccess?(
+    env: Record<string, string | undefined>,
+    access: TurnAccessInput,
+    instanceEnvironment: Record<string, string> | undefined,
+  ): void;
   /** Pick the ACP authenticate methodId from initialize's advertised
-   * authMethods; return null to skip the authenticate step. */
-  pickAuthMethod(authMethods: Array<{ id?: string }>): string | null;
+   * authMethods (and the child's env, for a key that needs a method of its
+   * own); return null to skip the authenticate step. */
+  pickAuthMethod(authMethods: Array<{ id?: string }>, env?: Record<string, string | undefined>): string | null;
   /** "fail": abort the turn if auth is missing/errors (subscription CLIs).
    *  "continue": proceed anyway (CLIs that work off an ambient login). */
   authFailure: "fail" | "continue";
@@ -1351,6 +1362,7 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
         const turnId = newId();
         const cwd = turn.cwd ?? turnConfig.workspace ?? homedir();
         const env = childEnv(turnConfig);
+        if (turn.access) support.applyAccess?.(env, turn.access, input.environment);
         if (
           support.requireAuthenticationBeforeSpawn
           && !skipSubscriptionAuthForLocalInject(turn.model)
@@ -1603,7 +1615,7 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
                 const methods: Array<{ id?: string }> = Array.isArray(session.initResult?.authMethods)
                   ? session.initResult.authMethods
                   : [];
-                const methodId = support.pickAuthMethod(methods);
+                const methodId = support.pickAuthMethod(methods, launchEnv);
                 if (methodId) {
                   try {
                     await request("authenticate", { methodId }, INIT_TIMEOUT);

@@ -294,6 +294,36 @@ local models are not offered. Tests: `ModelPicker.interaction.test.ts`,
 (org) and `pnpm exec electron scripts/smoke-approval-modes.cjs --model-ui-only`
 (solo).
 
+## More engines on an organization server (2026-10-02)
+
+Besides Claude Code and Codex, the server image can carry Grok Build, pi,
+Gemini CLI and Kimi Code (Dockerfile: npm ones in `ENGINES`, pinned; Grok
+Build through `NATIVE_ENGINES=grok`, the official x.ai release binary pinned
+by version and SHA-256). Each person pays with their own credentials
+(`server/engine-credentials.ts`, the order above), never the server's login:
+
+- Grok Build (`grokAgent`): their own `grok login --device-auth`
+  (`server/drivers/device-login.ts`, HOME `principals/<pid>/grok`), else
+  their xAI key in Perspicax (authenticate `xai.api_key`), else the xAI key
+  of Settings > Connections as the organization key.
+- Kimi Code (`kimiAgent`): their own `kimi login` device code
+  (KIMI_CODE_HOME `principals/<pid>/kimi`), else their Moonshot key
+  (provider `moonshot`; the key home's config.toml names `api_key_env`,
+  never the key).
+- Gemini CLI (`geminiAgent`, listed only on an organization server): their
+  Google key (provider `google`) as GEMINI_API_KEY.
+- pi (`piAgent`): every key they keep (anthropic, openai, xai, google,
+  moonshot) in their own PI_CODING_AGENT_DIR; the catalog is read with
+  placeholders so members see every provider's models.
+
+A key turn always runs in an empty home of the payer's
+(`principals/<pid>/<driver>-key`), an org-key turn in `org/<driver>-key`
+(`applyAccess` in `acp/core.ts`, `piAccessEnvironment`). Perspicax 1.8 lists
+anthropic, openai and xai keys; google and moonshot are read as soon as its
+directory lists them. Tests: `server/engine-credentials.test.ts`,
+`server/drivers/acp/org-access.test.ts`, `server/drivers/device-login.test.ts`,
+`server/principal-engine-logins.test.ts`.
+
 ## Voice mode (xAI)
 
 The call button on a bot opens the voice call pill

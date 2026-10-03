@@ -122,6 +122,9 @@ export interface TurnAccessInput {
   claudeConfigDir?: string;
   codexHome?: string;
   codexOwnerKey?: boolean;
+  /** Grok Build, Kimi Code, Gemini CLI, pi: the payer's own home for the
+   * engine (HOME, KIMI_CODE_HOME, GEMINI_CLI_HOME, PI_CODING_AGENT_DIR). */
+  engineHome?: string;
 }
 
 export interface SendTurnInput {

@@ -31,7 +31,7 @@ export function ManageMyKeysLink({ issuer }: { issuer: string }) {
 }
 
 /** One engine's own subscription sign-in for the signed-in person (Claude,
- * Codex): sign in, paste the code or follow the link, sign out. */
+ * Codex, Grok Build, Kimi Code): sign in, paste the code or follow the link, sign out. */
 export function MyEngineAccess({ engine, onChanged = () => { void reloadMyEngines(); } }: { engine: MyEngine; onChanged?: () => void }) {
   const [login, setLogin] = useState<LoginState | null>(null);
   const [code, setCode] = useState("");

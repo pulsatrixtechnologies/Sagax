@@ -3,10 +3,10 @@
 // (~/.grok/auth.json), NOT the xAI API key (that driver is drivers/grok.ts).
 // The generic protocol runtime lives in acp/core.ts; this file is only the
 // per-harness quirks. Verified against grok 1.0.0.
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-import type { ModelCatalog } from "../../contracts.ts";
+import type { ModelCatalog, TurnAccessInput } from "../../contracts.ts";
 import { harnessHome } from "../../env-path.ts";
 import { decodeInjectId, hostApiKey, localHost, mergeLocalInject } from "../local-inject.ts";
 import { createAcpDriver, type AcpSupport } from "./core.ts";
@@ -186,6 +186,30 @@ export function grokAcceptsUnadvertisedImages(init: unknown): boolean {
   return Boolean(version && Number(version[1]) >= 25);
 }
 
+/** Organization server: one turn's credentials (SendTurnInput.access). */
+export function grokApplyAccess(
+  env: Record<string, string | undefined>,
+  access: TurnAccessInput,
+  instanceEnvironment: Record<string, string> | undefined,
+): void {
+  if (access.engineHome) {
+    mkdirSync(access.engineHome, { recursive: true, mode: 0o700 });
+    env.HOME = access.engineHome;
+    delete env.GROK_HOME;
+  }
+  delete env.XAI_API_KEY;
+  if (access.via === "subscription") return;
+  const key = access.via === "org-key" ? instanceEnvironment?.XAI_API_KEY : access.environment?.XAI_API_KEY;
+  if (key) env.XAI_API_KEY = key;
+}
+
+/** The subscription's cached token when the CLI has one; else the key the
+ * turn was given (organization server only). */
+export function grokPickAuthMethod(methods: Array<{ id?: string }>, env?: Record<string, string | undefined>): string | null {
+  if (methods.some((m) => m.id === "cached_token")) return "cached_token";
+  return env?.XAI_API_KEY?.trim() ? "xai.api_key" : null;
+}
+
 const support: AcpSupport = {
   driverKind: "grokAgent",
   displayName: "Grok",
@@ -260,11 +284,19 @@ const support: AcpSupport = {
     delete env.XAI_API_KEY;
   },
 
-  // Bind the grok.com subscription login. No API-key fallback by design —
-  // an unauthenticated CLI is a user action, not something to paper over.
-  pickAuthMethod: (methods) => (methods.some((m) => m.id === "cached_token") ? "cached_token" : null),
+  // Organization server: the payer's own HOME (their `grok login
+  // --device-auth`, or an empty one for a key, so the server's cached token,
+  // which outranks a key, never serves them) and, for a key, that key.
+  applyAccess: grokApplyAccess,
+
+  // Bind the grok.com subscription login. The only key path is the payer's
+  // own xAI key on an organization server (applyAccess): grok accepts it
+  // through the unadvertised `xai.api_key` method (verified against grok
+  // 1.0.46). In solo mode transformEnv removed every key, so an
+  // unauthenticated CLI stays a user action, not something to paper over.
+  pickAuthMethod: grokPickAuthMethod,
   authFailure: "fail",
-  isAuthenticated: (env) => existsSync(join(harnessHome("grok", env), "auth.json")),
+  isAuthenticated: (env) => existsSync(join(harnessHome("grok", env), "auth.json")) || Boolean(env.XAI_API_KEY?.trim()),
 
   // `--append-system-prompt`/`--rules` are accepted by the CLI but do NOT
   // reach the agent-stdio system prompt (verified against 1.0.0), so the

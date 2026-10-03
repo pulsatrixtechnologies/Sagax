@@ -584,7 +584,7 @@ import {
 import { cookieMaxAgeSeconds, formatPairingCode, SessionRegistry, type Scope, type SessionRecord } from "./sessions.ts";
 import { isAccountEmail, isPrincipalId, PrincipalRegistry } from "./principals.ts";
 import { OrgTeams } from "./org-teams.ts";
-import { keyVia, materializeEngineAccess, providerOfDriver, resolveEngineAccess, subscriptionDriver, turnPayer, type AccessPayer, type EngineCredentialInput, type EngineCredentialPlan, type NoAccessCause, type TurnAccess } from "./engine-credentials.ts";
+import { keyVia, materializeEngineAccess, providersOfDriver, resolveEngineAccess, subscriptionDriver, turnPayer, type AccessPayer, type SubscriptionDriver, type EngineCredentialInput, type EngineCredentialPlan, type NoAccessCause, type TurnAccess } from "./engine-credentials.ts";
 import { isLoginDriver, PrincipalEngineLogins } from "./principal-engine-logins.ts";
 import { createSectionChannelRoutes, migrationOwner, recordAccess, SectionChannels, sectionShareGrants } from "./section-channels.ts";
 import { createBotGrantRoutes, visibleGrants, wireGrants } from "./bot-grants.ts";
@@ -686,7 +686,7 @@ import { RevocationQueue } from "./idp-revocations.ts";
 import { IDP_REFRESH_WAIT_MS, IDP_SWEEP_INTERVAL_MS, IdpGrantVault, IdpSessionManager, refreshAfterMs, resolveIdpVaultKey, settledWithin } from "./idp-session.ts";
 import { acceptOpenInvitesForEmail, createPublicInviteRoutes, createSoloOrgRoutes, inviteMailMessage, PUBLIC_INVITE_PATH, type OrgState } from "./org-routes.ts";
 import { createDirectGrantRoutes } from "./direct-grants.ts";
-import { directoryIntervalMs, PerspicaxDirectory } from "./perspicax-link.ts";
+import { directoryIntervalMs, PerspicaxDirectory, type ModelProvider } from "./perspicax-link.ts";
 import { PERSPICAX_UNAVAILABLE_WHY, PerspicaxMcp, perspicaxUnavailableRow, type PerspicaxUnavailableReason } from "./perspicax-mcp.ts";
 import { createPerspicaxOrgRoutes, orgDirectoryEntries, type PendingAdminApproval } from "./perspicax-org-routes.ts";
 import { orgFullAccessAllowed, orgFullAccessGrantRefusal, orgFullAccessHolds, ORG_FULL_ACCESS_DISABLED } from "./org-full-access.ts";
@@ -1129,7 +1129,7 @@ const turnTriggers = new Map<string, UsageTrigger>();
 const turnSpeakers = new Map<string, TurnSpeaker>();
 const turnSpeakerPrincipals = new Map<string, string>();
 /** Who ran each thread's current turn, for a key the provider refuses. */
-const turnAccessByThread = new Map<string, { via: TurnAccess["via"]; payer: AccessPayer; payerPrincipalId?: string; routine?: true; payerSub?: string; provider?: "anthropic" | "openai" }>();
+const turnAccessByThread = new Map<string, { via: TurnAccess["via"]; payer: AccessPayer; payerPrincipalId?: string; routine?: true; payerSub?: string; provider?: ModelProvider }>();
 /** Threads whose last admitted turn (Direct or room) descends from a routine
  * or other automation: a bot hop it starts carries the mark, so no turn a
  * routine started ever reaches someone's Perspicax access (slice 5, D5). */
@@ -17261,8 +17261,8 @@ class EngineAccessLost extends Error {
   }
 }
 /** A person's own engine login directory (their subscription). */
-function principalLoginDir(principalId: string, driver: "claudeAgent" | "codex"): string {
-  return engineLogins?.loginDir(principalId, driver) ?? join(DATA_DIR, "principals", principalId, driver === "claudeAgent" ? "claude" : "codex");
+function principalLoginDir(principalId: string, driver: SubscriptionDriver): string {
+  return engineLogins?.loginDir(principalId, driver) ?? join(DATA_DIR, "principals", principalId, { claudeAgent: "claude", codex: "codex", grokAgent: "grok", kimiAgent: "kimi" }[driver]);
 }
 /** Slice 4: the credentials of one turn on an organization server, fetched
  * at dispatch; undefined in solo mode. Throws EngineAccessLost. */
@@ -17276,8 +17276,8 @@ async function orgTurnAccess(threadId: string, bot: BotRecord, instance: { insta
     loginDir: principalLoginDir,
   });
   if (!outcome.ok) throw new EngineAccessLost(outcome.plan ? orgRefusalOf(outcome.plan) : { reason: outcome.reason }, outcome.detail);
-  const provider = providerOfDriver(instance.driverKind) ?? undefined;
   const { plan } = outcome;
+  const provider = plan.provider;
   const payerSub = plan.payerPrincipalId ? (plan.payer === "owner" ? input.owner.sub : input.person?.(plan.payerPrincipalId)?.sub) : undefined;
   turnAccessByThread.set(threadId, {
     via: outcome.access.via,
@@ -19083,8 +19083,8 @@ if (IDENTITY.kind === "perspicax" && engineLogins) {
         const installed = engineInstalled(entry.instanceId);
         const supported = isLoginDriver(driver);
         const signedIn = supported && logins.signedIn(principalId, driver);
-        const provider = providerOfDriver(driver);
-        const myKey = Boolean(provider && sub && perspicaxDirectory?.providerKeys(sub).includes(provider));
+        const held = sub ? perspicaxDirectory?.providerKeys(sub) ?? [] : [];
+        const myKey = providersOfDriver(driver).some((provider) => held.includes(provider));
         const orgKey = driverKeyBacked(cfg, driver, entry.instanceId);
         // the order of engine-credentials.ts for this person speaking
         const myTurns = !installed || person?.disabledAt !== undefined ? "none" : signedIn ? "subscription" : myKey ? "key" : orgKey ? "org-key" : "none";
@@ -19745,7 +19745,7 @@ function harnessCommandAccount(
     if (plan.ok) {
       via = plan.via;
       const payer = plan.payerPrincipalId;
-      if (plan.via === "subscription" && payer && subscriptionDriver(instance.driverKind)) {
+      if (plan.via === "subscription" && payer && (instance.driverKind === "claudeAgent" || instance.driverKind === "codex")) {
         const dir = principalLoginDir(payer, instance.driverKind);
         listing = { via: "subscription", identity: `subscription:${payer}`, ...(instance.driverKind === "claudeAgent" ? { claudeConfigDir: dir } : { codexHome: dir }) };
       }
