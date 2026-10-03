@@ -8,6 +8,8 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   clearSessionCookie,
   clientBotPatchViolation,
+  clientSessionIsComputerOwner,
+  companionBotFieldViolation,
   memberBotFieldViolation,
   clientGroupPatchViolation,
   clientInstanceView,
@@ -133,9 +135,9 @@ describe("scopes", () => {
       ["GET", "/api/instances/claude"], ["POST", "/api/instances/claude/refresh-models"], ["GET", "/api/instances/extra/x"],
       ["GET", "/api/bots/x/queue/q/steer"], ["POST", "/api/bots/x/queue/q/steer/extra"],
       // the desktop remote client hides these, or their handler has no per-viewer check:
-      // folders, team filing, room setup (it sets the room's folder), overview and usage
+      // folders, team filing, room setup (it sets the room's folder) and usage
       ["POST", "/api/bots/x/projects"], ["PATCH", "/api/bots/x/projects/order"], ["DELETE", "/api/bots/x/projects/p"],
-      ["POST", "/api/sidebar-sections"], ["GET", "/api/bots/x/overview"], ["GET", "/api/usage"],
+      ["POST", "/api/sidebar-sections"], ["GET", "/api/usage"],
       ["POST", "/api/bots/x/computer/exec"], ["POST", "/api/bots/x/computer/join"], ["POST", "/api/local-computer/run"],
       ["GET", "/api/computers/boxes"], ["POST", "/api/computers/boxes/bx_23456789/delete"],
       ["POST", "/api/webhooks"], ["POST", "/api/webhooks/w/rotate"], ["POST", "/api/bots/x/skills"], ["PATCH", "/api/bots/x/skills/s"],
@@ -149,6 +151,55 @@ describe("scopes", () => {
       ["GET", "/api/mail/settings"], ["PUT", "/api/mail/settings"], ["POST", "/api/mail/test"], // mail transport: admin only
       ["GET", "/api/something-new"], // anything unlisted is admin until listed
     ] as const) expect(requiredScope(method, path), `${method} ${path}`).toBe("admin");
+  });
+
+  // iOS feature parity S2 (docs/superpowers/specs/2026-10-03-ios-feature-parity-matrix.md):
+  // each route reaches its handler, which checks the owner.
+  it("lets a client session reach the owner routes of the iOS parity, and nothing beside them", () => {
+    for (const [method, path] of [
+      ["POST", "/api/bots/x/connector-cards/m/authorize"],
+      ["GET", "/api/bots/x/command-allowlist"], ["DELETE", "/api/bots/x/command-allowlist/rule-1"],
+      ["POST", "/api/plugins/install"],
+      ["GET", "/api/bots/x/overview"],
+    ] as const) expect(requiredScope(method, path), `${method} ${path}`).toBe("client");
+    for (const [method, path] of [
+      ["POST", "/api/bots/x/command-allowlist"], ["DELETE", "/api/bots/x/command-allowlist"],
+      ["PUT", "/api/bots/x/command-allowlist/rule-1"], ["GET", "/api/bots/x/connector-cards/m/authorize"],
+      ["POST", "/api/bots/x/connector-cards/m/authorize/extra"], ["GET", "/api/plugins/install"],
+      ["POST", "/api/plugins/uninstall"], ["POST", "/api/bots/x/overview"],
+      // the voice engine and the advanced panel stay admin for a session (the sidecar is the owner)
+      ["PUT", "/api/tts/provider"], ["GET", "/api/bots/x/system-prompt"], ["GET", "/api/bots/x/history"],
+      ["POST", "/api/bots/x/history/rollback"], ["GET", "/api/bots/x/skills"], ["GET", "/api/bots/x/memory/file"],
+      ["GET", "/api/bot-presets"], ["GET", "/api/bots/x/computer"],
+    ] as const) expect(requiredScope(method, path), `${method} ${path}`).toBe("admin");
+  });
+
+  it("knows this computer's own person: the owner, an admin, or a session bound to the operator on a personal server", () => {
+    const personal = { organization: false, cloudHome: false, localPrincipalId: "pr_owner", operatorEmail: "Owner@Example.test" };
+    const session = (fields: Partial<SessionRecord>, scopes: Array<"admin" | "client"> = ["client"]) =>
+      ({ kind: "session", via: "bearer", scopes, session: { id: "s", label: "phone", scopes, createdAt: 0, expiresAt: 1, lastUsedAt: 0, ...fields } }) as never;
+    expect(clientSessionIsComputerOwner({ kind: "loopback", scopes: ["admin", "client"] }, personal)).toBe(true);
+    expect(clientSessionIsComputerOwner({ kind: "loopback", scopes: ["client"], trust: "service" }, personal)).toBe(false);
+    expect(clientSessionIsComputerOwner(session({}, ["admin", "client"]), personal)).toBe(true);
+    expect(clientSessionIsComputerOwner(session({ principalId: "pr_owner" }), personal)).toBe(true);
+    expect(clientSessionIsComputerOwner(session({ email: "owner@example.test" }), personal)).toBe(true);
+    // a chat-only pairing with nobody behind it, someone else, or any client session where the owner is not the operator
+    expect(clientSessionIsComputerOwner(session({}), personal)).toBe(false);
+    expect(clientSessionIsComputerOwner(session({ principalId: "pr_guest", email: "owner@example.test" }), personal)).toBe(false);
+    expect(clientSessionIsComputerOwner(session({ email: "guest@example.test" }), personal)).toBe(false);
+    expect(clientSessionIsComputerOwner(session({ email: "owner@example.test" }), { ...personal, operatorEmail: undefined })).toBe(false);
+    expect(clientSessionIsComputerOwner(session({ principalId: "pr_owner" }), { ...personal, organization: true })).toBe(false);
+    expect(clientSessionIsComputerOwner(session({ principalId: "pr_owner" }), { ...personal, cloudHome: true })).toBe(false);
+  });
+
+  it("lets the owner's paired phone switch a bot's memory, and nothing a member may not set besides", () => {
+    expect(companionBotFieldViolation({ memoryEnabled: false, memoryUpkeep: true, name: "Scout", soul: "x", modelSelection: {} })).toBeNull();
+    for (const field of ["approvalMode", "cwd", "computer", "mcpServers", "autoApprove", "browserProfile", "visibility", "hidden"]) {
+      expect(companionBotFieldViolation({ memoryEnabled: true, [field]: "x" }), field).toBe(field);
+    }
+    expect(companionBotFieldViolation([])).toBe("body");
+    // a member session still may not
+    expect(memberBotFieldViolation({ memoryEnabled: false })).toBe("memoryEnabled");
   });
 
   it("opens the engines catalogue to client sessions behind a feature only", () => {
@@ -231,6 +282,10 @@ describe("resolveRequestAuth", () => {
       ["POST", "/api/bots/b/read"], ["POST", "/api/bots/b/respond"],
       ["POST", "/api/bots/b/secret-cards/card/provide"],
       ["GET", "/api/events"], ["PATCH", "/api/bots/b/profile"],
+      // iOS parity S1, D1, D3 and the voice engine reach the harness as the owner
+      ["GET", "/api/bots/b/skills"], ["PUT", "/api/bots/b/memory/file"], ["POST", "/api/bots/b/history/rollback"],
+      ["GET", "/api/bots/b/system-prompt"], ["POST", "/api/bots/b/primary"], ["PUT", "/api/groups/g/memory"],
+      ["PUT", "/api/tts/provider"], ["GET", "/api/bot-presets"],
     ]) expect(check(method, path).auth?.kind, path).toBe("loopback");
     const forged: Record<string, string>[] = [
       { "x-openmausbot-companion-auth": "" },
@@ -246,7 +301,7 @@ describe("resolveRequestAuth", () => {
     for (const [method, path] of [
       ["PUT", "/api/config"], ["POST", "/api/auth/pairing"],
       ["POST", "/api/internal/anything"], ["GET", "/api/auth/sessions"],
-      ["POST", "/api/not-yet-supported"],
+      ["POST", "/api/not-yet-supported"], ["POST", "/api/bots/b/memory/open"], ["DELETE", "/api/bot-presets/p"],
     ]) expect(check(method, path).auth, path).toBeNull();
   });
 

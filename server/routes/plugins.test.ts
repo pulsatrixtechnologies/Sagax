@@ -44,10 +44,13 @@ async function serve(auth: RequestAuth, deps: Partial<PluginRouteDeps> = {}) {
 }
 
 describe("plugin routes", () => {
-  it("read as a member, install as an admin", () => {
+  it("read as a member; install reaches the handler, which decides (mayInstall)", () => {
     expect(requiredScope("GET", "/api/plugins/search")).toBe("client");
     expect(requiredScope("GET", "/api/plugins/installed")).toBe("client");
-    expect(requiredScope("POST", "/api/plugins/install")).toBe("admin");
+    // iOS parity S2: a client session bound to the computer's operator may
+    // install; the handler's mayInstall refuses everyone else (see below).
+    expect(requiredScope("POST", "/api/plugins/install")).toBe("client");
+    expect(requiredScope("POST", "/api/plugins/uninstall")).toBe("admin");
   });
 
   it("lists featured first, community without duplicates, and what is installed", async () => {

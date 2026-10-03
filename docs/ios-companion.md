@@ -323,10 +323,13 @@ with a sentence for the families below and "no route" for the rest):
   `/api/sidebar-sections`).
 - A bot's execution policy and where it runs: approval mode, folder (`cwd`),
   computer, MCP servers, browser profile, peers (the harness refuses those
-  fields on a companion `PATCH`), skills, memory, history, the system prompt,
-  `/soul` writes, room setup (`PATCH /api/groups/:id/setup`, which sets the
+  fields on a companion `PATCH`), `/soul` writes, opening the memory folder on
+  the host's screen (`POST /api/bots/:id/memory/open`), the legacy whole-file
+  memory write, room setup (`PATCH /api/groups/:id/setup`, which sets the
   room's folder), room delete, calendar calls, the Inspector's raw events,
-  New Bot presets and defaults, MCP server writes.
+  New Bot defaults and removing a preset, MCP server writes. (Skills, memory,
+  history, the system prompt and the preset list cross for the owner since
+  decision D1: see "iOS feature parity routes" below.)
 - Cloud computer provisioning, removal, sleep and shell execution. The phone
   receives only the fresh `join` viewer URL, never the provider key.
 - Internal peer-agent routes, and new harness routes that have not been
@@ -372,10 +375,77 @@ organization server, where a member's engines are `/api/me/engines`),
 session receives through `clientInstanceView()`: engine names, models,
 capabilities, availability and billing, never CLI paths, install or sign-in
 commands, account addresses or update commands. Folders, team filing
-(`POST /api/sidebar-sections`), a bot's Overview and `/api/usage` stay admin
-on a server: their handlers have no per-viewer check, and the remote-client
-renderer does not show Overview or Usage. `/api/me/engines` is a client route
+(`POST /api/sidebar-sections`) and `/api/usage` stay admin on a server: their
+handlers have no per-viewer check, and the remote-client renderer does not
+show Usage. A bot's Overview is a client route since the iOS feature parity
+work, held to the bot's owner by its handler (see below). `/api/me/engines` is a client route
 on an organization server (`orgDirectory`), as before.
+
+## iOS feature parity routes (2026-10-03)
+
+From the feature parity matrix
+(`docs/superpowers/specs/2026-10-03-ios-feature-parity-matrix.md`, packages S1,
+S2 and S3, with JC's decisions D1 yes, D3 yes, D4 keep).
+
+**Through the companion (S1, D1, D3).** A companion request is the computer's
+owner to the harness, so these get the owner checks the desktop's own renderer
+has. Added to `ALLOWED` in `companion/src/routes.ts`:
+
+| Route | Why |
+|---|---|
+| `GET /api/bots/:id/harness-commands` | the engine's own slash commands (names, descriptions, hints) |
+| `POST /api/bots/:id/parallel/:threadId/stop` | Stop on a parallel task card |
+| `GET /api/bots/:id/activity`, `GET /api/bots/:id/activity/item` | what the bot is doing, its history and one item |
+| `POST /api/bots/:id/primary` | Make primary bot (the harness checks the owner) |
+| `GET /api/me/harness-connectors` | the owner's own claude.ai connectors (names, statuses) |
+| `GET /api/bots/:id/computer` | the bot computer's status and phase (read-only) |
+| `GET/PUT /api/groups/:id/memory` | a room's shared memory (D3): its people read, its owner edits or switches it off |
+| `PUT /api/tts/provider` | the voice engine alone (`{ provider }`, nothing else); `PUT /api/config` stays refused |
+| `GET /api/bots/:id/system-prompt` | prompt preview (D1) |
+| `GET /api/bots/:id/history`, `POST /api/bots/:id/history/rollback` | history of changes, restore instructions (D1) |
+| `GET/POST /api/bots/:id/skills`, `GET/PATCH/DELETE /api/bots/:id/skills/:name` | skills: list, read, import (lands disabled), enable, remove (D1) |
+| `GET /api/bots/:id/memory`, `GET/PUT/DELETE /api/bots/:id/memory/file`, `GET /api/bots/:id/memory/journal`, `POST /api/bots/:id/memory/journal/:changeId/revert`, `GET /api/bots/:id/memory/upkeep`, `POST /api/bots/:id/memory/tidy` | memory: overview, files (saved with their hash), journal and revert, upkeep (D1) |
+| `GET /api/bot-presets` | New bot's starting roles (D1) |
+| `GET /api/me/achievements`, `POST /api/me/achievements/events`, `PUT /api/me/achievements/settings`, `GET /api/achievements/public` | achievements (D1) |
+
+The companion's bot `PATCH` also takes `memoryEnabled` and `memoryUpkeep`
+(`companionBotFieldViolation`): the advanced panel's memory switches. Approval
+mode, folder, computer, MCP servers and access stay refused, as does
+`POST /api/bots/:id/memory/open` (it opens a window on the host's screen).
+
+**Client sessions on a server (S2).** Added to `CLIENT_ALLOW` in
+`server/request-auth.ts`, each held by its handler:
+
+| Route | Who |
+|---|---|
+| `POST /api/bots/:id/connector-cards/:messageId/authorize` | the bot's owner on a personal server, or this computer's own person; never a member on an organization server (it signs an account into the server's own connected apps); a Cloud guest only in a conversation it started |
+| `GET /api/bots/:id/command-allowlist`, `DELETE /api/bots/:id/command-allowlist/:ruleId` | the bot's owner, or this computer's own person; adding a rule stays admin |
+| `POST /api/plugins/install` | an admin, or this computer's own person |
+| `GET /api/bots/:id/overview` | the bot's owner (or edit grant on an organization server), or an admin |
+
+"This computer's own person" (`clientSessionIsComputerOwner`) is the loopback
+owner, an admin session, or on a personal server (not an organization server,
+not a Cloud home) a client session bound to the operator's principal or
+address. A chat-only pairing, with nobody behind it, is not.
+
+**Rooms from the phone.** `POST /api/groups` accepts
+`setup: { defaultResponder }` without `bulletin` (it defaults to empty), so a
+phone opens a room the way the desktop remote client does
+(`{ defaultResponder: { kind: "mentions" } }`).
+
+**Routine edits from the phone (S3, AU13).** `PATCH /api/routines/:id`
+merges: an interval schedule that omits `weekdays`, `window` or `endsAt` keeps
+the stored ones (explicit `null` clears one), and an omitted `overlap`,
+`attachments`, `continuity`, `resultsThreadId`, `target` or `groupId` keeps
+its value. The phone's editor body is pinned by `server/routines.test.ts`
+("keeps every field a phone editor does not send") and end to end through the
+sidecar by `companion/test/proxy.test.ts`.
+
+Tests: `companion/test/routes.test.ts` ("iOS feature parity (S1, D1, D3)"),
+`companion/test/proxy.test.ts` (the routes reach a real harness; the voice
+engine route; the routine edit), `server/request-auth.test.ts`,
+`server/routes/tts-provider.test.ts`, `server/ios-parity.e2e.test.ts` ("holds
+the owner routes of a client session to the owner").
 
 ## Visual parity routes (2026-10)
 
