@@ -87,6 +87,13 @@ final class Session: ObservableObject {
     /// Who this phone is signed in as (`GET /api/auth/session`), for the
     /// home's photo. Nil until loaded, or when the server does not say.
     @Published private(set) var account: AuthSession?
+    /// The person's photo for the active connection (AccountPhotoStore):
+    /// their Perspicax avatar on an organization server, read through that
+    /// server. Nil draws the initial. Shown by the home, the Settings
+    /// account card and Account.
+    @Published private(set) var accountPhoto: UIImage?
+    /// The connection `account` and `accountPhoto` belong to.
+    private var accountConnectionID: String?
     /// False once the server showed it has no group pins: the home then
     /// stops offering to pin a group.
     @Published private(set) var groupPinsSupported = true
@@ -204,6 +211,8 @@ final class Session: ObservableObject {
         if let parity = ParityLaunch.current {
             let fixture = parity.connection
             connections = [fixture]
+            // Each launch proves the photo comes from the fixture server.
+            AccountPhotoStore.shared.forget(fixture.id)
             configureActiveConnection(fixture, token: parity.token)
             Task { await refreshNotificationAuthorization() }
             return
@@ -665,6 +674,7 @@ final class Session: ObservableObject {
         preparedPhoneCredentials = preparedPhoneCredentials.filter { $0.value.connectionID != id }
         Keychain.remove(id)
         BrandMascotCache.forget(id)
+        AccountPhotoStore.shared.forget(id)
         registry.remove(id: id)
         persistRegistry()
         connections = registry.connections
@@ -724,6 +734,7 @@ final class Session: ObservableObject {
         token = nil
         rotation = CandidateRotation(hosts: [])
         state = CompanionState()
+        showAccount(of: nil)
         resetAvatarCache()
         resetAttachmentCache()
         attachmentSendIDs.removeAll()
@@ -734,6 +745,7 @@ final class Session: ObservableObject {
     private func configureActiveConnection(_ saved: Connection, token stored: String) {
         connection = saved
         token = stored
+        showAccount(of: saved.id)
         // New connections honor the desktop's transport policy. Automatic
         // walking is credential-safe: protected routes stay protected, while
         // a legacy/local route is only tried when it was the exact saved route.
@@ -1778,19 +1790,72 @@ final class Session: ObservableObject {
     }
 
     /// Load who this phone is signed in as, quietly: the home falls back to
-    /// an initial or the computer's mascot when it cannot.
+    /// an initial or the computer's mascot when it cannot. Runs when the
+    /// connection changes, when the app comes to the foreground and when
+    /// Settings opens, so a new photo in Perspicax (a new version) shows
+    /// without signing in again.
     func loadAccount() async {
-        guard let client else { return }
-        if let session = try? await client.authSession() { account = session }
+        guard let client, let connectionID = connection?.id else { return }
+        guard let session = try? await client.authSession(), connection?.id == connectionID else { return }
+        account = session
+        await refreshAccountPhoto(session.avatar, connectionID: connectionID)
     }
 
-    /// The person's photo bytes, when the session names one.
-    func accountPhotoData() async -> Data? {
-        guard let path = account?.avatarUrl, let client else { return nil }
-        if let url = URL(string: path), let scheme = url.scheme, scheme == "https" || scheme == "http" {
-            return try? await URLSession.shared.data(from: url).0
+    /// Show what this phone keeps for a connection at once (an offline
+    /// launch keeps the last photo); the server's answer follows.
+    private func showAccount(of connectionID: String?) {
+        guard connectionID != accountConnectionID || connectionID == nil else { return }
+        accountConnectionID = connectionID
+        account = nil
+        accountPhoto = AccountPhotoStore.shared.image(for: connectionID)
+    }
+
+    /// Bring the photo in line with what the session named: none clears it,
+    /// a version already kept is used as is, a new one is read from this
+    /// connection's own server with its bearer. A failed read keeps the last
+    /// photo rather than flashing the initial; a refusal (404) drops it.
+    func refreshAccountPhoto(_ avatar: AccountAvatar?, connectionID: String) async {
+        let store = AccountPhotoStore.shared
+        guard let avatar else {
+            store.forget(connectionID)
+            if connection?.id == connectionID { accountPhoto = nil }
+            return
         }
-        return try? await client.avatar(path: path)
+        if let kept = store.image(for: connectionID, avatar: avatar) {
+            if connection?.id == connectionID { accountPhoto = kept }
+            return
+        }
+        guard let client, connection?.id == connectionID else { return }
+        do {
+            let data = try await client.accountAvatar(avatar)
+            let image = store.store(data, avatar: avatar, connectionID: connectionID)
+            if connection?.id == connectionID, let image { accountPhoto = image }
+        } catch let APIError.status(code, _) where code == 404 {
+            store.forget(connectionID)
+            if connection?.id == connectionID { accountPhoto = nil }
+        } catch {
+            // offline or refused for now: keep what is shown
+        }
+    }
+
+    /// Switch Account shows each saved connection's own photo. The ones not
+    /// in use are asked once, each through its own server and bearer, with a
+    /// short timeout; one that does not answer keeps its last photo.
+    func refreshSavedAccountPhotos() async {
+        guard !isDemo else { return }
+#if DEBUG
+        if ParityLaunch.current != nil { return }
+#endif
+        let others = connections.filter { $0.id != connection?.id }
+        for saved in others {
+            guard let stored = try? Keychain.token(for: saved.id) else { continue }
+            let client = CompanionClient(connection: saved, token: stored, requestTimeout: 8)
+            guard let session = try? await client.authSession() else { continue }
+            let store = AccountPhotoStore.shared
+            guard let avatar = session.avatar else { store.forget(saved.id); continue }
+            if store.image(for: saved.id, avatar: avatar) != nil { continue }
+            if let data = try? await client.accountAvatar(avatar) { store.store(data, avatar: avatar, connectionID: saved.id) }
+        }
     }
 
     /// Create a sidebar section by assigning its complete starting set in one

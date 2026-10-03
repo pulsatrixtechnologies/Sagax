@@ -3,6 +3,7 @@
 // §6 and §7.
 import CompanionCore
 import SwiftUI
+import UIKit
 
 // MARK: - Account (16)
 
@@ -11,6 +12,7 @@ struct AccountSettingsView: View {
 
     @EnvironmentObject private var session: Session
     @EnvironmentObject private var model: SettingsModel
+    @ObservedObject private var photos = AccountPhotoStore.shared
     @State private var confirmingSignOut = false
     @State private var confirmingDelete = false
     @State private var deleting = false
@@ -26,7 +28,7 @@ struct AccountSettingsView: View {
     var body: some View {
         SettingsPage(title: "Account") {
             SettingsCard {
-                AccountCardRow(name: model.displayName, detail: model.detail, photo: model.photo)
+                AccountCardRow(name: model.displayName, detail: model.detail, photo: session.accountPhoto)
             }
             // Card bottom to the next card top: 49, the label between.
             SettingsSectionLabel(text: "Switch Account")
@@ -38,7 +40,9 @@ struct AccountSettingsView: View {
                         title: LocalizedStringKey(stringLiteral: accountLabel(for: connection, current: current)),
                         accessory: current ? .check : .none,
                         height: 44.33,
-                        identifier: "account-switch.\(connection.id)"
+                        identifier: "account-switch.\(connection.id)",
+                        leading: AnyView(SwitchAccountPhoto(connection: connection, current: current, name: current ? model.displayName : connection.name)),
+                        accessibilityValueText: switchPhoto(for: connection, current: current) == nil ? nil : "photo"
                     ) {
                         guard !current else { return }
                         closeSheet?()
@@ -63,6 +67,8 @@ struct AccountSettingsView: View {
             }
             SettingsFooter(text: "Permanently deletes your Sagax account. This can't be undone.")
         }
+        // Each saved account's own photo, read through its own server.
+        .task { await session.refreshSavedAccountPhotos() }
         .confirmationDialog("Sign out of this computer?", isPresented: $confirmingSignOut, titleVisibility: .visible) {
             Button("Sign Out", role: .destructive) {
                 closeSheet?()
@@ -83,6 +89,10 @@ struct AccountSettingsView: View {
                 notice.afterwards?()
             })
         }
+    }
+
+    private func switchPhoto(for connection: Connection, current: Bool) -> UIImage? {
+        current ? session.accountPhoto : photos.image(for: connection.id)
     }
 
     /// The email for the account this phone is signed in as; the computer's
@@ -121,6 +131,22 @@ struct AccountSettingsView: View {
         } catch {
             notice = Notice(title: "Could not delete the account", message: error.localizedDescription)
         }
+    }
+}
+
+/// A Switch Account row's photo: the account in use shows the session's
+/// photo, the others the last one kept for them (AccountPhotoStore), else
+/// their initial.
+private struct SwitchAccountPhoto: View {
+    let connection: Connection
+    let current: Bool
+    let name: String
+
+    @EnvironmentObject private var session: Session
+    @ObservedObject private var photos = AccountPhotoStore.shared
+
+    var body: some View {
+        AccountPhoto(photo: current ? session.accountPhoto : photos.image(for: connection.id), name: name, size: 28)
     }
 }
 

@@ -1122,7 +1122,7 @@ public struct CompanionClient: Sendable {
         return data
     }
 
-    private static func validAvatarPath(_ path: String) -> Bool {
+    static func validAvatarPath(_ path: String) -> Bool {
         let prefix = "/api/attachments/"
         guard path.hasPrefix(prefix) else { return false }
         let name = path.dropFirst(prefix.count)

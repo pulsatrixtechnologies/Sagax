@@ -676,6 +676,7 @@ import { canOnThread, migrationLogLine, threadOwner as privateThreadOwner, narro
 import { approvalAnswerStatus, approvalAudience, approvalDelivery, receivesApprovalCard, type ApprovalViewer } from "./approval-audience.ts";
 import type { BotHost } from "./turn-route.ts";
 import { signInListWithOpenInvites, type OrgRole } from "./org-directory.ts";
+import { createOwnerAvatarRoute, OwnerIdentityStore, parseOwnerIdentityMessage } from "./owner-identity.ts";
 import { configForViewer, personAvatarUrl, personDisplayName, sessionIsOperator, type ViewerIdentity } from "./viewer-identity.ts";
 // Keep these two last: a route module may import any server module, and
 // loading the table after everything above leaves module start-up order as is.
@@ -2429,10 +2430,19 @@ const browserCleanup: BrowserCleanupCoordinator = new BrowserCleanupCoordinator(
   },
 });
 const phoneSecrets = new PhoneSecretBridge(postDesktopPrivateMessage);
+// A personal computer's owner as their organization knows them, handed over
+// by the signed-in desktop app (server/owner-identity.ts). An organization
+// server has its own people and takes none.
+const ownerIdentity = IDENTITY.kind === "perspicax" ? null : new OwnerIdentityStore(join(DATA_DIR, "owner-identity.json"));
 utilityParentPort?.on("message", (event) => {
   const message = event?.data;
   try {
     if (applyDesktopMutationTokenMessage(message)) return;
+    const owner = parseOwnerIdentityMessage(message);
+    if (owner) {
+      ownerIdentity?.set(owner.identity);
+      return;
+    }
     if (handleDesktopTrustedApprovalMessage(message)) return;
     if (browserCleanup.receive(message)) return;
     if (phoneSecrets.receive(message)) return;
@@ -20484,6 +20494,11 @@ ROUTES.push(createOrgBotForceRoutes({
     });
   },
 }));
+if (ownerIdentity) {
+  // A personal computer: its owner's organization avatar, when the signed-in
+  // desktop handed it over, at the route an organization server uses.
+  ROUTES.push(createOwnerAvatarRoute({ store: ownerIdentity, localPrincipalId }));
+}
 if (IDENTITY.kind === "perspicax") {
   const issuer = IDENTITY.issuer;
   // A person's Perspicax avatar (personAvatarUrl), read through the link and
@@ -21791,7 +21806,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         res,
         200,
         auth.kind === "loopback"
-          ? { kind: "loopback", scopes: auth.scopes, environmentId: ENVIRONMENT_ID, ...(auth.trust ? { trust: auth.trust } : { ...computerOwnerFields() }) }
+          ? { kind: "loopback", scopes: auth.scopes, environmentId: ENVIRONMENT_ID, ...(auth.trust ? { trust: auth.trust } : { ...computerOwnerFields(), ...ownerIdentity?.sessionFields(localPrincipalId()) }) }
           : {
               kind: "session",
               id: auth.session.id,
@@ -21822,7 +21837,9 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
               ...sessionPersonFields(auth.session.principalId),
               // A personal server's own devices (a paired phone): who owns
               // this computer, by name only (never an address).
-              ...(IDENTITY.kind === "solo" && !auth.session.idp && viewerIsOperator(auth) ? computerOwnerFields() : {}),
+              // and, when this computer's desktop app is signed in to an
+              // organization, the owner as it knows them (name, address, avatar)
+              ...(IDENTITY.kind === "solo" && !auth.session.idp && viewerIsOperator(auth) ? { ...computerOwnerFields(), ...ownerIdentity?.sessionFields(localPrincipalId()) } : {}),
             },
       );
     }

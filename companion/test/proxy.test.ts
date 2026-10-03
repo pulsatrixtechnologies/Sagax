@@ -225,6 +225,18 @@ describe("the sidecar in front of an unmodified harness", () => {
     })).toBe(200);
   });
 
+  it("tells the phone whose computer this is, with no photo a personal computer cannot know", async () => {
+    // A personal computer has no Perspicax link, so its session names no
+    // avatar and the phone keeps its initial. The photo route still crosses
+    // the sidecar (routes.test.ts); this harness has none and answers 404.
+    const session = await device("GET", "/api/auth/session");
+    expect(session.status).toBe(200);
+    expect(session.body.kind).toBe("loopback");
+    expect(session.body.avatarUrl).toBeUndefined();
+    const photo = await device("GET", "/api/people/pr_0b1c/avatar?v=0123456789abcdef");
+    expect(photo.status).toBe(404);
+  });
+
   it("refuses anything carrying an Origin, before looking at the token", async () => {
     const { status } = await device("GET", "/api/bots", { headers: { origin: "https://evil.example" } });
     expect(status).toBe(403);

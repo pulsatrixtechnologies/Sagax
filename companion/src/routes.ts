@@ -163,6 +163,12 @@ const ALLOWED: ReadonlyArray<{ method: string; path: RegExp }> = [
   // iOS visual parity (docs/ios-companion.md). Who is signed in (on a
   // personal computer: its owner's name, never an address).
   { method: "GET", path: /^\/api\/auth\/session$/ },
+  // The person's photo, when that session names one (`avatarUrl`, the
+  // versioned `/api/people/<id>/avatar?v=` of a server that knows the
+  // person's Perspicax avatar). The phone asks for nothing else under
+  // /api/people; a computer without one answers 404 and the phone keeps the
+  // initial.
+  { method: "GET", path: /^\/api\/people\/[\w-]{1,80}\/avatar$/ },
   // The owner's bot edits from the profile: the harness holds a companion
   // request to the member fields (look, framing, name, instructions,
   // notifications, model), never where the bot runs or what it may do.
