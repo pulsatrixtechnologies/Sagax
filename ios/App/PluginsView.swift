@@ -3,6 +3,9 @@
 // the MCP Registry, and adding a plugin from the phone, its sign-in
 // included: the server's OAuth start runs in ASWebAuthenticationSession and
 // comes back to sagax://oauth-done. Geometry: measure-settings.md §5.
+// Under them, Connections (WP9): Connected apps, MCP servers and the
+// person's claude.ai connectors (Features/Plugins/), each where the pairing
+// may reach it (SurfaceGate).
 import AuthenticationServices
 import CompanionCore
 import SwiftUI
@@ -205,9 +208,16 @@ struct PluginsView: View {
         }
         .overlay {
             if let showingAll {
-                PluginsListView(kind: showingAll, model: model)
-                    .environment(\.settingsPop, { self.showingAll = nil })
-                    .transition(.move(edge: .trailing))
+                Group {
+                    switch showingAll {
+                    case .featured, .team: PluginsListView(kind: showingAll, model: model)
+                    case .connectedApps: ConnectedAppsView()
+                    case .mcpServers: McpServersList()
+                    case .harnessConnectors: HarnessConnectorsView()
+                    }
+                }
+                .environment(\.settingsPop, { self.showingAll = nil })
+                .transition(.move(edge: .trailing))
             }
         }
         .animation(.spring(response: 0.34, dampingFraction: 0.92), value: showingAll)
@@ -338,6 +348,41 @@ struct PluginsView: View {
                 .padding(.top, 8)
             if model.visibleTeam.isEmpty { PluginsEmptyLine(text: "Servers and apps added on your computer show up here.") }
             ForEach(model.visibleTeam.prefix(3)) { plugin in teamRow(plugin) }
+            connections
+        }
+    }
+
+    /// The desktop Plugins window's other doors (WP9): its Connected apps
+    /// and MCP servers tabs, and the person's own claude.ai connectors.
+    /// Each row shows only where the pairing may reach it (SurfaceGate).
+    @ViewBuilder
+    private var connections: some View {
+        let gate = session.surfaceGate
+        let apps = gate.allows(.connectedApps)
+        let mcp = gate.allows(.mcpServers)
+        let claude = gate.allows(.harnessConnectors)
+        if apps || mcp || claude {
+            PluginsSectionHeader(title: "Connections")
+                .padding(.top, 8)
+            SettingsCard {
+                if apps {
+                    SettingsRow(title: "Connected apps", systemImage: "link", accessory: .chevron, identifier: "plugins-connected-apps") {
+                        showingAll = .connectedApps
+                    }
+                }
+                if mcp {
+                    if apps { CardHairline(leadingInset: SettingsMetrics.rowInset) }
+                    SettingsRow(title: "MCP servers", systemImage: "server.rack", accessory: .chevron, identifier: "plugins-mcp-servers") {
+                        showingAll = .mcpServers
+                    }
+                }
+                if claude {
+                    if apps || mcp { CardHairline(leadingInset: SettingsMetrics.rowInset) }
+                    SettingsRow(title: "Provided by Claude", systemImage: "powerplug", accessory: .chevron, identifier: "plugins-harness-connectors") {
+                        showingAll = .harnessConnectors
+                    }
+                }
+            }
         }
     }
 
@@ -356,7 +401,7 @@ struct PluginsView: View {
     }
 }
 
-enum PluginsListKind: Hashable { case featured, team }
+enum PluginsListKind: Hashable { case featured, team, connectedApps, mcpServers, harnessConnectors }
 
 /// "View all": every featured entry, or every team plugin.
 struct PluginsListView: View {
@@ -368,6 +413,8 @@ struct PluginsListView: View {
     var body: some View {
         SettingsPage(title: kind == .featured ? "Featured" : "Team plugins", contentTop: 80) {
             switch kind {
+            case .connectedApps, .mcpServers, .harnessConnectors:
+                EmptyView()
             case .featured:
                 ForEach(model.visibleFeatured) { listing in
                     PluginListingRow(listing: listing, installed: model.isInstalled(listing), busy: model.busy.contains(listing.id)) {
