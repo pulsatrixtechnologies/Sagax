@@ -1674,6 +1674,10 @@ function injectedEnvironment(cfg: AppConfig, instanceId: string, driver: string)
   const environment = new Map<string, string>();
   if (driver === "mistral" && cfg.mistral?.key) environment.set("MISTRAL_API_KEY", cfg.mistral.key);
   if (driver === "grok" && cfg.xai?.key) environment.set("XAI_API_KEY", cfg.xai.key);
+  // Grok Build never runs on it in solo mode (acp/grok.ts strips it); on an
+  // organization server it is the organization's key for Grok Build, after
+  // each person's own sign-in and key (server/engine-credentials.ts).
+  if (driver === "grokAgent" && cfg.xai?.key && process.env.SAGAX_IDENTITY?.trim().toLowerCase() === "perspicax") environment.set("XAI_API_KEY", cfg.xai.key);
   // The workspace Anthropic key reaches Claude Code as the variable it
   // reads, carried in the instance environment so the driver can tell a
   // deliberate workspace key from one riding along in the parent's env.
@@ -1711,6 +1715,7 @@ const DRIVER_CREDENTIAL_VARIABLES: Record<string, readonly string[]> = {
   claudeAgent: ["ANTHROPIC_API_KEY"],
   mistral: ["MISTRAL_API_KEY"],
   grok: ["XAI_API_KEY"],
+  grokAgent: ["XAI_API_KEY"],
   "openai-compat": ["OPENAI_COMPAT_API_KEY", "SAGAX_OPENAI_API_KEY", "SAGAX_OPENROUTER_API_KEY"],
   opencodeGo: ["OPENCODE_API_KEY"],
 };
@@ -1718,7 +1723,8 @@ const DRIVER_CREDENTIAL_VARIABLES: Record<string, readonly string[]> = {
 /** Whether this driver's turns run on a key the workspace configured
  * (Settings > Connections): a credential variable injectedEnvironment
  * hands it, for this instance when one is named. Login-backed engines
- * (Codex, grokAgent, ACP agents) never are. On an organization server such a
+ * (Codex, ACP agents) never are, nor grokAgent outside an organization
+ * server. On an organization server such a
  * key is the organization's key, the fallback after the speaker's own
  * subscription and key (server/engine-credentials.ts). */
 export function driverKeyBacked(cfg: AppConfig, driver: string, instanceId = ""): boolean {
@@ -1807,6 +1813,12 @@ export function instanceConfigs(cfg: AppConfig): InstanceConfigMap {
   } as const;
   const configured = cfg.instances && Object.keys(cfg.instances).length ? cfg.instances : null;
   const map: InstanceConfigMap = configured ? { ...configured } : { ...DEFAULT_FLEET };
+  // An organization server serves Gemini CLI on each person's own Google key
+  // (Perspicax provider `google`, server/engine-credentials.ts): the retired
+  // consumer login above is not what pays there, so the engine is listed.
+  if (process.env.SAGAX_IDENTITY?.trim().toLowerCase() === "perspicax" && (!configured || Object.hasOwn(configured, "claude") || Object.hasOwn(configured, "grok") || Object.hasOwn(configured, "codex"))) {
+    if (!Object.hasOwn(map, "gemini")) map.gemini = { driver: "geminiAgent" };
+  }
   // Product fleets pick up newly shipped engines. A one-off test/shadow map
   // (no claude/grok/codex) is left exactly as written.
   if (

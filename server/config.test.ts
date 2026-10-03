@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { JsonValue } from "./schema.ts";
 
 import { customMcpServers,
+  driverKeyBacked,
   DATA_DIR,
   dropRetiredOrganizationKeys,
   ensureDirs,
@@ -719,6 +720,25 @@ describe("default fleet", () => {
     const map = instanceConfigs({});
     expect(map.qwen).toEqual({ driver: "qwenAgent", environment: {} });
     expect(map.hermes).toEqual({ driver: "hermesAgent", environment: {} });
+  });
+
+  it("an organization server lists Gemini CLI and uses the xAI connection as Grok Build's organization key", () => {
+    const solo = instanceConfigs({ xai: { key: "xai-fixture" } });
+    expect(solo).not.toHaveProperty("gemini");
+    expect(solo.grok).toEqual({ driver: "grokAgent", environment: {} });
+    expect(driverKeyBacked({ xai: { key: "xai-fixture" } }, "grokAgent", "grok")).toBe(false);
+    vi.stubEnv("SAGAX_IDENTITY", "perspicax");
+    try {
+      const org = instanceConfigs({ xai: { key: "xai-fixture" } });
+      expect(org.gemini).toEqual({ driver: "geminiAgent", environment: {} });
+      expect(org.grok).toEqual({ driver: "grokAgent", environment: { XAI_API_KEY: "xai-fixture" } });
+      expect(driverKeyBacked({ xai: { key: "xai-fixture" } }, "grokAgent", "grok")).toBe(true);
+      expect(driverKeyBacked({}, "grokAgent", "grok")).toBe(false);
+      // a one-off map is left as written
+      expect(instanceConfigs({ instances: { standalone: { driver: "fake" } } })).not.toHaveProperty("gemini");
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 
   it("ships Cursor as a default-fleet subscription engine", () => {
