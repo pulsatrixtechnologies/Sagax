@@ -74,7 +74,6 @@ struct CollapsedSections {
 struct HomeAccountButton: View {
     let action: () -> Void
     @EnvironmentObject private var session: Session
-    @State private var photo: UIImage?
 
     var body: some View {
         Button {
@@ -82,7 +81,7 @@ struct HomeAccountButton: View {
             action()
         } label: {
             ZStack {
-                if let photo {
+                if let photo = session.accountPhoto {
                     Image(uiImage: photo).resizable().scaledToFill()
                 } else if let chief = fallbackBot {
                     Theme.card
@@ -100,10 +99,8 @@ struct HomeAccountButton: View {
         .themeGlass(Circle())
         .accessibilityLabel(Text("Settings"))
         .accessibilityIdentifier("home-account")
-        .task(id: session.account?.avatarUrl) {
-            guard session.account?.avatarUrl != nil else { photo = nil; return }
-            if let data = await session.accountPhotoData() { photo = UIImage(data: data) }
-        }
+        // "photo" once the person's own picture shows (UI tests wait on it).
+        .accessibilityValue(Text(verbatim: session.accountPhoto == nil ? "" : "photo"))
     }
 
     /// Without a photo or a name, the paired computer's own mascot: its
