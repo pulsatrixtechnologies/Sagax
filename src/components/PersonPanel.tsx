@@ -24,6 +24,7 @@ import {
 } from "@/lib/person-panel";
 import { hiddenKey, hideFromSidebar, showInSidebar, useSidebarHidden } from "@/lib/sidebar-hidden";
 import { BotAvatar } from "./Avatar";
+import { PersonConnectionsSection } from "./PersonConnectionsSection";
 import { PersonAvatar } from "./MessageAuthor";
 import { useCaptionChrome, useMacInsetChrome } from "./DesktopCapabilities";
 import { useOrgDirectory } from "./GroupPeoplePicker";
@@ -174,6 +175,10 @@ export function PersonPanel({ personId, directory: given }: { personId: string; 
               </ul>
             ) : <p className="text-[12.5px] text-ink-secondary">{t("personPanel.noSharedBots")}</p>}
           </section>
+
+          {person && org?.viewerRole === "admin" && (
+            <PersonConnectionsSection principalId={person.principalId} />
+          )}
 
           {manageUrl && (
             <a

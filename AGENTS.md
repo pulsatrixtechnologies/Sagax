@@ -940,11 +940,15 @@ A person of the organization opens in the right panel like a bot
 (`src/components/PersonPanel.tsx`, store `personPanelId`, action
 `openPersonPanel`): from a direct conversation's header or context menu, a
 group's person label, the group's People list and another person's name in
-a bot chat. It shows only the directory's fields (name, login, email,
+a bot chat. It shows the directory's fields (name, login, email,
 avatar, role, teams), the groups the viewer shares with them, their bots the
 viewer already sees, Message, Hide/Show, and for an admin "Manage in
 Perspicax": `GET /api/org/directory` adds `manageUrl`
-(`<issuer>/console/users/<sub>`) for admins only. Nothing from a private
+(`<issuer>/console/users/<sub>`) for admins only. An admin also sees
+Connections for a person who is in the directory
+(`PersonConnectionsSection`): each MCP server, the GitHub connection and
+the plugins on that person's bots, with Remove and Remove all behind a
+confirm dialog. A member does not see that section. Nothing from a private
 thread. Hiding is per person and view-only (`src/lib/sidebar-hidden.ts`,
 key `sagax.sidebarHidden.v1`, synced by `/api/me/preferences` on an
 organization server): bots by id, groups by id, people by principal; still
@@ -953,6 +957,7 @@ Settings > Appearance show them back. A new unread message unhides people
 and groups by default, bots only when the person turns it on. Archive stays
 the bot-wide action. Tests: `src/lib/sidebar-hidden*.test.ts`,
 `src/lib/person-panel.test.ts`, `PersonPanel.test.ts`,
+`PersonConnectionsSection.test.ts`,
 `src/state/person-panel.reducer.test.ts`.
 
 ## Sidebar sections are personal
