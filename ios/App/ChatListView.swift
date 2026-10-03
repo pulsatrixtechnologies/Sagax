@@ -26,6 +26,8 @@ struct ChatListView: View {
     @State private var showingWalkie = false
     @State private var showingNewGroup = false
     @State private var showingNewSection = false
+    /// WP10: the Automations page (AU1), from a long press on "+".
+    @State private var showingAutomations = false
     @State private var showingPlusMenu = false
     @State private var showingSearch = false
     @State private var showingCreateBot = false
@@ -61,6 +63,7 @@ struct ChatListView: View {
             .navigationDestination(for: Chat.self) { ChatView(chat: $0) }
             .onValueChange(of: session.notificationChat) { chat in
                 guard let chat else { return }
+                showingAutomations = false
                 path.append(chat)
                 session.consumeNotificationChat()
             }
@@ -110,6 +113,9 @@ struct ChatListView: View {
             }
             .sheet(isPresented: $showingNewSection) {
                 NewSectionSheet()
+            }
+            .sheet(isPresented: $showingAutomations) {
+                AutomationsSheet()
             }
             .sheet(item: $managingThreads) { chat in
                 TaskManagerView(chat: chat) { threadId in
@@ -1319,6 +1325,14 @@ extension ChatListView {
             showingWalkie = true
         } label: {
             Label("Walkie", systemImage: "waveform")
+        }
+        if session.connection != nil {
+            Button {
+                showingAutomations = true
+            } label: {
+                Label("Automations", systemImage: "calendar.badge.clock")
+            }
+            .accessibilityIdentifier("home-plus-automations")
         }
         if session.canAdminister || layout.personal {
             Button {

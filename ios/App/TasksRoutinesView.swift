@@ -6,7 +6,12 @@ import SwiftUI
 // (src/components/RoutineCalendarPage.tsx RoutinesPage, routines/RoutineList.tsx,
 // routines/RoutineLogs.tsx). Toolbar: the unseen-failure badge, then a menu
 // with the bot filter and Mark all as read.
+//
+// The same screen is the Automations page (matrix AU1-AU4, reached from a
+// long press on the home "+"): Schedule / Run logs, the schedule as a List
+// or a day Calendar (Features/Automations), and New > Scheduled task.
 struct TasksRoutinesView: View {
+    enum Page { case settings, automations }
     @Environment(\.themePalette) var themePalette
     @EnvironmentObject private var session: Session
     @State private var routines: [Routine] = []
@@ -21,8 +26,24 @@ struct TasksRoutinesView: View {
     @State private var statusFilter: RoutineRunStatusFilter = .all
     @State private var query = ""
     @State private var logLimit = 50
+    let page: Page
+    @State private var scheduleView: ScheduleView
+    @State private var agendaDay = RoutineCalendar.startOfDay(Date())
+    @State private var quickSlot: AutomationsSlot?
+    @State private var pendingSeed: RoutineEditorSeed?
+    @State private var rescheduling: RoutineCalendarItem?
 
     enum RoutinesSection: Hashable { case routines, logs }
+    /// The desktop's Schedule view: List or Calendar (the default).
+    enum ScheduleView: Hashable { case list, calendar }
+
+    init(page: Page = .settings) {
+        self.page = page
+        _scheduleView = State(initialValue: page == .automations ? .calendar : .list)
+    }
+
+    private var automations: Bool { page == .automations }
+    private var showsCalendar: Bool { automations && section == .routines && scheduleView == .calendar }
 
     private var seenAllowed: Bool { session.surfaceGate.allows(.routineRunsSeen) }
     private var visibleBots: [Bot] { session.state.bots.filter { $0.hidden != true } }
@@ -31,21 +52,58 @@ struct TasksRoutinesView: View {
         RoutineRunLog.filter(botFilter.runs(runs), bots: session.state.bots, routineId: routineFilter, status: statusFilter, query: query)
     }
 
-    var body: some View {
-        ThemedList {
-            Section {
-                Picker("Show", selection: $section) {
-                    Text("Routines").tag(RoutinesSection.routines)
-                    Text("Run logs").tag(RoutinesSection.logs)
-                }
-                .pickerStyle(.segmented)
-                .listRowBackground(Color.clear)
-                .listRowInsets(EdgeInsets())
-                .accessibilityIdentifier("routines-section")
-            }
-            if section == .routines { routinesContent } else { logsContent }
+    private var sectionPicker: some View {
+        Picker("Show", selection: $section) {
+            Text(automations ? "Schedule" : "Routines").tag(RoutinesSection.routines)
+            Text("Run logs").tag(RoutinesSection.logs)
         }
-        .navigationTitle("Threads & Routines")
+        .pickerStyle(.segmented)
+        .accessibilityIdentifier("routines-section")
+    }
+
+    private var scheduleViewPicker: some View {
+        Picker("Schedule view", selection: $scheduleView) {
+            Label("List", systemImage: "list.bullet").tag(ScheduleView.list)
+            Label("Calendar", systemImage: "calendar").tag(ScheduleView.calendar)
+        }
+        .pickerStyle(.segmented)
+        .accessibilityIdentifier("automations-view")
+    }
+
+    @ViewBuilder
+    private var pageContent: some View {
+        if showsCalendar {
+            AutomationsCalendarView(
+                day: $agendaDay, routines: routines, runs: runs, bots: session.state.bots,
+                botId: botFilter.botId, loading: loading
+            ) {
+                sectionPicker
+                scheduleViewPicker
+            } onCreate: { at in
+                quickSlot = AutomationsSlot(at: at)
+            } onAction: { action, item in
+                handle(action, item)
+            }
+        } else {
+            ThemedList {
+                Section {
+                    sectionPicker
+                        .listRowBackground(Color.clear)
+                        .listRowInsets(EdgeInsets())
+                    if automations && section == .routines {
+                        scheduleViewPicker
+                            .listRowBackground(Color.clear)
+                            .listRowInsets(EdgeInsets())
+                    }
+                }
+                if section == .routines { routinesContent } else { logsContent }
+            }
+        }
+    }
+
+    var body: some View {
+        pageContent
+        .navigationTitle(automations ? "Automations" : "Threads & Routines")
         .modifier(LogsSearch(active: section == .logs, query: $query, limit: $logLimit))
         .toolbar {
             if seenAllowed && unseenFailures > 0 {
@@ -92,14 +150,45 @@ struct TasksRoutinesView: View {
                 .accessibilityIdentifier("routines-menu")
             }
             ToolbarItem(placement: .primaryAction) {
-                Button("New routine", systemImage: "plus") { editor = .new }
+                if automations {
+                    // The desktop's New menu; a phone, like the remote
+                    // client, offers the scheduled task only.
+                    Menu {
+                        Button {
+                            quickSlot = AutomationsSlot(at: RoutineScheduleForm.nextHour())
+                        } label: {
+                            Label { Text("Scheduled task") } icon: { Image(systemName: "clock") }
+                            Text("Ask a bot to do something later.")
+                        }
+                        .accessibilityIdentifier("automations-new-task")
+                    } label: {
+                        Label("Create an automation", systemImage: "plus")
+                    }
+                    .accessibilityIdentifier("automations-new")
+                } else {
+                    Button("New routine", systemImage: "plus") { editor = .new }
+                }
             }
         }
         .task { await reload() }
         .refreshable { await reload() }
         .onValueChange(of: botFilter) { _ in routineFilter = nil }
         .sheet(item: $editor) { target in
-            RoutineEditorView(routine: target.routine) { await reload() }
+            RoutineEditorView(routine: target.routine, seed: target.seed) { await reload() }
+        }
+        .sheet(item: $quickSlot, onDismiss: {
+            if let seed = pendingSeed {
+                pendingSeed = nil
+                editor = .seeded(seed)
+            }
+        }) { slot in
+            AutomationsQuickCreateSheet(slot: slot) { await reload() } onMore: { seed in
+                pendingSeed = seed
+                quickSlot = nil
+            }
+        }
+        .sheet(item: $rescheduling) { item in
+            AutomationsRescheduleSheet(item: item) { await reload() }
         }
         .sheet(item: $openRun) { run in
             RoutineRunDetailView(run: run, routine: routines.first { $0.id == run.routineId }) { updated in
@@ -282,6 +371,27 @@ struct TasksRoutinesView: View {
         }
     }
 
+    /// An event's tap or long-press choice on the calendar.
+    private func handle(_ action: AutomationsEventAction, _ item: RoutineCalendarItem) {
+        switch action {
+        case .open:
+            if let run = item.run { openRun = run } else if let routine = item.routine { editor = .edit(routine) }
+        case .reschedule:
+            rescheduling = item
+        case .edit:
+            if let routine = item.routine { editor = .edit(routine) }
+        case .runNow:
+            if let routine = item.routine { Task { await runNow(routine) } }
+        case .toggle:
+            if let routine = item.routine { Task { await toggle(routine) } }
+        case .logs:
+            guard let routine = item.routine else { return }
+            routineFilter = routine.id
+            statusFilter = .all
+            section = .logs
+        }
+    }
+
     private func markAllSeen() async {
         let updated = await session.markAllRoutineRunsSeen()
         runs = RoutineRunLog.replacing(runs, with: updated)
@@ -308,8 +418,17 @@ private struct LogsSearch: ViewModifier {
 private enum RoutineEditorTarget: Identifiable {
     case new
     case edit(Routine)
-    var id: String { routine?.id ?? "new" }
+    /// A new routine from a calendar slot's More options.
+    case seeded(RoutineEditorSeed)
+    var id: String {
+        switch self {
+        case .new: "new"
+        case let .edit(routine): routine.id
+        case let .seeded(seed): "seed-\(seed.at.timeIntervalSince1970)"
+        }
+    }
     var routine: Routine? { if case let .edit(value) = self { value } else { nil } }
+    var seed: RoutineEditorSeed? { if case let .seeded(value) = self { value } else { nil } }
 }
 
 private struct RoutineRow: View {
