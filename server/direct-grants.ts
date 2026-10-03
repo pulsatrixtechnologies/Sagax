@@ -56,12 +56,21 @@ export interface DirectGrantRouteDeps {
   /** After a grant was added or removed and saved: narrow or widen what the
    * people concerned see, at once. */
   onChanged?(botId: string): void;
+  /** Organization server: this person may use bots but not grant them
+   * (`sagax_bots: use`). Checked before a grantee is resolved. */
+  botsReadOnly?(actorId: string): boolean;
   /** Slice 7: one audit row per saved change (category rights). */
   audit?(auth: RequestAuth, row: { action: "direct_grant.add" | "direct_grant.remove"; botId: string; userId: string }): void;
 }
 
 /** Longest person ref accepted: an account email is at most 320 characters. */
 const MAX_REF = 320;
+/** Same body as index.ts BOTS_READ_ONLY: a read-only person grants nothing. */
+const BOTS_READ_ONLY = { error: "org_bots_read_only", message: "Your administrator lets you use shared bots only." } as const;
+
+function actorReadOnly(deps: DirectGrantRouteDeps, auth: RequestAuth): boolean {
+  return deps.botsReadOnly?.(deps.actorId(auth)) === true;
+}
 
 /** Remove one grant: owner only, 404 when the bot or the grant is absent. */
 export function revokeDirectRoute(input: {
@@ -83,6 +92,7 @@ export function createDirectGrantRoutes(deps: DirectGrantRouteDeps): RouteHandle
   return async ({ req, res, path, method, auth, json, readBody }) => {
     const removal = path.match(/^\/api\/bots\/([\w-]+)\/direct-grants\/([^/]+)$/);
     if (removal && method === "DELETE") {
+      if (actorReadOnly(deps, auth)) return json(res, 403, BOTS_READ_ONLY);
       const bot = deps.bot(removal[1]!);
       let userId: string;
       try {
@@ -99,6 +109,7 @@ export function createDirectGrantRoutes(deps: DirectGrantRouteDeps): RouteHandle
     }
     const m = path.match(/^\/api\/bots\/([\w-]+)\/direct-grants$/);
     if (!m || method !== "POST") return PASS;
+    if (actorReadOnly(deps, auth)) return json(res, 403, BOTS_READ_ONLY);
     const body = await readBody(req);
     if (typeof body?.userId !== "string" || !body.userId) return json(res, 400, { error: "userId is required" });
     const bot = deps.bot(m[1]!);

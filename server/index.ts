@@ -20059,6 +20059,11 @@ function personBotsReadOnly(principalId: string | undefined | null): boolean {
   const sub = person.subject?.iss === IDENTITY.issuer ? person.subject.sub : undefined;
   return Boolean(sub) && perspicaxDirectory?.botRights(sub!) === "use";
 }
+/** The signed-in person may use shared bots only. Loopback and an
+ * organization admin are never narrowed. */
+function callerBotsReadOnly(auth: RequestAuth): boolean {
+  return auth.kind === "session" && personBotsReadOnly(auth.session.principalId);
+}
 /** The person this bot belongs to may only use shared bots. Their Primary
  * Bot must not create, set up or delete (the same door as POST /api/bots). */
 function ownerBotsReadOnly(bot: { ownerUserId?: unknown }): boolean {
@@ -20552,6 +20557,7 @@ ROUTES.push(createDirectGrantRoutes({
     return store.setBotGrants(id, next);
   },
   actorId: channelActorId,
+  botsReadOnly: (actorId) => personBotsReadOnly(actorId),
   // Called only once the actor owns the bot: resolving an email may create
   // its principal. Anything that is not a principal id or an account email
   // is refused.
@@ -27500,6 +27506,9 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           (body.confirmFullAccess !== undefined && typeof body.confirmFullAccess !== "boolean")) {
           return json(res, 400, { error: "send { approvalMode: \"full\", confirmFullAccess } alone" });
         }
+        // use may talk and rename a thread, not raise the bot. This branch
+        // returns before the member field check, so the cap is applied here.
+        if (callerBotsReadOnly(auth)) return json(res, 403, BOTS_READ_ONLY);
         const refusal = orgFullAccessRefusalFor(auth, target, body.confirmFullAccess === true);
         if (refusal) return json(res, refusal.status, { error: refusal.error, code: refusal.code });
         if (target.busy) return json(res, 409, { error: "stop this bot's turn before changing its approval level" });
@@ -29629,6 +29638,9 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       }
       if (body.requireAvailableModel === true && body.modelSelection === undefined) return json(res, 400, { error: "requireAvailableModel requires modelSelection" });
       if (body.updateBotDefault === true && body.modelSelection === undefined) return json(res, 400, { error: "updateBotDefault requires modelSelection" });
+      // updateBotDefault writes the bot's own model (switchTaskModel), which
+      // is an edit. A thread-only model change leaves the flag off.
+      if (body.updateBotDefault === true && callerBotsReadOnly(auth)) return json(res, 403, BOTS_READ_ONLY);
       if (body.resetApprovalToAsk === true && (body.modelSelection === undefined ||
         (body.approvalMode !== undefined && body.approvalMode !== "ask") || body.autoApprove === true)) {
         return json(res, 400, { error: "resetApprovalToAsk requires a model selection and cannot be combined with another approval mode" });
@@ -29727,6 +29739,9 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         // Organization server: the bot's owner, signed in, turns Full on
         // over HTTP while the organization allows it (org-full-access.ts).
         if (mode === "full" && IDENTITY.kind === "perspicax") {
+          // The grant also stores fullAccessConsent on the bot. thread.post
+          // is enough to reach this handler, so the read-only cap is here.
+          if (callerBotsReadOnly(auth)) return json(res, 403, BOTS_READ_ONLY);
           const refusal = orgFullAccessRefusalFor(auth, current, body.confirmFullAccess === true);
           if (refusal) return json(res, refusal.status, { error: refusal.error, code: refusal.code });
           orgFullGrant = true;

@@ -94,7 +94,11 @@ Covered by `src/components/SettingsModal.orgCleanup.test.ts`,
   never the loopback caller (on an organization server that caller is a
   service and would leave the specialist to the operator). Every bot level
   they hold reads as `use` (`botLevel`, their own bots included), so no
-  edit, delete, grant or routine; they still talk to the bots shared with
+  edit, delete, grant or routine. Full access (`PATCH` the bot or a thread
+  with `{ approvalMode: "full", confirmFullAccess }`) and a thread
+  `updateBotDefault` (it writes the bot's model) answer the same 403, and so
+  do legacy `POST` and `DELETE /api/bots/:id/direct-grants` (MA-5, MA-6).
+  A thread title stays allowed. They still talk to the bots shared with
   them (speaker pays). An organization admin is never narrowed. The UI hides
   New bot and says "Votre administrateur vous permet d'utiliser les robots
   partagés seulement" (`bots.readOnly.notice`; MA-3, MA-4,
