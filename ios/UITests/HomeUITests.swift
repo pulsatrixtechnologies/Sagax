@@ -162,8 +162,14 @@ final class HomeUITests: XCTestCase {
         app.buttons["teal"].tap()
         let name = app.textFields["create-bot-name"]
         name.tap()
-        // Return creates: the keyboard covers the Create capsule.
-        name.typeText("Nova UI\n")
+        name.typeText("Nova UI")
+        // While the keyboard is up, a Create capsule rides on it (the card's
+        // own is behind the keyboard).
+        XCTAssertTrue(app.buttons["create-bot-submit-keyboard"].waitForExistence(timeout: 5))
+        // The keyboard's own return key creates, as a person would press it.
+        let key = app.keyboards.buttons.matching(NSPredicate(format: "label ==[c] 'done' OR identifier ==[c] 'done' OR label ==[c] 'return'")).firstMatch
+        XCTAssertTrue(key.waitForExistence(timeout: 5), "the keyboard's return key")
+        key.tap()
         XCTAssertTrue(waitForDisappearance(create, timeout: 15))
         XCTAssertTrue(app.staticTexts["Nova UI"].waitForExistence(timeout: 10))
     }
