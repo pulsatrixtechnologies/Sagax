@@ -46,6 +46,8 @@ struct HomeHiddenEntries: View {
                 }
             }
             .padding(.top, 8)
+            // closed again the next time something is hidden
+            .onDisappear { open = false }
         }
     }
 }

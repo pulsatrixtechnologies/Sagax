@@ -260,6 +260,23 @@ final class SidebarPrefsUITests: XCTestCase {
         show.tap()
         try eventually("Lux back") { row("Lux", in: app).exists }
         XCTAssertFalse(app.buttons["section.__hidden"].exists)
+
+        // a group chat hides from its own row menu (RM13), the same way
+        let groups = (try api("GET", "/api/bots") as? [String: Any])?["groups"] as? [[String: Any]] ?? []
+        let group = try XCTUnwrap(groups.first { $0["dm"] as? Bool != true && $0["pinned"] as? Bool != true })
+        let groupId = try XCTUnwrap(group["id"] as? String)
+        let groupRow = app.buttons["chat-row.\(groupId)"]
+        reveal(groupRow, in: app, "group row")
+        groupRow.press(forDuration: 1.2)
+        tapMenuItem("Hide from sidebar", in: app)
+        try eventually("group hidden") { !app.buttons["chat-row.\(groupId)"].exists }
+        let hiddenGroup = app.buttons["section.__hidden"]
+        reveal(hiddenGroup, in: app, "the Hidden row")
+        hiddenGroup.tap()
+        let showGroup = app.buttons["hidden-show.group:\(groupId)"]
+        XCTAssertTrue(showGroup.waitForExistence(timeout: 5))
+        showGroup.tap()
+        try eventually("group back") { app.buttons["chat-row.\(groupId)"].exists }
     }
 
     @MainActor
