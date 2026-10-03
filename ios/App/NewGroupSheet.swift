@@ -266,7 +266,9 @@ struct NewGroupSheet: View {
                     .autocorrectionDisabled()
                     .submitLabel(.done)
                     .focused($focus, equals: .name)
-                    .onSubmit(create)
+                    // As in Create Bot: on iOS 27 a create run inside the submit
+                    // callback does nothing; one main-actor turn later it does.
+                    .onSubmit { Task { @MainActor in await Task.yield(); create() } }
                     .accessibilityLabel(Text("Group name (optional)"))
                     .accessibilityIdentifier("new-group-name")
             }
