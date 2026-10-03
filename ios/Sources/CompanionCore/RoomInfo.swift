@@ -308,23 +308,50 @@ public struct GroupMemoryConflict: Error, Hashable, Sendable {
 // MARK: - People picker (GroupPeoplePicker.tsx, src/lib/private-threads.ts)
 
 public struct OrgDirectoryPerson: Codable, Hashable, Sendable, Identifiable {
+    /// A team the person is in, and whether they manage it.
+    public struct TeamSeat: Codable, Hashable, Sendable {
+        public var id: String
+        public var manager: Bool
+        public init(id: String, manager: Bool = false) {
+            self.id = id
+            self.manager = manager
+        }
+    }
+
     public var principalId: String
     public var name: String
     public var login: String
     public var email: String?
     public var disabled: Bool?
+    /// "admin" or "member" in the organization.
+    public var role: String?
+    /// Their Perspicax avatar as this server serves it.
+    public var avatarUrl: String?
+    /// A Perspicax service account: never someone to write to.
+    public var service: Bool?
+    /// Admins only: this person's page in the Perspicax console.
+    public var manageUrl: String?
+    public var teams: [TeamSeat]?
 
     public var id: String { principalId }
 
-    public init(principalId: String, name: String = "", login: String = "", email: String? = nil, disabled: Bool? = nil) {
+    public init(
+        principalId: String, name: String = "", login: String = "", email: String? = nil, disabled: Bool? = nil,
+        role: String? = nil, avatarUrl: String? = nil, service: Bool? = nil, manageUrl: String? = nil, teams: [TeamSeat]? = nil
+    ) {
         self.principalId = principalId
         self.name = name
         self.login = login
         self.email = email
         self.disabled = disabled
+        self.role = role
+        self.avatarUrl = avatarUrl
+        self.service = service
+        self.manageUrl = manageUrl
+        self.teams = teams
     }
 
-    private enum CodingKeys: String, CodingKey { case principalId, name, login, email, disabled }
+    private enum CodingKeys: String, CodingKey { case principalId, name, login, email, disabled, role, avatarUrl, service, manageUrl, teams }
 
     public init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
@@ -333,19 +360,39 @@ public struct OrgDirectoryPerson: Codable, Hashable, Sendable, Identifiable {
         login = try values.decodeIfPresent(String.self, forKey: .login) ?? ""
         email = try values.decodeIfPresent(String.self, forKey: .email)
         disabled = try values.decodeIfPresent(Bool.self, forKey: .disabled)
+        role = try? values.decodeIfPresent(String.self, forKey: .role)
+        avatarUrl = try? values.decodeIfPresent(String.self, forKey: .avatarUrl)
+        service = try? values.decodeIfPresent(Bool.self, forKey: .service)
+        manageUrl = try? values.decodeIfPresent(String.self, forKey: .manageUrl)
+        teams = (try? values.decodeIfPresent([Lossy<TeamSeat>].self, forKey: .teams))?.compactMap(\.value)
+    }
+}
+
+/// A team of the organization's directory.
+public struct OrgDirectoryTeam: Codable, Hashable, Sendable, Identifiable {
+    public var id: String
+    public var name: String
+    public init(id: String, name: String) {
+        self.id = id
+        self.name = name
     }
 }
 
 public struct OrgDirectory: Decodable, Hashable, Sendable {
     public var people: [OrgDirectoryPerson]
+    public var teams: [OrgDirectoryTeam]
 
-    private enum CodingKeys: String, CodingKey { case people }
+    private enum CodingKeys: String, CodingKey { case people, teams }
 
-    public init(people: [OrgDirectoryPerson]) { self.people = people }
+    public init(people: [OrgDirectoryPerson], teams: [OrgDirectoryTeam] = []) {
+        self.people = people
+        self.teams = teams
+    }
 
     public init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
         people = (try? values.decodeIfPresent([Lossy<OrgDirectoryPerson>].self, forKey: .people))?.compactMap(\.value) ?? []
+        teams = (try? values.decodeIfPresent([Lossy<OrgDirectoryTeam>].self, forKey: .teams))?.compactMap(\.value) ?? []
     }
 
     /// `groupPeopleCandidates`: active people not yet in the room, matching

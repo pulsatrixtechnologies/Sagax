@@ -515,10 +515,16 @@ struct CompactRoomRow: View {
     var body: some View {
         HStack(spacing: 0) {
             UnreadDot(visible: room.unread && !busy, color: "blue")
-            RoomFaces(members: room.memberIds.compactMap { session.state.bot($0) }, size: face)
+            Group {
+                if let peer = PeopleDirectory.shared.peer(room, session: session) {
+                    PersonAvatar(initials: peer.initials, size: face)
+                } else {
+                    RoomFaces(members: room.memberIds.compactMap { session.state.bot($0) }, size: face)
+                }
+            }
                 .accessibilityHidden(true)
                 .padding(.trailing, CompactRosterMetrics.faceSpacing)
-            let name = Text(verbatim: room.name)
+            let name = Text(verbatim: PeopleDirectory.shared.peer(room, session: session)?.name ?? room.name)
                 .font(.body.weight(.semibold))
                 .foregroundStyle(Theme.textPrimary)
             let status = RowStatus(
