@@ -41,8 +41,10 @@ public struct SidecarRoutes: OptionSet, Hashable, Sendable {
     /// A sidecar-safe voice engine switch, replacing PUT /api/config (BA12).
     public static let voiceEngine = SidecarRoutes(rawValue: 1 << 3)
 
-    /// What every sidecar serves today: none of the above.
-    public static let current: SidecarRoutes = []
+    /// What a sidecar of this release serves: all of the above (S1, D1, D3,
+    /// and the voice engine route ship with this version of the desktop). An
+    /// older desktop answers 403 and the view shows that error.
+    public static let current: SidecarRoutes = [.parallelStop, .roomMemory, .advancedPanel, .voiceEngine]
 }
 
 /// One gated surface. Named for what the person sees, with the matrix row

@@ -336,7 +336,8 @@ final class SurfaceGateTests: XCTestCase {
     }
 
     func testTheVoiceEngineIsNeverAConfigWriteOnASidecar() {
-        XCTAssertFalse(sidecar.allows(.voiceEngineSettings))
+        XCTAssertTrue(sidecar.allows(.voiceEngineSettings), "this release's desktop serves PUT /api/tts/provider")
+        XCTAssertFalse(SurfaceGate(scope: .sidecar, sidecarRoutes: []).allows(.voiceEngineSettings), "an older desktop does not")
         XCTAssertFalse(client.allows(.voiceEngineSettings))
         XCTAssertTrue(admin.allows(.voiceEngineSettings))
         XCTAssertTrue(SurfaceGate(scope: .sidecar, sidecarRoutes: .voiceEngine).allows(.voiceEngineSettings))
@@ -350,13 +351,15 @@ final class SurfaceGateTests: XCTestCase {
 
     func testJCsDecisions() {
         // D1: the advanced panel opens on a sidecar once its routes do
-        XCTAssertFalse(sidecar.allows(.advancedBotPanel))
+        XCTAssertTrue(sidecar.allows(.advancedBotPanel))
+        XCTAssertFalse(SurfaceGate(scope: .sidecar, sidecarRoutes: []).allows(.advancedBotPanel))
         XCTAssertTrue(SurfaceGate(scope: .sidecar, sidecarRoutes: .advancedPanel).allows(.advancedBotPanel))
         XCTAssertFalse(client.allows(.advancedBotPanel))
         // D2: message pin everywhere
         XCTAssertTrue([sidecar, client, admin].allSatisfy { $0.allows(.messagePin) })
         // D3: room memory on a sidecar once S1 lands; servers already serve it
-        XCTAssertFalse(sidecar.allows(.roomMemory))
+        XCTAssertTrue(sidecar.allows(.roomMemory))
+        XCTAssertFalse(SurfaceGate(scope: .sidecar, sidecarRoutes: []).allows(.roomMemory))
         XCTAssertTrue(SurfaceGate(scope: .sidecar, sidecarRoutes: .roomMemory).allows(.roomMemory))
         XCTAssertTrue(client.allows(.roomMemory))
         // D4: the phone's extras for the owner or an admin
@@ -378,7 +381,8 @@ final class SurfaceGateTests: XCTestCase {
     }
 
     func testRouteGapsStayHiddenUntilTheRouteExists() {
-        XCTAssertFalse(sidecar.allows(.parallelTaskStop))
+        XCTAssertTrue(sidecar.allows(.parallelTaskStop))
+        XCTAssertFalse(SurfaceGate(scope: .sidecar, sidecarRoutes: []).allows(.parallelTaskStop))
         XCTAssertTrue(client.allows(.parallelTaskStop))
         XCTAssertTrue(sidecar.allows(.connectorCardAuthorize))
         XCTAssertFalse(client.allows(.connectorCardAuthorize))
