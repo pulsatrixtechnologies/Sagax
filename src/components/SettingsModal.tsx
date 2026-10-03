@@ -5,7 +5,7 @@
 import { useRetroSkin } from "./RetroChromeHost";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { FLOATING_LIVELINESS, floatingBotPrefs, setFloatingFlyAway, setFloatingLiveliness, subscribeFloatingBots, type FloatingLiveliness } from "@/lib/floating-bots";
-import { Archive, Coins, FlaskConical, KeyRound, Mail, Monitor, Palette, ScrollText, Search, TabletSmartphone, Terminal, Trophy, User, Users, X, Building2, Zap } from "lucide-react";
+import { Archive, Coins, FlaskConical, KeyRound, Mail, Monitor, Palette, Plug, ScrollText, Search, TabletSmartphone, Terminal, Trophy, User, Users, X, Building2, Zap } from "lucide-react";
 import { AchievementsPage } from "./achievements/AchievementsPage";
 import { api, useStore, type AppSettingsSection, type ConfigStatus } from "@/state/store";
 import { browserAvailable, browserUnavailableReason, builtInBrowserEnabled, boatComputerEnabled, connectedAppsEnabled, routinesInConversationEnabled, showToolCallsEnabled, skillAuthoringEnabled, templatesEnabled, vpsComputerEnabled } from "@/lib/feature-flags";
@@ -40,6 +40,7 @@ import { effortLabel } from "./ModelPicker";
 import { EFFORT_LEVELS, isEffortLevel } from "../../shared/wire";
 import { shortcutLabel } from "./ShortcutHint";
 import { UsageSection } from "./UsageSection";
+import { MyConnectionsSettings } from "./settings/MyConnectionsSettings";
 import { LicenseExpiryBanner } from "./LicenseExpiryBanner";
 import { WorkspacesSection, workspacesAvailable } from "./WorkspacesSection";
 import { SkinPicker } from "./SkinPicker";
@@ -86,6 +87,7 @@ export const SECTIONS: Array<{
   { id: "achievements", labelKey: "settings.section.achievements", icon: Trophy, keywords: ["achievements", "trophies", "trophy", "points", "gamerscore", "level", "unlock", "succès", "trophées"] },
   { id: "experimental", labelKey: "settings.section.experimental", icon: FlaskConical, keywords: ["early", "preview", "learn", "skill", "authoring", "browser", "profiles"] },
   { id: "connections", labelKey: "settings.section.connections", icon: KeyRound, keywords: ["keys", "api", "api key", "api keys", "connections", "composio", "box", "xai", "mistral", "vps", "router", "openrouter", "base url", "openai", "anthropic", "groq", "opencode", "provider"] },
+  { id: "myConnections", labelKey: "settings.section.myConnections", icon: Plug, keywords: ["github", "mcp", "mcp servers", "connections", "connexions", "token", "oauth", "gh", "git", "my connections", "mes connexions", "server", "plugins"] },
   { id: "decisionModel", labelKey: "settings.section.decisionModel", icon: Zap, keywords: ["decision", "jev", "typesafe", "routing", "auto", "rooms", "who answers"] },
   { id: "engines", labelKey: "settings.section.engines", icon: Terminal, keywords: ["models", "model providers", "engines", "claude", "codex", "grok", "providers", "cli", "sign in", "subscription"] },
   { id: "companion", labelKey: "settings.section.companion", icon: TabletSmartphone, keywords: ["companion", "device", "phone", "desktop", "client", "host", "pair", "pairing", "mobile", "https", "secure", "tailscale", "wifi", "remote", "advanced", "domain", "dns", "self-hosted", "server", "caddy"] },
@@ -122,7 +124,8 @@ export function cardsMatching(query: string): string[] {
  * managed in the Perspicax admin console. A solo server keeps Email: it
  * sends its own sign-in codes and invitations. */
 export function organizationHidesSection(id: AppSettingsSection, organization: boolean): boolean {
-  return organization && id === "mail";
+  // Mes connexions is a person's own, on an organization server only.
+  return organization ? id === "mail" : id === "myConnections";
 }
 
 export function sectionMatches(section: (typeof SECTIONS)[number], query: string): boolean {
@@ -1342,6 +1345,7 @@ export function SettingsModal() {
             {section === "computer" && <LocalComputerSection />}
 
             {section === "usage" && <UsageSection />}
+            {section === "myConnections" && <MyConnectionsSettings />}
             {section === "people" && <PeopleSection />}
             {section === "mail" && <MailSettings />}
             {section === "activity" && <ActivitySection />}
