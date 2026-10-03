@@ -58,6 +58,12 @@ final class Session: ObservableObject {
     /// `Connection.canAdminister`. Views hide owner-only controls when this
     /// is false rather than offer buttons the server would answer 403 to.
     var canAdminister: Bool { connection?.canAdminister ?? false }
+    /// What this pairing lets the app show (`SurfaceGate`): the one place
+    /// views ask before drawing a feature the computer may refuse.
+    var surfaceGate: SurfaceGate {
+        guard let connection else { return .unpaired }
+        return SurfaceGate(connection: connection, account: account)
+    }
     @Published private(set) var status: Status = .unpaired
     /// Transient, user-facing failures from an action they just took.
     @Published var actionError: String?
@@ -2272,10 +2278,13 @@ final class Session: ObservableObject {
         }
     }
 
-    func saveRoutine(_ input: RoutineInput, id: String?) async -> Routine? {
+    /// Create a routine, or save an edit of `original`. An edit sends only
+    /// the fields that changed (`RoutinePatch`): the phone's editor shows a
+    /// subset of a routine and must never clear what it does not show.
+    func saveRoutine(_ input: RoutineInput, original: Routine?) async -> Routine? {
         guard let client else { return nil }
         do {
-            if let id { return try await client.updateRoutine(id: id, input: input) }
+            if let original { return try await client.updateRoutine(original, input: input) }
             return try await client.createRoutine(input)
         } catch { actionError = error.localizedDescription; return nil }
     }

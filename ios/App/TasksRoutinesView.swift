@@ -484,7 +484,7 @@ struct RoutineEditorView: View {
             schedule: schedule, durationMinutes: duration,
             timeoutMinutes: timeoutMinutes, clearTimeout: timeoutMinutes == nil
         )
-        if await session.saveRoutine(input, id: routine?.id) != nil {
+        if await session.saveRoutine(input, original: routine) != nil {
             await onSaved()
             dismiss()
         }

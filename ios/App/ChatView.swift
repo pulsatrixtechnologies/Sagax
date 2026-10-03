@@ -1629,7 +1629,10 @@ struct MessageRow: View {
                 // is written for exactly this reader.
                 TextBubble(message: message, chat: chat, tailed: endsRun, openLink: openLink)
             }
-        case .unknown:
+        case .unknown, .connector, .access, .goalRun:
+            // The connector, access and goal-run cards draw as their text
+            // until their card views land (WP2), as they did while they
+            // decoded as `unknown`.
             // A message kind from a newer computer. Almost everything the
             // harness sends carries `text`, so showing it is usually the
             // whole message and always better than a gap in the transcript.

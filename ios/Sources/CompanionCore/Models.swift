@@ -212,6 +212,14 @@ public struct Message: Codable, Hashable, Identifiable, Sendable {
         /// One background routine run, upserted into the thread that asked
         /// for it and patched as the run moves. `routineRun` carries the card.
         case routineRun = "routine.run"
+        /// A bot asked to connect an app from the conversation; `connector`
+        /// carries the card (`ConnectorCard.tsx`).
+        case connector
+        /// A turn that could not run for lack of engine access on an
+        /// organization server; `access` carries the card (`AccessCard.tsx`).
+        case access
+        /// The receipt of a room goal; `goalRun` carries it (`GoalRunCard.tsx`).
+        case goalRun = "goal.run"
         /// A kind this build has never heard of.
         ///
         /// Not decorative. `kind` is not optional, so without this a single
@@ -280,8 +288,58 @@ public struct Message: Codable, Hashable, Identifiable, Sendable {
     public var mime: String?
     /// Agent-generated images carried on a text reply, including late message patches.
     public var attachments: [MessageImageAttachment]?
+    /// `kind == .connector`: the connect-an-app card.
+    public var connector: ConnectorRequestCard? = nil
+    /// `kind == .access`: why the turn could not run.
+    public var access: AccessCard? = nil
+    /// `kind == .goalRun`: the room goal's receipt.
+    public var goalRun: GoalRunCard? = nil
+    /// The request line, live card or result of a parallel task.
+    public var parallelTask: ParallelTaskRef? = nil
+    /// Flat reply reference for an inline quote; unrelated to `parentId`.
+    public var replyToId: String? = nil
+    /// Stable client identity for at-most-once send retries.
+    public var sendId: String? = nil
+    /// A user line sent into a running turn: the model saw it mid-turn.
+    public var steered: Bool? = nil
+    /// A peer bot's aside folded into a running turn, never a new request.
+    public var aside: Bool? = nil
+    /// "api" when a user line arrived through the server's HTTP API.
+    public var via: String? = nil
+    /// Which signed-in person sent a user line on a shared workspace.
+    public var sender: MessageAuthor? = nil
+    /// A user-role line another bot delivered into this conversation.
+    public var peerAsk: PeerAsk? = nil
+    /// A room line a bot pushed in with post_to_room.
+    public var peerPost: PeerPost? = nil
+    /// Auto rooms: the decision model picked this reply's speaker.
+    public var routedBy: RoutedBy? = nil
+    /// Rooms: "chat" or "goal" for a user line. Absent is ordinary chat.
+    public var channelMode: String? = nil
+    /// Sent while the bot was mid-turn and still waiting to auto-send.
+    public var queued: Bool? = nil
+    /// The server-proven user message this reply answers: what Regenerate
+    /// re-sends through the edit route.
+    public var requestMessageId: String? = nil
+    /// Provider completion outcome, independent of whether it emitted text.
+    public var turnSucceeded: Bool? = nil
+    /// "failed": a dropped worker, or a person or bot removed mid-turn.
+    public var status: String? = nil
+    /// An exact request was stopped.
+    public var requestCancelled: Bool? = nil
+    /// Projected for someone who is not the approval audience:
+    /// "waiting-on-owner" or "owner-settled" (`OwnerWait.tsx`).
+    public var state: String? = nil
+    /// Whose approval a projected card waits on.
+    public var ownerName: String? = nil
 
     public var date: Date { Date(timeIntervalSince1970: at / 1000) }
+
+    /// The owner-wait projection, when this card waits on someone else.
+    public var ownerWait: OwnerWaitState? { state.flatMap(OwnerWaitState.init(rawValue:)) }
+
+    /// A dropped worker or a person or bot removed during the turn.
+    public var isFailed: Bool { status == "failed" }
 
     /// A teammate's reply chip carrying its report: someone else's words,
     /// so they read as prose in full rather than as a clipped tool log.
@@ -370,6 +428,19 @@ public struct BotTask: Codable, Hashable, Sendable {
     public var pinned: Bool? = nil
     /// Newest message time. Absent on older computers; the list uses createdAt.
     public var updatedAt: Double? = nil
+    /// The message pinned to the top of this thread (`PATCH tasks
+    /// {pinnedMessageId}`). Absent means none.
+    public var pinnedMessageId: String? = nil
+    /// A parallel task: the conversation and request it answers.
+    public var parallelOf: TaskParallelOf? = nil
+    /// What this thread has spent, banked once per turn.
+    public var usage: TaskUsage? = nil
+    /// True after an edit or branch switch rewound the visible conversation.
+    public var rewound: Bool? = nil
+    /// When the current busy stretch began (elapsed readout).
+    public var turnStartedAt: Double? = nil
+    /// Organization server: the person this 1:1 thread belongs to.
+    public var ownerPrincipalId: String? = nil
 
     /// The time the thread list sorts and stamps by.
     public var listStamp: Double { updatedAt ?? createdAt }
@@ -749,6 +820,25 @@ public struct Room: Codable, Hashable, Identifiable, Sendable {
     public var hasMore: Bool?
     /// Pinned to the home row. Older servers have no group pins and omit it.
     public var pinned: Bool?
+    /// People in this room, beside the bots. Absent on a bot-to-bot room.
+    public var humanIds: [String]? = nil
+    /// Compatibility mirror of the active task's pinned message.
+    public var pinnedMessageId: String? = nil
+    /// Organization server: the principal who created the room.
+    public var createdBy: String? = nil
+    /// Organization server: who owns the room's settings; nil when its
+    /// organization admins do, absent on a solo server.
+    public var ownerId: String? = nil
+    /// Organization server: a direct conversation between two people.
+    public var peopleDm: Bool? = nil
+    /// The room's shared memory; absent means on.
+    public var memoryEnabled: Bool? = nil
+    /// When the busy member's turn started.
+    public var turnStartedAt: Double? = nil
+    /// True while any member is mid-turn (computed by the server).
+    public var working: Bool? = nil
+    public var setupCompletedAt: Double? = nil
+    public var setupSkippedAt: Double? = nil
 }
 
 // MARK: - Responses
@@ -1221,6 +1311,40 @@ public struct RoutineSchedule: Codable, Hashable, Sendable {
     public var expression: String?
     /// `cron`: the IANA zone the expression is read in.
     public var timeZone: String?
+    /// `interval`: the local wall-clock window runs happen in. Absent means
+    /// all day. (`weekdays` restricts an interval to those days.)
+    public var window: RoutineIntervalWindow? = nil
+    /// `interval`: inclusive epoch-millisecond cutoff. Absent means never.
+    public var endsAt: Int64? = nil
+
+    public init(
+        type: Kind, at: Double? = nil, time: String? = nil, weekdays: [Int]? = nil,
+        everyMinutes: Int? = nil, anchorAt: Int64? = nil, expression: String? = nil,
+        timeZone: String? = nil, window: RoutineIntervalWindow? = nil, endsAt: Int64? = nil
+    ) {
+        self.type = type
+        self.at = at
+        self.time = time
+        self.weekdays = weekdays
+        self.everyMinutes = everyMinutes
+        self.anchorAt = anchorAt
+        self.expression = expression
+        self.timeZone = timeZone
+        self.window = window
+        self.endsAt = endsAt
+    }
+
+    /// The same schedule with the interval restrictions an editor that does
+    /// not show them must keep: days, window and end date. Only when both
+    /// are intervals; changing the kind drops them, as on the desktop.
+    public func keepingIntervalRestrictions(of original: RoutineSchedule) -> RoutineSchedule {
+        guard type == .interval, original.type == .interval else { return self }
+        var kept = self
+        if kept.weekdays == nil { kept.weekdays = original.weekdays }
+        if kept.window == nil { kept.window = original.window }
+        if kept.endsAt == nil { kept.endsAt = original.endsAt }
+        return kept
+    }
 
     public static func cron(expression: String, timeZone: String) -> Self {
         .init(type: .cron, expression: expression, timeZone: timeZone)
@@ -1254,6 +1378,38 @@ public struct RoutineSchedule: Codable, Hashable, Sendable {
     }
 }
 
+/// `RoutineIntervalWindow` in `shared/routines.ts`: "HH:mm" local times.
+public struct RoutineIntervalWindow: Codable, Hashable, Sendable {
+    public var start: String
+    public var end: String
+
+    public init(start: String, end: String) {
+        self.start = start
+        self.end = end
+    }
+}
+
+/// `RoutineContextAttachment` in `shared/routines.ts`.
+public struct RoutineAttachment: Codable, Hashable, Sendable {
+    public var id: String
+    public var kind: String
+    public var name: String
+    public var path: String
+    public var size: Int
+}
+
+/// `Routine.runAs` in `shared/routines.ts` (organization server).
+public struct RoutineRunAs: Codable, Hashable, Sendable {
+    public var principalId: String
+    public var name: String
+}
+
+/// `Routine.suspended` in `shared/routines.ts` (organization server).
+public struct RoutineSuspension: Codable, Hashable, Sendable {
+    public var reason: String
+    public var at: Double
+}
+
 public struct Routine: Codable, Hashable, Identifiable, Sendable {
     public var id: String
     public var name: String
@@ -1267,6 +1423,19 @@ public struct Routine: Codable, Hashable, Identifiable, Sendable {
     public var nextRunAt: Double?
     public var createdAt: Double
     public var updatedAt: Double
+    /// "bot" or "room-goal". Absent on older computers (a bot routine).
+    public var target: String? = nil
+    public var groupId: String? = nil
+    /// "skip" or "queue" when a run is still going at the next start.
+    public var overlap: String? = nil
+    public var skippedRuns: Int? = nil
+    public var lastSkippedAt: Double? = nil
+    public var failureStreak: Int? = nil
+    public var attachments: [RoutineAttachment]? = nil
+    public var sourceThreadId: String? = nil
+    public var resultsThreadId: String? = nil
+    public var runAs: RoutineRunAs? = nil
+    public var suspended: RoutineSuspension? = nil
 }
 
 public struct RoutineRun: Codable, Hashable, Identifiable, Sendable {

@@ -120,7 +120,9 @@ extension CompanionState {
     private func lastLine(threadId: String) -> String {
         guard let last = visibleTranscript(forThread: threadId).last(where: { $0.kind != .digest }) else { return "" }
         switch last.kind {
-        case .text, .unknown: return last.text ?? ""
+        // The new card kinds read as their text until their cards land
+        // (WP2), exactly as they did while they decoded as `unknown`.
+        case .text, .unknown, .connector, .access, .goalRun: return last.text ?? ""
         case .options: return last.card?.title ?? ""
         case .secret: return last.secret?.label ?? last.text ?? "Credential required"
         case .activity: return last.tool?.name ?? ""
