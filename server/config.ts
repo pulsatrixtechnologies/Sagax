@@ -450,6 +450,15 @@ const appConfigSchema = z.object({
      * (server/org-full-access.ts). Absent means allowed; an admin turns it
      * off in Settings > Organization. */
     allowFullAccess: z.boolean().optional(),
+    /** Where bots' Claude Code plugins may come from (server/bot-plugins.ts).
+     * Absent means any marketplace; an admin may keep a list. */
+    pluginMarketplaces: z.union([
+      z.object({ mode: z.literal("any") }).strict(),
+      z.object({ mode: z.literal("list"), allow: z.array(z.string().max(300)).max(100) }).strict(),
+    ]).optional(),
+    /** The organization's GitHub OAuth App (device flow) for "Connecter
+     * GitHub"; SAGAX_GITHUB_CLIENT_ID provides a default. */
+    githubClientId: z.string().max(128).optional(),
   }).optional(),
   /** When stored person references became principal ids (server/identity-migration.ts). */
   identityMigratedAt: z.number().optional(),
@@ -662,7 +671,12 @@ export interface AppConfig {
   signIn?: { admins?: string[]; members?: string[] };
 
   /** Organization server settings (slice 3); see appConfigSchema. */
-  organization?: { interimAttach?: { since: number; days: number }; allowFullAccess?: boolean };
+  organization?: {
+    interimAttach?: { since: number; days: number };
+    allowFullAccess?: boolean;
+    pluginMarketplaces?: { mode: "any" } | { mode: "list"; allow: string[] };
+    githubClientId?: string;
+  };
   /** When stored person references became principal ids (server/identity-migration.ts). */
   identityMigratedAt?: number;
   /** When every bot thread got its owner (server/thread-privacy.ts). */

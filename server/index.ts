@@ -662,6 +662,13 @@ import { createComputerStatusRoutes, diskStateForFree } from "./routes/computer-
 import { createPluginRoutes, pluginServerName, type InstalledPlugin } from "./routes/plugins.ts";
 import { createAccountRoutes } from "./routes/account.ts";
 import { createRegistrySearch } from "./plugin-registry.ts";
+import { BotPlugins, marketplacePolicySchema, normalizePolicyEntry, type MarketplacePolicy } from "./bot-plugins.ts";
+import { createBotPluginRoutes } from "./routes/bot-plugins.ts";
+import { GithubConnect, githubAuthorizedFetch, githubGitEnvironment, githubSandboxArgv } from "./github-connect.ts";
+import { parsePersonalMcpInput, personalAuthHeaders, personalMcpHostRefusal, personalMcpPrivateAllowed, PersonConnections, PersonConnectionsError, principalDir, type PersonalMcpServer } from "./person-connections.ts";
+import { createPersonConnectionRoutes } from "./routes/person-connections.ts";
+import { SandboxStdioRelay, StdioRelayError } from "./sandbox-stdio-mcp.ts";
+import { PERSONAL_STDIO_TOOL_SERVER } from "./user-sandbox-proxy.ts";
 import { PLUGIN_CATALOG } from "../shared/plugin-catalog.ts";
 import { diskSpace, folderBytes } from "./disk-usage.ts";
 import { autoReviewThreadMode, createBotSettingsStore, hostTimeZone } from "./bot-settings.ts";
@@ -688,7 +695,7 @@ import { acceptOpenInvitesForEmail, createPublicInviteRoutes, createSoloOrgRoute
 import { createDirectGrantRoutes } from "./direct-grants.ts";
 import { directoryIntervalMs, PerspicaxDirectory, type ModelProvider } from "./perspicax-link.ts";
 import { PERSPICAX_UNAVAILABLE_WHY, PerspicaxMcp, perspicaxUnavailableRow, type PerspicaxUnavailableReason } from "./perspicax-mcp.ts";
-import { createPerspicaxOrgRoutes, orgDirectoryEntries, type PendingAdminApproval } from "./perspicax-org-routes.ts";
+import { createPerspicaxOrgRoutes, orgDirectoryEntries, type OrgSettings, type PendingAdminApproval } from "./perspicax-org-routes.ts";
 import { orgFullAccessAllowed, orgFullAccessGrantRefusal, orgFullAccessHolds, ORG_FULL_ACCESS_DISABLED } from "./org-full-access.ts";
 import { createInterimAttachRoutes, INTERIM_WINDOW_DAYS, interimWindowUntil, windowWithDays } from "./interim-attach-routes.ts";
 import { createLinkedSubjectsRoute, createOrgExportRoute } from "./org-export.ts";
@@ -2508,11 +2515,14 @@ type InternalCapability = {
   threadId: string;
   generation: string;
   depth: number;
-  kind: "agents" | "connectors" | "computer" | "browser" | "hooks" | "phone" | "perspicax" | "sandbox" | "desktop" | "workplace";
+  kind: "agents" | "connectors" | "computer" | "browser" | "hooks" | "phone" | "perspicax" | "sandbox" | "desktop" | "workplace" | "personal-mcp";
   /** Slice 5: the one Perspicax profile a "perspicax" capability relays for. */
   perspicaxProfile?: string;
   /** A "sandbox" capability: whose server environment it runs in. */
   sandboxPrincipalId?: string;
+  /** A "personal-mcp" capability: which of that person's own MCP servers
+   * (a command in their server environment) it relays to. */
+  personalMcpServer?: string;
   /** A "desktop" capability: whose own computer it reaches (desktop bridge). */
   desktopPrincipalId?: string;
   skillAuthoring: boolean;
@@ -4524,6 +4534,250 @@ ROUTES.push(createUserSandboxRoutes({
       if (workplace.decision.target === "user-sandbox" && workplace.decision.principal === person) return true;
     }
     return false;
+  },
+}));
+// ── a person's own connections (organization mode) ─────────────────────
+// Their own MCP servers and GitHub account (server/person-connections.ts),
+// encrypted per person with the vault key of mcp-oauth.enc, and their own
+// OAuth sign-ins (one manager per person, principals/<pid>/mcp-oauth.enc).
+// Nobody else's turn ever gets them. A command they add runs in their
+// server environment (server/sandbox-stdio-mcp.ts), never on this host.
+function vaultKeySource(): VaultKeySource {
+  if (mcpOAuthKey?.kind === "key") return mcpOAuthKey;
+  mcpOAuthKey = resolveVaultKey(DATA_DIR);
+  return mcpOAuthKey;
+}
+const personConnections = new PersonConnections(DATA_DIR, vaultKeySource);
+const personOAuthManagers = new Map<string, McpOAuthManager>();
+function personOAuth(principalId: string): McpOAuthManager {
+  let manager = personOAuthManagers.get(principalId);
+  if (!manager) {
+    manager = new McpOAuthManager({ vault: new McpOAuthVault(principalDir(DATA_DIR, principalId), vaultKeySource) });
+    personOAuthManagers.set(principalId, manager);
+  }
+  return manager;
+}
+/** A person's GitHub connection, or none (an unreadable store is none). */
+function personGithub(principalId: string | null | undefined) {
+  if (!principalId) return undefined;
+  try { return personConnections.github(principalId.trim().toLowerCase()); } catch { return undefined; }
+}
+/** The organization's GitHub OAuth App for the device flow (Settings >
+ * Organization, else SAGAX_GITHUB_CLIENT_ID). A client id is public. */
+function githubClientId(): string | undefined {
+  return cfg.organization?.githubClientId?.trim() || process.env.SAGAX_GITHUB_CLIENT_ID?.trim() || undefined;
+}
+/** Put a person's GitHub connection where gh and git read it in their
+ * server environment (or take it out). Best effort: a turn re-applies it. */
+async function syncGithubToSandbox(principalId: string, connection: { token: string; login: string } | null): Promise<boolean> {
+  if (!userSandbox) return false;
+  try {
+    const { argv, env } = githubSandboxArgv(connection);
+    const result = await userSandbox.exec(principalId, { argv, env, timeoutSec: 30, maxOutputBytes: 4096 });
+    return result.exitCode === 0;
+  } catch (error) {
+    console.warn(`[github] server environment not updated: ${error instanceof Error ? error.message : String(error)}`);
+    return false;
+  }
+}
+/** Once per turn: the turn's person's GitHub connection in their server
+ * environment (it may have been reset since they connected). */
+const githubSyncedGenerations = new Set<string>();
+async function syncGithubForTurn(principalId: string, generation: string): Promise<void> {
+  const key = `${principalId}\n${generation}`;
+  if (githubSyncedGenerations.has(key)) return;
+  githubSyncedGenerations.add(key);
+  if (githubSyncedGenerations.size > 2_000) githubSyncedGenerations.delete(githubSyncedGenerations.values().next().value!);
+  const connection = personGithub(principalId);
+  if (connection) await syncGithubToSandbox(principalId, connection);
+}
+const githubConnect = new GithubConnect({
+  clientId: githubClientId,
+  save: (principalId, connection) => personConnections.setGithub(principalId, connection),
+  onConnected: (principalId, connection) => { void syncGithubToSandbox(principalId, connection); },
+});
+/** The organization admin's marketplace list (absent: any marketplace). */
+function pluginMarketplacePolicy(): MarketplacePolicy | undefined {
+  const parsed = marketplacePolicySchema.safeParse(cfg.organization?.pluginMarketplaces);
+  return parsed.success ? parsed.data : undefined;
+}
+const botPlugins = new BotPlugins({
+  dataDir: DATA_DIR,
+  gitEnvironment: (actor) => githubGitEnvironment(personGithub(actor)?.token),
+  policy: pluginMarketplacePolicy,
+});
+const stdioRelay = new SandboxStdioRelay({
+  open: (principalId, spec) => {
+    if (!userSandbox) throw new StdioRelayError("This server has no server environments.", "unavailable");
+    return userSandbox.stdioStream(principalId, spec);
+  },
+});
+/** Names Sagax mounts itself: a personal server never takes one. */
+const PERSONAL_MCP_RESERVED_PREFIX = /^(?:sagax|perspicax|openmausbot|claude_ai|mcp)/;
+function personalRemoteSpec(server: Extract<PersonalMcpServer, { kind: "remote" }>): RemoteMcpSpec {
+  return { type: server.type, url: server.url, headers: {} };
+}
+async function personalServerListing(principalId: string) {
+  const github = personGithub(principalId);
+  const servers = personConnections.servers(principalId);
+  return personConnections.list(principalId).map((listing) => {
+    const server = servers[listing.name]!;
+    if (server.kind !== "remote") return { ...listing, auth: "none" as const, authState: userSandbox ? "ready" : "no_environment" };
+    if (server.auth === "github") return { ...listing, authState: github ? "connected" : "needs_github" };
+    if (server.auth === "token") return { ...listing, authState: server.token ? "connected" : "needs_token" };
+    if (server.auth === "none") return { ...listing, authState: "ready" };
+    const manager = personOAuth(principalId);
+    const status = manager.status(listing.name, personalRemoteSpec(server));
+    return {
+      ...listing,
+      authState: status?.auth === "connected" ? "connected" : status?.auth === "expired" ? "expired" : status?.auth === "error" ? "error" : "needs_sign_in",
+      ...(status?.authError ? { authError: status.authError } : {}),
+      ...(manager.pendingFor(listing.name) ? { authPending: true } : {}),
+      ...(status?.authClient === "needed" ? { authClient: "needed" } : {}),
+    };
+  });
+}
+const personalHostChecks = new Map<string, { at: number; refused: boolean }>();
+async function personalHostRefusalCached(url: string): Promise<boolean> {
+  const seen = personalHostChecks.get(url);
+  if (seen && Date.now() - seen.at < 5 * 60_000) return seen.refused;
+  const refused = Boolean(await personalMcpHostRefusal(url, { allowPrivate: personalMcpPrivateAllowed() }));
+  if (personalHostChecks.size > 500) personalHostChecks.clear();
+  personalHostChecks.set(url, { at: Date.now(), refused });
+  return refused;
+}
+/** A person's own command, relayed to their server environment for one turn. */
+function personalStdioIntegration(botId: string, threadId: string, generation: string, principalId: string, server: string) {
+  const token = mintInternalCapability({
+    botId, threadId, generation, depth: 0, kind: "personal-mcp", skillAuthoring: false, createdBots: 0, openedThreads: 0,
+    sandboxPrincipalId: principalId, personalMcpServer: server,
+  });
+  return {
+    command: process.execPath,
+    args: [SPAWNED_PROXIES.userSandbox],
+    env: { ...AGENTS_NODE_FLAG, SAGAX_SANDBOX_TOKEN: token, SAGAX_HARNESS_URL: `http://127.0.0.1:${PORT}`, SAGAX_TOOL_SERVER: PERSONAL_STDIO_TOOL_SERVER },
+  };
+}
+/** The turn's person's own MCP servers (organization mode): the speaker in
+ * a conversation, the bot's owner for a routine (the workplace decision's
+ * person). A server that still needs a sign-in, a token or GitHub is not
+ * mounted; a name Sagax or the server already uses is skipped. */
+async function mountPersonalMcp(
+  integrations: NonNullable<SendTurnInput["integrations"]>,
+  input: { botId: string; threadId: string; generation: string; customMcp: boolean; principal: string | null },
+): Promise<void> {
+  if (IDENTITY.kind !== "perspicax" || !input.customMcp || !input.principal) return;
+  const principalId = input.principal.trim().toLowerCase();
+  let servers: Record<string, PersonalMcpServer>;
+  try { servers = personConnections.servers(principalId); } catch { return; }
+  const github = personGithub(principalId);
+  for (const [name, server] of Object.entries(servers)) {
+    if (!server.enabled || Object.hasOwn(integrations.custom ?? {}, name)) continue;
+    if (server.kind === "stdio") {
+      if (!userSandbox) continue;
+      integrations.custom = { ...integrations.custom, [name]: personalStdioIntegration(input.botId, input.threadId, input.generation, principalId, name) };
+      continue;
+    }
+    let headers = personalAuthHeaders(server, github);
+    if (headers === null) continue;
+    // Checked again at each mount (cached): a name that now resolves to a
+    // private address is not handed to the engine on this host.
+    if (await personalHostRefusalCached(server.url)) continue;
+    if (server.auth === "oauth") {
+      const manager = personOAuth(principalId);
+      const spec = { [name]: personalRemoteSpec(server) };
+      await manager.refreshDue(spec).catch(() => undefined);
+      const signed = manager.withAuthHeaders(spec)[name]!;
+      if (!("url" in signed) || !Object.keys(signed.headers).length) continue;
+      headers = signed.headers;
+    }
+    integrations.custom = { ...integrations.custom, [name]: { type: server.type, url: server.url, headers } };
+  }
+}
+ROUTES.push(createPersonConnectionRoutes({
+  organization: () => IDENTITY.kind === "perspicax",
+  sandboxConfigured: () => Boolean(userSandbox),
+  github: {
+    status: (principalId) => githubConnect.status(principalId, personGithub(principalId)),
+    startDevice: (principalId) => githubConnect.startDeviceFlow(principalId),
+    connectToken: async (principalId, token) => {
+      await githubConnect.connectWithToken(principalId, token);
+      return githubConnect.status(principalId, personGithub(principalId));
+    },
+    disconnect: async (principalId) => {
+      githubConnect.disconnect(principalId);
+      await syncGithubToSandbox(principalId, null);
+    },
+  },
+  servers: {
+    list: personalServerListing,
+    add: async (principalId, body) => {
+      const { name, server } = parsePersonalMcpInput(body, Date.now(), personalMcpPrivateAllowed());
+      if (server.kind === "remote") {
+        const hostRefusal = await personalMcpHostRefusal(server.url, { allowPrivate: personalMcpPrivateAllowed() });
+        if (hostRefusal) throw new PersonConnectionsError(hostRefusal, "private_address");
+      }
+      if (PERSONAL_MCP_RESERVED_PREFIX.test(name)) throw new PersonConnectionsError("That name is reserved by Sagax. Choose another one.", "invalid_name");
+      if (server.kind === "stdio" && !userSandbox) {
+        throw new PersonConnectionsError("This server has no server environments, so a command cannot run for you here. Add a remote server (an https address) instead.", "no_environment", 409);
+      }
+      personConnections.add(principalId, name, server);
+      if (server.kind === "remote" && server.auth === "oauth") {
+        const manager = personOAuth(principalId);
+        await manager.forget(name).catch(() => undefined);
+        await manager.probe(name, personalRemoteSpec(server), AbortSignal.timeout(10_000)).catch(() => undefined);
+      }
+    },
+    setEnabled: async (principalId, name, enabled) => {
+      personConnections.setEnabled(principalId, name, enabled);
+      if (!enabled) stdioRelay.closePerson(principalId, name);
+    },
+    remove: async (principalId, name) => {
+      if (!personConnections.remove(principalId, name)) throw new PersonConnectionsError("No server with that name.", "not_found", 404);
+      stdioRelay.closePerson(principalId, name);
+      await personOAuth(principalId).forget(name).catch(() => undefined);
+    },
+    oauthStart: async (principalId, name, req, body, auth) => {
+      const server = personConnections.servers(principalId)[name];
+      if (!server) return { status: 404, body: { error: "No server with that name.", code: "not_found" } };
+      if (server.kind !== "remote" || server.auth !== "oauth") return { status: 400, body: { error: "This server does not sign in with OAuth.", code: "not_oauth" } };
+      // The callback comes back to this server's public address (the same
+      // /api/mcp-oauth/callback); the state names this person's sign-in.
+      return startMcpSignIn(req, auth, name, personalRemoteSpec(server), body, personOAuth(principalId));
+    },
+    oauthDisconnect: async (principalId, name) => {
+      const server = personConnections.servers(principalId)[name];
+      if (server?.kind === "remote") await personOAuth(principalId).disconnect(name, personalRemoteSpec(server)).catch(() => undefined);
+    },
+  },
+}));
+// ── a bot's Claude Code plugins (server/bot-plugins.ts) ─────────────────
+function botLoadsPlugins(bot: { modelSelection: { instanceId: string } }): boolean {
+  return registry.get(bot.modelSelection.instanceId)?.driverKind === "claudeAgent";
+}
+/** The bot's enabled plugins for a Claude turn (`--plugin-dir`). */
+function pluginDirsFor(bot: { id: string }, instance: { driverKind: string }): { pluginDirs?: string[] } {
+  if (instance.driverKind !== "claudeAgent") return {};
+  const dirs = botPlugins.pluginDirs(bot.id);
+  return dirs.length ? { pluginDirs: dirs } : {};
+}
+ROUTES.push(createBotPluginRoutes<BotRecord>({
+  plugins: botPlugins,
+  bot: (id) => store.bot(id) ?? undefined,
+  mayRead: (auth, bot) => viewerBotLevel(auth, bot) !== null || orgAdminCaller(auth),
+  // The owner, or a person who manages the bot (#65 rights), or an
+  // organization admin (who could already change skills). A solo server:
+  // the owner at this computer or an admin session.
+  mayChange: (auth, bot) => {
+    if (IDENTITY.kind !== "perspicax") return auth.kind !== "session" || auth.scopes.includes("admin");
+    const level = viewerBotLevel(auth, bot);
+    return level === "owner" || level === "manage" || orgAdminCaller(auth);
+  },
+  actor: (auth) => sessionPrincipal(auth) ?? undefined,
+  policy: pluginMarketplacePolicy,
+  engineLoadsPlugins: botLoadsPlugins,
+  changed: (bot, action, detail, auth) => {
+    orgAudit({ category: "bot", action, target: auditBotTarget(bot.id), changed: ["plugins"], after: detail, actor: orgAuditActor(auth) });
   },
 }));
 // Slice 4: the Perspicax team names (who is in a team lives on each person).
@@ -11606,6 +11860,10 @@ async function startTurn(
         customMcp: instance.adapter.capabilities.customMcp === true,
         decision: turnPlace, staging: placedText.staging, auto: turnAuto,
       });
+      await mountPersonalMcp(integrations, {
+        botId: bot.id, threadId, generation: dispatchClaimId,
+        customMcp: instance.adapter.capabilities.customMcp === true, principal: turnPlace.principal,
+      });
       // A place the organisation disallows, or a Cloud home never offers, is
       // refused before anything is prepared; Auto below simply skips them.
       const wantedKind = teamComputer ? "box" : wants === "local" ? "thisComputer" : wants === "vm" ? "localVm"
@@ -12288,6 +12546,7 @@ async function startTurn(
         ...(() => { const networkProxy = turnNetworkProxy(threadId, bot.id, turnPlace); return networkProxy ? { networkProxy } : {}; })(),
         mcpFromUserConfig: claudeUserMcpEnabled(cfg) && !managedPolicy.restrictsMcp(),
         claudeAiConnectors: claudeAiConnectorsFor(bot, instance, speaker, turnAccess?.via),
+        ...pluginDirsFor(bot, instance),
         cwd,
       }), () => !directTurnClaimExists(bot.id, dispatchClaimId, threadId), async () => {
         await instance.adapter.interruptTurn(threadId).catch(() => {});
@@ -14412,6 +14671,11 @@ async function runGroupMemberTurn(
     customMcp: instance.adapter.capabilities.customMcp === true,
     decision: roomPlace, staging: roomPlaced.staging,
   });
+  await mountPersonalMcp(integrations, {
+    botId: readyBot.id, threadId, generation: internalGeneration,
+    customMcp: instance.adapter.capabilities.customMcp === true, principal: roomPlace.principal,
+  });
+  if (!roomSetupIsCurrent()) return false;
   if (!roomTeamComputer && roomPlan.computer === "local") {
     integrations.localComputer = await mountHostComputer(
       resourceOwner, readyBot.id, instance.adapter.capabilities.localComputerMcp === true);
@@ -14773,6 +15037,7 @@ async function runGroupMemberTurn(
         ...(() => { const networkProxy = turnNetworkProxy(threadId, readyBot.id, roomPlace); return networkProxy ? { networkProxy } : {}; })(),
         mcpFromUserConfig: claudeUserMcpEnabled(cfg) && !managedPolicy.restrictsMcp(),
         claudeAiConnectors: claudeAiConnectorsFor(readyBot, instance, roomSpeaker, roomTurnAccess?.via),
+        ...pluginDirsFor(readyBot, instance),
         ...(instance.instanceId === readyBot.modelSelection.instanceId
           ? memberTurnSelection(readyBot.modelSelection)
           : { model: instance.models.default }),
@@ -17027,8 +17292,17 @@ function mcpServerBody(body: unknown): Record<string, unknown> {
 /** Configured MCP servers that may reach this bot's engine. While enrolled,
  * the organisation's allow-list filters them; config.json is never changed. */
 function engineMcpServers(bot: BotRecord) {
-  return mcpOAuth.withAuthHeaders(managedPolicy.filterMcp(customMcpServers(cfg, bot.mcpServers)));
+  return mcpOAuth.withAuthHeaders(managedPolicy.filterMcp(withoutHostCommands(customMcpServers(cfg, bot.mcpServers))));
 }
+/** Organization server: a server-wide MCP server that is a command would
+ * run on this host, where no person's tools run (withholdHostTools). It is
+ * kept in config.json but never mounted; a person adds a command as their
+ * own server instead (it runs in their server environment). */
+function withoutHostCommands<T extends Record<string, McpServerSpec>>(servers: T): T {
+  if (IDENTITY.kind !== "perspicax") return servers;
+  return Object.fromEntries(Object.entries(servers).filter(([, server]) => "url" in server)) as T;
+}
+const ORG_HOST_COMMAND_REFUSAL = "On an organization server a command would run on the Sagax server itself. Add it in Settings > Mes connexions instead: it then runs in each person's own server environment.";
 
 /** Refresh the OAuth tokens a turn is about to hand its engine. A failure
  * only marks that server expired; the turn still starts without it signed in. */
@@ -17083,7 +17357,7 @@ function phoneCallbackOrigin(value: string): string | null {
 
 /** Start an MCP server's sign-in for this request: the desktop's browser
  * flow, or a phone's sheet when the body names an app return address. */
-async function startMcpSignIn(req: IncomingMessage, auth: RequestAuth, name: string, server: RemoteMcpSpec, body: unknown):
+async function startMcpSignIn(req: IncomingMessage, auth: RequestAuth, name: string, server: RemoteMcpSpec, body: unknown, manager: McpOAuthManager = mcpOAuth):
   Promise<{ status: number; body: Record<string, unknown> }> {
   const input = mcpOAuthStartSchema.safeParse(body ?? {});
   if (!input.success) return { status: 400, body: { error: input.error.issues[0]?.message ?? "Invalid sign-in request." } };
@@ -17101,7 +17375,7 @@ async function startMcpSignIn(req: IncomingMessage, auth: RequestAuth, name: str
     return { status: 409, body: { error: "Send the address the phone reaches this computer on (callbackOrigin).", code: "callback_unreachable" } };
   }
   try {
-    const started = await mcpOAuth.start(name, server, { redirectUri, ...client, ...(returnTo ? { returnTo } : {}) }, AbortSignal.timeout(15_000));
+    const started = await manager.start(name, server, { redirectUri, ...client, ...(returnTo ? { returnTo } : {}) }, AbortSignal.timeout(15_000));
     return { status: 200, body: { ...started, redirectUri } };
   } catch (error) {
     if (error instanceof McpOAuthError) {
@@ -18272,10 +18546,12 @@ function orgAdminCaller(auth: RequestAuth): boolean {
 function orgKeyConfigured(): boolean {
   return Object.entries(instanceConfigs(cfg)).some(([instanceId, entry]) => driverKeyBacked(cfg, entry.driver, instanceId));
 }
-function orgSettings(): { orgKeyConfigured: boolean; interimAttach?: { until: number | null; people: number }; allowFullAccess: boolean } {
+function orgSettings(): OrgSettings {
   return {
     orgKeyConfigured: orgKeyConfigured(),
     allowFullAccess: orgFullAccessPolicy(),
+    pluginMarketplaces: pluginMarketplacePolicy() ?? { mode: "any" },
+    github: { clientId: githubClientId() ?? null, fromEnvironment: !cfg.organization?.githubClientId && Boolean(process.env.SAGAX_GITHUB_CLIENT_ID?.trim()) },
     ...(IDENTITY.kind === "perspicax"
       ? { interimAttach: { until: interimWindowUntil(cfg.organization?.interimAttach, Date.now()), people: principals.listInterim().length } }
       : {}),
@@ -19444,6 +19720,32 @@ if (IDENTITY.kind === "perspicax") {
         actor: orgAuditActor(auth),
       });
     },
+    // Where bots' plugins may come from (server/bot-plugins.ts): any
+    // marketplace, or the admin's list of owner/repo, owner/* or URLs.
+    savePluginMarketplaces: (raw, auth) => {
+      const parsed = marketplacePolicySchema.safeParse(raw);
+      if (!parsed.success) throw new Error("Send { mode: \"any\" } or { mode: \"list\", allow: [\"owner/repo\", \"owner/*\", \"https://...\"] }.");
+      const next: MarketplacePolicy = parsed.data.mode === "any" ? { mode: "any" } : { mode: "list", allow: [...new Set(parsed.data.allow.map(normalizePolicyEntry))] };
+      const before = pluginMarketplacePolicy() ?? { mode: "any" };
+      saveConfig({ organization: { ...cfg.organization, pluginMarketplaces: next } });
+      cfg.organization = { ...cfg.organization, pluginMarketplaces: next };
+      orgAudit({
+        category: "org", action: "org.settings", target: { kind: "organization" }, changed: ["pluginMarketplaces"],
+        before: { pluginMarketplaces: before }, after: { pluginMarketplaces: next }, actor: orgAuditActor(auth),
+      });
+    },
+    saveGithubClientId: (clientId, auth) => {
+      const before = cfg.organization?.githubClientId ?? null;
+      const organization = { ...cfg.organization };
+      if (clientId) organization.githubClientId = clientId;
+      else delete organization.githubClientId;
+      saveConfig({ organization });
+      cfg.organization = organization;
+      orgAudit({
+        category: "org", action: "org.settings", target: { kind: "organization" }, changed: ["githubClientId"],
+        before: { githubClientId: before }, after: { githubClientId: clientId }, actor: orgAuditActor(auth),
+      });
+    },
     pendingAdminApprovals,
     teams: orgDirectoryTeams,
     viewer: (auth) => {
@@ -19795,6 +20097,7 @@ function harnessCommandSource(bot: BotRecord, threadId: string | undefined, opti
         ...(cwd ? { cwd } : {}),
         ...(withholdHostToolsFor(instance) ? { withholdHostTools: true } : {}),
         mcpFromUserConfig: claudeUserMcpEnabled(cfg) && !managedPolicy.restrictsMcp(),
+        ...pluginDirsFor(bot, instance),
       }),
       ...account,
     },
@@ -20190,7 +20493,11 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     // The browser lands here after an MCP server's sign-in. Public: the
     // single-use `state` bound to the pending flow is the authorization.
     if (method === "GET" && path === "/api/mcp-oauth/callback") {
-      const result = await mcpOAuth.callback(url.searchParams, AbortSignal.timeout(15_000));
+      // A person's own server's sign-in (organization mode) is that person's
+      // manager's: the state alone says whose; nobody else's can redeem it.
+      const state = url.searchParams.get("state") ?? "";
+      const owner = [...personOAuthManagers.values()].find((manager) => manager.ownsState(state)) ?? mcpOAuth;
+      const result = await owner.callback(url.searchParams, AbortSignal.timeout(15_000));
       // A phone's sign-in sheet ends on its app address (phoneOAuthReturns).
       const phoneReturn = phoneReturnLocation(result);
       if (phoneReturn) {
@@ -20852,6 +21159,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         ? "desktop"
         : path === "/api/internal/workplace/mcp"
         ? "workplace"
+        : path === "/api/internal/personal-mcp"
+        ? "personal-mcp"
         : path === "/api/internal/perspicax/mcp"
         ? "perspicax"
         : path.startsWith("/api/internal/connectors/")
@@ -21060,6 +21369,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         if (!ownerId) return json(res, 403, { error: "this capability has no server environment" });
         try {
           if (rpcMethod === "tools/call") await stagePendingAttachments(internalCapability.threadId, internalCapability.generation);
+          // Their GitHub connection, where gh and git read it (once per turn).
+          if (rpcMethod === "tools/call") await syncGithubForTurn(ownerId, internalCapability.generation);
           // The bot's own "no computer" setting holds on the environment's desktop too.
           const toolName = (frame?.params as { name?: unknown } | undefined)?.name;
           if (rpcMethod === "tools/call" && (toolName === "computer_use" || toolName === "computer_list_tools") && store.bot(internalCapability.botId)?.computer === "off") {
@@ -21082,6 +21393,40 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           if (error instanceof UserSandboxUnavailable) return json(res, 200, { result: { content: [{ type: "text", text: error.message }], isError: true } });
           const status = (error as { status?: number }).status;
           return json(res, status === 400 || status === 404 ? status : 502, { error: error instanceof Error ? error.message : "the server environment failed" });
+        }
+      }
+      if (method === "POST" && path === "/api/internal/personal-mcp") {
+        // A person's own MCP server command in their server environment
+        // (server/sandbox-stdio-mcp.ts). The bearer names the person and the
+        // server (fixed at mount); the frame goes through as it is.
+        if (IDENTITY.kind !== "perspicax" || !userSandbox) return json(res, 404, { error: "unknown internal endpoint" });
+        const body = await readInternalBody() as { message?: { id?: unknown; method?: unknown } } | null;
+        const person = internalCapability.sandboxPrincipalId;
+        const name = internalCapability.personalMcpServer;
+        if (!person || !name) return json(res, 403, { error: "this capability names no MCP server" });
+        const frame = body?.message;
+        const answerError = (message: string) => {
+          if (!frame || frame.id === undefined || frame.id === null || typeof frame.method !== "string") return { message: null };
+          return frame.method === "tools/call"
+            ? { message: { jsonrpc: "2.0", id: frame.id, result: { content: [{ type: "text", text: message }], isError: true } } }
+            : { message: { jsonrpc: "2.0", id: frame.id, error: { code: -32603, message } } };
+        };
+        let server: PersonalMcpServer | undefined;
+        try { server = personConnections.servers(person)[name]; } catch { server = undefined; }
+        if (!server || server.kind !== "stdio" || !server.enabled) return json(res, 200, answerError("This MCP server was removed or turned off in Settings > Mes connexions."));
+        try {
+          if (frame?.method === "tools/call") await syncGithubForTurn(person, internalCapability.generation);
+          const answer = await stdioRelay.relay({
+            principalId: person, botId: internalCapability.botId, threadId: internalCapability.threadId, server: name,
+            spec: { argv: [server.command, ...server.args], env: server.env }, frame,
+          });
+          requireActiveInternalCapability();
+          return json(res, 200, { message: answer });
+        } catch (error) {
+          if (error instanceof StdioRelayError || error instanceof UserSandboxUnavailable) return json(res, 200, answerError(error.message));
+          const status = (error as { status?: number }).status;
+          if (status === 409 || status === 410) return json(res, status, { error: error instanceof Error ? error.message : "the turn ended" });
+          return json(res, 200, answerError("Your MCP server could not be reached in your server environment."));
         }
       }
       if (method === "POST" && path === "/api/internal/desktop/mcp") {
@@ -26400,6 +26745,24 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     // ── bot skills: imported Agent Skills (SKILL.md) ────────────────────
     // Import lands DISABLED; the UI shows SKILL.md + scan warnings and a
     // person enables after reading. See server/skills.ts for the policy.
+    // Organization server: a member reaches these (CLIENT_ALLOW, orgDirectory)
+    // for a bot they may use (reads) or own or manage (changes, #65 rights).
+    const skillBotRefusal = (botId: string, change: boolean): { status: number; body: Record<string, unknown> } | null => {
+      const target = store.bot(botId);
+      if (!target) return { status: 404, body: { error: "no such bot" } };
+      if (IDENTITY.kind !== "perspicax") return null;
+      const level = viewerBotLevel(auth, target);
+      if (level === null && !orgAdminCaller(auth)) return { status: 404, body: { error: "no such bot" } };
+      if (change && level !== "owner" && level !== "manage" && !orgAdminCaller(auth)) return { status: 403, body: { error: "Only the bot's owner, or someone who manages it, can change its skills.", code: "skills_owner_only" } };
+      return null;
+    };
+    {
+      const skillRoute = /^\/api\/bots\/([\w-]+)\/(?:skill-template|skills(?:\/[a-z0-9-]+)?)$/.exec(path);
+      if (skillRoute) {
+        const refused = skillBotRefusal(skillRoute[1]!, method !== "GET");
+        if (refused) return json(res, refused.status, refused.body);
+      }
+    }
     m = path.match(/^\/api\/bots\/([\w-]+)\/skill-template$/);
     if (m && method === "POST") {
       if (!store.bot(m[1])) return json(res, 404, { error: "no such bot" });
@@ -26428,7 +26791,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (!store.bot(m[1])) return json(res, 404, { error: "no such bot" });
       const parsed = z.object({ source: z.string().min(1).max(2000) }).safeParse(await readBody(req));
       if (!parsed.success) return json(res, 400, { error: "source must be a GitHub or skills.sh URL, or owner/repo" });
-      const fetched = await fetchSkillFromSource(parsed.data.source);
+      // A private repository reads with the person's own GitHub connection.
+      const fetched = await fetchSkillFromSource(parsed.data.source, githubAuthorizedFetch(personGithub(sessionPrincipal(auth))?.token));
       if ("error" in fetched) return json(res, 422, { error: fetched.error });
       const results = fetched.skills.map((skill) => installSkill(m![1]!, skill.source, skill.files));
       const installed = results.filter((entry): entry is Exclude<typeof entry, { error: string }> => !("error" in entry));
@@ -28734,6 +29098,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         }
         const parsed = parseMcpServerMutation(name, mcpServerBody(body));
         if (!parsed.ok) return json(res, 400, { error: parsed.error });
+        if (IDENTITY.kind === "perspicax" && !isRemoteMcpServer(parsed.server)) return json(res, 403, { error: ORG_HOST_COMMAND_REFUSAL, code: "org_host_command" });
         const refusal = mcpPolicyRefusal(name, parsed.server);
         if (refusal) return json(res, 403, { error: refusal, code: "managed_policy" });
         persistMcpServers({ ...current, [name]: parsed.server });
@@ -28770,6 +29135,9 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         }
         if (Object.keys(current).length + names.length > MAX_MCP_SERVERS) {
           return json(res, 400, { error: `You can add at most ${MAX_MCP_SERVERS} MCP servers.` });
+        }
+        if (IDENTITY.kind === "perspicax" && names.some((name) => !isRemoteMcpServer(parsed.servers[name] as McpServerSpec))) {
+          return json(res, 403, { error: ORG_HOST_COMMAND_REFUSAL, code: "org_host_command" });
         }
         const refused = names.filter(name => mcpPolicyRefusal(name, parsed.servers[name] as object));
         if (refused.length) return json(res, 403, { error: `${mcpPolicyRefusal(refused[0]!, parsed.servers[refused[0]!] as object)} Not approved: ${refused.join(", ")}.`, code: "managed_policy" });
@@ -28815,6 +29183,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
 
         const parsed = parseMcpServerMutation(name, body, existing.server);
         if (!parsed.ok) return json(res, 400, { error: parsed.error });
+        if (IDENTITY.kind === "perspicax" && !isRemoteMcpServer(parsed.server)) return json(res, 403, { error: ORG_HOST_COMMAND_REFUSAL, code: "org_host_command" });
         const refusal = mcpPolicyRefusal(name, parsed.server);
         if (refusal) return json(res, 403, { error: refusal, code: "managed_policy" });
         persistMcpServers({ ...current, [name]: parsed.server });

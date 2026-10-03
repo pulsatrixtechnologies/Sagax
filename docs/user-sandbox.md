@@ -212,6 +212,30 @@ Shell, files and pages then go through `sagax-environment`.
 `scripts/smoke-host-tools.ts` starts the real Claude Code CLI with the
 driver's flags (no model request) and checks its tool list has no `Bash`.
 
+## A person's own MCP servers and GitHub account
+
+Settings > Mes connexions (`server/routes/person-connections.ts`) lets each
+person add MCP servers of their own and connect their GitHub account. A
+command they add runs here, in their own environment, never on the Sagax
+host: the engine starts Sagax's stdio proxy (tool server `sagax-stdio`)
+holding a turn capability that names the person and the server; the Sagax
+server keeps one process per person, server and thread through the
+provisioner's signed stdio stream (`/v1/sandboxes/<key>/stdio`, upgrade
+`sagax-stdio`; the command and its variables ride the first line, whose
+SHA-256 the signed path names) and relays the JSON-RPC frames
+(`server/sandbox-stdio-mcp.ts`). At most 8 such processes per person run at
+once; an idle one stops after 10 minutes.
+
+Their GitHub connection (`server/github-connect.ts`) is written into
+`/workspace/.config/gh/hosts.yml` and `/workspace/.git-credentials` (0600,
+`credential.https://github.com.helper store`) when they connect and again
+at the first tool call of each turn, so `gh` and `git` in the environment
+work as them. Disconnecting removes both. The image carries `gh`, `node` and
+`npm` for this (a change needs the sandbox image rebuilt). Public internet
+egress stays open, so github.com, api.github.com, codeload.github.com,
+objects.githubusercontent.com, raw.githubusercontent.com, ghcr.io and
+api.githubcopilot.com are reachable; only private destinations are dropped.
+
 ## Resource defaults (8 GiB host)
 
 | Variable | Default | Meaning |

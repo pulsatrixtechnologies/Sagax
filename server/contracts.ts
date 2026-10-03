@@ -285,6 +285,10 @@ export interface SendTurnInput {
    * Claude driver then drops --strict-mcp-config only; other drivers ignore
    * it. Their tools ride the normal permission flow, never pre-allowed. */
   claudeAiConnectors?: boolean;
+  /** Claude Code plugins installed on the bot (server/bot-plugins.ts): one
+   * folder each, already stripped of hooks, MCP and LSP servers. The Claude
+   * driver loads each with --plugin-dir; other drivers ignore them. */
+  pluginDirs?: string[];
   /** The person typed one of the engine's own slash commands
    * (shared/harness-commands.ts): `text` is that command line, verbatim.
    * Codex hands a skill's file with the text (`path`); Claude reads the
@@ -309,6 +313,9 @@ export interface HarnessCommandScope {
   /** The turn keeps the claude.ai connectors of the account it runs on
    * (server/harness-connectors.ts), so their MCP prompts are listed. */
   claudeAiConnectors?: boolean;
+  /** The bot's Claude Code plugins (server/bot-plugins.ts): their commands
+   * and skills are listed. */
+  pluginDirs?: string[];
 }
 
 /** An MCP server this machine starts and talks to over stdio. */

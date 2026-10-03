@@ -20,5 +20,6 @@ export function inProcessSandboxdClient(service: SandboxService, maxRunning = 3)
     remove: (key, options) => wire(() => service.remove(key, options)),
     exec: (key, input) => wire(() => service.exec(key, input)),
     desktopStream: (key, options) => wire(() => service.desktopStream(key, options)),
+    stdioStream: (key, spec) => wire(() => service.stdioStream(key, spec)),
   };
 }
