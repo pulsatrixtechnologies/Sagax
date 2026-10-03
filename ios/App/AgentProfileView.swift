@@ -251,10 +251,14 @@ struct AgentProfileView: View {
                 }
 
                 Section("Identity") {
-                    NavigationLink {
-                        BotOverviewView(bot: current)
-                    } label: {
-                        Label("What this bot does", systemImage: "list.bullet.rectangle")
+                    // `GET /api/bots/:id/overview` is admin only for a client
+                    // session (BA1): no link that can only fail.
+                    if session.surfaceGate.allows(.botOverview) {
+                        NavigationLink {
+                            BotOverviewView(bot: current)
+                        } label: {
+                            Label("What this bot does", systemImage: "list.bullet.rectangle")
+                        }
                     }
                     TextField("Name", text: $name)
                         .textInputAutocapitalization(.words)
@@ -266,44 +270,50 @@ struct AgentProfileView: View {
                 .listRowBackground(Theme.parity(Color(uiColor: .secondarySystemGroupedBackground), Theme.card))
 
                 Section {
-                    Picker("Voice engine", selection: $engine) {
-                        Text("ElevenLabs").tag(VoiceProvider.elevenlabs)
-                        Text("Fish Audio").tag(VoiceProvider.fish)
-                        Text("Built-in Mac voices")
-                            .tag(VoiceProvider.system)
-                            .disabled(!hostIsMac)
-                        Text("Chatterbox (local)").tag(VoiceProvider.chatterbox)
-                    }
-                    .disabled(switchingEngine)
-
-                    if usesChatterbox {
-                        TextField(
-                            "Chatterbox server address",
-                            text: $chatterboxURL,
-                            prompt: Text("http://127.0.0.1:4123")
-                        )
-                        .keyboardType(.URL)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                        TextField(
-                            "Chatterbox model",
-                            text: $chatterboxModel,
-                            prompt: Text("chatterbox-turbo")
-                        )
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                        Button {
-                            Task { await saveChatterboxServer() }
-                        } label: {
-                            HStack {
-                                Text("Save server")
-                                if savingServer { Spacer(); ProgressView() }
-                            }
+                    // The engine and the Chatterbox server are workspace
+                    // settings written with `PUT /api/config`, which every
+                    // sidecar refuses and a client session may not use
+                    // (BA12). Hidden until the pairing may write them.
+                    if canSetVoiceEngine {
+                        Picker("Voice engine", selection: $engine) {
+                            Text("ElevenLabs").tag(VoiceProvider.elevenlabs)
+                            Text("Fish Audio").tag(VoiceProvider.fish)
+                            Text("Built-in Mac voices")
+                                .tag(VoiceProvider.system)
+                                .disabled(!hostIsMac)
+                            Text("Chatterbox (local)").tag(VoiceProvider.chatterbox)
                         }
-                        .disabled(savingServer || chatterboxURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                        if let serverProblem {
-                            Label(serverProblem, systemImage: "exclamationmark.triangle")
-                                .foregroundStyle(Theme.parity(Color.orange, Theme.warning))
+                        .disabled(switchingEngine)
+
+                        if usesChatterbox {
+                            TextField(
+                                "Chatterbox server address",
+                                text: $chatterboxURL,
+                                prompt: Text("http://127.0.0.1:4123")
+                            )
+                            .keyboardType(.URL)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                            TextField(
+                                "Chatterbox model",
+                                text: $chatterboxModel,
+                                prompt: Text("chatterbox-turbo")
+                            )
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                            Button {
+                                Task { await saveChatterboxServer() }
+                            } label: {
+                                HStack {
+                                    Text("Save server")
+                                    if savingServer { Spacer(); ProgressView() }
+                                }
+                            }
+                            .disabled(savingServer || chatterboxURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                            if let serverProblem {
+                                Label(serverProblem, systemImage: "exclamationmark.triangle")
+                                    .foregroundStyle(Theme.parity(Color.orange, Theme.warning))
+                            }
                         }
                     }
 
@@ -357,9 +367,17 @@ struct AgentProfileView: View {
                         // `server/tts/index.ts` is reporting that this
                         // computer has no built-in voices to speak with.
                         if usesSystemVoices {
-                            Text("Built-in Mac voices need no key, and this computer has none available. Switch the voice engine above to ElevenLabs to keep using voice.")
+                            if canSetVoiceEngine {
+                                Text("Built-in Mac voices need no key, and this computer has none available. Switch the voice engine above to ElevenLabs to keep using voice.")
+                            } else {
+                                Text("Built-in Mac voices need no key, and this computer has none available. Switch the voice engine to ElevenLabs in Sagax on your computer to keep using voice.")
+                            }
                         } else if usesChatterbox {
-                            Text("Any OpenAI-compatible server running Chatterbox works, no key needed. Save its address and model id above.")
+                            if canSetVoiceEngine {
+                                Text("Any OpenAI-compatible server running Chatterbox works, no key needed. Save its address and model id above.")
+                            } else {
+                                Text("Any OpenAI-compatible server running Chatterbox works, no key needed. Set its address and model id in Sagax on your computer.")
+                            }
                         } else if usesFishAudio {
                             Text("Add the shared Fish Audio key in Sagax on your computer. The key is never returned to iOS.")
                         } else {
@@ -380,6 +398,9 @@ struct AgentProfileView: View {
                     }
                 }
                 .listRowBackground(Theme.parity(Color(uiColor: .secondarySystemGroupedBackground), Theme.card))
+
+                // Usage, voice notes, Primary Bot (WP7: BP14, BA11, SB28)
+                BotPanelAdvancedSections(bot: current)
 
                 Section {
                     Button("Save profile changes") { Task { await save() } }
@@ -427,8 +448,11 @@ struct AgentProfileView: View {
     /// secret, so it rides the ordinary config write; the voice list reloads
     /// because every engine offers different voices. A failed switch snaps
     /// the picker back to whatever the server still reports.
+    /// Whether this pairing may switch the workspace voice engine.
+    private var canSetVoiceEngine: Bool { session.surfaceGate.allows(.voiceEngineSettings) }
+
     private func switchEngine(to selected: VoiceProvider) async {
-        guard selected != (config?.voiceProvider ?? .elevenlabs) else { return }
+        guard canSetVoiceEngine, selected != (config?.voiceProvider ?? .elevenlabs) else { return }
         switchingEngine = true
         defer { switchingEngine = false }
         if let status = await session.setVoiceProvider(selected) {
@@ -452,6 +476,7 @@ struct AgentProfileView: View {
     }
 
     private func saveChatterboxServer() async {
+        guard canSetVoiceEngine else { return }
         let address = chatterboxURL.trimmingCharacters(in: .whitespacesAndNewlines)
         guard address.hasPrefix("http://") || address.hasPrefix("https://") else {
             serverProblem = String(localized: "The server address must start with http:// or https://.")

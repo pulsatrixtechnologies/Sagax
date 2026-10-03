@@ -25,7 +25,7 @@ public enum Walkie {
 
     private static func spoken(_ message: Message) -> String? {
         switch message.kind {
-        case .text, .unknown:
+        case .text, .unknown, .connector, .access, .goalRun:
             let text = message.text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
             return text.isEmpty ? nil : text
         case .options:

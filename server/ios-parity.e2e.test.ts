@@ -118,4 +118,32 @@ describe("iOS parity routes on a personal server", () => {
     expect((await api("PATCH", `/api/groups/${group.id}`, { pinned: false }, 200, token)).group.pinned).toBeUndefined();
     await api("PATCH", `/api/groups/${group.id}`, { cwd: "/" }, 403, token);
   });
+
+  // iOS feature parity S2 and the Overview gate: a client session reaches
+  // these routes, and each handler lets through only the bot's owner or this
+  // computer's own person. A chat-only pairing (nobody behind it) is neither.
+  it("holds the owner routes of a client session to the owner", async () => {
+    const { bot } = await api("POST", "/api/bots", { name: "Owner Scout" }, 201);
+    const chatOnly = await api("POST", "/api/auth/pair", { code: (await api("POST", "/api/auth/pairing", { label: "Chat-only phone", scopes: ["client"] })).code });
+    const admin = await api("POST", "/api/auth/pair", { code: (await api("POST", "/api/auth/pairing", { label: "Admin phone", scopes: ["admin", "client"] })).code });
+
+    expect((await api("GET", `/api/bots/${bot.id}/overview`, undefined, 403, chatOnly.token)).code).toBe("not_bot_owner");
+    expect(await api("GET", `/api/bots/${bot.id}/overview`, undefined, 200, admin.token)).toMatchObject({ does: expect.anything() });
+    await api("GET", `/api/bots/${bot.id}/overview`);
+
+    await api("GET", `/api/bots/${bot.id}/command-allowlist`, undefined, 403, chatOnly.token);
+    await api("DELETE", `/api/bots/${bot.id}/command-allowlist/rule-1`, undefined, 403, chatOnly.token);
+    await api("POST", `/api/bots/${bot.id}/command-allowlist`, { command: "ls" }, 403, chatOnly.token);
+    expect(await api("GET", `/api/bots/${bot.id}/command-allowlist`, undefined, 200, admin.token)).toMatchObject({ rules: expect.any(Array) });
+
+    const card = await api("POST", `/api/bots/${bot.id}/connector-cards/msg-1/authorize`, { threadId: bot.threadId }, 403, chatOnly.token);
+    expect(card.code).toBe("not_bot_owner");
+    // the owner reaches the card itself (here: there is none)
+    await api("POST", `/api/bots/${bot.id}/connector-cards/msg-1/authorize`, { threadId: bot.threadId }, 404, admin.token);
+
+    expect((await api("POST", "/api/plugins/install", { id: "notion" }, 403, chatOnly.token)).error).toMatch(/owner/);
+    // the voice engine stays an admin-scope write for a session
+    await api("PUT", "/api/tts/provider", { provider: "fish" }, 403, chatOnly.token);
+    await api("PUT", "/api/tts/provider", { provider: "elevenlabs" }, 200, admin.token);
+  });
 });

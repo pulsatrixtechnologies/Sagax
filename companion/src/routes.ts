@@ -247,6 +247,63 @@ const ALLOWED: ReadonlyArray<{ method: string; path: RegExp }> = [
   // Its live desktop while a person holds the computer, relayed like the
   // VPS viewer and behind the same per-device capability.
   LOCAL_VM_JOIN_ROUTE,
+
+  // iOS feature parity, package S1 (docs/superpowers/specs/
+  // 2026-10-03-ios-feature-parity-matrix.md). Surfaces the remote-client
+  // renderer draws and that got "no route" here: the engine's own slash
+  // commands (names and hints only), stopping one parallel task (the
+  // harness checks the thread), what a bot is doing, its owner's Primary
+  // Bot star, the owner's own claude.ai connectors (names and statuses), and
+  // the bot computer's status (read-only: no provisioning, no power).
+  { method: "GET", path: /^\/api\/bots\/[\w-]+\/harness-commands$/ },
+  { method: "POST", path: /^\/api\/bots\/[\w-]+\/parallel\/[\w-]+\/stop$/ },
+  { method: "GET", path: /^\/api\/bots\/[\w-]+\/activity(?:\/item)?$/ },
+  { method: "POST", path: /^\/api\/bots\/[\w-]+\/primary$/ },
+  { method: "GET", path: /^\/api\/me\/harness-connectors$/ },
+  { method: "GET", path: /^\/api\/bots\/[\w-]+\/computer$/ },
+  // A room's shared memory (decision D3): its people read it, its owner
+  // edits it or switches it off (server/routes/group-memory.ts).
+  { method: "GET", path: /^\/api\/groups\/[\w-]+\/memory$/ },
+  { method: "PUT", path: /^\/api\/groups\/[\w-]+\/memory$/ },
+  // The voice engine, alone: one field of the host's voice settings, never
+  // a key or an address (server: PUT /api/tts/provider). PUT /api/config
+  // stays refused.
+  { method: "PUT", path: /^\/api\/tts\/provider$/ },
+
+  // The advanced bot panel for the computer's owner (decision D1): the
+  // same reads and edits the desktop's own renderer makes, nothing else.
+  // Still refused: approval mode, the working folder, the computer, MCP
+  // servers and access (the harness holds a companion bot PATCH to the
+  // member fields plus the memory switches), and opening the memory folder
+  // on the host's screen.
+  //   prompt preview, history of changes and restoring instructions
+  { method: "GET", path: /^\/api\/bots\/[\w-]+\/system-prompt$/ },
+  { method: "GET", path: /^\/api\/bots\/[\w-]+\/history$/ },
+  { method: "POST", path: /^\/api\/bots\/[\w-]+\/history\/rollback$/ },
+  //   skills: list, read, import (lands disabled), enable or disable, remove
+  { method: "GET", path: /^\/api\/bots\/[\w-]+\/skills$/ },
+  { method: "POST", path: /^\/api\/bots\/[\w-]+\/skills$/ },
+  { method: "GET", path: /^\/api\/bots\/[\w-]+\/skills\/[a-z0-9-]+$/ },
+  { method: "PATCH", path: /^\/api\/bots\/[\w-]+\/skills\/[a-z0-9-]+$/ },
+  { method: "DELETE", path: /^\/api\/bots\/[\w-]+\/skills\/[a-z0-9-]+$/ },
+  //   memory: overview, one file (read, save with its hash, delete), the
+  //   journal and its revert, upkeep status and a tidy pass
+  { method: "GET", path: /^\/api\/bots\/[\w-]+\/memory$/ },
+  { method: "GET", path: /^\/api\/bots\/[\w-]+\/memory\/file$/ },
+  { method: "PUT", path: /^\/api\/bots\/[\w-]+\/memory\/file$/ },
+  { method: "DELETE", path: /^\/api\/bots\/[\w-]+\/memory\/file$/ },
+  { method: "GET", path: /^\/api\/bots\/[\w-]+\/memory\/journal$/ },
+  { method: "POST", path: /^\/api\/bots\/[\w-]+\/memory\/journal\/[\w-]+\/revert$/ },
+  { method: "GET", path: /^\/api\/bots\/[\w-]+\/memory\/upkeep$/ },
+  { method: "POST", path: /^\/api\/bots\/[\w-]+\/memory\/tidy$/ },
+  //   New bot's starting roles (the list; creating one is POST /api/bots)
+  { method: "GET", path: /^\/api\/bot-presets$/ },
+  //   the owner's achievements (their own record, and colleagues' shown points)
+  { method: "GET", path: /^\/api\/me\/achievements$/ },
+  { method: "POST", path: /^\/api\/me\/achievements\/events$/ },
+  { method: "PUT", path: /^\/api\/me\/achievements\/settings$/ },
+  { method: "GET", path: /^\/api\/achievements\/public$/ },
+
   // rooms — making one, and talking in one
   { method: "POST", path: /^\/api\/groups$/ },
   { method: "POST", path: /^\/api\/groups\/[\w-]+\/messages$/ },

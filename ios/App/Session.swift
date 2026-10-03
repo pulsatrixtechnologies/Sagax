@@ -58,6 +58,12 @@ final class Session: ObservableObject {
     /// `Connection.canAdminister`. Views hide owner-only controls when this
     /// is false rather than offer buttons the server would answer 403 to.
     var canAdminister: Bool { connection?.canAdminister ?? false }
+    /// What this pairing lets the app show (`SurfaceGate`): the one place
+    /// views ask before drawing a feature the computer may refuse.
+    var surfaceGate: SurfaceGate {
+        guard let connection else { return .unpaired }
+        return SurfaceGate(connection: connection, account: account)
+    }
     @Published private(set) var status: Status = .unpaired
     /// Transient, user-facing failures from an action they just took.
     @Published var actionError: String?
@@ -1163,7 +1169,8 @@ final class Session: ObservableObject {
     func send(
         text: String,
         attachments: [PendingMessageAttachment],
-        to chat: Chat
+        to chat: Chat,
+        options: SendOptions = SendOptions()
     ) async -> Bool {
         guard let client else {
             actionError = "This computer is offline."
@@ -1243,7 +1250,7 @@ final class Session: ObservableObject {
                 urls: [],
                 attachments: uploaded
             )
-            let receipt = try await client.send(text: message, to: destination, sendId: sendID)
+            let receipt = try await client.send(text: message, to: destination, sendId: sendID, options: options)
             // The send succeeded on the computer it was addressed to, so the
             // draft clears either way. Its queue row belongs to that computer,
             // and must not be drawn on one selected mid-upload.
@@ -1306,6 +1313,12 @@ final class Session: ObservableObject {
         guard agreed, client?.connection.id == connectionID else { return false }
         state.cancelQueued(queueId: send.queueId, threadId: threadId)
         return cancelled
+    }
+
+    /// Held sends the computer folded into the running turn (Steer): their
+    /// rows go, exactly as when their messages arrive on the stream.
+    func retireQueued(_ queueIds: [String], threadId: String) {
+        for queueId in queueIds { state.consumeQueued(queueId: queueId, threadId: threadId) }
     }
 
     /// Run Claude Code's updater for one engine instance on the computer.
@@ -2367,10 +2380,13 @@ final class Session: ObservableObject {
         }
     }
 
-    func saveRoutine(_ input: RoutineInput, id: String?) async -> Routine? {
+    /// Create a routine, or save an edit of `original`. An edit sends only
+    /// the fields that changed (`RoutinePatch`): the phone's editor shows a
+    /// subset of a routine and must never clear what it does not show.
+    func saveRoutine(_ input: RoutineInput, original: Routine?) async -> Routine? {
         guard let client else { return nil }
         do {
-            if let id { return try await client.updateRoutine(id: id, input: input) }
+            if let original { return try await client.updateRoutine(original, input: input) }
             return try await client.createRoutine(input)
         } catch { actionError = error.localizedDescription; return nil }
     }
@@ -2391,6 +2407,44 @@ final class Session: ObservableObject {
         guard let client else { return false }
         do { try await client.deleteRoutine(id: routine.id); return true }
         catch { actionError = error.localizedDescription; return false }
+    }
+
+    /// Cancel run (AU8): the run as the computer now has it.
+    func cancelRoutineRun(_ run: RoutineRun) async -> RoutineRun? {
+        guard let client else { return nil }
+        do { return try await client.cancelRoutineRun(id: run.id) }
+        catch { actionError = error.localizedDescription; return nil }
+    }
+
+    /// Opening a failed or missed run acknowledges it (AU9).
+    func markRoutineRunSeen(_ run: RoutineRun) async -> RoutineRun? {
+        guard let client else { return nil }
+        do { return try await client.markRoutineRunSeen(id: run.id) }
+        catch { actionError = error.localizedDescription; return nil }
+    }
+
+    /// "Mark all as read" (AU9): the runs it changed.
+    func markAllRoutineRunsSeen() async -> [RoutineRun] {
+        guard let client else { return [] }
+        do { return try await client.markAllRoutineRunsSeen() }
+        catch { actionError = error.localizedDescription; return [] }
+    }
+
+    /// A routine attachment (AU14): the file goes to the computer, the
+    /// routine keeps its path there.
+    func uploadRoutineAttachment(data: Data, name: String, mime: String, image: Bool) async -> RoutineAttachment? {
+        guard let client else { return nil }
+        do {
+            if image {
+                let path = try await client.uploadImage(data: data, mime: mime)
+                return RoutineAttachment(id: UUID().uuidString, kind: "image", name: name, path: path, size: data.count)
+            }
+            let file = try await client.uploadFile(data: data, name: name, mime: mime)
+            return RoutineAttachment(id: UUID().uuidString, kind: "file", name: file.name, path: file.path, size: data.count)
+        } catch {
+            actionError = error.localizedDescription
+            return nil
+        }
     }
 
     // MARK: - Notification navigation
@@ -2543,6 +2597,83 @@ final class Session: ObservableObject {
         }
     }
 
+    // MARK: - Message actions (WP1)
+
+    /// Regenerate: fork the newest user line with the same words, as the
+    /// desktop does (ChatView.tsx `regenerate`). The old answer stays
+    /// reachable through the version switcher.
+    func regenerate(for bot: Bot) async {
+        let messages = state.visibleTranscript(forThread: bot.threadId)
+        guard bot.busy != true,
+              let source = MessageActionRules.regenerateSource(
+                in: messages, pendingId: state.pendingEdits[bot.threadId]?.placeholderId
+              ),
+              let text = source.text
+        else { return }
+        await edit(source, for: bot, text: text)
+    }
+
+    /// Pin a message to the top of this conversation, or clear the pin with
+    /// nil. Bots pin per thread, rooms per room (the desktop's `updateTask`
+    /// and `patchGroup`). The row moves at once and comes back if the
+    /// computer refuses.
+    func setPinnedMessage(_ messageId: String?, in chat: Chat) async {
+        guard let client else { return }
+        switch chat {
+        case let .bot(bot):
+            let previous = state.bot(bot.id)?.tasks?.first { $0.threadId == bot.threadId }?.pinnedMessageId
+            setPinnedMessageLocally(messageId, botId: bot.id, threadId: bot.threadId)
+            do {
+                try await client.setPinnedMessage(botId: bot.id, threadId: bot.threadId, messageId: messageId)
+                await refresh()
+            } catch {
+                setPinnedMessageLocally(previous, botId: bot.id, threadId: bot.threadId)
+                actionError = error.localizedDescription
+            }
+        case let .room(room):
+            do {
+                let updated = try await client.setPinnedMessage(groupId: room.id, messageId: messageId)
+                if let index = state.rooms.firstIndex(where: { $0.id == room.id }) {
+                    state.rooms[index].pinnedMessageId = updated.pinnedMessageId
+                }
+            } catch { actionError = error.localizedDescription }
+        }
+    }
+
+    private func setPinnedMessageLocally(_ messageId: String?, botId: String, threadId: String) {
+        guard let botIndex = state.bots.firstIndex(where: { $0.id == botId }) else { return }
+        if var tasks = state.bots[botIndex].tasks, let taskIndex = tasks.firstIndex(where: { $0.threadId == threadId }) {
+            tasks[taskIndex].pinnedMessageId = messageId
+            state.bots[botIndex].tasks = tasks
+        }
+        if state.bots[botIndex].threadId == threadId { state.bots[botIndex].pinnedMessageId = messageId }
+    }
+
+    /// Scroll a conversation to one of its messages (a reply quote, the
+    /// pinned banner). A message outside the loaded page is fetched around
+    /// first, the way a search hit is.
+    func jump(to messageId: String, inThread threadId: String) async {
+        if !state.visibleTranscript(forThread: threadId).contains(where: { $0.id == messageId }), let client {
+            do {
+                let page = try await client.messages(threadId: threadId, around: messageId)
+                state.merge(page, intoThread: threadId)
+            } catch { actionError = error.localizedDescription; return }
+        }
+        focusedMessageId = messageId
+    }
+
+    /// The computer's voice for one message (`POST /api/tts/prepare`); nil
+    /// when the computer cannot be asked.
+    func prepareSpeech(text: String, voiceId: String?) async -> SpeechPreparation? {
+        guard let client else { return nil }
+        return try? await client.prepareSpeech(text: text, voiceId: voiceId)
+    }
+
+    func speechAudio(text: String, voiceId: String?) async throws -> Data {
+        guard let client else { throw APIError.transport("This computer is offline.") }
+        return try await client.speech(text: text, voiceId: voiceId)
+    }
+
     func switchVersion(to message: Message, for bot: Bot) async {
         guard let client else { return }
         do {
@@ -2613,7 +2744,7 @@ final class Session: ObservableObject {
         }
     }
 
-    private func perform(quietly: Bool = false, _ body: (CompanionClient) async throws -> Void) async {
+    func perform(quietly: Bool = false, _ body: (CompanionClient) async throws -> Void) async {
         guard let client else { return }
         do {
             try await body(client)

@@ -53,6 +53,15 @@ import { DatabaseSync } from "node:sqlite";
 import { randomUUID } from "node:crypto";
 import { deflateSync, crc32 } from "node:zlib";
 import { orgEnterpriseStub, orgServerEnv, seedOrg, signInOrg, startOrg, stopOrg } from "./org-fixture.mjs";
+// PARITY_CARDS=1: the interactive cards' lab for the WP2 UI tests (card-lab.mjs).
+import {
+  CARD_LAB, cardLabHook, cardLabInstances, cardLabServerEnv, closeCardLab, seedCardLabBots,
+  seedCardLabTranscripts, startCardLabBroker,
+} from "./card-lab.mjs";
+// The composer lab for the WP3 UI tests: refuses sends on request (composer-lab.mjs).
+import { composerLabHook } from "./composer-lab.mjs";
+// PARITY_ROUTINES=1: a desktop-made routine and its runs for the WP8 UI tests (routine-lab.mjs).
+import { ROUTINE_LAB, seedRoutineLab, seedRoutineLabRuns } from "./routine-lab.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(HERE, "..", "..");
@@ -92,6 +101,8 @@ async function freePair() {
 let home = "";
 let child = null;
 let enterpriseStub = "";
+/** PARITY_CARDS=1: the connected-apps broker stub's port. */
+let cardLabBroker = 0;
 
 let orgEnv = null;
 
@@ -113,6 +124,7 @@ function startServer(port, webhook) {
       // stub layer (written by main()) grants "budgets" and nothing else.
       ...(enterpriseStub ? { OMB_ENTERPRISE_DIR: enterpriseStub, OMB_LICENSE_KEY: "parity-fixture" } : {}),
       ...(org ? orgServerEnv(org) : {}),
+      ...(cardLabBroker ? cardLabServerEnv(cardLabBroker) : {}),
       TZ: process.env.TZ ?? Intl.DateTimeFormat().resolvedOptions().timeZone,
       ...orgEnv,
     },
@@ -549,6 +561,8 @@ function startComputerDouble(upstreamPort) {
   };
   const server = createHttpServer(async (req, res) => {
     const url = new URL(req.url ?? "/", "http://fixture");
+    if (await cardLabHook(req, res, url, `http://127.0.0.1:${upstreamPort}`, api)) return;
+    if (await composerLabHook(req, res, url)) return;
     if (url.pathname === "/__parity/computer") {
       if (req.method === "DELETE") {
         computerRecord.batches = [];
@@ -652,9 +666,11 @@ async function main() {
         displayName: "Fixture engine",
         config: { cli: join(ROOT, "server", "testing", "fake-claude-cli.ts") },
       },
+      ...(CARD_LAB ? cardLabInstances(ROOT, dataDir) : {}),
     },
   }));
 
+  if (CARD_LAB) cardLabBroker = await startCardLabBroker();
   const { port, webhook } = await freePair();
   const base = `http://127.0.0.1:${port}`;
   console.error(`[parity] data ${home}`);
@@ -665,9 +681,13 @@ async function main() {
   await waitHealthy(base, child);
   if (org) await signInOrg(org);
   const seeded = await seedThroughAPI(base);
+  if (CARD_LAB) await seedCardLabBots(base, api);
+  if (ROUTINE_LAB) await seedRoutineLab(base, api, seeded.ids);
   await stopServer(child);
 
   seedTranscripts(dataDir, seeded);
+  if (CARD_LAB) seedCardLabTranscripts(dataDir);
+  if (ROUTINE_LAB) seedRoutineLabRuns(dataDir);
   seedCommandRules(dataDir, seeded);
   const ownerMode = process.env.PARITY_OWNER === "1";
   if (ownerMode) {
@@ -814,6 +834,7 @@ async function mainOrg() {
 }
 
 async function shutdown(code) {
+  if (CARD_LAB) closeCardLab();
   await stopServer(child);
   await idp?.close().catch(() => {});
   await stopOrg(org);

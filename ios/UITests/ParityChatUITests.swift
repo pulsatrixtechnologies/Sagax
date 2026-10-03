@@ -115,7 +115,10 @@ final class ParityChatUITests: XCTestCase {
         let commands = app.buttons["plus-commands"]
         XCTAssertTrue(commands.waitForExistence(timeout: 5))
         commands.tap()
-        XCTAssertTrue(app.staticTexts["/diff"].waitForExistence(timeout: 5), "slash command HUD")
+        // the real "/" menu (WP3): Sagax's own commands, then the engine's
+        let menu = app.descendants(matching: .any).matching(identifier: "slash-menu").firstMatch
+        XCTAssertTrue(menu.waitForExistence(timeout: 10), "slash command menu")
+        XCTAssertTrue(app.descendants(matching: .any).matching(identifier: "slash-/compact").firstMatch.waitForExistence(timeout: 15), "the engine's commands")
         attach("Slash commands from the + sheet", app)
 
         app.buttons["composer-plus"].tap()

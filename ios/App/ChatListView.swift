@@ -595,6 +595,10 @@ struct ChatListView: View {
             searchButton
             if session.canAdminister {
                 sectionButton
+            }
+            // `POST /api/bots` passes both gates (SB31): a client session
+            // may make a bot even though it cannot file sections.
+            if session.surfaceGate.allows(.createBot) {
                 newBotButton
             }
         }
@@ -1493,7 +1497,7 @@ extension ChatListView {
                 .zIndex(4)
             }
             if showingPlusMenu {
-                HomePlusMenu(canCreateBot: session.canAdminister) {
+                HomePlusMenu(canCreateBot: session.surfaceGate.allows(.createBot)) {
                     showingPlusMenu = false
                     showingCreateBot = true
                 } newGroup: {

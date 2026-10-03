@@ -217,7 +217,10 @@ describe("what it may not", () => {
     expect(allowed("POST", "/api/bots/bot_123/computer/control")).toBe(true);
     expect(allowed("POST", "/api/bots/bot_123/computer/screenshot")).toBe(true);
     expect(allowed("POST", "/api/bots/bot_123/computer/viewer-close")).toBe(true);
-    expect(allowed("GET", "/api/bots/bot_123/computer")).toBe(false);
+    // the computer's status is a read (iOS parity S1); nothing under it but the viewer verbs
+    expect(allowed("GET", "/api/bots/bot_123/computer")).toBe(true);
+    expect(isCloudDesktopAccess("GET", "/api/bots/bot_123/computer")).toBe(false);
+    expect(allowed("POST", "/api/bots/bot_123/computer")).toBe(false);
     expect(allowed("GET", "/api/bots/bot_123/computer/control")).toBe(false);
     expect(allowed("GET", "/api/bots/bot_123/computer/viewer-close")).toBe(false);
     expect(allowed("POST", "/api/bots/bot_123/computer/provision")).toBe(false);
@@ -320,7 +323,7 @@ describe("what it may not", () => {
   });
 
   it("is not fooled by a prefix", () => {
-    expect(allowed("GET", "/api/bots/bot_123/computer")).toBe(false);
+    expect(allowed("GET", "/api/bots/bot_123/computer/status")).toBe(false);
     expect(allowed("GET", "/api/botsandthensome")).toBe(false);
     expect(allowed("GET", "/api/events/all")).toBe(false);
     expect(allowed("GET", "/api/threads/th_1/messages/msg_2/image/../../../config")).toBe(false);
@@ -442,12 +445,13 @@ describe("desktop remote-client parity", () => {
     for (const [method, path] of [
       // hidden in remote-client mode: room setup and delete, the full bot panel, Inspector,
       // team-map editing, Templates, New Bot presets and defaults, the approval-mode menu
+      // (the advanced panel's skills, memory, history and presets cross for
+      // the owner since decision D1: see "iOS feature parity" below)
       ["PATCH", "/api/groups/room_1/setup"], ["DELETE", "/api/groups/room_1"],
-      ["GET", "/api/bots/bot_1/skills"], ["GET", "/api/bots/bot_1/memory"], ["GET", "/api/bots/bot_1/history"],
       ["GET", "/api/threads/th_1/events"], ["GET", "/api/section-context"], ["PUT", "/api/section-context"],
       ["DELETE", "/api/sidebar-sections"], ["GET", "/api/sidebar-sections"], ["PUT", "/api/sidebar-sections"],
       ["GET", "/api/team-computers"], ["GET", "/api/teams/scout"], ["POST", "/api/teams/import"],
-      ["GET", "/api/bot-defaults"], ["GET", "/api/bot-presets"], ["GET", "/api/connectors/tools"],
+      ["GET", "/api/bot-defaults"], ["DELETE", "/api/bot-presets/preset_1"], ["GET", "/api/connectors/tools"],
       ["GET", "/api/calendar-calls"], ["GET", "/api/webhooks"],
       // host-only: keys, engines setup, Local VM, backups, pairing, MCP server writes, people
       ["PUT", "/api/config"], ["PATCH", "/api/config"], ["POST", "/api/keys/test"], ["PATCH", "/api/instances/claude"],
@@ -458,6 +462,63 @@ describe("desktop remote-client parity", () => {
       ["GET", "/api/bots/bot_1/queue/q_1/steer"], ["POST", "/api/bots/bot_1/queue/q_1/steer/extra"],
       ["GET", "/api/bots/bot_1/projects"], ["PUT", "/api/bots/bot_1/projects/pr_1"], ["POST", "/api/bots/bot_1/projects/pr_1/extra"],
       ["GET", "/api/bots/bot_1/tasks/th_2/title"], ["POST", "/api/brand"], ["GET", "/api/routine-runs/seen-all"],
+    ] as const) expect(allowed(method, path), `${method} ${path}`).toBe(false);
+  });
+});
+
+// docs/superpowers/specs/2026-10-03-ios-feature-parity-matrix.md, packages S1
+// and the decisions D1 (advanced bot panel for the computer's owner) and D3
+// (room memory). Each route crosses for exactly the methods listed; what the
+// advanced panel still keeps on the computer does not.
+describe("iOS feature parity (S1, D1, D3)", () => {
+  it("crosses the remote client's missing routes and the advanced panel, method by method", () => {
+    for (const [method, path] of [
+      // S1
+      ["GET", "/api/bots/bot_1/harness-commands"], ["POST", "/api/bots/bot_1/parallel/th_2/stop"],
+      ["GET", "/api/bots/bot_1/activity"], ["GET", "/api/bots/bot_1/activity/item"],
+      ["POST", "/api/bots/bot_1/primary"], ["GET", "/api/me/harness-connectors"], ["GET", "/api/bots/bot_1/computer"],
+      // D3
+      ["GET", "/api/groups/room_1/memory"], ["PUT", "/api/groups/room_1/memory"],
+      // the voice engine picker
+      ["PUT", "/api/tts/provider"],
+      // D1
+      ["GET", "/api/bots/bot_1/system-prompt"], ["GET", "/api/bots/bot_1/history"], ["POST", "/api/bots/bot_1/history/rollback"],
+      ["GET", "/api/bots/bot_1/skills"], ["POST", "/api/bots/bot_1/skills"],
+      ["GET", "/api/bots/bot_1/skills/web-research"], ["PATCH", "/api/bots/bot_1/skills/web-research"],
+      ["DELETE", "/api/bots/bot_1/skills/web-research"],
+      ["GET", "/api/bots/bot_1/memory"], ["GET", "/api/bots/bot_1/memory/file"], ["PUT", "/api/bots/bot_1/memory/file"],
+      ["DELETE", "/api/bots/bot_1/memory/file"], ["GET", "/api/bots/bot_1/memory/journal"],
+      ["POST", "/api/bots/bot_1/memory/journal/ch_1/revert"], ["GET", "/api/bots/bot_1/memory/upkeep"],
+      ["POST", "/api/bots/bot_1/memory/tidy"],
+      ["GET", "/api/bot-presets"],
+      ["GET", "/api/me/achievements"], ["POST", "/api/me/achievements/events"], ["PUT", "/api/me/achievements/settings"],
+      ["GET", "/api/achievements/public"],
+    ] as const) expect(allowed(method, path), `${method} ${path}`).toBe(true);
+  });
+
+  it("keeps the rest of the advanced panel and everything beside the new routes on the computer", () => {
+    for (const [method, path] of [
+      // opening the memory folder acts on the host's screen; the legacy whole-file write has no hash
+      ["POST", "/api/bots/bot_1/memory/open"], ["PUT", "/api/bots/bot_1/memory"], ["POST", "/api/bots/bot_1/memory/reviewed"],
+      ["GET", "/api/bots/bot_1/memory/topics/notes.md"], ["DELETE", "/api/bots/bot_1/memory"],
+      // skills: a template, an organization library entry, a path that is not a skill name
+      ["POST", "/api/bots/bot_1/skill-template"], ["GET", "/api/org-library/skills"],
+      ["GET", "/api/bots/bot_1/skills/Web_Research"], ["GET", "/api/bots/bot_1/skills/a/b"], ["PUT", "/api/bots/bot_1/skills/web-research"],
+      // history: only the soul rollback; presets: never removed from here
+      ["DELETE", "/api/bots/bot_1/history"], ["POST", "/api/bots/bot_1/history/rollback/extra"],
+      ["DELETE", "/api/bot-presets/preset_1"], ["POST", "/api/bot-presets"],
+      ["GET", "/api/bots/bot_1/system-prompt/extra"], ["PUT", "/api/bots/bot_1/system-prompt"],
+      // approval mode, folder, computer and access stay refused
+      ["POST", "/api/bots/bot_1/computer/provision"], ["POST", "/api/bots/bot_1/computer/sleep"],
+      ["GET", "/api/bots/bot_1/checkpoints"], ["GET", "/api/connectors/tools"], ["GET", "/api/webhooks"],
+      // nothing beside S1, D3 and the voice engine
+      ["GET", "/api/bots/bot_1/primary"], ["DELETE", "/api/bots/bot_1/primary"],
+      ["GET", "/api/bots/bot_1/parallel/th_2/stop"], ["POST", "/api/bots/bot_1/parallel/th_2"],
+      ["POST", "/api/bots/bot_1/activity"], ["GET", "/api/bots/bot_1/activity/item/extra"],
+      ["POST", "/api/bots/bot_1/harness-commands"], ["PUT", "/api/harness-connectors/settings"], ["POST", "/api/me/harness-connectors"],
+      ["DELETE", "/api/groups/room_1/memory"], ["PATCH", "/api/groups/room_1/memory"],
+      ["GET", "/api/tts/provider"], ["POST", "/api/tts/provider"], ["PUT", "/api/config"],
+      ["GET", "/api/me/achievements/settings"], ["DELETE", "/api/me/achievements"],
     ] as const) expect(allowed(method, path), `${method} ${path}`).toBe(false);
   });
 });

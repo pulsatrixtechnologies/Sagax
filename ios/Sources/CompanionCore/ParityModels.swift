@@ -117,8 +117,25 @@ public struct ThreadFile: Decodable, Hashable, Identifiable, Sendable {
     public var at: Double
     public var size: Int?
     public var available: Bool
+    /// Where the message named it (a host path, a URL or a bare name).
+    public var path: String
+    /// The resolved absolute path on the computer, while it is available.
+    public var localPath: String?
 
-    private enum CodingKeys: String, CodingKey { case id, messageId, source, name, mime, at, size, available }
+    private enum CodingKeys: String, CodingKey { case id, messageId, source, name, mime, at, size, available, path, localPath }
+
+    public init(id: String, messageId: String = "", source: Source, name: String, mime: String? = nil, at: Double, size: Int? = nil, available: Bool = true, path: String = "", localPath: String? = nil) {
+        self.id = id
+        self.messageId = messageId
+        self.source = source
+        self.name = name
+        self.mime = mime
+        self.at = at
+        self.size = size
+        self.available = available
+        self.path = path
+        self.localPath = localPath
+    }
 
     public init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
@@ -130,6 +147,8 @@ public struct ThreadFile: Decodable, Hashable, Identifiable, Sendable {
         at = try values.decodeIfPresent(Double.self, forKey: .at) ?? 0
         size = try values.decodeIfPresent(Int.self, forKey: .size)
         available = try values.decodeIfPresent(Bool.self, forKey: .available) ?? false
+        path = try values.decodeIfPresent(String.self, forKey: .path) ?? ""
+        localPath = try values.decodeIfPresent(String.self, forKey: .localPath)
     }
 
     /// Media tab when true, Files tab otherwise. Falls back to the extension

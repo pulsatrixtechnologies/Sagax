@@ -1368,7 +1368,7 @@ public struct CompanionClient: Sendable {
             throw APIError.transport("Choose a supported schedule before saving this routine.")
         }
         return try await send(
-            try makeRequest("POST", "/api/routines", body: Self.routineBody(input)),
+            try makeRequest("POST", "/api/routines", body: RoutinePatch.createBody(input)),
             as: RoutineResponse.self
         ).routine
     }
@@ -1378,7 +1378,24 @@ public struct CompanionClient: Sendable {
             throw APIError.transport("Choose a supported schedule before saving this routine.")
         }
         return try await send(
-            try makeRequest("PATCH", "/api/routines/\(id)", body: Self.routineBody(input)),
+            try makeRequest("PATCH", "/api/routines/\(id)", body: RoutinePatch.createBody(input)),
+            as: RoutineResponse.self
+        ).routine
+    }
+
+    /// Save an edit of `original`: the PATCH carries only what the editor
+    /// changed (`RoutinePatch`), so fields this phone does not show (an
+    /// interval's days, window and end date, overlap, attachments, results
+    /// thread, target) are never resent, let alone cleared. Nothing changed
+    /// means no request at all.
+    public func updateRoutine(_ original: Routine, input: RoutineInput) async throws -> Routine {
+        guard input.schedule.type != .unknown else {
+            throw APIError.transport("Choose a supported schedule before saving this routine.")
+        }
+        let body = RoutinePatch.body(original: original, input: input)
+        guard !body.isEmpty else { return original }
+        return try await send(
+            try makeRequest("PATCH", "/api/routines/\(original.id)", body: body),
             as: RoutineResponse.self
         ).routine
     }
@@ -1398,32 +1415,22 @@ public struct CompanionClient: Sendable {
         try await send(try makeRequest("DELETE", "/api/routines/\(id)"))
     }
 
-    private static func routineBody(_ input: RoutineInput) -> [String: Any] {
-        var schedule: [String: Any] = ["type": input.schedule.type.rawValue]
-        if let at = input.schedule.at { schedule["at"] = at }
-        if let time = input.schedule.time { schedule["time"] = time }
-        if let weekdays = input.schedule.weekdays { schedule["weekdays"] = weekdays }
-        if let everyMinutes = input.schedule.everyMinutes { schedule["everyMinutes"] = everyMinutes }
-        if let anchorAt = input.schedule.anchorAt { schedule["anchorAt"] = anchorAt }
-        if let expression = input.schedule.expression { schedule["expression"] = expression }
-        if let timeZone = input.schedule.timeZone { schedule["timeZone"] = timeZone }
-        var body: [String: Any] = [
-            "name": input.name, "prompt": input.prompt, "botId": input.botId,
-            "runOn": input.runOn, "schedule": schedule, "durationMinutes": input.durationMinutes,
-        ]
-        if let timeoutMinutes = input.timeoutMinutes { body["timeoutMinutes"] = timeoutMinutes }
-        else if input.clearTimeout { body["timeoutMinutes"] = NSNull() }
-        if let enabled = input.enabled { body["enabled"] = enabled }
-        return body
-    }
-
     /// Make a room. The harness names it after the first member when `name`
     /// is empty, exactly as the desktop's dialog does.
+    ///
+    /// The room is created with its setup already answered, the way the
+    /// desktop remote client creates one (`store.tsx` createGroup): an empty
+    /// bulletin and members answering when mentioned. The phone has no setup
+    /// step to finish later, so a room without it would sit "pending setup"
+    /// on the desktop.
     public func createRoom(name: String?, memberIds: [String]) async throws -> Room {
-        var body: [String: Any] = ["memberIds": memberIds]
+        var body: [String: Any] = ["memberIds": memberIds, "setup": Self.roomSetup]
         if let name, !name.trimmingCharacters(in: .whitespaces).isEmpty { body["name"] = name }
         return try await send(try makeRequest("POST", "/api/groups", body: body), as: CreatedRoom.self).group
     }
+
+    /// The setup a phone-made room starts with (`setup` on POST /api/groups).
+    static let roomSetup: [String: Any] = ["bulletin": "", "defaultResponder": ["kind": "mentions"]]
 
     /// File several bots under one shared desktop/mobile sidebar heading.
     /// This uses a narrow batch route instead of the desktop's general bot
@@ -1459,7 +1466,8 @@ public struct CompanionClient: Sendable {
     public func send(
         text: String,
         to destination: MessageDestination,
-        sendId: String
+        sendId: String,
+        options: SendOptions = SendOptions()
     ) async throws -> SendReceipt {
         let route: String
         let threadId: String
@@ -1474,11 +1482,9 @@ public struct CompanionClient: Sendable {
             threadId = selectedThreadId
         }
         guard Self.validRouteID(threadId), Self.validSendID(sendId) else { throw APIError.badURL }
-        return try await sendForReceipt(try makeRequest(
-            "POST",
-            route,
-            body: ["text": text, "threadId": threadId, "sendId": sendId]
-        ))
+        var body: [String: Any] = ["text": text, "threadId": threadId, "sendId": sendId]
+        options.apply(to: &body, destination: destination)
+        return try await sendForReceipt(try makeRequest("POST", route, body: body))
     }
 
     /// Take back a message the harness is holding.
