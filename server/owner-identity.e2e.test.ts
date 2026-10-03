@@ -72,7 +72,7 @@ posixOnly("a personal computer signed in to an organization", () => {
     }
     sidecar = createServer(createProxyHandler({
       harnessPort: PORT,
-      authenticate: (token) => (token === DEVICE_TOKEN ? { id: "phone", cloudDesktopAccess: false } : null),
+      authenticate: (token) => (token === DEVICE_TOKEN ? { id: "phone", cloudDesktopAccess: false, browserControlAccess: false } : null),
       redeem: () => ({ error: "no pairing here" }),
       serverName: () => "Studio",
       connected: createConnectedDeviceTracker().open,
