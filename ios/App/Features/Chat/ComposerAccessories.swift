@@ -9,6 +9,8 @@ import CompanionCore
 extension ChatView {
     @ViewBuilder
     var composerAccessories: some View {
+        runCard
+
         ForEach(power.failedSends(threadId)) { failure in
             FailedSendBanner(
                 failure: failure,

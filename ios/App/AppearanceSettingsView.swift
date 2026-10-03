@@ -9,6 +9,7 @@ struct AppearanceSettingsView: View {
     @Environment(\.themePalette) var themePalette
     @EnvironmentObject private var session: Session
     @ObservedObject private var themes = ThemeStore.shared
+    @AppStorage(RunCardPreference.key) private var showRunCard = true
 
     /// The skin in effect (a DEBUG launch override included).
     private var selection: ThemeSelection { themes.effective }
@@ -57,6 +58,17 @@ struct AppearanceSettingsView: View {
 
             // the thread switch and what is hidden from the home (WP6)
             SidebarAppearanceSettings()
+
+            // the run card above the composer (ST4, SettingsModal RunCardRow)
+            SettingsSectionLabel(text: "Chat")
+            SettingsCard {
+                SettingsRow(
+                    title: "This run",
+                    subtitle: "Show a list of the shell commands a bot ran for your current request. Turn it off to hide the card and its shortcut for saving the run as a skill.",
+                    accessory: .toggle($showRunCard),
+                    identifier: "settings.runCard"
+                )
+            }
         }
         .task(id: selection.mode) {
             if selection.mode == .computer { await themes.refreshFromComputer(client: client) }

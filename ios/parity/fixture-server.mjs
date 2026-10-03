@@ -45,6 +45,8 @@ import {
 import { composerLabHook } from "./composer-lab.mjs";
 // PARITY_ROUTINES=1: a desktop-made routine and its runs for the WP8 UI tests (routine-lab.mjs).
 import { ROUTINE_LAB, seedRoutineLab, seedRoutineLabRuns } from "./routine-lab.mjs";
+// PARITY_RICH=1: a bot whose transcript holds every rich block, for the WP14 UI tests (rich-lab.mjs).
+import { RICH_LAB, seedRichLabBot, seedRichLabTranscript } from "./rich-lab.mjs";
 // PARITY_PLUGINS=1: connected apps, MCP sign-in and a bot without apps for the WP9 UI tests (plugin-lab.mjs).
 import {
   PLUGIN_LAB, closePluginLab, pluginLabHook, pluginLabServerEnv, seedPluginLab, startPluginLabBroker,
@@ -699,11 +701,13 @@ async function main() {
   if (CARD_LAB) await seedCardLabBots(base, api);
   if (ROUTINE_LAB) await seedRoutineLab(base, api, seeded.ids);
   if (PLUGIN_LAB) await seedPluginLab(base, api, ROOT, seeded.ids);
+  if (RICH_LAB) await seedRichLabBot(base, api);
   await stopServer(child);
 
   seedTranscripts(dataDir, seeded);
   if (CARD_LAB) seedCardLabTranscripts(dataDir);
   if (ROUTINE_LAB) seedRoutineLabRuns(dataDir);
+  if (RICH_LAB) seedRichLabTranscript(dataDir, png);
   seedCommandRules(dataDir, seeded);
   if (PRESETS) seedPresets(dataDir);
 
