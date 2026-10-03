@@ -36,7 +36,9 @@ codes, and installation-scoped action limits. `0005` adds the cleanup-attempt
 counter used for scheduled retry backoff. `0006` adds the idle-reclaim marker
 and a one-row capacity snapshot (counts and timestamps only), and gives rows
 an operator had already moved to `deleting` for active installations the same
-reconnect guard as automatic reclaims. Endpoint rows deliberately do not
+reconnect guard as automatic reclaims. `0007` drops `account.issuer` and its
+unique index, which Better Auth 1.7.0 to 1.7.2 required and 1.7.3 no longer
+writes (its 1.7 upgrade guide). Endpoint rows deliberately do not
 cascade away with a hard installation deletion: losing the tunnel and DNS IDs
 would make operator cleanup impossible.
 
