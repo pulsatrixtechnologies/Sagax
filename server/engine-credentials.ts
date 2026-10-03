@@ -16,10 +16,12 @@
 //   2. the payer is disabled (the directory marked them
 //      out, a back-channel logout)                      -> no_access (payer_disabled)
 //   3. the payer is signed in to this engine with their
-//      own subscription (Claude, Codex)                 -> subscription
+//      own subscription (Claude, Codex, Grok Build,
+//      Kimi Code)                                       -> subscription
 //   4. the payer keeps a key for the engine's provider
 //      in Perspicax (claudeAgent: anthropic, codex:
-//      openai)                                          -> owner-key (the payer owns
+//      openai, grokAgent: xai, geminiAgent: google,
+//      kimiAgent: moonshot, piAgent: any of them)       -> owner-key (the payer owns
 //                                                          the bot) or speaker-key
 //   5. the server has a key for this engine (Settings >
 //      Connections, set by an admin: the organization's
@@ -79,18 +81,57 @@ export interface TurnAccess {
   codexHome?: string;
   /** Codex: run on the payer's OpenAI key (the pulsa_owner provider). */
   codexOwnerKey?: boolean;
+  /** Grok Build, Kimi Code, Gemini CLI, pi: the payer's own home for the
+   * engine (their device sign-in, or an empty one for a key), so the
+   * server's own login never serves the turn (engineHomeEnv). */
+  engineHome?: string;
 }
 
-/** The model provider behind a driver, when a person's key can serve it. */
+const DRIVER_PROVIDERS: Readonly<Record<string, readonly ModelProvider[]>> = {
+  claudeAgent: ["anthropic"],
+  codex: ["openai"],
+  grokAgent: ["xai"],
+  geminiAgent: ["google"],
+  kimiAgent: ["moonshot"],
+  // pi is BYOK across providers: any key the person keeps serves it, and the
+  // model they pick decides which one a turn uses.
+  piAgent: ["anthropic", "openai", "xai", "google", "moonshot"],
+};
+
+/** The model providers whose key can serve a driver, in preference order. */
+export function providersOfDriver(driver: string): readonly ModelProvider[] {
+  return DRIVER_PROVIDERS[driver] ?? [];
+}
+
+/** The model provider behind a driver, when a person's key can serve it
+ * (the first one for a multi-provider engine). */
 export function providerOfDriver(driver: string): ModelProvider | null {
-  if (driver === "claudeAgent") return "anthropic";
-  if (driver === "codex") return "openai";
-  return null;
+  return providersOfDriver(driver)[0] ?? null;
 }
 
-/** Drivers a person can sign in to with their own subscription. */
-export function subscriptionDriver(driver: string): driver is "claudeAgent" | "codex" {
-  return driver === "claudeAgent" || driver === "codex";
+/** The variable each provider's key reaches an engine as. Codex is apart: its
+ * key rides SAGAX_OWNER_OPENAI_API_KEY through the pulsa_owner provider. */
+export const PROVIDER_KEY_ENV: Readonly<Record<ModelProvider, string>> = {
+  anthropic: "ANTHROPIC_API_KEY",
+  openai: "OPENAI_API_KEY",
+  xai: "XAI_API_KEY",
+  google: "GEMINI_API_KEY",
+  moonshot: "MOONSHOT_API_KEY",
+};
+
+export type SubscriptionDriver = "claudeAgent" | "codex" | "grokAgent" | "kimiAgent";
+
+/** Drivers a person can sign in to with their own subscription: Claude and
+ * Codex through their login controllers, Grok Build (`grok login
+ * --device-auth`) and Kimi Code (`kimi login`) through a device code. */
+export function subscriptionDriver(driver: string): driver is SubscriptionDriver {
+  return driver === "claudeAgent" || driver === "codex" || driver === "grokAgent" || driver === "kimiAgent";
+}
+
+/** Drivers whose engine home is set per turn (engineHome), not a
+ * Claude config dir or a CODEX_HOME. */
+export function homeDriver(driver: string): driver is "grokAgent" | "kimiAgent" | "geminiAgent" | "piAgent" {
+  return driver === "grokAgent" || driver === "kimiAgent" || driver === "geminiAgent" || driver === "piAgent";
 }
 
 /** What the server knows of a person: their Perspicax subject and whether
@@ -153,8 +194,8 @@ export function resolveEngineAccess(input: EngineCredentialInput, skip: { key?: 
   if (payer.principalId && subscriptionDriver(driver) && input.subscriptionSignedIn(payer.principalId, driver)) {
     return { ok: true, via: "subscription", ...who };
   }
-  const provider = providerOfDriver(driver);
-  if (!skip.key && provider && facts?.sub && input.hasKey(facts.sub, provider)) {
+  const provider = facts?.sub ? providersOfDriver(driver).find((candidate) => input.hasKey(facts.sub!, candidate)) : undefined;
+  if (!skip.key && provider && facts?.sub) {
     return { ok: true, via: isOwner ? "owner-key" : "speaker-key", ...who, provider };
   }
   if (input.keyBacked) return { ok: true, via: "org-key", payer: "organization", ...routine };
@@ -166,7 +207,7 @@ export interface MaterializeDeps {
   resolveKey: (sub: string, provider: ModelProvider) => Promise<ProviderKeyResult>;
   invalidate: (sub: string, provider: ModelProvider) => void;
   /** The person's login directory for a driver (principal-engine-logins.ts). */
-  loginDir: (principalId: string, driver: "claudeAgent" | "codex") => string;
+  loginDir: (principalId: string, driver: SubscriptionDriver) => string;
 }
 
 export type MaterializedAccess =
@@ -187,7 +228,8 @@ export async function materializeEngineAccess(input: EngineCredentialInput, plan
   const payer = plan.payerPrincipalId ?? "";
   if (plan.via === "subscription" && subscriptionDriver(driver) && payer) {
     const dir = deps.loginDir(payer, driver);
-    return { ok: true, plan, access: { via: "subscription", identity: `subscription:${payer}`, ...(driver === "claudeAgent" ? { claudeConfigDir: dir } : { codexHome: dir }) } };
+    const where = driver === "claudeAgent" ? { claudeConfigDir: dir } : driver === "codex" ? { codexHome: dir } : { engineHome: dir };
+    return { ok: true, plan, access: { via: "subscription", identity: `subscription:${payer}`, ...where } };
   }
   if (keyVia(plan.via) && plan.provider && payer) {
     const facts = payerFacts(input, payer);
@@ -199,6 +241,33 @@ export async function materializeEngineAccess(input: EngineCredentialInput, plan
       return materializeEngineAccess(input, resolveEngineAccess(input, { key: true }), deps);
     }
     const result = await deps.resolveKey(sub, plan.provider);
+    if (result.ok && homeDriver(driver)) {
+      // An empty home of the payer's for the engine: their key, never the
+      // server's own login (a Grok cached token outranks a key).
+      const environment: Record<string, string> = { [PROVIDER_KEY_ENV[plan.provider]]: result.key };
+      const fingerprints = [result.fingerprint || "key"];
+      if (driver === "piAgent") {
+        // pi reaches every provider the payer keeps a key for; the picked
+        // model decides which one a turn uses.
+        for (const other of providersOfDriver(driver)) {
+          if (other === plan.provider || !input.hasKey(sub, other)) continue;
+          const more = await deps.resolveKey(sub, other);
+          if (!more.ok) continue;
+          environment[PROVIDER_KEY_ENV[other]] = more.key;
+          fingerprints.push(more.fingerprint || "key");
+        }
+      }
+      return {
+        ok: true,
+        plan,
+        access: {
+          via: plan.via,
+          identity: `${plan.via}:${payer}:${fingerprints.join("+")}`,
+          environment,
+          engineHome: join(deps.dataDir, "principals", payer, `${driver}-key`),
+        },
+      };
+    }
     if (result.ok) {
       const identity = `${plan.via}:${payer}:${result.fingerprint || "key"}`;
       if (plan.provider === "anthropic") return { ok: true, plan, access: { via: plan.via, identity, environment: { ANTHROPIC_API_KEY: result.key } } };
@@ -226,6 +295,12 @@ export async function materializeEngineAccess(input: EngineCredentialInput, plan
     }
     return { ok: false, reason: "no_access", detail: "perspicax_unreachable" };
   }
-  if (plan.via === "org-key") return { ok: true, plan, access: { via: "org-key", identity: "org-key" } };
+  if (plan.via === "org-key") {
+    // The organization's key comes from the instance's own environment; an
+    // engine with a home of its own still gets an empty one, never the
+    // server's login.
+    const home = homeDriver(driver) ? { engineHome: join(deps.dataDir, "org", `${driver}-key`) } : {};
+    return { ok: true, plan, access: { via: "org-key", identity: "org-key", ...home } };
+  }
   return { ok: true, plan, access: { via: "server", identity: "server" } };
 }

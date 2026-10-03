@@ -8,6 +8,7 @@
 #
 #   docker build -t openmausbot .
 #   docker build --build-arg ENGINES="@anthropic-ai/claude-code @openai/codex" -t openmausbot .
+#   docker build --build-arg ENGINES="@anthropic-ai/claude-code @openai/codex @earendil-works/pi-coding-agent@1.0.0 @google/gemini-cli@0.62.0 @moonshot-ai/kimi-code@2.1.1" --build-arg NATIVE_ENGINES=grok -t openmausbot .
 #
 # /run/sagax-sandboxd: the provisioner's shared key (docs/user-sandbox.md);
 # an empty named volume mounted there inherits this owner.
@@ -54,8 +55,42 @@ WORKDIR /app
 COPY --from=build --chown=maus:maus /src/dist-server ./dist-server
 COPY --from=build --chown=maus:maus /src/dist ./dist
 # Optional engine CLIs baked into the image (space-separated npm packages).
+# Pin versions for a reproducible image, for example the organization set:
+#   @anthropic-ai/claude-code @openai/codex @earendil-works/pi-coding-agent@1.0.0
+#   @google/gemini-cli@0.62.0 @moonshot-ai/kimi-code@2.1.1
 ARG ENGINES=""
-RUN if [ -n "$ENGINES" ]; then npm install -g $ENGINES; fi
+RUN if [ -n "$ENGINES" ]; then npm install -g $ENGINES && npm cache clean --force; fi
+# Optional engines that ship as a native binary, not an npm package
+# (space-separated names; empty skips). `grok`: Grok Build, xAI's coding CLI
+# (github.com/xai-org/grok-build, Apache-2.0), the release binary its official
+# installer (https://x.ai/cli/install.sh) downloads, pinned by version and
+# SHA-256. xAI publishes no checksum file: the hashes below were taken from
+# the artifacts whose MD5 matched the origin bucket's x-goog-hash. Bump
+# GROK_VERSION and both hashes together.
+ARG NATIVE_ENGINES=""
+ARG GROK_VERSION=1.0.46
+ARG GROK_SHA256_ARM64=69a7bdf9eb570435ac381213ff4648e5f31dc4e7546313758a7744fd54d8639f
+ARG GROK_SHA256_AMD64=0cc2a4aa40c2bf2a7a2c7933a738ea09b7c9fdafd200b53705e1d411617cd70f
+ARG TARGETARCH
+RUN set -eu; for engine in $NATIVE_ENGINES; do \
+    case "$engine" in \
+      grok) \
+        case "$TARGETARCH" in \
+          arm64) platform=linux-aarch64; sum="$GROK_SHA256_ARM64" ;; \
+          amd64) platform=linux-x86_64; sum="$GROK_SHA256_AMD64" ;; \
+          *) echo "grok: unsupported architecture $TARGETARCH" >&2; exit 1 ;; \
+        esac; \
+        curl -fsSL --proto '=https' -o /tmp/grok.gz "https://x.ai/cli/grok-${GROK_VERSION}-${platform}.gz"; \
+        echo "$sum  /tmp/grok.gz" | sha256sum -c -; \
+        install -d /opt/grok; \
+        gzip -dc /tmp/grok.gz > "/opt/grok/grok-${GROK_VERSION}"; \
+        rm -f /tmp/grok.gz; \
+        chmod 0755 "/opt/grok/grok-${GROK_VERSION}"; \
+        ln -sf "/opt/grok/grok-${GROK_VERSION}" /usr/local/bin/grok; \
+        grok --version ;; \
+      *) echo "unknown native engine: $engine" >&2; exit 1 ;; \
+    esac; \
+  done
 # The bots' browser (docs/plans/browser-engine.md): the pinned agent-browser
 # and a Chrome for Testing with its libraries, so a server bot can browse.
 # Pin here and in server/browser-engine-release.ts together.
