@@ -20,6 +20,7 @@ import UIKit
 import AVFoundation
 
 struct ChatView: View {
+    @Environment(\.themePalette) var themePalette
     let chat: Chat
     @State private var selectedThreadId: String
     @EnvironmentObject private var session: Session
@@ -33,8 +34,10 @@ struct ChatView: View {
     @State private var showingPlus = false
     @State private var showingProfile = false
     @State private var pushingProfile = false
-    @State private var showingWalkie = false
-    @AppStorage("walkie.target") private var walkieTarget = ""
+    /// The live call (the composer's white capsule): the desktop's voice mode.
+    @ObservedObject private var call = CallController.shared
+    @Environment(\.isPresented) private var isPresented
+    @Environment(\.openURL) private var openURL
     @State private var showCommandHUD = false
     @State private var shareFile: ShareFile?
     @State private var showingPhotoPicker = false
@@ -152,14 +155,17 @@ struct ChatView: View {
         .sheet(isPresented: $showingProfile) {
             if case let .bot(bot) = current { ChatProfileRoute.destination(for: bot) }
         }
-        .fullScreenCover(isPresented: $showingWalkie) {
-            WalkieView { chat in
-                showingWalkie = false
-                // Walkie hands back the chat it wants open: this one stays,
-                // another one is pushed from the home the way a deep link is.
-                if chat.threadId != threadId { session.openChat(threadId: chat.threadId) }
+        .alert(
+            call.unavailable?.title ?? "",
+            isPresented: Binding(get: { call.unavailable != nil }, set: { if !$0 { call.unavailable = nil } }),
+            presenting: call.unavailable
+        ) { unavailable in
+            if let url = unavailable.keysUrl {
+                Button(String(localized: "Add my xAI key")) { openURL(url) }
             }
-            .environmentObject(session)
+            Button(String(localized: "OK"), role: .cancel) {}
+        } message: { unavailable in
+            Text(unavailable.lines.joined(separator: "\n"))
         }
         .sheet(item: $shareFile) { file in
             ActivityShareSheet(items: [file.url])
@@ -194,6 +200,12 @@ struct ChatView: View {
             dictation.stop()
             resetFilePreview()
             cancelThreadOpen()
+            // Leaving the conversation hangs up, as on the desktop; a profile
+            // or the computer pushed over it keeps the call.
+            let chat = current
+            DispatchQueue.main.async {
+                if !isPresented, call.isOnCall(chat) { call.end() }
+            }
         }
         .onValueChange(of: scenePhase) { phase in
             if phase != .active { dictation.stop() }
@@ -207,8 +219,8 @@ struct ChatView: View {
         .onValueChange(of: showingProfile || pushingProfile) { shown in
             if shown { dictation.stop() }
         }
-        .onValueChange(of: showingWalkie) { shown in
-            if shown { dictation.stop() }
+        .onValueChange(of: call.active) { onCall in
+            if onCall { dictation.stop() }
         }
         .onValueChange(of: showingPlus) { shown in
             if shown { dictation.stop() }
@@ -248,8 +260,10 @@ struct ChatView: View {
             if let screen = ParityLaunch.current?.screen {
                 if screen.opensComputer { showingComputer = true }
                 if screen.opensProfile {
-                    // a push while the chat's own push still animates is dropped
-                    try? await Task.sleep(nanoseconds: 900_000_000)
+                    // a push while the chat's own push still animates is
+                    // dropped; 0.9 s was too tight once a busy Debug build
+                    // settled the chat a little later
+                    try? await Task.sleep(nanoseconds: 1_500_000_000)
                     openProfile()
                 }
             }
@@ -408,13 +422,17 @@ struct ChatView: View {
                 // The transcript starts under the top bar and scrolls
                 // beneath it: a clear inset the height of the bar, then the
                 // fade and the glass controls float over the content.
-                .safeAreaInset(edge: .top, spacing: 0) { Color.clear.frame(height: Self.topBarHeight) }
+                .safeAreaInset(edge: .top, spacing: 0) {
+                    // voice mode's pill keeps its own row under the name capsule
+                    Color.clear.frame(height: Self.topBarHeight + (callPillShown ? Self.callPillRow : 0))
+                }
                 .overlay(alignment: .top) {
                     ChatTopEdgeFade()
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                         .ignoresSafeArea()
                 }
                 .overlay(alignment: .top) { headerBar }
+                .overlay(alignment: .top) { callPill }
                 .overlay(alignment: .top) { islandFace }
                 .task {
                     // grow, hold a beat, shrink — the face rides along
@@ -520,6 +538,12 @@ struct ChatView: View {
         .ignoresSafeArea(.container, edges: .bottom)
         .background(Theme.bg.ignoresSafeArea())
         .overlay(alignment: .bottom) { plusSheet }
+        .overlay { groupCall }
+#if DEBUG
+        .overlay(alignment: .bottomLeading) {
+            if CallDebug.injecting && call.active { CallDebugPanel(call: call).padding(.leading, 2).padding(.bottom, 120) }
+        }
+#endif
         .toolbar(.hidden, for: .navigationBar)
         .navigationBarBackButtonHidden(true)
         // Hiding the bar above also disarms the system edge-swipe back
@@ -559,7 +583,7 @@ struct ChatView: View {
                         if unreadElsewhere > 0 {
                             Text(verbatim: "\(unreadElsewhere)")
                                 .font(.system(size: 11, weight: .semibold))
-                                .foregroundStyle(Color.white)
+                                .foregroundStyle(Theme.accentInk)
                                 .padding(.horizontal, 5)
                                 .frame(minWidth: 18, minHeight: 18)
                                 .background(Theme.unreadDot, in: Capsule())
@@ -650,12 +674,45 @@ struct ChatView: View {
         }
     }
 
-    /// Voice mode: Walkie, aimed at this bot.
+    /// Voice mode: a live call with this bot or room (the desktop's call
+    /// button in the composer). Pressed again on a call, it hangs up.
     private func startVoiceMode() {
         dictation.stop()
         composerFocused = false
-        if case let .bot(bot) = current { walkieTarget = bot.id }
-        showingWalkie = true
+        let chat = current
+        if call.isOnCall(chat) {
+            call.end()
+            return
+        }
+        Haptics.impact(.medium)
+        Task { await call.start(chat, session: session) }
+    }
+
+    /// The row voice mode's pill takes under the name capsule.
+    static let callPillRow: CGFloat = 56
+
+    private var callPillShown: Bool {
+        if case .bot = current { return call.isOnCall(current) }
+        return false
+    }
+
+    @ViewBuilder
+    private var callPill: some View {
+        if case let .bot(bot) = current, call.isOnCall(current) {
+            CallPillView(bot: bot, call: call)
+                .padding(.horizontal, 12)
+                .padding(.top, Self.topBarHeight + 4)
+                .frame(maxWidth: .infinity)
+                .transition(.move(edge: .top).combined(with: .opacity))
+        }
+    }
+
+    @ViewBuilder
+    private var groupCall: some View {
+        if case let .room(room) = current, call.isOnCall(current) {
+            GroupCallOverlay(room: room, call: call)
+                .transition(.opacity)
+        }
     }
 
     /// The island greeting: the face grows in the island, then shrinks into
@@ -706,7 +763,7 @@ struct ChatView: View {
     private var plusSheet: some View {
         if showingPlus {
             ZStack(alignment: .bottom) {
-                Color.black.opacity(0.35)
+                Color.black.opacity(Theme.palette.isDark ? 0.35 : 0.2)
                     .ignoresSafeArea()
                     .onTapGesture { withAnimation(.snappy(duration: 0.28)) { showingPlus = false } }
 
@@ -719,16 +776,16 @@ struct ChatView: View {
                             HStack(spacing: 16) {
                                 Image(systemName: action.systemImage)
                                     .font(.system(size: 20, weight: .medium))
-                                    .foregroundStyle(action.destructive ? Color.red : Color.primary)
+                                    .foregroundStyle(action.destructive ? Theme.destructiveMenu : Theme.textPrimary)
                                     .frame(width: 44, height: 44)
-                                    .background(Circle().fill(Color.primary.opacity(0.10)))
+                                    .background(Circle().fill(Theme.textPrimary.opacity(0.10)))
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(action.title)
                                         .font(.system(size: 19, weight: .medium))
-                                        .foregroundStyle(action.destructive ? Color.red : Color.primary)
+                                        .foregroundStyle(action.destructive ? Theme.destructiveMenu : Theme.textPrimary)
                                     Text(action.subtitle)
                                         .font(.system(size: 13))
-                                        .foregroundStyle(Color.secondary)
+                                        .foregroundStyle(Theme.textSecondary)
                                 }
                                 Spacer(minLength: 0)
                             }
@@ -901,6 +958,14 @@ struct ChatView: View {
               !preparingAttachments,
               !sendingMessage
         else { return }
+        // "/hibou98" alone toggles Hibou 98 and is never sent, as on the
+        // desktop (src/lib/retro98.ts).
+        if outgoingAttachments.isEmpty, text.lowercased() == "/hibou98" {
+            draft = ""
+            Haptics.selection()
+            ThemeStore.shared.toggleRetro(client: session.settingsClient)
+            return
+        }
         sendingMessage = true
         attachmentError = nil
         showCommandHUD = false
@@ -1216,7 +1281,7 @@ struct ChatView: View {
                     Text(preparingAttachments ? "Preparing attachments…" : "Sending…")
                         .font(.system(size: 13, weight: .medium))
                 }
-                .foregroundStyle(Color.secondary)
+                .foregroundStyle(Theme.textSecondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 4)
                 .accessibilityElement(children: .combine)
@@ -1230,7 +1295,7 @@ struct ChatView: View {
                         .font(.system(size: 13, weight: .medium))
                         .lineLimit(1)
                 }
-                .foregroundStyle(Color.secondary)
+                .foregroundStyle(Theme.textSecondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 4)
                 .accessibilityElement(children: .combine)
@@ -1239,10 +1304,10 @@ struct ChatView: View {
             if let error = fileOpenError ?? attachmentError {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     Image(systemName: "exclamationmark.triangle.fill")
-                        .foregroundStyle(Color.orange)
+                        .foregroundStyle(Theme.warning)
                     Text(error)
                         .font(.system(size: 13))
-                        .foregroundStyle(Color.primary)
+                        .foregroundStyle(Theme.textPrimary)
                         .fixedSize(horizontal: false, vertical: true)
                     Spacer(minLength: 4)
                     Button("Dismiss") {
@@ -1253,14 +1318,14 @@ struct ChatView: View {
                 }
                 .padding(.horizontal, 12)
                 .padding(.vertical, 9)
-                .background(Color.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 12))
+                .background(Theme.warning.opacity(0.12), in: RoundedRectangle(cornerRadius: 12))
                 .accessibilityElement(children: .combine)
             }
 
             if let error = dictation.error {
                 Text(error)
                     .font(.system(size: 13))
-                    .foregroundStyle(.orange)
+                    .foregroundStyle(Theme.warning)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 4)
             }
@@ -1324,10 +1389,10 @@ struct ChatView: View {
                 } label: {
                     Image(systemName: "plus")
                         .font(.system(size: 20.5, weight: .medium))
-                        .foregroundStyle(showingPlus ? Color.black : Theme.textPrimary)
+                        .foregroundStyle(showingPlus ? Theme.primaryInk : Theme.textPrimary)
                         .rotationEffect(.degrees(showingPlus ? 45 : 0))
                         .frame(width: Theme.Metric.glassLarge, height: Theme.Metric.glassLarge)
-                        .background(Circle().fill(showingPlus ? Color.white : Color.clear))
+                        .background(Circle().fill(showingPlus ? Theme.primaryFill : Color.clear))
                         .contentShape(Circle())
                 }
                 .buttonStyle(.plain)
@@ -1377,7 +1442,7 @@ struct ChatView: View {
                         dictation.toggle(capturing: draft)
                     } label: {
                         MicGlyph()
-                            .fill(dictation.isListening ? Color.red : Theme.composerMic)
+                            .fill(dictation.isListening ? Theme.danger : Theme.composerMic)
                             .frame(width: MicGlyph.size.width, height: MicGlyph.size.height)
                             .frame(width: 32, height: Theme.Metric.glassLarge)
                             .contentShape(Rectangle())
@@ -1391,6 +1456,7 @@ struct ChatView: View {
                     ComposerVoiceSendButton(
                         canSend: canSend,
                         busy: preparingAttachments || sendingMessage,
+                        onCall: call.isOnCall(current),
                         send: { submit() },
                         voice: startVoiceMode
                     )
@@ -1420,6 +1486,7 @@ struct ChatView: View {
 }
 
 struct MessageRow: View {
+    @Environment(\.themePalette) var themePalette
     let chat: Chat
     let message: Message
     /// Last bubble of a run from the same side: the one that gets the tail.
@@ -1462,7 +1529,7 @@ struct MessageRow: View {
                 // a linked chip is not always a message sent to someone
                 Label(message.tool?.name ?? "Messaged \(comm.withName)", systemImage: "arrow.up.right.bubble")
                     .font(.system(size: 12))
-                    .foregroundStyle(Color.secondary)
+                    .foregroundStyle(Theme.textSecondary)
             }
 
             if let reactions = message.reactions, !reactions.isEmpty {
@@ -1475,7 +1542,7 @@ struct MessageRow: View {
                         .font(.system(size: 13))
                         .buttonStyle(.bordered)
                         .buttonBorderShape(.capsule)
-                        .tint(group.mine ? Color.accentColor : Color.secondary)
+                        .tint(group.mine ? Theme.accent : Theme.textSecondary)
                     }
                 }
             }
@@ -1494,7 +1561,7 @@ struct MessageRow: View {
                     .disabled(index + 1 >= versions.count || bot.busy == true)
                 }
                 .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(Color.secondary)
+                .foregroundStyle(Theme.textSecondary)
             }
         }
         .contextMenu {
@@ -1667,6 +1734,7 @@ private struct ActivityShareSheet: UIViewControllerRepresentable {
 }
 
 struct TextBubble: View {
+    @Environment(\.themePalette) var themePalette
     let message: Message
     let chat: Chat
     var tailed = true
@@ -1708,7 +1776,7 @@ struct TextBubble: View {
                 if let speaker, !mine {
                     Text(speaker.name)
                         .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(MausPalette.color(speaker.color))
+                        .foregroundStyle(Theme.readable(MausPalette.color(speaker.color)))
                 }
                 ForEach(message.voiceNotes) { note in
                     VoiceNoteBubble(note: note, tint: MausPalette.color(chat.color))
@@ -1716,7 +1784,7 @@ struct TextBubble: View {
                 ForEach(message.generatedImages, id: \.path) { attachment in
                     TranscriptAttachmentView(
                         attachment: attachment, threadId: chat.threadId,
-                        messageId: message.id, foreground: mine ? BubbleColor.mineText : .primary
+                        messageId: message.id, foreground: mine ? BubbleColor.mineText : BubbleColor.theirsText
                     )
                 }
                 // Bots get markdown, you do not — the same split the desktop
@@ -1750,7 +1818,7 @@ struct TextBubble: View {
                     ) { url in
                         openLink(url, message)
                     }
-                        .foregroundStyle(Color.primary)
+                        .foregroundStyle(BubbleColor.theirsText)
                         .textSelection(.enabled)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -1776,6 +1844,7 @@ struct TextBubble: View {
 /// A tool the bot ran. Deliberately quiet — these are the bulk of a busy
 /// transcript and they are context, not content.
 struct ActivityChip: View {
+    @Environment(\.themePalette) var themePalette
     let tool: ToolActivity?
     /// The thread this chip opened, when it opened one.
     var threadRef: ThreadRef? = nil
@@ -1812,7 +1881,7 @@ struct ActivityChip: View {
                                 .font(.system(size: 10, weight: .semibold))
                         }
                         .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Theme.textSecondary)
                         .padding(.leading, 8)
                     }
                     .buttonStyle(.plain)
@@ -1840,6 +1909,7 @@ struct ActivityChip: View {
 /// A quiet capsule under a reply for the harness's receipts (the work
 /// digest, a compaction record): one line, and the full text on tap.
 struct ReceiptChip: View {
+    @Environment(\.themePalette) var themePalette
     let icon: String
     let label: String
     var hint = "Shows the full text"
@@ -1858,7 +1928,7 @@ struct ReceiptChip: View {
                         .font(.system(size: 12))
                         .lineLimit(1)
                 }
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Theme.textSecondary)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 5)
                 .background(Capsule().strokeBorder(.quaternary))
@@ -1876,6 +1946,7 @@ struct ReceiptChip: View {
 /// provider-neutral: Apple Passwords works without another subscription,
 /// while 1Password, Bitwarden and other enabled providers work as usual.
 struct CredentialRequestCardView: View {
+    @Environment(\.themePalette) var themePalette
     let chat: Chat
     let message: Message
     let secret: SecretRequestCardData
@@ -1975,7 +2046,7 @@ struct CredentialRequestCardView: View {
             HStack(alignment: .top, spacing: 11) {
                 Image(systemName: "key.fill")
                     .font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(tint)
+                    .foregroundStyle(Theme.readable(tint))
                     .frame(width: 38, height: 38)
                     .background(tint.opacity(0.13), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
 
@@ -1984,7 +2055,7 @@ struct CredentialRequestCardView: View {
                         .font(.system(size: 16, weight: .semibold))
                     Text("Requested by \(requester)")
                         .font(.system(size: 12.5))
-                        .foregroundStyle(Color.secondary)
+                        .foregroundStyle(Theme.textSecondary)
                 }
                 Spacer(minLength: 0)
             }
@@ -1992,7 +2063,7 @@ struct CredentialRequestCardView: View {
             if let description = visible(secret.description) {
                 Text(description)
                     .font(.system(size: 14.5))
-                    .foregroundStyle(Color.secondary)
+                    .foregroundStyle(Theme.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
 
@@ -2002,7 +2073,7 @@ struct CredentialRequestCardView: View {
                         secret.resumed == true ? "Saved securely. The task resumed." : "Saved securely on your computer.",
                         systemImage: "checkmark.shield.fill"
                     )
-                    .foregroundStyle(.green)
+                    .foregroundStyle(Theme.success)
 
                     if secret.resumed != true, let preparedSubmission {
                         Button(action: { send(preparedSubmission) }) {
@@ -2018,15 +2089,15 @@ struct CredentialRequestCardView: View {
                 }
             } else if secret.dismissed == true {
                 Label("Not provided", systemImage: "xmark.circle")
-                    .foregroundStyle(Color.secondary)
+                    .foregroundStyle(Theme.textSecondary)
             } else if submitted {
                 Label("Encrypted and saved on your computer", systemImage: "checkmark.shield.fill")
-                    .foregroundStyle(.green)
+                    .foregroundStyle(Theme.success)
             } else if canEnterOnPhone {
                 VStack(alignment: .leading, spacing: 5) {
                     Label("Enter securely on this phone", systemImage: "lock.shield.fill")
                         .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(tint)
+                        .foregroundStyle(Theme.readable(tint))
 
                     if preparedSubmission == nil {
                         SecureField(placeholder, text: $value)
@@ -2041,7 +2112,7 @@ struct CredentialRequestCardView: View {
                             .padding(.horizontal, 12)
                             .frame(minHeight: 44)
                             .background(
-                                Color.secondary.opacity(0.1),
+                                Theme.card,
                                 in: RoundedRectangle(cornerRadius: 11, style: .continuous)
                             )
                             .accessibilityLabel(label)
@@ -2051,11 +2122,11 @@ struct CredentialRequestCardView: View {
                             systemImage: "lock.fill"
                         )
                         .font(.system(size: 13))
-                        .foregroundStyle(Color.secondary)
+                        .foregroundStyle(Theme.textSecondary)
                         .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
                         .padding(.horizontal, 12)
                         .background(
-                            Color.secondary.opacity(0.1),
+                            Theme.card,
                             in: RoundedRectangle(cornerRadius: 11, style: .continuous)
                         )
                     }
@@ -2086,7 +2157,7 @@ struct CredentialRequestCardView: View {
 
                     Text("Use Apple Passwords, 1Password, Bitwarden, or paste. The value is encrypted for your computer and never added to chat.")
                         .font(.system(size: 13))
-                        .foregroundStyle(Color.secondary)
+                        .foregroundStyle(Theme.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 .padding(11)
@@ -2096,10 +2167,10 @@ struct CredentialRequestCardView: View {
                 VStack(alignment: .leading, spacing: 5) {
                     Label("Pair again to enter here", systemImage: "qrcode")
                         .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(tint)
+                        .foregroundStyle(Theme.readable(tint))
                     Text("This pairing predates secure phone entry. Scan a fresh QR from Sagax, or finish this request on your computer.")
                         .font(.system(size: 13))
-                        .foregroundStyle(Color.secondary)
+                        .foregroundStyle(Theme.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 .padding(11)
@@ -2109,10 +2180,10 @@ struct CredentialRequestCardView: View {
                 VStack(alignment: .leading, spacing: 5) {
                     Label("Secure connection required", systemImage: "lock.shield.fill")
                         .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(tint)
+                        .foregroundStyle(Theme.readable(tint))
                     Text("Switch to Secure phone access (HTTPS) or Tailscale, then try again. You can still finish this request on your computer.")
                         .font(.system(size: 13))
-                        .foregroundStyle(Color.secondary)
+                        .foregroundStyle(Theme.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 .padding(11)
@@ -2123,14 +2194,14 @@ struct CredentialRequestCardView: View {
             if let submissionError = visible(submissionError) {
                 Label(submissionError, systemImage: "exclamationmark.triangle.fill")
                     .font(.system(size: 12.5))
-                    .foregroundStyle(.red)
+                    .foregroundStyle(Theme.danger)
                     .fixedSize(horizontal: false, vertical: true)
             }
 
             if let error = visible(secret.error) {
                 Label(error, systemImage: "exclamationmark.triangle.fill")
                     .font(.system(size: 12.5))
-                    .foregroundStyle(.orange)
+                    .foregroundStyle(Theme.warning)
                     .fixedSize(horizontal: false, vertical: true)
             }
 
@@ -2145,7 +2216,7 @@ struct CredentialRequestCardView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .fill(Color.secondary.opacity(0.09))
+                .fill(Theme.inset)
         )
         .overlay {
             RoundedRectangle(cornerRadius: 22, style: .continuous)
@@ -2284,6 +2355,7 @@ struct CredentialRequestCardView: View {
 /// screen the companion exists for — a bot stopped, and only a person can
 /// let it continue.
 struct CardView: View {
+    @Environment(\.themePalette) var themePalette
     let chat: Chat
     let message: Message
     @EnvironmentObject private var session: Session
@@ -2317,16 +2389,16 @@ struct CardView: View {
                 if card.isPending {
                     Label("\(chat.name) is waiting on you", systemImage: "hand.raised.fill")
                         .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(tint)
+                        .foregroundStyle(Theme.readable(tint))
                 }
                 Text(card.title)
                     .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(Color.primary)
+                    .foregroundStyle(Theme.attentionText)
                     .fixedSize(horizontal: false, vertical: true)
                 if !card.subtitle.isEmpty {
                     Text(card.subtitle)
                         .font(.system(size: 15))
-                        .foregroundStyle(Color.secondary)
+                        .foregroundStyle(Theme.attentionSecondary)
                         .textSelection(.enabled)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -2340,22 +2412,22 @@ struct CardView: View {
                                 Spacer()
                                 Text("sha256 \(String(sha256.prefix(8)))")
                                     .font(.system(size: 10, design: .monospaced))
-                                    .foregroundStyle(Color.secondary)
+                                    .foregroundStyle(Theme.attentionSecondary)
                             }
                             Text(skill.source.map { LocalizedStringKey("Source: \($0)") } ?? "Source: unknown")
                                 .font(.system(size: 11))
-                                .foregroundStyle(Color.secondary)
+                                .foregroundStyle(Theme.attentionSecondary)
                                 .textSelection(.enabled)
                             ScrollView(.vertical) {
                                 Text(preview)
                                     .font(.system(size: 12, design: .monospaced))
-                                    .foregroundStyle(Color.primary)
+                                    .foregroundStyle(Theme.attentionText)
                                     .textSelection(.enabled)
                                     .frame(maxWidth: .infinity, alignment: .leading)
                             }
                             .frame(maxHeight: 220)
                             .padding(10)
-                            .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
+                            .background(Theme.inset, in: RoundedRectangle(cornerRadius: 10))
                         }
                     } else {
                         Label(
@@ -2363,14 +2435,14 @@ struct CardView: View {
                             systemImage: "exclamationmark.shield"
                         )
                         .font(.system(size: 12))
-                        .foregroundStyle(.orange)
+                        .foregroundStyle(Theme.warning)
                     }
                 }
 
                 if let held = card.held {
                     Label(held, systemImage: "exclamationmark.shield")
                         .font(.system(size: 13))
-                        .foregroundStyle(.orange)
+                        .foregroundStyle(Theme.warning)
                 }
 
                 if card.isPending {
@@ -2386,11 +2458,11 @@ struct CardView: View {
                             } label: {
                                 Text(option)
                                     .font(.system(size: 15, weight: .semibold))
-                                    .foregroundStyle(Self.isRefusal(option) ? Color.primary : .white)
+                                    .foregroundStyle(Self.isRefusal(option) ? Theme.attentionText : .white)
                                     .frame(maxWidth: .infinity)
                                     .frame(height: 40)
                                     .background(
-                                        Capsule().fill(Self.isRefusal(option) ? Color.secondary.opacity(0.18) : tint)
+                                        Capsule().fill(Self.isRefusal(option) ? Theme.cardRaised : Theme.readable(tint))
                                     )
                             }
                             .buttonStyle(.plain)
@@ -2424,21 +2496,22 @@ struct CardView: View {
                             }
                         }
                         .font(.system(size: 12))
-                        .foregroundStyle(Color.secondary)
+                        .foregroundStyle(Theme.attentionSecondary)
                         .frame(maxWidth: .infinity)
                         .disabled(answering)
                     }
                 } else if let answered = card.answered {
                     Label(answered, systemImage: "checkmark.circle")
                         .font(.system(size: 14))
-                        .foregroundStyle(Color.secondary)
+                        .foregroundStyle(Theme.attentionSecondary)
                 }
             }
             .padding(14)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
                 RoundedRectangle(cornerRadius: 22, style: .continuous)
-                    .fill(card.isPending ? tint.opacity(0.12) : Color.secondary.opacity(0.13))
+                    .fill(card.isPending ? Theme.attentionSurface : Theme.card)
+                    .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).fill(card.isPending ? tint.opacity(0.08) : Color.clear))
             )
             .overlay {
                 RoundedRectangle(cornerRadius: 22, style: .continuous)
@@ -2451,6 +2524,7 @@ struct CardView: View {
 /// A frame of the bot's computer. In the paged shape the pixels are not in
 /// the transcript — they are fetched here, once, when the row appears.
 struct ScreenShot: View {
+    @Environment(\.themePalette) var themePalette
     let threadId: String
     let message: Message
     @EnvironmentObject private var session: Session
@@ -2465,7 +2539,7 @@ struct ScreenShot: View {
                     .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
             } else {
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(Color.secondary.opacity(0.13))
+                    .fill(Theme.card)
                     .frame(height: 160)
                     .overlay { ProgressView() }
             }
@@ -2500,6 +2574,7 @@ struct ScreenShot: View {
 /// animates opacity on a separate view, which needs a device to get right;
 /// static is honest until then.
 struct StreamingBubble: View {
+    @Environment(\.themePalette) var themePalette
     let text: String?
     let reasoning: String?
     var color: String = "blue"
@@ -2524,7 +2599,7 @@ struct StreamingBubble: View {
                     // unclosed fence renders as code, an unclosed link as the
                     // characters typed so far.
                     MarkdownText(source: text, caret: true)
-                        .foregroundStyle(Color.primary)
+                        .foregroundStyle(BubbleColor.theirsText)
                 }
             }
             .padding(.horizontal, Theme.Chat.bubblePaddingH)
@@ -2545,6 +2620,7 @@ struct StreamingBubble: View {
 /// line each, editable and deletable, with a note when the harness held them
 /// for thread capacity rather than because a turn is running.
 private struct QueuedSendList: View {
+    @Environment(\.themePalette) var themePalette
     let sends: [QueuedSend]
     let edit: (QueuedSend) -> Void
     let cancel: (QueuedSend) -> Void
@@ -2558,16 +2634,16 @@ private struct QueuedSendList: View {
             if showsCapacityNote {
                 Text("Queued — starts when this bot has a free thread slot.")
                     .font(.system(size: 12))
-                    .foregroundStyle(Color.secondary)
+                    .foregroundStyle(Theme.textSecondary)
             }
             ForEach(Array(sends.enumerated()), id: \.element.queueId) { index, send in
                 HStack(spacing: 8) {
                     Image(systemName: "arrow.turn.down.right")
                         .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(Color.secondary)
+                        .foregroundStyle(Theme.textSecondary)
                     Text(send.text)
                         .font(.system(size: 14))
-                        .foregroundStyle(Color.primary)
+                        .foregroundStyle(Theme.textPrimary)
                         .lineLimit(1)
                         .truncationMode(.tail)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -2576,7 +2652,7 @@ private struct QueuedSendList: View {
                     } label: {
                         Image(systemName: "pencil")
                             .font(.system(size: 13, weight: .medium))
-                            .foregroundStyle(Color.secondary)
+                            .foregroundStyle(Theme.textSecondary)
                             .frame(width: 30, height: 30)
                             .contentShape(Rectangle())
                     }
@@ -2587,7 +2663,7 @@ private struct QueuedSendList: View {
                     } label: {
                         Image(systemName: "trash")
                             .font(.system(size: 13, weight: .medium))
-                            .foregroundStyle(Color.secondary)
+                            .foregroundStyle(Theme.textSecondary)
                             .frame(width: 30, height: 30)
                             .contentShape(Rectangle())
                     }
@@ -2596,7 +2672,7 @@ private struct QueuedSendList: View {
                 }
                 .padding(.horizontal, 10)
                 .padding(.vertical, 5)
-                .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
+                .background(Theme.inset, in: RoundedRectangle(cornerRadius: 12))
             }
         }
         .padding(.horizontal, 4)

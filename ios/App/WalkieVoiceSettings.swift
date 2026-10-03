@@ -1,4 +1,7 @@
-// Walkie's voice: the ElevenLabs key it speaks with and which voice it uses.
+// A call's fallback voice on this phone: when the computer has no voice for
+// a bot (no voice mode, no provider), calls speak with ElevenLabs straight
+// from the phone, with this key and voice. The storage keys keep their
+// first names ("walkie.*") so a key saved before stays.
 //
 // The key is pasted once and kept in this phone's Keychain — never in
 // defaults, never sent to the computer. It is checked against ElevenLabs
@@ -57,6 +60,7 @@ enum WalkieVoiceKey {
 }
 
 struct WalkieVoiceSheet: View {
+    @Environment(\.themePalette) var themePalette
     /// Play a short sample with the current settings.
     let onSample: () -> Void
 
@@ -100,14 +104,16 @@ struct WalkieVoiceSheet: View {
                 } header: {
                     Text("ElevenLabs")
                 } footer: {
-                    Text("Replies are spoken by ElevenLabs straight from this phone. The key stays in this phone's Keychain. Get one at elevenlabs.io, then Developers, then API keys.")
+                    Text("When your computer has no voice for a bot, calls speak with ElevenLabs straight from this phone. The key stays in this phone's Keychain. Get one at elevenlabs.io, then Developers, then API keys.")
                 }
+                .listRowBackground(Theme.parity(Color(uiColor: .secondarySystemGroupedBackground), Theme.card))
 
                 if let problem {
                     Section {
                         Label(problem, systemImage: "exclamationmark.triangle.fill")
-                            .foregroundStyle(Color.orange)
+                            .foregroundStyle(Theme.parity(Color.orange, Theme.warning))
                     }
+                    .listRowBackground(Theme.parity(Color(uiColor: .secondarySystemGroupedBackground), Theme.card))
                 }
 
                 if hasKey {
@@ -125,9 +131,12 @@ struct WalkieVoiceSheet: View {
                     } footer: {
                         Text("Agents with an ElevenLabs voice picked on your computer use it when this is on. Everyone else uses the voice above.")
                     }
+                    .listRowBackground(Theme.parity(Color(uiColor: .secondarySystemGroupedBackground), Theme.card))
                 }
             }
-            .navigationTitle("Walkie voice")
+            .scrollContentBackground(.hidden)
+            .background(Theme.parity(Color(uiColor: .systemGroupedBackground), Theme.bg))
+            .navigationTitle("Call voice")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {

@@ -179,14 +179,14 @@ enum WebSignIn {
 // MARK: - Screen
 
 struct PluginsView: View {
+    @Environment(\.themePalette) var themePalette
     @EnvironmentObject private var session: Session
     @EnvironmentObject private var settings: SettingsModel
     @StateObject private var model = PluginsModel()
-    @AppStorage(PrefKey.appearanceTone) private var tone = AppearanceTone.black.rawValue
     @State private var trusting: PluginListing?
     @State private var showingAll: PluginsListKind?
 
-    private var background: Color { (AppearanceTone(rawValue: tone) ?? .black).background }
+    private var background: Color { Theme.bg }
     private var searching: Bool { !model.query.trimmingCharacters(in: .whitespaces).isEmpty }
 
     var body: some View {
@@ -360,6 +360,7 @@ enum PluginsListKind: Hashable { case featured, team }
 
 /// "View all": every featured entry, or every team plugin.
 struct PluginsListView: View {
+    @Environment(\.themePalette) var themePalette
     let kind: PluginsListKind
     @ObservedObject var model: PluginsModel
     @EnvironmentObject private var session: Session
@@ -388,6 +389,7 @@ struct PluginsListView: View {
 // MARK: - Rows
 
 private struct PluginsSectionHeader: View {
+    @Environment(\.themePalette) var themePalette
     let title: LocalizedStringKey
     var viewAll: (() -> Void)?
 
@@ -395,7 +397,7 @@ private struct PluginsSectionHeader: View {
         HStack(alignment: .firstTextBaseline) {
             Text(title)
                 .font(Theme.Font.label)
-                .foregroundStyle(Color(hex: 0x575658))
+                .foregroundStyle(Theme.parity(Color(hex: 0x575658), Theme.placeholder))
             Spacer()
             if let viewAll {
                 Button("View all") {
@@ -403,7 +405,7 @@ private struct PluginsSectionHeader: View {
                     viewAll()
                 }
                 .font(Theme.Font.label)
-                .foregroundStyle(Color(hex: 0x97969C))
+                .foregroundStyle(Theme.parity(Color(hex: 0x97969C), Theme.textSecondary))
                 .buttonStyle(.plain)
             }
         }
@@ -414,6 +416,7 @@ private struct PluginsSectionHeader: View {
 }
 
 private struct PluginsEmptyLine: View {
+    @Environment(\.themePalette) var themePalette
     let text: LocalizedStringKey
 
     var body: some View {
@@ -428,6 +431,7 @@ private struct PluginsEmptyLine: View {
 
 /// Tile, name and description, and the Add / Added pill.
 private struct PluginRowLayout<Icon: View, Pill: View>: View {
+    @Environment(\.themePalette) var themePalette
     let name: String
     let description: String
     let identifier: String
@@ -466,6 +470,7 @@ private struct PluginRowLayout<Icon: View, Pill: View>: View {
 }
 
 private struct PluginListingRow: View {
+    @Environment(\.themePalette) var themePalette
     let listing: PluginListing
     let installed: Bool
     let busy: Bool
@@ -486,6 +491,7 @@ private struct PluginListingRow: View {
 }
 
 private struct PluginTeamRow: View {
+    @Environment(\.themePalette) var themePalette
     let plugin: InstalledPlugin
     let busy: Bool
     let signIn: () -> Void
@@ -502,6 +508,7 @@ private struct PluginTeamRow: View {
 
 /// "Add" (44.67 x 32.67) or "Added" (58 x 32.67): #2B2B2D, no rim.
 private struct PluginPill: View {
+    @Environment(\.themePalette) var themePalette
     let installed: Bool
     let busy: Bool
     let action: () -> Void
@@ -528,6 +535,11 @@ private struct PluginPill: View {
             .background(Theme.pill, in: Capsule())
         }
         .buttonStyle(.plain)
-        .disabled(installed || busy)
+        // Black and Dim keep the measured, dimmed "Added"; the other skins
+        // keep it readable (a disabled plain button fades its label below
+        // 3:1 on a light pill) and refuse the tap instead.
+        .disabled(Theme.keepsReference && (installed || busy))
+        .allowsHitTesting(!(installed || busy))
+        .accessibilityAddTraits(installed || busy ? .isStaticText : [])
     }
 }

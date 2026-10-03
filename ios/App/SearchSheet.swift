@@ -20,6 +20,7 @@ enum SearchScope: String, CaseIterable, Identifiable {
 }
 
 struct SearchSheet: View {
+    @Environment(\.themePalette) var themePalette
     let close: () -> Void
     let open: (Chat) -> Void
     let openHit: (SearchHit) -> Void
@@ -262,6 +263,7 @@ struct SearchSheet: View {
 /// One result: the home's 80 pt row with the type label (or a time) on the
 /// right and one grey line under the name.
 struct SearchResultRow: View {
+    @Environment(\.themePalette) var themePalette
     let chat: Chat?
     var title: String?
     let subtitle: String
@@ -297,7 +299,7 @@ struct SearchResultRow: View {
                     Spacer(minLength: 8)
                     Text(verbatim: label)
                         .font(HomeMetrics.font12)
-                        .foregroundStyle(Color(hex: 0x575759))
+                        .foregroundStyle(Theme.parity(Color(hex: 0x575759), Theme.placeholder))
                         .lineLimit(1)
                         .fixedSize()
                 }

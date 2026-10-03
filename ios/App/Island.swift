@@ -27,6 +27,7 @@ enum IslandGeometry {
 
 /// The island shape, collapsed or expanded, with whatever is inside it.
 struct IslandShell<Content: View>: View {
+    @Environment(\.themePalette) var themePalette
     let expanded: Bool
     var expandedSize = CGSize(width: 250, height: 330)
     @ViewBuilder let content: () -> Content
@@ -68,6 +69,7 @@ struct IslandShell<Content: View>: View {
 /// The roster's island: when a bot stops for you, it grows with that bot's
 /// face, the question, and the answers. Tap the face to open the chat.
 struct NeedsYouIsland: View {
+    @Environment(\.themePalette) var themePalette
     let update: ChatUpdate?
     let open: (Chat) -> Void
     @EnvironmentObject private var session: Session

@@ -2,6 +2,7 @@ import SwiftUI
 import CompanionCore
 
 struct WebhookMessageBody: View {
+    @Environment(\.themePalette) var themePalette
     let content: WebhookMessageContent
     @State private var expanded = false
 

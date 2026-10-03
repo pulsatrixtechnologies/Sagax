@@ -4,6 +4,7 @@ import CompanionCore
 /// Bot thread selection belongs to this phone. Group threads retain their
 /// shared, serial selection on the paired computer.
 struct TaskManagerView: View {
+    @Environment(\.themePalette) var themePalette
     let chat: Chat
     var onSelectThread: (String) -> Void = { _ in }
     @EnvironmentObject private var session: Session
@@ -51,7 +52,7 @@ struct TaskManagerView: View {
 
     var body: some View {
         NavigationStack {
-            List {
+            ThemedList {
                 if let taskToRename {
                     Section("Rename thread") {
                         TextField("Thread title", text: $title)
@@ -78,7 +79,7 @@ struct TaskManagerView: View {
             .safeAreaInset(edge: .top, spacing: 0) {
                 if let errorMessage {
                     Label(errorMessage, systemImage: "exclamationmark.circle")
-                        .foregroundStyle(.red)
+                        .foregroundStyle(Theme.danger)
                         .font(.subheadline)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding()
@@ -190,7 +191,7 @@ struct TaskManagerView: View {
             }
             Text("The current and working threads stay. Switch to a thread you want to keep first.")
                 .font(.footnote)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Theme.textSecondary)
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 12)
@@ -224,7 +225,7 @@ struct TaskManagerView: View {
                             }
                             if group.tasks.isEmpty {
                                 Text("No threads in this folder")
-                                    .foregroundStyle(.secondary)
+                                    .foregroundStyle(Theme.textSecondary)
                             }
                         } header: {
                             if let project = group.project {
@@ -284,7 +285,7 @@ struct TaskManagerView: View {
             } label: {
                 HStack(spacing: 12) {
                     Image(systemName: selected ? "checkmark.circle.fill" : "circle")
-                        .foregroundStyle(selected ? Color.accentColor : Color.secondary)
+                        .foregroundStyle(selected ? Theme.accentText : Theme.textSecondary)
                     BotThreadRow(
                         task: task,
                         selected: task.threadId == current.threadId,
@@ -379,7 +380,7 @@ struct TaskManagerView: View {
                 Button { beginRename(task) } label: {
                     Label("Rename", systemImage: "pencil")
                 }
-                .tint(.accentColor)
+                .tint(.blue)
                 .disabled(isMutating)
             }
         }

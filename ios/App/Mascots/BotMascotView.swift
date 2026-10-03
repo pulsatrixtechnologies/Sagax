@@ -10,6 +10,7 @@ import SwiftUI
 import UIKit
 
 struct BotMascotView: View {
+    @Environment(\.themePalette) var themePalette
     let bot: Bot
     let size: CGFloat
     var state: MausState = .idle
@@ -81,6 +82,7 @@ struct BotMascotView: View {
 /// scaled by the zoom about that same point (`AvatarFraming.imageRect`),
 /// masked to a circle, 22 % corners or a square.
 struct FramedPicture: View {
+    @Environment(\.themePalette) var themePalette
     let image: UIImage
     let size: CGFloat
     let crop: AvatarCrop
@@ -91,7 +93,7 @@ struct FramedPicture: View {
     var body: some View {
         let rect = AvatarFraming.imageRect(imageSize: image.size, box: size, zoom: zoom, focusX: focusX, focusY: focusY)
         ZStack(alignment: .topLeading) {
-            Color(uiColor: .secondarySystemBackground)
+            Theme.parity(Color(uiColor: .secondarySystemBackground), Theme.card)
             Group {
                 // SwiftUI's `Image` draws only a still; an animated attachment plays in UIKit
                 if image.images == nil {
@@ -135,13 +137,14 @@ private struct AnimatedAttachmentView: UIViewRepresentable {
 
 /// A chat's avatar: a bot's own, or a room's members as a group.
 struct ChatAvatarView: View {
+    @Environment(\.themePalette) var themePalette
     let chat: Chat
     let size: CGFloat
     var state: MausState = .idle
     var animated = false
     var comets = false
     /// The surface a room's cut-outs are painted in.
-    var background: Color = Color(uiColor: .systemBackground)
+    var background: Color = Theme.parity(Color(uiColor: .systemBackground), Theme.bg)
 
     @EnvironmentObject private var session: Session
 

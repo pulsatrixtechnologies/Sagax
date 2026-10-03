@@ -4,6 +4,7 @@ import CompanionCore
 /// The same reversible narration fold as desktop. Activity preferences apply
 /// to tool receipts independently, so Hidden still offers this compact row.
 struct AssistantTurnChip: View {
+    @Environment(\.themePalette) var themePalette
     let turn: AssistantTurnFold
     let chat: Chat
     let openLink: (URL, Message) -> OpenURLAction.Result
@@ -25,10 +26,10 @@ struct AssistantTurnChip: View {
                         .rotationEffect(.degrees(expanded ? 90 : 0))
                 }
                 .font(.caption.weight(.medium))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Theme.textSecondary)
                 .padding(.horizontal, 9)
                 .padding(.vertical, 6)
-                .background(Color.secondary.opacity(0.08), in: Capsule())
+                .background(Theme.cardRaised, in: Capsule())
             }
             .buttonStyle(.plain)
             .accessibilityLabel(turn.label)

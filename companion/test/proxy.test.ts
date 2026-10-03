@@ -225,6 +225,18 @@ describe("the sidecar in front of an unmodified harness", () => {
     })).toBe(200);
   });
 
+  it("tells the phone whose computer this is, with no photo a personal computer cannot know", async () => {
+    // A personal computer has no Perspicax link, so its session names no
+    // avatar and the phone keeps its initial. The photo route still crosses
+    // the sidecar (routes.test.ts); this harness has none and answers 404.
+    const session = await device("GET", "/api/auth/session");
+    expect(session.status).toBe(200);
+    expect(session.body.kind).toBe("loopback");
+    expect(session.body.avatarUrl).toBeUndefined();
+    const photo = await device("GET", "/api/people/pr_0b1c/avatar?v=0123456789abcdef");
+    expect(photo.status).toBe(404);
+  });
+
   it("refuses anything carrying an Origin, before looking at the token", async () => {
     const { status } = await device("GET", "/api/bots", { headers: { origin: "https://evil.example" } });
     expect(status).toBe(403);
@@ -379,6 +391,40 @@ describe("the sidecar in front of an unmodified harness", () => {
       body: { name: "Unsafe", botIds: [first.id], autoApprove: true },
     });
     expect(smuggled.status).toBe(400);
+  });
+
+  it("carries the desktop remote client's folders, steer, titles and Mark all read to the harness", async () => {
+    // The Electron app in remote-client mode shows each of these and goes
+    // through this same sidecar; the iPad follows it. The harness answers
+    // every one of them itself (its own errors, never the sidecar's "no route").
+    const bot = (await device("POST", "/api/bots")).body.bot;
+    const created = await device("POST", `/api/bots/${bot.id}/projects`, { body: { name: "Mobile", emoji: null } });
+    expect(created.status).toBe(201);
+    const folder = created.body.project.id;
+    const renamed = await device("PATCH", `/api/bots/${bot.id}/projects/${folder}`, { body: { name: "Phone" } });
+    expect(renamed.status).toBe(200);
+    expect(renamed.body.project.name).toBe("Phone");
+    expect((await device("PATCH", `/api/bots/${bot.id}/projects/order`, { body: { projectIds: [folder] } })).status).toBe(200);
+    // a folder owns no settings: anything but a name and an emoji is refused by the harness
+    expect((await device("PATCH", `/api/bots/${bot.id}/projects/${folder}`, { body: { cwd: "/" } })).status).toBe(400);
+    expect((await device("DELETE", `/api/bots/${bot.id}/projects/${folder}`)).status).toBe(200);
+
+    const steered = await device("POST", `/api/bots/${bot.id}/queue/nothing-queued/steer`, { body: { threadId: bot.threadId } });
+    expect(steered.status).toBe(404);
+    expect(steered.body.error).toBe("no such queued message");
+    const room = (await device("POST", "/api/groups", { body: { memberIds: [bot.id], name: "Steer room" } })).body.group;
+    const roomSteer = await device("POST", `/api/groups/${room.id}/queue/nothing-queued/steer`, { body: {} });
+    expect(roomSteer.body.error ?? "").not.toMatch(/^no route/);
+
+    const title = await device("POST", `/api/bots/${bot.id}/tasks/${bot.threadId}/title`);
+    expect(title.body.error ?? "").not.toMatch(/^no route/);
+    expect(title.status).not.toBe(403);
+
+    const seen = await device("POST", "/api/routine-runs/seen-all");
+    expect(seen.status).toBe(200);
+    expect(Array.isArray(seen.body.runs)).toBe(true);
+    const brand = await device("GET", "/api/brand");
+    expect(brand.status).toBe(200);
   });
 
   it("creates a bot through companion pairing without host defaults or settings access", async () => {

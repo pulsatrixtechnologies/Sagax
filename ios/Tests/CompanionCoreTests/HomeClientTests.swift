@@ -196,8 +196,12 @@ final class HomeClientTests: XCTestCase {
     }
 
     func testAuthSessionReadsAPhoto() throws {
-        let session = try JSONDecoder().decode(AuthSession.self, from: Data(#"{"kind":"session","scopes":["client"],"picture":"https://example.com/me.png"}"#.utf8))
-        XCTAssertEqual(session.avatarUrl, "https://example.com/me.png")
+        let session = try JSONDecoder().decode(AuthSession.self, from: Data(#"{"kind":"session","scopes":["client"],"avatarUrl":"/api/people/pr_1/avatar?v=0123456789abcdef"}"#.utf8))
+        XCTAssertEqual(session.avatar?.route, .person(id: "pr_1", version: "0123456789abcdef"))
+        // A `picture` claim names Perspicax itself: never fetched by the phone.
+        let claim = try JSONDecoder().decode(AuthSession.self, from: Data(#"{"kind":"session","scopes":["client"],"picture":"https://example.com/me.png"}"#.utf8))
+        XCTAssertNil(claim.avatarUrl)
+        XCTAssertNil(claim.avatar)
         let none = try JSONDecoder().decode(AuthSession.self, from: Data(#"{"kind":"session","scopes":[],"avatarUrl":" "}"#.utf8))
         XCTAssertNil(none.avatarUrl)
     }

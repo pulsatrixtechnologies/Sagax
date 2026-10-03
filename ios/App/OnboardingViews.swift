@@ -3,6 +3,7 @@ import SwiftUI
 /// After the first connection: ask once for notifications, in the same
 /// design as the other onboarding pages.
 struct NotificationOnboardingView: View {
+    @Environment(\.themePalette) var themePalette
     @EnvironmentObject private var session: Session
     @State private var enabling = false
     let onContinue: () -> Void

@@ -18,6 +18,11 @@ final class ShareViewController: UIViewController {
         }
         self.model = model
 
+        // The app pins one skin: the sheet takes that skin's light or dark,
+        // so system text and the keyboard match its colours (SharedTheme).
+        if let pinned = SharedTheme.pinnedScheme {
+            overrideUserInterfaceStyle = pinned == .dark ? .dark : .light
+        }
         let host = UIHostingController(rootView: ShareRootView(model: model))
         addChild(host)
         view.addSubview(host.view)
