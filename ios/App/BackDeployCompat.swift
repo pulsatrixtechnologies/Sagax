@@ -36,6 +36,7 @@ extension View {
 /// system layout, spacing and colour. On 16 it is a plain centred stack, which
 /// is what the system view looks like anyway.
 struct EmptyStateView<Actions: View>: View {
+    @Environment(\.themePalette) var themePalette
     /// English source text (or an already localized string), looked up in
     /// the catalog when drawn.
     let title: String
@@ -56,13 +57,14 @@ struct EmptyStateView<Actions: View>: View {
             VStack(spacing: 10) {
                 Image(systemName: systemImage)
                     .font(.system(size: 44, weight: .regular))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Theme.textSecondary)
                 Text(LocalizedStringKey(title))
                     .font(.title3.weight(.semibold))
+                    .foregroundStyle(Theme.textPrimary)
                     .multilineTextAlignment(.center)
                 description?
                     .font(.callout)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Theme.textSecondary)
                     .multilineTextAlignment(.center)
                 actions()
                     .padding(.top, 4)
@@ -202,6 +204,7 @@ extension View {
 /// iOS 16's `onChange` hands over only the new one, so the previous value is
 /// kept here and replayed in the iOS 17 order.
 private struct OnValueChangePair<V: Equatable>: ViewModifier {
+    @Environment(\.themePalette) var themePalette
     let value: V
     let action: (V, V) -> Void
     @State private var previous: V?

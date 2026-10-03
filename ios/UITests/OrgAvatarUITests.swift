@@ -8,8 +8,8 @@ import XCTest
 /// Start the organization fixture (a fake Perspicax whose avatar for the
 /// person is one solid colour) and pass its session to the test runner:
 ///
-///   PARITY_ORG=1 node ios/parity/fixture-server.mjs &
-///   TEST_RUNNER_PARITY_ORG=1 TEST_RUNNER_PARITY_ENDPOINT=... \
+///   PARITY_ORG=avatar node ios/parity/fixture-server.mjs &
+///   TEST_RUNNER_PARITY_ORG=avatar TEST_RUNNER_PARITY_ENDPOINT=... \
 ///   TEST_RUNNER_PARITY_TOKEN=... TEST_RUNNER_PARITY_ENVIRONMENT=... \
 ///   TEST_RUNNER_PARITY_AVATAR_RGB=236,18,196 xcodebuild test \
 ///     -only-testing:SagaxUITests/OrgAvatarUITests ...
@@ -31,10 +31,10 @@ final class OrgAvatarUITests: XCTestCase {
     override func setUpWithError() throws {
         continueAfterFailure = false
         let env = ProcessInfo.processInfo.environment
-        guard env["PARITY_ORG"] == "1" || env["PARITY_OWNER"] == "1", let endpoint = env["PARITY_ENDPOINT"], let token = env["PARITY_TOKEN"],
+        guard env["PARITY_ORG"] == "avatar" || env["PARITY_OWNER"] == "1", let endpoint = env["PARITY_ENDPOINT"], let token = env["PARITY_TOKEN"],
               let rgb = env["PARITY_AVATAR_RGB"]?.split(separator: ",").compactMap({ Int($0) }), rgb.count == 3
         else {
-            throw XCTSkip("no avatar fixture: set TEST_RUNNER_PARITY_ORG=1 (or _OWNER=1), _ENDPOINT, _TOKEN and _AVATAR_RGB")
+            throw XCTSkip("no avatar fixture: set TEST_RUNNER_PARITY_ORG=avatar (or _OWNER=1), _ENDPOINT, _TOKEN and _AVATAR_RGB")
         }
         avatar = (rgb[0], rgb[1], rgb[2])
         arguments = ["-parityEndpoint", endpoint, "-parityToken", token, "-parityScreen", "01-home"]

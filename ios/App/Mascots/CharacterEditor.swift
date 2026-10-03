@@ -50,6 +50,7 @@ struct CharacterDraft: Equatable {
 }
 
 struct CharacterEditor: View {
+    @Environment(\.themePalette) var themePalette
     /// Grid sizes: the create sheet's (measured on 20) or the profile card's.
     struct Metrics {
         var cell: CGFloat
@@ -336,6 +337,7 @@ struct CharacterEditor: View {
 /// The selection outline that follows a mascot's own silhouette: a ring
 /// `width` wide, `gap` away from the shape (reference 20's cloud).
 struct SilhouetteRing: ViewModifier {
+    @Environment(\.themePalette) var themePalette
     let visible: Bool
     var gap: CGFloat = 2.7
     var width: CGFloat = 2

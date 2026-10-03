@@ -1,6 +1,7 @@
 import SwiftUI
 
 public struct SkillExecutionReceiptView: View {
+    @Environment(\.themePalette) var themePalette
     public let skillName: String
     public let status: String // "running", "success", "error"
     public let durationMs: Int
@@ -43,11 +44,11 @@ public struct SkillExecutionReceiptView: View {
                     statusIcon
                     Text(skillName)
                         .font(.caption2.weight(.bold))
-                        .foregroundStyle(.primary)
+                        .foregroundStyle(Theme.textPrimary)
                     if durationMs > 0 {
                         Text("• \(durationMs)ms")
                             .font(.system(size: 9.5, design: .monospaced))
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(Theme.textSecondary)
                     }
 
                     Spacer()
@@ -56,7 +57,7 @@ public struct SkillExecutionReceiptView: View {
                     if hasDetails {
                         Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
                             .font(.system(size: 9, weight: .bold))
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(Theme.textSecondary)
                     }
                 }
                 .padding(.horizontal, 10)
@@ -71,10 +72,10 @@ public struct SkillExecutionReceiptView: View {
                         VStack(alignment: .leading, spacing: 2) {
                             Text("INPUT")
                                 .font(.system(size: 8.5, weight: .heavy, design: .monospaced))
-                                .foregroundColor(Color(hex: "#8B5CF6"))
+                                .foregroundColor(Theme.accentText)
                             Text(parameters)
                                 .font(.system(size: 10, design: .monospaced))
-                                .foregroundStyle(.primary)
+                                .foregroundStyle(Theme.textPrimary)
                         }
                     }
                     
@@ -82,30 +83,30 @@ public struct SkillExecutionReceiptView: View {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(outputIsProse ? "REPORT" : "OUTPUT")
                                 .font(.system(size: 8.5, weight: .heavy, design: .monospaced))
-                                .foregroundColor(Color(hex: "#10B981"))
+                                .foregroundColor(Theme.success)
                             if outputIsProse {
                                 Text(verbatim: output)
                                     .font(.system(size: 13))
-                                    .foregroundStyle(.primary)
+                                    .foregroundStyle(Theme.textPrimary)
                                     .textSelection(.enabled)
                                     .fixedSize(horizontal: false, vertical: true)
                             } else {
                                 Text(output)
                                     .font(.system(size: 10, design: .monospaced))
-                                    .foregroundStyle(.primary)
+                                    .foregroundStyle(Theme.textPrimary)
                                     .lineLimit(6)
                             }
                         }
                     }
                 }
                 .padding(8)
-                .background(Color.secondary.opacity(0.10))
+                .background(Theme.inset)
                 .clipShape(RoundedRectangle(cornerRadius: 8))
                 .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
         .padding(6)
-        .background(Color.secondary.opacity(0.10))
+        .background(Theme.card)
         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 
@@ -117,20 +118,20 @@ public struct SkillExecutionReceiptView: View {
         case "success":
             Image(systemName: "checkmark")
                 .font(.system(size: 11, weight: .bold))
-                .foregroundStyle(.green)
+                .foregroundStyle(Theme.success)
         case "error":
             Image(systemName: "xmark")
                 .font(.system(size: 11, weight: .bold))
-                .foregroundStyle(.red)
+                .foregroundStyle(Theme.danger)
         case "running":
             ProgressView()
                 .controlSize(.mini)
-                .tint(.orange)
+                .tint(Theme.warning)
                 .frame(width: 12, height: 12)
         default:
             Image(systemName: "circle.dotted")
                 .font(.system(size: 11))
-                .foregroundStyle(.orange)
+                .foregroundStyle(Theme.warning)
         }
     }
 
@@ -138,11 +139,11 @@ public struct SkillExecutionReceiptView: View {
     private var statusBadge: some View {
         HStack(spacing: 3) {
             Circle()
-                .fill(status == "success" ? Color.green : (status == "running" ? Color.orange : Color.red))
+                .fill(status == "success" ? Theme.success : (status == "running" ? Theme.warning : Theme.danger))
                 .frame(width: 5, height: 5)
             Text(status.capitalized)
                 .font(.system(size: 9, weight: .bold))
-                .foregroundColor(status == "success" ? Color.green : (status == "running" ? Color.orange : Color.red))
+                .foregroundColor(status == "success" ? Theme.success : (status == "running" ? Theme.warning : Theme.danger))
         }
     }
 }

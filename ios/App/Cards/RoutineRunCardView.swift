@@ -12,6 +12,7 @@ import SwiftUI
 /// redraws in place from queued to its result; nothing here keeps state
 /// about the run beyond whether the report is expanded.
 struct RoutineRunCardView: View {
+    @Environment(\.themePalette) var themePalette
     let card: RoutineRunCard
     /// When the message landed; stands in for runs with no scheduled time.
     let at: Date
@@ -45,10 +46,10 @@ struct RoutineRunCardView: View {
 
     private var toneColor: Color {
         switch card.tone {
-        case .neutral: .secondary
+        case .neutral: Theme.textSecondary
         case .active: tint
-        case .attention: .orange
-        case .danger: .red
+        case .attention: Theme.warning
+        case .danger: Theme.danger
         }
     }
 
@@ -64,7 +65,7 @@ struct RoutineRunCardView: View {
             if let summary {
                 Text(verbatim: summary)
                     .font(.system(size: 15))
-                    .foregroundStyle(.primary)
+                    .foregroundStyle(Theme.textPrimary)
                     .lineLimit(expanded ? nil : Self.collapsedLines)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .fixedSize(horizontal: false, vertical: true)
@@ -74,7 +75,7 @@ struct RoutineRunCardView: View {
                         withAnimation(.snappy) { expanded.toggle() }
                     }
                     .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(tint)
+                    .foregroundStyle(Theme.readable(tint))
                     .buttonStyle(.plain)
                 }
             }
@@ -87,12 +88,12 @@ struct RoutineRunCardView: View {
                     Image(systemName: "exclamationmark.triangle.fill")
                 }
                 .font(.system(size: 13))
-                .foregroundStyle(.red)
+                .foregroundStyle(Theme.danger)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 6)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(
-                    RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.red.opacity(0.10))
+                    RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Theme.danger.opacity(0.10))
                 )
             }
 
@@ -107,7 +108,7 @@ struct RoutineRunCardView: View {
                             .font(.system(size: 11, weight: .semibold))
                     }
                     .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(card.goalStatus == "needs-input" ? Color.orange : tint)
+                    .foregroundStyle(card.goalStatus == "needs-input" ? Theme.warning : tint)
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("\(actionLabel) for \(card.routineName)")
@@ -116,7 +117,7 @@ struct RoutineRunCardView: View {
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
-            RoundedRectangle(cornerRadius: 22, style: .continuous).fill(Color.secondary.opacity(0.10))
+            RoundedRectangle(cornerRadius: 22, style: .continuous).fill(Theme.card)
         )
         .accessibilityElement(children: .contain)
     }
@@ -126,7 +127,7 @@ struct RoutineRunCardView: View {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Image(systemName: "clock.arrow.circlepath")
                     .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Theme.textSecondary)
                 Text(card.routineName.isEmpty ? "Routine" : card.routineName)
                     .font(.system(size: 15, weight: .semibold))
                     .lineLimit(1)
@@ -143,7 +144,7 @@ struct RoutineRunCardView: View {
             }
             Text(scheduled, format: .dateTime.weekday(.abbreviated).month(.abbreviated).day().hour().minute())
                 .font(.system(size: 12))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Theme.textSecondary)
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel(card.headline)

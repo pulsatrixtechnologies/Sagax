@@ -42,6 +42,7 @@ enum AttachmentImportError: LocalizedError {
 }
 
 struct PendingAttachmentChip: View {
+    @Environment(\.themePalette) var themePalette
     let attachment: PendingMessageAttachment
     let remove: () -> Void
 
@@ -55,15 +56,15 @@ struct PendingAttachmentChip: View {
                     .lineLimit(1)
                 Text(ByteCountFormatter.string(fromByteCount: Int64(attachment.data.count), countStyle: .file))
                     .font(.system(size: 11))
-                    .foregroundStyle(Color.secondary)
+                    .foregroundStyle(Theme.textSecondary)
             }
 
             Button(action: remove) {
                 Image(systemName: "xmark")
                     .font(.system(size: 10, weight: .bold))
-                    .foregroundStyle(Color.secondary)
+                    .foregroundStyle(Theme.textSecondary)
                     .frame(width: 24, height: 24)
-                    .background(Color.secondary.opacity(0.12), in: Circle())
+                    .background(Theme.cardRaised, in: Circle())
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Remove \(attachment.name)")
@@ -72,10 +73,10 @@ struct PendingAttachmentChip: View {
         .padding(.trailing, 6)
         .padding(.vertical, 6)
         .frame(maxWidth: 280, alignment: .leading)
-        .background(Color.secondary.opacity(0.10), in: RoundedRectangle(cornerRadius: 14))
+        .background(Theme.card, in: RoundedRectangle(cornerRadius: 14))
         .overlay(
             RoundedRectangle(cornerRadius: 14)
-                .strokeBorder(Color.secondary.opacity(0.10))
+                .strokeBorder(Theme.hairline)
         )
         .accessibilityElement(children: .contain)
     }
@@ -92,9 +93,9 @@ struct PendingAttachmentChip: View {
         } else {
             Image(systemName: "doc.fill")
                 .font(.system(size: 15, weight: .medium))
-                .foregroundStyle(Color.accentColor)
+                .foregroundStyle(Theme.accentText)
                 .frame(width: 34, height: 34)
-                .background(Color.accentColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
+                .background(Theme.accent.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
                 .accessibilityHidden(true)
         }
     }
@@ -104,6 +105,7 @@ struct PendingAttachmentChip: View {
 /// transport metadata only: every byte still comes through the authenticated
 /// route for the message that introduced it.
 struct TranscriptAttachmentView: View {
+    @Environment(\.themePalette) var themePalette
     let attachment: DisplayedMessageAttachment
     let threadId: String
     let messageId: String
@@ -452,6 +454,7 @@ struct FilePreviewItem: Identifiable {
 }
 
 struct FilePreviewView: View {
+    @Environment(\.themePalette) var themePalette
     let item: FilePreviewItem
     let close: () -> Void
     @State private var linkError: LocalizedStringKey?
@@ -481,7 +484,7 @@ struct FilePreviewView: View {
                         .ignoresSafeArea(edges: .bottom)
                 }
             }
-            .background(Color(uiColor: .systemBackground))
+            .background(Theme.bg)
             .navigationTitle(item.filename)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

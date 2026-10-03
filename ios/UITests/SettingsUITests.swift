@@ -246,23 +246,66 @@ final class SettingsUITests: XCTestCase {
     }
 
     /// Dim is not only the settings sheet: closing it, the home behind is
-    /// drawn on the Dim background too, and Black puts back exactly #141414.
+    /// drawn on the Dim background too, Black puts back exactly #141414, and
+    /// following the phone again wears the default pair.
     @MainActor
-    func testDimToneAppliesToTheHomeAndBlackRestoresIt() {
+    func testDimSkinAppliesToTheHomeAndSystemRestoresBlack() {
         let app = launch()
-        defer { setTone("black", in: app) }
-        setTone("dim", in: app)
+        defer { setSkin(nil, in: app) }
+        setSkin("dim", in: app)
         XCTAssertTrue(app.buttons["home-plus"].waitForExistence(timeout: 10))
         XCTAssertTrue(eventually(5) { self.homeBackground(app) == 0x1C1C1E }, "home background \(String(homeBackground(app), radix: 16))")
 
-        setTone("black", in: app)
+        setSkin("black", in: app)
         XCTAssertTrue(eventually(5) { self.homeBackground(app) == 0x141414 }, "home background \(String(homeBackground(app), radix: 16))")
+
+        // Following the phone: Black on a dark simulator, Pulsatrix Light on a light one.
+        setSkin(nil, in: app)
+        XCTAssertTrue(eventually(5) { [0x141414, 0xEEF2F8].contains(self.homeBackground(app)) }, "home background \(String(homeBackground(app), radix: 16))")
     }
 
-    /// Opens Settings > Appearance (from the home or the settings root),
-    /// picks the tone and closes the sheet.
+    /// Picking a skin redraws everything at once, the page doing the picking
+    /// included: no relaunch, no leaving Settings, light and dark skins alike.
     @MainActor
-    private func setTone(_ tone: String, in app: XCUIApplication) {
+    func testSkinsSwitchLiveInsideSettings() {
+        let app = launch()
+        defer { setSkin(nil, in: app) }
+        openAppearance(in: app)
+        app.element("theme.mode.fixed").tap()
+        for (skin, ground) in [("lagoon", UInt32(0xDFECEB)), ("foundry", 0x100E0B), ("atelier", 0xF5F1EB), ("midnight", 0x070707)] {
+            let card = app.element("skin.fixed.\(skin)")
+            for _ in 0..<8 where !card.isHittable { app.swipeUp() }
+            XCTAssertTrue(card.waitForExistence(timeout: 5), skin)
+            card.tap()
+            // the sheet's own ground, beside the cards
+            XCTAssertTrue(eventually(5) { self.pixel(app, x: 16, y: 300) == ground }, "\(skin): \(String(self.pixel(app, x: 16, y: 300), radix: 16))")
+            XCTAssertTrue(app.element("theme.mode.fixed").exists || app.element("skin.fixed.\(skin)").exists, "still on Appearance")
+        }
+        // the root row names the skin worn now
+        for _ in 0..<8 where !app.element("settings-back").firstMatch.isHittable { app.swipeDown() }
+        app.element("settings-back").firstMatch.tap()
+        let row = app.element("settings-appearance")
+        XCTAssertTrue(row.waitForExistence(timeout: 5))
+        XCTAssertTrue(row.label.contains("Midnight") || (row.value as? String ?? "").contains("Midnight"), row.label)
+    }
+
+    /// The secret skin is not offered until it is found.
+    @MainActor
+    func testHibou98IsHiddenUntilUnlocked() {
+        let app = launch()
+        defer { setSkin(nil, in: app) }
+        openAppearance(in: app)
+        app.element("theme.mode.fixed").tap()
+        let daylight = app.element("skin.fixed.daylight")
+        for _ in 0..<8 where !daylight.isHittable { app.swipeUp() }
+        XCTAssertTrue(daylight.waitForExistence(timeout: 5))
+        XCTAssertFalse(app.element("skin.fixed.retro98").exists)
+    }
+
+    /// Opens Settings > Appearance from the home or the settings root.
+    @MainActor
+    private func openAppearance(in app: XCUIApplication) {
+        if app.element("theme.mode.system").exists { return }
         if !app.element("settings-close").exists {
             let open = app.element("home-account")
             XCTAssertTrue(open.waitForExistence(timeout: 10))
@@ -272,9 +315,25 @@ final class SettingsUITests: XCTestCase {
         XCTAssertTrue(row.waitForExistence(timeout: 10))
         for _ in 0..<6 where !row.isHittable { app.swipeUp() }
         row.tap()
-        let option = app.element("tone.\(tone)")
-        XCTAssertTrue(option.waitForExistence(timeout: 5))
-        option.tap()
+        XCTAssertTrue(app.element("theme.mode.system").waitForExistence(timeout: 5))
+    }
+
+    /// Wears one skin (nil: follow the phone again) and closes the sheet.
+    @MainActor
+    private func setSkin(_ skin: String?, in app: XCUIApplication) {
+        openAppearance(in: app)
+        if let skin {
+            app.element("theme.mode.fixed").tap()
+            let card = app.element("skin.fixed.\(skin)")
+            for _ in 0..<8 where !card.isHittable { app.swipeUp() }
+            XCTAssertTrue(card.waitForExistence(timeout: 5))
+            card.tap()
+            for _ in 0..<8 where !app.element("settings-back").firstMatch.isHittable { app.swipeDown() }
+        } else {
+            for _ in 0..<8 where !app.element("theme.mode.system").isHittable { app.swipeDown() }
+            app.element("theme.mode.system").tap()
+        }
+        for _ in 0..<8 where !app.element("settings-back").firstMatch.isHittable { app.swipeDown() }
         app.element("settings-back").firstMatch.tap()
         let close = app.element("settings-close")
         XCTAssertTrue(close.waitForExistence(timeout: 5))
@@ -284,10 +343,13 @@ final class SettingsUITests: XCTestCase {
 
     /// The home's background between the header and the first section
     /// label, as 0xRRGGBB.
-    private func homeBackground(_ app: XCUIApplication) -> UInt32 {
+    private func homeBackground(_ app: XCUIApplication) -> UInt32 { pixel(app, x: 130, y: 128) }
+
+    /// One screen pixel at a point, as 0xRRGGBB.
+    private func pixel(_ app: XCUIApplication, x px: CGFloat, y py: CGFloat) -> UInt32 {
         guard let image = app.screenshot().image.cgImage else { return 0 }
         let scale = CGFloat(image.width) / app.frame.width
-        let x = Int(130 * scale), y = Int(128 * scale)
+        let x = Int(px * scale), y = Int(py * scale)
         var pixel = [UInt8](repeating: 0, count: 4)
         let space = CGColorSpace(name: CGColorSpace.sRGB)!
         guard let context = CGContext(

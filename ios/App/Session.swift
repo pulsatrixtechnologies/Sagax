@@ -226,7 +226,7 @@ final class Session: ObservableObject {
         }
         if (arguments.contains("-store-preview") || arguments.contains("-computer-switcher-preview")),
            let url = Bundle.main.url(
-               forResource: arguments.contains("-images-preview") ? "ImagePreview" : arguments.contains("-chat-update-preview") ? "ChatUpdatePreview" : arguments.contains("-chat-presentation-preview") ? "ChatPresentationPreview" : arguments.contains("-roster-preview") ? "RosterPreview" : arguments.contains("-threads-preview") ? "ThreadPreview" : "StorePreview",
+               forResource: arguments.contains("-cards-preview") ? "CardsPreview" : arguments.contains("-images-preview") ? "ImagePreview" : arguments.contains("-chat-update-preview") ? "ChatUpdatePreview" : arguments.contains("-chat-presentation-preview") ? "ChatPresentationPreview" : arguments.contains("-roster-preview") ? "RosterPreview" : arguments.contains("-threads-preview") ? "ThreadPreview" : "StorePreview",
                withExtension: "json"
            ),
            let data = try? Data(contentsOf: url),
@@ -284,6 +284,10 @@ final class Session: ObservableObject {
                     state.messages["preview-gmail"] = messages
                 }
                 focusedMessageId = "progress2"
+            }
+            if arguments.contains("-cards-top") {
+                // The cards chat from its first cards (the theme captures).
+                focusedMessageId = "c-tool"
             }
             if arguments.contains("-chat-compaction-preview"),
                var receipt = state.messages["preview-gmail"]?.last {

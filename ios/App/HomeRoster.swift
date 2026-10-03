@@ -44,9 +44,9 @@ enum HomeMetrics {
     static let previewIconBox: CGFloat = 12
     static let previewIconGap: CGFloat = 8
 
-    static let font12 = Font.system(size: 12)
-    static let name = Font.system(size: 14, weight: .medium)
-    static let chevron = Color(hex: 0x3C3C3D)
+    static var font12: Font { Theme.font(12) }
+    static var name: Font { Theme.font(14, .medium) }
+    static var chevron: Color { Theme.parity(Color(hex: 0x3C3C3D), Theme.chevron) }
 }
 
 // MARK: - Collapsed sections
@@ -72,6 +72,7 @@ struct CollapsedSections {
 
 /// The person's photo in a 44 pt glass ring (38 pt photo inset 3 pt).
 struct HomeAccountButton: View {
+    @Environment(\.themePalette) var themePalette
     let action: () -> Void
     @EnvironmentObject private var session: Session
 
@@ -120,6 +121,7 @@ struct HomeAccountButton: View {
 /// A pinned bot or group: an 85 pt mascot, its name centred beneath with
 /// the unread dot after it.
 struct HomePinnedCell: View {
+    @Environment(\.themePalette) var themePalette
     let chat: Chat
     var state: MausState = .idle
 
@@ -169,6 +171,7 @@ struct HomePinnedCell: View {
 // MARK: - Section header
 
 struct HomeSectionHeader: View {
+    @Environment(\.themePalette) var themePalette
     let title: String
     let collapsed: Bool
     let toggle: () -> Void
@@ -215,6 +218,7 @@ struct HomeRowStatus: Equatable {
 /// One bot or group on two lines: 42 pt mascot, name, role chip and time,
 /// then the preview with its leading icon.
 struct HomeChatRow: View {
+    @Environment(\.themePalette) var themePalette
     let chat: Chat
     let preview: RosterPreviewLine
     let stamp: String
@@ -356,6 +360,7 @@ struct HomeChatRow: View {
 /// The glass popover that grows out of the "+" button: New Bot and New
 /// Group Chat, 14 pt, on a 35.8 pt pitch with about 10 pt of padding.
 struct HomePlusMenu: View {
+    @Environment(\.themePalette) var themePalette
     var canCreateBot: Bool
     let newBot: () -> Void
     let newGroup: () -> Void
@@ -380,7 +385,7 @@ struct HomePlusMenu: View {
             .padding(.bottom, 9.59)
             .frame(width: 250.67, height: 91.33, alignment: .topLeading)
             .background(alignment: .topLeading) { searchUnderGlass }
-            .themeGlass(RoundedRectangle(cornerRadius: Theme.continuous(31.5), style: .continuous), fill: Color(hex: 0x323232), interactive: false)
+            .themeGlass(RoundedRectangle(cornerRadius: Theme.continuous(31.5), style: .continuous), fill: Theme.parity(Color(hex: 0x323232), Theme.menuGlass), interactive: false)
             .padding(.trailing, 7.7)
             .transition(.scale(scale: 0.4, anchor: .topTrailing).combined(with: .opacity))
         }
@@ -390,10 +395,10 @@ struct HomePlusMenu: View {
     /// reference: it sits 166 pt into the popover, 28 pt down.
     private var searchUnderGlass: some View {
         ZStack {
-            Circle().fill(Color.white.opacity(0.11)).frame(width: 46, height: 46).blur(radius: 4)
+            Circle().fill(Theme.textPrimary.opacity(0.11)).frame(width: 46, height: 46).blur(radius: 4)
             Image(systemName: "magnifyingglass")
                 .font(.system(size: 19, weight: .medium))
-                .foregroundStyle(Color.white.opacity(0.17))
+                .foregroundStyle(Theme.textPrimary.opacity(0.17))
                 .blur(radius: 1.4)
         }
         .frame(width: 44, height: 44)
@@ -410,7 +415,7 @@ struct HomePlusMenu: View {
         } label: {
             title
                 .font(Theme.Font.body)
-                .foregroundStyle(Color(hex: 0xF9F9F9))
+                .foregroundStyle(Theme.parity(Color(hex: 0xF9F9F9), Theme.textPrimary))
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.leading, 28.4)
                 .frame(height: 35.83)

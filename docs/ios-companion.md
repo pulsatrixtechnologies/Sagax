@@ -298,17 +298,84 @@ An always-allow request succeeds only when its server-issued key is still on a
 pending approval for that bot, so possession of a device token is not enough
 to invent a broad execution grant.
 
-Intentionally refused:
+Intentionally refused (the sidecar's `ALLOWED` list in
+`companion/src/routes.ts` is the whole surface; everything else is denied,
+with a sentence for the families below and "no route" for the rest):
 
 - Reading credentials, arbitrary credential targets, and general provider
-  configuration. The only credential write is the exact pending-card envelope
-  above, and it feeds the existing desktop OS-encrypted save path.
-- Pairing, device revocation, or companion lifecycle control.
-- Local VM lifecycle, webhooks, connectors, routines, team import/export, and
-  internal peer-agent routes.
-- Cloud computer provisioning, sleep, shell execution, and screenshot APIs.
-  The phone receives only the fresh `join` viewer URL, never the provider key.
-- New harness routes that have not been reviewed for device access.
+  configuration: API keys and `/api/config` writes ("API keys can only be
+  changed on your computer"), engine setup (`/api/instances/:id` changes,
+  sign-ins, refresh-models), the decision model, `/api/keys/test`. The only
+  credential write is the exact pending-card envelope above, and it feeds the
+  existing desktop OS-encrypted save path. `POST /api/instances/:id/claude-update`
+  is the one engine action that crosses.
+- Pairing new devices, device revocation, sessions and companion lifecycle
+  (`/api/companion/*`, `/api/devices/*`, `/api/auth/pairing`, `/api/auth/sessions`).
+- The Local VM (`/api/local-computer/*`, `/api/computers/*`), backups
+  (`/api/workspace-backup/*`), people, mail, activity and fleet screens.
+- Webhook management (`/api/webhooks*`), whole-service connector removal
+  (`DELETE /api/connectors/:slug`), connector tool grants, single-routine
+  reads and anything else under `/api/routines/:id` beyond `PATCH`, `DELETE`
+  and `/run` ("this routine operation is only available on your computer").
+- Team import/export, the template library and team computers (`/api/teams/*`,
+  `/api/team-library/*`, `/api/team-computers*`), team instructions
+  (`/api/section-context`), team rename and delete (`PATCH`/`DELETE`
+  `/api/sidebar-sections`).
+- A bot's execution policy and where it runs: approval mode, folder (`cwd`),
+  computer, MCP servers, browser profile, peers (the harness refuses those
+  fields on a companion `PATCH`), skills, memory, history, the system prompt,
+  `/soul` writes, room setup (`PATCH /api/groups/:id/setup`, which sets the
+  room's folder), room delete, calendar calls, the Inspector's raw events,
+  New Bot presets and defaults, MCP server writes.
+- Cloud computer provisioning, removal, sleep and shell execution. The phone
+  receives only the fresh `join` viewer URL, never the provider key.
+- Internal peer-agent routes, and new harness routes that have not been
+  reviewed for device access.
+
+Routines (list, create, edit, delete, run, cancel, seen, seen-all) and
+Connected apps (catalog, connected accounts, authorize, removing one account)
+cross since the routines and multi-account work; webhooks stay refused.
+
+### Same surface as the desktop remote client
+
+The Electron app can itself be a remote client of another computer
+(`electron/desktop-companion-client.mjs`): it pairs with that computer's
+sidecar like a phone, and its renderer runs with
+`window.ogb.remoteClient.active`. That mode is the reference for what a paired
+iPad shows and does (`docs/superpowers/specs/2026-10-02-ipad-desktop-parity-design.md`,
+"What the phone API does not expose"): every request that renderer makes from
+a surface it shows in that mode crosses the sidecar, and what it hides there
+(the full bot panel, Inspector, approval-mode and "where" menus, the model
+picker, room setup, rename and delete, team-map editing, Templates, archived
+bots, Settings other than Pair devices, Appearance and Organization) the iPad
+hides too. Added for that parity (2026-10-02):
+
+| Route | Why |
+|---|---|
+| `GET /api/brand` | the deployment's name, icon and colours (also public on the harness) |
+| `POST /api/bots/:id/queue/:queueId/steer` | Steer a queued message into the running turn (composer) |
+| `POST /api/groups/:id/queue/:queueId/steer` | the same in a room |
+| `POST /api/bots/:id/tasks/:threadId/title` | Regenerate a thread's title (thread menu, when generated titles are on) |
+| `POST /api/bots/:id/projects`, `PATCH`/`DELETE /api/bots/:id/projects/:projectId`, `PATCH /api/bots/:id/projects/order` | thread folders (name and emoji only; the harness refuses any other field) |
+| `POST /api/routine-runs/seen-all` | Automations > Mark all as read |
+
+Tests: `companion/test/routes.test.ts` ("desktop remote-client parity": every
+request the remote-client renderer makes crosses, what it hides does not) and
+`companion/test/proxy.test.ts` (the new routes reach a real harness).
+
+For a phone or tablet paired with a server (a client session), `CLIENT_ALLOW`
+in `server/request-auth.ts` adds the two steer routes (the harness applies the
+cancel's guards plus the send's: the viewer's own thread, a read-only member
+of a shared room may not steer) and, on a solo or hosted server (not an
+organization server, where a member's engines are `/api/me/engines`),
+`GET /api/instances`, which a non-admin
+session receives through `clientInstanceView()`: engine names, models,
+capabilities, availability and billing, never CLI paths, install or sign-in
+commands, account addresses or update commands. Folders, team filing
+(`POST /api/sidebar-sections`), a bot's Overview and `/api/usage` stay admin
+on a server: their handlers have no per-viewer check, and the remote-client
+renderer does not show Overview or Usage. `/api/me/engines` is a client route
+on an organization server (`orgDirectory`), as before.
 
 ## Visual parity routes (2026-10)
 
@@ -354,6 +421,20 @@ reset/update, and `GET /api/threads/:id/files` with one file by id. On a
 personal computer the preferences and server-environment routes answer 404
 (they belong to an organization server); the phone uses
 `/api/settings/bot` and `/api/computer/*` there.
+
+**The computer's look.** Settings > Appearance > Same as my computer wears
+the computer's skin and font (`omb-skin`, `omb-font`, and the Hibou 98 keys
+`omb.retro98.on` / `omb.retro98.unlocked`). On an organization server the
+phone reads them from the person's `GET /api/me/preferences` and writes a new
+choice back with `PUT /api/me/preferences` (the whole record, read first). On
+a personal computer that route answers 404, and the phone uses
+`GET/PUT /api/me/appearance` instead (allowed through the companion):
+`{ stored, preferences: { "omb-skin"?, "omb-font"?, "omb.retro98.on"?,
+"omb.retro98.unlocked"? }, updatedAt }`, PUT `{ preferences }` replacing the
+record, unknown keys and values dropped (`shared/desktop-appearance.ts`). The
+desktop app keeps that record in step with what it wears and applies a look
+the phone wrote within a few seconds (`src/lib/desktop-appearance-sync.ts`);
+an organization server answers 404 there.
 
 **Remote input.** The phone takes control first (`POST /api/bots/:id/computer/control`
 `{ action: "take" }`, optionally with a `controlLeaseId`). Input without the

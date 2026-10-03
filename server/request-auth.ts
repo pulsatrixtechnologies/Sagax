@@ -291,7 +291,7 @@ export function clearSessionCookie(name: string): string {
  * deliberately listed here. Two client-allowed PATCH routes carry a body
  * filter in the handler (bot and room edits: display fields only). Loopback
  * holds both scopes. */
-export type ClientFeature = "sharedComputers" | "orgPairing" | "orgDirectory";
+export type ClientFeature = "sharedComputers" | "orgPairing" | "orgDirectory" | "serverCatalogue";
 export type ClientFeatures = Partial<Record<ClientFeature, boolean>>;
 
 export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: RegExp; feature?: ClientFeature }> = [
@@ -299,6 +299,8 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   { methods: ["GET"], path: /^\/api\/auth\/session$/ },
   // own preferences (organization server; the handler answers the session's person only)
   { methods: ["GET", "PUT"], path: /^\/api\/me\/preferences$/ },
+  // the desktop's look on a personal computer, for the phone's "Same as my computer"
+  { methods: ["GET", "PUT"], path: /^\/api\/me\/appearance$/ },
   // own achievements (server/routes/achievements.ts: the session's person only),
   // and the points colleagues chose to show
   { methods: ["GET"], path: /^\/api\/me\/achievements$/ },
@@ -348,6 +350,13 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   // reads: fleet, transcripts, search (no secrets in any of these)
   { methods: ["GET"], path: /^\/api\/bots$/ },
   { methods: ["GET"], path: /^\/api\/team-map$/ },
+  // The engines catalogue the model picker and the chat header read. A
+  // non-admin session gets clientInstanceView(): engine names, models,
+  // capabilities and availability, never the host's CLI paths, install
+  // commands, sign-in state or account addresses. Changing engines stays admin.
+  // An organization server lists it under orgDirectory below instead, with
+  // a member's copy (memberInstanceView in server/index.ts).
+  { methods: ["GET"], path: /^\/api\/instances$/, feature: "serverCatalogue" },
   // a link into the organisation's Admin: identifiers only, and Admin authorizes its own visitor
   { methods: ["GET"], path: /^\/api\/bots\/[\w-]+\/slack-management$/ },
   { methods: ["GET"], path: /^\/api\/search$/ },
@@ -371,6 +380,10 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   { methods: ["DELETE"], path: /^\/api\/bots\/[\w-]+\/queue\/[\w-]+$/ },
   // stop one parallel task (shared/parallel-tasks.ts); the handler checks the thread is theirs
   { methods: ["POST"], path: /^\/api\/bots\/[\w-]+\/parallel\/[\w-]+\/stop$/ },
+  // Steer a queued message into the running turn: the cancel's guards, plus
+  // the send's (the viewer's own thread; a Cloud guest only in a thread it
+  // started). It never starts a turn or changes a setting.
+  { methods: ["POST"], path: /^\/api\/bots\/[\w-]+\/queue\/[\w-]+\/steer$/ },
   { methods: ["POST"], path: /^\/api\/bots\/[\w-]+\/tasks$/ },
   { methods: ["POST", "PATCH", "DELETE"], path: /^\/api\/bots\/[\w-]+\/tasks\/[\w-]+$/ },
   { methods: ["POST"], path: /^\/api\/bots\/[\w-]+\/tasks\/[\w-]+\/title$/ }, // Regenerate title: a rename by the bot's own engine
@@ -409,6 +422,8 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   { methods: ["POST"], path: /^\/api\/groups\/[\w-]+\/interrupt$/ },
   { methods: ["POST"], path: /^\/api\/groups\/[\w-]+\/read$/ },
   { methods: ["DELETE"], path: /^\/api\/groups\/[\w-]+\/queue\/[\w-]+$/ },
+  // the room's steer: refused to a read-only member, as posting is
+  { methods: ["POST"], path: /^\/api\/groups\/[\w-]+\/queue\/[\w-]+\/steer$/ },
   { methods: ["POST"], path: /^\/api\/groups\/[\w-]+\/tasks$/ },
   { methods: ["POST", "PATCH", "DELETE"], path: /^\/api\/groups\/[\w-]+\/tasks\/[\w-]+$/ },
   { methods: ["PATCH"], path: /^\/api\/groups\/[\w-]+$/ }, // display fields only: see clientGroupPatchViolation
@@ -552,6 +567,30 @@ export function clientGroupPatchViolation(body: unknown, extra: readonly string[
   if (!body || typeof body !== "object" || Array.isArray(body)) return "body";
   for (const key of Object.keys(body)) if (!CLIENT_GROUP_PATCH_FIELDS.has(key) && !extra.includes(key)) return key;
   return null;
+}
+
+/** What a client session reads of one engine in GET /api/instances: what
+ * the model picker and the chat header draw (name, models, capabilities,
+ * whether it can run now, how it is paid for), never how the host is set up
+ * (CLI paths and candidates, install and sign-in commands, the signed-in
+ * account's address, update commands). Picked, not stripped, so a field the
+ * catalogue grows later stays with admin sessions until someone lists it. */
+const CLIENT_INSTANCE_FIELDS = ["instanceId", "driverKind", "displayName", "models", "capabilities", "access", "icon", "policy"] as const;
+const CLIENT_SNAPSHOT_FIELDS = ["state", "reason", "authenticated", "billing", "chatgptPlan"] as const;
+export function clientInstanceView<T extends object>(instance: T): Record<string, unknown> {
+  const source = instance as Record<string, unknown>;
+  const view: Record<string, unknown> = { readOnly: true };
+  for (const key of CLIENT_INSTANCE_FIELDS) if (source[key] !== undefined) view[key] = source[key];
+  const snapshot = source.snapshot;
+  if (snapshot && typeof snapshot === "object") {
+    const picked: Record<string, unknown> = {};
+    for (const key of CLIENT_SNAPSHOT_FIELDS) {
+      const value = (snapshot as Record<string, unknown>)[key];
+      if (value !== undefined) picked[key] = value;
+    }
+    view.snapshot = picked;
+  }
+  return view;
 }
 
 export interface ResolveOptions {

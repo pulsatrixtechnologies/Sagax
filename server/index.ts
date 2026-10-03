@@ -566,6 +566,7 @@ import {
   clientBotPatchViolation,
   memberBotFieldViolation,
   clientGroupPatchViolation,
+  clientInstanceView,
   isLoopbackHost,
   isProxied,
   healthDetail,
@@ -668,6 +669,8 @@ import { autoReviewThreadMode, createBotSettingsStore, hostTimeZone } from "./bo
 import { createComputerInputRoutes, createVmScreenshotRoute } from "./routes/computer-input.ts";
 import { createUserPreferenceRoutes } from "./routes/user-preferences.ts";
 import { createUserPreferenceStore } from "./user-preferences.ts";
+import { createDesktopAppearanceRoutes } from "./routes/desktop-appearance.ts";
+import { createDesktopAppearanceStore } from "./desktop-appearance.ts";
 import { achievementFrameAllowed, achievementRequestEvents, achievementSendEvents, activityEvents, createAchievementStore, routineRunEvents, type AchievementEvent } from "./achievements.ts";
 import { createAchievementRoutes } from "./routes/achievements.ts";
 import { grandfatheredFromBots } from "../shared/achievements.ts";
@@ -17651,6 +17654,8 @@ ROUTES.push(createDesktopBridgeRoutes({
   bridges: desktopBridges, tunnels: desktopTunnels, audit: bridgeAudit,
   workplace: (person) => workplacePreference(person),
 }));
+// A personal computer hands its look to the paired phone (shared/desktop-appearance.ts).
+ROUTES.push(createDesktopAppearanceRoutes({ store: createDesktopAppearanceStore(DATA_DIR), organization: () => IDENTITY.kind === "perspicax" }));
 // The bot-memory panel's routes (MEMORY.md, memory/ topics, journal); the
 // store lookups — the 404 precheck and journal thread titles — stay explicit.
 ROUTES.push(createBotMemoryRoutes({
@@ -20364,7 +20369,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       url,
       loopbackMutationToken: desktopMutationToken,
       companionMutationToken,
-      features: { sharedComputers: lendingEnabled(), orgPairing: IDENTITY.kind === "perspicax", orgDirectory: IDENTITY.kind === "perspicax" },
+      features: { sharedComputers: lendingEnabled(), orgPairing: IDENTITY.kind === "perspicax", orgDirectory: IDENTITY.kind === "perspicax", serverCatalogue: IDENTITY.kind !== "perspicax" },
       loopbackTrust: LOOPBACK.trust,
       cliOwnerToken,
     });
@@ -20441,7 +20446,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       auth.scopes = scopes;
       if (current.idp) auth.session.idp = current.idp;
       if (narrowed) {
-        const needed = requiredScope(method, path, { sharedComputers: sharedComputersEnabled(cfg), orgPairing: IDENTITY.kind === "perspicax", orgDirectory: IDENTITY.kind === "perspicax" });
+        const needed = requiredScope(method, path, { sharedComputers: sharedComputersEnabled(cfg), orgPairing: IDENTITY.kind === "perspicax", orgDirectory: IDENTITY.kind === "perspicax", serverCatalogue: IDENTITY.kind !== "perspicax" });
         if (!scopes.includes(needed)) return json(res, 403, { error: `forbidden: this session lacks the ${needed} scope` });
       }
     }
@@ -24232,7 +24237,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       const current = resolveRequestAuth(req, {
         sessions, cookieName: SESSION_COOKIE, streamPath: "/api/events", url,
         loopbackMutationToken: desktopMutationToken, companionMutationToken,
-        features: { sharedComputers: lendingEnabled(), orgPairing: IDENTITY.kind === "perspicax", orgDirectory: IDENTITY.kind === "perspicax" }, loopbackTrust: LOOPBACK.trust, cliOwnerToken,
+        features: { sharedComputers: lendingEnabled(), orgPairing: IDENTITY.kind === "perspicax", orgDirectory: IDENTITY.kind === "perspicax", serverCatalogue: IDENTITY.kind !== "perspicax" }, loopbackTrust: LOOPBACK.trust, cliOwnerToken,
       });
       if (!current.auth) return json(res, current.status, { error: current.error });
       const currentVisible = visibleTo(viewerFor(current.auth));
@@ -25086,6 +25091,11 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       }
       const group = store.group(m[1]);
       if (!group) return json(res, 404, { error: "no such room" });
+      // Steering posts into the room's running turn: a read-only member of a
+      // shared section may not, exactly as they may not post.
+      if (IDENTITY.kind === "perspicax" && !groupPostAllowed(group, channelViewerId(auth))) {
+        return json(res, 403, { error: "you may read this channel, not post in it", code: "read_only" });
+      }
       const targetThreadId = threadId ?? group.threadId;
       const ownsThread = group.dm
         ? group.threadId === targetThreadId
@@ -27046,6 +27056,10 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       const body = await readBody(req);
       requirePinnedClientThread(m[1], body?.threadId);
       const bot = requestedTaskBot(m[1], body?.threadId);
+      // Steered words reach the running turn like a sent line, so a Cloud
+      // guest steers only in a conversation it started (as it sends).
+      const steerRefusal = cloudGuestSendRefusal(auth, bot.threadId);
+      if (steerRefusal) return json(res, 403, { error: steerRefusal });
       // Pressing Steer folds the queued words into the running turn. It does
       // not re-book that turn to whoever pressed it, and the words keep the
       // sender they were queued with.
@@ -28360,7 +28374,12 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       // this the answer is frozen at boot and "check again" is a no-op.
       resetPathCache();
       const instances = await describeInstances();
-      return json(res, 200, { instances: auth.scopes.includes("admin") ? instances : instances.map(memberInstanceView) });
+      if (auth.scopes.includes("admin")) return json(res, 200, { instances });
+      // An organization member's copy (memberInstanceView); elsewhere a client
+      // session (a paired phone or tablet) reads the catalogue its model
+      // picker needs, not how the host is set up (clientInstanceView).
+      const view = IDENTITY.kind === "perspicax" ? memberInstanceView : clientInstanceView;
+      return json(res, 200, { instances: instances.map(view) });
     }
     const companyMutation = /^\/api\/instances\/(company\.[\w.-]+)(?:\/|$)/.exec(path);
     if (hostedModels && path.startsWith("/api/instances/") && method !== "GET") return json(res, 403, { error: HOSTED_PROVIDER_SETTINGS_ERROR });

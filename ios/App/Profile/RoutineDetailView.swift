@@ -10,6 +10,7 @@ import UIKit
 
 /// Back circle and an inline 14 pt medium title 16.7 pt after it.
 struct RoutineTitleBar<Trailing: View>: View {
+    @Environment(\.themePalette) var themePalette
     let title: String
     let back: () -> Void
     @ViewBuilder var trailing: () -> Trailing
@@ -34,6 +35,7 @@ struct RoutineTitleBar<Trailing: View>: View {
 
 /// A pushed screen on the routine grid: the title bar over scrolling cards.
 struct RoutineScreen<Content: View, Trailing: View>: View {
+    @Environment(\.themePalette) var themePalette
     let title: String
     @ViewBuilder var trailing: () -> Trailing
     @ViewBuilder var content: () -> Content
@@ -55,13 +57,13 @@ struct RoutineScreen<Content: View, Trailing: View>: View {
         .navigationBarBackButtonHidden(true)
         .background(SwipeBackBridge())
         .persistentSystemOverlays(.hidden)
-        .preferredColorScheme(.dark)
     }
 }
 
 // MARK: - Routine detail (05)
 
 struct RoutineDetailView: View {
+    @Environment(\.themePalette) var themePalette
     @State var routine: Routine
     /// The parity harness opens the instruction straight away (06).
     var showsInstruction = false
@@ -103,7 +105,7 @@ struct RoutineDetailView: View {
                 ProfileRow(title: Text("Next run"), height: Theme.Profile.row) {
                     Text(verbatim: RoutineWording.nextRun(routine))
                         .font(Theme.Font.body)
-                        .foregroundStyle(Color(hex: 0x9C9BA0))
+                        .foregroundStyle(Theme.parity(Color(hex: 0x9C9BA0), Theme.textSecondary))
                         .padding(.trailing, 18.7)
                         .accessibilityIdentifier("routine-next-run")
                 }
@@ -173,6 +175,7 @@ struct RoutineDetailView: View {
 
 /// One past run: when it was due and how it went.
 private struct RunHistoryRow: View {
+    @Environment(\.themePalette) var themePalette
     let run: RoutineRun
 
     var body: some View {
@@ -206,6 +209,7 @@ private struct RunHistoryRow: View {
 
 /// A long text in one card: 14 pt on the chat's 18.1 pt pitch, 18 pt in.
 struct TextCardBody: View {
+    @Environment(\.themePalette) var themePalette
     let text: String
 
     var body: some View {
@@ -225,6 +229,7 @@ struct TextCardBody: View {
 }
 
 struct TextCardView: View {
+    @Environment(\.themePalette) var themePalette
     let title: String
     let text: String
 
@@ -239,6 +244,7 @@ struct TextCardView: View {
 
 /// The soul, read from the server; the owner or an admin edits it in place.
 struct InstructionView: View {
+    @Environment(\.themePalette) var themePalette
     let bot: Bot
     @EnvironmentObject private var session: Session
     @State private var soul: String?
@@ -322,6 +328,7 @@ struct InstructionView: View {
 /// Pinch to zoom and drag to move the picture in its frame; saved as
 /// `avatarZoom` and `avatarFocusX/Y`.
 struct PictureFramingSheet: View {
+    @Environment(\.themePalette) var themePalette
     let bot: Bot
     let save: (Double, Double, Double) -> Void
 
@@ -384,7 +391,6 @@ struct PictureFramingSheet: View {
                 }
             }
         }
-        .preferredColorScheme(.dark)
         .task {
             if let data = await session.avatarData(for: bot) { image = UIImage(data: data) }
         }

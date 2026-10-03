@@ -1,11 +1,12 @@
 // The pieces every onboarding screen shares, in the parity design language
-// (Theme.swift): the dark #141414 page, a glass circle in the top corner,
+// (Theme.swift), in the active skin: the #141414 page on Black, a glass circle in the top corner,
 // a 13.5 pt medium title, grouped #202020 cards and the light capsule.
 import SwiftUI
 
 /// A full onboarding page: a glass button and a title on top, scrolling
 /// content, and an optional pinned footer (the capsule action).
 struct OnboardingPage<Content: View, Footer: View>: View {
+    @Environment(\.themePalette) var themePalette
     var title: LocalizedStringKey?
     var leading: Leading?
     var trailing: Trailing?
@@ -64,7 +65,7 @@ struct OnboardingPage<Content: View, Footer: View>: View {
                 .padding(.bottom, 12)
         }
         .background(Theme.bg.ignoresSafeArea())
-        .preferredColorScheme(.dark)
+        .preferredColorScheme(Theme.palette.isDark ? .dark : .light)
     }
 }
 
@@ -76,6 +77,7 @@ extension OnboardingPage where Footer == EmptyView {
 
 /// The big Sagax owl with a title and a line under it.
 struct OnboardingHero: View {
+    @Environment(\.themePalette) var themePalette
     let title: LocalizedStringKey
     let subtitle: LocalizedStringKey
     var color = "blue"
@@ -107,6 +109,7 @@ struct OnboardingHero: View {
 /// A failure the person can act on, always on screen above the content
 /// that caused it (never below the fold).
 struct OnboardingErrorBanner: View {
+    @Environment(\.themePalette) var themePalette
     let message: String
 
     var body: some View {
@@ -138,6 +141,7 @@ struct OnboardingErrorBanner: View {
 
 /// A text field inside a card row, in the parity type.
 struct OnboardingField: View {
+    @Environment(\.themePalette) var themePalette
     let placeholder: LocalizedStringKey
     @Binding var text: String
     var keyboard: UIKeyboardType = .URL
@@ -163,6 +167,7 @@ struct OnboardingField: View {
 
 /// The light capsule with a spinner while something runs.
 struct OnboardingCapsule: View {
+    @Environment(\.themePalette) var themePalette
     let title: LocalizedStringKey
     var busyTitle: LocalizedStringKey?
     var busy = false
@@ -176,15 +181,15 @@ struct OnboardingCapsule: View {
             action()
         } label: {
             HStack(spacing: 8) {
-                if busy { ProgressView().tint(.black).controlSize(.small) }
+                if busy { ProgressView().tint(Theme.primaryInk).controlSize(.small) }
                 Text(busy ? (busyTitle ?? title) : title)
                     .font(Theme.Font.buttonLabel)
             }
-            .foregroundStyle(enabled && !busy ? Color.black : Theme.disabledCapsuleText)
+            .foregroundStyle(enabled && !busy ? Theme.primaryInk : Theme.disabledCapsuleText)
             .frame(maxWidth: .infinity)
             .frame(height: 44)
-            .background(enabled && !busy ? Color.white : Theme.disabledCapsule, in: Capsule())
-            .overlay(Capsule().strokeBorder(Color.white.opacity(0.35), lineWidth: 0.5))
+            .background(enabled && !busy ? Theme.primaryFill : Theme.disabledCapsule, in: Capsule())
+            .overlay(Capsule().strokeBorder(Theme.palette.isDark ? Color.white.opacity(0.35) : Theme.hairline, lineWidth: 0.5))
         }
         .buttonStyle(.plain)
         .disabled(!enabled || busy)

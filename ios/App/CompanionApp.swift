@@ -16,7 +16,6 @@ struct CompanionApp: App {
     @State private var liveActivities = LiveActivityBridge()
     @State private var widgetSync = WidgetSyncBridge.makeAppGroupBridge()
     @AppStorage(PrefKey.language) private var language = AppLanguage.system.rawValue
-    @AppStorage(PrefKey.appearanceMode) private var appearance = AppearanceMode.system.rawValue
 
     var body: some Scene {
         WindowGroup {
@@ -40,10 +39,8 @@ struct CompanionApp: App {
                 // person changes deliberately and almost never. `session` lives
                 // on the App, not here, so the connection survives.
                 .id(language)
-                // Settings > App > Appearance: System follows the device, Dark forces it.
-                .preferredColorScheme((AppearanceMode(rawValue: appearance) ?? .system).colorScheme)
-                // Settings > App > Appearance: Black or Dim, everywhere.
-                .modifier(ThemeToneRefresh())
+                // Settings > App > Appearance: the skin, everywhere (ThemeStore.swift).
+                .themeRoot()
                 .onAppear {
                     SagaxSharedInbox.removeDirectories(olderThan: 60 * 60)
                     session.connect()
@@ -75,6 +72,7 @@ struct CompanionApp: App {
 }
 
 struct RootView: View {
+    @Environment(\.themePalette) var themePalette
     @EnvironmentObject private var session: Session
     @AppStorage("companion.onboarding.welcomeSeen") private var hasSeenWelcome = false
     @AppStorage("companion.onboarding.notificationsSeen") private var hasSeenNotificationPrompt = false
@@ -136,7 +134,7 @@ struct RootView: View {
                 )
             }
         }
-        .background(Color(uiColor: .systemBackground).ignoresSafeArea())
+        .background(Theme.bg.ignoresSafeArea())
         .onValueChange(of: session.pairingInvite) { invite in
             guard invite != nil else { return }
             hasSeenWelcome = true
@@ -244,6 +242,7 @@ struct RootView: View {
 /// phone on the computer — which is exactly what that button is for, so the
 /// honest thing is to say so and offer to pair again.
 struct UnpairedView: View {
+    @Environment(\.themePalette) var themePalette
     let onPairAgain: () -> Void
     let onChooseAnother: (() -> Void)?
 

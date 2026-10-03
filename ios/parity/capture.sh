@@ -4,7 +4,15 @@
 #   ios/parity/capture.sh                       build, seed, capture every screen
 #   ios/parity/capture.sh --skip-build          reuse the last build
 #   ios/parity/capture.sh 02-chat 13-computer   only these screens
-#   PARITY_WAIT=10 ios/parity/capture.sh         seconds to wait per screen
+#   PARITY_WAIT=14 ios/parity/capture.sh         seconds to wait per screen (10)
+#   PARITY_SKIN=lagoon ios/parity/capture.sh     wear a skin (DEBUG -paritySkin;
+#                                                "system" follows the simulator)
+#   PARITY_APPEARANCE=light ios/parity/capture.sh  the simulator's appearance
+#   PARITY_OUT=/tmp/shots ios/parity/capture.sh  where the PNGs go
+#   ios/parity/capture.sh cards cards-top 22-appearance  extra screens: a chat with
+#                                                every card type (store preview; its end
+#                                                and its first cards), and
+#                                                Settings > Appearance
 #
 # Then: python3 ios/parity/diff.py [--gate]
 #
@@ -17,18 +25,20 @@ set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 IOS="$(cd "$HERE/.." && pwd)"
-OUT="$HERE/out"
+OUT="${PARITY_OUT:-$HERE/out}"
+SKIN="${PARITY_SKIN:-}"
+APPEARANCE="${PARITY_APPEARANCE:-dark}"
 BUILD="$HERE/build"
 DEVICE_NAME="${PARITY_DEVICE:-parity-17pro}"
-BUNDLE_ID="com.openmausbot.app"
-WAIT="${PARITY_WAIT:-7}"
+BUNDLE_ID="ca.pulsatrix.sagax"
+WAIT="${PARITY_WAIT:-10}"
 
 SKIP_BUILD=0
 SCREENS=()
 for arg in "$@"; do
   case "$arg" in
     --skip-build) SKIP_BUILD=1 ;;
-    -h|--help) sed -n '2,15p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,22p' "$0"; exit 0 ;;
     *) SCREENS+=("$arg") ;;
   esac
 done
@@ -46,11 +56,11 @@ mkdir -p "$OUT"
 log() { printf '[capture] %s\n' "$*" >&2; }
 
 # ── build ────────────────────────────────────────────────────────────────
-APP="$BUILD/Build/Products/Debug-iphonesimulator/OpenMausCompanion.app"
+APP="$BUILD/Build/Products/Debug-iphonesimulator/Sagax.app"
 if [ "$SKIP_BUILD" -eq 0 ] || [ ! -d "$APP" ]; then
   log "xcodegen + build (Debug, simulator, unsigned)"
   (cd "$IOS" && xcodegen generate >/dev/null)
-  xcodebuild -project "$IOS/OpenMausCompanion.xcodeproj" -scheme OpenMausCompanion \
+  xcodebuild -project "$IOS/Sagax.xcodeproj" -scheme Sagax \
     -configuration Debug -sdk iphonesimulator \
     -destination "generic/platform=iOS Simulator" \
     -derivedDataPath "$BUILD" CODE_SIGNING_ALLOWED=NO build \
@@ -78,7 +88,7 @@ fi
 log "simulator $DEVICE_NAME ($UDID)"
 xcrun simctl boot "$UDID" 2>/dev/null || true
 xcrun simctl bootstatus "$UDID" -b >/dev/null
-xcrun simctl ui "$UDID" appearance dark
+xcrun simctl ui "$UDID" appearance "$APPEARANCE"
 # The references' keyboard: French (Canada) with English, no swipe-typing
 # introduction, no dictation key.
 xcrun simctl spawn "$UDID" defaults write -g AppleKeyboards -array \
@@ -120,9 +130,13 @@ for screen in "${SCREENS[@]}"; do
   ARGS=(-parityEndpoint "$ENDPOINT" -parityToken "$TOKEN" -parityScreen "$screen"
     -companion.prefs.rosterDensity standard)
   [ -n "$ENVIRONMENT" ] && ARGS+=(-parityEnvironment "$ENVIRONMENT")
+  # "cards": the store preview's Scout chat with every card type, no fixture.
+  [ "$screen" = "cards" ] && ARGS=(-store-preview -cards-preview -open-first -companion.prefs.rosterDensity standard)
+  [ "$screen" = "cards-top" ] && ARGS=(-store-preview -cards-preview -cards-top -open-first -companion.prefs.rosterDensity standard)
+  [ -n "$SKIN" ] && ARGS+=(-paritySkin "$SKIN")
   xcrun simctl launch "$UDID" "$BUNDLE_ID" "${ARGS[@]}" >/dev/null
   sleep "$WAIT"
   xcrun simctl io "$UDID" screenshot --type=png "$OUT/$screen.png" >/dev/null 2>&1
-  log "$screen -> out/$screen.png"
+  log "$screen -> $OUT/$screen.png"
 done
 log "done; compare with: python3 $HERE/diff.py"

@@ -189,9 +189,38 @@ const ALLOWED: ReadonlyArray<{ method: string; path: RegExp }> = [
   { method: "DELETE", path: /^\/api\/bots\/[\w-]+\/command-allowlist\/[\w-]+$/ },
   { method: "GET", path: /^\/api\/me\/preferences$/ },
   { method: "PUT", path: /^\/api\/me\/preferences$/ },
+  // a personal computer's look (skin, font), for Settings > Appearance > Same as my computer
+  { method: "GET", path: /^\/api\/me\/appearance$/ },
+  { method: "PUT", path: /^\/api\/me\/appearance$/ },
   { method: "GET", path: /^\/api\/me\/server-environment$/ },
   { method: "POST", path: /^\/api\/me\/server-environment\/(?:reset|update)$/ },
   { method: "PATCH", path: /^\/api\/groups\/[\w-]+$/ },
+
+  // Desktop remote-client parity (docs/ios-companion.md, "Same surface as
+  // the desktop remote client"). The Electron app paired to this host
+  // through this sidecar shows each of these and, until they were listed,
+  // got "no route" for them; the iPad follows the same renderer. None of
+  // them reaches settings, execution policy, credentials or the host.
+  //
+  // The deployment's public brand (name, icon, colours), also served to
+  // anyone without a session by the harness itself.
+  { method: "GET", path: /^\/api\/brand$/ },
+  // Steer: fold the queued words into the running turn instead of waiting.
+  // The same guards as cancelling that queued message (the thread must be
+  // the device's, the queue entry must exist); it never starts a turn.
+  { method: "POST", path: /^\/api\/bots\/[\w-]+\/queue\/[\w-]+\/steer$/ },
+  { method: "POST", path: /^\/api\/groups\/[\w-]+\/queue\/[\w-]+\/steer$/ },
+  // Regenerate a thread's title with the bot's own engine (the harness
+  // refuses it when generated titles are off or the engine cannot).
+  { method: "POST", path: /^\/api\/bots\/[\w-]+\/tasks\/[\w-]+\/title$/ },
+  // Thread folders: a name and an emoji that group one bot's threads. They
+  // own no settings, transcripts or working directories (the harness
+  // refuses any other field).
+  { method: "POST", path: /^\/api\/bots\/[\w-]+\/projects$/ },
+  { method: "PATCH", path: /^\/api\/bots\/[\w-]+\/projects\/[\w-]+$/ },
+  { method: "DELETE", path: /^\/api\/bots\/[\w-]+\/projects\/[\w-]+$/ },
+  // Automations > Mark all as read.
+  { method: "POST", path: /^\/api\/routine-runs\/seen-all$/ },
 
   // rooms — making one, and talking in one
   { method: "POST", path: /^\/api\/groups$/ },
