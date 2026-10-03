@@ -7274,7 +7274,8 @@ function approvalAnswerRefusal(auth: RequestAuth, threadId: string, requestId: s
     const audience = bot ? approvalAudience({ ownerUserId: approvalOwnerId(bot), host: approvalHostOf(bot) }) : null;
     return approvalAnswerStatus({ question: false, audience, callerUserId: approvalCallerUserId(auth) }) === 403 ? refusal : null;
   }
-  const question = Boolean(message.card && typeof message.card === "object" && message.card.questionRequest);
+  // a question (the questionRequest form, or a persistent ask card) stays on the ordinary answer path
+  const question = Boolean(message.card && typeof message.card === "object" && (message.card.questionRequest || isPersistentQuestionCard(message.card)));
   if (question) return null;
   if (!isApprovalCardMessage(message)) return refusal;
   const bot = botForApproval(threadId, message);

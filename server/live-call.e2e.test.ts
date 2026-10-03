@@ -77,9 +77,9 @@ posixOnly("Live call e2e", () => {
     chmodSync(FAKE_ACP, 0o755);
     live = await startFakeOpenAiLive();
     home = mkdtempSync(join(tmpdir(), "omb-live-call-"));
-    mkdirSync(join(home, ".openmausbot"), { recursive: true });
+    mkdirSync(join(home, ".sagax"), { recursive: true });
     writeFileSync(
-      join(home, ".openmausbot", "config.json"),
+      join(home, ".sagax", "config.json"),
       JSON.stringify({
         instances: {
           claude: {

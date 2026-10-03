@@ -524,7 +524,7 @@ beforeAll(async () => {
     ]),
   );
   writeFileSync(
-    join(home, ".openmausbot", "bots.json"),
+    join(home, ".sagax", "bots.json"),
     JSON.stringify([
       {
         id: "test-bot-seed",
@@ -577,7 +577,7 @@ beforeAll(async () => {
     ]),
   );
   writeFileSync(
-    join(home, ".openmausbot", "messages-test-bot-seed-thread.json"),
+    join(home, ".sagax", "messages-test-bot-seed-thread.json"),
     JSON.stringify({
       activeLeafId: "test-bot-seed-greeting",
       messages: [{
@@ -1266,7 +1266,7 @@ describe("harness HTTP API", () => {
 
   it("restores a live unanswered provider question after a server restart", async () => {
     const isolatedHome = mkdtempSync(join(tmpdir(), "omb-question-restart-"));
-    const isolatedData = join(isolatedHome, ".openmausbot");
+    const isolatedData = join(isolatedHome, ".sagax");
     const isolatedStatic = join(isolatedHome, "static");
     const isolatedDump = join(isolatedHome, "fake-claude-dump.json");
     const isolatedFinishGate = join(isolatedHome, "fake-claude-finish-gate");
@@ -3747,7 +3747,7 @@ describe("harness HTTP API", () => {
     // scripted coordinator replies so a real goal run delegates to a member
     // whose only computer is the one the holder already sits on.
     const isolatedHome = mkdtempSync(join(tmpdir(), "omb-computer-wait-goal-"));
-    const isolatedData = join(isolatedHome, ".openmausbot");
+    const isolatedData = join(isolatedHome, ".sagax");
     const isolatedStatic = join(isolatedHome, "static");
     const isolatedPort = await freePortBlock([0, 1]);
     const leadReplies = [
@@ -7305,7 +7305,7 @@ describe("harness HTTP API", () => {
       message: "The user closed this question without answering. Use your best judgment and continue.",
       dismiss: true,
     });
-    expect(dismissed.status).toBe(409);
+    expect(dismissed.status, JSON.stringify(dismissed.body)).toBe(409);
 
     const reread = (await api("GET", "/api/bots")).body.groups.find(
       (group: { id: string }) => group.id === "test-cancel-room",
@@ -9221,7 +9221,7 @@ describe("harness HTTP API", () => {
     expect(invalid.body.error).toContain("localVm.maxInstances");
 
     const disk = JSON.parse(readFileSync(join(home, ".sagax", "config.json"), "utf8"));
-    expect(disk.localVm).toEqual({ mode: "per-bot", maxInstances: 5, idleTimeoutMinutes: 480 });
+    expect(disk.localVm).toEqual({ mode: "per-bot", maxInstances: 5, idleTimeoutMinutes: 10 });
     await api("PATCH", "/api/config", { localVm: { mode: "shared", maxInstances: 2 } });
   });
 
@@ -10332,7 +10332,7 @@ describe("harness HTTP API", () => {
       expect(other.body.assignedSkills).toEqual([name]);
       expect(other.body.skills).toContainEqual(expect.objectContaining({ name, enabled: true, origin: "library" }));
       expect((await api("GET", "/api/skills-library")).body.skills).toContainEqual(expect.objectContaining({ name, enabled: true }));
-      const persisted = JSON.parse(readFileSync(join(home, ".openmausbot", "bots.json"), "utf8"));
+      const persisted = JSON.parse(readFileSync(join(home, ".sagax", "bots.json"), "utf8"));
       expect(persisted.find((bot: any) => bot.id === first.id).assignedSkills).toEqual([]);
       expect(persisted.find((bot: any) => bot.id === peer.id).assignedSkills).toEqual([name]);
       expect((await api("POST", `/api/threads/${first.threadId}/respond`, { requestId: proposed.requestId, behavior: "allow" })).status).toBe(200);
