@@ -60,6 +60,27 @@ describe("Mes connexions", () => {
     expect(html).toContain("npx in your server environment");
   });
 
+  it("an admin manages them (Perspicax sagax_integrations off): a notice, the servers listed, no change offered", () => {
+    setLocale("fr");
+    const html = renderToStaticMarkup(createElement(MyConnectionsSettings, { initial: { ...base, managedByAdmin: true, github: { state: "connected", deviceFlow: true, login: "octo", via: "device", connectedAt: 1 }, servers: [
+      { name: "notes", kind: "remote", type: "http", url: "https://mcp.notion.com/mcp", domain: "mcp.notion.com", auth: "oauth", tokenConfigured: false, enabled: true, addedAt: 1, authState: "connected" },
+    ] } }));
+    expect(html).toContain("data-integrations-managed");
+    expect(html).toContain("Votre administrateur gère les plugins et les serveurs MCP");
+    expect(html).toContain('data-personal-server="notes"');
+    expect(html).toContain("@octo");
+    expect(html).not.toContain("Déconnecter</button>");
+    expect(html).not.toContain("Ajouter un serveur MCP");
+    expect(html).not.toContain('role="switch"');
+  });
+
+  it("asks nothing of an admin when the person manages them", () => {
+    const html = renderToStaticMarkup(createElement(MyConnectionsSettings, { initial: { ...base, managedByAdmin: false } }));
+    expect(html).not.toContain("data-integrations-managed");
+    expect(html).not.toContain("administrator");
+    expect(html).toContain("Add an MCP server");
+  });
+
   it("reads names, arguments and variables the way a person types them", () => {
     expect(suggestServerName("https://api.githubcopilot.com/mcp/")).toBe("githubcopilot");
     expect(suggestServerName("@modelcontextprotocol/server-github")).toBe("server-github");
@@ -98,5 +119,14 @@ describe("Library > Plugins", () => {
     expect(html).toContain("Your organization allows: acme/*");
     expect(html).not.toContain("Add a marketplace");
     expect(html).not.toContain(">Install<");
+  });
+
+  it("says an admin manages the plugins (Perspicax sagax_integrations off), with no change offered", () => {
+    const html = renderToStaticMarkup(createElement(BotPluginsCard, { bot: { id: "b1" }, initial: { ...view, canChange: false, managedByAdmin: true } }));
+    expect(html).toContain("Your administrator manages plugins and MCP servers.");
+    expect(html).not.toContain("Only the bot&#x27;s owner");
+    expect(html).toContain('data-plugin="reviewer@acme-tools"');
+    expect(html).not.toContain("Add a marketplace");
+    expect(html).not.toContain(">Uninstall<");
   });
 });

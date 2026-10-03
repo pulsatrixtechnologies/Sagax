@@ -777,6 +777,9 @@ export interface ConfigViewer {
   /** Organization server: a Perspicax admin lets this person use shared
    * bots only (no creating, editing or owning a bot). */
   botsReadOnly?: true;
+  /** Organization server: a Perspicax admin manages this person's plugins,
+   * skills and MCP servers (Perspicax `sagax_integrations: off`). */
+  integrationsManagedByAdmin?: true;
   /** The operator's name, for their lines that carry no sender. */
   operatorName?: string;
   /** Organization server: Perspicax owns this person's name and email

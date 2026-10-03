@@ -4,6 +4,8 @@
 // one reads with their own GitHub connection) and installs its plugins;
 // everyone else who uses the bot reads the list. Hooks and the plugin's own
 // MCP servers are taken out at install: they would run on the server.
+// When an admin manages the person's plugins (Perspicax
+// `sagax_integrations: off`), the list is read-only under a short notice.
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import type { Bot } from "@/state/store";
@@ -13,6 +15,7 @@ import {
   type BotPluginsView,
 } from "@/lib/my-connections";
 import { Switch } from "../SettingsPrimitives";
+import { IntegrationsManagedNotice } from "../settings/MyConnectionsSettings";
 
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
@@ -56,7 +59,9 @@ export function BotPluginsCard({ bot, initial }: { bot: Pick<Bot, "id">; initial
     <div className="flex flex-col gap-4 text-[13px]" data-bot-plugins>
       <p className="text-[12.5px] leading-relaxed text-ink-secondary">{t("plugins.intro")}</p>
       {!view.engine.loadsPlugins && <p className="rounded-lg bg-inset px-3 py-2 text-[12px] text-ink-secondary">{t("plugins.claudeOnly")}</p>}
-      {!change && <p className="rounded-lg bg-inset px-3 py-2 text-[12px] text-ink-secondary">{t("plugins.readOnly")}</p>}
+      {view.managedByAdmin
+        ? <IntegrationsManagedNotice />
+        : !change && <p className="rounded-lg bg-inset px-3 py-2 text-[12px] text-ink-secondary">{t("plugins.readOnly")}</p>}
 
       <section className="flex flex-col gap-2">
         <h3 className="text-[13px] font-medium text-ink">{t("plugins.installed")}</h3>
