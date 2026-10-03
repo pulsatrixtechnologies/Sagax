@@ -145,6 +145,8 @@ final class ThemeStore: ObservableObject {
     /// desktop (src/lib/retro98.ts). Off goes back to the phone's pair.
     func toggleRetro(client: CompanionClient?) {
         unlockRetro()
+        // `/hibou98` summons Trombi (AchievementToaster.tsx, Composer.tsx).
+        AchievementStore.shared.report(.trombiSummoned)
         if effective.skin(deviceDark: true) == .retro98 {
             update { $0.mode = $0.mode == .computer ? .computer : .system; if $0.computerSkin == .retro98 { $0.computerSkin = .pulsatrix } }
         } else if selection.mode == .computer {
