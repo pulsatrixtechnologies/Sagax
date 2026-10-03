@@ -401,7 +401,9 @@ final class DesktopModelCatalog {
     func instances(_ session: Session) async -> [Instance] {
         let connection = session.connection?.id
         if let cached, cached.connection == connection, !cached.instances.isEmpty { return cached.instances }
-        let loaded = await session.modelInstances()
+        // quietly: a chip that cannot load stays hidden, never an alert
+        guard !session.isDemo, let client = session.profileClient else { return [] }
+        let loaded = (try? await client.instances()) ?? []
         cached = (connection, loaded)
         return loaded
     }
