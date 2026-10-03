@@ -1,0 +1,422 @@
+// Skills (BA4, bot-settings/SkillsSection.tsx and OrgSkillsCard.tsx): what
+// the bot learned or imported, to read, switch on after a review, switch
+// off and remove; an import field; the organization's offered skills for
+// an admin. Enabling a disabled skill always shows its full SKILL.md first,
+// exactly as the desktop's review step. `BotSkillsModel` holds the state
+// (the page and a future iPad panel share it); the review and the full
+// text open as sheets from the page, never from inside a List section
+// (a sheet raised there dismisses the sheet around it).
+import CompanionCore
+import SwiftUI
+
+struct SkillSheet: Identifiable {
+    let skill: ManagedSkill
+    let text: String
+    var id: String { skill.name }
+}
+
+@MainActor
+final class BotSkillsModel: ObservableObject {
+    @Published var skills: [ManagedSkill] = []
+    @Published var staged = 0
+    @Published var loading = true
+    @Published var working = ""
+    @Published var error = ""
+    @Published var authoring = true
+    @Published var importing = false
+    @Published var importMessage = ""
+    @Published var reviewing: SkillSheet?
+    @Published var viewing: SkillSheet?
+
+    let botId: String
+    var client: CompanionClient?
+
+    init(botId: String) { self.botId = botId }
+
+    func refresh(first: Bool = false) async {
+        guard let client else { return }
+        if first {
+            loading = true
+            authoring = (try? await client.skillAuthoringEnabled()) ?? true
+        }
+        do {
+            let list = try await client.botSkills(botId: botId)
+            skills = list.skills
+            staged = list.staged.count
+            error = ""
+        } catch {
+            self.error = error.localizedDescription
+        }
+        loading = false
+    }
+
+    func toggle(_ skill: ManagedSkill) async {
+        guard let client else { return }
+        working = skill.name
+        error = ""
+        defer { working = "" }
+        do {
+            if !skill.enabled {
+                // A disabled import has not necessarily been reviewed: show
+                // the integrity-checked text before it can reach the bot.
+                guard let text = try await client.skillText(botId: botId, name: skill.name), !text.isEmpty else {
+                    error = String(localized: "The skill contents are unavailable; remove and import or learn it again.")
+                    return
+                }
+                reviewing = SkillSheet(skill: skill, text: text)
+                return
+            }
+            try await client.setSkillEnabled(botId: botId, name: skill.name, enabled: false)
+            await refresh()
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+
+    func enableReviewed(_ skill: ManagedSkill) async {
+        guard let client else { return }
+        working = skill.name
+        error = ""
+        defer { working = "" }
+        do {
+            try await client.setSkillEnabled(botId: botId, name: skill.name, enabled: true)
+            reviewing = nil
+            await refresh()
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+
+    func remove(_ skill: ManagedSkill) async {
+        guard let client else { return }
+        working = skill.name
+        error = ""
+        defer { working = "" }
+        do {
+            try await client.removeSkill(botId: botId, name: skill.name)
+            await refresh()
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+
+    func view(_ skill: ManagedSkill) async {
+        guard let client else { return }
+        error = ""
+        do {
+            viewing = SkillSheet(skill: skill, text: try await client.skillText(botId: botId, name: skill.name) ?? "")
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+
+    /// True when the import worked (the field then clears).
+    func importSkill(_ source: String) async -> Bool {
+        guard let trimmed = SkillRules.importSource(source), let client else { return false }
+        importing = true
+        error = ""
+        importMessage = ""
+        defer { importing = false }
+        do {
+            let count = try await client.importSkill(botId: botId, source: trimmed)
+            importMessage = count == 1
+                ? String(localized: "Imported 1 skill — review and enable below.")
+                : String(localized: "Imported \(count) skills — review and enable below.")
+            await refresh()
+            return true
+        } catch {
+            self.error = error.localizedDescription
+            return false
+        }
+    }
+}
+
+struct BotSkillsSection: View {
+    @Environment(\.themePalette) var themePalette
+    let bot: Bot
+    @ObservedObject var model: BotSkillsModel
+    @EnvironmentObject private var session: Session
+    @State private var source = ""
+    @State private var removing: ManagedSkill?
+
+    var body: some View {
+        Section {
+            HStack(spacing: 8) {
+                TextField(String(localized: "owner/repo, https://github.com/…/SKILL.md, or https://skills.sh/…"), text: $source)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .font(.system(size: 14))
+                    .accessibilityLabel(Text(String(localized: "Import a skill")))
+                    .accessibilityIdentifier("skills-import-field")
+                    .onSubmit { importSkill() }
+                Button(model.importing ? String(localized: "Importing…") : String(localized: "Import")) { importSkill() }
+                    .buttonStyle(.borderless)
+                    .disabled(model.importing || SkillRules.importSource(source) == nil)
+                    .accessibilityIdentifier("skills-import")
+            }
+            if !model.importMessage.isEmpty {
+                Text(verbatim: model.importMessage).font(.footnote).foregroundStyle(Theme.textSecondary)
+            }
+            if model.loading {
+                Text(String(localized: "Loading…")).foregroundStyle(Theme.textSecondary)
+            } else if model.skills.isEmpty {
+                Text(String(localized: "No installed skills yet."))
+                    .foregroundStyle(Theme.textSecondary)
+                    .accessibilityIdentifier("skills-empty")
+            } else {
+                ForEach(model.skills) { skill in row(skill) }
+            }
+            if model.staged > 0 {
+                Text(model.staged == 1
+                     ? String(localized: "1 proposal is waiting for a decision in chat.")
+                     : String(localized: "\(model.staged) proposals are waiting for a decision in chat."))
+                    .font(.footnote)
+                    .foregroundStyle(Theme.warning)
+            }
+            if !model.error.isEmpty {
+                Text(verbatim: model.error).font(.footnote).foregroundStyle(Theme.danger)
+                    .accessibilityIdentifier("skills-error")
+            }
+        } header: {
+            Text(String(localized: "Learned skills"))
+        } footer: {
+            Text(model.authoring
+                 ? String(localized: "Save a bot's verification run as a skill from the Verify card, or import one below. Every change waits for your review.")
+                 : String(localized: "Skill authoring is off, but skills you already enabled stay under your control here."))
+        }
+        .task(id: bot.id) {
+            model.client = session.profileClient
+            await model.refresh(first: true)
+        }
+        .confirmationDialog(
+            removing.map { String(localized: "Remove the learned skill “\($0.name)”?") } ?? "",
+            isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } }),
+            titleVisibility: .visible,
+            presenting: removing
+        ) { skill in
+            Button(String(localized: "Remove skill"), role: .destructive) {
+                removing = nil
+                Task { await model.remove(skill) }
+            }
+            .accessibilityIdentifier("skills-remove-confirm")
+            Button(String(localized: "Cancel"), role: .cancel) { removing = nil }
+        }
+
+        if session.surfaceGate.allows(.orgSkillsLibrary) {
+            OrgSkillsSection(bot: bot) { Task { await model.refresh() } }
+        }
+    }
+
+    private func importSkill() {
+        let text = source
+        Task { if await model.importSkill(text) { source = "" } }
+    }
+
+    @ViewBuilder
+    private func row(_ skill: ManagedSkill) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(alignment: .top, spacing: 10) {
+                Button { Task { await model.view(skill) } } label: {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(verbatim: skill.name)
+                            .font(.system(size: 13, design: .monospaced))
+                            .foregroundStyle(Theme.textPrimary)
+                        if !skill.description.isEmpty {
+                            Text(verbatim: skill.description)
+                                .font(.system(size: 12))
+                                .foregroundStyle(Theme.textSecondary)
+                                .lineLimit(2)
+                        }
+                        Text(String(localized: "Used when the bot decides it's relevant"))
+                            .font(.system(size: 11))
+                            .foregroundStyle(Theme.textSecondary)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("skill-open.\(skill.name)")
+                Toggle(isOn: Binding(get: { skill.enabled }, set: { _ in Task { await model.toggle(skill) } })) { EmptyView() }
+                    .labelsHidden()
+                    .tint(Theme.toggleOn)
+                    .disabled(model.working == skill.name)
+                    .accessibilityLabel(Text(skill.enabled ? String(localized: "Disable \(skill.name)") : String(localized: "Enable \(skill.name)")))
+                    .accessibilityIdentifier("skill-toggle.\(skill.name)")
+            }
+            Text(String(localized: "Source: \(skill.source)"))
+                .font(.system(size: 11))
+                .foregroundStyle(Theme.textSecondary)
+                .lineLimit(1)
+            if !skill.warnings.isEmpty {
+                Text(verbatim: skill.warnings.joined(separator: " · "))
+                    .font(.system(size: 11))
+                    .foregroundStyle(Theme.warning)
+            }
+        }
+        .swipeActions(edge: .trailing) {
+            Button(String(localized: "Remove"), role: .destructive) { removing = skill }
+                .disabled(model.working == skill.name)
+        }
+        .contextMenu {
+            Button(String(localized: "Remove skill"), systemImage: "trash", role: .destructive) { removing = skill }
+        }
+    }
+}
+
+/// The review before enabling, as a sheet from the page.
+struct SkillReviewSheet: View {
+    @Environment(\.themePalette) var themePalette
+    let sheet: SkillSheet
+    @ObservedObject var model: BotSkillsModel
+
+    var body: some View {
+        NavigationStack {
+            ThemedList {
+                Section {
+                    Text(String(localized: "Source: \(sheet.skill.source)"))
+                        .font(.footnote).foregroundStyle(Theme.textSecondary)
+                    if !sheet.skill.warnings.isEmpty {
+                        Text(verbatim: sheet.skill.warnings.joined(separator: " · "))
+                            .font(.footnote).foregroundStyle(Theme.warning)
+                    }
+                    Text(verbatim: sheet.text)
+                        .font(.system(size: 12, design: .monospaced))
+                        .foregroundStyle(Theme.textPrimary)
+                        .textSelection(.enabled)
+                        .accessibilityLabel(Text(String(localized: "Full SKILL.md for \(sheet.skill.name)")))
+                    if !model.error.isEmpty {
+                        Text(verbatim: model.error).font(.footnote).foregroundStyle(Theme.danger)
+                    }
+                }
+            }
+            .navigationTitle(String(localized: "Review \(sheet.skill.name) before enabling"))
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button(String(localized: "Cancel")) { model.reviewing = nil }.disabled(model.working == sheet.skill.name)
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button(String(localized: "Enable reviewed skill")) { Task { await model.enableReviewed(sheet.skill) } }
+                        .disabled(model.working == sheet.skill.name)
+                        .accessibilityIdentifier("skill-enable-reviewed")
+                }
+            }
+        }
+    }
+}
+
+/// A skill's full text, read-only.
+struct SkillTextSheet: View {
+    @Environment(\.themePalette) var themePalette
+    let sheet: SkillSheet
+    @ObservedObject var model: BotSkillsModel
+
+    var body: some View {
+        NavigationStack {
+            ThemedList {
+                Text(verbatim: sheet.text)
+                    .font(.system(size: 12, design: .monospaced))
+                    .foregroundStyle(Theme.textPrimary)
+                    .textSelection(.enabled)
+                    .accessibilityLabel(Text(String(localized: "Full SKILL.md for \(sheet.skill.name)")))
+                    .accessibilityIdentifier("skill-text")
+            }
+            .navigationTitle(Text(verbatim: sheet.skill.name))
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button(String(localized: "Close")) { model.viewing = nil }
+                }
+            }
+        }
+    }
+}
+
+/// Bot > Skills > From {Organization} (OrgSkillsCard.tsx): absent with no
+/// organization or nothing offered.
+struct OrgSkillsSection: View {
+    @Environment(\.themePalette) var themePalette
+    let bot: Bot
+    let onAdded: () -> Void
+    @EnvironmentObject private var session: Session
+    @State private var offer: OrgSkillsOffer?
+    @State private var working = ""
+    @State private var error = ""
+
+    var body: some View {
+        Group {
+            if let offer, offer.shown, let organization = offer.organization {
+                Section {
+                    ForEach(offer.skills) { skill in
+                        HStack(spacing: 10) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(verbatim: skill.name).font(.system(size: 13, design: .monospaced)).foregroundStyle(Theme.textPrimary)
+                                Text(verbatim: skill.description).font(.system(size: 12)).foregroundStyle(Theme.textSecondary).lineLimit(2)
+                                Text(String(localized: "\(skill.packageName) \(skill.release) · \(skill.publisher)"))
+                                    .font(.system(size: 11)).foregroundStyle(Theme.textSecondary).lineLimit(1)
+                            }
+                            Spacer(minLength: 8)
+                            if skill.added {
+                                Label(String(localized: "Added"), systemImage: "checkmark")
+                                    .font(.footnote).foregroundStyle(Theme.textSecondary)
+                            } else {
+                                Button(working == skill.id ? String(localized: "Adding…") : String(localized: "Add")) {
+                                    Task { await add(skill) }
+                                }
+                                .buttonStyle(.borderless)
+                                .disabled(!working.isEmpty)
+                                .accessibilityLabel(Text(String(localized: "Add \(skill.name) to this bot")))
+                            }
+                        }
+                    }
+                    if !error.isEmpty {
+                        Text(verbatim: error).font(.footnote).foregroundStyle(Theme.danger)
+                    }
+                } header: {
+                    Text(String(localized: "From \(organization.name)"))
+                } footer: {
+                    Text(String(localized: "Skills your organization shares. Adding one puts it on this bot, switched on."))
+                }
+            }
+        }
+        .task(id: bot.id) { await refresh() }
+    }
+
+    private func refresh() async {
+        // No organization library is the same as nothing offered.
+        offer = try? await session.profileClient?.orgOfferedSkills(botId: bot.id)
+    }
+
+    private func add(_ skill: OfferedOrgSkill) async {
+        guard let client = session.profileClient else { return }
+        working = skill.id
+        error = ""
+        defer { working = "" }
+        do {
+            try await client.addOrgSkill(botId: bot.id, skill: skill)
+            await refresh()
+            onAdded()
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+}
+
+struct BotSkillsPage: View {
+    @Environment(\.themePalette) var themePalette
+    let bot: Bot
+    @StateObject private var model: BotSkillsModel
+
+    init(bot: Bot) {
+        self.bot = bot
+        _model = StateObject(wrappedValue: BotSkillsModel(botId: bot.id))
+    }
+
+    var body: some View {
+        ThemedList { BotSkillsSection(bot: bot, model: model) }
+            .sheet(item: $model.reviewing) { sheet in SkillReviewSheet(sheet: sheet, model: model) }
+            .sheet(item: $model.viewing) { sheet in SkillTextSheet(sheet: sheet, model: model) }
+            .navigationTitle(String(localized: "Skills"))
+            .navigationBarTitleDisplayMode(.inline)
+            .accessibilityIdentifier("skills-page")
+    }
+}

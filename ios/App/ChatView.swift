@@ -33,6 +33,9 @@ struct ChatView: View {
     @Environment(\.dismiss) var dismiss
     @Environment(\.accessibilityReduceMotion) var reduceMotion
     @Environment(\.scenePhase) var scenePhase
+    /// iPad desktop shell (Desktop/DesktopChat.swift): the desktop's header,
+    /// composer and column; nil on the iPhone.
+    @Environment(\.desktopChat) var desktopChat
     @State var draft = ""
     @State var revealedMessageId: String?
     @State var showingTasks = false
@@ -467,13 +470,14 @@ struct ChatView: View {
                             .frame(height: 26.3 - Self.composerTopPadding)
                             .id(Self.bottomId)
                     }
-                    .padding(.horizontal, Theme.Chat.bubbleLeading)
+                    .padding(.horizontal, desktopChat == nil ? Theme.Chat.bubbleLeading : 20)
                     .padding(.top, 12)
-                    .frame(maxWidth: CompanionLayout.chatWidth, alignment: .leading)
+                    .frame(maxWidth: desktopChat == nil ? CompanionLayout.chatWidth : DesktopShellRules.chatColumn + 40, alignment: .leading)
                     .frame(maxWidth: .infinity)
                     .environment(\.messageActions, messageActionContext)
                     .environment(\.citeIntoComposer, citeIntoComposer)
                     .environment(\.conversationGallery, conversationGallery)
+                    .environment(\.desktopBubbleCap, desktopChat == nil ? nil : 560)
                     .background(BottomFollowProbe(model: follow))
                 }
                 // The transcript starts under the top bar and scrolls
@@ -487,12 +491,15 @@ struct ChatView: View {
                         + (callPillShown ? Self.callPillRow : 0))
                 }
                 .overlay(alignment: .top) {
-                    ChatTopEdgeFade()
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-                        .ignoresSafeArea()
+                    // the desktop's header floats over the transcript, unfaded
+                    if desktopChat == nil {
+                        ChatTopEdgeFade()
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                            .ignoresSafeArea()
+                    }
                 }
                 .overlay(alignment: .top) { pinnedBanner }
-                .overlay(alignment: .top) { headerOrFindBar }
+                .overlay(alignment: .top) { chatHeaderSlot }
                 .overlay(alignment: .top) { callPill }
                 .overlay(alignment: .bottom) {
                     if !follow.following, !transcript.isEmpty {
@@ -606,14 +613,14 @@ struct ChatView: View {
             .id(threadId)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-            composer
+            composerSlot
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
         // The composer sits 30 pt above the screen's bottom edge, inside the
         // home-indicator area, as in the reference; the keyboard still
         // pushes it up.
         .ignoresSafeArea(.container, edges: .bottom)
-        .background(Theme.bg.ignoresSafeArea())
+        .background(chatBackground)
         .overlay(alignment: .bottom) { plusSheet }
         .overlay { groupCall }
 #if DEBUG

@@ -112,8 +112,9 @@ struct RootView: View {
                 }
                 .onAppear { hasSeenWelcome = true }
             case .chats:
-                ChatListView()
-                    .parityLauncher()
+                // the phone's roster, or on an iPad the desktop shell
+                // (Desktop/DesktopShell.swift); each applies the parity launcher
+                HomeRoot()
                     .onAppear {
                         hasSeenWelcome = true
                         // This is either an existing pairing or a new pairing

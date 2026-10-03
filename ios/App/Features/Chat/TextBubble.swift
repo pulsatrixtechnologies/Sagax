@@ -12,6 +12,8 @@ struct TextBubble: View {
     var showingSource = false
     let openLink: (URL, Message) -> OpenURLAction.Result
     @Environment(\.messageActions) private var context
+    /// The desktop's bubble cap on iPad (nil on the iPhone).
+    @Environment(\.desktopBubbleCap) private var bubbleCap
     /// A long line of yours, opened with Show full message (MS19).
     @State private var expanded = false
 
@@ -160,7 +162,24 @@ struct TextBubble: View {
                 }
             )
 
+            .modifier(DesktopBubbleCapModifier(cap: bubbleCap, mine: mine))
+
             if !mine { Spacer(minLength: Theme.Chat.bubbleTrailingGap) }
+        }
+    }
+}
+
+/// iPad desktop shell: a bubble no wider than the desktop's 560. The phone
+/// (no cap) is left exactly as it was.
+private struct DesktopBubbleCapModifier: ViewModifier {
+    let cap: CGFloat?
+    let mine: Bool
+
+    func body(content: Content) -> some View {
+        if let cap {
+            content.frame(maxWidth: cap, alignment: mine ? .trailing : .leading)
+        } else {
+            content
         }
     }
 }

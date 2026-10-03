@@ -38,12 +38,17 @@
 // reads (ios/parity/out/session.json) carries the endpoint, the bearer and
 // the environment id the app is launched with.
 //
+// PARITY_OWNER=1 puts the real companion sidecar (companion/src/proxy.ts) in
+// front of the server with one paired device, the way an iPhone reaches its
+// owner's computer: session.json then names the sidecar and no environment,
+// so the app pairs as the owner's sidecar (decision D1's advanced panel).
+//
 // PARITY_ORG=1 runs the same dataset on an organization server instead
 // (ios/parity/org-fixture.mjs): OMB_IDENTITY=perspicax against a local stub
 // identity provider, signed in as a placeholder admin. Without it nothing
 // below changes. PARITY_ORG_PHONE=1 adds a phone bearer for that person
 // (the session file's token), for the synced sidebar UI tests (WP6).
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { createServer as createHttpServer, request as httpRequest } from "node:http";
@@ -740,6 +745,7 @@ async function main() {
     }), { mode: 0o600 });
   }
   if (PRESETS) seedPresets(dataDir);
+  if (process.env.PARITY_OWNER === "1" && !org) seedOwnerSkill(seeded);
 
   child = startServer(port, webhook);
   await waitHealthy(base, child);
@@ -775,6 +781,21 @@ async function main() {
   console.error(`[parity] ready: ${record.bots} bots, session written to ${join(OUT, "session.json")}`);
   console.log(JSON.stringify({ endpoint: front, environmentId: record.environmentId, bots: record.bots }));
   if (once) await shutdown(0);
+}
+
+/** PARITY_OWNER=1: one imported skill on Ara, disabled as an import lands,
+ * through the server's own installer (server/skills.ts) while the server is
+ * stopped, for the advanced panel's Skills UI tests (WP16). */
+export const OWNER_SKILL = "fixture-check";
+function seedOwnerSkill(seeded) {
+  const skill = `---\nname: ${OWNER_SKILL}\ndescription: Placeholder skill that checks the fixture.\n---\n\nPlaceholder: run the fixture check and report.\n`;
+  const script = `import { installSkill } from ${JSON.stringify(join(ROOT, "server", "skills.ts"))};
+    const result = installSkill(${JSON.stringify(seeded.ids.ara.id)}, "parity/fixture", [{ path: "SKILL.md", content: ${JSON.stringify(skill)} }]);
+    if ("error" in result) { console.error(result.error); process.exit(1); }`;
+  const run = spawnSync(process.execPath, ["--experimental-strip-types", "--input-type=module", "-e", script], {
+    cwd: ROOT, env: { PATH: process.env.PATH, HOME: home, USERPROFILE: home, OMB_DATA_DIR: join(home, ".openmausbot") }, encoding: "utf8",
+  });
+  if (run.status !== 0) console.error(`[parity] owner skill: ${run.stderr}`);
 }
 
 // ── the companion sidecar (PARITY_OWNER=1) ─────────────────────────────
