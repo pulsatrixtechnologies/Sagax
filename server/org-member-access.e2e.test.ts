@@ -11,6 +11,8 @@
 //         the bots shared with them, creates, imports, edits and deletes none
 //         (even their own, even with an edit grant), schedules no routine;
 //         back to "manage" restores it; an admin is never narrowed
+//   MA-4  create_bot on the internal capability belongs to the Primary Bot's
+//         person (not the operator); sagax_bots "use" refuses that path too
 import { spawn, type ChildProcess } from "node:child_process";
 import { chmodSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -31,6 +33,7 @@ const ALICE: FakeOidcUser = { sub: "01J9MAALICE000000000000A", name: "Alice", pr
 const BOB: FakeOidcUser = { sub: "01J9MABOB0000000000000B", name: "Bob", preferred_username: "bob", role: "employee", teams: [] };
 const UMA: FakeOidcUser = { sub: "01J9MAUMA0000000000000U", name: "Uma", preferred_username: "uma", role: "employee", teams: [] };
 const READ_ONLY = "org_bots_read_only";
+const CAPABILITY_KEY = "org-member-access-fixture-capability";
 
 let PORT = 0;
 let BASE = "";
@@ -99,7 +102,7 @@ async function createBot(auth: Auth, name: string, instanceId: string): Promise<
 }
 
 async function start() {
-  child = spawn(process.execPath, [join(SERVER_DIR, "index.ts")], {
+  child = spawn(process.execPath, ["--experimental-strip-types", join(SERVER_DIR, "index.ts")], {
     cwd: join(SERVER_DIR, ".."),
     env: {
       ...(process.env.PATH ? { PATH: process.env.PATH } : {}),
@@ -114,6 +117,7 @@ async function start() {
       SAGAX_OIDC_REFRESH_AFTER_SECONDS: "2",
       SAGAX_ANTHROPIC_API_KEY: ORG_KEY,
       SAGAX_ORG_NAME: "Acme",
+      SAGAX_TEST_INTERNAL_CAPABILITY_KEY: CAPABILITY_KEY,
     },
     stdio: ["ignore", "pipe", "pipe"],
   });
@@ -266,4 +270,45 @@ posixOnly("Perspicax organization: a member's own engines and read-only bots", (
     expect((await api("PATCH", `/api/bots/${shared.id}`, uma, { name: "Edited by Uma" })).status).toBe(200);
     expect((await api("DELETE", `/api/bots/${own.id}`, uma)).status).toBe(200);
   }, 120_000);
+
+  it("MA-4: create_bot belongs to the Primary Bot's person; use refuses it", async () => {
+    let uma = await signIn(UMA);
+    const chief = await createBot(uma, "Uma Chief", "claude");
+    expect((await api("POST", `/api/bots/${chief.id}/primary`, uma, {})).status).toBe(200);
+
+    // A capability minted for the Primary Bot's thread, as the agents proxy
+    // holds during a turn (the fake turn ends before a dumped token is used).
+    const tokenOf = async (): Promise<string> => {
+      const res = await fetch(`${BASE}/api/testing/internal-capability`, {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-openmausbot-test-capability": CAPABILITY_KEY },
+        body: JSON.stringify({ botId: chief.id, threadId: chief.threadId }),
+      });
+      expect(res.status).toBe(201);
+      return ((await res.json()) as { token: string }).token;
+    };
+    const createSpecialist = async (token: string, name: string) => {
+      const res = await fetch(`${BASE}/api/internal/create-bot`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+        body: JSON.stringify({
+          fromBotId: chief.id, fromThreadId: chief.threadId, name,
+          role: "Ops", instructions: "Help Uma.",
+        }),
+      });
+      return { status: res.status, body: await res.json() as { id?: string; error?: string } };
+    };
+
+    const made = await createSpecialist(await tokenOf(), "Uma Scout");
+    expect(made.status, JSON.stringify(made.body)).toBe(201);
+    const orgBots = (await api("GET", "/api/org/bots", alice)).body.bots as Array<{ name: string; ownerPrincipalId: string }>;
+    expect(orgBots.find((bot) => bot.name === "Uma Scout")?.ownerPrincipalId).toBe(ids.uma);
+
+    setUma("use");
+    uma = await signIn(UMA);
+    const refused = await createSpecialist(await tokenOf(), "Uma Denied");
+    expect(refused.status).toBe(403);
+    expect(refused.body.error).toBe(READ_ONLY);
+    expect((await api("GET", "/api/org/bots", alice)).body.bots.some((bot: { name: string }) => bot.name === "Uma Denied")).toBe(false);
+  }, 90_000);
 });
