@@ -15,7 +15,7 @@
 // exception: fenced blocks and inline spans pin dir="ltr" and isolate
 // themselves, so a snippet never reorders and never scrambles the RTL
 // sentence holding it.
-import { memo, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
+import { memo, use, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import Markdown, { defaultUrlTransform, type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
@@ -50,7 +50,7 @@ import { repairMarkdownTables } from "../lib/markdown-tables";
 import { windowsPathDestinations } from "../../shared/markdown-windows-paths";
 import { looksLikeThreadRefUrl, parseThreadRefUrl, resolveThreadRefAddress, remarkThreadRefs } from "../lib/thread-refs";
 import { MarkdownImagePreview, useLocalFileSave, type MessageAttachmentContext } from "./AttachmentPreview";
-import { ThreadLink, threadLinkFromProps, useThreadRefs } from "./ThreadRefs";
+import { ThreadLink, ThreadRefsContext, threadLinkFromProps, type ThreadRefsValue } from "./ThreadRefs";
 import { t } from "../lib/i18n";
 import {
   headingSlug,
@@ -95,6 +95,8 @@ const hash = (s: string) => {
   }
   return (h >>> 0).toString(36);
 };
+const highlightKey = (lang: string, code: string) => `${lang}:${hash(code)}`;
+const mermaidKey = (scheme: "dark" | "light", code: string) => `${scheme}:${hash(code)}`;
 
 // A markdown link whose target is a file on this machine: bots hand over
 // bot-created documents as absolute paths or file:// URLs. Web links stay
@@ -257,7 +259,12 @@ export interface CodeBlockProps {
  * @returns Rendered code block element.
  */
 export function CodeBlock({ code, lang, streaming }: CodeBlockProps) {
-  const [html, setHtml] = useState<string | null>(null);
+  // a block highlighted before (revisiting a thread) paints highlighted in
+  // its first frame instead of plain first and highlighted after the effect
+  const [html, setHtml] = useState<string | null>(() => highlightCache.get(highlightKey(lang, code)) ?? null);
+  // React compares dangerouslySetInnerHTML by identity: a fresh object each
+  // render would rebuild the highlighted DOM on every re-render
+  const markup = useMemo(() => (html ? { __html: html } : null), [html]);
   const [copied, setCopied] = useState(false);
   const [wrapLines, setWrapLines] = useState(false);
   const [expanded, setExpanded] = useState(false);
@@ -272,7 +279,7 @@ export function CodeBlock({ code, lang, streaming }: CodeBlockProps) {
   }, []);
 
   useEffect(() => {
-    const key = `${lang}:${hash(code)}`;
+    const key = highlightKey(lang, code);
     const cached = highlightCache.get(key);
     if (cached) return setHtml(cached);
     let alive = true;
@@ -409,14 +416,14 @@ export function CodeBlock({ code, lang, streaming }: CodeBlockProps) {
         </div>
       </div>
       <div className={folded ? "relative max-h-[22rem] overflow-hidden" : undefined}>
-      {html ? (
+      {markup ? (
         <div
           className={`text-[12px] leading-[18px] [&_pre]:!bg-transparent [&_pre]:m-0 [&_pre]:p-3 ${
             wrapLines
               ? "whitespace-pre-wrap break-words overflow-x-hidden [&_pre]:!whitespace-pre-wrap [&_pre]:!break-words [&_code]:!whitespace-pre-wrap [&_code]:!break-words"
               : "overflow-x-auto"
           }`}
-          dangerouslySetInnerHTML={{ __html: html }}
+          dangerouslySetInnerHTML={markup}
         />
       ) : (
         <pre
@@ -485,7 +492,12 @@ const MERMAID_FONT = '"Inter", -apple-system, BlinkMacSystemFont, "SF UI Text", 
 export function MermaidDiagram({ code, streaming }: MermaidDiagramProps) {
   const frame = useRef<HTMLDivElement | null>(null);
   const [skinEpoch, setSkinEpoch] = useState(0);
-  const [svg, setSvg] = useState<string | null>(null);
+  // a diagram drawn before paints in its first frame, in the page's scheme;
+  // the effect below re-checks the scheme against the frame itself
+  const [svg, setSvg] = useState<string | null>(() =>
+    mermaidCache.get(mermaidKey(mermaidScheme(typeof document === "undefined" ? null : document.documentElement), code)) ?? null);
+  // stable for the same SVG, so a re-render keeps the drawn diagram's DOM
+  const markup = useMemo(() => (svg ? { __html: svg } : null), [svg]);
   const [error, setError] = useState<string | null>(null);
   const [showSource, setShowSource] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -503,7 +515,7 @@ export function MermaidDiagram({ code, streaming }: MermaidDiagramProps) {
 
   useEffect(() => {
     const scheme = mermaidScheme(frame.current);
-    const key = `${scheme}:${hash(code)}`;
+    const key = mermaidKey(scheme, code);
     const cached = mermaidCache.get(key);
     if (cached) {
       setSvg(cached);
@@ -632,10 +644,10 @@ export function MermaidDiagram({ code, streaming }: MermaidDiagramProps) {
           Diagram could not be rendered: {error}
         </p>
       )}
-      {svg && (
+      {markup && (
         <div
           className="overflow-x-auto p-3 [&_svg]:!max-w-full"
-          dangerouslySetInnerHTML={{ __html: svg }}
+          dangerouslySetInnerHTML={markup}
         />
       )}
       {(showSource || !svg || error) && (
@@ -957,6 +969,11 @@ const HEADING_CLASS: Record<string, string> = {
 const nodeOffset = (node: unknown): number | undefined =>
   (node as { position?: { start?: { offset?: number } } } | undefined)?.position?.start?.offset;
 
+// A thread link only ever comes from a "#Title" run or a canonical
+// openmausbot://thread/ link, whatever case or escaping its scheme uses.
+const MAY_LINK_THREAD = /#|openmausbot|sagax/i;
+const NO_THREAD_REFS: ThreadRefsValue = { threads: [] };
+
 /** Render message Markdown with math, protected code, scoped attachments, and mentions. */
 function ChatMarkdownComponent({ text, streaming = false, message, mentionPeers = NO_MENTION_PEERS, everyone = false }: {
   text: string; streaming?: boolean; message?: MessageAttachmentContext;
@@ -964,7 +981,10 @@ function ChatMarkdownComponent({ text, streaming = false, message, mentionPeers 
 }) {
   // "#Title" mentions link to the threads the person can see (ThreadRefs);
   // @mentions were already decorated by remarkMentions, which runs first.
-  const { threads, currentBotId } = useThreadRefs();
+  // Only a message that can hold a thread link reads the thread list (use()
+  // may be called conditionally), so opening or renaming a thread, renaming
+  // a bot or changing the selection leaves every other bubble alone.
+  const { threads, currentBotId } = MAY_LINK_THREAD.test(text) ? use(ThreadRefsContext) : NO_THREAD_REFS;
   // A near-miss table from a model renders as an unreadable run of pipes
   // unless it is repaired before parsing. Table repair moves image source
   // offsets, so image messages skip that repair but still normalize math.

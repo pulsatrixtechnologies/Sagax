@@ -1,10 +1,11 @@
-import { mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, utimesSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { JsonValue } from "./schema.ts";
 
-import { customMcpServers,
+import { cacheUntilConfigChanges,
+  customMcpServers,
   driverKeyBacked,
   DATA_DIR,
   dropRetiredOrganizationKeys,
@@ -1952,4 +1953,116 @@ describe("2026-10-01: the retired organization key switch", () => {
     expect(dropRetiredOrganizationKeys()).toBe(false);
     expect(JSON.parse(readFileSync(path, "utf8"))).toEqual({ profile: { name: "Ada" } });
   });
+});
+
+describe("a value derived from config.json", () => {
+  const path = join(DATA_DIR, "config.json");
+  const members = (config: AppConfig) => config.signIn?.members ?? [];
+  /** Written a minute ago: a running server's file, not one mid-save. */
+  const writeSettled = (signIn: AppConfig["signIn"], minutesAgo = 1) => {
+    writeFileSync(path, JSON.stringify({ signIn }));
+    const when = new Date(Date.now() - minutesAgo * 60_000);
+    utimesSync(path, when, when);
+  };
+  beforeEach(() => { mkdirSync(DATA_DIR, { recursive: true }); rmSync(path, { force: true }); });
+  afterEach(() => { rmSync(path, { force: true }); });
+
+  it("reads config.json once while the file is unchanged", () => {
+    writeSettled({ members: ["one@example.test"] });
+    const derive = vi.fn(members);
+    const read = cacheUntilConfigChanges(derive);
+    for (let i = 0; i < 5; i++) expect(read()).toEqual(["one@example.test"]);
+    expect(derive).toHaveBeenCalledTimes(1);
+  });
+
+  it("sees an outside edit on the next call, in place or renamed over the file", () => {
+    writeSettled({ members: ["one@example.test", "two@example.test"] });
+    const read = cacheUntilConfigChanges(members);
+    expect(read()).toEqual(["one@example.test", "two@example.test"]);
+    // In place, as a hand edit does: the size and the time change.
+    writeSettled({ members: ["one@example.test"] }, 2);
+    expect(read()).toEqual(["one@example.test"]);
+    // Renamed over the file, as the CLI and the fleet agent write it: same
+    // size and same time, so only the new file identity tells them apart.
+    const before = statSync(path);
+    writeFileSync(`${path}.next`, JSON.stringify({ signIn: { members: ["two@example.test"] } }));
+    utimesSync(`${path}.next`, before.atime, before.mtime);
+    renameSync(`${path}.next`, path);
+    expect(statSync(path).size).toBe(before.size);
+    expect(read()).toEqual(["two@example.test"]);
+  });
+
+  it("sees this process's own save at once", () => {
+    writeSettled({ members: ["one@example.test"] });
+    const read = cacheUntilConfigChanges(members);
+    expect(read()).toEqual(["one@example.test"]);
+    saveConfig({ signIn: { members: [] } });
+    expect(read()).toEqual([]);
+  });
+
+  it("reads a file saved in the last moments every time, so a second save in the same clock tick is not missed", () => {
+    const tick = new Date();
+    writeFileSync(path, JSON.stringify({ signIn: { members: ["one@example.test"] } }));
+    utimesSync(path, tick, tick);
+    const read = cacheUntilConfigChanges(members);
+    expect(read()).toEqual(["one@example.test"]);
+    // Same size, same file, same modification time: nothing in stat changed.
+    writeFileSync(path, JSON.stringify({ signIn: { members: ["two@example.test"] } }));
+    utimesSync(path, tick, tick);
+    expect(read()).toEqual(["two@example.test"]);
+  });
+
+  it("never keeps the old value once the file is gone", () => {
+    writeSettled({ members: ["one@example.test"] });
+    const read = cacheUntilConfigChanges(members);
+    expect(read()).toEqual(["one@example.test"]);
+    rmSync(path);
+    expect(read()).toEqual([]);
+  });
+
+  it("reads a file loadConfig() could not use on every call, never keeping its defaults", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      writeFileSync(path, "{ not json");
+      const when = new Date(Date.now() - 60_000);
+      utimesSync(path, when, when);
+      const derive = vi.fn(members);
+      const read = cacheUntilConfigChanges(derive);
+      expect(read()).toEqual([]);
+      expect(read()).toEqual([]);
+      expect(derive).toHaveBeenCalledTimes(2);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it.skipIf(process.platform === "win32")("sees a change of permissions or owner on the next call", () => {
+    writeSettled({ members: ["one@example.test"] });
+    const derive = vi.fn(members);
+    const read = cacheUntilConfigChanges(derive);
+    read();
+    // chmod and chown leave the size, the time and the file the same.
+    chmodSync(path, 0o600);
+    read();
+    expect(derive).toHaveBeenCalledTimes(2);
+  });
+
+  it.skipIf(process.platform === "win32" || process.getuid?.() === 0)(
+    "uses the list again once a file the server could not read is readable",
+    () => {
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      try {
+        writeSettled({ members: ["one@example.test"] });
+        chmodSync(path, 0o000);
+        const read = cacheUntilConfigChanges(members);
+        expect(read()).toEqual([]);
+        expect(read()).toEqual([]);
+        chmodSync(path, 0o600);
+        expect(read()).toEqual(["one@example.test"]);
+      } finally {
+        chmodSync(path, 0o600);
+        warn.mockRestore();
+      }
+    },
+  );
 });

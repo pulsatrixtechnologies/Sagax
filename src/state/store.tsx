@@ -126,6 +126,8 @@ export interface OptionCardData {
   routineRequest?: RoutineRequestCardData;
   /** Staged learned-skill change; applied only after the user confirms this card. */
   skillRequest?: SkillRequestCardData;
+  outboundRequest?: { tool: string; app: string | null };
+  teamMemoryRequest?: { section: string; entryId: string; kind: string };
   /** Persisted profile proposal used by the server when the user confirms it. */
   profileRequest?: ProfileRequestCardData;
   /** Persisted default-model proposal used by the server when the user confirms it. */
@@ -503,6 +505,9 @@ export interface Bot {
    * defers to the composio boolean (unset/true = every tool, false = none);
    * an explicit {} grants no tools. Edited from bot settings → Access. */
   connectorTools?: Record<string, ConnectorToolGrant>;
+  connectorScopes?: { apps: Record<string, "read" | "write"> };
+  outbound?: { policy: "ask" | "allow"; dailyCap: number };
+  fallback?: Array<{ instanceId: string; model: string }>;
   /** Whether this bot gets the app's built-in browser (Browser tab). On unless switched off. */
   browser?: boolean;
   /** Memory upkeep (Bot settings → Memory): background capture and the
@@ -777,6 +782,9 @@ export interface ConfigViewer {
   /** Organization server: a Perspicax admin lets this person use shared
    * bots only (no creating, editing or owning a bot). */
   botsReadOnly?: true;
+  /** Organization server: a Perspicax admin manages this person's plugins,
+   * skills and MCP servers (Perspicax `sagax_integrations: off`). */
+  integrationsManagedByAdmin?: true;
   /** The operator's name, for their lines that carry no sender. */
   operatorName?: string;
   /** Organization server: Perspicax owns this person's name and email
@@ -914,7 +922,6 @@ export interface InstanceInfo {
   };
   models: { default: string; options: Array<{ id: string; label: string; custom?: boolean; loaded?: boolean; provider?: string; variants?: ModelVariantOption[] }> };
   capabilities?: {
-    cloudComputerMcp?: boolean;
     computerMcp?: boolean;
     agentsMcp?: boolean;
     composioMcp?: boolean;
@@ -1045,6 +1052,7 @@ export interface AppState {
   computerOpen: boolean;
   /** the per-thread event inspector (runtime stream + native protocol tee) */
   inspectorOpen: boolean;
+  activityOpen: boolean;
   appSettingsOpen: boolean;
   appSettingsSection: AppSettingsSection;
   /** Non-zero while Settings → OMB Cloud is open because of the Cloud page's
@@ -1367,6 +1375,7 @@ export type Action =
   | { type: "toggleNewBot"; open?: boolean }
   | { type: "toggleComputer"; open?: boolean }
   | { type: "toggleInspector"; open?: boolean }
+  | { type: "toggleActivity"; open?: boolean }
   | { type: "focusMessage"; threadId: string; messageId: string; matchText?: string }
   | { type: "focusMessageConsumed"; nonce: number }
   | { type: "toggleAppSettings"; open?: boolean; section?: AppSettingsSection; cloudLink?: boolean; subPage?: string; phonePairing?: boolean }
@@ -1691,6 +1700,7 @@ export function reducer(state: AppState, action: Action): AppState {
         personPanelId: null,
         computerOpen: false,
         inspectorOpen: false,
+        activityOpen: false,
         appSettingsOpen: false,
         pluginsOpen: false,
         triggersOpen: false,
@@ -1704,6 +1714,7 @@ export function reducer(state: AppState, action: Action): AppState {
         settingsOpen: false,
         computerOpen: false,
         inspectorOpen: false,
+        activityOpen: false,
         appSettingsOpen: false,
         pluginsOpen: false,
         triggersOpen: false,
@@ -2167,6 +2178,7 @@ export function reducer(state: AppState, action: Action): AppState {
         ...state,
         selectedId,
         settingsOpen: open,
+        activityOpen: open ? false : state.activityOpen,
         botSettingsSection: action.section ?? (selectedId !== state.selectedId ? "overview" : state.botSettingsSection),
         // Mascot / bare open omits `section` → accordion stays fully collapsed.
         // Deep links expand that row even when the panel is already open.
@@ -2238,6 +2250,7 @@ export function reducer(state: AppState, action: Action): AppState {
         personPanelId: open ? null : state.personPanelId,
         settingsOpen: open ? false : state.settingsOpen,
         inspectorOpen: open ? false : state.inspectorOpen,
+        activityOpen: open ? false : state.activityOpen,
         appSettingsOpen: open ? false : state.appSettingsOpen,
       };
     }
@@ -2249,6 +2262,18 @@ export function reducer(state: AppState, action: Action): AppState {
         personPanelId: open ? null : state.personPanelId,
         settingsOpen: open ? false : state.settingsOpen,
         computerOpen: open ? false : state.computerOpen,
+        activityOpen: open ? false : state.activityOpen,
+        appSettingsOpen: open ? false : state.appSettingsOpen,
+      };
+    }
+    case "toggleActivity": {
+      const open = action.open ?? !state.activityOpen;
+      return {
+        ...state,
+        activityOpen: open,
+        settingsOpen: open ? false : state.settingsOpen,
+        computerOpen: open ? false : state.computerOpen,
+        inspectorOpen: open ? false : state.inspectorOpen,
         appSettingsOpen: open ? false : state.appSettingsOpen,
       };
     }
@@ -2257,6 +2282,7 @@ export function reducer(state: AppState, action: Action): AppState {
       return {
         ...state,
         appSettingsOpen: open,
+        activityOpen: open ? false : state.activityOpen,
         appSettingsSection: action.section ?? state.appSettingsSection,
         appSettingsCloudLink: action.cloudLink && open ? state.appSettingsCloudLink + 1 : 0,
         appSettingsSubPage: open ? action.subPage ?? null : null,
@@ -2325,6 +2351,7 @@ export function reducer(state: AppState, action: Action): AppState {
         organizationFullAccess: _orgFull,
         computer,
         connectorTools,
+        connectorScopes,
         ...rest
       } = action.patch;
       const botPatch: Partial<Bot> = { ...rest };
@@ -2334,6 +2361,8 @@ export function reducer(state: AppState, action: Action): AppState {
       // exactly like a cleared computer destination.
       if (connectorTools === null) botPatch.connectorTools = undefined;
       else if (connectorTools !== undefined) botPatch.connectorTools = connectorTools;
+      if (connectorScopes === null) botPatch.connectorScopes = undefined;
+      else if (connectorScopes !== undefined) botPatch.connectorScopes = connectorScopes;
       return updateBot(next, action.botId, (b) => ({ ...b, ...botPatch }));
     }
     case "threadActive": {
@@ -2613,6 +2642,7 @@ export const initialState: AppState = {
   botCreationPending: false,
   computerOpen: false,
   inspectorOpen: false,
+  activityOpen: false,
   appSettingsOpen: false,
   appSettingsSection: "general",
   appSettingsCloudLink: 0,

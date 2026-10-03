@@ -18,6 +18,7 @@ import {
   removeService,
   relayMcp,
   setManagedBrokerAccess,
+  trustedSessionMcpUrl,
   validateConnectorGrants,
 } from "./composio.ts";
 import {
@@ -28,6 +29,21 @@ import {
 import type { ConnectorToolGrant } from "../shared/wire.ts";
 
 let api: Server;
+it("only sends Session MCP credentials over HTTPS or loopback HTTP", () => {
+  const old = process.env.SAGAX_COMPOSIO_API;
+  try {
+    process.env.SAGAX_COMPOSIO_API = "http://remote.example.test/api";
+    expect(trustedSessionMcpUrl("http://remote.example.test/mcp")).toBe(false);
+    process.env.SAGAX_COMPOSIO_API = "ftp://remote.example.test/api";
+    expect(trustedSessionMcpUrl("ftp://remote.example.test/mcp")).toBe(false);
+    process.env.SAGAX_COMPOSIO_API = "http://127.0.0.1:9876/api";
+    expect(trustedSessionMcpUrl("http://127.0.0.1:9876/mcp")).toBe(true);
+    expect(trustedSessionMcpUrl("https://app.composio.dev/mcp")).toBe(true);
+  } finally {
+    if (old === undefined) delete process.env.SAGAX_COMPOSIO_API;
+    else process.env.SAGAX_COMPOSIO_API = old;
+  }
+});
 let origin = "";
 let base = "";
 const calls: Array<{

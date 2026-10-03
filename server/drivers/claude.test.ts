@@ -1440,17 +1440,15 @@ describe("ClaudeDriver turns (fake CLI)", () => {
     expect(text).toBe("hi");
   });
 
-  it("refreshes a coordinated resumed session's prompt when the CLI supports it", async () => {
+  it("refreshes a resumed session's recorded prompt on every turn when the CLI supports it", async () => {
     await create(undefined, { FAKE_CLAUDE_DUMP: join(scratch, "coordination-snapshot.json"), FAKE_CLAUDE_VERSION: "2.1.267" });
-    // Read the version first, so the floor is what admits the flag here —
-    // without this the driver sees a null version and would push it for any CLI.
+    // After an Engines snapshot, the cached version is what admits the flag.
     await instance.snapshot();
     await instance.adapter.sendTurn({
       threadId: "t-coordinated-resume",
       text: "Addressed teammate request 2. Add the new header row.",
       resumeCursor: "existing-claude-session",
       system: "Stable coordination policy, without the earlier assignment.",
-      refreshSystemPrompt: true,
     });
     await recorder.until((e) => e.type === "turn.completed");
     const seen = JSON.parse(readFileSync(join(scratch, "coordination-snapshot.json"), "utf8"));
@@ -1459,7 +1457,16 @@ describe("ClaudeDriver turns (fake CLI)", () => {
     expect(seen.prompt.message.content).toContain("Add the new header row.");
   });
 
-  it("keeps coordinated turns working on a CLI without the snapshot flag", async () => {
+  it("refreshes the recorded prompt on a plain turn too: no caller has to ask", async () => {
+    const dump = join(scratch, "plain-snapshot.json");
+    await create(undefined, { FAKE_CLAUDE_DUMP: dump, FAKE_CLAUDE_VERSION: "2.1.267" });
+    await instance.adapter.sendTurn({ threadId: "t-plain-snapshot", text: "hi", system: "You are Testy." });
+    await recorder.until((e) => e.type === "turn.completed");
+    const seen = JSON.parse(readFileSync(dump, "utf8"));
+    expect(seen.argv[seen.argv.indexOf("--system-prompt-snapshot") + 1]).toBe("off");
+  });
+
+  it("keeps resumed turns working on a CLI without the snapshot flag", async () => {
     const dump = join(scratch, "coordination-no-snapshot.json");
     await create(undefined, { FAKE_CLAUDE_DUMP: dump, FAKE_CLAUDE_VERSION: "2.1.232" });
     await instance.snapshot();
@@ -1468,7 +1475,6 @@ describe("ClaudeDriver turns (fake CLI)", () => {
       text: "Addressed teammate request 2. Add the new header row.",
       resumeCursor: "existing-claude-session",
       system: "Stable coordination policy, without the earlier assignment.",
-      refreshSystemPrompt: true,
     });
     await recorder.until((e) => e.type === "turn.completed");
     const seen = JSON.parse(readFileSync(dump, "utf8"));
@@ -1483,7 +1489,6 @@ describe("ClaudeDriver turns (fake CLI)", () => {
       threadId: "t-surface-resume", text: "Open the test page.",
       resumeCursor: "previous-host-computer-session",
       system: "Everything you do on screen happens in the built-in browser tab; no host computer tools are mounted.",
-      refreshSystemPrompt: true,
       integrations: { browser: { command: process.execPath, args: ["fixture-browser"], env: {} } },
     });
     await recorder.until((event) => event.type === "turn.completed");
@@ -1496,7 +1501,7 @@ describe("ClaudeDriver turns (fake CLI)", () => {
   });
 
   it.each([["2.1.232", false], ["2.1.267", true]] as const)(
-    "probes Claude %s before the first coordinated turn without an Engines snapshot",
+    "probes Claude %s before the first turn without an Engines snapshot",
     async (version, supportsSnapshot) => {
       const dump = join(scratch, `coordination-first-turn-${version}.json`);
       await create(undefined, { FAKE_CLAUDE_DUMP: dump, FAKE_CLAUDE_VERSION: version });
@@ -1505,7 +1510,6 @@ describe("ClaudeDriver turns (fake CLI)", () => {
         text: "Addressed teammate request 2. Add the new header row.",
         resumeCursor: "existing-claude-session",
         system: "Stable coordination policy, without the earlier assignment.",
-        refreshSystemPrompt: true,
       });
       await recorder.until((e) => e.type === "turn.completed");
       const seen = JSON.parse(readFileSync(dump, "utf8"));
@@ -1816,7 +1820,8 @@ describe("ClaudeDriver turns (fake CLI)", () => {
     expect(claudeCliUpdate(null, "claude")).toBeUndefined();
     const olderSnapshot = claudeCliUpdate("2.1.232 (Claude Code)", "claude");
     expect(olderSnapshot?.message).toContain("--system-prompt-snapshot");
-    expect(olderSnapshot?.message).toContain("coordinated resumed turns cannot refresh stale system prompts");
+    expect(olderSnapshot?.message).toContain("resumed turns cannot refresh stale system prompts");
+    expect(olderSnapshot?.message).not.toContain("coordinated");
     expect(olderSnapshot?.message).not.toContain("no compaction window");
     expect(claudeCliUpdate("2.1.121 (Claude Code)", "claude")).toMatchObject({
       command: "claude update",
@@ -2529,6 +2534,7 @@ describe("ClaudeDriver turns (fake CLI)", () => {
       FAKE_CLAUDE_SLOW_FINISH_GATE: finishGate,
       FAKE_CLAUDE_SLOW_TAIL_TOOL: "1",
       FAKE_CLAUDE_STEER_RECEIVED: received,
+      FAKE_CLAUDE_VERSION: "2.1.282", // CLAUDE_REPLAY_FLOOR: the CLI echoes steers
     });
     const threadId = "t-folded-steer";
     const { turnId } = await instance.adapter.sendTurn({ threadId, text: "first" });

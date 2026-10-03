@@ -10,6 +10,7 @@ import {
   orderedSidebarSections,
   partitionSidebarBots,
   partitionSidebarGroups,
+  pinnedCircleThreadListVisible,
   placeSection,
   sidebarLayoutInteractive,
   sidebarGoalRunPreview,
@@ -97,6 +98,14 @@ describe("sidebar virtual sections", () => {
     expect(parts.sectionedBots).toEqual([stay]);
     expect(workChief.section).toBe("Work");
     expect(home.section).toBe("Home");
+  });
+
+  it("shows pinned-circle thread rows only while the circle grid is showing", () => {
+    expect(pinnedCircleThreadListVisible(true, "comfortable", 1)).toBe(true);
+    expect(pinnedCircleThreadListVisible(true, "compact", 2)).toBe(true);
+    expect(pinnedCircleThreadListVisible(false, "comfortable", 1)).toBe(false);
+    expect(pinnedCircleThreadListVisible(true, "icons", 1)).toBe(false);
+    expect(pinnedCircleThreadListVisible(true, "comfortable", 0)).toBe(false);
   });
 
   it("forces filtered and icon-only views open and non-reorderable", () => {

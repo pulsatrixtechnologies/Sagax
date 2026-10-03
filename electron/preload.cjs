@@ -146,6 +146,7 @@ const bridge = {
     refreshTailscale: () => ipcRenderer.invoke("companion:refresh-tailscale"),
     pairing: (open, expectedToken) => ipcRenderer.invoke("companion:pairing", open, expectedToken),
     cloudDesktop: (deviceId, allowed) => ipcRenderer.invoke("companion:cloud-desktop", deviceId, allowed),
+    browserControl: (deviceId, allowed) => ipcRenderer.invoke("companion:browser-control", deviceId, allowed),
     revoke: (deviceId) => ipcRenderer.invoke("companion:revoke", deviceId),
   },
   /** Keep this computer awake for scheduled routines. The hold itself lives
@@ -228,7 +229,7 @@ const bridge = {
   permRequestMic: () => ipcRenderer.invoke("perm:request-mic"),
   /** Opens System Settings on the given privacy pane: mic|screen|speech. */
   permOpenSettings: (pane) => ipcRenderer.invoke("perm:open-settings", pane),
-  /** Relaunch the local macOS app after a permission grant. */
+  /** Relaunch the local desktop app through its normal shutdown cleanup. */
   relaunch: () => ipcRenderer.invoke("desktop:relaunch"),
 
   /** Copies an engine install command and opens a blank terminal. Resolves

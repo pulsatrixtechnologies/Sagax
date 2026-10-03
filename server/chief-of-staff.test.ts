@@ -69,7 +69,7 @@ describe("chiefOfStaffSystemPrompt", () => {
   });
 
   it.each([false, true])("follows staffing result states with bounded coordination %s", boundedCoordination => {
-    const prompt = chiefOfStaffSystemPrompt("chief", bots, true, "", boundedCoordination);
+    const prompt = chiefOfStaffSystemPrompt("chief", bots, true, boundedCoordination);
     expect(prompt).toContain("after an applied result, continue already-requested work without another confirmation");
     expect(prompt).toContain("Only if review is pending, end your turn");
     expect(prompt).toContain("Report failed or cancelled results honestly");
@@ -78,18 +78,8 @@ describe("chiefOfStaffSystemPrompt", () => {
     expect(prompt).not.toContain("End your turn after the proposal:");
   });
 
-  it("includes trusted Sagax status only when the Chief caller supplies it", () => {
-    const status = "TRUSTED SAGAX STATUS\nfreshness=fresh; runtime_state=degraded";
-
-    const chiefPrompt = chiefOfStaffSystemPrompt("chief", bots, true, status);
-    const ordinaryPrompt = chiefOfStaffSystemPrompt("writer", bots, true);
-
-    expect(chiefPrompt).toContain(status);
-    expect(ordinaryPrompt).not.toContain("TRUSTED SAGAX STATUS");
-  });
-
   it("pins legacy delegation guidance and shared staffing independently of the bounded chat coordinator", () => {
-    const prompt = chiefOfStaffSystemPrompt("chief", bots, true, "TRUSTED SAGAX STATUS\nfreshness=fresh");
+    const prompt = chiefOfStaffSystemPrompt("chief", bots, true);
 
     expect(prompt).toBe(
       [
@@ -102,8 +92,6 @@ describe("chiefOfStaffSystemPrompt", () => {
         "Current Work section team:",
         "- Quill — Writer: Drafts concise copy (available) [id: writer]",
         "- Patch — Engineer (working right now) [id: coder]",
-        "TRUSTED SAGAX STATUS",
-        "freshness=fresh",
       ].join("\n"),
     );
   });

@@ -177,6 +177,15 @@ describe("configuration", () => {
     expect(sandboxdConfigFromEnv({ SAGAX_SANDBOX_IMAGE: "x:1", SAGAX_SANDBOX_MEMORY_MB: "512", SAGAX_SANDBOX_CPUS: "0.5" }).limits)
       .toMatchObject({ memoryBytes: 512 * 1024 * 1024, nanoCpus: 500_000_000 });
   });
+
+  it("parses idle minutes, refuses zero and more than a day", () => {
+    const image = { SAGAX_SANDBOX_IMAGE: "x:1" };
+    expect(sandboxdConfigFromEnv({ ...image, SAGAX_SANDBOX_IDLE_MINUTES: "15" }).idleStopMs).toBe(15 * 60_000);
+    expect(sandboxdConfigFromEnv({ ...image, SAGAX_SANDBOX_IDLE_MINUTES: "1440" }).idleStopMs).toBe(1440 * 60_000);
+    expect(sandboxdConfigFromEnv({ ...image, SAGAX_SANDBOX_IDLE_MINUTES: "  " }).idleStopMs).toBe(10 * 60_000);
+    expect(() => sandboxdConfigFromEnv({ ...image, SAGAX_SANDBOX_IDLE_MINUTES: "0" })).toThrow(/SAGAX_SANDBOX_IDLE_MINUTES/);
+    expect(() => sandboxdConfigFromEnv({ ...image, SAGAX_SANDBOX_IDLE_MINUTES: "1441" })).toThrow(/SAGAX_SANDBOX_IDLE_MINUTES/);
+  });
 });
 
 describe("compose overlay (deploy/docker-compose.sandbox.yml)", () => {

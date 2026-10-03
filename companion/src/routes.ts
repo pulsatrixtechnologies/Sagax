@@ -61,6 +61,23 @@ export const CLOUD_DESKTOP_INPUT_ROUTES: ReadonlyArray<{ method: string; path: R
   { method: "GET", path: /^\/api\/bots\/[\w-]+\/computer\/clipboard$/ },
   { method: "PUT", path: /^\/api\/bots\/[\w-]+\/computer\/clipboard$/ },
 ];
+/** Driving a bot's own browser: the frame stream, and the channel that sends
+ * pointer and keyboard events into it.
+ *
+ * Deliberately separate from the cloud-desktop classifier above rather than
+ * folded into it. A cloud desktop is a disposable VM; a bot's browser is
+ * normally signed into the person's real accounts, with their cookies and
+ * their sessions. A device trusted with a throwaway VM must not acquire the
+ * second permission because the two looked similar from here. */
+export const BROWSER_LIVE_ROUTE = {
+  method: "GET",
+  path: /^\/api\/bots\/[\w-]+\/browser\/live$/,
+} as const;
+
+export const BROWSER_ACTION_ROUTE = {
+  method: "POST",
+  path: /^\/api\/bots\/[\w-]+\/browser\/action$/,
+} as const;
 
 /** The Local VM's live desktop, relayed by the sidecar like a VPS viewer.
  * The harness grants it only while a person holds that bot's computer. */
@@ -93,6 +110,14 @@ export function isCloudDesktopAccess(method: string, path: string): boolean {
     || CLOUD_DESKTOP_INPUT_ROUTES.some((route) => route.method === method && route.path.test(path))
     || (method === LOCAL_VM_SCREENSHOT_ROUTE.method && LOCAL_VM_SCREENSHOT_ROUTE.path.test(path))
     || (method === LOCAL_VM_JOIN_ROUTE.method && LOCAL_VM_JOIN_ROUTE.path.test(path));
+}
+
+/** Both halves of browser control, behind one capability. Watching the frames
+ * and driving them are the same permission: a viewer that can see a logged-in
+ * session is already past the line the capability is drawn at. */
+export function isBrowserControlAccess(method: string, path: string): boolean {
+  return (method === BROWSER_LIVE_ROUTE.method && BROWSER_LIVE_ROUTE.path.test(path))
+    || (method === BROWSER_ACTION_ROUTE.method && BROWSER_ACTION_ROUTE.path.test(path));
 }
 
 /** Every request the iOS app makes, and nothing else.
@@ -145,6 +170,17 @@ const ALLOWED: ReadonlyArray<{ method: string; path: RegExp }> = [
   // recent activity. No settings, no transcript — read on open and on
   // pull-to-refresh.
   { method: "GET", path: /^\/api\/bots\/[\w-]+\/overview$/ },
+  // Read-only: what the bot did, with the outcome, built from logs that
+  // already exist (server/activity.ts). No settings reachable through it.
+  { method: "GET", path: /^\/api\/bots\/[\w-]+\/activity$/ },
+  // The section's shared team memory: people, places, decisions and terms.
+  // Reading, adding, answering a proposal, editing a detail, and removing
+  // are all content edits, not execution policy — the same line the profile
+  // and sidebar-section routes draw. The section rides as a query string.
+  { method: "GET", path: /^\/api\/team-memory$/ },
+  { method: "POST", path: /^\/api\/team-memory$/ },
+  { method: "PATCH", path: /^\/api\/team-memory\/[\w-]+$/ },
+  { method: "DELETE", path: /^\/api\/team-memory\/[\w-]+$/ },
   // Paired-safe profile subset. The harness route itself rejects fields
   // outside identity, standing instructions (soul, byte-capped), avatar,
   // notifications, and voice preferences.
@@ -241,6 +277,11 @@ const ALLOWED: ReadonlyArray<{ method: string; path: RegExp }> = [
   // Automations > Mark all as read.
   { method: "POST", path: /^\/api\/routine-runs\/seen-all$/ },
 
+  // A bot's browser, watched and driven from the phone. Like the cloud
+  // desktop above, the proxy applies a second per-device capability check
+  // before either of these reaches the harness.
+  BROWSER_LIVE_ROUTE,
+  BROWSER_ACTION_ROUTE,
   // A picture of the Local VM — not its lifecycle, which stays on the host.
   // Gated per device by the proxy like the cloud desktop above.
   LOCAL_VM_SCREENSHOT_ROUTE,

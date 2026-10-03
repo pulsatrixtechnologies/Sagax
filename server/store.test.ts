@@ -785,6 +785,9 @@ describe("Store", () => {
     expect(artifact.parentId).toBe(turnEnd.id);
     // the re-parented child was announced so live clients converge
     expect(patches).toContain(followUp.id);
+    // a restart and the uncached-thread page both start from SQLite's leaf
+    expect(new Store(selection).messagesTail(bot.threadId, 2).activeLeafId).toBe(followUp.id);
+    expect(new Store(selection).activePath(bot.threadId).map((m) => m.id)).toEqual(path);
   });
 
   it("insertMessageAfter is a plain append when the anchor is still the leaf, or unknown", () => {
@@ -793,6 +796,7 @@ describe("Store", () => {
     const turnEnd = store.appendMessage(bot.threadId, { role: "bot", kind: "text", text: "done" });
     const artifact = store.insertMessageAfter(bot.threadId, turnEnd.id, { role: "bot", kind: "screen", png: "abc" });
     expect(store.activePath(bot.threadId).at(-1)?.id).toBe(artifact.id); // became the leaf
+    expect(new Store(selection).activePath(bot.threadId).at(-1)?.id).toBe(artifact.id); // and stays it after a reload
 
     const orphan = store.insertMessageAfter(bot.threadId, "no-such-message", { role: "bot", kind: "text", text: "x" });
     expect(store.activePath(bot.threadId).at(-1)?.id).toBe(orphan.id);

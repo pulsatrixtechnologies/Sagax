@@ -1,5 +1,7 @@
 package com.openmausbot.companion.ui
 
+import androidx.compose.ui.res.stringResource
+
 import android.view.KeyCharacterMap
 import androidx.activity.compose.BackHandler
 import androidx.compose.material.icons.filled.Warning
@@ -904,7 +906,7 @@ private fun LoadedChat(
                                 },
                                 modifier = Modifier.fillMaxWidth(),
                             ) {
-                                Text("Load earlier messages", fontSize = 13.sp)
+                                Text(stringResource(R.string.mobile_load_earlier_messages_4ac08d16), fontSize = 13.sp)
                             }
                         }
                     }
@@ -915,11 +917,11 @@ private fun LoadedChat(
                             // message is just noise.
                             if (TranscriptLayout.startsNewRowStretch(transcript, index)) {
                                 Text(
-                                    text = RelativeStamp.separator(
+                                    text = localizedMobileCopy(RelativeStamp.separator(
                                         message.at,
                                         System.currentTimeMillis(),
                                         locale = Locale.getDefault(),
-                                    ),
+                                    )),
                                     fontSize = 13.sp,
                                     color = secondaryTint,
                                     modifier = Modifier
@@ -1087,6 +1089,11 @@ private fun LoadedChat(
                     fileOpenError = null
                     attachmentError = null
                 },
+                stoppable = chat.canStop,
+                onStop = {
+                    haptics.play(HapticCue.SELECT)
+                    scope.launch { session.interrupt(chat) }
+                },
                 onTogglePlus = {
                     // iOS drops the composer's focus before the sheet rises; a
                     // keyboard under it would leave the sheet nowhere to go.
@@ -1124,6 +1131,7 @@ private fun LoadedChat(
 
         PlusSheet(
             open = showingPlus,
+            chat = chat,
             actions = remember(chat, pendingApproval, canAddAttachment) {
                 ChatActions.sheet(chat, hasPendingApproval = pendingApproval, canAddAttachment = canAddAttachment)
             },
@@ -1277,7 +1285,7 @@ private fun ChatHeader(
                 }
                 ChromeButton(
                     painter = painterResource(R.drawable.ic_display),
-                    contentDescription = "Watch ${chat.name}'s computer",
+                    contentDescription = stringResource(R.string.mobile_watch_chat_name_s_computer_92efc119, chat.name),
                     onClick = onWatchComputer,
                 )
             } else {
@@ -1299,7 +1307,9 @@ private fun ChatHeader(
                 modifier = if (chat is Chat.BotChat) {
                     Modifier
                         .clickable(role = Role.Button, onClick = onOpenProfile)
-                        .semantics { contentDescription = "Open ${chat.name} settings" }
+                        .localizedSemantics(contentDescription = {
+                            stringResource(R.string.mobile_a11y_open_chat_settings, chat.name)
+                        })
                 } else {
                     Modifier
                 },
@@ -1327,7 +1337,7 @@ private fun BackPill(unreadElsewhere: Int, onBack: () -> Unit) {
     ) {
         Icon(
             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-            contentDescription = "Back",
+            contentDescription = stringResource(R.string.mobile_back_b52b36b7),
             modifier = Modifier.size(20.dp),
         )
         if (unreadElsewhere > 0) {
@@ -1407,6 +1417,7 @@ private fun NamePill(chat: Chat, onOpen: () -> Unit) {
 @Composable
 private fun BoxScope.PlusSheet(
     open: Boolean,
+    chat: Chat,
     actions: List<ChatAction>,
     onDismiss: () -> Unit,
     onAction: (ChatActionId) -> Unit,
@@ -1429,7 +1440,7 @@ private fun BoxScope.PlusSheet(
                     role = Role.Button,
                     onClick = onDismiss,
                 )
-                .semantics { contentDescription = "Close" },
+                .localizedSemantics(contentDescription = { stringResource(R.string.mobile_a11y_close) }),
         )
     }
 
@@ -1480,13 +1491,13 @@ private fun BoxScope.PlusSheet(
                     }
                     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                         Text(
-                            text = action.title,
+                            text = localizedChatActionTitle(action.id),
                             fontSize = 18.sp,
                             fontWeight = FontWeight.Medium,
                             color = tint.copy(alpha = alpha),
                         )
                         Text(
-                            text = action.subtitle,
+                            text = localizedChatActionSubtitle(action.id, chat),
                             fontSize = 13.sp,
                             color = secondaryTint.copy(alpha = alpha),
                         )
@@ -1495,6 +1506,35 @@ private fun BoxScope.PlusSheet(
             }
         }
     }
+}
+
+@Composable
+private fun localizedChatActionTitle(id: ChatActionId): String = when (id) {
+    ChatActionId.PHOTOS -> stringResource(R.string.mobile_photo_library_26def20d)
+    ChatActionId.FILES -> stringResource(R.string.mobile_choose_file_54a2a841)
+    ChatActionId.NEW_TASK -> stringResource(R.string.mobile_new_thread_02057e28)
+    ChatActionId.TASKS -> stringResource(R.string.mobile_threads_bb12e8aa)
+    ChatActionId.WATCH_COMPUTER -> stringResource(R.string.mobile_watch_computer_c96208ca)
+    ChatActionId.SETTINGS -> stringResource(R.string.mobile_bot_settings_7092a294)
+    ChatActionId.SHARE_MARKDOWN -> stringResource(R.string.mobile_share_transcript_004e223a)
+    ChatActionId.SHARE_JSON -> stringResource(R.string.mobile_share_as_json_df80c8e6)
+    ChatActionId.INTERRUPT -> stringResource(R.string.mobile_interrupt_d5db4549)
+}
+
+@Composable
+private fun localizedChatActionSubtitle(id: ChatActionId, chat: Chat): String = when (id) {
+    ChatActionId.PHOTOS -> stringResource(R.string.mobile_action_add_photo)
+    ChatActionId.FILES -> stringResource(R.string.mobile_action_add_document)
+    ChatActionId.NEW_TASK -> when (chat) {
+        is Chat.BotChat -> stringResource(R.string.mobile_action_new_thread_for_bot, chat.bot.name)
+        is Chat.RoomChat -> stringResource(R.string.mobile_action_new_conversation_in_channel, chat.room.name)
+    }
+    ChatActionId.TASKS -> stringResource(R.string.mobile_action_manage_threads)
+    ChatActionId.WATCH_COMPUTER -> stringResource(R.string.mobile_action_live_computer, (chat as Chat.BotChat).bot.name)
+    ChatActionId.SETTINGS -> stringResource(R.string.mobile_action_bot_settings)
+    ChatActionId.SHARE_MARKDOWN -> stringResource(R.string.mobile_action_markdown_transcript)
+    ChatActionId.SHARE_JSON -> stringResource(R.string.mobile_action_structured_transcript)
+    ChatActionId.INTERRUPT -> stringResource(R.string.mobile_action_stop_turn)
 }
 
 private const val PLUS_MILLIS = 280
@@ -1581,6 +1621,8 @@ private fun Composer(
     attachmentError: String?,
     onRemoveAttachment: (PendingMessageAttachment) -> Unit,
     onDismissError: () -> Unit,
+    stoppable: Boolean,
+    onStop: () -> Unit,
 ) {
     val canSend = AttachmentImportRules.canSend(draft, attachments.size, preparing, sending)
     val inFlight = preparing || sending
@@ -1589,7 +1631,7 @@ private fun Composer(
     val turn = animateFloatAsState(
         targetValue = if (plusOpen) PLUS_TURN_DEGREES else 0f,
         animationSpec = tween(PLUS_MILLIS),
-        label = "plus",
+        label = stringResource(R.string.mobile_plus_6a8437dd),
     )
     Column(
         modifier = modifier
@@ -1611,7 +1653,7 @@ private fun Composer(
             ComposerStatusLine(if (preparing) "Preparing attachments…" else "Sending…")
         }
         if (openingFileName != null) {
-            ComposerStatusLine("Opening $openingFileName…")
+            ComposerStatusLine(stringResource(R.string.mobile_chat_opening_file, openingFileName))
         }
         if (attachmentError != null) {
             Row(
@@ -1629,9 +1671,9 @@ private fun Composer(
                     tint = Color(0xFFFF9800),
                     modifier = Modifier.size(18.dp),
                 )
-                Text(text = attachmentError, fontSize = 13.sp, modifier = Modifier.weight(1f))
+                Text(text = localizedMobileCopy(attachmentError), fontSize = 13.sp, modifier = Modifier.weight(1f))
                 Text(
-                    text = "Dismiss",
+                    text = stringResource(R.string.mobile_dismiss_70afe9ef),
                     fontSize = 13.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.primary,
@@ -1741,14 +1783,13 @@ private fun Composer(
                 // it better than a borrowed symbol would.
                 TouchTarget(
                     onClick = onToggleHud,
-                    contentDescription = "Slash commands",
-                    modifier = Modifier.semantics {
-                        stateDescription = if (accessory == ComposerAccessory.HUD) {
-                            "Expanded"
-                        } else {
-                            "Collapsed"
-                        }
-                    },
+                    contentDescription = stringResource(R.string.mobile_slash_commands_efce77da),
+                    modifier = Modifier.localizedSemantics(stateDescription = {
+                        stringResource(
+                            if (accessory == ComposerAccessory.HUD) R.string.mobile_a11y_expanded
+                            else R.string.mobile_a11y_collapsed,
+                        )
+                    }),
                 ) {
                     Text(
                         text = "/",
@@ -1770,13 +1811,13 @@ private fun Composer(
                 ) {
                     if (draft.isEmpty()) {
                         Text(
-                            text = ComposerPromise.placeholder(
+                            text = localizedMobileCopy(ComposerPromise.placeholder(
                                 name = name,
                                 busy = busy,
                                 engineCanSteer = engineCanSteer,
                                 sending = sending,
                                 listening = dictationListening,
-                            ),
+                            )),
                             fontSize = 17.sp,
                             color = secondaryTint,
                         )
@@ -1814,7 +1855,30 @@ private fun Composer(
                     )
                 }
 
-                TouchTarget(
+                // Stop sits in the bar while the turn runs, as it does on the
+                // desktop and iOS. The Interrupt chat action was the only way
+                // before, and rooms had none at all. It takes the mic's slot,
+                // as on the desktop: four 48dp targets left a 360dp phone a
+                // field about 60dp wide. A dictation already running keeps
+                // its mic so it can be stopped.
+                if (stoppable) {
+                    TouchTarget(onClick = onStop, contentDescription = "Stop the current turn") {
+                        Box(
+                            modifier = Modifier
+                                .size(32.dp)
+                                .background(secondaryTint.copy(alpha = 0.12f), CircleShape),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(11.dp)
+                                    .background(MaterialTheme.colorScheme.onSurface, RoundedCornerShape(2.dp)),
+                            )
+                        }
+                    }
+                }
+
+                if (!stoppable || dictationListening) TouchTarget(
                     onClick = onToggleDictation,
                     contentDescription = if (dictationListening) {
                         "Stop dictation"
@@ -1856,7 +1920,7 @@ private fun Composer(
                     ) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.Send,
-                            contentDescription = "Send",
+                            contentDescription = stringResource(R.string.mobile_send_9bc2575c),
                             tint = if (canSend) BubbleColor.mineText else secondaryTint,
                             modifier = Modifier.size(16.dp),
                         )

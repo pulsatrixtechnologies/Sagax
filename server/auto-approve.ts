@@ -8,6 +8,7 @@
 // Questions never come through here: a bot's question always reaches a human.
 
 import { supportsApprovalMode, type ApprovalMode } from "../shared/approval-mode.ts";
+import { isOutboundTool } from "../shared/outbound.ts";
 import type { ProviderAdapter, RequestOutcome } from "./contracts.ts";
 
 /** A failed delivery is a runtime error, not another permission decision.
@@ -123,6 +124,7 @@ export type AutoVerdictSource =
   | "command-allowlist"
   | "native-approval"
   | "explicit-approval-block"
+  | "outbound-guard"
   | "no-grant";
 
 export interface AutoVerdict {
@@ -155,6 +157,7 @@ export function autoVerdict(
   // request.opened caller invokes this for permissions only, never questions.
   if (mode === "full") return { approve: `approved ${tool} (full access)`, source: "full-access" };
   if (context?.requiresExplicitApproval) return { approve: null, source: "explicit-approval-block" };
+  if (isOutboundTool(tool)) return { approve: null, source: "outbound-guard" };
   if (context?.commandAllowed) return { approve: `approved ${tool} (saved command)`, source: "command-allowlist" };
   if (mode === "auto" || mode === "custom") return { approve: null, source: "native-approval" };
   return { approve: null, source: "no-grant" };
@@ -168,6 +171,7 @@ export function autoVerdict(
  * the server keeps sending: cards saved before the key existed still render,
  * and so do the free-text apply errors that have no key at all. */
 export const HELD_NOTE = {
+  "approval.held.outbound": "This sends something on your behalf, so it always asks first.",
   "approval.held.native": "The provider requires your approval for this action.",
   "approval.held.sandbox":
     "This changes the provider sandbox, so only Full access can approve it automatically.",
@@ -185,6 +189,7 @@ export function approvalHeldNote(context: {
   permission: boolean;
 }): HeldNoteKey | undefined {
   if (!context.permission) return undefined;
+  if (context.source === "outbound-guard") return "approval.held.outbound";
   if (context.source === "explicit-approval-block") return "approval.held.sandbox";
   if (context.source === "native-approval") return "approval.held.native";
   return undefined;

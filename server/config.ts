@@ -2,7 +2,7 @@
 //   { "xai": {"key":"xai-…"}, "composio": {"apiKey":"ak_…"}, "box": {"token":"…"},
 //     "instances": { "<instanceId>": {"driver":"grok", …} } }
 import { DEFAULT_MAX_PARALLEL_PER_PERSON, MAX_PARALLEL_PER_PERSON } from "../shared/parallel-tasks.ts";
-import { readFileSync, mkdirSync, existsSync, renameSync } from "node:fs";
+import { readFileSync, mkdirSync, existsSync, renameSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { z } from "zod";
@@ -1283,6 +1283,32 @@ export function loadConfig(): AppConfig {
     if (process.env.SAGAX_SIGNIN_MEMBER_EMAILS !== undefined) cfg.signIn.members = splitEmails(process.env.SAGAX_SIGNIN_MEMBER_EMAILS);
   }
   return cfg;
+}
+
+/** `derive(loadConfig())`, worked out again only when config.json changes:
+ * a new file (every save renames one into place), a new size, a new
+ * modification time, or new permissions or owner. For values read on every
+ * request or stream frame, where parsing the file each time costs more than
+ * the work itself. A file that is missing, saved in the last two seconds, or
+ * that loadConfig() could not use (unreadable, a failed read, invalid JSON)
+ * is read on every call: a second write inside one clock tick is never
+ * missed, and a file that is fixed is used again on the next call. */
+export function cacheUntilConfigChanges<T>(derive: (config: AppConfig) => T): () => T {
+  let cached: { stamp: string; value: T } | null = null;
+  return () => {
+    let stamp: string | null = null;
+    try {
+      const file = statSync(join(DATA_DIR, "config.json"), { bigint: true });
+      if (Date.now() - Number(file.mtimeMs) >= 2_000) stamp = `${file.ino}:${file.size}:${file.mtimeNs}:${file.ctimeNs}`;
+    } catch {
+      // Missing or out of reach: read it the way loadConfig() always has.
+    }
+    if (stamp !== null && cached?.stamp === stamp) return cached.value;
+    const value = derive(loadConfig());
+    // A warning means loadConfig() ignored the file and ran on defaults.
+    cached = stamp === null || lastIgnoredConfigWarning !== "" ? null : { stamp, value };
+    return value;
+  };
 }
 
 /** After saveConfig() writes a credential, the running process's env must

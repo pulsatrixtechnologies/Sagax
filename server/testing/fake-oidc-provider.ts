@@ -63,6 +63,9 @@ export interface FakeDirectoryPerson {
   /** Perspicax 1.8.6: "use" when an admin made this person read-only in
    * Sagax (shared bots only); absent from an older Perspicax. */
   sagax_bots?: "manage" | "use";
+  /** Perspicax migration 0046: "off" when an admin manages this person's
+   * plugins, skills and MCP servers; absent from an older Perspicax. */
+  sagax_integrations?: "manage" | "off";
   /** Slice 6: set to leave the field out (an older Perspicax); else the
    * provider reports the live delegation family of this person. */
   omitRoutineDelegation?: boolean;

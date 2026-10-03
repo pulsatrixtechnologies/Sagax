@@ -91,7 +91,7 @@ let lastSessionSearchUrl = "";
 let lastSessionReadUrl = "";
 let lastMemoryBody: any = null;
 let lastMemoryLogBody: any = null;
-let memoryResponse: unknown = { ok: true, text: "- new fact", truncated: false, bytes: 10 };
+let memoryResponse: unknown = { ok: true, truncated: false };
 let memoryStatus = 200;
 let sessionSearchResponse: unknown = {
   hits: [
@@ -605,7 +605,7 @@ describe("agents-proxy MCP surface", () => {
 
   it("answers the MCP handshake and lists the agents tools", async () => {
     const init = await rpc("initialize", { protocolVersion: "2024-11-05" });
-    expect(init.result.serverInfo.name).toContain("agents");
+    expect(init.result.serverInfo.name).toBe("openmausbot-agents");
     const list = await rpc("tools/list");
     expect(list.result.tools.map((t: { name: string }) => t.name)).toEqual([
       "tool_result_read",
@@ -641,6 +641,7 @@ describe("agents-proxy MCP surface", () => {
       "propose_routine_action",
       "propose_profile",
       "propose_model",
+      "propose_team_memory",
       "skills_list",
       "skill_manage",
     ]);
@@ -1334,12 +1335,12 @@ describe("agents-proxy MCP surface", () => {
       action: "replace", text: "- New preference", oldText: "- Old preference",
     });
     // the harness echoes the entry it wrote, so the model can replace it later by exact text
-    memoryResponse = { ok: true, text: "- new fact", truncated: false, bytes: 10, entry: '- 2026-09-10 · from chat "Setup" · New preference' };
+    memoryResponse = { ok: true, truncated: false, entry: '- 2026-09-10 · from chat "Setup" · New preference' };
     const echoed = await callTool("memory_update", { action: "supersede", text: "New preference", old_text: "- Old preference" });
     expect(echoed.result.isError).toBe(false);
     expect(echoed.result.content[0].text).toBe('Memory updated. Entry: - 2026-09-10 · from chat "Setup" · New preference');
     expect(lastMemoryBody).toMatchObject({ action: "supersede", text: "New preference", oldText: "- Old preference" });
-    memoryResponse = { ok: true, text: "- new fact", truncated: false, bytes: 10 };
+    memoryResponse = { ok: true, truncated: false };
     const append = await callTool("memory_update", { action: "append", text: "- Another fact" });
     expect(append.result.isError).toBe(false);
     expect(lastMemoryBody).toEqual({
@@ -1361,7 +1362,8 @@ describe("agents-proxy MCP surface", () => {
     // minimal satisfier instead of the intended text — the same class of
     // failure as the schema-conversion issues behind the flat-schema rule.
     // Blank text is still rejected by the handler (asserted above).
-    expect(schema.properties.text).toMatchObject({ minLength: 1 });
+    // one fact per call, the same cap updateMemory holds (MEMORY_ENTRY_MAX_CHARS)
+    expect(schema.properties.text).toMatchObject({ minLength: 1, maxLength: 1000 });
     expect(schema.properties.text).not.toHaveProperty("pattern");
     memoryStatus = 409;
     memoryResponse = { error: "oldText must match exactly once in the latest memory." };
@@ -1369,39 +1371,26 @@ describe("agents-proxy MCP surface", () => {
     expect(stale.result.isError).toBe(true);
     expect(stale.result.content[0].text).toContain("latest memory");
     memoryStatus = 200;
-    memoryResponse = { ok: true, text: "- new fact", truncated: false, bytes: 10 };
+    memoryResponse = { ok: true, truncated: false };
   });
 
-  it("memory_update relays a full-file refusal with the newest entries and closes after three refusals in a turn", async () => {
-    memoryStatus = 413;
+  it("memory_update on a full file says what moved to the archive, and stays open however many writes a turn makes", async () => {
     memoryResponse = {
-      ok: false, code: "over-budget",
-      error: "MEMORY.md would be 201 lines and 9000 bytes; only the first 200 lines / 24000 bytes load at the start of a session, and nothing past that is ever read. Consolidate now: replace or remove older entries, or move detail to a memory/<topic>.md file; do not retry the same append.",
-      lines: 201, bytes: 9000, budget: { lines: 200, bytes: 24000 },
-      recent: ["- 2026-09-09 · from chat \"A\" · fact 199", "- 2026-09-10 · from chat \"B\" · fact 200"],
+      ok: true, truncated: false,
+      entry: '- 2026-09-10 · from chat "Setup" · fact 201',
+      moved: ["- 2026-08-01 · from chat \"A\" · fact 1"],
     };
-    const full = await callTool("memory_update", { action: "append", text: "fact 201" });
-    expect(full.result.isError).toBe(true);
-    expect(full.result.content[0].text).toContain("Consolidate now: replace or remove older entries, or move detail to a memory/<topic>.md file; do not retry the same append.");
-    expect(full.result.content[0].text).toContain("Most recent entries, oldest first:\n- 2026-09-09 · from chat \"A\" · fact 199\n- 2026-09-10");
-    // The proxy lives for one turn and an earlier test already spent one
-    // refusal; keep refusing until the tool closes, which must take at most
-    // three refusals from a fresh counter.
-    let closed = "";
-    for (let attempt = 0; attempt < 3 && !closed; attempt += 1) {
+    for (let attempt = 0; attempt < 5; attempt += 1) {
       lastMemoryBody = null;
-      const again = await callTool("memory_update", { action: "append", text: "fact 201" });
-      expect(again.result.isError).toBe(true);
-      if (again.result.content[0].text.includes("closed for the rest of this turn")) closed = again.result.content[0].text;
+      const full = await callTool("memory_update", { action: "append", text: "fact 201" });
+      expect(full.result.isError).toBe(false);
+      expect(full.result.content[0].text).toBe(
+        'Memory updated. Entry: - 2026-09-10 · from chat "Setup" · fact 201\n' +
+        'To stay within what loads each session, moved 1 older entry to memory/archive.md (session_search finds them):\n- 2026-08-01 · from chat "A" · fact 1',
+      );
+      expect(lastMemoryBody).toMatchObject({ action: "append", text: "fact 201" });
     }
-    expect(closed).toContain("3 were refused. Do not retry.");
-    // closed means closed: nothing reached the harness for that call
-    expect(lastMemoryBody).toBeNull();
-    memoryStatus = 200;
-    memoryResponse = { ok: true, text: "- new fact", truncated: false, bytes: 10 };
-    const after = await callTool("memory_update", { action: "append", text: "one more" });
-    expect(after.result.isError).toBe(true);
-    expect(lastMemoryBody).toBeNull();
+    memoryResponse = { ok: true, truncated: false };
   });
 
   it("memory_log appends to today's log through the harness and says so, never loading it anywhere", async () => {
@@ -2272,11 +2261,11 @@ describe("coordinate_bots arguments (room turn)", () => {
 
   it("maps camelCase aliases onto the canonical snake_case fields", async () => {
     const res = await roomRpc("tools/call", { name: "coordinate_bots", arguments: {
-      botIds: ["bot-helper"], message: "please review the patch", requestKey: "review-1",
+      botIds: ["bot-helper"], message: "please review the patch",
     } });
     expect(res.result.isError).toBeFalsy();
     expect(lastCoordinateBody).toMatchObject({
-      botIds: ["bot-helper"], message: "please review the patch", requestKey: "review-1",
+      botIds: ["bot-helper"], message: "please review the patch",
     });
   });
 
@@ -2331,13 +2320,16 @@ describe("coordinate_bots arguments (room turn)", () => {
   it("keeps the documented snake_case key when both spellings arrive", async () => {
     const res = await roomRpc("tools/call", { name: "coordinate_bots", arguments: {
       bot_ids: ["bot-helper"], botIds: ["bot-other"], group_id: "room-right", groupId: "room-wrong",
-      message: "m", request_key: "k-2", requestKey: "wrong",
+      message: "m", request_key: "from an older tool list", label: "from an older tool list",
     } });
     expect(res.result.isError).toBeFalsy();
     expect(lastCoordinateBody).toMatchObject({
-      botIds: ["bot-helper"], groupId: "room-right", requestKey: "k-2",
+      botIds: ["bot-helper"], groupId: "room-right",
     });
     expect(lastCoordinateBody.botIds).not.toContain("bot-other");
+    // Fields from an older tool list are dropped.
+    expect(lastCoordinateBody).not.toHaveProperty("requestKey");
+    expect(lastCoordinateBody).not.toHaveProperty("label");
   });
 
   it("names the expected snake_case fields when arguments are unusable", async () => {
@@ -2347,7 +2339,7 @@ describe("coordinate_bots arguments (room turn)", () => {
     } });
     expect(res.result.isError).toBe(true);
     const text = res.result.content[0].text;
-    for (const field of ["bot_ids", "message", "request_key", "group_id", "rework", "label"]) {
+    for (const field of ["bot_ids", "message", "group_id", "rework"]) {
       expect(text).toContain(field);
     }
     expect(text).toContain("botIds");

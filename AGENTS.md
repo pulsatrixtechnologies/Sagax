@@ -88,12 +88,17 @@ Covered by `src/components/SettingsModal.orgCleanup.test.ts`,
   person, set by an admin on the person's sheet; default and absent mean
   `manage`). `use` makes the person read-only (`personBotsReadOnly`,
   `viewer.botsReadOnly`): `POST /api/bots` and `/api/org/import` answer 403
-  `org_bots_read_only`, every bot level they hold reads as `use`
-  (`botLevel`, their own bots included), so no edit, delete, grant or
-  routine; they still talk to the bots shared with them (speaker pays). An
-  organization admin is never narrowed. The UI hides New bot and says
-  "Votre administrateur vous permet d'utiliser les robots partagés
-  seulement" (`bots.readOnly.notice`; MA-3, `server/authz.test.ts`).
+  `org_bots_read_only`, and so do `POST /api/internal/create-bot`, team
+  setup and bot deletion (a Primary Bot must not create for a `use` owner).
+  `create_bot` stores the Primary Bot's person as owner (`recordedBotOwner`),
+  never the loopback caller (on an organization server that caller is a
+  service and would leave the specialist to the operator). Every bot level
+  they hold reads as `use` (`botLevel`, their own bots included), so no
+  edit, delete, grant or routine; they still talk to the bots shared with
+  them (speaker pays). An organization admin is never narrowed. The UI hides
+  New bot and says "Votre administrateur vous permet d'utiliser les robots
+  partagés seulement" (`bots.readOnly.notice`; MA-3, MA-4,
+  `server/authz.test.ts`).
 - Routines in my name is read-only: allowed by default, revoked in the
   Perspicax console (`manageUrl`, `/console/me/access#sagax`). Perspicax has no
   silent authorization, so `ensureRoutineDelegation` starts the consent once,
@@ -737,6 +742,28 @@ had no gh. Keep these rules, each covered by `server/org-connections.e2e.test.ts
   on an organization server: use reads, owner or manage changes; an import
   from a private repository reads with the person's GitHub connection.
 - Library tab: Files | Skills | Plugins (`bot-settings/LibraryTab.tsx`).
+- Who manages them comes from Perspicax (migration 0046,
+  `sagax_integrations` on each directory person, set by an admin on the
+  person's Sagax tab; default and absent mean `manage`;
+  `server/person-integrations.ts`, `personIntegrationsOff`,
+  `integrationsLocked`). `manage`: everything above, with no admin. `off`:
+  `/api/me/mcp/servers*` (add, toggle, remove, sign out), `/api/me/github*`,
+  every plugin change and every skill change answer 403
+  `org_integrations_admin_only`, even on their own bot; only a sign-in again
+  to a server they already have passes. What they have keeps working (their
+  servers mount, their GitHub reaches their environment, the bots' plugins
+  and skills load) and reads as such: `managedByAdmin` on
+  `/api/me/connections` and on the plugins listing (`canChange: false`),
+  `viewer.integrationsManagedByAdmin`, edit controls hidden under "Votre
+  administrateur gère les plugins et les serveurs MCP"
+  (`integrations.managedByAdmin`). `run_command` in their environment
+  refuses the engines' plugin, MCP and extension subcommands
+  (`engineIntegrationCommand`; a courtesy, the boundary is that a turn loads
+  only what Sagax keeps); `/plugin` and `/mcp` are managed for everyone. An
+  organization admin is never narrowed and changes a person's bot plugins
+  and skills for them. Tests: `server/person-integrations.test.ts`,
+  `server/perspicax-link.test.ts`, OC-7 and OC-8,
+  `MyConnectionsSettings.test.ts`.
 
 A change under `server/` needs the server image redeployed (sandboxd is the
 same image); `deploy/sandbox/Dockerfile` (gh, node, npm) needs the sandbox
@@ -1137,7 +1164,7 @@ it after an upstream merge instead of renaming by hand.
 ## Upstream sync
 
 Last sync: 2026-10-03, upstream `milind-soni/OpenMausBot` main at
-`ff01be8a` (0.1.94) merged into Sagax; `baseVersion` follows it. To repeat:
+`04a8bef8` (0.1.95) merged into Sagax; `baseVersion` follows it. To repeat:
 
 - Keep the `upstream` remote fetch-only (`git remote set-url --push
   upstream no_push`). Never push, open a pull request or file an issue

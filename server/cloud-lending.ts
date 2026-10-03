@@ -50,10 +50,6 @@ const personOf = (line: Line | undefined) => line?.role === "user" && !line.peer
 /** Why a turn may not use the lent Mac, or null when it may. */
 export type CloudLendingRefusal = "unproven" | "not-owner" | "someone-else";
 
-export function cloudHomeTurnMayLend(turn: CloudLendingTurn): boolean {
-  return cloudHomeLendingRefusal(turn) === null;
-}
-
 export function cloudHomeLendingRefusal(turn: CloudLendingTurn): CloudLendingRefusal | null {
   const { request } = turn;
   if (!request?.messageId || request.stopped || !request.generations.has(turn.generation)) return "unproven";

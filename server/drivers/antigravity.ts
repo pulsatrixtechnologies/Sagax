@@ -18,7 +18,6 @@ import { createAcpDriver, type AcpConfig, type AcpSupport } from "./acp/core.ts"
 import {
   AntigravityAuthController,
   antigravityProfileAuthenticated,
-  catalogFromAntigravityConfigOptions,
   prepareAntigravityProfile,
   probeAntigravityModels,
   validateAntigravityRuntime,
@@ -47,10 +46,6 @@ export const STATIC_ANTIGRAVITY_MODELS: ModelCatalog = {
 export function antigravityPermissionMode(fullAuto: boolean, approvalMode?: ApprovalMode): "yolo" | "auto_edit" | "default" {
   if (fullAuto) return "yolo";
   return approvalMode === "edits" ? "auto_edit" : "default";
-}
-
-export function antigravityModelsFromSession(value: unknown): ModelCatalog | null {
-  return catalogFromAntigravityConfigOptions(value, STATIC_ANTIGRAVITY_MODELS.default);
 }
 
 const managedAsset = resolveAntigravityReleaseAsset();

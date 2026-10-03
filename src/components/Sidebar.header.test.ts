@@ -156,3 +156,4 @@ describe("sidebar header", () => {
     expect(t("sidebar.search")).toBe("Rechercher");
   });
 });
+

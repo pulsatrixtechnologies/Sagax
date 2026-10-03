@@ -68,6 +68,8 @@ export type DecisionSource =
   | "tightening"
   | "user"
   | "connector-scope"
+  | "outbound"
+  | "team-memory"
   | "auto-review"
   | "auto-review-shadow";
 

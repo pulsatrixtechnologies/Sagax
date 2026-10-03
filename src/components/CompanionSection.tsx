@@ -355,6 +355,112 @@ export function CompanionSection({ profileEmail = "", focusRequest = 0 }: { prof
             />
           </div>
 
+          <div className="border-t border-hairline/30 pt-4">
+            <div className="text-[13px] text-ink">{t("remote.devices.title")}</div>
+            <div className="mt-0.5 text-[11.5px] leading-relaxed text-ink-secondary">{pairedCount ? t("remote.devices.subtitle", { app: brand().name }) : t("remote.devices.empty")}</div>
+            <div className="mt-3">
+              {pairedCount > 0 && (
+                <ul className="flex flex-col gap-2">
+                  {state.devices.map((device) => (
+                    <li key={device.id} className="rounded-xl bg-inset px-3 py-3">
+                      <div className="flex items-center gap-3">
+                        <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-control text-ink-secondary">
+                          <Smartphone size={15} />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <div className="truncate text-[13.5px] font-medium text-ink">{device.name}</div>
+                          <div className="text-[11.5px] text-ink-secondary">{t("remote.devices.lastSeen", { when: relative(device.lastSeenAt) })}</div>
+                        </div>
+                        <button
+                          disabled={c.busy}
+                          onClick={() => void c.act((companion) => companion.revoke(device.id))}
+                          aria-label={t("remote.devices.remove", { name: device.name })}
+                          className="shrink-0 rounded p-1.5 text-ink-secondary hover:bg-control hover:text-danger disabled:opacity-40"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                      <div className="mt-3 flex items-center justify-between gap-3 border-t border-hairline/30 pt-3">
+                        <div>
+                          <div className="text-[12px] text-ink">{t("remote.devices.allowView")}</div>
+                          <div className="mt-0.5 text-[11px] text-ink-secondary">{t("remote.devices.allowViewDetail")}</div>
+                        </div>
+                        <Switch
+                          checked={device.cloudDesktopAccess}
+                          aria-label={t("remote.devices.viewAria", { name: device.name })}
+                          disabled={c.busy}
+                          onClick={() =>
+                            void c.act((companion) =>
+                              companion.cloudDesktop(device.id, !device.cloudDesktopAccess),
+                            )
+                          }
+                        />
+                      </div>
+                      <div className="mt-3 flex items-center justify-between gap-3 border-t border-hairline/30 pt-3">
+                        <div>
+                          <div className="text-[12px] text-ink">{t("remote.devices.allowBrowser")}</div>
+                          <div className="mt-0.5 text-[11px] text-ink-secondary">{t("remote.devices.allowBrowserDetail")}</div>
+                        </div>
+                        <Switch
+                          checked={device.browserControlAccess === true}
+                          aria-label={t("remote.devices.browserAria", { name: device.name })}
+                          disabled={c.busy}
+                          onClick={() => void c.act((companion) => companion.browserControl(device.id, !device.browserControlAccess))}
+                        />
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </div>
+
+          <div className="border-t border-hairline/30 pt-4">
+            <div className="text-[13px] text-ink">{t("remote.pairing.tailscale.title")}</div>
+            <div className="mt-0.5 text-[11.5px] leading-relaxed text-ink-secondary">{t("remote.tailscaleCard.subtitle")}</div>
+            <div className="mt-3">
+              <div className="rounded-xl bg-inset px-3 py-3" aria-live="polite">
+                <div className="flex items-start gap-2.5">
+                  <ShieldCheck
+                    size={16}
+                    className={`mt-0.5 shrink-0 ${tailscaleStatus.kind === "ready" ? "text-success" : "text-ink-secondary"}`}
+                  />
+                  <div className="min-w-0">
+                    <div className="text-[13px] font-medium text-ink">{tailscaleStatus.title}</div>
+                    <div className="mt-0.5 text-[11.5px] leading-relaxed text-ink-secondary">
+                      {tailscaleStatus.detail}
+                    </div>
+                  </div>
+            </div>
+          </div>
+          {tailscaleStatus.kind === "ready" ? (
+            <button
+              disabled={c.busy || c.accountBusy || Boolean(managedBy)}
+              title={managedBy ?? undefined}
+              onClick={() => {
+                c.useTailscale();
+                window.requestAnimationFrame(() => {
+                  pairingFlow.current?.scrollIntoView({ block: "start" });
+                  pairingFlow.current?.focus({ preventScroll: true });
+                });
+              }}
+              className="mt-3 rounded-lg border border-hairline/40 px-3 py-1.5 text-[12px] text-ink hover:bg-control disabled:opacity-40"
+            >
+              {t("remote.pairOverTailscale")}
+            </button>
+          ) : (
+            <button
+              disabled={c.busy || c.accountBusy || (Boolean(managedBy) && !state.enabled)}
+              title={managedBy ?? undefined}
+              onClick={c.refreshTailscale}
+              className="mt-3 rounded-lg border border-hairline/40 px-3 py-1.5 text-[12px] text-ink hover:bg-control disabled:opacity-40"
+            >
+              {c.busy ? t("common.checking") : managedBy && !state.enabled ? managedBy : state.enabled ? t("remote.checkAgain") : t("remote.turnOnAndCheck")}
+            </button>
+          )}
+            </div>
+          </div>
+
           <div className="flex items-center justify-between gap-4 border-t border-hairline/30 pt-4">
             <div className="min-w-0">
               <div className="text-[13px] text-ink">{t("remote.keepAwake")}</div>

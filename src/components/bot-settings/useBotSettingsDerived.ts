@@ -35,6 +35,8 @@ export type BotPatch = Partial<
     | "alwaysAllow"
     | "autoApprove"
     | "approvalMode"
+    | "outbound"
+    | "fallback"
     | "speakReplies"
     | "memoryEnabled"
     | "voice"
@@ -51,6 +53,7 @@ export type BotPatch = Partial<
   /** null drops the explicit record and returns the bot to the legacy
    * all-tools boolean. */
   connectorTools?: Bot["connectorTools"] | null;
+  connectorScopes?: Bot["connectorScopes"] | null;
   acknowledgeLocalAuto?: boolean;
   confirmFullAccess?: boolean;
   acknowledgePeerScope?: boolean;

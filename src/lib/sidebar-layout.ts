@@ -80,6 +80,16 @@ export function sidebarSectionCollapsed(
   return sidebarLayoutInteractive(density, query) && collapsedIds.includes(id);
 }
 
+/** Thread rows for bots that the circle grid took out of the normal list.
+ * Icons and the row layout already show those rows, so this stays off there. */
+export function pinnedCircleThreadListVisible(
+  circles: boolean,
+  density: SidebarDensityMode,
+  pinnedCount: number,
+): boolean {
+  return circles && density !== "icons" && pinnedCount > 0;
+}
+
 /** Pinned bots are a virtual view. Their saved section is left untouched so
  * unpinning returns them to the context they came from.
  * With universal pins, a pin lifts a bot out of every group, including a
