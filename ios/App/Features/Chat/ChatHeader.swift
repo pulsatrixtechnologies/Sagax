@@ -57,7 +57,7 @@ extension ChatView {
             ChatNameCapsule(chat: current, state: mascotState, mascotHidden: islandVisible) { openProfile() }
                 .frame(maxWidth: 230)
                 .contextMenu { nameCapsuleMenu }
-                .accessibilityLabel(Text(current.name))
+                .accessibilityLabel(Text(PeopleDirectory.shared.name(current, session: session)))
                 // The thread is no longer drawn in the header; VoiceOver
                 // (and the UI tests) still hear which one is open.
                 .accessibilityValue(Text(current.supportsTasks ? current.threadTitle : current.subtitle))
@@ -96,7 +96,14 @@ extension ChatView {
                 Label(String(localized: "Profile"), systemImage: "person.crop.circle")
             }
         }
-        if case let .room(room) = current, room.dm != true {
+        if case let .room(room) = current, room.peopleDm == true {
+            // WP15 (RM21): a conversation with a person opens their sheet
+            if let peer = PeopleDirectory.shared.peer(room, session: session) {
+                Button { PeopleDirectory.shared.showPerson(peer.id) } label: {
+                    Label(String(localized: "View profile"), systemImage: "person.crop.circle")
+                }
+            }
+        } else if case let .room(room) = current, room.dm != true {
             Button { showingRoomInfo = true } label: {
                 Label(String(localized: "Group info"), systemImage: "info.circle")
             }
@@ -108,8 +115,13 @@ extension ChatView {
     /// presented.
     func openProfile() {
         guard case .bot = current else {
+            // A conversation with a person opens their sheet (RM21), the
+            // way the desktop's header name does.
+            if case let .room(room) = current, room.peopleDm == true,
+               let peer = PeopleDirectory.shared.peer(room, session: session) {
+                PeopleDirectory.shared.showPerson(peer.id)
             // A team room opens its Room info (RM6); Threads is a row there.
-            if case let .room(room) = current, room.dm != true {
+            } else if case let .room(room) = current, room.dm != true {
                 showingRoomInfo = true
             } else if current.supportsTasks {
                 showingTasks = true

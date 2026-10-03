@@ -398,6 +398,10 @@ struct ChatView: View {
                                 } else if index > 0 {
                                     Color.clear.frame(height: Self.rowGap)
                                 }
+                                // WP15 (RM21): another person's name over their run
+                                if case let .person(_, name, initials, personId)? = roomPersonLabel(at: index, in: transcript) {
+                                    RoomPersonLabel(name: name, initials: initials, personId: personId)
+                                }
                                 switch row {
                                 case let .message(message):
                                     MessageRow(
@@ -634,6 +638,8 @@ struct ChatView: View {
         let this = rows[index], next = rows[index + 1]
         if this.role != next.role { return true }
         if this.senderName != next.senderName { return true }
+        // two people's lines in a room are two runs (RM21)
+        if this.head.sender?.id != next.head.sender?.id { return true }
         // a card or a tool chip between two texts breaks the run visually
         return next.kind != .text
     }

@@ -77,6 +77,16 @@ struct RoomRowMenu: View {
 
     var body: some View {
         let access = session.roomAccess(room)
+        // WP15 (RM21): a conversation with a person opens their sheet first
+        // (Sidebar.tsx RoomContextMenu "View profile")
+        if room.peopleDm == true, let peer = PeopleDirectory.shared.peer(room, session: session) {
+            Button {
+                PeopleDirectory.shared.showPerson(peer.id)
+            } label: {
+                Label(String(localized: "View profile"), systemImage: "person.crop.circle")
+            }
+            .accessibilityIdentifier("room-view-profile")
+        }
         if access.editable {
             Button {
                 actions.startRename(room)
