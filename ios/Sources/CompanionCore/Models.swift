@@ -1184,11 +1184,14 @@ public struct ConfigViewer: Codable, Hashable, Sendable {
     public var role: String?
     /// The administrator lets this person use shared bots only.
     public var botsReadOnly: Bool?
+    /// Whether this person may make bots; absent on an older server (yes).
+    public var canCreateBots: Bool?
 
-    public init(principalId: String? = nil, role: String? = nil, botsReadOnly: Bool? = nil) {
+    public init(principalId: String? = nil, role: String? = nil, botsReadOnly: Bool? = nil, canCreateBots: Bool? = nil) {
         self.principalId = principalId
         self.role = role
         self.botsReadOnly = botsReadOnly
+        self.canCreateBots = canCreateBots
     }
 }
 

@@ -2243,6 +2243,13 @@ final class Session: ObservableObject {
         return try? await client.config()
     }
 
+    /// New bot's presets (NB2). Nothing when the pairing may not read them or
+    /// the computer refuses: the built-in roles stay, as on the desktop.
+    func botPresets() async -> [BotPreset] {
+        guard let client, surfaceGate.allows(.createBotPresets) else { return [] }
+        return (try? await client.botPresets()) ?? []
+    }
+
     func botOverview(for bot: Bot) async -> BotOverview? {
         guard let client else { return nil }
         let connectionID = connection?.id

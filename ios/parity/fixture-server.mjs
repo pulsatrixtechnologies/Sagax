@@ -62,6 +62,24 @@ const ORG = process.env.PARITY_ORG === "1";
 // tests). Off by default: the reference captures never see it.
 const THREAD_TITLES = process.env.PARITY_THREAD_TITLES === "1";
 const PARITY_GENERATED_TITLE = "Fixture generated title";
+// PARITY_PRESETS=1 offers one imported preset in New bot (WP13's UI tests):
+// written into the preset store between the passes, as an import leaves it
+// (server/presets.ts). Off by default: the reference captures never see it.
+const PRESETS = process.env.PARITY_PRESETS === "1";
+export const PARITY_PRESET = {
+  id: "fixture-analyst", key: "analyst", name: "Fixture Analyst", packageName: "Fixture Pack", release: "1.0.0",
+  bot: { name: "Analyst", title: "Data analyst", description: "Reads the numbers and reports.", soul: "Placeholder: cite every figure.", appearance: { color: "purple" } },
+};
+function seedPresets(dataDir) {
+  const dir = join(dataDir, "org-library");
+  mkdirSync(dir, { recursive: true });
+  const { id, key, name, packageName, release, bot } = PARITY_PRESET;
+  writeFileSync(join(dir, "presets.json"), JSON.stringify({
+    version: 1,
+    presets: [{ id, source: "file", installId: "fixture-install", packageId: "fixture-pack", packageName, release, key, name, bot, addedAt: Date.now() }],
+    content: { "fixture-install": { skills: [], playbooks: [] } },
+  }, null, 2));
+}
 /** Organization fixture: the stub provider and the admin's session cookie. */
 let org = null;
 
@@ -687,6 +705,7 @@ async function main() {
   if (CARD_LAB) seedCardLabTranscripts(dataDir);
   if (ROUTINE_LAB) seedRoutineLabRuns(dataDir);
   seedCommandRules(dataDir, seeded);
+  if (PRESETS) seedPresets(dataDir);
 
   child = startServer(port, webhook);
   await waitHealthy(base, child);

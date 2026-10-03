@@ -123,6 +123,14 @@ public enum SurfaceFeature: String, CaseIterable, Hashable, Sendable {
     case botOwnerExtras
     /// New bot (SB31): `POST /api/bots` passes both gates.
     case createBot
+    /// New bot's team, and "New bot here" on a team (NB3): a member's new
+    /// bot may not name a section (server `memberBotFieldViolation`); the
+    /// owner's sidecar and an admin may.
+    case createBotTeam
+    /// New bot's presets as starting roles (NB2): `GET /api/bot-presets` is
+    /// admin scoped on a server and opened on the sidecar by D1. The
+    /// built-in roles need no route and show everywhere.
+    case createBotPresets
     /// Connected apps (PL1): the sidecar allows connectors; a client
     /// session does not. Marketplace / Connected (PL2) and disconnecting
     /// one account (PL4) ride the same routes.
@@ -289,6 +297,14 @@ public struct SurfaceGate: Hashable, Sendable {
             case .serverAdmin: return true
             case .serverClient: return false
             case .sidecar: return sidecarRoutes.contains(.voiceEngine)
+            }
+        case .createBotTeam:
+            return scope != .serverClient
+        case .createBotPresets:
+            switch scope {
+            case .serverAdmin: return true
+            case .serverClient: return false
+            case .sidecar: return sidecarRoutes.contains(.advancedPanel)
             }
         case .advancedBotPanel:
             switch scope {
