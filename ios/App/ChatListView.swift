@@ -37,6 +37,11 @@ struct ChatListView: View {
     @State private var managingThreads: Chat?
     /// The shared thread and folder menus (Features/Threads) for every row.
     @StateObject private var threadActions = ThreadActions()
+    /// The sidebar preferences that follow the person (Features/Sidebar):
+    /// their sections, folds, order, hidden entries and the thread switch.
+    @ObservedObject private var sidebarPrefs = SidebarPrefsModel.shared
+    /// The section header menu's prompts.
+    @StateObject private var sectionActions = SidebarSectionActions()
     @FocusState private var searchFocused: Bool
 
     /// Space between the header's glass buttons and whatever the list
@@ -113,6 +118,17 @@ struct ChatListView: View {
             }
             .environmentObject(threadActions)
             .threadActionsPresenter(threadActions)
+            .environmentObject(sectionActions)
+            // its own host: alerts chained on one view after the thread
+            // presenter's would never show
+            .background { Color.clear.sidebarSectionActionsPresenter(sectionActions) }
+            .environment(\.sidebarShowsThreads, sidebarPrefs.showThreads)
+            // a new message brings a hidden entry back; a first roster seeds
+            // the person's own sections (organization server)
+            .onValueChange(of: rosterSignature) { _ in
+                sidebarPrefs.unhideNewMessages(session)
+                sidebarPrefs.seedIfNeeded(session)
+            }
             .onValueChange(of: threadActions.created?.threadId) { threadId in
                 guard let created = threadActions.created, threadId != nil else { return }
                 threadActions.created = nil
@@ -188,7 +204,10 @@ struct ChatListView: View {
                     .padding(.top, Self.listTopInset)
                     .padding(.bottom, Self.listBottomMargin)
                 }
-                .refreshable { await session.refresh() }
+                .refreshable {
+                    await session.refresh()
+                    await sidebarPrefs.load(session)
+                }
                 .accessibilityIdentifier("roster-list")
                 .overlay {
                     if rosterIsEmpty {
@@ -285,6 +304,7 @@ struct ChatListView: View {
 
     @ViewBuilder
     private var rosterSections: some View {
+        let layout = self.layout
         if !attention.isEmpty {
             sectionLabel(Text("Needs attention"))
                 .padding(.top, 2)
@@ -301,7 +321,7 @@ struct ChatListView: View {
             }
         }
 
-        if let chief = session.state.unsectionedChief {
+        if let chief = layout.unsectionedChief {
             VStack(alignment: .leading, spacing: 0) {
                 botRows(summaries(for: [chief]))
             }
@@ -310,7 +330,7 @@ struct ChatListView: View {
             .padding(.top, density == .compact && !attention.isEmpty ? sectionSpacing : 0)
         }
 
-        let pinned = summaries(for: session.state.pinnedBots)
+        let pinned = summaries(for: layout.pinnedBots)
         if !pinned.isEmpty {
             sectionLabel(Text("Pinned"))
                 // a compact row above it leaves little air of its own
@@ -323,26 +343,26 @@ struct ChatListView: View {
         case .comfortable:
             channelsStrip(
                 title: "Groups",
-                rooms: session.state.unsectionedChannels,
+                rooms: layout.unsectionedChannels,
                 showsCreate: true
             )
 
-            if !session.state.botChats.isEmpty {
-                channelsStrip(title: "Bot threads", rooms: session.state.botChats, showsCreate: false)
+            if !layout.botChats.isEmpty {
+                channelsStrip(title: "Bot threads", rooms: layout.botChats, showsCreate: false)
             }
         case .compact, .standard:
             compactRoomsSection(
                 title: "Groups",
-                rooms: session.state.unsectionedChannels,
+                rooms: layout.unsectionedChannels,
                 showsCreate: true
             )
 
-            if !session.state.botChats.isEmpty {
-                compactRoomsSection(title: "Bot threads", rooms: session.state.botChats, showsCreate: false)
+            if !layout.botChats.isEmpty {
+                compactRoomsSection(title: "Bot threads", rooms: layout.botChats, showsCreate: false)
             }
         }
 
-        let unsectioned = summaries(for: session.state.unsectionedBots)
+        let unsectioned = summaries(for: layout.unsectionedBots)
         if !unsectioned.isEmpty {
             sectionLabel(Text("Bots"))
                 .padding(.top, sectionSpacing)
@@ -350,7 +370,7 @@ struct ChatListView: View {
             botRows(unsectioned)
         }
 
-        ForEach(session.state.sidebarSections) { section in
+        ForEach(layout.sections) { section in
             VStack(alignment: .leading, spacing: 0) {
                 switch density {
                 case .comfortable:
@@ -541,7 +561,7 @@ struct ChatListView: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("chat-row.\(summary.chat.id)")
-                if case let .bot(bot) = summary.chat {
+                if case let .bot(bot) = summary.chat, sidebarPrefs.showThreads {
                     BotThreadTree(
                         botID: bot.id, query: $query,
                         expanded: expandedBinding(bot.id),
@@ -614,7 +634,7 @@ struct ChatListView: View {
                 .frame(width: 180)
             searchButton
             walkieButton
-            if session.canAdminister {
+            if session.canAdminister || layout.personal {
                 sectionButton
             }
             // `POST /api/bots` passes both gates (SB31): a client session
@@ -692,6 +712,17 @@ struct ChatListView: View {
 
     private var hasVisibleBots: Bool {
         session.state.bots.contains { $0.hidden != true }
+    }
+
+    /// The roster as the sidebar lays it out: the person's sections,
+    /// hidden entries and order applied (CompanionCore `SidebarLayout`).
+    private var layout: SidebarLayout { sidebarPrefs.layout(session) }
+
+    /// Changes when a message or an unread mark arrives, or the roster's
+    /// membership changes.
+    private var rosterSignature: [String] {
+        session.state.bots.map { "\($0.id):\($0.unread):\(session.state.messages[$0.threadId]?.last?.at ?? 0):\($0.tasks?.compactMap(\.updatedAt).max() ?? 0)" }
+            + session.state.rooms.map { "\($0.id):\($0.unread):\(session.state.messages[$0.threadId]?.last?.at ?? 0)" }
     }
 
     private func openNewSection() {
@@ -1170,7 +1201,10 @@ extension ChatListView {
             }
         }
         .overlay { homeOverlays }
-        .task(id: session.connection?.id) { await session.loadAccount() }
+        .task(id: session.connection?.id) {
+            await session.loadAccount()
+            await sidebarPrefs.load(session)
+        }
 #if DEBUG
         .task {
             switch ParityLaunch.current?.screen {
@@ -1185,12 +1219,23 @@ extension ChatListView {
 #endif
     }
 
+    /// The phone's own sections (Needs attention) fold on this phone; the
+    /// others under the desktop's section ids, which follow the person.
     private var collapsedSections: Set<String> { CollapsedSections.decode(collapsedRaw) }
 
+    private func isCollapsed(_ key: String) -> Bool {
+        guard let id = HomeSectionKey.sectionID(for: key) else { return collapsedSections.contains(key) }
+        return sidebarPrefs.isCollapsed(id)
+    }
+
     private func toggleSection(_ key: String) {
-        var set = collapsedSections
-        if set.contains(key) { set.remove(key) } else { set.insert(key) }
-        collapsedRaw = CollapsedSections.encode(set)
+        guard let id = HomeSectionKey.sectionID(for: key) else {
+            var set = collapsedSections
+            if set.contains(key) { set.remove(key) } else { set.insert(key) }
+            collapsedRaw = CollapsedSections.encode(set)
+            return
+        }
+        sidebarPrefs.toggleCollapsed(session, id)
     }
 
     private var standardHome: some View {
@@ -1212,7 +1257,10 @@ extension ChatListView {
                 }
                 .padding(.bottom, 32)
             }
-            .refreshable { await session.refresh() }
+            .refreshable {
+                await session.refresh()
+                await sidebarPrefs.load(session)
+            }
             .accessibilityIdentifier("roster-list")
             .topScrollEdgeFade(height: HomeMetrics.headerTop + HomeMetrics.headerHeight + 8)
             .overlay {
@@ -1269,7 +1317,7 @@ extension ChatListView {
         } label: {
             Label("Walkie", systemImage: "waveform")
         }
-        if session.canAdminister {
+        if session.canAdminister || layout.personal {
             Button {
                 showingNewSection = true
             } label: {
@@ -1284,10 +1332,12 @@ extension ChatListView {
     /// The Primary Bot (when it has no section), pinned bots, then
     /// pinned groups.
     private var pinnedChats: [Chat] {
+        let layout = self.layout
         var chats: [Chat] = []
-        if let chief = session.state.unsectionedChief { chats.append(.bot(chief)) }
-        chats += session.state.pinnedBots.sorted { $0.createdAt < $1.createdAt }.map(Chat.bot)
-        chats += session.state.rooms.filter { $0.dm != true && $0.pinned == true }.map(Chat.room)
+        if let chief = layout.unsectionedChief { chats.append(.bot(chief)) }
+        chats += layout.pinnedBots.sorted { $0.createdAt < $1.createdAt }.map(Chat.bot)
+        let shown = Set((layout.sections.flatMap(\.channels) + layout.unsectionedChannels).map(\.id))
+        chats += session.state.rooms.filter { $0.dm != true && $0.pinned == true && shown.contains($0.id) }.map(Chat.room)
         return chats
     }
 
@@ -1310,6 +1360,7 @@ extension ChatListView {
 
     @ViewBuilder
     private var standardSections: some View {
+        let layout = self.layout
         // Unread already shows as dots on the rows; this lists only what
         // waits on the person.
         let waitingOnYou = attention.filter { $0.task.activity == "waiting-on-you" }
@@ -1328,37 +1379,45 @@ extension ChatListView {
             }
         }
 
-        ForEach(session.state.sidebarSections) { sidebar in
-            section(key: sidebar.name, title: sidebar.name, rename: true) {
+        ForEach(layout.sections) { sidebar in
+            section(key: sidebar.name, title: sidebar.name, named: sidebar.name, layout: layout) {
                 homeRows(chats: sidebar.chiefs.map(Chat.bot)
                     + sidebar.channels.filter { $0.pinned != true }.map(Chat.room)
                     + sidebar.bots.map(Chat.bot))
             }
         }
 
-        let unsectioned = session.state.unsectionedBots
+        let unsectioned = layout.unsectionedBots
         if !unsectioned.isEmpty {
-            section(key: "__bots", title: String(localized: "Bots")) {
+            section(key: HomeSectionKey.bots, title: String(localized: "Bots"), layout: layout) {
                 homeRows(chats: unsectioned.map(Chat.bot))
             }
         }
 
-        let groups = session.state.unsectionedChannels.filter { $0.pinned != true }
+        let groups = layout.unsectionedChannels.filter { $0.pinned != true }
         if !groups.isEmpty {
-            section(key: "__groups", title: String(localized: "Group Chats")) {
+            section(key: HomeSectionKey.groups, title: String(localized: "Group Chats"), layout: layout) {
                 homeRows(chats: groups.map(Chat.room))
             }
         }
 
-        if !session.state.botChats.isEmpty {
-            section(key: "__botchats", title: String(localized: "Bot threads")) {
-                homeRows(chats: session.state.botChats.map(Chat.room))
+        if !layout.botChats.isEmpty {
+            section(key: HomeSectionKey.botChats, title: String(localized: "Bot threads")) {
+                homeRows(chats: layout.botChats.map(Chat.room))
             }
         }
+
+        HomeHiddenEntries(rows: layout.hiddenRows, prefs: sidebarPrefs)
     }
 
-    private func section<Rows: View>(key: String, title: String, rename: Bool = false, @ViewBuilder rows: () -> Rows) -> some View {
-        let collapsed = collapsedSections.contains(key)
+    /// One collapsible home section. `named` is a section of the person's or
+    /// the server's; `layout` (nil for Needs attention and Bot threads)
+    /// adds the section menu (Features/Sidebar/SidebarSectionActions).
+    private func section<Rows: View>(
+        key: String, title: String, named: String? = nil, layout: SidebarLayout? = nil,
+        @ViewBuilder rows: () -> Rows
+    ) -> some View {
+        let collapsed = isCollapsed(key)
         return VStack(alignment: .leading, spacing: 0) {
             HomeSectionHeader(title: title, collapsed: collapsed) { toggleSection(key) }
                 .contextMenu {
@@ -1367,13 +1426,16 @@ extension ChatListView {
                     } label: {
                         Label(collapsed ? "Expand" : "Collapse", systemImage: collapsed ? "chevron.down" : "chevron.up")
                     }
-                    if session.canAdminister {
+                    if session.canAdminister && layout?.personal != true {
                         Button {
                             showingNewSection = true
                         } label: {
                             Label("New section", systemImage: "folder.badge.plus")
                         }
                         .disabled(!hasVisibleBots)
+                    }
+                    if let layout, let id = HomeSectionKey.sectionID(for: key) {
+                        SidebarSectionMenu(name: named, sectionID: id, layout: layout, actions: sectionActions, prefs: sidebarPrefs)
                     }
                 }
                 .accessibilityIdentifier("section.\(key)")
@@ -1410,7 +1472,7 @@ extension ChatListView {
         switch chat {
         case let .bot(bot):
             let row = CompactBotRow(bot: bot, hasPendingCard: waiting, queuedThreadIds: queued, creatingThread: creatingThreads.contains(bot.id))
-            return HomeRowStatus(waiting: row.showsWaiting, working: row.showsSpinner, threadCount: row.threadCount, unread: row.showsUnreadDot)
+            return HomeRowStatus(waiting: row.showsWaiting, working: row.showsSpinner, threadCount: sidebarPrefs.showThreads ? row.threadCount : 0, unread: row.showsUnreadDot)
         case let .room(room):
             let busy = room.busyBotId != nil
             return HomeRowStatus(waiting: waiting, working: busy, threadCount: 0, unread: room.unread && !busy)
@@ -1435,19 +1497,26 @@ extension ChatListView {
                     Label(bot.pinned == true ? "Unpin" : "Pin", systemImage: bot.pinned == true ? "pin.slash" : "pin")
                 }
             }
-            Button {
-                createThread(for: bot)
-            } label: {
-                Label("New thread", systemImage: "square.and.pencil")
+            // Settings > Appearance > Threads off: no thread entries (the
+            // desktop bot menu's showThreads block)
+            if sidebarPrefs.showThreads {
+                Button {
+                    createThread(for: bot)
+                } label: {
+                    Label("New thread", systemImage: "square.and.pencil")
+                }
+                .disabled(creatingThreads.contains(bot.id))
+                Button {
+                    managingThreads = chat
+                } label: {
+                    Label("Threads", systemImage: "list.bullet")
+                }
             }
-            .disabled(creatingThreads.contains(bot.id))
-            Button {
-                managingThreads = chat
-            } label: {
-                Label("Threads", systemImage: "list.bullet")
-            }
-            BotThreadsMenu(bot: bot, actions: threadActions)
-            if session.canAdminister {
+            BotThreadsMenu(bot: bot, actions: threadActions, showsThreads: sidebarPrefs.showThreads)
+            let layout = self.layout
+            if layout.personal {
+                PersonalSectionPicker(key: PersonalSections.itemKey(bot: bot.id), layout: layout, actions: sectionActions)
+            } else if session.canAdminister {
                 Menu {
                     ForEach(session.state.sidebarSections.map(\.name).filter { $0 != bot.section }, id: \.self) { name in
                         Button(name) {
@@ -1463,7 +1532,14 @@ extension ChatListView {
                     Label("Move to section", systemImage: "folder")
                 }
             }
+            // only this person's sidebar: the bot and everyone else keep it
+            Button {
+                sidebarPrefs.hide(session, .bot, bot.id)
+            } label: {
+                Label("Hide from sidebar", systemImage: "eye.slash")
+            }
         case let .room(room):
+            let layout = self.layout
             if session.groupPinsSupported {
                 Button {
                     Task { await session.setPinned(room, pinned: room.pinned != true) }
@@ -1471,10 +1547,20 @@ extension ChatListView {
                     Label(room.pinned == true ? "Unpin" : "Pin", systemImage: room.pinned == true ? "pin.slash" : "pin")
                 }
             }
+            if sidebarPrefs.showThreads {
+                Button {
+                    managingThreads = chat
+                } label: {
+                    Label("Threads", systemImage: "list.bullet")
+                }
+            }
+            if layout.personal, room.dm != true, room.peopleDm != true {
+                PersonalSectionPicker(key: PersonalSections.itemKey(group: room.id), layout: layout, actions: sectionActions)
+            }
             Button {
-                managingThreads = chat
+                sidebarPrefs.hide(session, room: room)
             } label: {
-                Label("Threads", systemImage: "list.bullet")
+                Label("Hide from sidebar", systemImage: "eye.slash")
             }
         }
     }

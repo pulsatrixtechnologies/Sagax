@@ -113,10 +113,13 @@ struct FolderMenu: View {
 struct BotThreadsMenu: View {
     let bot: Bot
     @ObservedObject var actions: ThreadActions
+    /// Settings > Appearance > Threads (WP6): off drops New folder, as the
+    /// desktop bot menu does.
+    var showsThreads = true
     @EnvironmentObject private var session: Session
 
     var body: some View {
-        if session.surfaceGate.allows(.threadFolders) {
+        if showsThreads && session.surfaceGate.allows(.threadFolders) {
             Button { actions.newFolder(for: bot) } label: {
                 Label("New folder", systemImage: "folder.badge.plus")
             }

@@ -154,9 +154,14 @@ export function orgServerEnv(org) {
     OMB_PERSPICAX_LINK_FILE: org.linkFile,
     OMB_PERSPICAX_DIRECTORY_SECONDS: "5",
     OMB_ORG_NAME: "Parity Org",
-    OMB_ADMIN_URL: "https://admin.example.test",
-    OMB_ADMIN_WORKSPACE: "parity",
-    OMB_ADMIN_MEMBERSHIP: "portal",
+    // A hosted workspace signs in through its portal only and refuses the
+    // phone's pairing (POST /api/pair): PARITY_ORG_PHONE=1 runs a plain
+    // organization server instead.
+    ...(process.env.PARITY_ORG_PHONE === "1" ? {} : {
+      OMB_ADMIN_URL: "https://admin.example.test",
+      OMB_ADMIN_WORKSPACE: "parity",
+      OMB_ADMIN_MEMBERSHIP: "portal",
+    }),
     OMB_FLEET_SOCKET: org.fleetSocket,
   };
 }
@@ -198,6 +203,32 @@ async function signIn(org) {
     throw new Error(`oidc callback: ${callback.status} ${callback.headers.get("location")} ${(await callback.text()).slice(0, 300)}`);
   }
   return cookiePair(session);
+}
+
+/** PARITY_ORG_PHONE=1: the phone's own sign-in (Sign in with Pulsatrix,
+ * `/auth/oidc/start?client=phone&return=sagax`) run over HTTP as the
+ * viewer, its pairing invite redeemed through `POST /api/pair` as the app
+ * does: a bearer bound to the person, for the UI tests of what follows the
+ * person (GET/PUT /api/me/preferences). */
+export async function pairOrgPhone(org) {
+  const start = await fetch(`${org.base}/auth/oidc/start?client=phone&return=sagax`, { redirect: "manual" });
+  const binding = start.headers.getSetCookie().find((c) => c.includes("_oidc="));
+  const to = start.headers.get("location");
+  if (!binding || !to) throw new Error(`phone oidc start: ${start.status} ${await start.text()}`);
+  const authorize = await fetch(to, { redirect: "manual" });
+  const back = new URL(authorize.headers.get("location") ?? "");
+  const callback = await fetch(`${org.base}${back.pathname}${back.search}`, { redirect: "manual", headers: { cookie: cookiePair(binding) } });
+  const invite = new URL(callback.headers.get("location") ?? "about:blank");
+  const credential = invite.searchParams.get("token");
+  if (invite.protocol !== "sagax:" || !credential) throw new Error(`phone oidc callback: ${callback.status} ${callback.headers.get("location")}`);
+  const paired = await fetch(`${org.base}/api/pair`, {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ credential, deviceName: "Parity iPhone" }),
+  });
+  if (!paired.ok) throw new Error(`phone pair: ${paired.status} ${await paired.text()}`);
+  const { token } = await paired.json();
+  const session = await fetch(`${org.base}/api/auth/session`, { headers: { authorization: `Bearer ${token}` } }).then((r) => r.json()).catch(() => ({}));
+  return { token, environmentId: session?.session?.environmentId ?? session?.environmentId ?? null, scopes: session?.session?.scopes ?? session?.scopes ?? [] };
 }
 
 /** After the dataset: Ara is shared and offers Perspicax tools, and the

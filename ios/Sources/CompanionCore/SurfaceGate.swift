@@ -146,6 +146,13 @@ public enum SurfaceFeature: String, CaseIterable, Hashable, Sendable {
     /// edit every pairing may make.
     case threadFolders
 
+    // Sidebar (WP6)
+    /// Rename, add or remove bots, delete a server section (SB4): PATCH,
+    /// PUT and DELETE /api/sidebar-sections are admin only on a server and
+    /// refused by every sidecar. An organization server's sections are the
+    /// person's own instead (SB2), which every session may edit.
+    case sectionManagement
+
     // Rooms
     /// Room memory tab (RM8, D3). Sidecars wait on S1.
     case roomMemory
@@ -235,7 +242,7 @@ public struct SurfaceGate: Hashable, Sendable {
             return true
         case .engineCommands:
             return scope != .sidecar || sidecarRoutes.contains(.harnessCommands)
-        case .inspector, .scheduledCalls:
+        case .inspector, .scheduledCalls, .sectionManagement:
             return scope == .serverAdmin
         case .connectorCardAuthorize, .botOverview, .connectedApps, .botOwnerExtras, .threadFolders:
             return scope != .serverClient
