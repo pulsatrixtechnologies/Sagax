@@ -12,6 +12,7 @@
 //
 //   node dist-server/sandboxd.js                    serve (compose service)
 //   node dist-server/sandboxd.js --uninstall-egress remove the host egress rules
+import { createHash } from "node:crypto";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import type { Duplex } from "node:stream";
 import { pathToFileURL } from "node:url";
@@ -96,6 +97,38 @@ export function createSandboxdHandler(service: SandboxService, verifier: Sandbox
 
 export const SANDBOXD_DESKTOP_UPGRADE = "sagax-rfb";
 const DESKTOP_PATH = /^\/v1\/sandboxes\/([a-f0-9]{32})\/desktop$/;
+/** A person's MCP server command (server/sandbox-stdio-mcp.ts). The command
+ * and its environment ride the stream's first line, never the URL; the
+ * signed URL names that line's SHA-256, so it is authenticated too. */
+export const SANDBOXD_STDIO_UPGRADE = "sagax-stdio";
+const STDIO_PATH = /^\/v1\/sandboxes\/([a-f0-9]{32})\/stdio$/;
+const MAX_STDIO_SPEC_BYTES = 1_600_000;
+
+/** Read the first line of an upgraded socket (the stdio spec), bounded. */
+function readFirstLine(socket: Duplex, head: Buffer): Promise<{ line: Buffer; rest: Buffer }> {
+  return new Promise((resolve, reject) => {
+    let buffered = head;
+    const done = (error: Error | null, value?: { line: Buffer; rest: Buffer }) => {
+      socket.off("data", onData);
+      socket.off("end", onEnd);
+      socket.pause();
+      clearTimeout(timer);
+      if (error) reject(error);
+      else resolve(value!);
+    };
+    const check = () => {
+      const newline = buffered.indexOf(10);
+      if (newline !== -1) return done(null, { line: buffered.subarray(0, newline), rest: buffered.subarray(newline + 1) });
+      if (buffered.length > MAX_STDIO_SPEC_BYTES) done(new SandboxError(413, "too_large", "the request is too large"));
+    };
+    const onData = (chunk: Buffer) => { buffered = Buffer.concat([buffered, chunk]); check(); };
+    const onEnd = () => done(new SandboxError(400, "bad_stdio", "the stream ended before its command"));
+    const timer = setTimeout(() => done(new SandboxError(408, "timeout", "the command was not sent")), 15_000);
+    socket.on("data", onData);
+    socket.on("end", onEnd);
+    check();
+  });
+}
 
 function refuseUpgrade(socket: Duplex, status: number, code: string): void {
   const body = JSON.stringify({ error: code, code });
@@ -114,6 +147,33 @@ export function createSandboxdUpgradeHandler(service: SandboxService, verifier: 
     if (!verifier.verify(req.headers[SANDBOXD_AUTH_HEADER], method, rawPath, Buffer.alloc(0))) return refuseUpgrade(socket, 401, "unauthorized");
     let url: URL;
     try { url = new URL(rawPath, "http://sandboxd"); } catch { return refuseUpgrade(socket, 404, "not_found"); }
+    const stdio = STDIO_PATH.exec(url.pathname);
+    if (stdio) {
+      const digest = url.searchParams.get("digest") ?? "";
+      if (method !== "POST" || !/^[a-f0-9]{64}$/.test(digest) || String(req.headers.upgrade ?? "").toLowerCase() !== SANDBOXD_STDIO_UPGRADE) return refuseUpgrade(socket, 404, "not_found");
+      socket.write(`HTTP/1.1 101 Switching Protocols\r\nconnection: Upgrade\r\nupgrade: ${SANDBOXD_STDIO_UPGRADE}\r\n\r\n`);
+      void readFirstLine(socket, head).then(async ({ line, rest }) => {
+        if (createHash("sha256").update(line).digest("hex") !== digest) throw new SandboxError(401, "unauthorized", "the command does not match its signature");
+        let spec: { argv?: unknown; env?: unknown };
+        try { spec = JSON.parse(line.toString("utf8")) as { argv?: unknown; env?: unknown }; } catch { throw new SandboxError(400, "bad_stdio", "invalid JSON"); }
+        const stream = await service.stdioStream(stdio[1]!, {
+          argv: spec.argv as string[],
+          ...(spec.env && typeof spec.env === "object" ? { env: spec.env as Record<string, string> } : {}),
+        });
+        if (socket.destroyed) { stream.destroy(); return; }
+        if (rest.length) stream.write(rest);
+        stream.on("error", () => socket.destroy());
+        socket.on("close", () => stream.destroy());
+        stream.on("close", () => socket.destroy());
+        socket.pipe(stream).pipe(socket);
+      }).catch((error: unknown) => {
+        // after the 101 the only answer left is one JSON line, then close
+        const code = error instanceof SandboxError ? error.code : "internal";
+        if (!(error instanceof SandboxError)) console.error(`sandboxd: stdio stream failed: ${error instanceof Error ? error.message : String(error)}`);
+        socket.end(`${JSON.stringify({ sagaxStdioError: code, message: error instanceof SandboxError ? error.message : "the provisioner failed" })}\n`);
+      });
+      return;
+    }
     const match = DESKTOP_PATH.exec(url.pathname);
     if (method !== "POST" || !match || String(req.headers.upgrade ?? "").toLowerCase() !== SANDBOXD_DESKTOP_UPGRADE) return refuseUpgrade(socket, 404, "not_found");
     const control = url.searchParams.get("control") === "1";
