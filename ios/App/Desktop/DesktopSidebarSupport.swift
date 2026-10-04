@@ -25,6 +25,10 @@ struct DesktopKeyCommands: View {
             }
             ForEach(1..<10, id: \.self) { number in
                 command("Jump to bot \(number)", key: KeyEquivalent(Character("\(number)"))) {
+                    if model.menu?.kind == .new, let activate = model.composeActivate {
+                        activate(number - 1)
+                        return
+                    }
                     model.menu = nil
                     model.jump(to: number - 1, in: session)
                 }
@@ -39,9 +43,9 @@ struct DesktopKeyCommands: View {
         .accessibilityHidden(true)
     }
 
-    /// Under the New button (brand row, or the rail's third square).
+    /// Under the round New button (brand row, or the rail's second circle).
     private var newAnchor: CGPoint {
-        model.density == .icons ? CGPoint(x: 23.5, y: 148) : CGPoint(x: 201, y: 78)
+        model.density == .icons ? CGPoint(x: 21.5, y: 124) : CGPoint(x: model.sidebarWidth - 49, y: 80)
     }
 
     private func command(
@@ -75,6 +79,33 @@ struct DesktopSidebarPrompts: ViewModifier {
                     .accessibilityIdentifier("desktop-rename-save")
             }
             .confirmationDialog(
+                Text("Archive \(model.archivingBot?.name ?? "")?"),
+                isPresented: Binding(
+                    get: { model.archivingBot != nil },
+                    set: { if !$0 { model.archivingBot = nil } }
+                ),
+                titleVisibility: .visible
+            ) {
+                Button("Archive") { confirmArchive() }
+                    .accessibilityIdentifier("desktop-archive-confirm")
+                Button("Cancel", role: .cancel) { model.archivingBot = nil }
+            } message: {
+                Text("\(model.archivingBot?.name ?? "") leaves the sidebar, but every conversation is kept. You can restore it any time from Archived bots.")
+            }
+            .sheet(isPresented: Binding(
+                get: { model.sharingTeam != nil },
+                set: { if !$0 { model.sharingTeam = nil } }
+            )) {
+                if let team = model.sharingTeam {
+                    DesktopShareTeamSheet(team: team) { model.sharingTeam = nil }
+                        .environmentObject(session)
+                }
+            }
+            .sheet(item: $model.replacingPrimary) { bot in
+                PrimaryBotPicker(currentId: bot.id, viewerId: DesktopSidebarFlags.shared.viewerId) { _ in }
+                    .environmentObject(session)
+            }
+            .confirmationDialog(
                 Text("Delete \(model.deletingBot?.name ?? "")?"),
                 isPresented: Binding(
                     get: { model.deletingBot != nil },
@@ -99,6 +130,12 @@ struct DesktopSidebarPrompts: ViewModifier {
         Task { _ = await session.updateProfile(BotProfilePatch(name: name), for: bot) }
     }
 
+    private func confirmArchive() {
+        guard let bot = model.archivingBot else { return }
+        model.archivingBot = nil
+        Task { await DesktopBotArchiving.set(bot, archived: true, session: session, model: model) }
+    }
+
     private func confirmDelete() {
         guard let bot = model.deletingBot else { return }
         model.deletingBot = nil
@@ -115,7 +152,88 @@ struct DesktopSidebarPrompts: ViewModifier {
     }
 }
 
+/// Archive (`PATCH /api/bots/:id { hidden }`, as the desktop's
+/// `archiveBot`): the bot leaves the sidebar with its conversations kept;
+/// the selection moves to another active bot. Restore sends false.
+@MainActor
+enum DesktopBotArchiving {
+    static func set(_ bot: Bot, archived: Bool, session: Session, model: DesktopShellModel) async {
+        guard let client = session.profileClient else { return }
+        if archived, DesktopBotArchive.block(bot, in: session.state.bots) != nil { return }
+        do {
+            let updated = try await client.patchBot(botId: bot.id, patch: BotPatch(hidden: archived))
+            session.applyProfileBot(updated)
+            if archived, model.selected?.id == bot.id {
+                model.selected = session.state.bots.first { $0.hidden != true && $0.id != bot.id }.map(Chat.bot)
+            }
+        } catch {
+            session.actionError = error.localizedDescription
+        }
+    }
+}
+
 // MARK: - Sheets
+
+/// Share team…: the server packs the team (every skill and the starter
+/// notes, never chat history; keys redacted), then the share sheet takes
+/// the file (the desktop saves it).
+struct DesktopShareTeamSheet: View {
+    @EnvironmentObject private var session: Session
+    let team: String
+    let close: () -> Void
+    @State private var file: URL?
+    @State private var failure: String?
+
+    var body: some View {
+        NavigationStack {
+            Group {
+                if let file {
+                    DesktopActivityView(items: [file]) { close() }
+                } else if let failure {
+                    VStack(spacing: 12) {
+                        Text(verbatim: failure).foregroundStyle(.secondary).multilineTextAlignment(.center)
+                        Button("Close", action: close)
+                    }
+                    .padding()
+                } else {
+                    VStack(spacing: 12) {
+                        ProgressView()
+                        Text("Packing \(team)…").foregroundStyle(.secondary)
+                    }
+                }
+            }
+            .navigationTitle(Text("Share team…"))
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel", action: close) } }
+        }
+        .task {
+            guard let client = session.profileClient else { failure = String(localized: "Not connected"); return }
+            do {
+                let package = try await client.exportTeam(team)
+                let url = FileManager.default.temporaryDirectory.appendingPathComponent(package.filename)
+                try package.data.write(to: url, options: .atomic)
+                file = url
+            } catch {
+                failure = error.localizedDescription
+            }
+        }
+        .accessibilityIdentifier("desktop-share-team")
+    }
+}
+
+/// The system share sheet in a sheet.
+struct DesktopActivityView: UIViewControllerRepresentable {
+    let items: [Any]
+    let done: () -> Void
+
+    func makeUIViewController(context: Context) -> UIActivityViewController {
+        let controller = UIActivityViewController(activityItems: items, applicationActivities: nil)
+        controller.completionWithItemsHandler = { _, _, _, _ in done() }
+        return controller
+    }
+
+    func updateUIViewController(_ controller: UIActivityViewController, context: Context) {}
+}
 
 /// Templates (the team library) until its desktop modal lands: the catalog,
 /// read-only; installing a team runs on the computer.

@@ -71,7 +71,7 @@ enum DesktopShellRules {
 @MainActor
 final class DesktopShellModel: ObservableObject {
     enum Modal: String, Identifiable {
-        case settings, search, newBot, newGroup, teamMap, automations, plugins, templates, about, shortcuts
+        case settings, search, newBot, newGroup, teamMap, automations, plugins, templates, about, shortcuts, achievements
         var id: String { rawValue }
     }
 
@@ -125,6 +125,18 @@ final class DesktopShellModel: ObservableObject {
     @Published var renamingBot: Bot?
     @Published var renameDraft = ""
     @Published var deletingBot: Bot?
+    /// The bot menu's Archive and Replace with different Bot (I2b).
+    @Published var archivingBot: Bot?
+    @Published var replacingPrimary: Bot?
+    /// The team menu's Share team… (the package file, then the share sheet).
+    @Published var sharingTeam: String?
+    /// The open "To:" picker's ⌘1 to ⌘9 (DesktopKeyCommands routes them).
+    var composeActivate: ((Int) -> Void)?
+    #if DEBUG
+    /// The parity launch's picker state (the desktop reference's pointer
+    /// rests on a row after its click).
+    var parityComposePreset: (group: Bool, cursor: Int)?
+    #endif
     /// The WP5, WP6 and WP11 menus' prompts, mounted once by the shell.
     let threadActions = ThreadActions()
     let sectionActions = SidebarSectionActions()
@@ -142,6 +154,9 @@ final class DesktopShellModel: ObservableObject {
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         density = DesktopSidebarDensity(rawValue: defaults.string(forKey: PrefKey.desktopSidebarDensity) ?? "") ?? .comfortable
+        if !ParityMode.isActive {
+            sidebarExpandedWidth = CGFloat(DesktopSidebarEdge.clamped(defaults.object(forKey: Self.sidebarWidthKey) as? Double))
+        }
         // Settings > Appearance writes the same key (`@AppStorage`).
         defaultsObserver = NotificationCenter.default.addObserver(
             forName: UserDefaults.didChangeNotification, object: defaults, queue: .main
@@ -185,7 +200,26 @@ final class DesktopShellModel: ObservableObject {
     }
 
     var sidebarWidth: CGFloat {
-        density == .icons ? DesktopShellRules.railWidth : DesktopShellRules.sidebarWidth
+        density == .icons ? DesktopShellRules.railWidth : sidebarExpandedWidth
+    }
+
+    /// The expanded sidebar's width, 240 to 400 (`omb-sidebar-width-v2`);
+    /// the parity captures keep the desktop's default 280.
+    @Published private(set) var sidebarExpandedWidth: CGFloat = DesktopShellRules.sidebarWidth
+    static let sidebarWidthKey = "omb-sidebar-width-v2"
+
+    /// A drag of the sidebar's edge (I2b): to the rail under the snap
+    /// width, back out past it, and the width in between; kept when the
+    /// drag ends.
+    func dragSidebarEdge(toRaw raw: CGFloat, save: Bool) {
+        switch DesktopSidebarEdge.target(raw: Double(raw)) {
+        case .collapsed:
+            if density != .icons { setDensity(.icons) }
+        case let .expanded(width):
+            if density == .icons { toggleCollapsed() }
+            sidebarExpandedWidth = CGFloat(width)
+            if save, persistsDensity { defaults.set(width, forKey: Self.sidebarWidthKey) }
+        }
     }
 
     /// Settings > Appearance, or the rail's edge: the density, remembered on
@@ -276,6 +310,8 @@ struct DesktopShell: View {
                 AnyView(DesktopSidebar())
                     .frame(width: model.sidebarWidth)
                     .clipped()
+                    .overlay(alignment: .trailing) { DesktopSidebarEdgeHandle(model: model) }
+                    .zIndex(1)
                 AnyView(DesktopContent())
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 if docked, botOpen, let bot = selectedBot {
@@ -488,19 +524,24 @@ private struct DesktopShellRouting: ViewModifier {
         case .sidebarRowHover:
             model.hoveredRow = bot("Aurora")?.id
         case .sidebarBotMenu:
+            // the reference moves the pointer away after the click: no hover
             guard let aurora = bot("Aurora") else { return }
-            model.hoveredRow = aurora.id
-            model.menu = DesktopMenuRequest(kind: .bot(aurora.id), anchor: CGPoint(x: 235, y: 459))
+            model.menu = DesktopMenuRequest(kind: .bot(aurora.id), anchor: CGPoint(x: 235, y: 413))
         case .sidebarBotContextMenu:
             guard let helix = bot("Helix") else { return }
-            model.menu = DesktopMenuRequest(kind: .bot(helix.id), anchor: CGPoint(x: 76, y: 492))
+            model.menu = DesktopMenuRequest(kind: .bot(helix.id), anchor: CGPoint(x: 76, y: 446))
         case .sidebarSectionMenu:
             guard let aurora = bot("Aurora"), let team = aurora.section, !team.isEmpty else { return }
-            model.menu = DesktopMenuRequest(kind: .section(SidebarSectionID.user(team)), anchor: CGPoint(x: 68, y: 397))
+            model.menu = DesktopMenuRequest(kind: .section(SidebarSectionID.user(team)), anchor: CGPoint(x: 68, y: 351))
         case .sidebarProfileMenu:
-            model.menu = DesktopMenuRequest(kind: .profile, anchor: CGPoint(x: 8, y: height - 56), opensUp: true)
+            // 4 pt over the 48 pt account row (12 pt from the bottom)
+            model.menu = DesktopMenuRequest(kind: .profile, anchor: CGPoint(x: 8, y: height - 64), opensUp: true)
         case .sidebarNewMenu:
-            model.menu = DesktopMenuRequest(kind: .new, anchor: CGPoint(x: 201, y: 78))
+            model.menu = DesktopMenuRequest(kind: .new, anchor: .zero)
+        case .newGroup:
+            // the reference's pointer stays on the row under the click (Orion)
+            model.parityComposePreset = (group: true, cursor: 1)
+            model.menu = DesktopMenuRequest(kind: .new, anchor: .zero)
         default:
             break
         }
@@ -574,6 +615,13 @@ private struct DesktopShellPresenter: ViewModifier {
             NavigationStack { AboutPage() }
         case .shortcuts:
             DesktopShortcutsSheet { model.modal = nil }
+        case .achievements:
+            NavigationStack {
+                AchievementsPage()
+                    .toolbar {
+                        ToolbarItem(placement: .confirmationAction) { Button("Done") { model.modal = nil } }
+                    }
+            }
         }
     }
 }
