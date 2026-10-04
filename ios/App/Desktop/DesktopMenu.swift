@@ -84,7 +84,7 @@ enum DesktopMenuStyle {
     /// account menu draws it inside the next item's block, one 2 pt gap less.
     var dividerHeight: CGFloat { self == .profile ? 6.5 : 8.5 }
     /// The icon's box (`size-5` in the account menu).
-    var iconBox: CGFloat { self == .profile ? 20 : max(iconSize, 16) }
+    var iconBox: CGFloat { self == .profile ? 20 : iconSize }
 
     /// The popover's height for `entries`: 6 pt padding and a 1 pt border
     /// each side, 2 pt between entries, a divider 8.5 pt.

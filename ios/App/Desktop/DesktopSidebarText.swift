@@ -109,7 +109,9 @@ final class DesktopLineTextLine {
         var colored = attributes
         colored[kCTForegroundColorAttributeName as NSAttributedString.Key] = color
         let line = CTLineCreateWithAttributedString(NSAttributedString(string: text, attributes: colored))
-        guard width > available + 0.01 else { return (line, width) }
+        // the frame lands on the pixel grid, up to half a point short of
+        // the line's own width: that is not overflow
+        guard width > available + 0.5 else { return (line, width) }
         let ellipsis = CTLineCreateWithAttributedString(NSAttributedString(string: "\u{2026}", attributes: colored))
         let cut = CTLineCreateTruncatedLine(line, Double(max(0, available)), .end, ellipsis) ?? line
         return (cut, CGFloat(CTLineGetTypographicBounds(cut, nil, nil, nil)))
