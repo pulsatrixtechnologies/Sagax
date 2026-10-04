@@ -1473,7 +1473,8 @@
       "settings.scope.installation": "9ff1dc19d29f7913861a5be8f8214d02f73522dac31ab8f50e7a2f4621e1b77e",
       "settings.scope.me": "d356ec4efce0cd5ab06db10f7d82db9ffbef5cb6aaddba88afe8d0aef14e1024",
       "settings.scope.device": "636615ff9a6811546e2af5ba24d9a319f63d4dac42633269f6c3659e7cfe4663",
-      "botAccess.browserSwitchedOff": "a291137512b57c826522bcd20bad8cb8134451eff5ea601356a2ef61c3fb8f6b"
+      "botAccess.browserSwitchedOff": "a291137512b57c826522bcd20bad8cb8134451eff5ea601356a2ef61c3fb8f6b",
+      "newBot.defaults.summary": "d35065742e14eb5f95f6c8137ef038fadd3ddc1364cd916d1aec966fbc79fab4"
     },
     "es": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",
@@ -2929,7 +2930,8 @@
       "settings.scope.installation": "9ff1dc19d29f7913861a5be8f8214d02f73522dac31ab8f50e7a2f4621e1b77e",
       "settings.scope.me": "d356ec4efce0cd5ab06db10f7d82db9ffbef5cb6aaddba88afe8d0aef14e1024",
       "settings.scope.device": "636615ff9a6811546e2af5ba24d9a319f63d4dac42633269f6c3659e7cfe4663",
-      "botAccess.browserSwitchedOff": "a291137512b57c826522bcd20bad8cb8134451eff5ea601356a2ef61c3fb8f6b"
+      "botAccess.browserSwitchedOff": "a291137512b57c826522bcd20bad8cb8134451eff5ea601356a2ef61c3fb8f6b",
+      "newBot.defaults.summary": "d35065742e14eb5f95f6c8137ef038fadd3ddc1364cd916d1aec966fbc79fab4"
     },
     "fr": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",
@@ -4746,7 +4748,6 @@
       "settings.card.workspacesOne": "9d528b1e755e4a145647e868aacc6cfb92c07f5bfefcc89af464ffccf499565e",
       "settings.moreAbout": "9e393f6619b3c4f75e486fbd74ab8d674d90d0777b2afaf823054c5d8b8fdd51",
       "settings.language.short": "892fa2b4c3d9bd0d5933e74b0886c0302243dcf6736af971d546f6cccd73216b",
-      "settings.newBotEffort.short": "68e5168535dd536ec110850c8f4d272124f0e4f2a284c5d7dd5b7aef6d67dd73",
       "settings.routinesInConversation.short": "fba9f71db4c7b364db50b9eaada8fea537bb0e775071ee61450f04f7590fd567",
       "settings.threadDisplay.short": "84eabb15caed49cbcdf68bd438eabc884f02b73a8b81aa14f78c75518db1402c",
       "settings.sidebarLogo.title": "448dce5265449658d6bc797498730aca5ae3aa56661493ff409cee95abe9b8c6",
@@ -6063,7 +6064,8 @@
       "settings.scope.installation": "9ff1dc19d29f7913861a5be8f8214d02f73522dac31ab8f50e7a2f4621e1b77e",
       "settings.scope.me": "d356ec4efce0cd5ab06db10f7d82db9ffbef5cb6aaddba88afe8d0aef14e1024",
       "settings.scope.device": "636615ff9a6811546e2af5ba24d9a319f63d4dac42633269f6c3659e7cfe4663",
-      "botAccess.browserSwitchedOff": "a291137512b57c826522bcd20bad8cb8134451eff5ea601356a2ef61c3fb8f6b"
+      "botAccess.browserSwitchedOff": "a291137512b57c826522bcd20bad8cb8134451eff5ea601356a2ef61c3fb8f6b",
+      "newBot.defaults.summary": "d35065742e14eb5f95f6c8137ef038fadd3ddc1364cd916d1aec966fbc79fab4"
     },
     "hi": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",
@@ -7519,7 +7521,8 @@
       "settings.scope.installation": "9ff1dc19d29f7913861a5be8f8214d02f73522dac31ab8f50e7a2f4621e1b77e",
       "settings.scope.me": "d356ec4efce0cd5ab06db10f7d82db9ffbef5cb6aaddba88afe8d0aef14e1024",
       "settings.scope.device": "636615ff9a6811546e2af5ba24d9a319f63d4dac42633269f6c3659e7cfe4663",
-      "botAccess.browserSwitchedOff": "a291137512b57c826522bcd20bad8cb8134451eff5ea601356a2ef61c3fb8f6b"
+      "botAccess.browserSwitchedOff": "a291137512b57c826522bcd20bad8cb8134451eff5ea601356a2ef61c3fb8f6b",
+      "newBot.defaults.summary": "d35065742e14eb5f95f6c8137ef038fadd3ddc1364cd916d1aec966fbc79fab4"
     },
     "ja": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",
@@ -8977,7 +8980,8 @@
       "settings.scope.installation": "9ff1dc19d29f7913861a5be8f8214d02f73522dac31ab8f50e7a2f4621e1b77e",
       "settings.scope.me": "d356ec4efce0cd5ab06db10f7d82db9ffbef5cb6aaddba88afe8d0aef14e1024",
       "settings.scope.device": "636615ff9a6811546e2af5ba24d9a319f63d4dac42633269f6c3659e7cfe4663",
-      "botAccess.browserSwitchedOff": "a291137512b57c826522bcd20bad8cb8134451eff5ea601356a2ef61c3fb8f6b"
+      "botAccess.browserSwitchedOff": "a291137512b57c826522bcd20bad8cb8134451eff5ea601356a2ef61c3fb8f6b",
+      "newBot.defaults.summary": "d35065742e14eb5f95f6c8137ef038fadd3ddc1364cd916d1aec966fbc79fab4"
     },
     "pt-br": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",
@@ -10447,7 +10451,8 @@
       "settings.scope.installation": "9ff1dc19d29f7913861a5be8f8214d02f73522dac31ab8f50e7a2f4621e1b77e",
       "settings.scope.me": "d356ec4efce0cd5ab06db10f7d82db9ffbef5cb6aaddba88afe8d0aef14e1024",
       "settings.scope.device": "636615ff9a6811546e2af5ba24d9a319f63d4dac42633269f6c3659e7cfe4663",
-      "botAccess.browserSwitchedOff": "a291137512b57c826522bcd20bad8cb8134451eff5ea601356a2ef61c3fb8f6b"
+      "botAccess.browserSwitchedOff": "a291137512b57c826522bcd20bad8cb8134451eff5ea601356a2ef61c3fb8f6b",
+      "newBot.defaults.summary": "d35065742e14eb5f95f6c8137ef038fadd3ddc1364cd916d1aec966fbc79fab4"
     },
     "uk": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",
@@ -12443,7 +12448,8 @@
       "settings.scope.installation": "9ff1dc19d29f7913861a5be8f8214d02f73522dac31ab8f50e7a2f4621e1b77e",
       "settings.scope.me": "d356ec4efce0cd5ab06db10f7d82db9ffbef5cb6aaddba88afe8d0aef14e1024",
       "settings.scope.device": "636615ff9a6811546e2af5ba24d9a319f63d4dac42633269f6c3659e7cfe4663",
-      "botAccess.browserSwitchedOff": "a291137512b57c826522bcd20bad8cb8134451eff5ea601356a2ef61c3fb8f6b"
+      "botAccess.browserSwitchedOff": "a291137512b57c826522bcd20bad8cb8134451eff5ea601356a2ef61c3fb8f6b",
+      "newBot.defaults.summary": "d35065742e14eb5f95f6c8137ef038fadd3ddc1364cd916d1aec966fbc79fab4"
     },
     "zh-tw": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",
@@ -14815,7 +14821,8 @@
       "settings.scope.installation": "9ff1dc19d29f7913861a5be8f8214d02f73522dac31ab8f50e7a2f4621e1b77e",
       "settings.scope.me": "d356ec4efce0cd5ab06db10f7d82db9ffbef5cb6aaddba88afe8d0aef14e1024",
       "settings.scope.device": "636615ff9a6811546e2af5ba24d9a319f63d4dac42633269f6c3659e7cfe4663",
-      "botAccess.browserSwitchedOff": "a291137512b57c826522bcd20bad8cb8134451eff5ea601356a2ef61c3fb8f6b"
+      "botAccess.browserSwitchedOff": "a291137512b57c826522bcd20bad8cb8134451eff5ea601356a2ef61c3fb8f6b",
+      "newBot.defaults.summary": "d35065742e14eb5f95f6c8137ef038fadd3ddc1364cd916d1aec966fbc79fab4"
     },
     "zh": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",
@@ -17176,7 +17183,8 @@
       "settings.scope.installation": "9ff1dc19d29f7913861a5be8f8214d02f73522dac31ab8f50e7a2f4621e1b77e",
       "settings.scope.me": "d356ec4efce0cd5ab06db10f7d82db9ffbef5cb6aaddba88afe8d0aef14e1024",
       "settings.scope.device": "636615ff9a6811546e2af5ba24d9a319f63d4dac42633269f6c3659e7cfe4663",
-      "botAccess.browserSwitchedOff": "a291137512b57c826522bcd20bad8cb8134451eff5ea601356a2ef61c3fb8f6b"
+      "botAccess.browserSwitchedOff": "a291137512b57c826522bcd20bad8cb8134451eff5ea601356a2ef61c3fb8f6b",
+      "newBot.defaults.summary": "d35065742e14eb5f95f6c8137ef038fadd3ddc1364cd916d1aec966fbc79fab4"
     }
   }
 }

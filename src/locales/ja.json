@@ -1454,5 +1454,6 @@
   "settings.scope.installation": "このサーバーの全員",
   "settings.scope.me": "アカウントに従います",
   "settings.scope.device": "このデバイスのみ",
-  "botAccess.browserSwitchedOff": "組み込みブラウザーは {settings} でオフです。"
+  "botAccess.browserSwitchedOff": "組み込みブラウザーは {settings} でオフです。",
+  "newBot.defaults.summary": "{summary}"
 }

@@ -698,8 +698,14 @@ export interface ConfigStatus {
   box: { configured: boolean; included?: boolean };
   vps: { configured: boolean; sshAlias: string };
   rooms: { turnTimeoutMinutes: number };
-  /** Workspace defaults for new bots; absent effort = no level is sent. */
-  newBots?: { effort?: EffortLevel };
+  /** Visible slice of the new-bot template. Absent effort means no level is sent. */
+  newBotDefaults?: {
+    profile?: {
+      modelSelection?: ModelSelection;
+      approvalMode?: "ask" | "auto" | "full" | "custom";
+      computer?: "cloud" | "vm" | "local" | "browser" | "off" | null;
+    };
+  };
   threads?: { maxConcurrentPerBot: number; maxParallelPerPerson?: number; eventLogMaxBytes?: number; eventLogRetentionDays?: number };
   automaticRecovery?: { enabled: boolean; backup?: ModelSelection };
   localVm: { mode: "shared" | "per-bot" | "pool"; maxInstances: number; idleTimeoutMinutes?: number };

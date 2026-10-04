@@ -38,8 +38,7 @@ import { OrganizationSettings } from "./OrganizationSettings";
 import { CloudAccountSettings } from "./CloudAccountSettings";
 import { Card, SettingRow, Switch, requestSettingsCard, cardCount } from "./SettingsPrimitives";
 import { BrowserUnavailableNote, SettingsText } from "./SettingsLink";
-import { effortLabel } from "./ModelPicker";
-import { EFFORT_LEVELS, isEffortLevel } from "../../shared/wire";
+
 import { shortcutLabel } from "./ShortcutHint";
 import { UsageSection } from "./UsageSection";
 import { MyConnectionsSettings } from "./settings/MyConnectionsSettings";
@@ -375,57 +374,6 @@ function PrereleaseRow() {
         aria-label={t("settings.updates.prerelease.aria")}
         onClick={() => void setPrereleases(!on)}
       />
-    </SettingRow>
-  );
-}
-
-/** The effort every new bot starts with. The server skips a level the new
- * bot's engine does not offer, and a bot's own choice always wins. */
-function NewBotEffortRow() {
-  const { state, dispatch } = useStore();
-  const current = state.config?.newBots?.effort ?? "";
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState("");
-
-  const save = async (value: string) => {
-    if (saving) return;
-    setSaving(true);
-    setError("");
-    try {
-      const config: ConfigStatus = await api("/api/config", {
-        method: "PATCH",
-        body: JSON.stringify({ newBots: { effort: isEffortLevel(value) ? value : null } }),
-      });
-      dispatch({ type: "configStatus", config });
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : t("settings.newBotEffort.error"));
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  return (
-    <SettingRow
-      scope="installation"
-      title={t("settings.newBotEffort.title")}
-      subtitle={t("settings.newBotEffort.short")}
-      help={t("settings.newBotEffort.subtitle")}
-      message={error ? <p role="alert" className="text-danger">{error}</p> : null}
-    >
-      <select
-        value={current}
-        disabled={saving}
-        aria-label={t("settings.newBotEffort.aria")}
-        onChange={(event) => void save(event.target.value)}
-        className="w-full max-w-[240px] rounded-lg border border-border bg-ink/[0.03] px-2.5 py-1.5 text-[13px] leading-[18px] text-ink focus:border-border-strong focus:outline-none disabled:cursor-wait disabled:opacity-50"
-      >
-        <option value="">{t("settings.newBotEffort.default")}</option>
-        {EFFORT_LEVELS.map((level) => (
-          <option key={level} value={level}>
-            {effortLabel(level)}
-          </option>
-        ))}
-      </select>
     </SettingRow>
   );
 }
@@ -1224,7 +1172,6 @@ export function SettingsModal() {
                 )}
                 <div className="rounded-[14px] border-[0.5px] border-border py-1">
                   <LanguageRow />
-                  {editConfig && <NewBotEffortRow />}
                   {editConfig && <DefaultBotSettings />}
                 </div>
                 {!remoteActive && editConfig && (

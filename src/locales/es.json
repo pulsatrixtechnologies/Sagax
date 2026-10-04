@@ -1452,5 +1452,6 @@
   "settings.scope.installation": "Todas las personas en este servidor",
   "settings.scope.me": "Sigue tu cuenta",
   "settings.scope.device": "Solo este dispositivo",
-  "botAccess.browserSwitchedOff": "El navegador integrado está apagado en {settings}."
+  "botAccess.browserSwitchedOff": "El navegador integrado está apagado en {settings}.",
+  "newBot.defaults.summary": "{summary}"
 }

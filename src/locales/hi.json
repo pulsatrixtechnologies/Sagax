@@ -1452,5 +1452,6 @@
   "settings.scope.installation": "इस सर्वर पर सभी",
   "settings.scope.me": "आपके खाते के साथ रहता है",
   "settings.scope.device": "केवल यह डिवाइस",
-  "botAccess.browserSwitchedOff": "अंतर्निहित ब्राउज़र {settings} में बंद है।"
+  "botAccess.browserSwitchedOff": "अंतर्निहित ब्राउज़र {settings} में बंद है।",
+  "newBot.defaults.summary": "{summary}"
 }

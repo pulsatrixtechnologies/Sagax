@@ -1992,5 +1992,6 @@
   "settings.scope.installation": "Усі на цьому сервері",
   "settings.scope.me": "Слідує за вашим обліковим записом",
   "settings.scope.device": "Лише цей пристрій",
-  "botAccess.browserSwitchedOff": "Вбудований браузер вимкнено в {settings}."
+  "botAccess.browserSwitchedOff": "Вбудований браузер вимкнено в {settings}.",
+  "newBot.defaults.summary": "{summary}"
 }

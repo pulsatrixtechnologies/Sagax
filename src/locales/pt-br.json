@@ -1466,5 +1466,6 @@
   "settings.scope.installation": "Todas as pessoas neste servidor",
   "settings.scope.me": "Segue a sua conta",
   "settings.scope.device": "Somente este dispositivo",
-  "botAccess.browserSwitchedOff": "O navegador integrado está desligado em {settings}."
+  "botAccess.browserSwitchedOff": "O navegador integrado está desligado em {settings}.",
+  "newBot.defaults.summary": "{summary}"
 }

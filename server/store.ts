@@ -684,8 +684,8 @@ export class Store {
 
   constructor(
     defaultSelection: () => ModelSelection,
-    /** Workspace-wide new-bot defaults (config newBots), applied to every
-     * new bot's selection whichever path created it. */
+    /** Template effort applied to every new bot's selection, whichever path
+     * created it. */
     completeNewBotSelection: (selection: ModelSelection) => ModelSelection = (selection) => selection,
   ) {
     this.defaultSelection = defaultSelection;

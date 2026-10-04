@@ -4607,7 +4607,7 @@ let bootSelection = { instanceId: "", model: "" };
 const presetStore = createPresetStore();
 const store = new Store(
   () => bootSelection,
-  (selection) => withNewBotEffort(selection, cfg.newBots?.effort, registry.get(selection.instanceId)?.adapter.capabilities.effortLevels),
+  (selection) => withNewBotEffort(selection, cfg.newBotDefaults?.profile.modelSelection?.effort, registry.get(selection.instanceId)?.adapter.capabilities.effortLevels),
 );
 const teamComputers = new TeamComputers(join(DATA_DIR, "team-computers.json"), ENVIRONMENT_ID);
 let followupsReady = false;
@@ -18321,8 +18321,17 @@ function configStatus() {
     language: cfg.language ?? "",
     rooms: { turnTimeoutMinutes: roomTurnTimeoutMinutes(cfg) },
     automaticRecovery: cfg.automaticRecovery ?? { enabled: false },
-    // absent effort = no level is sent, so clients can tell it from any level
-    newBots: cfg.newBots?.effort ? { effort: cfg.newBots.effort } : {},
+    // The new-bot template's visible defaults. Memory files and skills stay
+    // on GET /api/bot-defaults; this line is what Settings summarizes.
+    newBotDefaults: {
+      profile: {
+        ...(cfg.newBotDefaults?.profile.modelSelection ? { modelSelection: cfg.newBotDefaults.profile.modelSelection } : {}),
+        ...(cfg.newBotDefaults?.profile.approvalMode ? { approvalMode: cfg.newBotDefaults.profile.approvalMode } : {}),
+        ...(cfg.newBotDefaults?.profile.computer !== undefined && cfg.newBotDefaults.profile.computer !== null
+          ? { computer: cfg.newBotDefaults.profile.computer }
+          : {}),
+      },
+    },
     threads: {
       maxConcurrentPerBot: maxConcurrentBotThreads(cfg),
       maxParallelPerPerson: maxParallelTasksPerPerson(cfg),

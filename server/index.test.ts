@@ -5171,11 +5171,15 @@ describe("harness HTTP API", () => {
     expect(claude.capabilities.effortLevels).toEqual(expect.arrayContaining(["low", "high"]));
     const selection = { instanceId: claude.instanceId, model: claude.models.default };
     const created: string[] = [];
+    let before: { profile: Record<string, unknown> } | undefined;
     try {
-      const saved = await api("PATCH", "/api/config", { newBots: { effort: "high" } });
+      before = (await api("GET", "/api/bot-defaults")).body.defaults;
+      const withEffort = { ...before, profile: { ...before.profile, modelSelection: { ...selection, effort: "high" } } };
+      const withoutEffort = { ...before, profile: { ...before.profile, modelSelection: selection } };
+      const saved = await api("PATCH", "/api/config", { newBotDefaults: withEffort });
       expect(saved.status).toBe(200);
-      expect(saved.body.newBots).toEqual({ effort: "high" });
-      expect((await api("GET", "/api/config")).body.newBots).toEqual({ effort: "high" });
+      expect(saved.body.newBots).toBeUndefined();
+      expect(saved.body.newBotDefaults.profile.modelSelection).toEqual({ ...selection, effort: "high" });
       const defaulted = (await api("POST", "/api/bots", { modelSelection: selection })).body.bot;
       const chosen = (await api("POST", "/api/bots", { modelSelection: { ...selection, effort: "low" } })).body.bot;
       created.push(defaulted.id, chosen.id);
@@ -5184,12 +5188,12 @@ describe("harness HTTP API", () => {
       const thread = await api("POST", `/api/bots/${defaulted.id}/tasks`, { title: "Next" });
       expect(thread.body.task.modelSelection).toEqual({ ...selection, effort: "high" });
 
-      expect((await api("PATCH", "/api/config", { newBots: { effort: null } })).body.newBots).toEqual({});
+      expect((await api("PATCH", "/api/config", { newBotDefaults: withoutEffort })).body.newBotDefaults.profile.modelSelection).toEqual(selection);
       const plain = (await api("POST", "/api/bots", { modelSelection: selection })).body.bot;
       created.push(plain.id);
       expect(plain.modelSelection).toEqual(selection);
     } finally {
-      await api("PATCH", "/api/config", { newBots: { effort: null } });
+      if (before) await api("PATCH", "/api/config", { newBotDefaults: before });
       for (const id of created) await api("DELETE", `/api/bots/${id}`);
     }
   });

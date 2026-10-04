@@ -573,7 +573,6 @@
   "settings.card.workspacesOne": "{count} installation",
   "settings.moreAbout": "More about {title}",
   "settings.language.short": "Follows your system language unless you pick one.",
-  "settings.newBotEffort.short": "How hard new bots think from their first message.",
   "settings.routinesInConversation.short": "Post routine work in the chat instead of a hidden thread.",
   "settings.threadDisplay.short": "Show thread lists and controls.",
   "settings.notificationSounds.short": "Play a sound when an agent finishes or needs you.",
@@ -630,11 +629,6 @@
   "settings.language.system": "System",
   "settings.language.aria": "App language",
   "settings.language.error": "Could not save the language.",
-  "settings.newBotEffort.title": "Effort for new bots",
-  "settings.newBotEffort.subtitle": "How hard every new bot thinks from its first message. A bot can change its own level; model providers without this level keep their default.",
-  "settings.newBotEffort.default": "Provider default",
-  "settings.newBotEffort.aria": "Effort for new bots",
-  "settings.newBotEffort.error": "Could not save the effort for new bots.",
   "settings.routinesInConversation.title": "Routines in the conversation",
   "settings.routinesInConversation.subtitle": "Run a routine in the chat it reports to, as ordinary messages. Off by default: the work stays in a hidden thread, and the chat only gets the status card.",
   "settings.routinesInConversation.aria": "Run routines in the conversation",
@@ -5102,5 +5096,6 @@
   "settings.scope.installation": "Everyone on this server",
   "settings.scope.me": "Follows your account",
   "settings.scope.device": "This device only",
-  "botAccess.browserSwitchedOff": "The built-in browser is switched off under {settings}."
+  "botAccess.browserSwitchedOff": "The built-in browser is switched off under {settings}.",
+  "newBot.defaults.summary": "{summary}"
 }

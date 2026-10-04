@@ -2368,5 +2368,6 @@
   "settings.scope.installation": "此伺服器上的所有人",
   "settings.scope.me": "跟隨你的帳戶",
   "settings.scope.device": "僅此裝置",
-  "botAccess.browserSwitchedOff": "內建瀏覽器在 {settings} 中已關閉。"
+  "botAccess.browserSwitchedOff": "內建瀏覽器在 {settings} 中已關閉。",
+  "newBot.defaults.summary": "{summary}"
 }

@@ -1470,5 +1470,6 @@
   "settings.scope.installation": "Alle auf diesem Server",
   "settings.scope.me": "Folgt deinem Konto",
   "settings.scope.device": "Nur dieses Gerät",
-  "botAccess.browserSwitchedOff": "Der eingebaute Browser ist unter {settings} ausgeschaltet."
+  "botAccess.browserSwitchedOff": "Der eingebaute Browser ist unter {settings} ausgeschaltet.",
+  "newBot.defaults.summary": "{summary}"
 }

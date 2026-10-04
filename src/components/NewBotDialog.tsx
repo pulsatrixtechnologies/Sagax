@@ -1,12 +1,16 @@
 import { useEffect, useRef, useState } from "react";
 import { Loader2, Plus, Trash2, X } from "lucide-react";
-import { api, BotEditorStore, useStore, type Bot, type ModelSelection } from "@/state/store";
+import { api, BotEditorStore, useStore, type Bot, type ConfigStatus, type ModelSelection } from "@/state/store";
 import { BotCreationDraft, EMPTY_BOT_DEFAULTS } from "@/lib/bot-creation-draft";
 import { createConfiguredBot, preparedBotTemplate } from "@/lib/create-configured-bot";
 import { BOT_ROLES, roleProfilePatch } from "@/lib/bot-roles";
 import { chosenPreset, presetDraftPatch, presetGroups, presetPictureFile, presetSummaryLines, type BotPreset } from "@/lib/bot-presets";
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
+import type { LocaleKey } from "@/locales";
+import { placeLabelKey } from "@/lib/place";
+import { isEffortLevel } from "../../shared/wire";
+import { effortLabel } from "./ModelPicker";
 import { useOwnerOrAdmin } from "@/lib/use-owner-or-admin";
 import { visibilityFromForm, type VisibilityMode } from "./bot-settings/VisibilitySection";
 import type { NewBotDefaults } from "../../shared/new-bot-defaults";
@@ -422,22 +426,46 @@ function DraftRoutines({ draft }: { draft: BotCreationDraft }) {
   </div>;
 }
 
+/** One line: model, effort, approval, Works on. Empty fields are left out. */
+export function newBotDefaultsSummary(config: ConfigStatus | null | undefined): string {
+  const profile = config?.newBotDefaults?.profile;
+  if (!profile) return "";
+  const bits: string[] = [];
+  const model = profile.modelSelection?.model?.trim();
+  if (model) bits.push(model);
+  const effort = profile.modelSelection?.effort;
+  if (effort && isEffortLevel(effort)) bits.push(effortLabel(effort));
+  if (profile.approvalMode) bits.push(t(`approvalMode.${profile.approvalMode}.chip` as LocaleKey));
+  if (profile.computer) bits.push(t(placeLabelKey(profile.computer)));
+  return bits.length === 0 ? "" : t("newBot.defaults.summary", { summary: bits.join(" · ") });
+}
+
+function DefaultsTitle({ summary }: { summary: string }) {
+  return (
+    <div className="min-w-0">
+      <div className="text-[13px] leading-[18px] text-ink">{t("newBot.defaults")}</div>
+      {summary ? <p className="truncate text-[12px] leading-[16px] text-ink-secondary">{summary}</p> : null}
+    </div>
+  );
+}
+
 export function DefaultBotSettings() {
   const { state } = useStore();
   const [open, setOpen] = useState(false);
   const [sharing, setSharing] = useState(false);
+  const summary = newBotDefaultsSummary(state.config);
   // A read-only person reads why instead of a button that would open an
   // empty form. A guest of someone else's server (an organization member,
   // a companion) cannot read or change the host's defaults: no row.
   if (viewerBotsReadOnly(state.config)) {
-    return <div className="flex items-center justify-between gap-4 px-3.5 py-2.5"><span className="text-[13px] leading-[18px] text-ink">{t("newBot.defaults")}</span>
+    return <div className="flex items-center justify-between gap-4 px-3.5 py-2.5"><DefaultsTitle summary={summary} />
       <p role="note" data-bots-read-only className="text-right text-[12.5px] leading-snug text-ink-secondary">{t("bots.readOnly.notice")}</p>
     </div>;
   }
   const guest = state.config?.viewer?.operator === false || (typeof window !== "undefined" && window.ogb?.remoteClient?.active === true);
   if (guest) return null;
   return <>
-    <div className="flex items-center justify-between gap-4 px-3.5 py-2.5"><span className="text-[13px] leading-[18px] text-ink">{t("newBot.defaults")}</span>
+    <div className="flex items-center justify-between gap-4 px-3.5 py-2.5"><DefaultsTitle summary={summary} />
       <div className="flex shrink-0 gap-2">
         <button type="button" onClick={() => setSharing(true)} className="rounded-lg px-3 py-1.5 text-[13px] text-ink-secondary hover:bg-control hover:text-ink">{t("newBot.sharePreset")}</button>
         <button type="button" onClick={() => setOpen(true)} className="rounded-lg bg-control px-3 py-1.5 text-[13px] text-ink hover:bg-raised-hover">{t("newBot.edit")}</button>
