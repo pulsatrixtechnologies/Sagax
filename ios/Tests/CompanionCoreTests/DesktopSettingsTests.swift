@@ -211,3 +211,83 @@ final class DesktopMCPAdminTests: XCTestCase {
         XCTAssertEqual(probe.tools?.map(\.name), ["search"])
     }
 }
+
+final class MCPServerDraftTests: XCTestCase {
+    private let client = CompanionClient(
+        connection: Connection(name: "Mac", host: "127.0.0.1", port: 8810),
+        token: "paired-token"
+    )
+
+    private func listing(_ json: String) throws -> MCPServerListing {
+        try JSONDecoder().decode(MCPServerListing.self, from: Data(json.utf8))
+    }
+
+    func testURLServerHeadersKeepSavedValuesWhenBlank() throws {
+        let existing = try listing(#"{"name":"docs","type":"http","url":"https://docs.example.test/mcp","headerKeys":["Authorization"],"enabled":true}"#)
+        var draft = MCPServerDraft(editing: existing)
+        XCTAssertEqual(draft.transport, .url)
+        XCTAssertEqual(draft.headers, "Authorization: ")
+        draft.headers += "\nX-Team: ops"
+        let body = try draft.body(existing: existing).get()
+        let headers = try XCTUnwrap(body["headers"] as? [String: Any])
+        XCTAssertEqual(headers["Authorization"] as? Bool, true)
+        XCTAssertEqual(headers["X-Team"] as? String, "ops")
+        let request = try client.saveMCPServerRequest(draft, existing: existing)
+        XCTAssertEqual(request.httpMethod, "PUT")
+        XCTAssertEqual(request.url?.path, "/api/mcp/servers/docs")
+    }
+
+    func testCommandServerBodyAndProblems() throws {
+        var draft = MCPServerDraft()
+        draft.name = "files"
+        draft.command = "npx"
+        draft.args = "-y\n @scope/server \n"
+        draft.env = "ROOT=/tmp\n"
+        let body = try draft.body(existing: nil).get()
+        XCTAssertEqual(body["args"] as? [String], ["-y", "@scope/server"])
+        XCTAssertEqual((body["env"] as? [String: Any])?["ROOT"] as? String, "/tmp")
+        let request = try client.saveMCPServerRequest(draft, existing: nil)
+        XCTAssertEqual(request.httpMethod, "POST")
+        let sent = try XCTUnwrap(JSONSerialization.jsonObject(with: XCTUnwrap(request.httpBody)) as? [String: Any])
+        XCTAssertEqual(sent["name"] as? String, "files")
+
+        draft.env = "1BAD=x"
+        XCTAssertEqual(draft.body(existing: nil).failureValue, .invalidName("1BAD"))
+        draft.env = "NOEQUALS"
+        XCTAssertEqual(draft.body(existing: nil).failureValue, .line("NOEQUALS"))
+        draft.env = "A=1\nA=2"
+        XCTAssertEqual(draft.body(existing: nil).failureValue, .duplicate("A"))
+        draft.command = " "
+        XCTAssertEqual(draft.body(existing: nil).failureValue, .nameAndCommand)
+        var remote = MCPServerDraft()
+        remote.transport = .url
+        remote.name = "x"
+        remote.url = "ftp://nope"
+        XCTAssertEqual(remote.body(existing: nil).failureValue, .nameAndURL)
+    }
+}
+
+private extension Result {
+    var failureValue: Failure? {
+        if case let .failure(error) = self { return error }
+        return nil
+    }
+}
+
+final class DeciderTestTests: XCTestCase {
+    func testResultsAndRequest() throws {
+        func result(_ json: String) throws -> DeciderTestResult {
+            try JSONDecoder().decode(DeciderTestResult.self, from: Data(json.utf8))
+        }
+        XCTAssertNil(try result(#"{"ok":true,"latencyMs":212}"#).failure)
+        XCTAssertEqual(try result(#"{"ok":false,"reason":"rate_limited"}"#).failure, .rateLimited)
+        XCTAssertEqual(try result(#"{"ok":false,"reason":"http_error","status":502}"#).failure, .http(502))
+        XCTAssertEqual(try result(#"{"ok":false,"reason":"something_new"}"#).failure, .other)
+        let client = CompanionClient(connection: Connection(name: "Mac", host: "127.0.0.1", port: 8810), token: "t")
+        let saved = try client.testDeciderRequest(key: "  ")
+        XCTAssertEqual(saved.url?.path, "/api/decider/test")
+        XCTAssertEqual(try JSONSerialization.jsonObject(with: XCTUnwrap(saved.httpBody)) as? [String: String], [:])
+        let pasted = try client.testDeciderRequest(key: " k ")
+        XCTAssertEqual(try JSONSerialization.jsonObject(with: XCTUnwrap(pasted.httpBody)) as? [String: String], ["key": "k"])
+    }
+}

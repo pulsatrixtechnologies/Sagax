@@ -24,6 +24,29 @@ struct DesktopOrganizationSettings: View {
 
     var body: some View {
         if let active = session.connection {
+            AnyView(computerCard(active))
+        } else {
+            DesktopText("Not connected", color: \.inkSecondary)
+        }
+        if session.surfaceGate.allows(.organizationSettings) {
+            organizationRow
+        }
+    }
+
+    private var organizationRow: some View {
+        Button { showingOrganization = true } label: {
+            DesktopCollapsedRow(title: Text("Your organization"), summary: Text("Who can see and use your bots"))
+        }
+        .buttonStyle(DesktopHoverFill(radius: 14))
+        .desktopHairlineBox()
+        .accessibilityIdentifier("desktop-settings.organization")
+        .sheet(isPresented: $showingOrganization) {
+            NavigationStack { OrganizationSettingsPage() }
+                .environmentObject(session)
+        }
+    }
+
+    private func computerCard(_ active: Connection) -> some View {
             DesktopSettingsCard(Text("This computer"), summary: Text(verbatim: active.name), identifier: "organization.computer") {
                 HStack(spacing: 12) {
                     Circle().fill(session.status == .live ? theme.success : theme.warning).frame(width: 8, height: 8)
@@ -55,22 +78,6 @@ struct DesktopOrganizationSettings: View {
                             size: 12, line: 17, color: \.inkSecondary)
                     .padding(.top, 8)
             }
-        } else {
-            DesktopText("Not connected", color: \.inkSecondary)
-        }
-        if session.surfaceGate.allows(.organizationSettings) {
-            Button { showingOrganization = true } label: {
-                DesktopCollapsedRow(title: Text("Your organization"), summary: Text("Who can see and use your bots"))
-            }
-            .buttonStyle(DesktopHoverFill(radius: 14))
-            .desktopHairlineBox()
-            .accessibilityIdentifier("desktop-settings.organization")
-            .sheet(isPresented: $showingOrganization) {
-                NavigationStack { OrganizationSettingsPage() }
-                    .environmentObject(session)
-            }
-        }
-        EmptyView()
             .confirmationDialog(
                 Text("Remove \(pendingRemoval?.name ?? "")?"),
                 isPresented: Binding(get: { pendingRemoval != nil }, set: { if !$0 { pendingRemoval = nil } }),
@@ -84,6 +91,7 @@ struct DesktopOrganizationSettings: View {
             } message: {
                 Text("This removes the saved connection from this device only.")
             }
+
     }
 }
 
@@ -122,8 +130,8 @@ struct DesktopAppearanceSettings: View {
             let font = themes.effective.mode == .computer ? (themes.effective.computerFont ?? .skin) : themes.effective.font
             DesktopSettingRow(title: Text("Interface font"), subtitle: Text("Overrides the skin's font on this device.")) {
                 DesktopSelect(
-                    options: [(SkinFontChoice.skin, String(localized: "Skin default")),
-                              (.system, String(localized: "System")), (.serif, String(localized: "Serif"))],
+                    options: [(SkinFontChoice.skin, AppStrings.localized("Skin default")),
+                              (.system, AppStrings.localized("System")), (.serif, AppStrings.localized("Serif"))],
                     selection: font == .inter || font == .poppins ? .system : font,
                     label: Text("Interface font"),
                     identifier: "desktop-settings.font"
@@ -134,9 +142,9 @@ struct DesktopAppearanceSettings: View {
                 subtitle: Text("How much room each bot and thread takes in the sidebar, on this device only.")
             ) {
                 DesktopSelect(
-                    options: [(DesktopSidebarDensity.comfortable.rawValue, String(localized: "Comfortable")),
-                              (DesktopSidebarDensity.compact.rawValue, String(localized: "Compact")),
-                              (DesktopSidebarDensity.icons.rawValue, String(localized: "Avatars only"))],
+                    options: [(DesktopSidebarDensity.comfortable.rawValue, AppStrings.localized("Comfortable")),
+                              (DesktopSidebarDensity.compact.rawValue, AppStrings.localized("Compact")),
+                              (DesktopSidebarDensity.icons.rawValue, AppStrings.localized("Avatars only"))],
                     selection: density,
                     label: Text("Sidebar density"),
                     identifier: "desktop-settings.density"
@@ -417,7 +425,7 @@ struct DesktopServerPairingCard: View {
                         }
                         .padding(.top, 8)
                     } else {
-                        DesktopText(Text(verbatim: offer.hint ?? String(localized: "This server has no public address for a link yet: open /pair on the address you use and type the code.")),
+                        DesktopText(Text(verbatim: offer.hint ?? AppStrings.localized("This server has no public address for a link yet: open /pair on the address you use and type the code.")),
                                     size: 12.5, color: \.inkSecondary)
                             .padding(.top, 8)
                     }
@@ -447,6 +455,7 @@ struct DesktopServerPairingCard: View {
                     .accessibilityIdentifier("desktop-settings.sign-out-device")
             }
         }
+        .frame(minHeight: 33.5)
         .padding(.vertical, 8)
     }
 
@@ -508,7 +517,7 @@ struct DesktopThisDeviceCard: View {
     var body: some View {
         DesktopSettingsCard(
             Text("This iPad"),
-            summary: Text(verbatim: session.connection?.name ?? String(localized: "Not paired")),
+            summary: Text(verbatim: session.connection?.name ?? AppStrings.localized("Not paired")),
             subtitle: Text("This iPad's own pairing with the computer. Forgetting it removes the saved connection from this iPad only."),
             open: open, identifier: "companion.this-device"
         ) {
@@ -679,9 +688,15 @@ struct DesktopEngineCard: View {
             Button(action: toggle) {
                 VStack(alignment: .leading, spacing: 16) {
                     HStack(spacing: 12) {
-                        Text(verbatim: String(engine.name.prefix(1)).uppercased())
-                            .font(theme.font(17, .semibold))
-                            .foregroundStyle(theme.ink)
+                        Group {
+                            if let mark = DesktopProviderMark(driverKind: engine.driverKind, preset: engine.iconPreset) {
+                                DesktopProviderMarkView(mark: mark, size: 28)
+                            } else {
+                                Text(verbatim: String(engine.driverKind.replacingOccurrences(of: "Agent", with: "").prefix(1)).uppercased())
+                                    .font(theme.font(10, .semibold))
+                                    .foregroundStyle(theme.inkSecondary)
+                            }
+                        }
                             .frame(width: 48, height: 48)
                             .background(theme.panel, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                             .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(theme.hairline.opacity(0.3), lineWidth: 1))
@@ -773,7 +788,7 @@ struct DesktopComputerSettings: View {
         let ready = status?.ready == true
         let statusText: Text = loading ? Text("Checking…")
             : status == nil ? Text("Status unavailable")
-            : ready ? Text("Ready") : Text(verbatim: status?.problem ?? String(localized: "Not ready"))
+            : ready ? Text("Ready") : Text(verbatim: status?.problem ?? AppStrings.localized("Not ready"))
         DesktopSettingsCard(
             Text("Local VM"),
             summary: statusText,
@@ -807,6 +822,13 @@ struct DesktopComputerSettings: View {
             if let error {
                 DesktopText(verbatim: error, size: 12, line: 17, color: \.danger).padding(.top, 10)
             }
+        }
+        .task { await load() }
+        .confirmationDialog(Text("Replace the Local VM?"), isPresented: $confirmingRecreate, titleVisibility: .visible) {
+            Button("Delete and recreate", role: .destructive) { Task { await recreate() } }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Replace the existing Local VM with the pinned image and safety limits? Files and browser sign-ins in its durable folder will remain.")
         }
         DesktopSettingsCard(
             Text("Isolation"),
@@ -863,14 +885,6 @@ struct DesktopComputerSettings: View {
                 }
             }
         }
-        EmptyView()
-            .task { await load() }
-            .confirmationDialog(Text("Replace the Local VM?"), isPresented: $confirmingRecreate, titleVisibility: .visible) {
-                Button("Delete and recreate", role: .destructive) { Task { await recreate() } }
-                Button("Cancel", role: .cancel) {}
-            } message: {
-                Text("Replace the existing Local VM with the pinned image and safety limits? Files and browser sign-ins in its durable folder will remain.")
-            }
     }
 
     @ViewBuilder

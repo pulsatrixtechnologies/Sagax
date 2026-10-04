@@ -359,11 +359,20 @@ public struct DesktopEngine: Decodable, Equatable, Identifiable, Sendable {
         public var account: Account?
     }
 
+    public struct Icon: Decodable, Equatable, Sendable {
+        public var kind: String?
+        public var preset: String?
+    }
+
     public var instanceId: String
     public var driverKind: String
     public var displayName: String?
     public var access: String?
     public var snapshot: Snapshot
+    /// A preset brand mark chosen for this provider (`icon.kind == "preset"`).
+    public var icon: Icon?
+
+    public var iconPreset: String? { icon?.kind == "preset" ? icon?.preset : nil }
 
     public var id: String { instanceId }
     public var name: String { displayName ?? instanceId }
@@ -603,5 +612,163 @@ public extension CompanionClient {
     func mcpServerRequest(_ method: String, _ name: String, suffix: String = "", body: [String: Any]? = nil) throws -> URLRequest {
         guard Self.validRouteID(name) else { throw APIError.badURL }
         return try makeRequest(method, "/api/mcp/servers/\(name)\(suffix)", body: body)
+    }
+}
+
+// MARK: - MCP server editor (McpServersPanel.tsx draftBody)
+
+/// The Add / Edit MCP server form. Saved values are never sent back by the
+/// server: editing lists saved env and header names with a blank value,
+/// which keeps the saved one (`true` on the wire).
+public struct MCPServerDraft: Equatable, Sendable {
+    public enum Transport: String, Sendable { case command, url }
+
+    public var name = ""
+    public var transport: Transport = .command
+    public var command = ""
+    /// One argument a line.
+    public var args = ""
+    /// `KEY=value` a line.
+    public var env = ""
+    /// "http" or "sse".
+    public var type = "http"
+    public var url = ""
+    /// `Name: value` a line.
+    public var headers = ""
+
+    public init() {}
+
+    /// The form for an existing server (`draftFor`).
+    public init(editing server: MCPServerListing) {
+        name = server.name
+        if server.isRemote {
+            transport = .url
+            type = server.type == "sse" ? "sse" : "http"
+            url = server.url ?? ""
+            headers = (server.headerKeys ?? []).map { "\($0): " }.joined(separator: "\n")
+        } else {
+            transport = .command
+            command = server.command ?? ""
+            args = (server.args ?? []).joined(separator: "\n")
+            env = (server.envKeys ?? []).map { "\($0)=" }.joined(separator: "\n")
+        }
+    }
+
+    public enum Problem: Equatable, Error, Sendable {
+        case nameAndURL, nameAndCommand, line(String), invalidName(String), duplicate(String)
+    }
+
+    private static func matches(_ value: String, _ pattern: String) -> Bool {
+        value.range(of: pattern, options: .regularExpression) != nil
+    }
+
+    /// The request body (`draftBody`), or what is wrong with the form.
+    public func body(existing: MCPServerListing?) -> Result<[String: Any], Problem> {
+        let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        if transport == .url {
+            let url = url.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !name.isEmpty, Self.matches(url, "^(?i)https?://") else { return .failure(.nameAndURL) }
+            let saved = Set(existing?.isRemote == true ? existing?.headerKeys ?? [] : [])
+            var out: [String: Any] = [:]
+            for raw in headers.split(whereSeparator: \.isNewline) {
+                let line = raw.trimmingCharacters(in: .whitespaces)
+                if line.isEmpty { continue }
+                guard let colon = line.firstIndex(of: ":"), colon > line.startIndex else { return .failure(.line(line)) }
+                let key = line[..<colon].trimmingCharacters(in: .whitespaces)
+                let value = line[line.index(after: colon)...].trimmingCharacters(in: .whitespaces)
+                guard Self.matches(key, "^[!#$%&'*+.^_`|~0-9A-Za-z-]{1,128}$") else { return .failure(.invalidName(key)) }
+                guard out[key] == nil else { return .failure(.duplicate(key)) }
+                out[key] = value.isEmpty && saved.contains(key) ? true : value
+            }
+            return .success(["type": type == "sse" ? "sse" : "http", "url": url, "headers": out])
+        }
+        let command = command.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty, !command.isEmpty else { return .failure(.nameAndCommand) }
+        let saved = Set(existing?.isRemote == false ? existing?.envKeys ?? [] : [])
+        var out: [String: Any] = [:]
+        for raw in env.split(whereSeparator: \.isNewline) {
+            let line = raw.trimmingCharacters(in: .whitespaces)
+            if line.isEmpty { continue }
+            guard let equals = line.firstIndex(of: "="), equals > line.startIndex else { return .failure(.line(line)) }
+            let key = line[..<equals].trimmingCharacters(in: .whitespaces)
+            let value = String(line[line.index(after: equals)...])
+            guard Self.matches(key, "^[A-Za-z_][A-Za-z0-9_]*$") else { return .failure(.invalidName(key)) }
+            guard out[key] == nil else { return .failure(.duplicate(key)) }
+            out[key] = value.isEmpty && saved.contains(key) ? true : value
+        }
+        let arguments = args.split(whereSeparator: \.isNewline)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+        return .success(["command": command, "args": arguments, "env": out])
+    }
+}
+
+public extension CompanionClient {
+    /// `POST /api/mcp/servers` (new, switched off by the server) or `PUT
+    /// /api/mcp/servers/:name` (an edit keeps its on/off state).
+    func saveMCPServer(_ draft: MCPServerDraft, existing: MCPServerListing?) async throws -> [MCPServerListing] {
+        try await send(saveMCPServerRequest(draft, existing: existing), as: MCPServersResponse.self).servers
+    }
+
+    func saveMCPServerRequest(_ draft: MCPServerDraft, existing: MCPServerListing?) throws -> URLRequest {
+        var body = try draft.body(existing: existing).get()
+        let name = draft.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let existing {
+            body["enabled"] = existing.enabled ?? false
+            return try mcpServerRequest("PUT", existing.name, body: body)
+        }
+        guard Self.validRouteID(name) else { throw APIError.badURL }
+        body["name"] = name
+        return try makeRequest("POST", "/api/mcp/servers", body: body)
+    }
+
+    /// Paste config: the `mcpServers` block Claude Code, Cursor and Claude
+    /// Desktop write (`POST /api/mcp/servers/import`); the server adds them off.
+    func importMCPServers(_ json: String) async throws -> [MCPServerListing] {
+        try await send(makeRequest("POST", "/api/mcp/servers/import", body: ["json": json]), as: MCPServersResponse.self).servers
+    }
+}
+
+// MARK: - Decision model test (DecisionModelSettings.tsx)
+
+/// `POST /api/decider/test`: Jev answered in so many milliseconds, or why not.
+public struct DeciderTestResult: Decodable, Equatable, Sendable {
+    public var ok: Bool
+    public var latencyMs: Int?
+    public var reason: String?
+    public var status: Int?
+
+    /// What went wrong, as the catalog key the desktop shows
+    /// (`deciderFailureText`); `http` carries the status.
+    public enum Failure: Equatable, Sendable {
+        case rejected, unreachable, timeout, rateLimited, overloaded, malformed, noKey, misconfigured, http(Int?), other
+    }
+
+    public var failure: Failure? {
+        guard !ok else { return nil }
+        switch reason {
+        case "rejected": return .rejected
+        case "unreachable": return .unreachable
+        case "timeout": return .timeout
+        case "rate_limited": return .rateLimited
+        case "overloaded": return .overloaded
+        case "malformed": return .malformed
+        case "no_key": return .noKey
+        case "misconfigured": return .misconfigured
+        case "http_error": return .http(status)
+        default: return .other
+        }
+    }
+}
+
+public extension CompanionClient {
+    /// Tests the pasted key, or the saved one when `key` is nil.
+    func testDecider(key: String?) async throws -> DeciderTestResult {
+        try await send(testDeciderRequest(key: key), as: DeciderTestResult.self)
+    }
+
+    func testDeciderRequest(key: String?) throws -> URLRequest {
+        let trimmed = key?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return try makeRequest("POST", "/api/decider/test", body: trimmed.isEmpty ? [:] : ["key": trimmed])
     }
 }

@@ -32,16 +32,16 @@ struct DesktopPluginsModal: View {
                 header
                 if tabs.isEmpty {
                     DesktopText("Connected apps and MCP servers are managed by an admin of this server.", color: \.inkSecondary)
-                        .padding(.horizontal, 33)
+                        .padding(.horizontal, 32)
                         .padding(.top, 20)
                     Spacer(minLength: 0)
                 } else {
                     tabBar
-                        .padding(.horizontal, 33)
+                        .padding(.horizontal, 32)
                         .padding(.top, 12)
                     ScrollView {
                         AnyView(page)
-                            .padding(.horizontal, 33)
+                            .padding(.horizontal, 32)
                             .padding(.top, 20)
                             .padding(.bottom, 24)
                     }
@@ -100,9 +100,9 @@ struct DesktopPluginsModal: View {
             }
             DesktopCloseButton(label: "Close plugins", identifier: "desktop-plugins.close", action: close)
         }
-        .padding(.leading, 33)
-        .padding(.trailing, 33)
-        .padding(.top, 25)
+        .padding(.leading, 32)
+        .padding(.trailing, 32)
+        .padding(.top, 24)
     }
 
     private var tabBar: some View {
@@ -527,6 +527,8 @@ struct DesktopMcpServersPage: View {
     @State private var probes: [String: MCPProbeResult] = [:]
     @State private var removing: MCPServerListing?
     @State private var error: String?
+    @State private var editing: DesktopMCPEditing?
+    @State private var pasting = false
 
     private var admin: Bool { session.surfaceGate.scope == .serverAdmin }
     private var servers: [MCPServerListing]? { adminServers ?? mcp.servers }
@@ -540,7 +542,7 @@ struct DesktopMcpServersPage: View {
                                 ? Text("Add an MCP server once (a command that runs on this computer, or a server at a URL) and every compatible bot can use its tools. Tool calls still follow your normal approval settings.")
                                 : Text("The MCP servers on the computer, for every compatible bot. Add or change them in Sagax on the computer."),
                                 size: 12.5, line: 20.3, color: \.inkSecondary)
-                        .frame(maxWidth: 450, alignment: .leading)
+                        .frame(maxWidth: 610, alignment: .leading)
                 }
                 Spacer(minLength: 0)
                 Button {
@@ -553,8 +555,27 @@ struct DesktopMcpServersPage: View {
                 }
                 .buttonStyle(DesktopHoverFill(radius: 8, fill: \.raised))
                 .disabled(mcp.loading)
+                .padding(.top, 1.4)
                 .accessibilityLabel(Text("Refresh MCP servers"))
                 .accessibilityIdentifier("desktop-plugins.mcp-refresh")
+                if admin {
+                    Button { pasting = true } label: {
+                        HStack(spacing: 6) {
+                            DesktopSettingsIconView(icon: .clipboardPaste, size: 14)
+                            Text("Paste config")
+                        }
+                    }
+                    .buttonStyle(DesktopButtonStyle(kind: .control, size: 12.5, weight: .medium, height: 34.8))
+                    .accessibilityIdentifier("desktop-plugins.mcp-paste")
+                    Button { editing = DesktopMCPEditing(server: nil) } label: {
+                        HStack(spacing: 6) {
+                            DesktopSettingsIconView(icon: .plus, size: 14)
+                            Text("Add server")
+                        }
+                    }
+                    .buttonStyle(DesktopButtonStyle(kind: .accent, size: 12.5, weight: .medium, height: 34.8))
+                    .accessibilityIdentifier("desktop-plugins.mcp-add")
+                }
             }
             if admin {
                 claudeSwitch.padding(.top, 16)
@@ -596,6 +617,20 @@ struct DesktopMcpServersPage: View {
                 if let server = removing { Task { await remove(server) } }
             }
             Button("Cancel", role: .cancel) {}
+        }
+        .sheet(item: $editing) { item in
+            DesktopMCPServerEditor(existing: item.server) { servers in
+                adminServers = servers
+                editing = nil
+            }
+            .environmentObject(session)
+        }
+        .sheet(isPresented: $pasting) {
+            DesktopMCPImport { servers in
+                adminServers = servers
+                pasting = false
+            }
+            .environmentObject(session)
         }
     }
 
@@ -643,6 +678,7 @@ struct DesktopMcpServersPage: View {
                     .foregroundStyle(theme.inkSecondary)
                     .lineLimit(1)
                     .truncationMode(.middle)
+                    .frame(height: 17.25)
                     .padding(.top, 4)
                 authLine(server).padding(.top, 6)
                 if let probe = probes[server.name] {
@@ -670,8 +706,18 @@ struct DesktopMcpServersPage: View {
                 .accessibilityIdentifier("desktop-plugins.mcp-sign-in.\(server.name)")
             }
             if admin {
+                HStack(spacing: 4) {
                 iconTextButton(.flaskConical, Text("Test"), id: "test", server) { await test(server) }
                 iconTextButton(.circlePower, enabled ? Text("Turn off") : Text("Turn on"), id: "toggle", server) { await toggle(server) }
+                Button { editing = DesktopMCPEditing(server: server) } label: {
+                    DesktopSettingsIconView(icon: .pencil, size: 14)
+                        .foregroundStyle(theme.inkSecondary)
+                        .frame(width: 30, height: 30)
+                }
+                .buttonStyle(DesktopHoverFill(radius: 8, fill: \.raised))
+                .disabled(busy != nil || server.managedBy != nil)
+                .accessibilityLabel(Text(verbatim: pluginsFormat("Edit %@", server.name)))
+                .accessibilityIdentifier("desktop-plugins.mcp-edit.\(server.name)")
                 Button { removing = server } label: {
                     DesktopSettingsIconView(icon: .trash2, size: 14)
                         .foregroundStyle(theme.inkSecondary)
@@ -681,6 +727,7 @@ struct DesktopMcpServersPage: View {
                 .disabled(busy != nil)
                 .accessibilityLabel(Text(verbatim: pluginsFormat("Remove %@", server.name)))
                 .accessibilityIdentifier("desktop-plugins.mcp-remove.\(server.name)")
+                }
             }
         }
         .padding(.horizontal, 21)
@@ -801,6 +848,177 @@ struct DesktopAppMark: View {
             Text(verbatim: String(card.label.prefix(1)).uppercased())
                 .font(theme.font(15, .semibold))
                 .foregroundStyle(theme.inkSecondary)
+        }
+    }
+}
+
+struct DesktopMCPEditing: Identifiable {
+    let server: MCPServerListing?
+    var id: String { server?.name ?? "new" }
+}
+
+/// Add or edit an MCP server (the desktop's inline editor, as a sheet).
+struct DesktopMCPServerEditor: View {
+    @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var session: Session
+    let existing: MCPServerListing?
+    let saved: ([MCPServerListing]) -> Void
+    @State private var draft = MCPServerDraft()
+    @State private var saving = false
+    @State private var error: String?
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    TextField("Server name", text: $draft.name)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .disabled(existing != nil)
+                        .accessibilityIdentifier("desktop-mcp.name")
+                    if existing == nil {
+                        Picker("Connection", selection: $draft.transport) {
+                            Text("Run a command").tag(MCPServerDraft.Transport.command)
+                            Text("Connect to a URL").tag(MCPServerDraft.Transport.url)
+                        }
+                        .pickerStyle(.segmented)
+                    }
+                }
+                if draft.transport == .url {
+                    Section {
+                        TextField("Server URL", text: $draft.url)
+                            .keyboardType(.URL)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                            .accessibilityIdentifier("desktop-mcp.url")
+                        Picker("Connection", selection: $draft.type) {
+                            Text("Streamable HTTP (most servers)").tag("http")
+                            Text("SSE (older servers)").tag("sse")
+                        }
+                    }
+                    Section {
+                        TextEditor(text: $draft.headers)
+                            .font(.system(.footnote, design: .monospaced))
+                            .frame(minHeight: 90)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                    } header: {
+                        Text("Headers · Name: value per line")
+                    } footer: {
+                        Text("Put tokens here, for example Authorization: Bearer …. Leave an existing value blank to keep it saved. Remove the line to delete it.")
+                    }
+                } else {
+                    Section {
+                        TextField("Executable command", text: $draft.command)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                            .accessibilityIdentifier("desktop-mcp.command")
+                    }
+                    Section("Arguments · one per line") {
+                        TextEditor(text: $draft.args)
+                            .font(.system(.footnote, design: .monospaced))
+                            .frame(minHeight: 70)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                    }
+                    Section {
+                        TextEditor(text: $draft.env)
+                            .font(.system(.footnote, design: .monospaced))
+                            .frame(minHeight: 70)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                    } header: {
+                        Text("Environment · KEY=value per line")
+                    } footer: {
+                        Text("Leave an existing value blank to keep it saved. Remove the line to delete it.")
+                    }
+                }
+                if let error {
+                    Section { Text(verbatim: error).foregroundStyle(.red) }
+                }
+            }
+            .navigationTitle(existing.map { Text(verbatim: pluginsFormat("Edit %@", $0.name)) } ?? Text("Add MCP server"))
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save", action: save)
+                        .disabled(saving)
+                        .accessibilityIdentifier("desktop-mcp.save")
+                }
+            }
+        }
+        .onAppear { if let existing { draft = MCPServerDraft(editing: existing) } }
+    }
+
+    private func save() {
+        if case let .failure(problem) = draft.body(existing: existing) {
+            error = Self.message(problem)
+            return
+        }
+        guard let client = session.settingsClient else { return }
+        saving = true
+        Task {
+            defer { saving = false }
+            do { saved(try await client.saveMCPServer(draft, existing: existing)) }
+            catch { self.error = error.localizedDescription }
+        }
+    }
+
+    static func message(_ problem: MCPServerDraft.Problem) -> String {
+        switch problem {
+        case .nameAndURL: AppStrings.localized("Add a server name and a full http:// or https:// address.")
+        case .nameAndCommand: AppStrings.localized("Add a server name and executable command.")
+        case let .line(line): pluginsFormat("Check “%@”: use KEY=value or Name: value.", line)
+        case let .invalidName(key): pluginsFormat("“%@” is not a valid name.", key)
+        case let .duplicate(key): pluginsFormat("“%@” is listed more than once.", key)
+        }
+    }
+}
+
+/// Paste config: the `{"mcpServers": {…}}` block other apps write.
+struct DesktopMCPImport: View {
+    @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var session: Session
+    let added: ([MCPServerListing]) -> Void
+    @State private var text = ""
+    @State private var saving = false
+    @State private var error: String?
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    TextEditor(text: $text)
+                        .font(.system(.footnote, design: .monospaced))
+                        .frame(minHeight: 200)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .accessibilityIdentifier("desktop-mcp.import-text")
+                } footer: {
+                    Text("Paste the {\"mcpServers\": {…}} block from Claude Code, Cursor, or Claude Desktop. Servers are added switched off; test each one, then turn it on.")
+                }
+                if let error {
+                    Section { Text(verbatim: error).foregroundStyle(.red) }
+                }
+            }
+            .navigationTitle("Paste config")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Add servers") {
+                        guard let client = session.settingsClient else { return }
+                        saving = true
+                        Task {
+                            defer { saving = false }
+                            do { added(try await client.importMCPServers(text)) }
+                            catch { self.error = error.localizedDescription }
+                        }
+                    }
+                    .disabled(saving || text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+            }
         }
     }
 }

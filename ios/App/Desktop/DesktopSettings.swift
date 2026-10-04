@@ -49,7 +49,7 @@ final class DesktopSettingsModel: ObservableObject {
     /// error, if any, is returned for the control that sent it.
     @discardableResult
     func apply(_ change: DesktopConfigChange, key: String) async -> String? {
-        guard let client else { return String(localized: "Not connected") }
+        guard let client else { return AppStrings.localized("Not connected") }
         saving.insert(key)
         defer { saving.remove(key) }
         do {
@@ -166,20 +166,20 @@ extension DesktopSettingsSection {
     /// The label as a string, for search (in the app's language).
     var labelString: String {
         switch self {
-        case .general: String(localized: "General")
-        case .organization: String(localized: "Organization")
-        case .appearance: String(localized: "Appearance")
-        case .experimental: String(localized: "Experimental")
-        case .connections: String(localized: "API keys")
-        case .decisionModel: String(localized: "Decision model")
-        case .engines: String(localized: "Model providers")
-        case .companion: String(localized: "Pair devices")
-        case .computer: String(localized: "Local VM")
-        case .usage: String(localized: "Usage")
-        case .people: String(localized: "People")
-        case .mail: String(localized: "Email")
-        case .activity: String(localized: "Activity")
-        case .backups: String(localized: "Backups")
+        case .general: AppStrings.localized("General")
+        case .organization: AppStrings.localized("Organization")
+        case .appearance: AppStrings.localized("Appearance")
+        case .experimental: AppStrings.localized("Experimental")
+        case .connections: AppStrings.localized("API keys")
+        case .decisionModel: AppStrings.localized("Decision model")
+        case .engines: AppStrings.localized("Model providers")
+        case .companion: AppStrings.localized("Pair devices")
+        case .computer: AppStrings.localized("Local VM")
+        case .usage: AppStrings.localized("Usage")
+        case .people: AppStrings.localized("People")
+        case .mail: AppStrings.localized("Email")
+        case .activity: AppStrings.localized("Activity")
+        case .backups: AppStrings.localized("Backups")
         }
     }
 

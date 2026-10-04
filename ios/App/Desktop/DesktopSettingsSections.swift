@@ -52,7 +52,7 @@ struct DesktopGeneralSettings: View {
                 help: Text("How hard every new bot thinks from its first message. A bot can change its own level; model providers without this level keep their default.")
             ) {
                 DesktopSelect(
-                    options: [("", String(localized: "Provider default"))] + DesktopEffort.levels.map { ($0, Self.effortLabel($0)) },
+                    options: [("", AppStrings.localized("Provider default"))] + DesktopEffort.levels.map { ($0, Self.effortLabel($0)) },
                     selection: config?.newBots?.effort ?? "",
                     label: Text("Effort for new bots"),
                     identifier: "desktop-settings.effort",
@@ -180,7 +180,7 @@ private extension AppLanguage {
 
     var optionLabel: String {
         switch self {
-        case .system: String(localized: "System")
+        case .system: AppStrings.localized("System")
         case .english: "English"
         case .french: "Français"
         case .portugueseBrazil: "Português (Brasil)"
@@ -249,8 +249,8 @@ struct DesktopProfileCard: View {
                         .accessibilityIdentifier("desktop-settings.profile-email")
                 }
             }
-            .padding(.top, 2)
-            .padding(.bottom, 2)
+            .padding(.top, 1)
+            .padding(.bottom, 3)
         }
         .onAppear(perform: seed)
         .onValueChange(of: model.config?.profile) { _ in seed() }
@@ -389,7 +389,7 @@ struct DesktopExperimentalSettings: View {
             DesktopFeatureRow(
                 title: Text("Built-in browser"),
                 detail: engine?.kind == "unavailable"
-                    ? Text(String(localized: "The browser engine is not installed on this server yet. Enable the browser switches in App Settings → Experimental and the bot's Access settings, then open Bot's computer → Browser to install it. Or run `openmausbot browser install` on the server."))
+                    ? Text(verbatim: AppStrings.localized("The browser engine is not installed on this server yet. Enable the browser switches in App Settings → Experimental and the bot's Access settings, then open Bot's computer → Browser to install it. Or run `openmausbot browser install` on the server."))
                     : (browser
                         ? Text("Enabled for this installation. Each bot also has its own browser switch.")
                         : Text("Off by default. Enable it to let supported bots use a browser tab you can watch and take over.")),
@@ -449,7 +449,7 @@ struct DesktopAPIKeysSettings: View {
             VStack(alignment: .leading, spacing: 16) {
                 VStack(alignment: .leading, spacing: 6) {
                     key(.openai, Text("OpenAI API key"), config)
-                    DesktopText("Codex doesn't use this key — it signs in with ChatGPT.", size: 11.5, line: 16.1, color: \.inkSecondary)
+                    DesktopText("Codex doesn't use this key; it signs in with ChatGPT.", size: 11.5, line: 16.1, color: \.inkSecondary)
                 }
                 key(.anthropic, Text("Anthropic API key"), config)
                 key(.xai, Text("xAI API key"), config)
@@ -549,9 +549,7 @@ struct DesktopDecisionModelSettings: View {
                 DesktopText(configured ? Text("Connected") : Text("Not connected"), line: 19.5, color: \.inkSecondary)
             }
             .padding(.bottom, 8)
-            DesktopKeyField(title: Text("Jev API key"), provider: .decider, configured: configured, showsHeader: false) { value in
-                await model.apply(.apiKey(.decider, value), key: "decider")
-            }
+            DesktopJevKeyRow(configured: configured)
             Button {
                 if let url = URL(string: "https://typesafe.ai") { openURL(url) }
             } label: {
@@ -817,4 +815,107 @@ struct DesktopShareSheet: UIViewControllerRepresentable {
     }
 
     func updateUIViewController(_ controller: UIActivityViewController, context: Context) {}
+}
+
+/// The Jev key row: the write-only field, Save (72 wide) and Test.
+struct DesktopJevKeyRow: View {
+    @Environment(\.desktopTheme) private var theme
+    @EnvironmentObject private var model: DesktopSettingsModel
+    let configured: Bool
+    @State private var draft = ""
+    @State private var saving = false
+    @State private var testing = false
+    @State private var verdict: (ok: Bool, text: String)?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 8) {
+                SecureField(text: $draft, prompt: Text(verbatim: configured
+                    ? AppStrings.localized("Saved. Paste a new key to replace it.")
+                    : AppStrings.localized("Paste your TypeSafe API key")).foregroundColor(theme.inkSecondary)) {
+                    Text("Jev API key")
+                }
+                .font(theme.font(13))
+                .foregroundStyle(theme.ink)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .onSubmit(save)
+                .disabled(saving)
+                .padding(.horizontal, 13)
+                .frame(height: 37.5)
+                .background(theme.inset, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(theme.hairline.opacity(0.4), lineWidth: 1))
+                .accessibilityIdentifier("desktop-settings.jev-key")
+                Button(action: save) {
+                    HStack(spacing: 6) {
+                        if saving { ProgressView().controlSize(.mini) } else { DesktopSettingsIconView(icon: .check, size: 13) }
+                        Text("Save")
+                    }
+                    .frame(width: 72 - 24)
+                }
+                .buttonStyle(DesktopButtonStyle(kind: .control, height: 37.5))
+                .disabled(saving || draft.trimmingCharacters(in: .whitespaces).isEmpty)
+                .accessibilityIdentifier("desktop-settings.jev-save")
+                Button(action: test) {
+                    Text(testing ? "Testing…" : "Test")
+                        .foregroundStyle(theme.inkSecondary)
+                }
+                .buttonStyle(DesktopButtonStyle(kind: .outline, height: 37.5))
+                .disabled(testing || saving || (draft.isEmpty && !configured))
+                .accessibilityIdentifier("desktop-settings.jev-test")
+            }
+            if let verdict {
+                DesktopText(verbatim: verdict.text, size: 12, line: 17, color: verdict.ok ? \.success : \.danger)
+            }
+        }
+    }
+
+    private func save() {
+        let key = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !key.isEmpty, !saving else { return }
+        saving = true
+        verdict = nil
+        Task {
+            if let error = await model.apply(.apiKey(.decider, key), key: "decider") {
+                verdict = (false, error)
+            } else {
+                draft = ""
+            }
+            saving = false
+        }
+    }
+
+    private func test() {
+        guard let client = model.client, !testing else { return }
+        testing = true
+        verdict = nil
+        Task {
+            defer { testing = false }
+            do {
+                let result = try await client.testDecider(key: draft.isEmpty ? nil : draft)
+                if result.ok {
+                    verdict = (true, pluginsFormat("Jev answered in %@ ms.", "\(result.latencyMs ?? 0)"))
+                } else {
+                    verdict = (false, Self.text(result.failure ?? .other))
+                }
+            } catch {
+                verdict = (false, error.localizedDescription)
+            }
+        }
+    }
+
+    static func text(_ failure: DeciderTestResult.Failure) -> String {
+        switch failure {
+        case .rejected: AppStrings.localized("Jev rejected this key. Check it at typesafe.ai.")
+        case .unreachable: AppStrings.localized("Could not reach Jev. Check your connection.")
+        case .timeout: AppStrings.localized("Jev did not answer in time. Try again.")
+        case .rateLimited: AppStrings.localized("Jev is limiting requests right now. Try again in a minute.")
+        case .overloaded: AppStrings.localized("Jev is overloaded right now. Try again shortly.")
+        case .malformed: AppStrings.localized("Jev sent an answer Sagax could not read.")
+        case .noKey: AppStrings.localized("Paste a key or save one first.")
+        case .misconfigured: AppStrings.localized("The decision model address is not allowed. It must use https.")
+        case let .http(status): pluginsFormat("Jev returned an unexpected error (HTTP %@).", status.map(String.init) ?? "?")
+        case .other: AppStrings.localized("The test did not finish. Try again.")
+        }
+    }
 }
