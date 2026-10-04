@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Download, Loader2, Upload } from "lucide-react";
 import type { WorkspaceBackupSummary } from "../../shared/workspace-backup";
-import { api } from "@/state/store";
+import { api, useStore } from "@/state/store";
+import { canManageBackups } from "@/lib/viewer";
 import { t } from "@/lib/i18n";
 import { applyWorkspaceClientState, collectWorkspaceClientState, WORKSPACE_RESTORE_MARKER } from "@/lib/workspace-backup-client";
 import { Card } from "./SettingsPrimitives";
@@ -53,6 +54,13 @@ export function WorkspaceBackupSummaryView({ summary }: { summary: WorkspaceBack
 }
 
 export function WorkspaceBackupSettings() {
+  const { state } = useStore();
+  // Status, export and import are admin routes. A member never starts the retry loop.
+  if (!canManageBackups(state.config)) return null;
+  return <WorkspaceBackupForm />;
+}
+
+function WorkspaceBackupForm() {
   const [status, setStatus] = useState<BackupStatus | null>(null);
   const [busy, setBusy] = useState<"export" | "preview" | "restore" | null>(null);
   const lock = useRef(false);

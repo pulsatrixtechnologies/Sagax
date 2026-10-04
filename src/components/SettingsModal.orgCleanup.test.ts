@@ -11,13 +11,14 @@ const fixture = vi.hoisted(() => ({
   section: "general" as AppSettingsSection,
   org: null as null | { org: { name: string; identity: { kind: "perspicax"; issuer: string } } },
   features: {} as Record<string, boolean>,
+  viewer: undefined as { role: "member" | "admin" | "owner"; operator: boolean } | undefined,
 }));
 vi.mock("./DesktopCapabilities", () => ({ useDesktopCapabilities: () => ({ capabilities: {} }) }));
 vi.mock("@/state/store", async (importOriginal) => ({
   ...await importOriginal<typeof import("@/state/store")>(),
   api: vi.fn(),
   useStore: () => ({
-    state: { appSettingsSection: fixture.section, instances: [], bots: [], groups: [], config: { features: fixture.features, composio: { mode: "self", configured: false }, ...Object.fromEntries(["openai", "anthropic", "xai", "openrouter", "mistral", "openaiCompat", "box", "vps", "opencodeGo"].map((key) => [key, { configured: false }])) } },
+    state: { appSettingsSection: fixture.section, instances: [], bots: [], groups: [], config: { features: fixture.features, viewer: fixture.viewer, rooms: { turnTimeoutMinutes: 5 }, composio: { mode: "self", configured: false }, ...Object.fromEntries(["openai", "anthropic", "xai", "openrouter", "mistral", "openaiCompat", "box", "vps", "opencodeGo"].map((key) => [key, { configured: false }])) } },
     dispatch: vi.fn(),
   }),
 }));
@@ -39,6 +40,7 @@ beforeEach(() => {
   fixture.section = "general";
   fixture.org = null;
   fixture.features = {};
+  fixture.viewer = undefined;
   setLocale("en");
   vi.stubGlobal("document", { documentElement: { dataset: {} } });
   vi.stubGlobal("window", {});
@@ -83,6 +85,50 @@ describe("Settings on an organization server", () => {
     const computer = SECTIONS.find((entry) => entry.id === "computer")!;
     expect(sectionMatches(computer, "local vm")).toBe(true);
     expect(sectionMatches(computer, "computer")).toBe(true);
+  });
+});
+
+describe("an organization member", () => {
+  const member = { role: "member" as const, operator: false };
+
+  it("does not see installation sections the server refuses", async () => {
+    fixture.viewer = member;
+    fixture.org = ORG;
+    const { memberHidesSection } = await import("./SettingsModal");
+    const hidden = { editConfig: false, manageComputers: false, viewUsage: false, manageBackups: false, organization: true };
+    expect(memberHidesSection("experimental", hidden)).toBe(true);
+    expect(memberHidesSection("connections", hidden)).toBe(true);
+    expect(memberHidesSection("decisionModel", hidden)).toBe(true);
+    expect(memberHidesSection("usage", hidden)).toBe(true);
+    expect(memberHidesSection("backups", hidden)).toBe(true);
+    expect(memberHidesSection("general", hidden)).toBe(false);
+    expect(memberHidesSection("computer", hidden)).toBe(false);
+    expect(memberHidesSection("computer", { ...hidden, organization: false })).toBe(true);
+    expect(memberHidesSection("engines", hidden)).toBe(false);
+
+    const nav = await render();
+    expect(nav).not.toContain(">Experimental<");
+    expect(nav).not.toContain(">API keys<");
+    expect(nav).not.toContain(">Decision model<");
+    expect(nav).not.toContain(">Usage<");
+    expect(nav).not.toContain(">Backups<");
+    expect(nav).toContain(">General<");
+    expect(nav).toContain(">Computer<");
+  });
+
+  it("hides the General and Appearance rows that write the installation", async () => {
+    fixture.viewer = member;
+    fixture.section = "general";
+    const general = await render();
+    expect(general).not.toContain("Effort for new bots");
+    expect(general).not.toContain("Defaults for new bots");
+    expect(general).not.toContain("Routines in the conversation");
+    expect(general).not.toContain("Group turns");
+    expect(general).toContain("Language");
+
+    fixture.section = "appearance";
+    expect(await render()).not.toContain("Tool calls");
+    expect(await render()).toContain("Interface font");
   });
 });
 

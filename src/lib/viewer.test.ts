@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { ConfigStatus } from "@/state/store";
-import { otherAuthorName, viewerActorId, viewerBotsReadOnly, viewerCanCreateBots, viewerIsOrgMember } from "./viewer";
+import { canEditConfig, canManageBackups, canManageComputers, canViewUsage, otherAuthorName, viewerActorId, viewerBotsReadOnly, viewerCanCreateBots, viewerIsOrgMember } from "./viewer";
 
 const ZARA = "pr_00000000-0000-4000-8000-000000000002";
 const member = { viewer: { operator: false, principalId: ZARA, email: "zara@example.test", name: "zara", role: "member", canCreateBots: true, operatorName: "JC" } } as ConfigStatus;
@@ -21,6 +21,17 @@ describe("viewer", () => {
     expect(viewerIsOrgMember(member)).toBe(true);
     expect(viewerIsOrgMember(operator)).toBe(false);
     expect(viewerIsOrgMember(null)).toBe(false);
+  });
+
+  it("hides installation writes from a member and keeps them for everyone else", () => {
+    expect(canEditConfig(member)).toBe(false);
+    expect(canManageComputers(member)).toBe(false);
+    expect(canViewUsage(member)).toBe(false);
+    expect(canManageBackups(member)).toBe(false);
+    expect(canEditConfig(operator)).toBe(true);
+    expect(canEditConfig(null)).toBe(true);
+    expect(canEditConfig({ viewer: { ...member.viewer!, role: "admin", capabilities: { editConfig: true, manageKeys: true, manageComputers: true, viewUsage: true, manageBackups: true, pairDevices: true } } } as ConfigStatus)).toBe(true);
+    expect(canEditConfig({ viewer: { ...member.viewer!, capabilities: { editConfig: false, manageKeys: false, manageComputers: false, viewUsage: false, manageBackups: false, pairDevices: true } } } as ConfigStatus)).toBe(false);
   });
 
   it("offers New bot on the server's word, and by default for older servers", () => {

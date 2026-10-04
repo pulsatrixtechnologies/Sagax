@@ -601,6 +601,7 @@ import { groupCommandTarget, resolveTypedCommand, type CommandResolution, type G
 import type { HarnessCommandScope } from "./contracts.ts";
 import { ProviderAuthSessions } from "./provider-auth-sessions.ts";
 import {
+  capabilitiesForAuth,
   clearSessionCookie,
   clientBotPatchViolation,
   memberBotFieldViolation,
@@ -20283,10 +20284,11 @@ function viewerIdentity(auth: RequestAuth): ViewerIdentity | null {
   const role = channelActorRole(auth);
   const canCreateBots = botCreationAllowed(auth);
   const managed = profileManagedFor(auth) ? PROFILE_MANAGEMENT! : {};
+  const capabilities = capabilitiesForAuth(auth, { orgPairing: IDENTITY.kind === "perspicax" });
   if (viewerIsOperator(auth)) {
     return {
       operator: true, principalId: localPrincipalId(), email: cfg.profile?.email?.trim() ?? "",
-      name: cfg.profile?.name?.trim() ?? "", role, canCreateBots, ...managed,
+      name: cfg.profile?.name?.trim() ?? "", role, canCreateBots, capabilities, ...managed,
     };
   }
   const session = (auth as Extract<RequestAuth, { kind: "session" }>).session;
@@ -20297,7 +20299,7 @@ function viewerIdentity(auth: RequestAuth): ViewerIdentity | null {
   return {
     // the name Perspicax sent (refreshed on each sign-in and directory
     // sync), else the address, else the login
-    operator: false, principalId, email, name: personDisplayName({ ...person, email }), role, canCreateBots,
+    operator: false, principalId, email, name: personDisplayName({ ...person, email }), role, canCreateBots, capabilities,
     ...(personBotsReadOnly(principalId) ? { botsReadOnly: true as const } : {}),
     ...(personIntegrationsOff(principalId) ? { integrationsManagedByAdmin: true as const } : {}),
     operatorName: cfg.profile?.name?.trim() || "",

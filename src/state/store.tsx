@@ -19,6 +19,7 @@ import type { BotVisibility, CardAnswerer, CloudBackend, ConnectorToolGrant, Eff
 import type { TurnDigest } from "../../shared/digest";
 import type { BusySendMode, ParallelTaskRef, TaskParallelOf } from "../../shared/parallel-tasks";
 import type { ToolScope } from "../../shared/tool-scope";
+import type { ViewerCapabilities } from "../../shared/viewer-capabilities";
 import type { ModelVariantOption, RuntimeEvent } from "../../shared/runtime-events";
 import type { MausColor, MausMotion } from "@/lib/mascot";
 import type { BotAvatarCrop } from "../../shared/bot-avatar";
@@ -793,6 +794,8 @@ export interface ConfigViewer {
   profileManageUrl?: string;
   /** Their Perspicax avatar as this server serves it. */
   avatarUrl?: string;
+  /** Which installation screens this viewer may change. Absent on an older server. */
+  capabilities?: ViewerCapabilities;
 }
 
 export interface ManagedPolicySummary {

@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import {
   clearSessionCookie,
+  capabilitiesForAuth,
   clientBotPatchViolation,
   memberBotFieldViolation,
   clientGroupPatchViolation,
@@ -160,6 +161,16 @@ describe("scopes", () => {
     expect(clientGroupPatchViolation({ name: "Ops", unread: false })).toBeNull();
     expect(clientGroupPatchViolation({ cwd: "/tmp" })).toBe("cwd");
     expect(clientGroupPatchViolation({ memberIds: ["bot"], humanIds: ["ada@example.test"] })).toBeNull();
+  });
+
+  it("reports installation capabilities from the admin scope, and pairing for an organization member", () => {
+    expect(capabilitiesForAuth({ scopes: ["admin", "client"] }, { orgPairing: false })).toEqual({
+      editConfig: true, manageKeys: true, manageComputers: true, viewUsage: true, manageBackups: true, pairDevices: true,
+    });
+    expect(capabilitiesForAuth({ scopes: ["client"] }, { orgPairing: true })).toEqual({
+      editConfig: false, manageKeys: false, manageComputers: false, viewUsage: false, manageBackups: false, pairDevices: true,
+    });
+    expect(capabilitiesForAuth({ scopes: ["client"] }, { orgPairing: false }).pairDevices).toBe(false);
   });
 });
 

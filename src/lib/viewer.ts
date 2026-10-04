@@ -2,6 +2,7 @@
 // (server/viewer-identity.ts). Older servers send no viewer: everything here
 // then falls back to what the app did before.
 import type { ConfigStatus, Message } from "@/state/store";
+import type { ViewerCapabilities } from "../../shared/viewer-capabilities";
 
 /** The id your bots and channel seats carry: your principal when the server
  * names one, else the profile email, else "local-owner" (older servers). */
@@ -33,6 +34,38 @@ export function viewerIntegrationsManagedByAdmin(config: ConfigStatus | null | u
  * the server's engines without its own account or install details. */
 export function viewerIsOrgMember(config: ConfigStatus | null | undefined): boolean {
   return config?.viewer?.role === "member";
+}
+
+/** A capability the server sent, or the safe fallback: a named member may
+ * not change the installation, and everyone else (no viewer, an older
+ * server, an owner or an admin) keeps the screen they had. */
+function viewerCapability(config: ConfigStatus | null | undefined, key: keyof ViewerCapabilities): boolean {
+  const caps = config?.viewer?.capabilities;
+  if (caps) return caps[key];
+  return config?.viewer?.role !== "member";
+}
+
+/** PUT/PATCH /api/config and the other installation writes. */
+export function canEditConfig(config: ConfigStatus | null | undefined): boolean {
+  return viewerCapability(config, "editConfig");
+}
+
+export function canManageKeys(config: ConfigStatus | null | undefined): boolean {
+  return viewerCapability(config, "manageKeys");
+}
+
+/** The installation's Local VM, Boat and VPS inventories. A member's own
+ * server environment is a different route and stays visible. */
+export function canManageComputers(config: ConfigStatus | null | undefined): boolean {
+  return viewerCapability(config, "manageComputers");
+}
+
+export function canViewUsage(config: ConfigStatus | null | undefined): boolean {
+  return viewerCapability(config, "viewUsage");
+}
+
+export function canManageBackups(config: ConfigStatus | null | undefined): boolean {
+  return viewerCapability(config, "manageBackups");
 }
 
 /** The name to show above a person's line, or null when the line is your

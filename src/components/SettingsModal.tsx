@@ -31,6 +31,7 @@ import { peopleListServed, readMembership } from "../lib/membership";
 import { ActivitySection } from "./ActivitySection";
 import { MailSettings } from "./MailSettings";
 import { useOwnerOrAdmin } from "@/lib/use-owner-or-admin";
+import { canEditConfig, canManageBackups, canManageComputers, canViewUsage } from "@/lib/viewer";
 import { BrowserProfilesManager } from "./BrowserProfilesManager";
 import { ThisComputerSettings } from "./DesktopWorkspaceSwitcher";
 import { OrganizationSettings } from "./OrganizationSettings";
@@ -127,6 +128,23 @@ export function cardsMatching(query: string): string[] {
 export function organizationHidesSection(id: AppSettingsSection, organization: boolean): boolean {
   // Mes connexions is a person's own, on an organization server only.
   return organization ? id === "mail" : id === "myConnections";
+}
+
+/** Sections whose every control writes the installation. Hidden (not greyed)
+ * when the viewer cannot edit it. Computer stays for an organization member:
+ * their own server environment is not an installation computer. */
+export function memberHidesSection(id: AppSettingsSection, input: {
+  editConfig: boolean;
+  manageComputers: boolean;
+  viewUsage: boolean;
+  manageBackups: boolean;
+  organization: boolean;
+}): boolean {
+  if (id === "experimental" || id === "connections" || id === "decisionModel" || id === "workspaces") return !input.editConfig;
+  if (id === "usage") return !input.viewUsage;
+  if (id === "backups") return !input.manageBackups;
+  if (id === "computer") return !input.manageComputers && !input.organization;
+  return false;
 }
 
 export function sectionMatches(section: (typeof SECTIONS)[number], query: string): boolean {
@@ -944,6 +962,10 @@ export function SettingsModal() {
   useEffect(() => window.ogb?.onOpenAppSettings?.(() => setQuery("")), []);
   const q = query.trim().toLowerCase();
   const ownerOrAdmin = useOwnerOrAdmin();
+  const editConfig = canEditConfig(state.config);
+  const manageComputers = canManageComputers(state.config);
+  const viewUsage = canViewUsage(state.config);
+  const manageBackups = canManageBackups(state.config);
   // Server mode: this app shows its organization's server only (src/lib/launch.ts).
   const serverMode = useServerMode();
   const lockedServer = serverMode?.active ? serverMode : null;
@@ -979,7 +1001,9 @@ export function SettingsModal() {
     .filter((entry) => entry.id !== "mail" || ownerOrAdmin === true)
     .filter((entry) => !organizationHidesSection(entry.id, organization))
     // the activity log belongs to a workspace served to a browser, and to its admins
-    .filter((entry) => entry.id !== "activity" || (servedPage() && ownerOrAdmin === true));
+    .filter((entry) => entry.id !== "activity" || (servedPage() && ownerOrAdmin === true))
+    // Installation writes the server refuses with 403: hide the section.
+    .filter((entry) => !memberHidesSection(entry.id, { editConfig, manageComputers, viewUsage, manageBackups, organization }));
   const visibleSections = availableSections.filter((entry) => sectionMatches(entry, q));
   const sectionLabelKey = SECTIONS.find((entry) => entry.id === section)?.labelKey;
   const subPageId = state.appSettingsSubPage;
@@ -1172,36 +1196,40 @@ export function SettingsModal() {
                 >
                   <ProfileFields />
                 </Card>
-                <SettingsSubPageRow
-                  cardId="general.aboutMe"
-                  title={t("settings.profile.aboutMe")}
-                  summary={aboutMeFirstLine(state.config?.profile?.aboutMe)}
-                  actionLabel={t("settings.aboutMe.edit")}
-                  onOpen={() => openSubPage("general.aboutMe")}
-                />
+                {(!state.config?.viewer || state.config.viewer.operator) && (
+                  <SettingsSubPageRow
+                    cardId="general.aboutMe"
+                    title={t("settings.profile.aboutMe")}
+                    summary={aboutMeFirstLine(state.config?.profile?.aboutMe)}
+                    actionLabel={t("settings.aboutMe.edit")}
+                    onOpen={() => openSubPage("general.aboutMe")}
+                  />
+                )}
                 <div className="rounded-[14px] border-[0.5px] border-border py-1">
                   <LanguageRow />
-                  <NewBotEffortRow />
-                  <DefaultBotSettings />
+                  {editConfig && <NewBotEffortRow />}
+                  {editConfig && <DefaultBotSettings />}
                 </div>
-                {!remoteActive && (
+                {!remoteActive && editConfig && (
                   <div className="rounded-[14px] border-[0.5px] border-border py-1">
                     <RoutinesInConversationRow />
                   </div>
                 )}
-                <Card
-                  collapsible
-                  cardId="general.roomTurns"
-                  defaultOpen={false}
-                  title={t("settings.roomTurns.title")}
-                  subtitle={t("settings.roomTurns.subtitle")}
-                  summary={t("settings.card.roomTurns", { minutes: state.config?.rooms.turnTimeoutMinutes ?? 5 })}
-                >
-                  <RoomTurnTimeoutSettings />
-                </Card>
-                <ThreadConcurrencySettings />
-                <AutomaticRecoverySettings />
-                <ThreadCleanupSettings />
+                {editConfig && (
+                  <Card
+                    collapsible
+                    cardId="general.roomTurns"
+                    defaultOpen={false}
+                    title={t("settings.roomTurns.title")}
+                    subtitle={t("settings.roomTurns.subtitle")}
+                    summary={t("settings.card.roomTurns", { minutes: state.config?.rooms.turnTimeoutMinutes ?? 5 })}
+                  >
+                    <RoomTurnTimeoutSettings />
+                  </Card>
+                )}
+                {editConfig && <ThreadConcurrencySettings />}
+                {editConfig && <AutomaticRecoverySettings />}
+                {editConfig && <ThreadCleanupSettings />}
                 <div className="rounded-[14px] border-[0.5px] border-border py-1">
                   {!remoteActive && <ReplayTourRow />}
                   <UpdatesRow />
@@ -1242,7 +1270,7 @@ export function SettingsModal() {
                   <NotificationSoundsRow />
                   <FloatingFlyAwayRow />
                   <FloatingLivelinessRow />
-                  {!remoteActive && <ToolCallsRow />}
+                  {!remoteActive && editConfig && <ToolCallsRow />}
                   <RunCardRow />
                 </div>
               </>
