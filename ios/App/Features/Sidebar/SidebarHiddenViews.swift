@@ -4,6 +4,7 @@
 // (SidebarHiddenSettings.tsx, SettingsModal ShowThreadsRow).
 import CompanionCore
 import SwiftUI
+import UIKit
 
 /// The foot of the home list: closed by default; each entry comes back
 /// with Show. Drawn only when something is hidden.
@@ -52,15 +53,27 @@ struct HomeHiddenEntries: View {
     }
 }
 
-/// Settings > Appearance: the thread switch, then the hidden entries with
+/// Settings > Appearance: on iPad the sidebar density, the thread switch, then the hidden entries with
 /// Show and whether a new message brings one back.
 struct SidebarAppearanceSettings: View {
     @Environment(\.themePalette) var themePalette
     @EnvironmentObject private var session: Session
     @ObservedObject private var prefs = SidebarPrefsModel.shared
+    /// iPad I2: the desktop sidebar's density, on this device.
+    @AppStorage(PrefKey.desktopSidebarDensity) private var desktopDensity = DesktopSidebarDensity.comfortable.rawValue
 
     var body: some View {
         let rows = prefs.layout(session).hiddenRows
+        if UIDevice.current.userInterfaceIdiom == .pad {
+            SettingsSectionLabel(text: "Sidebar")
+            SettingsCard {
+                densityRow("Comfortable", .comfortable, subtitle: "Avatars, titles and the last message.")
+                CardHairline(leadingInset: SettingsMetrics.rowInset)
+                densityRow("Compact", .compact, subtitle: "One line per bot.")
+                CardHairline(leadingInset: SettingsMetrics.rowInset)
+                densityRow("Avatars only", .icons, subtitle: "The sidebar folds to a rail of avatars.")
+            }
+        }
         SettingsSectionLabel(text: "Threads")
         SettingsCard {
             SettingsRow(
@@ -126,6 +139,22 @@ struct SidebarAppearanceSettings: View {
             )
         }
         .task(id: session.connection?.id) { await prefs.load(session) }
+    }
+
+    private func densityRow(_ title: LocalizedStringKey, _ value: DesktopSidebarDensity, subtitle: String) -> some View {
+        Button {
+            Haptics.selection()
+            desktopDensity = value.rawValue
+        } label: {
+            SettingsRow(
+                title: title,
+                subtitle: subtitle,
+                accessory: desktopDensity == value.rawValue ? .check : .none,
+                identifier: "settings.sidebarDensity.\(value.rawValue)"
+            )
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(desktopDensity == value.rawValue ? .isSelected : [])
     }
 
     private func kindLabel(_ kind: HiddenKind) -> LocalizedStringKey {

@@ -21,7 +21,9 @@
 # then be made at the same sizes:
 #   node ios/parity/desktop/capture-desktop.mjs --viewport 1376x1032,1032x1376,1210x834,834x1210
 #
-# Each device is a dedicated simulator ("parity-ipad13", "parity-ipad11"),
+# Each device is a dedicated simulator ("parity-ipad13", "parity-ipad11";
+# PARITY_SIM_PREFIX=i2 names them "i2-ipad13", "i2-ipad11" so two worktrees
+# can capture at once),
 # dark, status bar pinned, deleted at the end unless --keep-sims. The app is
 # the Debug simulator build of ios/parity/capture.sh (unsigned; the parity
 # launch keeps its bearer in memory), built for testing: the orientation is
@@ -57,7 +59,7 @@ while [ $# -gt 0 ]; do
     --keep-sims) KEEP_SIMS=1 ;;
     --device) DEVICE="$2"; shift ;;
     --viewport) IFS=, read -r -a VIEWPORTS <<< "$2"; shift ;;
-    -h|--help) sed -n '2,31p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,33p' "$0"; exit 0 ;;
     *) SCREENS+=("$1") ;;
   esac
   shift

@@ -209,6 +209,11 @@ final class SidebarPrefsModel: ObservableObject {
         update(session) { $0.setCollapsed(ids) }
     }
 
+    /// A whole new section order (the iPad sidebar's drag, DD1).
+    func setSectionOrder(_ session: Session, _ ids: [String]) {
+        update(session) { $0.setSectionOrder(ids) }
+    }
+
     func moveSection(_ session: Session, _ name: String, by direction: Int) {
         guard let next = layout(session).order(moving: name, by: direction, saved: prefs.sectionOrder) else { return }
         update(session) { $0.setSectionOrder(next) }

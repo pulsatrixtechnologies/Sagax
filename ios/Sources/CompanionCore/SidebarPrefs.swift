@@ -428,6 +428,16 @@ public enum SidebarSectionID {
         return result
     }
 
+    /// A section dropped on another (`placeSection` in Sidebar.tsx): before
+    /// it, or after it when the pointer was in its lower half.
+    public static func place(_ ids: [String], _ id: String, at target: String, after: Bool) -> [String] {
+        guard id != target, ids.contains(id), ids.contains(target) else { return ids }
+        var result = ids.filter { $0 != id }
+        guard let index = result.firstIndex(of: target) else { return ids }
+        result.insert(id, at: after ? index + 1 : index)
+        return result
+    }
+
     public static func move(_ ids: [String], _ id: String, by direction: Int) -> [String] {
         guard let index = ids.firstIndex(of: id) else { return ids }
         let destination = index + direction

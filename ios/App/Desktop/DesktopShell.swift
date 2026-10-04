@@ -49,6 +49,8 @@ enum DesktopShellRules {
     static let desktopMinWidth: CGFloat = 768
     static let dockMinWidth: CGFloat = 1024
     static let sidebarWidth: CGFloat = 280
+    /// The collapsed sidebar: the icon rail (SIDEBAR_RAIL_WIDTH).
+    static let railWidth: CGFloat = 80
     static let panelWidth: CGFloat = 360
     /// The desktop's title band: the top inset of the sidebar and the panel.
     static let topBand: CGFloat = 36
@@ -65,11 +67,11 @@ enum DesktopShellRules {
 // MARK: - State
 
 /// The renderer's store, for the shell: what is selected, which panel and
-/// modal are open.
+/// modal are open, the sidebar's density and its open menu.
 @MainActor
 final class DesktopShellModel: ObservableObject {
     enum Modal: String, Identifiable {
-        case settings, search, newBot, newGroup, teamMap, automations
+        case settings, search, newBot, newGroup, teamMap, automations, plugins, templates, about, shortcuts
         var id: String { rawValue }
     }
 
@@ -80,12 +82,117 @@ final class DesktopShellModel: ObservableObject {
     /// The composer's model picker (I3), over the whole window.
     @Published var modelPickerOpen = false
 
+    // MARK: Sidebar (I2)
+
+    /// Comfortable, compact or the 80 pt icon rail (`openmausbot.sidebarDensity`).
+    @Published private(set) var density: DesktopSidebarDensity
+    /// The row under the pointer: its hover fill and actions.
+    @Published var hoveredRow: String?
+    /// The desktop popover open over the shell (a row's Actions, the
+    /// account menu, New), anchored in the shell's coordinates.
+    @Published var menu: DesktopMenuRequest?
+    /// Bots whose thread list is open (Show threads on).
+    @Published var openThreadLists = Set<String>()
+    /// Folders folded in those lists, by "botId:folderId".
+    @Published var foldedFolders = Set<String>()
+    /// The section a dragged row or section hovers (DD1).
+    @Published var dropTarget: String?
+    @Published var renamingBot: Bot?
+    @Published var renameDraft = ""
+    @Published var deletingBot: Bot?
+    /// The WP5, WP6 and WP11 menus' prompts, mounted once by the shell.
+    let threadActions = ThreadActions()
+    let sectionActions = SidebarSectionActions()
+    let roomActions = RoomActions()
+    #if DEBUG
+    /// The parity launch's Show threads (the references preset it per
+    /// surface); never written to the person's synced preferences.
+    @Published var parityShowThreads: Bool?
+    #endif
+
+    private let defaults: UserDefaults
+    private var persistsDensity = true
+    private var defaultsObserver: NSObjectProtocol?
+
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+        density = DesktopSidebarDensity(rawValue: defaults.string(forKey: PrefKey.desktopSidebarDensity) ?? "") ?? .comfortable
+        // Settings > Appearance writes the same key (`@AppStorage`).
+        defaultsObserver = NotificationCenter.default.addObserver(
+            forName: UserDefaults.didChangeNotification, object: defaults, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in self?.reloadDensity() }
+        }
+    }
+
+    deinit {
+        if let defaultsObserver { NotificationCenter.default.removeObserver(defaultsObserver) }
+    }
+
+    private func reloadDensity() {
+        guard persistsDensity,
+              let stored = DesktopSidebarDensity(rawValue: defaults.string(forKey: PrefKey.desktopSidebarDensity) ?? ""),
+              stored != density
+        else { return }
+        withAnimation(.easeOut(duration: 0.2)) { density = stored }
+    }
+
     func open(_ chat: Chat) {
         selected = chat
     }
 
     func togglePanel() {
         withAnimation(.easeOut(duration: 0.2)) { panelOpen.toggle() }
+    }
+
+    var sidebarWidth: CGFloat {
+        density == .icons ? DesktopShellRules.railWidth : DesktopShellRules.sidebarWidth
+    }
+
+    /// Settings > Appearance, or the rail's edge: the density, remembered on
+    /// this device like the desktop's.
+    func setDensity(_ value: DesktopSidebarDensity) {
+        guard value != density else { return }
+        if density != .icons, value == .icons, persistsDensity {
+            defaults.set(density.rawValue, forKey: PrefKey.desktopSidebarExpandedDensity)
+        }
+        withAnimation(.easeOut(duration: 0.2)) { density = value }
+        if persistsDensity { defaults.set(value.rawValue, forKey: PrefKey.desktopSidebarDensity) }
+    }
+
+    /// The collapse button: to the rail, or back to the density it left.
+    func toggleCollapsed() {
+        menu = nil
+        if density == .icons {
+            let back = DesktopSidebarDensity(rawValue: defaults.string(forKey: PrefKey.desktopSidebarExpandedDensity) ?? "") ?? .comfortable
+            setDensity(back == .icons ? .comfortable : back)
+        } else {
+            setDensity(.icons)
+        }
+    }
+
+    #if DEBUG
+    /// A parity surface's preset density, kept out of the person's defaults.
+    func presetDensity(_ value: DesktopSidebarDensity) {
+        persistsDensity = false
+        density = value
+    }
+    #endif
+
+    /// ⌘1 to ⌘9 and ⌘⇧[ / ⌘⇧]: the visible bots in the roster's order
+    /// (App.tsx: `state.bots` without the hidden ones).
+    func jump(to index: Int, in session: Session) {
+        let bots = session.state.bots.filter { $0.hidden != true }
+        guard bots.indices.contains(index) else { return }
+        open(session.threadSelection.restoringThread(.bot(bots[index]), connectionID: session.connection?.id))
+    }
+
+    func step(_ direction: Int, in session: Session) {
+        let bots = session.state.bots.filter { $0.hidden != true }
+        guard !bots.isEmpty else { return }
+        let current = bots.firstIndex { $0.id == selected?.id } ?? -1
+        let next = bots[((current + direction) % bots.count + bots.count) % bots.count]
+        open(session.threadSelection.restoringThread(.bot(next), connectionID: session.connection?.id))
     }
 }
 
@@ -102,6 +209,9 @@ struct DesktopShell: View {
             AnyView(columns(width: geometry.size.width, theme: theme))
         }
         .ignoresSafeArea(.container)
+        .coordinateSpace(name: desktopShellSpace)
+        .overlay { AnyView(DesktopMenuLayer()) }
+        .background { AnyView(DesktopKeyCommands()) }
         .environment(\.desktopTheme, theme)
         .environmentObject(model)
         .statusBarHidden(true)
@@ -109,6 +219,7 @@ struct DesktopShell: View {
         .persistentSystemOverlays(.hidden)
         .parityLauncher()
         .modifier(DesktopShellPresenter(model: model))
+        .modifier(DesktopSidebarPrompts(model: model))
         .modifier(DesktopShellRouting(model: model))
     }
 
@@ -118,7 +229,8 @@ struct DesktopShell: View {
         return ZStack(alignment: .topLeading) {
             HStack(spacing: 0) {
                 AnyView(DesktopSidebar())
-                    .frame(width: DesktopShellRules.sidebarWidth)
+                    .frame(width: model.sidebarWidth)
+                    .clipped()
                 AnyView(DesktopContent())
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 if docked, botOpen, let bot = selectedBot {
@@ -276,18 +388,57 @@ private struct DesktopShellRouting: ViewModifier {
     }
 
     #if DEBUG
-    /// `-parityIPadScreen main | panel-details`: Ara's chat, the panel open
-    /// for the panel surfaces (the desktop references select Ara).
+    /// `-parityIPadScreen main | panel-details | main-compact | ...`: Ara's
+    /// chat (the desktop references select Ara), the panel open for the
+    /// panel surfaces, and the sidebar surfaces' presets: the density, Show
+    /// threads (off except main-threads, as the references' localStorage),
+    /// the pointer over Aurora, or a menu open where the desktop opened it.
     private func applyParityLaunch() async {
         guard let screen = ParityLaunch.current?.iPadScreen, screen.implemented else { return }
+        model.parityShowThreads = screen == .mainThreads
+        switch screen {
+        case .mainCompact: model.presetDensity(.compact)
+        case .mainCollapsed: model.presetDensity(.icons)
+        default: model.presetDensity(.comfortable)
+        }
         for _ in 0..<150 {
             if let ara = session.state.bots.first(where: { $0.name == "Ara" }) {
                 model.open(.bot(ara))
                 model.panelOpen = screen.opensBotPanel
                 model.modelPickerOpen = screen == .chatModelPicker
+                await applyParitySidebar(screen)
                 return
             }
             try? await Task.sleep(nanoseconds: 100_000_000)
+        }
+    }
+
+    /// The sidebar surfaces' pointer and menus, at the references' points
+    /// (desktop-*-08 to -12 DOM dumps). On the iPad a right click or a long
+    /// press opens iPadOS's context menu with the same entries; the
+    /// surfaces draw the desktop popover at the desktop's click point.
+    private func applyParitySidebar(_ screen: IPadParityScreen) async {
+        let bot = { (name: String) in session.state.bots.first { $0.name == name } }
+        let height = UIScreen.main.bounds.height
+        switch screen {
+        case .sidebarRowHover:
+            model.hoveredRow = bot("Aurora")?.id
+        case .sidebarBotMenu:
+            guard let aurora = bot("Aurora") else { return }
+            model.hoveredRow = aurora.id
+            model.menu = DesktopMenuRequest(kind: .bot(aurora.id), anchor: CGPoint(x: 235, y: 459))
+        case .sidebarBotContextMenu:
+            guard let helix = bot("Helix") else { return }
+            model.menu = DesktopMenuRequest(kind: .bot(helix.id), anchor: CGPoint(x: 76, y: 492))
+        case .sidebarSectionMenu:
+            guard let aurora = bot("Aurora"), let team = aurora.section, !team.isEmpty else { return }
+            model.menu = DesktopMenuRequest(kind: .section(SidebarSectionID.user(team)), anchor: CGPoint(x: 68, y: 397))
+        case .sidebarProfileMenu:
+            model.menu = DesktopMenuRequest(kind: .profile, anchor: CGPoint(x: 8, y: height - 56), opensUp: true)
+        case .sidebarNewMenu:
+            model.menu = DesktopMenuRequest(kind: .new, anchor: CGPoint(x: 201, y: 78))
+        default:
+            break
         }
     }
     #endif
@@ -342,6 +493,14 @@ private struct DesktopShellPresenter: ViewModifier {
             }
         case .automations:
             AutomationsSheet()
+        case .plugins:
+            DesktopPluginsSheet()
+        case .templates:
+            DesktopTemplatesSheet { model.modal = nil }
+        case .about:
+            NavigationStack { AboutPage() }
+        case .shortcuts:
+            DesktopShortcutsSheet { model.modal = nil }
         }
     }
 }

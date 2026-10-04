@@ -205,6 +205,9 @@ enum IPadParityScreen: String, CaseIterable {
     var implemented: Bool {
         switch self {
         case .main, .panelDetails: true
+        // I2: the sidebar's densities, threads, hover and menus
+        case .mainCompact, .mainCollapsed, .mainThreads, .sidebarRowHover, .sidebarBotMenu,
+             .sidebarBotContextMenu, .sidebarSectionMenu, .sidebarProfileMenu, .sidebarNewMenu: true
         default: isDesktopChat
         }
     }
