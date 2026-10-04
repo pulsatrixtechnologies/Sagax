@@ -20,6 +20,8 @@ struct DesktopChatChrome {
     var inspectorOpen = false
     var togglePanel: () -> Void
     var showPanel: (BotPanelTab) -> Void
+    /// The command allowlist, in the panel's Advanced > Permissions.
+    var showAllowlist: () -> Void = {}
     var toggleInspector: () -> Void = {}
     var openModelPicker: () -> Void = {}
 }
@@ -88,6 +90,9 @@ struct DesktopChatColumn: View {
         .onValueChange(of: model.panelOpen) { open in
             if open { inspectorOpen = false }
         }
+        .onValueChange(of: model.inspectorRequest) { _ in
+            if !inspectorOpen { toggleInspector() }
+        }
     }
 
     private func toggleInspector() {
@@ -113,10 +118,8 @@ struct DesktopChatColumn: View {
             panelDocked: model.panelOpen && totalWidth + DesktopShellRules.sidebarWidth + DesktopShellRules.panelWidth >= DesktopShellRules.dockMinWidth,
             inspectorOpen: inspectorOpen,
             togglePanel: { model.togglePanel() },
-            showPanel: { tab in
-                model.panelTab = tab
-                if !model.panelOpen { model.togglePanel() }
-            },
+            showPanel: { tab in model.showPanel(tab) },
+            showAllowlist: { model.showPanel(.advanced, section: .permissions) },
             toggleInspector: { toggleInspector() },
             openModelPicker: { model.modelPickerOpen = true }
         ))
@@ -228,7 +231,7 @@ extension ChatView {
                     withAnimation(.snappy(duration: 0.28)) { showingPlus.toggle() }
                 },
                 openModel: { desktopChat?.openModelPicker() },
-                openAllowlist: { desktopChat?.showPanel(.more) },
+                openAllowlist: { desktopChat?.showAllowlist() },
                 toggleDictation: {
                     composerFocused = false
                     dictation.toggle(capturing: draft)

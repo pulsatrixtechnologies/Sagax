@@ -700,6 +700,8 @@ public struct Bot: Codable, Hashable, Identifiable, Sendable {
     /// person-only list.
     public var grants: [BotGrantRecord]? = nil
     public var directGrants: [String]? = nil
+    /// Ask before contacting other bots (Permissions); absent is off.
+    public var approvePeerComms: Bool? = nil
 
     /// The look the renderers draw: the stored one, or the owl.
     public var resolvedMascotLook: CompleteMascotLook {

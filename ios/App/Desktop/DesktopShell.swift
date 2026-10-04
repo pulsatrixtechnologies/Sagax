@@ -76,6 +76,14 @@ final class DesktopShellModel: ObservableObject {
     @Published var selected: Chat?
     @Published var panelOpen = false
     @Published var panelTab: BotPanelTab = .details
+    /// The Advanced section open in the panel; nil shows the list.
+    @Published var panelSection: DesktopPanelSection?
+    /// The character editor over the panel (the mascot's Edit avatar).
+    @Published var avatarEditorOpen = false
+    /// A move the editor asks the panel's owl to play.
+    @Published var avatarMove: OwlWingMove?
+    /// Bumped by the panel's Inspector button; the chat column opens it.
+    @Published var inspectorRequest = 0
     @Published var modal: Modal?
     /// The composer's model picker (I3), over the whole window.
     @Published var modelPickerOpen = false
@@ -86,6 +94,20 @@ final class DesktopShellModel: ObservableObject {
 
     func togglePanel() {
         withAnimation(.easeOut(duration: 0.2)) { panelOpen.toggle() }
+        if !panelOpen { avatarEditorOpen = false }
+    }
+
+    /// Opens the panel on a tab (and an Advanced section).
+    func showPanel(_ tab: BotPanelTab, section: DesktopPanelSection? = nil) {
+        panelTab = tab
+        panelSection = section
+        if !panelOpen { togglePanel() }
+    }
+
+    /// The panel's Inspector button (`toggleInspector`): the Inspector takes
+    /// the panel's place.
+    func requestInspector() {
+        inspectorRequest += 1
     }
 }
 
@@ -284,6 +306,9 @@ private struct DesktopShellRouting: ViewModifier {
             if let ara = session.state.bots.first(where: { $0.name == "Ara" }) {
                 model.open(.bot(ara))
                 model.panelOpen = screen.opensBotPanel
+                if let tab = screen.panelTab { model.panelTab = tab }
+                model.panelSection = screen.panelSection
+                model.avatarEditorOpen = screen == .panelAvatarEditor
                 model.modelPickerOpen = screen == .chatModelPicker
                 return
             }
