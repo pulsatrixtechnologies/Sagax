@@ -94,4 +94,24 @@ final class DesktopSidebarPlacesTests: XCTestCase {
         XCTAssertEqual(DesktopComposeTo.move(9, by: 1, count: 4), 0)
         XCTAssertEqual(DesktopComposeTo.move(0, by: 1, count: 0), 0)
     }
+
+    func testShareTeamExportsTheWholeTeamAndReadsThePackage() throws {
+        let client = CompanionClient(connection: Connection(name: "Test", host: "127.0.0.1", port: 8810), token: "t")
+        let request = try client.exportTeamRequest(" Administration ")
+        XCTAssertEqual(request.httpMethod, "POST")
+        XCTAssertEqual(request.url?.path, "/api/teams/export")
+        let body = try JSONSerialization.jsonObject(with: request.httpBody ?? Data()) as? [String: Any]
+        XCTAssertEqual(body?["team"] as? String, "Administration")
+        XCTAssertEqual(body?["skills"] as? String, "all")
+        XCTAssertEqual(body?["includeMemory"] as? Bool, true)
+        XCTAssertNil(body?["dryRun"])
+        XCTAssertThrowsError(try client.exportTeamRequest("  "))
+
+        let answer = Data(#"{"document":{"format":"package","agents":[]},"filename":"administration.json","redacted":[]}"#.utf8)
+        let file = try CompanionClient.teamShareFile(from: answer, team: "Administration")
+        XCTAssertEqual(file.filename, "administration.json")
+        let document = try JSONSerialization.jsonObject(with: file.data) as? [String: Any]
+        XCTAssertEqual(document?["format"] as? String, "package")
+        XCTAssertThrowsError(try CompanionClient.teamShareFile(from: Data("{}".utf8), team: "x"))
+    }
 }

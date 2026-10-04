@@ -222,6 +222,24 @@ final class DesktopSidebarUITests: XCTestCase {
         try eventually("bot 2 selected") { self.isSelected(second, in: app) }
     }
 
+    /// New opens the inline "To:" picker (the desktop's compose-to): the
+    /// create rows and the bots, group mode collects members, Close puts
+    /// the header back.
+    @MainActor
+    func testNewOpensTheToPicker() throws {
+        let app = launch()
+        app.buttons["desktop-sidebar-new"].firstMatch.tap()
+        XCTAssertTrue(app.textFields["desktop-compose-field"].waitForExistence(timeout: 5), "the To: field")
+        XCTAssertTrue(app.buttons["desktop-compose.create-bot"].exists)
+        let group = app.buttons["desktop-compose.create-group"].firstMatch
+        XCTAssertTrue(group.exists)
+        group.tap()
+        XCTAssertFalse(app.buttons["desktop-compose.create-bot"].exists, "group mode keeps the confirm row and the bots")
+        XCTAssertFalse(app.buttons["desktop-compose.create-group"].firstMatch.isEnabled, "no member yet")
+        app.buttons["desktop-compose-close"].firstMatch.tap()
+        XCTAssertFalse(app.textFields["desktop-compose-field"].waitForExistence(timeout: 2))
+    }
+
     /// Connected apps and Templates wait for Settings > Experimental
     /// features, as on the desktop; the footer shows the achievements
     /// points from the server.

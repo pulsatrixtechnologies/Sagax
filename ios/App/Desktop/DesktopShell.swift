@@ -128,6 +128,8 @@ final class DesktopShellModel: ObservableObject {
     /// The bot menu's Archive and Replace with different Bot (I2b).
     @Published var archivingBot: Bot?
     @Published var replacingPrimary: Bot?
+    /// The team menu's Share team… (the package file, then the share sheet).
+    @Published var sharingTeam: String?
     /// The open "To:" picker's ⌘1 to ⌘9 (DesktopKeyCommands routes them).
     var composeActivate: ((Int) -> Void)?
     #if DEBUG
@@ -516,8 +518,8 @@ private struct DesktopShellRouting: ViewModifier {
         case .sidebarRowHover:
             model.hoveredRow = bot("Aurora")?.id
         case .sidebarBotMenu:
+            // the reference moves the pointer away after the click: no hover
             guard let aurora = bot("Aurora") else { return }
-            model.hoveredRow = aurora.id
             model.menu = DesktopMenuRequest(kind: .bot(aurora.id), anchor: CGPoint(x: 235, y: 413))
         case .sidebarBotContextMenu:
             guard let helix = bot("Helix") else { return }

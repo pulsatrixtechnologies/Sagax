@@ -91,12 +91,7 @@ struct DesktopSidebarHead: View {
                 .frame(width: 22, height: 17)
                 .padding(.leading, 16)
                 .accessibilityHidden(true)
-            Text(verbatim: "Sagax")
-                .font(theme.font(16, .semibold))
-                .tracking(-0.16)
-                .foregroundStyle(theme.sidebarInk)
-                .lineLimit(1)
-                .offset(y: -0.5)
+            DesktopLineText(text: "Sagax", size: 16, weight: .semibold, color: theme.sidebarInk, lineHeight: 20, tracking: -0.16)
                 .padding(.leading, 8)
             Spacer(minLength: 8)
             DesktopSearchButton()
@@ -120,7 +115,6 @@ struct DesktopRailHead: View {
         .frame(maxWidth: .infinity)
         .padding(.top, 4)
         .padding(.bottom, 8)
-        .offset(x: -0.5)
     }
 }
 
@@ -396,10 +390,8 @@ struct DesktopSectionHeader: View {
             withAnimation(.snappy(duration: 0.2)) { prefs.toggleCollapsed(session, section.id) }
         } label: {
             HStack(spacing: 8) {
-                Text(verbatim: section.title.uppercased())
-                    .font(theme.font(11, .medium))
-                    .tracking(0.44)
-                    .lineLimit(1)
+                DesktopLineText(text: section.title.uppercased(), size: 11, weight: .medium,
+                             color: hovering ? theme.sidebarInk : theme.sidebarInkSecondary, lineHeight: 16, tracking: 0.44)
                 if collapsed { attentionMarks }
                 Spacer(minLength: 0)
                 DesktopIconView(icon: .chevronRight, size: 16)
@@ -642,6 +634,8 @@ struct DesktopSidebarFooter: View {
         }
         .padding(.leading, 8)
         .padding(.trailing, icons ? 9 : 13)
+        // Chrome centres the rail's 63 pt column on the next device pixel
+        .offset(x: icons ? 0.5 : 0)
         .padding(.top, 4)
         .padding(.bottom, 12)
         .task(id: session.connection?.id) {
@@ -666,13 +660,13 @@ struct DesktopSidebarFooter: View {
     private func placeRow(_ place: DesktopSidebarPlace, icons: Bool) -> some View {
         switch place {
         case .teamMap:
-            DesktopPlaceRow(title: "Team map", icon: .network, id: place.rawValue, iconOnly: icons) { model.modal = .teamMap }
+            DesktopPlaceRow(title: String(localized: "Team map"), icon: .network, id: place.rawValue, iconOnly: icons) { model.modal = .teamMap }
         case .automations:
-            DesktopPlaceRow(title: "Automations", icon: .calendarDays, id: place.rawValue, iconOnly: icons) { model.modal = .automations }
+            DesktopPlaceRow(title: String(localized: "Automations"), icon: .calendarDays, id: place.rawValue, iconOnly: icons) { model.modal = .automations }
         case .connectedApps:
-            DesktopPlaceRow(title: "Connected apps", icon: .puzzle, id: place.rawValue, iconOnly: icons) { model.modal = .plugins }
+            DesktopPlaceRow(title: String(localized: "Connected apps"), icon: .puzzle, id: place.rawValue, iconOnly: icons) { model.modal = .plugins }
         case .templates:
-            DesktopPlaceRow(title: "Templates", icon: .library, id: place.rawValue, iconOnly: icons) { model.modal = .templates }
+            DesktopPlaceRow(title: String(localized: "Templates"), icon: .library, id: place.rawValue, iconOnly: icons) { model.modal = .templates }
         }
     }
 
@@ -694,12 +688,7 @@ struct DesktopSidebarFooter: View {
                     HStack(spacing: 10) {
                         initialsCircle
                         VStack(alignment: .leading, spacing: 0) {
-                            Text(verbatim: displayName)
-                                .font(theme.font(13, .medium))
-                                .foregroundStyle(theme.sidebarInk)
-                                .lineLimit(1)
-                                .frame(height: 20)
-                                .offset(y: -0.5)
+                            DesktopLineText(text: displayName, size: 13, weight: .medium, color: theme.sidebarInk, lineHeight: 20)
                             if points != nil { Color.clear.frame(height: 16) }
                         }
                         Spacer(minLength: 0)
@@ -739,9 +728,7 @@ struct DesktopSidebarFooter: View {
     }
 
     private var initialsCircle: some View {
-        Text(verbatim: initials)
-            .font(theme.font(10.64, .medium))
-            .foregroundStyle(theme.sidebarInkSecondary)
+        DesktopLineText(text: initials, size: 10.64, weight: .medium, color: theme.sidebarInkSecondary, lineHeight: 15.96, centered: true)
             .frame(width: 28, height: 28)
             .background(theme.raised, in: Circle())
     }
@@ -800,11 +787,7 @@ struct DesktopGamertag: View {
             HStack(spacing: 4) {
                 DesktopIconView(icon: .trophy, size: 11, strokeWidth: 2.4)
                     .foregroundStyle(Self.gold)
-                Text(verbatim: points)
-                    .font(theme.font(11))
-                    .monospacedDigit()
-                    .foregroundStyle(hovering ? theme.sidebarInk : theme.sidebarInkSecondary)
-                    .offset(y: -0.5)
+                DesktopLineText(text: points, size: 11, color: hovering ? theme.sidebarInk : theme.sidebarInkSecondary, lineHeight: 16)
             }
             .padding(.horizontal, 4)
             .frame(height: 16)
@@ -821,7 +804,7 @@ struct DesktopGamertag: View {
 /// One place row (`SidebarPlaces`).
 struct DesktopPlaceRow: View {
     @Environment(\.desktopTheme) private var theme
-    let title: LocalizedStringKey
+    let title: String
     let icon: DesktopIcon
     let id: String
     let iconOnly: Bool
@@ -832,10 +815,7 @@ struct DesktopPlaceRow: View {
             HStack(spacing: 10) {
                 DesktopIconView(icon: icon, size: 20, strokeWidth: 1.75)
                 if !iconOnly {
-                    Text(title)
-                        .font(theme.font(13))
-                        .lineLimit(1)
-                        .offset(y: -0.5)
+                    DesktopLineText(text: title, size: 13, color: theme.sidebarInkSecondary, lineHeight: 20)
                     Spacer(minLength: 0)
                 }
             }
@@ -846,7 +826,7 @@ struct DesktopPlaceRow: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(DesktopSidebarRowButtonStyle())
-        .accessibilityLabel(Text(title))
+        .accessibilityLabel(Text(verbatim: title))
         .accessibilityIdentifier("desktop-sidebar-\(id)")
     }
 }

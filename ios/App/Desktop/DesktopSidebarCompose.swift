@@ -60,7 +60,9 @@ struct DesktopComposePicker: View {
         }
         .frame(width: width, alignment: .topLeading)
         .onAppear {
-            focused = true
+            // the desktop's autoFocus; the parity captures keep the
+            // simulator's software keyboard away
+            if !ParityMode.isActive { focused = true }
             #if DEBUG
             if let preset = model.parityComposePreset {
                 mode = preset.group ? .group : .browse
@@ -82,9 +84,7 @@ struct DesktopComposePicker: View {
 
     private var band: some View {
         HStack(spacing: 12) {
-            Text("To:")
-                .font(theme.font(15))
-                .foregroundStyle(theme.inkSecondary)
+            DesktopLineText(text: String(localized: "To:"), size: 15, color: theme.inkSecondary, lineHeight: 22.5)
             HStack(spacing: 6) {
                 if mode == .group {
                     ForEach(picked, id: \.self) { id in
@@ -205,10 +205,7 @@ struct DesktopComposePicker: View {
             HStack(spacing: 12) {
                 DesktopIconView(icon: icon, size: 16)
                     .foregroundStyle(theme.inkSecondary)
-                Text(verbatim: title)
-                    .font(theme.font(14))
-                    .foregroundStyle(theme.ink)
-                    .lineLimit(1)
+                DesktopLineText(text: title, size: 14, color: theme.ink, lineHeight: 21)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 if let shortcut { DesktopComposeKey(number: shortcut) }
             }
@@ -232,10 +229,7 @@ struct DesktopComposePicker: View {
             HStack(spacing: 12) {
                 ChatAvatarView(chat: .bot(bot), size: 28, state: .idle, background: theme.menu)
                     .frame(width: 28, height: 28)
-                Text(verbatim: bot.name)
-                    .font(theme.font(14))
-                    .foregroundStyle(theme.ink)
-                    .lineLimit(1)
+                DesktopLineText(text: bot.name, size: 14, color: theme.ink, lineHeight: 21)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 if mode == .group, member, !selected {
                     DesktopIconView(icon: .check, size: 14).foregroundStyle(theme.inkSecondary)
@@ -332,7 +326,7 @@ struct DesktopComposeKey: View {
     var body: some View {
         HStack(spacing: 2) {
             DesktopIconView(icon: .command, size: 11)
-            Text(verbatim: "\(number)").font(theme.font(11))
+            DesktopLineText(text: "\(number)", size: 11, color: theme.inkSecondary, lineHeight: 11)
         }
         .foregroundStyle(theme.inkSecondary)
         .padding(.horizontal, 6)

@@ -92,6 +92,15 @@ struct DesktopSidebarPrompts: ViewModifier {
             } message: {
                 Text("\(model.archivingBot?.name ?? "") leaves the sidebar, but every conversation is kept. You can restore it any time from Archived bots.")
             }
+            .sheet(isPresented: Binding(
+                get: { model.sharingTeam != nil },
+                set: { if !$0 { model.sharingTeam = nil } }
+            )) {
+                if let team = model.sharingTeam {
+                    DesktopShareTeamSheet(team: team) { model.sharingTeam = nil }
+                        .environmentObject(session)
+                }
+            }
             .sheet(item: $model.replacingPrimary) { bot in
                 PrimaryBotPicker(currentId: bot.id, viewerId: DesktopSidebarFlags.shared.viewerId) { _ in }
                     .environmentObject(session)
@@ -164,6 +173,67 @@ enum DesktopBotArchiving {
 }
 
 // MARK: - Sheets
+
+/// Share team…: the server packs the team (every skill and the starter
+/// notes, never chat history; keys redacted), then the share sheet takes
+/// the file (the desktop saves it).
+struct DesktopShareTeamSheet: View {
+    @EnvironmentObject private var session: Session
+    let team: String
+    let close: () -> Void
+    @State private var file: URL?
+    @State private var failure: String?
+
+    var body: some View {
+        NavigationStack {
+            Group {
+                if let file {
+                    DesktopActivityView(items: [file]) { close() }
+                } else if let failure {
+                    VStack(spacing: 12) {
+                        Text(verbatim: failure).foregroundStyle(.secondary).multilineTextAlignment(.center)
+                        Button("Close", action: close)
+                    }
+                    .padding()
+                } else {
+                    VStack(spacing: 12) {
+                        ProgressView()
+                        Text("Packing \(team)…").foregroundStyle(.secondary)
+                    }
+                }
+            }
+            .navigationTitle(Text("Share team…"))
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel", action: close) } }
+        }
+        .task {
+            guard let client = session.profileClient else { failure = String(localized: "Not connected"); return }
+            do {
+                let package = try await client.exportTeam(team)
+                let url = FileManager.default.temporaryDirectory.appendingPathComponent(package.filename)
+                try package.data.write(to: url, options: .atomic)
+                file = url
+            } catch {
+                failure = error.localizedDescription
+            }
+        }
+        .accessibilityIdentifier("desktop-share-team")
+    }
+}
+
+/// The system share sheet in a sheet.
+struct DesktopActivityView: UIViewControllerRepresentable {
+    let items: [Any]
+    let done: () -> Void
+
+    func makeUIViewController(context: Context) -> UIActivityViewController {
+        let controller = UIActivityViewController(activityItems: items, applicationActivities: nil)
+        controller.completionWithItemsHandler = { _, _, _, _ in done() }
+        return controller
+    }
+
+    func updateUIViewController(_ controller: UIActivityViewController, context: Context) {}
+}
 
 /// Templates (the team library) until its desktop modal lands: the catalog,
 /// read-only; installing a team runs on the computer.

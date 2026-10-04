@@ -92,11 +92,8 @@ struct DesktopPinnedTile: View {
                 ChatAvatarView(chat: chat, size: rail ? 36 : 72, state: .idle, background: theme.sidebar)
                     .frame(width: rail ? 36 : 72, height: rail ? 36 : 72)
                 if !rail {
-                    Text(verbatim: PeopleDirectory.shared.name(chat, session: session))
-                        .font(theme.font(11))
-                        .tracking(0.055)
-                        .foregroundStyle(theme.sidebarInk)
-                        .lineLimit(1)
+                    DesktopLineText(text: PeopleDirectory.shared.name(chat, session: session), size: 11,
+                                 color: theme.sidebarInk, lineHeight: 16, tracking: 0.055, centered: true)
                         .frame(width: 72, height: 16)
                     if let title = chat.desktopTitle {
                         DesktopTitleChip(text: title, size: 10, maxWidth: 72, alignment: .center)
@@ -140,11 +137,8 @@ struct DesktopTitleChip: View {
     var alignment: Alignment = .leading
 
     var body: some View {
-        Text(verbatim: text)
-            .font(theme.font(size, size >= 11 ? .medium : .regular))
-            .foregroundStyle(theme.sidebarInkSecondary)
-            .lineLimit(1)
-            .truncationMode(.tail)
+        DesktopLineText(text: text, size: size, weight: size >= 11 ? .medium : .regular,
+                     color: theme.sidebarInkSecondary, lineHeight: 16)
             // px-1.5 inside the 1 pt border
             .padding(.horizontal, 7)
             .frame(height: 18)
@@ -280,11 +274,9 @@ struct DesktopSidebarRow: View {
                         DesktopIconView(icon: .pin, size: 12)
                             .foregroundStyle(theme.sidebarInkSecondary)
                     }
-                    Text(verbatim: PeopleDirectory.shared.name(chat, session: session))
-                        .font(theme.font(14, selected ? .semibold : .medium))
-                        .foregroundStyle(theme.sidebarInk)
-                        .lineLimit(1)
-                        .layoutPriority(1)
+                    DesktopLineText(text: PeopleDirectory.shared.name(chat, session: session), size: 14,
+                                 weight: selected ? .semibold : .medium, color: theme.sidebarInk, lineHeight: 20)
+                        .layoutPriority(2)
                     if !compact, let title = chat.desktopTitle {
                         DesktopTitleChip(text: title, maxWidth: titleMaxWidth(leading: leading, avatar: avatarSize))
                     }
@@ -324,20 +316,12 @@ struct DesktopSidebarRow: View {
     private func statusLine(_ status: RosterRowStatus) -> some View {
         switch status {
         case .waitingOnYou:
-            Text("Waiting on you")
-                .font(theme.font(13))
-                .foregroundStyle(theme.sidebarInkSecondary)
-                .lineLimit(1)
+            DesktopLineText(text: String(localized: "Waiting on you"), size: 13, color: theme.sidebarInkSecondary, lineHeight: 18)
         case .working:
             DesktopWorkingDots()
                 .accessibilityLabel(Text("Working"))
         case .idle:
-            Text(verbatim: preview)
-                .font(theme.font(13))
-                .foregroundStyle(theme.sidebarInkSecondary)
-                .lineLimit(1)
-                // CoreText sets 13/18 half a point lower than Chrome
-                .offset(y: -0.5)
+            DesktopLineText(text: preview, size: 13, color: theme.sidebarInkSecondary, lineHeight: 18)
         }
     }
 
