@@ -5174,6 +5174,7 @@ describe("harness HTTP API", () => {
     let before: { profile: Record<string, unknown> } | undefined;
     try {
       before = (await api("GET", "/api/bot-defaults")).body.defaults;
+      if (!before) throw new Error("bot defaults missing");
       const withEffort = { ...before, profile: { ...before.profile, modelSelection: { ...selection, effort: "high" } } };
       const withoutEffort = { ...before, profile: { ...before.profile, modelSelection: selection } };
       const saved = await api("PATCH", "/api/config", { newBotDefaults: withEffort });
