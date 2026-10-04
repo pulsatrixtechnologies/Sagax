@@ -208,12 +208,30 @@ enum IPadParityScreen: String, CaseIterable {
         // I2: the sidebar's densities, threads, hover and menus
         case .mainCompact, .mainCollapsed, .mainThreads, .sidebarRowHover, .sidebarBotMenu,
              .sidebarBotContextMenu, .sidebarSectionMenu, .sidebarProfileMenu, .sidebarNewMenu: true
-        default: isDesktopChat
+        default: isDesktopChat || opensBotPanel
         }
     }
 
-    /// The bot panel is open on this surface.
-    var opensBotPanel: Bool { self == .panelDetails }
+    /// The bot panel is open on this surface (I4).
+    var opensBotPanel: Bool { panelTab != nil }
+
+    /// The panel's tab on a panel surface.
+    var panelTab: DesktopPanelTab? {
+        switch self {
+        case .panelDetails, .panelAvatarEditor: .details
+        case .panelRoutines: .routines
+        case .panelFiles: .files
+        case .panelComputer: .computer
+        case .panelAdvanced: .advanced
+        default: panelSection != nil ? .advanced : nil
+        }
+    }
+
+    /// The Advanced section open on a `panel-advanced-<section>` surface.
+    var panelSection: DesktopPanelSection? {
+        guard rawValue.hasPrefix("panel-advanced-") else { return nil }
+        return DesktopPanelSection(rawValue: String(rawValue.dropFirst("panel-advanced-".count)))
+    }
 }
 
 #if DEBUG
