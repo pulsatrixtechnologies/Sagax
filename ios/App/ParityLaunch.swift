@@ -191,11 +191,12 @@ enum IPadParityScreen: String, CaseIterable {
 
     /// Accepts the id, or a capture file stem ("03-main", "desktop-1366x1024-03-main").
     init?(argument: String) {
+        // ids keep their case (settings-decisionModel): match without it
         let value = argument.lowercased()
-        if let exact = IPadParityScreen(rawValue: value) { self = exact; return }
+        if let exact = Self.allCases.first(where: { $0.rawValue.lowercased() == value }) { self = exact; return }
         guard let match = Self.allCases
             .sorted(by: { $0.rawValue.count > $1.rawValue.count })
-            .first(where: { value.hasSuffix("-" + $0.rawValue) })
+            .first(where: { value.hasSuffix("-" + $0.rawValue.lowercased()) })
         else { return nil }
         self = match
     }
@@ -208,7 +209,7 @@ enum IPadParityScreen: String, CaseIterable {
         // I2: the sidebar's densities, threads, hover and menus
         case .mainCompact, .mainCollapsed, .mainThreads, .sidebarRowHover, .sidebarBotMenu,
              .sidebarBotContextMenu, .sidebarSectionMenu, .sidebarProfileMenu, .sidebarNewMenu: true
-        default: isDesktopChat
+        default: isDesktopChat || isDesktopSettings
         }
     }
 

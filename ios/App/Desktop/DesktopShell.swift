@@ -81,6 +81,9 @@ final class DesktopShellModel: ObservableObject {
     @Published var modal: Modal?
     /// The composer's model picker (I3), over the whole window.
     @Published var modelPickerOpen = false
+    /// The Settings modal's section and the Plugins modal's tab (I5).
+    @Published var settingsSection: DesktopSettingsSection = .general
+    @Published var pluginsTab: DesktopPluginsTab = .apps
 
     // MARK: Sidebar (I2)
 
@@ -256,10 +259,19 @@ struct DesktopShell: View {
                     close: { model.modelPickerOpen = false },
                     openProviders: {
                         model.modelPickerOpen = false
+                        model.settingsSection = .engines
                         model.modal = .settings
                     }
                 ))
                 .transition(.opacity)
+            }
+            // I5: Settings and Plugins are the desktop's modals, over everything
+            if model.modal == .settings {
+                AnyView(DesktopSettingsModal(close: { model.modal = nil }))
+                    .transition(.opacity)
+            } else if model.modal == .plugins {
+                AnyView(DesktopPluginsModal(close: { model.modal = nil }))
+                    .transition(.opacity)
             }
         }
         .background(theme.app)
@@ -406,6 +418,7 @@ private struct DesktopShellRouting: ViewModifier {
                 model.open(.bot(ara))
                 model.panelOpen = screen.opensBotPanel
                 model.modelPickerOpen = screen == .chatModelPicker
+                model.applyParityModals(screen)
                 await applyParitySidebar(screen)
                 return
             }
@@ -453,17 +466,26 @@ private struct DesktopShellPresenter: ViewModifier {
     @EnvironmentObject private var session: Session
 
     func body(content: Content) -> some View {
-        content.sheet(item: $model.modal) { modal in
+        content.sheet(item: sheetModal) { modal in
             AnyView(sheet(modal))
                 .environmentObject(session)
         }
+    }
+
+    /// Settings and Plugins draw in the shell as the desktop's modals (I5);
+    /// the other surfaces are still sheets.
+    private var sheetModal: Binding<DesktopShellModel.Modal?> {
+        Binding(
+            get: { model.modal.flatMap { $0 == .settings || $0 == .plugins ? nil : $0 } },
+            set: { model.modal = $0 }
+        )
     }
 
     @ViewBuilder
     private func sheet(_ modal: DesktopShellModel.Modal) -> some View {
         switch modal {
         case .settings:
-            SettingsView(close: { model.modal = nil })
+            EmptyView()
         case .search:
             SearchSheet(close: { model.modal = nil }) { chat in
                 model.modal = nil
@@ -494,7 +516,7 @@ private struct DesktopShellPresenter: ViewModifier {
         case .automations:
             AutomationsSheet()
         case .plugins:
-            DesktopPluginsSheet()
+            EmptyView()
         case .templates:
             DesktopTemplatesSheet { model.modal = nil }
         case .about:

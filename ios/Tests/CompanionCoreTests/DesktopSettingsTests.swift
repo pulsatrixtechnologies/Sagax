@@ -1,0 +1,213 @@
+// iPad I5: the Settings and Plugins modals' rules (DesktopSettings.swift).
+import Foundation
+import XCTest
+@testable import CompanionCore
+
+final class DesktopSettingsTests: XCTestCase {
+    private let client = CompanionClient(
+        connection: Connection(name: "Mac", host: "127.0.0.1", port: 8810),
+        token: "paired-token"
+    )
+
+    // MARK: Sections per pairing
+
+    func testAnAdminSessionListsTheDesktopSectionsInOrder() {
+        let expected: [DesktopSettingsSection] = [
+            .general, .organization, .appearance, .experimental, .connections, .decisionModel, .engines,
+            .companion, .computer, .usage, .backups,
+        ]
+        XCTAssertEqual(DesktopSettingsSection.available(for: SurfaceGate(scope: .serverAdmin)), expected)
+        XCTAssertEqual(DesktopSettingsSection.available(for: SurfaceGate(scope: .serverAdmin, organization: true)), expected)
+    }
+
+    func testASidecarAndAClientSessionGetTheRemoteClientSections() {
+        for scope in [PairingScope.sidecar, .serverClient] {
+            XCTAssertEqual(DesktopSettingsSection.available(for: SurfaceGate(scope: scope)), [.organization, .appearance, .companion])
+        }
+    }
+
+    func testSearchMatchesTheLabelOrAKeywordIgnoringCase() {
+        XCTAssertTrue(DesktopSettingsSection.connections.matches("OpenRouter", label: "API keys"))
+        XCTAssertTrue(DesktopSettingsSection.engines.matches("model prov", label: "Model providers"))
+        XCTAssertTrue(DesktopSettingsSection.general.matches("  ", label: "General"))
+        XCTAssertFalse(DesktopSettingsSection.backups.matches("skin", label: "Backups"))
+    }
+
+    func testResolveKeepsTheRequestOrFallsToTheFirstMatch() {
+        let all = DesktopSettingsSection.available(for: SurfaceGate(scope: .serverAdmin))
+        XCTAssertEqual(DesktopSettingsSection.resolve(.usage, available: all, visible: all), .usage)
+        XCTAssertEqual(DesktopSettingsSection.resolve(.usage, available: all, visible: [.appearance]), .appearance)
+        // a section the pairing does not list opens its first one
+        let remote = DesktopSettingsSection.available(for: SurfaceGate(scope: .sidecar))
+        XCTAssertEqual(DesktopSettingsSection.resolve(.general, available: remote, visible: []), .organization)
+    }
+
+    func testPluginsTabsFollowTheConnectorGates() {
+        XCTAssertEqual(DesktopPluginsTab.available(for: SurfaceGate(scope: .serverAdmin)), [.apps, .mcp])
+        XCTAssertEqual(DesktopPluginsTab.available(for: SurfaceGate(scope: .sidecar)), [.apps, .mcp])
+        XCTAssertEqual(DesktopPluginsTab.available(for: SurfaceGate(scope: .serverClient)), [])
+    }
+
+    // MARK: Config
+
+    func testConfigDecodesTheSectionsSlice() throws {
+        let json = #"""
+        {"profile":{"name":"Parity Person","email":"parity@example.com","aboutMe":""},"language":"",
+         "features":{"skillAuthoring":true,"routinesInConversation":false,"browser":false},
+         "rooms":{"turnTimeoutMinutes":5},"threads":{"maxConcurrentPerBot":3},"budgets":{"monthlyUsd":100},
+         "decider":{"provider":"jev","configured":false,"enabled":false,"jobs":{"roomRouting":true}},
+         "openai":{"configured":true},"mistral":{"configured":false},"composio":{"configured":false,"mode":"unavailable"},
+         "browserEngine":{"kind":"unavailable","installable":true},"localVm":{"mode":"shared"}}
+        """#
+        let config = try JSONDecoder().decode(DesktopSettingsConfig.self, from: Data(json.utf8))
+        XCTAssertEqual(config.profile?.name, "Parity Person")
+        XCTAssertEqual(config.features?.skillAuthoring, true)
+        XCTAssertEqual(config.rooms?.turnTimeoutMinutes, 5)
+        XCTAssertEqual(config.threads?.maxConcurrentPerBot, 3)
+        XCTAssertEqual(config.budgets?.monthlyUsd, 100)
+        XCTAssertEqual(config.decider?.jobs?.roomRouting, true)
+        XCTAssertTrue(config.keyConfigured(.openai))
+        XCTAssertFalse(config.keyConfigured(.mistral))
+        XCTAssertFalse(config.keyConfigured(.decider))
+    }
+
+    func testChangesBuildTheDesktopBodies() throws {
+        func json(_ change: DesktopConfigChange) throws -> [String: Any] {
+            let request = try client.desktopSettingsRequest(change)
+            XCTAssertEqual(request.url?.path, "/api/config")
+            return try XCTUnwrap(JSONSerialization.jsonObject(with: XCTUnwrap(request.httpBody)) as? [String: Any])
+        }
+        XCTAssertEqual((try json(.feature("skillAuthoring", false))["features"] as? [String: Bool])?["skillAuthoring"], false)
+        XCTAssertEqual((try json(.roomTurnMinutes(10))["rooms"] as? [String: Int])?["turnTimeoutMinutes"], 10)
+        XCTAssertEqual((try json(.parallelThreads(4))["threads"] as? [String: Int])?["maxConcurrentPerBot"], 4)
+        XCTAssertEqual((try json(.profileName("  Ada  "))["profile"] as? [String: String])?["name"], "Ada")
+        let routing = try json(.deciderRoomRouting(false))["decider"] as? [String: Any]
+        XCTAssertEqual((routing?["jobs"] as? [String: Bool])?["roomRouting"], false)
+        XCTAssertEqual((try json(.apiKey(.mistral, " key "))["mistral"] as? [String: String])?["key"], "key")
+        XCTAssertEqual(try client.desktopSettingsRequest(.monthlyBudget(50)).httpMethod, "PUT")
+        // the desktop's one PATCH, and null for the provider default
+        let effort = try client.desktopSettingsRequest(.newBotEffort(nil))
+        XCTAssertEqual(effort.httpMethod, "PATCH")
+        XCTAssertTrue((try json(.newBotEffort(nil))["newBots"] as? [String: Any])?["effort"] is NSNull)
+    }
+
+    func testEventLogCleanupAndRecoveryBodies() throws {
+        let off = try client.desktopSettingsRequest(.eventLogRetention(nil))
+        XCTAssertEqual(off.httpMethod, "PATCH")
+        let body = try XCTUnwrap(JSONSerialization.jsonObject(with: XCTUnwrap(off.httpBody)) as? [String: Any])
+        XCTAssertTrue((body["threads"] as? [String: Any])?["eventLogRetentionDays"] is NSNull)
+        XCTAssertNil(DesktopConfigChange.eventLogRetention(0).body)
+        let recovery = DesktopConfigChange.automaticRecoveryOff.body?["automaticRecovery"] as? [String: Bool]
+        XCTAssertEqual(recovery?["enabled"], false)
+    }
+
+    func testBackupExportRequestsAndFileName() throws {
+        XCTAssertThrowsError(try client.exportWorkspaceBackupRequest(password: "short"))
+        let request = try client.exportWorkspaceBackupRequest(password: "twelve chars!")
+        XCTAssertEqual(request.httpMethod, "POST")
+        XCTAssertEqual(request.url?.path, "/api/workspace-backup/export")
+        XCTAssertEqual(try client.workspaceBackupDownloadRequest(id: "b-1").url?.path, "/api/workspace-backup/download/b-1")
+        XCTAssertThrowsError(try client.workspaceBackupDownloadRequest(id: "../etc"))
+        XCTAssertEqual(WorkspaceBackupExport.safeFilename("../x/sagax-2026.ombbackup"), "sagax-2026.ombbackup")
+        XCTAssertEqual(WorkspaceBackupExport.safeFilename(nil), "sagax-backup.ombbackup")
+        XCTAssertEqual(WorkspaceBackupExport.safeFilename(".hidden"), "sagax-backup.ombbackup")
+    }
+
+    func testOutOfRangeChangesAreRefusedBeforeTheNetwork() {
+        XCTAssertNil(DesktopConfigChange.feature("vpsComputer", true).body)
+        XCTAssertNil(DesktopConfigChange.roomTurnMinutes(0).body)
+        XCTAssertNil(DesktopConfigChange.parallelThreads(11).body)
+        XCTAssertNil(DesktopConfigChange.newBotEffort("turbo").body)
+        XCTAssertNil(DesktopConfigChange.monthlyBudget(-1).body)
+        XCTAssertThrowsError(try client.desktopSettingsRequest(.parallelThreads(0)))
+    }
+
+    func testSpendSummaryReadsLikeTheDesktop() {
+        XCTAssertEqual(DesktopSettingsSummary.spend(0, of: 100), "$0 of $100.00 (0%)")
+        XCTAssertEqual(DesktopSettingsSummary.spend(25.5, of: 100), "$25.50 of $100.00 (26%)")
+        XCTAssertEqual(DesktopSettingsSummary.spend(3, of: nil), "$3.00")
+    }
+}
+
+final class DesktopSettingsEnginesAndPairingTests: XCTestCase {
+    private let client = CompanionClient(
+        connection: Connection(name: "Mac", host: "127.0.0.1", port: 8810),
+        token: "paired-token"
+    )
+
+    func testEnginesGroupAndLabelLikeTheDesktop() throws {
+        let json = #"""
+        {"instances":[
+         {"instanceId":"claude","driverKind":"claudeAgent","displayName":"Fixture engine","access":"subscription",
+          "snapshot":{"state":"available","version":"2.1.232 (Claude Code)","authenticated":true}},
+         {"instanceId":"pi","driverKind":"piAgent","displayName":"pi","access":"custom","snapshot":{"state":"available","version":"0.87.1"}},
+         {"instanceId":"chatgpt","driverKind":"codex","displayName":"ChatGPT plan","access":"subscription",
+          "snapshot":{"state":"available","authenticated":false}},
+         {"instanceId":"mistral","driverKind":"mistral","displayName":"Mistral (API)","access":"api","snapshot":{"state":"unavailable"}}]}
+        """#
+        struct List: Decodable { var instances: [DesktopEngine] }
+        let engines = try JSONDecoder().decode(List.self, from: Data(json.utf8)).instances
+        XCTAssertEqual(engines.filter(\.ready).map(\.name), ["Fixture engine", "pi"])
+        XCTAssertEqual(engines[0].providerLine, "Anthropic")
+        XCTAssertNil(engines[1].providerLine)
+        XCTAssertEqual(engines[0].versionNumber, "2.1.232")
+        XCTAssertEqual(engines[3].apiKeyProvider, .mistral)
+        XCTAssertNil(engines[2].apiKeyProvider)
+    }
+
+    func testPairingRequestsAndTimes() throws {
+        let full = try client.createPairingCodeRequest(fullAccess: true)
+        XCTAssertEqual(full.url?.path, "/api/auth/pairing")
+        let body = try XCTUnwrap(JSONSerialization.jsonObject(with: XCTUnwrap(full.httpBody)) as? [String: [String]])
+        XCTAssertEqual(body["scopes"], ["admin", "client"])
+        let chat = try XCTUnwrap(JSONSerialization.jsonObject(with: XCTUnwrap(client.createPairingCodeRequest(fullAccess: false).httpBody)) as? [String: [String]])
+        XCTAssertEqual(chat["scopes"], ["client"])
+        XCTAssertEqual(try client.signOutDeviceRequest(id: "s-1").httpMethod, "DELETE")
+        XCTAssertThrowsError(try client.signOutDeviceRequest(id: "a/b"))
+
+        let now = Date(timeIntervalSince1970: 1_000_000)
+        let ms = now.timeIntervalSince1970 * 1000
+        XCTAssertEqual(LastSeen(lastSeenAt: ms - 30_000, now: now), .justNow)
+        XCTAssertEqual(LastSeen(lastSeenAt: ms - 13 * 60_000, now: now), .minutes(13))
+        XCTAssertEqual(LastSeen(lastSeenAt: ms - 150 * 60_000, now: now), .hours(3))
+        XCTAssertEqual(LastSeen(lastSeenAt: ms - 3 * 1_440 * 60_000, now: now), .days(3))
+        let offer = ServerPairingOffer(id: "p", code: "ABCD", expiresAt: ms + 4.2 * 60_000, url: nil, hint: nil)
+        XCTAssertEqual(offer.minutesLeft(now: now), 5)
+        XCTAssertFalse(offer.expired(now: now))
+    }
+}
+
+final class DesktopLocalComputerTests: XCTestCase {
+    func testStatusStepsAndRecreate() throws {
+        func status(_ json: String) throws -> LocalComputerStatus {
+            try JSONDecoder().decode(LocalComputerStatus.self, from: Data(json.utf8))
+        }
+        let older = try status(#"{"ready":false,"runtime":"podman","daemonUp":true,"image":"cua:1","container":"running","imageMatches":false,"managed":true,"problem":"The existing Local VM uses an older desktop or Cua Driver; recreate it"}"#)
+        XCTAssertTrue(older.image)
+        XCTAssertTrue(older.needsRecreate)
+        XCTAssertEqual(older.setupStep, 4)
+        let fresh = try status(#"{"ready":false,"daemonUp":false,"image":false,"container":"missing"}"#)
+        XCTAssertFalse(fresh.needsRecreate)
+        XCTAssertEqual(fresh.setupStep, 1)
+        let started = try status(#"{"runtime":"docker","daemonUp":false}"#)
+        XCTAssertEqual(started.setupStep, 2)
+    }
+}
+
+final class DesktopMCPAdminTests: XCTestCase {
+    private let client = CompanionClient(
+        connection: Connection(name: "Mac", host: "127.0.0.1", port: 8810),
+        token: "paired-token"
+    )
+
+    func testServerActionRequests() throws {
+        let toggle = try client.mcpServerRequest("PATCH", "docs-wiki", body: ["enabled": false])
+        XCTAssertEqual(toggle.url?.path, "/api/mcp/servers/docs-wiki")
+        XCTAssertEqual(toggle.httpMethod, "PATCH")
+        XCTAssertEqual(try client.mcpServerRequest("POST", "docs-wiki", suffix: "/test").url?.path, "/api/mcp/servers/docs-wiki/test")
+        XCTAssertThrowsError(try client.mcpServerRequest("DELETE", "../config"))
+        XCTAssertNotNil(DesktopConfigChange.feature("claudeUserMcp", true).body)
+        let probe = try JSONDecoder().decode(MCPProbeResult.self, from: Data(#"{"ok":true,"tools":[{"name":"search"}]}"#.utf8))
+        XCTAssertEqual(probe.tools?.map(\.name), ["search"])
+    }
+}
