@@ -4,7 +4,7 @@
 // with the search, the kind chips and their counts, who sent it, the sort,
 // grid or list, and each file's actions: open, download, show in chat and
 // copy path. The phone opens it from the profile's Files tab ("This chat");
-// the view is layout-agnostic for the iPad's `panel-files`.
+// the view is layout-agnostic for the iPad's `panel-library`.
 import CompanionCore
 import SwiftUI
 import UIKit

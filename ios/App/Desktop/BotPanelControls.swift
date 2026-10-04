@@ -1,5 +1,5 @@
 // iPad I4: the small controls the desktop's bot panel is made of, measured
-// in the references (desktop-*-3[3-9]-panel-*.json, 4x-panel-advanced-*):
+// in the references (desktop-*-3[3-9]-panel-*.json, 4x-panel-more-*):
 // the inset field (`inputCls`: rounded-lg, 1 pt hairline/40, bg-inset,
 // 13 pt, px 10 py 6), the 44x20 switch (`Toggle.tsx`), the cards
 // (`rounded-xl bg-hover p-3` and `rounded-xl border border-hairline/40

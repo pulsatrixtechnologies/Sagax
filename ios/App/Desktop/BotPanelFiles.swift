@@ -1,6 +1,6 @@
-// iPad I4: the bot panel's Files tab (`bot-settings/FilesSection.tsx`):
+// iPad I4/I4b: the bot panel's Library tab (was Files; `bot-settings/FilesSection.tsx`):
 // the open conversation's files from GET /api/threads/:id/files, with the
-// search field and the grid / list switch (y 305), the kind chips with
+// search field and the grid / list switch (y 347), the kind chips with
 // their counts (12/16, radius full; the chosen one `bg-ink text-app`), who
 // sent it and the sort (two `select`s, 33 tall), then the list: a 40 pt
 // thumbnail, the name 13 and "Bot attached · 14 B · Sep 30, 2026, 11:33 AM"
@@ -32,8 +32,9 @@ struct BotPanelFiles: View {
     private var threadId: String { bot.threadId }
     private var all: [ThreadFile] { files ?? [] }
     private var counts: [ThreadFileFilter: Int] { ThreadFileRules.counts(all, origin: query.origin, search: query.search) }
-    /// Every kind with its count, as the panel draws them, once there is a file.
-    private var chips: [ThreadFileFilter] { all.isEmpty ? [] : ThreadFileFilter.allCases }
+    /// Only kinds that have files (or the chosen one), and only with two
+    /// kinds or more to choose between (`visibleFilters`, FilesSection.tsx).
+    private var chips: [ThreadFileFilter] { ThreadFileRules.visibleFilters(counts: counts, selected: query.filter) }
     private var shown: [ThreadFile] {
         var effective = query
         if chips.isEmpty { effective.filter = .all }

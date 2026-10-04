@@ -136,7 +136,7 @@ async function startVite(apiPort) {
   const port = await freePort();
   const proc = spawn(join(ROOT, "node_modules", ".bin", "vite"), ["--strictPort", "--clearScreen", "false"], {
     cwd: ROOT,
-    env: { ...process.env, OMB_PORT: String(apiPort), OMB_UI_PORT: String(port), BROWSER: "none" },
+    env: { ...process.env, SAGAX_PORT: String(apiPort), SAGAX_UI_PORT: String(port), OMB_PORT: String(apiPort), OMB_UI_PORT: String(port), BROWSER: "none" },
     stdio: ["ignore", "pipe", "pipe"],
   });
   children.push(proc);
