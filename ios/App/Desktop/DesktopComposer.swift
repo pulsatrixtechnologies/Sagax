@@ -222,7 +222,7 @@ struct DesktopComposerPill: View {
 
 /// The desktop's menu panel (`bg-elevated`, 0.5 pt border at 15 % ink,
 /// radius 12, 6 pt in), floated 8 pt above its trigger's leading edge.
-struct DesktopMenuPanel<Content: View>: View {
+struct DesktopComposerMenuPanel<Content: View>: View {
     @Environment(\.desktopTheme) private var theme
     let label: LocalizedStringKey
     @ViewBuilder let content: Content
@@ -325,7 +325,7 @@ struct DesktopApprovalButton: View {
             .accessibilityIdentifier("desktop-composer-approval")
             .overlay(alignment: .topLeading) {
                 if open {
-                    DesktopMenuPanel(label: "Approval mode") {
+                    DesktopComposerMenuPanel(label: "Approval mode") {
                         ForEach(ApprovalLevel.offered, id: \.self) { option in
                             DesktopMenuRow(systemImage: Self.icon(option), title: Text(Self.label(option)),
                                            detail: Text(Self.detail(option)), selected: option == level) {
@@ -405,7 +405,7 @@ struct DesktopPlaceButton: View {
             .accessibilityIdentifier("desktop-composer-place")
             .overlay(alignment: .topLeading) {
                 if open {
-                    DesktopMenuPanel(label: "Where this conversation works") {
+                    DesktopComposerMenuPanel(label: "Where this conversation works") {
                         DesktopMenuRow(systemImage: Self.icon(botDefault), title: Text("Follow this bot's setting"),
                                        detail: Text("Currently \(Self.label(botDefault))"), selected: surface == nil) {
                             choose(nil, current: surface)
