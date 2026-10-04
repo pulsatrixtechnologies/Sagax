@@ -924,6 +924,12 @@ public struct Room: Codable, Hashable, Identifiable, Sendable {
     public var working: Bool? = nil
     public var setupCompletedAt: Double? = nil
     public var setupSkippedAt: Double? = nil
+    /// The room's working folder (`cwd`): where every member's shell and
+    /// file tools run. Absent is each bot's own folder.
+    public var cwd: String? = nil
+    /// The folder the room pinned on its first turn; once set, the working
+    /// folder no longer changes for that thread.
+    public var pinnedCwd: String? = nil
 }
 
 // MARK: - Responses

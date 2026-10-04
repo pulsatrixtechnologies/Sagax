@@ -25,6 +25,18 @@ public extension CompanionClient {
         try await send(patchRoomRequest(groupId: groupId, patch: patch), as: GroupResponse.self).group
     }
 
+    /// `PATCH /api/groups/:id {cwd}`: the room's working folder (Advanced),
+    /// nil for each bot's own (an explicit JSON null). Admin scope.
+    func setRoomFolderRequest(groupId: String, cwd: String?) throws -> URLRequest {
+        guard Self.validRouteID(groupId) else { throw APIError.badURL }
+        let folder = cwd?.trimmingCharacters(in: .whitespacesAndNewlines)
+        return try makeRequest("PATCH", "/api/groups/\(groupId)", encodedBody: RoomFolderBody(cwd: folder?.isEmpty == false ? folder : nil))
+    }
+
+    func setRoomFolder(groupId: String, cwd: String?) async throws -> Room {
+        try await send(setRoomFolderRequest(groupId: groupId, cwd: cwd), as: GroupResponse.self).group
+    }
+
     func deleteRoomRequest(groupId: String) throws -> URLRequest {
         guard Self.validRouteID(groupId) else { throw APIError.badURL }
         return try makeRequest("DELETE", "/api/groups/\(groupId)")
@@ -76,4 +88,17 @@ public extension CompanionClient {
     func orgDirectory() async throws -> OrgDirectory {
         try await send(orgDirectoryRequest(), as: OrgDirectory.self)
     }
+}
+
+
+/// `{ "cwd": "/path" }` or `{ "cwd": null }`: the server wants null to clear.
+struct RoomFolderBody: Encodable {
+    var cwd: String?
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(cwd, forKey: .cwd)
+    }
+
+    private enum CodingKeys: String, CodingKey { case cwd }
 }
