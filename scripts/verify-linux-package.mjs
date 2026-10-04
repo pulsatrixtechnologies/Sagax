@@ -125,8 +125,8 @@ function verifyCompliance(licenses, label) {
   const html = readFileSync(path.join(licenses, "THIRD_PARTY_LICENSES.html"), "utf8");
   const sbom = JSON.parse(readFileSync(path.join(licenses, "SBOM.cdx.json"), "utf8"));
   const components = sbom.components ?? [];
-  if (components.length !== 339) {
-    fail(`${label} SBOM must contain 330 registry packages, 8 Cua packages, and Inter`);
+  if (components.length !== 387) {
+    fail(`${label} SBOM must contain 378 registry packages, 8 Cua packages, and Inter`);
   }
   const componentRefs = new Set();
   for (const component of components) {
@@ -140,7 +140,7 @@ function verifyCompliance(licenses, label) {
   const registry = components.filter((component) => component.group === "crates.io");
   const trycua = components.filter((component) => component.group === "trycua");
   const fonts = components.filter((component) => component.group === "rsms");
-  if (registry.length !== 330 || trycua.length !== 8 || fonts.length !== 1) {
+  if (registry.length !== 378 || trycua.length !== 8 || fonts.length !== 1) {
     fail(`${label} SBOM component groups do not match the reviewed runtime graph`);
   }
   const trycuaNames = trycua.map((component) => component.name).sort();
@@ -182,8 +182,8 @@ function verifyCompliance(licenses, label) {
   const attributed = new Set(
     [...html.matchAll(/<tr data-package-id="([^"]+)">/g)].map((match) => match[1]),
   );
-  if (attributed.size !== 330) {
-    fail(`${label} license report does not cover the reviewed 330 registry packages`);
+  if (attributed.size !== 378) {
+    fail(`${label} license report does not cover the reviewed 378 registry packages`);
   }
   for (const packageId of attributed) {
     if (!registryIds.has(packageId)) {
@@ -209,7 +209,7 @@ function verifyCompliance(licenses, label) {
     fail(`${label} MPL component set changed`);
   }
   const rootDependency = sbom.dependencies?.find(
-    (dependency) => dependency.ref === "pkg:generic/cua-driver-linux-x64@0.19.3",
+    (dependency) => dependency.ref === "pkg:generic/cua-driver-linux-x64@0.33.0",
   );
   const rootReferences = rootDependency?.dependsOn;
   const uniqueRootReferences = new Set(rootReferences ?? []);
@@ -262,8 +262,8 @@ function verifyCuaResources(resources, label, {
   requireContained(cuaRoot, driver);
   requireContained(cuaRoot, cursorTheme);
   const expectedHashes = new Map([
-    [driver, "ed5844fadf07b9b72c4a3b3802e1c47233c166d66d6198608d5991f807aab4ac"],
-    [cursorTheme, "e589b2b7521bbfeaf9e2bfce668a38e80ed1b9790b1327b13d374fc331d8312a"],
+    [driver, "7941c851069ed4b03608a16f2fdd4c905314748765afd6aba45733daab511956"],
+    [cursorTheme, "f516d208440553d8b44e4e6786b20fa2ce995cbbd5895e51803bdb4e0b943b1b"],
   ]);
   for (const [file, expected] of expectedHashes) {
     const actual = sha256(file);
@@ -281,7 +281,7 @@ function verifyCuaResources(resources, label, {
     env: commandEnvironment,
     timeout: 5_000,
   }).trim();
-  if (version !== "cua-driver 0.19.3") fail(`${label} CUA version is ${JSON.stringify(version)}`);
+  if (version !== "cua-driver 0.33.0") fail(`${label} CUA version is ${JSON.stringify(version)}`);
   const manifest = JSON.parse(
     execFileSync(driver, ["manifest"], {
       encoding: "utf8",
@@ -299,7 +299,7 @@ function verifyCuaResources(resources, label, {
   }
   if (
     manifest.schema_version !== "1" ||
-    manifest.binary_version !== "0.19.3" ||
+    manifest.binary_version !== "0.33.0" ||
     invocationPath !== realpathSync(driver) ||
     JSON.stringify(manifest.mcp_invocation?.args) !== JSON.stringify(["mcp"])
   ) {
@@ -314,18 +314,18 @@ function verifyCuaResources(resources, label, {
   const release = JSON.parse(readFileSync(path.join(cuaRoot, "release.json"), "utf8"));
   const expectedRelease = {
     schemaVersion: 1,
-    version: "0.19.3",
+    version: "0.33.0",
     platform: "linux",
     arch: "x64",
     archive: {
-      name: "cua-driver-rs-0.19.3-linux-x86_64-binary.tar.gz",
+      name: "cua-driver-rs-0.33.0-linux-x86_64-binary.tar.gz",
       url:
-        "https://github.com/trycua/cua/releases/download/cua-driver-rs-v0.19.3/" +
-        "cua-driver-rs-0.19.3-linux-x86_64-binary.tar.gz",
-      size: 27_248_614,
-      sha256: "3db9d4257d84bacaf7eb104d225f85613ce67edbb20d6eeb83c1384b6d8a5b10",
+        "https://github.com/trycua/cua/releases/download/cua-driver-rs-v0.33.0/" +
+        "cua-driver-rs-0.33.0-linux-x86_64-binary.tar.gz",
+      size: 34_434_513,
+      sha256: "166869bd9920338e097050c0114c02d33fa59762a4ac7e690459725a204e91e5",
     },
-    sourceCommit: "a1672e7b11951275ecfba3384264d4530185d0db",
+    sourceCommit: "1553a3f360ea12155be3bc77e27c427ca62f967a",
     files: {
       "cua-driver": { sha256: expectedHashes.get(driver), mode: "0755" },
       "cua-cursor-theme": { sha256: expectedHashes.get(cursorTheme), mode: "0755" },

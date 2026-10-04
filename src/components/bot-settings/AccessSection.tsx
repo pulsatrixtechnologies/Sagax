@@ -23,6 +23,7 @@ import { ConfirmDialog } from "../ConfirmDialog";
 import { LocalComputerAutoWarning } from "../LocalComputerAutoWarning";
 import { Switch } from "../SettingsPrimitives";
 import { ProposalStatus } from "./ProposalStatus";
+import { ToolSelectionCard } from "./ToolSelectionCard";
 import { preloadConnectedApps, type ConnectorInventory } from "../PluginsPanel";
 import {
   classifyConnectorTool,
@@ -31,6 +32,7 @@ import {
   type ConnectorVerb,
 } from "@/lib/connector-grants";
 import { inputCls } from "./field";
+import type { ConnectorScope, ConnectorScopes } from "../../../shared/connector-scopes";
 import type { useBotSettingsDerived } from "./useBotSettingsDerived";
 
 /** Where a bot's shell tools run. Set per bot; each task pins its own copy
@@ -703,7 +705,10 @@ export function AccessSection({
           />
         </div>
         {connectedAppsEnabled && inventory?.authoritative && (
-          <ConnectorToolsGrants bot={bot} patch={patch} slugs={connectedSlugs} />
+          <>
+            {!draft && <ConnectorScopesControl connectedSlugs={connectedSlugs} scopes={bot.connectorScopes} onChange={(connectorScopes) => patch({ connectorScopes })} />}
+            <ConnectorToolsGrants bot={bot} patch={patch} slugs={connectedSlugs} />
+          </>
         )}
         {connectedAppsEnabled && connectedAppsConfigured && (
           <button
@@ -720,6 +725,7 @@ export function AccessSection({
       </div>}
 
       <McpServersCard bot={bot} patch={patch} />
+      <ToolSelectionCard key={bot.id} bot={bot} engineKind={derived.engine?.driverKind} />
 
       {browserFeature && <div className="flex items-center justify-between gap-4 rounded-xl border border-hairline/40 p-4">
         <div>
@@ -730,7 +736,7 @@ export function AccessSection({
                 ? "Not available on this Windows machine yet: install the browser engine with `openmausbot browser install`."
                 : browserUnavailableReason(state.config)
               : !browserFeature
-                ? "The built-in browser is switched off under App Settings → Experimental."
+                ? "The built-in browser is switched off under App Settings → Computers."
                 : !canUseBrowser
                   ? "This bot's current model cannot use the built-in browser."
                   : bot.computer === "off"
@@ -819,4 +825,39 @@ export function AccessSection({
       />
     </div>
   );
+}
+
+/** App-level limits intersect with the existing exact tool grants. */
+function ConnectorScopesControl({ connectedSlugs, scopes, onChange }: {
+  connectedSlugs: string[];
+  scopes: ConnectorScopes | undefined;
+  onChange: (scopes: ConnectorScopes | null) => void;
+}) {
+  const limited = scopes !== undefined;
+  const slugs = [...new Set([...connectedSlugs, ...Object.keys(scopes?.apps ?? {})])].sort();
+  const setScope = (slug: string, scope: ConnectorScope | null) => {
+    const apps = { ...scopes?.apps };
+    if (scope) apps[slug] = scope;
+    else delete apps[slug];
+    onChange({ apps });
+  };
+  return <div className="mt-3">
+    <div className="flex items-center justify-between gap-4">
+      <div className="text-[13px] text-ink-secondary">
+        {limited ? "Only the apps allowed below, at the level set for each. Everything else is off for this bot." : "No app-level limits. The tool grants below still apply."}
+      </div>
+      <Switch checked={limited} aria-label="Limit this bot to specific apps" onClick={() => onChange(limited ? null : { apps: {} })} />
+    </div>
+    {limited && <div className="mt-2 flex flex-col divide-y divide-hairline/20 rounded-lg bg-inset">
+      {!slugs.length && <div className="px-3 py-2 text-[11.5px] text-ink-secondary">No apps connected yet. Connect one, then allow it here.</div>}
+      {slugs.map((slug) => <div key={slug} className="flex flex-wrap items-center justify-between gap-3 px-3 py-1.5">
+        <span className="min-w-0 text-[13px] text-ink">{slug}{!connectedSlugs.includes(slug) && <span className="ml-2 text-[10.5px] text-ink-secondary">not connected</span>}</span>
+        <div className="flex shrink-0 gap-0.5 rounded-md bg-card p-0.5" role="group" aria-label={`${slug} access`}>
+          {([[null, "Off", "This bot cannot use it."], ["read", "Read", "Search, fetch, and list only."], ["write", "Read & write", "Tool grants and sending limits still apply."]] as const).map(([value, label, hint]) =>
+            <button key={label} type="button" title={hint} aria-pressed={(scopes?.apps[slug] ?? null) === value} onClick={() => setScope(slug, value)}
+              className={cn("rounded px-2 py-0.5 text-[11.5px] font-medium", (scopes?.apps[slug] ?? null) === value ? "bg-raised text-ink" : "text-ink-secondary hover:text-ink")}>{label}</button>)}
+        </div>
+      </div>)}
+    </div>}
+  </div>;
 }

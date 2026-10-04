@@ -76,6 +76,12 @@ describe("botLevel", () => {
     expect(botLevel({ viewer: viewer(CAROL, { botsReadOnly: true }), ...facts })).toBe("use");
     expect(botLevel({ viewer: viewer(DAVE, { botsReadOnly: true }), ...facts })).toBeNull();
     expect(botLevel({ viewer: viewer(ALICE, { botsReadOnly: true, orgAdmin: true }), ...facts })).toBe("owner");
+    expect(can(viewer(ALICE, { botsReadOnly: true }), "bot.use", { kind: "bot", bot: facts })).toBe(true);
+    expect(can(viewer(ALICE, { botsReadOnly: true }), "bot.run", { kind: "bot", bot: facts })).toBe(false);
+    expect(can(viewer(ALICE, { botsReadOnly: true }), "bot.edit", { kind: "bot", bot: facts })).toBe(false);
+    expect(can(viewer(ALICE, { botsReadOnly: true }), "bot.manage", { kind: "bot", bot: facts })).toBe(false);
+    expect(can(viewer(BOB, { botsReadOnly: true }), "bot.edit", { kind: "bot", bot: facts })).toBe(false);
+    expect(can(viewer(ALICE, { botsReadOnly: true, orgAdmin: true }), "bot.manage", { kind: "bot", bot: facts })).toBe(true);
   });
 
   it("a disabled person has nothing, even as owner", () => {
@@ -190,6 +196,19 @@ describe("grant administration (D4)", () => {
 
   it("a disabled manager administers nothing", () => {
     expect(canAdministerGrant(viewer(MIA, { disabled: true }), { bot: bot([grant("team:T", "use")]), target: "team:T", teamsOf })).toBe(false);
+  });
+
+  it("a read-only person administers no grant, their own bots included; an admin still can", () => {
+    const facts = bot([grant(`user:${BOB}`, "manage")]);
+    const ownerRo = viewer(ALICE, { botsReadOnly: true });
+    expect(canAdministerGrant(ownerRo, { bot: facts, target: `user:${DAVE}`, newLevel: "use", teamsOf })).toBe(false);
+    expect(grantAdministration(ownerRo, facts)).toBeNull();
+    const manageRo = viewer(BOB, { botsReadOnly: true });
+    expect(canAdministerGrant(manageRo, { bot: facts, target: `user:${DAVE}`, newLevel: "use", teamsOf })).toBe(false);
+    expect(grantAdministration(manageRo, facts)).toBeNull();
+    const adminRo = viewer(ADMIN, { botsReadOnly: true, orgAdmin: true });
+    expect(canAdministerGrant(adminRo, { bot: facts, target: `user:${DAVE}`, newLevel: "manage", teamsOf })).toBe(true);
+    expect(grantAdministration(adminRo, facts)).toMatchObject({ any: true, maxLevel: "manage" });
   });
 });
 

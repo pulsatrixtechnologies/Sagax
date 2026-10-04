@@ -162,7 +162,7 @@ export function orgInstallId(adminOrigin: string, organizationId: string, packag
   return createHash("sha256").update(`omb-install:v1\n${adminOrigin}\n${organizationId}\n${packageId}`, "utf8").digest("hex").slice(0, 32);
 }
 
-function memberFromAgent(agent: PackageAgent): TeamManifestMember {
+export function memberFromAgent(agent: PackageAgent): TeamManifestMember {
   return {
     key: agent.key,
     name: agent.name,

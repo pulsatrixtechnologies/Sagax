@@ -185,4 +185,15 @@ describe("computer control", () => {
     expect(control.leaseState("b1", "lease-b")).toBe("other");
     expect(control.leaseState("b1")).toBe("other");
   });
+
+  it("reports whether a lease holds the computer without taking a free one", () => {
+    const control = new ComputerControl();
+    expect(control.ownsLease("bot", "lease-aaaaaaaaaaaaaa")).toBe(false);
+    expect(control.snapshot("bot").held).toBe(false);
+    control.acquireLease("bot", "lease-aaaaaaaaaaaaaa");
+    expect(control.ownsLease("bot", "lease-aaaaaaaaaaaaaa")).toBe(true);
+    expect(control.ownsLease("bot", "lease-bbbbbbbbbbbbbb")).toBe(false);
+    control.release("bot");
+    expect(control.ownsLease("bot", "lease-aaaaaaaaaaaaaa")).toBe(false);
+  });
 });

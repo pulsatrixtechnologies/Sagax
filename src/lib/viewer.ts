@@ -22,6 +22,13 @@ export function viewerBotsReadOnly(config: ConfigStatus | null | undefined): boo
   return config?.viewer?.botsReadOnly === true;
 }
 
+/** Organization server: a Perspicax admin manages this person's plugins,
+ * skills and MCP servers (Perspicax `sagax_integrations: off`): they stay
+ * usable, read-only, with a short notice. */
+export function viewerIntegrationsManagedByAdmin(config: ConfigStatus | null | undefined): boolean {
+  return config?.viewer?.integrationsManagedByAdmin === true;
+}
+
 /** Organization server: a member (not an admin, not the operator) reads
  * the server's engines without its own account or install details. */
 export function viewerIsOrgMember(config: ConfigStatus | null | undefined): boolean {

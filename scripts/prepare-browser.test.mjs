@@ -13,19 +13,19 @@ afterEach(() => { vi.unstubAllGlobals(); for (const root of fixtures.splice(0)) 
 
 describe("pinned desktop browser preparation", () => {
   it("pins the exact headless vendor archives for only shipped targets", () => {
-    expect(CHROME_VERSION).toBe("153.0.8010.47");
+    expect(CHROME_VERSION).toBe("154.0.8037.92");
     expect(SUPPORTED_BROWSER_TARGETS).toEqual(["darwin-arm64", "darwin-x64", "linux-arm64", "linux-x64", "win32-x64"]);
     const pins = {
-      "darwin-arm64": [98668949, "6d28839675b6f22dbd7ba8775dbdabcae7a5be37b482380b27b12f05b748b955"],
-      "darwin-x64": [103712919, "aa178547f9751fbcf413e0f57915ddb72e83064d4d1c4a29dc1719b169f9cc2f"],
-      "linux-arm64": [120245582, "af0931a58d6bab688112d5ca1f7abd6d95c0b8a296ef34637f272795787774d7"],
-      "linux-x64": [119695587, "7728775cf4a35464cd81c8eea2d44d6d32ccc0bd1edfa75aea7f32d146963d63"],
-      "win32-x64": [120466147, "9f405cfaf7bc08bf9e046e653cd3086c0faa1d4e25907de857f7e7f093a20122"],
+      "darwin-arm64": [99221129, "77da14e75d7f2568e6f7898d3df7cdc6faac74b15e903b2c9d486ebb6ca9b929"],
+      "darwin-x64": [104748425, "a54292aaacbb77f76f6ef47558e7c51ab884044e0adacca315567f83c060bcc4"],
+      "linux-arm64": [121182296, "0ed0e47d9e9f639197f508d62ada09e5c6b4c4c60edab3160a9312a733091df6"],
+      "linux-x64": [120477194, "636aa5c79f2693632e9921b8bbb050038ba11672e02346c06c20f991aed096f9"],
+      "win32-x64": [120822223, "3ac2561f02d9d87aadc0399d00b9002d718a4c365624fa67db9e7bfaf6b1a568"],
     };
     for (const target of SUPPORTED_BROWSER_TARGETS) {
       const spec = browserBundleSpec(target);
       expect([spec.chrome.bytes, spec.chrome.sha256]).toEqual(pins[target]);
-      expect(spec.chrome.url).toMatch(/^https:\/\/storage.googleapis.com\/chrome-for-testing-public\/153\.0\.8010\.47\/[^/]+\/chrome-headless-shell-[^/]+\.zip$/);
+      expect(spec.chrome.url).toMatch(/^https:\/\/storage.googleapis.com\/chrome-for-testing-public\/154\.0\.8037\.92\/[^/]+\/chrome-headless-shell-[^/]+\.zip$/);
       const [platform, arch] = target.split("-");
       const engine = resolveAgentBrowserReleaseAsset(platform, arch);
       expect(spec.engine).toMatchObject({ bytes: engine.bytes, sha256: engine.sha256, asset: engine.asset });

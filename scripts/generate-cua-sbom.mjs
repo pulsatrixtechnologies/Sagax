@@ -27,13 +27,17 @@ if (
   );
 }
 
-const SOURCE_COMMIT = "a1672e7b11951275ecfba3384264d4530185d0db";
+const SOURCE_COMMIT = "1553a3f360ea12155be3bc77e27c427ca62f967a";
 const SOURCE_ROOT = `https://github.com/trycua/cua/tree/${SOURCE_COMMIT}/libs/cua-driver/rust`;
-const RELEASE_VERSION = "0.19.3";
+const RELEASE_VERSION = "0.33.0";
 const ARCHIVE_SHA256 =
-  "3db9d4257d84bacaf7eb104d225f85613ce67edbb20d6eeb83c1384b6d8a5b10";
+  "166869bd9920338e097050c0114c02d33fa59762a4ac7e690459725a204e91e5";
 const CARGO_LOCK_SHA256 =
-  "c1a8df7f4bedd554f6fc90c852c3625c91a89b28d9f2c642d966279e9e372362";
+  "522f756efb41d1545867f82ab0bb9bb203ecd65c5686433edcb623041f2b4297";
+const DRIVER_SHA256 =
+  "7941c851069ed4b03608a16f2fdd4c905314748765afd6aba45733daab511956";
+const CURSOR_THEME_SHA256 =
+  "f516d208440553d8b44e4e6786b20fa2ce995cbbd5895e51803bdb4e0b943b1b";
 const INTER_LICENSE_SHA256 =
   "ecfea75d8a36217d19528567070745a516072ffe907c9fffecbab92eb3b6fc59";
 const INTER_FONT_SHA256 =
@@ -43,16 +47,16 @@ const INTER_COMMIT = "66647c0bbbe41a850d79d9c76fb13add3378940f";
 const REGISTRY_SOURCE_PREFIX =
   "registry+https://github.com/rust-lang/crates.io-index";
 
-const EXPECTED_DRIVER_REGISTRY_COUNT = 325;
-const EXPECTED_CURSOR_THEME_REGISTRY_COUNT = 113;
-const EXPECTED_REGISTRY_UNION_COUNT = 330;
+const EXPECTED_DRIVER_REGISTRY_COUNT = 373;
+const EXPECTED_CURSOR_THEME_REGISTRY_COUNT = 239;
+const EXPECTED_REGISTRY_UNION_COUNT = 378;
 const EXPECTED_DRIVER_LOCAL = Object.freeze([
-  "cua-driver@0.19.3",
-  "cursor-overlay@0.19.3",
-  "pip-preview@0.19.3",
-  "platform-linux@0.19.3",
+  "cua-driver@0.33.0",
+  "cursor-overlay@0.33.0",
+  "pip-preview@0.33.0",
+  "platform-linux@0.33.0",
 ]);
-const EXPECTED_CURSOR_THEME_LOCAL = Object.freeze(["cursor-overlay@0.19.3"]);
+const EXPECTED_CURSOR_THEME_LOCAL = Object.freeze(["cursor-overlay@0.33.0"]);
 const EXPECTED_CURSOR_THEME_ONLY = Object.freeze([
   "bumpalo@3.20.2",
   "typed-path@0.12.3",
@@ -460,7 +464,7 @@ const [driverBytes, cursorThemeBytes, cargoLockBytes] = await Promise.all([
 ]);
 if (sha256(cargoLockBytes) !== CARGO_LOCK_SHA256) {
   throw new Error(
-    "Cargo.lock does not match the reviewed Cua 0.19.3 source commit",
+    "Cargo.lock does not match the reviewed Cua 0.33.0 source commit",
   );
 }
 
@@ -553,7 +557,7 @@ if (
   EXPECTED_REGISTRY_UNION_COUNT + TRYCUA_COMPONENTS.length + 1
 ) {
   throw new Error(
-    "SBOM component count is not the reviewed 330 + 8 + 1 inventory",
+    "SBOM component count is not the reviewed 378 + 8 + 1 inventory",
   );
 }
 
@@ -568,7 +572,7 @@ const rootReference = `pkg:generic/cua-driver-linux-x64@${RELEASE_VERSION}`;
 const bom = {
   bomFormat: "CycloneDX",
   specVersion: "1.5",
-  serialNumber: "urn:uuid:3db9d425-7d84-5aca-b7eb-104d225f8561",
+  serialNumber: "urn:uuid:166869bd-9920-538e-8970-50c0114c02d3",
   version: 1,
   metadata: {
     component: {
@@ -602,13 +606,11 @@ const bom = {
         },
         {
           name: "openmausbot:file:cua-driver:sha256",
-          value:
-            "ed5844fadf07b9b72c4a3b3802e1c47233c166d66d6198608d5991f807aab4ac",
+          value: DRIVER_SHA256,
         },
         {
           name: "openmausbot:file:cua-cursor-theme:sha256",
-          value:
-            "e589b2b7521bbfeaf9e2bfce668a38e80ed1b9790b1327b13d374fc331d8312a",
+          value: CURSOR_THEME_SHA256,
         },
       ],
     },

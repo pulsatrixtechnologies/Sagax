@@ -159,6 +159,73 @@ Models run with onnxruntime-web (MIT) from this app's own bundle; no CDN.
 Sizes: Silero VAD 2.3 MB, CAM++ int8 8.9 MB, the runtime's WebAssembly
 14 MB, loaded when a call starts. Licenses: `src/lib/voice-mode/models/NOTICE.txt`.
 
+## Latency
+
+The pause the person hears is measured stage by stage for every call turn,
+under the turn's `utteranceId` (ids and milliseconds, never the words):
+
+- The page (`src/lib/voice-mode/latency.ts`): `endpoint` (last voiced frame
+  to the detector's end of turn), `stt` (to the words), `dispatch` (to the
+  send), `firstToken` (to the answer's first streamed text), `firstSentence`
+  (to a speakable clause), `tts` (to its first audio bytes), `playback` (to
+  audible), and `total`. With `localStorage["omb.voiceCall.debug"]` set to
+  `"1"` the console logs a `[voice-latency]` line per turn and the call's
+  settings card shows the last answer's stages.
+- The server (`server/voice-latency.ts`) logs, under the same id,
+  `received->dispatch`, `dispatch->engine` (warm, or cold start) and
+  `engine->first-token`. A Claude relaunch logs which spawn contract fields
+  changed (names only, `server/drivers/spawn-contract.ts`).
+
+What keeps it short:
+
+- **A warm engine for the whole call.** Every turn used to relaunch the
+  Claude CLI (the agents proxy's per-turn comms token was part of the spawn
+  contract): a 2.5 to 3 s cold start on each answer (process boot, MCP
+  servers, the session read back; measured from native logs). While the
+  thread is on a call the turn carries `keepWarm`: the token rides a 0600
+  per-thread file (`SAGAX_COMMS_TOKEN_FILE`, read on each request) and
+  leaves the contract. Claude starts that process when the call is accepted
+  (`POST /voice/call`), before the first utterance, and the first spoken
+  turn reuses it (`server/voice-call-latency.e2e.test.ts`). A hangup before
+  any turn closes the idle process. Codex and the API drivers are not warmed
+  this way: a Codex warm would be the ACP handshake and `session/new` before
+  `session/prompt`, which is not done here, so a Codex call's first spoken
+  turn still pays that handshake. API drivers cannot start without a prompt,
+  and no hidden prompt is sent.
+- **A finished sentence ends sooner.** When the streamed words close with
+  final punctuation and the silence is confident (Silero under 0.15), the
+  turn ends after 288, 352 or 576 ms (Short, Normal, Patient) instead of the
+  adaptive endpoint. A pause inside a sentence never ends it early; words
+  said right after are joined back (`voiceCall.continues`).
+- **Sent on the stable words.** A turn whose streamed words are a stable
+  sentence is sent at once; the final words are checked when they come. A
+  material difference (any word beyond case, punctuation, accents and
+  fillers) stops that answer before it is spoken and sends the final words
+  as its complete version (`voiceCall.continues`).
+- **The first clause speaks first.** The first sentence is cut at a comma
+  after about six words.
+- **A warm connection to xAI's speech.** Each turn's end (`finalize`) opens
+  a pooled connection to api.x.ai (at most every 2 s), so the first
+  sentence does not pay a new TLS handshake after the person spoke.
+- **Short context on a call.** A call turn recalls at most two notes in
+  1,200 characters and no other conversation, and skips the recent-work
+  brief.
+- **A thinking tone.** When nothing is audible 1.2 s after the person
+  stopped, a soft two-note tone plays (Settings, "Soft tone while a slow
+  answer is coming", on by default).
+
+Bench: `SAGAX_VOICE_BENCH=1 BENCH_OUT=out.json pnpm exec vitest run
+scripts/voice-latency-bench.test.ts` runs the call engine against the real
+server, a fake xAI and the fake CLI in `FAKE_CLAUDE_MODE=voice`
+(`FAKE_CLAUDE_COLD_MS`, `FAKE_CLAUDE_FIRST_TOKEN_MS`, `FAKE_CLAUDE_TOKEN_MS`).
+
+xAI also offers a text to speech WebSocket (`wss://api.x.ai/v1/tts`,
+`text.delta` in, `audio.delta` out, `optimize_streaming_latency` 0 to 2,
+`text.clear` for barge-in:
+<https://docs.x.ai/developers/model-capabilities/audio/text-to-speech>). It
+is not used yet; it could start the voice on the first words rather than
+the first clause.
+
 ## Stable tools during a call
 
 On an organization server each turn used to exchange the speaker's sign-in

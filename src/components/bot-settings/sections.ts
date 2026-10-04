@@ -22,11 +22,11 @@ import {
   Network,
   Plug,
   ShieldCheck,
-  Slack,
   Sparkles,
   User,
   Users,
 } from "lucide-react";
+import { Slack } from "../brand-icons";
 
 import type { BotSettingsSection } from "@/state/store";
 import type { LocaleKey } from "@/locales";
@@ -47,7 +47,7 @@ export const BOT_SECTIONS: Array<{
   { id: "skills", label: "Skills", icon: BookOpen, keywords: ["skills", "learned", "procedures", "teach"] },
   { id: "memory", label: "Memory", icon: Brain, keywords: ["memory", "notes", "remember", "topics"] },
   { id: "routines", label: "Routines", icon: CalendarClock, keywords: ["schedule", "routines", "cron", "tasks"] },
-  { id: "access", label: "Access", icon: Network, keywords: ["works on", "computer", "vm", "cloud", "vps", "folder", "workspace", "browser", "connected apps", "composio", "webhooks", "always allow", "grants"] },
+  { id: "access", label: "Access", icon: Network, keywords: ["works on", "computer", "vm", "cloud", "vps", "folder", "workspace", "browser", "connected apps", "composio", "webhooks", "always allow", "grants", "tool selection", "tools", "mcp", "allow", "exclude"] },
   { id: "worksOn", label: "Computer", labelKey: "worksOn.section", icon: Monitor, keywords: ["works on", "computer", "auto", "cloud", "local vm", "vm", "this computer", "browser", "off", "where it works"] },
   { id: "model", label: "Model", icon: Cpu, keywords: ["engine", "model", "provider", "cli", "effort"] },
   { id: "permissions", label: "Permissions", icon: ShieldCheck, keywords: ["auto mode", "approve", "auto approve", "review", "routine approvals", "peers", "contact", "coordination", "chief of staff", "section"] },

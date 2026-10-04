@@ -61,11 +61,19 @@ function fixture(root: string): DatabaseSync {
   }
   return db;
 }
+// One salt and key for every forged payload: the product scrypt (N = 2^17) is
+// deliberately slow, and a test that forges many payloads would otherwise pay
+// for it twice per payload and time out on a loaded machine.
+let forgedKey: { salt: Buffer; key: Buffer } | undefined;
 function encryptedPayload(root: string, plaintext: Buffer): string {
-  const salt = randomBytes(16);
+  if (!forgedKey) {
+    const salt = randomBytes(16);
+    forgedKey = { salt, key: scryptSync(PASSWORD, salt, 32, { N: 131_072, r: 8, p: 1, maxmem: 256 * 1024 ** 2 }) };
+  }
+  const { salt, key } = forgedKey;
   const iv = randomBytes(12);
   const header = Buffer.concat([Buffer.from("OMB-WORKSPACE-1\n"), salt, iv]);
-  const cipher = createCipheriv("aes-256-gcm", scryptSync(PASSWORD, salt, 32, { N: 131_072, r: 8, p: 1, maxmem: 256 * 1024 ** 2 }), iv);
+  const cipher = createCipheriv("aes-256-gcm", key, iv);
   cipher.setAAD(header);
   const path = join(root, "malicious.ombbackup");
   writeFileSync(path, Buffer.concat([header, cipher.update(plaintext), cipher.final(), cipher.getAuthTag()]));
@@ -415,7 +423,7 @@ describe("encrypted full workspace backups", () => {
       const path = encryptedPayload(source, Buffer.concat([tarEntry("manifest.json", "File", JSON.stringify(manifest)), tarEntry("data", "Directory"), ...parents.map((parent) => tarEntry(`data/${parent}`, "Directory")), tarEntry(`data/${name}`, "File", content), Buffer.alloc(1024)]));
       await expect(stageWorkspaceBackup(directory(), path, { password: PASSWORD })).rejects.toThrow(/Unsafe|connection settings|webhook credentials/);
     }
-  });
+   }, 120_000); // 18 restores, each one real scrypt by design
 
   it("retains differently cased destination auth roots and refuses them in recovery journals", async () => {
     const source = directory();
@@ -501,6 +509,35 @@ describe("encrypted full workspace backups", () => {
     symlinkSync(skill, join(native, "example"), process.platform === "win32" ? "junction" : "dir");
     const exported = await createWorkspaceBackup(root, { password: PASSWORD });
     expect(exported.summary.warnings.some((warning) => warning.includes("1 managed skill"))).toBe(true);
+  });
+
+  // A client's export failed on task-workspaces/<bot>/<thread>/node_modules, a
+  // link an agent made to another checkout's install.
+  it("leaves out node_modules and links in conversation work folders, and says so", async () => {
+    const root = directory();
+    const outside = directory();
+    writeFileSync(join(outside, "secret"), "must never be read");
+    const work = join(root, "task-workspaces", "bot", "thread");
+    mkdirSync(work, { recursive: true });
+    writeFileSync(join(work, "app.js"), "console.log(1)");
+    symlinkSync(outside, join(work, "node_modules"), process.platform === "win32" ? "junction" : "dir");
+    symlinkSync(join(outside, "secret"), join(work, "linked-secret"));
+    const installed = join(root, "workspaces", "bot", "project", "node_modules", "left-pad");
+    mkdirSync(installed, { recursive: true });
+    writeFileSync(join(installed, "index.js"), "module.exports = 1");
+    const exported = await createWorkspaceBackup(root, { password: PASSWORD });
+    expect(exported.summary.warnings.some((warning) => warning.startsWith("2 installed dependency folder(s) (node_modules)"))).toBe(true);
+    expect(exported.summary.warnings.some((warning) => warning.startsWith("1 symbolic link(s) in conversation work folders"))).toBe(true);
+    const target = directory();
+    const staged = await stageWorkspaceBackup(target, exported.path, { password: PASSWORD });
+    const data = join(target, ".backups", staged.id, "staged", "data");
+    expect(readFileSync(join(data, "task-workspaces", "bot", "thread", "app.js"), "utf8")).toBe("console.log(1)");
+    expect(existsSync(join(data, "task-workspaces", "bot", "thread", "node_modules"))).toBe(false);
+    expect(existsSync(join(data, "task-workspaces", "bot", "thread", "linked-secret"))).toBe(false);
+    expect(existsSync(join(data, "workspaces", "bot", "project", "node_modules"))).toBe(false);
+    // Outside a work folder, a link out of the workspace still stops the export.
+    symlinkSync(join(outside, "secret"), join(root, "workspaces", "bot", "external"));
+    await expect(createWorkspaceBackup(root, { password: PASSWORD })).rejects.toThrow(/outside the workspace/);
   });
 
   it("recovers an interrupted top-level swap before any application state is loaded", async () => {

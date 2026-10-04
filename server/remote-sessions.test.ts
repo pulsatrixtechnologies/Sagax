@@ -12,11 +12,12 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { LOCKOUT } from "./sessions.ts";
 import { removeTempDir, waitForExit } from "./testing/cleanup.ts";
 import { openSse } from "./testing/sse.ts";
+import { freePortBlock } from "./testing/ports.ts";
 
 const SERVER_DIR = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(SERVER_DIR, "..");
-const PORT = 18800 + Math.floor(Math.random() * 10_000);
-const WEBHOOK_PORT = 39000 + Math.floor(Math.random() * 10_000);
+const PORT = await freePortBlock([0, 1]);
+const WEBHOOK_PORT = await freePortBlock([0], 39_000, 10_000);
 const BASE = `http://127.0.0.1:${PORT}`;
 const REMOTE_HOST = "mini.tail1234.ts.net:8799";
 const PUBLIC_URL = "https://mini.tail1234.ts.net";

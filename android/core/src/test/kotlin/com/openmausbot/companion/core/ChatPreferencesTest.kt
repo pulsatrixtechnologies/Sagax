@@ -44,6 +44,17 @@ class ChatPreferencesTest {
     // tool calls: hidden with them, but never folded into a run of them.
 
     @Test
+    fun statusNoticeIsNeverHiddenOrFolded() {
+        // "Qwen hit a rate limit and is retrying" answers "is it stuck?"; it is not tool noise.
+        val notice = activity("n").copy(tool = ToolActivity(name = "notice: Qwen is waiting on its model", ok = true))
+        val messages = listOf(activity("a"), activity("b"), notice, activity("c"), activity("d"))
+        assertEquals(listOf("n"), transcriptRows(messages, ActivityDetail.HIDDEN).map { it.id })
+        val rows = transcriptRows(messages, ActivityDetail.REDUCED)
+        assertEquals(3, rows.size)
+        assertEquals("n", assertIs<TranscriptRow.Single>(rows[1]).id)
+    }
+
+    @Test
     fun hiddenDropsDigestAndCompactionReceiptsToo() {
         val messages = listOf(text("a"), activity("b"), digest("c"), text("d"), compaction("e"))
         assertEquals(listOf("a", "d"), transcriptRows(messages, ActivityDetail.HIDDEN).map { it.id })
@@ -64,6 +75,16 @@ class ChatPreferencesTest {
         val messages = listOf(text("a"), digest("b"))
         assertEquals("hello", rosterPreview(messages, ActivityDetail.FULL))
         assertEquals("hello", rosterPreview(messages, ActivityDetail.REDUCED))
+    }
+
+    @Test
+    fun quietTurnsDoNotLeaveAnEmptyDigestRowAtAnyActivityLevel() {
+        val quiet = digest("quiet").copy(text = "[digest] · no tool activity observed in this turn · files: none changed · reply: hello")
+        for (detail in ActivityDetail.entries) {
+            assertEquals(listOf("answer"), transcriptRows(listOf(text("answer"), quiet), detail).map { it.id })
+        }
+        val changed = quiet.copy(text = "[digest] · no tool calls · files: changed notes.txt")
+        assertEquals(listOf("answer", "quiet"), transcriptRows(listOf(text("answer"), changed), ActivityDetail.REDUCED).map { it.id })
     }
 
     @Test

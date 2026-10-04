@@ -708,6 +708,13 @@ export class McpOAuthManager {
     }
   }
 
+  /** Whether this manager started the sign-in this callback `state` names
+   * (one manager per person on an organization server). */
+  ownsState(state: string): boolean {
+    this.sweep();
+    return Boolean(state) && this.pending.has(state);
+  }
+
   /** True while a flow for `name` is waiting for its redirect. */
   pendingFor(name: string): boolean {
     this.sweep();

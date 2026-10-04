@@ -37,6 +37,16 @@ export interface VoiceAccessCard {
 }
 
 /** What the card says, to the person it is about. Exported for tests. */
+/** The call's debug switch (localStorage "omb.voiceCall.debug"): the
+ * settings card then shows the last answer's latency stages. */
+function callDebug(): boolean {
+  try {
+    return typeof localStorage !== "undefined" && localStorage.getItem("omb.voiceCall.debug") === "1";
+  } catch {
+    return false;
+  }
+}
+
 export function voiceAccessCardText(card: VoiceAccessCard): string[] {
   if (card.cause === "payer_disabled") return [t("voiceMode.noAccess.disabled")];
   if (card.cause === "perspicax_unreachable") return [t("voiceMode.noAccess.unreachable")];
@@ -283,6 +293,7 @@ export function VoiceModeBar(props: VoiceModeBarProps) {
       data-voice-sent-ms={metrics?.sentMs}
       data-voice-duck-ms={metrics?.duckMs}
       data-voice-bargein-ms={metrics?.bargeInMs}
+      data-voice-utterance={metrics?.utteranceId}
       data-voice-endpoint-ms={call.endpointMs}
       data-voice-models={call.modelsReady ? "on-device" : "level"}
     >
@@ -392,6 +403,7 @@ export function VoiceModeBar(props: VoiceModeBarProps) {
                   onCallChange={(patch) => writeCallSettings(patch)}
                   onEnroll={enroll}
                   onForget={forget}
+                  latency={callDebug() ? metrics?.stages ?? null : null}
                 />
                 <button
                   type="button"

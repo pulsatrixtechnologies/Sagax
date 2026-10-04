@@ -8,6 +8,7 @@
 #
 #   docker build -t openmausbot .
 #   docker build --build-arg ENGINES="@anthropic-ai/claude-code @openai/codex" -t openmausbot .
+#   docker build --build-arg ENGINES="@anthropic-ai/claude-code@2.1.288 @openai/codex@0.160.0 @earendil-works/pi-coding-agent@1.0.1 @google/gemini-cli@0.62.0 @moonshot-ai/kimi-code@2.1.1" --build-arg NATIVE_ENGINES=grok -t openmausbot .
 #
 # /run/sagax-sandboxd: the provisioner's shared key (docs/user-sandbox.md);
 # an empty named volume mounted there inherits this owner.
@@ -15,10 +16,10 @@
 # HOME is the /data volume, so engine CLI logins (~/.claude, ~/.codex, ...) and
 # Sagax's own state (/data/.openmausbot, kept for existing volumes) persist across container restarts.
 
-FROM node:24-bookworm-slim AS build
+FROM node:24-trixie-slim AS build
 WORKDIR /src
 # pinned to package.json#packageManager; corepack is being removed from Node
-RUN npm install -g pnpm@10.33.0
+RUN npm install -g pnpm@10.34.6
 # The image never runs Electron, so skip its ~100MB postinstall download.
 ENV ELECTRON_SKIP_BINARY_DOWNLOAD=1
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
@@ -34,18 +35,19 @@ RUN pnpm install --frozen-lockfile
 COPY . .
 RUN pnpm build:server && pnpm exec vite build
 
-FROM node:24-bookworm-slim
-# Install Chrome's Bookworm libraries directly: agent-browser --with-deps
+FROM node:24-trixie-slim
+# Install Chrome's Trixie libraries directly (Debian 13 renamed several with
+# a t64 suffix for its 64-bit time_t transition): agent-browser --with-deps
 # invokes sudo even as root, and this image deliberately does not ship sudo.
 # git + curl: agent CLIs shell out to git; curl backs the healthcheck
 RUN apt-get update \
   && apt-get install -y --no-install-recommends ca-certificates curl git \
     libxcb-shm0 libx11-xcb1 libx11-6 libxcb1 libxext6 libxrandr2 \
-    libxcomposite1 libxcursor1 libxdamage1 libxfixes3 libxi6 libgtk-3-0 \
-    libpangocairo-1.0-0 libpango-1.0-0 libatk1.0-0 libcairo-gobject2 \
-    libcairo2 libgdk-pixbuf-2.0-0 libxrender1 libasound2 libfreetype6 \
+    libxcomposite1 libxcursor1 libxdamage1 libxfixes3 libxi6 libgtk-3-0t64 \
+    libpangocairo-1.0-0 libpango-1.0-0 libatk1.0-0t64 libcairo-gobject2 \
+    libcairo2 libgdk-pixbuf-2.0-0 libxrender1 libasound2t64 libfreetype6 \
     libfontconfig1 libdbus-1-3 libnss3 libnss3-tools libnspr4 \
-    libatk-bridge2.0-0 libdrm2 libxkbcommon0 libatspi2.0-0 libcups2 \
+    libatk-bridge2.0-0t64 libdrm2 libxkbcommon0 libatspi2.0-0t64 libcups2t64 \
     libxshmfence1 libgbm1 fonts-noto-color-emoji fonts-noto-cjk fonts-freefont-ttf \
   && rm -rf /var/lib/apt/lists/* \
   && useradd --create-home --home-dir /data --shell /bin/bash maus \
@@ -54,14 +56,49 @@ WORKDIR /app
 COPY --from=build --chown=maus:maus /src/dist-server ./dist-server
 COPY --from=build --chown=maus:maus /src/dist ./dist
 # Optional engine CLIs baked into the image (space-separated npm packages).
+# Pin versions for a reproducible image, for example the organization set:
+#   @anthropic-ai/claude-code@2.1.288 @openai/codex@0.160.0
+#   @earendil-works/pi-coding-agent@1.0.1 @google/gemini-cli@0.62.0
+#   @moonshot-ai/kimi-code@2.1.1
 ARG ENGINES=""
-RUN if [ -n "$ENGINES" ]; then npm install -g $ENGINES; fi
+RUN if [ -n "$ENGINES" ]; then npm install -g $ENGINES && npm cache clean --force; fi
+# Optional engines that ship as a native binary, not an npm package
+# (space-separated names; empty skips). `grok`: Grok Build, xAI's coding CLI
+# (github.com/xai-org/grok-build, Apache-2.0), the release binary its official
+# installer (https://x.ai/cli/install.sh) downloads, pinned by version and
+# SHA-256. xAI publishes no checksum file: the hashes below were taken from
+# the artifacts whose MD5 matched the origin bucket's x-goog-hash. Bump
+# GROK_VERSION and both hashes together.
+ARG NATIVE_ENGINES=""
+ARG GROK_VERSION=1.0.46
+ARG GROK_SHA256_ARM64=69a7bdf9eb570435ac381213ff4648e5f31dc4e7546313758a7744fd54d8639f
+ARG GROK_SHA256_AMD64=0cc2a4aa40c2bf2a7a2c7933a738ea09b7c9fdafd200b53705e1d411617cd70f
+ARG TARGETARCH
+RUN set -eu; for engine in $NATIVE_ENGINES; do \
+    case "$engine" in \
+      grok) \
+        case "$TARGETARCH" in \
+          arm64) platform=linux-aarch64; sum="$GROK_SHA256_ARM64" ;; \
+          amd64) platform=linux-x86_64; sum="$GROK_SHA256_AMD64" ;; \
+          *) echo "grok: unsupported architecture $TARGETARCH" >&2; exit 1 ;; \
+        esac; \
+        curl -fsSL --proto '=https' -o /tmp/grok.gz "https://x.ai/cli/grok-${GROK_VERSION}-${platform}.gz"; \
+        echo "$sum  /tmp/grok.gz" | sha256sum -c -; \
+        install -d /opt/grok; \
+        gzip -dc /tmp/grok.gz > "/opt/grok/grok-${GROK_VERSION}"; \
+        rm -f /tmp/grok.gz; \
+        chmod 0755 "/opt/grok/grok-${GROK_VERSION}"; \
+        ln -sf "/opt/grok/grok-${GROK_VERSION}" /usr/local/bin/grok; \
+        grok --version ;; \
+      *) echo "unknown native engine: $engine" >&2; exit 1 ;; \
+    esac; \
+  done
 # The bots' browser (docs/plans/browser-engine.md): the pinned agent-browser
 # and a Chrome for Testing with its libraries, so a server bot can browse.
 # Pin here and in server/browser-engine-release.ts together.
 # Chrome for Testing has no Linux ARM64 build (Apple silicon Docker), so
 # arm64 images use Debian's Chromium at the same path instead.
-ARG AGENT_BROWSER_VERSION=0.37.0
+ARG AGENT_BROWSER_VERSION=0.38.2
 ARG TARGETARCH
 RUN npm install -g agent-browser@${AGENT_BROWSER_VERSION} \
   && if [ "$TARGETARCH" = "arm64" ]; then \

@@ -104,7 +104,7 @@ const LEGACY_SHAPE_SKINS = { ink: "outline", royal: "gold", metal: "chrome", "li
 const LEGACY_TROMBI_SKINS = { retro: "retro98", win98: "retro98", royal: "gold", metal: "chrome", cyber: "glitch", iridescent: "holo", holographic: "holo", lava: "molten" };
 const LEGACY_BUNBU_SKINS = { fur: "plush", fuzzy: "plush", royal: "gold", metal: "chrome", glass: "crystal", iridescent: "holo", holographic: "holo", nebula: "galaxy", lava: "molten" };
 /** The app's skins (src/lib/skins.ts SKIN_IDS): the balloon wears the one the app wears. */
-export const APP_SKINS = new Set(["pulsatrix", "pulsatrix-light", "midnight", "atelier", "foundry", "lagoon", "graphite", "linen", "dusk", "daylight", "retro98"]);
+export const APP_SKINS = new Set(["pulsatrix", "pulsatrix-light", "midnight", "atelier", "foundry", "lagoon", "graphite", "linen", "dusk", "daylight", "retro98", "meadow"]);
 const ACCENT_RE = /^#[0-9a-fA-F]{6}$/;
 
 /** The app's theme for the balloon: a known skin and a plain hex accent, or nothing. */

@@ -54,7 +54,8 @@ sh setup.sh
 PODMAN_COMPOSE_PROVIDER=podman-compose podman compose --env-file .env -f compose.yaml up -d --build
 ```
 
-This recipe targets Podman 5.8.3 / podman-compose 1.6.0 and Linux x86_64. The
+This recipe targets Podman 5.8 (verified on 5.8.3; the image's remote client is
+5.8.8) / podman-compose 1.6.0 and Linux x86_64. The
 remote client is checksum-pinned; the renderer and server both build from your
 checkout. Engine installation is opt-in through `ENGINES`; pin package versions
 there when reproducibility is required. The live acceptance environment is a

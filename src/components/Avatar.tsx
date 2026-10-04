@@ -16,7 +16,7 @@ import { type MausColor, type MausMotion, type MausState } from "@/lib/mascot";
 import { t } from "@/lib/i18n";
 import { OWL_BEAT_MS, owlBeatForMotion, owlStateForMaus } from "@/lib/owl/owl-state";
 import { OwlAvatar, type OwlAvatarHandle } from "./OwlAvatar";
-import { botAvatarProfile, clampAvatarFocus, clampAvatarZoom, type BotAvatarCrop } from "../../shared/bot-avatar";
+import { avatarCropRadius, botAvatarProfile, clampAvatarFocus, clampAvatarZoom, type BotAvatarCrop } from "../../shared/bot-avatar";
 import type { MascotBodyId } from "../../shared/mascot-bodies";
 import type { MascotSkinId } from "../../shared/mascot-skins";
 import { botMascotLook, completeMascotLook, type MascotLook } from "../../shared/mascot-look";
@@ -313,12 +313,7 @@ function BotAvatarImage({ bot, size = 44, label, characterMove, ...mascotProps }
     );
   }
 
-  const radius =
-    profile.avatarCrop === "circle"
-      ? "50%"
-      : profile.avatarCrop === "rounded"
-        ? "22%"
-        : "0";
+  const radius = avatarCropRadius(profile.avatarCrop);
   const zoom = clampAvatarZoom(bot.avatarZoom ?? 1);
   const focusX = clampAvatarFocus(bot.avatarFocusX ?? 0.5);
   const focusY = clampAvatarFocus(bot.avatarFocusY ?? 0.5);

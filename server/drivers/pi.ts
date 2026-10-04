@@ -50,6 +50,7 @@ import type {
   RuntimeEventListener,
   SendTurnInput,
   SteerOutcome,
+  TurnAccessInput,
   TurnImageInput,
 } from "../contracts.ts";
 import { EFFORT_LEVELS } from "../../shared/wire.ts";
@@ -63,6 +64,9 @@ import {
   mergeLocalInject,
 } from "./local-inject.ts";
 import { appendNative } from "./native.ts";
+import { piHostToolArgs } from "./host-tools.ts";
+import { canUseMcpServer, parseToolScope } from "../../shared/tool-scope.ts";
+import { gateServer, mcpStdioServer, resultBudget } from "../mcp-gate-config.ts";
 
 const DRIVER_KIND = "piAgent";
 const PI_ARGS = ["--mode", "rpc", "--no-session"];
@@ -125,6 +129,8 @@ export function piThinkingLevel(effort: EffortLevel): (typeof EFFORT_LEVELS)[num
  * a JSON-RPC 2.0 stdio server the pi-mcp-extension consumes. Returns null when
  * there is nothing to mount (the common case). */
 export function buildMcpServers(turn: SendTurnInput): Record<string, unknown> | null {
+  const parsed = parseToolScope(turn.toolScope);
+  if (!parsed.ok) throw new Error(parsed.error);
   const servers: Record<string, unknown> = {};
   if (turn.integrations?.composio) servers.composio = { ...turn.integrations.composio };
   if (turn.integrations?.localComputer) {
@@ -146,6 +152,16 @@ export function buildMcpServers(turn: SendTurnInput): Record<string, unknown> | 
       args: [SPAWNED_PROXIES.dweb],
       env: { ...NODE_ENV_FLAG, DWEB_URL: turn.integrations.dweb.url },
     };
+  }
+  if (turn.integrations?.browser) servers.browser = { ...turn.integrations.browser };
+  for (const [name, server] of Object.entries(turn.integrations?.custom ?? {})) servers[name] = { ...server, scope: "custom" };
+  for (const [name, server] of Object.entries(servers)) {
+    if (parsed.scope !== undefined && !canUseMcpServer(parsed.scope, name)) { delete servers[name]; continue; }
+    const gated = gateServer({ name, server, toolScope: parsed.scope, threadId: turn.threadId, budget: name in (turn.integrations?.custom ?? {}) ? resultBudget() : 0, nodeEnv: NODE_ENV_FLAG });
+    const stdio = gated ?? mcpStdioServer(server, { nodeEnv: NODE_ENV_FLAG });
+    if (!stdio) throw new Error("Pi MCP server configuration is invalid");
+    const original = server as { scope?: string };
+    servers[name] = { ...stdio, ...(original.scope ? { scope: original.scope } : {}) };
   }
   return Object.keys(servers).length ? servers : null;
 }
@@ -464,6 +480,39 @@ function piEnvironment(source: Record<string, string | undefined>): Record<strin
   return env;
 }
 
+/** The provider keys pi reads, as engine-credentials.ts PROVIDER_KEY_ENV
+ * hands them (Perspicax providers anthropic, openai, xai, google, moonshot). */
+export const PI_ACCESS_KEY_ENV = ["ANTHROPIC_API_KEY", "OPENAI_API_KEY", "XAI_API_KEY", "GEMINI_API_KEY", "MOONSHOT_API_KEY"] as const;
+
+/** Organization server: one turn's credentials (SendTurnInput.access), over
+ * an environment piEnvironment already stripped of every key: the payer's
+ * own PI_CODING_AGENT_DIR (never the server's ~/.pi/agent/auth.json) and
+ * the keys they keep in Perspicax. */
+export function piAccessEnvironment(env: Record<string, string | undefined>, access: TurnAccessInput | undefined): Record<string, string | undefined> {
+  if (!access) return env;
+  if (access.engineHome) {
+    mkdirSync(access.engineHome, { recursive: true, mode: 0o700 });
+    env.PI_CODING_AGENT_DIR = access.engineHome;
+  }
+  for (const name of PI_ACCESS_KEY_ENV) {
+    const value = access.environment?.[name];
+    if (value) env[name] = value;
+  }
+  return env;
+}
+
+/** On an organization server the server's own pi holds no key, and pi lists
+ * only the models of providers it has a key for: the catalog is read with a
+ * placeholder for every provider a person's key can serve, in a pi home of
+ * its own, so members can pick a model their own key then pays for. The
+ * placeholders never reach a turn (piEnvironment). */
+export function piCatalogEnvironment(env: Record<string, string | undefined>, orgServer: boolean): Record<string, string | undefined> {
+  if (!orgServer) return env;
+  const next: Record<string, string | undefined> = { ...env, PI_CODING_AGENT_DIR: join(tmpdir(), "sagax-pi-catalog") };
+  for (const name of PI_ACCESS_KEY_ENV) next[name] = "sagax-catalog-only";
+  return next;
+}
+
 export const PiDriver: ProviderDriver<PiConfig> = {
   driverKind: DRIVER_KIND,
   metadata: { displayName: "pi", supportsMultipleInstances: true, access: "custom" },
@@ -482,7 +531,7 @@ export const PiDriver: ProviderDriver<PiConfig> = {
 
   async create(input: DriverCreateInput<PiConfig>): Promise<ProviderInstance> {
     const { instanceId, config } = input;
-    const catalogEnv = piEnvironment({ ...process.env, ...input.environment });
+    const catalogEnv = piCatalogEnvironment(piEnvironment({ ...process.env, ...input.environment }), process.env.SAGAX_IDENTITY?.trim().toLowerCase() === "perspicax");
     let models = EMPTY;
     const readModels = async () => {
       let base = models;
@@ -531,6 +580,9 @@ export const PiDriver: ProviderDriver<PiConfig> = {
 
     const sendTurn = async (turn: SendTurnInput) => {
       const { threadId } = turn;
+      const selection = parseToolScope(turn.toolScope);
+      if (!selection.ok) throw new Error(selection.error);
+      const toolScope = selection.scope;
       if (active.has(threadId)) throw new Error("a turn is already running on this thread");
       // Per-bot Ask/Auto is authoritative for harness turns. Preserve the
       // legacy instance flag only for direct adapter callers that omit it.
@@ -573,10 +625,12 @@ export const PiDriver: ProviderDriver<PiConfig> = {
       // into a 0600 temp file removed when the turn settles — never on argv.
       const mcpServers = buildMcpServers(turn);
       let mcpTempDir: string | null = null;
-      if (mcpServers) {
+      let scopeReadyPath: string | undefined;
+      if (mcpServers || toolScope !== undefined) {
         mcpTempDir = mkdtempSync(join(tmpdir(), "omb-pi-mcp-"));
+        if (toolScope !== undefined) scopeReadyPath = join(mcpTempDir, "scope-ready.json");
         try {
-          writeFileSync(join(mcpTempDir, "mcp.json"), JSON.stringify({ mcpServers }), { mode: 0o600 });
+          writeFileSync(join(mcpTempDir, "mcp.json"), JSON.stringify({ mcpServers: mcpServers ?? {}, toolScope, scopeReadyPath, approvalMode: turn.approvalMode }), { mode: 0o600 });
         } catch (err) {
           // A failed write must not leave the temp dir behind — a partial file
           // could still hold the boat token / composio key / comms token.
@@ -588,7 +642,13 @@ export const PiDriver: ProviderDriver<PiConfig> = {
           throw err;
         }
       }
-      const childArgs = mcpServers ? [...PI_ARGS, "-e", SPAWNED_PROXIES.piMcpExtension] : PI_ARGS;
+      // `--no-extensions` still loads an explicit `-e`, so the Sagax MCP
+      // extension stays while the person's own pi extensions do not.
+      const childArgs = [
+        ...PI_ARGS,
+        ...piHostToolArgs(turn.withholdHostTools === true),
+        ...(mcpTempDir ? ["-e", SPAWNED_PROXIES.piMcpExtension] : []),
+      ];
 
       // spawnCli can throw synchronously (unresolvable CLI); if it does, the
       // 0600 temp file with the boat token / composio key / comms token must
@@ -598,11 +658,11 @@ export const PiDriver: ProviderDriver<PiConfig> = {
           return spawnCli(config.cli, childArgs, {
             stdio: ["pipe", "pipe", "pipe"],
             cwd: turn.cwd,
-            env: piEnvironment({
+            env: piAccessEnvironment(piEnvironment({
               ...process.env,
               ...input.environment,
-              ...(mcpServers && mcpTempDir ? { SAGAX_MCP_CONFIG: join(mcpTempDir, "mcp.json") } : {}),
-            }),
+              ...(mcpTempDir ? { SAGAX_MCP_CONFIG: join(mcpTempDir, "mcp.json") } : {}),
+            }), turn.access),
           });
         } catch (err) {
           if (mcpTempDir) {
@@ -1048,6 +1108,20 @@ export const PiDriver: ProviderDriver<PiConfig> = {
         }
       }
 
+      if (scopeReadyPath) {
+        let ready = false;
+        try {
+          const receipt = JSON.parse(readFileSync(scopeReadyPath, "utf8")) as { ok?: unknown; toolScope?: unknown };
+          ready = receipt.ok === true && JSON.stringify(receipt.toolScope) === JSON.stringify(toolScope);
+        } catch { /* Missing or malformed readiness is never a grant. */ }
+        if (!ready) {
+          const message = "Pi tool selection enforcement is unavailable. Update Pi and check the Sagax extension before retrying.";
+          emit({ ...base(threadId, turnId), type: "runtime.error", message });
+          settle(false);
+          throw new Error(message);
+        }
+      }
+
       // The stable/volatile split: the full prompt rides only the turn that
       // establishes - or re-instructs, after a soul edit - this pi session,
       // which previously re-sent the whole system prompt on every turn and
@@ -1179,6 +1253,8 @@ export const PiDriver: ProviderDriver<PiConfig> = {
           computerMcp: true,
           composioMcp: true,
           phoneMcp: true,
+          customMcp: true,
+          browserMcp: true,
           // Host control (the user's real Mac) rides the pi-native permission
           // card (`ctx.ui.confirm` → extension_ui_request) gated in the
           // extension, so it is offered exactly when the other engines offer
@@ -1192,6 +1268,9 @@ export const PiDriver: ProviderDriver<PiConfig> = {
           // xhigh/max only land on models that expose them; pi rejects an
           // unsupported level and the turn keeps the engine default.
           effortLevels: EFFORT_LEVELS,
+          // The flags are added only when the turn sets withholdHostTools,
+          // which an organization server always does for this capability.
+          withholdsHostTools: true,
           // pi's RPC mode takes a mid-turn steer frame the runtime queues
           // into the running agent without aborting the current step.
           queueing: true,

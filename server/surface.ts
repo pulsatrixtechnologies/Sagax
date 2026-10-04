@@ -9,6 +9,7 @@
 /** A place a bot can act. `cloud` covers both the Boat and VPS backends —
  * from the person's seat they are the same "cloud computer" panel. */
 import type { Surface } from "../shared/wire.ts";
+import { canWorkOnCloud, type CloudEngine } from "../shared/cloud-computer.ts";
 export type { Surface };
 
 /** The bot's "Works on" setting; undefined = Auto. */
@@ -29,8 +30,6 @@ export interface SurfacePlan {
   browser: boolean;
   /** The surface this Auto turn was held to by the task's pin, or null. */
   pinned: Surface | null;
-  /** Reserved for a deliberate migration; unavailable targets retain their pin. */
-  clearPin: boolean;
   /** One prompt sentence when the chosen destination cannot be honoured. */
   note: string;
 }
@@ -84,27 +83,99 @@ export function resolveSurface(input: {
   // way; the dispatch was the odd one out. A bot that should keep the browser
   // and nothing else has its own destination: Browser.
   if (destination === "off") {
-    return { computer: "off", browser: false, pinned: null, clearPin: false, note: OFF_NOTE };
+    return { computer: "off", browser: false, pinned: null, note: OFF_NOTE };
   }
   const pin = input.pinnedSurface ?? null;
   if (pin === "browser") {
-    if (browserOn) return { computer: "off", browser: true, pinned: "browser", clearPin: false, note: "" };
+    if (browserOn) return { computer: "off", browser: true, pinned: "browser", note: "" };
     // A missing browser is not permission to act on the host instead. Keep
     // the chosen place so a retry or unrelated provider failure cannot move
     // the task to a different signed-in computer.
-    return { computer: "off", browser: false, pinned: pin, clearPin: false,
+    return { computer: "off", browser: false, pinned: pin,
       note: " This conversation is pinned to the built-in browser, but its tools are unavailable this turn. No computer is mounted instead. Do not claim to have used it; a different place must be selected before acting there." };
   }
-  if (pin) return { computer: pin, browser: false, pinned: pin, clearPin: false, note: "" };
+  if (pin) return { computer: pin, browser: false, pinned: pin, note: "" };
   if (destination === "browser") {
     return browserOn
-      ? { computer: "off", browser: true, pinned: null, clearPin: false, note: "" }
-      : { computer: "off", browser: false, pinned: null, clearPin: false, note: NO_BROWSER_NOTE };
+      ? { computer: "off", browser: true, pinned: null, note: "" }
+      : { computer: "off", browser: false, pinned: null, note: NO_BROWSER_NOTE };
   }
   if (destination !== undefined) {
-    return { computer: destination, browser: false, pinned: null, clearPin: false, note: "" };
+    return { computer: destination, browser: false, pinned: null, note: "" };
   }
-  return { computer: undefined, browser: browserOn, pinned: null, clearPin: false, note: "" };
+  return { computer: undefined, browser: browserOn, pinned: null, note: "" };
+}
+
+/** Where a turn's place came from: the one control a person changes when that
+ * place cannot be used. Auto (no choice anywhere) and a team's shared
+ * computer are not wrapped; their failures already say what to do. */
+export type PlaceSource = "pin" | "auto-pin" | "works-on" | "routine";
+
+/** The next action per source: the full sentence after a failed attach, and
+ * the clause after "Choose another model, or" when the engine is the cause. */
+const PLACE_ACTION: Record<PlaceSource, { sentence: string; clause: string }> = {
+  pin: {
+    sentence: "Clear this conversation's place in the composer to continue.",
+    clause: "clear this conversation's place in the composer",
+  },
+  // The dispatch clears an Auto-recorded pin that failed, so the next
+  // message runs on Auto: that pin was the machine's memory, not a choice.
+  "auto-pin": {
+    sentence: "This conversation is back on Auto; send your message again.",
+    clause: "send your message again; this conversation is back on Auto",
+  },
+  "works-on": {
+    sentence: "Set Works on to Auto in this bot's settings to continue.",
+    clause: "set Works on to Auto",
+  },
+  routine: {
+    sentence: "Change where this routine runs.",
+    clause: "change where this routine runs",
+  },
+};
+
+/** Why this engine can't work on the cloud computer, in the words of the
+ * place's source, or null when it can (shared/cloud-computer.ts holds the
+ * rule). Checked before anything is provisioned, so a turn that cannot run
+ * never creates or wakes a machine. */
+export function cloudPlaceDriverError(
+  engine: CloudEngine,
+  backend: "box" | "vps",
+  source: PlaceSource = "works-on",
+): string | null {
+  if (canWorkOnCloud(engine, backend)) return null;
+  const next = `Choose another model, or ${PLACE_ACTION[source].clause}.`;
+  return engine.driverKind === "boxAgent"
+    ? `The Computer engine runs on Boat and can't use a self-hosted VPS. ${next}`
+    : `This model can't use a computer. ${next}`;
+}
+
+/** One line, cause then next action. A bot thread's transcript row keeps
+ * 160 characters, so the cause is shortened there, never the action; the
+ * cause keeps its own words otherwise. */
+export function placeFailureMessage(cause: string, source: PlaceSource, limit = 160): string {
+  const action = PLACE_ACTION[source].sentence;
+  const body = cause.trim().replace(/[\s.]+$/, "");
+  const room = limit - action.length - 2;
+  if (body.length <= room) return `${body}. ${action}`;
+  return `${body.slice(0, Math.max(0, room - 1)).trimEnd()}… ${action}`;
+}
+
+/** A place the turn was told to use could not be used. The message already
+ * ends with the one next action; the place lets the dispatch clear a failed
+ * Auto-recorded pin to it, so a failed place never sticks. */
+export class PlaceUnavailableError extends Error {
+  readonly place: Surface;
+  constructor(place: Surface, message: string) {
+    super(message);
+    this.name = "PlaceUnavailableError";
+    this.place = place;
+  }
+}
+
+/** A failed attach: the attach's own words as the cause, plus the action. */
+export function placeUnavailable(place: Surface, source: PlaceSource, cause: string, limit = 160): PlaceUnavailableError {
+  return new PlaceUnavailableError(place, placeFailureMessage(cause, source, limit));
 }
 
 /** How the prompt and the app name a surface. Deliberately the same words
@@ -128,8 +199,15 @@ export function surfaceLabel(surface: Surface): string {
 const RESTATE_SENTENCE =
   " Before your first action on a screen or page in a task, say in one short sentence where you are working, using that same name.";
 
+/** Where a person moves a conversation: the Computer panel is the one place
+ * control both interface modes show (Simple has no composer chip). */
+const PLACE_CONTROL = "the Computer panel";
+/** Without select_computer the person has to switch; with it, surfacePrompt
+ * swaps exactly this phrase for the model's own switch. */
+const ASK_TO_SWITCH = `explain the mismatch and ask the user to change where this conversation works in ${PLACE_CONTROL}`;
+
 const SURFACE_AUTHORITY =
-  " For browser and computer tasks, use Sagax's mounted browser/computer tools first: inspect the target, perform the action, and verify its result before claiming success. Discover deferred tools by their server/name when needed. Do not substitute the provider's own desktop, a shell-launched browser, or another automation path for the selected Sagax surface. Ordinary code and file tasks may still use their normal tools. Announcing an action is not performing it. A request naming another place does not move these tools: this computer is the user's host, Local VM is an isolated desktop, the cloud computer is remote, and the built-in browser is a separate browser. If the requested place differs from the mounted one, explain the mismatch and ask the user to change the conversation's computer selector; never act on a different computer or describe a host window as a VM.";
+  ` For browser and computer tasks, use Sagax's mounted browser/computer tools first: inspect the target, perform the action, and verify its result before claiming success. Discover deferred tools by their server/name when needed. Do not substitute the provider's own desktop, a shell-launched browser, or another automation path for the selected Sagax surface. Ordinary code and file tasks may still use their normal tools. Announcing an action is not performing it. A request naming another place does not move these tools: this computer is the user's host, Local VM is an isolated desktop, the cloud computer is remote, and the built-in browser is a separate browser. If the requested place differs from the mounted one, ${ASK_TO_SWITCH}; never act on a different computer or describe a host window as a VM.`;
 
 /** A Cloud home offers neither this computer nor a Local VM
  * (server/cloud-home.ts), so its bots are told only about the places it has.
@@ -162,13 +240,13 @@ export function surfacePrompt(
       " Everything you do on screen happens in the built-in browser tab; there is no desktop, file or shell computer this turn. If you need the user to sign in, tell them it is in the Browser tab of the Computer panel.";
   }
   if (text) text += RESTATE_SENTENCE + (opts.canSelect
-    ? SURFACE_AUTHORITY.replace("explain the mismatch and ask the user to change the conversation's computer selector", "inspect connected choices with select_computer and select the requested available place; on a pending result end this turn so Sagax can reconnect the correct tools and continue the original request")
+    ? SURFACE_AUTHORITY.replace(ASK_TO_SWITCH, "inspect connected choices with select_computer and select the requested available place; on a pending result end this turn so Sagax can reconnect the correct tools and continue the original request")
     : SURFACE_AUTHORITY);
   else if (!opts.note && !opts.canSelect) {
     text = " No computer or built-in browser tools are mounted this turn. You cannot open apps, click, or inspect a screen through Sagax. If asked for screen work, explain this and ask the user to choose and connect a computer in the Computer panel; do not claim to have opened or checked it.";
   }
   if (opts.pinned) {
-    text += ` This conversation is pinned to ${surfaceLabel(opts.pinned)}; changing places requires ${opts.canSelect ? "select_computer or " : ""}the conversation's computer selector, not a different tool name.`;
+    text += ` This conversation is pinned to ${surfaceLabel(opts.pinned)}; changing places requires ${opts.canSelect ? "select_computer or " : ""}the user's choice in ${PLACE_CONTROL}, not a different tool name.`;
   }
   if (opts.canSelect) text += " For a screen task, use select_computer with no arguments when you need to inspect the actual available targets. Choose the requested place from its result; if the user left the place open, use a suitable available target or surface auto instead of asking them to operate the menu. Browser-only work can stay in Browser; when it needs desktop apps or capabilities the current Browser lacks, select an available Local VM without asking the user to switch it manually. Choose before taking actions, and do not repeat actions already completed if the task must continue elsewhere. Sagax can start an existing configured computer and highlight the selected target. If the right tools are already mounted, use them directly. On a pending switch, end this turn: the original request resumes automatically with the new tools, and then you must carry out the task. Only ask for input for a genuine blocker, such as missing setup, required sign-in or an approval. Never silently replace an explicitly requested VM with the host desktop.";
   if (opts.canSelect) text += " If no suitable computer is running but its provider is configured, select_computer can provision one for this computer task; reuse existing resources first. Do not provision merely for ordinary chat or inspection.";
@@ -176,21 +254,4 @@ export function surfacePrompt(
   if (computer || mounted.browser) text += " For online research, use the selected Sagax browser when a search service is unavailable. A failed tool proves only that this attempt failed, not that every browser is unavailable. Inspect the current page after navigation; report a sign-in page, redirect or error as such. A completed model turn is not proof that the user's task succeeded.";
   if (opts.cloudHome) for (const [desktop, cloudHome] of CLOUD_HOME_WORDING) text = text.replace(desktop, cloudHome);
   return text + (opts.note ?? "");
-}
-
-/** Tool names that touch a screen, for engines that report bare names.
- * Mirrors the screen-poller regex in the harness. */
-const SCREEN_TOOL = /^(?:screenshot|click|type_text|press_key|scroll|open_url|wait_for|computer_|browser_)/i;
-
-/** Which surface a completed tool call landed on, or null when it cannot
- * be told apart. The Claude driver namespaces MCP tools by server, which
- * is the only fully reliable signal; a bare name is trusted only when one
- * surface was mounted, because both servers expose `browser_snapshot`. */
-export function surfaceForTool(toolName: string, mounted: MountedSurfaces): Surface | null {
-  if (toolName.startsWith("mcp__browser__")) return mounted.browser ? "browser" : null;
-  if (toolName.startsWith("mcp__computer__")) return mounted.computer;
-  if (!SCREEN_TOOL.test(toolName)) return null;
-  if (mounted.computer && !mounted.browser) return mounted.computer;
-  if (!mounted.computer && mounted.browser && /^browser_/i.test(toolName)) return "browser";
-  return null;
 }

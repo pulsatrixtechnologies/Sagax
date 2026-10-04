@@ -56,6 +56,9 @@ vi.mock("@/state/store", async (importOriginal) => ({
   }),
 }));
 
+// These cases cover the full picker; Simple mode has its own file.
+vi.mock("@/lib/interface-mode", () => ({ useAdvancedMode: () => true, setAdvancedMode: () => {} }));
+
 const { LOCAL_PROBE_TIMEOUT_MS, ModelEngineRail, ModelPicker, offersLocalModels, probeLocalModels } = await import("./ModelPicker");
 
 afterAll(() => vi.unstubAllGlobals());
@@ -79,6 +82,7 @@ const claude = (snapshot: InstanceInfo["snapshot"], options: InstanceInfo["model
   instanceId: "claude", driverKind: "claudeAgent", displayName: "Claude", access: "subscription", snapshot,
   models: { default: "claude-opus-5-5", options }, install: claudeInstall,
   authentication: { method: "paste-code", signOut: true },
+  capabilities: { withholdsHostTools: true },
 });
 const signedOut = () => claude({ state: "available", version: "2.1.300", authenticated: false });
 const signedIn = () => claude({ state: "available", version: "2.1.300", authenticated: true });
@@ -87,6 +91,7 @@ const codex: InstanceInfo = {
   instanceId: "codex", driverKind: "codex", displayName: "Codex", access: "subscription",
   snapshot: { state: "available", version: "1.0.0", authenticated: true },
   models: { default: "gpt-5.6", options: [{ id: "gpt-5.6", label: "GPT-5.6" }] },
+  capabilities: { withholdsHostTools: true },
 };
 
 function bot(instanceId: string, model: string): Bot {
@@ -380,6 +385,37 @@ describe("on an organization server", () => {
     expect(rail(opened)!.props.instances.map((instance) => instance.instanceId)).toEqual(["claude"]);
     expect(html).not.toContain("data-model-local-entry");
     expect(html).toContain("data-model-local-hidden");
+    expect(html).not.toContain("data-model-host-tools");
+  });
+
+  it("offers engines that withhold host tools, keeps the current one, and says why it cannot run", () => {
+    fixture.org = orgOf("member");
+    fixture.myEngines = [engine()];
+    const grok: InstanceInfo = {
+      instanceId: "grok", driverKind: "grokAgent", displayName: "Grok", access: "subscription",
+      snapshot: { state: "available", authenticated: true },
+      models: { default: "grok-4.7", options: [{ id: "grok-4.7", label: "Grok 4.7" }] },
+      capabilities: { withholdsHostTools: true },
+    };
+    const pi: InstanceInfo = {
+      instanceId: "pi", driverKind: "piAgent", displayName: "pi", access: "custom",
+      snapshot: { state: "available", authenticated: true },
+      models: { default: "openai/gpt-4o", options: [{ id: "openai/gpt-4o", label: "gpt-4o", custom: true }] },
+      capabilities: { withholdsHostTools: true },
+    };
+    const gemini: InstanceInfo = {
+      instanceId: "gemini", driverKind: "geminiAgent", displayName: "Gemini", access: "subscription",
+      snapshot: { state: "available", authenticated: true },
+      models: { default: "gemini-pro", options: [{ id: "gemini-pro", label: "Gemini Pro" }] },
+    };
+    fixture.instances = [signedOut(), grok, pi, gemini, ollama];
+    const opened = open(bot("gemini", "gemini-pro"));
+    expect(rail(opened)!.props.instances.map((instance) => instance.instanceId)).toEqual(["claude", "grok", "pi", "gemini"]);
+    const html = menu(opened.html);
+    expect(html).toContain("data-model-host-tools");
+    expect(html).toContain("Gemini runs its own tools on the Sagax server.");
+    rail(opened)!.props.onSelect(grok);
+    expect(menu(render(bot("gemini", "gemini-pro")).html)).not.toContain("data-model-host-tools");
   });
 
   it("follows the server's answer for an admin too: no server row, the subscription first once signed in", () => {

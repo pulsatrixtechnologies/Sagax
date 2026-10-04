@@ -45,6 +45,13 @@ export interface FakeXaiOptions {
   sttConfidence?: number;
   /** seconds of tone per streamed sentence */
   ttsSeconds?: number;
+  /** interim words while audio streams in, like xAI's interim results: the
+   * next transcript's words, one per `msPerWord` of audio, each sent
+   * `latencyMs` after the audio that completes it */
+  sttPartials?: { msPerWord: number; latencyMs: number };
+  /** every new TCP connection waits this long before it is served (a TLS
+   * handshake to a distant api.x.ai); a kept-alive one does not */
+  newConnectionMs?: number;
 }
 
 export interface FakeXaiVoice {
@@ -167,12 +174,33 @@ export async function startFakeXaiVoice(options: FakeXaiOptions = {}): Promise<F
     if (url.pathname !== "/v1/stt") { socket.destroy(); return; }
     sockets.handleUpgrade(req, socket, head, (ws) => {
       ws.send(JSON.stringify({ type: "transcript.created" }));
+      // the utterance being heard: its audio so far and the words already said
+      let utteranceBytes = 0;
+      let wordsSent = 0;
       ws.on("message", (data, binary) => {
-        if (binary) { record.audioBytes = (record.audioBytes ?? 0) + (data as Buffer).length; return; }
+        if (binary) {
+          record.audioBytes = (record.audioBytes ?? 0) + (data as Buffer).length;
+          const partials = options.sttPartials;
+          if (partials) {
+            utteranceBytes += (data as Buffer).length;
+            const words = (transcripts[0] ?? options.transcript ?? "Hello from voice mode").split(/\s+/);
+            const heardWords = Math.min(words.length, Math.floor(utteranceBytes / (32 * partials.msPerWord)));
+            if (heardWords > wordsSent) {
+              wordsSent = heardWords;
+              const text = words.slice(0, heardWords).join(" ");
+              setTimeout(() => {
+                if (ws.readyState === ws.OPEN) ws.send(JSON.stringify({ type: "transcript.partial", text, is_final: false, speech_final: false, start: 0, duration: 1 }));
+              }, partials.latencyMs);
+            }
+          }
+          return;
+        }
         let message: { type?: string } = {};
         try { message = JSON.parse(String(data)) as { type?: string }; } catch { /* ignored */ }
         if (message.type === "finalize") {
           record.finalizes = (record.finalizes ?? 0) + 1;
+          utteranceBytes = 0;
+          wordsSent = 0;
           const text = transcripts.shift() ?? options.transcript ?? "Hello from voice mode";
           setTimeout(() => {
             if (ws.readyState === ws.OPEN) ws.send(JSON.stringify({ type: "transcript.partial", text, is_final: true, speech_final: true, start: 0, duration: 1, ...(options.sttConfidence !== undefined ? { confidence: options.sttConfidence } : {}) }));
@@ -184,6 +212,13 @@ export async function startFakeXaiVoice(options: FakeXaiOptions = {}): Promise<F
       });
     });
   });
+  if (options.newConnectionMs) {
+    const handshake = options.newConnectionMs;
+    server.on("connection", (socket) => {
+      socket.pause();
+      setTimeout(() => socket.resume(), handshake);
+    });
+  }
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const address = server.address();
   if (!address || typeof address === "string") throw new Error("fake xAI did not get a TCP port");

@@ -131,7 +131,7 @@ describe("the server's own machine on an organization server", () => {
     expect(source).toMatch(/function computerPlaceRefusal\([\s\S]{0,400}managedPolicy\.computerRefusal\(kind\)/);
     // creating or starting a desktop on the server itself is refused
     expect(source).toMatch(/const hostVmRefusal = action === "stop" \|\| action === "remove" \? undefined : hostComputerRefusal\(\);/);
-    expect(source).toMatch(/const botVmRefusal = action === "run" \? hostComputerRefusal\(\) : undefined;/);
+    expect(source).toMatch(/const botVmRefusal = action === "run" \|\| action === "start" \? hostComputerRefusal\(\) : undefined;/);
     // the internal route answers the proven requester's computers on an organization server
     expect(source).toMatch(/userComputers\.list\(personSpeaker\(principal\)\)/);
     expect(source).toMatch(/userComputers\.request\(personSpeaker\(principal\), parsed\.data, active\)/);

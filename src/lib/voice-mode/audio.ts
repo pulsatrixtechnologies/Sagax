@@ -5,7 +5,7 @@
 export const TARGET_RATE = 16_000;
 
 /** Mix down and resample float chunks (-1..1) to 16-bit PCM at `toRate`. */
-export function toPcm16(chunks: readonly Float32Array[], fromRate: number, toRate = TARGET_RATE): Int16Array {
+export function toPcm16(chunks: readonly Float32Array[], fromRate: number, toRate = TARGET_RATE): Int16Array<ArrayBuffer> {
   const total = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
   if (!total || fromRate <= 0) return new Int16Array(0);
   const joined = new Float32Array(total);

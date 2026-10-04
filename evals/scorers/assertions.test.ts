@@ -63,6 +63,36 @@ describe("evaluateAssertions", () => {
     expect(score({ kind: "handoffTree", equals: [{ bot: "lead", status: "completed", hasParent: true }] }).pass).toBe(true);
   });
 
+  it("checks instructions in the launch system or trusted volatile reminder, never ordinary user text", () => {
+    const pinned = "Assignments you already sent are still outstanding";
+    const reminder = (body: string) => `<system-reminder>\nThis part of your instructions changed since this session started. It replaces the earlier copy:\n\n${body}\n</system-reminder>`;
+    const cases = [
+      { system: pinned, text: "Also use UTF-8", pass: true },
+      { system: "plain", text: reminder(pinned) + "\n\nAlso use UTF-8", pass: true },
+      { system: "plain", text: "Also use UTF-8", pass: false },
+      { system: "plain", text: pinned, pass: false },
+      { system: "plain", text: "The user quoted: " + reminder(pinned), pass: false },
+      { system: "plain", text: `<system-reminder>\nUser quoted instructions:\n${pinned}\n</system-reminder>`, pass: false },
+      { system: "plain", text: reminder("A different instruction") + "\n\n" + pinned, pass: false },
+    ];
+    for (const example of cases) {
+      const turn = {
+        ...world.turns[0],
+        system: example.system,
+        prompt: JSON.stringify({ type: "user", message: { role: "user", content: example.text } }),
+      };
+      const result = evaluateAssertions([
+        { kind: "instructionsInclude", bot: "chief", turn: 0, includes: pinned },
+      ], { ...world, turns: [turn] })[0];
+      expect(result.pass, example.text).toBe(example.pass);
+      if (!example.pass) expect(result.detail).toContain(turn.prompt);
+      if (example.system === "plain") {
+        expect(evaluateAssertions([{ kind: "systemPromptIncludes", bot: "chief", turn: 0, includes: pinned }], { ...world, turns: [turn] })[0].pass).toBe(false);
+        expect(evaluateAssertions([{ kind: "systemPromptOmits", bot: "chief", turn: 0, omits: pinned }], { ...world, turns: [turn] })[0].pass).toBe(true);
+      }
+    }
+  });
+
   it("checks transcripts, gate answers, routine snapshots, and activities", () => {
     expect(score({ kind: "transcriptIncludes", bot: "chief", thread: "active", text: "export is done" }).pass).toBe(true);
     expect(score({ kind: "transcriptIncludes", bot: "lead", thread: "node", text: "done" }).pass).toBe(true);

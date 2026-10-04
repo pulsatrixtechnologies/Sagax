@@ -88,7 +88,7 @@ shared by the desktop, the web and the phone:
 | `mascotExpression` | the owl's or the shape's resting expression |
 
 Today iOS draws none of these characters. `MausAvatar` only knows the
-inherited OpenMausBot bodies (`mascotBody`).
+inherited Sagax bodies (`mascotBody`).
 
 **iOS renderers** (new, in `ios/App/Mascots/`). Each takes `(bot, size,
 state)`; one `BotMascotView` dispatches on the character and replaces

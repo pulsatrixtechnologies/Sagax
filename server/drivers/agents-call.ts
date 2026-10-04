@@ -24,11 +24,16 @@ export interface TurnGuards {
   createdThisTurn: number;
   roomPostsThisTurn: number;
   threadsOpenedThisTurn: number;
+  /** Group memory updates refused in this turn (bot memory archives at the cap instead). */
   memoryRefusalsThisTurn: number;
   /** Delegations made in this turn: their ids may not be checked or waited
    * on until a later one. */
   delegationTaskIdsThisTurn: Set<string>;
 }
+
+// A refused group memory update gets one re-read and one corrected retry,
+// not a loop: the third refusal in a turn closes the tool for that turn.
+const MAX_MEMORY_REFUSALS_PER_TURN = 3;
 
 export interface ToolCallContext {
   /** The calling bot's id (excluded from list_bots; the sender). */
@@ -88,11 +93,9 @@ const MAX_ROOM_POSTS_PER_TURN = 3;
 // deciding. The harness holds the same ceiling; this copy exists so the
 // refusal reaches the model without a round trip.
 const MAX_THREADS_PER_TURN = 5;
-// A memory write the harness refused (a stale passage, a full file) needs
-// one re-read and one corrected retry, not a loop of the same append. The
-// third refusal in a turn closes the tool so the turn ends with the person
-// told what did not fit instead of a transcript of retries.
-const MAX_MEMORY_REFUSALS_PER_TURN = 3;
+/** How many entries a memory_update reply names when its write moved some
+ * to the archive; the rest are counted. */
+const MOVED_ENTRIES_SHOWN = 5;
 
 const SHORT_WEEKDAYS = {
   mon: "monday",
@@ -321,7 +324,7 @@ function routineFields(args: Json): { fields: Json; error?: string } {
   const runOn = destination(args.run_on ?? args.runOn);
   const timeoutMinutes = args.timeout_minutes ?? args.timeoutMinutes;
   if (runOn != null && runOn !== "maus" && runOn !== "cloud") {
-    return { fields, error: 'Use run_on="maus" for the bot’s current model and configured computer (including VPS), or run_on="box" only for the Boat-hosted agent. Legacy "cloud" also means Boat.' };
+    return { fields, error: 'Use run_on="maus" for the bot’s current model and configured computer (including VPS), or run_on="box" only for the bot’s Boat cloud computer. Legacy "cloud" also means Boat.' };
   }
   if (timeoutMinutes != null && (
     typeof timeoutMinutes !== "number" || !Number.isInteger(timeoutMinutes) || timeoutMinutes < 5 || timeoutMinutes > 240
@@ -512,26 +515,50 @@ export async function callTool(name: string, args: Json, context: ToolCallContex
     // retry needs instead of a generic validation error (#1239).
     const canonical: Json = { ...args };
     delete canonical.botIds;
-    delete canonical.requestKey;
     delete canonical.groupId;
     if (canonical.bot_ids === undefined) canonical.bot_ids = args.botIds;
-    if (canonical.request_key === undefined) canonical.request_key = args.requestKey;
     if (canonical.group_id === undefined) canonical.group_id = args.groupId;
     const ids = canonical.bot_ids;
     const usable = Array.isArray(ids) && ids.length > 0 && ids.every((id) => typeof id === "string")
-      && typeof canonical.message === "string" && canonical.message.trim().length > 0
-      && typeof canonical.request_key === "string" && canonical.request_key.trim().length > 0;
+      && typeof canonical.message === "string" && canonical.message.trim().length > 0;
     if (!usable) {
       return {
-        text: `coordinate_bots takes snake_case arguments: bot_ids (an array of 1-4 teammate ids), message and request_key are required; group_id, rework and label are optional. Received: ${Object.keys(args).join(", ") || "none"}.`,
+        text: `coordinate_bots takes snake_case arguments: bot_ids (an array of 1-4 teammate ids) and message are required; group_id and rework are optional. Received: ${Object.keys(args).join(", ") || "none"}.`,
         isError: true,
       };
     }
     const r = await api("/api/internal/coordinate-bots", { method: "POST", body: JSON.stringify({
       groupId: canonical.group_id, botIds: ids, message: canonical.message,
-      requestKey: canonical.request_key, rework: canonical.rework, label: canonical.label,
+      rework: canonical.rework,
     }) });
     return { text: JSON.stringify(r), ...(r.error ? { isError: true } : {}) };
+  }
+  if (name === "send_to_bot") {
+    const botId = String(args.bot_id ?? "").trim();
+    const title = String(args.title ?? "").trim();
+    const message = String(args.message ?? "").trim();
+    if (!botId || !title || !message) {
+      return { text: "send_to_bot needs bot_id, title and message.", isError: true };
+    }
+    if (botId === context.botId) {
+      return { text: "send_to_bot is cross-bot only. Use start_thread to send independent work to yourself.", isError: true };
+    }
+    if (turn.threadsOpenedThisTurn >= MAX_THREADS_PER_TURN) {
+      return { text: `You have already opened ${MAX_THREADS_PER_TURN} threads this turn, which is the limit.`, isError: true };
+    }
+    const r = await api("/api/internal/threads", { method: "POST", body: JSON.stringify({
+      fromBotId: context.botId, fromThreadId: context.threadId, toBotId: botId,
+      title, message, depth: context.depth, oneWay: true,
+    }) });
+    if (r.error) return { text: `Couldn't send to that bot: ${String(r.error)}`, isError: true };
+    turn.threadsOpenedThisTurn += 1;
+    const destination = `@${String(r.botName ?? "that bot")} in #${String(r.title ?? title)} [thread id: ${String(r.threadId ?? "")}]`;
+    const state = r.approvalRequired === true
+      ? `Send to ${destination} is pending approval. The person's approval card appears after this turn ends; dispatch starts once approved.`
+      : r.state === "queued"
+        ? `Send to ${destination} is queued ${ordinal(Number(r.position) || 1)} for a free slot and can dispatch after this turn ends.`
+        : `Send to ${destination} is pending until this turn ends, then dispatch starts.`;
+    return { text: `${state} Its result stays in that thread; nothing there will resume you.` };
   }
   if (name === "list_bots") {
     const r = await api(`/api/internal/agents?self=${encodeURIComponent(BOT_ID)}`);
@@ -1082,12 +1109,6 @@ export async function callTool(name: string, args: Json, context: ToolCallContex
       || (args.action !== "append" && (typeof args.old_text !== "string" || !args.old_text.trim()))) {
       return { text: "Use memory_update action=append with text, replace or supersede with text and old_text, or remove with old_text.", isError: true };
     }
-    if (turn.memoryRefusalsThisTurn >= MAX_MEMORY_REFUSALS_PER_TURN) {
-      return {
-        text: `Memory updates are closed for the rest of this turn: ${MAX_MEMORY_REFUSALS_PER_TURN} were refused. Do not retry. Tell the person what you wanted to keep and why it did not fit; they can tidy MEMORY.md in Settings, and you can try again in your next turn.`,
-        isError: true,
-      };
-    }
     const { body: r } = await apiResponse("/api/internal/memory", {
       method: "POST",
       body: JSON.stringify({
@@ -1099,16 +1120,22 @@ export async function callTool(name: string, args: Json, context: ToolCallContex
         ...(typeof args.until === "string" && args.until.trim() ? { until: args.until.trim() } : {}),
       }),
     });
-    if (r.error || r.ok !== true) {
-      turn.memoryRefusalsThisTurn += 1;
-      const recent = Array.isArray(r.recent) ? r.recent.filter((line) => typeof line === "string") : [];
-      // A full file: the refusal carries the newest entries so the model
-      // can merge them in this same turn without a read round trip.
-      const tail = r.code === "over-budget" && recent.length ? `\n\nMost recent entries, oldest first:\n${recent.join("\n")}` : "";
-      return { text: `${String(r.error ?? "Memory update was not confirmed.")}${tail}`, isError: true };
-    }
+    if (r.error || r.ok !== true) return { text: String(r.error ?? "Memory update was not confirmed."), isError: true };
     const entry = typeof r.entry === "string" && r.entry ? ` Entry: ${r.entry}` : "";
-    return { text: `Memory updated.${entry}${r.truncated ? " MEMORY.md exceeds the prompt load budget; keep it short and curated." : ""}` };
+    const moved = Array.isArray(r.moved) ? r.moved.filter((line) => typeof line === "string") : [];
+    // A write never fails for size: the bot hears where older notes went,
+    // and the one case it cannot fix itself, in one plain sentence.
+    const full = r.truncated
+      ? "\nSaved, but the lines that never move out of MEMORY.md (hand-written ones, health and safety facts) fill what loads each session, so the newest entries do not load. Ask the person to trim MEMORY.md in Settings."
+      : "";
+    // Named by their first line, a few at most: a file grown far past the
+    // budget by hand can move hundreds in one write.
+    const shown = moved.slice(0, MOVED_ENTRIES_SHOWN).map((text) => text.split("\n")[0]);
+    const more = moved.length > shown.length ? `\n…and ${moved.length - shown.length} more` : "";
+    const movedNote = moved.length
+      ? `\nTo stay within what loads each session, moved ${moved.length === 1 ? "1 older entry" : `${moved.length} older entries`} to memory/archive.md (session_search finds them):\n${shown.join("\n")}${more}`
+      : "";
+    return { text: `Memory updated.${entry}${full}${movedNote}` };
   }
   if (name === "group_memory_update") {
     if (!["append", "replace", "remove", "supersede"].includes(String(args.action))
@@ -1161,6 +1188,24 @@ export async function callTool(name: string, args: Json, context: ToolCallContex
     });
     if (r.error || r.ok !== true) return { text: String(r.error ?? "The log line was not confirmed."), isError: true };
     return { text: `Logged to ${String(r.file)}: ${String(r.line)}` };
+  }
+  if (name === "propose_team_memory") {
+    const kind = String(args.kind ?? "").trim();
+    const entryName = String(args.name ?? "").trim();
+    const detail = String(args.detail ?? "").trim();
+    if (!kind || !entryName || !detail) return { text: "propose_team_memory needs kind, name, and detail.", isError: true };
+    const r = await api("/api/internal/team-memory", {
+      method: "POST",
+      body: JSON.stringify({
+        fromBotId: BOT_ID,
+        fromThreadId: THREAD_ID,
+        kind,
+        name: entryName,
+        detail,
+        aliases: Array.isArray(args.aliases) ? args.aliases.filter((alias) => typeof alias === "string") : undefined,
+      }),
+    });
+    return confirmationResult(r, `remembering ${entryName} for the team`, "entry");
   }
   if (name === "session_search") {
     const q = String(args.query ?? "").trim();

@@ -1,11 +1,13 @@
-# OMB Cloud Pro: the home machine
+# OMB Cloud: the home machine
 
-Cloud Pro gives one person an always-on Sagax server of their own. Each
+OMB Cloud (the Personal, Pro and Max plans) gives one person an always-on
+Sagax server of their own. The plans differ in machine size, disk and
+included allowances; everything on this page applies to all of them. Each
 customer gets one Fly app with one `home` machine that is always on, a volume
 at `/data`, and TLS at `https://<app>.fly.dev`. The desktop app, the phone and
 the web are windows onto it. Local use of the app is unchanged and free.
 
-Cloud Pro includes no AI usage. The person signs in on their machine with their
+OMB Cloud includes no AI usage. The person signs in on their machine with their
 own Claude or ChatGPT subscription, or an API key, through the same sign-in
 flows as any Sagax server. Nothing on a Cloud home is routed to a
 platform model gateway.
@@ -50,13 +52,45 @@ session; that is how the web UI knows to open the engine sign-in instead of
 the welcome flow, which describes the person's own computer (it can still be
 replayed from Settings).
 
+### Use your Cloud on your phone
+
+1. Get the phone app: the menu under your name → **Get the phone app** (App
+   Store for iPhone, APK for Android).
+2. The same menu → **Connect your phone · to your Cloud (always on)**, or
+   **Settings → OMB Cloud → Use your Cloud on your phone**. The Cloud opens in
+   the app window at its phone pairing.
+3. **Create pairing code**, and scan the QR code with the phone app.
+
+How it fits together (`src/lib/phone-pairing.ts`):
+
+- **Connect your phone** opens Settings → Remote access at the pairing that
+  fits the window, with focus on the button that shows the code: this
+  computer's phone flow in the desktop app on its own computer, the Cloud's
+  own pairing code (`ServerPairingCard`) on a Cloud home, and any other
+  server's pairing code only for a session that may make one (the owner on
+  that machine or an admin session, where pairing codes are on).
+- On this computer, when the verified snapshot shows a paid plan (any tier)
+  and a Ready Cloud, the menu has two **Connect your phone** lines: *to your
+  Cloud (always on)* first, which does what **Use your Cloud on your phone**
+  does, then *to this computer*. A paid plan whose Cloud is not Ready keeps
+  the single *to this computer* line, with a note that the Cloud will show
+  there. A failed switch opens Settings → OMB Cloud.
+- **Use your Cloud on your phone** shows for a paid plan. With a Ready Cloud it
+  calls `cloud-account:connectHomeForPhone`, which takes no arguments and
+  connects as **Connect to my Cloud** does, adding the one fixed request
+  `?desktop-settings=phone` (on `/pair` too, which carries it on once paired).
+  The Cloud's page opens Settings on its phone pairing. It never makes a code
+  by itself. Before the Cloud is Ready, or if opening it failed, the card
+  lists the two steps instead. On the Cloud itself, Settings → OMB Cloud
+  offers the same button and opens the pairing directly.
+
 ### Only your own devices
 
 A Cloud home is personal (`server/cloud-owner.ts`): only the owner's own
 devices connect (the desktop app, a phone, a browser signed in from the Cloud
 page), each with an admin session that the Admin's signed pairing, or one of
 those devices, gave it. The server mints and accepts nothing else, and says
-so in one line, "Cloud Pro is personal: only your own devices can connect.":
+so in one line, "OMB Cloud is personal: only your own devices can connect.":
 
 - `POST /api/auth/pairing` refuses a window without admin scope (Remote
   access offers no chat-only choice there), and `POST /api/auth/pair` and
@@ -661,7 +695,7 @@ never echoes a secret.
 
 ### No model gateway
 
-Cloud Pro includes no AI, so the contract has no model gateway. If a Cloud
+OMB Cloud includes no AI, so the contract has no model gateway. If a Cloud
 home is ever given `SAGAX_HOSTED_MODEL_URL`, `SAGAX_HOSTED_MODEL_TOKEN` or
 `SAGAX_HOSTED_MODELS` (an Admin from before this decision set all three), it
 still boots, logs one warning naming the variables (never their values), and
@@ -728,7 +762,7 @@ computers belong to this machine on every request.
   off.
 - **An included token is never the person's key.** It is never written to
   `config.json`, never sent to a client (Settings sees `configured` and
-  `included: true`, and says "Included with Cloud Pro"), and Settings never
+  `included: true`, and says "Included with your Cloud plan"), and Settings never
   verifies, rotates or clears it. The decision model's **Test** button, with
   no key pasted, makes one tiny call through the relay, never to Jev
   directly. Boat's account-change rules still apply: adding an own Boat key
@@ -744,7 +778,7 @@ computers belong to this machine on every request.
   engine, so a process running as the same user that may trace it (the
   kernel's ptrace policy, `kernel.yama.ptrace_scope`, decides) could read
   them there. That is why a guest's turn gets no shell (above); the complete
-  fix is engines under a user of their own. A relay token is only this customer's own Cloud Pro
+  fix is engines under a user of their own. A relay token is only this customer's own OMB Cloud
   allowance: it works only through the Admin, only on this machine's cloud
   computers, voice and decisions, and only up to the monthly caps.
 - A refusal from the Boat or voice relay (for example, the month's cloud
@@ -830,6 +864,56 @@ token (`Authorization: Bearer omc_…`). Contract version 1 adds:
   `allowance_used`) is treated as no machine. Other fields, such as a retired
   `allowance`, are ignored.
 
+Optional, additive fields the app reads when the Admin sends them (an Admin
+without them works as before; a malformed one is dropped, never the machine):
+
+- `cloud.setup: {step, slow}` while `setting_up` (`step` is `reserving`,
+  `storage`, `starting` or `checking`): the app shows the same four steps as
+  the Cloud page, and says when setup is slow.
+- `cloud.retryAt` (ms) when `failed`: the time of the next automatic try.
+- `cloud.disk: {gb, maxGb}`: the volume now and the most the plan lets it grow
+  to. Only with it does Move to Cloud count on a larger disk (and ask the Admin
+  to grow it, below). Without it the app assumes nothing: a move is measured
+  against the Cloud's free space today, and one larger than the Cloud's whole
+  disk says "tell us and we'll make room", never "remove files" or "try again".
+  The Admin should send it together with `POST /api/cloud/desktop/disk`.
+- `cloud.purchase: {state: "confirming" | "held", plan, paidAt}`: a payment
+  received but not yet linked to this account. While it is there, the app shows
+  "payment received" and offers nothing to buy. It never activates anything.
+
+How the app holds the answer (`electron/cloud-account.mjs`): it asks every
+minute (every 15 seconds while the Cloud is set up or a payment is linked),
+and an answer counts for 15 minutes, never past the plan's own `expiresAt` or
+the device token's. A failed check keeps the last verified answer, so the plan,
+the Cloud card and Connect never blink; after two failures in a row the
+snapshot says `checking`. Only a longer outage makes it `unavailable`, and even
+then the plan last verified is named (`lastPlan`, display only, kept beside the
+encrypted credential as `planHint`; it activates nothing). When the device
+token reaches its `expiresAt`, or the Admin itself answers `401`/`403` with
+its JSON `{error: "invalid_token"}`, the app asks the person to **Sign in
+again** (one step, the plan unaffected) instead of offering a plan. A `401` or
+`403` page from anything in between (Cloudflare's bot check, a proxy), or any
+other refusal, is a failed check like a dropped connection: it never ends the
+sign-in. Nobody signed in with a paid plan, in payment trouble, with a payment
+being linked, or whose state is unknown is offered a plan anywhere in the app.
+
+In the Server menu, **My Cloud** goes through the same connection as
+**Connect to my Cloud** (no pairing code to type); when it cannot, the app
+opens **Settings → OMB Cloud**, which says the next step. In the desktop app a
+`/pair#code=` link connects without a second click; a browser still asks. On a
+Cloud home the pairing page says where its connection starts (the environment
+descriptor's `capabilities.cloudHome`).
+
+On the person's own Cloud, open in the app's window, **Settings → OMB Cloud**
+shows the plan read only (`cloud-plan:*`: its name and whether it is active,
+**Manage in your browser** and **Switch to this computer**). It is listed only
+on an OMB Cloud home (`config.cloudHome`), never on another server open in the
+window. Main answers it for the Cloud this account verified, or last verified
+while a check is failing or the sign-in has ended, so that page says
+"checking" or "sign in again on your computer" rather than an error; where the
+app cannot vouch for the Cloud it only says the plan is managed in the app on
+the computer.
+
 **Connect to my Cloud** first asks the machine whether this app is already
 signed in there (`GET <origin>/api/auth/session` with its cookie). If not, it
 calls `POST /api/cloud/desktop/pairing` (same device token) and expects
@@ -914,11 +998,23 @@ do not.
    upload three times over (the upload, its decrypted copy and its staged
    files), plus twice its own workspace (the backup it takes first, briefly
    with its snapshot), plus 256 MB. A part stored by an earlier upload, of any
-   file, counts as free: a new upload replaces it. Cloud volumes have a fixed
-   size (the Admin's `SAGAX_CLOUD_VOLUME_GB`, 10 by default). Not enough room is
-   `507` with `freeBytes` and `neededBytes`, and the app shows both. Nothing
-   has been moved at that point. A new upload also deletes whatever an earlier
-   attempt staged.
+   file, counts as free: a new upload replaces it. Every Cloud starts at
+   10 GB; a plan whose disk grows grows it as it fills, up to the plan's
+   maximum. Before anything is exported the app measures the move the same
+   way (`moveFit`, with the Cloud's own `volumeBytes` from
+   `GET /api/cloud-move`), against the plan's largest disk only when the
+   Admin says how far it grows (`cloud.disk`): if it fits only once the disk
+   grows, it asks the Admin to grow it now (`POST /api/cloud/desktop/disk
+   {sizeGb}`, answered `{disk: {gb, maxGb}}`; `404` means this Admin cannot,
+   so the app says "tell us and we'll make room" with no "try again";
+   `409`/`422` over the plan) and waits until the Cloud reports the room
+   (only a timeout or no answer says "try again"). Not enough room is `507`
+   with `freeBytes` and `neededBytes`, and the app shows both, with the next
+   step: "make room on your Cloud" when the disk could hold it; "a plan with a
+   larger disk" only when the move is larger than the plan's whole disk, and
+   never on Max, the largest. A move that cannot fit says so before it
+   starts, and the Cloud's own card offers no move it would refuse. Nothing has been moved at that
+   point. A new upload also deletes whatever an earlier attempt staged.
 4. Parts of 16 MB (at most 64): `PUT /api/cloud-move/upload/<sha256>?offset=n`.
    A part already stored is accepted again without being written; any other
    offset answers `409` with `received`; a part that fails is cut back off.

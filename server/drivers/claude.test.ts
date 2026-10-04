@@ -464,11 +464,44 @@ describe("ClaudeDriver turns (fake CLI)", () => {
     scratch = mkdtempSync(join(tmpdir(), "omb-claude-test-"));
   });
 
+  it("refuses an unsupported native selection before launching, even with instance tools and Full access", async () => {
+    const dump = join(scratch, "scope-refused.json"); process.env.FAKE_CLAUDE_DUMP = dump;
+    await create("echo", {}, { tools: ["Read"], disallowedTools: ["Write"] });
+    await expect(instance.adapter.sendTurn({ threadId: "scope-refused", text: "Must not run", toolScope: { allow: ["native:Read", "native:Write"] }, approvalMode: "full", guestConfined: true })).rejects.toThrow(/native tool selection.*not supported/i);
+    expect(existsSync(dump)).toBe(false);
+  });
+
+  it("gates every eligible MCP mount while preserving guest and instance restrictions", async () => {
+    const dump = join(scratch, "scope-mcp.json"); process.env.FAKE_CLAUDE_DUMP = dump;
+    await create("echo", { FAKE_CLAUDE_VERSION: "2.1.284" }, { tools: ["Read"], disallowedTools: ["Write"] });
+    await instance.adapter.sendTurn({ threadId: "scope-mcp", text: "Fixture", approvalMode: "ask", guestConfined: true, toolScope: { allow: ["native:*", "mcp:agents:list_bots"] }, integrations: {
+      agents: { command: "node", args: ["agents"], env: {} }, browser: { command: "node", args: ["browser"], env: {} },
+    } });
+    await recorder.until((event) => event.type === "turn.completed");
+    const seen = JSON.parse(readFileSync(dump, "utf8"));
+    expect(seen.argv).toContain("--restricted");
+    expect(seen.argv[seen.argv.indexOf("--disallowedTools") + 1]).toBe("Write");
+    expect(seen.mcpConfig.mcpServers).not.toHaveProperty("browser");
+    expect(JSON.parse(seen.mcpConfig.mcpServers.agents.env.SAGAX_GATE_TOOL_SCOPE)).toEqual({ allow: ["native:*", "mcp:agents:list_bots"] });
+  });
+
+  it("refuses native MCP inheritance when a bot has an explicit selection", async () => {
+    const dump = join(scratch, "scope-inherited-mcp.json"); process.env.FAKE_CLAUDE_DUMP = dump;
+    await create();
+    await expect(instance.adapter.sendTurn({ threadId: "scope-inherited-mcp", text: "Must not run", mcpFromUserConfig: true, toolScope: { allow: ["native:*"] } })).rejects.toThrow(/restricted MCP configuration/);
+    expect(existsSync(dump)).toBe(false);
+  });
+
   afterEach(async () => {
     delete process.env.FAKE_CLAUDE_MODE;
     delete process.env.FAKE_CLAUDE_AUTO_UNAVAILABLE_MODELS;
     delete process.env.FAKE_CLAUDE_DUMP;
     delete process.env.FAKE_CLAUDE_PROMPTS;
+    delete process.env.FAKE_CLAUDE_COLD_MS;
+    delete process.env.FAKE_CLAUDE_FIRST_TOKEN_MS;
+    delete process.env.FAKE_CLAUDE_LAUNCH_LOG;
+    delete process.env.FAKE_CLAUDE_TOKEN_MS;
+    delete process.env.FAKE_CLAUDE_VOICE_REPLY;
     delete process.env.FAKE_CLAUDE_TRANSIENTS;
     delete process.env.FAKE_CLAUDE_PARTIAL_FAILS;
     delete process.env.FAKE_CLAUDE_STATE;
@@ -579,6 +612,105 @@ describe("ClaudeDriver turns (fake CLI)", () => {
     } finally {
       delete process.env.FAKE_CLAUDE_COMMANDS_DUMP;
     }
+  });
+
+  const launchLines = (path: string): Array<{ pid: number; at: number }> => existsSync(path)
+    ? readFileSync(path, "utf8").trim().split("\n").filter(Boolean).map((line) => JSON.parse(line) as { pid: number; at: number })
+    : [];
+  const processAlive = (pid: number) => {
+    try { process.kill(pid, 0); return true; } catch { return false; }
+  };
+
+  it("warms a call without a turn, reuses that process, and does not warm twice", async () => {
+    await create("voice");
+    expect(instance.adapter.capabilities.warmSession).toBe(true);
+    const launches = join(scratch, "launches.jsonl");
+    const prompts = join(scratch, "prompts.jsonl");
+    process.env.FAKE_CLAUDE_LAUNCH_LOG = launches;
+    process.env.FAKE_CLAUDE_PROMPTS = prompts;
+    const warm = { threadId: "t-warm", text: "", keepWarm: true, warmOnly: true };
+    const first = await instance.adapter.sendTurn(warm);
+    expect(first.reused).toBeUndefined();
+    await expect.poll(() => launchLines(launches).length, { timeout: 5_000 }).toBe(1);
+    expect(instance.adapter.hasSession("t-warm")).toBe(false);
+    expect(recorder.events.some((event) => event.type === "turn.started")).toBe(false);
+    expect(existsSync(prompts)).toBe(false);
+    const second = await instance.adapter.sendTurn(warm);
+    expect(second.reused).toBe(true);
+    expect(launchLines(launches)).toHaveLength(1);
+    const spoken = await instance.adapter.sendTurn({ threadId: "t-warm", text: "hello", keepWarm: true });
+    expect(spoken.reused).toBe(true);
+    await recorder.until((event) => event.type === "turn.completed" && event.turnId === spoken.turnId);
+    expect(launchLines(launches)).toHaveLength(1);
+    expect(readFileSync(prompts, "utf8").trim().split("\n").filter(Boolean)).toHaveLength(1);
+    expect(recorder.events.filter((event) => event.type === "turn.started")).toHaveLength(1);
+  });
+
+  it("pays the cold start at process boot, so a warmed first turn does not", async () => {
+    await create("voice");
+    process.env.FAKE_CLAUDE_COLD_MS = "400";
+    process.env.FAKE_CLAUDE_FIRST_TOKEN_MS = "50";
+    const coldStarted = Date.now();
+    const cold = await instance.adapter.sendTurn({ threadId: "t-cold", text: "hello", keepWarm: true });
+    await recorder.until((event) => event.type === "content.delta" && event.turnId === cold.turnId);
+    const coldMs = Date.now() - coldStarted;
+    expect(cold.reused).toBeUndefined();
+    expect(coldMs).toBeGreaterThanOrEqual(350);
+
+    const warmed = await instance.adapter.sendTurn({ threadId: "t-warmed", text: "", keepWarm: true, warmOnly: true });
+    expect(warmed.reused).toBeUndefined();
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    const warmStarted = Date.now();
+    const spoken = await instance.adapter.sendTurn({ threadId: "t-warmed", text: "hello", keepWarm: true });
+    await recorder.until((event) => event.type === "content.delta" && event.turnId === spoken.turnId);
+    const warmMs = Date.now() - warmStarted;
+    expect(spoken.reused).toBe(true);
+    expect(warmMs).toBeLessThan(300);
+  });
+
+  it("does not spawn when the warm is already cancelled", async () => {
+    await create("voice");
+    const launches = join(scratch, "launches.jsonl");
+    process.env.FAKE_CLAUDE_LAUNCH_LOG = launches;
+    const signal = new AbortController();
+    signal.abort();
+    const started = await instance.adapter.sendTurn({ threadId: "t-aborted", text: "", keepWarm: true, warmOnly: true, warmSignal: signal.signal });
+    expect(started.reused).toBeUndefined();
+    expect(existsSync(launches)).toBe(false);
+  });
+
+  it("closes the idle process when the call ends, and the next turn starts another", async () => {
+    await create("voice");
+    const launches = join(scratch, "launches.jsonl");
+    process.env.FAKE_CLAUDE_LAUNCH_LOG = launches;
+    const signal = new AbortController();
+    await instance.adapter.sendTurn({ threadId: "t-hangup", text: "", keepWarm: true, warmOnly: true, warmSignal: signal.signal });
+    await expect.poll(() => launchLines(launches).length, { timeout: 5_000 }).toBe(1);
+    const pid = launchLines(launches)[0]!.pid;
+    expect(processAlive(pid)).toBe(true);
+    signal.abort();
+    await expect.poll(() => processAlive(pid), { timeout: 5_000 }).toBe(false);
+    const again = await instance.adapter.sendTurn({ threadId: "t-hangup", text: "hello", keepWarm: true });
+    expect(again.reused).toBeUndefined();
+    await expect.poll(() => launchLines(launches).length, { timeout: 5_000 }).toBe(2);
+    await recorder.until((event) => event.type === "turn.completed" && event.turnId === again.turnId);
+  });
+
+  it("releaseWarmSession closes an idle warm process and leaves a running turn", async () => {
+    await create("voice");
+    const launches = join(scratch, "launches.jsonl");
+    process.env.FAKE_CLAUDE_LAUNCH_LOG = launches;
+    await instance.adapter.sendTurn({ threadId: "t-release", text: "", keepWarm: true, warmOnly: true });
+    await expect.poll(() => launchLines(launches).length, { timeout: 5_000 }).toBe(1);
+    const pid = launchLines(launches)[0]!.pid;
+    instance.adapter.releaseWarmSession?.("t-release");
+    await expect.poll(() => processAlive(pid), { timeout: 5_000 }).toBe(false);
+    const running = await instance.adapter.sendTurn({ threadId: "t-running", text: "hello", keepWarm: true });
+    await expect.poll(() => launchLines(launches).length, { timeout: 5_000 }).toBe(2);
+    const runningPid = launchLines(launches)[1]!.pid;
+    instance.adapter.releaseWarmSession?.("t-running");
+    expect(processAlive(runningPid)).toBe(true);
+    await recorder.until((event) => event.type === "turn.completed" && event.turnId === running.turnId);
   });
 
   it("normalizes a full turn into the canonical event sequence", async () => {
@@ -1412,17 +1544,15 @@ describe("ClaudeDriver turns (fake CLI)", () => {
     expect(text).toBe("hi");
   });
 
-  it("refreshes a coordinated resumed session's prompt when the CLI supports it", async () => {
+  it("refreshes a resumed session's recorded prompt on every turn when the CLI supports it", async () => {
     await create(undefined, { FAKE_CLAUDE_DUMP: join(scratch, "coordination-snapshot.json"), FAKE_CLAUDE_VERSION: "2.1.267" });
-    // Read the version first, so the floor is what admits the flag here —
-    // without this the driver sees a null version and would push it for any CLI.
+    // After an Engines snapshot, the cached version is what admits the flag.
     await instance.snapshot();
     await instance.adapter.sendTurn({
       threadId: "t-coordinated-resume",
       text: "Addressed teammate request 2. Add the new header row.",
       resumeCursor: "existing-claude-session",
       system: "Stable coordination policy, without the earlier assignment.",
-      refreshSystemPrompt: true,
     });
     await recorder.until((e) => e.type === "turn.completed");
     const seen = JSON.parse(readFileSync(join(scratch, "coordination-snapshot.json"), "utf8"));
@@ -1431,7 +1561,16 @@ describe("ClaudeDriver turns (fake CLI)", () => {
     expect(seen.prompt.message.content).toContain("Add the new header row.");
   });
 
-  it("keeps coordinated turns working on a CLI without the snapshot flag", async () => {
+  it("refreshes the recorded prompt on a plain turn too: no caller has to ask", async () => {
+    const dump = join(scratch, "plain-snapshot.json");
+    await create(undefined, { FAKE_CLAUDE_DUMP: dump, FAKE_CLAUDE_VERSION: "2.1.267" });
+    await instance.adapter.sendTurn({ threadId: "t-plain-snapshot", text: "hi", system: "You are Testy." });
+    await recorder.until((e) => e.type === "turn.completed");
+    const seen = JSON.parse(readFileSync(dump, "utf8"));
+    expect(seen.argv[seen.argv.indexOf("--system-prompt-snapshot") + 1]).toBe("off");
+  });
+
+  it("keeps resumed turns working on a CLI without the snapshot flag", async () => {
     const dump = join(scratch, "coordination-no-snapshot.json");
     await create(undefined, { FAKE_CLAUDE_DUMP: dump, FAKE_CLAUDE_VERSION: "2.1.232" });
     await instance.snapshot();
@@ -1440,7 +1579,6 @@ describe("ClaudeDriver turns (fake CLI)", () => {
       text: "Addressed teammate request 2. Add the new header row.",
       resumeCursor: "existing-claude-session",
       system: "Stable coordination policy, without the earlier assignment.",
-      refreshSystemPrompt: true,
     });
     await recorder.until((e) => e.type === "turn.completed");
     const seen = JSON.parse(readFileSync(dump, "utf8"));
@@ -1455,7 +1593,6 @@ describe("ClaudeDriver turns (fake CLI)", () => {
       threadId: "t-surface-resume", text: "Open the test page.",
       resumeCursor: "previous-host-computer-session",
       system: "Everything you do on screen happens in the built-in browser tab; no host computer tools are mounted.",
-      refreshSystemPrompt: true,
       integrations: { browser: { command: process.execPath, args: ["fixture-browser"], env: {} } },
     });
     await recorder.until((event) => event.type === "turn.completed");
@@ -1468,7 +1605,7 @@ describe("ClaudeDriver turns (fake CLI)", () => {
   });
 
   it.each([["2.1.232", false], ["2.1.267", true]] as const)(
-    "probes Claude %s before the first coordinated turn without an Engines snapshot",
+    "probes Claude %s before the first turn without an Engines snapshot",
     async (version, supportsSnapshot) => {
       const dump = join(scratch, `coordination-first-turn-${version}.json`);
       await create(undefined, { FAKE_CLAUDE_DUMP: dump, FAKE_CLAUDE_VERSION: version });
@@ -1477,7 +1614,6 @@ describe("ClaudeDriver turns (fake CLI)", () => {
         text: "Addressed teammate request 2. Add the new header row.",
         resumeCursor: "existing-claude-session",
         system: "Stable coordination policy, without the earlier assignment.",
-        refreshSystemPrompt: true,
       });
       await recorder.until((e) => e.type === "turn.completed");
       const seen = JSON.parse(readFileSync(dump, "utf8"));
@@ -1489,6 +1625,7 @@ describe("ClaudeDriver turns (fake CLI)", () => {
 
   it("compacts the CLI session at a window the harness picks", async () => {
     await create();
+    await instance.snapshot();
     const dump = join(scratch, "compact.json");
     process.env.FAKE_CLAUDE_DUMP = dump;
 
@@ -1703,6 +1840,19 @@ describe("ClaudeDriver turns (fake CLI)", () => {
     });
   });
 
+  it("withholds --autocompact from a CLI above the floor whose --help does not list it", async () => {
+    // 2.1.129 clears the 2.1.122 floor yet rejects the flag ("unknown option")
+    const dump = join(scratch, "no-autocompact-cli.json");
+    await create(undefined, { FAKE_CLAUDE_DUMP: dump, FAKE_CLAUDE_VERSION: "2.1.129", FAKE_CLAUDE_AUTOCOMPACT: "0" });
+    await instance.snapshot();
+    await instance.adapter.sendTurn({ threadId: "t-no-autocompact", text: "hi" });
+    await recorder.until((e) => e.type === "turn.completed");
+
+    const seen = JSON.parse(readFileSync(dump, "utf8"));
+    expect(seen.argv).not.toContain("--autocompact");
+    expect(seen.argv).toContain("--strict-mcp-config");
+  });
+
   it("keeps only the isolation flag a very old CLI accepts", async () => {
     // 1.0.100: --strict-mcp-config exists (1.0.60), --setting-sources does
     // not yet (1.0.122)
@@ -1744,14 +1894,13 @@ describe("ClaudeDriver turns (fake CLI)", () => {
     expect((await instance.snapshot()).warning).toBeUndefined();
   });
 
-  it("assumes a current CLI on a turn that runs before any snapshot", async () => {
-    // no CLI start-up of its own: the flags are the default, and the next
-    // snapshot corrects an older install
+  it.each(["2.1.100", "2.1.129", "2.1.267"])("omits unconfirmed --autocompact before a snapshot on Claude %s", async (version) => {
+    // Version alone is insufficient: even some newer builds reject the flag.
     const dump = join(scratch, "unsnapshotted.json");
-    await create(undefined, { FAKE_CLAUDE_DUMP: dump, FAKE_CLAUDE_VERSION: "2.1.100" });
+    await create(undefined, { FAKE_CLAUDE_DUMP: dump, FAKE_CLAUDE_VERSION: version });
     await instance.adapter.sendTurn({ threadId: "t-unsnapshotted", text: "hi" });
     await recorder.until((e) => e.type === "turn.completed");
-    expect(JSON.parse(readFileSync(dump, "utf8")).argv).toContain("--autocompact");
+    expect(JSON.parse(readFileSync(dump, "utf8")).argv).not.toContain("--autocompact");
   });
 
   it("maps a CLI version onto the flags it accepts", () => {
@@ -1775,7 +1924,8 @@ describe("ClaudeDriver turns (fake CLI)", () => {
     expect(claudeCliUpdate(null, "claude")).toBeUndefined();
     const olderSnapshot = claudeCliUpdate("2.1.232 (Claude Code)", "claude");
     expect(olderSnapshot?.message).toContain("--system-prompt-snapshot");
-    expect(olderSnapshot?.message).toContain("coordinated resumed turns cannot refresh stale system prompts");
+    expect(olderSnapshot?.message).toContain("resumed turns cannot refresh stale system prompts");
+    expect(olderSnapshot?.message).not.toContain("coordinated");
     expect(olderSnapshot?.message).not.toContain("no compaction window");
     expect(claudeCliUpdate("2.1.121 (Claude Code)", "claude")).toMatchObject({
       command: "claude update",
@@ -2488,6 +2638,7 @@ describe("ClaudeDriver turns (fake CLI)", () => {
       FAKE_CLAUDE_SLOW_FINISH_GATE: finishGate,
       FAKE_CLAUDE_SLOW_TAIL_TOOL: "1",
       FAKE_CLAUDE_STEER_RECEIVED: received,
+      FAKE_CLAUDE_VERSION: "2.1.282", // CLAUDE_REPLAY_FLOOR: the CLI echoes steers
     });
     const threadId = "t-folded-steer";
     const { turnId } = await instance.adapter.sendTurn({ threadId, text: "first" });

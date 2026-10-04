@@ -11,7 +11,7 @@
 # iptables ships here only for the provisioner's one-shot egress policy helper
 # (host network, NET_ADMIN); a sandbox itself never has NET_ADMIN, so the
 # binary is inert there.
-FROM debian:bookworm-slim
+FROM debian:trixie-slim
 
 ARG WITH_BROWSER=1
 # The on-demand desktop (docs/user-sandbox.md, "Desktop"): Xvnc (an X server
@@ -20,11 +20,14 @@ ARG WITH_BROWSER=1
 # (hsetroot) and a launcher bar (tint2). Nothing of it runs
 # until a computer-use tool or the person's live view starts it.
 ARG WITH_DESKTOP=1
+# gh, node and npm: the person's GitHub connection (Settings > Mes connexions
+# writes gh's hosts.yml and git's credentials into /workspace) and the MCP
+# servers a person runs here themselves (npx ...; server/sandbox-stdio-mcp.ts).
 RUN set -eux; \
     apt-get update; \
     apt-get install -y --no-install-recommends \
       bash ca-certificates coreutils curl git jq less procps python3 python3-venv \
-      unzip xz-utils zip file iptables tini; \
+      unzip xz-utils zip file iptables tini gh nodejs npm; \
     if [ "$WITH_BROWSER" = "1" ]; then \
       apt-get install -y --no-install-recommends chromium fonts-noto-color-emoji fonts-freefont-ttf; \
     fi; \

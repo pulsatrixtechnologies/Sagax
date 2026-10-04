@@ -5,7 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { DATA_DIR } from "./config.ts";
 import { closeMessageDb, recallMatchTerm, recallTerms } from "./message-db.ts";
-import { buildRecall, enoughMatches, memoryPassages, RECALL_CLOSE, RECALL_OPEN, recallQuery, renderRecall, topicPassages } from "./recall.ts";
+import { buildRecall, CALL_RECALL_BUDGET, enoughMatches, memoryPassages, RECALL_CLOSE, RECALL_OPEN, recallQuery, renderRecall, topicPassages } from "./recall.ts";
 import { appendMemoryLog, searchMemoryFiles, writeMemoryFile, writeMemoryTopic, WORKSPACES_DIR } from "./workspace.ts";
 
 const BOT = "bot-recall-test";
@@ -144,6 +144,18 @@ describe("recall from memory files", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("recalls less on a live call: two short notes at most", () => {
+    for (const topic of ["billing", "invoices", "finance", "ledger"]) {
+      writeMemoryTopic(BOT, `${topic}.md`, `---\naliases: [invoice]\n---\n- The invoice ${topic} note. ${"More about it. ".repeat(40)}\n`);
+    }
+    const full = buildRecall({ botId: BOT, message: "where is the invoice?", threadIds: [], label: () => "", author: () => "" })!;
+    const call = buildRecall({ botId: BOT, message: "where is the invoice?", threadIds: [], label: () => "", author: () => "", budget: CALL_RECALL_BUDGET })!;
+    expect(full.notes).toBeGreaterThan(2);
+    expect(call.notes).toBeLessThanOrEqual(2);
+    expect(call.text.length).toBeLessThanOrEqual(CALL_RECALL_BUDGET.chars);
+    expect(call.text.length).toBeLessThan(full.text.length);
   });
 
   it("is null for a short message or nothing matching", () => {

@@ -17,7 +17,12 @@ type RemoteProfilePatch = Partial<
   Pick<Bot, "name" | "title" | "description" | "avatarUrl" | "avatarCrop" | "voice" | "speakReplies" | "notifications">
 >;
 
-export function RemoteAgentSettingsPanel({ bot }: { bot: Bot }) {
+export function RemoteAgentSettingsPanel({ bot }: {
+  bot: Bot;
+  /** Float over the chat: the remote computer panel is open too and the
+   * window cannot seat both columns (see App). */
+  overlay?: boolean;
+}) {
   const { dispatch } = useStore();
   // Docked flush under the Windows caption corner: drop the header 16px.
   const { padClass } = useCaptionChrome();

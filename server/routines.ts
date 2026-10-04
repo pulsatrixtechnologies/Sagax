@@ -363,7 +363,7 @@ export interface RoutineManagerOptions {
     /** Slice 6: the run being dispatched (its runAs snapshot). */
     run?: RoutineRun,
   ) => Promise<void>;
-  interruptTurn?: (botId: string, threadId: string, runOn: RoutineRunOn) => Promise<void>;
+  interruptTurn?: (botId: string, threadId: string) => Promise<void>;
   interruptGoal?: (
     groupId: string,
     threadId: string,
@@ -1325,7 +1325,7 @@ export class RoutineManager {
         if (run.target === "room-goal" && run.groupId) {
           void this.options.interruptGoal?.(run.groupId, run.threadId).catch(() => {});
         } else {
-          void this.options.interruptTurn?.(run.botId, run.threadId, run.runOn ?? "maus").catch(() => {});
+          void this.options.interruptTurn?.(run.botId, run.threadId).catch(() => {});
         }
       }
       changed = true;
@@ -1520,7 +1520,7 @@ export class RoutineManager {
       if (run.target === "room-goal" && run.groupId) {
         await this.options.interruptGoal?.(run.groupId, run.threadId).catch(() => {});
       } else {
-        await this.options.interruptTurn?.(run.botId, run.threadId, run.runOn ?? "maus").catch(() => {});
+        await this.options.interruptTurn?.(run.botId, run.threadId).catch(() => {});
       }
     }
     queueMicrotask(() => void this.tick());
@@ -1594,7 +1594,7 @@ export class RoutineManager {
             detail,
           }).catch(() => {});
         } else {
-          await this.options.interruptTurn?.(run.botId, threadId, run.runOn ?? "maus").catch(() => {});
+          await this.options.interruptTurn?.(run.botId, threadId).catch(() => {});
         }
       }
       const dueRoutines = this.routines.filter(
@@ -1755,14 +1755,17 @@ export class RoutineManager {
         // A webhook is an incoming message, so make its task the bot's live
         // chat immediately. Scheduled work stays in its own task unless the
         // workspace has asked for runs to join the conversation they report to.
+        const startedAt = this.now();
+        const suffix = ` · ${new Date(startedAt).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}`;
+        const title = `${run.routineName.slice(0, 80 - suffix.length).trimEnd()}${suffix}`;
         const joined = run.target === "room-goal" ? null : this.options.joinConversation?.(run) || null;
         const task = joined
           ? { threadId: joined }
           : run.target === "room-goal"
           ? run.groupId
-            ? this.options.createGoalTask?.(run.groupId, run.routineName) ?? null
+            ? this.options.createGoalTask?.(run.groupId, title) ?? null
             : null
-          : this.options.createTask(run.botId, run.routineName, run.triggerSource === "webhook", run.routineId, run.runAs);
+          : this.options.createTask(run.botId, title, run.triggerSource === "webhook", run.routineId, run.runAs);
         if (!task) {
           this.failRun(run, run.target === "room-goal"
             ? "Could not create a room task for this goal"
@@ -1770,7 +1773,7 @@ export class RoutineManager {
           continue;
         }
         run.threadId = task.threadId;
-        run.startedAt = this.now();
+        run.startedAt = startedAt;
         run.status = "running";
         this.save();
         this.emitRun(run);
@@ -1854,7 +1857,14 @@ export class RoutineManager {
       if (event.cost != null) run.cost = (run.cost ?? 0) + event.cost;
       if (event.denials?.length) run.denials = [...new Set([...(run.denials ?? []), ...event.denials])];
       if (!event.ok) {
-        this.failRun(run, event.stopReason ?? run.error ?? "The bot did not complete this run");
+        const genericStopReason = event.stopReason === "error" || event.stopReason === "tool_error";
+        this.failRun(
+          run,
+          (genericStopReason ? run.error : undefined) ??
+            event.stopReason ??
+            run.error ??
+            "The bot did not complete this run",
+        );
         queueMicrotask(() => void this.tick());
         return cloneRun(run);
       }
@@ -1957,7 +1967,7 @@ export class RoutineManager {
         if (run.target === "room-goal" && run.groupId) {
           void this.options.interruptGoal?.(run.groupId, run.threadId).catch(() => {});
         } else {
-          void this.options.interruptTurn?.(run.botId, run.threadId, run.runOn ?? "maus").catch(() => {});
+          void this.options.interruptTurn?.(run.botId, run.threadId).catch(() => {});
         }
       }
     }

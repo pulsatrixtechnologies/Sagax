@@ -82,13 +82,20 @@ host is unknown simply fails until you have done this once.
   (`~/.sagax/config.json`); keys, passphrases, and agent state stay with SSH. The alias is also kept
   off paired phones — the companion reports configured-or-not, never the name.
 - The container itself runs hardened: capabilities dropped, private network/IPC/cgroup namespaces, no host
-  mounts, and memory/CPU/pid limits. A container missing any of that — including one someone created under
-  the managed name — is refused, not repaired.
+  mounts or devices, and no automatic removal. Ownership, pinned-image and isolation checks still apply
+  when reusing a container; a container that fails them is refused, not repaired.
 
 ## Container lifecycle
 
 Each bot owns one container on the VPS, named `openmausbot-vps-<bot>-<hash>` — stable across restarts and
 independent of the bot's display name.
+
+New containers default to 4 GiB memory with no extra swap, 2 CPUs, 512 PIDs, 512 MiB shared memory and an
+`unless-stopped` restart policy. These are creation defaults, not compatibility requirements. Existing
+managed containers can keep customized resource and OOM settings, unlimited budgets, or other restart
+policies, including the legacy `no` policy. Sagax does not reset those settings or recreate a
+container to enforce its defaults. Restart behavior follows the chosen Docker policy; for example,
+`always` can wake a slept container after a Docker daemon restart.
 
 - **Provision** (choosing **Cloud** for the bot, or the panel's button): builds the pinned Cua image on the
   VPS if needed, creates the container if missing, starts it if stopped, and waits until the desktop answers.
@@ -115,12 +122,13 @@ the first thread that calls a computer tool (a screenshot, a click, a command th
 with that turn until it ends; threads that never touch the computer tools are never held up. A thread that
 reaches for the screen while another holds it shows
 
-> Waiting for its turn on this computer — *bot* is running *thread*. Starts automatically when that finishes.
+> Waiting for its turn on this computer — *position* in queue — *bot* is running *thread*. Starts automatically when the turns ahead of it finish.
 
 and its computer calls are refused with a note telling the model to pause screen work; the chip settles as
 "Computer free — continuing" when the desktop lands, or "Stopped waiting for the computer" if the turn ends
-first. A wait gives up after 30 minutes and names the holder. Container lifecycle actions (create, start,
-stop) are still one at a time per container.
+first. A long wait parks the turn at the ceiling (30 minutes by default), still naming the holder, and it
+resumes on its own when the computer is free. Container lifecycle actions (create, start, stop) are still
+one at a time per container.
 
 ## Troubleshooting
 

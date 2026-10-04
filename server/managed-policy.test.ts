@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import ts from "typescript";
+import { transpileTs } from "./testing/transpile.ts";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cloudHomePlaceRefusal } from "./cloud-home.ts";
 import { computerKindForResource, ManagedDesktopPolicy, mcpEntryMatches, parseManagedPolicy, type ManagedPolicy } from "./managed-policy.ts";
@@ -143,7 +143,7 @@ describe("claim-time computer refusal in bindTurnComputer", () => {
   const guard = source.slice(start + 1, guardEnd) + "  return \"claimed\";\n}";
   const refusalStart = source.indexOf("\nfunction computerPlaceRefusal(");
   const refusal = source.slice(refusalStart + 1, source.indexOf("\n}\n", refusalStart) + 3);
-  const code = ts.transpileModule(refusal + guard, { compilerOptions: { target: ts.ScriptTarget.ESNext } }).outputText;
+  const code = transpileTs(refusal + guard);
   const bind = (managedPolicy: ManagedDesktopPolicy, cloudHome = false) =>
     new Function("managedPolicy", "computerKindForResource", "CLOUD_HOME", "cloudHomePlaceRefusal", `${code}; return bindTurnComputer;`)(
       managedPolicy, computerKindForResource, cloudHome ? { machineId: "fixture" } : null, cloudHomePlaceRefusal,

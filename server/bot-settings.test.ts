@@ -99,7 +99,7 @@ describe("GET and PUT /api/settings/bot", () => {
     const guest = await serve(session(["client"]), false);
     expect((await fetch(guest.base)).status).toBe(200);
     expect((await guest.put({ autoReviewDefault: true })).status).toBe(403);
-    expect((await serve({ kind: "loopback", scopes: ["client"], trust: "service" }, false)).put({}).then((res) => res.status)).resolves.toBe(403);
+    await expect((await serve({ kind: "loopback", scopes: ["client"], trust: "service" }, false)).put({}).then((res) => res.status)).resolves.toBe(403);
   });
 
   it("keeps each person's own on an organization server", async () => {

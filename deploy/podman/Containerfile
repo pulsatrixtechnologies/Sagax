@@ -1,8 +1,8 @@
 # Optional all-Podman self-hosting image; the existing Dockerfile is unchanged.
 # Build both server and renderer from this checkout, never mix release artifacts.
-FROM node:24.15.0-bookworm-slim AS build
+FROM node:24.21.0-trixie-slim AS build
 WORKDIR /src
-RUN npm install -g pnpm@10.33.0
+RUN npm install -g pnpm@10.34.6
 ENV ELECTRON_SKIP_BINARY_DOWNLOAD=1
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY apps/docs/package.json ./apps/docs/package.json
@@ -11,7 +11,7 @@ RUN pnpm install --frozen-lockfile
 COPY . .
 RUN pnpm build:server && pnpm exec vite build
 
-FROM node:24.15.0-bookworm-slim
+FROM node:24.21.0-trixie-slim
 RUN test "$(uname -m)" = x86_64 \
     || { echo 'The Podman self-hosting image currently requires Linux x86_64.' >&2; exit 1; }
 RUN apt-get update \
@@ -19,8 +19,8 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/* \
     && useradd --uid 1001 --create-home --home-dir /data --shell /bin/bash maus
 # Only the remote client runs here. The engine and desktop containers are siblings.
-RUN curl -fsSL https://github.com/podman-container-tools/podman/releases/download/v5.8.3/podman-remote-static-linux_amd64.tar.gz -o /tmp/podman.tgz \
-    && echo '8431e989a1383e4dc2582a178538b3a686160e15db9f5f2de2501a61dbf91c62  /tmp/podman.tgz' | sha256sum -c - \
+RUN curl -fsSL https://github.com/podman-container-tools/podman/releases/download/v5.8.8/podman-remote-static-linux_amd64.tar.gz -o /tmp/podman.tgz \
+    && echo '38b8b536201921410f5a05b6faad06fb36d2a551d2f38ccb58480c5b8cef7347  /tmp/podman.tgz' | sha256sum -c - \
     && tar -xzf /tmp/podman.tgz -C /tmp bin/podman-remote-static-linux_amd64 \
     && install -m 0755 /tmp/bin/podman-remote-static-linux_amd64 /usr/local/bin/podman \
     && rm /tmp/podman.tgz /tmp/bin/podman-remote-static-linux_amd64

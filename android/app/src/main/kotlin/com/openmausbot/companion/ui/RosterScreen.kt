@@ -1,5 +1,7 @@
 package com.openmausbot.companion.ui
 
+import androidx.compose.ui.res.stringResource
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -191,7 +193,7 @@ fun RosterScreen(navigator: CompanionNavigator) {
     }
     // Read by the bar over the list and by nothing inside it, so the rows never
     // recompose for it. `approvals` is handed over rather than walked again.
-    val updates = remember(state, approvals) { state.updates(approvals) }
+    val updates = remember(state, approvals, activityDetail) { state.updates(approvals, activityDetail) }
     // The cross-bot Needs attention section rides above every roster section.
     val attention = remember(state) { state.crossBotAttention() }
 
@@ -321,11 +323,11 @@ fun RosterScreen(navigator: CompanionNavigator) {
                     if (query.isEmpty()) !RosterLayout.listsAnyChat(summaries) else rows.isEmpty()
                 if (nothingToList && hits.isEmpty()) {
                     EmptyState(
-                        title = if (query.isEmpty()) "No bots yet" else "Nothing matches",
+                        title = stringResource(if (query.isEmpty()) R.string.mobile_roster_no_bots_yet else R.string.mobile_roster_nothing_matches),
                         description = if (query.isEmpty()) {
-                            "Bots you create on your computer show up here."
+                            stringResource(R.string.mobile_roster_empty_description)
                         } else {
-                            "No thread matches “$query”."
+                            stringResource(R.string.mobile_roster_no_thread_matches, query)
                         },
                     )
                 }
@@ -339,7 +341,7 @@ fun RosterScreen(navigator: CompanionNavigator) {
                     if (RosterLayout.showsGroups(query)) {
                         if (attention.isNotEmpty()) {
                             item(key = "attention-label") {
-                                SectionLabel("Needs attention", Modifier.padding(top = 2.dp, bottom = 4.dp))
+                                SectionLabel(stringResource(R.string.mobile_roster_needs_attention), Modifier.padding(top = 2.dp, bottom = 4.dp))
                             }
                             items(attention, key = { "attention-${it.id}" }) { entry ->
                                 AttentionRow(entry = entry, onOpen = {
@@ -366,7 +368,7 @@ fun RosterScreen(navigator: CompanionNavigator) {
                             item(key = "pinned-label") {
                                 // a compact row above it leaves little air of its own
                                 SectionLabel(
-                                    "Pinned",
+                                    stringResource(R.string.mobile_roster_pinned),
                                     Modifier.padding(top = if (compact) sectionSpacing else 2.dp, bottom = 4.dp),
                                 )
                             }
@@ -382,19 +384,19 @@ fun RosterScreen(navigator: CompanionNavigator) {
                             // Groups as rows under a title that carries the "+"
                             // the comfortable strip shows as a tile.
                             item(key = "groups-title") {
-                                CompactGroupsTitle("Groups", onCreate = startNewGroup, spacing = sectionSpacing)
+                                CompactGroupsTitle(stringResource(R.string.mobile_groups_ae9629f4), onCreate = startNewGroup, spacing = sectionSpacing)
                             }
                             items(state.unsectionedChannels, key = { "group-${it.id}" }) { compactRoom(it) }
                             if (state.botChats.isNotEmpty()) {
                                 item(key = "bot-chats-title") {
-                                    CompactGroupsTitle("Bot threads", onCreate = null, spacing = sectionSpacing)
+                                    CompactGroupsTitle(stringResource(R.string.mobile_bot_threads_ec81acf2), onCreate = null, spacing = sectionSpacing)
                                 }
                                 items(state.botChats, key = { "bot-chat-${it.id}" }) { compactRoom(it) }
                             }
                         } else {
                             item(key = "channels") {
                                 GroupsStrip(
-                                    title = "Groups",
+                                    title = stringResource(R.string.mobile_groups_ae9629f4),
                                     rooms = state.unsectionedChannels,
                                     members = tiles,
                                     onOpen = { navigator.open(Chat.RoomChat(it)) },
@@ -404,7 +406,7 @@ fun RosterScreen(navigator: CompanionNavigator) {
                             if (state.botChats.isNotEmpty()) {
                                 item(key = "bot-chats") {
                                     GroupsStrip(
-                                        title = "Bot threads",
+                                        title = stringResource(R.string.mobile_bot_threads_ec81acf2),
                                         rooms = state.botChats,
                                         members = tiles,
                                         onOpen = { navigator.open(Chat.RoomChat(it)) },
@@ -416,7 +418,7 @@ fun RosterScreen(navigator: CompanionNavigator) {
                         val unsectioned = state.unsectionedBots.mapNotNull { summariesById[it.id] }
                         if (unsectioned.isNotEmpty()) {
                             item(key = "bots-label") {
-                                SectionLabel("Bots", Modifier.padding(top = sectionSpacing, bottom = 4.dp))
+                                SectionLabel(stringResource(R.string.mobile_bots_4ca88ea4), Modifier.padding(top = sectionSpacing, bottom = 4.dp))
                             }
                             itemsIndexed(unsectioned, key = { _, summary -> "bot-${summary.id}" }) { index, summary ->
                                 entry(summary, index == unsectioned.lastIndex)
@@ -451,7 +453,7 @@ fun RosterScreen(navigator: CompanionNavigator) {
                                 } else {
                                     item(key = "section-${section.id}-channels") {
                                         GroupsStrip(
-                                            title = "Groups",
+                                            title = stringResource(R.string.mobile_groups_ae9629f4),
                                             rooms = section.channels,
                                             members = tiles,
                                             onOpen = { navigator.open(Chat.RoomChat(it)) },
@@ -477,7 +479,7 @@ fun RosterScreen(navigator: CompanionNavigator) {
                                     .padding(top = 10.dp, bottom = 4.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
-                                SectionLabel("Messages")
+                                SectionLabel(stringResource(R.string.mobile_roster_messages))
                                 Spacer(Modifier.weight(1f))
                                 if (searching) {
                                     CircularProgressIndicator(
@@ -507,7 +509,7 @@ fun RosterScreen(navigator: CompanionNavigator) {
                             )
                         }
                         item(key = "chats-label") {
-                            SectionLabel("Threads", Modifier.padding(top = 14.dp, bottom = 4.dp))
+                            SectionLabel(stringResource(R.string.mobile_threads_bb12e8aa), Modifier.padding(top = 14.dp, bottom = 4.dp))
                         }
                     }
 
@@ -631,7 +633,7 @@ private fun RosterHeader(name: String?, status: Session.Status, onSettings: () -
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        TouchTarget(onClick = onSettings, size = 44.dp, contentDescription = "Settings") {
+        TouchTarget(onClick = onSettings, size = 44.dp, contentDescription = stringResource(R.string.mobile_settings_c7f73bb5)) {
             Box(
                 modifier = Modifier
                     .size(44.dp)
@@ -647,9 +649,9 @@ private fun RosterHeader(name: String?, status: Session.Status, onSettings: () -
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(2.dp),
         ) {
-            Text("Threads", fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
+            Text(stringResource(R.string.mobile_threads_bb12e8aa), fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
             Text(
-                text = RosterLayout.headerSubtitle(name, status),
+                text = localizedRosterHeaderSubtitle(name, status),
                 fontSize = 13.sp,
                 color = secondaryTint,
                 maxLines = 1,
@@ -659,7 +661,7 @@ private fun RosterHeader(name: String?, status: Session.Status, onSettings: () -
 
         ChromeButton(
             icon = Icons.Filled.Settings,
-            contentDescription = "Settings",
+            contentDescription = stringResource(R.string.mobile_settings_c7f73bb5),
             onClick = onSettings,
         )
     }
@@ -792,7 +794,7 @@ private fun GroupTile(room: Room, members: List<Bot>, onClick: () -> Unit) {
 @Composable
 private fun NewGroupTile(onClick: () -> Unit) {
     val outline = secondaryTint.copy(alpha = 0.6f)
-    GroupTileFrame(label = "New group", labelColor = secondaryTint, onClick = onClick) {
+    GroupTileFrame(label = stringResource(R.string.mobile_new_group_f9850c0b), labelColor = secondaryTint, onClick = onClick) {
         Spacer(
             modifier = Modifier
                 .size(64.dp)
@@ -986,7 +988,7 @@ private fun ChatRow(
                                 modifier = Modifier.size(12.dp),
                             )
                             Text(
-                                text = "Waiting on you",
+                                text = stringResource(R.string.mobile_waiting_on_you_edab5b72),
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.SemiBold,
                                 color = Color.White,
@@ -1052,7 +1054,7 @@ private fun RosterBottomBar(
                 )
                 Box(modifier = Modifier.weight(1f)) {
                     if (bar.query.isEmpty()) {
-                        Text("Search threads", fontSize = 17.sp, color = secondaryTint)
+                        Text(stringResource(R.string.mobile_search_threads_006299d3), fontSize = 17.sp, color = secondaryTint)
                     }
                     BasicTextField(
                         value = bar.query,
@@ -1073,7 +1075,7 @@ private fun RosterBottomBar(
                     TouchTarget(onClick = { onBar(bar.clearQuery()) }, size = 24.dp) {
                         Icon(
                             imageVector = Icons.Filled.Close,
-                            contentDescription = "Clear search",
+                            contentDescription = stringResource(R.string.mobile_clear_search_67300d0f),
                             tint = secondaryTint,
                             modifier = Modifier.size(20.dp),
                         )
@@ -1090,7 +1092,7 @@ private fun RosterBottomBar(
                     .padding(horizontal = 16.dp),
                 contentAlignment = Alignment.Center,
             ) {
-                Text("Cancel", fontSize = 17.sp)
+                Text(stringResource(R.string.mobile_cancel_77dfd213), fontSize = 17.sp)
             }
         } else {
             UpdatesBar(
@@ -1100,13 +1102,13 @@ private fun RosterBottomBar(
             )
             ChromeButton(
                 icon = Icons.Filled.Search,
-                contentDescription = "Search",
+                contentDescription = stringResource(R.string.mobile_search_bce06414),
                 onClick = onOpenSearch,
                 size = MIN_TOUCH_TARGET,
             )
             ChromeButton(
                 icon = Icons.Filled.Add,
-                contentDescription = "Organize bots into a section",
+                contentDescription = stringResource(R.string.mobile_organize_bots_into_a_section_9293c5af),
                 onClick = onCreateSection,
                 enabled = canCreateSection,
                 size = MIN_TOUCH_TARGET,
@@ -1116,7 +1118,7 @@ private fun RosterBottomBar(
             // bots into a room is the other thing — two glyphs, two actions.
             ChromeButton(
                 icon = Icons.Filled.Create,
-                contentDescription = "New bot",
+                contentDescription = stringResource(R.string.mobile_new_bot_66d3c052),
                 onClick = onCreateBot,
                 enabled = canCreateBot,
                 size = MIN_TOUCH_TARGET,
@@ -1190,10 +1192,10 @@ fun StatusBanner() {
     val status by session.status.collectAsState()
     val banner: Pair<String, Color>? = when (val current = status) {
         Session.Status.Live, Session.Status.Unpaired -> null
-        Session.Status.Connecting -> "Connecting…" to secondaryTint
+        Session.Status.Connecting -> stringResource(R.string.mobile_connecting_fd3e7969) to secondaryTint
         is Session.Status.Offline -> current.message to Color(MausPalette.argb("orange"))
         Session.Status.Unauthorized ->
-            "This phone was unpaired on the computer." to MaterialTheme.colorScheme.error
+            stringResource(R.string.mobile_phone_unpaired_banner) to MaterialTheme.colorScheme.error
     }
     val (text, tint) = banner ?: return
     Text(
@@ -1205,4 +1207,19 @@ fun StatusBanner() {
             .background(secondaryTint.copy(alpha = 0.12f), CircleShape)
             .padding(horizontal = 12.dp, vertical = 6.dp),
     )
+}
+
+@Composable
+private fun localizedRosterHeaderSubtitle(name: String?, status: Session.Status): String {
+    if (status == Session.Status.Unpaired) {
+        return stringResource(R.string.mobile_settings_not_paired_status)
+    }
+    val computer = name ?: stringResource(R.string.mobile_settings_not_paired_status)
+    return when (status) {
+        Session.Status.Live -> stringResource(R.string.mobile_roster_header_connected, computer)
+        Session.Status.Connecting -> stringResource(R.string.mobile_roster_header_connecting, computer)
+        is Session.Status.Offline -> stringResource(R.string.mobile_roster_header_offline, computer)
+        Session.Status.Unauthorized -> stringResource(R.string.mobile_roster_header_unpaired, computer)
+        Session.Status.Unpaired -> stringResource(R.string.mobile_settings_not_paired_status)
+    }
 }

@@ -25,6 +25,7 @@ import { MyRoutineDelegation } from "./settings/MyRoutineDelegation";
 import { OrgSharing } from "./settings/OrgSharing";
 import { InterimPeople } from "./settings/InterimPeople";
 import { BotWorkplaceSettings } from "./settings/BotWorkplaceSettings";
+import { OrgPluginPolicy } from "./settings/OrgPluginPolicy";
 import { OrgFullAccessPolicy } from "./settings/OrgFullAccessPolicy";
 
 interface PendingAdminApproval {
@@ -125,6 +126,7 @@ export function PerspicaxOrgSettings({ org, onChanged }: { org: PerspicaxOrg; on
       <BotWorkplaceSettings />
       <OrgSharing admin={admin} />
       {admin && <OrgFullAccessPolicy initial={org.settings.allowFullAccess !== false} onChanged={onChanged} />}
+      {admin && <OrgPluginPolicy marketplaces={org.settings.pluginMarketplaces ?? { mode: "any" }} github={org.settings.github ?? { clientId: null, fromEnvironment: false }} onChanged={onChanged} />}
       {admin && (
         <Card cardId="organization.adminApprovals" title={t("organization.adminApprovals.title")} summary={approvals?.length ? String(approvals.length) : ""}>
           {!approvals?.length ? (

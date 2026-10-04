@@ -4,7 +4,8 @@
 //                             viewer's role and the settings (no people, no
 //                             invitations: Perspicax owns both)
 //   GET   /api/org/directory  the people a bot owner may share with (client)
-//   PATCH /api/org/settings   { interimAttachDays?, allowFullAccess? }
+//   PATCH /api/org/settings   { interimAttachDays?, allowFullAccess?,
+//                             pluginMarketplaces?, githubClientId? }
 //                             (organization admin)
 //   GET   /api/org/approvals  approvals waiting for an organization admin
 //                             (server commands of members' bots)
@@ -31,6 +32,13 @@ export interface OrgSettings {
   /** Whether bots may run with Full access (server/org-full-access.ts):
    * on by default, an admin turns it off. */
   allowFullAccess: boolean;
+  /** Where bots' Claude Code plugins may come from (server/bot-plugins.ts):
+   * any marketplace by default, or the admin's list. */
+  pluginMarketplaces?: { mode: "any" } | { mode: "list"; allow: string[] };
+  /** The organization's GitHub OAuth App for "Connecter GitHub" (a public
+   * client id; null: people paste a token). `fromEnvironment` when it comes
+   * from SAGAX_GITHUB_CLIENT_ID. */
+  github?: { clientId: string | null; fromEnvironment: boolean };
 }
 
 export interface OrgDirectoryEntry {
@@ -91,6 +99,10 @@ export interface PerspicaxOrgRouteDeps {
   /** Allow or refuse Full access for the organization's bots; throws when
    * it could not be written. */
   saveAllowFullAccess?(allowed: boolean, auth: RequestAuth): void;
+  /** Set the marketplace list (or any); throws a 400-worthy Error on a bad entry. */
+  savePluginMarketplaces?(policy: unknown, auth: RequestAuth): void;
+  /** Set (or with null clear) the GitHub OAuth App client id. */
+  saveGithubClientId?(clientId: string | null, auth: RequestAuth): void;
   pendingAdminApprovals(): PendingAdminApproval[];
   /** Slice 4: the teams with their people (principal ids). */
   teams?(): OrgDirectoryTeam[];
@@ -180,14 +192,25 @@ export function createPerspicaxOrgRoutes(deps: PerspicaxOrgRouteDeps): RouteHand
       // serves whenever an admin set one, so it is refused like any other.
       const days = keys?.includes("interimAttachDays");
       const fullAccess = keys?.includes("allowFullAccess");
-      if (!keys || !keys.length || keys.some((key) => key !== "interimAttachDays" && key !== "allowFullAccess") ||
+      const marketplaces = keys?.includes("pluginMarketplaces");
+      const githubClient = keys?.includes("githubClientId");
+      const known = new Set(["interimAttachDays", "allowFullAccess", "pluginMarketplaces", "githubClientId"]);
+      if (!keys || !keys.length || keys.some((key) => !known.has(key)) ||
         (days && (!deps.saveInterimAttachDays || !Number.isInteger(body.interimAttachDays) || body.interimAttachDays < 0 || body.interimAttachDays > 90)) ||
-        (fullAccess && (!deps.saveAllowFullAccess || typeof body.allowFullAccess !== "boolean"))) {
-        return json(res, 400, { error: "send { interimAttachDays: 0 to 90 } or { allowFullAccess: true | false }" });
+        (fullAccess && (!deps.saveAllowFullAccess || typeof body.allowFullAccess !== "boolean")) ||
+        (marketplaces && !deps.savePluginMarketplaces) ||
+        (githubClient && (!deps.saveGithubClientId || (body.githubClientId !== null && (typeof body.githubClientId !== "string" || !/^[\x21-\x7e]{1,128}$/.test(body.githubClientId.trim())))))) {
+        return json(res, 400, { error: "send { interimAttachDays: 0 to 90 }, { allowFullAccess: true | false }, { pluginMarketplaces: { mode: \"any\" } | { mode: \"list\", allow: [...] } } or { githubClientId: string | null }" });
+      }
+      try {
+        if (marketplaces) deps.savePluginMarketplaces!(body.pluginMarketplaces, auth);
+      } catch (error) {
+        return json(res, 400, { error: error instanceof Error ? error.message : "That marketplace list is not valid.", code: "invalid_policy" });
       }
       try {
         if (days) deps.saveInterimAttachDays!(body.interimAttachDays, auth);
         if (fullAccess) deps.saveAllowFullAccess!(body.allowFullAccess, auth);
+        if (githubClient) deps.saveGithubClientId!(typeof body.githubClientId === "string" ? body.githubClientId.trim() : null, auth);
       } catch (error) {
         return json(res, 500, { error: `the organization settings could not be saved: ${error instanceof Error ? error.message : String(error)}` });
       }

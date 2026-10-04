@@ -6,8 +6,9 @@
 //
 // Integrations become MCP servers on the CLI:
 //   - Composio Sessions (connected apps → tools) over streamable HTTP
-//   - the bot's cloud computer (boat.dev) via server/computer-proxy.ts
-//     — screenshot/exec/open_url, the CUA-on-the-boat bridge
+//   - every computer (this Mac, a Local VM, a VPS, or a Boat cloud
+//     computer through server/harness-mcp-proxy.ts computer) as the one
+//     stdio `computer` server in turn.integrations.localComputer
 import { claudeDisallowedTools } from "./host-tools.ts";
 import { AUTO_COMPUTER_MCP_NAME } from "../auto-computer.ts";
 import { networkProxyEnvironment } from "./network-proxy.ts";
@@ -38,11 +39,14 @@ import type {
   TextGenerationOptions,
 } from "../contracts.ts";
 import { gateServer, resultBudget } from "../mcp-gate-config.ts";
+import { canUseMcpServer } from "../../shared/tool-scope.ts";
+import { assertToolScopeSupported } from "../../shared/tool-scope-support.ts";
 import { newEventId, newId, type TurnAccessInput } from "../contracts.ts";
 import { askInputDetail, askInputSummary, commandSummary, toolDetailPreview } from "../tool-summary.ts";
 import { filesField, writtenFilesFromToolInput } from "../thread-files.ts";
 import { classifyError, computeBackoff, interruptibleDelay, RETRY_MAX_ATTEMPTS } from "./retry.ts";
 import { sessionIdlePolicy } from "./session-idle.ts";
+import { contractChanges, withoutTurnTokens } from "./spawn-contract.ts";
 import { parseVersionTriple, versionAtLeast } from "./acp/core.ts";
 import {
   applyClaudeInject,
@@ -341,6 +345,8 @@ export const CLAUDE_FLAG_FLOORS = {
   // A guest's turn on a Cloud home (GUEST_CLAUDE_TOOLS): 2.1.248 takes
   // --restricted, 2.1.257 honours blockReadsOutsideWorkingDirectories.
   "--restricted": [2, 1, 257],
+  // A bot's Claude Code plugins (server/bot-plugins.ts).
+  "--plugin-dir": [2, 0, 0],
 } as const satisfies Record<string, ClaudeCliVersion>;
 
 /** The only built-in tools a guest's turn on a Cloud home gets
@@ -430,7 +436,7 @@ export function claudeCliUpdate(version: string | null, cli: string): ProviderSn
   const effects = [
     ...(missing.includes("--autocompact") ? ["no compaction window picked by Sagax"] : []),
     ...(missing.includes("--setting-sources") ? ["bots still see this machine's own Claude Code setup"] : []),
-    ...(missing.includes("--system-prompt-snapshot") ? ["coordinated resumed turns cannot refresh stale system prompts"] : []),
+    ...(missing.includes("--system-prompt-snapshot") ? ["resumed turns cannot refresh stale system prompts"] : []),
   ];
   return {
     title: "Update Claude Code for context controls",
@@ -673,6 +679,13 @@ const steerSilenceScale = () => fakeTimerScale("FAKE_CLAUDE_STEER_SILENCE_SCALE"
 
 /** Where the hook helper reads this thread's current turn token. Stable per
  * thread (so the CLI's environment can name it once) and private. */
+/** Where a warm (call) session's agents proxy reads the current turn's
+ * comms token: per thread, 0600, rewritten every turn. */
+export function commsTokenFile(threadId: string, botId?: string): string {
+  const digest = createHash("sha256").update(`${botId ?? ""}\0${threadId}`).digest("hex").slice(0, 24);
+  return join(DATA_DIR, "comms-tokens", `${digest}.token`);
+}
+
 export function hookTokenFile(threadId: string, botId?: string): string {
   const digest = createHash("sha256").update(`${botId ?? ""}\0${threadId}`).digest("hex").slice(0, 24);
   return join(DATA_DIR, "hook-tokens", `${digest}.token`);
@@ -1222,11 +1235,19 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
     // harness snapshots every instance whenever it describes them — app
     // load, the Engines page, and right after `claude update`, which is
     // exactly when the answer changes — so a turn normally finds it filled.
-    // Most turns before any snapshot assume a current CLI. A coordinated
-    // turn checks first because the snapshot-refresh flag is newer than the
-    // other context controls and an unknown flag would reject that request.
+    // A turn that finds it empty reads the version itself first: the
+    // snapshot-refresh flag every turn passes is newer than the other context
+    // controls, and an unknown flag would reject the turn. If that read
+    // fails, most flags assume a current CLI; the snapshot flag needs a
+    // confirmed version and autocompact a confirmed help listing.
     let cliVersion: ClaudeCliVersion | null = null;
     let cliVersionChecked = false;
+    // Whether `claude --help` lists --autocompact, read once per CLI version
+    // by snapshot(). The flag is not in every build above its version floor
+    // (2.1.129 rejects it), so the listing wins over the floor; null until
+    // probed, or when the probe fails.
+    let cliHasAutocompact: boolean | null = null;
+    let cliHelpVersion: string | null = null;
     const readCliVersion = (env: NodeJS.ProcessEnv): Promise<string | null> =>
       new Promise((resolve) => {
         execCli(config.cli, ["--version"], { timeout: 8000, env }, (err, stdout) =>
@@ -1254,6 +1275,7 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
         if (claudeCliSupports(cliVersion, "--setting-sources")) args.push("--setting-sources", "project");
         if (!scope.mcpFromUserConfig && !scope.claudeAiConnectors) env.ENABLE_CLAUDEAI_MCP_SERVERS = "false";
       }
+      if (claudeCliSupports(cliVersion, "--plugin-dir")) for (const dir of scope.pluginDirs ?? []) args.push("--plugin-dir", dir);
       const listed = await probeClaudeCommands({ cli: config.cli, args, env, cwd: scope.cwd ?? homedir() });
       const live = scope.botId ? liveCommands.get(liveCommandsKey(scope.botId, access?.identity)) : undefined;
       if (!live) return listed;
@@ -1280,6 +1302,8 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
       systemPromptPath: string | null;
       /** the spawn contract — a different one means a fresh process */
       argsKey: string;
+      /** the same contract as an object, to name what changed on a relaunch */
+      contract?: unknown;
       /** the MCP servers it was launched with (names), for the relaunch log */
       mcpNames?: string[];
       /** the volatile half of the system prompt this process was launched
@@ -1292,6 +1316,16 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
        * began the turn. The acceptance boundary for --resume: before it,
        * nothing was submitted and the turn has caused nothing. */
       sawInit: boolean;
+      /** Set while this process was started for a call warm and no user
+       * turn owns it yet. Init is recorded; every other event is dropped
+       * until a real turn attaches. */
+      idleWarm?: boolean;
+      /** The warm that owns this idle process. A replaced call's abort
+       * closes the process only while this token still matches. */
+      warmToken?: string;
+      /** Model from init, so a real turn can publish session.started when
+       * init arrived during the warm and the CLI does not re-announce it. */
+      sessionModel?: string | null;
       /** the permission mode `init` says the session actually runs in. The
        * CLI takes `--permission-mode auto` for any model and starts in
        * "default" without a word when auto mode is unavailable (Haiku 4.5,
@@ -1377,6 +1411,22 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
       s.idleTimer = setTimeout(() => closeSession(threadId, "idle"), SESSION_IDLE_MS);
       s.idleTimer.unref?.();
     };
+    /** Park a pooled process with no user turn. A later warm of the same
+     * session bumps warmToken, so this signal's abort cannot close it. */
+    const holdWarm = (threadId: string, session: Session, token: string, signal?: AbortSignal) => {
+      session.idleWarm = true;
+      session.warmToken = token;
+      session.turn = null;
+      if (signal?.aborted) {
+        closeSession(threadId, "call ended");
+        return;
+      }
+      signal?.addEventListener("abort", () => {
+        const live = sessions.get(threadId);
+        if (live === session && !live.turn && live.warmToken === token) closeSession(threadId, "call ended");
+      }, { once: true });
+      armIdle(threadId);
+    };
     const writeUser = (s: Session, threadId: string, promptMsg: ClaudeUserMessage): Promise<boolean> => {
       if (!s.child.stdin.writable || s.child.stdin.destroyed) return Promise.resolve(false);
       return new Promise((resolve) => {
@@ -1411,6 +1461,7 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
     const retryState = new Map<string, { attempt: number; cancelled: boolean; rebuilt?: boolean }>();
 
     const sendTurn = async (turn: SendTurnInput, logicalTurnId?: string) => {
+      turn = { ...turn, toolScope: assertToolScopeSupported(DRIVER_KIND, turn.toolScope) };
       if (config.managedModels && (!turn.model || !config.managedModels.includes(turn.model))) throw new Error("This model is not assigned to this workspace.");
       if (config.requireApiKey && !input.environment.ANTHROPIC_API_KEY) throw new Error(NO_ANTHROPIC_KEY);
       if (config.managed && (!turn.model || turn.model.includes("::") || !config.configDir ||
@@ -1422,6 +1473,12 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
       // logical turn's stop handle in `active` while it sets up, so Stop is
       // never a silent no-op between two CLI processes of the same turn.
       const relaunch = logicalTurnId !== undefined;
+      // A warm must not steal a process a real turn already owns, and an
+      // aborted warm must not open files or spawn. Both return before any
+      // broker or temp file exists.
+      if (turn.warmOnly === true && (turn.warmSignal?.aborted || (active.has(threadId) && !relaunch))) {
+        return { turnId: logicalTurnId ?? newId() };
+      }
       if (active.has(threadId) && !relaunch) throw new Error("a turn is already running on this thread");
       // A bot-level mode is authoritative for this turn. In particular, an
       // old provider instance may still be configured with
@@ -1482,7 +1539,7 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
         args.push("--disallowedTools", disallowedTools.join(","));
       }
       const turnEnvironment = environment();
-      if ((turn.refreshSystemPrompt || turn.guestConfined) && !cliVersionChecked) {
+      if (!cliVersionChecked) {
         const version = await readCliVersion(turnEnvironment);
         if (version) {
           cliVersion = parseClaudeCliVersion(version);
@@ -1499,8 +1556,12 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
       const isolated = !inheritsUserConfig(turnEnvironment);
       // A guest's confined turn never gets anyone's connectors. Standing
       // allow rules (SAGAX_CLAUDE_ALLOW) may name mcp__claude_ai_ tools; deny
-      // rules still win, and nothing here pre-allows them.
-      const keepsClaudeAiConnectors = turn.claudeAiConnectors === true && !turn.guestConfined;
+      // rules still win, and nothing here pre-allows them. A turn with an
+      // owner's tool selection gets only the selected servers, never them.
+      const keepsClaudeAiConnectors = turn.claudeAiConnectors === true && !turn.guestConfined && turn.toolScope === undefined;
+      if (turn.toolScope !== undefined && (!isolated || turn.mcpFromUserConfig || cliVersion === null || !claudeCliSupports(cliVersion, "--strict-mcp-config"))) {
+        throw new Error("Claude cannot confirm a restricted MCP configuration for this account. Disable inherited Claude MCP servers and use a current, identifiable Claude CLI before using tool selection.");
+      }
       if (isolated) {
         // A bot gets the tools and instructions its owner gave it, not
         // whatever this machine's Claude Code happens to be set up with.
@@ -1523,16 +1584,21 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
         if (!turn.mcpFromUserConfig && !keepsClaudeAiConnectors && claudeCliSupports(cliVersion, "--strict-mcp-config")) args.push("--strict-mcp-config");
         if (claudeCliSupports(cliVersion, "--setting-sources")) args.push("--setting-sources", "project");
       }
+      // The bot's plugins (server/bot-plugins.ts): skills, commands and
+      // agents only, loaded for this session. A guest's confined turn gets none.
+      if (!turn.guestConfined && claudeCliSupports(cliVersion, "--plugin-dir")) {
+        for (const dir of turn.pluginDirs ?? []) args.push("--plugin-dir", dir);
+      }
       const compactWindow = autoCompactWindow(turnEnvironment);
-      if (compactWindow && claudeCliSupports(cliVersion, "--autocompact")) {
+      if (compactWindow && cliHasAutocompact === true) {
         args.push("--autocompact", compactWindow);
       }
-      // An old pair conversation can still carry its first assignment in
-      // Claude's recorded system prompt. The current brief rides in the user
-      // turn, so refresh the recorded prompt on --resume too. Gated by the
-      // version floor like every other flag the CLI may predate: an unknown
-      // flag is a hard argument error, not a graceful degrade.
-      if (turn.refreshSystemPrompt && cliVersionChecked && claudeCliSupports(cliVersion, "--system-prompt-snapshot")) {
+      // A resumed conversation can still carry an earlier assignment, place
+      // or teammate list in Claude's recorded system prompt, so every turn
+      // refreshes the recorded prompt, on --resume too. Gated by the version
+      // floor like every other flag the CLI may predate: an unknown flag is a
+      // hard argument error, not a graceful degrade.
+      if (cliVersionChecked && claudeCliSupports(cliVersion, "--system-prompt-snapshot")) {
         args.push("--system-prompt-snapshot", "off");
       }
       const turnModel = config.managed ? turn.model : await resolveClaudeTurnModel(turn.model, turnEnvironment);
@@ -1574,6 +1640,15 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
         // Coordination is foundational, not an optional deferred lookup.
         // Claude waits for always-loaded tools before building the prompt.
         mcpServers.agents = { ...turn.integrations.agents, alwaysLoad: true };
+        // On a call the process is kept from turn to turn: the turn's comms
+        // token (new every turn) rides a file the proxy reads on each call,
+        // and leaves the spawn contract (warmTurnTokens below).
+        if (turn.keepWarm && turn.integrations.agents.env?.SAGAX_COMMS_TOKEN) {
+          const tokenPath = commsTokenFile(threadId, botId);
+          mkdirSync(dirname(tokenPath), { recursive: true, mode: 0o700 });
+          writeFileAtomic(tokenPath, turn.integrations.agents.env.SAGAX_COMMS_TOKEN, { mode: 0o600 });
+          mcpServers.agents = { ...turn.integrations.agents, env: { ...turn.integrations.agents.env, SAGAX_COMMS_TOKEN_FILE: tokenPath }, alwaysLoad: true };
+        }
         allowed.push(...agentsAllowedTools(turn.integrations.agents.env));
       }
       if (turn.integrations?.phone) {
@@ -1638,10 +1713,13 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
       // permission broker, computer, browser, agents, dweb) are already
       // bounded and are deliberately left alone.
       const budget = resultBudget(turnEnvironment);
-      for (const name of botOwned) {
-        const gated = gateServer({ name, server: mcpServers[name], threadId, budget, nodeEnv: NODE_ENV_FLAG });
-        if (gated) mcpServers[name] = gated;
+      for (const name of turn.toolScope === undefined ? botOwned : Object.keys(mcpServers)) {
+        if (!canUseMcpServer(turn.toolScope, name)) { delete mcpServers[name]; continue; }
+        const gated = gateServer({ name, server: mcpServers[name], threadId, budget: botOwned.has(name) ? budget : 0, nodeEnv: NODE_ENV_FLAG, toolScope: turn.toolScope });
+        if (gated) mcpServers[name] = { ...gated, ...((mcpServers[name] as { alwaysLoad?: unknown })?.alwaysLoad === true ? { alwaysLoad: true } : {}) };
       }
+      // an allowed name is mcp__<server> or mcp__<server>__<tool> (agentsAllowedTools)
+      allowed.splice(0, allowed.length, ...allowed.filter((name) => Object.hasOwn(mcpServers, name.slice("mcp__".length).split("__")[0])));
       // Keep ask_user available even in Full access. Native bypass skips
       // permission prompts, not questions requiring a person's answer.
       let broker: Awaited<ReturnType<typeof createPermissionBroker>> | undefined;
@@ -1649,7 +1727,8 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
       if (permissionMode !== "bypassPermissions") {
         args.push("--permission-prompt-tool", "mcp__ogb__approve");
       }
-      mcpServers.ogb = { command: process.execPath, args: [PERM_PROXY_PATH, socketPath], env: { ...NODE_ENV_FLAG }, alwaysLoad: true };
+      const permissionEnv = { ...NODE_ENV_FLAG, ...(turn.toolScope !== undefined ? { SAGAX_PERMISSION_TOOL_SCOPE: JSON.stringify(turn.toolScope) } : {}) };
+      mcpServers.ogb = { command: process.execPath, args: [PERM_PROXY_PATH, socketPath], env: permissionEnv, alwaysLoad: true };
       allowed.push("mcp__ogb");
       // A guest's turn pre-allows only the harness's own tools: anything
       // else (the browser can open a file: address) asks the owner first.
@@ -1713,12 +1792,15 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
       // paths. Their contents are represented directly in the key instead.
       const privateFileFlags = new Set(["--mcp-config", "--settings"]);
       const keyArgs = args.filter((a, i) => !privateFileFlags.has(a) && !privateFileFlags.has(args[i - 1] ?? ""));
-      const argsKey = JSON.stringify({
+      const contract = {
         args: keyArgs,
         // the volatile half is deliberately absent: it must not respawn a
         // healthy session (see Session.volatile)
         system: turn.systemStable ?? turn.system ?? null,
-        mcpServers,
+        // a call's turns share one process: their per-turn tokens are not
+        // part of what makes a process (they ride a file, see above)
+        mcpServers: turn.keepWarm ? withoutTurnTokens(mcpServers) : mcpServers,
+        warm: turn.keepWarm === true,
         cwd,
         model: injected.model ?? null,
         base: env.ANTHROPIC_BASE_URL ?? null,
@@ -1734,14 +1816,36 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
           settings: authSettings,
           env: Object.fromEntries(CLAUDE_ACCOUNT_ENV_KEYS.map((key) => [key, env[key]])),
         })).digest("hex"),
-      });
+      };
+      const argsKey = JSON.stringify(contract);
 
       // Reuse the live process when it is idle, unchanged, and is the session
       // the harness wants resumed. Clearing a cursor alone does not opt out
       // of legacy reuse: an explicit rebuild must discard the idle context.
       const live = sessions.get(threadId);
+      const dropUnusedMcp = () => {
+        if (!mcpConfigPath) return;
+        try {
+          rmSync(dirname(mcpConfigPath), { recursive: true, force: true });
+        } catch {}
+        mcpConfigPath = null;
+      };
       if (!turn.sessionReset && live && !live.turn && !live.closing && live.child.exitCode === null && live.argsKey === argsKey && (!sessionId || sessionId === live.sessionId)) {
         if (live.idleTimer) clearTimeout(live.idleTimer);
+        // A second warm of the same call keeps the process and writes nothing.
+        if (turn.warmOnly === true) {
+          dropUnusedMcp();
+          holdWarm(threadId, live, turnId, turn.warmSignal);
+          return { turnId, reused: true };
+        }
+        // Attach before any await so a hangup abort cannot close a process
+        // this turn now owns. Init that arrived during the warm is published
+        // once here: a cancelled warm never emits, so it cannot overwrite a
+        // resume cursor, and a CLI that already announced init does not have
+        // to announce it again.
+        const publishWarmInit = live.idleWarm === true && live.sawInit && Boolean(live.sessionId);
+        live.idleWarm = false;
+        live.warmToken = undefined;
         live.turn = { turnId, input: turn, retryAbort, settled: false, sawStreamDelta: false, pendingSteers: new Set(), deferred: null, continuationGrace: null, continuationSilence: null };
         active.set(threadId, { stop: () => {
           if (live.turn) live.turn.stopRequested = true;
@@ -1751,6 +1855,9 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
           stopSession(live);
         }, turnId, broker: live.broker });
         emit({ ...base(threadId, turnId), type: "turn.started" });
+        if (publishWarmInit && live.sessionId) {
+          emit({ ...base(threadId, turnId), type: "session.started", sessionId: live.sessionId, model: live.sessionModel ?? null });
+        }
         const volatile = turn.systemVolatile ?? "";
         const message = volatile === live.volatile && !turn.mentionTurn
           ? promptMsg
@@ -1776,9 +1883,22 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
             rmSync(dirname(mcpConfigPath), { recursive: true, force: true });
           } catch {}
         }
-        return { turnId };
+        return { turnId, reused: true };
       }
       if (live) {
+        // A real turn owns the process. A warm must not close it.
+        if (turn.warmOnly === true && live.turn) {
+          dropUnusedMcp();
+          return { turnId };
+        }
+        // A relaunch costs the engine's whole cold start (on a call, most of
+        // the pause before the answer): say which fields of the spawn
+        // contract changed (names only, never values).
+        if (!turn.sessionReset) {
+          const why = live.argsKey !== argsKey ? `spawn contract changed (${live.contract ? contractChanges(live.contract, contract).join(", ") : "unknown"})`
+            : live.child.exitCode !== null ? "process exited" : live.closing ? "process closing" : live.turn ? "a turn is running" : "another session";
+          console.warn(`claude (${instanceId}): thread ${threadId} relaunch: ${why}`);
+        }
         // A relaunch reconnects every MCP server: say which ones changed, so
         // tools that come and go between turns can be traced.
         if (!turn.sessionReset && live.mcpNames) {
@@ -1886,7 +2006,7 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
           // the base path: the nonce is not part of the spawn contract, and a
           // retained session keeps its own broker object anyway.
           if (broker.socketPath !== socketPath && mcpConfigPath) {
-            mcpServers.ogb = { command: process.execPath, args: [PERM_PROXY_PATH, broker.socketPath], env: { ...NODE_ENV_FLAG }, alwaysLoad: true };
+            mcpServers.ogb = { command: process.execPath, args: [PERM_PROXY_PATH, broker.socketPath], env: permissionEnv, alwaysLoad: true };
           }
         }
 
@@ -1913,6 +2033,11 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
         emit({ ...base(threadId, turnId), type: "turn.completed", ok: false, stopReason: "interrupted", cost: null });
         return { turnId };
       }
+      // The call ended while this warm was still building its config.
+      if (turn.warmOnly === true && turn.warmSignal?.aborted) {
+        cleanupUnownedLaunch();
+        return { turnId };
+      }
 
       let child: ReturnType<typeof spawnCli>;
       try {
@@ -1931,13 +2056,18 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
         mcpConfigPath,
         systemPromptPath,
         argsKey,
+        contract,
         mcpNames: Object.keys(mcpServers),
         volatile: turn.systemVolatile ?? "",
         sessionId: sessionId ?? newSessionId,
         sawInit: false,
         nativePermissionMode: null,
         replaysUserMessages,
-        turn: { turnId, input: turn, retryAbort, settled: false, sawStreamDelta: false, pendingSteers: new Set(), deferred: null, continuationGrace: null, continuationSilence: null },
+        // A warm has no turn from the start, so a fast init cannot emit
+        // under a phantom turn id.
+        turn: turn.warmOnly === true ? null : { turnId, input: turn, retryAbort, settled: false, sawStreamDelta: false, pendingSteers: new Set(), deferred: null, continuationGrace: null, continuationSilence: null },
+        idleWarm: turn.warmOnly === true,
+        warmToken: turn.warmOnly === true ? turnId : undefined,
         idleTimer: null,
         closing: false,
         stderr: "",
@@ -2022,6 +2152,32 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
         // A stdin message echoed back (--replay-user-messages) carries its
         // images again: keep their bytes out of the log, as when it was sent.
         appendNative(threadId, { dir: "in", source: "claude.sdk.message", msg: o?.type === "user" && o.isReplay === true && o.message ? diagnosticClaudeUserMessage(o) : o });
+        // A warm process has no user turn. Record init (the resume cursor is
+        // published only when a real turn attaches) and drop everything else,
+        // so a call warm never writes a transcript row.
+        if (session.idleWarm && !session.turn) {
+          if (o?.type === "system" && o.subtype === "init") {
+            const tools: unknown[] = Array.isArray(o.tools) ? o.tools : [];
+            if (turn.guestConfined && (o.permissionMode !== "default" || tools.some((tool) => typeof tool === "string" && GUEST_FORBIDDEN_TOOLS.has(tool)))) {
+              session.closing = true;
+              stopSession(session);
+              return;
+            }
+            session.sawInit = true;
+            const liveBot = turn.botId;
+            if (liveBot && Array.isArray(o.slash_commands)) {
+              const liveAccess = turn.access;
+              liveCommands.set(liveCommandsKey(liveBot, liveAccess?.via === "subscription" ? liveAccess.identity : undefined), {
+                names: o.slash_commands.filter((name: unknown): name is string => typeof name === "string"),
+                terminal: Array.isArray(o.terminal_slash_commands) ? o.terminal_slash_commands.filter((name: unknown): name is string => typeof name === "string") : [],
+              });
+            }
+            session.nativePermissionMode = typeof o.permissionMode === "string" ? o.permissionMode : null;
+            if (typeof o.session_id === "string") session.sessionId = o.session_id;
+            if (typeof o.model === "string") session.sessionModel = o.model;
+          }
+          return;
+        }
         // The continuation a held result waits for has spoken: any frame
         // after its `init` — status, thinking, text, its own result. The
         // echo of its own message is not speech: it comes before the call.
@@ -2293,6 +2449,11 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
       });
 
       child.on("error", (e) => {
+        // A warm has no turn to fail in the thread. Close the idle process.
+        if (session.idleWarm && !session.turn) {
+          closeSession(threadId, "spawn error");
+          return;
+        }
         emit({ ...base(threadId, currentTurnId()), type: "runtime.error", ...describeSpawnFailure(e, config.cli) });
         settle(false, "spawn_error");
       });
@@ -2518,6 +2679,12 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
         retryAbort.abort();
         stopSession(session);
       };
+      // The process is up and idle. No turn.started, no user message, and
+      // the thread does not look busy (hasSession reads `active`).
+      if (turn.warmOnly === true) {
+        holdWarm(threadId, session, turnId, turn.warmSignal);
+        return { turnId };
+      }
       active.set(threadId, { stop, turnId, broker });
       emit({ ...base(threadId, turnId), type: "turn.started" });
 
@@ -2566,6 +2733,13 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
       if (!version) return { state: "unavailable", reason: `\`${config.cli}\` CLI not found` };
       cliVersion = parseClaudeCliVersion(version);
       cliVersionChecked = true;
+      if (version !== cliHelpVersion) {
+        const help = await new Promise<string | null>((resolve) => {
+          execCli(config.cli, ["--help"], { timeout: 8000, env }, (err, stdout) => resolve(err ? null : stdout));
+        });
+        cliHasAutocompact = help === null ? null : /^\s*--autocompact\b/m.test(help);
+        cliHelpVersion = version;
+      }
       const update = claudeCliUpdate(version, config.cli);
       const warning = claudeInheritWarning(env);
       if (config.requireApiKey) {
@@ -2715,6 +2889,9 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
           // when an old instance was configured with bypassPermissions.
           localComputerMcp: true,
           hooks: true,
+          // A call can start this process before the first utterance, with
+          // stdin open and no prompt, so the first spoken turn reuses it.
+          warmSession: true,
         },
         sendTurn,
         steer,
@@ -2729,6 +2906,13 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
           return behavior === "allow" ? "allowed-once" : behavior === "answer" ? "answered" : "rejected";
         },
         hasSession: (threadId) => active.has(threadId),
+        releaseWarmSession: (threadId) => {
+          const live = sessions.get(threadId);
+          // A running turn owns the process. Hangup closes only an idle one,
+          // including the process kept warm between call turns.
+          if (!live || live.turn || live.closing) return;
+          closeSession(threadId, "call ended");
+        },
         stopAll: async () => {
           for (const { stop } of active.values()) stop();
           for (const threadId of Array.from(sessions.keys())) closeSession(threadId, "stopAll");

@@ -1,7 +1,7 @@
 "use strict";
 
 // Must equal server/request-auth.ts DESKTOP_OWNER_HEADER. Lowercase on
-// purpose: the upstream rebrand rewrites "OpenMausBot", and a name with a
+// purpose: the upstream rebrand rewrites "Sagax", and a name with a
 // space (the old "X-Pulsa Bot-Desktop-Owner") is not a valid HTTP header, so
 // Chromium dropped it and every guarded desktop change was refused (403).
 const DESKTOP_MUTATION_HEADER = "x-openmausbot-desktop-owner";

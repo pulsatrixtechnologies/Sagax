@@ -150,6 +150,40 @@ describe("direct grants on an organization server", () => {
     expect(changed).toEqual(["aurora"]);
   });
 
+  it("refuses a read-only owner before resolving or saving a grant", async () => {
+    const bot = { id: "aurora", ownerUserId: OWNER, directGrants: [BOB] };
+    const resolved: string[] = [];
+    const changed: string[] = [];
+    const route = createDirectGrantRoutes({
+      bot: (id) => (id === "aurora" ? bot : undefined),
+      patchBot: (_id, patch) => { bot.directGrants = patch.directGrants; },
+      actorId: (auth) => (auth as unknown as { actor: string }).actor,
+      resolveOrgPerson: (ref) => { resolved.push(ref); return { ok: true, id: ref }; },
+      onChanged: (id) => changed.push(id),
+      botsReadOnly: (actorId) => actorId === OWNER,
+    });
+    const call = async (method: "POST" | "DELETE", path: string, userId?: string) => {
+      let answer: { status: number; body: unknown } | undefined;
+      await route({
+        req: {} as never,
+        res: {} as never,
+        url: new URL(`http://x${path}`),
+        path,
+        method,
+        auth: { actor: OWNER } as never,
+        json: ((_res: unknown, status: number, body: unknown) => { answer = { status, body }; }) as never,
+        readBody: (async () => ({ userId })) as never,
+      });
+      return answer!;
+    };
+    const refused = { error: "org_bots_read_only", message: "Your administrator lets you use shared bots only." };
+    expect(await call("POST", "/api/bots/aurora/direct-grants", BOB)).toEqual({ status: 403, body: refused });
+    expect(await call("DELETE", `/api/bots/aurora/direct-grants/${BOB}`)).toEqual({ status: 403, body: refused });
+    expect(bot.directGrants).toEqual([BOB]);
+    expect(resolved).toEqual([]);
+    expect(changed).toEqual([]);
+  });
+
   it("removes a grant through DELETE and says so, 404 the second time", async () => {
     const { bot, changed, call } = orgRoute();
     bot.directGrants = [BOB];
