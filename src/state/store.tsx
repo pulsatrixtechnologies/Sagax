@@ -972,7 +972,6 @@ export type AppSettingsSection =
   | "decisionModel"
   | "engines"
   | "companion"
-  | "remote"
   | "computer"
   | "usage"
   | "people"
@@ -980,12 +979,12 @@ export type AppSettingsSection =
   | "activity"
   | "backups"
   | "workspaces"
-  | "achievements"
-  | "skills";
+  | "achievements";
 
 export type BotSettingsSection =
   | "overview"
-  | "identity"
+  /** Deep link to the Details tab. Not a row in More. */
+  | "details"
   | "slack"
   | "soul"
   | "skills"

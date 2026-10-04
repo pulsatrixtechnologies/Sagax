@@ -18,6 +18,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { Card, CommandLine, cardCount } from "./SettingsPrimitives";
+import { SettingsText } from "./SettingsLink";
 import { MacLocalControl } from "./MacLocalControl";
 import { cn } from "@/lib/cn";
 import { useStore } from "@/state/store";
@@ -397,7 +398,7 @@ export function VpsComputersCard({
           {configured === true
             ? t("vm.vps.sshHost", { alias: sshAlias ?? t("vm.vps.configuredFallback") })
             : configured === false
-              ? t("vm.vps.needsAlias")
+              ? <SettingsText text={t("vm.vps.needsAlias")} links={{ settings: { section: "connections", cardId: "connections.integrations" } }} />
               : t("vm.vps.refreshHint")}
         </div>
         <button
@@ -537,7 +538,7 @@ export function CloudComputersCard({
           {configured === true
             ? t("vm.cloud.includesOrphans")
             : configured === false
-              ? t("vm.cloud.needsKey")
+              ? <SettingsText text={t("vm.cloud.needsKey")} links={{ settings: { section: "connections", cardId: "connections.integrations" } }} />
               : t("vm.cloud.refreshHint")}
         </div>
         <button

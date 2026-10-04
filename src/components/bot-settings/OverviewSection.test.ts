@@ -45,7 +45,7 @@ describe("OverviewSection", () => {
   it("does not offer setup ideas", () => {
     const markup = render(createElement(OverviewSection, {
       overview: { ...sentences, setup: [
-        { id: "identity", label: "Identity", done: true, section: "identity" },
+        { id: "identity", label: "Identity", done: true, section: "details" },
         { id: "folder", label: "Choose a project folder", done: false, section: "access" },
         { id: "schedule", label: "Add a routine", done: false, section: "routines" },
       ] }, prompt: null, onOpen: vi.fn(),

@@ -443,7 +443,7 @@ export function SkillsSection({ bot }: { bot: Bot }) {
             ) : (
               <div className="text-[12px] text-ink-secondary">Every skill in the library is already assigned to this bot.</div>
             )}
-            <div className="text-[11.5px] text-ink-secondary">Import and manage library skills in Settings → Skills.</div>
+
           </div>
         ) : (
           <>

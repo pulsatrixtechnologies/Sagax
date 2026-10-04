@@ -20,15 +20,16 @@ describe("bot panel tabs", () => {
 
   it("land a deep link on the tab that holds the section", () => {
     // Name, label and description are edited at the panel's top.
-    expect(tabForSection("identity")).toBe("details");
+    expect(tabForSection("details")).toBe("details");
     // Routines are a section of Details.
     expect(tabForSection("routines")).toBe("details");
     expect(tabForSection("memory")).toBe("more");
     expect(tabForSection("overview")).toBe("more");
   });
 
-  it("keep Identity and Routines out of the More list, and every other section in it", () => {
+  it("keeps Routines out of the More list, and every other section in it", () => {
     const more = BOT_SECTIONS.filter((entry) => isMoreSection(entry.id)).map((entry) => entry.id);
-    expect(more).toEqual(BOT_SECTIONS.map((entry) => entry.id).filter((id) => id !== "identity" && id !== "routines"));
+    expect(more).toEqual(BOT_SECTIONS.map((entry) => entry.id).filter((id) => id !== "routines"));
+    expect(BOT_SECTIONS.some((entry) => entry.id === "details")).toBe(false);
   });
 });

@@ -23,7 +23,6 @@ import {
   Plug,
   ShieldCheck,
   Sparkles,
-  User,
   Users,
 } from "lucide-react";
 import { Slack } from "../brand-icons";
@@ -41,7 +40,6 @@ export const BOT_SECTIONS: Array<{
   keywords: string[];
 }> = [
   { id: "overview", label: "Overview", icon: LayoutDashboard, keywords: ["summary", "status", "what it does", "won't", "prompt", "what the model sees"] },
-  { id: "identity", label: "Identity", icon: User, keywords: ["name", "title", "avatar", "blurb", "instructions"] },
   { id: "slack", label: "Slack", icon: Slack, keywords: ["slack", "slack app", "admin", "message", "direct messages", "mentions"] },
   { id: "soul", label: "Soul", icon: Sparkles, keywords: ["standing instructions", "instructions", "persona", "rules", "soul.md"] },
   { id: "skills", label: "Skills", icon: BookOpen, keywords: ["skills", "learned", "procedures", "teach"] },

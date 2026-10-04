@@ -56,6 +56,7 @@ import {
 import { t } from "@/lib/i18n";
 import type { LocaleKey } from "@/locales";
 import { requestSettingsCard } from "./SettingsPrimitives";
+import { SettingsText } from "./SettingsLink";
 import { OrgComputerTab } from "./computer/OrgComputerTab";
 import { useDesktopBridgeStatus } from "@/lib/desktop-bridge";
 
@@ -1398,7 +1399,7 @@ export function ComputerPanel({
         {phase === "vps-unconfigured" && (
           <div className="mt-3 rounded-xl bg-card p-4">
             <div className="mb-3 text-[13px] text-ink-secondary">
-              {t("computer.vpsAliasHint")}
+              <SettingsText text={t("computer.vpsAliasHint")} links={{ settings: { section: "connections", cardId: "connections.integrations" } }} />
             </div>
             <button
               onClick={openConnectionSettings}

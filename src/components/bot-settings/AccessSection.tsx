@@ -5,7 +5,7 @@
 // list, webhooks list, and always-allowed list (the first read-only view of
 // standing grants) are new.
 import { useEffect, useState } from "react";
-import { boatComputerEnabled, browserUnavailableReason, connectedAppsEnabled as connectedAppsFeatureEnabled, vpsComputerEnabled } from "@/lib/feature-flags";
+import { boatComputerEnabled, connectedAppsEnabled as connectedAppsFeatureEnabled, vpsComputerEnabled } from "@/lib/feature-flags";
 import { ChevronDown, ChevronRight, FolderOpen, Plus } from "lucide-react";
 
 import { api, useStore, type Bot } from "@/state/store";
@@ -18,6 +18,7 @@ import { mcpServersForBot, useMcpServers } from "@/lib/mcp-servers";
 import { cloudComputersOffered, placeLabelKey, placeOffered } from "@/lib/place";
 import { shortPath } from "@/lib/short-path";
 import { useDesktopCapabilities } from "../DesktopCapabilities";
+import { BrowserUnavailableNote, SettingsText } from "../SettingsLink";
 import { CloudBackendPicker } from "../CloudBackendPicker";
 import { ConfirmDialog } from "../ConfirmDialog";
 import { LocalComputerAutoWarning } from "../LocalComputerAutoWarning";
@@ -739,9 +740,9 @@ export function AccessSection({
             {!desktopBrowser
               ? browserBlockedOnWindows && !browserInstallable
                 ? "Not available on this Windows machine yet: install the browser engine with `openmausbot browser install`."
-                : browserUnavailableReason(state.config)
+                : <BrowserUnavailableNote config={state.config} />
               : !browserFeature
-                ? "The built-in browser is switched off under App Settings → Computers."
+                ? <SettingsText text={t("botAccess.browserSwitchedOff")} links={{ settings: { section: "experimental", cardId: "experimental.features" } }} />
                 : !canUseBrowser
                   ? "This bot's current model cannot use the built-in browser."
                   : bot.computer === "off"

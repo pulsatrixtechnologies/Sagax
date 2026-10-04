@@ -6,6 +6,7 @@ import { AlertTriangle, Check, Copy, Download, ExternalLink, KeyRound, Loader2, 
 import { api, type EngineInstall, type InstanceInfo, useStore } from "@/state/store";
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
+import { SettingsText } from "./SettingsLink";
 import { CodexDeviceSignIn } from "./CodexDeviceSignIn";
 import { ClaudeSignIn } from "./ClaudeSignIn";
 
@@ -405,7 +406,9 @@ function ApiKeyEngineSetup({ instance, className, unframed }: { instance: Instan
         <div className="min-w-0">
           <div className="text-[13px] font-semibold text-ink">{t("engineSetup.apiKey.title", { name: instance.displayName })}</div>
           <p className="mt-0.5 text-[12px] leading-relaxed text-ink-secondary">
-            {remote ? t("engineSetup.apiKey.remote") : t("engineSetup.apiKey.description")}
+            {remote ? t("engineSetup.apiKey.remote") : (
+              <SettingsText text={t("engineSetup.apiKey.description")} links={{ settings: { section: "connections", cardId: "connections.providers" } }} />
+            )}
           </p>
         </div>
       </div>

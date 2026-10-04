@@ -8,7 +8,7 @@ import { FLOATING_LIVELINESS, floatingBotPrefs, setFloatingFlyAway, setFloatingL
 import { Archive, Coins, FlaskConical, KeyRound, Mail, Monitor, Palette, Plug, ScrollText, Search, TabletSmartphone, Terminal, Trophy, User, Users, X, Building2, Zap } from "lucide-react";
 import { AchievementsPage } from "./achievements/AchievementsPage";
 import { api, useStore, type AppSettingsSection, type ConfigStatus } from "@/state/store";
-import { browserAvailable, browserUnavailableReason, builtInBrowserEnabled, boatComputerEnabled, connectedAppsEnabled, routinesInConversationEnabled, showToolCallsEnabled, skillAuthoringEnabled, templatesEnabled, vpsComputerEnabled } from "@/lib/feature-flags";
+import { browserAvailable, builtInBrowserEnabled, boatComputerEnabled, connectedAppsEnabled, routinesInConversationEnabled, showToolCallsEnabled, skillAuthoringEnabled, templatesEnabled, vpsComputerEnabled } from "@/lib/feature-flags";
 import { usePerspicaxOrg } from "@/lib/perspicax-org";
 import { localeChoices, type LocaleKey } from "@/locales";
 import { t } from "@/lib/i18n";
@@ -37,6 +37,7 @@ import { ThisComputerSettings } from "./DesktopWorkspaceSwitcher";
 import { OrganizationSettings } from "./OrganizationSettings";
 import { CloudAccountSettings } from "./CloudAccountSettings";
 import { Card, SettingRow, Switch, requestSettingsCard, cardCount } from "./SettingsPrimitives";
+import { BrowserUnavailableNote, SettingsText } from "./SettingsLink";
 import { effortLabel } from "./ModelPicker";
 import { EFFORT_LEVELS, isEffortLevel } from "../../shared/wire";
 import { shortcutLabel } from "./ShortcutHint";
@@ -822,7 +823,7 @@ function ExperimentalFeaturesRow() {
                 : t("settings.experimental.browserOff")
               : browserBlockedOnWindows
                 ? t("settings.experimental.browserWindows")
-                : browserUnavailableReason(state.config)}
+                : <BrowserUnavailableNote config={state.config} />}
           </div>
         </div>
         <Switch
@@ -852,7 +853,13 @@ function ExperimentalFeaturesRow() {
         <div className="min-w-0">
           <div className="text-[14px] font-medium text-ink">{t("settings.experimental.connectedApps")}</div>
           <div className="mt-0.5 text-[12px] leading-relaxed text-ink-secondary">
-            {t("settings.experimental.connectedAppsDetail")}
+            <SettingsText
+              text={t("settings.experimental.connectedAppsDetail")}
+              links={{
+                apiKeys: { section: "connections", cardId: "connections.apps" },
+                providers: { section: "engines" },
+              }}
+            />
           </div>
         </div>
         <Switch
@@ -962,7 +969,7 @@ export function SettingsModal() {
   // computer's phone flow, or the server's pairing code.
   const computerPairs = currentPhonePairingTarget(state.config?.cloudHome === true) === "computer";
   const section: AppSettingsSection =
-    (remoteActive && !["appearance", "organization"].includes(state.appSettingsSection)) || state.appSettingsSection === "remote"
+    remoteActive && state.appSettingsSection !== "appearance" && state.appSettingsSection !== "organization"
       ? "companion"
       : state.appSettingsSection;
   const dialogRef = useRef<HTMLDivElement>(null);

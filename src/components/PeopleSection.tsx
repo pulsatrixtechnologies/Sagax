@@ -18,6 +18,7 @@ import { readSessionState, type SessionState } from "../lib/session";
 import { canPairDevices } from "./ServerPairingCard";
 import { normalizeAccessEntry, withEntry, withoutEntry, type SignInLists } from "./SignInAccessCard";
 import { Card, cardCount } from "./SettingsPrimitives";
+import { SettingsText } from "./SettingsLink";
 import { fetchEnvironmentDescriptor } from "@/lib/environment-descriptor";
 
 export type Role = "admin" | "member";
@@ -318,7 +319,9 @@ export function PeopleSection() {
           onLink={(person) => setLink(inviteLink(base, person.entry))}
         />
       </div>
-      <p className="mt-3 text-[11.5px] leading-relaxed text-ink-secondary">{t("people.note")}</p>
+      <p className="mt-3 text-[11.5px] leading-relaxed text-ink-secondary">
+        <SettingsText text={t("people.note")} links={{ settings: { section: "companion" } }} />
+      </p>
     </Card>
   );
 }

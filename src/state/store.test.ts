@@ -2079,10 +2079,10 @@ describe("bot settings section", () => {
     const next = reducer(initialState, {
       type: "toggleSettings",
       open: true,
-      section: "identity",
+      section: "details",
     });
     expect(next.settingsOpen).toBe(true);
-    expect(next.botSettingsSection).toBe("identity");
+    expect(next.botSettingsSection).toBe("details");
     expect(next.botSettingsExpandAccordion).toBe(true);
   });
 
@@ -2121,7 +2121,7 @@ describe("bot settings section", () => {
     expect(next.botSettingsExpandAccordion).toBe(false);
   });
 
-  it.each(["identity", "model"] as const)("opens a bot's %s settings without leaving the team map or reading its conversations", (section) => {
+  it.each(["details", "model"] as const)("opens a bot's %s settings without leaving the team map or reading its conversations", (section) => {
     const state = {
       ...initialState,
       activeView: "team-map" as const,
@@ -2175,7 +2175,7 @@ describe("bot settings section", () => {
       groups: [{ id: "room" } as Group],
       settingsOpen: true,
     };
-    expect(reducer(state, { type: "toggleSettings", botId, section: "identity" })).toBe(state);
+    expect(reducer(state, { type: "toggleSettings", botId, section: "details" })).toBe(state);
   });
 
   it("selecting a different bot resets botSettingsSection to overview", () => {
@@ -2191,13 +2191,13 @@ describe("bot settings section", () => {
     });
     expect(state.selectedId).toBe("bot-b");
 
-    // Set section to "identity" while bot-b is selected
+    // Set section to "details" while bot-b is selected
     state = reducer(state, {
       type: "toggleSettings",
       open: true,
-      section: "identity",
+      section: "details",
     });
-    expect(state.botSettingsSection).toBe("identity");
+    expect(state.botSettingsSection).toBe("details");
 
     // Select bot A → should reset to "overview" because we're changing bots
     const next = reducer(state, {
