@@ -69,7 +69,7 @@ export function MacLocalControl() {
         className="flex w-full items-center gap-3 px-4 py-2.5 text-left"
       >
         <Shield size={15} className="shrink-0 text-ink-secondary" />
-        <span className="min-w-0 flex-1 text-[13px] font-medium text-ink-secondary">Allow control of this computer</span>
+        <span className="min-w-0 flex-1 text-[13px] font-medium text-ink-secondary">{t("settings.mac.allow")}</span>
         <ChevronDown size={16} className={cn("shrink-0 text-ink-secondary transition-transform", open && "rotate-180")} />
       </button>
       {open && <div className="px-4 pb-4">
@@ -93,7 +93,7 @@ export function MacLocalControl() {
                 disabled={pending}
                 className="inline-flex items-center gap-1.5 rounded-lg border border-hairline/50 bg-panel px-3 py-1.5 text-[12.5px] font-medium text-ink-secondary hover:bg-raised hover:text-ink disabled:opacity-50"
               >
-                Open System Settings
+                {t("settings.mac.open")}
               </button>
             )}
             <button
@@ -103,7 +103,7 @@ export function MacLocalControl() {
               className="inline-flex items-center gap-1.5 rounded-lg border border-hairline/50 px-3 py-1.5 text-[12.5px] font-medium text-ink-secondary hover:bg-raised hover:text-ink disabled:opacity-50"
             >
               {pending && <Loader2 size={13} className="animate-spin" />}
-              Retry
+              {t("connectors.action.retry")}
             </button>
           </div>
         </div>

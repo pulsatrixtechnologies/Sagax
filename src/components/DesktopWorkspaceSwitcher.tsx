@@ -25,7 +25,7 @@ export function useDesktopWorkspace() {
     if (!bridge || open) return;
     setError("");
     setOpen(true);
-    void bridge.menu().catch(() => setError("Could not open the server list. Try the Server menu.")).finally(() => setOpen(false));
+    void bridge.menu().catch(() => setError(t("settings.thisComputer.menuError"))).finally(() => setOpen(false));
   };
   return { available: Boolean(bridge), current, open, error, openMenu };
 }
@@ -33,15 +33,15 @@ export function useDesktopWorkspace() {
 export function ThisComputerSettings() {
   const workspace = useDesktopWorkspace();
   if (!workspace.available) return null;
-  const name = workspace.current?.name ?? "This computer";
+  const name = workspace.current?.name ?? t("settings.thisComputer.title");
   const Icon = workspace.current?.local === false ? Cloud : Laptop;
   return (
     <div className="rounded-xl border border-hairline/40 px-3 py-2.5">
-      <div className="text-[13px] font-medium text-ink">This computer</div>
-      <p className="mt-1 text-[12px] text-ink-secondary">{workspace.current?.origin || "Local bots and conversations"}</p>
+      <div className="text-[13px] font-medium text-ink">{t("settings.thisComputer.title")}</div>
+      <p className="mt-1 text-[12px] text-ink-secondary">{workspace.current?.origin || t("settings.thisComputer.local")}</p>
       <button
         type="button"
-        aria-label={`Switch server: ${name}`}
+        aria-label={t("settings.thisComputer.switch", { name })}
         aria-haspopup="menu"
         aria-expanded={workspace.open}
         onClick={workspace.openMenu}
@@ -86,12 +86,12 @@ export function DesktopWorkspaceSwitcher({ compact = false, inline = false, clou
     </div>;
   }
   // Main names the saved server; until it answers, a Cloud home is still My Cloud.
-  const name = current?.name ?? (cloudHome ? t("cloudSetup.myCloud") : "Servers");
+  const name = current?.name ?? (cloudHome ? t("cloudSetup.myCloud") : t("settings.servers.unnamed"));
   const Icon = current?.local === false || (cloudHome && !current) ? Cloud : Laptop;
   const shown = cloudHome ? `${name} · ${t("cloudSetup.alwaysOn")}` : name;
   const title = current?.origin ? `${shown} · ${current.origin}` : shown;
   if (inline) return <div data-workspace-switcher="inline" className="flex min-w-0">
-    <button type="button" aria-label={`Switch server: ${shown}`} aria-haspopup="menu" aria-expanded={open} data-cloud-home-indicator={cloudHome || undefined}
+    <button type="button" aria-label={t("settings.thisComputer.switch", { name: shown })} aria-haspopup="menu" aria-expanded={open} data-cloud-home-indicator={cloudHome || undefined}
       title={title} onClick={openMenu}
       className="flex h-7 min-w-0 max-w-full items-center gap-1.5 overflow-hidden rounded-md px-1.5 text-left text-[12.5px] font-medium text-ink hover:bg-control focus-visible:outline focus-visible:outline-accent"
       style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}>
@@ -102,7 +102,7 @@ export function DesktopWorkspaceSwitcher({ compact = false, inline = false, clou
     {error && <p role="alert" className="absolute right-2 top-full z-40 mt-1 w-56 max-w-[calc(100%-1rem)] rounded-md bg-menu px-2 py-1 text-[11px] text-danger shadow-lg">{error}</p>}
   </div>;
   return <div className={cn("py-1.5", compact ? "px-2" : "px-3")}>
-    <button type="button" aria-label={`Switch server: ${shown}`} aria-haspopup="menu" aria-expanded={open} data-cloud-home-indicator={cloudHome || undefined}
+    <button type="button" aria-label={t("settings.thisComputer.switch", { name: shown })} aria-haspopup="menu" aria-expanded={open} data-cloud-home-indicator={cloudHome || undefined}
       title={title}
       onClick={openMenu}
       className={cn("flex w-full items-center gap-2 rounded-lg py-2 text-left text-[13px] font-medium text-ink hover:bg-control focus-visible:outline focus-visible:outline-accent", compact ? "justify-center px-1" : "px-2")}

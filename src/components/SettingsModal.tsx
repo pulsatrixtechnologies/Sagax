@@ -160,10 +160,10 @@ export function sectionMatches(section: (typeof SECTIONS)[number], query: string
 function profilePhoto(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
-    reader.onerror = () => reject(reader.error ?? new Error("Could not read the image"));
+    reader.onerror = () => reject(reader.error ?? new Error(t("settings.profile.photoReadError")));
     reader.onload = () => {
       const image = new Image();
-      image.onerror = () => reject(new Error("Could not read the image"));
+      image.onerror = () => reject(new Error(t("settings.profile.photoReadError")));
       image.onload = () => {
         const size = 256;
         const canvas = document.createElement("canvas");
@@ -171,7 +171,7 @@ function profilePhoto(file: File): Promise<string> {
         canvas.height = size;
         const ctx = canvas.getContext("2d");
         if (!ctx) {
-          reject(new Error("Could not read the image"));
+          reject(new Error(t("settings.profile.photoReadError")));
           return;
         }
         const scale = Math.max(size / image.width, size / image.height);
@@ -237,7 +237,7 @@ function OperatorProfileFields() {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ profile }),
     })
-      .then((r) => { if (!r.ok) throw new Error("Profile save failed"); return r.json(); })
+      .then((r) => { if (!r.ok) throw new Error(t("settings.profile.photoSaveError")); return r.json(); })
       .then((config: ConfigStatus) => {
         if (config.profile) dispatch({ type: "profileSaved", profile: config.profile });
       })
@@ -258,7 +258,7 @@ function OperatorProfileFields() {
         <div className="relative">
           <button
             type="button"
-            aria-label="Change avatar"
+            aria-label={t("settings.profile.changeAvatar")}
             aria-expanded={menuOpen}
             onClick={() => setMenuOpen((open) => !open)}
             className="flex size-9 items-center justify-center overflow-hidden rounded-full bg-raised text-[13px] font-semibold text-ink"
@@ -267,11 +267,11 @@ function OperatorProfileFields() {
           </button>
           {menuOpen && (
             <div className="absolute left-0 top-full z-10 mt-2 flex min-w-[200px] flex-col gap-0.5 rounded-xl border-[0.5px] border-border bg-elevated p-1.5 text-[13px] leading-[18px]">
-              <button type="button" onClick={() => { setMenuOpen(false); fileRef.current?.click(); }} className="block w-full rounded-md px-2 py-1.5 text-left text-[13px] leading-[18px] text-ink hover:bg-hover">Upload photo</button>
-              {avatarUrl && <button type="button" onClick={() => { setAvatarUrl(""); setMenuOpen(false); save({ avatarUrl: "" }); }} className="block w-full rounded-md px-2 py-1.5 text-left text-[13px] leading-[18px] text-ink hover:bg-hover">Remove photo</button>}
+              <button type="button" onClick={() => { setMenuOpen(false); fileRef.current?.click(); }} className="block w-full rounded-md px-2 py-1.5 text-left text-[13px] leading-[18px] text-ink hover:bg-hover">{t("settings.profile.uploadPhoto")}</button>
+              {avatarUrl && <button type="button" onClick={() => { setAvatarUrl(""); setMenuOpen(false); save({ avatarUrl: "" }); }} className="block w-full rounded-md px-2 py-1.5 text-left text-[13px] leading-[18px] text-ink hover:bg-hover">{t("settings.profile.removePhoto")}</button>}
             </div>
           )}
-          <input ref={fileRef} type="file" accept="image/*" className="hidden" aria-label="Upload avatar" onChange={(event) => { choosePhoto(event.target.files?.[0]); event.target.value = ""; }} />
+          <input ref={fileRef} type="file" accept="image/*" className="hidden" aria-label={t("settings.profile.uploadAvatar")} onChange={(event) => { choosePhoto(event.target.files?.[0]); event.target.value = ""; }} />
         </div>
         <div className="min-w-0 flex-1">
           <input aria-label={t("settings.profile.name")} value={name} onChange={(e) => setName(e.target.value)} onBlur={() => save()} placeholder={t("settings.profile.name")} className="w-full bg-transparent text-[14px] font-semibold text-ink placeholder:text-ink-secondary focus:outline-none" />

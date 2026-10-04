@@ -22,7 +22,7 @@ import { cn } from "@/lib/cn";
 import { SettingsText } from "./SettingsLink";
 import { Switch } from "./SettingsPrimitives";
 
-const SAMPLE = "Morning. Overnight the tests went green, and I left two notes for you in the thread.";
+
 
 export function VoiceSettings({
   bot,
@@ -49,12 +49,12 @@ export function VoiceSettings({
   // the host engine from here.
   const provider = tts?.provider ?? "elevenlabs";
   const hostProviderLabel = provider === "fish"
-    ? "Host · Fish Audio"
+    ? t("botPanel.voice.hostFish")
     : provider === "elevenlabs"
-      ? "Host · ElevenLabs"
+      ? t("botPanel.voice.hostEleven")
       : provider === "chatterbox"
-        ? "Host · Chatterbox"
-        : provider === "xai" ? t("voice.grok.host") : "Host voice";
+        ? t("botPanel.voice.hostChatter")
+        : provider === "xai" ? t("voice.grok.host") : t("botPanel.voice.hostVoice");
   const hostConfigured = Boolean(tts?.configured);
   const configured = usesLocalSystem || hostConfigured;
 
@@ -110,7 +110,7 @@ export function VoiceSettings({
 
   return (
     <div className="rounded-xl bg-card p-4">
-      <div className="text-[15px] font-medium text-ink">Voice</div>
+      <div className="text-[15px] font-medium text-ink">{t("botPanel.voice.voice")}</div>
       <div className="mt-0.5 text-[13px] text-ink-secondary">
         {localMacClient
           ? t("voice.bot.macIntro")
@@ -131,10 +131,10 @@ export function VoiceSettings({
 
       {localMacClient && (
         <div className="mt-4">
-          <div className="mb-2 text-[13px] text-ink-secondary">Voice output on this Mac</div>
-          <div className="inline-flex rounded-xl bg-inset p-1" role="radiogroup" aria-label="Voice output on this Mac">
+          <div className="mb-2 text-[13px] text-ink-secondary">{t("botPanel.voice.mac")}</div>
+          <div className="inline-flex rounded-xl bg-inset p-1" role="radiogroup" aria-label={t("botPanel.voice.mac")}>
             {([
-              { value: "system", label: "Built-in Mac voices", available: true },
+              { value: "system", label: t("botPanel.voice.macVoices"), available: true },
               { value: "host", label: hostProviderLabel, available: hostConfigured },
             ] as const).map((option) => (
               <button
@@ -143,7 +143,7 @@ export function VoiceSettings({
                 role="radio"
                 aria-checked={deviceProvider === option.value}
                 disabled={!option.available}
-                title={!option.available ? "Voice output is not configured on the host" : undefined}
+                title={!option.available ? t("botPanel.voice.hostUnsetTitle") : undefined}
                 onClick={() => chooseDeviceProvider(option.value)}
                 className={cn(
                   "rounded-lg px-3.5 py-1.5 text-[12.5px] transition-colors disabled:opacity-50",
@@ -159,26 +159,26 @@ export function VoiceSettings({
 
       {configured && (
         <div className="mt-4">
-          <div className="mb-1.5 text-[13px] text-ink-secondary">Voice</div>
+          <div className="mb-1.5 text-[13px] text-ink-secondary">{t("botPanel.voice.voice")}</div>
           <div className="flex gap-2">
             <select
               value={selectedVoice}
               onChange={(e) => chooseVoice(e.target.value)}
-              aria-label={`${bot.name}'s voice`}
+              aria-label={t("botPanel.voice.whose", { name: bot.name })}
               data-voice-picker
               className="w-full rounded-lg border border-hairline/40 bg-inset px-3 py-2 text-[13px] text-ink focus:outline-none"
             >
               <option value="">
                 {loadingVoices
-                  ? "Loading voices…"
+                  ? t("botPanel.voice.loading")
                   : usesLocalSystem
-                    ? "Mac system default"
+                    ? t("botPanel.voice.macDefault")
                     : tts.voice
-                      ? "Installation default"
-                      : "Pick a voice"}
+                      ? t("botPanel.voice.installDefault")
+                      : t("botPanel.voice.pick")}
               </option>
               {selectedVoice && !voices.some((voice) => voice.id === selectedVoice) && (
-                <option value={selectedVoice}>Current agent voice</option>
+                <option value={selectedVoice}>{t("botPanel.voice.current")}</option>
               )}
               {voices.map((v) => (
                 <option key={v.id} value={v.id}>
@@ -189,13 +189,13 @@ export function VoiceSettings({
             </select>
             <button
               type="button"
-              onClick={() => void speaker.speak(SAMPLE, { voiceId: bot.voice, botId: bot.id })}
+              onClick={() => void speaker.speak(t("botPanel.voice.sample"), { voiceId: bot.voice, botId: bot.id })}
               disabled={!ready}
-              title={ready ? "Hear this voice" : "Pick a voice first"}
-              aria-label="Hear this voice"
+              title={ready ? t("botPanel.voice.hear") : t("botPanel.voice.pickFirst")}
+              aria-label={t("botPanel.voice.hear")}
               className="flex w-[72px] shrink-0 items-center justify-center gap-1.5 rounded-lg bg-control py-2 text-[13px] text-ink hover:bg-raised-hover disabled:cursor-not-allowed disabled:opacity-50"
             >
-              <Volume2 size={14} /> Try
+              <Volume2 size={14} /> {t("botPanel.voice.try")}
             </button>
           </div>
         </div>
@@ -203,28 +203,28 @@ export function VoiceSettings({
 
       <div className="mt-4 flex items-center justify-between gap-4 border-t border-hairline/40 pt-4">
         <div>
-          <div className="text-[13px] font-medium text-ink">Read replies aloud</div>
+          <div className="text-[13px] font-medium text-ink">{t("botPanel.voice.read")}</div>
           <div className="mt-0.5 text-[11.5px] leading-relaxed text-ink-secondary">
-            Speak this agent's answers as they arrive, even from another chat.
+            {t("botPanel.voice.readHelp")}
           </div>
         </div>
         <Switch
           checked={Boolean(bot.speakReplies)}
-          aria-label="Read this bot's replies aloud"
+          aria-label={t("botPanel.voice.readAria")}
           onClick={() => onPatch({ speakReplies: !bot.speakReplies })}
         />
       </div>
 
       <div className="mt-4 flex items-center justify-between gap-4">
         <div>
-          <div className="text-[13px] font-medium text-ink">Voice notes</div>
+          <div className="text-[13px] font-medium text-ink">{t("botPanel.voice.notes")}</div>
           <div className="mt-0.5 text-[11.5px] leading-relaxed text-ink-secondary">
-            Let this agent send spoken notes; on unless switched off here.
+            {t("botPanel.voice.notesHelp")}
           </div>
         </div>
         <Switch
           checked={bot.voiceNotes !== false}
-          aria-label="Let this bot send voice notes"
+          aria-label={t("botPanel.voice.notesAria")}
           onClick={() => onPatch({ voiceNotes: bot.voiceNotes === false })}
         />
       </div>

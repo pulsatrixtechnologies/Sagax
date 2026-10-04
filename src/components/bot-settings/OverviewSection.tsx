@@ -6,6 +6,7 @@
 import { useState } from "react";
 
 import type { BotOverview } from "@/lib/bot-overview-types";
+import { t } from "@/lib/i18n";
 import { whenLabel } from "@/lib/schedule-label";
 import type { BotSettingsSection } from "@/state/store";
 import { PromptPreview, type PromptPreviewData } from "./PromptPreview";
@@ -26,14 +27,14 @@ export function OverviewSection({
   const [promptOpen, setPromptOpen] = useState(false);
 
   if (!overview) {
-    return <div className="text-[13px] text-ink-secondary">Loading…</div>;
+    return <div className="text-[13px] text-ink-secondary">{t("botPanel.loading")}</div>;
   }
 
   return (
     <div className="flex flex-col gap-4">
       {refreshError && (
         <div className="rounded-lg bg-inset px-3 py-2 text-[12.5px] text-ink-secondary">
-          Couldn’t refresh — showing the last loaded overview.
+          {t("botPanel.overview.refresh")}
         </div>
       )}
 
@@ -49,16 +50,16 @@ export function OverviewSection({
               onClick={() => onOpen("soul")}
               className="mt-1.5 rounded-md text-[12px] font-medium text-accent-text hover:underline"
             >
-              Read all
+              {t("botPanel.overview.readAll")}
             </button>
           </div>
         )}
       </div>
 
       <div className="rounded-xl bg-hover p-3">
-        <div className="text-[13px] font-medium text-ink">Does</div>
+        <div className="text-[13px] font-medium text-ink">{t("botPanel.overview.does")}</div>
         {overview.does.length === 0 ? (
-          <p className="mt-2 text-[13px] text-ink-secondary">Nothing scheduled or learned yet.</p>
+          <p className="mt-2 text-[13px] text-ink-secondary">{t("botPanel.overview.nothingScheduled")}</p>
         ) : (
           <ul className="mt-2 flex flex-col gap-1.5 text-[13px] leading-relaxed text-ink">
             {overview.does.map((line, i) => (
@@ -69,9 +70,9 @@ export function OverviewSection({
       </div>
 
       <div className="rounded-xl bg-hover p-3">
-        <div className="text-[13px] font-medium text-ink">Can reach</div>
+        <div className="text-[13px] font-medium text-ink">{t("botPanel.overview.reach")}</div>
         {overview.reaches.length === 0 ? (
-          <p className="mt-2 text-[13px] text-ink-secondary">Nothing yet.</p>
+          <p className="mt-2 text-[13px] text-ink-secondary">{t("botPanel.overview.nothingYet")}</p>
         ) : (
           <ul className="mt-2 flex flex-col gap-1.5 text-[13px] leading-relaxed text-ink">
             {overview.reaches.map((line, i) => (
@@ -82,7 +83,7 @@ export function OverviewSection({
       </div>
 
       <div className="rounded-xl bg-hover p-3">
-        <div className="text-[13px] font-medium text-ink">Won&rsquo;t</div>
+        <div className="text-[13px] font-medium text-ink">{t("botPanel.overview.wont")}</div>
         <ul className="mt-2 flex flex-col gap-1.5 text-[13px] leading-relaxed text-ink">
           {overview.wont.map((line, i) => (
             <li key={i}>{line}</li>
@@ -99,17 +100,17 @@ export function OverviewSection({
 
       <div className="rounded-xl bg-hover p-3">
         <div className="flex items-baseline justify-between gap-3">
-          <div className="text-[13px] font-medium text-ink">Recent changes</div>
+          <div className="text-[13px] font-medium text-ink">{t("botPanel.overview.recent")}</div>
           <button
             type="button"
             onClick={() => onOpen("history")}
             className="shrink-0 text-[12px] text-ink-secondary hover:text-ink"
           >
-            View all →
+            {t("botPanel.overview.viewAll")}
           </button>
         </div>
         {overview.recent.length === 0 ? (
-          <p className="mt-2 text-[13px] text-ink-secondary">Nothing changed recently.</p>
+          <p className="mt-2 text-[13px] text-ink-secondary">{t("botPanel.overview.nothingChanged")}</p>
         ) : (
           <ul className="mt-2 flex flex-col gap-1.5 text-[13px] text-ink">
             {overview.recent.map((entry, i) => (

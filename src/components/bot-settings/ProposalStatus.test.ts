@@ -159,7 +159,7 @@ describe("Edit Profile boundary markers in sections", () => {
       'Where this bot runs its shell and file tools.</div><div class="mt-1 text-[11.5px] leading-snug text-ink-secondary">The Primary Bot can propose this',
     );
     expect(markup).toContain(
-      'Browser is the built-in browser tab only; no desktop. Now: Auto.</div><div class="mt-1 text-[11.5px] leading-snug text-ink-secondary">Owner-only',
+      'This server has no browser engine.</div><div class="mt-1 text-[11.5px] leading-snug text-ink-secondary">Owner-only',
     );
     expect(markup).toContain("Inbound triggers wired to this bot.");
   });

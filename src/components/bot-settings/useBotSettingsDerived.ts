@@ -12,6 +12,7 @@ import { useStore, type Bot } from "@/state/store";
 import { approvalModeFor } from "../../../shared/approval-mode";
 import { connectorGrantsState, type ConnectorGrantsState } from "@/lib/connector-grants";
 import { canEditBotField } from "@/lib/bot-capabilities";
+import { t } from "@/lib/i18n";
 import { useBotEditor } from "./BotEditorContext";
 
 export type BotPatch = Partial<
@@ -97,9 +98,9 @@ export function useBotSettingsDerived(bot: Bot) {
   const browserDisabledReason = !desktopBrowser
     ? browserUnavailableReason(state.config)
     : !browserFeature
-      ? "The built-in browser is switched off under App Settings → Computers"
-      : "This model cannot use the built-in browser";
-  const sectionName = bot.section?.trim() || "General";
+      ? t("botPanel.browserSwitchedOff")
+      : t("botPanel.access.browserDenied");
+  const sectionName = bot.section?.trim() || t("sidebar.section.general");
   // One Primary Bot per person: the one this bot would take the role from.
   const owner = bot.ownerUserId?.trim().toLowerCase() ?? "";
   const currentChief = state.bots.find(
