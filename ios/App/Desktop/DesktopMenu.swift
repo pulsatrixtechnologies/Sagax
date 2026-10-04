@@ -389,7 +389,7 @@ struct DesktopSidebarMenus {
             children.append(DesktopMenuEntry(id: "move.new", title: String(localized: "New section…"), icon: .folderPlus, kind: .action {
                 model.sectionActions.startNew(assigning: key)
             }))
-            return DesktopMenuEntry(id: "move", title: title, icon: .folderInput, kind: .submenu(children))
+            return DesktopMenuEntry(id: "move", title: title, icon: .folderPlus, kind: .submenu(children))
         }
         guard session.canAdminister || gate.scope == .sidecar else { return nil }
         let current = bot.section?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
@@ -403,7 +403,7 @@ struct DesktopSidebarMenus {
                 Task { _ = await session.setServerSectionBots(current, add: [], remove: [bot.id]) }
             }))
         }
-        return DesktopMenuEntry(id: "move", title: title, icon: .folderInput, kind: .submenu(children))
+        return DesktopMenuEntry(id: "move", title: title, icon: .folderPlus, kind: .submenu(children))
     }
 
     // MARK: Room row (RoomContextMenu)
@@ -438,7 +438,7 @@ struct DesktopSidebarMenus {
                     model.sectionActions.error = prefs.assignPersonal(session, key: key, to: "")
                 }))
             }
-            out.append(DesktopMenuEntry(id: "move", title: String(localized: "Move to"), icon: .folderInput, kind: .submenu(children)))
+            out.append(DesktopMenuEntry(id: "move", title: String(localized: "Move to"), icon: .folderPlus, kind: .submenu(children)))
         } else if !layout.personal, access.canMoveSection {
             let current = room.section?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
             var children = RoomSections.names(session.state).filter { $0 != current }.map { name in
@@ -453,7 +453,7 @@ struct DesktopSidebarMenus {
                     actions.move(room, to: "", session)
                 }))
             }
-            out.append(DesktopMenuEntry(id: "move", title: String(localized: "Move to"), icon: .folderInput, kind: .submenu(children)))
+            out.append(DesktopMenuEntry(id: "move", title: String(localized: "Move to"), icon: .folderPlus, kind: .submenu(children)))
         }
         out.append(DesktopMenuEntry(id: "copy-id", title: String(localized: "Copy conversation ID"), icon: .clipboardCopy, kind: .action {
             actions.copyConversationId(room)

@@ -97,7 +97,8 @@ struct DesktopPinnedTile: View {
                         .lineLimit(1)
                         .frame(width: 72, height: 16)
                     if let title = chat.desktopTitle {
-                        DesktopTitleChip(text: title, size: 10, maxWidth: 72)
+                        DesktopTitleChip(text: title, size: 10, maxWidth: 72, alignment: .center)
+                            .offset(y: -0.5)
                     }
                 }
             }
@@ -133,6 +134,8 @@ struct DesktopTitleChip: View {
     let text: String
     var size: CGFloat = 11
     var maxWidth: CGFloat = 79
+    /// A tile centres its badge; a row's follows the name.
+    var alignment: Alignment = .leading
 
     var body: some View {
         Text(verbatim: text)
@@ -144,7 +147,7 @@ struct DesktopTitleChip: View {
             .frame(height: 18)
             .background(theme.sidebarHover, in: RoundedRectangle(cornerRadius: 5, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 5, style: .continuous).strokeBorder(theme.sidebarHairline, lineWidth: 1))
-            .frame(maxWidth: maxWidth, alignment: .leading)
+            .frame(maxWidth: maxWidth, alignment: alignment)
             .fixedSize(horizontal: false, vertical: true)
     }
 }
@@ -327,6 +330,8 @@ struct DesktopSidebarRow: View {
                 .font(theme.font(13))
                 .foregroundStyle(theme.sidebarInkSecondary)
                 .lineLimit(1)
+                // CoreText sets 13/18 half a point lower than Chrome
+                .offset(y: -0.5)
         }
     }
 

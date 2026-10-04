@@ -135,6 +135,57 @@ struct DesktopPluginsSheet: View {
     }
 }
 
+/// Templates (the team library) until its desktop modal lands: the catalog,
+/// read-only; installing a team runs on the computer.
+struct DesktopTemplatesSheet: View {
+    @EnvironmentObject private var session: Session
+    let close: () -> Void
+    @State private var catalog: TeamLibraryCatalog?
+    @State private var failure: String?
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    Text("Teams of bots ready to install. Install one from Sagax on your computer.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+                if let catalog {
+                    ForEach(catalog.teams) { team in
+                        VStack(alignment: .leading, spacing: 4) {
+                            HStack {
+                                Text(verbatim: team.name).font(.body.weight(.medium))
+                                Spacer(minLength: 8)
+                                if let members = team.members {
+                                    Text("\(members) bots").font(.footnote).foregroundStyle(.secondary)
+                                }
+                            }
+                            Text(verbatim: team.summary).font(.footnote).foregroundStyle(.secondary)
+                        }
+                        .padding(.vertical, 2)
+                        .accessibilityElement(children: .combine)
+                    }
+                } else if let failure {
+                    Text(verbatim: failure).foregroundStyle(.secondary)
+                } else {
+                    ProgressView()
+                }
+            }
+            .navigationTitle("Templates")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) { Button("Done", action: close) }
+            }
+            .task {
+                guard let client = session.profileClient else { return }
+                do { catalog = try await client.teamLibraryCatalog() } catch { failure = error.localizedDescription }
+            }
+        }
+        .accessibilityIdentifier("desktop-templates")
+    }
+}
+
 /// The keyboard shortcuts (`KeyboardShortcutsDialog`) the iPad answers.
 struct DesktopShortcutsSheet: View {
     let close: () -> Void

@@ -71,7 +71,7 @@ enum DesktopShellRules {
 @MainActor
 final class DesktopShellModel: ObservableObject {
     enum Modal: String, Identifiable {
-        case settings, search, newBot, newGroup, teamMap, automations, plugins, about, shortcuts
+        case settings, search, newBot, newGroup, teamMap, automations, plugins, templates, about, shortcuts
         var id: String { rawValue }
     }
 
@@ -479,6 +479,8 @@ private struct DesktopShellPresenter: ViewModifier {
             AutomationsSheet()
         case .plugins:
             DesktopPluginsSheet()
+        case .templates:
+            DesktopTemplatesSheet { model.modal = nil }
         case .about:
             NavigationStack { AboutPage() }
         case .shortcuts:

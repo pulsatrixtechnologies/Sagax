@@ -92,6 +92,7 @@ struct DesktopSidebarHead: View {
                     .tracking(-0.16)
                     .foregroundStyle(theme.sidebarInk)
                     .lineLimit(1)
+                    .offset(y: -0.5)
                     .padding(.leading, 8)
                 Spacer(minLength: 0)
                 DesktopNewButton()
@@ -186,10 +187,13 @@ struct DesktopSearchField: View {
                     .font(theme.font(13))
                     .foregroundStyle(theme.sidebarInkSecondary)
                     .lineLimit(1)
+                    .offset(y: -0.5)
                     .padding(.leading, 8)
                 Spacer(minLength: 0)
-                DesktopKeycap(text: "⌘")
-                DesktopKeycap(text: "K").padding(.leading, 2)
+                // the keycaps' widths in the dump (the glyphs fall back to
+                // another face in both renderers)
+                DesktopKeycap(text: "⌘").frame(width: 20)
+                DesktopKeycap(text: "K").frame(width: 17).padding(.leading, 2)
                     .padding(.trailing, 6)
             }
             .frame(height: 30)
@@ -611,7 +615,7 @@ struct DesktopHiddenEntries: View {
 
 // MARK: - Footer
 
-/// The places (Team map, Automations, Connected apps: 36 pt rows, a 20 pt
+/// The places (Team map, Automations, Connected apps, Templates: 36 pt rows, a 20 pt
 /// icon at x 16, 13/20 at x 46), the hairline, and the account row (the
 /// initials 28, the name 13/20 medium, the achievement points when shown)
 /// opening the account menu. The rail keeps the same rows as icons.
@@ -630,10 +634,13 @@ struct DesktopSidebarFooter: View {
             if session.connection != nil {
                 place("Automations", icon: .calendarDays, id: "automations", icons: icons) { model.modal = .automations }
             }
-            // The remote client keeps Connected apps; a client session may
-            // not reach it. (Templates waits for its modal: nothing to open.)
+            // The remote client keeps Connected apps and hides Templates; a
+            // client session reaches neither.
             if session.connection != nil, session.surfaceGate.allows(.connectedApps) {
                 place("Connected apps", icon: .puzzle, id: "connected-apps", icons: icons) { model.modal = .plugins }
+            }
+            if session.connection != nil, session.surfaceGate.allows(.templates) {
+                place("Templates", icon: .library, id: "templates", icons: icons) { model.modal = .templates }
             }
             Rectangle().fill(theme.sidebarHairline).frame(height: 1)
                 .padding(.horizontal, 8)
@@ -663,6 +670,7 @@ struct DesktopSidebarFooter: View {
                             .font(theme.font(13, .medium))
                             .foregroundStyle(theme.sidebarInk)
                             .lineLimit(1)
+                            .offset(y: -0.5)
                         if let snapshot = achievements.snapshot, snapshot.settings.showPoints {
                             Label {
                                 Text("\(snapshot.points.formatted()) points")
@@ -737,6 +745,7 @@ struct DesktopPlaceRow: View {
                     Text(title)
                         .font(theme.font(13))
                         .lineLimit(1)
+                        .offset(y: -0.5)
                     Spacer(minLength: 0)
                 }
             }
