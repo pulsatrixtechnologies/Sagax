@@ -307,4 +307,17 @@ final class SidebarPrefsTests: XCTestCase {
         XCTAssertFalse(SurfaceGate(scope: .serverClient, organization: true).allows(.sectionManagement))
         XCTAssertFalse(SurfaceGate(scope: .sidecar).allows(.sectionManagement))
     }
+
+    /// The iPad sidebar's section drag (DD1): before or after the target,
+    /// as `placeSection` in Sidebar.tsx.
+    func testPlacesADraggedSectionBeforeOrAfterItsTarget() {
+        let ids = ["builtin:general", "section:A", "section:B", "section:C"]
+        XCTAssertEqual(SidebarSectionID.place(ids, "section:C", at: "section:A", after: false),
+                       ["builtin:general", "section:C", "section:A", "section:B"])
+        XCTAssertEqual(SidebarSectionID.place(ids, "section:A", at: "section:C", after: true),
+                       ["builtin:general", "section:B", "section:C", "section:A"])
+        XCTAssertEqual(SidebarSectionID.place(ids, "section:A", at: "section:B", after: false), ids)
+        XCTAssertEqual(SidebarSectionID.place(ids, "section:A", at: "section:A", after: true), ids)
+        XCTAssertEqual(SidebarSectionID.place(ids, "section:Z", at: "section:A", after: true), ids)
+    }
 }

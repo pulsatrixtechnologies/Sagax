@@ -17,6 +17,11 @@ enum PrefKey {
     /// Per device, like the desktop's sidebar density: a phone and a laptop
     /// have different room for a list.
     static let rosterDensity = "companion.prefs.rosterDensity"
+    /// The iPad desktop sidebar's density (comfortable, compact, icons),
+    /// per device as on the desktop (`openmausbot.sidebarDensity`).
+    static let desktopSidebarDensity = "companion.prefs.desktopSidebarDensity"
+    /// The density the rail returns to when it expands again.
+    static let desktopSidebarExpandedDensity = "companion.prefs.desktopSidebarExpandedDensity"
 }
 
 /// The set of chats whose island intro has already played.

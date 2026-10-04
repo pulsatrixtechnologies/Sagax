@@ -21,7 +21,9 @@
 # then be made at the same sizes:
 #   node ios/parity/desktop/capture-desktop.mjs --viewport 1376x1032,1032x1376,1210x834,834x1210
 #
-# Each device is a dedicated simulator ("parity-ipad13", "parity-ipad11"),
+# Each device is a dedicated simulator ("parity-ipad13", "parity-ipad11";
+# PARITY_SIM_PREFIX=i2 names them "i2-ipad13", "i2-ipad11" so two worktrees
+# can capture at once),
 # dark, status bar pinned, deleted at the end unless --keep-sims. The app is
 # the Debug simulator build of ios/parity/capture.sh (unsigned; the parity
 # launch keeps its bearer in memory), built for testing: the orientation is
@@ -39,6 +41,8 @@ OUT="$HERE/out"
 BUILD="$PARITY/build"
 BUNDLE_ID="ca.pulsatrix.sagax"
 WAIT="${PARITY_WAIT:-6}"
+SIM13="${PARITY_SIM_PREFIX:-parity}-ipad13"
+SIM11="${PARITY_SIM_PREFIX:-parity}-ipad11"
 
 SKIP_BUILD=0
 SKINS=0
@@ -53,7 +57,7 @@ while [ $# -gt 0 ]; do
     --keep-sims) KEEP_SIMS=1 ;;
     --device) DEVICE="$2"; shift ;;
     --viewport) IFS=, read -r -a VIEWPORTS <<< "$2"; shift ;;
-    -h|--help) sed -n '2,31p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,33p' "$0"; exit 0 ;;
     *) SCREENS+=("$1") ;;
   esac
   shift
@@ -85,10 +89,10 @@ case "$DEVICE" in
 esac
 # viewport -> device name, simulator type, orientation
 PLAN=(
-  "$V13L parity-ipad13 $DEV13_TYPE landscape"
-  "$V13P parity-ipad13 $DEV13_TYPE portrait"
-  "$V11L parity-ipad11 $DEV11_TYPE landscape"
-  "$V11P parity-ipad11 $DEV11_TYPE portrait"
+  "$V13L $SIM13 $DEV13_TYPE landscape"
+  "$V13P $SIM13 $DEV13_TYPE portrait"
+  "$V11L $SIM11 $DEV11_TYPE landscape"
+  "$V11P $SIM11 $DEV11_TYPE portrait"
 )
 
 # ── build ────────────────────────────────────────────────────────────────
@@ -154,7 +158,7 @@ rm -f "$FIXTURE_OUT/session.json"
 PARITY_OUT="$FIXTURE_OUT" node "$PARITY/fixture-server.mjs" > "$FIXTURE_OUT/fixture.log" 2>&1 &
 SERVER_PID=$!
 cleanup() {
-  for name in parity-ipad13 parity-ipad11; do
+  for name in "$SIM13" "$SIM11"; do
     local udid
     udid="$(sim_udid "$name")"
     [ -n "$udid" ] || continue
