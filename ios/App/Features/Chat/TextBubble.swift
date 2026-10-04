@@ -16,6 +16,11 @@ struct TextBubble: View {
     @Environment(\.desktopBubbleCap) private var bubbleCap
     /// A long line of yours, opened with Show full message (MS19).
     @State private var expanded = false
+    /// iPad desktop shell: the desktop's text, bubble and hover row.
+    @Environment(\.desktopChatText) private var desktop
+    @Environment(\.desktopWideCap) private var wideCap
+    @Environment(\.desktopMessageActions) private var hoverActions
+    @State private var hovering = false
 
     private var attachedContent: AttachedMessageContent {
         AttachedMessageContent.parse(message.text ?? "")
@@ -48,6 +53,10 @@ struct TextBubble: View {
         // a room the name line says who spoke. The bubble sits at the edge.
         HStack(alignment: .bottom, spacing: 0) {
             if mine { Spacer(minLength: Theme.Chat.bubbleTrailingGap) }
+            if mine, let hoverActions, desktop != nil {
+                DesktopMessageHoverStrip(model: hoverActions, mine: true, hovering: hovering)
+                    .padding(.trailing, 6)
+            }
 
             VStack(alignment: .leading, spacing: 4) {
                 if let speaker, !mine {
@@ -69,11 +78,18 @@ struct TextBubble: View {
                 ForEach(message.voiceNotes) { note in
                     VoiceNoteBubble(note: note, tint: MausPalette.color(chat.color))
                 }
-                ForEach(message.generatedImages, id: \.path) { attachment in
-                    TranscriptAttachmentView(
-                        attachment: attachment, threadId: chat.threadId,
-                        messageId: message.id, foreground: mine ? BubbleColor.mineText : BubbleColor.theirsText
-                    )
+                if desktop != nil {
+                    if !mine, !message.generatedImages.isEmpty || !message.fileAttachments.isEmpty {
+                        DesktopAttachmentGallery(images: message.generatedImages, files: message.fileAttachments,
+                                                 threadId: chat.threadId, messageId: message.id)
+                    }
+                } else {
+                    ForEach(message.generatedImages, id: \.path) { attachment in
+                        TranscriptAttachmentView(
+                            attachment: attachment, threadId: chat.threadId,
+                            messageId: message.id, foreground: mine ? BubbleColor.mineText : BubbleColor.theirsText
+                        )
+                    }
                 }
                 // Bots get markdown, you do not — the same split the desktop
                 // makes. Markdown you did not intend is worse than markdown
@@ -87,19 +103,28 @@ struct TextBubble: View {
                     // Quotes this message carries (CO8): its own words, then
                     // the citations as chips.
                     let cited = Citations.split(shared.text)
-                    ForEach(Array(shared.attachments.enumerated()), id: \.offset) { _, attachment in
-                        TranscriptAttachmentView(
-                            attachment: attachment,
-                            threadId: chat.threadId,
-                            messageId: message.id
-                        )
+                    if desktop != nil {
+                        if !shared.attachments.isEmpty {
+                            DesktopAttachmentGallery(images: shared.attachments.filter { $0.kind == .image },
+                                                     files: shared.attachments.filter { $0.kind == .file },
+                                                     threadId: chat.threadId, messageId: message.id)
+                        }
+                    } else {
+                        ForEach(Array(shared.attachments.enumerated()), id: \.offset) { _, attachment in
+                            TranscriptAttachmentView(
+                                attachment: attachment,
+                                threadId: chat.threadId,
+                                messageId: message.id
+                            )
+                        }
                     }
                     if !cited.display.isEmpty {
                         let collapsible = MessageCollapse.isLong(cited.display)
                         Text(MentionTint.attributed(cited.display, peers: context.mentionPeers, everyone: context.mentionEveryone))
-                            .font(Theme.Font.body)
-                            .lineSpacing(Theme.bodyLineSpacing)
-                            .foregroundStyle(BubbleColor.mineText)
+                            .font(desktop?.font(DesktopChatMetrics.textSize) ?? Theme.Font.body)
+                            .lineSpacing(desktop.map(DesktopChatMetrics.lineSpacing) ?? Theme.bodyLineSpacing)
+                            .modifier(DesktopLineBox(theme: desktop))
+                            .foregroundStyle(desktop?.bubbleUserInk ?? BubbleColor.mineText)
                             .textSelection(.enabled)
                             .fixedSize(horizontal: false, vertical: true)
                             .modifier(CollapsedText(collapsed: collapsible && !expanded))
@@ -144,28 +169,55 @@ struct TextBubble: View {
                     ) { url in
                         openLink(url, message)
                     }
-                        .foregroundStyle(BubbleColor.theirsText)
+                        .foregroundStyle(desktop?.ink ?? BubbleColor.theirsText)
                         .textSelection(.enabled)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
-            .padding(.horizontal, customCard ? 0 : Theme.Chat.bubblePaddingH)
-            .padding(.vertical, customCard ? 0 : Theme.Chat.bubblePaddingV)
+            .frame(maxWidth: desktopFills(mine: mine) ? .infinity : nil, alignment: .leading)
+            .padding(.horizontal, customCard ? 0 : (desktop != nil ? DesktopChatMetrics.bubblePadding.leading : Theme.Chat.bubblePaddingH))
+            .padding(.vertical, customCard ? 0 : (desktop != nil ? DesktopChatMetrics.bubblePadding.top : Theme.Chat.bubblePaddingV))
             // No tail (reference 02): a #202020 card with 20 pt corners for
             // the bot, the same shape one step lighter for you.
             .background(
                 Group {
                     if !customCard {
-                        RoundedRectangle(cornerRadius: Theme.Metric.bubbleRadius, style: .continuous)
-                            .fill(mine ? BubbleColor.mine : BubbleColor.theirs)
+                        RoundedRectangle(cornerRadius: desktop != nil ? DesktopChatMetrics.bubbleRadius : Theme.Metric.bubbleRadius, style: .continuous)
+                            .fill(bubbleFill(mine: mine))
                     }
                 }
             )
 
-            .modifier(DesktopBubbleCapModifier(cap: bubbleCap, mine: mine))
+            .modifier(DesktopBubbleCapModifier(cap: desktopCap(mine: mine), mine: mine))
+
+            if !mine, let hoverActions, desktop != nil {
+                DesktopMessageHoverStrip(model: hoverActions, mine: false, hovering: hovering)
+                    .padding(.leading, 6)
+            }
 
             if !mine { Spacer(minLength: Theme.Chat.bubbleTrailingGap) }
         }
+        .onHover { hovering = $0 }
+    }
+
+    private func bubbleFill(mine: Bool) -> Color {
+        if let desktop { return mine ? desktop.bubbleUser : desktop.card }
+        return mine ? BubbleColor.mine : BubbleColor.theirs
+    }
+
+    /// The desktop's cap: the wide one for tables and rich fences.
+    private func desktopCap(mine: Bool) -> CGFloat? {
+        guard desktop != nil, let bubbleCap else { return bubbleCap }
+        if !mine, let wideCap, DesktopChatMetrics.prefersWide(message.text ?? "") { return wideCap }
+        return bubbleCap
+    }
+
+    /// A bubble holding the gallery or a wide block takes its whole cap.
+    private func desktopFills(mine: Bool) -> Bool {
+        guard desktop != nil else { return false }
+        if mine { return !attachedContent.attachments.isEmpty }
+        return !message.generatedImages.isEmpty || !message.fileAttachments.isEmpty
+            || (wideCap != nil && DesktopChatMetrics.prefersWide(message.text ?? ""))
     }
 }
 

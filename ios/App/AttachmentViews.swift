@@ -123,6 +123,8 @@ struct TranscriptAttachmentView: View {
     @State private var thumbnailVisible = false
     @State private var preview: FilePreviewItem?
     @State private var previewTask: Task<Void, Never>?
+    /// iPad desktop shell: the desktop's picture tile and file chip.
+    @Environment(\.desktopChatText) private var desktop
 
     private var taskID: String {
         "\(threadId)\u{1F}\(messageId)\u{1F}\(attachment.path)\u{1F}\(thumbnailAttempt)\u{1F}\(thumbnailVisible)"
@@ -131,9 +133,9 @@ struct TranscriptAttachmentView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             if attachment.kind == .image {
-                imageCard
+                if desktop != nil { desktopImageTile } else { imageCard }
             } else {
-                fileCard
+                if desktop != nil { desktopFileChip } else { fileCard }
             }
 
             if let errorMessage {
@@ -152,7 +154,7 @@ struct TranscriptAttachmentView: View {
                 .accessibilityElement(children: .contain)
             }
         }
-        .frame(maxWidth: attachment.kind == .image ? 360 : 320, alignment: .leading)
+        .frame(maxWidth: desktop != nil ? (attachment.kind == .image ? DesktopChatMetrics.imageMax : nil) : (attachment.kind == .image ? 360 : 320), alignment: .leading)
         .background {
             if attachment.kind == .image {
                 GeometryReader { proxy in
@@ -254,6 +256,43 @@ struct TranscriptAttachmentView: View {
         .accessibilityLabel("Image: \(attachment.name)")
         .accessibilityValue(thumbnail != nil ? "Loaded" : (thumbnailLoading ? "Loading" : "Unavailable"))
         .accessibilityHint(thumbnail == nil ? "Loads the image preview" : "Opens the image full screen")
+    }
+
+    /// AttachmentThumbnail on the desktop: the picture itself, square, at
+    /// most 288, 16 pt corners, no caption.
+    private var desktopImageTile: some View {
+        Button(action: openImage) {
+            Color.clear
+                .aspectRatio(1, contentMode: .fit)
+                .overlay {
+                    if let thumbnail {
+                        Image(uiImage: thumbnail).resizable().scaledToFill()
+                    } else if thumbnailLoading {
+                        ProgressView()
+                    } else {
+                        Image(systemName: "photo").font(.system(size: 24)).foregroundStyle(.secondary)
+                    }
+                }
+                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .disabled(previewLoading || thumbnailLoading)
+        .accessibilityLabel("Image: \(attachment.name)")
+        .accessibilityHint("Opens the image full screen")
+    }
+
+    /// AttachedFileChip: "Save a copy of NAME" on the desktop; here it
+    /// opens the same preview as the phone's card.
+    private var desktopFileChip: some View {
+        Button(action: openPreview) {
+            DesktopFileChip(name: attachment.name, loading: previewLoading)
+        }
+        .buttonStyle(.plain)
+        .hoverEffect(.highlight)
+        .disabled(previewLoading)
+        .accessibilityLabel("File: \(attachment.name)")
+        .accessibilityHint("Opens a preview")
     }
 
     private var fileCard: some View {

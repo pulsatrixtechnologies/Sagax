@@ -36,6 +36,8 @@ struct ChatView: View {
     /// iPad desktop shell (Desktop/DesktopChat.swift): the desktop's header,
     /// composer and column; nil on the iPhone.
     @Environment(\.desktopChat) var desktopChat
+    /// The desktop transcript's tokens (set with `desktopChat`).
+    @Environment(\.desktopChatText) var desktopChatText
     @State var draft = ""
     @State var revealedMessageId: String?
     @State var showingTasks = false
@@ -388,7 +390,21 @@ struct ChatView: View {
                             VStack(alignment: .leading, spacing: 0) {
                                 // a gap in time is worth marking; a timestamp
                                 // on every message is just noise
-                                if startsANewStretch(at: index, in: transcript) {
+                                if let desktop = desktopChatText {
+                                    // ChatView.tsx DaySeparator: a new calendar
+                                    // day, 13 pt ink-secondary, 12 above and below
+                                    if desktopStartsANewDay(at: index, in: transcript) {
+                                        Text(RelativeStamp.separator(row.head.date))
+                                            .font(desktop.font(13))
+                                            .foregroundStyle(desktop.inkSecondary)
+                                            .frame(maxWidth: .infinity)
+                                            .padding(.vertical, 12)
+                                            .padding(.top, index == 0 ? 0 : DesktopChatMetrics.rowGap)
+                                            .padding(.bottom, DesktopChatMetrics.rowGap)
+                                    } else if index > 0 {
+                                        Color.clear.frame(height: DesktopChatMetrics.rowGap)
+                                    }
+                                } else if startsANewStretch(at: index, in: transcript) {
                                     // 11 pt #555557, centred: about 22.6 pt
                                     // under the previous bubble and 17.6 pt
                                     // above the next one (reference 02).
@@ -456,17 +472,16 @@ struct ChatView: View {
                         // composer's own top padding. Scrolling targets this,
                         // so the gap is always in view.
                         Color.clear
-                            .frame(height: 26.3 - Self.composerTopPadding)
+                            .frame(height: desktopChat == nil ? 26.3 - Self.composerTopPadding : DesktopChatMetrics.rowGap)
                             .id(Self.bottomId)
                     }
                     .padding(.horizontal, desktopChat == nil ? Theme.Chat.bubbleLeading : 20)
-                    .padding(.top, 12)
+                    .padding(.top, desktopChat == nil ? 12 : 56 - Self.topBarHeight)
                     .frame(maxWidth: desktopChat == nil ? CompanionLayout.chatWidth : DesktopShellRules.chatColumn + 40, alignment: .leading)
                     .frame(maxWidth: .infinity)
                     .environment(\.messageActions, messageActionContext)
                     .environment(\.citeIntoComposer, citeIntoComposer)
                     .environment(\.conversationGallery, conversationGallery)
-                    .environment(\.desktopBubbleCap, desktopChat == nil ? nil : 560)
                     .background(BottomFollowProbe(model: follow))
                 }
                 // The transcript starts under the top bar and scrolls
@@ -632,6 +647,12 @@ struct ChatView: View {
 
     /// True when this message opens a fresh stretch of conversation — the
     /// first one, or one that follows a gap of half an hour or more.
+    /// The desktop marks a new calendar day only.
+    func desktopStartsANewDay(at index: Int, in rows: [TranscriptRow]) -> Bool {
+        guard index > 0 else { return true }
+        return !Calendar.current.isDate(rows[index].head.date, inSameDayAs: rows[index - 1].head.date)
+    }
+
     func startsANewStretch(at index: Int, in rows: [TranscriptRow]) -> Bool {
         guard index > 0 else { return true }
         return rows[index].at - rows[index - 1].endAt > 30 * 60 * 1000

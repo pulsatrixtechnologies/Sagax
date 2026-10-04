@@ -39,6 +39,10 @@ OUT="$HERE/out"
 BUILD="$PARITY/build"
 BUNDLE_ID="ca.pulsatrix.sagax"
 WAIT="${PARITY_WAIT:-6}"
+# Simulator names: parity-ipad13 / parity-ipad11, or another prefix so two
+# worktrees can capture at once (PARITY_SIM_PREFIX=i3 -> i3-ipad13).
+SIM_PREFIX="${PARITY_SIM_PREFIX:-parity}"
+SIM13="$SIM_PREFIX-ipad13"; SIM11="$SIM_PREFIX-ipad11"
 
 SKIP_BUILD=0
 SKINS=0
@@ -85,10 +89,10 @@ case "$DEVICE" in
 esac
 # viewport -> device name, simulator type, orientation
 PLAN=(
-  "$V13L parity-ipad13 $DEV13_TYPE landscape"
-  "$V13P parity-ipad13 $DEV13_TYPE portrait"
-  "$V11L parity-ipad11 $DEV11_TYPE landscape"
-  "$V11P parity-ipad11 $DEV11_TYPE portrait"
+  "$V13L $SIM13 $DEV13_TYPE landscape"
+  "$V13P $SIM13 $DEV13_TYPE portrait"
+  "$V11L $SIM11 $DEV11_TYPE landscape"
+  "$V11P $SIM11 $DEV11_TYPE portrait"
 )
 
 # ── build ────────────────────────────────────────────────────────────────
@@ -154,7 +158,7 @@ rm -f "$FIXTURE_OUT/session.json"
 PARITY_OUT="$FIXTURE_OUT" node "$PARITY/fixture-server.mjs" > "$FIXTURE_OUT/fixture.log" 2>&1 &
 SERVER_PID=$!
 cleanup() {
-  for name in parity-ipad13 parity-ipad11; do
+  for name in "$SIM13" "$SIM11"; do
     local udid
     udid="$(sim_udid "$name")"
     [ -n "$udid" ] || continue

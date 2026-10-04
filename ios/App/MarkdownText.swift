@@ -53,6 +53,25 @@ struct MarkdownText: View {
     @State private var revealed: Set<String> = []
     /// The footnote a tapped reference opened.
     @State private var openFootnote: MarkdownFootnote?
+    /// iPad desktop shell: 13/20 text, 8 pt paragraphs, 4 pt list items.
+    @Environment(\.desktopChatText) private var desktop
+
+    private var bodyFont: Font { desktop?.font(DesktopChatMetrics.textSize) ?? Theme.Font.body }
+    private var bodyLineSpacing: CGFloat { desktop.map(DesktopChatMetrics.lineSpacing) ?? Theme.bodyLineSpacing }
+
+    private static func isListItem(_ block: MarkdownBlock) -> Bool {
+        switch block {
+        case .bullet, .ordered, .task: true
+        default: false
+        }
+    }
+
+    /// The desktop's gap above block `index`: 4 between list items, 8 otherwise.
+    private func desktopGap(_ blocks: [MarkdownBlock], _ index: Int) -> CGFloat {
+        guard desktop != nil, index > 0 else { return 0 }
+        return Self.isListItem(blocks[index]) && Self.isListItem(blocks[index - 1])
+            ? DesktopChatMetrics.listItemGap : DesktopChatMetrics.paragraphGap
+    }
 
     init(
         source: String,
@@ -86,7 +105,7 @@ struct MarkdownText: View {
         // widgets and email cards wait for it (ChatMarkdown `pendingAt`).
         let openFence = RichBlocks.unclosedFenceOffset(source) >= 0
         let lastCode = blocks.lastIndex { if case .code = $0 { return true }; return false }
-        VStack(alignment: .leading, spacing: Theme.Chat.paragraphSpacing) {
+        VStack(alignment: .leading, spacing: desktop == nil ? Theme.Chat.paragraphSpacing : 0) {
             let firstTable = blocks.firstIndex { if case .table = $0 { return true }; return false }
             ForEach(Array(blocks.enumerated()), id: \.offset) { item in
                 view(
@@ -96,6 +115,7 @@ struct MarkdownText: View {
                     pending: caret || (openFence && item.offset == lastCode),
                     identifier: richPrefix.map { "\($0)-\(item.offset)" }
                 )
+                .padding(.top, desktopGap(blocks, item.offset))
             }
         }
         .environment(\.openURL, OpenURLAction { url in
@@ -141,8 +161,9 @@ struct MarkdownText: View {
         switch block {
         case let .paragraph(text):
             inline(text, tail: tail)
-                .font(Theme.Font.body)
-                .lineSpacing(Theme.bodyLineSpacing)
+                .font(bodyFont)
+                .lineSpacing(bodyLineSpacing)
+                .modifier(DesktopLineBox(theme: desktop))
                 .fixedSize(horizontal: false, vertical: true)
                 // a paragraph holding spoilers or footnote marks is findable
                 // (its taps are the block's actions); plain prose is untouched
@@ -153,7 +174,7 @@ struct MarkdownText: View {
             // h4 that looks exactly like body text is a heading that failed.
             inline(text, tail: tail)
                 .font(.system(size: level <= 1 ? 17 : level == 2 ? 15.5 : 14, weight: .semibold))
-                .lineSpacing(Theme.bodyLineSpacing)
+                .lineSpacing(bodyLineSpacing)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.top, 2)
 
@@ -178,8 +199,8 @@ struct MarkdownText: View {
                     .fill(Theme.parity(Color.secondary.opacity(0.4), Theme.hairline))
                     .frame(width: 3)
                 inline(text, tail: tail)
-                    .font(Theme.Font.body)
-                    .lineSpacing(Theme.bodyLineSpacing)
+                    .font(bodyFont)
+                    .lineSpacing(bodyLineSpacing)
                     .foregroundStyle(Theme.parity(Color.secondary, Theme.textSecondary))
             }
             .fixedSize(horizontal: false, vertical: true)
@@ -200,7 +221,7 @@ struct MarkdownText: View {
 
         case let .image(image):
             if picturesAsText {
-                inline(image.alt, tail: tail).font(Theme.Font.body)
+                inline(image.alt, tail: tail).font(bodyFont)
             } else {
                 MarkdownImageView(image: image, scope: attachmentScope, identifier: identifier)
             }
@@ -244,15 +265,15 @@ struct MarkdownText: View {
         return HStack(alignment: .firstTextBaseline, spacing: 6) {
             if let number {
                 Text("\(number).")
-                    .font(Theme.Font.body)
+                    .font(bodyFont)
                     .foregroundStyle(Theme.parity(Color.secondary, Theme.textSecondary))
                     .frame(minWidth: 16, alignment: .trailing)
             }
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Image(systemName: checked ? "checkmark.square.fill" : "square")
-                    .font(Theme.Font.body)
+                    .font(bodyFont)
                     .foregroundStyle(Theme.parity(Color.secondary, Theme.textSecondary))
-                inline(text, tail: tail).font(Theme.Font.body).lineSpacing(Theme.bodyLineSpacing)
+                inline(text, tail: tail).font(bodyFont).lineSpacing(bodyLineSpacing)
             }
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(label)
@@ -276,14 +297,15 @@ struct MarkdownText: View {
     private func marker(_ symbol: String, indent: Int, text: String, tail: Bool) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 0) {
             Text(symbol)
-                .font(Theme.Font.body)
+                .font(bodyFont)
                 .foregroundStyle(Theme.bulletDot)
                 .frame(width: Theme.Chat.bulletIndent - 6, alignment: .trailing)
                 .padding(.trailing, 6)
             inline(text, tail: tail)
-                .font(Theme.Font.body)
-                .lineSpacing(Theme.bodyLineSpacing)
+                .font(bodyFont)
+                .lineSpacing(bodyLineSpacing)
         }
+        .modifier(DesktopLineBox(theme: desktop))
         .padding(.leading, CGFloat(indent) * Theme.Chat.bulletIndent)
         .fixedSize(horizontal: false, vertical: true)
     }
@@ -291,7 +313,31 @@ struct MarkdownText: View {
     /// A list item (reference 02): a 5 pt dot 5 pt in from the text column,
     /// centred on the first line's x-height, and the text 26 pt in. Wrapped
     /// lines align with the first.
+    @ViewBuilder
     private func bullet(indent: Int, text: String, tail: Bool) -> some View {
+        if let desktop {
+            // `list-disc pl-5`: the disc in the 20 pt gutter, the text at 20
+            HStack(alignment: .firstTextBaseline, spacing: 0) {
+                Circle()
+                    .fill(desktop.ink)
+                    .frame(width: 4.5, height: 4.5)
+                    .alignmentGuide(.firstTextBaseline) { d in d.height + 2.6 }
+                    .padding(.leading, 3)
+                    .padding(.trailing, DesktopChatMetrics.listIndent - 7.5)
+                    .accessibilityHidden(true)
+                inline(text, tail: tail)
+                    .font(bodyFont)
+                    .lineSpacing(bodyLineSpacing)
+            }
+            .modifier(DesktopLineBox(theme: desktop))
+            .padding(.leading, CGFloat(indent) * DesktopChatMetrics.listIndent)
+            .fixedSize(horizontal: false, vertical: true)
+        } else {
+            phoneBullet(indent: indent, text: text, tail: tail)
+        }
+    }
+
+    private func phoneBullet(indent: Int, text: String, tail: Bool) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 0) {
             Circle()
                 .fill(Theme.bulletDot)
@@ -302,8 +348,8 @@ struct MarkdownText: View {
                 .padding(.trailing, Theme.Chat.bulletIndent - Theme.Chat.bulletDotInset - Theme.Chat.bulletDot)
                 .accessibilityHidden(true)
             inline(text, tail: tail)
-                .font(Theme.Font.body)
-                .lineSpacing(Theme.bodyLineSpacing)
+                .font(bodyFont)
+                .lineSpacing(bodyLineSpacing)
         }
         .padding(.leading, CGFloat(indent) * Theme.Chat.bulletIndent)
         .fixedSize(horizontal: false, vertical: true)
@@ -324,7 +370,8 @@ struct MarkdownText: View {
         ) {
             // Code spans: SF Mono 12 on the bubble itself, no chip.
             for run in attributed.runs where run.inlinePresentationIntent?.contains(.code) == true {
-                attributed[run.range].font = Theme.Font.code
+                attributed[run.range].font = desktop != nil ? .system(size: 12, design: .monospaced) : Theme.Font.code
+                if let desktop { attributed[run.range].backgroundColor = desktop.inset }
             }
             MentionTint.apply(to: &attributed, peers: mentions, everyone: mentionEveryone)
             styleFootnotes(&attributed)

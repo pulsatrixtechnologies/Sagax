@@ -48,13 +48,19 @@ extension EnvironmentValues {
 /// computer and profile pushes), with the desktop chrome on.
 struct DesktopChatColumn: View {
     @EnvironmentObject private var model: DesktopShellModel
+    @Environment(\.desktopTheme) private var theme
     let chat: Chat
 
     var body: some View {
         GeometryReader { geometry in
+            // the transcript column: px-5 inside the content, at most 960
+            let column = min(DesktopShellRules.chatColumn, geometry.size.width - 40)
             NavigationStack {
                 AnyView(ChatView(chat: chat))
             }
+            .environment(\.desktopChatText, theme)
+            .environment(\.desktopBubbleCap, DesktopChatMetrics.bubbleCap(column: column))
+            .environment(\.desktopWideCap, DesktopChatMetrics.wideCap(column: column))
             .environment(\.desktopChat, DesktopChatChrome(
                 panelOpen: model.panelOpen && chat.isBot,
                 // the shell docks the panel at 1024: this column is then
