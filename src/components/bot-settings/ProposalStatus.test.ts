@@ -49,6 +49,7 @@ function makeBot(overrides: Partial<Bot> = {}): Bot {
 function makeDerived(): ReturnType<typeof import("./useBotSettingsDerived").useBotSettingsDerived> {
   return {
     patch: vi.fn(),
+    canEdit: () => true,
     engine: undefined,
     approvalMode: "ask",
     trustedModesAvailable: false,
