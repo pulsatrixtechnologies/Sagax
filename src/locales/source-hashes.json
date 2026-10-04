@@ -111,7 +111,7 @@
       "settings.profile.subtitle": "90611bd1eda2846f87cc23561253c79557a49bbe80d88a341e4660cb32d0e686",
       "settings.profile.name": "2c6b2e253c01fb2ed7209c15766745ccee92a35ac8209f544789bdf9500e0944",
       "settings.skin.title": "1fc91201eedbfcb784e071ae61080b0f91b6290f1aa2690490c6f54b38d56df7",
-      "settings.skin.subtitle": "c76a3c564dc8b657e995177c8727f970258005a37d35cdc7a5047ffd91e39001",
+      "settings.skin.subtitle": "60cf6dd726b80d252bfaaf16a4dd2bec598805e1950ff39f678cc977de1eb92d",
       "settings.roomTurns.title": "c9bef6f6fea47076662b32a16ce4cbc49aa5d11878ae78cd1cbcac59e91b2631",
       "settings.roomTurns.subtitle": "f9775dd2f4d23c6d84de083f994a63bb317325a27c9b225a9183b959c48b43d4",
       "settings.roomTurns.label": "9c7e0564db0a2417fc49663658711322f9b31f792dad3e97e5f810dc0e75c006",
@@ -1469,7 +1469,10 @@
       "personPanel.connections.created": "e7bbba62018aab286e5cb0b29764b2c340d96624d62bc7df6092809fa1050175",
       "personPanel.connections.lastUsed": "01c033196f6620567353caed94d0660e860a7774fe758873cff6e0a71fc31a80",
       "personPanel.connections.removeError": "f64bd4b7fdbb37dc803db6611a1a264d512630ce7a4e32df937174d3aa38087d",
-      "model.org.hostTools": "3fc5efd8e8190249f9f80da95fa048662b9f79331a089ca547e56be57c913df3"
+      "model.org.hostTools": "3fc5efd8e8190249f9f80da95fa048662b9f79331a089ca547e56be57c913df3",
+      "settings.scope.installation": "9ff1dc19d29f7913861a5be8f8214d02f73522dac31ab8f50e7a2f4621e1b77e",
+      "settings.scope.me": "d356ec4efce0cd5ab06db10f7d82db9ffbef5cb6aaddba88afe8d0aef14e1024",
+      "settings.scope.device": "636615ff9a6811546e2af5ba24d9a319f63d4dac42633269f6c3659e7cfe4663"
     },
     "es": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",
@@ -1502,7 +1505,7 @@
       "settings.profile.subtitle": "90611bd1eda2846f87cc23561253c79557a49bbe80d88a341e4660cb32d0e686",
       "settings.profile.name": "2c6b2e253c01fb2ed7209c15766745ccee92a35ac8209f544789bdf9500e0944",
       "settings.skin.title": "1fc91201eedbfcb784e071ae61080b0f91b6290f1aa2690490c6f54b38d56df7",
-      "settings.skin.subtitle": "c76a3c564dc8b657e995177c8727f970258005a37d35cdc7a5047ffd91e39001",
+      "settings.skin.subtitle": "60cf6dd726b80d252bfaaf16a4dd2bec598805e1950ff39f678cc977de1eb92d",
       "settings.roomTurns.title": "c9bef6f6fea47076662b32a16ce4cbc49aa5d11878ae78cd1cbcac59e91b2631",
       "settings.roomTurns.subtitle": "f9775dd2f4d23c6d84de083f994a63bb317325a27c9b225a9183b959c48b43d4",
       "settings.roomTurns.label": "9c7e0564db0a2417fc49663658711322f9b31f792dad3e97e5f810dc0e75c006",
@@ -2921,7 +2924,10 @@
       "personPanel.connections.created": "e7bbba62018aab286e5cb0b29764b2c340d96624d62bc7df6092809fa1050175",
       "personPanel.connections.lastUsed": "01c033196f6620567353caed94d0660e860a7774fe758873cff6e0a71fc31a80",
       "personPanel.connections.removeError": "f64bd4b7fdbb37dc803db6611a1a264d512630ce7a4e32df937174d3aa38087d",
-      "model.org.hostTools": "3fc5efd8e8190249f9f80da95fa048662b9f79331a089ca547e56be57c913df3"
+      "model.org.hostTools": "3fc5efd8e8190249f9f80da95fa048662b9f79331a089ca547e56be57c913df3",
+      "settings.scope.installation": "9ff1dc19d29f7913861a5be8f8214d02f73522dac31ab8f50e7a2f4621e1b77e",
+      "settings.scope.me": "d356ec4efce0cd5ab06db10f7d82db9ffbef5cb6aaddba88afe8d0aef14e1024",
+      "settings.scope.device": "636615ff9a6811546e2af5ba24d9a319f63d4dac42633269f6c3659e7cfe4663"
     },
     "fr": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",
@@ -2959,7 +2965,7 @@
       "settings.profile.managedByOrg": "bc2dd8ee27dff13778402562b56ca00daea65194d091dea7ab05b7f9258df783",
       "settings.profile.editInPerspicax": "e3597bcf63d0b32967ca90b93ec53a99678b2a7b76983c95f38273b1ea4cfebf",
       "settings.skin.title": "1fc91201eedbfcb784e071ae61080b0f91b6290f1aa2690490c6f54b38d56df7",
-      "settings.skin.subtitle": "c76a3c564dc8b657e995177c8727f970258005a37d35cdc7a5047ffd91e39001",
+      "settings.skin.subtitle": "60cf6dd726b80d252bfaaf16a4dd2bec598805e1950ff39f678cc977de1eb92d",
       "settings.appIcon.title": "56244b12a99280f9174ced62cb16167a2361dc1e5e3a6f609ea12e21d8af6ab7",
       "settings.appIcon.subtitle": "b81051798be7abd57da05fcd42580bf0ef4128294591525c8634f20ca0521abe",
       "settings.appIcon.default": "b8fb6e1d1ac570f8bd638bd0f41e175570022056e25fb1d00c5fd40c10ca6f2e",
@@ -4740,7 +4746,7 @@
       "settings.language.short": "892fa2b4c3d9bd0d5933e74b0886c0302243dcf6736af971d546f6cccd73216b",
       "settings.newBotEffort.short": "68e5168535dd536ec110850c8f4d272124f0e4f2a284c5d7dd5b7aef6d67dd73",
       "settings.routinesInConversation.short": "fba9f71db4c7b364db50b9eaada8fea537bb0e775071ee61450f04f7590fd567",
-      "settings.threadDisplay.short": "5945e8ecb57df1ea89a32e804f39700bf0dbb880e202fd732d011741f7ea587a",
+      "settings.threadDisplay.short": "84eabb15caed49cbcdf68bd438eabc884f02b73a8b81aa14f78c75518db1402c",
       "settings.sidebarLogo.title": "448dce5265449658d6bc797498730aca5ae3aa56661493ff409cee95abe9b8c6",
       "settings.sidebarLogo.subtitle": "54fe34812f80398ead8f0565feb1bb06ed1b048dc37220caadf2ad62d3adc232",
       "settings.sidebarLogo.show": "080056d98854872f0c77e281baff36cf3b85157f3620a29cf0d5fa4314085402",
@@ -6051,7 +6057,10 @@
       "personPanel.connections.created": "e7bbba62018aab286e5cb0b29764b2c340d96624d62bc7df6092809fa1050175",
       "personPanel.connections.lastUsed": "01c033196f6620567353caed94d0660e860a7774fe758873cff6e0a71fc31a80",
       "personPanel.connections.removeError": "f64bd4b7fdbb37dc803db6611a1a264d512630ce7a4e32df937174d3aa38087d",
-      "model.org.hostTools": "3fc5efd8e8190249f9f80da95fa048662b9f79331a089ca547e56be57c913df3"
+      "model.org.hostTools": "3fc5efd8e8190249f9f80da95fa048662b9f79331a089ca547e56be57c913df3",
+      "settings.scope.installation": "9ff1dc19d29f7913861a5be8f8214d02f73522dac31ab8f50e7a2f4621e1b77e",
+      "settings.scope.me": "d356ec4efce0cd5ab06db10f7d82db9ffbef5cb6aaddba88afe8d0aef14e1024",
+      "settings.scope.device": "636615ff9a6811546e2af5ba24d9a319f63d4dac42633269f6c3659e7cfe4663"
     },
     "hi": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",
@@ -6084,7 +6093,7 @@
       "settings.profile.subtitle": "90611bd1eda2846f87cc23561253c79557a49bbe80d88a341e4660cb32d0e686",
       "settings.profile.name": "2c6b2e253c01fb2ed7209c15766745ccee92a35ac8209f544789bdf9500e0944",
       "settings.skin.title": "1fc91201eedbfcb784e071ae61080b0f91b6290f1aa2690490c6f54b38d56df7",
-      "settings.skin.subtitle": "c76a3c564dc8b657e995177c8727f970258005a37d35cdc7a5047ffd91e39001",
+      "settings.skin.subtitle": "60cf6dd726b80d252bfaaf16a4dd2bec598805e1950ff39f678cc977de1eb92d",
       "settings.roomTurns.title": "c9bef6f6fea47076662b32a16ce4cbc49aa5d11878ae78cd1cbcac59e91b2631",
       "settings.roomTurns.subtitle": "f9775dd2f4d23c6d84de083f994a63bb317325a27c9b225a9183b959c48b43d4",
       "settings.roomTurns.label": "9c7e0564db0a2417fc49663658711322f9b31f792dad3e97e5f810dc0e75c006",
@@ -7503,7 +7512,10 @@
       "personPanel.connections.created": "e7bbba62018aab286e5cb0b29764b2c340d96624d62bc7df6092809fa1050175",
       "personPanel.connections.lastUsed": "01c033196f6620567353caed94d0660e860a7774fe758873cff6e0a71fc31a80",
       "personPanel.connections.removeError": "f64bd4b7fdbb37dc803db6611a1a264d512630ce7a4e32df937174d3aa38087d",
-      "model.org.hostTools": "3fc5efd8e8190249f9f80da95fa048662b9f79331a089ca547e56be57c913df3"
+      "model.org.hostTools": "3fc5efd8e8190249f9f80da95fa048662b9f79331a089ca547e56be57c913df3",
+      "settings.scope.installation": "9ff1dc19d29f7913861a5be8f8214d02f73522dac31ab8f50e7a2f4621e1b77e",
+      "settings.scope.me": "d356ec4efce0cd5ab06db10f7d82db9ffbef5cb6aaddba88afe8d0aef14e1024",
+      "settings.scope.device": "636615ff9a6811546e2af5ba24d9a319f63d4dac42633269f6c3659e7cfe4663"
     },
     "ja": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",
@@ -7536,7 +7548,7 @@
       "settings.profile.subtitle": "90611bd1eda2846f87cc23561253c79557a49bbe80d88a341e4660cb32d0e686",
       "settings.profile.name": "2c6b2e253c01fb2ed7209c15766745ccee92a35ac8209f544789bdf9500e0944",
       "settings.skin.title": "1fc91201eedbfcb784e071ae61080b0f91b6290f1aa2690490c6f54b38d56df7",
-      "settings.skin.subtitle": "c76a3c564dc8b657e995177c8727f970258005a37d35cdc7a5047ffd91e39001",
+      "settings.skin.subtitle": "60cf6dd726b80d252bfaaf16a4dd2bec598805e1950ff39f678cc977de1eb92d",
       "settings.roomTurns.title": "c9bef6f6fea47076662b32a16ce4cbc49aa5d11878ae78cd1cbcac59e91b2631",
       "settings.roomTurns.subtitle": "f9775dd2f4d23c6d84de083f994a63bb317325a27c9b225a9183b959c48b43d4",
       "settings.roomTurns.label": "9c7e0564db0a2417fc49663658711322f9b31f792dad3e97e5f810dc0e75c006",
@@ -8957,7 +8969,10 @@
       "personPanel.connections.created": "e7bbba62018aab286e5cb0b29764b2c340d96624d62bc7df6092809fa1050175",
       "personPanel.connections.lastUsed": "01c033196f6620567353caed94d0660e860a7774fe758873cff6e0a71fc31a80",
       "personPanel.connections.removeError": "f64bd4b7fdbb37dc803db6611a1a264d512630ce7a4e32df937174d3aa38087d",
-      "model.org.hostTools": "3fc5efd8e8190249f9f80da95fa048662b9f79331a089ca547e56be57c913df3"
+      "model.org.hostTools": "3fc5efd8e8190249f9f80da95fa048662b9f79331a089ca547e56be57c913df3",
+      "settings.scope.installation": "9ff1dc19d29f7913861a5be8f8214d02f73522dac31ab8f50e7a2f4621e1b77e",
+      "settings.scope.me": "d356ec4efce0cd5ab06db10f7d82db9ffbef5cb6aaddba88afe8d0aef14e1024",
+      "settings.scope.device": "636615ff9a6811546e2af5ba24d9a319f63d4dac42633269f6c3659e7cfe4663"
     },
     "pt-br": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",
@@ -9069,7 +9084,7 @@
       "settings.profile.subtitle": "90611bd1eda2846f87cc23561253c79557a49bbe80d88a341e4660cb32d0e686",
       "settings.profile.name": "2c6b2e253c01fb2ed7209c15766745ccee92a35ac8209f544789bdf9500e0944",
       "settings.skin.title": "1fc91201eedbfcb784e071ae61080b0f91b6290f1aa2690490c6f54b38d56df7",
-      "settings.skin.subtitle": "c76a3c564dc8b657e995177c8727f970258005a37d35cdc7a5047ffd91e39001",
+      "settings.skin.subtitle": "60cf6dd726b80d252bfaaf16a4dd2bec598805e1950ff39f678cc977de1eb92d",
       "settings.roomTurns.title": "c9bef6f6fea47076662b32a16ce4cbc49aa5d11878ae78cd1cbcac59e91b2631",
       "settings.roomTurns.subtitle": "f9775dd2f4d23c6d84de083f994a63bb317325a27c9b225a9183b959c48b43d4",
       "settings.roomTurns.label": "9c7e0564db0a2417fc49663658711322f9b31f792dad3e97e5f810dc0e75c006",
@@ -10423,7 +10438,10 @@
       "personPanel.connections.created": "e7bbba62018aab286e5cb0b29764b2c340d96624d62bc7df6092809fa1050175",
       "personPanel.connections.lastUsed": "01c033196f6620567353caed94d0660e860a7774fe758873cff6e0a71fc31a80",
       "personPanel.connections.removeError": "f64bd4b7fdbb37dc803db6611a1a264d512630ce7a4e32df937174d3aa38087d",
-      "model.org.hostTools": "3fc5efd8e8190249f9f80da95fa048662b9f79331a089ca547e56be57c913df3"
+      "model.org.hostTools": "3fc5efd8e8190249f9f80da95fa048662b9f79331a089ca547e56be57c913df3",
+      "settings.scope.installation": "9ff1dc19d29f7913861a5be8f8214d02f73522dac31ab8f50e7a2f4621e1b77e",
+      "settings.scope.me": "d356ec4efce0cd5ab06db10f7d82db9ffbef5cb6aaddba88afe8d0aef14e1024",
+      "settings.scope.device": "636615ff9a6811546e2af5ba24d9a319f63d4dac42633269f6c3659e7cfe4663"
     },
     "uk": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",
@@ -10548,9 +10566,9 @@
       "settings.profile.subtitle": "90611bd1eda2846f87cc23561253c79557a49bbe80d88a341e4660cb32d0e686",
       "settings.profile.name": "2c6b2e253c01fb2ed7209c15766745ccee92a35ac8209f544789bdf9500e0944",
       "settings.skin.title": "1fc91201eedbfcb784e071ae61080b0f91b6290f1aa2690490c6f54b38d56df7",
-      "settings.skin.subtitle": "c76a3c564dc8b657e995177c8727f970258005a37d35cdc7a5047ffd91e39001",
+      "settings.skin.subtitle": "60cf6dd726b80d252bfaaf16a4dd2bec598805e1950ff39f678cc977de1eb92d",
       "settings.threadDisplay.title": "3e42e385075b9b569620eb6d652cff77b19eab567ee2927d6e1bf901f51d8246",
-      "settings.threadDisplay.subtitle": "93a8e03cd4101974ad7a4c42d80a451f2adcd6fb130e70f04c283d19582fa66b",
+      "settings.threadDisplay.subtitle": "7e68b9678e33da8429166e52dacc1661478a499d7e4b4d358814635e02ca6ed7",
       "settings.threadDisplay.show": "f8c12b6bc2e27f1343ceb3682074f3cdce107530a241e1018064c2c7c0f75495",
       "settings.roomTurns.title": "c9bef6f6fea47076662b32a16ce4cbc49aa5d11878ae78cd1cbcac59e91b2631",
       "settings.roomTurns.subtitle": "f9775dd2f4d23c6d84de083f994a63bb317325a27c9b225a9183b959c48b43d4",
@@ -12415,7 +12433,10 @@
       "personPanel.connections.created": "e7bbba62018aab286e5cb0b29764b2c340d96624d62bc7df6092809fa1050175",
       "personPanel.connections.lastUsed": "01c033196f6620567353caed94d0660e860a7774fe758873cff6e0a71fc31a80",
       "personPanel.connections.removeError": "f64bd4b7fdbb37dc803db6611a1a264d512630ce7a4e32df937174d3aa38087d",
-      "model.org.hostTools": "3fc5efd8e8190249f9f80da95fa048662b9f79331a089ca547e56be57c913df3"
+      "model.org.hostTools": "3fc5efd8e8190249f9f80da95fa048662b9f79331a089ca547e56be57c913df3",
+      "settings.scope.installation": "9ff1dc19d29f7913861a5be8f8214d02f73522dac31ab8f50e7a2f4621e1b77e",
+      "settings.scope.me": "d356ec4efce0cd5ab06db10f7d82db9ffbef5cb6aaddba88afe8d0aef14e1024",
+      "settings.scope.device": "636615ff9a6811546e2af5ba24d9a319f63d4dac42633269f6c3659e7cfe4663"
     },
     "zh-tw": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",
@@ -12531,9 +12552,9 @@
       "settings.profile.subtitle": "90611bd1eda2846f87cc23561253c79557a49bbe80d88a341e4660cb32d0e686",
       "settings.profile.name": "2c6b2e253c01fb2ed7209c15766745ccee92a35ac8209f544789bdf9500e0944",
       "settings.skin.title": "1fc91201eedbfcb784e071ae61080b0f91b6290f1aa2690490c6f54b38d56df7",
-      "settings.skin.subtitle": "c76a3c564dc8b657e995177c8727f970258005a37d35cdc7a5047ffd91e39001",
+      "settings.skin.subtitle": "60cf6dd726b80d252bfaaf16a4dd2bec598805e1950ff39f678cc977de1eb92d",
       "settings.threadDisplay.title": "3e42e385075b9b569620eb6d652cff77b19eab567ee2927d6e1bf901f51d8246",
-      "settings.threadDisplay.subtitle": "93a8e03cd4101974ad7a4c42d80a451f2adcd6fb130e70f04c283d19582fa66b",
+      "settings.threadDisplay.subtitle": "7e68b9678e33da8429166e52dacc1661478a499d7e4b4d358814635e02ca6ed7",
       "settings.threadDisplay.show": "f8c12b6bc2e27f1343ceb3682074f3cdce107530a241e1018064c2c7c0f75495",
       "settings.roomTurns.title": "c9bef6f6fea47076662b32a16ce4cbc49aa5d11878ae78cd1cbcac59e91b2631",
       "settings.roomTurns.subtitle": "f9775dd2f4d23c6d84de083f994a63bb317325a27c9b225a9183b959c48b43d4",
@@ -14454,7 +14475,7 @@
       "organization.expires": "4bd9e42fe2cf7983c7e04b85be4009a2c10a34b414eed95dde5b9ddf67c1801d",
       "settings.section.workspaces": "df2bd1e0e84b102ada858eda3c43eb9498ca640f92e3e03a4c5685388f906313",
       "settings.font.title": "ad55b73eb9e0ae7e86043bcda1d94e9f94cd1aab0f48c47974e377f333aab507",
-      "settings.font.subtitle": "667d764e2aa8eaeb749f526c7761bcc1c71ae081752c8df35215c878e2589c71",
+      "settings.font.subtitle": "02c4439671b232040fd67d8aed365dfe4e4ef638719d2e88a0f36804ec69a0c0",
       "settings.font.aria": "ad55b73eb9e0ae7e86043bcda1d94e9f94cd1aab0f48c47974e377f333aab507",
       "settings.font.skin": "62148b5d673806481882b5ffc5317b86b9afedf32d5ddeba8abcaf410a5e1e06",
       "settings.font.system": "6725e7bbcd28f3a8a586fa34bf191fd72dde8b61756932cd3237c17a6f196f1a",
@@ -14783,7 +14804,10 @@
       "personPanel.connections.created": "e7bbba62018aab286e5cb0b29764b2c340d96624d62bc7df6092809fa1050175",
       "personPanel.connections.lastUsed": "01c033196f6620567353caed94d0660e860a7774fe758873cff6e0a71fc31a80",
       "personPanel.connections.removeError": "f64bd4b7fdbb37dc803db6611a1a264d512630ce7a4e32df937174d3aa38087d",
-      "model.org.hostTools": "3fc5efd8e8190249f9f80da95fa048662b9f79331a089ca547e56be57c913df3"
+      "model.org.hostTools": "3fc5efd8e8190249f9f80da95fa048662b9f79331a089ca547e56be57c913df3",
+      "settings.scope.installation": "9ff1dc19d29f7913861a5be8f8214d02f73522dac31ab8f50e7a2f4621e1b77e",
+      "settings.scope.me": "d356ec4efce0cd5ab06db10f7d82db9ffbef5cb6aaddba88afe8d0aef14e1024",
+      "settings.scope.device": "636615ff9a6811546e2af5ba24d9a319f63d4dac42633269f6c3659e7cfe4663"
     },
     "zh": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",
@@ -14816,7 +14840,7 @@
       "settings.profile.subtitle": "90611bd1eda2846f87cc23561253c79557a49bbe80d88a341e4660cb32d0e686",
       "settings.profile.name": "2c6b2e253c01fb2ed7209c15766745ccee92a35ac8209f544789bdf9500e0944",
       "settings.skin.title": "1fc91201eedbfcb784e071ae61080b0f91b6290f1aa2690490c6f54b38d56df7",
-      "settings.skin.subtitle": "c76a3c564dc8b657e995177c8727f970258005a37d35cdc7a5047ffd91e39001",
+      "settings.skin.subtitle": "60cf6dd726b80d252bfaaf16a4dd2bec598805e1950ff39f678cc977de1eb92d",
       "settings.roomTurns.title": "c9bef6f6fea47076662b32a16ce4cbc49aa5d11878ae78cd1cbcac59e91b2631",
       "settings.roomTurns.subtitle": "f9775dd2f4d23c6d84de083f994a63bb317325a27c9b225a9183b959c48b43d4",
       "settings.roomTurns.label": "9c7e0564db0a2417fc49663658711322f9b31f792dad3e97e5f810dc0e75c006",
@@ -16319,7 +16343,7 @@
       "settings.section.people": "7db20897053bb2780b9b706e5505227b005de80c236e4a4836aab37a3a7bb298",
       "settings.section.workspaces": "df2bd1e0e84b102ada858eda3c43eb9498ca640f92e3e03a4c5685388f906313",
       "settings.font.title": "ad55b73eb9e0ae7e86043bcda1d94e9f94cd1aab0f48c47974e377f333aab507",
-      "settings.font.subtitle": "667d764e2aa8eaeb749f526c7761bcc1c71ae081752c8df35215c878e2589c71",
+      "settings.font.subtitle": "02c4439671b232040fd67d8aed365dfe4e4ef638719d2e88a0f36804ec69a0c0",
       "settings.font.aria": "ad55b73eb9e0ae7e86043bcda1d94e9f94cd1aab0f48c47974e377f333aab507",
       "settings.font.skin": "62148b5d673806481882b5ffc5317b86b9afedf32d5ddeba8abcaf410a5e1e06",
       "settings.font.system": "6725e7bbcd28f3a8a586fa34bf191fd72dde8b61756932cd3237c17a6f196f1a",
@@ -16327,7 +16351,7 @@
       "settings.font.poppins": "bd3edbd6ee8c179ddac6e9632e7506aff9100d74ddf320af67bbf778d79be994",
       "settings.font.serif": "1b5e747e5031cb30527eed165111cf547edb09265bca0b7e319c72f42187c8f9",
       "settings.threadDisplay.title": "3e42e385075b9b569620eb6d652cff77b19eab567ee2927d6e1bf901f51d8246",
-      "settings.threadDisplay.subtitle": "93a8e03cd4101974ad7a4c42d80a451f2adcd6fb130e70f04c283d19582fa66b",
+      "settings.threadDisplay.subtitle": "7e68b9678e33da8429166e52dacc1661478a499d7e4b4d358814635e02ca6ed7",
       "settings.threadDisplay.show": "f8c12b6bc2e27f1343ceb3682074f3cdce107530a241e1018064c2c7c0f75495",
       "common.close": "7d9eb7acb13e24625c404401d8e88b2350e32162455885f18276cf802f7701ed",
       "team.create": "284ff194f8cf988472f2652885df3db950111f6ee79b96fde8d2c162cb6a42df",
@@ -17140,7 +17164,10 @@
       "personPanel.connections.created": "e7bbba62018aab286e5cb0b29764b2c340d96624d62bc7df6092809fa1050175",
       "personPanel.connections.lastUsed": "01c033196f6620567353caed94d0660e860a7774fe758873cff6e0a71fc31a80",
       "personPanel.connections.removeError": "f64bd4b7fdbb37dc803db6611a1a264d512630ce7a4e32df937174d3aa38087d",
-      "model.org.hostTools": "3fc5efd8e8190249f9f80da95fa048662b9f79331a089ca547e56be57c913df3"
+      "model.org.hostTools": "3fc5efd8e8190249f9f80da95fa048662b9f79331a089ca547e56be57c913df3",
+      "settings.scope.installation": "9ff1dc19d29f7913861a5be8f8214d02f73522dac31ab8f50e7a2f4621e1b77e",
+      "settings.scope.me": "d356ec4efce0cd5ab06db10f7d82db9ffbef5cb6aaddba88afe8d0aef14e1024",
+      "settings.scope.device": "636615ff9a6811546e2af5ba24d9a319f63d4dac42633269f6c3659e7cfe4663"
     }
   }
 }

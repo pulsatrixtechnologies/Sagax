@@ -29,7 +29,7 @@
   "settings.profile.subtitle": "显示在侧边栏，边输入边保存。",
   "settings.profile.name": "你的名字",
   "settings.skin.title": "主题",
-  "settings.skin.subtitle": "立即生效，并记在这台电脑上。",
+  "settings.skin.subtitle": "立即生效。",
   "settings.roomTurns.title": "群组轮次",
   "settings.roomTurns.subtitle": "为群组里每一次机器人轮次设定统一的最长时间。",
   "settings.roomTurns.label": "单轮最长时间",
@@ -1532,7 +1532,7 @@
   "settings.section.people": "人员",
   "settings.section.workspaces": "安装实例",
   "settings.font.title": "界面字体",
-  "settings.font.subtitle": "在这台设备上覆盖主题自带的字体。安装了 Poppins 时会使用 Poppins。",
+  "settings.font.subtitle": "覆盖主题自带的字体。安装了 Poppins 时会使用 Poppins。",
   "settings.font.aria": "界面字体",
   "settings.font.skin": "主题默认",
   "settings.font.system": "系统字体",
@@ -1540,7 +1540,7 @@
   "settings.font.poppins": "Poppins",
   "settings.font.serif": "衬线体",
   "settings.threadDisplay.title": "对话",
-  "settings.threadDisplay.subtitle": "仅在这部设备上显示对话清单与控制项。隐藏后仍会保留所有对话记录与进行中的工作；群组不受影响。重新打开即可再次访问你的对话。",
+  "settings.threadDisplay.subtitle": "显示对话清单与控制项。隐藏后仍会保留所有对话记录与进行中的工作；群组不受影响。重新打开即可再次访问你的对话。",
   "settings.threadDisplay.show": "显示对话",
   "common.close": "关闭",
   "team.create": "创建团队",
@@ -2353,5 +2353,8 @@
   "personPanel.connections.created": "添加于 {date}",
   "personPanel.connections.lastUsed": "上次使用 {date}",
   "personPanel.connections.removeError": "无法移除连接。",
-  "model.org.hostTools": "{name} 会在 Sagax 服务器上运行自己的工具。请选择能在你的服务器环境中工作的引擎。"
+  "model.org.hostTools": "{name} 会在 Sagax 服务器上运行自己的工具。请选择能在你的服务器环境中工作的引擎。",
+  "settings.scope.installation": "此服务器上的所有人",
+  "settings.scope.me": "跟随你的账户",
+  "settings.scope.device": "仅此设备"
 }

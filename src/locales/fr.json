@@ -34,7 +34,7 @@
   "settings.profile.managedByOrg": "Géré par votre organisation (Pulsatrix Perspicax)",
   "settings.profile.editInPerspicax": "Modifier dans Perspicax",
   "settings.skin.title": "Thème",
-  "settings.skin.subtitle": "S'applique aussitôt et reste mémorisé sur cet ordinateur.",
+  "settings.skin.subtitle": "S'applique aussitôt.",
   "settings.appIcon.title": "Icône de l'app",
   "settings.appIcon.subtitle": "Dessinée sur le gabarit d'icône du système pour s'accorder aux autres icônes de votre Dock ou de votre barre des tâches.",
   "settings.appIcon.default": "Sagax",
@@ -1816,7 +1816,7 @@
   "settings.language.short": "Suit la langue du système, sauf si vous en choisissez une.",
   "settings.newBotEffort.short": "L'effort de réflexion des nouveaux bots dès leur premier message.",
   "settings.routinesInConversation.short": "Publier le travail des routines dans la conversation plutôt que dans un fil caché.",
-  "settings.threadDisplay.short": "Afficher les listes et contrôles de fils sur cet appareil.",
+  "settings.threadDisplay.short": "Afficher les listes et contrôles de fils.",
   "settings.sidebarLogo.title": "Logo de la barre latérale",
   "settings.sidebarLogo.subtitle": "Afficher le logo et le nom Sagax en haut de la barre latérale.",
   "settings.sidebarLogo.show": "Afficher le logo de la barre latérale",
@@ -3126,5 +3126,8 @@
   "personPanel.connections.confirm.action": "Retirer",
   "personPanel.connections.created": "Ajouté le {date}",
   "personPanel.connections.lastUsed": "Dernière utilisation {date}",
-  "personPanel.connections.removeError": "La connexion n'a pas pu être retirée."
+  "personPanel.connections.removeError": "La connexion n'a pas pu être retirée.",
+  "settings.scope.installation": "Tout le monde sur ce serveur",
+  "settings.scope.me": "Suit votre compte",
+  "settings.scope.device": "Cet appareil seulement"
 }

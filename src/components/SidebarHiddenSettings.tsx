@@ -17,7 +17,7 @@ export function SidebarHiddenSettings() {
   const rows = hiddenSidebarRows(hidden.items, { bots: state.bots, groups: state.groups, viewerId: viewerActorId(state.config), people });
   return (
     <>
-      <SettingRow title={t("settings.sidebarHidden.title")} subtitle={rows.length ? t("sidebar.hidden.title", { count: rows.length }) : t("settings.sidebarHidden.none")}>
+      <SettingRow scope="me" title={t("settings.sidebarHidden.title")} subtitle={rows.length ? t("sidebar.hidden.title", { count: rows.length }) : t("settings.sidebarHidden.none")}>
         <span />
       </SettingRow>
       {rows.length > 0 && (
@@ -34,10 +34,10 @@ export function SidebarHiddenSettings() {
           ))}
         </ul>
       )}
-      <SettingRow title={t("settings.sidebarHidden.unhidePeople")} subtitle={t("settings.sidebarHidden.unhidePeopleHint")}>
+      <SettingRow scope="me" title={t("settings.sidebarHidden.unhidePeople")} subtitle={t("settings.sidebarHidden.unhidePeopleHint")}>
         <Switch checked={hidden.unhideOnMessage.people} aria-label={t("settings.sidebarHidden.unhidePeople")} onClick={() => setUnhideOnMessage("people", !hidden.unhideOnMessage.people)} />
       </SettingRow>
-      <SettingRow title={t("settings.sidebarHidden.unhideBots")} subtitle={t("settings.sidebarHidden.unhideBotsHint")}>
+      <SettingRow scope="me" title={t("settings.sidebarHidden.unhideBots")} subtitle={t("settings.sidebarHidden.unhideBotsHint")}>
         <Switch checked={hidden.unhideOnMessage.bots} aria-label={t("settings.sidebarHidden.unhideBots")} onClick={() => setUnhideOnMessage("bots", !hidden.unhideOnMessage.bots)} />
       </SettingRow>
     </>

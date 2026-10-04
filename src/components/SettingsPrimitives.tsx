@@ -135,6 +135,20 @@ function useCardOpen(id: string, defaultOpen: boolean) {
   return [open, toggle] as const;
 }
 
+/** Who a setting follows. The pill says it; the subtitle does not. */
+export type SettingsScope = "installation" | "me" | "device";
+
+export function ScopeMark({ scope }: { scope: SettingsScope }) {
+  return (
+    <span
+      data-settings-scope={scope}
+      className="inline-flex shrink-0 rounded-full bg-control px-2 py-0.5 text-[11px] font-normal leading-[16px] text-ink-secondary"
+    >
+      {t(`settings.scope.${scope}`)}
+    </span>
+  );
+}
+
 type CardProps = {
   title?: string;
   subtitle?: React.ReactNode;
@@ -143,6 +157,7 @@ type CardProps = {
   cardId?: string;
   defaultOpen?: boolean;
   summary?: React.ReactNode;
+  scope?: SettingsScope;
 };
 
 /** A settings form card. With `collapsible`, the title becomes a disclosure
@@ -153,17 +168,22 @@ type CardProps = {
 export function Card(props: CardProps) {
   // A plain card stays hook-free; only a collapsible one needs state.
   if (props.collapsible && props.title) return <CollapsibleCard {...props} title={props.title} />;
-  const { title, subtitle, children, cardId } = props;
+  const { title, subtitle, children, cardId, scope } = props;
   return (
     <div data-settings-card={cardId} className="rounded-[14px] border-[0.5px] border-border px-3.5 py-3">
-      {title && <div className="text-[13px] font-normal leading-[18px] text-ink">{title}</div>}
+      {title && (
+        <div className="flex items-center gap-2">
+          <div className="text-[13px] font-normal leading-[18px] text-ink">{title}</div>
+          {scope && <ScopeMark scope={scope} />}
+        </div>
+      )}
       {subtitle && <div className="mt-0.5 text-[13px] leading-[18px] text-ink-secondary">{subtitle}</div>}
       {children && <div className={title || subtitle ? "mt-2.5" : undefined}>{children}</div>}
     </div>
   );
 }
 
-function CollapsibleCard({ title, subtitle, children, cardId, defaultOpen = true, summary }: CardProps & { title: string }) {
+function CollapsibleCard({ title, subtitle, children, cardId, defaultOpen = true, summary, scope }: CardProps & { title: string }) {
   const bodyId = useId();
   const [open, toggle] = useCardOpen(cardId ?? `${ANONYMOUS_CARD}${bodyId}`, defaultOpen);
   return (
@@ -176,7 +196,10 @@ function CollapsibleCard({ title, subtitle, children, cardId, defaultOpen = true
           onClick={toggle}
           className="flex w-full min-w-0 items-center gap-3 rounded-[14px] px-3.5 py-3 text-left text-ink transition-colors hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/70 motion-reduce:transition-none"
         >
-          <span className="shrink-0">{title}</span>
+          <span className="flex min-w-0 items-center gap-2">
+            <span className="truncate">{title}</span>
+            {scope && <ScopeMark scope={scope} />}
+          </span>
           {!open && summary ? (
             <span data-card-summary className="ml-auto min-w-0 truncate text-right text-[12.5px] text-ink-secondary">{summary}</span>
           ) : (
@@ -224,20 +247,23 @@ export function SettingRow({
   help,
   children,
   message,
+  scope,
 }: {
   title: string;
   subtitle?: React.ReactNode;
   help?: React.ReactNode;
   children: React.ReactNode;
   message?: React.ReactNode;
+  scope?: SettingsScope;
 }) {
   const titleId = useId();
   return (
     <div role="group" aria-labelledby={titleId} className="setting-row px-3.5 py-2.5">
       <div className="grid min-w-0 grid-cols-1 items-center gap-2.5 sm:grid-cols-[minmax(0,1fr)_auto] sm:gap-4">
         <div className="min-w-0">
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-1.5">
             <div id={titleId} className="text-[13px] font-normal leading-[18px] text-ink">{title}</div>
+            {scope && <ScopeMark scope={scope} />}
             {help && <HelpTip label={t("settings.moreAbout", { title })}>{help}</HelpTip>}
           </div>
           {subtitle && <div className="mt-0.5 text-[13px] leading-[18px] text-ink-secondary">{subtitle}</div>}

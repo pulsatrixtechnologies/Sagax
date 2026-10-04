@@ -108,7 +108,7 @@
   "settings.profile.subtitle": "Aparece na barra lateral. Salvo conforme você digita.",
   "settings.profile.name": "Seu nome",
   "settings.skin.title": "Tema",
-  "settings.skin.subtitle": "Aplicado na hora e lembrado neste computador.",
+  "settings.skin.subtitle": "Aplicado na hora.",
   "settings.roomTurns.title": "Turnos em grupos",
   "settings.roomTurns.subtitle": "Defina uma duração máxima para todo turno de bot em um grupo.",
   "settings.roomTurns.label": "Duração máxima do turno",
@@ -1462,5 +1462,8 @@
   "personPanel.connections.created": "Adicionado em {date}",
   "personPanel.connections.lastUsed": "Último uso {date}",
   "personPanel.connections.removeError": "Não foi possível remover a conexão.",
-  "model.org.hostTools": "{name} executa as próprias ferramentas no servidor Sagax. Escolha um mecanismo que funcione no seu ambiente de servidor."
+  "model.org.hostTools": "{name} executa as próprias ferramentas no servidor Sagax. Escolha um mecanismo que funcione no seu ambiente de servidor.",
+  "settings.scope.installation": "Todas as pessoas neste servidor",
+  "settings.scope.me": "Segue a sua conta",
+  "settings.scope.device": "Somente este dispositivo"
 }

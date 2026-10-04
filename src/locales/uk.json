@@ -121,9 +121,9 @@
   "settings.profile.subtitle": "Показується в бічній панелі. Зберігається на ходу.",
   "settings.profile.name": "Ваше ім'я",
   "settings.skin.title": "Тема",
-  "settings.skin.subtitle": "Застосовується миттєво і запам'ятовується на цій машині.",
+  "settings.skin.subtitle": "Застосовується миттєво.",
   "settings.threadDisplay.title": "Гілки",
-  "settings.threadDisplay.subtitle": "Показувати списки гілок і керування лише на цьому пристрої. Приховування зберігає всю історію розмов і поточну роботу; групи не змінюються. Увімкніть знову, щоб повернути доступ до гілок.",
+  "settings.threadDisplay.subtitle": "Показувати списки гілок і керування. Приховування зберігає всю історію розмов і поточну роботу; групи не змінюються. Увімкніть знову, щоб повернути доступ до гілок.",
   "settings.threadDisplay.show": "Показувати гілки",
   "settings.roomTurns.title": "Тривалість запиту в групах",
   "settings.roomTurns.subtitle": "Задати одну максимальну тривалість для кожного запиту бота в групі.",
@@ -1988,5 +1988,8 @@
   "personPanel.connections.created": "Додано {date}",
   "personPanel.connections.lastUsed": "Востаннє {date}",
   "personPanel.connections.removeError": "Не вдалося вилучити з’єднання.",
-  "model.org.hostTools": "{name} запускає власні інструменти на сервері Sagax. Оберіть рушій, який працює у вашому серверному середовищі."
+  "model.org.hostTools": "{name} запускає власні інструменти на сервері Sagax. Оберіть рушій, який працює у вашому серверному середовищі.",
+  "settings.scope.installation": "Усі на цьому сервері",
+  "settings.scope.me": "Слідує за вашим обліковим записом",
+  "settings.scope.device": "Лише цей пристрій"
 }

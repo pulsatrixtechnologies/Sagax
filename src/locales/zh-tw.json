@@ -112,9 +112,9 @@
   "settings.profile.subtitle": "會顯示在側邊欄，並隨時自動儲存。",
   "settings.profile.name": "你的名稱",
   "settings.skin.title": "外觀主題",
-  "settings.skin.subtitle": "立即套用，並會記憶在這台電腦上。",
+  "settings.skin.subtitle": "立即套用。",
   "settings.threadDisplay.title": "對話",
-  "settings.threadDisplay.subtitle": "僅在這部裝置上顯示對話清單與控制項。隱藏後仍會保留所有對話紀錄與進行中的工作；群組不受影響。重新開啟即可再次存取你的對話。",
+  "settings.threadDisplay.subtitle": "顯示對話清單與控制項。隱藏後仍會保留所有對話紀錄與進行中的工作；群組不受影響。重新開啟即可再次存取你的對話。",
   "settings.threadDisplay.show": "顯示對話",
   "settings.roomTurns.title": "群組回合",
   "settings.roomTurns.subtitle": "為群組中每個機器人回合設定統一的最長時間。",
@@ -2035,7 +2035,7 @@
   "organization.expires": "到期日：{date}",
   "settings.section.workspaces": "安裝實例",
   "settings.font.title": "介面字體",
-  "settings.font.subtitle": "在這台裝置上覆寫主題內建的字體。安裝了 Poppins 時會使用 Poppins。",
+  "settings.font.subtitle": "覆寫主題內建的字體。安裝了 Poppins 時會使用 Poppins。",
   "settings.font.aria": "介面字體",
   "settings.font.skin": "主題預設",
   "settings.font.system": "系統字體",
@@ -2364,5 +2364,8 @@
   "personPanel.connections.created": "新增於 {date}",
   "personPanel.connections.lastUsed": "上次使用 {date}",
   "personPanel.connections.removeError": "無法移除連線。",
-  "model.org.hostTools": "{name} 會在 Sagax 伺服器上執行自己的工具。請選擇可在你的伺服器環境中運作的引擎。"
+  "model.org.hostTools": "{name} 會在 Sagax 伺服器上執行自己的工具。請選擇可在你的伺服器環境中運作的引擎。",
+  "settings.scope.installation": "此伺服器上的所有人",
+  "settings.scope.me": "跟隨你的帳戶",
+  "settings.scope.device": "僅此裝置"
 }

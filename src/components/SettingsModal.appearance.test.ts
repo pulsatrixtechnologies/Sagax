@@ -83,7 +83,11 @@ describe("Settings → Appearance", () => {
     expect(html).toContain("Midnight");
     expect(html).toContain('aria-label="Show threads"');
     expect(html).toContain('aria-label="Show tool calls in chat"');
-    expect(html).toContain("on this device only");
+    expect(html).not.toContain("on this device only");
+    expect(html).toContain('data-settings-scope="me"');
+    expect(html).toContain('data-settings-scope="device"');
+    expect(html).toContain("Follows your account");
+    expect(html).toContain("This device only");
     expect(html).toContain("all conversation history and running work");
     expect(html).toContain("channels are unchanged");
     expect(html).toContain("Turn this back on");

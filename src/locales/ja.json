@@ -29,7 +29,7 @@
   "settings.profile.subtitle": "サイドバーに表示されます。入力するそばから保存されます。",
   "settings.profile.name": "あなたの名前",
   "settings.skin.title": "テーマ",
-  "settings.skin.subtitle": "すぐに適用され、このコンピューターに記憶されます。",
+  "settings.skin.subtitle": "すぐに適用されます。",
   "settings.roomTurns.title": "グループのターン",
   "settings.roomTurns.subtitle": "グループ内のすべてのボットのターンに、共通の最大時間を設定します。",
   "settings.roomTurns.label": "ターンの最大長",
@@ -1450,5 +1450,8 @@
   "personPanel.connections.created": "追加 {date}",
   "personPanel.connections.lastUsed": "最終使用 {date}",
   "personPanel.connections.removeError": "接続を削除できませんでした。",
-  "model.org.hostTools": "{name} は Sagax サーバー上で自身のツールを実行します。あなたのサーバー環境で動くエンジンを選んでください。"
+  "model.org.hostTools": "{name} は Sagax サーバー上で自身のツールを実行します。あなたのサーバー環境で動くエンジンを選んでください。",
+  "settings.scope.installation": "このサーバーの全員",
+  "settings.scope.me": "アカウントに従います",
+  "settings.scope.device": "このデバイスのみ"
 }

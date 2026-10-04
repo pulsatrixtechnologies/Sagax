@@ -29,7 +29,7 @@
   "settings.profile.subtitle": "साइडबार में दिखता है। लिखते ही सहेजा जाता है।",
   "settings.profile.name": "आपका नाम",
   "settings.skin.title": "थीम",
-  "settings.skin.subtitle": "तुरंत लागू होती है और इसी कंप्यूटर पर याद रखी जाती है।",
+  "settings.skin.subtitle": "तुरंत लागू होती है।",
   "settings.roomTurns.title": "समूह की बारी",
   "settings.roomTurns.subtitle": "समूह में हर बॉट बारी के लिए एक अधिकतम अवधि तय करें।",
   "settings.roomTurns.label": "बारी की अधिकतम लंबाई",
@@ -1448,5 +1448,8 @@
   "personPanel.connections.created": "जोड़ा गया {date}",
   "personPanel.connections.lastUsed": "पिछली बार {date}",
   "personPanel.connections.removeError": "कनेक्शन हटाया नहीं जा सका।",
-  "model.org.hostTools": "{name} Sagax सर्वर पर अपने टूल चलाता है. ऐसा इंजन चुनें जो आपके सर्वर वातावरण में काम करे."
+  "model.org.hostTools": "{name} Sagax सर्वर पर अपने टूल चलाता है. ऐसा इंजन चुनें जो आपके सर्वर वातावरण में काम करे.",
+  "settings.scope.installation": "इस सर्वर पर सभी",
+  "settings.scope.me": "आपके खाते के साथ रहता है",
+  "settings.scope.device": "केवल यह डिवाइस"
 }
