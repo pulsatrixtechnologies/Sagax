@@ -29,7 +29,6 @@ import { canManageKeys } from "@/lib/viewer";
 import { api, ApiError, currentTaskBot, useStore, type Bot } from "@/state/store";
 import { effectivePlace, placeOffered } from "@/lib/place";
 import type { CloudBackend } from "../../shared/wire";
-import { ApiKeyRow } from "./ApiKeys";
 import { cn } from "@/lib/cn";
 import { CIRCLE_BUTTON } from "@/lib/circle-button";
 import { useCaptionChrome } from "@/components/DesktopCapabilities";
@@ -1388,12 +1387,15 @@ export function ComputerPanel({
         {phase === "unconfigured" && manageKeys && (
           <div className="mt-3 rounded-xl bg-card p-4">
             <div className="mb-3 text-[13px] text-ink-secondary">
-              {t("computer.addBoatKey")}
+              <SettingsText text={t("computer.addBoatKey")} links={{ settings: { section: "connections", cardId: "connections.integrations" } }} />
             </div>
-            <ApiKeyRow
-              section="box"
-              onSaved={(configured) => configured && setRetry((n) => n + 1)}
-            />
+            <button
+              type="button"
+              onClick={openConnectionSettings}
+              className="rounded-lg bg-control px-3 py-2 text-[13px] text-ink hover:bg-raised-hover"
+            >
+              {t("settings.section.connections")}
+            </button>
           </div>
         )}
         {phase === "vps-unconfigured" && (

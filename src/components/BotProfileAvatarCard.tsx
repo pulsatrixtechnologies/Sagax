@@ -184,7 +184,6 @@ export function BotProfileAvatarCard({
   const { request: api, uploadAvatar } = useBotEditor();
   const fileRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
-  const [savingConnection, setSavingConnection] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [editorOpen, setEditorOpen] = useState(false);
@@ -198,7 +197,7 @@ export function BotProfileAvatarCard({
   );
   const cropRef = useRef(crop);
   cropRef.current = crop;
-  const busy = uploading || generating || savingConnection;
+  const busy = uploading || generating;
   // A move tried here plays through the store, so the sidebar and chat header
   // react too. An unsaved draft has no store motion to show, so the card also
   // keeps the last move it asked for and plays that when nothing else is.
@@ -350,7 +349,6 @@ export function BotProfileAvatarCard({
             disabled={uploading}
             generating={generating}
             onGenerate={generate}
-            onSavingChange={setSavingConnection}
           />
         )}
 

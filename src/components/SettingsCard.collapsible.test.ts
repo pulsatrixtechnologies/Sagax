@@ -181,6 +181,8 @@ describe("collapsed card summaries", () => {
     expect(cardsMatching("ab")).toEqual([]);
     expect(cardsMatching("composio")).toEqual(["connections.apps"]);
     expect(cardsMatching("about")).toEqual(["general.aboutMe"]);
+    expect(cardsMatching("elevenlabs")).toEqual(["connections.voice"]);
+    expect(cardsMatching("avatar")).toEqual(["connections.image"]);
   });
 
   it("French summaries come from the pack", async () => {

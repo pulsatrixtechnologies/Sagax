@@ -21,6 +21,9 @@ import { ManagedByOrganization, ServerModeCard, useServerMode } from "./ServerMo
 import { AnthropicEveryClaudeBot, ApiKeyRow, OpenAiCompatUrl, VpsConnection } from "./ApiKeys";
 import { COMPOSIO_PLATFORM_URL } from "./ConnectedAppsSetup";
 import { DecisionModelSettings } from "./DecisionModelSettings";
+import { LiveCallInstallationSettings } from "./LiveCallSettings";
+import { ImageGenerationSettings } from "./settings/ImageGenerationSettings";
+import { VoiceEngineSettings } from "./settings/VoiceEngineSettings";
 import { useUpdaterState } from "@/lib/updater";
 import { EnginesSettings } from "./EnginesSettings";
 import { LocalComputerSection } from "./LocalComputerSection";
@@ -111,6 +114,8 @@ const CARD_KEYWORDS: Record<string, string[]> = {
   "general.recovery": ["automatic recovery", "backup model", "fallback"],
   "connections.apps": ["composio"],
   "connections.integrations": ["box", "vps"],
+  "connections.voice": ["voice", "tts", "elevenlabs", "fish", "chatterbox", "live call"],
+  "connections.image": ["image", "avatar", "gpt image"],
   "companion.domain": ["domain", "dns", "caddy"],
   "backups.import": ["import", "restore"],
 };
@@ -1316,6 +1321,31 @@ export function SettingsModal() {
                         index === 0 ? [part] : [<code key={index} className="font-mono">opencode auth login</code>, part])}
                     </p>
                   </div>
+                </Card>
+                <Card
+                  collapsible
+                  scope="installation"
+                  cardId="connections.voice"
+                  defaultOpen={false}
+                  title={t("voice.engine.title")}
+                  subtitle={t("voice.engine.subtitle")}
+                >
+                  <VoiceEngineSettings />
+                  <div className="mt-6 border-t border-hairline/40 pt-4">
+                    <div className="text-[15px] font-medium text-ink">{t("voice.live.title")}</div>
+                    <p className="mt-0.5 mb-3 text-[13px] text-ink-secondary">{t("voice.live.subtitle")}</p>
+                    <LiveCallInstallationSettings />
+                  </div>
+                </Card>
+                <Card
+                  collapsible
+                  scope="installation"
+                  cardId="connections.image"
+                  defaultOpen={false}
+                  title={t("imageGen.title")}
+                  subtitle={t("imageGen.subtitle")}
+                >
+                  <ImageGenerationSettings />
                 </Card>
               </>
             )}
