@@ -77,6 +77,8 @@ final class DesktopShellModel: ObservableObject {
     @Published var panelOpen = false
     @Published var panelTab: BotPanelTab = .details
     @Published var modal: Modal?
+    /// The composer's model picker (I3), over the whole window.
+    @Published var modelPickerOpen = false
 
     func open(_ chat: Chat) {
         selected = chat
@@ -133,6 +135,17 @@ struct DesktopShell: View {
                     .frame(maxHeight: .infinity)
                     .shadow(color: .black.opacity(0.35), radius: 24, x: 4)
                     .transition(.move(edge: .leading))
+            }
+            if model.modelPickerOpen, let bot = selectedBot {
+                AnyView(DesktopModelPicker(
+                    bot: bot.projected(forThread: model.selected?.threadId ?? bot.threadId) ?? bot,
+                    close: { model.modelPickerOpen = false },
+                    openProviders: {
+                        model.modelPickerOpen = false
+                        model.modal = .settings
+                    }
+                ))
+                .transition(.opacity)
             }
         }
         .background(theme.app)
@@ -269,6 +282,7 @@ private struct DesktopShellRouting: ViewModifier {
             if let ara = session.state.bots.first(where: { $0.name == "Ara" }) {
                 model.open(.bot(ara))
                 model.panelOpen = screen.opensBotPanel
+                model.modelPickerOpen = screen == .chatModelPicker
                 return
             }
             try? await Task.sleep(nanoseconds: 100_000_000)

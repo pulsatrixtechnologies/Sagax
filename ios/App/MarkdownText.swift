@@ -369,6 +369,19 @@ struct MarkdownText: View {
             markdown: text,
             options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)
         ) {
+            if let desktop {
+                // a custom face takes no bold or italic from the intent: set
+                // the weight and the slant on the run (Geist has no italic;
+                // the browser slants it, as `.italic()` does here)
+                for run in attributed.runs {
+                    guard let intent = run.inlinePresentationIntent else { continue }
+                    let bold = intent.contains(.stronglyEmphasized), italic = intent.contains(.emphasized)
+                    guard bold || italic else { continue }
+                    var font = desktop.font(DesktopChatMetrics.textSize, bold ? .bold : .regular)
+                    if italic { font = font.italic() }
+                    attributed[run.range].font = font
+                }
+            }
             // Code spans: SF Mono 12 on the bubble itself, no chip.
             for run in attributed.runs where run.inlinePresentationIntent?.contains(.code) == true {
                 attributed[run.range].font = desktop != nil ? .system(size: 12, design: .monospaced) : Theme.Font.code

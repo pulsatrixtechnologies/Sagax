@@ -51,3 +51,30 @@ extension CompanionClient {
         return try makeRequest("PATCH", "/api/bots/\(botId)/tasks/\(threadId)", body: body)
     }
 }
+
+/// The model picker's short list (src/lib/custom-models.ts `suggestedModels`):
+/// the current model, the default, then the catalogue order, five at most.
+public enum ModelSuggestions {
+    public static func suggested(_ options: [ModelOption], defaultId: String, currentId: String?, limit: Int = 5) -> [ModelOption] {
+        var picked: [ModelOption] = []
+        var seen = Set<String>()
+        func add(_ option: ModelOption?) {
+            guard let option, picked.count < limit, seen.insert(option.id).inserted else { return }
+            picked.append(option)
+        }
+        add(currentId.flatMap { id in options.first { $0.id == id } })
+        add(options.first { $0.id == defaultId })
+        options.forEach(add)
+        return picked
+    }
+
+    /// The search: a model whose label or id holds every word of the query.
+    public static func filter(_ options: [ModelOption], query: String) -> [ModelOption] {
+        let words = query.lowercased().split(whereSeparator: \.isWhitespace)
+        guard !words.isEmpty else { return options }
+        return options.filter { option in
+            let haystack = "\(option.label) \(option.id)".lowercased()
+            return words.allSatisfy { haystack.contains($0) }
+        }
+    }
+}

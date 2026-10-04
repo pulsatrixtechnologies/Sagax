@@ -17,7 +17,7 @@ struct DesktopInspectorPanel: View {
         var id: String { rawValue }
         var title: LocalizedStringKey {
             switch self {
-            case .runLog: "Run log"
+            case .runLog: "Run Log"
             case .events: "Events"
             case .raw: "Raw"
             }
@@ -137,6 +137,7 @@ struct DesktopInspectorPanel: View {
                             .font(theme.font(12, .medium))
                             .foregroundStyle(theme.ink)
                             .lineLimit(2)
+                            .frame(minHeight: 18)
                         Spacer(minLength: 8)
                         Text(entry.at, format: .dateTime.hour().minute())
                             .font(theme.font(12).monospacedDigit())

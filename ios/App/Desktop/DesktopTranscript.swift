@@ -82,6 +82,18 @@ enum DesktopChatMetrics {
     /// `min(94 %, 780, 100 % - 82)`.
     static func wideCap(column: CGFloat) -> CGFloat { max(120, min(column * 0.94, 780, column - 82)) }
 
+    /// True when some line of this text is wider than `width` at 13 pt
+    /// (markdown marks stripped roughly): the bubble then wraps.
+    static func wraps(_ text: String, in width: CGFloat, theme: DesktopTheme) -> Bool {
+        guard width > 0 else { return false }
+        let font = theme.uiFont(textSize)
+        for line in text.split(separator: "\n", omittingEmptySubsequences: true) {
+            let plain = line.replacingOccurrences(of: "**", with: "").replacingOccurrences(of: "`", with: "")
+            if (plain as NSString).size(withAttributes: [.font: font]).width > width { return true }
+        }
+        return false
+    }
+
     /// rich-blocks.ts `prefersWideBubble`: a table rule or a rich fence.
     static func prefersWide(_ text: String) -> Bool {
         text.range(of: #"(^|\n) {0,3}(?:`{3,}|~{3,})[ \t]*(?:email|mail|eml|widget|html-widget|artifact|chart|csv|tsv|mermaid)\b"#,
@@ -274,6 +286,7 @@ struct DesktopFileChip: View {
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
         .frame(minHeight: 40)
+        .padding(1)
         .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(theme.hairline.opacity(0.25), lineWidth: 1))
         .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
@@ -364,6 +377,7 @@ struct DesktopPermissionCard: View {
                 Text(verbatim: heading)
                     .font(theme.font(15, .semibold))
                     .foregroundStyle(theme.ink)
+                    .frame(minHeight: 22.5)
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 8)
                 if let tool = card.tool, !tool.isEmpty {
@@ -378,6 +392,7 @@ struct DesktopPermissionCard: View {
                     .lineSpacing(5)
                     .foregroundStyle(theme.ink)
                     .textSelection(.enabled)
+                    .frame(minHeight: 20.3)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 8)
@@ -389,8 +404,9 @@ struct DesktopPermissionCard: View {
                     Label {
                         Text(verbatim: waiting)
                     } icon: {
-                        Image(systemName: "clock").foregroundStyle(theme.accent)
+                        Image(systemName: "checkmark.shield").foregroundStyle(theme.accent)
                     }
+                    .frame(minHeight: 19.5)
                     .accessibilityIdentifier("card-waiting-\(message.id)")
                 } else if let outcome = ApprovalOutcome.of(card) {
                     Label(CardView.outcomeText(outcome), systemImage: outcome == .allowed ? "checkmark.circle" : "xmark.circle")

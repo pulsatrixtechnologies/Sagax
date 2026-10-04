@@ -29,7 +29,7 @@ struct ComposerCommandMenuView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
                     ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
-                        if (index == 0 || items[index - 1].section != item.section) && !(desktop != nil && singleGroup) {
+                        if (index == 0 || items[index - 1].section != item.section) && !(desktop != nil && (singleGroup || item.group == .sagax)) {
                             sectionHeading(item)
                         }
                         row(item, highlighted: desktop != nil && index == 0)

@@ -4,6 +4,7 @@
 // transcript rows injected into this screen only (the reference injects
 // them into its page's store; nothing reaches the fixture server).
 import SwiftUI
+import UIKit
 import CompanionCore
 
 extension IPadParityScreen {
@@ -27,6 +28,15 @@ enum DesktopChatParity {
     /// chat-message-hover: the reply the pointer rests on.
     static func forcesHover(_ message: Message) -> Bool {
         screen == .chatMessageHover && (message.text ?? "").contains("Veux-tu que je refasse")
+    }
+
+    /// Where the probe row's top sits on the reference (window points).
+    static var scrollTarget: CGFloat? {
+        switch screen {
+        case .chatTop: 38.5 - 12
+        case .chatAttachments: 1.5 - 12
+        default: nil
+        }
     }
 
     /// The find bar draws as focused without taking the keyboard.
@@ -130,15 +140,15 @@ extension ChatView {
         }
         try? await Task.sleep(nanoseconds: 900_000_000)
         switch screen {
-        case .chatTop:
-            if let target = messages.first(where: { ($0.text ?? "").hasPrefix("Peux-tu me donner les liens") }) {
-                follow.pause()
-                proxy.scrollTo("parity-top-\(rowId(for: target))", anchor: .top)
-            }
-        case .chatAttachments:
-            if let target = messages.first(where: { ($0.text ?? "").hasPrefix("Les deux captures de remplacement") }) {
-                follow.pause()
-                proxy.scrollTo(rowId(for: target), anchor: .center)
+        case .chatTop, .chatAttachments:
+            // The reference's scroll, read from its DOM dump: the row of
+            // "Voici les références" (its 12 pt gap, then the bubble) starts
+            // at this window y. Again as late layout settles.
+            guard let desired = DesktopChatParity.scrollTarget else { return }
+            follow.pause()
+            for delay in [0, 600, 1_200, 2_000] {
+                try? await Task.sleep(nanoseconds: UInt64(delay) * 1_000_000)
+                ParityRowProbe.place(rowTopAt: desired)
             }
         case .chatComposerDraft:
             // the simulator's software keyboard would cover the screen: the
@@ -154,13 +164,14 @@ extension ChatView {
         }
     }
 
-    /// chat-top: the reference scrolls a row to the very top of the column,
-    /// under the floating header; this marker sits a header's height into the
-    /// row, so scrolling it to the top inset puts the row at y 0.
+    /// chat-top / chat-attachments: a probe in the row the reference's
+    /// scroll position is read from ("Voici les références", the reply under
+    /// the first question).
     @ViewBuilder
-    func desktopParityTopMarker(_ id: String, below: CGFloat) -> some View {
-        if desktopChat != nil, DesktopChatParity.screen == .chatTop {
-            Color.clear.frame(height: 1).id("parity-top-\(id)").padding(.top, Self.topBarHeight + below)
+    func desktopParityRowProbe(_ row: TranscriptRow) -> some View {
+        if desktopChat != nil, DesktopChatParity.scrollTarget != nil,
+           row.head.role == .bot, (row.head.text ?? "").hasPrefix("Voici les références") {
+            ParityRowProbe()
         }
     }
 
@@ -170,6 +181,36 @@ extension ChatView {
             if case let .assistantTurn(turn) = row { return turn.messages.contains { $0.id == message.id } }
             return row.id == message.id
         }?.id ?? message.id
+    }
+}
+
+/// A UIKit view inside the probed row: where it is in the window, and the
+/// transcript's scroll view around it.
+struct ParityRowProbe: UIViewRepresentable {
+    private static weak var current: UIView?
+
+    func makeUIView(context: Context) -> UIView {
+        let view = UIView()
+        view.isUserInteractionEnabled = false
+        Self.current = view
+        return view
+    }
+
+    func updateUIView(_ view: UIView, context: Context) { Self.current = view }
+
+    /// Scrolls the transcript so the probed row's top is at `y` in the window.
+    @MainActor
+    static func place(rowTopAt y: CGFloat) {
+        guard let probe = current, probe.window != nil else { return }
+        var view = probe.superview
+        while let candidate = view, !(candidate is UIScrollView) { view = candidate.superview }
+        guard let scroll = view as? UIScrollView else { return }
+        let now = probe.convert(CGPoint.zero, to: nil).y
+        var offset = scroll.contentOffset
+        let lowest = -scroll.adjustedContentInset.top
+        let highest = max(lowest, scroll.contentSize.height - scroll.bounds.height + scroll.adjustedContentInset.bottom)
+        offset.y = min(highest, max(lowest, offset.y + now - y))
+        scroll.setContentOffset(offset, animated: false)
     }
 }
 #endif

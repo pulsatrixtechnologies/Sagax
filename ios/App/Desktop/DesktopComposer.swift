@@ -78,8 +78,8 @@ struct DesktopComposerPill: View {
                 popup
                     .frame(width: 320)
                     .fixedSize(horizontal: false, vertical: true)
-                    .alignmentGuide(.top) { d in d[.bottom] + 8 }
                     .padding(.leading, 8)
+                    .alignmentGuide(.top) { d in d[.bottom] + 8 }
                     .transition(.opacity)
             }
         }

@@ -21,6 +21,7 @@ struct DesktopChatChrome {
     var togglePanel: () -> Void
     var showPanel: (BotPanelTab) -> Void
     var toggleInspector: () -> Void = {}
+    var openModelPicker: () -> Void = {}
 }
 
 private struct DesktopChatKey: EnvironmentKey {
@@ -115,7 +116,8 @@ struct DesktopChatColumn: View {
                 model.panelTab = tab
                 if !model.panelOpen { model.togglePanel() }
             },
-            toggleInspector: { toggleInspector() }
+            toggleInspector: { toggleInspector() },
+            openModelPicker: { model.modelPickerOpen = true }
         ))
     }
 
@@ -224,7 +226,7 @@ extension ChatView {
                     composerFocused = false
                     withAnimation(.snappy(duration: 0.28)) { showingPlus.toggle() }
                 },
-                openModel: { desktopChat?.showPanel(.more) },
+                openModel: { desktopChat?.openModelPicker() },
                 openAllowlist: { desktopChat?.showPanel(.more) },
                 toggleDictation: {
                     composerFocused = false
@@ -319,7 +321,7 @@ struct DesktopChatHeader: View {
                         }
                         .zIndex(1)
                     if chat.isBot {
-                        DesktopRoundButton(systemImage: "ladybug", label: "Inspector", action: chrome.toggleInspector)
+                        DesktopRoundButton(systemImage: "ladybug", label: "Inspector", active: chrome.inspectorOpen, action: chrome.toggleInspector)
                             .accessibilityIdentifier("desktop-inspector-toggle")
                         DesktopRoundButton(systemImage: "sidebar.right", label: "Open agent profile", action: chrome.togglePanel)
                             .keyboardShortcut(".", modifiers: .command)

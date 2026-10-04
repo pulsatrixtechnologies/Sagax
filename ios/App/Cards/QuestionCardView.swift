@@ -71,6 +71,7 @@ struct QuestionCardView: View {
                     Text(current.question)
                         .font(desktop?.font(15) ?? .system(size: 15))
                         .lineSpacing(desktop == nil ? 0 : 5)
+                        .frame(minHeight: desktop == nil ? 0 : 24.4)
                         .foregroundStyle(desktop?.ink ?? Theme.attentionText)
                         .textSelection(.enabled)
                         .fixedSize(horizontal: false, vertical: true)
@@ -100,6 +101,7 @@ struct QuestionCardView: View {
                 Text("\(chat.name) has a question")
                     .font(desktop.font(15, .semibold))
                     .foregroundStyle(desktop.ink)
+                    .frame(minHeight: 22.5)
                 Spacer(minLength: 8)
                 if questions.count > 1, !settled {
                     Text("\(answeredCount) of \(questions.count)")
@@ -240,6 +242,7 @@ struct QuestionCardView: View {
                     if let detail, !detail.isEmpty {
                         Text(detail)
                             .font(desktop?.font(13) ?? .system(size: 13))
+                            .frame(minHeight: desktop == nil ? 0 : 17.9)
                             .foregroundStyle(desktop?.inkSecondary ?? Theme.attentionSecondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
@@ -268,12 +271,14 @@ struct QuestionCardView: View {
                 Label {
                     Text("Waiting for your answer")
                 } icon: {
-                    Image(systemName: "clock").foregroundStyle(desktop.accent)
+                    Image(systemName: "questionmark.bubble").foregroundStyle(desktop.accent)
                 }
                 .font(desktop.font(13))
                 .foregroundStyle(desktop.inkSecondary)
                 Button {
-                    send()
+                    // not `.disabled`: the plain style would dim the
+                    // desktop's own disabled colours
+                    if complete && !answering { send() }
                 } label: {
                     Text(questions.count > 1 ? "Submit answers" : "Submit answer")
                         .font(desktop.font(13.5, .medium))
@@ -283,7 +288,7 @@ struct QuestionCardView: View {
                         .background(complete ? desktop.accent : desktop.raisedHover, in: Capsule())
                 }
                 .buttonStyle(.plain)
-                .disabled(!complete || answering)
+                .accessibilityAddTraits(complete ? [] : .isStaticText)
             }
             .padding(.top, 0)
         } else {

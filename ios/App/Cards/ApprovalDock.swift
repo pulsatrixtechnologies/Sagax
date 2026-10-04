@@ -133,6 +133,7 @@ struct ApprovalDock: View {
                     Text(verbatim: Self.desktopLabel(pending))
                         .font(theme.font(13))
                         .foregroundStyle(theme.ink)
+                        .frame(minHeight: 19.5)
                         .accessibilityIdentifier("approval-dock-title")
                     if let tool = pending.card.tool, !tool.isEmpty {
                         Text(verbatim: tool)
@@ -148,6 +149,7 @@ struct ApprovalDock: View {
                             .font(.system(size: 12, design: .monospaced))
                             .foregroundStyle(theme.ink)
                             .textSelection(.enabled)
+                            .frame(minHeight: 19.5)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .accessibilityIdentifier("approval-dock-detail")
                     }

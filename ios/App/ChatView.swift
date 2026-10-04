@@ -443,7 +443,7 @@ struct ChatView: View {
                             }
                             .id(row.id)
 #if DEBUG
-                            .overlay(alignment: .top) { desktopParityTopMarker(row.id, below: desktopStartsANewDay(at: index, in: transcript) ? (index == 0 ? 43.5 : 55.5) + DesktopChatMetrics.rowGap : 0) }
+                            .background { desktopParityRowProbe(row) }
 #endif
                         }
 

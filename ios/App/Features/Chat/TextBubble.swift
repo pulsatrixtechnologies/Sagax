@@ -58,7 +58,7 @@ struct TextBubble: View {
                     .padding(.trailing, 6)
             }
 
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: desktop == nil ? 4 : 0) {
                 if let speaker, !mine {
                     Text(speaker.name)
                         .font(.system(size: 13, weight: .semibold))
@@ -220,9 +220,13 @@ struct TextBubble: View {
         return bubbleCap
     }
 
-    /// A bubble holding the gallery or a wide block takes its whole cap.
+    /// A bubble holding the gallery or a wide block takes its whole cap,
+    /// and so does text that wraps: CSS `w-fit` of wrapped text is the
+    /// whole available width, where SwiftUI hugs the longest line.
     private func desktopFills(mine: Bool) -> Bool {
-        guard desktop != nil else { return false }
+        guard let desktop else { return false }
+        let text = mine ? Citations.split(attachedContent.text).display : (message.text ?? "")
+        if let cap = desktopCap(mine: mine), DesktopChatMetrics.wraps(text, in: cap - 24, theme: desktop) { return true }
         if mine { return !attachedContent.attachments.isEmpty }
         return !message.generatedImages.isEmpty || !message.fileAttachments.isEmpty
             || (wideCap != nil && DesktopChatMetrics.prefersWide(message.text ?? ""))

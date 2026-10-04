@@ -33,3 +33,21 @@ final class ComposerPlaceTests: XCTestCase {
         XCTAssertEqual(task.surface, "vm")
     }
 }
+
+final class ModelSuggestionsTests: XCTestCase {
+    private func option(_ id: String) -> ModelOption {
+        try! JSONDecoder().decode(ModelOption.self, from: Data(#"{"id":"\#(id)","label":"Model \#(id)"}"#.utf8))
+    }
+
+    func testSuggestedPutsCurrentThenDefaultThenOrderUpToFive() {
+        let options = ["a", "b", "c", "d", "e", "f", "g"].map(option)
+        XCTAssertEqual(ModelSuggestions.suggested(options, defaultId: "c", currentId: "f").map(\.id), ["f", "c", "a", "b", "d"])
+        XCTAssertEqual(ModelSuggestions.suggested(options, defaultId: "a", currentId: nil, limit: 2).map(\.id), ["a", "b"])
+    }
+
+    func testFilterMatchesEveryWord() {
+        let options = ["sonnet-5", "opus-5"].map(option)
+        XCTAssertEqual(ModelSuggestions.filter(options, query: "model opus").map(\.id), ["opus-5"])
+        XCTAssertEqual(ModelSuggestions.filter(options, query: " ").count, 2)
+    }
+}
