@@ -250,10 +250,16 @@ struct DesktopMenuRow: View {
     var body: some View {
         Button(action: action) {
             HStack(alignment: .top, spacing: 8) {
-                Image(systemName: systemImage)
-                    .font(.system(size: 13, weight: .regular))
-                    .frame(width: 16, height: 16)
-                    .padding(.top, 1)
+                Group {
+                    if let lucide = DesktopLucide.forSymbol(systemImage) {
+                        DesktopLucideGlyph(paths: lucide, size: 16)
+                    } else {
+                        Image(systemName: systemImage)
+                            .font(.system(size: 13, weight: .regular))
+                            .frame(width: 16, height: 16)
+                    }
+                }
+                .padding(.top, 1)
                 VStack(alignment: .leading, spacing: 0) {
                     title
                         .font(theme.font(13))
@@ -267,9 +273,7 @@ struct DesktopMenuRow: View {
                 }
                 Spacer(minLength: 4)
                 if selected {
-                    Image(systemName: "checkmark")
-                        .font(.system(size: 11, weight: .semibold))
-                        .frame(width: 14, height: 14)
+                    DesktopLucideGlyph(paths: DesktopLucide.check, size: 14)
                         .padding(.top, 2)
                 }
             }
@@ -326,7 +330,7 @@ struct DesktopApprovalButton: View {
 
     var body: some View {
         let level = ApprovalLevel.of(approvalMode: bot.approvalMode, autoApprove: bot.autoApprove)
-        DesktopPillTrigger(systemImage: Self.icon(level), lucide: level == .ask ? DesktopLucide.hand : nil, active: open) { open.toggle() }
+        DesktopPillTrigger(systemImage: Self.icon(level), lucide: DesktopLucide.forSymbol(Self.icon(level)), active: open) { open.toggle() }
             .accessibilityLabel(Text("\(String(localized: Self.labelResource(level))) for \(bot.name)"))
             .accessibilityIdentifier("desktop-composer-approval")
             .overlay(alignment: .topLeading) {
@@ -346,8 +350,8 @@ struct DesktopApprovalButton: View {
                         }
                     }
                     .fixedSize()
-                    .alignmentGuide(.top) { d in d[.bottom] + 8 }
-                    .offset(x: 1)
+                    .frame(height: 0, alignment: .bottom)
+                    .offset(x: 1, y: -8)
                     .accessibilityIdentifier("desktop-approval-menu")
                 }
             }
@@ -405,7 +409,7 @@ struct DesktopPlaceButton: View {
         let surface = session.state.bot(bot.id)?.tasks?.first { $0.threadId == bot.threadId }?.surface
         let effective = WorkPlace.effective(botComputer: bot.computer, taskSurface: surface)
         let botDefault = bot.computer ?? "auto"
-        DesktopPillTrigger(systemImage: Self.icon(effective), lucide: Self.icon(effective) == "sparkles" ? DesktopLucide.sparkles : nil, active: open) { open.toggle() }
+        DesktopPillTrigger(systemImage: Self.icon(effective), lucide: DesktopLucide.forSymbol(Self.icon(effective)), active: open) { open.toggle() }
             .disabled(effective == "off")
             .accessibilityLabel(Text("Where this conversation works: \(Self.label(effective))"))
             .accessibilityIdentifier("desktop-composer-place")
@@ -424,7 +428,8 @@ struct DesktopPlaceButton: View {
                         }
                     }
                     .fixedSize()
-                    .alignmentGuide(.top) { d in d[.bottom] + 8 }
+                    .frame(height: 0, alignment: .bottom)
+                    .offset(y: -8)
                     .accessibilityIdentifier("desktop-place-menu")
                 }
             }
@@ -510,6 +515,10 @@ enum DesktopLucide {
     static let mic = ["M12 19v3", "M19 10v2a7 7 0 0 1-14 0v-2", "M12 2a3 3 0 0 1 3 3v7a3 3 0 0 1-6 0V5a3 3 0 0 1 3-3z"]
     static let audioLines = ["M2 10v3", "M6 6v11", "M10 3v18", "M14 8v7", "M18 5v13", "M22 10v3"]
     static let chevronDown = ["m6 9 6 6 6-6"]
+    static let copy = ["M10 8h10a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H10a2 2 0 0 1-2-2V10a2 2 0 0 1 2-2z",
+                       "M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"]
+    static let download = ["M12 15V3", "M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4", "m7 10 5 5 5-5"]
+    static let share = ["M12 2v13", "m16 6-4-4-4 4", "M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"]
     static let shieldCheck = [
         "M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z",
         "m9 12 2 2 4-4",
@@ -527,6 +536,40 @@ enum DesktopLucide {
         "M10 11v6", "M14 11v6", "M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6", "M3 6h18",
         "M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2",
     ]
+
+    static let box = [
+        "M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z",
+        "m3.3 7 8.7 5 8.7-5", "M12 22V12",
+    ]
+    static let monitor = ["M4 3h16a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z", "M8 21h8", "M12 17v4"]
+    static let cloud = ["M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"]
+    static let globe = [circle(12, 12, 10), "M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20", "M2 12h20"]
+    static let check = ["M20 6 9 17l-5-5"]
+    static let filePen = [
+        "M12.5 22H18a2 2 0 0 0 2-2V7l-5-5H6a2 2 0 0 0-2 2v9.5", "M14 2v4a2 2 0 0 0 2 2h4",
+        "M13.378 15.626a1 1 0 1 0-3.004-3.004l-5.01 5.012a2 2 0 0 0-.506.854l-.837 2.87a.5.5 0 0 0 .62.62l2.87-.837a2 2 0 0 0 .854-.506z",
+    ]
+    static let triangleAlert = ["m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3", "M12 9v4", "M12 17h.01"]
+    static let listChecks = ["m3 17 2 2 4-4", "m3 7 2 2 4-4", "M13 6h8", "M13 12h8", "M13 18h8"]
+
+    /// The renderer's glyph for an SF Symbol name the menus use, if any.
+    static func forSymbol(_ name: String) -> [String]? {
+        switch name {
+        case "sparkles": sparkles
+        case "macwindow": box
+        case "laptopcomputer": monitor
+        case "cloud": cloud
+        case "globe": globe
+        case "hand.raised": hand
+        case "square.and.pencil": filePen
+        case "checkmark.shield": shieldCheck
+        case "exclamationmark.triangle": triangleAlert
+        case "checklist": listChecks
+        case "doc.on.doc": copy
+        case "arrow.down.to.line": download
+        default: nil
+        }
+    }
 
     static func circle(_ cx: Double, _ cy: Double, _ r: Double) -> String {
         "M\(cx - r) \(cy)A\(r) \(r) 0 1 0 \(cx + r) \(cy)A\(r) \(r) 0 1 0 \(cx - r) \(cy)Z"

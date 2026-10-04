@@ -346,7 +346,7 @@ struct DesktopChatHeader: View {
             if !(chrome.panelOpen && chrome.panelDocked) {
                 HStack(spacing: 8) {
                     Spacer(minLength: 0)
-                    DesktopRoundButton(systemImage: "square.and.arrow.up", label: "Export conversation", active: exportOpen, icon: .share) { exportOpen.toggle() }
+                    DesktopRoundButton(systemImage: "square.and.arrow.up", label: "Export conversation", active: exportOpen, lucide: DesktopLucide.share) { exportOpen.toggle() }
                         .overlay(alignment: .topTrailing) {
                             if exportOpen { exportMenu }
                         }
@@ -376,31 +376,46 @@ extension DesktopChatHeader {
     /// ChatView.tsx's export menu: "Export Conversation", Copy as Markdown,
     /// Download as .md; 4 pt under the button, its trailing edge aligned.
     var exportMenu: some View {
-        VStack(alignment: .leading, spacing: 0) {
+        VStack(alignment: .leading, spacing: 2) {
             Text("Export Conversation")
                 .font(theme.font(12))
                 .foregroundStyle(theme.inkSecondary)
-                .padding(.horizontal, 14)
-                .padding(.top, 10)
-                .padding(.bottom, 4)
-            DesktopMenuRow(systemImage: "doc.on.doc", title: Text("Copy as Markdown")) {
+                .padding(.horizontal, 8)
+                .frame(height: 24)
+            exportRow(DesktopLucide.copy, Text("Copy as Markdown")) {
                 exportOpen = false
                 copyMarkdown()
             }
-            DesktopMenuRow(systemImage: "arrow.down.to.line", title: Text("Download as .md")) {
+            exportRow(DesktopLucide.download, Text("Download as .md")) {
                 exportOpen = false
                 export()
             }
         }
-        .padding(.horizontal, 6)
-        .padding(.bottom, 6)
-        .frame(width: 219, alignment: .leading)
-        .background(theme.menu, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(theme.border, lineWidth: 1))
-        .shadow(color: .black.opacity(0.25), radius: 14, y: 8)
+        .padding(6)
+        .frame(width: 218, alignment: .leading)
+        .padding(1)
+        .background(theme.elevated, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(theme.border, lineWidth: 0.5))
         .fixedSize()
         .alignmentGuide(.top) { d in d[.top] - 40 }
         .accessibilityIdentifier("desktop-export-menu")
+    }
+
+    /// `flex items-center gap-2 rounded-md px-2 py-1.5 text-[13px] leading-[18px]`.
+    private func exportRow(_ glyph: [String], _ title: Text, _ action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 8) {
+                DesktopLucideGlyph(paths: glyph, size: 16)
+                title.font(theme.font(13)).lineLimit(1)
+                Spacer(minLength: 0)
+            }
+            .foregroundStyle(theme.ink)
+            .padding(.horizontal, 8)
+            .frame(height: 30)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .hoverEffect(.highlight)
     }
 
     #if DEBUG

@@ -34,10 +34,13 @@ struct DesktopThreadPickerButton: View {
         .accessibilityIdentifier("desktop-thread-picker")
         .overlay(alignment: .topTrailing) {
             if open {
+                // `absolute right-0 top-full mt-1`: hung from a zero-high
+                // frame on the button's top edge, 40 pt down
                 DesktopThreadPickerCard(bot: bot, close: { open = false })
-                    .fixedSize(horizontal: false, vertical: true)
                     .frame(width: 300)
-                    .alignmentGuide(.top) { d in d[.top] - 40 }
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(height: 0, alignment: .top)
+                    .offset(y: 40)
                     .transition(.opacity)
             }
         }
@@ -198,9 +201,10 @@ private struct DesktopThreadPickerRow: View {
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
         .frame(minHeight: 52)
-        .background(active ? theme.raised.opacity(0.6) : (hovering ? theme.raised.opacity(0.4) : .clear))
+        .contentShape(.contextMenuPreview, Rectangle())
         .onHover { hovering = $0 }
         .threadMenu(task, owner: .bot(bot), actions: actions, session: session)
+        .background(active ? theme.raised.opacity(0.6) : (hovering ? theme.raised.opacity(0.4) : .clear))
         .accessibilityIdentifier("desktop-thread-picker.\(task.threadId)")
     }
 
