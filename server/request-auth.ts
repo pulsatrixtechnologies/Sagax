@@ -392,7 +392,7 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   // The bot's standing instructions for the profile's Instructions row
   // (owner or admin, checked in the handler).
   { methods: ["GET"], path: /^\/api\/bots\/[\w-]+\/soul$/ },
-  { methods: ["POST"], path: /^\/api\/bots\/[\w-]+\/primary$/ }, // the person's own bot only: the handler checks the owner
+  { methods: ["POST", "DELETE"], path: /^\/api\/bots\/[\w-]+\/primary$/ }, // the person's own bot only: the handler checks the owner
   // An organization member's own bots: the handler requires a member or
   // admin role, limits the fields (memberBotFieldViolation) and, for a
   // delete, that the session owns the bot.

@@ -47,6 +47,7 @@ import { t } from "@/lib/i18n";
 import { useOwnerOrAdmin } from "@/lib/use-owner-or-admin";
 import type { PromptPreviewData } from "./bot-settings/PromptPreview";
 import { servedPage } from "@/lib/desktop";
+import { canEditBotField, canStepPrimary } from "@/lib/bot-capabilities";
 import { viewerBotsReadOnly } from "@/lib/viewer";
 
 const sectionLabel = (entry: (typeof BOT_SECTIONS)[number]) => (entry.labelKey ? t(entry.labelKey) : entry.label);
@@ -132,7 +133,12 @@ export function BotSettingsDialog({ bot, onOpenVmWorkspace }: {
     .filter((entry) => entry.id !== "sharing" || perspicaxOrg !== null)
     .filter((entry) => entry.id !== "perspicax" || perspicaxOrg !== null)
     // On an organization server Works on is its own item (Access keeps it elsewhere).
-    .filter((entry) => entry.id !== "worksOn" || perspicaxOrg !== null);
+    .filter((entry) => entry.id !== "worksOn" || perspicaxOrg !== null)
+    // An organization member never sees a section whose fields the server refuses.
+    .filter((entry) => entry.id !== "access" || canEditBotField(state.config, bot, "computer") || canEditBotField(state.config, bot, "cwd"))
+    .filter((entry) => entry.id !== "worksOn" || canEditBotField(state.config, bot, "computer"))
+    .filter((entry) => entry.id !== "memory" || canEditBotField(state.config, bot, "memoryEnabled"))
+    .filter((entry) => entry.id !== "permissions" || canStepPrimary(state.config, bot) || canEditBotField(state.config, bot, "approvalMode"));
   const visibleSections = sections.filter((entry) => sectionMatches(entry, q));
 
   const [overview, setOverview] = useState<BotOverview | null>(null);
@@ -341,8 +347,9 @@ export function BotSettingsDialog({ bot, onOpenVmWorkspace }: {
       case "memory":
         // Memory has an explicit Save button; preserve its unsaved draft
         // while the user consults another section. It fetches when it
-        // becomes the active section. Always mounted; visibility toggled
-        // via hidden on the accordion body wrapper.
+        // becomes the active section. Mounted below while the viewer may
+        // change it; visibility toggled via hidden on the wrapper.
+        if (!canEditBotField(state.config, bot, "memoryEnabled")) return null;
         return <MemorySection bot={bot} active={!collapsed && section === "memory"} onToggle={(enabled) => derived.patch({ memoryEnabled: enabled })} />;
       case "routines":
         return <RoutinesSection bot={bot} routines={derived.botRoutines} runs={state.routineRuns} />;
@@ -616,10 +623,11 @@ export function BotSettingsDialog({ bot, onOpenVmWorkspace }: {
             </>
           )}
           {/* Memory stays mounted so an unsaved draft survives tab and
-              section changes; it shows only while it is the open section. */}
-          <div hidden={!(tab === "more" && !collapsed && section === "memory")} className="px-4 pb-6">
+              section changes; it shows only while it is the open section.
+              A member cannot save it, so it is not mounted and does not fetch. */}
+          {canEditBotField(state.config, bot, "memoryEnabled") && <div hidden={!(tab === "more" && !collapsed && section === "memory")} className="px-4 pb-6">
             <MemorySection bot={bot} active={tab === "more" && !collapsed && section === "memory"} onToggle={(enabled) => derived.patch({ memoryEnabled: enabled })} />
-          </div>
+          </div>}
         </div>
       </aside>
       <ConfirmDialog

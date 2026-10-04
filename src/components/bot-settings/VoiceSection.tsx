@@ -17,10 +17,13 @@ export function VoiceSection({
 }) {
   const { patch } = derived;
   const { draft } = useBotEditor();
+  // Voice, read-aloud and voice notes are not member fields, and the
+  // engine key is an installation write. Notifications stay.
+  const showVoice = !derived.canEdit || derived.canEdit("voice");
 
   return (
     <div className="flex flex-col gap-4">
-      <VoiceSettings bot={bot} onPatch={patch} />
+      {showVoice && <VoiceSettings bot={bot} onPatch={patch} />}
 
       <div className="flex items-center justify-between gap-4 rounded-xl border border-hairline/40 p-4">
         <div>

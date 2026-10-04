@@ -68,6 +68,7 @@ export function WorksOnSetting({ bot }: { bot: Bot }) {
   const { dispatch } = useStore();
   const derived = useBotSettingsDerived(bot);
   const [warnLocal, setWarnLocal] = useState(false);
+  if (!derived.canEdit("computer")) return null;
   const disabled: Partial<Record<"local" | "browser", string>> = {};
   if (!derived.localSelectable) disabled.local = derived.localDisabledReason ?? t("place.unavailable");
   if (!derived.browserSelectable) disabled.browser = derived.browserDisabledReason;

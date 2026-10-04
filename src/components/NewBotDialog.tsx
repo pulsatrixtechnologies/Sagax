@@ -26,7 +26,7 @@ import { FullAccessWarning } from "./FullAccessWarning";
 import { LocalComputerAutoWarning } from "./LocalComputerAutoWarning";
 import { SharePresetDialog } from "./SharePresetDialog";
 import { servedPage } from "@/lib/desktop";
-import { viewerBotsReadOnly, viewerCanCreateBots } from "@/lib/viewer";
+import { viewerBotsReadOnly, viewerCanCreateBots, viewerIsOrgMember } from "@/lib/viewer";
 
 const SECTIONS = ["Identity", "Soul", "Skills", "Memory", "Routines", "Access", "Model", "Permissions", "Voice & alerts"] as const;
 type Section = typeof SECTIONS[number];
@@ -203,7 +203,7 @@ export function LocalNewBotDialog({ defaultsMode = false, onClose, section, onCr
     try {
       if (defaultsMode) await api("/api/config", { method: "PATCH", body: JSON.stringify({ newBotDefaults: await preparedBotTemplate(draft) }) });
       else {
-        const { bot, warnings } = await createConfiguredBot(draft, undefined, undefined, undefined, visibility?.ok ? visibility.visibility : undefined);
+        const { bot, warnings } = await createConfiguredBot(draft, undefined, undefined, undefined, visibility?.ok ? visibility.visibility : undefined, { memberFieldsOnly: viewerIsOrgMember(parent.state.config) });
         parent.dispatch({ type: "botAdded", bot, preserveSelection });
         if (warnings.length) parent.dispatch({ type: "error", message: warnings.join("\n") });
         try { await onCreated?.(bot); }
@@ -270,7 +270,7 @@ export function LocalNewBotDialog({ defaultsMode = false, onClose, section, onCr
         )}
       <div className="flex min-h-0 flex-1 flex-col sm:flex-row">
         <nav aria-label={t("newBot.sections")} className="flex shrink-0 gap-1 overflow-x-auto border-b border-hairline/40 p-2 sm:w-40 sm:flex-col sm:border-b-0 sm:border-r">
-          {SECTIONS.map(label => <button key={label} type="button" onClick={() => setActive(label)} aria-current={active === label ? "page" : undefined}
+          {SECTIONS.filter(label => !viewerIsOrgMember(parent.state.config) || (label !== "Memory" && label !== "Access" && label !== "Permissions")).map(label => <button key={label} type="button" onClick={() => setActive(label)} aria-current={active === label ? "page" : undefined}
             className={cn("shrink-0 rounded-lg px-3 py-2 text-left text-[13px]", active === label ? "bg-control text-ink" : "text-ink-secondary hover:bg-control/50")}>{label}</button>)}
         </nav>
         <div className="min-h-0 min-w-0 flex-1 overflow-y-auto p-4 sm:p-5">
@@ -304,11 +304,11 @@ function DraftSection({ active, draft, defaultsMode }: { active: Section; draft:
     <StartingRole draft={draft} defaultsMode={defaultsMode} />
     <IdentitySection bot={bot} patch={derived.patch} activeState={derived.activeState} mascotMotion={null}
       namePlaceholder={defaultsMode ? t("newBot.randomName") : undefined} />
-    <label className="block text-[13px] text-ink-secondary">Team
+    {!viewerIsOrgMember(state.config) && <label className="block text-[13px] text-ink-secondary">Team
       <select className={cn(inputCls, "mt-1.5")} value={bot.section ?? ""} onChange={event => draft.patch({ section: event.target.value })}>
         <option value="">General</option>{[...new Set([...(state.sections ?? []), ...state.bots.map(bot => bot.section ?? "")])].filter(Boolean).map(name => <option key={name}>{name}</option>)}
       </select>
-    </label>
+    </label>}
   </div>;
   if (active === "Soul") return <SoulSection bot={bot} patch={derived.patch} />;
   if (active === "Skills") return <SkillsSection bot={bot} />;

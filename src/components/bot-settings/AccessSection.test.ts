@@ -85,6 +85,13 @@ function render(bot: Bot, derived = makeDerived()) {
   );
 }
 
+describe("an organization member", () => {
+  it("hides the section when none of its fields can be saved", () => {
+    const markup = render(makeBot(), makeDerived({ canEdit: () => false }));
+    expect(markup).toBe("");
+  });
+});
+
 describe("owner tool selection status", () => {
   it("distinguishes the legacy catalog from an explicit no-tools selection", () => {
     expect(render(makeBot())).toContain("All current tools");

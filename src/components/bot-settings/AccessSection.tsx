@@ -565,6 +565,11 @@ export function AccessSection({
         .map(([slug]) => slug)
     : [];
 
+  // Where the bot runs, what it may reach, and which tools it may use are
+  // not member fields. Hide the whole section when none of them can be saved.
+  const canEdit = derived.canEdit ?? (() => true);
+  if (!canEdit("computer") && !canEdit("cwd") && !canEdit("mcpServers") && !canEdit("browser") && !canEdit("composio")) return null;
+
   return (
     <div className="flex flex-col gap-4">
       {/* On an organization server Works on lives in the bot's Computer tab

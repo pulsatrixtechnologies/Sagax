@@ -24,6 +24,8 @@ import {
   ChevronLeft,
   PanelRight,
 } from "lucide-react";
+import { canEditBotField } from "@/lib/bot-capabilities";
+import { canManageKeys } from "@/lib/viewer";
 import { api, ApiError, currentTaskBot, useStore, type Bot } from "@/state/store";
 import { effectivePlace, placeOffered } from "@/lib/place";
 import type { CloudBackend } from "../../shared/wire";
@@ -239,6 +241,10 @@ export function ComputerPanel({
   [profileBot.id, profileBot.threadId]);
   const canManageCloud = profileBot.computer === "cloud" && livePlace === "cloud";
   const canManageVm = profileBot.computer === "vm" && livePlace === "vm";
+  // Choose Cloud and Delete VM write where the bot runs. The Boat key is
+  // an installation secret. Both are refused to an organization member.
+  const editComputer = canEditBotField(state.config, profileBot, "computer");
+  const manageKeys = canManageKeys(state.config);
   const { capabilities, ready: capabilitiesReady } = useDesktopCapabilities();
   const localAvailable = capabilities.localComputer.available;
   const isLinux = capabilities.host.platform === "linux";
@@ -1290,7 +1296,7 @@ export function ComputerPanel({
                 </button>
               )}
 
-              {(phase === "show-ready-boat" || phase === "show-sleeping-boat" || phase === "show-pending-boat") && (
+              {editComputer && (phase === "show-ready-boat" || phase === "show-sleeping-boat" || phase === "show-pending-boat") && (
                 <button
                   type="button"
                   onClick={() => updateComputerSelection({ computer: "cloud" })}
@@ -1378,7 +1384,7 @@ export function ComputerPanel({
             {errorText}
           </div>
         )}
-        {phase === "unconfigured" && (
+        {phase === "unconfigured" && manageKeys && (
           <div className="mt-3 rounded-xl bg-card p-4">
             <div className="mb-3 text-[13px] text-ink-secondary">
               {t("computer.addBoatKey")}
@@ -1488,7 +1494,7 @@ export function ComputerPanel({
             {t("computer.takeControl")}
           </button>
         )}
-        {canManageVm && phase === "vm" && vmStatus?.mode === "per-bot" && (
+        {editComputer && canManageVm && phase === "vm" && vmStatus?.mode === "per-bot" && (
           <button
             onClick={() => void runVmAction("vm-delete")}
             disabled={pending !== null || profileBot.busy}

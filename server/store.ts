@@ -2335,6 +2335,19 @@ export class Store {
     return changed;
   }
 
+  /** Step this bot down from Primary Bot. The role is not handed to anyone
+   * else. Managed teams belonged to the role, so they go with it. */
+  clearPrimaryBot(id: string): BotRecord[] | null {
+    const selected = this.bot(id);
+    if (!selected) return null;
+    if (!selected.chiefOfStaff) return [];
+    selected.chiefOfStaff = false;
+    delete selected.managedSections;
+    this.saveBots();
+    this.emit({ type: "bot", botId: selected.id });
+    return [selected];
+  }
+
   /** Leaders of an imported team (a package's leader, a backup's former
    * Chiefs of Staff). An import is additive: a person who has a Primary Bot
    * keeps it unchanged, and the leaders arrive as ordinary bots (the person

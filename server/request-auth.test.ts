@@ -118,6 +118,7 @@ describe("scopes", () => {
       ["GET", "/api/bots/x/slack-management"], // a link to Admin, read-only
       ["POST", "/api/bots/x/direct-grants"],
       ["POST", "/api/bots"], ["DELETE", "/api/bots/x"], // a member's own bots: the handler checks role and owner
+      ["POST", "/api/bots/x/primary"], ["DELETE", "/api/bots/x/primary"], // the owner's own Primary Bot, both ways
       ["POST", "/api/org/invites/tok/accept"],
       ["GET", "/api/org"],
       ["POST", "/api/workers"],

@@ -1800,8 +1800,12 @@ describe("harness HTTP API", () => {
       const bots = (await api("GET", "/api/bots")).body.bots as Array<{ id: string; chiefOfStaff?: boolean }>;
       expect(bots.filter((bot) => bot.chiefOfStaff).map((bot) => bot.id)).toEqual([second.id]);
       expect((await api("POST", "/api/bots/missing-bot/primary")).status).toBe(404);
+      const stepped = await api("DELETE", `/api/bots/${second.id}/primary`);
+      expect(stepped.status).toBe(200);
+      expect(stepped.body.bot).toMatchObject({ id: second.id, chiefOfStaff: false });
+      expect((await api("GET", "/api/bots")).body.bots.filter((bot: { chiefOfStaff?: boolean }) => bot.chiefOfStaff)).toEqual([]);
+      expect((await api("DELETE", "/api/bots/missing-bot/primary")).status).toBe(404);
     } finally {
-      await api("PATCH", `/api/bots/${second.id}`, { chiefOfStaff: false });
       await Promise.all([first, second].map((bot) => api("DELETE", `/api/bots/${bot.id}`)));
     }
   });

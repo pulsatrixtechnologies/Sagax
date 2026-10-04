@@ -1294,6 +1294,27 @@ describe("Store", () => {
     expect(reloaded.setPrimaryBot("missing")).toBeNull();
   });
 
+  it("steps one Primary Bot down without handing the role to anyone else", () => {
+    const store = new Store(selection);
+    const first = store.createBot({ section: "Work" });
+    const ada = store.createBot({ section: "Work", ownerUserId: "ada" });
+    store.setPrimaryBot(first.id);
+    store.setPrimaryBot(ada.id);
+    store.patchBot(first.id, { managedSections: ["Lab"] });
+
+    const cleared = store.clearPrimaryBot(first.id);
+    expect(cleared?.map((bot) => bot.id)).toEqual([first.id]);
+    expect(store.bot(first.id)?.chiefOfStaff).toBe(false);
+    expect(store.bot(first.id)?.managedSections).toBeUndefined();
+    expect(store.bot(ada.id)?.chiefOfStaff).toBe(true);
+    expect(store.clearPrimaryBot(first.id)).toEqual([]);
+    expect(store.clearPrimaryBot("missing")).toBeNull();
+
+    const reloaded = new Store(selection);
+    expect(reloaded.bot(first.id)?.chiefOfStaff).toBe(false);
+    expect(reloaded.bot(ada.id)?.chiefOfStaff).toBe(true);
+  });
+
   it("migrates one Chief of Staff per section to one Primary Bot per person, once", () => {
     const store = new Store(selection);
     const work = store.createBot({ section: "Work" });

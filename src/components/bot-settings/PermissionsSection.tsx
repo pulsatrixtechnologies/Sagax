@@ -14,6 +14,7 @@
 import { useEffect, useState } from "react";
 import { Star } from "lucide-react";
 
+import { canEditBotField, canStepPrimary } from "@/lib/bot-capabilities";
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
 import { useOwnerOrAdmin } from "@/lib/use-owner-or-admin";
@@ -48,12 +49,15 @@ export function PermissionsSection({
   const [allThreads, setAllThreads] = useState(true);
   const [commandAllowlistTarget, setCommandAllowlistTarget] = useState<{ botId: string; botName: string } | null>(null);
   const [primaryError, setPrimaryError] = useState<string | null>(null);
-  // Taking the role goes through the owner's own route (one per person; an
-  // organization member may choose theirs). A draft or a step-down patches.
+  // Taking the role and leaving it go through the owner's own route (one
+  // per person). A draft still patches, because the bot does not exist yet;
+  // an organization member never sees the switch while drafting (create
+  // refuses chiefOfStaff).
   const togglePrimary = () => {
     setPrimaryError(null);
-    if (bot.chiefOfStaff || draft) return patch({ chiefOfStaff: !bot.chiefOfStaff });
-    void api<{ bot: Bot }>(`/api/bots/${bot.id}/primary`, { method: "POST" })
+    if (draft) return patch({ chiefOfStaff: !bot.chiefOfStaff });
+    const method = bot.chiefOfStaff ? "DELETE" : "POST";
+    void api<{ bot: Bot }>(`/api/bots/${bot.id}/primary`, { method })
       .then((response) => dispatch({ type: "botPatched", bot: response.bot }))
       .catch((error: unknown) => setPrimaryError(error instanceof Error ? error.message : String(error)));
   };
@@ -81,10 +85,16 @@ export function PermissionsSection({
     }
     patch({ approvalMode: mode });
   };
+  const showPrimary = canStepPrimary(state.config, bot, { draft });
+  const showApproval = canEditBotField(state.config, bot, "approvalMode", { draft });
+  const showContact = canEditBotField(state.config, bot, "approvePeerComms", { draft });
+  const showTeams = canEditBotField(state.config, bot, "managedSections", { draft });
+  const showOutbound = canEditBotField(state.config, bot, "outbound", { draft });
+  if (!showPrimary && !showApproval && !showContact && !showOutbound) return null;
 
   return (
     <div className="flex flex-col gap-4">
-      <div
+      {showPrimary && <div
         className={cn(
           "rounded-xl border border-hairline/40 p-4",
         )}
@@ -119,17 +129,17 @@ export function PermissionsSection({
         </div>
         {primaryError && <div role="alert" className="mt-2 text-[12px] text-danger">{primaryError}</div>}
         <ProposalStatus bot={bot} kind="chief" />
-        {bot.chiefOfStaff && <ManagedTeamsSettings
+        {showTeams && bot.chiefOfStaff && <ManagedTeamsSettings
           key={bot.id + JSON.stringify(bot.managedSections ?? [])}
           name={bot.name} ownTeam={bot.section?.trim() || ""}
           teams={["", ...(state.sections ?? []), ...[...state.bots, ...state.groups].map(member => member.section?.trim() || "")]}
           allowed={bot.managedSections ?? []}
           onSave={managedSections => patch({ managedSections, acknowledgePeerScope: true })}
         />}
-        {bot.chiefOfStaff && <ProposalStatus bot={bot} kind="owner" />}
-      </div>
+        {showTeams && bot.chiefOfStaff && <ProposalStatus bot={bot} kind="owner" />}
+      </div>}
 
-      <div className="flex items-center justify-between gap-4 rounded-xl border border-hairline/40 p-4">
+      {showContact && <div className="flex items-center justify-between gap-4 rounded-xl border border-hairline/40 p-4">
         <div>
           <div className="text-[13px] font-medium text-ink">Ask me before contacting other bots</div>
           <div className="mt-0.5 text-[13px] text-ink-secondary">
@@ -147,9 +157,9 @@ export function PermissionsSection({
           title={!bot.approvePeerComms && !canCoordinate ? "This model cannot contact other bots" : undefined}
           className="disabled:cursor-not-allowed"
         />
-      </div>
+      </div>}
 
-      <div className="rounded-xl border border-hairline/40 p-4">
+      {showApproval && <div className="rounded-xl border border-hairline/40 p-4">
         <div className="text-[13px] font-medium text-ink">Approval level</div>
         <div className="mt-0.5 text-[13px] text-ink-secondary">
           {draft ? "Default for the new bot's threads, routines and delegated work." : "Default for new threads, routines and delegated work. When enabling Full access, you can also apply it to every existing thread. Use Refresh permissions on a thread to apply the current level to that conversation."}
@@ -180,14 +190,14 @@ export function PermissionsSection({
           className="mt-3 block text-[13px] text-ink-secondary hover:text-ink hover:underline"
           onClick={() => setCommandAllowlistTarget({ botId: bot.id, botName: bot.name })}
         >{t("commandAllowlist.manage")}</button>}
-      </div>
+      </div>}
 
       {commandAllowlistTarget && <CommandAllowlistDialog
         key={commandAllowlistTarget.botId}
         {...commandAllowlistTarget}
         onClose={() => setCommandAllowlistTarget(null)}
       />}
-      {!draft && <OutboundControl key={bot.id} bot={bot} onChange={(outbound) => patch({ outbound })} />}
+      {!draft && showOutbound && <OutboundControl key={bot.id} bot={bot} onChange={(outbound) => patch({ outbound })} />}
       <LocalComputerAutoWarning
         open={localAutoWarning !== null}
         onCancel={() => setLocalAutoWarning(null)}

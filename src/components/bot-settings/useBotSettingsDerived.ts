@@ -11,6 +11,8 @@ import { placeOffered } from "@/lib/place";
 import { useStore, type Bot } from "@/state/store";
 import { approvalModeFor } from "../../../shared/approval-mode";
 import { connectorGrantsState, type ConnectorGrantsState } from "@/lib/connector-grants";
+import { canEditBotField } from "@/lib/bot-capabilities";
+import { useBotEditor } from "./BotEditorContext";
 
 export type BotPatch = Partial<
   Pick<
@@ -61,6 +63,7 @@ export type BotPatch = Partial<
 
 export function useBotSettingsDerived(bot: Bot) {
   const { state, dispatch } = useStore();
+  const { draft } = useBotEditor();
   const { capabilities } = useDesktopCapabilities();
   const providerSupportsLocal = instanceSupportsLocalComputer(state.instances, bot);
   // An OMB Cloud home never offers this computer (shared/cloud-home.ts).
@@ -110,6 +113,7 @@ export function useBotSettingsDerived(bot: Bot) {
 
   return {
     patch,
+    canEdit: (field: string) => canEditBotField(state.config, bot, field, { draft }),
     engine,
     approvalMode,
     trustedModesAvailable,

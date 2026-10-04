@@ -6,6 +6,7 @@
 // Effort card down instead and is fully visible where it opens.
 import { EffortRow, ModelPicker } from "../ModelPicker";
 import { X } from "lucide-react";
+import { canEditBotField } from "@/lib/bot-capabilities";
 import { cn } from "@/lib/cn";
 import { useStore, type Bot } from "@/state/store";
 import { useBotEditor } from "./BotEditorContext";
@@ -52,7 +53,7 @@ export function ModelSection({ bot }: { bot: Bot }) {
           </div>
         }
       />
-      {!draft && <FallbackChain bot={bot} onChange={(fallback) => dispatch({ type: "updateBot", botId: bot.id, patch: { fallback } })} />}
+      {!draft && canEditBotField(state.config, bot, "fallback") && <FallbackChain bot={bot} onChange={(fallback) => dispatch({ type: "updateBot", botId: bot.id, patch: { fallback } })} />}
     </div>
   );
 }
