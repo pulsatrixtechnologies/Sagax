@@ -32,7 +32,8 @@ struct BotPanelFiles: View {
     private var threadId: String { bot.threadId }
     private var all: [ThreadFile] { files ?? [] }
     private var counts: [ThreadFileFilter: Int] { ThreadFileRules.counts(all, origin: query.origin, search: query.search) }
-    private var chips: [ThreadFileFilter] { ThreadFileRules.visibleFilters(counts: counts, selected: query.filter) }
+    /// Every kind with its count, as the panel draws them, once there is a file.
+    private var chips: [ThreadFileFilter] { all.isEmpty ? [] : ThreadFileFilter.allCases }
     private var shown: [ThreadFile] {
         var effective = query
         if chips.isEmpty { effective.filter = .all }
@@ -57,7 +58,7 @@ struct BotPanelFiles: View {
             AnyView(content)
         }
         .padding(.top, 8)
-        .padding(.leading, 16.5)
+        .padding(.leading, 17)
         .padding(.trailing, 16)
         .padding(.bottom, 24)
         .task(id: threadId) { await load() }
@@ -261,8 +262,7 @@ struct BotPanelFiles: View {
             .accessibilityIdentifier("desktop-file.\(file.name)")
             actions(file)
         }
-        .padding(.vertical, 8)
-        .frame(height: 57)
+        .frame(height: 56)
     }
 
     private func tile(_ file: ThreadFile) -> some View {
@@ -305,7 +305,7 @@ struct BotPanelFiles: View {
                 }
             }
             if file.available, let path = ThreadFileRules.copyablePath(of: file) {
-                actionButton("doc.on.doc", label: "Copy path") { copy(path) }
+                actionButton("square.on.square", label: "Copy path") { copy(path) }
             }
         }
     }
@@ -385,14 +385,9 @@ struct BotPanelFiles: View {
 
     /// `dateStyle: medium, timeStyle: short`, as Intl writes it
     /// ("Sep 30, 2026, 11:33 AM").
-    private static let whenFormat: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.setLocalizedDateFormatFromTemplate("MMMdyjmm")
-        return formatter
-    }()
-
     static func when(_ at: Double) -> String {
-        whenFormat.string(from: Date(timeIntervalSince1970: at / 1000))
+        Date(timeIntervalSince1970: at / 1000)
+            .formatted(.dateTime.month(.abbreviated).day().year().hour().minute())
     }
 }
 

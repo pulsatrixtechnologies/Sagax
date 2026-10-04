@@ -1198,6 +1198,8 @@ public enum VoiceProvider: Hashable, Sendable {
     case fish
     case system
     case chatterbox
+    /// Grok's voices (xAI), on a computer that offers them.
+    case xai
 
     /// The exact string the config write carries. The server matches
     /// spellings, not meanings, so neither does this.
@@ -1207,6 +1209,7 @@ public enum VoiceProvider: Hashable, Sendable {
         case .fish: "fish"
         case .system: "system"
         case .chatterbox: "chatterbox"
+        case .xai: "xai"
         }
     }
 }
@@ -1308,6 +1311,7 @@ public struct ConfigStatus: Codable, Sendable {
         case "fish": .fish
         case "system": .system
         case "chatterbox": .chatterbox
+        case "xai": .xai
         default: .elevenlabs
         }
     }

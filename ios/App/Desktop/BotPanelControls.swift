@@ -16,6 +16,15 @@ extension DesktopTheme {
     var hairline50: Color { hairline.opacity(0.5) }
     /// The switch's "on" track (`bg-success`, rgb(56, 213, 145) in Pulsatrix).
     var switchOn: Color { success }
+
+    /// `bg-hover` (#77777752 at 0.173) composited over the panel's `app`
+    /// ground in sRGB, as the browser does.
+    var hoverOnApp: Color {
+        var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        UIColor(app).getRed(&r, green: &g, blue: &b, alpha: &a)
+        let gray: CGFloat = 0x77 / 255, alpha: CGFloat = 0.173
+        return Color(.sRGB, red: r + (gray - r) * alpha, green: g + (gray - g) * alpha, blue: b + (gray - b) * alpha)
+    }
 }
 
 /// A 13 pt label above a control (`Field`).
@@ -41,8 +50,8 @@ struct PanelTextField: View {
     var onCommit: () -> Void = {}
 
     var body: some View {
-        TextField("", text: $text, prompt: Text(placeholder).foregroundColor(theme.inkSecondary.opacity(0.7)))
-            .font(mono ? .system(size: 13, design: .monospaced) : theme.font(13))
+        TextField("", text: $text, prompt: Text(placeholder).foregroundColor(theme.inkSecondary))
+            .font(mono ? .system(size: 12.5, design: .monospaced) : theme.font(13))
             .foregroundStyle(theme.ink)
             .tint(theme.focus)
             .padding(.horizontal, 10)
@@ -60,19 +69,24 @@ struct PanelTextArea: View {
     @Binding var text: String
     var minHeight: CGFloat = 72
     var mono = false
+    /// The CSS line height (`leading-relaxed` = 21.125 at 13 pt).
+    var lineHeight: CGFloat = 21.125
+
+    private var uiFont: UIFont { mono ? .monospacedSystemFont(ofSize: 13, weight: .regular) : theme.uiFont(13) }
 
     var body: some View {
         ZStack(alignment: .topLeading) {
             if text.isEmpty {
                 Text(placeholder)
                     .font(theme.font(13))
-                    .foregroundStyle(theme.inkSecondary.opacity(0.7))
+                    .foregroundStyle(theme.inkSecondary)
                     .padding(.horizontal, 10)
                     .padding(.top, 9)
                     .allowsHitTesting(false)
             }
             TextEditor(text: $text)
                 .font(mono ? .system(size: 13, design: .monospaced) : theme.font(13))
+                .lineSpacing(max(0, lineHeight - uiFont.lineHeight))
                 .foregroundStyle(theme.ink)
                 .tint(theme.focus)
                 .scrollContentBackground(.hidden)
@@ -121,14 +135,15 @@ struct PanelFillCard<Content: View>: View {
         VStack(alignment: .leading, spacing: 0) { content }
             .padding(12)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(theme.hover, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .background(theme.hoverOnApp, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 }
 
 /// `rounded-xl border border-hairline/40 p-4`: every other section's cards.
 struct PanelCard<Content: View>: View {
     @Environment(\.desktopTheme) private var theme
-    var padding: CGFloat = 16
+    /// p-4 inside the 1 pt border.
+    var padding: CGFloat = 17
     @ViewBuilder let content: Content
 
     var body: some View {
@@ -235,14 +250,14 @@ struct PanelFlow: Layout {
     }
 }
 
-/// A segmented choice in an inset track (Works on, Voice engine): equal
-/// cells in rows of `columns`, the chosen one filled `control`.
+/// A grid of choices (Works on): equal cells, 32 tall, 6 apart, the chosen
+/// one `border-hairline bg-control text-ink`, the others hairline/40, an
+/// unavailable one at 40 %.
 struct PanelSegmentGrid<Value: Hashable>: View {
     @Environment(\.desktopTheme) private var theme
     let options: [(Value, String, Bool)]
     let selected: Value?
     var columns = 3
-    var bordered = true
     let pick: (Value) -> Void
 
     var body: some View {
@@ -254,19 +269,16 @@ struct PanelSegmentGrid<Value: Hashable>: View {
                         let on = option.0 == selected
                         Button { pick(option.0) } label: {
                             Text(verbatim: option.1)
-                                .font(theme.font(12.5))
-                                .foregroundStyle(option.2 ? (on ? theme.ink : theme.inkSecondary) : theme.inkSecondary.opacity(0.5))
+                                .font(theme.font(12))
+                                .foregroundStyle(on ? theme.ink : theme.inkSecondary)
                                 .lineLimit(1)
                                 .minimumScaleFactor(0.85)
                                 .frame(maxWidth: .infinity)
-                                .frame(height: 31)
-                                .background(on ? theme.control : .clear, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
-                                .overlay {
-                                    if bordered {
-                                        RoundedRectangle(cornerRadius: 6, style: .continuous)
-                                            .strokeBorder(on ? theme.accent.opacity(0.35) : theme.hairline50, lineWidth: 1)
-                                    }
-                                }
+                                .frame(height: 32)
+                                .background(on ? theme.control : .clear, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                                .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                    .strokeBorder(on ? theme.hairline : theme.hairline40, lineWidth: 1))
+                                .opacity(option.2 || on ? 1 : 0.4)
                                 .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)

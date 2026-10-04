@@ -80,7 +80,7 @@ private struct BotPanelContent: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(theme.app)
         .overlay(alignment: docked ? .leading : .trailing) {
-            Rectangle().fill(theme.hairlineWeak).frame(width: 0.5)
+            Rectangle().fill(theme.hairlineWeak).frame(width: 1)
         }
         .overlay {
             if model.avatarEditorOpen {
@@ -236,7 +236,8 @@ private struct BotPanelIdentity: View {
                 withAnimation(.easeOut(duration: 0.15)) { model.avatarEditorOpen.toggle() }
             } label: {
                 BotMascotView(bot: bot, size: 112, state: MausState.forChat(.bot(bot), in: session.state), animated: true, owlHandle: owlHandle)
-                    .frame(width: 112, height: 119)
+                    .frame(width: 112, height: 112)
+                    .frame(width: 112, height: 119, alignment: .top)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -284,8 +285,6 @@ private struct BotPanelDetails: View {
 
     private enum Field { case name, title, blurb }
 
-    private var canEdit: Bool { session.surfaceGate.allows(.botOwnerExtras) || session.canAdminister }
-
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             PanelLabel(text: "Name")
@@ -331,9 +330,8 @@ private struct BotPanelDetails: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.top, 13)
         }
-        .disabled(!canEdit)
         .padding(.top, 8)
-        .padding(.leading, 16.5)
+        .padding(.leading, 17)
         .padding(.trailing, 16)
         .padding(.bottom, 24)
         .onAppear(perform: sync)
@@ -439,7 +437,7 @@ private struct BotPanelRoutines: View {
             list
         }
         .padding(.top, 8)
-        .padding(.leading, 16.5)
+        .padding(.leading, 17)
         .padding(.trailing, 16)
         .padding(.bottom, 24)
         .task { await load() }

@@ -479,9 +479,9 @@ struct BotPanelVoice: View {
         case .fish: "Fish Audio"
         case .system: String(localized: "Built-in Mac voices")
         case .chatterbox: "Chatterbox"
+        case .xai: "xAI"
         }
     }
-    private var canSpeak: Bool { config?.canSpeak(agentVoice: bot.voice ?? "") == true }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -497,7 +497,7 @@ struct BotPanelVoice: View {
                 PanelSettingRow(title: "Read replies aloud",
                                 detail: Text("Speak this agent's answers as they arrive, even from another chat."),
                                 detailSize: 11.5, detailLine: 18.69) {
-                    PanelSwitch(label: "Read this bot's replies aloud", isOn: bot.speakReplies == true, disabled: !canSpeak) { on in
+                    PanelSwitch(label: "Read this bot's replies aloud", isOn: bot.speakReplies == true) { on in
                         Task { _ = await session.updateProfile(BotProfilePatch(speakReplies: on), for: bot) }
                     }
                 }
@@ -535,6 +535,7 @@ struct BotPanelVoice: View {
         switch provider {
         case .system: "Give this agent a voice for calls and spoken replies. The voice choice belongs to this agent; the voices are the ones already installed on this Mac."
         case .chatterbox: "Give this agent a voice for calls and spoken replies. The voice choice belongs to this agent; the Chatterbox server address is shared by this installation."
+        case .xai: "Give this agent a voice for calls and spoken replies. The voice choice belongs to this agent; Grok uses this installation’s existing xAI key."
         case .fish: "Give this agent a voice for calls and spoken replies. The voice choice belongs to this agent; the Fish Audio key is shared by this installation."
         case .elevenlabs: "Give this agent a voice for calls and spoken replies. The voice choice belongs to this agent; the ElevenLabs key is shared by this installation."
         }
@@ -544,6 +545,7 @@ struct BotPanelVoice: View {
         let options: [(VoiceProvider, String)] = [
             (.elevenlabs, "ElevenLabs"), (.fish, "Fish Audio"),
             (.system, String(localized: "Built-in Mac voices")), (.chatterbox, String(localized: "Chatterbox (local)")),
+            (.xai, String(localized: "Grok (xAI)")),
         ]
         return LazyVGrid(columns: [GridItem(.flexible(), spacing: 4), GridItem(.flexible(), spacing: 4)], spacing: 4) {
             ForEach(options, id: \.0) { option in
@@ -577,24 +579,40 @@ struct BotPanelVoice: View {
         .accessibilityLabel(Text("Voice engine"))
     }
 
+    /// The provider's key: on the desktop a field to paste it; here where
+    /// it is set, since keys never come to this device.
     private var keyStatus: some View {
         let configured = config?.isTTSConfigured == true
-        return VStack(alignment: .leading, spacing: 6) {
+        return VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 8) {
                 Circle().fill(configured ? theme.success : theme.raisedHover).frame(width: 6, height: 6)
-                Text(provider == .system || provider == .chatterbox ? "\(providerName)" : "\(providerName) key")
+                Group {
+                    if provider == .system || provider == .chatterbox {
+                        Text(verbatim: providerName)
+                    } else {
+                        Text("\(providerName) key")
+                    }
+                }
                     .panelText(13, 19.5)
                     .foregroundStyle(theme.ink)
             }
             Text(configured
                  ? "Set on your computer. Keys never come to this device."
-                 : "Add the key in Sagax on your computer; it never comes to this device.")
-                .panelText(12, 18)
+                 : "Add it in Sagax on your computer.")
+                .font(theme.font(13))
                 .foregroundStyle(theme.inkSecondary)
-            if provider == .elevenlabs, !configured, let url = URL(string: "https://elevenlabs.io/app/settings/api-keys") {
+                .lineLimit(1)
+                .minimumScaleFactor(0.85)
+                .padding(.horizontal, 12)
+                .frame(maxWidth: .infinity, minHeight: 37.5, alignment: .leading)
+                .background(theme.inset, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(theme.hairline40, lineWidth: 1))
+                .padding(.top, 6)
+            if provider == .elevenlabs, let url = URL(string: "https://elevenlabs.io/app/settings/api-keys") {
                 Link(destination: url) {
                     Text("Get a key from ElevenLabs").panelText(12, 18, .medium).foregroundStyle(theme.accent)
                 }
+                .padding(.top, 6)
             }
         }
     }

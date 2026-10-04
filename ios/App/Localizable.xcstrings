@@ -40489,6 +40489,2272 @@
           }
         }
       }
+    },
+    "Edit avatar": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Edit avatar"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Modifier l'avatar"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Editar avatar"
+          }
+        }
+      }
+    },
+    "Label (optional)": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Label (optional)"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Libellé (facultatif)"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rótulo (opcional)"
+          }
+        }
+      }
+    },
+    "Description": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Description"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Description"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Descrição"
+          }
+        }
+      }
+    },
+    "View full": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "View full"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tout afficher"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ver tudo"
+          }
+        }
+      }
+    },
+    "Shown in rosters, on the phone, and to other bots. Standing instructions belong in Soul, which has room for a full document.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Shown in rosters, on the phone, and to other bots. Standing instructions belong in Soul, which has room for a full document."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Affichée dans les listes, sur le téléphone et aux autres bots. Les instructions permanentes vont dans Âme, qui a la place pour un document complet."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Exibida nas listas, no telefone e para outros bots. Instruções permanentes ficam em Alma, que comporta um documento completo."
+          }
+        }
+      }
+    },
+    "No description yet.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No description yet."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pas encore de description."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ainda sem descrição."
+          }
+        }
+      }
+    },
+    "Create schedule": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Create schedule"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Créer une planification"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Criar agendamento"
+          }
+        }
+      }
+    },
+    "Loading routines…": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Loading routines…"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Chargement des routines…"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Carregando rotinas…"
+          }
+        }
+      }
+    },
+    "Overview": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Overview"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aperçu"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Visão geral"
+          }
+        }
+      }
+    },
+    "Soul": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Soul"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Âme"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alma"
+          }
+        }
+      }
+    },
+    "Permissions": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Permissions"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Autorisations"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Permissões"
+          }
+        }
+      }
+    },
+    "Voice & alerts": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Voice & alerts"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Voix et alertes"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Voz e alertas"
+          }
+        }
+      }
+    },
+    "Search settings": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Search settings"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rechercher dans les réglages"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Buscar nos ajustes"
+          }
+        }
+      }
+    },
+    "Read all": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Read all"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tout lire"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ler tudo"
+          }
+        }
+      }
+    },
+    "Won’t": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Won’t"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ne fera pas"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Não fará"
+          }
+        }
+      }
+    },
+    "Couldn’t load the overview.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn’t load the overview."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Impossible de charger l'aperçu."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Não foi possível carregar a visão geral."
+          }
+        }
+      }
+    },
+    "View all →": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "View all →"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tout voir →"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ver tudo →"
+          }
+        }
+      }
+    },
+    "Nothing changed recently.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nothing changed recently."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rien n'a changé récemment."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nada mudou recentemente."
+          }
+        }
+      }
+    },
+    "Who this bot is and the rules it never breaks. Always in its context.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Who this bot is and the rules it never breaks. Always in its context."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Qui est ce bot et les règles qu'il n'enfreint jamais. Toujours dans son contexte."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Quem é este bot e as regras que ele nunca quebra. Sempre no contexto dele."
+          }
+        }
+      }
+    },
+    "Standing instructions (SOUL.md)": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Standing instructions (SOUL.md)"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Instructions permanentes (SOUL.md)"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Instruções permanentes (SOUL.md)"
+          }
+        }
+      }
+    },
+    "Standing instructions": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Standing instructions"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Instructions permanentes"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Instruções permanentes"
+          }
+        }
+      }
+    },
+    "In this bot’s context on every turn. Mirrored to %@.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "In this bot’s context on every turn. Mirrored to %@."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dans le contexte de ce bot à chaque tour. Copié dans %@."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No contexto deste bot a cada turno. Espelhado em %@."
+          }
+        }
+      }
+    },
+    "In this bot’s context on every turn.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "In this bot’s context on every turn."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dans le contexte de ce bot à chaque tour."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No contexto deste bot a cada turno."
+          }
+        }
+      }
+    },
+    "Discard": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Discard"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ignorer"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Descartar"
+          }
+        }
+      }
+    },
+    "owner/repo, https://github.com/…": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "owner/repo, https://github.com/…"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "owner/repo, https://github.com/…"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "owner/repo, https://github.com/…"
+          }
+        }
+      }
+    },
+    "Enabled": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enabled"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Activé"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ativado"
+          }
+        }
+      }
+    },
+    "Off stops memory prompts, recall, native memory tools, upkeep, and automatic turn logs. Existing files remain available for review. Stop this bot's turn before changing this setting.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Off stops memory prompts, recall, native memory tools, upkeep, and automatic turn logs. Existing files remain available for review. Stop this bot's turn before changing this setting."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Désactivée, la mémoire n'envoie plus de rappels, de souvenirs, d'outils de mémoire natifs, d'entretien ni de journaux de tour automatiques. Les fichiers existants restent consultables. Arrêtez le tour de ce bot avant de changer ce réglage."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Desligada, a memória deixa de enviar lembretes, recordações, ferramentas de memória nativas, manutenção e registros automáticos de turno. Os arquivos existentes continuam disponíveis para revisão. Pare o turno deste bot antes de mudar este ajuste."
+          }
+        }
+      }
+    },
+    "Notes this bot keeps between tasks. They are plain markdown files in a folder on this computer — open them in any editor, or in Obsidian.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Notes this bot keeps between tasks. They are plain markdown files in a folder on this computer — open them in any editor, or in Obsidian."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Les notes que ce bot garde d'une tâche à l'autre. Ce sont de simples fichiers markdown dans un dossier de cet ordinateur — ouvrez-les dans n'importe quel éditeur, ou dans Obsidian."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Notas que este bot guarda entre tarefas. São arquivos markdown simples em uma pasta deste computador — abra-os em qualquer editor ou no Obsidian."
+          }
+        }
+      }
+    },
+    "Open files": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open files"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ouvrir les fichiers"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Abrir arquivos"
+          }
+        }
+      }
+    },
+    "%lld / %lld lines": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld / %lld lines"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld / %lld lignes"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld / %lld linhas"
+          }
+        }
+      }
+    },
+    "Works on": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Works on"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Travaille sur"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Trabalha em"
+          }
+        }
+      }
+    },
+    "Where this bot works (currently: auto). Browser is the built-in browser tab only; no desktop.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Where this bot works (currently: auto). Browser is the built-in browser tab only; no desktop."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Où ce bot travaille (actuellement : auto). Navigateur est l'onglet de navigateur intégré seulement, sans bureau."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Onde este bot trabalha (atualmente: auto). Navegador é só a aba do navegador integrado, sem área de trabalho."
+          }
+        }
+      }
+    },
+    "Where this bot works. Browser is the built-in browser tab only; no desktop.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Where this bot works. Browser is the built-in browser tab only; no desktop."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Où ce bot travaille. Navigateur est l'onglet de navigateur intégré seulement, sans bureau."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Onde este bot trabalha. Navegador é só a aba do navegador integrado, sem área de trabalho."
+          }
+        }
+      }
+    },
+    "Off means no screen.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Off means no screen."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Désactivé veut dire aucun écran."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Desligado significa sem tela."
+          }
+        }
+      }
+    },
+    "This bot gets no computer and no built-in browser, so it cannot open a web page, click, or type anywhere. Its connected apps, MCP servers, files and chat all still work.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This bot gets no computer and no built-in browser, so it cannot open a web page, click, or type anywhere. Its connected apps, MCP servers, files and chat all still work."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ce bot n'a ni ordinateur ni navigateur intégré : il ne peut ouvrir aucune page web, cliquer ni taper nulle part. Ses apps connectées, serveurs MCP, fichiers et la discussion fonctionnent toujours."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Este bot não tem computador nem navegador integrado, então não pode abrir páginas, clicar nem digitar em lugar nenhum. Apps conectados, servidores MCP, arquivos e o chat continuam funcionando."
+          }
+        }
+      }
+    },
+    "Auto cloud preference.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Auto cloud preference."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Préférence infonuagique d'Auto."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Preferência de nuvem do Auto."
+          }
+        }
+      }
+    },
+    "This chooses what Auto may reuse during a task; viewing settings does not create or wake a computer.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This chooses what Auto may reuse during a task; viewing settings does not create or wake a computer."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ceci choisit ce qu'Auto peut réutiliser pendant une tâche; consulter les réglages ne crée ni ne réveille aucun ordinateur."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Isto escolhe o que o Auto pode reutilizar durante uma tarefa; ver os ajustes não cria nem acorda um computador."
+          }
+        }
+      }
+    },
+    "Private bot folder — or an absolute path": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Private bot folder — or an absolute path"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dossier privé du bot — ou un chemin absolu"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pasta privada do bot — ou um caminho absoluto"
+          }
+        }
+      }
+    },
+    "Allow this bot to use connected apps": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Allow this bot to use connected apps"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Permettre à ce bot d'utiliser les apps connectées"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Permitir que este bot use apps conectados"
+          }
+        }
+      }
+    },
+    "No apps connected yet.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No apps connected yet."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aucune app connectée pour l'instant."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nenhum app conectado ainda."
+          }
+        }
+      }
+    },
+    "Browser, MCP servers and allowed commands": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Browser, MCP servers and allowed commands"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Navigateur, serveurs MCP et commandes permises"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Navegador, servidores MCP e comandos permitidos"
+          }
+        }
+      }
+    },
+    "Connect apps in App Settings before giving this bot access.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connect apps in App Settings before giving this bot access."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connectez des apps dans les réglages avant de donner l'accès à ce bot."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Conecte apps nos ajustes antes de dar acesso a este bot."
+          }
+        }
+      }
+    },
+    "Cloud backend": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cloud backend"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hébergement infonuagique"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Back-end de nuvem"
+          }
+        }
+      }
+    },
+    "Boat is the default hosted computer. Choose Self-hosted VPS to use your SSH-configured Linux Docker host.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Boat is the default hosted computer. Choose Self-hosted VPS to use your SSH-configured Linux Docker host."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Boat est l'ordinateur hébergé par défaut. Choisissez VPS autohébergé pour utiliser votre hôte Docker Linux configuré en SSH."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Boat é o computador hospedado padrão. Escolha VPS auto-hospedado para usar seu host Docker Linux configurado por SSH."
+          }
+        }
+      }
+    },
+    "Boat": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Boat"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Boat"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Boat"
+          }
+        }
+      }
+    },
+    "Self-hosted VPS": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Self-hosted VPS"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "VPS autohébergé"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "VPS auto-hospedado"
+          }
+        }
+      }
+    },
+    "Default model": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Default model"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Modèle par défaut"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Modelo padrão"
+          }
+        }
+      }
+    },
+    "For groups and new threads. Also updates the selected idle thread; other existing threads keep their model.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "For groups and new threads. Also updates the selected idle thread; other existing threads keep their model."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pour les groupes et les nouveaux fils. Met aussi à jour le fil inactif sélectionné; les autres fils gardent leur modèle."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Para grupos e novas conversas. Também atualiza a conversa ociosa selecionada; as outras mantêm o modelo."
+          }
+        }
+      }
+    },
+    "Choose a model": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choose a model"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choisir un modèle"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Escolher um modelo"
+          }
+        }
+      }
+    },
+    "Effort": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Effort"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Effort"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Esforço"
+          }
+        }
+      }
+    },
+    "How hard this bot thinks in groups and new threads (Default: no level is sent)": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "How hard this bot thinks in groups and new threads (Default: no level is sent)"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "À quel point ce bot réfléchit dans les groupes et les nouveaux fils (Par défaut : aucun niveau n'est envoyé)"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Quanto este bot pensa em grupos e novas conversas (Padrão: nenhum nível é enviado)"
+          }
+        }
+      }
+    },
+    "How hard this bot thinks in groups and new threads": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "How hard this bot thinks in groups and new threads"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "À quel point ce bot réfléchit dans les groupes et les nouveaux fils"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Quanto este bot pensa em grupos e novas conversas"
+          }
+        }
+      }
+    },
+    "Chief of Staff": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Chief of Staff"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Chef de cabinet"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Chefe de gabinete"
+          }
+        }
+      }
+    },
+    "One for %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "One for %@"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Un pour %@"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Um para %@"
+          }
+        }
+      }
+    },
+    "This is the primary contact for %@. It can create and coordinate specialists in this team, then combine their work into one answer.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This is the primary contact for %@. It can create and coordinate specialists in this team, then combine their work into one answer."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "C'est le contact principal pour %@. Il peut créer et coordonner des spécialistes dans cette équipe, puis réunir leur travail en une seule réponse."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Este é o contato principal de %@. Ele pode criar e coordenar especialistas nesta equipe e depois juntar o trabalho deles em uma resposta."
+          }
+        }
+      }
+    },
+    "Make this bot the primary contact for the %@ team.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Make this bot the primary contact for the %@ team."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Faire de ce bot le contact principal de l'équipe %@."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tornar este bot o contato principal da equipe %@."
+          }
+        }
+      }
+    },
+    "Ask me before contacting other bots": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ask me before contacting other bots"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Me demander avant de contacter d'autres bots"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Perguntar antes de contatar outros bots"
+          }
+        }
+      }
+    },
+    "This bot will stop and ask before it reaches out to another bot.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This bot will stop and ask before it reaches out to another bot."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ce bot s'arrêtera pour demander avant de joindre un autre bot."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Este bot vai parar e perguntar antes de contatar outro bot."
+          }
+        }
+      }
+    },
+    "Let this bot talk to teammates on its own, without a confirmation step.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Let this bot talk to teammates on its own, without a confirmation step."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Laisser ce bot parler à ses coéquipiers seul, sans étape de confirmation."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Deixar este bot falar com colegas sozinho, sem etapa de confirmação."
+          }
+        }
+      }
+    },
+    "Approval level": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Approval level"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Niveau d'approbation"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nível de aprovação"
+          }
+        }
+      }
+    },
+    "Default for new threads, routines and delegated work. When enabling Full access, you can also apply it to every existing thread.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Default for new threads, routines and delegated work. When enabling Full access, you can also apply it to every existing thread."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Par défaut pour les nouveaux fils, les routines et le travail délégué. En activant l'Accès complet, vous pouvez aussi l'appliquer à tous les fils existants."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Padrão para novas conversas, rotinas e trabalho delegado. Ao ativar o Acesso total, você também pode aplicá-lo a todas as conversas existentes."
+          }
+        }
+      }
+    },
+    "Manage command allowlist": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Manage command allowlist"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gérer la liste des commandes permises"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gerenciar a lista de comandos permitidos"
+          }
+        }
+      }
+    },
+    "Give this bot Full access?": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Give this bot Full access?"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Donner l'Accès complet à ce bot?"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dar Acesso total a este bot?"
+          }
+        }
+      }
+    },
+    "It runs commands and edits files without asking, in every thread. Use only with bots you trust.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "It runs commands and edits files without asking, in every thread. Use only with bots you trust."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Il exécute des commandes et modifie des fichiers sans demander, dans tous les fils. À utiliser seulement avec des bots de confiance."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ele executa comandos e edita arquivos sem perguntar, em todas as conversas. Use só com bots de confiança."
+          }
+        }
+      }
+    },
+    "Built-in Mac voices": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Built-in Mac voices"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Voix intégrées du Mac"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vozes integradas do Mac"
+          }
+        }
+      }
+    },
+    "Chatterbox (local)": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Chatterbox (local)"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Chatterbox (local)"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Chatterbox (local)"
+          }
+        }
+      }
+    },
+    "Grok (xAI)": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Grok (xAI)"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Grok (xAI)"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Grok (xAI)"
+          }
+        }
+      }
+    },
+    "Voice engine": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Voice engine"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Moteur de voix"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mecanismo de voz"
+          }
+        }
+      }
+    },
+    "Read replies aloud": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Read replies aloud"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lire les réponses à voix haute"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ler respostas em voz alta"
+          }
+        }
+      }
+    },
+    "Speak this agent's answers as they arrive, even from another chat.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Speak this agent's answers as they arrive, even from another chat."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dire les réponses de cet agent à leur arrivée, même depuis une autre discussion."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Falar as respostas deste agente quando chegam, mesmo de outro chat."
+          }
+        }
+      }
+    },
+    "Read this bot's replies aloud": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Read this bot's replies aloud"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lire les réponses de ce bot à voix haute"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ler as respostas deste bot em voz alta"
+          }
+        }
+      }
+    },
+    "Get notified when this agent finishes or needs input": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Get notified when this agent finishes or needs input"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Être averti quand cet agent termine ou a besoin de vous"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Receber aviso quando este agente terminar ou precisar de você"
+          }
+        }
+      }
+    },
+    "Give this agent a voice for calls and spoken replies. The voice choice belongs to this agent; the voices are the ones already installed on this Mac.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Give this agent a voice for calls and spoken replies. The voice choice belongs to this agent; the voices are the ones already installed on this Mac."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Donnez une voix à cet agent pour les appels et les réponses parlées. Le choix de voix appartient à cet agent; les voix sont celles déjà installées sur ce Mac."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dê uma voz a este agente para chamadas e respostas faladas. A escolha da voz é deste agente; as vozes são as já instaladas neste Mac."
+          }
+        }
+      }
+    },
+    "Give this agent a voice for calls and spoken replies. The voice choice belongs to this agent; the Chatterbox server address is shared by this installation.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Give this agent a voice for calls and spoken replies. The voice choice belongs to this agent; the Chatterbox server address is shared by this installation."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Donnez une voix à cet agent pour les appels et les réponses parlées. Le choix de voix appartient à cet agent; l'adresse du serveur Chatterbox est partagée par cette installation."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dê uma voz a este agente para chamadas e respostas faladas. A escolha da voz é deste agente; o endereço do servidor Chatterbox é compartilhado por esta instalação."
+          }
+        }
+      }
+    },
+    "Give this agent a voice for calls and spoken replies. The voice choice belongs to this agent; Grok uses this installation’s existing xAI key.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Give this agent a voice for calls and spoken replies. The voice choice belongs to this agent; Grok uses this installation’s existing xAI key."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Donnez une voix à cet agent pour les appels et les réponses parlées. Le choix de voix appartient à cet agent; Grok utilise la clé xAI existante de cette installation."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dê uma voz a este agente para chamadas e respostas faladas. A escolha da voz é deste agente; o Grok usa a chave xAI existente desta instalação."
+          }
+        }
+      }
+    },
+    "Give this agent a voice for calls and spoken replies. The voice choice belongs to this agent; the Fish Audio key is shared by this installation.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Give this agent a voice for calls and spoken replies. The voice choice belongs to this agent; the Fish Audio key is shared by this installation."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Donnez une voix à cet agent pour les appels et les réponses parlées. Le choix de voix appartient à cet agent; la clé Fish Audio est partagée par cette installation."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dê uma voz a este agente para chamadas e respostas faladas. A escolha da voz é deste agente; a chave Fish Audio é compartilhada por esta instalação."
+          }
+        }
+      }
+    },
+    "Give this agent a voice for calls and spoken replies. The voice choice belongs to this agent; the ElevenLabs key is shared by this installation.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Give this agent a voice for calls and spoken replies. The voice choice belongs to this agent; the ElevenLabs key is shared by this installation."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Donnez une voix à cet agent pour les appels et les réponses parlées. Le choix de voix appartient à cet agent; la clé ElevenLabs est partagée par cette installation."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dê uma voz a este agente para chamadas e respostas faladas. A escolha da voz é deste agente; a chave ElevenLabs é compartilhada por esta instalação."
+          }
+        }
+      }
+    },
+    "%@ key": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ key"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Clé %@"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Chave %@"
+          }
+        }
+      }
+    },
+    "Set on your computer. Keys never come to this device.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Set on your computer. Keys never come to this device."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Réglée sur votre ordinateur. Les clés ne viennent jamais sur cet appareil."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Definida no seu computador. As chaves nunca vêm para este aparelho."
+          }
+        }
+      }
+    },
+    "Add it in Sagax on your computer.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Add it in Sagax on your computer."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ajoutez-la dans Sagax sur votre ordinateur."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Adicione-a no Sagax no seu computador."
+          }
+        }
+      }
+    },
+    "Get a key from ElevenLabs": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Get a key from ElevenLabs"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Obtenir une clé chez ElevenLabs"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Obter uma chave na ElevenLabs"
+          }
+        }
+      }
+    },
+    "No usage recorded yet.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No usage recorded yet."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aucune utilisation enregistrée pour l'instant."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nenhum uso registrado ainda."
+          }
+        }
+      }
+    },
+    "Input %@ · output %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Input %@ · output %@"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Entrée %@ · sortie %@"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Entrada %@ · saída %@"
+          }
+        }
+      }
+    },
+    "No files in this chat yet.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No files in this chat yet."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pas encore de fichiers dans cette discussion."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ainda não há arquivos neste chat."
+          }
+        }
+      }
+    },
+    "Open %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open %@"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ouvrir %@"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Abrir %@"
+          }
+        }
+      }
+    },
+    "%@'s screen": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@'s screen"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Écran de %@"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tela de %@"
+          }
+        }
+      }
+    },
+    "This bot works in the built-in browser — no desktop here": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This bot works in the built-in browser — no desktop here"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ce bot travaille dans le navigateur intégré — pas de bureau ici"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Este bot trabalha no navegador integrado — sem área de trabalho aqui"
+          }
+        }
+      }
+    },
+    "This computer is offline": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This computer is offline"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cet ordinateur est hors ligne"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Este computador está offline"
+          }
+        }
+      }
+    },
+    "Starting your bot's computer…": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Starting your bot's computer…"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Démarrage de l'ordinateur de votre bot…"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Iniciando o computador do seu bot…"
+          }
+        }
+      }
+    },
+    "This bot's computer is off": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This bot's computer is off"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "L'ordinateur de ce bot est éteint"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "O computador deste bot está desligado"
+          }
+        }
+      }
+    },
+    "Allow control of this computer": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Allow control of this computer"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Permettre le contrôle de cet ordinateur"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Permitir o controle deste computador"
+          }
+        }
+      }
+    },
+    "Take control to move the pointer and type on this computer from this iPad. The bot waits while you hold it.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Take control to move the pointer and type on this computer from this iPad. The bot waits while you hold it."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Prenez le contrôle pour déplacer le pointeur et taper sur cet ordinateur depuis cet iPad. Le bot attend pendant que vous le tenez."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Assuma o controle para mover o ponteiro e digitar neste computador a partir deste iPad. O bot espera enquanto você o mantém."
+          }
+        }
+      }
+    },
+    "Open full view": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open full view"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ouvrir en plein écran"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Abrir em tela cheia"
+          }
+        }
+      }
+    },
+    "Reset": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reset"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Réinitialiser"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Redefinir"
+          }
+        }
+      }
+    },
+    "Color": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Color"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couleur"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cor"
+          }
+        }
+      }
+    },
+    "Use %@ mascot color": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Use %@ mascot color"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Utiliser la couleur %@ pour la mascotte"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Usar a cor %@ no mascote"
+          }
+        }
+      }
+    },
+    "To generate pictures, set up the shared image provider in Sagax on your computer. Provider keys cannot be added from this device.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "To generate pictures, set up the shared image provider in Sagax on your computer. Provider keys cannot be added from this device."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pour générer des images, configurez le fournisseur d'images partagé dans Sagax sur votre ordinateur. Les clés de fournisseur ne peuvent pas être ajoutées depuis cet appareil."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Para gerar imagens, configure o provedor de imagens compartilhado no Sagax no seu computador. Chaves de provedor não podem ser adicionadas por este aparelho."
+          }
+        }
+      }
+    },
+    "PNG, JPEG, GIF, or WebP, up to 10 MB. Images are stored on your paired computer.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "PNG, JPEG, GIF, or WebP, up to 10 MB. Images are stored on your paired computer."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "PNG, JPEG, GIF ou WebP, jusqu'à 10 Mo. Les images sont gardées sur votre ordinateur jumelé."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "PNG, JPEG, GIF ou WebP, até 10 MB. As imagens ficam no computador pareado."
+          }
+        }
+      }
+    },
+    "Choose a picture": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choose a picture"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choisir une image"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Escolher uma imagem"
+          }
+        }
+      }
+    },
+    "Use the character": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Use the character"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Utiliser le personnage"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Usar o personagem"
+          }
+        }
+      }
+    },
+    "Original shapes": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Original shapes"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Formes originales"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Formas originais"
+          }
+        }
+      }
+    },
+    "Ice": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ice"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Glace"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gelo"
+          }
+        }
+      }
+    },
+    "Resize settings": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Resize settings"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Redimensionner les réglages"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Redimensionar os ajustes"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

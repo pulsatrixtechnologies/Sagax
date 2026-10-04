@@ -156,4 +156,20 @@ final class DesktopBotPanelTests: XCTestCase {
         XCTAssertEqual(DesktopWorksOn.of(try bot("mystery")), .auto)
         XCTAssertNil(try bot(nil).approvePeerComms)
     }
+
+    func testComputerPhaseNeverWakesAnAutoComputer() {
+        XCTAssertEqual(DesktopComputerPhase.of(worksOn: .auto, hasPicture: false), .off)
+        XCTAssertEqual(DesktopComputerPhase.of(worksOn: .auto, hasPicture: true), .picture)
+        XCTAssertEqual(DesktopComputerPhase.of(worksOn: .off, hasPicture: true), .off)
+        XCTAssertEqual(DesktopComputerPhase.of(worksOn: .browser, hasPicture: false), .browser)
+        XCTAssertEqual(DesktopComputerPhase.of(worksOn: .cloud, hasPicture: false), .waiting)
+        XCTAssertFalse(DesktopComputerPhase.polls(.auto))
+        XCTAssertTrue(DesktopComputerPhase.polls(.vm))
+    }
+
+    func testGrokVoicesRoundTrip() throws {
+        XCTAssertEqual(VoiceProvider.xai.wireValue, "xai")
+        let config = try JSONDecoder().decode(ConfigStatus.self, from: Data(#"{"tts":{"configured":true,"provider":"xai"}}"#.utf8))
+        XCTAssertEqual(config.voiceProvider, .xai)
+    }
 }

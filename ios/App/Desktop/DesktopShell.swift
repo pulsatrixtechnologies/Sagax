@@ -84,6 +84,20 @@ final class DesktopShellModel: ObservableObject {
     @Published var avatarMove: OwlWingMove?
     /// Bumped by the panel's Inspector button; the chat column opens it.
     @Published var inspectorRequest = 0
+    /// The bot panel's width, 320 to 720 (`omb-settings-panel-width`).
+    @Published var panelWidth: CGFloat = CGFloat(DesktopPanelPlacement.clampedWidth(
+        UserDefaults.standard.object(forKey: DesktopShellModel.panelWidthKey) as? Double))
+    /// The window docks the panel (1024 pt and wider); set by the shell.
+    @Published var panelDocked = true
+
+    static let panelWidthKey = "omb-settings-panel-width"
+
+    /// A drag of the panel's edge, held to the desktop's range; saved when
+    /// the drag ends.
+    func resizePanel(to width: CGFloat, save: Bool) {
+        panelWidth = CGFloat(DesktopPanelPlacement.clampedWidth(Double(width)))
+        if save { UserDefaults.standard.set(Double(panelWidth), forKey: Self.panelWidthKey) }
+    }
     @Published var modal: Modal?
     /// The composer's model picker (I3), over the whole window.
     @Published var modelPickerOpen = false
@@ -122,6 +136,8 @@ struct DesktopShell: View {
         let theme = DesktopTheme.of(themePalette.id)
         return GeometryReader { geometry in
             AnyView(columns(width: geometry.size.width, theme: theme))
+                .onAppear { model.panelDocked = DesktopShellRules.docksPanel(width: geometry.size.width) }
+                .onValueChange(of: geometry.size.width) { model.panelDocked = DesktopShellRules.docksPanel(width: $0) }
         }
         .ignoresSafeArea(.container)
         .environment(\.desktopTheme, theme)
@@ -145,7 +161,8 @@ struct DesktopShell: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 if docked, botOpen, let bot = selectedBot {
                     AnyView(BotPanel(bot: bot, docked: true))
-                        .frame(width: DesktopShellRules.panelWidth)
+                        .frame(width: model.panelWidth)
+                        .overlay(alignment: .leading) { DesktopPanelResizeHandle(model: model) }
                         .transition(.move(edge: .trailing))
                 }
             }
@@ -155,9 +172,8 @@ struct DesktopShell: View {
                 Color.black.opacity(0.001)
                     .onTapGesture { model.togglePanel() }
                 AnyView(BotPanel(bot: bot, docked: false))
-                    .frame(width: DesktopShellRules.panelWidth)
+                    .frame(width: min(model.panelWidth, width))
                     .frame(maxHeight: .infinity)
-                    .shadow(color: .black.opacity(0.35), radius: 24, x: 4)
                     .transition(.move(edge: .leading))
             }
             if model.modelPickerOpen, let bot = selectedBot {
@@ -368,5 +384,44 @@ private struct DesktopShellPresenter: ViewModifier {
         case .automations:
             AutomationsSheet()
         }
+    }
+}
+
+// MARK: - Panel edge
+
+/// The docked panel's resize handle (`app-resize-handle`, 12 pt across its
+/// leading edge): drag to 320 to 720 pt; the width is kept.
+private struct DesktopPanelResizeHandle: View {
+    @ObservedObject var model: DesktopShellModel
+    @State private var start: CGFloat?
+
+    var body: some View {
+        Color.clear
+            .frame(width: 12)
+            .contentShape(Rectangle())
+            .offset(x: -6)
+            .hoverEffect(.highlight)
+            .gesture(
+                DragGesture(minimumDistance: 2, coordinateSpace: .global)
+                    .onChanged { value in
+                        let from = start ?? model.panelWidth
+                        if start == nil { start = from }
+                        model.resizePanel(to: from - value.translation.width, save: false)
+                    }
+                    .onEnded { _ in
+                        start = nil
+                        model.resizePanel(to: model.panelWidth, save: true)
+                    }
+            )
+            .accessibilityElement()
+            .accessibilityLabel(Text("Resize settings"))
+            .accessibilityValue(Text(verbatim: "\(Int(model.panelWidth))"))
+            .accessibilityAdjustableAction { direction in
+                switch direction {
+                case .increment: model.resizePanel(to: model.panelWidth + 24, save: true)
+                case .decrement: model.resizePanel(to: model.panelWidth - 24, save: true)
+                @unknown default: break
+                }
+            }
     }
 }

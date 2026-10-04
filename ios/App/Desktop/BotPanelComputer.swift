@@ -25,6 +25,9 @@ struct BotPanelComputer: View {
     }
 
     private var streamFrame: ScreenFrame? { session.state.screens[bot.id] }
+    private var worksOn: DesktopWorksOn { DesktopWorksOn.of(bot) }
+    private var polls: Bool { DesktopComputerPhase.polls(worksOn) }
+    private var phase: DesktopComputerPhase { DesktopComputerPhase.of(worksOn: worksOn, hasPicture: controller.image != nil) }
     private var offline: Bool {
         if case .live = session.status { return false }
         return true
@@ -48,17 +51,18 @@ struct BotPanelComputer: View {
             }
         }
         .padding(.top, 16)
-        .padding(.leading, 16.5)
+        .padding(.leading, 17)
         .padding(.trailing, 16)
         .padding(.bottom, 24)
         .onAppear {
             controller.attach { [weak session] in session?.computerClient }
             session.watchScreen(of: bot.id)
             controller.streamFrame(streamFrame?.data)
-            controller.appear()
+            // Auto, Off and Browser never create or wake a computer
+            if polls { controller.appear() }
         }
         .onDisappear {
-            controller.disappear()
+            if polls { controller.disappear() }
             session.stopWatchingScreen(of: bot.id)
         }
         .onValueChange(of: streamFrame) { controller.streamFrame($0?.data) }
@@ -73,19 +77,29 @@ struct BotPanelComputer: View {
     private var screen: some View {
         ZStack {
             theme.card
-            if let image = controller.image {
+            if phase == .picture, let image = controller.image {
                 Image(uiImage: image)
                     .resizable()
                     .scaledToFit()
                     .accessibilityLabel(Text("\(bot.name)'s screen"))
             } else {
                 VStack(spacing: 8) {
-                    Image(systemName: "power")
-                        .font(.system(size: 19, weight: .regular))
-                    Text(offline ? "This computer is offline" : "This bot's computer is off")
-                        .font(theme.font(12))
+                    switch phase {
+                    case .browser:
+                        Image(systemName: "globe").font(.system(size: 19))
+                        Text("This bot works in the built-in browser — no desktop here")
+                    case .waiting:
+                        ProgressView().controlSize(.small)
+                        Text(offline ? "This computer is offline" : "Starting your bot's computer…")
+                    case .off, .picture:
+                        Image(systemName: "power").font(.system(size: 19, weight: .regular))
+                        Text("This bot's computer is off")
+                    }
                 }
+                .font(theme.font(12))
+                .multilineTextAlignment(.center)
                 .foregroundStyle(theme.inkSecondary)
+                .padding(.horizontal, 24)
             }
         }
         .aspectRatio(16 / 10, contentMode: .fit)
@@ -114,8 +128,8 @@ struct BotPanelComputer: View {
                         .foregroundStyle(theme.inkSecondary)
                         .rotationEffect(.degrees(controlOpen ? 180 : 0))
                 }
-                .padding(.horizontal, 16)
-                .frame(height: 39.5)
+                .padding(.horizontal, 17)
+                .frame(height: 41.5)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)

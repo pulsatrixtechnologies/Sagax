@@ -65,7 +65,7 @@ struct DesktopChatColumn: View {
         GeometryReader { geometry in
             // The window is this column plus the sidebar (and a docked panel):
             // the Inspector docks from 1024, as the bot panel does.
-            let window = geometry.size.width + DesktopShellRules.sidebarWidth + (model.panelOpen ? DesktopShellRules.panelWidth : 0)
+            let window = geometry.size.width + DesktopShellRules.sidebarWidth + (model.panelOpen && model.panelDocked ? model.panelWidth : 0)
             let docksInspector = inspectorOpen && window >= DesktopShellRules.dockMinWidth
             let chatWidth = geometry.size.width - (docksInspector ? Self.inspectorWidth : 0)
             HStack(spacing: 0) {
@@ -115,7 +115,7 @@ struct DesktopChatColumn: View {
             panelOpen: model.panelOpen && chat.isBot,
             // the shell docks the panel at 1024: this column is then
             // the window less the sidebar and the panel
-            panelDocked: model.panelOpen && totalWidth + DesktopShellRules.sidebarWidth + DesktopShellRules.panelWidth >= DesktopShellRules.dockMinWidth,
+            panelDocked: model.panelOpen && model.panelDocked,
             inspectorOpen: inspectorOpen,
             togglePanel: { model.togglePanel() },
             showPanel: { tab in model.showPanel(tab) },

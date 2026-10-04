@@ -290,6 +290,7 @@ struct BotAvatarEditor: View {
             Circle()
                 .fill(MausPalette.color(name))
                 .frame(width: 24, height: 24)
+                .overlay(Circle().strokeBorder(Color.white.opacity(0.18), lineWidth: 1))
                 .overlay {
                     if selected {
                         Circle().strokeBorder(Color.white.opacity(0.8), lineWidth: 2).frame(width: 32, height: 32)
@@ -308,10 +309,9 @@ struct BotAvatarEditor: View {
             Text(verbatim: text)
                 .font(theme.font(12.5))
                 .foregroundStyle(theme.ink)
-                .padding(.horizontal, 14)
-                .frame(height: 30)
+                .padding(.horizontal, 10)
+                .frame(height: 28)
                 .background(selected ? theme.control : theme.inset, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(selected ? theme.accent.opacity(0.5) : .clear, lineWidth: 1))
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

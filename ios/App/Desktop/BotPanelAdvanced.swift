@@ -96,7 +96,7 @@ struct BotPanelAdvanced: View {
                     .frame(height: 21)
                 AnyView(body(of: section))
             }
-            .padding(.leading, 16.5)
+            .padding(.leading, 17)
             .padding(.trailing, 16)
             .padding(.bottom, 24)
             .id(section)
@@ -144,7 +144,7 @@ struct BotPanelAdvanced: View {
                                 .foregroundStyle(theme.inkSecondary)
                         }
                         .padding(.horizontal, 12)
-                        .frame(height: 40.5)
+                        .frame(height: 39.5)
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
@@ -165,7 +165,7 @@ struct BotPanelAdvanced: View {
             .padding(1)
             .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(theme.hairlineWeak, lineWidth: 1))
         }
-        .padding(.leading, 16.5)
+        .padding(.leading, 17)
         .padding(.trailing, 16)
         .padding(.bottom, 24)
         .accessibilityElement(children: .contain)
@@ -438,7 +438,8 @@ private struct BotPanelSoul: View {
             HStack(alignment: .top, spacing: 12) {
                 Group {
                     if let file = soul?.file, !file.isEmpty {
-                        Text("In this bot’s context on every turn. Mirrored to \(file).")
+                        // break-all: the path wraps anywhere, as the desktop's does
+                        Text("In this bot’s context on every turn. Mirrored to \(file.map(String.init).joined(separator: "\u{200B}")).")
                     } else {
                         Text("In this bot’s context on every turn.")
                     }
@@ -451,7 +452,7 @@ private struct BotPanelSoul: View {
                     .monospacedDigit()
                     .foregroundStyle(bytes > limit ? theme.danger : theme.inkSecondary)
             }
-            .padding(.top, 9)
+            .padding(.top, 13)
             if dirty {
                 HStack(spacing: 8) {
                     PanelButton(title: "Save", prominent: true, disabled: saving || bytes > limit) { Task { await save() } }
@@ -663,9 +664,18 @@ private struct BotPanelMemory: View {
                 Text("Memory").panelText(13, 19.5, .medium).foregroundStyle(theme.ink)
                 Button { Task { await patch(BotAccessPatch(memoryEnabled: !enabled)) } } label: {
                     HStack(spacing: 8) {
-                        Image(systemName: enabled ? "checkmark.square.fill" : "square")
-                            .font(.system(size: 14))
-                            .foregroundStyle(enabled ? theme.accent : theme.inkSecondary)
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 3, style: .continuous)
+                                .fill(enabled ? theme.accent : Color.clear)
+                            RoundedRectangle(cornerRadius: 3, style: .continuous)
+                                .strokeBorder(enabled ? Color.clear : theme.inkSecondary, lineWidth: 1)
+                            if enabled {
+                                Image(systemName: "checkmark")
+                                    .font(.system(size: 8.5, weight: .heavy))
+                                    .foregroundStyle(.white)
+                            }
+                        }
+                        .frame(width: 13, height: 13)
                         Text("Let this bot use memory").panelText(13, 19.5).foregroundStyle(theme.ink)
                     }
                     .contentShape(Rectangle())
@@ -730,7 +740,7 @@ private struct BotPanelMemory: View {
             .background(theme.card, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
             .padding(.top, 20)
         }
-        .padding(.top, 12)
+        .padding(.top, 24)
         .task(id: bot.id) {
             memory.client = session.profileClient
             await memory.refresh()
@@ -742,14 +752,14 @@ private struct BotPanelMemory: View {
     }
 
     private func capacityBlock(_ capacity: MemoryCapacity) -> some View {
-        let lines = "\(capacity.lines) / \(capacity.maxLines) lines"
+        let lines = String(localized: "\(capacity.lines) / \(capacity.maxLines) lines")
         let size = "\(MemoryCapacity.formatBytes(capacity.bytes)) / \(MemoryCapacity.formatBytes(capacity.maxBytes))"
         return VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .top, spacing: 12) {
                 Text("How much of MEMORY.md loads").panelText(13, 19.5, .medium).foregroundStyle(theme.ink)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 Text(verbatim: "\(lines) · \(size)").panelText(12, 18).foregroundStyle(theme.inkSecondary)
-                    .frame(width: 138, alignment: .leading)
+                    .frame(width: 135, alignment: .leading)
             }
             gauge("Lines", share: capacity.lineShare).padding(.top, 8)
             gauge("Size", share: capacity.byteShare).padding(.top, 8)

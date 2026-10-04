@@ -205,3 +205,35 @@ public extension CompanionClient {
         return try makeRequest("PATCH", "/api/bots/\(botId)", encodedBody: patch)
     }
 }
+
+/// What the Computer tab's screen shows (`ComputerPanel` phases, the ones a
+/// paired iPad can tell): Auto, Off and Browser never create or wake a
+/// computer, so they show a live frame only when one is streaming; a bot
+/// pinned to a computer asks it for a picture.
+public enum DesktopComputerPhase: Equatable, Sendable {
+    /// A picture to draw.
+    case picture
+    /// "This bot's computer is off".
+    case off
+    /// "This bot works in the built-in browser — no desktop here".
+    case browser
+    /// Waiting for the pinned computer's first picture.
+    case waiting
+
+    public static func of(worksOn: DesktopWorksOn, hasPicture: Bool) -> DesktopComputerPhase {
+        switch worksOn {
+        case .off: return .off
+        case .browser: return .browser
+        case .auto: return hasPicture ? .picture : .off
+        case .cloud, .vm, .local: return hasPicture ? .picture : .waiting
+        }
+    }
+
+    /// Whether the tab may poll the computer for screenshots.
+    public static func polls(_ worksOn: DesktopWorksOn) -> Bool {
+        switch worksOn {
+        case .cloud, .vm, .local: true
+        case .auto, .off, .browser: false
+        }
+    }
+}
