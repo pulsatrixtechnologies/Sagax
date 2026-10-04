@@ -1,9 +1,11 @@
 // iPad I2: the desktop sidebar (`Sidebar.tsx`), measured in the DOM dumps
 // desktop-<W>x<H>-03-main (comfortable), -04-main-compact, -05-main-collapsed
 // (the 80 pt icon rail) and -06-main-threads: the 36 pt band, the brand row
-// (mark, "Sagax", New, collapse), the search field, the pinned tiles, the
-// collapsible sections and their rows, the places (Team map, Automations,
-// Connected apps) and the account row with its menu.
+// (mark, "Sagax", the round Search and New buttons), the pinned tiles, the
+// collapsible sections and their rows, the places (Team map, Automations;
+// Connected apps and Templates once Experimental features turns them on),
+// the account row with its gamertag and menu, and the edge (I2b: the
+// sidebar as the desktop redrew it in October 2026).
 //
 // Built from the phone's own state: `SidebarPrefsModel` (the person's
 // sections, folds, order, hidden entries and the thread switch, WP6), the
@@ -66,74 +68,64 @@ struct DesktopSidebar: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel(Text("Bots and navigation"))
+        .accessibilityIdentifier(icons ? "desktop-sidebar-rail" : "desktop-sidebar-full")
     }
 }
 
 // MARK: - Head
 
-/// The brand row (h 44: mark 22 at x 16, "Sagax" 16/20 semibold at x 46,
-/// New and Collapse 32 pt squares at x 201 and 235) and the search field
-/// (8, 86, 259 x 32).
+/// The brand row (`h-11 pl-4 pr-3`: mark 22 at x 16, "Sagax" 16/20
+/// semibold at x 46, then the round Search and New buttons, 36 pt circles
+/// 8 apart ending 12 pt from the edge). There is no search field and no
+/// collapse button any more: the palette opens from the round button (⌘K)
+/// and the sidebar's edge collapses it (drag, double tap, ⌘\).
 struct DesktopSidebarHead: View {
     @Environment(\.desktopTheme) private var theme
-    @EnvironmentObject private var model: DesktopShellModel
 
     var body: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: 0) {
-                Image(theme.sidebarIsDark ? "PulsatrixMark-dark" : "PulsatrixMark-light")
-                    .resizable()
-                    .renderingMode(.original)
-                    .scaledToFit()
-                    .frame(width: 22, height: 17)
-                    .padding(.leading, 16)
-                    .accessibilityHidden(true)
-                Text(verbatim: "Sagax")
-                    .font(theme.font(16, .semibold))
-                    .tracking(-0.16)
-                    .foregroundStyle(theme.sidebarInk)
-                    .lineLimit(1)
-                    .offset(y: -0.5)
-                    .padding(.leading, 8)
-                Spacer(minLength: 0)
-                DesktopNewButton()
-                DesktopHeadButton(icon: .panelLeftClose, label: "Collapse sidebar to avatars", id: "desktop-sidebar-collapse") {
-                    model.toggleCollapsed()
-                }
-                .padding(.leading, 2)
-                .padding(.trailing, 13)
-            }
-            .frame(height: 44)
-            DesktopSearchField()
-                .padding(.top, 6)
+        HStack(spacing: 0) {
+            Image(theme.sidebarIsDark ? "PulsatrixMark-dark" : "PulsatrixMark-light")
+                .resizable()
+                .renderingMode(.original)
+                .scaledToFit()
+                .frame(width: 22, height: 17)
+                .padding(.leading, 16)
+                .accessibilityHidden(true)
+            Text(verbatim: "Sagax")
+                .font(theme.font(16, .semibold))
+                .tracking(-0.16)
+                .foregroundStyle(theme.sidebarInk)
+                .lineLimit(1)
+                .offset(y: -0.5)
                 .padding(.leading, 8)
-                .padding(.trailing, 13)
-                .padding(.bottom, 8)
+            Spacer(minLength: 8)
+            DesktopSearchButton()
+            DesktopNewButton()
+                .padding(.leading, 8)
+                .padding(.trailing, 12)
         }
+        .frame(height: 44)
     }
 }
 
-/// The rail's head: Expand, Search and New, 32 pt squares 4 apart.
+/// The rail's head (`flex-col gap-2 px-2 pb-2 pt-1`): Search and New, the
+/// same 36 pt circles, one above the other.
 struct DesktopRailHead: View {
-    @EnvironmentObject private var model: DesktopShellModel
-
     var body: some View {
-        VStack(spacing: 4) {
-            DesktopHeadButton(icon: .panelLeftOpen, label: "Expand sidebar", id: "desktop-sidebar-expand") {
-                model.toggleCollapsed()
-            }
-            DesktopHeadButton(icon: .search, label: "Search bots and messages", id: "desktop-sidebar-search") {
-                model.modal = .search
-            }
+        VStack(spacing: 8) {
+            DesktopSearchButton()
             DesktopNewButton()
         }
         .frame(maxWidth: .infinity)
         .padding(.top, 4)
         .padding(.bottom, 8)
+        .offset(x: -0.5)
     }
 }
 
-/// A 32 pt ghost square with an 18 pt icon (`SIDEBAR_HEAD_BUTTON`).
+/// `SIDEBAR_HEAD_BUTTON` (`CIRCLE_BUTTON`): a 36 pt circle, 1 pt
+/// hairline-weak border on the elevated fill, a 16 pt icon at stroke 1.75
+/// in the secondary ink (the ink on hover).
 struct DesktopHeadButton: View {
     @Environment(\.desktopTheme) private var theme
     let icon: DesktopIcon
@@ -144,16 +136,30 @@ struct DesktopHeadButton: View {
 
     var body: some View {
         Button(action: action) {
-            DesktopIconView(icon: icon, size: 18, strokeWidth: 1.75)
+            DesktopIconView(icon: icon, size: 16, strokeWidth: 1.75)
                 .foregroundStyle(hovering ? theme.sidebarInk : theme.sidebarInkSecondary)
-                .frame(width: 32, height: 32)
-                .background(hovering ? theme.sidebarHover : .clear, in: RoundedRectangle(cornerRadius: theme.radiusLg, style: .continuous))
-                .contentShape(Rectangle())
+                .frame(width: 36, height: 36)
+                .background(hovering ? theme.elevatedHover : theme.elevated, in: Circle())
+                .overlay(Circle().strokeBorder(theme.hairlineWeak, lineWidth: 1))
+                .contentShape(Circle())
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
         .accessibilityLabel(Text(label))
         .accessibilityIdentifier(id)
+    }
+}
+
+/// Search: the command palette (⌘K).
+struct DesktopSearchButton: View {
+    @EnvironmentObject private var model: DesktopShellModel
+
+    var body: some View {
+        DesktopHeadButton(icon: .search, label: "Search bots and messages", id: "desktop-sidebar-search") {
+            model.menu = nil
+            model.modal = .search
+        }
+        .accessibilityHint(Text("Command K"))
     }
 }
 
@@ -164,70 +170,14 @@ struct DesktopNewButton: View {
 
     var body: some View {
         GeometryReader { geometry in
-            DesktopHeadButton(icon: .plus, label: "New", id: "desktop-sidebar-new") {
+            DesktopHeadButton(icon: .squarePen, label: "New", id: "desktop-sidebar-new") {
                 let frame = geometry.frame(in: .named(desktopShellSpace))
-                model.menu = DesktopMenuRequest(kind: .new, anchor: CGPoint(x: frame.minX, y: frame.maxY + 4))
+                model.menu = model.menu?.kind == .new
+                    ? nil
+                    : DesktopMenuRequest(kind: .new, anchor: CGPoint(x: frame.minX, y: frame.maxY + 4))
             }
         }
-        .frame(width: 32, height: 32)
-    }
-}
-
-/// The search field: opens the palette (⌘K).
-struct DesktopSearchField: View {
-    @Environment(\.desktopTheme) private var theme
-    @EnvironmentObject private var model: DesktopShellModel
-
-    var body: some View {
-        Button { model.modal = .search } label: {
-            HStack(spacing: 0) {
-                DesktopIconView(icon: .search, size: 14)
-                    .foregroundStyle(theme.sidebarInkSecondary)
-                    .padding(.leading, 10)
-                Text("Search…")
-                    .font(theme.font(13))
-                    .foregroundStyle(theme.sidebarInkSecondary)
-                    .lineLimit(1)
-                    .offset(y: -0.5)
-                    .padding(.leading, 8)
-                Spacer(minLength: 0)
-                // the keycaps' widths in the dump (the glyphs fall back to
-                // another face in both renderers)
-                DesktopKeycap(text: "⌘").frame(width: 20)
-                DesktopKeycap(text: "K").frame(width: 17).padding(.leading, 2)
-                    .padding(.trailing, 6)
-            }
-            .frame(height: 30)
-            .background(theme.sidebarInk.opacity(0.05), in: RoundedRectangle(cornerRadius: theme.radiusLg, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: theme.radiusLg, style: .continuous)
-                    .strokeBorder(theme.sidebarHairline, lineWidth: 1)
-                    .padding(-1)
-            )
-            .padding(1)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(Text("Search bots and messages"))
-        .accessibilityIdentifier("desktop-sidebar-search")
-    }
-}
-
-// MARK: - Keycap
-
-/// `kbd`: 16 tall, at least 16 wide, radius 5, 11 pt, 4 pt padding.
-struct DesktopKeycap: View {
-    @Environment(\.desktopTheme) private var theme
-    let text: String
-
-    var body: some View {
-        Text(verbatim: text)
-            .font(theme.font(11))
-            .foregroundStyle(theme.sidebarInkSecondary)
-            .padding(.horizontal, 4)
-            .frame(minWidth: 16, minHeight: 16, maxHeight: 16)
-            .background(theme.sidebarInk.opacity(0.05), in: RoundedRectangle(cornerRadius: 5, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 5, style: .continuous).strokeBorder(theme.sidebarHairline, lineWidth: 1))
+        .frame(width: 36, height: 36)
     }
 }
 
@@ -273,7 +223,7 @@ struct DesktopSidebarList: View {
                 .padding(.top, 4)
                 .padding(.bottom, 24)
                 .padding(.leading, 8)
-                .padding(.trailing, icons ? 8.5 : 13)
+                .padding(.trailing, icons ? 9 : 13)
                 .background(GeometryReader { inner in
                     let frame = inner.frame(in: .named("desktop-sidebar-list"))
                     Color.clear
@@ -630,86 +580,149 @@ struct DesktopHiddenEntries: View {
 
 // MARK: - Footer
 
-/// The places (Team map, Automations, Connected apps, Templates: 36 pt rows, a 20 pt
-/// icon at x 16, 13/20 at x 46), the hairline, and the account row (the
-/// initials 28, the name 13/20 medium, the achievement points when shown)
-/// opening the account menu. The rail keeps the same rows as icons.
+/// The server's experimental switches the sidebar reads (Connected apps and
+/// Templates), from `GET /api/config`: read when the shell appears and again
+/// when a modal closes (Settings > Experimental features may have changed
+/// them).
+@MainActor
+final class DesktopSidebarFlags: ObservableObject {
+    static let shared = DesktopSidebarFlags()
+    @Published private(set) var features: ServerFeatures?
+    /// Who is looking (`PrimaryBotRules.viewerId`), for the bot menu's
+    /// Primary Bot item.
+    @Published private(set) var viewerId = "local-owner"
+    private var connectionID: String?
+
+    func reload(_ session: Session) async {
+        let id = session.connection?.id
+        if id != connectionID {
+            connectionID = id
+            features = nil
+        }
+        guard id != nil, let config = await session.configStatus() else { return }
+        guard session.connection?.id == id else { return }
+        features = config.features
+        viewerId = PrimaryBotRules.viewerId(config: config)
+    }
+}
+
+/// The places (`SidebarPlaces`: 36 pt rows 2 apart, a 20 pt icon at x 16,
+/// 13/20 at x 46), the hairline (`mx-2 my-2`), and the account row (the
+/// initials 28 at x 16, the name 13/20 medium at x 54, and under it the
+/// gamertag: a gold trophy and the points, opening the achievements; the
+/// row is 48 tall with it, 40 without) opening the account menu. The rail
+/// keeps the same rows as icons at the same heights.
 struct DesktopSidebarFooter: View {
     @Environment(\.desktopTheme) private var theme
     @EnvironmentObject private var session: Session
     @EnvironmentObject private var model: DesktopShellModel
     @ObservedObject private var achievements = AchievementStore.shared
+    @ObservedObject private var flags = DesktopSidebarFlags.shared
 
     var body: some View {
         let icons = model.density == .icons
-        return VStack(spacing: 2) {
-            if session.connection != nil, session.surfaceGate.allows(.teamMap) {
-                place("Team map", icon: .network, id: "team-map", icons: icons) { model.modal = .teamMap }
+        let places = DesktopSidebarPlaces.visible(
+            connected: session.connection != nil, gate: session.surfaceGate, features: flags.features)
+        return VStack(spacing: 0) {
+            if icons, DesktopSettingsSection.available(for: session.surfaceGate).contains(.companion) {
+                AnyView(DesktopRailPhoneButton())
             }
-            if session.connection != nil {
-                place("Automations", icon: .calendarDays, id: "automations", icons: icons) { model.modal = .automations }
+            if !places.isEmpty {
+                VStack(spacing: 2) {
+                    ForEach(places, id: \.self) { place in
+                        AnyView(placeRow(place, icons: icons))
+                    }
+                }
+                Rectangle().fill(theme.sidebarHairline).frame(height: 1)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 8)
             }
-            // The remote client keeps Connected apps and hides Templates; a
-            // client session reaches neither.
-            if session.connection != nil, session.surfaceGate.allows(.connectedApps) {
-                place("Connected apps", icon: .puzzle, id: "connected-apps", icons: icons) { model.modal = .plugins }
-            }
-            if session.connection != nil, session.surfaceGate.allows(.templates) {
-                place("Templates", icon: .library, id: "templates", icons: icons) { model.modal = .templates }
-            }
-            Rectangle().fill(theme.sidebarHairline).frame(height: 1)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 6)
-            if icons { railAccount } else { account }
+            if icons { AnyView(railAccount) } else { AnyView(account) }
         }
         .padding(.leading, 8)
-        .padding(.trailing, icons ? 8.5 : 13)
+        .padding(.trailing, icons ? 9 : 13)
         .padding(.top, 4)
         .padding(.bottom, 12)
+        .task(id: session.connection?.id) {
+            await flags.reload(session)
+            await loadAchievements()
+        }
+        .onValueChange(of: model.modal == nil) { closed in
+            if closed { Task { await flags.reload(session) } }
+        }
     }
 
-    private func place(_ title: LocalizedStringKey, icon: DesktopIcon, id: String, icons: Bool, action: @escaping () -> Void) -> some View {
-        DesktopPlaceRow(title: title, icon: icon, id: id, iconOnly: icons, action: action)
+    /// The parity captures and the demo do not run the achievements host's
+    /// reporting; the gamertag still reads the snapshot (a GET).
+    private func loadAchievements() async {
+        guard session.connection != nil, session.surfaceGate.allows(.achievements), achievements.status == .idle else { return }
+        if achievements.snapshot == nil, let client = session.settingsClient, !session.isDemo {
+            achievements.attach(client: client, connectionID: session.connection?.id)
+        }
+        await achievements.reload()
+    }
+
+    private func placeRow(_ place: DesktopSidebarPlace, icons: Bool) -> some View {
+        switch place {
+        case .teamMap:
+            DesktopPlaceRow(title: "Team map", icon: .network, id: place.rawValue, iconOnly: icons) { model.modal = .teamMap }
+        case .automations:
+            DesktopPlaceRow(title: "Automations", icon: .calendarDays, id: place.rawValue, iconOnly: icons) { model.modal = .automations }
+        case .connectedApps:
+            DesktopPlaceRow(title: "Connected apps", icon: .puzzle, id: place.rawValue, iconOnly: icons) { model.modal = .plugins }
+        case .templates:
+            DesktopPlaceRow(title: "Templates", icon: .library, id: place.rawValue, iconOnly: icons) { model.modal = .templates }
+        }
+    }
+
+    private var gamertag: String? {
+        DesktopSidebarPlaces.gamertag(ready: achievements.status == .ready, snapshot: achievements.snapshot)
     }
 
     private var account: some View {
-        GeometryReader { geometry in
-            Button {
-                let frame = geometry.frame(in: .named(desktopShellSpace))
-                model.menu = DesktopMenuRequest(kind: .profile, anchor: CGPoint(x: frame.minX, y: frame.minY - 4), opensUp: true)
-            } label: {
-                HStack(spacing: 10) {
-                    initialsCircle
-                    VStack(alignment: .leading, spacing: 0) {
-                        Text(verbatim: displayName)
-                            .font(theme.font(13, .medium))
-                            .foregroundStyle(theme.sidebarInk)
-                            .lineLimit(1)
-                            .offset(y: -0.5)
-                        if let snapshot = achievements.snapshot, snapshot.settings.showPoints {
-                            Label {
-                                Text("\(snapshot.points.formatted()) points")
-                            } icon: {
-                                Image(systemName: "trophy")
-                            }
-                            .labelStyle(DesktopCompactLabelStyle())
-                            .font(theme.font(11))
-                            .foregroundStyle(theme.sidebarInkSecondary)
-                            .accessibilityIdentifier("desktop-sidebar-points")
+        let points = gamertag
+        let height: CGFloat = points == nil ? 40 : 48
+        return GeometryReader { geometry in
+            ZStack(alignment: .bottomLeading) {
+                Button {
+                    let frame = geometry.frame(in: .named(desktopShellSpace))
+                    model.menu = model.menu?.kind == .profile
+                        ? nil
+                        : DesktopMenuRequest(kind: .profile, anchor: CGPoint(x: frame.minX, y: frame.minY - 4), opensUp: true)
+                } label: {
+                    HStack(spacing: 10) {
+                        initialsCircle
+                        VStack(alignment: .leading, spacing: 0) {
+                            Text(verbatim: displayName)
+                                .font(theme.font(13, .medium))
+                                .foregroundStyle(theme.sidebarInk)
+                                .lineLimit(1)
+                                .frame(height: 20)
+                                .offset(y: -0.5)
+                            if points != nil { Color.clear.frame(height: 16) }
                         }
+                        Spacer(minLength: 0)
                     }
-                    Spacer(minLength: 0)
+                    .padding(.leading, 8)
+                    .frame(height: height)
+                    .background(
+                        model.menu?.kind == .profile ? theme.sidebarHover : .clear,
+                        in: RoundedRectangle(cornerRadius: theme.radiusLg, style: .continuous)
+                    )
+                    .contentShape(Rectangle())
                 }
-                .padding(.leading, 8)
-                .frame(height: 40)
-                .contentShape(Rectangle())
+                .buttonStyle(DesktopSidebarRowButtonStyle())
+                .accessibilityLabel(Text(verbatim: displayName))
+                .accessibilityHint(Text("Opens the account menu"))
+                .accessibilityIdentifier("desktop-sidebar-account")
+                if let points, let snapshot = achievements.snapshot {
+                    DesktopGamertag(points: points, level: snapshot.level.level) { model.modal = .achievements }
+                        .padding(.leading, 42)
+                        .padding(.bottom, 6)
+                }
             }
-            .buttonStyle(DesktopSidebarRowButtonStyle())
-            .accessibilityLabel(Text(displayName))
-            .accessibilityHint(Text("Opens the account menu"))
-            .accessibilityIdentifier("desktop-sidebar-account")
         }
-        .frame(height: 40)
+        .frame(height: height)
     }
 
     private var railAccount: some View {
@@ -743,6 +756,67 @@ struct DesktopSidebarFooter: View {
     }
 }
 
+/// The rail's phone button (`SidebarPhoneButton`): a 40 pt square, an 18 pt
+/// tablet-and-phone at stroke 1.8, opening Settings > Pair devices.
+struct DesktopRailPhoneButton: View {
+    @Environment(\.desktopTheme) private var theme
+    @EnvironmentObject private var model: DesktopShellModel
+    @State private var hovering = false
+
+    var body: some View {
+        Button {
+            model.settingsSection = .companion
+            model.modal = .settings
+        } label: {
+            DesktopIconView(icon: .tabletSmartphone, size: 18, strokeWidth: 1.8)
+                .foregroundStyle(hovering ? theme.sidebarInk : theme.sidebarInkSecondary)
+                .frame(width: 40, height: 40)
+                .background(hovering ? theme.sidebarHover : .clear, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .frame(maxWidth: .infinity)
+        .accessibilityLabel(Text("Pair devices"))
+        .accessibilityIdentifier("desktop-sidebar-phone")
+    }
+}
+
+/// `Gamertag`: an 11 pt gold trophy (stroke 2.4) and the points 11/16 in the
+/// secondary ink, 4 apart, padded 4 with a 6 pt hover pill; opens the
+/// achievements.
+struct DesktopGamertag: View {
+    @Environment(\.desktopTheme) private var theme
+    let points: String
+    let level: Int
+    let open: () -> Void
+    @State private var hovering = false
+
+    static let gold = Color(.sRGB, red: 0xe0 / 255, green: 0xa8 / 255, blue: 0x2e / 255, opacity: 1)
+
+    var body: some View {
+        Button(action: open) {
+            HStack(spacing: 4) {
+                DesktopIconView(icon: .trophy, size: 11, strokeWidth: 2.4)
+                    .foregroundStyle(Self.gold)
+                Text(verbatim: points)
+                    .font(theme.font(11))
+                    .monospacedDigit()
+                    .foregroundStyle(hovering ? theme.sidebarInk : theme.sidebarInkSecondary)
+                    .offset(y: -0.5)
+            }
+            .padding(.horizontal, 4)
+            .frame(height: 16)
+            .background(hovering ? theme.sidebarHover : .clear, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .accessibilityLabel(Text("\(points) points, level \(level). Open achievements"))
+        .accessibilityIdentifier("desktop-sidebar-points")
+    }
+}
+
 /// One place row (`SidebarPlaces`).
 struct DesktopPlaceRow: View {
     @Environment(\.desktopTheme) private var theme
@@ -755,7 +829,7 @@ struct DesktopPlaceRow: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 10) {
-                DesktopIconView(icon: icon, size: 20)
+                DesktopIconView(icon: icon, size: 20, strokeWidth: 1.75)
                 if !iconOnly {
                     Text(title)
                         .font(theme.font(13))
@@ -797,5 +871,61 @@ struct DesktopCompactLabelStyle: LabelStyle {
             configuration.icon
             configuration.title
         }
+    }
+}
+
+// MARK: - Edge
+
+/// The sidebar's edge (`app-resize-handle`, 12 pt across it, invisible at
+/// rest): drag to resize, narrower than 180 to collapse to the rail and back
+/// out to expand; a double tap toggles; VoiceOver adjusts it.
+struct DesktopSidebarEdgeHandle: View {
+    @ObservedObject var model: DesktopShellModel
+    @Environment(\.desktopTheme) private var theme
+    @State private var start: CGFloat?
+    @State private var hovering = false
+
+    var body: some View {
+        Rectangle()
+            .fill(Color.clear)
+            .frame(width: 12)
+            .overlay {
+                Rectangle()
+                    .fill(theme.accent.opacity(start != nil || hovering ? 0.6 : 0))
+                    .frame(width: 2)
+            }
+            .contentShape(Rectangle())
+            .offset(x: 6)
+            .onHover { hovering = $0 }
+            .gesture(
+                DragGesture(minimumDistance: 2, coordinateSpace: .named(desktopShellSpace))
+                    .onChanged { value in
+                        let from = start ?? model.sidebarWidth
+                        if start == nil { start = from }
+                        model.dragSidebarEdge(toRaw: from + value.translation.width, save: false)
+                    }
+                    .onEnded { value in
+                        let from = start ?? model.sidebarWidth
+                        start = nil
+                        model.dragSidebarEdge(toRaw: from + value.translation.width, save: true)
+                    }
+            )
+            .simultaneousGesture(TapGesture(count: 2).onEnded { model.toggleCollapsed() })
+            .accessibilityElement()
+            .accessibilityLabel(Text("Resize sidebar"))
+            .accessibilityValue(Text(verbatim: "\(Int(model.sidebarWidth))"))
+            .accessibilityIdentifier("desktop-sidebar-edge")
+            .accessibilityAction(named: Text("Collapse or expand the sidebar")) { model.toggleCollapsed() }
+            .accessibilityAdjustableAction { direction in
+                switch direction {
+                case .increment:
+                    if model.density == .icons { model.toggleCollapsed() } else { model.dragSidebarEdge(toRaw: model.sidebarWidth + 24, save: true) }
+                case .decrement:
+                    guard model.density != .icons else { return }
+                    let next = model.sidebarWidth - 24
+                    model.dragSidebarEdge(toRaw: next < DesktopSidebarEdge.minWidth ? 0 : next, save: true)
+                @unknown default: break
+                }
+            }
     }
 }

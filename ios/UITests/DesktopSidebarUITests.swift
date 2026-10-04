@@ -196,8 +196,9 @@ final class DesktopSidebarUITests: XCTestCase {
         try eventually("the team renamed") { try bot(named: "Aurora")["section"] as? String == renamed }
     }
 
-    /// Collapse folds the sidebar to the rail and Expand brings it back;
-    /// ⌘1 and ⌘⇧] select bots in the roster's order.
+    /// A double tap on the sidebar's edge folds it to the rail and back
+    /// (there is no collapse button any more); ⌘1 and ⌘⇧] select bots in
+    /// the roster's order.
     @MainActor
     func testRailAndKeyboardShortcuts() throws {
         let visible = try bots().filter { $0["hidden"] as? Bool != true }
@@ -205,15 +206,47 @@ final class DesktopSidebarUITests: XCTestCase {
         let second = try XCTUnwrap(visible.dropFirst().first?["id"] as? String)
         let app = launch()
 
-        app.buttons["desktop-sidebar-collapse"].firstMatch.tap()
-        XCTAssertTrue(app.buttons["desktop-sidebar-expand"].waitForExistence(timeout: 5), "the rail")
-        app.buttons["desktop-sidebar-expand"].firstMatch.tap()
-        XCTAssertTrue(app.buttons["desktop-sidebar-collapse"].waitForExistence(timeout: 5), "the full sidebar")
+        XCTAssertTrue(app.buttons["desktop-sidebar-search"].exists, "the round search button")
+        XCTAssertTrue(app.buttons["desktop-sidebar-new"].exists, "the round New button")
+        XCTAssertFalse(app.buttons["desktop-sidebar-collapse"].exists, "no collapse button")
+        let edge = app.otherElements["desktop-sidebar-edge"].firstMatch
+        XCTAssertTrue(edge.waitForExistence(timeout: 5), "the sidebar's edge")
+        edge.doubleTap()
+        XCTAssertTrue(app.otherElements["desktop-sidebar-rail"].waitForExistence(timeout: 5), "the rail")
+        app.otherElements["desktop-sidebar-edge"].firstMatch.doubleTap()
+        XCTAssertTrue(app.otherElements["desktop-sidebar-full"].waitForExistence(timeout: 5), "the full sidebar")
 
         app.typeKey("1", modifierFlags: .command)
         try eventually("bot 1 selected") { self.isSelected(first, in: app) }
         app.typeKey("]", modifierFlags: [.command, .shift])
         try eventually("bot 2 selected") { self.isSelected(second, in: app) }
+    }
+
+    /// Connected apps and Templates wait for Settings > Experimental
+    /// features, as on the desktop; the footer shows the achievements
+    /// points from the server.
+    @MainActor
+    func testExperimentalPlacesAndGamertag() throws {
+        let config = try api("GET", "/api/config") as? [String: Any]
+        let features = config?["features"] as? [String: Any]
+        let apps = features?["connectedApps"] as? Bool ?? false
+        let templates = features?["templates"] as? Bool ?? false
+        addTeardownBlock {
+            _ = try? self.api("PUT", "/api/config", ["features": ["connectedApps": apps, "templates": templates]])
+        }
+        try api("PUT", "/api/config", ["features": ["connectedApps": false, "templates": false]])
+        var app = launch()
+        XCTAssertTrue(app.buttons["desktop-sidebar-team-map"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["desktop-sidebar-automations"].exists)
+        XCTAssertFalse(app.buttons["desktop-sidebar-connected-apps"].exists, "Connected apps is experimental")
+        XCTAssertFalse(app.buttons["desktop-sidebar-templates"].exists, "Templates is experimental")
+        let points = app.buttons["desktop-sidebar-points"].firstMatch
+        XCTAssertTrue(points.waitForExistence(timeout: 10), "the gamertag")
+
+        try api("PUT", "/api/config", ["features": ["connectedApps": true, "templates": true]])
+        app = launch()
+        XCTAssertTrue(app.buttons["desktop-sidebar-connected-apps"].waitForExistence(timeout: 10), "switched on")
+        XCTAssertTrue(app.buttons["desktop-sidebar-templates"].exists, "switched on (the parity pairing is an administrator's)")
     }
 
     @MainActor

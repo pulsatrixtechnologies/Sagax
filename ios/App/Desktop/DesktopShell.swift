@@ -71,7 +71,7 @@ enum DesktopShellRules {
 @MainActor
 final class DesktopShellModel: ObservableObject {
     enum Modal: String, Identifiable {
-        case settings, search, newBot, newGroup, teamMap, automations, plugins, templates, about, shortcuts
+        case settings, search, newBot, newGroup, teamMap, automations, plugins, templates, about, shortcuts, achievements
         var id: String { rawValue }
     }
 
@@ -125,6 +125,9 @@ final class DesktopShellModel: ObservableObject {
     @Published var renamingBot: Bot?
     @Published var renameDraft = ""
     @Published var deletingBot: Bot?
+    /// The bot menu's Archive and Replace with different Bot (I2b).
+    @Published var archivingBot: Bot?
+    @Published var replacingPrimary: Bot?
     /// The WP5, WP6 and WP11 menus' prompts, mounted once by the shell.
     let threadActions = ThreadActions()
     let sectionActions = SidebarSectionActions()
@@ -142,6 +145,9 @@ final class DesktopShellModel: ObservableObject {
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         density = DesktopSidebarDensity(rawValue: defaults.string(forKey: PrefKey.desktopSidebarDensity) ?? "") ?? .comfortable
+        if !ParityMode.isActive {
+            sidebarExpandedWidth = CGFloat(DesktopSidebarEdge.clamped(defaults.object(forKey: Self.sidebarWidthKey) as? Double))
+        }
         // Settings > Appearance writes the same key (`@AppStorage`).
         defaultsObserver = NotificationCenter.default.addObserver(
             forName: UserDefaults.didChangeNotification, object: defaults, queue: .main
@@ -185,7 +191,26 @@ final class DesktopShellModel: ObservableObject {
     }
 
     var sidebarWidth: CGFloat {
-        density == .icons ? DesktopShellRules.railWidth : DesktopShellRules.sidebarWidth
+        density == .icons ? DesktopShellRules.railWidth : sidebarExpandedWidth
+    }
+
+    /// The expanded sidebar's width, 240 to 400 (`omb-sidebar-width-v2`);
+    /// the parity captures keep the desktop's default 280.
+    @Published private(set) var sidebarExpandedWidth: CGFloat = DesktopShellRules.sidebarWidth
+    static let sidebarWidthKey = "omb-sidebar-width-v2"
+
+    /// A drag of the sidebar's edge (I2b): to the rail under the snap
+    /// width, back out past it, and the width in between; kept when the
+    /// drag ends.
+    func dragSidebarEdge(toRaw raw: CGFloat, save: Bool) {
+        switch DesktopSidebarEdge.target(raw: Double(raw)) {
+        case .collapsed:
+            if density != .icons { setDensity(.icons) }
+        case let .expanded(width):
+            if density == .icons { toggleCollapsed() }
+            sidebarExpandedWidth = CGFloat(width)
+            if save, persistsDensity { defaults.set(width, forKey: Self.sidebarWidthKey) }
+        }
     }
 
     /// Settings > Appearance, or the rail's edge: the density, remembered on
@@ -276,6 +301,8 @@ struct DesktopShell: View {
                 AnyView(DesktopSidebar())
                     .frame(width: model.sidebarWidth)
                     .clipped()
+                    .overlay(alignment: .trailing) { DesktopSidebarEdgeHandle(model: model) }
+                    .zIndex(1)
                 AnyView(DesktopContent())
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 if docked, botOpen, let bot = selectedBot {
@@ -568,6 +595,13 @@ private struct DesktopShellPresenter: ViewModifier {
             NavigationStack { AboutPage() }
         case .shortcuts:
             DesktopShortcutsSheet { model.modal = nil }
+        case .achievements:
+            NavigationStack {
+                AchievementsPage()
+                    .toolbar {
+                        ToolbarItem(placement: .confirmationAction) { Button("Done") { model.modal = nil } }
+                    }
+            }
         }
     }
 }

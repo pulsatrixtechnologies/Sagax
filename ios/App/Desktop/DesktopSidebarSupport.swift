@@ -39,9 +39,9 @@ struct DesktopKeyCommands: View {
         .accessibilityHidden(true)
     }
 
-    /// Under the New button (brand row, or the rail's third square).
+    /// Under the round New button (brand row, or the rail's second circle).
     private var newAnchor: CGPoint {
-        model.density == .icons ? CGPoint(x: 23.5, y: 148) : CGPoint(x: 201, y: 78)
+        model.density == .icons ? CGPoint(x: 21.5, y: 124) : CGPoint(x: model.sidebarWidth - 49, y: 80)
     }
 
     private func command(
@@ -75,6 +75,24 @@ struct DesktopSidebarPrompts: ViewModifier {
                     .accessibilityIdentifier("desktop-rename-save")
             }
             .confirmationDialog(
+                Text("Archive \(model.archivingBot?.name ?? "")?"),
+                isPresented: Binding(
+                    get: { model.archivingBot != nil },
+                    set: { if !$0 { model.archivingBot = nil } }
+                ),
+                titleVisibility: .visible
+            ) {
+                Button("Archive") { confirmArchive() }
+                    .accessibilityIdentifier("desktop-archive-confirm")
+                Button("Cancel", role: .cancel) { model.archivingBot = nil }
+            } message: {
+                Text("\(model.archivingBot?.name ?? "") leaves the sidebar, but every conversation is kept. You can restore it any time from Archived bots.")
+            }
+            .sheet(item: $model.replacingPrimary) { bot in
+                PrimaryBotPicker(currentId: bot.id, viewerId: DesktopSidebarFlags.shared.viewerId) { _ in }
+                    .environmentObject(session)
+            }
+            .confirmationDialog(
                 Text("Delete \(model.deletingBot?.name ?? "")?"),
                 isPresented: Binding(
                     get: { model.deletingBot != nil },
@@ -99,6 +117,12 @@ struct DesktopSidebarPrompts: ViewModifier {
         Task { _ = await session.updateProfile(BotProfilePatch(name: name), for: bot) }
     }
 
+    private func confirmArchive() {
+        guard let bot = model.archivingBot else { return }
+        model.archivingBot = nil
+        Task { await DesktopBotArchiving.set(bot, archived: true, session: session, model: model) }
+    }
+
     private func confirmDelete() {
         guard let bot = model.deletingBot else { return }
         model.deletingBot = nil
@@ -111,6 +135,26 @@ struct DesktopSidebarPrompts: ViewModifier {
             } catch {
                 session.actionError = error.localizedDescription
             }
+        }
+    }
+}
+
+/// Archive (`PATCH /api/bots/:id { hidden }`, as the desktop's
+/// `archiveBot`): the bot leaves the sidebar with its conversations kept;
+/// the selection moves to another active bot. Restore sends false.
+@MainActor
+enum DesktopBotArchiving {
+    static func set(_ bot: Bot, archived: Bool, session: Session, model: DesktopShellModel) async {
+        guard let client = session.profileClient else { return }
+        if archived, DesktopBotArchive.block(bot, in: session.state.bots) != nil { return }
+        do {
+            let updated = try await client.patchBot(botId: bot.id, patch: BotPatch(hidden: archived))
+            session.applyProfileBot(updated)
+            if archived, model.selected?.id == bot.id {
+                model.selected = session.state.bots.first { $0.hidden != true && $0.id != bot.id }.map(Chat.bot)
+            }
+        } catch {
+            session.actionError = error.localizedDescription
         }
     }
 }

@@ -1,0 +1,106 @@
+// iPad I2b: what the desktop sidebar's foot shows (src/components/Sidebar.tsx
+// `places`, SidebarPlaces.tsx, achievements/Gamertag.tsx), as rules the
+// iPad's `DesktopSidebarFooter` reads and the tests pin.
+//
+// - Team map and Automations are always there (a pairing with a server).
+// - Connected apps and Templates are experimental: each one shows only once
+//   Settings > Experimental features switches it on (`connectedAppsEnabled`,
+//   `templatesEnabled` in src/lib/feature-flags.ts), and only for a pairing
+//   allowed to open it.
+// - The gamertag (a trophy and the points) shows under the name when the
+//   server keeps achievements, the snapshot is read and the person did not
+//   turn "Show my points" off.
+import Foundation
+
+public enum DesktopSidebarPlace: String, CaseIterable, Sendable {
+    case teamMap = "team-map"
+    case automations
+    case connectedApps = "connected-apps"
+    case templates
+}
+
+public enum DesktopSidebarPlaces {
+    /// The places in the desktop's order.
+    public static func visible(
+        connected: Bool,
+        gate: SurfaceGate,
+        connectedAppsOn: Bool,
+        templatesOn: Bool
+    ) -> [DesktopSidebarPlace] {
+        guard connected else { return [] }
+        var out: [DesktopSidebarPlace] = []
+        if gate.allows(.teamMap) { out.append(.teamMap) }
+        out.append(.automations)
+        if connectedAppsOn, gate.allows(.connectedApps) { out.append(.connectedApps) }
+        if templatesOn, gate.allows(.templates) { out.append(.templates) }
+        return out
+    }
+
+    /// The same, from the server's experimental switches.
+    public static func visible(connected: Bool, gate: SurfaceGate, features: ServerFeatures?) -> [DesktopSidebarPlace] {
+        visible(
+            connected: connected,
+            gate: gate,
+            connectedAppsOn: features?.connectedApps == true,
+            templatesOn: features?.templates == true
+        )
+    }
+
+    /// `gamertagText`: the points as the person's language groups them, or
+    /// nil when the line stays hidden.
+    public static func gamertag(ready: Bool, snapshot: AchievementSnapshot?, locale: Locale = .current) -> String? {
+        guard ready, let snapshot, snapshot.settings.showPoints else { return nil }
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+        formatter.locale = locale
+        return formatter.string(from: NSNumber(value: snapshot.points)) ?? String(snapshot.points)
+    }
+}
+
+/// The sidebar's edge (`sidebarDragTarget`, src/lib/sidebar-preferences.ts):
+/// a drag narrower than the snap width collapses it to the 80 pt rail, past
+/// it the width is held to 240 to 400. There is no collapse button: the
+/// edge (drag, double tap), ⌘\ and Settings > Appearance go in and out.
+public enum DesktopSidebarEdge {
+    public static let railWidth: Double = 80
+    public static let minWidth: Double = 240
+    public static let maxWidth: Double = 400
+    public static let defaultWidth: Double = 280
+    public static let snapWidth: Double = 180
+
+    public enum Target: Equatable, Sendable {
+        case collapsed
+        case expanded(width: Double)
+    }
+
+    /// Where a drag lands; `raw` is the width under the finger (the width
+    /// the drag started from plus its travel, 80 from the rail).
+    public static func target(raw: Double) -> Target {
+        guard raw.isFinite, raw >= snapWidth else { return .collapsed }
+        return .expanded(width: (min(maxWidth, max(minWidth, raw))).rounded())
+    }
+
+    /// A stored width, or the default when it is missing or out of range.
+    public static func clamped(_ stored: Double?) -> Double {
+        guard let stored, stored.isFinite else { return defaultWidth }
+        return min(maxWidth, max(minWidth, stored))
+    }
+}
+
+/// The bot menu's Archive (`archiveBlocked` in Sidebar.tsx): the Primary Bot
+/// and the last active bot stay; an archived bot is restored from the
+/// account menu's Archived bots.
+public enum DesktopBotArchive {
+    public enum Block: Equatable, Sendable { case primary, last }
+
+    public static func block(_ bot: Bot, in bots: [Bot]) -> Block? {
+        if bot.chiefOfStaff == true { return .primary }
+        if bots.filter({ $0.hidden != true }).count <= 1 { return .last }
+        return nil
+    }
+
+    /// The archived bots, by name.
+    public static func archived(_ bots: [Bot]) -> [Bot] {
+        bots.filter { $0.hidden == true }.sorted { $0.name.localizedCompare($1.name) == .orderedAscending }
+    }
+}

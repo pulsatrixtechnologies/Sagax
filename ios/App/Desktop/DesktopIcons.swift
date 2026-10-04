@@ -13,6 +13,8 @@ enum DesktopIcon: String, CaseIterable {
     case users, share, smartphone, settings, keyboard, info, help, squarePen, star, arrowLeftRight, arrowUp, arrowDown, eye
     // the bot panel (I4b)
     case panelRight, squareTerminal, activity, calendarClock, fileText
+    // the sidebar footer's gamertag (I2b)
+    case trophy, tabletSmartphone, archive
 
     /// Path data in the 24 pt viewBox.
     var paths: [String] {
@@ -85,6 +87,15 @@ enum DesktopIcon: String, CaseIterable {
         case .arrowUp: ["m5 12 7-7 7 7", "M12 19V5"]
         case .arrowDown: ["M12 5v14", "m19 12-7 7-7-7"]
         case .panelRight: [Self.rect(3, 3, 18, 18, 2), "M15 3v18"]
+        case .archive: [Self.rect(2, 3, 20, 5, 1), "M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8", "M10 12h4"]
+        case .tabletSmartphone: [Self.rect(3, 8, 10, 14, 2), "M5 4a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2h-2.4", "M8 18h.01"]
+        case .trophy: [
+            "M10 14.66v1.626a2 2 0 0 1-.976 1.696A5 5 0 0 0 7 21.978",
+            "M14 14.66v1.626a2 2 0 0 0 .976 1.696A5 5 0 0 1 17 21.978",
+            "M18 9h1.5a1 1 0 0 0 0-5H18", "M4 22h16",
+            "M6 9a6 6 0 0 0 12 0V3a1 1 0 0 0-1-1H7a1 1 0 0 0-1 1z",
+            "M6 9H4.5a1 1 0 0 1 0-5H6",
+        ]
         case .squareTerminal: ["m7 11 2-2-2-2", "M11 13h4", Self.rect(3, 3, 18, 18, 2)]
         case .activity:
             ["M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a0.25 0.25 0 0 1-0.48 0L9.24 2.18a0.25 0.25 0 0 0-0.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2"]
@@ -122,6 +133,9 @@ enum DesktopIcon: String, CaseIterable {
         case .eyeOff: "eye.slash"
         case .eye: "eye"
         case .panelRight: "sidebar.right"
+        case .trophy: "trophy"
+        case .tabletSmartphone: "ipad.and.iphone"
+        case .archive: "archivebox"
         case .squareTerminal: "terminal"
         case .activity: "waveform.path.ecg"
         case .calendarClock: "calendar.badge.clock"

@@ -361,9 +361,29 @@ struct DesktopSidebarMenus {
             prefs.hide(session, .bot, bot.id)
         }))
         if gate.allows(.botOwnerExtras) {
+            let block = DesktopBotArchive.block(bot, in: session.state.bots)
+            out.append(DesktopMenuEntry(id: "archive", title: String(localized: "Archive"), icon: .archive, disabled: block != nil, kind: .action {
+                model.archivingBot = bot
+            }))
             out.append(DesktopMenuEntry(id: "delete", title: String(localized: "Delete"), icon: .trash, danger: true, kind: .action {
                 model.deletingBot = bot
             }))
+        }
+        // The Primary Bot (one per person): its own menu hands the role to
+        // another of the viewer's bots, the viewer's other bots take it.
+        switch PrimaryBotRules.menuAction(for: bot, viewerId: DesktopSidebarFlags.shared.viewerId) {
+        case .make:
+            out.append(.divider("primary"))
+            out.append(DesktopMenuEntry(id: "make-primary", title: String(localized: "Make primary bot"), icon: .star, kind: .action {
+                Task { await PrimaryBotActions.make(bot.id, session: session, done: { _ in }, working: .constant(false)) }
+            }))
+        case .replace:
+            out.append(.divider("primary"))
+            out.append(DesktopMenuEntry(id: "replace-primary", title: String(localized: "Replace with different Bot"), icon: .arrowLeftRight, kind: .action {
+                model.replacingPrimary = bot
+            }))
+        case nil:
+            break
         }
         return out
     }
@@ -526,11 +546,34 @@ struct DesktopSidebarMenus {
     // MARK: Account (SidebarProfileMenu)
 
     func profile() -> [DesktopMenuEntry] {
-        // "Get Sagax for iOS" is this app; the desktop's own row is left out.
-        [
-            DesktopMenuEntry(id: "settings", title: String(localized: "Settings"), icon: .settings, kind: .action {
+        var out: [DesktopMenuEntry] = []
+        // The desktop's phone row: here it opens Pair devices, where another
+        // phone or iPad pairs with the same computer.
+        if DesktopSettingsSection.available(for: gate).contains(.companion) {
+            out.append(DesktopMenuEntry(id: "phone", title: String(localized: "Get Sagax for iOS"), icon: .smartphone, kind: .action {
+                model.settingsSection = .companion
                 model.modal = .settings
-            }),
+            }))
+        }
+        out.append(DesktopMenuEntry(id: "settings", title: String(localized: "Settings"), icon: .settings, kind: .action {
+            model.modal = .settings
+        }))
+        let archived = DesktopBotArchive.archived(session.state.bots)
+        if gate.allows(.botOwnerExtras), !archived.isEmpty {
+            // Archived bots (the desktop's account place): each one restores.
+            let children = archived.map { bot in
+                DesktopMenuEntry(id: "restore.\(bot.id)", title: String(localized: "Restore \(bot.name)"), kind: .action {
+                    Task { await DesktopBotArchiving.set(bot, archived: false, session: session, model: model) }
+                })
+            }
+            out.append(DesktopMenuEntry(id: "archived", title: String(localized: "Archived bots"), icon: .archive, kind: .submenu(children)))
+        }
+        if AchievementStore.shared.status == .ready {
+            out.append(DesktopMenuEntry(id: "achievements", title: String(localized: "Achievements"), icon: .trophy, kind: .action {
+                model.modal = .achievements
+            }))
+        }
+        out += [
             DesktopMenuEntry(id: "shortcuts", title: String(localized: "Keyboard shortcuts"), icon: .keyboard, shortcut: "⌘ /", kind: .action {
                 model.modal = .shortcuts
             }),
@@ -544,6 +587,7 @@ struct DesktopSidebarMenus {
                 }
             }),
         ]
+        return out
     }
 
     // MARK: New (⌘N)
