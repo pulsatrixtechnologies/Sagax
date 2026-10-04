@@ -1,7 +1,7 @@
 // Prompt preview (BA2, bot-settings/PromptPreview.tsx): the settings-derived
 // prompt from GET /api/bots/:id/system-prompt, each part folded, with its
-// size. Read-only. `PromptPreviewSection` is the Form content (phone page or
-// the iPad panel); `PromptPreviewPage` is the phone's pushed page.
+// size. Read-only. `PromptPreviewSection` is the Form content of the bot
+// panel's Overview (OverviewSection.tsx shows it there).
 import CompanionCore
 import SwiftUI
 
@@ -61,17 +61,5 @@ struct PromptPreviewSection: View {
             // data wins over a failed refetch, as on the desktop
             if data == nil { failed = true }
         }
-    }
-}
-
-struct PromptPreviewPage: View {
-    @Environment(\.themePalette) var themePalette
-    let bot: Bot
-
-    var body: some View {
-        ThemedForm { PromptPreviewSection(bot: bot) }
-            .navigationTitle(String(localized: "Prompt preview"))
-            .navigationBarTitleDisplayMode(.inline)
-            .accessibilityIdentifier("prompt-preview-page")
     }
 }

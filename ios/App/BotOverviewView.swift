@@ -8,6 +8,9 @@ import SwiftUI
 struct BotOverviewView: View {
     @Environment(\.themePalette) var themePalette
     let bot: Bot
+    /// The bot panel's Overview also shows what the model sees
+    /// (`OverviewSection.tsx` PromptPreview).
+    var showsPromptPreview = false
 
     @EnvironmentObject private var session: Session
     @State private var overview: BotOverview?
@@ -96,6 +99,10 @@ struct BotOverviewView: View {
                     }
                 }
                 .listRowBackground(Theme.parity(Color(uiColor: .secondarySystemGroupedBackground), Theme.card))
+                if showsPromptPreview {
+                    PromptPreviewSection(bot: bot)
+                        .listRowBackground(Theme.parity(Color(uiColor: .secondarySystemGroupedBackground), Theme.card))
+                }
             } else if failed {
                 Section {
                     EmptyStateView("Couldn't load", systemImage: "wifi.exclamationmark")
