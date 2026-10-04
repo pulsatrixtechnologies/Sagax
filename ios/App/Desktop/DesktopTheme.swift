@@ -79,6 +79,15 @@ struct DesktopTheme: Equatable {
         }
     }
 
+    /// The UIKit font of `font(_:_:)`, for line metrics.
+    func uiFont(_ size: CGFloat, _ weight: Font.Weight = .regular) -> UIFont {
+        switch face {
+        case .geist: return DesktopFonts.uiGeist(size, weight)
+        case .system: return .systemFont(ofSize: size)
+        case .retro: return UIFont(name: "Verdana", size: size * 0.9) ?? .systemFont(ofSize: size)
+        }
+    }
+
     // MARK: Per skin
 
     static func of(_ skin: SkinID) -> DesktopTheme {
@@ -231,14 +240,20 @@ enum DesktopFonts {
         let value = wght(weight)
         let key = "\(size)-\(value)"
         if let font = cache[key] { return font }
+        let font = Font(uiGeist(size, weight) as CTFont)
+        cache[key] = font
+        return font
+    }
+
+    /// The UIKit font behind `geist` (its metrics: the chat's line box).
+    static func uiGeist(_ size: CGFloat, _ weight: Font.Weight = .regular) -> UIFont {
+        guard registered else { return .systemFont(ofSize: size) }
         let variation = UIFontDescriptor.AttributeName(rawValue: kCTFontVariationAttribute as String)
         let descriptor = UIFontDescriptor(fontAttributes: [
             .name: "Geist-Regular",
-            variation: [0x7767_6874 as NSNumber: value as NSNumber],
+            variation: [0x7767_6874 as NSNumber: wght(weight) as NSNumber],
         ])
-        let font = Font(UIFont(descriptor: descriptor, size: size) as CTFont)
-        cache[key] = font
-        return font
+        return UIFont(descriptor: descriptor, size: size)
     }
 
     /// CSS weight for a SwiftUI weight.

@@ -485,6 +485,9 @@ public struct BotTask: Codable, Hashable, Sendable {
     public var turnStartedAt: Double? = nil
     /// Organization server: the person this 1:1 thread belongs to.
     public var ownerPrincipalId: String? = nil
+    /// Where this conversation works when pinned (`cloud`, `vm`, `local`,
+    /// `browser`); nil follows the bot's Works on (src/lib/place.ts).
+    public var surface: String? = nil
 
     /// The time the thread list sorts and stamps by.
     public var listStamp: Double { updatedAt ?? createdAt }
@@ -2075,6 +2078,8 @@ public struct MessageImageAttachment: Codable, Hashable, Sendable {
     public var kind: String
     public var path: String?
     public var mime: String?
+    /// The file's display name (`kind == "file"`); the path's basename otherwise.
+    public var name: String? = nil
     /// The server's duration estimate for an audio attachment, in
     /// milliseconds; shown until the player loads real metadata.
     public var durationMs: Double?

@@ -294,6 +294,21 @@ public struct AttachedMessageContent: Hashable, Sendable {
 }
 
 extension Message {
+    /// Files a bot attached to its reply (`kind == "file"`), in wire order,
+    /// deduplicated by path: the desktop's file cards (AttachmentGallery).
+    public var fileAttachments: [DisplayedMessageAttachment] {
+        var seen = Set<String>()
+        return (attachments ?? []).compactMap { attachment in
+            guard attachment.kind == "file", let path = attachment.path,
+                  !path.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                  seen.insert(path).inserted else { return nil }
+            return DisplayedMessageAttachment(
+                kind: .file, path: path,
+                name: AttachedMessageContent.displayName(providedName: attachment.name, path: path, kind: .file)
+            )
+        }
+    }
+
     /// Paths are server metadata, passed unchanged to the message-scoped file route.
     public var generatedImages: [DisplayedMessageAttachment] {
         var seen = Set<String>()

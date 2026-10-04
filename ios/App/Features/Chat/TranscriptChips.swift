@@ -75,9 +75,35 @@ struct ReceiptChip: View {
     let label: String
     var hint = "Shows the full text"
     var open: (() -> Void)? = nil
+    /// iPad desktop shell: DigestChip.tsx (panel fill, hairline ring at
+    /// 40 %, 12 pt ink-secondary, 12 x 4 in, at most 480 wide).
+    @Environment(\.desktopChatText) private var desktop
 
     var body: some View {
-        if !label.isEmpty {
+        if let desktop, !label.isEmpty {
+            Button {
+                open?()
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: icon)
+                        .font(.system(size: 11, weight: .regular))
+                    Text(label)
+                        .font(desktop.font(12))
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
+                .foregroundStyle(desktop.inkSecondary)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 4)
+                .background(desktop.panel, in: Capsule())
+                .overlay(Capsule().strokeBorder(desktop.hairline.opacity(0.4), lineWidth: 1))
+                .frame(maxWidth: 480, alignment: .leading)
+            }
+            .buttonStyle(.plain)
+            .hoverEffect(.highlight)
+            .accessibilityLabel(label)
+            .accessibilityHint(hint)
+        } else if !label.isEmpty {
             Button {
                 Haptics.selection()
                 open?()

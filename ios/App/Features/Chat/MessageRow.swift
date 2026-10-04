@@ -27,6 +27,8 @@ struct MessageRow: View {
     @Environment(\.citeIntoComposer) private var citeIntoComposer
     @ObservedObject private var speaker = MessageSpeaker.shared
     @AppStorage(PrefKey.activityDetail) private var activityDetail = ActivityDetail.full.rawValue
+    /// iPad desktop shell: the hover row beside the bubble (MessageActions.tsx).
+    @Environment(\.desktopChatText) private var desktop
 
     private var versions: [Message] {
         session.state.versions(of: message, inThread: chat.threadId)
@@ -47,6 +49,11 @@ struct MessageRow: View {
     var body: some View {
         VStack(alignment: message.role == .user ? .trailing : .leading, spacing: 6) {
             content
+                .environment(\.desktopMessageActions, desktop == nil || isPendingEdit ? nil : DesktopMessageActions(
+                    copyText: message.webhookContent?.task ?? Citations.split(attachedContent.text).display,
+                    actions: actionSet,
+                    at: message.date
+                ))
 
             if let comm = message.comm {
                 // the chip already says what happened ("Posted in Standup");

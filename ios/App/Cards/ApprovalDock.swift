@@ -20,11 +20,15 @@ struct ApprovalDock: View {
     @EnvironmentObject private var session: Session
     @State private var requestId: String?
     @State private var answering = false
+    /// iPad desktop shell: PendingApproval.tsx's box.
+    @Environment(\.desktopChatText) private var desktop
 
     private var tint: Color { MausPalette.color(chat.color) }
 
     var body: some View {
-        if !approvals.isEmpty {
+        if let desktop, !approvals.isEmpty {
+            desktopBody(desktop)
+        } else if !approvals.isEmpty {
             let index = ApprovalDockRules.stepperIndex(approvals, requestId: requestId)
             let pending = approvals[index]
             let readOnly = ApprovalDockRules.readOnly(approvals)
@@ -102,6 +106,155 @@ struct ApprovalDock: View {
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("approval-dock")
         }
+    }
+
+    // MARK: Desktop
+
+    /// PendingApprovalBox: a card ring (accent at 40 %, radius 16) holding a
+    /// raised strip (PENDING APPROVAL, the request, the tool, the detail)
+    /// and a row of pill buttons on the right: Cancel turn, Deny, the
+    /// remembering choice, Allow once.
+    private func desktopBody(_ theme: DesktopTheme) -> some View {
+        let index = ApprovalDockRules.stepperIndex(approvals, requestId: requestId)
+        let pending = approvals[index]
+        let actions = ApprovalDockRules.actions(
+            for: pending,
+            ownerOrAdmin: session.canAdminister,
+            hasBot: session.askingBotId(pending, in: chat) != nil
+        )
+        return VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text("Pending approval")
+                        .textCase(.uppercase)
+                        .font(theme.font(11))
+                        .tracking(1.98)
+                        .foregroundStyle(theme.inkSecondary)
+                    Text(verbatim: Self.desktopLabel(pending))
+                        .font(theme.font(13))
+                        .foregroundStyle(theme.ink)
+                        .frame(minHeight: 19.5)
+                        .accessibilityIdentifier("approval-dock-title")
+                    if let tool = pending.card.tool, !tool.isEmpty {
+                        Text(verbatim: tool)
+                            .font(.system(size: 11, design: .monospaced))
+                            .foregroundStyle(theme.inkSecondary)
+                    }
+                    Spacer(minLength: 0)
+                    if approvals.count > 1 { stepper(index: index) }
+                }
+                if let detail = ApprovalHeading.detail(pending.card) {
+                    ScrollView(.vertical) {
+                        Text(detail)
+                            .font(.system(size: 12, design: .monospaced))
+                            .foregroundStyle(theme.ink)
+                            .textSelection(.enabled)
+                            .frame(minHeight: 19.5)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .accessibilityIdentifier("approval-dock-detail")
+                    }
+                    .frame(maxHeight: 160)
+                    .fixedSize(horizontal: false, vertical: true)
+                } else {
+                    // the desktop keeps its (empty) detail block: 8 + 1
+                    Color.clear.frame(height: 1)
+                }
+                if let held = pending.card.held, !held.isEmpty {
+                    Label(held, systemImage: "exclamationmark.shield")
+                        .font(theme.font(12.5))
+                        .foregroundStyle(theme.warning)
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(theme.raised.opacity(0.4))
+            .overlay(alignment: .bottom) { Rectangle().fill(theme.hairline.opacity(0.5)).frame(height: 1) }
+
+            HStack(spacing: 8) {
+                Spacer(minLength: 0)
+                if actions.waitingForAdmin {
+                    Text("This command runs on the server: waiting for an admin to approve it.")
+                        .font(theme.font(13))
+                        .foregroundStyle(theme.inkSecondary)
+                } else {
+                    if actions.cancelTurn {
+                        desktopPill(String(localized: "Cancel turn"), theme: theme, ink: theme.inkSecondary, id: "approval-cancel-turn") {
+                            await session.cancelTurn(for: pending, in: chat)
+                        }
+                    }
+                    desktopPill(actions.denyIsCancel ? String(localized: "Cancel") : String(localized: "Deny"), theme: theme,
+                                ink: theme.danger, ring: theme.danger.opacity(0.4), id: "approval-deny") {
+                        await session.decide(.deny, on: pending, in: chat)
+                    }
+                    if actions.alwaysAllowTool {
+                        desktopPill(String(localized: "Always allow"), theme: theme, ink: theme.ink, ring: theme.hairline.opacity(0.5), id: "approval-always-allow") {
+                            await session.decide(.alwaysAllowTool, on: pending, in: chat)
+                        }
+                    } else if actions.alwaysAllowCommand {
+                        desktopPill(String(localized: "Always allow this command"), theme: theme, ink: theme.ink, ring: theme.hairline.opacity(0.5), id: "approval-always-command") {
+                            await session.decide(.alwaysAllowCommand, on: pending, in: chat)
+                        }
+                    } else if actions.alwaysAllowSession {
+                        desktopPill(String(localized: "Always allow this session"), theme: theme, ink: theme.ink, ring: theme.hairline.opacity(0.5), id: "approval-always-session") {
+                            await session.decide(.alwaysAllowSession, on: pending, in: chat)
+                        }
+                    }
+                    desktopPill(primaryLabel(actions.primary, pending), theme: theme, ink: theme.app, fill: theme.accent, weight: .medium, id: "approval-allow-once") {
+                        await session.decide(.allowOnce, on: pending, in: chat)
+                    }
+                    .disabled(actions.primaryDisabled)
+                }
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 8)
+        }
+        .background(theme.card, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(theme.accent.opacity(0.4), lineWidth: 1))
+        .padding(.bottom, 2)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("approval-dock")
+    }
+
+    /// PendingApproval.tsx `approvalLabel`.
+    static func desktopLabel(_ pending: PendingApproval) -> String {
+        switch ApprovalHeading.of(pending.card) {
+        case .confirmRoutine: return String(localized: "Confirm this routine")
+        case .confirmRoutineChange: return String(localized: "Confirm this routine change")
+        case .enableSkill: return String(localized: "Enable this learned skill")
+        case .updateSkill: return String(localized: "Update this learned skill")
+        case .confirmProfileChange: return String(localized: "Confirm this profile change")
+        case let .teamSetup(title): return title
+        case .wantsTo:
+            switch pending.card.tool ?? "" {
+            case "Bash", "shell": return String(localized: "Command approval requested")
+            case "Read": return String(localized: "File-read approval requested")
+            case "Write", "Edit", "edit": return String(localized: "File-change approval requested")
+            default: return String(localized: "Approval requested")
+            }
+        }
+    }
+
+    private func desktopPill(
+        _ title: String, theme: DesktopTheme, ink: Color, fill: Color = .clear, ring: Color = .clear,
+        weight: Font.Weight = .regular, id: String, _ action: @escaping () async -> Void
+    ) -> some View {
+        Button { run(action) } label: {
+            Text(title)
+                .font(theme.font(13.5, weight))
+                .foregroundStyle(ink)
+                .lineLimit(1)
+                .padding(.horizontal, 14)
+                .frame(height: ring == .clear ? 32.2 : 34.2)
+                .background(fill, in: Capsule())
+                .overlay(Capsule().strokeBorder(ring, lineWidth: 1))
+                .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .hoverEffect(.highlight)
+        .disabled(answering)
+        .accessibilityIdentifier(id)
     }
 
     // MARK: Parts

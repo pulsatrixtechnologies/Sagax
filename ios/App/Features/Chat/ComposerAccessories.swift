@@ -91,9 +91,11 @@ extension ChatView {
                 .padding(.horizontal, 4)
         }
 
-        let menuItems = slashMenuItems
-        let suggestions = suggestionItems
-        if slashContext != nil, !menuItems.isEmpty || power.loadingCommands {
+        let menuItems = desktopChat == nil ? slashMenuItems : []
+        let suggestions = desktopChat == nil ? suggestionItems : []
+        if desktopChat != nil {
+            // the desktop pill floats these (desktopComposerPopup)
+        } else if slashContext != nil, !menuItems.isEmpty || power.loadingCommands {
             ComposerCommandMenuView(
                 items: menuItems,
                 loading: power.loadingCommands,

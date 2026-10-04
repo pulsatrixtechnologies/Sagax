@@ -246,6 +246,11 @@ public enum SurfaceFeature: String, CaseIterable, Hashable, Sendable {
     /// server; the owner's sidecar passes `GET /api/usage`.
     case usageHistory
 
+    /// Templates, the team library (the desktop sidebar's place): the
+    /// remote client hides it, a client session may not reach it; an admin
+    /// session browses the catalog (`GET /api/team-library/catalog`).
+    case templates
+
     // Team map and people (WP15)
     /// The Team map, read-only (TM1): `GET /api/team-map` passes both gates
     /// and the remote client shows the page. Arranging a bot inside its own
@@ -379,6 +384,8 @@ public struct SurfaceGate: Hashable, Sendable {
             return scope != .serverClient
         case .teamMap:
             return true
+        case .templates:
+            return scope == .serverAdmin
         case .teamMapMove:
             return scope == .serverAdmin
         case .people:

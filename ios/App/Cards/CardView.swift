@@ -12,6 +12,8 @@ struct CardView: View {
     let message: Message
     @EnvironmentObject private var session: Session
     @State private var answering = false
+    /// iPad desktop shell: ApprovalCard.tsx for a permission ask.
+    @Environment(\.desktopChatText) private var desktop
 
     /// The option this card offers that means "go ahead".
     ///
@@ -46,7 +48,9 @@ struct CardView: View {
     }
 
     var body: some View {
-        if let card = message.card, !hidden {
+        if let desktop, let card = message.card, !hidden, answeredInDock {
+            DesktopPermissionCard(chat: chat, message: message, card: card, theme: desktop, waiting: waitingLine(card))
+        } else if let card = message.card, !hidden {
             VStack(alignment: .leading, spacing: 10) {
                 if card.isPending && !answeredInDock {
                     Label("\(chat.name) is waiting on you", systemImage: "hand.raised.fill")

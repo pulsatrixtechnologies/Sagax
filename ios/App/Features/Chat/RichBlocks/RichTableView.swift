@@ -28,6 +28,8 @@ struct RichTableView: View {
     @State private var filtering = false
     @State private var draftQuery = ""
     @StateObject private var feedback = RichCopyFeedback()
+    /// iPad desktop shell: RichTable.tsx's framed table with its toolbar.
+    @Environment(\.desktopChatText) private var desktop
 
     /// Tables with more rows than this offer a filter (`FILTER_THRESHOLD`).
     static let filterThreshold = 8
@@ -61,8 +63,76 @@ struct RichTableView: View {
     }
 
     var body: some View {
+        if let desktop {
+            desktopBody(desktop)
+        } else {
+            phoneBody
+        }
+    }
+
+    /// The desktop table: hairline ring at 40 %, radius 8; a toolbar strip
+    /// (raised at 25 %, 33 tall) with "N rows" and CSV / Markdown; the grid
+    /// filling the width, 12.5 pt cells 10 x 6 in, a 50 % rule under the
+    /// header and 20 % between rows. A header tap sorts.
+    private func desktopBody(_ theme: DesktopTheme) -> some View {
         let order = self.order
-        VStack(alignment: .leading, spacing: 4) {
+        return VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 6) {
+                Image(systemName: "tablecells")
+                    .font(.system(size: 11))
+                    .foregroundStyle(theme.inkSecondary)
+                    .frame(width: 14, height: 14)
+                Text(query.isEmpty ? "\(table.rows.count) rows" : "\(order.count) of \(table.rows.count) rows")
+                    .font(theme.font(11).monospacedDigit())
+                    .foregroundStyle(theme.inkSecondary)
+                Spacer(minLength: 6)
+                DesktopBlockTool(icon: "doc.on.doc", title: "CSV") {
+                    feedback.copy("csv", RichBlocks.tableToCSV(header: headerTexts, rows: order.map { texts[$0] }))
+                }
+                .accessibilityLabel(Text("Copy as CSV"))
+                DesktopBlockTool(icon: "doc.on.doc", title: "Markdown") {
+                    feedback.copy("md", RichBlocks.tableToMarkdown(header: headerTexts, rows: order.map { texts[$0] }, align: exportAlign))
+                }
+                .accessibilityLabel(Text("Copy as Markdown"))
+            }
+            .padding(.horizontal, 8)
+            .frame(height: 33)
+            .background(theme.raised.opacity(0.25))
+            .overlay(alignment: .bottom) { Rectangle().fill(theme.hairline.opacity(0.3)).frame(height: 1) }
+            DesktopTableGrid(
+                headers: table.headers.map { render($0, tail: false) },
+                rows: order.map { table.rows[$0].map { render($0, tail: false) } },
+                weights: desktopWeights(theme),
+                alignments: table.headers.indices.map(alignment),
+                sort: sort,
+                theme: theme
+            ) { column in sort = RichBlocks.nextSort(sort, column: column) }
+        }
+        .background(theme.card)
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(theme.hairline.opacity(0.4), lineWidth: 1))
+        .contentShape(.contextMenuPreview, Rectangle())
+        .contextMenu { menu(order) }
+        .accessibilityElement(children: .contain)
+        .modifier(RichIdentifier(identifier: identifier))
+    }
+
+    /// HTML's automatic table layout: each column's share of the width
+    /// follows its widest cell (plus the 20 pt of padding).
+    private func desktopWeights(_ theme: DesktopTheme) -> [CGFloat] {
+        let head = theme.uiFont(12.5, .semibold), body = theme.uiFont(12.5)
+        return table.headers.indices.map { index in
+            var widest = textWidth(table.headers[index], font: head)
+            for row in table.rows where index < row.count {
+                widest = max(widest, textWidth(row[index], font: body))
+            }
+            return widest + 20
+        }
+    }
+
+    private var phoneBody: some View {
+        let order = self.order
+        return VStack(alignment: .leading, spacing: 4) {
             if !query.isEmpty {
                 HStack(spacing: 6) {
                     Image(systemName: "line.3.horizontal.decrease")
@@ -279,5 +349,67 @@ extension MarkdownTable {
             rows: parsed.dropFirst().map(pad),
             declared: Array(repeating: false, count: width)
         )
+    }
+}
+
+/// The desktop table's grid: columns sized by weight to fill the width.
+struct DesktopTableGrid: View {
+    let headers: [Text]
+    let rows: [[Text]]
+    let weights: [CGFloat]
+    let alignments: [MarkdownTableAlignment]
+    let sort: RichSort?
+    let theme: DesktopTheme
+    let sortBy: (Int) -> Void
+
+    var body: some View {
+        GeometryReader { geometry in
+            let total = max(weights.reduce(0, +), 1)
+            let scale = max(geometry.size.width / total, 1)
+            let widths = weights.map { $0 * scale }
+            VStack(spacing: 0) {
+                HStack(spacing: 0) {
+                    ForEach(Array(headers.enumerated()), id: \.offset) { index, header in
+                        Button { sortBy(index) } label: {
+                            HStack(spacing: 4) {
+                                header.font(theme.font(12.5, .semibold)).lineLimit(1)
+                                if sort?.column == index {
+                                    Image(systemName: sort?.direction == .asc ? "arrow.up" : "arrow.down")
+                                        .font(.system(size: 9, weight: .semibold))
+                                }
+                            }
+                            .foregroundStyle(theme.ink)
+                            .padding(.horizontal, 10)
+                            .frame(width: widths[index], height: 32, alignment: Self.align(alignments, index))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .overlay(alignment: .bottom) { Rectangle().fill(theme.hairline.opacity(0.5)).frame(height: 1) }
+                ForEach(Array(rows.enumerated()), id: \.offset) { position, row in
+                    HStack(spacing: 0) {
+                        ForEach(Array(row.enumerated()), id: \.offset) { index, cell in
+                            cell.font(theme.font(12.5))
+                                .foregroundStyle(theme.ink)
+                                .lineLimit(1)
+                                .padding(.horizontal, 10)
+                                .frame(width: index < widths.count ? widths[index] : 0, height: 33, alignment: Self.align(alignments, index))
+                        }
+                    }
+                    .overlay(alignment: .bottom) {
+                        if position < rows.count - 1 { Rectangle().fill(theme.hairline.opacity(0.2)).frame(height: 1) }
+                    }
+                }
+            }
+        }
+        .frame(height: 32.5 + CGFloat(rows.count) * 33)
+    }
+
+    static func align(_ alignments: [MarkdownTableAlignment], _ index: Int) -> Alignment {
+        switch index < alignments.count ? alignments[index] : .leading {
+        case .leading: .leading
+        case .trailing: .trailing
+        case .center: .center
+        }
     }
 }
