@@ -1528,5 +1528,7 @@
   "imageGen.saveKey": "Schlüssel speichern",
   "imageGen.modelError": "Verwende eine Modell-ID mit höchstens 200 Zeichen und ohne Steuerzeichen.",
   "imageGen.setup": "Richte die Bildgenerierung in {settings} ein.",
-  "imageGen.unavailable": "Die Bildgenerierung ist auf diesem Server nicht eingerichtet."
+  "imageGen.unavailable": "Die Bildgenerierung ist auf diesem Server nicht eingerichtet.",
+  "place.forConversation": "für dieses Gespräch",
+  "computer.worksOnPointer": "Stell oben bei Arbeitet auf ein, wo dieser Bot arbeitet."
 }

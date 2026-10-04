@@ -1510,5 +1510,7 @@
   "imageGen.saveKey": "कुंजी सहेजें",
   "imageGen.modelError": "अधिकतम 200 वर्णों का मॉडल ID इस्तेमाल करें, नियंत्रण वर्णों के बिना।",
   "imageGen.setup": "छवि निर्माण {settings} में सेट करें।",
-  "imageGen.unavailable": "इस सर्वर पर छवि निर्माण सेट नहीं है।"
+  "imageGen.unavailable": "इस सर्वर पर छवि निर्माण सेट नहीं है।",
+  "place.forConversation": "इस बातचीत के लिए",
+  "computer.worksOnPointer": "ऊपर काम करता है में सेट करें कि यह बॉट कहाँ काम करता है।"
 }

@@ -2426,5 +2426,7 @@
   "imageGen.saveKey": "儲存金鑰",
   "imageGen.modelError": "請使用不超過 200 個字元且不含控制字元的模型 ID。",
   "imageGen.setup": "在 {settings} 中設定影像產生。",
-  "imageGen.unavailable": "此伺服器尚未設定影像產生。"
+  "imageGen.unavailable": "此伺服器尚未設定影像產生。",
+  "place.forConversation": "用於這段對話",
+  "computer.worksOnPointer": "在上方的運作位置設定這個機器人的工作位置。"
 }

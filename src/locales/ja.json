@@ -1512,5 +1512,7 @@
   "imageGen.saveKey": "キーを保存",
   "imageGen.modelError": "制御文字を含まない、200 文字以内のモデル ID を使ってください。",
   "imageGen.setup": "画像生成は {settings} で設定します。",
-  "imageGen.unavailable": "このサーバーでは画像生成が設定されていません。"
+  "imageGen.unavailable": "このサーバーでは画像生成が設定されていません。",
+  "place.forConversation": "この会話では",
+  "computer.worksOnPointer": "上の作業先で、このボットがどこで作業するかを設定します。"
 }

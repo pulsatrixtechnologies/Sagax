@@ -2415,5 +2415,7 @@
   "imageGen.saveKey": "保存密钥",
   "imageGen.modelError": "请使用不超过 200 个字符且不含控制字符的模型 ID。",
   "imageGen.setup": "在 {settings} 中设置图像生成。",
-  "imageGen.unavailable": "此服务器尚未设置图像生成。"
+  "imageGen.unavailable": "此服务器尚未设置图像生成。",
+  "place.forConversation": "用于此对话",
+  "computer.worksOnPointer": "在上方的工作位置中设置此机器人的工作位置。"
 }

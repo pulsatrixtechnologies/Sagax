@@ -65,13 +65,14 @@ const bot = {
 } as Bot;
 
 describe("PlaceChip composer trigger", () => {
-  it("is icon-only, with the place name in the accessible name and tooltip", () => {
+  it("names this conversation on the trigger, and the place in the accessible name", () => {
     const html = renderToStaticMarkup(createElement(PlaceChip, {
       bot,
       live: false,
       onPin: () => {},
     } satisfies ComponentProps<typeof PlaceChip>));
     expect(html).toContain('data-testid="place-chip"');
+    expect(html).toContain(">for this conversation<");
     expect(html).toContain('aria-label="Where this conversation works: This computer"');
     expect(html).toContain("This computer — From this bot&#x27;s Works on setting");
     expect(html).not.toMatch(/<span class="truncate">This computer<\/span>/);

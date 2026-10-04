@@ -997,7 +997,6 @@ export type BotSettingsSection =
   | "memory"
   | "routines"
   | "access"
-  | "worksOn"
   | "model"
   | "permissions"
   | "voice"

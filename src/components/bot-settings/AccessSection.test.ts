@@ -197,21 +197,16 @@ describe("AccessSection Works on", () => {
   const places = (markup: string) => [...markup.matchAll(/>(Auto(?: \(Cloud\))?|Cloud computer|Cloud \(server environment\)|Local VM|This computer|Browser|Off)<\/button>/g)].map((match) => match[1]);
   const FLAGS = [{}, { boatComputer: true }, { vpsComputer: true }, { boatComputer: true, vpsComputer: true }];
 
-  it("offers this computer and a Local VM on a desktop or self-hosted server", () => {
-    // Cloud (Boat or VPS Computer) is experimental and off by default.
-    expect(places(render(makeBot()))).toEqual(["Auto", "Local VM", "This computer", "Browser", "Off"]);
-    fixture.config = { cloudHome: false } as Partial<ConfigStatus>;
-    expect(places(render(makeBot()))).toEqual(["Auto", "Local VM", "This computer", "Browser", "Off"]);
-    fixture.config = { cloudHome: false, features: { skillAuthoring: true, boatComputer: true } } as Partial<ConfigStatus>;
-    expect(places(render(makeBot()))).toEqual(["Auto", "Cloud computer", "Local VM", "This computer", "Browser", "Off"]);
-  });
-
-  it("never offers them on an OMB Cloud home", () => {
+  it("does not list Works on: that control is the Computer tab", () => {
+    expect(places(render(makeBot()))).toEqual([]);
     fixture.config = { cloudHome: true } as Partial<ConfigStatus>;
-    expect(places(render(makeBot()))).toEqual(["Auto", "Cloud computer", "Browser", "Off"]);
+    expect(places(render(makeBot()))).toEqual([]);
+    fixture.config = { features: { boatComputer: true } } as Partial<ConfigStatus>;
+    expect(places(render(makeBot()))).toEqual([]);
+    expect(render(makeBot())).not.toContain("Works on");
   });
 
-  it("has no Works on on an organization server: it lives in the bot's Computer tab", () => {
+  it("has no Works on and no cloud backend on an organization server", () => {
     fixture.organization = true;
     for (const features of FLAGS) {
       fixture.config = { features } as Partial<ConfigStatus>;
@@ -223,15 +218,12 @@ describe("AccessSection Works on", () => {
     }
   });
 
-  it("says why an option is disabled", () => {
-    const markup = render(makeBot(), makeDerived({ localSelectable: false, localDisabledReason: "Local computer control requires the desktop app." }));
-    expect(markup).toContain("This computer is not available: Local computer control requires the desktop app.");
-    expect(markup).toContain("Browser is not available: The built-in browser needs the Sagax desktop app");
-  });
-
   it("explains Auto and cloud computers on a solo server only when a cloud computer can be chosen", () => {
     expect(render(makeBot())).not.toContain("Auto and cloud computers.");
+    expect(render(makeBot())).not.toContain("Cloud backend");
     fixture.config = { features: { boatComputer: true } } as Partial<ConfigStatus>;
-    expect(render(makeBot())).toContain("Auto and cloud computers.");
+    const markup = render(makeBot());
+    expect(markup).toContain("Auto and cloud computers.");
+    expect(markup).toContain("Cloud backend");
   });
 });

@@ -1,9 +1,10 @@
-// Access: where this bot runs, its working folder, connected apps and
-// browser toggles, its webhooks, and the standing "always allowed" grants.
-// Works on/cloud backend/auto-start VPS, Working folder, Connected apps, and
-// Browser are moved verbatim from SettingsPanel.tsx; the connected-service
-// list, webhooks list, and always-allowed list (the first read-only view of
-// standing grants) are new.
+// Access: the cloud backend for a solo bot, its working folder, connected
+// apps and browser toggles, its webhooks, and the standing "always allowed"
+// grants. Works on lives once, at the top of the Computer tab
+// (src/components/computer/WorksOnSetting.tsx). Cloud backend and auto-start
+// VPS, Working folder, Connected apps, and Browser are moved verbatim from
+// SettingsPanel.tsx; the connected-service list, webhooks list, and
+// always-allowed list (the first read-only view of standing grants) are new.
 import { useEffect, useState } from "react";
 import { boatComputerEnabled, connectedAppsEnabled as connectedAppsFeatureEnabled, vpsComputerEnabled } from "@/lib/feature-flags";
 import { ChevronDown, ChevronRight, FolderOpen, Plus } from "lucide-react";
@@ -15,13 +16,12 @@ import { usePerspicaxOrg } from "@/lib/perspicax-org";
 import { t } from "@/lib/i18n";
 import type { LocaleKey } from "@/locales";
 import { mcpServersForBot, useMcpServers } from "@/lib/mcp-servers";
-import { cloudComputersOffered, placeLabelKey, placeOffered } from "@/lib/place";
+import { cloudComputersOffered } from "@/lib/place";
 import { shortPath } from "@/lib/short-path";
 import { useDesktopCapabilities } from "../DesktopCapabilities";
 import { BrowserUnavailableNote, SettingsText } from "../SettingsLink";
 import { CloudBackendPicker } from "../CloudBackendPicker";
 import { ConfirmDialog } from "../ConfirmDialog";
-import { LocalComputerAutoWarning } from "../LocalComputerAutoWarning";
 import { Switch } from "../SettingsPrimitives";
 import { ProposalStatus } from "./ProposalStatus";
 import { ToolSelectionCard } from "./ToolSelectionCard";
@@ -534,17 +534,12 @@ export function AccessSection({
     browserFeature,
     browserAllowed,
     browserEnabled,
-    browserSelectable,
-    browserDisabledReason,
-    localSelectable,
-    localDisabledReason,
   } = derived;
   const browserInstallable = state.config?.browserEngine?.installable === true;
   // Connected apps (Composio) is experimental: while Settings > Experimental
   // features leaves it off, the bot's own switch hides too, like the sidebar
   // entry and the Settings card.
   const connectedAppsFeature = connectedAppsFeatureEnabled(state.config);
-  const [localAutoWarning, setLocalAutoWarning] = useState<string | null>(null);
   const [inventory, setInventory] = useState<ConnectorInventory | null>(null);
 
   useEffect(() => {
@@ -573,104 +568,41 @@ export function AccessSection({
 
   return (
     <div className="flex flex-col gap-4">
-      {/* On an organization server Works on lives in the bot's Computer tab
-          (src/components/computer/WorksOnSetting.tsx). */}
-      {!organization && <div className="rounded-xl border border-hairline/40 p-4" data-works-on-org="0">
-        <div className="text-[13px] font-medium text-ink">{t("computer.worksOn")}</div>
-        <div className="mt-0.5 text-[13px] text-ink-secondary">
-          {t(organization ? "worksOn.helpOrg" : "worksOn.help")}{bot.computer ? "" : ` ${t("worksOn.currentlyAuto", { place: t(placeLabelKey("auto", organization)) })}`}
-        </div>
-        <ProposalStatus bot={bot} kind="owner" />
-        <div className="mt-3 grid grid-cols-3 gap-1.5">
-          {(([null, "cloud", "vm", "local", "browser", "off"] as const)
-            .filter((mode) => mode === null || mode === "off" || placeOffered(mode, state.config, organization))
-          ).map((mode) => {
-            const disabled = (mode === "local" && !localSelectable) || (mode === "browser" && !browserSelectable);
-            return (
-              <button
-                key={mode ?? "auto"}
-                type="button"
-                disabled={disabled}
-                title={
-                  mode === "local" && !localSelectable
-                    ? localDisabledReason ?? undefined
-                    : mode === "browser"
-                      ? browserSelectable ? t("worksOn.browserTitle") : browserDisabledReason
-                      : mode === "off"
-                        ? t("computer.dest.offDesc")
-                        : undefined
-                }
-                onClick={() => {
-                  if ((mode === null && bot.computer === undefined) || mode === bot.computer) return;
-                  if (mode === "local" && derived.approvalMode === "auto") setLocalAutoWarning(bot.id);
-                  // a browser-only bot must actually have its browser: flip
-                  // the per-bot switch on with the destination
-                  else if (mode === "browser") patch({ computer: mode, browser: true });
-                  else patch({ computer: mode });
-                }}
-                className={cn(
-                  "rounded-lg border px-1.5 py-1.5 text-[12px] whitespace-nowrap",
-                  disabled && "cursor-not-allowed opacity-40",
-                  (mode === null ? bot.computer === undefined : bot.computer === mode)
-                    ? "border-hairline bg-control text-ink"
-                    : "border-hairline/40 text-ink-secondary hover:bg-control/60 hover:text-ink",
-                )}
-              >
-                {t(placeLabelKey(mode ?? "auto", organization))}
-              </button>
-            );
-          })}
-        </div>
-        {(!localSelectable || !browserSelectable) && (
-          <ul className="mt-2 flex flex-col gap-0.5 text-[11.5px] leading-relaxed text-ink-secondary" data-works-on-disabled>
-            {!localSelectable && placeOffered("local", state.config, organization) && (
-              <li>{t("worksOn.disabled", { place: t("place.local"), reason: localDisabledReason ?? t("place.unavailable") })}</li>
-            )}
-            {!browserSelectable && (
-              <li>{t("worksOn.disabled", { place: t("place.browser"), reason: browserDisabledReason })}</li>
-            )}
-          </ul>
-        )}
-        {bot.computer === "off" && (
-          <div className="mt-3 rounded-lg bg-inset px-3 py-2.5 text-[11.5px] leading-relaxed text-ink-secondary">
-            <span className="font-medium text-ink">{t("worksOn.offTitle")}</span>{" "}
-            {t("worksOn.offBody")}
-          </div>
-        )}
-        {!organization && (!bot.computer || bot.computer === "cloud") && (state.config?.cloudHome === true || cloudComputersOffered(state.config)) && (
-          <>
-            {!bot.computer && (
-              <div className="mt-3 rounded-lg bg-inset px-3 py-2.5 text-[11.5px] leading-relaxed text-ink-secondary">
-                <span className="font-medium text-ink">{t("worksOn.autoCloudTitle")}</span>{" "}
-                {t("worksOn.autoCloudBody")}
-              </div>
-            )}
-            <CloudBackendPicker
-              value={bot.cloudBackend ?? "box"}
-              vpsSupported={canUseVps}
-              organization={organization}
-              boat={state.config?.cloudHome === true || boatComputerEnabled(state.config)}
-              vps={vpsComputerEnabled(state.config)}
-              onChange={(backend) => patch({ cloudBackend: backend })}
-            />
-            {!bot.computer && bot.cloudBackend === "vps" && (
-              <div className="mt-3 flex items-center justify-between gap-4 rounded-lg bg-inset px-3 py-2.5">
-                <div className="min-w-0">
-                  <div className="text-[13px] text-ink">Start VPS automatically</div>
-                  <div className="mt-0.5 text-[11.5px] text-ink-secondary">
-                    Allow Auto to create or wake this bot's managed container when needed.
-                  </div>
+      {/* Boat or VPS is which cloud computer Auto and Cloud use. It is not
+          a second Works on: that control is the Computer tab. */}
+      {!organization && (!bot.computer || bot.computer === "cloud") && (state.config?.cloudHome === true || cloudComputersOffered(state.config)) && (
+        <div className="rounded-xl border border-hairline/40 p-4" data-cloud-backend>
+          {!bot.computer && (
+            <div className="rounded-lg bg-inset px-3 py-2.5 text-[11.5px] leading-relaxed text-ink-secondary">
+              <span className="font-medium text-ink">{t("worksOn.autoCloudTitle")}</span>{" "}
+              {t("worksOn.autoCloudBody")}
+            </div>
+          )}
+          <CloudBackendPicker
+            value={bot.cloudBackend ?? "box"}
+            vpsSupported={canUseVps}
+            organization={organization}
+            boat={state.config?.cloudHome === true || boatComputerEnabled(state.config)}
+            vps={vpsComputerEnabled(state.config)}
+            onChange={(backend) => patch({ cloudBackend: backend })}
+          />
+          {!bot.computer && bot.cloudBackend === "vps" && (
+            <div className="mt-3 flex items-center justify-between gap-4 rounded-lg bg-inset px-3 py-2.5">
+              <div className="min-w-0">
+                <div className="text-[13px] text-ink">Start VPS automatically</div>
+                <div className="mt-0.5 text-[11.5px] text-ink-secondary">
+                  Allow Auto to create or wake this bot's managed container when needed.
                 </div>
-                <Switch
-                  checked={Boolean(bot.autoStartVps)}
-                  aria-label="Start VPS automatically"
-                  onClick={() => patch({ autoStartVps: !bot.autoStartVps })}
-                />
               </div>
-            )}
-          </>
-        )}
-      </div>}
+              <Switch
+                checked={Boolean(bot.autoStartVps)}
+                aria-label="Start VPS automatically"
+                onClick={() => patch({ autoStartVps: !bot.autoStartVps })}
+              />
+            </div>
+          )}
+        </div>
+      )}
 
       <WorkingFolder bot={bot} />
 
@@ -818,17 +750,6 @@ export function AccessSection({
           </div>
         )}
       </div>}
-
-      <LocalComputerAutoWarning
-        open={localAutoWarning !== null}
-        onCancel={() => setLocalAutoWarning(null)}
-        onConfirm={() => {
-          const target = localAutoWarning;
-          setLocalAutoWarning(null);
-          if (!target) return;
-          dispatch({ type: "updateBot", botId: target, patch: { computer: "local", acknowledgeLocalAuto: true } });
-        }}
-      />
     </div>
   );
 }

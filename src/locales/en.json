@@ -5154,5 +5154,7 @@
   "imageGen.saveKey": "Save key",
   "imageGen.modelError": "Use a model ID of at most 200 characters, with no control characters.",
   "imageGen.setup": "Set up image generation in {settings}.",
-  "imageGen.unavailable": "Image generation is not set up on this server."
+  "imageGen.unavailable": "Image generation is not set up on this server.",
+  "place.forConversation": "for this conversation",
+  "computer.worksOnPointer": "Set where this bot works in Works on, above."
 }

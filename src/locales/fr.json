@@ -3187,5 +3187,7 @@
   "imageGen.saveKey": "Enregistrer la clé",
   "imageGen.modelError": "Utilisez un ID de modèle d'au plus 200 caractères, sans caractères de contrôle.",
   "imageGen.setup": "Configurez la génération d'images dans {settings}.",
-  "imageGen.unavailable": "La génération d'images n'est pas configurée sur ce serveur."
+  "imageGen.unavailable": "La génération d'images n'est pas configurée sur ce serveur.",
+  "place.forConversation": "pour cette conversation",
+  "computer.worksOnPointer": "Réglez où ce bot travaille dans Travaille sur, plus haut."
 }

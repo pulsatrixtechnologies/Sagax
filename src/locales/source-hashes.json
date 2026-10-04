@@ -1531,7 +1531,9 @@
       "imageGen.saveKey": "b6e0aef2a9f1eda5d44e17f83826029b93502e4c5efe98d56febf36fc8f3b45e",
       "imageGen.modelError": "957fdb7819a323dc6be192bac6a7f3cd50cd07cef3e9f1f5de82f401bf864ecc",
       "imageGen.setup": "97a84729027b684889ca6b9a49fccfdac3b564da5174752e1f15951c00571ab8",
-      "imageGen.unavailable": "dcc6b8e2f28a6a6a8b6e3be0e91f9bef550875e5ba4e8f67be1480707f2bdba7"
+      "imageGen.unavailable": "dcc6b8e2f28a6a6a8b6e3be0e91f9bef550875e5ba4e8f67be1480707f2bdba7",
+      "place.forConversation": "f7f6e1f5557345f464b436ee23c1b7a25b924eb3948be0d160c0390267801221",
+      "computer.worksOnPointer": "8445311ede7b96ee914d165c26657d1150b0d53a11748560f213125c1aeee01a"
     },
     "es": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",
@@ -3045,7 +3047,9 @@
       "imageGen.saveKey": "b6e0aef2a9f1eda5d44e17f83826029b93502e4c5efe98d56febf36fc8f3b45e",
       "imageGen.modelError": "957fdb7819a323dc6be192bac6a7f3cd50cd07cef3e9f1f5de82f401bf864ecc",
       "imageGen.setup": "97a84729027b684889ca6b9a49fccfdac3b564da5174752e1f15951c00571ab8",
-      "imageGen.unavailable": "dcc6b8e2f28a6a6a8b6e3be0e91f9bef550875e5ba4e8f67be1480707f2bdba7"
+      "imageGen.unavailable": "dcc6b8e2f28a6a6a8b6e3be0e91f9bef550875e5ba4e8f67be1480707f2bdba7",
+      "place.forConversation": "f7f6e1f5557345f464b436ee23c1b7a25b924eb3948be0d160c0390267801221",
+      "computer.worksOnPointer": "8445311ede7b96ee914d165c26657d1150b0d53a11748560f213125c1aeee01a"
     },
     "fr": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",
@@ -6236,7 +6240,9 @@
       "imageGen.saveKey": "b6e0aef2a9f1eda5d44e17f83826029b93502e4c5efe98d56febf36fc8f3b45e",
       "imageGen.modelError": "957fdb7819a323dc6be192bac6a7f3cd50cd07cef3e9f1f5de82f401bf864ecc",
       "imageGen.setup": "97a84729027b684889ca6b9a49fccfdac3b564da5174752e1f15951c00571ab8",
-      "imageGen.unavailable": "dcc6b8e2f28a6a6a8b6e3be0e91f9bef550875e5ba4e8f67be1480707f2bdba7"
+      "imageGen.unavailable": "dcc6b8e2f28a6a6a8b6e3be0e91f9bef550875e5ba4e8f67be1480707f2bdba7",
+      "place.forConversation": "f7f6e1f5557345f464b436ee23c1b7a25b924eb3948be0d160c0390267801221",
+      "computer.worksOnPointer": "8445311ede7b96ee914d165c26657d1150b0d53a11748560f213125c1aeee01a"
     },
     "hi": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",
@@ -7750,7 +7756,9 @@
       "imageGen.saveKey": "b6e0aef2a9f1eda5d44e17f83826029b93502e4c5efe98d56febf36fc8f3b45e",
       "imageGen.modelError": "957fdb7819a323dc6be192bac6a7f3cd50cd07cef3e9f1f5de82f401bf864ecc",
       "imageGen.setup": "97a84729027b684889ca6b9a49fccfdac3b564da5174752e1f15951c00571ab8",
-      "imageGen.unavailable": "dcc6b8e2f28a6a6a8b6e3be0e91f9bef550875e5ba4e8f67be1480707f2bdba7"
+      "imageGen.unavailable": "dcc6b8e2f28a6a6a8b6e3be0e91f9bef550875e5ba4e8f67be1480707f2bdba7",
+      "place.forConversation": "f7f6e1f5557345f464b436ee23c1b7a25b924eb3948be0d160c0390267801221",
+      "computer.worksOnPointer": "8445311ede7b96ee914d165c26657d1150b0d53a11748560f213125c1aeee01a"
     },
     "ja": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",
@@ -9266,7 +9274,9 @@
       "imageGen.saveKey": "b6e0aef2a9f1eda5d44e17f83826029b93502e4c5efe98d56febf36fc8f3b45e",
       "imageGen.modelError": "957fdb7819a323dc6be192bac6a7f3cd50cd07cef3e9f1f5de82f401bf864ecc",
       "imageGen.setup": "97a84729027b684889ca6b9a49fccfdac3b564da5174752e1f15951c00571ab8",
-      "imageGen.unavailable": "dcc6b8e2f28a6a6a8b6e3be0e91f9bef550875e5ba4e8f67be1480707f2bdba7"
+      "imageGen.unavailable": "dcc6b8e2f28a6a6a8b6e3be0e91f9bef550875e5ba4e8f67be1480707f2bdba7",
+      "place.forConversation": "f7f6e1f5557345f464b436ee23c1b7a25b924eb3948be0d160c0390267801221",
+      "computer.worksOnPointer": "8445311ede7b96ee914d165c26657d1150b0d53a11748560f213125c1aeee01a"
     },
     "pt-br": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",
@@ -10794,7 +10804,9 @@
       "imageGen.saveKey": "b6e0aef2a9f1eda5d44e17f83826029b93502e4c5efe98d56febf36fc8f3b45e",
       "imageGen.modelError": "957fdb7819a323dc6be192bac6a7f3cd50cd07cef3e9f1f5de82f401bf864ecc",
       "imageGen.setup": "97a84729027b684889ca6b9a49fccfdac3b564da5174752e1f15951c00571ab8",
-      "imageGen.unavailable": "dcc6b8e2f28a6a6a8b6e3be0e91f9bef550875e5ba4e8f67be1480707f2bdba7"
+      "imageGen.unavailable": "dcc6b8e2f28a6a6a8b6e3be0e91f9bef550875e5ba4e8f67be1480707f2bdba7",
+      "place.forConversation": "f7f6e1f5557345f464b436ee23c1b7a25b924eb3948be0d160c0390267801221",
+      "computer.worksOnPointer": "8445311ede7b96ee914d165c26657d1150b0d53a11748560f213125c1aeee01a"
     },
     "uk": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",
@@ -12848,7 +12860,9 @@
       "imageGen.saveKey": "b6e0aef2a9f1eda5d44e17f83826029b93502e4c5efe98d56febf36fc8f3b45e",
       "imageGen.modelError": "957fdb7819a323dc6be192bac6a7f3cd50cd07cef3e9f1f5de82f401bf864ecc",
       "imageGen.setup": "97a84729027b684889ca6b9a49fccfdac3b564da5174752e1f15951c00571ab8",
-      "imageGen.unavailable": "dcc6b8e2f28a6a6a8b6e3be0e91f9bef550875e5ba4e8f67be1480707f2bdba7"
+      "imageGen.unavailable": "dcc6b8e2f28a6a6a8b6e3be0e91f9bef550875e5ba4e8f67be1480707f2bdba7",
+      "place.forConversation": "f7f6e1f5557345f464b436ee23c1b7a25b924eb3948be0d160c0390267801221",
+      "computer.worksOnPointer": "8445311ede7b96ee914d165c26657d1150b0d53a11748560f213125c1aeee01a"
     },
     "zh-tw": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",
@@ -15278,7 +15292,9 @@
       "imageGen.saveKey": "b6e0aef2a9f1eda5d44e17f83826029b93502e4c5efe98d56febf36fc8f3b45e",
       "imageGen.modelError": "957fdb7819a323dc6be192bac6a7f3cd50cd07cef3e9f1f5de82f401bf864ecc",
       "imageGen.setup": "97a84729027b684889ca6b9a49fccfdac3b564da5174752e1f15951c00571ab8",
-      "imageGen.unavailable": "dcc6b8e2f28a6a6a8b6e3be0e91f9bef550875e5ba4e8f67be1480707f2bdba7"
+      "imageGen.unavailable": "dcc6b8e2f28a6a6a8b6e3be0e91f9bef550875e5ba4e8f67be1480707f2bdba7",
+      "place.forConversation": "f7f6e1f5557345f464b436ee23c1b7a25b924eb3948be0d160c0390267801221",
+      "computer.worksOnPointer": "8445311ede7b96ee914d165c26657d1150b0d53a11748560f213125c1aeee01a"
     },
     "zh": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",
@@ -17697,7 +17713,9 @@
       "imageGen.saveKey": "b6e0aef2a9f1eda5d44e17f83826029b93502e4c5efe98d56febf36fc8f3b45e",
       "imageGen.modelError": "957fdb7819a323dc6be192bac6a7f3cd50cd07cef3e9f1f5de82f401bf864ecc",
       "imageGen.setup": "97a84729027b684889ca6b9a49fccfdac3b564da5174752e1f15951c00571ab8",
-      "imageGen.unavailable": "dcc6b8e2f28a6a6a8b6e3be0e91f9bef550875e5ba4e8f67be1480707f2bdba7"
+      "imageGen.unavailable": "dcc6b8e2f28a6a6a8b6e3be0e91f9bef550875e5ba4e8f67be1480707f2bdba7",
+      "place.forConversation": "f7f6e1f5557345f464b436ee23c1b7a25b924eb3948be0d160c0390267801221",
+      "computer.worksOnPointer": "8445311ede7b96ee914d165c26657d1150b0d53a11748560f213125c1aeee01a"
     }
   }
 }

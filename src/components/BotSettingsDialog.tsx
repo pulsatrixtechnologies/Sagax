@@ -25,7 +25,6 @@ import { MemorySection } from "./bot-settings/MemorySection";
 import { RoutinesSection } from "./bot-settings/RoutinesSection";
 import { AccessSection } from "./bot-settings/AccessSection";
 import { ModelSection } from "./bot-settings/ModelSection";
-import { WorksOnSetting } from "./computer/WorksOnSetting";
 import { PermissionsSection } from "./bot-settings/PermissionsSection";
 import { VoiceSection } from "./bot-settings/VoiceSection";
 import { HistorySection, type HistoryRow } from "./bot-settings/HistorySection";
@@ -132,11 +131,8 @@ export function BotSettingsDialog({ bot, onOpenVmWorkspace }: {
     .filter((entry) => entry.id !== "visibility" || (servedPage() && ownerOrAdmin === true && perspicaxOrg === null))
     .filter((entry) => entry.id !== "sharing" || perspicaxOrg !== null)
     .filter((entry) => entry.id !== "perspicax" || perspicaxOrg !== null)
-    // On an organization server Works on is its own item (Access keeps it elsewhere).
-    .filter((entry) => entry.id !== "worksOn" || perspicaxOrg !== null)
     // An organization member never sees a section whose fields the server refuses.
     .filter((entry) => entry.id !== "access" || canEditBotField(state.config, bot, "computer") || canEditBotField(state.config, bot, "cwd"))
-    .filter((entry) => entry.id !== "worksOn" || canEditBotField(state.config, bot, "computer"))
     .filter((entry) => entry.id !== "memory" || canEditBotField(state.config, bot, "memoryEnabled"))
     .filter((entry) => entry.id !== "permissions" || canStepPrimary(state.config, bot) || canEditBotField(state.config, bot, "approvalMode"));
   const visibleSections = sections.filter((entry) => sectionMatches(entry, q));
@@ -355,8 +351,6 @@ export function BotSettingsDialog({ bot, onOpenVmWorkspace }: {
         return <RoutinesSection bot={bot} routines={derived.botRoutines} runs={state.routineRuns} />;
       case "access":
         return <AccessSection bot={bot} derived={derived} />;
-      case "worksOn":
-        return <WorksOnSetting bot={bot} />;
       case "model":
         return <ModelSection bot={bot} />;
       case "permissions":
