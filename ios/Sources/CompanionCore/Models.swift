@@ -485,6 +485,9 @@ public struct BotTask: Codable, Hashable, Sendable {
     public var turnStartedAt: Double? = nil
     /// Organization server: the person this 1:1 thread belongs to.
     public var ownerPrincipalId: String? = nil
+    /// Where this conversation works when pinned (`cloud`, `vm`, `local`,
+    /// `browser`); nil follows the bot's Works on (src/lib/place.ts).
+    public var surface: String? = nil
 
     /// The time the thread list sorts and stamps by.
     public var listStamp: Double { updatedAt ?? createdAt }

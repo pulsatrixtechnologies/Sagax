@@ -104,8 +104,77 @@ struct ChatFindBar: View {
     let threadId: String
     @EnvironmentObject private var session: Session
     @FocusState private var focused: Bool
+    /// iPad desktop shell: ChatFindBar.tsx's bar (pane fill, 12 pt corners,
+    /// 37 tall, 13 pt field, 23 pt buttons).
+    @Environment(\.desktopChatText) private var desktop
 
     var body: some View {
+        if let desktop {
+            desktopBody(desktop)
+        } else {
+            phoneBody
+        }
+    }
+
+    private func desktopBody(_ theme: DesktopTheme) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 13, weight: .regular))
+                .frame(width: 15, height: 15)
+                .foregroundStyle(theme.inkSecondary)
+                .accessibilityHidden(true)
+            TextField(String(localized: "Find in this conversation"), text: $model.query)
+                .font(theme.font(13))
+                .foregroundStyle(theme.ink)
+                .tint(theme.focus)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .focused($focused)
+                .onSubmit {
+                    model.move(1, session: session)
+                    focused = true
+                }
+                .padding(.horizontal, 4)
+                .accessibilityLabel(Text("Find in this conversation"))
+                .accessibilityIdentifier("chat-find-field")
+            Text(verbatim: model.status)
+                .font(theme.font(11.5).monospacedDigit())
+                .foregroundStyle(theme.inkSecondary)
+                .lineLimit(1)
+                .frame(minWidth: 58, alignment: .trailing)
+                .accessibilityIdentifier("chat-find-status")
+            DesktopFindButton(systemImage: "chevron.up", label: "Previous result") { model.move(-1, session: session) }
+                .disabled(model.hits.isEmpty)
+                .keyboardShortcut(.return, modifiers: .shift)
+                .accessibilityIdentifier("chat-find-previous")
+            DesktopFindButton(systemImage: "chevron.down", label: "Next result") { model.move(1, session: session) }
+                .disabled(model.hits.isEmpty)
+                .accessibilityIdentifier("chat-find-next")
+            DesktopFindButton(systemImage: "xmark", label: "Close find") { model.close() }
+                .keyboardShortcut(.cancelAction)
+                .accessibilityIdentifier("chat-find-close")
+        }
+        .padding(.horizontal, 9)
+        .frame(height: 37)
+        .background(theme.panel, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .strokeBorder(focused || Self.parityFocus ? theme.focus : theme.hairline.opacity(0.5), lineWidth: 1)
+        )
+        .shadow(color: .black.opacity(0.12), radius: 6, y: 3)
+        .onValueChange(of: model.query) { _ in model.queryChanged(threadId: threadId, session: session) }
+        .onValueChange(of: model.openCount, initial: true) { _ in focused = !Self.parityFocus }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("chat-find-bar")
+    }
+
+    #if DEBUG
+    private static var parityFocus: Bool { DesktopChatParity.findLooksFocused }
+    #else
+    private static let parityFocus = false
+    #endif
+
+    private var phoneBody: some View {
         HStack(spacing: 6) {
             Image(systemName: "magnifyingglass")
                 .font(.system(size: 15, weight: .medium))
@@ -161,6 +230,27 @@ struct ChatFindBar: View {
         .buttonStyle(.plain)
         .accessibilityLabel(Text(label))
         .accessibilityIdentifier(id)
+    }
+}
+
+/// `rounded-md p-1`: a 15 pt glyph in a 23 pt square.
+private struct DesktopFindButton: View {
+    @Environment(\.desktopTheme) private var theme
+    let systemImage: String
+    let label: LocalizedStringKey
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: systemImage)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(theme.inkSecondary)
+                .frame(width: 23, height: 23)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .hoverEffect(.highlight)
+        .accessibilityLabel(Text(label))
     }
 }
 

@@ -56,6 +56,18 @@ enum DesktopChatMetrics {
     static let galleryWidth: CGFloat = 544
     static let imageMax: CGFloat = 288
 
+    /// ChatView.tsx `DaySeparator`: "Today 4:04 PM", "Yesterday 9:12 AM",
+    /// else "Mon, Sep 28 11:31 AM".
+    static func dayLabel(_ date: Date, now: Date = Date(), calendar: Calendar = .current) -> String {
+        let time = date.formatted(date: .omitted, time: .shortened)
+        if calendar.isDate(date, inSameDayAs: now) { return String(localized: "Today \(time)") }
+        if let yesterday = calendar.date(byAdding: .day, value: -1, to: now), calendar.isDate(date, inSameDayAs: yesterday) {
+            return String(localized: "Yesterday \(time)")
+        }
+        let day = date.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day())
+        return "\(day) \(time)"
+    }
+
     /// The line spacing that turns the face's natural line into 20 pt.
     static func lineSpacing(_ theme: DesktopTheme) -> CGFloat {
         max(0, lineHeight - theme.uiFont(textSize).lineHeight)
@@ -264,5 +276,138 @@ struct DesktopFileChip: View {
         .frame(minHeight: 40)
         .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(theme.hairline.opacity(0.25), lineWidth: 1))
         .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+}
+
+/// PdfAttachment: a 288 pt card (inset at 60 %, hairline ring at 30 %,
+/// radius 12, 10 in): a 40 x 48 page glyph with "PDF" in the danger colour,
+/// the name 12.5 medium, "PDF document" 11, a download glyph.
+struct DesktopPdfCard: View {
+    @Environment(\.desktopTheme) private var theme
+    let name: String
+    let loading: Bool
+
+    var body: some View {
+        HStack(spacing: 12) {
+            VStack(spacing: 2) {
+                Image(systemName: "doc.text")
+                    .font(.system(size: 14))
+                    .frame(width: 18, height: 18)
+                Text(verbatim: "PDF")
+                    .font(theme.font(8.5, .bold))
+                    .tracking(0.4)
+            }
+            .foregroundStyle(theme.danger)
+            .frame(width: 40, height: 48)
+            .background(theme.panel, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).strokeBorder(theme.hairline.opacity(0.4), lineWidth: 1))
+            VStack(alignment: .leading, spacing: 0) {
+                Text(verbatim: name)
+                    .font(theme.font(12.5, .medium))
+                    .foregroundStyle(theme.ink)
+                    .lineLimit(1)
+                    .frame(height: 20)
+                Text("PDF document")
+                    .font(theme.font(11))
+                    .foregroundStyle(theme.inkSecondary)
+                    .frame(height: 20)
+            }
+            Spacer(minLength: 0)
+            if loading {
+                ProgressView().controlSize(.mini)
+            } else {
+                Image(systemName: "arrow.down.to.line")
+                    .font(.system(size: 12))
+                    .frame(width: 14, height: 14)
+                    .foregroundStyle(theme.inkSecondary)
+            }
+        }
+        .padding(10)
+        .frame(width: 288, alignment: .leading)
+        .background(theme.inset.opacity(0.6), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(theme.hairline.opacity(0.3), lineWidth: 1))
+        .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+}
+
+// MARK: - Cards
+
+/// ApprovalCard.tsx: what a permission ask asks, in the transcript (it is
+/// answered in the dock). Card fill, accent ring at 40 % while pending,
+/// radius 16, 16 in, at most 840; the heading 15 semibold, the tool mono
+/// 11 on the right, the detail on an inset block, then the waiting line or
+/// the outcome.
+struct DesktopPermissionCard: View {
+    let chat: Chat
+    let message: Message
+    let card: OptionCard
+    let theme: DesktopTheme
+    let waiting: String
+
+    private var heading: String {
+        switch ApprovalHeading.of(card) {
+        case let .wantsTo(action):
+            let name = message.from?.name ?? chat.name
+            return String(localized: "\(name) wants to \(ApprovalDock.phrase(action))")
+        case .confirmRoutine: return String(localized: "Confirm this routine")
+        case .confirmRoutineChange: return String(localized: "Confirm this routine change")
+        case .enableSkill: return String(localized: "Enable this learned skill")
+        case .updateSkill: return String(localized: "Update this learned skill")
+        case .confirmProfileChange: return String(localized: "Confirm this profile change")
+        case let .teamSetup(title): return title
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text(verbatim: heading)
+                    .font(theme.font(15, .semibold))
+                    .foregroundStyle(theme.ink)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 8)
+                if let tool = card.tool, !tool.isEmpty {
+                    Text(verbatim: tool)
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundStyle(theme.inkSecondary)
+                }
+            }
+            if let detail = ApprovalHeading.detail(card) {
+                Text(detail)
+                    .font(.system(size: 12.5, design: .monospaced))
+                    .lineSpacing(5)
+                    .foregroundStyle(theme.ink)
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(theme.inset, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .padding(.top, 8)
+            }
+            Group {
+                if card.isPending {
+                    Label {
+                        Text(verbatim: waiting)
+                    } icon: {
+                        Image(systemName: "clock").foregroundStyle(theme.accent)
+                    }
+                    .accessibilityIdentifier("card-waiting-\(message.id)")
+                } else if let outcome = ApprovalOutcome.of(card) {
+                    Label(CardView.outcomeText(outcome), systemImage: outcome == .allowed ? "checkmark.circle" : "xmark.circle")
+                        .accessibilityIdentifier("card-outcome-\(message.id)")
+                }
+            }
+            .font(theme.font(13))
+            .foregroundStyle(theme.inkSecondary)
+            .padding(.top, 12)
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(theme.card, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .strokeBorder(card.isPending ? theme.accent.opacity(0.4) : theme.hairline.opacity(0.4), lineWidth: 1)
+        )
+        .frame(maxWidth: 840, alignment: .leading)
     }
 }

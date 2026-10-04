@@ -191,13 +191,21 @@ struct TextBubble: View {
             .modifier(DesktopBubbleCapModifier(cap: desktopCap(mine: mine), mine: mine))
 
             if !mine, let hoverActions, desktop != nil {
-                DesktopMessageHoverStrip(model: hoverActions, mine: false, hovering: hovering)
+                DesktopMessageHoverStrip(model: hoverActions, mine: false, hovering: hovering || parityHover)
                     .padding(.leading, 6)
             }
 
             if !mine { Spacer(minLength: Theme.Chat.bubbleTrailingGap) }
         }
         .onHover { hovering = $0 }
+    }
+
+    private var parityHover: Bool {
+        #if DEBUG
+        DesktopChatParity.forcesHover(message)
+        #else
+        false
+        #endif
     }
 
     private func bubbleFill(mine: Bool) -> Color {

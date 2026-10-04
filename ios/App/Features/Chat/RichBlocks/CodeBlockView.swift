@@ -5,6 +5,7 @@
 // the desktop's way) and Wrap long lines. A block longer than 30 lines folds
 // behind "Show all N lines" once the message is complete.
 import SwiftUI
+import UIKit
 import CompanionCore
 
 struct CodeBlockView: View {
@@ -21,12 +22,84 @@ struct CodeBlockView: View {
     @State private var expanded = false
     @State private var share: RichShareItem?
     @StateObject private var feedback = RichCopyFeedback()
+    /// iPad desktop shell: ChatMarkdown.tsx's CodeBlock with its toolbar.
+    @Environment(\.desktopChatText) private var desktop
 
     private var lineCount: Int { CodeBlocks.countLines(code) }
     private var collapsible: Bool { !pending && lineCount > CodeBlocks.collapseLines }
     private var folded: Bool { collapsible && !expanded }
 
     var body: some View {
+        if let desktop {
+            desktopBody(desktop)
+        } else {
+            phoneBody
+        }
+    }
+
+    /// The desktop block: inset panel, hairline ring at 40 %, radius 8; a
+    /// header strip (raised at 30 %) with the language chip, "N lines" and
+    /// Wrap, Save, Copy; the code 12/18 monospaced, 12 in.
+    private func desktopBody(_ theme: DesktopTheme) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 8) {
+                if let language, !language.isEmpty {
+                    Text(verbatim: CodeBlocks.languageDisplayName(language))
+                        .font(theme.font(11, .medium))
+                        .tracking(0.275)
+                        .foregroundStyle(theme.ink)
+                        .lineLimit(1)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(theme.raised, in: RoundedRectangle(cornerRadius: 4))
+                        .overlay(RoundedRectangle(cornerRadius: 4).strokeBorder(theme.hairline.opacity(0.4), lineWidth: 1))
+                }
+                Text(lineCount == 1 ? "1 line" : "\(lineCount) lines")
+                    .font(theme.font(11))
+                    .foregroundStyle(theme.inkSecondary)
+                Spacer(minLength: 8)
+                DesktopBlockTool(icon: "text.word.spacing", title: "Wrap", pressed: wrap) { wrap.toggle() }
+                    .accessibilityLabel(Text("Wrap long lines"))
+                DesktopBlockTool(icon: "arrow.down.to.line", title: "Save") {
+                    share = RichShareItem.writing(code, named: CodeBlocks.snippetFileName(language))
+                }
+                .accessibilityLabel(Text("Save as file"))
+                DesktopBlockTool(icon: "doc.on.doc", title: feedback.copied == nil ? "Copy" : "Copied") { feedback.copy("code", code) }
+                    .accessibilityLabel(Text("Copy code"))
+            }
+            .padding(.horizontal, 12)
+            .frame(height: 33.7)
+            .background(theme.raised.opacity(0.3))
+            .overlay(alignment: .bottom) { Rectangle().fill(theme.hairline.opacity(0.3)).frame(height: 1) }
+            Group {
+                let text = (Text(verbatim: code) + caret)
+                    .font(.system(size: 12, design: .monospaced))
+                    .lineSpacing(18 - UIFont.monospacedSystemFont(ofSize: 12, weight: .regular).lineHeight)
+                    .foregroundStyle(theme.ink)
+                    .textSelection(.enabled)
+                if wrap {
+                    text.fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                } else {
+                    ScrollView(.horizontal, showsIndicators: false) { text }
+                }
+            }
+            .frame(maxHeight: folded ? 352 : nil, alignment: .top)
+            .clipped()
+            .padding(12)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(theme.inset, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(theme.hairline.opacity(0.4), lineWidth: 1))
+        .sheet(item: $share) { item in
+            ActivityShareSheet(items: [item.url])
+        }
+        .accessibilityElement(children: .contain)
+        .modifier(RichIdentifier(identifier: identifier))
+    }
+
+    private var phoneBody: some View {
         VStack(alignment: .leading, spacing: 4) {
             if let language, !language.isEmpty {
                 Text(verbatim: CodeBlocks.languageDisplayName(language))

@@ -394,8 +394,9 @@ struct ChatView: View {
                                     // ChatView.tsx DaySeparator: a new calendar
                                     // day, 13 pt ink-secondary, 12 above and below
                                     if desktopStartsANewDay(at: index, in: transcript) {
-                                        Text(RelativeStamp.separator(row.head.date))
+                                        Text(verbatim: DesktopChatMetrics.dayLabel(row.head.date))
                                             .font(desktop.font(13))
+                                            .frame(minHeight: 19.5)
                                             .foregroundStyle(desktop.inkSecondary)
                                             .frame(maxWidth: .infinity)
                                             .padding(.vertical, 12)
@@ -441,6 +442,9 @@ struct ChatView: View {
                                 }
                             }
                             .id(row.id)
+#if DEBUG
+                            .overlay(alignment: .top) { desktopParityTopMarker(row.id, below: desktopStartsANewDay(at: index, in: transcript) ? (index == 0 ? 43.5 : 55.5) + DesktopChatMetrics.rowGap : 0) }
+#endif
                         }
 
                         // The reply as it is typed. It sits after the last
@@ -580,6 +584,9 @@ struct ChatView: View {
                     guard length > 0, follow.following else { return }
                     proxy.scrollTo(Self.bottomId, anchor: .bottom)
                 }
+#if DEBUG
+                .task { await desktopParityLaunch(proxy) }
+#endif
                 .task(id: session.focusedMessageId) {
                     guard let messageId = session.focusedMessageId,
                           messages.contains(where: { $0.id == messageId })

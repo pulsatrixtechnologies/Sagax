@@ -194,14 +194,15 @@ struct MarkdownText: View {
             )
 
         case let .quote(text):
-            HStack(alignment: .top, spacing: 8) {
-                RoundedRectangle(cornerRadius: 1.5)
-                    .fill(Theme.parity(Color.secondary.opacity(0.4), Theme.hairline))
-                    .frame(width: 3)
+            HStack(alignment: .top, spacing: desktop == nil ? 8 : 12) {
+                RoundedRectangle(cornerRadius: desktop == nil ? 1.5 : 0)
+                    .fill(desktop?.hairline ?? Theme.parity(Color.secondary.opacity(0.4), Theme.hairline))
+                    .frame(width: desktop == nil ? 3 : 2)
                 inline(text, tail: tail)
                     .font(bodyFont)
                     .lineSpacing(bodyLineSpacing)
-                    .foregroundStyle(Theme.parity(Color.secondary, Theme.textSecondary))
+                    .modifier(DesktopLineBox(theme: desktop))
+                    .foregroundStyle(desktop?.inkSecondary ?? Theme.parity(Color.secondary, Theme.textSecondary))
             }
             .fixedSize(horizontal: false, vertical: true)
 
@@ -298,15 +299,15 @@ struct MarkdownText: View {
         HStack(alignment: .firstTextBaseline, spacing: 0) {
             Text(symbol)
                 .font(bodyFont)
-                .foregroundStyle(Theme.bulletDot)
-                .frame(width: Theme.Chat.bulletIndent - 6, alignment: .trailing)
+                .foregroundStyle(desktop?.ink ?? Theme.bulletDot)
+                .frame(width: (desktop == nil ? Theme.Chat.bulletIndent : DesktopChatMetrics.listIndent) - 6, alignment: .trailing)
                 .padding(.trailing, 6)
             inline(text, tail: tail)
                 .font(bodyFont)
                 .lineSpacing(bodyLineSpacing)
         }
         .modifier(DesktopLineBox(theme: desktop))
-        .padding(.leading, CGFloat(indent) * Theme.Chat.bulletIndent)
+        .padding(.leading, CGFloat(indent) * (desktop == nil ? Theme.Chat.bulletIndent : DesktopChatMetrics.listIndent))
         .fixedSize(horizontal: false, vertical: true)
     }
 
@@ -372,6 +373,17 @@ struct MarkdownText: View {
             for run in attributed.runs where run.inlinePresentationIntent?.contains(.code) == true {
                 attributed[run.range].font = desktop != nil ? .system(size: 12, design: .monospaced) : Theme.Font.code
                 if let desktop { attributed[run.range].backgroundColor = desktop.inset }
+            }
+            if let desktop {
+                // `px-1` on the desktop's code chip: a quarter-em space each side
+                let ranges = attributed.runs.filter { $0.inlinePresentationIntent?.contains(.code) == true }.map(\.range)
+                for range in ranges.reversed() {
+                    var pad = AttributedString("\u{2005}")
+                    pad.font = .system(size: 12, design: .monospaced)
+                    pad.backgroundColor = desktop.inset
+                    attributed.insert(pad, at: range.upperBound)
+                    attributed.insert(pad, at: range.lowerBound)
+                }
             }
             MentionTint.apply(to: &attributed, peers: mentions, everyone: mentionEveryone)
             styleFootnotes(&attributed)

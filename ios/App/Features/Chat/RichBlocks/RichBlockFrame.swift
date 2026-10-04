@@ -79,6 +79,32 @@ struct RichToolButton: View {
     }
 }
 
+/// The desktop's block tool (`rich-ui.tsx` ToolButton): an 11 pt glyph and
+/// label, ink-secondary, 6 x 2 in, radius 4.
+struct DesktopBlockTool: View {
+    @Environment(\.desktopTheme) private var theme
+    let icon: String
+    let title: LocalizedStringKey
+    var pressed = false
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 4) {
+                Image(systemName: icon).font(.system(size: 10, weight: .medium))
+                Text(title).font(theme.font(11))
+            }
+            .foregroundStyle(pressed ? theme.ink : theme.inkSecondary)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(pressed ? theme.raised : .clear, in: RoundedRectangle(cornerRadius: 4))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .hoverEffect(.highlight)
+    }
+}
+
 struct RichIdentifier: ViewModifier {
     let identifier: String?
 

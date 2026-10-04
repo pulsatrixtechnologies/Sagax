@@ -205,7 +205,7 @@ enum IPadParityScreen: String, CaseIterable {
     var implemented: Bool {
         switch self {
         case .main, .panelDetails: true
-        default: false
+        default: isDesktopChat
         }
     }
 
