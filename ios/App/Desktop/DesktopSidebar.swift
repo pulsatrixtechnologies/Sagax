@@ -296,10 +296,12 @@ struct DesktopSidebarList: View {
         .coordinateSpace(name: "desktop-sidebar-list")
     }
 
-    /// Pinned bots (`Sidebar.tsx` `pinnedBots`: bots only; a pinned group
-    /// stays in its section), in the roster's order.
+    /// Pinned bots (`Sidebar.tsx` `pinnedBots`: every shown bot that is
+    /// pinned, the Primary Bot included; a pinned group stays in its
+    /// section), in the roster's order. The sections leave them out.
     private var pinnedChats: [Chat] {
-        let pinned = Set(layout.pinnedBots.map(\.id))
+        let chiefs = ([layout.unsectionedChief].compactMap { $0 } + layout.sections.flatMap(\.chiefs)).filter { $0.pinned == true }
+        let pinned = Set((layout.pinnedBots + chiefs).map(\.id))
         return session.state.bots.filter { pinned.contains($0.id) }.map(Chat.bot)
     }
 
