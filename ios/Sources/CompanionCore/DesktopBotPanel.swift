@@ -237,3 +237,15 @@ public enum DesktopComputerPhase: Equatable, Sendable {
         }
     }
 }
+
+/// `whenLabel` (src/lib/schedule-label.ts): the time for today, else the
+/// short month and day.
+public enum DesktopWhenLabel {
+    public static func label(_ ms: Double, now: Date = Date(), calendar: Calendar = .current, locale: Locale = .current) -> String {
+        let date = Date(timeIntervalSince1970: ms / 1000)
+        if calendar.isDate(date, inSameDayAs: now) {
+            return date.formatted(Date.FormatStyle(date: .omitted, time: .shortened, locale: locale, calendar: calendar, timeZone: calendar.timeZone))
+        }
+        return date.formatted(Date.FormatStyle(locale: locale, calendar: calendar, timeZone: calendar.timeZone).month(.abbreviated).day())
+    }
+}

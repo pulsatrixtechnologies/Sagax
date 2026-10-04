@@ -221,7 +221,7 @@ struct PanelFlow: Layout {
         let width = proposal.width ?? .infinity
         var x: CGFloat = 0, y: CGFloat = 0, line: CGFloat = 0, widest: CGFloat = 0
         for view in subviews {
-            let size = view.sizeThatFits(.unspecified)
+            let size = Self.size(of: view, in: width)
             if x > 0, x + size.width > width {
                 y += line + lineSpacing
                 x = 0
@@ -237,7 +237,7 @@ struct PanelFlow: Layout {
     func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
         var x = bounds.minX, y = bounds.minY, line: CGFloat = 0
         for view in subviews {
-            let size = view.sizeThatFits(.unspecified)
+            let size = Self.size(of: view, in: bounds.width)
             if x > bounds.minX, x + size.width > bounds.maxX {
                 y += line + lineSpacing
                 x = bounds.minX
@@ -247,6 +247,13 @@ struct PanelFlow: Layout {
             x += size.width + spacing
             line = max(line, size.height)
         }
+    }
+
+    /// Its natural size, wrapped to the row when it is wider.
+    private static func size(of view: LayoutSubview, in width: CGFloat) -> CGSize {
+        let natural = view.sizeThatFits(.unspecified)
+        guard width.isFinite, natural.width > width else { return natural }
+        return view.sizeThatFits(ProposedViewSize(width: width, height: nil))
     }
 }
 

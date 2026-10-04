@@ -163,7 +163,7 @@ struct BotPanelAccess: View {
     }
 
     private func note(bold: LocalizedStringKey, _ rest: LocalizedStringKey) -> some View {
-        (Text(bold).foregroundColor(theme.ink).fontWeight(.medium) + Text(verbatim: " ") + Text(rest))
+        (Text(bold).font(theme.font(11.5, .medium)).foregroundColor(theme.ink) + Text(verbatim: " ") + Text(rest))
             .panelText(11.5, 18.69)
             .foregroundStyle(theme.inkSecondary)
             .padding(.horizontal, 12)
@@ -313,7 +313,7 @@ struct BotPanelModel: View {
             Text(verbatim: level.map(Self.effortLabel) ?? String(localized: "Default"))
                 .font(theme.font(12))
                 .foregroundStyle(on ? theme.ink : theme.inkSecondary)
-                .padding(.horizontal, 10)
+                .padding(.horizontal, 11)
                 .frame(height: 28)
                 .background(on ? theme.control : .clear, in: Capsule())
                 .overlay(Capsule().strokeBorder(on ? theme.accent.opacity(0.5) : theme.hairline40, lineWidth: 1))

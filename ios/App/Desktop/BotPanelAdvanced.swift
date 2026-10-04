@@ -303,6 +303,7 @@ private struct BotPanelOverview: View {
                             .font(.system(size: 12))
                             .foregroundStyle(theme.inkSecondary)
                             .rotationEffect(.degrees(promptOpen ? 180 : 0))
+                            .frame(width: 16)
                     }
                     .contentShape(Rectangle())
                 }
@@ -357,9 +358,7 @@ private struct BotPanelOverview: View {
         }
     }
 
-    private static func when(_ at: Double) -> String {
-        Date(timeIntervalSince1970: at / 1000).formatted(.relative(presentation: .named))
-    }
+    private static func when(_ at: Double) -> String { DesktopWhenLabel.label(at) }
 }
 
 /// One section of the prompt preview, opened to read its text.
@@ -646,8 +645,9 @@ private struct BotPanelMemory: View {
     let bot: Bot
 
     @StateObject private var memory: BotMemoryModel
-    @State private var openFiles = false
     @State private var saving = false
+    @State private var newTopic = ""
+    @State private var deleting: MemoryFileInfo?
 
     init(bot: Bot) {
         self.bot = bot
@@ -701,8 +701,11 @@ private struct BotPanelMemory: View {
                             .lineLimit(1)
                             .truncationMode(.middle)
                             .frame(maxWidth: .infinity, alignment: .leading)
-                        Button { openFiles = true } label: {
-                            Label("Open files", systemImage: "folder")
+                        Button {
+                            let path = overview.workspacePath
+                            Task.detached(priority: .userInitiated) { UIPasteboard.general.string = path }
+                        } label: {
+                            Label("Copy path", systemImage: "square.on.square")
                                 .font(theme.font(13))
                                 .foregroundStyle(theme.ink)
                                 .padding(.horizontal, 12)
@@ -734,20 +737,257 @@ private struct BotPanelMemory: View {
                     .foregroundStyle(theme.inkSecondary)
                     .padding(.top, 4)
                     .padding(.trailing, 56)
+                if upkeep {
+                    PanelFlow(spacing: 12, lineSpacing: 12) {
+                        quietButton(memory.tidying ? "Tidying…" : "Tidy up now", disabled: memory.tidying || !canEdit) {
+                            Task { await memory.tidy() }
+                        }
+                        Text(verbatim: lastUpkeepLine)
+                            .font(theme.font(12.5))
+                            .foregroundStyle(theme.inkSecondary)
+                            .frame(minHeight: 31.5)
+                    }
+                    .padding(.top, 12)
+                }
             }
             .padding(16)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(theme.card, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
             .padding(.top, 20)
+            if let editing = memory.editing {
+                editor(editing).padding(.top, 16)
+            }
+            if let overview = memory.overview {
+                filesCard(overview).padding(.top, 16)
+            }
+            changesCard.padding(.top, 16)
+            if let notice = memory.notice {
+                Text(verbatim: notice).panelText(12.5, 18.75).foregroundStyle(theme.inkSecondary).padding(.top, 12)
+            }
         }
         .padding(.top, 24)
         .task(id: bot.id) {
             memory.client = session.profileClient
-            await memory.refresh()
+            await memory.activate()
         }
-        .sheet(isPresented: $openFiles) {
-            NavigationStack { BotMemoryPage(bot: bot) }
-                .environmentObject(session)
+        .confirmationDialog(
+            deleting.map { String(localized: "Delete \($0.name)? The journal below can bring it back.") } ?? "",
+            isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }),
+            titleVisibility: .visible,
+            presenting: deleting
+        ) { file in
+            Button(String(localized: "Delete"), role: .destructive) {
+                deleting = nil
+                Task { await memory.remove(file) }
+            }
+        }
+    }
+
+    // MARK: Files and changes
+
+    private func quietButton(_ title: LocalizedStringKey, disabled: Bool = false, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(theme.font(13))
+                .foregroundStyle(theme.ink)
+                .padding(.horizontal, 12)
+                .frame(height: 31.5)
+                .background(theme.control, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(disabled)
+        .opacity(disabled ? 0.5 : 1)
+    }
+
+    private var lastUpkeepLine: String {
+        var line = memory.upkeep?.lastTidy.map {
+            String(localized: "Last tidy-up \(BotAdvancedWording.ago($0.at)): \(BotAdvancedWording.tidySummary($0).lowercased()).")
+        } ?? String(localized: "Not tidied yet.")
+        if let capture = memory.upkeep?.lastCapture, capture.noticed > 0 {
+            line += " " + (capture.noticed == 1
+                ? String(localized: "Last noticed 1 fact \(BotAdvancedWording.ago(capture.at)).")
+                : String(localized: "Last noticed \(capture.noticed) facts \(BotAdvancedWording.ago(capture.at))."))
+        }
+        return line
+    }
+
+    /// The open file (MEMORY.md first): edited in place, saved with its
+    /// hash so a change the bot made meanwhile is never overwritten.
+    private func editor(_ editing: BotMemoryModel.Editing) -> some View {
+        PanelCard {
+            HStack(spacing: 8) {
+                Text(verbatim: editing.path)
+                    .font(.system(size: 12.5, design: .monospaced))
+                    .foregroundStyle(theme.ink)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                if editing.path != MemoryRules.index {
+                    Button { Task { await memory.open(MemoryRules.index) } } label: {
+                        Text("Back to MEMORY.md").font(theme.font(12.5)).foregroundStyle(theme.inkSecondary)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            if memory.conflict != nil {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("\(bot.name) changed this file while you were editing.").panelText(12.5, 18.75, .medium).foregroundStyle(theme.ink)
+                    Text("Nothing has been saved. Reload to see \(bot.name)'s version (your draft is kept below), or overwrite it with yours.")
+                        .panelText(12.5, 18.75).foregroundStyle(theme.inkSecondary)
+                    HStack(spacing: 8) {
+                        quietButton("Reload", disabled: memory.saving) { memory.reloadFromConflict() }
+                        quietButton("Overwrite with mine", disabled: memory.saving) {
+                            Task { await memory.save(expectedHash: memory.conflict?.currentHash) }
+                        }
+                    }
+                }
+                .padding(12)
+                .background(theme.warning.opacity(0.1), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .padding(.top, 8)
+            }
+            PanelTextArea(
+                placeholder: editing.path == MemoryRules.index
+                    ? "Nothing remembered yet. The bot writes durable notes here — or add your own."
+                    : "Write the note here.",
+                text: Binding(get: { memory.editing?.text ?? "" }, set: { memory.edit($0) }),
+                minHeight: 200, mono: true, lineHeight: 20.3125
+            )
+            .disabled(editing.readOnly || !canEdit)
+            .padding(.top, 8)
+            .accessibilityLabel(Text(editing.path == MemoryRules.index ? "Bot memory" : "Memory file \(editing.path)"))
+            if editing.readOnly {
+                Text("Daily logs are the bot's own record of what it did; they are not loaded into conversations and are read-only here.")
+                    .panelText(12, 18).foregroundStyle(theme.inkSecondary).padding(.top, 8)
+            } else {
+                HStack(spacing: 12) {
+                    quietButton(memory.saving ? "Saving…" : "Save", disabled: memory.saving || !editing.dirty || !canEdit) {
+                        Task { await memory.save(expectedHash: editing.hash) }
+                    }
+                    if editing.dirty {
+                        Button { Task { await memory.open(editing.path) } } label: {
+                            Text("Discard changes").font(theme.font(12.5)).foregroundStyle(theme.inkSecondary)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.top, 8)
+            }
+            if let draft = memory.savedDraft {
+                Text("Your unsaved draft, kept so nothing is lost:").font(theme.font(12)).foregroundStyle(theme.inkSecondary).padding(.top, 12)
+                Text(verbatim: draft)
+                    .font(.system(size: 12, design: .monospaced))
+                    .foregroundStyle(theme.ink)
+                    .textSelection(.enabled)
+                    .padding(12)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(theme.inset, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .padding(.top, 4)
+                Button { memory.savedDraft = nil } label: {
+                    Text("Dismiss draft").font(theme.font(12.5)).foregroundStyle(theme.inkSecondary)
+                }
+                .buttonStyle(.plain)
+                .padding(.top, 4)
+            }
+        }
+    }
+
+    private func filesCard(_ overview: MemoryOverview) -> some View {
+        PanelCard {
+            fileRows(title: "Topic files", hint: "Longer notes the bot reads on demand. Tap one to edit it.", files: overview.topics)
+            HStack(spacing: 8) {
+                PanelTextField(placeholder: "New topic name, e.g. clients", text: $newTopic) { createTopic() }
+                    .accessibilityLabel(Text("New topic name"))
+                quietButton("New topic", disabled: newTopic.trimmingCharacters(in: .whitespaces).isEmpty || !canEdit) { createTopic() }
+            }
+            .padding(.top, 12)
+            if !overview.logs.isEmpty {
+                fileRows(title: "Daily logs", hint: "What the bot did each day, in its own words. Not loaded into conversations.", files: overview.logs)
+                    .padding(.top, 16)
+            }
+        }
+    }
+
+    private func createTopic() {
+        let name = newTopic
+        Task { if await memory.createTopic(name) != nil { newTopic = "" } }
+    }
+
+    private func fileRows(title: LocalizedStringKey, hint: LocalizedStringKey, files: [MemoryFileInfo]) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text(title).textCase(.uppercase).font(theme.font(12, .medium)).tracking(0.96).foregroundStyle(theme.inkSecondary)
+            Text(hint).panelText(12, 18).foregroundStyle(theme.inkSecondary).padding(.top, 2)
+            if files.isEmpty {
+                Text("None yet.").font(theme.font(12.5)).foregroundStyle(theme.inkSecondary).padding(.top, 8)
+            } else {
+                VStack(spacing: 0) {
+                    ForEach(Array(files.enumerated()), id: \.element.id) { index, file in
+                        HStack(spacing: 8) {
+                            Button { Task { await memory.open(file.path) } } label: {
+                                HStack(spacing: 8) {
+                                    Image(systemName: "doc.text").font(.system(size: 12)).foregroundStyle(theme.inkSecondary)
+                                    Text(verbatim: file.name).font(.system(size: 12.5, design: .monospaced)).foregroundStyle(theme.ink).lineLimit(1)
+                                    Spacer(minLength: 4)
+                                    Text(verbatim: "\(MemoryCapacity.formatBytes(file.bytes)) · \(BotAdvancedWording.ago(file.modifiedAt))")
+                                        .font(theme.font(11.5)).foregroundStyle(theme.inkSecondary).lineLimit(1)
+                                }
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            Button { deleting = file } label: {
+                                Image(systemName: "trash").font(.system(size: 12)).foregroundStyle(theme.inkSecondary).frame(width: 24, height: 24)
+                            }
+                            .buttonStyle(.plain)
+                            .disabled(!canEdit)
+                            .accessibilityLabel(Text("Delete \(file.name)"))
+                        }
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .background(memory.editing?.path == file.path ? theme.control.opacity(0.6) : .clear)
+                        if index < files.count - 1 { Rectangle().fill(theme.hairline40).frame(height: 1) }
+                    }
+                }
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(theme.hairline40, lineWidth: 1))
+                .padding(.top, 8)
+            }
+        }
+    }
+
+    private var changesCard: some View {
+        PanelCard {
+            Text("Changes").panelText(13, 19.5, .medium).foregroundStyle(theme.ink)
+            Text("Every change to these files, whoever made it. Undo puts a file back the way it was before that change.")
+                .panelText(13, 21.125).foregroundStyle(theme.inkSecondary).padding(.top, 4)
+            VStack(alignment: .leading, spacing: 10) {
+                if let journal = memory.journal {
+                    if journal.isEmpty {
+                        Text("No changes recorded yet.").font(theme.font(12.5)).foregroundStyle(theme.inkSecondary)
+                    }
+                    ForEach(journal) { row in
+                        HStack(alignment: .top, spacing: 8) {
+                            Text(verbatim: [BotAdvancedWording.journalSummary(row, botName: bot.name), BotAdvancedWording.ago(row.at),
+                                            BotAdvancedWording.journalSource(row)].compactMap { $0 }.joined(separator: " · "))
+                                .panelText(12.5, 18.75)
+                                .foregroundStyle(theme.ink)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                            if row.canRevert {
+                                Button { Task { await memory.revert(row) } } label: {
+                                    Text(memory.reverting == row.id ? "Undoing…" : "Undo").font(theme.font(12, .medium)).foregroundStyle(theme.accentText)
+                                }
+                                .buttonStyle(.plain)
+                                .disabled(memory.reverting != nil || !canEdit)
+                            }
+                        }
+                    }
+                } else {
+                    Text("Loading…").font(theme.font(12.5)).foregroundStyle(theme.inkSecondary)
+                }
+                if let error = memory.error {
+                    Text(verbatim: error).font(theme.font(12.5)).foregroundStyle(theme.danger)
+                }
+            }
+            .padding(.top, 12)
         }
     }
 
@@ -758,6 +998,7 @@ private struct BotPanelMemory: View {
             HStack(alignment: .top, spacing: 12) {
                 Text("How much of MEMORY.md loads").panelText(13, 19.5, .medium).foregroundStyle(theme.ink)
                     .frame(maxWidth: .infinity, alignment: .leading)
+                    .layoutPriority(1)
                 Text(verbatim: "\(lines) · \(size)").panelText(12, 18).foregroundStyle(theme.inkSecondary)
                     .frame(width: 135, alignment: .leading)
             }

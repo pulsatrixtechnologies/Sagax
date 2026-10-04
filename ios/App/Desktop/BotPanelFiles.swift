@@ -124,7 +124,7 @@ struct BotPanelFiles: View {
                             .foregroundStyle(selected ? theme.app.opacity(0.7) : theme.inkTertiary)
                     }
                     .font(theme.font(12))
-                    .padding(.horizontal, 10)
+                    .padding(.horizontal, 11) // px-2.5 inside a 1 pt border
                     .frame(height: 26)
                     .background(selected ? theme.ink : .clear, in: Capsule())
                     .overlay(Capsule().strokeBorder(selected ? .clear : theme.hairlineWeak, lineWidth: 1))
@@ -386,8 +386,9 @@ struct BotPanelFiles: View {
     /// `dateStyle: medium, timeStyle: short`, as Intl writes it
     /// ("Sep 30, 2026, 11:33 AM").
     static func when(_ at: Double) -> String {
-        Date(timeIntervalSince1970: at / 1000)
-            .formatted(.dateTime.month(.abbreviated).day().year().hour().minute())
+        // Intl joins the two with a comma, where Foundation says "at"
+        let date = Date(timeIntervalSince1970: at / 1000)
+        return "\(date.formatted(.dateTime.month(.abbreviated).day().year())), \(date.formatted(date: .omitted, time: .shortened))"
     }
 }
 

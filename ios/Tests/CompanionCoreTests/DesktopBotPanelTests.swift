@@ -172,4 +172,17 @@ final class DesktopBotPanelTests: XCTestCase {
         let config = try JSONDecoder().decode(ConfigStatus.self, from: Data(#"{"tts":{"configured":true,"provider":"xai"}}"#.utf8))
         XCTAssertEqual(config.voiceProvider, .xai)
     }
+
+    func testWhenLabelIsTheTimeTodayElseTheDay() {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "America/Toronto")!
+        let locale = Locale(identifier: "en_US")
+        let now = Date(timeIntervalSince1970: 1_790_000_000) // 2026-09-21 local
+        let today = (now.timeIntervalSince1970 - 3600) * 1000
+        let label = DesktopWhenLabel.label(today, now: now, calendar: calendar, locale: locale)
+        XCTAssertTrue(label.contains(":"), label)
+        let older = (now.timeIntervalSince1970 - 3 * 86_400) * 1000
+        XCTAssertFalse(DesktopWhenLabel.label(older, now: now, calendar: calendar, locale: locale).contains(":"))
+        XCTAssertTrue(DesktopWhenLabel.label(older, now: now, calendar: calendar, locale: locale).hasPrefix("Sep"))
+    }
 }
