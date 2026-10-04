@@ -511,6 +511,7 @@ struct DesktopDisclosure<Content: View>: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
+        .padding(1)
         .background(theme.inset, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(theme.hairline.opacity(0.4), lineWidth: 1))
     }
@@ -565,6 +566,7 @@ struct DesktopDecisionModelSettings: View {
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
         .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(1)
         .desktopHairlineBox()
         VStack(alignment: .leading, spacing: 0) {
             DesktopText("What it decides")
@@ -597,6 +599,7 @@ struct DesktopDecisionModelSettings: View {
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
         .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(1)
         .desktopHairlineBox()
     }
 }

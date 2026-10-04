@@ -244,8 +244,12 @@ struct DesktopConnectedAppsPage: View {
                         Button {
                             if let url = URL(string: "https://platform.composio.dev") { openURL(url) }
                         } label: {
-                            step(1, Text("Create a free Composio account at") + Text(verbatim: " ")
-                                + Text(verbatim: "platform.composio.dev").foregroundColor(theme.accent).fontWeight(.medium))
+                            HStack(spacing: 4) {
+                                step(1, Text("Create a free Composio account at") + Text(verbatim: " ")
+                                    + Text(verbatim: "platform.composio.dev").foregroundColor(theme.accent).fontWeight(.medium))
+                                DesktopSettingsIconView(icon: .externalLink, size: 11)
+                                    .foregroundStyle(theme.accent)
+                            }
                         }
                         .buttonStyle(.plain)
                         step(2, Text("Open your project settings and copy the project API key (it starts with ak_)."))
@@ -275,6 +279,7 @@ struct DesktopConnectedAppsPage: View {
         .padding(.horizontal, 16)
         .padding(.vertical, 14)
         .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(1)
         .background(theme.inset, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(theme.border, lineWidth: 1))
         .accessibilityIdentifier("desktop-plugins.setup")
@@ -342,7 +347,7 @@ struct DesktopConnectedAppsPage: View {
                     DesktopText(verbatim: card.label, weight: .medium).lineLimit(1)
                     DesktopText(subtitle, size: 12, color: \.inkTertiary).lineLimit(1)
                 }
-                Spacer(minLength: 8)
+                .frame(maxWidth: .infinity, alignment: .leading)
                 Button { apps.tapAction(card, session: session) } label: {
                     Group {
                         if busy { ProgressView().controlSize(.mini) } else { actionLabel(unavailable ? nil : action, unavailable: unavailable) }
@@ -461,6 +466,7 @@ struct DesktopHarnessConnectorsBox: View {
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
         .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(1)
         .background(theme.inset, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(theme.border, lineWidth: 1))
         .accessibilityIdentifier("desktop-plugins.harness")
@@ -584,6 +590,7 @@ struct DesktopMcpServersPage: View {
                     .padding(.horizontal, 16)
                     .padding(.vertical, 12)
                     .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(1)
                     .background(theme.raised.opacity(0.35), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                     .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(theme.hairline.opacity(0.5), lineWidth: 1))
                     .padding(.top, 16)
@@ -649,8 +656,9 @@ struct DesktopMcpServersPage: View {
             }
             .padding(.top, 2)
         }
-        .padding(.horizontal, 21)
-        .padding(.vertical, 17)
+        .padding(.horizontal, 20)
+        .padding(.vertical, 16)
+        .padding(1)
         .background(theme.card, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(theme.hairline.opacity(0.5), lineWidth: 1))
     }
@@ -730,9 +738,10 @@ struct DesktopMcpServersPage: View {
                 }
             }
         }
-        .padding(.horizontal, 21)
-        .padding(.vertical, 17)
+        .padding(.horizontal, 20)
+        .padding(.vertical, 16)
         .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(1)
         .background(theme.card, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(theme.hairline.opacity(0.5), lineWidth: 1))
         .accessibilityElement(children: .contain)

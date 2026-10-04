@@ -434,6 +434,7 @@ struct DesktopServerPairingCard: View {
             Spacer(minLength: 0)
         }
         .padding(16)
+        .padding(1)
         .background(theme.inset, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(theme.hairline.opacity(0.4), lineWidth: 1))
     }
@@ -707,7 +708,7 @@ struct DesktopEngineCard: View {
                                         size: 12, color: \.inkSecondary)
                                 .lineLimit(1)
                         }
-                        Spacer(minLength: 0)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                         DesktopSettingsIconView(icon: open ? .chevronUp : .chevronDown, size: 16)
                             .foregroundStyle(theme.inkSecondary)
                     }
@@ -763,6 +764,7 @@ struct DesktopEngineCard: View {
                 .overlay(alignment: .top) { Rectangle().fill(theme.hairline.opacity(0.4)).frame(height: 1) }
             }
         }
+        .padding(1)
         .background(theme.card, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 16, style: .continuous)
