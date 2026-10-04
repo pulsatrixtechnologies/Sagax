@@ -70,17 +70,17 @@ struct CollapsedSections {
 
 // MARK: - Header
 
-/// The person's photo in a 44 pt glass ring (38 pt photo inset 3 pt).
+/// The person's photo in a 44 pt glass ring (38 pt photo inset 3 pt). A tap
+/// opens the account menu (the desktop's `SidebarProfileMenu`).
 struct HomeAccountButton: View {
     @Environment(\.themePalette) var themePalette
-    let action: () -> Void
+    let select: (AccountMenuItem) -> Void
     @EnvironmentObject private var session: Session
     @State private var photo: UIImage?
 
     var body: some View {
-        Button {
-            Haptics.selection()
-            action()
+        Menu {
+            HomeAccountMenuItems(select: select)
         } label: {
             ZStack {
                 if let photo {
@@ -99,7 +99,7 @@ struct HomeAccountButton: View {
         }
         .buttonStyle(.plain)
         .themeGlass(Circle())
-        .accessibilityLabel(Text("Settings"))
+        .accessibilityLabel(Text("Account"))
         .accessibilityIdentifier("home-account")
         .task(id: session.account?.avatarUrl) {
             guard session.account?.avatarUrl != nil else { photo = nil; return }
@@ -370,40 +370,54 @@ struct HomeChatRow: View {
 
 // MARK: - "+" popover
 
-/// The glass popover that grows out of the "+" button: New Bot and New
-/// Group Chat, 14 pt, on a 35.8 pt pitch with about 10 pt of padding.
+/// The glass popover that grows out of the "+" button: New, the desktop's
+/// compose-to picker (Create new Bot, Create group chat, then every bot and
+/// the organization's people), 14 pt rows on a 35.8 pt pitch with about
+/// 10 pt of padding. A long list scrolls inside the glass.
 struct HomePlusMenu: View {
     @Environment(\.themePalette) var themePalette
-    var canCreateBot: Bool
-    /// WP15 (RM22): "Message a person", on an organization server only, so
-    /// the reference menu (18) keeps its two rows elsewhere.
-    var messagePerson: (() -> Void)? = nil
-    let newBot: () -> Void
-    let newGroup: () -> Void
+    let groups: [[NewMenuItem]]
+    let title: (NewMenuItem) -> String
+    let select: (NewMenuItem) -> Void
     let dismiss: () -> Void
+
+    private static let row: CGFloat = 35.83
+    private static let divider: CGFloat = 9
+
+    private var contentHeight: CGFloat {
+        let rows = CGFloat(groups.reduce(0) { $0 + $1.count })
+        let dividers = CGFloat(max(0, groups.count - 1))
+        return rows * Self.row + dividers * Self.divider + 10.08 + 9.59
+    }
 
     var body: some View {
         ZStack(alignment: .topTrailing) {
             Color.black.opacity(0.001)
                 .ignoresSafeArea()
                 .onTapGesture(perform: dismiss)
-            VStack(alignment: .leading, spacing: 0) {
-                if canCreateBot {
-                    item(Text("New Bot"), action: newBot)
-                        .accessibilityIdentifier("plus-menu.new-bot")
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(Array(groups.enumerated()), id: \.offset) { index, group in
+                        if index > 0 {
+                            Rectangle()
+                                .fill(Theme.parity(Color(hex: 0xF9F9F9), Theme.textPrimary).opacity(0.14))
+                                .frame(height: 0.5)
+                                .padding(.horizontal, 20)
+                                .frame(height: Self.divider)
+                        }
+                        ForEach(group, id: \.self) { entry in
+                            item(Text(verbatim: title(entry))) { select(entry) }
+                                .accessibilityIdentifier(NewMenuLabels.identifier(entry))
+                        }
+                    }
                 }
-                item(Text("New Group Chat"), action: newGroup)
-                    .accessibilityIdentifier("plus-menu.new-group")
-                if let messagePerson {
-                    item(Text("Message a person"), action: messagePerson)
-                        .accessibilityIdentifier("plus-menu.message-person")
-                }
+                // item centres 28 and 63.8 pt down (reference 18, measured on
+                // the text)
+                .padding(.top, 10.08)
+                .padding(.bottom, 9.59)
             }
-            // item centres 28 and 63.8 pt down (reference 18, measured on
-            // the text)
-            .padding(.top, 10.08)
-            .padding(.bottom, 9.59)
-            .frame(width: 250.67, height: 91.33 + (messagePerson == nil ? 0 : 35.83), alignment: .topLeading)
+            .scrollDisabled(contentHeight <= 440)
+            .frame(width: 250.67, height: min(contentHeight, 440), alignment: .topLeading)
             .background(alignment: .topLeading) { searchUnderGlass }
             .themeGlass(RoundedRectangle(cornerRadius: Theme.continuous(31.5), style: .continuous), fill: Theme.parity(Color(hex: 0x323232), Theme.menuGlass), interactive: false)
             .padding(.trailing, 7.7)
@@ -436,8 +450,10 @@ struct HomePlusMenu: View {
             title
                 .font(Theme.Font.body)
                 .foregroundStyle(Theme.parity(Color(hex: 0xF9F9F9), Theme.textPrimary))
+                .lineLimit(1)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.leading, 28.4)
+                .padding(.trailing, 18)
                 .frame(height: 35.83)
                 .contentShape(Rectangle())
         }

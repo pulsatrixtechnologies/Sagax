@@ -1,7 +1,6 @@
-// Settings search (matrix ST11): the field of the Advanced sheet finds any
-// page of Settings by its name or the desktop's keywords for it
-// (SettingsDestination), and opens it there. The Settings root keeps its
-// reference look (parity 12 and 14), so the field lives one level in.
+// Settings search (matrix ST11): the field at the top of Settings finds any
+// page by its name or the desktop's keywords for it (SettingsDestination),
+// the way the desktop's Settings filters its sections, and opens it.
 import CompanionCore
 import SwiftUI
 
@@ -9,41 +8,46 @@ struct SettingsSearchResults: View {
     @Environment(\.themePalette) var themePalette
     @EnvironmentObject private var session: Session
     let query: String
-    let closeSheet: (() -> Void)?
+    let open: (SettingsDestination) -> Void
 
     var body: some View {
         let results = SettingsSearch.results(query, available: available, label: Self.label)
         if results.isEmpty {
-            Section {
-                Text("Nothing matches “\(query.trimmingCharacters(in: .whitespacesAndNewlines))”")
-                    .foregroundStyle(Theme.textSecondary)
-                    .accessibilityIdentifier("settings-search-empty")
-            }
+            Text("Nothing matches “\(query.trimmingCharacters(in: .whitespacesAndNewlines))”")
+                .font(Theme.Font.rowTitle)
+                .foregroundStyle(Theme.textSecondary)
+                .frame(maxWidth: .infinity)
+                .padding(.top, 24)
+                .accessibilityIdentifier("settings-search-empty")
         } else {
-            Section {
-                ForEach(results, id: \.self) { destination in
-                    NavigationLink {
-                        SettingsDestinationView(destination: destination, closeSheet: closeSheet)
-                    } label: {
-                        Label { Text(verbatim: Self.label(destination)) } icon: { Image(systemName: Self.symbol(destination)) }
-                    }
-                    .accessibilityIdentifier("settings-search.\(destination.rawValue)")
+            SettingsCard {
+                ForEach(Array(results.enumerated()), id: \.element) { index, destination in
+                    if index > 0 { CardHairline(leadingInset: SettingsMetrics.rowInset) }
+                    SettingsRow(
+                        title: LocalizedStringKey(stringLiteral: Self.label(destination)),
+                        systemImage: Self.symbol(destination),
+                        accessory: .chevron,
+                        identifier: "settings-search.\(destination.rawValue)"
+                    ) { open(destination) }
                 }
             }
         }
     }
 
-    /// The pages this pairing shows; the sheets (Walkie voice, Updates) and
-    /// the Advanced page itself are not destinations.
+    /// The pages this pairing shows.
     private var available: [SettingsDestination] {
         let gate = session.surfaceGate
+        let connected = session.connection != nil
+        let sections = NavigationMenus.settings(
+            gate: gate, connected: connected,
+            achievementsAvailable: AchievementStore.shared.status != .unavailable
+        )
         return SettingsDestination.allCases.filter { destination in
             switch destination {
-            case .walkieVoice, .updates, .chat: return false
-            case .connectedApps: return gate.allows(.connectedApps) && session.connection != nil
-            case .routines: return session.connection != nil
-            case .achievements: return gate.allows(.achievements) && AchievementStore.shared.status != .unavailable
-            case .organization: return gate.allows(.organizationSettings)
+            case .organization: return sections.contains(.organization)
+            case .achievements: return sections.contains(.achievements)
+            case .experimental: return sections.contains(.experimental)
+            case .plugins, .botComputer, .usage, .rules, .timeZone: return connected
             default: return true
             }
         }
@@ -51,77 +55,82 @@ struct SettingsSearchResults: View {
 
     static func label(_ destination: SettingsDestination) -> String {
         switch destination {
-        case .account: String(localized: "Account")
-        case .usage: String(localized: "Usage")
+        case .general: String(localized: "General")
+        case .organization: String(localized: "Organization")
+        case .appearance: String(localized: "Appearance")
+        case .achievements: String(localized: "Achievements")
+        case .experimental: String(localized: "Experimental")
         case .plugins: String(localized: "Plugins")
+        case .account: String(localized: "Account")
+        case .botComputer: String(localized: "Computer")
+        case .usage: String(localized: "Usage")
         case .rules: String(localized: "Auto-review Rules")
         case .timeZone: String(localized: "Time Zone")
-        case .botComputer: String(localized: "Bot Computer")
-        case .appearance: String(localized: "Appearance")
         case .language: String(localized: "Language")
         case .haptics: String(localized: "Haptics")
-        case .computers: String(localized: "Computers")
-        case .routines: String(localized: "Threads & Routines")
         case .quickReplies: String(localized: "Quick Replies")
-        case .connectedApps: String(localized: "Connected Apps")
         case .walkieVoice: String(localized: "Walkie voice")
-        case .updates: String(localized: "Updates")
-        case .chat: String(localized: "Chat")
-        case .achievements: String(localized: "Achievements")
-        case .organization: String(localized: "Organization")
         case .about: String(localized: "About")
         }
     }
 
     static func symbol(_ destination: SettingsDestination) -> String {
         switch destination {
-        case .account: "person.crop.circle"
-        case .usage: "chart.bar"
+        case .general: "gearshape"
+        case .organization: "building.2"
+        case .appearance: "paintpalette"
+        case .achievements: "trophy"
+        case .experimental: "flask"
         case .plugins: "puzzlepiece.extension"
+        case .account: "person.crop.circle"
+        case .botComputer: "desktopcomputer"
+        case .usage: "chart.bar"
         case .rules: "checklist"
         case .timeZone: "clock"
-        case .botComputer: "desktopcomputer"
-        case .appearance: "paintpalette"
         case .language: "globe"
         case .haptics: "speaker.wave.2"
-        case .computers: "laptopcomputer"
-        case .routines: "calendar.badge.clock"
         case .quickReplies: "bolt"
-        case .connectedApps: "link"
         case .walkieVoice: "waveform"
-        case .updates: "bell.badge"
-        case .chat: "bubble.left"
-        case .achievements: "trophy"
-        case .organization: "building.2"
         case .about: "info.circle"
         }
     }
 }
 
-/// A Settings page opened from the search or the Advanced sheet.
-struct SettingsDestinationView: View {
-    @Environment(\.themePalette) var themePalette
-    let destination: SettingsDestination
-    let closeSheet: (() -> Void)?
+/// The Settings pages drawn as lists of their own (a navigation bar, a
+/// Done button), opened in a sheet over Settings.
+enum SettingsSheetPage: String, Identifiable {
+    case organization, achievements, quickReplies, walkieVoice, about, connection
+    var id: String { rawValue }
+}
+
+struct SettingsSheetPageView: View {
+    let page: SettingsSheetPage
+    @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-        switch destination {
-        case .account: AccountSettingsView(closeSheet: closeSheet)
-        case .usage: UsageSettingsView()
-        case .plugins: PluginsView()
-        case .rules: AutoReviewRulesView()
-        case .timeZone: TimeZonePickerView()
-        case .botComputer: BotComputerSettingsView()
-        case .appearance: AppearanceSettingsView()
-        case .language: LanguageSettingsView()
-        case .haptics: HapticsSettingsView()
-        case .computers: ConnectedComputersView()
-        case .routines: TasksRoutinesView()
-        case .quickReplies: QuickRepliesEditor()
-        case .connectedApps: ConnectedAppsView()
-        case .achievements: AchievementsPage()
-        case .organization: OrganizationSettingsPage()
-        case .about, .walkieVoice, .updates, .chat: AboutPage()
+        if page == .walkieVoice {
+            WalkieVoiceSheet(onSample: {})
+        } else {
+            NavigationStack {
+                content
+                    .toolbar {
+                        ToolbarItem(placement: .confirmationAction) {
+                            Button(String(localized: "Done")) { dismiss() }
+                                .accessibilityIdentifier("settings-sheet-done")
+                        }
+                    }
+            }
+        }
+    }
+
+    private var content: AnyView {
+        switch page {
+        case .organization: AnyView(OrganizationSettingsPage())
+        case .achievements: AnyView(AchievementsPage())
+        case .quickReplies: AnyView(QuickRepliesEditor())
+        case .about: AnyView(AboutPage())
+        case .connection: AnyView(ConnectionSecurityView())
+        case .walkieVoice: AnyView(EmptyView())
         }
     }
 }

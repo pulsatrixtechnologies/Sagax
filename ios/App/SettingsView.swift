@@ -1,10 +1,10 @@
-// Settings (iOS parity 12 and 14): the card sheet the home's photo opens.
+// Settings (iOS parity 12 and 14): the card sheet the account menu opens.
 //
-// Account card and Usage, Plugins, the Bot section (auto-review default,
-// its rules, the time zone and the bot computer), the App section
-// (notifications, appearance, language, haptics), the Pulsatrix links,
-// Send Feedback, Sign Out and the Sagax footer. Everything the earlier
-// settings screen offered stays reachable under "Advanced" at the bottom.
+// One flat list in the desktop's order (SettingsModal.tsx `SECTIONS`, the
+// sections a phone pairing can use: NavigationMenus.settings) under the
+// account card, which is Pair devices (switch, add, sign out, delete). The
+// phone's own settings sit in General; list density, activity and the bot
+// intro in Appearance. The search at the top finds any page.
 // Geometry: measure-settings.md §1 to §4.
 import CompanionCore
 import SwiftUI
@@ -13,7 +13,7 @@ import MessageUI
 
 /// The sheet's pages.
 enum SettingsRoute: Hashable {
-    case account, usage, plugins, rules, timeZone, botComputer, appearance, language, haptics, advanced
+    case account, usage, plugins, rules, timeZone, botComputer, appearance, language, haptics, general, experimental
 }
 
 struct SettingsView: View {
@@ -56,6 +56,11 @@ struct SettingsView: View {
         .persistentSystemOverlays(ParityMode.isActive ? .hidden : .automatic)
         .environmentObject(model)
         .environmentObject(navigator)
+        .sheet(item: $navigator.sheet) { page in
+            SettingsSheetPageView(page: page)
+                .environmentObject(session)
+                .environmentObject(model)
+        }
         .task {
             model.attach(session)
             if let route = Self.initialRoute, navigator.routes.isEmpty {
@@ -83,10 +88,11 @@ struct SettingsView: View {
     }
 }
 
-/// The sheet's page stack.
+/// The sheet's page stack, and the pages drawn as lists of their own.
 @MainActor
 final class SettingsNavigator: ObservableObject {
     @Published var routes: [SettingsRoute] = []
+    @Published var sheet: SettingsSheetPage?
 
     func push(_ route: SettingsRoute) { routes.append(route) }
     func pop() { if !routes.isEmpty { routes.removeLast() } }
@@ -113,86 +119,44 @@ private struct SettingsRootPage: View {
 
     @EnvironmentObject private var session: Session
     @EnvironmentObject private var model: SettingsModel
-    @Environment(\.locale) private var locale
+    @EnvironmentObject private var navigator: SettingsNavigator
     @ObservedObject private var themes = ThemeStore.shared
-    @AppStorage(PrefKey.language) private var language = AppLanguage.system.rawValue
-    @AppStorage(PrefKey.haptics) private var haptics = true
-    @State private var link: URL?
-    @State private var composingMail = false
-    @State private var confirmingSignOut = false
-    @State private var enablingNotifications = false
+    @ObservedObject private var achievements = AchievementStore.shared
+    @State private var query = ""
 
-    private var french: Bool {
-        (AppLanguage.resolved(language).locale ?? locale).language.languageCode?.identifier == "fr"
+    private var sections: [PhoneSettingsSection] {
+        NavigationMenus.settings(
+            gate: session.surfaceGate,
+            connected: session.connection != nil,
+            achievementsAvailable: achievements.status != .unavailable
+        )
+        // Pair devices is the account card above the list.
+        .filter { $0 != .pairDevices }
     }
 
     var body: some View {
         SettingsPage(leading: close.map { .close($0) } ?? .back) {
-            accountCard
-            SettingsSpacer(SettingsMetrics.cardGap)
-            SettingsCard {
-                SettingsRow(title: "Plugins", subtitle: "Tools and skills for Sagax", accessory: .chevron, height: 61, identifier: "settings-plugins") {
-                    push(.plugins)
+            SettingsSearchField(prompt: "Search", text: $query, identifier: "settings-search")
+                .padding(.horizontal, SettingsMetrics.cardMargin)
+            SettingsSpacer(18)
+            if query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                accountCard
+                SettingsSpacer(SettingsMetrics.cardGap)
+                SettingsCard {
+                    ForEach(Array(sections.enumerated()), id: \.element) { index, section in
+                        if index > 0 { CardHairline(leadingInset: SettingsMetrics.rowInset) }
+                        row(section)
+                    }
                 }
-            }
-            SettingsSectionLabel(text: "Bot")
-            botCard
-            SettingsSpacer(SettingsMetrics.cardGap)
-            appCard
-            SettingsSpacer(SettingsMetrics.cardGap)
-            linksCard
-            SettingsSpacer(SettingsMetrics.cardGap)
-            SettingsCard {
-                SettingsRow(title: "Send Feedback", accessory: .chevron, height: 44.67, identifier: "settings-feedback") { sendFeedback() }
-            }
-            SettingsSpacer(26.67)
-            SettingsCard {
-                SettingsRow(title: "Sign Out", style: .destructive, height: 44.67, identifier: "settings-sign-out") {
-                    confirmingSignOut = true
-                }
-            }
-            footer
-            SettingsCard {
-                SettingsRow(title: "Advanced", accessory: .chevron, height: 44.67, identifier: "settings-advanced") { showingAdvanced = true }
+                footer
+            } else {
+                SettingsSearchResults(query: query, open: open)
             }
 #if DEBUG
             if ParityLaunch.current?.screen == .settingsBottom {
-                // 14-settings-bottom: the Notifications card's top at y 197.
-                ScrollOffsetSetter(offset: 573.67).frame(width: 0, height: 0)
+                ScrollOffsetSetter(offset: 400).frame(width: 0, height: 0)
             }
 #endif
-        }
-        .task { await session.refreshNotificationAuthorization() }
-        .sheet(isPresented: $showingAdvanced) {
-            NavigationStack {
-                AdvancedSettingsView(onConnect: onConnect, closeSheet: close)
-                    .toolbar {
-                        ToolbarItem(placement: .confirmationAction) {
-                            Button("Done") { showingAdvanced = false }
-                        }
-                    }
-            }
-            .environmentObject(session)
-            .environmentObject(model)
-        }
-        .sheet(item: Binding(get: { link.map(IdentifiedURL.init) }, set: { link = $0?.url })) { item in
-            SafariSheet(url: item.url).ignoresSafeArea()
-        }
-        .sheet(isPresented: $composingMail) {
-            MailComposeSheet(recipient: SettingsLinks.supportEmail, subject: feedbackSubject, body: feedbackBody) {
-                composingMail = false
-            }
-            .ignoresSafeArea()
-        }
-        .confirmationDialog("Sign out of this computer?", isPresented: $confirmingSignOut, titleVisibility: .visible) {
-            Button("Sign Out", role: .destructive) {
-                close?()
-                session.signOut()
-            }
-            .accessibilityIdentifier("settings-sign-out-confirm")
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("This phone forgets this computer. Pair it again to come back.")
         }
         .alert("Settings", isPresented: Binding(get: { model.error != nil }, set: { if !$0 { model.error = nil } })) {
             Button("OK", role: .cancel) {}
@@ -204,81 +168,35 @@ private struct SettingsRootPage: View {
         }
     }
 
-    @EnvironmentObject private var navigator: SettingsNavigator
-    @State private var showingAdvanced = false
-
-    private func push(_ route: SettingsRoute) {
-        navigator.push(route)
-    }
-
-    // MARK: Cards
+    // MARK: Rows
 
     private var accountCard: some View {
         SettingsCard {
-            AccountCardRow(name: model.displayName, detail: model.detail, photo: model.photo, chevron: true) { push(.account) }
-            if let percent = model.usagePercent {
-                CardHairline(leadingInset: SettingsMetrics.rowInset)
-                SettingsRow(title: "Usage", accessory: .valueChevron("\(percent)%"), height: 43.5, identifier: "settings-usage") { push(.usage) }
-            }
+            AccountCardRow(name: model.displayName, detail: model.detail, photo: model.photo, chevron: true) { navigator.push(.account) }
         }
     }
 
-    private var botCard: some View {
-        SettingsCard {
-            SettingsRow(
-                title: "Auto-review",
-                subtitle: "Require approval for risky shell, MCP, and computer actions.",
-                accessory: .toggle(Binding(get: { model.autoReview }, set: { on in Task { await model.setAutoReview(on) } })),
-                height: 75,
-                identifier: "settings-auto-review"
-            )
-            CardHairline(leadingInset: SettingsMetrics.rowInset)
-            SettingsRow(title: "Auto-review Rules", accessory: .valueChevron(model.rules.map { "\($0.total)" } ?? ""), height: 43.33, identifier: "settings-rules") {
-                push(.rules)
-            }
-            CardHairline(leadingInset: SettingsMetrics.rowInset)
-            SettingsRow(
-                title: "Set Time Zone Automatically",
-                subtitle: "Your Bot's computer follows this device's time zone.",
-                accessory: .toggle(Binding(get: { model.timeZoneAuto }, set: { on in Task { await model.setTimeZoneAuto(on) } })),
-                height: 74,
-                identifier: "settings-time-zone-auto",
-                textTop: 13.4
-            )
-            CardHairline(leadingInset: SettingsMetrics.rowInset)
-            if model.timeZoneAuto {
-                SettingsRow(title: "Time Zone", accessory: .value(model.timeZone ?? ""), height: 43.67, identifier: "settings-time-zone")
-            } else {
-                SettingsRow(title: "Time Zone", accessory: .valueChevron(model.timeZone ?? ""), height: 43.67, identifier: "settings-time-zone") {
-                    push(.timeZone)
-                }
-            }
-            CardHairline(leadingInset: SettingsMetrics.rowInset)
-            SettingsRow(title: "Bot Computer", accessory: .chevron, height: 43.33, identifier: "settings-bot-computer") { push(.botComputer) }
-        }
-    }
-
-    private var notificationsOn: Bool {
-        switch session.notificationAuthorization {
-        case .authorized, .provisional, .ephemeral: true
-        default: false
-        }
-    }
-
-    private var appCard: some View {
-        SettingsCard {
-            SettingsRow(
-                title: "Notifications",
-                accessory: .toggle(Binding(get: { notificationsOn }, set: { on in setNotifications(on) })),
-                height: 53.67,
-                identifier: "settings-notifications"
-            )
-            CardHairline(leadingInset: SettingsMetrics.rowInset)
-            SettingsRow(title: "Appearance", accessory: .valueChevron(appearanceValue), height: 43.67, identifier: "settings-appearance") { push(.appearance) }
-            CardHairline(leadingInset: SettingsMetrics.rowInset)
-            SettingsRow(title: "Language", accessory: .valueChevron(AppLanguage.resolved(language).shortLabel), height: 43.33, identifier: "settings-language") { push(.language) }
-            CardHairline(leadingInset: SettingsMetrics.rowInset)
-            SettingsRow(title: "Haptics", accessory: .valueChevron(haptics ? String(localized: "On") : String(localized: "Off")), height: 43.67, identifier: "settings-haptics") { push(.haptics) }
+    @ViewBuilder
+    private func row(_ section: PhoneSettingsSection) -> some View {
+        switch section {
+        case .general:
+            SettingsRow(title: "General", systemImage: "gearshape", accessory: .chevron, height: 44.33, identifier: "settings-general") { navigator.push(.general) }
+        case .organization:
+            SettingsRow(title: "Organization", systemImage: "building.2", accessory: .chevron, height: 44.33, identifier: "settings-organization") { navigator.sheet = .organization }
+        case .appearance:
+            SettingsRow(title: "Appearance", systemImage: "paintpalette", accessory: .valueChevron(appearanceValue), height: 44.33, identifier: "settings-appearance") { navigator.push(.appearance) }
+        case .achievements:
+            SettingsRow(title: "Achievements", systemImage: "trophy", accessory: .chevron, height: 44.33, identifier: "settings-achievements") { navigator.sheet = .achievements }
+        case .experimental:
+            SettingsRow(title: "Experimental", systemImage: "flask", accessory: .chevron, height: 44.33, identifier: "settings-experimental") { navigator.push(.experimental) }
+        case .plugins:
+            SettingsRow(title: "Plugins", systemImage: "puzzlepiece.extension", accessory: .chevron, height: 44.33, identifier: "settings-plugins") { navigator.push(.plugins) }
+        case .pairDevices:
+            SettingsRow(title: "Pair devices", systemImage: "iphone", accessory: .chevron, height: 44.33, identifier: "settings-account") { navigator.push(.account) }
+        case .computer:
+            SettingsRow(title: "Computer", systemImage: "desktopcomputer", accessory: .chevron, height: 44.33, identifier: "settings-bot-computer") { navigator.push(.botComputer) }
+        case .usage:
+            SettingsRow(title: "Usage", systemImage: "chart.bar", accessory: model.usagePercent.map { .valueChevron("\($0)%") } ?? .chevron, height: 44.33, identifier: "settings-usage") { navigator.push(.usage) }
         }
     }
 
@@ -293,22 +211,9 @@ private struct SettingsRootPage: View {
         return "\(mode) · \(themePalette.id.name)"
     }
 
-    private var linksCard: some View {
-        SettingsCard {
-            SettingsRow(title: "Help Center", accessory: .chevron, height: 44.33, identifier: "settings-help") { link = SettingsLinks.helpCenter(french: french) }
-            CardHairline(leadingInset: SettingsMetrics.rowInset)
-            SettingsRow(title: "Privacy Policy", accessory: .chevron, height: 43.33, identifier: "settings-privacy") { link = SettingsLinks.privacy(french: french) }
-            CardHairline(leadingInset: SettingsMetrics.rowInset)
-            SettingsRow(title: "Terms of Service", accessory: .chevron, height: 43.67, identifier: "settings-terms") { link = SettingsLinks.terms(french: french) }
-            CardHairline(leadingInset: SettingsMetrics.rowInset)
-            SettingsRow(title: "Sagax Terms", accessory: .chevron, height: 43.33, identifier: "settings-sagax-terms") { link = SettingsLinks.sagaxTerms }
-        }
-    }
-
-    /// The white Sagax owl over "Sagax": 60.67 pt below Sign Out.
+    /// The white Sagax owl over "Sagax".
     private var footer: some View {
         VStack(spacing: 0) {
-            // The Primary Bot once connected, else the white Sagax owl.
             BrandMascotView(owlColor: "white", size: 47.67, animated: false)
             Text(verbatim: "Sagax")
                 .font(Theme.Font.appName)
@@ -320,40 +225,27 @@ private struct SettingsRootPage: View {
         .padding(.bottom, 40)
     }
 
-    // MARK: Actions
+    // MARK: Search
 
-    private func setNotifications(_ on: Bool) {
-        if on {
-            guard !enablingNotifications else { return }
-            enablingNotifications = true
-            Task {
-                await session.enableNotifications()
-                enablingNotifications = false
-            }
-        } else if let url = URL(string: UIApplication.openSettingsURLString) {
-            // iOS lets only the person turn an app's notifications off.
-            UIApplication.shared.open(url)
+    private func open(_ destination: SettingsDestination) {
+        switch destination {
+        case .general: navigator.push(.general)
+        case .organization: navigator.sheet = .organization
+        case .appearance: navigator.push(.appearance)
+        case .achievements: navigator.sheet = .achievements
+        case .experimental: navigator.push(.experimental)
+        case .plugins: navigator.push(.plugins)
+        case .account: navigator.push(.account)
+        case .botComputer: navigator.push(.botComputer)
+        case .usage: navigator.push(.usage)
+        case .rules: navigator.push(.rules)
+        case .timeZone: navigator.push(.timeZone)
+        case .language: navigator.push(.language)
+        case .haptics: navigator.push(.haptics)
+        case .quickReplies: navigator.sheet = .quickReplies
+        case .walkieVoice: navigator.sheet = .walkieVoice
+        case .about: navigator.sheet = .about
         }
-    }
-
-    private var feedbackSubject: String { String(localized: "Sagax feedback") }
-
-    private var feedbackBody: String {
-        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?"
-        let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "?"
-        return "\n\n—\nSagax iOS \(version) (\(build)), iOS \(UIDevice.current.systemVersion)"
-    }
-
-    private func sendFeedback() {
-        if MFMailComposeViewController.canSendMail() {
-            composingMail = true
-            return
-        }
-        var components = URLComponents()
-        components.scheme = "mailto"
-        components.path = SettingsLinks.supportEmail
-        components.queryItems = [URLQueryItem(name: "subject", value: feedbackSubject), URLQueryItem(name: "body", value: feedbackBody)]
-        if let url = components.url { UIApplication.shared.open(url) }
     }
 }
 
@@ -375,7 +267,8 @@ struct SettingsRouteView: View {
         case .appearance: AppearanceSettingsView()
         case .language: LanguageSettingsView()
         case .haptics: HapticsSettingsView()
-        case .advanced: AdvancedSettingsView(onConnect: onConnect, closeSheet: closeSheet)
+        case .general: GeneralSettingsView()
+        case .experimental: ExperimentalSettingsView()
         }
     }
 }
@@ -460,341 +353,6 @@ struct HapticsSettingsView: View {
             }
             SettingsFooter(text: "Small taps when you press buttons, switch options and send.")
             NotificationSoundsCard()
-        }
-    }
-}
-
-// MARK: - Advanced (the earlier settings, kept)
-
-struct AdvancedSettingsView: View {
-    @Environment(\.themePalette) var themePalette
-    let onConnect: (() -> Void)?
-    let closeSheet: (() -> Void)?
-
-    @EnvironmentObject private var session: Session
-    @AppStorage(PrefKey.activityDetail) private var activityDetail = ActivityDetail.full.rawValue
-    @AppStorage(PrefKey.islandIntro) private var islandIntro = IslandIntro.oncePerBot.rawValue
-    @AppStorage(PrefKey.rosterDensity) private var rosterDensity = RosterDensity.default.rawValue
-    @State private var showingUpdates = false
-    @State private var showingWalkieVoice = false
-    /// Settings search (ST11): any page, by name or keyword.
-    @State private var query = ""
-
-    var body: some View {
-        ThemedForm {
-            if query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                sections
-            } else {
-                SettingsSearchResults(query: query, closeSheet: closeSheet)
-            }
-        }
-        .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: Text("Search"))
-        .navigationTitle("Advanced")
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar(.visible, for: .navigationBar)
-        .sheet(isPresented: $showingUpdates) {
-            UpdatesSheet { chat in
-                showingUpdates = false
-                closeSheet?()
-                session.openChat(threadId: chat.threadId)
-            }
-            .environmentObject(session)
-            .presentationDetents([.medium, .large])
-        }
-        .sheet(isPresented: $showingWalkieVoice) {
-            WalkieVoiceSheet(onSample: {})
-        }
-    }
-
-    @ViewBuilder
-    private var sections: some View {
-        Section("Computer") {
-            if let connection = session.connection {
-                NavigationLink {
-                    ConnectedComputersView()
-                } label: {
-                    ComputerSettingsRow(
-                        name: Text(verbatim: connection.name),
-                        status: computerStatusText,
-                        connected: session.status == .live
-                    )
-                }
-            } else {
-                Button {
-                    onConnect?()
-                } label: {
-                    ComputerSettingsRow(name: Text("Connect a computer"), status: Text("Not connected"), connected: false)
-                }
-                .disabled(onConnect == nil)
-            }
-        }
-
-        Section {
-            Picker(selection: $activityDetail) {
-                ForEach(ActivityDetail.allCases, id: \.rawValue) { level in
-                    Text(LocalizedStringKey(level.label)).tag(level.rawValue)
-                }
-            } label: {
-                Label { Text("Activity") } icon: { SettingsIcon(symbol: "wrench.and.screwdriver.fill", color: .purple) }
-            }
-
-            Picker(selection: $islandIntro) {
-                ForEach(IslandIntro.allCases, id: \.rawValue) { option in
-                    Text(LocalizedStringKey(option.label)).tag(option.rawValue)
-                }
-            } label: {
-                Label { Text("Bot intro animation") } icon: { SettingsIcon(symbol: "sparkles", color: .pink) }
-            }
-
-            NavigationLink {
-                QuickRepliesEditor()
-            } label: {
-                Label { Text("Quick Replies") } icon: { SettingsIcon(symbol: "bolt.fill", color: .yellow) }
-            }
-        } header: {
-            Text("Chat")
-        } footer: {
-            Text(LocalizedStringKey(ActivityDetail(rawValue: activityDetail)?.caption ?? ""))
-        }
-
-        Section {
-            Picker(selection: Binding(
-                get: { RosterDensity(stored: rosterDensity) },
-                set: { rosterDensity = $0.rawValue }
-            )) {
-                ForEach(RosterDensity.allCases, id: \.self) { density in
-                    Text(LocalizedStringKey(density.label)).tag(density)
-                }
-            } label: {
-                Label { Text("List density") } icon: { SettingsIcon(symbol: "list.bullet", color: .indigo) }
-            }
-            .accessibilityIdentifier("list-density")
-        } footer: {
-            Text(LocalizedStringKey(RosterDensity(stored: rosterDensity).caption))
-        }
-
-        Section("Voice") {
-            Button {
-                showingWalkieVoice = true
-            } label: {
-                Label { Text("Walkie voice") } icon: { SettingsIcon(symbol: "waveform", color: .green) }
-            }
-            .foregroundStyle(Theme.textPrimary)
-        }
-
-        if session.connection != nil {
-            Section("Workspace") {
-                Button {
-                    showingUpdates = true
-                } label: {
-                    Label { Text("Updates") } icon: { SettingsIcon(symbol: "bell.badge.fill", color: .red) }
-                }
-                .foregroundStyle(Theme.textPrimary)
-
-                NavigationLink {
-                    TasksRoutinesView()
-                } label: {
-                    Label { Text("Threads & Routines") } icon: { SettingsIcon(symbol: "calendar.badge.clock", color: .orange) }
-                }
-                .accessibilityIdentifier("settings-routines")
-
-                // Composio accounts (Work, Personal, client accounts):
-                // the sidecar serves them, a client session does not (PL1).
-                if session.surfaceGate.allows(.connectedApps) {
-                    NavigationLink {
-                        ConnectedAppsView()
-                    } label: {
-                        Label { Text("Connected Apps") } icon: { SettingsIcon(symbol: "link", color: .blue) }
-                    }
-                }
-            }
-        }
-
-        // WP12: the person's achievements (ST9), the organization (ST8,
-        // AU19) and About (ST12).
-        Section("Sagax") {
-            if session.connection != nil, session.surfaceGate.allows(.achievements), achievements.status != .unavailable {
-                NavigationLink {
-                    AchievementsPage()
-                } label: {
-                    Label { Text("Achievements") } icon: { SettingsIcon(symbol: "trophy.fill", color: .orange) }
-                }
-                .accessibilityIdentifier("settings-achievements")
-            }
-            if session.surfaceGate.allows(.organizationSettings) {
-                NavigationLink {
-                    OrganizationSettingsPage()
-                } label: {
-                    Label { Text("Organization") } icon: { SettingsIcon(symbol: "building.2.fill", color: .teal) }
-                }
-                .accessibilityIdentifier("settings-organization")
-            }
-            NavigationLink {
-                AboutPage()
-            } label: {
-                Label { Text("About") } icon: { SettingsIcon(symbol: "info.circle.fill", color: .gray) }
-            }
-            .accessibilityIdentifier("settings-about")
-        }
-    }
-
-    @ObservedObject private var achievements = AchievementStore.shared
-
-    private var computerStatusText: Text {
-        guard session.connections.count > 1 else { return session.status.settingsText }
-        return session.status.settingsText + Text(verbatim: " · ") + Text("\(session.connections.count) saved")
-    }
-}
-
-private struct ComputerSettingsRow: View {
-    @Environment(\.themePalette) var themePalette
-    let name: Text
-    let status: Text
-    let connected: Bool
-
-    var body: some View {
-        HStack(spacing: 12) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(MausPalette.color("blue").opacity(0.14))
-                    .frame(width: 38, height: 38)
-                Image(systemName: "laptopcomputer")
-                    .foregroundStyle(MausPalette.color("blue"))
-            }
-            .accessibilityHidden(true)
-
-            VStack(alignment: .leading, spacing: 3) {
-                name
-                    .foregroundStyle(Theme.textPrimary)
-                    .lineLimit(1)
-                HStack(spacing: 5) {
-                    Circle()
-                        .fill(connected ? Theme.success : Theme.textSecondary)
-                        .frame(width: 7, height: 7)
-                    status
-                        .font(.footnote)
-                        .foregroundStyle(Theme.textSecondary)
-                        .lineLimit(1)
-                }
-            }
-        }
-        .padding(.vertical, 2)
-        .accessibilityElement(children: .combine)
-    }
-}
-
-private struct SettingsIcon: View {
-    @Environment(\.themePalette) var themePalette
-    let symbol: String
-    let color: Color
-
-    var body: some View {
-        Image(systemName: symbol)
-            .font(.system(size: 15, weight: .semibold))
-            .foregroundStyle(.white)
-            .frame(width: 28, height: 28)
-            .background(color, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
-            .accessibilityHidden(true)
-    }
-}
-
-struct ConnectedComputersView: View {
-    @Environment(\.themePalette) var themePalette
-    @EnvironmentObject private var session: Session
-    @State private var pendingRemoval: Connection?
-
-    /// The dialog interpolates the computer's own name. With no name there is
-    /// copy to fall back to, rather than an English word inside a translated
-    /// sentence.
-    private var removalTitle: LocalizedStringKey {
-        guard let name = pendingRemoval?.name else { return "Remove this computer?" }
-        return "Remove \(name)?"
-    }
-
-    private var otherComputers: [Connection] {
-        session.connections.filter { $0.id != session.connection?.id }
-    }
-
-    var body: some View {
-        ThemedList {
-            if let active = session.connection {
-                Section("Current computer") {
-                    NavigationLink {
-                        ConnectionSecurityView()
-                    } label: {
-                        ComputerSettingsRow(
-                            name: Text(verbatim: active.name),
-                            status: session.status.settingsText,
-                            connected: session.status == .live
-                        )
-                    }
-                }
-            }
-
-            if !otherComputers.isEmpty {
-                Section("Other computers") {
-                    ForEach(otherComputers) { computer in
-                        Button {
-                            Haptics.selection()
-                            session.switchComputer(to: computer.id)
-                        } label: {
-                            HStack(spacing: 12) {
-                                ProfileAvatar(name: computer.name, size: 38)
-                                VStack(alignment: .leading, spacing: 3) {
-                                    Text(computer.name)
-                                        .foregroundStyle(Theme.textPrimary)
-                                        .lineLimit(1)
-                                    Text("Tap to switch")
-                                        .font(.footnote)
-                                        .foregroundStyle(Theme.textSecondary)
-                                }
-                                Spacer()
-                                Text("Use")
-                                    .font(.subheadline.weight(.semibold))
-                                    .foregroundStyle(MausPalette.color("blue"))
-                            }
-                            .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                        .swipeActions {
-                            Button("Remove", role: .destructive) {
-                                pendingRemoval = computer
-                            }
-                        }
-                        .accessibilityHint("Switches Sagax to this computer")
-                    }
-                }
-            }
-
-            Section {
-                Button {
-                    Haptics.selection()
-                    session.beginPairing()
-                } label: {
-                    Label("Connect another computer", systemImage: "plus.circle.fill")
-                }
-            } footer: {
-                Text("Each computer is paired separately. Only the selected computer is active at a time.")
-            }
-        }
-        .navigationTitle("Computers")
-        .navigationBarTitleDisplayMode(.inline)
-        .confirmationDialog(
-            removalTitle,
-            isPresented: Binding(
-                get: { pendingRemoval != nil },
-                set: { if !$0 { pendingRemoval = nil } }
-            ),
-            titleVisibility: .visible
-        ) {
-            Button("Remove from this device", role: .destructive) {
-                guard let pendingRemoval else { return }
-                session.forgetConnection(id: pendingRemoval.id)
-                self.pendingRemoval = nil
-            }
-            Button("Cancel", role: .cancel) { pendingRemoval = nil }
-        } message: {
-            Text("This removes the saved connection from this device only.")
         }
     }
 }
