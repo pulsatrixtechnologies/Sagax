@@ -1,8 +1,8 @@
 // iPad I2: what the desktop sidebar needs around it in the shell: the
 // hardware-keyboard commands (KB1, KB2; src/lib/keyboard-shortcuts.ts and
 // App.tsx), the prompts behind its menus (rename and delete a bot, and the
-// WP5, WP6 and WP11 presenters, mounted once), Connected apps as a sheet,
-// and the keyboard shortcuts list.
+// WP5, WP6 and WP11 presenters, mounted once) and the keyboard shortcuts
+// list. Connected apps is the Plugins modal (I5, DesktopPlugins.swift).
 import SwiftUI
 import UIKit
 import CompanionCore
@@ -10,7 +10,8 @@ import CompanionCore
 // MARK: - Keyboard
 
 /// ⌘K palette, ⌘N New, ⌘1 to ⌘9 a bot, ⌘⇧[ / ⌘⇧] previous and next bot,
-/// ⌘/ the shortcuts, ⌘, Settings, ⌘\ the sidebar rail. Invisible buttons:
+/// ⌘/ the shortcuts, ⌘\ the sidebar rail (⌘, Settings is the app menu's,
+/// CompanionApp.swift). Invisible buttons:
 /// iPadOS lists them in its ⌘ overlay under these titles.
 struct DesktopKeyCommands: View {
     @EnvironmentObject private var session: Session
@@ -31,7 +32,6 @@ struct DesktopKeyCommands: View {
             command("Previous bot", key: "[", modifiers: [.command, .shift]) { model.step(-1, in: session) }
             command("Next bot", key: "]", modifiers: [.command, .shift]) { model.step(1, in: session) }
             command("Keyboard shortcuts", key: "/") { model.modal = .shortcuts }
-            command("Settings", key: ",") { model.modal = .settings }
             command("Toggle sidebar", key: "\\") { model.toggleCollapsed() }
         }
         .opacity(0)
@@ -116,24 +116,6 @@ struct DesktopSidebarPrompts: ViewModifier {
 }
 
 // MARK: - Sheets
-
-/// Connected apps (the desktop's Plugins modal) until I5 draws it: the
-/// phone's page in a sheet.
-struct DesktopPluginsSheet: View {
-    @EnvironmentObject private var session: Session
-    @StateObject private var settings = SettingsModel()
-
-    var body: some View {
-        NavigationStack {
-            PluginsView()
-        }
-        .environmentObject(settings)
-        .task {
-            settings.attach(session)
-            await settings.load()
-        }
-    }
-}
 
 /// Templates (the team library) until its desktop modal lands: the catalog,
 /// read-only; installing a team runs on the computer.

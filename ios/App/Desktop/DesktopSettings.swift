@@ -371,3 +371,8 @@ enum DesktopSettingsScroll {
         #endif
     }
 }
+
+extension Notification.Name {
+    /// The app menu's Settings (⌘,): the desktop shell opens its modal.
+    static let desktopOpenSettings = Notification.Name("ca.pulsatrix.sagax.desktopOpenSettings")
+}

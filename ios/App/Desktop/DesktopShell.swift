@@ -224,6 +224,10 @@ struct DesktopShell: View {
         .modifier(DesktopShellPresenter(model: model))
         .modifier(DesktopSidebarPrompts(model: model))
         .modifier(DesktopShellRouting(model: model))
+        .onReceive(NotificationCenter.default.publisher(for: .desktopOpenSettings)) { _ in
+            model.menu = nil
+            model.modal = .settings
+        }
     }
 
     private func columns(width: CGFloat, theme: DesktopTheme) -> some View {
