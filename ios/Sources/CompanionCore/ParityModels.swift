@@ -71,8 +71,10 @@ public struct BotSoul: Decodable, Equatable, Sendable {
     public var limit: Int?
     /// True when the SOUL.md on disk no longer matches the stored text.
     public var drift: Bool?
+    /// Where SOUL.md is mirrored on the computer (the panel's footnote).
+    public var file: String?
 
-    private enum CodingKeys: String, CodingKey { case soul, revision, bytes, limit, drift }
+    private enum CodingKeys: String, CodingKey { case soul, revision, bytes, limit, drift, file }
 
     public init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
@@ -88,6 +90,7 @@ public struct BotSoul: Decodable, Equatable, Sendable {
         bytes = try values.decodeIfPresent(Int.self, forKey: .bytes)
         limit = try values.decodeIfPresent(Int.self, forKey: .limit)
         drift = try values.decodeIfPresent(Bool.self, forKey: .drift)
+        file = try? values.decodeIfPresent(String.self, forKey: .file)
     }
 
     /// The first non-empty line, for search subtitles.

@@ -78,9 +78,34 @@ final class DesktopShellModel: ObservableObject {
     @Published var selected: Chat?
     @Published var panelOpen = false
     @Published var panelTab: BotPanelTab = .details
+    /// The Advanced section open in the panel; nil shows the list.
+    @Published var panelSection: DesktopPanelSection?
+    /// The character editor over the panel (the mascot's Edit avatar).
+    @Published var avatarEditorOpen = false
+    /// A move the editor asks the panel's owl to play.
+    @Published var avatarMove: OwlWingMove?
+    /// Bumped by the panel's Inspector button; the chat column opens it.
+    @Published var inspectorRequest = 0
+    /// The bot panel's width, 320 to 720 (`omb-settings-panel-width`).
+    @Published var panelWidth: CGFloat = CGFloat(DesktopPanelPlacement.clampedWidth(
+        UserDefaults.standard.object(forKey: DesktopShellModel.panelWidthKey) as? Double))
+    /// The window docks the panel (1024 pt and wider); set by the shell.
+    @Published var panelDocked = true
+
+    static let panelWidthKey = "omb-settings-panel-width"
+
+    /// A drag of the panel's edge, held to the desktop's range; saved when
+    /// the drag ends.
+    func resizePanel(to width: CGFloat, save: Bool) {
+        panelWidth = CGFloat(DesktopPanelPlacement.clampedWidth(Double(width)))
+        if save { UserDefaults.standard.set(Double(panelWidth), forKey: Self.panelWidthKey) }
+    }
     @Published var modal: Modal?
     /// The composer's model picker (I3), over the whole window.
     @Published var modelPickerOpen = false
+    /// The Settings modal's section and the Plugins modal's tab (I5).
+    @Published var settingsSection: DesktopSettingsSection = .general
+    @Published var pluginsTab: DesktopPluginsTab = .apps
 
     // MARK: Sidebar (I2)
 
@@ -143,6 +168,20 @@ final class DesktopShellModel: ObservableObject {
 
     func togglePanel() {
         withAnimation(.easeOut(duration: 0.2)) { panelOpen.toggle() }
+        if !panelOpen { avatarEditorOpen = false }
+    }
+
+    /// Opens the panel on a tab (and an Advanced section).
+    func showPanel(_ tab: BotPanelTab, section: DesktopPanelSection? = nil) {
+        panelTab = tab
+        panelSection = section
+        if !panelOpen { togglePanel() }
+    }
+
+    /// The panel's Inspector button (`toggleInspector`): the Inspector takes
+    /// the panel's place.
+    func requestInspector() {
+        inspectorRequest += 1
     }
 
     var sidebarWidth: CGFloat {
@@ -207,6 +246,8 @@ struct DesktopShell: View {
         let theme = DesktopTheme.of(themePalette.id)
         return GeometryReader { geometry in
             AnyView(columns(width: geometry.size.width, theme: theme))
+                .onAppear { model.panelDocked = DesktopShellRules.docksPanel(width: geometry.size.width) }
+                .onValueChange(of: geometry.size.width) { model.panelDocked = DesktopShellRules.docksPanel(width: $0) }
         }
         .ignoresSafeArea(.container)
         .coordinateSpace(name: desktopShellSpace)
@@ -221,6 +262,10 @@ struct DesktopShell: View {
         .modifier(DesktopShellPresenter(model: model))
         .modifier(DesktopSidebarPrompts(model: model))
         .modifier(DesktopShellRouting(model: model))
+        .onReceive(NotificationCenter.default.publisher(for: .desktopOpenSettings)) { _ in
+            model.menu = nil
+            model.modal = .settings
+        }
     }
 
     private func columns(width: CGFloat, theme: DesktopTheme) -> some View {
@@ -235,7 +280,8 @@ struct DesktopShell: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 if docked, botOpen, let bot = selectedBot {
                     AnyView(BotPanel(bot: bot, docked: true))
-                        .frame(width: DesktopShellRules.panelWidth)
+                        .frame(width: model.panelWidth)
+                        .overlay(alignment: .leading) { DesktopPanelResizeHandle(model: model) }
                         .transition(.move(edge: .trailing))
                 }
             }
@@ -245,9 +291,8 @@ struct DesktopShell: View {
                 Color.black.opacity(0.001)
                     .onTapGesture { model.togglePanel() }
                 AnyView(BotPanel(bot: bot, docked: false))
-                    .frame(width: DesktopShellRules.panelWidth)
+                    .frame(width: min(model.panelWidth, width))
                     .frame(maxHeight: .infinity)
-                    .shadow(color: .black.opacity(0.35), radius: 24, x: 4)
                     .transition(.move(edge: .leading))
             }
             if model.modelPickerOpen, let bot = selectedBot {
@@ -256,10 +301,19 @@ struct DesktopShell: View {
                     close: { model.modelPickerOpen = false },
                     openProviders: {
                         model.modelPickerOpen = false
+                        model.settingsSection = .engines
                         model.modal = .settings
                     }
                 ))
                 .transition(.opacity)
+            }
+            // I5: Settings and Plugins are the desktop's modals, over everything
+            if model.modal == .settings {
+                AnyView(DesktopSettingsModal(close: { model.modal = nil }))
+                    .transition(.opacity)
+            } else if model.modal == .plugins {
+                AnyView(DesktopPluginsModal(close: { model.modal = nil }))
+                    .transition(.opacity)
             }
         }
         .background(theme.app)
@@ -405,7 +459,11 @@ private struct DesktopShellRouting: ViewModifier {
             if let ara = session.state.bots.first(where: { $0.name == "Ara" }) {
                 model.open(.bot(ara))
                 model.panelOpen = screen.opensBotPanel
+                if let tab = screen.panelTab { model.panelTab = tab }
+                model.panelSection = screen.panelSection
+                model.avatarEditorOpen = screen == .panelAvatarEditor
                 model.modelPickerOpen = screen == .chatModelPicker
+                model.applyParityModals(screen)
                 await applyParitySidebar(screen)
                 return
             }
@@ -453,17 +511,26 @@ private struct DesktopShellPresenter: ViewModifier {
     @EnvironmentObject private var session: Session
 
     func body(content: Content) -> some View {
-        content.sheet(item: $model.modal) { modal in
+        content.sheet(item: sheetModal) { modal in
             AnyView(sheet(modal))
                 .environmentObject(session)
         }
+    }
+
+    /// Settings and Plugins draw in the shell as the desktop's modals (I5);
+    /// the other surfaces are still sheets.
+    private var sheetModal: Binding<DesktopShellModel.Modal?> {
+        Binding(
+            get: { model.modal.flatMap { $0 == .settings || $0 == .plugins ? nil : $0 } },
+            set: { model.modal = $0 }
+        )
     }
 
     @ViewBuilder
     private func sheet(_ modal: DesktopShellModel.Modal) -> some View {
         switch modal {
         case .settings:
-            SettingsView(close: { model.modal = nil })
+            EmptyView()
         case .search:
             SearchSheet(close: { model.modal = nil }) { chat in
                 model.modal = nil
@@ -494,7 +561,7 @@ private struct DesktopShellPresenter: ViewModifier {
         case .automations:
             AutomationsSheet()
         case .plugins:
-            DesktopPluginsSheet()
+            EmptyView()
         case .templates:
             DesktopTemplatesSheet { model.modal = nil }
         case .about:
@@ -502,5 +569,44 @@ private struct DesktopShellPresenter: ViewModifier {
         case .shortcuts:
             DesktopShortcutsSheet { model.modal = nil }
         }
+    }
+}
+
+// MARK: - Panel edge
+
+/// The docked panel's resize handle (`app-resize-handle`, 12 pt across its
+/// leading edge): drag to 320 to 720 pt; the width is kept.
+private struct DesktopPanelResizeHandle: View {
+    @ObservedObject var model: DesktopShellModel
+    @State private var start: CGFloat?
+
+    var body: some View {
+        Color.clear
+            .frame(width: 12)
+            .contentShape(Rectangle())
+            .offset(x: -6)
+            .hoverEffect(.highlight)
+            .gesture(
+                DragGesture(minimumDistance: 2, coordinateSpace: .global)
+                    .onChanged { value in
+                        let from = start ?? model.panelWidth
+                        if start == nil { start = from }
+                        model.resizePanel(to: from - value.translation.width, save: false)
+                    }
+                    .onEnded { _ in
+                        start = nil
+                        model.resizePanel(to: model.panelWidth, save: true)
+                    }
+            )
+            .accessibilityElement()
+            .accessibilityLabel(Text("Resize settings"))
+            .accessibilityValue(Text(verbatim: "\(Int(model.panelWidth))"))
+            .accessibilityAdjustableAction { direction in
+                switch direction {
+                case .increment: model.resizePanel(to: model.panelWidth + 24, save: true)
+                case .decrement: model.resizePanel(to: model.panelWidth - 24, save: true)
+                @unknown default: break
+                }
+            }
     }
 }

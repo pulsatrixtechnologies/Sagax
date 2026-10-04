@@ -6,6 +6,7 @@
 // down at a known point. Coming back asks the harness what was missed rather
 // than asking for everything.
 import SwiftUI
+import UIKit
 import CompanionCore
 import UserNotifications
 
@@ -13,6 +14,8 @@ import UserNotifications
 struct CompanionApp: App {
     @StateObject private var session = Session()
     @Environment(\.scenePhase) private var scenePhase
+    /// ⌘, (the app menu's Settings) for the iPad's desktop shell.
+    @UIApplicationDelegateAdaptor(SagaxAppDelegate.self) private var appDelegate
     @State private var liveActivities = LiveActivityBridge()
     @State private var widgetSync = WidgetSyncBridge.makeAppGroupBridge()
     @AppStorage(PrefKey.language) private var language = AppLanguage.system.rawValue
@@ -266,5 +269,26 @@ struct UnpairedView: View {
                 }
             }
         }
+    }
+}
+
+/// The app menu's Settings (⌘,), as on the desktop. iPadOS keeps ⌘, for its
+/// own Settings item, so the item is replaced here and opens the desktop
+/// shell's Settings modal (I5); the phone has no menu bar.
+final class SagaxAppDelegate: UIResponder, UIApplicationDelegate {
+    override func buildMenu(with builder: UIMenuBuilder) {
+        super.buildMenu(with: builder)
+        guard builder.system == .main else { return }
+        builder.remove(menu: .preferences)
+        let settings = UIKeyCommand(
+            title: AppStrings.localized("Settings…"), action: #selector(openDesktopSettings),
+            input: ",", modifierFlags: .command
+        )
+        settings.wantsPriorityOverSystemBehavior = true
+        builder.insertSibling(UIMenu(options: .displayInline, children: [settings]), afterMenu: .about)
+    }
+
+    @objc func openDesktopSettings() {
+        NotificationCenter.default.post(name: .desktopOpenSettings, object: nil)
     }
 }

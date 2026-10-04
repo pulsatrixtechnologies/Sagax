@@ -20,6 +20,8 @@ struct DesktopChatChrome {
     var inspectorOpen = false
     var togglePanel: () -> Void
     var showPanel: (BotPanelTab) -> Void
+    /// The command allowlist, in the panel's Advanced > Permissions.
+    var showAllowlist: () -> Void = {}
     var toggleInspector: () -> Void = {}
     var openModelPicker: () -> Void = {}
 }
@@ -63,7 +65,7 @@ struct DesktopChatColumn: View {
         GeometryReader { geometry in
             // The window is this column plus the sidebar (and a docked panel):
             // the Inspector docks from 1024, as the bot panel does.
-            let window = geometry.size.width + DesktopShellRules.sidebarWidth + (model.panelOpen ? DesktopShellRules.panelWidth : 0)
+            let window = geometry.size.width + DesktopShellRules.sidebarWidth + (model.panelOpen && model.panelDocked ? model.panelWidth : 0)
             let docksInspector = inspectorOpen && window >= DesktopShellRules.dockMinWidth
             let chatWidth = geometry.size.width - (docksInspector ? Self.inspectorWidth : 0)
             HStack(spacing: 0) {
@@ -88,6 +90,9 @@ struct DesktopChatColumn: View {
         .onValueChange(of: model.panelOpen) { open in
             if open { inspectorOpen = false }
         }
+        .onValueChange(of: model.inspectorRequest) { _ in
+            if !inspectorOpen { toggleInspector() }
+        }
     }
 
     private func toggleInspector() {
@@ -110,13 +115,11 @@ struct DesktopChatColumn: View {
             panelOpen: model.panelOpen && chat.isBot,
             // the shell docks the panel at 1024: this column is then
             // the window less the sidebar and the panel
-            panelDocked: model.panelOpen && totalWidth + DesktopShellRules.sidebarWidth + DesktopShellRules.panelWidth >= DesktopShellRules.dockMinWidth,
+            panelDocked: model.panelOpen && model.panelDocked,
             inspectorOpen: inspectorOpen,
             togglePanel: { model.togglePanel() },
-            showPanel: { tab in
-                model.panelTab = tab
-                if !model.panelOpen { model.togglePanel() }
-            },
+            showPanel: { tab in model.showPanel(tab) },
+            showAllowlist: { model.showPanel(.more, section: .permissions) },
             toggleInspector: { toggleInspector() },
             openModelPicker: { model.modelPickerOpen = true }
         ))
@@ -228,7 +231,7 @@ extension ChatView {
                     withAnimation(.snappy(duration: 0.28)) { showingPlus.toggle() }
                 },
                 openModel: { desktopChat?.openModelPicker() },
-                openAllowlist: { desktopChat?.showPanel(.more) },
+                openAllowlist: { desktopChat?.showAllowlist() },
                 toggleDictation: {
                     composerFocused = false
                     dictation.toggle(capturing: draft)
@@ -381,12 +384,13 @@ struct DesktopRoundButton: View {
     let systemImage: String
     let label: LocalizedStringKey
     var active = false
+    /// The renderer's own lucide glyph (18 pt, stroke 1.75) instead of the symbol.
+    var icon: DesktopIcon? = nil
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
-            Image(systemName: systemImage)
-                .font(.system(size: 15, weight: .regular))
+            glyph
                 .foregroundStyle(theme.ink)
                 .frame(width: 36, height: 36)
                 .background(active ? theme.raised : theme.chrome, in: Circle())
@@ -396,6 +400,15 @@ struct DesktopRoundButton: View {
         .buttonStyle(.plain)
         .hoverEffect(.highlight)
         .accessibilityLabel(Text(label))
+    }
+
+    @ViewBuilder
+    private var glyph: some View {
+        if let icon {
+            DesktopIconView(icon: icon, size: 18, strokeWidth: 1.75)
+        } else {
+            Image(systemName: systemImage).font(.system(size: 15, weight: .regular))
+        }
     }
 }
 
