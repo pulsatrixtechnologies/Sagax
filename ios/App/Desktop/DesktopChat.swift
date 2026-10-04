@@ -244,9 +244,10 @@ extension ChatView {
                 }
             ))
         }
-        .padding(.horizontal, 20)
+        // the dock is `px-4` (the transcript `px-5`), both at most 960
+        .frame(maxWidth: DesktopShellRules.chatColumn)
+        .padding(.horizontal, 16)
         .padding(.bottom, 16)
-        .frame(maxWidth: DesktopShellRules.chatColumn + 40)
         .frame(maxWidth: .infinity)
         .task(id: commandLoadKey) { await loadCommands() }
         .task(id: heldSends.isEmpty) {
@@ -290,6 +291,8 @@ struct DesktopChatHeader: View {
     let copyMarkdown: () -> Void
     let openProfile: () -> Void
     @State private var exportOpen = DesktopChatHeader.parityExport
+    /// Appearance > Inspector button (off by default, as on the desktop).
+    @AppStorage(DesktopInspectorButton.key) private var showInspector = false
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -325,8 +328,10 @@ struct DesktopChatHeader: View {
                         }
                         .zIndex(1)
                     if chat.isBot {
-                        DesktopRoundButton(systemImage: "ladybug", label: "Inspector", active: chrome.inspectorOpen, action: chrome.toggleInspector)
-                            .accessibilityIdentifier("desktop-inspector-toggle")
+                        if showInspector && session.surfaceGate.allows(.inspector) {
+                            DesktopRoundButton(systemImage: "ladybug", label: "Inspector", active: chrome.inspectorOpen, action: chrome.toggleInspector)
+                                .accessibilityIdentifier("desktop-inspector-toggle")
+                        }
                         DesktopRoundButton(systemImage: "sidebar.right", label: "Open agent profile", action: chrome.togglePanel)
                             .keyboardShortcut(".", modifiers: .command)
                             .accessibilityIdentifier("desktop-panel-toggle")

@@ -72,8 +72,13 @@ struct CodeBlockView: View {
             .background(theme.raised.opacity(0.3))
             .overlay(alignment: .bottom) { Rectangle().fill(theme.hairline.opacity(0.3)).frame(height: 1) }
             Group {
-                let text = (Text(verbatim: code) + caret)
+                // Shiki's github-dark / -light roles, once the block is settled
+                let body = !pending && DesktopCodeHighlight.supports(language)
+                    ? Text(DesktopCodeHighlight.attributed(code, language: language, ink: theme.ink, dark: theme.dark))
+                    : Text(verbatim: code)
+                let text = (body + caret)
                     .font(.system(size: 12, design: .monospaced))
+                    .tracking(DesktopChatMetrics.monoTracking(12))
                     .lineSpacing(18 - UIFont.monospacedSystemFont(ofSize: 12, weight: .regular).lineHeight)
                     .foregroundStyle(theme.ink)
                     .textSelection(.enabled)

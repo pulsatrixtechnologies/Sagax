@@ -476,7 +476,7 @@ struct ChatView: View {
                         // composer's own top padding. Scrolling targets this,
                         // so the gap is always in view.
                         Color.clear
-                            .frame(height: desktopChat == nil ? 26.3 - Self.composerTopPadding : DesktopChatMetrics.rowGap)
+                            .frame(height: desktopChat == nil ? 26.3 - Self.composerTopPadding : DesktopChatMetrics.composerGap)
                             .id(Self.bottomId)
                     }
                     .padding(.horizontal, desktopChat == nil ? Theme.Chat.bubbleLeading : 20)

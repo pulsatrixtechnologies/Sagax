@@ -385,17 +385,31 @@ struct MarkdownText: View {
             // Code spans: SF Mono 12 on the bubble itself, no chip.
             for run in attributed.runs where run.inlinePresentationIntent?.contains(.code) == true {
                 attributed[run.range].font = desktop != nil ? .system(size: 12, design: .monospaced) : Theme.Font.code
+                if desktop != nil { attributed[run.range].tracking = DesktopChatMetrics.monoTracking(12) }
                 if let desktop { attributed[run.range].backgroundColor = desktop.inset }
             }
             if let desktop {
-                // `px-1` on the desktop's code chip: a quarter-em space each side
+                // `px-1` on the desktop's code chip: 4 pt each side. Geist
+                // has no fixed-width spaces (they fall back) and every space
+                // of the mono face is a 7.2 cell: a three-per-em space of
+                // the system face at 12.235 pt is 4.0 wide.
                 let ranges = attributed.runs.filter { $0.inlinePresentationIntent?.contains(.code) == true }.map(\.range)
                 for range in ranges.reversed() {
-                    var pad = AttributedString("\u{2005}")
-                    pad.font = .system(size: 12, design: .monospaced)
+                    var pad = AttributedString("\u{2004}")
+                    pad.font = .system(size: 12.235)
                     pad.backgroundColor = desktop.inset
                     attributed.insert(pad, at: range.upperBound)
                     attributed.insert(pad, at: range.lowerBound)
+                }
+            }
+            if desktop != nil {
+                // SwiftUI draws a `.code` intent in the environment's size
+                // (13) whatever the run's font says: drop the intent so the
+                // run's SF Mono 12 holds (the desktop's `text-[12px]`).
+                for run in attributed.runs where run.inlinePresentationIntent?.contains(.code) == true {
+                    var intent = run.inlinePresentationIntent ?? []
+                    intent.remove(.code)
+                    attributed[run.range].inlinePresentationIntent = intent.isEmpty ? nil : intent
                 }
             }
             MentionTint.apply(to: &attributed, peers: mentions, everyone: mentionEveryone)

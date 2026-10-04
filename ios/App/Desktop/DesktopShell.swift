@@ -456,7 +456,13 @@ private struct DesktopShellRouting: ViewModifier {
         default: model.presetDensity(.comfortable)
         }
         for _ in 0..<150 {
-            if let ara = session.state.bots.first(where: { $0.name == "Ara" }) {
+            if screen == .groupChat {
+                // the room chat (Peer Managers), as the reference selects it
+                if let room = session.state.rooms.first(where: { $0.name == "Peer Managers" }) {
+                    model.open(.room(room))
+                    return
+                }
+            } else if let ara = session.state.bots.first(where: { $0.name == "Ara" }) {
                 model.open(.bot(ara))
                 model.panelOpen = screen.opensBotPanel
                 if let tab = screen.panelTab { model.panelTab = tab }

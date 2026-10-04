@@ -104,6 +104,7 @@ struct DesktopAppearanceSettings: View {
     @AppStorage(PrefKey.desktopSidebarDensity) private var density = DesktopSidebarDensity.comfortable.rawValue
     @AppStorage(RunCardPreference.key) private var showRunCard = true
     @AppStorage(NotificationSounds.key) private var sounds = true
+    @AppStorage(DesktopInspectorButton.key) private var showInspector = false
 
     var body: some View {
         DesktopSettingsCard(
@@ -149,6 +150,16 @@ struct DesktopAppearanceSettings: View {
                     label: Text("Sidebar density"),
                     identifier: "desktop-settings.density"
                 ) { density = $0 }
+            }
+            if session.surfaceGate.allows(.inspector) {
+                DesktopSettingRow(
+                    title: Text("Inspector button"),
+                    subtitle: Text("Show the Inspector (run log, events, raw) button in the chat header.")
+                ) {
+                    DesktopSwitch(isOn: showInspector, label: Text("Show the Inspector button"), identifier: "desktop-settings.inspector-button") {
+                        showInspector.toggle()
+                    }
+                }
             }
             DesktopSettingRow(title: Text("Notification sounds"), subtitle: Text("Play a sound when an agent finishes or needs you.")) {
                 DesktopSwitch(isOn: sounds, label: Text("Notification sounds"), identifier: "desktop-settings.sounds") {

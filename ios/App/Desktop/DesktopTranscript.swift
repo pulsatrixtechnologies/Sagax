@@ -52,6 +52,17 @@ enum DesktopChatMetrics {
     static let listItemGap: CGFloat = 4
     static let listIndent: CGFloat = 20
     static let rowGap: CGFloat = 12
+    /// From the last row to the composer's top (refs: 949.5 to 962).
+    static let composerGap: CGFloat = 12.5
+    /// Chrome's `ui-monospace` is SF Mono at its plain 0.6 em advance (7.2
+    /// at 12 pt); UIKit's monospaced system face adds its own tracking
+    /// (7.3 to 7.4): this takes it back off.
+    static func monoTracking(_ size: CGFloat) -> CGFloat {
+        let font = UIFont.monospacedSystemFont(ofSize: size, weight: .regular)
+        let advance = ("0000000000" as NSString).size(withAttributes: [.font: font]).width / 10
+        return size * 0.6 - advance
+    }
+
     /// The attachment gallery: `w-[min(34rem,70vw)]`, 6 pt between rows.
     static let galleryWidth: CGFloat = 544
     static let imageMax: CGFloat = 288
@@ -74,7 +85,11 @@ enum DesktopChatMetrics {
     }
 
     /// Half of it above and below a block, as CSS centres the line box.
-    static func halfLeading(_ theme: DesktopTheme) -> CGFloat { lineSpacing(theme) / 2 }
+    /// SwiftUI rounds a text's height up to the pixel (Geist 13: 20 n - 3.1
+    /// draws 20 n - 3.0), so the two halves add up to the spacing floored
+    /// to the half point: every block is then exactly n x 20, and a long
+    /// reply no longer drifts half a point per few paragraphs.
+    static func halfLeading(_ theme: DesktopTheme) -> CGFloat { (lineSpacing(theme) * 2).rounded(.down) / 4 }
 
     /// `min(80 %, 560, 100 % - 82)` of the transcript column.
     static func bubbleCap(column: CGFloat) -> CGFloat { max(120, min(column * 0.8, 560, column - 82)) }
@@ -346,84 +361,313 @@ struct DesktopPdfCard: View {
 // MARK: - Cards
 
 /// ApprovalCard.tsx: what a permission ask asks, in the transcript (it is
-/// answered in the dock). Card fill, accent ring at 40 % while pending,
-/// radius 16, 16 in, at most 840; the heading 15 semibold, the tool mono
-/// 11 on the right, the detail on an inset block, then the waiting line or
-/// the outcome.
+/// answered in the dock). Card fill, accent ring at 40 % while pending
+/// (hairline at 30 % and 80 % opacity once settled), radius 16, 16 x 12 in,
+/// at most 840: the heading (avatar, "Ara wants to run a command", the
+/// risk chip), the command on an inset block, then the waiting line or the
+/// outcome; a settled tool ask keeps its technical details.
 struct DesktopPermissionCard: View {
+    @EnvironmentObject private var session: Session
     let chat: Chat
     let message: Message
     let card: OptionCard
     let theme: DesktopTheme
     let waiting: String
 
-    private var heading: String {
-        switch ApprovalHeading.of(card) {
-        case let .wantsTo(action):
-            let name = message.from?.name ?? chat.name
-            return String(localized: "\(name) wants to \(ApprovalDock.phrase(action))")
-        case .confirmRoutine: return String(localized: "Confirm this routine")
-        case .confirmRoutineChange: return String(localized: "Confirm this routine change")
-        case .enableSkill: return String(localized: "Enable this learned skill")
-        case .updateSkill: return String(localized: "Update this learned skill")
-        case .confirmProfileChange: return String(localized: "Confirm this profile change")
-        case let .teamSetup(title): return title
-        }
-    }
-
     var body: some View {
+        let proposal = ApprovalDockRules.isProposal(card)
+        let open = card.isPending
+        let outcome = ApprovalOutcome.of(card)
         VStack(alignment: .leading, spacing: 0) {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text(verbatim: heading)
-                    .font(theme.font(15, .semibold))
-                    .foregroundStyle(theme.ink)
-                    .frame(minHeight: 22.5)
-                    .fixedSize(horizontal: false, vertical: true)
-                Spacer(minLength: 8)
-                if let tool = card.tool, !tool.isEmpty {
-                    Text(verbatim: tool)
-                        .font(.system(size: 11, design: .monospaced))
-                        .foregroundStyle(theme.inkSecondary)
-                }
+            DesktopApprovalHeading(
+                bot: DesktopApprovalText.bot(of: message, in: chat, session: session),
+                title: DesktopApprovalText.cardTitle(card, name: message.from?.name ?? PeopleDirectory.shared.name(chat, session: session)),
+                risk: proposal ? nil : ApprovalRiskClassifier.risk(of: card),
+                theme: theme
+            )
+            if let detail = DesktopApprovalText.plain(card) {
+                DesktopApprovalBlock(text: detail, size: 12.5, theme: theme)
             }
-            if let detail = ApprovalHeading.detail(card) {
-                Text(detail)
-                    .font(.system(size: 12.5, design: .monospaced))
-                    .lineSpacing(5)
-                    .foregroundStyle(theme.ink)
-                    .textSelection(.enabled)
-                    .frame(minHeight: 20.3)
+            if let held = card.held, !held.isEmpty {
+                Text(verbatim: held)
+                    .font(theme.font(12.5))
+                    .foregroundStyle(theme.warning)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 8)
-                    .background(theme.inset, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .background(theme.warning.opacity(0.1), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(theme.warning.opacity(0.3), lineWidth: 1))
                     .padding(.top, 8)
             }
-            Group {
-                if card.isPending {
-                    Label {
-                        Text(verbatim: waiting)
-                    } icon: {
-                        Image(systemName: "checkmark.shield").foregroundStyle(theme.accent)
-                    }
-                    .frame(minHeight: 19.5)
-                    .accessibilityIdentifier("card-waiting-\(message.id)")
-                } else if let outcome = ApprovalOutcome.of(card) {
-                    Label(CardView.outcomeText(outcome), systemImage: outcome == .allowed ? "checkmark.circle" : "xmark.circle")
+            HStack(spacing: 6) {
+                if let outcome {
+                    Image(systemName: outcome == .allowed ? "checkmark" : "xmark")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(outcome == .allowed ? theme.success : theme.inkSecondary)
+                        .frame(width: 14, height: 14)
+                    Text(verbatim: CardView.outcomeText(outcome))
                         .accessibilityIdentifier("card-outcome-\(message.id)")
+                } else {
+                    DesktopLucideGlyph(paths: DesktopLucide.shieldCheck, size: 14)
+                        .foregroundStyle(theme.accent)
+                    Text(verbatim: waiting)
+                        .accessibilityIdentifier("card-waiting-\(message.id)")
                 }
             }
             .font(theme.font(13))
             .foregroundStyle(theme.inkSecondary)
-            .padding(.top, 12)
+            .frame(minHeight: 19.5)
+            .padding(.top, 8)
+            if !proposal, !open, card.tool?.isEmpty == false {
+                DesktopTechnicalDetails(card: card, theme: theme)
+            }
         }
-        .padding(16)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(theme.card, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .padding(1)
         .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .strokeBorder(card.isPending ? theme.accent.opacity(0.4) : theme.hairline.opacity(0.4), lineWidth: 1)
+            RoundedRectangle(cornerRadius: 17, style: .continuous)
+                .strokeBorder(open ? theme.accent.opacity(0.4) : theme.hairline.opacity(0.3), lineWidth: 1)
         )
+        .opacity(open ? 1 : 0.8)
         .frame(maxWidth: 840, alignment: .leading)
+    }
+}
+
+/// The words of the human approval cards (approval-describe.ts, ApprovalCard.tsx).
+enum DesktopApprovalText {
+    /// Who asks: the 1:1 bot, or the room member the message is from.
+    @MainActor
+    static func bot(of message: Message, in chat: Chat, session: Session) -> Bot? {
+        switch chat {
+        case let .bot(bot): session.state.bot(bot.id) ?? bot
+        case let .room(room): (message.from?.botId ?? room.busyBotId).flatMap { session.state.bot($0) }
+        }
+    }
+
+    /// "Ara wants to run a command"; a proposal names what it proposes
+    /// ("Ara wants to schedule a routine"); a team setup keeps its title.
+    static func cardTitle(_ card: OptionCard, name: String) -> String {
+        switch ApprovalHeading.of(card) {
+        case let .wantsTo(action): return wants(name, action)
+        case .confirmRoutine: return wants(name, .scheduleRoutine)
+        case .confirmRoutineChange: return wants(name, .changeRoutine)
+        case .enableSkill: return wants(name, .enableSkill)
+        case .updateSkill: return wants(name, .updateSkill)
+        case .confirmProfileChange: return wants(name, .updateProfile)
+        case let .teamSetup(title): return title
+        }
+    }
+
+    static func wants(_ name: String, _ action: ApprovalToolAction) -> String {
+        String(localized: "\(name) wants to \(ApprovalDock.phrase(action))")
+    }
+
+    /// The block under the heading: a proposal's text, or a tool's command
+    /// or URL as is; JSON arguments stay behind the technical details.
+    static func plain(_ card: OptionCard) -> String? {
+        if ApprovalDockRules.isProposal(card) { return card.subtitle.isEmpty ? nil : card.subtitle }
+        if let command = card.commandAllowlist?.command, !command.isEmpty { return command }
+        let text = card.subtitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        return text.isEmpty || technical(text) ? nil : card.subtitle
+    }
+
+    static func technical(_ text: String) -> Bool { text.hasPrefix("{") || text.hasPrefix("[") }
+
+    /// The arguments for the details, pretty JSON when they are JSON.
+    static func arguments(_ card: OptionCard) -> String? {
+        let raw = card.toolInput ?? (technical(card.subtitle.trimmingCharacters(in: .whitespaces)) ? card.subtitle : nil)
+        guard let raw, !raw.isEmpty else { return nil }
+        guard let data = raw.data(using: .utf8),
+              let object = try? JSONSerialization.jsonObject(with: data),
+              let pretty = try? JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]),
+              let text = String(data: pretty, encoding: .utf8)
+        else { return raw }
+        return text
+    }
+
+    static func riskLabel(_ risk: ApprovalRisk) -> String {
+        switch risk {
+        case .read: String(localized: "Read-only")
+        case .write: String(localized: "Makes changes")
+        case .destructive: String(localized: "Destructive")
+        case .execute: String(localized: "Runs an action")
+        }
+    }
+}
+
+/// ApprovalParts.tsx `ApprovalHeading`: the 30 pt avatar, 12 pt, then the
+/// title (15 semibold) and the risk chip on one wrapping row; `aside` on
+/// the right (the dock's stepper).
+struct DesktopApprovalHeading: View {
+    let bot: Bot?
+    let title: String
+    let risk: ApprovalRisk?
+    let theme: DesktopTheme
+    var aside: AnyView? = nil
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            if let bot {
+                BotMascotView(bot: bot, size: 30, state: .idle, animated: false)
+                    .frame(width: 30, height: 30)
+            }
+            HStack(alignment: .center, spacing: 8) {
+                Text(verbatim: title)
+                    .font(theme.font(15, .semibold))
+                    .foregroundStyle(theme.ink)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("approval-heading")
+                if let risk { DesktopRiskChip(risk: risk, theme: theme) }
+            }
+            .frame(minHeight: 22.5)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            if let aside { aside }
+        }
+    }
+}
+
+/// `RiskChip`: 11 pt medium on a 10 % wash, a 35 % ring (40 % destructive).
+struct DesktopRiskChip: View {
+    let risk: ApprovalRisk
+    let theme: DesktopTheme
+
+    var body: some View {
+        let tone: Color = switch risk {
+        case .read: theme.success
+        case .write, .execute: theme.warning
+        case .destructive: theme.danger
+        }
+        let icon = switch risk {
+        case .read: DesktopLucide.eye
+        case .write: DesktopLucide.pencilLine
+        case .execute: DesktopLucide.play
+        case .destructive: DesktopLucide.trash
+        }
+        HStack(spacing: 4) {
+            DesktopLucideGlyph(paths: icon, size: 11)
+            Text(verbatim: DesktopApprovalText.riskLabel(risk))
+                .font(theme.font(11, .medium))
+        }
+        .foregroundStyle(tone)
+        .padding(.horizontal, 8)
+        .frame(height: 22.5)
+        .background(tone.opacity(0.1), in: Capsule())
+        .overlay(Capsule().strokeBorder(tone.opacity(risk == .destructive ? 0.4 : 0.35), lineWidth: 1))
+        .fixedSize()
+    }
+}
+
+/// The monospace block (`rounded-lg bg-inset px-3 py-2`, leading-relaxed),
+/// 8 pt under what precedes it; long text scrolls instead of truncating.
+struct DesktopApprovalBlock: View {
+    let text: String
+    let size: CGFloat
+    let theme: DesktopTheme
+    var maxHeight: CGFloat = 160
+
+    var body: some View {
+        let font = UIFont.monospacedSystemFont(ofSize: size, weight: .regular)
+        ScrollView(.vertical) {
+            Text(verbatim: text)
+                .font(.system(size: size, design: .monospaced))
+                .lineSpacing(max(0, size * 1.625 - font.lineHeight))
+                .foregroundStyle(theme.ink)
+                .textSelection(.enabled)
+                .padding(.vertical, max(0, size * 1.625 - font.lineHeight) / 2)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .accessibilityIdentifier("approval-dock-detail")
+        }
+        .frame(maxHeight: maxHeight)
+        .fixedSize(horizontal: false, vertical: true)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(theme.inset, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .padding(.top, 8)
+    }
+}
+
+/// "See technical details": collapsed by default; open, the tool id, its
+/// server and the arguments on an inset box, with Copy.
+struct DesktopTechnicalDetails: View {
+    let card: OptionCard
+    let theme: DesktopTheme
+    @State private var open = false
+    @State private var copied = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Button { withAnimation(.easeOut(duration: 0.15)) { open.toggle() } } label: {
+                HStack(spacing: 4) {
+                    DesktopLucideGlyph(paths: DesktopLucide.chevronDown, size: 13)
+                        .rotationEffect(.degrees(open ? 0 : -90))
+                    Text(open ? "Hide technical details" : "See technical details")
+                        .font(theme.font(12.5))
+                }
+                .foregroundStyle(theme.inkSecondary)
+                .frame(height: 22.8)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("approval-technical-details")
+            if open { details }
+        }
+        .padding(.top, 8)
+    }
+
+    private var details: some View {
+        let tool = card.tool ?? ""
+        let server = ApprovalRiskClassifier.parseToolId(tool).server
+        let args = DesktopApprovalText.arguments(card)
+        return VStack(alignment: .leading, spacing: 2) {
+            Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 2) {
+                if !tool.isEmpty { row(Text("Tool"), tool) }
+                if let server { row(Text("Server"), server) }
+            }
+            if let args {
+                HStack {
+                    Text("Arguments").foregroundStyle(theme.inkSecondary)
+                    Spacer()
+                    Button {
+                        PlatformBridge.copyToPasteboard(args)
+                        copied = true
+                    } label: {
+                        Label(copied ? "Copied" : "Copy", systemImage: copied ? "checkmark" : "doc.on.doc")
+                            .font(theme.font(11.5))
+                            .foregroundStyle(theme.inkSecondary)
+                    }
+                    .buttonStyle(.plain)
+                }
+                .font(theme.font(12))
+                .padding(.top, 6)
+                ScrollView(.vertical) {
+                    Text(verbatim: args)
+                        .font(.system(size: 12, design: .monospaced))
+                        .foregroundStyle(theme.ink)
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .frame(maxHeight: 240)
+                .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(theme.inset, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(theme.hairline.opacity(0.4), lineWidth: 1))
+    }
+
+    private func row(_ label: Text, _ value: String) -> some View {
+        GridRow {
+            label.foregroundStyle(theme.inkSecondary)
+            Text(verbatim: value)
+                .font(.system(size: 12, design: .monospaced))
+                .foregroundStyle(theme.ink)
+                .textSelection(.enabled)
+        }
+        .font(theme.font(12))
     }
 }

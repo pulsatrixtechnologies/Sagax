@@ -13,7 +13,7 @@ extension IPadParityScreen {
         switch self {
         case .chatTop, .chatAttachments, .chatMarkdown, .chatApproval, .chatQuestion, .chatMessageHover,
              .chatComposerDraft, .chatComposerSlash, .chatExportMenu, .chatModelPicker, .chatApprovalMode,
-             .chatWhereMenu, .chatFind, .chatThreads, .inspector:
+             .chatWhereMenu, .chatFind, .chatThreads, .inspector, .groupChat:
             true
         default:
             false
