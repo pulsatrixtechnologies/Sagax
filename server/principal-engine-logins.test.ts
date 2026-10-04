@@ -71,12 +71,19 @@ describe("PrincipalEngineLogins", () => {
 
   it("Grok and Kimi sign in by device code into the person's own engine home, with no key", async () => {
     const { dataDir, logins, made } = harness();
-    await logins.start(A, "grok", "session-a");
-    expect(made[0]).toMatchObject({ driver: "grokAgent", home: join(dataDir, "principals", A, "grok") });
+    const started = await logins.start(A, "grok", "session-a");
+    expect(JSON.stringify(started)).not.toContain("xai-workspace");
+    const home = join(dataDir, "principals", A, "grok");
+    expect(made[0]).toMatchObject({ driver: "grokAgent", home });
     expect(made[0]!.env.XAI_API_KEY).toBeUndefined();
+    expect(made[0]!.env.HOME).toBe(home);
+    expect(made[0]!.env.GROK_HOME).toBe(join(home, ".grok"));
     await made[0]!.finish();
     expect(logins.signedIn(A, "grokAgent")).toBe(true);
     expect(logins.signedIn(B, "grokAgent")).toBe(false);
+    await logins.signOut(A, "grok", "session-a");
+    expect(existsSync(home)).toBe(false);
+    expect(logins.signedIn(A, "grokAgent")).toBe(false);
     await logins.start(B, "kimi", "session-b");
     expect(made[1]).toMatchObject({ driver: "kimiAgent", home: join(dataDir, "principals", B, "kimi") });
     expect(statSync(made[1]!.home).mode & 0o777).toBe(0o700);

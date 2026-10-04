@@ -7,7 +7,7 @@
 // The fake CLI is a shebang script Windows cannot exec directly —
 // resolveCliSpawn turns it into `node <script>`, so these run everywhere.
 import { randomUUID } from "node:crypto";
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, unlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -1263,6 +1263,86 @@ describe("ACP turns (fake CLI)", () => {
       }
     },
   );
+
+  it("withholds Grok host tools on an organization turn and isolates each person's GROK_HOME", async () => {
+    await create(GrokAgentDriver);
+    expect(instance.adapter.capabilities.withholdsHostTools).toBe(true);
+    const homeA = join(scratch, "person-a");
+    const dump = join(scratch, "grok-withhold.json");
+    process.env.FAKE_ACP_DUMP = dump;
+    const agents = { command: "node", args: ["/fixture/agents-proxy.mjs"], env: {} };
+    const { turnId } = await instance.adapter.sendTurn({
+      threadId: "t-grok-withhold",
+      text: "read the roster",
+      model: "grok-4.7",
+      effort: "high",
+      approvalMode: "auto",
+      withholdHostTools: true,
+      access: { via: "subscription", identity: "subscription:a", engineHome: homeA },
+      integrations: { agents },
+    });
+    await recorder.until((e) => e.type === "turn.completed" && e.turnId === turnId);
+    const seen = JSON.parse(readFileSync(dump, "utf8")) as { argv: string[]; env: Record<string, string> };
+    expect(seen.argv).toEqual([
+      "--no-subagents", "--disable-web-search",
+      "--deny", "Bash", "--deny", "Read", "--deny", "Edit", "--deny", "Write", "--deny", "Grep", "--deny", "WebFetch", "--deny", "WebSearch",
+      "--permission-mode", "auto",
+      "agent", "--no-leader", "-m", "grok-4.7", "--reasoning-effort", "high", "stdio",
+    ]);
+    expect(seen.argv).not.toContain("--sandbox");
+    expect(seen.argv).not.toContain("--tools");
+    expect(seen.argv).not.toContain("--disallowed-tools");
+    expect(seen.env.HOME).toBe(homeA);
+    expect(seen.env.GROK_HOME).toBe(join(homeA, ".grok"));
+    expect(seen.env.XAI_API_KEY).toBeUndefined();
+    expect(seen.env.GROK_AGENT).toBe("grok-build");
+    expect(seen.env.GROK_MANAGED_MCPS_ENABLED).toBe("false");
+    expect(seen.env.GROK_MANAGED_MCP_GATEWAY_TOOLS_ENABLED).toBe("false");
+    const profile = JSON.parse(readFileSync(`${dump}.session.json`, "utf8"))._meta.agentProfile;
+    expect(profile).toMatchObject({
+      injectDefaultTools: false,
+      tools: ["search_tool", "use_tool"],
+      model: "grok-4.7",
+    });
+    for (const name of ["run_terminal_command", "read_file", "write", "web_search", "web_fetch", "spawn_subagent"]) {
+      expect(profile.disallowedTools).toContain(name);
+      expect(profile.tools).not.toContain(name);
+    }
+    expect(existsSync(`${dump}.config.json`)).toBe(false);
+    expect(JSON.stringify(seen)).not.toContain("xai-");
+
+    const homeB = join(scratch, "person-b");
+    const resumeDump = join(scratch, "grok-withhold-b.json");
+    process.env.FAKE_ACP_DUMP = resumeDump;
+    const second = await instance.adapter.sendTurn({
+      threadId: "t-grok-withhold-b",
+      text: "again",
+      model: "grok-4.7",
+      withholdHostTools: true,
+      resumeCursor: "fake-acp-session",
+      access: { via: "subscription", identity: "subscription:b", engineHome: homeB },
+      integrations: { agents },
+    });
+    await recorder.until((e) => e.type === "turn.completed" && e.turnId === second.turnId);
+    const loaded = readFileSync(join(NATIVE_DIR, "t-grok-withhold-b.ndjson"), "utf8")
+      .trim().split("\n").map((line) => JSON.parse(line))
+      .find((entry) => entry.dir === "out" && entry.msg.method === "session/load");
+    expect(loaded.msg.params._meta.agentProfile.tools).toEqual(["search_tool", "use_tool"]);
+    expect(loaded.msg.params._meta.agentProfile.disallowedTools).toContain("run_terminal_command");
+    const seenB = JSON.parse(readFileSync(resumeDump, "utf8")) as { env: Record<string, string> };
+    expect(seenB.env.HOME).toBe(homeB);
+    expect(seenB.env.GROK_HOME).toBe(join(homeB, ".grok"));
+    expect(seenB.env.GROK_HOME).not.toBe(join(homeA, ".grok"));
+    expect(JSON.stringify(seenB)).not.toContain(homeA);
+  });
+
+  it("does not claim Gemini or Kimi withhold their own tools", async () => {
+    await create(GeminiAgentDriver);
+    expect(instance.adapter.capabilities.withholdsHostTools).toBeUndefined();
+    await instance.dispose();
+    await create(KimiAgentDriver);
+    expect(instance.adapter.capabilities.withholdsHostTools).toBeUndefined();
+  });
 
   it.each([
     ["ask", true, "default"],

@@ -257,6 +257,7 @@ export class ProviderRegistry {
             queueing: inst.adapter.capabilities.queueing === true,
             localComputerMcp: inst.adapter.capabilities.localComputerMcp === true,
             approvalReview: inst.reviewPermission !== undefined,
+            withholdsHostTools: inst.adapter.capabilities.withholdsHostTools === true,
           },
           access: driver?.metadata.access ?? "subscription",
           install: withServerInstall(driver?.install, npmPresent),

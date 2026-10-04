@@ -34,14 +34,16 @@ describe("deviceLoginPrompt", () => {
 function fakeCli(engine: "grokAgent" | "kimiAgent", fail = false): string {
   const dir = mkdtempSync(join(tmpdir(), "device-login-cli-"));
   const path = join(dir, "cli.mjs");
-  const file = engine === "grokAgent" ? "join(process.env.HOME, '.grok', 'auth.json')" : "join(process.env.KIMI_CODE_HOME, 'credentials', 'kimi-code.json')";
+  const file = engine === "grokAgent"
+    ? "join(process.env.GROK_HOME || join(process.env.HOME, '.grok'), 'auth.json')"
+    : "join(process.env.KIMI_CODE_HOME, 'credentials', 'kimi-code.json')";
   const link = engine === "grokAgent" ? "https://accounts.x.ai/oauth2/device?user_code=ABCD-EFGH\\n\\nABCD-EFGH" : "login: https://www.kimi.ai/code/authorize_device?user_code=ABCD-EFGH\\nenter code: ABCD-EFGH";
   writeFileSync(path, `#!/usr/bin/env node
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 process.stdout.write("${link}\\n");
 setTimeout(() => {
-  ${fail ? "process.exit(1);" : `const f = ${file}; mkdirSync(dirname(f), { recursive: true }); writeFileSync(f, "{}"); process.exit(0);`}
+  ${fail ? "process.exit(1);" : `const f = ${file}; mkdirSync(dirname(f), { recursive: true }); writeFileSync(f, JSON.stringify({ token: "grok-secret-token" })); process.exit(0);`}
 }, 150);
 `);
   chmodSync(path, 0o755);
@@ -59,8 +61,29 @@ describe("DeviceLoginController", () => {
     await expect.poll(async () => (await controller.get(started.flowId!)).phase, { timeout: 5000 }).toBe("succeeded");
     expect(authenticated).toBe(1);
     expect(existsSync(DEVICE_LOGIN_SPECS[engine].credentialFile(home))).toBe(true);
+    expect(JSON.stringify(await controller.get(started.flowId!))).not.toContain("grok-secret-token");
     // already signed in: no new flow
     expect(await controller.start()).toMatchObject({ phase: "succeeded" });
+  });
+
+  it("grok login writes into the person's GROK_HOME, not a server home, and the response has no credential", async () => {
+    const home = mkdtempSync(join(tmpdir(), "device-login-home-"));
+    const leaked = mkdtempSync(join(tmpdir(), "device-login-leaked-"));
+    const controller = new DeviceLoginController({
+      engine: "grokAgent",
+      cli: fakeCli("grokAgent"),
+      home,
+      environment: () => ({ PATH: process.env.PATH, HOME: "/server", GROK_HOME: leaked }),
+    });
+    expect(grok.homeEnv(home)).toEqual({ HOME: home, GROK_HOME: join(home, ".grok") });
+    const started = await controller.start();
+    expect(JSON.stringify(started)).not.toContain("grok-secret-token");
+    expect(started.authorizationUrl).toBe("https://accounts.x.ai/oauth2/device?user_code=ABCD-EFGH");
+    await expect.poll(async () => (await controller.get(started.flowId!)).phase, { timeout: 5000 }).toBe("succeeded");
+    const status = await controller.get(started.flowId!);
+    expect(JSON.stringify(status)).not.toContain("grok-secret-token");
+    expect(existsSync(join(home, ".grok", "auth.json"))).toBe(true);
+    expect(existsSync(join(leaked, "auth.json"))).toBe(false);
   });
 
   it("a CLI that exits without a login fails the flow", async () => {

@@ -4002,7 +4002,7 @@ async function stagePendingAttachments(threadId: string, generation: string): Pr
 function withholdHostToolsFor(instance: { adapter: { capabilities: { withholdsHostTools?: boolean } }; displayName?: string; driverKind: string }): boolean {
   if (IDENTITY.kind !== "perspicax") return false;
   if (instance.adapter.capabilities.withholdsHostTools !== true) {
-    throw Object.assign(new Error(`${engineDisplayName(instance)} runs commands on the server itself; on an organization server choose Claude Code, Codex or a chat engine, which work in your server environment.`), { status: 409, code: "host_tools" });
+    throw Object.assign(new Error(`${engineDisplayName(instance)} runs its own tools on the Sagax server. On an organization server, choose an engine that works in your server environment.`), { status: 409, code: "host_tools" });
   }
   return true;
 }
