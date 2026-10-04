@@ -25,6 +25,10 @@ struct DesktopKeyCommands: View {
             }
             ForEach(1..<10, id: \.self) { number in
                 command("Jump to bot \(number)", key: KeyEquivalent(Character("\(number)"))) {
+                    if model.menu?.kind == .new, let activate = model.composeActivate {
+                        activate(number - 1)
+                        return
+                    }
                     model.menu = nil
                     model.jump(to: number - 1, in: session)
                 }

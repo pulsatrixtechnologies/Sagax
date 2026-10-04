@@ -76,4 +76,22 @@ final class DesktopSidebarPlacesTests: XCTestCase {
         XCTAssertEqual(body?["hidden"] as? Bool, true)
         XCTAssertFalse(BotPatch(hidden: false).isEmpty)
     }
+
+    func testComposeToListsCreateRowsThenOwnActiveBotsMatchingTheQuery() {
+        var mine = bot("orion"); mine.name = "Orion"; mine.title = "Analyst"
+        var theirs = bot("x"); theirs.ownerUserId = "someone@else"
+        let archived = bot("old", hidden: true)
+        var lux = bot("lux"); lux.name = "Lux"
+        let all = [mine, theirs, archived, lux]
+        XCTAssertEqual(DesktopComposeTo.bots(all, viewerId: "local-owner", query: "").map(\.id), ["orion", "lux"])
+        XCTAssertEqual(DesktopComposeTo.bots(all, viewerId: "local-owner", query: " analy ").map(\.id), ["orion"])
+        let bots = DesktopComposeTo.bots(all, viewerId: "local-owner", query: "")
+        XCTAssertEqual(DesktopComposeTo.rows(mode: .browse, bots: bots, canCreateBots: true), [.createBot, .createGroup, .bot("orion"), .bot("lux")])
+        XCTAssertEqual(DesktopComposeTo.rows(mode: .browse, bots: bots, canCreateBots: false).first, .createGroup)
+        XCTAssertEqual(DesktopComposeTo.rows(mode: .group, bots: bots, canCreateBots: true), [.createGroup, .bot("orion"), .bot("lux")])
+        XCTAssertEqual(DesktopComposeTo.move(0, by: -1, count: 4), 3)
+        XCTAssertEqual(DesktopComposeTo.move(3, by: 1, count: 4), 0)
+        XCTAssertEqual(DesktopComposeTo.move(9, by: 1, count: 4), 0)
+        XCTAssertEqual(DesktopComposeTo.move(0, by: 1, count: 0), 0)
+    }
 }

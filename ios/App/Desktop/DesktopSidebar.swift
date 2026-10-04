@@ -64,7 +64,7 @@ struct DesktopSidebar: View {
         .background(theme.sidebar)
         .overlay(alignment: .trailing) {
             // border-r-[0.5px] border-hairline-weak
-            Rectangle().fill(theme.sidebarInk.opacity(0.10)).frame(width: 0.5)
+            Rectangle().fill(theme.sidebarInk.opacity(0.10)).frame(width: 1)
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel(Text("Bots and navigation"))
@@ -102,7 +102,8 @@ struct DesktopSidebarHead: View {
             DesktopSearchButton()
             DesktopNewButton()
                 .padding(.leading, 8)
-                .padding(.trailing, 12)
+                // pr-3 inside the 1 pt border
+                .padding(.trailing, 13)
         }
         .frame(height: 44)
     }

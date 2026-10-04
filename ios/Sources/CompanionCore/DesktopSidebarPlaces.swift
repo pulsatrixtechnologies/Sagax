@@ -104,3 +104,37 @@ public enum DesktopBotArchive {
         bots.filter { $0.hidden == true }.sorted { $0.name.localizedCompare($1.name) == .orderedAscending }
     }
 }
+
+/// The sidebar's New: the inline "To:" picker (src/components/ComposeToPicker.tsx).
+/// Browse lists Create new Bot (when the viewer may), Create group chat,
+/// then the viewer's own active bots matching the query; group mode keeps
+/// the confirm row and the bots. ⌘1 to ⌘9 pick the first nine rows.
+public enum DesktopComposeTo {
+    public enum Mode: Equatable, Sendable { case browse, group }
+    public enum Row: Equatable, Sendable {
+        case createBot, createGroup
+        case bot(String)
+    }
+
+    /// `state.bots` without archived bots and other people's, matching the
+    /// query on name, title and description.
+    public static func bots(_ bots: [Bot], viewerId: String, query: String) -> [Bot] {
+        let q = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return bots.filter { bot in
+            bot.hidden != true && PrimaryBotRules.viewerOwns(bot, viewerId: viewerId)
+                && (q.isEmpty || "\(bot.name) \(bot.title) \(bot.description)".lowercased().contains(q))
+        }
+    }
+
+    public static func rows(mode: Mode, bots: [Bot], canCreateBots: Bool) -> [Row] {
+        let botRows = bots.map { Row.bot($0.id) }
+        if mode == .group { return [.createGroup] + botRows }
+        return (canCreateBots ? [.createBot] : []) + [.createGroup] + botRows
+    }
+
+    /// Arrow keys wrap around the rows.
+    public static func move(_ cursor: Int, by step: Int, count: Int) -> Int {
+        guard count > 0 else { return 0 }
+        return ((min(cursor, count - 1) + step) % count + count) % count
+    }
+}

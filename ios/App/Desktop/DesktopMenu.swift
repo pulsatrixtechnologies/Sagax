@@ -240,7 +240,14 @@ struct DesktopMenuLayer: View {
 
     var body: some View {
         GeometryReader { geometry in
-            if let request = model.menu {
+            if model.menu?.kind == .new {
+                // New is the inline "To:" picker over the main column
+                let left = model.sidebarWidth
+                let right = model.panelOpen && model.panelDocked && model.selected.map({ if case .bot = $0 { true } else { false } }) == true
+                    ? model.panelWidth : 0
+                AnyView(DesktopComposePicker(width: max(0, geometry.size.width - left - right), height: geometry.size.height))
+                    .offset(x: left)
+            } else if let request = model.menu {
                 let menus = DesktopSidebarMenus(session: session, model: model, prefs: prefs)
                 let (entries, style) = menus.entries(for: request.kind)
                 if !entries.isEmpty {

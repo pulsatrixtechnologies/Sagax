@@ -14,7 +14,7 @@ enum DesktopIcon: String, CaseIterable {
     // the bot panel (I4b)
     case panelRight, squareTerminal, activity, calendarClock, fileText
     // the sidebar footer's gamertag (I2b)
-    case trophy, tabletSmartphone, archive
+    case trophy, tabletSmartphone, archive, x, command, check
 
     /// Path data in the 24 pt viewBox.
     var paths: [String] {
@@ -87,6 +87,9 @@ enum DesktopIcon: String, CaseIterable {
         case .arrowUp: ["m5 12 7-7 7 7", "M12 19V5"]
         case .arrowDown: ["M12 5v14", "m19 12-7 7-7-7"]
         case .panelRight: [Self.rect(3, 3, 18, 18, 2), "M15 3v18"]
+        case .x: ["M18 6 6 18", "m6 6 12 12"]
+        case .command: ["M15 6v12a3 3 0 1 0 3-3H6a3 3 0 1 0 3 3V6a3 3 0 1 0-3 3h12a3 3 0 1 0-3-3"]
+        case .check: ["M20 6 9 17l-5-5"]
         case .archive: [Self.rect(2, 3, 20, 5, 1), "M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8", "M10 12h4"]
         case .tabletSmartphone: [Self.rect(3, 8, 10, 14, 2), "M5 4a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2h-2.4", "M8 18h.01"]
         case .trophy: [
@@ -136,6 +139,9 @@ enum DesktopIcon: String, CaseIterable {
         case .trophy: "trophy"
         case .tabletSmartphone: "ipad.and.iphone"
         case .archive: "archivebox"
+        case .x: "xmark"
+        case .command: "command"
+        case .check: "checkmark"
         case .squareTerminal: "terminal"
         case .activity: "waveform.path.ecg"
         case .calendarClock: "calendar.badge.clock"

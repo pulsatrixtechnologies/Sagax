@@ -67,6 +67,8 @@ struct DesktopPinnedTiles: View {
                 }
             }
             .frame(maxWidth: .infinity)
+            // Chrome lays the centred grid on the next device pixel
+            .offset(x: 0.5)
             .padding(.vertical, 6)
             .padding(.bottom, 8)
         }
@@ -143,7 +145,8 @@ struct DesktopTitleChip: View {
             .foregroundStyle(theme.sidebarInkSecondary)
             .lineLimit(1)
             .truncationMode(.tail)
-            .padding(.horizontal, 6)
+            // px-1.5 inside the 1 pt border
+            .padding(.horizontal, 7)
             .frame(height: 18)
             .background(theme.sidebarHover, in: RoundedRectangle(cornerRadius: 5, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 5, style: .continuous).strokeBorder(theme.sidebarHairline, lineWidth: 1))
