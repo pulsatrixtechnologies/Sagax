@@ -688,6 +688,16 @@ public struct CompanionClient: Sendable {
         }
     }
 
+    /// A response streamed to a temporary file (a backup can be gigabytes),
+    /// for `exportWorkspaceBackup`.
+    func performDownload(_ request: URLRequest) async throws -> (URL, URLResponse) {
+        do {
+            return try await session.download(for: request)
+        } catch {
+            throw APIError.transport(error.localizedDescription)
+        }
+    }
+
     /// Turn a non-2xx into an `APIError` carrying the harness's own message.
     /// Those messages are written for people, so passing them through beats
     /// inventing a different client-side explanation here. Captured fixtures
