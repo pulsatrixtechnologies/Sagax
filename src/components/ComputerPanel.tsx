@@ -298,19 +298,6 @@ export function ComputerPanel({
     resolvedComputer: resolvedComputerSelection?.computer ?? null,
     resolvedCloudBackend: resolvedComputerSelection?.cloudBackend ?? null,
   });
-  const updateComputerSelection = useCallback((patch: {
-    computer?: Bot["computer"] | null;
-    cloudBackend?: CloudBackend;
-    browser?: boolean;
-    acknowledgeLocalAuto?: boolean;
-  }) => {
-    // Clear old-provider UI in the same render as the optimistic profile
-    // change. The resolving effect waits for its PATCH before doing any work.
-    setResolvedComputerSelection(null);
-    setTeamComputer(null);
-    setPhase("checking");
-    dispatch({ type: "updateBot", botId: bot.id, patch });
-  }, [bot.id, dispatch]);
   useEffect(() => {
     let alive = true;
     setPersistedComputerSelection(null);
