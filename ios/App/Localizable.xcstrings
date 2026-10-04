@@ -43459,6 +43459,468 @@
           }
         }
       }
+    },
+    "Edit name": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Edit name"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Modifier le nom"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Editar nome"
+          }
+        }
+      }
+    },
+    "Add a label": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Add a label"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ajouter une étiquette"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Adicionar um rótulo"
+          }
+        }
+      }
+    },
+    "Edit label": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Edit label"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Modifier l'étiquette"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Editar rótulo"
+          }
+        }
+      }
+    },
+    "No schedules yet.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No schedules yet."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aucune planification pour l'instant."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nenhum agendamento ainda."
+          }
+        }
+      }
+    },
+    "Now: %@.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Now: %@."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Actuellement : %@."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Agora: %@."
+          }
+        }
+      }
+    },
+    "%@ is not available: %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ is not available: %@"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ n'est pas disponible : %@"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ não está disponível: %@"
+          }
+        }
+      }
+    },
+    "Auto and cloud computers.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Auto and cloud computers."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Auto et les ordinateurs infonuagiques."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Auto e computadores na nuvem."
+          }
+        }
+      }
+    },
+    "Auto may reuse the cloud computer below when it is already running. Opening these settings never creates or wakes one.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Auto may reuse the cloud computer below when it is already running. Opening these settings never creates or wakes one."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Auto peut réutiliser l'ordinateur infonuagique ci-dessous quand il roule déjà. Ouvrir ces réglages n'en crée ni n'en réveille jamais un."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "O Auto pode reutilizar o computador na nuvem abaixo quando ele já estiver em execução. Abrir estas configurações nunca cria nem acorda um."
+          }
+        }
+      }
+    },
+    "Add an MCP server…": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Add an MCP server…"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ajouter un serveur MCP…"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Adicionar um servidor MCP…"
+          }
+        }
+      }
+    },
+    "Could not refresh MCP servers.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Could not refresh MCP servers."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Impossible d'actualiser les serveurs MCP."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Não foi possível atualizar os servidores MCP."
+          }
+        }
+      }
+    },
+    "Let this bot use %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Let this bot use %@"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Permettre à ce bot d'utiliser %@"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Permitir que este bot use %@"
+          }
+        }
+      }
+    },
+    "Give this bot a built-in browser": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Give this bot a built-in browser"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Donner un navigateur intégré à ce bot"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dar a este bot um navegador integrado"
+          }
+        }
+      }
+    },
+    "Inbound triggers wired to this bot.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Inbound triggers wired to this bot."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Déclencheurs entrants reliés à ce bot."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gatilhos de entrada ligados a este bot."
+          }
+        }
+      }
+    },
+    "No webhooks for this bot.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No webhooks for this bot."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aucun webhook pour ce bot."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nenhum webhook para este bot."
+          }
+        }
+      }
+    },
+    "%lld deliveries": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld deliveries"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld livraisons"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld entregas"
+          }
+        }
+      }
+    },
+    "The browser engine is not installed on this server yet. Enable the browser switches in App Settings → Experimental and the bot's Access settings, then open Bot's computer → Browser to install it. Or run `openmausbot browser install` on the server.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The browser engine is not installed on this server yet. Enable the browser switches in App Settings → Experimental and the bot's Access settings, then open Bot's computer → Browser to install it. Or run `openmausbot browser install` on the server."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le moteur du navigateur n’est pas encore installé sur ce serveur. Activez les interrupteurs du navigateur dans Paramètres → Expérimental et dans les paramètres Access du bot, puis ouvrez Ordinateur du bot → Navigateur pour l’installer. Vous pouvez aussi lancer `openmausbot browser install` sur le serveur."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "O mecanismo do navegador ainda não está instalado neste servidor. Ative os interruptores do navegador em Configurações → Experimental e nas configurações de Acesso do bot, depois abra Computador do bot → Navegador para instalá-lo. Ou execute `openmausbot browser install` no servidor."
+          }
+        }
+      }
+    },
+    "The built-in browser is switched off under App Settings → Experimental": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The built-in browser is switched off under App Settings → Experimental"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le navigateur intégré est désactivé dans Paramètres → Expérimental"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "O navegador integrado está desativado em Configurações → Experimental"
+          }
+        }
+      }
+    },
+    "This bot's current model cannot use the built-in browser.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This bot's current model cannot use the built-in browser."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le modèle actuel de ce bot ne peut pas utiliser le navigateur intégré."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "O modelo atual deste bot não pode usar o navegador integrado."
+          }
+        }
+      }
+    },
+    "This model cannot use the built-in browser": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This model cannot use the built-in browser"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ce modèle ne peut pas utiliser le navigateur intégré"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Este modelo não pode usar o navegador integrado"
+          }
+        }
+      }
+    },
+    "This server has no browser engine.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This server has no browser engine."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ce serveur n'a pas de moteur de navigateur."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Este servidor não tem mecanismo de navegador."
+          }
+        }
+      }
+    },
+    "Works on is set to Off, so this bot has no browser. Pick another destination above to give it one.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Works on is set to Off, so this bot has no browser. Pick another destination above to give it one."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Travaille sur est réglé à Désactivé : ce bot n'a donc pas de navigateur. Choisissez une autre destination ci-dessus pour lui en donner un."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Trabalha em está definido como Desligado, então este bot não tem navegador. Escolha outro destino acima para dar um a ele."
+          }
+        }
+      }
     }
   },
   "version": "1.0"

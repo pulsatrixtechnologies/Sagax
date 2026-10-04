@@ -1,6 +1,6 @@
-// iPad I4: the Advanced sections made of switches and choices (Access,
+// iPad I4: the More sections made of switches and choices (Access,
 // Model, Permissions, Voice & alerts, Usage), as the references draw them
-// (desktop-*-4[4-7]-panel-advanced-*): bordered cards (`rounded-xl border
+// (desktop-*-4[3-7]-panel-more-*): bordered cards (`rounded-xl border
 // border-hairline/40 p-4`), 13 medium titles over 13 secondary copy, the
 // 44x20 switch. The writes are the routes the phone already has (profile,
 // access, model, voice engine) plus `BotPanelPatch` (PATCH /api/bots/:id)
@@ -12,7 +12,7 @@ import CompanionCore
 
 /// A card title and its 13 pt explanation, with an optional trailing
 /// control (`flex items-center justify-between gap-4`).
-private struct PanelSettingRow<Trailing: View>: View {
+struct PanelSettingRow<Trailing: View>: View {
     @Environment(\.desktopTheme) private var theme
     let title: LocalizedStringKey
     let detail: Text?
@@ -36,7 +36,7 @@ private struct PanelSettingRow<Trailing: View>: View {
 
 /// The admin-only writes of these sections.
 @MainActor
-private func sendPanelPatch(_ patch: BotPanelPatch, bot: Bot, session: Session) async -> Bool {
+func sendPanelPatch(_ patch: BotPanelPatch, bot: Bot, session: Session) async -> Bool {
     guard let client = session.profileClient else { return false }
     do {
         session.applyProfileBot(try await client.patchBotSettings(botId: bot.id, patch: patch))
@@ -47,169 +47,13 @@ private func sendPanelPatch(_ patch: BotPanelPatch, bot: Bot, session: Session) 
     }
 }
 
-// MARK: - Access
-
-/// Access (`AccessSection.tsx`): Works on (six choices, three a row), the
-/// Auto note and the cloud backend, the working folder, Connected apps;
-/// the browser, MCP servers and always-allowed lists open in the phone's
-/// access page.
-struct BotPanelAccess: View {
-    @Environment(\.desktopTheme) private var theme
-    @EnvironmentObject private var session: Session
+/// More > Computer on an organization server (`WorksOnSetting`): where the
+/// bot works, the same card Access holds elsewhere.
+struct BotPanelWorksOn: View {
     let bot: Bot
 
-    @State private var folder = ""
-    @State private var config: ConfigStatus?
-    @State private var more = false
-    @State private var saving = false
-
-    private var canEdit: Bool { session.surfaceGate.allows(.botAccessEdit) }
-    private var worksOn: DesktopWorksOn { DesktopWorksOn.of(bot) }
-    private var appsOn: Bool { bot.composio != false }
-    private var appsConfigured: Bool { config?.composio?.configured == true }
-
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            PanelCard {
-                Text("Works on").panelText(13, 19.5, .medium).foregroundStyle(theme.ink)
-                Text(bot.computer == nil
-                     ? "Where this bot works (currently: auto). Browser is the built-in browser tab only; no desktop."
-                     : "Where this bot works. Browser is the built-in browser tab only; no desktop.")
-                    .panelText(13, 19.5)
-                    .foregroundStyle(theme.inkSecondary)
-                    .padding(.top, 2)
-                worksOnGrid.padding(.top, 12)
-                if worksOn == .off {
-                    note(bold: "Off means no screen.", "This bot gets no computer and no built-in browser, so it cannot open a web page, click, or type anywhere. Its connected apps, MCP servers, files and chat all still work.")
-                        .padding(.top, 12)
-                }
-                if worksOn == .auto || worksOn == .cloud {
-                    if worksOn == .auto {
-                        note(bold: "Auto cloud preference.", "This chooses what Auto may reuse during a task; viewing settings does not create or wake a computer.")
-                            .padding(.top, 12)
-                    }
-                    cloudBackend.padding(.top, 12)
-                }
-            }
-            PanelCard {
-                Text("Working folder").panelText(13, 19.5, .medium).foregroundStyle(theme.ink)
-                Text("Where this bot runs its shell and file tools.").panelText(13, 19.5).foregroundStyle(theme.inkSecondary).padding(.top, 2)
-                HStack(spacing: 8) {
-                    PanelTextField(placeholder: "Private bot folder — or an absolute path", text: $folder, mono: true)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                        .disabled(!canEdit)
-                    Button {
-                        Task {
-                            saving = true
-                            _ = await sendPanelPatch(BotPanelPatch(cwd: folder.trimmingCharacters(in: .whitespacesAndNewlines)), bot: bot, session: session)
-                            saving = false
-                        }
-                    } label: {
-                        Text("Save").font(theme.font(13)).foregroundStyle(theme.ink)
-                            .padding(.horizontal, 12).frame(height: 35.5)
-                            .background(theme.control, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(!canEdit || saving || folder == (bot.cwd ?? ""))
-                    .opacity(!canEdit || saving || folder == (bot.cwd ?? "") ? 0.5 : 1)
-                }
-                .padding(.top, 12)
-            }
-            PanelCard {
-                PanelSettingRow(title: "Connected apps", detail: Text(appsDetail)) {
-                    PanelSwitch(label: "Allow this bot to use connected apps", isOn: appsOn,
-                                disabled: !session.surfaceGate.allows(.connectedAppsPerBot) || (!appsOn && !appsConfigured)) { on in
-                        Task {
-                            guard let client = session.profileClient else { return }
-                            do { session.applyProfileBot(try await client.patchBot(botId: bot.id, patch: BotPatch(composio: on))) }
-                            catch { session.actionError = error.localizedDescription }
-                        }
-                    }
-                }
-                if !appsConfigured {
-                    Text("No apps connected yet.").panelText(11.5, 17.25).foregroundStyle(theme.inkSecondary).padding(.top, 12)
-                }
-            }
-            PanelButton(title: "Browser, MCP servers and allowed commands", systemImage: "slider.horizontal.3") { more = true }
-                .accessibilityIdentifier("desktop-access-more")
-        }
-        .onAppear { folder = bot.cwd ?? "" }
-        .task { config = await session.configStatus() }
-        .sheet(isPresented: $more) {
-            NavigationStack { BotAccessPage(bot: bot) }
-                .environmentObject(session)
-        }
-    }
-
-    private var appsDetail: LocalizedStringKey {
-        if !appsConfigured { return "Connect apps in App Settings before giving this bot access." }
-        return appsOn ? "Let this bot use your connected Gmail, Calendar, Slack, and other apps." : "Keep your connected apps unavailable to this bot."
-    }
-
-    private var worksOnGrid: some View {
-        let options: [(DesktopWorksOn, String, Bool)] = [
-            (.auto, String(localized: "Auto"), canEdit),
-            (.cloud, String(localized: "Cloud"), canEdit),
-            (.vm, String(localized: "Local VM"), canEdit),
-            (.local, String(localized: "This computer"), canEdit),
-            (.browser, String(localized: "Browser"), canEdit && bot.browser != false && worksOn != .auto),
-            (.off, String(localized: "Off"), canEdit),
-        ]
-        return PanelSegmentGrid(options: options, selected: worksOn, columns: 3) { choice in
-            guard choice != worksOn else { return }
-            Task { _ = await sendPanelPatch(BotPanelPatch(computer: choice.stored), bot: bot, session: session) }
-        }
-    }
-
-    private func note(bold: LocalizedStringKey, _ rest: LocalizedStringKey) -> some View {
-        (Text(bold).font(theme.font(11.5, .medium)).foregroundColor(theme.ink) + Text(verbatim: " ") + Text(rest))
-            .panelText(11.5, 18.69)
-            .foregroundStyle(theme.inkSecondary)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 10)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(theme.inset, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-    }
-
-    private var cloudBackend: some View {
-        let backend = bot.cloudBackend ?? "box"
-        return VStack(alignment: .leading, spacing: 0) {
-            Text("Cloud backend").panelText(12, 18, .medium).foregroundStyle(theme.ink)
-            Text("Boat is the default hosted computer. Choose Self-hosted VPS to use your SSH-configured Linux Docker host.")
-                .panelText(11.5, 17.25)
-                .foregroundStyle(theme.inkSecondary)
-                .padding(.top, 2)
-            HStack(spacing: 0) {
-                backendButton("Boat", value: "box", on: backend == "box")
-                Rectangle().fill(theme.hairline40).frame(width: 1)
-                backendButton("Self-hosted VPS", value: "vps", on: backend == "vps")
-            }
-            .frame(height: 30)
-            .padding(1)
-            .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(theme.hairline40, lineWidth: 1))
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-            .padding(.top, 8)
-        }
-        .padding(12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(theme.inset, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-    }
-
-    private func backendButton(_ title: LocalizedStringKey, value: String, on: Bool) -> some View {
-        Button {
-            guard !on else { return }
-            Task { _ = await sendPanelPatch(BotPanelPatch(cloudBackend: value), bot: bot, session: session) }
-        } label: {
-            Text(title)
-                .font(theme.font(12))
-                .foregroundStyle(on ? theme.ink : theme.inkSecondary)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(on ? theme.raised : .clear)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .disabled(!canEdit)
+        BotPanelAccess(bot: bot, showsWorksOn: true, worksOnOnly: true)
     }
 }
 

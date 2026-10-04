@@ -1,5 +1,5 @@
-// iPad I4: the bot panel's Advanced tab (`BotSettingsDialog.tsx` "advanced"
-// with `bot-settings/sections.ts`): a search field (y 297, 33.5 tall,
+// iPad I4/I4b: the bot panel's More tab (`BotSettingsDialog.tsx` "more",
+// was Advanced, with `bot-settings/sections.ts`): a search field (33.5 tall,
 // elevated fill, hairline-weak ring) over one bordered list of sections
 // (rows 40.5: 15 pt glyph, label 13, chevron), each opening its section
 // under a 14 medium heading with Back in the top bar. Which sections a
@@ -24,6 +24,7 @@ extension DesktopPanelSection {
         case .skills: "Skills"
         case .memory: "Memory"
         case .access: "Access"
+        case .worksOn: "Computer"
         case .model: "Model"
         case .permissions: "Permissions"
         case .voice: "Voice & alerts"
@@ -44,6 +45,7 @@ extension DesktopPanelSection {
         case .skills: String(localized: "Skills")
         case .memory: String(localized: "Memory")
         case .access: String(localized: "Access")
+        case .worksOn: String(localized: "Computer")
         case .model: String(localized: "Model")
         case .permissions: String(localized: "Permissions")
         case .voice: String(localized: "Voice & alerts")
@@ -64,6 +66,7 @@ extension DesktopPanelSection {
         case .skills: "book"
         case .memory: "brain"
         case .access: "point.3.connected.trianglepath.dotted"
+        case .worksOn: "desktopcomputer"
         case .model: "cpu"
         case .permissions: "checkmark.shield"
         case .voice: "mic"
@@ -76,7 +79,7 @@ extension DesktopPanelSection {
     }
 }
 
-struct BotPanelAdvanced: View {
+struct BotPanelMore: View {
     @Environment(\.desktopTheme) private var theme
     @EnvironmentObject private var session: Session
     @EnvironmentObject private var model: DesktopShellModel
@@ -169,7 +172,7 @@ struct BotPanelAdvanced: View {
         .padding(.trailing, 16)
         .padding(.bottom, 24)
         .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("desktop-panel-advanced")
+        .accessibilityIdentifier("desktop-panel-more")
     }
 
     @ViewBuilder
@@ -179,12 +182,13 @@ struct BotPanelAdvanced: View {
         case .soul: BotPanelSoul(bot: bot)
         case .skills: BotPanelSkills(bot: bot)
         case .memory: BotPanelMemory(bot: bot)
-        case .access: BotPanelAccess(bot: bot)
+        case .access: BotPanelAccess(bot: bot, showsWorksOn: !sections.contains(.worksOn))
+        case .worksOn: BotPanelWorksOn(bot: bot)
         case .model: BotPanelModel(bot: bot)
         case .permissions: BotPanelPermissions(bot: bot)
         case .voice: BotPanelVoice(bot: bot)
         case .usage: BotPanelUsage(bot: bot)
-        case .history: BotPanelPhoneSection { BotHistorySection(bot: bot) }
+        case .history: BotPanelHistory(bot: bot)
         case .visibility: BotPanelPhoneSection { BotVisibilitySection(bot: bot) }
         case .sharing: BotPanelPhoneSection { BotSharingSection(bot: bot) }
         case .perspicax: BotPanelPhoneSection { BotPerspicaxSection(bot: bot) }
@@ -1043,5 +1047,115 @@ private struct BotPanelMemory: View {
         } catch {
             session.actionError = error.localizedDescription
         }
+    }
+}
+
+// MARK: - History
+
+/// History (`HistorySection.tsx`): a bordered card per change, newest first
+/// (the time secondary, then who, how and what, 13 / 21.125), and "Undo
+/// this change" (12 medium accent) beside a soul row that can be undone,
+/// confirmed as on the desktop; the list reloads after.
+private struct BotPanelHistory: View {
+    @Environment(\.desktopTheme) private var theme
+    @EnvironmentObject private var session: Session
+    let bot: Bot
+
+    @State private var history: BotHistory?
+    @State private var loadFailed = false
+    @State private var rollingBack = false
+    @State private var target: BotHistoryRow?
+    @State private var request = 0
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if let history {
+                if loadFailed {
+                    PanelNotice(text: String(localized: "Couldn’t refresh history."))
+                }
+                if history.rows.isEmpty {
+                    Text("No changes recorded yet.").font(theme.font(13)).foregroundStyle(theme.inkSecondary)
+                }
+                ForEach(history.sorted) { row in
+                    AnyView(card(row, revision: history.revision))
+                }
+            } else if loadFailed {
+                Text("Couldn’t load history.").font(theme.font(13)).foregroundStyle(theme.inkSecondary)
+            } else {
+                Text("Loading…").font(theme.font(13)).foregroundStyle(theme.inkSecondary)
+            }
+        }
+        .task(id: bot.id) { await load() }
+        .confirmationDialog(
+            String(localized: "Restore previous instructions?"),
+            isPresented: Binding(get: { target != nil }, set: { if !$0 { target = nil } }),
+            titleVisibility: .visible,
+            presenting: target
+        ) { row in
+            Button(String(localized: "Restore instructions")) { Task { await rollback(row) } }
+            Button(String(localized: "Cancel"), role: .cancel) { target = nil }
+        } message: { _ in
+            Text(String(localized: "Replaces current SOUL with the version before this change. Current version stays in History."))
+        }
+    }
+
+    private func card(_ row: BotHistoryRow, revision: String?) -> some View {
+        PanelCard {
+            HStack(alignment: .top, spacing: 12) {
+                (Text(verbatim: DesktopWhenLabel.label(row.at)).foregroundColor(theme.inkSecondary)
+                 + Text(verbatim: " · " + String(localized: "\(row.actor) via \(row.via)") + " · \(row.summary)").foregroundColor(theme.ink))
+                    .panelText(13, 21.125)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                if row.restorable {
+                    Button { target = row } label: {
+                        Text("Undo this change")
+                            .font(theme.font(12, .medium))
+                            .foregroundStyle(theme.accentText)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .hoverEffect(.highlight)
+                    .disabled(rollingBack || revision == nil)
+                    .opacity(rollingBack || revision == nil ? 0.5 : 1)
+                    .accessibilityIdentifier("desktop-history-undo.\(row.id)")
+                }
+            }
+            if row.showsRestoreReason {
+                Text(verbatim: row.restoreUnavailableReason
+                     ?? String(localized: "The exact previous instructions are unavailable, so this change cannot be undone."))
+                    .panelText(12, 19.5)
+                    .foregroundStyle(theme.inkSecondary)
+                    .padding(.top, 8)
+            }
+        }
+    }
+
+    private func load() async {
+        guard let client = session.profileClient else { return }
+        request += 1
+        let mine = request
+        do {
+            let next = try await client.botHistory(botId: bot.id)
+            guard mine == request else { return }
+            history = next
+            loadFailed = false
+        } catch {
+            if mine == request { loadFailed = true }
+        }
+    }
+
+    private func rollback(_ row: BotHistoryRow) async {
+        target = nil
+        guard !rollingBack, let revision = history?.revision, let client = session.profileClient else { return }
+        rollingBack = true
+        do {
+            try await client.rollbackHistory(botId: bot.id, rowId: row.id, expectedRevision: revision)
+        } catch {
+            session.actionError = error.localizedDescription
+        }
+        await load()
+        rollingBack = false
     }
 }

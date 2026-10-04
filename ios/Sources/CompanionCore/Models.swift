@@ -1168,11 +1168,14 @@ public struct InstanceCapabilities: Codable, Hashable, Sendable {
     public var composioMcp: Bool?
     /// The engine takes a model-specific variant instead of an effort level.
     public var modelVariants: Bool? = nil
+    /// The engine can drive the built-in browser (Works on: Browser).
+    public var browserMcp: Bool? = nil
 
-    public init(effortLevels: [String]? = nil, composioMcp: Bool? = nil, modelVariants: Bool? = nil) {
+    public init(effortLevels: [String]? = nil, composioMcp: Bool? = nil, modelVariants: Bool? = nil, browserMcp: Bool? = nil) {
         self.effortLevels = effortLevels
         self.composioMcp = composioMcp
         self.modelVariants = modelVariants
+        self.browserMcp = browserMcp
     }
 }
 
@@ -1260,6 +1263,57 @@ public struct ConfigDecider: Codable, Hashable, Sendable {
     public var jobs: Jobs?
 }
 
+/// The experimental switches the panel reads (`src/lib/feature-flags.ts`).
+/// Each one decodes on its own: an unknown or odd value is simply off.
+public struct ServerFeatures: Codable, Hashable, Sendable {
+    public var browser: Bool?
+    public var connectedApps: Bool?
+    public var templates: Bool?
+    public var vpsComputer: Bool?
+    public var boatComputer: Bool?
+
+    public init(browser: Bool? = nil, connectedApps: Bool? = nil, templates: Bool? = nil, vpsComputer: Bool? = nil, boatComputer: Bool? = nil) {
+        self.browser = browser
+        self.connectedApps = connectedApps
+        self.templates = templates
+        self.vpsComputer = vpsComputer
+        self.boatComputer = boatComputer
+    }
+
+    private enum CodingKeys: String, CodingKey { case browser, connectedApps, templates, vpsComputer, boatComputer }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        browser = try? c.decodeIfPresent(Bool.self, forKey: .browser)
+        connectedApps = try? c.decodeIfPresent(Bool.self, forKey: .connectedApps)
+        templates = try? c.decodeIfPresent(Bool.self, forKey: .templates)
+        vpsComputer = try? c.decodeIfPresent(Bool.self, forKey: .vpsComputer)
+        boatComputer = try? c.decodeIfPresent(Bool.self, forKey: .boatComputer)
+    }
+}
+
+/// `browserEngine` in the config: "engine" when the server has one.
+public struct BrowserEngineStatus: Codable, Hashable, Sendable {
+    public var kind: String?
+    public var reason: String?
+    public var installable: Bool?
+
+    public init(kind: String? = nil, reason: String? = nil, installable: Bool? = nil) {
+        self.kind = kind
+        self.reason = reason
+        self.installable = installable
+    }
+
+    private enum CodingKeys: String, CodingKey { case kind, reason, installable }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        kind = try? c.decodeIfPresent(String.self, forKey: .kind)
+        reason = try? c.decodeIfPresent(String.self, forKey: .reason)
+        installable = try? c.decodeIfPresent(Bool.self, forKey: .installable)
+    }
+}
+
 public struct ConfigStatus: Codable, Sendable {
     public var composio: ConfigFlag?
     public var box: ConfigFlag?
@@ -1272,6 +1326,12 @@ public struct ConfigStatus: Codable, Sendable {
     /// The decision model (Jev) and its jobs; a room in Auto routes with it
     /// only while `roomRouting` is on (`jevRoomRoutingOn`).
     public var decider: ConfigDecider? = nil
+    /// Settings > Experimental features (`FeatureFlagConfig.features`).
+    public var features: ServerFeatures? = nil
+    /// Whether this server can give a bot a browser (`browserEngine`).
+    public var browserEngine: BrowserEngineStatus? = nil
+    /// An OMB Cloud home: no "this computer" and no Local VM.
+    public var cloudHome: Bool? = nil
 
     /// `jevRoomRoutingOn`: an Auto room with Jev off answers like a lead room.
     public var jevRoomRoutingOn: Bool {

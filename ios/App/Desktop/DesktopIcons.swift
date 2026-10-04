@@ -11,6 +11,8 @@ enum DesktopIcon: String, CaseIterable {
     case plus, panelLeftClose, panelLeftOpen, search, chevronRight, network, calendarDays, puzzle, library
     case ellipsis, pin, pinOff, folderPlus, folderInput, bellDot, pencil, clipboardCopy, eyeOff, trash
     case users, share, smartphone, settings, keyboard, info, help, squarePen, star, arrowLeftRight, arrowUp, arrowDown, eye
+    // the bot panel (I4b)
+    case panelRight, squareTerminal, activity, calendarClock, fileText
 
     /// Path data in the 24 pt viewBox.
     var paths: [String] {
@@ -82,6 +84,14 @@ enum DesktopIcon: String, CaseIterable {
         case .arrowLeftRight: ["M8 3 4 7l4 4", "M4 7h16", "m16 21 4-4-4-4", "M20 17H4"]
         case .arrowUp: ["m5 12 7-7 7 7", "M12 19V5"]
         case .arrowDown: ["M12 5v14", "m19 12-7 7-7-7"]
+        case .panelRight: [Self.rect(3, 3, 18, 18, 2), "M15 3v18"]
+        case .squareTerminal: ["m7 11 2-2-2-2", "M11 13h4", Self.rect(3, 3, 18, 18, 2)]
+        case .activity:
+            ["M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a0.25 0.25 0 0 1-0.48 0L9.24 2.18a0.25 0.25 0 0 0-0.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2"]
+        case .calendarClock:
+            ["M16 14v2.2l1.6 1", "M16 2v4", "M21 7.5V6a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h3.5", "M3 10h5", "M8 2v4", Self.circle(16, 16, 6)]
+        case .fileText:
+            ["M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z", "M14 2v4a2 2 0 0 0 2 2h4", "M10 9H8", "M16 13H8", "M16 17H8"]
         case .eye:
             ["M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0",
              Self.circle(12, 12, 3)]
@@ -111,6 +121,11 @@ enum DesktopIcon: String, CaseIterable {
         case .clipboardCopy: "doc.on.clipboard"
         case .eyeOff: "eye.slash"
         case .eye: "eye"
+        case .panelRight: "sidebar.right"
+        case .squareTerminal: "terminal"
+        case .activity: "waveform.path.ecg"
+        case .calendarClock: "calendar.badge.clock"
+        case .fileText: "doc.text"
         case .trash: "trash"
         case .users: "person.2"
         case .share: "square.and.arrow.up"

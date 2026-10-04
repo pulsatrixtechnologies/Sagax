@@ -200,27 +200,26 @@ add({ id: "group-panel", phase: "main", note: "room panel (header profile button
   open: async (ctx) => { await ctx.selectGroup("Peer Managers"); await ctx.sleep(500); await ctx.click('[aria-label="Open agent profile"]'); await ctx.sleep(500); } });
 
 // the bot panel
-add({ id: "panel-details", phase: "main", note: "bot panel: Details tab", open: async (ctx) => { await openPanel(ctx, "identity"); } });
+add({ id: "panel-details", phase: "main", note: "bot panel: Details tab (Coding, Activity, Routines)", open: async (ctx) => { await openPanel(ctx); } });
 add({ id: "panel-avatar-editor", phase: "main", note: "bot panel: character/avatar editor popover",
-  open: async (ctx) => { await openPanel(ctx, "identity"); await ctx.click('button[aria-label="Edit avatar"]'); await ctx.sleep(500); } });
-add({ id: "panel-routines", phase: "main", note: "bot panel: Routines tab", open: async (ctx) => { await openPanel(ctx, "routines"); } });
-add({ id: "panel-files", phase: "main", note: "bot panel: Files tab",
-  open: async (ctx) => { await openPanel(ctx); await ctx.click('[data-panel-tab="files"]'); await ctx.sleep(600); } });
+  open: async (ctx) => { await openPanel(ctx); await ctx.click('button[aria-label="Edit avatar"]'); await ctx.sleep(500); } });
+add({ id: "panel-library", phase: "main", note: "bot panel: Library tab (the bot's files)",
+  open: async (ctx) => { await openPanel(ctx); await ctx.click('[data-panel-tab="library"]'); await ctx.sleep(600); } });
 add({ id: "panel-computer", phase: "main", note: "bot panel: Computer tab",
   open: async (ctx) => { await ctx.dispatch({ type: "toggleComputer", open: true }); await ctx.sleep(900); } });
-add({ id: "panel-advanced", phase: "main", note: "bot panel: Advanced tab (searchable section list)",
-  open: async (ctx) => { await openPanel(ctx); await ctx.click('[data-panel-tab="advanced"]'); await ctx.sleep(400); } });
-// Slack: a hosted workspace's link to its Admin; Shared with and Perspicax
-// tools: a server signed in with Perspicax (the organization pass draws all
-// three on one server). Who can see it: an admin on a served page of a
-// server that is not an organization's.
-const ADVANCED_WHERE = { slack: { org: true }, sharing: { org: true }, perspicax: { org: true }, visibility: { served: true } };
-for (const section of ["overview", "slack", "soul", "skills", "memory", "access", "model", "permissions", "voice", "visibility", "sharing", "perspicax", "history", "usage"]) {
-  const where = ADVANCED_WHERE[section] ?? {};
-  add({ id: `panel-advanced-${section}`, phase: "main", note: `bot panel: Advanced > ${section}${where.org ? " (organization server)" : where.served ? " (served page)" : ""}`, ...where,
+add({ id: "panel-more", phase: "main", note: "bot panel: More tab (searchable section list)",
+  open: async (ctx) => { await openPanel(ctx); await ctx.click('[data-panel-tab="more"]'); await ctx.sleep(400); } });
+// Slack: a hosted workspace's link to its Admin; Shared with, Perspicax
+// tools and Works on: a server signed in with Perspicax (the organization
+// pass draws them on one server). Who can see it: an admin on a served page
+// of a server that is not an organization's.
+const MORE_WHERE = { slack: { org: true }, worksOn: { org: true }, sharing: { org: true }, perspicax: { org: true }, visibility: { served: true } };
+for (const section of ["overview", "slack", "soul", "skills", "memory", "access", "worksOn", "model", "permissions", "voice", "visibility", "sharing", "perspicax", "history", "usage"]) {
+  const where = MORE_WHERE[section] ?? {};
+  add({ id: `panel-more-${section.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`)}`, phase: "main", note: `bot panel: More > ${section}${where.org ? " (organization server)" : where.served ? " (served page)" : ""}`, ...where,
     open: async (ctx) => {
       await openPanel(ctx);
-      await ctx.click('[data-panel-tab="advanced"]');
+      await ctx.click('[data-panel-tab="more"]');
       await ctx.sleep(300);
       // these rows wait for the server's answer (the organization, the Slack link, the viewer)
       if (where.org || where.served) await ctx.waitFor(`Boolean(document.querySelector('[data-bot-settings-section="${section}"]'))`, { timeoutMs: 8_000 }).catch(() => {});
@@ -240,7 +239,11 @@ add({ id: "routines-logs", phase: "main", note: "Automations page: run logs",
 add({ id: "team-map", phase: "main", note: "Team map page", settleMs: 600,
   open: async (ctx) => { await ctx.dispatch({ type: "showTeamMap" }); await ctx.sleep(1200); } });
 add({ id: "templates", phase: "main", note: "Templates (team library) panel",
-  open: async (ctx) => { await ctx.click({ text: "Templates", tag: "button,a" }); await ctx.sleep(800); } });
+  open: async (ctx) => {
+    // an experimental place since the sidebar redesign (Settings > Experimental features)
+    if (!(await ctx.exists('[data-sidebar-place="templates"]'))) return { skip: "Templates is experimental and off in the default fixture (Settings > Experimental features)" };
+    await ctx.click('[data-sidebar-place="templates"]'); await ctx.sleep(800);
+  } });
 
 // dialogs
 add({ id: "new-bot", phase: "main", note: "New bot dialog",

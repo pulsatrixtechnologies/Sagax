@@ -1,13 +1,14 @@
-// iPad I4: the docked bot panel's tabs, Advanced sections and search,
-// against bot-settings/panel-tabs.ts and bot-settings/sections.ts as the
-// desktop references draw them, gated by SurfaceGate.
+// iPad I4 and I4b: the docked bot panel's tabs (Details, Library, Computer,
+// More), More sections and search, against bot-settings/panel-tabs.ts and
+// bot-settings/sections.ts as the current desktop draws them, gated by
+// SurfaceGate.
 import XCTest
 @testable import CompanionCore
 
 final class DesktopBotPanelTests: XCTestCase {
     func testAdminSeesEveryTabAndTheDesktopSectionOrder() {
         let admin = SurfaceGate(scope: .serverAdmin)
-        XCTAssertEqual(DesktopPanelTab.visible(gate: admin), [.details, .routines, .files, .computer, .advanced])
+        XCTAssertEqual(DesktopPanelTab.visible(gate: admin), [.details, .library, .computer, .more])
         // a served page that is not an organization's adds "Who can see it"
         XCTAssertEqual(
             DesktopPanelSection.visible(gate: admin),
@@ -15,13 +16,16 @@ final class DesktopBotPanelTests: XCTestCase {
         )
     }
 
-    func testOrganizationServerSwapsVisibilityForSharingAndPerspicax() {
+    func testOrganizationServerSwapsVisibilityForSharingAndPerspicax() throws {
         let org = SurfaceGate(scope: .serverAdmin, organization: true)
         let sections = DesktopPanelSection.visible(gate: org, slack: true)
         XCTAssertFalse(sections.contains(.visibility))
         XCTAssertTrue(sections.contains(.sharing))
         XCTAssertTrue(sections.contains(.perspicax))
         XCTAssertEqual(sections[1], .slack)
+        // Works on is its own item there, right after Access
+        let access = try XCTUnwrap(sections.firstIndex(of: .access))
+        XCTAssertEqual(sections[access + 1], .worksOn)
     }
 
     func testSlackNeedsTheServersLink() {
@@ -49,7 +53,7 @@ final class DesktopBotPanelTests: XCTestCase {
         let client = SurfaceGate(scope: .serverClient)
         let sections = DesktopPanelSection.visible(gate: client)
         XCTAssertEqual(sections, [.voice, .usage])
-        XCTAssertEqual(DesktopPanelTab.visible(gate: client).last, .advanced)
+        XCTAssertEqual(DesktopPanelTab.visible(gate: client).last, .more)
     }
 
     func testSearchMatchesLabelAndKeywords() {
@@ -62,8 +66,68 @@ final class DesktopBotPanelTests: XCTestCase {
         XCTAssertFalse(DesktopPanelSection.usage.matches("soul", label: "Usage"))
     }
 
-    func testDeepLinksLandOnAdvanced() {
-        XCTAssertEqual(DesktopPanelTab.holding(.memory), .advanced)
+    func testDeepLinksLandOnMore() {
+        XCTAssertEqual(DesktopPanelTab.holding(.memory), .more)
+        XCTAssertEqual(DesktopPanelTab.holding(.worksOn), .more)
+    }
+
+    func testWorksOnIsListedOnlyOnAnOrganizationServer() {
+        XCTAssertFalse(DesktopPanelSection.visible(gate: SurfaceGate(scope: .serverAdmin)).contains(.worksOn))
+        XCTAssertFalse(DesktopPanelSection.visible(gate: SurfaceGate(scope: .sidecar)).contains(.worksOn))
+        XCTAssertTrue(DesktopPanelSection.worksOn.matches("where it works", label: "Computer"))
+    }
+
+    func testInlineEditSavesOnlyAChange() {
+        XCTAssertNil(DesktopInlineEdit.commit(draft: " Ara ", current: "Ara", required: true))
+        XCTAssertNil(DesktopInlineEdit.commit(draft: "   ", current: "Ara", required: true))
+        XCTAssertEqual(DesktopInlineEdit.commit(draft: " Lux ", current: "Ara", required: true), "Lux")
+        // an optional label may be cleared
+        XCTAssertEqual(DesktopInlineEdit.commit(draft: "", current: "Admin", required: false), "")
+        XCTAssertNil(DesktopInlineEdit.commit(draft: "", current: "", required: false))
+    }
+
+    // MARK: More > Access, Works on
+
+    private func config(_ json: String) throws -> ConfigStatus {
+        try JSONDecoder().decode(ConfigStatus.self, from: Data(json.utf8))
+    }
+
+    func testWorksOnOffersCloudOnlyWithACloudComputer() throws {
+        let plain = try config("{}")
+        XCTAssertEqual(DesktopWorksOnRules.choices(config: plain, organization: false), [.auto, .vm, .local, .browser, .off])
+        let boat = try config(#"{"features":{"boatComputer":true}}"#)
+        XCTAssertEqual(DesktopWorksOnRules.choices(config: boat, organization: false), [.auto, .cloud, .vm, .local, .browser, .off])
+        XCTAssertTrue(DesktopWorksOnRules.showsCloudBackend(worksOn: .auto, config: boat, organization: false))
+        XCTAssertFalse(DesktopWorksOnRules.showsCloudBackend(worksOn: .auto, config: plain, organization: false))
+        // an OMB Cloud home has no computer of the person's own
+        let home = try config(#"{"cloudHome":true}"#)
+        XCTAssertEqual(DesktopWorksOnRules.choices(config: home, organization: false), [.auto, .cloud, .browser, .off])
+        // an organization server offers every place
+        XCTAssertEqual(DesktopWorksOnRules.choices(config: plain, organization: true), DesktopWorksOn.allCases)
+    }
+
+    func testBrowserBlockSaysWhy() throws {
+        let missing = try config(#"{"browserEngine":{"kind":"unavailable","installable":true},"features":{"browser":true}}"#)
+        XCTAssertEqual(DesktopWorksOnRules.browserBlock(config: missing), .notInstalled)
+        XCTAssertFalse(DesktopWorksOnRules.browserSelectable(config: missing, modelCanBrowse: true))
+        XCTAssertEqual(DesktopWorksOnRules.browserBlock(config: try config("{}")), .noEngine)
+        let off = try config(#"{"browserEngine":{"kind":"engine"}}"#)
+        XCTAssertEqual(DesktopWorksOnRules.browserBlock(config: off), .featureOff)
+        let on = try config(#"{"browserEngine":{"kind":"engine"},"features":{"browser":true}}"#)
+        XCTAssertTrue(DesktopWorksOnRules.browserSelectable(config: on, modelCanBrowse: true))
+        XCTAssertEqual(DesktopWorksOnRules.browserBlock(config: on), .model)
+    }
+
+    func testOddFeatureValuesReadAsOff() throws {
+        let odd = try config(#"{"features":{"browser":"yes","boatComputer":1,"connectedApps":true}}"#)
+        XCTAssertNil(odd.features?.browser)
+        XCTAssertEqual(odd.features?.connectedApps, true)
+    }
+
+    func testWebhooksListKeepsOneBotsTriggers() throws {
+        let json = #"{"webhooks":[{"id":"w1","endpointId":"e","name":"Build","prompt":"p","botId":"b1","runOn":"maus","enabled":true,"createdAt":1,"updatedAt":2,"deliveryCount":3},{"id":"w2","name":"Other","botId":"b2","enabled":false,"deliveryCount":0}],"attempts":[]}"#
+        let list = try JSONDecoder().decode(WebhooksResponse.self, from: Data(json.utf8))
+        XCTAssertEqual(list.of(botId: "b1"), [WebhookListing(id: "w1", name: "Build", botId: "b1", enabled: true, deliveryCount: 3)])
     }
 
     func testPlacementDocksFrom1024() {
@@ -81,7 +145,7 @@ final class DesktopBotPanelTests: XCTestCase {
         XCTAssertEqual(DesktopPanelPlacement.clampedWidth(480), 480)
     }
 
-    // MARK: Routines tab
+    // MARK: Details > Routines
 
     private func routine(_ id: String, name: String, bot: String = "b1", enabled: Bool, next: Double?, schedule: String = #"{"type":"daily","time":"09:00"}"#) throws -> Routine {
         let next = next.map { String(format: "%.0f", $0) } ?? "null"

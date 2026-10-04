@@ -119,7 +119,7 @@ struct DesktopChatColumn: View {
             inspectorOpen: inspectorOpen,
             togglePanel: { model.togglePanel() },
             showPanel: { tab in model.showPanel(tab) },
-            showAllowlist: { model.showPanel(.advanced, section: .permissions) },
+            showAllowlist: { model.showPanel(.more, section: .permissions) },
             toggleInspector: { toggleInspector() },
             openModelPicker: { model.modelPickerOpen = true }
         ))
@@ -384,12 +384,13 @@ struct DesktopRoundButton: View {
     let systemImage: String
     let label: LocalizedStringKey
     var active = false
+    /// The renderer's own lucide glyph (18 pt, stroke 1.75) instead of the symbol.
+    var icon: DesktopIcon? = nil
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
-            Image(systemName: systemImage)
-                .font(.system(size: 15, weight: .regular))
+            glyph
                 .foregroundStyle(theme.ink)
                 .frame(width: 36, height: 36)
                 .background(active ? theme.raised : theme.chrome, in: Circle())
@@ -399,6 +400,15 @@ struct DesktopRoundButton: View {
         .buttonStyle(.plain)
         .hoverEffect(.highlight)
         .accessibilityLabel(Text(label))
+    }
+
+    @ViewBuilder
+    private var glyph: some View {
+        if let icon {
+            DesktopIconView(icon: icon, size: 18, strokeWidth: 1.75)
+        } else {
+            Image(systemName: systemImage).font(.system(size: 15, weight: .regular))
+        }
     }
 }
 

@@ -143,24 +143,24 @@ enum IPadParityScreen: String, CaseIterable {
     case groupPanel = "group-panel"
     case panelDetails = "panel-details"
     case panelAvatarEditor = "panel-avatar-editor"
-    case panelRoutines = "panel-routines"
-    case panelFiles = "panel-files"
+    case panelLibrary = "panel-library"
     case panelComputer = "panel-computer"
-    case panelAdvanced = "panel-advanced"
-    case panelAdvancedOverview = "panel-advanced-overview"
-    case panelAdvancedSlack = "panel-advanced-slack"
-    case panelAdvancedSoul = "panel-advanced-soul"
-    case panelAdvancedSkills = "panel-advanced-skills"
-    case panelAdvancedMemory = "panel-advanced-memory"
-    case panelAdvancedAccess = "panel-advanced-access"
-    case panelAdvancedModel = "panel-advanced-model"
-    case panelAdvancedPermissions = "panel-advanced-permissions"
-    case panelAdvancedVoice = "panel-advanced-voice"
-    case panelAdvancedVisibility = "panel-advanced-visibility"
-    case panelAdvancedSharing = "panel-advanced-sharing"
-    case panelAdvancedPerspicax = "panel-advanced-perspicax"
-    case panelAdvancedHistory = "panel-advanced-history"
-    case panelAdvancedUsage = "panel-advanced-usage"
+    case panelMore = "panel-more"
+    case panelMoreOverview = "panel-more-overview"
+    case panelMoreSlack = "panel-more-slack"
+    case panelMoreSoul = "panel-more-soul"
+    case panelMoreSkills = "panel-more-skills"
+    case panelMoreMemory = "panel-more-memory"
+    case panelMoreAccess = "panel-more-access"
+    case panelMoreWorksOn = "panel-more-works-on"
+    case panelMoreModel = "panel-more-model"
+    case panelMorePermissions = "panel-more-permissions"
+    case panelMoreVoice = "panel-more-voice"
+    case panelMoreVisibility = "panel-more-visibility"
+    case panelMoreSharing = "panel-more-sharing"
+    case panelMorePerspicax = "panel-more-perspicax"
+    case panelMoreHistory = "panel-more-history"
+    case panelMoreUsage = "panel-more-usage"
     case routinesCalendar = "routines-calendar"
     case routinesList = "routines-list"
     case routinesLogs = "routines-logs"
@@ -219,18 +219,21 @@ enum IPadParityScreen: String, CaseIterable {
     var panelTab: DesktopPanelTab? {
         switch self {
         case .panelDetails, .panelAvatarEditor: .details
-        case .panelRoutines: .routines
-        case .panelFiles: .files
+        case .panelLibrary: .library
         case .panelComputer: .computer
-        case .panelAdvanced: .advanced
-        default: panelSection != nil ? .advanced : nil
+        case .panelMore: .more
+        default: panelSection != nil ? .more : nil
         }
     }
 
-    /// The Advanced section open on a `panel-advanced-<section>` surface.
+    /// The More section open on a `panel-more-<section>` surface (the
+    /// section's id in kebab case: `panel-more-works-on` is worksOn).
     var panelSection: DesktopPanelSection? {
-        guard rawValue.hasPrefix("panel-advanced-") else { return nil }
-        return DesktopPanelSection(rawValue: String(rawValue.dropFirst("panel-advanced-".count)))
+        guard rawValue.hasPrefix("panel-more-") else { return nil }
+        let id = String(rawValue.dropFirst("panel-more-".count))
+        return DesktopPanelSection.allCases.first { section in
+            section.rawValue.replacingOccurrences(of: "([A-Z])", with: "-$1", options: .regularExpression).lowercased() == id
+        }
     }
 }
 
