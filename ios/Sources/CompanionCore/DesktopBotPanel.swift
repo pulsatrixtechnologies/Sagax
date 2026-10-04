@@ -393,3 +393,76 @@ public enum DesktopWorksOnRules {
         return config?.cloudHome == true || cloudComputersOffered(config)
     }
 }
+
+// MARK: - The iPhone's bot panel
+
+// The iPhone shows the same panel as the iPad and the desktop
+// (`BotSettingsDialog.tsx`): the same tabs and More sections, from the same
+// `DesktopPanelTab` / `DesktopPanelSection` rules, full screen. What is the
+// phone's own is below: the doors into it, the bot's actions in its top
+// bar, and the Library's chips (the conversation's files by kind, and the
+// bot's links as one more chip).
+
+/// A way into the bot panel and the tab it opens on.
+public enum BotPanelDoor: String, CaseIterable, Hashable, Sendable {
+    /// The chat's name capsule (a long press is Threads).
+    case nameCapsule
+    /// The + sheet's "Bot settings".
+    case plusSettings
+    /// The chat's computer button.
+    case computerButton
+    /// The + sheet's Computer.
+    case plusComputer
+
+    public var tab: DesktopPanelTab {
+        switch self {
+        case .nameCapsule, .plusSettings: .details
+        case .computerButton, .plusComputer: .computer
+        }
+    }
+}
+
+/// The bot's own actions, in the panel's top bar menu. The desktop keeps
+/// them in the sidebar row's menu (Duplicate, Primary Bot, Delete) and has
+/// no per-bot template share; the phone has no sidebar under the panel, so
+/// they sit together in one menu, each once.
+public enum BotPanelAction: String, CaseIterable, Hashable, Sendable {
+    case shareTemplate, copyId, duplicate, makePrimary, replacePrimary, delete
+
+    /// What this pairing may do with this bot, in menu order.
+    public static func available(gate: SurfaceGate, bot: Bot, viewerId: String) -> [BotPanelAction] {
+        var out: [BotPanelAction] = [.shareTemplate, .copyId]
+        if gate.allows(.duplicateBot) { out.append(.duplicate) }
+        if gate.allows(.primaryBot) {
+            switch PrimaryBotRules.menuAction(for: bot, viewerId: viewerId) {
+            case .make: out.append(.makePrimary)
+            case .replace: out.append(.replacePrimary)
+            case nil: break
+            }
+        }
+        // D4: an owner's or an admin's, not a client session's
+        if gate.allows(.botOwnerExtras) { out.append(.delete) }
+        return out
+    }
+}
+
+/// A chip of the Library tab: a kind of the conversation's files
+/// (`FilesSection.tsx` `visibleFilters`), or the bot's links.
+public enum BotLibraryChip: Hashable, Sendable {
+    case files(ThreadFileFilter)
+    case links
+
+    public var fileFilter: ThreadFileFilter? {
+        if case let .files(filter) = self { return filter }
+        return nil
+    }
+
+    /// The chips to show: the files' kinds as the desktop shows them (two
+    /// kinds or more), then Links when the bot has any. With links and a
+    /// single kind of file, All stands for the files.
+    public static func visible(counts: [ThreadFileFilter: Int], selected: BotLibraryChip, links: Int) -> [BotLibraryChip] {
+        let kinds = ThreadFileRules.visibleFilters(counts: counts, selected: selected.fileFilter ?? .all).map(BotLibraryChip.files)
+        guard links > 0 || selected == .links else { return kinds }
+        return (kinds.isEmpty ? [.files(.all)] : kinds) + [.links]
+    }
+}
