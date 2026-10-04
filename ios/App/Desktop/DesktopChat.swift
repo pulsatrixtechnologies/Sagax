@@ -263,7 +263,8 @@ extension ChatView {
                 items: menuItems,
                 loading: power.loadingCommands,
                 accent: desktopChatText?.accent ?? MausPalette.color(current.color),
-                refresh: nil,
+                refresh: commandTargets.contains { power.commands(botId: $0.member.id, threadId: threadId, groupId: current.isBot ? nil : current.id)?.available == true }
+                    ? { Task { await loadCommands(refresh: true) } } : nil,
                 close: closeCommandMenu,
                 pick: pickCommand
             ))
@@ -423,9 +424,9 @@ final class DesktopModelCatalog {
     static let shared = DesktopModelCatalog()
     private var cached: (connection: String?, instances: [Instance])?
 
-    func instances(_ session: Session) async -> [Instance] {
+    func instances(_ session: Session, reload: Bool = false) async -> [Instance] {
         let connection = session.connection?.id
-        if let cached, cached.connection == connection, !cached.instances.isEmpty { return cached.instances }
+        if !reload, let cached, cached.connection == connection, !cached.instances.isEmpty { return cached.instances }
         // quietly: a chip that cannot load stays hidden, never an alert
         guard !session.isDemo, let client = session.profileClient else { return [] }
         let loaded = (try? await client.instances()) ?? []

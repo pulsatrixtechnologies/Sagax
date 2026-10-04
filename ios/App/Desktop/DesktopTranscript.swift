@@ -573,6 +573,7 @@ struct DesktopApprovalBlock: View {
         ScrollView(.vertical) {
             Text(verbatim: text)
                 .font(.system(size: size, design: .monospaced))
+                .tracking(DesktopChatMetrics.monoTracking(size))
                 .lineSpacing(max(0, size * 1.625 - font.lineHeight))
                 .foregroundStyle(theme.ink)
                 .textSelection(.enabled)

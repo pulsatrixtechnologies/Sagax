@@ -75,11 +75,13 @@ struct DesktopComposerPill: View {
         .shadow(color: .black.opacity(0.05), radius: 4, y: 2)
         .overlay(alignment: .topLeading) {
             if let popup, menu == nil {
+                // `absolute bottom-full left-2 mb-2 w-[26rem]`: a zero-high
+                // frame on the pill's top edge, the popup hanging up from it
                 popup
-                    .frame(width: 320)
+                    .frame(width: 416)
                     .fixedSize(horizontal: false, vertical: true)
-                    .padding(.leading, 8)
-                    .alignmentGuide(.top) { d in d[.bottom] + 8 }
+                    .frame(height: 0, alignment: .bottom)
+                    .offset(x: 8, y: -8)
                     .transition(.opacity)
             }
         }

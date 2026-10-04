@@ -17,10 +17,20 @@ struct ComposerCommandMenuView: View {
     let close: () -> Void
     let pick: (ComposerMenuItem) -> Void
     /// iPad desktop shell: ComposerCommandMenu.tsx's panel (composer fill,
-    /// hairline ring at 40 %, radius 12, 320 wide, rows 57 tall).
+    /// hairline ring at 40 %, radius 12, 416 wide, at most 320 tall: a
+    /// 37 pt raised header, 27 pt group headings, 53 pt rows).
     @Environment(\.desktopChatText) private var desktop
 
-    private var singleGroup: Bool { Set(items.map(\.section)).count <= 1 }
+    private func startsSection(_ index: Int) -> Bool {
+        index == 0 || items[index - 1].section != items[index].section
+    }
+
+    /// The desktop list's own height (its rows and headings), so the panel
+    /// is as tall as what it lists, up to the 320 pt cap less the header.
+    private var desktopListHeight: CGFloat {
+        let headings = items.indices.filter(startsSection).count
+        return min(CGFloat(headings) * 27 + CGFloat(items.count) * 53, 320 - 37)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -29,7 +39,7 @@ struct ComposerCommandMenuView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
                     ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
-                        if (index == 0 || items[index - 1].section != item.section) && !(desktop != nil && (singleGroup || item.group == .sagax)) {
+                        if startsSection(index) {
                             sectionHeading(item)
                         }
                         row(item, highlighted: desktop != nil && index == 0)
@@ -37,8 +47,8 @@ struct ComposerCommandMenuView: View {
                 }
                 .padding(.bottom, desktop == nil ? 4 : 0)
             }
-            .frame(maxHeight: 264)
-            .fixedSize(horizontal: false, vertical: desktop != nil)
+            .frame(maxHeight: desktop == nil ? 264 : desktopListHeight)
+            .frame(height: desktop == nil ? nil : desktopListHeight)
         }
         .modifier(CommandMenuChrome(desktop: desktop))
         .accessibilityElement(children: .contain)
@@ -62,9 +72,21 @@ struct ComposerCommandMenuView: View {
                         .foregroundStyle(desktop.inkTertiary)
                         .lineLimit(1)
                 }
+                if let refresh {
+                    Button(action: refresh) {
+                        Image(systemName: "arrow.clockwise")
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundStyle(desktop.inkSecondary)
+                            .frame(width: 20, height: 20)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Refresh engine commands")
+                }
             }
             .padding(.horizontal, 12)
-            .frame(height: 31)
+            .frame(height: 36)
+            .background(desktop.raised)
         } else {
             phoneHeader
         }
@@ -121,13 +143,14 @@ struct ComposerCommandMenuView: View {
             }
         }
         .textCase(.uppercase)
-        .font(.system(size: 10, weight: .semibold))
+        .font(desktop?.font(10, .semibold) ?? .system(size: 10, weight: .semibold))
         .tracking(0.8)
-        .foregroundStyle(Theme.textTertiary)
+        .foregroundStyle(desktop?.inkTertiary ?? Theme.textTertiary)
         .lineLimit(1)
         .padding(.horizontal, 12)
         .padding(.top, 8)
-        .padding(.bottom, 2)
+        .padding(.bottom, desktop == nil ? 2 : 4)
+        .frame(height: desktop == nil ? nil : 27, alignment: .bottomLeading)
     }
 
     @ViewBuilder
@@ -175,8 +198,8 @@ struct ComposerCommandMenuView: View {
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, 12)
-            .padding(.vertical, 10)
-            .frame(minHeight: 57)
+            .padding(.vertical, 8)
+            .frame(height: 53)
             .background(highlighted ? desktop.raisedHover : .clear)
             .contentShape(Rectangle())
             .opacity(reason == nil ? 1 : 0.55)

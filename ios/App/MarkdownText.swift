@@ -402,6 +402,12 @@ struct MarkdownText: View {
                     attributed.insert(pad, at: range.lowerBound)
                 }
             }
+            if let desktop {
+                // links: `underline decoration-accent/40`
+                for run in attributed.runs where run.link != nil {
+                    attributed[run.range].underlineStyle = Text.LineStyle(pattern: .solid, color: desktop.accent.opacity(0.4))
+                }
+            }
             if desktop != nil {
                 // SwiftUI draws a `.code` intent in the environment's size
                 // (13) whatever the run's font says: drop the intent so the

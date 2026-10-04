@@ -25,10 +25,17 @@ struct DesktopModelPicker: View {
     @State private var query = ""
     @State private var showAll = false
     @State private var saving = false
+    @State private var refreshing = false
+    @State private var updating = false
+    @State private var updateError: String?
+    @State private var terminalOpen = false
 
     private var selection: ModelSelection { bot.currentTaskModelSelection }
+    /// engine-rail.ts `configuredModelInstances`: what someone can use or
+    /// finish setting up; the full catalogue stays in Settings.
+    private var pickerInstances: [Instance] { DesktopEngineRail.configured(instances, selected: selection.instanceId) }
     private var rail: Instance? {
-        instances.first { $0.instanceId == (railId ?? selection.instanceId) } ?? instances.first
+        pickerInstances.first { $0.instanceId == (railId ?? selection.instanceId) } ?? pickerInstances.first
     }
 
     var body: some View {
@@ -82,46 +89,18 @@ struct DesktopModelPicker: View {
     // MARK: Rail
 
     private var engineRail: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            railHeading("Cloud")
-            ForEach(instances) { instance in
-                Button {
-                    railId = instance.instanceId
-                    showAll = false
-                    query = ""
-                } label: {
-                    HStack(spacing: 10) {
-                        Image(systemName: instance.driverKind.lowercased().contains("codex") ? "circle.hexagongrid" : "asterisk")
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundStyle(instance.driverKind.lowercased().contains("codex") ? theme.ink : Color(red: 0.85, green: 0.47, blue: 0.34))
-                            .frame(width: 28, height: 28)
-                            .background(theme.inset, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
-                        VStack(alignment: .leading, spacing: 0) {
-                            Text(verbatim: instance.displayName ?? instance.instanceId)
-                                .font(theme.font(13, .medium))
-                                .foregroundStyle(theme.ink)
-                                .lineLimit(1)
-                                .frame(height: 19.5)
-                            status(instance)
-                        }
-                        Spacer(minLength: 0)
+        let groups = DesktopEngineRail.groups(pickerInstances)
+        return ScrollView {
+            VStack(alignment: .leading, spacing: 4) {
+                if !groups.cloud.isEmpty { railHeading("Cloud") }
+                ForEach(groups.cloud) { railButton($0) }
+                railHeading("API keys").padding(.top, groups.cloud.isEmpty ? 0 : 6)
+                ForEach(groups.api) { railButton($0) }
+                Button(action: openProviders) {
+                    HStack(spacing: 8) {
+                        DesktopLucideGlyph(paths: ["M5 12h14", "M12 5v14"], size: 14)
+                        Text("Add API keys")
                     }
-                    .padding(.horizontal, 10)
-                    .frame(height: 52)
-                    .background(instance.instanceId == rail?.instanceId ? theme.selected : .clear, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                    .overlay {
-                        if instance.instanceId == rail?.instanceId {
-                            RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(theme.hairline.opacity(0.5), lineWidth: 1)
-                        }
-                    }
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .hoverEffect(.highlight)
-            }
-            railHeading("API keys").padding(.top, 6)
-            Button(action: openProviders) {
-                Label("Add API keys", systemImage: "plus")
                     .font(theme.font(12))
                     .foregroundStyle(theme.inkSecondary)
                     .padding(.horizontal, 10)
@@ -130,10 +109,63 @@ struct DesktopModelPicker: View {
                         RoundedRectangle(cornerRadius: 8, style: .continuous)
                             .strokeBorder(theme.hairline, style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
                     )
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                if !groups.local.isEmpty { railHeading("Local").padding(.top, 6) }
+                ForEach(groups.local) { railButton($0) }
             }
-            .buttonStyle(.plain)
+            .padding(12)
         }
-        .padding(12)
+    }
+
+    /// One provider: a Claude account or the OpenAI sign-ins fold into one
+    /// button named for the family, opening on the account in use.
+    private func railButton(_ instance: Instance) -> some View {
+        let family = DesktopEngineRail.family(instance)
+        let target = family.flatMap { f in
+            pickerInstances.first { DesktopEngineRail.family($0) == f && $0.instanceId == selection.instanceId }
+        } ?? instance
+        let selected = family.map { $0 == rail.flatMap(DesktopEngineRail.family) } ?? (instance.instanceId == rail?.instanceId)
+        return Button {
+            railId = target.instanceId
+            showAll = false
+            query = ""
+        } label: {
+            HStack(spacing: 10) {
+                Group {
+                    if let mark = DesktopProviderMark(driverKind: target.driverKind, preset: nil) {
+                        DesktopProviderMarkView(mark: mark, size: 16)
+                    } else {
+                        Image(systemName: "cpu").font(.system(size: 13)).foregroundStyle(theme.ink)
+                    }
+                }
+                    .frame(width: 28, height: 28)
+                    .background(theme.inset, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                VStack(alignment: .leading, spacing: 0) {
+                    Text(verbatim: DesktopEngineRail.label(instance))
+                        .font(theme.font(13, .medium))
+                        .foregroundStyle(theme.ink)
+                        .lineLimit(1)
+                        .frame(height: 19.5)
+                    status(target)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 10)
+            .frame(height: 52)
+            .background(selected ? theme.selected : .clear, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .overlay {
+                if selected {
+                    RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(theme.hairline.opacity(0.5), lineWidth: 1)
+                }
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .hoverEffect(.highlight)
+        .accessibilityLabel(Text(verbatim: DesktopEngineRail.label(instance)))
+        .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
     private func railHeading(_ title: LocalizedStringKey) -> some View {
@@ -143,20 +175,25 @@ struct DesktopModelPicker: View {
             .tracking(0.8)
             .foregroundStyle(theme.inkSecondary)
             .padding(.horizontal, 10)
-            .frame(height: 19, alignment: .bottom)
+            .frame(height: 19)
     }
 
+    /// `engineStatus`: Setup required, Sign-in required, or the version;
+    /// amber while it needs something (or has an update).
     @ViewBuilder
     private func status(_ instance: Instance) -> some View {
-        let signedOut = instance.snapshot.authenticated == false
-        let warn = signedOut || !instance.snapshot.isAvailable || instance.snapshot.reason != nil
+        let warn = DesktopEngineRail.needsCli(instance) || DesktopEngineRail.needsSignIn(instance) || instance.snapshot.update != nil
         HStack(spacing: 4) {
             Circle().fill(warn ? theme.warning : theme.success).frame(width: 6, height: 6)
             Group {
-                if signedOut {
+                if DesktopEngineRail.needsCli(instance) {
+                    Text("Setup required")
+                } else if DesktopEngineRail.needsSignIn(instance) {
                     Text("Sign-in required")
+                } else if let version = instance.snapshot.version {
+                    Text(verbatim: version)
                 } else {
-                    Text(verbatim: instance.snapshot.version ?? instance.driverKind)
+                    Text("Ready")
                 }
             }
             .font(theme.font(11))
@@ -173,11 +210,23 @@ struct DesktopModelPicker: View {
         if let rail {
             VStack(alignment: .leading, spacing: 0) {
                 HStack(spacing: 4) {
-                    Text(verbatim: rail.displayName ?? rail.instanceId)
+                    Text(verbatim: DesktopEngineRail.label(rail))
                         .font(theme.font(16, .semibold))
                         .foregroundStyle(theme.ink)
+                        .lineLimit(1)
                         .frame(height: 24)
                     Spacer(minLength: 8)
+                    Button { refresh() } label: {
+                        Image(systemName: "arrow.clockwise")
+                            .font(.system(size: 10.5, weight: .medium))
+                            .foregroundStyle(theme.inkSecondary)
+                            .rotationEffect(.degrees(refreshing ? 180 : 0))
+                            .frame(width: 24, height: 24)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(refreshing)
+                    .accessibilityLabel(Text("Refresh \(rail.displayName ?? rail.instanceId) models"))
                     if let version = rail.snapshot.version {
                         Text(verbatim: version)
                             .font(theme.font(10.5, .medium))
@@ -205,14 +254,16 @@ struct DesktopModelPicker: View {
                         Text("Other threads and groups keep their model.")
                     }
                 }
-                .font(theme.font(11.5))
+                .font(theme.font(11))
                 .foregroundStyle(theme.inkSecondary)
-                .padding(.top, 6)
+                .frame(minHeight: 16.5)
+                .padding(.top, 4)
 
                 Text("Model")
                     .font(theme.font(12.5, .medium))
                     .foregroundStyle(theme.ink)
-                    .padding(.top, 18)
+                    .frame(minHeight: 18.8)
+                    .padding(.top, 17.5)
                 HStack(spacing: 8) {
                     Image(systemName: "magnifyingglass")
                         .font(.system(size: 12))
@@ -230,6 +281,9 @@ struct DesktopModelPicker: View {
                 .padding(.horizontal, 8)
                 .padding(.top, 4)
 
+                if let update = rail.snapshot.update {
+                    updateCard(rail, update).padding(.horizontal, 4).padding(.top, 8)
+                }
                 models(rail).padding(.top, 8)
             }
         } else {
@@ -267,6 +321,7 @@ struct DesktopModelPicker: View {
                 .tracking(0.8)
                 .foregroundStyle(theme.inkSecondary)
                 .padding(.horizontal, 8)
+                .padding(.top, 2)
                 .frame(height: 21, alignment: .top)
             ForEach(shown) { option in
                 Button { pick(rail, option) } label: {
@@ -320,6 +375,128 @@ struct DesktopModelPicker: View {
         }
     }
 
+    /// The engine's update notice (EngineSetup's update card): what the
+    /// newer version brings, the update on this server (Claude Code), and
+    /// the command for a terminal.
+    private func updateCard(_ rail: Instance, _ update: EngineUpdateNotice) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .top, spacing: 8) {
+                Image(systemName: "exclamationmark.triangle")
+                    .font(.system(size: 11.5, weight: .medium))
+                    .foregroundStyle(theme.warning)
+                    .frame(width: 14, height: 14)
+                    .padding(.top, 2)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(verbatim: update.title)
+                        .font(theme.font(12.5, .semibold))
+                        .foregroundStyle(theme.ink)
+                        .frame(minHeight: 18.8)
+                    Text(verbatim: update.message)
+                        .font(theme.font(11.5))
+                        .lineSpacing(18.7 - theme.uiFont(11.5).lineHeight)
+                        .foregroundStyle(theme.inkSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.vertical, (18.7 - theme.uiFont(11.5).lineHeight) / 2)
+                }
+            }
+            if rail.driverKind == "claudeAgent" {
+                Button { runUpdate(rail) } label: {
+                    HStack(spacing: 8) {
+                        if updating {
+                            ProgressView().controlSize(.small).tint(theme.accentInk)
+                        } else {
+                            Image(systemName: "arrow.down.to.line").font(.system(size: 12, weight: .semibold))
+                        }
+                        Text("Update \(rail.displayName ?? rail.instanceId) on this server")
+                            .font(theme.font(12.5, .semibold))
+                    }
+                    .foregroundStyle(theme.accentInk)
+                    .frame(maxWidth: .infinity, minHeight: 34.8)
+                    .background(theme.accent, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .disabled(updating)
+                .padding(.top, 12)
+                .accessibilityIdentifier("desktop-model-update")
+            }
+            if let updateError {
+                Text(verbatim: updateError)
+                    .font(theme.font(11.5))
+                    .foregroundStyle(theme.danger)
+                    .padding(.top, 6)
+            }
+            VStack(alignment: .leading, spacing: 8) {
+                Button { withAnimation(.easeOut(duration: 0.15)) { terminalOpen.toggle() } } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "arrowtriangle.right.fill")
+                            .font(.system(size: 6.5))
+                            .rotationEffect(.degrees(terminalOpen ? 90 : 0))
+                        Text("Prefer a terminal?")
+                    }
+                    .font(theme.font(11.5))
+                    .foregroundStyle(theme.inkSecondary)
+                    .frame(maxWidth: .infinity, minHeight: 17.2, alignment: .leading)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                if terminalOpen {
+                    HStack(spacing: 6) {
+                        Text(verbatim: update.command)
+                            .font(.system(size: 11, design: .monospaced))
+                            .foregroundStyle(theme.inkSecondary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                            .textSelection(.enabled)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        Button { PlatformBridge.copyToPasteboard(update.command) } label: {
+                            Label("Copy", systemImage: "doc.on.doc")
+                                .font(theme.font(11, .medium))
+                                .foregroundStyle(theme.inkSecondary)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(Text("Copy command"))
+                    }
+                    .padding(.horizontal, 8)
+                    .frame(minHeight: 38.5)
+                    .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(theme.hairline.opacity(0.5), lineWidth: 1))
+                }
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            .padding(1)
+            .background(theme.app, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(theme.hairline.opacity(0.5), lineWidth: 1))
+            .padding(.top, 8)
+        }
+        .padding(10)
+        .padding(1)
+        .background(theme.warning.opacity(0.05), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(theme.warning.opacity(0.25), lineWidth: 1))
+    }
+
+    private func refresh() {
+        refreshing = true
+        Task {
+            instances = await DesktopModelCatalog.shared.instances(session, reload: true)
+            refreshing = false
+        }
+    }
+
+    private func runUpdate(_ rail: Instance) {
+        updating = true
+        updateError = nil
+        Task {
+            do {
+                _ = try await session.updateClaude(instanceId: rail.instanceId)
+                instances = await DesktopModelCatalog.shared.instances(session, reload: true)
+            } catch {
+                updateError = error.localizedDescription
+            }
+            updating = false
+        }
+    }
+
     private var footer: some View {
         HStack(spacing: 0) {
             Button(action: openProviders) {
@@ -365,5 +542,56 @@ extension Session {
         } catch {
             if !Task.isCancelled { actionError = error.localizedDescription }
         }
+    }
+}
+
+/// engine-rail.ts: which engines the picker lists, how sign-ins fold, and
+/// the rail's groups.
+enum DesktopEngineRail {
+    enum Family: Equatable { case claude, openai }
+
+    static func configured(_ instances: [Instance], selected: String) -> [Instance] {
+        instances.filter { instance in
+            instance.instanceId == selected
+                || (instance.snapshot.isAvailable && (!instance.models.options.isEmpty || instance.snapshot.chatgptPlan == true))
+        }
+    }
+
+    static func family(_ instance: Instance) -> Family? {
+        guard instance.access != "api" else { return nil }
+        switch instance.driverKind {
+        case "claudeAgent": return .claude
+        case "codex": return .openai
+        default: return nil
+        }
+    }
+
+    static func label(_ instance: Instance) -> String {
+        switch family(instance) {
+        case .claude: "Claude"
+        case .openai: "OpenAI"
+        case nil: instance.displayName ?? instance.instanceId
+        }
+    }
+
+    static func needsSignIn(_ instance: Instance) -> Bool { instance.snapshot.isAvailable && instance.snapshot.authenticated == false }
+    static func needsCli(_ instance: Instance) -> Bool { !instance.snapshot.isAvailable }
+
+    /// One button per family (its first engine), then Cloud / API keys / Local.
+    static func groups(_ instances: [Instance]) -> (cloud: [Instance], api: [Instance], local: [Instance]) {
+        var seen: [Family] = []
+        var cloud: [Instance] = [], api: [Instance] = [], local: [Instance] = []
+        for instance in instances {
+            if let f = family(instance) {
+                if seen.contains(f) { continue }
+                seen.append(f)
+            }
+            switch instance.access {
+            case "custom": local.append(instance)
+            case "api": api.append(instance)
+            default: cloud.append(instance)
+            }
+        }
+        return (cloud, api, local)
     }
 }
