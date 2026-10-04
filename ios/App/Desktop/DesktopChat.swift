@@ -277,6 +277,26 @@ extension ChatView {
     }
 }
 
+/// Cuts the transcript under the open find bar: the header's 52 pt and
+/// the bar's 37, as the desktop's column lays the bar out before the
+/// scroll view (its header still floats over the glow above).
+struct DesktopFindClip: ViewModifier {
+    let open: Bool
+
+    func body(content: Content) -> some View {
+        if open {
+            content.mask(alignment: .top) {
+                VStack(spacing: 0) {
+                    Color.clear.frame(height: 52 + 37)
+                    Color.black
+                }
+            }
+        } else {
+            content
+        }
+    }
+}
+
 // MARK: - Header
 
 /// The bot pill (41 tall, radius full, card fill, hairline ring, mascot 24,
@@ -294,6 +314,9 @@ struct DesktopChatHeader: View {
     @State private var exportOpen = DesktopChatHeader.parityExport
     /// Appearance > Inspector button (off by default, as on the desktop).
     @AppStorage(DesktopInspectorButton.key) private var showInspector = false
+    @EnvironmentObject private var model: DesktopShellModel
+    @ObservedObject private var prefs = SidebarPrefsModel.shared
+    @State private var threadsOpen = DesktopChatHeader.parityThreads
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -309,7 +332,7 @@ struct DesktopChatHeader: View {
                 .padding(.leading, 8)
                 .padding(.trailing, 14)
                 .frame(height: 41)
-                .background(theme.chrome, in: Capsule())
+                .background(theme.elevated, in: Capsule())
                 .overlay(Capsule().strokeBorder(theme.hairlineWeak, lineWidth: 1))
                 .contentShape(Capsule())
             }
@@ -323,17 +346,20 @@ struct DesktopChatHeader: View {
             if !(chrome.panelOpen && chrome.panelDocked) {
                 HStack(spacing: 8) {
                     Spacer(minLength: 0)
-                    DesktopRoundButton(systemImage: "square.and.arrow.up", label: "Export conversation", active: exportOpen) { exportOpen.toggle() }
+                    DesktopRoundButton(systemImage: "square.and.arrow.up", label: "Export conversation", active: exportOpen, icon: .share) { exportOpen.toggle() }
                         .overlay(alignment: .topTrailing) {
                             if exportOpen { exportMenu }
                         }
                         .zIndex(1)
+                    if case let .bot(bot) = chat, DesktopSidebarState.showThreads(model: model, prefs: prefs) {
+                        DesktopThreadPickerButton(bot: bot, open: $threadsOpen)
+                    }
                     if chat.isBot {
                         if showInspector && session.surfaceGate.allows(.inspector) {
-                            DesktopRoundButton(systemImage: "ladybug", label: "Inspector", active: chrome.inspectorOpen, action: chrome.toggleInspector)
+                            DesktopRoundButton(systemImage: "ladybug", label: "Inspector", active: chrome.inspectorOpen, lucide: DesktopInspectorPanel.bug, action: chrome.toggleInspector)
                                 .accessibilityIdentifier("desktop-inspector-toggle")
                         }
-                        DesktopRoundButton(systemImage: "sidebar.right", label: "Open agent profile", action: chrome.togglePanel)
+                        DesktopRoundButton(systemImage: "sidebar.right", label: "Open agent profile", icon: .panelRight, action: chrome.togglePanel)
                             .keyboardShortcut(".", modifiers: .command)
                             .accessibilityIdentifier("desktop-panel-toggle")
                     }
@@ -379,8 +405,10 @@ extension DesktopChatHeader {
 
     #if DEBUG
     static var parityExport: Bool { ParityLaunch.current?.iPadScreen == .chatExportMenu }
+    static var parityThreads: Bool { ParityLaunch.current?.iPadScreen == .chatThreads }
     #else
     static let parityExport = false
+    static let parityThreads = false
     #endif
 }
 
@@ -392,6 +420,8 @@ struct DesktopRoundButton: View {
     var active = false
     /// The renderer's own lucide glyph (18 pt, stroke 1.75) instead of the symbol.
     var icon: DesktopIcon? = nil
+    /// Or a lucide glyph's paths (DesktopLucide).
+    var lucide: [String]? = nil
     let action: () -> Void
 
     var body: some View {
@@ -399,7 +429,7 @@ struct DesktopRoundButton: View {
             glyph
                 .foregroundStyle(theme.ink)
                 .frame(width: 36, height: 36)
-                .background(active ? theme.raised : theme.chrome, in: Circle())
+                .background(active ? theme.elevatedHover : theme.elevated, in: Circle())
                 .overlay(Circle().strokeBorder(theme.hairlineWeak, lineWidth: 1))
                 .contentShape(Circle())
         }
@@ -410,7 +440,9 @@ struct DesktopRoundButton: View {
 
     @ViewBuilder
     private var glyph: some View {
-        if let icon {
+        if let lucide {
+            DesktopLucideGlyph(paths: lucide, size: 18, strokeWidth: 1.75)
+        } else if let icon {
             DesktopIconView(icon: icon, size: 18, strokeWidth: 1.75)
         } else {
             Image(systemName: systemImage).font(.system(size: 15, weight: .regular))

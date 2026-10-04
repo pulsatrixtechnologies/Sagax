@@ -103,7 +103,10 @@ enum DesktopChatMetrics {
         guard width > 0 else { return false }
         let font = theme.uiFont(textSize)
         for line in text.split(separator: "\n", omittingEmptySubsequences: true) {
-            let plain = line.replacingOccurrences(of: "**", with: "").replacingOccurrences(of: "`", with: "")
+            // links read as their text (`[Guide](https://…)` is "Guide")
+            let plain = String(line)
+                .replacingOccurrences(of: #"!?\[([^\]]*)\]\([^)]*\)"#, with: "$1", options: .regularExpression)
+                .replacingOccurrences(of: "**", with: "").replacingOccurrences(of: "`", with: "")
             if (plain as NSString).size(withAttributes: [.font: font]).width > width { return true }
         }
         return false

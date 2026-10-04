@@ -449,7 +449,7 @@ private struct DesktopShellRouting: ViewModifier {
     /// the pointer over Aurora, or a menu open where the desktop opened it.
     private func applyParityLaunch() async {
         guard let screen = ParityLaunch.current?.iPadScreen, screen.implemented else { return }
-        model.parityShowThreads = screen == .mainThreads
+        model.parityShowThreads = screen == .mainThreads || screen == .chatThreads
         switch screen {
         case .mainCompact: model.presetDensity(.compact)
         case .mainCollapsed: model.presetDensity(.icons)

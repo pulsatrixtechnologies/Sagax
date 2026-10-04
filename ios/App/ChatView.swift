@@ -494,6 +494,9 @@ struct ChatView: View {
                 .safeAreaInset(edge: .top, spacing: 0) {
                     Color.clear.frame(height: Self.topBarHeight + (pinnedPreview == nil ? 0 : Self.pinnedBannerHeight))
                 }
+                // iPad desktop: an open find bar sits in the column's flow,
+                // so the transcript is cut under it (ChatView.tsx)
+                .modifier(DesktopFindClip(open: desktopChat != nil && finder.isOpen && session.surfaceGate.allows(.findInConversation)))
                 .overlay(alignment: .top) {
                     // the desktop's header floats over the transcript, unfaded
                     if desktopChat == nil {
