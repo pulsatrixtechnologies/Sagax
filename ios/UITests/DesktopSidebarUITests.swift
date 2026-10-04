@@ -98,12 +98,13 @@ final class DesktopSidebarUITests: XCTestCase {
     @MainActor
     private func row(_ id: String, in app: XCUIApplication) -> XCUIElement {
         let element = app.buttons["desktop-row.\(id)"].firstMatch
-        let list = app.scrollViews.firstMatch
-        for step in 0..<10 where !element.waitForExistence(timeout: 1) || !element.isHittable {
-            if step < 5 { list.swipeUp() } else { list.swipeDown() }
-        }
         XCTAssertTrue(element.waitForExistence(timeout: 10), "row \(id)")
         return element
+    }
+
+    @MainActor
+    private func header(_ name: String, in app: XCUIApplication) -> XCUIElement {
+        app.buttons["desktop-section-header.section:\(name)"].firstMatch
     }
 
     @MainActor
@@ -157,9 +158,16 @@ final class DesktopSidebarUITests: XCTestCase {
         let app = launch()
 
         let source = row(auroraId, in: app)
-        let header = app.buttons["desktop-section-header.section:\(target)"].firstMatch
-        XCTAssertTrue(header.waitForExistence(timeout: 10), "the \(target) header")
-        source.press(forDuration: 1.0, thenDragTo: header)
+        let destination = header(target, in: app)
+        XCTAssertTrue(destination.waitForExistence(timeout: 10), "the \(target) header")
+        // A touch drag lifts after a short press; a longer one opens the
+        // row's context menu first, whose preview then carries the drag.
+        for hold in [0.35, 1.2] {
+            source.press(forDuration: hold, thenDragTo: destination, withVelocity: .slow, thenHoldForDuration: 1.0)
+            if (try? bot(named: "Aurora")["section"] as? String) == target { break }
+            Thread.sleep(forTimeInterval: 2)
+            if (try? bot(named: "Aurora")["section"] as? String) == target { break }
+        }
         try eventually("Aurora filed in \(target)", timeout: 20) { try bot(named: "Aurora")["section"] as? String == target }
     }
 
@@ -175,9 +183,9 @@ final class DesktopSidebarUITests: XCTestCase {
         }
         let app = launch()
 
-        let header = app.buttons["desktop-section-header.section:\(team)"].firstMatch
-        XCTAssertTrue(header.waitForExistence(timeout: 10))
-        header.press(forDuration: 1.2)
+        let teamHeader = header(team, in: app)
+        XCTAssertTrue(teamHeader.waitForExistence(timeout: 10), "the \(team) header")
+        teamHeader.press(forDuration: 1.2)
         tapMenuItem("Rename team", in: app)
         let alert = app.alerts.firstMatch
         XCTAssertTrue(alert.waitForExistence(timeout: 5))

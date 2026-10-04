@@ -14,6 +14,7 @@
 // build 6 crashed at launch on iPad resolving one deep SwiftUI type.
 import SwiftUI
 import UIKit
+import UniformTypeIdentifiers
 import CompanionCore
 
 /// The desktop's sidebar densities (`SidebarDensity`).
@@ -404,12 +405,23 @@ struct DesktopSidebarSection: View {
             Color.clear.onAppear { height = proxy.size.height }
                 .onValueChange(of: proxy.size.height) { height = $0 }
         })
-        .dropDestination(for: String.self) { items, location in
-            DesktopSidebarDrop.drop(items, on: section, after: location.y > height / 2, session: session, model: model, prefs: prefs)
-        } isTargeted: { inside in
-            if inside { model.dropTarget = section.id } else if model.dropTarget == section.id { model.dropTarget = nil }
+        .onDrop(of: [.plainText, .utf8PlainText, .text], isTargeted: Binding(
+            get: { model.dropTarget == section.id },
+            set: { inside in
+                if inside { model.dropTarget = section.id } else if model.dropTarget == section.id { model.dropTarget = nil }
+            }
+        )) { providers, location in
+            guard let provider = providers.first, provider.canLoadObject(ofClass: NSString.self) else { return false }
+            let after = location.y > height / 2
+            _ = provider.loadObject(ofClass: NSString.self) { object, _ in
+                guard let item = object as? NSString else { return }
+                let payload = item as String
+                Task { @MainActor in
+                    DesktopSidebarDrop.drop([payload], on: section, after: after, session: session, model: model, prefs: prefs)
+                }
+            }
+            return true
         }
-        .accessibilityIdentifier("desktop-section.\(section.id)")
     }
 }
 
@@ -452,14 +464,15 @@ struct DesktopSectionHeader: View {
         .accessibilityAddTraits(.isHeader)
         .accessibilityValue(Text(collapsed ? "Collapsed" : "Expanded"))
         .accessibilityIdentifier("desktop-section-header.\(section.id)")
+        let payload = reorderable ? "section:\(section.id)" : nil
         return Group {
             if menu.isEmpty {
-                AnyView(header)
+                AnyView(header.modifier(DesktopDraggable(payload: payload)))
             } else {
-                AnyView(header.contextMenu { DesktopMenuItems(entries: menu) })
+                // the drag on the view that owns the menu (see the rows)
+                AnyView(header.contextMenu { DesktopMenuItems(entries: menu) }.modifier(DesktopDraggable(payload: payload)))
             }
         }
-        .modifier(DesktopDraggable(payload: reorderable ? "section:\(section.id)" : nil))
     }
 
     /// A folded section's marks: waiting, unread and working counts.
@@ -484,13 +497,13 @@ struct DesktopSectionHeader: View {
     }
 }
 
-/// `.draggable` when there is something to drag.
+/// A drag (the payload as plain text) when there is something to drag.
 struct DesktopDraggable: ViewModifier {
     let payload: String?
 
     func body(content: Content) -> some View {
         if let payload {
-            content.draggable(payload)
+            content.onDrag { NSItemProvider(object: payload as NSString) }
         } else {
             content
         }

@@ -114,7 +114,7 @@ struct DesktopPinnedTile: View {
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
         .contextMenu { DesktopMenuItems(entries: menu) }
-        .draggable("bot:\(chat.id)")
+        .onDrag { NSItemProvider(object: "bot:\(chat.id)" as NSString) }
         .accessibilityLabel(Text(verbatim: PeopleDirectory.shared.name(chat, session: session)))
         .accessibilityAddTraits(selected ? .isSelected : [])
         .accessibilityIdentifier("desktop-pinned.\(chat.id)")
@@ -197,7 +197,11 @@ struct DesktopSidebarRow: View {
                 content(selected: selected, hovered: hovered)
             }
             .buttonStyle(.plain)
+            // the drag on the view that owns the context menu, so a long
+            // press that moves lifts the row (iPadOS hands the menu's preview
+            // to the drag)
             .contextMenu { DesktopMenuItems(entries: menu) }
+            .onDrag { NSItemProvider(object: (isRoom ? "room:\(chat.id)" : "bot:\(chat.id)") as NSString) }
             .accessibilityAddTraits(selected ? .isSelected : [])
             .accessibilityIdentifier("desktop-row.\(chat.id)")
             if density != .icons {
@@ -212,7 +216,6 @@ struct DesktopSidebarRow: View {
         .onHover { inside in
             if inside { model.hoveredRow = chat.id } else if model.hoveredRow == chat.id { model.hoveredRow = nil }
         }
-        .draggable(isRoom ? "room:\(chat.id)" : "bot:\(chat.id)")
     }
 
     private var menuKind: DesktopMenuRequest.Kind {

@@ -393,7 +393,7 @@ struct DesktopSidebarMenus {
         }
         guard session.canAdminister || gate.scope == .sidecar else { return nil }
         let current = bot.section?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        var children = session.state.sidebarSections.map(\.name).filter { $0 != current }.map { name in
+        var children = layout.sectionNames.filter { $0 != current }.map { name in
             DesktopMenuEntry(id: "move.\(name)", title: name, kind: .action {
                 Task { await session.assignSection(name: name, botIds: [bot.id]) }
             })
