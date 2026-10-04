@@ -30,12 +30,22 @@ enum DesktopChatParity {
         screen == .chatMessageHover && (message.text ?? "").contains("Veux-tu que je refasse")
     }
 
-    /// Where the probe row's top sits on the reference (window points).
-    static var scrollTarget: CGFloat? {
+    /// Which row the scroll is read from, and where its edge sits on the
+    /// reference (window points; refs/*.json): chat-top, the top of the
+    /// "Voici les références" row; chat-attachments, the bottom of the
+    /// "Les deux captures" bubble, per window size.
+    static var scrollTarget: (prefix: String, edge: CGFloat, bottom: Bool)? {
         switch screen {
-        case .chatTop: 38.5 - 12
-        case .chatAttachments: 1.5 - 12
-        default: nil
+        case .chatTop:
+            return ("Voici les références", 45.5 - 7 - 12, false)
+        case .chatAttachments:
+            let size = UIApplication.shared.connectedScenes.compactMap { ($0 as? UIWindowScene)?.screen.bounds.size }.first ?? .zero
+            let wide = max(size.width, size.height) > 1300
+            let landscape = size.width > size.height
+            let bottom: CGFloat = wide ? (landscape ? 529 : 685) : (landscape ? 434 : 610.59)
+            return ("Les deux captures de remplacement", bottom, true)
+        default:
+            return nil
         }
     }
 
@@ -148,7 +158,7 @@ extension ChatView {
             follow.pause()
             for delay in [0, 600, 1_200, 2_000] {
                 try? await Task.sleep(nanoseconds: UInt64(delay) * 1_000_000)
-                ParityRowProbe.place(rowTopAt: desired)
+                ParityRowProbe.place(edge: desired.edge, bottom: desired.bottom)
             }
         case .chatComposerDraft:
             // the simulator's software keyboard would cover the screen: the
@@ -169,8 +179,8 @@ extension ChatView {
     /// the first question).
     @ViewBuilder
     func desktopParityRowProbe(_ row: TranscriptRow) -> some View {
-        if desktopChat != nil, DesktopChatParity.scrollTarget != nil,
-           row.head.role == .bot, (row.head.text ?? "").hasPrefix("Voici les références") {
+        if desktopChat != nil, let target = DesktopChatParity.scrollTarget,
+           row.head.role == .bot, (row.head.text ?? "").hasPrefix(target.prefix) {
             ParityRowProbe()
         }
     }
@@ -200,12 +210,12 @@ struct ParityRowProbe: UIViewRepresentable {
 
     /// Scrolls the transcript so the probed row's top is at `y` in the window.
     @MainActor
-    static func place(rowTopAt y: CGFloat) {
+    static func place(edge y: CGFloat, bottom: Bool) {
         guard let probe = current, probe.window != nil else { return }
         var view = probe.superview
         while let candidate = view, !(candidate is UIScrollView) { view = candidate.superview }
         guard let scroll = view as? UIScrollView else { return }
-        let now = probe.convert(CGPoint.zero, to: nil).y
+        let now = probe.convert(CGPoint(x: 0, y: bottom ? probe.bounds.height : 0), to: nil).y
         var offset = scroll.contentOffset
         let lowest = -scroll.adjustedContentInset.top
         let highest = max(lowest, scroll.contentSize.height - scroll.bounds.height + scroll.adjustedContentInset.bottom)

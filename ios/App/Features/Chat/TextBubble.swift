@@ -52,11 +52,7 @@ struct TextBubble: View {
         // No face beside the bubble: the bot's face is in the header, and in
         // a room the name line says who spoke. The bubble sits at the edge.
         HStack(alignment: .bottom, spacing: 0) {
-            if mine { Spacer(minLength: Theme.Chat.bubbleTrailingGap) }
-            if mine, let hoverActions, desktop != nil {
-                DesktopMessageHoverStrip(model: hoverActions, mine: true, hovering: hovering)
-                    .padding(.trailing, 6)
-            }
+            if mine { Spacer(minLength: desktop == nil ? Theme.Chat.bubbleTrailingGap : 0) }
 
             VStack(alignment: .leading, spacing: desktop == nil ? 4 : 0) {
                 if let speaker, !mine {
@@ -188,14 +184,19 @@ struct TextBubble: View {
                 }
             )
 
+            // the hover row beside the bubble, outside its layout: the cap
+            // (100 % - 82) already leaves it room, as on the desktop
+            .overlay(alignment: mine ? .bottomLeading : .bottomTrailing) {
+                if let hoverActions, desktop != nil {
+                    DesktopMessageHoverStrip(model: hoverActions, mine: mine, hovering: hovering || parityHover)
+                        .fixedSize()
+                        .alignmentGuide(.leading) { d in d[.trailing] + 6 }
+                        .alignmentGuide(.trailing) { d in d[.leading] - 6 }
+                }
+            }
             .modifier(DesktopBubbleCapModifier(cap: desktopCap(mine: mine), mine: mine))
 
-            if !mine, let hoverActions, desktop != nil {
-                DesktopMessageHoverStrip(model: hoverActions, mine: false, hovering: hovering || parityHover)
-                    .padding(.leading, 6)
-            }
-
-            if !mine { Spacer(minLength: Theme.Chat.bubbleTrailingGap) }
+            if !mine { Spacer(minLength: desktop == nil ? Theme.Chat.bubbleTrailingGap : 0) }
         }
         .onHover { hovering = $0 }
     }

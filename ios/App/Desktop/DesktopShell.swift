@@ -105,6 +105,8 @@ struct DesktopShell: View {
         .environment(\.desktopTheme, theme)
         .environmentObject(model)
         .statusBarHidden(true)
+        // no home indicator over the composer: the desktop window has none
+        .persistentSystemOverlays(.hidden)
         .parityLauncher()
         .modifier(DesktopShellPresenter(model: model))
         .modifier(DesktopShellRouting(model: model))

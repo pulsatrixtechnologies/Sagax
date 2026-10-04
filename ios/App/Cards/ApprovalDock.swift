@@ -155,6 +155,9 @@ struct ApprovalDock: View {
                     }
                     .frame(maxHeight: 160)
                     .fixedSize(horizontal: false, vertical: true)
+                } else {
+                    // the desktop keeps its (empty) detail block: 8 + 1
+                    Color.clear.frame(height: 1)
                 }
                 if let held = pending.card.held, !held.isEmpty {
                     Label(held, systemImage: "exclamationmark.shield")

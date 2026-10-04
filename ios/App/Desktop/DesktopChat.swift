@@ -77,9 +77,10 @@ struct DesktopChatColumn: View {
             }
             .overlay(alignment: .trailing) {
                 if inspectorOpen && !docksInspector {
+                    // below 1024 the Inspector covers the whole window row
+                    // (InspectorPanel.tsx `max-lg:absolute inset-0`)
                     AnyView(DesktopInspectorPanel(threadId: chat.threadId) { toggleInspector() })
-                        .frame(width: min(Self.inspectorWidth, geometry.size.width))
-                        .shadow(color: .black.opacity(0.35), radius: 24, x: -4)
+                        .frame(width: window)
                         .transition(.move(edge: .trailing))
                 }
             }
