@@ -51379,6 +51379,336 @@
           }
         }
       }
+    },
+    "Backup models for this bot": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Backup models for this bot"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Modèles de secours pour ce bot"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Modelos de reserva para este bot"
+          }
+        }
+      }
+    },
+    "When Automatic recovery is enabled in App Settings, try these models in order only if the provider proves the request never started. Work that may have run is not replayed. Only that thread switches; bot defaults and other threads stay unchanged. Backup provider charges may apply.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "When Automatic recovery is enabled in App Settings, try these models in order only if the provider proves the request never started. Work that may have run is not replayed. Only that thread switches; bot defaults and other threads stay unchanged. Backup provider charges may apply."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Quand la reprise automatique est activée dans les réglages de l'app, ces modèles sont essayés dans l'ordre seulement si le fournisseur prouve que la requête n'a jamais commencé. Le travail qui a pu s'exécuter n'est pas rejoué. Seul ce fil change; les valeurs par défaut du bot et les autres fils restent inchangés. Des frais du fournisseur de secours peuvent s'appliquer."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Quando a recuperação automática está ativada nos Ajustes do app, estes modelos são tentados em ordem só se o provedor provar que a solicitação nunca começou. Trabalho que pode ter rodado não é repetido. Só aquela conversa muda; os padrões do bot e as outras conversas ficam iguais. Podem ser cobradas tarifas do provedor de reserva."
+          }
+        }
+      }
+    },
+    "Automatic recovery is off. This list stays inactive until you enable it in App Settings.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Automatic recovery is off. This list stays inactive until you enable it in App Settings."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La reprise automatique est désactivée. Cette liste reste inactive tant que vous ne l'activez pas dans les réglages de l'app."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A recuperação automática está desativada. Esta lista fica inativa até você ativá-la nos Ajustes do app."
+          }
+        }
+      }
+    },
+    "Remove %@ from the fallback list": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Remove %@ from the fallback list"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Retirer %@ de la liste de secours"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Remover %@ da lista de reserva"
+          }
+        }
+      }
+    },
+    "No other engine is available": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No other engine is available"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aucun autre moteur n'est disponible"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nenhum outro motor disponível"
+          }
+        }
+      }
+    },
+    "Add an engine…": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Add an engine…"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ajouter un moteur…"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Adicionar um motor…"
+          }
+        }
+      }
+    },
+    "Add a fallback engine": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Add a fallback engine"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ajouter un moteur de secours"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Adicionar um motor de reserva"
+          }
+        }
+      }
+    },
+    "Sending on your behalf": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sending on your behalf"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Envoyer en votre nom"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Envios em seu nome"
+          }
+        }
+      }
+    },
+    "Emails, messages, posts, invites, and payments through connected apps. Reading and drafting never count. This applies at every approval level, including Full access.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Emails, messages, posts, invites, and payments through connected apps. Reading and drafting never count. This applies at every approval level, including Full access."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Courriels, messages, publications, invitations et paiements par les apps connectées. Lire et rédiger ne comptent jamais. Cela s'applique à tous les niveaux d'approbation, y compris l'accès complet."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "E-mails, mensagens, posts, convites e pagamentos pelos apps conectados. Ler e rascunhar nunca contam. Isso vale em todos os níveis de aprovação, inclusive Acesso total."
+          }
+        }
+      }
+    },
+    "Ask every time": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ask every time"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Demander chaque fois"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Perguntar sempre"
+          }
+        }
+      }
+    },
+    "Allow a daily amount": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Allow a daily amount"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Autoriser un nombre par jour"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Permitir uma quantidade diária"
+          }
+        }
+      }
+    },
+    "Up to": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Up to"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Jusqu'à"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Até"
+          }
+        }
+      }
+    },
+    "a day": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "a day"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "par jour"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "por dia"
+          }
+        }
+      }
+    },
+    "Daily outbound limit": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Daily outbound limit"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Limite d'envois par jour"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Limite diário de envios"
+          }
+        }
+      }
+    },
+    "%lld of %lld used today": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld of %lld used today"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld sur %lld utilisés aujourd'hui"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld de %lld usados hoje"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

@@ -145,6 +145,13 @@ public enum SurfaceFeature: String, CaseIterable, Hashable, Sendable {
     /// own GitHub and MCP servers, on an organization server only
     /// (`/api/me/connections`; the sidecar does not list it).
     case myConnections
+    /// More > Model's Backup models (`ModelSection.tsx` FallbackChain):
+    /// PATCH /api/bots/:id {fallback} is an admin field (neither the
+    /// sidecar's companion fields nor a client session's).
+    case botFallback
+    /// More > Permissions' Sending on your behalf (`OutboundControl`): the
+    /// same admin field rule as the backup models.
+    case botOutbound
     /// Saved command rules (BA9): read and remove pass both gates (the
     /// handler holds a client session to the bot's owner).
     case commandAllowlist
@@ -377,6 +384,8 @@ public struct SurfaceGate: Hashable, Sendable {
             return scope == .serverAdmin || (scope == .serverClient && organization)
         case .myConnections:
             return scope != .sidecar && organization
+        case .botFallback, .botOutbound:
+            return scope == .serverAdmin
         case .botSlack:
             return scope != .sidecar
         case .commandAllowlist:

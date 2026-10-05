@@ -58,3 +58,32 @@ final class BotPluginsClientTests: XCTestCase {
         XCTAssertTrue(SurfaceGate(scope: .serverClient, organization: true).allows(.myConnections))
     }
 }
+
+final class BotFallbackTests: XCTestCase {
+    private func instance(_ id: String, state: String = "available", model: String = "m") -> Instance {
+        try! JSONDecoder().decode(Instance.self, from: Data(#"{"instanceId":"\#(id)","driverKind":"x","displayName":"\#(id)","enabled":true,"snapshot":{"state":"\#(state)"},"models":{"default":"\#(model)","options":[]}}"#.utf8))
+    }
+
+    func testCandidatesAndAdding() {
+        var bot = Bot(id: "b", threadId: "t", name: "B", title: "", description: "", notifications: true, color: "blue",
+                      unread: false, modelSelection: ModelSelection(instanceId: "own", model: "m"), createdAt: 0)
+        bot.fallback = [ModelSelection(instanceId: "two", model: "m")]
+        let all = [instance("own"), instance("two"), instance("three"), instance("off", state: "unavailable"), instance("empty", model: " ")]
+        XCTAssertEqual(BotFallbackRules.candidates(all, bot: bot).map(\.instanceId), ["three"])
+        let chain = BotFallbackRules.adding(instance("three"), to: bot.fallback ?? [])
+        XCTAssertEqual(chain.map(\.instanceId), ["two", "three"])
+        XCTAssertEqual(BotFallbackRules.adding(instance("three"), to: chain), chain)
+        XCTAssertTrue(SurfaceGate(scope: .serverAdmin).allows(.botFallback))
+        XCTAssertFalse(SurfaceGate(scope: .sidecar).allows(.botFallback))
+    }
+
+    func testOutboundPolicy() throws {
+        XCTAssertEqual(OutboundPolicy.cap(" 40 "), 40)
+        XCTAssertNil(OutboundPolicy.cap("0"))
+        XCTAssertNil(OutboundPolicy.cap("1001"))
+        XCTAssertNil(OutboundPolicy.cap("2.5"))
+        let decoded = try JSONDecoder().decode(OutboundPolicy.self, from: Data(#"{"policy":"allow","dailyCap":10}"#.utf8))
+        XCTAssertEqual(decoded, OutboundPolicy(policy: "allow", dailyCap: 10))
+        XCTAssertFalse(SurfaceGate(scope: .serverClient, organization: true).allows(.botOutbound))
+    }
+}

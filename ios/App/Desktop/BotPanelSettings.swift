@@ -138,6 +138,9 @@ struct BotPanelModel: View {
                     .accessibilityLabel(Text("Reasoning effort"))
                 }
             }
+            if session.surfaceGate.allows(.botFallback) {
+                AnyView(BotPanelFallback(bot: bot, instances: instances))
+            }
         }
         .task { instances = await DesktopModelCatalog.shared.instances(session) }
     }
@@ -280,6 +283,9 @@ struct BotPanelPermissions: View {
                     .padding(.top, 12)
                     .accessibilityIdentifier("desktop-panel-allowlist")
                 }
+            }
+            if session.surfaceGate.allows(.botOutbound) {
+                AnyView(BotPanelOutbound(bot: bot))
             }
         }
         .alert("Give this bot Full access?", isPresented: $confirmingFull) {

@@ -144,3 +144,55 @@ public extension CompanionClient {
         return request
     }
 }
+
+// MARK: - Backup models (bot-settings/ModelSection.tsx FallbackChain)
+
+public enum BotFallbackRules {
+    public static let limit = 5
+
+    /// The engines that can be added: available, with a default model, not
+    /// the bot's own engine and not already in the list.
+    public static func candidates(_ instances: [Instance], bot: Bot) -> [Instance] {
+        let chain = bot.fallback ?? []
+        return instances.filter { instance in
+            instance.snapshot.state == "available"
+                && !instance.models.default.trimmingCharacters(in: .whitespaces).isEmpty
+                && instance.instanceId != bot.modelSelection.instanceId
+                && !chain.contains { $0.instanceId == instance.instanceId }
+        }
+    }
+
+    /// The list with this engine's default model appended (unchanged at the limit).
+    public static func adding(_ instance: Instance, to chain: [ModelSelection]) -> [ModelSelection] {
+        guard chain.count < limit, !chain.contains(where: { $0.instanceId == instance.instanceId }) else { return chain }
+        return chain + [ModelSelection(instanceId: instance.instanceId, model: instance.models.default)]
+    }
+}
+
+public extension CompanionClient {
+    /// `PATCH /api/bots/:id {fallback}`: an admin session only (the sidecar's
+    /// companion fields and a client session's refuse it).
+    func setBotFallback(botId: String, fallback: [ModelSelection]) async throws -> Bot {
+        guard Self.validRouteID(botId) else { throw APIError.badURL }
+        struct Body: Encodable { var fallback: [ModelSelection] }
+        return try await send(makeRequest("PATCH", "/api/bots/\(botId)", encodedBody: Body(fallback: fallback)), as: BotResponse.self).bot
+    }
+}
+
+// MARK: - Sending on your behalf (bot-settings/PermissionsSection.tsx OutboundControl)
+
+public extension CompanionClient {
+    /// `PATCH /api/bots/:id {outbound}`: an admin session's field.
+    func setBotOutbound(botId: String, outbound: OutboundPolicy) async throws -> Bot {
+        guard Self.validRouteID(botId) else { throw APIError.badURL }
+        struct Body: Encodable { var outbound: OutboundPolicy }
+        return try await send(makeRequest("PATCH", "/api/bots/\(botId)", encodedBody: Body(outbound: outbound)), as: BotResponse.self).bot
+    }
+
+    /// `GET /api/bots/:id/outbound`: how many sends went out today.
+    func botOutboundToday(botId: String) async throws -> Int? {
+        guard Self.validRouteID(botId) else { throw APIError.badURL }
+        struct Answer: Decodable { var today: Int? }
+        return try await send(makeRequest("GET", "/api/bots/\(botId)/outbound"), as: Answer.self).today
+    }
+}
