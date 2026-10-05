@@ -102,3 +102,33 @@ final class PhoneBotPanelTests: XCTestCase {
         XCTAssertEqual(BotLibraryChip.files(.video).fileFilter, .video)
     }
 }
+
+final class BotLibraryViewTests: XCTestCase {
+    func testLibraryViewsFollowTheDesktopPerPairing() {
+        XCTAssertEqual(BotLibraryView.visible(gate: SurfaceGate(scope: .serverAdmin)), [.files, .skills, .plugins])
+        XCTAssertEqual(BotLibraryView.visible(gate: SurfaceGate(scope: .serverClient)), [.files, .plugins])
+        // the sidecar forwards the skills route (D1), not the plugins one
+        XCTAssertEqual(BotLibraryView.visible(gate: SurfaceGate(scope: .sidecar)), [.files, .skills])
+        XCTAssertEqual(BotLibraryView.visible(gate: SurfaceGate(scope: .sidecar, sidecarRoutes: [])), [.files])
+    }
+
+    func testPluginsListingDecodesAndToleratesMissingFields() throws {
+        let json = #"{"marketplaces":[{"name":"acme","source":"acme/tools","addedAt":1,"updatedAt":2,"plugins":[{"name":"lint","installed":true,"external":false},{"name":"fmt"}]}],"plugins":[{"key":"lint@acme","name":"lint","marketplace":"acme","enabled":true,"removed":[],"declaredMcpServers":[]}],"policy":{"mode":"any"},"engine":{"loadsPlugins":false},"canChange":true}"#
+        let listing = try JSONDecoder().decode(BotPluginsListing.self, from: Data(json.utf8))
+        XCTAssertEqual(listing.marketplaces.first?.plugins.map(\.installed), [true, false])
+        XCTAssertEqual(listing.plugins.first?.key, "lint@acme")
+        XCTAssertTrue(listing.canChange)
+        XCTAssertFalse(listing.managedByAdmin)
+        XCTAssertFalse(listing.loadsPlugins)
+    }
+
+    func testPluginRoutesEncodeTheKey() throws {
+        let client = CompanionClient(connection: Connection(name: "Mac", host: "127.0.0.1", port: 8810), token: "t")
+        let toggle = try client.botPluginRequest(botId: "b1", key: "lint@acme", enabled: false)
+        XCTAssertEqual(toggle.httpMethod, "PATCH")
+        XCTAssertEqual(toggle.url?.absoluteString.hasSuffix("/api/bots/b1/plugins/lint@acme"), true)
+        XCTAssertEqual(try client.botPluginRequest(botId: "b1", key: "lint@acme", enabled: nil).httpMethod, "DELETE")
+        XCTAssertThrowsError(try client.botPluginRequest(botId: "../x", key: "k", enabled: true))
+        XCTAssertThrowsError(try client.botPluginRequest(botId: "b1", key: "a/../b", enabled: true))
+    }
+}

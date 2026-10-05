@@ -9,8 +9,9 @@
 //   top bar  Close, Export conversation, and "..." with the bot's own
 //            actions (Share as Template, Copy ID, Duplicate, Primary Bot,
 //            Delete), each once
-//   tabs     Details (Coding, Activity, Routines) | Library (the
-//            conversation's files by kind, and the bot's links) |
+//   tabs     Details (Coding, Activity, Routines) | Library (Files: the
+//            conversation's files by kind and the bot's links; Skills;
+//            Plugins) |
 //            Computer (the live computer, embedded) | More (a searchable
 //            list in the desktop's order; each row pushes its page)
 //
@@ -358,7 +359,7 @@ private struct PhoneBotPanelContent: View {
         switch tabs.contains(tab) ? tab : .details {
         case .details: AnyView(details)
         case .library:
-            AnyView(ThreadFilesView(bot: current, start: libraryStart) { file in showInChat(file) })
+            AnyView(PhoneBotLibrary(bot: current, start: libraryStart) { file in showInChat(file) })
         case .computer:
             AnyView(ComputerView(bot: current, embeddedWidth: width - Theme.Profile.cardMargin * 2) {
                 path.append(PanelComputerRoute())

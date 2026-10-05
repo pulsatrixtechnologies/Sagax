@@ -46,7 +46,7 @@ public enum DesktopPanelSection: String, CaseIterable, Hashable, Sendable {
         case .soul: ["standing instructions", "instructions", "persona", "rules", "soul.md"]
         case .skills: ["skills", "learned", "procedures", "teach"]
         case .memory: ["memory", "notes", "remember", "topics"]
-        case .access: ["works on", "computer", "vm", "cloud", "vps", "folder", "workspace", "browser", "connected apps", "composio", "webhooks", "always allow", "grants"]
+        case .access: ["works on", "computer", "vm", "cloud", "vps", "folder", "workspace", "browser", "connected apps", "composio", "webhooks", "always allow", "grants", "tool selection", "tools", "mcp", "allow", "exclude"]
         case .worksOn: ["works on", "computer", "auto", "cloud", "local vm", "vm", "this computer", "browser", "off", "where it works"]
         case .model: ["engine", "model", "provider", "cli", "effort"]
         case .permissions: ["auto mode", "approve", "auto approve", "review", "routine approvals", "peers", "contact", "coordination", "chief of staff", "section"]
