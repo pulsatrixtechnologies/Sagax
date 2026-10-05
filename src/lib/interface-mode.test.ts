@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { USER_PREFERENCE_KEYS } from "../../shared/user-preferences";
 
 function memoryStorage() {
   const values = new Map<string, string>();
@@ -7,7 +8,9 @@ function memoryStorage() {
     setItem: vi.fn((key: string, value: string) => {
       values.set(key, value);
     }),
-    removeItem: (key: string) => values.delete(key),
+    removeItem: vi.fn((key: string) => {
+      values.delete(key);
+    }),
     clear: () => values.clear(),
   };
 }
@@ -32,27 +35,56 @@ afterEach(() => {
 });
 
 describe("interface mode", () => {
-  it("defaults a fresh install to Advanced (the Sagax experience) and stores that once", async () => {
-    const { readAdvancedMode, settleAdvancedModeDefault, ADVANCED_MODE_KEY } = await fresh();
-    expect(readAdvancedMode()).toBe(true);
-    settleAdvancedModeDefault();
-    local.setItem("omb-skin", "midnight");
-    expect(local.getItem(ADVANCED_MODE_KEY)).toBe("1");
-    expect((await fresh()).readAdvancedMode()).toBe(true);
+  it("is a per-person preference key", async () => {
+    const { INTERFACE_MODE_KEY } = await fresh();
+    expect(USER_PREFERENCE_KEYS).toContain(INTERFACE_MODE_KEY);
   });
 
-  it("defaults an existing install to Advanced so an update hides nothing", async () => {
-    local.setItem("omb-skin", "lagoon");
-    const { readAdvancedMode, settleAdvancedModeDefault, ADVANCED_MODE_KEY } = await fresh();
-    expect(readAdvancedMode()).toBe(true);
-    settleAdvancedModeDefault();
-    expect(local.getItem(ADVANCED_MODE_KEY)).toBe("1");
+  it("defaults a fresh install to Simple and does not store that", async () => {
+    const { readAdvancedMode, readInterfaceMode, INTERFACE_MODE_KEY } = await fresh();
+    expect(readInterfaceMode()).toBe("simple");
+    expect(readAdvancedMode()).toBe(false);
+    expect(local.setItem).not.toHaveBeenCalled();
+    expect(local.getItem(INTERFACE_MODE_KEY)).toBeNull();
+    expect((await fresh()).readInterfaceMode()).toBe("simple");
   });
 
-  it("keeps an explicit choice over the existing-install default", async () => {
+  it("ignores the legacy always-on key", async () => {
+    local.setItem("omb-advanced-mode", "1");
     local.setItem("omb-skin", "midnight");
-    (await fresh()).setAdvancedMode(false);
-    expect((await fresh()).readAdvancedMode()).toBe(false);
+    const { readInterfaceMode, retireLegacyInterfaceMode, LEGACY_ADVANCED_MODE_KEY } = await fresh();
+    expect(readInterfaceMode()).toBe("simple");
+    retireLegacyInterfaceMode();
+    expect(local.getItem(LEGACY_ADVANCED_MODE_KEY)).toBeNull();
+    expect(local.getItem("omb-skin")).toBe("midnight");
+  });
+
+  it("defaults a solo owner to Simple and an organization owner or admin to Advanced", async () => {
+    const { readInterfaceMode, setInterfaceModeRole } = await fresh();
+    setInterfaceModeRole({ organization: false, role: "owner" });
+    expect(readInterfaceMode()).toBe("simple");
+    setInterfaceModeRole({ organization: true, role: "member" });
+    expect(readInterfaceMode()).toBe("simple");
+    setInterfaceModeRole({ organization: true, role: null });
+    expect(readInterfaceMode()).toBe("simple");
+    setInterfaceModeRole({ organization: true, role: "owner" });
+    expect(readInterfaceMode()).toBe("advanced");
+    setInterfaceModeRole({ organization: true, role: "admin" });
+    expect(readInterfaceMode()).toBe("advanced");
+    expect(local.setItem).not.toHaveBeenCalled();
+  });
+
+  it("keeps an explicit choice over the role default", async () => {
+    const { setAdvancedMode, INTERFACE_MODE_KEY } = await fresh();
+    setAdvancedMode(true);
+    expect(local.getItem(INTERFACE_MODE_KEY)).toBe("advanced");
+    const next = await fresh();
+    next.setInterfaceModeRole({ organization: false, role: null });
+    expect(next.readInterfaceMode()).toBe("advanced");
+    next.setInterfaceMode("simple");
+    const member = await fresh();
+    member.setInterfaceModeRole({ organization: true, role: "admin" });
+    expect(member.readInterfaceMode()).toBe("simple");
   });
 
   it("still switches for the session when storage throws", async () => {
@@ -60,16 +92,25 @@ describe("interface mode", () => {
     local.setItem.mockImplementation(() => {
       throw new Error("quota");
     });
+    expect(readAdvancedMode()).toBe(false);
     setAdvancedMode(true);
     expect(readAdvancedMode()).toBe(true);
   });
 
-  it("falls back to Advanced when storage cannot be read at all", async () => {
+  it("falls back to Simple when storage cannot be read at all", async () => {
     local.getItem.mockImplementation(() => {
       throw new Error("blocked");
     });
-    const { readAdvancedMode, settleAdvancedModeDefault } = await fresh();
-    expect(() => settleAdvancedModeDefault()).not.toThrow();
-    expect(readAdvancedMode()).toBe(true);
+    const { readInterfaceMode, retireLegacyInterfaceMode, setInterfaceModeRole } = await fresh();
+    expect(() => retireLegacyInterfaceMode()).not.toThrow();
+    setInterfaceModeRole({ organization: true, role: "owner" });
+    expect(readInterfaceMode()).toBe("simple");
+  });
+
+  it("ignores a stored value that is not simple or advanced", async () => {
+    local.setItem("sagax.interfaceMode.v1", "1");
+    const { readInterfaceMode, setInterfaceModeRole } = await fresh();
+    setInterfaceModeRole({ organization: true, role: "member" });
+    expect(readInterfaceMode()).toBe("simple");
   });
 });
