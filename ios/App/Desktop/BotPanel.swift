@@ -2,7 +2,7 @@
 // trailing edge from 1024 pt, over the leading edge below
 // (`max-lg:absolute`). Its tabs are the current desktop's
 // (`bot-settings/panel-tabs.ts`): Details (Coding, Activity, Routines),
-// Library (the conversation's files), Computer, More (every other section
+// Library (Files, Skills, Plugins: BotPanelLibrary.swift), Computer, More (every other section
 // behind a searchable list). The name, label and description are edited
 // where they show, under the mascot (`InlineEditableText.tsx`). Which tabs
 // and sections a pairing shows is `DesktopPanelTab` / `DesktopPanelSection`
@@ -212,7 +212,7 @@ private struct BotPanelContent: View {
         case .details:
             AnyView(BotPanelDetails(bot: current))
         case .library:
-            AnyView(BotPanelFiles(bot: current, docked: docked))
+            AnyView(BotPanelLibrary(bot: current, docked: docked))
         case .computer:
             AnyView(BotPanelComputer(bot: current))
         case .more:

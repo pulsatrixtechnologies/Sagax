@@ -496,7 +496,7 @@ private struct BotPanelSoul: View {
 
 /// Skills (`SkillsSection.tsx`): the Learned skills card (glyph, title,
 /// explanation, the import field and button, the installed list).
-private struct BotPanelSkills: View {
+struct BotPanelSkills: View {
     @Environment(\.desktopTheme) private var theme
     @EnvironmentObject private var session: Session
     let bot: Bot

@@ -196,7 +196,17 @@ const MEASURE = readFileSync(join(HERE, "measure.js"), "utf8");
 
 /** Helpers a surface's `open(ctx)` uses. Coordinates are CSS px (= points). */
 function context(page, viewport, fixture) {
+  // The renderer fills some rows after the fleet arrives (the account
+  // name, a row's activity line): look again for up to five seconds.
   const center = async (selector) => {
+    for (let i = 0; i < 20; i++) {
+      const r = await locate(selector);
+      if (r && (r.w || r.h)) return r;
+      await sleep(250);
+    }
+    throw new Error(`not found or not visible: ${JSON.stringify(selector)}`);
+  };
+  const locate = async (selector) => {
     const r = await page.eval(`(() => {
       const el = ${selectorExpr(selector)};
       if (!el) return null;
@@ -204,7 +214,6 @@ function context(page, viewport, fixture) {
       const b = el.getBoundingClientRect();
       return { x: b.x + b.width / 2, y: b.y + b.height / 2, w: b.width, h: b.height };
     })()`);
-    if (!r || (!r.w && !r.h)) throw new Error(`not found or not visible: ${JSON.stringify(selector)}`);
     return r;
   };
   const mouse = async (type, x, y, extra = {}) => page.send("Input.dispatchMouseEvent", { type, x, y, button: "left", clickCount: 1, pointerType: "mouse", ...extra });
@@ -410,6 +419,11 @@ async function main() {
       for (let attempt = 1; attempt <= 2; attempt++) try {
         await loadApp(page, base, viewport, preset, fixture);
         await page.waitFor(`__parity.state().connected && __parity.state().bots.length >= 14`, { timeoutMs: 20_000, label: "fleet" });
+        // The engines (GET /api/instances) arrive after the fleet: until then
+        // the composer shows the raw model id and no approval-mode control,
+        // and their arrival re-pins the transcript to its end.
+        await page.waitFor(`(__parity.state().instances || []).length > 0`, { timeoutMs: 15_000, label: "engines" }).catch(() => {});
+        await sleep(300);
         const ctx = context(page, viewport, fixture);
         await ctx.selectBot("Ara");
         const result = await item.surface.open(ctx);

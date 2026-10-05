@@ -138,9 +138,10 @@ add({ id: "search-palette-query", phase: "main", note: "command palette with a q
 
 // chat
 add({ id: "chat-top", phase: "main", note: "Ara's transcript scrolled to the top (links, day separators)",
-  open: async (ctx) => { await ctx.scrollTo({ text: /^Peux-tu me donner les liens/ }, "start"); } });
+  // twice: a late engines or achievements answer re-pins the transcript to its end
+  open: async (ctx) => { for (let i = 0; i < 2; i++) { await ctx.scrollTo({ text: /^Peux-tu me donner les liens/ }, "start"); await ctx.sleep(700); } } });
 add({ id: "chat-attachments", phase: "main", note: "image and file attachments in the transcript",
-  open: async (ctx) => { await ctx.scrollTo({ text: /^Les deux captures de remplacement/ }, "center"); } });
+  open: async (ctx) => { for (let i = 0; i < 2; i++) { await ctx.scrollTo({ text: /^Les deux captures de remplacement/ }, "center"); await ctx.sleep(700); } } });
 add({ id: "chat-markdown", phase: "main", note: "bot reply with a markdown table, code block, list and quote (injected)",
   open: async (ctx) => { await inject(ctx, "Ara", [{ role: "user", kind: "text", text: "Montre-moi le tableau." }, { role: "bot", kind: "text", text: MARKDOWN, turnTerminal: true }]); } });
 add({ id: "chat-approval", phase: "main", note: "approval card (command permission ask, injected)",
