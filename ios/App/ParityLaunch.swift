@@ -213,7 +213,7 @@ enum IPadParityScreen: String, CaseIterable {
         // I2: the sidebar's densities, threads, hover and menus
         case .mainCompact, .mainCollapsed, .mainThreads, .sidebarRowHover, .sidebarBotMenu,
              .sidebarBotContextMenu, .sidebarSectionMenu, .sidebarProfileMenu, .sidebarNewMenu, .newGroup: true
-        default: isDesktopChat || opensBotPanel || isDesktopSettings || parityPage != nil
+        default: isDesktopChat || opensBotPanel || isDesktopSettings || parityPage != nil || self == .keyboardShortcuts
         }
     }
 

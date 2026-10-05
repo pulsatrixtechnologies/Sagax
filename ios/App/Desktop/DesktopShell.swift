@@ -360,6 +360,9 @@ struct DesktopShell: View {
             } else if model.modal == .plugins {
                 AnyView(DesktopPluginsModal(close: { model.modal = nil }))
                     .transition(.opacity)
+            } else if model.modal == .shortcuts {
+                AnyView(DesktopShortcutsModal(close: { model.modal = nil }))
+                    .transition(.opacity)
             }
         }
         .background(theme.app)
@@ -522,6 +525,7 @@ private struct DesktopShellRouting: ViewModifier {
                 model.modelPickerOpen = screen == .chatModelPicker
                 model.applyParityModals(screen)
                 model.page = screen.parityPage
+                if screen == .keyboardShortcuts { model.modal = .shortcuts }
                 await applyParitySidebar(screen)
                 return
             }
@@ -584,7 +588,7 @@ private struct DesktopShellPresenter: ViewModifier {
     /// the other surfaces are still sheets.
     private var sheetModal: Binding<DesktopShellModel.Modal?> {
         Binding(
-            get: { model.modal.flatMap { $0 == .settings || $0 == .plugins ? nil : $0 } },
+            get: { model.modal.flatMap { $0 == .settings || $0 == .plugins || $0 == .shortcuts ? nil : $0 } },
             set: { model.modal = $0 }
         )
     }
@@ -630,7 +634,7 @@ private struct DesktopShellPresenter: ViewModifier {
         case .about:
             NavigationStack { AboutPage() }
         case .shortcuts:
-            DesktopShortcutsSheet { model.modal = nil }
+            EmptyView()
         case .achievements:
             NavigationStack {
                 AchievementsPage()
