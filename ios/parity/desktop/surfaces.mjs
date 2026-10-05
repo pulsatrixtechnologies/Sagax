@@ -283,6 +283,27 @@ add({ id: "settings-general-scrolled", phase: "main", note: "Settings > General,
     await ctx.eval(`(() => { for (const el of document.querySelectorAll("[role=dialog] *")) { if (el.scrollHeight > el.clientHeight + 20 && getComputedStyle(el).overflowY !== "visible") el.scrollTop = el.scrollHeight; } return true; })()`);
   } });
 
+// I-sync (current renderer): appended so the earlier numbers stay put.
+// Library's Skills and Plugins views (LibraryTab.tsx), and Settings > My
+// connections, a person's own on an organization server.
+for (const view of ["skills", "plugins"]) {
+  add({ id: `panel-library-${view}`, phase: "main", note: `bot panel: Library > ${view}`,
+    open: async (ctx) => {
+      await openPanel(ctx);
+      await ctx.click('[data-panel-tab="library"]');
+      await ctx.sleep(300);
+      await ctx.click({ text: view === "skills" ? "Skills" : "Plugins", tag: "[role=tab]", within: "[data-library-view]" });
+      await ctx.sleep(900);
+    } });
+}
+add({ id: "settings-myConnections", phase: "main", note: "Settings > myConnections (organization server)", org: true,
+  open: async (ctx) => {
+    await openSettings(ctx, "myConnections", { retries: 6 });
+    const current = await ctx.eval(`__parity.state().appSettingsSection ?? null`);
+    if (current !== "myConnections") return { skip: `section myConnections not shown on this page (opened ${current})` };
+    await ctx.sleep(700);
+  } });
+
 // notes for the spec: not capturable here
 export const NOT_CAPTURED = [
   { id: "floating-mascot", why: "desktop-only: a bot floated onto the macOS desktop is its own frameless always-on-top Electron window (electron/floating-bot-window.mjs); nothing is drawn in the main window" },

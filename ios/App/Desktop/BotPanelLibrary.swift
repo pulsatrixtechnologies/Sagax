@@ -29,7 +29,20 @@ struct BotPanelLibrary: View {
     let bot: Bot
     let docked: Bool
 
-    @State private var view: BotPanelLibraryView = .files
+    @State private var view: BotPanelLibraryView = Self.parityView
+
+    /// panel-library-skills / -plugins: the reference opens that view.
+    private static var parityView: BotPanelLibraryView {
+        #if DEBUG
+        switch ParityLaunch.current?.iPadScreen {
+        case .panelLibrarySkills: return .skills
+        case .panelLibraryPlugins: return .plugins
+        default: return .files
+        }
+        #else
+        return .files
+        #endif
+    }
 
     private var views: [BotPanelLibraryView] {
         BotPanelLibraryView.allCases.filter { $0 != .plugins || session.surfaceGate.allows(.botPlugins) }

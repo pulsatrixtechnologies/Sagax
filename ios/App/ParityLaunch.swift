@@ -188,6 +188,10 @@ enum IPadParityScreen: String, CaseIterable {
     case settingsBackups = "settings-backups"
     case settingsWorkspaces = "settings-workspaces"
     case settingsGeneralScrolled = "settings-general-scrolled"
+    // I-sync: appended after the I5 list (surfaces.mjs keeps the numbers)
+    case panelLibrarySkills = "panel-library-skills"
+    case panelLibraryPlugins = "panel-library-plugins"
+    case settingsMyConnections = "settings-myConnections"
 
     /// Accepts the id, or a capture file stem ("03-main", "desktop-1366x1024-03-main").
     init?(argument: String) {
@@ -220,7 +224,7 @@ enum IPadParityScreen: String, CaseIterable {
     var panelTab: DesktopPanelTab? {
         switch self {
         case .panelDetails, .panelAvatarEditor: .details
-        case .panelLibrary: .library
+        case .panelLibrary, .panelLibrarySkills, .panelLibraryPlugins: .library
         case .panelComputer: .computer
         case .panelMore: .more
         default: panelSection != nil ? .more : nil

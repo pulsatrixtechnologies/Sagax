@@ -339,6 +339,7 @@ extension IPadParityScreen {
         case .settingsAppearance: (.settings, .appearance, nil)
         case .settingsExperimental: (.settings, .experimental, nil)
         case .settingsConnections: (.settings, .connections, nil)
+        case .settingsMyConnections: (.settings, .myConnections, nil)
         case .settingsDecisionModel: (.settings, .decisionModel, nil)
         case .settingsEngines: (.settings, .engines, nil)
         case .settingsCompanion: (.settings, .companion, nil)
