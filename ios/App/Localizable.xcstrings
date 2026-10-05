@@ -52061,6 +52061,28 @@
           }
         }
       }
+    },
+    "My bots": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "My bots"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mes bots"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Meus bots"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

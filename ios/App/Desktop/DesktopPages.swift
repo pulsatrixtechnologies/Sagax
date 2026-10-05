@@ -430,6 +430,8 @@ struct DesktopAutomationsPage: View {
         NavigationStack {
             TasksRoutinesView(page: .automations)
                 .navigationBarTitleDisplayMode(.inline)
+                // the desktop's week, not the phone's day
+                .environment(\.automationsGridDays, 7)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(theme.app)
