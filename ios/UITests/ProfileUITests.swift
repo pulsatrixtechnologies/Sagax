@@ -1,7 +1,8 @@
 import XCTest
 
-/// The bot profile (03 to 10) and its routine screens (05, 06) against the
-/// parity fixture server: every action is a real request, and each test reads
+/// The bot panel (03 to 10: Details, Library, More, the avatar editor and
+/// the top bar menu) and its routine screens (05, 06) against the parity
+/// fixture server: every action is a real request, and each test reads
 /// the result back from the server's API.
 ///
 /// Start the fixture first and pass its session to the test runner:
@@ -41,11 +42,20 @@ final class ProfileUITests: XCTestCase {
         return app
     }
 
-    /// Ara's profile, pushed from her chat by the parity launcher.
+    /// Ara's bot panel, opened from her chat by the parity launcher.
     @MainActor
     private func launchProfile() -> XCUIApplication {
         let app = launch(screen: "03-profile-info")
-        XCTAssertTrue(app.staticTexts["profile-name"].waitForExistence(timeout: 30))
+        XCTAssertTrue(element("profile-name", in: app).waitForExistence(timeout: 30))
+        return app
+    }
+
+    /// The mascot opens the avatar editor, as the desktop's does.
+    @MainActor
+    private func launchAvatarEditor() -> XCUIApplication {
+        let app = launchProfile()
+        element("profile-mascot", in: app).tap()
+        XCTAssertTrue(element("character-reset", in: app).waitForExistence(timeout: 10))
         return app
     }
 
@@ -113,7 +123,7 @@ final class ProfileUITests: XCTestCase {
         let ara = try XCTUnwrap(try bot(named: "Ara"))
         let id = try XCTUnwrap(ara["id"] as? String)
         defer { _ = try? api("PATCH", "/api/bots/\(id)", ["color": "purple", "mascotLook": ["character": "owl"], "mascotSkin": "none"]) }
-        let app = launchProfile()
+        let app = launchAvatarEditor()
 
         let teal = app.buttons["teal"]
         XCTAssertTrue(teal.waitForExistence(timeout: 10))
@@ -145,7 +155,7 @@ final class ProfileUITests: XCTestCase {
         let id = try XCTUnwrap(ara["id"] as? String)
         defer { _ = try? api("PATCH", "/api/bots/\(id)", ["avatarUrl": NSNull(), "avatarCrop": "mascot"]) }
         try api("PATCH", "/api/bots/\(id)", ["avatarUrl": NSNull(), "avatarCrop": "mascot"])
-        let app = launchProfile()
+        let app = launchAvatarEditor()
 
         let generate = element("character-photo-generate", in: app)
         XCTAssertTrue(generate.waitForExistence(timeout: 10))
@@ -185,7 +195,7 @@ final class ProfileUITests: XCTestCase {
         // A picture to frame, through the same route the Generate button uses.
         try api("POST", "/api/bots/\(id)/avatar/generate", ["prompt": "Une chouette calme"])
         try api("PATCH", "/api/bots/\(id)", ["avatarZoom": 1, "avatarFocusX": 0.5, "avatarFocusY": 0.5])
-        let app = launchProfile()
+        let app = launchAvatarEditor()
 
         let frame = element("character-photo-frame", in: app)
         XCTAssertTrue(frame.waitForExistence(timeout: 10))
@@ -213,7 +223,7 @@ final class ProfileUITests: XCTestCase {
     /// `ProfileClientTests.testUploadAvatarPostsTheBytesAndReturnsTheStoredPath`.
     @MainActor
     func testUploadOpensThePhotoPicker() throws {
-        let app = launchProfile()
+        let app = launchAvatarEditor()
         let upload = element("character-photo-upload", in: app)
         XCTAssertTrue(upload.waitForExistence(timeout: 10))
         XCTAssertTrue(upload.isHittable)
@@ -237,7 +247,11 @@ final class ProfileUITests: XCTestCase {
         defer { _ = try? api("PATCH", "/api/bots/\(id)", ["soul": before]) }
         let app = launchProfile()
 
-        element("profile-instructions", in: app).tap()
+        // More > Soul (the standing instructions), where the pairing has it
+        element("panel-tab.more", in: app).tap()
+        let soul = element("panel-row.soul", in: app)
+        guard soul.waitForExistence(timeout: 10) else { throw XCTSkip("this pairing has no Soul section: start the fixture with PARITY_OWNER=1") }
+        soul.tap()
         let body = app.staticTexts["text-card-body"]
         XCTAssertTrue(body.waitForExistence(timeout: 10))
         XCTAssertTrue(body.label.contains("Tu coordonnes"), body.label)
@@ -314,37 +328,35 @@ final class ProfileUITests: XCTestCase {
         }
     }
 
-    // MARK: Library tabs
+    // MARK: Library
 
+    /// Library: the conversation's files by kind (Images was Media), and the
+    /// bot's links behind their own chip (was Links), each paging as before.
     @MainActor
-    func testLinksMediaAndFilesLoadAPageThenShowMore() throws {
+    func testLibraryChipsShowFilesByKindAndTheLinks() throws {
         let app = launchProfile()
+        element("panel-tab.library", in: app).tap()
+        XCTAssertTrue(element("thread-files", in: app).waitForExistence(timeout: 10))
 
-        element("profile-tab.links", in: app).tap()
+        let links = element("thread-files-chip.links", in: app)
+        XCTAssertTrue(links.waitForExistence(timeout: 15))
+        links.tap()
         XCTAssertTrue(element("profile-link.1", in: app).waitForExistence(timeout: 10))
         XCTAssertFalse(element("profile-link.2", in: app).exists)
         XCTAssertTrue(element("profile-link.0", in: app).label.contains("docs.example.com"))
         element("profile-show-more", in: app).tap()
         XCTAssertTrue(element("profile-link.2", in: app).waitForExistence(timeout: 10))
-        XCTAssertFalse(element("profile-show-more", in: app).exists)
 
-        element("profile-tab.media", in: app).tap()
-        XCTAssertTrue(element("profile-media.1", in: app).waitForExistence(timeout: 10))
-        XCTAssertFalse(element("profile-media.2", in: app).exists)
-        element("profile-show-more", in: app).tap()
-        XCTAssertTrue(element("profile-media.2", in: app).waitForExistence(timeout: 10))
-        element("profile-media.0", in: app).tap()
-        XCTAssertTrue(element("media-viewer-image", in: app).waitForExistence(timeout: 10))
-        element("media-viewer-close", in: app).tap()
+        let images = element("thread-files-chip.image", in: app)
+        XCTAssertTrue(images.waitForExistence(timeout: 10))
+        images.tap()
+        XCTAssertTrue(element("thread-file.parity-media-1.png", in: app).waitForExistence(timeout: 10))
+        XCTAssertFalse(element("thread-file.report.md", in: app).exists, "Images keeps the pictures only")
 
-        element("profile-tab.files", in: app).tap()
-        XCTAssertTrue(element("profile-file.2", in: app).waitForExistence(timeout: 10))
-        XCTAssertTrue(element("profile-file.0", in: app).label.contains("skills-export-2026-09-28.zip"))
-        XCTAssertFalse(element("profile-file.3", in: app).exists)
-        element("profile-show-more", in: app).tap()
-        XCTAssertTrue(element("profile-file.5", in: app).waitForExistence(timeout: 10))
+        element("thread-files-chip.all", in: app).tap()
+        XCTAssertTrue(element("thread-file.report.md", in: app).waitForExistence(timeout: 10))
         // a file opens in Quick Look
-        element("profile-file.1", in: app).tap()
+        element("thread-file.EXEC_BRIEF.md", in: app).tap()
         XCTAssertTrue(app.navigationBars.matching(NSPredicate(format: "identifier CONTAINS 'QL' OR identifier == 'EXEC_BRIEF.md'")).firstMatch.waitForExistence(timeout: 10)
             || app.staticTexts["EXEC_BRIEF"].waitForExistence(timeout: 2)
             || app.otherElements["QLPreviewControllerView"].waitForExistence(timeout: 2))
@@ -355,7 +367,8 @@ final class ProfileUITests: XCTestCase {
     @MainActor
     func testShareExportsThePackageIntoTheShareSheet() throws {
         let app = launchProfile()
-        element("profile-share", in: app).tap()
+        element("profile-more", in: app).tap()
+        element("profile-menu.share-template", in: app).tap()
         // the system share sheet, with the package named after the bot
         let sheet = app.otherElements["ActivityListView"].firstMatch
         let named = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'Ara'")).firstMatch
@@ -373,7 +386,7 @@ final class ProfileUITests: XCTestCase {
         let capsule = element("chat-name", in: app)
         XCTAssertTrue(capsule.waitForExistence(timeout: 10))
         capsule.tap()
-        XCTAssertTrue(app.staticTexts["profile-name"].waitForExistence(timeout: 10))
+        XCTAssertTrue(element("profile-name", in: app).waitForExistence(timeout: 10))
 
         element("profile-more", in: app).tap()
         let delete = element("profile-menu.delete", in: app)

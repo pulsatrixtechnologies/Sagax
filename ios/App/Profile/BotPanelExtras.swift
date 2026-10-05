@@ -4,32 +4,12 @@
 // `makePrimaryBot` and `PrimaryBotPicker.tsx`), the read-only notice and the
 // proposal status (BP9, BotSettingsDialog.tsx, `ProposalStatus.tsx`), and
 // the character's moves and style (BP7, BP8, MascotLookEditor.tsx). Each is
-// a small layout-agnostic view the phone mounts in its existing doors (the
-// Advanced sheet, the Info tab, long presses) and the iPad in its panel.
+// a small layout-agnostic view the phone's bot panel mounts in its pages
+// (Usage, Voice & alerts, its top bar menu) and the iPad in its panel.
 import CompanionCore
 import SwiftUI
 
-// MARK: - Advanced sections
-
-/// Usage, voice notes and Primary Bot, as Form sections for the Advanced
-/// sheet (`AgentProfileView`).
-struct BotPanelAdvancedSections: View {
-    @Environment(\.themePalette) var themePalette
-    let bot: Bot
-
-    @EnvironmentObject private var session: Session
-    @State private var viewerId = "local-owner"
-
-    var body: some View {
-        let gate = session.surfaceGate
-        // Usage always shows (local figures): it also learns who the viewer
-        // is, for the Primary Bot section.
-        BotUsageSection(bot: bot)
-            .task { viewerId = PrimaryBotRules.viewerId(config: await session.configStatus()) }
-        if gate.allows(.voiceNotesSetting) { BotVoiceNotesSection(bot: bot) }
-        if gate.allows(.primaryBot) { PrimaryBotSection(bot: bot, viewerId: viewerId) }
-    }
-}
+// MARK: - Usage, voice notes, Primary Bot
 
 /// What this bot has spent across its threads (UsageSection.tsx).
 struct BotUsageSection: View {

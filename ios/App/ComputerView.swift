@@ -29,8 +29,17 @@ struct ComputerView: View {
     @AppStorage("companion.computer.fit") private var fitRaw = ComputerFit.fit.rawValue
     @AppStorage("companion.computer.specialKeys") private var specialKeys = false
 
-    init(bot: Bot) {
+    /// The bot panel's Computer tab (`ComputerPanel` embedded): the picture
+    /// at this width in a rounded black card, with Gestures, More and Full
+    /// screen above it; nil is the full screen view (parity 13 and 11).
+    var embeddedWidth: CGFloat?
+    /// Embedded: open the full screen view.
+    var onFullScreen: (() -> Void)?
+
+    init(bot: Bot, embeddedWidth: CGFloat? = nil, onFullScreen: (() -> Void)? = nil) {
         self.bot = bot
+        self.embeddedWidth = embeddedWidth
+        self.onFullScreen = onFullScreen
         _controller = StateObject(wrappedValue: ComputerController(botId: bot.id, client: { nil }))
     }
 
@@ -47,6 +56,72 @@ struct ComputerView: View {
     }
 
     var body: some View {
+        if let embeddedWidth {
+            AnyView(lifecycle(AnyView(embedded(width: embeddedWidth))))
+        } else {
+            AnyView(lifecycle(AnyView(fullScreen))
+                .toolbar(.hidden, for: .navigationBar)
+                .navigationBarBackButtonHidden(true)
+                .background(SwipeBackBridge())
+                .preferredColorScheme(.dark))
+        }
+    }
+
+    /// The panel's card: Gestures, More and Full screen, the picture, its
+    /// status line and the clipboard and keyboard circles.
+    private func embedded(width: CGFloat) -> some View {
+        let inner = width - 24
+        return VStack(spacing: 0) {
+            HStack(spacing: 8) {
+                Text("\(current.name)'s screen")
+                    .font(Theme.Profile.labelFont)
+                    .foregroundStyle(Theme.Computer.inkSecondary)
+                    .lineLimit(1)
+                Spacer(minLength: 8)
+                GlassCircleButton(
+                    systemImage: "questionmark", fill: Theme.Computer.glassFill, accessibilityLabel: "Gestures",
+                    glyphSize: 20, weight: .regular, glyphColor: Theme.Computer.ink
+                ) { showingHelp = true }
+                    .accessibilityIdentifier("computer-help")
+                moreMenu
+                if let onFullScreen {
+                    GlassCircleButton(
+                        systemImage: "arrow.up.left.and.arrow.down.right", fill: Theme.Computer.glassFill,
+                        accessibilityLabel: "Full screen", glyphSize: 16, weight: .regular, glyphColor: Theme.Computer.ink
+                    ) { onFullScreen() }
+                        .accessibilityIdentifier("computer-full-screen")
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            screen(width: inner, height: inner / Theme.Computer.frameAspect)
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            statusLine
+            bottomButtons
+                .padding(.vertical, 12)
+            RemoteKeyboardField(
+                isActive: $keyboardUp,
+                showsSpecialKeys: specialKeys,
+                modifiers: controller.modifiers,
+                onInsert: { controller.type($0) },
+                onDelete: { controller.deleteBackward() },
+                onSpecial: { controller.special($0) },
+                onModifier: { controller.toggle($0) }
+            )
+            .frame(width: 1, height: 1)
+            .opacity(0.01)
+            .accessibilityHidden(true)
+        }
+        .frame(width: width)
+        .background(Theme.bgComputer, in: RoundedRectangle(cornerRadius: Theme.Metric.cardRadius, style: .continuous))
+        .overlay(alignment: .top) { toast.padding(.top, 4) }
+        .environment(\.colorScheme, .dark)
+        .onAppear { controller.frameWidth = inner }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("panel-computer")
+    }
+
+    private var fullScreen: some View {
         GeometryReader { proxy in
             let width = proxy.size.width
             let barCentre = proxy.safeAreaInsets.top + 6 + Theme.Metric.glassLarge / 2
@@ -85,10 +160,11 @@ struct ComputerView: View {
             .onAppear { controller.frameWidth = width }
             .onValueChange(of: width) { controller.frameWidth = $0 }
         }
-        .toolbar(.hidden, for: .navigationBar)
-        .navigationBarBackButtonHidden(true)
-        .background(SwipeBackBridge())
-        .preferredColorScheme(.dark)
+    }
+
+    /// What both forms share: the prompts, the stream, the parity hooks.
+    private func lifecycle(_ content: AnyView) -> some View {
+        content
         .sheet(isPresented: $showingHelp) { ComputerGestureHelp() }
         .alert(item: $controller.prompt) { prompt in
             switch prompt {

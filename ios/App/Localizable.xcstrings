@@ -412,7 +412,8 @@
       }
     },
     "000000": {
-      "shouldTranslate": false
+      "shouldTranslate": false,
+      "localizations": {}
     },
     "5–1,440": {
       "localizations": {
@@ -2245,7 +2246,8 @@
       }
     },
     "English": {
-      "shouldTranslate": false
+      "shouldTranslate": false,
+      "localizations": {}
     },
     "Enter a different value": {
       "localizations": {
@@ -3570,7 +3572,8 @@
       }
     },
     "Sagax": {
-      "shouldTranslate": false
+      "shouldTranslate": false,
+      "localizations": {}
     },
     "Sagax is trying the saved connection automatically.": {
       "localizations": {
@@ -3839,7 +3842,8 @@
       }
     },
     "Português (Brasil)": {
-      "shouldTranslate": false
+      "shouldTranslate": false,
+      "localizations": {}
     },
     "Preparing attachments…": {
       "localizations": {
@@ -6228,7 +6232,8 @@
       }
     },
     "Français": {
-      "shouldTranslate": false
+      "shouldTranslate": false,
+      "localizations": {}
     },
     "System": {
       "localizations": {
@@ -49946,6 +49951,358 @@
           "stringUnit": {
             "state": "translated",
             "value": "Escolher os bots da conversa em grupo"
+          }
+        }
+      }
+    },
+    "Double tap to edit": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Double tap to edit"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Touchez deux fois pour modifier"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Toque duas vezes para editar"
+          }
+        }
+      }
+    },
+    "Chatterbox server address": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Chatterbox server address"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Adresse du serveur Chatterbox"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Endereço do servidor Chatterbox"
+          }
+        }
+      }
+    },
+    "Chatterbox model": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Chatterbox model"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Modèle Chatterbox"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Modelo Chatterbox"
+          }
+        }
+      }
+    },
+    "Save server": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Save server"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enregistrer le serveur"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Salvar servidor"
+          }
+        }
+      }
+    },
+    "Give this agent a voice for calls and spoken replies. The voice choice belongs to this agent; provider keys stay on your computer and never come to this device.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Give this agent a voice for calls and spoken replies. The voice choice belongs to this agent; provider keys stay on your computer and never come to this device."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Donnez une voix à cet agent pour les appels et les réponses parlées. Le choix de la voix appartient à cet agent; les clés du fournisseur restent sur votre ordinateur et ne viennent jamais sur cet appareil."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dê uma voz a este agente para chamadas e respostas faladas. A escolha da voz pertence a este agente; as chaves do provedor ficam no seu computador e nunca vêm para este dispositivo."
+          }
+        }
+      }
+    },
+    "These are changed by an administrator, or in Sagax on your computer.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "These are changed by an administrator, or in Sagax on your computer."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ces réglages sont modifiés par un administrateur, ou dans Sagax sur votre ordinateur."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Estas opções são alteradas por um administrador ou no Sagax no seu computador."
+          }
+        }
+      }
+    },
+    "Where this bot runs its tools: a computer of its own, this computer, the built-in browser, or nowhere.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Where this bot runs its tools: a computer of its own, this computer, the built-in browser, or nowhere."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Où ce bot exécute ses outils : son propre ordinateur, cet ordinateur, le navigateur intégré, ou nulle part."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Onde este bot executa suas ferramentas: um computador próprio, este computador, o navegador integrado ou lugar nenhum."
+          }
+        }
+      }
+    },
+    "Install": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Install"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Installer"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Instalar"
+          }
+        }
+      }
+    },
+    "Uninstall": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Uninstall"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Désinstaller"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Desinstalar"
+          }
+        }
+      }
+    },
+    "Library views": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Library views"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vues de la bibliothèque"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Visualizações da biblioteca"
+          }
+        }
+      }
+    },
+    "An administrator manages your plugins.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "An administrator manages your plugins."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Un administrateur gère vos plugins."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Um administrador gerencia seus plugins."
+          }
+        }
+      }
+    },
+    "This bot's engine does not load Claude Code plugins.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This bot's engine does not load Claude Code plugins."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le moteur de ce bot ne charge pas les plugins Claude Code."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "O mecanismo deste bot não carrega plugins do Claude Code."
+          }
+        }
+      }
+    },
+    "No plugins on this bot yet.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No plugins on this bot yet."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aucun plugin sur ce bot pour l'instant."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nenhum plugin neste bot ainda."
+          }
+        }
+      }
+    },
+    "This marketplace lists no plugins.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This marketplace lists no plugins."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ce marketplace ne liste aucun plugin."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Este marketplace não lista nenhum plugin."
+          }
+        }
+      }
+    },
+    "Remove marketplace": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Remove marketplace"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Retirer le marketplace"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Remover marketplace"
+          }
+        }
+      }
+    },
+    "Add a marketplace": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Add a marketplace"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ajouter un marketplace"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Adicionar um marketplace"
           }
         }
       }

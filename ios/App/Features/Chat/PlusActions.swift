@@ -133,7 +133,7 @@ extension ChatView {
             out.append(PlusAction(
                 id: "settings", systemImage: "gearshape", title: "Bot settings",
                 subtitle: "Model, profile, voice and notifications"
-            ) { openProfile() })
+            ) { openPanel(.plusSettings) })
             if session.surfaceGate.allows(.compactConversation) {
                 out.append(PlusAction(
                     id: "compact", systemImage: "rectangle.compress.vertical", title: "Compact conversation",
@@ -145,7 +145,7 @@ extension ChatView {
             out.append(PlusAction(
                 id: "computer", systemImage: "display", title: "Watch computer",
                 subtitle: "Live view of what \(bot.name) is doing"
-            ) { showingComputer = true })
+            ) { openPanel(.plusComputer) })
             out.append(PlusAction(
                 id: "voice", systemImage: "waveform",
                 title: LocalizedStringKey(String(localized: "Voice mode")),

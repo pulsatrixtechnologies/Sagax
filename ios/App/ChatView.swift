@@ -43,8 +43,9 @@ struct ChatView: View {
     @State var showingTasks = false
     @State var showingComputer = false
     @State var showingPlus = false
-    @State var showingProfile = false
-    @State var pushingProfile = false
+    /// The bot panel, full screen, and the tab it opens on (`BotPanelDoor`).
+    @State var showingPanel = false
+    @State var panelTab: DesktopPanelTab = .details
     @State var showingWalkie = false
     /// WP11: the Room info sheet (RM6), opened by a room's header.
     @State var showingRoomInfo = false
@@ -178,8 +179,11 @@ struct ChatView: View {
                 TaskManagerView(chat: current) { selectedThreadId = $0 }
             }
         }
-        .sheet(isPresented: $showingProfile) {
-            if case let .bot(bot) = current { ChatProfileRoute.destination(for: bot) }
+        .fullScreenCover(isPresented: $showingPanel) {
+            if case let .bot(bot) = current {
+                ChatProfileRoute.destination(for: bot, tab: panelTab)
+                    .environmentObject(session)
+            }
         }
         .sheet(isPresented: $showingRoomInfo, onDismiss: {
             if roomInfoOpensThreads {
@@ -253,7 +257,7 @@ struct ChatView: View {
         .onValueChange(of: showingRoomInfo) { shown in
             if shown { dictation.stop() }
         }
-        .onValueChange(of: showingProfile || pushingProfile) { shown in
+        .onValueChange(of: showingPanel) { shown in
             if shown { dictation.stop() }
         }
         .onValueChange(of: showingWalkie) { shown in
@@ -640,9 +644,6 @@ struct ChatView: View {
         .background(SwipeBackBridge())
         .navigationDestination(isPresented: $showingComputer) {
             if case let .bot(bot) = current { ComputerView(bot: bot) }
-        }
-        .navigationDestination(isPresented: $pushingProfile) {
-            if case let .bot(bot) = current { ChatProfileRoute.destination(for: bot) }
         }
     }
 

@@ -1,17 +1,18 @@
-// The open chat's files (matrix rows BF1, BF3, BF4), as the desktop's bot
-// panel Files section shows them (`bot-settings/FilesSection.tsx`): every
+// The bot panel's Library tab on the iPhone (matrix rows BF1, BF3, BF4),
+// as the desktop's panel draws it (`bot-settings/FilesSection.tsx`): every
 // file of the conversation from GET /api/threads/:id/files, newest first,
 // with the search, the kind chips and their counts, who sent it, the sort,
 // grid or list, and each file's actions: open, download, show in chat and
-// copy path. The phone opens it from the profile's Files tab ("This chat");
-// the view is layout-agnostic for the iPad's `panel-library`.
+// copy path. The bot's links (GET /api/bots/:id/links) are one more chip,
+// where the phone's profile had Links and Media tabs (`BotLibraryChip`).
+// It draws inside the panel's scroll view.
 import CompanionCore
 import SwiftUI
 import UIKit
 
 struct ThreadFilesView: View {
     @Environment(\.themePalette) var themePalette
-    let threadId: String
+    let bot: Bot
     /// Show the file's message in the chat; the host closes what covers it.
     let onShowInChat: (ThreadFile) -> Void
 
@@ -19,19 +20,32 @@ struct ThreadFilesView: View {
     @State private var files: [ThreadFile]?
     @State private var failed = false
     @State private var query = ThreadFileQuery()
+    @State private var showingLinks = false
+    @StateObject private var links = LibraryLoader<BotLink>()
     @AppStorage("omb-files-view") private var pickedView = ""
     @State private var previewing: IdentifiedURL?
     @State private var sharing: IdentifiedURL?
     @State private var working: String?
     @State private var status: String?
 
+    init(bot: Bot, start: BotLibraryChip = .files(.all), onShowInChat: @escaping (ThreadFile) -> Void) {
+        self.bot = bot
+        self.onShowInChat = onShowInChat
+        _showingLinks = State(initialValue: start == .links)
+        _query = State(initialValue: ThreadFileQuery(filter: start.fileFilter ?? .all))
+    }
+
+    private var threadId: String { bot.threadId }
     private var all: [ThreadFile] { files ?? [] }
     private var counts: [ThreadFileFilter: Int] { ThreadFileRules.counts(all, origin: query.origin, search: query.search) }
-    private var chips: [ThreadFileFilter] { ThreadFileRules.visibleFilters(counts: counts, selected: query.filter) }
-    /// With no chips on screen the list is never narrowed by a hidden filter.
+    private var selectedChip: BotLibraryChip { showingLinks ? .links : .files(query.filter) }
+    private var linkCount: Int { links.page?.total ?? links.page?.items.count ?? 0 }
+    private var chips: [BotLibraryChip] { BotLibraryChip.visible(counts: counts, selected: selectedChip, links: linkCount) }
+    private var fileChips: [ThreadFileFilter] { ThreadFileRules.visibleFilters(counts: counts, selected: query.filter) }
+    /// With no kind chips on screen the list is never narrowed by a hidden filter.
     private var shown: [ThreadFile] {
         var effective = query
-        if chips.isEmpty { effective.filter = .all }
+        if fileChips.isEmpty { effective.filter = .all }
         return ThreadFileRules.visible(all, query: effective)
     }
     /// Grid suits pictures; a chosen view sticks.
@@ -42,18 +56,17 @@ struct ThreadFilesView: View {
     }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 12) {
-                controls
-                content
+        VStack(alignment: .leading, spacing: 12) {
+            AnyView(searchRow)
+            AnyView(controls)
+            if showingLinks {
+                AnyView(LinksTab(bot: bot, loader: links))
+            } else {
+                AnyView(content)
             }
-            .padding(.vertical, 12)
-            .accessibilityElement(children: .contain)
-            .accessibilityIdentifier("thread-files")
         }
-        .background(Theme.bg)
         .overlay(alignment: .top) {
-            // "Path copied", as the profile's own Copied toast
+            // "Path copied", as the panel's own Copied toast
             if let status {
                 Text(verbatim: status)
                     .font(Theme.Font.body)
@@ -61,86 +74,130 @@ struct ThreadFilesView: View {
                     .padding(.horizontal, 18)
                     .frame(height: 40)
                     .themeGlass(Capsule(), interactive: false)
-                    .padding(.top, 8)
                     .transition(.opacity)
                     .accessibilityIdentifier("thread-files-status")
             }
         }
-        .searchable(text: $query.search, prompt: Text("Search files"))
-        .navigationTitle(Text("This chat's files"))
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                Button {
-                    pickedView = grid ? "list" : "grid"
-                } label: {
-                    Image(systemName: grid ? "list.bullet" : "square.grid.2x2")
-                }
-                .accessibilityLabel(Text(grid ? "List view" : "Grid view"))
-                .accessibilityIdentifier("thread-files-view")
-            }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("thread-files")
+        .task(id: threadId) {
+            await load()
+            guard let client = session.profileClient else { return }
+            let botId = bot.id
+            links.loadFirst { cursor, limit in try await client.botLinks(botId: botId, cursor: cursor, limit: limit) }
         }
-        .task { await load() }
-        .refreshable { await load() }
         .sheet(item: $previewing) { item in ProfileQuickLook(url: item.url).ignoresSafeArea() }
         .sheet(item: $sharing) { item in ProfileShareSheet(items: [item.url]) }
     }
 
     // MARK: Controls
 
+    private var searchRow: some View {
+        HStack(spacing: 8) {
+            HStack(spacing: 8) {
+                Image(systemName: "magnifyingglass").font(.system(size: 14)).foregroundStyle(Theme.textSecondary)
+                TextField(String(localized: "Search files"), text: $query.search)
+                    .font(Theme.Font.body)
+                    .foregroundStyle(Theme.textPrimary)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .accessibilityIdentifier("thread-files-search")
+            }
+            .padding(.horizontal, 12)
+            .frame(height: 38)
+            .background(Theme.card, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            Button {
+                pickedView = grid ? "list" : "grid"
+            } label: {
+                Image(systemName: grid ? "list.bullet" : "square.grid.2x2")
+                    .font(.system(size: 15))
+                    .foregroundStyle(Theme.textPrimary)
+                    .frame(width: 38, height: 38)
+                    .background(Theme.card, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(Text(grid ? "List view" : "Grid view"))
+            .accessibilityIdentifier("thread-files-view")
+        }
+        .padding(.horizontal, Theme.Profile.cardMargin)
+    }
+
     private var controls: some View {
         VStack(alignment: .leading, spacing: 10) {
             if !chips.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 6) {
-                        ForEach(chips, id: \.self) { chip in
-                            let selected = query.filter == chip
-                            Button {
-                                Haptics.selection()
-                                query.filter = chip
-                            } label: {
-                                HStack(spacing: 5) {
-                                    Text(Self.filterName(chip))
-                                    Text(verbatim: "\(counts[chip] ?? 0)")
-                                        .monospacedDigit()
-                                        .foregroundStyle(selected ? Theme.bg.opacity(0.7) : Theme.textTertiary)
-                                }
-                                .font(Theme.Profile.labelFont)
-                                .foregroundStyle(selected ? Theme.bg : Theme.textSecondary)
-                                .padding(.horizontal, 10)
-                                .frame(height: 28)
-                                .background(selected ? Theme.textPrimary : Theme.card, in: Capsule())
-                                .overlay(Capsule().strokeBorder(selected ? Color.clear : Theme.hairline))
-                            }
-                            .buttonStyle(.plain)
-                            .accessibilityAddTraits(selected ? .isSelected : [])
-                            .accessibilityIdentifier("thread-files-chip.\(chip.rawValue)")
-                        }
+                        ForEach(chips, id: \.self) { chip in chipButton(chip) }
                     }
                     .padding(.horizontal, Theme.Profile.cardMargin)
                 }
                 .accessibilityLabel(Text("Filter files by type"))
             }
-            HStack(spacing: 8) {
-                Menu {
-                    Picker(String(localized: "Show files from"), selection: $query.origin) {
-                        ForEach(ThreadFileOrigin.allCases, id: \.self) { Text(Self.originName($0)).tag($0) }
+            if !showingLinks {
+                HStack(spacing: 8) {
+                    Menu {
+                        Picker(String(localized: "Show files from"), selection: $query.origin) {
+                            ForEach(ThreadFileOrigin.allCases, id: \.self) { Text(Self.originName($0)).tag($0) }
+                        }
+                    } label: {
+                        menuLabel(Self.originName(query.origin), systemImage: "person.2")
                     }
-                } label: {
-                    menuLabel(Self.originName(query.origin), systemImage: "person.2")
-                }
-                .accessibilityIdentifier("thread-files-origin")
-                Menu {
-                    Picker(String(localized: "Sort files"), selection: $query.sort) {
-                        ForEach(ThreadFileSort.allCases, id: \.self) { Text(Self.sortName($0)).tag($0) }
+                    .accessibilityIdentifier("thread-files-origin")
+                    Menu {
+                        Picker(String(localized: "Sort files"), selection: $query.sort) {
+                            ForEach(ThreadFileSort.allCases, id: \.self) { Text(Self.sortName($0)).tag($0) }
+                        }
+                    } label: {
+                        menuLabel(Self.sortName(query.sort), systemImage: "arrow.up.arrow.down")
                     }
-                } label: {
-                    menuLabel(Self.sortName(query.sort), systemImage: "arrow.up.arrow.down")
+                    .accessibilityIdentifier("thread-files-sort")
                 }
-                .accessibilityIdentifier("thread-files-sort")
+                .padding(.horizontal, Theme.Profile.cardMargin)
             }
-            .padding(.horizontal, Theme.Profile.cardMargin)
         }
+    }
+
+    private func chipButton(_ chip: BotLibraryChip) -> some View {
+        let selected = chip == selectedChip
+        let title: String
+        let count: Int
+        let id: String
+        switch chip {
+        case let .files(filter):
+            title = Self.filterName(filter)
+            count = counts[filter] ?? 0
+            id = filter.rawValue
+        case .links:
+            title = String(localized: "Links")
+            count = linkCount
+            id = "links"
+        }
+        return Button {
+            Haptics.selection()
+            switch chip {
+            case let .files(filter):
+                showingLinks = false
+                query.filter = filter
+            case .links:
+                showingLinks = true
+            }
+        } label: {
+            HStack(spacing: 5) {
+                Text(verbatim: title)
+                Text(verbatim: "\(count)")
+                    .monospacedDigit()
+                    .foregroundStyle(selected ? Theme.bg.opacity(0.7) : Theme.textTertiary)
+            }
+            .font(Theme.Profile.labelFont)
+            .foregroundStyle(selected ? Theme.bg : Theme.textSecondary)
+            .padding(.horizontal, 10)
+            .frame(height: 28)
+            .background(selected ? Theme.textPrimary : Theme.card, in: Capsule())
+            .overlay(Capsule().strokeBorder(selected ? Color.clear : Theme.hairline))
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(selected ? .isSelected : [])
+        .accessibilityIdentifier("thread-files-chip.\(id)")
     }
 
     private func menuLabel(_ title: String, systemImage: String) -> some View {
@@ -213,7 +270,7 @@ struct ThreadFilesView: View {
     private var emptyText: String {
         let search = query.search.trimmingCharacters(in: .whitespacesAndNewlines)
         if !search.isEmpty { return String(localized: "Nothing matches “\(search)”") }
-        switch chips.isEmpty ? .all : query.filter {
+        switch fileChips.isEmpty ? .all : query.filter {
         case .all: return String(localized: "Files you send and files this bot makes in this chat show up here.")
         case .image: return String(localized: "No images in this chat yet.")
         case .video: return String(localized: "No videos in this chat yet.")

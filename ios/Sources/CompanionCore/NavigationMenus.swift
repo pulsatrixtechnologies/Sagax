@@ -191,15 +191,16 @@ public enum NavigationMenus {
             third.append(.archive)
             if bot.chiefOfStaff == true { block = .primary } else if context.activeBotCount <= 1 { block = .lastActive }
         }
+        // Delete and the Primary Bot entry: the same rules as the bot
+        // panel's own menu (`BotPanelAction`), in the sidebar's place.
+        let panel = context.viewerId.map { BotPanelAction.available(gate: gate, bot: bot, viewerId: $0) } ?? []
         if gate.allows(.botOwnerExtras) { third.append(.delete) }
         groups.append(third)
 
-        if gate.allows(.primaryBot), let viewer = context.viewerId {
-            switch PrimaryBotRules.menuAction(for: bot, viewerId: viewer) {
-            case .replace?: groups.append([.replacePrimary])
-            case .make?: groups.append([.makePrimary])
-            case nil: break
-            }
+        if panel.contains(.replacePrimary) {
+            groups.append([.replacePrimary])
+        } else if panel.contains(.makePrimary) {
+            groups.append([.makePrimary])
         }
         return BotMenuPlan(groups: groups, archiveBlock: block)
     }
