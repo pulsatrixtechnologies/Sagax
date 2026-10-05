@@ -616,7 +616,7 @@ import { cookieMaxAgeSeconds, formatPairingCode, SessionRegistry, type Scope, ty
 import { isAccountEmail, isPrincipalId, PrincipalRegistry } from "./principals.ts";
 import { OrgTeams } from "./org-teams.ts";
 import { keyVia, materializeEngineAccess, providersOfDriver, resolveEngineAccess, subscriptionDriver, turnPayer, type AccessPayer, type SubscriptionDriver, type EngineCredentialInput, type EngineCredentialPlan, type NoAccessCause, type TurnAccess } from "./engine-credentials.ts";
-import { isLoginDriver, PrincipalEngineLogins } from "./principal-engine-logins.ts";
+import { isLoginDriver, loginCliFor, PrincipalEngineLogins } from "./principal-engine-logins.ts";
 import { createSectionChannelRoutes, migrationOwner, recordAccess, SectionChannels, sectionShareGrants } from "./section-channels.ts";
 import { createBotGrantRoutes, visibleGrants, wireGrants } from "./bot-grants.ts";
 import { createBotPerspicaxRoutes } from "./bot-perspicax.ts";
@@ -5005,7 +5005,8 @@ const engineLogins = IDENTITY.kind === "perspicax"
     instance: (instanceId) => {
       const entry = instanceConfigs(cfg)[instanceId];
       if (!entry) return null;
-      const cli = typeof (entry.config as { cli?: unknown } | undefined)?.cli === "string" ? (entry.config as { cli: string }).cli : entry.driver === "codex" ? "codex" : "claude";
+      const configured = (entry.config as { cli?: unknown } | undefined)?.cli;
+      const cli = loginCliFor(entry.driver, configured, registry.cliTarget(instanceId)?.cli);
       return { driver: entry.driver, cli, environment: entry.environment ?? {} };
     },
   })

@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import type { ProviderAuthenticationStatus } from "./contracts.ts";
-import { LOGIN_MARKER, PrincipalEngineLogins, type LoginController } from "./principal-engine-logins.ts";
+import { LOGIN_MARKER, loginCliFor, PrincipalEngineLogins, type LoginController } from "./principal-engine-logins.ts";
 
 const A = "pr_00000000-0000-4000-8000-00000000000a";
 const B = "pr_00000000-0000-4000-8000-00000000000b";
@@ -113,5 +113,20 @@ describe("PrincipalEngineLogins", () => {
     await originalFinish();
     expect(await logins.status(A, "codex", "s", started.flowId!)).toMatchObject({ phase: "succeeded" });
     expect(logins.signedIn(A, "codex")).toBe(true);
+  });
+});
+
+describe("loginCliFor", () => {
+  it("uses the driver's own command when the instance saved none", () => {
+    expect(loginCliFor("grokAgent", undefined, undefined)).toBe("grok");
+    expect(loginCliFor("kimiAgent", undefined, "kimi")).toBe("kimi");
+    expect(loginCliFor("codex", undefined, undefined)).toBe("codex");
+    expect(loginCliFor("claudeAgent", undefined, undefined)).toBe("claude");
+  });
+
+  it("keeps a saved command, including a path, and ignores a blank one", () => {
+    expect(loginCliFor("grokAgent", "  /usr/local/bin/grok  ", "claude")).toBe("/usr/local/bin/grok");
+    expect(loginCliFor("grokAgent", "   ", "grok")).toBe("grok");
+    expect(loginCliFor("other", undefined, undefined)).toBe("claude");
   });
 });

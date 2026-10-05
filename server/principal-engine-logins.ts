@@ -30,6 +30,25 @@ import { isPrincipalId } from "./principals.ts";
 export const LOGIN_MARKER = ".pulsabot-login.json";
 export type LoginDriver = "claudeAgent" | "codex" | "grokAgent" | "kimiAgent";
 
+const DRIVER_CLI: Readonly<Record<LoginDriver, string>> = {
+  claudeAgent: "claude",
+  codex: "codex",
+  grokAgent: "grok",
+  kimiAgent: "kimi",
+};
+
+/** Executable for a person's subscription sign-in.
+ * A saved config.cli wins. Otherwise the driver's own default, so Grok
+ * runs grok and Kimi runs kimi. Claude is only the last resort. */
+export function loginCliFor(driver: string, configured: unknown, driverDefault: string | null | undefined): string {
+  const raw = typeof configured === "string" ? configured.trim() : "";
+  if (raw) return raw;
+  const fallback = typeof driverDefault === "string" ? driverDefault.trim() : "";
+  if (fallback) return fallback;
+  if (driver === "claudeAgent" || driver === "codex" || driver === "grokAgent" || driver === "kimiAgent") return DRIVER_CLI[driver];
+  return "claude";
+}
+
 const LOGIN_DIR: Readonly<Record<LoginDriver, string>> = { claudeAgent: "claude", codex: "codex", grokAgent: "grok", kimiAgent: "kimi" };
 
 export interface LoginController {
