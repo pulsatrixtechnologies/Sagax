@@ -35,7 +35,7 @@ export interface BotOverviewGrant {
 }
 
 export type SetupStepId = "identity" | "soul" | "folder" | "apps" | "schedule";
-export type SetupStepSection = "identity" | "soul" | "access" | "routines";
+export type SetupStepSection = "details" | "soul" | "access" | "routines";
 
 export interface SetupStep {
   id: SetupStepId;
@@ -325,7 +325,7 @@ export function setupSteps(facts: OverviewFacts): SetupStep[] {
   const routines = facts.routines.some((routine) => routine.enabled);
   const webhooks = facts.webhooks.some((webhook) => webhook.enabled);
   const steps: SetupStep[] = [
-    { id: "identity", label: "Give it a name and a role", done: named && described, section: "identity" },
+    { id: "identity", label: "Give it a name and a role", done: named && described, section: "details" },
     { id: "soul", label: "Write its standing instructions", done: (facts.bot.soul ?? "").trim() !== "", section: "soul" },
     { id: "folder", label: "Choose a working folder", done: Boolean(facts.bot.cwd), section: "access" },
   ];

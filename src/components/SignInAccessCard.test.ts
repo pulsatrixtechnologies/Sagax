@@ -1,8 +1,6 @@
-import { createElement } from "react";
-import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
-import { normalizeAccessEntry, SignInAccessCard, withEntry, withoutEntry } from "./SignInAccessCard";
+import { normalizeAccessEntry, withEntry, withoutEntry } from "./SignInAccessCard";
 
 describe("who may sign in with an emailed code", () => {
   it("accepts an address or an @domain and nothing else", () => {
@@ -20,9 +18,5 @@ describe("who may sign in with an emailed code", () => {
     expect(withEntry(start, "a@x.com", "member")).toEqual({ admins: [], members: ["b@x.com", "a@x.com"] });
     expect(withEntry(start, "@y.com", "member")).toEqual({ admins: ["a@x.com"], members: ["b@x.com", "@y.com"] });
     expect(withoutEntry(start, "a@x.com")).toEqual({ admins: [], members: ["b@x.com"] });
-  });
-
-  it("renders nothing until it knows who is asking", () => {
-    expect(renderToStaticMarkup(createElement(SignInAccessCard))).toBe("");
   });
 });

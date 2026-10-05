@@ -1,4 +1,4 @@
-// Settings > Organization > Where bots work, on an organization server: each
+// Settings > Computer > Where bots work, on an organization server: each
 // bot's Works on decides (Auto and Cloud: the person's server environment;
 // Local VM and This computer: their own computer through this desktop app);
 // here, whether their computer is connected, whether routines may use it,
@@ -7,8 +7,8 @@
 import { useEffect, useState } from "react";
 
 import { activeLocale, t } from "@/lib/i18n";
-import { readWorkplace, useDesktopBridgeStatus, writeWorkplace, type DesktopBridgeActivity } from "@/lib/desktop-bridge";
-import type { BotWorkplace } from "../../../shared/bot-workplace";
+import { readWorkplace, useDesktopBridgeStatus, writeWorkplace, type DesktopBridgeActivity, type DesktopBridgeStatus } from "@/lib/desktop-bridge";
+import { DEFAULT_BOT_WORKPLACE, type BotWorkplace } from "../../../shared/bot-workplace";
 import { Card } from "../SettingsPrimitives";
 
 function when(ms: number): string {
@@ -20,9 +20,13 @@ export function activityLine(entry: DesktopBridgeActivity): string {
   return `${entry.detail} · ${where}${entry.ok ? "" : ` · ${t("botWorkplace.activity.failed")}`}`;
 }
 
-export function BotWorkplaceSettings() {
-  const status = useDesktopBridgeStatus(15_000);
-  const [workplace, setWorkplace] = useState<BotWorkplace>(() => readWorkplace());
+export function BotWorkplaceSettings({ status: given }: { status?: DesktopBridgeStatus } = {}) {
+  const polled = useDesktopBridgeStatus(15_000);
+  const status = given ?? polled;
+  const [workplace, setWorkplace] = useState<BotWorkplace>(() => {
+    if (given?.workplace) return given.workplace;
+    try { return readWorkplace(); } catch { return { ...DEFAULT_BOT_WORKPLACE }; }
+  });
   useEffect(() => { if (status?.workplace) setWorkplace(status.workplace); }, [status?.workplace?.routines, status?.workplace?.network]);
   if (!status) return null;
   const change = (next: Partial<BotWorkplace>) => {

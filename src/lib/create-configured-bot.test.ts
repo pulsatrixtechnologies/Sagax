@@ -45,6 +45,22 @@ describe("configured bot creation", () => {
     expect(f.bodies[1]).not.toHaveProperty("toolScope");
   });
 
+  it("sends only member fields when an organization member creates a bot", async () => {
+    const f = fixture("auto");
+    f.draft.patch({ computer: "vm", cwd: "/tmp", soul: "Be brief.", notifications: false });
+    f.draft.setMemory("MEMORY.md", "notes");
+    await createConfiguredBot(f.draft, f.request, persistBotUpdate, f.approvals, undefined, { memberFieldsOnly: true });
+    expect(f.bodies[0]).toMatchObject({ name: "Fixture", requireAvailableModel: true, useDefaults: false });
+    expect(f.bodies[0]).not.toHaveProperty("section");
+    expect(f.bodies[0]).not.toHaveProperty("visibility");
+    expect(f.bodies[0]).not.toHaveProperty("preset");
+    expect(f.bodies[1]).not.toHaveProperty("computer");
+    expect(f.bodies[1]).not.toHaveProperty("cwd");
+    expect(f.bodies[1]).not.toHaveProperty("approvalMode");
+    expect(f.bodies[1]).toMatchObject({ soul: "Be brief.", notifications: false });
+    expect(f.events.some((event) => event.includes("/memory/"))).toBe(false);
+  });
+
   it("keeps the server-completed workspace effort when applying draft settings", async () => {
     const selection = { instanceId: "claude", model: "sonnet", effort: "high" as const };
     const f = fixture("ask", 0, selection);

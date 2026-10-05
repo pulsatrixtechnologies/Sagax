@@ -601,6 +601,7 @@ import { groupCommandTarget, resolveTypedCommand, type CommandResolution, type G
 import type { HarnessCommandScope } from "./contracts.ts";
 import { ProviderAuthSessions } from "./provider-auth-sessions.ts";
 import {
+  capabilitiesForAuth,
   clearSessionCookie,
   clientBotPatchViolation,
   memberBotFieldViolation,
@@ -4606,7 +4607,7 @@ let bootSelection = { instanceId: "", model: "" };
 const presetStore = createPresetStore();
 const store = new Store(
   () => bootSelection,
-  (selection) => withNewBotEffort(selection, cfg.newBots?.effort, registry.get(selection.instanceId)?.adapter.capabilities.effortLevels),
+  (selection) => withNewBotEffort(selection, cfg.newBotDefaults?.profile.modelSelection?.effort, registry.get(selection.instanceId)?.adapter.capabilities.effortLevels),
 );
 const teamComputers = new TeamComputers(join(DATA_DIR, "team-computers.json"), ENVIRONMENT_ID);
 let followupsReady = false;
@@ -18320,8 +18321,17 @@ function configStatus() {
     language: cfg.language ?? "",
     rooms: { turnTimeoutMinutes: roomTurnTimeoutMinutes(cfg) },
     automaticRecovery: cfg.automaticRecovery ?? { enabled: false },
-    // absent effort = no level is sent, so clients can tell it from any level
-    newBots: cfg.newBots?.effort ? { effort: cfg.newBots.effort } : {},
+    // The new-bot template's visible defaults. Memory files and skills stay
+    // on GET /api/bot-defaults; this line is what Settings summarizes.
+    newBotDefaults: {
+      profile: {
+        ...(cfg.newBotDefaults?.profile.modelSelection ? { modelSelection: cfg.newBotDefaults.profile.modelSelection } : {}),
+        ...(cfg.newBotDefaults?.profile.approvalMode ? { approvalMode: cfg.newBotDefaults.profile.approvalMode } : {}),
+        ...(cfg.newBotDefaults?.profile.computer !== undefined && cfg.newBotDefaults.profile.computer !== null
+          ? { computer: cfg.newBotDefaults.profile.computer }
+          : {}),
+      },
+    },
     threads: {
       maxConcurrentPerBot: maxConcurrentBotThreads(cfg),
       maxParallelPerPerson: maxParallelTasksPerPerson(cfg),
@@ -20283,10 +20293,11 @@ function viewerIdentity(auth: RequestAuth): ViewerIdentity | null {
   const role = channelActorRole(auth);
   const canCreateBots = botCreationAllowed(auth);
   const managed = profileManagedFor(auth) ? PROFILE_MANAGEMENT! : {};
+  const capabilities = capabilitiesForAuth(auth, { orgPairing: IDENTITY.kind === "perspicax" });
   if (viewerIsOperator(auth)) {
     return {
       operator: true, principalId: localPrincipalId(), email: cfg.profile?.email?.trim() ?? "",
-      name: cfg.profile?.name?.trim() ?? "", role, canCreateBots, ...managed,
+      name: cfg.profile?.name?.trim() ?? "", role, canCreateBots, capabilities, ...managed,
     };
   }
   const session = (auth as Extract<RequestAuth, { kind: "session" }>).session;
@@ -20297,7 +20308,7 @@ function viewerIdentity(auth: RequestAuth): ViewerIdentity | null {
   return {
     // the name Perspicax sent (refreshed on each sign-in and directory
     // sync), else the address, else the login
-    operator: false, principalId, email, name: personDisplayName({ ...person, email }), role, canCreateBots,
+    operator: false, principalId, email, name: personDisplayName({ ...person, email }), role, canCreateBots, capabilities,
     ...(personBotsReadOnly(principalId) ? { botsReadOnly: true as const } : {}),
     ...(personIntegrationsOff(principalId) ? { integrationsManagedByAdmin: true as const } : {}),
     operatorName: cfg.profile?.name?.trim() || "",
@@ -27704,6 +27715,22 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         return json(res, 403, { error: "Only this bot's owner can make it their Primary Bot", code: "not_bot_owner" });
       }
       const changed = store.setPrimaryBot(target.id);
+      if (changed === null) return json(res, 404, { error: "no such bot" });
+      return json(res, 200, { bot: wireBot(store.bot(target.id)!), changed: changed.map((bot) => bot.id) });
+    }
+    // Leave the role. The same people who may take it may give it up. A
+    // member cannot PATCH chiefOfStaff (it is not a member field), so this
+    // is the step-down that matches POST.
+    if (m && method === "DELETE") {
+      const target = store.bot(m[1]);
+      if (!target) return json(res, 404, { error: "no such bot" });
+      const actor = actorPrincipalId(auth).trim().toLowerCase();
+      const owner = effectiveBotOwner(target);
+      const soloAdmin = IDENTITY.kind !== "perspicax" && (auth.kind !== "session" || auth.scopes.includes("admin"));
+      if (!soloAdmin && (!actor || owner !== actor)) {
+        return json(res, 403, { error: "Only this bot's owner can step down their Primary Bot", code: "not_bot_owner" });
+      }
+      const changed = store.clearPrimaryBot(target.id);
       if (changed === null) return json(res, 404, { error: "no such bot" });
       return json(res, 200, { bot: wireBot(store.bot(target.id)!), changed: changed.map((bot) => bot.id) });
     }

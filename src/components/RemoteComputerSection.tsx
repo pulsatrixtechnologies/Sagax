@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { t } from "@/lib/i18n";
+import { settingsSectionLabel } from "@/lib/settings-link";
 import { Laptop, Loader2, Unplug } from "lucide-react";
 import { Card } from "./SettingsPrimitives";
 
@@ -183,7 +184,7 @@ export function RemoteComputerSection() {
           ) : (
             <>
               <p className="text-[12.5px] leading-relaxed text-ink-secondary">
-                {t("remote.client.companion.hint")}
+                {t("remote.client.companion.hint", { settings: settingsSectionLabel("companion") })}
               </p>
               <label className="flex flex-col gap-1.5 text-[12px] text-ink-secondary">
                 {t("remote.client.companion.address")}

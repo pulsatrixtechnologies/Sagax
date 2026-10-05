@@ -96,7 +96,7 @@ export function autoComputerUnavailable(state: AutoComputerState, target: AutoCo
       : "The server environment (cloud) is not enabled on this server. Tell the person; an administrator can enable it.";
   }
   if (state.routine && !state.routinesAllowed) {
-    return "This is a routine: it uses the owner's computer only when they allowed routines on it (Settings > Computer). It keeps working in the cloud.";
+    return "This is a routine: it uses the owner's computer only when they allowed routines on it (Settings > Computer, Where bots work). It keeps working in the cloud.";
   }
   if (!state.desktopMounted || !desktopConnected) {
     return "The person's computer is not connected: their Sagax desktop app is closed or signed out. Ask them to open it, signed in to this server, then send the request again; or work in the cloud.";

@@ -1,11 +1,12 @@
-// Access: where this bot runs, its working folder, connected apps and
-// browser toggles, its webhooks, and the standing "always allowed" grants.
-// Works on/cloud backend/auto-start VPS, Working folder, Connected apps, and
-// Browser are moved verbatim from SettingsPanel.tsx; the connected-service
-// list, webhooks list, and always-allowed list (the first read-only view of
-// standing grants) are new.
+// Access: the cloud backend for a solo bot, its working folder, connected
+// apps and browser toggles, its webhooks, and the standing "always allowed"
+// grants. Works on lives once, at the top of the Computer tab
+// (src/components/computer/WorksOnSetting.tsx). Cloud backend and auto-start
+// VPS, Working folder, Connected apps, and Browser are moved verbatim from
+// SettingsPanel.tsx; the connected-service list, webhooks list, and
+// always-allowed list (the first read-only view of standing grants) are new.
 import { useEffect, useState } from "react";
-import { boatComputerEnabled, browserUnavailableReason, connectedAppsEnabled as connectedAppsFeatureEnabled, vpsComputerEnabled } from "@/lib/feature-flags";
+import { boatComputerEnabled, connectedAppsEnabled as connectedAppsFeatureEnabled, vpsComputerEnabled } from "@/lib/feature-flags";
 import { ChevronDown, ChevronRight, FolderOpen, Plus } from "lucide-react";
 
 import { api, useStore, type Bot } from "@/state/store";
@@ -15,12 +16,12 @@ import { usePerspicaxOrg } from "@/lib/perspicax-org";
 import { t } from "@/lib/i18n";
 import type { LocaleKey } from "@/locales";
 import { mcpServersForBot, useMcpServers } from "@/lib/mcp-servers";
-import { cloudComputersOffered, placeLabelKey, placeOffered } from "@/lib/place";
+import { cloudComputersOffered } from "@/lib/place";
 import { shortPath } from "@/lib/short-path";
 import { useDesktopCapabilities } from "../DesktopCapabilities";
+import { BrowserUnavailableNote, SettingsText } from "../SettingsLink";
 import { CloudBackendPicker } from "../CloudBackendPicker";
 import { ConfirmDialog } from "../ConfirmDialog";
-import { LocalComputerAutoWarning } from "../LocalComputerAutoWarning";
 import { Switch } from "../SettingsPrimitives";
 import { ProposalStatus } from "./ProposalStatus";
 import { ToolSelectionCard } from "./ToolSelectionCard";
@@ -71,20 +72,20 @@ function WorkingFolder({ bot }: { bot: Bot }) {
 
   return (
     <div className="rounded-xl border border-hairline/40 p-4">
-      <div className="text-[13px] font-medium text-ink">Working folder</div>
-      <div className="mt-0.5 text-[13px] text-ink-secondary">Where this bot runs its shell and file tools.</div>
+      <div className="text-[13px] font-medium text-ink">{t("botPanel.access.folder")}</div>
+      <div className="mt-0.5 text-[13px] text-ink-secondary">{t("botPanel.access.folderHelp")}</div>
       <ProposalStatus bot={bot} kind="chief" />
       {canPick ? (
         <div className="mt-3 flex items-center gap-2">
           <div className="min-w-0 flex-1 truncate rounded-lg border border-hairline/40 bg-inset px-3 py-2 font-mono text-[12.5px] text-ink" title={bot.cwd}>
-            {bot.cwd ? shortPath(bot.cwd, home) : <span className="text-ink-secondary">Private bot folder</span>}
+            {bot.cwd ? shortPath(bot.cwd, home) : <span className="text-ink-secondary">{t("botPanel.access.private")}</span>}
           </div>
           <button onClick={() => void pick()} disabled={saving} className="flex shrink-0 items-center gap-1.5 rounded-lg bg-control px-3 py-2 text-[13px] text-ink hover:bg-raised-hover disabled:opacity-50">
-            <FolderOpen size={14} /> Choose…
+            <FolderOpen size={14} /> {t("botPanel.access.choose")}
           </button>
           {bot.cwd && (
             <button onClick={() => void save(null)} disabled={saving} className="shrink-0 rounded-lg px-2 py-2 text-[13px] text-ink-secondary hover:text-ink disabled:opacity-50">
-              Clear
+              {t("botPanel.access.clear")}
             </button>
           )}
         </div>
@@ -99,19 +100,19 @@ function WorkingFolder({ bot }: { bot: Bot }) {
         >
           <input
             className={cn(inputCls, "font-mono text-[12.5px]")}
-            placeholder="Private bot folder — or an absolute path"
+            placeholder={t("botPanel.access.placeholder")}
             value={draft ?? bot.cwd ?? ""}
             onChange={(e) => setDraft(e.target.value)}
           />
           <button type="submit" disabled={saving || draft === null} className="shrink-0 rounded-lg bg-control px-3 py-2 text-[13px] text-ink hover:bg-raised-hover disabled:opacity-50">
-            Save
+            {t("common.save")}
           </button>
         </form>
       )}
       {error && <div className="mt-2 text-[12px] text-danger">{error}</div>}
       {pinnedElsewhere && (
         <div className="mt-2 text-[12px] text-ink-secondary">
-          New tasks start here. This task is pinned to {pinned ? <span className="font-mono">{shortPath(pinned, home)}</span> : "the home folder"} — start a new task to use the new folder.
+          {t("botPanel.access.pinnedBefore")} {pinned ? <span className="font-mono">{shortPath(pinned, home)}</span> : t("botPanel.access.home")}. {t("botPanel.access.pinnedAfter")}
         </div>
       )}
     </div>
@@ -533,17 +534,12 @@ export function AccessSection({
     browserFeature,
     browserAllowed,
     browserEnabled,
-    browserSelectable,
-    browserDisabledReason,
-    localSelectable,
-    localDisabledReason,
   } = derived;
   const browserInstallable = state.config?.browserEngine?.installable === true;
   // Connected apps (Composio) is experimental: while Settings > Experimental
   // features leaves it off, the bot's own switch hides too, like the sidebar
   // entry and the Settings card.
   const connectedAppsFeature = connectedAppsFeatureEnabled(state.config);
-  const [localAutoWarning, setLocalAutoWarning] = useState<string | null>(null);
   const [inventory, setInventory] = useState<ConnectorInventory | null>(null);
 
   useEffect(() => {
@@ -565,140 +561,82 @@ export function AccessSection({
         .map(([slug]) => slug)
     : [];
 
+  // Where the bot runs, what it may reach, and which tools it may use are
+  // not member fields. Hide the whole section when none of them can be saved.
+  const canEdit = derived.canEdit ?? (() => true);
+  if (!canEdit("computer") && !canEdit("cwd") && !canEdit("mcpServers") && !canEdit("browser") && !canEdit("composio")) return null;
+
   return (
     <div className="flex flex-col gap-4">
-      {/* On an organization server Works on lives in the bot's Computer tab
-          (src/components/computer/WorksOnSetting.tsx). */}
-      {!organization && <div className="rounded-xl border border-hairline/40 p-4" data-works-on-org="0">
-        <div className="text-[13px] font-medium text-ink">{t("computer.worksOn")}</div>
-        <div className="mt-0.5 text-[13px] text-ink-secondary">
-          {t(organization ? "worksOn.helpOrg" : "worksOn.help")}{bot.computer ? "" : ` ${t("worksOn.currentlyAuto", { place: t(placeLabelKey("auto", organization)) })}`}
-        </div>
-        <ProposalStatus bot={bot} kind="owner" />
-        <div className="mt-3 grid grid-cols-3 gap-1.5">
-          {(([null, "cloud", "vm", "local", "browser", "off"] as const)
-            .filter((mode) => mode === null || mode === "off" || placeOffered(mode, state.config, organization))
-          ).map((mode) => {
-            const disabled = (mode === "local" && !localSelectable) || (mode === "browser" && !browserSelectable);
-            return (
-              <button
-                key={mode ?? "auto"}
-                type="button"
-                disabled={disabled}
-                title={
-                  mode === "local" && !localSelectable
-                    ? localDisabledReason ?? undefined
-                    : mode === "browser"
-                      ? browserSelectable ? t("worksOn.browserTitle") : browserDisabledReason
-                      : mode === "off"
-                        ? t("computer.dest.offDesc")
-                        : undefined
-                }
-                onClick={() => {
-                  if ((mode === null && bot.computer === undefined) || mode === bot.computer) return;
-                  if (mode === "local" && derived.approvalMode === "auto") setLocalAutoWarning(bot.id);
-                  // a browser-only bot must actually have its browser: flip
-                  // the per-bot switch on with the destination
-                  else if (mode === "browser") patch({ computer: mode, browser: true });
-                  else patch({ computer: mode });
-                }}
-                className={cn(
-                  "rounded-lg border px-1.5 py-1.5 text-[12px] whitespace-nowrap",
-                  disabled && "cursor-not-allowed opacity-40",
-                  (mode === null ? bot.computer === undefined : bot.computer === mode)
-                    ? "border-hairline bg-control text-ink"
-                    : "border-hairline/40 text-ink-secondary hover:bg-control/60 hover:text-ink",
-                )}
-              >
-                {t(placeLabelKey(mode ?? "auto", organization))}
-              </button>
-            );
-          })}
-        </div>
-        {(!localSelectable || !browserSelectable) && (
-          <ul className="mt-2 flex flex-col gap-0.5 text-[11.5px] leading-relaxed text-ink-secondary" data-works-on-disabled>
-            {!localSelectable && placeOffered("local", state.config, organization) && (
-              <li>{t("worksOn.disabled", { place: t("place.local"), reason: localDisabledReason ?? t("place.unavailable") })}</li>
-            )}
-            {!browserSelectable && (
-              <li>{t("worksOn.disabled", { place: t("place.browser"), reason: browserDisabledReason })}</li>
-            )}
-          </ul>
-        )}
-        {bot.computer === "off" && (
-          <div className="mt-3 rounded-lg bg-inset px-3 py-2.5 text-[11.5px] leading-relaxed text-ink-secondary">
-            <span className="font-medium text-ink">{t("worksOn.offTitle")}</span>{" "}
-            {t("worksOn.offBody")}
-          </div>
-        )}
-        {!organization && (!bot.computer || bot.computer === "cloud") && (state.config?.cloudHome === true || cloudComputersOffered(state.config)) && (
-          <>
-            {!bot.computer && (
-              <div className="mt-3 rounded-lg bg-inset px-3 py-2.5 text-[11.5px] leading-relaxed text-ink-secondary">
-                <span className="font-medium text-ink">{t("worksOn.autoCloudTitle")}</span>{" "}
-                {t("worksOn.autoCloudBody")}
-              </div>
-            )}
-            <CloudBackendPicker
-              value={bot.cloudBackend ?? "box"}
-              vpsSupported={canUseVps}
-              organization={organization}
-              boat={state.config?.cloudHome === true || boatComputerEnabled(state.config)}
-              vps={vpsComputerEnabled(state.config)}
-              onChange={(backend) => patch({ cloudBackend: backend })}
-            />
-            {!bot.computer && bot.cloudBackend === "vps" && (
-              <div className="mt-3 flex items-center justify-between gap-4 rounded-lg bg-inset px-3 py-2.5">
-                <div className="min-w-0">
-                  <div className="text-[13px] text-ink">Start VPS automatically</div>
-                  <div className="mt-0.5 text-[11.5px] text-ink-secondary">
-                    Allow Auto to create or wake this bot's managed container when needed.
-                  </div>
+      {/* Boat or VPS is which cloud computer Auto and Cloud use. It is not
+          a second Works on: that control is the Computer tab. */}
+      {!organization && (!bot.computer || bot.computer === "cloud") && (state.config?.cloudHome === true || cloudComputersOffered(state.config)) && (
+        <div className="rounded-xl border border-hairline/40 p-4" data-cloud-backend>
+          {!bot.computer && (
+            <div className="rounded-lg bg-inset px-3 py-2.5 text-[11.5px] leading-relaxed text-ink-secondary">
+              <span className="font-medium text-ink">{t("worksOn.autoCloudTitle")}</span>{" "}
+              {t("worksOn.autoCloudBody")}
+            </div>
+          )}
+          <CloudBackendPicker
+            value={bot.cloudBackend ?? "box"}
+            vpsSupported={canUseVps}
+            organization={organization}
+            boat={state.config?.cloudHome === true || boatComputerEnabled(state.config)}
+            vps={vpsComputerEnabled(state.config)}
+            onChange={(backend) => patch({ cloudBackend: backend })}
+          />
+          {!bot.computer && bot.cloudBackend === "vps" && (
+            <div className="mt-3 flex items-center justify-between gap-4 rounded-lg bg-inset px-3 py-2.5">
+              <div className="min-w-0">
+                <div className="text-[13px] text-ink">{t("botPanel.access.startVps")}</div>
+                <div className="mt-0.5 text-[11.5px] text-ink-secondary">
+                  {t("botPanel.access.startVpsHelp")}
                 </div>
-                <Switch
-                  checked={Boolean(bot.autoStartVps)}
-                  aria-label="Start VPS automatically"
-                  onClick={() => patch({ autoStartVps: !bot.autoStartVps })}
-                />
               </div>
-            )}
-          </>
-        )}
-      </div>}
+              <Switch
+                checked={Boolean(bot.autoStartVps)}
+                aria-label={t("botPanel.access.startVps")}
+                onClick={() => patch({ autoStartVps: !bot.autoStartVps })}
+              />
+            </div>
+          )}
+        </div>
+      )}
 
       <WorkingFolder bot={bot} />
 
       {connectedAppsFeature && <div className="rounded-xl border border-hairline/40 p-4">
         <div className="flex items-center justify-between gap-4">
           <div>
-            <div className="text-[13px] font-medium text-ink">Connected apps</div>
+            <div className="text-[13px] font-medium text-ink">{t("botPanel.access.apps")}</div>
             <div className="mt-0.5 text-[13px] text-ink-secondary">
               {!connectedAppsConfigured
-                ? "Connect apps in App Settings before giving this bot access."
+                ? t("botPanel.access.appsConnect")
                 : !canUseConnectedApps
-                  ? "This bot's current model cannot use connected apps."
+                  ? t("botPanel.access.appsModel")
                   : connectedAppsEnabled
                     ? connectorGrantState === "partial"
-                      ? "Tool access is tailored per app. Expand an app below to edit its tools."
+                      ? t("botPanel.access.appsPartial")
                       : connectorGrantState === "none"
-                        ? "Every connected app is currently limited to no tools. Expand an app to grant tools."
-                        : "Let this bot use your connected Gmail, Calendar, Slack, and other apps."
-                    : "Keep your connected apps unavailable to this bot."}
+                        ? t("botPanel.access.appsNone")
+                        : t("botPanel.access.appsOn")
+                    : t("botPanel.access.appsOff")}
             </div>
             <ProposalStatus bot={bot} kind="owner" />
           </div>
           <Switch
             checked={connectedAppsEnabled}
-            aria-label="Allow this bot to use connected apps"
+            aria-label={t("botPanel.access.appsAllow")}
             disabled={
               !connectedAppsEnabled && (!connectedAppsConfigured || !canUseConnectedApps)
             }
             onClick={() => patch({ composio: !connectedAppsEnabled })}
             title={
               !connectedAppsEnabled && !connectedAppsConfigured
-                ? "Connect apps in App Settings first"
+                ? t("botPanel.access.appsConnectFirst")
                 : !connectedAppsEnabled && !canUseConnectedApps
-                  ? "This model cannot use connected apps"
+                  ? t("botPanel.access.appsModelShort")
                   : undefined
             }
             className="disabled:cursor-not-allowed"
@@ -729,43 +667,43 @@ export function AccessSection({
 
       {browserFeature && <div className="flex items-center justify-between gap-4 rounded-xl border border-hairline/40 p-4">
         <div>
-          <div className="text-[13px] font-medium text-ink">Browser</div>
+          <div className="text-[13px] font-medium text-ink">{t("botPanel.access.browser")}</div>
           <div className="mt-0.5 text-[13px] text-ink-secondary">
             {!desktopBrowser
               ? browserBlockedOnWindows && !browserInstallable
-                ? "Not available on this Windows machine yet: install the browser engine with `openmausbot browser install`."
-                : browserUnavailableReason(state.config)
+                ? t("settings.experimental.browserWindows")
+                : <BrowserUnavailableNote config={state.config} />
               : !browserFeature
-                ? "The built-in browser is switched off under App Settings → Computers."
+                ? <SettingsText text={t("botAccess.browserSwitchedOff")} links={{ settings: { section: "experimental", cardId: "experimental.features" } }} />
                 : !canUseBrowser
-                  ? "This bot's current model cannot use the built-in browser."
+                  ? t("botPanel.access.browserModel")
                   : bot.computer === "off"
-                    ? "Works on is set to Off, so this bot has no browser. Pick another destination above to give it one."
+                    ? t("botPanel.access.browserOff")
                     : browserEnabled
-                      ? "This bot has its own browser with its own logins."
-                      : "Keep the built-in browser unavailable to this bot."}
+                      ? t("botPanel.access.browserOn")
+                      : t("botPanel.access.browserKeepOff")}
           </div>
           <ProposalStatus bot={bot} kind="owner" />
         </div>
         <Switch
           checked={browserEnabled && bot.computer !== "off"}
-          aria-label="Give this bot a built-in browser"
+          aria-label={t("botPanel.access.browserGive")}
           disabled={
             bot.computer === "off" ||
             (!browserEnabled && ((!desktopBrowser && !browserInstallable) || !browserFeature || !canUseBrowser))
           }
           onClick={() => patch({ browser: !browserAllowed })}
-          title={bot.computer === "off" ? "Works on is set to Off, so this bot has no browser" : undefined}
+          title={bot.computer === "off" ? t("botPanel.access.browserOffShort") : undefined}
           className="disabled:cursor-not-allowed"
         />
       </div>}
 
       {!draft && <div className="rounded-xl border border-hairline/40 p-4">
-        <div className="text-[13px] font-medium text-ink">Webhooks</div>
-        <div className="mt-0.5 text-[13px] text-ink-secondary">Inbound triggers wired to this bot.</div>
+        <div className="text-[13px] font-medium text-ink">{t("botPanel.access.webhooks")}</div>
+        <div className="mt-0.5 text-[13px] text-ink-secondary">{t("botPanel.access.webhooksHelp")}</div>
         <ProposalStatus bot={bot} kind="owner" />
         {webhooks.length === 0 ? (
-          <div className="mt-3 rounded-lg bg-inset px-3 py-2 text-[12px] text-ink-secondary">No webhooks for this bot.</div>
+          <div className="mt-3 rounded-lg bg-inset px-3 py-2 text-[12px] text-ink-secondary">{t("botPanel.access.noWebhooks")}</div>
         ) : (
           <div className="mt-3 divide-y divide-hairline/40 overflow-hidden rounded-lg border border-hairline/40">
             {webhooks.map((webhook) => (
@@ -777,10 +715,10 @@ export function AccessSection({
                     webhook.enabled ? "bg-accent/15 text-accent-text" : "bg-control text-ink-secondary",
                   )}
                 >
-                  {webhook.enabled ? "Active" : "Paused"}
+                  {webhook.enabled ? t("botPanel.access.active") : t("botPanel.access.paused")}
                 </span>
                 <span className="shrink-0 text-[11.5px] tabular-nums text-ink-secondary">
-                  {webhook.deliveryCount} deliveries
+                  {t("botPanel.access.deliveries", { count: String(webhook.deliveryCount) })}
                 </span>
               </div>
             ))}
@@ -789,11 +727,11 @@ export function AccessSection({
       </div>}
 
       {!draft && <div className="rounded-xl border border-hairline/40 p-4">
-        <div className="text-[13px] font-medium text-ink">Always allowed</div>
-        <div className="mt-0.5 text-[13px] text-ink-secondary">Tools this bot no longer asks about.</div>
+        <div className="text-[13px] font-medium text-ink">{t("botPanel.access.always")}</div>
+        <div className="mt-0.5 text-[13px] text-ink-secondary">{t("botPanel.access.alwaysHelp")}</div>
         <ProposalStatus bot={bot} kind="owner" />
         {alwaysAllow.length === 0 ? (
-          <div className="mt-3 rounded-lg bg-inset px-3 py-2 text-[12px] text-ink-secondary">Nothing standing yet.</div>
+          <div className="mt-3 rounded-lg bg-inset px-3 py-2 text-[12px] text-ink-secondary">{t("botPanel.access.nothing")}</div>
         ) : (
           <div className="mt-3 divide-y divide-hairline/40 overflow-hidden rounded-lg border border-hairline/40">
             {alwaysAllow.map((entry) => (
@@ -801,28 +739,17 @@ export function AccessSection({
                 <span className="min-w-0 flex-1 truncate font-mono text-[12.5px] text-ink">{entry}</span>
                 <button
                   type="button"
-                  aria-label={`Remove ${entry} from always allowed`}
+                  aria-label={t("botPanel.access.removeAlways", { entry })}
                   onClick={() => patch({ alwaysAllow: alwaysAllow.filter((key) => key !== entry) })}
                   className="shrink-0 rounded-md px-2 py-1 text-[12px] text-ink-secondary hover:bg-danger/10 hover:text-danger"
                 >
-                  Remove
+                  {t("botPanel.access.remove")}
                 </button>
               </div>
             ))}
           </div>
         )}
       </div>}
-
-      <LocalComputerAutoWarning
-        open={localAutoWarning !== null}
-        onCancel={() => setLocalAutoWarning(null)}
-        onConfirm={() => {
-          const target = localAutoWarning;
-          setLocalAutoWarning(null);
-          if (!target) return;
-          dispatch({ type: "updateBot", botId: target, patch: { computer: "local", acknowledgeLocalAuto: true } });
-        }}
-      />
     </div>
   );
 }
@@ -844,18 +771,18 @@ function ConnectorScopesControl({ connectedSlugs, scopes, onChange }: {
   return <div className="mt-3">
     <div className="flex items-center justify-between gap-4">
       <div className="text-[13px] text-ink-secondary">
-        {limited ? "Only the apps allowed below, at the level set for each. Everything else is off for this bot." : "No app-level limits. The tool grants below still apply."}
+        {limited ? t("botPanel.access.limitApps") : t("botPanel.access.noLimits")}
       </div>
-      <Switch checked={limited} aria-label="Limit this bot to specific apps" onClick={() => onChange(limited ? null : { apps: {} })} />
+      <Switch checked={limited} aria-label={t("botPanel.access.limitSwitch")} onClick={() => onChange(limited ? null : { apps: {} })} />
     </div>
     {limited && <div className="mt-2 flex flex-col divide-y divide-hairline/20 rounded-lg bg-inset">
-      {!slugs.length && <div className="px-3 py-2 text-[11.5px] text-ink-secondary">No apps connected yet. Connect one, then allow it here.</div>}
+      {!slugs.length && <div className="px-3 py-2 text-[11.5px] text-ink-secondary">{t("botPanel.access.noApps")}</div>}
       {slugs.map((slug) => <div key={slug} className="flex flex-wrap items-center justify-between gap-3 px-3 py-1.5">
-        <span className="min-w-0 text-[13px] text-ink">{slug}{!connectedSlugs.includes(slug) && <span className="ml-2 text-[10.5px] text-ink-secondary">not connected</span>}</span>
-        <div className="flex shrink-0 gap-0.5 rounded-md bg-card p-0.5" role="group" aria-label={`${slug} access`}>
-          {([[null, "Off", "This bot cannot use it."], ["read", "Read", "Search, fetch, and list only."], ["write", "Read & write", "Tool grants and sending limits still apply."]] as const).map(([value, label, hint]) =>
-            <button key={label} type="button" title={hint} aria-pressed={(scopes?.apps[slug] ?? null) === value} onClick={() => setScope(slug, value)}
-              className={cn("rounded px-2 py-0.5 text-[11.5px] font-medium", (scopes?.apps[slug] ?? null) === value ? "bg-raised text-ink" : "text-ink-secondary hover:text-ink")}>{label}</button>)}
+        <span className="min-w-0 text-[13px] text-ink">{slug}{!connectedSlugs.includes(slug) && <span className="ml-2 text-[10.5px] text-ink-secondary">{t("botPanel.access.notConnected")}</span>}</span>
+        <div className="flex shrink-0 gap-0.5 rounded-md bg-card p-0.5" role="group" aria-label={t("botPanel.access.slugAccess", { slug })}>
+          {([[null, "botPanel.access.scopeOff", "botPanel.access.scopeOffHint"], ["read", "botPanel.access.scopeRead", "botPanel.access.scopeReadHint"], ["write", "botPanel.access.scopeWrite", "botPanel.access.scopeWriteHint"]] as const).map(([value, label, hint]) =>
+            <button key={label} type="button" title={t(hint)} aria-pressed={(scopes?.apps[slug] ?? null) === value} onClick={() => setScope(slug, value)}
+              className={cn("rounded px-2 py-0.5 text-[11.5px] font-medium", (scopes?.apps[slug] ?? null) === value ? "bg-raised text-ink" : "text-ink-secondary hover:text-ink")}>{t(label)}</button>)}
         </div>
       </div>)}
     </div>}

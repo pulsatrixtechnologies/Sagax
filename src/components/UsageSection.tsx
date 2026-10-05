@@ -9,8 +9,16 @@ import { t } from "@/lib/i18n";
 import { botUsage, cachedUsageNote, costCaption, formatTokens, formatUsd, hasFiniteCost, headlineTokens, sumUsage, tokensColumnLabel, usageDetail } from "@/lib/usage";
 import { UsageHistory } from "./UsageHistory";
 import { PlanUsage } from "./PlanUsage";
+import { canViewUsage } from "@/lib/viewer";
 
 export function UsageSection() {
+  const { state } = useStore();
+  // Plan usage and history are admin reads. Mounting them as a member polls 403.
+  if (!canViewUsage(state.config)) return null;
+  return <UsageDetails />;
+}
+
+function UsageDetails() {
   const { state } = useStore();
   const rows = state.bots
     .filter((b) => !b.hidden)

@@ -188,12 +188,41 @@ describe("configuration boundaries", () => {
     expect(parseConfigPatch(input)).toEqual(expected);
   });
 
-  it("accepts a new-bot effort default and clears it with null", () => {
-    expect(parseStoredConfig({ newBots: { effort: "medium" } })).toEqual({ newBots: { effort: "medium" } });
-    expect(parseConfigPatch({ newBots: { effort: "medium" } })).toEqual({ newBots: { effort: "medium" } });
-    expect(parseConfigPatch({ newBots: { effort: null } })).toEqual({ newBots: { effort: null } });
-    expect(() => parseConfigPatch({ newBots: { effort: "turbo" } })).toThrow("newBots");
-    expect(() => parseConfigPatch({ newBots: { approvalMode: "full" } })).toThrow("newBots");
+  it("folds a legacy new-bot effort into the template and drops the old key", () => {
+    const template = {
+      profile: { modelSelection: { instanceId: "claude", model: "opus" } },
+      memory: {},
+      skills: [],
+      routines: [],
+    };
+    expect(parseStoredConfig({ newBots: { effort: "medium" }, newBotDefaults: template })).toEqual({
+      newBotDefaults: {
+        ...template,
+        profile: { modelSelection: { instanceId: "claude", model: "opus", effort: "medium" } },
+      },
+    });
+    expect(parseStoredConfig({
+      newBots: { effort: "low" },
+      newBotDefaults: {
+        ...template,
+        profile: { modelSelection: { instanceId: "claude", model: "opus", effort: "high" } },
+      },
+    }).newBotDefaults?.profile.modelSelection).toEqual({ instanceId: "claude", model: "opus", effort: "high" });
+    expect(parseStoredConfig({
+      newBots: { effort: "medium" },
+      defaultModelSelection: { instanceId: "claude", model: "opus" },
+    })).toEqual({
+      defaultModelSelection: { instanceId: "claude", model: "opus", effort: "medium" },
+      newBotDefaults: {
+        profile: { modelSelection: { instanceId: "claude", model: "opus", effort: "medium" } },
+        memory: {},
+        skills: [],
+        routines: [],
+      },
+    });
+    expect(parseStoredConfig({ newBots: { effort: "medium" } })).toEqual({});
+    expect(parseStoredConfig({ newBots: { effort: "turbo" } })).toEqual({});
+    expect(parseConfigPatch({ newBots: { effort: "medium" } })).toEqual({});
   });
 
   it("round-trips an opaque model variant without converting omission to none", () => {

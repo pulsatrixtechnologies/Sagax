@@ -123,6 +123,23 @@ describe("bot draft dialog", () => {
     expect(fixture.api).not.toHaveBeenCalled();
   });
 
+  it("summarizes the template on the defaults row", () => {
+    fixture.state = {
+      config: {
+        newBotDefaults: {
+          profile: {
+            modelSelection: { instanceId: "claude", model: "opus", effort: "high" },
+            approvalMode: "ask",
+            computer: "local",
+          },
+        },
+      },
+    };
+    const html = renderToStaticMarkup(createElement(DefaultBotSettings));
+    expect(html).toContain("Defaults for new bots");
+    expect(html).toContain("opus · High · Ask · This computer");
+  });
+
   it("uses the same section editor for default templates", () => {
     const result = render(true);
     expect(result.html).toContain("Defaults for new bots");

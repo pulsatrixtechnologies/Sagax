@@ -14,7 +14,9 @@ export function browserAvailable(config: FeatureFlagConfig | null | undefined): 
 /** Why a bot cannot have a browser right now, in the user's words. */
 export function browserUnavailableReason(config: FeatureFlagConfig | null | undefined): string {
   const engine = config?.browserEngine;
-  if (engine?.kind === "unavailable" && engine.installable) return t("browser.notInstalled");
+  if (engine?.kind === "unavailable" && engine.installable) {
+    return t("browser.notInstalled", { settings: t("settings.section.experimental") });
+  }
   if (engine?.kind === "unavailable" && engine.reason) return engine.reason;
   return t("browser.noEngine");
 }

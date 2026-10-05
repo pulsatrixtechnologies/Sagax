@@ -6,7 +6,7 @@ import { StoreProvider, type Bot } from "@/state/store";
 import { endCall } from "@/lib/call";
 import { configureLiveMedia, resetLiveMedia, startLiveCall } from "@/lib/live-call-media";
 import { LiveCallBar } from "./LiveCallBar";
-import { LiveCallSettings } from "./LiveCallSettings";
+import { LiveCallInstallationSettings, LiveCallSettings } from "./LiveCallSettings";
 import { LiveKeySetup } from "./LiveKeySetup";
 
 const bot: Bot = {
@@ -97,18 +97,29 @@ describe("LiveCallBar", () => {
 });
 
 describe("LiveCallSettings", () => {
-  it("offers voice, typed replies, idle minutes and the key, defaulting to 5 minutes", () => {
+  it("offers the next call's voice and points at Settings for the key and limits", () => {
     const markup = render(createElement(LiveCallSettings, { onClose: vi.fn() }));
     expect(markup).toContain('aria-label="Call settings"');
     expect(markup).toContain("Marin (default)");
+    expect(markup).toContain("A new voice starts with the next call.");
+    expect(markup).toContain("Key and limits are in");
+    expect(markup).toContain(">API keys<");
+    expect(markup).not.toContain("Read replies to typed messages");
+    expect(markup).not.toContain("Change key");
+    expect(markup).toMatch(/role="dialog" tabindex="-1"/);
+  });
+
+  it("keeps typed replies, idle minutes and the key on the installation card", () => {
+    const markup = render(createElement(LiveCallInstallationSettings));
     expect(markup).toContain("Read replies to typed messages");
     expect(markup).toContain(`When this is off, messages you type during a call and the bot&#x27;s answers to them are not sent to OpenAI.`);
     expect(markup).toContain(`A Live call sends your voice to OpenAI, along with the chat&#x27;s recent messages, the bot&#x27;s answers and the details of any approval it asks for. The OpenAI key stays on your computer.`);
+    expect(markup).toContain("Hang up after this many minutes of silence");
     expect(markup).toMatch(/<option value="5" selected="">5<\/option>/);
     expect(markup).toContain("Change key");
-    // nothing to remove without a key
+    expect(markup).toContain('role="switch"');
     expect(markup).not.toContain("Remove key");
-    expect(markup).toMatch(/role="dialog" tabindex="-1"/);
+    expect(markup).not.toContain("Marin (default)");
   });
 
   it("takes focus when it opens, so Escape closes it", () => {

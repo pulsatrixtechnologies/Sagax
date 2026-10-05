@@ -59,8 +59,7 @@ const ORG_DESCRIPTION: Record<Place, LocaleKey> = {
   cloud: "computer.dest.cloudOrgDesc", vm: "computer.dest.vmOrgDesc", local: "computer.dest.localOrgDesc", browser: "computer.dest.browserDesc",
 };
 
-/** Where this conversation works, beside the send button in Advanced mode
- * (Simple leaves every conversation on its bot's Works on). Shows the
+/** Where this conversation works, beside the send button. Shows the
  * effective place (the conversation's pin, else the bot's Works on), pulses
  * while a turn is acting there, and pins another place for this
  * conversation only. No confirmation card: choosing is the whole gesture. */
@@ -76,7 +75,7 @@ export function PlaceChip({ bot, task, live, disabled = false, onPin, initialOpe
   const [open, setOpen] = useState(initialOpen);
   const motion = useMenuMotion(open);
   const wrapperRef = useRef<HTMLDivElement>(null);
-  const { state } = useStore();
+  const { state, dispatch } = useStore();
   const availability = usePlaceAvailability(bot);
   const organization = useOrganizationServer();
   const effective = effectivePlace(bot, task);
@@ -109,18 +108,28 @@ export function PlaceChip({ bot, task, live, disabled = false, onPin, initialOpe
         aria-haspopup="menu"
         aria-expanded={open}
         aria-label={t("place.chipAria", { place: label })}
-        disabled={disabled || off}
+        disabled={disabled}
         title={off || disabled ? title : `${label} — ${title}`}
         data-testid="place-chip"
-        onClick={() => setOpen((value) => !value)}
+        onClick={() => {
+          if (off) {
+            dispatch({ type: "toggleComputer", open: true });
+            return;
+          }
+          setOpen((value) => !value);
+        }}
         className={cn(
-          "relative flex size-8 shrink-0 items-center justify-center rounded-full text-ink-secondary hover:bg-control hover:text-ink",
+          "relative flex h-8 shrink-0 items-center gap-1 rounded-full px-2 text-[12px] text-ink-secondary hover:bg-control hover:text-ink",
           pinned && "text-accent hover:text-accent",
-          (disabled || off) && "cursor-not-allowed opacity-45 hover:bg-transparent",
+          off && !disabled && "opacity-45",
+          disabled && "cursor-not-allowed opacity-45 hover:bg-transparent",
         )}
       >
-        <PlaceIcon place={effective} size={16} className="shrink-0 opacity-80" aria-hidden="true" />
-        {showLive && <span className="absolute right-1.5 top-1.5 size-1.5 animate-pulse rounded-full bg-success" aria-label={t("place.live")} />}
+        <span className="relative flex size-4 shrink-0 items-center justify-center">
+          <PlaceIcon place={effective} size={16} className="shrink-0 opacity-80" aria-hidden="true" />
+          {showLive && <span className="absolute -right-0.5 -top-0.5 size-1.5 animate-pulse rounded-full bg-success" aria-label={t("place.live")} />}
+        </span>
+        <span>{t("place.forConversation")}</span>
       </button>
       {motion.shown && (
         // Same surface and scale as the right-click menus. The title stays

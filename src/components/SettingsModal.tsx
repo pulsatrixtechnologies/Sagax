@@ -8,7 +8,7 @@ import { FLOATING_LIVELINESS, floatingBotPrefs, setFloatingFlyAway, setFloatingL
 import { Archive, Coins, FlaskConical, KeyRound, Mail, Monitor, Palette, Plug, ScrollText, Search, TabletSmartphone, Terminal, Trophy, User, Users, X, Building2, Zap } from "lucide-react";
 import { AchievementsPage } from "./achievements/AchievementsPage";
 import { api, useStore, type AppSettingsSection, type ConfigStatus } from "@/state/store";
-import { browserAvailable, browserUnavailableReason, builtInBrowserEnabled, boatComputerEnabled, connectedAppsEnabled, routinesInConversationEnabled, showToolCallsEnabled, skillAuthoringEnabled, templatesEnabled, vpsComputerEnabled } from "@/lib/feature-flags";
+import { browserAvailable, builtInBrowserEnabled, boatComputerEnabled, connectedAppsEnabled, routinesInConversationEnabled, showToolCallsEnabled, skillAuthoringEnabled, templatesEnabled, vpsComputerEnabled } from "@/lib/feature-flags";
 import { usePerspicaxOrg } from "@/lib/perspicax-org";
 import { localeChoices, type LocaleKey } from "@/locales";
 import { t } from "@/lib/i18n";
@@ -21,6 +21,9 @@ import { ManagedByOrganization, ServerModeCard, useServerMode } from "./ServerMo
 import { AnthropicEveryClaudeBot, ApiKeyRow, OpenAiCompatUrl, VpsConnection } from "./ApiKeys";
 import { COMPOSIO_PLATFORM_URL } from "./ConnectedAppsSetup";
 import { DecisionModelSettings } from "./DecisionModelSettings";
+import { LiveCallInstallationSettings } from "./LiveCallSettings";
+import { ImageGenerationSettings } from "./settings/ImageGenerationSettings";
+import { VoiceEngineSettings } from "./settings/VoiceEngineSettings";
 import { useUpdaterState } from "@/lib/updater";
 import { EnginesSettings } from "./EnginesSettings";
 import { LocalComputerSection } from "./LocalComputerSection";
@@ -31,13 +34,14 @@ import { peopleListServed, readMembership } from "../lib/membership";
 import { ActivitySection } from "./ActivitySection";
 import { MailSettings } from "./MailSettings";
 import { useOwnerOrAdmin } from "@/lib/use-owner-or-admin";
+import { canEditConfig, canManageBackups, canManageComputers, canViewUsage } from "@/lib/viewer";
 import { BrowserProfilesManager } from "./BrowserProfilesManager";
 import { ThisComputerSettings } from "./DesktopWorkspaceSwitcher";
 import { OrganizationSettings } from "./OrganizationSettings";
 import { CloudAccountSettings } from "./CloudAccountSettings";
 import { Card, SettingRow, Switch, requestSettingsCard, cardCount } from "./SettingsPrimitives";
-import { effortLabel } from "./ModelPicker";
-import { EFFORT_LEVELS, isEffortLevel } from "../../shared/wire";
+import { BrowserUnavailableNote, SettingsText } from "./SettingsLink";
+
 import { shortcutLabel } from "./ShortcutHint";
 import { UsageSection } from "./UsageSection";
 import { MyConnectionsSettings } from "./settings/MyConnectionsSettings";
@@ -110,6 +114,8 @@ const CARD_KEYWORDS: Record<string, string[]> = {
   "general.recovery": ["automatic recovery", "backup model", "fallback"],
   "connections.apps": ["composio"],
   "connections.integrations": ["box", "vps"],
+  "connections.voice": ["voice", "tts", "elevenlabs", "fish", "chatterbox", "live call"],
+  "connections.image": ["image", "avatar", "gpt image"],
   "companion.domain": ["domain", "dns", "caddy"],
   "backups.import": ["import", "restore"],
 };
@@ -129,6 +135,23 @@ export function organizationHidesSection(id: AppSettingsSection, organization: b
   return organization ? id === "mail" : id === "myConnections";
 }
 
+/** Sections whose every control writes the installation. Hidden (not greyed)
+ * when the viewer cannot edit it. Computer stays for an organization member:
+ * their own server environment is not an installation computer. */
+export function memberHidesSection(id: AppSettingsSection, input: {
+  editConfig: boolean;
+  manageComputers: boolean;
+  viewUsage: boolean;
+  manageBackups: boolean;
+  organization: boolean;
+}): boolean {
+  if (id === "experimental" || id === "connections" || id === "decisionModel" || id === "workspaces") return !input.editConfig;
+  if (id === "usage") return !input.viewUsage;
+  if (id === "backups") return !input.manageBackups;
+  if (id === "computer") return !input.manageComputers && !input.organization;
+  return false;
+}
+
 export function sectionMatches(section: (typeof SECTIONS)[number], query: string): boolean {
   if (!query) return true;
   return [t(section.labelKey), ...section.keywords].some((part) => part.toLowerCase().includes(query));
@@ -137,10 +160,10 @@ export function sectionMatches(section: (typeof SECTIONS)[number], query: string
 function profilePhoto(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
-    reader.onerror = () => reject(reader.error ?? new Error("Could not read the image"));
+    reader.onerror = () => reject(reader.error ?? new Error(t("settings.profile.photoReadError")));
     reader.onload = () => {
       const image = new Image();
-      image.onerror = () => reject(new Error("Could not read the image"));
+      image.onerror = () => reject(new Error(t("settings.profile.photoReadError")));
       image.onload = () => {
         const size = 256;
         const canvas = document.createElement("canvas");
@@ -148,7 +171,7 @@ function profilePhoto(file: File): Promise<string> {
         canvas.height = size;
         const ctx = canvas.getContext("2d");
         if (!ctx) {
-          reject(new Error("Could not read the image"));
+          reject(new Error(t("settings.profile.photoReadError")));
           return;
         }
         const scale = Math.max(size / image.width, size / image.height);
@@ -214,7 +237,7 @@ function OperatorProfileFields() {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ profile }),
     })
-      .then((r) => { if (!r.ok) throw new Error("Profile save failed"); return r.json(); })
+      .then((r) => { if (!r.ok) throw new Error(t("settings.profile.photoSaveError")); return r.json(); })
       .then((config: ConfigStatus) => {
         if (config.profile) dispatch({ type: "profileSaved", profile: config.profile });
       })
@@ -235,7 +258,7 @@ function OperatorProfileFields() {
         <div className="relative">
           <button
             type="button"
-            aria-label="Change avatar"
+            aria-label={t("settings.profile.changeAvatar")}
             aria-expanded={menuOpen}
             onClick={() => setMenuOpen((open) => !open)}
             className="flex size-9 items-center justify-center overflow-hidden rounded-full bg-raised text-[13px] font-semibold text-ink"
@@ -244,11 +267,11 @@ function OperatorProfileFields() {
           </button>
           {menuOpen && (
             <div className="absolute left-0 top-full z-10 mt-2 flex min-w-[200px] flex-col gap-0.5 rounded-xl border-[0.5px] border-border bg-elevated p-1.5 text-[13px] leading-[18px]">
-              <button type="button" onClick={() => { setMenuOpen(false); fileRef.current?.click(); }} className="block w-full rounded-md px-2 py-1.5 text-left text-[13px] leading-[18px] text-ink hover:bg-hover">Upload photo</button>
-              {avatarUrl && <button type="button" onClick={() => { setAvatarUrl(""); setMenuOpen(false); save({ avatarUrl: "" }); }} className="block w-full rounded-md px-2 py-1.5 text-left text-[13px] leading-[18px] text-ink hover:bg-hover">Remove photo</button>}
+              <button type="button" onClick={() => { setMenuOpen(false); fileRef.current?.click(); }} className="block w-full rounded-md px-2 py-1.5 text-left text-[13px] leading-[18px] text-ink hover:bg-hover">{t("settings.profile.uploadPhoto")}</button>
+              {avatarUrl && <button type="button" onClick={() => { setAvatarUrl(""); setMenuOpen(false); save({ avatarUrl: "" }); }} className="block w-full rounded-md px-2 py-1.5 text-left text-[13px] leading-[18px] text-ink hover:bg-hover">{t("settings.profile.removePhoto")}</button>}
             </div>
           )}
-          <input ref={fileRef} type="file" accept="image/*" className="hidden" aria-label="Upload avatar" onChange={(event) => { choosePhoto(event.target.files?.[0]); event.target.value = ""; }} />
+          <input ref={fileRef} type="file" accept="image/*" className="hidden" aria-label={t("settings.profile.uploadAvatar")} onChange={(event) => { choosePhoto(event.target.files?.[0]); event.target.value = ""; }} />
         </div>
         <div className="min-w-0 flex-1">
           <input aria-label={t("settings.profile.name")} value={name} onChange={(e) => setName(e.target.value)} onBlur={() => save()} placeholder={t("settings.profile.name")} className="w-full bg-transparent text-[14px] font-semibold text-ink placeholder:text-ink-secondary focus:outline-none" />
@@ -304,7 +327,7 @@ function UpdatesRow() {
                     ? t("settings.updates.failed", { message: s.message ?? t("settings.updates.unknownError") })
                     : t("settings.updates.latest");
   return (
-    <SettingRow title={t("settings.updates.title")} subtitle={label}>
+    <SettingRow scope="device" title={t("settings.updates.title")} subtitle={label}>
       <button
         onClick={() => {
           if (s?.status === "available") return void updater.download();
@@ -346,6 +369,7 @@ function PrereleaseRow() {
   const on = s?.allowPrerelease === true;
   return (
     <SettingRow
+      scope="device"
       title={t("settings.updates.prerelease.title")}
       subtitle={t("settings.updates.prerelease.short")}
       help={t("settings.updates.prerelease.subtitle")}
@@ -355,56 +379,6 @@ function PrereleaseRow() {
         aria-label={t("settings.updates.prerelease.aria")}
         onClick={() => void setPrereleases(!on)}
       />
-    </SettingRow>
-  );
-}
-
-/** The effort every new bot starts with. The server skips a level the new
- * bot's engine does not offer, and a bot's own choice always wins. */
-function NewBotEffortRow() {
-  const { state, dispatch } = useStore();
-  const current = state.config?.newBots?.effort ?? "";
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState("");
-
-  const save = async (value: string) => {
-    if (saving) return;
-    setSaving(true);
-    setError("");
-    try {
-      const config: ConfigStatus = await api("/api/config", {
-        method: "PATCH",
-        body: JSON.stringify({ newBots: { effort: isEffortLevel(value) ? value : null } }),
-      });
-      dispatch({ type: "configStatus", config });
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : t("settings.newBotEffort.error"));
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  return (
-    <SettingRow
-      title={t("settings.newBotEffort.title")}
-      subtitle={t("settings.newBotEffort.short")}
-      help={t("settings.newBotEffort.subtitle")}
-      message={error ? <p role="alert" className="text-danger">{error}</p> : null}
-    >
-      <select
-        value={current}
-        disabled={saving}
-        aria-label={t("settings.newBotEffort.aria")}
-        onChange={(event) => void save(event.target.value)}
-        className="w-full max-w-[240px] rounded-lg border border-border bg-ink/[0.03] px-2.5 py-1.5 text-[13px] leading-[18px] text-ink focus:border-border-strong focus:outline-none disabled:cursor-wait disabled:opacity-50"
-      >
-        <option value="">{t("settings.newBotEffort.default")}</option>
-        {EFFORT_LEVELS.map((level) => (
-          <option key={level} value={level}>
-            {effortLabel(level)}
-          </option>
-        ))}
-      </select>
     </SettingRow>
   );
 }
@@ -453,10 +427,10 @@ function ReplayTourRow() {
   const launchMode = state.config?.onboarding?.launchMode ?? "solo";
   return (
     <>
-      <SettingRow title={t("settings.appTour.title")} subtitle={t("settings.appTour.subtitle")}>
+      <SettingRow scope="installation" title={t("settings.appTour.title")} subtitle={t("settings.appTour.subtitle")}>
         <ReplayAppTourButton />
       </SettingRow>
-      <SettingRow title={t("settings.welcome.title")} subtitle={t("settings.welcome.subtitle")}>
+      <SettingRow scope="device" title={t("settings.welcome.title")} subtitle={t("settings.welcome.subtitle")}>
         <button onClick={() => dispatch({ type: "toggleWelcome", open: true })} className="ui-button">
           {t("settings.welcome.replay")}
         </button>
@@ -464,6 +438,7 @@ function ReplayTourRow() {
       {/* the launch screen: no server or an organization server */}
       {launchBridges(window.ogb) && (
         <SettingRow
+          scope="installation"
           title={t("settings.launch.title")}
           subtitle={t(launchMode === "server" ? "settings.launch.server" : "settings.launch.solo")}
         >
@@ -481,13 +456,14 @@ function ReplayTourRow() {
 
 function LanguageRow() {
   const { state } = useStore();
-  // Saved on this device only: anyone can switch, including a chat-only
-  // teammate, and nobody changes another person's screen. The server's
-  // language is the default until this device picks one.
+  // Follows the account: anyone can switch, including a chat-only teammate,
+  // and nobody changes another person's screen. The server's language is
+  // the default until this person picks one.
   const current = effectiveLanguage(useLanguageChoice(), state.config?.language);
 
   return (
     <SettingRow
+      scope="me"
       title={t("settings.language.title")}
       subtitle={t("settings.language.short")}
       help={t("settings.language.subtitle")}
@@ -513,7 +489,7 @@ function LanguageRow() {
 function FloatingFlyAwayRow() {
   const prefs = useSyncExternalStore(subscribeFloatingBots, floatingBotPrefs, floatingBotPrefs);
   return (
-    <SettingRow title={t("settings.floatingBots.flyAway.title")} subtitle={t("settings.floatingBots.flyAway.subtitle")}>
+    <SettingRow scope="me" title={t("settings.floatingBots.flyAway.title")} subtitle={t("settings.floatingBots.flyAway.subtitle")}>
       <Switch
         checked={prefs.flyAway}
         aria-label={t("settings.floatingBots.flyAway.title")}
@@ -527,7 +503,7 @@ function FloatingFlyAwayRow() {
 function FloatingLivelinessRow() {
   const prefs = useSyncExternalStore(subscribeFloatingBots, floatingBotPrefs, floatingBotPrefs);
   return (
-    <SettingRow title={t("settings.floatingBots.liveliness.title")} subtitle={t("settings.floatingBots.liveliness.subtitle")}>
+    <SettingRow scope="me" title={t("settings.floatingBots.liveliness.title")} subtitle={t("settings.floatingBots.liveliness.subtitle")}>
       <select
         value={prefs.liveliness}
         aria-label={t("settings.floatingBots.liveliness.title")}
@@ -545,7 +521,7 @@ function FloatingLivelinessRow() {
 function NotificationSoundsRow() {
   const enabled = useNotificationSounds();
   return (
-    <SettingRow title={t("settings.notificationSounds.title")} subtitle={t("settings.notificationSounds.short")} help={t("settings.notificationSounds.subtitle")}>
+    <SettingRow scope="me" title={t("settings.notificationSounds.title")} subtitle={t("settings.notificationSounds.short")} help={t("settings.notificationSounds.subtitle")}>
       <Switch
         checked={enabled}
         aria-label={t("settings.notificationSounds.play")}
@@ -558,7 +534,7 @@ function NotificationSoundsRow() {
 function FontRow() {
   const [current, setCurrent] = useState<FontId>(readFont);
   return (
-    <SettingRow title={t("settings.font.title")} subtitle={t("settings.font.subtitle")}>
+    <SettingRow scope="me" title={t("settings.font.title")} subtitle={t("settings.font.subtitle")}>
       <select
         value={current}
         aria-label={t("settings.font.aria")}
@@ -582,7 +558,7 @@ function SidebarDensityRow() {
   const density = useSidebarDensity();
   const choose = (next: SidebarDensity) => setSidebarDensity(parseSidebarDensity(next));
   return (
-    <SettingRow title={t("sidebar.density.title")} subtitle={t("settings.sidebarDensity.subtitle")}>
+    <SettingRow scope="me" title={t("sidebar.density.title")} subtitle={t("settings.sidebarDensity.subtitle")}>
       <select
         aria-label={t("sidebar.density.chooseAria")}
         value={density}
@@ -600,7 +576,7 @@ function SidebarDensityRow() {
 function ShowThreadsRow() {
   const enabled = useShowThreads();
   return (
-    <SettingRow title={t("settings.threadDisplay.title")} subtitle={t("settings.threadDisplay.short")} help={t("settings.threadDisplay.subtitle")}>
+    <SettingRow scope="me" title={t("settings.threadDisplay.title")} subtitle={t("settings.threadDisplay.short")} help={t("settings.threadDisplay.subtitle")}>
       <Switch
         checked={enabled}
         aria-label={t("settings.threadDisplay.show")}
@@ -613,7 +589,7 @@ function ShowThreadsRow() {
 function InspectorButtonRow() {
   const enabled = useShowInspectorButton();
   return (
-    <SettingRow title={t("settings.inspectorButton.title")} subtitle={t("settings.inspectorButton.subtitle")}>
+    <SettingRow scope="device" title={t("settings.inspectorButton.title")} subtitle={t("settings.inspectorButton.subtitle")}>
       <Switch
         checked={enabled}
         aria-label={t("settings.inspectorButton.show")}
@@ -626,7 +602,7 @@ function InspectorButtonRow() {
 function SidebarLogoRow() {
   const enabled = useShowSidebarLogo();
   return (
-    <SettingRow title={t("settings.sidebarLogo.title")} subtitle={t("settings.sidebarLogo.subtitle")}>
+    <SettingRow scope="device" title={t("settings.sidebarLogo.title")} subtitle={t("settings.sidebarLogo.subtitle")}>
       <Switch
         checked={enabled}
         aria-label={t("settings.sidebarLogo.show")}
@@ -639,7 +615,7 @@ function SidebarLogoRow() {
 function RunCardRow() {
   const enabled = useShowRunCard();
   return (
-    <SettingRow title={t("settings.runCard.title")} subtitle={t("settings.runCard.subtitle")}>
+    <SettingRow scope="device" title={t("settings.runCard.title")} subtitle={t("settings.runCard.subtitle")}>
       <Switch
         checked={enabled}
         aria-label={t("settings.runCard.show")}
@@ -674,6 +650,7 @@ function RoutinesInConversationRow() {
 
   return (
     <SettingRow
+      scope="installation"
       title={t("settings.routinesInConversation.title")}
       subtitle={t("settings.routinesInConversation.short")}
       help={t("settings.routinesInConversation.subtitle")}
@@ -715,6 +692,7 @@ function ToolCallsRow() {
 
   return (
     <SettingRow
+      scope="installation"
       title={t("settings.toolCalls.title")}
       subtitle={t("settings.toolCalls.short")}
       help={<>{t("settings.toolCalls.subtitle")} {t("settings.toolCalls.detail")}</>}
@@ -767,6 +745,7 @@ function ExperimentalFeaturesRow() {
   return (
     <Card
       collapsible
+      scope="installation"
       cardId="experimental.features"
       title={t("settings.experimental.title")}
       subtitle={t("settings.experimental.subtitle")}
@@ -797,7 +776,7 @@ function ExperimentalFeaturesRow() {
                 : t("settings.experimental.browserOff")
               : browserBlockedOnWindows
                 ? t("settings.experimental.browserWindows")
-                : browserUnavailableReason(state.config)}
+                : <BrowserUnavailableNote config={state.config} />}
           </div>
         </div>
         <Switch
@@ -827,7 +806,13 @@ function ExperimentalFeaturesRow() {
         <div className="min-w-0">
           <div className="text-[14px] font-medium text-ink">{t("settings.experimental.connectedApps")}</div>
           <div className="mt-0.5 text-[12px] leading-relaxed text-ink-secondary">
-            {t("settings.experimental.connectedAppsDetail")}
+            <SettingsText
+              text={t("settings.experimental.connectedAppsDetail")}
+              links={{
+                apiKeys: { section: "connections", cardId: "connections.apps" },
+                providers: { section: "engines" },
+              }}
+            />
           </div>
         </div>
         <Switch
@@ -872,6 +857,7 @@ function BrowserProfilesRow() {
   return (
     <Card
       collapsible
+      scope="installation"
       cardId="experimental.browserProfiles"
       defaultOpen={false}
       title={t("settings.profiles.title")}
@@ -906,6 +892,7 @@ function DiagnosticsRow() {
 
   return (
     <SettingRow
+      scope="device"
       title={t("settings.diagnostics.title")}
       subtitle={t("settings.diagnostics.short")}
       help={t("settings.diagnostics.subtitle")}
@@ -935,7 +922,7 @@ export function SettingsModal() {
   // computer's phone flow, or the server's pairing code.
   const computerPairs = currentPhonePairingTarget(state.config?.cloudHome === true) === "computer";
   const section: AppSettingsSection =
-    (remoteActive && !["appearance", "organization"].includes(state.appSettingsSection)) || state.appSettingsSection === "remote"
+    remoteActive && state.appSettingsSection !== "appearance" && state.appSettingsSection !== "organization"
       ? "companion"
       : state.appSettingsSection;
   const dialogRef = useRef<HTMLDivElement>(null);
@@ -944,6 +931,10 @@ export function SettingsModal() {
   useEffect(() => window.ogb?.onOpenAppSettings?.(() => setQuery("")), []);
   const q = query.trim().toLowerCase();
   const ownerOrAdmin = useOwnerOrAdmin();
+  const editConfig = canEditConfig(state.config);
+  const manageComputers = canManageComputers(state.config);
+  const viewUsage = canViewUsage(state.config);
+  const manageBackups = canManageBackups(state.config);
   // Server mode: this app shows its organization's server only (src/lib/launch.ts).
   const serverMode = useServerMode();
   const lockedServer = serverMode?.active ? serverMode : null;
@@ -979,7 +970,9 @@ export function SettingsModal() {
     .filter((entry) => entry.id !== "mail" || ownerOrAdmin === true)
     .filter((entry) => !organizationHidesSection(entry.id, organization))
     // the activity log belongs to a workspace served to a browser, and to its admins
-    .filter((entry) => entry.id !== "activity" || (servedPage() && ownerOrAdmin === true));
+    .filter((entry) => entry.id !== "activity" || (servedPage() && ownerOrAdmin === true))
+    // Installation writes the server refuses with 403: hide the section.
+    .filter((entry) => !memberHidesSection(entry.id, { editConfig, manageComputers, viewUsage, manageBackups, organization }));
   const visibleSections = availableSections.filter((entry) => sectionMatches(entry, q));
   const sectionLabelKey = SECTIONS.find((entry) => entry.id === section)?.labelKey;
   const subPageId = state.appSettingsSubPage;
@@ -1166,42 +1159,47 @@ export function SettingsModal() {
                 {lockedServer ? <ServerModeCard state={lockedServer} /> : <ThisComputerSettings />}
                 <Card
                   collapsible
+                  scope="installation"
                   cardId="general.profile"
                   title={t("settings.profile.title")}
                   summary={state.config?.profile?.name || state.config?.profile?.email || t("settings.card.notSet")}
                 >
                   <ProfileFields />
                 </Card>
-                <SettingsSubPageRow
-                  cardId="general.aboutMe"
-                  title={t("settings.profile.aboutMe")}
-                  summary={aboutMeFirstLine(state.config?.profile?.aboutMe)}
-                  actionLabel={t("settings.aboutMe.edit")}
-                  onOpen={() => openSubPage("general.aboutMe")}
-                />
+                {(!state.config?.viewer || state.config.viewer.operator) && (
+                  <SettingsSubPageRow
+                    cardId="general.aboutMe"
+                    title={t("settings.profile.aboutMe")}
+                    summary={aboutMeFirstLine(state.config?.profile?.aboutMe)}
+                    actionLabel={t("settings.aboutMe.edit")}
+                    onOpen={() => openSubPage("general.aboutMe")}
+                  />
+                )}
                 <div className="rounded-[14px] border-[0.5px] border-border py-1">
                   <LanguageRow />
-                  <NewBotEffortRow />
-                  <DefaultBotSettings />
+                  {editConfig && <DefaultBotSettings />}
                 </div>
-                {!remoteActive && (
+                {!remoteActive && editConfig && (
                   <div className="rounded-[14px] border-[0.5px] border-border py-1">
                     <RoutinesInConversationRow />
                   </div>
                 )}
-                <Card
-                  collapsible
-                  cardId="general.roomTurns"
-                  defaultOpen={false}
-                  title={t("settings.roomTurns.title")}
-                  subtitle={t("settings.roomTurns.subtitle")}
-                  summary={t("settings.card.roomTurns", { minutes: state.config?.rooms.turnTimeoutMinutes ?? 5 })}
-                >
-                  <RoomTurnTimeoutSettings />
-                </Card>
-                <ThreadConcurrencySettings />
-                <AutomaticRecoverySettings />
-                <ThreadCleanupSettings />
+                {editConfig && (
+                  <Card
+                    collapsible
+                    scope="installation"
+                    cardId="general.roomTurns"
+                    defaultOpen={false}
+                    title={t("settings.roomTurns.title")}
+                    subtitle={t("settings.roomTurns.subtitle")}
+                    summary={t("settings.card.roomTurns", { minutes: state.config?.rooms.turnTimeoutMinutes ?? 5 })}
+                  >
+                    <RoomTurnTimeoutSettings />
+                  </Card>
+                )}
+                {editConfig && <ThreadConcurrencySettings />}
+                {editConfig && <AutomaticRecoverySettings />}
+                {editConfig && <ThreadCleanupSettings />}
                 <div className="rounded-[14px] border-[0.5px] border-border py-1">
                   {!remoteActive && <ReplayTourRow />}
                   <UpdatesRow />
@@ -1215,6 +1213,7 @@ export function SettingsModal() {
               <>
                 <Card
                   collapsible
+                  scope="me"
                   cardId="appearance.skin"
                   title={t("settings.skin.title")}
                   subtitle={t("settings.skin.subtitle")}
@@ -1225,6 +1224,7 @@ export function SettingsModal() {
                 {appIconAvailable() && (
                   <Card
                     collapsible
+                    scope="device"
                     cardId="appearance.appIcon"
                     title={t("settings.appIcon.title")}
                     subtitle={t("settings.appIcon.subtitle")}
@@ -1242,7 +1242,7 @@ export function SettingsModal() {
                   <NotificationSoundsRow />
                   <FloatingFlyAwayRow />
                   <FloatingLivelinessRow />
-                  {!remoteActive && <ToolCallsRow />}
+                  {!remoteActive && editConfig && <ToolCallsRow />}
                   <RunCardRow />
                 </div>
               </>
@@ -1265,6 +1265,7 @@ export function SettingsModal() {
                 ) : null}
                 <Card
                   collapsible
+                  scope="installation"
                   cardId="connections.providers"
                   title={t("keys.providers.title")}
                   subtitle={t("keys.providers.subtitle")}
@@ -1288,6 +1289,7 @@ export function SettingsModal() {
                 </Card>
                 {connectedAppsEnabled(state.config) && <Card
                   collapsible
+                  scope="installation"
                   cardId="connections.apps"
                   defaultOpen={false}
                   title={t("settings.connections.appsTitle")}
@@ -1303,6 +1305,7 @@ export function SettingsModal() {
                 </Card>}
                 <Card
                   collapsible
+                  scope="installation"
                   cardId="connections.integrations"
                   defaultOpen={false}
                   title={t("keys.integrations.title")}
@@ -1318,6 +1321,31 @@ export function SettingsModal() {
                         index === 0 ? [part] : [<code key={index} className="font-mono">opencode auth login</code>, part])}
                     </p>
                   </div>
+                </Card>
+                <Card
+                  collapsible
+                  scope="installation"
+                  cardId="connections.voice"
+                  defaultOpen={false}
+                  title={t("voice.engine.title")}
+                  subtitle={t("voice.engine.subtitle")}
+                >
+                  <VoiceEngineSettings />
+                  <div className="mt-6 border-t border-hairline/40 pt-4">
+                    <div className="text-[15px] font-medium text-ink">{t("voice.live.title")}</div>
+                    <p className="mt-0.5 mb-3 text-[13px] text-ink-secondary">{t("voice.live.subtitle")}</p>
+                    <LiveCallInstallationSettings />
+                  </div>
+                </Card>
+                <Card
+                  collapsible
+                  scope="installation"
+                  cardId="connections.image"
+                  defaultOpen={false}
+                  title={t("imageGen.title")}
+                  subtitle={t("imageGen.subtitle")}
+                >
+                  <ImageGenerationSettings />
                 </Card>
               </>
             )}

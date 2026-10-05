@@ -23,6 +23,7 @@ import { companionPairingMode } from "../lib/phone-setup";
 import { revealPhonePairing } from "../lib/phone-pairing";
 import { ConnectionDetail } from "./ConnectionDetail";
 import { Card, requestSettingsCard, Switch, cardCount } from "./SettingsPrimitives";
+import { SettingsText } from "./SettingsLink";
 import { brand } from "../lib/brand";
 import { useStore } from "@/state/store";
 
@@ -162,7 +163,7 @@ export function CompanionSection({ profileEmail = "", focusRequest = 0 }: { prof
         cardId="companion.desktopOnly"
         defaultOpen={false}
         title={t("remote.desktopOnly.title", { app: brand().name })}
-        subtitle={t("remote.desktopOnly.subtitle")}
+        subtitle={<SettingsText text={t("remote.desktopOnly.subtitle")} links={{ settings: { section: "companion" } }} />}
         summary={t("settings.card.desktopOnly")}
       />
     );

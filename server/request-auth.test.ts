@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import {
   clearSessionCookie,
+  capabilitiesForAuth,
   clientBotPatchViolation,
   memberBotFieldViolation,
   clientGroupPatchViolation,
@@ -117,6 +118,7 @@ describe("scopes", () => {
       ["GET", "/api/bots/x/slack-management"], // a link to Admin, read-only
       ["POST", "/api/bots/x/direct-grants"],
       ["POST", "/api/bots"], ["DELETE", "/api/bots/x"], // a member's own bots: the handler checks role and owner
+      ["POST", "/api/bots/x/primary"], ["DELETE", "/api/bots/x/primary"], // the owner's own Primary Bot, both ways
       ["POST", "/api/org/invites/tok/accept"],
       ["GET", "/api/org"],
       ["POST", "/api/workers"],
@@ -160,6 +162,16 @@ describe("scopes", () => {
     expect(clientGroupPatchViolation({ name: "Ops", unread: false })).toBeNull();
     expect(clientGroupPatchViolation({ cwd: "/tmp" })).toBe("cwd");
     expect(clientGroupPatchViolation({ memberIds: ["bot"], humanIds: ["ada@example.test"] })).toBeNull();
+  });
+
+  it("reports installation capabilities from the admin scope, and pairing for an organization member", () => {
+    expect(capabilitiesForAuth({ scopes: ["admin", "client"] }, { orgPairing: false })).toEqual({
+      editConfig: true, manageKeys: true, manageComputers: true, viewUsage: true, manageBackups: true, pairDevices: true,
+    });
+    expect(capabilitiesForAuth({ scopes: ["client"] }, { orgPairing: true })).toEqual({
+      editConfig: false, manageKeys: false, manageComputers: false, viewUsage: false, manageBackups: false, pairDevices: true,
+    });
+    expect(capabilitiesForAuth({ scopes: ["client"] }, { orgPairing: false }).pairDevices).toBe(false);
   });
 });
 

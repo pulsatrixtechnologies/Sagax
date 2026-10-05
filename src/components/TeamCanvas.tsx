@@ -35,7 +35,7 @@ function BotCard({ bot, selected, moving, connected, onComputer, onArrange }: {
   return <article className={cn("relative h-[126px] w-[236px] shrink-0 rounded-xl border bg-card shadow-sm transition-colors",
     selected ? "border-accent/60 ring-1 ring-accent/15" : connected ? "border-accent/40" : "border-hairline/50 hover:border-ink-secondary/40", moving && "opacity-35")}>
     <button data-bot-id={bot.id} aria-label={t("canvas.editBot", { name: bot.name })}
-      onClick={() => dispatch({ type: "toggleSettings", botId: bot.id, section: "identity", open: true })}
+      onClick={() => dispatch({ type: "toggleSettings", botId: bot.id, section: "details", open: true })}
       title={onArrange ? t("canvas.reorderHint") : undefined}
       onKeyDown={(event) => {
         if (!onArrange || !event.altKey || (event.key !== "ArrowUp" && event.key !== "ArrowDown")) return;

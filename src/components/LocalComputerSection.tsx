@@ -18,11 +18,13 @@ import {
   Trash2,
 } from "lucide-react";
 import { Card, CommandLine, cardCount } from "./SettingsPrimitives";
+import { SettingsText } from "./SettingsLink";
 import { MacLocalControl } from "./MacLocalControl";
 import { cn } from "@/lib/cn";
 import { useStore } from "@/state/store";
 import { boatComputerEnabled, vpsComputerEnabled } from "@/lib/feature-flags";
 import { useDesktopBridgeStatus } from "@/lib/desktop-bridge";
+import { canManageComputers } from "@/lib/viewer";
 import { OrgComputerSettings } from "./settings/OrgComputerSettings";
 
 type Action = "pull" | "run" | "start" | "stop" | "remove" | "recreate";
@@ -396,7 +398,7 @@ export function VpsComputersCard({
           {configured === true
             ? t("vm.vps.sshHost", { alias: sshAlias ?? t("vm.vps.configuredFallback") })
             : configured === false
-              ? t("vm.vps.needsAlias")
+              ? <SettingsText text={t("vm.vps.needsAlias")} links={{ settings: { section: "connections", cardId: "connections.integrations" } }} />
               : t("vm.vps.refreshHint")}
         </div>
         <button
@@ -536,7 +538,7 @@ export function CloudComputersCard({
           {configured === true
             ? t("vm.cloud.includesOrphans")
             : configured === false
-              ? t("vm.cloud.needsKey")
+              ? <SettingsText text={t("vm.cloud.needsKey")} links={{ settings: { section: "connections", cardId: "connections.integrations" } }} />
               : t("vm.cloud.refreshHint")}
         </div>
         <button
@@ -957,9 +959,12 @@ export function LocalComputerSection() {
   // checks for one nor explains how to set one up.
   const { state: storeState } = useStore();
   const cloudHome = storeState.config?.cloudHome === true;
+  // Installation inventories are admin routes. A member's own computer is
+  // OrgComputerSettings; probing these every 5s only produces 403s.
+  const manageComputers = canManageComputers(storeState.config);
   // Experimental (Settings > Experimental features): off hides the cards.
-  const boatOn = cloudHome || boatComputerEnabled(storeState.config);
-  const vpsOn = vpsComputerEnabled(storeState.config);
+  const boatOn = manageComputers && (cloudHome || boatComputerEnabled(storeState.config));
+  const vpsOn = manageComputers && vpsComputerEnabled(storeState.config);
   // An organization server (a desktop bridge status exists): the Local VM is
   // the one on the person's own computer, set up through their desktop app,
   // and their server environment sits beside it (OrgComputerSettings).
@@ -1060,7 +1065,7 @@ export function LocalComputerSection() {
   }, []);
 
   useEffect(() => {
-    if (cloudHome) return;
+    if (cloudHome || !manageComputers) return;
     let active = true;
     let timer: number | undefined;
     let controller: AbortController | undefined;
@@ -1086,7 +1091,7 @@ export function LocalComputerSection() {
       controller?.abort();
       if (timer !== undefined) window.clearTimeout(timer);
     };
-  }, [cloudHome, refresh, refreshKey]);
+  }, [cloudHome, manageComputers, refresh, refreshKey]);
 
   useEffect(() => {
     if (status?.mode !== "per-bot") {
@@ -1114,6 +1119,7 @@ export function LocalComputerSection() {
   // Settings must remain an observation-only surface until the person clicks
   // Sleep or Delete.
   useEffect(() => {
+    if (!manageComputers) return;
     const controller = new AbortController();
     setCloudLoading(true);
     void refreshCloudInventory(controller.signal)
@@ -1126,11 +1132,12 @@ export function LocalComputerSection() {
         if (!controller.signal.aborted) setCloudLoading(false);
       });
     return () => controller.abort();
-  }, [cloudRefreshKey, refreshCloudInventory]);
+  }, [cloudRefreshKey, manageComputers, refreshCloudInventory]);
 
   // Docker-over-SSH inventory is also manual/mount-only. A Settings view
   // must never become a hidden remote poller or wake a stopped container.
   useEffect(() => {
+    if (!manageComputers) return;
     const controller = new AbortController();
     setVpsLoading(true);
     void refreshVpsInventory(controller.signal)
@@ -1143,7 +1150,7 @@ export function LocalComputerSection() {
         if (!controller.signal.aborted) setVpsLoading(false);
       });
     return () => controller.abort();
-  }, [refreshVpsInventory, vpsRefreshKey]);
+  }, [manageComputers, refreshVpsInventory, vpsRefreshKey]);
 
   const post = async (action: Exclude<Action, "recreate">, signal: AbortSignal) => {
     const response = await fetch(`/api/local-computer/${action}`, {
@@ -1441,7 +1448,7 @@ export function LocalComputerSection() {
 
       <MacLocalControl />
 
-      {!cloudHome && !orgBridge && <>
+      {!cloudHome && !orgBridge && manageComputers && <>
       <Card
         collapsible
         cardId="computer.main"

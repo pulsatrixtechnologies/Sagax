@@ -89,7 +89,7 @@ export function RoutineList({ routines, loading, error, onOpen, onToggle, viewer
             </button>
             <Switch
               checked={routine.enabled}
-              aria-label={routine.enabled ? "Pause" : "Resume"}
+              aria-label={routine.enabled ? t("botPanel.routines.pause") : t("botPanel.routines.resume")}
               onClick={() => onToggle?.(routine)}
             />
           </div>

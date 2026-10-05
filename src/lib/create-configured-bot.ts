@@ -4,6 +4,18 @@ import type { BotCreationDraft } from "./bot-creation-draft";
 import { imageAttachmentFromFile } from "./composer-attachments";
 import type { BotVisibility } from "../../shared/wire";
 import { botAvatarUrlFromStoredPath } from "../../shared/bot-avatar";
+import { isMemberBotField } from "../../shared/viewer-capabilities";
+
+/** Fields an organization member may send. Anything else (where the bot
+ * runs, approval, a team, a preset) is refused on create and on the
+ * follow-up patch, which would roll the new bot back. */
+function memberWritableProfile<T extends object>(profile: T): Partial<T> {
+  const next: Partial<T> = {};
+  for (const key of Object.keys(profile) as Array<keyof T>) {
+    if (profile[key] !== undefined && isMemberBotField(String(key))) next[key] = profile[key];
+  }
+  return next;
+}
 
 export async function preparedBotTemplate(draft: BotCreationDraft) {
   const template = draft.export();
@@ -25,20 +37,24 @@ export async function createConfiguredBot(
   update: typeof persistBotUpdate = persistBotUpdate,
   approvals = typeof window === "undefined" ? undefined : window.ogb?.approvals,
   visibility?: BotVisibility,
+  options?: { memberFieldsOnly?: boolean },
 ): Promise<{ bot: Bot; warnings: string[] }> {
   const template = await preparedBotTemplate(draft);
   const { chiefOfStaff, managedSections, toolScope, ...profile } = template.profile;
+  const memberFieldsOnly = options?.memberFieldsOnly === true;
   if (!profile.name?.trim()) throw new Error("Give the bot a name");
   // The server adds a chosen preset's skills (switched on only for an
   // organization's preset) and starter notes; for the same skill name or
   // note file, the preset's wins over the draft's.
   const preset = draft.preset;
   const response = await request<{ bot: Bot }>("/api/bots", {
-    method: "POST", body: JSON.stringify({ name: profile.name, title: profile.title,
-      description: profile.description, modelSelection: profile.modelSelection, section: profile.section,
-      requireAvailableModel: true, useDefaults: false, ...(visibility !== undefined ? { visibility } : {}),
-      ...(Object.hasOwn(template.profile, "toolScope") ? { settings: { toolScope } } : {}),
-      ...(preset ? { preset: preset.id } : {}) }),
+    method: "POST", body: JSON.stringify(memberFieldsOnly
+      ? { name: profile.name, title: profile.title, description: profile.description, modelSelection: profile.modelSelection, requireAvailableModel: true, useDefaults: false }
+      : { name: profile.name, title: profile.title,
+        description: profile.description, modelSelection: profile.modelSelection, section: profile.section,
+        requireAvailableModel: true, useDefaults: false, ...(visibility !== undefined ? { visibility } : {}),
+        ...(Object.hasOwn(template.profile, "toolScope") ? { settings: { toolScope } } : {}),
+        ...(preset ? { preset: preset.id } : {}) }),
   });
   let bot = response.bot;
   const routines: Array<{ id: string; enabled: boolean }> = [];
@@ -46,7 +62,8 @@ export async function createConfiguredBot(
   try {
     // The create endpoint already validated the chosen model and completed
     // workspace effort defaults. Do not overwrite those with the raw draft.
-    const patched = await update(bot.id, { ...profile, modelSelection: bot.modelSelection, ...draft.consent }, new AbortController().signal,
+    const savedProfile = memberFieldsOnly ? memberWritableProfile(profile) : profile;
+    const patched = await update(bot.id, { ...savedProfile, modelSelection: bot.modelSelection, ...(memberFieldsOnly ? {} : draft.consent) }, new AbortController().signal,
       request, approvals, bot);
     bot = { ...bot, ...patched };
     if (profile.approvalMode === "full" || profile.approvalMode === "custom") {
@@ -63,7 +80,7 @@ export async function createConfiguredBot(
         throw new Error("The initial thread's requested approval level was not granted");
       }
     }
-    for (const [path, text] of Object.entries(template.memory)) {
+    if (!memberFieldsOnly) for (const [path, text] of Object.entries(template.memory)) {
       if (preset?.notes.includes(path)) continue;
       await request(`/api/bots/${bot.id}/memory/file`, {
         method: "PUT", body: JSON.stringify({ path, text }),
@@ -93,7 +110,7 @@ export async function createConfiguredBot(
   // Creation is complete. Activation failures leave a visible, configured
   // bot with paused routines; never delete a bot whose routine may have run,
   // undo a Chief handover, or invite a duplicate creation retry.
-  if (chiefOfStaff) {
+  if (chiefOfStaff && !memberFieldsOnly) {
     try {
       const result = await request<{ bot: Bot }>(`/api/bots/${bot.id}`, {
         method: "PATCH", body: JSON.stringify({ chiefOfStaff, managedSections, acknowledgePeerScope: true }),

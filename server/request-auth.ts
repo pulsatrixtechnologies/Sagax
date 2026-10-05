@@ -14,6 +14,12 @@ import { isIP } from "node:net";
 
 import type { Scope, SessionRecord, SessionRegistry } from "./sessions.ts";
 import { denyReason as companionDenial, isCompanionNotice } from "../companion/src/routes.ts";
+import {
+  clientBotPatchViolation as sharedClientBotPatchViolation,
+  memberBotFieldViolation as sharedMemberBotFieldViolation,
+  viewerCapabilities,
+  type ViewerCapabilities,
+} from "../shared/viewer-capabilities.ts";
 
 /** How much a loopback request without a session is trusted.
  *
@@ -386,7 +392,7 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   // The bot's standing instructions for the profile's Instructions row
   // (owner or admin, checked in the handler).
   { methods: ["GET"], path: /^\/api\/bots\/[\w-]+\/soul$/ },
-  { methods: ["POST"], path: /^\/api\/bots\/[\w-]+\/primary$/ }, // the person's own bot only: the handler checks the owner
+  { methods: ["POST", "DELETE"], path: /^\/api\/bots\/[\w-]+\/primary$/ }, // the person's own bot only: the handler checks the owner
   // An organization member's own bots: the handler requires a member or
   // admin role, limits the fields (memberBotFieldViolation) and, for a
   // delete, that the session owns the bot.
@@ -534,31 +540,24 @@ export function requiredScope(method: string, path: string, features: ClientFeat
 }
 
 /** Fields a client session may change on a bot: how it looks in the list,
- * never what it may do. Returns the first offending field, or null. */
-const CLIENT_BOT_PATCH_FIELDS = new Set([
-  "unread", "pinned", "pinnedMessageId", "color", "mascotExpression", "mascotBody", "mascotSkin", "mascotLook",
-  // how the picture sits in its frame (the phone's framing view)
-  "avatarCrop", "avatarZoom", "avatarFocusX", "avatarFocusY",
-]);
-export function clientBotPatchViolation(body: unknown): string | null {
-  if (!body || typeof body !== "object" || Array.isArray(body)) return "body";
-  for (const key of Object.keys(body)) if (!CLIENT_BOT_PATCH_FIELDS.has(key)) return key;
-  return null;
-}
+ * never what it may do. Returns the first offending field, or null.
+ * The list lives in shared/viewer-capabilities.ts so the client hides the
+ * same fields. */
+export const clientBotPatchViolation = sharedClientBotPatchViolation;
 
 /** What an organization member may set on a bot they own, at creation and
  * afterwards: how it looks, its name and instructions, and which of the
  * server's engines it runs on. Never where it runs, what it may reach or
  * how much it may do unasked (computer, folder, approval level, MCP servers,
  * browser profile, peers, teams): those stay server admin settings. */
-const MEMBER_BOT_FIELDS = new Set([
-  ...CLIENT_BOT_PATCH_FIELDS,
-  "name", "title", "description", "soul", "notifications", "avatarUrl", "modelSelection", "requireAvailableModel",
-]);
-export function memberBotFieldViolation(body: unknown): string | null {
-  if (!body || typeof body !== "object" || Array.isArray(body)) return "body";
-  for (const key of Object.keys(body)) if (!MEMBER_BOT_FIELDS.has(key)) return key;
-  return null;
+export const memberBotFieldViolation = sharedMemberBotFieldViolation;
+
+/** The capabilities block GET /api/config puts on `viewer`. An admin scope
+ * may edit the installation. Pairing is also open to an organization member
+ * when org pairing is on (the route itself stays the gate). */
+export function capabilitiesForAuth(auth: { scopes: readonly string[] }, options: { orgPairing: boolean }): ViewerCapabilities {
+  const admin = auth.scopes.includes("admin");
+  return viewerCapabilities({ admin, pairDevices: admin || options.orgPairing });
 }
 
 /** Same for a room: name, reading state, and the roster. humanIds and

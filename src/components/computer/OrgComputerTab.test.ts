@@ -44,16 +44,15 @@ describe("Computer tab on an organization server", () => {
     }
   });
 
-  it("shows only the screen: the bot's Works on is an item of the More tab, between Access and Model", () => {
+  it("shows only the screen: Works on is not a More row and not inside this screen", () => {
     for (const place of ["auto", "cloud", "vm", "local"] as const) {
       const markup = renderToStaticMarkup(createElement(OrgComputerTab, { bridge: bridge(true, "computer"), place, computerOff: false, botName: "Luna" }));
       expect(markup).not.toContain('role="radiogroup"');
       expect(markup).not.toContain("data-works-on-setting");
     }
     const ids = BOT_SECTIONS.map((entry) => entry.id);
-    expect(ids.indexOf("worksOn")).toBe(ids.indexOf("access") + 1);
-    expect(ids.indexOf("model")).toBe(ids.indexOf("worksOn") + 1);
-    expect(BOT_SECTIONS.find((entry) => entry.id === "worksOn")?.labelKey).toBe("worksOn.section");
+    expect(ids).not.toContain("worksOn");
+    expect(ids.indexOf("model")).toBe(ids.indexOf("access") + 1);
   });
 
   it("shows the owner's stale Local VM as an error with Repair, never raw JSON", () => {
@@ -107,19 +106,17 @@ describe("Computer tab on an organization server", () => {
   });
 });
 
-describe("the bot's Works on in the More tab", () => {
-  it("is a card like the other More items: title, one-line hint, short labels, the meaning in each tooltip", () => {
-    const markup = renderToStaticMarkup(createElement(WorksOnControl, { value: "cloud", onChange: () => {}, disabled: {} }));
-    expect(markup).toContain('class="rounded-xl border border-hairline/40 p-4"');
+describe("the bot's Works on", () => {
+  it("uses the same place names as the composer chip, with the meaning in each tooltip", () => {
+    const markup = renderToStaticMarkup(createElement(WorksOnControl, { value: "cloud", onChange: () => {}, disabled: {}, organization: true }));
+    expect(markup).toContain('class="mb-4 rounded-xl border border-hairline/40 p-4"');
     expect(markup).toContain('<div id="works-on-setting" class="text-[13px] font-medium text-ink">Works on</div>');
     expect(markup).toMatch(/id="works-on-setting-hint" class="mt-0.5 text-\[13px\] text-ink-secondary">Where this bot works\./);
     expect(markup.match(/role="radio"/g)).toHaveLength(6);
-    for (const label of [">Auto<", ">Cloud<", ">Local VM<", ">This computer<", ">Browser<", ">Off<"]) expect(markup).toContain(label);
+    for (const label of [">Auto (Cloud)<", ">Cloud (server environment)<", ">Local VM<", ">This computer<", ">Browser<", ">Off<"]) expect(markup).toContain(label);
     expect(markup).toMatch(/aria-checked="true"[^>]*data-works-on-choice="cloud"/);
     expect(markup).toContain('title="Your own Linux machine on the organization server"');
-    // No long explanation box any more.
     expect(markup).not.toContain("Cloud is your server environment.");
-    expect(markup).not.toContain("Auto (Cloud)");
   });
 
   it("explains a choice that cannot be picked in its tooltip", () => {
@@ -205,7 +202,8 @@ describe("Settings > Computer on an organization server", () => {
       initialServer: { configured: true, state: "stopped", limits: { memoryMb: 1024, cpus: 1, pids: 256, diskMb: 2048, tmpMb: 256 }, pendingDeletionAt: null },
     }));
     expect(markup).toContain("Where bots work");
-    expect(markup).toContain("Each bot&#x27;s Works on decides");
+    expect(markup).toContain("Bots whose Works on is Local VM");
+    expect(markup).not.toContain("Each bot&#x27;s Works on decides");
     expect(markup).not.toContain('role="radiogroup"');
     expect(markup).toContain("Docker Desktop found and running");
     expect(markup).not.toContain("Install a supported container runtime first");

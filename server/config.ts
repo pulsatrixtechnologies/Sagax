@@ -10,7 +10,7 @@ import { normalizeImageGenerationUrl, type ImageGenerationConfig } from "../shar
 
 import { writeFileAtomic } from "./atomic.ts";
 import { newBotDefaultsSchema, type NewBotDefaults } from "./new-bot-defaults.ts";
-import { EFFORT_LEVELS, type EffortLevel, type LiveSettings } from "../shared/wire.ts";
+import { EFFORT_LEVELS, type LiveSettings } from "../shared/wire.ts";
 import { isModelVariant, type InstanceConfigMap, type ModelSelection } from "./contracts.ts";
 import { PROVIDER_ICON_PRESETS, providerIconError } from "../shared/provider-icon.ts";
 import type { McpServerSpec } from "./contracts.ts";
@@ -412,15 +412,6 @@ const threadsConfigSchema = z.object({
    * Absent keeps them forever. */
   eventLogRetentionDays: z.number().int().min(1).max(3650).optional(),
 }).strict();
-/** Workspace-wide defaults every new bot starts with (Store.createBot). */
-const newBotsConfigSchema = z.object({
-  /** Effort for a new bot whose model selection names none. */
-  effort: z.enum(EFFORT_LEVELS).optional(),
-}).strict();
-/** PATCH newBots: null clears a default back to absent (no level is sent). */
-const newBotsPatchSchema = z.object({
-  effort: newBotsConfigSchema.shape.effort.nullable(),
-}).strict();
 /** PATCH threads: every knob is independently patchable, and null clears an
  * event-log knob back to its absent (off) default. */
 const threadsPatchSchema = threadsConfigSchema.extend({
@@ -497,7 +488,6 @@ const appConfigSchema = z.object({
   defaultModelSelection: defaultModelSelectionSchema.optional(),
   automaticRecovery: automaticRecoverySchema.optional(),
   newBotDefaults: newBotDefaultsSchema.optional(),
-  newBots: newBotsConfigSchema.optional(),
   /** CLI-only launch preferences. Never enable remote access implicitly. */
   cliStartup: z.object({
     access: z.enum(["local", "tunnel", "tailscale", "public-url"]),
@@ -677,7 +667,7 @@ const storedAppConfigSchema = appConfigSchema.extend({
   browserProfiles: storedBrowserProfilesSchema.optional(),
 });
 const appConfigPatchSchema = appConfigSchema.omit({ instances: true, mcpServers: true, harnessConnectors: true, cliStartup: true, customDomain: true, identityMigratedAt: true, privateThreadsMigratedAt: true, invites: true, mail: true })
-  .extend({ threads: threadsPatchSchema.optional(), newBots: newBotsPatchSchema.optional() });
+  .extend({ threads: threadsPatchSchema.optional() });
 const jsonObjectSchema = z.record(z.string(), z.json());
 
 export interface AppConfig {
@@ -704,14 +694,15 @@ export interface AppConfig {
     revokedAt?: number;
   }>;
   mail?: MailSettings;
-  /** Preferred selection for newly created bots; existing bots keep theirs. */
+  /** CLI mirror of `newBotDefaults.profile.modelSelection`. The template wins:
+   * saving defaults writes this field, and a CLI write of this field copies
+   * into the template when one is already stored. */
   defaultModelSelection?: ModelSelection;
   /** Off by default; one backup attempt only before any work starts. */
   automaticRecovery?: { enabled: boolean; backup?: ModelSelection };
-  /** UI creation template. Saving it never mutates a bot or grants access. */
+  /** UI creation template. Saving it never mutates a bot or grants access.
+   * Its model selection effort is the only new-bot effort. */
   newBotDefaults?: NewBotDefaults;
-  /** Defaults for newly created bots that no model selection carries. */
-  newBots?: { effort?: EffortLevel };
   cliStartup?: {
     access: "local" | "tunnel" | "tailscale" | "public-url";
     publicUrl?: string;
@@ -845,8 +836,53 @@ export function browserProfilePartitionTarget(
   return profile ? { profileId: profile.id, partitionId: browserProfilePartitionId(profile) } : null;
 }
 
+function isJsonRecord(value: unknown): value is Record<string, JsonValue> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+const EFFORT_LEVEL_SET = new Set<string>(EFFORT_LEVELS);
+
+/** `newBots.effort` used to be a second new-bot default. Fold it into the
+ * template's model selection when that selection names no effort and no
+ * variant, then drop the key. Effort with nowhere to hang it is dropped:
+ * the template is the only new-bot effort. */
+export function foldLegacyNewBotEffort(value: JsonValue): JsonValue {
+  if (!isJsonRecord(value) || !Object.hasOwn(value, "newBots")) return value;
+  const doc: Record<string, JsonValue> = { ...value };
+  const legacy = doc.newBots;
+  delete doc.newBots;
+  const effort = isJsonRecord(legacy) ? legacy.effort : undefined;
+  if (typeof effort !== "string" || !EFFORT_LEVEL_SET.has(effort)) return doc;
+
+  const defaults = isJsonRecord(doc.newBotDefaults) ? { ...doc.newBotDefaults } : undefined;
+  const profile = defaults && isJsonRecord(defaults.profile) ? { ...defaults.profile } : undefined;
+  const selection = profile && isJsonRecord(profile.modelSelection) ? { ...profile.modelSelection } : undefined;
+  const canTakeEffort = (candidate: Record<string, JsonValue> | undefined) =>
+    Boolean(candidate && candidate.effort == null && candidate.variant == null && candidate.instanceId && candidate.model);
+  if (canTakeEffort(selection) && selection && profile && defaults) {
+    selection.effort = effort;
+    profile.modelSelection = selection;
+    defaults.profile = profile;
+    doc.newBotDefaults = defaults;
+    return doc;
+  }
+  if (!selection) {
+    const mirror = isJsonRecord(doc.defaultModelSelection) ? { ...doc.defaultModelSelection } : undefined;
+    if (canTakeEffort(mirror) && mirror) {
+      mirror.effort = effort;
+      doc.defaultModelSelection = mirror;
+      const nextProfile = profile ?? {};
+      nextProfile.modelSelection = { ...mirror };
+      const nextDefaults = defaults ?? {};
+      nextDefaults.profile = nextProfile;
+      doc.newBotDefaults = nextDefaults;
+    }
+  }
+  return doc;
+}
+
 export function parseStoredConfig(value: JsonValue): AppConfig {
-  const parsed = storedAppConfigSchema.safeParse(value);
+  const parsed = storedAppConfigSchema.safeParse(foldLegacyNewBotEffort(value));
   if (!parsed.success) throw new Error(schemaIssue(parsed.error, "Invalid stored configuration"));
   return parsed.data;
 }
@@ -1168,6 +1204,7 @@ export function ensureDirs() {
   }
   for (const dir of [DATA_DIR, EVENTS_DIR, NATIVE_DIR]) mkdirSync(dir, { recursive: true });
   migrateLegacyFeatureFlags();
+  migrateLegacyNewBotEffort();
 }
 
 /** `features.skillRecorder` became `features.skillAuthoring` when the Teach a
@@ -1194,6 +1231,20 @@ function migrateLegacyFeatureFlags(): void {
     // A readable but unwritable config would otherwise lose the opt-in on
     // every boot with no trace: parseStoredConfig drops the legacy key.
     console.error(`[config] could not rename features.skillRecorder: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
+/** Same fold as parseStoredConfig, written once so a later saveConfig does
+ * not merge the retired `newBots` key back from the raw file. */
+function migrateLegacyNewBotEffort(): void {
+  const p = join(DATA_DIR, "config.json");
+  try {
+    if (!existsSync(p)) return;
+    const raw = parseJson(readFileSync(p, "utf8"));
+    if (!isJsonRecord(raw) || !Object.hasOwn(raw, "newBots")) return;
+    writeFileAtomic(p, JSON.stringify(foldLegacyNewBotEffort(raw), null, 2), { mode: 0o600 });
+  } catch (error) {
+    console.error(`[config] could not fold newBots.effort: ${error instanceof Error ? error.message : String(error)}`);
   }
 }
 
@@ -1318,7 +1369,7 @@ export function cacheUntilConfigChanges<T>(derive: (config: AppConfig) => T): ()
  * user cleared the credential, so the var is dropped and the (now empty)
  * file value is authoritative again. Fields absent from the patch are
  * untouched. */
-export function syncCredentialEnv(patch: Partial<Omit<AppConfig, "threads" | "newBots">>): void {
+export function syncCredentialEnv(patch: Partial<Omit<AppConfig, "threads">>): void {
   const secrets: Array<[value: string | undefined, name: string]> = [
     [patch.xai?.key, "XAI_API_KEY"],
     [patch.mistral?.key, "MISTRAL_API_KEY"],
@@ -1488,9 +1539,8 @@ export function dropRetiredOrganizationKeys(): boolean {
 }
 
 export function saveConfig(
-  patch: Partial<Omit<AppConfig, "threads" | "newBots">> & {
+  patch: Partial<Omit<AppConfig, "threads">> & {
     threads?: z.output<typeof threadsPatchSchema>;
-    newBots?: z.output<typeof newBotsPatchSchema>;
   },
   options: { replaceInstances?: boolean } = {},
 ): void {
@@ -1502,14 +1552,14 @@ export function saveConfig(
   } catch {
     /* first write */
   }
-  const checkedPatch = appConfigSchema.partial().extend({ threads: threadsPatchSchema.optional(), newBots: newBotsPatchSchema.optional() }).parse(patch);
+  const checkedPatch = appConfigSchema.partial().extend({ threads: threadsPatchSchema.optional() }).parse(patch);
   const before = configSaveListeners.size ? structuredClone(disk) : disk;
   // A write is the durable migration point. Preserve every other raw key in
   // config.json, but never write #567's mixed-case or duplicate profile ids
   // back after we have successfully recognized the legacy list.
   const storedProfiles = storedBrowserProfilesSchema.safeParse(disk.browserProfiles);
   if (storedProfiles.success) disk.browserProfiles = storedProfiles.data;
-  for (const key of ["xai", "anthropic", "mistral", "cerebras", "openai", "openrouter", "openaiCompat", "composio", "box", "opencodeGo", "tts", "decider", "imageGen", "live", "profile", "rooms", "threads", "context", "memory", "localVm", "features", "cloudOverflow", "budgets", "billing", "decisions", "onboarding", "browserEngine", "newBots"] as const) {
+  for (const key of ["xai", "anthropic", "mistral", "cerebras", "openai", "openrouter", "openaiCompat", "composio", "box", "opencodeGo", "tts", "decider", "imageGen", "live", "profile", "rooms", "threads", "context", "memory", "localVm", "features", "cloudOverflow", "budgets", "billing", "decisions", "onboarding", "browserEngine"] as const) {
     const section = checkedPatch[key];
     if (!section) continue;
     const current = jsonObjectSchema.safeParse(disk[key]);
@@ -1520,8 +1570,7 @@ export function saveConfig(
     if (key === "threads" && !current.success) merged.maxConcurrentPerBot = DEFAULT_MAX_CONCURRENT_BOT_THREADS;
     Object.assign(merged, section);
     // null is the patch's explicit "remove this key" marker (the threads
-    // event-log knobs and newBots.effort use it); a key the patch omits
-    // keeps its value.
+    // event-log knobs use it); a key the patch omits keeps its value.
     for (const [sectionKey, sectionValue] of Object.entries(section as Record<string, unknown>)) {
       if (sectionValue === null) delete merged[sectionKey];
     }

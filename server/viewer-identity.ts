@@ -4,6 +4,7 @@
 // signed in is described from their own principal and sign-in email, and
 // never sees the operator's private profile fields.
 import type { OrgRole } from "./channel-membership.ts";
+import type { ViewerCapabilities } from "../shared/viewer-capabilities.ts";
 
 export interface ViewerIdentity {
   /** The operator at this computer, or a device they paired. */
@@ -36,6 +37,9 @@ export interface ViewerIdentity {
   profileManageUrl?: string;
   /** Their Perspicax avatar as this server serves it (personAvatarUrl). */
   avatarUrl?: string;
+  /** Which installation screens this viewer may change. Absent on a server
+   * that predates the field; the client then hides them only for role member. */
+  capabilities?: ViewerCapabilities;
 }
 
 /** "zara.q@example.test" becomes "zara.q". Anything without an "@" stays itself. */

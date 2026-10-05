@@ -10,7 +10,7 @@ export const PANEL_TABS = ["details", "library", "computer", "more"] as const;
 export type PanelTab = (typeof PANEL_TABS)[number];
 
 const SECTION_TABS: Partial<Record<BotSettingsSection, Exclude<PanelTab, "computer" | "more">>> = {
-  identity: "details",
+  details: "details",
   routines: "details",
 };
 

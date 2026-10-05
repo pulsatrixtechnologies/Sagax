@@ -12,7 +12,12 @@ vi.mock("react", async (original) => ({ ...await original<typeof import("react")
   },
   useEffect: (effect: EffectCallback) => { fixture.effects.push(effect); },
 }));
-vi.mock("@/state/store", () => ({ api: fixture.api }));
+vi.mock("@/state/store", () => ({
+  api: fixture.api,
+  // No viewer: the admin and solo path stays allowed. useStore must not call
+  // useState, or the form's captured hook indexes shift.
+  useStore: () => ({ state: { config: null }, dispatch: vi.fn() }),
+}));
 import { WorkspaceBackupRecovery, WorkspaceBackupRestartNotice, WorkspaceBackupSettings, WorkspaceBackupSummaryView } from "./WorkspaceBackupSettings";
 
 type Node = ReactElement<{ children?: ReactNode; type?: string; disabled?: boolean; value?: string; onChange?: (event: unknown) => void; onSubmit?: (event: unknown) => void; onClick?: () => void }>;
@@ -24,7 +29,17 @@ function nodes(value: ReactNode): Node[] {
 function render(recovery: boolean | "restart" = false) {
   fixture.index = 0; fixture.effects = [];
   let tree: ReactNode;
-  function Capture() { tree = recovery === "restart" ? WorkspaceBackupRestartNotice() : recovery ? WorkspaceBackupRecovery({ children: createElement("p", null, "Normal app") }) : WorkspaceBackupSettings(); return tree; }
+  function Capture() {
+    if (recovery === "restart") { tree = WorkspaceBackupRestartNotice(); return tree; }
+    if (recovery) { tree = WorkspaceBackupRecovery({ children: createElement("p", null, "Normal app") }); return tree; }
+    // The settings export returns null for a member, or the form element.
+    // Call the form here so its inputs stay on the captured tree and its
+    // useState indexes stay where these tests left them.
+    const gate = WorkspaceBackupSettings() as ReactElement<object> | null;
+    const Form = gate && typeof gate.type === "function" ? gate.type as (props: object) => ReactNode : null;
+    tree = Form && gate ? Form(gate.props) : gate;
+    return tree;
+  }
   const html = renderToStaticMarkup(createElement(Capture));
   return { html, nodes: nodes(tree) };
 }

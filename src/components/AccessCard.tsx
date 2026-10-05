@@ -13,6 +13,7 @@ import { useState } from "react";
 import { KeyRound } from "lucide-react";
 
 import { t } from "@/lib/i18n";
+import { SettingsText } from "./SettingsLink";
 import { startRoutineDelegation } from "@/lib/routine-delegation";
 import type { WireAccessCard } from "../../shared/wire";
 
@@ -108,7 +109,11 @@ export function AccessCard({ access, viewer, onSignIn }: { access: WireAccessCar
       <KeyRound size={14} aria-hidden="true" className="mt-0.5 shrink-0 text-warning" />
       <div className="flex min-w-0 flex-col gap-1">
         <span className="break-words">{lines.text}</span>
-        {lines.hint && <span className="break-words text-[12px] text-ink-secondary">{lines.hint}</span>}
+        {lines.hint && (
+          lines.hint.includes("{settings}")
+            ? <SettingsText text={lines.hint} links={{ settings: { section: "connections", cardId: "connections.providers" } }} className="break-words text-[12px] text-ink-secondary" />
+            : <span className="break-words text-[12px] text-ink-secondary">{lines.hint}</span>
+        )}
         {(lines.signIn && onSignIn) || lines.link ? (
           <div className="flex flex-wrap items-center gap-2">
             {lines.signIn && onSignIn && (

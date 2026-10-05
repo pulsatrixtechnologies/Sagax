@@ -6,6 +6,7 @@ import { useStore, type Bot } from "@/state/store";
 import { useBotEditor } from "./bot-settings/BotEditorContext";
 import { imageAttachmentFromFile } from "@/lib/composer-attachments";
 import { cn } from "@/lib/cn";
+import { t } from "@/lib/i18n";
 import { type MausMotion, type MausState } from "@/lib/mascot";
 import {
   AVATAR_FOCUS_CENTER,
@@ -134,7 +135,7 @@ function AvatarFraming({
         <BotAvatar bot={bot} size={FRAME_SIZE} animated={false} label={`${bot.name} avatar preview`} />
       </div>
       <div className="mb-1.5 mt-4 flex items-baseline justify-between">
-        <span className="text-[12px] font-medium uppercase tracking-[0.08em] text-ink-secondary">Zoom</span>
+        <span className="text-[12px] font-medium uppercase tracking-[0.08em] text-ink-secondary">{t("botPanel.avatar.zoom")}</span>
         <span className="tabular-nums text-[12px] text-ink-secondary">{Math.round(zoom * 100)}%</span>
       </div>
       <input
@@ -144,7 +145,7 @@ function AvatarFraming({
         step={0.01}
         value={zoom}
         disabled={disabled}
-        aria-label="Zoom avatar"
+        aria-label={t("botPanel.avatar.zoomAria")}
         aria-valuemin={AVATAR_ZOOM_MIN}
         aria-valuemax={AVATAR_ZOOM_MAX}
         aria-valuenow={zoom}
@@ -153,7 +154,7 @@ function AvatarFraming({
         className="w-full accent-accent"
       />
       <div className="mt-1.5 flex items-center justify-between gap-3 text-[11.5px] text-ink-secondary">
-        <span>Drag the picture to reposition it. Scroll to zoom.</span>
+        <span>{t("botPanel.avatar.drag")}</span>
         {framed && (
           <button
             type="button"
@@ -161,7 +162,7 @@ function AvatarFraming({
             onClick={() => onPatch({ avatarZoom: AVATAR_ZOOM_MIN, avatarFocusX: AVATAR_FOCUS_CENTER, avatarFocusY: AVATAR_FOCUS_CENTER })}
             className="shrink-0 rounded-md px-2 py-1 text-ink hover:bg-control disabled:opacity-50"
           >
-            Reset framing
+            {t("botPanel.avatar.resetFrame")}
           </button>
         )}
       </div>
@@ -184,7 +185,6 @@ export function BotProfileAvatarCard({
   const { request: api, uploadAvatar } = useBotEditor();
   const fileRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
-  const [savingConnection, setSavingConnection] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [editorOpen, setEditorOpen] = useState(false);
@@ -198,7 +198,7 @@ export function BotProfileAvatarCard({
   );
   const cropRef = useRef(crop);
   cropRef.current = crop;
-  const busy = uploading || generating || savingConnection;
+  const busy = uploading || generating;
   // A move tried here plays through the store, so the sidebar and chat header
   // react too. An unsaved draft has no store motion to show, so the card also
   // keeps the last move it asked for and plays that when nothing else is.
@@ -219,7 +219,7 @@ export function BotProfileAvatarCard({
     try {
       const saved = uploadAvatar ? null : await imageAttachmentFromFile(file);
       const avatarUrl = uploadAvatar ? await uploadAvatar(file) : saved ? botAvatarUrlFromStoredPath(saved.path) : null;
-      if (!avatarUrl) throw new Error("The uploaded image could not be used as an avatar");
+      if (!avatarUrl) throw new Error(t("botPanel.avatar.badImage"));
       const latestCrop = cropRef.current;
       onPatch({
         avatarUrl,
@@ -294,10 +294,10 @@ export function BotProfileAvatarCard({
               onClick={() => setEditorTab(tab)}
               className={cn("rounded-md px-2 py-1 capitalize", editorTab === tab ? "bg-control text-ink" : "text-ink-secondary hover:text-ink")}
             >
-              {tab === "bot" ? "Bot" : tab === "generate" ? "Generate" : "Upload"}
+              {tab === "bot" ? t("botPanel.avatar.bot") : tab === "generate" ? t("botPanel.avatar.generate") : t("botPanel.avatar.upload")}
             </button>
           ))}
-          <button type="button" onClick={resetMascot} className="ml-auto px-2 py-1 text-ink-secondary hover:text-ink">Reset</button>
+          <button type="button" onClick={resetMascot} className="ml-auto px-2 py-1 text-ink-secondary hover:text-ink">{t("botPanel.avatar.reset")}</button>
         </div>
         <input
           ref={fileRef}
@@ -316,22 +316,22 @@ export function BotProfileAvatarCard({
                 className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-control px-3 py-2 text-[13px] text-ink hover:bg-raised-hover disabled:opacity-50"
               >
                 {uploading ? <Loader2 size={14} className="animate-spin" /> : <ImagePlus size={14} />}
-                Upload image
+                {t("botPanel.avatar.uploadImage")}
               </button>
               {bot.avatarUrl && (
                 <button
                   type="button"
                   onClick={removeImage}
                   disabled={busy}
-                  aria-label="Remove custom avatar image"
-                  title="Remove custom image"
+                  aria-label={t("botPanel.avatar.removeAria")}
+                  title={t("botPanel.avatar.removeTitle")}
                   className="flex size-10 items-center justify-center rounded-lg text-ink-secondary hover:bg-control hover:text-danger disabled:opacity-50"
                 >
                   <Trash2 size={14} />
                 </button>
               )}
             </div>
-            <div className="mt-1.5 text-[11.5px] text-ink-secondary">PNG, JPEG, GIF, or WebP · up to 10 MB</div>
+            <div className="mt-1.5 text-[11.5px] text-ink-secondary">{t("botPanel.avatar.types")}</div>
             {crop !== "mascot" && bot.avatarUrl && <AvatarFraming bot={bot} disabled={busy} onPatch={onPatch} />}
           </div>
         )}
@@ -342,7 +342,7 @@ export function BotProfileAvatarCard({
           </Suspense>
         )}
         {editorTab === "bot" && crop !== "mascot" && (
-          <button type="button" onClick={() => onPatch({ avatarCrop: "mascot" })} className="text-[13px] text-ink-secondary hover:text-ink">Use the mascot</button>
+          <button type="button" onClick={() => onPatch({ avatarCrop: "mascot" })} className="text-[13px] text-ink-secondary hover:text-ink">{t("botPanel.avatar.useMascot")}</button>
         )}
         {editorTab === "generate" && (
           <AvatarImageGenerator
@@ -350,7 +350,6 @@ export function BotProfileAvatarCard({
             disabled={uploading}
             generating={generating}
             onGenerate={generate}
-            onSavingChange={setSavingConnection}
           />
         )}
 
@@ -365,7 +364,7 @@ export function BotProfileAvatarCard({
         <button
           ref={anchor}
           type="button"
-          aria-label="Edit avatar"
+          aria-label={t("botPanel.avatar.edit")}
           aria-expanded={editorOpen}
           onClick={() => setEditorOpen((open) => !open)}
           className="rounded-full outline-none focus-visible:ring-2 focus-visible:ring-accent"
@@ -387,7 +386,7 @@ export function BotProfileAvatarCard({
             ref={popover}
             data-avatar-popover=""
             role="dialog"
-            aria-label="Edit avatar"
+            aria-label={t("botPanel.avatar.edit")}
             className="fixed z-[1000] overflow-y-auto overscroll-contain rounded-2xl border border-hairline/50 bg-card p-3.5 shadow-2xl shadow-black/50"
             style={{ left: place.left, top: place.top, width: place.width, maxHeight: place.maxHeight, visibility: place.ready ? "visible" : "hidden" }}
           >

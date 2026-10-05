@@ -76,7 +76,7 @@ describe("browser installation opt-in", () => {
     const toggle = switchTag(markup, "Give this bot a built-in browser");
     expect(toggle).toContain('aria-checked="false"');
     expect(toggle).not.toContain("disabled=");
-    expect(markup.match(/<button[^>]*>Browser<\/button>/)?.[0]).toContain("disabled=");
+    expect(panel(false).match(/<button[^>]*data-works-on-choice="browser"[^>]*>/)?.[0]).toContain("disabled");
     expect(panel(false)).not.toContain("Install the browser engine");
     expect(panel(true)).not.toContain("Install the browser engine");
     expect(fixture.dispatch).not.toHaveBeenCalled();

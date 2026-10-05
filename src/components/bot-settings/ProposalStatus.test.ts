@@ -9,10 +9,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { StoreProvider, api, type Bot } from "@/state/store";
 import { BotEditorContext } from "./BotEditorContext";
 
-const fixture = vi.hoisted(() => ({ bots: [] as Bot[] }));
+const fixture = vi.hoisted(() => ({ bots: [] as Bot[], config: undefined as import("@/state/store").ConfigStatus | undefined }));
 vi.mock("@/state/store", async (importOriginal) => {
   const original = await importOriginal<typeof import("@/state/store")>();
-  return { ...original, useStore: () => ({ state: { ...original.initialState, bots: fixture.bots }, dispatch: vi.fn() }) };
+  return { ...original, useStore: () => ({ state: { ...original.initialState, bots: fixture.bots, config: fixture.config ?? original.initialState.config }, dispatch: vi.fn() }) };
 });
 vi.mock("../DesktopCapabilities", () => ({
   useDesktopCapabilities: () => ({ capabilities: { host: { homeDir: undefined } } }),
@@ -49,6 +49,7 @@ function makeBot(overrides: Partial<Bot> = {}): Bot {
 function makeDerived(): ReturnType<typeof import("./useBotSettingsDerived").useBotSettingsDerived> {
   return {
     patch: vi.fn(),
+    canEdit: () => true,
     engine: undefined,
     approvalMode: "ask",
     trustedModesAvailable: false,
@@ -146,6 +147,7 @@ describe("Edit Profile boundary markers in sections", () => {
   beforeEach(() => {
     vi.stubGlobal("window", {});
     fixture.bots = [];
+    fixture.config = undefined;
   });
   afterEach(() => vi.unstubAllGlobals());
 
@@ -158,7 +160,7 @@ describe("Edit Profile boundary markers in sections", () => {
       'Where this bot runs its shell and file tools.</div><div class="mt-1 text-[11.5px] leading-snug text-ink-secondary">The Primary Bot can propose this',
     );
     expect(markup).toContain(
-      'Browser is the built-in browser tab only; no desktop. Now: Auto.</div><div class="mt-1 text-[11.5px] leading-snug text-ink-secondary">Owner-only',
+      'This server has no browser engine.</div><div class="mt-1 text-[11.5px] leading-snug text-ink-secondary">Owner-only',
     );
     expect(markup).toContain("Inbound triggers wired to this bot.");
   });
@@ -197,5 +199,23 @@ describe("Edit Profile boundary markers in sections", () => {
     );
     expect(markup).not.toContain(CHIEF_COPY);
     expect(markup).not.toContain(OWNER_COPY);
+  });
+
+  it("keeps Primary Bot for the owner and hides the fields the server refuses", () => {
+    const principal = "pr_00000000-0000-4000-8000-000000000002";
+    fixture.config = { viewer: { operator: false, principalId: principal, email: "zara@example.test", name: "zara", role: "member", canCreateBots: true } } as import("@/state/store").ConfigStatus;
+    fixture.bots = [makeBot({ ownerUserId: principal, chiefOfStaff: true })];
+    const own = renderToStaticMarkup(
+      createElement(StoreProvider, null, createElement(PermissionsSection, { bot: makeBot({ ownerUserId: principal, chiefOfStaff: true }), derived: makeDerived() })),
+    );
+    expect(own).toContain("Primary Bot");
+    expect(own).not.toContain("Approval level");
+    expect(own).not.toContain("Ask me before contacting other bots");
+    expect(own).not.toContain("Additional teams");
+    const other = renderToStaticMarkup(
+      createElement(StoreProvider, null, createElement(PermissionsSection, { bot: makeBot({ ownerUserId: "pr_other" }), derived: makeDerived() })),
+    );
+    expect(other).toBe("");
+    fixture.config = undefined;
   });
 });

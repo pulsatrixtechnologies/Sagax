@@ -4,26 +4,17 @@ import { LIVE_VOICE_OPTIONS } from "../../shared/live-call";
 import { t } from "@/lib/i18n";
 import { api, useStore, type ConfigStatus } from "@/state/store";
 import type { LiveSettings } from "../../shared/wire";
+import { SettingsText } from "./SettingsLink";
+import { Switch } from "./SettingsPrimitives";
 import { LiveKeySetup } from "./LiveKeySetup";
 
 const IDLE_CHOICES = [1, 2, 3, 5, 10, 15, 30, 60];
 
-/** The gear in the call bar. Voice, typed replies, idle minutes and the key.
- * It takes focus when it opens, so Escape closes it; `onClose` (Escape) puts
- * focus back on the gear. */
-export function LiveCallSettings({ onClose }: { onClose: () => void }) {
+function useLiveSettingsEditor() {
   const { state, dispatch } = useStore();
   const live: LiveSettings = state.config?.live ?? { enabled: false, configured: false, voice: "", readTypedReplies: true, idleMinutes: 5 };
   const [saving, setSaving] = useState(false);
-  const [changingKey, setChangingKey] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const typedHintId = useId();
-  // Stable, so it runs once when the popover mounts, not on every save.
-  const focusOnOpen = useCallback((dialog: HTMLDivElement | null) => {
-    dialog?.querySelector<HTMLElement>("select, input, button")?.focus();
-  }, []);
-  const voice = live.voice || "marin";
-  const known = LIVE_VOICE_OPTIONS.some((option) => option.id === voice);
 
   const save = async (patch: Partial<Pick<LiveSettings, "voice" | "readTypedReplies" | "idleMinutes">>) => {
     setSaving(true);
@@ -55,6 +46,19 @@ export function LiveCallSettings({ onClose }: { onClose: () => void }) {
     }
   };
 
+  return { live, saving, error, save, removeKey };
+}
+
+/** The gear in the call bar. The next call's voice only. The key, idle
+ * minutes and typed replies are installation settings. */
+export function LiveCallSettings({ onClose }: { onClose: () => void }) {
+  const { live, saving, error, save } = useLiveSettingsEditor();
+  const focusOnOpen = useCallback((dialog: HTMLDivElement | null) => {
+    dialog?.querySelector<HTMLElement>("select, input, button")?.focus();
+  }, []);
+  const voice = live.voice || "marin";
+  const known = LIVE_VOICE_OPTIONS.some((option) => option.id === voice);
+
   return (
     <div
       ref={focusOnOpen}
@@ -81,22 +85,42 @@ export function LiveCallSettings({ onClose }: { onClose: () => void }) {
         </select>
       </label>
       <div className="-mt-2 text-[11.5px] text-ink-tertiary">{t("call.live.voiceNext")}</div>
-      <label className="flex items-center justify-between gap-2">
-        <span className="text-ink-secondary">{t("call.live.readTyped")}</span>
-        <input
-          type="checkbox"
+      <div className="text-[11.5px] text-ink-tertiary">
+        <SettingsText text={t("voice.live.inSettings")} links={{ settings: { section: "connections", cardId: "connections.voice" } }} />
+      </div>
+      {error && <div className="text-[12px] text-danger">{error}</div>}
+    </div>
+  );
+}
+
+/** Key, silence limit and typed replies. Installation-wide, so they live in
+ * Settings rather than on the call bar. */
+export function LiveCallInstallationSettings() {
+  const { live, saving, error, save, removeKey } = useLiveSettingsEditor();
+  const [changingKey, setChangingKey] = useState(false);
+  const typedHintId = useId();
+
+  return (
+    <div className="flex flex-col gap-3 text-[13px]">
+      <div className="flex items-center justify-between gap-4">
+        <div>
+          <div className="font-medium text-ink">{t("call.live.readTyped")}</div>
+          <div id={typedHintId} className="mt-0.5 text-[11.5px] leading-relaxed text-ink-secondary">{t("call.live.readTypedHint")}</div>
+        </div>
+        <Switch
           checked={live.readTypedReplies}
           disabled={saving}
+          aria-label={t("call.live.readTyped")}
           aria-describedby={typedHintId}
-          onChange={(event) => void save({ readTypedReplies: event.target.checked })}
+          onClick={() => void save({ readTypedReplies: !live.readTypedReplies })}
         />
-      </label>
-      <div id={typedHintId} className="-mt-2 text-[11.5px] text-ink-tertiary">{t("call.live.readTypedHint")}</div>
+      </div>
       <label className="flex items-center justify-between gap-2">
         <span className="text-ink-secondary">{t("call.live.idle")}</span>
         <select
           value={live.idleMinutes}
           disabled={saving}
+          aria-label={t("call.live.idle")}
           onChange={(event) => void save({ idleMinutes: Number(event.target.value) })}
           className="rounded-md border border-hairline/60 bg-panel px-2 py-1 text-ink outline-none"
         >

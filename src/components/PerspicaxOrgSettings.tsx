@@ -24,7 +24,7 @@ import { Card } from "./SettingsPrimitives";
 import { MyRoutineDelegation } from "./settings/MyRoutineDelegation";
 import { OrgSharing } from "./settings/OrgSharing";
 import { InterimPeople } from "./settings/InterimPeople";
-import { BotWorkplaceSettings } from "./settings/BotWorkplaceSettings";
+
 import { OrgPluginPolicy } from "./settings/OrgPluginPolicy";
 import { OrgFullAccessPolicy } from "./settings/OrgFullAccessPolicy";
 
@@ -123,7 +123,6 @@ export function PerspicaxOrgSettings({ org, onChanged }: { org: PerspicaxOrg; on
       </Card>
       {interimVisible && interim?.until ? <InterimPeople until={interim.until} onChanged={onChanged} /> : null}
       <MyRoutineDelegation issuer={org.org.identity.issuer} />
-      <BotWorkplaceSettings />
       <OrgSharing admin={admin} />
       {admin && <OrgFullAccessPolicy initial={org.settings.allowFullAccess !== false} onChanged={onChanged} />}
       {admin && <OrgPluginPolicy marketplaces={org.settings.pluginMarketplaces ?? { mode: "any" }} github={org.settings.github ?? { clientId: null, fromEnvironment: false }} onChanged={onChanged} />}

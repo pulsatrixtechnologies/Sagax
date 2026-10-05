@@ -684,8 +684,8 @@ export class Store {
 
   constructor(
     defaultSelection: () => ModelSelection,
-    /** Workspace-wide new-bot defaults (config newBots), applied to every
-     * new bot's selection whichever path created it. */
+    /** Template effort applied to every new bot's selection, whichever path
+     * created it. */
     completeNewBotSelection: (selection: ModelSelection) => ModelSelection = (selection) => selection,
   ) {
     this.defaultSelection = defaultSelection;
@@ -2333,6 +2333,19 @@ export class Store {
     if (changed.length) this.saveBots();
     for (const bot of changed) this.emit({ type: "bot", botId: bot.id });
     return changed;
+  }
+
+  /** Step this bot down from Primary Bot. The role is not handed to anyone
+   * else. Managed teams belonged to the role, so they go with it. */
+  clearPrimaryBot(id: string): BotRecord[] | null {
+    const selected = this.bot(id);
+    if (!selected) return null;
+    if (!selected.chiefOfStaff) return [];
+    selected.chiefOfStaff = false;
+    delete selected.managedSections;
+    this.saveBots();
+    this.emit({ type: "bot", botId: selected.id });
+    return [selected];
   }
 
   /** Leaders of an imported team (a package's leader, a backup's former

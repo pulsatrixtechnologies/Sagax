@@ -65,9 +65,11 @@ export function selectDefaultModelSelection(
   return { instanceId: pick?.instanceId ?? "", model: pick?.models.default ?? "" };
 }
 
-/** Complete a new bot's selection with the workspace's new-bot effort. An
- * explicit effort or model variant is the caller's choice and wins; an engine
- * that does not offer the level keeps sending none rather than failing turn 1. */
+/** Complete a new bot's selection with the template's effort
+ * (`newBotDefaults.profile.modelSelection.effort`). `defaultModelSelection`
+ * is the CLI mirror of that selection; the template wins. An explicit effort
+ * or model variant is the caller's choice and wins; an engine that does not
+ * offer the level keeps sending none rather than failing turn 1. */
 export function withNewBotEffort(
   selection: ModelSelection,
   effort: EffortLevel | undefined,

@@ -16,5 +16,5 @@ export interface SetupStep {
   id: "identity" | "soul" | "folder" | "apps" | "schedule";
   label: string;
   done: boolean;
-  section?: "identity" | "soul" | "access" | "routines";
+  section?: "details" | "soul" | "access" | "routines";
 }

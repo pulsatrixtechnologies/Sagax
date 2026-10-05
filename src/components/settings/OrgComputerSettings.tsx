@@ -1,6 +1,5 @@
-// Settings > Computer on an organization server: where bots work (one
-// sentence: each bot's Works on decides, Auto being the server environment),
-// the Local VM on their own computer
+// Settings > Computer on an organization server: where bots work (the
+// person's computer, routines, and network), the Local VM on their own computer
 // (found through their desktop app: which runtime, its state, "Set up in one
 // click" with visible steps, install offers) and their server environment
 // (one line, state, resources, Reset behind "..." with a confirmation, and
@@ -16,6 +15,7 @@ import { loadServerEnvironment, resetServerEnvironment, type ServerEnvironmentSt
 import { ServerComputerScreen, useDesktopLocalVm } from "../computer/OrgComputerTab";
 import { screenStateLabel } from "../computer/ComputerScreen";
 import { Card } from "../SettingsPrimitives";
+import { BotWorkplaceSettings } from "./BotWorkplaceSettings";
 import { serverEnvironmentStateText } from "./MyServerEnvironment";
 
 export function OrgComputerSettings({ bridge, initialLocal = null, initialServer = null, confirm = (text: string) => window.confirm(text) }: {
@@ -26,7 +26,7 @@ export function OrgComputerSettings({ bridge, initialLocal = null, initialServer
 }) {
   return (
     <>
-      <Card cardId="computer.orgWhere" title={t("orgComputer.where")} subtitle={t("orgComputer.whereHelp")} />
+      <BotWorkplaceSettings status={bridge} />
       <LocalVmCard bridge={bridge} initial={initialLocal} confirm={confirm} />
       <ServerEnvironmentCard initial={initialServer} confirm={confirm} />
     </>

@@ -19,6 +19,7 @@ import type { BotVisibility, CardAnswerer, CloudBackend, ConnectorToolGrant, Eff
 import type { TurnDigest } from "../../shared/digest";
 import type { BusySendMode, ParallelTaskRef, TaskParallelOf } from "../../shared/parallel-tasks";
 import type { ToolScope } from "../../shared/tool-scope";
+import type { ViewerCapabilities } from "../../shared/viewer-capabilities";
 import type { ModelVariantOption, RuntimeEvent } from "../../shared/runtime-events";
 import type { MausColor, MausMotion } from "@/lib/mascot";
 import type { BotAvatarCrop } from "../../shared/bot-avatar";
@@ -697,8 +698,14 @@ export interface ConfigStatus {
   box: { configured: boolean; included?: boolean };
   vps: { configured: boolean; sshAlias: string };
   rooms: { turnTimeoutMinutes: number };
-  /** Workspace defaults for new bots; absent effort = no level is sent. */
-  newBots?: { effort?: EffortLevel };
+  /** Visible slice of the new-bot template. Absent effort means no level is sent. */
+  newBotDefaults?: {
+    profile?: {
+      modelSelection?: ModelSelection;
+      approvalMode?: "ask" | "auto" | "full" | "custom";
+      computer?: "cloud" | "vm" | "local" | "browser" | "off" | null;
+    };
+  };
   threads?: { maxConcurrentPerBot: number; maxParallelPerPerson?: number; eventLogMaxBytes?: number; eventLogRetentionDays?: number };
   automaticRecovery?: { enabled: boolean; backup?: ModelSelection };
   localVm: { mode: "shared" | "per-bot" | "pool"; maxInstances: number; idleTimeoutMinutes?: number };
@@ -793,6 +800,8 @@ export interface ConfigViewer {
   profileManageUrl?: string;
   /** Their Perspicax avatar as this server serves it. */
   avatarUrl?: string;
+  /** Which installation screens this viewer may change. Absent on an older server. */
+  capabilities?: ViewerCapabilities;
 }
 
 export interface ManagedPolicySummary {
@@ -969,7 +978,6 @@ export type AppSettingsSection =
   | "decisionModel"
   | "engines"
   | "companion"
-  | "remote"
   | "computer"
   | "usage"
   | "people"
@@ -977,19 +985,18 @@ export type AppSettingsSection =
   | "activity"
   | "backups"
   | "workspaces"
-  | "achievements"
-  | "skills";
+  | "achievements";
 
 export type BotSettingsSection =
   | "overview"
-  | "identity"
+  /** Deep link to the Details tab. Not a row in More. */
+  | "details"
   | "slack"
   | "soul"
   | "skills"
   | "memory"
   | "routines"
   | "access"
-  | "worksOn"
   | "model"
   | "permissions"
   | "voice"

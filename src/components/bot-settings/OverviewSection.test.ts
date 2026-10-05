@@ -45,7 +45,7 @@ describe("OverviewSection", () => {
   it("does not offer setup ideas", () => {
     const markup = render(createElement(OverviewSection, {
       overview: { ...sentences, setup: [
-        { id: "identity", label: "Identity", done: true, section: "identity" },
+        { id: "identity", label: "Identity", done: true, section: "details" },
         { id: "folder", label: "Choose a project folder", done: false, section: "access" },
         { id: "schedule", label: "Add a routine", done: false, section: "routines" },
       ] }, prompt: null, onOpen: vi.fn(),
@@ -99,7 +99,7 @@ describe("OverviewSection", () => {
       createElement(OverviewSection, { overview: sentences, refreshError: true, prompt, onOpen: vi.fn() }),
     );
 
-    expect(markup).toContain("Couldn’t refresh — showing the last loaded overview.");
+    expect(markup).toContain("Couldn’t refresh. Showing the last loaded overview.");
     // The data itself must still be there — a refresh failure is not a load
     // failure, so none of the sections should be replaced by an error state.
     for (const line of sentences.wont) {

@@ -200,7 +200,8 @@ describe("voice set-up pop-up", () => {
     vi.stubGlobal("document", { body: {}, activeElement: null });
     vi.stubGlobal("window", { addEventListener: vi.fn(), removeEventListener: vi.fn() });
     const view = render();
-    // The key field stays (to replace the key), ahead of the picker.
+    // A field ahead of the picker must not take focus. The engine key
+    // lives in Settings, so the picker is the first voice control.
     const keyField = new FakeElement();
     const voicePicker = new FakeElement();
     const pane = paneWith({ voicePicker, firstField: keyField });
@@ -215,23 +216,35 @@ describe("voice set-up pop-up", () => {
   it("finds the voice picker where VoiceSettings draws it, which is only once the engine is set up", async () => {
     const actual = await vi.importActual<typeof import("./VoiceSettings")>("./VoiceSettings");
     const card = () => renderToStaticMarkup(createElement(actual.VoiceSettings, { bot: pepper, onPatch: () => {} }));
-    const key = 'aria-label="ElevenLabs key"';
     const pickerTag = (html: string) => html.match(/<select\b[^>]*>/g)?.find((tag) => tag.includes("data-voice-picker"));
 
-    // No ElevenLabs key yet: its field, and no picker.
+    // The engine key is not on this card. Until the engine is set up, the
+    // card points at Settings and draws no picker.
     fixture.config = { tts: { configured: false, provider: "elevenlabs" } };
-    const needsKey = card();
-    expect(needsKey).toContain(key);
-    expect(pickerTag(needsKey)).toBeUndefined();
+    const needsEngine = card();
+    expect(needsEngine).not.toContain("ElevenLabs key");
+    expect(needsEngine).not.toContain('aria-label="Voice engine"');
+    expect(needsEngine).toContain("Set up the voice engine");
+    expect(needsEngine).toContain(">API keys<");
+    expect(pickerTag(needsEngine)).toBeUndefined();
 
-    // Key saved: the field is still there, first, and Pepper's voice picker
-    // follows it.
     fixture.config = { tts: { configured: true, provider: "elevenlabs" } };
     const needsVoice = card();
     const tag = pickerTag(needsVoice);
     expect(tag).toContain('aria-label="Pepper&#x27;s voice"');
-    expect(needsVoice.indexOf(key)).toBeGreaterThan(-1);
-    expect(needsVoice.indexOf(key)).toBeLessThan(needsVoice.indexOf(tag!));
+    expect(needsVoice).not.toContain("ElevenLabs key");
+    expect(needsVoice).not.toContain("Set up the voice engine");
+
+    // A paired Mac cannot edit the host engine from the bot panel.
+    fixture.config = { tts: { configured: false, provider: "elevenlabs" } };
+    const locked = renderToStaticMarkup(createElement(actual.VoiceSettings, {
+      bot: pepper,
+      onPatch: () => {},
+      workspaceConfigurationLocked: true,
+    }));
+    expect(locked).toContain("The host has not set up a voice engine.");
+    expect(locked).not.toContain(">API keys<");
+    expect(locked).not.toContain("ElevenLabs key");
   });
 
   it("keeps Tab inside, and brings focus back when it has fallen out", () => {
