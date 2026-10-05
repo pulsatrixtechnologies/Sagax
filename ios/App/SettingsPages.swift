@@ -3,14 +3,18 @@
 // §6 and §7.
 import CompanionCore
 import SwiftUI
+import UIKit
 
 // MARK: - Account (16)
 
 struct AccountSettingsView: View {
+    @Environment(\.themePalette) var themePalette
     let closeSheet: (() -> Void)?
 
     @EnvironmentObject private var session: Session
     @EnvironmentObject private var model: SettingsModel
+    @ObservedObject private var photos = AccountPhotoStore.shared
+    @EnvironmentObject private var navigator: SettingsNavigator
     @State private var confirmingSignOut = false
     @State private var confirmingDelete = false
     @State private var deleting = false
@@ -26,7 +30,7 @@ struct AccountSettingsView: View {
     var body: some View {
         SettingsPage(title: "Account") {
             SettingsCard {
-                AccountCardRow(name: model.displayName, detail: model.detail, photo: model.photo)
+                AccountCardRow(name: model.displayName, detail: model.detail, photo: session.accountPhoto)
             }
             // Card bottom to the next card top: 49, the label between.
             SettingsSectionLabel(text: "Switch Account")
@@ -38,7 +42,9 @@ struct AccountSettingsView: View {
                         title: LocalizedStringKey(stringLiteral: accountLabel(for: connection, current: current)),
                         accessory: current ? .check : .none,
                         height: 44.33,
-                        identifier: "account-switch.\(connection.id)"
+                        identifier: "account-switch.\(connection.id)",
+                        leading: AnyView(SwitchAccountPhoto(connection: connection, current: current, name: current ? model.displayName : connection.name)),
+                        accessibilityValueText: switchPhoto(for: connection, current: current) == nil ? nil : "photo"
                     ) {
                         guard !current else { return }
                         closeSheet?()
@@ -62,7 +68,18 @@ struct AccountSettingsView: View {
                 }
             }
             SettingsFooter(text: "Permanently deletes your Sagax account. This can't be undone.")
+            if session.connection != nil {
+                SettingsSpacer(SettingsMetrics.cardGap)
+                SettingsCard {
+                    // the paired computer's address, refresh and forget
+                    SettingsRow(title: "Connection details", accessory: .chevron, height: 44.33, identifier: "account-connection") {
+                        navigator.sheet = .connection
+                    }
+                }
+            }
         }
+        // Each saved account's own photo, read through its own server.
+        .task { await session.refreshSavedAccountPhotos() }
         .confirmationDialog("Sign out of this computer?", isPresented: $confirmingSignOut, titleVisibility: .visible) {
             Button("Sign Out", role: .destructive) {
                 closeSheet?()
@@ -83,6 +100,10 @@ struct AccountSettingsView: View {
                 notice.afterwards?()
             })
         }
+    }
+
+    private func switchPhoto(for connection: Connection, current: Bool) -> UIImage? {
+        current ? session.accountPhoto : photos.image(for: connection.id)
     }
 
     /// The email for the account this phone is signed in as; the computer's
@@ -124,6 +145,22 @@ struct AccountSettingsView: View {
     }
 }
 
+/// A Switch Account row's photo: the account in use shows the session's
+/// photo, the others the last one kept for them (AccountPhotoStore), else
+/// their initial.
+private struct SwitchAccountPhoto: View {
+    let connection: Connection
+    let current: Bool
+    let name: String
+
+    @EnvironmentObject private var session: Session
+    @ObservedObject private var photos = AccountPhotoStore.shared
+
+    var body: some View {
+        AccountPhoto(photo: current ? session.accountPhoto : photos.image(for: connection.id), name: name, size: 28)
+    }
+}
+
 enum ParityMode {
     /// True only in a DEBUG parity launch.
     static var isActive: Bool {
@@ -138,6 +175,7 @@ enum ParityMode {
 // MARK: - Bot Computer (21)
 
 struct BotComputerSettingsView: View {
+    @Environment(\.themePalette) var themePalette
     @EnvironmentObject private var session: Session
     @State private var status: ComputerStatus?
     @State private var loadError: String?
@@ -262,6 +300,7 @@ struct BotComputerSettingsView: View {
 // MARK: - Auto-review Rules
 
 struct AutoReviewRulesView: View {
+    @Environment(\.themePalette) var themePalette
     @EnvironmentObject private var model: SettingsModel
 
     var body: some View {
@@ -316,6 +355,7 @@ struct AutoReviewRulesView: View {
     }
 
     private struct RuleRow: View {
+        @Environment(\.themePalette) var themePalette
         let rule: AutoReviewRule
 
         var body: some View {
@@ -338,6 +378,7 @@ struct AutoReviewRulesView: View {
 // MARK: - Time zone
 
 struct TimeZonePickerView: View {
+    @Environment(\.themePalette) var themePalette
     @EnvironmentObject private var model: SettingsModel
     @Environment(\.dismiss) private var dismiss
     @Environment(\.settingsPop) private var settingsPop
@@ -395,6 +436,7 @@ struct TimeZonePickerView: View {
 
 /// The glass search capsule: magnifier, field, measured at 40.67 pt.
 struct SettingsSearchField: View {
+    @Environment(\.themePalette) var themePalette
     let prompt: LocalizedStringKey
     @Binding var text: String
     var identifier: String
@@ -403,8 +445,8 @@ struct SettingsSearchField: View {
         HStack(spacing: 7.67) {
             Image(systemName: "magnifyingglass")
                 .font(.system(size: 15.3, weight: .medium))
-                .foregroundStyle(Color(hex: 0x6B6B6D))
-            TextField("", text: $text, prompt: Text(prompt).foregroundColor(Color(hex: 0x6C6B6F)).tracking(SettingsMetrics.tracking135))
+                .foregroundStyle(Theme.parity(Color(hex: 0x6B6B6D), Theme.placeholder))
+            TextField("", text: $text, prompt: Text(prompt).foregroundColor(Theme.parity(Color(hex: 0x6C6B6F), Theme.placeholder)).tracking(SettingsMetrics.tracking135))
                 .font(Theme.Font.rowTitle)
                 .foregroundStyle(Theme.textPrimary)
                 .textInputAutocapitalization(.never)

@@ -29,6 +29,7 @@ import { packageUrlFromCommandLine, packageUrlFromDeepLink } from "./package-lin
 import { createOrganizationEntry, ORGANIZATION_DEEP_LINK, isOrganizationDeepLink, takeOrganizationDeepLink, organizationRestartIntent, withOrganizationRestartIntent, withoutOrganizationRestartIntent } from "./organization-entry.mjs";
 import { createRotatingLog } from "./log-file.mjs";
 import { createOrgJoin, forgetDetail } from "./org-join.mjs";
+import { createOwnerIdentitySync } from "./owner-identity.mjs";
 import { trafficLightsForSkin, windowChromeOptions } from "./window-chrome.mjs";
 import { createStartupScreen } from "./startup-screen.mjs";
 import { createSystemTray } from "./system-tray.mjs";
@@ -348,6 +349,8 @@ function watchSignInRedeem(win, origin) {
     if (details.method !== "POST") return;
     signInLog(`redeem POST ${origin}/api/auth/pair answered ${details.statusCode}${details.responseHeaders && Object.keys(details.responseHeaders).some((h) => h.toLowerCase() === "set-cookie") ? " with a session cookie" : ""}`);
     stop();
+    // Signed in: the local server learns who its owner is there.
+    if (details.statusCode >= 200 && details.statusCode < 300) void ownerIdentitySync.refresh("sign-in");
   });
   requests.onErrorOccurred(filter, (details) => {
     signInLog(`redeem POST ${origin}/api/auth/pair failed (${details.error})`);
@@ -576,6 +579,24 @@ const UTILITY_SERVER_STOP_TIMEOUT_MS = 6_500;
 const trustedApprovalMode = createTrustedApprovalModeCoordinator({ randomId: randomUUID });
 const desktopMutationToken = randomBytes(32).toString("base64url");
 const companionMutationToken = randomBytes(32).toString("base64url");
+// The owner's organization identity and avatar for the local server
+// (electron/owner-identity.mjs): read with this app's organization cookie,
+// handed over the private parent port, never stored here.
+const ownerIdentitySync = createOwnerIdentitySync({
+  environments: () => environmentsState,
+  fetch: (url, init) => session.defaultSession.fetch(url, { ...init, bypassCustomProtocolHandlers: true }),
+  post: (message) => {
+    if (!serverProc) return false;
+    try {
+      serverProc.postMessage(message);
+      return true;
+    } catch (error) {
+      slog(`owner identity sync failed: ${error?.message ?? error}`);
+      return false;
+    }
+  },
+  log: slog,
+});
 const serverSupervisor = createServerSupervisor({
   restart: () => startServerOn(SERVER_PORT),
   stop: stopUtilityServer,
@@ -587,6 +608,9 @@ const serverSupervisor = createServerSupervisor({
     // Re-read the latest account credentials; registration may have completed
     // while the replacement child's health probe was pending.
     syncManagedComposioCredentials();
+    // Who owns this computer in their organization (name, address, avatar).
+    void ownerIdentitySync.serverReady();
+    ownerIdentitySync.start();
     // A restarted runtime has no library catalog until main sends it again.
     orgLibrary?.runtimeReady();
     if (managedDesktop) void managedDesktop.refresh().catch(() => {});
@@ -2347,6 +2371,8 @@ function persistEnvironments(next) {
   desktopBridge().sync();
   refreshApplicationMenu();
   if (mainWindow && !mainWindow.isDestroyed()) mainWindow.setTitle(workspaceWindowTitle(environmentsState, desktopRemoteAccess));
+  // A server saved, marked, forgotten or left: the owner identity follows.
+  void ownerIdentitySync.refresh("servers changed");
 }
 
 async function workspaceMenuAction(action) {

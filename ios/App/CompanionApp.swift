@@ -6,6 +6,7 @@
 // down at a known point. Coming back asks the harness what was missed rather
 // than asking for everything.
 import SwiftUI
+import UIKit
 import CompanionCore
 import UserNotifications
 
@@ -13,10 +14,11 @@ import UserNotifications
 struct CompanionApp: App {
     @StateObject private var session = Session()
     @Environment(\.scenePhase) private var scenePhase
+    /// ⌘, (the app menu's Settings) for the iPad's desktop shell.
+    @UIApplicationDelegateAdaptor(SagaxAppDelegate.self) private var appDelegate
     @State private var liveActivities = LiveActivityBridge()
     @State private var widgetSync = WidgetSyncBridge.makeAppGroupBridge()
     @AppStorage(PrefKey.language) private var language = AppLanguage.system.rawValue
-    @AppStorage(PrefKey.appearanceMode) private var appearance = AppearanceMode.system.rawValue
 
     var body: some Scene {
         WindowGroup {
@@ -40,10 +42,10 @@ struct CompanionApp: App {
                 // person changes deliberately and almost never. `session` lives
                 // on the App, not here, so the connection survives.
                 .id(language)
-                // Settings > App > Appearance: System follows the device, Dark forces it.
-                .preferredColorScheme((AppearanceMode(rawValue: appearance) ?? .system).colorScheme)
-                // Settings > App > Appearance: Black or Dim, everywhere.
-                .modifier(ThemeToneRefresh())
+                // Settings > App > Appearance: the skin, everywhere (ThemeStore.swift).
+                .themeRoot()
+                // Settings > Achievements: reads, reports and unlock banners (ST9).
+                .achievementsHost(session)
                 .onAppear {
                     SagaxSharedInbox.removeDirectories(olderThan: 60 * 60)
                     session.connect()
@@ -57,6 +59,8 @@ struct CompanionApp: App {
                         SagaxSharedInbox.removeDirectories(olderThan: 60 * 60)
                         session.connect()
                         Task { await session.refreshNotificationAuthorization() }
+                        // A photo changed in Perspicax shows on the way back.
+                        Task { await session.loadAccount() }
                     case .background:
                         session.linger()
                         if !session.isDemo { widgetSync.flush(session.state, connectionID: session.connection?.id) }
@@ -73,6 +77,7 @@ struct CompanionApp: App {
 }
 
 struct RootView: View {
+    @Environment(\.themePalette) var themePalette
     @EnvironmentObject private var session: Session
     @AppStorage("companion.onboarding.welcomeSeen") private var hasSeenWelcome = false
     @AppStorage("companion.onboarding.notificationsSeen") private var hasSeenNotificationPrompt = false
@@ -110,8 +115,9 @@ struct RootView: View {
                 }
                 .onAppear { hasSeenWelcome = true }
             case .chats:
-                ChatListView()
-                    .parityLauncher()
+                // the phone's roster, or on an iPad the desktop shell
+                // (Desktop/DesktopShell.swift); each applies the parity launcher
+                HomeRoot()
                     .onAppear {
                         hasSeenWelcome = true
                         // This is either an existing pairing or a new pairing
@@ -134,7 +140,7 @@ struct RootView: View {
                 )
             }
         }
-        .background(Color(uiColor: .systemBackground).ignoresSafeArea())
+        .background(Theme.bg.ignoresSafeArea())
         .onValueChange(of: session.pairingInvite) { invite in
             guard invite != nil else { return }
             hasSeenWelcome = true
@@ -242,6 +248,7 @@ struct RootView: View {
 /// phone on the computer — which is exactly what that button is for, so the
 /// honest thing is to say so and offer to pair again.
 struct UnpairedView: View {
+    @Environment(\.themePalette) var themePalette
     let onPairAgain: () -> Void
     let onChooseAnother: (() -> Void)?
 
@@ -262,5 +269,26 @@ struct UnpairedView: View {
                 }
             }
         }
+    }
+}
+
+/// The app menu's Settings (⌘,), as on the desktop. iPadOS keeps ⌘, for its
+/// own Settings item, so the item is replaced here and opens the desktop
+/// shell's Settings modal (I5); the phone has no menu bar.
+final class SagaxAppDelegate: UIResponder, UIApplicationDelegate {
+    override func buildMenu(with builder: UIMenuBuilder) {
+        super.buildMenu(with: builder)
+        guard builder.system == .main else { return }
+        builder.remove(menu: .preferences)
+        let settings = UIKeyCommand(
+            title: AppStrings.localized("Settings…"), action: #selector(openDesktopSettings),
+            input: ",", modifierFlags: .command
+        )
+        settings.wantsPriorityOverSystemBehavior = true
+        builder.insertSibling(UIMenu(options: .displayInline, children: [settings]), afterMenu: .about)
+    }
+
+    @objc func openDesktopSettings() {
+        NotificationCenter.default.post(name: .desktopOpenSettings, object: nil)
     }
 }

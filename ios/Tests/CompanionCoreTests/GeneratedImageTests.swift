@@ -27,4 +27,14 @@ final class GeneratedImageTests: XCTestCase {
         XCTAssertTrue(message.generatedImages.isEmpty)
         XCTAssertEqual(message.text, "Still visible")
     }
+
+    func testFileAttachmentsKeepTheirNameAndSkipImages() throws {
+        let source = #"{"id":"files","role":"bot","kind":"text","at":1,"text":"Joints.","attachments":[{"kind":"image","path":"/tmp/a.png"},{"kind":"file","path":"/data/attachments/EXEC_BRIEF.md","name":"EXEC_BRIEF.md","mime":"text/markdown"},{"kind":"file","path":"/data/attachments/EXEC_BRIEF.md","name":"dup"},{"kind":"file","path":"/data/x/report.md"},{"kind":"file","path":" "}]}"#
+        let message = try JSONDecoder().decode(Message.self, from: Data(source.utf8))
+        XCTAssertEqual(message.fileAttachments, [
+            DisplayedMessageAttachment(kind: .file, path: "/data/attachments/EXEC_BRIEF.md", name: "EXEC_BRIEF.md"),
+            DisplayedMessageAttachment(kind: .file, path: "/data/x/report.md", name: "report.md"),
+        ])
+        XCTAssertEqual(message.generatedImages.count, 1)
+    }
 }

@@ -4,6 +4,7 @@
 import SwiftUI
 
 struct SagaxWelcomeView: View {
+    @Environment(\.themePalette) var themePalette
     let onOrganization: () -> Void
     let onComputer: () -> Void
     let onDemo: () -> Void

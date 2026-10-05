@@ -44,9 +44,9 @@ enum HomeMetrics {
     static let previewIconBox: CGFloat = 12
     static let previewIconGap: CGFloat = 8
 
-    static let font12 = Font.system(size: 12)
-    static let name = Font.system(size: 14, weight: .medium)
-    static let chevron = Color(hex: 0x3C3C3D)
+    static var font12: Font { Theme.font(12) }
+    static var name: Font { Theme.font(14, .medium) }
+    static var chevron: Color { Theme.parity(Color(hex: 0x3C3C3D), Theme.chevron) }
 }
 
 // MARK: - Collapsed sections
@@ -70,19 +70,19 @@ struct CollapsedSections {
 
 // MARK: - Header
 
-/// The person's photo in a 44 pt glass ring (38 pt photo inset 3 pt).
+/// The person's photo in a 44 pt glass ring (38 pt photo inset 3 pt). A tap
+/// opens the account menu (the desktop's `SidebarProfileMenu`).
 struct HomeAccountButton: View {
-    let action: () -> Void
+    @Environment(\.themePalette) var themePalette
+    let select: (AccountMenuItem) -> Void
     @EnvironmentObject private var session: Session
-    @State private var photo: UIImage?
 
     var body: some View {
-        Button {
-            Haptics.selection()
-            action()
+        Menu {
+            HomeAccountMenuItems(select: select)
         } label: {
             ZStack {
-                if let photo {
+                if let photo = session.accountPhoto {
                     Image(uiImage: photo).resizable().scaledToFill()
                 } else if let chief = fallbackBot {
                     Theme.card
@@ -98,12 +98,10 @@ struct HomeAccountButton: View {
         }
         .buttonStyle(.plain)
         .themeGlass(Circle())
-        .accessibilityLabel(Text("Settings"))
+        .accessibilityLabel(Text("Account"))
         .accessibilityIdentifier("home-account")
-        .task(id: session.account?.avatarUrl) {
-            guard session.account?.avatarUrl != nil else { photo = nil; return }
-            if let data = await session.accountPhotoData() { photo = UIImage(data: data) }
-        }
+        // "photo" once the person's own picture shows (UI tests wait on it).
+        .accessibilityValue(Text(verbatim: session.accountPhoto == nil ? "" : "photo"))
     }
 
     /// Without a photo or a name, the paired computer's own mascot: its
@@ -123,10 +121,12 @@ struct HomeAccountButton: View {
 /// A pinned bot or group: an 85 pt mascot, its name centred beneath with
 /// the unread dot after it.
 struct HomePinnedCell: View {
+    @Environment(\.themePalette) var themePalette
     let chat: Chat
     var state: MausState = .idle
 
     @EnvironmentObject private var session: Session
+    @ObservedObject private var people = PeopleDirectory.shared
 
     var body: some View {
         VStack(spacing: 0) {
@@ -135,17 +135,21 @@ struct HomePinnedCell: View {
                 case let .bot(bot):
                     BotMascotView(bot: bot, size: HomeMetrics.pinnedMascot, state: state, animated: state.showsActivity)
                 case let .room(room):
-                    GroupMascotView(
-                        members: room.memberIds.compactMap { session.state.bot($0) },
-                        size: HomeMetrics.pinnedMascot,
-                        background: Theme.bg
-                    )
+                    if let peer = people.peer(room, session: session) {
+                        PersonAvatar(initials: peer.initials, size: HomeMetrics.pinnedMascot)
+                    } else {
+                        GroupMascotView(
+                            members: room.memberIds.compactMap { session.state.bot($0) },
+                            size: HomeMetrics.pinnedMascot,
+                            background: Theme.bg
+                        )
+                    }
                 }
             }
             .frame(width: HomeMetrics.pinnedMascot, height: HomeMetrics.pinnedMascot)
 
             HStack(spacing: HomeMetrics.unreadGap) {
-                Text(verbatim: chat.name)
+                Text(verbatim: people.name(chat, session: session))
                     .font(.system(size: 11.65))
                     .foregroundStyle(Theme.textSecondaryHome)
                     .lineLimit(1)
@@ -172,6 +176,7 @@ struct HomePinnedCell: View {
 // MARK: - Section header
 
 struct HomeSectionHeader: View {
+    @Environment(\.themePalette) var themePalette
     let title: String
     let collapsed: Bool
     let toggle: () -> Void
@@ -218,6 +223,7 @@ struct HomeRowStatus: Equatable {
 /// One bot or group on two lines: 42 pt mascot, name, role chip and time,
 /// then the preview with its leading icon.
 struct HomeChatRow: View {
+    @Environment(\.themePalette) var themePalette
     let chat: Chat
     let preview: RosterPreviewLine
     let stamp: String
@@ -225,6 +231,7 @@ struct HomeChatRow: View {
     var state: MausState = .idle
 
     @EnvironmentObject private var session: Session
+    @ObservedObject private var people = PeopleDirectory.shared
 
     var body: some View {
         HStack(alignment: .top, spacing: 0) {
@@ -233,11 +240,15 @@ struct HomeChatRow: View {
                 case let .bot(bot):
                     BotMascotView(bot: bot, size: HomeMetrics.rowMascot, state: state, animated: state.showsActivity)
                 case let .room(room):
-                    GroupMascotView(
-                        members: room.memberIds.compactMap { session.state.bot($0) },
-                        size: HomeMetrics.rowMascot,
-                        background: Theme.bg
-                    )
+                    if let peer = people.peer(room, session: session) {
+                        PersonAvatar(initials: peer.initials, size: HomeMetrics.rowMascot)
+                    } else {
+                        GroupMascotView(
+                            members: room.memberIds.compactMap { session.state.bot($0) },
+                            size: HomeMetrics.rowMascot,
+                            background: Theme.bg
+                        )
+                    }
                 }
             }
             .frame(width: HomeMetrics.rowMascot, height: HomeMetrics.rowMascot)
@@ -266,7 +277,7 @@ struct HomeChatRow: View {
     private var nameLine: some View {
         HStack(spacing: 7.5) {
             HStack(spacing: 5) {
-                Text(verbatim: chat.name)
+                Text(verbatim: people.name(chat, session: session))
                     .font(HomeMetrics.name)
                     .foregroundStyle(Theme.textPrimary)
                     .lineLimit(1)
@@ -356,34 +367,56 @@ struct HomeChatRow: View {
 
 // MARK: - "+" popover
 
-/// The glass popover that grows out of the "+" button: New Bot and New
-/// Group Chat, 14 pt, on a 35.8 pt pitch with about 10 pt of padding.
+/// The glass popover that grows out of the "+" button: New, the desktop's
+/// compose-to picker (Create new Bot, Create group chat, then every bot and
+/// the organization's people), 14 pt rows on a 35.8 pt pitch with about
+/// 10 pt of padding. A long list scrolls inside the glass.
 struct HomePlusMenu: View {
-    var canCreateBot: Bool
-    let newBot: () -> Void
-    let newGroup: () -> Void
+    @Environment(\.themePalette) var themePalette
+    let groups: [[NewMenuItem]]
+    let title: (NewMenuItem) -> String
+    let select: (NewMenuItem) -> Void
     let dismiss: () -> Void
+
+    private static let row: CGFloat = 35.83
+    private static let divider: CGFloat = 9
+
+    private var contentHeight: CGFloat {
+        let rows = CGFloat(groups.reduce(0) { $0 + $1.count })
+        let dividers = CGFloat(max(0, groups.count - 1))
+        return rows * Self.row + dividers * Self.divider + 10.08 + 9.59
+    }
 
     var body: some View {
         ZStack(alignment: .topTrailing) {
             Color.black.opacity(0.001)
                 .ignoresSafeArea()
                 .onTapGesture(perform: dismiss)
-            VStack(alignment: .leading, spacing: 0) {
-                if canCreateBot {
-                    item(Text("New Bot"), action: newBot)
-                        .accessibilityIdentifier("plus-menu.new-bot")
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(Array(groups.enumerated()), id: \.offset) { index, group in
+                        if index > 0 {
+                            Rectangle()
+                                .fill(Theme.parity(Color(hex: 0xF9F9F9), Theme.textPrimary).opacity(0.14))
+                                .frame(height: 0.5)
+                                .padding(.horizontal, 20)
+                                .frame(height: Self.divider)
+                        }
+                        ForEach(group, id: \.self) { entry in
+                            item(Text(verbatim: title(entry))) { select(entry) }
+                                .accessibilityIdentifier(NewMenuLabels.identifier(entry))
+                        }
+                    }
                 }
-                item(Text("New Group Chat"), action: newGroup)
-                    .accessibilityIdentifier("plus-menu.new-group")
+                // item centres 28 and 63.8 pt down (reference 18, measured on
+                // the text)
+                .padding(.top, 10.08)
+                .padding(.bottom, 9.59)
             }
-            // item centres 28 and 63.8 pt down (reference 18, measured on
-            // the text)
-            .padding(.top, 10.08)
-            .padding(.bottom, 9.59)
-            .frame(width: 250.67, height: 91.33, alignment: .topLeading)
+            .scrollDisabled(contentHeight <= 440)
+            .frame(width: 250.67, height: min(contentHeight, 440), alignment: .topLeading)
             .background(alignment: .topLeading) { searchUnderGlass }
-            .themeGlass(RoundedRectangle(cornerRadius: Theme.continuous(31.5), style: .continuous), fill: Color(hex: 0x323232), interactive: false)
+            .themeGlass(RoundedRectangle(cornerRadius: Theme.continuous(31.5), style: .continuous), fill: Theme.parity(Color(hex: 0x323232), Theme.menuGlass), interactive: false)
             .padding(.trailing, 7.7)
             .transition(.scale(scale: 0.4, anchor: .topTrailing).combined(with: .opacity))
         }
@@ -393,10 +426,10 @@ struct HomePlusMenu: View {
     /// reference: it sits 166 pt into the popover, 28 pt down.
     private var searchUnderGlass: some View {
         ZStack {
-            Circle().fill(Color.white.opacity(0.11)).frame(width: 46, height: 46).blur(radius: 4)
+            Circle().fill(Theme.textPrimary.opacity(0.11)).frame(width: 46, height: 46).blur(radius: 4)
             Image(systemName: "magnifyingglass")
                 .font(.system(size: 19, weight: .medium))
-                .foregroundStyle(Color.white.opacity(0.17))
+                .foregroundStyle(Theme.textPrimary.opacity(0.17))
                 .blur(radius: 1.4)
         }
         .frame(width: 44, height: 44)
@@ -413,9 +446,11 @@ struct HomePlusMenu: View {
         } label: {
             title
                 .font(Theme.Font.body)
-                .foregroundStyle(Color(hex: 0xF9F9F9))
+                .foregroundStyle(Theme.parity(Color(hex: 0xF9F9F9), Theme.textPrimary))
+                .lineLimit(1)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.leading, 28.4)
+                .padding(.trailing, 18)
                 .frame(height: 35.83)
                 .contentShape(Rectangle())
         }

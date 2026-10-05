@@ -15,6 +15,25 @@ public struct MarkdownTable: Equatable, Sendable {
     public var headers: [String]
     public var alignments: [MarkdownTableAlignment]
     public var rows: [[String]]
+    /// Columns whose delimiter cell set an alignment. The desktop
+    /// right-aligns a numeric column only when nothing was declared.
+    public var declared: [Bool] = []
+
+    public init(headers: [String], alignments: [MarkdownTableAlignment], rows: [[String]], declared: [Bool] = []) {
+        self.headers = headers
+        self.alignments = alignments
+        self.rows = rows
+        self.declared = declared
+    }
+
+    public static func == (lhs: MarkdownTable, rhs: MarkdownTable) -> Bool {
+        lhs.headers == rhs.headers && lhs.alignments == rhs.alignments && lhs.rows == rhs.rows
+    }
+
+    /// Whether column `index` had an alignment written in its delimiter cell.
+    public func isDeclared(_ index: Int) -> Bool {
+        index < declared.count && declared[index]
+    }
 }
 
 public enum MarkdownBlock: Equatable, Sendable {
@@ -30,6 +49,36 @@ public enum MarkdownBlock: Equatable, Sendable {
     case quote(String)
     case rule
     case table(MarkdownTable)
+    /// A GitHub alert (`> [!NOTE] title`): its kind, the title written after
+    /// the marker (empty for the kind's own word), and the body as Markdown.
+    case callout(kind: CalloutKind, title: String, text: String)
+    /// `![alt](src)` standing in a paragraph: drawn as a preview, not text.
+    case image(MarkdownImage)
+    /// GFM footnote definitions, numbered by first reference, drawn last.
+    case footnotes([MarkdownFootnote])
+}
+
+public struct MarkdownImage: Equatable, Hashable, Sendable {
+    public var alt: String
+    public var source: String
+    /// `[![alt](src)](href)`: where the picture links to.
+    public var link: String?
+
+    public init(alt: String, source: String, link: String? = nil) {
+        self.alt = alt
+        self.source = source
+        self.link = link
+    }
+}
+
+public struct MarkdownFootnote: Equatable, Hashable, Sendable {
+    public var number: Int
+    public var text: String
+
+    public init(number: Int, text: String) {
+        self.number = number
+        self.text = text
+    }
 }
 
 public enum Markdown {
@@ -46,9 +95,16 @@ public enum Markdown {
             // GFM: a single newline inside a paragraph is a soft break, which
             // renders as a space. The desktop does not enable `breaks`, so
             // neither does this — the two should wrap the same way.
-            blocks.append(.paragraph(paragraph.joined(separator: " ")))
+            let text = paragraph.joined(separator: " ")
             paragraph.removeAll()
+            if text.contains("![") {
+                blocks.append(contentsOf: splitImages(text))
+            } else {
+                blocks.append(.paragraph(text))
+            }
         }
+        /// Footnote definitions by lowercased label, first one wins.
+        var footnoteDefinitions: [(label: String, text: String)] = []
 
         // Normalise the line endings before splitting, because
         // `CharacterSet.newlines` contains \r and \n *separately* and
@@ -105,7 +161,38 @@ public enum Markdown {
             if trimmed.hasPrefix(">") {
                 flushParagraph()
                 closeLists(line, indents: &listIndents)
-                blocks.append(.quote(String(trimmed.dropFirst()).trimmingCharacters(in: .whitespaces)))
+                let content = String(trimmed.dropFirst()).trimmingCharacters(in: .whitespaces)
+                if let marker = RichBlocks.parseCalloutMarker(content) {
+                    // The alert's body is the rest of the quote, each line
+                    // with its ">" and one following space removed.
+                    var body: [String] = []
+                    while let next = lines.first {
+                        let rest = next.trimmingCharacters(in: .whitespaces)
+                        guard rest.hasPrefix(">") else { break }
+                        lines = lines.dropFirst()
+                        var inner = rest.dropFirst()
+                        if inner.first == " " { inner = inner.dropFirst() }
+                        body.append(String(inner))
+                    }
+                    blocks.append(.callout(kind: marker.kind, title: marker.title, text: body.joined(separator: "\n")))
+                    continue
+                }
+                blocks.append(.quote(content))
+                continue
+            }
+
+            if let definition = footnoteDefinition(line) {
+                flushParagraph()
+                listIndents.removeAll()
+                var text = [definition.text]
+                // continuation lines are indented four spaces or a tab
+                while let next = lines.first, next.hasPrefix("    ") || next.hasPrefix("\t") {
+                    lines = lines.dropFirst()
+                    text.append(next.trimmingCharacters(in: .whitespaces))
+                }
+                if !footnoteDefinitions.contains(where: { $0.label == definition.label }) {
+                    footnoteDefinitions.append((definition.label, text.joined(separator: " ")))
+                }
                 continue
             }
 
@@ -140,7 +227,121 @@ public enum Markdown {
             paragraph.append(trimmed)
         }
         flushParagraph()
+        if !footnoteDefinitions.isEmpty {
+            return numberFootnotes(blocks, definitions: footnoteDefinitions)
+        }
         return blocks
+    }
+
+    // MARK: Footnotes
+
+    /// The scheme a footnote reference links to; the view draws these runs
+    /// as superscript numbers and opens the note on a tap.
+    public static let footnoteScheme = "sagax-footnote"
+
+    private static func footnoteDefinition(_ line: String) -> (label: String, text: String)? {
+        let indent = line.prefix(while: { $0 == " " }).count
+        guard indent <= 3 else { return nil }
+        let rest = line.dropFirst(indent)
+        guard rest.hasPrefix("[^"), let close = rest.firstIndex(of: "]") else { return nil }
+        let label = rest[rest.index(rest.startIndex, offsetBy: 2)..<close]
+        guard !label.isEmpty, !label.contains(where: { $0.isWhitespace }) else { return nil }
+        let after = rest[rest.index(after: close)...]
+        guard after.hasPrefix(":") else { return nil }
+        return (label.lowercased(), after.dropFirst().trimmingCharacters(in: .whitespaces))
+    }
+
+    /// GFM numbers notes by first reference and drops the unreferenced ones;
+    /// a reference with no definition stays literal text.
+    private static func numberFootnotes(_ blocks: [MarkdownBlock], definitions: [(label: String, text: String)]) -> [MarkdownBlock] {
+        let known = Set(definitions.map(\.label))
+        var numbers: [String: Int] = [:]
+        func rewrite(_ text: String) -> String {
+            guard text.contains("[^") else { return text }
+            var out = ""
+            var index = text.startIndex
+            var inCode = false
+            while index < text.endIndex {
+                let character = text[index]
+                if character == "`" { inCode.toggle() }
+                if !inCode, text[index...].hasPrefix("[^"),
+                   let close = text[index...].firstIndex(of: "]") {
+                    let labelStart = text.index(index, offsetBy: 2)
+                    let label = text[labelStart..<close].lowercased()
+                    if known.contains(label) {
+                        let number = numbers[label] ?? (numbers.count + 1)
+                        numbers[label] = number
+                        out += "[\(number)](\(footnoteScheme):\(number))"
+                        index = text.index(after: close)
+                        continue
+                    }
+                }
+                out.append(character)
+                index = text.index(after: index)
+            }
+            return out
+        }
+        var rewritten: [MarkdownBlock] = blocks.map { block -> MarkdownBlock in
+            switch block {
+            case let .paragraph(text): return .paragraph(rewrite(text))
+            case let .bullet(indent, text): return .bullet(indent: indent, text: rewrite(text))
+            case let .ordered(indent, number, text): return .ordered(indent: indent, number: number, text: rewrite(text))
+            case let .task(indent, number, checked, text): return .task(indent: indent, number: number, checked: checked, text: rewrite(text))
+            case let .heading(level, text): return .heading(level: level, text: rewrite(text))
+            case let .quote(text): return .quote(rewrite(text))
+            case let .callout(kind, title, text): return .callout(kind: kind, title: title, text: rewrite(text))
+            case var .table(table):
+                table.headers = table.headers.map(rewrite)
+                table.rows = table.rows.map { $0.map(rewrite) }
+                return .table(table)
+            default: return block
+            }
+        }
+        let notes = definitions.compactMap { definition -> MarkdownFootnote? in
+            guard let number = numbers[definition.label] else { return nil }
+            return MarkdownFootnote(number: number, text: definition.text)
+        }.sorted { $0.number < $1.number }
+        if !notes.isEmpty { rewritten.append(.footnotes(notes)) }
+        return rewritten
+    }
+
+    // MARK: Images
+
+    private static let imagePattern = try! NSRegularExpression(
+        pattern: #"\[!\[([^\]]*)\]\(\s*(<[^>]*>|[^\s)]+)(?:\s+"[^"]*")?\s*\)\]\(\s*([^\s)]+)(?:\s+"[^"]*")?\s*\)|!\[([^\]]*)\]\(\s*(<[^>]*>|[^\s)]+)(?:\s+"[^"]*")?\s*\)"#
+    )
+
+    /// A paragraph holding pictures: the words around them stay paragraphs,
+    /// each picture becomes its own block, in order.
+    static func splitImages(_ text: String) -> [MarkdownBlock] {
+        let ns = text as NSString
+        let matches = imagePattern.matches(in: text, range: NSRange(location: 0, length: ns.length))
+        guard !matches.isEmpty else { return [.paragraph(text)] }
+        func group(_ match: NSTextCheckingResult, _ index: Int) -> String? {
+            let range = match.range(at: index)
+            return range.location == NSNotFound ? nil : ns.substring(with: range)
+        }
+        func unbracket(_ value: String) -> String {
+            value.hasPrefix("<") && value.hasSuffix(">") ? String(value.dropFirst().dropLast()) : value
+        }
+        var out: [MarkdownBlock] = []
+        var cursor = 0
+        func words(upTo location: Int) {
+            let chunk = ns.substring(with: NSRange(location: cursor, length: location - cursor))
+                .trimmingCharacters(in: .whitespaces)
+            if !chunk.isEmpty { out.append(.paragraph(chunk)) }
+        }
+        for match in matches {
+            words(upTo: match.range.location)
+            if let source = group(match, 2) {
+                out.append(.image(MarkdownImage(alt: group(match, 1) ?? "", source: unbracket(source), link: group(match, 3))))
+            } else {
+                out.append(.image(MarkdownImage(alt: group(match, 4) ?? "", source: unbracket(group(match, 5) ?? ""))))
+            }
+            cursor = match.range.location + match.range.length
+        }
+        words(upTo: ns.length)
+        return out
     }
 
     private static func leadingCount(_ line: String) -> Int {
@@ -223,7 +424,8 @@ public enum Markdown {
         guard !headers.isEmpty else { return nil }
         var alignments = fittedAlignments(cells(next), count: headers.count)
         var rows: [[String]] = []
-        var table = MarkdownTable(headers: headers, alignments: alignments, rows: rows)
+        let declared = declaredAlignments(cells(next), count: headers.count)
+        var table = MarkdownTable(headers: headers, alignments: alignments, rows: rows, declared: declared)
         while let body = rest.first, isBodyRow(body) {
             rest = rest.dropFirst()
             appendRow(cells(body), to: &table)
@@ -231,7 +433,7 @@ public enum Markdown {
         headers = table.headers
         alignments = table.alignments
         rows = table.rows
-        return MarkdownTable(headers: headers, alignments: alignments, rows: rows)
+        return MarkdownTable(headers: headers, alignments: alignments, rows: rows, declared: table.declared)
     }
 
     private static func isRowCandidate(_ line: String) -> Bool {
@@ -278,6 +480,12 @@ public enum Markdown {
         return .leading
     }
 
+    private static func declaredAlignments(_ supplied: [String], count: Int) -> [Bool] {
+        (0..<count).map { index in
+            index < supplied.count && (supplied[index].hasPrefix(":") || supplied[index].hasSuffix(":"))
+        }
+    }
+
     private static func fittedAlignments(_ supplied: [String], count: Int) -> [MarkdownTableAlignment] {
         (0..<count).map { index in
             guard index < supplied.count else { return .leading }
@@ -291,6 +499,7 @@ public enum Markdown {
             let extra = row.count - table.headers.count
             table.headers.append(contentsOf: Array(repeating: "", count: extra))
             table.alignments.append(contentsOf: Array(repeating: .leading, count: extra))
+            if !table.declared.isEmpty { table.declared.append(contentsOf: Array(repeating: false, count: extra)) }
             for index in table.rows.indices {
                 table.rows[index].append(contentsOf: Array(repeating: "", count: extra))
             }
@@ -321,7 +530,8 @@ public enum Markdown {
         var table = MarkdownTable(
             headers: headers,
             alignments: fittedAlignments(delimiter, count: headers.count),
-            rows: []
+            rows: [],
+            declared: declaredAlignments(delimiter, count: headers.count)
         )
         var chunk: [String] = []
         var boundary = false

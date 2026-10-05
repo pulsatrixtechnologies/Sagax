@@ -15,6 +15,7 @@ import SwiftUI
 /// The answer text is built by `AskQuestionAnswer.format`, so an answer given
 /// here is byte-for-byte the one the Mac would have sent.
 struct QuestionCardView: View {
+    @Environment(\.themePalette) var themePalette
     let chat: Chat
     let message: Message
     @EnvironmentObject private var session: Session
@@ -29,6 +30,9 @@ struct QuestionCardView: View {
     /// sent answer closes the window where the buttons are still live.
     @State private var sent: String?
     @FocusState private var otherFocused: Bool
+    /// iPad desktop shell: QuestionCard.tsx's card (card fill, accent ring
+    /// at 40 %, radius 16, 16 in, at most 840 wide).
+    @Environment(\.desktopChatText) private var desktop
 
     private var tint: Color { MausPalette.color(chat.color) }
 
@@ -55,25 +59,27 @@ struct QuestionCardView: View {
 
     var body: some View {
         if let card, !questions.isEmpty {
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: desktop == nil ? 10 : 12) {
                 header(card)
                 if card.questionRequest?.origin == "output" {
                     Text("Agent-composed question")
                         .font(.system(size: 12))
-                        .foregroundStyle(Color.secondary)
+                        .foregroundStyle(Theme.attentionSecondary)
                 }
                 if questions.count > 1 { tabs }
                 if let current {
                     Text(current.question)
-                        .font(.system(size: 15))
-                        .foregroundStyle(Color.primary)
+                        .font(desktop?.font(15) ?? .system(size: 15))
+                        .lineSpacing(desktop == nil ? 0 : 5)
+                        .frame(minHeight: desktop == nil ? 0 : 24.4)
+                        .foregroundStyle(desktop?.ink ?? Theme.attentionText)
                         .textSelection(.enabled)
                         .fixedSize(horizontal: false, vertical: true)
                     if !settled {
                         if current.allowsMultiple {
                             Text("Choose all that apply")
                                 .font(.system(size: 12))
-                                .foregroundStyle(Color.secondary)
+                                .foregroundStyle(Theme.attentionSecondary)
                         }
                         choices(current)
                     }
@@ -84,30 +90,40 @@ struct QuestionCardView: View {
                     submit
                 }
             }
-            .padding(14)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                RoundedRectangle(cornerRadius: 22, style: .continuous)
-                    .fill(settled ? Color.secondary.opacity(0.13) : tint.opacity(0.12))
-            )
-            .overlay {
-                RoundedRectangle(cornerRadius: 22, style: .continuous)
-                    .strokeBorder(settled ? .clear : tint, lineWidth: 1.5)
-            }
+            .modifier(QuestionCardChrome(desktop: desktop, settled: settled, tint: tint))
         }
     }
 
     @ViewBuilder
     private func header(_ card: OptionCard) -> some View {
+        if let desktop {
+            HStack(alignment: .firstTextBaseline) {
+                Text("\(chat.name) has a question")
+                    .font(desktop.font(15, .semibold))
+                    .foregroundStyle(desktop.ink)
+                    .frame(minHeight: 22.5)
+                Spacer(minLength: 8)
+                if questions.count > 1, !settled {
+                    Text("\(answeredCount) of \(questions.count)")
+                        .font(desktop.font(12).monospacedDigit())
+                        .foregroundStyle(desktop.inkSecondary)
+                }
+            }
+        } else {
+            phoneHeader(card)
+        }
+    }
+
+    private func phoneHeader(_ card: OptionCard) -> some View {
         HStack(alignment: .firstTextBaseline) {
             Label("\(chat.name) has a question", systemImage: "questionmark.bubble.fill")
                 .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(settled ? Color.secondary : tint)
+                .foregroundStyle(settled ? Theme.attentionSecondary : Theme.readable(tint))
             Spacer(minLength: 8)
             if questions.count > 1, !settled {
                 Text("\(answeredCount) of \(questions.count)")
                     .font(.system(size: 12).monospacedDigit())
-                    .foregroundStyle(Color.secondary)
+                    .foregroundStyle(Theme.attentionSecondary)
             }
         }
     }
@@ -131,9 +147,9 @@ struct QuestionCardView: View {
                         .padding(.horizontal, 10)
                         .padding(.vertical, 5)
                         .background(
-                            Capsule().fill(position == index ? Color.secondary.opacity(0.22) : Color.clear)
+                            Capsule().fill(position == index ? Theme.cardRaised : Color.clear)
                         )
-                        .foregroundStyle(position == index ? Color.primary : Color.secondary)
+                        .foregroundStyle(position == index ? Theme.attentionText : Theme.attentionSecondary)
                     }
                     .buttonStyle(.plain)
                     .disabled(settled)
@@ -146,7 +162,7 @@ struct QuestionCardView: View {
     private func choices(_ question: AskQuestion) -> some View {
         VStack(spacing: 0) {
             ForEach(Array(question.options.enumerated()), id: \.offset) { position, option in
-                if position > 0 { Divider().opacity(0.4) }
+                if position > 0 { divider }
                 row(
                     label: option.label,
                     detail: option.detail,
@@ -154,7 +170,7 @@ struct QuestionCardView: View {
                     multi: question.allowsMultiple
                 ) { choose(option.label, in: question) }
             }
-            if !question.options.isEmpty { Divider().opacity(0.4) }
+            if !question.options.isEmpty { divider }
             row(
                 label: String(localized: "Other"),
                 detail: nil,
@@ -162,7 +178,7 @@ struct QuestionCardView: View {
                 multi: question.allowsMultiple
             ) { toggleOther(question) }
             if other.contains(index) {
-                Divider().opacity(0.4)
+                divider
                 TextField("Type your own answer", text: binding(forCustom: index), axis: .vertical)
                     .font(.system(size: 15))
                     .lineLimit(1...4)
@@ -172,9 +188,25 @@ struct QuestionCardView: View {
                     .padding(.vertical, 10)
             }
         }
-        .background(
-            RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color.secondary.opacity(0.10))
-        )
+        .background {
+            if desktop == nil {
+                RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Theme.cardRaised)
+            }
+        }
+        .overlay {
+            if let desktop {
+                RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(desktop.hairline.opacity(0.4), lineWidth: 1)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var divider: some View {
+        if let desktop {
+            Rectangle().fill(desktop.hairline.opacity(0.4)).frame(height: 1)
+        } else {
+            Divider().opacity(0.4)
+        }
     }
 
     @ViewBuilder
@@ -189,19 +221,29 @@ struct QuestionCardView: View {
             Haptics.selection()
             action()
         }) {
-            HStack(alignment: .top, spacing: 10) {
-                Image(systemName: marker(checked: checked, multi: multi))
-                    .font(.system(size: 17))
-                    .foregroundStyle(checked ? tint : Color.secondary)
-                VStack(alignment: .leading, spacing: 2) {
+            HStack(alignment: .top, spacing: desktop == nil ? 10 : 12) {
+                if let desktop {
+                    // a 16 pt ring (hairline), filled with the accent when picked
+                    Circle()
+                        .strokeBorder(checked ? desktop.accent : desktop.hairline, lineWidth: checked ? 5 : 1)
+                        .frame(width: 16, height: 16)
+                        .padding(.top, 2)
+                } else {
+                    Image(systemName: marker(checked: checked, multi: multi))
+                        .font(.system(size: 17))
+                        .foregroundStyle(checked ? tint : Theme.attentionSecondary)
+                }
+                VStack(alignment: .leading, spacing: desktop == nil ? 2 : 0) {
                     Text(label)
-                        .font(.system(size: 15, weight: .medium))
-                        .foregroundStyle(Color.primary)
+                        .font(desktop?.font(14.5, detail == nil ? .regular : .medium) ?? .system(size: 15, weight: .medium))
+                        .foregroundStyle(desktop?.ink ?? Theme.attentionText)
+                        .frame(minHeight: desktop == nil ? 0 : 21.75)
                         .fixedSize(horizontal: false, vertical: true)
                     if let detail, !detail.isEmpty {
                         Text(detail)
-                            .font(.system(size: 13))
-                            .foregroundStyle(Color.secondary)
+                            .font(desktop?.font(13) ?? .system(size: 13))
+                            .frame(minHeight: desktop == nil ? 0 : 17.9)
+                            .foregroundStyle(desktop?.inkSecondary ?? Theme.attentionSecondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
@@ -221,17 +263,50 @@ struct QuestionCardView: View {
         return checked ? "largecircle.fill.circle" : "circle"
     }
 
+    @ViewBuilder
     private var submit: some View {
+        if let desktop {
+            HStack(spacing: 12) {
+                Spacer(minLength: 0)
+                Label {
+                    Text("Waiting for your answer")
+                } icon: {
+                    Image(systemName: "questionmark.bubble").foregroundStyle(desktop.accent)
+                }
+                .font(desktop.font(13))
+                .foregroundStyle(desktop.inkSecondary)
+                Button {
+                    // not `.disabled`: the plain style would dim the
+                    // desktop's own disabled colours
+                    if complete && !answering { send() }
+                } label: {
+                    Text(questions.count > 1 ? "Submit answers" : "Submit answer")
+                        .font(desktop.font(13.5, .medium))
+                        .foregroundStyle(complete ? desktop.accentInk : desktop.inkSecondary)
+                        .padding(.horizontal, 14)
+                        .frame(height: 32)
+                        .background(complete ? desktop.accent : desktop.raisedHover, in: Capsule())
+                }
+                .buttonStyle(.plain)
+                .accessibilityAddTraits(complete ? [] : .isStaticText)
+            }
+            .padding(.top, 0)
+        } else {
+            phoneSubmit
+        }
+    }
+
+    private var phoneSubmit: some View {
         Button {
             Haptics.selection()
             send()
         } label: {
             Text(questions.count > 1 ? "Submit answers" : "Submit answer")
                 .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(.white)
+                .foregroundStyle(complete ? Color.white : Theme.disabledCapsuleText)
                 .frame(maxWidth: .infinity)
                 .frame(height: 40)
-                .background(Capsule().fill(complete ? tint : Color.secondary.opacity(0.35)))
+                .background(Capsule().fill(complete ? Theme.readable(tint) : Theme.disabledCapsule))
         }
         .buttonStyle(.plain)
         .disabled(!complete || answering)
@@ -249,7 +324,7 @@ struct QuestionCardView: View {
         } icon: {
             Image(systemName: "checkmark.circle")
         }
-        .foregroundStyle(Color.secondary)
+        .foregroundStyle(Theme.attentionSecondary)
     }
 
     private func binding(forCustom position: Int) -> Binding<String> {
@@ -308,6 +383,41 @@ struct QuestionCardView: View {
                 isPermission: false
             )
             answering = false
+        }
+    }
+}
+
+/// The card's frame: the phone's attention card, or the desktop's.
+private struct QuestionCardChrome: ViewModifier {
+    @Environment(\.themePalette) var themePalette
+    let desktop: DesktopTheme?
+    let settled: Bool
+    let tint: Color
+
+    func body(content: Content) -> some View {
+        if let desktop {
+            content
+                .padding(16)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(desktop.card, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .strokeBorder(settled ? desktop.hairline.opacity(0.4) : desktop.accent.opacity(0.4), lineWidth: 1)
+                )
+                .frame(maxWidth: 840, alignment: .leading)
+        } else {
+            content
+                .padding(14)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(
+                    RoundedRectangle(cornerRadius: 22, style: .continuous)
+                        .fill(settled ? Theme.card : Theme.attentionSurface)
+                        .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).fill(settled ? Color.clear : tint.opacity(0.08)))
+                )
+                .overlay {
+                    RoundedRectangle(cornerRadius: 22, style: .continuous)
+                        .strokeBorder(settled ? .clear : tint, lineWidth: 1.5)
+                }
         }
     }
 }

@@ -13,6 +13,7 @@ import { PairPage } from "./pair/PairPage";
 import { rememberOpenThreadHash } from "./lib/open-thread-hash";
 import { syncUserPreferences } from "./lib/user-preferences-sync";
 import { installAnimationPause } from "./lib/animation-pause";
+import { syncDesktopAppearance } from "./lib/desktop-appearance-sync";
 import { JoinPage, takeInviteTokenFromLocation } from "./pair/JoinPage";
 import "katex/dist/katex.min.css";
 import "./styles.css";
@@ -82,6 +83,10 @@ async function chooseRoot(): Promise<React.ReactNode> {
     applySkin(readSkin());
     applyFont(readFont());
   }
+  // The desktop app on a personal computer hands its look to the paired
+  // phone (Same as my computer) and wears a look the phone chose
+  // (src/lib/desktop-appearance-sync.ts). Elsewhere the route answers 404.
+  if (session.kind === "loopback") void syncDesktopAppearance();
   return <App />;
 }
 

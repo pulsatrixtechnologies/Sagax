@@ -16,6 +16,7 @@ import UIKit
 enum ComputerFit: String { case fit, fill }
 
 struct ComputerView: View {
+    @Environment(\.themePalette) var themePalette
     let bot: Bot
     @EnvironmentObject private var session: Session
     @Environment(\.dismiss) private var dismiss
@@ -28,8 +29,17 @@ struct ComputerView: View {
     @AppStorage("companion.computer.fit") private var fitRaw = ComputerFit.fit.rawValue
     @AppStorage("companion.computer.specialKeys") private var specialKeys = false
 
-    init(bot: Bot) {
+    /// The bot panel's Computer tab (`ComputerPanel` embedded): the picture
+    /// at this width in a rounded black card, with Gestures, More and Full
+    /// screen above it; nil is the full screen view (parity 13 and 11).
+    var embeddedWidth: CGFloat?
+    /// Embedded: open the full screen view.
+    var onFullScreen: (() -> Void)?
+
+    init(bot: Bot, embeddedWidth: CGFloat? = nil, onFullScreen: (() -> Void)? = nil) {
         self.bot = bot
+        self.embeddedWidth = embeddedWidth
+        self.onFullScreen = onFullScreen
         _controller = StateObject(wrappedValue: ComputerController(botId: bot.id, client: { nil }))
     }
 
@@ -46,6 +56,72 @@ struct ComputerView: View {
     }
 
     var body: some View {
+        if let embeddedWidth {
+            AnyView(lifecycle(AnyView(embedded(width: embeddedWidth))))
+        } else {
+            AnyView(lifecycle(AnyView(fullScreen))
+                .toolbar(.hidden, for: .navigationBar)
+                .navigationBarBackButtonHidden(true)
+                .background(SwipeBackBridge())
+                .preferredColorScheme(.dark))
+        }
+    }
+
+    /// The panel's card: Gestures, More and Full screen, the picture, its
+    /// status line and the clipboard and keyboard circles.
+    private func embedded(width: CGFloat) -> some View {
+        let inner = width - 24
+        return VStack(spacing: 0) {
+            HStack(spacing: 8) {
+                Text("\(current.name)'s screen")
+                    .font(Theme.Profile.labelFont)
+                    .foregroundStyle(Theme.Computer.inkSecondary)
+                    .lineLimit(1)
+                Spacer(minLength: 8)
+                GlassCircleButton(
+                    systemImage: "questionmark", fill: Theme.Computer.glassFill, accessibilityLabel: "Gestures",
+                    glyphSize: 20, weight: .regular, glyphColor: Theme.Computer.ink
+                ) { showingHelp = true }
+                    .accessibilityIdentifier("computer-help")
+                moreMenu
+                if let onFullScreen {
+                    GlassCircleButton(
+                        systemImage: "arrow.up.left.and.arrow.down.right", fill: Theme.Computer.glassFill,
+                        accessibilityLabel: "Full screen", glyphSize: 16, weight: .regular, glyphColor: Theme.Computer.ink
+                    ) { onFullScreen() }
+                        .accessibilityIdentifier("computer-full-screen")
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            screen(width: inner, height: inner / Theme.Computer.frameAspect)
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            statusLine
+            bottomButtons
+                .padding(.vertical, 12)
+            RemoteKeyboardField(
+                isActive: $keyboardUp,
+                showsSpecialKeys: specialKeys,
+                modifiers: controller.modifiers,
+                onInsert: { controller.type($0) },
+                onDelete: { controller.deleteBackward() },
+                onSpecial: { controller.special($0) },
+                onModifier: { controller.toggle($0) }
+            )
+            .frame(width: 1, height: 1)
+            .opacity(0.01)
+            .accessibilityHidden(true)
+        }
+        .frame(width: width)
+        .background(Theme.bgComputer, in: RoundedRectangle(cornerRadius: Theme.Metric.cardRadius, style: .continuous))
+        .overlay(alignment: .top) { toast.padding(.top, 4) }
+        .environment(\.colorScheme, .dark)
+        .onAppear { controller.frameWidth = inner }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("panel-computer")
+    }
+
+    private var fullScreen: some View {
         GeometryReader { proxy in
             let width = proxy.size.width
             let barCentre = proxy.safeAreaInsets.top + 6 + Theme.Metric.glassLarge / 2
@@ -84,10 +160,11 @@ struct ComputerView: View {
             .onAppear { controller.frameWidth = width }
             .onValueChange(of: width) { controller.frameWidth = $0 }
         }
-        .toolbar(.hidden, for: .navigationBar)
-        .navigationBarBackButtonHidden(true)
-        .background(SwipeBackBridge())
-        .preferredColorScheme(.dark)
+    }
+
+    /// What both forms share: the prompts, the stream, the parity hooks.
+    private func lifecycle(_ content: AnyView) -> some View {
+        content
         .sheet(isPresented: $showingHelp) { ComputerGestureHelp() }
         .alert(item: $controller.prompt) { prompt in
             switch prompt {
@@ -150,7 +227,7 @@ struct ComputerView: View {
         HStack(spacing: 0) {
             GlassCircleButton(
                 systemImage: "chevron.left", fill: Theme.Computer.glassFill, accessibilityLabel: "Back",
-                glyphSize: 18, glyphOffset: CGSize(width: 0.85, height: -0.25)
+                glyphSize: 18, glyphOffset: CGSize(width: 0.85, height: -0.25), glyphColor: Theme.Computer.ink
             ) { dismiss() }
                 .accessibilityIdentifier("computer-back")
             BotMascotView(bot: current, size: Theme.Computer.mascot)
@@ -159,13 +236,13 @@ struct ComputerView: View {
                 .accessibilityHidden(true)
             Text(current.name)
                 .font(Theme.Font.bodyMedium)
-                .foregroundStyle(Theme.textPrimary)
+                .foregroundStyle(Theme.Computer.ink)
                 .lineLimit(1)
                 .padding(.leading, Theme.Computer.nameLeading)
             Spacer(minLength: 8)
             GlassCircleButton(
                 systemImage: "questionmark", fill: Theme.Computer.glassFill, accessibilityLabel: "Gestures",
-                glyphSize: 20, weight: .regular
+                glyphSize: 20, weight: .regular, glyphColor: Theme.Computer.ink
             ) { showingHelp = true }
                 .accessibilityIdentifier("computer-help")
             moreMenu
@@ -215,7 +292,7 @@ struct ComputerView: View {
         } label: {
             Image(systemName: "ellipsis")
                 .font(.system(size: 17, weight: .semibold))
-                .foregroundStyle(Theme.textPrimary)
+                .foregroundStyle(Theme.Computer.ink)
                 .frame(width: Theme.Metric.glassLarge, height: Theme.Metric.glassLarge)
                 .contentShape(Circle())
         }
@@ -286,7 +363,7 @@ struct ComputerView: View {
                     .font(Theme.Font.body)
             }
         }
-        .foregroundStyle(Theme.textSecondary)
+        .foregroundStyle(Theme.Computer.inkSecondary)
         .multilineTextAlignment(.center)
         .padding(.horizontal, 32)
         .allowsHitTesting(false)
@@ -297,7 +374,7 @@ struct ComputerView: View {
         if let notice = controller.notice ?? (offline ? String(localized: "This computer is offline. Reconnecting…") : nil) {
             Text(notice)
                 .font(Theme.Font.profileLabel)
-                .foregroundStyle(Theme.textSecondary)
+                .foregroundStyle(Theme.Computer.inkSecondary)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 24)
                 .padding(.top, 12)
@@ -319,7 +396,7 @@ struct ComputerView: View {
                 }
             } label: {
                 ClipboardGlyph()
-                    .fill(Theme.textPrimary, style: FillStyle(eoFill: true))
+                    .fill(Theme.Computer.ink, style: FillStyle(eoFill: true))
                     .frame(width: ClipboardGlyph.size.width, height: ClipboardGlyph.size.height)
                     .frame(width: Theme.Metric.glassSmall, height: Theme.Metric.glassSmall)
                     .contentShape(Circle())
@@ -337,7 +414,7 @@ struct ComputerView: View {
                 toggleKeyboard()
             } label: {
                 KeyboardDotsGlyph()
-                    .fill(Theme.textPrimary)
+                    .fill(Theme.Computer.ink)
                     .frame(width: KeyboardDotsGlyph.size.width, height: KeyboardDotsGlyph.size.height)
                     .frame(width: Theme.Metric.glassSmall, height: Theme.Metric.glassSmall)
                     .contentShape(Circle())
@@ -423,6 +500,7 @@ struct ComputerView: View {
 
 /// "?": what each gesture does.
 struct ComputerGestureHelp: View {
+    @Environment(\.themePalette) var themePalette
     @Environment(\.dismiss) private var dismiss
 
     private let rows: [(String, LocalizedStringKey, LocalizedStringKey)] = [
@@ -437,7 +515,7 @@ struct ComputerGestureHelp: View {
 
     var body: some View {
         NavigationStack {
-            List {
+            ThemedList {
                 Section {
                     ForEach(rows, id: \.0) { row in
                         HStack(alignment: .top, spacing: 14) {
@@ -465,7 +543,8 @@ struct ComputerGestureHelp: View {
             }
         }
         .presentationDetents([.medium, .large])
-        .preferredColorScheme(.dark)
+        // The stage behind forces dark; this sheet follows the skin.
+        .preferredColorScheme(Theme.palette.isDark ? .dark : .light)
     }
 }
 
@@ -524,4 +603,11 @@ struct KeyboardDotsGlyph: Shape {
         }
         return path
     }
+}
+
+extension Theme.Computer {
+    /// The stage is black whatever the skin: its ink is Black's, never the
+    /// skin's (a light skin's dark ink would vanish on it).
+    static let ink = Color.white
+    static let inkSecondary = Color(hex: 0x9C9BA1)
 }

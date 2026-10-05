@@ -9,18 +9,13 @@ import CompanionCore
 
 // MARK: - Profile hook
 
-/// What tapping the name capsule opens, and how.
-///
-/// The single hook for the profile: `BotProfileView`, pushed (reference 03).
-/// Today's `AgentProfileView` form stays reachable from its "..." > Advanced.
+/// What the name capsule (and every other door into the bot) opens: the
+/// bot panel, full screen, on the door's tab (`BotPanelDoor`), as the
+/// desktop's header opens its panel.
 enum ChatProfileRoute {
-    enum Presentation { case sheet, push }
-
-    static let presentation: Presentation = .push
-
     @ViewBuilder
-    static func destination(for bot: Bot) -> some View {
-        BotProfileView(bot: bot)
+    static func destination(for bot: Bot, tab: DesktopPanelTab) -> some View {
+        PhoneBotPanel(bot: bot, tab: tab)
     }
 }
 
@@ -30,11 +25,14 @@ enum ChatProfileRoute {
 /// in 14 medium, 14 pt out (83 pt wide for "Ara").
 /// The mascot carries the bot's live state (working, needs you).
 struct ChatNameCapsule: View {
+    @Environment(\.themePalette) var themePalette
     let chat: Chat
     var state: MausState = .idle
     /// Hidden while the island intro is carrying the face.
     var mascotHidden = false
     let open: () -> Void
+    @EnvironmentObject private var session: Session
+    @ObservedObject private var people = PeopleDirectory.shared
 
     var body: some View {
         Button {
@@ -50,7 +48,7 @@ struct ChatNameCapsule: View {
                     background: Theme.glassFill
                 )
                 .opacity(mascotHidden ? 0 : 1)
-                Text(chat.name)
+                Text(verbatim: people.name(chat, session: session))
                     .font(Theme.Font.bodyMedium)
                     .foregroundStyle(Theme.textPrimary)
                     .lineLimit(1)
@@ -71,6 +69,7 @@ struct ChatNameCapsule: View {
 /// Content scrolled under the top bar blurs and fades into the background:
 /// gone above about y 36, about 60% through the bar, clear below it.
 struct ChatTopEdgeFade: View {
+    @Environment(\.themePalette) var themePalette
     var background: Color = Theme.bg
 
     var body: some View {
@@ -134,8 +133,12 @@ struct VoiceWaveformGlyph: Shape {
 /// The white 36x28 capsule at the end of the field: the waveform starts voice
 /// mode; once there is something to send it becomes the send arrow.
 struct ComposerVoiceSendButton: View {
+    @Environment(\.themePalette) var themePalette
     let canSend: Bool
     let busy: Bool
+    /// This chat is on a call: the capsule hangs up (the desktop's red
+    /// call button).
+    var onCall = false
     let send: () -> Void
     let voice: () -> Void
 
@@ -145,7 +148,12 @@ struct ComposerVoiceSendButton: View {
             canSend ? send() : voice()
         } label: {
             ZStack {
-                if canSend {
+                if onCall && !canSend {
+                    Image(systemName: "phone.down.fill")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(Color.white)
+                        .transition(.scale.combined(with: .opacity))
+                } else if canSend {
                     Image(systemName: "arrow.up")
                         .font(.system(size: 15, weight: .bold))
                         .transition(.scale.combined(with: .opacity))
@@ -154,17 +162,18 @@ struct ComposerVoiceSendButton: View {
                         .transition(.scale.combined(with: .opacity))
                 }
             }
-            .foregroundStyle(Color.black)
+            .foregroundStyle(Theme.primaryInk)
             .frame(width: Theme.Chat.voiceCapsule.width, height: Theme.Chat.voiceCapsule.height)
-            .background(Color.white, in: Capsule())
+            .background(onCall && !canSend ? Color(red: 0.89, green: 0.27, blue: 0.27) : Theme.primaryFill, in: Capsule())
             .opacity(busy ? 0.5 : 1)
             .contentShape(Capsule())
         }
         .buttonStyle(.plain)
         .disabled(busy)
         .animation(.easeOut(duration: 0.15), value: canSend)
-        .accessibilityLabel(canSend ? Text(String(localized: "Send")) : Text(String(localized: "Start voice mode")))
-        .accessibilityIdentifier(canSend ? "composer-send" : "composer-voice")
+        .animation(.easeOut(duration: 0.15), value: onCall)
+        .accessibilityLabel(canSend ? Text(String(localized: "Send")) : onCall ? Text(String(localized: "End call")) : Text(String(localized: "Start voice mode")))
+        .accessibilityIdentifier(canSend ? "composer-send" : onCall ? "composer-end-call" : "composer-voice")
     }
 }
 

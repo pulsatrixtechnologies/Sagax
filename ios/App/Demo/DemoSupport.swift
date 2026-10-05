@@ -74,16 +74,17 @@ enum DemoScreen {
 
 /// The card at the top of the home while the demo is open.
 struct DemoBanner: View {
+    @Environment(\.themePalette) var themePalette
     @EnvironmentObject private var session: Session
 
     var body: some View {
         HStack(spacing: 10) {
             Text("Demo")
                 .font(Theme.Font.roleChip)
-                .foregroundStyle(Color.black)
+                .foregroundStyle(Theme.primaryInk)
                 .padding(.horizontal, 8)
                 .frame(height: Theme.Metric.chipHeight)
-                .background(Color.white, in: RoundedRectangle(cornerRadius: Theme.Metric.chipRadius, style: .continuous))
+                .background(Theme.primaryFill, in: RoundedRectangle(cornerRadius: Theme.Metric.chipRadius, style: .continuous))
                 .accessibilityIdentifier("demo-badge")
             Text("Made-up data, nothing leaves this phone.")
                 .font(Theme.Font.label)

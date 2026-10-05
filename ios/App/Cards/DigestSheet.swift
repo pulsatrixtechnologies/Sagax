@@ -4,12 +4,22 @@ import SwiftUI
 /// What a turn's digest opens onto: the tools, files and memory it
 /// touched, read down a list rather than across one run-on line.
 struct DigestSheet: View {
+    @Environment(\.themePalette) var themePalette
     let summary: DigestSummary
+    /// Which credentials paid for the turn (organization servers, CA16).
+    var paidWith: String? = nil
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         NavigationStack {
             List {
+                if let paidWith {
+                    Section("Paid with") {
+                        Label(paidWith, systemImage: "key")
+                            .font(.system(size: 14))
+                            .accessibilityIdentifier("digest-paid-with")
+                    }
+                }
                 ForEach(Array(summary.lines.enumerated()), id: \.offset) { _, line in
                     if let label = line.label {
                         Section(label) {
@@ -36,7 +46,7 @@ struct DigestSheet: View {
                 }
                 ToolbarItem(placement: .primaryAction) {
                     Button("Copy", systemImage: "doc.on.doc") {
-                        PlatformBridge.copyToPasteboard(summary.plainText)
+                        PlatformBridge.copyToPasteboard(paidWith.map { "\(String(localized: "Paid with: \($0)"))\n\n\(summary.plainText)" } ?? summary.plainText)
                         Haptics.selection()
                     }
                 }

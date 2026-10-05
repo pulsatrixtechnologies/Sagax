@@ -1,0 +1,196 @@
+// iPad I2: the desktop's own icons (lucide-react, ISC licence, the icon set
+// the renderer draws), so the sidebar's glyphs match point for point instead
+// of falling back to SF Symbols of another weight and shape. Each icon is its
+// lucide node list (24 x 24 viewBox, stroke-width 2, round caps and joins),
+// with `rect` and `circle` written as path data, drawn through CompanionCore's
+// SVG path parser.
+import SwiftUI
+import CompanionCore
+
+enum DesktopIcon: String, CaseIterable {
+    case plus, panelLeftClose, panelLeftOpen, search, chevronRight, network, calendarDays, puzzle, library
+    case ellipsis, pin, pinOff, folderPlus, folderInput, bellDot, pencil, clipboardCopy, eyeOff, trash
+    case users, share, smartphone, settings, keyboard, info, help, squarePen, star, arrowLeftRight, arrowUp, arrowDown, eye
+    // the bot panel (I4b)
+    case panelRight, squareTerminal, activity, calendarClock, fileText
+    // the sidebar footer's gamertag (I2b)
+    case trophy, tabletSmartphone, archive, x, command, check
+
+    /// Path data in the 24 pt viewBox.
+    var paths: [String] {
+        switch self {
+        case .plus: ["M5 12h14", "M12 5v14"]
+        case .panelLeftClose: [Self.rect(3, 3, 18, 18, 2), "M9 3v18", "m16 15-3-3 3-3"]
+        case .panelLeftOpen: [Self.rect(3, 3, 18, 18, 2), "M9 3v18", "m14 9 3 3-3 3"]
+        case .search: ["m21 21-4.34-4.34", Self.circle(11, 11, 8)]
+        case .chevronRight: ["m9 18 6-6-6-6"]
+        case .network:
+            [Self.rect(16, 16, 6, 6, 1), Self.rect(2, 16, 6, 6, 1), Self.rect(9, 2, 6, 6, 1),
+             "M5 16v-3a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v3", "M12 12V8"]
+        case .calendarDays:
+            ["M8 2v4", "M16 2v4", Self.rect(3, 4, 18, 18, 2), "M3 10h18",
+             "M8 14h.01", "M12 14h.01", "M16 14h.01", "M8 18h.01", "M12 18h.01", "M16 18h.01"]
+        case .puzzle:
+            ["M15.39 4.39a1 1 0 0 0 1.68-.474 2.5 2.5 0 1 1 3.014 3.015 1 1 0 0 0-.474 1.68l1.683 1.682a2.414 2.414 0 0 1 0 3.414L19.61 15.39a1 1 0 0 1-1.68-.474 2.5 2.5 0 1 0-3.014 3.015 1 1 0 0 1 .474 1.68l-1.683 1.682a2.414 2.414 0 0 1-3.414 0L8.61 19.61a1 1 0 0 0-1.68.474 2.5 2.5 0 1 1-3.014-3.015 1 1 0 0 0 .474-1.68l-1.683-1.682a2.414 2.414 0 0 1 0-3.414L4.39 8.61a1 1 0 0 1 1.68.474 2.5 2.5 0 1 0 3.014-3.015 1 1 0 0 1-.474-1.68l1.683-1.682a2.414 2.414 0 0 1 3.414 0z"]
+        case .library: ["m16 6 4 14", "M12 6v14", "M8 8v12", "M4 4v16"]
+        case .ellipsis: [Self.circle(12, 12, 1), Self.circle(19, 12, 1), Self.circle(5, 12, 1)]
+        case .pin:
+            ["M12 17v5",
+             "M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"]
+        case .pinOff:
+            ["M12 17v5", "M15 9.34V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H7.89", "m2 2 20 20",
+             "M9 9v1.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h11"]
+        case .folderPlus:
+            ["M12 10v6", "M9 13h6",
+             "M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.930 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"]
+        case .folderInput:
+            ["M2 9V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H20a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-1",
+             "M2 13h10", "m9 16 3-3-3-3"]
+        case .bellDot:
+            ["M10.268 21a2 2 0 0 0 3.464 0",
+             "M13.916 2.314A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.74 7.327A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673 9 9 0 0 1-.585-.665",
+             Self.circle(18, 8, 3)]
+        case .pencil:
+            ["M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z",
+             "m15 5 4 4"]
+        case .clipboardCopy:
+            [Self.rect(8, 2, 8, 4, 1), "M8 4H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2",
+             "M16 4h2a2 2 0 0 1 2 2v4", "M21 14H11", "m15 10-4 4 4 4"]
+        case .eyeOff:
+            ["M10.733 5.076a10.744 10.744 0 0 1 11.205 6.575 1 1 0 0 1 0 .696 10.747 10.747 0 0 1-1.444 2.49",
+             "M14.084 14.158a3 3 0 0 1-4.242-4.242",
+             "M17.479 17.499a10.75 10.75 0 0 1-15.417-5.151 1 1 0 0 1 0-.696 10.75 10.75 0 0 1 4.446-5.143",
+             "m2 2 20 20"]
+        case .trash:
+            ["M10 11v6", "M14 11v6", "M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6", "M3 6h18", "M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"]
+        case .users:
+            ["M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2", "M16 3.128a4 4 0 0 1 0 7.744",
+             "M22 21v-2a4 4 0 0 0-3-3.87", Self.circle(9, 7, 4)]
+        case .share:
+            [Self.circle(18, 5, 3), Self.circle(6, 12, 3), Self.circle(18, 19, 3),
+             "M8.59 13.51 15.42 17.49", "M15.41 6.51 8.59 10.49"]
+        case .smartphone: [Self.rect(5, 2, 14, 20, 2), "M12 18h.01"]
+        case .settings:
+            ["M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915",
+             Self.circle(12, 12, 3)]
+        case .keyboard:
+            ["M10 8h.01", "M12 12h.01", "M14 8h.01", "M16 12h.01", "M18 8h.01", "M6 8h.01", "M7 16h10", "M8 12h.01",
+             Self.rect(2, 4, 20, 16, 2)]
+        case .info: [Self.circle(12, 12, 10), "M12 16v-4", "M12 8h.01"]
+        case .help: [Self.circle(12, 12, 10), "M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3", "M12 17h.01"]
+        case .squarePen:
+            ["M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7",
+             "M18.375 2.625a1 1 0 0 1 3 3l-9.013 9.014a2 2 0 0 1-.853.505l-2.873.84a.5.5 0 0 1-.62-.62l.84-2.873a2 2 0 0 1 .506-.852z"]
+        case .star:
+            ["M11.525 2.295a.53.53 0 0 1 .95 0l2.31 4.679a2.123 2.123 0 0 0 1.595 1.16l5.166.756a.53.53 0 0 1 .294.904l-3.736 3.638a2.123 2.123 0 0 0-.611 1.878l.882 5.14a.53.53 0 0 1-.771.56l-4.618-2.428a2.122 2.122 0 0 0-1.973 0L6.396 21.01a.53.53 0 0 1-.77-.56l.881-5.139a2.122 2.122 0 0 0-.611-1.879L2.16 9.795a.53.53 0 0 1 .294-.906l5.165-.755a2.122 2.122 0 0 0 1.597-1.16z"]
+        case .arrowLeftRight: ["M8 3 4 7l4 4", "M4 7h16", "m16 21 4-4-4-4", "M20 17H4"]
+        case .arrowUp: ["m5 12 7-7 7 7", "M12 19V5"]
+        case .arrowDown: ["M12 5v14", "m19 12-7 7-7-7"]
+        case .panelRight: [Self.rect(3, 3, 18, 18, 2), "M15 3v18"]
+        case .x: ["M18 6 6 18", "m6 6 12 12"]
+        case .command: ["M15 6v12a3 3 0 1 0 3-3H6a3 3 0 1 0 3 3V6a3 3 0 1 0-3 3h12a3 3 0 1 0-3-3"]
+        case .check: ["M20 6 9 17l-5-5"]
+        case .archive: [Self.rect(2, 3, 20, 5, 1), "M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8", "M10 12h4"]
+        case .tabletSmartphone: [Self.rect(3, 8, 10, 14, 2), "M5 4a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2h-2.4", "M8 18h.01"]
+        case .trophy: [
+            "M10 14.66v1.626a2 2 0 0 1-.976 1.696A5 5 0 0 0 7 21.978",
+            "M14 14.66v1.626a2 2 0 0 0 .976 1.696A5 5 0 0 1 17 21.978",
+            "M18 9h1.5a1 1 0 0 0 0-5H18", "M4 22h16",
+            "M6 9a6 6 0 0 0 12 0V3a1 1 0 0 0-1-1H7a1 1 0 0 0-1 1z",
+            "M6 9H4.5a1 1 0 0 1 0-5H6",
+        ]
+        case .squareTerminal: ["m7 11 2-2-2-2", "M11 13h4", Self.rect(3, 3, 18, 18, 2)]
+        case .activity:
+            ["M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a0.25 0.25 0 0 1-0.48 0L9.24 2.18a0.25 0.25 0 0 0-0.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2"]
+        case .calendarClock:
+            ["M16 14v2.2l1.6 1", "M16 2v4", "M21 7.5V6a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h3.5", "M3 10h5", "M8 2v4", Self.circle(16, 16, 6)]
+        case .fileText:
+            ["M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z", "M14 2v4a2 2 0 0 0 2 2h4", "M10 9H8", "M16 13H8", "M16 17H8"]
+        case .eye:
+            ["M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0",
+             Self.circle(12, 12, 3)]
+        }
+    }
+
+    /// The SF Symbol for the same entry in a system menu (a long press or a
+    /// right click draws iPadOS's context menu, which takes only symbols).
+    var symbol: String {
+        switch self {
+        case .plus: "plus"
+        case .panelLeftClose: "sidebar.left"
+        case .panelLeftOpen: "sidebar.left"
+        case .search: "magnifyingglass"
+        case .chevronRight: "chevron.right"
+        case .network: "point.3.connected.trianglepath.dotted"
+        case .calendarDays: "calendar"
+        case .puzzle: "puzzlepiece.extension"
+        case .library: "books.vertical"
+        case .ellipsis: "ellipsis"
+        case .pin: "pin"
+        case .pinOff: "pin.slash"
+        case .folderPlus: "folder.badge.plus"
+        case .folderInput: "folder"
+        case .bellDot: "bell.badge"
+        case .pencil: "pencil"
+        case .clipboardCopy: "doc.on.clipboard"
+        case .eyeOff: "eye.slash"
+        case .eye: "eye"
+        case .panelRight: "sidebar.right"
+        case .trophy: "trophy"
+        case .tabletSmartphone: "ipad.and.iphone"
+        case .archive: "archivebox"
+        case .x: "xmark"
+        case .command: "command"
+        case .check: "checkmark"
+        case .squareTerminal: "terminal"
+        case .activity: "waveform.path.ecg"
+        case .calendarClock: "calendar.badge.clock"
+        case .fileText: "doc.text"
+        case .trash: "trash"
+        case .users: "person.2"
+        case .share: "square.and.arrow.up"
+        case .smartphone: "iphone"
+        case .settings: "gearshape"
+        case .keyboard: "keyboard"
+        case .info: "info.circle"
+        case .help: "questionmark.circle"
+        case .squarePen: "square.and.pencil"
+        case .star: "star"
+        case .arrowLeftRight: "arrow.left.arrow.right"
+        case .arrowUp: "arrow.up"
+        case .arrowDown: "arrow.down"
+        }
+    }
+
+    /// `<rect x y width height rx>` as path data.
+    private static func rect(_ x: Double, _ y: Double, _ w: Double, _ h: Double, _ r: Double) -> String {
+        "M\(x + r) \(y)H\(x + w - r)A\(r) \(r) 0 0 1 \(x + w) \(y + r)V\(y + h - r)A\(r) \(r) 0 0 1 \(x + w - r) \(y + h)"
+            + "H\(x + r)A\(r) \(r) 0 0 1 \(x) \(y + h - r)V\(y + r)A\(r) \(r) 0 0 1 \(x + r) \(y)Z"
+    }
+
+    /// `<circle cx cy r>` as path data.
+    private static func circle(_ cx: Double, _ cy: Double, _ r: Double) -> String {
+        "M\(cx - r) \(cy)A\(r) \(r) 0 1 0 \(cx + r) \(cy)A\(r) \(r) 0 1 0 \(cx - r) \(cy)Z"
+    }
+}
+
+/// One lucide icon at `size` points. `strokeWidth` is in viewBox units, as
+/// the renderer's `strokeWidth` prop (2 by default, 1.75 in the sidebar head).
+struct DesktopIconView: View {
+    let icon: DesktopIcon
+    var size: CGFloat = 16
+    var strokeWidth: CGFloat = 2
+
+    var body: some View {
+        Canvas { context, canvas in
+            let scale = canvas.width / 24
+            context.scaleBy(x: scale, y: scale)
+            let style = StrokeStyle(lineWidth: strokeWidth, lineCap: .round, lineJoin: .round)
+            for d in icon.paths {
+                context.stroke(Path(SVGPath.cached(d)), with: .foreground, style: style)
+            }
+        }
+        .frame(width: size, height: size)
+        .accessibilityHidden(true)
+    }
+}

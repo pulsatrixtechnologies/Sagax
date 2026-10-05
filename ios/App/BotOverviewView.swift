@@ -6,7 +6,11 @@ import SwiftUI
 /// transcript live here — this mirrors the paired-safe `BotOverview` payload
 /// exactly. Shell copied from `ConnectedAppsView`.
 struct BotOverviewView: View {
+    @Environment(\.themePalette) var themePalette
     let bot: Bot
+    /// The bot panel's Overview also shows what the model sees
+    /// (`OverviewSection.tsx` PromptPreview).
+    var showsPromptPreview = false
 
     @EnvironmentObject private var session: Session
     @State private var overview: BotOverview?
@@ -27,26 +31,29 @@ struct BotOverviewView: View {
                     if !overview.who.soulLead.isEmpty {
                         Text(overview.who.soulLead)
                             .font(.footnote)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(Theme.parity(Color.secondary, Theme.textSecondary))
                     }
                 }
+                .listRowBackground(Theme.parity(Color(uiColor: .secondarySystemGroupedBackground), Theme.card))
 
                 Section("Does") {
                     if overview.does.isEmpty {
                         Text("Nothing scheduled or learned yet.")
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(Theme.parity(Color.secondary, Theme.textSecondary))
                     } else {
                         ForEach(Array(overview.does.enumerated()), id: \.offset) { _, line in
                             Label(line, systemImage: "calendar.badge.clock")
                         }
                     }
                 }
+                .listRowBackground(Theme.parity(Color(uiColor: .secondarySystemGroupedBackground), Theme.card))
 
                 Section("Can reach") {
                     ForEach(Array(overview.reaches.enumerated()), id: \.offset) { _, line in
                         Label(line, systemImage: "network")
                     }
                 }
+                .listRowBackground(Theme.parity(Color(uiColor: .secondarySystemGroupedBackground), Theme.card))
 
                 if let grants = overview.grants {
                     Section("App tools") {
@@ -54,18 +61,19 @@ struct BotOverviewView: View {
                             // The record exists but grants nothing: stronger
                             // than "no apps connected", and worth its own line.
                             Text("No tools granted on any connected app.")
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(Theme.parity(Color.secondary, Theme.textSecondary))
                         } else {
                             ForEach(grants, id: \.slug) { grant in
                                 HStack {
                                     Text(grant.slug)
                                     Spacer()
                                     Text(toolsLabel(grant))
-                                        .foregroundStyle(.secondary)
+                                        .foregroundStyle(Theme.parity(Color.secondary, Theme.textSecondary))
                                 }
                             }
                         }
                     }
+                    .listRowBackground(Theme.parity(Color(uiColor: .secondarySystemGroupedBackground), Theme.card))
                 }
 
                 Section("Won't") {
@@ -73,28 +81,37 @@ struct BotOverviewView: View {
                         Label(line, systemImage: "hand.raised")
                     }
                 }
+                .listRowBackground(Theme.parity(Color(uiColor: .secondarySystemGroupedBackground), Theme.card))
 
                 Section("Recent changes") {
                     if overview.recent.isEmpty {
                         Text("No changes recorded yet.")
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(Theme.parity(Color.secondary, Theme.textSecondary))
                     } else {
                         ForEach(Array(overview.recent.enumerated()), id: \.offset) { _, change in
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(change.summary)
                                 Text(Date(timeIntervalSince1970: change.at / 1_000).formatted(date: .abbreviated, time: .shortened))
                                     .font(.caption)
-                                    .foregroundStyle(.secondary)
+                                    .foregroundStyle(Theme.parity(Color.secondary, Theme.textSecondary))
                             }
                         }
                     }
+                }
+                .listRowBackground(Theme.parity(Color(uiColor: .secondarySystemGroupedBackground), Theme.card))
+                if showsPromptPreview {
+                    PromptPreviewSection(bot: bot)
+                        .listRowBackground(Theme.parity(Color(uiColor: .secondarySystemGroupedBackground), Theme.card))
                 }
             } else if failed {
                 Section {
                     EmptyStateView("Couldn't load", systemImage: "wifi.exclamationmark")
                 }
+                .listRowBackground(Theme.parity(Color(uiColor: .secondarySystemGroupedBackground), Theme.card))
             }
         }
+        .scrollContentBackground(.hidden)
+        .background(Theme.parity(Color(uiColor: .systemGroupedBackground), Theme.bg))
         .navigationTitle("What \(bot.name) does")
         .overlay { if loading && overview == nil { ProgressView() } }
         .task(id: session.connection?.id) {

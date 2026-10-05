@@ -1,0 +1,12 @@
+{
+  "images" : [
+    {
+      "filename" : "pulsatrix-owl-mark-light.png",
+      "idiom" : "universal"
+    }
+  ],
+  "info" : {
+    "author" : "xcode",
+    "version" : 1
+  }
+}

@@ -9,6 +9,7 @@ import CompanionCore
 import UIKit
 
 struct MascotGalleryView: View {
+    @Environment(\.themePalette) var themePalette
     let page: String
 
     static var requestedPage: String? {
@@ -165,6 +166,7 @@ struct MascotGalleryView: View {
 }
 /// The app's root, or the gallery when launched with `-mascotGallery`.
 struct MascotGalleryGate<Content: View>: View {
+    @Environment(\.themePalette) var themePalette
     @ViewBuilder var content: () -> Content
 
     var body: some View {
@@ -178,6 +180,7 @@ struct MascotGalleryGate<Content: View>: View {
 #else
 /// Release builds have no gallery.
 struct MascotGalleryGate<Content: View>: View {
+    @Environment(\.themePalette) var themePalette
     @ViewBuilder var content: () -> Content
     var body: some View { content() }
 }

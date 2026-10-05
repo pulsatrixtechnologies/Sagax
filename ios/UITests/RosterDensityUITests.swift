@@ -36,7 +36,9 @@ final class RosterDensityUITests: XCTestCase {
         atlas.press(forDuration: 1.2)
         let newThread = app.buttons["New thread"]
         XCTAssertTrue(newThread.waitForExistence(timeout: 5))
-        XCTAssertTrue(app.buttons["Manage threads"].exists)
+        // the desktop's bot menu: no Threads entry, Hide from sidebar below
+        XCTAssertFalse(app.buttons["Manage threads"].exists)
+        XCTAssertTrue(app.buttons["Hide from sidebar"].exists)
         recordScreenshot("Long press offers a new thread", in: app)
         // The preview has no client, so creating fails offline — visibly.
         newThread.tap()
@@ -174,7 +176,7 @@ final class RosterDensityUITests: XCTestCase {
         for density in ["compact", "comfortable"] {
             let app = launchRoster(density: density)
             let list = app.scrollViews["roster-list"]
-            let settings = app.buttons["Settings"]
+            let settings = app.buttons["home-account"]
             let title = app.staticTexts.matching(NSPredicate(format: "label ==[c] %@", "Needs attention")).firstMatch
             XCTAssertTrue(title.waitForExistence(timeout: 10), density)
             XCTAssertTrue(list.exists, density)
@@ -217,13 +219,17 @@ final class RosterDensityUITests: XCTestCase {
 
     @MainActor
     private func chooseDensity(_ label: String, in app: XCUIApplication) {
-        app.buttons["Settings"].tap()
-        // List density lives in Settings > Advanced (the earlier settings,
-        // kept behind the parity Settings page).
-        let advanced = app.descendants(matching: .any)["settings-advanced"].firstMatch
-        XCTAssertTrue(advanced.waitForExistence(timeout: 5))
-        for _ in 0..<6 where !advanced.isHittable { app.swipeUp() }
-        advanced.tap()
+        // the photo's account menu > Settings > Appearance > List density
+        app.buttons["home-account"].tap()
+        let settings = app.buttons["account-menu.settings"]
+        XCTAssertTrue(settings.waitForExistence(timeout: 5))
+        settings.tap()
+        let appearance = app.descendants(matching: .any)["settings-appearance"].firstMatch
+        XCTAssertTrue(appearance.waitForExistence(timeout: 10))
+        appearance.tap()
+        let row = app.buttons["list-density"]
+        XCTAssertTrue(row.waitForExistence(timeout: 10))
+        for _ in 0..<10 where !row.isHittable { app.swipeUp() }
         let picker = app.buttons["list-density"]
         XCTAssertTrue(picker.waitForExistence(timeout: 5))
         func chosen() -> Bool { (picker.value as? String)?.contains(label) == true || picker.label.contains(label) }
@@ -240,13 +246,13 @@ final class RosterDensityUITests: XCTestCase {
         }
         XCTAssertTrue(picker.waitForExistence(timeout: 5))
         XCTAssertTrue(chosen())
-        app.buttons["Done"].tap()
-        // Settings pushed from this list leads with Back (a close button
-        // when it is the home's card sheet).
-        let leading = app.descendants(matching: .any)
-            .matching(NSPredicate(format: "identifier IN %@", ["settings-close", "settings-back"])).firstMatch
-        XCTAssertTrue(leading.waitForExistence(timeout: 5))
-        leading.tap()
+        // back to the Settings list, then close the card sheet
+        let back = app.descendants(matching: .any)["settings-back"].firstMatch
+        for _ in 0..<10 where !back.isHittable { app.swipeDown() }
+        back.tap()
+        let close = app.descendants(matching: .any)["settings-close"].firstMatch
+        XCTAssertTrue(close.waitForExistence(timeout: 5))
+        close.tap()
         XCTAssertTrue(app.buttons["updates-button"].waitForExistence(timeout: 5))
     }
 
