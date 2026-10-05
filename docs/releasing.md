@@ -56,7 +56,14 @@ refreshes it.
 Sagax releases are built on a Mac, not by the workflows above:
 
 1. Set `forkVersion` in `package.json` (`version` stays the Sagax base)
-   and write `docs/releases/X.Y.Z.md`.
+   and write `docs/releases/X.Y.Z.md`. French comes first. A line that is
+   exactly `## English` starts the English section. That file is the GitHub
+   release body (`pulsa-vX.Y.Z`) and the notes the app shows before and
+   after the update. `node scripts/check-release-notes.mjs` fails with a
+   clear message when the file is missing, has no French section, or has
+   no `## English` line. `pnpm package:fork:mac` and `pnpm package:fork:win`
+   run the same check before packaging, and the fork release workflow runs
+   it before creating the tag. A version that fails the check cannot be tagged.
 2. macOS: `SAGAX_MAC_IDENTITY="<Developer ID name or SHA-1 hash>" pnpm package:fork:mac`
    (a hash is required when the keychain holds two identities with the same
    name), then notarize and staple each `.zip`/`.dmg`, re-zip and regenerate
@@ -74,8 +81,11 @@ Sagax releases are built on a Mac, not by the workflows above:
    `pnpm smoke:launch --app release/mac-arm64/Sagax.app`, and again with
    `--user-data-copy` pointing at an existing userData folder (it is copied,
    never modified). Both must load the main window within 60 s.
-5. `gh release create pulsa-vX.Y.Z` with every installer, zip, blockmap and
-   both feeds, as a full release.
+5. `node scripts/check-release-notes.mjs`, then
+   `gh release create pulsa-vX.Y.Z --notes-file docs/releases/X.Y.Z.md`
+   with every installer, zip, blockmap and both feeds, as a full release.
+   The release body is that file. Do not write a different body: the
+   desktop updater shows it as the notes for the version.
 
 ## Updater migration invariant
 

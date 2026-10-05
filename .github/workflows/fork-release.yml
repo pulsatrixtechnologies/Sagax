@@ -1,5 +1,7 @@
 # Trial builds of the Pulsatrix fork. The official package version is not bumped.
 # Artifacts and the GitHub tag use forkVersion (pulsa-vX.Y.Z).
+# The release body is docs/releases/<forkVersion>.md. The job refuses to tag
+# when that file is missing or has no "## English" section.
 # macOS is unsigned. Windows is unsigned. This does not touch the upstream release mirror.
 name: Fork release
 
@@ -100,21 +102,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          node scripts/check-release-notes.mjs
           fork=$(node -p "require('./package.json').forkVersion")
-          base=$(node -p "require('./package.json').baseVersion")
           tag="pulsa-v$fork"
           mkdir -p out
           find dist-release -type f \( -name '*.dmg' -o -name '*.zip' -o -name '*.exe' -o -name '*.blockmap' -o -name '*.yml' \) -exec cp {} out/ \;
           ls -lh out
-          notes=$(cat <<EOF
-          Sagax $fork is a trial build of this fork.
-
-          The official base stays OpenMausBot $base. Fork versioning starts at 0.1.0.
-
-          macOS is not notarized. The first open needs a right-click, then Open.
-          Windows is unsigned. SmartScreen shows an unknown publisher. Choose More info, then Run anyway.
-
-          This is not an official OpenMausBot release.
-          EOF
-          )
-          gh release create "$tag" --repo "$GITHUB_REPOSITORY" ${{ inputs.prerelease && '--prerelease' || '' }} --title "Sagax $fork" --notes "$notes" out/*
+          gh release create "$tag" --repo "$GITHUB_REPOSITORY" ${{ inputs.prerelease && '--prerelease' || '' }} --title "Sagax $fork" --notes-file "docs/releases/$fork.md" out/*
