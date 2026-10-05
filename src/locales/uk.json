@@ -2424,5 +2424,20 @@
   "settings.profile.uploadAvatar": "Завантажити аватар",
   "settings.profile.uploadPhoto": "Завантажити фото",
   "settings.profile.removePhoto": "Вилучити фото",
-  "botPanel.skills.close": "Закрити"
+  "botPanel.skills.close": "Закрити",
+  "releaseNotes.updateTitle": "{name} {version} доступна",
+  "releaseNotes.updateReady": "{version} готова",
+  "releaseNotes.updateRestart": "Оновити й перезапустити",
+  "releaseNotes.later": "Пізніше",
+  "releaseNotes.downloading": "Завантаження {version}…",
+  "releaseNotes.starting": "Запуск завантаження…",
+  "releaseNotes.percent": "{percent}%",
+  "releaseNotes.preparing": "Підготовка оновлення…",
+  "releaseNotes.restarting": "Перезапуск…",
+  "releaseNotes.versionHeading": "Версія {version}",
+  "releaseNotes.noNotes": "Для цього оновлення не опубліковано приміток до випуску.",
+  "releaseNotes.whatsNew": "Що нового у {version}",
+  "releaseNotes.menu": "Примітки до випуску",
+  "releaseNotes.close": "Закрити",
+  "releaseNotes.whatsNewEmpty": "Приміток до версії {version} немає в цій копії Sagax."
 }
