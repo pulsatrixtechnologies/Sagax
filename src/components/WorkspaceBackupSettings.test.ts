@@ -35,8 +35,9 @@ function render(recovery: boolean | "restart" = false) {
     // The settings export returns null for a member, or the form element.
     // Call the form here so its inputs stay on the captured tree and its
     // useState indexes stay where these tests left them.
-    const gate = WorkspaceBackupSettings() as ReactElement<{ children?: ReactNode }> | null;
-    tree = gate && typeof gate.type === "function" ? gate.type(gate.props) : gate;
+    const gate = WorkspaceBackupSettings() as ReactElement<object> | null;
+    const Form = gate && typeof gate.type === "function" ? gate.type as (props: object) => ReactNode : null;
+    tree = Form && gate ? Form(gate.props) : gate;
     return tree;
   }
   const html = renderToStaticMarkup(createElement(Capture));
