@@ -48,7 +48,6 @@ import { TeamMapPage } from "@/components/TeamMapPage";
 import { setLocale, t } from "@/lib/i18n";
 import { shouldOpenKeyboardShortcuts } from "@/lib/keyboard-shortcuts";
 import { effectiveLanguage, useLanguageChoice } from "@/lib/language-preference";
-import { requestEnterpriseEntry } from "@/lib/enterprise-entry";
 import { takeRoutineDelegationReturn } from "@/lib/routine-delegation";
 import { openThreadVisible, pageOpenThreadTarget, type OpenThreadTarget } from "@/lib/open-thread-hash";
 import { botShowsUnread } from "@/lib/bot-unread";
@@ -75,10 +74,9 @@ function Shell() {
     const url = new URL(window.location.href);
     const requestedSettings = url.searchParams.get("desktop-settings");
     // Sagax: the inherited OMB Cloud links ("cloud", "cloud-settings") open nothing.
-    if (requestedSettings === "workspaces" || (requestedSettings === "organization" && window.ogb.organization && !remoteClient)) {
+    if (requestedSettings === "workspaces" || requestedSettings === "organization") {
       url.searchParams.delete("desktop-settings");
       window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
-      if (requestedSettings === "organization") requestEnterpriseEntry();
       open();
     }
     return window.ogb.environments.onOpenSettings?.(open);
@@ -296,8 +294,7 @@ function Shell() {
   // is absent in the browser.
   useEffect(() => {
     return window.ogb?.onOpenAppSettings?.(section => {
-      if (section === "organization" && window.ogb && !remoteClient) requestEnterpriseEntry();
-      dispatch({ type: "toggleAppSettings", open: true, ...(section === "organization" && window.ogb && !remoteClient ? { section } : {}) });
+      dispatch({ type: "toggleAppSettings", open: true, ...(section === "organization" ? { section } : {}) });
     });
   }, [dispatch]);
 

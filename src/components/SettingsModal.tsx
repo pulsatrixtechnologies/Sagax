@@ -63,7 +63,6 @@ import { ThreadCleanupSettings } from "./ThreadCleanupSettings";
 import { DefaultBotSettings } from "./NewBotDialog";
 import { AppIconPicker, appIconAvailable } from "./settings/AppIconPicker";
 import { WorkspaceBackupSettings } from "./WorkspaceBackupSettings";
-import { CompanyBackupSettings } from "./CompanyBackupSettings";
 import { cn } from "@/lib/cn";
 import { setAdvancedMode, useAdvancedMode } from "@/lib/interface-mode";
 import { simpleHidesSettingsSection } from "@/lib/interface-visibility";
@@ -1372,7 +1371,7 @@ export function SettingsModal() {
               <EnginesSettings />
             )}
 
-            {section === "backups" && <><WorkspaceBackupSettings /><CompanyBackupSettings /></>}
+            {section === "backups" && <WorkspaceBackupSettings />}
 
             {section === "companion" && (
               <>

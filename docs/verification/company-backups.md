@@ -1,5 +1,12 @@
 # Company cloud backups
 
+Settings no longer shows company cloud backups, and the desktop does not
+start the hosted Admin connection or its daily backup schedule. The transfer
+modules remain for a saved connection that an older build already holds.
+Import of a workspace backup file is unchanged (see workspace backups).
+
+# Retired portal backup notes
+
 ## Execution status
 
 2026-10-03: The isolated Electron restore completed through **Restart and

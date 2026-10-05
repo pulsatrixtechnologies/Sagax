@@ -89,18 +89,15 @@ describe("people on a workspace the organisation's Admin manages", () => {
     ]);
   });
 
-  it("says where people are managed, links there safely, and offers nothing to edit", () => {
+  it("lists who signed in and does not link to a hosted Admin portal", () => {
     const people: Person[] = [{ entry: "bob@acme.test", role: "member", isDomain: false, lastSeenAt: null, devices: 1, turns: 3, costUsd: 1.25 }];
-    const html = renderToStaticMarkup(createElement(PortalPeople, { peopleUrl: url, people }));
-    expect(html).toContain("data-people-portal");
-    expect(html).toContain("People are managed in your organization&#x27;s Admin");
-    expect(html).toContain(`href="${url}"`);
-    expect(html).toContain('target="_blank"');
-    expect(html).toContain('rel="noopener noreferrer"');
-    expect(html).toContain("Manage people in Admin");
+    const html = renderToStaticMarkup(createElement(PortalPeople, { people }));
+    expect(html).not.toContain("data-people-portal");
+    expect(html).not.toContain(url);
+    expect(html).not.toContain("Manage people in Admin");
     expect(html).toContain("bob@acme.test");
     expect(html).toContain("$1.25");
     expect(html).not.toMatch(/Make admin|Make user|>Remove<|Invite link|<input|<form|pairing code|ends their account sessions/);
-    expect(renderToStaticMarkup(createElement(PortalPeople, { peopleUrl: null, people: [] }))).toContain("Nobody has signed in here yet.");
+    expect(renderToStaticMarkup(createElement(PortalPeople, { people: [] }))).toContain("Nobody yet");
   });
 });

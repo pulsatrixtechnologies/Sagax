@@ -1,5 +1,12 @@
 # Optional desktop organization connection
 
+The hosted OpenMausBot Admin portal (menu **Sign in with your organization**,
+Company models, company cloud backups, the People portal link) is removed.
+Settings → Organization is Perspicax. The smoke below describes the retired
+portal client and will not pass against current Settings.
+
+# Retired portal smoke
+
 Run the actual renderer and production desktop preload/client in a disposable
 Electron window:
 
