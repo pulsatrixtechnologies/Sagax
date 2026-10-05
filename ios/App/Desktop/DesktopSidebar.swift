@@ -660,9 +660,9 @@ struct DesktopSidebarFooter: View {
     private func placeRow(_ place: DesktopSidebarPlace, icons: Bool) -> some View {
         switch place {
         case .teamMap:
-            DesktopPlaceRow(title: String(localized: "Team map"), icon: .network, id: place.rawValue, iconOnly: icons) { model.modal = .teamMap }
+            DesktopPlaceRow(title: String(localized: "Team map"), icon: .network, id: place.rawValue, iconOnly: icons, selected: model.page == .teamMap) { model.show(.teamMap) }
         case .automations:
-            DesktopPlaceRow(title: String(localized: "Automations"), icon: .calendarDays, id: place.rawValue, iconOnly: icons) { model.modal = .automations }
+            DesktopPlaceRow(title: String(localized: "Automations"), icon: .calendarDays, id: place.rawValue, iconOnly: icons, selected: model.page == .automations) { model.show(.automations) }
         case .connectedApps:
             DesktopPlaceRow(title: String(localized: "Connected apps"), icon: .puzzle, id: place.rawValue, iconOnly: icons) { model.modal = .plugins }
         case .templates:
@@ -808,14 +808,18 @@ struct DesktopPlaceRow: View {
     let icon: DesktopIcon
     let id: String
     let iconOnly: Bool
+    /// The place's page is open: `bg-accent/16`, the icon in the accent, the title medium ink.
+    var selected = false
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
             HStack(spacing: 10) {
                 DesktopIconView(icon: icon, size: 20, strokeWidth: 1.75)
+                    .foregroundStyle(selected ? theme.accentText : theme.sidebarInkSecondary)
                 if !iconOnly {
-                    DesktopLineText(text: title, size: 13, color: theme.sidebarInkSecondary, lineHeight: 20)
+                    DesktopLineText(text: title, size: 13, weight: selected ? .medium : .regular,
+                                    color: selected ? theme.sidebarInk : theme.sidebarInkSecondary, lineHeight: 20)
                     Spacer(minLength: 0)
                 }
             }
@@ -823,9 +827,11 @@ struct DesktopPlaceRow: View {
             .padding(.horizontal, 8)
             .frame(maxWidth: .infinity, alignment: iconOnly ? .center : .leading)
             .frame(height: 36)
+            .background(selected ? theme.accent.opacity(0.16) : .clear, in: RoundedRectangle(cornerRadius: theme.radiusLg, style: .continuous))
             .contentShape(Rectangle())
         }
         .buttonStyle(DesktopSidebarRowButtonStyle())
+        .accessibilityAddTraits(selected ? .isSelected : [])
         .accessibilityLabel(Text(verbatim: title))
         .accessibilityIdentifier("desktop-sidebar-\(id)")
     }
