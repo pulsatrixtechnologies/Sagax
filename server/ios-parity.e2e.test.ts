@@ -68,8 +68,9 @@ describe("iOS parity routes on a personal server", () => {
   it("keeps Settings > Bot for the server and opens reviewed conversations when auto-review is on", async () => {
     const { bot } = await api("POST", "/api/bots", { name: "Review Scout", modelSelection: { instanceId: "claude", model: "claude-sonnet-5" } }, 201);
     expect((await api("GET", "/api/settings/bot")).settings).toEqual({ autoReviewDefault: false, timeZone: null, timeZoneAuto: true });
+    await api("PATCH", `/api/bots/${bot.id}`, { approvalMode: "ask" });
     const before = (await api("POST", `/api/bots/${bot.id}/tasks`, { title: "Before" }, 201)).task;
-    expect(before.approvalMode ?? "ask").toBe("ask");
+    expect(before.approvalMode).toBe("ask");
     const saved = await api("PUT", "/api/settings/bot", { autoReviewDefault: true, timeZone: "America/Toronto", timeZoneAuto: false });
     expect(saved).toMatchObject({ scope: "server", effectiveTimeZone: "America/Toronto" });
     await api("PUT", "/api/settings/bot", { timeZone: "Nowhere/Land" }, 400);

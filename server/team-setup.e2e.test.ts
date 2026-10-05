@@ -43,6 +43,9 @@ it("Clive reviews multi-provider teams once, continues after each decision, and 
     const start = async (text: string, sendId?: string) => {
       if (existsSync(gate)) unlinkSync(gate);
       if (sendId) {
+        // A guarded send names Ask, or Full on a thread that already has it.
+        // Clive starts on Approve for me, so this snapshot case sets the thread back to Ask.
+        await api("PATCH", `/api/bots/${chief.id}/tasks/${chief.threadId}`, { approvalMode: "ask" });
         const before = await api("GET", `/api/threads/${chief.threadId}/messages`);
         const accepted = await api("POST", `/api/bots/${chief.id}/messages/guarded`, {
           threadId: chief.threadId, sendId, text, expectedActiveLeafId: before.activeLeafId,
@@ -139,7 +142,7 @@ it("Clive reviews multi-provider teams once, continues after each decision, and 
     expect(created.map((bot: any) => bot.name).sort()).toEqual(["Mira", "Patch", "Quill"]);
     const engineer = created.find((bot: any) => bot.name === "Patch");
     expect(engineer.chiefOfStaff).toBeFalsy(); // one Primary Bot per person: Clive keeps it
-    expect(engineer).toMatchObject({ title: "Implementation and verification engineer", section: "Engineering", modelSelection: selection(codex), approvalMode: "ask", autoApprove: false, composio: false });
+    expect(engineer).toMatchObject({ title: "Implementation and verification engineer", section: "Engineering", modelSelection: selection(codex), approvalMode: "auto", autoApprove: true, composio: false });
     expect(engineer.managedSections).toBeUndefined();
     expect(saved.find((bot: any) => bot.id === chief.id).managedSections).toEqual(expect.arrayContaining(plan.newTeams));
     await api("POST", `/api/threads/${chief.threadId}/respond`, { requestId: proposed.requestId, behavior: "allow" });

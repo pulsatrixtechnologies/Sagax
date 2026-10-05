@@ -713,6 +713,10 @@ export class Store {
     let botsMigrated = false;
     const browserProfileAliases = loadBrowserProfileIdAliases();
     let groupsMigrated = false;
+    // An unconfirmed elevation revoked below must stay Ask. The one-time
+    // default below must not turn that revocation into Approve for me.
+    const keepAskBot = new Set<string>();
+    const keepAskTask = new Set<string>();
     for (const b of this.bots) {
       // transient state never survives a restart — and if a previous
       // process died mid-turn, bots.json still says busy/working; persist
@@ -770,15 +774,21 @@ export class Store {
           // A crash may land between saving the target and clearing its
           // journal. Revoke that target only, never unrelated threads.
           const target = b.tasks?.find(task => task.threadId === b.approvalGrant?.threadId);
-          if (target) { target.approvalMode = "ask"; target.autoApprove = false; }
+          if (target) {
+            target.approvalMode = "ask";
+            target.autoApprove = false;
+            keepAskTask.add(target.threadId);
+          }
         }
         if (!threadOnly) {
         b.approvalMode = "ask";
         b.autoApprove = false;
+        keepAskBot.add(b.id);
         for (const task of b.tasks ?? []) {
           if (task.approvalMode === "full" || task.approvalMode === "custom") {
             task.approvalMode = "ask";
             task.autoApprove = false;
+            keepAskTask.add(task.threadId);
           }
         }
         }
@@ -1001,7 +1011,36 @@ export class Store {
         botsMigrated = true;
       }
     }
+    // Approve for me is the default. The first start on this data directory
+    // moves bots and threads still on Ask (or with no mode) onto it. A later
+    // choice of Ask, Edits, Full or Custom stays. This computer keeps Ask
+    // until its own warning. A grant revoked above stays Ask, threads included.
+    // The marker is written after the save so a crash before the write retries.
+    const approvalDefaultMarker = join(DATA_DIR, "approval-default-auto.v1");
+    const approvalDefaultPending = !existsSync(approvalDefaultMarker);
+    if (approvalDefaultPending) {
+      for (const b of this.bots) {
+        if (b.computer === "local" || keepAskBot.has(b.id)) continue;
+        if (b.approvalMode === undefined || b.approvalMode === "ask") {
+          b.approvalMode = "auto";
+          b.autoApprove = true;
+          botsMigrated = true;
+        }
+        for (const task of b.tasks ?? []) {
+          if (keepAskTask.has(task.threadId)) continue;
+          if (task.approvalMode === undefined || task.approvalMode === "ask") {
+            task.approvalMode = "auto";
+            task.autoApprove = true;
+            botsMigrated = true;
+          }
+        }
+      }
+    }
     if (botsMigrated) this.saveBots();
+    if (approvalDefaultPending) {
+      try { writeFileAtomic(approvalDefaultMarker, "auto\n", { mode: 0o600 }); }
+      catch (error) { console.warn("store: approval default marker was not saved", error); }
+    }
     // Search reads SQLite directly, so migrate every known legacy transcript
     // at startup rather than waiting until the user happens to open it. Only
     // pending JSON files are touched; already-migrated threads stay lazy.
@@ -1872,6 +1911,8 @@ export class Store {
       ...(toolScope.scope ? { toolScope: toolScope.scope } : {}),
       unread: false,
       modelSelection: this.newBotSelection(profile.modelSelection),
+      approvalMode: "auto",
+      autoApprove: true,
       resumeCursors: {},
       createdAt: Date.now(),
       host: { kind: "fleet" },
@@ -1886,6 +1927,8 @@ export class Store {
       updatedAt: bot.createdAt,
       resumeCursors: {},
       modelSelection: structuredClone(bot.modelSelection),
+      approvalMode: "auto",
+      autoApprove: true,
       unread: false,
       activity: "idle",
       busy: false,
@@ -1937,14 +1980,14 @@ export class Store {
         next = { id: operation.botId, threadId: operation.threadId, name: operation.fields.name,
           title: "", description: "", soul: "", notifications: true, color: COLORS[nextBots.length % COLORS.length], unread: false,
           resumeCursors: {}, createdAt, ...operation.fields, modelSelection,
-          approvalMode: "ask", autoApprove: false, composio: false, approvePeerComms: false,
+          approvalMode: "auto", autoApprove: true, composio: false, approvePeerComms: false,
           // A Primary Bot's new teammate is seen by exactly the Primary Bot's audience:
           // a restricted Primary Bot never creates a bot everyone sees.
           ...(chief.visibility && chief.visibility !== "everyone" ? { visibility: structuredClone(chief.visibility) } : {}),
           // ...and belongs to the Primary Bot's own person.
           ...(chief.ownerUserId ? { ownerUserId: chief.ownerUserId } : {}),
           tasks: [{ threadId: operation.threadId, title: UNTITLED_THREAD, createdAt, updatedAt: createdAt, resumeCursors: {},
-            modelSelection: structuredClone(modelSelection), approvalMode: "ask", autoApprove: false,
+            modelSelection: structuredClone(modelSelection), approvalMode: "auto", autoApprove: true,
             unread: false, activity: "idle", busy: false }],
         };
         // "" is the private-workspace spelling on proposal; the record

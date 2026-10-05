@@ -156,7 +156,7 @@ it("applies requested Full Access workflows through MCP without duplicate approv
     const updatedChief = (await bots()).find(bot => bot.id === chief.id);
     expect(updatedChief).toMatchObject({ title: "Monthly reporting Chief", description: "Coordinates monthly fixture reports", soul: "Report only verified fixture results.", approvalMode: "full", approvePeerComms: true, managedSections: ["Research"] });
     const mira = (await bots()).find(bot => bot.name === "Mira");
-    expect(mira).toMatchObject({ section: "Research", approvalMode: "ask", autoApprove: false, composio: false });
+    expect(mira).toMatchObject({ section: "Research", approvalMode: "auto", autoApprove: true, composio: false });
     const routine = (await api("GET", "/api/routines")).routines.find((item: any) => item.name === "Monthly fixture report");
     expect(routine).toMatchObject({ botId: chief.id, enabled: true, schedule });
     expect((await api("GET", `/api/bots/${chief.id}/skills`)).skills).toEqual(expect.arrayContaining([expect.objectContaining({ name: "monthly-fixture-review", enabled: true })]));
@@ -186,12 +186,12 @@ it("applies requested Full Access workflows through MCP without duplicate approv
     const handoffs = JSON.parse(readFileSync(join(dataDir, "room-handoffs.json"), "utf8"));
     expect(handoffs.every((node: any) => node.status === "completed")).toBe(true);
     expect(providerTurns().filter(turn => turn.botId === peer.id)).toHaveLength(1);
-    // A Full-access Chief's delegation runs Full: Ada's own level is Ask,
-    // yet the work Clive handed her ran without a single card, her pair
+    // A Full-access Chief's delegation runs Full. Ada's own level stays
+    // Approve for me: the work Clive handed her ran without a card, her pair
     // thread with Clive is now Full, and the thread says where that came from.
     const peerTurn = providerTurns().find(turn => turn.botId === peer.id)!;
     expect(peerTurn.permissionMode).toBe("bypassPermissions");
-    expect((await bots()).find(bot => bot.id === peer.id).approvalMode ?? "ask").toBe("ask");
+    expect((await bots()).find(bot => bot.id === peer.id).approvalMode).toBe("auto");
     expect(await unanswered(peerTurn.threadId)).toHaveLength(0);
     expect((await messages(peerTurn.threadId)).some(message => message.kind === "activity" && /^Full access — delegated by Clive, a Primary Bot on Full access$/.test(message.tool?.name ?? ""))).toBe(true);
     evidence.push({ delegatedFullAccess: { peerThreadId: peerTurn.threadId, permissionMode: peerTurn.permissionMode } });

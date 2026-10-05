@@ -145,6 +145,22 @@ the driver tests or `src/components/ApprovalModeSelector.fullAccess.test.ts`:
 - Mode changes (`approval.mode`), Full turns (`approval.full_access_turn`)
   and the policy (`org.settings`) go to the admin activity log.
 
+## Default approval mode (2026-10-05)
+
+Approve for me (`approvalMode: "auto"`) is the mode a bot starts on. Keep
+these rules, covered by `server/independent-task-store.test.ts` ("moves Ask
+bots and threads to Approve for me once"):
+
+- `createBot` writes `auto` on the bot and its first thread. `POST /api/bots`
+  keeps a level the request names. This computer (`computer: "local"`) stays
+  Ask until its own warning. The New bot dialog shows Approve for me when the
+  saved template names no mode.
+- The first start of a data directory moves bots and threads still on Ask, or
+  with no mode, onto Approve for me, then writes `approval-default-auto.v1`.
+  A later choice of Ask stays. Edits, Full and Custom stay. A grant revoked
+  at that start stays Ask, threads included. Import and team backup still
+  force Ask.
+
 ## Profile on an organization server
 
 On an organization server (`SAGAX_IDENTITY=perspicax`) a signed-in person's

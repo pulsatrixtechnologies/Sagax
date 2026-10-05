@@ -7152,7 +7152,7 @@ describe("harness HTTP API", () => {
       const stored = (await api("GET", "/api/bots")).body.bots.find(
         (candidate: { id: string }) => candidate.id === bot.id,
       );
-      expect(stored.approvalMode).toBeUndefined();
+      expect(stored.approvalMode).toBe("auto");
     } finally {
       await api("DELETE", `/api/bots/${bot.id}`);
     }
@@ -7197,7 +7197,7 @@ describe("harness HTTP API", () => {
       const stored = (await api("GET", "/api/bots")).body.bots.find(
         (candidate: { id: string }) => candidate.id === bot.id,
       );
-      expect(stored.approvalMode).toBeUndefined();
+      expect(stored.approvalMode).toBe("auto");
     } finally {
       await api("DELETE", `/api/bots/${bot.id}`);
     }
@@ -7220,7 +7220,7 @@ describe("harness HTTP API", () => {
     const claude = instances.find((instance: { instanceId: string }) => instance.instanceId === "claude");
     const bot = (await api("POST", "/api/bots", {
       modelSelection: { instanceId: claude.instanceId, model: claude.models.default },
-      approvalMode: "ask",
+      settings: { approvalMode: "ask" },
     })).body.bot;
     try {
       expect((await api("POST", `/api/bots/${bot.id}/messages`, { text: "keep working" })).status).toBe(202);

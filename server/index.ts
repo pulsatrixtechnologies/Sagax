@@ -27669,6 +27669,9 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       const createdRoutines: Array<{ id: string; enabled: boolean }> = [];
       try {
         const { chiefOfStaff: _chief, managedSections: _managed, toolScope: _toolScope, ...ordinary } = settings;
+        // Approve for me unless the request chose another level, or the bot
+        // works on this computer (that warning is its own confirmation).
+        const approvalMode = ordinary.approvalMode ?? (ordinary.computer === "local" ? "ask" : "auto");
         store.patchBot(bot.id, {
           // Store creation completes workspace defaults (including effort).
           // Applying the rest of the template must not undo that selection.
@@ -27678,8 +27681,10 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           computer: ordinary.computer ?? undefined, cwd: checkedCwd.cwd ?? undefined,
           peers: ordinary.peers ?? undefined, mcpServers: ordinary.mcpServers ?? undefined,
           browserProfile: ordinary.browserProfile || undefined,
-          autoApprove: ordinary.approvalMode === "auto",
+          approvalMode,
+          autoApprove: approvalMode === "auto",
         });
+        store.patchTask(bot.id, bot.threadId, { approvalMode, autoApprove: approvalMode === "auto" });
         // What the preset brings wins over the saved defaults for the same
         // skill name or note file.
         const presetSkills = new Set(preset?.preset.skills ?? []);

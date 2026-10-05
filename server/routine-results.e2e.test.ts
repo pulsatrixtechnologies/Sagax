@@ -58,7 +58,7 @@ it("keeps results together while fresh executions, approvals, deletion and unrea
     expect(savedBot.tasks.filter((task: any) => !task.routineRunId)).toHaveLength(2);
     expect(savedBot.tasks.find((task: any) => task.threadId === destination).unread).toBe(true);
     for (const run of completed) expect(savedBot.tasks.find((task: any) => task.threadId === run.threadId))
-      .toMatchObject({ routineRunId: run.id, unread: false, autoApprove: false, approvalMode: "ask" });
+      .toMatchObject({ routineRunId: run.id, unread: false, autoApprove: true, approvalMode: "auto" });
 
     await api("PATCH", `/api/routines/${routine.id}`, { resultsThreadId: completed[0].threadId }, 400);
     // Open run remains a usable normal conversation. Marking its historical

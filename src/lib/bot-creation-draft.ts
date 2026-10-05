@@ -27,6 +27,11 @@ export class BotCreationDraft {
 
   constructor(defaults: NewBotDefaults, readonly changed: () => void, private network: typeof api = api) {
     this.template = structuredClone(defaults);
+    // Approve for me is the mode a new bot starts in. A saved template that
+    // already names a mode, and This computer (its own warning), stay as given.
+    if (this.template.profile.approvalMode === undefined && this.template.profile.computer !== "local") {
+      this.template.profile.approvalMode = "auto";
+    }
     this.routines = defaults.routines.map(routine => this.routine({ ...routine, botId: this.id }));
   }
 

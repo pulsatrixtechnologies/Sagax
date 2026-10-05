@@ -36,7 +36,7 @@ describe("independent bot task state", () => {
     });
     expect(restarted.messagesFor(first)).toEqual(history);
     expect(restarted.createTask(bot.id)?.approvalMode).toBe("full");
-    expect(approvalModeFor(restarted.bot(other.id)!)).toBe("ask");
+    expect(approvalModeFor(restarted.bot(other.id)!)).toBe("auto");
     restarted.setAllThreadApprovalMode(bot.id, "ask");
     expect(new Store(selection).tasks(bot.id).every(task => task.approvalMode === "ask")).toBe(true);
   });
@@ -47,6 +47,7 @@ describe("independent bot task state", () => {
     const first = bot.threadId;
     // The opening thread inherits until it has its own copy. A later thread,
     // and any thread whose level was chosen in the composer, keeps that copy.
+    store.patchBot(bot.id, { approvalMode: "ask", autoApprove: false });
     store.patchTask(bot.id, first, { approvalMode: "ask", autoApprove: false, alwaysAllow: ["Read"] });
     const model = store.taskByThread(bot.id, first)?.modelSelection;
     store.appendMessage(first, { role: "user", kind: "text", text: "Keep this conversation" });
@@ -89,7 +90,7 @@ describe("independent bot task state", () => {
       expect(() => store.setAllThreadApprovalMode(bot.id, "full")).toThrow("fixture disk full");
       expect(JSON.stringify(bot)).toBe(before);
       const restarted = new Store(selection);
-      expect(restarted.tasks(bot.id).every(task => approvalModeFor(restarted.projectBotForTask(bot.id, task.threadId)!) === "ask")).toBe(true);
+      expect(restarted.tasks(bot.id).every(task => approvalModeFor(restarted.projectBotForTask(bot.id, task.threadId)!) === "auto")).toBe(true);
     } finally { save.mockRestore(); }
   });
 
@@ -138,7 +139,7 @@ describe("independent bot task state", () => {
     store.setResumeCursor(bot.id, "claude", "first-session", first.threadId);
     const reloaded = new Store(selection);
     expect(reloaded.taskByThread(bot.id, first.threadId)).toMatchObject({ routineRunId: "run-1", resumeCursors: { claude: "first-session" } });
-    expect(reloaded.taskByThread(bot.id, second.threadId)).toMatchObject({ routineRunId: "run-2", resumeCursors: {}, approvalMode: "ask", autoApprove: false });
+    expect(reloaded.taskByThread(bot.id, second.threadId)).toMatchObject({ routineRunId: "run-2", resumeCursors: {}, approvalMode: "auto", autoApprove: true });
     reloaded.patchTask(bot.id, first.threadId, { routineRunId: undefined });
     expect(new Store(selection).taskByThread(bot.id, first.threadId)?.routineRunId).toBeUndefined();
   });
@@ -416,6 +417,53 @@ describe("independent bot task state", () => {
     expect(migrated.messagesFor(second.threadId).at(-1)?.text).toBe("Second conversation");
     expect(savedBots()[0]!.tasks).toHaveLength(2);
     expect(savedBots()[0]!.tasks!.every((task) => task.modelSelection?.model === "legacy-model")).toBe(true);
+  });
+
+  it("moves Ask bots and threads to Approve for me once, and leaves a later Ask choice", () => {
+    mkdirSync(DATA_DIR, { recursive: true });
+    writeFileSync(join(DATA_DIR, "bots.json"), JSON.stringify([
+      { id: "ask-bot", name: "Ask", threadId: "t1", soul: "", computer: "cloud", approvalMode: "ask", autoApprove: false,
+        tasks: [{ threadId: "t1", title: "One", approvalMode: "ask", autoApprove: false }, { threadId: "t2", title: "Two" }] },
+      { id: "plain-bot", name: "Plain", threadId: "p1", soul: "", tasks: [{ threadId: "p1", title: "Plain" }] },
+      { id: "full-bot", name: "Full", threadId: "f1", soul: "", approvalMode: "full",
+        tasks: [{ threadId: "f1", title: "Full", approvalMode: "full" }, { threadId: "f2", title: "Ask thread", approvalMode: "ask" }] },
+      { id: "local-bot", name: "Local", threadId: "l1", soul: "", computer: "local", approvalMode: "ask",
+        tasks: [{ threadId: "l1", title: "Local", approvalMode: "ask" }] },
+      { id: "edits-bot", name: "Edits", threadId: "e1", soul: "", approvalMode: "edits",
+        tasks: [{ threadId: "e1", title: "Edits", approvalMode: "edits" }] },
+      { id: "revoked-bot", name: "Revoked", threadId: "r1", soul: "", approvalMode: "full",
+        approvalGrant: { requestId: "123e4567-e89b-42d3-a456-426614174000", mode: "full", phase: "confirmed" },
+        tasks: [
+          { threadId: "r1", title: "Was full", approvalMode: "full" },
+          { threadId: "r2", title: "Already ask", approvalMode: "ask" },
+        ] },
+    ]));
+    const store = new Store(selection);
+    expect(store.bot("ask-bot")).toMatchObject({ approvalMode: "auto", autoApprove: true });
+    expect(store.taskByThread("ask-bot", "t1")).toMatchObject({ approvalMode: "auto", autoApprove: true });
+    expect(store.taskByThread("ask-bot", "t2")).toMatchObject({ approvalMode: "auto", autoApprove: true });
+    expect(store.bot("plain-bot")).toMatchObject({ approvalMode: "auto", autoApprove: true });
+    expect(store.taskByThread("plain-bot", "p1")).toMatchObject({ approvalMode: "auto" });
+    expect(store.bot("full-bot")?.approvalMode).toBe("full");
+    expect(store.taskByThread("full-bot", "f1")?.approvalMode).toBe("full");
+    expect(store.taskByThread("full-bot", "f2")?.approvalMode).toBe("auto");
+    expect(store.bot("local-bot")).toMatchObject({ approvalMode: "ask" });
+    expect(store.taskByThread("local-bot", "l1")?.approvalMode).toBe("ask");
+    expect(store.bot("edits-bot")?.approvalMode).toBe("edits");
+    expect(store.taskByThread("edits-bot", "e1")?.approvalMode).toBe("edits");
+    expect(store.bot("revoked-bot")).toMatchObject({ approvalMode: "ask", autoApprove: false });
+    expect(store.bot("revoked-bot")).not.toHaveProperty("approvalGrant");
+    expect(store.taskByThread("revoked-bot", "r1")?.approvalMode).toBe("ask");
+    expect(store.taskByThread("revoked-bot", "r2")?.approvalMode).toBe("ask");
+    store.patchBot("ask-bot", { approvalMode: "ask", autoApprove: false });
+    store.patchTask("ask-bot", "t1", { approvalMode: "ask", autoApprove: false });
+    const again = new Store(selection);
+    expect(again.bot("ask-bot")?.approvalMode).toBe("ask");
+    expect(again.taskByThread("ask-bot", "t1")?.approvalMode).toBe("ask");
+    expect(again.bot("plain-bot")?.approvalMode).toBe("auto");
+    const created = again.createBot({}, { seedMessages: false });
+    expect(created).toMatchObject({ approvalMode: "auto", autoApprove: true });
+    expect(created.tasks?.[0]).toMatchObject({ approvalMode: "auto", autoApprove: true });
   });
 
   it("revokes elevated task snapshots along with a stale bot elevation grant", () => {

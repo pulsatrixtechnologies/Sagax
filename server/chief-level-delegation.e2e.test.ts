@@ -44,6 +44,9 @@ it("starts a thread a Chief opens with a teammate at the Chief's level, and a Ch
     await api("PATCH", `/api/bots/${chief.id}`, { chiefOfStaff: true });
     const ada = (await cli("new-bot", "--name", "Ada", "--section", "Operations")).bot;
     const bea = (await cli("new-bot", "--name", "Bea", "--section", "Operations")).bot;
+    // New bots start on Approve for me. This case is about delegation, so
+    // each bot's own level is Ask before the Chief conversation is raised.
+    for (const id of [chief.id, ada.id, bea.id]) await api("PATCH", `/api/bots/${id}`, { approvalMode: "ask" });
 
     // The person put this Chief conversation on Approve for me.
     await api("PATCH", `/api/bots/${chief.id}/tasks/${chief.activeTaskId}`, { approvalMode: "auto", acknowledgeLocalAuto: true });
