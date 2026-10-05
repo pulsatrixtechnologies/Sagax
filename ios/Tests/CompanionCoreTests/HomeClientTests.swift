@@ -149,6 +149,57 @@ final class HomeClientTests: XCTestCase {
         XCTAssertThrowsError(try client.createBotRequest(NewBotDraft(name: "   "), includeLook: true))
     }
 
+    // MARK: Create bot, More options (WP13)
+
+    func testMoreOptionsRideAsTheDesktopSendsThem() async throws {
+        HomeRequestStub.responses = [(201, Self.botJSON)]
+        let draft = NewBotDraft(
+            name: "Scout", color: "teal", title: "Researcher", description: "Digs.", soul: "Cite sources.",
+            section: "Administration", preset: "preset-1", mascotBody: "round", mascotExpression: "happy"
+        )
+        _ = try await client.createBot(draft)
+        let body = try json(0)
+        XCTAssertEqual(body["name"] as? String, "Scout")
+        XCTAssertEqual(body["title"] as? String, "Researcher")
+        XCTAssertEqual(body["description"] as? String, "Digs.")
+        XCTAssertEqual(body["section"] as? String, "Administration")
+        XCTAssertEqual(body["preset"] as? String, "preset-1")
+        XCTAssertNil(body["soul"], "instructions ride in settings, the strict profile schema")
+        XCTAssertEqual(body["settings"] as? [String: String], [
+            "color": "teal", "soul": "Cite sources.", "mascotBody": "round", "mascotExpression": "happy",
+        ])
+    }
+
+    func testUntouchedOptionsAreNotSent() async throws {
+        HomeRequestStub.responses = [(201, Self.botJSON)]
+        _ = try await client.createBot(NewBotDraft(name: "Nova"))
+        XCTAssertEqual(Set(try json(0).keys), ["name", "settings"])
+    }
+
+    func testARefusedLookKeepsTheOptionsOnTheRetry() async throws {
+        HomeRequestStub.responses = [(400, #"{"error":"bad"}"#), (201, Self.botJSON), (200, Self.botJSON)]
+        let draft = NewBotDraft(name: "Nova", look: MascotLook(character: .trombi), title: "T", soul: "S", section: "Ops")
+        _ = try await client.createBot(draft)
+        let retry = try json(1)
+        XCTAssertEqual(retry["title"] as? String, "T")
+        XCTAssertEqual(retry["section"] as? String, "Ops")
+        XCTAssertEqual((retry["settings"] as? [String: Any])?["soul"] as? String, "S")
+        XCTAssertNil((retry["settings"] as? [String: Any])?["mascotLook"])
+    }
+
+    func testPresetsAreRead() async throws {
+        HomeRequestStub.responses = [(200, #"""
+        {"presets":[{"id":"p1","source":"org","key":"k","name":"Analyst","packageName":"Pack","release":"1.0",
+        "publisherName":"Acme","bot":{"title":"Analyst","soul":"Be exact.","appearance":{"color":"blue"}},
+        "skills":[{"name":"report","description":"d"}],"skillsEnabled":true,"playbooks":[],"notes":["MEMORY.md"]}]}
+        """#)]
+        let presets = try await client.botPresets()
+        XCTAssertEqual(HomeRequestStub.requests[0].request.url?.path, "/api/bot-presets")
+        XCTAssertEqual(presets.map(\.id), ["p1"])
+        XCTAssertEqual(presets[0].bot.appearance?.color, "blue")
+        XCTAssertEqual(presets[0].skills.map(\.name), ["report"])
+    }
+
     func testBotPatchCarriesTheLook() throws {
         let patch = BotPatch(mascotLook: MascotLook(character: .trombi, skins: .init(trombi: .gold)), mascotSkin: .neon)
         XCTAssertFalse(patch.isEmpty)
@@ -196,8 +247,12 @@ final class HomeClientTests: XCTestCase {
     }
 
     func testAuthSessionReadsAPhoto() throws {
-        let session = try JSONDecoder().decode(AuthSession.self, from: Data(#"{"kind":"session","scopes":["client"],"picture":"https://example.com/me.png"}"#.utf8))
-        XCTAssertEqual(session.avatarUrl, "https://example.com/me.png")
+        let session = try JSONDecoder().decode(AuthSession.self, from: Data(#"{"kind":"session","scopes":["client"],"avatarUrl":"/api/people/pr_1/avatar?v=0123456789abcdef"}"#.utf8))
+        XCTAssertEqual(session.avatar?.route, .person(id: "pr_1", version: "0123456789abcdef"))
+        // A `picture` claim names Perspicax itself: never fetched by the phone.
+        let claim = try JSONDecoder().decode(AuthSession.self, from: Data(#"{"kind":"session","scopes":["client"],"picture":"https://example.com/me.png"}"#.utf8))
+        XCTAssertNil(claim.avatarUrl)
+        XCTAssertNil(claim.avatar)
         let none = try JSONDecoder().decode(AuthSession.self, from: Data(#"{"kind":"session","scopes":[],"avatarUrl":" "}"#.utf8))
         XCTAssertNil(none.avatarUrl)
     }

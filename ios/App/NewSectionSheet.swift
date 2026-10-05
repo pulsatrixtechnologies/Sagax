@@ -7,6 +7,7 @@ private let maximumBotsPerSection = 100
 /// A normal tap always works; holding for a beat starts a trail that can be
 /// drawn through the grid without lifting a finger.
 struct NewSectionSheet: View {
+    @Environment(\.themePalette) var themePalette
     @EnvironmentObject private var session: Session
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -65,6 +66,8 @@ struct NewSectionSheet: View {
     /// Sections allow one coordinator. Moving two Chiefs together, or moving
     /// one beside a different incumbent, must never silently remove a role.
     private var hasChiefConflict: Bool {
+        // personal sections hold any bots: the one-coordinator rule is the server's
+        if SidebarPrefsModel.shared.personal != nil { return false }
         let selectedChiefIDs = selectedBots
             .filter { $0.chiefOfStaff == true }
             .map(\.id)
@@ -147,7 +150,7 @@ struct NewSectionSheet: View {
                     .font(.system(size: 24, weight: .bold, design: .rounded))
                 Text("Touch a bot, then glide. Pause briefly on each bot until it clicks.")
                     .font(.system(size: 15))
-                    .foregroundStyle(Color.secondary)
+                    .foregroundStyle(Theme.parity(Color.secondary, Theme.textSecondary))
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 20)
@@ -157,7 +160,7 @@ struct NewSectionSheet: View {
             HStack {
                 Text(selection.selectedIDs.isEmpty ? "Choose bots" : "\(selection.selectedIDs.count) selected")
                     .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(Color.secondary)
+                    .foregroundStyle(Theme.parity(Color.secondary, Theme.textSecondary))
                 Spacer()
                 let selectableCount = min(bots.count, maximumBotsPerSection)
                 Button(selection.selectedIDs.count == selectableCount && selectableCount > 0 ? "Clear" : "Select all") {
@@ -181,7 +184,7 @@ struct NewSectionSheet: View {
                         : "Choose up to 100 bots for one section."
                 )
                 .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(Color.secondary)
+                .foregroundStyle(Theme.parity(Color.secondary, Theme.textSecondary))
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 20)
                 .padding(.bottom, 10)
@@ -203,7 +206,7 @@ struct NewSectionSheet: View {
                 if selection.selectedIDs.isEmpty {
                     Text("Tap bots individually, or hold and swipe through the grid.")
                         .font(.system(size: 13))
-                        .foregroundStyle(Color.secondary)
+                        .foregroundStyle(Theme.parity(Color.secondary, Theme.textSecondary))
                 }
                 Button {
                     endDrawing()
@@ -253,6 +256,7 @@ struct NewSectionSheet: View {
             .onPreferenceChange(SectionCellFramePreference.self) { cellFrames = $0 }
             .highPriorityGesture(drawGesture)
         }
+        .background(Theme.parity(Color(uiColor: .systemBackground), Theme.bg).ignoresSafeArea())
         // A fast vertical swipe still scrolls. Briefly touching a tile before
         // gliding switches into drawing and freezes the scroll position; there
         // is deliberately no surprising edge auto-scroll while a trail is active.
@@ -281,7 +285,7 @@ struct NewSectionSheet: View {
                             .foregroundStyle(Color.white)
                             .frame(minWidth: 21, minHeight: 21)
                             .background(tint, in: Circle())
-                            .overlay(Circle().stroke(Color(uiColor: .systemBackground), lineWidth: 2))
+                            .overlay(Circle().stroke(Theme.parity(Color(uiColor: .systemBackground), Theme.bg), lineWidth: 2))
                             .offset(x: 5, y: -5)
                     }
                 }
@@ -289,24 +293,24 @@ struct NewSectionSheet: View {
                 VStack(spacing: 3) {
                     Text(bot.name)
                         .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(Color.primary)
+                        .foregroundStyle(Theme.textPrimary)
                         .lineLimit(1)
                     Text(botContext(bot))
                         .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(Color.secondary)
+                        .foregroundStyle(Theme.parity(Color.secondary, Theme.textSecondary))
                         .lineLimit(1)
                 }
             }
             .frame(maxWidth: .infinity)
             .frame(height: 116)
             .background(
-                selected ? tint.opacity(0.13) : Color.secondary.opacity(0.07),
+                selected ? tint.opacity(0.13) : Theme.parity(Color.secondary, Theme.textSecondary).opacity(0.07),
                 in: RoundedRectangle(cornerRadius: 20, style: .continuous)
             )
             .overlay {
                 RoundedRectangle(cornerRadius: 20, style: .continuous)
                     .stroke(
-                        candidate ? tint : (selected ? tint.opacity(0.75) : Color.secondary.opacity(0.12)),
+                        candidate ? tint : (selected ? tint.opacity(0.75) : Theme.parity(Color.secondary, Theme.textSecondary).opacity(0.12)),
                         lineWidth: candidate ? 3 : 1
                     )
             }
@@ -343,7 +347,7 @@ struct NewSectionSheet: View {
             for point in points.dropFirst() { path.addLine(to: point) }
             context.stroke(
                 path,
-                with: .color(Color.accentColor.opacity(0.72)),
+                with: .color(Theme.parity(Color.accentColor, Theme.accent).opacity(0.72)),
                 style: StrokeStyle(lineWidth: 5, lineCap: .round, lineJoin: .round)
             )
         }
@@ -456,7 +460,7 @@ struct NewSectionSheet: View {
                         .font(.system(size: 24, weight: .bold, design: .rounded))
                     Text("It will appear on both this device and your computer.")
                         .font(.system(size: 15))
-                        .foregroundStyle(Color.secondary)
+                        .foregroundStyle(Theme.parity(Color.secondary, Theme.textSecondary))
                 }
 
                 TextField("For example, Research", text: $name)
@@ -467,24 +471,24 @@ struct NewSectionSheet: View {
                     .focused($nameFocused)
                     .padding(.horizontal, 16)
                     .frame(height: 56)
-                    .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 16))
+                    .background(Theme.parity(Color.secondary, Theme.textSecondary).opacity(0.08), in: RoundedRectangle(cornerRadius: 16))
                     .overlay {
                         RoundedRectangle(cornerRadius: 16)
-                            .stroke(Color.secondary.opacity(0.14), lineWidth: 1)
+                            .stroke(Theme.parity(Color.secondary, Theme.textSecondary).opacity(0.14), lineWidth: 1)
                     }
                     .onSubmit { if canSave { save() } }
 
                 HStack {
                     if joinsExistingSection {
                         Label("Adds to existing section", systemImage: "arrow.triangle.merge")
-                            .foregroundStyle(Color.secondary)
+                            .foregroundStyle(Theme.parity(Color.secondary, Theme.textSecondary))
                     } else {
                         Label("Creates a new section", systemImage: "square.stack.3d.up")
-                            .foregroundStyle(Color.secondary)
+                            .foregroundStyle(Theme.parity(Color.secondary, Theme.textSecondary))
                     }
                     Spacer()
                     Text("\(trimmedName.utf16.count)/60")
-                        .foregroundStyle(trimmedName.utf16.count > 60 ? Color.red : Color.secondary)
+                        .foregroundStyle(trimmedName.utf16.count > 60 ? Theme.parity(Color.red, Theme.danger) : Color.secondary)
                 }
                 .font(.system(size: 13, weight: .medium))
 
@@ -494,10 +498,10 @@ struct NewSectionSheet: View {
                         systemImage: "person.crop.circle.badge.exclamationmark"
                     )
                     .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(Color.orange)
+                    .foregroundStyle(Theme.parity(Color.orange, Theme.warning))
                     .padding(12)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Color.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 14))
+                    .background(Theme.parity(Color.orange, Theme.warning).opacity(0.1), in: RoundedRectangle(cornerRadius: 14))
                 }
 
                 if hasPinnedSelection {
@@ -506,22 +510,23 @@ struct NewSectionSheet: View {
                         systemImage: "pin.fill"
                     )
                     .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(Color.secondary)
+                    .foregroundStyle(Theme.parity(Color.secondary, Theme.textSecondary))
                 }
 
                 VStack(alignment: .leading, spacing: 10) {
                     Text("\(selection.selectedIDs.count) bot\(selection.selectedIDs.count == 1 ? "" : "s")")
                         .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(Color.secondary)
+                        .foregroundStyle(Theme.parity(Color.secondary, Theme.textSecondary))
                     selectedBotChips
                 }
             }
             .padding(20)
         }
+        .background(Theme.parity(Color(uiColor: .systemBackground), Theme.bg).ignoresSafeArea())
         .safeAreaInset(edge: .bottom) {
             Button(action: save) {
                 HStack(spacing: 8) {
-                    if saving { ProgressView().tint(.white) }
+                    if saving { ProgressView().tint(Theme.parity(.white, Theme.accentInk)) }
                     Text(saving ? "Creating…" : (joinsExistingSection ? "Add to section" : "Create section"))
                         .font(.system(size: 17, weight: .semibold))
                 }
@@ -552,7 +557,7 @@ struct NewSectionSheet: View {
                     }
                     .padding(.horizontal, 10)
                     .frame(height: 40)
-                    .background(Color.secondary.opacity(0.08), in: Capsule())
+                    .background(Theme.parity(Color.secondary, Theme.textSecondary).opacity(0.08), in: Capsule())
                 }
             }
         }
@@ -566,6 +571,27 @@ struct NewSectionSheet: View {
         saveError = nil
         session.actionError = nil
         nameFocused = false
+
+        // An organization server's sections are the person's own (#101):
+        // they go in the synced preference, never on the server's bots.
+        if SidebarPrefsModel.shared.personal != nil {
+            let prefs = SidebarPrefsModel.shared
+            var failed: String?
+            for id in botIDs where failed == nil {
+                failed = prefs.assignPersonal(session, key: PersonalSections.itemKey(bot: id), to: section)
+            }
+            saving = false
+            if let failed {
+                saveError = failed
+                return
+            }
+            successFeedback += 1
+            lastCreatedName = section
+            selection.clear()
+            name = ""
+            step = .bots
+            return
+        }
 
         Task {
             let result = await session.assignSection(name: section, botIds: botIDs)
@@ -589,18 +615,18 @@ struct NewSectionSheet: View {
     private func successBanner(name: String) -> some View {
         HStack(spacing: 10) {
             Image(systemName: "checkmark.circle.fill")
-                .foregroundStyle(Color.green)
+                .foregroundStyle(Theme.parity(Color.green, Theme.success))
             VStack(alignment: .leading, spacing: 2) {
                 Text("\(name) is ready")
                     .font(.system(size: 14, weight: .semibold))
                 Text("Swipe another section together, or tap Done.")
                     .font(.system(size: 12))
-                    .foregroundStyle(Color.secondary)
+                    .foregroundStyle(Theme.parity(Color.secondary, Theme.textSecondary))
             }
             Spacer()
         }
         .padding(12)
-        .background(Color.green.opacity(0.1), in: RoundedRectangle(cornerRadius: 14))
+        .background(Theme.parity(Color.green, Theme.success).opacity(0.1), in: RoundedRectangle(cornerRadius: 14))
         .accessibilityElement(children: .combine)
     }
 

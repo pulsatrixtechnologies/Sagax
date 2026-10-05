@@ -28,6 +28,8 @@ public struct BotProfileEdit: Encodable, Equatable, Sendable {
     public var avatarUrl: AvatarURL?
     public var notifications: Bool?
     public var soul: String?
+    /// Let the bot send spoken notes (`voiceNotes`).
+    public var voiceNotes: Bool?
 
     public init(
         color: String? = nil,
@@ -39,7 +41,8 @@ public struct BotProfileEdit: Encodable, Equatable, Sendable {
         avatarFocusY: Double? = nil,
         avatarUrl: AvatarURL? = nil,
         notifications: Bool? = nil,
-        soul: String? = nil
+        soul: String? = nil,
+        voiceNotes: Bool? = nil
     ) {
         self.color = color
         self.mascotLook = mascotLook
@@ -51,6 +54,7 @@ public struct BotProfileEdit: Encodable, Equatable, Sendable {
         self.avatarUrl = avatarUrl
         self.notifications = notifications
         self.soul = soul
+        self.voiceNotes = voiceNotes
     }
 
     /// The desktop's "Reset to default" (`BotProfileAvatarCard.tsx`): the owl
@@ -61,11 +65,11 @@ public struct BotProfileEdit: Encodable, Equatable, Sendable {
 
     public var isEmpty: Bool {
         color == nil && mascotLook == nil && mascotSkin == nil && avatarCrop == nil && avatarZoom == nil
-            && avatarFocusX == nil && avatarFocusY == nil && avatarUrl == nil && notifications == nil && soul == nil
+            && avatarFocusX == nil && avatarFocusY == nil && avatarUrl == nil && notifications == nil && soul == nil && voiceNotes == nil
     }
 
     private enum CodingKeys: String, CodingKey {
-        case color, mascotLook, mascotSkin, avatarCrop, avatarZoom, avatarFocusX, avatarFocusY, avatarUrl, notifications, soul
+        case color, mascotLook, mascotSkin, avatarCrop, avatarZoom, avatarFocusX, avatarFocusY, avatarUrl, notifications, soul, voiceNotes
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -84,6 +88,7 @@ public struct BotProfileEdit: Encodable, Equatable, Sendable {
         }
         try values.encodeIfPresent(notifications, forKey: .notifications)
         try values.encodeIfPresent(soul, forKey: .soul)
+        try values.encodeIfPresent(voiceNotes, forKey: .voiceNotes)
     }
 }
 

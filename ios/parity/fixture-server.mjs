@@ -6,6 +6,24 @@
 //
 //   node ios/parity/fixture-server.mjs            # seed, pair, keep serving
 //   node ios/parity/fixture-server.mjs --once     # seed, pair, print, stop
+//   PARITY_ORG=avatar node ios/parity/fixture-server.mjs   # an organization server for the avatar test
+//
+// PARITY_ORG=avatar runs the server as an organization server
+// (SAGAX_IDENTITY=perspicax) behind the repository's fake Perspicax
+// (server/testing/fake-oidc-provider.ts): an OIDC provider whose id_token
+// carries a `picture` claim, a directory that names each person's avatar
+// version, and the link route that serves the image. The phone is paired by
+// code from that person's signed-in session, exactly as from the desktop,
+// and session.json adds `avatarRgb`, the solid colour of the person's
+// Perspicax avatar, for the UI test that samples it (OrgAvatarUITests).
+//
+// PARITY_OWNER=1 is the personal computer whose desktop app is signed in to
+// an organization: the same dataset, plus the owner identity the desktop
+// hands its server (owner-identity.json, server/owner-identity.ts) with a
+// solid-colour avatar, and the phone reaching it the way an iPhone reaches
+// a personal computer: through the companion sidecar (companion/src/proxy.ts)
+// with a device token. session.json then names the sidecar, no environment,
+// and `avatarRgb`.
 //
 // Nothing touches ~/.openmausbot: HOME and OMB_DATA_DIR point into a temp
 // directory removed on exit. The engine is the repository's fake Claude CLI,
@@ -19,7 +37,18 @@
 // pairing window through the server's own API; the session file the harness
 // reads (ios/parity/out/session.json) carries the endpoint, the bearer and
 // the environment id the app is launched with.
-import { spawn } from "node:child_process";
+//
+// PARITY_OWNER=1 puts the real companion sidecar (companion/src/proxy.ts) in
+// front of the server with one paired device, the way an iPhone reaches its
+// owner's computer: session.json then names the sidecar and no environment,
+// so the app pairs as the owner's sidecar (decision D1's advanced panel).
+//
+// PARITY_ORG=1 runs the same dataset on an organization server instead
+// (ios/parity/org-fixture.mjs): OMB_IDENTITY=perspicax against a local stub
+// identity provider, signed in as a placeholder admin. Without it nothing
+// below changes. PARITY_ORG_PHONE=1 adds a phone bearer for that person
+// (the session file's token), for the synced sidebar UI tests (WP6).
+import { spawn, spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { createServer as createHttpServer, request as httpRequest } from "node:http";
@@ -29,12 +58,55 @@ import { fileURLToPath } from "node:url";
 import { DatabaseSync } from "node:sqlite";
 import { randomUUID } from "node:crypto";
 import { deflateSync, crc32 } from "node:zlib";
+import { orgEnterpriseStub, orgServerEnv, pairOrgPhone, seedOrg, signInOrg, startOrg, stopOrg } from "./org-fixture.mjs";
+// PARITY_CARDS=1: the interactive cards' lab for the WP2 UI tests (card-lab.mjs).
+import {
+  CARD_LAB, cardLabHook, cardLabInstances, cardLabServerEnv, closeCardLab, seedCardLabBots,
+  seedCardLabTranscripts, startCardLabBroker,
+} from "./card-lab.mjs";
+// The composer lab for the WP3 UI tests: refuses sends on request (composer-lab.mjs).
+import { composerLabHook } from "./composer-lab.mjs";
+// PARITY_ROUTINES=1: a desktop-made routine and its runs for the WP8 UI tests (routine-lab.mjs).
+import { ROUTINE_LAB, seedRoutineLab, seedRoutineLabRuns } from "./routine-lab.mjs";
+// PARITY_RICH=1: a bot whose transcript holds every rich block, for the WP14 UI tests (rich-lab.mjs).
+import { RICH_LAB, seedRichLabBot, seedRichLabTranscript } from "./rich-lab.mjs";
+// PARITY_PLUGINS=1: connected apps, MCP sign-in and a bot without apps for the WP9 UI tests (plugin-lab.mjs).
+import {
+  PLUGIN_LAB, closePluginLab, pluginLabHook, pluginLabServerEnv, seedPluginLab, startPluginLabBroker,
+} from "./plugin-lab.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(HERE, "..", "..");
 // PARITY_OUT moves session.json and server.log (a second fixture beside a capture).
 const OUT = process.env.PARITY_OUT ?? join(HERE, "out");
 const once = process.argv.includes("--once");
+const ORG = process.env.PARITY_ORG === "1";
+// PARITY_THREAD_TITLES=1 turns on generated thread titles (config
+// features.llmThreadTitles) with the fake engine's one-shot reply read from
+// a file, so the thread menu's "Regenerate title" runs end to end (WP5's UI
+// tests). Off by default: the reference captures never see it.
+const THREAD_TITLES = process.env.PARITY_THREAD_TITLES === "1";
+const PARITY_GENERATED_TITLE = "Fixture generated title";
+// PARITY_PRESETS=1 offers one imported preset in New bot (WP13's UI tests):
+// written into the preset store between the passes, as an import leaves it
+// (server/presets.ts). Off by default: the reference captures never see it.
+const PRESETS = process.env.PARITY_PRESETS === "1";
+export const PARITY_PRESET = {
+  id: "fixture-analyst", key: "analyst", name: "Fixture Analyst", packageName: "Fixture Pack", release: "1.0.0",
+  bot: { name: "Analyst", title: "Data analyst", description: "Reads the numbers and reports.", soul: "Placeholder: cite every figure.", appearance: { color: "purple" } },
+};
+function seedPresets(dataDir) {
+  const dir = join(dataDir, "org-library");
+  mkdirSync(dir, { recursive: true });
+  const { id, key, name, packageName, release, bot } = PARITY_PRESET;
+  writeFileSync(join(dir, "presets.json"), JSON.stringify({
+    version: 1,
+    presets: [{ id, source: "file", installId: "fixture-install", packageId: "fixture-pack", packageName, release, key, name, bot, addedAt: Date.now() }],
+    content: { "fixture-install": { skills: [], playbooks: [] } },
+  }, null, 2));
+}
+/** Organization fixture: the stub provider and the admin's session cookie. */
+let org = null;
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -65,6 +137,12 @@ async function freePair() {
 let home = "";
 let child = null;
 let enterpriseStub = "";
+/** PARITY_CARDS=1: the connected-apps broker stub's port. */
+let cardLabBroker = 0;
+/** PARITY_PLUGINS=1: the plugins lab's broker stub's port. */
+let pluginLabBroker = 0;
+
+let orgEnv = null;
 
 function startServer(port, webhook) {
   const log = join(OUT, "server.log");
@@ -80,10 +158,15 @@ function startServer(port, webhook) {
       OMB_PORT: String(port),
       OMB_WEBHOOK_PORT: String(webhook),
       FAKE_CLAUDE_MODE: "happy",
+      ...(THREAD_TITLES ? { FAKE_CLAUDE_TEXT_FILE: join(home, "thread-title.txt") } : {}),
       // Settings > Usage reads the monthly budget, an enterprise feature: a
       // stub layer (written by main()) grants "budgets" and nothing else.
       ...(enterpriseStub ? { OMB_ENTERPRISE_DIR: enterpriseStub, OMB_LICENSE_KEY: "parity-fixture" } : {}),
+      ...(org ? orgServerEnv(org) : {}),
+      ...(cardLabBroker ? cardLabServerEnv(cardLabBroker) : {}),
+      ...(pluginLabBroker ? pluginLabServerEnv(pluginLabBroker) : {}),
       TZ: process.env.TZ ?? Intl.DateTimeFormat().resolvedOptions().timeZone,
+      ...orgEnv,
     },
     stdio: ["ignore", "pipe", "pipe"],
   });
@@ -116,9 +199,12 @@ async function stopServer(proc) {
 }
 
 async function api(base, method, path, body) {
+  // On the organization server loopback is a service, not the owner: every
+  // call is the signed-in admin's, from the server's own origin.
+  const signedIn = org?.cookie ? { cookie: org.cookie, origin: base } : {};
   const init = body === undefined
-    ? { method }
-    : { method, headers: { "content-type": "application/json" }, body: JSON.stringify(body) };
+    ? { method, headers: signedIn }
+    : { method, headers: { "content-type": "application/json", ...signedIn }, body: JSON.stringify(body) };
   const res = await fetch(`${base}${path}`, init);
   const text = await res.text();
   let parsed = null;
@@ -272,13 +358,13 @@ function writeEnterpriseStub(dir) {
 }
 
 // ── tiny PNG writer (solid colour with a diagonal band) ─────────────────
-function png(width, height, [r, g, b]) {
+function png(width, height, [r, g, b], { band: banded = true } = {}) {
   const raw = Buffer.alloc((width * 3 + 1) * height);
   for (let y = 0; y < height; y++) {
     const row = y * (width * 3 + 1);
     raw[row] = 0;
     for (let x = 0; x < width; x++) {
-      const band = Math.abs(x - y) < width / 6 ? 40 : 0;
+      const band = banded && Math.abs(x - y) < width / 6 ? 40 : 0;
       raw[row + 1 + x * 3] = Math.min(255, r + band);
       raw[row + 2 + x * 3] = Math.min(255, g + band);
       raw[row + 3 + x * 3] = Math.min(255, b + band);
@@ -515,6 +601,9 @@ function startComputerDouble(upstreamPort) {
   };
   const server = createHttpServer(async (req, res) => {
     const url = new URL(req.url ?? "/", "http://fixture");
+    if (await cardLabHook(req, res, url, `http://127.0.0.1:${upstreamPort}`, api)) return;
+    if (await composerLabHook(req, res, url)) return;
+    if (await pluginLabHook(req, res, url)) return;
     if (url.pathname === "/__parity/computer") {
       if (req.method === "DELETE") {
         computerRecord.batches = [];
@@ -600,13 +689,149 @@ async function main() {
   home = mkdtempSync(join(tmpdir(), "omb-parity-"));
   const dataDir = join(home, ".openmausbot");
   mkdirSync(dataDir, { recursive: true });
+  if (process.env.PARITY_ORG === "avatar") return mainOrg();
   enterpriseStub = join(home, "enterprise-stub");
+  if (THREAD_TITLES) writeFileSync(join(home, "thread-title.txt"), PARITY_GENERATED_TITLE);
   writeEnterpriseStub(enterpriseStub);
+  if (ORG) {
+    org = await startOrg(home);
+    orgEnterpriseStub(enterpriseStub);
+  }
   writeFileSync(join(dataDir, "config.json"), JSON.stringify({
     profile: { name: "Parity Person", email: "parity@example.com" },
     budgets: { monthlyUsd: 100 },
     imageGen: { provider: "custom", customUrl: `http://127.0.0.1:${await startImageStub()}/v1`, customModel: "parity-stub" },
     mcpServers: teamMcpServers(),
+    ...(THREAD_TITLES ? { features: { llmThreadTitles: true } } : {}),
+    instances: {
+      claude: {
+        driver: "claudeAgent",
+        displayName: "Fixture engine",
+        config: { cli: join(ROOT, "server", "testing", "fake-claude-cli.ts") },
+      },
+      ...(CARD_LAB ? cardLabInstances(ROOT, dataDir) : {}),
+    },
+  }));
+
+  if (CARD_LAB) cardLabBroker = await startCardLabBroker();
+  else if (PLUGIN_LAB) pluginLabBroker = await startPluginLabBroker();
+  const { port, webhook } = await freePair();
+  const base = `http://127.0.0.1:${port}`;
+  console.error(`[parity] data ${home}`);
+  console.error(`[parity] server ${base}`);
+
+  if (org) org.base = base;
+  child = startServer(port, webhook);
+  await waitHealthy(base, child);
+  if (org) await signInOrg(org);
+  const seeded = await seedThroughAPI(base);
+  if (CARD_LAB) await seedCardLabBots(base, api);
+  if (ROUTINE_LAB) await seedRoutineLab(base, api, seeded.ids);
+  if (PLUGIN_LAB) await seedPluginLab(base, api, ROOT, seeded.ids);
+  if (RICH_LAB) await seedRichLabBot(base, api);
+  await stopServer(child);
+
+  seedTranscripts(dataDir, seeded);
+  if (CARD_LAB) seedCardLabTranscripts(dataDir);
+  if (ROUTINE_LAB) seedRoutineLabRuns(dataDir);
+  if (RICH_LAB) seedRichLabTranscript(dataDir, png);
+  seedCommandRules(dataDir, seeded);
+  const ownerMode = process.env.PARITY_OWNER === "1";
+  if (ownerMode) {
+    // What the signed-in desktop leaves its server (server/owner-identity.ts).
+    writeFileSync(join(dataDir, "owner-identity.json"), JSON.stringify({
+      origin: "https://sagax.example.test", principalId: "pr_parity_org_person", name: "Parity Person", email: "parity.person@example.test",
+      avatar: { version: "parityowner01", data: png(96, 96, ORG_AVATAR_RGB, { band: false }).toString("base64") },
+    }), { mode: 0o600 });
+  }
+  if (PRESETS) seedPresets(dataDir);
+  if (process.env.PARITY_OWNER === "1" && !org) seedOwnerSkill(seeded);
+
+  child = startServer(port, webhook);
+  await waitHealthy(base, child);
+  if (org) await signInOrg(org);
+  // Settings > Bot as in the reference: auto-review on, the zone automatic.
+  await api(base, "PUT", "/api/settings/bot", {
+    autoReviewDefault: true, timeZoneAuto: true, timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+  }).catch((error) => console.error(`[parity] bot settings: ${error.message}`));
+  // A hosted workspace (the organization fixture's) refuses pairing codes:
+  // the desktop capture uses the admin's cookie there instead.
+  const session = ownerMode ? await startSidecar(port)
+    : org ? { token: null, environmentId: null, scopes: ["admin", "client"] }
+    : await pair(base);
+  if (org) await seedOrg(org, seeded, api);
+  // PARITY_ORG_PHONE=1: the phone signs in as the viewer (org-fixture.mjs).
+  if (org && process.env.PARITY_ORG_PHONE === "1") Object.assign(session, await pairOrgPhone(org));
+  const front = ownerMode ? session.endpoint : COMPUTER_DOUBLE ? `http://127.0.0.1:${(await startComputerDouble(port)).port}` : base;
+  if (COMPUTER_DOUBLE && !ownerMode) console.error(`[parity] computer double ${front} -> ${base}`);
+  const fleet = await fetch(`${org ? base : front}/api/bots`, { headers: org ? { cookie: org.cookie } : { authorization: `Bearer ${session.token}` } }).then((r) => r.json());
+  const record = {
+    endpoint: front,
+    server: base,
+    token: session.token,
+    environmentId: session.environmentId,
+    scopes: session.scopes,
+    bots: (fleet.bots ?? []).length,
+    ...(ownerMode ? { owner: true, avatarRgb: ORG_AVATAR_RGB } : {}),
+    pid: process.pid,
+    dataDir,
+    ...(org ? { org: { cookieName: org.cookieName, cookieValue: org.cookieValue, issuer: org.idp.issuer, viewer: org.viewer } } : {}),
+  };
+  writeFileSync(join(OUT, "session.json"), `${JSON.stringify(record, null, 2)}\n`);
+  console.error(`[parity] ready: ${record.bots} bots, session written to ${join(OUT, "session.json")}`);
+  console.log(JSON.stringify({ endpoint: front, environmentId: record.environmentId, bots: record.bots }));
+  if (once) await shutdown(0);
+}
+
+/** PARITY_OWNER=1: one imported skill on Ara, disabled as an import lands,
+ * through the server's own installer (server/skills.ts) while the server is
+ * stopped, for the advanced panel's Skills UI tests (WP16). */
+export const OWNER_SKILL = "fixture-check";
+function seedOwnerSkill(seeded) {
+  const skill = `---\nname: ${OWNER_SKILL}\ndescription: Placeholder skill that checks the fixture.\n---\n\nPlaceholder: run the fixture check and report.\n`;
+  const script = `import { installSkill } from ${JSON.stringify(join(ROOT, "server", "skills.ts"))};
+    const result = installSkill(${JSON.stringify(seeded.ids.ara.id)}, "parity/fixture", [{ path: "SKILL.md", content: ${JSON.stringify(skill)} }]);
+    if ("error" in result) { console.error(result.error); process.exit(1); }`;
+  const run = spawnSync(process.execPath, ["--experimental-strip-types", "--input-type=module", "-e", script], {
+    cwd: ROOT, env: { PATH: process.env.PATH, HOME: home, USERPROFILE: home, OMB_DATA_DIR: join(home, ".openmausbot") }, encoding: "utf8",
+  });
+  if (run.status !== 0) console.error(`[parity] owner skill: ${run.stderr}`);
+}
+
+// ── the companion sidecar (PARITY_OWNER=1) ─────────────────────────────
+// The real sidecar handler in front of the server, with one paired device.
+const SIDECAR_TOKEN = "parity_owner_device_token_0001";
+async function startSidecar(harnessPort) {
+  const { createProxyHandler } = await import("../../companion/src/proxy.ts");
+  const { createConnectedDeviceTracker } = await import("../../companion/src/connected-devices.ts");
+  const server = createHttpServer(createProxyHandler({
+    harnessPort,
+    authenticate: (token) => (token === SIDECAR_TOKEN ? { id: "parity-phone", cloudDesktopAccess: true } : null),
+    redeem: () => ({ error: "already paired" }),
+    serverName: () => "Parity computer",
+    connected: createConnectedDeviceTracker().open,
+  }));
+  const port = await new Promise((resolve) => server.listen(0, "127.0.0.1", () => resolve(server.address().port)));
+  console.error(`[parity] companion sidecar http://127.0.0.1:${port} -> ${harnessPort}`);
+  return { endpoint: `http://127.0.0.1:${port}`, token: SIDECAR_TOKEN, environmentId: null, scopes: ["admin", "client"] };
+}
+
+// ── organization avatar mode (PARITY_ORG=avatar) ───────────────────────────────────
+// The person's Perspicax avatar: one solid, unmistakable colour, so a test
+// can tell it from the initial, a mascot or the glass around it.
+const ORG_AVATAR_RGB = [236, 18, 196];
+const ORG_PERSON = { sub: "01J9S8PARITYORG000000000JC", email: "parity.person@example.test", name: "Parity Person", preferred_username: "parity", role: "admin" };
+let idp = null;
+
+async function mainOrg() {
+  const { startFakeOidcProvider } = await import("../../server/testing/fake-oidc-provider.ts");
+  idp = await startFakeOidcProvider({ user: ORG_PERSON });
+  idp.avatarsEnabled = true;
+  idp.avatars.set(ORG_PERSON.sub, png(96, 96, ORG_AVATAR_RGB, { band: false }));
+  idp.directoryPeople = [idp.personOf(ORG_PERSON)];
+
+  const dataDir = join(home, ".openmausbot");
+  writeFileSync(join(dataDir, "config.json"), JSON.stringify({
     instances: {
       claude: {
         driver: "claudeAgent",
@@ -615,48 +840,71 @@ async function main() {
       },
     },
   }));
-
   const { port, webhook } = await freePair();
   const base = `http://127.0.0.1:${port}`;
-  console.error(`[parity] data ${home}`);
-  console.error(`[parity] server ${base}`);
-
+  const linkDir = join(home, "link");
+  mkdirSync(linkDir, { recursive: true, mode: 0o750 });
+  writeFileSync(join(linkDir, "pulsabot.json"), JSON.stringify({
+    version: 1, issuer: idp.issuer, client_id: "pulsa-bot", server_id: idp.serverId, origin: base, link_token: idp.linkToken,
+  }), { mode: 0o640 });
+  orgEnv = {
+    SAGAX_IDENTITY: "perspicax",
+    SAGAX_PERSPICAX_ISSUER: idp.issuer,
+    SAGAX_PUBLIC_URL: base,
+    SAGAX_PERSPICAX_LINK_FILE: join(linkDir, "pulsabot.json"),
+    SAGAX_PERSPICAX_DIRECTORY_SECONDS: "5",
+  };
+  console.error(`[parity] organization server ${base}, Perspicax ${idp.issuer}`);
   child = startServer(port, webhook);
   await waitHealthy(base, child);
-  const seeded = await seedThroughAPI(base);
-  await stopServer(child);
 
-  seedTranscripts(dataDir, seeded);
-  seedCommandRules(dataDir, seeded);
-
-  child = startServer(port, webhook);
-  await waitHealthy(base, child);
-  // Settings > Bot as in the reference: auto-review on, the zone automatic.
-  await api(base, "PUT", "/api/settings/bot", {
-    autoReviewDefault: true, timeZoneAuto: true, timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-  }).catch((error) => console.error(`[parity] bot settings: ${error.message}`));
-  const session = await pair(base);
-  const front = COMPUTER_DOUBLE ? `http://127.0.0.1:${(await startComputerDouble(port)).port}` : base;
-  if (COMPUTER_DOUBLE) console.error(`[parity] computer double ${front} -> ${base}`);
-  const fleet = await fetch(`${base}/api/bots`, { headers: { authorization: `Bearer ${session.token}` } }).then((r) => r.json());
+  // The person signs in on the web (the provider signs them in at once),
+  // then pairs this phone by code, as from the desktop. A proxy's headers
+  // make the server treat these calls as remote, as a browser's would be.
+  const remote = { "x-forwarded-for": "198.51.100.23", "x-forwarded-proto": "https" };
+  const cookieOf = (setCookie) => setCookie.split(";")[0];
+  const start = await fetch(`${base}/auth/oidc/start`, { redirect: "manual" });
+  const binding = cookieOf(start.headers.getSetCookie().find((c) => c.includes("_oidc=")));
+  const authorize = await fetch(start.headers.get("location"), { redirect: "manual" });
+  const callback = await fetch(authorize.headers.get("location"), { redirect: "manual", headers: { cookie: binding } });
+  const signedIn = callback.headers.getSetCookie().find((c) => c.startsWith("omb_session_") && !c.includes("_oidc="));
+  if (!signedIn) throw new Error(`sign-in failed (${callback.status} ${callback.headers.get("location")})`);
+  const cookie = cookieOf(signedIn);
+  const opened = await fetch(`${base}/api/auth/pairing`, {
+    method: "POST", headers: { ...remote, cookie, "content-type": "application/json" },
+    body: JSON.stringify({ scopes: ["admin", "client"], label: "parity-harness" }),
+  }).then(async (r) => (r.ok ? r.json() : Promise.reject(new Error(`pairing ${r.status}: ${await r.text()}`))));
+  const paired = await fetch(`${base}/api/pair`, {
+    method: "POST", headers: { ...remote, "content-type": "application/json" },
+    body: JSON.stringify({ credential: opened.credential, deviceName: "Parity iPhone", pairRequestId: "parity-org-1" }),
+  }).then(async (r) => (r.ok ? r.json() : Promise.reject(new Error(`pair ${r.status}: ${await r.text()}`))));
+  const session = await fetch(`${base}/api/auth/session`, { headers: { authorization: `Bearer ${paired.token}` } }).then((r) => r.json());
+  if (!session.avatarUrl) throw new Error(`the paired session names no avatar: ${JSON.stringify(session)}`);
   const record = {
-    endpoint: front,
+    endpoint: base,
     server: base,
-    token: session.token,
-    environmentId: session.environmentId,
-    scopes: session.scopes,
-    bots: (fleet.bots ?? []).length,
+    token: paired.token,
+    environmentId: paired.environment?.environmentId ?? session.environmentId ?? null,
+    scopes: session.scopes ?? [],
+    organization: true,
+    issuer: idp.issuer,
+    avatarUrl: session.avatarUrl,
+    avatarRgb: ORG_AVATAR_RGB,
     pid: process.pid,
     dataDir,
   };
   writeFileSync(join(OUT, "session.json"), `${JSON.stringify(record, null, 2)}\n`);
-  console.error(`[parity] ready: ${record.bots} bots, session written to ${join(OUT, "session.json")}`);
-  console.log(JSON.stringify({ endpoint: front, environmentId: record.environmentId, bots: record.bots }));
+  console.error(`[parity] ready (organization): ${session.name} with avatar ${session.avatarUrl}, session written to ${join(OUT, "session.json")}`);
+  console.log(JSON.stringify({ endpoint: base, environmentId: record.environmentId, avatarUrl: record.avatarUrl }));
   if (once) await shutdown(0);
 }
 
 async function shutdown(code) {
+  if (CARD_LAB) closeCardLab();
+  if (PLUGIN_LAB) await closePluginLab();
   await stopServer(child);
+  await idp?.close().catch(() => {});
+  await stopOrg(org);
   if (home) rmSync(home, { recursive: true, force: true });
   try { rmSync(join(OUT, "session.json")); } catch { /* already gone */ }
   process.exit(code);

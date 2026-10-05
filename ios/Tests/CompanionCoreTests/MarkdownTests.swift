@@ -194,6 +194,9 @@ final class MarkdownTests: XCTestCase {
         case let .quote(text): return text
         case .rule: return ""
         case let .table(table): return (table.headers + table.rows.flatMap { $0 }).joined()
+        case let .callout(_, title, text): return title + text
+        case let .image(image): return image.alt + image.source
+        case let .footnotes(notes): return notes.map(\.text).joined()
         }
     }
 }

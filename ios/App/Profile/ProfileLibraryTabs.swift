@@ -9,6 +9,7 @@ import UIKit
 // MARK: - Links (08)
 
 struct LinksTab: View {
+    @Environment(\.themePalette) var themePalette
     let bot: Bot
     @ObservedObject var loader: LibraryLoader<BotLink>
     @State private var opened: IdentifiedURL?
@@ -68,6 +69,7 @@ struct LinksTab: View {
 // MARK: - Media (09)
 
 struct MediaTab: View {
+    @Environment(\.themePalette) var themePalette
     let bot: Bot
     @ObservedObject var loader: LibraryLoader<BotLibraryFile>
     @State private var viewing: BotLibraryFile?
@@ -108,6 +110,7 @@ struct MediaTab: View {
 
 /// A thumbnail through the authenticated preview route.
 struct LibraryThumbnail: View {
+    @Environment(\.themePalette) var themePalette
     let file: BotLibraryFile
     @EnvironmentObject private var session: Session
     @State private var image: UIImage?
@@ -130,6 +133,7 @@ struct LibraryThumbnail: View {
 
 /// One image, full screen, at its full size.
 struct MediaViewer: View {
+    @Environment(\.themePalette) var themePalette
     let file: BotLibraryFile
     @EnvironmentObject private var session: Session
     @Environment(\.dismiss) private var dismiss
@@ -151,9 +155,10 @@ struct MediaViewer: View {
                         })
                         .accessibilityIdentifier("media-viewer-image")
                 } else if failed {
-                    Text("This image could not be loaded.").foregroundStyle(Theme.textSecondary)
+                    // the viewer is a black stage in every skin
+                    Text("This image could not be loaded.").foregroundStyle(Color.white.opacity(0.7))
                 } else {
-                    ProgressView()
+                    ProgressView().tint(.white)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -162,7 +167,6 @@ struct MediaViewer: View {
                 .padding(.top, 6)
                 .accessibilityIdentifier("media-viewer-close")
         }
-        .preferredColorScheme(.dark)
         .task {
             guard let client = session.profileClient else { failed = true; return }
             do { image = UIImage(data: try await client.botFileData(file, preview: false)) } catch { failed = true }
@@ -174,8 +178,12 @@ struct MediaViewer: View {
 // MARK: - Files (10)
 
 struct FilesTab: View {
+    @Environment(\.themePalette) var themePalette
     let bot: Bot
     @ObservedObject var loader: LibraryLoader<BotLibraryFile>
+    /// This chat's files with search, kinds, sort, copy path and show in
+    /// chat (BF1, BF3, BF4); nil hides the link.
+    var onOpenThreadFiles: (() -> Void)?
     @EnvironmentObject private var session: Session
     @State private var previewing: IdentifiedURL?
     @State private var downloading: String?
@@ -210,6 +218,21 @@ struct FilesTab: View {
             } else {
                 LibraryEmptyState(loading: loader.loading || loader.page == nil && loader.problem == nil, problem: loader.problem, empty: Text("No files yet"))
             }
+            if let onOpenThreadFiles {
+                Button {
+                    Haptics.selection()
+                    onOpenThreadFiles()
+                } label: {
+                    Label("Search this chat's files", systemImage: "magnifyingglass")
+                        .font(Theme.Profile.labelFont)
+                        .foregroundStyle(Theme.textTertiary)
+                        .frame(height: 36)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .padding(.top, 14)
+                .accessibilityIdentifier("profile-thread-files")
+            }
         }
         .sheet(item: $previewing) { item in
             ProfileQuickLook(url: item.url).ignoresSafeArea()
@@ -238,6 +261,7 @@ struct FilesTab: View {
 // MARK: - Empty
 
 struct LibraryEmptyState: View {
+    @Environment(\.themePalette) var themePalette
     let loading: Bool
     let problem: String?
     let empty: Text

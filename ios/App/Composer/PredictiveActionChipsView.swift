@@ -18,11 +18,11 @@ public struct ActionChipItem: Identifiable {
 }
 
 public struct PredictiveActionChipsView: View {
+    @Environment(\.themePalette) var themePalette
     public let chips: [ActionChipItem]
     public let accentColor: Color
     public let onSelectChip: (ActionChipItem) -> Void
     
-    @Environment(\.colorScheme) private var colorScheme
     
     public static let defaultChips: [ActionChipItem] = [
         ActionChipItem(title: "Show diff", icon: "arrow.triangle.pull", prompt: "Show latest git diff"),
@@ -42,7 +42,6 @@ public struct PredictiveActionChipsView: View {
     }
     
     public var body: some View {
-        let isDark = colorScheme == .dark
         
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 6) {
@@ -58,15 +57,15 @@ public struct PredictiveActionChipsView: View {
                             
                             Text(chip.title)
                                 .font(.caption2.weight(.semibold))
-                                .foregroundColor(isDark ? Color(hex: "#E2E8F0") : Color(hex: "#334155"))
+                                .foregroundColor(Theme.textPrimary)
                         }
                         .padding(.horizontal, 9)
                         .padding(.vertical, 4.5)
-                        .background(isDark ? Color.white.opacity(0.08) : Color.black.opacity(0.05))
+                        .background(Theme.cardRaised)
                         .clipShape(Capsule())
                         .overlay(
                             Capsule()
-                                .stroke(isDark ? Color.white.opacity(0.08) : Color.black.opacity(0.06), lineWidth: 0.5)
+                                .stroke(Theme.hairline, lineWidth: 0.5)
                         )
                     }
                     .buttonStyle(.plain)

@@ -3,6 +3,9 @@
 // the MCP Registry, and adding a plugin from the phone, its sign-in
 // included: the server's OAuth start runs in ASWebAuthenticationSession and
 // comes back to sagax://oauth-done. Geometry: measure-settings.md §5.
+// Under them, Connections (WP9): Connected apps, MCP servers and the
+// person's claude.ai connectors (Features/Plugins/), each where the pairing
+// may reach it (SurfaceGate).
 import AuthenticationServices
 import CompanionCore
 import SwiftUI
@@ -179,14 +182,14 @@ enum WebSignIn {
 // MARK: - Screen
 
 struct PluginsView: View {
+    @Environment(\.themePalette) var themePalette
     @EnvironmentObject private var session: Session
     @EnvironmentObject private var settings: SettingsModel
     @StateObject private var model = PluginsModel()
-    @AppStorage(PrefKey.appearanceTone) private var tone = AppearanceTone.black.rawValue
     @State private var trusting: PluginListing?
     @State private var showingAll: PluginsListKind?
 
-    private var background: Color { (AppearanceTone(rawValue: tone) ?? .black).background }
+    private var background: Color { Theme.bg }
     private var searching: Bool { !model.query.trimmingCharacters(in: .whitespaces).isEmpty }
 
     var body: some View {
@@ -205,9 +208,16 @@ struct PluginsView: View {
         }
         .overlay {
             if let showingAll {
-                PluginsListView(kind: showingAll, model: model)
-                    .environment(\.settingsPop, { self.showingAll = nil })
-                    .transition(.move(edge: .trailing))
+                Group {
+                    switch showingAll {
+                    case .featured, .team: PluginsListView(kind: showingAll, model: model)
+                    case .connectedApps: ConnectedAppsView()
+                    case .mcpServers: McpServersList()
+                    case .harnessConnectors: HarnessConnectorsView()
+                    }
+                }
+                .environment(\.settingsPop, { self.showingAll = nil })
+                .transition(.move(edge: .trailing))
             }
         }
         .animation(.spring(response: 0.34, dampingFraction: 0.92), value: showingAll)
@@ -338,6 +348,41 @@ struct PluginsView: View {
                 .padding(.top, 8)
             if model.visibleTeam.isEmpty { PluginsEmptyLine(text: "Servers and apps added on your computer show up here.") }
             ForEach(model.visibleTeam.prefix(3)) { plugin in teamRow(plugin) }
+            connections
+        }
+    }
+
+    /// The desktop Plugins window's other doors (WP9): its Connected apps
+    /// and MCP servers tabs, and the person's own claude.ai connectors.
+    /// Each row shows only where the pairing may reach it (SurfaceGate).
+    @ViewBuilder
+    private var connections: some View {
+        let gate = session.surfaceGate
+        let apps = gate.allows(.connectedApps)
+        let mcp = gate.allows(.mcpServers)
+        let claude = gate.allows(.harnessConnectors)
+        if apps || mcp || claude {
+            PluginsSectionHeader(title: "Connections")
+                .padding(.top, 8)
+            SettingsCard {
+                if apps {
+                    SettingsRow(title: "Connected apps", systemImage: "link", accessory: .chevron, identifier: "plugins-connected-apps") {
+                        showingAll = .connectedApps
+                    }
+                }
+                if mcp {
+                    if apps { CardHairline(leadingInset: SettingsMetrics.rowInset) }
+                    SettingsRow(title: "MCP servers", systemImage: "server.rack", accessory: .chevron, identifier: "plugins-mcp-servers") {
+                        showingAll = .mcpServers
+                    }
+                }
+                if claude {
+                    if apps || mcp { CardHairline(leadingInset: SettingsMetrics.rowInset) }
+                    SettingsRow(title: "Provided by Claude", systemImage: "powerplug", accessory: .chevron, identifier: "plugins-harness-connectors") {
+                        showingAll = .harnessConnectors
+                    }
+                }
+            }
         }
     }
 
@@ -356,10 +401,11 @@ struct PluginsView: View {
     }
 }
 
-enum PluginsListKind: Hashable { case featured, team }
+enum PluginsListKind: Hashable { case featured, team, connectedApps, mcpServers, harnessConnectors }
 
 /// "View all": every featured entry, or every team plugin.
 struct PluginsListView: View {
+    @Environment(\.themePalette) var themePalette
     let kind: PluginsListKind
     @ObservedObject var model: PluginsModel
     @EnvironmentObject private var session: Session
@@ -367,6 +413,8 @@ struct PluginsListView: View {
     var body: some View {
         SettingsPage(title: kind == .featured ? "Featured" : "Team plugins", contentTop: 80) {
             switch kind {
+            case .connectedApps, .mcpServers, .harnessConnectors:
+                EmptyView()
             case .featured:
                 ForEach(model.visibleFeatured) { listing in
                     PluginListingRow(listing: listing, installed: model.isInstalled(listing), busy: model.busy.contains(listing.id)) {
@@ -388,6 +436,7 @@ struct PluginsListView: View {
 // MARK: - Rows
 
 private struct PluginsSectionHeader: View {
+    @Environment(\.themePalette) var themePalette
     let title: LocalizedStringKey
     var viewAll: (() -> Void)?
 
@@ -395,7 +444,7 @@ private struct PluginsSectionHeader: View {
         HStack(alignment: .firstTextBaseline) {
             Text(title)
                 .font(Theme.Font.label)
-                .foregroundStyle(Color(hex: 0x575658))
+                .foregroundStyle(Theme.parity(Color(hex: 0x575658), Theme.placeholder))
             Spacer()
             if let viewAll {
                 Button("View all") {
@@ -403,7 +452,7 @@ private struct PluginsSectionHeader: View {
                     viewAll()
                 }
                 .font(Theme.Font.label)
-                .foregroundStyle(Color(hex: 0x97969C))
+                .foregroundStyle(Theme.parity(Color(hex: 0x97969C), Theme.textSecondary))
                 .buttonStyle(.plain)
             }
         }
@@ -414,6 +463,7 @@ private struct PluginsSectionHeader: View {
 }
 
 private struct PluginsEmptyLine: View {
+    @Environment(\.themePalette) var themePalette
     let text: LocalizedStringKey
 
     var body: some View {
@@ -428,6 +478,7 @@ private struct PluginsEmptyLine: View {
 
 /// Tile, name and description, and the Add / Added pill.
 private struct PluginRowLayout<Icon: View, Pill: View>: View {
+    @Environment(\.themePalette) var themePalette
     let name: String
     let description: String
     let identifier: String
@@ -466,6 +517,7 @@ private struct PluginRowLayout<Icon: View, Pill: View>: View {
 }
 
 private struct PluginListingRow: View {
+    @Environment(\.themePalette) var themePalette
     let listing: PluginListing
     let installed: Bool
     let busy: Bool
@@ -486,6 +538,7 @@ private struct PluginListingRow: View {
 }
 
 private struct PluginTeamRow: View {
+    @Environment(\.themePalette) var themePalette
     let plugin: InstalledPlugin
     let busy: Bool
     let signIn: () -> Void
@@ -502,6 +555,7 @@ private struct PluginTeamRow: View {
 
 /// "Add" (44.67 x 32.67) or "Added" (58 x 32.67): #2B2B2D, no rim.
 private struct PluginPill: View {
+    @Environment(\.themePalette) var themePalette
     let installed: Bool
     let busy: Bool
     let action: () -> Void
@@ -528,6 +582,11 @@ private struct PluginPill: View {
             .background(Theme.pill, in: Capsule())
         }
         .buttonStyle(.plain)
-        .disabled(installed || busy)
+        // Black and Dim keep the measured, dimmed "Added"; the other skins
+        // keep it readable (a disabled plain button fades its label below
+        // 3:1 on a light pill) and refuse the tap instead.
+        .disabled(Theme.keepsReference && (installed || busy))
+        .allowsHitTesting(!(installed || busy))
+        .accessibilityAddTraits(installed || busy ? .isStaticText : [])
     }
 }

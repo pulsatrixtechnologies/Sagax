@@ -10,6 +10,11 @@
 //   5. Photo (optional): upload or remove a picture.
 //   6. Reset to default (optional): the owl, green, no skin, no picture.
 //
+// Locks (matrix row BP6): with `unlocks` from the person's achievements, a
+// character or a skin they have not earned carries a lock badge and cannot
+// be chosen; what the bot wears now always stays usable. Each skin names its
+// rarity (Common, Rare, Epic, Legendary) to VoiceOver.
+//
 // Every choice is written to the binding at once; the owner decides whether
 // that is a draft (create) or a save (profile).
 import PhotosUI
@@ -50,6 +55,7 @@ struct CharacterDraft: Equatable {
 }
 
 struct CharacterEditor: View {
+    @Environment(\.themePalette) var themePalette
     /// Grid sizes: the create sheet's (measured on 20) or the profile card's.
     struct Metrics {
         var cell: CGFloat
@@ -100,6 +106,9 @@ struct CharacterEditor: View {
     /// Called after the draft is reset, so the owner also clears the picture
     /// (`avatarCrop: mascot`).
     var onReset: (() -> Void)?
+    /// What the person may wear (`GET /api/me/achievements`); nothing is
+    /// locked until it is known or on a server without achievements.
+    var unlocks: MascotUnlocks = .nothingLocked
 
     @State private var photoItem: PhotosPickerItem?
 
@@ -115,7 +124,8 @@ struct CharacterEditor: View {
                     skin: character == .owl ? draft.skin : .none,
                     size: metrics.cell,
                     selected: draft.character == character,
-                    label: Text(characterName(character))
+                    label: Text(characterName(character)),
+                    locked: unlocks.characterLocked(character, current: wornDraft.character)
                 ) {
                     draft.character = character
                 }
@@ -149,6 +159,22 @@ struct CharacterEditor: View {
         .animation(.snappy(duration: 0.2), value: draft)
     }
 
+    /// What the bot wears now: always usable (MascotLookEditor.tsx).
+    private var wornDraft: CharacterDraft { draft }
+
+    private func skinLocked(_ character: MascotCharacter, _ skin: String, worn current: String) -> Bool {
+        unlocks.skinLocked(character, skin: skin, current: current)
+    }
+
+    private func tierLabel(_ character: MascotCharacter, _ skin: String) -> Text {
+        switch MascotUnlocks.tier(character, skin: skin) {
+        case .common: Text("Common")
+        case .rare: Text("Rare")
+        case .epic: Text("Epic")
+        case .legendary: Text("Legendary")
+        }
+    }
+
     // MARK: Rows
 
     @ViewBuilder private var skinRow: some View {
@@ -156,14 +182,14 @@ struct CharacterEditor: View {
         case .owl:
             let skins = MascotSkin.allCases
             row(count: skins.count, pitch: metrics.skinPitch, height: metrics.skinRowHeight ?? metrics.pitch) { index in
-                thumbnail(look: MascotLook.owl.complete, skin: skins[index], size: metrics.skinCell, selected: draft.skin == skins[index], label: Text(verbatim: skins[index].rawValue)) {
+                thumbnail(look: MascotLook.owl.complete, skin: skins[index], size: metrics.skinCell, selected: draft.skin == skins[index], label: Text(verbatim: skins[index].rawValue), tier: tierLabel(.owl, skins[index].rawValue), locked: skinLocked(.owl, skins[index].rawValue, worn: wornDraft.skin.rawValue)) {
                     draft.skin = skins[index]
                 }
             }
         case .shape:
             let skins = ShapeSkin.allCases
             row(count: skins.count, pitch: metrics.skinPitch, height: metrics.skinRowHeight ?? metrics.pitch) { index in
-                thumbnail(look: edited { $0.shapeSkin = skins[index] }, skin: .none, size: metrics.skinCell, selected: draft.complete.shapeSkin == skins[index], label: Text(verbatim: skins[index].rawValue)) {
+                thumbnail(look: edited { $0.shapeSkin = skins[index] }, skin: .none, size: metrics.skinCell, selected: draft.complete.shapeSkin == skins[index], label: Text(verbatim: skins[index].rawValue), tier: tierLabel(.shape, skins[index].rawValue), locked: skinLocked(.shape, skins[index].rawValue, worn: wornDraft.complete.shapeSkin.rawValue)) {
                     var next = draft.complete
                     next.shapeSkin = skins[index]
                     draft.look = next.stored
@@ -172,7 +198,7 @@ struct CharacterEditor: View {
         case .trombi:
             let skins = TrombiSkin.allCases
             row(count: skins.count, pitch: metrics.pitch, height: metrics.pitch) { index in
-                thumbnail(look: edited { $0.trombiSkin = skins[index] }, skin: .none, size: metrics.cell, selected: draft.complete.trombiSkin == skins[index], label: Text(verbatim: skins[index].rawValue)) {
+                thumbnail(look: edited { $0.trombiSkin = skins[index] }, skin: .none, size: metrics.cell, selected: draft.complete.trombiSkin == skins[index], label: Text(verbatim: skins[index].rawValue), tier: tierLabel(.trombi, skins[index].rawValue), locked: skinLocked(.trombi, skins[index].rawValue, worn: wornDraft.complete.trombiSkin.rawValue)) {
                     var next = draft.complete
                     next.trombiSkin = skins[index]
                     draft.look = next.stored
@@ -297,18 +323,31 @@ struct CharacterEditor: View {
         .frame(height: height)
     }
 
-    private func thumbnail(look: CompleteMascotLook, skin: MascotSkin, size: CGFloat, selected: Bool, label: Text, action: @escaping () -> Void) -> some View {
+    private func thumbnail(look: CompleteMascotLook, skin: MascotSkin, size: CGFloat, selected: Bool, label: Text, tier: Text? = nil, locked: Bool = false, action: @escaping () -> Void) -> some View {
         Button {
             Haptics.selection()
-            action()
+            // a locked choice shows what it is but cannot be worn
+            if !locked { action() }
         } label: {
             MascotCharacterView(look: look, color: draft.color, skin: skin, size: size)
                 .frame(width: size, height: size)
                 .modifier(SilhouetteRing(visible: selected, gap: Self.ringGap, width: Self.ringWidth))
+                .overlay(alignment: .bottomTrailing) {
+                    if locked {
+                        Image(systemName: "lock.fill")
+                            .font(.system(size: 7, weight: .bold))
+                            .foregroundStyle(Theme.textPrimary)
+                            .frame(width: 13, height: 13)
+                            .background(Theme.cardRaised, in: Circle())
+                            .offset(x: 4, y: 4)
+                            .accessibilityHidden(true)
+                    }
+                }
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(label)
+        .accessibilityLabel(tier.map { Text("\(label), \($0)") } ?? label)
+        .accessibilityValue(locked ? Text("Locked") : Text(verbatim: ""))
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
@@ -336,6 +375,7 @@ struct CharacterEditor: View {
 /// The selection outline that follows a mascot's own silhouette: a ring
 /// `width` wide, `gap` away from the shape (reference 20's cloud).
 struct SilhouetteRing: ViewModifier {
+    @Environment(\.themePalette) var themePalette
     let visible: Bool
     var gap: CGFloat = 2.7
     var width: CGFloat = 2

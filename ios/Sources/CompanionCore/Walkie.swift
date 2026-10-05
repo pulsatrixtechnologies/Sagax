@@ -25,7 +25,7 @@ public enum Walkie {
 
     private static func spoken(_ message: Message) -> String? {
         switch message.kind {
-        case .text, .unknown:
+        case .text, .unknown, .connector, .access, .goalRun:
             let text = message.text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
             return text.isEmpty ? nil : text
         case .options:
@@ -74,15 +74,23 @@ public enum Walkie {
             return sentence(piped(plain(text)))
         case .code:
             return "Code omitted."
-        case .rule:
+        case .rule, .footnotes:
             return nil
+        case let .callout(_, title, text):
+            let words = [title, text].map { plain($0) }.filter { !$0.isEmpty }
+            return words.isEmpty ? nil : sentence(piped(words.joined(separator: ". ")))
+        case let .image(image):
+            let alt = plain(image.alt)
+            return alt.isEmpty ? nil : sentence(alt)
         }
     }
 
     /// Emphasis and code ticks, without touching pipes. List markers are
     /// already gone: the splitter consumed them.
     private static func plain(_ text: String) -> String {
-        var line = text.replacingOccurrences(of: "**", with: "")
+        // a footnote mark is not read aloud
+        var line = replace(#"\[\d+\]\(\#(Markdown.footnoteScheme):\d+\)"#, in: text, with: "")
+        line = line.replacingOccurrences(of: "**", with: "")
             .replacingOccurrences(of: "__", with: "")
             .replacingOccurrences(of: "~~", with: "")
             .replacingOccurrences(of: "`", with: "")

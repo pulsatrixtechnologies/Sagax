@@ -230,7 +230,7 @@ import { fleetAvailable, fleetRequest, fleetSocketPath } from "./fleet-client.ts
 import { entitled } from "./enterprise.ts";
 import { HOSTED_CONTRACT_HEADER, HOSTED_CONTRACT_METADATA, HOSTED_CONTRACT_VERSION } from "./hosted-contract.ts";
 import { describeSpawnFailure, execCli } from "./procs.ts";
-import { blockedTarget, buildNotification, buildSpendNotification, summarize, type Notification } from "./notify.ts";
+import { blockedTarget, buildNotification, buildSpendNotification, quietForCall, summarize, type Notification } from "./notify.ts";
 import {
   isModelVariant,
   TurnNotStartedError,
@@ -591,8 +591,11 @@ import {
   capabilitiesForAuth,
   clearSessionCookie,
   clientBotPatchViolation,
+  clientSessionIsComputerOwner,
+  companionBotFieldViolation,
   memberBotFieldViolation,
   clientGroupPatchViolation,
+  clientInstanceView,
   isLoopbackHost,
   isProxied,
   healthDetail,
@@ -674,6 +677,7 @@ import { canOnThread, migrationLogLine, threadOwner as privateThreadOwner, narro
 import { approvalAnswerStatus, approvalAudience, approvalDelivery, receivesApprovalCard, type ApprovalViewer } from "./approval-audience.ts";
 import type { BotHost } from "./turn-route.ts";
 import { signInListWithOpenInvites, type OrgRole } from "./org-directory.ts";
+import { createOwnerAvatarRoute, OwnerIdentityStore, parseOwnerIdentityMessage } from "./owner-identity.ts";
 import { configForViewer, personAvatarUrl, personDisplayName, sessionIsOperator, type ViewerIdentity } from "./viewer-identity.ts";
 // Keep these two last: a route module may import any server module, and
 // loading the table after everything above leaves module start-up order as is.
@@ -701,6 +705,8 @@ import { autoReviewThreadMode, createBotSettingsStore, hostTimeZone } from "./bo
 import { createComputerInputRoutes, createVmScreenshotRoute } from "./routes/computer-input.ts";
 import { createUserPreferenceRoutes } from "./routes/user-preferences.ts";
 import { createUserPreferenceStore } from "./user-preferences.ts";
+import { createDesktopAppearanceRoutes } from "./routes/desktop-appearance.ts";
+import { createDesktopAppearanceStore } from "./desktop-appearance.ts";
 import { achievementFrameAllowed, achievementRequestEvents, achievementSendEvents, activityEvents, createAchievementStore, routineRunEvents, type AchievementEvent } from "./achievements.ts";
 import { createAchievementRoutes } from "./routes/achievements.ts";
 import { grandfatheredFromBots } from "../shared/achievements.ts";
@@ -708,6 +714,7 @@ import { createBotMemoryRoutes } from "./routes/bot-memory.ts";
 import { createBotActivityRoutes, type ActivityChildRef } from "./routes/bot-activity.ts";
 import { inGitRepository } from "./activity-coding.ts";
 import { createGroupMemoryRoutes } from "./routes/group-memory.ts";
+import { createTtsProviderRoutes } from "./routes/tts-provider.ts";
 import { createPeopleDmRoutes } from "./routes/people-dms.ts";
 import { isPeopleDmParticipant, otherPerson, peopleDmPatchRefusal, peopleDmRouteRefusal } from "./people-dms.ts";
 import { deleteGroupMemory, groupMemoryEnabled, groupMemorySystemPrompt, updateGroupMemory } from "./group-memory.ts";
@@ -2431,10 +2438,19 @@ const browserCleanup: BrowserCleanupCoordinator = new BrowserCleanupCoordinator(
   },
 });
 const phoneSecrets = new PhoneSecretBridge(postDesktopPrivateMessage);
+// A personal computer's owner as their organization knows them, handed over
+// by the signed-in desktop app (server/owner-identity.ts). An organization
+// server has its own people and takes none.
+const ownerIdentity = IDENTITY.kind === "perspicax" ? null : new OwnerIdentityStore(join(DATA_DIR, "owner-identity.json"));
 utilityParentPort?.on("message", (event) => {
   const message = event?.data;
   try {
     if (applyDesktopMutationTokenMessage(message)) return;
+    const owner = parseOwnerIdentityMessage(message);
+    if (owner) {
+      ownerIdentity?.set(owner.identity);
+      return;
+    }
     if (handleDesktopTrustedApprovalMessage(message)) return;
     if (browserCleanup.receive(message)) return;
     if (phoneSecrets.receive(message)) return;
@@ -5877,15 +5893,18 @@ function createChannel(value: unknown): GroupRecord {
       throw Object.assign(new Error("setup must be an object"), { status: 400 });
     }
     const requested = body.setup as { bulletin?: unknown; defaultResponder?: unknown };
-    if (typeof requested.bulletin !== "string") {
+    // A room opened from a phone carries only who answers, like the desktop
+    // remote client's { defaultResponder: mentions }: no instructions yet.
+    const bulletin = requested.bulletin === undefined ? "" : requested.bulletin;
+    if (typeof bulletin !== "string") {
       throw Object.assign(new Error("setup.bulletin must be a string"), { status: 400 });
     }
-    if (requested.bulletin.length > 12_000) {
+    if (bulletin.length > 12_000) {
       throw Object.assign(new Error("setup.bulletin must be at most 12000 characters"), { status: 400 });
     }
     const responder = checkedGroupResponder(requested.defaultResponder, memberIds);
     if (!responder) throw Object.assign(new Error("invalid setup.defaultResponder"), { status: 400 });
-    setup = { bulletin: requested.bulletin, defaultResponder: responder };
+    setup = { bulletin, defaultResponder: responder };
   }
   let humanIds: string[] | undefined;
   if (body.humanIds !== undefined) {
@@ -7987,9 +8006,18 @@ const providerLabel = (provider: string): string => {
 /** Put a notification on the wire. Clients decide what to do with it — a
  * desktop notification now, a push to a paired phone later. */
 function notify(notification: Notification | null) {
+  // the conversation on a live voice call is heard, not buzzed (notify.ts)
+  if (notification && quietForCall(notification, lastPersonMessage(notification.threadId), Date.now(), Boolean(voiceCalls.active(notification.threadId)))) return;
   // nested rather than spread — the frame's own `kind` names the frame,
   // exactly like {kind:"message", message} and {kind:"bot", bot}
   if (notification) broadcast({ kind: "notify", notification });
+}
+
+/** The person's latest message in a thread (a call turn carries voiceCall). */
+function lastPersonMessage(threadId: string): Message | undefined {
+  const messages = store.messagesFor(threadId);
+  for (let index = messages.length - 1; index >= 0; index--) if (messages[index]!.role === "user") return messages[index];
+  return undefined;
 }
 
 type RoutedBy = NonNullable<Message["routedBy"]>;
@@ -19034,6 +19062,22 @@ ROUTES.push(createHostedSlackRoutes({ bot: (id) => store.bot(id), hostedReady: (
 // its file, so New bot cannot disagree with it. No organization: none.
 const orgInstallStatuses = () => orgLibrary?.installStatuses() ?? new Map();
 ROUTES.push(createBotPresetRoutes({ presets: presetStore, orgStatuses: orgInstallStatuses }));
+// The voice engine alone, for the phone's Voice engine picker (iOS parity).
+ROUTES.push(createTtsProviderRoutes({
+  current: () => tts.voiceProvider(cfg),
+  busy: () => providerConfigBusy,
+  apply: (provider, clearVoices) => {
+    // The same rule as PUT /api/config: a provider's voice ids never carry
+    // over to another provider, and bot voices go first (see that route).
+    if (clearVoices) store.clearVoiceSelections();
+    saveConfig(parseConfigPatch({ tts: { provider, ...(clearVoices ? { voice: "" } : {}) } }));
+    Object.assign(cfg, loadConfig());
+    const status = configStatus();
+    broadcast({ kind: "config", ...status });
+    return status;
+  },
+  view: (auth, status) => configForViewer(configForAccess(status as ReturnType<typeof configStatus>, auth.scopes.includes("admin")), viewerIdentity(auth)),
+}));
 // Server mode: a person's appearance, language, notifications and mascot
 // settings follow them across devices (shared/user-preferences.ts).
 ROUTES.push(createUserPreferenceRoutes({ store: userPreferenceStore, organization: () => IDENTITY.kind === "perspicax" }));
@@ -19048,6 +19092,8 @@ ROUTES.push(createDesktopBridgeRoutes({
   bridges: desktopBridges, tunnels: desktopTunnels, audit: bridgeAudit,
   workplace: (person) => workplacePreference(person),
 }));
+// A personal computer hands its look to the paired phone (shared/desktop-appearance.ts).
+ROUTES.push(createDesktopAppearanceRoutes({ store: createDesktopAppearanceStore(DATA_DIR), organization: () => IDENTITY.kind === "perspicax" }));
 // The bot-memory panel's routes (MEMORY.md, memory/ topics, journal); the
 // store lookups — the 404 precheck and journal thread titles — stay explicit.
 ROUTES.push(createBotMemoryRoutes({
@@ -19277,7 +19323,9 @@ ROUTES.push(createPluginRoutes({
     }
     return plugins;
   },
-  mayInstall: (auth) => auth.kind === "loopback" ? auth.trust !== "service" : auth.scopes.includes("admin"),
+  // an admin, or this computer's own person (a client session bound to the
+  // operator on a personal server: iOS parity S2)
+  mayInstall: (auth) => computerOwner(auth),
   install: async (listing, { req, auth, returnTo, callbackOrigin }) => {
     const current = cfg.mcpServers ?? {};
     const existing = listMcpServers(current).find((server) => "url" in server && server.url === listing.url);
@@ -19448,7 +19496,9 @@ function activityChildren(botId: string, threadId: string): ActivityChildRef[] {
 // it, its owner edits it or switches it off.
 ROUTES.push(createGroupMemoryRoutes({
   group: (id) => store.group(id),
-  canRead: (auth, group) => groupVisible(group as GroupRecord, channelViewerId(auth)),
+  // The same filter as GET /api/groups: a personal server's paired phone
+  // (a session without a principal) sees the operator's rooms.
+  canRead: (auth, group) => groupVisible(group as GroupRecord, channelFilterViewerId(auth)),
   isOwner: (auth, group) => groupOwnerCaller(auth, group as GroupRecord),
   setEnabled: (groupId, enabled) => {
     const group = store.patchGroup(groupId, { memoryEnabled: enabled ? undefined : false });
@@ -20222,6 +20272,17 @@ function ownerOrAdminOf(auth: RequestAuth, bot: BotRecord): boolean {
   if (memberOwnsBot(auth, bot)) return true;
   return IDENTITY.kind === "perspicax" && atLeast(viewerBotLevel(auth, bot), "edit");
 }
+/** This computer's own person (request-auth.ts clientSessionIsComputerOwner):
+ * the owner at this computer, an admin session, or on a personal server a
+ * client session bound to the operator. */
+function computerOwner(auth: RequestAuth): boolean {
+  return clientSessionIsComputerOwner(auth, {
+    organization: IDENTITY.kind === "perspicax",
+    cloudHome: Boolean(CLOUD_HOME),
+    localPrincipalId: localPrincipalId(),
+    operatorEmail: cfg.profile?.email,
+  });
+}
 /** A request the paired phone's companion relayed (request-auth.ts checked
  * its capability before it became a loopback request). The header alone only
  * ever narrows what a request may do, so trusting it here is safe. */
@@ -20845,6 +20906,11 @@ ROUTES.push(createOrgPersonConnectionRoutes({
     after: { removed }, actor: orgAuditActor(auth),
   }),
 }));
+if (ownerIdentity) {
+  // A personal computer: its owner's organization avatar, when the signed-in
+  // desktop handed it over, at the route an organization server uses.
+  ROUTES.push(createOwnerAvatarRoute({ store: ownerIdentity, localPrincipalId }));
+}
 if (IDENTITY.kind === "perspicax") {
   const issuer = IDENTITY.issuer;
   // A person's Perspicax avatar (personAvatarUrl), read through the link and
@@ -21997,7 +22063,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       url,
       loopbackMutationToken: desktopMutationToken,
       companionMutationToken,
-      features: { sharedComputers: lendingEnabled(), orgPairing: IDENTITY.kind === "perspicax", orgDirectory: IDENTITY.kind === "perspicax" },
+      features: { sharedComputers: lendingEnabled(), orgPairing: IDENTITY.kind === "perspicax", orgDirectory: IDENTITY.kind === "perspicax", serverCatalogue: IDENTITY.kind !== "perspicax" },
       loopbackTrust: LOOPBACK.trust,
       cliOwnerToken,
     });
@@ -22074,7 +22140,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       auth.scopes = scopes;
       if (current.idp) auth.session.idp = current.idp;
       if (narrowed) {
-        const needed = requiredScope(method, path, { sharedComputers: sharedComputersEnabled(cfg), orgPairing: IDENTITY.kind === "perspicax", orgDirectory: IDENTITY.kind === "perspicax" });
+        const needed = requiredScope(method, path, { sharedComputers: sharedComputersEnabled(cfg), orgPairing: IDENTITY.kind === "perspicax", orgDirectory: IDENTITY.kind === "perspicax", serverCatalogue: IDENTITY.kind !== "perspicax" });
         if (!scopes.includes(needed)) return json(res, 403, { error: `forbidden: this session lacks the ${needed} scope` });
       }
     }
@@ -22187,7 +22253,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         res,
         200,
         auth.kind === "loopback"
-          ? { kind: "loopback", scopes: auth.scopes, environmentId: ENVIRONMENT_ID, ...(auth.trust ? { trust: auth.trust } : { ...computerOwnerFields() }) }
+          ? { kind: "loopback", scopes: auth.scopes, environmentId: ENVIRONMENT_ID, ...(auth.trust ? { trust: auth.trust } : { ...computerOwnerFields(), ...ownerIdentity?.sessionFields(localPrincipalId()) }) }
           : {
               kind: "session",
               id: auth.session.id,
@@ -22218,7 +22284,9 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
               ...sessionPersonFields(auth.session.principalId),
               // A personal server's own devices (a paired phone): who owns
               // this computer, by name only (never an address).
-              ...(IDENTITY.kind === "solo" && !auth.session.idp && viewerIsOperator(auth) ? computerOwnerFields() : {}),
+              // and, when this computer's desktop app is signed in to an
+              // organization, the owner as it knows them (name, address, avatar)
+              ...(IDENTITY.kind === "solo" && !auth.session.idp && viewerIsOperator(auth) ? { ...computerOwnerFields(), ...ownerIdentity?.sessionFields(localPrincipalId()) } : {}),
             },
       );
     }
@@ -26155,7 +26223,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       const current = resolveRequestAuth(req, {
         sessions, cookieName: SESSION_COOKIE, streamPath: "/api/events", url,
         loopbackMutationToken: desktopMutationToken, companionMutationToken,
-        features: { sharedComputers: lendingEnabled(), orgPairing: IDENTITY.kind === "perspicax", orgDirectory: IDENTITY.kind === "perspicax" }, loopbackTrust: LOOPBACK.trust, cliOwnerToken,
+        features: { sharedComputers: lendingEnabled(), orgPairing: IDENTITY.kind === "perspicax", orgDirectory: IDENTITY.kind === "perspicax", serverCatalogue: IDENTITY.kind !== "perspicax" }, loopbackTrust: LOOPBACK.trust, cliOwnerToken,
       });
       if (!current.auth) return json(res, current.status, { error: current.error });
       const currentVisible = visibleTo(viewerFor(current.auth));
@@ -27010,6 +27078,11 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       }
       const group = store.group(m[1]);
       if (!group) return json(res, 404, { error: "no such room" });
+      // Steering posts into the room's running turn: a read-only member of a
+      // shared section may not, exactly as they may not post.
+      if (IDENTITY.kind === "perspicax" && !groupPostAllowed(group, channelViewerId(auth))) {
+        return json(res, 403, { error: "you may read this channel, not post in it", code: "read_only" });
+      }
       const targetThreadId = threadId ?? group.threadId;
       const ownsThread = group.dm
         ? group.threadId === targetThreadId
@@ -27619,7 +27692,13 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     }
     m = path.match(/^\/api\/bots\/([\w-]+)\/command-allowlist(?:\/([\w-]+))?$/);
     if (m && ["GET", "POST", "DELETE"].includes(method)) {
-      if (!canManageCommandAllowlist(auth)) return json(res, 403, { error: "Only the owner or an admin can manage command permissions." });
+      // A client session (iOS parity S2) reads and removes the rules of a
+      // bot it owns, or of any bot when it is this computer's own person.
+      // Removing a rule only narrows what runs unasked; adding one stays admin.
+      const owned = store.bot(m[1]);
+      const ownerReadOrRemove = ((method === "GET" && !m[2]) || (method === "DELETE" && Boolean(m[2]))) &&
+        Boolean(owned) && (computerOwner(auth) || ownerOrAdminOf(auth, owned!));
+      if (!canManageCommandAllowlist(auth) && !ownerReadOrRemove) return json(res, 403, { error: "Only the owner or an admin can manage command permissions." });
       const bot = requestedTaskBot(m[1], url.searchParams.get("threadId") ?? undefined);
       if (method === "GET" && !m[2]) return json(res, 200, commandAllowlistResponse(bot));
       if (method === "POST" && !m[2]) {
@@ -27712,11 +27791,12 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       }
       // A paired phone reaches a personal server through the companion as
       // its owner, but only with the fields an owner may set from a phone
-      // (look, framing, name, instructions, notifications, model): never
-      // where the bot runs or what it may do unasked.
+      // (look, framing, name, instructions, notifications, model, and the
+      // memory switches of the advanced panel): never where the bot runs or
+      // what it may do unasked.
       if (companionRequest(req, auth)) {
-        const field = memberBotFieldViolation(body);
-        if (field) return json(res, 403, { error: `forbidden: a phone may change a bot's name, look, instructions, notifications and model, not "${field}"` });
+        const field = companionBotFieldViolation(body);
+        if (field) return json(res, 403, { error: `forbidden: a phone may change a bot's name, look, instructions, notifications, model and memory, not "${field}"` });
       }
       // Organization server: the bot's owner, signed in, turns Full on as
       // the bot's default (its new threads and routines) while the
@@ -28739,6 +28819,10 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     if (m && method === "GET") {
       const bot = store.bot(m[1]);
       if (!bot) return json(res, 404, { error: "no such bot" });
+      // A client session (iOS parity) reads it for a bot it owns.
+      if (!ownerOrAdminOf(auth, bot) && !computerOwner(auth)) {
+        return json(res, 403, { error: "forbidden: only the bot owner or an admin can read what it does", code: "not_bot_owner" });
+      }
       return json(res, 200, await botOverview(bot));
     }
 
@@ -29215,6 +29299,10 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       const body = await readBody(req);
       requirePinnedClientThread(m[1], body?.threadId);
       const bot = requestedTaskBot(m[1], body?.threadId);
+      // Steered words reach the running turn like a sent line, so a Cloud
+      // guest steers only in a conversation it started (as it sends).
+      const steerRefusal = cloudGuestSendRefusal(auth, bot.threadId);
+      if (steerRefusal) return json(res, 403, { error: steerRefusal });
       // Pressing Steer folds the queued words into the running turn. It does
       // not re-book that turn to whoever pressed it, and the words keep the
       // sender they were queued with.
@@ -30722,7 +30810,12 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       // this the answer is frozen at boot and "check again" is a no-op.
       resetPathCache();
       const instances = await describeInstances();
-      return json(res, 200, { instances: auth.scopes.includes("admin") ? instances : instances.map(memberInstanceView) });
+      if (auth.scopes.includes("admin")) return json(res, 200, { instances });
+      // An organization member's copy (memberInstanceView); elsewhere a client
+      // session (a paired phone or tablet) reads the catalogue its model
+      // picker needs, not how the host is set up (clientInstanceView).
+      const view = IDENTITY.kind === "perspicax" ? memberInstanceView : clientInstanceView;
+      return json(res, 200, { instances: instances.map(view) });
     }
     const companyMutation = /^\/api\/instances\/(company\.[\w.-]+)(?:\/|$)/.exec(path);
     if (hostedModels && path.startsWith("/api/instances/") && method !== "GET") return json(res, 403, { error: HOSTED_PROVIDER_SETTINGS_ERROR });
@@ -31941,6 +32034,19 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     if (m) {
       const body = method === "POST" ? await readBody(req) : {};
       const threadId = String(method === "GET" ? url.searchParams.get("threadId") ?? "" : body.threadId ?? "");
+      if (m[3] === "authorize" && method === "POST" && auth.kind === "session" && !auth.scopes.includes("admin")) {
+        // It signs an account into this server's connected apps: a client
+        // session (iOS parity S2) only for its own bot on a personal server,
+        // or as this computer's own person; a Cloud guest only in a
+        // conversation it started.
+        const bot = store.bot(m[1]);
+        const own = Boolean(bot) && IDENTITY.kind !== "perspicax" && memberOwnsBot(auth, bot!);
+        if (!computerOwner(auth) && !own) {
+          return json(res, 403, { error: "Only this bot's owner can connect an app from here.", code: "not_bot_owner" });
+        }
+        const notYours = cloudThreadRefusal(auth, threadId);
+        if (notYours) return json(res, 403, { error: notYours });
+      }
       const message = connectorMessage(m[1], threadId, m[2]);
       if (!message?.connector) return json(res, 404, { error: "no such connection request" });
       const connector = message.connector;

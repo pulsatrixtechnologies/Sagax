@@ -25,6 +25,9 @@ public struct BotPatch: Encodable, Equatable, Sendable {
     public var mascotLook: MascotLook?
     /// The owl's special edition.
     public var mascotSkin: MascotSkin?
+    /// The bot's own Connected apps switch (PL6). Only an admin session may
+    /// send it: the sidecar and a client session refuse it.
+    public var composio: Bool?
 
     public init(
         pinned: Bool? = nil,
@@ -34,7 +37,8 @@ public struct BotPatch: Encodable, Equatable, Sendable {
         title: String? = nil,
         name: String? = nil,
         mascotLook: MascotLook? = nil,
-        mascotSkin: MascotSkin? = nil
+        mascotSkin: MascotSkin? = nil,
+        composio: Bool? = nil
     ) {
         self.pinned = pinned
         self.color = color
@@ -44,11 +48,12 @@ public struct BotPatch: Encodable, Equatable, Sendable {
         self.name = name
         self.mascotLook = mascotLook
         self.mascotSkin = mascotSkin
+        self.composio = composio
     }
 
     public var isEmpty: Bool {
         pinned == nil && color == nil && notifications == nil && soul == nil && title == nil && name == nil
-            && mascotLook == nil && mascotSkin == nil
+            && mascotLook == nil && mascotSkin == nil && composio == nil
     }
 }
 
@@ -66,8 +71,10 @@ public struct BotSoul: Decodable, Equatable, Sendable {
     public var limit: Int?
     /// True when the SOUL.md on disk no longer matches the stored text.
     public var drift: Bool?
+    /// Where SOUL.md is mirrored on the computer (the panel's footnote).
+    public var file: String?
 
-    private enum CodingKeys: String, CodingKey { case soul, revision, bytes, limit, drift }
+    private enum CodingKeys: String, CodingKey { case soul, revision, bytes, limit, drift, file }
 
     public init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
@@ -83,6 +90,7 @@ public struct BotSoul: Decodable, Equatable, Sendable {
         bytes = try values.decodeIfPresent(Int.self, forKey: .bytes)
         limit = try values.decodeIfPresent(Int.self, forKey: .limit)
         drift = try values.decodeIfPresent(Bool.self, forKey: .drift)
+        file = try? values.decodeIfPresent(String.self, forKey: .file)
     }
 
     /// The first non-empty line, for search subtitles.
@@ -117,8 +125,25 @@ public struct ThreadFile: Decodable, Hashable, Identifiable, Sendable {
     public var at: Double
     public var size: Int?
     public var available: Bool
+    /// Where the message named it (a host path, a URL or a bare name).
+    public var path: String
+    /// The resolved absolute path on the computer, while it is available.
+    public var localPath: String?
 
-    private enum CodingKeys: String, CodingKey { case id, messageId, source, name, mime, at, size, available }
+    private enum CodingKeys: String, CodingKey { case id, messageId, source, name, mime, at, size, available, path, localPath }
+
+    public init(id: String, messageId: String = "", source: Source, name: String, mime: String? = nil, at: Double, size: Int? = nil, available: Bool = true, path: String = "", localPath: String? = nil) {
+        self.id = id
+        self.messageId = messageId
+        self.source = source
+        self.name = name
+        self.mime = mime
+        self.at = at
+        self.size = size
+        self.available = available
+        self.path = path
+        self.localPath = localPath
+    }
 
     public init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
@@ -130,6 +155,8 @@ public struct ThreadFile: Decodable, Hashable, Identifiable, Sendable {
         at = try values.decodeIfPresent(Double.self, forKey: .at) ?? 0
         size = try values.decodeIfPresent(Int.self, forKey: .size)
         available = try values.decodeIfPresent(Bool.self, forKey: .available) ?? false
+        path = try values.decodeIfPresent(String.self, forKey: .path) ?? ""
+        localPath = try values.decodeIfPresent(String.self, forKey: .localPath)
     }
 
     /// Media tab when true, Files tab otherwise. Falls back to the extension
@@ -161,12 +188,17 @@ public struct AuthSession: Decodable, Equatable, Sendable {
     public var name: String?
     public var principalId: String?
     public var role: String?
-    /// The person's photo, when the server knows one: an absolute URL or an
-    /// app-owned `/api/attachments/...` path.
+    /// The person's photo, when the server knows one: the versioned
+    /// `/api/people/<id>/avatar?v=` route of their Perspicax avatar on an
+    /// organization server (or a stored `/api/attachments/...` picture).
+    /// Read through `avatar`; never an address to fetch as is.
     public var avatarUrl: String?
 
+    /// The photo this phone may request from its own server, or nil.
+    public var avatar: AccountAvatar? { AccountAvatar(avatarUrl) }
+
     private enum CodingKeys: String, CodingKey {
-        case kind, id, label, scopes, expiresAt, environmentId, email, owner, name, principalId, role, avatarUrl, picture
+        case kind, id, label, scopes, expiresAt, environmentId, email, owner, name, principalId, role, avatarUrl
     }
 
     public init(from decoder: Decoder) throws {
@@ -183,7 +215,9 @@ public struct AuthSession: Decodable, Equatable, Sendable {
         name = try? values.decodeIfPresent(String.self, forKey: .name)
         principalId = try? values.decodeIfPresent(String.self, forKey: .principalId)
         role = try? values.decodeIfPresent(String.self, forKey: .role)
-        let avatar = (try? values.decodeIfPresent(String.self, forKey: .avatarUrl)) ?? (try? values.decodeIfPresent(String.self, forKey: .picture))
+        // Only the server's own `avatarUrl`: an id_token `picture` names an
+        // address on Perspicax, which the phone never calls.
+        let avatar = try? values.decodeIfPresent(String.self, forKey: .avatarUrl)
         avatarUrl = avatar.flatMap { $0.trimmingCharacters(in: .whitespaces).isEmpty ? nil : $0 }
     }
 
@@ -294,6 +328,16 @@ public struct MCPServerListing: Decodable, Hashable, Identifiable, Sendable {
     public var auth: String?
     /// Set when an organization policy keeps this server from bots.
     public var managedBy: String?
+    /// A command server's arguments, and the names (never the values) of
+    /// its saved environment variables.
+    public var args: [String]? = nil
+    public var envKeys: [String]? = nil
+    /// A URL server's saved header names (never the values).
+    public var headerKeys: [String]? = nil
+    /// Why the last sign-in or refresh failed, in the server's words.
+    public var authError: String? = nil
+    /// Who signs the person in (a host), when the server knows.
+    public var authIssuer: String? = nil
 
     public var id: String { name }
     public var isRemote: Bool { url != nil }

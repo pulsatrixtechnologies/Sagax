@@ -36,6 +36,7 @@ enum CompactRosterMetrics {
 
 /// One bot on one line, with its threads beneath it when opened.
 struct CompactBotEntry: View {
+    @Environment(\.themePalette) var themePalette
     let bot: Bot
     /// When the bot's current thread last moved, from the roster summary.
     let lastActivity: Double
@@ -52,6 +53,13 @@ struct CompactBotEntry: View {
     let manage: (Chat) -> Void
 
     @EnvironmentObject private var session: Session
+    /// The shared thread and folder menus, mounted by the roster.
+    @EnvironmentObject private var threadActions: ThreadActions
+    /// Settings > Appearance > Threads (WP6): off, no "› N" and no list.
+    @Environment(\.sidebarShowsThreads) private var showsThreads
+    /// The sidebar preferences and the section prompts (WP6).
+    @ObservedObject private var sidebarPrefs = SidebarPrefsModel.shared
+    @EnvironmentObject private var sectionActions: SidebarSectionActions
     @Environment(\.dynamicTypeSize) private var typeSize
     @ScaledMetric(relativeTo: .body) private var scaledFace = CompactRosterMetrics.face
     /// Wakes the list when a timed snooze ends, so the count and the list
@@ -73,7 +81,7 @@ struct CompactBotEntry: View {
         )
         VStack(alignment: .leading, spacing: 0) {
             rowLine(live, row)
-            if row.listsThreads(expanded: expanded, searching: searching) {
+            if showsThreads && row.listsThreads(expanded: expanded, searching: searching) {
                 threadList(live, row: row, queued: queued)
             }
         }
@@ -128,7 +136,7 @@ struct CompactBotEntry: View {
                     }
                 }
                 .padding(.leading, CompactRosterMetrics.leading)
-                .padding(.trailing, row.showsThreadControl ? 0 : CompactRosterMetrics.trailing)
+                .padding(.trailing, showsThreads && row.showsThreadControl ? 0 : CompactRosterMetrics.trailing)
                 .modifier(RowPadding())
                 .frame(minHeight: 44)
                 .contentShape(Rectangle())
@@ -137,17 +145,27 @@ struct CompactBotEntry: View {
             .contextMenu {
                 // A single-thread bot shows no thread list to end in "New
                 // thread", so the home list offers it here — for every bot.
-                Button { createThread(for: bot) } label: {
-                    Label("New thread", systemImage: "square.and.pencil")
+                if showsThreads {
+                    Button { createThread(for: bot) } label: {
+                        Label("New thread", systemImage: "square.and.pencil")
+                    }
+                    .disabled(creating)
+                    Button { manage(.bot(bot)) } label: {
+                        Label("Manage threads", systemImage: "list.bullet")
+                    }
                 }
-                .disabled(creating)
-                Button { manage(.bot(bot)) } label: {
-                    Label("Manage threads", systemImage: "list.bullet")
+                BotThreadsMenu(bot: bot, actions: threadActions, showsThreads: showsThreads)
+                let layout = sidebarPrefs.layout(session)
+                if layout.personal {
+                    PersonalSectionPicker(key: PersonalSections.itemKey(bot: bot.id), layout: layout, actions: sectionActions)
+                }
+                Button { sidebarPrefs.hide(session, .bot, bot.id) } label: {
+                    Label("Hide from sidebar", systemImage: "eye.slash")
                 }
             }
             .accessibilityIdentifier("chat-row.\(bot.id)")
 
-            if row.showsThreadControl {
+            if showsThreads && row.showsThreadControl {
                 threadControl(bot, count: row.threadCount)
                     // the control's own padding lands its glyph on the
                     // 16pt edge that times in other rows end on
@@ -170,7 +188,7 @@ struct CompactBotEntry: View {
                 if !bot.displayRole.isEmpty {
                     Text(verbatim: bot.displayRole)
                         .font(.subheadline)
-                        .foregroundStyle(Color.secondary)
+                        .foregroundStyle(Theme.parity(Color.secondary, Theme.textSecondary))
                         .lineLimit(1)
                         // Measured at its minimum, so this line is chosen
                         // whenever the name fits with room for a word of role.
@@ -185,7 +203,7 @@ struct CompactBotEntry: View {
         HStack(spacing: 6) {
             Text(verbatim: bot.name)
                 .font(.body.weight(.semibold))
-                .foregroundStyle(Color.primary)
+                .foregroundStyle(Theme.textPrimary)
                 .lineLimit(typeSize.isAccessibilitySize ? 3 : 1)
                 .fixedSize(horizontal: false, vertical: true)
             if row.showsChiefBadge {
@@ -209,7 +227,7 @@ struct CompactBotEntry: View {
                     .font(.subheadline.weight(.medium))
                     .monospacedDigit()
             }
-            .foregroundStyle(Color.secondary)
+            .foregroundStyle(Theme.parity(Color.secondary, Theme.textSecondary))
             .padding(.horizontal, 10)
             .frame(minWidth: 44, minHeight: 44)
             .contentShape(Rectangle())
@@ -227,7 +245,8 @@ struct CompactBotEntry: View {
         // A name match lists everything; otherwise only what matched.
         let groups = bot.threadGroups(
             matching: bot.name.localizedCaseInsensitiveContains(query) ? "" : query,
-            queuedThreadIds: queued
+            queuedThreadIds: queued,
+            includingEmptyFolders: true
         )
         let labelsUnfiled = groups.labelsUnfiledThreads
         return VStack(alignment: .leading, spacing: 0) {
@@ -236,6 +255,12 @@ struct CompactBotEntry: View {
                     folderHeader(folder)
                     if searching || !collapsedFolders.contains(folderKey(folder)) {
                         threadLines(group.tasks, bot: bot)
+                        if bot.folderThreads(folder.id).isEmpty {
+                            Text("No threads yet")
+                                .font(.footnote)
+                                .foregroundStyle(Theme.parity(Color.secondary, Theme.textSecondary))
+                                .frame(minHeight: 32)
+                        }
                     }
                 } else {
                     if labelsUnfiled {
@@ -257,6 +282,7 @@ struct CompactBotEntry: View {
 
     private func folderHeader(_ folder: BotProject) -> some View {
         let open = searching || !collapsedFolders.contains(folderKey(folder))
+        let live = session.state.bot(bot.id) ?? bot
         return Button {
             let key = folderKey(folder)
             if collapsedFolders.contains(key) { collapsedFolders.remove(key) } else { collapsedFolders.insert(key) }
@@ -269,17 +295,22 @@ struct CompactBotEntry: View {
                 }
                 Text(verbatim: folder.name)
                     .lineLimit(1)
+                Text("\(live.folderThreads(folder.id).count)")
+                    .monospacedDigit()
+                    .opacity(0.6)
                 Image(systemName: "chevron.right")
                     .font(.caption2.weight(.semibold))
                     .rotationEffect(.degrees(open ? 90 : 0))
+                if !open { FolderStatusMark(status: FolderStatus(live.folderThreads(folder.id))) }
                 Spacer(minLength: 0)
             }
             .font(.footnote.weight(.medium))
-            .foregroundStyle(Color.secondary)
+            .foregroundStyle(Theme.parity(Color.secondary, Theme.textSecondary))
             .frame(minHeight: 44)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .folderMenu(folder, of: live, actions: threadActions, session: session)
         .disabled(searching)
         .accessibilityLabel(Text(verbatim: folder.name))
         .accessibilityValue(open ? "Expanded" : "Collapsed")
@@ -291,7 +322,7 @@ struct CompactBotEntry: View {
     private func unfiledLabel(_ bot: Bot) -> some View {
         Text("Threads")
             .font(.footnote.weight(.medium))
-            .foregroundStyle(Color.secondary)
+            .foregroundStyle(Theme.parity(Color.secondary, Theme.textSecondary))
             .padding(.top, 10)
             .padding(.bottom, 2)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -309,14 +340,7 @@ struct CompactBotEntry: View {
                     )
                 }
                 .buttonStyle(.plain)
-                .contextMenu {
-                    Button {
-                        let pinned = task.pinned != true
-                        Task { await session.setTaskPinned(task, pinned: pinned, in: .bot(bot)) }
-                    } label: {
-                        Label(task.pinned == true ? "Unpin" : "Pin", systemImage: task.pinned == true ? "pin.slash" : "pin")
-                    }
-                }
+                .threadMenu(task, owner: .bot(bot), actions: threadActions, session: session)
                 .accessibilityIdentifier("thread.\(task.threadId)")
             }
         }
@@ -334,7 +358,7 @@ struct CompactBotEntry: View {
                 Spacer(minLength: 0)
             }
             .font(.subheadline.weight(.medium))
-            .foregroundStyle(Color.accentColor)
+            .foregroundStyle(Theme.parity(Color.accentColor, Theme.accentText))
             .frame(minHeight: 44)
             .contentShape(Rectangle())
         }
@@ -358,6 +382,7 @@ struct CompactBotEntry: View {
 
 /// One thread under its bot: title, then its status and when it last moved.
 struct CompactThreadLine: View {
+    @Environment(\.themePalette) var themePalette
     let task: BotTask
     /// A held send, from the client's queue state (never in `activity`).
     var queued = false
@@ -421,11 +446,11 @@ struct CompactThreadLine: View {
         HStack(spacing: 6) {
             Text(verbatim: task.displayTitle)
                 .font(.subheadline.weight(task.unread == true ? .semibold : .regular))
-                .foregroundStyle(dimmed ? Color.secondary : Color.primary)
+                .foregroundStyle(dimmed ? Theme.parity(Color.secondary, Theme.textSecondary) : Theme.textPrimary)
             if task.pinned == true {
                 Image(systemName: "pin.fill")
                     .font(.caption2)
-                    .foregroundStyle(Color.secondary)
+                    .foregroundStyle(Theme.parity(Color.secondary, Theme.textSecondary))
             }
         }
     }
@@ -435,18 +460,18 @@ struct CompactThreadLine: View {
         HStack(spacing: 6) {
             if task.unread == true {
                 Circle()
-                    .fill(Color.accentColor)
+                    .fill(Theme.parity(Color.accentColor, Theme.accent))
                     .frame(width: 7, height: 7)
             }
             switch mark {
             case .waitingOnYou:
                 Image(systemName: "hand.raised.fill")
                     .font(.caption)
-                    .foregroundStyle(Color.orange)
+                    .foregroundStyle(Theme.parity(Color.orange, Theme.warning))
             case .waitingOnTeammate, .queued:
                 Image(systemName: "clock")
                     .font(.caption)
-                    .foregroundStyle(Color.secondary)
+                    .foregroundStyle(Theme.parity(Color.secondary, Theme.textSecondary))
             case .working, nil:
                 EmptyView()
             }
@@ -456,7 +481,7 @@ struct CompactThreadLine: View {
             } else if !stamp.isEmpty {
                 Text(verbatim: stamp)
                     .font(.footnote)
-                    .foregroundStyle(Color.secondary)
+                    .foregroundStyle(Theme.parity(Color.secondary, Theme.textSecondary))
             }
         }
         .fixedSize()
@@ -474,6 +499,7 @@ struct CompactThreadLine: View {
 
 /// A group on one line: two of its members' faces, overlapping, then its name.
 struct CompactRoomRow: View {
+    @Environment(\.themePalette) var themePalette
     let room: Room
     let lastActivity: Double
     /// An unanswered approval or question sits in the group's thread.
@@ -489,12 +515,18 @@ struct CompactRoomRow: View {
     var body: some View {
         HStack(spacing: 0) {
             UnreadDot(visible: room.unread && !busy, color: "blue")
-            RoomFaces(members: room.memberIds.compactMap { session.state.bot($0) }, size: face)
+            Group {
+                if let peer = PeopleDirectory.shared.peer(room, session: session) {
+                    PersonAvatar(initials: peer.initials, size: face)
+                } else {
+                    RoomFaces(members: room.memberIds.compactMap { session.state.bot($0) }, size: face)
+                }
+            }
                 .accessibilityHidden(true)
                 .padding(.trailing, CompactRosterMetrics.faceSpacing)
-            let name = Text(verbatim: room.name)
+            let name = Text(verbatim: PeopleDirectory.shared.peer(room, session: session)?.name ?? room.name)
                 .font(.body.weight(.semibold))
-                .foregroundStyle(Color.primary)
+                .foregroundStyle(Theme.textPrimary)
             let status = RowStatus(
                 waiting: waiting, working: busy,
                 stamp: busy ? "" : RelativeStamp.list(lastActivity),
@@ -530,6 +562,7 @@ struct CompactRoomRow: View {
 /// accessibility sizes, it grows with the text, so one row's time does not
 /// run into the next row's name.
 private struct RowPadding: ViewModifier {
+    @Environment(\.themePalette) var themePalette
     @Environment(\.dynamicTypeSize) private var typeSize
     @ScaledMetric(relativeTo: .body) private var stacked = CompactRosterMetrics.rowPadding
 
@@ -541,6 +574,7 @@ private struct RowPadding: ViewModifier {
 /// Beneath a bot's name at the accessibility sizes: the hand or the spinner,
 /// then the time and the role as one quiet line that gives way at its end.
 private struct SecondLine: View {
+    @Environment(\.themePalette) var themePalette
     let line: CompactSecondLine
     let color: String
     let spinnerLabel: LocalizedStringKey
@@ -556,7 +590,7 @@ private struct SecondLine: View {
             if !line.words.isEmpty {
                 Text(verbatim: line.text)
                     .font(CompactRosterMetrics.stackedDetail)
-                    .foregroundStyle(Color.secondary)
+                    .foregroundStyle(Theme.parity(Color.secondary, Theme.textSecondary))
                     .lineLimit(1)
                     .accessibilityLabel(Text(verbatim: line.spokenText))
             }
@@ -567,6 +601,7 @@ private struct SecondLine: View {
 /// Two members' faces in one face's square: the first up and left, the
 /// second down and right on a ring of the list's background.
 private struct RoomFaces: View {
+    @Environment(\.themePalette) var themePalette
     let members: [Bot]
     let size: CGFloat
 
@@ -578,6 +613,7 @@ private struct RoomFaces: View {
 /// The unread dot, in its own gutter at the row's leading edge, as on the
 /// comfortable rows.
 private struct UnreadDot: View {
+    @Environment(\.themePalette) var themePalette
     let visible: Bool
     let color: String
 
@@ -597,6 +633,7 @@ private struct UnreadDot: View {
 /// The trailing marks: a hand in the chat's colour while it waits on the
 /// person, and a spinner in place of the time while it works.
 private struct RowStatus: View {
+    @Environment(\.themePalette) var themePalette
     let waiting: Bool
     let working: Bool
     let stamp: String
@@ -622,7 +659,7 @@ private struct RowStatus: View {
             } else if !stamp.isEmpty {
                 Text(verbatim: stamp)
                     .font(stampFont)
-                    .foregroundStyle(Color.secondary)
+                    .foregroundStyle(Theme.parity(Color.secondary, Theme.textSecondary))
             }
         }
         .fixedSize()

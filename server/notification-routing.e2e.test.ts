@@ -203,6 +203,36 @@ describe("an ordinary turn still announces itself", () => {
   }, 40_000);
 });
 
+describe("a conversation on a live voice call", () => {
+  it("is heard, not buzzed, and buzzes again once the person writes", async () => {
+    const bot = await createBot("Caller", "quick");
+    const stream = await openSse(`${base}/api/events`);
+    try {
+      const voiceCall = { callId: "call-notify-0001", interrupted: false };
+      expect((await api("POST", `/api/bots/${bot.id}/messages`, { text: "on the phone: how did it go?", voiceCall })).status).toBe(202);
+      // the answer lands in the thread (and is read aloud on the call)...
+      await expect.poll(async () => ((await botState(bot.id))?.messages ?? []).some(
+        (message: { role: string; text?: string }) => message.role === "bot" && (message.text ?? "").includes("hello from fake claude"),
+      ), { timeout: 20_000 }).toBe(true);
+      // ...with no banner: a unique patch is the ordering barrier, as below
+      expect((await api("PATCH", `/api/bots/${bot.id}`, { name: "Caller observed" })).status).toBe(200);
+      await stream.until((candidate) => candidate.kind === "bot" && candidate.bot?.id === bot.id && candidate.bot?.name === "Caller observed");
+      expect(stream.frames.filter((candidate) => candidate.kind === "notify" && candidate.notification?.botId === bot.id)).toEqual([]);
+
+      // hung up and written: news again
+      expect((await api("POST", `/api/bots/${bot.id}/messages`, { text: "and in writing?" })).status).toBe(202);
+      const frame = await stream.until(
+        (candidate) => candidate.kind === "notify" && candidate.notification?.kind === "done" && candidate.notification?.botId === bot.id,
+        20_000,
+      );
+      expect(frame.notification.threadId).toBe(bot.threadId);
+    } finally {
+      stream.close();
+      await cleanup([], [bot.id]);
+    }
+  }, 60_000);
+});
+
 describe("a room turn belongs to the room", () => {
   it("leaves the speaking bot's own thread unread-free while the room lights up", async () => {
     const bot = await createBot("Roomie", "quick");

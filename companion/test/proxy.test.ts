@@ -226,6 +226,18 @@ describe("the sidecar in front of an unmodified harness", () => {
     })).toBe(200);
   });
 
+  it("tells the phone whose computer this is, with no photo a personal computer cannot know", async () => {
+    // A personal computer has no Perspicax link, so its session names no
+    // avatar and the phone keeps its initial. The photo route still crosses
+    // the sidecar (routes.test.ts); this harness has none and answers 404.
+    const session = await device("GET", "/api/auth/session");
+    expect(session.status).toBe(200);
+    expect(session.body.kind).toBe("loopback");
+    expect(session.body.avatarUrl).toBeUndefined();
+    const photo = await device("GET", "/api/people/pr_0b1c/avatar?v=0123456789abcdef");
+    expect(photo.status).toBe(404);
+  });
+
   it("refuses anything carrying an Origin, before looking at the token", async () => {
     const { status } = await device("GET", "/api/bots", { headers: { origin: "https://evil.example" } });
     expect(status).toBe(403);
@@ -380,6 +392,150 @@ describe("the sidecar in front of an unmodified harness", () => {
       body: { name: "Unsafe", botIds: [first.id], autoApprove: true },
     });
     expect(smuggled.status).toBe(400);
+  });
+
+  it("carries the desktop remote client's folders, steer, titles and Mark all read to the harness", async () => {
+    // The Electron app in remote-client mode shows each of these and goes
+    // through this same sidecar; the iPad follows it. The harness answers
+    // every one of them itself (its own errors, never the sidecar's "no route").
+    const bot = (await device("POST", "/api/bots")).body.bot;
+    const created = await device("POST", `/api/bots/${bot.id}/projects`, { body: { name: "Mobile", emoji: null } });
+    expect(created.status).toBe(201);
+    const folder = created.body.project.id;
+    const renamed = await device("PATCH", `/api/bots/${bot.id}/projects/${folder}`, { body: { name: "Phone" } });
+    expect(renamed.status).toBe(200);
+    expect(renamed.body.project.name).toBe("Phone");
+    expect((await device("PATCH", `/api/bots/${bot.id}/projects/order`, { body: { projectIds: [folder] } })).status).toBe(200);
+    // a folder owns no settings: anything but a name and an emoji is refused by the harness
+    expect((await device("PATCH", `/api/bots/${bot.id}/projects/${folder}`, { body: { cwd: "/" } })).status).toBe(400);
+    expect((await device("DELETE", `/api/bots/${bot.id}/projects/${folder}`)).status).toBe(200);
+
+    const steered = await device("POST", `/api/bots/${bot.id}/queue/nothing-queued/steer`, { body: { threadId: bot.threadId } });
+    expect(steered.status).toBe(404);
+    expect(steered.body.error).toBe("no such queued message");
+    const room = (await device("POST", "/api/groups", { body: { memberIds: [bot.id], name: "Steer room" } })).body.group;
+    const roomSteer = await device("POST", `/api/groups/${room.id}/queue/nothing-queued/steer`, { body: {} });
+    expect(roomSteer.body.error ?? "").not.toMatch(/^no route/);
+
+    const title = await device("POST", `/api/bots/${bot.id}/tasks/${bot.threadId}/title`);
+    expect(title.body.error ?? "").not.toMatch(/^no route/);
+    expect(title.status).not.toBe(403);
+
+    const seen = await device("POST", "/api/routine-runs/seen-all");
+    expect(seen.status).toBe(200);
+    expect(Array.isArray(seen.body.runs)).toBe(true);
+    const brand = await device("GET", "/api/brand");
+    expect(brand.status).toBe(200);
+  });
+
+  it("carries the iOS parity routes (S1, D1, D3) to the harness, and still not what stays on the computer", async () => {
+    // docs/superpowers/specs/2026-10-03-ios-feature-parity-matrix.md. A
+    // companion request is the computer's owner to the harness, so each of
+    // these is answered by the harness itself: never the sidecar's "no route",
+    // never a 403 for a route the owner's own renderer may use.
+    const notNoRoute = (r: { status: number; body: any }, label: string) => {
+      expect(String(r.body?.error ?? ""), label).not.toMatch(/^no route/);
+      expect(r.status, label).not.toBe(403);
+    };
+    const bot = (await device("POST", "/api/bots")).body.bot;
+
+    // S1
+    notNoRoute(await device("GET", `/api/bots/${bot.id}/harness-commands`), "harness-commands");
+    const stop = await device("POST", `/api/bots/${bot.id}/parallel/${bot.threadId}/stop`);
+    expect(stop.status).toBe(404);
+    expect(stop.body.error).toBe("no running or waiting parallel task there");
+    notNoRoute(await device("GET", `/api/bots/${bot.id}/activity`), "activity");
+    const primary = await device("POST", `/api/bots/${bot.id}/primary`);
+    expect(primary.status).toBe(200);
+    expect(primary.body.bot.id).toBe(bot.id);
+    notNoRoute(await device("GET", "/api/me/harness-connectors"), "harness-connectors");
+    notNoRoute(await device("GET", `/api/bots/${bot.id}/computer`), "computer status");
+
+    // D1: the advanced panel, reads and edits
+    const prompt = await device("GET", `/api/bots/${bot.id}/system-prompt`);
+    expect(prompt.status).toBe(200);
+    const skills = await device("GET", `/api/bots/${bot.id}/skills`);
+    expect(skills.status).toBe(200);
+    expect(skills.body).toMatchObject({ skills: expect.any(Array) });
+    expect((await device("GET", `/api/bots/${bot.id}/skills/not-installed`)).status).toBe(404);
+    const saved = await device("PUT", `/api/bots/${bot.id}/memory/file`, { body: { path: "MEMORY.md", text: "- likes short replies\n" } });
+    expect(saved.status).toBe(200);
+    const read = await device("GET", `/api/bots/${bot.id}/memory/file?path=MEMORY.md`);
+    expect(read.status).toBe(200);
+    expect(read.body.text).toContain("likes short replies");
+    expect((await device("GET", `/api/bots/${bot.id}/memory`)).status).toBe(200);
+    const journal = await device("GET", `/api/bots/${bot.id}/memory/journal`);
+    expect(journal.status).toBe(200);
+    expect(journal.body.entries.length).toBeGreaterThan(0);
+    expect((await device("GET", `/api/bots/${bot.id}/memory/upkeep`)).status).toBe(200);
+    const history = await device("GET", `/api/bots/${bot.id}/history`);
+    expect(history.status).toBe(200);
+    expect(history.body).toMatchObject({ rows: expect.any(Array) });
+    expect((await device("GET", "/api/bot-presets")).status).toBe(200);
+    expect((await device("GET", "/api/me/achievements")).status).not.toBe(403);
+    // the memory switches cross the companion's bot PATCH; access still does not
+    const off = await device("PATCH", `/api/bots/${bot.id}`, { body: { memoryEnabled: false, memoryUpkeep: false } });
+    expect(off.status).toBe(200);
+    expect(off.body.bot).toMatchObject({ memoryEnabled: false });
+    expect((await device("PATCH", `/api/bots/${bot.id}`, { body: { memoryEnabled: true, cwd: "/" } })).status).toBe(403);
+    // opening the memory folder acts on the host's screen: still no route
+    const open = await device("POST", `/api/bots/${bot.id}/memory/open`, { body: { target: "folder" } });
+    expect(open.status).toBe(404);
+    expect(open.body.error).toMatch(/^no route/);
+
+    // D3: the room's shared memory
+    const room = (await device("POST", "/api/groups", { body: { memberIds: [bot.id], name: "Memory room" } })).body.group;
+    notNoRoute(await device("GET", `/api/groups/${room.id}/memory`), "room memory read");
+    notNoRoute(await device("PUT", `/api/groups/${room.id}/memory`, { body: { enabled: true } }), "room memory write");
+
+    // The room the phone opens carries only who answers, like the remote client.
+    const phoneRoom = await device("POST", "/api/groups", {
+      body: { memberIds: [bot.id], name: "Phone room", setup: { defaultResponder: { kind: "mentions" } } },
+    });
+    expect(phoneRoom.status).toBe(201);
+    expect(phoneRoom.body.group).toMatchObject({ defaultResponder: { kind: "mentions" }, setupCompletedAt: expect.any(Number) });
+  });
+
+  it("switches the voice engine through its own route, one field and nothing else", async () => {
+    const switched = await device("PUT", "/api/tts/provider", { body: { provider: "fish" } });
+    expect(switched.status).toBe(200);
+    // the key-carrying write stays refused, and the narrow one takes nothing beside the engine
+    expect((await device("PUT", "/api/config", { body: { tts: { provider: "fish" } } })).status).toBe(403);
+    expect((await device("PUT", "/api/tts/provider", { body: { provider: "fish", key: "sk-smuggled" } })).status).toBe(400);
+    expect((await device("PUT", "/api/tts/provider", { body: { provider: "nope" } })).status).toBe(400);
+    expect((await device("PUT", "/api/tts/provider", { body: { provider: "elevenlabs" } })).status).toBe(200);
+  });
+
+  it("keeps an interval's days, window and end date when a phone edits the routine without them (AU13)", async () => {
+    const bot = (await device("POST", "/api/bots")).body.bot;
+    const anchorAt = Date.UTC(2031, 0, 6, 14, 0);
+    const endsAt = Date.UTC(2031, 11, 31, 23, 0);
+    const created = await device("POST", "/api/routines", {
+      body: {
+        name: "Support hours check", prompt: "Check the queue", botId: bot.id,
+        schedule: { type: "interval", everyMinutes: 30, anchorAt, weekdays: [1, 3, 5], window: { start: "09:00", end: "17:00" }, endsAt },
+        overlap: "queue", continuity: true, timeoutMinutes: 20,
+      },
+    });
+    expect(created.status, JSON.stringify(created.body)).toBe(201);
+    const id = created.body.routine.id;
+    // Exactly what the phone's editor sends (ios RoutineInput): it has no
+    // field for the window, the end date, overlap or continuity.
+    const edited = await device("PATCH", `/api/routines/${id}`, {
+      body: {
+        name: "Support hours check (phone)", prompt: "Check the queue", botId: bot.id, runOn: "maus", enabled: true,
+        schedule: { type: "interval", everyMinutes: 60, anchorAt }, durationMinutes: 30, timeoutMinutes: 20,
+      },
+    });
+    expect(edited.status, JSON.stringify(edited.body)).toBe(200);
+    expect(edited.body.routine).toMatchObject({
+      name: "Support hours check (phone)",
+      schedule: { type: "interval", everyMinutes: 60, anchorAt, weekdays: [1, 3, 5], window: { start: "09:00", end: "17:00" }, endsAt },
+      overlap: "queue", continuity: true, timeoutMinutes: 20,
+    });
+    const listed = (await device("GET", "/api/routines")).body.routines.find((routine: { id: string }) => routine.id === id);
+    expect(listed.schedule).toEqual({ type: "interval", everyMinutes: 60, anchorAt, weekdays: [1, 3, 5], window: { start: "09:00", end: "17:00" }, endsAt });
+    expect((await device("DELETE", `/api/routines/${id}`)).status).toBe(200);
   });
 
   it("creates a bot through companion pairing without host defaults or settings access", async () => {

@@ -16,6 +16,7 @@ import UIKit
 enum ComputerFit: String { case fit, fill }
 
 struct ComputerView: View {
+    @Environment(\.themePalette) var themePalette
     let bot: Bot
     @EnvironmentObject private var session: Session
     @Environment(\.dismiss) private var dismiss
@@ -150,7 +151,7 @@ struct ComputerView: View {
         HStack(spacing: 0) {
             GlassCircleButton(
                 systemImage: "chevron.left", fill: Theme.Computer.glassFill, accessibilityLabel: "Back",
-                glyphSize: 18, glyphOffset: CGSize(width: 0.85, height: -0.25)
+                glyphSize: 18, glyphOffset: CGSize(width: 0.85, height: -0.25), glyphColor: Theme.Computer.ink
             ) { dismiss() }
                 .accessibilityIdentifier("computer-back")
             BotMascotView(bot: current, size: Theme.Computer.mascot)
@@ -159,13 +160,13 @@ struct ComputerView: View {
                 .accessibilityHidden(true)
             Text(current.name)
                 .font(Theme.Font.bodyMedium)
-                .foregroundStyle(Theme.textPrimary)
+                .foregroundStyle(Theme.Computer.ink)
                 .lineLimit(1)
                 .padding(.leading, Theme.Computer.nameLeading)
             Spacer(minLength: 8)
             GlassCircleButton(
                 systemImage: "questionmark", fill: Theme.Computer.glassFill, accessibilityLabel: "Gestures",
-                glyphSize: 20, weight: .regular
+                glyphSize: 20, weight: .regular, glyphColor: Theme.Computer.ink
             ) { showingHelp = true }
                 .accessibilityIdentifier("computer-help")
             moreMenu
@@ -215,7 +216,7 @@ struct ComputerView: View {
         } label: {
             Image(systemName: "ellipsis")
                 .font(.system(size: 17, weight: .semibold))
-                .foregroundStyle(Theme.textPrimary)
+                .foregroundStyle(Theme.Computer.ink)
                 .frame(width: Theme.Metric.glassLarge, height: Theme.Metric.glassLarge)
                 .contentShape(Circle())
         }
@@ -286,7 +287,7 @@ struct ComputerView: View {
                     .font(Theme.Font.body)
             }
         }
-        .foregroundStyle(Theme.textSecondary)
+        .foregroundStyle(Theme.Computer.inkSecondary)
         .multilineTextAlignment(.center)
         .padding(.horizontal, 32)
         .allowsHitTesting(false)
@@ -297,7 +298,7 @@ struct ComputerView: View {
         if let notice = controller.notice ?? (offline ? String(localized: "This computer is offline. Reconnecting…") : nil) {
             Text(notice)
                 .font(Theme.Font.profileLabel)
-                .foregroundStyle(Theme.textSecondary)
+                .foregroundStyle(Theme.Computer.inkSecondary)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 24)
                 .padding(.top, 12)
@@ -319,7 +320,7 @@ struct ComputerView: View {
                 }
             } label: {
                 ClipboardGlyph()
-                    .fill(Theme.textPrimary, style: FillStyle(eoFill: true))
+                    .fill(Theme.Computer.ink, style: FillStyle(eoFill: true))
                     .frame(width: ClipboardGlyph.size.width, height: ClipboardGlyph.size.height)
                     .frame(width: Theme.Metric.glassSmall, height: Theme.Metric.glassSmall)
                     .contentShape(Circle())
@@ -337,7 +338,7 @@ struct ComputerView: View {
                 toggleKeyboard()
             } label: {
                 KeyboardDotsGlyph()
-                    .fill(Theme.textPrimary)
+                    .fill(Theme.Computer.ink)
                     .frame(width: KeyboardDotsGlyph.size.width, height: KeyboardDotsGlyph.size.height)
                     .frame(width: Theme.Metric.glassSmall, height: Theme.Metric.glassSmall)
                     .contentShape(Circle())
@@ -423,6 +424,7 @@ struct ComputerView: View {
 
 /// "?": what each gesture does.
 struct ComputerGestureHelp: View {
+    @Environment(\.themePalette) var themePalette
     @Environment(\.dismiss) private var dismiss
 
     private let rows: [(String, LocalizedStringKey, LocalizedStringKey)] = [
@@ -437,7 +439,7 @@ struct ComputerGestureHelp: View {
 
     var body: some View {
         NavigationStack {
-            List {
+            ThemedList {
                 Section {
                     ForEach(rows, id: \.0) { row in
                         HStack(alignment: .top, spacing: 14) {
@@ -465,7 +467,8 @@ struct ComputerGestureHelp: View {
             }
         }
         .presentationDetents([.medium, .large])
-        .preferredColorScheme(.dark)
+        // The stage behind forces dark; this sheet follows the skin.
+        .preferredColorScheme(Theme.palette.isDark ? .dark : .light)
     }
 }
 
@@ -524,4 +527,11 @@ struct KeyboardDotsGlyph: Shape {
         }
         return path
     }
+}
+
+extension Theme.Computer {
+    /// The stage is black whatever the skin: its ink is Black's, never the
+    /// skin's (a light skin's dark ink would vanish on it).
+    static let ink = Color.white
+    static let inkSecondary = Color(hex: 0x9C9BA1)
 }

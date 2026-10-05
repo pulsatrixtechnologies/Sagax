@@ -4,6 +4,7 @@ import SwiftUI
 /// Observe search and live thread metadata here, independently of the
 /// roster summary's stable bot identity.
 struct BotThreadTree: View {
+    @Environment(\.themePalette) var themePalette
     let botID: String
     @Binding var query: String
     @Binding var expanded: Bool
@@ -12,6 +13,8 @@ struct BotThreadTree: View {
     let open: (Chat) -> Void
     let manage: (Chat) -> Void
     @EnvironmentObject private var session: Session
+    /// The shared thread and folder menus, mounted by the roster.
+    @EnvironmentObject private var threadActions: ThreadActions
     /// A timed snooze ends on the wall clock, not on a server ping: bump
     /// this when the nearest expiry passes so its row folds back in without
     /// waiting for the next snapshot. Mirrors the desktop's useSnoozeExpiry.
@@ -28,7 +31,8 @@ struct BotThreadTree: View {
             let queued = session.state.queuedThreadIds
             let groups = bot.threadGroups(
                 matching: bot.name.localizedCaseInsensitiveContains(query) ? "" : query,
-                queuedThreadIds: queued
+                queuedThreadIds: queued,
+                includingEmptyFolders: true
             )
             let count = bot.threadGroups(queuedThreadIds: queued).reduce(0) { $0 + $1.tasks.count }
             let nextSnoozeExpiry = bot.visibleTasks.nextSnoozeExpiry()
@@ -42,7 +46,7 @@ struct BotThreadTree: View {
                             Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
                                 .font(.system(size: 10, weight: .semibold))
                             Text("Threads")
-                            Text("\(count)").foregroundStyle(.secondary)
+                            Text("\(count)").foregroundStyle(Theme.parity(Color.secondary, Theme.textSecondary))
                             Spacer(minLength: 0)
                         }
                         .font(.system(size: 13, weight: .medium))
@@ -67,7 +71,7 @@ struct BotThreadTree: View {
                         .accessibilityLabel("Manage \(bot.name)'s threads")
                     }
                 }
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Theme.parity(Color.secondary, Theme.textSecondary))
 
                 if isExpanded {
                     ForEach(groups) { group in
@@ -81,15 +85,29 @@ struct BotThreadTree: View {
                                 }
                             )) {
                                 threadLinks(group.tasks, bot: bot).padding(.leading, 8)
+                                if bot.folderThreads(folder.id).isEmpty {
+                                    Text("No threads yet")
+                                        .font(.footnote)
+                                        .foregroundStyle(Theme.parity(Color.secondary, Theme.textSecondary))
+                                        .padding(.leading, 8)
+                                        .frame(minHeight: 32)
+                                }
                             } label: {
+                                let open = searching || !collapsedFolders.contains("\(botID):\(folder.id)")
+                                let threads = bot.folderThreads(folder.id)
                                 HStack(spacing: 6) {
                                     if let emoji = folder.emoji, !emoji.isEmpty { Text(emoji) }
                                     else { Image(systemName: "folder") }
                                     Text(folder.name).lineLimit(1)
+                                    Text("\(threads.count)").monospacedDigit().opacity(0.6)
+                                    if !open { FolderStatusMark(status: FolderStatus(threads)) }
                                 }
                                 .font(.system(size: 13, weight: .medium))
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(Theme.parity(Color.secondary, Theme.textSecondary))
                                 .frame(minHeight: 40)
+                                .contentShape(Rectangle())
+                                .folderMenu(folder, of: bot, actions: threadActions, session: session)
+                                .accessibilityIdentifier("folder.\(bot.id).\(folder.id)")
                             }
                         } else {
                             threadLinks(group.tasks, bot: bot)
@@ -114,14 +132,7 @@ struct BotThreadTree: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .contextMenu {
-                    Button {
-                        let pinned = task.pinned != true
-                        Task { await session.setTaskPinned(task, pinned: pinned, in: .bot(bot)) }
-                    } label: {
-                        Label(task.pinned == true ? "Unpin" : "Pin", systemImage: task.pinned == true ? "pin.slash" : "pin")
-                    }
-                }
+                .threadMenu(task, owner: .bot(bot), actions: threadActions, session: session)
                 .accessibilityIdentifier("thread.\(task.threadId)")
             }
         }

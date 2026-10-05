@@ -302,7 +302,8 @@ final class ProfileUITests: XCTestCase {
         let prompt = app.textFields["What should the agent do?"]
         prompt.tap()
         prompt.typeText("Placeholder routine made by the UI test.")
-        app.buttons["Save"].tap()
+        // a new routine's button says "Schedule routine", as on the desktop
+        element("routine-editor-save", in: app).tap()
 
         try eventually("the routine exists on the server for Ara") {
             try routines().contains { $0["name"] as? String == name && $0["botId"] as? String == id }

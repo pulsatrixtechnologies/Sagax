@@ -54,7 +54,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: ca.pulsatrix.sagax
         MARKETING_VERSION: "0.4.0"
-        CURRENT_PROJECT_VERSION: "1"
+        CURRENT_PROJECT_VERSION: "10"
         SWIFT_VERSION: "5.9"
         TARGETED_DEVICE_FAMILY: "1,2"
         # The catalog lives in App/, which is already a source path.
@@ -119,7 +119,13 @@ targets:
           Sagax uses the camera only to scan a pairing QR code shown on
           your computer.
         NSMicrophoneUsageDescription: >-
-          Sagax listens while you dictate a message to a bot.
+          Sagax listens while you dictate a message to a bot or talk with
+          one on a call.
+        # A call keeps going with the screen locked or the app in the
+        # background, like a phone call (CallKit places it; this keeps its
+        # audio running).
+        UIBackgroundModes:
+          - audio
         NSSpeechRecognitionUsageDescription: >-
           Sagax converts your speech into text so you can send it
           to a bot. Recognition runs on this phone when it can.
@@ -150,6 +156,9 @@ targets:
     platform: iOS
     sources:
       - path: UITests
+        # recordings a call test says into the app, read from this checkout
+        excludes:
+          - "CallAudio/**"
     dependencies:
       - target: Sagax
     settings:
@@ -177,7 +186,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: ca.pulsatrix.sagax.share
         MARKETING_VERSION: "0.4.0"
-        CURRENT_PROJECT_VERSION: "1"
+        CURRENT_PROJECT_VERSION: "10"
         SWIFT_VERSION: "5.9"
         TARGETED_DEVICE_FAMILY: "1,2"
         APPLICATION_EXTENSION_API_ONLY: YES
@@ -257,7 +266,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: ca.pulsatrix.sagax.widgets
         MARKETING_VERSION: "0.4.0"
-        CURRENT_PROJECT_VERSION: "1"
+        CURRENT_PROJECT_VERSION: "10"
         SWIFT_VERSION: "5.9"
         TARGETED_DEVICE_FAMILY: "1,2"
         APPLICATION_EXTENSION_API_ONLY: YES

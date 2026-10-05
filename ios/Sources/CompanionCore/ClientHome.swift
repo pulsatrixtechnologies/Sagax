@@ -4,19 +4,45 @@ import Foundation
 // with its name and look (20), pin a group (01), and the defensive fallbacks
 // those need while the server catches up.
 
-/// What the create-bot sheet sends: a name and the character it picked.
+/// What the create-bot sheet sends: a name and the character it picked,
+/// and, from its More options (WP13, NB2-NB4), the starting preset, the
+/// team, the title, the description and the standing instructions. A `nil`
+/// field is not sent, so the server's New bot defaults apply to it.
 public struct NewBotDraft: Equatable, Sendable {
     public var name: String
     /// One of the twelve `MausColors` names.
     public var color: String
     public var look: MascotLook
     public var skin: MascotSkin
+    public var title: String?
+    public var description: String?
+    /// Standing instructions (the bot's SOUL.md).
+    public var soul: String?
+    /// The team; "" is General.
+    public var section: String?
+    /// A preset id from `GET /api/bot-presets`: the server adds its skills,
+    /// starter notes and playbooks.
+    public var preset: String?
+    /// A preset's legacy owl body and expression (`presetDraftPatch`).
+    public var mascotBody: String?
+    public var mascotExpression: String?
 
-    public init(name: String, color: String = "green", look: MascotLook = .owl, skin: MascotSkin = .none) {
+    public init(
+        name: String, color: String = "green", look: MascotLook = .owl, skin: MascotSkin = .none,
+        title: String? = nil, description: String? = nil, soul: String? = nil, section: String? = nil,
+        preset: String? = nil, mascotBody: String? = nil, mascotExpression: String? = nil
+    ) {
         self.name = name
         self.color = color
         self.look = look
         self.skin = skin
+        self.title = title
+        self.description = description
+        self.soul = soul
+        self.section = section
+        self.preset = preset
+        self.mascotBody = mascotBody
+        self.mascotExpression = mascotExpression
     }
 
     public var trimmedName: String { name.trimmingCharacters(in: .whitespacesAndNewlines) }
@@ -25,16 +51,25 @@ public struct NewBotDraft: Equatable, Sendable {
     public var hasCustomLook: Bool { look != .owl || skin != .none }
 }
 
-/// `POST /api/bots` body: the name at the top, the look under `settings`
-/// (the server's `botDefaultsProfileSchema`, which is strict).
+/// `POST /api/bots` body: the name, title, description, team and preset at
+/// the top (as the desktop's `createConfiguredBot` sends them), the look and
+/// the standing instructions under `settings` (the server's
+/// `botDefaultsProfileSchema`, which is strict).
 struct NewBotBody: Encodable {
     struct Settings: Encodable {
         var color: String
         var mascotLook: MascotLook?
         var mascotSkin: MascotSkin?
+        var mascotBody: String?
+        var mascotExpression: String?
+        var soul: String?
     }
 
     var name: String
+    var title: String?
+    var description: String?
+    var section: String?
+    var preset: String?
     var settings: Settings
 }
 
@@ -56,9 +91,16 @@ public extension CompanionClient {
         let settings = NewBotBody.Settings(
             color: draft.color,
             mascotLook: includeLook && draft.look != .owl ? draft.look : nil,
-            mascotSkin: includeLook && draft.skin != .none ? draft.skin : nil
+            mascotSkin: includeLook && draft.skin != .none ? draft.skin : nil,
+            mascotBody: draft.mascotBody,
+            mascotExpression: draft.mascotExpression,
+            soul: draft.soul
         )
-        return try makeRequest("POST", "/api/bots", encodedBody: NewBotBody(name: name, settings: settings))
+        let body = NewBotBody(
+            name: name, title: draft.title, description: draft.description,
+            section: draft.section, preset: draft.preset, settings: settings
+        )
+        return try makeRequest("POST", "/api/bots", encodedBody: body)
     }
 
     /// Make a bot with a name and a look. A server that refuses the look at

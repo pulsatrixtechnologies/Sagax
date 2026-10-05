@@ -9,8 +9,11 @@ import {
   clearSessionCookie,
   capabilitiesForAuth,
   clientBotPatchViolation,
+  clientSessionIsComputerOwner,
+  companionBotFieldViolation,
   memberBotFieldViolation,
   clientGroupPatchViolation,
+  clientInstanceView,
   healthDetail,
   ipcPeer,
   isAllowedOrigin,
@@ -112,6 +115,8 @@ describe("scopes", () => {
       ["PATCH", "/api/bots/x"], ["PATCH", "/api/bots/x/profile"], ["POST", "/api/attachments"],
       ["GET", "/api/attachments/a.png"], ["POST", "/api/routines"], ["POST", "/api/routines/r/run"],
       ["POST", "/api/routine-runs/seen-all"],
+      // desktop remote-client parity: steer (bot and room) and the engines catalogue (redacted)
+      ["POST", "/api/bots/x/queue/q/steer"], ["POST", "/api/groups/g/queue/q/steer"],
       ["GET", "/api/bots"], ["GET", "/api/groups"], ["GET", "/api/threads/t/messages"], ["GET", "/api/search"], ["GET", "/api/events"],
       ["GET", "/api/config"], ["GET", "/api/webhooks"], ["POST", "/api/tts/speak"],
       ["GET", "/api/auth/session"], ["POST", "/api/auth/stream-ticket"], ["POST", "/api/auth/logout"],
@@ -128,7 +133,13 @@ describe("scopes", () => {
       ["GET", "/api/threads/t/files"], ["GET", `/api/threads/t/files/${"a1".repeat(12)}`],
     ] as const) expect(requiredScope(method, path), `${method} ${path}`).toBe("client");
     for (const [method, path] of [
-      ["POST", "/api/cli-test"], ["GET", "/api/cli-candidates"], ["GET", "/api/instances"], ["PATCH", "/api/instances/claude"],
+      ["POST", "/api/cli-test"], ["GET", "/api/cli-candidates"], ["PATCH", "/api/instances/claude"],
+      ["GET", "/api/instances/claude"], ["POST", "/api/instances/claude/refresh-models"], ["GET", "/api/instances/extra/x"],
+      ["GET", "/api/bots/x/queue/q/steer"], ["POST", "/api/bots/x/queue/q/steer/extra"],
+      // the desktop remote client hides these, or their handler has no per-viewer check:
+      // folders, team filing, room setup (it sets the room's folder) and usage
+      ["POST", "/api/bots/x/projects"], ["PATCH", "/api/bots/x/projects/order"], ["DELETE", "/api/bots/x/projects/p"],
+      ["POST", "/api/sidebar-sections"], ["GET", "/api/usage"],
       ["POST", "/api/bots/x/computer/exec"], ["POST", "/api/bots/x/computer/join"], ["POST", "/api/local-computer/run"],
       ["POST", "/api/bots/x/local-computer/join"], ["POST", "/api/bots/x/local-computer/screenshot"],
       ["GET", "/api/computers/boxes"], ["POST", "/api/computers/boxes/bx_23456789/delete"],
@@ -145,6 +156,105 @@ describe("scopes", () => {
       ["POST", "/api/org"], ["POST", "/api/org/invites"], ["GET", "/api/org/invites"],
       ["GET", "/api/mail/settings"], ["PUT", "/api/mail/settings"], ["POST", "/api/mail/test"], // mail transport: admin only
       ["GET", "/api/something-new"], // anything unlisted is admin until listed
+    ] as const) expect(requiredScope(method, path), `${method} ${path}`).toBe("admin");
+  });
+
+  // iOS feature parity S2 (docs/superpowers/specs/2026-10-03-ios-feature-parity-matrix.md):
+  // each route reaches its handler, which checks the owner.
+  it("lets a client session reach the owner routes of the iOS parity, and nothing beside them", () => {
+    for (const [method, path] of [
+      ["POST", "/api/bots/x/connector-cards/m/authorize"],
+      ["GET", "/api/bots/x/command-allowlist"], ["DELETE", "/api/bots/x/command-allowlist/rule-1"],
+      ["POST", "/api/plugins/install"],
+      ["GET", "/api/bots/x/overview"],
+    ] as const) expect(requiredScope(method, path), `${method} ${path}`).toBe("client");
+    for (const [method, path] of [
+      ["POST", "/api/bots/x/command-allowlist"], ["DELETE", "/api/bots/x/command-allowlist"],
+      ["PUT", "/api/bots/x/command-allowlist/rule-1"], ["GET", "/api/bots/x/connector-cards/m/authorize"],
+      ["POST", "/api/bots/x/connector-cards/m/authorize/extra"], ["GET", "/api/plugins/install"],
+      ["POST", "/api/plugins/uninstall"], ["POST", "/api/bots/x/overview"],
+      // the voice engine and the advanced panel stay admin for a session (the sidecar is the owner)
+      ["PUT", "/api/tts/provider"], ["GET", "/api/bots/x/system-prompt"], ["GET", "/api/bots/x/history"],
+      ["POST", "/api/bots/x/history/rollback"], ["GET", "/api/bots/x/skills"], ["GET", "/api/bots/x/memory/file"],
+      ["GET", "/api/bot-presets"], ["GET", "/api/bots/x/computer"],
+    ] as const) expect(requiredScope(method, path), `${method} ${path}`).toBe("admin");
+  });
+
+  it("knows this computer's own person: the owner, an admin, or a session bound to the operator on a personal server", () => {
+    const personal = { organization: false, cloudHome: false, localPrincipalId: "pr_owner", operatorEmail: "Owner@Example.test" };
+    const session = (fields: Partial<SessionRecord>, scopes: Array<"admin" | "client"> = ["client"]) =>
+      ({ kind: "session", via: "bearer", scopes, session: { id: "s", label: "phone", scopes, createdAt: 0, expiresAt: 1, lastUsedAt: 0, ...fields } }) as never;
+    expect(clientSessionIsComputerOwner({ kind: "loopback", scopes: ["admin", "client"] }, personal)).toBe(true);
+    expect(clientSessionIsComputerOwner({ kind: "loopback", scopes: ["client"], trust: "service" }, personal)).toBe(false);
+    expect(clientSessionIsComputerOwner(session({}, ["admin", "client"]), personal)).toBe(true);
+    expect(clientSessionIsComputerOwner(session({ principalId: "pr_owner" }), personal)).toBe(true);
+    expect(clientSessionIsComputerOwner(session({ email: "owner@example.test" }), personal)).toBe(true);
+    // a chat-only pairing with nobody behind it, someone else, or any client session where the owner is not the operator
+    expect(clientSessionIsComputerOwner(session({}), personal)).toBe(false);
+    expect(clientSessionIsComputerOwner(session({ principalId: "pr_guest", email: "owner@example.test" }), personal)).toBe(false);
+    expect(clientSessionIsComputerOwner(session({ email: "guest@example.test" }), personal)).toBe(false);
+    expect(clientSessionIsComputerOwner(session({ email: "owner@example.test" }), { ...personal, operatorEmail: undefined })).toBe(false);
+    expect(clientSessionIsComputerOwner(session({ principalId: "pr_owner" }), { ...personal, organization: true })).toBe(false);
+    expect(clientSessionIsComputerOwner(session({ principalId: "pr_owner" }), { ...personal, cloudHome: true })).toBe(false);
+  });
+
+  it("lets the owner's paired phone switch a bot's memory, and nothing a member may not set besides", () => {
+    expect(companionBotFieldViolation({ memoryEnabled: false, memoryUpkeep: true, name: "Scout", soul: "x", modelSelection: {} })).toBeNull();
+    // the voice notes switch of the bot panel (row BA11)
+    expect(companionBotFieldViolation({ voiceNotes: false })).toBeNull();
+    for (const field of ["approvalMode", "cwd", "computer", "mcpServers", "autoApprove", "browserProfile", "visibility", "hidden"]) {
+      expect(companionBotFieldViolation({ memoryEnabled: true, [field]: "x" }), field).toBe(field);
+    }
+    expect(companionBotFieldViolation([])).toBe("body");
+    // a member session still may not
+    expect(memberBotFieldViolation({ memoryEnabled: false })).toBe("memoryEnabled");
+    expect(memberBotFieldViolation({ voiceNotes: false })).toBe("voiceNotes");
+  });
+
+  it("opens the engines catalogue to client sessions behind a feature only", () => {
+    expect(requiredScope("GET", "/api/instances", { serverCatalogue: true })).toBe("client");
+    expect(requiredScope("GET", "/api/instances")).toBe("admin");
+    // an organization server opens it too, with a member's copy (memberInstanceView)
+    expect(requiredScope("GET", "/api/instances", { orgDirectory: true })).toBe("client");
+    expect(requiredScope("PATCH", "/api/instances/claude", { serverCatalogue: true })).toBe("admin");
+    expect(requiredScope("GET", "/api/instances/claude", { serverCatalogue: true })).toBe("admin");
+  });
+
+  it("gives a client session the engines catalogue without how the host is set up", () => {
+    const view = clientInstanceView({
+      instanceId: "claude", driverKind: "claudeAgent", displayName: "Claude",
+      models: { default: "opus", options: [{ id: "opus", label: "Opus" }] },
+      capabilities: { queueing: true }, access: "subscription", icon: "claude",
+      snapshot: {
+        state: "available", authenticated: true, billing: "subscription", version: "2.1.0",
+        account: { email: "owner@example.test", organization: "Owner Inc" },
+        update: { title: "Update", message: "m", command: "claude update" },
+      },
+      cli: "/opt/bin/claude", cliDefault: "claude", cliCandidates: ["/usr/local/bin/claude"],
+      install: { signInCommand: "claude login" }, authentication: { method: "browser" },
+      claudeAccount: { configDir: "/Users/owner/.claude", signInCommand: "x" }, freeUpSpace: true,
+      somethingNew: "unlisted",
+    });
+    expect(view).toEqual({
+      readOnly: true, instanceId: "claude", driverKind: "claudeAgent", displayName: "Claude",
+      models: { default: "opus", options: [{ id: "opus", label: "Opus" }] },
+      capabilities: { queueing: true }, access: "subscription", icon: "claude",
+      snapshot: { state: "available", authenticated: true, billing: "subscription" },
+    });
+    expect(JSON.stringify(view)).not.toMatch(/owner@|\/opt\/bin|\/Users\/owner|claude login|claude update/);
+  });
+
+  it("gives a paired phone's live call every voice mode route it uses, and nothing more", () => {
+    // ios/Sources/CompanionCore/VoiceCall/ClientVoiceMode.swift: status, voices,
+    // a sentence streamed as PCM, a whole turn transcribed, and the call turn's send
+    for (const [method, path] of [
+      ["GET", "/api/bots/x/voice/status"], ["GET", "/api/bots/x/voice/voices"],
+      ["POST", "/api/bots/x/voice/stream"], ["POST", "/api/bots/x/voice/transcribe"],
+      ["POST", "/api/bots/x/voice/speak"], ["POST", "/api/bots/x/voice/prepare"], ["POST", "/api/bots/x/voice/call"],
+      ["POST", "/api/bots/x/messages"], ["POST", "/api/bots/x/interrupt"], ["POST", "/api/groups/g/interrupt"],
+    ] as const) expect(requiredScope(method, path), `${method} ${path}`).toBe("client");
+    for (const [method, path] of [
+      ["POST", "/api/bots/x/voice/status"], ["GET", "/api/bots/x/voice/stream"], ["POST", "/api/bots/x/voice/other"],
     ] as const) expect(requiredScope(method, path), `${method} ${path}`).toBe("admin");
   });
 
@@ -205,6 +315,10 @@ describe("resolveRequestAuth", () => {
       ["POST", "/api/bots/b/read"], ["POST", "/api/bots/b/respond"],
       ["POST", "/api/bots/b/secret-cards/card/provide"],
       ["GET", "/api/events"], ["PATCH", "/api/bots/b/profile"],
+      // iOS parity S1, D1, D3 and the voice engine reach the harness as the owner
+      ["GET", "/api/bots/b/skills"], ["PUT", "/api/bots/b/memory/file"], ["POST", "/api/bots/b/history/rollback"],
+      ["GET", "/api/bots/b/system-prompt"], ["POST", "/api/bots/b/primary"], ["PUT", "/api/groups/g/memory"],
+      ["PUT", "/api/tts/provider"], ["GET", "/api/bot-presets"],
       // Browser control: the harness re-runs the sidecar's own allowlist, so
       // these resolve here for the same reason the phone may ask for them.
       // The per-device capability is the proxy's job, not this one's.
@@ -229,7 +343,7 @@ describe("resolveRequestAuth", () => {
     for (const [method, path] of [
       ["PUT", "/api/config"], ["POST", "/api/auth/pairing"],
       ["POST", "/api/internal/anything"], ["GET", "/api/auth/sessions"],
-      ["POST", "/api/not-yet-supported"],
+      ["POST", "/api/not-yet-supported"], ["POST", "/api/bots/b/memory/open"], ["DELETE", "/api/bot-presets/p"],
     ]) expect(check(method, path).auth, path).toBeNull();
     // The companion's own notice that it unpaired a phone: not on the phone
     // allowlist, but the relay's private token opens it; a forged one does not.
@@ -710,6 +824,10 @@ describe("organization sharing routes (SAGAX_IDENTITY=perspicax, slice 3)", () =
   it("opens the directory to members only on an organization server", () => {
     expect(requiredScope("GET", "/api/org/directory")).toBe("admin");
     expect(requiredScope("GET", "/api/org/directory", { orgDirectory: true })).toBe("client");
+    // a person's avatar: an organization's people, or a personal computer's owner
+    expect(requiredScope("GET", "/api/people/pr_1/avatar")).toBe("client");
+    expect(requiredScope("GET", "/api/people/pr_1/avatar", { orgDirectory: true })).toBe("client");
+    expect(requiredScope("PUT", "/api/people/pr_1/avatar")).toBe("admin");
     expect(requiredScope("POST", "/api/org/directory", { orgDirectory: true })).toBe("admin");
   });
 

@@ -14,6 +14,7 @@ import UIKit
 import CompanionCore
 
 private struct OptionalIdentifier: ViewModifier {
+    @Environment(\.themePalette) var themePalette
     let identifier: String?
 
     func body(content: Content) -> some View {
@@ -26,6 +27,7 @@ private struct OptionalIdentifier: ViewModifier {
 }
 
 struct MarkdownText: View {
+    @Environment(\.themePalette) var themePalette
     let source: String
     /// Draws a caret after the last block. The streaming bubble sets this so
     /// the live reply and the settled one are the same view with the same
@@ -36,51 +38,143 @@ struct MarkdownText: View {
     /// bubbles pass `message-<id>-scroll`. Streaming and file preview pass nil.
     var scrollIdentifier: String? = nil
     var openLink: ((URL) -> OpenURLAction.Result)?
+    /// @mentions of these peers are tinted (MS21), as the desktop's
+    /// `remarkMentions` does; links and code spans are left alone.
+    var mentions: [MentionPeer] = []
+    var mentionEveryone = false
+    /// The message a picture written in the reply belongs to: a path on the
+    /// computer loads through that message's file route (CA28).
+    var attachmentScope: (threadId: String, messageId: String)?
+    /// Pictures as their alt text (an email draft's body, as the desktop's
+    /// EmailCard draws them).
+    var picturesAsText = false
+
+    /// Spoilers this reader has revealed, by their text.
+    @State private var revealed: Set<String> = []
+    /// The footnote a tapped reference opened.
+    @State private var openFootnote: MarkdownFootnote?
+    /// iPad desktop shell: 13/20 text, 8 pt paragraphs, 4 pt list items.
+    @Environment(\.desktopChatText) private var desktop
+
+    private var bodyFont: Font { desktop?.font(DesktopChatMetrics.textSize) ?? Theme.Font.body }
+    private var bodyLineSpacing: CGFloat { desktop.map(DesktopChatMetrics.lineSpacing) ?? Theme.bodyLineSpacing }
+
+    private static func isListItem(_ block: MarkdownBlock) -> Bool {
+        switch block {
+        case .bullet, .ordered, .task: true
+        default: false
+        }
+    }
+
+    /// The desktop's gap above block `index`: 4 between list items, 8 otherwise.
+    private func desktopGap(_ blocks: [MarkdownBlock], _ index: Int) -> CGFloat {
+        guard desktop != nil, index > 0 else { return 0 }
+        return Self.isListItem(blocks[index]) && Self.isListItem(blocks[index - 1])
+            ? DesktopChatMetrics.listItemGap : DesktopChatMetrics.paragraphGap
+    }
 
     init(
         source: String,
         caret: Bool = false,
         scrollIdentifier: String? = nil,
+        mentions: [MentionPeer] = [],
+        mentionEveryone: Bool = false,
+        attachmentScope: (threadId: String, messageId: String)? = nil,
+        picturesAsText: Bool = false,
         openLink: ((URL) -> OpenURLAction.Result)? = nil
     ) {
         self.source = source
         self.caret = caret
         self.scrollIdentifier = scrollIdentifier
+        self.mentions = mentions
+        self.mentionEveryone = mentionEveryone
+        self.attachmentScope = attachmentScope
+        self.picturesAsText = picturesAsText
         self.openLink = openLink
+    }
+
+    /// Identifier prefix for the rich blocks of a settled bubble
+    /// (`message-<id>-rich-<n>`); nil while streaming and in previews.
+    private var richPrefix: String? {
+        scrollIdentifier.map { $0.hasSuffix("-scroll") ? String($0.dropLast("-scroll".count)) + "-rich" : $0 + "-rich" }
     }
 
     var body: some View {
         let blocks = Markdown.blocks(source)
-        VStack(alignment: .leading, spacing: Theme.Chat.paragraphSpacing) {
+        // A fence the message has not closed is still being written: charts,
+        // widgets and email cards wait for it (ChatMarkdown `pendingAt`).
+        let openFence = RichBlocks.unclosedFenceOffset(source) >= 0
+        let lastCode = blocks.lastIndex { if case .code = $0 { return true }; return false }
+        VStack(alignment: .leading, spacing: desktop == nil ? Theme.Chat.paragraphSpacing : 0) {
             let firstTable = blocks.firstIndex { if case .table = $0 { return true }; return false }
             ForEach(Array(blocks.enumerated()), id: \.offset) { item in
                 view(
                     for: item.element,
                     tail: caret && item.offset == blocks.count - 1,
-                    scrollIdentifier: item.offset == firstTable ? scrollIdentifier : nil
+                    scrollIdentifier: item.offset == firstTable ? scrollIdentifier : nil,
+                    pending: caret || (openFence && item.offset == lastCode),
+                    identifier: richPrefix.map { "\($0)-\(item.offset)" }
                 )
+                .padding(.top, desktopGap(blocks, item.offset))
             }
         }
         .environment(\.openURL, OpenURLAction { url in
-            openLink?(url) ?? .systemAction(url)
+            switch url.scheme {
+            case Self.spoilerScheme:
+                let key = Self.spoilerKey(url)
+                if revealed.contains(key) { revealed.remove(key) } else { revealed.insert(key) }
+                return .handled
+            case Markdown.footnoteScheme:
+                let number = Int(url.absoluteString.dropFirst(Markdown.footnoteScheme.count + 1)) ?? 0
+                openFootnote = footnotes(blocks).first { $0.number == number }
+                return .handled
+            default:
+                return openLink?(url) ?? .systemAction(url)
+            }
         })
+        .alert(
+            openFootnote.map { String(localized: "Footnote \($0.number)") } ?? "",
+            isPresented: Binding(get: { openFootnote != nil }, set: { if !$0 { openFootnote = nil } }),
+            presenting: openFootnote
+        ) { _ in
+            Button("OK", role: .cancel) {}
+        } message: { note in
+            Text(verbatim: renderedInline(note.text))
+        }
+    }
+
+    private func footnotes(_ blocks: [MarkdownBlock]) -> [MarkdownFootnote] {
+        for block in blocks { if case let .footnotes(notes) = block { return notes } }
+        return []
+    }
+
+    /// A nested reply part (a callout's body) with this one's settings.
+    private func nested(_ text: String) -> MarkdownText {
+        MarkdownText(
+            source: text, mentions: mentions, mentionEveryone: mentionEveryone,
+            attachmentScope: attachmentScope, picturesAsText: picturesAsText, openLink: openLink
+        )
     }
 
     @ViewBuilder
-    private func view(for block: MarkdownBlock, tail: Bool, scrollIdentifier: String?) -> some View {
+    private func view(for block: MarkdownBlock, tail: Bool, scrollIdentifier: String?, pending: Bool, identifier: String?) -> some View {
         switch block {
         case let .paragraph(text):
             inline(text, tail: tail)
-                .font(Theme.Font.body)
-                .lineSpacing(Theme.bodyLineSpacing)
+                .font(bodyFont)
+                .lineSpacing(bodyLineSpacing)
+                .modifier(DesktopLineBox(theme: desktop))
                 .fixedSize(horizontal: false, vertical: true)
+                // a paragraph holding spoilers or footnote marks is findable
+                // (its taps are the block's actions); plain prose is untouched
+                .modifier(RichIdentifier(identifier: text.contains("~~") || text.contains(Markdown.footnoteScheme) ? identifier : nil))
 
         case let .heading(level, text):
             // Three sizes, not six. A chat bubble is not a document, and an
             // h4 that looks exactly like body text is a heading that failed.
             inline(text, tail: tail)
                 .font(.system(size: level <= 1 ? 17 : level == 2 ? 15.5 : 14, weight: .semibold))
-                .lineSpacing(Theme.bodyLineSpacing)
+                .lineSpacing(bodyLineSpacing)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.top, 2)
 
@@ -94,46 +188,74 @@ struct MarkdownText: View {
             taskRow(indent: indent, number: number, checked: checked, text: text, tail: tail)
 
         case let .table(table):
-            tableView(table, tail: tail, scrollIdentifier: scrollIdentifier)
+            RichTableView(
+                table: table, tail: tail, scrollIdentifier: scrollIdentifier, identifier: identifier,
+                inline: { inline($0, tail: $1) }, plain: renderedInline
+            )
 
         case let .quote(text):
-            HStack(alignment: .top, spacing: 8) {
-                RoundedRectangle(cornerRadius: 1.5)
-                    .fill(Color.secondary.opacity(0.4))
-                    .frame(width: 3)
+            HStack(alignment: .top, spacing: desktop == nil ? 8 : 12) {
+                RoundedRectangle(cornerRadius: desktop == nil ? 1.5 : 0)
+                    .fill(desktop?.hairline ?? Theme.parity(Color.secondary.opacity(0.4), Theme.hairline))
+                    .frame(width: desktop == nil ? 3 : 2)
                 inline(text, tail: tail)
-                    .font(Theme.Font.body)
-                    .lineSpacing(Theme.bodyLineSpacing)
-                    .foregroundStyle(Color.secondary)
+                    .font(bodyFont)
+                    .lineSpacing(bodyLineSpacing)
+                    .modifier(DesktopLineBox(theme: desktop))
+                    .foregroundStyle(desktop?.inkSecondary ?? Theme.parity(Color.secondary, Theme.textSecondary))
             }
             .fixedSize(horizontal: false, vertical: true)
 
         case let .code(language, text):
-            VStack(alignment: .leading, spacing: 4) {
-                if let language, !language.isEmpty {
-                    Text(language)
-                        .font(.system(size: 11, weight: .medium, design: .monospaced))
-                        .foregroundStyle(Color.secondary)
-                }
-                // Horizontal scroll rather than wrapping: wrapped code is
-                // harder to read than code you have to push sideways, and
-                // indentation is most of what a snippet is saying.
-                ScrollView(.horizontal, showsIndicators: false) {
-                    (Text(text) + caretText(tail))
-                        .font(Theme.Font.code)
-                        .lineSpacing(Theme.bodyLineSpacing)
-                        .textSelection(.enabled)
-                }
-            }
-            .padding(10)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(Color.secondary.opacity(0.14))
-            )
+            fence(language: language, code: text, tail: tail, pending: pending, identifier: identifier)
 
         case .rule:
             Divider().padding(.vertical, 2)
+
+        case let .callout(kind, title, text):
+            CalloutView(kind: kind, title: title, identifier: identifier) {
+                if !text.isEmpty {
+                    nested(text)
+                        .foregroundStyle(Theme.textPrimary)
+                }
+            }
+
+        case let .image(image):
+            if picturesAsText {
+                inline(image.alt, tail: tail).font(bodyFont)
+            } else {
+                MarkdownImageView(image: image, scope: attachmentScope, identifier: identifier)
+            }
+
+        case let .footnotes(notes):
+            FootnotesView(notes: notes, inline: { inline($0) }, identifier: identifier)
+        }
+    }
+
+    /// A fenced block, routed the way ChatMarkdown's `pre` does: mermaid to
+    /// the diagram block, then email, widget, chart and CSV fences, and
+    /// everything else to the code block.
+    @ViewBuilder
+    private func fence(language: String?, code: String, tail: Bool, pending: Bool, identifier: String?) -> some View {
+        let lang = language ?? ""
+        let kind = RichBlocks.fenceKind(lang)
+        let email = kind == .email || kind == nil ? RichBlocks.parseEmailBlock(code, lang: lang) : nil
+        let csv = kind == .csv && !pending ? MarkdownTable.delimited(code, language: lang) : nil
+        if lang.trimmingCharacters(in: .whitespaces).lowercased() == "mermaid" {
+            MermaidBlockView(code: code, identifier: identifier)
+        } else if let email {
+            EmailCardView(draft: email, pending: pending, identifier: identifier)
+        } else if kind == .widget {
+            WidgetFrameView(code: code, pending: pending, identifier: identifier)
+        } else if kind == .chart {
+            ChartBlockView(code: code, pending: pending, identifier: identifier, inline: { inline($0, tail: $1) }, plain: renderedInline)
+        } else if let csv, !csv.headers.isEmpty {
+            RichTableView(
+                table: csv, tail: tail, literal: true, identifier: identifier,
+                inline: { inline($0, tail: $1) }, plain: renderedInline
+            )
+        } else {
+            CodeBlockView(language: language, code: code, pending: pending, caret: caretText(tail), identifier: identifier)
         }
     }
 
@@ -144,125 +266,21 @@ struct MarkdownText: View {
         return HStack(alignment: .firstTextBaseline, spacing: 6) {
             if let number {
                 Text("\(number).")
-                    .font(Theme.Font.body)
-                    .foregroundStyle(Color.secondary)
+                    .font(bodyFont)
+                    .foregroundStyle(Theme.parity(Color.secondary, Theme.textSecondary))
                     .frame(minWidth: 16, alignment: .trailing)
             }
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Image(systemName: checked ? "checkmark.square.fill" : "square")
-                    .font(Theme.Font.body)
-                    .foregroundStyle(Color.secondary)
-                inline(text, tail: tail).font(Theme.Font.body).lineSpacing(Theme.bodyLineSpacing)
+                    .font(bodyFont)
+                    .foregroundStyle(Theme.parity(Color.secondary, Theme.textSecondary))
+                inline(text, tail: tail).font(bodyFont).lineSpacing(bodyLineSpacing)
             }
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(label)
         }
         .padding(.leading, CGFloat(indent) * Theme.Chat.bulletIndent)
         .fixedSize(horizontal: false, vertical: true)
-    }
-
-    private func tableView(_ table: MarkdownTable, tail: Bool, scrollIdentifier: String?) -> some View {
-        let widths = columnWidths(table)
-        return ScrollView(.horizontal, showsIndicators: false) {
-            Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 6) {
-                GridRow {
-                    ForEach(Array(table.headers.enumerated()), id: \.offset) { index, header in
-                        cell(
-                            header,
-                            width: widths[index],
-                            alignment: table.alignments[index],
-                            weight: .semibold,
-                            tail: tail && table.rows.isEmpty && index == table.headers.count - 1,
-                            identifier: scrollIdentifier.map { "\($0)-cell-0-\(index)" }
-                        )
-                    }
-                }
-                if !table.headers.isEmpty {
-                    Divider().gridCellColumns(table.headers.count)
-                }
-                ForEach(Array(table.rows.enumerated()), id: \.offset) { rowIndex, row in
-                    GridRow {
-                        ForEach(Array(row.enumerated()), id: \.offset) { index, value in
-                            let isLast = rowIndex == table.rows.count - 1 && index == row.count - 1
-                            cell(
-                                value,
-                                width: widths[index],
-                                alignment: table.alignments[index],
-                                weight: .regular,
-                                tail: tail && isLast,
-                                identifier: scrollIdentifier.map { "\($0)-cell-\(rowIndex + 1)-\(index)" }
-                            )
-                        }
-                    }
-                }
-            }
-            .padding(.vertical, 4)
-        }
-        .background(alignment: .topLeading) {
-            if let scrollIdentifier {
-                Color.white.opacity(0.001)
-                    .frame(width: 12, height: 12)
-                    .accessibilityIdentifier(scrollIdentifier)
-            }
-        }
-    }
-
-    private func cell(
-        _ text: String,
-        width: CGFloat,
-        alignment: MarkdownTableAlignment,
-        weight: Font.Weight,
-        tail: Bool,
-        identifier: String?
-    ) -> some View {
-        Color.clear
-            .frame(width: tail ? width + caretWidth : width, height: 22)
-            .overlay(alignment: frameAlignment(alignment)) {
-                inline(text, tail: tail)
-                    .font(.system(size: 15, weight: weight))
-                    .lineLimit(1)
-                    .accessibilityHidden(true)
-            }
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel(renderedInline(text))
-            .modifier(OptionalIdentifier(identifier: identifier))
-    }
-
-    private func frameAlignment(_ alignment: MarkdownTableAlignment) -> Alignment {
-        switch alignment {
-        case .leading: .leading
-        case .trailing: .trailing
-        case .center: .center
-        }
-    }
-
-    /// Column width is the widest single-line cell, measured on the words
-    /// that are actually drawn. A code span is also measured in monospace,
-    /// which is wider than the proportional font.
-    private func columnWidths(_ table: MarkdownTable) -> [CGFloat] {
-        let headerFont = UIFont.systemFont(ofSize: 15, weight: .semibold)
-        let bodyFont = UIFont.systemFont(ofSize: 15, weight: .regular)
-        return table.headers.indices.map { index in
-            var widest = textWidth(table.headers[index], font: headerFont)
-            for row in table.rows where index < row.count {
-                widest = max(widest, textWidth(row[index], font: bodyFont))
-            }
-            return max(widest + 8, 24)
-        }
-    }
-
-    private var caretWidth: CGFloat {
-        textWidth("\u{2007}▍", font: UIFont.systemFont(ofSize: 15))
-    }
-
-    private func textWidth(_ text: String, font: UIFont) -> CGFloat {
-        let plain = renderedInline(text)
-        var width = ceil((plain as NSString).size(withAttributes: [.font: font]).width)
-        if text.contains("`") {
-            let mono = UIFont.monospacedSystemFont(ofSize: font.pointSize, weight: .regular)
-            width = max(width, ceil((plain as NSString).size(withAttributes: [.font: mono]).width))
-        }
-        return width
     }
 
     /// The words VoiceOver should hear, with inline markers removed. The
@@ -280,22 +298,47 @@ struct MarkdownText: View {
     private func marker(_ symbol: String, indent: Int, text: String, tail: Bool) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 0) {
             Text(symbol)
-                .font(Theme.Font.body)
-                .foregroundStyle(Theme.bulletDot)
-                .frame(width: Theme.Chat.bulletIndent - 6, alignment: .trailing)
+                .font(bodyFont)
+                .foregroundStyle(desktop?.ink ?? Theme.bulletDot)
+                .frame(width: (desktop == nil ? Theme.Chat.bulletIndent : DesktopChatMetrics.listIndent) - 6, alignment: .trailing)
                 .padding(.trailing, 6)
             inline(text, tail: tail)
-                .font(Theme.Font.body)
-                .lineSpacing(Theme.bodyLineSpacing)
+                .font(bodyFont)
+                .lineSpacing(bodyLineSpacing)
         }
-        .padding(.leading, CGFloat(indent) * Theme.Chat.bulletIndent)
+        .modifier(DesktopLineBox(theme: desktop))
+        .padding(.leading, CGFloat(indent) * (desktop == nil ? Theme.Chat.bulletIndent : DesktopChatMetrics.listIndent))
         .fixedSize(horizontal: false, vertical: true)
     }
 
     /// A list item (reference 02): a 5 pt dot 5 pt in from the text column,
     /// centred on the first line's x-height, and the text 26 pt in. Wrapped
     /// lines align with the first.
+    @ViewBuilder
     private func bullet(indent: Int, text: String, tail: Bool) -> some View {
+        if let desktop {
+            // `list-disc pl-5`: the disc in the 20 pt gutter, the text at 20
+            HStack(alignment: .firstTextBaseline, spacing: 0) {
+                Circle()
+                    .fill(desktop.ink)
+                    .frame(width: 4.5, height: 4.5)
+                    .alignmentGuide(.firstTextBaseline) { d in d.height + 2.6 }
+                    .padding(.leading, 3)
+                    .padding(.trailing, DesktopChatMetrics.listIndent - 7.5)
+                    .accessibilityHidden(true)
+                inline(text, tail: tail)
+                    .font(bodyFont)
+                    .lineSpacing(bodyLineSpacing)
+            }
+            .modifier(DesktopLineBox(theme: desktop))
+            .padding(.leading, CGFloat(indent) * DesktopChatMetrics.listIndent)
+            .fixedSize(horizontal: false, vertical: true)
+        } else {
+            phoneBullet(indent: indent, text: text, tail: tail)
+        }
+    }
+
+    private func phoneBullet(indent: Int, text: String, tail: Bool) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 0) {
             Circle()
                 .fill(Theme.bulletDot)
@@ -306,8 +349,8 @@ struct MarkdownText: View {
                 .padding(.trailing, Theme.Chat.bulletIndent - Theme.Chat.bulletDotInset - Theme.Chat.bulletDot)
                 .accessibilityHidden(true)
             inline(text, tail: tail)
-                .font(Theme.Font.body)
-                .lineSpacing(Theme.bodyLineSpacing)
+                .font(bodyFont)
+                .lineSpacing(bodyLineSpacing)
         }
         .padding(.leading, CGFloat(indent) * Theme.Chat.bulletIndent)
         .fixedSize(horizontal: false, vertical: true)
@@ -326,10 +369,38 @@ struct MarkdownText: View {
             markdown: text,
             options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)
         ) {
+            if let desktop {
+                // a custom face takes no bold or italic from the intent: set
+                // the weight and the slant on the run (Geist has no italic;
+                // the browser slants it, as `.italic()` does here)
+                for run in attributed.runs {
+                    guard let intent = run.inlinePresentationIntent else { continue }
+                    let bold = intent.contains(.stronglyEmphasized), italic = intent.contains(.emphasized)
+                    guard bold || italic else { continue }
+                    var font = desktop.font(DesktopChatMetrics.textSize, bold ? .bold : .regular)
+                    if italic { font = font.italic() }
+                    attributed[run.range].font = font
+                }
+            }
             // Code spans: SF Mono 12 on the bubble itself, no chip.
             for run in attributed.runs where run.inlinePresentationIntent?.contains(.code) == true {
-                attributed[run.range].font = Theme.Font.code
+                attributed[run.range].font = desktop != nil ? .system(size: 12, design: .monospaced) : Theme.Font.code
+                if let desktop { attributed[run.range].backgroundColor = desktop.inset }
             }
+            if let desktop {
+                // `px-1` on the desktop's code chip: a quarter-em space each side
+                let ranges = attributed.runs.filter { $0.inlinePresentationIntent?.contains(.code) == true }.map(\.range)
+                for range in ranges.reversed() {
+                    var pad = AttributedString("\u{2005}")
+                    pad.font = .system(size: 12, design: .monospaced)
+                    pad.backgroundColor = desktop.inset
+                    attributed.insert(pad, at: range.upperBound)
+                    attributed.insert(pad, at: range.lowerBound)
+                }
+            }
+            MentionTint.apply(to: &attributed, peers: mentions, everyone: mentionEveryone)
+            styleFootnotes(&attributed)
+            styleSpoilers(&attributed)
             rendered = Text(attributed)
         } else {
             rendered = Text(text)
@@ -337,10 +408,68 @@ struct MarkdownText: View {
         return rendered + caretText(tail)
     }
 
+    // MARK: Spoilers and footnote marks
+
+    static let spoilerScheme = "sagax-spoiler"
+
+    static func spoilerURL(_ key: String) -> URL? {
+        var components = URLComponents()
+        components.scheme = spoilerScheme
+        components.path = key
+        return components.url
+    }
+
+    static func spoilerKey(_ url: URL) -> String {
+        URLComponents(url: url, resolvingAgainstBaseURL: false)?.path ?? url.absoluteString
+    }
+
+    /// `~~text~~` in a bot reply is a spoiler (ChatMarkdown `Spoiler`), not
+    /// a deletion: hidden behind a raised chip until tapped, then shown with
+    /// a dotted underline and a small "Hide". Display only: the stored text,
+    /// copies and the model's context keep the raw `~~text~~`.
+    private func styleSpoilers(_ attributed: inout AttributedString) {
+        let ranges = attributed.runs
+            .filter { $0.inlinePresentationIntent?.contains(.strikethrough) == true }
+            .map(\.range)
+        guard !ranges.isEmpty else { return }
+        for range in ranges.reversed() {
+            let key = String(attributed[range].characters)
+            guard let url = Self.spoilerURL(key) else { continue }
+            var intent = attributed[range].inlinePresentationIntent ?? []
+            intent.remove(.strikethrough)
+            if revealed.contains(key) {
+                attributed[range].inlinePresentationIntent = intent
+                attributed[range].underlineStyle = Text.LineStyle(pattern: .dot, color: Theme.hairline)
+                var hide = AttributedString(" " + String(localized: "Hide"))
+                hide.link = url
+                hide.font = .system(size: 11)
+                attributed.insert(hide, at: range.upperBound)
+            } else {
+                // the words become figure spaces on a raised chip: nothing to
+                // read until the tap, whatever colour the link takes
+                var mask = AttributedString(String(repeating: "\u{2007}", count: max(2, key.count)))
+                mask.link = url
+                mask.backgroundColor = Theme.cardRaised
+                mask.inlinePresentationIntent = intent
+                if let font = attributed[range].font { mask.font = font }
+                attributed.replaceSubrange(range, with: mask)
+            }
+        }
+    }
+
+    /// Footnote references (`[^id]`, rewritten by the splitter as links)
+    /// read as small raised numbers.
+    private func styleFootnotes(_ attributed: inout AttributedString) {
+        for run in attributed.runs where run.link?.scheme == Markdown.footnoteScheme {
+            attributed[run.range].font = .system(size: 10, weight: .medium)
+            attributed[run.range].baselineOffset = 5
+        }
+    }
+
     /// A figure space then a block, so the caret sits off the last glyph
     /// rather than touching it. Empty when not streaming — an empty `Text`
     /// concatenated in costs nothing and keeps the callers branch-free.
     private func caretText(_ tail: Bool) -> Text {
-        tail ? Text("\u{2007}▍").foregroundColor(Color.secondary) : Text("")
+        tail ? Text("\u{2007}▍").foregroundColor(Theme.parity(Color.secondary, Theme.textSecondary)) : Text("")
     }
 }

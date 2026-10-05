@@ -17,6 +17,7 @@ enum SettingsRoute: Hashable {
 }
 
 struct SettingsView: View {
+    @Environment(\.themePalette) var themePalette
     @EnvironmentObject private var session: Session
     @StateObject private var model = SettingsModel()
     @StateObject private var navigator = SettingsNavigator()
@@ -73,6 +74,7 @@ struct SettingsView: View {
         case .plugins?: return .plugins
         case .account?: return .account
         case .botComputer?: return .botComputer
+        case .appearance?: return .appearance
         default: return nil
         }
 #else
@@ -105,14 +107,14 @@ extension EnvironmentValues {
 // MARK: - Root
 
 private struct SettingsRootPage: View {
+    @Environment(\.themePalette) var themePalette
     let close: (() -> Void)?
     let onConnect: (() -> Void)?
 
     @EnvironmentObject private var session: Session
     @EnvironmentObject private var model: SettingsModel
     @Environment(\.locale) private var locale
-    @AppStorage(PrefKey.appearanceMode) private var appearance = AppearanceMode.system.rawValue
-    @AppStorage(PrefKey.appearanceTone) private var tone = AppearanceTone.black.rawValue
+    @ObservedObject private var themes = ThemeStore.shared
     @AppStorage(PrefKey.language) private var language = AppLanguage.system.rawValue
     @AppStorage(PrefKey.haptics) private var haptics = true
     @State private var link: URL?
@@ -171,7 +173,7 @@ private struct SettingsRootPage: View {
                     }
             }
             .environmentObject(session)
-            .preferredColorScheme(.dark)
+            .environmentObject(model)
         }
         .sheet(item: Binding(get: { link.map(IdentifiedURL.init) }, set: { link = $0?.url })) { item in
             SafariSheet(url: item.url).ignoresSafeArea()
@@ -213,7 +215,7 @@ private struct SettingsRootPage: View {
 
     private var accountCard: some View {
         SettingsCard {
-            AccountCardRow(name: model.displayName, detail: model.detail, photo: model.photo, chevron: true) { push(.account) }
+            AccountCardRow(name: model.displayName, detail: model.detail, photo: session.accountPhoto, chevron: true) { push(.account) }
             if let percent = model.usagePercent {
                 CardHairline(leadingInset: SettingsMetrics.rowInset)
                 SettingsRow(title: "Usage", accessory: .valueChevron("\(percent)%"), height: 43.5, identifier: "settings-usage") { push(.usage) }
@@ -280,10 +282,15 @@ private struct SettingsRootPage: View {
         }
     }
 
+    /// "System · Black": how the skin is chosen, then the one worn now.
     private var appearanceValue: String {
-        let mode = AppearanceMode(rawValue: appearance) == .dark ? String(localized: "Dark") : String(localized: "System")
-        let shade = AppearanceTone(rawValue: tone) == .dim ? String(localized: "Dim") : String(localized: "Black")
-        return "\(mode) · \(shade)"
+        let mode: String
+        switch themes.effective.mode {
+        case .system: mode = String(localized: "System")
+        case .fixed: mode = String(localized: "Fixed")
+        case .computer: mode = String(localized: "Computer")
+        }
+        return "\(mode) · \(themePalette.id.name)"
     }
 
     private var linksCard: some View {
@@ -352,6 +359,7 @@ private struct SettingsRootPage: View {
 
 /// A route's page.
 struct SettingsRouteView: View {
+    @Environment(\.themePalette) var themePalette
     let route: SettingsRoute
     let onConnect: (() -> Void)?
     let closeSheet: (() -> Void)?
@@ -374,6 +382,7 @@ struct SettingsRouteView: View {
 
 /// Vertical space between cards.
 struct SettingsSpacer: View {
+    @Environment(\.themePalette) var themePalette
     let height: CGFloat
     init(_ height: CGFloat) { self.height = height }
     var body: some View { Color.clear.frame(height: height) }
@@ -382,7 +391,9 @@ struct SettingsSpacer: View {
 // MARK: - Usage
 
 struct UsageSettingsView: View {
+    @Environment(\.themePalette) var themePalette
     @EnvironmentObject private var model: SettingsModel
+    @EnvironmentObject private var session: Session
 
     var body: some View {
         SettingsPage(title: "Usage") {
@@ -402,6 +413,11 @@ struct UsageSettingsView: View {
             SettingsFooter(text: model.usage?.budget?.exceeded == true
                 ? "The monthly budget is used up. Bots pause new paid work until next month or until the budget is raised on the computer."
                 : "Spending on paid engines this month, against the budget set on the computer.")
+            // What each bot spent (ST10), then the History for an admin.
+            UsageByBotSection()
+            if session.surfaceGate.allows(.usageHistory) {
+                UsageHistorySection()
+            }
         }
     }
 
@@ -412,35 +428,8 @@ struct UsageSettingsView: View {
 
 // MARK: - Appearance, language, haptics
 
-struct AppearanceSettingsView: View {
-    @AppStorage(PrefKey.appearanceMode) private var appearance = AppearanceMode.system.rawValue
-    @AppStorage(PrefKey.appearanceTone) private var tone = AppearanceTone.black.rawValue
-
-    var body: some View {
-        SettingsPage(title: "Appearance") {
-            SettingsCard {
-                ForEach(Array(AppearanceMode.allCases.enumerated()), id: \.element) { index, mode in
-                    if index > 0 { CardHairline(leadingInset: SettingsMetrics.rowInset) }
-                    SettingsRow(title: mode.label, accessory: appearance == mode.rawValue ? .check : .none, identifier: "appearance.\(mode.rawValue)") {
-                        appearance = mode.rawValue
-                    }
-                }
-            }
-            SettingsSectionLabel(text: "Dark background")
-            SettingsCard {
-                ForEach(Array(AppearanceTone.allCases.enumerated()), id: \.element) { index, option in
-                    if index > 0 { CardHairline(leadingInset: SettingsMetrics.rowInset) }
-                    SettingsRow(title: option.label, accessory: tone == option.rawValue ? .check : .none, identifier: "tone.\(option.rawValue)") {
-                        tone = option.rawValue
-                    }
-                }
-            }
-            SettingsFooter(text: "System follows the phone; Dark keeps Sagax dark. Black is the deepest background, Dim a softer grey.")
-        }
-    }
-}
-
 struct LanguageSettingsView: View {
+    @Environment(\.themePalette) var themePalette
     @AppStorage(PrefKey.language) private var language = AppLanguage.system.rawValue
 
     var body: some View {
@@ -459,6 +448,7 @@ struct LanguageSettingsView: View {
 }
 
 struct HapticsSettingsView: View {
+    @Environment(\.themePalette) var themePalette
     @AppStorage(PrefKey.haptics) private var haptics = true
 
     var body: some View {
@@ -469,6 +459,7 @@ struct HapticsSettingsView: View {
                 SettingsRow(title: "Off", accessory: haptics ? .none : .check, identifier: "haptics.off") { haptics = false }
             }
             SettingsFooter(text: "Small taps when you press buttons, switch options and send.")
+            NotificationSoundsCard()
         }
     }
 }
@@ -476,6 +467,7 @@ struct HapticsSettingsView: View {
 // MARK: - Advanced (the earlier settings, kept)
 
 struct AdvancedSettingsView: View {
+    @Environment(\.themePalette) var themePalette
     let onConnect: (() -> Void)?
     let closeSheet: (() -> Void)?
 
@@ -485,109 +477,18 @@ struct AdvancedSettingsView: View {
     @AppStorage(PrefKey.rosterDensity) private var rosterDensity = RosterDensity.default.rawValue
     @State private var showingUpdates = false
     @State private var showingWalkieVoice = false
+    /// Settings search (ST11): any page, by name or keyword.
+    @State private var query = ""
 
     var body: some View {
-        Form {
-            Section("Computer") {
-                if let connection = session.connection {
-                    NavigationLink {
-                        ConnectedComputersView()
-                    } label: {
-                        ComputerSettingsRow(
-                            name: Text(verbatim: connection.name),
-                            status: computerStatusText,
-                            connected: session.status == .live
-                        )
-                    }
-                } else {
-                    Button {
-                        onConnect?()
-                    } label: {
-                        ComputerSettingsRow(name: Text("Connect a computer"), status: Text("Not connected"), connected: false)
-                    }
-                    .disabled(onConnect == nil)
-                }
-            }
-
-            Section {
-                Picker(selection: $activityDetail) {
-                    ForEach(ActivityDetail.allCases, id: \.rawValue) { level in
-                        Text(LocalizedStringKey(level.label)).tag(level.rawValue)
-                    }
-                } label: {
-                    Label { Text("Activity") } icon: { SettingsIcon(symbol: "wrench.and.screwdriver.fill", color: .purple) }
-                }
-
-                Picker(selection: $islandIntro) {
-                    ForEach(IslandIntro.allCases, id: \.rawValue) { option in
-                        Text(LocalizedStringKey(option.label)).tag(option.rawValue)
-                    }
-                } label: {
-                    Label { Text("Bot intro animation") } icon: { SettingsIcon(symbol: "sparkles", color: .pink) }
-                }
-
-                NavigationLink {
-                    QuickRepliesEditor()
-                } label: {
-                    Label { Text("Quick Replies") } icon: { SettingsIcon(symbol: "bolt.fill", color: .yellow) }
-                }
-            } header: {
-                Text("Chat")
-            } footer: {
-                Text(LocalizedStringKey(ActivityDetail(rawValue: activityDetail)?.caption ?? ""))
-            }
-
-            Section {
-                Picker(selection: Binding(
-                    get: { RosterDensity(stored: rosterDensity) },
-                    set: { rosterDensity = $0.rawValue }
-                )) {
-                    ForEach(RosterDensity.allCases, id: \.self) { density in
-                        Text(LocalizedStringKey(density.label)).tag(density)
-                    }
-                } label: {
-                    Label { Text("List density") } icon: { SettingsIcon(symbol: "list.bullet", color: .indigo) }
-                }
-                .accessibilityIdentifier("list-density")
-            } footer: {
-                Text(LocalizedStringKey(RosterDensity(stored: rosterDensity).caption))
-            }
-
-            Section("Voice") {
-                Button {
-                    showingWalkieVoice = true
-                } label: {
-                    Label { Text("Walkie voice") } icon: { SettingsIcon(symbol: "waveform", color: .green) }
-                }
-                .foregroundStyle(.primary)
-            }
-
-            if session.connection != nil {
-                Section("Workspace") {
-                    Button {
-                        showingUpdates = true
-                    } label: {
-                        Label { Text("Updates") } icon: { SettingsIcon(symbol: "bell.badge.fill", color: .red) }
-                    }
-                    .foregroundStyle(.primary)
-
-                    NavigationLink {
-                        TasksRoutinesView()
-                    } label: {
-                        Label { Text("Threads & Routines") } icon: { SettingsIcon(symbol: "calendar.badge.clock", color: .orange) }
-                    }
-
-                    // Composio accounts (Work, Personal, client accounts).
-                    if session.canAdminister {
-                        NavigationLink {
-                            ConnectedAppsView()
-                        } label: {
-                            Label { Text("Connected Apps") } icon: { SettingsIcon(symbol: "link", color: .blue) }
-                        }
-                    }
-                }
+        ThemedForm {
+            if query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                sections
+            } else {
+                SettingsSearchResults(query: query, closeSheet: closeSheet)
             }
         }
+        .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: Text("Search"))
         .navigationTitle("Advanced")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(.visible, for: .navigationBar)
@@ -605,6 +506,140 @@ struct AdvancedSettingsView: View {
         }
     }
 
+    @ViewBuilder
+    private var sections: some View {
+        Section("Computer") {
+            if let connection = session.connection {
+                NavigationLink {
+                    ConnectedComputersView()
+                } label: {
+                    ComputerSettingsRow(
+                        name: Text(verbatim: connection.name),
+                        status: computerStatusText,
+                        connected: session.status == .live
+                    )
+                }
+            } else {
+                Button {
+                    onConnect?()
+                } label: {
+                    ComputerSettingsRow(name: Text("Connect a computer"), status: Text("Not connected"), connected: false)
+                }
+                .disabled(onConnect == nil)
+            }
+        }
+
+        Section {
+            Picker(selection: $activityDetail) {
+                ForEach(ActivityDetail.allCases, id: \.rawValue) { level in
+                    Text(LocalizedStringKey(level.label)).tag(level.rawValue)
+                }
+            } label: {
+                Label { Text("Activity") } icon: { SettingsIcon(symbol: "wrench.and.screwdriver.fill", color: .purple) }
+            }
+
+            Picker(selection: $islandIntro) {
+                ForEach(IslandIntro.allCases, id: \.rawValue) { option in
+                    Text(LocalizedStringKey(option.label)).tag(option.rawValue)
+                }
+            } label: {
+                Label { Text("Bot intro animation") } icon: { SettingsIcon(symbol: "sparkles", color: .pink) }
+            }
+
+            NavigationLink {
+                QuickRepliesEditor()
+            } label: {
+                Label { Text("Quick Replies") } icon: { SettingsIcon(symbol: "bolt.fill", color: .yellow) }
+            }
+        } header: {
+            Text("Chat")
+        } footer: {
+            Text(LocalizedStringKey(ActivityDetail(rawValue: activityDetail)?.caption ?? ""))
+        }
+
+        Section {
+            Picker(selection: Binding(
+                get: { RosterDensity(stored: rosterDensity) },
+                set: { rosterDensity = $0.rawValue }
+            )) {
+                ForEach(RosterDensity.allCases, id: \.self) { density in
+                    Text(LocalizedStringKey(density.label)).tag(density)
+                }
+            } label: {
+                Label { Text("List density") } icon: { SettingsIcon(symbol: "list.bullet", color: .indigo) }
+            }
+            .accessibilityIdentifier("list-density")
+        } footer: {
+            Text(LocalizedStringKey(RosterDensity(stored: rosterDensity).caption))
+        }
+
+        Section("Voice") {
+            Button {
+                showingWalkieVoice = true
+            } label: {
+                Label { Text("Call voice") } icon: { SettingsIcon(symbol: "waveform", color: .green) }
+            }
+            .foregroundStyle(Theme.textPrimary)
+        }
+
+        if session.connection != nil {
+            Section("Workspace") {
+                Button {
+                    showingUpdates = true
+                } label: {
+                    Label { Text("Updates") } icon: { SettingsIcon(symbol: "bell.badge.fill", color: .red) }
+                }
+                .foregroundStyle(Theme.textPrimary)
+
+                NavigationLink {
+                    TasksRoutinesView()
+                } label: {
+                    Label { Text("Threads & Routines") } icon: { SettingsIcon(symbol: "calendar.badge.clock", color: .orange) }
+                }
+                .accessibilityIdentifier("settings-routines")
+
+                // Composio accounts (Work, Personal, client accounts):
+                // the sidecar serves them, a client session does not (PL1).
+                if session.surfaceGate.allows(.connectedApps) {
+                    NavigationLink {
+                        ConnectedAppsView()
+                    } label: {
+                        Label { Text("Connected Apps") } icon: { SettingsIcon(symbol: "link", color: .blue) }
+                    }
+                }
+            }
+        }
+
+        // WP12: the person's achievements (ST9), the organization (ST8,
+        // AU19) and About (ST12).
+        Section("Sagax") {
+            if session.connection != nil, session.surfaceGate.allows(.achievements), achievements.status != .unavailable {
+                NavigationLink {
+                    AchievementsPage()
+                } label: {
+                    Label { Text("Achievements") } icon: { SettingsIcon(symbol: "trophy.fill", color: .orange) }
+                }
+                .accessibilityIdentifier("settings-achievements")
+            }
+            if session.surfaceGate.allows(.organizationSettings) {
+                NavigationLink {
+                    OrganizationSettingsPage()
+                } label: {
+                    Label { Text("Organization") } icon: { SettingsIcon(symbol: "building.2.fill", color: .teal) }
+                }
+                .accessibilityIdentifier("settings-organization")
+            }
+            NavigationLink {
+                AboutPage()
+            } label: {
+                Label { Text("About") } icon: { SettingsIcon(symbol: "info.circle.fill", color: .gray) }
+            }
+            .accessibilityIdentifier("settings-about")
+        }
+    }
+
+    @ObservedObject private var achievements = AchievementStore.shared
+
     private var computerStatusText: Text {
         guard session.connections.count > 1 else { return session.status.settingsText }
         return session.status.settingsText + Text(verbatim: " · ") + Text("\(session.connections.count) saved")
@@ -612,6 +647,7 @@ struct AdvancedSettingsView: View {
 }
 
 private struct ComputerSettingsRow: View {
+    @Environment(\.themePalette) var themePalette
     let name: Text
     let status: Text
     let connected: Bool
@@ -629,15 +665,15 @@ private struct ComputerSettingsRow: View {
 
             VStack(alignment: .leading, spacing: 3) {
                 name
-                    .foregroundStyle(.primary)
+                    .foregroundStyle(Theme.textPrimary)
                     .lineLimit(1)
                 HStack(spacing: 5) {
                     Circle()
-                        .fill(connected ? Color.green : Color.secondary)
+                        .fill(connected ? Theme.success : Theme.textSecondary)
                         .frame(width: 7, height: 7)
                     status
                         .font(.footnote)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Theme.textSecondary)
                         .lineLimit(1)
                 }
             }
@@ -648,6 +684,7 @@ private struct ComputerSettingsRow: View {
 }
 
 private struct SettingsIcon: View {
+    @Environment(\.themePalette) var themePalette
     let symbol: String
     let color: Color
 
@@ -662,6 +699,7 @@ private struct SettingsIcon: View {
 }
 
 struct ConnectedComputersView: View {
+    @Environment(\.themePalette) var themePalette
     @EnvironmentObject private var session: Session
     @State private var pendingRemoval: Connection?
 
@@ -678,7 +716,7 @@ struct ConnectedComputersView: View {
     }
 
     var body: some View {
-        List {
+        ThemedList {
             if let active = session.connection {
                 Section("Current computer") {
                     NavigationLink {
@@ -704,11 +742,11 @@ struct ConnectedComputersView: View {
                                 ProfileAvatar(name: computer.name, size: 38)
                                 VStack(alignment: .leading, spacing: 3) {
                                     Text(computer.name)
-                                        .foregroundStyle(.primary)
+                                        .foregroundStyle(Theme.textPrimary)
                                         .lineLimit(1)
                                     Text("Tap to switch")
                                         .font(.footnote)
-                                        .foregroundStyle(.secondary)
+                                        .foregroundStyle(Theme.textSecondary)
                                 }
                                 Spacer()
                                 Text("Use")
@@ -762,6 +800,7 @@ struct ConnectedComputersView: View {
 }
 
 struct ConnectionSecurityView: View {
+    @Environment(\.themePalette) var themePalette
     @EnvironmentObject private var session: Session
     @Environment(\.dismiss) private var dismiss
     @State private var confirmingSignOut = false
@@ -772,7 +811,7 @@ struct ConnectionSecurityView: View {
     @State private var refreshing = false
 
     var body: some View {
-        Form {
+        ThemedForm {
             if let connection = session.connection {
                 Section {
                     HStack(spacing: 14) {
@@ -786,7 +825,7 @@ struct ConnectionSecurityView: View {
                                 Image(systemName: session.status == .live ? "checkmark.circle.fill" : "circle.dotted")
                             }
                                 .font(.subheadline)
-                                .foregroundStyle(session.status == .live ? Color.green : Color.secondary)
+                                .foregroundStyle(session.status == .live ? Theme.success : Theme.textSecondary)
                         }
                     }
                     .padding(.vertical, 4)
@@ -807,7 +846,7 @@ struct ConnectionSecurityView: View {
                                 }
                             }
                             .font(.footnote.monospaced())
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(Theme.textSecondary)
 
                             HStack(spacing: 16) {
                                 Button(showingFullAddress ? "Hide full address" : "Show full address") {
@@ -836,7 +875,7 @@ struct ConnectionSecurityView: View {
                 Section("Troubleshooting") {
                     troubleshootingText
                         .font(.subheadline)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Theme.textSecondary)
 
                     Button {
                         refreshing = true
