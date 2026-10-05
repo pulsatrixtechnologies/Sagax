@@ -509,6 +509,9 @@ describe("iOS feature parity (S1, D1, D3)", () => {
       ["GET", "/api/tts/provider"], ["POST", "/api/tts/provider"], ["PUT", "/api/config"],
       ["GET", "/api/me/achievements/settings"], ["DELETE", "/api/me/achievements"],
     ] as const) expect(allowed(method, path), `${method} ${path}`).toBe(false);
+  });
+});
+
 describe("browser control", () => {
   it("allows the live stream and the action channel, and nothing else under browser/", () => {
     expect(allowed("GET", "/api/bots/b1/browser/live")).toBe(true);
