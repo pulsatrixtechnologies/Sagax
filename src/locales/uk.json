@@ -2439,5 +2439,12 @@
   "releaseNotes.whatsNew": "Що нового у {version}",
   "releaseNotes.menu": "Примітки до випуску",
   "releaseNotes.close": "Закрити",
-  "releaseNotes.whatsNewEmpty": "Приміток до версії {version} немає в цій копії Sagax."
+  "releaseNotes.whatsNewEmpty": "Приміток до версії {version} немає в цій копії Sagax.",
+  "settings.advancedMode.title": "Розширений режим",
+  "settings.advancedMode.subtitle": "Показує технічні контроли. Збережений вибір лишається.",
+  "approvalMode.simple.ask": "Спочатку запитати",
+  "approvalMode.simple.askHint": "Бот зупиняється і питає перед дією.",
+  "approvalMode.simple.decide": "Вирішувати за мене",
+  "approvalMode.simple.decideHint": "Бот діє і питає, коли вагається.",
+  "approvalMode.simple.custom": "Збережено власний рівень. Він лишається, доки ви не оберете один із цих."
 }

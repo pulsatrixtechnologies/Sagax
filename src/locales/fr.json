@@ -3576,5 +3576,12 @@
   "releaseNotes.whatsNew": "Quoi de neuf dans {version}",
   "releaseNotes.menu": "Notes de version",
   "releaseNotes.close": "Fermer",
-  "releaseNotes.whatsNewEmpty": "Les notes de la version {version} ne sont pas dans cette copie de Sagax."
+  "releaseNotes.whatsNewEmpty": "Les notes de la version {version} ne sont pas dans cette copie de Sagax.",
+  "settings.advancedMode.title": "Mode avancé",
+  "settings.advancedMode.subtitle": "Affiche les contrôles techniques. Vos choix restent.",
+  "approvalMode.simple.ask": "Demander d'abord",
+  "approvalMode.simple.askHint": "Le bot s'arrête et vous demande avant d'agir.",
+  "approvalMode.simple.decide": "Décider pour moi",
+  "approvalMode.simple.decideHint": "Le bot agit et vous consulte s'il hésite.",
+  "approvalMode.simple.custom": "Un niveau personnalisé est enregistré. Il reste jusqu'à votre choix."
 }

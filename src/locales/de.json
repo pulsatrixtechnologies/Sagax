@@ -1917,5 +1917,12 @@
   "releaseNotes.whatsNew": "Neu in {version}",
   "releaseNotes.menu": "Versionshinweise",
   "releaseNotes.close": "Schließen",
-  "releaseNotes.whatsNewEmpty": "Die Versionshinweise für {version} sind in dieser Kopie von Sagax nicht enthalten."
+  "releaseNotes.whatsNewEmpty": "Die Versionshinweise für {version} sind in dieser Kopie von Sagax nicht enthalten.",
+  "settings.advancedMode.title": "Erweiterter Modus",
+  "settings.advancedMode.subtitle": "Zeigt technische Kontrollen. Gespeicherte Wahl bleibt.",
+  "approvalMode.simple.ask": "Erst fragen",
+  "approvalMode.simple.askHint": "Der Bot hält an und fragt, bevor er handelt.",
+  "approvalMode.simple.decide": "Für mich entscheiden",
+  "approvalMode.simple.decideHint": "Der Bot handelt und fragt, wenn er unsicher ist.",
+  "approvalMode.simple.custom": "Eine eigene Stufe ist gespeichert. Sie bleibt, bis Sie eine dieser Optionen wählen."
 }

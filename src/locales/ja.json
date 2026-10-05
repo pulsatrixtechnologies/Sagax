@@ -1901,5 +1901,12 @@
   "releaseNotes.whatsNew": "{version} の新機能",
   "releaseNotes.menu": "リリースノート",
   "releaseNotes.close": "閉じる",
-  "releaseNotes.whatsNewEmpty": "バージョン {version} のリリースノートはこの Sagax には含まれていません。"
+  "releaseNotes.whatsNewEmpty": "バージョン {version} のリリースノートはこの Sagax には含まれていません。",
+  "settings.advancedMode.title": "詳細モード",
+  "settings.advancedMode.subtitle": "技術的な操作を表示します. 選んだ内容はそのまま残ります.",
+  "approvalMode.simple.ask": "先に確認する",
+  "approvalMode.simple.askHint": "ボットは動く前に止まって確認します.",
+  "approvalMode.simple.decide": "任せる",
+  "approvalMode.simple.decideHint": "ボットが進めて、迷ったときだけ確認します.",
+  "approvalMode.simple.custom": "カスタムのレベルが保存されています. ここで選ぶまで残ります."
 }

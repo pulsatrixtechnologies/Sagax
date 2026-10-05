@@ -2815,5 +2815,12 @@
   "releaseNotes.whatsNew": "{version} 的新功能",
   "releaseNotes.menu": "版本說明",
   "releaseNotes.close": "關閉",
-  "releaseNotes.whatsNewEmpty": "此 Sagax 複本中沒有 {version} 的版本說明。"
+  "releaseNotes.whatsNewEmpty": "此 Sagax 複本中沒有 {version} 的版本說明。",
+  "settings.advancedMode.title": "進階模式",
+  "settings.advancedMode.subtitle": "顯示技術控制項. 已儲存的選擇會保留.",
+  "approvalMode.simple.ask": "先問我",
+  "approvalMode.simple.askHint": "機器人在行動前會停下來詢問.",
+  "approvalMode.simple.decide": "替我決定",
+  "approvalMode.simple.decideHint": "機器人會行動, 不確定時再問.",
+  "approvalMode.simple.custom": "已儲存自訂層級. 在你選擇其中一項之前會保留."
 }
