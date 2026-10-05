@@ -14,6 +14,8 @@ import {
   openExternalLink,
   platformLabel,
 } from "@/lib/app-links";
+import { t } from "@/lib/i18n";
+import { requestReleaseNotes } from "@/lib/release-notes-ui";
 
 export function AboutDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const closeRef = useRef<HTMLButtonElement>(null);
@@ -65,6 +67,16 @@ export function AboutDialog({ open, onClose }: { open: boolean; onClose: () => v
           <AboutLink href={DOCS_URL} label="Docs" />
           <AboutLink href={RELEASES_URL} label="Releases" />
           <AboutLink href={LICENSE_URL} label="License" />
+          <button
+            type="button"
+            onClick={() => {
+              onClose();
+              requestReleaseNotes();
+            }}
+            className="text-accent hover:underline"
+          >
+            {t("releaseNotes.menu")}
+          </button>
         </div>
         <button
           ref={closeRef}

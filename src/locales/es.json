@@ -1884,5 +1884,20 @@
   "settings.profile.uploadAvatar": "Subir un avatar",
   "settings.profile.uploadPhoto": "Subir una foto",
   "settings.profile.removePhoto": "Quitar la foto",
-  "botPanel.skills.close": "Cerrar"
+  "botPanel.skills.close": "Cerrar",
+  "releaseNotes.updateTitle": "{name} {version} está disponible",
+  "releaseNotes.updateReady": "{version} está lista",
+  "releaseNotes.updateRestart": "Actualizar y reiniciar",
+  "releaseNotes.later": "Más tarde",
+  "releaseNotes.downloading": "Descargando {version}…",
+  "releaseNotes.starting": "Iniciando la descarga…",
+  "releaseNotes.percent": "{percent} %",
+  "releaseNotes.preparing": "Preparando la actualización…",
+  "releaseNotes.restarting": "Reiniciando…",
+  "releaseNotes.versionHeading": "Versión {version}",
+  "releaseNotes.noNotes": "No se publicaron notas de versión para esta actualización.",
+  "releaseNotes.whatsNew": "Novedades de {version}",
+  "releaseNotes.menu": "Notas de versión",
+  "releaseNotes.close": "Cerrar",
+  "releaseNotes.whatsNewEmpty": "Las notas de la versión {version} no están en esta copia de Sagax."
 }

@@ -6,6 +6,29 @@
 // describing what is left to do, which the card renders.
 import { updateErrorMessage } from "./update-errors.mjs";
 
+// The feed's releaseNotes: a string (the latest GitHub release body) or one
+// { version, note } per skipped version when fullChangelog is on. Anything
+// else is dropped so the renderer only ever sees text.
+export function releaseNotesFrom(info) {
+  const raw = info?.releaseNotes;
+  if (typeof raw === "string") return raw;
+  if (!Array.isArray(raw)) return undefined;
+  const notes = [];
+  for (const item of raw) {
+    if (!item || typeof item.version !== "string" || !item.version.trim()) continue;
+    notes.push({
+      version: item.version.trim(),
+      note: typeof item.note === "string" ? item.note : "",
+    });
+  }
+  return notes;
+}
+
+function withNotes(patch, info) {
+  const notes = releaseNotesFrom(info);
+  return notes === undefined ? patch : { ...patch, notes };
+}
+
 export function createUpdaterCoordinator(updater, setState, { handOffInstall = null, nativeStaging = false } = {}) {
   let checkOperation = null;
   // Set from downloadUpdate's resolution: the paths electron-updater staged.
@@ -68,7 +91,7 @@ export function createUpdaterCoordinator(updater, setState, { handOffInstall = n
   });
   updater.on("update-available", (info) => {
     if (checkOwnsState()) {
-      setState({ status: "available", version: info?.version, message: undefined });
+      setState(withNotes({ status: "available", version: info?.version, message: undefined }, info));
     }
   });
   updater.on("update-not-available", () => {
@@ -98,7 +121,7 @@ export function createUpdaterCoordinator(updater, setState, { handOffInstall = n
       downloadOperation.downloadedInfo = info;
       if (nativeStaging && !nativeStagingStarted) {
         nativeStagingStarted = true;
-        setState({ status: "preparing", version: info?.version, message: undefined });
+        setState(withNotes({ status: "preparing", version: info?.version, message: undefined }, info));
         downloadOperation.timer = setTimeout(() => {
           updater.logger?.warn?.("Native update preparation exceeded the five-minute deadline; restart is required before retrying.");
           routeError(true, new Error("Preparing the update took too long."));
@@ -110,7 +133,7 @@ export function createUpdaterCoordinator(updater, setState, { handOffInstall = n
     // No native attempt may become actionable from an uncorrelated late event.
     if (nativeStaging) return;
     actionOwnsState = true;
-    setState({ status: "downloaded", version: info?.version });
+    setState(withNotes({ status: "downloaded", version: info?.version }, info));
   });
 
   function check(manual = false) {
@@ -161,7 +184,7 @@ export function createUpdaterCoordinator(updater, setState, { handOffInstall = n
           if (!operation.failed && operation.downloadedInfo) {
             nativeReady = nativeStaging;
             actionOwnsState = true;
-            setState({ status: "downloaded", version: operation.downloadedInfo?.version });
+            setState(withNotes({ status: "downloaded", version: operation.downloadedInfo?.version }, operation.downloadedInfo));
           }
           return result;
         })

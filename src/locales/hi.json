@@ -1884,5 +1884,20 @@
   "settings.profile.uploadAvatar": "अवतार अपलोड करें",
   "settings.profile.uploadPhoto": "फ़ोटो अपलोड करें",
   "settings.profile.removePhoto": "फ़ोटो हटाएँ",
-  "botPanel.skills.close": "बंद करें"
+  "botPanel.skills.close": "बंद करें",
+  "releaseNotes.updateTitle": "{name} {version} उपलब्ध है",
+  "releaseNotes.updateReady": "{version} तैयार है",
+  "releaseNotes.updateRestart": "अपडेट करें और पुनः आरंभ करें",
+  "releaseNotes.later": "बाद में",
+  "releaseNotes.downloading": "{version} डाउनलोड हो रहा है…",
+  "releaseNotes.starting": "डाउनलोड शुरू हो रहा है…",
+  "releaseNotes.percent": "{percent}%",
+  "releaseNotes.preparing": "अपडेट तैयार हो रहा है…",
+  "releaseNotes.restarting": "पुनः आरंभ हो रहा है…",
+  "releaseNotes.versionHeading": "संस्करण {version}",
+  "releaseNotes.noNotes": "इस अपडेट के लिए कोई रिलीज़ नोट प्रकाशित नहीं किया गया।",
+  "releaseNotes.whatsNew": "{version} में नया क्या है",
+  "releaseNotes.menu": "रिलीज़ नोट",
+  "releaseNotes.close": "बंद करें",
+  "releaseNotes.whatsNewEmpty": "{version} के रिलीज़ नोट Sagax की इस प्रति में नहीं हैं।"
 }

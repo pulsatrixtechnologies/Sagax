@@ -1886,5 +1886,20 @@
   "settings.profile.uploadAvatar": "アバターをアップロード",
   "settings.profile.uploadPhoto": "写真をアップロード",
   "settings.profile.removePhoto": "写真を削除",
-  "botPanel.skills.close": "閉じる"
+  "botPanel.skills.close": "閉じる",
+  "releaseNotes.updateTitle": "{name} {version} が利用できます",
+  "releaseNotes.updateReady": "{version} の準備ができました",
+  "releaseNotes.updateRestart": "アップデートして再起動",
+  "releaseNotes.later": "後で",
+  "releaseNotes.downloading": "{version} をダウンロードしています…",
+  "releaseNotes.starting": "ダウンロードを開始しています…",
+  "releaseNotes.percent": "{percent}%",
+  "releaseNotes.preparing": "アップデートを準備しています…",
+  "releaseNotes.restarting": "再起動しています…",
+  "releaseNotes.versionHeading": "バージョン {version}",
+  "releaseNotes.noNotes": "このアップデートのリリースノートは公開されていません。",
+  "releaseNotes.whatsNew": "{version} の新機能",
+  "releaseNotes.menu": "リリースノート",
+  "releaseNotes.close": "閉じる",
+  "releaseNotes.whatsNewEmpty": "バージョン {version} のリリースノートはこの Sagax には含まれていません。"
 }

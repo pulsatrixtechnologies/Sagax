@@ -5,7 +5,7 @@ import type { UpdaterState } from "@/lib/updater";
 
 const fixture = vi.hoisted(() => ({ state: { status: "idle" } as UpdaterState }));
 vi.mock("@/lib/updater", () => ({ useUpdaterState: () => fixture.state }));
-vi.mock("../lib/brand", () => ({ brand: () => ({ name: "Sagax" }) }));
+vi.mock("@/lib/brand", () => ({ brand: () => ({ name: "Sagax" }) }));
 import { UpdateBanner } from "./UpdateBanner";
 
 afterEach(() => vi.unstubAllGlobals());
@@ -18,7 +18,7 @@ function render(state: UpdaterState) {
 describe("UpdateBanner", () => {
   it("cannot restart or retry while macOS is preparing the downloaded bytes", () => {
     const html = render({ status: "preparing", version: "0.2.0", percent: 100 });
-    expect(html).toContain("Preparing update…");
+    expect(html).toContain("Preparing the update…");
     expect(html).toContain("macOS is preparing the update.");
     expect(html).toContain("disabled=\"\"");
     expect(html).not.toContain("Restart to update");
@@ -29,7 +29,7 @@ describe("UpdateBanner", () => {
   it("offers restart only after native preparation is complete", () => {
     const html = render({ status: "downloaded", version: "0.2.0" });
     expect(html).toContain("0.2.0 is ready");
-    expect(html).toContain("Restart to update");
+    expect(html).toContain("Update and restart");
   });
 
   it("keeps restart busy and displays the recovery instruction", () => {
@@ -55,7 +55,9 @@ describe("UpdateBanner", () => {
 
   it("preserves system package hand-off without promising restart", () => {
     const html = render({ status: "downloaded", version: "0.2.0", installMode: "handoff" });
-    expect(html).toContain("Copy the install command and open a terminal.");
+    expect(html).toContain("Install in a terminal");
+    expect(html).toContain("Install");
+    expect(html).not.toContain("Update and restart");
     expect(html).not.toContain("Restart to update");
   });
 

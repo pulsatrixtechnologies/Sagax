@@ -65,4 +65,5 @@ it("pins the feed to Sagax's GitHub releases with pre-releases off by default", 
   expect(updater.setFeedURL).toHaveBeenLastCalledWith({ provider: "github", owner: "pulsatrixtechnologies", repo: "sagax" });
   expect(updater.allowPrerelease).toBe(false);
   expect(updater.allowDowngrade).toBe(false);
+  expect(updater.fullChangelog).toBe(true);
 });

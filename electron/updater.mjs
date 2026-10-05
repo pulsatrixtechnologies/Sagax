@@ -125,6 +125,10 @@ export function startUpdater() {
   // Our GitHub releases only, whatever app-update.yml says.
   configureUpdateFeed(autoUpdater, prefs);
   autoUpdater.autoDownload = false; // button-driven download
+  // Every skipped version contributes its GitHub release body. The yml feed
+  // leaves releaseNotes empty, so electron-updater fills them from the
+  // release. The renderer shows them newest first.
+  autoUpdater.fullChangelog = true;
   // Squirrel.Mac has a second, native staging pass after the ZIP download.
   // Start it immediately so "Restart to update" never has to begin that slow
   // pass and wait indefinitely. Windows keeps the explicit installer click.

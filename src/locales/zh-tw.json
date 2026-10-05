@@ -2800,5 +2800,20 @@
   "settings.profile.uploadAvatar": "上傳頭像",
   "settings.profile.uploadPhoto": "上傳照片",
   "settings.profile.removePhoto": "移除照片",
-  "botPanel.skills.close": "關閉"
+  "botPanel.skills.close": "關閉",
+  "releaseNotes.updateTitle": "{name} {version} 可供更新",
+  "releaseNotes.updateReady": "{version} 已準備好",
+  "releaseNotes.updateRestart": "更新並重新啟動",
+  "releaseNotes.later": "稍後",
+  "releaseNotes.downloading": "正在下載 {version}…",
+  "releaseNotes.starting": "正在開始下載…",
+  "releaseNotes.percent": "{percent}%",
+  "releaseNotes.preparing": "正在準備更新…",
+  "releaseNotes.restarting": "正在重新啟動…",
+  "releaseNotes.versionHeading": "版本 {version}",
+  "releaseNotes.noNotes": "這次更新沒有發佈版本說明。",
+  "releaseNotes.whatsNew": "{version} 的新功能",
+  "releaseNotes.menu": "版本說明",
+  "releaseNotes.close": "關閉",
+  "releaseNotes.whatsNewEmpty": "此 Sagax 複本中沒有 {version} 的版本說明。"
 }

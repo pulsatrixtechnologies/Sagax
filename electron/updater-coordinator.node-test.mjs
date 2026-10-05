@@ -538,3 +538,39 @@ test("failed download and hand-off actions survive automatic checks but remain r
     assert.equal(h.getState().status, "available");
   }
 });
+
+test("an available update keeps each skipped version's release notes", async () => {
+  const { updater, coordinator, getState } = harness();
+  const notes = [
+    { version: "2.0.0", note: "newest" },
+    { version: "1.5.0", note: "older" },
+    { note: "missing version" },
+  ];
+  updater.checkForUpdates = () => {
+    updater.emit("update-available", { version: "2.0.0", releaseNotes: notes });
+    return Promise.resolve();
+  };
+  await coordinator.check(true);
+  assert.deepEqual(getState().notes, [
+    { version: "2.0.0", note: "newest" },
+    { version: "1.5.0", note: "older" },
+  ]);
+});
+
+test("a string release note is forwarded and an update without notes adds no notes field", async () => {
+  const withNote = harness();
+  withNote.updater.checkForUpdates = () => {
+    withNote.updater.emit("update-available", { version: "2.0.0", releaseNotes: "Hello" });
+    return Promise.resolve();
+  };
+  await withNote.coordinator.check(true);
+  assert.equal(withNote.getState().notes, "Hello");
+
+  const without = harness();
+  without.updater.checkForUpdates = () => {
+    without.updater.emit("update-available", { version: "2.0.0" });
+    return Promise.resolve();
+  };
+  await without.coordinator.check(true);
+  assert.equal(Object.hasOwn(without.getState(), "notes"), false);
+});

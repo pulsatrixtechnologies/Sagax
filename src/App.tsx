@@ -25,6 +25,7 @@ import { InspectorPanel } from "@/components/InspectorPanel";
 import { ActivityPanel } from "@/components/ActivityPanel";
 import { SettingsModal } from "@/components/SettingsModal";
 import { WorkspaceBackupRecovery } from "@/components/WorkspaceBackupSettings";
+import { ReleaseNotesPrompt } from "@/components/ReleaseNotesPrompt";
 import { UpdateBanner } from "@/components/UpdateBanner";
 import { DesktopCapabilitiesProvider, useDesktopCapabilities } from "@/components/DesktopCapabilities";
 import { WindowCaptionButtons } from "@/components/WindowCaptionButtons";
@@ -314,7 +315,8 @@ function Shell({ viewer }: { viewer: WelcomeViewer | null }) {
 
   return (
     <div className="flex h-full flex-col" data-app-shell="">
-      {/* fixed-position popup, bottom-left — outside the layout flow */}
+      {/* What's new sits above the update dialog. Both are outside the layout flow. */}
+      <ReleaseNotesPrompt />
       <UpdateBanner />
       {/* Hibou 98 only: title bar, menus and toolbar (renders nothing otherwise) */}
       <RetroChromeSlot slot="top" onNewBot={() => setComposeOpen((open) => !open)} />

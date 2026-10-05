@@ -5503,5 +5503,20 @@
   "settings.profile.uploadAvatar": "Upload avatar",
   "settings.profile.uploadPhoto": "Upload photo",
   "settings.profile.removePhoto": "Remove photo",
-  "botPanel.skills.close": "Close"
+  "botPanel.skills.close": "Close",
+  "releaseNotes.updateTitle": "{name} {version} is available",
+  "releaseNotes.updateReady": "{version} is ready",
+  "releaseNotes.updateRestart": "Update and restart",
+  "releaseNotes.later": "Later",
+  "releaseNotes.downloading": "Downloading {version}…",
+  "releaseNotes.starting": "Starting download…",
+  "releaseNotes.percent": "{percent}%",
+  "releaseNotes.preparing": "Preparing the update…",
+  "releaseNotes.restarting": "Restarting…",
+  "releaseNotes.versionHeading": "Version {version}",
+  "releaseNotes.noNotes": "No release notes were published for this update.",
+  "releaseNotes.whatsNew": "What's new in {version}",
+  "releaseNotes.menu": "Release notes",
+  "releaseNotes.close": "Close",
+  "releaseNotes.whatsNewEmpty": "Release notes for {version} are not in this copy of Sagax."
 }

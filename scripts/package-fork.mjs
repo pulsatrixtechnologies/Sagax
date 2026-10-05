@@ -2,6 +2,9 @@
 // The installer, updater feed, and app.getVersion() use forkVersion.
 import { readFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { checkReleaseNotes } from "./check-release-notes.mjs";
 
 const target = process.argv[2];
 if (target !== "mac" && target !== "win") {
@@ -14,6 +17,14 @@ const fork = pkg.forkVersion;
 const base = pkg.baseVersion ?? pkg.version;
 if (!/^\d+\.\d+\.\d+$/.test(fork ?? "")) {
   console.error("package.json forkVersion must be X.Y.Z");
+  process.exit(1);
+}
+const notes = checkReleaseNotes({
+  root: join(dirname(fileURLToPath(import.meta.url)), ".."),
+  version: fork,
+});
+if (!notes.ok) {
+  console.error(notes.message);
   process.exit(1);
 }
 
