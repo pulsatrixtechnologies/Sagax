@@ -24,7 +24,7 @@ describe("simple visibility", () => {
     for (const id of ["experimental", "connections", "myConnections", "decisionModel", "engines", "computer", "usage", "mail", "activity", "backups", "workspaces", "people"] as const) {
       expect(simpleHidesSettingsSection(id), id).toBe(true);
     }
-    for (const id of ["general", "appearance", "achievements", "organization", "companion", "cloudAccount"] as const) {
+    for (const id of ["general", "appearance", "achievements", "organization", "companion"] as const) {
       expect(simpleHidesSettingsSection(id), id).toBe(false);
     }
   });

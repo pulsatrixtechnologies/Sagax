@@ -5,10 +5,6 @@ const { contextBridge, ipcRenderer, webUtils } = require("electron");
 // Sandboxed preloads receive Electron's restricted `require`, which cannot
 // load sibling CommonJS files. Keep this tiny predicate inline here; main's
 const desktopRemoteClient = process.argv.includes("--openmausbot-remote-client");
-// The original project's Cloud (account, Move to Cloud, lending) is exposed
-// only when main enables it (CLOUD_SERVICES_ENABLED in cloud-account.mjs);
-// Sagax ships with it off.
-const cloudServices = process.argv.includes("--omb-company-desktop=1") && process.argv.includes("--sagax-cloud=1");
 
 let pendingPackageInstallUrl = null;
 const packageInstallListeners = new Set();
@@ -19,10 +15,8 @@ ipcRenderer.on("package:install", (_event, url) => {
 });
 
 // Main can finish loading the document before React subscribes. Retain only
-// the fixed actions (Organisation, the openmausbot://cloud link, and plain
-// Settings → OMB Cloud from the lending menu-bar item), never a destination
-// supplied by a renderer.
-const FIXED_SETTINGS_ACTIONS = new Set(["organization", "cloud", "cloud-settings"]);
+// the fixed organisation action, never a destination supplied by a renderer.
+const FIXED_SETTINGS_ACTIONS = new Set(["organization"]);
 let pendingSettingsAction = null;
 const appSettingsListeners = new Set();
 ipcRenderer.on("app:open-settings", (_event, section) => {
@@ -52,10 +46,7 @@ ipcRenderer.on("release-notes:open", () => {
 // helpers here. Main enforces the same rule on the sensitive channels.
 const localOrigin = process.argv.find((arg) => arg.startsWith("--omb-local-origin="))?.slice("--omb-local-origin=".length) ?? null;
 const isLocalPage = !localOrigin || location.origin === localOrigin;
-// cloudMove, cloudLending and cloudPlan: main answers them on a remote page
-// only when that page is the person's own verified Cloud in this window (Move
-// to Cloud's card, the Cloud's setup checklist, and its Settings' plan line).
-const REMOTE_SAFE = new Set(["platform", "getCapabilities", "onCapabilitiesChanged", "applySkin", "setUnreadCount", "permStatus", "workspaces", "takeSignInReturn", "pulsatrixSignIn", "orgJoin", "cloudMove", "cloudLending", "cloudPlan"]);
+const REMOTE_SAFE = new Set(["platform", "getCapabilities", "onCapabilitiesChanged", "applySkin", "setUnreadCount", "permStatus", "workspaces", "takeSignInReturn", "pulsatrixSignIn", "orgJoin"]);
 // An organization server's page drawn from THIS app's bundle
 // (electron/bundled-ui.cjs) is the desktop's own UI on that server, so it
 // also gets the desktop-UI parts that hold no local data: floating bots and
@@ -393,63 +384,6 @@ const bridge = {
       return () => ipcRenderer.removeListener("workspaces:open-settings", handler);
     },
   },
-  cloudAccount: cloudServices ? {
-    state: () => ipcRenderer.invoke("cloud-account:state"),
-    begin: () => ipcRenderer.invoke("cloud-account:begin"),
-    signInAgain: () => ipcRenderer.invoke("cloud-account:signInAgain"),
-    reopen: () => ipcRenderer.invoke("cloud-account:reopen"),
-    cancel: () => ipcRenderer.invoke("cloud-account:cancel"),
-    refresh: () => ipcRenderer.invoke("cloud-account:refresh"),
-    signOut: () => ipcRenderer.invoke("cloud-account:signOut"),
-    openDashboard: () => ipcRenderer.invoke("cloud-account:openDashboard"),
-    connectHome: () => ipcRenderer.invoke("cloud-account:connectHome"),
-    connectHomeForPhone: () => ipcRenderer.invoke("cloud-account:connectHomeForPhone"),
-    onState: cb => {
-      const handler = (_event, state) => cb(state);
-      ipcRenderer.on("cloud-account:state-changed", handler);
-      return () => ipcRenderer.removeListener("cloud-account:state-changed", handler);
-    },
-    // "Let my Cloud use this Mac": main decides the Cloud; no argument names it.
-    lending: {
-      state: () => ipcRenderer.invoke("lending:state"),
-      chooseFolder: () => ipcRenderer.invoke("lending:folder"),
-      save: input => ipcRenderer.invoke("lending:save", input),
-      stop: () => ipcRenderer.invoke("lending:stop"),
-    },
-  } : undefined,
-  /** Move to Cloud: this computer's workspace to the person's Cloud home.
-   * No arguments reach main. A remote page may start a move only from the
-   * person's own click. */
-  cloudMove: cloudServices ? {
-    state: () => ipcRenderer.invoke("cloud-move:state"),
-    start: () => isLocalPage || navigator.userActivation?.isActive === true
-      ? ipcRenderer.invoke("cloud-move:start") : Promise.reject(new Error("Choose Move to start moving.")),
-    cancel: () => ipcRenderer.invoke("cloud-move:cancel"),
-    restorePrevious: () => ipcRenderer.invoke("cloud-move:restore-previous"),
-    dismiss: () => ipcRenderer.invoke("cloud-move:dismiss"),
-    onState: cb => {
-      const handler = (_event, state) => cb(state);
-      ipcRenderer.on("cloud-move:state-changed", handler);
-      return () => ipcRenderer.removeListener("cloud-move:state-changed", handler);
-    },
-  } : undefined,
-  /** The Cloud's setup checklist: "Let your Cloud use this Mac" opens the
-   * lending switch in this app's own Settings → OMB Cloud. No arguments; it
-   * shows the switch and changes nothing. */
-  cloudLending: cloudServices ? {
-    open: () => ipcRenderer.invoke("cloud-lending:open"),
-  } : undefined,
-  /** The plan, read only, in Settings on the person's own Cloud: its name and
-   * whether it is active, Manage (the Cloud dashboard in the browser) and
-   * back to this computer. No arguments; a remote page acts only on a click. */
-  // Off with the rest of OMB Cloud in Sagax (cloudServices above).
-  cloudPlan: cloudServices ? {
-    state: () => ipcRenderer.invoke("cloud-plan:state"),
-    manage: () => isLocalPage || navigator.userActivation?.isActive === true
-      ? ipcRenderer.invoke("cloud-plan:manage") : Promise.reject(new Error("Choose Manage to open your Cloud dashboard.")),
-    useThisComputer: () => isLocalPage || navigator.userActivation?.isActive === true
-      ? ipcRenderer.invoke("cloud-plan:local") : Promise.reject(new Error("Choose Use this computer to switch.")),
-  } : undefined,
   organization: process.argv.includes("--omb-company-desktop=1") ? {
     settingsOpened: () => ipcRenderer.invoke("organization:settings-opened"),
     state: () => ipcRenderer.invoke("organization:state"),

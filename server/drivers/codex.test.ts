@@ -1512,7 +1512,6 @@ process.stdout.write(JSON.stringify({jsonrpc:'2.0',id:m.id,result})+'\\n');});`)
   });
 
   it.each([
-    ["Cloud home", "SAGAX_CLOUD_ROLE", "home"],
     ["hosted enterprise", "SAGAX_ADMIN_URL", "https://admin.example.test"],
   ])("refuses desktop ChatGPT plan sign-in on %s before accessing credentials or spawning", async (_name, variable, value) => {
     vi.stubEnv(variable, value);

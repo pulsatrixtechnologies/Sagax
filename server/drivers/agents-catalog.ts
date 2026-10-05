@@ -50,7 +50,8 @@ export function catalogProfileFromEnv(env: NodeJS.ProcessEnv): CatalogProfile {
     skillAuthoring: env.SAGAX_SKILL_AUTHORING_ENABLED === "1",
     sharedComputers: env.SAGAX_SHARED_COMPUTERS_ENABLED === "1",
     voiceNotes: env.SAGAX_VOICE_NOTES === "1",
-    cloudHome: env.SAGAX_CLOUD_HOME === "1",
+    // Sagax is never an OMB Cloud home, so the env switch is ignored.
+    cloudHome: false,
     memoryEnabled: env.SAGAX_MEMORY_ENABLED !== "0",
     groupMemory: env.SAGAX_GROUP_MEMORY === "1",
     botId: env.SAGAX_BOT_ID ?? "",

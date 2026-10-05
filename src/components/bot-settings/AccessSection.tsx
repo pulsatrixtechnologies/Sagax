@@ -570,7 +570,7 @@ export function AccessSection({
     <div className="flex flex-col gap-4">
       {/* Boat or VPS is which cloud computer Auto and Cloud use. It is not
           a second Works on: that control is the Computer tab. */}
-      {!organization && (!bot.computer || bot.computer === "cloud") && (state.config?.cloudHome === true || cloudComputersOffered(state.config)) && (
+      {!organization && (!bot.computer || bot.computer === "cloud") && cloudComputersOffered(state.config) && (
         <div className="rounded-xl border border-hairline/40 p-4" data-cloud-backend>
           {!bot.computer && (
             <div className="rounded-lg bg-inset px-3 py-2.5 text-[11.5px] leading-relaxed text-ink-secondary">
@@ -582,7 +582,7 @@ export function AccessSection({
             value={bot.cloudBackend ?? "box"}
             vpsSupported={canUseVps}
             organization={organization}
-            boat={state.config?.cloudHome === true || boatComputerEnabled(state.config)}
+            boat={boatComputerEnabled(state.config)}
             vps={vpsComputerEnabled(state.config)}
             onChange={(backend) => patch({ cloudBackend: backend })}
           />

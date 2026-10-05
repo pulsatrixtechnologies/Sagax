@@ -232,14 +232,4 @@ describe("Settings → Appearance", () => {
     fixture.section = "appearance";
     expect(render()).toContain("Midnight");
   });
-  it("offers personal Cloud separately and only through the local desktop bridge", () => {
-    fixture.section = "cloudAccount";
-    vi.stubGlobal("window", { ogb: { cloudAccount: {} } });
-    expect(render()).toContain('<option value="cloudAccount" selected="">OMB Cloud</option>');
-    expect(render()).toContain("Free local use");
-    fixture.section = "appearance";
-    vi.stubGlobal("window", {}); expect(render()).not.toContain('<option value="cloudAccount"');
-    vi.stubGlobal("window", { ogb: { cloudAccount: {}, remoteClient: { active: true } } });
-    expect(render()).not.toContain('<option value="cloudAccount"');
-  });
 });

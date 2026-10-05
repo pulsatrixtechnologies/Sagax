@@ -48,12 +48,12 @@ function control(config: Partial<ConfigStatus> | null, organization: boolean, va
 describe("one Works on control", () => {
   it("offers this computer and a Local VM on a desktop or self-hosted server", () => {
     expect(labels(control(null, false))).toEqual(["Auto", "Local VM", "This computer", "Browser", "Off"]);
-    expect(labels(control({ cloudHome: false }, false))).toEqual(["Auto", "Local VM", "This computer", "Browser", "Off"]);
-    expect(labels(control({ cloudHome: false, features: { skillAuthoring: true, boatComputer: true } }, false))).toEqual(["Auto", "Cloud computer", "Local VM", "This computer", "Browser", "Off"]);
+    expect(labels(control({}, false))).toEqual(["Auto", "Local VM", "This computer", "Browser", "Off"]);
+    expect(labels(control({ features: { skillAuthoring: true, boatComputer: true } }, false))).toEqual(["Auto", "Cloud computer", "Local VM", "This computer", "Browser", "Off"]);
   });
 
-  it("never offers them on an OMB Cloud home", () => {
-    expect(labels(control({ cloudHome: true }, false))).toEqual(["Auto", "Cloud computer", "Browser", "Off"]);
+  it("keeps local places when a leftover Cloud home flag is present", () => {
+    expect(labels(control({ cloudHome: true } as Partial<ConfigStatus>, false))).toEqual(["Auto", "Local VM", "This computer", "Browser", "Off"]);
   });
 
   it("names every place on an organization server the way the composer chip does", () => {

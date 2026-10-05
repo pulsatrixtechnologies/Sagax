@@ -71,15 +71,6 @@ The log stays on this machine: workspace backups leave it out.
   placeholder.
 - **Server or browser use:** in the server's own `config.json` (mode 0600),
   under `decider.key`. `SAGAX_JEV_API_KEY` overrides it.
-- **Cloud Pro:** decisions are included, with no key to paste. With no key of
-  the person's own, the Cloud home uses its relay token
-  (`SAGAX_CLOUD_DECIDER_TOKEN`), sent only to the Admin's relay, never to Jev
-  or `baseUrl`, and only for room routing and the key check (other jobs need
-  a key of the person's own). Settings says **Included with your Cloud plan**, and
-  the master switch is on until someone switches it off. A key saved here
-  always wins; clearing it falls back to the included decisions. See
-  [cloud-pro.md](cloud-pro.md), "Included Boat computers, voice and
-  decisions".
 
 The key is write-only: `GET /api/config` reports only whether one is saved
 and which switches are on. Engines never inherit it, and diagnostics exports
@@ -89,9 +80,7 @@ costs about $0.00003; the test call costs less.
 
 ## Turning it off
 
-Switch off **Use Jev for fast decisions**, or clear the key (on Cloud Pro,
-clearing a key falls back to the included decisions: switch off to stop
-them). To keep Jev on but stop room routing, switch off **Who answers in
+Switch off **Use Jev for fast decisions**, or clear the key. To keep Jev on but stop room routing, switch off **Who answers in
 rooms**. To stop one room asking, set its responder to a lead, **Everyone
 responds** or **Only when mentioned**.
 

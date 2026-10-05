@@ -514,8 +514,7 @@ Set `SAGAX_LOOPBACK_TRUST=service` on a self-hosted server people share (with
 an email sign-in list, say), or `SAGAX_LOOPBACK_TRUST=owner` to opt a hosted
 workspace back into the old behaviour (the log then warns). Any other value
 means `service`. The desktop app ignores the setting: its local changes
-already need the app's own per-launch capability. An OMB Cloud home ignores
-it too and is always `service` (docs/cloud-pro.md).
+already need the app's own per-launch capability.
 
 With `service` on a self-hosted server:
 

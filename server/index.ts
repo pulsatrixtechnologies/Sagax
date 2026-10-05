@@ -5,9 +5,6 @@
 // the rename, electron/legacy-names.mjs).
 import "../electron/legacy-env-boot.mjs";
 import { ENVIRONMENT_PATHS, HEALTH_IDENTITY } from "../electron/legacy-names.mjs";
-// First, before any module that could start a process: a Cloud home's
-// secrets off the launcher's pipe (cloud-secrets-boot.ts).
-import { BOOT_CLOUD_SECRETS } from "./cloud-secrets-boot.ts";
 // Then the upstream/analytics network block (network-guard.ts).
 import "./network-guard.ts";
 import { groupOwnerId, groupPatchOwnerRefusal, mayDeleteGroup, ownsGroup, type GroupActor } from "./group-ownership.ts";
@@ -28,8 +25,6 @@ import { draftSummary, foldPoint } from "./compaction-summary.ts";
 import { compactBudget, contextWindowFor, shouldCompact } from "./context-budget.ts";
 import { autoCompactWindow, resolveClaudeConfigDir } from "./drivers/claude.ts";
 import { provenRequestPerson, SharedComputers, sharedComputerOperation, sharedComputerRegistration } from "./shared-computers.ts";
-import { cloudHomeLendingRefusal, createCloudRoutineAuthors, ownerOnlyConversation, type CloudLendingTurn } from "./cloud-lending.ts";
-import { botMemoryFiles, createLendingMemory } from "./lending-memory.ts";
 import { createUserComputerRouter } from "./user-computers.ts";
 import { SharedComputerControl } from "./shared-computer-control.ts";
 import { RoomHandoffs, type RoomHandoff } from "./room-handoffs.ts";
@@ -347,12 +342,6 @@ import { ProviderRegistry } from "./harness/registry.ts";
 import { ManagedDesktopProviders } from "./managed-desktop.ts";
 import { HOST_COMPUTER_REFUSAL, computerKindForResource, ManagedDesktopPolicy, type ComputerKind } from "./managed-policy.ts";
 import { hostedModelPolicy, HOSTED_MODEL_POLICY_HEADER, HOSTED_PROVIDER_SETTINGS_ERROR } from "./hosted-models.ts";
-import {
-  boatNotConfiguredMessage, CLOUD_HOME_RESTART_EXIT_CODE, CLOUD_HOME_SECRET_KEYS, CLOUD_IGNORED_KEYS, CLOUD_PAIRING_PATH, cloudHomeConfiguration, cloudHomeOffersPlace, cloudHomePlaceRefusal,
-  createCloudPairing, firstCloudTurnPatch, readSignedBody,
-} from "./cloud-home.ts";
-import { CLOUD_PERSONAL_REFUSAL, settleCloudOwnership, type CloudOwnership } from "./cloud-owner.ts";
-import { createCloudMoveRoutes } from "./cloud-move-http.ts";
 import { holdIncludedServices } from "./included-services.ts";
 import type { ProviderInstance, RemoteMcpSpec } from "./contracts.ts";
 import { selectDefaultModelSelection, withNewBotEffort } from "./default-model-selection.ts";
@@ -403,8 +392,6 @@ import {
   memorySourceLabel,
   searchMemoryFiles,
   SESSION_SEARCH_SYSTEM_PROMPT,
-  TASK_WORKSPACES_DIR,
-  readMemoryOnlyFromRegularFiles,
   workspaceDir,
 } from "./workspace.ts";
 import { listMemoryTopics, memoryDate, readMemoryFile, readMemoryTopic, writeMemoryFile, writeMemoryTopic } from "./workspace.ts";
@@ -974,68 +961,61 @@ let egressProxy: EgressProxy | null = null;
 function personSpeaker(principal: string | null): TurnSpeaker | undefined {
   return principal ? { origin: "person", principalId: principal } : undefined;
 }
-// OMB Cloud Pro home machine (server/cloud-home.ts, docs/cloud-pro.md). A
-// partial or invalid boot contract stops the server here, before it serves.
-// Its secrets come over the launcher's pipe, never this process's
-// environment (cloud-home-start.ts); a server started another way (tests,
-// development) still reads them from its environment.
-const CLOUD_SECRETS = BOOT_CLOUD_SECRETS;
-const CLOUD_ENV: NodeJS.ProcessEnv = { ...process.env, ...CLOUD_SECRETS };
-const CLOUD_HOME = cloudHomeConfiguration(CLOUD_ENV);
-// A Cloud home is personal: only the owner's own devices, each with admin
-// scope, connect (server/cloud-owner.ts; the stored rest is revoked below).
-if (CLOUD_HOME) sessions.requireAdmin(CLOUD_PERSONAL_REFUSAL);
-/** Lending a computer to this server (the shared-computer routes, the two
- * agent tools, the advertised capability): the maintainer flag anywhere, and
- * always on an OMB Cloud home, where it is the person's own Mac lent to their
- * own Cloud (docs/cloud-pro.md, "Let my Cloud use this Mac"). */
-const lendingEnabled = () => sharedComputersEnabled(cfg) || CLOUD_HOME !== null;
-/** On a Cloud home every lent computer and every turn belong to one person. */
+// Sagax has no personal OMB Cloud home. CLOUD_HOME stays null, so every
+// guard below is off. Boat and VPS computers stay behind their own flags.
+type CloudOwnership = { adopted: Set<string>; proven: Set<string> };
+const CLOUD_PERSONAL_REFUSAL = "This server is not a personal Cloud.";
+const CLOUD_PAIRING_PATH = "/api/cloud/pairing";
+const cloudHomeLendingRefusal = (..._args: unknown[]): "unproven" | "not-owner" | "someone-else" | "memory-changed" | null => null;
+const ownerOnlyConversation = (..._args: unknown[]): boolean => false;
+const cloudHomePlaceRefusal = (..._args: unknown[]): string | undefined => undefined;
+const cloudHomeOffersPlace = (..._args: unknown[]): boolean => true;
+const firstCloudTurnPatch = (..._args: unknown[]): { onboarding: { firstTurnAt: string } } | null => null;
+const readSignedBody = async (..._args: unknown[]): Promise<Buffer> => Buffer.alloc(0);
+const settleCloudOwnership = (_opts: {
+  routines: {
+    writer: (id: string) => unknown;
+    fingerprinted: (id: string) => unknown;
+    resultsOpener: (id: string) => unknown;
+    shape: (id: string) => unknown;
+    name: (id: string, person: string) => unknown;
+    pause: (ids: readonly string[]) => void;
+    [key: string]: unknown;
+  };
+  unpin: (threadIds: readonly string[]) => void;
+  log: (line: string) => void;
+  [key: string]: unknown;
+}): CloudOwnership => ({ adopted: new Set(), proven: new Set() });
+interface CloudRoutineAuthors {
+  record(id: string, routine: unknown): void;
+  wrote(id: string, person: string): void;
+  authored(id: string, routine: unknown): boolean;
+  writer(id: string): string | undefined;
+  recorded(id: string): boolean;
+  forget(id: string): void;
+  remove(id: string): void;
+}
+interface LendingMemory {
+  reconcile(botId: string, foreign: boolean, opts?: { cached?: boolean }): { changedBySomeoneElse?: boolean };
+  noteForeignTurn(botId: string): void;
+  forget(botId: string): void;
+  trustedWrite<T>(botId: string, write: () => T): T;
+  reviewInfo(botId: string): { token: string; changed: string[] };
+  review(botId: string, foreign: boolean, token: string): { ok: boolean };
+}
+interface CloudPairing {
+  handle(input: unknown): { status: number; body: { error?: unknown } };
+}
+const CLOUD_HOME = null as { machineId: string; bootstrapSecret: string; warnings: string[] } | null;
+/** Lending a computer to this server: the maintainer shared-computers flag. */
+const lendingEnabled = () => sharedComputersEnabled(cfg);
 const CLOUD_HOME_LENDER = "cloud-home";
-/** Routines whose instructions the Cloud home's owner wrote, and manual runs
- * the owner started: the only routine turns that may use a lent Mac. */
-const cloudRoutineAuthors = CLOUD_HOME ? createCloudRoutineAuthors(join(DATA_DIR, "lending-routines.json")) : null;
+const cloudRoutineAuthors = null as CloudRoutineAuthors | null;
 const ownerStartedRoutineRuns = new Set<string>();
-/** Turns running now that are not provably the owner's, by generation. */
 const foreignTurns = new Map<string, { botId: string; threadId: string }>();
-/** Whether each bot's memory is still the owner's (server/lending-memory.ts):
- * its memory files, and the instruction files its engine reads in the
- * folders its conversations work in. */
-const lendingMemory = CLOUD_HOME ? createLendingMemory({
-  file: join(DATA_DIR, "lending-memory.json"),
-  files: (botId) => {
-    const bot = store.bot(botId);
-    // The workspace as a turn dispatch leaves it: a bot's first turn seeds
-    // MEMORY.md, and that seed is not a change anyone made. Only the folders
-    // of conversations the owner opened: what a guest's own conversation
-    // writes in its own private folder reaches no turn of the owner's.
-    // (A bot's own conversations are never a room's: its opener is enough.)
-    const ownerOpened = (threadId: string) => { const starter = threadStarters.get(threadId); return starter === undefined || cloudOwnerPerson(starter); };
-    return botMemoryFiles(bot ? { id: bot.id, cwd: bot.cwd, tasks: store.tasks(bot.id).filter((task) => ownerOpened(task.threadId)) } : undefined,
-      { workspace: ensureWorkspace, taskWorkspaces: TASK_WORKSPACES_DIR });
-  },
-  knownBots: () => store.bots.map((bot) => bot.id),
-  log: (line) => console.warn(line),
-}) : null;
-// On a Cloud home memory is never read through a link (server/workspace.ts).
-if (CLOUD_HOME) readMemoryOnlyFromRegularFiles();
-const cloudPairing = CLOUD_HOME ? createCloudPairing({ secret: CLOUD_HOME.bootstrapSecret, sessions, ownerPrincipalId: () => localPrincipalId() }) : null;
-if (CLOUD_HOME) {
-  // The signing secret is held in memory from here on, and a platform
-  // gateway's settings are dropped: no engine or tool this server starts
-  // inherits either. The person's own engines are the only way to a model.
-  delete process.env.SAGAX_CLOUD_BOOTSTRAP_SECRET;
-  for (const key of CLOUD_IGNORED_KEYS) delete process.env[key];
-  console.log(`cloud home ${CLOUD_HOME.machineId}: bots run on the engines the person signs in to here`);
-  for (const warning of CLOUD_HOME.warnings) console.warn(`cloud home: ${warning}`);
-}
-// Cloud Pro's included Boat, voice and decision relay tokens, when the Admin
-// set them: held in memory from here on, like the signing secret.
-holdIncludedServices(CLOUD_ENV);
-for (const key of CLOUD_HOME_SECRET_KEYS) delete process.env[key];
-if (CLOUD_HOME && Object.keys(CLOUD_SECRETS).length === 0) {
-  console.warn("cloud home: its secrets came in this process's environment, which anything running as the same user can read in /proc; start it with cloud-home-start");
-}
+const lendingMemory = null as LendingMemory | null;
+const cloudPairing = null as CloudPairing | null;
+holdIncludedServices(process.env);
 // Who each thread is for, when a signed-in person can be named (server-private).
 const threadStarters = new ThreadStarters(join(DATA_DIR, "thread-starters.json"));
 const commandAllowlist = new CommandAllowlistStore(join(DATA_DIR, "command-allowlist.json"));
@@ -1293,7 +1273,7 @@ function sharedComputerPrincipal(capability: Pick<InternalCapability, "botId" | 
 }
 
 /** What the lending rule needs to know about one bot turn on a Cloud home. */
-function cloudLendingTurn(capability: Pick<InternalCapability, "botId" | "threadId" | "generation">): CloudLendingTurn {
+function cloudLendingTurn(capability: Pick<InternalCapability, "botId" | "threadId" | "generation">) {
   return {
     request: directRequestOwners.get(capability.threadId),
     generation: capability.generation,
@@ -2492,7 +2472,7 @@ function computerPlaceRefusal(kind: ComputerKind): { message: string; code: "clo
   return managed ? { message: managed, code: "managed_policy" } : undefined;
 }
 /** Cloud chosen with no Boat account: a Cloud home suggests the browser, not a Local VM. */
-const BOAT_NOT_CONFIGURED = boatNotConfiguredMessage(Boolean(CLOUD_HOME));
+const BOAT_NOT_CONFIGURED = "Cloud Boat is not configured. Add a Boat API key or choose Local VM.";
 // OAuth sign-ins for remote MCP servers (server/mcp-oauth.ts). Tokens live in
 // an encrypted vault beside config.json, never in it; the key comes from the
 // desktop's OS-encrypted store, or a 0600 key file on a headless server.
@@ -19043,19 +19023,9 @@ const workspaceBackupRoutes = createWorkspaceBackupRoutes({
   restored: workspaceRestore,
   ...workspaceBackupAccess,
 });
-// Move to Cloud (server/cloud-move-http.ts): every server sizes its own
-// workspace for the desktop; only a Cloud home receives one. After its
-// restore commits, the Cloud home restarts so startup installs it.
-let cloudHomeRestartRequested = false;
-const cloudMoveRoutes = createCloudMoveRoutes({
-  dataDir: DATA_DIR,
-  appVersion: serverVersion(),
-  cloudHome: Boolean(CLOUD_HOME),
-  readBody,
-  restored: workspaceRestore,
-  ...workspaceBackupAccess,
-  restart: () => { cloudHomeRestartRequested = true; gracefulShutdown(); },
-});
+// Move to Cloud is gone with the personal OMB Cloud. The call stays so the
+// request path below does not grow a special case.
+const cloudMoveRoutes = async (..._args: unknown[]): Promise<boolean> => false;
 
 // Route modules (server/routes/README.md). `workspaceAccess` is assigned at
 // boot, after this line, so the dependency reads it per request.
@@ -32522,8 +32492,7 @@ const gracefulShutdown = createGracefulShutdown({
     }
     closeMessageDb();
     releaseDataDirLeaseAtExit();
-    // A Cloud home's launcher starts the server again on this code only.
-    process.exit(cloudHomeRestartRequested && code === 0 ? CLOUD_HOME_RESTART_EXIT_CODE : code);
+    process.exit(code);
   },
 });
 

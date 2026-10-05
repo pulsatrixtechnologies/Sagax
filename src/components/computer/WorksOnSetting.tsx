@@ -27,8 +27,7 @@ const ORG_MEANS: Record<string, LocaleKey> = {
 
 /** Choices this server offers. Auto and Off are always listed. An
  * organization server offers every place; a solo server hides Cloud until
- * a Boat or a VPS is on, and an OMB Cloud home hides Local VM and This
- * computer (placeOffered). */
+ * a Boat or a VPS is on (placeOffered). */
 export function worksOnModes(
   config: Parameters<typeof placeOffered>[1],
   organization: boolean,
