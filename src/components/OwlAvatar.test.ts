@@ -234,6 +234,30 @@ describe("the shared owl loop", () => {
     expect(runningOwlCount()).toBe(0);
   });
 
+  it("paces a resting owl below the display rate and keeps a working owl on it", () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      const raf = stubRaf();
+      const idle = createOwlController(rig(), { state: "idle", reducedMotion: false });
+      expect(raf).toHaveBeenCalledTimes(1);
+      frames.shift()?.(1000);
+      expect(raf).toHaveBeenCalledTimes(1);
+      vi.advanceTimersByTime(80);
+      expect(raf).toHaveBeenCalledTimes(2);
+      idle.destroy();
+
+      frames.length = 0;
+      raf.mockClear();
+      const working = createOwlController(rig(), { state: "working", reducedMotion: false });
+      expect(raf).toHaveBeenCalledTimes(1);
+      frames.shift()?.(1000);
+      expect(raf).toHaveBeenCalledTimes(2);
+      working.destroy();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("plays success once and settles back to the resting state", () => {
     vi.stubGlobal("requestAnimationFrame", (cb: FrameRequestCallback) => frames.push(cb));
     vi.stubGlobal("cancelAnimationFrame", vi.fn());
