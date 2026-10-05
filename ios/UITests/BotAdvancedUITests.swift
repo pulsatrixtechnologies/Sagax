@@ -102,10 +102,10 @@ final class BotAdvancedUITests: XCTestCase {
         if let environment = fixture.environmentId { arguments += ["-parityEnvironment", environment] }
         app.launchArguments = arguments
         app.launch()
-        XCTAssertTrue(app.staticTexts["profile-name"].waitForExistence(timeout: 30))
-        element("profile-more", in: app).tap()
-        app.buttons["Advanced"].firstMatch.tap()
-        XCTAssertTrue(app.navigationBars["Bot settings"].waitForExistence(timeout: 10))
+        XCTAssertTrue(element("profile-name", in: app).waitForExistence(timeout: 30))
+        // the bot panel's More tab: every section, in the desktop's order
+        element("panel-tab.more", in: app).tap()
+        XCTAssertTrue(element("panel-more", in: app).waitForExistence(timeout: 10))
         return app
     }
 
@@ -155,7 +155,7 @@ final class BotAdvancedUITests: XCTestCase {
             try api("PATCH", "/api/bots/\(id)/skills/\(Self.skill)", ["enabled": false])
         }
         let app = launchAdvanced()
-        open("advanced-skills", in: app)
+        open("panel-row.skills", in: app)
         let toggle = app.switches["skill-toggle.\(Self.skill)"].firstMatch
         XCTAssertTrue(toggle.waitForExistence(timeout: 15))
         attach("Skills", app)
@@ -195,7 +195,7 @@ final class BotAdvancedUITests: XCTestCase {
         let doc = try XCTUnwrap(try api("GET", "/api/bots/\(id)/memory/file?path=MEMORY.md") as? [String: Any])
         try api("PUT", "/api/bots/\(id)/memory/file", ["path": "MEMORY.md", "text": "- Placeholder fact one\n", "expectedHash": doc["hash"] as? String ?? ""])
         let app = launchAdvanced()
-        open("advanced-memory", in: app)
+        open("panel-row.memory", in: app)
         XCTAssertTrue(element("memory-gauge", in: app).waitForExistence(timeout: 15), "the gauge shows")
         let file = element("memory-file.MEMORY.md", in: app)
         XCTAssertTrue(reveal(file, in: app))
@@ -234,7 +234,7 @@ final class BotAdvancedUITests: XCTestCase {
         try api("PATCH", "/api/bots/\(id)", ["memoryUpkeep": true])
         defer { _ = try? api("PATCH", "/api/bots/\(id)", ["memoryUpkeep": true]) }
         let app = launchAdvanced()
-        open("advanced-memory", in: app)
+        open("panel-row.memory", in: app)
         let toggle = app.switches["memory-upkeep"].firstMatch
         XCTAssertTrue(reveal(toggle, in: app))
         toggle.coordinate(withNormalizedOffset: CGVector(dx: 0.93, dy: 0.5)).tap()
@@ -260,7 +260,7 @@ final class BotAdvancedUITests: XCTestCase {
             .max { ($0["at"] as? Double ?? 0) < ($1["at"] as? Double ?? 0) }?["id"] as? String)
 
         let app = launchAdvanced()
-        open("advanced-history", in: app)
+        open("panel-row.history", in: app)
         let undo = element("history-undo.\(newest)", in: app)
         XCTAssertTrue(undo.waitForExistence(timeout: 15) || reveal(undo, in: app))
         attach("History", app)
@@ -279,12 +279,13 @@ final class BotAdvancedUITests: XCTestCase {
     func testPromptPreviewAndReadOnlyAccess() throws {
         try requirePanel()
         let app = launchAdvanced()
-        open("advanced-prompt", in: app)
-        XCTAssertTrue(element("prompt-preview-header", in: app).waitForExistence(timeout: 15), "the sizes show")
+        // the prompt preview is on Overview, as OverviewSection.tsx draws it
+        open("panel-row.overview", in: app)
+        XCTAssertTrue(reveal(element("prompt-preview-header", in: app), in: app), "the sizes show")
         XCTAssertTrue(element("prompt-preview-part.soul", in: app).exists, "the instructions part shows")
         attach("Prompt preview", app)
         app.navigationBars.buttons.element(boundBy: 0).tap()
-        open("advanced-access", in: app)
+        open("panel-row.access", in: app)
         XCTAssertTrue(element("access-folder", in: app).waitForExistence(timeout: 10))
         // the sidecar refuses these fields: read-only lines, never switches
         // the sidecar refuses these fields: read-only lines, never switches
@@ -303,7 +304,9 @@ final class BotAdvancedUITests: XCTestCase {
         let rules = ((try api("GET", "/api/bots/\(id)/command-allowlist") as? [String: Any])?["rules"] as? [[String: Any]]) ?? []
         guard let rule = rules.first, let ruleId = rule["id"] as? String else { throw XCTSkip("no saved rule left on Ara") }
         let app = launchAdvanced()
-        open("advanced-allowlist", in: app)
+        // Permissions > Command allowlist (PermissionsSection.tsx)
+        open("panel-row.permissions", in: app)
+        open("permissions-allowlist", in: app)
         let remove = element("allowlist-remove.\(ruleId)", in: app)
         XCTAssertTrue(remove.waitForExistence(timeout: 15) || reveal(remove, in: app))
         attach("Allowed commands", app)
@@ -323,8 +326,9 @@ final class BotAdvancedUITests: XCTestCase {
             if let copyId = copy["id"] as? String { try api("DELETE", "/api/bots/\(copyId)", allowFailure: true) }
         }
         let app = launchAdvanced()
-        let duplicate = element("advanced-duplicate", in: app)
-        reveal(duplicate, in: app)
+        // the panel's top bar menu
+        element("profile-more", in: app).tap()
+        let duplicate = element("profile-menu.duplicate", in: app)
         XCTAssertTrue(duplicate.waitForExistence(timeout: 10))
         duplicate.tap()
         var copyId: String?
@@ -332,7 +336,7 @@ final class BotAdvancedUITests: XCTestCase {
             copyId = try bots().first { $0["name"] as? String == "Ara copy" }?["id"] as? String
             return copyId != nil
         }
-        XCTAssertTrue(reveal(element("advanced-duplicate-done", in: app), in: app), "the sheet says the copy was added")
+        XCTAssertTrue(element("panel-toast", in: app).waitForExistence(timeout: 10), "the panel says the copy was added")
         if let copyId {
             let source = (try api("GET", "/api/bots/\(try araId())/soul") as? [String: Any])?["soul"] as? String
             let copied = (try api("GET", "/api/bots/\(copyId)/soul") as? [String: Any])?["soul"] as? String

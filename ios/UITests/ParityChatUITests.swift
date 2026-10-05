@@ -76,24 +76,30 @@ final class ParityChatUITests: XCTestCase {
         attach("Reply streamed from the fake engine", app)
     }
 
-    /// The name capsule opens the profile; the computer circle the computer;
-    /// the white capsule a call (voice mode), and again hangs up.
+    /// The name capsule opens the bot panel; the computer circle the panel
+    /// on Computer, whose full screen button opens the computer view; the
+    /// white capsule voice mode.
     @MainActor
     func testTopBarAndVoiceOpenTheirScreens() throws {
         let app = try launchChat()
 
         app.buttons["chat-name"].tap()
-        XCTAssertTrue(app.staticTexts["profile-name"].waitForExistence(timeout: 10), "profile screen")
-        attach("Profile from the name capsule", app)
-        app.buttons["profile-back"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["profile-name"].firstMatch.waitForExistence(timeout: 10), "bot panel")
+        attach("Bot panel from the name capsule", app)
+        app.buttons["panel-close"].tap()
         XCTAssertTrue(app.buttons["header-computer"].waitForExistence(timeout: 10))
 
         app.buttons["header-computer"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["panel-computer"].firstMatch.waitForExistence(timeout: 10), "the panel on Computer")
+        attach("Panel on Computer", app)
+        app.buttons["computer-full-screen"].tap()
         // the computer view (13): its own glass back button over the screen
         let back = app.buttons["computer-back"]
         XCTAssertTrue(back.waitForExistence(timeout: 10), "computer view")
         attach("Computer view", app)
         back.tap()
+        XCTAssertTrue(app.buttons["panel-close"].waitForExistence(timeout: 10))
+        app.buttons["panel-close"].tap()
         XCTAssertTrue(app.buttons["composer-voice"].waitForExistence(timeout: 10))
 
         app.buttons["composer-voice"].tap()

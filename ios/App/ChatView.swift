@@ -43,8 +43,9 @@ struct ChatView: View {
     @State var showingTasks = false
     @State var showingComputer = false
     @State var showingPlus = false
-    @State var showingProfile = false
-    @State var pushingProfile = false
+    /// The bot panel, full screen, and the tab it opens on (`BotPanelDoor`).
+    @State var showingPanel = false
+    @State var panelTab: DesktopPanelTab = .details
     /// The live call (the composer's white capsule): the desktop's voice mode.
     @ObservedObject var call = CallController.shared
     @Environment(\.isPresented) var isPresented
@@ -180,8 +181,11 @@ struct ChatView: View {
                 TaskManagerView(chat: current) { selectedThreadId = $0 }
             }
         }
-        .sheet(isPresented: $showingProfile) {
-            if case let .bot(bot) = current { ChatProfileRoute.destination(for: bot) }
+        .fullScreenCover(isPresented: $showingPanel) {
+            if case let .bot(bot) = current {
+                ChatProfileRoute.destination(for: bot, tab: panelTab)
+                    .environmentObject(session)
+            }
         }
         .sheet(isPresented: $showingRoomInfo, onDismiss: {
             if roomInfoOpensThreads {
@@ -264,7 +268,7 @@ struct ChatView: View {
         .onValueChange(of: showingRoomInfo) { shown in
             if shown { dictation.stop() }
         }
-        .onValueChange(of: showingProfile || pushingProfile) { shown in
+        .onValueChange(of: showingPanel) { shown in
             if shown { dictation.stop() }
         }
         .onValueChange(of: call.active) { onCall in
@@ -487,7 +491,7 @@ struct ChatView: View {
                         // composer's own top padding. Scrolling targets this,
                         // so the gap is always in view.
                         Color.clear
-                            .frame(height: desktopChat == nil ? 26.3 - Self.composerTopPadding : DesktopChatMetrics.rowGap)
+                            .frame(height: desktopChat == nil ? 26.3 - Self.composerTopPadding : DesktopChatMetrics.composerGap)
                             .id(Self.bottomId)
                     }
                     .padding(.horizontal, desktopChat == nil ? Theme.Chat.bubbleLeading : 20)
@@ -509,6 +513,9 @@ struct ChatView: View {
                         + (pinnedPreview == nil ? 0 : Self.pinnedBannerHeight)
                         + (callPillShown ? Self.callPillRow : 0))
                 }
+                // iPad desktop: an open find bar sits in the column's flow,
+                // so the transcript is cut under it (ChatView.tsx)
+                .modifier(DesktopFindClip(open: desktopChat != nil && finder.isOpen && session.surfaceGate.allows(.findInConversation)))
                 .overlay(alignment: .top) {
                     // the desktop's header floats over the transcript, unfaded
                     if desktopChat == nil {
@@ -659,9 +666,6 @@ struct ChatView: View {
         .background(SwipeBackBridge())
         .navigationDestination(isPresented: $showingComputer) {
             if case let .bot(bot) = current { ComputerView(bot: bot) }
-        }
-        .navigationDestination(isPresented: $pushingProfile) {
-            if case let .bot(bot) = current { ChatProfileRoute.destination(for: bot) }
         }
     }
 

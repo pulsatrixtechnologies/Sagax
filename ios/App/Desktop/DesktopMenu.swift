@@ -80,10 +80,16 @@ enum DesktopMenuStyle {
         }
     }
 
+    /// A divider's own height: `mx-2 my-1 h-[0.5px]` between entries; the
+    /// account menu draws it inside the next item's block, one 2 pt gap less.
+    var dividerHeight: CGFloat { self == .profile ? 6.5 : 8.5 }
+    /// The icon's box (`size-5` in the account menu).
+    var iconBox: CGFloat { self == .profile ? 20 : iconSize }
+
     /// The popover's height for `entries`: 6 pt padding and a 1 pt border
     /// each side, 2 pt between entries, a divider 8.5 pt.
     func height(_ entries: [DesktopMenuEntry]) -> CGFloat {
-        let body = entries.reduce(CGFloat(0)) { $0 + ($1.isDivider ? 8.5 : rowHeight) }
+        let body = entries.reduce(CGFloat(0)) { $0 + ($1.isDivider ? dividerHeight : rowHeight) }
         return body + CGFloat(max(0, entries.count - 1)) * 2 + 14
     }
 }
@@ -103,7 +109,8 @@ struct DesktopMenuPanel: View {
                 row(entry)
             }
         }
-        .padding(6)
+        // p-1.5 inside the 1 pt border
+        .padding(7)
         .frame(width: style.width, alignment: .leading)
         .background(theme.elevated, in: RoundedRectangle(cornerRadius: max(theme.radiusXl, 0), style: .continuous))
         .overlay(
@@ -120,9 +127,12 @@ struct DesktopMenuPanel: View {
     private func row(_ entry: DesktopMenuEntry) -> some View {
         switch entry.kind {
         case .divider:
+            // my-1 around the line; the account menu's sits in the next
+            // item's block (one gap less below it)
             Rectangle().fill(theme.border).frame(height: 0.5)
                 .padding(.horizontal, 8)
-                .padding(.vertical, 4)
+                .padding(.top, 4)
+                .padding(.bottom, style.dividerHeight - 4.5)
         case let .action(perform):
             Button {
                 dismiss()
@@ -150,16 +160,12 @@ struct DesktopMenuPanel: View {
         return HStack(spacing: 8) {
             if let icon = entry.icon {
                 DesktopIconView(icon: icon, size: style.iconSize)
-                    .frame(width: max(style.iconSize, 16), height: max(style.iconSize, 16))
+                    .frame(width: style.iconBox, height: style.iconBox)
             }
-            Text(verbatim: entry.title)
-                .font(theme.font(13))
-                .lineLimit(1)
+            DesktopLineText(text: entry.title, size: 13, color: tint, lineHeight: 18)
             Spacer(minLength: 0)
             if let shortcut = entry.shortcut {
-                Text(verbatim: shortcut)
-                    .font(theme.font(11))
-                    .foregroundStyle(theme.inkSecondary)
+                DesktopLineText(text: shortcut, size: 11, color: theme.inkSecondary, lineHeight: 11)
                     .padding(.horizontal, 6)
                     .frame(height: 17)
                     .overlay(RoundedRectangle(cornerRadius: 4, style: .continuous).strokeBorder(theme.hairline.opacity(0.5), lineWidth: 1))
@@ -240,7 +246,14 @@ struct DesktopMenuLayer: View {
 
     var body: some View {
         GeometryReader { geometry in
-            if let request = model.menu {
+            if model.menu?.kind == .new {
+                // New is the inline "To:" picker over the main column
+                let left = model.sidebarWidth
+                let right = model.panelOpen && model.panelDocked && model.selected.map({ if case .bot = $0 { true } else { false } }) == true
+                    ? model.panelWidth : 0
+                AnyView(DesktopComposePicker(width: max(0, geometry.size.width - left - right), height: geometry.size.height))
+                    .offset(x: left)
+            } else if let request = model.menu {
                 let menus = DesktopSidebarMenus(session: session, model: model, prefs: prefs)
                 let (entries, style) = menus.entries(for: request.kind)
                 if !entries.isEmpty {
@@ -361,9 +374,29 @@ struct DesktopSidebarMenus {
             prefs.hide(session, .bot, bot.id)
         }))
         if gate.allows(.botOwnerExtras) {
+            let block = DesktopBotArchive.block(bot, in: session.state.bots)
+            out.append(DesktopMenuEntry(id: "archive", title: String(localized: "Archive"), icon: .archive, disabled: block != nil, kind: .action {
+                model.archivingBot = bot
+            }))
             out.append(DesktopMenuEntry(id: "delete", title: String(localized: "Delete"), icon: .trash, danger: true, kind: .action {
                 model.deletingBot = bot
             }))
+        }
+        // The Primary Bot (one per person): its own menu hands the role to
+        // another of the viewer's bots, the viewer's other bots take it.
+        switch PrimaryBotRules.menuAction(for: bot, viewerId: DesktopSidebarFlags.shared.viewerId) {
+        case .make:
+            out.append(.divider("primary"))
+            out.append(DesktopMenuEntry(id: "make-primary", title: String(localized: "Make primary bot"), icon: .star, kind: .action {
+                Task { await PrimaryBotActions.make(bot.id, session: session, done: { _ in }, working: .constant(false)) }
+            }))
+        case .replace:
+            out.append(.divider("primary"))
+            out.append(DesktopMenuEntry(id: "replace-primary", title: String(localized: "Replace with different Bot"), icon: .arrowLeftRight, kind: .action {
+                model.replacingPrimary = bot
+            }))
+        case nil:
+            break
         }
         return out
     }
@@ -491,14 +524,19 @@ struct DesktopSidebarMenus {
             out.append(DesktopMenuEntry(id: "rename", title: String(localized: "Rename team"), icon: .pencil, kind: .action {
                 actions.startRename(name, personal: false)
             }))
+            out.append(DesktopMenuEntry(id: "share", title: String(localized: "Share team…"), icon: .share, kind: .action {
+                model.sharingTeam = name
+            }))
         }
+        // A team's menu is Add bots, Rename, Share, Delete (TeamMenuItems);
+        // a person's own sections also move up and down (the org menu).
         var moves: [DesktopMenuEntry] = []
-        if let name, layout.canMove(name, by: -1) {
+        if let name, layout.personal, layout.canMove(name, by: -1) {
             moves.append(DesktopMenuEntry(id: "up", title: String(localized: "Move up"), icon: .arrowUp, kind: .action {
                 prefs.moveSection(session, name, by: -1)
             }))
         }
-        if let name, layout.canMove(name, by: 1) {
+        if let name, layout.personal, layout.canMove(name, by: 1) {
             moves.append(DesktopMenuEntry(id: "down", title: String(localized: "Move down"), icon: .arrowDown, kind: .action {
                 prefs.moveSection(session, name, by: 1)
             }))
@@ -526,11 +564,34 @@ struct DesktopSidebarMenus {
     // MARK: Account (SidebarProfileMenu)
 
     func profile() -> [DesktopMenuEntry] {
-        // "Get Sagax for iOS" is this app; the desktop's own row is left out.
-        [
-            DesktopMenuEntry(id: "settings", title: String(localized: "Settings"), icon: .settings, kind: .action {
+        var out: [DesktopMenuEntry] = []
+        // The desktop's phone row: here it opens Pair devices, where another
+        // phone or iPad pairs with the same computer.
+        if DesktopSettingsSection.available(for: gate).contains(.companion) {
+            out.append(DesktopMenuEntry(id: "phone", title: String(localized: "Get Sagax for iOS"), icon: .smartphone, kind: .action {
+                model.settingsSection = .companion
                 model.modal = .settings
-            }),
+            }))
+        }
+        out.append(DesktopMenuEntry(id: "settings", title: String(localized: "Settings"), icon: .settings, kind: .action {
+            model.modal = .settings
+        }))
+        let archived = DesktopBotArchive.archived(session.state.bots)
+        if gate.allows(.botOwnerExtras), !archived.isEmpty {
+            // Archived bots (the desktop's account place): each one restores.
+            let children = archived.map { bot in
+                DesktopMenuEntry(id: "restore.\(bot.id)", title: String(localized: "Restore \(bot.name)"), kind: .action {
+                    Task { await DesktopBotArchiving.set(bot, archived: false, session: session, model: model) }
+                })
+            }
+            out.append(DesktopMenuEntry(id: "archived", title: String(localized: "Archived bots"), icon: .archive, kind: .submenu(children)))
+        }
+        if AchievementStore.shared.status == .ready {
+            out.append(DesktopMenuEntry(id: "achievements", title: String(localized: "Achievements"), icon: .trophy, kind: .action {
+                model.modal = .achievements
+            }))
+        }
+        out += [
             DesktopMenuEntry(id: "shortcuts", title: String(localized: "Keyboard shortcuts"), icon: .keyboard, shortcut: "⌘ /", kind: .action {
                 model.modal = .shortcuts
             }),
@@ -544,6 +605,7 @@ struct DesktopSidebarMenus {
                 }
             }),
         ]
+        return out
     }
 
     // MARK: New (⌘N)

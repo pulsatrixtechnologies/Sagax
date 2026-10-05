@@ -36,7 +36,7 @@ extension ChatView {
                     // symbols fill the screen)
                     Button {
                         Haptics.selection()
-                        showingComputer = true
+                        openPanel(.computerButton)
                     } label: {
                         ComputerGlyph()
                             .fill(Theme.textPrimary)
@@ -91,11 +91,6 @@ extension ChatView {
                 }
             }
         }
-        if case .bot = current {
-            Button { openProfile() } label: {
-                Label(String(localized: "Profile"), systemImage: "person.crop.circle")
-            }
-        }
         if case let .room(room) = current, room.peopleDm == true {
             // WP15 (RM21): a conversation with a person opens their sheet
             if let peer = PeopleDirectory.shared.peer(room, session: session) {
@@ -135,10 +130,19 @@ extension ChatView {
             }
             return
         }
-        switch ChatProfileRoute.presentation {
-        case .sheet: showingProfile = true
-        case .push: pushingProfile = true
+        openPanel(.nameCapsule)
+    }
+
+    /// The bot panel on the door's tab: full screen on the phone, the docked
+    /// panel in the iPad's desktop shell.
+    func openPanel(_ door: BotPanelDoor) {
+        guard case .bot = current else { return }
+        if let desktopChat {
+            desktopChat.showPanel(door.tab)
+            return
         }
+        panelTab = door.tab
+        showingPanel = true
     }
 
     /// Voice mode: a live call with this bot or room (the desktop's call

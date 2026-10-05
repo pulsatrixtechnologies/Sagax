@@ -1,8 +1,9 @@
-// Room info (matrix RM6, RM7, RM8, RM14-RM19; GroupPanel.tsx): the room's
-// faces, name and bot count, then what the desktop panel's tabs hold —
-// Details (people, bots, leave), Instructions, Memory, Advanced (who
-// answers) — as rows, plus the threads row that used to be the header's
-// tap. Owner items follow `RoomInfoAccess` and are never drawn disabled.
+// Room info (matrix RM6, RM7, RM8, RM14-RM19; GroupPanel.tsx): the desktop
+// panel's tabs (`GROUP_PANEL_TABS`) as a segmented control — Details (the
+// room's faces and name, People, Bots and Manage, Leave), Instructions,
+// Memory, Advanced (Default responder, Working folder). Rename, Move to
+// team, Copy ID and Delete are the row menu's (RoomRowMenu), as on the
+// desktop. Owner items follow `RoomInfoAccess` and are never drawn disabled.
 //
 // `RoomInfoView` is the presentation-free body; the phone wraps it in a
 // sheet (`RoomInfoSheet`), the iPad desktop shell will dock it as the
@@ -45,6 +46,7 @@ struct RoomInfoView: View {
     @State private var pickingPeople = false
     @State private var addingEmail = false
     @State private var emailDraft = ""
+    @State private var tab: RoomInfoTab = .details
 
     private var room: Room? { session.state.rooms.first { $0.id == roomId } }
 
@@ -69,6 +71,40 @@ struct RoomInfoView: View {
     @ViewBuilder
     private func content(_ room: Room) -> some View {
         let access = session.roomAccess(room)
+        let tabs = RoomInfoTab.available(access: access, gate: session.surfaceGate)
+        VStack(spacing: 0) {
+            Picker(String(localized: "Group info"), selection: $tab) {
+                ForEach(tabs, id: \.self) { tab in
+                    Text(tab.title).tag(tab)
+                }
+            }
+            .pickerStyle(.segmented)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
+            .accessibilityIdentifier("room-tabs")
+            switch tabs.contains(tab) ? tab : .details {
+            case .details: AnyView(details(room, access: access))
+            case .instructions: AnyView(RoomInstructionsView(roomId: roomId, editable: access.editable))
+            case .memory: AnyView(RoomMemoryView(room: room))
+            case .advanced: AnyView(advanced(room, access: access))
+            }
+        }
+        .background(Theme.bg)
+    }
+
+    private func advanced(_ room: Room, access: RoomInfoAccess) -> some View {
+        ThemedList {
+            RoomResponderSection(room: room, jevOn: jevOn)
+                .disabled(!access.editable)
+            if session.surfaceGate.scope == .serverAdmin {
+                RoomFolderSection(room: room, editable: access.editable)
+            }
+        }
+        .accessibilityIdentifier("room-advanced")
+    }
+
+    @ViewBuilder
+    private func details(_ room: Room, access: RoomInfoAccess) -> some View {
         let members = room.memberIds.compactMap { session.state.bot($0) }
         ThemedList {
             Section {
@@ -84,28 +120,6 @@ struct RoomInfoView: View {
                 }
             }
 
-            Section {
-                Button(action: openThreads) {
-                    row(String(localized: "Threads"), systemImage: "square.stack", value: "\(room.tasks?.count ?? 1)")
-                }
-                .accessibilityIdentifier("room-threads")
-                NavigationLink {
-                    RoomInstructionsView(roomId: roomId, editable: access.editable)
-                } label: {
-                    row(String(localized: "Instructions"), systemImage: "text.alignleft",
-                        value: room.bulletin.split(separator: "\n").first.map(String.init) ?? "")
-                }
-                .accessibilityIdentifier("room-instructions")
-                if access.memory {
-                    NavigationLink {
-                        RoomMemoryView(room: room)
-                    } label: {
-                        row(String(localized: "Memory"), systemImage: "brain", value: "")
-                    }
-                    .accessibilityIdentifier("room-memory")
-                }
-            }
-
             RoomPeopleSection(
                 room: room, access: access, directory: directory,
                 pickPeople: { pickingPeople = true },
@@ -113,42 +127,22 @@ struct RoomInfoView: View {
             )
             RoomBotsSection(room: room, access: access, manageMembers: { managingMembers = true })
 
-            if access.editable {
-                RoomResponderSection(room: room, jevOn: jevOn)
-            }
-
             Section {
-                if access.canMoveSection {
-                    NavigationLink {
-                        RoomSectionPicker(roomId: roomId, actions: actions)
-                    } label: {
-                        row(String(localized: "Move to section"), systemImage: "folder", value: room.section ?? "")
-                    }
-                    .accessibilityIdentifier("room-section")
+                // the phone's way into the room's threads (the header's tap)
+                Button(action: openThreads) {
+                    row(String(localized: "Threads"), systemImage: "square.stack", value: "\(room.tasks?.count ?? 1)")
                 }
-                Button {
-                    actions.copyConversationId(room)
-                } label: {
-                    Label(String(localized: "Copy conversation ID"), systemImage: "doc.on.clipboard")
-                }
-                .accessibilityIdentifier("room-copy-id")
+                .accessibilityIdentifier("room-threads")
             }
-            .foregroundStyle(Theme.textPrimary)
 
-            if access.canLeave || access.canDelete {
+            if access.canLeave {
                 Section {
-                    if access.canLeave {
-                        Button(String(localized: "Leave group"), role: .destructive) {
-                            Task {
-                                await session.patchRoom(room, RoomPatch(humanIds: RoomOwnership.humanIdsLeaving(room, viewer: session.roomViewer)))
-                            }
+                    Button(String(localized: "Leave group"), role: .destructive) {
+                        Task {
+                            await session.patchRoom(room, RoomPatch(humanIds: RoomOwnership.humanIdsLeaving(room, viewer: session.roomViewer)))
                         }
-                        .accessibilityIdentifier("room-leave")
                     }
-                    if access.canDelete {
-                        Button(String(localized: "Delete group chat"), role: .destructive) { actions.deleting = room }
-                            .accessibilityIdentifier("room-delete")
-                    }
+                    .accessibilityIdentifier("room-leave")
                 }
             }
         }
@@ -271,6 +265,79 @@ struct RoomResponderSection: View {
                 ? String(localized: "Jev picks who answers each plain message; @mentions override this")
                 : String(localized: "Jev is off, so plain messages go to \(lead); @mentions override this")
         case .lead: return String(localized: "Plain messages go to \(lead); @mentions override this")
+        }
+    }
+}
+
+/// The desktop panel's tabs (GroupPanel.tsx `GROUP_PANEL_TABS`): Memory for
+/// a pairing that reaches it, Advanced off the remote client.
+enum RoomInfoTab: String, Hashable, CaseIterable {
+    case details, instructions, memory, advanced
+
+    var title: String {
+        switch self {
+        case .details: String(localized: "Details")
+        case .instructions: String(localized: "Instructions")
+        case .memory: String(localized: "Memory")
+        case .advanced: String(localized: "Advanced")
+        }
+    }
+
+    static func available(access: RoomInfoAccess, gate: SurfaceGate) -> [RoomInfoTab] {
+        var tabs: [RoomInfoTab] = [.details, .instructions]
+        if access.memory { tabs.append(.memory) }
+        if access.manages, gate.scope != .sidecar { tabs.append(.advanced) }
+        return tabs
+    }
+}
+
+/// Working folder (`RoomWorkingFolder`): where every bot in the group runs
+/// its shell and file tools. Fixed once the room pinned it on a first turn.
+struct RoomFolderSection: View {
+    let room: Room
+    let editable: Bool
+    @EnvironmentObject private var session: Session
+    @State private var draft: String?
+    @State private var saving = false
+
+    var body: some View {
+        let locked = room.pinnedCwd != nil
+        Section {
+            if locked || !editable {
+                Text(verbatim: (locked ? room.pinnedCwd : room.cwd) ?? String(localized: "Each bot’s own folder"))
+                    .font(.footnote.monospaced())
+                    .foregroundStyle(Theme.textSecondary)
+                    .accessibilityIdentifier("room-folder-value")
+            } else {
+                TextField(String(localized: "Each bot’s own folder, or an absolute path"), text: Binding(
+                    get: { draft ?? room.cwd ?? "" },
+                    set: { draft = $0 }
+                ))
+                .font(.footnote.monospaced())
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .submitLabel(.done)
+                .onSubmit(save)
+                .accessibilityIdentifier("room-folder-field")
+                Button(String(localized: "Save"), action: save)
+                    .disabled(saving || draft == nil)
+                    .accessibilityIdentifier("room-folder-save")
+            }
+        } header: {
+            Text(String(localized: "Working folder"))
+        } footer: {
+            Text(locked
+                 ? String(localized: "Fixed for this thread after its first turn. Start a new thread to work somewhere else.")
+                 : String(localized: "Where every bot in this group runs its shell and file tools."))
+        }
+    }
+
+    private func save() {
+        guard let value = draft else { return }
+        saving = true
+        Task {
+            if await session.setRoomFolder(room, cwd: value) { draft = nil }
+            saving = false
         }
     }
 }

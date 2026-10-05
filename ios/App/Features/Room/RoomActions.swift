@@ -65,7 +65,9 @@ final class RoomActions: ObservableObject {
     }
 }
 
-/// The long-press items for one room, in the desktop's order.
+/// The long-press items for one room, in the desktop's order
+/// (NavigationMenus.room): View profile, Rename, Move to team, Copy
+/// conversation ID, Hide from sidebar; the phone's group pin; Delete.
 struct RoomRowMenu: View {
     let room: Room
     @ObservedObject var actions: RoomActions
@@ -77,47 +79,71 @@ struct RoomRowMenu: View {
 
     var body: some View {
         let access = session.roomAccess(room)
-        // WP15 (RM21): a conversation with a person opens their sheet first
-        // (Sidebar.tsx RoomContextMenu "View profile")
-        if room.peopleDm == true, let peer = PeopleDirectory.shared.peer(room, session: session) {
+        let peer = room.peopleDm == true ? PeopleDirectory.shared.peer(room, session: session) : nil
+        let groups = NavigationMenus.room(room, RoomMenuContext(
+            gate: session.surfaceGate,
+            access: access,
+            personalSections: personalLayout != nil && sectionActions != nil,
+            knowsPeer: peer != nil,
+            groupPinsSupported: session.groupPinsSupported
+        ))
+        ForEach(Array(groups.enumerated()), id: \.offset) { index, group in
+            if index > 0 { Divider() }
+            ForEach(group, id: \.self) { item in
+                entry(item, peer: peer)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func entry(_ item: RoomMenuItem, peer: PeopleDMPeer?) -> some View {
+        switch item {
+        case .viewProfile:
             Button {
-                PeopleDirectory.shared.showPerson(peer.id)
+                if let peer { PeopleDirectory.shared.showPerson(peer.id) }
             } label: {
                 Label(String(localized: "View profile"), systemImage: "person.crop.circle")
             }
             .accessibilityIdentifier("room-view-profile")
-        }
-        if access.editable {
+        case .rename:
             Button {
                 actions.startRename(room)
             } label: {
-                Label(String(localized: "Rename group chat"), systemImage: "pencil")
+                Label(room.dm == true ? String(localized: "Rename thread") : String(localized: "Rename group chat"), systemImage: "pencil")
             }
-        }
-        if let personalLayout, let sectionActions {
-            if room.dm != true, room.peopleDm != true {
-                PersonalSectionPicker(key: PersonalSections.itemKey(group: room.id), layout: personalLayout, actions: sectionActions)
+        case .moveTo:
+            if let personalLayout, let sectionActions {
+                PersonalSectionPicker(key: PersonalSections.itemKey(group: room.id), layout: personalLayout, actions: sectionActions,
+                                      title: String(localized: "Move to team"))
+            } else {
+                RoomSectionMenu(room: room, actions: actions)
             }
-        } else if access.canMoveSection {
-            RoomSectionMenu(room: room, actions: actions)
-        }
-        Button {
-            actions.copyConversationId(room)
-        } label: {
-            Label(String(localized: "Copy conversation ID"), systemImage: "doc.on.clipboard")
-        }
-        // WP6 (SB25, RM13): only this person's sidebar; a direct
-        // conversation with someone is hidden as that person
-        Button {
-            SidebarPrefsModel.shared.hide(session, room: room)
-        } label: {
-            Label("Hide from sidebar", systemImage: "eye.slash")
-        }
-        if access.canDelete {
+        case .copyConversationId:
+            Button {
+                actions.copyConversationId(room)
+            } label: {
+                Label(String(localized: "Copy conversation ID"), systemImage: "doc.on.clipboard")
+            }
+        case .hide:
+            // WP6 (SB25, RM13): only this person's sidebar; a direct
+            // conversation with someone is hidden as that person
+            Button {
+                SidebarPrefsModel.shared.hide(session, room: room)
+            } label: {
+                Label(String(localized: "Hide from sidebar"), systemImage: "eye.slash")
+            }
+        case .pin, .unpin:
+            Button {
+                Task { await session.setPinned(room, pinned: item == .pin) }
+            } label: {
+                Label(item == .pin ? String(localized: "Pin") : String(localized: "Unpin"),
+                      systemImage: item == .pin ? "pin" : "pin.slash")
+            }
+        case .delete:
             Button(role: .destructive) {
                 actions.deleting = room
             } label: {
-                Label(String(localized: "Delete group chat"), systemImage: "trash")
+                Label(room.dm == true ? String(localized: "Delete thread") : String(localized: "Delete group chat"), systemImage: "trash")
             }
         }
     }
@@ -158,7 +184,7 @@ struct RoomSectionMenu: View {
                 }
             }
         } label: {
-            Label(String(localized: "Move to section"), systemImage: "folder")
+            Label(String(localized: "Move to team"), systemImage: "folder")
         }
     }
 }

@@ -108,6 +108,8 @@ struct RichTableView: View {
                 theme: theme
             ) { column in sort = RichBlocks.nextSort(sort, column: column) }
         }
+        // inside the 1 pt border, as the desktop's box
+        .padding(1)
         .background(theme.card)
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(theme.hairline.opacity(0.4), lineWidth: 1))
@@ -122,7 +124,8 @@ struct RichTableView: View {
     private func desktopWeights(_ theme: DesktopTheme) -> [CGFloat] {
         let head = theme.uiFont(12.5, .semibold), body = theme.uiFont(12.5)
         return table.headers.indices.map { index in
-            var widest = textWidth(table.headers[index], font: head)
+            // a header also holds its (hidden) 11 pt sort arrow, 4 pt off
+            var widest = textWidth(table.headers[index], font: head) + 15
             for row in table.rows where index < row.count {
                 widest = max(widest, textWidth(row[index], font: body))
             }
@@ -380,7 +383,7 @@ struct DesktopTableGrid: View {
                             }
                             .foregroundStyle(theme.ink)
                             .padding(.horizontal, 10)
-                            .frame(width: widths[index], height: 32, alignment: Self.align(alignments, index))
+                            .frame(width: widths[index], height: 32.5, alignment: Self.align(alignments, index))
                         }
                         .buttonStyle(.plain)
                     }
@@ -393,7 +396,8 @@ struct DesktopTableGrid: View {
                                 .foregroundStyle(theme.ink)
                                 .lineLimit(1)
                                 .padding(.horizontal, 10)
-                                .frame(width: index < widths.count ? widths[index] : 0, height: 33, alignment: Self.align(alignments, index))
+                                .frame(width: index < widths.count ? widths[index] : 0, height: position == rows.count - 1 ? 32.5 : 33,
+                                       alignment: Self.align(alignments, index))
                         }
                     }
                     .overlay(alignment: .bottom) {
@@ -402,7 +406,7 @@ struct DesktopTableGrid: View {
                 }
             }
         }
-        .frame(height: 32.5 + CGFloat(rows.count) * 33)
+        .frame(height: 32.5 + CGFloat(rows.count) * 33 - (rows.isEmpty ? 0 : 0.5))
     }
 
     static func align(_ alignments: [MarkdownTableAlignment], _ index: Int) -> Alignment {

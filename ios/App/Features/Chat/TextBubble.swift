@@ -168,6 +168,9 @@ struct TextBubble: View {
                         .foregroundStyle(desktop?.ink ?? BubbleColor.theirsText)
                         .textSelection(.enabled)
                         .fixedSize(horizontal: false, vertical: true)
+                        // Chrome measures Geist a hair wider than Core Text: a
+                        // line within 1.5 pt of the edge wraps there, not here
+                        .padding(.trailing, desktop != nil && desktopFills(mine: false) ? 1.5 : 0)
                 }
             }
             .frame(maxWidth: desktopFills(mine: mine) ? .infinity : nil, alignment: .leading)

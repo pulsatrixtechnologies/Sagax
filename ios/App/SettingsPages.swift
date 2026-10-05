@@ -14,6 +14,7 @@ struct AccountSettingsView: View {
     @EnvironmentObject private var session: Session
     @EnvironmentObject private var model: SettingsModel
     @ObservedObject private var photos = AccountPhotoStore.shared
+    @EnvironmentObject private var navigator: SettingsNavigator
     @State private var confirmingSignOut = false
     @State private var confirmingDelete = false
     @State private var deleting = false
@@ -67,6 +68,15 @@ struct AccountSettingsView: View {
                 }
             }
             SettingsFooter(text: "Permanently deletes your Sagax account. This can't be undone.")
+            if session.connection != nil {
+                SettingsSpacer(SettingsMetrics.cardGap)
+                SettingsCard {
+                    // the paired computer's address, refresh and forget
+                    SettingsRow(title: "Connection details", accessory: .chevron, height: 44.33, identifier: "account-connection") {
+                        navigator.sheet = .connection
+                    }
+                }
+            }
         }
         // Each saved account's own photo, read through its own server.
         .task { await session.refreshSavedAccountPhotos() }

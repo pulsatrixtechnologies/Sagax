@@ -100,7 +100,7 @@ public enum ApprovalRiskClassifier {
     }
 
     /// `mcp__<server>__<tool>`, split on the first two `__` only.
-    static func parseToolId(_ tool: String) -> (server: String?, name: String) {
+    public static func parseToolId(_ tool: String) -> (server: String?, name: String) {
         guard tool.hasPrefix("mcp__") else { return (nil, tool) }
         let rest = tool.dropFirst(5)
         guard let split = rest.range(of: "__"), split.lowerBound > rest.startIndex else { return (nil, tool) }

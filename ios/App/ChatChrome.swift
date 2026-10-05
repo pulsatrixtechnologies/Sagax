@@ -9,18 +9,13 @@ import CompanionCore
 
 // MARK: - Profile hook
 
-/// What tapping the name capsule opens, and how.
-///
-/// The single hook for the profile: `BotProfileView`, pushed (reference 03).
-/// Today's `AgentProfileView` form stays reachable from its "..." > Advanced.
+/// What the name capsule (and every other door into the bot) opens: the
+/// bot panel, full screen, on the door's tab (`BotPanelDoor`), as the
+/// desktop's header opens its panel.
 enum ChatProfileRoute {
-    enum Presentation { case sheet, push }
-
-    static let presentation: Presentation = .push
-
     @ViewBuilder
-    static func destination(for bot: Bot) -> some View {
-        BotProfileView(bot: bot)
+    static func destination(for bot: Bot, tab: DesktopPanelTab) -> some View {
+        PhoneBotPanel(bot: bot, tab: tab)
     }
 }
 

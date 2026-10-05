@@ -59,6 +59,9 @@ struct AppearanceSettingsView: View {
             // the thread switch and what is hidden from the home (WP6)
             SidebarAppearanceSettings()
 
+            // list density, activity and the bot intro (this phone's display)
+            DisplaySettingsCard()
+
             // the run card above the composer (ST4, SettingsModal RunCardRow)
             SettingsSectionLabel(text: "Chat")
             SettingsCard {

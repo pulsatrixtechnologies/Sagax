@@ -72,9 +72,16 @@ struct CodeBlockView: View {
             .background(theme.raised.opacity(0.3))
             .overlay(alignment: .bottom) { Rectangle().fill(theme.hairline.opacity(0.3)).frame(height: 1) }
             Group {
-                let text = (Text(verbatim: code) + caret)
+                // Shiki's github-dark / -light roles, once the block is settled
+                let body = !pending && DesktopCodeHighlight.supports(language)
+                    ? Text(DesktopCodeHighlight.attributed(code, language: language, ink: theme.ink, dark: theme.dark))
+                    : Text(verbatim: code)
+                let text = (body + caret)
                     .font(.system(size: 12, design: .monospaced))
+                    .tracking(DesktopChatMetrics.monoTracking(12))
                     .lineSpacing(18 - UIFont.monospacedSystemFont(ofSize: 12, weight: .regular).lineHeight)
+                    // the 18 pt line box's half-leading above and below
+                    .padding(.vertical, ((18 - UIFont.monospacedSystemFont(ofSize: 12, weight: .regular).lineHeight) * 2).rounded(.down) / 4)
                     .foregroundStyle(theme.ink)
                     .textSelection(.enabled)
                 if wrap {
@@ -88,6 +95,8 @@ struct CodeBlockView: View {
             .clipped()
             .padding(12)
         }
+        // inside the 1 pt border, as the desktop's box
+        .padding(1)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(theme.inset, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))

@@ -99,7 +99,8 @@ final class RoutinesUITests: XCTestCase {
         let app = XCUIApplication()
         app.terminate()
         var arguments = [
-            "-parityEndpoint", fixture.endpoint, "-parityToken", fixture.token, "-parityScreen", "12-settings-top",
+            "-parityEndpoint", fixture.endpoint, "-parityToken", fixture.token, "-parityScreen", "01-home",
+            "-companion.prefs.rosterDensity", "standard",
             "-AppleLanguages", "(en)", "-AppleLocale", "en_US",
             "-companion.prefs.islandIntro", "never",
             "-companion.onboarding.welcomeSeen", "YES",
@@ -108,16 +109,15 @@ final class RoutinesUITests: XCTestCase {
         if let environment = fixture.environmentId { arguments += ["-parityEnvironment", environment] }
         app.launchArguments = arguments
         app.launch()
-        // Settings > Advanced > Workspace > Threads & Routines
-        XCTAssertTrue(app.descendants(matching: .any)["settings-close"].waitForExistence(timeout: 30))
-        let advanced = element("settings-advanced", in: app)
-        for _ in 0..<10 where !(advanced.exists && advanced.isHittable) { app.swipeUp() }
-        advanced.tap()
-        let row = element("settings-routines", in: app)
-        _ = row.waitForExistence(timeout: 10)
-        for _ in 0..<10 where !(row.exists && row.isHittable) { app.swipeUp() }
+        // the home's Automations place (Settings no longer carries routines)
+        XCTAssertTrue(app.buttons["home-plus"].waitForExistence(timeout: 30))
+        let row = app.buttons["home-place.automations"]
+        for _ in 0..<12 where !(row.exists && row.isHittable) { app.swipeUp() }
         row.tap()
         XCTAssertTrue(element("routines-section", in: app).waitForExistence(timeout: 15))
+        // Automations opens on the calendar; these tests read the list
+        let list = app.segmentedControls["automations-view"].buttons.element(boundBy: 0)
+        if list.waitForExistence(timeout: 5) { list.tap() }
         return app
     }
 
@@ -179,7 +179,8 @@ final class RoutinesUITests: XCTestCase {
         failed.tap()
         XCTAssertTrue(element("routine-run-status", in: app).waitForExistence(timeout: 10))
         try eventually("the failed run is seen on the server") { try run("lab-run-failed")?["seenAt"] != nil }
-        app.buttons["Done"].tap()
+        // the run's own Done, over the Automations sheet's
+        app.buttons.matching(NSPredicate(format: "label == %@", "Done")).allElementsBoundByIndex.last?.tap()
 
         element("routines-menu", in: app).tap()
         element("routines-mark-all-seen", in: app).tap()
@@ -237,7 +238,10 @@ final class RoutinesUITests: XCTestCase {
         XCTAssertTrue(element("routines-row.Scan skills populaires mensuel", in: app).waitForExistence(timeout: 10))
         element("routines-menu", in: app).tap()
         app.buttons["Filter by bot"].firstMatch.tap()
-        app.buttons["Aurora"].firstMatch.tap()
+        // the submenu opens over the Automations sheet
+        let aurora = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Aurora")).firstMatch
+        XCTAssertTrue(aurora.waitForExistence(timeout: 5), "Aurora in the bot filter")
+        aurora.tap()
         XCTAssertTrue(element("routines-row.\(lab)", in: app).waitForExistence(timeout: 5))
         XCTAssertFalse(element("routines-row.Scan skills populaires mensuel", in: app).exists)
     }

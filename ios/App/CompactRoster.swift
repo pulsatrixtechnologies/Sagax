@@ -142,27 +142,8 @@ struct CompactBotEntry: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .contextMenu {
-                // A single-thread bot shows no thread list to end in "New
-                // thread", so the home list offers it here — for every bot.
-                if showsThreads {
-                    Button { createThread(for: bot) } label: {
-                        Label("New thread", systemImage: "square.and.pencil")
-                    }
-                    .disabled(creating)
-                    Button { manage(.bot(bot)) } label: {
-                        Label("Manage threads", systemImage: "list.bullet")
-                    }
-                }
-                BotThreadsMenu(bot: bot, actions: threadActions, showsThreads: showsThreads)
-                let layout = sidebarPrefs.layout(session)
-                if layout.personal {
-                    PersonalSectionPicker(key: PersonalSections.itemKey(bot: bot.id), layout: layout, actions: sectionActions)
-                }
-                Button { sidebarPrefs.hide(session, .bot, bot.id) } label: {
-                    Label("Hide from sidebar", systemImage: "eye.slash")
-                }
-            }
+            // the desktop's bot menu, the same in every density
+            .contextMenu { BotRowMenu(bot: bot) }
             .accessibilityIdentifier("chat-row.\(bot.id)")
 
             if showsThreads && row.showsThreadControl {

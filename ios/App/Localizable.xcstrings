@@ -412,7 +412,8 @@
       }
     },
     "000000": {
-      "shouldTranslate": false
+      "shouldTranslate": false,
+      "localizations": {}
     },
     "5–1,440": {
       "localizations": {
@@ -2245,7 +2246,8 @@
       }
     },
     "English": {
-      "shouldTranslate": false
+      "shouldTranslate": false,
+      "localizations": {}
     },
     "Enter a different value": {
       "localizations": {
@@ -3570,7 +3572,8 @@
       }
     },
     "Sagax": {
-      "shouldTranslate": false
+      "shouldTranslate": false,
+      "localizations": {}
     },
     "Sagax is trying the saved connection automatically.": {
       "localizations": {
@@ -3839,7 +3842,8 @@
       }
     },
     "Português (Brasil)": {
-      "shouldTranslate": false
+      "shouldTranslate": false,
+      "localizations": {}
     },
     "Preparing attachments…": {
       "localizations": {
@@ -6228,7 +6232,8 @@
       }
     },
     "Français": {
-      "shouldTranslate": false
+      "shouldTranslate": false,
+      "localizations": {}
     },
     "System": {
       "localizations": {
@@ -49550,6 +49555,1414 @@
           "stringUnit": {
             "state": "translated",
             "value": "Trabalha em está definido como Desligado, então este bot não tem navegador. Escolha outro destino acima para dar um a ele."
+          }
+        }
+      }
+    },
+    "Archive %@?": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Archive %@?"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Archiver %@ ?"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Arquivar %@?"
+          }
+        }
+      }
+    },
+    "Archived bots": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Archived bots"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bots archivés"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bots arquivados"
+          }
+        }
+      }
+    },
+    "Choose another Primary Bot first": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choose another Primary Bot first"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choisissez d'abord un autre robot principal"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Escolha outro bot principal primeiro"
+          }
+        }
+      }
+    },
+    "Display": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Display"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Affichage"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Exibição"
+          }
+        }
+      }
+    },
+    "Each bot’s own folder": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Each bot’s own folder"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le dossier propre à chaque bot"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A pasta de cada bot"
+          }
+        }
+      }
+    },
+    "Each bot’s own folder, or an absolute path": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Each bot’s own folder, or an absolute path"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le dossier propre à chaque bot, ou un chemin absolu"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A pasta de cada bot, ou um caminho absoluto"
+          }
+        }
+      }
+    },
+    "Fixed for this thread after its first turn. Start a new thread to work somewhere else.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fixed for this thread after its first turn. Start a new thread to work somewhere else."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fixé pour ce fil après son premier tour. Commencez un nouveau fil pour travailler ailleurs."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fixada para esta conversa após o primeiro turno. Comece uma nova conversa para trabalhar em outro lugar."
+          }
+        }
+      }
+    },
+    "Keep at least one active bot": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keep at least one active bot"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gardez au moins un bot actif"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mantenha pelo menos um bot ativo"
+          }
+        }
+      }
+    },
+    "No archived bots.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No archived bots."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aucun bot archivé."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nenhum bot arquivado."
+          }
+        }
+      }
+    },
+    "Unassigned": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unassigned"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Non assigné"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sem atribuição"
+          }
+        }
+      }
+    },
+    "Where every bot in this group runs its shell and file tools.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Where every bot in this group runs its shell and file tools."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "L'endroit où chaque bot de ce groupe exécute son terminal et ses outils de fichiers."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Onde cada bot deste grupo executa o terminal e as ferramentas de arquivos."
+          }
+        }
+      }
+    },
+    "%@ archived": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ archived"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ archivé"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ arquivado"
+          }
+        }
+      }
+    },
+    "%@ leaves the sidebar, but every conversation is kept. You can restore it any time from Archived bots.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ leaves the sidebar, but every conversation is kept. You can restore it any time from Archived bots."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ quitte la barre latérale, mais toutes les conversations sont conservées. Vous pouvez le restaurer à tout moment depuis Bots archivés."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ sai da barra lateral, mas todas as conversas são mantidas. Você pode restaurá-lo a qualquer momento em Bots arquivados."
+          }
+        }
+      }
+    },
+    "Off by default. Shows Templates in the sidebar menu, to install a ready-made team of bots.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Off by default. Shows Templates in the sidebar menu, to install a ready-made team of bots."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Désactivé par défaut. Affiche Modèles dans le menu de la barre latérale, pour installer une équipe de bots toute prête."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Desligado por padrão. Mostra Modelos no menu da barra lateral, para instalar uma equipe de bots pronta."
+          }
+        }
+      }
+    },
+    "Gmail, Slack, GitHub and more through your Composio project: the entry at the foot of the sidebar and the card in Settings > API keys. While off, your Claude account's connectors show in Settings > Model providers.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gmail, Slack, GitHub and more through your Composio project: the entry at the foot of the sidebar and the card in Settings > API keys. While off, your Claude account's connectors show in Settings > Model providers."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gmail, Slack, GitHub et plus par votre projet Composio : l'entrée au pied de la barre latérale et la carte dans Paramètres > Clés API. Désactivé, les connecteurs de votre compte Claude s'affichent dans Paramètres > Fournisseurs de modèles."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gmail, Slack, GitHub e mais pelo seu projeto Composio: a entrada no rodapé da barra lateral e o cartão em Configurações > Chaves de API. Desligado, os conectores da sua conta Claude aparecem em Configurações > Provedores de modelos."
+          }
+        }
+      }
+    },
+    "Inspector button": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Inspector button"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bouton Inspecteur"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Botão Inspetor"
+          }
+        }
+      }
+    },
+    "Show the Inspector (run log, events, raw) button in the chat header.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Show the Inspector (run log, events, raw) button in the chat header."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Afficher le bouton Inspecteur (journal d'exécution, événements, brut) dans l'en-tête du chat."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mostrar o botão Inspetor (registro de execução, eventos, bruto) no cabeçalho do chat."
+          }
+        }
+      }
+    },
+    "Show the Inspector button": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Show the Inspector button"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Afficher le bouton Inspecteur"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mostrar o botão Inspetor"
+          }
+        }
+      }
+    },
+    "Read-only": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Read-only"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lecture seule"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Somente leitura"
+          }
+        }
+      }
+    },
+    "Makes changes": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Makes changes"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Modification"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Faz alterações"
+          }
+        }
+      }
+    },
+    "Destructive": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Destructive"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Destructif"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Destrutivo"
+          }
+        }
+      }
+    },
+    "Runs an action": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Runs an action"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Exécution"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Executa uma ação"
+          }
+        }
+      }
+    },
+    "See technical details": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "See technical details"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Voir les détails techniques"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ver detalhes técnicos"
+          }
+        }
+      }
+    },
+    "Hide technical details": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hide technical details"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Masquer les détails techniques"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ocultar detalhes técnicos"
+          }
+        }
+      }
+    },
+    "Server": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Server"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Serveur"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Servidor"
+          }
+        }
+      }
+    },
+    "Arguments": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Arguments"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Arguments"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Argumentos"
+          }
+        }
+      }
+    },
+    "Setup required": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Setup required"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configuration requise"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configuração necessária"
+          }
+        }
+      }
+    },
+    "Local": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Local"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Local"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Local"
+          }
+        }
+      }
+    },
+    "Update %@ on this server": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Update %@ on this server"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mettre à jour %@ sur ce serveur"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Atualizar %@ neste servidor"
+          }
+        }
+      }
+    },
+    "Prefer a terminal?": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Prefer a terminal?"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vous préférez un terminal ?"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Prefere um terminal?"
+          }
+        }
+      }
+    },
+    "Copy command": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copy command"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copier la commande"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copiar comando"
+          }
+        }
+      }
+    },
+    "Refresh %@ models": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Refresh %@ models"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Actualiser les modèles de %@"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Atualizar os modelos de %@"
+          }
+        }
+      }
+    },
+    "All threads": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "All threads"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tous les fils"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Todas as conversas"
+          }
+        }
+      }
+    },
+    "Search threads": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Search threads"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rechercher des fils"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Buscar conversas"
+          }
+        }
+      }
+    },
+    "No thread matches “%@”": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No thread matches “%@”"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rien ne correspond à « %@ »"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nada corresponde a “%@”"
+          }
+        }
+      }
+    },
+    "Waiting on a teammate": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Waiting on a teammate"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "En attente d'un coéquipier"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Esperando colega"
+          }
+        }
+      }
+    },
+    "Get Sagax for iOS": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Get Sagax for iOS"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Obtenir Sagax pour iOS"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Baixar o Sagax para iOS"
+          }
+        }
+      }
+    },
+    "Restore %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Restore %@"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Restaurer %@"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Restaurar %@"
+          }
+        }
+      }
+    },
+    "%@ points, level %lld. Open achievements": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ points, level %lld. Open achievements"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ points, niveau %lld. Ouvrir les succès"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ pontos, nível %lld. Abrir conquistas"
+          }
+        }
+      }
+    },
+    "Resize sidebar": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Resize sidebar"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Redimensionner la barre latérale"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Redimensionar a barra lateral"
+          }
+        }
+      }
+    },
+    "Command K": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Command K"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Commande K"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Command K"
+          }
+        }
+      }
+    },
+    "Share team…": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Share team…"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Partager l'équipe…"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Compartilhar equipe…"
+          }
+        }
+      }
+    },
+    "Packing %@…": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Packing %@…"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Préparation de %@…"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Preparando %@…"
+          }
+        }
+      }
+    },
+    "Search bots": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Search bots"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Chercher des bots"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Buscar bots"
+          }
+        }
+      }
+    },
+    "Search or create Bots": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Search or create Bots"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Chercher ou créer des bots"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Buscar ou criar bots"
+          }
+        }
+      }
+    },
+    "Create group chat · 1 bot": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Create group chat · 1 bot"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Créer une discussion de groupe · 1 bot"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Criar conversa em grupo · 1 bot"
+          }
+        }
+      }
+    },
+    "Create group chat · %lld bots": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Create group chat · %lld bots"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Créer une discussion de groupe · %lld bots"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Criar conversa em grupo · %lld bots"
+          }
+        }
+      }
+    },
+    "Choose bots for the group chat": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choose bots for the group chat"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choisir les bots de la discussion de groupe"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Escolher os bots da conversa em grupo"
+          }
+        }
+      }
+    },
+    "Double tap to edit": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Double tap to edit"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Touchez deux fois pour modifier"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Toque duas vezes para editar"
+          }
+        }
+      }
+    },
+    "Chatterbox server address": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Chatterbox server address"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Adresse du serveur Chatterbox"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Endereço do servidor Chatterbox"
+          }
+        }
+      }
+    },
+    "Chatterbox model": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Chatterbox model"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Modèle Chatterbox"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Modelo Chatterbox"
+          }
+        }
+      }
+    },
+    "Save server": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Save server"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enregistrer le serveur"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Salvar servidor"
+          }
+        }
+      }
+    },
+    "Give this agent a voice for calls and spoken replies. The voice choice belongs to this agent; provider keys stay on your computer and never come to this device.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Give this agent a voice for calls and spoken replies. The voice choice belongs to this agent; provider keys stay on your computer and never come to this device."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Donnez une voix à cet agent pour les appels et les réponses parlées. Le choix de la voix appartient à cet agent; les clés du fournisseur restent sur votre ordinateur et ne viennent jamais sur cet appareil."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dê uma voz a este agente para chamadas e respostas faladas. A escolha da voz pertence a este agente; as chaves do provedor ficam no seu computador e nunca vêm para este dispositivo."
+          }
+        }
+      }
+    },
+    "These are changed by an administrator, or in Sagax on your computer.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "These are changed by an administrator, or in Sagax on your computer."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ces réglages sont modifiés par un administrateur, ou dans Sagax sur votre ordinateur."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Estas opções são alteradas por um administrador ou no Sagax no seu computador."
+          }
+        }
+      }
+    },
+    "Where this bot runs its tools: a computer of its own, this computer, the built-in browser, or nowhere.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Where this bot runs its tools: a computer of its own, this computer, the built-in browser, or nowhere."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Où ce bot exécute ses outils : son propre ordinateur, cet ordinateur, le navigateur intégré, ou nulle part."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Onde este bot executa suas ferramentas: um computador próprio, este computador, o navegador integrado ou lugar nenhum."
+          }
+        }
+      }
+    },
+    "Install": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Install"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Installer"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Instalar"
+          }
+        }
+      }
+    },
+    "Uninstall": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Uninstall"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Désinstaller"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Desinstalar"
+          }
+        }
+      }
+    },
+    "Library views": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Library views"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vues de la bibliothèque"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Visualizações da biblioteca"
+          }
+        }
+      }
+    },
+    "An administrator manages your plugins.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "An administrator manages your plugins."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Un administrateur gère vos plugins."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Um administrador gerencia seus plugins."
+          }
+        }
+      }
+    },
+    "This bot's engine does not load Claude Code plugins.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This bot's engine does not load Claude Code plugins."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le moteur de ce bot ne charge pas les plugins Claude Code."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "O mecanismo deste bot não carrega plugins do Claude Code."
+          }
+        }
+      }
+    },
+    "No plugins on this bot yet.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No plugins on this bot yet."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aucun plugin sur ce bot pour l'instant."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nenhum plugin neste bot ainda."
+          }
+        }
+      }
+    },
+    "This marketplace lists no plugins.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This marketplace lists no plugins."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ce marketplace ne liste aucun plugin."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Este marketplace não lista nenhum plugin."
+          }
+        }
+      }
+    },
+    "Remove marketplace": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Remove marketplace"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Retirer le marketplace"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Remover marketplace"
+          }
+        }
+      }
+    },
+    "Add a marketplace": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Add a marketplace"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ajouter un marketplace"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Adicionar um marketplace"
           }
         }
       }

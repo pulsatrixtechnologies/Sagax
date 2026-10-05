@@ -160,6 +160,15 @@ final class RoomInfoUITests: XCTestCase {
         XCTAssertTrue(element(app, "room-info").waitForExistence(timeout: 15), "the Room info sheet")
     }
 
+    /// One of the sheet's tabs (GroupPanel.tsx: Details, Instructions,
+    /// Memory, Advanced).
+    @MainActor
+    private func tab(_ app: XCUIApplication, _ title: String) {
+        let button = app.segmentedControls["room-tabs"].buttons[title]
+        XCTAssertTrue(button.waitForExistence(timeout: 10), "the \(title) tab")
+        button.tap()
+    }
+
     @MainActor
     private func scrollTo(_ app: XCUIApplication, _ id: String) -> XCUIElement {
         let target = element(app, id)
@@ -222,24 +231,25 @@ final class RoomInfoUITests: XCTestCase {
         let field = app.alerts.textFields.firstMatch
         XCTAssertTrue(field.waitForExistence(timeout: 10), "the rename field")
         replaceText(field, with: newName)
+        attach("Rename typed", app)
         app.alerts.buttons["room-rename-save"].firstMatch.tap()
+        attach("Rename saved", app)
         try eventually("the room renamed") { try room(lab.id)?.name == newName }
         XCTAssertTrue(app.staticTexts[newName].waitForExistence(timeout: 10), "the new name on the sheet")
 
         // instructions (RM7 read, RM17 edit)
         let brief = "Brief partagé \(stamp())"
-        tap(app, "room-instructions")
+        tab(app, "Instructions")
         let editor = element(app, "room-instructions-editor")
         XCTAssertTrue(editor.waitForExistence(timeout: 10), "the instructions editor")
         editor.tap()
         editor.typeText(brief)
         tap(app, "room-instructions-save")
         try eventually("the instructions saved") { try room(lab.id)?.bulletin == brief }
-        app.navigationBars["Instructions"].buttons.element(boundBy: 0).tap()
 
         // memory (RM8)
         let fact = "- Fait du groupe \(stamp())"
-        tap(app, "room-memory")
+        tab(app, "Memory")
         let memory = element(app, "room-memory-editor")
         XCTAssertTrue(memory.waitForExistence(timeout: 15), "the memory editor")
         XCTAssertTrue(element(app, "room-memory-gauge").exists, "the memory gauge")
@@ -270,7 +280,8 @@ final class RoomInfoUITests: XCTestCase {
         let app = try launch(try XCTUnwrap(try room(lab.id)).name)
         openRoomInfo(app)
 
-        let picker = scrollTo(app, "room-responder")
+        tab(app, "Advanced")
+        let picker = element(app, "room-responder")
         XCTAssertTrue(picker.waitForExistence(timeout: 10), "who answers")
         picker.tap()
         let everyone = app.buttons["Everyone responds"]
@@ -278,6 +289,7 @@ final class RoomInfoUITests: XCTestCase {
         everyone.tap()
         try eventually("everyone answers") { try room(lab.id)?.defaultResponder.kind == "everyone" }
 
+        tab(app, "Details")
         let manage = scrollTo(app, "room-manage-members")
         XCTAssertTrue(manage.waitForExistence(timeout: 10))
         manage.tap()
@@ -325,6 +337,8 @@ final class RoomInfoUITests: XCTestCase {
 
     // MARK: - Copy ID, move, delete (RM13, RM15, RM16)
 
+    /// The room row's menu on the home (the desktop's RoomContextMenu):
+    /// Copy conversation ID, Move to team > New section, Delete group chat.
     @MainActor
     func testCopyMoveAndDeleteARoom() throws {
         try setUpFixture()
@@ -333,30 +347,65 @@ final class RoomInfoUITests: XCTestCase {
         let created = try JSONDecoder().decode(Created.self, from: request("POST", "/api/groups", body: ["name": name, "memberIds": [lead.id]]))
         let id = created.group.id
         defer { _ = try? request("DELETE", "/api/groups/\(id)") }
-        let app = try launch(name)
-        openRoomInfo(app)
+        let app = try launchHome()
 
-        let copy = scrollTo(app, "room-copy-id")
-        copy.tap()
-        XCTAssertTrue(element(app, "room-action-notice").waitForExistence(timeout: 5), "the copy notice")
+        pressRow(app, id)
+        attach("Room menu", app)
+        UIPasteboard.general.string = ""
+        tapMenu(app, "Copy conversation ID")
+        try eventually("the conversation id on the pasteboard") { UIPasteboard.general.string == created.group.threadId }
 
-        let move = scrollTo(app, "room-section")
-        XCTAssertTrue(move.waitForExistence(timeout: 10), "Move to section")
-        move.tap()
-        tap(app, "room-section-new")
+        pressRow(app, id)
+        tapMenu(app, "Move to team")
+        tapMenu(app, "New section")
         let field = app.alerts.textFields.firstMatch
         XCTAssertTrue(field.waitForExistence(timeout: 10))
         let section = "Pièce \(stamp())"
         field.typeText(section)
         app.alerts.buttons["Add"].firstMatch.tap()
         try eventually("the room moved") { try room(id)?.section == section }
-        app.navigationBars["Move to section"].buttons.element(boundBy: 0).tap()
 
-        let delete = scrollTo(app, "room-delete")
-        delete.tap()
+        pressRow(app, id)
+        tapMenu(app, "Delete group chat")
         tap(app, "room-delete-confirm")
         try eventually("the room deleted") { try room(id) == nil }
-        XCTAssertFalse(element(app, "room-info").waitForExistence(timeout: 3), "the sheet closed")
         attach("Deleted", app)
+    }
+
+    @MainActor
+    private func launchHome() throws -> XCUIApplication {
+        continueAfterFailure = false
+        let app = XCUIApplication()
+        app.terminate()
+        var arguments = [
+            "-parityEndpoint", fixture.endpoint,
+            "-parityToken", fixture.token,
+            "-parityScreen", "01-home",
+            "-companion.prefs.rosterDensity", "standard",
+            "-AppleLanguages", "(en)", "-AppleLocale", "en_US",
+            "-companion.prefs.islandIntro", "never",
+            "-companion.onboarding.welcomeSeen", "YES",
+            "-companion.onboarding.notificationsSeen", "YES",
+        ]
+        if let environment = fixture.environmentId { arguments += ["-parityEnvironment", environment] }
+        app.launchArguments = arguments
+        app.launch()
+        XCTAssertTrue(app.buttons["home-plus"].waitForExistence(timeout: 30))
+        return app
+    }
+
+    @MainActor
+    private func pressRow(_ app: XCUIApplication, _ id: String) {
+        let row = element(app, "chat-row.\(id)")
+        for _ in 0..<12 where !(row.exists && row.isHittable) { app.swipeUp() }
+        XCTAssertTrue(row.waitForExistence(timeout: 10), "the room's row")
+        row.press(forDuration: 1.2)
+    }
+
+    @MainActor
+    private func tapMenu(_ app: XCUIApplication, _ label: String) {
+        let item = app.buttons.matching(NSPredicate(format: "label == %@", label)).firstMatch
+        XCTAssertTrue(item.waitForExistence(timeout: 5), label)
+        item.tap()
     }
 }

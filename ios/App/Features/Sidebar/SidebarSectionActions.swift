@@ -109,58 +109,82 @@ final class SidebarSectionActions: ObservableObject {
     }
 }
 
-/// The menu of one home section header. `name` is nil for the phone's
-/// General buckets (Bots, Group Chats).
+/// The menu of one home section header (NavigationMenus.section). `name`
+/// is nil for the phone's General buckets (Bots, Group Chats).
 struct SidebarSectionMenu: View {
     let name: String?
     let sectionID: String
     let layout: SidebarLayout
     @ObservedObject var actions: SidebarSectionActions
     @ObservedObject var prefs: SidebarPrefsModel
+    /// New bot here (a server team): the home's create sheet, set to it.
+    var newBotHere: ((String) -> Void)? = nil
     @EnvironmentObject private var session: Session
 
     var body: some View {
-        if layout.personal {
-            // OrgSectionMenu: create, rename, move, fold, delete
-            Button { actions.startNew() } label: { Label("New section…", systemImage: "plus") }
-            if let name {
-                Button { actions.startRename(name, personal: true) } label: { Label("Rename…", systemImage: "pencil") }
-            }
-            moves
-            foldAll
-            if let name {
-                Button(role: .destructive) { actions.startDelete(.personal(name)) } label: {
-                    Label("Delete section", systemImage: "trash")
-                }
-            }
-        } else if let name {
-            moves
-            if session.surfaceGate.allows(.sectionManagement) {
-                // TeamMenuItems (Share team is the desktop's own)
-                Button { actions.startEditingBots(name) } label: { Label("Add bots", systemImage: "person.2") }
-                Button { actions.startRename(name, personal: false) } label: { Label("Rename team", systemImage: "pencil") }
-                Button(role: .destructive) { actions.startDelete(.server(name)) } label: {
-                    Label("Delete team", systemImage: "trash")
-                }
-            }
-        }
-    }
-
-    @ViewBuilder private var moves: some View {
-        if let name, layout.canMove(name, by: -1) {
-            Button { prefs.moveSection(session, name, by: -1) } label: { Label("Move up", systemImage: "arrow.up") }
-        }
-        if let name, layout.canMove(name, by: 1) {
-            Button { prefs.moveSection(session, name, by: 1) } label: { Label("Move down", systemImage: "arrow.down") }
-        }
-    }
-
-    @ViewBuilder private var foldAll: some View {
         let ids = layout.sectionIds
-        if ids.contains(where: { !prefs.isCollapsed($0) }) {
-            Button { prefs.setAllCollapsed(session, ids) } label: { Label("Collapse all", systemImage: "arrow.down.right.and.arrow.up.left") }
-        } else {
-            Button { prefs.setAllCollapsed(session, []) } label: { Label("Expand all", systemImage: "arrow.up.left.and.arrow.down.right") }
+        let groups = NavigationMenus.section(SectionMenuContext(
+            gate: session.surfaceGate,
+            personalSections: layout.personal,
+            name: name,
+            canMoveUp: name.map { layout.canMove($0, by: -1) } ?? false,
+            canMoveDown: name.map { layout.canMove($0, by: 1) } ?? false,
+            anyExpanded: ids.contains { !prefs.isCollapsed($0) }
+        ), canCreateBotHere: newBotHere != nil)
+        ForEach(Array(groups.enumerated()), id: \.offset) { index, group in
+            if index > 0 { Divider() }
+            ForEach(group, id: \.self) { item in
+                entry(item, ids: ids)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func entry(_ item: SectionMenuItem, ids: [String]) -> some View {
+        switch item {
+        case .newSection:
+            Button { actions.startNew() } label: { Label(String(localized: "New section…"), systemImage: "plus") }
+        case .rename:
+            Button { if let name { actions.startRename(name, personal: true) } } label: {
+                Label(String(localized: "Rename…"), systemImage: "pencil")
+            }
+        case .moveUp:
+            Button { if let name { prefs.moveSection(session, name, by: -1) } } label: {
+                Label(String(localized: "Move up"), systemImage: "arrow.up")
+            }
+        case .moveDown:
+            Button { if let name { prefs.moveSection(session, name, by: 1) } } label: {
+                Label(String(localized: "Move down"), systemImage: "arrow.down")
+            }
+        case .collapseAll:
+            Button { prefs.setAllCollapsed(session, ids) } label: {
+                Label(String(localized: "Collapse all"), systemImage: "arrow.down.right.and.arrow.up.left")
+            }
+        case .expandAll:
+            Button { prefs.setAllCollapsed(session, []) } label: {
+                Label(String(localized: "Expand all"), systemImage: "arrow.up.left.and.arrow.down.right")
+            }
+        case .delete:
+            Button(role: .destructive) { if let name { actions.startDelete(.personal(name)) } } label: {
+                Label(String(localized: "Delete section"), systemImage: "trash")
+            }
+        case .addBots:
+            Button { if let name { actions.startEditingBots(name) } } label: {
+                Label(String(localized: "Add bots"), systemImage: "person.2")
+            }
+        case .renameTeam:
+            Button { if let name { actions.startRename(name, personal: false) } } label: {
+                Label(String(localized: "Rename team"), systemImage: "pencil")
+            }
+        case .deleteTeam:
+            Button(role: .destructive) { if let name { actions.startDelete(.server(name)) } } label: {
+                Label(String(localized: "Delete team"), systemImage: "trash")
+            }
+        case .newBotHere:
+            Button { if let name { newBotHere?(name) } } label: {
+                Label(String(localized: "New bot here"), systemImage: "plus.circle")
+            }
+            .accessibilityIdentifier("section-new-bot")
         }
     }
 }
@@ -171,6 +195,7 @@ struct PersonalSectionPicker: View {
     let key: String
     let layout: SidebarLayout
     @ObservedObject var actions: SidebarSectionActions
+    var title: String = String(localized: "Move to")
     @EnvironmentObject private var session: Session
 
     var body: some View {
@@ -184,7 +209,7 @@ struct PersonalSectionPicker: View {
             }
             Button { actions.startNew(assigning: key) } label: { Label("New section…", systemImage: "folder.badge.plus") }
         } label: {
-            Label("Move to section", systemImage: "folder")
+            Label(title, systemImage: "folder")
         }
     }
 

@@ -38,6 +38,16 @@ final class SettingsUITests: XCTestCase {
         app.launchArguments = arguments
         app.launch()
         XCTAssertTrue(app.element("settings-close").waitForExistence(timeout: 20))
+        XCTAssertTrue(app.element("settings-general").waitForExistence(timeout: 20))
+        return app
+    }
+
+    /// Settings > General: the phone's own settings (the bot's auto-review
+    /// and time zone, notifications).
+    @MainActor
+    private func launchGeneral() -> XCUIApplication {
+        let app = launch()
+        app.element("settings-general").tap()
         XCTAssertTrue(app.element("settings-auto-review.toggle").waitForExistence(timeout: 20))
         return app
     }
@@ -82,12 +92,12 @@ final class SettingsUITests: XCTestCase {
 
     @MainActor
     func testAutoReviewTogglePersistsOnTheServer() {
-        let app = launch()
+        let app = launchGeneral()
         let before = botSettings()["autoReviewDefault"] as? Bool ?? false
         app.element("settings-auto-review.toggle").tap()
         XCTAssertTrue(eventually { (self.botSettings()["autoReviewDefault"] as? Bool) == !before })
         // Shown the same after a relaunch, then put back.
-        let again = launch()
+        let again = launchGeneral()
         XCTAssertEqual(again.element("settings-auto-review.toggle").value as? String, before ? "0" : "1")
         again.element("settings-auto-review.toggle").tap()
         XCTAssertTrue(eventually { (self.botSettings()["autoReviewDefault"] as? Bool) == before })
@@ -95,7 +105,7 @@ final class SettingsUITests: XCTestCase {
 
     @MainActor
     func testTimeZoneIsSetFromThePickerAndAutomatically() {
-        let app = launch()
+        let app = launchGeneral()
         if botSettings()["timeZoneAuto"] as? Bool == true {
             app.element("settings-time-zone-auto.toggle").tap()
             XCTAssertTrue(eventually { (self.botSettings()["timeZoneAuto"] as? Bool) == false })
@@ -124,7 +134,7 @@ final class SettingsUITests: XCTestCase {
 
     @MainActor
     func testRulesListAndSwipeToDelete() {
-        let app = launch()
+        let app = launchGeneral()
         let before = api("GET", "/api/auto-review/rules").1["total"] as? Int ?? 0
         XCTAssertGreaterThan(before, 0, "the fixture seeds saved command rules")
         app.element("settings-rules").tap()
@@ -137,7 +147,7 @@ final class SettingsUITests: XCTestCase {
         XCTAssertTrue(delete.waitForExistence(timeout: 5))
         delete.tap()
         XCTAssertTrue(eventually { (self.api("GET", "/api/auto-review/rules").1["total"] as? Int) == before - 1 })
-        // Back on the root page, the count follows.
+        // Back on General, the count follows.
         app.element("settings-back").firstMatch.tap()
         XCTAssertTrue(app.element("settings-rules").waitForExistence(timeout: 5))
         XCTAssertTrue(app.element("settings-rules").label.contains("\(before - 1)"))
@@ -216,10 +226,13 @@ final class SettingsUITests: XCTestCase {
     @MainActor
     func testSignOutEndsTheSession() {
         let app = launch()
-        let signOut = app.element("settings-sign-out")
+        // Sign Out lives with the paired computers (Pair devices)
+        app.element("settings-account").tap()
+        let signOut = app.element("account-sign-out")
+        XCTAssertTrue(signOut.waitForExistence(timeout: 10))
         for _ in 0..<6 where !signOut.isHittable { app.swipeUp() }
         signOut.tap()
-        let confirm = app.buttons.matching(NSPredicate(format: "label == 'Sign Out' AND identifier != 'settings-sign-out'")).firstMatch
+        let confirm = app.buttons.matching(NSPredicate(format: "label == 'Sign Out' AND identifier != 'account-sign-out'")).firstMatch
         XCTAssertTrue(confirm.waitForExistence(timeout: 5))
         confirm.tap()
         XCTAssertTrue(waitForDisappearance(app.buttons["home-plus"], timeout: 10))
@@ -232,7 +245,7 @@ final class SettingsUITests: XCTestCase {
     /// simulator; afterwards the switch simply reads On).
     @MainActor
     func testNotificationsSwitchAsksTheSystem() {
-        let app = launch()
+        let app = launchGeneral()
         let toggle = app.element("settings-notifications.toggle")
         XCTAssertTrue(toggle.waitForExistence(timeout: 5))
         if toggle.value as? String == "1" { return }
@@ -308,9 +321,13 @@ final class SettingsUITests: XCTestCase {
     private func openAppearance(in app: XCUIApplication) {
         if app.element("theme.mode.system").exists { return }
         if !app.element("settings-close").exists {
+            // the photo opens the account menu, which holds Settings
             let open = app.element("home-account")
             XCTAssertTrue(open.waitForExistence(timeout: 10))
             open.tap()
+            let settings = app.buttons["account-menu.settings"]
+            XCTAssertTrue(settings.waitForExistence(timeout: 5))
+            settings.tap()
         }
         let row = app.element("settings-appearance")
         XCTAssertTrue(row.waitForExistence(timeout: 10))

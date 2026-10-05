@@ -29,8 +29,15 @@ struct ChatListView: View {
     @State private var showingAutomations = false
     /// WP15: the Team map (TM1), from a long press on "+".
     @State private var showingTeamMap = false
-    /// WP15: "Message a person" (RM22), organization servers only.
-    @State private var showingMessagePerson = false
+    /// The places' Connected apps and Templates (Settings > Experimental).
+    @State private var showingConnectedApps = false
+    @State private var showingTemplates = false
+    /// What the account menu opens besides Settings.
+    @State private var accountSheet: HomeAccountSheet?
+    /// Settings > Experimental's switches, for the places.
+    @State private var features: ServerFeatures?
+    /// The bot row menu's prompts (rename, archive, delete, Primary Bot).
+    @StateObject private var botActions = BotRowActions()
     @ObservedObject private var people = PeopleDirectory.shared
     @State private var showingPlusMenu = false
     @State private var showingSearch = false
@@ -119,11 +126,27 @@ struct ChatListView: View {
                     path.append(chat)
                 }
             }
-            .sheet(isPresented: $showingMessagePerson) {
-                MessagePersonSheet { chat in
-                    showingMessagePerson = false
-                    path.append(chat)
+            .sheet(isPresented: $showingConnectedApps) {
+                NavigationStack {
+                    ConnectedAppsView()
+                        .toolbar {
+                            ToolbarItem(placement: .confirmationAction) {
+                                Button(String(localized: "Done")) { showingConnectedApps = false }
+                            }
+                        }
                 }
+                .environmentObject(session)
+            }
+            .sheet(isPresented: $showingTemplates) {
+                DesktopTemplatesSheet { showingTemplates = false }
+                    .environmentObject(session)
+            }
+            .sheet(item: $accountSheet) { sheet in
+                HomeAccountSheetView(sheet: sheet)
+                    .environmentObject(session)
+            }
+            .sheet(isPresented: $botActions.newServerSection) {
+                NewSectionSheet()
             }
             // the person sheet (RM21), from a room line, a row or a header
             .personSheetPresenter { chat in path.append(chat) }
@@ -137,6 +160,8 @@ struct ChatListView: View {
             .environmentObject(threadActions)
             .threadActionsPresenter(threadActions)
             .environmentObject(sectionActions)
+            .environmentObject(botActions)
+            .botRowActionsPresenter(botActions)
             // its own host: alerts chained on one view after the thread
             // presenter's would never show
             .background { Color.clear.sidebarSectionActionsPresenter(sectionActions) }
@@ -266,11 +291,18 @@ struct ChatListView: View {
     /// second hidden route to the same screen.
     private var header: some View {
         HStack(alignment: .center) {
-            ProfileAvatar(name: session.connection?.name ?? "You", size: 30)
-                .frame(width: 44, height: 44)
-                .glassCapsule(interactive: false)
-                .accessibilityLabel(session.connection.map { LocalizedStringKey("Connected to \($0.name)") }
-                    ?? "Connected to your computer")
+            // the account menu, as on the standard home
+            Menu {
+                HomeAccountMenuItems(select: selectAccount)
+            } label: {
+                ProfileAvatar(name: session.connection?.name ?? "You", size: 30)
+                    .frame(width: 44, height: 44)
+                    .contentShape(Circle())
+            }
+            .buttonStyle(.plain)
+            .glassCapsule()
+            .accessibilityLabel(Text("Account"))
+            .accessibilityIdentifier("home-account")
 
             Spacer(minLength: 8)
 
@@ -286,15 +318,8 @@ struct ChatListView: View {
 
             Spacer(minLength: 8)
 
-            NavigationLink { SettingsView() } label: {
-                Image(systemName: "gearshape")
-                    .font(.system(size: 18, weight: .medium))
-                    .foregroundStyle(Theme.textPrimary)
-                    .frame(width: 44, height: 44)
-            }
-            .buttonStyle(.plain)
-            .glassCapsule()
-            .accessibilityLabel("Settings")
+            // balances the account button so the title stays centred
+            Color.clear.frame(width: 44, height: 44)
         }
         .padding(.horizontal, 16)
         .padding(.top, 4)
@@ -416,6 +441,8 @@ struct ChatListView: View {
                 botRows(summaries(for: section.bots))
             }
         }
+
+        HomePlacesSection(places: places, open: openPlace)
     }
 
     /// Between one section and the next title.
@@ -467,6 +494,7 @@ struct ChatListView: View {
                 )
             }
             .buttonStyle(.plain)
+            .contextMenu { chatMenu(.room(room)) }
             .accessibilityIdentifier("chat-row.\(room.id)")
         }
     }
@@ -579,6 +607,7 @@ struct ChatListView: View {
                     )
                 }
                 .buttonStyle(.plain)
+                .contextMenu { chatMenu(summary.chat) }
                 .accessibilityIdentifier("chat-row.\(summary.chat.id)")
                 if case let .bot(bot) = summary.chat, sidebarPrefs.showThreads {
                     BotThreadTree(
@@ -652,14 +681,7 @@ struct ChatListView: View {
             updatesButton
                 .frame(width: 180)
             searchButton
-            if session.canAdminister || layout.personal {
-                sectionButton
-            }
-            // `POST /api/bots` passes both gates (SB31): a client session
-            // may make a bot even though it cannot file sections.
-            if session.surfaceGate.allows(.createBot) {
-                newBotButton
-            }
+            newMenuButton
         }
     }
 
@@ -668,25 +690,26 @@ struct ChatListView: View {
             updatesButton
                 .frame(minWidth: 148)
             searchButton
-            // Creating bots and sections needs the admin scope on a server;
-            // a chat-only phone is not shown buttons the server would refuse.
-            if session.canAdminister {
-                Menu {
-                    Button("New section", systemImage: "folder.badge.plus", action: openNewSection)
-                        .disabled(!hasVisibleBots)
-                    Button("New bot", systemImage: "square.and.pencil", action: createBot)
-                } label: {
-                    Image(systemName: "plus")
-                        .font(.system(size: 20, weight: .medium))
-                        .foregroundStyle(Theme.textPrimary)
-                        .frame(width: 48, height: 48)
-                        .contentShape(Circle())
-                }
-                .buttonStyle(.plain)
-                .glassCapsule()
-                .accessibilityLabel("Create")
-            }
+            newMenuButton
         }
+    }
+
+    /// New (the desktop's compose-to picker), the same entries as the
+    /// standard home's "+".
+    private var newMenuButton: some View {
+        Menu {
+            NewMenuItems(select: selectNew)
+        } label: {
+            Image(systemName: "plus")
+                .font(.system(size: 20, weight: .medium))
+                .foregroundStyle(Theme.textPrimary)
+                .frame(width: 48, height: 48)
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .glassCapsule()
+        .accessibilityLabel("Create")
+        .accessibilityIdentifier("home-plus")
     }
 
     private var updatesButton: some View {
@@ -706,22 +729,6 @@ struct ChatListView: View {
         .accessibilityLabel("Search")
     }
 
-    private var sectionButton: some View {
-        GlassButton(systemImage: "folder.badge.plus", size: 48, weight: .medium, action: openNewSection)
-            .disabled(!hasVisibleBots)
-            .opacity(hasVisibleBots ? 1 : 0.45)
-            .accessibilityLabel("New section")
-    }
-
-    private var newBotButton: some View {
-        GlassButton(systemImage: "square.and.pencil", size: 48, weight: .medium, action: createBot)
-            .accessibilityLabel("New bot")
-    }
-
-    private var hasVisibleBots: Bool {
-        session.state.bots.contains { $0.hidden != true }
-    }
-
     /// The roster as the sidebar lays it out: the person's sections,
     /// hidden entries and order applied (CompanionCore `SidebarLayout`).
     private var layout: SidebarLayout { sidebarPrefs.layout(session) }
@@ -733,17 +740,47 @@ struct ChatListView: View {
             + session.state.rooms.map { "\($0.id):\($0.unread):\(session.state.messages[$0.threadId]?.last?.at ?? 0)" }
     }
 
-    private func openNewSection() {
+    /// The account menu's entries.
+    private func selectAccount(_ item: AccountMenuItem) {
         Haptics.selection()
-        showingNewSection = true
+        switch item {
+        case .settings: showingSettings = true
+        case .archivedBots: accountSheet = .archivedBots
+        case .achievements: accountSheet = .achievements
+        case .about: accountSheet = .about
+        case .help: UIApplication.shared.open(SettingsLinks.helpCenter(french: false))
+        }
     }
 
-    private func createBot() {
-        Task {
-            if let bot = await session.createBot() {
-                Haptics.success()
-                path.append(Chat.bot(bot))
+    /// New's entries: create, or open a bot's or a person's conversation.
+    private func selectNew(_ item: NewMenuItem) {
+        showingPlusMenu = false
+        switch item {
+        case .createBot:
+            createBotSection = nil
+            showingCreateBot = true
+        case .createGroup:
+            showingNewGroup = true
+        case let .bot(id):
+            if let bot = session.state.bot(id) { openChat(.bot(bot)) }
+        case let .person(id):
+            Task {
+                if let chat = await PeopleDirectory.shared.openConversation(with: id, session: session) { path.append(chat) }
             }
+        }
+    }
+
+    /// The places at the foot of the list.
+    private var places: [HomePlace] {
+        NavigationMenus.places(gate: session.surfaceGate, connected: session.connection != nil, features: features)
+    }
+
+    private func openPlace(_ place: HomePlace) {
+        switch place {
+        case .teamMap: showingTeamMap = true
+        case .automations: showingAutomations = true
+        case .connectedApps: showingConnectedApps = true
+        case .templates: showingTemplates = true
         }
     }
 
@@ -1213,6 +1250,8 @@ extension ChatListView {
             await session.loadAccount()
             await sidebarPrefs.load(session)
             await people.load(session)
+            features = await session.configStatus()?.features
+            await botActions.load(session)
         }
 #if DEBUG
         .task {
@@ -1299,7 +1338,7 @@ extension ChatListView {
 
     private var standardHeader: some View {
         HStack(spacing: Theme.Metric.controlGap) {
-            HomeAccountButton { showingSettings = true }
+            HomeAccountButton(select: selectAccount)
             Spacer(minLength: 0)
             GlassCircleButton(systemImage: "magnifyingglass", accessibilityLabel: "Search") {
                 showingSearch = true
@@ -1309,45 +1348,10 @@ extension ChatListView {
                 withAnimation(.spring(response: 0.32, dampingFraction: 0.82)) { showingPlusMenu = true }
             }
             .opacity(showingPlusMenu ? 0 : 1)
-            .contextMenu { AnyView(plusLongPressMenu) }
             .accessibilityIdentifier("home-plus")
         }
         .padding(.horizontal, Theme.Metric.screenEdge)
         .padding(.top, HomeMetrics.headerTop)
-    }
-
-    /// A long press on "+" reaches what the floating bar used to hold.
-    @ViewBuilder
-    private var plusLongPressMenu: some View {
-        Button {
-            showingUpdates = true
-        } label: {
-            Label("Updates", systemImage: "bell")
-        }
-        if session.connection != nil {
-            Button {
-                showingAutomations = true
-            } label: {
-                Label("Automations", systemImage: "calendar.badge.clock")
-            }
-            .accessibilityIdentifier("home-plus-automations")
-        }
-        if session.connection != nil, session.surfaceGate.allows(.teamMap) {
-            Button {
-                showingTeamMap = true
-            } label: {
-                Label("Team map", systemImage: "point.3.connected.trianglepath.dotted")
-            }
-            .accessibilityIdentifier("home-plus-team-map")
-        }
-        if session.canAdminister || layout.personal {
-            Button {
-                showingNewSection = true
-            } label: {
-                Label("New section", systemImage: "folder.badge.plus")
-            }
-            .disabled(!hasVisibleBots)
-        }
     }
 
     // MARK: Pinned
@@ -1431,6 +1435,8 @@ extension ChatListView {
         }
 
         HomeHiddenEntries(rows: layout.hiddenRows, prefs: sidebarPrefs)
+
+        HomePlacesSection(places: places, open: openPlace)
     }
 
     /// One collapsible home section. `named` is a section of the person's or
@@ -1444,36 +1450,17 @@ extension ChatListView {
         return VStack(alignment: .leading, spacing: 0) {
             HomeSectionHeader(title: title, collapsed: collapsed) { toggleSection(key) }
                 .contextMenu {
-                    Button {
-                        toggleSection(key)
-                    } label: {
-                        Label(collapsed ? "Expand" : "Collapse", systemImage: collapsed ? "chevron.down" : "chevron.up")
-                    }
-                    if session.canAdminister && layout?.personal != true {
-                        Button {
-                            showingNewSection = true
-                        } label: {
-                            Label("New section", systemImage: "folder.badge.plus")
-                        }
-                        .disabled(!hasVisibleBots)
-                    }
-                    // NB3: a new bot that starts in this team (the desktop's
-                    // Manage team > New bot). Server teams only: an
-                    // organization's sections are the person's own.
-                    if let named, layout?.personal != true, session.surfaceGate.allows(.createBot), session.surfaceGate.allows(.createBotTeam) {
-                        Button {
-                            Task { @MainActor in
-                                try? await Task.sleep(nanoseconds: 350_000_000)
-                                createBotSection = named
-                                showingCreateBot = true
-                            }
-                        } label: {
-                            Label("New bot here", systemImage: "plus.circle")
-                        }
-                        .accessibilityIdentifier("section-new-bot")
-                    }
                     if let layout, let id = HomeSectionKey.sectionID(for: key) {
-                        SidebarSectionMenu(name: named, sectionID: id, layout: layout, actions: sectionActions, prefs: sidebarPrefs)
+                        SidebarSectionMenu(
+                            name: named, sectionID: id, layout: layout, actions: sectionActions, prefs: sidebarPrefs,
+                            newBotHere: { team in
+                                Task { @MainActor in
+                                    try? await Task.sleep(nanoseconds: 350_000_000)
+                                    createBotSection = team
+                                    showingCreateBot = true
+                                }
+                            }
+                        )
                     }
                 }
                 .accessibilityIdentifier("section.\(key)")
@@ -1524,88 +1511,16 @@ extension ChatListView {
 
     // MARK: Long press
 
+    /// One builder for every density and the pinned row: the desktop's
+    /// bot and room menus (Features/Sidebar/HomeMenus.swift, RoomActions).
     @ViewBuilder
     private func chatMenu(_ chat: Chat) -> some View {
         switch chat {
         case let .bot(bot):
-            if bot.chiefOfStaff != true {
-                Button {
-                    Task { await session.setPinned(bot, pinned: bot.pinned != true) }
-                } label: {
-                    Label(bot.pinned == true ? "Unpin" : "Pin", systemImage: bot.pinned == true ? "pin.slash" : "pin")
-                }
-            }
-            // Settings > Appearance > Threads off: no thread entries (the
-            // desktop bot menu's showThreads block)
-            if sidebarPrefs.showThreads {
-                Button {
-                    createThread(for: bot)
-                } label: {
-                    Label("New thread", systemImage: "square.and.pencil")
-                }
-                .disabled(creatingThreads.contains(bot.id))
-                Button {
-                    managingThreads = chat
-                } label: {
-                    Label("Threads", systemImage: "list.bullet")
-                }
-            }
-            BotThreadsMenu(bot: bot, actions: threadActions, showsThreads: sidebarPrefs.showThreads)
-            let layout = self.layout
-            if layout.personal {
-                PersonalSectionPicker(key: PersonalSections.itemKey(bot: bot.id), layout: layout, actions: sectionActions)
-            } else if session.canAdminister {
-                Menu {
-                    ForEach(session.state.sidebarSections.map(\.name).filter { $0 != bot.section }, id: \.self) { name in
-                        Button(name) {
-                            Task { await session.assignSection(name: name, botIds: [bot.id]) }
-                        }
-                    }
-                    Button {
-                        showingNewSection = true
-                    } label: {
-                        Label("New section", systemImage: "folder.badge.plus")
-                    }
-                } label: {
-                    Label("Move to section", systemImage: "folder")
-                }
-            }
-            // only this person's sidebar: the bot and everyone else keep it
-            Button {
-                sidebarPrefs.hide(session, .bot, bot.id)
-            } label: {
-                Label("Hide from sidebar", systemImage: "eye.slash")
-            }
+            BotRowMenu(bot: bot)
         case let .room(room):
             let layout = self.layout
-            if session.groupPinsSupported {
-                Button {
-                    Task { await session.setPinned(room, pinned: room.pinned != true) }
-                } label: {
-                    Label(room.pinned == true ? "Unpin" : "Pin", systemImage: room.pinned == true ? "pin.slash" : "pin")
-                }
-            }
-            if sidebarPrefs.showThreads {
-                Button {
-                    managingThreads = chat
-                } label: {
-                    Label("Threads", systemImage: "list.bullet")
-                }
-            }
-            // rename, move (the person's own sections on an organization
-            // server), copy ID, Hide from sidebar, delete: the desktop's order
             RoomRowMenu(room: room, actions: roomActions, personalLayout: layout.personal ? layout : nil, sectionActions: sectionActions)
-        }
-    }
-
-    private func createThread(for bot: Bot) {
-        guard !creatingThreads.contains(bot.id) else { return }
-        creatingThreads.insert(bot.id)
-        Task {
-            defer { creatingThreads.remove(bot.id) }
-            if let created = await session.createRosterThread(for: bot) {
-                path.append(Chat.bot(created))
-            }
         }
     }
 
@@ -1654,19 +1569,10 @@ extension ChatListView {
             }
             if showingPlusMenu {
                 HomePlusMenu(
-                    canCreateBot: session.surfaceGate.allows(.createBot),
-                    messagePerson: session.surfaceGate.allows(.people) ? {
-                        showingPlusMenu = false
-                        showingMessagePerson = true
-                    } : nil
+                    groups: NewMenuLabels.groups(session),
+                    title: { NewMenuLabels.title($0, session: session) },
+                    select: selectNew
                 ) {
-                    showingPlusMenu = false
-                    createBotSection = nil
-                    showingCreateBot = true
-                } newGroup: {
-                    showingPlusMenu = false
-                    showingNewGroup = true
-                } dismiss: {
                     withAnimation(.easeOut(duration: 0.18)) { showingPlusMenu = false }
                 }
                 .padding(.top, HomeMetrics.headerTop - 6)

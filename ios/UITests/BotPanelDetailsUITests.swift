@@ -106,7 +106,7 @@ final class BotPanelDetailsUITests: XCTestCase {
         if let environment = fixture.environmentId { arguments += ["-parityEnvironment", environment] }
         app.launchArguments = arguments
         app.launch()
-        XCTAssertTrue(app.staticTexts["profile-name"].waitForExistence(timeout: 30))
+        XCTAssertTrue(element("profile-name", in: app).waitForExistence(timeout: 30))
         return app
     }
 
@@ -246,10 +246,7 @@ final class BotPanelDetailsUITests: XCTestCase {
             throw XCTSkip("the fixture seeds no file in Ara's thread")
         }
         let app = launchProfile()
-        element("profile-tab.files", in: app).tap()
-        let link = element("profile-thread-files", in: app)
-        XCTAssertTrue(link.waitForExistence(timeout: 20))
-        link.tap()
+        element("panel-tab.library", in: app).tap()
         XCTAssertTrue(element("thread-files", in: app).waitForExistence(timeout: 15))
         for file in files.prefix(3) {
             let fileName = try XCTUnwrap(file["name"] as? String)
@@ -278,8 +275,8 @@ final class BotPanelDetailsUITests: XCTestCase {
 
 
         // the search keeps the matching file only
-        let search = app.searchFields.firstMatch
-        if !search.exists { app.swipeDown() }
+        let search = app.textFields["thread-files-search"].firstMatch
+        if !search.isHittable { app.scrollViews["profile-scroll"].firstMatch.swipeDown() }
         XCTAssertTrue(search.waitForExistence(timeout: 10))
         search.tap()
         search.typeText(name)
@@ -288,7 +285,7 @@ final class BotPanelDetailsUITests: XCTestCase {
             XCTAssertFalse(element("thread-file.\(other)", in: app).exists, "\(other) is filtered out")
         }
 
-        // Show in chat closes the files and the profile over the chat
+        // Show in chat closes the panel over the chat
         actions.tap()
         let show = app.buttons["Show in chat"].firstMatch
         XCTAssertTrue(show.waitForExistence(timeout: 10))
@@ -301,7 +298,7 @@ final class BotPanelDetailsUITests: XCTestCase {
         attach("Shown in chat", app)
     }
 
-    // MARK: Advanced: usage, voice notes, Primary Bot (BP14, BA11, SB28)
+    // MARK: More: voice notes, usage; the menu's Primary Bot (BP14, BA11, SB28)
 
     @MainActor
     func testVoiceNotesToggleSavesAndUsageShows() throws {
@@ -310,20 +307,24 @@ final class BotPanelDetailsUITests: XCTestCase {
         try api("PATCH", "/api/bots/\(id)", ["voiceNotes": true])
         defer { _ = try? api("PATCH", "/api/bots/\(id)", ["voiceNotes": true]) }
         let app = launchProfile()
-        element("profile-more", in: app).tap()
-        app.buttons["Advanced"].firstMatch.tap()
+        element("panel-tab.more", in: app).tap()
+        // More > Usage
+        element("panel-row.usage", in: app).tap()
+        XCTAssertTrue(element("bot-usage-empty", in: app).waitForExistence(timeout: 10) || element("bot-usage-turns", in: app).exists, "the usage section shows")
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        // More > Voice & alerts
+        element("panel-row.voice", in: app).tap()
         let toggle = app.switches["bot-voice-notes"].firstMatch
         for _ in 0..<8 where !(toggle.exists && toggle.isHittable) { app.swipeUp() }
         XCTAssertTrue(toggle.waitForExistence(timeout: 10))
-        XCTAssertTrue(element("bot-usage-empty", in: app).exists || element("bot-usage-turns", in: app).exists, "the usage section shows")
-        attach("Advanced: usage and voice notes", app)
+        attach("More: voice notes", app)
         // the switch's own control sits at its trailing edge
         toggle.coordinate(withNormalizedOffset: CGVector(dx: 0.93, dy: 0.5)).tap()
         try eventually("voice notes are off on the server") { try bot(named: "Ara")?["voiceNotes"] as? Bool == false }
     }
 
     @MainActor
-    func testMakePrimaryBotFromTheNameMenu() throws {
+    func testMakePrimaryBotFromThePanelMenu() throws {
         let before = try bots().first { $0["chiefOfStaff"] as? Bool == true }?["id"] as? String
         let ara = try XCTUnwrap(try bot(named: "Ara"))
         let id = try XCTUnwrap(ara["id"] as? String)
@@ -334,8 +335,8 @@ final class BotPanelDetailsUITests: XCTestCase {
             try api("POST", "/api/bots/\(other)/primary")
         }
         let app = launchProfile()
-        app.staticTexts["profile-name"].press(forDuration: 1.2)
-        let make = app.buttons["Make primary bot"].firstMatch
+        element("profile-more", in: app).tap()
+        let make = element("profile-menu.make-primary", in: app)
         XCTAssertTrue(make.waitForExistence(timeout: 10))
         make.tap()
         try eventually("Ara is the Primary Bot on the server") { try bot(named: "Ara")?["chiefOfStaff"] as? Bool == true }
@@ -376,6 +377,7 @@ final class BotPanelDetailsUITests: XCTestCase {
         try api("PATCH", "/api/bots/\(id)", ["mascotLook": ["character": "owl"], "mascotSkin": "none"])
         defer { _ = try? api("PATCH", "/api/bots/\(id)", ["mascotLook": ["character": "owl"], "mascotSkin": "none"]) }
         let app = launchProfile()
+        element("profile-mascot", in: app).tap()
         let inferno = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'inferno'")).firstMatch
         XCTAssertTrue(inferno.waitForExistence(timeout: 15))
         XCTAssertEqual(inferno.value as? String, "Locked")

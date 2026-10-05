@@ -263,6 +263,18 @@ public enum SurfaceFeature: String, CaseIterable, Hashable, Sendable {
     /// The person sheet, people's names on room lines, and direct
     /// conversations between people (RM21, RM22): organization servers only.
     case people
+
+    // Home, menus and settings (iPhone navigation parity)
+    /// Rename Bot from its row (`PATCH /api/bots/:id/profile`): the owner's
+    /// sidecar and an admin session; a client session only for its own bot
+    /// on an organization server (member fields), which the menu checks.
+    case renameBot
+    /// Archive a bot and the Archived bots list (`PATCH /api/bots/:id`
+    /// `{hidden}`): an admin session only; the sidecar and a client
+    /// session refuse the field, and the remote client hides both.
+    case archiveBot
+    /// Settings > Experimental (`PUT /api/config` features): admin scope.
+    case experimentalSettings
 }
 
 public struct SurfaceGate: Hashable, Sendable {
@@ -390,6 +402,10 @@ public struct SurfaceGate: Hashable, Sendable {
             return scope == .serverAdmin
         case .people:
             return organization
+        case .renameBot:
+            return scope != .serverClient || organization
+        case .archiveBot, .experimentalSettings:
+            return scope == .serverAdmin
         }
     }
 }
