@@ -115,6 +115,9 @@ final class RoutinesUITests: XCTestCase {
         for _ in 0..<12 where !(row.exists && row.isHittable) { app.swipeUp() }
         row.tap()
         XCTAssertTrue(element("routines-section", in: app).waitForExistence(timeout: 15))
+        // Automations opens on the calendar; these tests read the list
+        let list = app.segmentedControls["automations-view"].buttons.element(boundBy: 0)
+        if list.waitForExistence(timeout: 5) { list.tap() }
         return app
     }
 
@@ -176,7 +179,8 @@ final class RoutinesUITests: XCTestCase {
         failed.tap()
         XCTAssertTrue(element("routine-run-status", in: app).waitForExistence(timeout: 10))
         try eventually("the failed run is seen on the server") { try run("lab-run-failed")?["seenAt"] != nil }
-        app.buttons["Done"].tap()
+        // the run's own Done, over the Automations sheet's
+        app.buttons.matching(NSPredicate(format: "label == %@", "Done")).allElementsBoundByIndex.last?.tap()
 
         element("routines-menu", in: app).tap()
         element("routines-mark-all-seen", in: app).tap()
@@ -234,7 +238,10 @@ final class RoutinesUITests: XCTestCase {
         XCTAssertTrue(element("routines-row.Scan skills populaires mensuel", in: app).waitForExistence(timeout: 10))
         element("routines-menu", in: app).tap()
         app.buttons["Filter by bot"].firstMatch.tap()
-        app.buttons["Aurora"].firstMatch.tap()
+        // the submenu opens over the Automations sheet
+        let aurora = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Aurora")).firstMatch
+        XCTAssertTrue(aurora.waitForExistence(timeout: 5), "Aurora in the bot filter")
+        aurora.tap()
         XCTAssertTrue(element("routines-row.\(lab)", in: app).waitForExistence(timeout: 5))
         XCTAssertFalse(element("routines-row.Scan skills populaires mensuel", in: app).exists)
     }

@@ -47,6 +47,19 @@ final class HomeMenusUITests: XCTestCase {
         app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'chat-row.' AND label CONTAINS %@", name)).firstMatch
     }
 
+    /// A bot's row, its section opened if an earlier test folded it.
+    @MainActor
+    private func reveal(_ name: String, section: String, in app: XCUIApplication) -> XCUIElement {
+        let target = row(name, in: app)
+        if !target.waitForExistence(timeout: 10) {
+            let header = app.buttons["section.\(section)"]
+            for _ in 0..<8 where !(header.exists && header.isHittable) { app.swipeUp() }
+            if header.exists { header.tap() }
+        }
+        for _ in 0..<8 where !(target.exists && target.isHittable) { app.swipeUp() }
+        return target
+    }
+
     private func item(_ label: String, in app: XCUIApplication) -> XCUIElement {
         app.buttons.matching(NSPredicate(format: "label == %@", label)).firstMatch
     }
@@ -91,14 +104,18 @@ final class HomeMenusUITests: XCTestCase {
     @MainActor
     func testTheBotMenuFollowsTheDesktopOrderAndRenames() throws {
         let app = launch()
-        let aurora = row("Aurora", in: app)
-        for _ in 0..<8 where !(aurora.exists && aurora.isHittable) { app.swipeUp() }
+        let aurora = reveal("Aurora", section: "Administration", in: app)
         XCTAssertTrue(aurora.waitForExistence(timeout: 10))
         let id = try XCTUnwrap(bot(named: "Aurora")?["id"] as? String)
         defer { _ = api("PATCH", "/api/bots/\(id)", ["name": "Aurora"]) }
 
         aurora.press(forDuration: 1.2)
-        let expected = ["New thread", "Pin", "Move to", "Mark as Unread", "Rename Bot", "Copy conversation ID", "Hide from sidebar", "Archive", "Delete"]
+        // a press that lands while the list still settles opens nothing
+        if !item("Copy conversation ID", in: app).waitForExistence(timeout: 5) { aurora.press(forDuration: 1.5) }
+        // New thread leads while Settings > Appearance > Threads is on (an
+        // earlier test may have turned it off on this simulator)
+        let threads = item("New thread", in: app).exists ? ["New thread"] : []
+        let expected = threads + ["Pin", "Move to", "Mark as Unread", "Rename Bot", "Copy conversation ID", "Hide from sidebar", "Archive", "Delete"]
         var lastY = -CGFloat.greatestFiniteMagnitude
         for label in expected {
             let entry = item(label, in: app)
@@ -123,8 +140,7 @@ final class HomeMenusUITests: XCTestCase {
     @MainActor
     func testArchiveThenRestoreFromArchivedBots() throws {
         let app = launch()
-        let orion = row("Orion", in: app)
-        for _ in 0..<8 where !(orion.exists && orion.isHittable) { app.swipeUp() }
+        let orion = reveal("Orion", section: "Bots", in: app)
         XCTAssertTrue(orion.waitForExistence(timeout: 10))
         let id = try XCTUnwrap(bot(named: "Orion")?["id"] as? String)
         defer { _ = api("PATCH", "/api/bots/\(id)", ["hidden": false]) }

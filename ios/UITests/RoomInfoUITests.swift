@@ -231,7 +231,9 @@ final class RoomInfoUITests: XCTestCase {
         let field = app.alerts.textFields.firstMatch
         XCTAssertTrue(field.waitForExistence(timeout: 10), "the rename field")
         replaceText(field, with: newName)
+        attach("Rename typed", app)
         app.alerts.buttons["room-rename-save"].firstMatch.tap()
+        attach("Rename saved", app)
         try eventually("the room renamed") { try room(lab.id)?.name == newName }
         XCTAssertTrue(app.staticTexts[newName].waitForExistence(timeout: 10), "the new name on the sheet")
 
@@ -348,8 +350,10 @@ final class RoomInfoUITests: XCTestCase {
         let app = try launchHome()
 
         pressRow(app, id)
+        attach("Room menu", app)
+        UIPasteboard.general.string = ""
         tapMenu(app, "Copy conversation ID")
-        XCTAssertTrue(element(app, "room-action-notice").waitForExistence(timeout: 5), "the copy notice")
+        try eventually("the conversation id on the pasteboard") { UIPasteboard.general.string == created.group.threadId }
 
         pressRow(app, id)
         tapMenu(app, "Move to team")
