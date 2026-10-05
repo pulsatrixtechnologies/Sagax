@@ -77,6 +77,13 @@ export function workplaceNotice(status: DesktopBridgeStatus | null, computer: "s
   return status.connected ? "computer" : "fallback";
 }
 
+/** True when a refresh would not change what the composer already shows. */
+export function sameDesktopBridgeStatus(previous: DesktopBridgeStatus | null, next: DesktopBridgeStatus | null): boolean {
+  if (previous === next) return true;
+  if (!previous || !next) return false;
+  return JSON.stringify(previous) === JSON.stringify(next);
+}
+
 /** The person's bridge status, refreshed while shown (organization only). */
 export function useDesktopBridgeStatus(refreshMs = 20_000): DesktopBridgeStatus | null {
   const [status, setStatus] = useState<DesktopBridgeStatus | null>(null);
@@ -87,7 +94,7 @@ export function useDesktopBridgeStatus(refreshMs = 20_000): DesktopBridgeStatus 
       let next: DesktopBridgeStatus | null;
       try { next = await loadDesktopBridge(); } catch { return; /* keep the last answer */ }
       if (cancelled) return;
-      setStatus(next);
+      setStatus((previous) => sameDesktopBridgeStatus(previous, next) ? previous : next);
       // A solo server has no bridge: stop asking.
       if (next === null) stopped = true;
     };

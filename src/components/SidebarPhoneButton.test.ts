@@ -3,10 +3,13 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  createSidebarPhonePoll,
   deriveSidebarPhoneStatus,
   phoneSettingsAction,
+  sameSidebarPhoneSnapshot,
   SIDEBAR_PHONE_RECENT_MS,
   SidebarPhoneStatusButton,
+  type SidebarPhoneSnapshot,
   type SidebarPhoneStatus,
 } from "./SidebarPhoneButton";
 
@@ -168,5 +171,62 @@ describe("SidebarPhoneStatusButton", () => {
     expect(markup).toContain('data-sidebar-density="compact"');
     expect(markup).toContain("size-10");
     expect(markup).toContain("shrink-0");
+  });
+});
+
+describe("sidebar phone poll", () => {
+  const snapshot = (lastSeenAt: number): SidebarPhoneSnapshot => ({
+    enabled: true,
+    devices: [{ id: "phone-1", name: "iPhone", createdAt: lastSeenAt, lastSeenAt, cloudDesktopAccess: false }],
+    connectedDeviceIds: ["phone-1"],
+  });
+
+  it("shares one poll and does not publish an unchanged snapshot", async () => {
+    const calls: number[] = [];
+    let current = snapshot(1);
+    const seen: Array<SidebarPhoneSnapshot | null | undefined> = [];
+    // The interval callback assigns this. A property stays visible to the
+    // assertions; a let would be narrowed to its initial null.
+    const clock: { timer: { fire: () => void; delay: number } | null } = { timer: null };
+    let visible = true;
+    const poll = createSidebarPhonePoll({
+      bridge: () => ({
+        state: async () => {
+          calls.push(1);
+          return current;
+        },
+      }),
+      intervalMs: 15_000,
+      visible: () => visible,
+      listenVisible: () => () => {},
+      setInterval: (callback, delay) => {
+        clock.timer = { fire: callback, delay };
+        return 1;
+      },
+      clearInterval: () => { clock.timer = null; },
+    });
+    const stopA = poll.subscribe((next) => seen.push(next));
+    const stopB = poll.subscribe((next) => seen.push(next));
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(calls).toEqual([1]);
+    expect(clock.timer?.delay).toBe(15_000);
+    expect(seen).toHaveLength(2);
+    const published = seen.length;
+    current = snapshot(1);
+    clock.timer?.fire();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(calls).toEqual([1, 1]);
+    expect(seen).toHaveLength(published);
+    expect(sameSidebarPhoneSnapshot(snapshot(1), snapshot(1))).toBe(true);
+    visible = false;
+    clock.timer?.fire();
+    await Promise.resolve();
+    expect(calls).toHaveLength(2);
+    stopA();
+    expect(clock.timer).not.toBeNull();
+    stopB();
+    expect(clock.timer).toBeNull();
   });
 });
