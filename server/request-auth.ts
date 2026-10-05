@@ -15,6 +15,7 @@ import { isIP } from "node:net";
 import type { Scope, SessionRecord, SessionRegistry } from "./sessions.ts";
 import { denyReason as companionDenial, isCompanionNotice } from "../companion/src/routes.ts";
 import {
+  MEMBER_BOT_FIELDS,
   clientBotPatchViolation as sharedClientBotPatchViolation,
   memberBotFieldViolation as sharedMemberBotFieldViolation,
   viewerCapabilities,
