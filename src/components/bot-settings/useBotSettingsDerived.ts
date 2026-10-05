@@ -103,13 +103,14 @@ export function useBotSettingsDerived(bot: Bot) {
   const sectionName = bot.section?.trim() || t("sidebar.section.general");
   // One Primary Bot per person: the one this bot would take the role from.
   const owner = bot.ownerUserId?.trim().toLowerCase() ?? "";
-  const currentChief = state.bots.find(
+  // A computer-panel test mounts a partial store that omits bots.
+  const currentChief = (state.bots ?? []).find(
     (candidate) =>
       candidate.id !== bot.id &&
       candidate.chiefOfStaff &&
       (candidate.ownerUserId?.trim().toLowerCase() ?? "") === owner,
   );
-  const botRoutines = state.routines.filter((routine) => routine.botId === bot.id);
+  const botRoutines = (state.routines ?? []).filter((routine) => routine.botId === bot.id);
   const activeBotRoutines = botRoutines.filter((routine) => routine.enabled).length;
 
   return {

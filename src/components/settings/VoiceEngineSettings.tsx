@@ -50,7 +50,9 @@ export function VoiceEngineSettings() {
         }
       : null;
   const key = cloudProvider ? voiceKeyDraftValue(keyDraft, cloudProvider.id) : "";
-  const systemVoicesAvailable = capabilities.host.platform === "darwin";
+  // A settings test can mount this card with an empty capabilities object.
+  const host = (capabilities as { host?: { platform?: string } }).host;
+  const systemVoicesAvailable = host?.platform === "darwin";
   const configured = Boolean(tts?.configured);
   const included = Boolean(tts?.included);
 
