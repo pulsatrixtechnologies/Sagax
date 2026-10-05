@@ -248,7 +248,12 @@ add({ id: "templates", phase: "main", note: "Templates (team library) panel",
 
 // dialogs
 add({ id: "new-bot", phase: "main", note: "New bot dialog",
-  open: async (ctx) => { await ctx.dispatch({ type: "toggleNewBot", open: true }); await ctx.sleep(700); } });
+  open: async (ctx) => {
+    await ctx.dispatch({ type: "toggleNewBot", open: true });
+    // the dialog loads its settings first ("Loading settings…")
+    await ctx.waitFor(`!/Loading settings/.test(document.querySelector("[role=dialog]")?.innerText ?? "")`, { timeoutMs: 15_000 }).catch(() => {});
+    await ctx.sleep(700);
+  } });
 add({ id: "plugins-apps", phase: "main", note: "Connected apps / plugins panel: apps",
   open: async (ctx) => { await ctx.dispatch({ type: "togglePlugins", open: true, surface: "apps" }); await ctx.sleep(1200); } });
 add({ id: "plugins-mcp", phase: "main", note: "Connected apps / plugins panel: MCP servers",
