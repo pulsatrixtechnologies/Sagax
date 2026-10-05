@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Bot as BotIcon, Loader2, Menu, Plus } from "lucide-react";
-import { useAdvancedMode } from "@/lib/interface-mode";
+import { setInterfaceModeRole, useAdvancedMode } from "@/lib/interface-mode";
+import { usePerspicaxOrg } from "@/lib/perspicax-org";
 import { openNotificationTarget, StoreProvider, useStore } from "@/state/store";
 import { useWelcomeViewer, WelcomeGate } from "@/components/onboarding/WelcomeGate";
 import { mainConversation } from "@/lib/main-view";
@@ -24,6 +25,7 @@ import { RemoteDesktopPanel } from "@/components/remote-desktop-panel";
 import { InspectorPanel } from "@/components/InspectorPanel";
 import { ActivityPanel } from "@/components/ActivityPanel";
 import { SettingsModal } from "@/components/SettingsModal";
+import { useServerMode } from "@/components/ServerModeSettings";
 import { WorkspaceBackupRecovery } from "@/components/WorkspaceBackupSettings";
 import { ReleaseNotesPrompt } from "@/components/ReleaseNotesPrompt";
 import { UpdateBanner } from "@/components/UpdateBanner";
@@ -146,11 +148,24 @@ function Shell({ viewer }: { viewer: WelcomeViewer | null }) {
   // Someone with no bot of their own still opens on a group they are in.
   const { group, bot } = mainConversation(state.bots, state.groups, state.selectedId);
   const calendarOpen = state.activeView === "routines";
-  // Turning Advanced mode off (an opt-in) closes the inspector it no longer offers.
+  // Simple is the default until an explicit choice or an organization
+  // owner/admin is known. The choice itself is written only on the switch.
   const advanced = useAdvancedMode();
+  const org = usePerspicaxOrg();
+  const serverMode = useServerMode();
   useEffect(() => {
-    if (!advanced && state.inspectorOpen) dispatch({ type: "toggleInspector", open: false });
-  }, [advanced, state.inspectorOpen, dispatch]);
+    const viewer = state.config?.viewer;
+    const organization = viewer?.profileManagedBy === "perspicax" || org !== null || serverMode?.active === true;
+    setInterfaceModeRole({ organization, role: viewer?.role ?? null });
+  }, [org, serverMode, state.config?.viewer]);
+  // Simple does not offer the inspector, the computer panel or connected apps.
+  // Closing them leaves their saved settings as they were.
+  useEffect(() => {
+    if (advanced) return;
+    if (state.inspectorOpen) dispatch({ type: "toggleInspector", open: false });
+    if (state.computerOpen) dispatch({ type: "toggleComputer", open: false });
+    if (state.pluginsOpen) dispatch({ type: "togglePlugins", open: false });
+  }, [advanced, state.inspectorOpen, state.computerOpen, state.pluginsOpen, dispatch]);
 
   // Nothing on this machine can run a bot. A missing cloud login does not
   // count — that CLI can still host a local model. Wait for the first

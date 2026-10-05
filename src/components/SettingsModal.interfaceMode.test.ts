@@ -1,0 +1,62 @@
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { setLocale } from "@/lib/i18n";
+import type { AppSettingsSection } from "@/state/store";
+import { SettingsModal } from "./SettingsModal";
+
+const fixture = vi.hoisted(() => ({ section: "appearance" as AppSettingsSection }));
+vi.mock("@/state/store", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@/state/store")>(),
+  useStore: () => ({ state: { appSettingsSection: fixture.section, instances: [] }, dispatch: vi.fn() }),
+}));
+
+const stored = new Map<string, string>();
+
+beforeEach(() => {
+  stored.clear();
+  fixture.section = "appearance";
+  vi.stubGlobal("localStorage", {
+    getItem: (key: string) => stored.get(key) ?? null,
+    setItem: (key: string, value: string) => { stored.set(key, value); },
+    removeItem: (key: string) => { stored.delete(key); },
+  });
+  vi.stubGlobal("window", {});
+  vi.stubGlobal("document", { documentElement: { dataset: {} } });
+  setLocale("en");
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+  setLocale("en");
+});
+
+const render = () => renderToStaticMarkup(createElement(SettingsModal));
+
+describe("Settings Simple and Advanced", () => {
+  it("starts in Simple, with the switch in Appearance and technical sections hidden", () => {
+    const html = render();
+    expect(html).toContain('aria-label="Advanced mode"');
+    expect(html).toContain('aria-checked="false"');
+    expect(html).toContain("Show technical controls. Saved choices stay either way.");
+    expect(html).toContain('data-settings-scope="me"');
+    expect(html).toContain('<option value="general"');
+    expect(html).toContain('<option value="appearance"');
+    for (const id of ["connections", "engines", "usage", "computer", "experimental"]) {
+      expect(html, id).not.toContain(`<option value="${id}"`);
+    }
+    expect(html).not.toContain('aria-label="Show tool calls in chat"');
+    expect(html).not.toContain("Maximum turn length");
+  });
+
+  it("shows the current sections when Advanced is the stored choice", () => {
+    stored.set("sagax.interfaceMode.v1", "advanced");
+    const html = render();
+    expect(html).toContain('aria-label="Advanced mode"');
+    expect(html).toContain('aria-checked="true"');
+    for (const id of ["connections", "engines", "usage", "computer", "experimental"]) {
+      expect(html, id).toContain(`<option value="${id}"`);
+    }
+    expect(html).toContain('aria-label="Show tool calls in chat"');
+  });
+});

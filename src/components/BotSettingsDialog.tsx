@@ -11,6 +11,8 @@ import { reportAchievement } from "@/lib/achievements";
 import { ExportTranscriptMenu } from "./ExportTranscriptMenu";
 import type { BotOverview } from "@/lib/bot-overview-types";
 import { cn } from "@/lib/cn";
+import { useAdvancedMode } from "@/lib/interface-mode";
+import { simpleHidesBotSection, simpleHidesPanelTab } from "@/lib/interface-visibility";
 import { useShowInspectorButton } from "@/lib/inspector-preferences";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { BOT_SECTIONS } from "./bot-settings/sections";
@@ -76,6 +78,7 @@ export function BotSettingsDialog({ bot, onOpenVmWorkspace }: {
   overlay?: boolean;
 }) {
   const showInspector = useShowInspectorButton();
+  const advanced = useAdvancedMode();
   const { state, dispatch, flushBotPatches } = useStore();
   const { padClass } = useCaptionChrome();
   const { macInset, browser } = useMacInsetChrome();
@@ -96,13 +99,17 @@ export function BotSettingsDialog({ bot, onOpenVmWorkspace }: {
   }, [collapsed, section]);
   // The Computer tab is the store's computer view, so every existing
   // "open the computer" link still lands on it.
-  const tab: PanelTab = state.computerOpen ? "computer" : pickedTab;
+  const panelTabs = PANEL_TABS.filter((id) => advanced || !simpleHidesPanelTab(id));
+  // Simple never shows the computer tab. An open computer panel is closed
+  // by the shell; until that lands, the tab the person picked stays up.
+  const tab: PanelTab = advanced && state.computerOpen ? "computer" : pickedTab;
   // the Library holds the bot's files (an achievement teaches it)
   useEffect(() => {
     if (tab === "library") reportAchievement("files.opened");
   }, [tab]);
   const chooseTab = (next: PanelTab) => {
     if (next === "computer") {
+      if (!advanced) return;
       dispatch({ type: "toggleComputer", open: true });
       return;
     }
@@ -134,8 +141,12 @@ export function BotSettingsDialog({ bot, onOpenVmWorkspace }: {
     // An organization member never sees a section whose fields the server refuses.
     .filter((entry) => entry.id !== "access" || canEditBotField(state.config, bot, "computer") || canEditBotField(state.config, bot, "cwd"))
     .filter((entry) => entry.id !== "memory" || canEditBotField(state.config, bot, "memoryEnabled"))
-    .filter((entry) => entry.id !== "permissions" || canStepPrimary(state.config, bot) || canEditBotField(state.config, bot, "approvalMode"));
+    .filter((entry) => entry.id !== "permissions" || canStepPrimary(state.config, bot) || canEditBotField(state.config, bot, "approvalMode"))
+    .filter((entry) => advanced || !simpleHidesBotSection(entry.id));
   const visibleSections = sections.filter((entry) => sectionMatches(entry, q));
+  // A deep link into a section Simple hides shows Overview instead. The
+  // hidden section's saved values stay.
+  const shownSection = !advanced && simpleHidesBotSection(section) ? "overview" : section;
 
   const [overview, setOverview] = useState<BotOverview | null>(null);
   const [overviewError, setOverviewError] = useState(false);
@@ -331,7 +342,10 @@ export function BotSettingsDialog({ bot, onOpenVmWorkspace }: {
             refreshError={overview !== null && overviewError}
             prompt={prompt}
             promptError={promptError}
-            onOpen={(target) => dispatch({ type: "toggleSettings", open: true, section: target })}
+            onOpen={(target) => {
+              if (!advanced && simpleHidesBotSection(target)) return;
+              dispatch({ type: "toggleSettings", open: true, section: target });
+            }}
           />
         );
       case "soul":
@@ -451,7 +465,7 @@ export function BotSettingsDialog({ bot, onOpenVmWorkspace }: {
           ) : <span />}
           <div className="flex items-center gap-2">
             <ExportTranscriptMenu title={bot.name} messages={visibleMessages(bot)} botName={bot.name} />
-            {showInspector && <button
+            {showInspector && advanced && <button
               type="button"
               onClick={() => dispatch({ type: "toggleInspector", open: true })}
               aria-label={t("chat.inspector")}
@@ -519,13 +533,13 @@ export function BotSettingsDialog({ bot, onOpenVmWorkspace }: {
                 const step = event.key === "ArrowRight" ? 1 : event.key === "ArrowLeft" ? -1 : 0;
                 if (!step) return;
                 event.preventDefault();
-                const next = PANEL_TABS[(PANEL_TABS.indexOf(tab) + step + PANEL_TABS.length) % PANEL_TABS.length]!;
+                const next = panelTabs[(panelTabs.indexOf(tab) + step + panelTabs.length) % panelTabs.length]!;
                 chooseTab(next);
                 event.currentTarget.querySelector<HTMLElement>(`[data-panel-tab="${next}"]`)?.focus();
               }}
               className="mt-4 flex max-w-full flex-wrap items-center justify-center gap-0.5"
             >
-              {PANEL_TABS.map((id) => (
+              {panelTabs.map((id) => (
                 <button
                   key={id}
                   type="button"
@@ -609,9 +623,9 @@ export function BotSettingsDialog({ bot, onOpenVmWorkspace }: {
               {!collapsed && (
                 <div className="px-4 pb-6">
                   <h3 className="mb-3 text-[14px] font-medium text-ink">
-                    {sectionLabel(sections.find((entry) => entry.id === section) ?? sections[0]!)}
+                    {sectionLabel(sections.find((entry) => entry.id === shownSection) ?? sections[0]!)}
                   </h3>
-                  {section !== "memory" && renderSectionBody(section)}
+                  {shownSection !== "memory" && renderSectionBody(shownSection)}
                 </div>
               )}
             </>
@@ -619,8 +633,8 @@ export function BotSettingsDialog({ bot, onOpenVmWorkspace }: {
           {/* Memory stays mounted so an unsaved draft survives tab and
               section changes; it shows only while it is the open section.
               A member cannot save it, so it is not mounted and does not fetch. */}
-          {canEditBotField(state.config, bot, "memoryEnabled") && <div hidden={!(tab === "more" && !collapsed && section === "memory")} className="px-4 pb-6">
-            <MemorySection bot={bot} active={tab === "more" && !collapsed && section === "memory"} onToggle={(enabled) => derived.patch({ memoryEnabled: enabled })} />
+          {canEditBotField(state.config, bot, "memoryEnabled") && <div hidden={!(tab === "more" && !collapsed && shownSection === "memory")} className="px-4 pb-6">
+            <MemorySection bot={bot} active={tab === "more" && !collapsed && shownSection === "memory"} onToggle={(enabled) => derived.patch({ memoryEnabled: enabled })} />
           </div>}
         </div>
       </aside>

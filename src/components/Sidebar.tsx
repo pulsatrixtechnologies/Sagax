@@ -39,6 +39,7 @@ import { viewerMayDeleteGroup, viewerOwnsGroup } from "@/lib/group-owner";
 import { viewerActorId } from "@/lib/viewer";
 import { liveActivityLabel } from "@/lib/live-activity";
 import { connectedAppsEnabled, llmThreadTitlesEnabled, templatesEnabled } from "@/lib/feature-flags";
+import { useAdvancedMode } from "@/lib/interface-mode";
 
 import { BotAvatar, InitialsAvatar } from "./Avatar";
 import { stateForBot } from "@/lib/mascot";
@@ -2102,6 +2103,7 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
   const searchTitle = `${t("sidebar.search")} (${paletteShortcutLabel()})`;
   // null on 404 and on any other failure, so the roster stays.
   // Chosen in Settings > Appearance or by dragging the edge; one store.
+  const advanced = useAdvancedMode();
   const density = useSidebarDensity();
   const [sidebarWidth, setSidebarWidth] = useState(readSidebarWidth);
   // `collapsed` follows the drag itself: the density store answers a beat
@@ -2441,7 +2443,7 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
       onSelect: () => dispatch({ type: "showRoutines" }),
     },
     // Connected apps is experimental (Settings > Experimental features).
-    ...(connectedAppsEnabled(state.config) ? [{
+    ...(advanced && connectedAppsEnabled(state.config) ? [{
       key: "plugins",
       tourId: "nav-apps",
       label: t("sidebar.nav.connectedApps"),
@@ -2449,7 +2451,7 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
       onSelect: () => dispatch({ type: "togglePlugins", open: true }),
     }] : []),
     // Experimental: hidden until Settings > Experimental features turns it on.
-    ...(!remoteClient && templatesEnabled(state.config) ? [{
+    ...(!remoteClient && advanced && templatesEnabled(state.config) ? [{
       key: "templates",
       label: t("sidebar.teamLibrary"),
       icon: Library,

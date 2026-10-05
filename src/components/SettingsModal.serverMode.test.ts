@@ -5,6 +5,8 @@ import type { AppSettingsSection } from "@/state/store";
 import { setLocale } from "@/lib/i18n";
 import { SettingsModal } from "./SettingsModal";
 
+vi.mock("@/lib/interface-mode", () => ({ useAdvancedMode: () => true, setAdvancedMode: () => {} }));
+
 // Server mode (src/lib/launch.ts): the desktop app shows its organization's
 // server only. Settings > General names that server with the one way out,
 // and a section about this computer says the organization manages it.

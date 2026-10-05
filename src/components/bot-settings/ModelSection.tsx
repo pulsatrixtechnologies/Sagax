@@ -4,6 +4,7 @@
 // picker's floating popover (absolute, ~480px tall) would open below the
 // fold and only become visible by scrolling; the in-flow menu pushes the
 // Effort card down instead and is fully visible where it opens.
+import { useAdvancedMode } from "@/lib/interface-mode";
 import { EffortRow, ModelPicker } from "../ModelPicker";
 import { X } from "lucide-react";
 import { canEditBotField } from "@/lib/bot-capabilities";
@@ -14,6 +15,7 @@ import { useBotEditor } from "./BotEditorContext";
 import { ProposalStatus } from "./ProposalStatus";
 
 export function ModelSection({ bot }: { bot: Bot }) {
+  const advanced = useAdvancedMode();
   const { state, dispatch } = useStore();
   const { draft } = useBotEditor();
   const modelVariants = state.instances.find((instance) => instance.instanceId === bot.modelSelection.instanceId)?.capabilities?.modelVariants;
@@ -35,8 +37,9 @@ export function ModelSection({ bot }: { bot: Bot }) {
         />
       </div>
 
-      {/* Share the model picker's effort choices, but edit the profile default. */}
-      <EffortRow
+      {/* Share the model picker's effort choices, but edit the profile default.
+          Simple keeps the saved effort and does not show the control. */}
+      {advanced && <EffortRow
         bot={bot}
         className="rounded-xl border border-hairline/40 p-4"
         label={
@@ -55,8 +58,8 @@ export function ModelSection({ bot }: { bot: Bot }) {
             <ProposalStatus bot={bot} kind="chief" />
           </div>
         }
-      />
-      {!draft && canEditBotField(state.config, bot, "fallback") && <FallbackChain bot={bot} onChange={(fallback) => dispatch({ type: "updateBot", botId: bot.id, patch: { fallback } })} />}
+      />}
+      {advanced && !draft && canEditBotField(state.config, bot, "fallback") && <FallbackChain bot={bot} onChange={(fallback) => dispatch({ type: "updateBot", botId: bot.id, patch: { fallback } })} />}
     </div>
   );
 }

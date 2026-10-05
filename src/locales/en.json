@@ -4615,7 +4615,7 @@
   "cloudHome.step.starting": "Starting your Cloud",
   "cloudHome.step.checking": "Checking it's ready",
   "settings.advancedMode.title": "Advanced mode",
-  "settings.advancedMode.subtitle": "Show every technical control on this device: usage and tokens, the inspector and other tools for builders. Turn it off for a simpler app. Nothing is deleted either way.",
+  "settings.advancedMode.subtitle": "Show technical controls. Saved choices stay either way.",
   "settings.pinnedCircles.title": "Pinned bots as circles",
   "settings.pinnedCircles.subtitle": "Show pinned bots as large avatars, like Grok Bot. Widening the sidebar fits more on each row.",
   "settings.universalPins.title": "Universal pins",
@@ -5518,5 +5518,10 @@
   "releaseNotes.whatsNew": "What's new in {version}",
   "releaseNotes.menu": "Release notes",
   "releaseNotes.close": "Close",
-  "releaseNotes.whatsNewEmpty": "Release notes for {version} are not in this copy of Sagax."
+  "releaseNotes.whatsNewEmpty": "Release notes for {version} are not in this copy of Sagax.",
+  "approvalMode.simple.ask": "Ask me first",
+  "approvalMode.simple.askHint": "The bot stops and asks before it acts.",
+  "approvalMode.simple.decide": "Decide for me",
+  "approvalMode.simple.decideHint": "The bot acts, and checks in when unsure.",
+  "approvalMode.simple.custom": "A custom level is saved. It stays until you choose one of these."
 }

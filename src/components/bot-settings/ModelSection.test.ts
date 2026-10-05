@@ -2,6 +2,8 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
+vi.mock("@/lib/interface-mode", () => ({ useAdvancedMode: () => true, setAdvancedMode: () => {} }));
+
 import { StoreProvider, type Bot, type ConfigStatus } from "@/state/store";
 
 const fixture = vi.hoisted(() => ({ config: null as ConfigStatus | null }));

@@ -22,6 +22,7 @@ import { ChatGptPlanStatus } from "./ChatGptPlanStatus";
 import { approvalModeFor, modelSwitchNeedsAsk } from "../../shared/approval-mode";
 import { cn } from "@/lib/cn";
 import { useMenuMotion } from "./MenuMotion";
+import { useAdvancedMode } from "@/lib/interface-mode";
 import { t } from "@/lib/i18n";
 import { myTurnsText, reloadMyEngines, useMyEngines, usePerspicaxOrg } from "@/lib/perspicax-org";
 import { orgEngineState } from "@/lib/model-payers";
@@ -532,6 +533,7 @@ export function ModelPicker({
   // subscription, their model key, or the organization key; the server's
   // local models are not offered (src/lib/model-payers.ts).
   const org = usePerspicaxOrg();
+  const advanced = useAdvancedMode();
   const myEngines = useMyEngines();
   const orgMode = org !== null;
   const modal = !contained;
@@ -753,7 +755,15 @@ export function ModelPicker({
   const compactOfficial = railInstance
     ? suggestedModels(official, railInstance.models.default, currentModel, COMPACT_MODEL_COUNT)
     : [];
-  const shownOfficial = query ? filteredOfficial : showAll ? official : compactOfficial;
+  // Simple stays on the short suggested list. Search and "show all" would
+  // surface the rest of the catalog, which is an engine control.
+  const shownOfficial = !advanced
+    ? compactOfficial
+    : query
+      ? filteredOfficial
+      : showAll
+        ? official
+        : compactOfficial;
   const filteredCustom = filterCustomModels(custom, query);
   const { pinned, rest } = partitionCustomModels(filteredCustom);
   // On an organization server the server's own sign-in is not the person's:
@@ -796,7 +806,7 @@ export function ModelPicker({
   const composerLabel = [
     modelLabel(active, selection.model),
     selectedVariantLabel,
-    !selectedVariantLabel && selection.effort ? effortLabel(selection.effort) : "",
+    !selectedVariantLabel && advanced && selection.effort ? effortLabel(selection.effort) : "",
   ].filter(Boolean).join(" ");
 
   const toggle = () => {
@@ -852,7 +862,7 @@ export function ModelPicker({
           : active
           ? `${active.displayName} · ${modelLabel(active, selection.model)}${
               modelProvider(active, selection.model) ? ` · ${modelProvider(active, selection.model)}` : ""
-            }${selectedVariantLabel ? ` · ${selectedVariantLabel}` : selection.effort ? ` · ${effortLabel(selection.effort)} effort` : ""}`
+            }${selectedVariantLabel ? ` · ${selectedVariantLabel}` : advanced && selection.effort ? ` · ${effortLabel(selection.effort)} effort` : ""}`
           : selection.model
       }
     >
@@ -874,7 +884,7 @@ export function ModelPicker({
             hides the effort the header exists to surface */}
         {selectedVariantLabel !== undefined ? (
           <span data-model-variant className="max-w-[120px] truncate text-ink-secondary">· {selectedVariantLabel}</span>
-        ) : selection.effort && (
+        ) : advanced && selection.effort && (
           <span data-model-effort className="shrink-0 text-ink-secondary">
             · {effortLabel(selection.effort)}
           </span>
@@ -951,10 +961,10 @@ export function ModelPicker({
           )}
         </div>
       </div>
-      {isClaudeAccount(railInstance) && claudeAccounts.length > 1 && (
+      {advanced && isClaudeAccount(railInstance) && claudeAccounts.length > 1 && (
         <ClaudeAccountSelect accounts={claudeAccounts} selectedId={railInstance.instanceId} onSelect={selectRail} />
       )}
-      {signInFamily(railInstance) === "openai" && openaiAccounts.length > 1 && (
+      {advanced && signInFamily(railInstance) === "openai" && openaiAccounts.length > 1 && (
         <ClaudeAccountSelect accounts={openaiAccounts} selectedId={railInstance.instanceId} onSelect={selectRail} />
       )}
       {/* On an organization server this is the server's own account, not the person's. */}
@@ -963,13 +973,13 @@ export function ModelPicker({
           {[railInstance.snapshot.account.email, railInstance.snapshot.account.organization].filter(Boolean).join(" · ")}
         </p>
       )}
-      {!orgMode && railInstance.snapshot.chatgptPlan && railInstance.snapshot.authenticated && (
+      {advanced && !orgMode && railInstance.snapshot.chatgptPlan && railInstance.snapshot.authenticated && (
         <ChatGptPlanStatus key={railInstance.instanceId} instanceId={railInstance.instanceId} />
       )}
       {railInstance.access === "api"
         ? <div className="mt-0.5 text-[11.5px] text-ink-secondary">{t("model.apiKeyHint")}</div>
         : pane === "custom" && <div className="mt-0.5 text-[11.5px] text-ink-secondary">{t("model.localHint")}</div>}
-      {orgMode && railInstance.capabilities?.withholdsHostTools !== true && (
+      {advanced && orgMode && railInstance.capabilities?.withholdsHostTools !== true && (
         <p data-model-host-tools className="mt-2 text-[11.5px] leading-relaxed text-ink-tertiary">
           {t("model.org.hostTools", { name: railInstance.displayName })}
         </p>
@@ -1024,7 +1034,7 @@ export function ModelPicker({
         </div>
       ) : (
         <>
-          {((pane === "main" && official.length > COMPACT_MODEL_COUNT) ||
+          {advanced && ((pane === "main" && official.length > COMPACT_MODEL_COUNT) ||
             (pane === "custom" && custom.length > COMPACT_MODEL_COUNT)) && (
             <ModelSearch
               value={query}
@@ -1043,7 +1053,7 @@ export function ModelPicker({
           <div data-model-list className={cn(modal ? "pb-2" : "min-h-[min(180px,30dvh)] flex-1 overflow-y-auto px-2 pb-2")}>
             {pane === "main" ? (
               <>
-                {railInstance.snapshot.update && (
+                {advanced && railInstance.snapshot.update && (
                   <EngineUpdateNotice update={railInstance.snapshot.update} instance={railInstance} className="mx-1 mb-2" />
                 )}
                 <EngineGroupLabel className="px-2 pb-1 pt-0.5">
@@ -1059,7 +1069,7 @@ export function ModelPicker({
                     {query ? t("model.noMatch", { query: query.trim() }) : orgMode ? t("model.org.noModels") : t("model.noMatch", { query: "" })}
                   </div>
                 )}
-                {!query && !showAll && official.length > compactOfficial.length && (
+                {advanced && !query && !showAll && official.length > compactOfficial.length && (
                   <button
                     type="button"
                     onClick={() => setShowAll(true)}
@@ -1068,7 +1078,7 @@ export function ModelPicker({
                     {t("model.showAll", { count: official.length })} <ChevronDown size={13} />
                   </button>
                 )}
-                {!query && showAll && official.length > COMPACT_MODEL_COUNT && (
+                {advanced && !query && showAll && official.length > COMPACT_MODEL_COUNT && (
                   <button
                     type="button"
                     onClick={() => setShowAll(false)}
@@ -1122,7 +1132,7 @@ export function ModelPicker({
   // not the provider being browsed). `contained` callers (the settings
   // dialog) render their own EffortRow card, and two copies of one control
   // in one view read as a bug.
-  const effort = !contained && (
+  const effort = advanced && !contained && (
     <EffortRow
       bot={bot}
       threadId={threadId}
@@ -1132,7 +1142,7 @@ export function ModelPicker({
     />
   );
 
-  const localEntry = railInstance && (orgMode ? (
+  const localEntry = advanced && railInstance && (orgMode ? (
     <p data-model-local-hidden className="text-[11.5px] leading-relaxed text-ink-tertiary">{t("model.org.localHidden")}</p>
   ) : pane === "main" && offersLocalModels(railInstance, custom.length) && (
     <button
@@ -1159,7 +1169,7 @@ export function ModelPicker({
     </button>
   ));
 
-  const footer = (
+  const footer = !advanced ? null : (
     <div className="flex shrink-0 border-t border-hairline/40">
       <button type="button" data-model-engines-link onClick={() => {
         setOpen(false);
@@ -1181,7 +1191,7 @@ export function ModelPicker({
   const railProps = {
     instances: pickerInstances, selectedInstance: railInstance, claudeInstance: claudeRailInstance,
     openaiInstance: openaiRailInstance, onSelect: selectRail,
-    onAddApiKeys: window.ogb?.remoteClient?.active === true ? undefined : openApiKeys,
+    onAddApiKeys: advanced && window.ogb?.remoteClient?.active !== true ? openApiKeys : undefined,
     ...(orgMode && myEngines ? { statusOf: orgStatusOf } : {}),
   };
 
