@@ -122,11 +122,29 @@ describe("loginCliFor", () => {
     expect(loginCliFor("kimiAgent", undefined, "kimi")).toBe("kimi");
     expect(loginCliFor("codex", undefined, undefined)).toBe("codex");
     expect(loginCliFor("claudeAgent", undefined, undefined)).toBe("claude");
+    expect(loginCliFor("geminiAgent", undefined, undefined)).toBe("gemini");
+    expect(loginCliFor("piAgent", undefined, null)).toBe("pi");
+    expect(loginCliFor("cursorAgent", undefined, "  ")).toBe("cursor-agent");
+    expect(loginCliFor("droidAgent", undefined, undefined)).toBe("droid");
+    expect(loginCliFor("opencodeGo", undefined, undefined)).toBe("opencode");
+    expect(loginCliFor("hermesAgent", undefined, undefined)).toBe("hermes");
+    expect(loginCliFor("qwenAgent", undefined, undefined)).toBe("qwen");
+    expect(loginCliFor("antigravityAgent", undefined, undefined)).toBe("agy");
   });
 
   it("keeps a saved command, including a path, and ignores a blank one", () => {
     expect(loginCliFor("grokAgent", "  /usr/local/bin/grok  ", "claude")).toBe("/usr/local/bin/grok");
     expect(loginCliFor("grokAgent", "   ", "grok")).toBe("grok");
-    expect(loginCliFor("other", undefined, undefined)).toBe("claude");
+    expect(loginCliFor("cursorAgent", undefined, "/opt/cursor-agent")).toBe("/opt/cursor-agent");
+  });
+
+  it("does not borrow claude for an engine that has no command", () => {
+    expect(loginCliFor("grok", undefined, undefined)).toBe("");
+    expect(loginCliFor("openai-compat", undefined, undefined)).toBe("");
+    expect(loginCliFor("mistral", undefined, undefined)).toBe("");
+    expect(loginCliFor("cerebras", undefined, undefined)).toBe("");
+    expect(loginCliFor("boxAgent", undefined, undefined)).toBe("");
+    expect(loginCliFor("customAcp", undefined, undefined)).toBe("");
+    expect(loginCliFor("other", undefined, undefined)).toBe("");
   });
 });

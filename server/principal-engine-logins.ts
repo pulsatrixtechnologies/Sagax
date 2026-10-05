@@ -30,23 +30,34 @@ import { isPrincipalId } from "./principals.ts";
 export const LOGIN_MARKER = ".pulsabot-login.json";
 export type LoginDriver = "claudeAgent" | "codex" | "grokAgent" | "kimiAgent";
 
-const DRIVER_CLI: Readonly<Record<LoginDriver, string>> = {
+/** Each driver's own command when the instance saved none and the registry
+ * has no default yet. API engines are absent on purpose: they have no CLI,
+ * and a sign-in must not borrow Claude's command. */
+const DEFAULT_CLI: Readonly<Record<string, string>> = {
   claudeAgent: "claude",
   codex: "codex",
   grokAgent: "grok",
   kimiAgent: "kimi",
+  geminiAgent: "gemini",
+  piAgent: "pi",
+  cursorAgent: "cursor-agent",
+  droidAgent: "droid",
+  opencodeGo: "opencode",
+  hermesAgent: "hermes",
+  qwenAgent: "qwen",
+  antigravityAgent: "agy",
 };
 
 /** Executable for a person's subscription sign-in.
- * A saved config.cli wins. Otherwise the driver's own default, so Grok
- * runs grok and Kimi runs kimi. Claude is only the last resort. */
+ * A saved config.cli wins, then the registry's default for that instance.
+ * Otherwise the driver's own command. An engine with no command yields "",
+ * never another engine's binary. */
 export function loginCliFor(driver: string, configured: unknown, driverDefault: string | null | undefined): string {
   const raw = typeof configured === "string" ? configured.trim() : "";
   if (raw) return raw;
   const fallback = typeof driverDefault === "string" ? driverDefault.trim() : "";
   if (fallback) return fallback;
-  if (driver === "claudeAgent" || driver === "codex" || driver === "grokAgent" || driver === "kimiAgent") return DRIVER_CLI[driver];
-  return "claude";
+  return DEFAULT_CLI[driver] ?? "";
 }
 
 const LOGIN_DIR: Readonly<Record<LoginDriver, string>> = { claudeAgent: "claude", codex: "codex", grokAgent: "grok", kimiAgent: "kimi" };
@@ -129,7 +140,7 @@ export class PrincipalEngineLogins {
 
   private loginInstance(principalId: string, instanceId: string) {
     const facts = this.options.instance(instanceId);
-    if (!facts || !isLoginDriver(facts.driver)) throw failure("This engine has no personal sign-in.", 404);
+    if (!facts || !isLoginDriver(facts.driver) || !facts.cli.trim()) throw failure("This engine has no personal sign-in.", 404);
     const driver = facts.driver;
     const key = this.flowKey(principalId, instanceId);
     let controller = this.controllers.get(key);

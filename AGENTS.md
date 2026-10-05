@@ -365,6 +365,16 @@ by version and SHA-256). Each person pays with their own credentials
   moonshot) in their own PI_CODING_AGENT_DIR; the catalog is read with
   placeholders so members see every provider's models.
 
+Personal sign-in runs that engine's own command (`loginCliFor`). A saved
+`config.cli` wins, otherwise the driver's default (`claude`, `codex`,
+`grok`, `kimi`, `gemini`, `pi`, `cursor-agent`, `droid`, `opencode`,
+`hermes`, `qwen`, `agy`). Claude is never substituted for another engine.
+An API engine has no command and no personal CLI sign-in. The sign-in
+button itself stays on Claude, Codex, Grok Build and Kimi Code, the
+engines whose login the server can finish (device code or their own
+controller). Gemini and pi use a key. Cursor, Droid, OpenCode, Hermes,
+Qwen and Antigravity are not given a borrowed login.
+
 A key turn always runs in an empty home of the payer's
 (`principals/<pid>/<driver>-key`), an org-key turn in `org/<driver>-key`
 (`applyAccess` in `acp/core.ts`, `piAccessEnvironment`). Perspicax 1.8 lists
