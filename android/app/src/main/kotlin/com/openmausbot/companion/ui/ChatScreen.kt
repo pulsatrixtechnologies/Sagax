@@ -1,5 +1,7 @@
 package com.openmausbot.companion.ui
 
+import androidx.compose.ui.res.stringResource
+
 import android.view.KeyCharacterMap
 import androidx.activity.compose.BackHandler
 import androidx.compose.material.icons.filled.Warning
@@ -18,6 +20,7 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -33,8 +36,10 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListLayoutInfo
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -45,6 +50,7 @@ import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Settings
@@ -66,6 +72,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -97,6 +104,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.openmausbot.companion.R
+import com.openmausbot.companion.audio.MicrophoneAccess
 import com.openmausbot.companion.core.AttachmentPolicy
 import com.openmausbot.companion.core.Chat
 import com.openmausbot.companion.core.ChatTarget
@@ -113,9 +121,12 @@ import com.openmausbot.companion.core.TranscriptRow
 import com.openmausbot.companion.core.target
 import com.openmausbot.companion.core.transcriptRows
 import java.util.Locale
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -216,6 +227,23 @@ private fun LoadedChat(
     val session = environment.session
     val dictation = environment.dictation
     val chatDrafts = environment.chatDrafts
+    val liveCalls = environment.liveCalls
+    val liveCall by liveCalls.state.collectAsState()
+    var showingLiveSettings by remember { mutableStateOf(false) }
+    // Sagax: the Live call button shows only when the computer turned Live
+    // calls on (SAGAX_LIVE_CALLS=1); off by default, our voice call engine is
+    // the call path.
+    var liveCallsEnabled by remember { mutableStateOf(false) }
+    LaunchedEffect(session) { liveCallsEnabled = session.liveSettings()?.enabled == true }
+    // The call that waits on this phone's first-call disclosure.
+    var pendingLiveCall by remember { mutableStateOf<PendingLiveCall?>(null) }
+    fun startLiveCall(call: PendingLiveCall) =
+        liveCalls.start(call.botId, call.threadId, call.botName, MicrophoneAccess { environment.mic.ensure(it) })
+    // A call holds the microphone in every chat, not only its own: the manager
+    // is app-scoped and the call runs on while the person reads another chat,
+    // where dictation's audio focus would end it as "another app took the audio".
+    val callHoldsMic = liveCall.holdsMedia
+    LaunchedEffect(callHoldsMic) { if (callHoldsMic) dictation.stop() }
     val haptics = rememberHaptics()
     val scope = rememberCoroutineScope()
     var threadOpenJob by remember { mutableStateOf<Job?>(null) }
@@ -586,6 +614,27 @@ private fun LoadedChat(
         if (liveCount == 0 || itemCount == 0) return@LaunchedEffect
         listState.scrollToItem(itemCount - 1)
     }
+    // The call bar sits under the transcript and changes height as a call
+    // goes on: a caption line once it is live, a second line on the remote
+    // bar. The list gets shorter from the bottom then, and a LazyColumn keeps
+    // its top where it was, so the newest message would slide out of sight
+    // under the bar. A list that showed its end keeps showing it, whatever
+    // made it shorter; one the reader has scrolled up stays where it is.
+    LaunchedEffect(listState) {
+        var height = -1
+        snapshotFlow { listState.layoutInfo }.collect { info ->
+            val shrunkBy = if (height < 0) 0 else height - info.viewportSize.height
+            height = info.viewportSize.height
+            val by = TranscriptLayout.keepEndInView(info.endHiddenBelow(), shrunkBy)
+            if (by == 0 || listState.isScrollInProgress) return@collect
+            try {
+                listState.scrollBy(by.toFloat())
+            } catch (taken: CancellationException) {
+                // A drag took the list first: the reader is in charge.
+                currentCoroutineContext().ensureActive()
+            }
+        }
+    }
     // A search hit lands on its message.
     LaunchedEffect(focusedMessageId, transcript.size) {
         val target = focusedMessageId ?: return@LaunchedEffect
@@ -857,7 +906,7 @@ private fun LoadedChat(
                                 },
                                 modifier = Modifier.fillMaxWidth(),
                             ) {
-                                Text("Load earlier messages", fontSize = 13.sp)
+                                Text(stringResource(R.string.mobile_load_earlier_messages_4ac08d16), fontSize = 13.sp)
                             }
                         }
                     }
@@ -868,11 +917,11 @@ private fun LoadedChat(
                             // message is just noise.
                             if (TranscriptLayout.startsNewRowStretch(transcript, index)) {
                                 Text(
-                                    text = RelativeStamp.separator(
+                                    text = localizedMobileCopy(RelativeStamp.separator(
                                         message.at,
                                         System.currentTimeMillis(),
                                         locale = Locale.getDefault(),
-                                    ),
+                                    )),
                                     fontSize = 13.sp,
                                     color = secondaryTint,
                                     modifier = Modifier
@@ -943,6 +992,18 @@ private fun LoadedChat(
                         dictation.stop()
                         if (bot != null) onOpenComputer(bot.id)
                     },
+                    onCall = {
+                        if (bot != null) {
+                            // MicPermissionController holds one pending callback:
+                            // dictation must be off before the call asks.
+                            dictation.stop()
+                            focusManager.clearFocus()
+                            val call = PendingLiveCall(bot.id, threadId, bot.name)
+                            // A phone's first Live call says first what a call sends to OpenAI.
+                            if (liveCalls.disclosureDue) pendingLiveCall = call else startLiveCall(call)
+                        }
+                    },
+                    showCall = liveCallsEnabled && LiveCallRules.offersCall(liveCall, state.liveCall),
                     // A bot's face and its name pill are both the door to its
                     // profile; a room has no profile, so its pill opens the same
                     // sheet the + does.
@@ -960,6 +1021,16 @@ private fun LoadedChat(
                         .widthIn(max = CHAT_CONTENT_MAX_WIDTH),
                 )
             }
+
+            LiveCallBarHost(
+                chat = chat,
+                onSettings = { showingLiveSettings = true },
+                modifier = Modifier
+                    .align(Alignment.CenterHorizontally)
+                    .widthIn(max = CHAT_CONTENT_MAX_WIDTH)
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp),
+            )
 
             Composer(
                 modifier = Modifier
@@ -1018,6 +1089,11 @@ private fun LoadedChat(
                     fileOpenError = null
                     attachmentError = null
                 },
+                stoppable = chat.canStop,
+                onStop = {
+                    haptics.play(HapticCue.SELECT)
+                    scope.launch { session.interrupt(chat) }
+                },
                 onTogglePlus = {
                     // iOS drops the composer's focus before the sheet rises; a
                     // keyboard under it would leave the sheet nowhere to go.
@@ -1031,6 +1107,7 @@ private fun LoadedChat(
                     publishFrom(composer)
                 },
                 onToggleDictation = {
+                    if (callHoldsMic) return@Composer
                     focusManager.clearFocus()
                     dictation.toggle(capturing = draft)
                 },
@@ -1054,6 +1131,7 @@ private fun LoadedChat(
 
         PlusSheet(
             open = showingPlus,
+            chat = chat,
             actions = remember(chat, pendingApproval, canAddAttachment) {
                 ChatActions.sheet(chat, hasPendingApproval = pendingApproval, canAddAttachment = canAddAttachment)
             },
@@ -1077,6 +1155,22 @@ private fun LoadedChat(
                 onOpenOverview(it)
                 showingProfile = false
             },
+        )
+    }
+
+    if (showingLiveSettings) {
+        LiveCallSettingsSheet(onDismiss = { showingLiveSettings = false })
+    }
+
+    pendingLiveCall?.let { call ->
+        LiveCallDisclosureDialog(
+            onStart = {
+                pendingLiveCall = null
+                liveCalls.acceptDisclosure()
+                startLiveCall(call)
+            },
+            // Records nothing: the next tap shows it again.
+            onCancel = { pendingLiveCall = null },
         )
     }
 
@@ -1129,8 +1223,8 @@ private val HEADER_SCRIM_FADE = 24.dp
 private val HEADER_CLEARANCE = 128.dp
 
 /**
- * Back on the left with the rest-of-app unread count, the bot's computer on the
- * right, and the bot itself between them over its name.
+ * Back on the left with the rest-of-app unread count, a Live call and the bot's
+ * computer on the right, and the bot itself between them over its name.
  *
  * The strip behind the two buttons is opaque and then fades out, so the
  * transcript slides under the chrome and disappears rather than stopping at a
@@ -1143,6 +1237,13 @@ private fun ChatHeader(
     unreadElsewhere: Int,
     onBack: () -> Unit,
     onWatchComputer: () -> Unit,
+    onCall: () -> Unit,
+    /**
+     * False while this phone is on a call (the bar has the controls) and while
+     * the computer reports one running from another device, which has to hang
+     * up first: [LiveCallRules.offersCall].
+     */
+    showCall: Boolean,
     onOpenProfile: () -> Unit,
     onOpenThreads: () -> Unit,
     modifier: Modifier = Modifier,
@@ -1172,11 +1273,19 @@ private fun ChatHeader(
         ) {
             BackPill(unreadElsewhere = unreadElsewhere, onBack = onBack)
             Spacer(Modifier.weight(1f))
-            // The computer is a bot idea; a room has none (§12).
+            // The computer and the phone are bot ideas; a room has neither (§12).
             if (chat is Chat.BotChat) {
+                if (showCall) {
+                    ChromeButton(
+                        icon = Icons.Filled.Call,
+                        contentDescription = "Call ${chat.name}",
+                        onClick = onCall,
+                    )
+                    Spacer(Modifier.width(8.dp))
+                }
                 ChromeButton(
                     painter = painterResource(R.drawable.ic_display),
-                    contentDescription = "Watch ${chat.name}'s computer",
+                    contentDescription = stringResource(R.string.mobile_watch_chat_name_s_computer_92efc119, chat.name),
                     onClick = onWatchComputer,
                 )
             } else {
@@ -1198,7 +1307,9 @@ private fun ChatHeader(
                 modifier = if (chat is Chat.BotChat) {
                     Modifier
                         .clickable(role = Role.Button, onClick = onOpenProfile)
-                        .semantics { contentDescription = "Open ${chat.name} settings" }
+                        .localizedSemantics(contentDescription = {
+                            stringResource(R.string.mobile_a11y_open_chat_settings, chat.name)
+                        })
                 } else {
                     Modifier
                 },
@@ -1226,7 +1337,7 @@ private fun BackPill(unreadElsewhere: Int, onBack: () -> Unit) {
     ) {
         Icon(
             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-            contentDescription = "Back",
+            contentDescription = stringResource(R.string.mobile_back_b52b36b7),
             modifier = Modifier.size(20.dp),
         )
         if (unreadElsewhere > 0) {
@@ -1306,6 +1417,7 @@ private fun NamePill(chat: Chat, onOpen: () -> Unit) {
 @Composable
 private fun BoxScope.PlusSheet(
     open: Boolean,
+    chat: Chat,
     actions: List<ChatAction>,
     onDismiss: () -> Unit,
     onAction: (ChatActionId) -> Unit,
@@ -1328,7 +1440,7 @@ private fun BoxScope.PlusSheet(
                     role = Role.Button,
                     onClick = onDismiss,
                 )
-                .semantics { contentDescription = "Close" },
+                .localizedSemantics(contentDescription = { stringResource(R.string.mobile_a11y_close) }),
         )
     }
 
@@ -1379,13 +1491,13 @@ private fun BoxScope.PlusSheet(
                     }
                     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                         Text(
-                            text = action.title,
+                            text = localizedChatActionTitle(action.id),
                             fontSize = 18.sp,
                             fontWeight = FontWeight.Medium,
                             color = tint.copy(alpha = alpha),
                         )
                         Text(
-                            text = action.subtitle,
+                            text = localizedChatActionSubtitle(action.id, chat),
                             fontSize = 13.sp,
                             color = secondaryTint.copy(alpha = alpha),
                         )
@@ -1394,6 +1506,35 @@ private fun BoxScope.PlusSheet(
             }
         }
     }
+}
+
+@Composable
+private fun localizedChatActionTitle(id: ChatActionId): String = when (id) {
+    ChatActionId.PHOTOS -> stringResource(R.string.mobile_photo_library_26def20d)
+    ChatActionId.FILES -> stringResource(R.string.mobile_choose_file_54a2a841)
+    ChatActionId.NEW_TASK -> stringResource(R.string.mobile_new_thread_02057e28)
+    ChatActionId.TASKS -> stringResource(R.string.mobile_threads_bb12e8aa)
+    ChatActionId.WATCH_COMPUTER -> stringResource(R.string.mobile_watch_computer_c96208ca)
+    ChatActionId.SETTINGS -> stringResource(R.string.mobile_bot_settings_7092a294)
+    ChatActionId.SHARE_MARKDOWN -> stringResource(R.string.mobile_share_transcript_004e223a)
+    ChatActionId.SHARE_JSON -> stringResource(R.string.mobile_share_as_json_df80c8e6)
+    ChatActionId.INTERRUPT -> stringResource(R.string.mobile_interrupt_d5db4549)
+}
+
+@Composable
+private fun localizedChatActionSubtitle(id: ChatActionId, chat: Chat): String = when (id) {
+    ChatActionId.PHOTOS -> stringResource(R.string.mobile_action_add_photo)
+    ChatActionId.FILES -> stringResource(R.string.mobile_action_add_document)
+    ChatActionId.NEW_TASK -> when (chat) {
+        is Chat.BotChat -> stringResource(R.string.mobile_action_new_thread_for_bot, chat.bot.name)
+        is Chat.RoomChat -> stringResource(R.string.mobile_action_new_conversation_in_channel, chat.room.name)
+    }
+    ChatActionId.TASKS -> stringResource(R.string.mobile_action_manage_threads)
+    ChatActionId.WATCH_COMPUTER -> stringResource(R.string.mobile_action_live_computer, (chat as Chat.BotChat).bot.name)
+    ChatActionId.SETTINGS -> stringResource(R.string.mobile_action_bot_settings)
+    ChatActionId.SHARE_MARKDOWN -> stringResource(R.string.mobile_action_markdown_transcript)
+    ChatActionId.SHARE_JSON -> stringResource(R.string.mobile_action_structured_transcript)
+    ChatActionId.INTERRUPT -> stringResource(R.string.mobile_action_stop_turn)
 }
 
 private const val PLUS_MILLIS = 280
@@ -1480,6 +1621,8 @@ private fun Composer(
     attachmentError: String?,
     onRemoveAttachment: (PendingMessageAttachment) -> Unit,
     onDismissError: () -> Unit,
+    stoppable: Boolean,
+    onStop: () -> Unit,
 ) {
     val canSend = AttachmentImportRules.canSend(draft, attachments.size, preparing, sending)
     val inFlight = preparing || sending
@@ -1488,7 +1631,7 @@ private fun Composer(
     val turn = animateFloatAsState(
         targetValue = if (plusOpen) PLUS_TURN_DEGREES else 0f,
         animationSpec = tween(PLUS_MILLIS),
-        label = "plus",
+        label = stringResource(R.string.mobile_plus_6a8437dd),
     )
     Column(
         modifier = modifier
@@ -1510,7 +1653,7 @@ private fun Composer(
             ComposerStatusLine(if (preparing) "Preparing attachments…" else "Sending…")
         }
         if (openingFileName != null) {
-            ComposerStatusLine("Opening $openingFileName…")
+            ComposerStatusLine(stringResource(R.string.mobile_chat_opening_file, openingFileName))
         }
         if (attachmentError != null) {
             Row(
@@ -1528,9 +1671,9 @@ private fun Composer(
                     tint = Color(0xFFFF9800),
                     modifier = Modifier.size(18.dp),
                 )
-                Text(text = attachmentError, fontSize = 13.sp, modifier = Modifier.weight(1f))
+                Text(text = localizedMobileCopy(attachmentError), fontSize = 13.sp, modifier = Modifier.weight(1f))
                 Text(
-                    text = "Dismiss",
+                    text = stringResource(R.string.mobile_dismiss_70afe9ef),
                     fontSize = 13.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.primary,
@@ -1640,14 +1783,13 @@ private fun Composer(
                 // it better than a borrowed symbol would.
                 TouchTarget(
                     onClick = onToggleHud,
-                    contentDescription = "Slash commands",
-                    modifier = Modifier.semantics {
-                        stateDescription = if (accessory == ComposerAccessory.HUD) {
-                            "Expanded"
-                        } else {
-                            "Collapsed"
-                        }
-                    },
+                    contentDescription = stringResource(R.string.mobile_slash_commands_efce77da),
+                    modifier = Modifier.localizedSemantics(stateDescription = {
+                        stringResource(
+                            if (accessory == ComposerAccessory.HUD) R.string.mobile_a11y_expanded
+                            else R.string.mobile_a11y_collapsed,
+                        )
+                    }),
                 ) {
                     Text(
                         text = "/",
@@ -1669,13 +1811,13 @@ private fun Composer(
                 ) {
                     if (draft.isEmpty()) {
                         Text(
-                            text = ComposerPromise.placeholder(
+                            text = localizedMobileCopy(ComposerPromise.placeholder(
                                 name = name,
                                 busy = busy,
                                 engineCanSteer = engineCanSteer,
                                 sending = sending,
                                 listening = dictationListening,
-                            ),
+                            )),
                             fontSize = 17.sp,
                             color = secondaryTint,
                         )
@@ -1713,7 +1855,30 @@ private fun Composer(
                     )
                 }
 
-                TouchTarget(
+                // Stop sits in the bar while the turn runs, as it does on the
+                // desktop and iOS. The Interrupt chat action was the only way
+                // before, and rooms had none at all. It takes the mic's slot,
+                // as on the desktop: four 48dp targets left a 360dp phone a
+                // field about 60dp wide. A dictation already running keeps
+                // its mic so it can be stopped.
+                if (stoppable) {
+                    TouchTarget(onClick = onStop, contentDescription = "Stop the current turn") {
+                        Box(
+                            modifier = Modifier
+                                .size(32.dp)
+                                .background(secondaryTint.copy(alpha = 0.12f), CircleShape),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(11.dp)
+                                    .background(MaterialTheme.colorScheme.onSurface, RoundedCornerShape(2.dp)),
+                            )
+                        }
+                    }
+                }
+
+                if (!stoppable || dictationListening) TouchTarget(
                     onClick = onToggleDictation,
                     contentDescription = if (dictationListening) {
                         "Stop dictation"
@@ -1755,7 +1920,7 @@ private fun Composer(
                     ) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.Send,
-                            contentDescription = "Send",
+                            contentDescription = stringResource(R.string.mobile_send_9bc2575c),
                             tint = if (canSend) BubbleColor.mineText else secondaryTint,
                             modifier = Modifier.size(16.dp),
                         )
@@ -1764,4 +1929,18 @@ private fun Composer(
             }
         }
     }
+}
+
+/** A Live call the phone button asked for, while the first-call disclosure is up. */
+private data class PendingLiveCall(val botId: String, val threadId: String, val botName: String)
+
+/**
+ * How much of the list's end — its last item and the padding after it — lies
+ * below the viewport, in px: 0 while the end shows, and [Int.MAX_VALUE] when
+ * the last item is not even laid out (the end is a screen or more away).
+ */
+private fun LazyListLayoutInfo.endHiddenBelow(): Int {
+    val last = visibleItemsInfo.lastOrNull() ?: return 0
+    if (last.index < totalItemsCount - 1) return Int.MAX_VALUE
+    return (last.offset + last.size + afterContentPadding - viewportEndOffset).coerceAtLeast(0)
 }

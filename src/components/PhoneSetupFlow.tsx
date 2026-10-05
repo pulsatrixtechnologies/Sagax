@@ -65,6 +65,8 @@ export interface PhoneDevice {
   createdAt: number;
   lastSeenAt: number;
   cloudDesktopAccess: boolean;
+  /** Absent on older sidecars means no browser access. */
+  browserControlAccess?: boolean;
 }
 
 export interface CompanionState {
@@ -93,6 +95,7 @@ export type CompanionBridge = {
   refreshTailscale: () => Promise<CompanionState>;
   pairing: (open: boolean, expectedToken?: string) => Promise<CompanionState>;
   cloudDesktop: (deviceId: string, allowed: boolean) => Promise<CompanionState>;
+  browserControl: (deviceId: string, allowed: boolean) => Promise<CompanionState>;
   revoke: (deviceId: string) => Promise<CompanionState>;
 };
 
@@ -997,6 +1000,7 @@ export function PhoneSetupFlowView({
         </p>
         <ValuePoints />
         <button
+          data-phone-pairing-action
           onClick={c.start}
           disabled={!c.state || c.busy || c.accountBusy}
           className={compactHeader

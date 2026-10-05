@@ -12,7 +12,7 @@ Access, OMB also applies its own configuration tools without another approval.
 | **Ask for approval** | Requests approval for commands and file changes, the way the provider's supervised mode does. |
 | **Auto-accept edits** | Approves file edits automatically; other actions can still require approval. Offered where the provider has such a mode (Claude, Grok, Antigravity). |
 | **Approve for me** | Uses the provider's automatic review on Codex, Claude, Cursor, and Grok to approve routine actions and ask about others. Providers without an equivalent fall back to asking. |
-| **Full access** | Enables the provider's permissive mode for commands, edits, and selected-computer actions, including potentially destructive or sensitive work. Residual native permission prompts are answered for you. OMB profile changes, routine actions, team setup, bot deletion, and enabled skill authoring apply without a second approval. Peer-review prompts are skipped within the bot's authorized scope. Delegation uses the receiving bot's setting, never the sender's — except from a Primary Bot with Full access (below). Actual questions and missing credentials still need your input. |
+| **Full access** | Enables the provider's permissive mode for commands, edits, and selected-computer actions, including potentially destructive or sensitive work. Residual native permission prompts are answered for you. OMB profile changes, routine actions, team setup, bot deletion, and enabled skill authoring apply without a second approval. Peer-review prompts are skipped within the bot's authorized scope. Delegation uses the receiving bot's setting, never the sender's — except from a Primary Bot, whose level flows down (below). Actual questions and missing credentials still need your input. |
 | **Custom (`config.toml`)** | Codex only. Sagax reads and reapplies the effective approval and sandbox settings from your Codex configuration. |
 
 Full access is an elevated-risk standing approval. Full and Custom can only be
@@ -37,21 +37,29 @@ A turn a webhook, a routine, or another bot started runs in the bot's level
 like any other turn. The decision log records that nobody was at the keyboard
 when such a turn asked.
 
-### A Primary Bot's Full access covers the work it delegates
+### A Primary Bot's level covers the work it delegates
 
-Approvals were where a team's owner spent their day: every teammate a Primary Bot
-handed work to stopped that work to ask the owner, one card every few
-minutes, across the whole team. So a **Primary Bot with Full access passes
-that access on**. Work it delegates from a Full-access conversation —
-`delegate_bot`, and `coordinate_bots` into a teammate's thread — runs with
-Full access whatever the teammate's own level: the delegated thread is
-switched to Full, stays Full, and opens with a line saying so ("Full access —
-delegated by Clive, a Primary Bot with Full access"). Work a Full-access
-Primary Bot hands out inside a room runs Full for that turn. The teammate's own
-default and its other conversations do not change; a teammate whose engine
-has no Full mode keeps its own level; an ordinary bot's delegation still uses
-the recipient's setting; a Primary Bot delegating from an Ask conversation passes
-nothing on. Questions and missing credentials still reach you.
+Approvals were where a team's owner spent their day: every teammate a Primary
+Bot brought in started at "Ask for approval", so the owner either answered a
+card every few minutes or switched each new thread by hand. So **a Primary
+Bot's level flows down**. Work it delegates (`coordinate_bots` into a
+teammate's thread, and `delegate_bot`) starts at the level of the Primary Bot
+conversation it came from: Auto-accept edits, Approve for me, or Full access.
+The delegated thread is switched to that level, keeps it, and opens with a
+line saying so ("Approve for me — delegated by Clive, a Primary Bot on Approve
+for me"); you can still change it in that thread. Work a Primary Bot hands out
+inside a room runs at its level for that turn.
+
+It only ever raises: a teammate already on a higher level keeps it, a teammate
+on Custom keeps its own configuration, and a Primary Bot delegating from an
+Ask conversation passes nothing on. A teammate's engine caps the level: one
+without Full access gets Approve for me, and one without Auto-accept edits
+(Codex, whose Ask already writes the workspace) stays on its own level. On an
+organization server, a bot a member owns never runs with Full access: a Full
+Primary Bot's work reaches it as Approve for me. The teammate's own default
+and its other conversations do not change, and an ordinary bot's delegation
+still uses the recipient's setting. Questions and missing credentials still
+reach you.
 
 ## Answering a request
 

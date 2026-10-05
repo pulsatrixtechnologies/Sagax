@@ -18,6 +18,7 @@
 import { lstatSync, readFileSync } from "node:fs";
 import { z } from "zod";
 
+import { effectiveIntegrationRights } from "./person-integrations.ts";
 import type { Principal } from "./principals.ts";
 
 export const LINK_FILE_MAX_BYTES = 4 * 1024;
@@ -124,6 +125,10 @@ const personSchema = z.object({
    * their own Sagax bots (`manage`, the default) or only use the bots
    * shared with them (`use`). Absent from an older Perspicax: manage. */
   sagax_bots: z.enum(["manage", "use"]).optional().catch(undefined),
+  /** Perspicax migration 0046: whether this person manages their own
+   * plugins, skills and MCP servers in Sagax (`manage`, the default) or an
+   * admin does (`off`). Absent from an older Perspicax: manage. */
+  sagax_integrations: z.enum(["manage", "off"]).optional().catch(undefined),
   routine_delegation: z.object({
     consented_at: z.string().max(40),
     renewed_at: z.string().max(40),
@@ -200,11 +205,14 @@ export function avatarContentType(bytes: Uint8Array): AvatarImage["contentType"]
 export const PROVIDER_KEY_TIMEOUT_MS = 5_000;
 export const PROVIDER_KEY_MAX_BYTES = 8 * 1024;
 export const PROVIDER_KEY_CACHE_MS = 60_000;
-export type ModelProvider = "anthropic" | "openai";
-/** A key a person keeps in Perspicax: an engine's provider, or `xai`, which
- * serves voice mode only (server/voice-mode.ts), never an engine. */
-export type KeyProvider = ModelProvider | "xai";
-const MODEL_PROVIDERS: readonly KeyProvider[] = ["anthropic", "openai", "xai"];
+/** A key a person keeps in Perspicax ("Mes clés de modèle"), by provider:
+ * anthropic (Claude Code, pi), openai (Codex, pi), xai (Grok Build, pi and
+ * voice mode, server/voice-mode.ts), google (Gemini CLI, pi) and moonshot
+ * (Kimi Code, pi). Perspicax 1.8 lists the first three; google and moonshot
+ * are read as soon as its directory lists them (server/engine-credentials.ts). */
+export type ModelProvider = "anthropic" | "openai" | "xai" | "google" | "moonshot";
+export type KeyProvider = ModelProvider;
+export const MODEL_PROVIDERS: readonly ModelProvider[] = ["anthropic", "openai", "xai", "google", "moonshot"];
 export type ProviderKeyResult =
   | { ok: true; key: string; fingerprint: string }
   | { ok: false; error: "no_key" | "user_inactive" | "unreachable" | "link" };
@@ -242,6 +250,11 @@ export interface PerspicaxDirectoryOptions {
    * holds a routine delegation (undefined: unknown), and when the fetch
    * started (RoutineConsents.reconcile). */
   onDelegations?: (present: (sub: string) => boolean | undefined, fetchStartedAt: number) => void;
+  /** `sagax_integrations` changed for an active person (effective right:
+   * an admin stays `manage`). Not fired on a 304, and not again while the
+   * right stays the same. The new right is passed in: `integrationRights`
+   * still reads the previous directory until this answer is stored. */
+  onIntegrationRights?: (principalId: string, rights: "manage" | "off") => void;
   /** Pulsa Bot's version, sent as X-Pulsabot-Version. */
   version: string;
   /** Slice 7: the link file was loaded, changed to another server id, or
@@ -350,6 +363,15 @@ export class PerspicaxDirectory {
   botRights(sub: string): "manage" | "use" {
     const person = this.data?.people.find((entry) => entry.sub === sub);
     return person?.sagax_bots === "use" ? "use" : "manage";
+  }
+
+  /** Whether this subject manages their own plugins, skills and MCP servers
+   * (Perspicax `sagax_integrations`): `off` only when the last directory
+   * says so, else `manage` (the default, an older Perspicax, or before the
+   * first directory). */
+  integrationRights(sub: string): "manage" | "off" {
+    const person = this.data?.people.find((entry) => entry.sub === sub);
+    return person?.sagax_integrations === "off" ? "off" : "manage";
   }
 
   /** Slice 5: every MCP profile Perspicax lists, sorted by id ([] before the
@@ -816,10 +838,29 @@ export class PerspicaxDirectory {
       // fetch started is newer than this answer and stays.
       if (after.disabledAt !== undefined) this.options.principals.markEnabled?.(iss, person.sub, fetchStartedAt);
       if (before?.orgRole === "admin" && orgRole !== "admin") this.options.onRoleNarrowed(after.id);
+      this.reportIntegrationRights(person, before, after.id, orgRole);
     }
     for (const [sub, principal] of known) {
       if (listed.has(sub) || principal.disabledAt !== undefined) continue;
       this.options.onPersonOut(iss, sub);
+    }
+  }
+
+  /** Tell the server when an active person's effective `sagax_integrations`
+   * changed, so saved connections stop or start being usable without waiting
+   * for their next turn. A disabled person is logged out instead. */
+  private reportIntegrationRights(person: DirectoryPerson, before: Principal | undefined, principalId: string, orgRole: "admin" | "member"): void {
+    if (!this.options.onIntegrationRights) return;
+    const next = effectiveIntegrationRights(orgRole === "admin", person.sagax_integrations);
+    const previousListed = this.data?.people.find((entry) => entry.sub === person.sub);
+    const seenBefore = before !== undefined || previousListed !== undefined;
+    const previousRole = before ? before.orgRole === "admin" : previousListed?.role === "admin";
+    const previous = seenBefore ? effectiveIntegrationRights(previousRole, previousListed?.sagax_integrations) : "manage";
+    if (next === previous) return;
+    try {
+      this.options.onIntegrationRights(principalId, next);
+    } catch (error) {
+      this.log(`perspicax directory: integration rights could not be applied: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 }

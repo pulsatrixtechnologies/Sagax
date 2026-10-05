@@ -115,24 +115,25 @@ describe("independent bot tasks through the isolated control surface", () => {
       status: "waiting-on-user", statusText: "waiting on the user", busy: true,
     });
     const queued = await internal(token, "POST", "/api/internal/coordinate-bots", {
-      botIds: [peer.id], requestKey: "mailbox-review", message: "MAILBOX_REVIEW: check the release notes.",
+      botIds: [peer.id], message: "MAILBOX_REVIEW: check the release notes.",
     });
     expect(queued.status).toBe(200);
-    expect(queued.body.accepted).toHaveLength(1);
-    const requestId = queued.body.accepted[0].requestId;
+    const requestId = queued.body.receipts[0].requestId;
     // The receipt is the sender's honest answer at send time: this peer is
     // queued behind its open approval card, so nothing has been delivered.
     expect(queued.body.receipts).toEqual([{
       botId: peer.id,
       botName: "Mailbox Peer",
       outcome: "queued",
-      detail: "handed to the coordinator; the teammate's turn has not started yet",
-      requestId,
+      detail: "sent to \"@Mailbox Chief · work\"; it runs after anything still running there",
+      requestId: expect.any(String),
+      threadId: expect.any(String),
     }]);
     const handoff = () => JSON.parse(readFileSync(join(session.info.dataDir, "room-handoffs.json"), "utf8"))
       .find((node: any) => node.id === requestId);
     const peerThread = handoff().threadId;
     expect(peerThread).not.toBe(peer.activeTaskId);
+    expect(queued.body.receipts[0].threadId).toBe(peerThread);
     // The open approval keeps fresh work queued across a tick, spare slot or
     // not. Ending the source turn does not release it. #1589 admits a spare
     // slot only beside a sibling that is running, not beside this card.
@@ -171,6 +172,30 @@ describe("independent bot tasks through the isolated control surface", () => {
     await control(["messages", "--bot", peer.id, "--limit", "10"]);
     await control(["messages", "--bot", chief.id, "--limit", "15"]);
   }, 60_000);
+
+  it("reports a deleted one-way recipient thread in its surviving source without restarting the sender", async () => {
+    const sender = (await tool("create_bot", { name: "Independent sender", instance_id: "claude", model: models[0] })).bot;
+    const recipient = (await tool("create_bot", { name: "Independent recipient", instance_id: "claude", model: models[1] })).bot;
+    await control(["send", "--bot", sender.id, "--text", "Prepare independent work."]);
+    const launched = await dump(models[0]);
+    const token = launched.mcpConfig.mcpServers.agents.env.SAGAX_COMMS_TOKEN;
+    const sent = await internal(token, "POST", "/api/internal/threads", {
+      toBotId: recipient.id, title: "Deleted independent work", message: "Own this work.", oneWay: true,
+    });
+    expect(sent.status).toBe(201);
+    const threadId = sent.body.threadId;
+    expect((await api("DELETE", `/api/bots/${recipient.id}/tasks/${threadId}`)).status).toBe(200);
+    writeFileSync(modelFile(models[0], "gate"), "finish sender");
+    expect((await control(["wait", "--bot", sender.id, "--timeout", "15"])).status).toBe("settled");
+    await expect.poll(async () => (await api("GET", `/api/threads/${sender.activeTaskId}/messages`)).body.messages
+      .some((message: any) => message.tool?.ok === false && message.tool.name.includes("deleted before it could start")),
+    { timeout: 5_000 }).toBe(true);
+    expect((await api("GET", `/api/threads/${threadId}/messages`)).status).toBe(404);
+    expect((await botState(recipient.id)).tasks.some((task: any) => task.threadId === threadId)).toBe(false);
+    expect((await botState(sender.id)).busy).toBe(false);
+    expect((await dump(models[0])).pid).toBe(launched.pid);
+    expect(existsSync(modelFile(models[1], "json"))).toBe(false);
+  }, 30_000);
 
   it("replaces the final worked thread with blank context but refuses to delete it while running", async () => {
     const created = await tool("create_bot", { name: "Last thread fixture", instance_id: "claude", model: models[0] });

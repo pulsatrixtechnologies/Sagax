@@ -1,19 +1,20 @@
 # cloudflared release provenance
 
-OpenMausBot stages the official `cloudflared` 2026.8.2 executable as a separate
+OpenMausBot stages the official `cloudflared` 2026.9.3 executable as a separate
 process. The binaries come from Cloudflare's official GitHub release:
 
-<https://github.com/cloudflare/cloudflared/releases/tag/2026.8.2>
+<https://github.com/cloudflare/cloudflared/releases/tag/2026.9.3>
 
 `scripts/prepare-cloudflared.mjs` verifies these SHA-256 digests before an
 executable can be staged:
 
 | OpenMausBot target | Release asset | Release asset SHA-256 | Extracted executable SHA-256 |
 | --- | --- | --- | --- |
-| macOS arm64 | `cloudflared-darwin-arm64.tgz` | `9042c2c5d8b2de78e60f313d5fb31b6c5c1cebde787a3caf1f2c9588084ac442` | `b61054d3d6326ea558cb49826eebf5676e0d0a36d51b546975096ca3e0e3c89d` |
-| macOS x64 | `cloudflared-darwin-amd64.tgz` | `f1727723c586500e2092368ae21871b3df7ddfd2cb097f22d81bee4a9c458bb4` | `b0f770e1e0b281399a57219b840fd8eef1cc25387a404124248157ea2073727a` |
-| Linux x64 | `cloudflared-linux-amd64` | `fcfb02b575a52ca1af2e3267af4e1517bcdeb30ac48c834c69abaed3c0576ad2` | same as release asset |
-| Windows x64 | `cloudflared-windows-amd64.exe` | `c29eee2b121f5436a642eed69fd9767da7e7b8c510fa50aaa130337f931357b5` | same as release asset |
+| macOS arm64 | `cloudflared-darwin-arm64.tgz` | `587c2cfb1c230fe36c7fa7727da78be459dae028cabe8c001291999350f07095` | `5472c1a01c84bc31b3021056a73b4e5774ddddefc572124ea8fdf6c340639f32` |
+| macOS x64 | `cloudflared-darwin-amd64.tgz` | `d1155d0837487f261183b15c1eab6c4ebcad9dc49b94675f1524c3564cea3977` | `ab588b3b4db9cdb4476c30a3db2a72635b1d8327d44741fee6799a0f37b0ec07` |
+| Linux x64 | `cloudflared-linux-amd64` | `77e26d8d900e0b8469f416239d14b5f296525fdf79fee6f511ef55609e3fbac2` | same as release asset |
+| Linux arm64 | `cloudflared-linux-arm64` | `aaeb2d7d0da3614634c7e03ab13487a1522c2e79165ed2929cfe23d5e95b326d` | same as release asset |
+| Windows x64 | `cloudflared-windows-amd64.exe` | `f096265ec2fcbe9bb6e2d64268db167ced3fcbb83d894bdb9e2fcdb26f2ea7e2` | same as release asset |
 
 The staged executables are generated build output and are intentionally not
 checked into git. Set `OMB_CLOUDFLARED_ARCHIVE_DIR` to a directory containing

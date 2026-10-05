@@ -12,6 +12,8 @@ export const APPROVAL_LEVELS_URL = `${APP_REPOSITORY}/blob/main/docs/approval-le
 export const RELEASES_URL = `${APP_REPOSITORY}/releases`;
 /** No upstream Pro offer: the original project's site is never linked. */
 export const PRO_URL = "";
+/** No upstream plans page either. */
+export const PRICING_URL = "";
 export const LICENSE_URL = `${APP_REPOSITORY}/blob/main/LICENSE`;
 
 /** Fork version Vite inlined from package.json forkVersion. "dev" outside the bundler. */

@@ -33,7 +33,12 @@ recipient-scoped OTP limiter whose keys are HMACs rather than email addresses,
 plus an authenticated installation-creation limiter. `0004` adds managed
 endpoint resource IDs, lifecycle state, generation leases, redacted error
 codes, and installation-scoped action limits. `0005` adds the cleanup-attempt
-counter used for scheduled retry backoff. Endpoint rows deliberately do not
+counter used for scheduled retry backoff. `0006` adds the idle-reclaim marker
+and a one-row capacity snapshot (counts and timestamps only), and gives rows
+an operator had already moved to `deleting` for active installations the same
+reconnect guard as automatic reclaims. `0007` drops `account.issuer` and its
+unique index, which Better Auth 1.7.0 to 1.7.2 required and 1.7.3 no longer
+writes (its 1.7 upgrade guide). Endpoint rows deliberately do not
 cascade away with a hard installation deletion: losing the tunnel and DNS IDs
 would make operator cleanup impossible.
 
@@ -81,7 +86,21 @@ Account bearer tokens are rejected.
   and returns `{ endpoint, connectorToken }`. The raw token is obtained only
   after tunnel configuration and DNS are ready. The caller must place it
   directly in the operating system's secure credential store; it is not
-  recoverable from GET or D1.
+  recoverable from GET or D1. After an idle reclaim the same call allocates a
+  new tunnel behind the **same hostname**, so a paired phone keeps its
+  address; it may also take back an endpoint whose reclaim is still pending.
+  The desktop app (Remote access on) and `openmausbot serve --tunnel` ask
+  `GET` every 15 minutes, even while their connector reports ready, and make
+  this call when the endpoint is gone or in `error`; a `401` from `GET` (the
+  90-day installation credential expired) sends them through account
+  recovery, or to a "sign-in expired" prompt.
+- When Cloudflare's tunnel quota (`1045`) or the zone's DNS record quota
+  (`81045`) refuses an allocation, `POST` returns
+  `503 endpoint_capacity` with `Retry-After: 600`. For the next ten minutes
+  (or until scheduled cleanup frees a resource) further allocations that
+  would need a new tunnel are answered the same way without calling
+  Cloudflare, protecting the shared API budget. Every other provider failure
+  remains `502 endpoint_unavailable`.
 - `DELETE` removes DNS first and then the tunnel. It returns `204` when done or
   when already deleted. A partial Cloudflare failure returns
   `503 endpoint_cleanup_pending` and retains only the IDs needed for a retry.
@@ -110,15 +129,83 @@ Revoking an installation first revokes its local installation credentials, then
 schedules best-effort endpoint cleanup. Cloud cleanup failure cannot restore or
 delay credential revocation. Repeating the owner-scoped installation DELETE is
 safe and retries retained cleanup state. A five-minute cron also processes at
-most four expired-lease rows per run when they are already deleting, belong to
-a revoked installation, or outlive a hard-deleted installation. The four-row
-bound leaves the worst-case 40 external provider calls below the Workers Free
-plan's 50-subrequest ceiling. Failed scheduled cleanups back off from five
-minutes through 15 minutes, one hour, six hours, and then 24 hours. Once a
-deletion has been pending for 24 hours, each eligible sweep emits a distinct
-aggregate operator-attention log without installation or account identifiers.
-This bounded sweep prevents a transient provider failure from orphaning
-resources forever without creating an unbounded scheduled invocation.
+most `SAGAX_CLEANUP_SWEEP_LIMIT` (code default 20; `wrangler.jsonc` ships 4 until
+the account is confirmed on Workers Paid, whose per-invocation subrequest and D1
+limits the default needs) expired-lease rows per run when
+they are already deleting, belong to a revoked installation, or outlive a
+hard-deleted installation. Rows run five at a time (the Workers limit is six
+connections awaiting headers), and a run stops starting new rows as soon as
+Cloudflare answers `429`. At ten provider calls per row the default is about
+200 calls per run: a sixth of the API token's 1,200 requests per five minutes,
+and far below the Workers Paid limit of 10,000 subrequests per invocation. On
+Workers Free (50 subrequests per invocation) set the limit to 4. Failed
+scheduled cleanups back off from five minutes through 15 minutes, one hour,
+six hours, and then 24 hours. Once a deletion has been pending for 24 hours,
+each eligible sweep emits a distinct aggregate operator-attention log without
+installation or account identifiers. This bounded sweep prevents a transient
+provider failure from orphaning resources forever without creating an
+unbounded scheduled invocation.
+
+### Tunnel capacity and idle reclaim
+
+Cloudflare limits an account to 1,000 tunnels by default and a zone to a fixed
+number of DNS records. Each run of the same cron also performs one bounded
+capacity step before cleanup:
+
+1. It reads one page of 100 undeleted tunnels for the whole account (the page
+   cursor walks and wraps across runs) and the zone's DNS record count. The
+   tunnel page's total is the account-wide usage.
+2. It reclaims idle tunnels by moving their endpoint rows to `deleting` with
+   `reclaim_requested_at`, at most 20 per run. It never deletes anything
+   itself; cleanup does, through the same ownership-verified path as an
+   owner's DELETE. A tunnel is idle only when Cloudflare reports it
+   - `inactive` (never ran), with no activation time, created at least seven
+     days ago; or
+   - `down` with its last connection ended at least
+     `SAGAX_TUNNEL_OFFLINE_RECLAIM_DAYS` (default 21, minimum 7) days ago and no
+     later activation.
+
+   `healthy` and `degraded` tunnels, any reported connection, an unknown
+   status, and any unparseable timestamp are never idle. The D1 side must also
+   be quiet for the same period: the installation is active (not revoked) and
+   has not called the control plane, the endpoint row has not been reconciled
+   or updated, the stored tunnel ID still names the listed tunnel, and no
+   request holds the row's lease. Those guards live in the marking SQL itself,
+   so a check-in that races the scan wins. Tunnels with no endpoint row are
+   only counted (`unmatched`), never touched.
+3. Before each destructive call of a reclaim, cleanup re-reads the tunnel
+   from Cloudflare. If it has reconnected, or the installation checked in after
+   the mark, the reclaim is cancelled and the row returns to `ready` (or to a
+   retryable `error` when its DNS record was already removed). An owner's
+   DELETE or revocation clears the reclaim marker and always deletes.
+4. It writes the capacity snapshot and logs one `managed endpoint tunnel scan`
+   summary. When usage reaches 90% of `SAGAX_TUNNEL_LIMIT` (default 1000) or
+   `SAGAX_DNS_RECORD_LIMIT` (default 1000) it emits
+   `console.error` with `"alert": "managed_endpoint_capacity"`, the resource,
+   used, limit, and percentage. Create a Workers Logs alert on that field.
+
+`SAGAX_TUNNEL_RECLAIM` is `observe` unless set to `on` (an unset or invalid value
+observes): it logs `idle`/`eligible` counts without marking anything. Deploy in
+`observe`, check one full scan cycle of real counts, then set it to `on`. The two limits only drive the alert and `/healthz`; raise
+them when Cloudflare raises the account or zone quota.
+
+`GET /healthz` keeps `ok` and `service` unchanged (desktops gate hosted sign-in
+on them; a full quota must not hide sign-in or recovery) and adds a
+`capacity` object with no identifiers or secrets:
+
+```json
+{
+  "status": "ok | high | full | unknown",
+  "checkedAt": 1790000000000,
+  "tunnels": { "used": 950, "limit": 1000 },
+  "dnsRecords": { "used": 960, "limit": 1000 },
+  "providerRejectedAt": null,
+  "reclaim": { "mode": "on", "pending": 12 }
+}
+```
+
+`status` is `full` while a recent quota rejection is gating allocations,
+`unknown` when the snapshot is more than 30 minutes old.
 
 ## Local checks
 
@@ -144,7 +231,10 @@ Do not commit `.dev.vars`.
 
 ## Troubleshooting managed HTTPS setup
 
-`endpoint_unavailable` comes from authenticated endpoint provisioning, before
+`endpoint_capacity` means Cloudflare refused a new tunnel (`cf_api_1045`) or
+DNS record (`cf_api_81045`): see **Tunnel capacity and idle reclaim** and the
+`capacity` object in `/healthz`. `endpoint_unavailable` is every other
+failure. Both come from authenticated endpoint provisioning, before
 the desktop starts its connector or a phone connects. A successful `/healthz`
 response only validates Worker configuration; it does **not** check provider
 capacity, API permissions, DNS writes, or tunnel creation. A reachable LAN
@@ -169,10 +259,13 @@ companion on port `8810` also does not prove managed HTTPS is ready.
    capacity. At the limit, request a capacity increase from Cloudflare. A new
    desktop release cannot raise the provider's quota. Do not infer the meaning
    of an API error code from similarly numbered Cloudflare edge error pages.
+   `GET /healthz` reports the last scanned usage.
 4. Review already-requested deletion and revoked-installation cleanup. Do not
-   delete a healthy installation's tunnel, or infer abandonment from a
-   disconnected connector: a sleeping laptop is normal. The existing cleanup
-   path validates ownership before deleting resources.
+   delete a healthy installation's tunnel by hand, or infer abandonment from a
+   disconnected connector: a sleeping laptop is normal. Idle reclaim already
+   uses week-scale thresholds and re-checks the connection before deleting;
+   search logs for `managed endpoint tunnel scan` and
+   `managed endpoint cleanup sweep`.
 5. After the service-side problem is resolved, the user can choose **Retry
    secure access** without signing out or reinstalling. The desktop retains
    the installation credential even when endpoint provisioning fails, avoiding
@@ -227,8 +320,8 @@ Before a production deployment, an operator must:
 7. Replace `ALLOWED_ORIGINS` with a comma-separated allow-list of exact HTTPS
    application origins. Wildcards are deliberately unsupported.
 8. Deploy the Worker and verify that `GET <BETTER_AUTH_URL>/healthz` returns
-   exactly `{ "ok": true, "service": "openmausbot-control-plane" }` over
-   HTTPS before shipping the desktop build. Electron probes this endpoint and
+   `"ok": true` and `"service": "openmausbot-control-plane"` over HTTPS
+   before shipping the desktop build. Electron probes this endpoint and
    keeps new hosted onboarding hidden until it is healthy; an already signed-in
    user remains visible so cleanup and recovery are not stranded.
 

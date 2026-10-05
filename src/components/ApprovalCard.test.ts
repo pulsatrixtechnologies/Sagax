@@ -26,6 +26,33 @@ const createRoutineOperation = {
   },
 };
 
+describe("ApprovalCard decided by voice", () => {
+  const bash = (answered: string, via?: "call"): Message => ({
+    id: "bash-card",
+    role: "bot",
+    kind: "options",
+    at: 1,
+    card: {
+      title: "Approval needed",
+      subtitle: "rm -rf build",
+      options: ["Allow", "Deny"],
+      requestId: "r1",
+      tool: "Bash",
+      answered,
+      answeredBy: { kind: "loopback", ...(via ? { via } : {}) },
+    },
+  });
+
+  it("says a card was decided by voice on a Live call", () => {
+    expect(renderToStaticMarkup(createElement(ApprovalCard, { message: bash("allow", "call") }))).toMatch(/Allowed.*by voice/);
+    expect(renderToStaticMarkup(createElement(ApprovalCard, { message: bash("deny", "call") }))).toMatch(/Denied.*by voice/);
+  });
+
+  it("says nothing extra for a tap", () => {
+    expect(renderToStaticMarkup(createElement(ApprovalCard, { message: bash("allow") }))).not.toContain("by voice");
+  });
+});
+
 describe("ApprovalCard routine proposals", () => {
   it("describes a chat-created routine as scheduling rather than a raw tool call", () => {
     const message: Message = {

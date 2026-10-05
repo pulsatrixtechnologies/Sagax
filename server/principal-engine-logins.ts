@@ -1,14 +1,17 @@
 // A person's own engine subscriptions on an organization server (slice 4,
-// decision D10). Each person signs in to Claude or Codex with their own
-// account; the login lives in their own directory:
+// decision D10). Each person signs in to Claude, Codex, Grok Build or Kimi
+// Code with their own account; the login lives in their own directory:
 //
 //   ${DATA_DIR}/principals/<principalId>/claude   (CLAUDE_CONFIG_DIR, 0700)
 //   ${DATA_DIR}/principals/<principalId>/codex    (CODEX_HOME, 0700)
+//   ${DATA_DIR}/principals/<principalId>/grok     (HOME of the grok CLI, 0700)
+//   ${DATA_DIR}/principals/<principalId>/kimi     (KIMI_CODE_HOME, 0700)
 //
 // Signed in means our marker `<dir>/.pulsabot-login.json` ({ at }, 0600),
 // written when the CLI reports success and removed on sign-out; nothing else
 // is trusted. The flows are the drivers' own login controllers
-// (ClaudeLoginController, CodexDeviceAuthController) pointed at that
+// (ClaudeLoginController, CodexDeviceAuthController, and the device-code
+// DeviceLoginController for Grok and Kimi) pointed at that
 // directory, one flow per (person, engine), owned by the session that
 // started it and ended with it (provider-auth-sessions.ts).
 //
@@ -20,11 +23,14 @@ import { writeFileAtomic } from "./atomic.ts";
 import type { ProviderAuthenticationStart, ProviderAuthenticationStatus } from "./contracts.ts";
 import { ClaudeLoginController } from "./drivers/claude-login-auth.ts";
 import { CodexDeviceAuthController } from "./drivers/codex-device-auth.ts";
+import { DeviceLoginController } from "./drivers/device-login.ts";
 import { ProviderAuthSessions } from "./provider-auth-sessions.ts";
 import { isPrincipalId } from "./principals.ts";
 
 export const LOGIN_MARKER = ".pulsabot-login.json";
-export type LoginDriver = "claudeAgent" | "codex";
+export type LoginDriver = "claudeAgent" | "codex" | "grokAgent" | "kimiAgent";
+
+const LOGIN_DIR: Readonly<Record<LoginDriver, string>> = { claudeAgent: "claude", codex: "codex", grokAgent: "grok", kimiAgent: "kimi" };
 
 export interface LoginController {
   start(): Promise<ProviderAuthenticationStart>;
@@ -47,14 +53,14 @@ export interface PrincipalEngineLoginsOptions {
   /** The instance's driver, CLI and environment, or null when unknown. */
   instance(instanceId: string): LoginInstanceFacts | null;
   /** Tests pass fakes; the default is the drivers' own controllers. */
-  controller?(input: { driver: LoginDriver; cli: string; environment: () => Record<string, string | undefined>; onAuthenticated: () => Promise<void> }): LoginController;
+  controller?(input: { driver: LoginDriver; cli: string; home: string; environment: () => Record<string, string | undefined>; onAuthenticated: () => Promise<void> }): LoginController;
   now?: () => number;
 }
 
 const failure = (message: string, status: number) => Object.assign(new Error(message), { status });
 
 export function isLoginDriver(driver: string): driver is LoginDriver {
-  return driver === "claudeAgent" || driver === "codex";
+  return driver === "claudeAgent" || driver === "codex" || driver === "grokAgent" || driver === "kimiAgent";
 }
 
 export class PrincipalEngineLogins {
@@ -71,7 +77,7 @@ export class PrincipalEngineLogins {
   /** The person's login directory for a driver (not created). */
   loginDir(principalId: string, driver: LoginDriver): string {
     if (!isPrincipalId(principalId)) throw failure("not a person", 400);
-    return join(this.options.dataDir, "principals", principalId, driver === "claudeAgent" ? "claude" : "codex");
+    return join(this.options.dataDir, "principals", principalId, LOGIN_DIR[driver]);
   }
 
   signedIn(principalId: string, driver: string): boolean {
@@ -116,18 +122,31 @@ export class PrincipalEngineLogins {
           env.CLAUDE_CONFIG_DIR = dir;
           delete env.ANTHROPIC_API_KEY;
           delete env.ANTHROPIC_AUTH_TOKEN;
-        } else {
+        } else if (driver === "codex") {
           env.CODEX_HOME = dir;
           delete env.OPENAI_API_KEY;
+        } else {
+          // the device login writes into the person's home only
+          delete env.XAI_API_KEY;
+          delete env.MOONSHOT_API_KEY;
+          delete env.KIMI_API_KEY;
+          if (driver === "grokAgent") {
+            // GROK_HOME outranks $HOME/.grok. A copied server GROK_HOME must
+            // not win over the overlay the device login applies next.
+            env.HOME = dir;
+            env.GROK_HOME = join(dir, ".grok");
+          }
         }
         return env;
       };
       const onAuthenticated = async () => { this.markSignedIn(principalId, driver); };
       controller = this.options.controller
-        ? this.options.controller({ driver, cli: facts.cli, environment, onAuthenticated })
+        ? this.options.controller({ driver, cli: facts.cli, home: dir, environment, onAuthenticated })
         : driver === "claudeAgent"
           ? new ClaudeLoginController({ cli: facts.cli, environment: environment as () => NodeJS.ProcessEnv, onAuthenticated })
-          : new CodexDeviceAuthController({ cli: facts.cli, environment, onAuthenticated });
+          : driver === "codex"
+            ? new CodexDeviceAuthController({ cli: facts.cli, environment, onAuthenticated })
+            : new DeviceLoginController({ engine: driver, cli: facts.cli, home: dir, environment, onAuthenticated });
       this.controllers.set(key, controller);
     }
     const bound = controller;

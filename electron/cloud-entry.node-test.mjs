@@ -115,7 +115,7 @@ test("a consumed launch link is not replayed by the companion or updater relaunc
   takeCloudDeepLink(argv);
   const calls = [];
   runInNewContext(`${between("function relaunchAfterDesktopRemoteChange()", 'ipcMain.handle("desktop-remote:state"')}\nrelaunchAfterDesktopRemoteChange();`, {
-    process: { argv }, setTimeout: callback => { callback(); return {}; },
+    desktopShutdownStarted: false, process: { argv }, setTimeout: callback => { callback(); return {}; },
     app: { relaunch: options => calls.push(options.args), quit: () => {} },
   });
   const patched = patchOrganizationUpdater("      relaunch() {\n        this.app.relaunch();\n      }");

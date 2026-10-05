@@ -385,17 +385,43 @@ struct MarkdownText: View {
             // Code spans: SF Mono 12 on the bubble itself, no chip.
             for run in attributed.runs where run.inlinePresentationIntent?.contains(.code) == true {
                 attributed[run.range].font = desktop != nil ? .system(size: 12, design: .monospaced) : Theme.Font.code
+                if desktop != nil { attributed[run.range].tracking = DesktopChatMetrics.monoTracking(12) }
                 if let desktop { attributed[run.range].backgroundColor = desktop.inset }
             }
             if let desktop {
-                // `px-1` on the desktop's code chip: a quarter-em space each side
+                // `px-1` on the desktop's code chip: 4 pt each side. Geist
+                // has no fixed-width spaces (they fall back) and every space
+                // of the mono face is a 7.2 cell: a three-per-em space of
+                // the system face at 12.235 pt is 4.0 wide.
                 let ranges = attributed.runs.filter { $0.inlinePresentationIntent?.contains(.code) == true }.map(\.range)
+                // A word joiner glues each pad to its chip: a line may break
+                // before the chip, never between a pad and the code (the pad
+                // would hang at the previous line's end).
                 for range in ranges.reversed() {
-                    var pad = AttributedString("\u{2005}")
-                    pad.font = .system(size: 12, design: .monospaced)
-                    pad.backgroundColor = desktop.inset
-                    attributed.insert(pad, at: range.upperBound)
-                    attributed.insert(pad, at: range.lowerBound)
+                    var leading = AttributedString("\u{2004}\u{2060}")
+                    leading.font = .system(size: 12.235)
+                    leading.backgroundColor = desktop.inset
+                    var trailing = AttributedString("\u{2060}\u{2004}")
+                    trailing.font = .system(size: 12.235)
+                    trailing.backgroundColor = desktop.inset
+                    attributed.insert(trailing, at: range.upperBound)
+                    attributed.insert(leading, at: range.lowerBound)
+                }
+            }
+            if let desktop {
+                // links: `underline decoration-accent/40`
+                for run in attributed.runs where run.link != nil {
+                    attributed[run.range].underlineStyle = Text.LineStyle(pattern: .solid, color: desktop.accent.opacity(0.4))
+                }
+            }
+            if desktop != nil {
+                // SwiftUI draws a `.code` intent in the environment's size
+                // (13) whatever the run's font says: drop the intent so the
+                // run's SF Mono 12 holds (the desktop's `text-[12px]`).
+                for run in attributed.runs where run.inlinePresentationIntent?.contains(.code) == true {
+                    var intent = run.inlinePresentationIntent ?? []
+                    intent.remove(.code)
+                    attributed[run.range].inlinePresentationIntent = intent.isEmpty ? nil : intent
                 }
             }
             MentionTint.apply(to: &attributed, peers: mentions, everyone: mentionEveryone)

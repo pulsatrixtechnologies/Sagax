@@ -6,6 +6,7 @@
 // readable.
 
 import type { ApprovalMode } from "../shared/approval-mode.ts";
+import type { ToolScope } from "../shared/tool-scope.ts";
 import type { EffortLevel } from "../shared/wire.ts";
 import type { HarnessCommand } from "../shared/harness-commands.ts";
 import type {
@@ -122,6 +123,9 @@ export interface TurnAccessInput {
   claudeConfigDir?: string;
   codexHome?: string;
   codexOwnerKey?: boolean;
+  /** Grok Build, Kimi Code, Gemini CLI, pi: the payer's own home for the
+   * engine (HOME, KIMI_CODE_HOME, GEMINI_CLI_HOME, PI_CODING_AGENT_DIR). */
+  engineHome?: string;
 }
 
 export interface SendTurnInput {
@@ -141,6 +145,8 @@ export interface SendTurnInput {
   /** Per-bot approval policy, reasserted by providers on every turn so a
    * resumed native session cannot retain a stale, more permissive mode. */
   approvalMode?: ApprovalMode;
+  /** Fresh owner selection, independent of execution approval and resume state. */
+  toolScope?: ToolScope;
   /** A guest drives this turn on an OMB Cloud home: it runs with no shell
    * or command execution and reads nothing outside its own folder. Sent
    * only to a driver whose capabilities.guestTurns is "confined"; the harness
@@ -194,6 +200,21 @@ export interface SendTurnInput {
    * systemVolatile describes this turn even when its text is unchanged from
    * the previous turn, so digest-based delivery must not suppress the note. */
   mentionTurn?: boolean;
+  /** The thread is on a live voice call: keep the engine process warm from
+   * turn to turn. A driver that pools one process per thread hands per-turn
+   * credentials to it through files it rewrites each turn, so a new turn's
+   * token never forces a relaunch (docs/voice-mode-xai.md, "Latency"). */
+  keepWarm?: boolean;
+  /** Start (or keep) the pooled engine process without a user turn. No
+   * prompt is written and no turn events are emitted. A call warms the
+   * process when it is accepted so the first spoken turn reuses it.
+   * Drivers that cannot start without a prompt leave `warmSession` unset
+   * and the harness does not send them this flag. */
+  warmOnly?: boolean;
+  /** Aborted when the call ends before that warm process is needed. The
+   * driver closes the idle process this warm started. A process a real
+   * turn already owns stays up. */
+  warmSignal?: AbortSignal;
   /** Coordinated teammate turns may resume a Claude conversation whose
    * earlier system prompt contained a different assignment. Refresh that
    * prompt when the provider supports it; the current brief also arrives
@@ -205,17 +226,17 @@ export interface SendTurnInput {
      * bridge harness-controlled lets it turn connection requests into trusted
      * chat cards consistently across provider CLIs. */
     composio?: { command: string; args: string[]; env: Record<string, string> };
-    /** Boat's native runner or an explicitly capable driver consumes this
-     * leased descriptor. Other computers use the stdio descriptor below. */
+    /** The Boat the Computer engine (remoteAgent) runs its turn on. Every
+     * other engine reaches a cloud computer through `localComputer`, as one
+     * more stdio computer server the harness serves. */
     computer?: {
-      // kind "box" and field boxId keep their historical names (leased-wire contract).
+      // kind "box" and field boxId keep their historical names (wire contract).
       kind?: "box";
       boxId: string;
-      token: string;
-      control?: { url: string; token: string };
     };
-    /** Direct stdio connection to a Cua Driver MCP server (host, sandbox, or
-     * VPS). `scope` is set only for the user's host desktop; isolated and
+    /** Direct stdio connection to a computer MCP server: Cua Driver (host,
+     * sandbox, or VPS) or the harness's own cloud computer server (a Boat).
+     * `scope` is set only for the user's host desktop; isolated and
      * remote computers intentionally omit it so host-only approval rules
      * cannot change their semantics. */
     localComputer?: {
@@ -238,7 +259,7 @@ export interface SendTurnInput {
     agents?: { command: string; args: string[]; env: Record<string, string> };
     /** Physical Android phone tools over authorized USB debugging. */
     phone?: { command: string; args: string[]; env: Record<string, string> };
-    /** The app's built-in browser: an MCP proxy (server/drivers/browser-proxy)
+    /** The app's built-in browser: an MCP proxy (server/harness-mcp-proxy browser)
      * that forwards to the Electron-owned WebContentsView the Browser tab
      * shows. One tab per bot, in its own persistent session partition. */
     browser?: { command: string; args: string[]; env: Record<string, string> };
@@ -277,6 +298,10 @@ export interface SendTurnInput {
    * Claude driver then drops --strict-mcp-config only; other drivers ignore
    * it. Their tools ride the normal permission flow, never pre-allowed. */
   claudeAiConnectors?: boolean;
+  /** Claude Code plugins installed on the bot (server/bot-plugins.ts): one
+   * folder each, already stripped of hooks, MCP and LSP servers. The Claude
+   * driver loads each with --plugin-dir; other drivers ignore them. */
+  pluginDirs?: string[];
   /** The person typed one of the engine's own slash commands
    * (shared/harness-commands.ts): `text` is that command line, verbatim.
    * Codex hands a skill's file with the text (`path`); Claude reads the
@@ -301,6 +326,9 @@ export interface HarnessCommandScope {
   /** The turn keeps the claude.ai connectors of the account it runs on
    * (server/harness-connectors.ts), so their MCP prompts are listed. */
   claudeAiConnectors?: boolean;
+  /** The bot's Claude Code plugins (server/bot-plugins.ts): their commands
+   * and skills are listed. */
+  pluginDirs?: string[];
 }
 
 /** An MCP server this machine starts and talks to over stdio. */
@@ -323,6 +351,10 @@ export type McpServerSpec = StdioMcpSpec | RemoteMcpSpec;
 
 export interface TurnStartResult {
   turnId: TurnId;
+  /** The turn went to an engine process that was already running (no cold
+   * start). Reported by drivers that pool a process per thread; absent
+   * elsewhere. Diagnostics only (server/voice-latency.ts). */
+  reused?: boolean;
 }
 
 export interface ProviderAdapter {
@@ -338,19 +370,13 @@ export interface ProviderAdapter {
      * told it has a computer whose tools its driver cannot mount — it
      * burns turns hunting for tools that aren't there. */
     computerMcp?: boolean;
-    /** Consumes the leased Boat descriptor without switching to Boat's model. */
-    cloudComputerMcp?: boolean;
     /** True when the whole turn executes on the cloud computer (the Boat native
      * agent — POST /boxes/{id}/prompt) instead of in the host harness. Such a
      * driver claims the boat exclusively, cannot use host or Local VM surfaces,
      * and every tool call acts on that machine's screen (screen pollers start
      * with screenIsTheWork). Implies a cloud-computer turn even though the
-     * driver mounts no computer descriptor — cloudComputerMcp stays false. */
+     * driver mounts no computer tools. */
     remoteAgent?: boolean;
-    /** True when this driver's turn can run against a cloud computer — natively
-     * (remoteAgent) or by mounting the leased Boat descriptor (cloudComputerMcp).
-     * Gates every cloud attach path (attachBotBoat / attachTeamBoat canMount). */
-    usesCloudComputer?: boolean;
     /** True when the driver mounts turn.integrations.composio (the user's
      * connected apps). Same rule again: a key in the config says the user
      * HAS those connections, not that this driver can reach them. */
@@ -408,6 +434,10 @@ export interface ProviderAdapter {
      * execution, no reads outside its folder). Absent: such a turn is
      * refused. */
     guestTurns?: "confined";
+    /** True when sendTurn honours warmOnly: the pooled process starts, no
+     * prompt is written, and no turn is emitted. Absent: a warm is a no-op.
+     * No hidden prompt is sent to an engine that cannot start without one. */
+    warmSession?: boolean;
   };
   sendTurn(input: SendTurnInput): Promise<TurnStartResult>;
   interruptTurn(threadId: ThreadId, turnId?: TurnId): Promise<void>;
@@ -447,6 +477,9 @@ export interface ProviderAdapter {
    * them again on the next turn as a message "you may already have". */
   steer?(threadId: ThreadId, text: string, options?: { steerId?: string }): Promise<SteerOutcome>;
   hasSession(threadId: ThreadId): boolean;
+  /** Close an idle warm process on this thread. A process whose turn is
+   * already running is left alone. */
+  releaseWarmSession?(threadId: ThreadId): void;
   stopAll(): Promise<void>;
   onEvent(listener: RuntimeEventListener): () => void;
 }

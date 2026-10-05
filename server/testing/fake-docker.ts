@@ -76,6 +76,7 @@ export class FakeDocker implements DockerApi {
   async execStream(name: string, exec: ExecRequest) {
     if (!this.containers.get(name)?.running) throw new Error("container not running");
     this.execs.push({ name, exec });
+    if (exec.Cmd[0] === "fake-mcp-server") return fakeMcpServerStream(name, exec, this.streams);
     const stream: Duplex = new Duplex({
       read() {},
       write(chunk: Buffer, _encoding, callback) { stream.push(Buffer.concat([Buffer.from("echo:"), chunk])); callback(); },
@@ -105,4 +106,34 @@ export class FakeDocker implements DockerApi {
     this.calls.push(`helper ${name}`);
     return this.helperOutput;
   }
+}
+
+/** A person's MCP server command in their sandbox (sandbox-stdio-mcp): a
+ * line-delimited JSON-RPC server with one tool, `whoami`, answering which
+ * container it runs in and the names of the variables it was given. */
+function fakeMcpServerStream(container: string, exec: ExecRequest, streams: Duplex[]): Duplex {
+  let buffer = "";
+  const stream: Duplex = new Duplex({
+    read() {},
+    write(chunk: Buffer, _encoding, callback) {
+      buffer += chunk.toString("utf8");
+      let newline: number;
+      while ((newline = buffer.indexOf("\n")) !== -1) {
+        const line = buffer.slice(0, newline).trim();
+        buffer = buffer.slice(newline + 1);
+        if (!line) continue;
+        const frame = JSON.parse(line) as { id?: number | string; method?: string; params?: { name?: string } };
+        if (frame.id === undefined || !frame.method) continue;
+        const reply = (result: unknown) => stream.push(`${JSON.stringify({ jsonrpc: "2.0", id: frame.id, result })}\n`);
+        if (frame.method === "initialize") reply({ protocolVersion: "2025-06-18", capabilities: { tools: {} }, serverInfo: { name: "fake-mcp-server", version: "1" } });
+        else if (frame.method === "tools/list") reply({ tools: [{ name: "whoami", description: "who and where", inputSchema: { type: "object", properties: {} } }] });
+        else if (frame.method === "tools/call") reply({ content: [{ type: "text", text: `container=${container} env=${exec.Env.map((entry) => entry.split("=")[0]).join(",")} user=${exec.User}` }] });
+        else stream.push(`${JSON.stringify({ jsonrpc: "2.0", id: frame.id, error: { code: -32601, message: "no" } })}\n`);
+      }
+      callback();
+    },
+    final(callback) { stream.push(null); callback(); },
+  });
+  streams.push(stream);
+  return stream;
 }

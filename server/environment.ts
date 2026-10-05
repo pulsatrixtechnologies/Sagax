@@ -31,6 +31,8 @@ export interface EnvironmentDescriptor {
      * maintainer flag `features.sharedComputers` is on: a server with it off
      * advertises nothing, exactly like a build that predates the feature. */
     sharedComputers?: true;
+    /** A person's own OMB Cloud home (docs/cloud-pro.md). Absent elsewhere. */
+    cloudHome?: true;
     /** Who can update the server: the desktop app that runs it, or the operator. */
     selfUpdate: "desktop-managed" | "operator";
     /** Whether /pair offers "sign in with your email" (an allow-list is set). */
@@ -139,7 +141,7 @@ export function environmentLabel(env: NodeJS.ProcessEnv = process.env): string {
   return hostname();
 }
 
-export function environmentDescriptor(input: { environmentId: string; desktopManaged: boolean; emailSignIn?: boolean; sharedComputers?: boolean; identity?: IdentityDescriptor }): EnvironmentDescriptor {
+export function environmentDescriptor(input: { environmentId: string; desktopManaged: boolean; emailSignIn?: boolean; sharedComputers?: boolean; cloudHome?: boolean; identity?: IdentityDescriptor }): EnvironmentDescriptor {
   return {
     environmentId: input.environmentId,
     label: environmentLabel(),
@@ -150,6 +152,9 @@ export function environmentDescriptor(input: { environmentId: string; desktopMan
       // Never advertise a protocol this server would refuse: the routes are
       // gone unless features.sharedComputers is on, so the capability is too.
       ...(input.sharedComputers === true ? { sharedComputers: true as const } : {}),
+      // An OMB Cloud home: its pairing page says "Opening your Cloud…" and
+      // where to connect from, not "the code shown on the server".
+      ...(input.cloudHome === true ? { cloudHome: true as const } : {}),
       selfUpdate: input.desktopManaged ? "desktop-managed" : "operator",
       emailSignIn: input.emailSignIn === true,
     },

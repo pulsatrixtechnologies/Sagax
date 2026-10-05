@@ -45,7 +45,7 @@ Requirements for building from source:
 
 - Ubuntu 24.04 LTS x86_64
 - Node.js 24 or newer
-- pnpm 10.33.0 (Corepack can install the version declared by the project)
+- pnpm 10.34.6 (Corepack can install the version declared by the project)
 
 ```sh
 git clone https://github.com/pulsatrixtechnologies/sagax.git
@@ -164,7 +164,7 @@ fail-closed on Wayland. XWayland's `DISPLAY` never bypasses the Wayland safety g
 
 ## Enable local control
 
-Installed `.deb` and AppImage builds include the certified **Cua Driver 0.19.3** CLI and cursor-theme sidecar.
+Installed `.deb` and AppImage builds include the certified **Cua Driver 0.33.0** CLI and cursor-theme sidecar.
 On GNOME Xorg, open Settings, choose **Enable local control (Beta)**, wait for **Ready**, then explicitly assign a bot
 to **This computer**. No driver download, terminal command, `chmod`, or daemon setup is required. The owned daemon
 starts with `--no-overlay`, so Cua's decorative full-screen X11 cursor surface is never created. Sagax also
@@ -180,19 +180,19 @@ file permissions. Sign out and choose **Ubuntu on Xorg** from the login-screen s
 preview-only capture, Cloud, or Local VM. Wayland re-enablement requires its own real-seat evidence and will not be
 controlled by an environment override.
 
-The upstream release has no signature or GitHub artifact attestation and is not immutable, so the build uses an
-explicit reviewed digest as its trust anchor:
+The upstream tag is still marked prerelease and the GitHub release is not immutable. A sigstore bundle is published
+beside the archive. Sagax does not verify that bundle; the build trust anchor remains the reviewed digest:
 
-- source commit: `a1672e7b11951275ecfba3384264d4530185d0db`;
-- archive SHA-256: `3db9d4257d84bacaf7eb104d225f85613ce67edbb20d6eeb83c1384b6d8a5b10`;
-- packaged driver SHA-256: `ed5844fadf07b9b72c4a3b3802e1c47233c166d66d6198608d5991f807aab4ac`;
-- packaged cursor-theme SHA-256: `e589b2b7521bbfeaf9e2bfce668a38e80ed1b9790b1327b13d374fc331d8312a`.
+- source commit: `1553a3f360ea12155be3bc77e27c427ca62f967a`;
+- archive SHA-256: `166869bd9920338e097050c0114c02d33fa59762a4ac7e690459725a204e91e5`;
+- packaged driver SHA-256: `7941c851069ed4b03608a16f2fdd4c905314748765afd6aba45733daab511956`;
+- packaged cursor-theme SHA-256: `f516d208440553d8b44e4e6786b20fa2ce995cbbd5895e51803bdb4e0b943b1b`.
 
 Packaging verifies the exact archive size, checksum, member names/types/sizes, and inner hashes before extracting
 only those two executables. The app performs no runtime driver download or self-update. Cua's MIT license, the
 embedded Inter font's SIL OFL 1.1 notice, full dependency license texts, MPL source locations, and a CycloneDX
 inventory ship beside the binary; the reviewed source records live in [`third_party/cua-driver`](../third_party/cua-driver/).
-The reviewed native runtime adds roughly 11–13 MiB to a compressed Ubuntu artifact. The ELF
+The staged `cua-driver` ELF is 57,398,736 bytes and `cua-cursor-theme` is 4,239,272 bytes before Ubuntu compression. The ELF
 requires glibc 2.30 or newer plus the standard Ubuntu X11/XInput/xkbcommon libraries already present on the supported
 Ubuntu 24.04 desktop; the package verifier executes the exact binary from every artifact layout.
 

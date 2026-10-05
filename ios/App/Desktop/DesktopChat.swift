@@ -244,9 +244,10 @@ extension ChatView {
                 }
             ))
         }
-        .padding(.horizontal, 20)
+        // the dock is `px-4` (the transcript `px-5`), both at most 960
+        .frame(maxWidth: DesktopShellRules.chatColumn)
+        .padding(.horizontal, 16)
         .padding(.bottom, 16)
-        .frame(maxWidth: DesktopShellRules.chatColumn + 40)
         .frame(maxWidth: .infinity)
         .task(id: commandLoadKey) { await loadCommands() }
         .task(id: heldSends.isEmpty) {
@@ -262,7 +263,8 @@ extension ChatView {
                 items: menuItems,
                 loading: power.loadingCommands,
                 accent: desktopChatText?.accent ?? MausPalette.color(current.color),
-                refresh: nil,
+                refresh: commandTargets.contains { power.commands(botId: $0.member.id, threadId: threadId, groupId: current.isBot ? nil : current.id)?.available == true }
+                    ? { Task { await loadCommands(refresh: true) } } : nil,
                 close: closeCommandMenu,
                 pick: pickCommand
             ))
@@ -272,6 +274,26 @@ extension ChatView {
             return AnyView(SuggestionStrip(items: suggestions, pick: pickSuggestion))
         }
         return nil
+    }
+}
+
+/// Cuts the transcript under the open find bar: the header's 52 pt and
+/// the bar's 37, as the desktop's column lays the bar out before the
+/// scroll view (its header still floats over the glow above).
+struct DesktopFindClip: ViewModifier {
+    let open: Bool
+
+    func body(content: Content) -> some View {
+        if open {
+            content.mask(alignment: .top) {
+                VStack(spacing: 0) {
+                    Color.clear.frame(height: 52 + 37)
+                    Color.black
+                }
+            }
+        } else {
+            content
+        }
     }
 }
 
@@ -290,6 +312,11 @@ struct DesktopChatHeader: View {
     let copyMarkdown: () -> Void
     let openProfile: () -> Void
     @State private var exportOpen = DesktopChatHeader.parityExport
+    /// Appearance > Inspector button (off by default, as on the desktop).
+    @AppStorage(DesktopInspectorButton.key) private var showInspector = false
+    @EnvironmentObject private var model: DesktopShellModel
+    @ObservedObject private var prefs = SidebarPrefsModel.shared
+    @State private var threadsOpen = DesktopChatHeader.parityThreads
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -305,7 +332,7 @@ struct DesktopChatHeader: View {
                 .padding(.leading, 8)
                 .padding(.trailing, 14)
                 .frame(height: 41)
-                .background(theme.chrome, in: Capsule())
+                .background(theme.elevated, in: Capsule())
                 .overlay(Capsule().strokeBorder(theme.hairlineWeak, lineWidth: 1))
                 .contentShape(Capsule())
             }
@@ -319,15 +346,20 @@ struct DesktopChatHeader: View {
             if !(chrome.panelOpen && chrome.panelDocked) {
                 HStack(spacing: 8) {
                     Spacer(minLength: 0)
-                    DesktopRoundButton(systemImage: "square.and.arrow.up", label: "Export conversation", active: exportOpen) { exportOpen.toggle() }
+                    DesktopRoundButton(systemImage: "square.and.arrow.up", label: "Export conversation", active: exportOpen, lucide: DesktopLucide.share) { exportOpen.toggle() }
                         .overlay(alignment: .topTrailing) {
                             if exportOpen { exportMenu }
                         }
                         .zIndex(1)
+                    if case let .bot(bot) = chat, DesktopSidebarState.showThreads(model: model, prefs: prefs) {
+                        DesktopThreadPickerButton(bot: bot, open: $threadsOpen)
+                    }
                     if chat.isBot {
-                        DesktopRoundButton(systemImage: "ladybug", label: "Inspector", active: chrome.inspectorOpen, action: chrome.toggleInspector)
-                            .accessibilityIdentifier("desktop-inspector-toggle")
-                        DesktopRoundButton(systemImage: "sidebar.right", label: "Open agent profile", action: chrome.togglePanel)
+                        if showInspector && session.surfaceGate.allows(.inspector) {
+                            DesktopRoundButton(systemImage: "ladybug", label: "Inspector", active: chrome.inspectorOpen, lucide: DesktopInspectorPanel.bug, action: chrome.toggleInspector)
+                                .accessibilityIdentifier("desktop-inspector-toggle")
+                        }
+                        DesktopRoundButton(systemImage: "sidebar.right", label: "Open agent profile", icon: .panelRight, action: chrome.togglePanel)
                             .keyboardShortcut(".", modifiers: .command)
                             .accessibilityIdentifier("desktop-panel-toggle")
                     }
@@ -344,37 +376,54 @@ extension DesktopChatHeader {
     /// ChatView.tsx's export menu: "Export Conversation", Copy as Markdown,
     /// Download as .md; 4 pt under the button, its trailing edge aligned.
     var exportMenu: some View {
-        VStack(alignment: .leading, spacing: 0) {
+        VStack(alignment: .leading, spacing: 2) {
             Text("Export Conversation")
                 .font(theme.font(12))
                 .foregroundStyle(theme.inkSecondary)
-                .padding(.horizontal, 14)
-                .padding(.top, 10)
-                .padding(.bottom, 4)
-            DesktopMenuRow(systemImage: "doc.on.doc", title: Text("Copy as Markdown")) {
+                .padding(.horizontal, 8)
+                .frame(height: 24)
+            exportRow(DesktopLucide.copy, Text("Copy as Markdown")) {
                 exportOpen = false
                 copyMarkdown()
             }
-            DesktopMenuRow(systemImage: "arrow.down.to.line", title: Text("Download as .md")) {
+            exportRow(DesktopLucide.download, Text("Download as .md")) {
                 exportOpen = false
                 export()
             }
         }
-        .padding(.horizontal, 6)
-        .padding(.bottom, 6)
-        .frame(width: 219, alignment: .leading)
-        .background(theme.menu, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(theme.border, lineWidth: 1))
-        .shadow(color: .black.opacity(0.25), radius: 14, y: 8)
+        .padding(6)
+        .frame(width: 218, alignment: .leading)
+        .padding(1)
+        .background(theme.elevated, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(theme.border, lineWidth: 0.5))
         .fixedSize()
         .alignmentGuide(.top) { d in d[.top] - 40 }
         .accessibilityIdentifier("desktop-export-menu")
     }
 
+    /// `flex items-center gap-2 rounded-md px-2 py-1.5 text-[13px] leading-[18px]`.
+    private func exportRow(_ glyph: [String], _ title: Text, _ action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 8) {
+                DesktopLucideGlyph(paths: glyph, size: 16)
+                title.font(theme.font(13)).lineLimit(1)
+                Spacer(minLength: 0)
+            }
+            .foregroundStyle(theme.ink)
+            .padding(.horizontal, 8)
+            .frame(height: 30)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .hoverEffect(.highlight)
+    }
+
     #if DEBUG
     static var parityExport: Bool { ParityLaunch.current?.iPadScreen == .chatExportMenu }
+    static var parityThreads: Bool { ParityLaunch.current?.iPadScreen == .chatThreads }
     #else
     static let parityExport = false
+    static let parityThreads = false
     #endif
 }
 
@@ -386,6 +435,8 @@ struct DesktopRoundButton: View {
     var active = false
     /// The renderer's own lucide glyph (18 pt, stroke 1.75) instead of the symbol.
     var icon: DesktopIcon? = nil
+    /// Or a lucide glyph's paths (DesktopLucide).
+    var lucide: [String]? = nil
     let action: () -> Void
 
     var body: some View {
@@ -393,7 +444,7 @@ struct DesktopRoundButton: View {
             glyph
                 .foregroundStyle(theme.ink)
                 .frame(width: 36, height: 36)
-                .background(active ? theme.raised : theme.chrome, in: Circle())
+                .background(active ? theme.elevatedHover : theme.elevated, in: Circle())
                 .overlay(Circle().strokeBorder(theme.hairlineWeak, lineWidth: 1))
                 .contentShape(Circle())
         }
@@ -404,7 +455,9 @@ struct DesktopRoundButton: View {
 
     @ViewBuilder
     private var glyph: some View {
-        if let icon {
+        if let lucide {
+            DesktopLucideGlyph(paths: lucide, size: 18, strokeWidth: 1.75)
+        } else if let icon {
             DesktopIconView(icon: icon, size: 18, strokeWidth: 1.75)
         } else {
             Image(systemName: systemImage).font(.system(size: 15, weight: .regular))
@@ -418,9 +471,9 @@ final class DesktopModelCatalog {
     static let shared = DesktopModelCatalog()
     private var cached: (connection: String?, instances: [Instance])?
 
-    func instances(_ session: Session) async -> [Instance] {
+    func instances(_ session: Session, reload: Bool = false) async -> [Instance] {
         let connection = session.connection?.id
-        if let cached, cached.connection == connection, !cached.instances.isEmpty { return cached.instances }
+        if !reload, let cached, cached.connection == connection, !cached.instances.isEmpty { return cached.instances }
         // quietly: a chip that cannot load stays hidden, never an alert
         guard !session.isDemo, let client = session.profileClient else { return [] }
         let loaded = (try? await client.instances()) ?? []

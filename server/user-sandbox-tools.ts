@@ -102,6 +102,9 @@ const MAX_PATH = 4096;
 export interface ToolExec {
   exec(input: { argv: string[]; env?: Record<string, string>; timeoutSec?: number; maxOutputBytes?: number }): Promise<SandboxExecOutput>;
   overQuota(): Promise<boolean>;
+  /** A refusal for a shell command, or null to run it (an admin who
+   * manages this person's plugins and MCP servers: person-integrations.ts). */
+  commandRefusal?(command: string): string | null;
 }
 
 type ToolContent = { type: "text"; text: string } | { type: "image"; data: string; mimeType: string };
@@ -213,6 +216,8 @@ export async function callUserSandboxTool(name: string, args: Record<string, unk
     if (name === "run_command") {
       const command = args.command;
       if (typeof command !== "string" || !command.trim() || command.length > 100_000) return text("command must be a non-empty string", true);
+      const refused = exec.commandRefusal?.(command);
+      if (refused) return text(refused, true);
       const timeout = typeof args.timeout_seconds === "number" ? args.timeout_seconds : 120;
       return commandOutput(await exec.exec({ argv: ["bash", "-lc", command], timeoutSec: timeout }));
     }

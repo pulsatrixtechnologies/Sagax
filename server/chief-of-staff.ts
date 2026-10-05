@@ -18,7 +18,6 @@ export function chiefOfStaffSystemPrompt(
   chiefId: string,
   bots: ChiefTeamMember[],
   canDelegate: boolean,
-  trustedSagaxStatus = "",
   boundedCoordination = false,
 ): string {
   const chief = bots.find((bot) => bot.id === chiefId);
@@ -41,7 +40,7 @@ export function chiefOfStaffSystemPrompt(
 
   const delegation = canDelegate
     ? boundedCoordination
-      ? "Use list_bots or list_room_targets for the live reachable roster. Use coordinate_bots to ask actual teammates for advice or assign concrete work. Outside a room, each distinct assignment starts a fresh thread for that teammate, using their own model and permissions. Include the context they need in each brief. Busy teammates queue. Give self-contained briefs, then end your turn; you resume automatically after their results return. Leads can coordinate their own specialists. Do not poll, send acknowledgements as new work, or substitute native helpers for named bots. On return, verify the requested outcome, resolve decisions within the user's scope, request concrete corrections with rework=true when necessary, and return one consolidated answer. Consultations are advice, not proof that work or tests ran. A refusal from coordinate_bots means nothing was sent: fix what it names (usually the id — copy it from list_bots or your roster; a unique teammate name also works) and retry, and never describe a handoff the tool did not accept."
+      ? "Use list_bots or list_room_targets for the live reachable roster. Use coordinate_bots to ask actual teammates for advice or assign concrete work. Give clear briefs, then end your turn; you resume automatically after their results return. Leads can coordinate their own specialists. Do not poll, send acknowledgements as new work, or substitute native helpers for named bots. On return, verify the requested outcome, resolve decisions within the user's scope, request concrete corrections with rework=true when necessary, and return one consolidated answer. Consultations are advice, not proof that work or tests ran. A refusal from coordinate_bots means nothing was sent: fix what it names (usually the id — copy it from list_bots or your roster; a unique teammate name also works) and retry, and never describe a handoff the tool did not accept."
       : [
         "Use list_bots to confirm the live roster and IDs. When assigning work to a teammate, use delegate_bot: it returns immediately, keeps you available to the user, and delivers the teammate's outcome back into this conversation automatically — success or failure. When the result arrives you are woken with it: report it to the user and act. If the teammate fails or stalls, tell the user plainly and decide the next step yourself.",
         "After delegate_bot accepts the task, acknowledge the handoff and continue with any independent work or end your turn. Do not call wait_delegation or repeatedly poll check_delegation in the same turn.",
@@ -65,6 +64,5 @@ export function chiefOfStaffSystemPrompt(
     canDelegate ? "When the user asks you to assemble or configure a team, use list_team_setup for the exact authorized teams, bot IDs and model catalog, then propose_team_setup once with all named specialists and their profile/model changes. Include new teams explicitly; the plan covers their creation and your access. Existing thread models and other bots' execution permissions stay unchanged. Follow the tool result: granted Full Access may apply the plan immediately; after an applied result, continue already-requested work without another confirmation. Only if review is pending, end your turn: the user's decision automatically resumes you once with a structured result. Report failed or cancelled results honestly. Do not ask for another yes, poll, or repeat the proposal. After successful setup, use the available coordination tools for already requested work. Use create_bot only for a single specialist when no combined setup was requested. For explicitly requested bot deletion, use propose_bot_deletion separately and follow its applied or pending result too. Do not create duplicate or unnecessary bots." : "",
     chief?.managedSections?.length ? "Reachable teammates in your allowed teams:" : `Current ${sectionName} section team:`,
     roster,
-    trustedSagaxStatus,
   ].filter(Boolean).join("\n");
 }

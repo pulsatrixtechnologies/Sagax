@@ -88,12 +88,21 @@ Covered by `src/components/SettingsModal.orgCleanup.test.ts`,
   person, set by an admin on the person's sheet; default and absent mean
   `manage`). `use` makes the person read-only (`personBotsReadOnly`,
   `viewer.botsReadOnly`): `POST /api/bots` and `/api/org/import` answer 403
-  `org_bots_read_only`, every bot level they hold reads as `use`
-  (`botLevel`, their own bots included), so no edit, delete, grant or
-  routine; they still talk to the bots shared with them (speaker pays). An
-  organization admin is never narrowed. The UI hides New bot and says
-  "Votre administrateur vous permet d'utiliser les robots partagés
-  seulement" (`bots.readOnly.notice`; MA-3, `server/authz.test.ts`).
+  `org_bots_read_only`, and so do `POST /api/internal/create-bot`, team
+  setup and bot deletion (a Primary Bot must not create for a `use` owner).
+  `create_bot` stores the Primary Bot's person as owner (`recordedBotOwner`),
+  never the loopback caller (on an organization server that caller is a
+  service and would leave the specialist to the operator). Every bot level
+  they hold reads as `use` (`botLevel`, their own bots included), so no
+  edit, delete, grant or routine. Full access (`PATCH` the bot or a thread
+  with `{ approvalMode: "full", confirmFullAccess }`) and a thread
+  `updateBotDefault` (it writes the bot's model) answer the same 403, and so
+  do legacy `POST` and `DELETE /api/bots/:id/direct-grants` (MA-5, MA-6).
+  A thread title stays allowed. They still talk to the bots shared with
+  them (speaker pays). An organization admin is never narrowed. The UI hides
+  New bot and says "Votre administrateur vous permet d'utiliser les robots
+  partagés seulement" (`bots.readOnly.notice`; MA-3, MA-4,
+  `server/authz.test.ts`).
 - Routines in my name is read-only: allowed by default, revoked in the
   Perspicax console (`manageUrl`, `/console/me/access#sagax`). Perspicax has no
   silent authorization, so `ensureRoutineDelegation` starts the consent once,
@@ -294,6 +303,36 @@ local models are not offered. Tests: `ModelPicker.interaction.test.ts`,
 (org) and `pnpm exec electron scripts/smoke-approval-modes.cjs --model-ui-only`
 (solo).
 
+## More engines on an organization server (2026-10-02)
+
+Besides Claude Code and Codex, the server image can carry Grok Build, pi,
+Gemini CLI and Kimi Code (Dockerfile: npm ones in `ENGINES`, pinned; Grok
+Build through `NATIVE_ENGINES=grok`, the official x.ai release binary pinned
+by version and SHA-256). Each person pays with their own credentials
+(`server/engine-credentials.ts`, the order above), never the server's login:
+
+- Grok Build (`grokAgent`): their own `grok login --device-auth`
+  (`server/drivers/device-login.ts`, HOME `principals/<pid>/grok`), else
+  their xAI key in Perspicax (authenticate `xai.api_key`), else the xAI key
+  of Settings > Connections as the organization key.
+- Kimi Code (`kimiAgent`): their own `kimi login` device code
+  (KIMI_CODE_HOME `principals/<pid>/kimi`), else their Moonshot key
+  (provider `moonshot`; the key home's config.toml names `api_key_env`,
+  never the key).
+- Gemini CLI (`geminiAgent`, listed only on an organization server): their
+  Google key (provider `google`) as GEMINI_API_KEY.
+- pi (`piAgent`): every key they keep (anthropic, openai, xai, google,
+  moonshot) in their own PI_CODING_AGENT_DIR; the catalog is read with
+  placeholders so members see every provider's models.
+
+A key turn always runs in an empty home of the payer's
+(`principals/<pid>/<driver>-key`), an org-key turn in `org/<driver>-key`
+(`applyAccess` in `acp/core.ts`, `piAccessEnvironment`). Perspicax 1.8 lists
+anthropic, openai and xai keys; google and moonshot are read as soon as its
+directory lists them. Tests: `server/engine-credentials.test.ts`,
+`server/drivers/acp/org-access.test.ts`, `server/drivers/device-login.test.ts`,
+`server/principal-engine-logins.test.ts`.
+
 ## Voice mode (xAI)
 
 The call button on a bot opens the voice call pill
@@ -359,6 +398,21 @@ fake xAI: `scripts/verify-voice-mode.ts`. Details: `docs/voice-mode-xai.md`.
   Connections"), or the server's error with a retry; a room says voice mode
   talks with one bot at a time. Tests: `VoiceModeCallButton.test.ts`,
   `scripts/verify-voice-mode.ts` (no key, then the admin's key).
+
+- Latency (`docs/voice-mode-xai.md`, "Latency"): every call turn is timed
+  under its `utteranceId` on the page (`latency.ts`) and on the server
+  (`server/voice-latency.ts`, `[voice-latency]` lines). A thread on a call
+  passes `keepWarm` to the engine: the Claude driver keeps one process for
+  the call, the per-turn comms token in a file (`SAGAX_COMMS_TOKEN_FILE`),
+  never in the spawn contract. Claude starts that process when the call is
+  accepted (`POST /voice/call`); the first spoken turn reuses it. A hangup
+  before any turn closes the idle process. Codex and the API drivers are
+  not warmed this way (a Codex warm is the ACP handshake and `session/new`
+  before `session/prompt`, which is not done here, and no hidden prompt is
+  sent). Do not put a per-turn value in a pooled
+  process's contract: it relaunches the engine on every turn. Tests:
+  `server/voice-call-latency.e2e.test.ts`, `server/voice-call-warmup.test.ts`,
+  `call.test.ts` ("latency"), bench `scripts/voice-latency-bench.ts`.
 
 A change to `server/voice-mode.ts` needs the server image redeployed.
 
@@ -626,6 +680,109 @@ it. Keep these rules, each covered by `server/desktop-bridge*.test.ts`,
 A change under `server/` needs the server image redeployed; under `electron/`
 a desktop rebuild.
 
+## A person's own connections, plugins and skills (organization mode, 2026-10-02)
+
+Owner report: on GOX nobody could add the GitHub MCP, log into GitHub or
+install plugins. Why: the server-wide MCP list was admin-only, hidden with
+Connected apps, shared one token by all and ran commands on the host;
+`claude plugin ...` typed by a bot hit the host Bash denial whatever
+`SAGAX_CLAUDE_ALLOW` said; skills routes were admin-only; the environment
+had no gh. Keep these rules, each covered by `server/org-connections.e2e.test.ts`
+(OC-1 to OC-9), `server/person-connections.test.ts`,
+`server/org-person-connections.test.ts`,
+`server/github-connect.test.ts`, `server/bot-plugins.test.ts`,
+`server/sandbox-stdio-mcp.test.ts`, `server/sandboxd.test.ts` or
+`src/components/settings/MyConnectionsSettings.test.ts`:
+
+- Settings > Mes connexions (organization server only,
+  `organizationHidesSection`): `/api/me/connections`, `/api/me/github/*`,
+  `/api/me/mcp/servers/*` (`server/routes/person-connections.ts`), the
+  session's person only, member scope (CLIENT_ALLOW, `orgDirectory`).
+- One encrypted file per person (`principals/<pid>/connections.enc`,
+  AES-256-GCM with the mcp-oauth vault key; `server/person-connections.ts`)
+  holds their own MCP servers and GitHub token; their OAuth sign-ins live in
+  their own `principals/<pid>/mcp-oauth.enc` (one `McpOAuthManager` per
+  person, `ownsState` routes `/api/mcp-oauth/callback` to it). No answer
+  carries a token.
+- A personal server mounts for the turn's person only (`mountPersonalMcp`:
+  the speaker, the owner for a routine; the workplace decision's person),
+  never under a name already taken, never while it needs a sign-in, a token
+  or GitHub. A remote one must resolve to a public address (checked at add
+  and, cached, at mount; `SAGAX_PERSONAL_MCP_ALLOW_PRIVATE=1` is for a lab or
+  a test only). A command runs in the person's server environment through
+  `sagax-stdio` (`server/sandbox-stdio-mcp.ts`, sandboxd's signed stdio
+  stream), never on the host; without server environments it is refused.
+- A server-wide MCP command is never added (403 `org_host_command`) nor
+  mounted (`withoutHostCommands`) on an organization server.
+- Connecter GitHub (`server/github-connect.ts`): the device flow of the
+  organization's GitHub OAuth App (`SAGAX_GITHUB_CLIENT_ID`, or
+  `organization.githubClientId` from Settings > Organization), else a pasted
+  token. The token goes into the person's environment for gh and git
+  (`githubSandboxArgv`, through `SAGAX_GH_TOKEN`, never the argv), into their
+  personal servers with auth `github`, and into Sagax's own fetches for them
+  (private skills, private marketplaces).
+- Plugins (`server/bot-plugins.ts`, `/api/bots/:id/plugins/*`): per bot, the
+  owner or a person with manage changes them, use reads. Sagax clones the
+  marketplace (git with the actor's GitHub token in an extra header, only the
+  server's proxy, certificate and git config variables), copies a plugin
+  without links, hooks, `.mcp.json`, `.lsp.json`, `bin/` or those manifest
+  keys, and a Claude turn (and its "/" list) loads each enabled one with
+  `--plugin-dir`. `organization.pluginMarketplaces` (any by default, or a
+  list of owner/repo, owner/* or https URLs; PATCH `/api/org/settings`)
+  applies to marketplaces and to a plugin's own repository.
+- Skills routes (`/api/bots/:id/skills*`, `skill-template`) are member scope
+  on an organization server: use reads, owner or manage changes; an import
+  from a private repository reads with the person's GitHub connection.
+- Library tab: Files | Skills | Plugins (`bot-settings/LibraryTab.tsx`).
+- Who manages them comes from Perspicax (migration 0046,
+  `sagax_integrations` on each directory person, set by an admin on the
+  person's Sagax tab; default and absent mean `manage`;
+  `server/person-integrations.ts`, `personIntegrationsOff`,
+  `integrationsLocked`, `effectiveIntegrationRights`). `manage`: everything
+  above, with no admin. `off`: the same change routes answer 403
+  `org_integrations_admin_only`, even on their own bot; only a sign-in again
+  to a server they already have passes (`oauth/start` does not mount it).
+  Use stops at once and the saved credentials stay, so turning the cap back
+  to `manage` mounts them on the next turn: `mountPersonalMcp` closes that
+  person's stdio sessions and adds nothing, `syncGithubForTurn` and
+  `usablePersonGithub` drop the token from the environment and from Sagax's
+  own fetches, and `pluginDirsFor` passes no `--plugin-dir`. Skills already
+  on a bot still load. The directory callback `onIntegrationRights` fires
+  only when the effective right changes (an organization admin stays
+  `manage` even when the field is `off`; a disabled person is skipped; a 304
+  does not re-fire) and closes stdio and clears or restores the GitHub
+  sandbox token. The person's own screen still reads `managedByAdmin` on
+  `/api/me/connections` and on the plugins listing (`canChange: false`),
+  `viewer.integrationsManagedByAdmin`, edit controls hidden under "Votre
+  administrateur gère les plugins et les serveurs MCP"
+  (`integrations.managedByAdmin`). `run_command` in their environment
+  refuses the engines' plugin, MCP and extension subcommands
+  (`engineIntegrationCommand`; a courtesy, the boundary is that a turn loads
+  only what Sagax keeps); `/plugin` and `/mcp` are managed for everyone. An
+  organization admin is never narrowed and changes a person's bot plugins
+  and skills for them.
+- An organization admin lists and removes another person's connections
+  (`GET /api/org/people/<principalId>/connections` and
+  `POST .../connections/revoke`, `server/org-person-connections.ts`): admin
+  scope, `orgAdminCaller` (a service loopback is not an admin), not in
+  `CLIENT_ALLOW`. A solo server answers 403 `identity_perspicax`. The list
+  names MCP servers (hostname or command only), the GitHub connection
+  (login, never a pending `userCode`) and plugins on bots that person owns,
+  with kind, created date and last stdio use when a session is open. No
+  token, env value, argument, header name or path. Remove deletes the
+  stored credential, forgets that server's OAuth entry, stops the stdio
+  child (`closePerson`) and writes `connections.revoke` (category `people`)
+  only when something was removed. One target that is missing is 404 with
+  no audit; remove-all of nothing is 200 and no audit.
+  Tests: `server/person-integrations.test.ts`,
+  `server/perspicax-link.test.ts`, `server/org-person-connections.test.ts`,
+  OC-7, OC-8 and OC-9, `MyConnectionsSettings.test.ts`,
+  `PersonConnectionsSection.test.ts`.
+
+A change under `server/` needs the server image redeployed (sandboxd is the
+same image); `deploy/sandbox/Dockerfile` (gh, node, npm) needs the sandbox
+image rebuilt.
+
 ## Connectors from the person's own Claude account
 
 Sagax builds no GitHub, Outlook or Calendar integration of its own: a Claude
@@ -788,11 +945,15 @@ A person of the organization opens in the right panel like a bot
 (`src/components/PersonPanel.tsx`, store `personPanelId`, action
 `openPersonPanel`): from a direct conversation's header or context menu, a
 group's person label, the group's People list and another person's name in
-a bot chat. It shows only the directory's fields (name, login, email,
+a bot chat. It shows the directory's fields (name, login, email,
 avatar, role, teams), the groups the viewer shares with them, their bots the
 viewer already sees, Message, Hide/Show, and for an admin "Manage in
 Perspicax": `GET /api/org/directory` adds `manageUrl`
-(`<issuer>/console/users/<sub>`) for admins only. Nothing from a private
+(`<issuer>/console/users/<sub>`) for admins only. An admin also sees
+Connections for a person who is in the directory
+(`PersonConnectionsSection`): each MCP server, the GitHub connection and
+the plugins on that person's bots, with Remove and Remove all behind a
+confirm dialog. A member does not see that section. Nothing from a private
 thread. Hiding is per person and view-only (`src/lib/sidebar-hidden.ts`,
 key `sagax.sidebarHidden.v1`, synced by `/api/me/preferences` on an
 organization server): bots by id, groups by id, people by principal; still
@@ -801,6 +962,7 @@ Settings > Appearance show them back. A new unread message unhides people
 and groups by default, bots only when the person turns it on. Archive stays
 the bot-wide action. Tests: `src/lib/sidebar-hidden*.test.ts`,
 `src/lib/person-panel.test.ts`, `PersonPanel.test.ts`,
+`PersonConnectionsSection.test.ts`,
 `src/state/person-panel.reducer.test.ts`.
 
 ## Sidebar sections are personal
@@ -1020,8 +1182,8 @@ it after an upstream merge instead of renaming by hand.
 
 ## Upstream sync
 
-Last sync: 2026-10-01, upstream `milind-soni/OpenMausBot` main at
-`4ed952aa` (0.1.92) merged into Sagax; `baseVersion` follows it. To repeat:
+Last sync: 2026-10-03, upstream `milind-soni/OpenMausBot` main at
+`04a8bef8` (0.1.95) merged into Sagax; `baseVersion` follows it. To repeat:
 
 - Keep the `upstream` remote fetch-only (`git remote set-url --push
   upstream no_push`). Never push, open a pull request or file an issue

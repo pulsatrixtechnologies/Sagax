@@ -140,6 +140,18 @@ class CompanionClient(
         .build()
 
     /**
+     * A browser-live transport on the route this client is already using.
+     *
+     * Built here rather than standalone so it inherits the endpoint, the
+     * scoped-IPv6 DNS and the streaming timeouts that took real work to get
+     * right — a second copy of that setup would drift.
+     */
+    fun browserLive(): BrowserLiveTransport? {
+        val base = endpoint?.baseUrl ?: return null
+        return BrowserLiveTransport(base, token, streamingClient, actionClient, ::ensureServerIdentity)
+    }
+
+    /**
      * Share uploads can be tens of MB. A wall-clock [callTimeout] would abort a
      * steady transfer; iOS uses an idle `timeoutInterval` that resets on bytes.
      * Connect/read/write idle limits, no overall call deadline.
@@ -172,6 +184,21 @@ class CompanionClient(
         .connectTimeout(AVATAR_GENERATION_TIMEOUT_SECONDS, TimeUnit.SECONDS)
         .readTimeout(AVATAR_GENERATION_TIMEOUT_SECONDS, TimeUnit.SECONDS)
         .writeTimeout(AVATAR_GENERATION_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+        .build()
+
+    /**
+     * `POST /api/live/session` waits on the Mac, which waits on OpenAI (up to
+     * 20 s), behind a sidecar that allows 30 s for headers. The action client
+     * gives up at 20 s, which would abandon a call the Mac is still creating.
+     */
+    private val liveSessionClient = baseClient.newBuilder()
+        .followRedirects(baseClient.followRedirects && !connection.pairedWithServer)
+        .followSslRedirects(baseClient.followSslRedirects && !connection.pairedWithServer)
+        .dns(endpoint?.dns ?: baseClient.dns)
+        .callTimeout(LIVE_SESSION_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+        .connectTimeout(ACTION_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+        .readTimeout(LIVE_SESSION_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+        .writeTimeout(ACTION_TIMEOUT_SECONDS, TimeUnit.SECONDS)
         .build()
 
     /**
@@ -752,9 +779,68 @@ class CompanionClient(
         sendUnit(makeRequest("POST", "/api/bots/${segment(botId)}/interrupt", body = jsonBody("threadId" to threadId)))
     }
 
+    /** Stop a room's running turn, whichever member is speaking. */
+    suspend fun interruptRoom(groupId: String, threadId: String? = null) {
+        sendUnit(makeRequest("POST", "/api/groups/${segment(groupId)}/interrupt", body = jsonBody("threadId" to threadId)))
+    }
+
     suspend fun cloudDesktop(botId: String): CloudDesktopSession = send(
         makeRequest("POST", "/api/bots/${segment(botId)}/computer/join"),
     )
+
+    // ── Live calls ──
+    // The phone holds its own WebRTC audio to OpenAI; the Mac creates the
+    // session (the key never leaves it) and runs the call. These four routes
+    // are the whole of what a phone may do about a call.
+
+    /**
+     * The offer goes up byte for byte: SDP is CRLF-sensitive and the harness
+     * relays it unchanged. The two 409 shapes are answers, not errors — the
+     * bar words them; every other failure throws with the computer's text.
+     */
+    suspend fun startLiveCall(botId: String, threadId: String, sdp: String): LiveCallStart {
+        val request = makeRequest(
+            "POST",
+            "/api/live/session",
+            body = buildJsonObject {
+                put("botId", botId)
+                put("threadId", threadId)
+                put("sdp", sdp)
+                put("client", "android")
+            },
+        )
+        val raw = perform(request, liveSessionClient)
+        if (raw.code == 409) {
+            val conflict = runCatching {
+                CompanionJson.decodeFromString<LiveConflictBody>(raw.data.toString(Charsets.UTF_8))
+            }.getOrNull()
+            if (conflict?.needsKey == true) return LiveCallStart.NeedsKey(conflict.error)
+            if (conflict?.activeCall != null) return LiveCallStart.Busy(conflict.activeCall, conflict.error)
+        }
+        check(raw)
+        return try {
+            val body = CompanionJson.decodeFromString<LiveSessionResponse>(raw.data.toString(Charsets.UTF_8))
+            LiveCallStart.Started(body.call, body.transport.sdp)
+        } catch (error: SerializationException) {
+            throw APIError.Transport("The computer sent something this app couldn't read.", error)
+        }
+    }
+
+    suspend fun endLiveCall(callId: String): LiveCallState {
+        val response = send<LiveCallResponse>(
+            makeRequest("POST", "/api/live/call/end", body = jsonBody("callId" to callId)),
+        )
+        return response.call ?: throw APIError.Transport("The computer sent something this app couldn't read.")
+    }
+
+    suspend fun liveCall(): LiveCallState? =
+        send<LiveCallResponse>(makeRequest("GET", "/api/live/call")).call
+
+    /** Non-secret settings only. The route refuses a key, and this never sends one. */
+    suspend fun updateLiveSettings(patch: LiveSettingsPatch): LiveSettings {
+        val body = CompanionJson.encodeToJsonElement(LiveSettingsPatch.serializer(), patch).jsonObject
+        return send<LiveSettingsResponse>(makeRequest("PATCH", "/api/live/settings", body = body)).live
+    }
 
     suspend fun markBotRead(botId: String, threadId: String? = null) {
         sendUnit(makeRequest("POST", "/api/bots/${segment(botId)}/read", body = jsonBody("threadId" to threadId)))
@@ -843,12 +929,16 @@ class CompanionClient(
         request: Request,
         requestClient: OkHttpClient = actionClient,
     ): RawResponse {
+        ensureServerIdentity()
+        return performUnchecked(request, requestClient)
+    }
+
+    internal suspend fun ensureServerIdentity() {
         if (token != null && connection.serverEnvironmentId != null &&
             environment().environmentId != connection.serverEnvironmentId
         ) {
             throw APIError.Status(401, "This address belongs to a different server. Pair again to continue.")
         }
-        return performUnchecked(request, requestClient)
     }
 
     private suspend fun performUnchecked(
@@ -905,6 +995,7 @@ class CompanionClient(
         const val ALREADY_DRAINED = "no such queued message"
 
         private const val ACTION_TIMEOUT_SECONDS = 20L
+        private const val LIVE_SESSION_TIMEOUT_SECONDS = 35L
         private const val AVATAR_GENERATION_TIMEOUT_SECONDS = 150L
         /** The harness allows the updater three minutes; leave room to hear back. */
         private const val CLAUDE_UPDATE_TIMEOUT_SECONDS = 200L

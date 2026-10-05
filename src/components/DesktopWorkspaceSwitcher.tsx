@@ -56,15 +56,27 @@ export function ThisComputerSettings() {
   );
 }
 
-/** Outside the desktop app there is nothing to switch; a Cloud home still
+/** `inline` is the small pill that shares the sidebar's top row with the
+ * traffic lights and the header buttons: icon, short name, tiny chevron,
+ * truncating to whatever width the row leaves it. Inside a `sidebar-top`
+ * container narrower than 164px it drops the name for icon + chevron; the
+ * title and aria-label keep the full name.
+ *
+ * Outside the desktop app there is nothing to switch; a Cloud home still
  * says what it is, and whose it is when this browser signed in from the
  * Cloud page (`owner`). */
-export function DesktopWorkspaceSwitcher({ compact = false, cloudHome = false, owner = null }: { compact?: boolean; cloudHome?: boolean; owner?: string | null }) {
+export function DesktopWorkspaceSwitcher({ compact = false, inline = false, cloudHome = false, owner = null }: { compact?: boolean; inline?: boolean; cloudHome?: boolean; owner?: string | null }) {
   const { available, current, open, error, openMenu } = useDesktopWorkspace();
   if (!available) {
     if (!cloudHome) return null;
     const whose = owner ? t("sidebar.cloudOwner", { email: owner }) : "";
     const label = `${t("cloudSetup.myCloud")} · ${t("cloudSetup.alwaysOn")}${whose ? ` · ${whose}` : ""}`;
+    if (inline) return <div data-cloud-home-indicator data-workspace-switcher="inline" title={label}
+      className="flex min-w-0 items-center gap-1.5 px-1.5 text-[12.5px] font-medium text-ink">
+      <Cloud size={14} aria-hidden="true" className="shrink-0 text-ink-secondary" />
+      <span className="min-w-0 truncate">{t("cloudSetup.myCloud")}</span>
+      <span className="sr-only"> · {t("cloudSetup.alwaysOn")}{whose ? ` · ${whose}` : ""}</span>
+    </div>;
     return <div data-cloud-home-indicator className={cn("py-1.5", compact ? "px-2" : "px-3")}>
       <div title={label} className={cn("flex items-center gap-2 py-2 text-[13px] font-medium text-ink", compact ? "justify-center px-1" : "px-2")}>
         <Cloud size={16} aria-hidden="true" className="shrink-0 text-ink-secondary" />
@@ -77,9 +89,21 @@ export function DesktopWorkspaceSwitcher({ compact = false, cloudHome = false, o
   const name = current?.name ?? (cloudHome ? t("cloudSetup.myCloud") : "Servers");
   const Icon = current?.local === false || (cloudHome && !current) ? Cloud : Laptop;
   const shown = cloudHome ? `${name} · ${t("cloudSetup.alwaysOn")}` : name;
+  const title = current?.origin ? `${shown} · ${current.origin}` : shown;
+  if (inline) return <div data-workspace-switcher="inline" className="flex min-w-0">
+    <button type="button" aria-label={`Switch server: ${shown}`} aria-haspopup="menu" aria-expanded={open} data-cloud-home-indicator={cloudHome || undefined}
+      title={title} onClick={openMenu}
+      className="flex h-7 min-w-0 max-w-full items-center gap-1.5 overflow-hidden rounded-md px-1.5 text-left text-[12.5px] font-medium text-ink hover:bg-control focus-visible:outline focus-visible:outline-accent"
+      style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}>
+      <Icon size={14} aria-hidden="true" className="shrink-0 text-ink-secondary" />
+      <span className="min-w-0 truncate @max-[164px]/sidebar-top:hidden">{name}</span>
+      <ChevronDown size={11} aria-hidden="true" className="shrink-0 text-ink-secondary" />
+    </button>
+    {error && <p role="alert" className="absolute right-2 top-full z-40 mt-1 w-56 max-w-[calc(100%-1rem)] rounded-md bg-menu px-2 py-1 text-[11px] text-danger shadow-lg">{error}</p>}
+  </div>;
   return <div className={cn("py-1.5", compact ? "px-2" : "px-3")}>
     <button type="button" aria-label={`Switch server: ${shown}`} aria-haspopup="menu" aria-expanded={open} data-cloud-home-indicator={cloudHome || undefined}
-      title={current?.origin ? `${shown} · ${current.origin}` : shown}
+      title={title}
       onClick={openMenu}
       className={cn("flex w-full items-center gap-2 rounded-lg py-2 text-left text-[13px] font-medium text-ink hover:bg-control focus-visible:outline focus-visible:outline-accent", compact ? "justify-center px-1" : "px-2")}
       style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}>

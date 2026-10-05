@@ -1,5 +1,9 @@
 package com.openmausbot.companion.ui
 
+import com.openmausbot.companion.R
+
+import androidx.compose.ui.res.stringResource
+
 import android.graphics.BitmapFactory
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -20,6 +24,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -54,7 +59,7 @@ import kotlinx.coroutines.launch
  * for the composable's lifetime.
  */
 @Composable
-fun ComputerScreen(botId: String, onBack: () -> Unit) {
+fun ComputerScreen(botId: String, onBack: () -> Unit, onOpenBrowser: (String) -> Unit = {}) {
     val environment = LocalCompanion.current
     val session = environment.session
     val scope = rememberCoroutineScope()
@@ -93,7 +98,7 @@ fun ComputerScreen(botId: String, onBack: () -> Unit) {
         if (image != null) {
             Image(
                 bitmap = image,
-                contentDescription = "${bot.name}'s computer",
+                contentDescription = stringResource(R.string.mobile_bot_name_s_computer_7637def1, bot.name),
                 contentScale = ContentScale.Fit,
                 modifier = Modifier.fillMaxSize(),
             )
@@ -115,7 +120,7 @@ fun ComputerScreen(botId: String, onBack: () -> Unit) {
         ) {
             Icon(
                 imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                contentDescription = "Back",
+                contentDescription = stringResource(R.string.mobile_back_b52b36b7),
                 tint = Color.White,
                 modifier = Modifier
                     .size(32.dp)
@@ -131,7 +136,7 @@ fun ComputerScreen(botId: String, onBack: () -> Unit) {
                 modifier = Modifier.weight(1f),
             )
             Text(
-                text = ComputerPolicy.statusLabel(bot),
+                text = localizedMobileCopy(ComputerPolicy.statusLabel(bot)),
                 fontSize = 13.sp,
                 fontWeight = FontWeight.Medium,
                 color = if (bot.busy == true) {
@@ -140,6 +145,23 @@ fun ComputerScreen(botId: String, onBack: () -> Unit) {
                     Color.White.copy(alpha = 0.6f)
                 },
             )
+        }
+
+        // A bot's browser is not a cloud-desktop feature: any bot with one
+        // enabled can be watched and driven, so this sits outside that gate.
+        Column(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .padding(horizontal = 18.dp, vertical = 12.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            if (!ComputerPolicy.showsCloudDesktop(bot)) {
+                OutlinedButton(
+                    onClick = { onOpenBrowser(botId) },
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text("Open browser") }
+            }
         }
 
         if (ComputerPolicy.showsCloudDesktop(bot)) {
@@ -154,12 +176,16 @@ fun ComputerScreen(botId: String, onBack: () -> Unit) {
             ) {
                 failure?.let {
                     Text(
-                        text = it,
+                        text = localizedMobileCopy(it),
                         fontSize = 13.sp,
                         color = MaterialTheme.colorScheme.error,
                         textAlign = TextAlign.Center,
                     )
                 }
+                OutlinedButton(
+                    onClick = { onOpenBrowser(botId) },
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text("Open browser") }
                 Button(
                     onClick = { confirming = true },
                     enabled = !opening,
@@ -171,11 +197,11 @@ fun ComputerScreen(botId: String, onBack: () -> Unit) {
                             strokeWidth = 2.dp,
                         )
                     } else {
-                        Text(ComputerPolicy.OPEN_DESKTOP)
+                        Text(localizedMobileCopy(ComputerPolicy.OPEN_DESKTOP))
                     }
                 }
                 Text(
-                    text = ComputerPolicy.VNC_NOTE,
+                    text = localizedMobileCopy(ComputerPolicy.VNC_NOTE),
                     fontSize = 12.sp,
                     color = Color.White.copy(alpha = 0.6f),
                     textAlign = TextAlign.Center,
@@ -187,8 +213,8 @@ fun ComputerScreen(botId: String, onBack: () -> Unit) {
     if (confirming) {
         AlertDialog(
             onDismissRequest = { confirming = false },
-            title = { Text(ComputerPolicy.CONFIRM_TITLE) },
-            text = { Text(ComputerPolicy.CONFIRM_MESSAGE) },
+            title = { Text(localizedMobileCopy(ComputerPolicy.CONFIRM_TITLE)) },
+            text = { Text(localizedMobileCopy(ComputerPolicy.CONFIRM_MESSAGE)) },
             confirmButton = {
                 TextButton(
                     onClick = {
@@ -209,10 +235,10 @@ fun ComputerScreen(botId: String, onBack: () -> Unit) {
                             }
                         }
                     },
-                ) { Text("Open desktop") }
+                ) { Text(stringResource(R.string.mobile_open_desktop_cd6f8218)) }
             },
             dismissButton = {
-                TextButton(onClick = { confirming = false }) { Text("Cancel") }
+                TextButton(onClick = { confirming = false }) { Text(stringResource(R.string.mobile_cancel_77dfd213)) }
             },
         )
     }
@@ -231,13 +257,13 @@ private fun Waiting(headline: String, explanation: String?) {
             color = Color.White,
         )
         Text(
-            text = headline,
+            text = localizedMobileCopy(headline),
             fontSize = 15.sp,
             color = Color.White.copy(alpha = 0.7f),
         )
         explanation?.let {
             Text(
-                text = it,
+                text = localizedMobileCopy(it),
                 fontSize = 13.sp,
                 color = Color.White.copy(alpha = 0.45f),
                 textAlign = TextAlign.Center,

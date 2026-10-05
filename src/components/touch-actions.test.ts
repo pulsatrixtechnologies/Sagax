@@ -27,6 +27,7 @@ const notActions: Array<{ file: string; snippet: string; why: string }> = [
   { file: "components/routines/CalendarSidebar.tsx", snippet: "text-[8.5px]", why: "'Drag' hint badge, not a control" },
   { file: "components/RoutineCalendarPage.tsx", snippet: "cursor-ns-resize", why: "mouse drag-resize handle for call events" },
   { file: "components/ComputerPanel.tsx", snippet: "opacity-80", why: "already visible at 80% without hover" },
+  { file: "components/bot-settings/ActivitySection.tsx", snippet: "group-focus-visible:opacity-100", why: "aria-hidden chevron hint; the whole heading button is the tap target" },
 ];
 
 function sourceFiles(dir: string): string[] {

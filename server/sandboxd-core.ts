@@ -82,6 +82,17 @@ export class SandboxError extends Error {
 }
 
 export const EXEC_ENV_KEY_RE = /^SAGAX_[A-Z0-9_]{1,40}$/;
+/** A person's MCP server command (stdioStream): its own variables, minus
+ * those that describe the environment itself. */
+export const STDIO_ENV_KEY_RE = /^[A-Za-z_][A-Za-z0-9_]{0,63}$/;
+const STDIO_ENV_RESERVED = new Set(["HOME", "PATH", "USER", "SAGAX_ENVIRONMENT"]);
+/** MCP servers of one person running at once (one per server and turn). */
+export const MAX_STDIO_STREAMS = 8;
+
+export interface SandboxStdioSpec {
+  argv: string[];
+  env?: Record<string, string>;
+}
 export const MAX_EXEC_TIMEOUT_SEC = 600;
 export const DEFAULT_EXEC_TIMEOUT_SEC = 120;
 export const MAX_EXEC_OUTPUT_BYTES = 1024 * 1024;
@@ -99,6 +110,7 @@ export class SandboxService {
   private readonly usage = new Map<string, { bytes: number; at: number }>();
   private readonly locks = new Map<string, Promise<void>>();
   private readonly desktopStreams = new Map<string, number>();
+  private readonly stdioStreams = new Map<string, number>();
   private readonly osInfo = new Map<string, { os: string; arch: string }>();
   egress: EgressPolicyState;
 
@@ -452,6 +464,53 @@ export class SandboxService {
       if (!released) { released = true; this.releaseDesktopStream(key); }
     });
     return stream;
+  }
+
+  /** A person's own MCP server (a command) for one turn's engine: its stdin
+   * and stdout as a byte stream (server/sandbox-stdio-mcp.ts). Starts the
+   * sandbox when needed, runs as the sandbox user in /workspace, and counts
+   * as use while open. The command and its environment are the person's
+   * own, in their own environment: nothing here runs on the host. */
+  async stdioStream(key: string, spec: SandboxStdioSpec): Promise<Duplex> {
+    this.checkKey(key);
+    if (!Array.isArray(spec.argv) || spec.argv.length === 0 || spec.argv.length > 65 || spec.argv.some((arg) => typeof arg !== "string" || arg.includes("\u0000") || arg.length > 4096)) {
+      throw new SandboxError(400, "bad_stdio", "argv must be 1 to 65 strings");
+    }
+    const env = Object.entries(spec.env ?? {});
+    let envBytes = 0;
+    for (const [name, value] of env) {
+      if (!STDIO_ENV_KEY_RE.test(name) || STDIO_ENV_RESERVED.has(name) || typeof value !== "string" || value.includes("\u0000")) throw new SandboxError(400, "bad_stdio", `environment variable ${name.slice(0, 40)} is not allowed`);
+      envBytes += name.length + value.length;
+    }
+    if (envBytes > MAX_EXEC_ENV_BYTES) throw new SandboxError(413, "too_large", "the request is too large");
+    const open = this.stdioStreams.get(key) ?? 0;
+    if (open >= MAX_STDIO_STREAMS) throw new SandboxError(429, "busy", "too many MCP servers are running in this environment");
+    await this.ensure(key);
+    this.stdioStreams.set(key, open + 1);
+    let stream: Duplex;
+    try {
+      stream = await this.docker.execStream(sandboxNames(key).container, {
+        Cmd: spec.argv, User: `${SANDBOX_UID}:${SANDBOX_UID}`, Env: env.map(([name, value]) => `${name}=${value}`), WorkingDir: SANDBOX_WORKSPACE,
+      });
+    } catch (error) {
+      this.releaseStdioStream(key);
+      throw error;
+    }
+    this.touch(key);
+    const timer = setInterval(() => this.touch(key), CONTROL_TOUCH_MS);
+    timer.unref?.();
+    let released = false;
+    stream.once("close", () => {
+      clearInterval(timer);
+      if (!released) { released = true; this.releaseStdioStream(key); }
+    });
+    return stream;
+  }
+
+  private releaseStdioStream(key: string): void {
+    const left = (this.stdioStreams.get(key) ?? 1) - 1;
+    if (left > 0) this.stdioStreams.set(key, left);
+    else this.stdioStreams.delete(key);
   }
 
   private releaseDesktopStream(key: string): void {

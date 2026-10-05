@@ -4,7 +4,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { TurnSpeaker } from "./engine-access.ts";
-import { materializeEngineAccess, providerOfDriver, resolveEngineAccess, turnPayer, type EngineCredentialInput, type PersonFacts } from "./engine-credentials.ts";
+import { materializeEngineAccess, providerOfDriver, providersOfDriver, resolveEngineAccess, subscriptionDriver, turnPayer, type EngineCredentialInput, type PersonFacts } from "./engine-credentials.ts";
 import type { ModelProvider, ProviderKeyResult } from "./perspicax-link.ts";
 
 const OWNER = "pr_00000000-0000-4000-8000-000000000001";
@@ -32,6 +32,10 @@ function input(patch: Partial<EngineCredentialInput> & Facts = {}): EngineCreden
 const CLAUDE = { instanceId: "claude", driver: "claudeAgent", installed: true };
 const CODEX = { instanceId: "codex", driver: "codex", installed: true };
 const GROK = { instanceId: "grok", driver: "grokAgent", installed: true };
+const KIMI = { instanceId: "kimi", driver: "kimiAgent", installed: true };
+const GEMINI = { instanceId: "gemini", driver: "geminiAgent", installed: true };
+const PI = { instanceId: "pi", driver: "piAgent", installed: true };
+const CURSOR = { instanceId: "cursor", driver: "cursorAgent", installed: true };
 const bob: TurnSpeaker = { origin: "person", principalId: BOB };
 const routine: TurnSpeaker = { origin: "owner-routine" };
 
@@ -64,9 +68,23 @@ describe("resolveEngineAccess: the person who speaks pays", () => {
     ["bob, a key for the other provider only", { speaker: bob, instance: CODEX, keys: ["SUB-BOB/anthropic"] }, { ok: false, reason: "no_access", cause: "no_credentials", payer: "speaker", payerPrincipalId: BOB }],
     ["bob, nothing, owner has everything, org key", { speaker: bob, signedIn: [`${OWNER}/claudeAgent`], keys: ["SUB-OWNER/anthropic"], keyBacked: true }, { ok: true, via: "org-key", payer: "organization" }],
     ["bob, nothing, owner has everything, no org key", { speaker: bob, signedIn: [`${OWNER}/claudeAgent`], keys: ["SUB-OWNER/anthropic"] }, { ok: false, reason: "no_access", cause: "no_credentials", payer: "speaker", payerPrincipalId: BOB }],
-    // an engine without personal sign-in or Perspicax key (grokAgent, ACP)
-    ["other engine, owner signed in elsewhere", { instance: GROK, signedIn: [`${OWNER}/grokAgent`], keys: ["SUB-OWNER/anthropic"] }, { ok: false, reason: "no_access", cause: "no_credentials", payer: "owner", payerPrincipalId: OWNER }],
-    ["other engine, key-backed by the server", { instance: GROK, speaker: bob, keyBacked: true }, { ok: true, via: "org-key", payer: "organization" }],
+    // an engine without personal sign-in or Perspicax key (Cursor, other ACP)
+    ["other engine, owner signed in elsewhere", { instance: CURSOR, signedIn: [`${OWNER}/cursorAgent`], keys: ["SUB-OWNER/anthropic"] }, { ok: false, reason: "no_access", cause: "no_credentials", payer: "owner", payerPrincipalId: OWNER }],
+    ["other engine, key-backed by the server", { instance: CURSOR, speaker: bob, keyBacked: true }, { ok: true, via: "org-key", payer: "organization" }],
+    // Grok Build: the person's own grok.com sign-in, then their xAI key, then the org key
+    ["bob, his Grok sign-in", { instance: GROK, speaker: bob, signedIn: [`${BOB}/grokAgent`, `${OWNER}/grokAgent`], keys: ["SUB-BOB/xai"], keyBacked: true }, { ok: true, via: "subscription", payer: "speaker", payerPrincipalId: BOB }],
+    ["bob, his xAI key", { instance: GROK, speaker: bob, keys: ["SUB-BOB/xai", "SUB-OWNER/xai"], keyBacked: true }, { ok: true, via: "speaker-key", payer: "speaker", payerPrincipalId: BOB, provider: "xai" }],
+    ["bob, the owner's Grok sign-in never serves him", { instance: GROK, speaker: bob, signedIn: [`${OWNER}/grokAgent`], keys: ["SUB-OWNER/xai"] }, { ok: false, reason: "no_access", cause: "no_credentials", payer: "speaker", payerPrincipalId: BOB }],
+    ["bob, nothing, the org xAI key", { instance: GROK, speaker: bob, keyBacked: true }, { ok: true, via: "org-key", payer: "organization" }],
+    // Kimi Code: the person's own Kimi sign-in, then their Moonshot key
+    ["owner, own Kimi sign-in", { instance: KIMI, signedIn: [`${OWNER}/kimiAgent`] }, { ok: true, via: "subscription", payer: "owner", payerPrincipalId: OWNER }],
+    ["bob, his Moonshot key", { instance: KIMI, speaker: bob, keys: ["SUB-BOB/moonshot"] }, { ok: true, via: "speaker-key", payer: "speaker", payerPrincipalId: BOB, provider: "moonshot" }],
+    // Gemini CLI: a Google key only (the consumer login is retired)
+    ["bob, his Google key", { instance: GEMINI, speaker: bob, signedIn: [`${BOB}/geminiAgent`], keys: ["SUB-BOB/google"] }, { ok: true, via: "speaker-key", payer: "speaker", payerPrincipalId: BOB, provider: "google" }],
+    ["bob, a Gemini login is not a payer", { instance: GEMINI, speaker: bob, signedIn: [`${BOB}/geminiAgent`] }, { ok: false, reason: "no_access", cause: "no_credentials", payer: "speaker", payerPrincipalId: BOB }],
+    // pi: any key the person keeps
+    ["bob, pi on his xAI key", { instance: PI, speaker: bob, keys: ["SUB-BOB/xai"] }, { ok: true, via: "speaker-key", payer: "speaker", payerPrincipalId: BOB, provider: "xai" }],
+    ["bob, pi with no key", { instance: PI, speaker: bob, keys: ["SUB-OWNER/anthropic"] }, { ok: false, reason: "no_access", cause: "no_credentials", payer: "speaker", payerPrincipalId: BOB }],
     // disabled people
     ["bob disabled: refused, not the org key", { speaker: bob, people: { [BOB]: { sub: "SUB-BOB", disabled: true } }, signedIn: [`${BOB}/claudeAgent`], keys: ["SUB-BOB/anthropic"], keyBacked: true }, { ok: false, reason: "no_access", cause: "payer_disabled", payer: "speaker", payerPrincipalId: BOB }],
     ["owner disabled, bob speaks: bob's own key still serves", { speaker: bob, owner: { principalId: OWNER, sub: "SUB-OWNER", disabled: true }, keys: ["SUB-BOB/anthropic"] }, { ok: true, via: "speaker-key", payer: "speaker", payerPrincipalId: BOB, provider: "anthropic" }],
@@ -126,7 +144,12 @@ describe("the bot's routines run on the owner's credentials", () => {
   it("providers by driver", () => {
     expect(providerOfDriver("claudeAgent")).toBe("anthropic");
     expect(providerOfDriver("codex")).toBe("openai");
-    expect(providerOfDriver("grokAgent")).toBeNull();
+    expect(providerOfDriver("grokAgent")).toBe("xai");
+    expect(providerOfDriver("geminiAgent")).toBe("google");
+    expect(providerOfDriver("kimiAgent")).toBe("moonshot");
+    expect(providersOfDriver("piAgent")).toEqual(["anthropic", "openai", "xai", "google", "moonshot"]);
+    expect(providerOfDriver("cursorAgent")).toBeNull();
+    expect(["claudeAgent", "codex", "grokAgent", "kimiAgent", "geminiAgent", "piAgent"].filter(subscriptionDriver)).toEqual(["claudeAgent", "codex", "grokAgent", "kimiAgent"]);
   });
 });
 
@@ -143,7 +166,7 @@ describe("materializeEngineAccess", () => {
         return typeof answer === "function" ? answer(sub, provider) : answer;
       },
       invalidate: (sub: string, provider: string) => { invalidated.push(`${sub}/${provider}`); },
-      loginDir: (principalId: string, driver: "claudeAgent" | "codex") => `/data/principals/${principalId}/${driver === "claudeAgent" ? "claude" : "codex"}`,
+      loginDir: (principalId: string, driver: string) => `/data/principals/${principalId}/${{ claudeAgent: "claude", codex: "codex", grokAgent: "grok", kimiAgent: "kimi" }[driver]}`,
     };
   };
   const BOB_PID = BOB.toLowerCase();
@@ -169,6 +192,35 @@ describe("materializeEngineAccess", () => {
     expect(await materializeEngineAccess(claude, resolveEngineAccess(claude), deps({ ok: false, error: "no_key" }))).toMatchObject({ ok: true, access: { via: "subscription", identity: `subscription:${BOB_PID}`, claudeConfigDir: `/data/principals/${BOB_PID}/claude` } });
     const codex = input({ instance: CODEX, signedIn: [`${OWNER}/codex`] });
     expect(await materializeEngineAccess(codex, resolveEngineAccess(codex), deps({ ok: false, error: "no_key" }))).toMatchObject({ ok: true, access: { via: "subscription", identity: `subscription:${OWNER}`, codexHome: `/data/principals/${OWNER}/codex` } });
+  });
+
+  it("Grok and Kimi: a sign-in is the person's own engine home; a key rides in an empty home of theirs", async () => {
+    const grokSub = input({ instance: GROK, speaker: bob, signedIn: [`${BOB}/grokAgent`] });
+    expect(await materializeEngineAccess(grokSub, resolveEngineAccess(grokSub), deps({ ok: false, error: "no_key" }))).toEqual({ ok: true, plan: expect.anything(), access: { via: "subscription", identity: `subscription:${BOB_PID}`, engineHome: `/data/principals/${BOB_PID}/grok` } });
+    const grokKey = input({ instance: GROK, speaker: bob, keys: ["SUB-BOB/xai"] });
+    expect(await materializeEngineAccess(grokKey, resolveEngineAccess(grokKey), deps({ ok: true, key: "xai-test-bob-000001", fingerprint: "fx" }))).toMatchObject({ ok: true, access: { via: "speaker-key", identity: `speaker-key:${BOB_PID}:fx`, environment: { XAI_API_KEY: "xai-test-bob-000001" }, engineHome: `/data/principals/${BOB_PID}/grokAgent-key` } });
+    const kimiSub = input({ instance: KIMI, signedIn: [`${OWNER}/kimiAgent`] });
+    expect(await materializeEngineAccess(kimiSub, resolveEngineAccess(kimiSub), deps({ ok: false, error: "no_key" }))).toMatchObject({ ok: true, access: { via: "subscription", engineHome: `/data/principals/${OWNER}/kimi` } });
+    const kimiKey = input({ instance: KIMI, keys: ["SUB-OWNER/moonshot"] });
+    expect(await materializeEngineAccess(kimiKey, resolveEngineAccess(kimiKey), deps({ ok: true, key: "sk-moonshot-test-01", fingerprint: "fm" }))).toMatchObject({ ok: true, access: { via: "owner-key", environment: { MOONSHOT_API_KEY: "sk-moonshot-test-01" }, engineHome: `/data/principals/${OWNER}/kimiAgent-key` } });
+  });
+
+  it("Gemini runs on the payer's Google key as GEMINI_API_KEY", async () => {
+    const inp = input({ instance: GEMINI, speaker: bob, keys: ["SUB-BOB/google"] });
+    expect(await materializeEngineAccess(inp, resolveEngineAccess(inp), deps({ ok: true, key: "AIza-test-bob-0001", fingerprint: "fg" }))).toMatchObject({ ok: true, access: { via: "speaker-key", environment: { GEMINI_API_KEY: "AIza-test-bob-0001" }, engineHome: `/data/principals/${BOB_PID}/geminiAgent-key` } });
+  });
+
+  it("pi gets every key the payer keeps, and only theirs", async () => {
+    const inp = input({ instance: PI, speaker: bob, keys: ["SUB-BOB/openai", "SUB-BOB/moonshot", "SUB-OWNER/anthropic"] });
+    const d = deps((_sub, provider) => ({ ok: true, key: `key-${provider}`, fingerprint: `f-${provider}` }));
+    const out = await materializeEngineAccess(inp, resolveEngineAccess(inp), d);
+    expect(out).toMatchObject({ ok: true, access: { via: "speaker-key", identity: `speaker-key:${BOB_PID}:f-openai+f-moonshot`, environment: { OPENAI_API_KEY: "key-openai", MOONSHOT_API_KEY: "key-moonshot" }, engineHome: `/data/principals/${BOB_PID}/piAgent-key` } });
+    expect(d.resolved).toEqual(["SUB-BOB/openai", "SUB-BOB/moonshot"]);
+  });
+
+  it("the org key gives a home engine an empty organization home, never the server's login", async () => {
+    const inp = input({ instance: GROK, speaker: bob, keyBacked: true });
+    expect(await materializeEngineAccess(inp, resolveEngineAccess(inp), deps({ ok: false, error: "no_key" }))).toMatchObject({ ok: true, access: { via: "org-key", identity: "org-key", engineHome: "/data/org/grokAgent-key" } });
   });
 
   it("S4-14: a key plan for a payer disabled since never reads the (cached) key", async () => {

@@ -89,8 +89,14 @@ data class OptionCard(
      * question card would read "answer" instead of the reply.
      */
     val answeredText: String? = null,
+    /**
+     * Terminal: the proposal went stale while open. The computer clears its
+     * options and nothing can answer it; a fresh proposal is needed.
+     */
+    val expired: Boolean? = null,
 ) {
-    val isPending: Boolean get() = requestId != null && answered == null && dismissed != true
+    val isPending: Boolean get() =
+        requestId != null && answered == null && dismissed != true && expired != true
     val isPermission: Boolean get() = tool != null
 
     /**
@@ -235,6 +241,12 @@ data class Message(
     /** Completed provider turns can fold narration without guessing which reply is final. */
     val turnId: String? = null,
     val turnTerminal: Boolean? = null,
+    /**
+     * "api" for a user line that arrived through the computer's HTTP API,
+     * "call" for a request the person spoke on a Live call. Last on purpose:
+     * tests build messages positionally.
+     */
+    val via: String? = null,
 ) {
     @Serializable(with = MessageKindSerializer::class)
     enum class Kind { TEXT, OPTIONS, ACTIVITY, SCREEN, DIGEST, COMPACTION, ROUTINE_RUN, UNKNOWN }
@@ -490,6 +502,11 @@ data class Room(
     /** Desktop sidebar section. Missing or blank means the built-in Channels area. */
     val section: String? = null,
     val busyBotId: String? = null,
+    /**
+     * True for the whole orchestrated run — routing, members queued behind a
+     * busy speaker, hand-offs — not just while [busyBotId] names a speaker.
+     */
+    val working: Boolean? = null,
     /** Independent user conversations in this channel. DMs omit this field. */
     val tasks: List<BotTask>? = null,
     val messages: List<Message>? = null,
@@ -815,6 +832,94 @@ data class ConfigFlag(
 @Serializable
 data class Profile(val name: String, val email: String)
 
+/**
+ * The one Live call a paired computer runs — `LiveCallState` in
+ * `shared/wire.ts`, as `GET /api/live/call`, the `live.call` frame and the
+ * 409 `activeCall` body carry it. Never carries the key or any speech.
+ */
+@Serializable
+data class LiveCallState(
+    val callId: String,
+    val botId: String,
+    val threadId: String,
+    /** "desktop", "ios" or "android": which app holds the microphone. Display only. */
+    val client: String,
+    val voice: String = "",
+    /** Epoch milliseconds, the harness's `Date.now()`; a Double like [Message.at]. */
+    val startedAt: Double,
+    val status: LiveCallStatus,
+    val endReason: String? = null,
+    /** Short and user-facing; present when the call ended on a problem. */
+    val error: String? = null,
+) {
+    /**
+     * Anything but `ended`, a status this build has never heard of included:
+     * the harness says `ended` when a call is over, and guessing that early
+     * would hide the bar, and its Hang up, for a call still on the line (the
+     * iPhone's rule too).
+     */
+    val isRunning: Boolean
+        get() = status != LiveCallStatus.ENDED
+}
+
+/** The same fallback rule as [MessageKindSerializer]: a status this build has never seen must not break a frame. */
+@Serializable(with = LiveCallStatusSerializer::class)
+enum class LiveCallStatus { CONNECTING, LIVE, ENDING, ENDED, UNKNOWN }
+
+object LiveCallStatusSerializer : KSerializer<LiveCallStatus> {
+    override val descriptor = PrimitiveSerialDescriptor("LiveCallStatus", PrimitiveKind.STRING)
+
+    override fun deserialize(decoder: Decoder): LiveCallStatus = when (decoder.decodeString()) {
+        "connecting" -> LiveCallStatus.CONNECTING
+        "live" -> LiveCallStatus.LIVE
+        "ending" -> LiveCallStatus.ENDING
+        "ended" -> LiveCallStatus.ENDED
+        else -> LiveCallStatus.UNKNOWN
+    }
+
+    override fun serialize(encoder: Encoder, value: LiveCallStatus) {
+        encoder.encodeString(value.name.lowercase())
+    }
+}
+
+/** Non-secret Live settings (`LiveSettings` in `shared/wire.ts`). The key never appears here. */
+@Serializable
+data class LiveSettings(
+    /**
+     * Sagax: upstream Live calls are off unless the computer runs with
+     * SAGAX_LIVE_CALLS=1 (its /api/live routes answer 404 otherwise). Absent on
+     * an older harness, which reads as off: the phone offers no Live call.
+     */
+    val enabled: Boolean = false,
+    val configured: Boolean = false,
+    val voice: String = "",
+    val readTypedReplies: Boolean = true,
+    val idleMinutes: Int = 5,
+)
+
+/**
+ * `PATCH /api/live/settings` body. [CompanionJson] leaves default-valued
+ * fields out, so an unset field is absent rather than `null` — the route is
+ * strict and would refuse a null.
+ */
+@Serializable
+data class LiveSettingsPatch(
+    val voice: String? = null,
+    val readTypedReplies: Boolean? = null,
+    val idleMinutes: Int? = null,
+)
+
+/** The outcome of asking the computer for a Live session. Every other failure throws [APIError]. */
+sealed interface LiveCallStart {
+    data class Started(val call: LiveCallState, val answerSdp: String) : LiveCallStart
+
+    /** The Mac has no OpenAI key; the phone cannot set one. */
+    data class NeedsKey(val message: String) : LiveCallStart
+
+    /** Someone is already on the line, from the device [activeCall] names. */
+    data class Busy(val activeCall: LiveCallState, val message: String) : LiveCallStart
+}
+
 @Serializable
 data class ConfigStatus(
     val composio: ConfigFlag? = null,
@@ -822,6 +927,8 @@ data class ConfigStatus(
     val tts: ConfigFlag? = null,
     val imageGen: ConfigFlag? = null,
     val profile: Profile? = null,
+    /** Live-call settings; absent on a harness older than Live calls. */
+    val live: LiveSettings? = null,
 ) {
     /**
      * "This engine can speak", not "a key is on file" — under the built-in
@@ -1217,6 +1324,27 @@ internal data class ActiveBranchResponse(val activeLeafId: String)
 
 @Serializable
 internal data class BotResponse(val bot: Bot)
+
+/** What `POST /api/live/session` says on 201. The 409 bodies decode through [LiveConflictBody]. */
+@Serializable
+internal data class LiveSessionResponse(val call: LiveCallState, val transport: LiveTransportAnswer)
+
+@Serializable
+internal data class LiveTransportAnswer(val type: String, val sdp: String)
+
+@Serializable
+internal data class LiveCallResponse(val call: LiveCallState? = null)
+
+@Serializable
+internal data class LiveSettingsResponse(val live: LiveSettings)
+
+/** A 409 from `POST /api/live/session`: either the Mac has no key, or someone is already on the line. */
+@Serializable
+internal data class LiveConflictBody(
+    val error: String,
+    val needsKey: Boolean? = null,
+    val activeCall: LiveCallState? = null,
+)
 
 @Serializable
 internal data class RoomResponse(val group: Room)

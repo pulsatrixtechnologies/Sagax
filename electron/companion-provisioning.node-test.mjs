@@ -191,3 +191,122 @@ test("endpoint failure retains the installation across immediate Retry and resta
     await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
   }
 });
+
+test("a reclaimed endpoint is re-provisioned at restart and a full provider retries by itself over real HTTP", { timeout: 15_000 }, async () => {
+  const identity = { name: "Fixture computer", platform: "darwin", appVersion: "1.2.3" };
+  const installation = { id: INSTALLATION_ID, clientInstanceId: CLIENT_ID, ...identity };
+  const credentialExpiresAt = Date.now() + 86_400_000;
+  const OLD_CONNECTOR_TOKEN = `fixture-old-connector.${"e".repeat(80)}`;
+  const calls = [];
+  const routeFailures = [];
+  let capacityAvailable = false;
+  let baseURL;
+  let activations = 0;
+  let document = {
+    [COMPANION_CLIENT_INSTANCE_FIELD]: CLIENT_ID,
+    [COMPANION_ACCOUNT_EMAIL_FIELD]: EMAIL,
+    [COMPANION_ACCOUNT_USER_ID_FIELD]: "fixture-user",
+    [COMPANION_ACCOUNT_TOKEN_FIELD]: ACCOUNT_TOKEN,
+    [COMPANION_INSTALLATION_ID_FIELD]: INSTALLATION_ID,
+    [COMPANION_INSTALLATION_CREDENTIAL_FIELD]: INSTALLATION_CREDENTIAL,
+    [COMPANION_INSTALLATION_EXPIRY_FIELD]: credentialExpiresAt,
+    [MANAGED_COMPANION_ENDPOINT_FIELD]: ENDPOINT,
+    [MANAGED_COMPANION_TOKEN_FIELD]: OLD_CONNECTOR_TOKEN,
+    [MANAGED_COMPANION_ORIGIN_VERSION_FIELD]: MANAGED_COMPANION_ORIGIN_VERSION,
+  };
+
+  const reply = (response, status, body, headers = {}) => {
+    response.writeHead(status, { "content-type": "application/json", "x-request-id": REQUEST_ID, ...headers });
+    response.end(JSON.stringify(body));
+  };
+  const route = async (request, response) => {
+    const key = `${request.method} ${request.url}`;
+    calls.push(key);
+    for await (const _chunk of request) {
+      // Drain the body; none of these routes takes one.
+    }
+    if (request.url.startsWith("/v1/installations/self")) {
+      assert.equal(request.headers.authorization, `Bearer ${INSTALLATION_CREDENTIAL}`);
+    }
+    switch (key) {
+      case "GET /healthz":
+        return reply(response, 200, { ok: true, service: "openmausbot-control-plane" });
+      case "GET /v1/installations/self":
+        return reply(response, 200, { installation, credentialExpiresAt });
+      case "GET /v1/installations/self/endpoint":
+        // The idle tunnel was reclaimed while this computer was away.
+        return reply(response, 200, { endpoint: null });
+      case "POST /v1/installations/self/endpoint":
+        return capacityAvailable
+          ? reply(response, 200, { endpoint: { url: ENDPOINT }, connectorToken: CONNECTOR_TOKEN })
+          : reply(response, 503, { error: "endpoint_capacity" }, { "retry-after": "600" });
+      default:
+        assert.fail(`unexpected fixture request: ${key}`);
+    }
+  };
+  const server = createServer((request, response) => {
+    route(request, response).catch((error) => {
+      routeFailures.push(error);
+      reply(response, 500, { error: "fixture_route_failed" });
+    });
+  });
+
+  try {
+    server.listen(0, "127.0.0.1");
+    await once(server, "listening");
+    baseURL = `http://127.0.0.1:${server.address().port}`;
+    const scheduled = [];
+    const service = createCompanionAccountService({
+      client: createControlPlaneClient({ baseURL, timeoutMs: 2_000 }),
+      readCredentials: () => structuredClone(document),
+      updateCredentials: async (derive) => {
+        document = structuredClone(await derive(structuredClone(document)));
+        return structuredClone(document);
+      },
+      identity,
+      newClientInstanceId: () => CLIENT_ID,
+      companionIsOn: () => true,
+      managedConnectionState: () => ({ status: activations ? "ready" : "retrying", ready: activations > 0 }),
+      activatePersistedEndpoint: async () => {
+        activations += 1;
+        return { status: "ready", ready: true };
+      },
+      autoRecover: true,
+      autoRetryBaseMs: 1_000,
+      random: () => 0.5,
+      setTimer: (callback, milliseconds) => {
+        scheduled.push({ callback, milliseconds });
+        return scheduled.length;
+      },
+      clearTimer: () => {},
+    });
+
+    const full = await service.restore();
+    assert.deepEqual(routeFailures, []);
+    assert.equal(full.status, "error");
+    assert.match(full.message, /^Secure HTTPS links are temporarily full\. Pair on this Wi-Fi or with Tailscale for now; we'll retry automatically\./);
+    assert.match(full.message, new RegExp(`Reference: ${REQUEST_ID}`));
+    // The old connector token is kept until a replacement exists.
+    assert.equal(document[MANAGED_COMPANION_TOKEN_FIELD], OLD_CONNECTOR_TOKEN);
+    const retry = scheduled.find((timer) => timer.milliseconds === 600_000);
+    assert.ok(retry, "the server's Retry-After sets the automatic retry delay");
+
+    capacityAvailable = true;
+    retry.callback();
+    for (let attempt = 0; attempt < 50 && activations === 0; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    assert.deepEqual(routeFailures, []);
+    assert.equal(activations, 1);
+    assert.equal(document[MANAGED_COMPANION_ENDPOINT_FIELD], ENDPOINT);
+    assert.equal(document[MANAGED_COMPANION_TOKEN_FIELD], CONNECTOR_TOKEN);
+    assert.deepEqual(await service.state(), { available: true, status: "ready", email: EMAIL, endpoint: ENDPOINT });
+    const count = (key) => calls.filter((call) => call === key).length;
+    assert.equal(count("GET /v1/installations/self/endpoint"), 1);
+    assert.equal(count("POST /v1/installations/self/endpoint"), 2);
+    service.dispose();
+  } finally {
+    server.closeAllConnections();
+    await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+  }
+});

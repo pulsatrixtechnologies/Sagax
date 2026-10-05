@@ -464,6 +464,20 @@ describe("phone setup flow", () => {
     expect(message).not.toContain("companion-account");
   });
 
+  it("keeps the provider-capacity explanation instead of generic setup copy", () => {
+    const requestId = "44444444-4444-4444-8444-444444444444";
+    expect(
+      normalizePhoneSetupActionError(
+        new Error(
+          `Error invoking remote method 'companion-account:verify-code': Error: Secure HTTPS links are temporarily full. Pair on this Wi-Fi or with Tailscale for now; we'll retry automatically. Reference: ${requestId}.`,
+        ),
+        "We could not finish setup. Try again.",
+      ),
+    ).toBe(
+      `Secure HTTPS links are temporarily full. Pair on this Wi-Fi or with Tailscale for now; we'll retry automatically. Reference: ${requestId}.`,
+    );
+  });
+
   it("replaces arbitrary IPC details with calm setup copy", () => {
     expect(
       normalizePhoneSetupActionError(

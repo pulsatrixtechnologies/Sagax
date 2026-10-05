@@ -427,6 +427,7 @@ const PUBLIC_ACCOUNT_MESSAGES = [
   /^This account has reached its computer limit\./,
   /^This computer is already connected\./,
   /^The secure connection (?:is still being prepared|service could not finish setup|is still being removed)\./,
+  /^Secure HTTPS links are temporarily full\./,
   /^Secure access is not available right now\./,
   /^The secure connection service (?:had a problem|returned an unexpected response)\./,
   /^The secure connection request could not be completed\./,

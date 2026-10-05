@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Bot as BotIcon, Loader2, Menu, Plus } from "lucide-react";
+import { useAdvancedMode } from "@/lib/interface-mode";
 import { openNotificationTarget, StoreProvider, useStore } from "@/state/store";
 import { useWelcomeViewer, WelcomeGate } from "@/components/onboarding/WelcomeGate";
 import { mainConversation } from "@/lib/main-view";
 import { cloudSignInDue, spotlightsQuiet, type WelcomeViewer } from "@/lib/onboarding";
 import { FirstConversationTour } from "@/components/onboarding/FirstConversationTour";
 import { GuidedTour } from "@/components/onboarding/GuidedTour";
+import { LiveCallHost } from "@/components/LiveCallHost";
 import { ThreadRefsProvider } from "@/components/ThreadRefs";
 import { initAnalytics } from "@/lib/analytics";
 import { Sidebar } from "@/components/Sidebar";
@@ -17,8 +19,10 @@ import { RemoteAgentSettingsPanel } from "@/components/RemoteAgentSettingsPanel"
 import { NewBotDialog } from "@/components/NewBotDialog";
 import { ComposeToPicker } from "@/components/ComposeToPicker";
 import { PluginsPanel, preloadConnectedApps } from "@/components/PluginsPanel";
+import { TriggersPanel } from "@/components/TriggersPanel";
 import { RemoteDesktopPanel } from "@/components/remote-desktop-panel";
 import { InspectorPanel } from "@/components/InspectorPanel";
+import { ActivityPanel } from "@/components/ActivityPanel";
 import { SettingsModal } from "@/components/SettingsModal";
 import { WorkspaceBackupRecovery } from "@/components/WorkspaceBackupSettings";
 import { UpdateBanner } from "@/components/UpdateBanner";
@@ -48,6 +52,7 @@ import { takeRoutineDelegationReturn } from "@/lib/routine-delegation";
 import { openThreadVisible, pageOpenThreadTarget, type OpenThreadTarget } from "@/lib/open-thread-hash";
 import { botShowsUnread } from "@/lib/bot-unread";
 import { viewerBotsReadOnly, viewerCanCreateBots } from "@/lib/viewer";
+import { phonePairingSettingsAction, takePhonePairingRequest } from "@/lib/phone-pairing";
 
 function Shell({ viewer }: { viewer: WelcomeViewer | null }) {
   const { state, dispatch } = useStore();
@@ -98,6 +103,15 @@ function Shell({ viewer }: { viewer: WelcomeViewer | null }) {
     openThreadTarget.current = null;
     openNotificationTarget(dispatch, target, state);
   }, [state.bots, state.groups, dispatch]);
+  // "Use your Cloud on your phone" opens the Cloud in this window at
+  // /?desktop-settings=phone: its own phone pairing, in any window, on any
+  // server. It only opens Settings there; no code is made until a click.
+  useEffect(() => {
+    const rest = takePhonePairingRequest(window.location.href);
+    if (rest === null) return;
+    window.history.replaceState(null, "", rest);
+    dispatch(phonePairingSettingsAction());
+  }, [dispatch]);
   // Mobile-only drawer state. Above md, none of these properties are emitted
   // at all — Sidebar scopes every mobile class with max-md: rather than
   // cancelling them with md:, which would still emit a translate value and
@@ -131,6 +145,11 @@ function Shell({ viewer }: { viewer: WelcomeViewer | null }) {
   // Someone with no bot of their own still opens on a group they are in.
   const { group, bot } = mainConversation(state.bots, state.groups, state.selectedId);
   const calendarOpen = state.activeView === "routines";
+  // Turning Advanced mode off (an opt-in) closes the inspector it no longer offers.
+  const advanced = useAdvancedMode();
+  useEffect(() => {
+    if (!advanced && state.inspectorOpen) dispatch({ type: "toggleInspector", open: false });
+  }, [advanced, state.inspectorOpen, dispatch]);
 
   // Nothing on this machine can run a bot. A missing cloud login does not
   // count — that CLI can still host a local model. Wait for the first
@@ -253,8 +272,10 @@ function Shell({ viewer }: { viewer: WelcomeViewer | null }) {
     state.settingsOpen ||
     state.computerOpen ||
     state.inspectorOpen ||
+    state.activityOpen ||
     state.appSettingsOpen ||
-    state.pluginsOpen;
+    state.pluginsOpen ||
+    state.triggersOpen;
 
   // The macOS app menu's Preferences… item lives in the desktop shell, so the
   // shell signals the request over the bridge (Cmd+, accelerates the item).
@@ -399,11 +420,13 @@ function Shell({ viewer }: { viewer: WelcomeViewer | null }) {
         <RemoteDesktopPanel key={`computer:${bot.id}`} bot={bot} />
       )}
       {!remoteClient && state.inspectorOpen && bot && <InspectorPanel key={bot.threadId} bot={bot} />}
+      {!remoteClient && state.activityOpen && bot && <ActivityPanel key={`activity:${bot.id}`} bot={bot} />}
       {state.appSettingsOpen && <SettingsModal />}
       {/* On the person's Cloud: its setup checklist, and after it Move to
           Cloud's one-time card on an empty Cloud (desktop app only). */}
       <CloudSetup viewer={viewer} />
       {state.pluginsOpen && <PluginsPanel />}
+      {state.triggersOpen && <TriggersPanel />}
       {state.newBotOpen && <NewBotDialog />}
       {state.shortcutsOpen && (
         <KeyboardShortcutsModal
@@ -449,6 +472,7 @@ function Application() {
         </ThreadRefsProvider>
         <WelcomeGate viewer={viewer} />
         <GuidedTour />
+        <LiveCallHost />
         <FirstConversationTour quiet={spotlightsQuiet(viewer)} />
       </StoreProvider>
     </DesktopCapabilitiesProvider>

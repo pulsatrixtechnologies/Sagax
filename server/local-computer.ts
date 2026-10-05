@@ -196,7 +196,7 @@ export function decodeLinuxDescriptor(value: LinuxConnectionDescriptor): LocalCo
   if (
     typeof driver.path !== "string" ||
     !isAbsolute(driver.path) ||
-    driver.version !== "0.19.3" ||
+    driver.version !== "0.33.0" ||
     !["bundled", "environment", "user-local", "path"].includes(String(driver.source)) ||
     driver.manifestSchema !== "1" ||
     !validDriverFileIdentity(driver.fileIdentity) ||
@@ -204,7 +204,7 @@ export function decodeLinuxDescriptor(value: LinuxConnectionDescriptor): LocalCo
     !isAbsolute(daemon.socketPath) ||
     !Number.isInteger(daemon.pid) ||
     (daemon.pid as number) <= 0 ||
-    daemon.contractVersion !== "0.6.0" ||
+    daemon.contractVersion !== "0.8.0" ||
     daemon.toolsListSchemaVersion !== "1" ||
     daemon.capabilityVersion !== "1" ||
     daemon.mcpProtocolVersion !== "2025-06-18" ||

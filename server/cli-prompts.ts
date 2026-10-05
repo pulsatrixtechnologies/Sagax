@@ -154,10 +154,10 @@ export function defaultSetupIo(input: TerminalInput = process.stdin, output: Ter
     })();
   };
 
-  const ask: SetupIo["ask"] = (question) => run((context) => rich()
+  const ask: SetupIo["ask"] = (question) => run<string>((context) => rich()
     ? text({ ...context, message: displayText(question) })
     : plainText(displayText(question), false, context));
-  const secret: SetupIo["secret"] = (question) => run((context) => rich()
+  const secret: SetupIo["secret"] = (question) => run<string>((context) => rich()
     ? password({ ...context, message: displayText(question), mask: "*" })
     : plainText(displayText(question), true, context));
 
@@ -166,7 +166,7 @@ export function defaultSetupIo(input: TerminalInput = process.stdin, output: Ter
     if (!Number.isInteger(defaultIndex) || defaultIndex < 0 || defaultIndex >= options.length) {
       throw new Error("The default choice is not available.");
     }
-    if (rich()) return run((context) => select({
+    if (rich()) return run<number>((context) => select({
       ...context,
       message: displayText(question),
       options: options.map((label, value) => ({ value, label: displayText(label) })),
@@ -195,7 +195,7 @@ export function defaultSetupIo(input: TerminalInput = process.stdin, output: Ter
     }
   };
   const confirm: SetupIo["confirm"] = async (question, defaultYes = false) => {
-    if (rich()) return run((context) => clackConfirm({ ...context, message: displayText(question), initialValue: defaultYes }));
+    if (rich()) return run<boolean>((context) => clackConfirm({ ...context, message: displayText(question), initialValue: defaultYes }));
     for (;;) {
       const answer = (await ask(`${question} ${defaultYes ? "[Y/n]" : "[y/N]"}: `)).trim();
       if (!answer) return defaultYes;

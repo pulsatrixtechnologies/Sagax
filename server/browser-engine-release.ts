@@ -1,9 +1,9 @@
 // The pinned agent-browser release the harness downloads for the bots'
 // browser (docs/plans/browser-engine.md). Digests were computed from the
-// official GitHub assets on 2026-09-08, except the explicitly versioned Windows
+// official GitHub assets on 2026-10-03, except the explicitly versioned Windows
 // vendor build below. Update pins through a reviewed native end-to-end run.
 // The Dockerfile retains the official Linux version.
-export const AGENT_BROWSER_VERSION = "0.37.0";
+export const AGENT_BROWSER_VERSION = "0.38.2";
 
 export interface AgentBrowserReleaseAsset {
   /** `<platform>-<arch>`; Linux adds `-musl` on Alpine-style systems. */
@@ -21,32 +21,32 @@ export interface AgentBrowserReleaseAsset {
 const RELEASES = new Map<string, AgentBrowserReleaseAsset>([
   [
     "darwin-arm64",
-    { target: "darwin-arm64", asset: "agent-browser-darwin-arm64", sha256: "da5a2b4ef7be8ba279b1258c542c33877f480b1951d0d94de607fc1528edd380", bytes: 12429360 },
+    { target: "darwin-arm64", asset: "agent-browser-darwin-arm64", sha256: "8168b86ab5d94be8f670992dfe4fe1445016518a864b48bda105e64142e7cbf9", bytes: 15570496 },
   ],
   [
     "darwin-x64",
-    { target: "darwin-x64", asset: "agent-browser-darwin-x64", sha256: "f402c96350ffd2adc68d0e5e4d83aa49cf7735fef29882a8866be36cc2fc67e9", bytes: 13588296 },
+    { target: "darwin-x64", asset: "agent-browser-darwin-x64", sha256: "787cb40e086a188d0bb13ff29a99a0b2380aff3aa5e8600b8f8131a0b98ca69c", bytes: 17210352 },
   ],
   [
     "linux-arm64",
-    { target: "linux-arm64", asset: "agent-browser-linux-arm64", sha256: "0315a8c4f7bf167cc5fd5eeaea79009b0e6b5d2ae8b3057bf6f96be978483426", bytes: 12507840 },
+    { target: "linux-arm64", asset: "agent-browser-linux-arm64", sha256: "690c02d952de8497bba4f8cc58b59acbf27dc27b346755869b518f4b411c7f40", bytes: 15633664 },
   ],
   [
     "linux-musl-arm64",
-    { target: "linux-musl-arm64", asset: "agent-browser-linux-musl-arm64", sha256: "db67c0e84e0668c052c2cbdca325c57f896e309c3723755dcdd65b700f8a2b52", bytes: 12369352 },
+    { target: "linux-musl-arm64", asset: "agent-browser-linux-musl-arm64", sha256: "eafeca9ca0fdb2fa2aa60c4554723348c739656b0ddba0d82ff654d4d33311b1", bytes: 15418440 },
   ],
   [
     "linux-musl-x64",
-    { target: "linux-musl-x64", asset: "agent-browser-linux-musl-x64", sha256: "5cff3bc7b2486867aba2901f92c9ce6029bd2a37951630d9feec1c5b3fee402e", bytes: 14092888 },
+    { target: "linux-musl-x64", asset: "agent-browser-linux-musl-x64", sha256: "993d462f4dcfc19860d93a6521a452eba4502bfc449fe0120303c2ccb998e675", bytes: 17863544 },
   ],
   [
     "linux-x64",
-    { target: "linux-x64", asset: "agent-browser-linux-x64", sha256: "78e0c5a14a7fa1f3d1ae2acdbdcc94a047b435b998a8c505fcc49d7fa4935a49", bytes: 14253776 },
+    { target: "linux-x64", asset: "agent-browser-linux-x64", sha256: "a54b765192db774666f0513fa8b545a298753b6f29e73bcdf4a1e78f18e7c0e1", bytes: 18084048 },
   ],
   [
     "win32-x64",
     {
-      // Upstream 0.37.0 still lacks PR #1781's Windows cold-start fix.
+      // Upstream 0.38.2 still lacks PR #1781 (open on 2026-10-03)'s Windows cold-start fix.
       // Retain the native-verified revision until its replacement is tested.
       // Hosted on our own vendor release (docs/browser-packaging.md).
       target: "win32-x64", version: "0.36.0-omb.1",

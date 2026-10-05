@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { createElement } from "react";
 import * as React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -59,6 +60,39 @@ describe("mention highlighting", () => {
 });
 
 describe("math rendering", () => {
+  it.each([
+    "\\(x% comment\r\n+y\\)\n\nAfter",
+    "> Before \\(x% comment\n> +y\\)\n\nAfter",
+    "> > Before \\(x% comment\n> > +y\\)\n\nAfter",
+    "> - Before \\(x% comment\n>   +y\\)\n\nAfter",
+    "\\(x\n+y\\)\n\nAfter",
+    "\\(\nx\n+y\\)\n\nAfter",
+    "\\(\r\nx+y\\)\n\nAfter",
+    "\\( \t\n \r\nx\n+y\\)\n\nAfter",
+  ])("retains multiline inline TeX and following prose: %s", (text) => {
+    const html = renderToStaticMarkup(createElement(ChatMarkdown, { text }));
+    expect(html.match(/class="katex"/g)).toHaveLength(1);
+    expect(html).not.toContain("katex-display");
+    expect(html).not.toContain("katex-error");
+    expect(html).toContain("<mi>x</mi><mo>+</mo><mi>y</mi>");
+    expect(html).toContain('<p dir="ltr">After</p>');
+  });
+
+  it("keeps the earlier currency fix's exact prices plain and multiline image offsets scoped", () => {
+    const prices = "Jan −$3,000 · Feb −$2,000 · Avg ≈ $2,200 and $5 vs $10";
+    const html = renderToStaticMarkup(createElement(ChatMarkdown, { text: prices }));
+    expect(html).not.toContain('class="katex"');
+    expect(html).toContain(prices);
+    const text = "$5 before \\(\r\nx+y\\)\n\n![diagram](/workspace/diagram.png)";
+    const preview = vi.spyOn(AttachmentPreview, "MarkdownImagePreview");
+    try {
+      renderToStaticMarkup(createElement(ChatMarkdown, { text, message: { threadId: "thread-1", messageId: "message-1" } }));
+      expect(preview.mock.calls[0][0].sourceOffset).toBe(text.indexOf("!["));
+    } finally {
+      preview.mockRestore();
+    }
+  });
+
   it("renders inline, display, and TeX-style delimiters with KaTeX", () => {
     const html = renderToStaticMarkup(createElement(ChatMarkdown, {
       text: "Inline $s'(t)=2t$.\n\n$$\\int_0^3 2t\\,dt=9$$\n\n\\(x^2\\)\n\n\\[y^2\\]",
@@ -112,6 +146,114 @@ describe("math rendering", () => {
     expect(normalizeMathDelimiters(crlf)).toBe(
       "```tex\r\n\\(not rendered\\)\r\n```\r\n\r\nAfter $rendered$.",
     );
+  });
+
+  it("keeps prices literal instead of rendering the text between them as math", () => {
+    for (const [text, expected] of [
+      ["**1. R$ 120:** o plano custa R$ 120 por mês.", 0],
+      ["**2. Os R$1.500,00: à vista ou parcelado?** O total fica em R$ 1.500,00.", 0],
+      ["It costs $5 and the upgrade costs $10.", 0],
+      ["Plans: US$5, $20 per month, or $x$ per seat.", 1],
+    ] as const) {
+      const html = renderToStaticMarkup(createElement(ChatMarkdown, { text }));
+      expect(html.match(/class="katex"/g)?.length ?? 0).toBe(expected);
+      expect(html).toContain("$");
+    }
+    const prose = renderToStaticMarkup(createElement(ChatMarkdown, {
+      text: "**1. R$ 120:** o plano custa R$ 120 por mês.",
+    }));
+    expect(prose).not.toContain('class="katex"');
+    expect(prose).toContain("<strong>1. R$ 120:</strong>");
+    expect(prose).toContain("custa R$ 120 por");
+  });
+
+  it("still renders inline dollar math next to prices", () => {
+    const html = renderToStaticMarkup(createElement(ChatMarkdown, {
+      text: "Pay $5 now; the rate is $r = 0.1$ and \\( x^2 \\) grows.",
+    }));
+    expect(html.match(/class="katex"/g)).toHaveLength(2);
+    expect(html).toContain("Pay $5 now");
+  });
+
+  it("does not treat a math closer as a currency sign", () => {
+    const html = renderToStaticMarkup(createElement(ChatMarkdown, { text: "$R$ 120 and US$5." }));
+    expect(html.match(/class="katex"/g)).toHaveLength(1);
+    expect(html).toContain("120 and US$5.");
+  });
+
+  it.each([
+    ["https://shop.test/item/$5", "https://shop.test/item/$5"],
+    ["www.shop.test/item/$5", "http://www.shop.test/item/$5"],
+    ["<https://shop.test/item/$5>", "https://shop.test/item/$5"],
+    ["[Store](https://shop.test/item/$5)", "https://shop.test/item/$5"],
+  ])("keeps dollar signs in link destinations: %s", (text, href) => {
+    const html = renderToStaticMarkup(createElement(ChatMarkdown, { text }));
+    expect(html).toContain(`href="${href}"`);
+    expect(html).not.toContain("%5C");
+  });
+
+  it("normalizes math in explicit link labels without changing destinations", () => {
+    const html = renderToStaticMarkup(createElement(ChatMarkdown, {
+      text: "[\\(x^2\\)](https://shop.test/item/$5)",
+    }));
+    expect(html).toContain('href="https://shop.test/item/$5"');
+    expect(html.match(/class="katex"/g)).toHaveLength(1);
+  });
+
+  it("contains long inline formulas in a horizontal scroll container", () => {
+    const html = renderToStaticMarkup(createElement(ChatMarkdown, {
+      text: `Inline $${"abcdefghijklmnopqrstuvwxyz".repeat(3)}$.`,
+    }));
+    expect(html.match(/class="katex"/g)).toHaveLength(1);
+    const css = readFileSync(new URL("../styles.css", import.meta.url), "utf8");
+    const rule = css.match(/\.chat-md :not\(\.katex-display\) > \.katex \{([^}]*)\}/)?.[1];
+    expect(rule).toContain("max-width: 100%");
+    expect(rule).toContain("overflow-x: auto");
+  });
+
+  it("does not pair dollars across paragraphs", () => {
+    const html = renderToStaticMarkup(createElement(ChatMarkdown, { text: "Costs $5.\n\nThen pay later$" }));
+    expect(html).not.toContain('class="katex"');
+  });
+
+  it.each([
+    "R$ 120.\n\n![receipt](/workspace/receipt.png)",
+    "Pay $5.\n\n![receipt][image]\n\n[image]: /workspace/receipt.png",
+    "` lone ![receipt](/workspace/receipt.png) ``code``",
+    "![receipt][R$5]\n\n[R$5]: /workspace/receipt.png",
+    "![R$5]\n\n[R$5]: /workspace/receipt.png",
+    "[R$5]: /workspace/receipt.png\n\nPay $10.\n\n![receipt][R$5]",
+    "Price R$ 120.\n\n[![receipt](/workspace/receipt.png)][R$5]\n\n[R$5]: https://example.test",
+    "Price R$ 120.\n\n[![receipt](/workspace/receipt.png)](https://shop.test/item/$5)",
+  ])("keeps local image authorization offsets after prices: %s", (text) => {
+    const preview = vi.spyOn(AttachmentPreview, "MarkdownImagePreview");
+    try {
+      renderToStaticMarkup(createElement(ChatMarkdown, {
+        text, message: { threadId: "thread-1", messageId: "message-1" },
+      }));
+      expect(preview).toHaveBeenCalledOnce();
+      expect(preview.mock.calls[0][0].sourceOffset).toBe(text.indexOf("!["));
+      expect(preview.mock.calls[0][0].filePath).toBe("/workspace/receipt.png");
+    } finally {
+      preview.mockRestore();
+    }
+  });
+
+  it("keeps separate authorization offsets for repeated images after normalized math and code", () => {
+    const image = "![receipt $5](/workspace/receipt.png)";
+    const text = `Price R$ 120; \\( x^2 \\) and \`$5\`.\n\n${image}\n\nPay $10.\n\n${image}`;
+    const preview = vi.spyOn(AttachmentPreview, "MarkdownImagePreview");
+    try {
+      const html = renderToStaticMarkup(createElement(ChatMarkdown, {
+        text, message: { threadId: "thread-1", messageId: "message-1" },
+      }));
+      expect(html).toContain('class="katex"');
+      expect(preview.mock.calls.map(([props]) => props.sourceOffset)).toEqual([
+        text.indexOf(image), text.lastIndexOf(image),
+      ]);
+    } finally {
+      preview.mockRestore();
+    }
   });
 
   it("normalizes math in messages that also contain an image", () => {
@@ -184,14 +326,19 @@ it("requests both code palettes for skin-aware highlighting", async () => {
   const codeToHtml = vi.fn().mockResolvedValue("<pre>dual palette</pre>");
   vi.doMock("shiki", () => ({ codeToHtml }));
   const cleanup: ReturnType<React.EffectCallback>[] = [];
+  // effects stay captured, so each static render is a fresh first frame
+  const fence = createElement(ChatMarkdown, { text: "```text\nPalette regression sample\n```" });
   try {
-    renderToStaticMarkup(createElement(ChatMarkdown, { text: "```text\nPalette regression sample\n```" }));
-    for (const callback of effects) cleanup.push(callback());
+    expect(renderToStaticMarkup(fence)).not.toContain("dual palette");
+    for (const callback of effects.splice(0)) cleanup.push(callback());
     await vi.waitFor(() => expect(codeToHtml).toHaveBeenCalledWith("Palette regression sample", {
       lang: "text",
       themes: { light: "github-light-default", dark: "github-dark-default" },
       defaultColor: "light-dark()",
     }));
+    // a remount (revisiting the thread) paints the cached highlight at once,
+    // never plain text first
+    await vi.waitFor(() => expect(renderToStaticMarkup(fence)).toContain("dual palette"));
   } finally {
     for (const close of cleanup) if (typeof close === "function") close();
     effect.mockImplementation(originalUseEffect);
@@ -338,6 +485,19 @@ describe("ChatMarkdown attachments", () => {
     } finally {
       save.mockRestore();
       preview.mockRestore();
+    }
+  });
+
+  it("preserves dollar signs in Windows file destinations", () => {
+    const save = vi.spyOn(AttachmentPreview, "useLocalFileSave");
+    const filePath = "C:\\Users\\Maus\\R$5\\receipt.pdf";
+    try {
+      renderToStaticMarkup(createElement(ChatMarkdown, {
+        text: `[Receipt](${filePath})`, message: { threadId: "thread-1", messageId: "message-1" },
+      }));
+      expect(save.mock.calls[0]?.[0]).toBe(filePath);
+    } finally {
+      save.mockRestore();
     }
   });
 
@@ -669,8 +829,9 @@ it("renders mermaid strictly and serves repeat views from cache", async () => {
     expect(render).toHaveBeenCalledWith(expect.any(String), "flowchart LR\n  Ship-->Sea");
 
     // a settled remount (revisiting the thread, a skin flip) re-renders from
-    // cache: still exactly one real mermaid render for this source
-    renderToStaticMarkup(createElement(ChatMarkdown, { text: fence }));
+    // cache: the diagram is in its first frame, and still exactly one real
+    // mermaid render for this source
+    expect(renderToStaticMarkup(createElement(ChatMarkdown, { text: fence }))).toContain("<svg>sea lanes</svg>");
     for (const callback of effects.splice(0)) cleanup.push(callback());
     await Promise.resolve();
     expect(render).toHaveBeenCalledTimes(1);

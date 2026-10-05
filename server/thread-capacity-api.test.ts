@@ -53,7 +53,8 @@ describe("per-bot thread capacity through an isolated HTTP fixture", () => {
   const limit = async (maxConcurrentPerBot: number) => {
     const result = await api("PATCH", "/api/config", { threads: { maxConcurrentPerBot } });
     expect(result.status).toBe(200);
-    expect(result.body.threads).toEqual({ maxConcurrentPerBot });
+    // the per-person parallel task limit (0b3772e00) rides along at its default
+    expect(result.body.threads).toEqual({ maxConcurrentPerBot, maxParallelPerPerson: 3 });
     return result;
   };
   const botWithThreads = async (count: number) => {
@@ -122,7 +123,7 @@ describe("per-bot thread capacity through an isolated HTTP fixture", () => {
   });
 
   it("defaults to three, runs ten real turns after raising the limit, and safely queues and cancels overflow", async () => {
-    expect((await api("GET", "/api/config")).body.threads).toEqual({ maxConcurrentPerBot: 3 });
+    expect((await api("GET", "/api/config")).body.threads).toEqual({ maxConcurrentPerBot: 3, maxParallelPerPerson: 3 });
     for (const maxConcurrentPerBot of [0, 11, 1.5, "2", null]) {
       expect((await api("PATCH", "/api/config", { threads: { maxConcurrentPerBot } })).status).toBe(400);
     }
