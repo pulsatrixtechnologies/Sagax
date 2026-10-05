@@ -434,6 +434,10 @@ async function main() {
         }
         if (!item.surface.keepPointer) await ctx.moveAway();
         await settle(page, item.surface.settleMs ?? 0);
+        // a remount between the surface and the shot draws a blank page: retry
+        if (!(await page.eval(`Boolean(document.querySelector("[data-app-shell]") && document.body.innerText.trim().length > 0)`))) {
+          throw new Error("blank page at capture time");
+        }
         writeFileSync(join(REFS, `${file}.png`), await page.screenshot());
         if (withDom) {
           const dom = await page.eval(MEASURE);
