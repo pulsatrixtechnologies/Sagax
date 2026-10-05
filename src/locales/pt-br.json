@@ -1913,5 +1913,12 @@
   "releaseNotes.whatsNew": "Novidades da {version}",
   "releaseNotes.menu": "Notas de versão",
   "releaseNotes.close": "Fechar",
-  "releaseNotes.whatsNewEmpty": "As notas da versão {version} não estão nesta cópia do Sagax."
+  "releaseNotes.whatsNewEmpty": "As notas da versão {version} não estão nesta cópia do Sagax.",
+  "settings.advancedMode.title": "Modo avançado",
+  "settings.advancedMode.subtitle": "Mostra os controles técnicos. O que você salvou fica.",
+  "approvalMode.simple.ask": "Perguntar primeiro",
+  "approvalMode.simple.askHint": "O bot para e pergunta antes de agir.",
+  "approvalMode.simple.decide": "Decidir por mim",
+  "approvalMode.simple.decideHint": "O bot age e consulta quando hesita.",
+  "approvalMode.simple.custom": "Um nível personalizado está salvo. Ele fica até você escolher um destes."
 }

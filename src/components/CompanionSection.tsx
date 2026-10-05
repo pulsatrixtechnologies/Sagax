@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { useAdvancedMode } from "@/lib/interface-mode";
 import { t } from "@/lib/i18n";
 import {
   Cloud,
@@ -139,6 +140,7 @@ const endpointHost = (url: string): string => {
 /** `focusRequest` counts up when "Connect your phone" opened Settings here:
  * the phone flow scrolls into view with focus on Pair your phone. */
 export function CompanionSection({ profileEmail = "", focusRequest = 0 }: { profileEmail?: string; focusRequest?: number }) {
+  const advanced = useAdvancedMode();
   const c = usePhoneSetupController(profileEmail);
   const state = c.state;
   const pairingFlow = useRef<HTMLDivElement>(null);
@@ -336,7 +338,7 @@ export function CompanionSection({ profileEmail = "", focusRequest = 0 }: { prof
         )}
       </Card>
 
-      <details className="rounded-xl border border-hairline/40 bg-card">
+      {advanced && <details className="rounded-xl border border-hairline/40 bg-card">
         <summary className="cursor-pointer px-4 py-3.5 text-[13px] font-medium text-ink">
           {t("remote.advanced")}
         </summary>
@@ -558,7 +560,7 @@ export function CompanionSection({ profileEmail = "", focusRequest = 0 }: { prof
           )}
           {(c.error || state.error) && <div className="text-[12px] text-danger">{c.error ?? state.error}</div>}
         </div>
-      </details>
+      </details>}
     </div>
   );
 }

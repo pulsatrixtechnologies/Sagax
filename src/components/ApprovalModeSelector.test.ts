@@ -1,4 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+
+vi.mock("@/lib/interface-mode", () => ({ useAdvancedMode: () => true, setAdvancedMode: () => {} }));
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { FullAccessWarning } from "./FullAccessWarning";

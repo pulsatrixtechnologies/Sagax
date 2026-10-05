@@ -1899,5 +1899,12 @@
   "releaseNotes.whatsNew": "{version} में नया क्या है",
   "releaseNotes.menu": "रिलीज़ नोट",
   "releaseNotes.close": "बंद करें",
-  "releaseNotes.whatsNewEmpty": "{version} के रिलीज़ नोट Sagax की इस प्रति में नहीं हैं।"
+  "releaseNotes.whatsNewEmpty": "{version} के रिलीज़ नोट Sagax की इस प्रति में नहीं हैं।",
+  "settings.advancedMode.title": "उन्नत मोड",
+  "settings.advancedMode.subtitle": "तकनीकी नियंत्रण दिखाएँ. सहेजे विकल्प बने रहते हैं.",
+  "approvalMode.simple.ask": "पहले मुझसे पूछें",
+  "approvalMode.simple.askHint": "बॉट रुककर काम से पहले पूछता है.",
+  "approvalMode.simple.decide": "मेरे लिए तय करें",
+  "approvalMode.simple.decideHint": "बॉट काम करता है और संदेह पर पूछता है.",
+  "approvalMode.simple.custom": "एक कस्टम स्तर सहेजा है. यह तब तक रहता है जब तक आप इनमें से एक चुनें."
 }

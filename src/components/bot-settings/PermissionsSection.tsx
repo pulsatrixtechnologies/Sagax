@@ -15,6 +15,7 @@ import { useEffect, useState } from "react";
 import { Star } from "lucide-react";
 
 import { canEditBotField, canStepPrimary } from "@/lib/bot-capabilities";
+import { useAdvancedMode } from "@/lib/interface-mode";
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
 import { useOwnerOrAdmin } from "@/lib/use-owner-or-admin";
@@ -40,6 +41,7 @@ export function PermissionsSection({
   bot: Bot;
   derived: ReturnType<typeof useBotSettingsDerived>;
 }) {
+  const advanced = useAdvancedMode();
   const { patch, engine, canCoordinate, approvalMode, trustedModesAvailable, sectionName, currentChief } = derived;
   const { state, dispatch } = useStore();
   const ownerOrAdmin = useOwnerOrAdmin();
@@ -90,11 +92,15 @@ export function PermissionsSection({
   const showContact = canEditBotField(state.config, bot, "approvePeerComms", { draft });
   const showTeams = canEditBotField(state.config, bot, "managedSections", { draft });
   const showOutbound = canEditBotField(state.config, bot, "outbound", { draft });
-  if (!showPrimary && !showApproval && !showContact && !showOutbound) return null;
+  // Simple keeps the approval level and hides the rest. Values stay.
+  const showPrimaryUi = advanced && showPrimary;
+  const showContactUi = advanced && showContact;
+  const showOutboundUi = advanced && showOutbound;
+  if (!showPrimaryUi && !showApproval && !showContactUi && !showOutboundUi) return null;
 
   return (
     <div className="flex flex-col gap-4">
-      {showPrimary && <div
+      {showPrimaryUi && <div
         className={cn(
           "rounded-xl border border-hairline/40 p-4",
         )}
@@ -139,7 +145,7 @@ export function PermissionsSection({
         {showTeams && bot.chiefOfStaff && <ProposalStatus bot={bot} kind="owner" />}
       </div>}
 
-      {showContact && <div className="flex items-center justify-between gap-4 rounded-xl border border-hairline/40 p-4">
+      {showContactUi && <div className="flex items-center justify-between gap-4 rounded-xl border border-hairline/40 p-4">
         <div>
           <div className="text-[13px] font-medium text-ink">{t("botPanel.permissions.ask")}</div>
           <div className="mt-0.5 text-[13px] text-ink-secondary">
@@ -177,15 +183,15 @@ export function PermissionsSection({
             disabled={Boolean(bot.busy)}
             trustedModesAvailable={trustedModesAvailable}
             orgFullAccess={orgFullAccess}
-            onManageCommandAllowlist={!draft && ownerOrAdmin === true ? () => setCommandAllowlistTarget({ botId: bot.id, botName: bot.name }) : undefined}
+            onManageCommandAllowlist={advanced && !draft && ownerOrAdmin === true ? () => setCommandAllowlistTarget({ botId: bot.id, botName: bot.name }) : undefined}
           />
         </div>
-        {!draft && approvalMode === "full" && trustedModesAvailable && <button
+        {!draft && advanced && approvalMode === "full" && trustedModesAvailable && <button
           type="button" disabled={Boolean(bot.busy)}
           className="mt-3 text-[13px] text-ink-secondary hover:text-ink hover:underline disabled:opacity-40"
           onClick={() => { setAllThreads(true); setFullAccessTarget(bot.id); }}
         >{t("botPanel.permissions.applyFull")}</button>}
-        {!draft && ownerOrAdmin === true && <button
+        {!draft && advanced && ownerOrAdmin === true && <button
           type="button"
           className="mt-3 block text-[13px] text-ink-secondary hover:text-ink hover:underline"
           onClick={() => setCommandAllowlistTarget({ botId: bot.id, botName: bot.name })}
@@ -197,7 +203,7 @@ export function PermissionsSection({
         {...commandAllowlistTarget}
         onClose={() => setCommandAllowlistTarget(null)}
       />}
-      {!draft && showOutbound && <OutboundControl key={bot.id} bot={bot} onChange={(outbound) => patch({ outbound })} />}
+      {!draft && showOutboundUi && <OutboundControl key={bot.id} bot={bot} onChange={(outbound) => patch({ outbound })} />}
       <LocalComputerAutoWarning
         open={localAutoWarning !== null}
         onCancel={() => setLocalAutoWarning(null)}

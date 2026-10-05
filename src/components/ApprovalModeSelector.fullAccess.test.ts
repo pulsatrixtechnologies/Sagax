@@ -3,6 +3,8 @@
 import { Children, createElement, isValidElement, type ReactElement, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+
+vi.mock("@/lib/interface-mode", () => ({ useAdvancedMode: () => true, setAdvancedMode: () => {} }));
 import { TriangleAlert } from "lucide-react";
 import type { ApprovalMode } from "../../shared/approval-mode";
 import type { OrgFullAccess } from "@/lib/full-access";

@@ -120,7 +120,7 @@ describe("trust controls in the real renderer", () => {
     expect((await saved()).modelSelection).toEqual(bot.modelSelection);
     await ui("press", "--keys", "Escape");
 
-    await evaluate(`(() => { localStorage.setItem('omb-advanced-mode','1'); window.dispatchEvent(new StorageEvent('storage', {key:'omb-advanced-mode'})); return true; })()`);
+    await evaluate(`(() => { localStorage.setItem('sagax.interfaceMode.v1','advanced'); window.dispatchEvent(new StorageEvent('storage', {key:'sagax.interfaceMode.v1'})); return true; })()`);
     await click("Team map");
     const openMemory = async () => {
       await evaluate(`(() => { const menu = document.querySelector('[data-team-key=""] details'); if (!menu) throw new Error('No General team menu'); if (!menu.open) menu.querySelector('summary').click(); return true; })()`);

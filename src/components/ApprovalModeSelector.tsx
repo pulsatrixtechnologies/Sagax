@@ -4,6 +4,7 @@ import { reportAchievement } from "@/lib/achievements";
 
 import { approvalModeFor, hasNativeAutoReview, supportsApprovalMode, type ApprovalMode } from "../../shared/approval-mode";
 import { cn } from "@/lib/cn";
+import { useAdvancedMode } from "@/lib/interface-mode";
 import { useMenuMotion } from "./MenuMotion";
 import { t } from "@/lib/i18n";
 import type { LocaleKey } from "@/locales";
@@ -116,6 +117,7 @@ export function ApprovalModeSelector({
   orgFullAccess?: OrgFullAccess;
   onManageCommandAllowlist?: () => void;
 }) {
+  const advanced = useAdvancedMode();
   const [open, setOpen] = useState(false);
   const motion = useMenuMotion(open);
   const wrapperRef = useRef<HTMLDivElement>(null);
@@ -178,6 +180,48 @@ export function ApprovalModeSelector({
       {t("commandAllowlist.title")}
     </button>
   );
+  // Simple offers two choices and leaves any other saved level untouched
+  // until the person picks one of them. Decide is absent when this engine
+  // has no auto mode (hiding, not a disabled row).
+  if (!advanced) {
+    const canDecide = visibleOptions.some((option) => option.mode === "auto");
+    const known = mode === "ask" || (mode === "auto" && canDecide);
+    const choiceClass = cn(
+      "flex min-w-0 flex-1 flex-col rounded-lg border px-2.5 py-1.5 text-left",
+      "border-hairline/40 bg-inset hover:bg-raised disabled:cursor-not-allowed disabled:opacity-45",
+    );
+    return (
+      <div data-approval-simple className={cn("flex flex-col gap-1", wide ? "w-full" : "max-w-full")}>
+        <div className={cn("flex gap-1", wide ? "flex-col" : "flex-wrap")}>
+          <button
+            type="button"
+            data-approval-choice="ask"
+            aria-pressed={known && mode === "ask"}
+            disabled={disabled}
+            onClick={() => { if (!disabled) onSelect("ask"); }}
+            className={cn(choiceClass, known && mode === "ask" && "border-accent/40 bg-accent/10")}
+          >
+            <span className="text-[13px] leading-[18px] text-ink">{t("approvalMode.simple.ask")}</span>
+            <span className="text-[11.5px] leading-4 text-ink-tertiary">{t("approvalMode.simple.askHint")}</span>
+          </button>
+          {canDecide && (
+            <button
+              type="button"
+              data-approval-choice="auto"
+              aria-pressed={known && mode === "auto"}
+              disabled={disabled}
+              onClick={() => { if (!disabled) onSelect("auto"); }}
+              className={cn(choiceClass, known && mode === "auto" && "border-accent/40 bg-accent/10")}
+            >
+              <span className="text-[13px] leading-[18px] text-ink">{t("approvalMode.simple.decide")}</span>
+              <span className="text-[11.5px] leading-4 text-ink-tertiary">{t("approvalMode.simple.decideHint")}</span>
+            </button>
+          )}
+        </div>
+        {!known && <p data-approval-custom className="text-[12px] leading-4 text-ink-secondary">{t("approvalMode.simple.custom")}</p>}
+      </div>
+    );
+  }
   return (
     <div className={cn("relative flex items-center", wide && "w-full")} ref={wrapperRef}>
       <button

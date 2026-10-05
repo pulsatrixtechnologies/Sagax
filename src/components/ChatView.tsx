@@ -36,6 +36,7 @@ import {
   type InstanceInfo,
   type Message,
 } from "@/state/store";
+import { useAdvancedMode } from "@/lib/interface-mode";
 import { EngineSetup } from "./EngineSetup";
 import { CHATGPT_USAGE_URL } from "./ChatGptPlanStatus";
 import { openExternalLink } from "@/lib/app-links";
@@ -997,6 +998,7 @@ function PinnedBanner({
 
 export function ChatView({ bot: profile }: { bot: Bot }) {
   const showInspector = useShowInspectorButton();
+  const advanced = useAdvancedMode();
   const bot = useMemo(() => currentTaskBot(profile), [profile]);
   const { state, dispatch } = useStore();
   const remoteClient = window.ogb?.remoteClient?.active === true;
@@ -1388,7 +1390,7 @@ export function ChatView({ bot: profile }: { bot: Bot }) {
           <TaskPicker bot={bot} />
           {/* Share, Inspector and the panel toggle move into the bot panel's
               top bar while it is open, the way Grok Bot's do. */}
-          {!remoteClient && !panelOpen && showInspector && <button
+          {!remoteClient && !panelOpen && showInspector && advanced && <button
             onClick={() => dispatch({ type: "toggleInspector" })}
             aria-label={t("chat.inspector")}
             aria-pressed={state.inspectorOpen}

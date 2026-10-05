@@ -484,6 +484,12 @@ export async function launchUi(
     opened = { binary, env };
     await agentBrowser(binary, env, ["open", preview.previewUrl], 120_000);
     checkpoint();
+    await agentBrowser(binary, env, ["wait", "--load", "networkidle"], 60_000);
+    checkpoint();
+    // The product default is Simple. These fixtures were written against the
+    // full UI, so the session opts into Advanced once the page is listening.
+    await agentBrowser(binary, env, ["eval", "localStorage.setItem('sagax.interfaceMode.v1','advanced'); window.dispatchEvent(new StorageEvent('storage', {key:'sagax.interfaceMode.v1', newValue:'advanced'})); true"], 30_000);
+    checkpoint();
     const handle: UiHandle = {
       url: fixture.info.url,
       previewUrl: preview.previewUrl,

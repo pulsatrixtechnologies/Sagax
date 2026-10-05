@@ -39,6 +39,8 @@ export const USER_PREFERENCE_KEYS = [
   "sagax.sidebarSections.v1",
   // privacy
   "omb-analytics-opt-out",
+  // Simple or Advanced (src/lib/interface-mode.ts). "simple" | "advanced".
+  "sagax.interfaceMode.v1",
   // where bots work for this person (organization server: their computer
   // through the desktop app, or their server environment; shared/bot-workplace.ts)
   "sagax.botWorkplace.v1",

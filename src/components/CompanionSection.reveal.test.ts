@@ -4,12 +4,13 @@ import { beforeEach, expect, it, vi } from "vitest";
 
 // Connect your phone on this computer: the phone flow reveals itself once the
 // companion's state is read, once per request. React's hooks are replayed by hand.
-const f = vi.hoisted(() => ({ values: [] as unknown[], index: 0, effects: [] as EffectCallback[], revealed: [] as unknown[], state: null as object | null }));
+const f = vi.hoisted(() => ({ values: [] as unknown[], index: 0, effects: [] as EffectCallback[], revealed: [] as unknown[], state: null as object | null, advanced: true }));
 vi.mock("react", async (original) => ({
   ...await original<typeof import("react")>(),
   useRef: (initial: unknown) => { const index = f.index++; if (!(index in f.values)) f.values[index] = { current: initial }; return f.values[index]; },
   useEffect: (effect: EffectCallback) => { f.effects.push(effect); },
 }));
+vi.mock("@/lib/interface-mode", () => ({ useAdvancedMode: () => f.advanced, setAdvancedMode: () => {} }));
 vi.mock("../lib/phone-pairing", () => ({ revealPhonePairing: (root: unknown) => { if (!root) return false; f.revealed.push(root); return true; } }));
 vi.mock("@/state/store", () => ({ useStore: () => ({ state: { config: {} } }) }));
 vi.mock("./PhoneSetupFlow", () => ({
@@ -29,7 +30,7 @@ function render(focusRequest: number) {
 }
 const flow = () => f.values[0] as { current: unknown };
 
-beforeEach(() => { f.values = []; f.index = 0; f.effects = []; f.revealed = []; f.state = null; });
+beforeEach(() => { f.values = []; f.index = 0; f.effects = []; f.revealed = []; f.state = null; f.advanced = true; });
 
 it("waits for the phone flow to be drawn, then reveals it once per request", () => {
   render(1);
@@ -51,6 +52,16 @@ it("a plain visit reveals nothing", () => {
   f.values[0] = { current: { id: "flow" } };
   render(0);
   expect(f.revealed).toEqual([]);
+});
+
+it("hides remote-access plumbing in Simple and keeps the paired device list", () => {
+  f.advanced = false;
+  f.state = { enabled: true, devices: [{ id: "phone-1", name: "Ada", lastSeenAt: Date.now(), cloudDesktopAccess: true, browserControlAccess: false }], port: 8810 };
+  const markup = renderToStaticMarkup(createElement(() => CompanionSection({})));
+  expect(markup).toContain('aria-label="Computer view access for Ada"');
+  expect(markup).not.toContain("Browser control access for Ada");
+  expect(markup).not.toContain("Advanced &amp; troubleshooting");
+  expect(markup).not.toContain("Advanced & troubleshooting");
 });
 
 it("keeps browser access separately off until granted, including old sidecar snapshots", () => {

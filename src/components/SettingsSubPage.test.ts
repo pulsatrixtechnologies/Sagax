@@ -4,6 +4,8 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+vi.mock("@/lib/interface-mode", () => ({ useAdvancedMode: () => true, setAdvancedMode: () => {} }));
 import { initialState, reducer, type AppSettingsSection } from "@/state/store";
 import { setLocale } from "@/lib/i18n";
 import { createAboutMeDraft } from "./about-me-draft";

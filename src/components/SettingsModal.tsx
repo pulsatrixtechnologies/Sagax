@@ -66,6 +66,8 @@ import { AppIconPicker, appIconAvailable } from "./settings/AppIconPicker";
 import { WorkspaceBackupSettings } from "./WorkspaceBackupSettings";
 import { CompanyBackupSettings } from "./CompanyBackupSettings";
 import { cn } from "@/lib/cn";
+import { setAdvancedMode, useAdvancedMode } from "@/lib/interface-mode";
+import { simpleHidesSettingsSection } from "@/lib/interface-visibility";
 import { setNotificationSounds, useNotificationSounds } from "@/lib/notification-preferences";
 import { setShowThreads, useShowThreads } from "@/lib/thread-preferences";
 import { parseSidebarDensity, setSidebarDensity, SIDEBAR_DENSITIES, useSidebarDensity, type SidebarDensity } from "@/lib/sidebar-preferences";
@@ -88,7 +90,7 @@ export const SECTIONS: Array<{
   { id: "general", labelKey: "settings.section.general", icon: User, keywords: ["profile", "name", "email", "about me", "about", "suggestions", "suggested", "memory", "updates", "effort", "new bots", "reasoning", "threads", "parallel", "concurrency", "cleanup", "retention", "event log", "event-log", "log size", "automatic recovery", "backup model", "fallback", "routines", "conversation", "schedule"] },
   { id: "organization", labelKey: "settings.section.organization", icon: Building2, keywords: ["company", "organization", "organisation", "sign in", "enroll", "managed", "models", "disconnect", "workspace", "cloud", "hosted", "vps", "server", "servers", "connect", "pair", "switch", "local"] },
   { id: "cloudAccount", labelKey: "settings.section.cloudAccount", icon: User, keywords: ["cloud", "account", "personal", "sign in", "pro", "subscription", "billing"] },
-  { id: "appearance", labelKey: "settings.section.appearance", icon: Palette, keywords: ["skin", "theme", "appearance", "tools", "tool calls", "threads", "show threads", "hide threads", "sidebar", "hidden", "hide", "show", "density", "compact", "comfortable", "avatars", "display", "run", "this run", "run card", "commands", "notifications", "sound", "sounds", "mute", "silent", "chime", "mascot", "owl", "desktop", "fly", "floating", "app icon", "dock", "icon", "taskbar"] },
+  { id: "appearance", labelKey: "settings.section.appearance", icon: Palette, keywords: ["skin", "theme", "appearance", "advanced", "simple", "mode", "tools", "tool calls", "threads", "show threads", "hide threads", "sidebar", "hidden", "hide", "show", "density", "compact", "comfortable", "avatars", "display", "run", "this run", "run card", "commands", "notifications", "sound", "sounds", "mute", "silent", "chime", "mascot", "owl", "desktop", "fly", "floating", "app icon", "dock", "icon", "taskbar"] },
   { id: "achievements", labelKey: "settings.section.achievements", icon: Trophy, keywords: ["achievements", "trophies", "trophy", "points", "gamerscore", "level", "unlock", "succès", "trophées"] },
   { id: "experimental", labelKey: "settings.section.experimental", icon: FlaskConical, keywords: ["early", "preview", "learn", "skill", "authoring", "browser", "profiles"] },
   { id: "connections", labelKey: "settings.section.connections", icon: KeyRound, keywords: ["keys", "api", "api key", "api keys", "connections", "composio", "box", "xai", "mistral", "vps", "router", "openrouter", "base url", "openai", "anthropic", "groq", "opencode", "provider"] },
@@ -914,8 +916,22 @@ function DiagnosticsRow() {
   );
 }
 
+function InterfaceModeRow() {
+  const advanced = useAdvancedMode();
+  return (
+    <SettingRow title={t("settings.advancedMode.title")} subtitle={t("settings.advancedMode.subtitle")} scope="me">
+      <Switch
+        checked={advanced}
+        aria-label={t("settings.advancedMode.title")}
+        onClick={() => setAdvancedMode(!advanced)}
+      />
+    </SettingRow>
+  );
+}
+
 export function SettingsModal() {
   const { state, dispatch } = useStore();
+  const advanced = useAdvancedMode();
   const retroSkin = useRetroSkin();
   const remoteActive = window.ogb?.remoteClient?.active === true;
   // "Connect your phone" focuses the pairing this window can do: this
@@ -972,7 +988,9 @@ export function SettingsModal() {
     // the activity log belongs to a workspace served to a browser, and to its admins
     .filter((entry) => entry.id !== "activity" || (servedPage() && ownerOrAdmin === true))
     // Installation writes the server refuses with 403: hide the section.
-    .filter((entry) => !memberHidesSection(entry.id, { editConfig, manageComputers, viewUsage, manageBackups, organization }));
+    .filter((entry) => !memberHidesSection(entry.id, { editConfig, manageComputers, viewUsage, manageBackups, organization }))
+    // Simple hides technical sections. Their saved values stay.
+    .filter((entry) => advanced || !simpleHidesSettingsSection(entry.id));
   const visibleSections = availableSections.filter((entry) => sectionMatches(entry, q));
   const sectionLabelKey = SECTIONS.find((entry) => entry.id === section)?.labelKey;
   const subPageId = state.appSettingsSubPage;
@@ -1177,14 +1195,14 @@ export function SettingsModal() {
                 )}
                 <div className="rounded-[14px] border-[0.5px] border-border py-1">
                   <LanguageRow />
-                  {editConfig && <DefaultBotSettings />}
+                  {advanced && editConfig && <DefaultBotSettings />}
                 </div>
-                {!remoteActive && editConfig && (
+                {advanced && !remoteActive && editConfig && (
                   <div className="rounded-[14px] border-[0.5px] border-border py-1">
                     <RoutinesInConversationRow />
                   </div>
                 )}
-                {editConfig && (
+                {advanced && editConfig && (
                   <Card
                     collapsible
                     scope="installation"
@@ -1197,20 +1215,23 @@ export function SettingsModal() {
                     <RoomTurnTimeoutSettings />
                   </Card>
                 )}
-                {editConfig && <ThreadConcurrencySettings />}
-                {editConfig && <AutomaticRecoverySettings />}
-                {editConfig && <ThreadCleanupSettings />}
+                {advanced && editConfig && <ThreadConcurrencySettings />}
+                {advanced && editConfig && <AutomaticRecoverySettings />}
+                {advanced && editConfig && <ThreadCleanupSettings />}
                 <div className="rounded-[14px] border-[0.5px] border-border py-1">
                   {!remoteActive && <ReplayTourRow />}
                   <UpdatesRow />
-                  <PrereleaseRow />
-                  <DiagnosticsRow />
+                  {advanced && <PrereleaseRow />}
+                  {advanced && <DiagnosticsRow />}
                 </div>
               </>
             )}
 
             {section === "appearance" && (
               <>
+                <div className="rounded-[14px] border-[0.5px] border-border py-1">
+                  <InterfaceModeRow />
+                </div>
                 <Card
                   collapsible
                   scope="me"
@@ -1236,14 +1257,14 @@ export function SettingsModal() {
                   <FontRow />
                   <SidebarDensityRow />
                   <SidebarLogoRow />
-                  <InspectorButtonRow />
+                  {advanced && <InspectorButtonRow />}
                   <ShowThreadsRow />
                   <SidebarHiddenSettings />
                   <NotificationSoundsRow />
                   <FloatingFlyAwayRow />
                   <FloatingLivelinessRow />
-                  {!remoteActive && editConfig && <ToolCallsRow />}
-                  <RunCardRow />
+                  {advanced && !remoteActive && editConfig && <ToolCallsRow />}
+                  {advanced && <RunCardRow />}
                 </div>
               </>
             )}

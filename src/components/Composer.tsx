@@ -9,6 +9,8 @@ import { useMenuMotion } from "./MenuMotion";
 import { activeLocale, t } from "@/lib/i18n";
 import { consumeRetroCommand, retroSignal } from "@/lib/retro98";
 import { reportAchievement } from "@/lib/achievements";
+import { useAdvancedMode } from "@/lib/interface-mode";
+import { simpleKeepsComposerItem } from "@/lib/interface-visibility";
 import { useOwnerOrAdmin } from "@/lib/use-owner-or-admin";
 
 import {
@@ -142,6 +144,7 @@ export function Composer({
   const locked = Boolean(bot?.awaitingThreadSnapshot);
   const { state, dispatch } = useStore();
   const ownerOrAdmin = useOwnerOrAdmin();
+  const advanced = useAdvancedMode();
   const { threads, currentBotId } = useThreadRefs();
   const { capabilities } = useDesktopCapabilities();
   const remoteClient = window.ogb?.remoteClient?.active === true;
@@ -386,17 +389,15 @@ export function Composer({
       label: "/setup",
       description: t("composer.command.setupDesc"),
     });
-    if (group) {
-      // after a leading mention only that bot's engine commands make sense
-      const sets: GroupEngineCommands[] = groupTargets.map((target) => ({
+    const menu = group
+      ? composerGroupCommandMenu(groupSlashBotId ? [] : available, groupTargets.map((target): GroupEngineCommands => ({
         bot: { id: target.bot.id, name: target.bot.name },
         commands: groupEngineCommands.lists.find((list) => list.botId === target.bot.id)?.answer.commands ?? [],
         mention: target.mention,
-      }));
-      return composerGroupCommandMenu(groupSlashBotId ? [] : available, sets, slash.query);
-    }
-    return composerCommandMenu(available, engineCommands.answer?.commands ?? [], slash.query);
-  }, [slash, dismissedSlashAt, group, members, bot, state.config, state.instances, locale, engineCommands.answer, groupTargets, groupEngineCommands.lists, groupSlashBotId]);
+      })), slash.query)
+      : composerCommandMenu(available, engineCommands.answer?.commands ?? [], slash.query);
+    return advanced ? menu : menu.filter(simpleKeepsComposerItem);
+  }, [slash, dismissedSlashAt, group, members, bot, state.config, state.instances, locale, engineCommands.answer, groupTargets, groupEngineCommands.lists, groupSlashBotId, advanced]);
   const commandPickerOpen = commandCandidates.length > 0;
 
   // Tag another bot; the agent reaches it via ask_bot.
@@ -1117,10 +1118,10 @@ export function Composer({
                   disabled={Boolean(modeBot.busy)}
                   trustedModesAvailable={trustedThreadAccess}
                   orgFullAccess={orgFullAccess}
-                  onManageCommandAllowlist={ownerOrAdmin === true ? () => setCommandAllowlistTarget({ botId: modeBot.id, botName: modeBot.name, threadId: modeBot.threadId }) : undefined}
+                  onManageCommandAllowlist={advanced && ownerOrAdmin === true ? () => setCommandAllowlistTarget({ botId: modeBot.id, botName: modeBot.name, threadId: modeBot.threadId }) : undefined}
                 />
               )}
-              {modeBot && !remoteClient && (
+              {advanced && modeBot && !remoteClient && (
                 <PlaceChip
                   bot={modeBot}
                   task={composerTask}
