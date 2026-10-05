@@ -5,7 +5,8 @@ describe("bundledReleaseCatalog", () => {
   it("bundles the shipped release notes, including 0.4.4", () => {
     const catalog = bundledReleaseCatalog();
     expect(catalog["0.4.4"]).toContain("## English");
-    expect(Object.keys(catalog).sort()).toEqual(["0.4.0", "0.4.1", "0.4.2", "0.4.3", "0.4.4"]);
+    expect(catalog["0.4.6"]).toContain("## English");
+    expect(Object.keys(catalog).sort()).toEqual(["0.4.0", "0.4.1", "0.4.2", "0.4.3", "0.4.4", "0.4.5", "0.4.6"]);
   });
 
   it("reads a version from the file name and picks the language section", () => {
