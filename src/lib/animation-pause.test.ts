@@ -24,7 +24,7 @@ afterEach(() => {
 });
 
 describe("animationsPaused", () => {
-  it("pauses a hidden main window and a blurred one", () => {
+  it("pauses a hidden or minimized window only", () => {
     const doc: FakeDoc = {
       hidden: true,
       visibilityState: "hidden",
@@ -37,29 +37,9 @@ describe("animationsPaused", () => {
     doc.hidden = false;
     doc.visibilityState = "visible";
     expect(animationsPaused()).toBe(false);
-    doc.hasFocus = () => false;
-    expect(animationsPaused()).toBe(true);
   });
 
-  it("does not treat blur as a pause for a floating mascot or Hibou 98", () => {
-    const doc: FakeDoc = {
-      hidden: false,
-      visibilityState: "visible",
-      documentElement: { dataset: { floatingBot: "" } },
-      hasFocus: () => false,
-      addEventListener: vi.fn(),
-    };
-    stub(doc);
-    expect(animationsPaused()).toBe(false);
-    delete doc.documentElement.dataset.floatingBot;
-    doc.documentElement.dataset.retroDetached = "";
-    expect(animationsPaused()).toBe(false);
-    doc.hidden = true;
-    doc.visibilityState = "hidden";
-    expect(animationsPaused()).toBe(true);
-  });
-
-  it("sets the CSS pause attribute while blurred, and clears it on focus", () => {
+  it("keeps a visible window that lost focus animating", () => {
     const doc: FakeDoc = {
       hidden: false,
       visibilityState: "visible",
@@ -68,16 +48,30 @@ describe("animationsPaused", () => {
       addEventListener: vi.fn(),
     };
     stub(doc);
+    expect(animationsPaused()).toBe(false);
+    doc.documentElement.dataset.floatingBot = "";
+    expect(animationsPaused()).toBe(false);
+  });
+
+  it("sets the CSS pause attribute while hidden, and clears it when shown", () => {
+    const doc: FakeDoc = {
+      hidden: true,
+      visibilityState: "hidden",
+      documentElement: { dataset: {} },
+      hasFocus: () => true,
+      addEventListener: vi.fn(),
+    };
+    stub(doc);
     applyAnimationPauseAttribute();
     expect(doc.documentElement.dataset.animationsPaused).toBe("");
-    doc.hasFocus = () => true;
+    doc.hidden = false;
+    doc.visibilityState = "visible";
     applyAnimationPauseAttribute();
     expect(doc.documentElement.dataset.animationsPaused).toBeUndefined();
     // Reduced motion must not pause play-state: entrance animations would
     // stay stuck on their first keyframe. The stylesheets turn them off.
     resetAnimationPauseForTests();
     stub(doc, true);
-    doc.hasFocus = () => true;
     applyAnimationPauseAttribute();
     expect(doc.documentElement.dataset.animationsPaused).toBeUndefined();
   });

@@ -1,8 +1,8 @@
-/** Pause display-rate animation when the user is not looking.
+/** Pause display-rate animation when the window cannot be seen.
  *
- * Hidden or minimized: always. Blurred but still on screen: the main window
- * only. A floating mascot and the detached Hibou 98 assistant are unfocused
- * for their whole life, so blur is not a pause for them.
+ * Hidden or minimized only. A window that is visible but not focused (on a
+ * second screen, beside the app the person is typing in) keeps animating, so
+ * a working bot still looks alive there; a resting face is already still.
  * prefers-reduced-motion stays on the stylesheets (`animation: none`).
  * Pausing play-state instead would freeze entrance animations on their
  * first keyframe.
@@ -11,23 +11,10 @@
 let watching = false;
 const listeners = new Set<() => void>();
 
-function backgroundPet(): boolean {
-  const root = typeof document === "undefined" ? null : document.documentElement;
-  if (!root) return false;
-  return "floatingBot" in root.dataset || "retroDetached" in root.dataset;
-}
-
 /** True when this document should not paint a frame loop. */
 export function animationsPaused(): boolean {
   if (typeof document === "undefined") return false;
-  if (document.hidden || document.visibilityState === "hidden") return true;
-  if (backgroundPet()) return false;
-  if (typeof document.hasFocus !== "function") return false;
-  try {
-    return document.hasFocus() === false;
-  } catch {
-    return false;
-  }
+  return document.hidden || document.visibilityState === "hidden";
 }
 
 export function applyAnimationPauseAttribute(): void {
@@ -47,10 +34,6 @@ function ensureWatching() {
   if (watching || typeof document === "undefined") return;
   watching = true;
   document.addEventListener("visibilitychange", onChange);
-  if (typeof window !== "undefined") {
-    window.addEventListener("focus", onChange);
-    window.addEventListener("blur", onChange);
-  }
   applyAnimationPauseAttribute();
 }
 

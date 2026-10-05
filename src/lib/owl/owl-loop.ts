@@ -71,7 +71,7 @@ function prefersReducedMotion(): boolean {
 }
 
 function frame(now: number) {
-  // A hidden, minimized, or blurred window must not keep the frame clock.
+  // A hidden or minimized window must not keep the frame clock.
   if (animationsPaused()) {
     rafId = 0;
     return;

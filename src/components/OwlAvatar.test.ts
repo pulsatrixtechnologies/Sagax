@@ -273,7 +273,7 @@ describe("the shared owl loop", () => {
     c.destroy();
   });
 
-  it("schedules no frames across three idle seconds while hidden or blurred", () => {
+  it("schedules no frames while hidden, and keeps a blurred visible window running", () => {
     const raf = stubRaf();
     const hidden = stubDocument({ hidden: true, focused: true });
     const hiddenOwl = createOwlController(rig(), { reducedMotion: false });
@@ -288,15 +288,11 @@ describe("the shared owl loop", () => {
     frames.length = 0;
     raf.mockClear();
 
+    // A visible window that lost focus keeps its loop: a working bot on a
+    // second screen still looks alive.
     stubDocument({ hidden: false, focused: false });
     const blurred = createOwlController(rig(), { reducedMotion: false });
-    let steps = 0;
-    while (frames.length > 0 && steps < 180) {
-      step(steps * 16);
-      steps += 1;
-    }
-    expect(steps).toBe(0);
-    expect(raf).not.toHaveBeenCalled();
+    expect(raf).toHaveBeenCalledTimes(1);
     blurred.destroy();
   });
 
