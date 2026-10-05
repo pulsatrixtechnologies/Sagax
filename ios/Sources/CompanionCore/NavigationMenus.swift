@@ -289,19 +289,22 @@ public enum NavigationMenus {
     /// Connected apps and Templates while Settings > Experimental turns them
     /// on (`connectedAppsEnabled`, `templatesEnabled`).
     public static func places(gate: SurfaceGate, connected: Bool, features: ServerFeatures?) -> [HomePlace] {
-        guard connected else { return [] }
-        var places: [HomePlace] = []
-        if gate.allows(.teamMap) { places.append(.teamMap) }
-        places.append(.automations)
-        if features?.connectedApps == true, gate.allows(.connectedApps) { places.append(.connectedApps) }
-        if features?.templates == true, gate.allows(.templates) { places.append(.templates) }
-        return places
+        // one rule with the iPad's sidebar foot (DesktopSidebarPlaces)
+        DesktopSidebarPlaces.visible(connected: connected, gate: gate, features: features).map { place in
+            switch place {
+            case .teamMap: .teamMap
+            case .automations: .automations
+            case .connectedApps: .connectedApps
+            case .templates: .templates
+            }
+        }
     }
 
     /// Settings in the desktop's order (`SECTIONS`), the sections a phone
     /// pairing can use: General, Organization, Appearance, Achievements,
     /// Experimental, Plugins (where the desktop keeps its connections),
-    /// Pair devices, Computer, Usage.
+    /// Pair devices, Computer, Usage. The desktop's My connections (an
+    /// organization person's own GitHub and MCP tokens) has no phone page yet.
     public static func settings(gate: SurfaceGate, connected: Bool, achievementsAvailable: Bool) -> [PhoneSettingsSection] {
         var sections: [PhoneSettingsSection] = [.general]
         if gate.allows(.organizationSettings) { sections.append(.organization) }
