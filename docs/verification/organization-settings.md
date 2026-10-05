@@ -187,8 +187,9 @@ engine account or paid model call was used.
   personal bot's selection untouched and keeps a Company bot's stable id for
   the next sign-in.
 - `pnpm vitest run src/lib/company-models.test.ts
-  src/components/CompanyModels.test.ts
-  src/components/OrganizationSettings.test.ts`: the connected panel shows each
+  src/components/OrganizationSettings.test.ts`: the Company models panel
+  and its test were removed with the hosted portal. The rest of this note
+  describes that retired panel. The connected panel shows each
   Company engine as ready, blocked by policy, or needing its CLI installed
   (reusing the engine's own install action, without a personal sign-in). The
   inline **Use {Company model} for N bots that can't run** button counts only
