@@ -51709,6 +51709,94 @@
           }
         }
       }
+    },
+    "One per person": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "One per person"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Un par personne"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Um por pessoa"
+          }
+        }
+      }
+    },
+    "This is your primary bot, your main contact. It coordinates your other bots and specialists (home team: %@), then combines their work into one answer.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This is your primary bot, your main contact. It coordinates your other bots and specialists (home team: %@), then combines their work into one answer."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "C'est votre bot principal, votre contact principal. Il coordonne vos autres bots et spécialistes (équipe d'attache : %@), puis réunit leur travail en une seule réponse."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Este é o seu bot principal, o seu contato principal. Ele coordena seus outros bots e especialistas (equipe de origem: %@) e depois junta o trabalho deles em uma só resposta."
+          }
+        }
+      }
+    },
+    "Make this bot your primary bot and hand the role over from %@.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Make this bot your primary bot and hand the role over from %@."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Faire de ce bot votre bot principal et reprendre le rôle de %@."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tornar este bot o seu bot principal e passar o papel de %@ para ele."
+          }
+        }
+      }
+    },
+    "Make this bot your primary bot, your main contact who coordinates your other bots.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Make this bot your primary bot, your main contact who coordinates your other bots."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Faire de ce bot votre bot principal, votre contact principal qui coordonne vos autres bots."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tornar este bot o seu bot principal, o seu contato principal que coordena seus outros bots."
+          }
+        }
+      }
     }
   },
   "version": "1.0"

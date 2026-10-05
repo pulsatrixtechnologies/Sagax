@@ -209,3 +209,72 @@ struct BotPanelOutbound: View {
         }
     }
 }
+
+/// More > Permissions' Primary Bot (`PermissionsSection.tsx`): the orange
+/// star, "Primary Bot" and "One per person", the switch, and the line under
+/// it. Turning it on hands the role over (POST /api/bots/:id/primary) where
+/// the pairing allows it, else sets the bot's own flag; off clears it.
+struct BotPanelPrimaryCard: View {
+    @Environment(\.desktopTheme) private var theme
+    @EnvironmentObject private var session: Session
+    let bot: Bot
+    let canEdit: Bool
+    let sectionName: String
+
+    @State private var working = false
+
+    private var currentPrimary: Bot? {
+        session.state.bots.first { $0.id != bot.id && $0.chiefOfStaff == true && $0.hidden != true }
+    }
+
+    var body: some View {
+        PanelCard {
+            HStack(spacing: 12) {
+                Image(systemName: "star")
+                    .font(.system(size: 15, weight: .medium))
+                    .foregroundStyle(Color(red: 0.98, green: 0.45, blue: 0.09))
+                    .frame(width: 32, height: 32)
+                    .background(theme.control, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                VStack(alignment: .leading, spacing: 0) {
+                    Text("Primary Bot").panelText(13, 19.5, .medium).foregroundStyle(theme.ink)
+                    Text("One per person").panelText(11.5, 17.25).foregroundStyle(theme.inkSecondary)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                PanelSwitch(label: "Primary Bot", isOn: bot.chiefOfStaff == true, disabled: !canEdit || working) { on in
+                    Task { await toggle(on) }
+                }
+            }
+            Text(detail)
+                .panelText(13, 21.125)
+                .foregroundStyle(theme.inkSecondary)
+                .padding(.top, 12)
+        }
+    }
+
+    private var detail: String {
+        if bot.chiefOfStaff == true {
+            return String(localized: "This is your primary bot, your main contact. It coordinates your other bots and specialists (home team: \(sectionName)), then combines their work into one answer.")
+        }
+        if let currentPrimary {
+            return String(localized: "Make this bot your primary bot and hand the role over from \(currentPrimary.name).")
+        }
+        return String(localized: "Make this bot your primary bot, your main contact who coordinates your other bots.")
+    }
+
+    private func toggle(_ on: Bool) async {
+        working = true
+        defer { working = false }
+        guard on, session.surfaceGate.allows(.primaryBot), let client = session.profileClient else {
+            _ = await sendPanelPatch(BotPanelPatch(chiefOfStaff: on), bot: bot, session: session)
+            return
+        }
+        do {
+            let primary = try await client.makePrimaryBot(botId: bot.id)
+            for changed in PrimaryBotRules.withPrimary(session.state.bots, primary: primary) where changed != session.state.bot(changed.id) {
+                session.applyProfileBot(changed)
+            }
+        } catch {
+            session.actionError = error.localizedDescription
+        }
+    }
+}
