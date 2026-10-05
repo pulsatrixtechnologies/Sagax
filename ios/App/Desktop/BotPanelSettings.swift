@@ -196,7 +196,7 @@ struct BotPanelPermissions: View {
     private var level: ApprovalLevel { ApprovalLevel.of(approvalMode: bot.approvalMode, autoApprove: bot.autoApprove) }
     private var sectionName: String {
         let name = bot.section?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        return name.isEmpty ? String(localized: "General") : name
+        return name.isEmpty ? String(localized: "Unassigned") : name
     }
 
     var body: some View {

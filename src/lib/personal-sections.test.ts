@@ -35,7 +35,7 @@ describe("personal sections: create, rename, reorder data, delete", () => {
     prefs = ok(createPersonalSection(prefs, "TEST"));
     expect(personalSectionNames(prefs)).toEqual(["Ventes", "TEST"]);
     expect(createPersonalSection(prefs, "Ventes")).toEqual({ ok: false, code: "exists" });
-    for (const reserved of ["General", "général", "Sans section"]) expect(createPersonalSection(prefs, reserved)).toEqual({ ok: false, code: "reserved" });
+    for (const reserved of ["General", "général", "Sans section", "Unassigned", "Non assigné", "Não atribuído"]) expect(createPersonalSection(prefs, reserved)).toEqual({ ok: false, code: "reserved" });
     expect(createPersonalSection(prefs, "")).toEqual({ ok: false, code: "bad_name" });
     expect(createPersonalSection(prefs, "x".repeat(61))).toEqual({ ok: false, code: "bad_name" });
     prefs = ok(assignToPersonalSection(prefs, itemKey("bot", "b1"), "Ventes"));
@@ -45,7 +45,7 @@ describe("personal sections: create, rename, reorder data, delete", () => {
     expect(renamePersonalSection(prefs, "Nope", "Other")).toEqual({ ok: false, code: "missing" });
   });
 
-  it("files an item in one section at a time; an empty name puts it back in General", () => {
+  it("files an item in one section at a time; an empty name puts it back in Unassigned", () => {
     let prefs = ok(assignToPersonalSection(EMPTY_PERSONAL_SECTIONS, itemKey("bot", "b1"), "Ops"));
     prefs = ok(assignToPersonalSection(prefs, itemKey("group", "g1"), "Ops"));
     prefs = ok(assignToPersonalSection(prefs, itemKey("bot", "b1"), "Ventes"));
@@ -56,7 +56,7 @@ describe("personal sections: create, rename, reorder data, delete", () => {
     expect(personalSectionNames(prefs)).toEqual(["Ops", "Ventes"]);
   });
 
-  it("delete moves the section's items back to General and deletes nothing else", () => {
+  it("delete moves the section's items back to Unassigned and deletes nothing else", () => {
     let prefs = ok(assignToPersonalSection(EMPTY_PERSONAL_SECTIONS, itemKey("bot", "b1"), "TEST"));
     prefs = ok(assignToPersonalSection(prefs, itemKey("group", "dm-bob"), "TEST"));
     type Row = { id: string; name: string; section?: string | undefined };

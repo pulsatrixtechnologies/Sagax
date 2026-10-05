@@ -28,6 +28,13 @@ import { assistantWindowOptions, clampToDisplays, displaySignature } from "./ret
 export const FLOATING_QUERY = "omb-floating-bot=1";
 
 export const FLOAT_SIZE = Object.freeze({ width: 156, height: 172 });
+/**
+ * The window the mascot stands in while it is home: the quick chat's room
+ * (`chatHomeSize(mascotStage(120))` in window-frame.ts). The character stays
+ * at the bottom-right corner, so opening the chat does not resize the window.
+ * Kept equal by the window-frame test.
+ */
+export const FLOAT_HOME = Object.freeze({ width: 352, height: 716 });
 export const FLOAT_MIN = Object.freeze({ width: 60, height: 60 });
 /** Room for the mascot and a resized, moved balloon (the balloon itself caps at about 60 % of the work area). */
 export const FLOAT_MAX = Object.freeze({ width: 1100, height: 1100 });
@@ -67,7 +74,7 @@ export const isBotId = (value) => typeof value === "string" && BOT_ID_RE.test(va
  * Where a new floating bot first lands: along the bottom of the primary
  * display, right to left, so a second and third bot do not stack on the first.
  */
-export function floatingDefaultBounds(primaryWorkArea, index = 0, size = FLOAT_SIZE) {
+export function floatingDefaultBounds(primaryWorkArea, index = 0, size = FLOAT_HOME) {
   const step = size.width + 8;
   const perRow = Math.max(1, Math.floor((primaryWorkArea.width - 48) / step));
   const column = index % perRow;
@@ -469,7 +476,7 @@ export function createFloatingBotWindows(deps) {
   const startBounds = (botId) => {
     const saved = savedPositions()[signature()]?.[botId];
     const bounds = saved
-      ? { x: saved.x - FLOAT_SIZE.width, y: saved.y - FLOAT_SIZE.height, ...FLOAT_SIZE }
+      ? { x: saved.x - FLOAT_HOME.width, y: saved.y - FLOAT_HOME.height, ...FLOAT_HOME }
       : floatingDefaultBounds(screen.getPrimaryDisplay().workArea, floats.size);
     return clampToDisplays(bounds, workAreas());
   };
@@ -811,11 +818,15 @@ export function createFloatingBotWindows(deps) {
       const found = senderFloat(event);
       if (!found || typeof on !== "boolean") return;
       const { entry } = found;
+      // focus can nudge a transparent window for a frame: put it back before the next paint
+      const held = entry.win.getBounds();
       try {
         // each call is a round trip to the window server: only a change, and focus only when it is not already there
         if (entry.focusable !== on) entry.win.setFocusable(on);
         entry.focusable = on;
         if (on && !entry.win.isFocused()) entry.win.focus();
+        const now = entry.win.getBounds();
+        if (now.x !== held.x || now.y !== held.y || now.width !== held.width || now.height !== held.height) place(entry.win, held);
       } catch {
         /* keep the last state */
       }

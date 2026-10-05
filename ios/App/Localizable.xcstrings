@@ -26449,6 +26449,28 @@
         }
       }
     },
+    "Move to Unassigned": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Move to Unassigned"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Déplacer vers Non assigné"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mover para Não atribuído"
+          }
+        }
+      }
+    },
     "Add bots": {
       "localizations": {
         "en": {
@@ -26581,6 +26603,28 @@
         }
       }
     },
+    "Bots and group chats move to Unassigned with their conversations intact. The team and its shared instructions are deleted. This cannot be undone.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bots and group chats move to Unassigned with their conversations intact. The team and its shared instructions are deleted. This cannot be undone."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Les bots et les discussions de groupe passent dans Non assigné, avec leurs conversations intactes. L'équipe et ses instructions partagées sont supprimées. Cette action est irréversible."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bots e conversas em grupo vão para Não atribuído com as conversas intactas. A equipe e suas instruções compartilhadas são excluídas. Isso não pode ser desfeito."
+          }
+        }
+      }
+    },
     "Checked bots belong to this team. Uncheck a bot to move it to General. Moving changes who they can work with and which shared instructions they read. Their chats stay with them.": {
       "localizations": {
         "en": {
@@ -26599,6 +26643,28 @@
           "stringUnit": {
             "state": "translated",
             "value": "Os bots marcados pertencem a esta equipe. Desmarque um bot para movê-lo para Geral. Mover muda com quem eles podem trabalhar e quais instruções compartilhadas leem. As conversas continuam com eles."
+          }
+        }
+      }
+    },
+    "Checked bots belong to this team. Uncheck a bot to move it to Unassigned. Moving changes who they can work with and which shared instructions they read. Their chats stay with them.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Checked bots belong to this team. Uncheck a bot to move it to Unassigned. Moving changes who they can work with and which shared instructions they read. Their chats stay with them."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Les bots cochés font partie de cette équipe. Décochez un bot pour le déplacer vers Non assigné. Le déplacement change avec qui ils peuvent travailler et les instructions partagées qu'ils lisent. Leurs discussions restent avec eux."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Os bots marcados pertencem a esta equipe. Desmarque um bot para movê-lo para Não atribuído. Mover muda com quem eles podem trabalhar e quais instruções compartilhadas leem. As conversas continuam com eles."
           }
         }
       }
@@ -26951,6 +27017,28 @@
           "stringUnit": {
             "state": "translated",
             "value": "Geral já contém o que não está em nenhuma seção. Escolha outro nome."
+          }
+        }
+      }
+    },
+    "Unassigned already holds what is in no section. Choose another name.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unassigned already holds what is in no section. Choose another name."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Non assigné contient déjà ce qui n'est dans aucune section. Choisissez un autre nom."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Não atribuído já contém o que não está em nenhuma seção. Escolha outro nome."
           }
         }
       }
@@ -32165,6 +32253,28 @@
           "stringUnit": {
             "state": "translated",
             "value": "Geral"
+          }
+        }
+      }
+    },
+    "Unassigned": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unassigned"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Non assigné"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Não atribuído"
           }
         }
       }

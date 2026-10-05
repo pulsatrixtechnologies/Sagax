@@ -78,7 +78,7 @@ describe("PlaceChip composer trigger", () => {
     expect(html).not.toMatch(/<span class="truncate">This computer<\/span>/);
   });
 
-  it("stays clickable when Works on is off, so the chip opens the computer panel", () => {
+  it("stays clickable when Works on is off, and points at More > Computer", () => {
     const html = renderToStaticMarkup(createElement(PlaceChip, {
       bot: { ...bot, computer: "off" },
       live: false,
@@ -86,6 +86,7 @@ describe("PlaceChip composer trigger", () => {
     } satisfies ComponentProps<typeof PlaceChip>));
     expect(html).toContain('data-testid="place-chip"');
     expect(html).not.toContain("disabled");
+    expect(html).toContain("Change it in More, under Computer.");
   });
 });
 

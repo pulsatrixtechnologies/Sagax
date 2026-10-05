@@ -476,6 +476,16 @@ export async function callTool(name: string, args: Json, context: ToolCallContex
       text: `Rendered the native options card in this Watcher thread (message ${String(result.messageId ?? "created")}). Wait for the person's click or custom response; the card itself authorizes no external action.`,
     };
   }
+  if (name === "act") {
+    if (EXTERNAL_RUNTIME) return { text: "Unknown tool: act", isError: true };
+    const { status, body } = await apiResponse("/api/internal/act", {
+      method: "POST",
+      body: JSON.stringify(args),
+    });
+    const text = String(body.text ?? body.error ?? "").slice(0, 8000);
+    if (status >= 400 || body.error) return { text: text || "The action was refused.", isError: true };
+    return { text: text || "Done." };
+  }
   // Second lock. With sharing off the tool is not in the catalog, so a front
   // end already refuses the call as an unknown tool — the same answer a build
   // without the feature gives. This keeps the handler itself refusing if that

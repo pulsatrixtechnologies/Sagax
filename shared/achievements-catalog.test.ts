@@ -46,7 +46,7 @@ describe("achievements catalog", () => {
     }
   });
 
-  it("rewards every skin above Common and both locked characters exactly once", () => {
+  it("rewards every skin above Common and every locked character exactly once", () => {
     const rewarded = ACHIEVEMENTS.flatMap((item) => item.rewards.map(rewardKey));
     const lockable: string[] = [];
     for (const character of MASCOT_CHARACTERS) {
@@ -71,10 +71,16 @@ describe("achievements catalog", () => {
     expect(rarityForPoints(100)).toBe("legendary");
   });
 
-  it("unlocks Trombi only through its command", () => {
+  it("unlocks Trombi only through its hidden command, and Shapes only through a linked Grok account", () => {
     const trombi = ACHIEVEMENTS.filter((item) => item.rewards.some((reward) => reward.kind === "character" && reward.character === "trombi"));
     expect(trombi.map((item) => item.id)).toEqual(["trombi-summoned"]);
     expect(trombi[0]!.rule).toEqual({ kind: "count", event: "trombi.summoned", target: 1 });
+    expect(trombi[0]!.hidden).toBe(true);
+    const described = `${trombi[0]!.description.en} ${trombi[0]!.hint?.en ?? ""}`;
+    expect(described.toLowerCase()).not.toContain("hibou");
+    const shapes = ACHIEVEMENTS.filter((item) => item.rewards.some((reward) => reward.kind === "character" && reward.character === "shape"));
+    expect(shapes.map((item) => item.id)).toEqual(["grok-linked"]);
+    expect(shapes[0]!.rule).toEqual({ kind: "count", event: "grok.linked", target: 1 });
   });
 
   it("keeps the points tiers reachable without the secrets", () => {

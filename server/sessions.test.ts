@@ -15,6 +15,7 @@ import {
   PAIRING_CODE_ALPHABET,
   PAIRING_CODE_TTL_MS,
   SESSION_TTL_MS,
+  BOT_ACT_SESSION_TTL_MS,
   SessionRegistry,
   STREAM_TICKET_TTL_MS,
   SESSION_MAX_AGE_MS,
@@ -273,6 +274,73 @@ describe("pairing codes", () => {
 });
 
 describe("sessions", () => {
+  it("delegates a bot-act copy that is not stored, listed, or renewed", () => {
+    registry = new SessionRegistry({ file: file(), now: () => clock, emailScopes: () => ["client", "admin"] });
+    const issued = registry.issue({ label: "Phone", scopes: ["client"], principalId: "person-1", email: "a@b.test" });
+    const before = readFileSync(file(), "utf8");
+    const delegated = registry.delegate(issued.session.id);
+    expect(delegated).not.toBeNull();
+    expect(delegated!.token.startsWith("sgx_sess_")).toBe(true);
+    expect(delegated!.session.label).toBe("Bot act");
+    expect(delegated!.session.scopes).toEqual(["client"]);
+    const authed = registry.authenticate(delegated!.token);
+    expect(authed?.id).toBe(delegated!.session.id);
+    expect(authed?.scopes).toEqual(issued.session.scopes);
+    expect(authed?.ephemeral).toBe(true);
+    expect(authed?.principalId).toBe("person-1");
+    expect(readFileSync(file(), "utf8")).toBe(before);
+    expect(registry.list().map((session) => session.id)).toEqual([issued.session.id]);
+    expect(registry.forPrincipal("person-1").map((session) => session.id)).toEqual([issued.session.id]);
+    expect(registry.liveWhere((session) => session.principalId === "person-1").map((session) => session.id)).toEqual([issued.session.id]);
+    expect(registry.renew(delegated!.session.id)).toBe(false);
+    expect(registry.authenticate(delegated!.token)?.expiresAt).toBe(clock + BOT_ACT_SESSION_TTL_MS);
+    expect(registry.delegate(delegated!.session.id)).toBeNull();
+    expect(registry.revoke(delegated!.session.id)).toBe(true);
+    expect(readFileSync(file(), "utf8")).toBe(before);
+    expect(registry.authenticate(issued.token)?.id).toBe(issued.session.id);
+
+    const again = registry.delegate(issued.session.id)!;
+    clock += BOT_ACT_SESSION_TTL_MS + 1_000;
+    expect(registry.authenticate(again.token)).toBeNull();
+    expect(registry.authenticate(issued.token)?.id).toBe(issued.session.id);
+    const afterExpiry = readFileSync(file(), "utf8");
+    registry.list();
+    expect(readFileSync(file(), "utf8")).toBe(afterExpiry);
+
+    registry.close();
+    const stored = JSON.parse(readFileSync(file(), "utf8")) as { sessions: Array<Record<string, unknown>> };
+    stored.sessions.push({ ...stored.sessions[0], id: "hand-written", ephemeral: true, tokenHash: "ab".repeat(32) });
+    writeFileSync(file(), JSON.stringify(stored));
+    const dropped = new SessionRegistry({ file: file(), now: () => clock, emailScopes: () => ["client", "admin"] });
+    expect(dropped.byId("hand-written")).toBeNull();
+    expect(dropped.authenticate(issued.token)?.id).toBe(issued.session.id);
+    dropped.close();
+  });
+
+  it("strips cookieOnly so the copy can be presented as a bearer, and a reload drops it", () => {
+    const opened = registry.openPairing({ browser: true, scopes: ["admin"], principalId: "person-2", owner: "owner@test" });
+    const exchanged = registry.exchange({ code: opened.credential, browser: true, label: "Browser", source: "browser" });
+    if (!exchanged.ok) throw new Error(exchanged.error);
+    expect(registry.authenticate(exchanged.token)?.cookieOnly).toBe(true);
+    const delegated = registry.delegate(exchanged.session.id);
+    expect(delegated).not.toBeNull();
+    expect(registry.authenticate(delegated!.token)?.cookieOnly).toBeUndefined();
+    expect(registry.authenticate(delegated!.token)?.scopes).toEqual(["admin"]);
+    expect(registry.authenticate(delegated!.token)?.owner).toBe("owner@test");
+    const token = delegated!.token;
+    registry.close();
+    const reloaded = new SessionRegistry({ file: file(), now: () => clock });
+    expect(reloaded.authenticate(token)).toBeNull();
+    expect(reloaded.authenticate(exchanged.token)?.id).toBe(exchanged.session.id);
+    reloaded.close();
+  });
+
+  it("returns null instead of throwing when the source session is personal", () => {
+    const viewer = registry.issue({ label: "Viewer", scopes: ["client"] });
+    registry.requireAdmin("personal");
+    expect(registry.delegate(viewer.session.id)).toBeNull();
+  });
+
   it("delegates membership only for internally marked portal grants, never ordinary email or a userId prefix", () => {
     registry = new SessionRegistry({ file: file(), now: () => clock, emailScopes: () => null, portalMembership: true });
     const portal = registry.issuePortal({ email: "person@example.test", grant: "g".repeat(43), scopes: ["client"] });

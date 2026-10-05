@@ -5,8 +5,8 @@
  * device, the web and the phone see the same one.
  *
  * - owl: the Sagax owl; its color is the bot's color and its skin the bot's
- *   mascotSkin (shared/mascot-skins.ts). `style` picks the flat owl (2d,
- *   the default) or the 3D preview, on the desktop.
+ *   mascotSkin (shared/mascot-skins.ts). A stored `style` of `3d` still
+ *   validates. The desktop always draws the flat owl.
  * - shape: one of the shapes (a body with two small eyes), in the
  *   bot's color, with a shape skin.
  * - trombi: the Hibou 98 paperclip, with a Trombi skin.

@@ -345,10 +345,9 @@ final class BotPanelDetailsUITests: XCTestCase {
 
     // MARK: Character (BP6-BP8)
 
-    /// A long press on the mascot offers the moves and the style; 3D is
-    /// saved on the server.
+    /// A long press on the mascot offers the wing moves. There is no 3D style.
     @MainActor
-    func testStyleFromTheMascotMenuSaves() throws {
+    func testMovesFromTheMascotMenu() throws {
         let ara = try XCTUnwrap(try bot(named: "Ara"))
         let id = try XCTUnwrap(ara["id"] as? String)
         defer { _ = try? api("PATCH", "/api/bots/\(id)", ["mascotLook": ["character": "owl"], "color": "purple", "mascotSkin": "none"]) }
@@ -358,11 +357,8 @@ final class BotPanelDetailsUITests: XCTestCase {
         XCTAssertTrue(mascot.waitForExistence(timeout: 10))
         mascot.press(forDuration: 1.2)
         XCTAssertTrue(app.buttons["Hoot"].firstMatch.waitForExistence(timeout: 10), "the owl's moves")
+        XCTAssertFalse(app.buttons["3D (preview)"].firstMatch.exists)
         attach("Mascot menu", app)
-        app.buttons["3D (preview)"].firstMatch.tap()
-        try eventually("the 3D style is saved") {
-            ((try bot(named: "Ara")?["mascotLook"] as? [String: Any])?["style"] as? String) == "3d"
-        }
     }
 
     /// Skins earned or not: with achievements on, a locked skin cannot be

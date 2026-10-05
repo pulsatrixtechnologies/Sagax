@@ -331,6 +331,15 @@ Allowed in the first release:
   on both connection paths until a viewer can reserve its desktop against
   other bots; a control hold on one bot alone cannot do that. Stills remain
   available in every mode.
+- On an organization server (the phone paired to the server itself, not
+  through the sidecar) Works on Local VM or This computer shows a still
+  and Play, Pause and Stop through `GET /api/me/desktop-bridge` and
+  `POST /api/me/desktop-bridge/local-vm`. There is no Take control on
+  that screen. The phone does not send action `use`. The bot drives the
+  VM from the server. The sidecar allow-list does not include those
+  routes: a sidecar pairing is not an organization, so the app does not
+  ask them there. Auto and Cloud keep Take control of the server
+  environment. A solo server keeps the still and join routes above.
 - Send messages, interrupt bots, answer approvals/questions, and mark chats
   read.
 - Create a basic bot.

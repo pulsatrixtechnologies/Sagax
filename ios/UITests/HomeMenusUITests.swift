@@ -191,14 +191,19 @@ final class HomeMenusUITests: XCTestCase {
     }
 
     @MainActor
-    func testPlacesSitAtTheFootOfTheList() {
+    func testTeamMapAndAutomationsSitUnderSettingsInTheAccountMenu() {
         let app = launch()
-        let map = app.buttons["home-place.teamMap"]
-        for _ in 0..<12 where !(map.exists && map.isHittable) { app.swipeUp() }
+        app.buttons["home-account"].tap()
+        let settings = app.buttons["account-menu.settings"]
+        XCTAssertTrue(settings.waitForExistence(timeout: 5))
+        let map = app.buttons["account-menu.teamMap"]
+        let automations = app.buttons["account-menu.automations"]
         XCTAssertTrue(map.waitForExistence(timeout: 5))
-        let automations = app.buttons["home-place.automations"]
         XCTAssertTrue(automations.exists)
+        XCTAssertGreaterThan(map.frame.minY, settings.frame.minY)
         XCTAssertGreaterThan(automations.frame.minY, map.frame.minY)
+        XCTAssertFalse(app.buttons["home-place.teamMap"].exists)
+        XCTAssertFalse(app.buttons["home-place.automations"].exists)
         automations.tap()
         XCTAssertTrue(app.segmentedControls["routines-section"].waitForExistence(timeout: 15))
     }

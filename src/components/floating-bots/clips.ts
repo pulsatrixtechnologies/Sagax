@@ -1,7 +1,7 @@
 // The mascot's animation clips: for every thing it can do (walk, fly, spin,
 // backflip, wave, hide its eyes, hoot, yawn...), where each moving part
 // stands at an instant. Pure functions of time, blended by behavior.ts so a
-// change of clip never pops. Every renderer (the 2.5D owl, a 3D owl, another
+// change of clip never pops. Every renderer (the flat owl, another
 // character) maps the parts it has and ignores the rest.
 //
 // Units: lengths in owl units (the owl is about 2.3 tall), angles in radians.

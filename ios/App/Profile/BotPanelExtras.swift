@@ -289,15 +289,13 @@ struct BotPanelNoticesView: View {
     }
 }
 
-// MARK: - Moves and style
+// MARK: - Moves
 
-/// The character's moves and the owl's style (MascotLookEditor.tsx Moves
-/// and Style), as menu items for a long press on the mascot.
+/// The character's moves (MascotLookEditor.tsx Moves), as menu items for a
+/// long press on the mascot.
 struct CharacterMovesMenu: View {
-    @Environment(\.themePalette) var themePalette
     let look: CompleteMascotLook
     let onMove: (OwlWingMove) -> Void
-    let onStyle: (MascotStyle) -> Void
 
     var body: some View {
         if look.character == .owl {
@@ -305,20 +303,6 @@ struct CharacterMovesMenu: View {
                 ForEach(OwlWingMove.allCases, id: \.self) { move in
                     Button(Self.name(move)) { onMove(move) }
                         .accessibilityIdentifier("character-move.\(move.rawValue)")
-                }
-            }
-            Section(String(localized: "Style")) {
-                ForEach(MascotStyle.allCases, id: \.self) { style in
-                    Button {
-                        onStyle(style)
-                    } label: {
-                        if look.style == style {
-                            Label(Self.name(style), systemImage: "checkmark")
-                        } else {
-                            Text(Self.name(style))
-                        }
-                    }
-                    .accessibilityIdentifier("character-style.\(style.rawValue)")
                 }
             }
         }
@@ -331,13 +315,6 @@ struct CharacterMovesMenu: View {
         case .takeoff: String(localized: "Take off")
         case .shake: String(localized: "Ruffle")
         case .hoot: String(localized: "Hoot")
-        }
-    }
-
-    static func name(_ style: MascotStyle) -> String {
-        switch style {
-        case .flat: String(localized: "2D")
-        case .threeD: String(localized: "3D (preview)")
         }
     }
 }

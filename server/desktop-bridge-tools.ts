@@ -8,6 +8,7 @@
 // (Ask shows a card per call), exactly as the engine's own tools do in solo.
 import { localVmDesktopSpec } from "./container-computer.ts";
 import type { DesktopBridgeOperation } from "./desktop-bridge.ts";
+import { localVmComputerCall, localVmComputerCatalogText } from "./local-vm-computer.ts";
 
 const where = "on the computer of the person you are working for (their own PC, through their Sagax desktop app), like their own terminal";
 
@@ -92,14 +93,16 @@ export const DESKTOP_BRIDGE_TOOLS = [
   },
   {
     name: "local_vm",
-    description: "The person's Local VM (the Sagax Linux desktop container on their computer): action status lists it, start starts it, run runs a bash command inside it, create makes one when none exists (the person confirms it on their computer; the first time downloads and builds the desktop image, which takes several minutes; while it runs the conversation shows the bot's computer being set up, and the steps come back in this tool's result).",
+    description: "The person's Local VM (the Sagax Linux desktop container on their computer), never their own screen. action status lists it, start starts it, run runs a bash command inside it, create makes one when none exists (the person confirms it on their computer; the first time downloads and builds the desktop image, which takes several minutes; while it runs the conversation shows the bot's computer being set up, and the steps come back in this tool's result). action tools lists the screen tools. action use calls one of them (tool_name, arguments): screenshot or get_desktop_state returns the screen, get_screen_size, list_apps, click, move_cursor, drag, type_text, press_key, scroll.",
     inputSchema: {
       type: "object",
       properties: {
-        action: { type: "string", enum: ["status", "start", "run", "create"] },
+        action: { type: "string", enum: ["status", "start", "run", "create", "tools", "use"] },
         command: { type: "string" },
         container: { type: "string", description: "Which Local VM, from status (default: the first one)." },
         timeout_seconds: { type: "number" },
+        tool_name: { type: "string", description: "A screen tool from action tools. Used with action use." },
+        arguments: { type: "object", description: "That screen tool's arguments. A screenshot takes none." },
       },
       required: ["action"],
       additionalProperties: false,
@@ -164,7 +167,15 @@ export function desktopToolOperation(name: string, args: Record<string, unknown>
       // Waits up to ten minutes; a creation that takes longer keeps going on
       // the computer and status says where it is.
       if (args.action === "create") return { action: "vm_create", arguments: { spec: localVmDesktopSpec() }, timeout_seconds: 600 };
-      throw new Error("action must be status, start, run or create");
+      if (args.action === "tools") throw new Error("action tools is answered by the server");
+      if (args.action === "use") {
+        const toolArgs = args.arguments;
+        if (toolArgs !== undefined && (!toolArgs || typeof toolArgs !== "object" || Array.isArray(toolArgs))) throw new Error("arguments must be an object");
+        const checked = localVmComputerCall(str(args.tool_name, "tool_name", 100), toolArgs ?? {});
+        if ("error" in checked) throw new Error(checked.error);
+        return { action: "vm_computer_call", tool_name: checked.tool, arguments: checked.arguments, timeout_seconds: 60 };
+      }
+      throw new Error("action must be status, start, run, create, tools or use");
     }
     default:
       throw new Error(`unknown tool ${name}`);
@@ -208,13 +219,20 @@ export async function handleDesktopBridgeMcp(
     const call = (params ?? {}) as { name?: unknown; arguments?: unknown };
     if (typeof call.name !== "string") throw Object.assign(new Error("tools/call needs a tool name"), { status: 400 });
     const args = call.arguments && typeof call.arguments === "object" && !Array.isArray(call.arguments) ? call.arguments as Record<string, unknown> : {};
+    // The screen catalog is fixed. Answering it here keeps a closed desktop
+    // from hiding the tools, and sends nothing to the computer.
+    if (call.name === "local_vm" && args.action === "tools") return text(localVmComputerCatalogText());
     let operation: DesktopBridgeOperation;
     try { operation = desktopToolOperation(call.name, args); } catch (error) { return text(error instanceof Error ? error.message : String(error), true); }
     try {
       const result = desktopToolResult(await request(operation));
+      const staleDesktop = result.isError && result.content[0]?.type === "text" && (result.content[0].text === "Invalid request" || result.content[0].text === "Unsupported operation");
       // A desktop app from before Local VM creation refuses the operation.
-      if (operation.action === "vm_create" && result.isError && result.content[0]?.type === "text" && result.content[0].text === "Invalid request") {
+      if (operation.action === "vm_create" && staleDesktop) {
         return text("The Sagax desktop app on this computer is too old to create a Local VM. Update it, or create the Local VM from its settings.", true);
+      }
+      if (operation.action === "vm_computer_call" && staleDesktop) {
+        return text("The Sagax desktop app on this computer is too old to control the Local VM screen. Update the Sagax app.", true);
       }
       return result;
     } catch (error) {

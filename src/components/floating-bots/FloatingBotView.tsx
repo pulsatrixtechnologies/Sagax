@@ -1,4 +1,4 @@
-// What a floating bot looks like: its mascot (a 3D owl in the bot's colour,
+// What a floating bot looks like: its mascot (the flat owl in the bot's colour,
 // or its picture) standing on the desktop or over the app, with a little life
 // of its own (behavior.ts: it breathes, blinks, looks at the pointer, spins,
 // hops, wanders, naps, reacts to clicks and strokes, flies off while its bot
@@ -24,11 +24,11 @@ import {
 import { clickGesture, eventsForClick, newStroke, strokeLeave, strokeStep } from "./gestures";
 import type { FloatingPilot } from "./pilot";
 import { mascotFor } from "./mascots";
-import { Balloon, BALLOON_MAX_W, type BalloonSide } from "./Balloon";
+import { Balloon, BALLOON_MAX_W, readBalloonPlace, splitOffset, type BalloonSide } from "./Balloon";
 import { completeMascotLook } from "../../../shared/mascot-look";
 import { mascotStage } from "./fit";
 import { mascotFields, type FloatingEvent, type FloatingPose, type FloatingSnapshot } from "./protocol";
-import type { Size } from "./window-frame";
+import { dockedWindowSize, type Size } from "./window-frame";
 import { MascotCallCardView, MascotCallPill, type LevelSource, type MascotCallCard } from "./MascotCall";
 import type { MascotLook } from "../../../shared/mascot-look";
 
@@ -49,7 +49,6 @@ const FLIGHT_MS = 1400;
 const GAZE_MS = 200;
 /** A bot's picture, drawn flat. */
 export const CHARACTER_SIZE = 88;
-/** The 3D owl's canvas: room above the owl for its hops and spins. */
 /** The owl's own box. */
 const OWL_SIZE = 120;
 /** The stage around it: big enough that no spin, flip, jump or spread wing is ever cut off (fit.ts). */
@@ -176,24 +175,23 @@ const Character = memo(function Character({ color, skin, avatarSrc, avatarX, ava
 export function balloonSide(where: "desktop" | "overlay", below: boolean, stageHeight: number): { side: BalloonSide; room: { x: number; y: number; w: number; h: number } } {
   if (typeof window === "undefined") return { side: { below, right: false }, room: { x: 0, y: 0, w: BALLOON_MAX_W, h: 420 } };
   const screenH = window.screen?.availHeight ?? window.innerHeight;
-  const screenW = window.screen?.availWidth ?? window.innerWidth;
   const top = (window.screen as Screen & { availTop?: number })?.availTop ?? 0;
   const left = (window.screen as Screen & { availLeft?: number })?.availLeft ?? 0;
   const maxH = Math.round(screenH * 0.6);
   if (where === "overlay") return { side: { below, right: false }, room: { x: 0, y: 0, w: Math.min(BALLOON_MAX_W, window.innerWidth - 16), h: Math.min(maxH, window.innerHeight - stageHeight - 24) } };
-  const mascotTop = window.screenY + window.innerHeight - stageHeight;
-  const mascotRight = window.screenX + window.innerWidth;
-  const spaceAbove = mascotTop - top;
-  const spaceBelow = top + screenH - (window.screenY + window.innerHeight);
-  const spaceLeft = mascotRight - left;
-  const spaceRight = left + screenW - window.screenX;
-  const openBelow = spaceAbove < 260 && spaceBelow > spaceAbove;
-  const openRight = spaceLeft < 320 && spaceRight > spaceLeft;
-  const vertical = openBelow ? spaceBelow + stageHeight : spaceAbove;
-  const horizontal = openRight ? spaceRight : spaceLeft;
+  // The desktop balloon always opens above and to the left, into the room the
+  // window already holds. Flipping it below or to the right moves the window's
+  // origin, and the character jumps for a frame. A short screen just scrolls.
+  const spaceAbove = window.screenY + window.innerHeight - stageHeight - top;
+  const spaceLeft = window.screenX + window.innerWidth - left;
   return {
-    side: { below: openBelow, right: openRight },
-    room: { x: Math.max(0, horizontal - 300), y: Math.max(0, vertical - 220), w: Math.max(280, horizontal - 16), h: Math.max(160, Math.min(maxH, vertical - 24)) },
+    side: { below: false, right: false },
+    room: {
+      x: Math.max(0, spaceLeft - 300),
+      y: Math.max(0, spaceAbove - 220),
+      w: Math.max(280, spaceLeft - 16),
+      h: Math.max(160, Math.min(maxH, spaceAbove - 24)),
+    },
   };
 }
 
@@ -323,8 +321,8 @@ export function FloatingBotView({ snapshot: given, onEvent, mover, interactive, 
     random: Math.random,
     liveliness: snapshot.liveliness ?? "normal",
     mood: snapshot.mood,
-    // only the 3D owl has real depth: spins, flips and turns in place are its alone
-    depth: (snapshot.mascot?.character ?? "owl") === "owl" && snapshot.mascot?.style === "3d",
+    // the desktop owl is the flat one; nothing here turns in depth
+    depth: false,
   });
   const options = useRef(mascotOptions());
   options.current = mascotOptions();
@@ -485,6 +483,20 @@ export function FloatingBotView({ snapshot: given, onEvent, mover, interactive, 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [panelOpen]);
 
+  // While the mascot is home the desktop window already holds the quick chat,
+  // so a click paints the balloon and does not move the character. Away, the
+  // window fits the badge. The open balloon reports its own room.
+  useLayoutEffect(() => {
+    if (!onReserve || !pilot || panelOpen) return;
+    if (away) {
+      onReserve(null, true);
+      return;
+    }
+    const saved = readBalloonPlace(snapshot.id ?? snapshot.name);
+    const held = splitOffset(saved, { below: false, right: false }).away;
+    onReserve(dockedWindowSize(STAGE, { w: saved.w, h: saved.h, dx: held.dx, dy: held.dy }), false);
+  }, [onReserve, pilot, panelOpen, away, snapshot.id, snapshot.name]);
+
   // On a call the mascot bounces with its bot's voice (the stage's --fb-voice, set
   // straight on the element: no render per level) and leans in while the person talks
   useEffect(() => {
@@ -618,7 +630,7 @@ export function FloatingBotView({ snapshot: given, onEvent, mover, interactive, 
     <div
       ref={rootRef}
       className={cn("fb-root", retro && "r98-root", (balloon ? side.below : below) && "fb-below", balloon && side.right && "fb-left", className)}
-      style={{ ...style, ...(balloon && side.right ? { alignItems: "flex-start" } : {}), "--fb-tail": `${Math.round(STAGE.width / 2) - 7}px` } as React.CSSProperties}
+      style={{ ...style, ...(balloon && side.right ? { alignItems: "flex-start" } : {}), "--fb-tail": `${Math.round(STAGE.width / 2) - 7}px`, "--fb-stage-h": `${STAGE.height}px` } as React.CSSProperties}
       data-reduced={snapshot.reduced ? "" : undefined}
       data-retro={retro ? "" : undefined}
       data-chatting={balloon ? "" : undefined}

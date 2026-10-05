@@ -4,18 +4,20 @@ import XCTest
 /// iPad I2b: the sidebar's foot as the desktop draws it now (Sidebar.tsx
 /// `places`, Gamertag.tsx) and its edge (`sidebarDragTarget`).
 final class DesktopSidebarPlacesTests: XCTestCase {
-    func testTeamMapAndAutomationsAlwaysShowConnectedAppsAndTemplatesWaitForExperimental() {
+    func testConnectedAppsAndTemplatesWaitForExperimental() {
         let admin = SurfaceGate(scope: .serverAdmin)
-        XCTAssertEqual(DesktopSidebarPlaces.visible(connected: true, gate: admin, features: nil), [.teamMap, .automations])
-        XCTAssertEqual(DesktopSidebarPlaces.visible(connected: true, gate: admin, features: ServerFeatures()), [.teamMap, .automations])
+        XCTAssertEqual(DesktopSidebarPlaces.visible(connected: true, gate: admin, features: nil), [])
+        XCTAssertEqual(DesktopSidebarPlaces.visible(connected: true, gate: admin, features: ServerFeatures()), [])
         XCTAssertEqual(
             DesktopSidebarPlaces.visible(connected: true, gate: admin, features: ServerFeatures(connectedApps: true)),
-            [.teamMap, .automations, .connectedApps]
+            [.connectedApps]
         )
         XCTAssertEqual(
             DesktopSidebarPlaces.visible(connected: true, gate: admin, features: ServerFeatures(connectedApps: true, templates: true)),
-            [.teamMap, .automations, .connectedApps, .templates]
+            [.connectedApps, .templates]
         )
+        XCTAssertFalse(DesktopSidebarPlaces.visible(connected: true, gate: admin, features: nil).contains(.teamMap))
+        XCTAssertFalse(DesktopSidebarPlaces.visible(connected: true, gate: admin, features: nil).contains(.automations))
     }
 
     func testExperimentalPlacesStillNeedThePairingsGate() {
@@ -23,7 +25,7 @@ final class DesktopSidebarPlacesTests: XCTestCase {
         let client = SurfaceGate(scope: .serverClient)
         let places = DesktopSidebarPlaces.visible(connected: true, gate: client, features: features)
         XCTAssertFalse(places.contains(.templates), "Templates is an administrator's")
-        XCTAssertEqual(places.prefix(2), [.teamMap, .automations])
+        XCTAssertEqual(places, [])
         XCTAssertEqual(DesktopSidebarPlaces.visible(connected: false, gate: SurfaceGate(scope: .serverAdmin), features: features), [])
     }
 

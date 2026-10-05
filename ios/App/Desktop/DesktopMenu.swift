@@ -415,7 +415,7 @@ struct DesktopSidebarMenus {
                 })
             }
             if current != nil {
-                children.append(DesktopMenuEntry(id: "move.general", title: String(localized: "Move to General"), icon: .folderInput, kind: .action {
+                children.append(DesktopMenuEntry(id: "move.general", title: String(localized: "Move to Unassigned"), icon: .folderInput, kind: .action {
                     model.sectionActions.error = prefs.assignPersonal(session, key: key, to: "")
                 }))
             }
@@ -432,7 +432,7 @@ struct DesktopSidebarMenus {
             })
         }
         if !current.isEmpty, gate.allows(.sectionManagement) {
-            children.append(DesktopMenuEntry(id: "move.general", title: String(localized: "Move to General"), icon: .folderInput, kind: .action {
+            children.append(DesktopMenuEntry(id: "move.general", title: String(localized: "Move to Unassigned"), icon: .folderInput, kind: .action {
                 Task { _ = await session.setServerSectionBots(current, add: [], remove: [bot.id]) }
             }))
         }
@@ -467,7 +467,7 @@ struct DesktopSidebarMenus {
                 })
             }
             if current != nil {
-                children.append(DesktopMenuEntry(id: "move.general", title: String(localized: "Move to General"), icon: .folderInput, kind: .action {
+                children.append(DesktopMenuEntry(id: "move.general", title: String(localized: "Move to Unassigned"), icon: .folderInput, kind: .action {
                     model.sectionActions.error = prefs.assignPersonal(session, key: key, to: "")
                 }))
             }
@@ -576,6 +576,20 @@ struct DesktopSidebarMenus {
         out.append(DesktopMenuEntry(id: "settings", title: String(localized: "Settings"), icon: .settings, kind: .action {
             model.modal = .settings
         }))
+        for item in NavigationMenus.accountShortcuts(gate: gate, connected: session.connection != nil) {
+            switch item {
+            case .teamMap:
+                out.append(DesktopMenuEntry(id: "teamMap", title: String(localized: "Team map"), icon: .network, kind: .action {
+                    model.show(.teamMap)
+                }))
+            case .automations:
+                out.append(DesktopMenuEntry(id: "automations", title: String(localized: "Automations"), icon: .calendarDays, kind: .action {
+                    model.show(.automations)
+                }))
+            case .archivedBots, .settings, .achievements, .about, .help:
+                break
+            }
+        }
         let archived = DesktopBotArchive.archived(session.state.bots)
         if gate.allows(.botOwnerExtras), !archived.isEmpty {
             // Archived bots (the desktop's account place): each one restores.

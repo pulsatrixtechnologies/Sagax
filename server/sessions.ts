@@ -47,6 +47,8 @@ export function cookieMaxAgeSeconds(session: { expiresAt: number }, now = Date.n
   return Math.max(1, Math.floor((session.expiresAt - now) / 1000));
 }
 export const STREAM_TICKET_TTL_MS = 5 * 60_000;
+/** How long a bot-act copy of a person's session lasts. It is not renewed. */
+export const BOT_ACT_SESSION_TTL_MS = 60_000;
 /** Per-source slow-down only. A 60-bit code cannot be guessed online in
  * five minutes whatever the rate, so the lock exists to make noise visible,
  * not to protect the secret; it is kept short because sources are shared
@@ -95,6 +97,9 @@ const sessionSchema = z.object({
   cookieOnly: z.literal(true).optional(),
   /** Whose OMB Cloud a browser sign-in signed in to (its PairingCode `owner`). */
   owner: z.string().max(254).optional(),
+  /** A bot-act copy. Memory only: persist and load drop it, and renew never
+   * extends it. A file that still contains one is ignored. */
+  ephemeral: z.literal(true).optional(),
 });
 
 const fileSchema = z.object({ version: z.literal(1), sessions: z.array(sessionSchema) });
@@ -283,7 +288,7 @@ export class SessionRegistry {
       return; // unreadable: start empty rather than refuse to boot; pairing again is cheap
     }
     const parsed = fileSchema.safeParse(raw);
-    if (parsed.success) this.sessions = parsed.data.sessions.filter(session => restoreAccounts || (session.email === undefined && session.userId === undefined && session.idp === undefined));
+    if (parsed.success) this.sessions = parsed.data.sessions.filter(session => !session.ephemeral && (restoreAccounts || (session.email === undefined && session.userId === undefined && session.idp === undefined)));
   }
 
   private syncDirectory(): void {
@@ -299,7 +304,8 @@ export class SessionRegistry {
     if (this.closed) throw new Error("Session registry is closed.");
     const dir = dirname(this.options.file);
     mkdirSync(dir, { recursive: true, mode: 0o700 });
-    writeFileAtomic(this.options.file, JSON.stringify({ version: 1, sessions: this.sessions }, null, 2) + "\n", { mode: 0o600 });
+    const sessions = this.sessions.filter((session) => !session.ephemeral);
+    writeFileAtomic(this.options.file, JSON.stringify({ version: 1, sessions }, null, 2) + "\n", { mode: 0o600 });
     this.syncDirectory();
   }
 
@@ -331,9 +337,10 @@ export class SessionRegistry {
     }
     const expired = this.sessions.filter((s) => s.expiresAt <= now);
     if (expired.length) {
+      const durable = expired.some((s) => !s.ephemeral);
       this.sessions = this.sessions.filter((s) => s.expiresAt > now);
       for (const s of expired) this.forget(s.id);
-      this.persist();
+      if (durable) this.persist();
     }
   }
 
@@ -607,6 +614,7 @@ export class SessionRegistry {
     const now = this.now();
     const record = this.sessions.find((s) => sameDigest(s.tokenHash, hash));
     if (!record || record.expiresAt <= now || this.personal(record.scopes)) return null;
+    if (record.ephemeral) return record;
     const lastWrite = this.lastSeenWrites.get(record.id) ?? 0;
     if (now - lastWrite >= LAST_SEEN_WRITE_INTERVAL_MS) {
       record.lastSeenAt = now;
@@ -626,7 +634,7 @@ export class SessionRegistry {
     this.revalidateEmailSessions();
     const record = this.sessions.find((s) => s.id === sessionId);
     const now = this.now();
-    if (!record || record.expiresAt <= now) return false;
+    if (!record || record.expiresAt <= now || record.ephemeral) return false;
     if (record.expiresAt - now > SESSION_RENEW_WHEN_LEFT_MS) return false;
     const next = Math.min(now + SESSION_TTL_MS, record.createdAt + SESSION_MAX_AGE_MS);
     if (next <= record.expiresAt) return false; // already at the absolute cap
@@ -645,15 +653,15 @@ export class SessionRegistry {
 
   list(): PublicSession[] {
     this.prune();
-    return this.sessions.map(publicSession);
+    return this.sessions.filter((s) => !s.ephemeral).map(publicSession);
   }
 
   revoke(id: string): boolean {
-    const before = this.sessions.length;
+    const removed = this.sessions.find((s) => s.id === id);
+    if (!removed) return false;
     this.sessions = this.sessions.filter((s) => s.id !== id);
-    if (this.sessions.length === before) return false;
     this.forget(id);
-    this.persist();
+    if (!removed.ephemeral) this.persist();
     return true;
   }
 
@@ -680,10 +688,45 @@ export class SessionRegistry {
     return found ? structuredClone(found) : null;
   }
 
-  /** Every live session acting as this person (copies). */
+  /** Every live session acting as this person (copies). Bot-act copies are not devices. */
   forPrincipal(principalId: string): SessionRecord[] {
     const now = this.now();
-    return this.sessions.filter((s) => s.principalId === principalId && s.expiresAt > now).map((s) => structuredClone(s));
+    return this.sessions.filter((s) => !s.ephemeral && s.principalId === principalId && s.expiresAt > now).map((s) => structuredClone(s));
+  }
+
+  /** Live durable sessions the predicate picks (copies). Bot-act copies are excluded. */
+  liveWhere(pick: (session: SessionRecord) => boolean): SessionRecord[] {
+    const now = this.now();
+    return this.sessions.filter((s) => !s.ephemeral && s.expiresAt > now && !this.personal(s.scopes) && pick(s)).map((s) => structuredClone(s));
+  }
+
+  /** A 60-second copy of one live session, for one bot action. Same scopes,
+   * same person. Not written, not listed, not renewed. A browser-only
+   * session's copy accepts a bearer. Returns null for an ephemeral source,
+   * an expired session, or a session this registry refuses as personal. */
+  delegate(sessionId: string): { token: string; session: PublicSession } | null {
+    const source = this.sessions.find((s) => s.id === sessionId && s.expiresAt > this.now());
+    if (!source || source.ephemeral || this.personal(source.scopes)) return null;
+    const now = this.now();
+    const token = `sgx_sess_${randomBytes(32).toString("base64url")}`;
+    const record: SessionRecord = {
+      id: randomUUID(),
+      tokenHash: sha256(token),
+      label: "Bot act",
+      scopes: [...source.scopes],
+      createdAt: now,
+      lastSeenAt: now,
+      expiresAt: now + BOT_ACT_SESSION_TTL_MS,
+      ephemeral: true,
+    };
+    if (source.userId) record.userId = source.userId;
+    if (source.email) record.email = source.email;
+    if (source.membershipAuthority) record.membershipAuthority = source.membershipAuthority;
+    if (source.principalId) record.principalId = source.principalId;
+    if (source.idp) record.idp = { ...source.idp };
+    if (source.owner) record.owner = source.owner;
+    this.sessions.push(record);
+    return { token, session: publicSession(record) };
   }
 
   /** Replace a session's scopes (a role change at the identity provider).

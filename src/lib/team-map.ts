@@ -46,7 +46,7 @@ export const EMPTY_TEAM_MAP_SNAPSHOT: TeamMapSnapshot = {
 
 export function buildTeamMapSections<T extends TeamMapBot>(bots: T[], names: string[] = [], options: { general?: boolean } = {}): TeamMapSection<T>[] {
   const sections = new Map<string, T[]>();
-  // General holds what has no section; the sidebar asks for it when only a
+  // Unassigned holds what has no section; the sidebar asks for it when only a
   // room is there (someone with no bot of their own, added to a group).
   if (options.general) sections.set("", []);
   for (const bot of bots) {
@@ -60,7 +60,7 @@ export function buildTeamMapSections<T extends TeamMapBot>(bots: T[], names: str
   }
   return [...sections].map(([key, sectionBots]) => ({
     key,
-    name: key || "General",
+    name: key || "Unassigned",
     chiefs: sectionBots.filter((bot) => bot.chiefOfStaff),
     members: sectionBots.filter((bot) => !bot.chiefOfStaff),
   }));

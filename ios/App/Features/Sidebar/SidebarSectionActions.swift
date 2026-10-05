@@ -110,7 +110,7 @@ final class SidebarSectionActions: ObservableObject {
 }
 
 /// The menu of one home section header (NavigationMenus.section). `name`
-/// is nil for the phone's General buckets (Bots, Group Chats).
+/// is nil for the phone's Unassigned buckets (Bots, Group Chats).
 struct SidebarSectionMenu: View {
     let name: String?
     let sectionID: String
@@ -190,7 +190,7 @@ struct SidebarSectionMenu: View {
 }
 
 /// "Move to section" for a bot or a group on an organization server: the
-/// person's own sections, General, or a new one (the desktop's SectionPicker).
+/// person's own sections, Unassigned, or a new one (the desktop's SectionPicker).
 struct PersonalSectionPicker: View {
     let key: String
     let layout: SidebarLayout
@@ -205,7 +205,7 @@ struct PersonalSectionPicker: View {
                 Button(name) { assign(name) }
             }
             if current != nil {
-                Button { assign("") } label: { Label("Move to General", systemImage: "tray") }
+                Button { assign("") } label: { Label("Move to Unassigned", systemImage: "tray") }
             }
             Button { actions.startNew(assigning: key) } label: { Label("New section…", systemImage: "folder.badge.plus") }
         } label: {
@@ -254,7 +254,7 @@ struct SidebarSectionActionsPresenter: ViewModifier {
                 Button("Delete team", role: .destructive) { actions.confirmDelete(session) }
                     .accessibilityIdentifier("section-delete-confirm")
             } message: {
-                Text("Bots and group chats move to General with their conversations intact. The team and its shared instructions are deleted. This cannot be undone.")
+                Text("Bots and group chats move to Unassigned with their conversations intact. The team and its shared instructions are deleted. This cannot be undone.")
             }
             .sheet(item: $actions.editingBots) { target in
                 SectionBotsSheet(section: target.name)
@@ -278,7 +278,7 @@ extension View {
 }
 
 /// Add or remove bots of a server section (TeamDialog in its managing
-/// mode): checked bots belong to it; unchecking one moves it to General.
+/// mode): checked bots belong to it; unchecking one moves it to Unassigned.
 struct SectionBotsSheet: View {
     @Environment(\.themePalette) var themePalette
     let section: String
@@ -297,7 +297,7 @@ struct SectionBotsSheet: View {
         NavigationStack {
             List {
                 Section {
-                    Text("Checked bots belong to this team. Uncheck a bot to move it to General. Moving changes who they can work with and which shared instructions they read. Their chats stay with them.")
+                    Text("Checked bots belong to this team. Uncheck a bot to move it to Unassigned. Moving changes who they can work with and which shared instructions they read. Their chats stay with them.")
                         .font(.footnote)
                         .foregroundStyle(Theme.textSecondary)
                         .listRowBackground(Color.clear)

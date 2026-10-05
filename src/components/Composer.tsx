@@ -647,6 +647,21 @@ export function Composer({
     }
     dispatch({ type: "updateTask", botId: modeBot.id, threadId: modeBot.threadId, patch: { approvalMode: mode } });
   };
+  // Simple's two choices are a row of their own. Sharing the message line
+  // squeezes "Message {name}" down to a sliver beside the cards.
+  const approvalControl = modeBot && approvalEngine && !remoteClient ? (
+    <ApprovalModeSelector
+      approvalMode={modeBot.approvalMode}
+      autoApprove={modeBot.autoApprove}
+      providerName={approvalEngine.displayName}
+      driverKind={approvalEngine.driverKind}
+      onSelect={setApprovalMode}
+      disabled={Boolean(modeBot.busy)}
+      trustedModesAvailable={trustedThreadAccess}
+      orgFullAccess={orgFullAccess}
+      onManageCommandAllowlist={advanced && ownerOrAdmin === true ? () => setCommandAllowlistTarget({ botId: modeBot.id, botName: modeBot.name, threadId: modeBot.threadId }) : undefined}
+    />
+  ) : null;
 
   const hasContent = Boolean(effectiveText.trim()) || attachments.length > 0;
   const retroSkin = useRetroSkin();
@@ -1051,8 +1066,14 @@ export function Composer({
           />
         {/* One row while it fits: chips, editor, mic. Below the container
             width where the chips and the placeholder cannot share a line,
-            the editor takes a full line of its own above the chips. */}
+            the editor takes a full line of its own above the chips.
+            Simple approval choices are the row above this one. */}
         <div data-tour="composer" className="@container/composer relative z-[1] min-h-11 rounded-[22px] border-[0.5px] border-border bg-composer px-2 py-1.5 shadow-[0_2px_8px_-1px_#0000000d,0_1px_2px_#00000008,0_0_0_1px_#e4e4e40a] transition-colors hover:border-border-strong focus-within:border-border-strong">
+        {!locked && !advanced && approvalControl && (
+          <div data-composer-approval className="mb-1 w-full min-w-0">
+            {approvalControl}
+          </div>
+        )}
         <div data-composer-row className="flex items-end gap-1 @max-[30rem]/composer:flex-wrap">
           <input
             ref={fileInput}
@@ -1108,19 +1129,7 @@ export function Composer({
                   {effectiveChannelMode === "goal" ? "/goal" : t("composer.goal.chip")}
                 </button>
               )}
-              {modeBot && approvalEngine && !remoteClient && (
-                <ApprovalModeSelector
-                  approvalMode={modeBot.approvalMode}
-                  autoApprove={modeBot.autoApprove}
-                  providerName={approvalEngine.displayName}
-                  driverKind={approvalEngine.driverKind}
-                  onSelect={setApprovalMode}
-                  disabled={Boolean(modeBot.busy)}
-                  trustedModesAvailable={trustedThreadAccess}
-                  orgFullAccess={orgFullAccess}
-                  onManageCommandAllowlist={advanced && ownerOrAdmin === true ? () => setCommandAllowlistTarget({ botId: modeBot.id, botName: modeBot.name, threadId: modeBot.threadId }) : undefined}
-                />
-              )}
+              {advanced && approvalControl}
               {advanced && modeBot && !remoteClient && (
                 <PlaceChip
                   bot={modeBot}

@@ -2,7 +2,8 @@
 // `places`, SidebarPlaces.tsx, achievements/Gamertag.tsx), as rules the
 // iPad's `DesktopSidebarFooter` reads and the tests pin.
 //
-// - Team map and Automations are always there (a pairing with a server).
+// - Team map and Automations are not sidebar places on iOS. They live in
+//   the avatar popup, under Settings (`NavigationMenus.accountShortcuts`).
 // - Connected apps and Templates are experimental: each one shows only once
 //   Settings > Experimental features switches it on (`connectedAppsEnabled`,
 //   `templatesEnabled` in src/lib/feature-flags.ts), and only for a pairing
@@ -29,8 +30,6 @@ public enum DesktopSidebarPlaces {
     ) -> [DesktopSidebarPlace] {
         guard connected else { return [] }
         var out: [DesktopSidebarPlace] = []
-        if gate.allows(.teamMap) { out.append(.teamMap) }
-        out.append(.automations)
         if connectedAppsOn, gate.allows(.connectedApps) { out.append(.connectedApps) }
         if templatesOn, gate.allows(.templates) { out.append(.templates) }
         return out

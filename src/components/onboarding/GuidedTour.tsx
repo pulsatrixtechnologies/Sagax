@@ -79,9 +79,9 @@ export function GuidedTour() {
           dispatch({ type: "toggleComputer", open: false });
           return;
         case "openTools": {
-          // The places are always-visible rows now, so there is usually
-          // nothing to open; a menu trigger (a toggle) is pressed only while
-          // it is closed.
+          // The foot stack is only the experimental places. Team map and
+          // Automations live in the account menu, which this step does not
+          // open. A menu trigger (a toggle) is pressed only while it is closed.
           const trigger = visible("tools");
           if (trigger?.hasAttribute("aria-expanded") && trigger.getAttribute("aria-expanded") !== "true") trigger.click();
           return;

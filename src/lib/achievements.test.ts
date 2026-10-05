@@ -66,12 +66,12 @@ describe("locks", () => {
     expect(posted).toBe(0);
   });
 
-  it("offers the owl and the shapes with their Common skins; Trombi and Bunbu wait for their achievement", () => {
+  it("offers the owl and its Common skins; Shapes, Trombi and Bunbu wait", () => {
     const unlocks = unlocksFromSnapshot(snapshot());
     expect(characterLock(unlocks, "owl").locked).toBe(false);
-    expect(characterLock(unlocks, "shape").locked).toBe(false);
     expect(skinLock(unlocks, "owl", "snowy").locked).toBe(false);
-    expect(skinLock(unlocks, "shape", "glossy").locked).toBe(false);
+    expect(characterLock(unlocks, "shape")).toMatchObject({ locked: true, achievement: { id: "grok-linked" } });
+    expect(skinLock(unlocks, "shape", "glossy")).toMatchObject({ locked: true, achievement: { id: "grok-linked" } });
     expect(characterLock(unlocks, "trombi")).toMatchObject({ locked: true, achievement: { id: "trombi-summoned" } });
     expect(characterLock(unlocks, "bunbu")).toMatchObject({ locked: true, achievement: { id: "small-family" } });
     expect(skinLock(unlocks, "owl", "galaxy")).toMatchObject({ locked: true, achievement: { id: "month-streak" } });
@@ -158,8 +158,8 @@ describe("grandfathering", () => {
       { mascotLook: { character: "owl", skins: { shape: "neon", trombi: "glitch", bunbu: "plain" } } },
       { mascotLook: { character: "trombi" } },
       {},
-    ])).toEqual(["character:bunbu", "character:trombi", "skin:bunbu:holo", "skin:owl:galaxy", "skin:shape:neon", "skin:trombi:glitch"]);
-    // the defaults the editor fills in grant nothing
-    expect(grandfatheredFromBots([{ mascotLook: { character: "shape", skins: { shape: "plain", trombi: "classic", bunbu: "plain" } } }])).toEqual([]);
+    ])).toEqual(["character:bunbu", "character:shape", "character:trombi", "skin:bunbu:holo", "skin:owl:galaxy", "skin:shape:neon", "skin:trombi:glitch"]);
+    // a bot that wears Shapes keeps the character; the Common skins the editor fills in grant nothing more
+    expect(grandfatheredFromBots([{ mascotLook: { character: "shape", skins: { shape: "plain", trombi: "classic", bunbu: "plain" } } }])).toEqual(["character:shape"]);
   });
 });

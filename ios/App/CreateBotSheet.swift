@@ -474,13 +474,13 @@ struct NewBotOptionsForm: View {
 
     private var teamMenu: some View {
         Menu {
-            Button(String(localized: "General")) { options.section = "" }
+            Button(String(localized: "Unassigned")) { options.section = "" }
             ForEach(teams, id: \.self) { team in
                 Button(team) { options.section = team }
             }
         } label: {
             LabeledContent(String(localized: "Team")) {
-                Text(options.section.flatMap { $0.isEmpty ? nil : $0 } ?? String(localized: "General"))
+                Text(options.section.flatMap { $0.isEmpty ? nil : $0 } ?? String(localized: "Unassigned"))
                     .foregroundStyle(Theme.textSecondary)
             }
             .contentShape(Rectangle())

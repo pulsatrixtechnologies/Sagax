@@ -1,9 +1,7 @@
 // Model: which provider/model this bot runs on, and how hard it thinks.
-// Moved from SettingsPanel.tsx (~835-881). ModelPicker keeps `contained`:
-// this section sits inside the dialog's overflow-y-auto scroller, where the
-// picker's floating popover (absolute, ~480px tall) would open below the
-// fold and only become visible by scrolling; the in-flow menu pushes the
-// Effort card down instead and is fully visible where it opens.
+// Moved from SettingsPanel.tsx (~835-881). The pill keeps the profile row
+// (`contained`) and opens the same modal as the composer chip. An in-flow
+// menu is clipped by this sidebar.
 import { useAdvancedMode } from "@/lib/interface-mode";
 import { EffortRow, ModelPicker } from "../ModelPicker";
 import { X } from "lucide-react";

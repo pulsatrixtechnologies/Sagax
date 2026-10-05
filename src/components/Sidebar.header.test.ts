@@ -136,7 +136,8 @@ describe("sidebar header", () => {
     fixture.connectedApps = true;
     const html = render();
     expect(html).toContain(">Connected apps</span>");
-    expect(html).toContain(">Team map</span>");
+    expect(html).not.toContain(">Team map</span>");
+    expect(html).not.toContain(">Automations</span>");
   });
 
   it("hides the brand row when the sidebar logo is turned off, keeping search and New", () => {

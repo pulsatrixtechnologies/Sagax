@@ -112,7 +112,7 @@ export function PlaceChip({ bot, task, live, disabled = false, onPin, initialOpe
         data-testid="place-chip"
         onClick={() => {
           if (off) {
-            dispatch({ type: "toggleComputer", open: true });
+            dispatch({ type: "toggleSettings", open: true, section: "worksOn", botId: bot.id });
             return;
           }
           setOpen((value) => !value);

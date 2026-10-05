@@ -1,5 +1,5 @@
-// The bot's Works on, once, at the top of the Computer tab on a solo
-// server and on an organization server. The labels are the same ones the
+// The bot's Works on, once, as More > Computer on a solo server and on an
+// organization server. The Computer tab does not show it. The labels are the same ones the
 // composer chip uses (placeLabelKey). What each place means, and why one
 // is not available, is in its tooltip.
 import { useState } from "react";

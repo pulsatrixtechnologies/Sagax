@@ -569,7 +569,7 @@ export function AccessSection({
   return (
     <div className="flex flex-col gap-4">
       {/* Boat or VPS is which cloud computer Auto and Cloud use. It is not
-          a second Works on: that control is the Computer tab. */}
+          a second Works on: that control is More > Computer. */}
       {!organization && (!bot.computer || bot.computer === "cloud") && cloudComputersOffered(state.config) && (
         <div className="rounded-xl border border-hairline/40 p-4" data-cloud-backend>
           {!bot.computer && (

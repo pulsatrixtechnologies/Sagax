@@ -25,6 +25,7 @@ import type { MausColor, MausMotion } from "@/lib/mascot";
 import type { BotAvatarCrop } from "../../shared/bot-avatar";
 import type { BotPublicProfile } from "../../shared/bot-public-profile";
 import { approvalModeFor, type ApprovalMode } from "../../shared/approval-mode";
+import { uiCommandToAction } from "../../shared/bot-act";
 import type { MascotBodyId } from "../../shared/mascot-bodies";
 import type { MascotSkinId } from "../../shared/mascot-skins";
 import type { QuestionRequestCardData } from "../../shared/ask-question";
@@ -137,6 +138,8 @@ export interface OptionCardData {
   /** The model's own questions and options (Claude's AskUserQuestion), so
    * the card offers choices instead of an unanswerable Allow/Deny. */
   questionRequest?: QuestionRequestCardData;
+  /** A bot action waiting for this person's Allow. The id matches requestId. */
+  botActRequest?: { id: string };
 }
 
 export interface ConnectorCardData {
@@ -992,6 +995,8 @@ export type BotSettingsSection =
   | "memory"
   | "routines"
   | "access"
+  /** More > Computer. The Works on control. Not a row of the Computer tab. */
+  | "worksOn"
   | "model"
   | "permissions"
   | "voice"
@@ -4281,6 +4286,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           // Rendered at once: a bot message frame right behind this one
           // decides auto-speak from stateRef, which must know the call by then.
           if (framed) flushSync(() => rawDispatch({ type: "liveCall", call: framed.call }));
+          break;
+        }
+        case "bot-act": {
+          const command = uiCommandToAction(frame.action, frame.input);
+          if (command) dispatch(command.action as Action);
           break;
         }
         // a key changed and the fleet hot-reloaded — refresh the picker so

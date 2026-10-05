@@ -396,8 +396,8 @@ describe("floating bots: positions and screens", () => {
     const geometry = invoke("floating-bots:geometry", from);
     expect(geometry).toEqual({ bounds: home, workArea: PRIMARY.workArea, cursor: { x: 700, y: 400 } });
     emit("floating-bots:autopilot", from, true);
-    // a flight cannot leave the screens
-    expect(invoke("floating-bots:move-to", from, { x: -5000, y: 600 })).toMatchObject({ x: 0, y: 600 });
+    // a flight cannot leave the screens (the window is the quick chat's room, so a spot keeps its y only while that room fits)
+    expect(invoke("floating-bots:move-to", from, { x: -5000, y: 100 })).toMatchObject({ x: 0, y: 100 });
     expect(invoke("floating-bots:move-to", from, { x: 100, y: -900 })).toMatchObject({ x: 100, y: PRIMARY.workArea.y });
     win.events.get("moved")?.forEach((fn) => fn());
     emit("floating-bots:moved", from);

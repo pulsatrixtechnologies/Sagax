@@ -109,10 +109,11 @@ final class RoutinesUITests: XCTestCase {
         if let environment = fixture.environmentId { arguments += ["-parityEnvironment", environment] }
         app.launchArguments = arguments
         app.launch()
-        // the home's Automations place (Settings no longer carries routines)
-        XCTAssertTrue(app.buttons["home-plus"].waitForExistence(timeout: 30))
-        let row = app.buttons["home-place.automations"]
-        for _ in 0..<12 where !(row.exists && row.isHittable) { app.swipeUp() }
+        // Automations opens from the account menu, under Settings
+        XCTAssertTrue(app.buttons["home-account"].waitForExistence(timeout: 30))
+        app.buttons["home-account"].tap()
+        let row = app.buttons["account-menu.automations"]
+        XCTAssertTrue(row.waitForExistence(timeout: 5))
         row.tap()
         XCTAssertTrue(element("routines-section", in: app).waitForExistence(timeout: 15))
         // Automations opens on the calendar; these tests read the list

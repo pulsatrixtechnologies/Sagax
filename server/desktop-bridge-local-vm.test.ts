@@ -51,7 +51,7 @@ describe("the person's Local VM route", () => {
   });
 
   it("refuses anything else", async () => {
-    for (const action of ["run_command", "__proto__", "toString", 3]) {
+    for (const action of ["run_command", "use", "vm_computer_call", "__proto__", "toString", 3]) {
       const { answer, sent } = await call({ action });
       expect(answer.status).toBe(400);
       expect(sent).toEqual([]);

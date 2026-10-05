@@ -102,12 +102,17 @@ function bot(instanceId: string, model: string): Bot {
 }
 
 /** Render the picker once; the picker's own state survives, children start fresh. */
-function render(forBot: Bot) {
+function render(forBot: Bot, options?: { contained?: boolean; threadId?: string; label?: string }) {
   fixture.values.length = Math.min(fixture.values.length, fixture.own);
   let tree: ReactNode = null;
   function Capture() {
     fixture.index = 0;
-    tree = ModelPicker({ bot: forBot, threadId: forBot.threadId });
+    tree = ModelPicker({
+      bot: forBot,
+      threadId: options && "threadId" in options ? options.threadId : forBot.threadId,
+      contained: options?.contained,
+      label: options?.label,
+    });
     fixture.own = fixture.index;
     return tree;
   }
@@ -115,10 +120,10 @@ function render(forBot: Bot) {
   return { html, nodes: nodes(tree) };
 }
 
-function open(forBot: Bot) {
-  const trigger = render(forBot).nodes.find((node) => node.props["data-tour"] === "model")!;
+function open(forBot: Bot, options?: { contained?: boolean; threadId?: string; label?: string }) {
+  const trigger = render(forBot, options).nodes.find((node) => node.props["data-tour"] === "model")!;
   (trigger.props.onClick as () => void)();
-  return render(forBot);
+  return render(forBot, options);
 }
 
 function rail(rendered: ReturnType<typeof render>) {
@@ -327,6 +332,26 @@ describe("the picker opens as a modal like Settings", () => {
     const close = opened.nodes.find((node) => node.props["aria-label"] === "Close")!;
     (close.props.onClick as () => void)();
     expect(render(onClaude).html).not.toContain("data-model-picker-content");
+  });
+
+  it("opens that same modal from the profile row", () => {
+    fixture.instances = [codex, signedIn()];
+    const onClaude = bot("claude", "claude-opus-5-5");
+    const profile = { contained: true, threadId: undefined, label: "Default model" };
+    const closed = render(onClaude, profile).html;
+    expect(closed).toContain("Default model");
+    expect(closed).not.toContain("data-model-picker-backdrop");
+    const opened = open(onClaude, profile);
+    const html = menu(opened.html);
+    expect(opened.html).toContain("data-model-picker-backdrop");
+    expect(html).toContain('aria-modal="true"');
+    expect(html).toContain("data-model-provider-column");
+    expect(html).toContain('aria-label="Close"');
+    expect(html).toContain(">Opus 5.5<");
+    // The profile card sets the bot default. Thread scope stays on the composer.
+    expect(html).not.toContain(">Only this thread<");
+    // Effort already has its own card under the pill.
+    expect(html).not.toContain(">Effort<");
   });
 
   it("closes from its backdrop, not from a click inside", () => {

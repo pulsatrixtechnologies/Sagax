@@ -1,30 +1,27 @@
 // The profile row at the very bottom of the sidebar, and the menu it opens.
 //
-// Everything app-level used to sit in that row as unlabelled icons crowding
-// the name: a phone, an update arrow, a gear. Three icons is a guessing game
-// and there was nowhere to put a fourth. They are now a menu that the row
-// opens, the shape every desktop app uses for "this is about the app, not
-// about what you are looking at".
-//
-// The footer reads like Perspicax's: an avatar and a full name. The
-// sidebar's places (Team map, Automations, Connected apps, Templates) are
-// always-visible rows just above it (SidebarPlaces), so this menu holds the
-// profile items, led by Archived bots when there are any. It opens on click;
-// the collapsed rail keeps its avatar-only trigger.
+// The row is an avatar and a full name. The menu leads with Team map and
+// Automations, then a hairline, then settings. Archived bots, when there
+// are any, sit above that pair with their own hairline. Your phone and
+// Help Center are not in this menu: the phone stays in Settings and on
+// the collapsed rail, and docs stay on About. Connected apps and Templates
+// stay rows above this one when they are on (SidebarPlaces). It opens on
+// click. The collapsed rail keeps its own avatar button.
 //
 // The update entry is the one item that reports progress in place, so it
-// keeps the menu open and re-labels itself as it works.
-import { useEffect, useRef, useState } from "react";
+// keeps the menu open and re-labels itself as it works. A failed automation
+// dots this row while the menu is closed.
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   ArrowDownToLine,
+  CalendarDays,
   Check,
   Info,
-  HelpCircle,
   Keyboard,
   Loader2,
+  Network,
   RefreshCw,
   Settings as SettingsIcon,
-  Smartphone,
   Trophy,
 } from "lucide-react";
 
@@ -32,13 +29,12 @@ import { InitialsAvatar } from "./Avatar";
 import { AboutDialog } from "./AboutDialog";
 import { SidebarPopoverMenu, type SidebarMenuItem } from "./SidebarPopoverMenu";
 import { ShortcutHint } from "./ShortcutHint";
-import { phoneSettingsAction, useSidebarPhoneStatus } from "./SidebarPhoneButton";
 import { useStore } from "@/state/store";
 import { useUpdaterState, type UpdaterState } from "@/lib/updater";
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
-import { HELP_CENTER_URL, openExternalLink } from "@/lib/app-links";
 import { useAchievements } from "@/lib/achievements";
+import { isRoutineProblemRun } from "@/lib/routines";
 import { Gamertag, gamertagText } from "./achievements/Gamertag";
 
 /** "Milind Soni" → "MS", "milind" → "M", "you@x.dev" → "Y", unset → "?" */
@@ -204,16 +200,88 @@ export function footerMenuItems(places: SidebarMenuItem[], profileItems: Sidebar
   return first ? [...places, { ...first, separatorBefore: true }, ...rest] : places;
 }
 
+export interface ProfileMenuHandlers {
+  onTeamMap: () => void;
+  onAutomations: () => void;
+  onSettings: () => void;
+  onAchievements: () => void;
+  onShortcuts: () => void;
+  onAbout: () => void;
+}
+
+/** Team map, Automations, a hairline, then the account items. Phone and
+ * Help Center are not offered here. */
+export function profileMenuItems(input: {
+  teamMapLabel: string;
+  automationsLabel: string;
+  settingsLabel: string;
+  achievementsLabel: string | null;
+  aboutLabel: string;
+  teamMapActive: boolean;
+  automationsActive: boolean;
+  routineAttention: boolean;
+  shortcutsTrailing?: ReactNode;
+  updateItem: SidebarMenuItem | null;
+  handlers: ProfileMenuHandlers;
+}): SidebarMenuItem[] {
+  return [
+    {
+      key: "team-map",
+      label: input.teamMapLabel,
+      icon: <Network size={18} />,
+      active: input.teamMapActive,
+      onSelect: input.handlers.onTeamMap,
+    },
+    {
+      key: "routines",
+      tourId: "nav-automations",
+      label: input.automationsLabel,
+      icon: <CalendarDays size={18} />,
+      active: input.automationsActive,
+      attention: input.routineAttention,
+      onSelect: input.handlers.onAutomations,
+    },
+    {
+      key: "settings",
+      label: input.settingsLabel,
+      icon: <SettingsIcon size={18} />,
+      separatorBefore: true,
+      onSelect: input.handlers.onSettings,
+    },
+    ...(input.achievementsLabel
+      ? [{
+          key: "achievements",
+          label: input.achievementsLabel,
+          icon: <Trophy size={18} />,
+          onSelect: input.handlers.onAchievements,
+        }]
+      : []),
+    {
+      key: "shortcuts",
+      label: "Keyboard shortcuts",
+      icon: <Keyboard size={18} />,
+      trailing: input.shortcutsTrailing,
+      onSelect: input.handlers.onShortcuts,
+    },
+    ...(input.updateItem ? [input.updateItem] : []),
+    {
+      key: "about",
+      label: input.aboutLabel,
+      icon: <Info size={18} />,
+      separatorBefore: true,
+      onSelect: input.handlers.onAbout,
+    },
+  ];
+}
+
 export function SidebarProfileMenu({ avatarOnly = false, places = [] }: {
   /** just the avatar, for the collapsed (icons) rail; the name moves to the
    * tooltip and the menu keeps its width */
   avatarOnly?: boolean;
-  /** Items listed before the profile items (Archived bots). The sidebar's
-   * pages are not here: they are rows above this one (SidebarPlaces). */
+  /** Items listed before the profile items (Archived bots). */
   places?: SidebarMenuItem[];
 }) {
   const { state, dispatch } = useStore();
-  const phone = useSidebarPhoneStatus();
   const update = useUpdateItem();
   const [aboutOpen, setAboutOpen] = useState(false);
   const triggerRef = useRef<HTMLSpanElement>(null);
@@ -235,61 +303,35 @@ export function SidebarProfileMenu({ avatarOnly = false, places = [] }: {
     email: profile?.email?.trim() || viewer?.email?.trim(),
   });
 
-  const profileItems: SidebarMenuItem[] = [
-    {
-      key: "phone",
-      label: phone.pairedCount ? t("sidebar.menu.yourPhone") : t("sidebar.menu.getIos"),
-      icon: <Smartphone size={18} />,
-      trailing:
-        phone.kind === "connected" ? (
-          <span aria-hidden="true" className="size-1.5 shrink-0 rounded-full bg-success" />
-        ) : undefined,
-      onSelect: () => dispatch(phoneSettingsAction()),
-    },
-    {
-      key: "settings",
-      label: t("sidebar.menu.settings"),
-      icon: <SettingsIcon size={18} />,
-      onSelect: () => dispatch({ type: "toggleAppSettings" }),
-    },
-    ...(achievements.status === "ready"
-      ? [{
-          key: "achievements",
-          label: t("achievements.menu"),
-          icon: <Trophy size={18} />,
-          onSelect: openAchievements,
-        }]
-      : []),
-    {
-      key: "shortcuts",
-      label: "Keyboard shortcuts",
-      icon: <Keyboard size={18} />,
-      trailing: <ShortcutHint id="shortcuts-cheat-sheet" />,
-      onSelect: () => {
+  const routineAttention = state.routineRuns.some((run) => isRoutineProblemRun(run) && !run.seenAt);
+  const profileItems = profileMenuItems({
+    teamMapLabel: t("sidebar.nav.teamMap"),
+    automationsLabel: t("sidebar.nav.automations"),
+    settingsLabel: t("sidebar.menu.settings"),
+    achievementsLabel: achievements.status === "ready" ? t("achievements.menu") : null,
+    aboutLabel: t("sidebar.menu.about"),
+    teamMapActive: state.activeView === "team-map",
+    automationsActive: state.activeView === "routines",
+    routineAttention,
+    shortcutsTrailing: <ShortcutHint id="shortcuts-cheat-sheet" />,
+    updateItem: update?.item ?? null,
+    handlers: {
+      onTeamMap: () => dispatch({ type: "showTeamMap" }),
+      onAutomations: () => dispatch({ type: "showRoutines" }),
+      onSettings: () => dispatch({ type: "toggleAppSettings" }),
+      onAchievements: openAchievements,
+      onShortcuts: () => {
         // The menu item unmounts; let the dialog restore the profile button.
         triggerRef.current?.closest("button")?.focus();
         dispatch({ type: "toggleShortcuts", open: true });
       },
+      onAbout: () => setAboutOpen(true),
     },
-    ...(update ? [update.item] : []),
-    {
-      key: "about",
-      label: t("sidebar.menu.about"),
-      icon: <Info size={18} />,
-      separatorBefore: true,
-      onSelect: () => setAboutOpen(true),
-    },
-    {
-      key: "help",
-      label: t("sidebar.menu.help"),
-      icon: <HelpCircle size={18} />,
-      onSelect: () => void openExternalLink(HELP_CENTER_URL),
-    },
-  ];
+  });
   const items = footerMenuItems(places, profileItems);
   const noteworthy = update && updateNoteworthy(update.phase, update.pending) ? update : null;
   // an item in the menu asking for attention while the menu is folded away
-  const placeAttention = places.some((item) => item.attention);
+  const placeAttention = places.some((item) => item.attention) || routineAttention;
 
   const avatar = (size: number) => (
     // the footer avatar, always in its real colours

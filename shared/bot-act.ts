@@ -1,0 +1,364 @@
+// What a bot may do in the signed-in person's name.
+// The caller is that person. A route they cannot call is refused.
+// Reads and screen changes run now. A write waits unless the bot's
+// approval mode is auto or full. This module decides. It does not perform.
+
+const PATH_MAX = 512;
+const QUERY_KEYS_MAX = 20;
+const QUERY_VALUE_MAX = 200;
+const BODY_MAX = 100_000;
+const ACTION_MAX = 100_000;
+const OBJECT_MAX = 50_000;
+const ID_MAX = 200;
+const TEXT_MAX = 20_000;
+const ARRAY_MAX = 64;
+const METHODS = new Set(["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD"]);
+const CALLBACKS = new Set(["onError", "onCreated", "onSettled", "onSent", "onCancelled", "onSaved", "onDeleted"]);
+const BAD_KEYS = new Set(["__proto__", "constructor", "prototype"]);
+const MOTIONS = new Set([
+  "arrive", "switch", "customize", "alert", "thinking", "working", "launch",
+  "success", "celebrate", "blink", "surprise", "failure",
+  "spread-wings", "flap", "take-off", "shake", "hoot",
+]);
+
+export type TurnFacts = {
+  automation: boolean;
+  guest: boolean;
+  requestUsable: boolean;
+  senderUnproven: boolean;
+  provenPerson: string | null;
+  sharedServer: boolean;
+};
+
+export type TurnActor =
+  | { kind: "none"; reason: "automation" | "guest" | "unproven" | "stale" | "shared" }
+  | { kind: "person"; personKey: string }
+  | { kind: "operator" };
+
+export function actorForTurn(facts: TurnFacts): TurnActor {
+  if (facts.automation) return { kind: "none", reason: "automation" };
+  if (facts.guest) return { kind: "none", reason: "guest" };
+  if (!facts.requestUsable) return { kind: "none", reason: "unproven" };
+  if (facts.senderUnproven) return { kind: "none", reason: "stale" };
+  if (facts.provenPerson) return { kind: "person", personKey: facts.provenPerson };
+  if (facts.sharedServer) return { kind: "none", reason: "shared" };
+  return { kind: "operator" };
+}
+
+export type UiTarget = {
+  kind: "ui";
+  command: string;
+  input: Record<string, unknown>;
+  action: Record<string, unknown>;
+  write: boolean;
+};
+
+export type RouteTarget = {
+  kind: "route";
+  method: string;
+  path: string;
+  query?: Record<string, string>;
+  body?: unknown;
+};
+
+export type ActTarget = UiTarget | RouteTarget;
+
+export type ActDecision =
+  | { ok: false; status: 400 | 403; error: string }
+  | { ok: true; effect: "run" | "hold"; summary: string; target: ActTarget };
+
+type ScopeName = "admin" | "client";
+
+/** A screen frame reaches only the streams of the audience it names. */
+export function botActFrameAllowed(audience: string, viewerId: string | undefined, localPrincipalId: string): boolean {
+  return audience === (viewerId ?? localPrincipalId);
+}
+
+export function summaryOf(target: ActTarget): string {
+  if (target.kind === "ui") return `Screen: ${target.command}`;
+  return `${target.method} ${target.path}`;
+}
+
+type CommandSpec = { write: boolean; fields: Record<string, string> };
+
+const COMMANDS: Record<string, CommandSpec> = {
+  showRoutines: { write: false, fields: { section: "e?:schedule|logs", view: "e?:calendar|list", botId: "s?", routineId: "s?", runStatus: "e?:all|problems|queued|running|waiting|completed|failed|cancelled|missed" } },
+  showTeamMap: { write: false, fields: {} },
+  showChat: { write: false, fields: {} },
+  select: { write: false, fields: { id: "s" } },
+  revealThread: { write: false, fields: { threadId: "s" } },
+  toggleSettings: { write: false, fields: { open: "b?", section: "s?", botId: "s?" } },
+  openPersonPanel: { write: false, fields: { personId: "n" } },
+  openBotActivity: { write: false, fields: { botId: "s", itemId: "s" } },
+  togglePlugins: { write: false, fields: { open: "b?", surface: "e?:apps|mcp" } },
+  toggleTriggers: { write: false, fields: { open: "b?" } },
+  toggleNewBot: { write: false, fields: { open: "b?" } },
+  toggleComputer: { write: false, fields: { open: "b?" } },
+  toggleInspector: { write: false, fields: { open: "b?" } },
+  toggleActivity: { write: false, fields: { open: "b?" } },
+  focusMessage: { write: false, fields: { threadId: "s", messageId: "s", matchText: "S?" } },
+  toggleAppSettings: { write: false, fields: { open: "b?", section: "s?", subPage: "s?", phonePairing: "b?" } },
+  toggleShortcuts: { write: false, fields: { open: "b?" } },
+  toggleWelcome: { write: false, fields: { open: "b?" } },
+  toggleLaunch: { write: false, fields: { open: "b?", mode: "e?:solo|server" } },
+  toggleTour: { write: false, fields: { open: "b?" } },
+  loadOlderMessages: { write: false, fields: { threadId: "s" } },
+  createRoutine: { write: true, fields: { input: "o" } },
+  updateRoutine: { write: true, fields: { routineId: "s", patch: "o" } },
+  deleteRoutine: { write: true, fields: { routineId: "s" } },
+  runRoutine: { write: true, fields: { routineId: "s" } },
+  cancelRoutineRun: { write: true, fields: { runId: "s" } },
+  markRoutineRunSeen: { write: true, fields: { runId: "s" } },
+  markAllRoutineRunsSeen: { write: true, fields: {} },
+  createGroup: { write: true, fields: { memberIds: "a", name: "s?", section: "s?" } },
+  openPeopleDm: { write: true, fields: { principalId: "s" } },
+  sendGroup: { write: true, fields: { groupId: "s", text: "S", sendId: "s?", replyToId: "s?", threadId: "s?", mode: "e?:chat|goal" } },
+  patchGroup: { write: true, fields: { groupId: "s", patch: "o" } },
+  deleteGroup: { write: true, fields: { groupId: "s" } },
+  newGroupTask: { write: true, fields: { groupId: "s" } },
+  switchGroupTask: { write: true, fields: { groupId: "s", threadId: "s" } },
+  renameGroupTask: { write: true, fields: { groupId: "s", threadId: "s", title: "S" } },
+  pinGroupTask: { write: true, fields: { groupId: "s", threadId: "s", pinned: "b", title: "S" } },
+  deleteGroupTask: { write: true, fields: { groupId: "s", threadId: "s" } },
+  interruptGroup: { write: true, fields: { groupId: "s", threadId: "s?" } },
+  send: { write: true, fields: { botId: "s", text: "S", sendId: "s?", replyToId: "s?", threadId: "s?", voiceCall: "o?", busyMode: "e?:steer|parallel|after" } },
+  stopParallelTask: { write: true, fields: { botId: "s", threadId: "s" } },
+  cancelQueued: { write: true, fields: { botId: "s", queueId: "s", threadId: "s?" } },
+  steerQueued: { write: true, fields: { botId: "s", queueId: "s", threadId: "s?" } },
+  cancelGroupQueued: { write: true, fields: { groupId: "s", threadId: "s", queueId: "s" } },
+  steerGroupQueued: { write: true, fields: { groupId: "s", queueId: "s", threadId: "s?" } },
+  editMessage: { write: true, fields: { botId: "s", messageId: "s", text: "S", threadId: "s?", sendId: "s?" } },
+  switchBranch: { write: true, fields: { botId: "s", messageId: "s", threadId: "s?" } },
+  answerCard: { write: true, fields: { botId: "s", messageId: "s", answer: "S", threadId: "s?", groupId: "s?" } },
+  dismissCard: { write: true, fields: { botId: "s", messageId: "s", threadId: "s?", groupId: "s?" } },
+  decideRequest: { write: true, fields: { threadId: "s", requestId: "s", behavior: "e:allow|deny|answer", message: "S?", reviewedSha256: "s?", alwaysAllow: "o?", always: "b?", rememberCommand: "b?" } },
+  newTask: { write: true, fields: { botId: "s", projectId: "s?" } },
+  switchTask: { write: true, fields: { botId: "s", threadId: "s" } },
+  renameTask: { write: true, fields: { botId: "s", threadId: "s", title: "S" } },
+  regenerateTaskTitle: { write: true, fields: { botId: "s", threadId: "s" } },
+  deleteTask: { write: true, fields: { botId: "s", threadId: "s" } },
+  newBot: { write: true, fields: { role: "s?", visibility: "v?", section: "s?", preserveSelection: "b?" } },
+  updateTask: { write: true, fields: { botId: "s", threadId: "s", patch: "o" } },
+  refreshTaskPermissions: { write: true, fields: { botId: "s", threadId: "s", acknowledgeLocalAuto: "b?" } },
+  createProject: { write: true, fields: { botId: "s", name: "S", emoji: "z?" } },
+  updateProject: { write: true, fields: { botId: "s", projectId: "s", patch: "o" } },
+  deleteProject: { write: true, fields: { botId: "s", projectId: "s" } },
+  reorderProjects: { write: true, fields: { botId: "s", projectIds: "a" } },
+  deleteBot: { write: true, fields: { botId: "s" } },
+  duplicateBot: { write: true, fields: { botId: "s" } },
+  markUnread: { write: true, fields: { botId: "s" } },
+  playMascotMotion: { write: true, fields: { botId: "s", kind: "m" } },
+  setModel: { write: true, fields: { botId: "s", selection: "o", threadId: "s?", updateBotDefault: "b?", resetApprovalToAsk: "b?" } },
+  interrupt: { write: true, fields: { botId: "s", threadId: "s?" } },
+  updateBot: { write: true, fields: { botId: "s", patch: "o" } },
+};
+
+/** Screen or button the desktop app already dispatches. Unknown names and
+ * internal frames are null, which the route refuses. Callbacks are dropped. */
+export function uiCommandToAction(ui: string, input: unknown): { action: Record<string, unknown>; write: boolean; input: Record<string, unknown> } | null {
+  const spec = COMMANDS[ui];
+  if (!spec) return null;
+  if (input === undefined) input = {};
+  if (!plainObject(input) || hasBadKey(input)) return null;
+  const source = input as Record<string, unknown>;
+  const action: Record<string, unknown> = { type: ui };
+  const kept: Record<string, unknown> = {};
+  for (const key of Object.keys(source)) {
+    if (CALLBACKS.has(key)) continue;
+    if (!(key in spec.fields)) return null;
+  }
+  for (const [key, code] of Object.entries(spec.fields)) {
+    if (!(key in source)) {
+      if (!code.includes("?")) return null;
+      continue;
+    }
+    const value = accept(code, source[key]);
+    if (value === INVALID) return null;
+    action[key] = value;
+    kept[key] = value;
+  }
+  if (ui === "playMascotMotion" && !MOTIONS.has(String(action.kind))) return null;
+  let encoded: string;
+  try {
+    encoded = JSON.stringify(action);
+  } catch {
+    return null;
+  }
+  if (encoded.length > ACTION_MAX) return null;
+  return { action, write: spec.write, input: kept };
+}
+
+const INVALID = Symbol("invalid");
+
+function accept(code: string, value: unknown): unknown {
+  const kind = code.replace("?", "");
+  if (kind === "s" || kind === "S") {
+    const max = kind === "S" ? TEXT_MAX : ID_MAX;
+    if (typeof value !== "string" || value.length < 1 || value.length > max) return INVALID;
+    return value;
+  }
+  if (kind === "b") return typeof value === "boolean" ? value : INVALID;
+  if (kind.startsWith("e:")) {
+    const allowed = kind.slice(2).split("|");
+    return typeof value === "string" && allowed.includes(value) ? value : INVALID;
+  }
+  if (kind === "a") {
+    if (!Array.isArray(value) || value.length > ARRAY_MAX) return INVALID;
+    if (value.some((item) => typeof item !== "string" || item.length < 1 || item.length > ID_MAX)) return INVALID;
+    return [...value];
+  }
+  if (kind === "o") {
+    if (!plainObject(value)) return INVALID;
+    return cloneJson(value, OBJECT_MAX);
+  }
+  if (kind === "n") {
+    if (value === null) return null;
+    if (typeof value !== "string" || value.length < 1 || value.length > ID_MAX) return INVALID;
+    return value;
+  }
+  if (kind === "z") {
+    if (value === null) return null;
+    if (typeof value !== "string" || value.length > 32) return INVALID;
+    return value;
+  }
+  if (kind === "v") {
+    if (typeof value === "string") return value.length > 0 && value.length <= ID_MAX ? value : INVALID;
+    if (!plainObject(value)) return INVALID;
+    return cloneJson(value, OBJECT_MAX);
+  }
+  if (kind === "m") return typeof value === "string" && MOTIONS.has(value) ? value : INVALID;
+  return INVALID;
+}
+
+function cloneJson(value: unknown, max: number): unknown {
+  if (!plainObject(value) && !Array.isArray(value)) return INVALID;
+  try {
+    const encoded = JSON.stringify(value);
+    if (encoded.length > max) return INVALID;
+    return JSON.parse(encoded) as unknown;
+  } catch {
+    return INVALID;
+  }
+}
+
+export function decideBotAct(input: {
+  raw: unknown;
+  mode: "ask" | "edits" | "auto" | "full" | "custom" | undefined;
+  scopes: readonly string[];
+  neededScope: (method: string, path: string) => ScopeName;
+}): ActDecision {
+  const parsed = parseActTarget(input.raw);
+  if (!parsed.ok) return parsed;
+  const target = parsed.target;
+  if (target.kind === "route") {
+    const needed = input.neededScope(target.method, target.path);
+    if (!input.scopes.includes(needed)) {
+      return { ok: false, status: 403, error: "This person cannot call that route." };
+    }
+  } else if (!input.scopes.includes("admin") && !input.scopes.includes("client")) {
+    return { ok: false, status: 403, error: "This person cannot call that route." };
+  }
+  const write = target.kind === "route" ? target.method !== "GET" && target.method !== "HEAD" : target.write;
+  const unattended = input.mode === "auto" || input.mode === "full";
+  return {
+    ok: true,
+    effect: write && !unattended ? "hold" : "run",
+    summary: summaryOf(target),
+    target,
+  };
+}
+
+function parseActTarget(raw: unknown): { ok: true; target: ActTarget } | { ok: false; status: 400; error: string } {
+  if (!plainObject(raw) || hasBadKey(raw)) return { ok: false, status: 400, error: "Send either ui and input, or method and path." };
+  const record = raw as Record<string, unknown>;
+  for (const key of Object.keys(record)) {
+    if (!["ui", "input", "method", "path", "query", "body"].includes(key)) {
+      return { ok: false, status: 400, error: "Send either ui and input, or method and path." };
+    }
+  }
+  const hasUi = record.ui !== undefined;
+  const hasRoute = record.method !== undefined || record.path !== undefined || record.query !== undefined || record.body !== undefined;
+  if (hasUi === hasRoute) return { ok: false, status: 400, error: hasUi ? "ui cannot be combined with method, path, query or body." : "Send either ui and input, or method and path." };
+  if (hasUi) {
+    if (typeof record.ui !== "string" || record.ui.length < 1 || record.ui.length > 64) {
+      return { ok: false, status: 400, error: "That screen action is not available." };
+    }
+    const built = uiCommandToAction(record.ui, record.input);
+    if (!built) return { ok: false, status: 400, error: "That screen action is not available." };
+    return { ok: true, target: { kind: "ui", command: record.ui, input: built.input, action: built.action, write: built.write } };
+  }
+  if (typeof record.method !== "string" || typeof record.path !== "string") {
+    return { ok: false, status: 400, error: "Send either ui and input, or method and path." };
+  }
+  const method = record.method.toUpperCase();
+  if (!METHODS.has(method)) return { ok: false, status: 400, error: "method must be GET, POST, PUT, PATCH, DELETE or HEAD." };
+  if (!acceptablePath(record.path)) return { ok: false, status: 400, error: "That path is not available." };
+  if ((method === "GET" || method === "HEAD") && record.body !== undefined) {
+    return { ok: false, status: 400, error: "A read cannot carry a body." };
+  }
+  let query: Record<string, string> | undefined;
+  if (record.query !== undefined) {
+    const parsed = parseQuery(record.query);
+    if (!parsed.ok) return parsed;
+    query = parsed.query;
+  }
+  let body: unknown;
+  if (record.body !== undefined) {
+    if (!plainJson(record.body)) return { ok: false, status: 400, error: "The body must be a JSON object or a list." };
+    let encoded: string;
+    try {
+      encoded = JSON.stringify(record.body);
+      body = JSON.parse(encoded) as unknown;
+    } catch {
+      return { ok: false, status: 400, error: "The body must be a JSON object or a list." };
+    }
+    if (encoded.length > BODY_MAX) return { ok: false, status: 400, error: "The body is too large." };
+  }
+  return { ok: true, target: { kind: "route", method, path: record.path, ...(query ? { query } : {}), ...(body !== undefined ? { body } : {}) } };
+}
+
+function acceptablePath(path: string): boolean {
+  if (path.length < 5 || path.length > PATH_MAX) return false;
+  if (path.includes("%") || path.includes("?") || path.includes("#") || path.includes("\\") || path.includes("..") || path.includes("//")) return false;
+  if (!/^\/api\/[A-Za-z0-9_./~:@+-]*$/.test(path)) return false;
+  if (path === "/api/internal" || path.startsWith("/api/internal/")) return false;
+  if (path === "/api/testing" || path.startsWith("/api/testing/")) return false;
+  return true;
+}
+
+function parseQuery(value: unknown): { ok: true; query: Record<string, string> } | { ok: false; status: 400; error: string } {
+  if (!plainObject(value)) return { ok: false, status: 400, error: "query values must be short strings." };
+  const entries = Object.entries(value as Record<string, unknown>);
+  if (entries.length > QUERY_KEYS_MAX) return { ok: false, status: 400, error: "query values must be short strings." };
+  const query: Record<string, string> = {};
+  for (const [key, item] of entries) {
+    if (!/^[\w.-]{1,64}$/.test(key) || typeof item !== "string" || item.length > QUERY_VALUE_MAX) {
+      return { ok: false, status: 400, error: "query values must be short strings." };
+    }
+    query[key] = item;
+  }
+  return { ok: true, query };
+}
+
+function plainJson(value: unknown): boolean {
+  if (Array.isArray(value)) return value.every((item) => item === null || ["string", "number", "boolean"].includes(typeof item) || plainJson(item));
+  if (!plainObject(value)) return false;
+  return true;
+}
+
+function plainObject(value: unknown): value is Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const proto = Object.getPrototypeOf(value);
+  return proto === Object.prototype || proto === null;
+}
+
+function hasBadKey(value: unknown, depth = 0): boolean {
+  if (depth > 12) return true;
+  if (!value || typeof value !== "object") return false;
+  if (Array.isArray(value)) return value.some((item) => hasBadKey(item, depth + 1));
+  for (const key of Object.keys(value as Record<string, unknown>)) {
+    if (BAD_KEYS.has(key)) return true;
+    if (hasBadKey((value as Record<string, unknown>)[key], depth + 1)) return true;
+  }
+  return false;
+}

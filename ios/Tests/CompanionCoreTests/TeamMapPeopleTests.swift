@@ -96,7 +96,7 @@ final class TeamMapPeopleTests: XCTestCase {
         state.rooms = [room("r1", section: "Lab")]
         let sections = TeamMap.pageSections(state: state)
         XCTAssertEqual(sections.map(\.key), ["", "Dev", "Ops", "Empty", "Lab"])
-        XCTAssertEqual(sections[0].name, "General")
+        XCTAssertEqual(sections[0].name, "Unassigned")
         XCTAssertEqual(sections[1].chiefs.map(\.id), ["cy"])
         XCTAssertEqual(sections[1].members.map(\.id), ["dee"])
         XCTAssertEqual(sections[2].members.map(\.id), ["ara"], "a hidden bot is not on the map")

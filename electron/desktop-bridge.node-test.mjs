@@ -41,6 +41,19 @@ test("operations are checked for shape before anything runs", () => {
   assert.equal(validBridgeOperation({ action: "read_file", path: "~/x", extra: 1 }), false);
   assert.equal(validBridgeOperation({ action: "read_file", offset: -1 }), false);
   assert.equal(validBridgeOperation({ action: "computer_call", arguments: [] }), false);
+  assert.equal(validBridgeOperation({ action: "vm_computer_call", tool_name: "click", arguments: { x: 1, y: 2 } }), true);
+  assert.equal(validBridgeOperation({ action: "vm_computer_call", arguments: [] }), false);
+});
+
+test("a Local VM screen call goes to the VM, not the person's screen", async () => {
+  const home = sandboxHome();
+  const seen = [];
+  const localVm = { computer: async (name, args) => { seen.push({ name, args }); return { content: [{ type: "text", text: "clicked" }] }; } };
+  const result = await executeBridgeOperation({ action: "vm_computer_call", tool_name: "click", arguments: { x: 4, y: 5 } }, { ...deps(home), localVm }, signal());
+  assert.deepEqual(seen, [{ name: "click", args: { x: 4, y: 5 } }]);
+  assert.match(result.content[0].text, /clicked/);
+  await assert.rejects(executeBridgeOperation({ action: "vm_computer_call", tool_name: "click" }, { ...deps(home), localVm: {} }, signal()), /cannot control the Local VM screen/);
+  fs.rmSync(home, { recursive: true, force: true });
 });
 
 test("paths are absolute or the person's home; attachment names are one file", () => {

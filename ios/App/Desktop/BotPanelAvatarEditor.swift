@@ -130,11 +130,13 @@ struct BotAvatarEditor: View {
                     .padding(.top, 11)
                 VStack(alignment: .leading, spacing: 6) {
                     label("Character")
+                    let wornCharacter = CharacterDraft(bot: bot).character
+                    let characters = MascotCharacter.allCases.filter { !unlocks.characterLocked($0, current: wornCharacter) }
                     HStack(spacing: 6) {
-                        ForEach(MascotCharacter.allCases, id: \.self) { character in
+                        ForEach(characters, id: \.self) { character in
                             cell(look: lookFor(character), skin: character == .owl ? draft.skin : .none,
                                  name: characterName(character), selected: draft.character == character, height: 64,
-                                 locked: unlocks.characterLocked(character, current: CharacterDraft(bot: bot).character)) {
+                                 locked: false) {
                                 var next = draft
                                 next.character = character
                                 save(next)
@@ -169,19 +171,6 @@ struct BotAvatarEditor: View {
             label("Skin").padding(.top, 12)
             skins.padding(.top, 6)
             if draft.character == .owl {
-                label("Style").padding(.top, 12)
-                HStack(spacing: 6) {
-                    ForEach(MascotStyle.allCases, id: \.self) { style in
-                        chip(CharacterMovesMenu.name(style), selected: draft.complete.style == style) {
-                            var next = draft
-                            var look = next.complete
-                            look.style = style
-                            next.look = look.stored
-                            save(next)
-                        }
-                    }
-                }
-                .padding(.top, 6)
                 label("Moves").padding(.top, 12)
                 HStack(spacing: 6) {
                     ForEach(OwlWingMove.allCases, id: \.self) { move in
@@ -203,10 +192,11 @@ struct BotAvatarEditor: View {
         let worn = CharacterDraft(bot: bot)
         switch draft.character {
         case .owl:
+            let skins = MascotSkin.allCases.filter { !unlocks.skinLocked(.owl, skin: $0.rawValue, current: worn.skin.rawValue) }
             LazyVGrid(columns: columns, spacing: 4) {
-                ForEach(MascotSkin.allCases, id: \.self) { skin in
+                ForEach(skins, id: \.self) { skin in
                     cell(look: MascotLook.owl.complete, skin: skin, name: skinName(skin.rawValue), selected: draft.skin == skin, height: 60,
-                         locked: unlocks.skinLocked(.owl, skin: skin.rawValue, current: worn.skin.rawValue)) {
+                         locked: false) {
                         var next = draft
                         next.skin = skin
                         save(next)
@@ -214,10 +204,11 @@ struct BotAvatarEditor: View {
                 }
             }
         case .shape:
+            let skins = ShapeSkin.allCases.filter { !unlocks.skinLocked(.shape, skin: $0.rawValue, current: worn.complete.shapeSkin.rawValue) }
             LazyVGrid(columns: columns, spacing: 4) {
-                ForEach(ShapeSkin.allCases, id: \.self) { skin in
+                ForEach(skins, id: \.self) { skin in
                     cell(look: edited { $0.shapeSkin = skin }, skin: .none, name: skinName(skin.rawValue), selected: draft.complete.shapeSkin == skin, height: 60,
-                         locked: unlocks.skinLocked(.shape, skin: skin.rawValue, current: worn.complete.shapeSkin.rawValue)) {
+                         locked: false) {
                         var next = draft
                         var look = next.complete
                         look.shapeSkin = skin
@@ -227,10 +218,11 @@ struct BotAvatarEditor: View {
                 }
             }
         case .trombi:
+            let skins = TrombiSkin.allCases.filter { !unlocks.skinLocked(.trombi, skin: $0.rawValue, current: worn.complete.trombiSkin.rawValue) }
             LazyVGrid(columns: columns, spacing: 4) {
-                ForEach(TrombiSkin.allCases, id: \.self) { skin in
+                ForEach(skins, id: \.self) { skin in
                     cell(look: edited { $0.trombiSkin = skin }, skin: .none, name: skinName(skin.rawValue), selected: draft.complete.trombiSkin == skin, height: 60,
-                         locked: unlocks.skinLocked(.trombi, skin: skin.rawValue, current: worn.complete.trombiSkin.rawValue)) {
+                         locked: false) {
                         var next = draft
                         var look = next.complete
                         look.trombiSkin = skin

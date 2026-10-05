@@ -14,7 +14,7 @@ describe("sidebarListedBots", () => {
   const shared = bot("x", "pr_alice", "Alice private");
   const sharedInSection = bot("y", "pr_alice", "Shared ops");
 
-  it("keeps a bot someone shared with you in an organization, in General unless you see its section", () => {
+  it("keeps a bot someone shared with you in an organization, in Unassigned unless you see its section", () => {
     const listed = sidebarListedBots([mine, shared, sharedInSection], "pr_bob", true, ["Ops", "Shared ops"]);
     expect(listed.map((b) => b.id)).toEqual(["mine", "x", "y"]);
     expect(listed.find((b) => b.id === "x")?.section).toBeUndefined();

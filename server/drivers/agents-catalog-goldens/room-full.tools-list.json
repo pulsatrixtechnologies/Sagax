@@ -1341,6 +1341,56 @@
       }
     },
     {
+      "name": "act",
+      "description": "Act as the signed-in person. Send either ui and input (a screen or button in their open Sagax app) or method, path, and optional query and body (an /api route, which also works when they have no desktop window). You are that person: a route they cannot call is refused, and you cannot do more than they can. Reads and screen changes run now. A write waits for their Allow on a card unless this bot's approval mode is auto or full. Do not retry a held write. /api/internal and /api/testing are refused.",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "ui": {
+            "type": "string",
+            "maxLength": 64,
+            "description": "A screen or button the desktop app already dispatches, such as showTeamMap or send."
+          },
+          "input": {
+            "type": "object",
+            "additionalProperties": true,
+            "description": "Fields for that screen or button. Omit when ui needs none."
+          },
+          "method": {
+            "type": "string",
+            "enum": [
+              "GET",
+              "POST",
+              "PUT",
+              "PATCH",
+              "DELETE",
+              "HEAD"
+            ],
+            "description": "HTTP method for an /api route."
+          },
+          "path": {
+            "type": "string",
+            "maxLength": 512,
+            "description": "An /api path. It must not include a query string."
+          },
+          "query": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string",
+              "maxLength": 200
+            },
+            "description": "Query values as strings, at most 20 keys."
+          },
+          "body": {
+            "type": "object",
+            "additionalProperties": true,
+            "description": "JSON object sent with POST, PUT, PATCH, or DELETE."
+          }
+        }
+      }
+    },
+    {
       "name": "skills_list",
       "description": "List this bot's imported skills (enabled and disabled) and any staged skill writes waiting for the user to confirm. Use this before skill_manage to avoid duplicate names. Listing does not enable anything.",
       "inputSchema": {

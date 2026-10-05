@@ -10,9 +10,9 @@
 // layout keys (sidebar-preferences.ts). On a solo server the sidebar keeps
 // the server's own sections (bot.section, group.section): one person.
 //
-// What is in no section shows in General, at the top: nothing disappears
+// What is in no section shows in Unassigned, at the top: nothing disappears
 // because it has no section. Deleting a section frees its items (they go
-// back to General); it never deletes a bot, a group or a conversation.
+// back to Unassigned); it never deletes a bot, a group or a conversation.
 import { useSyncExternalStore } from "react";
 import { z } from "zod";
 
@@ -45,8 +45,8 @@ const schema = z.object({
   })),
 });
 
-/** General holds what is in no section: its names are not section names. */
-const RESERVED = new Set(["general", "général", "generale", "sans section", "unassigned", "no section"]);
+/** Unassigned holds what is in no section: its names are not section names. */
+const RESERVED = new Set(["general", "général", "generale", "sans section", "unassigned", "no section", "non assigné", "não atribuído"]);
 
 export function itemKey(kind: SectionItemKind, id: string): string {
   return `${kind}:${id}`;
@@ -127,12 +127,12 @@ export function renamePersonalSection(prefs: PersonalSections, from: string, to:
   return done({ sections: prefs.sections.map((section) => (section.name === from ? { ...section, name: to.trim() } : section)) });
 }
 
-/** Removes the section; its items go back to General. */
+/** Removes the section; its items go back to Unassigned. */
 export function deletePersonalSection(prefs: PersonalSections, name: string): PersonalSections {
   return { sections: prefs.sections.filter((section) => section.name !== name) };
 }
 
-/** Puts an item in a section (created when new), or back in General with "".
+/** Puts an item in a section (created when new), or back in Unassigned with "".
  * `known` prunes keys of items that no longer exist when the value is full. */
 export function assignToPersonalSection(prefs: PersonalSections, key: string, name: string, known?: ReadonlySet<string>): SectionEditResult {
   const target = name.trim();
@@ -155,7 +155,7 @@ interface SeedGroup { id: string; section?: string | undefined; dm?: unknown }
 
 /** The first value for a person who never had one: their own bots and the
  * rooms they see keep the section the server gave them (bots shared by
- * someone else start in General: their owner's sections are the owner's). */
+ * someone else start in Unassigned: their owner's sections are the owner's). */
 export function seedPersonalSections(input: { bots: readonly SeedBot[]; groups: readonly SeedGroup[]; sections: readonly string[]; viewerId: string }): PersonalSections {
   const me = input.viewerId.trim().toLowerCase();
   const own = (bot: SeedBot) => {
@@ -184,7 +184,7 @@ export function seedPersonalSections(input: { bots: readonly SeedBot[]; groups: 
 }
 
 /** The sidebar's view: each bot and group carries the viewer's own section
- * (undefined: General), whatever the server says. */
+ * (undefined: Unassigned), whatever the server says. */
 export function withPersonalSections<B extends { id: string; section?: string | undefined }, G extends { id: string; section?: string | undefined }>(bots: readonly B[], groups: readonly G[], prefs: PersonalSections): { bots: B[]; groups: G[] } {
   const where = new Map<string, string>();
   for (const section of prefs.sections) for (const key of section.items) where.set(key, section.name);

@@ -190,7 +190,7 @@ private struct DesktopTeamCanvas: View {
         let members = model.lane(section.members, in: section)
         return VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 8) {
-                Text(verbatim: section.name)
+                Text(section.key.isEmpty ? String(localized: "Unassigned") : section.name)
                     .font(theme.font(13, .semibold))
                     .tracking(-0.3)
                     .foregroundStyle(theme.ink)
@@ -233,7 +233,7 @@ private struct DesktopTeamCanvas: View {
         .background(theme.panel.opacity(0.9), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(theme.hairline.opacity(0.5), lineWidth: 1))
         .accessibilityElement(children: .contain)
-        .accessibilityLabel(Text("\(section.name) team"))
+        .accessibilityLabel(Text("\(section.key.isEmpty ? String(localized: "Unassigned") : section.name) team"))
     }
 
     /// `BotCard`: the 82 pt identity (mascot 38, name 14 semibold, title 11),
@@ -316,7 +316,7 @@ private struct DesktopTeamCanvas: View {
             if !others.isEmpty {
                 Menu {
                     ForEach(others) { section in
-                        Button(section.name) { model.requestMove(bot, to: section.key) }
+                        Button(section.key.isEmpty ? String(localized: "Unassigned") : section.name) { model.requestMove(bot, to: section.key) }
                     }
                 } label: { Label(String(localized: "Move to team"), systemImage: "person.2") }
             }

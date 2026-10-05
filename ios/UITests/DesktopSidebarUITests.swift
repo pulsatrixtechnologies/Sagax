@@ -254,8 +254,11 @@ final class DesktopSidebarUITests: XCTestCase {
         }
         try api("PUT", "/api/config", ["features": ["connectedApps": false, "templates": false]])
         var app = launch()
-        XCTAssertTrue(app.buttons["desktop-sidebar-team-map"].waitForExistence(timeout: 10))
-        XCTAssertTrue(app.buttons["desktop-sidebar-automations"].exists)
+        app.buttons["desktop-sidebar-account"].tap()
+        XCTAssertTrue(app.buttons["desktop-menu.teamMap"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["desktop-menu.automations"].exists)
+        XCTAssertFalse(app.buttons["desktop-sidebar-team-map"].exists)
+        XCTAssertFalse(app.buttons["desktop-sidebar-automations"].exists)
         XCTAssertFalse(app.buttons["desktop-sidebar-connected-apps"].exists, "Connected apps is experimental")
         XCTAssertFalse(app.buttons["desktop-sidebar-templates"].exists, "Templates is experimental")
         let points = app.buttons["desktop-sidebar-points"].firstMatch

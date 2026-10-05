@@ -117,15 +117,15 @@ struct CharacterEditor: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            row(count: 3, pitch: metrics.pitch, height: metrics.pitch) { index in
-                let character = MascotCharacter.allCases[index]
+            let characters = MascotCharacter.allCases.filter { !unlocks.characterLocked($0, current: wornDraft.character) }
+            row(count: characters.count, pitch: metrics.pitch, height: metrics.pitch) { index in
+                let character = characters[index]
                 thumbnail(
                     look: lookFor(character),
                     skin: character == .owl ? draft.skin : .none,
                     size: metrics.cell,
                     selected: draft.character == character,
-                    label: Text(characterName(character)),
-                    locked: unlocks.characterLocked(character, current: wornDraft.character)
+                    label: Text(characterName(character))
                 ) {
                     draft.character = character
                 }
@@ -180,25 +180,25 @@ struct CharacterEditor: View {
     @ViewBuilder private var skinRow: some View {
         switch draft.character {
         case .owl:
-            let skins = MascotSkin.allCases
+            let skins = MascotSkin.allCases.filter { !skinLocked(.owl, $0.rawValue, worn: wornDraft.skin.rawValue) }
             row(count: skins.count, pitch: metrics.skinPitch, height: metrics.skinRowHeight ?? metrics.pitch) { index in
-                thumbnail(look: MascotLook.owl.complete, skin: skins[index], size: metrics.skinCell, selected: draft.skin == skins[index], label: Text(verbatim: skins[index].rawValue), tier: tierLabel(.owl, skins[index].rawValue), locked: skinLocked(.owl, skins[index].rawValue, worn: wornDraft.skin.rawValue)) {
+                thumbnail(look: MascotLook.owl.complete, skin: skins[index], size: metrics.skinCell, selected: draft.skin == skins[index], label: Text(verbatim: skins[index].rawValue), tier: tierLabel(.owl, skins[index].rawValue)) {
                     draft.skin = skins[index]
                 }
             }
         case .shape:
-            let skins = ShapeSkin.allCases
+            let skins = ShapeSkin.allCases.filter { !skinLocked(.shape, $0.rawValue, worn: wornDraft.complete.shapeSkin.rawValue) }
             row(count: skins.count, pitch: metrics.skinPitch, height: metrics.skinRowHeight ?? metrics.pitch) { index in
-                thumbnail(look: edited { $0.shapeSkin = skins[index] }, skin: .none, size: metrics.skinCell, selected: draft.complete.shapeSkin == skins[index], label: Text(verbatim: skins[index].rawValue), tier: tierLabel(.shape, skins[index].rawValue), locked: skinLocked(.shape, skins[index].rawValue, worn: wornDraft.complete.shapeSkin.rawValue)) {
+                thumbnail(look: edited { $0.shapeSkin = skins[index] }, skin: .none, size: metrics.skinCell, selected: draft.complete.shapeSkin == skins[index], label: Text(verbatim: skins[index].rawValue), tier: tierLabel(.shape, skins[index].rawValue)) {
                     var next = draft.complete
                     next.shapeSkin = skins[index]
                     draft.look = next.stored
                 }
             }
         case .trombi:
-            let skins = TrombiSkin.allCases
+            let skins = TrombiSkin.allCases.filter { !skinLocked(.trombi, $0.rawValue, worn: wornDraft.complete.trombiSkin.rawValue) }
             row(count: skins.count, pitch: metrics.pitch, height: metrics.pitch) { index in
-                thumbnail(look: edited { $0.trombiSkin = skins[index] }, skin: .none, size: metrics.cell, selected: draft.complete.trombiSkin == skins[index], label: Text(verbatim: skins[index].rawValue), tier: tierLabel(.trombi, skins[index].rawValue), locked: skinLocked(.trombi, skins[index].rawValue, worn: wornDraft.complete.trombiSkin.rawValue)) {
+                thumbnail(look: edited { $0.trombiSkin = skins[index] }, skin: .none, size: metrics.cell, selected: draft.complete.trombiSkin == skins[index], label: Text(verbatim: skins[index].rawValue), tier: tierLabel(.trombi, skins[index].rawValue)) {
                     var next = draft.complete
                     next.trombiSkin = skins[index]
                     draft.look = next.stored

@@ -4,7 +4,7 @@
 import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 
-import { DesktopBridges, resolveBotWorkplace, type DesktopBridgeRegistration } from "./desktop-bridge.ts";
+import { DesktopBridges, desktopBridgeCapability, resolveBotWorkplace, type DesktopBridgeRegistration } from "./desktop-bridge.ts";
 import { localVmDesktopSpec } from "./container-computer.ts";
 import { desktopToolOperation, handleDesktopBridgeMcp } from "./desktop-bridge-tools.ts";
 import { DEFAULT_BOT_WORKPLACE, parseBotWorkplace, serializeBotWorkplace } from "../shared/bot-workplace.ts";
@@ -166,7 +166,11 @@ describe("the sagax-desktop tools", () => {
     expect(desktopToolOperation("local_vm", { action: "run", command: "uname" })).toMatchObject({ action: "vm_run_command", command: "uname" });
     // the server's own recipe goes with it; the desktop checks it
     expect(desktopToolOperation("local_vm", { action: "create" })).toEqual({ action: "vm_create", arguments: { spec: localVmDesktopSpec() }, timeout_seconds: 600 });
-    expect(() => desktopToolOperation("local_vm", { action: "destroy" })).toThrow(/status, start, run or create/);
+    expect(() => desktopToolOperation("local_vm", { action: "destroy" })).toThrow(/status, start, run, create, tools or use/);
+    expect(() => desktopToolOperation("local_vm", { action: "use", tool_name: "click", arguments: { x: 12, y: 34, button: "left", debug_image_out: "/tmp/x" } })).toThrow(/not allowed/);
+    expect(desktopToolOperation("local_vm", { action: "use", tool_name: "screenshot" })).toEqual({ action: "vm_computer_call", tool_name: "get_desktop_state", arguments: {}, timeout_seconds: 60 });
+    expect(desktopToolOperation("local_vm", { action: "use", tool_name: "click", arguments: { x: 12, y: 34, button: "left" } })).toEqual({ action: "vm_computer_call", tool_name: "click", arguments: { x: 12, y: 34, button: "left" }, timeout_seconds: 60 });
+    expect(() => desktopToolOperation("local_vm", { action: "use", tool_name: "bash", arguments: { command: "id" } })).toThrow(/not part of the Local VM screen/);
     expect(desktopToolOperation("fetch_url", { url: "http://intranet.local/x" })).toMatchObject({ action: "fetch_url", url: "http://intranet.local/x" });
     expect(() => desktopToolOperation("fetch_url", { url: "file:///etc/passwd" })).toThrow();
     expect(() => desktopToolOperation("fetch_url", { url: "https://user:pw@x.test/" })).toThrow();
@@ -182,6 +186,22 @@ describe("the sagax-desktop tools", () => {
   it("an older desktop app that cannot create a Local VM says to update it", async () => {
     const old = await handleDesktopBridgeMcp("tools/call", { name: "local_vm", arguments: { action: "create" } }, async () => ({ content: [{ type: "text", text: "Invalid request" }], isError: true }));
     expect(old).toMatchObject({ isError: true, content: [{ type: "text", text: expect.stringMatching(/too old to create a Local VM/) }] });
+  });
+  it("lists the Local VM screen tools without calling the desktop, and an older app says to update", async () => {
+    let called = false;
+    const listed = await handleDesktopBridgeMcp("tools/call", { name: "local_vm", arguments: { action: "tools" } }, async () => { called = true; return null; }) as { content: { text: string }[] };
+    expect(called).toBe(false);
+    expect(listed.content[0]?.text).toContain("screenshot");
+    expect(listed.content[0]?.text).toContain("click");
+    expect(listed.content[0]?.text).not.toContain("debug_image_out");
+    expect(listed.content[0]?.text).not.toContain("launch_app");
+    const use = desktopToolOperation("local_vm", { action: "use", tool_name: "click", arguments: { x: 1, y: 2 } });
+    expect(use.action).toBe("vm_computer_call");
+    expect(desktopBridgeCapability("vm_computer_call")).toBe("localVm");
+    for (const text of ["Invalid request", "Unsupported operation"]) {
+      const old = await handleDesktopBridgeMcp("tools/call", { name: "local_vm", arguments: { action: "use", tool_name: "click", arguments: { x: 1, y: 2 } } }, async () => ({ content: [{ type: "text", text }], isError: true }));
+      expect(old).toMatchObject({ isError: true, content: [{ type: "text", text: expect.stringMatching(/too old to control the Local VM screen/) }] });
+    }
   });
 });
 

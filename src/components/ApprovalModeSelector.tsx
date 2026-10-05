@@ -83,11 +83,10 @@ export function approvalModeSelectionRequiresLocalDesktop(
   return currentMode === "custom" && !trustedModesAvailable;
 }
 
-/** How much this bot may do on its own, shown beside the composer with the
- * current mode as its icon. Opens a menu that lists every available mode with
- * its label and description and returns the chosen mode to the caller. Compact
- * (icon-only) by default; `wide` renders the labeled variant used on bot
- * settings. */
+/** How much this bot may do on its own. Advanced is an icon beside the
+ * message field that opens the full menu. Simple is Ask and Decide, on their
+ * own row, so the message field stays a normal chat bar. `wide` stacks the
+ * same two choices on bot settings. */
 export function ApprovalModeSelector({
   approvalMode,
   autoApprove,
@@ -191,8 +190,8 @@ export function ApprovalModeSelector({
       "border-hairline/40 bg-inset hover:bg-raised disabled:cursor-not-allowed disabled:opacity-45",
     );
     return (
-      <div data-approval-simple className={cn("flex flex-col gap-1", wide ? "w-full" : "max-w-full")}>
-        <div className={cn("flex gap-1", wide ? "flex-col" : "flex-wrap")}>
+      <div data-approval-simple className="flex w-full min-w-0 flex-col gap-1">
+        <div className={cn("flex w-full min-w-0 gap-1", wide && "flex-col")}>
           <button
             type="button"
             data-approval-choice="ask"

@@ -7,10 +7,11 @@
 // and set the rarity; a skin reward's own rarity matches the points it costs
 // (Rare 10 or 20, Epic 20 or 50, Legendary 50 or 100).
 //
-// Every skin above Common and both locked characters (Trombi, Bunbu) are a
-// reward of exactly one achievement. Trombi comes only from its command
-// (/hibou98), never from points. An id is stored per person: never rename
-// one; retire it by keeping it in the list.
+// Every skin above Common and every character except the owl is a reward of
+// exactly one achievement. Shapes comes from linking a Grok account. Trombi
+// comes only from its hidden command, never from points, and that command is
+// not written down. An id is stored per person: never rename one; retire it
+// by keeping it in the list.
 import type { AchievementDefinition } from "./achievements.ts";
 
 const skin = (character: "owl" | "shape" | "trombi" | "bunbu", id: string) => ({ kind: "skin", character, skin: id }) as const;
@@ -37,6 +38,16 @@ export const ACHIEVEMENTS: readonly AchievementDefinition[] = [
     points: 10,
     rule: { kind: "count", event: "bot.created", target: 1 },
     rewards: [skin("shape", "outline")],
+  },
+  {
+    id: "grok-linked",
+    category: "onboarding",
+    name: { en: "Grok Linked", fr: "Compte Grok lié" },
+    description: { en: "Sign in to Grok, or save your own xAI key.", fr: "Connectez-vous à Grok, ou enregistrez votre propre clé xAI." },
+    icon: "Link",
+    points: 10,
+    rule: { kind: "count", event: "grok.linked", target: 1 },
+    rewards: [{ kind: "character", character: "shape" }],
   },
   {
     id: "makeover",

@@ -61,9 +61,9 @@ describe("mainConversation: the empty state only when there is no bot and no gro
 });
 
 describe("sidebar teams: a room shows with no bot in the list", () => {
-  it("keeps General for an unsectioned room when the viewer owns no bot", () => {
+  it("keeps Unassigned for an unsectioned room when the viewer owns no bot", () => {
     expect(buildTeamMapSections([], [])).toEqual([]);
-    expect(buildTeamMapSections([], [], { general: true })).toEqual([{ key: "", name: "General", chiefs: [], members: [] }]);
+    expect(buildTeamMapSections([], [], { general: true })).toEqual([{ key: "", name: "Unassigned", chiefs: [], members: [] }]);
   });
 });
 

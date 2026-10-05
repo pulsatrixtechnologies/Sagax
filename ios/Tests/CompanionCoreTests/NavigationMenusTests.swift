@@ -142,13 +142,16 @@ final class NavigationMenusTests: XCTestCase {
     // MARK: Account, New, places
 
     func testTheAccountMenu() {
-        XCTAssertEqual(NavigationMenus.account(gate: admin, hasArchivedBots: true, achievementsReady: true),
-                       [[.archivedBots], [.settings, .achievements], [.about, .help]])
-        XCTAssertEqual(NavigationMenus.account(gate: admin, hasArchivedBots: false, achievementsReady: false),
+        XCTAssertEqual(NavigationMenus.account(gate: admin, hasArchivedBots: true, achievementsReady: true, connected: true),
+                       [[.archivedBots], [.settings, .teamMap, .automations, .achievements], [.about, .help]])
+        XCTAssertEqual(NavigationMenus.account(gate: admin, hasArchivedBots: false, achievementsReady: false, connected: true),
+                       [[.settings, .teamMap, .automations], [.about, .help]])
+        // offline: Team map and Automations stay out of the popup
+        XCTAssertEqual(NavigationMenus.account(gate: admin, hasArchivedBots: false, achievementsReady: false, connected: false),
                        [[.settings], [.about, .help]])
         // archived bots are an admin's housekeeping: the remote client hides them
-        XCTAssertEqual(NavigationMenus.account(gate: sidecar, hasArchivedBots: true, achievementsReady: true),
-                       [[.settings, .achievements], [.about, .help]])
+        XCTAssertEqual(NavigationMenus.account(gate: sidecar, hasArchivedBots: true, achievementsReady: true, connected: true),
+                       [[.settings, .teamMap, .automations, .achievements], [.about, .help]])
     }
 
     func testNewListsCreateThenBotsThenPeople() throws {
@@ -161,13 +164,15 @@ final class NavigationMenusTests: XCTestCase {
     }
 
     func testPlacesFollowTheExperimentalSwitches() {
-        XCTAssertEqual(NavigationMenus.places(gate: admin, connected: true, features: nil), [.teamMap, .automations])
+        XCTAssertEqual(NavigationMenus.places(gate: admin, connected: true, features: nil), [])
         let on = ServerFeatures(connectedApps: true, templates: true)
-        XCTAssertEqual(NavigationMenus.places(gate: admin, connected: true, features: on), [.teamMap, .automations, .connectedApps, .templates])
+        XCTAssertEqual(NavigationMenus.places(gate: admin, connected: true, features: on), [.connectedApps, .templates])
         // the remote client: Connected apps yes, Templates never
-        XCTAssertEqual(NavigationMenus.places(gate: sidecar, connected: true, features: on), [.teamMap, .automations, .connectedApps])
-        XCTAssertEqual(NavigationMenus.places(gate: client, connected: true, features: on), [.teamMap, .automations])
+        XCTAssertEqual(NavigationMenus.places(gate: sidecar, connected: true, features: on), [.connectedApps])
+        XCTAssertEqual(NavigationMenus.places(gate: client, connected: true, features: on), [])
         XCTAssertEqual(NavigationMenus.places(gate: admin, connected: false, features: on), [])
+        XCTAssertEqual(NavigationMenus.accountShortcuts(gate: admin, connected: true), [.teamMap, .automations])
+        XCTAssertEqual(NavigationMenus.accountShortcuts(gate: admin, connected: false), [])
     }
 
     // MARK: Settings

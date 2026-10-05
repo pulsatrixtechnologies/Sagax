@@ -243,6 +243,43 @@ test("bot commands and an open screen view keep the Local VM running", async () 
   assert.equal(stops(), 1);
 });
 
+test("a bot drives the Local VM screen with a fixed cua-driver call", async () => {
+  const docker = fakeDocker({ existing: container({ running: true }) });
+  const vm = createLocalVm({ exec: docker.exec, dataDir: DATA, home: HOME, platform: "darwin", env: {}, exists: exists([]) });
+  const cua = () => docker.calls.filter(call => call.includes("cua-driver"));
+  await assert.rejects(vm.computer("bash", { command: "id" }), /not part of the Local VM screen/);
+  await assert.rejects(vm.computer("click", { x: 1, y: 2, debug_image_out: "/tmp/pwn" }), /not allowed/);
+  await assert.rejects(vm.computer("get_desktop_state", { screenshot_out_file: "/etc/passwd" }), /not allowed/);
+  assert.equal(cua().length, 0, "a refused screen call never reaches the container");
+  await vm.computer("click", { x: 12, y: 34, button: "left" });
+  assert.equal(cua().length, 1);
+  const call = cua()[0];
+  assert.match(call, /^docker exec -u cua /);
+  assert.match(call, /openmausbot-computer \/usr\/local\/libexec\/openmausbot\/cua-driver call click \{"x":12,"y":34,"button":"left"\} --socket \/run\/user\/1000\/openmausbot-cua\.sock$/);
+  assert.doesNotMatch(call, /bash/);
+  assert.doesNotMatch(call, /pwn|passwd/);
+  await vm.computer("type_text", { text: "hello; rm -rf /" });
+  assert.match(cua().at(-1), /call type_text \{"text":"hello; rm -rf \/"\} --socket/);
+  assert.ok(cua().every(line => !line.includes("bash")));
+  await vm.computer("screenshot", {}).catch(() => {});
+  const shot = cua().find(line => line.includes("get_desktop_state"));
+  assert.match(shot, /call get_desktop_state \{\} --socket \/run\/user\/1000\/openmausbot-cua\.sock --screenshot-out-file \/tmp\/openmausbot-preview\.png$/);
+  const stopped = createLocalVm({ exec: fakeDocker({ existing: container({ running: false }) }).exec, dataDir: DATA, home: HOME, platform: "darwin", env: {}, exists: exists([]) });
+  await assert.rejects(stopped.computer("click", { x: 1, y: 1 }), /not running/);
+});
+
+test("driving the Local VM screen counts as use", async () => {
+  const docker = fakeDocker({ existing: container({ running: true }) });
+  const clock = fakeClock();
+  const vm = createLocalVm({ exec: docker.exec, dataDir: DATA, home: HOME, platform: "darwin", env: {}, exists: exists([]), ...clock });
+  const stops = () => docker.calls.filter(call => call.endsWith(" stop openmausbot-computer")).length;
+  await vm.computer("move_cursor", { x: 1, y: 1 });
+  await clock.advance(10 * 60_000 - 1);
+  assert.equal(stops(), 0);
+  await clock.advance(1);
+  assert.equal(stops(), 1);
+});
+
 test("a command still running defers the idle stop", async () => {
   const docker = fakeDocker({ existing: container({ running: true }) });
   let finish;

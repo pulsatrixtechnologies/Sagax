@@ -502,10 +502,9 @@ export function ModelPicker({
   bot: Bot;
   threadId?: string;
   className?: string;
-  /** Expand the menu in-flow under the trigger so it cannot overflow a
-   * narrow parent (the Agent profile sidebar). Otherwise the picker opens as
-   * a modal like Settings: providers on the left, the choice on the right,
-   * a bottom sheet on a narrow window. */
+  /** Profile row: the label sits beside the pill. The menu is still the
+   * same modal as the composer. The profile card already has Effort, so
+   * the modal does not repeat it. */
   contained?: boolean;
   /** Sit in the composer as a text row. */
   inComposer?: boolean;
@@ -536,7 +535,9 @@ export function ModelPicker({
   const advanced = useAdvancedMode();
   const myEngines = useMyEngines();
   const orgMode = org !== null;
-  const modal = !contained;
+  // Every opener uses the composer modal. An in-flow menu is clipped by
+  // the profile sidebar (overflow-y-auto, a narrow column).
+  const modal = true;
 
   const selection = bot.modelSelection;
   const active = state.instances.find((instance) => instance.instanceId === selection.instanceId);
@@ -628,9 +629,8 @@ export function ModelPicker({
     if (bot.busy) setOpen(false);
   }, [bot.busy]);
 
-  // Escape steps back (search, then the local list, then closes). The inline
-  // panel also closes on a click outside; the modal closes on its backdrop
-  // and keeps Tab inside itself.
+  // Escape steps back (search, then the local list, then closes). The modal
+  // closes on its backdrop and keeps Tab inside itself.
   useEffect(() => {
     if (!open) return;
     const closeOnOutsideClick = (event: MouseEvent) => {
@@ -1195,32 +1195,6 @@ export function ModelPicker({
     ...(orgMode && myEngines ? { statusOf: orgStatusOf } : {}),
   };
 
-  const inlinePanel = (
-    <div
-      data-model-picker-content
-      role="dialog"
-      aria-label={t("model.choose")}
-      {...motion.exitProps}
-      className={cn("relative mt-3 flex w-full max-h-[min(420px,50dvh)] overflow-hidden rounded-2xl border border-hairline/50 bg-card", motion.className)}
-    >
-      {pickerInstances.length > 0 && <ModelEngineRail {...railProps} />}
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto">
-        {scopeControl}
-        {railInstance ? (
-          <>
-            {header}
-            {payers && <div className="px-3 pb-2">{payers}</div>}
-            {listSection}
-            {localEntry && <div className={orgMode ? "px-4 pb-2" : ""}>{localEntry}</div>}
-          </>
-        ) : (
-          <div className="px-4 py-5 text-[13px] text-ink-secondary">{t("model.noProviders")}</div>
-        )}
-        {footer}
-      </div>
-    </div>
-  );
-
   const modalPanel = (
     <div
       data-model-picker-backdrop
@@ -1285,12 +1259,12 @@ export function ModelPicker({
         trigger
       )}
 
-      {motion.shown && (modal
+      {motion.shown && (
         // Portalled like Settings: a translated sidebar or composer would
         // otherwise become the containing block. Without a document (static
         // rendering in tests) the dialog renders in place.
-        ? typeof document === "undefined" ? modalPanel : createPortal(modalPanel, document.body)
-        : inlinePanel)}
+        typeof document === "undefined" ? modalPanel : createPortal(modalPanel, document.body)
+      )}
       <ConfirmDialog
         open={pendingSwitch !== null}
         title={t("model.providerSwitch.title")}

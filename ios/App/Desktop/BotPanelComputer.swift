@@ -6,6 +6,8 @@
 // opens on Take control / Release and the full computer view. The picture
 // and control are the phone's ComputerController (POST
 // /api/bots/:id/computer/{screenshot,control}), the stream's frames first.
+// On an organization server, Local VM and This computer use
+// LocalVmComputerPanel instead: a still and power buttons, no Take control.
 import SwiftUI
 import UIKit
 import CompanionCore
@@ -25,6 +27,10 @@ struct BotPanelComputer: View {
     }
 
     private var streamFrame: ScreenFrame? { session.state.screens[bot.id] }
+    private var current: Bot { session.state.bot(bot.id) ?? bot }
+    private var showsLocalVm: Bool {
+        OrgLocalVmScreen.shows(worksOn: DesktopWorksOn.of(current), organization: session.surfaceGate.organization)
+    }
     private var worksOn: DesktopWorksOn { DesktopWorksOn.of(bot) }
     private var polls: Bool { DesktopComputerPhase.polls(worksOn) }
     private var phase: DesktopComputerPhase { DesktopComputerPhase.of(worksOn: worksOn, hasPicture: controller.image != nil) }
@@ -34,6 +40,20 @@ struct BotPanelComputer: View {
     }
 
     var body: some View {
+        if showsLocalVm {
+            LocalVmComputerPanel(name: current.name, chrome: .pad(theme))
+                .padding(.top, 16)
+                .padding(.leading, 17)
+                .padding(.trailing, 16)
+                .padding(.bottom, 24)
+                .accessibilityElement(children: .contain)
+                .accessibilityIdentifier("desktop-panel-computer")
+        } else {
+            cloud
+        }
+    }
+
+    private var cloud: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text("\(bot.name)'s screen")
                 .font(theme.font(13))

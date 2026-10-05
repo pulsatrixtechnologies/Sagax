@@ -745,6 +745,8 @@ struct ChatListView: View {
         Haptics.selection()
         switch item {
         case .settings: showingSettings = true
+        case .teamMap: showingTeamMap = true
+        case .automations: showingAutomations = true
         case .archivedBots: accountSheet = .archivedBots
         case .achievements: accountSheet = .achievements
         case .about: accountSheet = .about

@@ -90,10 +90,10 @@ final class TeamMapPeopleUITests: XCTestCase {
 
     @MainActor
     private func openTeamMap(_ app: XCUIApplication) {
-        // Team map: a place at the foot of the home list
-        let item = app.buttons["home-place.teamMap"]
-        for _ in 0..<12 where !(item.exists && item.isHittable) { app.swipeUp() }
-        XCTAssertTrue(item.waitForExistence(timeout: 5), "the home offers the Team map")
+        // Team map: the account menu, under Settings
+        app.buttons["home-account"].tap()
+        let item = app.buttons["account-menu.teamMap"]
+        XCTAssertTrue(item.waitForExistence(timeout: 5), "the account menu offers the Team map")
         item.tap()
         XCTAssertTrue(app.descendants(matching: .any)["team-map"].waitForExistence(timeout: 10))
     }

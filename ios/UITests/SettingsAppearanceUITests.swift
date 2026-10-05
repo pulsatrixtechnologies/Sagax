@@ -288,10 +288,10 @@ final class SettingsAppearanceUITests: XCTestCase {
     @MainActor
     private func quickCreate(_ name: String, in app: XCUIApplication) {
         if !app.segmentedControls["routines-section"].exists {
-            // Automations is a place at the foot of the home list
-            XCTAssertTrue(app.buttons["home-plus"].waitForExistence(timeout: 30))
-            let automations = app.buttons["home-place.automations"]
-            for _ in 0..<12 where !(automations.exists && automations.isHittable) { app.swipeUp() }
+            // Automations opens from the account menu, under Settings
+            XCTAssertTrue(app.buttons["home-account"].waitForExistence(timeout: 30))
+            app.buttons["home-account"].tap()
+            let automations = app.buttons["account-menu.automations"]
             XCTAssertTrue(automations.waitForExistence(timeout: 5))
             automations.tap()
             XCTAssertTrue(app.segmentedControls["routines-section"].waitForExistence(timeout: 15))

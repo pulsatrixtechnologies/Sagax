@@ -71,7 +71,7 @@ const WRITE_MAX = 1024 * 1024;
 const FETCH_MAX = 256 * 1024;
 /** The server's largest upload (an archive, server/attachments.ts). */
 const STAGE_MAX = 90 * 1024 * 1024;
-const ACTIONS = new Set(["run_command", "read_file", "write_file", "list_files", "search_files", "fetch_url", "browse", "computer_tools", "computer_call", "vm_status", "vm_start", "vm_run_command", "vm_create", "vm_stop", "vm_pause", "vm_resume", "vm_setup", "vm_install", "vm_screenshot", "stage_file", "extract_archive"]);
+const ACTIONS = new Set(["run_command", "read_file", "write_file", "list_files", "search_files", "fetch_url", "browse", "computer_tools", "computer_call", "vm_status", "vm_start", "vm_run_command", "vm_create", "vm_stop", "vm_pause", "vm_resume", "vm_setup", "vm_install", "vm_screenshot", "vm_computer_call", "stage_file", "extract_archive"]);
 const KEYS = new Set(["action", "path", "content", "encoding", "offset", "max_bytes", "command", "cwd", "timeout_seconds", "pattern", "glob", "url", "screenshot", "tool_name", "arguments", "container", "name", "final"]);
 const uuid = value => typeof value === "string" && /^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(value);
 const text = value => ({ content: [{ type: "text", text: typeof value === "string" ? value : JSON.stringify(value) }] });
@@ -294,6 +294,9 @@ export async function executeBridgeOperation(operation, deps, signal) {
     case "vm_setup": return deps.localVm.setup(operation.arguments?.spec);
     case "vm_install": return deps.localVm.install(String(operation.arguments?.choice ?? ""));
     case "vm_screenshot": return deps.localVm.screenshot();
+    case "vm_computer_call":
+      if (typeof deps.localVm.computer !== "function") throw new Error("This Sagax desktop app cannot control the Local VM screen. Update it.");
+      return deps.localVm.computer(operation.tool_name, operation.arguments);
     case "vm_run_command": return deps.localVm.exec(operation.container, operation.command, { timeoutSeconds: operation.timeout_seconds ?? 120, signal });
     case "vm_create": return deps.localVm.create({ spec: operation.arguments?.spec, signal, progress: deps.progress });
     case "stage_file": {
@@ -331,7 +334,7 @@ const describe = operation => {
     case "run_command": case "vm_run_command": return String(operation.command ?? "").slice(0, 300);
     case "read_file": case "write_file": case "list_files": case "search_files": return String(operation.path ?? "~").slice(0, 300);
     case "fetch_url": case "browse": try { return new URL(operation.url).host; } catch { return ""; }
-    case "computer_call": return String(operation.tool_name ?? "");
+    case "computer_call": case "vm_computer_call": return String(operation.tool_name ?? "");
     case "stage_file": case "extract_archive": return String(operation.name ?? "");
     default: return "";
   }

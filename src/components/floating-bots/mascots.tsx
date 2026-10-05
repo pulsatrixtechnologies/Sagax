@@ -6,7 +6,7 @@
 // Trombi and Bunbu have no wings, so a flight is a bouncing hop across. The
 // character and its look come from the bot (bot.mascotLook); the desktop
 // draws a skin's full effects, and its move effects with each move.
-import { lazy, Suspense, useEffect, useId, useRef, useState, type ComponentType } from "react";
+import { useEffect, useId, useRef, type ComponentType } from "react";
 import { MAUS_COLORS } from "@/lib/mascot";
 import type { LocaleKey } from "@/locales";
 import { owlSkinId } from "@/lib/owl/owl-skins";
@@ -128,9 +128,6 @@ function Motion25D({ size, frame, fps, onHitTest, children }: Pick<MascotRenderP
 
 /* ------------------------------------------------------------ the owl */
 
-// the 3D owl and three.js: their own chunk, fetched only when a bot's owl is set to 3D
-const Owl3D = lazy(() => import("./owl3d/Owl3D"));
-
 /** The owl skin's equip animation and its move effects, over the desktop owl (the rarity set's effects). */
 function OwlSkinBursts({ color, skin, activity }: { color: string; skin: string; activity: MascotActivity }) {
   const reduced = useReducedMotion();
@@ -148,19 +145,12 @@ function OwlSkinBursts({ color, skin, activity }: { color: string; skin: string;
   );
 }
 
-function OwlRender({ color, skin, size, frame, fps, onHitTest, look, activity, stage }: MascotRenderProps) {
-  const [flat, setFlat] = useState(false);
-  const owl2d = (
+function OwlRender({ color, skin, size, frame, fps, onHitTest, activity }: MascotRenderProps) {
+  return (
     <span style={{ position: "relative", display: "block", width: size, height: size }}>
       <Owl25D color={color} skin={skin} size={size} frame={frame} fps={fps} onHitTest={onHitTest} />
       <OwlSkinBursts color={color} skin={skin} activity={activity} />
     </span>
-  );
-  if (look.style !== "3d" || !stage || flat) return owl2d;
-  return (
-    <Suspense fallback={owl2d}>
-      <Owl3D color={color} skin={skin} activity={activity} stage={stage} owlSize={size} frame={frame} fps={fps} onHitTest={onHitTest} onFail={() => setFlat(true)} />
-    </Suspense>
   );
 }
 

@@ -179,8 +179,8 @@ public struct MascotUnlocks: Hashable, Sendable {
 
     public static let nothingLocked = MascotUnlocks(enforced: false)
 
-    /// The characters every person has (`DEFAULT_CHARACTERS`).
-    public static let defaultCharacters: Set<MascotCharacter> = [.owl, .shape]
+    /// The character every person has (`DEFAULT_CHARACTERS`): the owl.
+    public static let defaultCharacters: Set<MascotCharacter> = [.owl]
 
     public func characterUnlocked(_ character: MascotCharacter) -> Bool {
         !enforced || Self.defaultCharacters.contains(character) || keys.contains("character:\(character.rawValue)")

@@ -25,6 +25,7 @@ describe("bot panel tabs", () => {
     expect(tabForSection("routines")).toBe("details");
     expect(tabForSection("memory")).toBe("more");
     expect(tabForSection("overview")).toBe("more");
+    expect(tabForSection("worksOn")).toBe("more");
   });
 
   it("keeps Routines out of the More list, and every other section in it", () => {

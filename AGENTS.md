@@ -309,8 +309,9 @@ The model chip (composer and chat header, `src/components/ModelPicker.tsx`)
 opens a modal like Settings, portalled to `<body>`: providers with their
 status on the left, account, scope, models, effort and payers on the right,
 a bottom sheet on a narrow window; focus stays inside and Escape closes it.
-Only `contained` (the bot settings dialog) keeps the inline panel. On an
-organization server it shows the speaker's payer order
+`contained` (the bot settings dialog) keeps the label and the pill and opens
+the same modal. Thread scope and Effort stay out of that modal. Effort stays
+on its own card. On an organization server it shows the speaker's payer order
 (`src/lib/model-payers.ts`: subscription, key in Perspicax, organization
 key, as `server/engine-credentials.ts` decides; the payer used now is the
 server's `myTurns`, never recomputed; a routine thread shows the owner's
@@ -320,6 +321,27 @@ local models are not offered. Tests: `ModelPicker.interaction.test.ts`,
 `src/lib/model-payers.test.ts`; real Electron: `scripts/verify-server-mode.ts`
 (org) and `pnpm exec electron scripts/smoke-approval-modes.cjs --model-ui-only`
 (solo).
+
+## Bot actions
+
+A bot calls the same function as the button or the route (`act` in the
+agents catalog, `POST /api/internal/act`). The caller is the signed-in
+person. `requiredScope` and the route's own checks decide. The comms token
+is the harness and is never replayed as the person.
+
+A person replay uses a 60-second memory-only copy of their live session
+(`sessions.delegate`), with the same scopes. The desktop owner replays
+through the loopback owner header. A routine, a webhook, a guest, an
+unproven turn, and a shared server with nobody to act as do not become
+the owner.
+
+Reads and screen changes run now. A write waits for Allow on a card unless
+this bot's approval mode is auto or full. The card stores the summary only:
+no body and no query. An external runtime does not get `act`. A `bot-act`
+frame reaches only that person's streams. iOS and Android ignore the kind.
+The desktop dispatches it through the same path as the button.
+
+Tests: `shared/bot-act.test.ts`, `server/bot-act.test.ts`.
 
 ## More engines on an organization server (2026-10-02)
 
@@ -452,30 +474,26 @@ Electron restart (no HMR); launch-test them before committing.
   Test new behavior there, not in the view.
 - Characters live in the registry `mascots.tsx` (id, label, thumbnail,
   renderer, capabilities, popover paint and moves); adding one is adding an
-  entry. Flat renderers (`Owl25D.tsx` draws owl-art's own SVG parts) never
-  turn in depth: only `depth` renderers spin, flip or turn in place.
-- The 3D owl (`owl3d/Owl3D.tsx`, preview, off by default) is a modeled,
-  rigged and animated glb (original work, see NOTICE) built headless in
-  Blender by `tools/owl3d/build_owl.py` and compressed by `pnpm gen:owl3d`
-  (`tools/owl3d/gen.mjs`; Blender from `brew install --cask blender` or
-  `BLENDER=`). One material per palette region (named after the palette
-  slot), shape keys for the lids and beak, 24 clips in place.
-  `OWL_CLIP_FOR` maps every behavior activity to a clip; the gaze and blink
-  are an overlay undone after each frame (never accumulated). Add
-  `--render DIR` to the generator for Eevee preview sheets, and check it in
-  real Electron with `node scripts/verify-owl3d.mjs [dir]` (isolated: own
-  Vite port, temporary profile). Keep it lazy so the main bundle never loads
-  three; `src/lib/floating-bots.test.ts` guards this.
+  entry. The desktop owl is the flat one (`Owl25D.tsx`, owl-art's own SVG
+  parts). A stored look `style` of `3d` still validates and is drawn flat.
+  The modeled owl under `owl3d/` stays for its own checks; the editor and
+  the floating window do not load it. `src/lib/floating-bots.test.ts` guards
+  that.
 - `fit.ts` sizes the stage for the widest pose; `pilot.ts` moves the window
   (flights, walks) through `floating-bots:geometry`, `move-to` and
   `autopilot`; main clamps every move and never saves spots flown to.
-- The chat stays smooth (`window-frame.ts`): while the balloon is open the
-  window holds the balloon's room and only grows, so streaming, resizing or
-  moving the balloon never resizes the window per frame; it fits again when
-  the balloon closes or a gesture ends. Drags move the window once a frame
+- The chat stays put (`window-frame.ts`): while the mascot is home the
+  window already holds the quick chat's room (`chatHomeSize`,
+  `FLOAT_HOME`), anchored on the character's bottom-right corner, so
+  opening and closing the balloon does not resize or move the window. The
+  balloon is drawn in that room, above the character, and scrolls. A grip
+  resize or a drag away grows the window in one step, and closing fits
+  back to that room rather than to the bare character. The away badge
+  still fits the window to itself. Drags move the window once a frame
   (`setPosition`, one request in flight); main saves a spot once the window
   stands still and only calls `setIgnoreMouseEvents`, `setFocusable` and
-  `focus` on a change. With the balloon open the mascot stays home (no
+  `focus` on a change. A focus that moved the window is put back on that
+  same turn. With the balloon open the mascot stays home (no
   wander, no flight while its bot works), draws at 30 fps at most and the
   skin's loops rest. Measure with `node scripts/verify-mascot-chat.mjs`
   (isolated real Electron: open latency, window moves, clipped and dropped
@@ -517,6 +535,13 @@ Electron restart (no HMR); launch-test them before committing.
   (`bot.mascotLook`, `shared/mascot-look.ts`, validated by the server), chosen
   in the avatar popover (`MascotLookEditor.tsx`) and drawn by `BotAvatar` for
   every bot avatar in the app; never draw a bot's mascot outside `BotAvatar`.
+  By default the popover offers only the owl and its Common skins. Shapes
+  appears after a linked Grok account. Trombi appears only from its hidden
+  command (an easter egg; do not write the command down). Bunbu and every
+  skin above Common appear when their achievement unlocks them. A locked
+  reward is left out of the editor and the app icon picker until then. What
+  a bot already wears stays listed. The phone follows the same list from the
+  server's reward keys and has no Grok detector of its own.
 - Bunbu is an original character of ours (a collectible-vinyl little monster:
   long paddle ears, gumdrop body, five small teeth, a tummy heart). It is
   inspired by the designer-toy genre, never a copy of an existing one: keep
@@ -610,7 +635,8 @@ server `sagax-desktop` (shell, files, search, fetch, offscreen browser,
 computer use, Local VM), and the engine's own network traffic leaves through
 it. Keep these rules, each covered by `server/desktop-bridge*.test.ts`,
 `server/desktop-egress.test.ts`, `server/attachment-staging.test.ts`,
-`electron/local-vm.node-test.mjs`, `electron/desktop-bridge.node-test.mjs` or
+`electron/local-vm.node-test.mjs`, `electron/desktop-bridge.node-test.mjs`,
+`server/local-vm-computer.test.ts` or
 `scripts/verify-desktop-bridge.ts`:
 
 - Where tools run is decided once per turn by `resolveBotWorkplace` from
@@ -628,7 +654,8 @@ it. Keep these rules, each covered by `server/desktop-bridge*.test.ts`,
   routine: and the owner allowed routines on it), `sagax-desktop` beside
   `sagax-environment`. The selection (`TurnWorkplace.auto`) gates every
   later call of the turn (`autoComputerToolRefusal`: Local VM allows only the
-  `local_vm` tool) and resets with each message; the egress proxy still
+  `local_vm` tool, and its `use` action sees and drives that VM's desktop,
+  never the person's own screen) and resets with each message; the egress proxy still
   follows the turn's start. A fixed Works on gets the tool too and it
   answers that the setting is fixed. Each switch is `computer.switch` in the
   admin activity log (person, bot, from, to, reason); the transcript shows a
@@ -680,6 +707,21 @@ it. Keep these rules, each covered by `server/desktop-bridge*.test.ts`,
   is not shown live: it comes back in the tool's result. A turn that ends
   does not stop a creation under way; the next `create` or `status` reports
   it.
+- Local VM screen (`local_vm` action `use`, operation `vm_computer_call`,
+  capability `localVm`): the bot sees and drives that VM's own desktop
+  (screenshot, get_screen_size, list_apps, click, move_cursor, drag,
+  type_text, press_key, scroll). The desktop runs a fixed `cua-driver call`
+  as user cua. The allow-list is `electron/local-vm-computer.mjs`, checked
+  again from `server/local-vm-computer.ts` before the call leaves (the two
+  builds cannot import each other; `server/local-vm-computer.test.ts` fails
+  if they disagree). A tool or argument that is not listed is refused.
+  Screenshots come back inline. A path, a shell line and the person's own
+  screen are not reachable this way. `computer_use` stays the person's own
+  screen and is still refused while Local VM is selected. action `tools`
+  lists the screen tools on the server, with no desktop round trip. An older
+  desktop answers Invalid request or Unsupported operation; the tool then
+  says to update the Sagax app. The Computer tab stays a still image plus
+  the power buttons.
 - Attachments of the CURRENT message are the speaker's only when the first
   message naming them is theirs; small text ones are inlined, all are copied
   where the tools run at the first tool call, and the tag names that path.
@@ -997,23 +1039,36 @@ shares nothing (JC, 2026-10-02). Keep these rules, covered by
   server keeps the server's sections (one person).
 - The menu creates, renames, moves, folds and deletes; no members or
   sharing item. A bot is shared from its own panel; a group has its people.
-- General (what is in none of my sections: my bots, bots shared with me,
+- Unassigned (what is in none of my sections: my bots, bots shared with me,
   groups, conversations with people) is always shown, on top. Deleting a
-  section puts its items back in General and never deletes anything.
+  section puts its items back in Unassigned and never deletes anything.
 - Server: bots take no access from a section. At boot each legacy shared
   section became bot grants once (`sectionShareGrants`, marker
   `botSharesMigratedAt` in `section-channels.json`); the records stay and
   rooms keep reading them. `PUT /api/org/sections/:id/members|bots` answers
   410 `sections_are_personal`.
 
+## Account menu
+
+Team map and Automations open from the account row at the foot of the
+sidebar (`SidebarProfileMenu`), in that order, with a hairline under the
+pair. Archived bots, when there are any, sit above the pair. Connected
+apps and Templates stay rows above that row when their experimental flags
+are on (`SidebarPlaces`). Your phone and Help Center are not in the menu.
+The phone stays in Settings and on the collapsed rail. Docs stay on About.
+A failed automation still dots the closed account row. The guided tour's
+`tools` anchor sits on the places stack, or on the foot when that stack is
+empty. Tests: `SidebarProfileMenu.test.ts`, `Sidebar.header.test.ts`.
+
 ## Computer tab and Local VM on an organization server
 
 The Computer tab (`src/components/computer/OrgComputerTab.tsx`) draws the
 solo screen: one rounded screen (`ComputerScreen.tsx`) with Play / Pause /
-Stop on it and "<Bot>'s screen" below, one line naming the computer the
-bot's Works on uses with a link to change it (no selector there), and a
-usage panel that keeps polling while the environment is off. States are
-words (Off, Starting, Running, Paused, Error); never show the desktop's raw
+Stop on it and "<Bot>'s screen" below, and a usage panel that keeps
+polling while the environment is off. Works on is not on this tab. It is
+its own section of More, labelled Computer, immediately after Access
+(`worksOn` in `src/components/bot-settings/sections.ts`, `WorksOnSetting`).
+States are words (Off, Starting, Running, Paused, Error); never show the desktop's raw
 answer. The server environment's live view is view-only with "Take control"
 in the middle of the screen and a "Release control" chip while in control.
 
@@ -1051,6 +1106,21 @@ The Local VM in server mode lives on the person's computer
   a real-named VM is refused in the temp folder (`localVmFolderRefusal`).
   Tests: `electron/local-vm.node-test.mjs`, `server/local-vm-hygiene.test.ts`,
   `server/desktop-bridge-local-vm.test.ts`.
+- The bot sees and drives that VM's desktop with `local_vm` action `use`
+  (operation `vm_computer_call`). The Computer tab itself stays a still
+  image and the power buttons. See Desktop bridge above.
+- iPhone and iPad show that same still and those power buttons when the
+  phone is paired to the organization server and Works on is Local VM or
+  This computer (`OrgLocalVmScreen` in
+  `ios/Sources/CompanionCore/LocalVmComputer.swift`, drawn from
+  `ios/App/ComputerView.swift` for both `ComputerView` and
+  `BotPanelComputer`). Take control stays on the server environment. The
+  bot still drives the VM with `local_vm` action `use`. The phone does
+  not send `use`. A sidecar pairing is not an organization, so the
+  companion allow-list is not widened for these routes: the app does not
+  ask them there. Auto and Cloud keep the existing computer viewer.
+  Tests: `ios/Tests/CompanionCoreTests/LocalVmComputerTests.swift`
+  (`swift test` in `ios/`).
 
 ## Group settings
 
@@ -1113,13 +1183,15 @@ rules, each covered by `shared/achievements-catalog.test.ts`,
   live frames in `observeAchievementFrame`); `POST /api/me/achievements/events`
   takes client events only. Events are rate limited, an event id counts
   once, an achievement unlocks once.
-- By default only the owl and the shapes with their Common skins are
-  usable. Trombi unlocks only from its command (`/hibou98`, or a device that
-  already found it). Every skin above Common and Bunbu is the reward of
-  exactly one achievement. On first use a person keeps every character and
-  skin their bots wear (`grandfatheredFromBots`); what a bot wears now is
-  never shown locked. Locks are in the editor and app icon picker only; the
-  server never refuses a look.
+- By default only the owl and its Common skins are usable. Shapes unlocks
+  when a Grok account is linked (the person's own sign-in or their own xAI
+  key, reported as `grok.linked`). Trombi unlocks only from its hidden
+  command (an easter egg; do not write the command down), or on a device
+  that already found it. Every skin above Common, and Bunbu, is the reward
+  of exactly one achievement. On first use a person keeps every character
+  and skin their bots wear (`grandfatheredFromBots`); what a bot wears now
+  stays in the editor. Locked rewards are hidden in the editor and the app
+  icon picker until they unlock. The server never refuses a look.
 - A server without the routes (404) locks nothing.
 - The unlock frame (`kind: "achievements"`, `audience`) reaches that
   person's streams only (`achievementFrameAllowed`). Nobody reads another

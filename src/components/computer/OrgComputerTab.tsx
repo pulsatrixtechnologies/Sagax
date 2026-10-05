@@ -11,8 +11,8 @@
 //   started from the screen itself.
 //
 // Under it, only the usage of that computer (disk, CPU, memory, OS) behind
-// a small Details toggle. The bot's Works on is an item of the panel's More
-// tab (WorksOnSetting).
+// a small Details toggle. The bot's Works on is More > Computer
+// (WorksOnSetting), not a control on this screen.
 //
 // Every action is the signed-in person's own (the server takes the person
 // from the session); nothing here names a bot or another person.

@@ -2,7 +2,7 @@
 // renderer. The main app page decides the pose and the balloon and sends a
 // snapshot; this page draws it, moves its own window when dragged, sizes the
 // window to what is drawn, lets clicks fall through wherever it is
-// transparent (the 3D owl's own pixels take the pointer, not its empty
+// transparent (the owl's own pixels take the pointer, not its empty
 // corners), lets the mascot fly the window off and back while its bot works,
 // and reports every click and typed message back. It holds no session and
 // calls no API.

@@ -1,7 +1,7 @@
 import { useRef, useState } from "react";
 import { api, useStore, type ConfigStatus } from "@/state/store";
 import { t } from "@/lib/i18n";
-import { Card, ScopeMark } from "./SettingsPrimitives";
+import { Card } from "./SettingsPrimitives";
 import { useBusySendPreference, writeBusySendPreference } from "@/lib/busy-send";
 import { DEFAULT_MAX_PARALLEL_PER_PERSON, MAX_PARALLEL_PER_PERSON, parseBusySendPreference } from "../../shared/parallel-tasks";
 
@@ -34,7 +34,6 @@ export function ThreadConcurrencySettings() {
   return (
     <Card
       collapsible
-      scope="installation"
       cardId="general.threads"
       defaultOpen={false}
       title={t("settings.threads.title")}
@@ -49,9 +48,8 @@ export function ThreadConcurrencySettings() {
         {Array.from({ length: 10 }, (_, i) => i + 1).map((limit) => <option key={limit} value={limit}>{limit}</option>)}
       </select>
       <p id="thread-concurrency-help" className="mt-2 text-[12px] leading-relaxed text-ink-secondary">{t("settings.threads.help")}</p>
-      <label htmlFor="busy-send-default" className="mt-4 flex items-center gap-2 text-[13px] font-medium text-ink">
+      <label htmlFor="busy-send-default" className="mt-4 block text-[13px] font-medium text-ink">
         {t("settings.threads.busySend.label")}
-        <ScopeMark scope="me" />
       </label>
       <select id="busy-send-default" value={busySend}
         onChange={(event) => writeBusySendPreference(parseBusySendPreference(event.target.value))}

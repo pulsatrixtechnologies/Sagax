@@ -290,15 +290,10 @@ private struct PhoneBotPanelContent: View {
                     editingAvatar = true
                 }
                 .contextMenu {
-                    // the owl's moves and style (an iPhone extra)
+                    // the owl's moves (an iPhone extra)
                     CharacterMovesMenu(
                         look: draft.complete,
-                        onMove: { owlHandle.flourish($0) },
-                        onStyle: { style in
-                            var look = draft.complete
-                            look.style = style
-                            saveLook(look.stored)
-                        }
+                        onMove: { owlHandle.flourish($0) }
                     )
                 }
                 .accessibilityLabel(Text("Edit avatar"))

@@ -135,7 +135,7 @@ public struct SectionMenuContext: Hashable, Sendable {
 // MARK: - Account, New, places, Settings
 
 public enum AccountMenuItem: String, Hashable, Sendable, CaseIterable {
-    case archivedBots, settings, achievements, about, help
+    case archivedBots, settings, teamMap, automations, achievements, about, help
 }
 
 public enum NewMenuItem: Hashable, Sendable {
@@ -261,16 +261,28 @@ public enum NavigationMenus {
     }
 
     /// `SidebarProfileMenu` on a phone: Archived bots (housekeeping, when
-    /// there are any), Settings, Achievements, then About and Help Center.
-    /// "Your phone" and Keyboard shortcuts are the desktop's own.
-    public static func account(gate: SurfaceGate, hasArchivedBots: Bool, achievementsReady: Bool) -> [[AccountMenuItem]] {
+    /// there are any), Settings, then Team map and Automations, Achievements,
+    /// then About and Help Center. Team map and Automations sit in this
+    /// popup, under Settings, on iOS only. "Your phone" and Keyboard
+    /// shortcuts are the iPad menu's own extra rows.
+    public static func account(gate: SurfaceGate, hasArchivedBots: Bool, achievementsReady: Bool, connected: Bool) -> [[AccountMenuItem]] {
         var groups: [[AccountMenuItem]] = []
         if gate.allows(.archiveBot), hasArchivedBots { groups.append([.archivedBots]) }
-        var main: [AccountMenuItem] = [.settings]
+        var main: [AccountMenuItem] = [.settings] + accountShortcuts(gate: gate, connected: connected)
         if gate.allows(.achievements), achievementsReady { main.append(.achievements) }
         groups.append(main)
         groups.append([.about, .help])
         return groups
+    }
+
+    /// Team map and Automations, in that order, once a server is paired.
+    /// The iPhone account menu and the iPad avatar popup both read this.
+    public static func accountShortcuts(gate: SurfaceGate, connected: Bool) -> [AccountMenuItem] {
+        guard connected else { return [] }
+        var items: [AccountMenuItem] = []
+        if gate.allows(.teamMap) { items.append(.teamMap) }
+        items.append(.automations)
+        return items
     }
 
     /// `composeRows` in browse mode: Create new Bot (when the pairing may),
@@ -286,9 +298,9 @@ public enum NavigationMenus {
         return groups
     }
 
-    /// The sidebar's places: Team map, Automations, then the experimental
-    /// Connected apps and Templates while Settings > Experimental turns them
-    /// on (`connectedAppsEnabled`, `templatesEnabled`).
+    /// The phone list's places: the experimental Connected apps and Templates
+    /// while Settings > Experimental turns them on. Team map and Automations
+    /// are account-menu rows, not places.
     public static func places(gate: SurfaceGate, connected: Bool, features: ServerFeatures?) -> [HomePlace] {
         // one rule with the iPad's sidebar foot (DesktopSidebarPlaces)
         DesktopSidebarPlaces.visible(connected: connected, gate: gate, features: features).map { place in

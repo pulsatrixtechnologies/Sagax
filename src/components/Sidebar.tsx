@@ -6,7 +6,6 @@ import {
   BellDot,
   Check,
   ChevronRight,
-  CalendarDays,
   ClipboardCopy,
   ArrowLeftRight,
   Star,
@@ -17,7 +16,6 @@ import {
   Library,
   Loader2,
   MoreHorizontal,
-  Network,
   Pencil,
   Pin,
   PinOff,
@@ -76,7 +74,6 @@ import {
   type SectionEditError,
   type SectionItemKind,
 } from "@/lib/personal-sections";
-import { isRoutineProblemRun } from "@/lib/routines";
 import type { LocaleKey } from "@/locales";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { FullAccessWarning } from "./FullAccessWarning";
@@ -663,7 +660,7 @@ function sectionEditMessage(code: SectionEditError): string {
 }
 
 /** Files a bot or a group in one of the viewer's own sections ("" puts it
- * back in General). An error text, or null. */
+ * back in Unassigned). An error text, or null. */
 function assignPersonalSection(kind: SectionItemKind, id: string, name: string, known?: ReadonlySet<string>): string | null {
   const code = editPersonalSections((prefs) => assignToPersonalSection(prefs, itemKey(kind, id), name, known));
   return code ? sectionEditMessage(code) : null;
@@ -1910,7 +1907,7 @@ function isExternalBot(bot: Bot, viewerId: string): boolean {
  * owns reaches you only through a room, so it stays out of the list. In an
  * organization the server lists only bots you may open (yours and the ones
  * shared with you), so all of them show; a shared bot filed in a section of
- * its owner that you do not see goes to General. */
+ * its owner that you do not see goes to Unassigned. */
 export function sidebarListedBots(bots: Bot[], viewerId: string, orgMode: boolean, sections: readonly string[] = []): Bot[] {
   if (!orgMode) return bots.filter((bot) => !isExternalBot(bot, viewerId));
   return bots.map((bot) => (isExternalBot(bot, viewerId) && bot.section && !sections.includes(bot.section) ? { ...bot, section: undefined } : bot));
@@ -2030,7 +2027,7 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
     writePersonalSections(seedPersonalSections({ bots: state.bots, groups: state.groups, sections: state.sections ?? [], viewerId: orgViewerId(state) }));
   }, [orgMode, personalStored, loaded, state.bots, state.groups, state.sections, state.config]);
   // What the sidebar lays out: on an organization server each bot and group
-  // sits in the viewer's own section (undefined: General), whatever the
+  // sits in the viewer's own section (undefined: Unassigned), whatever the
   // server's section field says.
   const personalView = personal ? withPersonalSections(state.bots, state.groups, personal) : null;
   const layoutBots = personalView?.bots ?? state.bots;
@@ -2064,7 +2061,7 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
     renamedTeam(oldName, name.trim());
     return null;
   };
-  /** Files a bot or a group in a section ("" = General): the viewer's own on
+  /** Files a bot or a group in a section ("" = Unassigned): the viewer's own on
    * an organization server, the server's otherwise. */
   const assignSection = (kind: SectionItemKind, id: string, section: string) => {
     if (personal) {
@@ -2311,7 +2308,7 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
     ...(botChats.length > 0 ? [BOT_CHATS_SECTION_ID] : []),
   ];
   const orderedSectionIds = orderedSidebarSections(naturalSectionIds, sectionOrder);
-  // Organization: General (what is in no section of yours) stays on top.
+  // Organization: Unassigned (what is in no section of yours) stays on top.
   const generalOnTop = orgMode && orderedSectionIds.includes(GENERAL_SECTION_ID);
   const sectionIds = generalOnTop ? [GENERAL_SECTION_ID, ...orderedSectionIds.filter((id) => id !== GENERAL_SECTION_ID)] : orderedSectionIds;
   const layoutInteractive = sidebarLayoutInteractive(density, q);
@@ -2369,7 +2366,7 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
     setDropTarget(next);
   };
 
-  // Dragging a bot or a group onto a section files it there (General: in
+  // Dragging a bot or a group onto a section files it there (Unassigned: in
   // none). Bot-to-bot chats are a view, not something to file.
   const [itemDropId, setItemDropId] = useState<string | null>(null);
   const itemDragProps = (kind: SectionItemKind, itemId: string) => layoutInteractive ? {
@@ -2422,26 +2419,10 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
   // same rule and order as the sidebar tree, so the bell can never
   // disagree with it.
   const pendingBotUndo = teamFeedback?.restoreBot;
-  // Always in view at the foot of the sidebar, above the account row
-  // (SidebarPlaces); the account menu keeps the profile items.
-  const routineAttention = state.routineRuns.some((run) => isRoutineProblemRun(run) && !run.seenAt);
+  // Connected apps and Templates stay in view above the account row when
+  // their experimental flags are on. Team map and Automations are in the
+  // account menu.
   const places: SidebarPlace[] = [
-    {
-      key: "team-map",
-      label: t("sidebar.nav.teamMap"),
-      icon: Network,
-      active: state.activeView === "team-map",
-      onSelect: () => dispatch({ type: "showTeamMap" }),
-    },
-    {
-      key: "routines",
-      tourId: "nav-automations",
-      label: t("sidebar.nav.automations"),
-      icon: CalendarDays,
-      active: state.activeView === "routines",
-      attention: routineAttention,
-      onSelect: () => dispatch({ type: "showRoutines" }),
-    },
     // Connected apps is experimental (Settings > Experimental features).
     ...(advanced && connectedAppsEnabled(state.config) ? [{
       key: "plugins",
@@ -2743,7 +2724,11 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
           (SidebarPlaces) and an account row of the same h-10 height in both
           layouts. The rail's extra buttons (archived bots, phone) sit above
           the places so they never push them. */}
-      <div data-sidebar-foot className={cn("pb-3 pt-1", density === "icons" ? "px-2" : "pl-2 pr-3")}>
+      <div
+        data-sidebar-foot
+        data-tour={places.length === 0 ? "tools" : undefined}
+        className={cn("pb-3 pt-1", density === "icons" ? "px-2" : "pl-2 pr-3")}
+      >
         {density === "icons" && !remoteClient && archivedBots.length > 0 && (
           <button
             type="button"
@@ -2872,7 +2857,7 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
           const name = deletingTeam;
           if (!name || teamDeleteRunning.current) return;
           // Organization: the viewer's own section goes, its bots, groups and
-          // conversations go back to General; nothing else changes.
+          // conversations go back to Unassigned; nothing else changes.
           if (personal) {
             writePersonalSections(deletePersonalSection(personal, name));
             setDeletingTeam(null);

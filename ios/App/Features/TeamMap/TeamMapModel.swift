@@ -26,7 +26,7 @@ final class TeamMapModel: ObservableObject {
         let bot: Bot
         let destination: String
         var id: String { "\(bot.id)>\(destination)" }
-        var destinationName: String { destination.isEmpty ? TeamMap.generalName : destination }
+        var destinationName: String { destination.isEmpty ? String(localized: "Unassigned") : destination }
     }
 
     private var workspace: String?
@@ -82,7 +82,7 @@ final class TeamMapModel: ObservableObject {
         if let workspace {
             defaults.set(TeamMap.encodeOrders(orders), forKey: TeamMap.ordersKey(workspace: workspace))
         }
-        let team = key.isEmpty ? String(localized: "General") : key
+        let team = key.isEmpty ? String(localized: "Unassigned") : key
         announcement = String(localized: "\(bot.name) arranged in \(team). Team membership is unchanged.")
         Haptics.selection()
     }
@@ -102,7 +102,7 @@ final class TeamMapModel: ObservableObject {
             defer { moving = nil }
             if await session.assignSection(name: move.destination, botIds: [move.bot.id]) != nil {
                 await session.refresh()
-                let team = move.destination.isEmpty ? String(localized: "General") : move.destination
+                let team = move.destination.isEmpty ? String(localized: "Unassigned") : move.destination
                 announcement = String(localized: "Moved \(move.bot.name) to \(team).")
             } else {
                 error = session.actionError

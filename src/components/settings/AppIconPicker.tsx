@@ -4,8 +4,8 @@
 // like the other apps' icons. The desktop app keeps and shows the result
 // (electron/app-icon.mjs); a browser has no app icon, so no picker.
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Check, Loader2, Lock, Upload } from "lucide-react";
-import { appIconLock, lockHint, reportAchievement, useUnlocks } from "@/lib/achievements";
+import { Check, Loader2, Upload } from "lucide-react";
+import { appIconLock, reportAchievement, useUnlocks } from "@/lib/achievements";
 import "@/components/achievements/achievements.css";
 import { BotAvatar } from "@/components/Avatar";
 import { useStore } from "@/state/store";
@@ -156,15 +156,15 @@ export function AppIconPicker() {
   }
 
   if (!bridge) return null;
-  const tiles = previews[UPLOAD_APP_ICON.id] ? [...choices, UPLOAD_APP_ICON] : choices;
+  const tiles = (previews[UPLOAD_APP_ICON.id] ? [...choices, UPLOAD_APP_ICON] : choices).filter((choice) => {
+    if (choice.id === current) return true;
+    return !appIconLock(unlocks, choice.id, choice.art as { kind: string; skin?: string }).locked;
+  });
   return (
     <div className="flex flex-col gap-3" data-app-icon-picker data-platform={platform}>
       <div role="radiogroup" aria-label={t("settings.appIcon.title")} className="grid grid-cols-[repeat(auto-fill,minmax(84px,1fr))] gap-2">
         {tiles.map((choice) => {
           const selected = current === choice.id;
-          // the icon in use stays usable even when it would be locked now
-          const lock = selected ? { locked: false } : appIconLock(unlocks, choice.id, choice.art as { kind: string; skin?: string });
-          const hint = lockHint(lock);
           return (
             <button
               key={choice.id}
@@ -172,10 +172,7 @@ export function AppIconPicker() {
               role="radio"
               aria-checked={selected}
               data-app-icon={choice.id}
-              data-locked={lock.locked ? "" : undefined}
-              title={hint || undefined}
-              aria-description={hint || undefined}
-              disabled={busy !== null || !previews[choice.id] || lock.locked}
+              disabled={busy !== null || !previews[choice.id]}
               onClick={() => void apply(choice, arts.current[choice.id] ?? null)}
               className={cn(
                 "relative flex flex-col items-center gap-1 rounded-xl p-2 text-[12px] leading-tight text-ink-secondary hover:bg-control/60 disabled:cursor-default",
@@ -187,7 +184,6 @@ export function AppIconPicker() {
               </span>
               <span className="max-w-full truncate">{t(choice.labelKey)}</span>
               {selected && <Check size={13} className="absolute right-1.5 top-1.5 text-accent" aria-hidden="true" />}
-              {lock.locked && <span className="unlock-lock" aria-hidden="true"><Lock size={9} strokeWidth={2.6} /></span>}
               {busy === choice.id && <Loader2 size={13} className="absolute left-1.5 top-1.5 animate-spin" aria-hidden="true" />}
             </button>
           );

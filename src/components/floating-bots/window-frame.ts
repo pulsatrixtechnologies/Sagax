@@ -2,11 +2,12 @@
 //
 // A transparent window that is resized while its content changes shows the
 // content cut, or the mascot jumping, for a frame or two each time (the
-// window server draws the old surface at the new place). So while the
-// balloon is open the window is sized once, for the room the balloon may
-// take, and only ever grows, in steps with some room ahead; it fits the
-// content exactly again only when the balloon closes or a gesture ends. The
-// empty part is transparent and lets clicks through.
+// window server draws the old surface at the new place). So the window
+// already holds the quick chat's room while the mascot is home: opening and
+// closing the balloon paint into that room and do not resize anything. A
+// grip or a drag that needs more room grows the window once, in a step with
+// some room ahead, and it fits that balloon again when the gesture ends.
+// The empty part is transparent and lets clicks through.
 //
 // Moves by hand are coalesced to one per frame, with one request in flight:
 // the pointer may report 120 moves a second, the window moves at most once a
@@ -19,6 +20,42 @@ export interface Size {
 
 /** How far ahead of the content a growing window reaches, px: a few frames of growth without a resize. */
 export const GROW_AHEAD = 120;
+
+/**
+ * The docked quick chat before anyone resizes it. Wide as the balloon's CSS,
+ * tall enough that a reply scrolls inside it instead of growing the window.
+ */
+export const CHAT_BALLOON = { w: 288, h: 360 } as const;
+
+/**
+ * The room the desktop window holds while the mascot is home, so the quick
+ * chat opens in place. Slack past the drawn balloon keeps a subpixel from
+ * growing the window (that growth jumps the mascot for a frame).
+ */
+export function chatHomeSize(stage: Size): Size {
+  const held = balloonReserve({
+    stage,
+    room: { w: CHAT_BALLOON.w, h: CHAT_BALLOON.h },
+    place: { w: CHAT_BALLOON.w, h: CHAT_BALLOON.h + 48 },
+    maxWidth: CHAT_BALLOON.w,
+  });
+  return { width: held.width + 48, height: held.height + 48 };
+}
+
+/**
+ * The window a docked balloon holds: the person's size and the offset away
+ * from the mascot, and never smaller than the quick chat's home.
+ */
+export function dockedWindowSize(stage: Size, place: { w?: number; h?: number; dx?: number; dy?: number } = {}): Size {
+  const home = chatHomeSize(stage);
+  const held = balloonReserve({
+    stage,
+    room: { w: place.w ?? CHAT_BALLOON.w, h: place.h ?? CHAT_BALLOON.h },
+    place: { w: place.w ?? CHAT_BALLOON.w, h: place.h ?? CHAT_BALLOON.h, dx: place.dx, dy: place.dy },
+    maxWidth: Math.max(CHAT_BALLOON.w, place.w ?? 0),
+  });
+  return { width: Math.max(home.width, held.width), height: Math.max(home.height, held.height) };
+}
 
 /**
  * The window size for this content. `exact` fits it (the balloon closed, or a

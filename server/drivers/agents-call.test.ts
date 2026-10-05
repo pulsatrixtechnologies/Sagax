@@ -25,6 +25,48 @@ function context(overrides: Partial<ToolCallContext> = {}): ToolCallContext {
   };
 }
 
+describe("act", () => {
+  it("refuses an external runtime before it calls the harness", async () => {
+    let called = false;
+    const result = await callTool("act", { method: "GET", path: "/api/bots" }, context({
+      externalRuntime: true,
+      client: {
+        api: async () => ({}),
+        apiResponse: async () => {
+          called = true;
+          return { ok: true, status: 200, body: {} };
+        },
+      },
+    }));
+    expect(result).toEqual({ text: "Unknown tool: act", isError: true });
+    expect(called).toBe(false);
+  });
+
+  it("returns a held write as text and a refused route as an error", async () => {
+    const held = await callTool("act", { method: "POST", path: "/api/bots" }, context({
+      client: {
+        api: async () => ({}),
+        apiResponse: async () => ({
+          ok: true,
+          status: 200,
+          body: { held: true, text: "Approval needed. POST /api/bots A card is waiting in the conversation. Do not retry this action." },
+        }),
+      },
+    }));
+    expect(held.isError).toBeFalsy();
+    expect(held.text).toContain("Approval needed.");
+    expect(held.text).toContain("Do not retry");
+
+    const refused = await callTool("act", { method: "POST", path: "/api/admin/settings" }, context({
+      client: {
+        api: async () => ({}),
+        apiResponse: async () => ({ ok: false, status: 403, body: { error: "This person cannot call that route." } }),
+      },
+    }));
+    expect(refused).toEqual({ text: "This person cannot call that route.", isError: true });
+  });
+});
+
 describe("send_voice_note", () => {
   it("refuses a missing or blank note with the shape a retry needs", async () => {
     for (const args of [{}, { text: "" }, { text: "   " }]) {

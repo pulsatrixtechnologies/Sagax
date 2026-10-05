@@ -669,6 +669,9 @@ export interface OptionCardData {
   skillRequest?: SkillRequestCardData;
   /** A provider's structured question set. */
   questionRequest?: QuestionRequestCardData;
+  /** A bot action waiting for this person's Allow. The id matches requestId.
+   * The card stores no body and no query. */
+  botActRequest?: { id: string };
 }
 
 /** Which app holds the microphone of a Live call. Self-declared; for display and logs only. */
@@ -895,6 +898,8 @@ export type ServerFrame =
   | { kind: "bot.deleted"; botId: string }
   /** A person's own unlocks (server/achievements.ts), to their streams only. */
   | { kind: "achievements"; audience: string; unlocked: Array<{ id: string; points: number; unlockedAt: number }> }
+  /** A screen or button for one person's open desktop app. iOS and Android ignore this kind. */
+  | { kind: "bot-act"; audience: string; action: string; input?: Record<string, unknown> }
   | { kind: "live.call"; botId: string; threadId: string; call: LiveCallState | null }
   /** The config status object spread flat into the frame; its full typing
    * is the deferred client-model extraction (see j1-phase-bc-progress). */

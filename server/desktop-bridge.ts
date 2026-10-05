@@ -63,7 +63,7 @@ export const DESKTOP_BRIDGE_ACTIONS = [
   // Unpack a staged archive next to it (electron/archive-extract.mjs).
   "extract_archive",
   // The person's own Local VM from their Computer tab (desktop-bridge-routes.ts).
-  "vm_stop", "vm_pause", "vm_resume", "vm_setup", "vm_install", "vm_screenshot",
+  "vm_stop", "vm_pause", "vm_resume", "vm_setup", "vm_install", "vm_screenshot", "vm_computer_call",
 ] as const;
 export type DesktopBridgeAction = (typeof DESKTOP_BRIDGE_ACTIONS)[number];
 
@@ -99,7 +99,7 @@ export function desktopBridgeCapability(action: DesktopBridgeAction): keyof Desk
     case "browse": return "browser";
     case "computer_tools": case "computer_call": return "computer";
     case "vm_status": case "vm_start": case "vm_run_command": case "vm_create":
-    case "vm_stop": case "vm_pause": case "vm_resume": case "vm_setup": case "vm_install": case "vm_screenshot": return "localVm";
+    case "vm_stop": case "vm_pause": case "vm_resume": case "vm_setup": case "vm_install": case "vm_screenshot": case "vm_computer_call": return "localVm";
   }
 }
 

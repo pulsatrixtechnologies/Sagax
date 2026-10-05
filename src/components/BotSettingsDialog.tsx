@@ -42,6 +42,7 @@ import { PackageProvenance } from "./bot-settings/PackageProvenance";
 import { ProposalStatus } from "./bot-settings/ProposalStatus";
 import { BOT_PROFILE_LIMITS } from "../../shared/bot-profile";
 import { ComputerPanel } from "./ComputerPanel";
+import { WorksOnSetting } from "./computer/WorksOnSetting";
 import { BotProfileAvatarCard } from "./BotProfileAvatarCard";
 import { useCaptionChrome, useMacInsetChrome } from "./DesktopCapabilities";
 import { t } from "@/lib/i18n";
@@ -140,6 +141,7 @@ export function BotSettingsDialog({ bot, onOpenVmWorkspace }: {
     .filter((entry) => entry.id !== "perspicax" || perspicaxOrg !== null)
     // An organization member never sees a section whose fields the server refuses.
     .filter((entry) => entry.id !== "access" || canEditBotField(state.config, bot, "computer") || canEditBotField(state.config, bot, "cwd"))
+    .filter((entry) => entry.id !== "worksOn" || canEditBotField(state.config, bot, "computer"))
     .filter((entry) => entry.id !== "memory" || canEditBotField(state.config, bot, "memoryEnabled"))
     .filter((entry) => entry.id !== "permissions" || canStepPrimary(state.config, bot) || canEditBotField(state.config, bot, "approvalMode"))
     .filter((entry) => advanced || !simpleHidesBotSection(entry.id));
@@ -365,6 +367,8 @@ export function BotSettingsDialog({ bot, onOpenVmWorkspace }: {
         return <RoutinesSection bot={bot} routines={derived.botRoutines} runs={state.routineRuns} />;
       case "access":
         return <AccessSection bot={bot} derived={derived} />;
+      case "worksOn":
+        return <WorksOnSetting bot={bot} />;
       case "model":
         return <ModelSection bot={bot} />;
       case "permissions":

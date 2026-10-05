@@ -243,7 +243,7 @@ public enum NewBotRules {
         return lines
     }
 
-    /// The Team picker's teams after "General": the server's sections, then
+    /// The Team picker's teams after "Unassigned": the server's sections, then
     /// any a bot names, once each, without the empty one.
     public static func teams(sections: [String], bots: [Bot]) -> [String] {
         var seen = Set<String>()

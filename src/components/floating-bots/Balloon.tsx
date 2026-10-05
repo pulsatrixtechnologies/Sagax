@@ -11,7 +11,7 @@ import { Phone } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { BalloonMarkdown } from "./BalloonMarkdown";
 import type { FloatingBalloon, FloatingEvent } from "./protocol";
-import { balloonReserve, type Size } from "./window-frame";
+import { balloonReserve, CHAT_BALLOON, dockedWindowSize, type Size } from "./window-frame";
 
 export interface BalloonPlace {
   /** px; absent: as wide as the content wants, within bounds. */
@@ -193,14 +193,15 @@ export function Balloon({ botId, name, balloon, retro, side, room, onEvent, hove
 
   useEffect(() => setPlace(readBalloonPlace(botId)), [botId]);
 
-  // The window holds the room this balloon may take (window-frame.ts), set
-  // before the first paint so it opens at its size in one step; a gesture
-  // reserves its whole range at its start and fits again at its end.
+  // Docked, the window already holds this balloon (window-frame.ts), so opening
+  // it does not resize. A move or a grip reserves its whole range once, at the start.
   const reserveFor = (range: "place" | "move" | "resize") => {
     if (!stage) return null;
+    const away = splitOffset(place, side).away;
+    if (range === "place") return dockedWindowSize(stage, { w: place.w, h: place.h, dx: away.dx, dy: away.dy });
     const grown = range === "resize" ? { ...place, w: Math.max(place.w ?? 0, room.w), h: Math.max(place.h ?? 0, room.h) } : place;
     // only the part away from the mascot grows the window; toward it the balloon is drawn over the stage
-    const moved = range === "move" ? { ...grown, dx: room.x, dy: room.y } : { ...grown, ...splitOffset(grown, side).away };
+    const moved = range === "move" ? { ...grown, dx: room.x, dy: room.y } : { ...grown, ...away };
     return balloonReserve({ stage, room, place: moved, maxWidth: BALLOON_MAX_W });
   };
   const reserveRef = useRef(reserveFor);
@@ -222,7 +223,6 @@ export function Balloon({ botId, name, balloon, retro, side, room, onEvent, hove
     if (fixed.dx !== (place.dx ?? 0) || fixed.dy !== (place.dy ?? 0)) setPlace((current) => ({ ...current, ...fixed }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [side.right, side.below, stage, owl, room.x, room.y, place.w, place.h]);
-  useEffect(() => () => onReserve?.(null, true), [onReserve]);
 
   // Follow a streaming reply to its newest words; a finished one shows its start.
   useEffect(() => {
@@ -324,7 +324,8 @@ export function Balloon({ botId, name, balloon, retro, side, room, onEvent, hove
     width: place.w ?? undefined,
     height: place.h ?? undefined,
     maxWidth: place.w ? undefined : Math.min(BALLOON_MAX_W, room.w),
-    maxHeight: place.h ? undefined : room.h,
+    // the quick chat scrolls; a size the person chose (the grip) may be taller
+    maxHeight: place.h ? undefined : Math.min(CHAT_BALLOON.h, room.h),
   };
   const grip = `${side.below ? "bottom" : "top"}-${side.right ? "right" : "left"}`;
 
@@ -334,6 +335,7 @@ export function Balloon({ botId, name, balloon, retro, side, room, onEvent, hove
       role="dialog"
       aria-label={name}
       data-kind={balloon.kind}
+      data-capped={place.h ? undefined : ""}
       data-detached={detached ? "" : undefined}
       className={cn("fb-balloon", retro && "r98-balloon r98-balloon-docked")}
       style={{ ...offsetStyle, ...sizeStyle }}
@@ -383,11 +385,9 @@ export function Balloon({ botId, name, balloon, retro, side, room, onEvent, hove
             )}
           </div>
         </div>
-        {(balloon.kind !== "chat" || balloon.asked || balloon.truncated) && (
-          <button type="button" className="fb-open" onClick={() => onEvent({ type: "open" })}>
-            {balloon.open}
-          </button>
-        )}
+        <button type="button" className="fb-open" onClick={() => onEvent({ type: "open" })}>
+          {balloon.open}
+        </button>
         {balloon.input && (
           <form className="fb-ask" onSubmit={onSubmit}>
             <textarea

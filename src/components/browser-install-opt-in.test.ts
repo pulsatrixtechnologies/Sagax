@@ -38,6 +38,7 @@ vi.mock("@/state/store", async (importOriginal) => {
 
 import { SettingsModal } from "./SettingsModal";
 import { ComputerPanel } from "./ComputerPanel";
+import { WorksOnSetting } from "./computer/WorksOnSetting";
 import { AccessSection } from "./bot-settings/AccessSection";
 import { useBotSettingsDerived } from "./bot-settings/useBotSettingsDerived";
 
@@ -78,7 +79,9 @@ describe("browser installation opt-in", () => {
     const toggle = switchTag(markup, "Give this bot a built-in browser");
     expect(toggle).toContain('aria-checked="false"');
     expect(toggle).not.toContain("disabled=");
-    expect(panel(false).match(/<button[^>]*data-works-on-choice="browser"[^>]*>/)?.[0]).toContain("disabled");
+    const worksOn = renderToStaticMarkup(createElement(WorksOnSetting, { bot: { ...bot, browser: false } }));
+    expect(worksOn.match(/<button[^>]*data-works-on-choice="browser"[^>]*>/)?.[0]).toContain("disabled");
+    expect(panel(false)).not.toContain("data-works-on-setting");
     expect(panel(false)).not.toContain("Install the browser engine");
     expect(panel(true)).not.toContain("Install the browser engine");
     expect(fixture.dispatch).not.toHaveBeenCalled();

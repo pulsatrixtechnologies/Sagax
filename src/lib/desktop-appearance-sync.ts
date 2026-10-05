@@ -7,7 +7,7 @@
 // person record, so the desktop app keeps a copy of the four appearance keys
 // at /api/me/appearance:
 //   1. at start the desktop is the authority: it saves what it wears now;
-//   2. a local change (the skin picker, the font setting, /hibou98) is saved
+//   2. a local change (the skin picker, the font setting, Hibou 98) is saved
 //      within WATCH_MS;
 //   3. the record is read every POLL_MS; when it changed since this page last
 //      saved or read it, and differs from what the page wears, the phone wrote

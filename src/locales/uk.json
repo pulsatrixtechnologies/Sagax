@@ -198,7 +198,7 @@
   "sidebar.section.moveToContext": "Перемістити в команду",
   "sidebar.section.newContext": "Нова команда…",
   "sidebar.section.newContextAria": "Назва нової команди",
-  "sidebar.section.removeFromContext": "Перемістити в General",
+  "sidebar.section.removeFromContext": "Перемістити до Непризначено",
   "sidebar.room.renameAria": "Перейменувати {name}",
   "sidebar.room.saveChatName": "Зберегти назву гілки",
   "sidebar.room.saveChannelName": "Зберегти назву групового чату",

@@ -141,7 +141,7 @@ export function TeamCanvas({ sections, canManage, onMove, onInstructions, onMemo
       try { localStorage.setItem(`${storageKey.current}:bot-order`, JSON.stringify(next)); }
       catch { /* Personal ordering remains usable when browser storage is unavailable. */ }
     }
-    setAnnouncement(t("canvas.arrangedBot", { name: bot.name, team: section.name }));
+    setAnnouncement(t("canvas.arrangedBot", { name: bot.name, team: section.key ? section.name : t("sidebar.section.general") }));
   };
   const arrangeBot = (bot: Bot, delta: number) => {
     const section = sections.find((item) => item.key === (bot.section?.trim() ?? ""));
@@ -360,16 +360,17 @@ export function TeamCanvas({ sections, canManage, onMove, onInstructions, onMemo
         const hierarchy = section.chiefs.length > 0 && section.members.length > 0;
         const dropping = computerDropKey === section.key || (dragged && dropKey === section.key && (dragged.bot.section?.trim() ?? "") !== section.key);
         const computer = Object.hasOwn(teamComputers, section.key) ? teamComputers[section.key] : undefined;
+        const label = section.key ? section.name : t("sidebar.section.general");
         const renderBot = (bot: Bot) => <div key={bot.id} className="relative">
           {insertion?.botId === bot.id && <div className={cn("pointer-events-none absolute inset-x-1 h-0.5 rounded bg-accent", insertion.after ? "-bottom-[9px]" : "-top-[9px]")} />}
           <BotCard bot={bot} selected={state.selectedId === bot.id && state.settingsOpen} moving={dragged?.bot.id === bot.id || moving === bot.id}
             connected={connectedBotIds.includes(bot.id)} onComputer={onComputer} onArrange={layoutLoaded ? arrangeBot : undefined} />
         </div>;
-        return <section key={section.key} data-team-key={section.key} aria-label={t("canvas.teamRegion", { name: section.name })}
+        return <section key={section.key} data-team-key={section.key} aria-label={t("canvas.teamRegion", { name: label })}
           className={cn("absolute rounded-2xl border bg-panel/90 shadow-sm has-[details[open]]:z-20 data-[computer-dropping=true]:border-accent data-[computer-dropping=true]:ring-2 data-[computer-dropping=true]:ring-accent/25", dropping ? "border-accent ring-2 ring-accent/25" : "border-hairline/50")}
           style={{ left: tile.x, top: tile.y, width: tile.width, height: tile.height }}>
           <header className="flex h-16 items-center gap-2 px-5">
-            <button data-arrange-team={section.key} disabled={!layoutLoaded} aria-label={t("canvas.arrange", { name: section.name })}
+            <button data-arrange-team={section.key} disabled={!layoutLoaded} aria-label={t("canvas.arrange", { name: label })}
               title={t("canvas.arrangeHint")} className="min-w-0 flex-1 cursor-grab rounded-md py-2 text-left active:cursor-grabbing focus-visible:outline-2 focus-visible:outline-accent"
               onKeyDown={(event) => {
                 const delta = ({ ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] } as Record<string, number[]>)[event.key];
@@ -378,9 +379,9 @@ export function TeamCanvas({ sections, canManage, onMove, onInstructions, onMemo
                 const step = event.shiftKey ? 40 : 10;
                 savePositions({ ...positions, [section.key]: { x: tile.x + delta[0] * step, y: tile.y + delta[1] * step } });
               }}>
-              <h2 className="truncate text-[13px] font-semibold tracking-tight">{section.name}</h2>
+              <h2 className="truncate text-[13px] font-semibold tracking-tight">{label}</h2>
             </button>
-            {computer && <button aria-label={t("canvas.teamComputer", { team: section.name, name: computer.name })} title={`${computer.name}${computer.state ? ` · ${computer.state}` : ""}`}
+            {computer && <button aria-label={t("canvas.teamComputer", { team: label, name: computer.name })} title={`${computer.name}${computer.state ? ` · ${computer.state}` : ""}`}
               disabled={!onTeamComputer} onClick={() => onTeamComputer?.(section.key)}
               className="flex min-w-0 max-w-[120px] shrink items-center gap-1.5 rounded-md px-1.5 py-2 text-[10px] text-ink-secondary hover:bg-control hover:text-ink focus-visible:outline-2 focus-visible:outline-accent disabled:pointer-events-none">
               <Monitor size={12} className="shrink-0" /><span className="truncate">{computer.name}</span>
@@ -393,17 +394,17 @@ export function TeamCanvas({ sections, canManage, onMove, onInstructions, onMemo
                 viewport.current?.querySelectorAll("details[open]").forEach((element) => { if (element !== event.currentTarget) element.removeAttribute("open"); });
               }
             }}>
-              <summary aria-label={t("canvas.manageTeam", { name: section.name })} className={cn(iconButton, "cursor-pointer list-none [&::-webkit-details-marker]:hidden")}><MoreHorizontal size={17} /></summary>
+              <summary aria-label={t("canvas.manageTeam", { name: label })} className={cn(iconButton, "cursor-pointer list-none [&::-webkit-details-marker]:hidden")}><MoreHorizontal size={17} /></summary>
               <div className={cn("absolute right-0 z-30 w-[220px] animate-pop-in rounded-xl border border-hairline bg-panel p-1.5 shadow-xl", menuAbove === section.key ? "bottom-10" : "top-10")} onClick={(event) => {
                 const menu = event.currentTarget.closest("details");
                 menu?.querySelector("summary")?.focus();
                 menu?.removeAttribute("open");
               }}>
-                <button className={menuButton} onClick={() => onEditTeam(section.key)} aria-label={t("team.moveTo", { name: section.name })}><Users size={14} />{t("team.moveTo", { name: section.name })}</button>
-                <button className={menuButton} onClick={() => onInstructions(section.key, section.name)} aria-label={t("team.instructionsEdit", { name: section.name })}><BookOpen size={14} />{t("team.instructions")}</button>
-                {onMemory && <button className={menuButton} onClick={() => onMemory(section.key, section.name)} aria-label={`${section.name} team memory`}><Brain size={14} />Team memory</button>}
-                {section.key && <button className={menuButton} onClick={() => onEditTeam(section.key, true)} aria-label={t("team.renameAria", { name: section.name })}><Pencil size={14} />{t("team.rename")}</button>}
-                {section.key && <button className={cn(menuButton, "hover:text-danger")} onClick={() => onDeleteTeam(section.key)} aria-label={t("team.deleteAria", { name: section.name })}><Trash2 size={14} />{t("team.delete")}</button>}
+                <button className={menuButton} onClick={() => onEditTeam(section.key)} aria-label={t("team.moveTo", { name: label })}><Users size={14} />{t("team.moveTo", { name: label })}</button>
+                <button className={menuButton} onClick={() => onInstructions(section.key, label)} aria-label={t("team.instructionsEdit", { name: label })}><BookOpen size={14} />{t("team.instructions")}</button>
+                {onMemory && <button className={menuButton} onClick={() => onMemory(section.key, label)} aria-label={`${label} team memory`}><Brain size={14} />Team memory</button>}
+                {section.key && <button className={menuButton} onClick={() => onEditTeam(section.key, true)} aria-label={t("team.renameAria", { name: label })}><Pencil size={14} />{t("team.rename")}</button>}
+                {section.key && <button className={cn(menuButton, "hover:text-danger")} onClick={() => onDeleteTeam(section.key)} aria-label={t("team.deleteAria", { name: label })}><Trash2 size={14} />{t("team.delete")}</button>}
               </div>
             </details>}
           </header>

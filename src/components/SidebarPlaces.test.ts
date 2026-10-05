@@ -1,5 +1,6 @@
-// Team map, Automations, Connected apps and Templates: always-visible rows
-// above the account row, icon buttons on the collapsed rail.
+// SidebarPlaces lays out the rows it is given, as labels or as icon buttons.
+// The product passes Connected apps and Templates. This fixture still covers
+// a four-row stack, including the attention dot and the tour anchors.
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { CalendarDays, Library, Network, Puzzle } from "lucide-react";

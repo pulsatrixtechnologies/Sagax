@@ -1,13 +1,12 @@
-// The sidebar's places, always in view at its foot: Team map, Automations,
-// Connected apps and Templates, directly above the account row.
+// Rows at the foot of the sidebar, above the account row. Connected apps
+// and Templates land here when their experimental flags are on. Team map
+// and Automations are in the account menu (SidebarProfileMenu). A failed
+// automation dots that row while the menu is closed.
 //
-// They used to fold into the account row's menu. Four pages you go to every
-// day are not account settings, and a menu hides the one thing a place has to
-// say (a failed automation), so they are rows again, laid out like
-// Perspicax's nav items: a line icon, the label, a rounded hover pill, the
-// active page lit. No section title, no collapse: four rows are cheaper than
-// the gesture it takes to reveal them. The collapsed rail shows the same
-// places as icon buttons with tooltips.
+// What remains is laid out like Perspicax's nav items: a line icon, the
+// label, a rounded hover pill, the active page lit. No section title, no
+// collapse. The collapsed rail shows the same rows as icon buttons with
+// tooltips.
 //
 // Collapsing the sidebar must not move them: both layouts share one row
 // height, one gap and one hairline under the stack (PLACE_ROW, PLACES_STACK,
@@ -17,8 +16,9 @@
 // The hairline sets the places apart from the account zone below, the way a
 // group ends in Perspicax's sidebar.
 //
-// The stack carries the tour's `tools` anchor; Connected apps and
-// Automations keep `nav-apps` and `nav-automations`.
+// The stack carries the tour's `tools` anchor when it has rows. Connected
+// apps keeps `nav-apps`. When the stack is empty the sidebar foot carries
+// `tools` instead, so the tour still has a target.
 import type { LucideIcon } from "lucide-react";
 
 import { cn } from "@/lib/cn";

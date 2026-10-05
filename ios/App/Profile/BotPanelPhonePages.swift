@@ -215,7 +215,7 @@ struct BotPermissionsSection: View {
     private var level: ApprovalLevel { ApprovalLevel.of(approvalMode: current.approvalMode, autoApprove: current.autoApprove) }
     private var sectionName: String {
         let name = current.section?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        return name.isEmpty ? String(localized: "General") : name
+        return name.isEmpty ? String(localized: "Unassigned") : name
     }
     /// A client session reads and removes command rules only for its own bot.
     private var showsAllowlist: Bool {

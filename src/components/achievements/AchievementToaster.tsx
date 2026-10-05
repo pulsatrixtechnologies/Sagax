@@ -11,6 +11,8 @@ import { ACHIEVEMENTS } from "../../../shared/achievements-catalog";
 import { rarityForPoints } from "../../../shared/achievements";
 import { achievementToasts, TOAST_SHOW_MS } from "@/lib/achievement-toasts";
 import { achievementsState, flushAchievementEvents, loadAchievements, localized, reportAchievement, rewardLabel, saveAchievementSettings } from "@/lib/achievements";
+import { grokAccountLinked, setGrokAccountLinked } from "@/lib/grok-account";
+import { useMyEngines } from "@/lib/perspicax-org";
 import { readRetroUnlocked } from "@/lib/retro98";
 import { useStore } from "@/state/store";
 import { notificationSoundsEnabled } from "@/lib/notification-preferences";
@@ -131,7 +133,20 @@ function useAchievementsBoot(person: string): void {
 
 export function AchievementToaster() {
   const { state } = useStore();
-  useAchievementsBoot(state.config?.viewer?.principalId ?? state.config?.profile?.email ?? "");
+  const engines = useMyEngines();
+  const person = state.config?.viewer?.principalId ?? state.config?.profile?.email ?? "";
+  useAchievementsBoot(person);
+  const grokLinked = grokAccountLinked({
+    xaiConfigured: state.config?.xai?.configured === true,
+    instances: state.instances,
+    engines,
+  });
+  useEffect(() => {
+    setGrokAccountLinked(grokLinked);
+    if (!grokLinked || achievementsState().status === "unavailable") return;
+    if (achievementsState().snapshot?.rewards.includes("character:shape")) return;
+    reportAchievement("grok.linked");
+  }, [grokLinked, person]);
   const queue = useSyncExternalStore(achievementToasts.subscribe.bind(achievementToasts), () => achievementToasts.snapshot());
   const lastTyped = useRef(0);
   const [leaving, setLeaving] = useState(false);

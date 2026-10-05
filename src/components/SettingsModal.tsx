@@ -326,7 +326,7 @@ function UpdatesRow() {
                     ? t("settings.updates.failed", { message: s.message ?? t("settings.updates.unknownError") })
                     : t("settings.updates.latest");
   return (
-    <SettingRow scope="device" title={t("settings.updates.title")} subtitle={label}>
+    <SettingRow title={t("settings.updates.title")} subtitle={label}>
       <button
         onClick={() => {
           if (s?.status === "available") return void updater.download();
@@ -368,7 +368,6 @@ function PrereleaseRow() {
   const on = s?.allowPrerelease === true;
   return (
     <SettingRow
-      scope="device"
       title={t("settings.updates.prerelease.title")}
       subtitle={t("settings.updates.prerelease.short")}
       help={t("settings.updates.prerelease.subtitle")}
@@ -426,10 +425,10 @@ function ReplayTourRow() {
   const launchMode = state.config?.onboarding?.launchMode ?? "solo";
   return (
     <>
-      <SettingRow scope="installation" title={t("settings.appTour.title")} subtitle={t("settings.appTour.subtitle")}>
+      <SettingRow title={t("settings.appTour.title")} subtitle={t("settings.appTour.subtitle")}>
         <ReplayAppTourButton />
       </SettingRow>
-      <SettingRow scope="device" title={t("settings.welcome.title")} subtitle={t("settings.welcome.subtitle")}>
+      <SettingRow title={t("settings.welcome.title")} subtitle={t("settings.welcome.subtitle")}>
         <button onClick={() => dispatch({ type: "toggleWelcome", open: true })} className="ui-button">
           {t("settings.welcome.replay")}
         </button>
@@ -437,7 +436,6 @@ function ReplayTourRow() {
       {/* the launch screen: no server or an organization server */}
       {launchBridges(window.ogb) && (
         <SettingRow
-          scope="installation"
           title={t("settings.launch.title")}
           subtitle={t(launchMode === "server" ? "settings.launch.server" : "settings.launch.solo")}
         >
@@ -462,7 +460,6 @@ function LanguageRow() {
 
   return (
     <SettingRow
-      scope="me"
       title={t("settings.language.title")}
       subtitle={t("settings.language.short")}
       help={t("settings.language.subtitle")}
@@ -488,7 +485,7 @@ function LanguageRow() {
 function FloatingFlyAwayRow() {
   const prefs = useSyncExternalStore(subscribeFloatingBots, floatingBotPrefs, floatingBotPrefs);
   return (
-    <SettingRow scope="me" title={t("settings.floatingBots.flyAway.title")} subtitle={t("settings.floatingBots.flyAway.subtitle")}>
+    <SettingRow title={t("settings.floatingBots.flyAway.title")} subtitle={t("settings.floatingBots.flyAway.subtitle")}>
       <Switch
         checked={prefs.flyAway}
         aria-label={t("settings.floatingBots.flyAway.title")}
@@ -502,7 +499,7 @@ function FloatingFlyAwayRow() {
 function FloatingLivelinessRow() {
   const prefs = useSyncExternalStore(subscribeFloatingBots, floatingBotPrefs, floatingBotPrefs);
   return (
-    <SettingRow scope="me" title={t("settings.floatingBots.liveliness.title")} subtitle={t("settings.floatingBots.liveliness.subtitle")}>
+    <SettingRow title={t("settings.floatingBots.liveliness.title")} subtitle={t("settings.floatingBots.liveliness.subtitle")}>
       <select
         value={prefs.liveliness}
         aria-label={t("settings.floatingBots.liveliness.title")}
@@ -520,7 +517,7 @@ function FloatingLivelinessRow() {
 function NotificationSoundsRow() {
   const enabled = useNotificationSounds();
   return (
-    <SettingRow scope="me" title={t("settings.notificationSounds.title")} subtitle={t("settings.notificationSounds.short")} help={t("settings.notificationSounds.subtitle")}>
+    <SettingRow title={t("settings.notificationSounds.title")} subtitle={t("settings.notificationSounds.short")} help={t("settings.notificationSounds.subtitle")}>
       <Switch
         checked={enabled}
         aria-label={t("settings.notificationSounds.play")}
@@ -533,7 +530,7 @@ function NotificationSoundsRow() {
 function FontRow() {
   const [current, setCurrent] = useState<FontId>(readFont);
   return (
-    <SettingRow scope="me" title={t("settings.font.title")} subtitle={t("settings.font.subtitle")}>
+    <SettingRow title={t("settings.font.title")} subtitle={t("settings.font.subtitle")}>
       <select
         value={current}
         aria-label={t("settings.font.aria")}
@@ -557,7 +554,7 @@ function SidebarDensityRow() {
   const density = useSidebarDensity();
   const choose = (next: SidebarDensity) => setSidebarDensity(parseSidebarDensity(next));
   return (
-    <SettingRow scope="me" title={t("sidebar.density.title")} subtitle={t("settings.sidebarDensity.subtitle")}>
+    <SettingRow title={t("sidebar.density.title")} subtitle={t("settings.sidebarDensity.subtitle")}>
       <select
         aria-label={t("sidebar.density.chooseAria")}
         value={density}
@@ -575,7 +572,7 @@ function SidebarDensityRow() {
 function ShowThreadsRow() {
   const enabled = useShowThreads();
   return (
-    <SettingRow scope="me" title={t("settings.threadDisplay.title")} subtitle={t("settings.threadDisplay.short")} help={t("settings.threadDisplay.subtitle")}>
+    <SettingRow title={t("settings.threadDisplay.title")} subtitle={t("settings.threadDisplay.short")} help={t("settings.threadDisplay.subtitle")}>
       <Switch
         checked={enabled}
         aria-label={t("settings.threadDisplay.show")}
@@ -588,7 +585,7 @@ function ShowThreadsRow() {
 function InspectorButtonRow() {
   const enabled = useShowInspectorButton();
   return (
-    <SettingRow scope="device" title={t("settings.inspectorButton.title")} subtitle={t("settings.inspectorButton.subtitle")}>
+    <SettingRow title={t("settings.inspectorButton.title")} subtitle={t("settings.inspectorButton.subtitle")}>
       <Switch
         checked={enabled}
         aria-label={t("settings.inspectorButton.show")}
@@ -601,7 +598,7 @@ function InspectorButtonRow() {
 function SidebarLogoRow() {
   const enabled = useShowSidebarLogo();
   return (
-    <SettingRow scope="device" title={t("settings.sidebarLogo.title")} subtitle={t("settings.sidebarLogo.subtitle")}>
+    <SettingRow title={t("settings.sidebarLogo.title")} subtitle={t("settings.sidebarLogo.subtitle")}>
       <Switch
         checked={enabled}
         aria-label={t("settings.sidebarLogo.show")}
@@ -614,7 +611,7 @@ function SidebarLogoRow() {
 function RunCardRow() {
   const enabled = useShowRunCard();
   return (
-    <SettingRow scope="device" title={t("settings.runCard.title")} subtitle={t("settings.runCard.subtitle")}>
+    <SettingRow title={t("settings.runCard.title")} subtitle={t("settings.runCard.subtitle")}>
       <Switch
         checked={enabled}
         aria-label={t("settings.runCard.show")}
@@ -649,7 +646,6 @@ function RoutinesInConversationRow() {
 
   return (
     <SettingRow
-      scope="installation"
       title={t("settings.routinesInConversation.title")}
       subtitle={t("settings.routinesInConversation.short")}
       help={t("settings.routinesInConversation.subtitle")}
@@ -691,7 +687,6 @@ function ToolCallsRow() {
 
   return (
     <SettingRow
-      scope="installation"
       title={t("settings.toolCalls.title")}
       subtitle={t("settings.toolCalls.short")}
       help={<>{t("settings.toolCalls.subtitle")} {t("settings.toolCalls.detail")}</>}
@@ -744,7 +739,6 @@ function ExperimentalFeaturesRow() {
   return (
     <Card
       collapsible
-      scope="installation"
       cardId="experimental.features"
       title={t("settings.experimental.title")}
       subtitle={t("settings.experimental.subtitle")}
@@ -856,7 +850,6 @@ function BrowserProfilesRow() {
   return (
     <Card
       collapsible
-      scope="installation"
       cardId="experimental.browserProfiles"
       defaultOpen={false}
       title={t("settings.profiles.title")}
@@ -891,7 +884,6 @@ function DiagnosticsRow() {
 
   return (
     <SettingRow
-      scope="device"
       title={t("settings.diagnostics.title")}
       subtitle={t("settings.diagnostics.short")}
       help={t("settings.diagnostics.subtitle")}
@@ -916,7 +908,7 @@ function DiagnosticsRow() {
 function InterfaceModeRow() {
   const advanced = useAdvancedMode();
   return (
-    <SettingRow title={t("settings.advancedMode.title")} subtitle={t("settings.advancedMode.subtitle")} scope="me">
+    <SettingRow title={t("settings.advancedMode.title")} subtitle={t("settings.advancedMode.subtitle")}>
       <Switch
         checked={advanced}
         aria-label={t("settings.advancedMode.title")}
@@ -1171,7 +1163,6 @@ export function SettingsModal() {
                 {lockedServer ? <ServerModeCard state={lockedServer} /> : <ThisComputerSettings />}
                 <Card
                   collapsible
-                  scope="installation"
                   cardId="general.profile"
                   title={t("settings.profile.title")}
                   summary={state.config?.profile?.name || state.config?.profile?.email || t("settings.card.notSet")}
@@ -1199,7 +1190,6 @@ export function SettingsModal() {
                 {advanced && editConfig && (
                   <Card
                     collapsible
-                    scope="installation"
                     cardId="general.roomTurns"
                     defaultOpen={false}
                     title={t("settings.roomTurns.title")}
@@ -1228,7 +1218,6 @@ export function SettingsModal() {
                 </div>
                 <Card
                   collapsible
-                  scope="me"
                   cardId="appearance.skin"
                   title={t("settings.skin.title")}
                   subtitle={t("settings.skin.subtitle")}
@@ -1239,7 +1228,6 @@ export function SettingsModal() {
                 {appIconAvailable() && (
                   <Card
                     collapsible
-                    scope="device"
                     cardId="appearance.appIcon"
                     title={t("settings.appIcon.title")}
                     subtitle={t("settings.appIcon.subtitle")}
@@ -1280,7 +1268,6 @@ export function SettingsModal() {
                 ) : null}
                 <Card
                   collapsible
-                  scope="installation"
                   cardId="connections.providers"
                   title={t("keys.providers.title")}
                   subtitle={t("keys.providers.subtitle")}
@@ -1304,7 +1291,6 @@ export function SettingsModal() {
                 </Card>
                 {connectedAppsEnabled(state.config) && <Card
                   collapsible
-                  scope="installation"
                   cardId="connections.apps"
                   defaultOpen={false}
                   title={t("settings.connections.appsTitle")}
@@ -1320,7 +1306,6 @@ export function SettingsModal() {
                 </Card>}
                 <Card
                   collapsible
-                  scope="installation"
                   cardId="connections.integrations"
                   defaultOpen={false}
                   title={t("keys.integrations.title")}
@@ -1339,7 +1324,6 @@ export function SettingsModal() {
                 </Card>
                 <Card
                   collapsible
-                  scope="installation"
                   cardId="connections.voice"
                   defaultOpen={false}
                   title={t("voice.engine.title")}
@@ -1354,7 +1338,6 @@ export function SettingsModal() {
                 </Card>
                 <Card
                   collapsible
-                  scope="installation"
                   cardId="connections.image"
                   defaultOpen={false}
                   title={t("imageGen.title")}

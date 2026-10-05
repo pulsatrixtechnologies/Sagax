@@ -57,6 +57,17 @@ describe("thread control placement", () => {
     expect(markup).toMatch(/<textarea[^>]*disabled=""[^>]*aria-busy="true"/);
     expect(markup).not.toContain("Finish group setup");
   });
+  it("puts simple approval choices above the message line", () => {
+    const markup = renderToStaticMarkup(createElement(ChatView, { bot: { ...bot, busy: false } }));
+    const rowAt = markup.indexOf("data-composer-row");
+    const approvalAt = markup.indexOf("data-composer-approval");
+    expect(approvalAt).toBeGreaterThan(-1);
+    expect(rowAt).toBeGreaterThan(approvalAt);
+    const row = markup.slice(rowAt);
+    expect(row).not.toContain("data-test-approval-control");
+    expect(row).toContain("Message Pepper");
+  });
+
   it("offers trusted modes in the composer without requiring a Full bot default", () => {
     const fullBot = { ...bot, busy: false, approvalMode: "full" as const };
     expect(renderToStaticMarkup(createElement(ChatView, { bot: fullBot }))).not.toContain("Use bot’s Full access for this thread");

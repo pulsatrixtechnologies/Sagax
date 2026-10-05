@@ -311,7 +311,7 @@ struct BotMoveToMenu: View {
 // MARK: - Account menu
 
 /// The photo's menu (`SidebarProfileMenu`): Archived bots, Settings,
-/// Achievements, About, Help Center.
+/// Team map, Automations, Achievements, About, Help Center.
 struct HomeAccountMenuItems: View {
     let select: (AccountMenuItem) -> Void
     @EnvironmentObject private var session: Session
@@ -321,7 +321,8 @@ struct HomeAccountMenuItems: View {
         let groups = NavigationMenus.account(
             gate: session.surfaceGate,
             hasArchivedBots: session.state.bots.contains { $0.hidden == true },
-            achievementsReady: session.connection != nil && achievements.status != .unavailable
+            achievementsReady: session.connection != nil && achievements.status != .unavailable,
+            connected: session.connection != nil
         )
         ForEach(Array(groups.enumerated()), id: \.offset) { index, group in
             if index > 0 { Divider() }
@@ -338,6 +339,8 @@ struct HomeAccountMenuItems: View {
         switch item {
         case .archivedBots: String(localized: "Archived bots")
         case .settings: String(localized: "Settings")
+        case .teamMap: String(localized: "Team map")
+        case .automations: String(localized: "Automations")
         case .achievements: String(localized: "Achievements")
         case .about: String(localized: "About")
         case .help: String(localized: "Help Center")
@@ -348,6 +351,8 @@ struct HomeAccountMenuItems: View {
         switch item {
         case .archivedBots: "archivebox"
         case .settings: "gearshape"
+        case .teamMap: "point.3.connected.trianglepath.dotted"
+        case .automations: "calendar"
         case .achievements: "trophy"
         case .about: "info.circle"
         case .help: "questionmark.circle"
@@ -444,9 +449,9 @@ struct ArchivedBotsView: View {
 
 // MARK: - Places
 
-/// The desktop sidebar's rows above the account footer, at the foot of the
-/// home list: Team map, Automations, then Connected apps and Templates
-/// while Settings > Experimental turns them on.
+/// Experimental places at the foot of the home list: Connected apps and
+/// Templates while Settings > Experimental turns them on. Team map and
+/// Automations open from the account menu.
 struct HomePlacesSection: View {
     @Environment(\.themePalette) var themePalette
     let places: [HomePlace]

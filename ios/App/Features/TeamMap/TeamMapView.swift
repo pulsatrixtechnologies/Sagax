@@ -91,7 +91,7 @@ struct TeamMapContent: View {
                     }
                 } header: {
                     HStack {
-                        Text(verbatim: section.name)
+                        Text(section.key.isEmpty ? String(localized: "Unassigned") : section.name)
                         Spacer()
                         Text(verbatim: "\(section.count)")
                             .monospacedDigit()
@@ -148,7 +148,7 @@ struct TeamMapContent: View {
             if !others.isEmpty {
                 Menu {
                     ForEach(others) { section in
-                        Button(section.name) { model.requestMove(bot, to: section.key) }
+                        Button(section.key.isEmpty ? String(localized: "Unassigned") : section.name) { model.requestMove(bot, to: section.key) }
                             .accessibilityIdentifier("team-map-move-to-\(section.key.isEmpty ? "general" : section.key)")
                     }
                 } label: {

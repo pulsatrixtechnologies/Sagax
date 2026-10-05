@@ -3,10 +3,13 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import en from "@/locales/en.json";
 import fr from "@/locales/fr.json";
+import { resetAchievementsForTests } from "@/lib/achievements";
 import { forgetLegacyBotLooks, readLegacyBotLooks, type FloatingStorage } from "@/lib/floating-bots";
+import { setGrokAccountLinked } from "@/lib/grok-account";
+import type { AchievementSnapshot } from "../../../shared/achievements";
 import { BotAvatar } from "@/components/Avatar";
 import { SHAPE_ART, shapeSkinPaint } from "@/components/ShapeMascot";
 import { botMascotLook, CHARACTER_PAINT, completeMascotLook, MASCOT_SHAPES, SHAPE_SKINS, TROMBI_SKINS } from "../../../shared/mascot-look";
@@ -156,10 +159,16 @@ describe("the mascot registry", () => {
 });
 
 describe("the avatar popover's Bot tab", () => {
-  const render = (mascotLook?: Parameters<typeof botMascotLook>[0]) =>
-    renderToStaticMarkup(createElement(MascotLookEditor, { bot: { color: "blue", mascotSkin: "none", mascotLook: botMascotLook(mascotLook) }, onPatch: () => undefined }));
+  const render = (mascotLook?: Parameters<typeof botMascotLook>[0], mascotSkin = "none") =>
+    renderToStaticMarkup(createElement(MascotLookEditor, { bot: { color: "blue", mascotSkin: mascotSkin as never, mascotLook: botMascotLook(mascotLook) }, onPatch: () => undefined }));
+  const enforce = (rewards: string[]) => resetAchievementsForTests({ status: "ready", snapshot: { rewards, items: [] } as unknown as AchievementSnapshot });
 
-  it("offers the owl its colors, skins, style and wing moves", () => {
+  afterEach(() => {
+    resetAchievementsForTests();
+    setGrokAccountLinked(false);
+  });
+
+  it("offers the owl its colors, skins and wing moves when nothing is locked", () => {
     const html = render(undefined);
     for (const id of ["owl", "shape", "trombi"]) expect(html).toContain(`data-character-option="${id}"`);
     expect(html).toContain('data-character-options="owl"');
@@ -168,9 +177,33 @@ describe("the avatar popover's Bot tab", () => {
     expect(html).not.toContain('data-mascot-skin-option="frost"');
     for (const tier of ["common", "rare", "epic", "legendary"]) expect(html).toMatch(new RegExp(`role="tab"[^>]*data-tab="${tier}"`));
     expect(html).toContain("data-color-tabs");
-    expect(html).toContain('data-character-style="3d"');
+    expect(html).not.toContain("data-character-style");
     expect(html).toContain('data-character-move="spread-wings"');
     expect(html).not.toContain("data-character-shape");
+  });
+
+  it("hides locked characters and skins, and shows Shapes once a Grok account is linked", () => {
+    enforce([]);
+    const locked = render(undefined);
+    expect(locked).toContain('data-character-option="owl"');
+    for (const id of ["shape", "trombi", "bunbu"]) expect(locked).not.toContain(`data-character-option="${id}"`);
+    expect(locked).not.toContain("data-locked");
+    expect(locked).not.toContain('data-tab="epic"');
+    expect(locked).toContain('data-mascot-skin-option="none"');
+    // the skin this bot already wears stays visible
+    expect(render(undefined, "chrome")).toContain('data-mascot-skin-option="chrome"');
+    expect(render(undefined, "chrome")).not.toContain('data-mascot-skin-option="lightning"');
+    setGrokAccountLinked(true);
+    const linked = render(undefined);
+    expect(linked).toContain('data-character-option="shape"');
+    expect(linked).not.toContain('data-character-option="trombi"');
+    setGrokAccountLinked(false);
+    enforce(["character:trombi", "character:bunbu", "skin:owl:chrome"]);
+    const earned = render(undefined);
+    expect(earned).toContain('data-character-option="trombi"');
+    expect(earned).toContain('data-character-option="bunbu"');
+    expect(earned).not.toContain('data-character-option="shape"');
+    expect(earned).toContain('data-tab="epic"');
   });
 
   it("offers a shape its shapes, colors, skins by rarity and its own moves, and nothing of the owl", () => {

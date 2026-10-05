@@ -238,7 +238,7 @@ if (!enabled) console.log("skipping team lifecycle UI e2e: set SAGAX_UI_E2E=1 to
     expect((await fetch(`${info.url}/api/section-context?section=Sidebar%20empty`)).status).toBe(404);
 
     // The visible delete button shares the established keep-members behavior:
-    // active, pinned and archived bots move to General with their chats intact.
+    // active, pinned and archived bots move to Unassigned with their chats intact.
     await control("send", "--bot", a.id, "--text", "Keep this conversation when its sidebar section is deleted.");
     expect(await control("wait", "--bot", a.id, "--timeout", "30")).toMatchObject({ status: "settled" });
     const transcript = (await control("messages", "--bot", a.id, "--limit", "10") as any).messages;
@@ -248,7 +248,7 @@ if (!enabled) console.log("skipping team lifecycle UI e2e: set SAGAX_UI_E2E=1 to
       await expect.poll(snapshot).toContain(`alertdialog "Delete ${name} team?"`);
       expect(await focused()).toBe("Cancel");
       expect(await evaluate("document.querySelector('[role=alertdialog]')?.textContent")).toContain(
-        "Bots and group chats move to General with their conversations intact.",
+        "Bots and group chats move to Unassigned with their conversations intact.",
       );
       await click("Delete team");
       await expect.poll(async () => (await api("/api/sidebar-sections")).sections.includes(name)).toBe(false);

@@ -57,7 +57,7 @@ import type { LocaleKey } from "@/locales";
 import { requestSettingsCard } from "./SettingsPrimitives";
 import { SettingsText } from "./SettingsLink";
 import { OrgComputerTab } from "./computer/OrgComputerTab";
-import { WorksOnSetting } from "./computer/WorksOnSetting";
+
 import { useDesktopBridgeStatus } from "@/lib/desktop-bridge";
 
 /** Keep local failure copy translatable while it remains in panel state. */
@@ -228,7 +228,7 @@ export function ComputerPanel({
   const [autoSurface, setAutoSurface] = useState<{ key: string; surface: Bot["computer"] } | null>(null);
   const autoSurfaceCurrent = autoSurface?.key === connectionKey;
   const surfaceReady = livePlace !== "auto" || autoSurfaceCurrent;
-  // Profile defaults still belong to the Works on picker below. The screen
+  // Profile defaults belong to More > Computer (Works on). The screen
   // and capability checks belong to the selected conversation, not that default.
   const bot = { ...threadBot, computer: livePlace === "auto"
     ? autoSurfaceCurrent ? autoSurface.surface : undefined : livePlace };
@@ -242,8 +242,8 @@ export function ComputerPanel({
   [profileBot.id, profileBot.threadId]);
   const canManageCloud = profileBot.computer === "cloud" && livePlace === "cloud";
   const canManageVm = profileBot.computer === "vm" && livePlace === "vm";
-  // Delete VM writes where the bot runs. Works on, at the top of this
-  // panel, is the one control for that choice. The Boat key is an
+  // Delete VM writes where the bot runs. Works on, in More > Computer,
+  // is the one control for that choice. The Boat key is an
   // installation secret. Both are refused to an organization member.
   const editComputer = canEditBotField(state.config, profileBot, "computer");
   const manageKeys = canManageKeys(state.config);
@@ -1181,12 +1181,9 @@ export function ComputerPanel({
     error: t("computer.phase.error"),
   } satisfies Record<Exclude<Phase, "ready" | "local" | "vm">, string>;
 
-  const worksOn = <WorksOnSetting bot={profileBot} />;
-
   const deviceBody = (
       <div className={embedded ? "pb-5" : "flex-1 overflow-y-auto px-5 pb-5"}>
-          {worksOn}
-          {/* Screen preview */}
+          {/* Screen preview. Works on lives in More > Computer. */}
           <div className="mb-1.5 mt-2 flex items-center justify-between text-[13px] text-ink-secondary">
             <span>{t("computer.screenOf", { name: bot.name })}</span>
             {currentTeamComputer && <span className="text-[11px]">Team default</span>}
@@ -1291,10 +1288,10 @@ export function ComputerPanel({
               {editComputer && (phase === "show-ready-boat" || phase === "show-sleeping-boat" || phase === "show-pending-boat") && (
                 <button
                   type="button"
-                  onClick={() => document.getElementById("works-on-setting")?.scrollIntoView({ block: "nearest" })}
+                  onClick={() => dispatch({ type: "toggleSettings", open: true, section: "worksOn" })}
                   className="mt-1 rounded-lg bg-control px-3 py-1.5 text-[12px] text-ink hover:bg-raised-hover"
                 >
-                  {t("computer.worksOnPointer")}
+                  {t("computer.worksOn")}
                 </button>
               )}
               {vmResumable && pending !== "vm-start" && (
@@ -1559,7 +1556,6 @@ export function ComputerPanel({
   // (src/components/computer/OrgComputerTab.tsx).
   const body = bridgeStatus ? (
     <div className={embedded ? "pb-5" : "flex-1 overflow-y-auto px-5 pb-5"}>
-      {worksOn}
       <OrgComputerTab
         bridge={bridgeStatus}
         // The conversation's own place (its pin, else Works on), not the

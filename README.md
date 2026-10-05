@@ -133,7 +133,7 @@ effects and moves.
 
 <img src="docs/images/readme/desktop-mascot.webp" alt="Three desktop mascots over a blurred app window: Trombi with a holographic skin, a galaxy cloud shape, and a gold owl whose balloon says the release notes are posted" width="100%">
 
-<img src="docs/images/readme/avatar-skins.webp" alt="Avatar editor: character choice Owl, Shapes or Trombi, color swatches, skins None, Lightning, Gold, Neon, Inferno, Ice and Carbon, 2D or 3D style, and moves" width="100%">
+<img src="docs/images/readme/avatar-skins.webp" alt="Avatar editor: the owl, its colors, skins and wing moves" width="100%">
 
 </td>
 </tr>

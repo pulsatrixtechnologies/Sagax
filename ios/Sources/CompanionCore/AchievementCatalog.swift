@@ -21,6 +21,13 @@ public extension AchievementDefinition {
             rewards: [.skin(character: "shape", skin: "outline", name: AchievementText(en: "Outline", fr: "Contour", ptBR: "Outline"), characterName: AchievementText(en: "Shapes", fr: "Formes", ptBR: "Shapes"))]
         ),
         AchievementDefinition(
+            id: "grok-linked", category: .onboarding, icon: "Link", points: 10, hidden: false,
+            name: AchievementText(en: "Grok Linked", fr: "Compte Grok lié", ptBR: "Grok Linked"),
+            description: AchievementText(en: "Sign in to Grok, or save your own xAI key.", fr: "Connectez-vous à Grok, ou enregistrez votre propre clé xAI.", ptBR: "Sign in to Grok, or save your own xAI key."),
+            hint: nil,
+            rewards: [.character(id: "shape", name: AchievementText(en: "Shapes", fr: "Formes", ptBR: "Shapes"))]
+        ),
+        AchievementDefinition(
             id: "makeover", category: .onboarding, icon: "Palette", points: 10, hidden: false,
             name: AchievementText(en: "Makeover", fr: "Relooking", ptBR: "Makeover"),
             description: AchievementText(en: "Change a bot's look: its character, color or skin.", fr: "Changez l'allure d'un robot : son personnage, sa couleur ou son skin.", ptBR: "Change a bot's look: its character, color or skin."),

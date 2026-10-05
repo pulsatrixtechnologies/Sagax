@@ -39,6 +39,19 @@ describe("sidebar footer row", () => {
     expect(html).toContain('data-testid="footer-attention"');
   });
 
+  it("dots the closed account row when an automation failed and clears it once seen", () => {
+    fixture.state = {
+      config: { profile: { name: "Jean-Christophe Proulx", email: "jc@example.com" } } as AppState["config"],
+      routineRuns: [{ status: "failed" }] as AppState["routineRuns"],
+    };
+    expect(renderToStaticMarkup(createElement(SidebarProfileMenu, {}))).toContain('data-testid="footer-attention"');
+    fixture.state = {
+      ...fixture.state,
+      routineRuns: [{ status: "failed", seenAt: 1 }] as AppState["routineRuns"],
+    };
+    expect(renderToStaticMarkup(createElement(SidebarProfileMenu, {}))).not.toContain('data-testid="footer-attention"');
+  });
+
   it("falls back to the viewer's name for a member on a shared server", () => {
     fixture.state = { config: { viewer: { operator: false, principalId: "u1", email: "sam@example.com", name: "Sam Tremblay", role: "member", canCreateBots: false } } as AppState["config"] };
     const html = renderToStaticMarkup(createElement(SidebarProfileMenu, {}));

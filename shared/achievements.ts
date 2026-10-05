@@ -52,6 +52,7 @@ export const SERVER_EVENTS = [
 export const CLIENT_EVENTS = [
   "app.opened",
   "trombi.summoned",
+  "grok.linked",
   "konami",
   "mascot.pet",
   "mascot.midnight",
@@ -135,7 +136,7 @@ export type AchievementRule =
   | { kind: "completion" };
 
 export type AchievementReward =
-  | { kind: "character"; character: Extract<MascotCharacter, "trombi" | "bunbu"> }
+  | { kind: "character"; character: Extract<MascotCharacter, "shape" | "trombi" | "bunbu"> }
   | { kind: "skin"; character: MascotCharacter; skin: string }
   | { kind: "appIcon"; id: string }
   | { kind: "title"; id: string; name: Localized };
@@ -368,8 +369,8 @@ export function rewardKey(reward: AchievementReward): string {
   }
 }
 
-/** Unlocked from the start: the owl and the shapes, with their Common skins. */
-export const DEFAULT_CHARACTERS: readonly MascotCharacter[] = ["owl", "shape"];
+/** Unlocked from the start: the owl, with its Common skins. Shapes waits for a linked Grok account. */
+export const DEFAULT_CHARACTERS: readonly MascotCharacter[] = ["owl"];
 
 /** The rarity of a character's skin, by its id. */
 export function skinTier(character: MascotCharacter, skin: string): SkinTier {
@@ -457,7 +458,7 @@ export function grandfatheredFromBots(bots: ReadonlyArray<{ mascotLook?: unknown
   for (const bot of bots) {
     const stored = bot.mascotLook && typeof bot.mascotLook === "object" ? (bot.mascotLook as { skins?: Record<string, unknown> }) : null;
     const look = completeMascotLook(bot.mascotLook);
-    if (look.character !== "owl" && look.character !== "shape") keys.add(`character:${look.character}`);
+    if (look.character !== "owl") keys.add(`character:${look.character}`);
     const owlSkin: MascotSkinId = botMascotSkin(bot.mascotSkin);
     if (OWL_SKIN_TIER[owlSkin] !== "common") keys.add(`skin:owl:${owlSkin}`);
     for (const character of ["shape", "trombi", "bunbu"] as const) {
@@ -468,7 +469,7 @@ export function grandfatheredFromBots(bots: ReadonlyArray<{ mascotLook?: unknown
       const skin = look.skins[character];
       if (skinTier(character, skin) === "common") continue;
       keys.add(`skin:${character}:${skin}`);
-      if (character !== "shape") keys.add(`character:${character}`);
+      keys.add(`character:${character}`);
     }
   }
   return [...keys].sort();

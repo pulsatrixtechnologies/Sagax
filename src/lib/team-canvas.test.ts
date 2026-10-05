@@ -5,7 +5,7 @@ import type { TeamMapSection } from "./team-map";
 function section(key: string, chiefs = 0, members = 0): TeamMapSection {
   return {
     key,
-    name: key || "General",
+    name: key || "Unassigned",
     chiefs: Array.from({ length: chiefs }, (_, index) => ({ id: `${key}-chief-${index}`, name: "Chief" })),
     members: Array.from({ length: members }, (_, index) => ({ id: `${key}-member-${index}`, name: "Member" })),
   };

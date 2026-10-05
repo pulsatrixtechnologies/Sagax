@@ -197,7 +197,7 @@ describe("AccessSection Works on", () => {
   const places = (markup: string) => [...markup.matchAll(/>(Auto(?: \(Cloud\))?|Cloud computer|Cloud \(server environment\)|Local VM|This computer|Browser|Off)<\/button>/g)].map((match) => match[1]);
   const FLAGS = [{}, { boatComputer: true }, { vpsComputer: true }, { boatComputer: true, vpsComputer: true }];
 
-  it("does not list Works on: that control is the Computer tab", () => {
+  it("does not list Works on: that control is More > Computer", () => {
     expect(places(render(makeBot()))).toEqual([]);
     fixture.config = { cloudHome: true } as Partial<ConfigStatus>;
     expect(places(render(makeBot()))).toEqual([]);

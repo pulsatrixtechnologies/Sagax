@@ -68,7 +68,7 @@ public extension CompanionClient {
 public struct TeamMapSection: Hashable, Sendable, Identifiable {
     /// The exact persisted section; "" is the unsectioned team.
     public var key: String
-    /// "General" for the unsectioned team.
+    /// "Unassigned" for the unsectioned team.
     public var name: String
     public var chiefs: [Bot]
     public var members: [Bot]
@@ -79,7 +79,7 @@ public struct TeamMapSection: Hashable, Sendable, Identifiable {
 
 public enum TeamMap {
     /// The desktop's name for the unsectioned team.
-    public static let generalName = "General"
+    public static let generalName = "Unassigned"
 
     private static func trim(_ text: String) -> String { text.trimmingCharacters(in: .whitespacesAndNewlines) }
 
@@ -110,7 +110,7 @@ public enum TeamMap {
     }
 
     /// TeamMapPage's teams: the visible bots, the server's sections and the
-    /// rooms' sections, General first, then the server's order.
+    /// rooms' sections, Unassigned first, then the server's order.
     public static func pageSections(state: CompanionState) -> [TeamMapSection] {
         var names: [String] = []
         for name in state.sectionOrder + state.rooms.compactMap(\.section) where !name.isEmpty && !names.contains(name) {
@@ -125,7 +125,7 @@ public enum TeamMap {
         }.map(\.element)
     }
 
-    /// The team a bot belongs to: its trimmed section, "" for General.
+    /// The team a bot belongs to: its trimmed section, "" for Unassigned.
     public static func teamKey(of bot: Bot) -> String { trim(bot.section ?? "") }
 }
 

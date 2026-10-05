@@ -263,4 +263,4 @@ export function lockHint(info: LockInfo): string {
   return unlockedSecret && achievement.hint ? `${line} ${localized(achievement.hint)}` : line;
 }
 
-export { achievementById };
+export { achievementById, characterUnlocked };

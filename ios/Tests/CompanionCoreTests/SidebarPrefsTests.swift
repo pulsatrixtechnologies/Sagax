@@ -60,7 +60,7 @@ final class SidebarPrefsTests: XCTestCase {
         prefs = ok(prefs.creating("TEST"))
         XCTAssertEqual(prefs.names, ["Ventes", "TEST"])
         XCTAssertEqual(refused(prefs.creating("Ventes")), .exists)
-        for reserved in ["General", "général", "Sans section"] {
+        for reserved in ["General", "général", "Sans section", "Unassigned", "Non assigné", "Não atribuído"] {
             XCTAssertEqual(refused(prefs.creating(reserved)), .reserved)
         }
         XCTAssertEqual(refused(prefs.creating("")), .badName)
@@ -243,7 +243,7 @@ final class SidebarPrefsTests: XCTestCase {
         let layout = state.sidebarLayout(prefs: prefs, personal: personal, viewerId: "me")
         XCTAssertTrue(layout.personal)
         XCTAssertEqual(layout.sectionNames, ["Mine", "Empty one"])
-        XCTAssertEqual(layout.sectionIds.first, SidebarSectionID.general, "General stays on top on an organization server")
+        XCTAssertEqual(layout.sectionIds.first, SidebarSectionID.general, "Unassigned stays on top on an organization server")
         XCTAssertEqual(layout.sections.first?.bots.map(\.id), ["c"])
         XCTAssertEqual(layout.sections.first?.channels.map(\.id), ["r"])
         XCTAssertEqual(layout.unsectionedBots.map(\.id), ["a", "b"], "the server's sections do not apply")

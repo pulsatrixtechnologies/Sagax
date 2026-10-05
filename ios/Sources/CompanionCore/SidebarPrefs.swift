@@ -103,7 +103,7 @@ public struct PersonalSections: Hashable, Sendable {
     public static func itemKey(bot id: String) -> String { "bot:\(id)" }
     public static func itemKey(group id: String) -> String { "group:\(id)" }
 
-    private static let reserved: Set<String> = ["general", "général", "generale", "sans section", "unassigned", "no section"]
+    private static let reserved: Set<String> = ["general", "général", "generale", "sans section", "unassigned", "no section", "non assigné", "não atribuído"]
 
     public static func isReserved(_ name: String) -> Bool {
         reserved.contains(jsTrim(name).lowercased())

@@ -310,7 +310,7 @@ function DraftSection({ active, draft, defaultsMode }: { active: Section; draft:
       namePlaceholder={defaultsMode ? t("newBot.randomName") : undefined} />
     {!viewerIsOrgMember(state.config) && <label className="block text-[13px] text-ink-secondary">Team
       <select className={cn(inputCls, "mt-1.5")} value={bot.section ?? ""} onChange={event => draft.patch({ section: event.target.value })}>
-        <option value="">General</option>{[...new Set([...(state.sections ?? []), ...state.bots.map(bot => bot.section ?? "")])].filter(Boolean).map(name => <option key={name}>{name}</option>)}
+        <option value="">{t("sidebar.section.general")}</option>{[...new Set([...(state.sections ?? []), ...state.bots.map(bot => bot.section ?? "")])].filter(Boolean).map(name => <option key={name}>{name}</option>)}
       </select>
     </label>}
   </div>;

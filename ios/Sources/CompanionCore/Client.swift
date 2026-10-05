@@ -4,8 +4,11 @@
 // encodes come from the default-deny policy in `companion/src/routes.ts`: a
 // paired phone may chat, answer approvals, and read rooms. Credential values
 // are the narrow exception: this client can transport an HPKE envelope whose
-// plaintext only the QR-paired Electron process can open. Pairing management
-// and the Local VM remain absent rather than failing at runtime.
+// plaintext only the QR-paired Electron process can open. Pairing
+// management stays absent. On an organization server the phone shows the
+// person's Local VM as a still and power buttons (`/api/me/desktop-bridge`).
+// It never sends action `use`. A sidecar pairing is not an organization,
+// so those routes are not asked there.
 import Foundation
 
 /// Where a companion connects, and with what. The token is *not* held here

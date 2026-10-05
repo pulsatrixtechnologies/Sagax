@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { createPortal } from "react-dom";
 import { Box, ExternalLink, Loader2, Monitor, Plus, RefreshCw, X } from "lucide-react";
+import { t } from "@/lib/i18n";
 import { api, useStore } from "@/state/store";
 import type { TeamComputer } from "../../shared/team-computer";
 import { ConfirmDialog } from "./ConfirmDialog";
@@ -74,7 +75,7 @@ export function CanvasComputers({ open, createRequest, drop, sections, onClose, 
   const requestAssignment = useCallback((computer: TeamComputer, section: string | null) => {
     if (pending.current || computer.section === section) return;
     if (computer.section !== null && section !== null) {
-      setError(`Unassign ${computer.name} from ${computer.section || "General"} before moving it to another team. Its files and signed-in accounts stay on the computer.`);
+      setError(`Unassign ${computer.name} from ${computer.section || t("sidebar.section.general")} before moving it to another team. Its files and signed-in accounts stay on the computer.`);
       return;
     }
     setError("");
@@ -264,7 +265,7 @@ export function CanvasComputers({ open, createRequest, drop, sections, onClose, 
       <span className="flex items-center gap-2"><Box size={15} />{dragging.name}</span>
       <p className="mt-1 text-[10px] text-ink-secondary">{dragging.hint}</p>
     </div>, document.body)}
-    <ConfirmDialog open={assignment !== null} tone="neutral" title={assignment?.section === null ? `Unassign ${assignment?.computer.name ?? "computer"}?` : `Assign ${assignment?.computer.name ?? "computer"} to ${assignment?.section || "General"}?`}
+    <ConfirmDialog open={assignment !== null} tone="neutral" title={assignment?.section === null ? `Unassign ${assignment?.computer.name ?? "computer"}?` : `Assign ${assignment?.computer.name ?? "computer"} to ${assignment?.section || t("sidebar.section.general")}?`}
       body={assignment?.section === null
         ? "This removes the team default. It does not stop or delete the machine, its files, or its logins. Review the bots' Auto routing before their next task."
         : "Bots on Auto in this team will share this computer's files and signed-in accounts. Explicit bot computer settings stay unchanged. Only one bot can use the desktop at a time. This does not move the OMB server or enable 24/7 hosting."}

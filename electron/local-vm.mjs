@@ -22,11 +22,17 @@
 //   after the person said yes on this computer (`confirmCreate`, the desktop
 //   app's own prompt), with its steps sent to the turn. A stale VM is never
 //   repaired this way: the person repairs it from the Computer tab.
+// - A bot drives this VM's own desktop (`computer`, the local_vm tool's use):
+//   a fixed `cua-driver call` as user cua. The allow-list is
+//   local-vm-computer.mjs. Never a shell line, never a path the bot chose,
+//   never this computer's own screen.
 import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+
+import { localVmComputerCall } from "./local-vm-computer.mjs";
 
 export const LOCAL_VM_LABEL = "com.openmausbot.local-vm";
 export const WORKSPACE_PATH_LABEL = "com.openmausbot.workspace-path";
@@ -38,6 +44,8 @@ const WORKSPACE_PLACEHOLDER = "__SAGAX_WORKSPACE__";
 const PASSWORD_PLACEHOLDER = "__SAGAX_VNC_PW__";
 const CUA_EXECUTABLE = "/usr/local/libexec/openmausbot/cua-driver";
 const CUA_SOCKET = "/run/user/1000/openmausbot-cua.sock";
+const CUA_PREVIEW = "/tmp/openmausbot-preview.png";
+const CUA_EXEC_ENV = ["-u", "cua", "-e", "HOME=/home/cua", "-e", "DISPLAY=:1", "-e", "CUA_DRIVER_INSTALL_CHANNEL=python_package", "-e", "CUA_DRIVER_RS_TELEMETRY_ENABLED=0"];
 const OUTPUT_LIMIT = 256 * 1024;
 
 const text = value => ({ content: [{ type: "text", text: typeof value === "string" ? value : JSON.stringify(value) }] });
@@ -470,6 +478,17 @@ export function createLocalVm({
   // A VM left running by an earlier session of the app stops too.
   touch();
 
+  // The preview path is ours. The bot never chooses it, and the PNG comes
+  // back inline.
+  const grab = async (runtime, vm) => {
+    const shot = await run(runtime, ["exec", ...CUA_EXEC_ENV, vm.name, CUA_EXECUTABLE, "call", "get_desktop_state", "{}", "--socket", CUA_SOCKET, "--screenshot-out-file", CUA_PREVIEW], 30);
+    if (shot.code !== 0) throw new Error("The Local VM's screen is not ready yet.");
+    const data = await run(runtime, ["exec", vm.name, "base64", "-w0", CUA_PREVIEW], 30);
+    const png = data.stdout.trim();
+    if (data.code !== 0 || !/^[A-Za-z0-9+/=]+$/.test(png) || png.length > 2_800_000) throw new Error("The Local VM's screen could not be read.");
+    return { content: [{ type: "image", data: png, mimeType: "image/png" }] };
+  };
+
   const api = {
     workspace,
     idleStopMs,
@@ -577,14 +596,20 @@ export function createLocalVm({
       const runtime = await need();
       const vm = await pick(runtime);
       if (vm.stale || vm.state !== "running") throw new Error("The Local VM is not running.");
-      const file = "/tmp/openmausbot-preview.png";
-      const env = ["-u", "cua", "-e", "HOME=/home/cua", "-e", "DISPLAY=:1", "-e", "CUA_DRIVER_INSTALL_CHANNEL=python_package", "-e", "CUA_DRIVER_RS_TELEMETRY_ENABLED=0"];
-      const shot = await run(runtime, ["exec", ...env, vm.name, CUA_EXECUTABLE, "call", "get_desktop_state", "{}", "--socket", CUA_SOCKET, "--screenshot-out-file", file], 30);
-      if (shot.code !== 0) throw new Error("The Local VM's screen is not ready yet.");
-      const data = await run(runtime, ["exec", vm.name, "base64", "-w0", file], 30);
-      const png = data.stdout.trim();
-      if (data.code !== 0 || !/^[A-Za-z0-9+/=]+$/.test(png) || png.length > 2_800_000) throw new Error("The Local VM's screen could not be read.");
-      return { content: [{ type: "image", data: png, mimeType: "image/png" }] };
+      return grab(runtime, vm);
+    },
+    async computer(toolName, args) {
+      const checked = localVmComputerCall(toolName, args ?? {});
+      if (checked.error) throw new Error(checked.error);
+      const runtime = await need();
+      const vm = await pick(runtime);
+      if (vm.stale) throw new Error(staleMessage(vm));
+      if (vm.state !== "running") throw new Error("The Local VM is not running.");
+      if (checked.image) return grab(runtime, vm);
+      const answer = await run(runtime, ["exec", ...CUA_EXEC_ENV, vm.name, CUA_EXECUTABLE, "call", checked.tool, JSON.stringify(checked.arguments), "--socket", CUA_SOCKET], 60);
+      const err = answer.stderr ? `${answer.stdout ? "\n" : ""}[stderr]\n${answer.stderr}` : "";
+      const out = `${answer.stdout}${err}\n[exit ${answer.code}]`.trimStart();
+      return { ...text(out.slice(0, OUTPUT_LIMIT)), ...(answer.code === 0 ? {} : { isError: true }) };
     },
     async exec(container, command, options) {
       const runtime = await need();
@@ -597,7 +622,7 @@ export function createLocalVm({
     },
   };
   // Commands, creations and screen grabs are use, held for as long as they run.
-  for (const name of ["create", "exec", "screenshot"]) {
+  for (const name of ["create", "exec", "screenshot", "computer"]) {
     const work = api[name];
     api[name] = (...args) => using(() => work(...args));
   }

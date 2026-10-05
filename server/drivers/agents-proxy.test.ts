@@ -642,6 +642,7 @@ describe("agents-proxy MCP surface", () => {
       "propose_profile",
       "propose_model",
       "propose_team_memory",
+      "act",
       "skills_list",
       "skill_manage",
     ]);
@@ -2091,7 +2092,7 @@ describe("standing external runtime", () => {
       "list_bots", "ask_bot", "delegate_bot", "check_delegation", "wait_delegation",
     ]);
     expect(JSON.stringify(list.result.tools)).not.toMatch(/after your current turn finishes|earlier turn|same turn as delegate_bot/);
-    for (const name of ["coordinate_bots", "start_thread", "create_bot", "request_credential", "memory_update", "skill_manage", "shared_computer", "tool_result_read"]) {
+    for (const name of ["coordinate_bots", "start_thread", "create_bot", "request_credential", "memory_update", "skill_manage", "shared_computer", "tool_result_read", "act"]) {
       expect((await externalCall(name, {})).error).toMatchObject({ code: -32602, message: `Unknown tool: ${name}` });
     }
     const roster = (await externalCall("list_bots", {})).result.content[0].text;

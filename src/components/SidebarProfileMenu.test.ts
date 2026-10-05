@@ -4,6 +4,7 @@ import {
   footerMenuItems,
   profileInitials,
   profileLabel,
+  profileMenuItems,
   updateBusy,
   updateNoteworthy,
   updateLabel,
@@ -165,6 +166,52 @@ describe("outward links", () => {
     expect(RELEASES_URL).toBe(`${APP_REPOSITORY}/releases`);
     expect(LICENSE_URL).toBe(`${APP_REPOSITORY}/blob/main/LICENSE`);
     expect(APP_REPOSITORY).toBe("https://github.com/pulsatrixtechnologies/sagax");
+  });
+});
+
+describe("profileMenuItems", () => {
+  const handlers = {
+    onTeamMap: () => {},
+    onAutomations: () => {},
+    onSettings: () => {},
+    onAchievements: () => {},
+    onShortcuts: () => {},
+    onAbout: () => {},
+  };
+  const items = (patch: Partial<Parameters<typeof profileMenuItems>[0]> = {}) => profileMenuItems({
+    teamMapLabel: "Team map",
+    automationsLabel: "Automations",
+    settingsLabel: "Settings",
+    achievementsLabel: "Achievements",
+    aboutLabel: "About",
+    teamMapActive: false,
+    automationsActive: true,
+    routineAttention: true,
+    updateItem: null,
+    handlers,
+    ...patch,
+  });
+
+  it("leads with Team map and Automations, then a hairline, and leaves out phone and help", () => {
+    const menu = items();
+    expect(menu.map((entry) => entry.key)).toEqual([
+      "team-map", "routines", "settings", "achievements", "shortcuts", "about",
+    ]);
+    expect(menu.find((entry) => entry.key === "settings")?.separatorBefore).toBe(true);
+    expect(menu.find((entry) => entry.key === "about")?.separatorBefore).toBe(true);
+    expect(menu.find((entry) => entry.key === "team-map")?.separatorBefore).toBeUndefined();
+    expect(menu.find((entry) => entry.key === "routines")).toMatchObject({
+      attention: true,
+      active: true,
+      tourId: "nav-automations",
+    });
+    expect(menu.some((entry) => entry.key === "phone" || entry.key === "help")).toBe(false);
+  });
+
+  it("drops achievements when they are not ready and keeps one hairline under the pair", () => {
+    const menu = items({ achievementsLabel: null, routineAttention: false, automationsActive: false });
+    expect(menu.map((entry) => entry.key)).toEqual(["team-map", "routines", "settings", "shortcuts", "about"]);
+    expect(menu.filter((entry) => entry.separatorBefore).map((entry) => entry.key)).toEqual(["settings", "about"]);
   });
 });
 

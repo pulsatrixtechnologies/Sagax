@@ -42,6 +42,8 @@ import {
   isApprovalMode,
   type ApprovalMode,
 } from "../shared/approval-mode.ts";
+import { botActFrameAllowed, type RouteTarget, type TurnFacts } from "../shared/bot-act.ts";
+import { createBotActService, type BotActAnswerer, type BotActService, type PerformActor } from "./bot-act.ts";
 import { createApprovalModeSupport } from "./harness-capabilities.ts";
 import { escapeAttribute } from "../src/lib/composer-attachments.ts";
 import { threadRefUrl } from "../src/lib/thread-refs.ts";
@@ -1253,6 +1255,26 @@ function cardRequesterKey(threadId: string, requestId: string): string | undefin
  * current (else latest) request from a session, else whoever the thread was
  * opened for. A bot opening a thread while working records this for the new
  * thread, so delegated work leads back to the person who asked. */
+function actTurnFacts(threadId: string, generation: string): TurnFacts {
+  const request = directRequestOwners.get(threadId);
+  const message = request?.messageId
+    ? store.messagesFor(threadId).find((row) => row.id === request.messageId)
+    : undefined;
+  const provenPerson = provenRequestPerson(request, generation, (messageId) =>
+    linePersonKey(store.messagesFor(threadId).find((row) => row.id === messageId)));
+  const rawSender = message?.role === "user" && typeof message.sender?.id === "string" && message.sender.id
+    ? message.sender.id
+    : undefined;
+  return {
+    automation: Boolean(request?.automation),
+    guest: guestDrivenTurns.get(threadId) === generation,
+    requestUsable: Boolean(request?.messageId) && request?.stopped !== true && Boolean(request?.generations.has(generation)),
+    senderUnproven: Boolean(rawSender) && provenPerson === null,
+    provenPerson,
+    sharedServer: LOOPBACK.trust === "service" || IDENTITY.kind === "perspicax" || HOSTED_WORKSPACE || Boolean(CLOUD_HOME),
+  };
+}
+
 function threadPersonKey(threadId: string): string | undefined {
   const thread = store.messagesFor(threadId);
   const owner = directRequestOwners.get(threadId);
@@ -7706,6 +7728,7 @@ function sseFrameFor(
   if (payload && !peopleDmFrameAllowed(payload, client.viewerId)) return null;
   // a person's unlocks reach that person's streams only
   if (payload?.kind === "achievements" && !achievementFrameAllowed(payload, client.viewerId, localPrincipalId())) return null;
+  if (payload?.kind === "bot-act" && !botActFrameAllowed(typeof payload.audience === "string" ? payload.audience : "", client.viewerId, localPrincipalId())) return null;
   if (payload) {
     const scoped = scopeChannelApproval(payload, approvalViewerOf(client));
     if (scoped.action === "drop") return null;
@@ -7919,6 +7942,14 @@ async function respondToCard(input: {
   // A call outlives the request that started it: the session must still be valid.
   if (auth.kind === "session" && !sessions.isLive(auth.session.id)) {
     return { ok: false, status: 401, error: "The session that started this call has ended." };
+  }
+  if (isBotActCard(threadId, requestId)) {
+    const act = await settleBotActCard(auth, threadId, requestId, behavior, "call");
+    if (act.status >= 400) {
+      const error = typeof act.body.error === "string" ? act.body.error : "The request is no longer open.";
+      return { ok: false, status: act.status, error };
+    }
+    return { ok: true };
   }
   const refusal = cardAnswerRefusal(auth, threadId, requestId, behavior);
   if (refusal) return { ok: false, status: 403, error: refusal };
@@ -19588,6 +19619,134 @@ function localPrincipalId(): string {
   // at boot and after a config save, never on a read.
   return principals.local()?.id ?? principals.localOperator().id;
 }
+
+let botActService: BotActService | null = null;
+function botActs(): BotActService {
+  botActService ??= createBotActService({
+    now: () => Date.now(),
+    newId: () => randomUUID(),
+    neededScope: (method, path) => requiredScope(method, path, {
+      sharedComputers: sharedComputersEnabled(cfg),
+      orgPairing: IDENTITY.kind === "perspicax",
+      orgDirectory: IDENTITY.kind === "perspicax",
+      serverCatalogue: IDENTITY.kind !== "perspicax",
+    }),
+    operatorAudience: () => localPrincipalId(),
+    sessionForPerson: (key) => {
+      const live = sessions.liveWhere((session) => personKey(session) === key);
+      const admin = live.find((session) => session.scopes.includes("admin"));
+      const picked = admin ?? live[0];
+      return picked ? { id: picked.id, scopes: [...picked.scopes] } : null;
+    },
+    performRoute: performBotActRoute,
+    broadcastUi: (audience, command, input) => {
+      broadcast({ kind: "bot-act", audience, action: command, ...(Object.keys(input).length ? { input } : {}) });
+    },
+    postCard: ({ threadId, botId, botName, botColor, requestId, summary }) => {
+      const message = store.appendMessage(threadId, {
+        role: "bot",
+        kind: "options",
+        from: { botId, name: botName, color: botColor },
+        card: {
+          title: "Approval needed",
+          subtitle: summary,
+          options: ["Allow", "Deny"],
+          requestId,
+          tool: "act",
+          botActRequest: { id: requestId },
+        },
+      });
+      return { messageId: message.id };
+    },
+    patchCard: (threadId, messageId, patch) => {
+      const message = store.messagesFor(threadId).find((row) => row.id === messageId);
+      if (!message?.card) return;
+      store.patchMessage(threadId, messageId, { card: { ...message.card, ...patch } });
+    },
+    findCard: (threadId, requestId) => {
+      const message = store.messagesFor(threadId).find((row) => row.card?.requestId === requestId && row.card.botActRequest);
+      if (!message?.card) return null;
+      return { messageId: message.id, answered: message.card.answered, dismissed: message.card.dismissed, expired: message.card.expired };
+    },
+  });
+  return botActService;
+}
+
+function actAnswerer(auth: RequestAuth): BotActAnswerer {
+  if (auth.kind === "session") {
+    return {
+      kind: "session",
+      personKey: personKey(auth.session),
+      sessionId: auth.session.id,
+      scopes: auth.scopes,
+      admin: auth.scopes.includes("admin"),
+    };
+  }
+  return auth.trust === "service" ? { kind: "service" } : { kind: "operator" };
+}
+
+function actSharedServer(): boolean {
+  return LOOPBACK.trust === "service" || IDENTITY.kind === "perspicax" || HOSTED_WORKSPACE || Boolean(CLOUD_HOME);
+}
+
+function isBotActCard(threadId: string, requestId: string): boolean {
+  return store.messagesFor(threadId).some((row) => row.card?.requestId === requestId && Boolean(row.card.botActRequest));
+}
+
+async function finishBotAct(threadId: string, requestId: string, behavior: string, auth: RequestAuth): Promise<{ status: number; body: Record<string, unknown> } | null> {
+  if (!isBotActCard(threadId, requestId)) return null;
+  const settled = await botActs().confirm({ threadId, requestId, behavior, answerer: actAnswerer(auth), sharedServer: actSharedServer() });
+  return settled.handled ? { status: settled.status, body: settled.body } : null;
+}
+
+/** Settle a bot-act card before the owner and admin checks. Those checks
+ * refuse a member on an ordinary approval card. This card is the person's
+ * own action, answered as that person. */
+async function settleBotActCard(
+  auth: RequestAuth,
+  threadId: string,
+  requestId: string,
+  behavior: string,
+  via?: "call",
+): Promise<{ status: number; body: Record<string, unknown> }> {
+  let settled: { status: number; body: Record<string, unknown> } | null = null;
+  await answeringCardAs(auth, threadId, requestId, async () => {
+    settled = await finishBotAct(threadId, requestId, behavior, auth);
+  }, via);
+  return settled ?? { status: 409, body: { error: "The request is no longer open." } };
+}
+
+async function performBotActRoute(actor: PerformActor, target: RouteTarget): Promise<{ status: number; text: string }> {
+  if (target.path === "/api/internal" || target.path.startsWith("/api/internal/") || target.path === "/api/testing" || target.path.startsWith("/api/testing/")) {
+    return { status: 400, text: "That path is not available." };
+  }
+  const headers = new Headers();
+  headers.set("accept", "application/json");
+  let body: string | undefined;
+  if (target.body !== undefined) {
+    headers.set("content-type", "application/json");
+    body = JSON.stringify(target.body);
+  }
+  let revokeId: string | null = null;
+  if (actor.kind === "person") {
+    const delegated = sessions.delegate(actor.sessionId);
+    if (!delegated) return { status: 403, text: "This person's session is no longer valid." };
+    headers.set("authorization", `Bearer ${delegated.token}`);
+    revokeId = delegated.session.id;
+  } else if (desktopMutationToken) {
+    headers.set("x-openmausbot-desktop-owner", desktopMutationToken);
+  }
+  const url = new URL(`http://127.0.0.1:${PORT}${target.path}`);
+  if (target.query) for (const [key, value] of Object.entries(target.query)) url.searchParams.append(key, value);
+  try {
+    const response = await fetch(url, { method: target.method, headers, body, redirect: "error" });
+    return { status: response.status, text: (await response.text()).slice(0, 8000) };
+  } catch {
+    return { status: 502, text: "The action could not be completed." };
+  } finally {
+    if (revokeId) sessions.revoke(revokeId);
+  }
+}
 /** Who acts, by principal: a session's principal (or its anonymous id),
  * the operator on loopback, nobody for a local service. */
 function actorPrincipalId(auth: RequestAuth): string {
@@ -22614,6 +22773,25 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         task: store.taskByThread(internalSender.id, internalCapability.threadId),
         threadId: internalCapability.threadId,
       });
+      if (path === "/api/internal/act" && method === "POST") {
+        const body = await readInternalBody();
+        const acting = store.projectBotForTask(internalSender.id, internalCapability.threadId) ?? internalSender;
+        const result = await botActs().handle({
+          facts: actTurnFacts(internalCapability.threadId, internalCapability.generation),
+          raw: body,
+          threadId: internalCapability.threadId,
+          botId: internalSender.id,
+          botName: acting.name,
+          botColor: acting.color,
+          mode: approvalModeFor({
+            approvalMode: acting.approvalMode,
+            autoApprove: acting.autoApprove,
+            approvalGrant: acting.approvalGrant,
+            threadId: internalCapability.threadId,
+          }),
+        });
+        return json(res, result.status, result.body);
+      }
       if (path === "/api/internal/computer/select" && (method === "GET" || method === "POST")) {
         const source = computerSelectionTurns.get(internalCapability.threadId);
         const bot = store.projectBotForTask(internalSender.id, internalCapability.threadId);
@@ -29474,6 +29652,10 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       const behavior = requestBehavior(body.behavior);
       const reviewedSha256 = typeof body.reviewedSha256 === "string" ? body.reviewedSha256 : undefined;
       if (!behavior) return json(res, 400, { error: "behavior must be allow, deny, or answer" });
+      if (isBotActCard(bot.threadId, String(body.requestId))) {
+        const act = await settleBotActCard(auth, bot.threadId, String(body.requestId), behavior);
+        return json(res, act.status, act.body);
+      }
       const adminCheck = adminApprovalCheck(auth, bot.threadId, String(body.requestId));
       if (adminCheck === "refused") return json(res, 403, ADMIN_APPROVAL_REQUIRED);
       if (adminCheck && (body.always === true || body.rememberCommand === true)) return json(res, 400, { error: "a server command of a member's bot is approved once, never remembered" });
@@ -29570,6 +29752,10 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       const reviewedSha256 = typeof body.reviewedSha256 === "string" ? body.reviewedSha256 : undefined;
       if (!behavior) return json(res, 400, { error: "behavior must be allow, deny, or answer" });
       const requestId = String(body.requestId);
+      if (isBotActCard(threadId, requestId)) {
+        const act = await settleBotActCard(auth, threadId, requestId, behavior);
+        return json(res, act.status, act.body);
+      }
       const adminCheck = adminApprovalCheck(auth, threadId, requestId);
       if (adminCheck === "refused") return json(res, 403, ADMIN_APPROVAL_REQUIRED);
       if (adminCheck && (body.always === true || body.rememberCommand === true)) return json(res, 400, { error: "a server command of a member's bot is approved once, never remembered" });

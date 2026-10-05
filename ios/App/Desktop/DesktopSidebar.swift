@@ -297,7 +297,7 @@ enum DesktopSidebarSections {
     }
 
     static func title(for id: String) -> String {
-        if id == SidebarSectionID.general { return String(localized: "General") }
+        if id == SidebarSectionID.general { return String(localized: "Unassigned") }
         if id == SidebarSectionID.botChats { return String(localized: "Bot threads") }
         return SidebarSectionID.userName(id) ?? id
     }

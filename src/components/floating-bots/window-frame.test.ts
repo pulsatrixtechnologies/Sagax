@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { balloonReserve, createMoveCoalescer, GROW_AHEAD, nextWindowSize } from "./window-frame";
+import { FLOAT_HOME } from "../../../electron/floating-bot-window.mjs";
+import { mascotStage } from "./fit";
+import { balloonReserve, chatHomeSize, createMoveCoalescer, dockedWindowSize, GROW_AHEAD, nextWindowSize } from "./window-frame";
 
 describe("the mascot window's size", () => {
   const mascot = { width: 156, height: 172 };
@@ -31,6 +33,22 @@ describe("the mascot window's size", () => {
   it("fits again when a gesture ends, never smaller than the balloon's room", () => {
     const reserve = { width: 500, height: 700 };
     expect(nextWindowSize({ content: { width: 480, height: 600 }, current: { width: 1100, height: 1100 }, reserve, exact: true })).toEqual(reserve);
+  });
+
+  it("holds the quick chat's room so opening it does not resize the window", () => {
+    const stage = mascotStage(120);
+    const home = chatHomeSize(stage);
+    // the character's corner is the window's: main opens at this size
+    expect(home).toEqual(FLOAT_HOME);
+    expect(dockedWindowSize(stage)).toEqual(home);
+    expect(home.width).toBeGreaterThan(stage.width);
+    expect(home.height).toBeGreaterThan(stage.height + 360);
+    expect(nextWindowSize({ content: stage, current: home, reserve: home, exact: false })).toBeNull();
+    // a short reply, and a size inside the home, stay put
+    expect(nextWindowSize({ content: { width: home.width - 8, height: home.height - 8 }, current: home, reserve: dockedWindowSize(stage, { h: 200 }), exact: false })).toBeNull();
+    const grown = dockedWindowSize(stage, { w: 640, h: 520, dx: -80, dy: -40 });
+    expect(grown.width).toBeGreaterThan(home.width);
+    expect(grown.height).toBeGreaterThan(home.height);
   });
 
   it("reserves the balloon's widest and tallest, its offset, the stage and the paddings", () => {

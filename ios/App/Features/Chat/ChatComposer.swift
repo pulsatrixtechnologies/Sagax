@@ -25,8 +25,8 @@ extension ChatView {
               !preparingAttachments,
               !sendingMessage
         else { return }
-        // "/hibou98" alone toggles Hibou 98 and is never sent, as on the
-        // desktop (src/lib/retro98.ts).
+        // The hidden composer line toggles Hibou 98 and is never sent, as on
+        // the desktop (src/lib/retro98.ts).
         if outgoingAttachments.isEmpty, pastesAtSend.isEmpty, citationsAtSend.isEmpty, text.lowercased() == "/hibou98" {
             draft = ""
             Haptics.selection()

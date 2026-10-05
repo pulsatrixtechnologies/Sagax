@@ -1,6 +1,6 @@
 // The Computer tab on an organization server: one screen like the solo panel
 // (Play / Pause / Stop on it, "<Bot>'s screen" below), the computer the bot's
-// Works on names (no selector) with a link to change it, the usage panel,
+// Works on is More > Computer (no selector on this screen), the usage panel,
 // and words for every state, never the desktop's raw answer.
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -44,15 +44,17 @@ describe("Computer tab on an organization server", () => {
     }
   });
 
-  it("shows only the screen: Works on is not a More row and not inside this screen", () => {
+  it("shows only the screen: Works on is More > Computer, not inside this screen", () => {
     for (const place of ["auto", "cloud", "vm", "local"] as const) {
       const markup = renderToStaticMarkup(createElement(OrgComputerTab, { bridge: bridge(true, "computer"), place, computerOff: false, botName: "Luna" }));
       expect(markup).not.toContain('role="radiogroup"');
       expect(markup).not.toContain("data-works-on-setting");
     }
     const ids = BOT_SECTIONS.map((entry) => entry.id);
-    expect(ids).not.toContain("worksOn");
-    expect(ids.indexOf("model")).toBe(ids.indexOf("access") + 1);
+    const worksOn = BOT_SECTIONS.find((entry) => entry.id === "worksOn");
+    expect(ids.indexOf("worksOn")).toBe(ids.indexOf("access") + 1);
+    expect(worksOn?.label).toBe("Computer");
+    expect(worksOn?.labelKey).toBe("botSettings.nav.computer");
   });
 
   it("shows the owner's stale Local VM as an error with Repair, never raw JSON", () => {

@@ -9,6 +9,10 @@
 // trackpad and the keyboard button into a remote keyboard; while held the
 // picture is also refreshed with direct captures, faster than the stream.
 // See `ComputerController` for the wire side.
+//
+// On an organization server, Works on Local VM or This computer does not
+// use that viewer. `LocalVmComputerPanel` below shows a still and the
+// power buttons, and it never takes control.
 import SwiftUI
 import CompanionCore
 import UIKit
@@ -55,8 +59,14 @@ struct ComputerView: View {
         current.computer == "cloud" && current.cloudBackend != "vps" && session.canAdminister
     }
 
+    private var showsLocalVm: Bool {
+        OrgLocalVmScreen.shows(worksOn: DesktopWorksOn.of(current), organization: session.surfaceGate.organization)
+    }
+
     var body: some View {
-        if let embeddedWidth {
+        if showsLocalVm {
+            localVmScreen
+        } else if let embeddedWidth {
             AnyView(lifecycle(AnyView(embedded(width: embeddedWidth))))
         } else {
             AnyView(lifecycle(AnyView(fullScreen))
@@ -64,6 +74,42 @@ struct ComputerView: View {
                 .navigationBarBackButtonHidden(true)
                 .background(SwipeBackBridge())
                 .preferredColorScheme(.dark))
+        }
+    }
+
+    /// Organization Local VM: the same still the desktop Computer tab shows.
+    /// The cloud viewer (and its Take control lease) stays unmounted.
+    @ViewBuilder
+    private var localVmScreen: some View {
+        if let embeddedWidth {
+            LocalVmComputerPanel(name: current.name, chrome: .phone)
+                .frame(width: embeddedWidth)
+                .background(Theme.bgComputer, in: RoundedRectangle(cornerRadius: Theme.Metric.cardRadius, style: .continuous))
+                .environment(\.colorScheme, .dark)
+                .accessibilityElement(children: .contain)
+                .accessibilityIdentifier("panel-computer")
+        } else {
+            VStack(spacing: 0) {
+                HStack {
+                    GlassCircleButton(
+                        systemImage: "chevron.left", fill: Theme.Computer.glassFill, accessibilityLabel: "Back",
+                        glyphSize: 18, glyphOffset: CGSize(width: 0.85, height: -0.25), glyphColor: Theme.Computer.ink
+                    ) { dismiss() }
+                        .accessibilityIdentifier("computer-back")
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, Theme.Metric.screenEdge)
+                .padding(.top, 6)
+                LocalVmComputerPanel(name: current.name, chrome: .phone)
+                    .padding(.horizontal, Theme.Metric.screenEdge)
+                Spacer(minLength: 0)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(Theme.bgComputer.ignoresSafeArea())
+            .toolbar(.hidden, for: .navigationBar)
+            .navigationBarBackButtonHidden(true)
+            .background(SwipeBackBridge())
+            .preferredColorScheme(.dark)
         }
     }
 
@@ -610,4 +656,459 @@ extension Theme.Computer {
     /// skin's (a light skin's dark ink would vanish on it).
     static let ink = Color.white
     static let inkSecondary = Color(hex: 0x9C9BA1)
+}
+
+// MARK: - Organization Local VM
+
+/// Colours supplied by the phone or the iPad. The computer stage does not
+/// read the theme environment, so the parent passes them.
+struct LocalVmComputerChrome {
+    var ink: Color
+    var secondary: Color
+    var frame: Color
+    var accent: Color
+    var accentInk: Color
+    var danger: Color
+    var warning: Color
+    var hairline: Color
+    var control: Color
+
+    /// The phone's computer stage is black, with the skin's accent on the
+    /// setup button.
+    static var phone: LocalVmComputerChrome {
+        LocalVmComputerChrome(
+            ink: Theme.Computer.ink,
+            secondary: Theme.Computer.inkSecondary,
+            frame: Theme.Computer.frameEmpty,
+            accent: Theme.accent,
+            accentInk: Theme.accentInk,
+            danger: Theme.danger,
+            warning: Theme.warning,
+            hairline: Color.white.opacity(0.16),
+            control: Color.white.opacity(0.12)
+        )
+    }
+
+    static func pad(_ theme: DesktopTheme) -> LocalVmComputerChrome {
+        LocalVmComputerChrome(
+            ink: theme.ink,
+            secondary: theme.inkSecondary,
+            frame: theme.card,
+            accent: theme.accent,
+            accentInk: theme.accentInk,
+            danger: theme.danger,
+            warning: theme.warning,
+            hairline: theme.hairline,
+            control: theme.control
+        )
+    }
+}
+
+/// The person's Local VM on an organization server (`LocalComputerScreen`).
+/// A still while it runs, Play / Pause / Stop on the screen. There is no
+/// hover on a phone, so the buttons stay visible and dim when they do
+/// nothing. The sentence and the setup buttons sit under the 16:10 frame:
+/// that frame is short, and a sentence inside it would be clipped. The
+/// desktop's Details row (disk, CPU, memory, OS) is not on this screen.
+/// The bot drives the desktop with `local_vm` `use`. This view never sends it.
+struct LocalVmComputerPanel: View {
+    @EnvironmentObject private var session: Session
+    @Environment(\.scenePhase) private var scenePhase
+    let name: String
+    let chrome: LocalVmComputerChrome
+    @StateObject private var model = LocalVmComputerModel()
+    @State private var consent: LocalVmConsent?
+
+    var body: some View {
+        contents(model.view, image: model.image)
+    }
+
+    @ViewBuilder
+    private func contents(_ view: LocalVmView, image: UIImage?) -> some View {
+        let picture = view.state == .running ? image : nil
+        VStack(spacing: 8) {
+            screen(view: view, picture: picture)
+            if picture == nil, let words = view.words(status: model.status) {
+                Text(words)
+                    .font(.system(size: 12))
+                    .foregroundStyle(chrome.secondary)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity)
+                    .accessibilityIdentifier("local-vm-message")
+            }
+            if picture == nil {
+                actions(view: view)
+            }
+            if !model.error.isEmpty {
+                Text(model.error)
+                    .font(.system(size: 12))
+                    .foregroundStyle(chrome.danger)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: .infinity)
+                    .accessibilityIdentifier("local-vm-error")
+            }
+            Text("\(name)'s screen")
+                .font(.system(size: 13))
+                .foregroundStyle(chrome.secondary)
+                .frame(maxWidth: .infinity)
+            if model.status?.setup?.state == "done", let folder = model.status?.setup?.previousFolder, !folder.isEmpty {
+                Text("The files of the previous Local VM are still in \(folder).")
+                    .font(.system(size: 12))
+                    .foregroundStyle(chrome.secondary)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: .infinity)
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("local-vm-computer")
+        .onAppear {
+            model.attach { [weak session] in session?.computerClient }
+            if scenePhase == .active { model.start() }
+        }
+        .onDisappear { model.stop() }
+        .onValueChange(of: scenePhase) { phase in
+            if phase == .active { model.start() } else { model.stop() }
+        }
+        .alert(consentTitle, isPresented: consentShown) {
+            Button("Cancel", role: .cancel) {}
+            Button("Continue") { Task { await model.act(.setup) } }
+        } message: {
+            Text(consent?.message ?? "")
+        }
+    }
+
+    private var consentTitle: String {
+        switch consent {
+        case .repair: "Repair"
+        case .create: "Set up in one click"
+        case nil: ""
+        }
+    }
+
+    private var consentShown: Binding<Bool> {
+        Binding(get: { consent != nil }, set: { if !$0 { consent = nil } })
+    }
+
+    private func screen(view: LocalVmView, picture: UIImage?) -> some View {
+        ZStack {
+            chrome.frame
+            if let picture {
+                Image(uiImage: picture)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .accessibilityLabel(Text("\(name)'s screen"))
+                    .accessibilityIdentifier("local-vm-picture")
+            } else {
+                VStack(spacing: 8) {
+                    if view.state == .starting {
+                        ProgressView().controlSize(.small).tint(chrome.secondary)
+                    } else if view.state == .error {
+                        Image(systemName: "exclamationmark.triangle")
+                            .font(.system(size: 22))
+                            .foregroundStyle(chrome.warning)
+                    } else {
+                        Image(systemName: "display")
+                            .font(.system(size: 22))
+                            .foregroundStyle(chrome.secondary)
+                    }
+                    Text(view.stateLabel)
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(chrome.ink)
+                }
+                .padding(.horizontal, 24)
+            }
+            if view.state != .running {
+                stateChip(view)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                    .padding(8)
+            }
+            power(view)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+                .padding(.bottom, 8)
+        }
+        .aspectRatio(16.0 / 10.0, contentMode: .fit)
+        .frame(maxWidth: .infinity)
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(chrome.hairline, lineWidth: 1))
+    }
+
+    private func stateChip(_ view: LocalVmView) -> some View {
+        let dot: Color = view.state == .paused || view.state == .starting
+            ? chrome.warning
+            : view.state == .error ? chrome.danger : Color.white.opacity(0.5)
+        return HStack(spacing: 6) {
+            Circle().fill(dot).frame(width: 6, height: 6)
+            Text(view.stateLabel)
+                .font(.system(size: 11))
+                .foregroundStyle(Color.white)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 2)
+        .background(Color.black.opacity(0.55), in: Capsule())
+        .accessibilityHidden(true)
+    }
+
+    private func power(_ view: LocalVmView) -> some View {
+        let playOn = view.state == .paused ? view.canResume : view.canPlay
+        return HStack(spacing: 4) {
+            LocalVmPowerButton(systemImage: "play.fill", label: view.playLabel, identifier: "local-vm-play", enabled: playOn && !model.busy, action: setUp)
+            LocalVmPowerButton(systemImage: "pause.fill", label: "Pause", identifier: "local-vm-pause", enabled: view.canPause && !model.busy) {
+                Task { await model.act(.pause) }
+            }
+            LocalVmPowerButton(systemImage: "stop.fill", label: "Stop", identifier: "local-vm-stop", enabled: view.canStop && !model.busy) {
+                Task { await model.act(.stop) }
+            }
+        }
+        .padding(4)
+        .background(Color.black.opacity(0.6), in: Capsule())
+        .accessibilityElement(children: .contain)
+    }
+
+    @ViewBuilder
+    private func actions(view: LocalVmView) -> some View {
+        if view.problem == .noRuntime {
+            installChoices
+        } else if let title = view.setupTitle {
+            wordButton(title, identifier: "local-vm-setup", primary: true, action: setUp)
+        }
+    }
+
+    private var installChoices: some View {
+        let choices = LocalVmInstall.choices(platform: model.platform)
+        return VStack(spacing: 8) {
+            ForEach(choices) { choice in
+                wordButton(choice.title, identifier: "local-vm-install-\(choice.raw)", primary: choice.raw == choices.first?.raw) {
+                    Task { await model.act(.install, choice: choice.raw) }
+                }
+            }
+        }
+    }
+
+    private func wordButton(_ title: String, identifier: String, primary: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(.system(size: 12, weight: primary ? .medium : .regular))
+                .foregroundStyle(primary ? chrome.accentInk : chrome.ink)
+                .padding(.horizontal, 12)
+                .frame(maxWidth: .infinity, minHeight: 44)
+                .background(primary ? chrome.accent : chrome.control, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .disabled(model.busy)
+        .opacity(model.busy ? 0.5 : 1)
+        .accessibilityIdentifier(identifier)
+    }
+
+    /// Play sets the VM up. While it is paused, the same button resumes it.
+    /// A create or a repair asks first.
+    private func setUp() {
+        let view = model.view
+        if view.state == .paused {
+            guard view.canResume, !model.busy else { return }
+            Task { await model.act(.resume) }
+            return
+        }
+        guard view.canPlay, !model.busy else { return }
+        if let next = view.consent(workspace: model.status?.workspace) {
+            consent = next
+        } else {
+            Task { await model.act(.setup) }
+        }
+    }
+}
+
+private struct LocalVmPowerButton: View {
+    let systemImage: String
+    let label: String
+    let identifier: String
+    let enabled: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: systemImage)
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(Color.white)
+                .frame(width: 36, height: 36)
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .disabled(!enabled)
+        .opacity(enabled ? 1 : 0.35)
+        .accessibilityLabel(Text(label))
+        .accessibilityIdentifier(identifier)
+    }
+}
+
+/// Polls the person's desktop bridge. Status every 10 seconds, every 2
+/// while a setup runs, and a still every 4 seconds while the VM is running.
+@MainActor
+final class LocalVmComputerModel: ObservableObject {
+    @Published private(set) var view = LocalVmView.loading
+    @Published private(set) var status: LocalVmStatus?
+    @Published private(set) var image: UIImage?
+    @Published private(set) var error = ""
+    @Published private(set) var platform: String?
+    @Published private(set) var busy = false
+
+    private var clientProvider: @MainActor () -> CompanionClient? = { nil }
+    private var pending: LocalVmAction?
+    private var connected = false
+    private var bridgeKnown = false
+    private var bridgeStopped = false
+    private var bridgeLoop: Task<Void, Never>?
+    private var statusLoop: Task<Void, Never>?
+    private var frameLoop: Task<Void, Never>?
+
+    func attach(_ provider: @escaping @MainActor () -> CompanionClient?) {
+        clientProvider = provider
+    }
+
+    func start() {
+        guard bridgeLoop == nil, statusLoop == nil else { return }
+        if !bridgeStopped {
+            bridgeLoop = Task { [weak self] in await self?.bridgeLoopBody() }
+        }
+        statusLoop = Task { [weak self] in await self?.statusLoopBody() }
+    }
+
+    func stop() {
+        bridgeLoop?.cancel()
+        statusLoop?.cancel()
+        frameLoop?.cancel()
+        bridgeLoop = nil
+        statusLoop = nil
+        frameLoop = nil
+    }
+
+    func act(_ action: LocalVmAction, choice: String? = nil) async {
+        guard pending == nil else { return }
+        guard let client = clientProvider() else {
+            error = "Your computer is not connected. Open the Sagax app on it to use its Local VM."
+            connected = false
+            bridgeKnown = true
+            publish()
+            return
+        }
+        pending = action
+        busy = true
+        error = ""
+        publish()
+        do {
+            let answer = try await client.localVm(action: action, choice: choice)
+            if !answer.ok { error = answer.text }
+        } catch {
+            self.error = Self.failed(error)
+        }
+        pending = nil
+        busy = false
+        publish()
+        await refreshStatus()
+    }
+
+    private func bridgeLoopBody() async {
+        while !Task.isCancelled, !bridgeStopped {
+            await refreshBridge()
+            if bridgeStopped || Task.isCancelled { return }
+            try? await Task.sleep(nanoseconds: 20_000_000_000)
+        }
+    }
+
+    private func statusLoopBody() async {
+        // Wake every 2 seconds so a setup that just started is seen at the
+        // desktop's setup interval. Idle status is still every 10 seconds.
+        var tick = 0
+        while !Task.isCancelled {
+            let fast = connected && status?.setup?.state == "running"
+            if connected && (fast || tick == 0) { await refreshStatus() }
+            tick = fast ? 0 : (tick + 1) % 5
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+        }
+    }
+
+    private func frameLoopBody() async {
+        while !Task.isCancelled {
+            await grab()
+            try? await Task.sleep(nanoseconds: 4_000_000_000)
+        }
+    }
+
+    private func refreshBridge() async {
+        guard let client = clientProvider() else {
+            connected = false
+            platform = nil
+            bridgeKnown = true
+            publish()
+            return
+        }
+        do {
+            guard let bridge = try await client.personDesktopBridge() else {
+                bridgeStopped = true
+                connected = false
+                platform = nil
+                bridgeKnown = true
+                publish()
+                return
+            }
+            let picked = bridge.localVmDesktop()
+            connected = picked.connected
+            platform = picked.platform
+            bridgeKnown = true
+            publish()
+            if connected { await refreshStatus() }
+        } catch {
+            // Keep the last answer. The next poll asks again.
+        }
+    }
+
+    private func refreshStatus() async {
+        guard connected, let client = clientProvider() else { return }
+        do {
+            let answer = try await client.localVm(action: .status)
+            if let next = answer.status {
+                status = next
+                publish()
+            } else if !answer.ok {
+                error = answer.text
+            }
+        } catch {
+            self.error = Self.failed(error)
+        }
+    }
+
+    private func grab() async {
+        guard !Task.isCancelled, view.state == .running, let client = clientProvider() else { return }
+        do {
+            let answer = try await client.localVm(action: .screenshot)
+            guard !Task.isCancelled, view.state == .running, let data = answer.image, let picture = UIImage(data: data) else { return }
+            image = picture
+        } catch {
+            // Keep the last frame.
+        }
+    }
+
+    private func publish() {
+        if bridgeKnown {
+            view = LocalVmView.of(status: status, connected: connected, pending: pending)
+        } else {
+            view = .loading
+        }
+        let live = view.state == .running
+        if live {
+            if frameLoop == nil {
+                frameLoop = Task { [weak self] in await self?.frameLoopBody() }
+            }
+        } else {
+            frameLoop?.cancel()
+            frameLoop = nil
+            image = nil
+        }
+    }
+
+    private static func failed(_ error: Error) -> String {
+        if let text = (error as? LocalizedError)?.errorDescription, !text.isEmpty { return text }
+        return "That did not work. Try again in a moment."
+    }
 }

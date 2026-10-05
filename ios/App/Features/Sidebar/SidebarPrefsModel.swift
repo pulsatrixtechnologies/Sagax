@@ -192,7 +192,7 @@ final class SidebarPrefsModel: ObservableObject {
     }
 
     /// Files a bot or a group in one of the person's sections ("" puts it
-    /// back in General).
+    /// back in Unassigned).
     func assignPersonal(_ session: Session, key: String, to name: String) -> String? {
         let known = Set(session.state.bots.map { PersonalSections.itemKey(bot: $0.id) }
             + session.state.rooms.map { PersonalSections.itemKey(group: $0.id) })
@@ -264,7 +264,7 @@ extension PersonalSectionError {
     /// The desktop sidebar's sentences (`sectionEditMessage`).
     var message: String {
         switch self {
-        case .reserved: String(localized: "General already holds what is in no section. Choose another name.")
+        case .reserved: String(localized: "Unassigned already holds what is in no section. Choose another name.")
         case .exists: String(localized: "You already have a section with that name.")
         case .full: String(localized: "Your sections hold too much to save. Empty one first.")
         case .badName, .missing: String(localized: "Section name")
@@ -273,7 +273,7 @@ extension PersonalSectionError {
 }
 
 /// The home's section keys and the desktop's section ids. The phone splits
-/// the desktop's General into Bots and Group Chats: both fold together.
+/// the desktop's Unassigned into Bots and Group Chats: both fold together.
 enum HomeSectionKey {
     static let attention = "__attention"
     static let bots = "__bots"
