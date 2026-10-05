@@ -2199,6 +2199,34 @@ final class Session: ObservableObject {
         }
     }
 
+    /// More > Permissions' Sending on your behalf (an admin session's field).
+    func updateOutbound(_ outbound: OutboundPolicy, for bot: Bot) async -> Bot? {
+        guard let client else { return nil }
+        do {
+            let updated = try await client.setBotOutbound(botId: bot.id, outbound: outbound)
+            guard !Task.isCancelled else { return nil }
+            state.apply(.bot(updated))
+            return updated
+        } catch {
+            if !Task.isCancelled { actionError = error.localizedDescription }
+            return nil
+        }
+    }
+
+    /// More > Model's Backup models (an admin session's field).
+    func updateFallback(_ fallback: [ModelSelection], for bot: Bot) async -> Bot? {
+        guard let client else { return nil }
+        do {
+            let updated = try await client.setBotFallback(botId: bot.id, fallback: fallback)
+            guard !Task.isCancelled else { return nil }
+            state.apply(.bot(updated))
+            return updated
+        } catch {
+            if !Task.isCancelled { actionError = error.localizedDescription }
+            return nil
+        }
+    }
+
     func updateProfile(_ patch: BotProfilePatch, for bot: Bot) async -> Bot? {
         guard let client else { return nil }
         do {

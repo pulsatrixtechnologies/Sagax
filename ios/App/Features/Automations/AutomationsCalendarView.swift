@@ -14,6 +14,16 @@
 import CompanionCore
 import SwiftUI
 
+/// The iPad desktop shell's Automations page draws the desktop's week
+/// (`days` 7, RoutineCalendarPage.tsx CalendarGrid); the phone keeps its day.
+private struct AutomationsGridDaysKey: EnvironmentKey { static let defaultValue = 1 }
+extension EnvironmentValues {
+    var automationsGridDays: Int {
+        get { self[AutomationsGridDaysKey.self] }
+        set { self[AutomationsGridDaysKey.self] = newValue }
+    }
+}
+
 /// What an event's long-press menu asks the page to do.
 enum AutomationsEventAction {
     case open, reschedule, edit, runNow, toggle, logs
@@ -21,6 +31,7 @@ enum AutomationsEventAction {
 
 struct AutomationsCalendarView<Header: View>: View {
     @Environment(\.themePalette) var themePalette
+    @Environment(\.automationsGridDays) private var gridDays
     @Binding var day: Date
     let routines: [Routine]
     let runs: [RoutineRun]
@@ -44,6 +55,17 @@ struct AutomationsCalendarView<Header: View>: View {
     }
 
     var body: some View {
+        if gridDays > 1 {
+            AnyView(AutomationsWeekView(
+                day: $day, routines: routines, runs: runs, bots: bots, botId: botId, loading: loading,
+                header: { AnyView(header()) }, onCreate: onCreate, onAction: onAction
+            ))
+        } else {
+            AnyView(dayBody)
+        }
+    }
+
+    private var dayBody: some View {
         VStack(spacing: 0) {
             VStack(spacing: 10) {
                 header()

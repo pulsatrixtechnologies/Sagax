@@ -50,18 +50,29 @@ struct DesktopComposerPill: View {
 
     private var hasText: Bool { !draft.isEmpty }
 
+    /// The pill's width: under 30rem of content (`@max-[30rem]/composer`)
+    /// the field takes a full line above the chips and the actions.
+    @State private var pillWidth: CGFloat = 0
+    private var wraps: Bool { pillWidth > 0 && pillWidth - 18 < 480 }
+
     var body: some View {
-        HStack(alignment: .bottom, spacing: 4) {
-            attach
-            if let bot, session.canAdminister {
-                DesktopApprovalButton(bot: bot, open: menuBinding(.approval), openAllowlist: openAllowlist)
-                DesktopPlaceButton(bot: bot, open: menuBinding(.place))
+        Group {
+            if wraps {
+                VStack(alignment: .leading, spacing: 4) {
+                    field
+                    HStack(alignment: .bottom, spacing: 4) {
+                        chips
+                        Spacer(minLength: 4)
+                        actions
+                    }
+                }
+            } else {
+                HStack(alignment: .bottom, spacing: 4) {
+                    chips
+                    field
+                    actions
+                }
             }
-            field
-            if let modelLabel { modelChip(modelLabel) }
-            if !hasText { dictationButton }
-            voiceButton
-            if canSend || busy { sendButton }
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 6)
@@ -85,8 +96,30 @@ struct DesktopComposerPill: View {
                     .transition(.opacity)
             }
         }
+        .background(GeometryReader { proxy in
+            Color.clear
+                .onAppear { pillWidth = proxy.size.width }
+                .onValueChange(of: proxy.size.width) { pillWidth = $0 }
+        })
         .task(id: bot?.currentTaskModelSelection) { await loadModelLabel() }
         .onValueChange(of: hasText) { _ in menu = nil }
+    }
+
+    @ViewBuilder
+    private var chips: some View {
+        attach
+        if let bot, session.canAdminister {
+            DesktopApprovalButton(bot: bot, open: menuBinding(.approval), openAllowlist: openAllowlist)
+            DesktopPlaceButton(bot: bot, open: menuBinding(.place))
+        }
+    }
+
+    @ViewBuilder
+    private var actions: some View {
+        if let modelLabel { modelChip(modelLabel) }
+        if !hasText { dictationButton }
+        voiceButton
+        if canSend || busy { sendButton }
     }
 
     private func menuBinding(_ which: DesktopComposerMenu) -> Binding<Bool> {

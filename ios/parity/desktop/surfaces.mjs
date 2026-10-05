@@ -138,9 +138,10 @@ add({ id: "search-palette-query", phase: "main", note: "command palette with a q
 
 // chat
 add({ id: "chat-top", phase: "main", note: "Ara's transcript scrolled to the top (links, day separators)",
-  open: async (ctx) => { await ctx.scrollTo({ text: /^Peux-tu me donner les liens/ }, "start"); } });
+  // twice: a late engines or achievements answer re-pins the transcript to its end
+  open: async (ctx) => { for (let i = 0; i < 2; i++) { await ctx.scrollTo({ text: /^Peux-tu me donner les liens/ }, "start"); await ctx.sleep(700); } } });
 add({ id: "chat-attachments", phase: "main", note: "image and file attachments in the transcript",
-  open: async (ctx) => { await ctx.scrollTo({ text: /^Les deux captures de remplacement/ }, "center"); } });
+  open: async (ctx) => { for (let i = 0; i < 2; i++) { await ctx.scrollTo({ text: /^Les deux captures de remplacement/ }, "center"); await ctx.sleep(700); } } });
 add({ id: "chat-markdown", phase: "main", note: "bot reply with a markdown table, code block, list and quote (injected)",
   open: async (ctx) => { await inject(ctx, "Ara", [{ role: "user", kind: "text", text: "Montre-moi le tableau." }, { role: "bot", kind: "text", text: MARKDOWN, turnTerminal: true }]); } });
 add({ id: "chat-approval", phase: "main", note: "approval card (command permission ask, injected)",
@@ -247,7 +248,12 @@ add({ id: "templates", phase: "main", note: "Templates (team library) panel",
 
 // dialogs
 add({ id: "new-bot", phase: "main", note: "New bot dialog",
-  open: async (ctx) => { await ctx.dispatch({ type: "toggleNewBot", open: true }); await ctx.sleep(700); } });
+  open: async (ctx) => {
+    await ctx.dispatch({ type: "toggleNewBot", open: true });
+    // the dialog loads its settings first ("Loading settings…")
+    await ctx.waitFor(`!/Loading settings/.test(document.querySelector("[role=dialog]")?.innerText ?? "")`, { timeoutMs: 15_000 }).catch(() => {});
+    await ctx.sleep(700);
+  } });
 add({ id: "plugins-apps", phase: "main", note: "Connected apps / plugins panel: apps",
   open: async (ctx) => { await ctx.dispatch({ type: "togglePlugins", open: true, surface: "apps" }); await ctx.sleep(1200); } });
 add({ id: "plugins-mcp", phase: "main", note: "Connected apps / plugins panel: MCP servers",
@@ -280,6 +286,27 @@ add({ id: "settings-general-scrolled", phase: "main", note: "Settings > General,
   open: async (ctx) => {
     await openSettings(ctx, "general");
     await ctx.eval(`(() => { for (const el of document.querySelectorAll("[role=dialog] *")) { if (el.scrollHeight > el.clientHeight + 20 && getComputedStyle(el).overflowY !== "visible") el.scrollTop = el.scrollHeight; } return true; })()`);
+  } });
+
+// I-sync (current renderer): appended so the earlier numbers stay put.
+// Library's Skills and Plugins views (LibraryTab.tsx), and Settings > My
+// connections, a person's own on an organization server.
+for (const view of ["skills", "plugins"]) {
+  add({ id: `panel-library-${view}`, phase: "main", note: `bot panel: Library > ${view}`,
+    open: async (ctx) => {
+      await openPanel(ctx);
+      await ctx.click('[data-panel-tab="library"]');
+      await ctx.sleep(300);
+      await ctx.click({ text: view === "skills" ? "Skills" : "Plugins", tag: "[role=tab]", within: "[data-library-view]" });
+      await ctx.sleep(900);
+    } });
+}
+add({ id: "settings-myConnections", phase: "main", note: "Settings > myConnections (organization server)", org: true,
+  open: async (ctx) => {
+    await openSettings(ctx, "myConnections", { retries: 6 });
+    const current = await ctx.eval(`__parity.state().appSettingsSection ?? null`);
+    if (current !== "myConnections") return { skip: `section myConnections not shown on this page (opened ${current})` };
+    await ctx.sleep(700);
   } });
 
 // notes for the spec: not capturable here

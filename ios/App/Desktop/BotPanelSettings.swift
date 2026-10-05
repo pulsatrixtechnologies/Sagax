@@ -138,6 +138,9 @@ struct BotPanelModel: View {
                     .accessibilityLabel(Text("Reasoning effort"))
                 }
             }
+            if session.surfaceGate.allows(.botFallback) {
+                AnyView(BotPanelFallback(bot: bot, instances: instances))
+            }
         }
         .task { instances = await DesktopModelCatalog.shared.instances(session) }
     }
@@ -198,29 +201,9 @@ struct BotPanelPermissions: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            PanelCard {
-                HStack(spacing: 12) {
-                    Image(systemName: "crown")
-                        .font(.system(size: 14))
-                        .foregroundStyle(theme.inkSecondary)
-                        .frame(width: 32, height: 32)
-                        .background(theme.control, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                    VStack(alignment: .leading, spacing: 0) {
-                        Text("Chief of Staff").panelText(13, 19.5, .medium).foregroundStyle(theme.ink)
-                        Text("One for \(sectionName)").panelText(11.5, 17.25).foregroundStyle(theme.inkSecondary)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    PanelSwitch(label: "Chief of Staff", isOn: bot.chiefOfStaff == true, disabled: !canEdit) { on in
-                        Task { _ = await sendPanelPatch(BotPanelPatch(chiefOfStaff: on), bot: bot, session: session) }
-                    }
-                }
-                Text(bot.chiefOfStaff == true
-                     ? "This is the primary contact for \(sectionName). It can create and coordinate specialists in this team, then combine their work into one answer."
-                     : "Make this bot the primary contact for the \(sectionName) team.")
-                    .panelText(13, 21.125)
-                    .foregroundStyle(theme.inkSecondary)
-                    .padding(.top, 12)
-            }
+            // I-sync: the current renderer's Primary Bot (one per person,
+            // PermissionsSection.tsx), in place of the per-team Chief of Staff.
+            AnyView(BotPanelPrimaryCard(bot: bot, canEdit: canEdit, sectionName: sectionName))
             PanelCard {
                 PanelSettingRow(title: "Ask me before contacting other bots",
                                 detail: Text(bot.approvePeerComms == true
@@ -280,6 +263,9 @@ struct BotPanelPermissions: View {
                     .padding(.top, 12)
                     .accessibilityIdentifier("desktop-panel-allowlist")
                 }
+            }
+            if session.surfaceGate.allows(.botOutbound) {
+                AnyView(BotPanelOutbound(bot: bot))
             }
         }
         .alert("Give this bot Full access?", isPresented: $confirmingFull) {

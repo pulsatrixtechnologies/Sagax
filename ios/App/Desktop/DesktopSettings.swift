@@ -151,6 +151,7 @@ extension DesktopSettingsSection {
         case .appearance: "Appearance"
         case .experimental: "Experimental"
         case .connections: "API keys"
+        case .myConnections: "My connections"
         case .decisionModel: "Decision model"
         case .engines: "Model providers"
         case .companion: "Pair devices"
@@ -171,6 +172,7 @@ extension DesktopSettingsSection {
         case .appearance: AppStrings.localized("Appearance")
         case .experimental: AppStrings.localized("Experimental")
         case .connections: AppStrings.localized("API keys")
+        case .myConnections: AppStrings.localized("My connections")
         case .decisionModel: AppStrings.localized("Decision model")
         case .engines: AppStrings.localized("Model providers")
         case .companion: AppStrings.localized("Pair devices")
@@ -190,6 +192,7 @@ extension DesktopSettingsSection {
         case .appearance: .palette
         case .experimental: .flaskConical
         case .connections: .keyRound
+        case .myConnections: .plug
         case .decisionModel: .zap
         case .engines: .terminal
         case .companion: .tabletSmartphone
@@ -307,6 +310,7 @@ struct DesktopSettingsPage: View {
         case .appearance: AnyView(DesktopAppearanceSettings())
         case .experimental: AnyView(DesktopExperimentalSettings())
         case .connections: AnyView(DesktopAPIKeysSettings())
+        case .myConnections: AnyView(DesktopMyConnectionsSettings())
         case .decisionModel: AnyView(DesktopDecisionModelSettings())
         case .engines: AnyView(DesktopEnginesSettings())
         case .companion: AnyView(DesktopPairDevicesSettings())
@@ -335,6 +339,7 @@ extension IPadParityScreen {
         case .settingsAppearance: (.settings, .appearance, nil)
         case .settingsExperimental: (.settings, .experimental, nil)
         case .settingsConnections: (.settings, .connections, nil)
+        case .settingsMyConnections: (.settings, .myConnections, nil)
         case .settingsDecisionModel: (.settings, .decisionModel, nil)
         case .settingsEngines: (.settings, .engines, nil)
         case .settingsCompanion: (.settings, .companion, nil)

@@ -136,6 +136,22 @@ public enum SurfaceFeature: String, CaseIterable, Hashable, Sendable {
     case botSlack
     /// Skills an organization package offers (BA4, OrgSkillsCard): admin.
     case orgSkillsLibrary
+    /// Library > Plugins, a bot's Claude Code plugins (`BotPluginsCard.tsx`):
+    /// `/api/bots/:id/plugins` is a server route (admin, or a client on an
+    /// organization server: `orgDirectory` in request-auth.ts); the sidecar
+    /// does not list it.
+    case botPlugins
+    /// Settings > My connections (`MyConnectionsSettings.tsx`): a person's
+    /// own GitHub and MCP servers, on an organization server only
+    /// (`/api/me/connections`; the sidecar does not list it).
+    case myConnections
+    /// More > Model's Backup models (`ModelSection.tsx` FallbackChain):
+    /// PATCH /api/bots/:id {fallback} is an admin field (neither the
+    /// sidecar's companion fields nor a client session's).
+    case botFallback
+    /// More > Permissions' Sending on your behalf (`OutboundControl`): the
+    /// same admin field rule as the backup models.
+    case botOutbound
     /// Saved command rules (BA9): read and remove pass both gates (the
     /// handler holds a client session to the bot's owner).
     case commandAllowlist
@@ -376,6 +392,12 @@ public struct SurfaceGate: Hashable, Sendable {
             return scope == .serverAdmin && !organization
         case .botSharing, .botPerspicax:
             return organization
+        case .botPlugins:
+            return scope == .serverAdmin || (scope == .serverClient && organization)
+        case .myConnections:
+            return scope != .sidecar && organization
+        case .botFallback, .botOutbound:
+            return scope == .serverAdmin
         case .botSlack:
             return scope != .sidecar
         case .commandAllowlist:

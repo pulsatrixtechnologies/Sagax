@@ -389,6 +389,19 @@ public struct Message: Codable, Hashable, Identifiable, Sendable {
 
 // MARK: - Bots and rooms
 
+/// `OutboundPolicy`: ask, or allow up to `dailyCap` sends a day.
+public struct OutboundPolicy: Codable, Hashable, Sendable {
+    public var policy: String
+    public var dailyCap: Int
+    public init(policy: String, dailyCap: Int) { self.policy = policy; self.dailyCap = dailyCap }
+    public static let `default` = OutboundPolicy(policy: "ask", dailyCap: 25)
+    /// A typed cap: a whole number from 1 to 1000, else nil.
+    public static func cap(_ text: String) -> Int? {
+        guard let value = Int(text.trimmingCharacters(in: .whitespaces)), (1...1000).contains(value) else { return nil }
+        return value
+    }
+}
+
 public struct ModelSelection: Codable, Hashable, Sendable {
     public var instanceId: String
     public var model: String
@@ -619,6 +632,13 @@ public struct Bot: Codable, Hashable, Identifiable, Sendable {
     public var unread: Bool
     public var modelSelection: ModelSelection
     public var createdAt: Double
+    /// Backup models for this bot (`Bot.fallback`): tried in order, only
+    /// when Automatic recovery is on and the provider proves a request
+    /// never started. At most five, one per engine.
+    public var fallback: [ModelSelection]?
+    /// Sending on the person's behalf (`shared/outbound.ts`); missing is
+    /// the default: ask every time, 25 a day when allowed.
+    public var outbound: OutboundPolicy?
     public var busy: Bool?
     /// What the bot is doing on its current thread: "working",
     /// "waiting-on-you", "idle", "no-signal" or "dead". Transient on the

@@ -76,6 +76,9 @@ final class DesktopShellModel: ObservableObject {
     }
 
     @Published var selected: Chat?
+    /// Team map or Automations in the main column (I-sync); a conversation
+    /// opened from the sidebar takes the column back.
+    @Published var page: DesktopPage?
     @Published var panelOpen = false
     @Published var panelTab: BotPanelTab = .details
     /// The Advanced section open in the panel; nil shows the list.
@@ -179,6 +182,13 @@ final class DesktopShellModel: ObservableObject {
 
     func open(_ chat: Chat) {
         selected = chat
+        page = nil
+    }
+
+    /// A sidebar place: its page in the main column.
+    func show(_ page: DesktopPage) {
+        menu = nil
+        self.page = page
     }
 
     func togglePanel() {
@@ -304,7 +314,7 @@ struct DesktopShell: View {
 
     private func columns(width: CGFloat, theme: DesktopTheme) -> some View {
         let docked = DesktopShellRules.docksPanel(width: width)
-        let botOpen = model.panelOpen && selectedBot != nil
+        let botOpen = model.panelOpen && selectedBot != nil && model.page == nil
         return ZStack(alignment: .topLeading) {
             HStack(spacing: 0) {
                 AnyView(DesktopSidebar())
@@ -350,6 +360,9 @@ struct DesktopShell: View {
             } else if model.modal == .plugins {
                 AnyView(DesktopPluginsModal(close: { model.modal = nil }))
                     .transition(.opacity)
+            } else if model.modal == .shortcuts {
+                AnyView(DesktopShortcutsModal(close: { model.modal = nil }))
+                    .transition(.opacity)
             }
         }
         .background(theme.app)
@@ -369,7 +382,12 @@ struct DesktopContent: View {
     @EnvironmentObject private var model: DesktopShellModel
 
     var body: some View {
-        if let chat = model.selected {
+        if let page = model.page {
+            switch page {
+            case .teamMap: AnyView(DesktopTeamMapPage())
+            case .automations: AnyView(DesktopAutomationsPage())
+            }
+        } else if let chat = model.selected {
             AnyView(DesktopChatColumn(chat: chat))
                 .id(chat.threadId)
         } else {
@@ -506,6 +524,8 @@ private struct DesktopShellRouting: ViewModifier {
                 model.avatarEditorOpen = screen == .panelAvatarEditor
                 model.modelPickerOpen = screen == .chatModelPicker
                 model.applyParityModals(screen)
+                model.page = screen.parityPage
+                if screen == .keyboardShortcuts { model.modal = .shortcuts }
                 await applyParitySidebar(screen)
                 return
             }
@@ -568,7 +588,7 @@ private struct DesktopShellPresenter: ViewModifier {
     /// the other surfaces are still sheets.
     private var sheetModal: Binding<DesktopShellModel.Modal?> {
         Binding(
-            get: { model.modal.flatMap { $0 == .settings || $0 == .plugins ? nil : $0 } },
+            get: { model.modal.flatMap { $0 == .settings || $0 == .plugins || $0 == .shortcuts ? nil : $0 } },
             set: { model.modal = $0 }
         )
     }
@@ -614,7 +634,7 @@ private struct DesktopShellPresenter: ViewModifier {
         case .about:
             NavigationStack { AboutPage() }
         case .shortcuts:
-            DesktopShortcutsSheet { model.modal = nil }
+            EmptyView()
         case .achievements:
             NavigationStack {
                 AchievementsPage()

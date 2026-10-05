@@ -614,6 +614,8 @@ struct DesktopUsageSettings: View {
 
     var body: some View {
         let rows = UsageByBot.rows(session.state.bots)
+        // I-sync: the current renderer's Plan usage, above the token ledger
+        AnyView(DesktopPlanUsageCard())
         DesktopSettingsCard(
             Text("Usage"),
             subtitle: Text("Tokens and cost per bot, added up from every settled turn. Only providers that report a price show one."),

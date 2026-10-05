@@ -9,7 +9,7 @@ import Foundation
 /// A Settings section, in the desktop's nav order (`SECTIONS`,
 /// src/components/SettingsModal.tsx), as the references draw it.
 public enum DesktopSettingsSection: String, CaseIterable, Hashable, Sendable {
-    case general, organization, appearance, experimental, connections, decisionModel, engines, companion,
+    case general, organization, appearance, experimental, connections, myConnections, decisionModel, engines, companion,
          computer, usage, people, mail, activity, backups
 
     /// Search words beside the label (the desktop's `keywords`).
@@ -27,6 +27,9 @@ public enum DesktopSettingsSection: String, CaseIterable, Hashable, Sendable {
         case .connections:
             ["keys", "api", "api key", "api keys", "connections", "composio", "xai", "mistral", "router", "openrouter",
              "openai", "anthropic", "provider"]
+        case .myConnections:
+            ["github", "mcp", "mcp servers", "connections", "connexions", "token", "oauth", "gh", "git", "my connections",
+             "mes connexions", "server", "plugins"]
         case .decisionModel: ["decision", "jev", "typesafe", "routing", "auto", "rooms", "who answers"]
         case .engines: ["models", "model providers", "engines", "claude", "codex", "grok", "providers", "sign in", "subscription"]
         case .companion: ["companion", "device", "phone", "ipad", "pair", "pairing", "mobile", "remote"]
@@ -55,15 +58,17 @@ public enum DesktopSettingsSection: String, CaseIterable, Hashable, Sendable {
     /// list. A section the pairing cannot use is left out, never drawn
     /// disabled.
     public static func available(for gate: SurfaceGate) -> [DesktopSettingsSection] {
+        // My connections: a person's own, on an organization server only
+        // (`organizationHidesSection`), through the server (not the sidecar).
+        let mine: [DesktopSettingsSection] = gate.allows(.myConnections) ? [.myConnections] : []
         switch gate.scope {
         case .sidecar, .serverClient:
-            return [.organization, .appearance, .companion]
+            return [.organization] + mine + [.appearance, .companion]
         case .serverAdmin:
             // Email, People and Activity are the served page's too; the
             // iPad does not draw them yet, so it leaves them out.
-            return [
-                .general, .organization, .appearance, .experimental, .connections, .decisionModel, .engines,
-                .companion, .computer, .usage, .backups,
+            return [.general, .organization, .appearance, .experimental, .connections] + mine + [
+                .decisionModel, .engines, .companion, .computer, .usage, .backups,
             ]
         }
     }

@@ -257,3 +257,80 @@ public extension TeamMap {
     /// Where a workspace's order is kept on this device.
     static func ordersKey(workspace: String) -> String { "omb-team-canvas:\(workspace):bot-order" }
 }
+
+// MARK: - The desktop canvas (src/lib/team-canvas.ts)
+
+/// The Team map page's canvas on the iPad shell: each team a tile, two
+/// columns, fitted to the page (`layoutTeams`, `fitTeams`, `zoomAt`).
+public enum TeamCanvasLayout {
+    public static let cardWidth: Double = 236
+    public static let cardHeight: Double = 126
+    public static let gap: Double = 16
+    public static let teamPadding: Double = 20
+    public static let headerHeight: Double = 64
+
+    public struct Tile: Hashable, Sendable {
+        public var key: String
+        public var x: Double
+        public var y: Double
+        public var width: Double
+        public var height: Double
+    }
+
+    public struct View: Hashable, Sendable {
+        public var x: Double
+        public var y: Double
+        public var scale: Double
+        public init(x: Double, y: Double, scale: Double) { self.x = x; self.y = y; self.scale = scale }
+    }
+
+    /// Chiefs and members side by side (an arrow between) when a team has both.
+    public static func hierarchy(_ section: TeamMapSection) -> Bool {
+        !section.chiefs.isEmpty && !section.members.isEmpty
+    }
+
+    /// `teamSize`.
+    public static func size(_ section: TeamMapSection) -> (width: Double, height: Double) {
+        let hierarchy = hierarchy(section)
+        let rows = hierarchy ? max(section.chiefs.count, section.members.count) : max(1, section.count)
+        return (
+            cardWidth * (hierarchy ? 2 : 1) + teamPadding * 2 + (hierarchy ? 40 : 0),
+            headerHeight + teamPadding + Double(rows) * (cardHeight + gap) - gap
+        )
+    }
+
+    /// `layoutTeams` without saved positions: two columns from (40, 40),
+    /// 56 apart, each row as tall as its taller tile.
+    public static func layout(_ sections: [TeamMapSection]) -> [Tile] {
+        let sizes = sections.map(size)
+        let firstColumnWidth = sizes.enumerated().filter { $0.offset % 2 == 0 }.map(\.element.width).max() ?? 0
+        var y: Double = 40
+        return sections.enumerated().map { index, section in
+            if index > 0, index % 2 == 0 {
+                y += max(sizes[index - 2].height, sizes[index - 1].height) + 56
+            }
+            return Tile(key: section.key, x: index % 2 == 0 ? 40 : 40 + firstColumnWidth + 56, y: y,
+                        width: sizes[index].width, height: sizes[index].height)
+        }
+    }
+
+    /// `fitTeams`: the whole map centred, 30 % to 100 %, 40 pt in.
+    public static func fit(_ tiles: [Tile], width: Double, height: Double) -> View {
+        guard !tiles.isEmpty else { return View(x: 0, y: 0, scale: 1) }
+        let left = tiles.map(\.x).min() ?? 0
+        let top = tiles.map(\.y).min() ?? 0
+        let contentWidth = (tiles.map { $0.x + $0.width }.max() ?? 0) - left
+        let contentHeight = (tiles.map { $0.y + $0.height }.max() ?? 0) - top
+        let scale = max(0.3, min(1, (width - 80) / contentWidth, (height - 80) / contentHeight))
+        return View(x: (width - contentWidth * scale) / 2 - left * scale,
+                    y: (height - contentHeight * scale) / 2 - top * scale,
+                    scale: scale)
+    }
+
+    /// `zoomAt`: a new scale that keeps `point` where it is.
+    public static func zoom(_ view: View, to scale: Double, at point: (x: Double, y: Double)) -> View {
+        let next = min(1.5, max(0.3, scale))
+        let ratio = next / view.scale
+        return View(x: point.x - (point.x - view.x) * ratio, y: point.y - (point.y - view.y) * ratio, scale: next)
+    }
+}
