@@ -194,7 +194,7 @@ describe("Settings → Appearance", () => {
     const html = render();
     expect(html).toContain('<option value="backups" selected="">Backups</option>');
     expect(html).toContain("Export full backup");
-    expect(html).toContain('type="file" accept=".ombbackup"');
+    expect(html).toContain('type="file" accept=".sagaxbackup"');
     expect(html).toContain("Older team backups and shareable templates");
   });
 

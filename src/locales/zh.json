@@ -2128,7 +2128,7 @@
   "backup.exporting": "正在创建加密备份…",
   "backup.downloadAgain": "下载 {filename}",
   "backup.import": "导入备份",
-  "backup.importHint": "选取加密的 .ombbackup 文件，并在变更任何内容前先验证。备份最多支持 10 GB 安装实例数据。较旧的团队备份与可分享范本仍可从“范本”导入。",
+  "backup.importHint": "选取加密的 .sagaxbackup 文件，并在变更任何内容前先验证。备份最多支持 10 GB 安装实例数据。较旧的团队备份与可分享范本仍可从“范本”导入。",
   "backup.file": "备份文件",
   "backup.importPassword": "这份备份的密码",
   "backup.validate": "验证备份",

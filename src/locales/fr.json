@@ -1769,7 +1769,7 @@
   "settings.card.safety": "Arrêt, suppression, limites et stockage",
   "settings.card.backupScope": "Contenu d'une sauvegarde",
   "settings.card.backupScopeSummary": "Bots, conversations et fichiers, sans identifiants",
-  "settings.card.importSummary": "Restaurer depuis un fichier .ombbackup",
+  "settings.card.importSummary": "Restaurer depuis un fichier .sagaxbackup",
   "org.createCard": "Démarrer une organisation",
   "org.inviteTitle": "Inviter une personne",
   "settings.card.backups": "{count} sauvegardes",
