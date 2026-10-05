@@ -12,6 +12,7 @@ import { BrowserSignInPage } from "./pair/BrowserSignInPage";
 import { PairPage } from "./pair/PairPage";
 import { rememberOpenThreadHash } from "./lib/open-thread-hash";
 import { syncUserPreferences } from "./lib/user-preferences-sync";
+import { installAnimationPause } from "./lib/animation-pause";
 import { JoinPage, takeInviteTokenFromLocation } from "./pair/JoinPage";
 import "katex/dist/katex.min.css";
 import "./styles.css";
@@ -28,6 +29,9 @@ if (detachedAssistant) document.documentElement.dataset.retroDetached = "";
 // one bot and its balloon (electron/floating-bot-window.mjs).
 const floatingBot = new URLSearchParams(location.search).get("omb-floating-bot") === "1";
 if (floatingBot) document.documentElement.dataset.floatingBot = "";
+// After the window flags, so a floating mascot or Hibou 98 is not paused
+// just because its window is never the focused one.
+installAnimationPause();
 
 // Slice 7: an "Open in Sagax" link survives the sign-in (/pair, Perspicax).
 rememberOpenThreadHash();

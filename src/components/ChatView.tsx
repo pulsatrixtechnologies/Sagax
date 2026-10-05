@@ -47,6 +47,7 @@ import { BotAvatar } from "./Avatar";
 import { TurnPresence } from "./TurnPresence";
 import { showToolCallsEnabled, skillAuthoringEnabled } from "@/lib/feature-flags";
 import { normalizeState, stateForBot } from "@/lib/mascot";
+import { mascotRowAnimated } from "@/lib/mascot-animate";
 import { peerLine, type PeerLine } from "@/lib/peer-message";
 import { showWorkingDots } from "@/lib/turn-tail";
 import { liveActivityLabel } from "@/lib/live-activity";
@@ -684,7 +685,7 @@ function ActivityChip({ message, place = "auto" }: { message: Message; place?: E
           title={t("chat.openConversationWith", { name: comm.withName })}
           className="flex items-center gap-2 rounded-full border border-hairline/40 bg-panel px-3 py-1.5 text-[13px] text-ink-secondary hover:bg-raised hover:text-ink"
         >
-          <BotAvatar bot={withBot ?? { name: comm.withName, color: comm.withColor }} state="happy" size={16} />
+          <BotAvatar bot={withBot ?? { name: comm.withName, color: comm.withColor }} state="happy" size={16} animated={false} />
           <span className="max-w-[480px] truncate">{tool.name}</span>
           <ChevronRight size={13} />
         </button>
@@ -757,7 +758,7 @@ const MessagesList = memo(function MessagesList({
     <>
       {messages.length === 0 && !bot.busy && (
         <div className="flex flex-1 flex-col items-center justify-center gap-3 py-24 text-center">
-          <BotAvatar bot={bot} state="idle" size={64} motion="none" motionKey={0} />
+          <BotAvatar bot={bot} state="idle" size={64} motion="none" motionKey={0} animated={false} />
           <RenameTitle
             value={bot.name}
             onCommit={(name) => {
@@ -1351,6 +1352,7 @@ export function ChatView({ bot: profile }: { bot: Bot }) {
               size={24}
               motion={mascotMotion?.kind ?? "none"}
               motionKey={mascotMotion?.nonce ?? 0}
+              animated={mascotRowAnimated(bot, state.pendingQueued, mascotMotion?.kind)}
             />
             <span className="truncate text-[14px] font-medium leading-5 text-ink">{bot.name}</span>
           </button>
