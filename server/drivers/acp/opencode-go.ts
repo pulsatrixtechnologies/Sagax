@@ -7,7 +7,6 @@ import { homedir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve as resolvePath, sep } from "node:path";
 
 import { ATTACHMENTS_DIR } from "../../attachments.ts";
-import { cloudHomeConfigured } from "../../cloud-home.ts";
 import { DATA_DIR } from "../../config.ts";
 import { hostedWorkspaceConfigured } from "../../enterprise.ts";
 import { decodeInjectId, hostApiKey, localHost, mergeLocalInject } from "../local-inject.ts";
@@ -488,7 +487,7 @@ export function openCodeProviderKeysAllowed(state: {
 }
 
 let providerKeysAllowed = (): boolean => openCodeProviderKeysAllowed({
-  cloudHome: cloudHomeConfigured(),
+  cloudHome: false,
   hostedWorkspace: hostedWorkspaceConfigured(),
   organisationManaged: false,
   sharedSignIn: false,

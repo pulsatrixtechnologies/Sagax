@@ -59,13 +59,12 @@ describe("buildApplicationMenu", () => {
     }
   });
 
-  it.each(["darwin", "linux", "win32"])("offers native organisation sign-in while a hosted workspace is active on %s", platform => {
-    const onOrganizationSignIn = vi.fn();
-    const template = build(platform, { onOrganizationSignIn });
-    const item = template.find(entry => entry.label === "Server").submenu.find(entry => entry.id === "organization-sign-in");
-    expect(item.label).toBe("Sign in with your organization…");
-    item.click();
-    expect(onOrganizationSignIn).toHaveBeenCalledOnce();
+  it.each(["darwin", "linux", "win32"])("does not offer hosted organisation sign-in on %s", platform => {
+    const template = build(platform);
+    const server = template.find(entry => entry.label === "Server").submenu;
+    expect(server.some(entry => entry.id === "organization-sign-in")).toBe(false);
+    expect(JSON.stringify(server)).not.toContain("Sign in with your organization");
+    expect(server.some(entry => entry.label === "Connect to a server…")).toBe(true);
   });
 
   it("in server mode the Server menu shows the organization's server and Change server only", () => {

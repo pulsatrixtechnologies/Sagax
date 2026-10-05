@@ -32,8 +32,7 @@ export function usePlaceAvailability(bot: Bot): PlaceAvailability {
   const computerMcp = instance?.capabilities?.computerMcp === true;
   const boxAgent = instance?.driverKind === "boxAgent";
   const backend = bot.cloudBackend === "vps" ? "vps" : "box";
-  // Places the enrolled organisation disallows, or this server never
-  // offers (an OMB Cloud home), are not reachable.
+  // Places the enrolled organisation disallows are not reachable.
   const allowed = state.config?.managedPolicy?.computers ?? { thisComputer: true, localVm: true, box: true, vps: true };
   const local = localComputerSelectable({ capabilities, providerSupportsLocal: instanceSupportsLocalComputer(state.instances, bot) }) && allowed.thisComputer;
   const browser = builtInBrowserEnabled(state.config) && browserAvailable(state.config) && instance?.capabilities?.browserMcp === true && !boxAgent;
@@ -43,9 +42,9 @@ export function usePlaceAvailability(bot: Bot): PlaceAvailability {
   if (organization) return { cloud: true, vm: allowed.localVm, local, browser };
   return {
     // the server's cloud rule (shared/cloud-computer.ts), behind Sagax's
-    // experimental VPS and Boat flags (always offered on a Cloud home)
+    // experimental VPS and Boat flags
     cloud: canWorkOnCloud(cloudEngineOf(instance), backend) && allowed[backend]
-      && (state.config?.cloudHome === true || (backend === "vps" ? vpsComputerEnabled(state.config) : boatComputerEnabled(state.config))),
+      && (backend === "vps" ? vpsComputerEnabled(state.config) : boatComputerEnabled(state.config)),
     vm: Boolean(instance?.snapshot?.state === "available" && computerMcp && !boxAgent) && allowed.localVm && placeOffered("vm", state.config),
     local: local && placeOffered("local", state.config),
     browser,

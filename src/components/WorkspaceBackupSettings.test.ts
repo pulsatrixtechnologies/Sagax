@@ -60,7 +60,7 @@ async function ready() { fixture.api.mockResolvedValueOnce({ busy: false }); ren
 describe("Settings full backups", () => {
   it("shows a native file input, password fields and validated summary with warnings", () => {
     const html = render().html;
-    expect(html).toContain('type="file" accept=".ombbackup"');
+    expect(html).toContain('type="file" accept=".sagaxbackup"');
     expect(html.match(/type="password"/g)).toHaveLength(3);
     expect(html).toContain("remote VM disks");
     expect(html).toContain("Saved account credentials and connections are not included");
@@ -80,7 +80,7 @@ describe("Settings full backups", () => {
     view = render();
     const link = { href: "", download: "", click: vi.fn(), remove: vi.fn() };
     vi.stubGlobal("document", { createElement: () => link, body: { append: vi.fn() } });
-    fixture.api.mockResolvedValueOnce({ id: "download-id", filename: "fixture.ombbackup" });
+    fixture.api.mockResolvedValueOnce({ id: "download-id", filename: "fixture.sagaxbackup" });
     const form = view.nodes.find((node) => node.type === "form")!;
     submit(form); submit(form); await flush();
     expect(fixture.api).toHaveBeenCalledTimes(2); // one status, one export
@@ -88,6 +88,7 @@ describe("Settings full backups", () => {
     expect(path).toBe("/api/workspace-backup/export");
     expect(JSON.parse(init.body)).toEqual({ password: "correct horse battery", clientState: { "omb-drafts": "private draft" } });
     expect(link.href).toBe("/api/workspace-backup/download/download-id");
+    expect(link.download).toBe("fixture.sagaxbackup");
     expect(link.click).toHaveBeenCalledOnce();
     expect([...storage.values()]).not.toContain("correct horse battery");
     expect(render().html).not.toContain('value="correct horse battery"');
@@ -95,6 +96,7 @@ describe("Settings full backups", () => {
 
   it("uploads a raw file, validates it, and requires exact REPLACE with the staged ID", async () => {
     await ready();
+    // An older .ombbackup name still uploads. The server reads the bytes, not the extension.
     const file = new File(["encrypted fixture"], "fixture.ombbackup");
     render().nodes.find((node) => node.props.type === "file")!.props.onChange!({ target: { files: [file] } });
     let view = render();

@@ -71,7 +71,8 @@ export function createWorkspaceBackupRoutes(options: {
     const uploads = join(root, "uploads");
     if (!existsSync(uploads) || lstatSync(uploads).isSymbolicLink()) return;
     for (const entry of readdirSync(uploads, { withFileTypes: true })) {
-      if (!entry.isFile() || !/^[a-f0-9-]{36}\.ombbackup$/.test(entry.name)) continue;
+      // New uploads are .sagaxbackup. Older .ombbackup uploads are still reclaimed.
+      if (!entry.isFile() || !/^[a-f0-9-]{36}\.(?:sagaxbackup|ombbackup)$/.test(entry.name)) continue;
       const file = join(uploads, entry.name);
       if (statSync(file).mtimeMs + EXPIRES_MS <= Date.now()) { try { unlinkSync(file); } catch {} }
     }
@@ -134,7 +135,7 @@ export function createWorkspaceBackupRoutes(options: {
         }));
         try { check(req, auth); } catch (error) { removeWorkspaceBackupJob(options.dataDir, result.id); throw error; }
         artifacts.set(result.id, { owner: owner(auth), kind: "download", path: result.path, summary: result.summary, expires: Date.now() + EXPIRES_MS });
-        json(res, 200, { id: result.id, filename: `Sagax-${result.summary.createdAt.slice(0, 10)}.ombbackup`, bytes: statSync(result.path).size, summary: result.summary });
+        json(res, 200, { id: result.id, filename: `Sagax-${result.summary.createdAt.slice(0, 10)}.sagaxbackup`, bytes: statSync(result.path).size, summary: result.summary });
         return true;
       }
       const download = /^\/api\/workspace-backup\/download\/([\w-]+)$/.exec(path);
@@ -144,7 +145,7 @@ export function createWorkspaceBackupRoutes(options: {
         res.writeHead(200, {
           "content-type": "application/octet-stream",
           "content-length": statSync(file).size,
-          "content-disposition": `attachment; filename="Sagax-${artifact.summary!.createdAt.slice(0, 10)}.ombbackup"`,
+          "content-disposition": `attachment; filename="Sagax-${artifact.summary!.createdAt.slice(0, 10)}.sagaxbackup"`,
           "x-content-type-options": "nosniff",
         });
         await pipeline(createReadStream(file), res);
@@ -163,7 +164,9 @@ export function createWorkspaceBackupRoutes(options: {
           mkdirSync(directory, { recursive: true, mode: 0o700 });
           if (lstatSync(directory).isSymbolicLink()) throw failure("Backup storage must not be a symbolic link.");
           const id = randomUUID();
-          const file = join(directory, `${id}.ombbackup`);
+          // The stored name is .sagaxbackup. The upload body is the archive
+          // itself, so a file the person picked as .ombbackup still imports.
+          const file = join(directory, `${id}.sagaxbackup`);
           let bytes = 0;
           try {
             const limit = new Transform({ transform(chunk, _encoding, callback) {

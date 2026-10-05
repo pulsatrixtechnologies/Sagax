@@ -63,7 +63,7 @@ function liveExpiry(value) {
   if (!Number.isSafeInteger(value) || value <= Date.now() || value > Date.now() + 15 * 60_000) fail("invalid_response", "The storage link has expired or has an invalid lifetime. Try again.");
 }
 
-/** Transfer existing encrypted .ombbackup archives. Never commits a restore. */
+/** Transfer an encrypted workspace archive. New temp files are .sagaxbackup. Never commits a restore. */
 export function createCompanyBackups({ localRequest, portalRequest, tempRoot, fetchImpl = fetch, allowLoopbackForTests = false, availableBytes }) {
   if (typeof localRequest !== "function" || typeof portalRequest !== "function" || typeof fetchImpl !== "function" || typeof tempRoot !== "string" ||
       !isAbsolute(tempRoot) || resolve(tempRoot) === parse(resolve(tempRoot)).root) throw new Error("A private backup transfer directory and request adapters are required.");
@@ -161,7 +161,7 @@ export function createCompanyBackups({ localRequest, portalRequest, tempRoot, fe
         if (typeof appVersion !== "string" || !/^[a-zA-Z\d][a-zA-Z\d ._+()-]{0,63}$/.test(appVersion)) fail("invalid_response", "The desktop app version is invalid.");
         await checkSpace(directory, exported.bytes);
         const response = await localRequest(`${LOCAL}/download/${exported.id}`, { method: "GET", signal: operationSignal, redirect: "error" });
-        const file = join(directory, "workspace.ombbackup");
+        const file = join(directory, "workspace.sagaxbackup");
         report("reading", 0, exported.bytes);
         const sha256 = await transferToFile(response, file, exported.bytes, operationSignal, report, "reading");
         let pendingId = null;
@@ -219,7 +219,7 @@ export function createCompanyBackups({ localRequest, portalRequest, tempRoot, fe
         await checkSpace(directory, backup.sizeBytes * 4);
         report("downloading", 0, backup.sizeBytes);
         const downloaded = await storageRequest(url, { method: "GET", signal: operationSignal });
-        const file = join(directory, "workspace.ombbackup");
+        const file = join(directory, "workspace.sagaxbackup");
         const sha256 = await transferToFile(downloaded, file, backup.sizeBytes, operationSignal, report, "downloading");
         report("validating", backup.sizeBytes, backup.sizeBytes);
         if (sha256 !== backup.sha256) fail("checksum_mismatch", "The downloaded backup checksum did not match. Nothing was uploaded locally or restored.");

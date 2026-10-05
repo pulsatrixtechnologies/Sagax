@@ -25,7 +25,6 @@ import {
   setOpenCodeProviderKeyPolicy,
 } from "./opencode-go.ts";
 import { ATTACHMENTS_DIR } from "../../attachments.ts";
-import { cloudHomeConfigured } from "../../cloud-home.ts";
 import { hostedWorkspaceConfigured } from "../../enterprise.ts";
 import { TASK_WORKSPACES_DIR, workspaceDir } from "../../workspace.ts";
 import type { ModelCatalog, ProviderInstance, SendTurnInput } from "../../contracts.ts";
@@ -439,7 +438,7 @@ describe("OpenCode catalog", () => {
       expect(child.env.GEMINI_API_KEY).toBeUndefined();
       await instance.dispose();
     } finally {
-      setOpenCodeProviderKeyPolicy(() => !cloudHomeConfigured() && !hostedWorkspaceConfigured());
+      setOpenCodeProviderKeyPolicy(() => !hostedWorkspaceConfigured());
       await removeTempDir(scratch);
     }
   });

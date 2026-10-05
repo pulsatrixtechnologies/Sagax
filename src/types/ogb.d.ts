@@ -138,14 +138,6 @@ const __SAGAX_DEFAULT_SERVER__: string;
         onChange(cb: (state: PulsatrixSignInState) => void): () => void;
       };
       organization?: import("../../electron/managed-desktop.mjs").ManagedDesktopBridge;
-      cloudAccount?: import("../../electron/cloud-account.mjs").CloudAccountBridge;
-      /** Move to Cloud; on a remote page, only the person's own Cloud is answered. */
-      cloudMove?: import("../../electron/cloud-move.mjs").CloudMoveBridge;
-      /** The Cloud's setup checklist: shows the lending switch in this app's
-       * own Settings → OMB Cloud (leaving the Cloud's page). */
-      cloudLending?: { open(): Promise<void> };
-      /** Settings on the person's own Cloud: the plan, read only. */
-      cloudPlan?: import("../../electron/cloud-account.mjs").CloudPlanBridge;
       companyBackups?: {
         state(): Promise<CompanyBackupState>;
         list(): Promise<{ backups: CompanyBackupEntry[]; usedBytes: number; limits: { ownerQuotaBytes: number; retainedSnapshots: number } }>;

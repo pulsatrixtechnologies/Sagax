@@ -9,7 +9,6 @@ import type { AppSettingsSection } from "@/state/store";
 const SECTION_LABEL = {
   general: "settings.section.general",
   organization: "settings.section.organization",
-  cloudAccount: "settings.section.cloudAccount",
   appearance: "settings.section.appearance",
   experimental: "settings.section.experimental",
   connections: "settings.section.connections",

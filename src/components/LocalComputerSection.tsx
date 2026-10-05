@@ -955,15 +955,12 @@ export function LocalVmIdleTimeoutSetting({
 }
 
 export function LocalComputerSection() {
-  // An OMB Cloud home has no Local VM (shared/cloud-home.ts): it neither
-  // checks for one nor explains how to set one up.
   const { state: storeState } = useStore();
-  const cloudHome = storeState.config?.cloudHome === true;
   // Installation inventories are admin routes. A member's own computer is
   // OrgComputerSettings; probing these every 5s only produces 403s.
   const manageComputers = canManageComputers(storeState.config);
   // Experimental (Settings > Experimental features): off hides the cards.
-  const boatOn = manageComputers && (cloudHome || boatComputerEnabled(storeState.config));
+  const boatOn = manageComputers && boatComputerEnabled(storeState.config);
   const vpsOn = manageComputers && vpsComputerEnabled(storeState.config);
   // An organization server (a desktop bridge status exists): the Local VM is
   // the one on the person's own computer, set up through their desktop app,
@@ -1065,7 +1062,7 @@ export function LocalComputerSection() {
   }, []);
 
   useEffect(() => {
-    if (cloudHome || !manageComputers) return;
+    if (!manageComputers) return;
     let active = true;
     let timer: number | undefined;
     let controller: AbortController | undefined;
@@ -1091,7 +1088,7 @@ export function LocalComputerSection() {
       controller?.abort();
       if (timer !== undefined) window.clearTimeout(timer);
     };
-  }, [cloudHome, manageComputers, refresh, refreshKey]);
+  }, [manageComputers, refresh, refreshKey]);
 
   useEffect(() => {
     if (status?.mode !== "per-bot") {
@@ -1448,7 +1445,7 @@ export function LocalComputerSection() {
 
       <MacLocalControl />
 
-      {!cloudHome && !orgBridge && manageComputers && <>
+      {!orgBridge && manageComputers && <>
       <Card
         collapsible
         cardId="computer.main"

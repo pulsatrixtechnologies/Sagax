@@ -105,9 +105,9 @@ describe("the places a conversation can be pinned to", () => {
     expect(availability()).toMatchObject({ cloud: true, vm: true, local: true });
   });
 
-  it("never reaches them on an OMB Cloud home", () => {
+  it("ignores a leftover Cloud home flag", () => {
     fixture.config = { cloudHome: true };
-    expect(availability()).toMatchObject({ cloud: true, vm: false, local: false });
+    expect(availability()).toMatchObject({ cloud: false, vm: true, local: true });
   });
 });
 

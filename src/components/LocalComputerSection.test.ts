@@ -536,7 +536,7 @@ describe("VPS computer inventory UI", () => {
   });
 });
 
-describe("Settings → Computers on an OMB Cloud home", () => {
+describe("Settings → Computers", () => {
   afterEach(() => { storeFixture.config = null; });
   // Settings cards are collapsible here: the title is the first span of the card's toggle.
   const cards = () => [...renderToStaticMarkup(createElement(LocalComputerSection)).matchAll(/<button type="button" aria-expanded="[a-z]+"[^>]*><span class="flex min-w-0 items-center gap-2"><span class="truncate">([^<]+)<\/span>/g)].map((match) => match[1]);
@@ -549,12 +549,12 @@ describe("Settings → Computers on an OMB Cloud home", () => {
     expect(cards()).toContain("Cloud computers");
   });
 
-  it("shows no Local VM, and no steps to install one, where it cannot exist", () => {
+  it("keeps Local VM when a leftover Cloud home flag is present", () => {
     storeFixture.config = { cloudHome: true };
     const titles = cards();
-    expect(titles).toContain("Cloud computers");
-    expect(titles).not.toContain("Local VM");
-    expect(titles).not.toContain("Setup");
+    expect(titles).not.toContain("Cloud computers");
+    expect(titles).toContain("Local VM");
+    expect(titles).toContain("Setup");
   });
 });
 

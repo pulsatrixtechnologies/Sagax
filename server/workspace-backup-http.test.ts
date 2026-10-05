@@ -32,7 +32,7 @@ function fakeArchive() {
   const id = randomUUID();
   const directory = join(dataDir, ".backups", id);
   mkdirSync(directory, { recursive: true, mode: 0o700 });
-  const path = join(directory, "workspace.ombbackup");
+  const path = join(directory, "workspace.sagaxbackup");
   writeFileSync(path, "fixture encrypted bytes", { mode: 0o600 });
   const summary: WorkspaceBackupSummary = { format: "openmaus.workspace-backup", version: 1, id, createdAt: "2026-09-11T00:00:00Z", appVersion: "0.1.71", files: 1, directories: 0, bytes: 23, bots: 0, groups: 0, threads: 0, messages: 0, exclusions: [], warnings: [] };
   return { id, path, summary };
@@ -154,7 +154,9 @@ it("keeps a validated stage after rejecting a malformed or oversized upload", as
 
 it("accepts drafts between 1 and 2 MiB and enforces the preference cap in UTF-8 bytes", async () => {
   const clientState = { "omb-drafts": "a".repeat(1536 * 1024) };
-  expect((await post("/api/workspace-backup/export", { password: PASSWORD, clientState })).status).toBe(200);
+  const exported = await post("/api/workspace-backup/export", { password: PASSWORD, clientState });
+  expect(exported.status).toBe(200);
+  expect(((await exported.json()) as { filename: string }).filename).toMatch(/\.sagaxbackup$/);
   expect(archive.create.mock.calls[0][1].clientState).toEqual(clientState);
   // Fits the request framing allowance but exceeds the preference byte cap;
   // JavaScript string.length alone would accept it.

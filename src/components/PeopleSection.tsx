@@ -4,11 +4,11 @@
 // sign-in page with their address filled in. The link is convenience, not
 // a second door: the one-time code still goes to the address itself.
 //
-// On a workspace whose members the organisation's Admin decides (portal
-// membership), this list decides nothing, so the section turns read-only:
-// who has signed in, what they spent, and a link to Admin → People.
+// On a workspace whose membership is decided elsewhere, the section is
+// read-only: who has signed in, and what they spent. It does not open a
+// hosted Admin portal.
 import { useCallback, useEffect, useState } from "react";
-import { Check, Copy, ExternalLink, Link2, Loader2, Plus, RefreshCw } from "lucide-react";
+import { Check, Copy, Link2, Loader2, Plus, RefreshCw } from "lucide-react";
 import { api } from "@/state/store";
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
@@ -115,7 +115,7 @@ export function PeopleTable({ people, busy, onRole, onRemove, onLink, readOnly =
   /** Admin decides membership: show the rows, offer nothing to change. */
   readOnly?: boolean;
 }) {
-  if (people.length === 0) return <p className="text-[13px] text-ink-secondary">{t(readOnly ? "people.portal.empty" : "people.empty")}</p>;
+  if (people.length === 0) return <p className="text-[13px] text-ink-secondary">{t("people.empty")}</p>;
   const columns = "grid grid-cols-[1fr_auto_auto_auto_auto] items-center gap-x-4";
   return (
     <div className="flex flex-col">
@@ -181,29 +181,15 @@ export function CopyLink({ link }: { link: string }) {
   );
 }
 
-/** Portal membership: this server's list decides nothing, so say where
- * people are managed and show, read-only, who has signed in here. */
-export function PortalPeople({ peopleUrl, people }: { peopleUrl: string | null; people: Person[] }) {
+/** A server whose membership is decided elsewhere shows who has signed in.
+ * It does not link to a hosted Admin portal. */
+export function PortalPeople({ people }: { people: Person[] }) {
   const noop = () => {};
   return (
-    <Card collapsible cardId="people.portal" title={t("people.title")} subtitle={t("people.portal.subtitle")} summary={cardCount("people", people.length)}>
-      <div data-people-portal className="flex flex-col gap-3 text-[13px] leading-relaxed text-ink-secondary">
-        <p>{t("people.portal.managed")}</p>
-        {peopleUrl && (
-          <a
-            href={peopleUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex w-fit items-center gap-2 rounded-lg bg-control px-3 py-2 font-medium text-ink hover:bg-control/70"
-          >
-            {t("people.portal.open")} <ExternalLink size={14} aria-hidden="true" />
-          </a>
-        )}
-      </div>
-      <div className="mt-4">
+    <Card collapsible cardId="people.list" title={t("people.title")} subtitle={t("people.subtitle")} summary={cardCount("people", people.length)}>
+      <div className="mt-1">
         <PeopleTable people={people} busy={false} readOnly onRole={noop} onRemove={noop} onLink={noop} />
       </div>
-      <p className="mt-3 text-[11.5px] leading-relaxed text-ink-secondary">{t("people.portal.note")}</p>
     </Card>
   );
 }
@@ -285,7 +271,7 @@ export function PeopleSection() {
   };
 
   if (!canPairDevices(session)) return null;
-  if (membership?.authority === "portal") return <PortalPeople peopleUrl={membership.peopleUrl} people={people} />;
+  if (membership?.authority === "portal") return <PortalPeople people={people} />;
   return (
     <Card collapsible cardId="people.list" title={t("people.title")} subtitle={t("people.subtitle")} summary={cardCount("people", people.length)}>
       {emailOffered === false && <p className="mb-3 rounded-lg border border-warning/25 bg-warning/5 px-3 py-2 text-[12.5px] text-ink-secondary">{t(membership?.pairingCodes === false ? "people.portalSignIn" : "people.notHosted")}</p>}

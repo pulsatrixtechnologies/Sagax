@@ -235,8 +235,8 @@ Pulsatrix** (`electron/org-join.mjs`, `startPulsatrixSignIn` in
 `electron/main.mjs`). Do not add another sign-in path. The choice lives in
 `config.onboarding.launchMode`; the default address is
 `DEFAULT_SERVER_ADDRESS`, overridable at build time with
-`SAGAX_DEFAULT_SERVER`. The welcome tour no longer surfaces the inherited
-managed-desktop Admin sign-in; Settings > Organization still does. See
+`SAGAX_DEFAULT_SERVER`. The welcome tour and Settings > Organization no longer
+offer the inherited managed-desktop Admin sign-in. Organization is Perspicax. See
 `docs/self-hosting.md` ("At launch: No server or Server").
 
 Server mode (the launch screen's Server) is exclusive: `serverModeId` in
@@ -1168,11 +1168,12 @@ it after an upstream merge instead of renaming by hand.
   relay tokens) are wire values.
 - Wire and stored names: `x-openmausbot-*`/`x-omb-*` headers, storage keys and
   IPC channels (`openmausbot:`, `openmausbot.`, `omb.`, `omb-`), file formats
-  (`openmaus.*`, `.openmaus.json`, `.ombbackup`, `OMB-WORKSPACE-1`), the
+  (`openmaus.*`, `.openmaus.json`, `.ombbackup` still imported, `OMB-WORKSPACE-1`), the
   `omb-ask` block, `com.openmausbot.*` container and launchd labels,
   `_openmausbot._tcp`, MCP server names, systemd units and host paths
   (`/etc/openmausbot`, `/var/lib/openmausbot`), the upstream's hosted
-  domains (`*.openmausbot.com`).
+  domains (`*.openmausbot.com`). Workspace backups the app writes use
+  `.sagaxbackup`. An older `.ombbackup` file still imports.
 - Stored field names that predate a rename of their own, such as a bot's
   `chiefOfStaff` (the Primary Bot, see above).
 - The native apps (`ios/`, `android/`): bundle ids, keychain services and

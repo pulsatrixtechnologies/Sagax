@@ -59,15 +59,16 @@ describe("Settings → Remote access: server pairing card visibility", () => {
     expect(render()).toContain("SERVER_PAIRING_CARD_MARKER");
   });
 
-  it("on an OMB Cloud home, which is personal, tells the card so and offers no People section to invite anyone", () => {
+  it("ignores a leftover Cloud home flag: pairing stays the server's and People stays", () => {
     vi.stubGlobal("window", {});
     // Sagax shows People only where the server serves a sign-in list.
     fixture.config = { signIn: {} };
     expect(render()).toContain(">People<");
     fixture.config = { cloudHome: true, signIn: {} };
     const html = render();
-    expect(html).toContain("SERVER_PAIRING_CARD_MARKER cloud");
-    expect(html).not.toContain(">People<");
+    expect(html).toContain("SERVER_PAIRING_CARD_MARKER");
+    expect(html).not.toContain("SERVER_PAIRING_CARD_MARKER cloud");
+    expect(html).toContain(">People<");
   });
 });
 
@@ -82,13 +83,13 @@ describe("Settings → Remote access opened by Connect your phone", () => {
     expect(html).toContain("SERVER_PAIRING_CARD_MARKER focus=0");
   });
 
-  it("on the person's own Cloud in this window, reveals the Cloud's own pairing code", () => {
+  it("does not treat a leftover Cloud home flag as this window's own Cloud", () => {
     fixture.phonePairing = 2;
     fixture.config = { cloudHome: true };
-    // a Cloud page gets the reduced bridge: no phone bridge, no remote client
-    vi.stubGlobal("window", { ogb: { cloudPlan: {} } });
+    vi.stubGlobal("window", { ogb: {} });
     const html = render();
-    expect(html).toContain("SERVER_PAIRING_CARD_MARKER cloud focus=2");
+    expect(html).toContain("SERVER_PAIRING_CARD_MARKER focus=2");
+    expect(html).not.toContain("SERVER_PAIRING_CARD_MARKER cloud");
     expect(html).toContain("COMPANION_SECTION focus=0");
   });
 

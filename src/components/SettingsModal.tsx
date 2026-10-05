@@ -38,7 +38,6 @@ import { canEditConfig, canManageBackups, canManageComputers, canViewUsage } fro
 import { BrowserProfilesManager } from "./BrowserProfilesManager";
 import { ThisComputerSettings } from "./DesktopWorkspaceSwitcher";
 import { OrganizationSettings } from "./OrganizationSettings";
-import { CloudAccountSettings } from "./CloudAccountSettings";
 import { Card, SettingRow, Switch, requestSettingsCard, cardCount } from "./SettingsPrimitives";
 import { BrowserUnavailableNote, SettingsText } from "./SettingsLink";
 
@@ -64,7 +63,6 @@ import { ThreadCleanupSettings } from "./ThreadCleanupSettings";
 import { DefaultBotSettings } from "./NewBotDialog";
 import { AppIconPicker, appIconAvailable } from "./settings/AppIconPicker";
 import { WorkspaceBackupSettings } from "./WorkspaceBackupSettings";
-import { CompanyBackupSettings } from "./CompanyBackupSettings";
 import { cn } from "@/lib/cn";
 import { setAdvancedMode, useAdvancedMode } from "@/lib/interface-mode";
 import { simpleHidesSettingsSection } from "@/lib/interface-visibility";
@@ -89,7 +87,6 @@ export const SECTIONS: Array<{
 }> = [
   { id: "general", labelKey: "settings.section.general", icon: User, keywords: ["profile", "name", "email", "about me", "about", "suggestions", "suggested", "memory", "updates", "effort", "new bots", "reasoning", "threads", "parallel", "concurrency", "cleanup", "retention", "event log", "event-log", "log size", "automatic recovery", "backup model", "fallback", "routines", "conversation", "schedule"] },
   { id: "organization", labelKey: "settings.section.organization", icon: Building2, keywords: ["company", "organization", "organisation", "sign in", "enroll", "managed", "models", "disconnect", "workspace", "cloud", "hosted", "vps", "server", "servers", "connect", "pair", "switch", "local"] },
-  { id: "cloudAccount", labelKey: "settings.section.cloudAccount", icon: User, keywords: ["cloud", "account", "personal", "sign in", "pro", "subscription", "billing"] },
   { id: "appearance", labelKey: "settings.section.appearance", icon: Palette, keywords: ["skin", "theme", "appearance", "advanced", "simple", "mode", "tools", "tool calls", "threads", "show threads", "hide threads", "sidebar", "hidden", "hide", "show", "density", "compact", "comfortable", "avatars", "display", "run", "this run", "run card", "commands", "notifications", "sound", "sounds", "mute", "silent", "chime", "mascot", "owl", "desktop", "fly", "floating", "app icon", "dock", "icon", "taskbar"] },
   { id: "achievements", labelKey: "settings.section.achievements", icon: Trophy, keywords: ["achievements", "trophies", "trophy", "points", "gamerscore", "level", "unlock", "succès", "trophées"] },
   { id: "experimental", labelKey: "settings.section.experimental", icon: FlaskConical, keywords: ["early", "preview", "learn", "skill", "authoring", "browser", "profiles"] },
@@ -936,7 +933,7 @@ export function SettingsModal() {
   const remoteActive = window.ogb?.remoteClient?.active === true;
   // "Connect your phone" focuses the pairing this window can do: this
   // computer's phone flow, or the server's pairing code.
-  const computerPairs = currentPhonePairingTarget(state.config?.cloudHome === true) === "computer";
+  const computerPairs = currentPhonePairingTarget(false) === "computer";
   const section: AppSettingsSection =
     remoteActive && state.appSettingsSection !== "appearance" && state.appSettingsSection !== "organization"
       ? "companion"
@@ -970,17 +967,15 @@ export function SettingsModal() {
     // the desktop app in "No server" mode has no organization to show; it
     // joins one from General > Server, which brings this section back
     .filter((entry) => entry.id !== "organization" || !soloDesktop)
-    .filter((entry) => entry.id !== "cloudAccount" || Boolean(window.ogb?.cloudAccount))
     // the operator's screen for other workspaces exists only where a fleet agent does
     .filter((entry) => entry.id !== "workspaces" || workspacesAvailable(state.config))
     // sign-in by email is a served solo server's (the desktop app pairs
     // devices under Remote access), or the read-only view of a hosted
-    // workspace whose members the organisation's Admin decides. An OMB
-    // Cloud home is personal: nobody is invited to it. An
+    // workspace whose members the organisation's Admin decides. An
     // organization server sends no sign-in list: Perspicax owns its people.
     // A served page, in a browser or drawn by the desktop app on that server
     // (electron/bundled-ui.cjs): the same server shows the same sections.
-    .filter((entry) => entry.id !== "people" || (servedPage() && state.config?.cloudHome !== true && (readMembership(state.config).authority === "portal" || peopleListServed(state.config))))
+    .filter((entry) => entry.id !== "people" || (servedPage() && (readMembership(state.config).authority === "portal" || peopleListServed(state.config))))
     // how the server sends sign-in codes and invitations: its admins and
     // the operator, on the desktop and on the web
     .filter((entry) => entry.id !== "mail" || ownerOrAdmin === true)
@@ -1171,7 +1166,6 @@ export function SettingsModal() {
             <div className="flex flex-col gap-3 px-4 pb-6 pt-4 sm:px-8">
             <LicenseExpiryBanner config={state.config} />
             {section === "organization" && <OrganizationSettings />}
-            {section === "cloudAccount" && window.ogb?.cloudAccount && !remoteActive && <CloudAccountSettings linkRequest={state.appSettingsCloudLink} />}
             {section === "general" && (
               <>
                 {lockedServer ? <ServerModeCard state={lockedServer} /> : <ThisComputerSettings />}
@@ -1333,7 +1327,7 @@ export function SettingsModal() {
                   summary={configuredSummary(state.config, ["box", "vps", "opencodeGo"])}
                 >
                   <div className="flex flex-col gap-4">
-                    {(state.config?.cloudHome === true || boatComputerEnabled(state.config)) && <ApiKeyRow section="box" />}
+                    {boatComputerEnabled(state.config) && <ApiKeyRow section="box" />}
                     {vpsComputerEnabled(state.config) && <VpsConnection />}
                     <ApiKeyRow section="opencodeGo" />
                     <p className="-mt-2 text-[11.5px] leading-relaxed text-ink-secondary">
@@ -1377,7 +1371,7 @@ export function SettingsModal() {
               <EnginesSettings />
             )}
 
-            {section === "backups" && <><WorkspaceBackupSettings /><CompanyBackupSettings /></>}
+            {section === "backups" && <WorkspaceBackupSettings />}
 
             {section === "companion" && (
               <>
@@ -1388,7 +1382,7 @@ export function SettingsModal() {
                     a remote client of a hosted workspace: its requests carry that server's session, and
                     Settings there is the only place that server's phones can be paired from (MOCA-84).
                     The server decides who may act — an owner or an admin session — not this gate. */}
-                <ServerPairingCard cloudHome={state.config?.cloudHome === true} focusRequest={computerPairs ? 0 : state.appSettingsPhonePairing} />
+                <ServerPairingCard focusRequest={computerPairs ? 0 : state.appSettingsPhonePairing} />
                 {lockedServer
                   ? <ManagedByOrganization cardId="companion.managed" title={t("remote.desktopOnly.title", { app: brand().name })} />
                   : !remoteActive && <CompanionSection profileEmail={state.config?.profile?.email} focusRequest={computerPairs ? state.appSettingsPhonePairing : 0} />}

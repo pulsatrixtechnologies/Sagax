@@ -421,7 +421,9 @@ export async function createWorkspaceBackupSnapshot(dataDir: string, options: Cr
     // Validate our own output too: JSON serialization must never silently
     // discard metadata or produce a backup the importer cannot read.
     validateManifest(privateJson(join(snapshot, "manifest.json")));
-    const path = join(job.directory, "workspace.ombbackup");
+    // New archives are .sagaxbackup. Import reads the encrypted bytes, so an
+    // older .ombbackup file still opens.
+    const path = join(job.directory, "workspace.sagaxbackup");
     const iv = randomBytes(12);
     const header = Buffer.concat([MAGIC, salt, iv]);
     const cipher = createCipheriv("aes-256-gcm", key, iv);

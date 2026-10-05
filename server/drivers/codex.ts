@@ -21,7 +21,6 @@ import { probeCodexSkills } from "./harness-command-probe.ts";
 
 import { DATA_DIR, stripWorkspaceCredentialEnv } from "../config.ts";
 import { hostedWorkspaceConfigured } from "../enterprise.ts";
-import { cloudHomeConfigured } from "../cloud-home.ts";
 import { serverVersion } from "../environment.ts";
 import { ChatGptPlanAuthController } from "./chatgpt-plan-auth.ts";
 import { describeSpawnFailure, execCli, killCliTree, spawnCli } from "../procs.ts";
@@ -698,7 +697,7 @@ export const CodexDriver: ProviderDriver<CodexConfig> = {
   async create(input: DriverCreateInput<CodexConfig>): Promise<ProviderInstance> {
     const { instanceId, config } = input;
     const plan = config.authMode === "chatgpt-plan";
-    const planUnavailable = plan && (hostedWorkspaceConfigured() || cloudHomeConfigured())
+    const planUnavailable = plan && hostedWorkspaceConfigured()
       ? "ChatGPT plan sign-in for hosted Pro requires OpenAI's hosted-app approval. Use a Company model or API key until that integration is approved; the local desktop flow cannot be used here."
       : undefined;
     // Provider homes are excluded from portable backups and Move to Cloud.

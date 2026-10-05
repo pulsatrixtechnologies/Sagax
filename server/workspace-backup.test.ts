@@ -75,6 +75,7 @@ function encryptedPayload(root: string, plaintext: Buffer): string {
   const header = Buffer.concat([Buffer.from("OMB-WORKSPACE-1\n"), salt, iv]);
   const cipher = createCipheriv("aes-256-gcm", key, iv);
   cipher.setAAD(header);
+  // The importer reads the encrypted bytes. The old extension is still accepted.
   const path = join(root, "malicious.ombbackup");
   writeFileSync(path, Buffer.concat([header, cipher.update(plaintext), cipher.final(), cipher.getAuthTag()]));
   return path;
@@ -102,6 +103,7 @@ describe("encrypted full workspace backups", () => {
         password: PASSWORD, appVersion: "test",
         clientState: { "omb-drafts": '{"thread":"unsent"}', "omb-draft-attachments": JSON.stringify({ thread: [{ kind: "file", path: join(source, "attachments", "image.png") }] }) },
       });
+      expect(exported.path.endsWith("workspace.sagaxbackup")).toBe(true);
       expect(exported.summary).toMatchObject({ bots: 1, groups: 1, threads: 1, messages: 1 });
       expect(exported.summary).not.toHaveProperty("includesCredentials");
       const encrypted = readFileSync(exported.path);
@@ -214,6 +216,7 @@ describe("encrypted full workspace backups", () => {
     expect(readdirSync(join(target, ".backups"))).toEqual([]);
     const corrupted = readFileSync(exported.path);
     corrupted[corrupted.length - 1] ^= 1;
+    // A damaged .ombbackup is still rejected as an import, not by its name.
     const path = join(source, "corrupted.ombbackup");
     writeFileSync(path, corrupted);
     await expect(stageWorkspaceBackup(target, path, { password: PASSWORD })).rejects.toThrow(/damaged/);

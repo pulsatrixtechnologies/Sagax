@@ -771,9 +771,6 @@ export interface ConfigStatus {
   /** The enrolled organisation's read-only desktop policy; null when this
    * desktop is not enrolled or its Admin sends no policy. */
   managedPolicy?: ManagedPolicySummary | null;
-  /** This server is an OMB Cloud home: it offers no "this computer" and no
-   * Local VM (server/cloud-home.ts). Absent everywhere else. */
-  cloudHome?: boolean;
 }
 
 /** Mirrors ViewerIdentity in server/viewer-identity.ts. */
@@ -837,7 +834,7 @@ export interface BrowserProfile {
 // Settings shows (a saved key's Test button used to vanish that way).
 export type ConfigStatusFrame = Pick<
   ConfigStatus,
-  "xai" | "mistral" | "cerebras" | "anthropic" | "openai" | "openrouter" | "openaiCompat" | "fleet" | "composio" | "box" | "vps" | "rooms" | "threads" | "automaticRecovery" | "localVm" | "opencodeGo" | "tts" | "decider" | "imageGen" | "live" | "profile" | "language" | "features" | "onboarding" | "browserEngine" | "browserProfiles" | "edition" | "budgets" | "billing" | "managedPolicy" | "viewer" | "cloudHome"
+  "xai" | "mistral" | "cerebras" | "anthropic" | "openai" | "openrouter" | "openaiCompat" | "fleet" | "composio" | "box" | "vps" | "rooms" | "threads" | "automaticRecovery" | "localVm" | "opencodeGo" | "tts" | "decider" | "imageGen" | "live" | "profile" | "language" | "features" | "onboarding" | "browserEngine" | "browserProfiles" | "edition" | "budgets" | "billing" | "managedPolicy" | "viewer"
 >;
 
 export function configStatusFromFrame(frame: ConfigStatusFrame): ConfigStatus {
@@ -873,7 +870,6 @@ export function configStatusFromFrame(frame: ConfigStatusFrame): ConfigStatus {
     billing: frame.billing,
     managedPolicy: frame.managedPolicy,
     viewer: frame.viewer,
-    ...(frame.cloudHome ? { cloudHome: true } : {}),
   };
 }
 
@@ -970,7 +966,6 @@ export interface InstanceInfo {
 export type AppSettingsSection =
   | "general"
   | "organization"
-  | "cloudAccount"
   | "appearance"
   | "experimental"
   | "connections"
@@ -1065,10 +1060,6 @@ export interface AppState {
   activityOpen: boolean;
   appSettingsOpen: boolean;
   appSettingsSection: AppSettingsSection;
-  /** Non-zero while Settings → OMB Cloud is open because of the Cloud page's
-   * openmausbot://cloud link; each link counts up. Any other
-   * toggleAppSettings (another section, the same one by hand, closing) sets 0. */
-  appSettingsCloudLink: number;
   /** A settings sub-page pushed inside the section (src/components/
    * SettingsSubPage.tsx), e.g. General > About me; null shows the section.
    * Any toggleAppSettings that names none (another section, closing) clears it. */
@@ -1388,7 +1379,7 @@ export type Action =
   | { type: "toggleActivity"; open?: boolean }
   | { type: "focusMessage"; threadId: string; messageId: string; matchText?: string }
   | { type: "focusMessageConsumed"; nonce: number }
-  | { type: "toggleAppSettings"; open?: boolean; section?: AppSettingsSection; cloudLink?: boolean; subPage?: string; phonePairing?: boolean }
+  | { type: "toggleAppSettings"; open?: boolean; section?: AppSettingsSection; subPage?: string; phonePairing?: boolean }
   | { type: "toggleShortcuts"; open?: boolean }
   | { type: "toggleWelcome"; open?: boolean }
   | { type: "toggleLaunch"; open?: boolean; mode?: "solo" | "server" }
@@ -1600,10 +1591,6 @@ function optimisticUserMessage(
     channelMode,
   };
 }
-
-/** Settings → OMB Cloud as opened by openmausbot://cloud (the Cloud page's
- * "Open in the app"); that view then signs in or connects by itself. */
-export const CLOUD_LINK_SETTINGS = { type: "toggleAppSettings", open: true, section: "cloudAccount", cloudLink: true } as const satisfies Action;
 
 /** The right panel follows the selection, the way the bot panel does: with
  * a person's or a bot's panel open, selecting a direct conversation with a
@@ -2294,7 +2281,6 @@ export function reducer(state: AppState, action: Action): AppState {
         appSettingsOpen: open,
         activityOpen: open ? false : state.activityOpen,
         appSettingsSection: action.section ?? state.appSettingsSection,
-        appSettingsCloudLink: action.cloudLink && open ? state.appSettingsCloudLink + 1 : 0,
         appSettingsSubPage: open ? action.subPage ?? null : null,
         personPanelId: open ? null : state.personPanelId,
         appSettingsPhonePairing: action.phonePairing && open ? state.appSettingsPhonePairing + 1 : 0,
@@ -2655,7 +2641,6 @@ export const initialState: AppState = {
   activityOpen: false,
   appSettingsOpen: false,
   appSettingsSection: "general",
-  appSettingsCloudLink: 0,
   appSettingsSubPage: null,
   appSettingsPhonePairing: 0,
   shortcutsOpen: false,

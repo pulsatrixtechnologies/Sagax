@@ -5,7 +5,7 @@ import { usePerspicaxOrg } from "@/lib/perspicax-org";
 import { openNotificationTarget, StoreProvider, useStore } from "@/state/store";
 import { useWelcomeViewer, WelcomeGate } from "@/components/onboarding/WelcomeGate";
 import { mainConversation } from "@/lib/main-view";
-import { cloudSignInDue, spotlightsQuiet, type WelcomeViewer } from "@/lib/onboarding";
+import { spotlightsQuiet } from "@/lib/onboarding";
 import { FirstConversationTour } from "@/components/onboarding/FirstConversationTour";
 import { GuidedTour } from "@/components/onboarding/GuidedTour";
 import { LiveCallHost } from "@/components/LiveCallHost";
@@ -33,9 +33,7 @@ import { DesktopCapabilitiesProvider, useDesktopCapabilities } from "@/component
 import { WindowCaptionButtons } from "@/components/WindowCaptionButtons";
 import { RoutinesPage } from "@/components/RoutinesPage";
 import { NoEngines } from "@/components/NoEngines";
-import { CloudEngineSignIn } from "@/components/CloudEngineSignIn";
-import { CloudSetup } from "@/components/CloudSetup";
-import { engineReady } from "@/components/EngineLibrary";
+
 import { CommandPalette } from "@/components/CommandPalette";
 import { StagedOrgImport } from "@/components/OrgImportDialog";
 import { RetroAssistantHost } from "@/components/RetroAssistantHost";
@@ -50,14 +48,13 @@ import { TeamMapPage } from "@/components/TeamMapPage";
 import { setLocale, t } from "@/lib/i18n";
 import { shouldOpenKeyboardShortcuts } from "@/lib/keyboard-shortcuts";
 import { effectiveLanguage, useLanguageChoice } from "@/lib/language-preference";
-import { requestEnterpriseEntry } from "@/lib/enterprise-entry";
 import { takeRoutineDelegationReturn } from "@/lib/routine-delegation";
 import { openThreadVisible, pageOpenThreadTarget, type OpenThreadTarget } from "@/lib/open-thread-hash";
 import { botShowsUnread } from "@/lib/bot-unread";
 import { viewerBotsReadOnly, viewerCanCreateBots } from "@/lib/viewer";
 import { phonePairingSettingsAction, takePhonePairingRequest } from "@/lib/phone-pairing";
 
-function Shell({ viewer }: { viewer: WelcomeViewer | null }) {
+function Shell() {
   const { state, dispatch } = useStore();
   const { capabilities } = useDesktopCapabilities();
   const unreadCount =
@@ -77,10 +74,9 @@ function Shell({ viewer }: { viewer: WelcomeViewer | null }) {
     const url = new URL(window.location.href);
     const requestedSettings = url.searchParams.get("desktop-settings");
     // Sagax: the inherited OMB Cloud links ("cloud", "cloud-settings") open nothing.
-    if (requestedSettings === "workspaces" || (requestedSettings === "organization" && window.ogb.organization && !remoteClient)) {
+    if (requestedSettings === "workspaces" || requestedSettings === "organization") {
       url.searchParams.delete("desktop-settings");
       window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
-      if (requestedSettings === "organization") requestEnterpriseEntry();
       open();
     }
     return window.ogb.environments.onOpenSettings?.(open);
@@ -177,7 +173,6 @@ function Shell({ viewer }: { viewer: WelcomeViewer | null }) {
     !state.instances.some((i) => i.snapshot.state === "available");
   // An OMB Cloud home with none of the person's own engines signed in yet:
   // its first run, and every bot until then, is the engine sign-in.
-  const cloudSignIn = cloudSignInDue(viewer, state, engineReady);
 
   // App-wide shortcuts: ⌘N new bot · ⌘1–9 jump to bot · ⌘⇧[ / ⌘⇧] prev/next · ⌘/ or ? shortcuts cheat sheet.
   // Kept deliberately small; every panel already closes on Esc.
@@ -299,8 +294,7 @@ function Shell({ viewer }: { viewer: WelcomeViewer | null }) {
   // is absent in the browser.
   useEffect(() => {
     return window.ogb?.onOpenAppSettings?.(section => {
-      if (section === "organization" && window.ogb && !remoteClient) requestEnterpriseEntry();
-      dispatch({ type: "toggleAppSettings", open: true, ...(section === "organization" && window.ogb && !remoteClient ? { section } : {}) });
+      dispatch({ type: "toggleAppSettings", open: true, ...(section === "organization" ? { section } : {}) });
     });
   }, [dispatch]);
 
@@ -376,8 +370,6 @@ function Shell({ viewer }: { viewer: WelcomeViewer | null }) {
           onClose={() => setLocalVmWorkspaceBotId(null)}
           onOpenComputer={openComputerFromWorkspace}
         />
-      ) : cloudSignIn ? (
-        <CloudEngineSignIn />
       ) : noEngines ? (
         <NoEngines />
       ) : group ? (
@@ -439,9 +431,6 @@ function Shell({ viewer }: { viewer: WelcomeViewer | null }) {
       {!remoteClient && state.inspectorOpen && bot && <InspectorPanel key={bot.threadId} bot={bot} />}
       {!remoteClient && state.activityOpen && bot && <ActivityPanel key={`activity:${bot.id}`} bot={bot} />}
       {state.appSettingsOpen && <SettingsModal />}
-      {/* On the person's Cloud: its setup checklist, and after it Move to
-          Cloud's one-time card on an empty Cloud (desktop app only). */}
-      <CloudSetup viewer={viewer} />
       {state.pluginsOpen && <PluginsPanel />}
       {state.triggersOpen && <TriggersPanel />}
       {state.newBotOpen && <NewBotDialog />}
@@ -485,7 +474,7 @@ function Application() {
     <DesktopCapabilitiesProvider>
       <StoreProvider>
         <ThreadRefsProvider>
-          <Shell viewer={viewer} />
+          <Shell />
         </ThreadRefsProvider>
         <WelcomeGate viewer={viewer} />
         <GuidedTour />

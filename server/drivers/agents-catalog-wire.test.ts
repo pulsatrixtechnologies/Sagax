@@ -73,12 +73,6 @@ function profiles(): Record<string, Profile> {
       }
     }
   }
-  // A Cloud home is one more switch on top of any of these; its fullest
-  // profiles are pinned, and differ from their family only where the test
-  // below says they may.
-  for (const name of ["direct+skills+shared+voice", "room+own-thread+skills+shared+voice"]) {
-    all[`${name}+cloud-home`] = { family: all[name]!.family, env: { ...all[name]!.env, SAGAX_CLOUD_HOME: "1" } };
-  }
   all.external = { family: "external", env: { SAGAX_EXTERNAL_RUNTIME: "1" } };
   // The external switch wins over every other one; pin that it still does.
   all["external+everything"] = {
@@ -90,7 +84,6 @@ function profiles(): Record<string, Profile> {
       SAGAX_SKILL_AUTHORING_ENABLED: "1",
       SAGAX_SHARED_COMPUTERS_ENABLED: "1",
       SAGAX_VOICE_NOTES: "1",
-      SAGAX_CLOUD_HOME: "1",
     },
   };
   return all;
@@ -130,8 +123,6 @@ const BUDGET_BASELINE: Record<string, number> = {
   "room+own-thread+skills+voice": 47983,
   "room+own-thread+skills+shared": 48987,
   "room+own-thread+skills+shared+voice": 49728,
-  "direct+skills+shared+voice+cloud-home": 48916,
-  "room+own-thread+skills+shared+voice+cloud-home": 48802,
   "external": 3030,
   "external+everything": 3030,
 };
@@ -229,27 +220,8 @@ describe("agents proxy tools/list golden", () => {
     for (const [name, profile] of Object.entries(PROFILES)) {
       const full = new Map(toolsOf(wires[FULL[profile.family]]!).map((tool) => [tool.name, JSON.stringify(tool)]));
       for (const tool of toolsOf(wires[name]!)) {
-        // A Cloud home's own select_computer is pinned by the next test.
-        if (profile.env.SAGAX_CLOUD_HOME === "1" && tool.name === "select_computer") continue;
         expect(JSON.stringify(tool), `${name}: ${tool.name}`).toBe(full.get(tool.name));
       }
-    }
-  });
-
-  it("shows a Cloud home's bots no Local VM and no this computer, and every other server both", () => {
-    type SelectTool = Tool & { inputSchema: { properties: { surface: { enum: string[]; description: string } } } };
-    const select = (wire: string) => toolsOf(wire).find((tool) => tool.name === "select_computer") as SelectTool;
-    const cloudHome = Object.keys(PROFILES).filter((name) => name.endsWith("+cloud-home"));
-    expect(cloudHome).toHaveLength(2);
-    for (const name of cloudHome) {
-      const desktop = wires[name.slice(0, -"+cloud-home".length)]!;
-      const names = toolsOf(wires[name]!).map((tool) => tool.name);
-      expect(names).toEqual(toolsOf(desktop).map((tool) => tool.name).filter((tool) => tool !== "vm_exec"));
-      expect(select(desktop).inputSchema.properties.surface.enum).toEqual(["auto", "cloud", "vm", "local", "browser"]);
-      expect(toolsOf(desktop).map((tool) => tool.name)).toContain("vm_exec");
-      const surface = select(wires[name]!).inputSchema.properties.surface;
-      expect(surface.enum).toEqual(["auto", "cloud", "browser"]);
-      expect(surface.description).not.toMatch(/\b(?:vm|local) =/);
     }
   });
 

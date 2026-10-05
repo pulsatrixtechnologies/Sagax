@@ -194,7 +194,7 @@ describe("Settings → Appearance", () => {
     const html = render();
     expect(html).toContain('<option value="backups" selected="">Backups</option>');
     expect(html).toContain("Export full backup");
-    expect(html).toContain('type="file" accept=".ombbackup"');
+    expect(html).toContain('type="file" accept=".sagaxbackup"');
     expect(html).toContain("Older team backups and shareable templates");
   });
 
@@ -231,15 +231,5 @@ describe("Settings → Appearance", () => {
     expect(html).toContain('<option value="organization" selected="">Organization</option>');
     fixture.section = "appearance";
     expect(render()).toContain("Midnight");
-  });
-  it("offers personal Cloud separately and only through the local desktop bridge", () => {
-    fixture.section = "cloudAccount";
-    vi.stubGlobal("window", { ogb: { cloudAccount: {} } });
-    expect(render()).toContain('<option value="cloudAccount" selected="">OMB Cloud</option>');
-    expect(render()).toContain("Free local use");
-    fixture.section = "appearance";
-    vi.stubGlobal("window", {}); expect(render()).not.toContain('<option value="cloudAccount"');
-    vi.stubGlobal("window", { ogb: { cloudAccount: {}, remoteClient: { active: true } } });
-    expect(render()).not.toContain('<option value="cloudAccount"');
   });
 });
