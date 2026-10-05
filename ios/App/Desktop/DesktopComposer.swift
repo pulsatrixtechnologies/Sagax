@@ -75,11 +75,13 @@ struct DesktopComposerPill: View {
         .shadow(color: .black.opacity(0.05), radius: 4, y: 2)
         .overlay(alignment: .topLeading) {
             if let popup, menu == nil {
+                // `absolute bottom-full left-2 mb-2 w-[26rem]`: a zero-high
+                // frame on the pill's top edge, the popup hanging up from it
                 popup
-                    .frame(width: 320)
+                    .frame(width: 416)
                     .fixedSize(horizontal: false, vertical: true)
-                    .padding(.leading, 8)
-                    .alignmentGuide(.top) { d in d[.bottom] + 8 }
+                    .frame(height: 0, alignment: .bottom)
+                    .offset(x: 8, y: -8)
                     .transition(.opacity)
             }
         }
@@ -98,8 +100,7 @@ struct DesktopComposerPill: View {
             Divider()
             Button(action: more) { Label("More", systemImage: "ellipsis.circle") }
         } label: {
-            Image(systemName: "paperclip")
-                .font(.system(size: 15, weight: .regular))
+            DesktopLucideGlyph(paths: DesktopLucide.paperclip, size: 17)
                 .foregroundStyle(theme.inkSecondary)
                 .frame(width: 28, height: 28)
                 .contentShape(Circle())
@@ -119,7 +120,7 @@ struct DesktopComposerPill: View {
             .lineSpacing(DesktopChatMetrics.lineSpacing(theme))
             .foregroundStyle(theme.ink)
             .tint(theme.focus)
-            .padding(.leading, 4)
+            .padding(.leading, 3)
             .padding(.vertical, 6 + DesktopChatMetrics.halfLeading(theme))
             .frame(maxWidth: .infinity, minHeight: 32, alignment: .leading)
             .focused(focused)
@@ -135,9 +136,7 @@ struct DesktopComposerPill: View {
                 Text(verbatim: label)
                     .font(theme.font(13))
                     .lineLimit(1)
-                Image(systemName: "chevron.down")
-                    .font(.system(size: 10, weight: .medium))
-                    .frame(width: 14, height: 14)
+                DesktopLucideGlyph(paths: DesktopLucide.chevronDown, size: 14)
             }
             .foregroundStyle(theme.inkSecondary)
             .padding(.horizontal, 6)
@@ -154,8 +153,7 @@ struct DesktopComposerPill: View {
 
     private var dictationButton: some View {
         Button(action: toggleDictation) {
-            Image(systemName: "mic")
-                .font(.system(size: 15, weight: .regular))
+            DesktopLucideGlyph(paths: DesktopLucide.mic, size: 18)
                 .foregroundStyle(listening ? theme.danger : theme.inkSecondary)
                 .frame(width: 28, height: 28)
                 .overlay(Circle().strokeBorder(theme.hairline.opacity(0.6), lineWidth: 1))
@@ -170,8 +168,7 @@ struct DesktopComposerPill: View {
 
     private var voiceButton: some View {
         Button(action: voice) {
-            Image(systemName: "waveform")
-                .font(.system(size: 13, weight: .regular))
+            DesktopLucideGlyph(paths: DesktopLucide.audioLines, size: 15)
                 .foregroundStyle(theme.inkTertiary)
                 .frame(width: 32, height: 32)
                 .background(theme.composer, in: Circle())
@@ -253,10 +250,16 @@ struct DesktopMenuRow: View {
     var body: some View {
         Button(action: action) {
             HStack(alignment: .top, spacing: 8) {
-                Image(systemName: systemImage)
-                    .font(.system(size: 13, weight: .regular))
-                    .frame(width: 16, height: 16)
-                    .padding(.top, 1)
+                Group {
+                    if let lucide = DesktopLucide.forSymbol(systemImage) {
+                        DesktopLucideGlyph(paths: lucide, size: 16)
+                    } else {
+                        Image(systemName: systemImage)
+                            .font(.system(size: 13, weight: .regular))
+                            .frame(width: 16, height: 16)
+                    }
+                }
+                .padding(.top, 1)
                 VStack(alignment: .leading, spacing: 0) {
                     title
                         .font(theme.font(13))
@@ -270,9 +273,7 @@ struct DesktopMenuRow: View {
                 }
                 Spacer(minLength: 4)
                 if selected {
-                    Image(systemName: "checkmark")
-                        .font(.system(size: 11, weight: .semibold))
-                        .frame(width: 14, height: 14)
+                    DesktopLucideGlyph(paths: DesktopLucide.check, size: 14)
                         .padding(.top, 2)
                 }
             }
@@ -292,13 +293,13 @@ struct DesktopMenuRow: View {
 private struct DesktopPillTrigger: View {
     @Environment(\.desktopTheme) private var theme
     let systemImage: String
+    var lucide: [String]? = nil
     let active: Bool
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
-            Image(systemName: systemImage)
-                .font(.system(size: 14, weight: .regular))
+            glyph
                 .opacity(0.8)
                 .foregroundStyle(active ? theme.ink : theme.inkSecondary)
                 .frame(width: 32, height: 32)
@@ -307,6 +308,15 @@ private struct DesktopPillTrigger: View {
         }
         .buttonStyle(.plain)
         .hoverEffect(.highlight)
+    }
+
+    @ViewBuilder
+    private var glyph: some View {
+        if let lucide {
+            DesktopLucideGlyph(paths: lucide, size: 16)
+        } else {
+            Image(systemName: systemImage).font(.system(size: 14, weight: .regular))
+        }
     }
 }
 
@@ -320,7 +330,7 @@ struct DesktopApprovalButton: View {
 
     var body: some View {
         let level = ApprovalLevel.of(approvalMode: bot.approvalMode, autoApprove: bot.autoApprove)
-        DesktopPillTrigger(systemImage: Self.icon(level), active: open) { open.toggle() }
+        DesktopPillTrigger(systemImage: Self.icon(level), lucide: DesktopLucide.forSymbol(Self.icon(level)), active: open) { open.toggle() }
             .accessibilityLabel(Text("\(String(localized: Self.labelResource(level))) for \(bot.name)"))
             .accessibilityIdentifier("desktop-composer-approval")
             .overlay(alignment: .topLeading) {
@@ -340,8 +350,8 @@ struct DesktopApprovalButton: View {
                         }
                     }
                     .fixedSize()
-                    .alignmentGuide(.top) { d in d[.bottom] + 8 }
-                    .offset(x: 1)
+                    .frame(height: 0, alignment: .bottom)
+                    .offset(x: 1, y: -8)
                     .accessibilityIdentifier("desktop-approval-menu")
                 }
             }
@@ -399,7 +409,7 @@ struct DesktopPlaceButton: View {
         let surface = session.state.bot(bot.id)?.tasks?.first { $0.threadId == bot.threadId }?.surface
         let effective = WorkPlace.effective(botComputer: bot.computer, taskSurface: surface)
         let botDefault = bot.computer ?? "auto"
-        DesktopPillTrigger(systemImage: Self.icon(effective), active: open) { open.toggle() }
+        DesktopPillTrigger(systemImage: Self.icon(effective), lucide: DesktopLucide.forSymbol(Self.icon(effective)), active: open) { open.toggle() }
             .disabled(effective == "off")
             .accessibilityLabel(Text("Where this conversation works: \(Self.label(effective))"))
             .accessibilityIdentifier("desktop-composer-place")
@@ -418,7 +428,8 @@ struct DesktopPlaceButton: View {
                         }
                     }
                     .fixedSize()
-                    .alignmentGuide(.top) { d in d[.bottom] + 8 }
+                    .frame(height: 0, alignment: .bottom)
+                    .offset(y: -8)
                     .accessibilityIdentifier("desktop-place-menu")
                 }
             }
@@ -483,5 +494,104 @@ extension Session {
         } catch {
             if !Task.isCancelled { actionError = error.localizedDescription }
         }
+    }
+}
+
+// MARK: - Glyphs
+
+/// The renderer's lucide glyphs the chat draws (lucide-react paths, 24 pt
+/// viewBox), stroked at `strokeWidth` like `DesktopIconView`.
+enum DesktopLucide {
+    static let paperclip = ["m16 6-8.414 8.586a2 2 0 0 0 2.829 2.829l8.414-8.586a4 4 0 1 0-5.657-5.657l-8.379 8.551a6 6 0 1 0 8.485 8.485l8.379-8.551"]
+    static let hand = [
+        "M18 11V6a2 2 0 0 0-2-2a2 2 0 0 0-2 2", "M14 10V4a2 2 0 0 0-2-2a2 2 0 0 0-2 2v2",
+        "M10 10.5V6a2 2 0 0 0-2-2a2 2 0 0 0-2 2v8",
+        "M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15",
+    ]
+    static let sparkles = [
+        "M11.017 2.814a1 1 0 0 1 1.966 0l1.051 5.558a2 2 0 0 0 1.594 1.594l5.558 1.051a1 1 0 0 1 0 1.966l-5.558 1.051a2 2 0 0 0-1.594 1.594l-1.051 5.558a1 1 0 0 1-1.966 0l-1.051-5.558a2 2 0 0 0-1.594-1.594l-5.558-1.051a1 1 0 0 1 0-1.966l5.558-1.051a2 2 0 0 0 1.594-1.594z",
+        "M20 2v4", "M22 4h-4", circle(4, 20, 2),
+    ]
+    static let mic = ["M12 19v3", "M19 10v2a7 7 0 0 1-14 0v-2", "M12 2a3 3 0 0 1 3 3v7a3 3 0 0 1-6 0V5a3 3 0 0 1 3-3z"]
+    static let audioLines = ["M2 10v3", "M6 6v11", "M10 3v18", "M14 8v7", "M18 5v13", "M22 10v3"]
+    static let chevronDown = ["m6 9 6 6 6-6"]
+    static let copy = ["M10 8h10a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H10a2 2 0 0 1-2-2V10a2 2 0 0 1 2-2z",
+                       "M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"]
+    static let download = ["M12 15V3", "M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4", "m7 10 5 5 5-5"]
+    static let share = ["M12 2v13", "m16 6-4-4-4 4", "M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"]
+    static let shieldCheck = [
+        "M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z",
+        "m9 12 2 2 4-4",
+    ]
+    static let play = ["M5 5a2 2 0 0 1 3.008-1.728l11.997 6.998a2 2 0 0 1 .003 3.458l-12 7A2 2 0 0 1 5 19z"]
+    static let pencilLine = [
+        "M13 21h8", "m15 5 4 4",
+        "M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z",
+    ]
+    static let eye = [
+        "M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0",
+        circle(12, 12, 3),
+    ]
+    static let trash = [
+        "M10 11v6", "M14 11v6", "M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6", "M3 6h18",
+        "M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2",
+    ]
+
+    static let box = [
+        "M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z",
+        "m3.3 7 8.7 5 8.7-5", "M12 22V12",
+    ]
+    static let monitor = ["M4 3h16a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z", "M8 21h8", "M12 17v4"]
+    static let cloud = ["M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"]
+    static let globe = [circle(12, 12, 10), "M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20", "M2 12h20"]
+    static let check = ["M20 6 9 17l-5-5"]
+    static let filePen = [
+        "M12.5 22H18a2 2 0 0 0 2-2V7l-5-5H6a2 2 0 0 0-2 2v9.5", "M14 2v4a2 2 0 0 0 2 2h4",
+        "M13.378 15.626a1 1 0 1 0-3.004-3.004l-5.01 5.012a2 2 0 0 0-.506.854l-.837 2.87a.5.5 0 0 0 .62.62l2.87-.837a2 2 0 0 0 .854-.506z",
+    ]
+    static let triangleAlert = ["m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3", "M12 9v4", "M12 17h.01"]
+    static let listChecks = ["m3 17 2 2 4-4", "m3 7 2 2 4-4", "M13 6h8", "M13 12h8", "M13 18h8"]
+
+    /// The renderer's glyph for an SF Symbol name the menus use, if any.
+    static func forSymbol(_ name: String) -> [String]? {
+        switch name {
+        case "sparkles": sparkles
+        case "macwindow": box
+        case "laptopcomputer": monitor
+        case "cloud": cloud
+        case "globe": globe
+        case "hand.raised": hand
+        case "square.and.pencil": filePen
+        case "checkmark.shield": shieldCheck
+        case "exclamationmark.triangle": triangleAlert
+        case "checklist": listChecks
+        case "doc.on.doc": copy
+        case "arrow.down.to.line": download
+        default: nil
+        }
+    }
+
+    static func circle(_ cx: Double, _ cy: Double, _ r: Double) -> String {
+        "M\(cx - r) \(cy)A\(r) \(r) 0 1 0 \(cx + r) \(cy)A\(r) \(r) 0 1 0 \(cx - r) \(cy)Z"
+    }
+}
+
+/// One lucide glyph at `size` points.
+struct DesktopLucideGlyph: View {
+    let paths: [String]
+    var size: CGFloat = 16
+    var strokeWidth: CGFloat = 2
+
+    var body: some View {
+        Canvas { context, canvas in
+            let scale = canvas.width / 24
+            context.scaleBy(x: scale, y: scale)
+            let style = StrokeStyle(lineWidth: strokeWidth, lineCap: .round, lineJoin: .round)
+            for d in paths {
+                context.stroke(Path(SVGPath.cached(d)), with: .foreground, style: style)
+            }
+        }
+        .frame(width: size, height: size)
+        .accessibilityHidden(true)
     }
 }

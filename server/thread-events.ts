@@ -101,7 +101,7 @@ function parseRecent<T>(text: string, includeFirst: boolean, limit: number, vali
   return out.slice(-limit);
 }
 
-function readRecentLines<T>(file: string, limit: number, valid: RecordGuard<T>): { lines: T[]; total: number } {
+export function readRecentLines<T>(file: string, limit: number, valid: RecordGuard<T>): { lines: T[]; total: number } {
   let fd: number;
   try {
     fd = openSync(file, "r");
@@ -164,7 +164,7 @@ const askQuestionsOrMissing = (value: unknown) =>
         question.options.every((option) => isRecord(option) && typeof option.label === "string"),
     ));
 
-function isRuntimeEvent(value: unknown): value is RuntimeEvent {
+export function isRuntimeEvent(value: unknown): value is RuntimeEvent {
   if (
     !isRecord(value) ||
     typeof value.eventId !== "string" ||
@@ -212,7 +212,7 @@ function isRuntimeEvent(value: unknown): value is RuntimeEvent {
         typeof value.waitedMs === "number" &&
         Number.isFinite(value.waitedMs) &&
         value.waitedMs >= 0 &&
-        (value.outcome === "acquired" || value.outcome === "gave_up" || value.outcome === "stopped")
+        (value.outcome === "acquired" || value.outcome === "gave_up" || value.outcome === "parked" || value.outcome === "stopped")
       );
     case "item.started":
       return (value.itemType === "tool" || value.itemType === "reasoning") && stringOrMissing(value.title);

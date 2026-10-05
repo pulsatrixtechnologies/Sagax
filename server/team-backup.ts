@@ -148,6 +148,7 @@ export function createTeamBackup(store: Store, routines: Routine[], name: string
       // so the team's shape is not lost, but the import below still lands
       // every bot grant-less — restoring them is a deliberate later choice.
       ...(bot.connectorTools ? { connectorTools: structuredClone(bot.connectorTools) } : {}),
+      ...(bot.toolScope !== undefined ? { toolScope: structuredClone(bot.toolScope) } : {}),
       memory: options.memory && !options.memory(bot.id) ? undefined : memoryFor(bot.id, options.scrub),
       activeTask: bot.threadId, tasks: history(bot),
     })),
@@ -250,7 +251,7 @@ export function importTeamBackup(store: Store, routines: RoutineManager, input: 
       bots.push(bot);
       botIds.set(source.key, bot.id);
       store.patchBot(bot.id, { composio: false, computer: "off", browser: false, approvalMode: "ask", autoApprove: false,
-        connectorTools: {}, hidden: source.hidden, playbooks: source.playbooks });
+        connectorTools: {}, toolScope: source.toolScope, hidden: source.hidden, playbooks: source.playbooks });
       if (source.memory) restoreMemory(bot.id, source.memory);
       if (channels && bot.section) {
         channelFor(bot.section);

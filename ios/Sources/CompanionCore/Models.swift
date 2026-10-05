@@ -1136,8 +1136,26 @@ public struct ProviderSnapshot: Codable, Hashable, Sendable {
     public var version: String?
     /// "metered" or "subscription": how a cost figure is captioned.
     public var billing: String? = nil
+    /// A ChatGPT plan sign-in: its model list arrives only after sign-in.
+    public var chatgptPlan: Bool? = nil
+    /// A newer engine version unlocks capabilities (the installed one stays usable).
+    public var update: EngineUpdateNotice? = nil
 
     public var isAvailable: Bool { state == "available" }
+}
+
+/// `snapshot.update`: what a newer engine version brings, and the command
+/// that installs it.
+public struct EngineUpdateNotice: Codable, Hashable, Sendable {
+    public var title: String
+    public var message: String
+    public var command: String
+
+    public init(title: String, message: String, command: String) {
+        self.title = title
+        self.message = message
+        self.command = command
+    }
 }
 
 public struct ModelOption: Codable, Hashable, Identifiable, Sendable {
@@ -1146,6 +1164,8 @@ public struct ModelOption: Codable, Hashable, Identifiable, Sendable {
     /// The reasoning variants this model offers, on an engine with
     /// `capabilities.modelVariants`.
     public var variants: [ModelVariantOption]? = nil
+    /// A model added by hand (a local server's), not the engine's catalogue.
+    public var custom: Bool? = nil
 }
 
 /// One reasoning variant of a model (`shared/runtime-events.ts`).
@@ -1192,6 +1212,9 @@ public struct Instance: Codable, Hashable, Identifiable, Sendable {
     public var snapshot: ProviderSnapshot
     public var models: ModelCatalog
     public var capabilities: InstanceCapabilities? = nil
+    /// "subscription" (a sign-in plan), "api" (a pasted key) or "custom"
+    /// (a local engine with no catalogue); nil reads as a sign-in plan.
+    public var access: String? = nil
 
     public var id: String { instanceId }
 }

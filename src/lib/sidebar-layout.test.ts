@@ -10,6 +10,7 @@ import {
   orderedSidebarSections,
   partitionSidebarBots,
   partitionSidebarGroups,
+  pinnedCircleThreadListVisible,
   placeSection,
   sidebarLayoutInteractive,
   sidebarGoalRunPreview,
@@ -79,6 +80,32 @@ describe("sidebar virtual sections", () => {
     const parts = partitionSidebarBots([chief]);
     expect(parts.sectionChiefs).toEqual([chief]);
     expect(parts.pinnedBots).toEqual([]);
+  });
+
+  it("lifts pinned bots from every group when pins are universal", () => {
+    const workChief = { id: "work-chief", chiefOfStaff: true, section: "Work", pinned: true };
+    const home = { id: "home", section: "Home", pinned: true };
+    const looseChief = { id: "loose", chiefOfStaff: true, pinned: true };
+    const stay = { id: "stay", section: "Work" };
+    const hidden = { id: "hidden", section: "Home", pinned: true, hidden: true };
+    const parts = partitionSidebarBots(
+      [workChief, home, looseChief, stay, hidden],
+      { universalPins: true },
+    );
+    expect(parts.pinnedBots.map((bot) => bot.id)).toEqual(["work-chief", "home", "loose"]);
+    expect(parts.sectionChiefs).toEqual([]);
+    expect(parts.unsectionedChief).toBeNull();
+    expect(parts.sectionedBots).toEqual([stay]);
+    expect(workChief.section).toBe("Work");
+    expect(home.section).toBe("Home");
+  });
+
+  it("shows pinned-circle thread rows only while the circle grid is showing", () => {
+    expect(pinnedCircleThreadListVisible(true, "comfortable", 1)).toBe(true);
+    expect(pinnedCircleThreadListVisible(true, "compact", 2)).toBe(true);
+    expect(pinnedCircleThreadListVisible(false, "comfortable", 1)).toBe(false);
+    expect(pinnedCircleThreadListVisible(true, "icons", 1)).toBe(false);
+    expect(pinnedCircleThreadListVisible(true, "comfortable", 0)).toBe(false);
   });
 
   it("forces filtered and icon-only views open and non-reorderable", () => {

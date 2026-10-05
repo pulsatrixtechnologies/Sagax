@@ -8,7 +8,6 @@
 
 import { SAVE_RUN_AS_SKILL_LINE } from "../shared/learn-request.ts";
 
-export const LEARN_COMMAND = "/learn";
 export const LEARN_SOURCE_PREFIX = "learn:";
 export const LEARN_PROMPT_MARKER = "[/learn]";
 export const LEARN_DESCRIPTION_SOFT_MAX = 60;

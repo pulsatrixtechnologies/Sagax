@@ -305,9 +305,15 @@ posixOnly("Perspicax organization, slice 5: MCP for the person who speaks", () =
     const bob = await signIn(BOB);
     const threadId = await ownThread(bob, x.id);
     const callId = "call-orgmcp-000001";
+    const exchangesBefore = idp.exchanges.length;
     const started = await api("POST", `/api/bots/${x.id}/voice/call`, bob, { threadId, callId, state: "start" });
     expect(started.status, started.text).toBe(200);
-    const exchangesBefore = idp.exchanges.length;
+    // The warm exchanges once while the call connects. The spoken turns reuse that token.
+    const warmed = await waitFor(async () => {
+      const added = idp.exchanges.slice(exchangesBefore);
+      return added.length === 0 ? null : added;
+    });
+    expect(warmed.map((entry) => ({ sub: entry.sub, profile: entry.profile, ok: entry.ok }))).toEqual([{ sub: BOB.sub, profile: PROFILE.id, ok: true }]);
     expect(await turn(bob, x, "first thing on the call")).toContain("mcp:api_list:ok");
     expect(await turn(bob, x, "second thing on the call")).toContain("mcp:api_list:ok");
     expect(await turn(bob, x, "third thing on the call")).toContain("mcp:api_list:ok");

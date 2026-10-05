@@ -479,7 +479,7 @@ describe("peer allow-list", () => {
           chiefOfStaff: true, managedSections: ["Engineering"], acknowledgePeerScope: true,
         }, headers);
         expect(refused.status).toBe(409);
-        expect(String(refused.body.error)).toContain("paired owner session");
+        expect(String(refused.body.error)).toContain("paired Full-access session");
       }
       // refused means unchanged
       expect(await botState(bound.id)).toMatchObject({ peers: [peer.id], approvePeerComms: true, section: "Ops" });

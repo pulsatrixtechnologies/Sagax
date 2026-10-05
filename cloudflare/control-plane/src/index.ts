@@ -12,6 +12,7 @@ import {
   provisionManagedEndpoint,
   sweepManagedEndpointCleanup,
 } from "./endpoints";
+import { capacityHealth, scanTunnelCapacity } from "./tunnel-capacity";
 import {
   createInstallation,
   installationSelf,
@@ -141,12 +142,21 @@ export function createWorker(cloudflareFetch: CloudflareFetch = fetch) {
       const requestId = crypto.randomUUID();
       const url = new URL(request.url);
       if (request.method === "GET" && url.pathname === "/healthz") {
+        let healthConfig: ControlPlaneConfig;
         try {
-          readConfig(env);
+          healthConfig = readConfig(env);
         } catch {
           return secureResponse(errorResponse(503, "misconfigured"), request, null, requestId);
         }
-        return secureResponse(json({ ok: true, service: "openmausbot-control-plane" }), request, null, requestId);
+        // `ok` keeps meaning "this Worker is correctly configured"; desktops
+        // gate hosted sign-in on it. Provider capacity is reported beside it
+        // so a full quota never hides sign-in, recovery, or local pairing.
+        const capacity = await capacityHealth(env, healthConfig).catch(() => null);
+        return secureResponse(json({
+          ok: true,
+          service: "openmausbot-control-plane",
+          ...(capacity === null ? {} : { capacity }),
+        }), request, null, requestId);
       }
 
       let config: ControlPlaneConfig | null = null;
@@ -174,8 +184,30 @@ export function createWorker(cloudflareFetch: CloudflareFetch = fetch) {
     scheduled(_controller: ScheduledController, env: Env, ctx: ExecutionContext): void {
       const requestId = crypto.randomUUID();
       ctx.waitUntil((async () => {
+        let config: ControlPlaneConfig;
         try {
-          const config = readConfig(env);
+          config = readConfig(env);
+        } catch {
+          console.error(JSON.stringify({
+            message: "managed endpoint cleanup sweep failed",
+            requestId,
+            errorCode: "misconfigured",
+          }));
+          return;
+        }
+        // The scan only marks idle rows; the sweep below performs every
+        // deletion through the ownership-verified path. A failed scan must
+        // never block cleanup that is already queued.
+        try {
+          await scanTunnelCapacity(env, config, cloudflareFetch, requestId);
+        } catch {
+          console.error(JSON.stringify({
+            message: "managed endpoint tunnel scan failed",
+            requestId,
+            errorCode: "endpoint_internal",
+          }));
+        }
+        try {
           await sweepManagedEndpointCleanup(env, config, cloudflareFetch, requestId);
         } catch {
           console.error(JSON.stringify({

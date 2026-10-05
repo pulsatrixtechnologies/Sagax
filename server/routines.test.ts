@@ -42,8 +42,9 @@ function harness(start = new Date(2026, 7, 17, 8, 0, 0).getTime()) {
   const runOns: string[] = [];
   const triggerSources: string[] = [];
   const taskActivations: boolean[] = [];
+  const taskTitles: string[] = [];
   const goalTasks: Array<{ groupId: string; title: string }> = [];
-  const interruptedTurns: Array<{ botId: string; threadId: string; runOn: string }> = [];
+  const interruptedTurns: Array<{ botId: string; threadId: string }> = [];
   const interruptedGoals: Array<{
     groupId: string;
     threadId: string;
@@ -61,6 +62,7 @@ function harness(start = new Date(2026, 7, 17, 8, 0, 0).getTime()) {
     goalState: () => goal,
     createTask: (_botId, _title, activate = false) => {
       taskActivations.push(activate);
+      taskTitles.push(_title);
       return { threadId: `thread-${++task}` };
     },
     createGoalTask: (groupId, title) => {
@@ -75,8 +77,8 @@ function harness(start = new Date(2026, 7, 17, 8, 0, 0).getTime()) {
     startGoal: async (groupId, threadId, prompt, coordinatorBotId, runId, onDispatchError) => {
       startedGoals.push({ groupId, threadId, prompt, coordinatorBotId, runId, onDispatchError });
     },
-    interruptTurn: async (botId, threadId, runOn) => {
-      interruptedTurns.push({ botId, threadId, runOn });
+    interruptTurn: async (botId, threadId) => {
+      interruptedTurns.push({ botId, threadId });
     },
     interruptGoal: async (groupId, threadId, outcome) => {
       interruptedGoals.push({ groupId, threadId, ...(outcome ? { outcome } : {}) });
@@ -95,6 +97,7 @@ function harness(start = new Date(2026, 7, 17, 8, 0, 0).getTime()) {
     runOns,
     triggerSources,
     taskActivations,
+    taskTitles,
     goalTasks,
     interruptedTurns,
     interruptedGoals,
@@ -109,6 +112,7 @@ function harness(start = new Date(2026, 7, 17, 8, 0, 0).getTime()) {
 
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.unstubAllEnvs();
   for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
 
@@ -248,6 +252,28 @@ describe("bounded scheduled overlap and run health", () => {
     }
     expect(() => h.manager.update(routine.id, { overlap: "invalid" as "queue" })).toThrow("skip or queue");
   });
+});
+
+it("names a new routine thread with the local dispatch date and time", async () => {
+  vi.stubEnv("TZ", "UTC");
+  const at = Date.parse("2026-10-01T21:26:00Z");
+  const h = harness(at);
+  const routine = h.manager.create({ name: "Morning brief", prompt: "Summarize", botId: "maus-1",
+    schedule: { type: "once", at } });
+  h.manager.runNow(routine.id);
+  const createTask = h.options.createTask;
+  h.options.createTask = (...args) => { h.setNow(at + 60_000); return createTask(...args); };
+  await h.manager.tick();
+  expect(h.taskTitles).toEqual(["Morning brief · Oct 1, 9:26 PM"]);
+  expect(h.manager.listRuns()[0]).toMatchObject({ routineName: "Morning brief", startedAt: at });
+
+  const long = harness(at);
+  const named = long.manager.create({ name: "x".repeat(100), prompt: "Summarize", botId: "maus-1",
+    schedule: { type: "once", at } });
+  long.manager.runNow(named.id);
+  await long.manager.tick();
+  expect(long.taskTitles[0]).toHaveLength(80);
+  expect(long.taskTitles[0]).toMatch(/ · Oct 1, 9:26 PM$/);
 });
 
 describe("cron routines use the existing persistent scheduler", () => {
@@ -1801,7 +1827,7 @@ describe("RoutineManager", () => {
       finishedAt: startedAt! + 5 * 60_000,
     });
     expect(h.interruptedTurns).toEqual([
-      { botId: "maus-timeout", threadId: "thread-1", runOn: "maus" },
+      { botId: "maus-timeout", threadId: "thread-1" },
     ]);
   });
 
@@ -1891,6 +1917,7 @@ describe("RoutineManager", () => {
   });
 
   it("queues behind a busy room goal, then dispatches it into a detached room task", async () => {
+    vi.stubEnv("TZ", "UTC");
     const h = harness();
     h.setGoal("busy");
     const routine = h.manager.create({
@@ -1916,7 +1943,7 @@ describe("RoutineManager", () => {
     h.setGoal("ready");
     await h.manager.tick();
     const run = h.manager.listRuns()[0]!;
-    expect(h.goalTasks).toEqual([{ groupId: "room-1", title: "Team launch" }]);
+    expect(h.goalTasks).toEqual([{ groupId: "room-1", title: "Team launch · Aug 17, 8:01 AM" }]);
     expect(h.startedGoals[0]).toMatchObject({
       groupId: "room-1",
       threadId: "goal-thread-1",
@@ -2585,6 +2612,45 @@ describe("RoutineManager", () => {
     expect(h.failed).toHaveLength(1);
   });
 
+  it.each(["error", "tool_error"])(
+    "preserves the detailed runtime error when a turn ends with generic %s",
+    async (stopReason) => {
+      const h = harness();
+      const routine = h.manager.create({
+        name: "Broken report",
+        prompt: "Write the report",
+        botId: "maus-failed",
+        schedule: { type: "once", at: new Date(2026, 7, 17, 8, 1).getTime() },
+      });
+      h.setNow(routine.nextRunAt!);
+      await h.manager.tick();
+
+      const base = {
+        provider: "fake",
+        threadId: "thread-1",
+        createdAt: new Date().toISOString(),
+      };
+      h.manager.handleRuntimeEvent({
+        ...base,
+        eventId: "runtime-error",
+        type: "runtime.error",
+        message: "model-call limit reached before a final response",
+      });
+      h.manager.handleRuntimeEvent({
+        ...base,
+        eventId: "turn-completed",
+        type: "turn.completed",
+        ok: false,
+        stopReason,
+      });
+
+      expect(h.manager.listRuns()[0]).toMatchObject({
+        status: "failed",
+        error: "model-call limit reached before a final response",
+      });
+    },
+  );
+
   it("marks every unseen failed or missed run seen in one sweep", async () => {
     const h = harness();
     const broken = h.manager.create({
@@ -3025,7 +3091,7 @@ describe("routine runs × turn-held BoatAgent asks", () => {
         h.manager.handleRuntimeEvent(event);
       });
       h.options.startTurn = async (_botId, threadId) => {
-        await instance.adapter.sendTurn({ threadId, text: "sweep", integrations: { computer: { boxId: "boat-1", token: "boat-test-token" } } });
+        await instance.adapter.sendTurn({ threadId, text: "sweep", integrations: { computer: { boxId: "boat-1" } } });
       };
       const routine = h.manager.create({
         name: "Boat sweep",

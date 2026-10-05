@@ -110,79 +110,93 @@ struct ApprovalDock: View {
 
     // MARK: Desktop
 
-    /// PendingApprovalBox: a card ring (accent at 40 %, radius 16) holding a
-    /// raised strip (PENDING APPROVAL, the request, the tool, the detail)
-    /// and a row of pill buttons on the right: Cancel turn, Deny, the
-    /// remembering choice, Allow once.
+    /// PendingApprovalBox: a card ring (accent at 40 %, radius 16): the
+    /// heading (avatar, "Ara wants to run a command", the risk chip, the
+    /// stepper), the command on an inset block, "See technical details",
+    /// then Cancel turn as a quiet link on the left and the pills on the
+    /// right: Deny, the remembering choice, Allow once.
     private func desktopBody(_ theme: DesktopTheme) -> some View {
         let index = ApprovalDockRules.stepperIndex(approvals, requestId: requestId)
         let pending = approvals[index]
+        let card = pending.card
+        let proposal = ApprovalDockRules.isProposal(card)
         let actions = ApprovalDockRules.actions(
             for: pending,
             ownerOrAdmin: session.canAdminister,
             hasBot: session.askingBotId(pending, in: chat) != nil
         )
+        let readOnly = ApprovalDockRules.readOnly(approvals)
+        let bot = session.askingBotId(pending, in: chat).flatMap { session.state.bot($0) }
         return VStack(alignment: .leading, spacing: 0) {
-            VStack(alignment: .leading, spacing: 8) {
-                HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    Text("Pending approval")
-                        .textCase(.uppercase)
-                        .font(theme.font(11))
-                        .tracking(1.98)
+            VStack(alignment: .leading, spacing: 0) {
+                if let title = pending.parallelTitle {
+                    Label(String(localized: "Parallel task · \(title)"), systemImage: "arrow.triangle.branch")
+                        .font(theme.font(11.5))
                         .foregroundStyle(theme.inkSecondary)
-                    Text(verbatim: Self.desktopLabel(pending))
-                        .font(theme.font(13))
-                        .foregroundStyle(theme.ink)
-                        .frame(minHeight: 19.5)
-                        .accessibilityIdentifier("approval-dock-title")
-                    if let tool = pending.card.tool, !tool.isEmpty {
-                        Text(verbatim: tool)
-                            .font(.system(size: 11, design: .monospaced))
-                            .foregroundStyle(theme.inkSecondary)
-                    }
-                    Spacer(minLength: 0)
-                    if approvals.count > 1 { stepper(index: index) }
+                        .lineLimit(1)
+                        .padding(.bottom, 6)
                 }
-                if let detail = ApprovalHeading.detail(pending.card) {
-                    ScrollView(.vertical) {
-                        Text(detail)
-                            .font(.system(size: 12, design: .monospaced))
-                            .foregroundStyle(theme.ink)
-                            .textSelection(.enabled)
-                            .frame(minHeight: 19.5)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .accessibilityIdentifier("approval-dock-detail")
-                    }
-                    .frame(maxHeight: 160)
-                    .fixedSize(horizontal: false, vertical: true)
-                } else {
-                    // the desktop keeps its (empty) detail block: 8 + 1
-                    Color.clear.frame(height: 1)
+                DesktopApprovalHeading(
+                    bot: bot,
+                    title: proposal ? Self.desktopLabel(pending) : heading(pending),
+                    risk: proposal ? nil : ApprovalRiskClassifier.risk(of: card),
+                    theme: theme,
+                    aside: approvals.count > 1 ? AnyView(VStack(alignment: .trailing, spacing: 2) {
+                        stepper(index: index)
+                        if readOnly.count > 1 {
+                            Button {
+                                Haptics.selection()
+                                run { await session.allowAll(readOnly, in: chat) }
+                            } label: {
+                                Text("Allow all read-only (\(readOnly.count))")
+                                    .font(theme.font(12, .medium))
+                                    .foregroundStyle(theme.accent)
+                            }
+                            .buttonStyle(.plain)
+                            .disabled(answering)
+                            .accessibilityIdentifier("approval-allow-read-only")
+                        }
+                    }) : nil
+                )
+                if let detail = Self.desktopDetail(card) {
+                    DesktopApprovalBlock(text: detail, size: 12, theme: theme)
                 }
-                if let held = pending.card.held, !held.isEmpty {
-                    Label(held, systemImage: "exclamationmark.shield")
-                        .font(theme.font(12.5))
+                if let held = card.held, !held.isEmpty {
+                    Text(verbatim: held)
+                        .font(theme.font(12))
                         .foregroundStyle(theme.warning)
+                        .padding(.top, 8)
+                }
+                if !proposal, card.tool?.isEmpty == false {
+                    DesktopTechnicalDetails(card: card, theme: theme)
+                        .id(pending.requestId)
+                        .padding(.bottom, 2)
                 }
             }
             .padding(.horizontal, 16)
-            .padding(.vertical, 12)
+            .padding(.top, 12)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(theme.raised.opacity(0.4))
-            .overlay(alignment: .bottom) { Rectangle().fill(theme.hairline.opacity(0.5)).frame(height: 1) }
 
             HStack(spacing: 8) {
+                if actions.cancelTurn || actions.waitingForAdmin {
+                    Button { run { await session.cancelTurn(for: pending, in: chat) } } label: {
+                        Text("Cancel turn")
+                            .font(theme.font(12.5))
+                            .foregroundStyle(theme.inkSecondary)
+                            .padding(4)
+                            .frame(height: 26.8)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(answering)
+                    .accessibilityIdentifier("approval-cancel-turn")
+                }
                 Spacer(minLength: 0)
                 if actions.waitingForAdmin {
                     Text("This command runs on the server: waiting for an admin to approve it.")
-                        .font(theme.font(13))
+                        .font(theme.font(12.5))
                         .foregroundStyle(theme.inkSecondary)
                 } else {
-                    if actions.cancelTurn {
-                        desktopPill(String(localized: "Cancel turn"), theme: theme, ink: theme.inkSecondary, id: "approval-cancel-turn") {
-                            await session.cancelTurn(for: pending, in: chat)
-                        }
-                    }
                     desktopPill(actions.denyIsCancel ? String(localized: "Cancel") : String(localized: "Deny"), theme: theme,
                                 ink: theme.danger, ring: theme.danger.opacity(0.4), id: "approval-deny") {
                         await session.decide(.deny, on: pending, in: chat)
@@ -200,21 +214,29 @@ struct ApprovalDock: View {
                             await session.decide(.alwaysAllowSession, on: pending, in: chat)
                         }
                     }
-                    desktopPill(primaryLabel(actions.primary, pending), theme: theme, ink: theme.app, fill: theme.accent, weight: .medium, id: "approval-allow-once") {
+                    desktopPill(primaryLabel(actions.primary, pending), theme: theme, ink: theme.accentInk, fill: theme.accent, weight: .medium, id: "approval-allow-once") {
                         await session.decide(.allowOnce, on: pending, in: chat)
                     }
                     .disabled(actions.primaryDisabled)
                 }
             }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 8)
+            .padding(.horizontal, 16)
+            .padding(.top, 8)
+            .padding(.bottom, 12)
         }
         .background(theme.card, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(theme.accent.opacity(0.4), lineWidth: 1))
+        .padding(1)
+        .overlay(RoundedRectangle(cornerRadius: 17, style: .continuous).strokeBorder(theme.accent.opacity(0.4), lineWidth: 1))
+        // mb-2: with the composer's 6 pt stack spacing
         .padding(.bottom, 2)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("approval-dock")
+    }
+
+    /// The dock's block: a proposal's text, the exact command, or the
+    /// plain subtitle (PendingApproval.tsx `visibleText`).
+    static func desktopDetail(_ card: OptionCard) -> String? {
+        DesktopApprovalText.plain(card)
     }
 
     /// PendingApproval.tsx `approvalLabel`.

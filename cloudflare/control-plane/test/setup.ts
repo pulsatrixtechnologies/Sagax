@@ -20,6 +20,13 @@ afterEach(async () => {
     env.DB.prepare("DELETE FROM control_action_rate_limits"),
     env.DB.prepare("DELETE FROM installation_action_rate_limits"),
     env.DB.prepare("DELETE FROM installation_endpoints"),
+    env.DB.prepare(
+      `UPDATE managed_endpoint_capacity
+          SET scan_page = 1, tunnel_count = NULL, dns_record_count = NULL, reclaim_pending = 0,
+              checked_at = NULL, capacity_rejected_at = NULL, capacity_rejected_code = NULL,
+              updated_at = 0
+        WHERE id = 1`,
+    ),
     env.DB.prepare("DELETE FROM installation_credentials"),
     env.DB.prepare("DELETE FROM installations"),
     env.DB.prepare('DELETE FROM "session"'),

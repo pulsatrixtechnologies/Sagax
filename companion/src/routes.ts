@@ -61,6 +61,38 @@ export const CLOUD_DESKTOP_INPUT_ROUTES: ReadonlyArray<{ method: string; path: R
   { method: "GET", path: /^\/api\/bots\/[\w-]+\/computer\/clipboard$/ },
   { method: "PUT", path: /^\/api\/bots\/[\w-]+\/computer\/clipboard$/ },
 ];
+/** Driving a bot's own browser: the frame stream, and the channel that sends
+ * pointer and keyboard events into it.
+ *
+ * Deliberately separate from the cloud-desktop classifier above rather than
+ * folded into it. A cloud desktop is a disposable VM; a bot's browser is
+ * normally signed into the person's real accounts, with their cookies and
+ * their sessions. A device trusted with a throwaway VM must not acquire the
+ * second permission because the two looked similar from here. */
+export const BROWSER_LIVE_ROUTE = {
+  method: "GET",
+  path: /^\/api\/bots\/[\w-]+\/browser\/live$/,
+} as const;
+
+export const BROWSER_ACTION_ROUTE = {
+  method: "POST",
+  path: /^\/api\/bots\/[\w-]+\/browser\/action$/,
+} as const;
+
+/** The Local VM's live desktop, relayed by the sidecar like a VPS viewer.
+ * The harness grants it only while a person holds that bot's computer. */
+export const LOCAL_VM_JOIN_ROUTE = {
+  method: "POST",
+  path: /^\/api\/bots\/[\w-]+\/local-computer\/join$/,
+} as const;
+
+/** A still of a bot's Local VM, on demand. The VM's lifecycle stays on the
+ * host; this only reads a picture of it, behind the same per-device
+ * computer-access capability as the cloud desktop. */
+export const LOCAL_VM_SCREENSHOT_ROUTE = {
+  method: "POST",
+  path: /^\/api\/bots\/[\w-]+\/local-computer\/screenshot$/,
+} as const;
 
 export function isCloudDesktopJoin(method: string, path: string): boolean {
   return method === CLOUD_DESKTOP_JOIN_ROUTE.method && CLOUD_DESKTOP_JOIN_ROUTE.path.test(path);
@@ -70,10 +102,22 @@ export function isMessageFileDownload(method: string, path: string): boolean {
   return method === MESSAGE_FILE_ROUTE.method && MESSAGE_FILE_ROUTE.path.test(path);
 }
 
+/** Every route that shows or drives a bot's computer — cloud or Local VM —
+ * and so needs the device's computer-access capability, not just a token. */
 export function isCloudDesktopAccess(method: string, path: string): boolean {
   return isCloudDesktopJoin(method, path)
     || (method === CLOUD_DESKTOP_CONTROL_ROUTE.method && CLOUD_DESKTOP_CONTROL_ROUTE.path.test(path))
-    || CLOUD_DESKTOP_INPUT_ROUTES.some((route) => route.method === method && route.path.test(path));
+    || CLOUD_DESKTOP_INPUT_ROUTES.some((route) => route.method === method && route.path.test(path))
+    || (method === LOCAL_VM_SCREENSHOT_ROUTE.method && LOCAL_VM_SCREENSHOT_ROUTE.path.test(path))
+    || (method === LOCAL_VM_JOIN_ROUTE.method && LOCAL_VM_JOIN_ROUTE.path.test(path));
+}
+
+/** Both halves of browser control, behind one capability. Watching the frames
+ * and driving them are the same permission: a viewer that can see a logged-in
+ * session is already past the line the capability is drawn at. */
+export function isBrowserControlAccess(method: string, path: string): boolean {
+  return (method === BROWSER_LIVE_ROUTE.method && BROWSER_LIVE_ROUTE.path.test(path))
+    || (method === BROWSER_ACTION_ROUTE.method && BROWSER_ACTION_ROUTE.path.test(path));
 }
 
 /** Every request the iOS app makes, and nothing else.
@@ -126,6 +170,17 @@ const ALLOWED: ReadonlyArray<{ method: string; path: RegExp }> = [
   // recent activity. No settings, no transcript — read on open and on
   // pull-to-refresh.
   { method: "GET", path: /^\/api\/bots\/[\w-]+\/overview$/ },
+  // Read-only: what the bot did, with the outcome, built from logs that
+  // already exist (server/activity.ts). No settings reachable through it.
+  { method: "GET", path: /^\/api\/bots\/[\w-]+\/activity$/ },
+  // The section's shared team memory: people, places, decisions and terms.
+  // Reading, adding, answering a proposal, editing a detail, and removing
+  // are all content edits, not execution policy — the same line the profile
+  // and sidebar-section routes draw. The section rides as a query string.
+  { method: "GET", path: /^\/api\/team-memory$/ },
+  { method: "POST", path: /^\/api\/team-memory$/ },
+  { method: "PATCH", path: /^\/api\/team-memory\/[\w-]+$/ },
+  { method: "DELETE", path: /^\/api\/team-memory\/[\w-]+$/ },
   // Paired-safe profile subset. The harness route itself rejects fields
   // outside identity, standing instructions (soul, byte-capped), avatar,
   // notifications, and voice preferences.
@@ -272,6 +327,17 @@ const ALLOWED: ReadonlyArray<{ method: string; path: RegExp }> = [
   { method: "PUT", path: /^\/api\/me\/achievements\/settings$/ },
   { method: "GET", path: /^\/api\/achievements\/public$/ },
 
+  // A bot's browser, watched and driven from the phone. Like the cloud
+  // desktop above, the proxy applies a second per-device capability check
+  // before either of these reaches the harness.
+  BROWSER_LIVE_ROUTE,
+  BROWSER_ACTION_ROUTE,
+  // A picture of the Local VM — not its lifecycle, which stays on the host.
+  // Gated per device by the proxy like the cloud desktop above.
+  LOCAL_VM_SCREENSHOT_ROUTE,
+  // Its live desktop while a person holds the computer, relayed like the
+  // VPS viewer and behind the same per-device capability.
+  LOCAL_VM_JOIN_ROUTE,
   // rooms — making one, and talking in one
   { method: "POST", path: /^\/api\/groups$/ },
   { method: "POST", path: /^\/api\/groups\/[\w-]+\/messages$/ },
@@ -309,6 +375,13 @@ const ALLOWED: ReadonlyArray<{ method: string; path: RegExp }> = [
   { method: "POST", path: /^\/api\/tts\/prepare$/ },
   { method: "POST", path: /^\/api\/tts\/speak$/ },
 
+  // Live calls: the phone holds its own WebRTC audio to OpenAI; the Mac
+  // creates the session (the key never leaves it) and runs the call.
+  { method: "POST", path: /^\/api\/live\/session$/ },
+  { method: "POST", path: /^\/api\/live\/call\/end$/ },
+  { method: "GET", path: /^\/api\/live\/call$/ },
+  { method: "PATCH", path: /^\/api\/live\/settings$/ },
+
   // Routines create ordinary tasks using an existing agent configuration.
   // Webhook management remains explicitly denied below.
   { method: "GET", path: /^\/api\/routines$/ },
@@ -339,6 +412,23 @@ const ALLOWED: ReadonlyArray<{ method: string; path: RegExp }> = [
   // to the host's OS-backed credential store.
   { method: "POST", path: /^\/api\/bots\/[\w-]+\/secret-cards\/[\w-]+\/(?:resume|dismiss)$/ },
 ];
+
+/** Notices the companion itself sends the harness, never a device: they are
+ * not in ALLOWED, so the proxy refuses them from a phone, and the harness
+ * accepts them only with the companion's private relay token
+ * (server/request-auth.ts) or, for a standalone harness, from loopback.
+ *
+ * `POST /api/live/device-revoked`: a phone was just unpaired (the device id
+ * rides in `x-openmausbot-companion-device`), so the harness ends the Live
+ * call that phone holds. A phone's requests reach the harness as this
+ * computer's own, so nothing else would tell it the phone lost its access. */
+const COMPANION_NOTICES: ReadonlyArray<{ method: string; path: RegExp }> = [
+  { method: "POST", path: /^\/api\/live\/device-revoked$/ },
+];
+
+export function isCompanionNotice(method: string, path: string): boolean {
+  return COMPANION_NOTICES.some((route) => route.method === method && route.path.test(path));
+}
 
 /** Route families worth naming in the refusal.
  *

@@ -19,6 +19,16 @@ directory was removed and none of its source or license check is included;
 files across the tree were modified. These changes are licensed under the
 PolyForm Noncommercial License 1.0.0, not the Apache License 2.0.
 
+The Android companion app bundles a prebuilt WebRTC library for Live calls
+(io.github.webrtc-sdk:android), built from the WebRTC project, Copyright (c)
+2011, The WebRTC project authors, used under the BSD 3-Clause License. WebRTC
+includes third-party components under their own licenses, listed with the
+library.
+
+Selected provider icon paths are from Simple Icons, used under CC0 1.0.
+The Cohere provider icon path is from Lobe Icons, Copyright 2023 LobeHub,
+used under the MIT License.
+
 The OpenMausBot name and mascot are trademarks of Milind Soni. This product
 does not use those marks as its name. Apache License 2.0 section 6 does not
 grant trademark rights.
@@ -31,3 +41,13 @@ quantized to int8 by Pulsatrix Technologies inc. Licenses are in
 third_party/onnxruntime-web, third_party/silero-vad, third_party/3d-speaker
 and third_party/sherpa-onnx; details and checksums in
 src/lib/voice-mode/models/NOTICE.txt.
+
+The browser desktop viewer bundles the unmodified noVNC 1.7.0 library,
+Copyright the noVNC authors, under MPL-2.0 and its accompanying licenses.
+Attribution, license terms and the corresponding source location are in
+public/novnc-NOTICE.txt (novnc-NOTICE.txt in the built UI).
+
+The iOS companion app bundles a prebuilt WebRTC library for Live calls
+(stasel/WebRTC), built from the WebRTC project, Copyright (c) 2011, The WebRTC
+project authors, used under the BSD 3-Clause License. WebRTC includes
+third-party components under their own licenses, listed with the library.

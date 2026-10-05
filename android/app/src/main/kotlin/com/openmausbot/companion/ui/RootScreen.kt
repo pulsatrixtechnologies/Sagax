@@ -1,10 +1,15 @@
 package com.openmausbot.companion.ui
 
+import com.openmausbot.companion.R
+
+import androidx.compose.ui.res.stringResource
+
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.material3.AlertDialog
@@ -361,43 +366,55 @@ private fun PairedScreen(
 
     BackHandler(enabled = navigator.canGoBack) { navigator.pop() }
 
-    when (val destination = navigator.current) {
-        Destination.Roster -> RosterScreen(navigator)
-        Destination.Settings -> SettingsScreen(
-            onBack = navigator::pop,
-            onOpenRoutines = { navigator.push(Destination.Routines) },
-            onOpenConnectedApps = { navigator.push(Destination.ConnectedApps) },
-        )
-        Destination.Routines -> TasksRoutinesScreen(
-            onBack = navigator::pop,
-            // A receipt's "Open task" pushes the chat above this screen, the way
-            // iOS appends it to the same navigation path.
-            onOpenChat = navigator::open,
-        )
-        Destination.ConnectedApps -> ConnectedAppsScreen(onBack = navigator::pop)
-        // One branch for both shapes of chat address, so a notification's thread
-        // becoming an addressed chat re-reads the same screen instead of
-        // rebuilding it.
-        is Destination.Conversation -> ChatScreen(
-            destination = destination,
-            onResolved = { target ->
-                navigator.selectTask(destination, target)
-            },
-            onBack = navigator::pop,
-            onOpenComputer = { navigator.push(Destination.Computer(it)) },
-            onOpenOverview = { navigator.push(Destination.Overview(it)) },
-            // Push Computer keeps the chat under the top; pop to roster does not.
-            retainsDraft = navigator::retainsChatDraft,
-            onOpenChat = navigator::open,
-        )
-        is Destination.Computer -> ComputerScreen(
-            botId = destination.botId,
-            onBack = navigator::pop,
-        )
-        is Destination.Overview -> BotOverviewScreen(
-            botId = destination.botId,
-            onBack = navigator::pop,
-        )
+    // The banner follows a call to every screen but its own chat, and pushes
+    // whatever is on screen down by its height rather than covering it.
+    Column(modifier = Modifier.fillMaxSize()) {
+        LiveCallBannerHost(navigator)
+        Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+            when (val destination = navigator.current) {
+                Destination.Roster -> RosterScreen(navigator)
+                Destination.Settings -> SettingsScreen(
+                    onBack = navigator::pop,
+                    onOpenRoutines = { navigator.push(Destination.Routines) },
+                    onOpenConnectedApps = { navigator.push(Destination.ConnectedApps) },
+                )
+                Destination.Routines -> TasksRoutinesScreen(
+                    onBack = navigator::pop,
+                    // A receipt's "Open task" pushes the chat above this screen, the way
+                    // iOS appends it to the same navigation path.
+                    onOpenChat = navigator::open,
+                )
+                Destination.ConnectedApps -> ConnectedAppsScreen(onBack = navigator::pop)
+                // One branch for both shapes of chat address, so a notification's thread
+                // becoming an addressed chat re-reads the same screen instead of
+                // rebuilding it.
+                is Destination.Conversation -> ChatScreen(
+                    destination = destination,
+                    onResolved = { target ->
+                        navigator.selectTask(destination, target)
+                    },
+                    onBack = navigator::pop,
+                    onOpenComputer = { navigator.push(Destination.Computer(it)) },
+                    onOpenOverview = { navigator.push(Destination.Overview(it)) },
+                    // Push Computer keeps the chat under the top; pop to roster does not.
+                    retainsDraft = navigator::retainsChatDraft,
+                    onOpenChat = navigator::open,
+                )
+                is Destination.Computer -> ComputerScreen(
+                    botId = destination.botId,
+                    onBack = navigator::pop,
+                    onOpenBrowser = { navigator.push(Destination.Browser(it)) },
+                )
+                is Destination.Browser -> BrowserControlScreen(
+                    botId = destination.botId,
+                    onBack = navigator::pop,
+                )
+                is Destination.Overview -> BotOverviewScreen(
+                    botId = destination.botId,
+                    onBack = navigator::pop,
+                )
+            }
+        }
     }
 }
 
@@ -407,10 +424,10 @@ private fun ActionErrorDialog(session: Session) {
     val text = message ?: return
     AlertDialog(
         onDismissRequest = { session.actionError = null },
-        title = { Text("Something went wrong") },
-        text = { Text(text) },
+        title = { Text(stringResource(R.string.mobile_something_went_wrong_8d886c0b)) },
+        text = { Text(localizedMobileCopy(text)) },
         confirmButton = {
-            TextButton(onClick = { session.actionError = null }) { Text("OK") }
+            TextButton(onClick = { session.actionError = null }) { Text(stringResource(R.string.mobile_ok_9ce3bd42)) }
         },
     )
 }
@@ -423,12 +440,12 @@ private fun ActionErrorDialog(session: Session) {
 @Composable
 private fun UnpairedScreen(onPairAgain: () -> Unit, onChooseAnother: (() -> Unit)? = null) {
     EmptyState(
-        title = "This phone was unpaired",
+        title = stringResource(R.string.mobile_this_phone_was_unpaired_09273604),
         description = "It was removed from the computer's Phone settings, or the pairing was reset.",
     ) {
-        Button(onClick = onPairAgain) { Text("Pair again") }
+        Button(onClick = onPairAgain) { Text(stringResource(R.string.mobile_pair_again_379e2bf5)) }
         onChooseAnother?.let { choose ->
-            TextButton(onClick = choose) { Text("Use another computer") }
+            TextButton(onClick = choose) { Text(stringResource(R.string.mobile_use_another_computer_ff6a1b80)) }
         }
     }
 }
@@ -449,12 +466,12 @@ fun EmptyState(
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Text(
-            text = title,
+            text = localizedMobileCopy(title),
             style = MaterialTheme.typography.titleMedium,
             textAlign = TextAlign.Center,
         )
         Text(
-            text = description,
+            text = localizedMobileCopy(description),
             style = MaterialTheme.typography.bodyMedium,
             color = secondaryTint,
             textAlign = TextAlign.Center,

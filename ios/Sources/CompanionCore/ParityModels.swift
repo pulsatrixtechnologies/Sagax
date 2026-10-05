@@ -28,8 +28,8 @@ public struct BotPatch: Encodable, Equatable, Sendable {
     /// The bot's own Connected apps switch (PL6). Only an admin session may
     /// send it: the sidecar and a client session refuse it.
     public var composio: Bool?
-    /// Archive (true) or restore (false): the desktop's Archive and
-    /// Archived bots. Admin scope only (`archiveBot`).
+    /// Archived (`hidden`): out of the sidebar, every conversation kept;
+    /// restored by sending false (the desktop's Archive and Archived bots).
     public var hidden: Bool?
 
     public init(

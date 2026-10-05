@@ -32,6 +32,8 @@ export interface PeerDeliveryReceipt {
   taskId?: string;
   /** The coordination node, for coordinate_bots sends. */
   requestId?: string;
+  /** The recipient's thread the work went into, for direct coordinate_bots sends. */
+  threadId?: string;
 }
 
 // Detail lines are built from harness error text that can carry
@@ -65,6 +67,7 @@ export function peerDeliveryReceipt(receipt: PeerDeliveryReceipt): PeerDeliveryR
     detail: clip(receipt.detail) || "no detail recorded",
     ...(receipt.taskId ? { taskId: receipt.taskId } : {}),
     ...(receipt.requestId ? { requestId: receipt.requestId } : {}),
+    ...(receipt.threadId ? { threadId: receipt.threadId } : {}),
   };
 }
 

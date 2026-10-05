@@ -1,5 +1,7 @@
 package com.openmausbot.companion.ui
 
+import androidx.compose.ui.res.stringResource
+
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -101,6 +103,10 @@ internal fun AgentProfileSheet(bot: Bot, onDismiss: () -> Unit, onOpenOverview: 
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val player = environment.voicePreview
+    // A running Live call holds the audio. A preview asks for transient focus,
+    // which would end the call as "another app took the audio" — the reason
+    // ChatScreen keeps dictation off during a call, too.
+    val liveCall by environment.liveCalls.state.collectAsState()
 
     // The record the sheet was opened on, so the form has an origin even after
     // the fleet drops the agent; `current` is what every action is applied to.
@@ -217,10 +223,10 @@ internal fun AgentProfileSheet(bot: Bot, onDismiss: () -> Unit, onOpenOverview: 
                         onClick = onDismiss,
                         modifier = Modifier.align(Alignment.CenterStart),
                     ) {
-                        Text("Done")
+                        Text(stringResource(R.string.mobile_done_e9b450d1))
                     }
                     Text(
-                        text = "Bot settings",
+                        text = stringResource(R.string.mobile_bot_settings_7092a294),
                         fontSize = 17.sp,
                         fontWeight = FontWeight.SemiBold,
                         modifier = Modifier.align(Alignment.Center),
@@ -276,7 +282,7 @@ internal fun AgentProfileSheet(bot: Bot, onDismiss: () -> Unit, onOpenOverview: 
                             modifier = Modifier.fillMaxWidth().heightIn(min = MIN_TOUCH_TARGET),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Text(ModelRules.LOADING, fontSize = 15.sp, modifier = Modifier.weight(1f))
+                            Text(localizedMobileCopy(ModelRules.LOADING), fontSize = 15.sp, modifier = Modifier.weight(1f))
                             CircularProgressIndicator(modifier = Modifier.size(20.dp))
                         }
                     } else if (instanceChoices.isEmpty()) {
@@ -305,7 +311,7 @@ internal fun AgentProfileSheet(bot: Bot, onDismiss: () -> Unit, onOpenOverview: 
                             }
                         }
                         ChoicePicker(
-                            label = "Provider",
+                            label = stringResource(R.string.mobile_provider_7ceee3f3),
                             choices = providerRows,
                             selected = selectedInstanceId,
                             onSelect = { id ->
@@ -314,7 +320,7 @@ internal fun AgentProfileSheet(bot: Bot, onDismiss: () -> Unit, onOpenOverview: 
                             },
                         )
                         ChoicePicker(
-                            label = "Model",
+                            label = stringResource(R.string.mobile_model_68c2cc7f),
                             choices = ModelRules.modelChoices(selectedInstance, selectedModelId).map {
                                 VoiceChoice(id = it.id, label = it.label, detail = null, enabled = true)
                             },
@@ -325,7 +331,7 @@ internal fun AgentProfileSheet(bot: Bot, onDismiss: () -> Unit, onOpenOverview: 
                         val effortLevels = ModelRules.effortLevels(selectedInstance)
                         if (effortLevels.isNotEmpty()) {
                             ChoicePicker(
-                                label = "Reasoning effort",
+                                label = stringResource(R.string.mobile_reasoning_effort_cd32c0f5),
                                 choices = buildList {
                                     add(VoiceChoice(id = "", label = ModelRules.DEFAULT_EFFORT_LABEL, detail = null, enabled = true))
                                     effortLevels.forEach {
@@ -377,7 +383,7 @@ internal fun AgentProfileSheet(bot: Bot, onDismiss: () -> Unit, onOpenOverview: 
                             bot = current,
                             size = 112.dp,
                             state = MausState.HAPPY,
-                            contentDescription = "${current.name} avatar",
+                            contentDescription = stringResource(R.string.mobile_current_name_avatar_de638954, current.name),
                         )
                     }
 
@@ -393,7 +399,7 @@ internal fun AgentProfileSheet(bot: Bot, onDismiss: () -> Unit, onOpenOverview: 
                                     count = AvatarCrop.entries.size,
                                 ),
                             ) {
-                                Text(ProfileRules.cropLabel(option))
+                                Text(localizedMobileCopy(ProfileRules.cropLabel(option)))
                             }
                         }
                     }
@@ -443,7 +449,7 @@ internal fun AgentProfileSheet(bot: Bot, onDismiss: () -> Unit, onOpenOverview: 
                     OutlinedTextField(
                         value = prompt,
                         onValueChange = { prompt = it },
-                        label = { Text("Art direction") },
+                        label = { Text(stringResource(R.string.mobile_art_direction_52d878a2)) },
                         minLines = 2,
                         maxLines = 5,
                         modifier = Modifier.fillMaxWidth(),
@@ -492,7 +498,7 @@ internal fun AgentProfileSheet(bot: Bot, onDismiss: () -> Unit, onOpenOverview: 
                     OutlinedTextField(
                         value = form.name,
                         onValueChange = { form = form.copy(name = it) },
-                        label = { Text("Name") },
+                        label = { Text(stringResource(R.string.mobile_name_709a2322)) },
                         singleLine = true,
                         keyboardOptions = KeyboardOptions(
                             capitalization = KeyboardCapitalization.Words,
@@ -502,20 +508,20 @@ internal fun AgentProfileSheet(bot: Bot, onDismiss: () -> Unit, onOpenOverview: 
                     OutlinedTextField(
                         value = form.title,
                         onValueChange = { form = form.copy(title = it) },
-                        label = { Text("Title") },
+                        label = { Text(stringResource(R.string.mobile_title_768e0c1c)) },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth(),
                     )
                     OutlinedTextField(
                         value = form.description,
                         onValueChange = { form = form.copy(description = it) },
-                        label = { Text("What this agent does") },
+                        label = { Text(stringResource(R.string.mobile_what_this_agent_does_82aa1b56)) },
                         minLines = 3,
                         maxLines = 8,
                         modifier = Modifier.fillMaxWidth(),
                     )
                     SwitchRow(
-                        label = "Agent notifications",
+                        label = stringResource(R.string.mobile_agent_notifications_a3bd8bd0),
                         checked = form.notifications,
                         onCheckedChange = { form = form.copy(notifications = it) },
                     )
@@ -554,13 +560,13 @@ internal fun AgentProfileSheet(bot: Bot, onDismiss: () -> Unit, onOpenOverview: 
                     },
                 ) {
                     ChoicePicker(
-                        label = "Voice",
+                        label = stringResource(R.string.mobile_voice_3091c844),
                         choices = ProfileRules.voiceChoices(config, voices, form.voice),
                         selected = form.voice,
                         onSelect = { form = form.copy(voice = it) },
                     )
                     SwitchRow(
-                        label = "Speak replies",
+                        label = stringResource(R.string.mobile_speak_replies_90b05ae0),
                         checked = form.speakReplies,
                         enabled = ProfileRules.selectedVoiceCanSpeak(config, form.voice),
                         onCheckedChange = { form = form.copy(speakReplies = it) },
@@ -568,8 +574,11 @@ internal fun AgentProfileSheet(bot: Bot, onDismiss: () -> Unit, onOpenOverview: 
                     ActionRow(
                         text = "Preview voice",
                         painter = R.drawable.ic_volume_up,
-                        enabled = ProfileRules.canPreview(busy, config, form.voice),
+                        enabled = ProfileRules.canPreview(busy, config, form.voice) && !liveCall.holdsMedia,
                         onClick = {
+                            // Disabled is how it looks; this is what stops a tap that
+                            // reaches the click action anyway.
+                            if (environment.liveCalls.state.value.holdsMedia) return@ActionRow
                             scope.launch {
                                 if (!ProfileRules.selectedVoiceCanSpeak(config, form.voice)) {
                                     session.actionError = ProfileRules.PREVIEW_REFUSED
@@ -598,6 +607,9 @@ internal fun AgentProfileSheet(bot: Bot, onDismiss: () -> Unit, onOpenOverview: 
                             }
                         },
                     )
+                    if (liveCall.holdsMedia) {
+                        IconNote(text = LiveCallRules.PREVIEW_DURING_CALL, icon = Icons.Filled.Info)
+                    }
                     ProfileRules.pickAVoiceHint(config, form.voice)?.let { hint ->
                         IconNote(text = hint, icon = Icons.Filled.Info)
                     }
@@ -648,7 +660,7 @@ internal fun ChoicePicker(
     enabled: Boolean = true,
 ) {
     var expanded by remember { mutableStateOf(false) }
-    val selectedLabel = choices.firstOrNull { it.id == selected }?.label.orEmpty()
+    val selectedLabel = localizedMobileCopy(choices.firstOrNull { it.id == selected }?.label.orEmpty())
     ExposedDropdownMenuBox(
         expanded = expanded && enabled,
         onExpandedChange = { if (enabled) expanded = it },
@@ -659,7 +671,7 @@ internal fun ChoicePicker(
             onValueChange = {},
             readOnly = true,
             enabled = enabled,
-            label = { Text(label) },
+            label = { Text(localizedMobileCopy(label)) },
             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
             modifier = Modifier
                 .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable)
@@ -670,9 +682,9 @@ internal fun ChoicePicker(
                 DropdownMenuItem(
                     text = {
                         Column {
-                            Text(choice.label)
+                            Text(localizedMobileCopy(choice.label))
                             choice.detail?.let {
-                                Text(it, fontSize = 13.sp, color = secondaryTint)
+                                Text(localizedMobileCopy(it), fontSize = 13.sp, color = secondaryTint)
                             }
                         }
                     },
@@ -711,7 +723,7 @@ internal fun VoiceSection(
     val copy = ProfileRules.voiceCopy(config)
     FormSection(header = "Voice", footer = copy.footer) {
         ChoicePicker(
-            label = "Voice engine",
+            label = stringResource(R.string.mobile_voice_engine_3b4d8dea),
             choices = ProfileRules.providerChoices(),
             selected = (config?.voiceProvider ?: VoiceProvider.ELEVENLABS).wire,
             onSelect = { next -> onSwitchEngine(VoiceProvider.fromWire(next)) },
@@ -741,7 +753,7 @@ internal fun FormSection(
     ) {
         header?.let {
             Text(
-                text = it.uppercase(),
+                text = localizedMobileCopy(it).uppercase(),
                 fontSize = 12.sp,
                 fontWeight = FontWeight.SemiBold,
                 color = secondaryTint,
@@ -749,7 +761,7 @@ internal fun FormSection(
         }
         HorizontalDivider()
         content()
-        footer?.let { Text(text = it, fontSize = 13.sp, color = secondaryTint) }
+        footer?.let { Text(text = localizedMobileCopy(it), fontSize = 13.sp, color = secondaryTint) }
     }
 }
 
@@ -790,7 +802,7 @@ internal fun ActionRow(
                 modifier = Modifier.size(20.dp),
             )
         }
-        Text(text = text, fontSize = 15.sp, color = tint)
+        Text(text = localizedMobileCopy(text), fontSize = 15.sp, color = tint)
     }
 }
 
@@ -852,7 +864,7 @@ internal fun IconNote(
                 modifier = Modifier.size(18.dp),
             )
         }
-        Text(text = text, fontSize = 13.sp, color = resolved)
+        Text(text = localizedMobileCopy(text), fontSize = 13.sp, color = resolved)
     }
 }
 

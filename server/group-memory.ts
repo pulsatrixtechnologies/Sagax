@@ -26,10 +26,40 @@ import {
   applyMemoryUpdate,
   memoryDate,
   memoryLineCount,
+  memoryOverBudget,
   type MemoryUpdate,
   type MemoryUpdateOptions,
-  type MemoryUpdateResult,
 } from "./workspace.ts";
+
+/** How many of the newest entries ride back with a budget refusal: enough
+ * to see what could be merged, few enough that the refusal itself does not
+ * become the long thing in the turn. */
+export const MEMORY_REFUSAL_RECENT_ENTRIES = 8;
+
+/** The instruction every budget refusal carries. The tool relays it word
+ * for word, so the model hears the same thing however the refusal reached it. */
+export const MEMORY_CONSOLIDATE_HINT =
+  "Consolidate now: replace or remove older entries; do not retry the same append.";
+
+export type MemoryBudgetRefusal = {
+  ok: false;
+  code: "over-budget";
+  error: string;
+  /** what the file would have been after the write */
+  lines: number;
+  bytes: number;
+  budget: { lines: number; bytes: number };
+  /** the newest entries of the CURRENT file, oldest first */
+  recent: string[];
+};
+
+/** A group memory write. The bot memory moves older entries to its archive
+ * (server/workspace.ts updateMemory); a group's memory has no archive, so a
+ * write that would push it past what loads is refused instead. */
+export type GroupMemoryUpdateResult =
+  | { ok: true; text: string; truncated: boolean; bytes: number; entry?: string }
+  | { ok: false; error: string; code: "invalid" | "conflict" }
+  | MemoryBudgetRefusal;
 
 export const GROUP_MEMORY_DIR = join(DATA_DIR, "group-memory");
 const GROUP_ID = /^[\w-]{1,128}$/;
@@ -107,13 +137,30 @@ export function saveGroupMemory(groupId: string, text: string, expectedHash?: st
 
 /** A bot's group_memory_update: the bot memory's entry rules, on the
  * group's file. */
-export function updateGroupMemory(groupId: string, update: MemoryUpdate, opts: MemoryUpdateOptions = {}): MemoryUpdateResult {
+export function updateGroupMemory(groupId: string, update: MemoryUpdate, opts: MemoryUpdateOptions = {}): GroupMemoryUpdateResult {
   const current = readGroupMemory(groupId);
   const applied = applyMemoryUpdate(current, update, opts);
   if (!applied.ok) return applied;
+  const bytes = Buffer.byteLength(applied.next, "utf8");
+  const lines = memoryLineCount(applied.next);
+  // A write that would push the file past what a turn loads is refused
+  // rather than landing where no turn will see it. A change that makes an
+  // over-budget file smaller is the consolidation the refusal asks for.
+  const shrinks = bytes < Buffer.byteLength(current, "utf8") && lines <= memoryLineCount(current);
+  if (memoryOverBudget(applied.next) && !shrinks) {
+    return {
+      ok: false,
+      code: "over-budget",
+      error: `The group memory would be ${lines} lines and ${bytes} bytes; only the first ${MEMORY_MAX_LINES} lines / ${MEMORY_MAX_BYTES} bytes load in a turn. ${MEMORY_CONSOLIDATE_HINT}`,
+      lines,
+      bytes,
+      budget: { lines: MEMORY_MAX_LINES, bytes: MEMORY_MAX_BYTES },
+      recent: current.split("\n").filter((line) => line.trim()).slice(-MEMORY_REFUSAL_RECENT_ENTRIES),
+    };
+  }
   writeGroupMemory(groupId, applied.next);
   const doc = groupMemoryDoc(groupId);
-  return { ok: true, text: doc.text, truncated: doc.capacity.truncated, bytes: applied.bytes, entry: applied.entry };
+  return { ok: true, text: doc.text, truncated: doc.capacity.truncated, bytes, entry: applied.entry };
 }
 
 /** Removed with its group. */

@@ -1,6 +1,7 @@
 import { Check } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/cn";
+import { cloudEngineOf } from "@/lib/remote-desktop";
 import { useMenuMotion } from "./MenuMotion";
 import { boatComputerEnabled, browserAvailable, builtInBrowserEnabled, vpsComputerEnabled } from "@/lib/feature-flags";
 import { t } from "@/lib/i18n";
@@ -9,6 +10,7 @@ import { instanceSupportsLocalComputer, localComputerSelectable } from "@/lib/lo
 import { effectivePlace, PLACES, placeLabelKey, placeOffered, type Place } from "@/lib/place";
 import { usePerspicaxOrg } from "@/lib/perspicax-org";
 import { useStore, type Bot, type Task } from "@/state/store";
+import { canWorkOnCloud } from "../../shared/cloud-computer";
 import { useDesktopCapabilities } from "./DesktopCapabilities";
 import { PlaceIcon } from "./PlaceIcon";
 
@@ -29,6 +31,7 @@ export function usePlaceAvailability(bot: Bot): PlaceAvailability {
   const instance = state.instances.find((candidate) => candidate.instanceId === bot.modelSelection.instanceId);
   const computerMcp = instance?.capabilities?.computerMcp === true;
   const boxAgent = instance?.driverKind === "boxAgent";
+  const backend = bot.cloudBackend === "vps" ? "vps" : "box";
   // Places the enrolled organisation disallows, or this server never
   // offers (an OMB Cloud home), are not reachable.
   const allowed = state.config?.managedPolicy?.computers ?? { thisComputer: true, localVm: true, box: true, vps: true };
@@ -39,8 +42,10 @@ export function usePlaceAvailability(bot: Bot): PlaceAvailability {
   // experimental VPS and Boat flags have nothing to do with either.
   if (organization) return { cloud: true, vm: allowed.localVm, local, browser };
   return {
-    cloud: (bot.cloudBackend === "vps" ? computerMcp && !boxAgent : computerMcp || boxAgent) && (bot.cloudBackend === "vps" ? allowed.vps : allowed.box)
-      && (state.config?.cloudHome === true || (bot.cloudBackend === "vps" ? vpsComputerEnabled(state.config) : boatComputerEnabled(state.config))),
+    // the server's cloud rule (shared/cloud-computer.ts), behind Sagax's
+    // experimental VPS and Boat flags (always offered on a Cloud home)
+    cloud: canWorkOnCloud(cloudEngineOf(instance), backend) && allowed[backend]
+      && (state.config?.cloudHome === true || (backend === "vps" ? vpsComputerEnabled(state.config) : boatComputerEnabled(state.config))),
     vm: Boolean(instance?.snapshot?.state === "available" && computerMcp && !boxAgent) && allowed.localVm && placeOffered("vm", state.config),
     local: local && placeOffered("local", state.config),
     browser,
@@ -54,9 +59,10 @@ const ORG_DESCRIPTION: Record<Place, LocaleKey> = {
   cloud: "computer.dest.cloudOrgDesc", vm: "computer.dest.vmOrgDesc", local: "computer.dest.localOrgDesc", browser: "computer.dest.browserDesc",
 };
 
-/** Where this conversation works, always visible beside the send button.
- * Shows the effective place (the conversation's pin, else the bot's Works
- * on), pulses while a turn is acting there, and pins another place for this
+/** Where this conversation works, beside the send button in Advanced mode
+ * (Simple leaves every conversation on its bot's Works on). Shows the
+ * effective place (the conversation's pin, else the bot's Works on), pulses
+ * while a turn is acting there, and pins another place for this
  * conversation only. No confirmation card: choosing is the whole gesture. */
 export function PlaceChip({ bot, task, live, disabled = false, onPin, initialOpen = false }: {
   bot: Bot;
@@ -91,6 +97,10 @@ export function PlaceChip({ bot, task, live, disabled = false, onPin, initialOpe
 
   const choose = (surface: Place | null) => { setOpen(false); if (surface !== (task?.surface ?? null)) onPin(surface); };
   const botDefault = bot.computer ?? "auto";
+  // A bot on Auto offers Auto itself as the unpinned default, rather than
+  // "follow this bot's setting" spelled out to end in the same word. On an
+  // organization server the row keeps saying what Auto means (Cloud).
+  const followsAuto = botDefault === "auto" && !organization;
 
   return (
     <div className="relative flex items-center" ref={wrapperRef}>
@@ -126,8 +136,10 @@ export function PlaceChip({ bot, task, live, disabled = false, onPin, initialOpe
             >
               <PlaceIcon place={botDefault} size={16} className="mt-px shrink-0 text-ink" aria-hidden="true" />
               <span className="min-w-0 flex-1">
-                <span className="block text-[13px] leading-[18px] text-ink">{t("place.followBot")}</span>
-                <span className="block text-[12px] leading-4 text-ink-tertiary">{t("place.followBotDetail", { place: t(placeLabelKey(botDefault, organization)) })}</span>
+                <span className="block text-[13px] leading-[18px] text-ink">{followsAuto ? t("place.auto") : t("place.followBot")}</span>
+                <span className="block text-[12px] leading-4 text-ink-tertiary">
+                  {followsAuto ? t("place.autoDetail") : t("place.followBotDetail", { place: t(placeLabelKey(botDefault, organization)) })}
+                </span>
               </span>
               {!pinned && <Check size={14} className="mt-0.5 shrink-0 text-ink" aria-hidden="true" />}
             </button>

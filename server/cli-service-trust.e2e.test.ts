@@ -14,10 +14,11 @@ import { promisify } from "node:util";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { removeTempDir, waitForExit } from "./testing/cleanup.ts";
+import { freePortBlock } from "./testing/ports.ts";
 
 const SERVER_DIR = dirname(fileURLToPath(import.meta.url));
 const ENTRY = join(SERVER_DIR, "openmausbot.ts");
-const PORT = 38800 + Math.floor(Math.random() * 5_000);
+const PORT = await freePortBlock([0, 1]);
 const run = promisify(execFile);
 
 let home: string;

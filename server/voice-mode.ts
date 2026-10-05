@@ -66,6 +66,8 @@ import type { Audio, Voice } from "./tts/elevenlabs.ts";
 const ROUTE = /^\/api\/bots\/([\w-]+)\/voice\/(status|voices|prepare|speak|transcribe|stream|listen|call)$/;
 type Action = "status" | "voices" | "prepare" | "speak" | "transcribe" | "stream" | "listen" | "call";
 const CALL_ID = /^[A-Za-z0-9_-]{8,80}$/;
+/** A turn's end warms the connection to xAI's speech at most this often. */
+export const LISTEN_WARM_EVERY_MS = 2_000;
 /** The most audio one live call may stream (16 kHz 16-bit mono: 2 hours). */
 export const VOICE_LISTEN_MAX_BYTES = 16_000 * 2 * 60 * 60 * 2;
 const LISTEN_READY_MS = 8_000;
@@ -139,7 +141,7 @@ export interface VoiceModeDeps {
   /** The thread is on a live call (server/voice-call-session.ts): every
    * send to it while the call lasts is a call turn. */
   callSession?: {
-    start(target: VoiceTarget, callId: string, language?: string): void;
+    start(target: VoiceTarget, callId: string, language?: string, auth?: RequestAuth): void;
     end(target: VoiceTarget, callId: string): void;
   };
   now?: () => number;
@@ -251,6 +253,7 @@ export function createVoiceModeRoutes(deps: VoiceModeDeps): RouteHandler {
     };
     const send = (frame: ListenFrame) => session?.sendText(JSON.stringify(frame));
     deps.xai.warm?.(key);
+    let warmedAt = now();
     // the page's own detector ends turns (and sends finalize); xAI's
     // endpointing is only a backstop for a very long pause
     const upstream = deps.xai.openTranscription(key, { language: sttLanguage(language), endpointingMs: 1500 }, {
@@ -288,6 +291,14 @@ export function createVoiceModeRoutes(deps: VoiceModeDeps): RouteHandler {
         if (message?.type === "finalize") {
           upstream.finalize();
           book();
+          // the answer's first sentence goes to xAI's speech a second or
+          // two from now: have a connection open by then (a pooled one
+          // idles out in a few seconds, and the person spoke longer)
+          const at = now();
+          if (at - warmedAt >= LISTEN_WARM_EVERY_MS) {
+            warmedAt = at;
+            deps.xai.warm?.(key);
+          }
         }
       },
       onClose: () => { book(); upstream.close(); },
@@ -340,7 +351,7 @@ export function createVoiceModeRoutes(deps: VoiceModeDeps): RouteHandler {
       if (language !== undefined && !isVoiceModeLanguage(language)) return json(res, 400, { error: "unknown language" });
       if (!deps.callSession) return json(res, 404, { error: "call sessions are not available" });
       if (state === "end") deps.callSession.end(target, callId);
-      else deps.callSession.start(target, callId, language as string | undefined);
+      else deps.callSession.start(target, callId, language as string | undefined, auth);
       return json(res, 200, { ok: true });
     }
 

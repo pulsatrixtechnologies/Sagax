@@ -1,6 +1,6 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { StoreProvider, type Bot } from "@/state/store";
 
@@ -14,6 +14,7 @@ vi.mock("@/lib/thread-preferences", () => ({
 
 import { ConfirmDialogCard } from "./ConfirmDialog";
 import { BotDeleteMenuItem, BotListItem, botConfirmCopy, currentArchivableBot } from "./Sidebar";
+import { endCall } from "@/lib/call";
 
 const bot = (overrides: Partial<Bot> = {}): Bot => ({
   id: "atlas",
@@ -29,18 +30,23 @@ const bot = (overrides: Partial<Bot> = {}): Bot => ({
   ...overrides,
 });
 
-function renderRow(candidate: Bot, quiet = false) {
+function renderRow(candidate: Bot, quiet = false, density: "comfortable" | "icons" = "comfortable") {
   return renderToStaticMarkup(createElement(
     StoreProvider,
     null,
     createElement(BotListItem, {
       bot: candidate,
-      density: "comfortable",
+      density,
       quiet,
       onMenu: vi.fn(),
     }),
   ));
 }
+
+afterEach(() => {
+  endCall();
+  vi.unstubAllGlobals();
+});
 
 describe("BotListItem", () => {
   it("offers direct New thread and New folder icons and a keyboard-accessible bot menu", () => {

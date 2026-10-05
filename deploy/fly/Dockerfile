@@ -8,7 +8,7 @@
 # HOME is the /data volume, so Claude Code and Codex sign-ins (~/.claude,
 # ~/.codex) and OpenMausBot's own state (~/.openmausbot) persist.
 ARG BASE_IMAGE=ghcr.io/milind-soni/openmausbot:latest
-FROM caddy:2.10.2 AS edge
+FROM caddy:2.11.6 AS edge
 
 FROM ${BASE_IMAGE}
 USER root

@@ -8,6 +8,7 @@ import {
   createStreamDeltaBuffer,
   currentTaskBot,
   initialState,
+  liveCallFromFrame,
   loadSnapshotBoundary,
   messageVersions,
   openNotificationTarget,
@@ -348,6 +349,20 @@ describe("independent bot threads", () => {
     expect(ungrouped.bots[0]?.tasks?.[1]).toEqual({ ...bot.tasks?.[1], projectId: undefined });
     expect(ungrouped.bots[0]?.tasks?.[0]).toEqual(bot.tasks?.[0]);
   });
+
+  it("drops the machine's mark the moment the person pins or unpins a thread's place", () => {
+    const autoPinned = { ...start(), bots: [{ ...bot, tasks: bot.tasks?.map((task) =>
+      task.threadId === "first" ? { ...task, surface: "browser" as const, surfaceAuto: true as const } : task) }] };
+    const pinned = reducer(autoPinned, { type: "updateTask", botId: bot.id, threadId: "first", patch: { surface: "cloud" } });
+    expect(pinned.bots[0]?.tasks?.[0]?.surface).toBe("cloud");
+    expect(pinned.bots[0]?.tasks?.[0]?.surfaceAuto).toBeUndefined();
+    const unpinned = reducer(autoPinned, { type: "updateTask", botId: bot.id, threadId: "first", patch: { surface: null } });
+    expect(unpinned.bots[0]?.tasks?.[0]?.surface).toBeUndefined();
+    expect(unpinned.bots[0]?.tasks?.[0]?.surfaceAuto).toBeUndefined();
+    // Any other thread edit leaves the machine's record as it is.
+    const listPinned = reducer(autoPinned, { type: "updateTask", botId: bot.id, threadId: "first", patch: { pinned: true } });
+    expect(listPinned.bots[0]?.tasks?.[0]).toMatchObject({ surface: "browser", surfaceAuto: true });
+  });
 });
 
 describe("keyboard shortcuts dialog state", () => {
@@ -377,6 +392,19 @@ describe("Settings opened by the Cloud link", () => {
     expect(reducer(opened, { type: "toggleAppSettings", open: false })).toMatchObject({ appSettingsOpen: false, appSettingsCloudLink: 0 });
     expect(reducer(opened, { type: "toggleAppSettings" }).appSettingsCloudLink).toBe(0);
     expect(reducer(initialState, { ...link, open: false }).appSettingsCloudLink).toBe(0);
+  });
+});
+
+describe("Settings opened on the phone pairing", () => {
+  it("counts each request, and clears on any other Settings navigation", () => {
+    expect(initialState.appSettingsPhonePairing).toBe(0);
+    const phone = { type: "toggleAppSettings", open: true, section: "companion", phonePairing: true } as const;
+    const opened = reducer(initialState, phone);
+    expect(opened).toMatchObject({ appSettingsOpen: true, appSettingsSection: "companion", appSettingsPhonePairing: 1 });
+    expect(reducer(opened, phone).appSettingsPhonePairing).toBe(2);
+    expect(reducer(opened, { type: "toggleAppSettings", open: true, section: "companion" }).appSettingsPhonePairing).toBe(0);
+    expect(reducer(opened, { type: "toggleAppSettings", open: false }).appSettingsPhonePairing).toBe(0);
+    expect(reducer(initialState, { ...phone, open: false }).appSettingsPhonePairing).toBe(0);
   });
 });
 
@@ -1442,6 +1470,20 @@ describe("computer destination announcements", () => {
   });
 });
 
+describe("tool selection announcements", () => {
+  it.each(["botPatched", "taskSwitched", "botPatchedSwitch"] as const)("clears the saved restriction when the server returns to all tools via %s", kind => {
+    const bot: Bot = { id: "scoped", threadId: "old", name: "Scope fixture", title: "", description: "",
+      notifications: false, color: "green", unread: false, modelSelection: { instanceId: "pi", model: "local" },
+      toolScope: { allow: [] }, messages: [] };
+    const { toolScope: _scope, ...announcement } = bot;
+    const next = reducer({ ...initialState, bots: [bot] }, {
+      type: kind === "taskSwitched" ? "taskSwitched" : "botPatched",
+      bot: { ...announcement, threadId: kind === "botPatchedSwitch" ? "new" : bot.threadId },
+    });
+    expect(next.bots[0]?.toolScope).toBeUndefined();
+  });
+});
+
 describe("teammate wait announcements", () => {
   const waiting: Bot = {
     id: "wait-bot", threadId: "wait-thread", name: "Scooter", title: "", description: "",
@@ -2204,6 +2246,43 @@ describe("bot settings section", () => {
   });
 });
 
+describe("activity panel", () => {
+  // The activity panel is a sibling of the inspector and the computer panel:
+  // one side panel at a time, and any view change closes it.
+  it("starts closed", () => {
+    expect(initialState.activityOpen).toBe(false);
+  });
+
+  it("toggleActivity opens it and closes the other side panels", () => {
+    const withPanels = { ...initialState, computerOpen: true, inspectorOpen: true, appSettingsOpen: true };
+    const next = reducer(withPanels, { type: "toggleActivity" });
+    expect(next.activityOpen).toBe(true);
+    expect(next.computerOpen).toBe(false);
+    expect(next.inspectorOpen).toBe(false);
+    expect(next.appSettingsOpen).toBe(false);
+    expect(reducer(next, { type: "toggleActivity" }).activityOpen).toBe(false);
+  });
+
+  it("opening the inspector or the computer closes the activity panel", () => {
+    const open = { ...initialState, activityOpen: true };
+    expect(reducer(open, { type: "toggleInspector", open: true }).activityOpen).toBe(false);
+    expect(reducer(open, { type: "toggleComputer", open: true }).activityOpen).toBe(false);
+  });
+
+  it("opening bot settings closes activity (and, in Sagax, the computer panel that shares its slot)", () => {
+    const open = { ...initialState, activityOpen: true, computerOpen: true };
+    const next = reducer(open, { type: "toggleSettings", open: true });
+    expect(next.activityOpen).toBe(false);
+    expect(next.computerOpen).toBe(false);
+  });
+
+  it("switching to routines or the team map closes the activity panel", () => {
+    const open = { ...initialState, activityOpen: true };
+    expect(reducer(open, { type: "showRoutines" }).activityOpen).toBe(false);
+    expect(reducer(open, { type: "showTeamMap" }).activityOpen).toBe(false);
+  });
+});
+
 describe("live config frames", () => {
   const baseFrame: ConfigStatusFrame = {
     composio: { configured: false },
@@ -2278,6 +2357,14 @@ describe("live config frames", () => {
       budgets: { monthlyUsd: 10, warnAtPercent: 80 },
       billing: { currency: "USD" },
     });
+  });
+
+  it("keeps live settings when a config frame arrives", () => {
+    const live = { enabled: false, configured: true, voice: "sol", readTypedReplies: false, idleMinutes: 7 };
+    const config = configStatusFromFrame({ ...baseFrame, live });
+    expect(config.live).toEqual(live);
+    const state = reducer(initialState, { type: "configStatus", config });
+    expect(state.config?.live).toEqual(live);
   });
 });
 
@@ -2359,5 +2446,50 @@ describe("conversation model variant discoveries", () => {
     state = reducer(state, { type: "hydrate", bots: [owner], groups: [], computerControl: {} });
     expect(state.modelVariantSessions).toEqual({});
     expect(state.bots[0].tasks![0].modelSelection?.variant).toBe("minimal");
+  });
+});
+
+describe("live call state", () => {
+  const call = { callId: "c1", botId: "b1", threadId: "t1", client: "ios", voice: "marin", startedAt: 1, status: "live" } as const;
+  it("starts empty and follows live.call frames", () => {
+    expect(initialState.liveCall).toBeNull();
+    const live = reducer(initialState, { type: "liveCall", call });
+    expect(live.liveCall).toEqual(call);
+    const ended = reducer(live, { type: "liveCall", call: { ...call, status: "ended", endReason: "idle" } });
+    expect(ended.liveCall?.status).toBe("ended");
+    expect(reducer(ended, { type: "liveCall", call: null }).liveCall).toBeNull();
+  });
+
+  // GET /api/live/call races the event stream: an answer that left before a
+  // newer live.call frame landed must not put back an older line (a phantom
+  // bar for a call that has ended, or no bar for one that just began).
+  it("takes a lookup of the line only if no newer frame landed while it was out", () => {
+    const since = initialState.liveCallVersion;
+    const framed = reducer(initialState, { type: "liveCall", call });
+    expect(reducer(framed, { type: "liveCallLookup", call: null, since, seq: 1 })).toBe(framed);
+    const fresh = reducer(framed, { type: "liveCallLookup", call: { ...call, status: "ended", endReason: "idle" }, since: framed.liveCallVersion, seq: 2 });
+    expect(fresh.liveCall?.status).toBe("ended");
+    // a lookup is not newer news than the next lookup
+    expect(fresh.liveCallVersion).toBe(framed.liveCallVersion);
+  });
+
+  // Two snapshots can overlap (a reconnect while the first one is out):
+  // both lookups leave at the same version, and the answers can come back
+  // in either order.
+  it("never lets an earlier lookup's answer replace a later one's", () => {
+    const since = initialState.liveCallVersion;
+    const later = reducer(initialState, { type: "liveCallLookup", call, since, seq: 2 });
+    expect(later.liveCall).toEqual(call);
+    expect(reducer(later, { type: "liveCallLookup", call: null, since, seq: 1 })).toBe(later);
+    const inOrder = reducer(reducer(initialState, { type: "liveCallLookup", call: null, since, seq: 1 }), { type: "liveCallLookup", call, since, seq: 2 });
+    expect(inOrder.liveCall).toEqual(call);
+  });
+
+  it("reads a live.call frame's call, and ignores a frame without one", () => {
+    expect(liveCallFromFrame({ kind: "live.call", botId: "b1", threadId: "t1", call })).toEqual({ call });
+    expect(liveCallFromFrame({ kind: "live.call", botId: "b1", threadId: "t1", call: null })).toEqual({ call: null });
+    expect(liveCallFromFrame({ kind: "live.call", botId: "b1", threadId: "t1" })).toBeNull();
+    expect(liveCallFromFrame({ kind: "live.call", call: "c1" })).toBeNull();
+    expect(liveCallFromFrame({ kind: "live.call", call: { status: "live" } })).toBeNull();
   });
 });

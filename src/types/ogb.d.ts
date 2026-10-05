@@ -144,6 +144,8 @@ const __SAGAX_DEFAULT_SERVER__: string;
       /** The Cloud's setup checklist: shows the lending switch in this app's
        * own Settings → OMB Cloud (leaving the Cloud's page). */
       cloudLending?: { open(): Promise<void> };
+      /** Settings on the person's own Cloud: the plan, read only. */
+      cloudPlan?: import("../../electron/cloud-account.mjs").CloudPlanBridge;
       companyBackups?: {
         state(): Promise<CompanyBackupState>;
         list(): Promise<{ backups: CompanyBackupEntry[]; usedBytes: number; limits: { ownerQuotaBytes: number; retainedSnapshots: number } }>;
@@ -235,6 +237,7 @@ const __SAGAX_DEFAULT_SERVER__: string;
           botId: string,
           mode: import("../../shared/approval-mode").ApprovalMode,
           options?: { acknowledgeLocalAuto?: boolean; threadId?: string; threadOnly?: boolean; allThreads?: boolean;
+            refreshPermissions?: boolean;
             modelSelection?: import("../state/store").ModelSelection; updateBotDefault?: boolean },
         ): Promise<import("../state/store").Bot>;
       };
@@ -273,7 +276,7 @@ const __SAGAX_DEFAULT_SERVER__: string;
       permRequestMic(): Promise<boolean>;
       /** Opens System Settings on a privacy pane: mic|screen|speech|accessibility. */
       permOpenSettings(pane: "mic" | "screen" | "speech" | "accessibility"): Promise<void>;
-      /** Relaunch the local macOS app after a permission grant. */
+      /** Relaunch the local desktop app through its normal shutdown cleanup. */
       relaunch?(): Promise<boolean>;
       /** Copies an engine install command and opens a blank terminal. False
        * when no terminal could be launched; the clipboard still has it. */
@@ -353,7 +356,7 @@ const __SAGAX_DEFAULT_SERVER__: string;
       saveFile?(filePath: string): Promise<string | null>;
       /** Save a provider credential through Electron's OS-backed store. */
       setCredential?(
-        name: "composioApiKey" | "xaiApiKey" | "boxToken" | "opencodeGoApiKey" | "ttsKey" | "fishAudioKey" | "jevApiKey" | "openaiImageApiKey" | "customImageApiKey",
+        name: "composioApiKey" | "xaiApiKey" | "boxToken" | "opencodeGoApiKey" | "ttsKey" | "fishAudioKey" | "jevApiKey" | "openaiImageApiKey" | "customImageApiKey" | "openaiLiveKey",
         value: string,
       ): Promise<ConfigStatus>;
       /** In-app auto-update (packaged app only; dormant in dev). onState

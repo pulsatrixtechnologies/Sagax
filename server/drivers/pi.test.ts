@@ -79,6 +79,20 @@ describe("parsePiCatalog", () => {
 });
 
 describe("buildMcpServers", () => {
+  it("mounts a selected custom mail server without unrelated built-ins", () => {
+    const servers = buildMcpServers({ threadId: "selected", text: "Read mail", toolScope: { allow: ["mcp:mail:*"] }, integrations: {
+      agents: { command: "node", args: ["agents"], env: {} },
+      localComputer: { command: "node", args: ["computer"], env: {} },
+      custom: { mail: { command: "node", args: ["mail"], env: { SYNTHETIC: "1" } } },
+    } });
+    expect(Object.keys(servers ?? {})).toEqual(["mail"]);
+    expect(servers?.mail).toMatchObject({ scope: "custom" });
+  });
+
+  it("rejects malformed policy and mounts nothing for native-only selection", () => {
+    expect(() => buildMcpServers({ threadId: "bad", text: "Stop", toolScope: { allow: null } as never })).toThrow(/tool selection/i);
+    expect(buildMcpServers({ threadId: "native", text: "Draft", toolScope: { allow: ["native:read", "native:write"] }, integrations: { agents: { command: "node", args: [], env: {} } } })).toBeNull();
+  });
   it("returns null when there are no integrations", () => {
     expect(buildMcpServers({ threadId: "t", text: "hi" })).toBeNull();
   });
@@ -239,6 +253,17 @@ describe("PiDriver turns (fake CLI)", () => {
   beforeEach(() => {
     ensureDirs();
     chmodSync(FAKE_CLI, 0o755);
+  });
+
+  it("refuses a restricted turn when the loaded extension has not confirmed enforcement", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "omb-pi-missing-scope-"));
+    const dump = join(dir, "rpc.jsonl");
+    await create(undefined, { FAKE_PI_DUMP: dump });
+    await expect(instance.adapter.sendTurn({ threadId: "missing-enforcement", text: "Must not reach a provider", toolScope: { allow: [] } })).rejects.toThrow(/tool selection.*enforcement/i);
+    const rows = readFileSync(dump, "utf8").trim().split("\n").map((line) => JSON.parse(line));
+    expect(rows.some((row) => row.argv?.includes("-e"))).toBe(true);
+    expect(rows.find((row) => row.argv?.includes("-e"))?.mcpConfig?.toolScope).toEqual({ allow: [] });
+    expect(rows.some((row) => row.prompt !== undefined)).toBe(false);
   });
   afterEach(async () => {
     recorder?.stop();
@@ -671,7 +696,7 @@ describe("PiDriver turns (fake CLI)", () => {
       text: "hi",
       integrations: {
         composio: { command: "node", args: ["connector-proxy.js"], env: { COMPOSIO_KEY: "ck" } },
-        computer: { kind: "box", boxId: "b1", token: "bt", control: { url: "http://c", token: "ct" } },
+        computer: { kind: "box", boxId: "b1" },
       },
     });
     await recorder.until((e) => e.type === "turn.completed" && e.turnId === turnId);
@@ -687,10 +712,34 @@ describe("PiDriver turns (fake CLI)", () => {
     const extIndex = mcpRow!.argv.indexOf("-e");
     expect(extIndex).toBeGreaterThanOrEqual(0);
     expect(mcpRow!.argv[extIndex + 1]).toContain("pi-mcp-extension");
+    expect(mcpRow!.argv).not.toContain("--no-builtin-tools");
 
     const servers = mcpRow!.mcpConfig!.mcpServers!;
     // composio passes through verbatim as a stdio server
     expect(servers.composio).toMatchObject({ command: "node", args: ["connector-proxy.js"], env: { COMPOSIO_KEY: "ck" } });
+  });
+
+  it("withholds pi builtins on an organization turn and still loads the Sagax MCP extension", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "omb-pi-withhold-"));
+    const dump = join(dir, "dump.jsonl");
+    await create(undefined, { FAKE_PI_DUMP: dump });
+    expect(instance.adapter.capabilities.withholdsHostTools).toBe(true);
+    const { turnId } = await instance.adapter.sendTurn({
+      threadId: "t-withhold",
+      text: "hi",
+      withholdHostTools: true,
+      integrations: { composio: { command: "node", args: ["connector-proxy.js"], env: {} } },
+    });
+    await recorder.until((e) => e.type === "turn.completed" && e.turnId === turnId);
+    const rows = readFileSync(dump, "utf8").trim().split("\n").map((line) => JSON.parse(line) as { argv: string[] });
+    const argv = rows.find((row) => row.argv.includes("-e"))!.argv;
+    expect(argv).toContain("--no-builtin-tools");
+    expect(argv).toContain("--no-extensions");
+    const excluded = argv[argv.indexOf("--exclude-tools") + 1];
+    for (const name of ["read", "bash", "powershell", "edit", "write", "grep", "find", "ls"]) expect(excluded.split(",")).toContain(name);
+    const ext = argv.indexOf("-e");
+    expect(ext).toBeGreaterThan(argv.indexOf("--no-extensions"));
+    expect(argv[ext + 1]).toContain("pi-mcp-extension");
   });
 
   it("rides the toolUse auto-continue and only settles on the final end_turn", async () => {

@@ -77,38 +77,38 @@ describe("cloudflared download retries", () => {
 const PINNED_ASSETS = {
   "darwin-arm64": {
     name: "cloudflared-darwin-arm64.tgz",
-    sha256: "9042c2c5d8b2de78e60f313d5fb31b6c5c1cebde787a3caf1f2c9588084ac442",
-    binarySha256: "b61054d3d6326ea558cb49826eebf5676e0d0a36d51b546975096ca3e0e3c89d",
+    sha256: "587c2cfb1c230fe36c7fa7727da78be459dae028cabe8c001291999350f07095",
+    binarySha256: "5472c1a01c84bc31b3021056a73b4e5774ddddefc572124ea8fdf6c340639f32",
     archive: true,
   },
   "darwin-x64": {
     name: "cloudflared-darwin-amd64.tgz",
-    sha256: "f1727723c586500e2092368ae21871b3df7ddfd2cb097f22d81bee4a9c458bb4",
-    binarySha256: "b0f770e1e0b281399a57219b840fd8eef1cc25387a404124248157ea2073727a",
+    sha256: "d1155d0837487f261183b15c1eab6c4ebcad9dc49b94675f1524c3564cea3977",
+    binarySha256: "ab588b3b4db9cdb4476c30a3db2a72635b1d8327d44741fee6799a0f37b0ec07",
     archive: true,
   },
   "linux-x64": {
     name: "cloudflared-linux-amd64",
-    sha256: "fcfb02b575a52ca1af2e3267af4e1517bcdeb30ac48c834c69abaed3c0576ad2",
-    binarySha256: "fcfb02b575a52ca1af2e3267af4e1517bcdeb30ac48c834c69abaed3c0576ad2",
+    sha256: "77e26d8d900e0b8469f416239d14b5f296525fdf79fee6f511ef55609e3fbac2",
+    binarySha256: "77e26d8d900e0b8469f416239d14b5f296525fdf79fee6f511ef55609e3fbac2",
     archive: false,
   },
   "linux-arm64": {
     name: "cloudflared-linux-arm64",
-    sha256: "7747d94570fb390cf47dcb4f9555c193c6355cda9793f0d878d9049e5d6a7790",
-    binarySha256: "7747d94570fb390cf47dcb4f9555c193c6355cda9793f0d878d9049e5d6a7790",
+    sha256: "aaeb2d7d0da3614634c7e03ab13487a1522c2e79165ed2929cfe23d5e95b326d",
+    binarySha256: "aaeb2d7d0da3614634c7e03ab13487a1522c2e79165ed2929cfe23d5e95b326d",
     archive: false,
   },
   "win32-x64": {
     name: "cloudflared-windows-amd64.exe",
-    sha256: "c29eee2b121f5436a642eed69fd9767da7e7b8c510fa50aaa130337f931357b5",
-    binarySha256: "c29eee2b121f5436a642eed69fd9767da7e7b8c510fa50aaa130337f931357b5",
+    sha256: "f096265ec2fcbe9bb6e2d64268db167ced3fcbb83d894bdb9e2fcdb26f2ea7e2",
+    binarySha256: "f096265ec2fcbe9bb6e2d64268db167ced3fcbb83d894bdb9e2fcdb26f2ea7e2",
     archive: false,
   },
   "win32-arm64": {
     name: "cloudflared-windows-amd64.exe",
-    sha256: "c29eee2b121f5436a642eed69fd9767da7e7b8c510fa50aaa130337f931357b5",
-    binarySha256: "c29eee2b121f5436a642eed69fd9767da7e7b8c510fa50aaa130337f931357b5",
+    sha256: "f096265ec2fcbe9bb6e2d64268db167ced3fcbb83d894bdb9e2fcdb26f2ea7e2",
+    binarySha256: "f096265ec2fcbe9bb6e2d64268db167ced3fcbb83d894bdb9e2fcdb26f2ea7e2",
     archive: false,
     executableTarget: "win32-x64",
   },
@@ -181,7 +181,7 @@ describe("pinned cloudflared packaging", () => {
   });
 
   it("pins a complete release asset and digest for every supported target", () => {
-    expect(CLOUDFLARED_VERSION).toBe("2026.8.2");
+    expect(CLOUDFLARED_VERSION).toBe("2026.9.3");
     expect(CLOUDFLARED_ASSETS).toEqual(PINNED_ASSETS);
   });
 

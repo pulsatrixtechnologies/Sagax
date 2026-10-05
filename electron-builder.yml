@@ -67,7 +67,7 @@ extraResources:
   - from: LICENSE-POLYFORM-NC.md
     to: licenses/Sagax-PolyForm-Noncommercial-1.0.0.md
   - from: LICENSE-APACHE
-    to: licenses/OpenMausBot-Apache-2.0-LICENSE.txt
+    to: licenses/Sagax-Apache-2.0-LICENSE.txt
   - from: NOTICE
     to: licenses/Sagax-NOTICE.txt
   # cloudflared is distributed under Apache-2.0 as a separate executable;

@@ -1,4 +1,4 @@
-import { cloudRunner } from "@/lib/remote-desktop";
+import { boatCapableEngine } from "@/lib/remote-desktop";
 import { boatComputerEnabled } from "@/lib/feature-flags";
 import {
   useCallback,
@@ -53,6 +53,7 @@ import { CronScheduleFields, CronSchedulePreview } from "@/components/routines/C
 import { cronChoiceFor, cronDraftFor, cronEditorValue, isCronChoice, type CronChoice } from "@/components/routines/cron-editor";
 import { routineRunLabel } from "@/lib/routine-display";
 import { t } from "@/lib/i18n";
+import { useModalDialog } from "@/hooks/use-modal-dialog";
 import { useDesktopCapabilities } from "@/components/DesktopCapabilities";
 import { WebhooksPanel } from "@/components/WebhooksPanel";
 import type { CalendarCall, CalendarCallAttachment, CalendarCallInput } from "@/lib/calendar-calls";
@@ -404,7 +405,7 @@ function EventEditor({
   const [attachmentPendingCount, setAttachmentPendingCount] = useState(0);
   const attachmentPending = attachmentPendingCount > 0;
   const fileInput = useRef<HTMLInputElement>(null);
-  const cloudReady = Boolean(state.config?.box.configured && botIds.length > 0 && botIds.every(id => cloudRunner(state.instances, bots.find(bot => bot.id === id)?.modelSelection.instanceId)?.snapshot.state === "available"));
+  const cloudReady = Boolean(state.config?.box.configured && botIds.length > 0 && botIds.every(id => boatCapableEngine(state.instances, bots.find(bot => bot.id === id)?.modelSelection.instanceId)?.snapshot.state === "available"));
   const rooms = state.groups.filter(roomCanRunGoal);
   const selectedRoom = rooms.find((group) => group.id === groupId);
   const roomMembers = activeRoomMembers(selectedRoom, state.bots);
@@ -413,8 +414,6 @@ function EventEditor({
   const endAt = at + durationMinutes * 60_000;
   const selectedBots = botIds.flatMap((id) => bots.find((bot) => bot.id === id) ?? []);
   const dialogRef = useRef<HTMLDivElement>(null);
-  const onCloseRef = useRef(onClose);
-  onCloseRef.current = onClose;
   const intervalInvalid = recurrence === "interval"
     && (!Number.isInteger(intervalMinutes) || intervalMinutes < 5 || intervalMinutes > 1_440);
   const intervalDaysInvalid = recurrence === "interval" && intervalDays === "custom" && intervalWeekdays.length === 0;
@@ -595,39 +594,7 @@ function EventEditor({
   );
   const canSwitchKind = !routinesOnly && !existingRoutine && !existingCall && !lockedBotId;
 
-  useEffect(() => {
-    const dialog = dialogRef.current;
-    if (!dialog) return;
-    const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    const focusable = () => Array.from(dialog.querySelectorAll<HTMLElement>(
-      'button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])',
-    )).filter((element) => !element.hasAttribute("hidden"));
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        event.stopPropagation();
-        onCloseRef.current();
-        return;
-      }
-      if (event.key !== "Tab") return;
-      const controls = focusable();
-      if (!controls.length) return event.preventDefault();
-      const first = controls[0]!;
-      const last = controls[controls.length - 1]!;
-      if (event.shiftKey && (document.activeElement === first || !dialog.contains(document.activeElement))) {
-        event.preventDefault();
-        last.focus();
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault();
-        first.focus();
-      }
-    };
-    dialog.addEventListener("keydown", onKey);
-    return () => {
-      dialog.removeEventListener("keydown", onKey);
-      previousFocus?.focus();
-    };
-  }, []);
+  useModalDialog(dialogRef, onClose);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-3" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
@@ -1377,6 +1344,8 @@ export function EventDetails({
   onOpenRoom: (id: string) => void;
 }) {
   const { state, dispatch } = useStore();
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useModalDialog(dialogRef, onClose);
   const [working, setWorking] = useState(false);
   const runNowPending = useRef(false);
   const [starting, setStarting] = useState(false);
@@ -1485,7 +1454,7 @@ export function EventDetails({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-3" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
-      <div role="dialog" aria-modal="true" aria-label="Calendar event details" className="w-full max-w-[520px] overflow-hidden rounded-[14px] border border-border bg-elevated">
+      <div ref={dialogRef} role="dialog" aria-modal="true" aria-label="Calendar event details" tabIndex={-1} className="w-full max-w-[520px] overflow-hidden rounded-[14px] border border-border bg-elevated">
         <div className="flex items-start gap-4 border-b border-hairline/40 px-5 py-4">
           <span className={cn("mt-1 size-4 shrink-0 rounded", isCall ? "bg-[#6d7cff]" : "bg-accent")} />
           <div className="min-w-0 flex-1">
@@ -1547,7 +1516,7 @@ export function EventDetails({
   );
 }
 
-function PausedList({
+export function PausedList({
   routines,
   bots,
   groups,
@@ -1563,10 +1532,12 @@ function PausedList({
   onOpenRoom: (id: string) => void;
 }) {
   const { dispatch } = useStore();
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useModalDialog(dialogRef, onClose);
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-3" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
-      <div role="dialog" aria-modal="true" aria-label="Paused routines" className="w-full max-w-[520px] rounded-[14px] border border-border bg-elevated">
-        <div className="flex items-center justify-between border-b border-hairline/40 px-5 py-4"><div><div className="text-[16px] font-semibold text-ink">Paused routines</div><div className="mt-0.5 text-[11.5px] text-ink-secondary">History is kept; no new tasks will run.</div></div><button onClick={onClose} className="rounded-full p-2 text-ink-secondary hover:bg-raised"><X size={17} /></button></div>
+      <div ref={dialogRef} role="dialog" aria-modal="true" aria-label="Paused routines" tabIndex={-1} className="w-full max-w-[520px] rounded-[14px] border border-border bg-elevated">
+        <div className="flex items-center justify-between border-b border-hairline/40 px-5 py-4"><div><div className="text-[16px] font-semibold text-ink">Paused routines</div><div className="mt-0.5 text-[11.5px] text-ink-secondary">History is kept; no new tasks will run.</div></div><button onClick={onClose} className="rounded-full p-2 text-ink-secondary hover:bg-raised" aria-label={t("routines.paused.close")}><X size={17} /></button></div>
         <div className="max-h-[55vh] space-y-1 overflow-y-auto p-3">
           {routines.map((routine) => {
             const bot = bots.find((candidate) => candidate.id === routine.botId);

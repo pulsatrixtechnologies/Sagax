@@ -50,7 +50,7 @@ describe("people table", () => {
     expect(html).toContain("$3.50");
     expect(html).toContain("Never");
     expect(html).toContain("everyone at acme.test");
-    expect(html).toContain(">Make member<");
+    expect(html).toContain(">Make user<");
     expect(html).toContain(">Make admin<");
     expect(html).toContain(">Remove<");
     expect(html).toContain('aria-label="Invite link"');
@@ -100,7 +100,7 @@ describe("people on a workspace the organisation's Admin manages", () => {
     expect(html).toContain("Manage people in Admin");
     expect(html).toContain("bob@acme.test");
     expect(html).toContain("$1.25");
-    expect(html).not.toMatch(/Make admin|Make member|>Remove<|Invite link|<input|<form|pairing code|ends their account sessions/);
+    expect(html).not.toMatch(/Make admin|Make user|>Remove<|Invite link|<input|<form|pairing code|ends their account sessions/);
     expect(renderToStaticMarkup(createElement(PortalPeople, { peopleUrl: null, people: [] }))).toContain("Nobody has signed in here yet.");
   });
 });

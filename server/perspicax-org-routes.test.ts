@@ -99,3 +99,67 @@ describe("/api/org/directory manageUrl (person panel)", () => {
     expect((await directoryAs("member"))[0]).not.toHaveProperty("manageUrl");
   });
 });
+
+describe("/api/org/settings githubClientId", () => {
+  async function patchGithub(opts: {
+    role: "admin" | "member";
+    body: unknown;
+    save?: (clientId: string | null) => void;
+    omitSave?: boolean;
+  }) {
+    const out: { status?: number; body?: unknown } = {};
+    const saved: Array<string | null> = [];
+    const routes = createPerspicaxOrgRoutes({
+      issuer: "https://px.example.test",
+      orgName: "Acme",
+      directory: () => null,
+      bySubject: () => null,
+      viewerRole: () => opts.role,
+      settings: () => ({
+        orgKeyConfigured: false,
+        allowFullAccess: true,
+        github: { clientId: saved.at(-1) ?? null, fromEnvironment: false },
+      }),
+      pendingAdminApprovals: () => [],
+      ...(opts.omitSave
+        ? {}
+        : {
+            saveGithubClientId: (clientId: string | null) => {
+              saved.push(clientId);
+              opts.save?.(clientId);
+            },
+          }),
+    });
+    const ctx = {
+      req: {},
+      res: { setHeader: () => {}, headersSent: false, writableEnded: false },
+      url: new URL("http://127.0.0.1/api/org/settings"),
+      path: "/api/org/settings",
+      method: "PATCH",
+      auth: session({ principalId: "pr_admin" }),
+      json: (_res: unknown, status: number, body: unknown) => {
+        out.status = status;
+        out.body = body;
+      },
+      readBody: async () => opts.body,
+    } as unknown as RouteContext;
+    await routes(ctx);
+    return { ...out, saved };
+  }
+
+  it("lets an admin save a trimmed id and clear it with null", async () => {
+    const set = await patchGithub({ role: "admin", body: { githubClientId: "  Iv1.acme  " } });
+    expect(set).toMatchObject({ status: 200, saved: ["Iv1.acme"] });
+    expect(set.body).toMatchObject({ settings: { github: { clientId: "Iv1.acme" } } });
+    const cleared = await patchGithub({ role: "admin", body: { githubClientId: null } });
+    expect(cleared).toMatchObject({ status: 200, saved: [null] });
+  });
+
+  it("refuses a member, a missing saver and a value that is not printable ASCII 1 to 128", async () => {
+    expect(await patchGithub({ role: "member", body: { githubClientId: "Iv1.acme" } })).toMatchObject({ status: 403 });
+    expect(await patchGithub({ role: "admin", body: { githubClientId: "Iv1.acme" }, omitSave: true })).toMatchObject({ status: 400 });
+    for (const githubClientId of ["", "   ", "bad\nid", "a".repeat(129)]) {
+      expect(await patchGithub({ role: "admin", body: { githubClientId } })).toMatchObject({ status: 400, saved: [] });
+    }
+  });
+});

@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import ts from "typescript";
+import { transpileTs } from "./testing/transpile.ts";
 import { describe, expect, it } from "vitest";
 
 import type { ModelCatalog, ModelSelection, ProviderSnapshot } from "./contracts.ts";
@@ -152,8 +152,7 @@ describe("new bot default model selection wiring in index.ts", () => {
     expect(start).toBeGreaterThan(0); expect(end).toBeGreaterThan(start);
     return source.slice(start + 1, end + 2);
   };
-  const code = ts.transpileModule(`${extract("function policyModelRefusal(")}\n${extract("async function defaultSelection(")}`,
-    { compilerOptions: { target: ts.ScriptTarget.ESNext } }).outputText;
+  const code = transpileTs(`${extract("function policyModelRefusal(")}\n${extract("async function defaultSelection(")}`);
   const companyRouter = {
     instanceId: "company.fixture.openrouter", driverKind: "openai-compat",
     snapshot: { state: "available", authenticated: true } satisfies ProviderSnapshot,

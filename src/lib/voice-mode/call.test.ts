@@ -5,7 +5,7 @@
 // socket cannot open.
 import { describe, expect, it, vi } from "vitest";
 
-import { VoiceCall, callAudioConstraints, isNoiseFragment, resampler, type BargeInMetrics, type TurnMetrics } from "./call";
+import { VoiceCall, callAudioConstraints, isNoiseFragment, resampler, stablePartial, THINKING_CUE_MS, type BargeInMetrics, type TurnMetrics, type VoiceCallOptions } from "./call";
 import { DEFAULT_CALL_SETTINGS, type CallSettings } from "./call-settings";
 import type { PcmPlayer, Sentence } from "./player";
 import type { SpeakerEmbedder } from "./speaker-id";
@@ -22,7 +22,7 @@ class FakeSocket {
   audioBytes = 0;
   finalizes = 0;
   private listeners: Record<string, Array<(event: unknown) => void>> = {};
-  constructor(readonly url: string, private readonly transcripts: string[], private readonly fail = false) {
+  constructor(readonly url: string, private readonly transcripts: string[], private readonly fail = false, private readonly finalDelayMs = 2) {
     FakeSocket.last = this;
     setTimeout(() => {
       if (this.fail) return this.fire("error", {});
@@ -45,11 +45,15 @@ class FakeSocket {
     if (JSON.parse(data).type === "finalize") {
       this.finalizes += 1;
       const text = this.transcripts.shift() ?? "";
-      setTimeout(() => this.fire("message", { data: JSON.stringify({ type: "transcript", text, final: true, speechFinal: true }) }), 2);
+      setTimeout(() => this.fire("message", { data: JSON.stringify({ type: "transcript", text, final: true, speechFinal: true }) }), this.finalDelayMs);
     }
   }
   close() {
     this.readyState = 3;
+  }
+  /** xAI's interim words (not final) for the utterance being heard */
+  partial(text: string) {
+    this.fire("message", { data: JSON.stringify({ type: "transcript", text, final: false, speechFinal: false }) });
   }
 }
 
@@ -119,6 +123,10 @@ interface Setup {
   embedder?: SpeakerEmbedder | null;
   voiceprint?: ReturnType<typeof voiceprintOf> | null;
   transcribe?: LiveTranscriber["uploadError"];
+  /** more VoiceCall options (early start, ids, the timeline's log) */
+  options?: Partial<VoiceCallOptions>;
+  /** how long xAI takes to answer a finalize (ms) */
+  finalDelayMs?: number;
 }
 
 async function setup(options: Setup = {}) {
@@ -129,7 +137,7 @@ async function setup(options: Setup = {}) {
     botId: "b-1",
     language: () => options.language?.value ?? "fr",
     threadId: () => "t-1",
-    socket: (url) => new FakeSocket(url, [...(options.transcripts ?? ["hello bot"])], options.socketFails) as unknown as WebSocket,
+    socket: (url) => new FakeSocket(url, [...(options.transcripts ?? ["hello bot"])], options.socketFails, options.finalDelayMs) as unknown as WebSocket,
     transcribe: upload,
     finalTimeoutMs: 200,
   });
@@ -158,12 +166,13 @@ async function setup(options: Setup = {}) {
     speech,
     voiceprint: options.voiceprint ?? null,
     now: () => clock,
+    ...options.options,
   });
-  const utterances: Array<{ text: string; metrics: TurnMetrics; interrupted: boolean; cut?: { heard: string; unheard: string } }> = [];
+  const utterances: Array<{ text: string; metrics: TurnMetrics; interrupted: boolean; cut?: { heard: string; unheard: string }; continues?: boolean; utteranceId?: string }> = [];
   const interrupts: number[] = [];
   const metrics: Array<{ turn: TurnMetrics | null; bargeIn: BargeInMetrics | null }> = [];
   const rejected: string[] = [];
-  call.on("utterance", (text, m, turn) => utterances.push({ text, metrics: { ...m }, interrupted: turn.interrupted, ...(turn.cut ? { cut: turn.cut } : {}) }));
+  call.on("utterance", (text, m, turn) => utterances.push({ text, metrics: { ...m }, interrupted: turn.interrupted, ...(turn.cut ? { cut: turn.cut } : {}), ...(turn.continues ? { continues: true } : {}), utteranceId: turn.utteranceId }));
   call.on("interrupt-bot", () => interrupts.push(clock));
   call.on("metrics", (turn, bargeIn) => metrics.push({ turn: turn && { ...turn }, bargeIn: bargeIn && { ...bargeIn } }));
   call.on("rejected", (reason) => rejected.push(reason));
@@ -471,5 +480,138 @@ describe("resampler", () => {
     expect(frames.length).toBe(Math.floor((8192 / 3) / 512));
     expect(frames[0]!.length).toBe(512);
     expect(frames[0]![10]).toBeCloseTo(0.5);
+  });
+});
+
+describe("latency (docs/voice-mode-xai.md, Latency)", () => {
+  const speak = async (t: Awaited<ReturnType<typeof setup>>, words: string) => {
+    await t.feed(0.95, 0.05, 32);
+    // xAI's interim words, a beat after they were said
+    await t.feed(0.02, 0.001, 2);
+    t.socket().partial(words);
+  };
+
+  it("a stable partial is two words or more, not an unfinished clause, recognized after the person's last word", () => {
+    expect(stablePartial("What time is it in Tokyo?", 1_000, 900)).toBe(true);
+    expect(stablePartial("give me a good prompt to", 1_000, 900)).toBe(false);
+    expect(stablePartial("hello", 1_000, 900)).toBe(false);
+    // closed by the recognizer as a sentence, even while the person was finishing it
+    expect(stablePartial("What time is it in Tokyo?", 800, 900)).toBe(true);
+    // recognized before the person stopped and not closed: xAI may not have heard the end
+    expect(stablePartial("call Max about the invoice", 800, 900)).toBe(false);
+  });
+
+  it("ends a finished sentence on a short confident silence, and sends it on its stable words before the final", async () => {
+    const t = await setup({ transcripts: ["What time is it in Tokyo?"], finalDelayMs: 120, options: { newId: () => "utt-00000001" } });
+    await speak(t, "What time is it in Tokyo?");
+    await t.feed(0.02, 0.001, 12); // with the two above, 450 ms of confident silence
+    await t.settle();
+    expect(t.utterances.map((u) => u.text)).toEqual(["What time is it in Tokyo?"]);
+    const turn = t.utterances[0]!.metrics;
+    // the Normal endpoint is 700 ms; a finished sentence ends at 352
+    expect(turn.endedAt - turn.stoppedAt).toBeLessThan(420);
+    expect(turn.earlyEnd).toBe(true);
+    // sent on the partial: no wait for the final's round trip
+    expect(turn.earlyStart).toBe(true);
+    expect(turn.transcribedAt).toBe(turn.endedAt);
+    expect(t.utterances[0]!.utteranceId).toBe("utt-00000001");
+    expect(turn.utteranceId).toBe("utt-00000001");
+    // the final words, the same: nothing sent again
+    await new Promise((r) => setTimeout(r, 200));
+    expect(t.utterances.map((u) => [u.text, u.continues])).toEqual([["What time is it in Tokyo?", undefined]]);
+    expect(t.interrupts).toHaveLength(0);
+  });
+
+  it("never ends early on a sentence that is not finished, nor on a silence the VAD is unsure of", async () => {
+    const unfinished = await setup({ transcripts: ["give me a good prompt to"] });
+    await speak(unfinished, "give me a good prompt to");
+    await unfinished.feed(0.02, 0.001, 14);
+    await unfinished.settle();
+    expect(unfinished.utterances).toHaveLength(0);
+
+    const unsure = await setup({ transcripts: ["What time is it in Tokyo?"] });
+    await speak(unsure, "What time is it in Tokyo?");
+    // under the voice threshold, but not confidently silent (a breath)
+    await unsure.feed(0.25, 0.001, 14);
+    await unsure.settle();
+    expect(unsure.utterances).toHaveLength(0);
+    await unsure.feed(0.25, 0.001, 10);
+    await unsure.settle();
+    expect(unsure.utterances).toHaveLength(1);
+    expect(unsure.utterances[0]!.metrics.earlyEnd).toBeUndefined();
+  });
+
+  it("sends again with the final words when they differ: the answer to the partial is stopped and never spoken", async () => {
+    const ids = ["utt-00000001", "utt-00000002"];
+    const t = await setup({ transcripts: ["What time is it in Toronto?"], finalDelayMs: 40, options: { newId: () => ids.shift()! } });
+    await speak(t, "What time is it in Tokyo?");
+    await t.feed(0.02, 0.001, 14);
+    await t.settle();
+    expect(t.utterances.map((u) => u.text)).toEqual(["What time is it in Tokyo?"]);
+    t.call.setBotBusy(true);
+    // the bot started on the partial's question
+    t.call.replyProgress("In Tokyo it is ");
+    await new Promise((r) => setTimeout(r, 80));
+    expect(t.utterances.map((u) => u.text)).toEqual(["What time is it in Tokyo?", "What time is it in Toronto?"]);
+    const reissued = t.utterances[1]!;
+    // the complete version of the turn (voiceCall.continues), its own id
+    expect(reissued.continues).toBe(true);
+    expect(reissued.utteranceId).toBe("utt-00000002");
+    expect(reissued.metrics.reissued).toBe(true);
+    // the turn on the partial is stopped
+    expect(t.interrupts).toHaveLength(1);
+  });
+
+  it("waits for the final words when the partial is not a stable sentence", async () => {
+    const t = await setup({ transcripts: ["call Max about the invoice."], finalDelayMs: 60 });
+    await t.feed(0.95, 0.05, 32);
+    await t.feed(0.02, 0.001, 25);
+    await t.settle();
+    await new Promise((r) => setTimeout(r, 100));
+    expect(t.utterances.map((u) => u.text)).toEqual(["call Max about the invoice."]);
+    expect(t.utterances[0]!.metrics.earlyStart).toBeUndefined();
+  });
+
+  it("times every stage of a turn under its utterance id, and logs it without the words", async () => {
+    const lines: string[] = [];
+    const t = await setup({ transcripts: ["hello bot"], options: { newId: () => "utt-timeline1", logTimeline: (line) => lines.push(line) } });
+    await t.feed(0.95, 0.05, 40);
+    await t.feed(0.02, 0.001, 25);
+    await t.settle();
+    t.call.replyProgress("Sure. It is noon in Tokyo.");
+    await t.settle();
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toMatch(/^\[voice-latency\] utt=utt-timeline1 endpoint=\d+ms stt=\d+ms dispatch=\d+ms firstToken=\d+ms firstSentence=\d+ms/);
+    expect(lines[0]).not.toMatch(/hello|Tokyo|Sure/);
+    const turn = t.metrics.at(-1)!.turn!;
+    expect(turn.utteranceId).toBe("utt-timeline1");
+    expect(turn.firstTokenAt).toBeDefined();
+    expect(turn.firstSentenceAt).toBeDefined();
+    expect(turn.firstAudioAt).toBeDefined();
+  });
+
+  it("plays a soft tone when the answer has not started 1.2 s after the person stopped, unless turned off", async () => {
+    const t = await setup({ transcripts: ["hello bot"] });
+    const quiet = await setup({ transcripts: ["hello bot"], settings: { thinkingCue: false } });
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      await t.feed(0.95, 0.05, 40);
+      await t.feed(0.02, 0.001, 25);
+      await vi.advanceTimersByTimeAsync(30);
+      expect(t.utterances).toHaveLength(1);
+      const before = t.player.tones;
+      await vi.advanceTimersByTimeAsync(THINKING_CUE_MS);
+      expect(t.player.tones).toBe(before + 1);
+      expect(t.metrics.length).toBeGreaterThan(0);
+
+      await quiet.feed(0.95, 0.05, 40);
+      await quiet.feed(0.02, 0.001, 25);
+      await vi.advanceTimersByTimeAsync(30);
+      const quietBefore = quiet.player.tones;
+      await vi.advanceTimersByTimeAsync(THINKING_CUE_MS);
+      expect(quiet.player.tones).toBe(quietBefore);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

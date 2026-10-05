@@ -82,7 +82,7 @@ final class DesktopSettingsUITests: XCTestCase {
         // the keyboard: ⌘\ twice (rail and back) takes it, then ⌘,.
         app.typeKey("\\", modifierFlags: .command)
         app.typeKey("\\", modifierFlags: .command)
-        XCTAssertTrue(app.buttons["desktop-sidebar-collapse"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.otherElements["desktop-sidebar-full"].waitForExistence(timeout: 5))
         app.typeKey(",", modifierFlags: .command)
         let settings = app.buttons["desktop-settings.close"]
         XCTAssertTrue(settings.waitForExistence(timeout: 10), "⌘, opens Settings")

@@ -539,11 +539,11 @@ export function ModelPicker({
   const selection = bot.modelSelection;
   const active = state.instances.find((instance) => instance.instanceId === selection.instanceId);
   const configured = configuredModelInstances(state.instances, selection.instanceId);
-  // The server's own local engines run on the server's machine, never the
-  // person's: an organization server does not offer them (the bot's current
-  // one stays so its state is explained).
+  // An organization server offers an engine only when that engine's own
+  // shell, file and web tools stay off the Sagax server. The bot's current
+  // engine stays so its state is explained.
   const pickerInstances = orgMode
-    ? configured.filter((instance) => instance.access !== "custom" || instance.instanceId === selection.instanceId)
+    ? configured.filter((instance) => instance.instanceId === selection.instanceId || instance.capabilities?.withholdsHostTools === true)
     : configured;
   const selectedVariantLabel = selection.variant === undefined ? undefined : variantLabel(
     active?.models.options.find((option) => option.id === selection.model)?.variants?.find((option) => option.id === selection.variant)
@@ -969,6 +969,11 @@ export function ModelPicker({
       {railInstance.access === "api"
         ? <div className="mt-0.5 text-[11.5px] text-ink-secondary">{t("model.apiKeyHint")}</div>
         : pane === "custom" && <div className="mt-0.5 text-[11.5px] text-ink-secondary">{t("model.localHint")}</div>}
+      {orgMode && railInstance.capabilities?.withholdsHostTools !== true && (
+        <p data-model-host-tools className="mt-2 text-[11.5px] leading-relaxed text-ink-tertiary">
+          {t("model.org.hostTools", { name: railInstance.displayName })}
+        </p>
+      )}
     </div>
   );
 

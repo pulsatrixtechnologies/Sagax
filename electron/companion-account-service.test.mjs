@@ -842,3 +842,394 @@ describe("Companion account service", () => {
     expect(store.read()).toEqual({ [COMPANION_CLIENT_INSTANCE_FIELD]: UUID });
   });
 });
+
+const RECLAIMED_TOKEN = `eyJ${"e".repeat(100)}`;
+
+/** Captures scheduled callbacks so a test decides when time passes. */
+function manualTimers() {
+  const pending = new Map();
+  let next = 1;
+  return {
+    pending,
+    setTimer: vi.fn((callback, milliseconds) => {
+      const id = next;
+      next += 1;
+      pending.set(id, { callback, milliseconds });
+      return id;
+    }),
+    clearTimer: vi.fn((id) => {
+      pending.delete(id);
+    }),
+    delays: () => [...pending.values()].map((timer) => timer.milliseconds),
+    fire() {
+      const due = [...pending.entries()];
+      pending.clear();
+      for (const [, timer] of due) timer.callback();
+    },
+  };
+}
+
+describe("Companion account background recovery", () => {
+  it("names provider capacity honestly and retries with backoff that honours Retry-After", async () => {
+    const timers = manualTimers();
+    const ensureEndpoint = vi
+      .fn()
+      .mockRejectedValueOnce(new ControlPlaneError("endpoint_capacity", 503, "", 600_000))
+      .mockRejectedValueOnce(new ControlPlaneError("endpoint_capacity", 503))
+      .mockResolvedValueOnce({ endpoint: { url: ENDPOINT }, connectorToken: CONNECTOR_TOKEN });
+    const client = readyClient({ ensureEndpoint });
+    const { service, store } = serviceFixture({
+      client,
+      autoRecover: true,
+      autoRetryBaseMs: 1_000,
+      autoRetryMaxMs: 1_000_000,
+      random: () => 0.5,
+      setTimer: timers.setTimer,
+      clearTimer: timers.clearTimer,
+    });
+
+    await expect(service.verifyCode("ada@example.com", "12345678")).resolves.toMatchObject({
+      status: "error",
+      message: "Secure HTTPS links are temporarily full. Pair on this Wi-Fi or with Tailscale for now; we'll retry automatically.",
+    });
+    // The server's ten-minute hint outranks the first one-second backoff.
+    expect(timers.delays()).toEqual([600_000]);
+
+    timers.fire();
+    await vi.waitFor(() => expect(ensureEndpoint).toHaveBeenCalledTimes(2));
+    await vi.waitFor(() => expect(timers.delays()).toEqual([2_000]));
+
+    timers.fire();
+    await vi.waitFor(() => expect(store.read()[MANAGED_COMPANION_TOKEN_FIELD]).toBe(CONNECTOR_TOKEN));
+    expect(timers.delays()).toEqual([]);
+    expect(client.verifyOTP).toHaveBeenCalledOnce();
+    expect(client.revokeInstallation).not.toHaveBeenCalled();
+    await expect(service.state()).resolves.toMatchObject({ status: "ready", endpoint: ENDPOINT });
+  });
+
+  it("does not retry on its own without autoRecover or for failures that need the user", async () => {
+    for (const [autoRecover, error] of [
+      [false, new ControlPlaneError("endpoint_capacity", 503, "", 600_000)],
+      [true, new ControlPlaneError("installation_limit_reached", 409)],
+      [true, new ControlPlaneError("unauthorized", 401)],
+    ]) {
+      const timers = manualTimers();
+      const client = readyClient({ ensureEndpoint: vi.fn(async () => { throw error; }) });
+      const { service } = serviceFixture({
+        client,
+        autoRecover,
+        setTimer: timers.setTimer,
+        clearTimer: timers.clearTimer,
+      });
+      await service.verifyCode("ada@example.com", "12345678");
+      expect(timers.setTimer).not.toHaveBeenCalled();
+    }
+  });
+
+  it("caps the backoff and stops retrying after sign-out", async () => {
+    const timers = manualTimers();
+    const ensureEndpoint = vi.fn(async () => {
+      throw new ControlPlaneError("endpoint_unavailable", 502);
+    });
+    const incomplete = signedCredentials();
+    delete incomplete[MANAGED_COMPANION_ENDPOINT_FIELD];
+    delete incomplete[MANAGED_COMPANION_TOKEN_FIELD];
+    const { service } = serviceFixture({
+      initial: incomplete,
+      client: readyClient({ ensureEndpoint }),
+      autoRecover: true,
+      autoRetryBaseMs: 1_000,
+      autoRetryMaxMs: 4_000,
+      random: () => 0.5,
+      setTimer: timers.setTimer,
+      clearTimer: timers.clearTimer,
+    });
+
+    await service.retry();
+    const seen = [...timers.delays()];
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      timers.fire();
+      await vi.waitFor(() => expect(ensureEndpoint).toHaveBeenCalledTimes(attempt + 2));
+      await vi.waitFor(() => expect(timers.delays()).toHaveLength(1));
+      seen.push(...timers.delays());
+    }
+    expect(seen).toEqual([1_000, 2_000, 4_000, 4_000]);
+
+    await service.signOut();
+    expect(timers.pending.size).toBe(0);
+  });
+
+  it("re-provisions a reclaimed endpoint at launch behind the same address without a new sign-in", async () => {
+    for (const reclaimed of [null, { url: ENDPOINT, status: "deleted" }, { url: ENDPOINT, status: "deleting" }]) {
+      const client = readyClient({
+        getEndpoint: vi.fn(async () => reclaimed),
+        ensureEndpoint: vi.fn(async () => ({
+          endpoint: { url: ENDPOINT },
+          connectorToken: RECLAIMED_TOKEN,
+        })),
+      });
+      const activatePersistedEndpoint = vi.fn(async () => ({ status: "ready", ready: true }));
+      const { service, store } = serviceFixture({
+        initial: signedCredentials(),
+        client,
+        autoRecover: true,
+        activatePersistedEndpoint,
+        setTimer: manualTimers().setTimer,
+      });
+
+      await expect(service.restore()).resolves.toMatchObject({ status: "ready", endpoint: ENDPOINT });
+      expect(client.getEndpoint).toHaveBeenCalledWith(INSTALLATION_CREDENTIAL);
+      expect(client.ensureEndpoint).toHaveBeenCalledOnce();
+      expect(store.read()[MANAGED_COMPANION_TOKEN_FIELD]).toBe(RECLAIMED_TOKEN);
+      expect(activatePersistedEndpoint).toHaveBeenCalledOnce();
+      expect(client.verifyOTP).not.toHaveBeenCalled();
+      expect(client.revokeInstallation).not.toHaveBeenCalled();
+    }
+  });
+
+  it("trusts the saved address when the endpoint is live, the check fails, or Remote access is off", async () => {
+    const cases = [
+      { getEndpoint: vi.fn(async () => ({ url: ENDPOINT, status: "ready" })), on: true, checked: true },
+      {
+        getEndpoint: vi.fn(async () => {
+          throw new ControlPlaneError("network_unavailable");
+        }),
+        on: true,
+        checked: true,
+      },
+      { getEndpoint: vi.fn(async () => null), on: false, checked: false },
+    ];
+    for (const { getEndpoint, on, checked } of cases) {
+      const client = readyClient({ getEndpoint });
+      const initial = signedCredentials();
+      const { service, store } = serviceFixture({
+        initial,
+        client,
+        autoRecover: true,
+        companionIsOn: () => on,
+        setTimer: manualTimers().setTimer,
+      });
+      await expect(service.restore()).resolves.toMatchObject({ status: "ready", endpoint: ENDPOINT });
+      expect(getEndpoint).toHaveBeenCalledTimes(checked ? 1 : 0);
+      expect(client.ensureEndpoint).not.toHaveBeenCalled();
+      expect(store.read()).toEqual(initial);
+    }
+  });
+
+  it("checks the endpoint once the connector cannot come up after Remote access is turned on", async () => {
+    const timers = manualTimers();
+    let clock = 1_000_000;
+    let on = false;
+    let connection = { status: "stopped", ready: false };
+    const client = readyClient({
+      getEndpoint: vi.fn(async () => null),
+      ensureEndpoint: vi.fn(async () => ({
+        endpoint: { url: ENDPOINT },
+        connectorToken: RECLAIMED_TOKEN,
+      })),
+    });
+    const { service, store } = serviceFixture({
+      initial: signedCredentials(),
+      client,
+      autoRecover: true,
+      companionIsOn: () => on,
+      managedConnectionState: () => connection,
+      now: () => clock,
+      firstEndpointCheckMs: 100,
+      endpointCheckIntervalMs: 1_000,
+      setTimer: timers.setTimer,
+      clearTimer: timers.clearTimer,
+    });
+
+    await service.restore();
+    expect(client.getEndpoint).not.toHaveBeenCalled();
+    expect(timers.delays()).toEqual([100]);
+
+    timers.fire();
+    expect(client.getEndpoint).not.toHaveBeenCalled();
+    expect(timers.delays()).toEqual([1_000]);
+
+    // Remote access is switched on and the saved token's tunnel is gone.
+    on = true;
+    connection = { status: "retrying", ready: false };
+    timers.fire();
+    await vi.waitFor(() => expect(client.ensureEndpoint).toHaveBeenCalledOnce());
+    await vi.waitFor(() => expect(store.read()[MANAGED_COMPANION_TOKEN_FIELD]).toBe(RECLAIMED_TOKEN));
+
+    // A missing binary, or a check inside the interval, costs nothing.
+    connection = { status: "unavailable", ready: false };
+    clock += 5_000;
+    timers.fire();
+    await Promise.resolve();
+    expect(client.getEndpoint).toHaveBeenCalledOnce();
+    connection = { status: "retrying", ready: false };
+    client.getEndpoint.mockResolvedValue({ url: ENDPOINT, status: "ready" });
+    timers.fire();
+    await vi.waitFor(() => expect(client.getEndpoint).toHaveBeenCalledTimes(2));
+    timers.fire();
+    await Promise.resolve();
+    expect(client.getEndpoint).toHaveBeenCalledTimes(2);
+    expect(client.ensureEndpoint).toHaveBeenCalledOnce();
+
+    service.dispose();
+    expect(timers.pending.size).toBe(0);
+  });
+
+  it("replaces a reclaimed tunnel while the connector still reports ready after a long sleep", async () => {
+    // The app kept running through the sleep. The connector verified its
+    // route once and still says "ready", but the server removed the tunnel
+    // (or, after a cancelled reclaim, its DNS record) meanwhile.
+    for (const serverView of [null, { url: ENDPOINT, status: "deleted" }, { url: ENDPOINT, status: "error" }]) {
+      const timers = manualTimers();
+      let clock = 1_000_000;
+      const client = readyClient({
+        getEndpoint: vi.fn(async () => ({ url: ENDPOINT, status: "ready" })),
+        ensureEndpoint: vi.fn(async () => ({
+          endpoint: { url: ENDPOINT },
+          connectorToken: RECLAIMED_TOKEN,
+        })),
+      });
+      const activatePersistedEndpoint = vi.fn(async () => ({ status: "ready", ready: true }));
+      const { service, store } = serviceFixture({
+        initial: signedCredentials(),
+        client,
+        autoRecover: true,
+        activatePersistedEndpoint,
+        managedConnectionState: () => ({ status: "ready", ready: true }),
+        now: () => clock,
+        firstEndpointCheckMs: 100,
+        endpointCheckIntervalMs: 1_000,
+        setTimer: timers.setTimer,
+        clearTimer: timers.clearTimer,
+      });
+
+      // Launch: the endpoint is live, so nothing changes.
+      await expect(service.restore()).resolves.toMatchObject({ status: "ready", endpoint: ENDPOINT });
+      expect(client.getEndpoint).toHaveBeenCalledOnce();
+
+      // Weeks later the laptop wakes and the next watchdog tick runs.
+      clock += 30 * 24 * 60 * 60_000;
+      client.getEndpoint.mockResolvedValue(serverView);
+      timers.fire();
+      await vi.waitFor(() => expect(store.read()[MANAGED_COMPANION_TOKEN_FIELD]).toBe(RECLAIMED_TOKEN));
+      expect(client.getEndpoint).toHaveBeenCalledTimes(2);
+      expect(client.ensureEndpoint).toHaveBeenCalledOnce();
+      expect(client.ensureEndpoint).toHaveBeenCalledWith(INSTALLATION_CREDENTIAL);
+      expect(store.read()[MANAGED_COMPANION_ENDPOINT_FIELD]).toBe(ENDPOINT);
+      await vi.waitFor(() => expect(activatePersistedEndpoint).toHaveBeenCalledOnce());
+      expect(client.verifyOTP).not.toHaveBeenCalled();
+      expect(client.revokeInstallation).not.toHaveBeenCalled();
+      await expect(service.state()).resolves.toMatchObject({ status: "ready", endpoint: ENDPOINT });
+      service.dispose();
+    }
+  });
+
+  it("checks on every interval tick, even when the last check landed just after its own tick", async () => {
+    const timers = manualTimers();
+    let clock = 1_000_000;
+    const client = readyClient({ getEndpoint: vi.fn(async () => ({ url: ENDPOINT, status: "ready" })) });
+    const { service } = serviceFixture({
+      initial: signedCredentials(),
+      client,
+      autoRecover: true,
+      now: () => clock,
+      firstEndpointCheckMs: 100,
+      endpointCheckIntervalMs: 1_000,
+      setTimer: timers.setTimer,
+      clearTimer: timers.clearTimer,
+    });
+
+    await service.restore();
+    expect(client.getEndpoint).toHaveBeenCalledOnce();
+    // The first tick comes right after the launch check and is skipped.
+    clock += 100;
+    timers.fire();
+    await Promise.resolve();
+    expect(client.getEndpoint).toHaveBeenCalledOnce();
+    // Ticks then come exactly one interval apart, and each check is recorded
+    // a few milliseconds after its own tick, as on a busy event loop.
+    let tickAt = 1_000_000;
+    for (let tick = 2; tick <= 4; tick += 1) {
+      tickAt += 1_000;
+      clock = tickAt;
+      timers.fire();
+      clock += 5;
+      await vi.waitFor(() => expect(client.getEndpoint).toHaveBeenCalledTimes(tick));
+    }
+    expect(client.ensureEndpoint).not.toHaveBeenCalled();
+    service.dispose();
+  });
+
+  it("recovers a rejected installation credential through the account session", async () => {
+    const timers = manualTimers();
+    const client = readyClient({
+      getEndpoint: vi.fn(async () => {
+        throw new ControlPlaneError("unauthorized", 401);
+      }),
+      ensureEndpoint: vi.fn(async () => ({
+        endpoint: { url: ENDPOINT },
+        connectorToken: RECLAIMED_TOKEN,
+      })),
+    });
+    const { service, store } = serviceFixture({
+      initial: signedCredentials(),
+      client,
+      autoRecover: true,
+      setTimer: timers.setTimer,
+      clearTimer: timers.clearTimer,
+    });
+
+    await expect(service.restore()).resolves.toMatchObject({ status: "ready", endpoint: ENDPOINT });
+    expect(client.ensureInstallation).toHaveBeenCalledWith(
+      expect.objectContaining({ accountToken: ACCOUNT_TOKEN, currentCredential: INSTALLATION_CREDENTIAL }),
+    );
+    expect(client.ensureEndpoint).toHaveBeenCalledOnce();
+    expect(store.read()[MANAGED_COMPANION_TOKEN_FIELD]).toBe(RECLAIMED_TOKEN);
+    expect(store.read()[MANAGED_COMPANION_ENDPOINT_FIELD]).toBe(ENDPOINT);
+    service.dispose();
+  });
+
+  it("asks for a sign-in when the installation credential and the session have both expired", async () => {
+    const timers = manualTimers();
+    let clock = 1_000_000;
+    const client = readyClient({
+      getEndpoint: vi.fn(async () => {
+        throw new ControlPlaneError("unauthorized", 401);
+      }),
+      ensureInstallation: vi.fn(async () => {
+        throw new ControlPlaneError("unauthorized", 401);
+      }),
+    });
+    const initial = signedCredentials();
+    const { service, store } = serviceFixture({
+      initial,
+      client,
+      autoRecover: true,
+      managedConnectionState: () => ({ status: "retrying", ready: false }),
+      now: () => clock,
+      firstEndpointCheckMs: 100,
+      endpointCheckIntervalMs: 1_000,
+      setTimer: timers.setTimer,
+      clearTimer: timers.clearTimer,
+    });
+
+    // Not "starting" forever: the person is told to sign in again.
+    await expect(service.restore()).resolves.toMatchObject({
+      status: "signed-out",
+      email: "ada@example.com",
+      message: expect.stringContaining("sign-in expired"),
+    });
+    expect(client.ensureEndpoint).not.toHaveBeenCalled();
+    expect(store.read()).toEqual(initial);
+
+    // Only the person can fix this, so the watchdog stops asking.
+    for (let tick = 0; tick < 3; tick += 1) {
+      clock += 1_000;
+      timers.fire();
+      await Promise.resolve();
+    }
+    expect(client.getEndpoint).toHaveBeenCalledOnce();
+    expect(client.ensureInstallation).toHaveBeenCalledOnce();
+    service.dispose();
+  });
+});

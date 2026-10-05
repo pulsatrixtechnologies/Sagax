@@ -19,10 +19,11 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import type { DecisionRow } from "./decision-log.ts";
 import { removeTempDir, waitForExit } from "./testing/cleanup.ts";
+import { freePortBlock } from "./testing/ports.ts";
 
 const SERVER_DIR = dirname(fileURLToPath(import.meta.url));
 const FAKE_CLI = join(SERVER_DIR, "testing", "fake-acp-cli.ts");
-const PORT = 18800 + Math.floor(Math.random() * 10_000);
+const PORT = await freePortBlock([0, 1]);
 const BASE = `http://127.0.0.1:${PORT}`;
 const posixOnly = describe.skipIf(process.platform === "win32");
 
@@ -322,11 +323,15 @@ posixOnly("authorization decisions are logged", () => {
 
   it("GET /api/decisions.csv exports a date range, one line per row, from the month files", async () => {
     const all = (await api("GET", "/api/decisions")).body.decisions as DecisionRow[];
-    const today = new Date().toISOString().slice(0, 10);
-    const res = await fetch(`${BASE}/api/decisions.csv?from=${today}&to=${today}`);
+    // Span the UTC days the rows were written on, not "today": a run that
+    // crosses midnight UTC writes rows on two days (and maybe two month files).
+    const days = all.map((row) => row.at.slice(0, 10)).sort();
+    const from = days[0];
+    const to = days.at(-1);
+    const res = await fetch(`${BASE}/api/decisions.csv?from=${from}&to=${to}`);
     expect(res.status).toBe(200);
     expect(res.headers.get("content-type")).toMatch(/^text\/csv/);
-    expect(res.headers.get("content-disposition")).toBe(`attachment; filename="decisions-${today}-${today}.csv"`);
+    expect(res.headers.get("content-disposition")).toBe(`attachment; filename="decisions-${from}-${to}.csv"`);
     const lines = (await res.text()).trim().split("\n");
     expect(lines[0]).toBe("time,decision,source,bot,tool,summary,rule,unattended,answered_by,thread,request");
     expect(lines).toHaveLength(all.length + 1);

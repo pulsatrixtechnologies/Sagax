@@ -476,7 +476,7 @@ struct ChatView: View {
                         // composer's own top padding. Scrolling targets this,
                         // so the gap is always in view.
                         Color.clear
-                            .frame(height: desktopChat == nil ? 26.3 - Self.composerTopPadding : DesktopChatMetrics.rowGap)
+                            .frame(height: desktopChat == nil ? 26.3 - Self.composerTopPadding : DesktopChatMetrics.composerGap)
                             .id(Self.bottomId)
                     }
                     .padding(.horizontal, desktopChat == nil ? Theme.Chat.bubbleLeading : 20)
@@ -494,6 +494,9 @@ struct ChatView: View {
                 .safeAreaInset(edge: .top, spacing: 0) {
                     Color.clear.frame(height: Self.topBarHeight + (pinnedPreview == nil ? 0 : Self.pinnedBannerHeight))
                 }
+                // iPad desktop: an open find bar sits in the column's flow,
+                // so the transcript is cut under it (ChatView.tsx)
+                .modifier(DesktopFindClip(open: desktopChat != nil && finder.isOpen && session.surfaceGate.allows(.findInConversation)))
                 .overlay(alignment: .top) {
                     // the desktop's header floats over the transcript, unfaded
                     if desktopChat == nil {

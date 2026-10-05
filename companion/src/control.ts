@@ -40,6 +40,10 @@ export interface ControlOptions {
   /** Terminate every authenticated event stream and viewer relay session
    * owned by a device whose access changed or was revoked. */
   disconnectDevice?: (deviceId: string) => void;
+  /** A device was revoked (not merely changed): tell the harness, which
+   * sees a phone's requests as this computer's own, so it can end the Live
+   * call that phone holds. */
+  revoked?: (deviceId: string) => void;
   /** Re-read Tailscale after the sidecar has started. People commonly install,
    * sign in, or enable Tailscale while Sagax is already running. */
   refreshTailscale?: () => Promise<void>;
@@ -320,10 +324,25 @@ export function createControlServer(options: ControlOptions): Server {
       options.disconnectDevice?.(cloudDesktop[1]);
       return json(res, 200, companionState(options));
     }
+    const browserControl = path.match(/^\/devices\/([\w-]+)\/browser-control$/);
+    if (browserControl && (method === "POST" || method === "DELETE")) {
+      try {
+        if (!options.devices.setBrowserControlAccess(browserControl[1], method === "POST")) {
+          return json(res, 404, { error: "no such device" });
+        }
+      } catch {
+        return json(res, 500, { error: "could not save browser control access" });
+      }
+      // Revoking must reach the streams this device already holds open, not
+      // just the next request it makes.
+      options.disconnectDevice?.(browserControl[1]);
+      return json(res, 200, companionState(options));
+    }
     const revoke = path.match(/^\/devices\/([\w-]+)$/);
     if (revoke && method === "DELETE") {
       if (!options.devices.revoke(revoke[1])) return json(res, 404, { error: "no such device" });
       options.disconnectDevice?.(revoke[1]);
+      options.revoked?.(revoke[1]);
       return json(res, 200, companionState(options));
     }
     return json(res, 404, { error: `no route: ${method} ${path}` });
@@ -426,7 +445,9 @@ function render(s) {
           "<li><div class='grow'><div class=name>" + esc(d.name) + "</div>" +
           "<div class=dim>Last seen " + ago(d.lastSeenAt) + "</div>" +
           "<button data-cloud='" + esc(d.id) + "' data-allowed='" + (d.cloudDesktopAccess ? "1" : "0") + "'>" +
-          (d.cloudDesktopAccess ? "Cloud desktop on" : "Allow cloud desktop") + "</button></div>" +
+          (d.cloudDesktopAccess ? "Cloud desktop on" : "Allow cloud desktop") + "</button>" +
+          "<button data-browser='" + esc(d.id) + "' data-browser-allowed='" + (d.browserControlAccess ? "1" : "0") + "'>" +
+          (d.browserControlAccess ? "Browser control on" : "Allow browser control") + "</button></div>" +
           "<button data-revoke='" + esc(d.id) + "'>Remove</button></li>").join("") + "</ul>"
       : "<p class=dim>No phones are paired yet.</p>");
 
@@ -439,6 +460,12 @@ function render(s) {
     b.addEventListener("click", async () => render(await api(
       "/devices/" + b.dataset.cloud + "/cloud-desktop",
       b.dataset.allowed === "1" ? "DELETE" : "POST"
+    )));
+  }
+  for (const b of document.querySelectorAll("[data-browser]")) {
+    b.addEventListener("click", async () => render(await api(
+      "/devices/" + b.dataset.browser + "/browser-control",
+      b.dataset.browserAllowed === "1" ? "DELETE" : "POST"
     )));
   }
   if (s.pairing) {

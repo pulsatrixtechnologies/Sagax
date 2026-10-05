@@ -59,10 +59,22 @@ describe("skins", () => {
   it("selects a code-only light or dark palette in every nearest skin", () => {
     for (const id of SKIN_IDS) {
       const body = css.match(new RegExp(`\\[data-skin="${id}"\\]\\s*\\{([^}]*)\\}`))?.[1] ?? "";
-      const scheme = ["pulsatrix-light", "atelier", "lagoon", "linen", "daylight", "retro98"].includes(id) ? "light" : "dark";
+      const scheme = ["pulsatrix-light", "atelier", "lagoon", "linen", "daylight", "retro98", "meadow"].includes(id) ? "light" : "dark";
       expect(body).toContain(`--code-color-scheme: ${scheme};`);
     }
     expect(css).toMatch(/\.chat-md \.shiki\s*\{\s*color-scheme:\s*var\(--code-color-scheme\);\s*\}/);
+  });
+
+  it("adds Meadow without moving or replacing the Sagax skins", () => {
+    expect(SKIN_IDS).toContain("meadow");
+    expect(SKIN_IDS.slice(0, 11)).toEqual([
+      "pulsatrix", "pulsatrix-light", "midnight", "atelier", "foundry", "lagoon", "graphite", "linen", "dusk", "daylight", "retro98",
+    ]);
+    expect(DEFAULT_SKIN).toBe("pulsatrix");
+  });
+
+  it("gives Meadow's dark bubble its own inverted context", () => {
+    expect(css).toMatch(/@scope \(\[data-skin="meadow"\]\) to \(\[data-skin\]\)\s*\{\s*\.bg-bubble-user\s*\{/);
   });
 
   it("describes each skin exactly once", () => {

@@ -5,7 +5,6 @@ import { StoreProvider, type Bot, type Group } from "@/state/store";
 import { BotThreadList, GroupThreadList } from "./Sidebar";
 import { formatUpdatedAt } from "./SidebarThreadRow";
 import { GroupTaskPicker, TaskPicker } from "./TaskPicker";
-import { workingFolderLabel } from "./ComposerTray";
 
 vi.mock("./DesktopCapabilities", () => ({ useDesktopCapabilities: () => ({}) }));
 // The header pickers follow the threads setting; server rendering reads it as off.
@@ -28,12 +27,6 @@ const bot: Bot = {
 };
 
 describe("sidebar bot threads", () => {
-  it("hides generated workspace IDs while retaining useful user-chosen folder names", () => {
-    expect(workingFolderLabel("/tmp/fixture/task-workspaces/maus/idle", "maus", "idle")).toBe("Task folder");
-    expect(workingFolderLabel("C:\\fixture\\task-workspaces\\maus\\idle\\", "maus", "idle")).toBe("Task folder");
-    expect(workingFolderLabel("/Users/example/Projects/Website/", "maus", "idle")).toBe("Website");
-    expect(workingFolderLabel("/Users/example/task-workspaces/notes", "maus", "idle")).toBe("notes");
-  });
   it("shows named threads flush with the bot row, with separate presence and no trailing New thread row", () => {
     const markup = renderToStaticMarkup(createElement(StoreProvider, null, createElement(BotThreadList, { bot, selected: true })));
     expect(markup).toContain('aria-label="Maus threads"');

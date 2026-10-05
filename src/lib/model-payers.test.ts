@@ -24,6 +24,14 @@ describe("payerOrder (server/engine-credentials.ts, the speaker pays)", () => {
     expect(orgEngineState(other)).toBe("noAccess");
   });
 
+  it("Grok Build and Kimi Code take a subscription and a key; Gemini CLI and pi a key only", () => {
+    const engine = (driver: string, supported: boolean) => ({ driver, installed: true, subscription: { supported, signedIn: false }, myKey: false, orgKey: false, myTurns: "none" as const });
+    expect(payerOrder(engine("grokAgent", true)).rows.map((row) => row.id)).toEqual(["subscription", "key", "org-key"]);
+    expect(payerOrder(engine("kimiAgent", true)).rows.map((row) => row.id)).toEqual(["subscription", "key", "org-key"]);
+    expect(payerOrder(engine("geminiAgent", false)).rows.map((row) => row.id)).toEqual(["key", "org-key"]);
+    expect(payerOrder(engine("piAgent", false)).rows.map((row) => row.id)).toEqual(["key", "org-key"]);
+  });
+
   it("names the provider column state", () => {
     expect(orgEngineState(claude({ installed: false }))).toBe("notInstalled");
     expect(orgEngineState(claude())).toBe("signInRequired");

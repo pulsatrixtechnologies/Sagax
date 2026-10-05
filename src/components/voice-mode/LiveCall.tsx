@@ -19,6 +19,7 @@ import { NO, YES } from "@/lib/voice-mode/answers";
 import { voiceCallSession } from "@/lib/voice-mode/api";
 import { VoiceCall, type BargeInMetrics, type TurnMetrics } from "@/lib/voice-mode/call";
 import { readCallSettings } from "@/lib/voice-mode/call-settings";
+import { stageDurations } from "@/lib/voice-mode/latency";
 import type { CallState } from "@/lib/voice-mode/call-machine";
 import { readVoiceModeSettings } from "@/lib/voice-mode/settings";
 import { publishLiveCall, retractLiveCall, useLiveCall, type LiveCallData, type LiveCallMetrics } from "@/lib/voice-mode/live-call-store";
@@ -125,6 +126,8 @@ export function LiveCallEngine({ bot }: { bot: Bot }) {
         setMetrics({
           ...(turn?.firstAudioAt !== undefined ? { firstAudioMs: Math.round(turn.firstAudioAt - turn.stoppedAt) } : {}),
           ...(turn?.sentAt !== undefined ? { sentMs: Math.round(turn.sentAt - turn.stoppedAt) } : {}),
+          // the last turn's stages (ids and milliseconds only)
+          ...(turn?.firstAudioAt !== undefined ? { stages: stageDurations(turn), ...(turn.utteranceId ? { utteranceId: turn.utteranceId } : {}) } : {}),
           ...(barge?.duckedAt !== undefined ? { duckMs: Math.round(barge.duckedAt - barge.candidateAt) } : {}),
           ...(barge?.cancelledAt !== undefined ? { bargeInMs: Math.round(barge.cancelledAt - barge.candidateAt) } : {}),
         });
@@ -154,7 +157,7 @@ export function LiveCallEngine({ bot }: { bot: Bot }) {
 
   // ── what the person said ───────────────────────────────────────────────
   const onUtterance = useCallback(
-    (said: string, interrupted = false, cut?: { heard: string; unheard: string }, continues = false) => {
+    (said: string, interrupted = false, cut?: { heard: string; unheard: string }, continues = false, spokenId?: string) => {
       const current = botRef.current;
       if (!call || currentCall() !== current.id) return;
       setHeard("");
@@ -193,8 +196,9 @@ export function LiveCallEngine({ bot }: { bot: Bot }) {
       // a new turn: what the interrupted answer had left is never spoken
       dropOldReply.current = false;
       const language = readVoiceModeSettings().language;
-      // one id per utterance: the server delivers it once, whatever retries
-      const utteranceId = crypto.randomUUID();
+      // one id per utterance: the server delivers it once, whatever retries,
+      // and logs its stages under it (the call's timeline uses the same)
+      const utteranceId = spokenId ?? crypto.randomUUID();
       // a send that failed (a network blip, a turn that ended under it) is
       // tried again once with the same utterance; then the person is told,
       // never left waiting on silence
@@ -214,6 +218,7 @@ export function LiveCallEngine({ bot }: { bot: Bot }) {
         threadId: current.threadId,
         sendId: utteranceId,
         onError,
+        onSent: () => call.accepted(utteranceId),
         voiceCall: {
           callId,
           utteranceId,
@@ -231,7 +236,7 @@ export function LiveCallEngine({ bot }: { bot: Bot }) {
 
   useEffect(() => {
     if (!call) return;
-    return call.on("utterance", (text, _metrics, turn) => onUtterance(text, turn.interrupted, turn.cut, turn.continues === true));
+    return call.on("utterance", (text, _metrics, turn) => onUtterance(text, turn.interrupted, turn.cut, turn.continues === true, turn.utteranceId));
   }, [call, onUtterance]);
 
   useEffect(() => {

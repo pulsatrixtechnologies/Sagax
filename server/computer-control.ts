@@ -120,6 +120,13 @@ export class ComputerControl {
     return "other";
   }
 
+  /** Whether this workspace lease is the one holding the wheel right now.
+   * Read-only: unlike `acquireLease`, a free computer is not taken. */
+  ownsLease(botId: string, controlLeaseId: string): boolean {
+    const entry = this.entries.get(botId);
+    return entry?.heldSinceMs != null && entry.controlLeaseId === controlLeaseId;
+  }
+
   /** The person hands the wheel back. Also settles any open help request —
    * the waiting bot resumes from this one state change. */
   release(botId: string): ControlSnapshot {
@@ -197,22 +204,3 @@ export class ComputerControl {
     return snapshot;
   }
 }
-
-/** Safely executes an async tool or desktop control call, catching runtime exceptions gracefully. */
-export async function executeToolSafely<T>(
-  toolName: string,
-  fn: () => Promise<T>
-): Promise<{ success: boolean; data?: T; error?: string }> {
-  try {
-    const data = await fn();
-    return { success: true, data };
-  } catch (err: any) {
-    const errorMessage = err?.message || String(err) || 'Unknown execution error';
-    console.error(`[Tool Execution Error] Name: ${toolName} | Details: ${errorMessage}`);
-    return {
-      success: false,
-      error: `Tool '${toolName}' failed to execute: ${errorMessage}`
-    };
-  }
-}
-
