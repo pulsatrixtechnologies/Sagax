@@ -18,7 +18,7 @@ import {
   poseTransforms,
   shade,
 } from "@/lib/owl/owl-art";
-import { createOwlController, runningOwlCount, type OwlRigElements } from "@/lib/owl/owl-loop";
+import { createOwlController, resetOwlLoopForTests, runningOwlCount, type OwlRigElements } from "@/lib/owl/owl-loop";
 
 const render = (props: Partial<OwlAvatarProps>) =>
   renderToStaticMarkup(createElement(OwlAvatar, { color: "green", animated: false, ...props }));
@@ -172,9 +172,51 @@ describe("the shared owl loop", () => {
   };
 
   afterEach(() => {
+    resetOwlLoopForTests();
     vi.unstubAllGlobals();
     frames.length = 0;
   });
+
+  /** A document the pause gate can see. `fire` runs the visibility and focus listeners. */
+  function stubDocument(opts: { hidden?: boolean; focused?: boolean; dataset?: Record<string, string> } = {}) {
+    const docListeners = new Map<string, Array<() => void>>();
+    const winListeners = new Map<string, Array<() => void>>();
+    const listen = (map: Map<string, Array<() => void>>) => (type: string, fn: () => void) => {
+      const list = map.get(type) ?? [];
+      list.push(fn);
+      map.set(type, list);
+    };
+    const doc = {
+      hidden: Boolean(opts.hidden),
+      visibilityState: (opts.hidden ? "hidden" : "visible") as DocumentVisibilityState,
+      documentElement: { dataset: { ...opts.dataset } },
+      hasFocus: () => opts.focused !== false,
+      addEventListener: listen(docListeners),
+      removeEventListener() {},
+    };
+    vi.stubGlobal("document", doc);
+    vi.stubGlobal("window", {
+      addEventListener: listen(winListeners),
+      removeEventListener() {},
+      matchMedia: () => ({ matches: false, addEventListener() {} }),
+    });
+    return {
+      doc,
+      fire(type: string) {
+        for (const fn of [...(docListeners.get(type) ?? []), ...(winListeners.get(type) ?? [])]) fn();
+      },
+    };
+  }
+
+  const stubRaf = () => {
+    const raf = vi.fn((cb: FrameRequestCallback) => {
+      frames.push(cb);
+      return frames.length;
+    });
+    vi.stubGlobal("requestAnimationFrame", raf);
+    vi.stubGlobal("cancelAnimationFrame", vi.fn());
+    return raf;
+  };
 
   it("drives many owls from one requestAnimationFrame and stops when the last leaves", () => {
     const raf = vi.fn((cb: FrameRequestCallback) => {
@@ -220,6 +262,45 @@ describe("the shared owl loop", () => {
     expect(els.nearWing.style.transform).toBe("");
     expect(els.lids.style.transform).toContain("scale(1,");
     expect(els.lids.style.transform).not.toContain("scale(1,0.000)");
+    c.destroy();
+  });
+
+  it("does not keep a requestAnimationFrame loop under reduced motion", () => {
+    const raf = stubRaf();
+    const c = createOwlController(rig(), { state: "idle", reducedMotion: true });
+    expect(runningOwlCount()).toBe(0);
+    expect(raf).not.toHaveBeenCalled();
+    c.destroy();
+  });
+
+  it("schedules no frames while hidden, and keeps a blurred visible window running", () => {
+    const raf = stubRaf();
+    const hidden = stubDocument({ hidden: true, focused: true });
+    const hiddenOwl = createOwlController(rig(), { reducedMotion: false });
+    expect(runningOwlCount()).toBe(1);
+    expect(raf).not.toHaveBeenCalled();
+    hidden.doc.hidden = false;
+    hidden.doc.visibilityState = "visible";
+    hidden.fire("visibilitychange");
+    expect(raf).toHaveBeenCalledTimes(1);
+    hiddenOwl.destroy();
+    resetOwlLoopForTests();
+    frames.length = 0;
+    raf.mockClear();
+
+    // A visible window that lost focus keeps its loop: a working bot on a
+    // second screen still looks alive.
+    stubDocument({ hidden: false, focused: false });
+    const blurred = createOwlController(rig(), { reducedMotion: false });
+    expect(raf).toHaveBeenCalledTimes(1);
+    blurred.destroy();
+  });
+
+  it("keeps animating a floating mascot that is visible but never focused", () => {
+    const raf = stubRaf();
+    stubDocument({ hidden: false, focused: false, dataset: { floatingBot: "" } });
+    const c = createOwlController(rig(), { reducedMotion: false });
+    expect(raf).toHaveBeenCalledTimes(1);
     c.destroy();
   });
 });

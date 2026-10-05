@@ -1672,6 +1672,14 @@ body {
   /* The drawer still moves, it just arrives instantly. */
   aside { transition: none; }
 }
+/* Hidden, minimized, or (main window) blurred. The renderer sets this from
+   src/lib/animation-pause.ts. play-state freezes infinite CSS without
+   dropping transitions, and comes off again when the window is back. */
+html[data-animations-paused] *,
+html[data-animations-paused] *::before,
+html[data-animations-paused] *::after {
+  animation-play-state: paused !important;
+}
 /* The onboarding preview page flips this to show the reduced variant
    without touching system settings; the welcome flow also reads it to skip
    its view transitions. Mirrors the media block above for its own classes. */

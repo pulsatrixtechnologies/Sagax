@@ -42,6 +42,7 @@ import { connectedAppsEnabled, llmThreadTitlesEnabled, templatesEnabled } from "
 
 import { BotAvatar, InitialsAvatar } from "./Avatar";
 import { stateForBot } from "@/lib/mascot";
+import { mascotRowAnimated } from "@/lib/mascot-animate";
 import { cn } from "@/lib/cn";
 import { CIRCLE_BUTTON } from "@/lib/circle-button";
 import { useHeldMenuMotion } from "./MenuMotion";
@@ -1494,11 +1495,7 @@ export function BotListItem({
           size={avatarSize}
           motion={mascotMotion?.kind ?? "none"}
           motionKey={mascotMotion?.nonce ?? 0}
-          // Motion means something is happening. A resting bot holds a resting
-          // pose — N idle rows bobbing at display rate was most of the app's
-          // visible-idle CPU (states are keyword-derived, so "working" can be
-          // decorative; working/unread/motion are the real signals).
-          animated={working || unread || (mascotMotion?.kind ?? "none") !== "none"}
+          animated={mascotRowAnimated(bot, state.pendingQueued, mascotMotion?.kind)}
         />
         {working && (
           // presence dot: green while the bot is working, ringed in the row's

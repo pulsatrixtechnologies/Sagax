@@ -3,6 +3,7 @@
 // its SVG groups (via refs): no React state changes per frame. Static owls
 // (animated=false) never register, so a long sidebar costs nothing.
 
+import { animationsPaused, resetAnimationPauseForTests, watchAnimationPause } from "../animation-pause";
 import {
   OWL_GEOM,
   eyesTransform,
@@ -61,6 +62,7 @@ interface Driven {
 const running = new Set<Driven>();
 let rafId = 0;
 let reduceMQ: MediaQueryList | null = null;
+let pauseUnsub: (() => void) | null = null;
 
 function prefersReducedMotion(): boolean {
   if (typeof window === "undefined" || typeof window.matchMedia !== "function") return false;
@@ -69,18 +71,57 @@ function prefersReducedMotion(): boolean {
 }
 
 function frame(now: number) {
+  // A hidden or minimized window must not keep the frame clock.
+  if (animationsPaused()) {
+    rafId = 0;
+    return;
+  }
   for (const c of running) c.tick(now / 1000);
-  rafId = running.size ? requestAnimationFrame(frame) : 0;
+  rafId = 0;
+  kick();
+}
+
+function kick() {
+  if (animationsPaused() || rafId || !running.size) return;
+  if (typeof requestAnimationFrame !== "function") return;
+  rafId = requestAnimationFrame(frame);
+}
+
+function ensurePauseWatch() {
+  if (pauseUnsub || typeof document === "undefined") return;
+  pauseUnsub = watchAnimationPause(() => {
+    if (animationsPaused()) {
+      if (rafId && typeof cancelAnimationFrame === "function") {
+        cancelAnimationFrame(rafId);
+        rafId = 0;
+      }
+      return;
+    }
+    kick();
+  });
 }
 
 function start(c: Driven) {
   running.add(c);
-  if (!rafId && typeof requestAnimationFrame === "function") rafId = requestAnimationFrame(frame);
+  ensurePauseWatch();
+  kick();
 }
 
 function stop(c: Driven) {
   running.delete(c);
   if (!running.size && rafId && typeof cancelAnimationFrame === "function") {
+    cancelAnimationFrame(rafId);
+    rafId = 0;
+  }
+}
+
+/** Drops the pause subscription. Tests call this between cases. */
+export function resetOwlLoopForTests(): void {
+  pauseUnsub?.();
+  pauseUnsub = null;
+  resetAnimationPauseForTests();
+  reduceMQ = null;
+  if (rafId && typeof cancelAnimationFrame === "function") {
     cancelAnimationFrame(rafId);
     rafId = 0;
   }
@@ -198,22 +239,93 @@ export function createOwlController(
     },
   };
 
-  start(driven);
+  // Reduced motion keeps the blink and drops the body. A 60 fps loop that
+  // only writes the lids is the same idle cost as the full pose.
+  let destroyed = false;
+  let blinkTimer: ReturnType<typeof setTimeout> | 0 = 0;
+  let blinkRaf = 0;
+  const reduced = () => forcedReduce ?? prefersReducedMotion();
+
+  const clearBlinkSchedule = () => {
+    if (blinkTimer) {
+      clearTimeout(blinkTimer);
+      blinkTimer = 0;
+    }
+    if (blinkRaf && typeof cancelAnimationFrame === "function") {
+      cancelAnimationFrame(blinkRaf);
+      blinkRaf = 0;
+    }
+  };
+
+  const scheduleReducedBlink = (delayMs: number) => {
+    if (destroyed || !reduced()) return;
+    if (blinkTimer) clearTimeout(blinkTimer);
+    blinkTimer = setTimeout(() => {
+      blinkTimer = 0;
+      if (destroyed) return;
+      blinkPending = true;
+      runReducedBlink();
+    }, delayMs);
+  };
+
+  const runReducedBlink = () => {
+    if (destroyed) return;
+    if (!reduced()) {
+      clearBlinkSchedule();
+      start(driven);
+      return;
+    }
+    if (animationsPaused()) {
+      scheduleReducedBlink(1000);
+      return;
+    }
+    if (typeof requestAnimationFrame !== "function") return;
+    if (blinkRaf && typeof cancelAnimationFrame === "function") cancelAnimationFrame(blinkRaf);
+    let started: number | null = null;
+    const dur = (base === "sleepy" ? 0.45 : 0.16) * 1000 + 40;
+    const step = (ms: number) => {
+      blinkRaf = 0;
+      if (destroyed) return;
+      if (animationsPaused()) {
+        scheduleReducedBlink(1000);
+        return;
+      }
+      if (!reduced()) {
+        start(driven);
+        return;
+      }
+      if (started === null) started = ms;
+      driven.tick(ms / 1000);
+      if (ms - started < dur) blinkRaf = requestAnimationFrame(step);
+      else scheduleReducedBlink((base === "sleepy" ? 4 : 3) * 1000 + Math.random() * 3000);
+    };
+    blinkRaf = requestAnimationFrame(step);
+  };
+
+  if (reduced()) scheduleReducedBlink(1000 + Math.random() * 4000);
+  else start(driven);
 
   return {
     setState(state) {
       if (state === base) return;
       base = state;
       if (!beat) beatPending = true;
+      // No frame loop under reduced motion, so a state change paints once.
+      if (reduced()) driven.tick((typeof performance !== "undefined" ? performance.now() : 0) / 1000);
     },
     play(state, durationMs = 1400) {
       beat = { state, untilMs: ONE_SHOTS.has(state) ? null : durationMs };
       beatPending = true;
+      if (reduced()) driven.tick((typeof performance !== "undefined" ? performance.now() : 0) / 1000);
     },
     blink() {
       blinkPending = true;
+      if (!reduced()) return;
+      clearBlinkSchedule();
+      runReducedBlink();
     },
     flourish(move) {
+      if (reduced()) return;
       wingMove = { move, start: null };
     },
     setPointer(offset) {
@@ -227,8 +339,18 @@ export function createOwlController(
     },
     setReducedMotion(value) {
       forcedReduce = value;
+      if (reduced()) {
+        stop(driven);
+        clearBlinkSchedule();
+        scheduleReducedBlink(1000 + Math.random() * 4000);
+      } else {
+        clearBlinkSchedule();
+        start(driven);
+      }
     },
     destroy() {
+      destroyed = true;
+      clearBlinkSchedule();
       stop(driven);
     },
   };
