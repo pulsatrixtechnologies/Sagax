@@ -140,3 +140,44 @@ test("a Cloud link arriving before React subscriptions is delivered exactly once
   assert.deepEqual(calls, ["cloud"], "later subscriptions must not reopen Settings");
   late();
 });
+
+test("onOpenReleaseNotes forwards release-notes:open and keeps a single cold-start listener", () => {
+  assert.equal(subscriberCount("release-notes:open"), 1);
+  const calls = [];
+  const unsubscribe = exposed.api.onOpenReleaseNotes(() => calls.push(1));
+  assert.equal(subscriberCount("release-notes:open"), 1);
+  emit("release-notes:open");
+  emit("release-notes:open");
+  assert.deepEqual(calls, [1, 1]);
+  unsubscribe();
+  assert.equal(subscriberCount("release-notes:open"), 1);
+  assert.deepEqual(calls, [1, 1]);
+});
+
+test("a release-notes open before React subscribes is delivered once", async () => {
+  emit("release-notes:open");
+  const calls = [];
+  const unsubscribe = exposed.api.onOpenReleaseNotes(() => calls.push("app"));
+  const second = exposed.api.onOpenReleaseNotes(() => calls.push("panel"));
+  assert.deepEqual(calls, []);
+  await Promise.resolve();
+  assert.deepEqual(calls, ["app", "panel"]);
+  unsubscribe();
+  second();
+  const late = exposed.api.onOpenReleaseNotes(() => calls.push("late"));
+  await Promise.resolve();
+  assert.deepEqual(calls, ["app", "panel"]);
+  late();
+});
+
+test("a transient release-notes subscription cannot consume a cold-start open", async () => {
+  emit("release-notes:open");
+  const calls = [];
+  exposed.api.onOpenReleaseNotes(() => calls.push("gone"))();
+  await Promise.resolve();
+  assert.deepEqual(calls, []);
+  const unsubscribe = exposed.api.onOpenReleaseNotes(() => calls.push("kept"));
+  await Promise.resolve();
+  assert.deepEqual(calls, ["kept"]);
+  unsubscribe();
+});

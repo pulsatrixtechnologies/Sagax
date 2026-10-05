@@ -80,4 +80,14 @@ describe("buildApplicationMenu", () => {
     expect(onLeaveServerMode).toHaveBeenCalledOnce();
     expect(onSwitch).not.toHaveBeenCalled();
   });
+
+  it.each(["darwin", "linux", "win32"])("Help menu opens release notes on %s", (platform) => {
+    const onOpenReleaseNotes = vi.fn();
+    const template = build(platform, { onOpenReleaseNotes });
+    const help = template.find((entry) => entry.label === "Help");
+    const item = help.submenu.find((entry) => entry.label === "Release notes");
+    expect(item).toBeDefined();
+    item.click();
+    expect(onOpenReleaseNotes).toHaveBeenCalledOnce();
+  });
 });

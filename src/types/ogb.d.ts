@@ -316,6 +316,8 @@ const __SAGAX_DEFAULT_SERVER__: string;
        * the channel, and the bridge is absent in the browser. "cloud" is the
        * openmausbot://cloud link (Settings → OMB Cloud, opened by the link). */
       onOpenAppSettings?(cb: (section?: "organization" | "cloud" | "cloud-settings") => void): () => void;
+      /** Help → Release notes. Absent in the browser and on a remote page. */
+      onOpenReleaseNotes?(cb: () => void): () => void;
       /** Updates the native Dock/taskbar unread indicator. */
       setUnreadCount?(count: number): void;
       /** Opens a live desktop as a sandboxed window owned by Sagax. */
@@ -401,6 +403,12 @@ export interface UpdaterState {
     | "handed-off"
     | "error";
   version?: string;
+  /**
+   * GitHub release body for this update. A string is the latest release.
+   * An array is one entry per skipped version. The renderer sorts it
+   * newest first and drops anything that is not text.
+   */
+  notes?: string | Array<{ version: string; note: string }>;
   percent?: number;
   message?: string;
   /** pre-release versions are offered (opt-in, this computer only) */

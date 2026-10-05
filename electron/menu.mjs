@@ -16,11 +16,12 @@ import { DISPLAY_NAME } from "./app-name.mjs";
  * @param {() => void} input.onConnect
  * @param {(id: string) => void} input.onForget
  * @param {() => void} input.onOpenSettings
+ * @param {() => void} [input.onOpenReleaseNotes]
  * @param {() => void} input.onOrganizationSignIn
  * @param {string | null} [input.serverModeId]  server mode: the one server this app shows
  * @param {() => void} [input.onLeaveServerMode]
  */
-export function buildApplicationMenu({ environments, activeId, onSwitch, onAddFromClipboard, onConnect, onForget, onOpenSettings, onOrganizationSignIn, serverModeId = null, onLeaveServerMode }) {
+export function buildApplicationMenu({ environments, activeId, onSwitch, onAddFromClipboard, onConnect, onForget, onOpenSettings, onOpenReleaseNotes, onOrganizationSignIn, serverModeId = null, onLeaveServerMode }) {
   const isMac = process.platform === "darwin";
   const active = environments.find((e) => e.id === activeId) ?? null;
   const locked = serverModeId ? environments.find((e) => e.id === serverModeId) ?? null : null;
@@ -62,6 +63,12 @@ export function buildApplicationMenu({ environments, activeId, onSwitch, onAddFr
     server,
     { role: "viewMenu" },
     { role: "windowMenu" },
+    {
+      label: "Help",
+      submenu: [
+        { label: "Release notes", click: () => onOpenReleaseNotes?.() },
+      ],
+    },
   ];
   return Menu.buildFromTemplate(template);
 }
