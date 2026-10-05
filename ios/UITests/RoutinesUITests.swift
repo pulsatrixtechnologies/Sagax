@@ -99,7 +99,8 @@ final class RoutinesUITests: XCTestCase {
         let app = XCUIApplication()
         app.terminate()
         var arguments = [
-            "-parityEndpoint", fixture.endpoint, "-parityToken", fixture.token, "-parityScreen", "12-settings-top",
+            "-parityEndpoint", fixture.endpoint, "-parityToken", fixture.token, "-parityScreen", "01-home",
+            "-companion.prefs.rosterDensity", "standard",
             "-AppleLanguages", "(en)", "-AppleLocale", "en_US",
             "-companion.prefs.islandIntro", "never",
             "-companion.onboarding.welcomeSeen", "YES",
@@ -108,14 +109,10 @@ final class RoutinesUITests: XCTestCase {
         if let environment = fixture.environmentId { arguments += ["-parityEnvironment", environment] }
         app.launchArguments = arguments
         app.launch()
-        // Settings > Advanced > Workspace > Threads & Routines
-        XCTAssertTrue(app.descendants(matching: .any)["settings-close"].waitForExistence(timeout: 30))
-        let advanced = element("settings-advanced", in: app)
-        for _ in 0..<10 where !(advanced.exists && advanced.isHittable) { app.swipeUp() }
-        advanced.tap()
-        let row = element("settings-routines", in: app)
-        _ = row.waitForExistence(timeout: 10)
-        for _ in 0..<10 where !(row.exists && row.isHittable) { app.swipeUp() }
+        // the home's Automations place (Settings no longer carries routines)
+        XCTAssertTrue(app.buttons["home-plus"].waitForExistence(timeout: 30))
+        let row = app.buttons["home-place.automations"]
+        for _ in 0..<12 where !(row.exists && row.isHittable) { app.swipeUp() }
         row.tap()
         XCTAssertTrue(element("routines-section", in: app).waitForExistence(timeout: 15))
         return app

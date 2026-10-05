@@ -44,22 +44,23 @@ final class SettingsAppearanceUITests: XCTestCase {
         return app
     }
 
-    /// Settings > Advanced (the sheet at the bottom of the root).
+    /// A row of the Settings list (the root, in the desktop's order).
     @MainActor
-    private func openAdvanced(_ app: XCUIApplication) {
-        let row = app.element("settings-advanced")
-        XCTAssertTrue(row.waitForExistence(timeout: 10))
+    private func openRow(_ id: String, _ app: XCUIApplication) {
+        let row = app.element(id)
+        XCTAssertTrue(row.waitForExistence(timeout: 10), id)
         for _ in 0..<10 where !row.isHittable { app.swipeUp() }
         row.tap()
-        XCTAssertTrue(app.navigationBars["Advanced"].waitForExistence(timeout: 10))
     }
 
+    /// The search field at the top of Settings.
     @MainActor
-    private func openInAdvanced(_ id: String, _ app: XCUIApplication) {
-        let row = app.element(id)
-        for _ in 0..<10 where !(row.exists && row.isHittable) { app.swipeUp() }
-        XCTAssertTrue(row.waitForExistence(timeout: 10), "no \(id)")
-        row.tap()
+    private func search(_ text: String, _ app: XCUIApplication) -> XCUIElement {
+        let field = app.textFields["settings-search"]
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        field.tap()
+        field.typeText(text)
+        return field
     }
 
     // MARK: API
@@ -104,19 +105,15 @@ final class SettingsAppearanceUITests: XCTestCase {
     @MainActor
     func testSearchFindsPagesByNameAndKeyword() {
         let app = launch()
-        openAdvanced(app)
-        let field = app.searchFields.firstMatch
-        XCTAssertTrue(field.waitForExistence(timeout: 5))
-        field.tap()
-        field.typeText("chime")
+        let field = search("chime", app)
         let haptics = app.element("settings-search.haptics")
         XCTAssertTrue(haptics.waitForExistence(timeout: 5), "a keyword finds the sounds")
         XCTAssertFalse(app.element("settings-search.about").exists)
-        field.buttons.firstMatch.tap()
+        app.buttons["Clear"].firstMatch.tap()
         field.typeText("zzqq")
         XCTAssertTrue(app.element("settings-search-empty").waitForExistence(timeout: 5))
         // A name opens its page.
-        field.buttons.firstMatch.tap()
+        app.buttons["Clear"].firstMatch.tap()
         field.typeText("About")
         app.element("settings-search.about").tap()
         XCTAssertTrue(app.element("about-version").waitForExistence(timeout: 5))
@@ -124,9 +121,10 @@ final class SettingsAppearanceUITests: XCTestCase {
 
     @MainActor
     func testAboutShowsTheVersionAndTheComputer() {
+        // About is in the account menu; in Settings, the search finds it
         let app = launch()
-        openAdvanced(app)
-        openInAdvanced("settings-about", app)
+        _ = search("About", app)
+        openRow("settings-search.about", app)
         let version = app.element("about-version")
         XCTAssertTrue(version.waitForExistence(timeout: 5))
         XCTAssertTrue(version.label.hasPrefix("Version "))
@@ -139,6 +137,7 @@ final class SettingsAppearanceUITests: XCTestCase {
     @MainActor
     func testNotificationSoundsSwitchIsKept() {
         let app = launch()
+        openRow("settings-general", app)
         let haptics = app.element("settings-haptics")
         for _ in 0..<8 where !haptics.isHittable { app.swipeUp() }
         haptics.tap()
@@ -150,6 +149,7 @@ final class SettingsAppearanceUITests: XCTestCase {
         XCTAssertTrue(eventually(5) { toggle.value as? String == flipped })
         // Kept on this phone after a relaunch, then put back.
         let again = launch()
+        openRow("settings-general", again)
         let row = again.element("settings-haptics")
         for _ in 0..<8 where !row.isHittable { again.swipeUp() }
         row.tap()
@@ -188,8 +188,7 @@ final class SettingsAppearanceUITests: XCTestCase {
         guard status == 200 else { throw XCTSkip("this pairing keeps no achievements (\(status))") }
         let wasPublic = (before["settings"] as? [String: Any])?["public"] as? Bool ?? false
         let app = launch()
-        openAdvanced(app)
-        openInAdvanced("settings-achievements", app)
+        openRow("settings-achievements", app)
         XCTAssertTrue(app.element("achievements-points").waitForExistence(timeout: 15))
         XCTAssertTrue(app.element("achievement.first-words").exists)
 
@@ -226,8 +225,7 @@ final class SettingsAppearanceUITests: XCTestCase {
         let org = api("GET", "/api/org").1
         let admin = org["viewerRole"] as? String == "admin"
         let app = launch()
-        openAdvanced(app)
-        openInAdvanced("settings-organization", app)
+        openRow("settings-organization", app)
         XCTAssertTrue(app.element("org-name").waitForExistence(timeout: 15))
         XCTAssertEqual(app.element("org-name").label, (org["org"] as? [String: Any])?["name"] as? String)
         let delegation = api("GET", "/api/org/routine-delegation").1["state"] as? String ?? "none"
@@ -290,10 +288,10 @@ final class SettingsAppearanceUITests: XCTestCase {
     @MainActor
     private func quickCreate(_ name: String, in app: XCUIApplication) {
         if !app.segmentedControls["routines-section"].exists {
-            let plus = app.buttons["home-plus"]
-            XCTAssertTrue(plus.waitForExistence(timeout: 30))
-            plus.press(forDuration: 1.2)
-            let automations = app.buttons["home-plus-automations"]
+            // Automations is a place at the foot of the home list
+            XCTAssertTrue(app.buttons["home-plus"].waitForExistence(timeout: 30))
+            let automations = app.buttons["home-place.automations"]
+            for _ in 0..<12 where !(automations.exists && automations.isHittable) { app.swipeUp() }
             XCTAssertTrue(automations.waitForExistence(timeout: 5))
             automations.tap()
             XCTAssertTrue(app.segmentedControls["routines-section"].waitForExistence(timeout: 15))

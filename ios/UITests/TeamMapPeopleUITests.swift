@@ -90,9 +90,10 @@ final class TeamMapPeopleUITests: XCTestCase {
 
     @MainActor
     private func openTeamMap(_ app: XCUIApplication) {
-        app.buttons["home-plus"].press(forDuration: 1.0)
-        let item = app.buttons["home-plus-team-map"]
-        XCTAssertTrue(item.waitForExistence(timeout: 5), "the + long press offers the Team map")
+        // Team map: a place at the foot of the home list
+        let item = app.buttons["home-place.teamMap"]
+        for _ in 0..<12 where !(item.exists && item.isHittable) { app.swipeUp() }
+        XCTAssertTrue(item.waitForExistence(timeout: 5), "the home offers the Team map")
         item.tap()
         XCTAssertTrue(app.descendants(matching: .any)["team-map"].waitForExistence(timeout: 10))
     }
@@ -274,13 +275,12 @@ final class TeamMapPeopleUITests: XCTestCase {
         let disabled = try principal("casey.brooks")
 
         let app = launch()
+        // New lists the people after the bots (ComposeToPicker)
         app.buttons["home-plus"].tap()
-        let item = app.buttons["plus-menu.message-person"]
-        XCTAssertTrue(item.waitForExistence(timeout: 5), "an organization server offers Message a person")
-        item.tap()
-        let person = app.buttons["compose-person-\(jordan)"]
-        XCTAssertTrue(person.waitForExistence(timeout: 10))
-        XCTAssertFalse(app.buttons["compose-person-\(disabled)"].exists, "a disabled person is not offered")
+        let person = app.buttons["plus-menu.person.\(jordan)"]
+        for _ in 0..<6 where !(person.exists && person.isHittable) { app.swipeUp() }
+        XCTAssertTrue(person.waitForExistence(timeout: 10), "an organization server lists its people in New")
+        XCTAssertFalse(app.buttons["plus-menu.person.\(disabled)"].exists, "a disabled person is not offered")
         person.tap()
 
         try eventually("the server holds the conversation with Jordan") { try peopleConversation(with: jordan) != nil }

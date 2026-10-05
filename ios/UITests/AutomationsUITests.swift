@@ -110,11 +110,10 @@ final class AutomationsUITests: XCTestCase {
         if let environment = fixture.environmentId { arguments += ["-parityEnvironment", environment] }
         app.launchArguments = arguments
         app.launch()
-        // Home "+" long press > Automations
-        let plus = app.buttons["home-plus"]
-        XCTAssertTrue(plus.waitForExistence(timeout: 30))
-        plus.press(forDuration: 1.2)
-        let automations = app.buttons["home-plus-automations"]
+        // Automations: a place at the foot of the home list
+        XCTAssertTrue(app.buttons["home-plus"].waitForExistence(timeout: 30))
+        let automations = app.buttons["home-place.automations"]
+        for _ in 0..<12 where !(automations.exists && automations.isHittable) { app.swipeUp() }
         XCTAssertTrue(automations.waitForExistence(timeout: 5))
         automations.tap()
         XCTAssertTrue(app.segmentedControls["routines-section"].waitForExistence(timeout: 15))

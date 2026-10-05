@@ -529,13 +529,10 @@ enum NewMenuLabels {
         }
     }
 
-    /// The organization's people other than the viewer.
+    /// The organization's active people the viewer may write to (the
+    /// same list as Message a person).
     static func people(_ session: Session) -> [String] {
-        let me = session.account?.principalId?.lowercased()
-        return (PeopleDirectory.shared.directory?.people ?? [])
-            .filter { $0.principalId.lowercased() != me }
-            .sorted { $0.name.localizedCompare($1.name) == .orderedAscending }
-            .map(\.principalId)
+        (PeopleDirectory.shared.directory?.messageable(viewer: session.roomViewer.actorId, query: "") ?? []).map(\.principalId)
     }
 
     static func groups(_ session: Session) -> [[NewMenuItem]] {

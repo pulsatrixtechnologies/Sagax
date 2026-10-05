@@ -48893,6 +48893,336 @@
           }
         }
       }
+    },
+    "Archive %@?": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Archive %@?"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Archiver %@ ?"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Arquivar %@?"
+          }
+        }
+      }
+    },
+    "Archived bots": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Archived bots"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bots archivés"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bots arquivados"
+          }
+        }
+      }
+    },
+    "Choose another Primary Bot first": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choose another Primary Bot first"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choisissez d'abord un autre robot principal"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Escolha outro bot principal primeiro"
+          }
+        }
+      }
+    },
+    "Display": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Display"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Affichage"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Exibição"
+          }
+        }
+      }
+    },
+    "Each bot’s own folder": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Each bot’s own folder"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le dossier propre à chaque bot"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A pasta de cada bot"
+          }
+        }
+      }
+    },
+    "Each bot’s own folder, or an absolute path": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Each bot’s own folder, or an absolute path"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le dossier propre à chaque bot, ou un chemin absolu"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A pasta de cada bot, ou um caminho absoluto"
+          }
+        }
+      }
+    },
+    "Fixed for this thread after its first turn. Start a new thread to work somewhere else.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fixed for this thread after its first turn. Start a new thread to work somewhere else."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fixé pour ce fil après son premier tour. Commencez un nouveau fil pour travailler ailleurs."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fixada para esta conversa após o primeiro turno. Comece uma nova conversa para trabalhar em outro lugar."
+          }
+        }
+      }
+    },
+    "Keep at least one active bot": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keep at least one active bot"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gardez au moins un bot actif"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mantenha pelo menos um bot ativo"
+          }
+        }
+      }
+    },
+    "No archived bots.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No archived bots."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aucun bot archivé."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nenhum bot arquivado."
+          }
+        }
+      }
+    },
+    "Unassigned": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unassigned"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Non assigné"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sem atribuição"
+          }
+        }
+      }
+    },
+    "Where every bot in this group runs its shell and file tools.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Where every bot in this group runs its shell and file tools."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "L'endroit où chaque bot de ce groupe exécute son terminal et ses outils de fichiers."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Onde cada bot deste grupo executa o terminal e as ferramentas de arquivos."
+          }
+        }
+      }
+    },
+    "%@ archived": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ archived"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ archivé"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ arquivado"
+          }
+        }
+      }
+    },
+    "%@ leaves the sidebar, but every conversation is kept. You can restore it any time from Archived bots.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ leaves the sidebar, but every conversation is kept. You can restore it any time from Archived bots."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ quitte la barre latérale, mais toutes les conversations sont conservées. Vous pouvez le restaurer à tout moment depuis Bots archivés."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ sai da barra lateral, mas todas as conversas são mantidas. Você pode restaurá-lo a qualquer momento em Bots arquivados."
+          }
+        }
+      }
+    },
+    "Off by default. Shows Templates in the sidebar menu, to install a ready-made team of bots.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Off by default. Shows Templates in the sidebar menu, to install a ready-made team of bots."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Désactivé par défaut. Affiche Modèles dans le menu de la barre latérale, pour installer une équipe de bots toute prête."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Desligado por padrão. Mostra Modelos no menu da barra lateral, para instalar uma equipe de bots pronta."
+          }
+        }
+      }
+    },
+    "Gmail, Slack, GitHub and more through your Composio project: the entry at the foot of the sidebar and the card in Settings > API keys. While off, your Claude account's connectors show in Settings > Model providers.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gmail, Slack, GitHub and more through your Composio project: the entry at the foot of the sidebar and the card in Settings > API keys. While off, your Claude account's connectors show in Settings > Model providers."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gmail, Slack, GitHub et plus par votre projet Composio : l'entrée au pied de la barre latérale et la carte dans Paramètres > Clés API. Désactivé, les connecteurs de votre compte Claude s'affichent dans Paramètres > Fournisseurs de modèles."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gmail, Slack, GitHub e mais pelo seu projeto Composio: a entrada no rodapé da barra lateral e o cartão em Configurações > Chaves de API. Desligado, os conectores da sua conta Claude aparecem em Configurações > Provedores de modelos."
+          }
+        }
+      }
     }
   },
   "version": "1.0"
