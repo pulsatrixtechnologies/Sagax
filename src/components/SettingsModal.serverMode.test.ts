@@ -91,10 +91,11 @@ describe("Settings in server mode", () => {
     const html = render();
     expect(html).toContain('data-testid="managed-profile"');
     expect(nestedCardBorders(html)).toEqual([]);
-    // About me is a row with its first line and Edit, not a card with a field
-    expect(html).toContain('data-settings-card="general.aboutMe" data-settings-subpage-row');
-    expect(html).toContain("I run IT at GOX.");
-    expect(html).toContain(">Edit<");
+    // About me is the operator's shared profile. This signed-in person is
+    // not the operator, so the row stays hidden instead of offering a save
+    // the server would refuse. It is still a row, not a card, for the operator.
+    expect(html).not.toContain('data-settings-card="general.aboutMe"');
+    expect(html).not.toContain("I run IT at GOX.");
     expect(html).not.toContain("<textarea");
   });
 

@@ -539,7 +539,7 @@ describe("VPS computer inventory UI", () => {
 describe("Settings → Computers on an OMB Cloud home", () => {
   afterEach(() => { storeFixture.config = null; });
   // Settings cards are collapsible here: the title is the first span of the card's toggle.
-  const cards = () => [...renderToStaticMarkup(createElement(LocalComputerSection)).matchAll(/<button type="button" aria-expanded="[a-z]+"[^>]*><span class="shrink-0">([^<]+)<\/span>/g)].map((match) => match[1]);
+  const cards = () => [...renderToStaticMarkup(createElement(LocalComputerSection)).matchAll(/<button type="button" aria-expanded="[a-z]+"[^>]*><span class="flex min-w-0 items-center gap-2"><span class="truncate">([^<]+)<\/span>/g)].map((match) => match[1]);
 
   it("sets up a Local VM on a desktop or self-hosted server", () => {
     expect(cards()).toEqual(expect.arrayContaining(["Local VM", "Setup"]));
