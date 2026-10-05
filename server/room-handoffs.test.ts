@@ -793,6 +793,58 @@ describe("hard cap expiry digest", () => {
       expect(node.result).not.toContain("\n");
     }, () => nowMs, { hardCapMs: 45 * 60_000 });
   });
+
+  it("does not keep a timer while the tree is idle", () => fixture(async (engine, hooks, file) => {
+    const waitFor = async (ready: () => boolean) => {
+      const deadline = Date.now() + 2_000;
+      while (!ready()) {
+        if (Date.now() > deadline) throw new Error("room handoff pump did not settle");
+        await new Promise(resolve => setTimeout(resolve, 15));
+      }
+    };
+    try {
+      engine.start(20);
+      expect(engine.pumping()).toBe(false);
+      expect(engine.needsPump()).toBe(false);
+
+      // Accepting work before start() must not arm a timer by itself.
+      const quiet = new RoomHandoffs(`${file}-quiet`, hooks);
+      quiet.enqueue(
+        { botId: "chief", threadId: "chief-chat" },
+        "quiet",
+        undefined,
+        { botId: "builder", threadId: "builder-chat" },
+        "build",
+        "Build it",
+      );
+      expect(quiet.pumping()).toBe(false);
+
+      const child = engine.enqueue(
+        { botId: "chief", threadId: "chief-chat" },
+        "turn",
+        undefined,
+        { botId: "builder", threadId: "builder-chat" },
+        "build",
+        "Build it",
+      ).node;
+      expect(engine.pumping()).toBe(true);
+
+      await waitFor(() => child.status === "completed" && engine.nodes.get("turn")?.status === "source");
+      // The source conversation is still open, so the pump stays until it settles.
+      expect(engine.pumping()).toBe(true);
+      engine.sourceSettled("turn", false);
+      await waitFor(() => engine.nodes.get("turn")?.status === "completed" && !engine.pumping());
+      expect(engine.needsPump()).toBe(false);
+      expect(hooks.run).toHaveBeenCalledTimes(2);
+
+      const restarted = new RoomHandoffs(file, hooks);
+      restarted.start(20);
+      expect(restarted.needsPump()).toBe(false);
+      expect(restarted.pumping()).toBe(false);
+    } finally {
+      engine.stop();
+    }
+  }));
 });
 
 describe("shared room request display", () => {

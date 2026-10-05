@@ -15016,10 +15016,9 @@ const webhookIngressStatus = () => ({
 // a time — the transcript and streaming bubble stay coherent), each on a
 // fresh session with recent room context. A member's reply may @mention
 // teammates; those get one chained turn (hop 1), never deeper.
-const roomHandoffTimer = setInterval(() => {
-  try { roomHandoffs.tick(); } catch (error) { console.error("room handoffs:", error); }
-}, 250);
-roomHandoffTimer.unref();
+// Wake only while a handoff can still dispatch, resume, expire, or report.
+// An empty tree used to take a timer every 250ms for the whole session.
+roomHandoffs.start(250);
 // The room-context window IS the drain's coalescing cap: a burst longer
 // than the window would append transcript lines the responder never reads,
 // so both bounds come from one constant (admission.ts).

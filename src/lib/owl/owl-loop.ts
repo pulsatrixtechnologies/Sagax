@@ -1,7 +1,12 @@
-// One requestAnimationFrame loop for every animated owl on the page. Each
-// OwlAvatar registers a controller that writes CSS transforms straight onto
-// its SVG groups (via refs): no React state changes per frame. Static owls
-// (animated=false) never register, so a long sidebar costs nothing.
+// One clock for every animated owl on the page. Each OwlAvatar registers a
+// controller that writes CSS transforms straight onto its SVG groups (via
+// refs): no React state changes per frame. Static owls (animated=false)
+// never register, so a resting sidebar costs nothing.
+//
+// Working, a wing move, a blink, and the shake of an unread face run on
+// requestAnimationFrame. A resting pose (a breath, or an unread face that
+// has finished its shake) waits on a short timer instead, so a sidebar of
+// unread owls does not repaint the glass bars at the display rate.
 
 import { animationsPaused, resetAnimationPauseForTests, watchAnimationPause } from "../animation-pause";
 import {
@@ -57,12 +62,25 @@ export interface OwlController {
 
 interface Driven {
   tick(now: number): void;
+  /** The last tick needed a display-rate frame (motion that would alias at 12Hz). */
+  fullRate: boolean;
 }
+
+/** Resting poses do not need a display-rate clock. The gap leaves room for
+ * one vsync, so the next paint lands near 12Hz. */
+const REST_FRAME_GAP_MS = 70;
 
 const running = new Set<Driven>();
 let rafId = 0;
+let slowTimer: ReturnType<typeof setTimeout> | 0 = 0;
 let reduceMQ: MediaQueryList | null = null;
 let pauseUnsub: (() => void) | null = null;
+
+function clearSlow() {
+  if (!slowTimer) return;
+  clearTimeout(slowTimer);
+  slowTimer = 0;
+}
 
 function prefersReducedMotion(): boolean {
   if (typeof window === "undefined" || typeof window.matchMedia !== "function") return false;
@@ -78,11 +96,24 @@ function frame(now: number) {
   }
   for (const c of running) c.tick(now / 1000);
   rafId = 0;
-  kick();
+  if (!running.size) return;
+  let full = false;
+  for (const c of running) if (c.fullRate) full = true;
+  if (full) kick();
+  else scheduleSlow();
+}
+
+function scheduleSlow() {
+  if (animationsPaused() || rafId || slowTimer || !running.size) return;
+  slowTimer = setTimeout(() => {
+    slowTimer = 0;
+    kick();
+  }, REST_FRAME_GAP_MS);
 }
 
 function kick() {
   if (animationsPaused() || rafId || !running.size) return;
+  clearSlow();
   if (typeof requestAnimationFrame !== "function") return;
   rafId = requestAnimationFrame(frame);
 }
@@ -95,6 +126,7 @@ function ensurePauseWatch() {
         cancelAnimationFrame(rafId);
         rafId = 0;
       }
+      clearSlow();
       return;
     }
     kick();
@@ -109,10 +141,12 @@ function start(c: Driven) {
 
 function stop(c: Driven) {
   running.delete(c);
-  if (!running.size && rafId && typeof cancelAnimationFrame === "function") {
+  if (running.size) return;
+  if (rafId && typeof cancelAnimationFrame === "function") {
     cancelAnimationFrame(rafId);
     rafId = 0;
   }
+  clearSlow();
 }
 
 /** Drops the pause subscription. Tests call this between cases. */
@@ -121,6 +155,7 @@ export function resetOwlLoopForTests(): void {
   pauseUnsub = null;
   resetAnimationPauseForTests();
   reduceMQ = null;
+  clearSlow();
   if (rafId && typeof cancelAnimationFrame === "function") {
     cancelAnimationFrame(rafId);
     rafId = 0;
@@ -157,6 +192,7 @@ export function createOwlController(
   const gaze: Offset = { ...OWL_GEOM.gazeRest };
 
   const driven: Driven = {
+    fullRate: false,
     tick(now) {
       if (t0 === null || beatPending) {
         t0 = now;
@@ -176,10 +212,16 @@ export function createOwlController(
       }
       const state = beat?.state ?? base;
       const oneShot = beat != null && ONE_SHOTS.has(beat.state);
-      const pose = owlPose(state, now - t0, !oneShot, hop);
+      const elapsed = now - t0;
+      // Unread faces shake for the first part of the alert cycle, then hold.
+      // Only the shake needs a display-rate clock.
+      const alertPhase = state === "alert" ? (oneShot ? elapsed : elapsed % 1.8) : 1;
+      const pose = owlPose(state, elapsed, !oneShot, hop);
+      let paintAgain = false;
       if (pose.done) {
         beat = null;
         t0 = now;
+        paintAgain = true;
       }
       if (wingMove) {
         wingMove.start ??= now;
@@ -205,37 +247,52 @@ export function createOwlController(
       const lid = Math.max(pose.lid, blinkAmt);
 
       const reduce = forcedReduce ?? prefersReducedMotion();
+      const writeTransform = (style: CSSStyleDeclaration, value: string) => {
+        if (style.transform !== value) style.transform = value;
+      };
       if (reduce) {
         const g = pinned ?? gazeToOffset(pose.gaze);
         gaze.x = g.x;
         gaze.y = g.y;
         wingMove = null;
-        el.rig.style.transform = "";
-        el.nearWing.style.transform = "";
-        if (el.nearWingBack) el.nearWingBack.style.transform = "";
+        writeTransform(el.rig.style, "");
+        writeTransform(el.nearWing.style, "");
+        if (el.nearWingBack) writeTransform(el.nearWingBack.style, "");
         if (farShown && el.farWing) {
-          el.farWing.style.opacity = "0";
+          if (el.farWing.style.opacity !== "0") el.farWing.style.opacity = "0";
           farShown = false;
         }
-        el.eyes.style.transform = state === "alert" ? eyesTransform(1.15) : "";
+        writeTransform(el.eyes.style, state === "alert" ? eyesTransform(1.15) : "");
       } else {
         const target = pointer ?? pinned ?? gazeToOffset(pose.gaze);
         const k = 1 - Math.exp(-dt * (pointer ? 14 : 6));
         gaze.x += (target.x - gaze.x) * k;
         gaze.y += (target.y - gaze.y) * k;
-        el.rig.style.transform = rigTransform(pose);
-        el.nearWing.style.transform = wingTransform(pose.wing, pose.open);
-        if (el.nearWingBack) el.nearWingBack.style.transform = el.nearWing.style.transform;
+        writeTransform(el.rig.style, rigTransform(pose));
+        writeTransform(el.nearWing.style, wingTransform(pose.wing, pose.open));
+        if (el.nearWingBack) writeTransform(el.nearWingBack.style, el.nearWing.style.transform);
         if (el.farWing && (pose.open > 0 || farShown)) {
           // only touched while the wings are (or were just) out
-          el.farWing.style.transform = farWingTransform(pose.wing, pose.open);
-          el.farWing.style.opacity = String(farWingOpacity(pose.open));
+          writeTransform(el.farWing.style, farWingTransform(pose.wing, pose.open));
+          const opacity = String(farWingOpacity(pose.open));
+          if (el.farWing.style.opacity !== opacity) el.farWing.style.opacity = opacity;
           farShown = pose.open > 0;
         }
-        el.eyes.style.transform = eyesTransform(pose.eyeScale);
+        writeTransform(el.eyes.style, eyesTransform(pose.eyeScale));
       }
-      el.pupil.style.transform = pupilTransform(gaze);
-      el.lids.style.transform = lidTransform(lid);
+      writeTransform(el.pupil.style, pupilTransform(gaze));
+      writeTransform(el.lids.style, lidTransform(lid));
+      const blinking = blinkStart >= 0 && now - blinkStart < blinkDur;
+      // A 12Hz shake or a 6Hz wing flap aliases if the whole sidebar is paced
+      // down. Breathing and a held unread face do not.
+      driven.fullRate = !reduce && (
+        paintAgain
+        || state === "working"
+        || state === "success"
+        || wingMove !== null
+        || blinking
+        || (state === "alert" && alertPhase < 0.65)
+      );
     },
   };
 
@@ -312,21 +369,28 @@ export function createOwlController(
       if (!beat) beatPending = true;
       // No frame loop under reduced motion, so a state change paints once.
       if (reduced()) driven.tick((typeof performance !== "undefined" ? performance.now() : 0) / 1000);
+      else kick();
     },
     play(state, durationMs = 1400) {
       beat = { state, untilMs: ONE_SHOTS.has(state) ? null : durationMs };
       beatPending = true;
       if (reduced()) driven.tick((typeof performance !== "undefined" ? performance.now() : 0) / 1000);
+      else kick();
     },
     blink() {
       blinkPending = true;
-      if (!reduced()) return;
+      if (!reduced()) {
+        kick();
+        return;
+      }
       clearBlinkSchedule();
       runReducedBlink();
     },
     flourish(move) {
       if (reduced()) return;
       wingMove = { move, start: null };
+      // A resting owl may be waiting out its slow gap. Start the move now.
+      kick();
     },
     setPointer(offset) {
       pointer = offset;

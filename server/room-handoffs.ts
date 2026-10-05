@@ -45,6 +45,9 @@ export class RoomHandoffs {
   private readonly limits: typeof ROOM_HANDOFF_LIMITS;
   /** Per-root pause accounting for the tree lifetime clock. */
   private readonly pauses = new Map<string, { accumulatedMs: number; since?: number }>();
+  /** Armed only while a tick can still change something. Idle servers do not wake for it. */
+  private timer: ReturnType<typeof setInterval> | null = null;
+  private intervalMs = 0;
 
   constructor(file: string, hooks: RoomHandoffHooks, now: () => number = Date.now,
     limits: Partial<typeof ROOM_HANDOFF_LIMITS> = {}) {
@@ -269,6 +272,7 @@ export class RoomHandoffs {
     if (fresh) this.nodes.set(parent.id, parent);
     this.nodes.set(node.id, node);
     try { this.publish(node, parent); } catch (e) { this.nodes.delete(node.id); if (fresh) this.nodes.delete(parent.id); throw e; }
+    this.kick();
     return { node, duplicate: false };
   }
 
@@ -419,5 +423,49 @@ export class RoomHandoffs {
       })
         .finally(() => this.controllers.delete(n.id));
     }
+  }
+
+  /** True while a later tick can still dispatch, resume, expire, or report. */
+  needsPump(): boolean {
+    if (this.loadError) return false;
+    for (const n of this.nodes.values()) {
+      if (!terminal(n)) return true;
+      if (n.parentId && !n.reported) return true;
+    }
+    return false;
+  }
+
+  /** Whether the idle-gated pump is currently scheduled. */
+  pumping(): boolean {
+    return this.timer !== null;
+  }
+
+  /** Drop the pump. A later enqueue or start() arms it again while work remains. */
+  stop(): void {
+    if (!this.timer) return;
+    clearInterval(this.timer);
+    this.timer = null;
+  }
+
+  /**
+   * Check the tree on `intervalMs` while work is unfinished, then stop.
+   * Callers used to leave a 250ms timer running for the life of the process,
+   * including when the tree was empty.
+   */
+  start(intervalMs = 250): void {
+    this.intervalMs = intervalMs;
+    this.kick();
+  }
+
+  private kick(): void {
+    if (!this.intervalMs || this.timer || !this.needsPump()) return;
+    this.timer = setInterval(() => {
+      try { this.tick(); } catch (error) { console.error("room handoffs:", error); }
+      if (!this.needsPump() && this.timer) {
+        clearInterval(this.timer);
+        this.timer = null;
+      }
+    }, this.intervalMs);
+    this.timer.unref?.();
   }
 }

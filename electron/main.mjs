@@ -27,6 +27,7 @@ import { pollServerIdentity } from "./server-boot-probe.mjs";
 import { createServerSupervisor } from "./server-supervisor.mjs";
 import { packageUrlFromCommandLine, packageUrlFromDeepLink } from "./package-link.mjs";
 import { createOrganizationEntry, ORGANIZATION_DEEP_LINK, isOrganizationDeepLink, takeOrganizationDeepLink, organizationRestartIntent, withOrganizationRestartIntent, withoutOrganizationRestartIntent } from "./organization-entry.mjs";
+import { createRotatingLog } from "./log-file.mjs";
 import { createOrgJoin, forgetDetail } from "./org-join.mjs";
 import { createOwnerIdentitySync } from "./owner-identity.mjs";
 import { trafficLightsForSkin, windowChromeOptions } from "./window-chrome.mjs";
@@ -801,7 +802,7 @@ function composioBrokerUrl() {
 const LOG_DIR = app.getPath("logs");
 const DESKTOP_CRASH_LOG = path.join(LOG_DIR, "desktop-crashes.log");
 const DESKTOP_CRASH_LOG_MAX_BYTES = 512 * 1024;
-let logStream = null;
+let desktopLog = null;
 let desktopShutdownStarted = false;
 import {
   companionAdvertisedHostedUrl,
@@ -884,11 +885,8 @@ function startupPhase(phase, status) {
 
 function slog(line) {
   try {
-    if (!logStream) {
-      fs.mkdirSync(LOG_DIR, { recursive: true });
-      logStream = fs.createWriteStream(path.join(LOG_DIR, "server.log"), { flags: "a" });
-    }
-    logStream.write(`[${new Date().toISOString()}] ${line}\n`);
+    desktopLog ??= createRotatingLog(path.join(LOG_DIR, "server.log"));
+    desktopLog.write(`[${new Date().toISOString()}] ${line}\n`);
   } catch {
     /* logging must never break startup */
   }
