@@ -48893,6 +48893,160 @@
           }
         }
       }
+    },
+    "Double tap to edit": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Double tap to edit"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Touchez deux fois pour modifier"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Toque duas vezes para editar"
+          }
+        }
+      }
+    },
+    "Chatterbox server address": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Chatterbox server address"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Adresse du serveur Chatterbox"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Endereço do servidor Chatterbox"
+          }
+        }
+      }
+    },
+    "Chatterbox model": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Chatterbox model"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Modèle Chatterbox"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Modelo Chatterbox"
+          }
+        }
+      }
+    },
+    "Save server": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Save server"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enregistrer le serveur"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Salvar servidor"
+          }
+        }
+      }
+    },
+    "Give this agent a voice for calls and spoken replies. The voice choice belongs to this agent; provider keys stay on your computer and never come to this device.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Give this agent a voice for calls and spoken replies. The voice choice belongs to this agent; provider keys stay on your computer and never come to this device."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Donnez une voix à cet agent pour les appels et les réponses parlées. Le choix de la voix appartient à cet agent; les clés du fournisseur restent sur votre ordinateur et ne viennent jamais sur cet appareil."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dê uma voz a este agente para chamadas e respostas faladas. A escolha da voz pertence a este agente; as chaves do provedor ficam no seu computador e nunca vêm para este dispositivo."
+          }
+        }
+      }
+    },
+    "These are changed by an administrator, or in Sagax on your computer.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "These are changed by an administrator, or in Sagax on your computer."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ces réglages sont modifiés par un administrateur, ou dans Sagax sur votre ordinateur."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Estas opções são alteradas por um administrador ou no Sagax no seu computador."
+          }
+        }
+      }
+    },
+    "Where this bot runs its tools: a computer of its own, this computer, the built-in browser, or nowhere.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Where this bot runs its tools: a computer of its own, this computer, the built-in browser, or nowhere."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Où ce bot exécute ses outils : son propre ordinateur, cet ordinateur, le navigateur intégré, ou nulle part."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Onde este bot executa suas ferramentas: um computador próprio, este computador, o navegador integrado ou lugar nenhum."
+          }
+        }
+      }
     }
   },
   "version": "1.0"
