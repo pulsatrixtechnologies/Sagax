@@ -11,7 +11,7 @@ final class SettingsAppearanceParityTests: XCTestCase {
 
     func testTheCatalogMatchesTheDesktopOne() {
         let catalog = AchievementDefinition.catalog
-        XCTAssertEqual(catalog.count, 51)
+        XCTAssertEqual(catalog.count, 52)
         XCTAssertEqual(Set(catalog.map(\.id)).count, catalog.count, "ids are unique")
         XCTAssertEqual(AchievementDefinition.lookup("first-words")?.name.fr, "Premiers mots")
         XCTAssertEqual(AchievementDefinition.lookup("first-words")?.rewards.first?.key, "title:rookie")
