@@ -31,6 +31,7 @@ import { createRotatingLog } from "./log-file.mjs";
 import { createOrgJoin, forgetDetail } from "./org-join.mjs";
 import { createOwnerIdentitySync } from "./owner-identity.mjs";
 import { trafficLightsForSkin, windowChromeOptions } from "./window-chrome.mjs";
+import { createWindowNudger } from "./window-nudge.mjs";
 import { createStartupScreen } from "./startup-screen.mjs";
 import { createSystemTray } from "./system-tray.mjs";
 let startupScreen = null;
@@ -2004,6 +2005,28 @@ ipcMain.on("desktop:unread-count", (event, value) => {
   applyUnreadBadge(sender);
 });
 
+// A nudge between the two people in a chat: bring this desktop's main
+// window to the front and shake it. The sender and the recipient each ask
+// from their own app. Floating windows stay where they are. A subframe
+// cannot ask, and a second call during the shake does not focus again
+// (electron/window-nudge.mjs).
+const windowNudger = createWindowNudger(undefined, () => {
+  if (process.platform === "darwin") {
+    app.show();
+    app.focus({ steal: true });
+  } else {
+    app.focus();
+  }
+});
+ipcMain.on("desktop:nudge", (event) => {
+  const sender = BrowserWindow.fromWebContents(event.sender);
+  if (!sender || sender !== mainWindow || sender.isDestroyed()) return;
+  const frame = event.senderFrame;
+  const mainFrame = event.sender?.mainFrame;
+  if (frame && mainFrame && frame !== mainFrame) return;
+  windowNudger.nudge(mainWindow);
+});
+
 // ── environments: this computer's server, or a paired remote one ──────
 // The app switches by loading the chosen server's own UI (electron/menu.mjs).
 // Only {id, name, origin} is stored here; the session credential is the
@@ -3738,6 +3761,7 @@ const CREDENTIAL_PATCH = {
   opencodeGoApiKey: (value) => ({ opencodeGo: { apiKey: value } }),
   ttsKey: (value) => ({ tts: { key: value } }),
   fishAudioKey: (value) => ({ tts: { fishKey: value } }),
+  xaiVoiceKey: (value) => ({ tts: { xaiKey: value } }),
   jevApiKey: (value) => ({ decider: { key: value } }),
   openaiImageApiKey: (value) => ({ imageGen: { key: value } }),
   customImageApiKey: (value) => ({ imageGen: { customApiKey: value } }),

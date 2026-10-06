@@ -55,6 +55,8 @@ public enum Frame: Sendable {
     case computer(botId: String, state: String)
     case config
     case runtime(RuntimeEvent)
+    /// The desktop shakes. The phone only needs a light haptic.
+    case nudge
     case unknown(kind: String)
 }
 
@@ -126,6 +128,8 @@ extension Frame: Decodable {
             )
         case "config":
             self = .config
+        case "nudge":
+            self = .nudge
         case "runtime":
             self = .runtime(try container.decode(RuntimeEvent.self, forKey: .event))
         default:

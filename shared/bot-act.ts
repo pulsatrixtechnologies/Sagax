@@ -7,6 +7,18 @@ const PATH_MAX = 512;
 const QUERY_KEYS_MAX = 20;
 const QUERY_VALUE_MAX = 200;
 const BODY_MAX = 100_000;
+const PLUGIN_BOT = /^[\w-]{1,80}$/;
+const PLUGIN_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
+const PLUGIN_KEY = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}@[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
+const PLUGIN_FIELDS: Record<string, readonly string[]> = {
+  list: ["action", "botId"],
+  addMarketplace: ["action", "botId", "source", "ref"],
+  install: ["action", "botId", "marketplace", "plugin"],
+  setEnabled: ["action", "botId", "key", "enabled"],
+  uninstall: ["action", "botId", "key"],
+  removeMarketplace: ["action", "botId", "marketplace"],
+};
+const PLUGIN_UNAVAILABLE = "That plugin action is not available.";
 const ACTION_MAX = 100_000;
 const OBJECT_MAX = 50_000;
 const ID_MAX = 200;
@@ -76,6 +88,7 @@ export function botActFrameAllowed(audience: string, viewerId: string | undefine
 
 export function summaryOf(target: ActTarget): string {
   if (target.kind === "ui") return `Screen: ${target.command}`;
+  if (target.kind === "route" && target.method === "POST" && target.path === "/api/nudges") return "Nudge";
   return `${target.method} ${target.path}`;
 }
 
@@ -112,6 +125,10 @@ const COMMANDS: Record<string, CommandSpec> = {
   markAllRoutineRunsSeen: { write: true, fields: {} },
   createGroup: { write: true, fields: { memberIds: "a", name: "s?", section: "s?" } },
   openPeopleDm: { write: true, fields: { principalId: "s" } },
+  // Same POST /api/nudges the button uses. decideBotAct turns it into that
+  // route so the server, not every open window, performs it once.
+  nudgePerson: { write: true, fields: { principalId: "s" } },
+  nudgeGroup: { write: true, fields: { groupId: "s" } },
   sendGroup: { write: true, fields: { groupId: "s", text: "S", sendId: "s?", replyToId: "s?", threadId: "s?", mode: "e?:chat|goal" } },
   patchGroup: { write: true, fields: { groupId: "s", patch: "o" } },
   deleteGroup: { write: true, fields: { groupId: "s" } },
@@ -249,7 +266,7 @@ export function decideBotAct(input: {
 }): ActDecision {
   const parsed = parseActTarget(input.raw);
   if (!parsed.ok) return parsed;
-  const target = parsed.target;
+  const target = nudgeActRoute(parsed.target);
   if (target.kind === "route") {
     const needed = input.neededScope(target.method, target.path);
     if (!input.scopes.includes(needed)) {
@@ -268,10 +285,81 @@ export function decideBotAct(input: {
   };
 }
 
+/** The nudge button's catalog name is one server call, not a screen
+ * broadcast. Every open window would otherwise post, and only the first
+ * would pass the cooldown. */
+function nudgeActRoute(target: ActTarget): ActTarget {
+  if (target.kind !== "ui") return target;
+  if (target.command === "nudgePerson") {
+    const principalId = target.input.principalId;
+    if (typeof principalId !== "string" || principalId.length < 1) return target;
+    return { kind: "route", method: "POST", path: "/api/nudges", body: { principalId } };
+  }
+  if (target.command === "nudgeGroup") {
+    const groupId = target.input.groupId;
+    if (typeof groupId !== "string" || groupId.length < 1) return target;
+    return { kind: "route", method: "POST", path: "/api/nudges", body: { groupId } };
+  }
+  return target;
+}
+
+function pluginFail(): { ok: false; status: 400; error: string } {
+  return { ok: false, status: 400, error: PLUGIN_UNAVAILABLE };
+}
+
+/** Plugin writes and reads are the existing plugin routes. The route stays
+ * the permission check. A missing botId is filled by the server before this. */
+function parsePluginAct(value: unknown): { ok: true; target: ActTarget } | { ok: false; status: 400; error: string } {
+  if (!plainObject(value)) return pluginFail();
+  const record = value;
+  const action = record.action;
+  if (typeof action !== "string" || !PLUGIN_FIELDS[action]) return pluginFail();
+  for (const key of Object.keys(record)) {
+    if (!PLUGIN_FIELDS[action]!.includes(key)) return pluginFail();
+  }
+  const botId = record.botId;
+  if (typeof botId !== "string" || !PLUGIN_BOT.test(botId)) return pluginFail();
+  const base = `/api/bots/${botId}/plugins`;
+  if (action === "list") return { ok: true, target: { kind: "route", method: "GET", path: base } };
+  if (action === "addMarketplace") {
+    const source = record.source;
+    if (typeof source !== "string" || source.length < 1 || source.length > 500) return pluginFail();
+    const body: Record<string, string> = { source };
+    if (record.ref !== undefined) {
+      if (typeof record.ref !== "string" || record.ref.length < 1 || record.ref.length > 200) return pluginFail();
+      body.ref = record.ref;
+    }
+    return { ok: true, target: { kind: "route", method: "POST", path: `${base}/marketplaces`, body } };
+  }
+  if (action === "install") {
+    if (typeof record.marketplace !== "string" || !PLUGIN_NAME.test(record.marketplace)) return pluginFail();
+    if (typeof record.plugin !== "string" || !PLUGIN_NAME.test(record.plugin)) return pluginFail();
+    return { ok: true, target: { kind: "route", method: "POST", path: `${base}/install`, body: { marketplace: record.marketplace, plugin: record.plugin } } };
+  }
+  if (action === "setEnabled") {
+    if (typeof record.key !== "string" || !PLUGIN_KEY.test(record.key)) return pluginFail();
+    if (typeof record.enabled !== "boolean") return pluginFail();
+    return { ok: true, target: { kind: "route", method: "PATCH", path: `${base}/${record.key}`, body: { enabled: record.enabled } } };
+  }
+  if (action === "uninstall") {
+    if (typeof record.key !== "string" || !PLUGIN_KEY.test(record.key)) return pluginFail();
+    return { ok: true, target: { kind: "route", method: "DELETE", path: `${base}/${record.key}` } };
+  }
+  if (typeof record.marketplace !== "string" || !PLUGIN_NAME.test(record.marketplace)) return pluginFail();
+  return { ok: true, target: { kind: "route", method: "DELETE", path: `${base}/marketplaces/${record.marketplace}` } };
+}
+
 function parseActTarget(raw: unknown): { ok: true; target: ActTarget } | { ok: false; status: 400; error: string } {
   if (!plainObject(raw) || hasBadKey(raw)) return { ok: false, status: 400, error: "Send either ui and input, or method and path." };
   const record = raw as Record<string, unknown>;
-  for (const key of Object.keys(record)) {
+  const keys = Object.keys(record);
+  if (record.plugins !== undefined) {
+    if (keys.some((key) => key !== "plugins")) {
+      return { ok: false, status: 400, error: "plugins cannot be combined with ui, method, path, query or body." };
+    }
+    return parsePluginAct(record.plugins);
+  }
+  for (const key of keys) {
     if (!["ui", "input", "method", "path", "query", "body"].includes(key)) {
       return { ok: false, status: 400, error: "Send either ui and input, or method and path." };
     }
@@ -361,4 +449,15 @@ function hasBadKey(value: unknown, depth = 0): boolean {
     if (hasBadKey((value as Record<string, unknown>)[key], depth + 1)) return true;
   }
   return false;
+}
+
+/** The turn's bot, when the model omits plugins.botId. A botId already
+ * present is left alone, and the route still decides whether this person
+ * may change that bot. Does not mutate `raw`. */
+export function fillPluginBot(raw: unknown, botId: string): unknown {
+  if (!plainObject(raw)) return raw;
+  const plugins = raw.plugins;
+  if (!plainObject(plugins) || Object.prototype.hasOwnProperty.call(plugins, "botId")) return raw;
+  if (!PLUGIN_BOT.test(botId)) return raw;
+  return { ...raw, plugins: { ...plugins, botId } };
 }

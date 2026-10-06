@@ -12,6 +12,7 @@ export const WORKSPACE_CREDENTIALS = [
   { section: "box", field: "token", name: "boxToken", env: "BOX_TOKEN" },
   { section: "tts", field: "key", name: "ttsKey", env: "SAGAX_TTS_KEY" },
   { section: "tts", field: "fishKey", name: "fishAudioKey", env: "SAGAX_FISH_AUDIO_API_KEY" },
+  { section: "tts", field: "xaiKey", name: "xaiVoiceKey", env: "SAGAX_XAI_VOICE_KEY" },
   { section: "decider", field: "key", name: "jevApiKey", env: "SAGAX_JEV_API_KEY" },
   { section: "imageGen", field: "key", name: "openaiImageApiKey", env: "SAGAX_OPENAI_IMAGE_KEY" },
   { section: "imageGen", field: "customApiKey", name: "customImageApiKey", env: "SAGAX_CUSTOM_IMAGE_KEY" },

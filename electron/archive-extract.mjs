@@ -15,7 +15,7 @@
 // - the result appears atomically: a private partial folder is renamed into
 //   place only when every file was written.
 import { randomUUID } from "node:crypto";
-import { createReadStream } from "node:fs";
+import { createReadStream, readFileSync, statSync } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { pipeline } from "node:stream";
@@ -453,6 +453,173 @@ function failedManifest(kind, archiveBytes, error) {
     version: 1, kind, status, reason, files: 0, dirs: 0, totalBytes: 0, archiveBytes,
     entries: [], truncated: false, skipped: [], skippedCount: 0,
   };
+}
+
+/** Extensions a small archive may inline as text. Same set as a plain upload. */
+export const SMALL_ARCHIVE_TEXT_EXTENSIONS = new Set([".txt", ".md", ".csv", ".tsv", ".json"]);
+
+function entryExtension(relative) {
+  const base = String(relative).split("/").at(-1) ?? "";
+  const dot = base.lastIndexOf(".");
+  return dot <= 0 ? "" : base.slice(dot).toLowerCase();
+}
+
+function asUtf8Text(bytes) {
+  if (bytes.includes(0)) return null;
+  try {
+    return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  } catch {
+    return null;
+  }
+}
+
+/** Local-file payload of one zip entry. Null when the header does not match
+ * the central directory (the archive changed, or it is damaged). */
+function zipEntryBytes(buffer, entry) {
+  if (entry.offset < 0 || entry.offset + 30 > buffer.length) return null;
+  if (buffer.readUInt32LE(entry.offset) !== 0x04034b50) return null;
+  const start = entry.offset + 30 + buffer.readUInt16LE(entry.offset + 26) + buffer.readUInt16LE(entry.offset + 28);
+  const end = start + entry.compressed;
+  if (start < 0 || end > buffer.length) return null;
+  const raw = buffer.subarray(start, end);
+  if (entry.method === 0) return raw;
+  try {
+    const data = zlib.inflateRawSync(raw, { maxOutputLength: entry.size });
+    return data.length === entry.size ? data : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Text members of a zip already in memory. Skips links, odd compression,
+ * passwords, paths that leave the folder, and anything that is not UTF-8. */
+function textsFromZip(buffer, fileMax, totalMax) {
+  const tailLength = Math.min(buffer.length, 22 + 0xffff);
+  const tailStart = buffer.length - tailLength;
+  let end = -1;
+  for (let index = tailLength - 22; index >= 0; index -= 1) {
+    if (buffer.readUInt32LE(tailStart + index) === 0x06054b50) { end = index; break; }
+  }
+  if (end < 0) return [];
+  const tail = buffer.subarray(tailStart);
+  const count = tail.readUInt16LE(end + 10);
+  const directorySize = tail.readUInt32LE(end + 12);
+  const directoryOffset = tail.readUInt32LE(end + 16);
+  // A small upload never needs zip64. Leave those to the normal unpacker.
+  if (count === 0xffff || directorySize === 0xffffffff || directoryOffset === 0xffffffff) return [];
+  if (directoryOffset + directorySize > buffer.length || directorySize > ZIP_DIRECTORY_MAX_BYTES) return [];
+  const directory = buffer.subarray(directoryOffset, directoryOffset + directorySize);
+  const out = [];
+  const seen = new Set();
+  let total = 0;
+  let at = 0;
+  for (let index = 0; index < count; index += 1) {
+    if (at + 46 > directory.length || directory.readUInt32LE(at) !== 0x02014b50) return [];
+    const madeBy = directory.readUInt16LE(at + 4);
+    const flags = directory.readUInt16LE(at + 8);
+    const method = directory.readUInt16LE(at + 10);
+    const crc = directory.readUInt32LE(at + 16);
+    const compressed = directory.readUInt32LE(at + 20);
+    const size = directory.readUInt32LE(at + 24);
+    const nameLength = directory.readUInt16LE(at + 28);
+    const extraLength = directory.readUInt16LE(at + 30);
+    const commentLength = directory.readUInt16LE(at + 32);
+    const external = directory.readUInt32LE(at + 38);
+    const offset = directory.readUInt32LE(at + 42);
+    const nameEnd = at + 46 + nameLength;
+    const extraEnd = nameEnd + extraLength;
+    if (extraEnd + commentLength > directory.length || size === 0xffffffff || compressed === 0xffffffff || offset === 0xffffffff) return [];
+    const nameBytes = directory.subarray(at + 46, nameEnd);
+    const name = flags & 0x800 ? nameBytes.toString("utf8") : nameBytes.toString("latin1");
+    at = extraEnd + commentLength;
+    const unixType = madeBy >> 8 === 3 ? (external >>> 16) & 0o170000 : 0;
+    const dosDir = (madeBy >> 8) === 0 && (external & 0x10) !== 0;
+    if ((flags & 0x1) !== 0 || unixType === 0o120000 || dosDir) continue;
+    if (/[\\/]$/.test(name) || unixType === 0o040000) continue;
+    if (method !== 0 && method !== 8) continue;
+    if (size > fileMax) continue;
+    const safe = safeEntryPath(name);
+    if (!safe.path || isMetadata(safe.path) || !SMALL_ARCHIVE_TEXT_EXTENSIONS.has(entryExtension(safe.path))) continue;
+    const key = safe.path.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const bytes = zipEntryBytes(buffer, { offset, compressed, size, method });
+    if (!bytes || bytes.length !== size) continue;
+    if (typeof zlib.crc32 === "function" && (zlib.crc32(bytes) >>> 0) !== crc) continue;
+    const text = asUtf8Text(bytes);
+    if (text === null || text.includes("</attached-file-content>") || text.includes("</attached-archive>")) continue;
+    if (total + bytes.length > totalMax) break;
+    total += bytes.length;
+    out.push({ path: safe.path, text });
+  }
+  return out;
+}
+
+/** Text members of an uncompressed tar buffer. Pax and GNU long names are
+ * left to the unpacker: a template zip is the case this exists for. */
+function textsFromTar(buffer, fileMax, totalMax) {
+  const out = [];
+  const seen = new Set();
+  let total = 0;
+  let offset = 0;
+  let zeros = 0;
+  while (offset + 512 <= buffer.length) {
+    const block = buffer.subarray(offset, offset + 512);
+    offset += 512;
+    if (block.every((byte) => byte === 0)) {
+      zeros += 1;
+      if (zeros >= 2) break;
+      continue;
+    }
+    zeros = 0;
+    const header = parseTarHeader(block);
+    if (offset + header.size > buffer.length) return out;
+    const data = buffer.subarray(offset, offset + header.size);
+    offset += header.size + ((512 - (header.size % 512)) % 512);
+    if (header.flag !== "0" && header.flag !== "7") continue;
+    if (header.size > fileMax || header.name.endsWith("/")) continue;
+    const safe = safeEntryPath(header.name);
+    if (!safe.path || isMetadata(safe.path) || !SMALL_ARCHIVE_TEXT_EXTENSIONS.has(entryExtension(safe.path))) continue;
+    const key = safe.path.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const text = asUtf8Text(data);
+    if (text === null || text.includes("</attached-file-content>") || text.includes("</attached-archive>")) continue;
+    if (total + data.length > totalMax) break;
+    total += data.length;
+    out.push({ path: safe.path, text });
+  }
+  return out;
+}
+
+/** Text files inside a small archive, read in memory. Nothing is written.
+ * Returns [] when the file is missing, larger than `archiveMax`, or not a
+ * zip/tar this reader opens. Never throws. */
+export function readSmallArchiveTexts(file, options = {}) {
+  const fileMax = options.fileMax ?? 100 * 1024;
+  const totalMax = options.totalMax ?? 256 * 1024;
+  const archiveMax = options.archiveMax ?? totalMax;
+  let buffer;
+  try {
+    const stat = statSync(file);
+    if (!stat.isFile() || stat.size === 0 || stat.size > archiveMax) return [];
+    buffer = readFileSync(file);
+    if (buffer.length !== stat.size) return [];
+  } catch {
+    return [];
+  }
+  const kind = options.kind ?? archiveKind(file);
+  try {
+    if (kind === "zip") return textsFromZip(buffer, fileMax, totalMax);
+    if (kind === "tgz") {
+      const tar = zlib.gunzipSync(buffer, { maxOutputLength: totalMax + 1024 * 1024 });
+      return textsFromTar(tar, fileMax, totalMax);
+    }
+    if (kind === "tar") return textsFromTar(buffer, fileMax, totalMax);
+  } catch {
+    return [];
+  }
+  return [];
 }
 
 /** What is inside an archive, without unpacking anything. Never throws for

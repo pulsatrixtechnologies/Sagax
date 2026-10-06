@@ -29,6 +29,12 @@ export class NoVoiceConfigured extends Error {
  * included with Cloud Pro. Settings' own-key flows read cfg.tts.key instead. */
 const elevenLabs = (cfg: AppConfig) => voiceCredential(cfg.tts?.key);
 
+/** Grok voice has its own key. The xAI key bots run on is never read here. */
+function grokVoiceKey(cfg: AppConfig): string | undefined {
+  const key = cfg.tts?.xaiKey?.trim();
+  return key || undefined;
+}
+
 export function voiceProvider(cfg: AppConfig): VoiceProvider {
   const provider = cfg.tts?.provider;
   return provider === "xai" || provider === "fish" || provider === "system" || provider === "chatterbox" ? provider : "elevenlabs";
@@ -39,7 +45,7 @@ export function voiceProvider(cfg: AppConfig): VoiceProvider {
  * speak", not "a key is on file". */
 export function providerConfigured(cfg: AppConfig): boolean {
   const provider = voiceProvider(cfg);
-  if (provider === "xai") return Boolean(cfg.xai?.key);
+  if (provider === "xai") return Boolean(grokVoiceKey(cfg));
   if (provider === "system") return systemVoices.systemVoicesAvailable();
   if (provider === "chatterbox") return Boolean(cfg.tts?.baseUrl?.trim());
   if (provider === "fish") return Boolean(cfg.tts?.fishKey);
@@ -48,7 +54,7 @@ export function providerConfigured(cfg: AppConfig): boolean {
 
 export function voiceConfigured(cfg: AppConfig): boolean {
   const provider = voiceProvider(cfg);
-  if (provider === "xai") return Boolean(cfg.xai?.key && cfg.tts?.voice);
+  if (provider === "xai") return Boolean(grokVoiceKey(cfg) && cfg.tts?.voice);
   if (provider === "system") {
     return systemVoices.systemVoicesAvailable() && Boolean(cfg.tts?.voice);
   }
@@ -61,7 +67,7 @@ export function voiceConfigured(cfg: AppConfig): boolean {
  * because the app-wide fallback has not been selected yet. */
 export function voiceReady(cfg: AppConfig, voiceId?: string): boolean {
   const provider = voiceProvider(cfg);
-  if (provider === "xai") return Boolean(cfg.xai?.key && (voiceId || cfg.tts?.voice));
+  if (provider === "xai") return Boolean(grokVoiceKey(cfg) && (voiceId || cfg.tts?.voice));
   if (provider === "system") {
     return systemVoices.systemVoicesAvailable() && Boolean(voiceId || cfg.tts?.voice);
   }
@@ -96,7 +102,10 @@ export function verifyKey(provider: "elevenlabs" | "fish", key: string) {
 
 export async function listVoices(cfg: AppConfig, run?: systemVoices.Runner): Promise<elevenlabs.Voice[]> {
   const provider = voiceProvider(cfg);
-  if (provider === "xai") return cfg.xai?.key ? grok.listVoices(cfg.xai.key) : [];
+  if (provider === "xai") {
+    const key = grokVoiceKey(cfg);
+    return key ? grok.listVoices(key) : [];
+  }
   if (provider === "system") return systemVoices.listSystemVoices(run);
   if (provider === "chatterbox") {
     const baseUrl = cfg.tts?.baseUrl?.trim();
@@ -116,8 +125,8 @@ export async function listVoices(cfg: AppConfig, run?: systemVoices.Runner): Pro
 export function speak(cfg: AppConfig, text: string, voiceId?: string, run?: systemVoices.Runner) {
   const provider = voiceProvider(cfg);
   if (provider === "xai") {
-    const key = cfg.xai?.key;
-    if (!key) throw new NoVoiceConfigured("key", "Add an xAI key in Settings to use Grok voice.");
+    const key = grokVoiceKey(cfg);
+    if (!key) throw new NoVoiceConfigured("key", "Add a Grok voice key in Settings. It is separate from the xAI key bots use.");
     const voice = voiceId || cfg.tts?.voice;
     if (!voice) throw new NoVoiceConfigured("voice");
     return grok.synthesize(text, voice, key);

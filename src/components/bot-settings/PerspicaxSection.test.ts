@@ -8,7 +8,7 @@ import en from "@/locales/en.json";
 import fr from "@/locales/fr.json";
 import { BOT_SECTIONS } from "./sections";
 import { isMoreSection } from "./panel-tabs";
-import { PerspicaxSection, perspicaxErrorKey, perspicaxRows, type PerspicaxAnswer } from "./PerspicaxSection";
+import { PerspicaxProfileControl, PerspicaxSection, perspicaxErrorKey, perspicaxRows, perspicaxShowsCheckbox, type PerspicaxAnswer } from "./PerspicaxSection";
 
 const DISPATCH = { id: "P1", slug: "dispatch", name: "Dispatch", description: "Tickets" };
 const BILLING = { id: "P2", slug: "billing", name: "Billing", description: "" };
@@ -30,10 +30,30 @@ describe("PerspicaxSection rows", () => {
     expect(perspicaxRows(answer, ["P1"]).at(-1)).toMatchObject({ profile: SALES, checked: false, notHeld: true });
   });
 
-  it("a viewer who may only use the bot sees every box disabled", () => {
+  it("a viewer who may only use the bot gets no checkbox", () => {
     const rows = perspicaxRows({ selected: [{ ...DISPATCH, heldByMe: true }], available: [DISPATCH], canEdit: false }, ["P1"]);
     expect(rows.every((row) => row.disabled)).toBe(true);
+    expect(rows.every((row) => !perspicaxShowsCheckbox(row))).toBe(true);
     expect(perspicaxRows({ selected: [], available: [], canEdit: true }, [])).toEqual([]);
+    const html = renderToStaticMarkup(createElement(PerspicaxProfileControl, {
+      row: rows[0]!,
+      saving: false,
+      canRemove: false,
+      onToggle: () => {},
+      onRemove: () => {},
+    }));
+    expect(html).toContain("Dispatch");
+    expect(html).not.toContain('type="checkbox"');
+    expect(html).not.toContain("<button");
+    const remove = renderToStaticMarkup(createElement(PerspicaxProfileControl, {
+      row: { profile: SALES, checked: true, notHeld: true, disabled: true },
+      saving: false,
+      canRemove: true,
+      onToggle: () => {},
+      onRemove: () => {},
+    }));
+    expect(remove).not.toContain('type="checkbox"');
+    expect(remove).toContain(en["botSettings.perspicax.remove"]);
   });
 
   it("names each refusal, and anything else as a failed save", () => {

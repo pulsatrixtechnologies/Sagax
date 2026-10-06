@@ -276,32 +276,39 @@ export function CallOverlay({ bot }: { bot: Bot }) {
 /** Same length as `--animate-call-dock-out` in styles.css. */
 const CALL_DOCK_EXIT_MS = 180;
 
-/** Voice mode (xAI): a live, full-duplex call (voice-mode/LiveCall.tsx),
- * shown as a compact pill centered at the top of the chat column, under the
- * bot's name chip. The collapsed pill keeps its own small row in the layout
- * (never covering a message); its expanded card (settings, transcript)
- * hangs below that row over the thread. When the call ends the row folds
- * away (the call itself is already over by then). */
+/** Voice mode (xAI): a live, full-duplex call (voice-mode/LiveCall.tsx).
+ * The stage fills the chat column. The chevron folds it to a short row in
+ * the banner stack, which does not cover a message. When the call ends,
+ * that row folds away. */
 export function VoiceCallDock({ bot }: { bot: Bot }) {
   const active = useOnCall() === bot.id;
   const voiceMode = useVoiceModeStatus(bot.id);
   const live = active && voiceMode?.available === true;
+  const [collapsed, setCollapsed] = useState(false);
   const motion = useMenuMotion(live);
   const dock = useRef<HTMLDivElement>(null);
   const height = useRef(0);
   useEffect(() => {
+    if (live) setCollapsed(false);
+  }, [live, bot.id]);
+  useEffect(() => {
     const element = dock.current;
-    if (!live || !element || typeof ResizeObserver === "undefined") return;
+    if (!live || !collapsed || !element || typeof ResizeObserver === "undefined") return;
     const observer = new ResizeObserver(() => (height.current = element.offsetHeight));
     observer.observe(element);
     return () => observer.disconnect();
-  }, [live]);
+  }, [live, collapsed]);
+  if (live && !collapsed) {
+    return (
+      <div className="absolute inset-0 z-30 flex min-h-0 flex-col bg-app" data-voice-call-dock data-voice-stage>
+        <LiveCall bot={bot} onCollapse={() => setCollapsed(true)} />
+      </div>
+    );
+  }
   if (live) {
     return (
-      <div ref={dock} className="animate-call-dock-in relative z-20 mb-2 h-12 px-3" data-voice-call-dock>
-        <div className="pointer-events-none absolute inset-x-3 top-0">
-          <LiveCall bot={bot} />
-        </div>
+      <div ref={dock} className="relative z-20 mb-2 px-3" data-voice-call-dock>
+        <LiveCall bot={bot} collapsed onExpand={() => setCollapsed(false)} />
       </div>
     );
   }

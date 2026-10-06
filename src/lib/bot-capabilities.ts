@@ -51,3 +51,36 @@ export function canStepPrimary(
   if (options?.draft) return false;
   return viewerOwnsBot(config, bot);
 }
+
+/** Rename writes `name`, a member field. A non-owner member is refused. */
+export function showBotRename(
+  config: ConfigStatus | null | undefined,
+  bot: { ownerUserId?: string | null },
+): boolean {
+  return canEditBotField(config, bot, "name");
+}
+
+/** Archive writes `hidden`, which is not a member field. An organization
+ * member is refused, including on a bot they own. An admin is not a member
+ * here and the server still accepts the write. */
+export function showBotArchive(config: ConfigStatus | null | undefined): boolean {
+  return !viewerIsOrgMember(config);
+}
+
+/** Delete is the owner or an admin. A read-only person is refused even on
+ * their own bot (`memberOwnsBot` requires bot creation). */
+export function showBotDelete(
+  config: ConfigStatus | null | undefined,
+  bot: { ownerUserId?: string | null },
+): boolean {
+  if (viewerBotsReadOnly(config)) return false;
+  if (!viewerIsOrgMember(config)) return true;
+  return viewerOwnsBot(config, bot);
+}
+
+/** Moving a bot between server sections writes `section`, not a member field.
+ * A personal sidebar section is this person's preference and stays. */
+export function showServerSectionMove(config: ConfigStatus | null | undefined, personal: boolean): boolean {
+  if (personal) return true;
+  return !viewerIsOrgMember(config);
+}

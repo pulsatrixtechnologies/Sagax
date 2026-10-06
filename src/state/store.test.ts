@@ -883,6 +883,30 @@ describe("notification routing", () => {
       ]);
     });
 
+    it("remembers the conversation on screen so the chip has a way back", () => {
+      const dispatch = vi.fn();
+      expect(openThread(dispatch, { botId: "bot-1", threadId: "detached-thread" }, { bots: named, groups, selectedId: "bot-1" })).toBe(true);
+      expect(dispatch.mock.calls.map(([action]) => action)).toEqual([
+        { type: "select", id: "bot-1" },
+        { type: "switchTask", botId: "bot-1", threadId: "detached-thread" },
+        { type: "revealThread", threadId: "detached-thread" },
+        { type: "setThreadReturn", threadReturn: { ownerId: "bot-1", threadId: "main-thread" } },
+      ]);
+      const remembered = reducer(
+        { ...initialState, selectedId: "bot-1" },
+        { type: "setThreadReturn", threadReturn: { ownerId: "bot-1", threadId: "main-thread" } },
+      );
+      expect(remembered.threadReturn).toEqual({ ownerId: "bot-1", threadId: "main-thread" });
+      const home = {
+        ...remembered,
+        bots: [{ ...initialState.bots[0], id: "bot-1", threadId: "main-thread", messages: [] }],
+      };
+      expect(reducer(home, { type: "taskSwitched", bot: home.bots[0] }).threadReturn).toBeNull();
+      const elsewhere = reducer(remembered, { type: "select", id: "room-1" });
+      expect(elsewhere.threadReturn).toBeNull();
+      expect(reducer({ ...remembered, selectedId: "bot-1" }, { type: "select", id: "bot-1" }).threadReturn).toEqual(remembered.threadReturn);
+    });
+
     it("opens a room thread through the room, not a bot switch", () => {
       const dispatch = vi.fn();
       openThread(dispatch, { botId: "bot-1", threadId: "older-room-thread" }, { bots: named, groups });

@@ -55,3 +55,32 @@ export function sandboxPrincipalForTurn(input: {
 /** The MCP server name the environment tools are mounted under. The UI reads
  * it back from tool names to show where a tool ran. */
 export const USER_SANDBOX_MCP_NAME = "sagax-environment";
+
+/** Whether this turn attaches a Boat, a VPS, or a shared team computer.
+ * An organization server never does. Cloud, a cloud routine and a room all
+ * use the person's one server environment. A team computer does not open a
+ * shared machine there. A cloud routine still forces the Cloud place, which
+ * on an organization server is that environment. Solo still forces Cloud
+ * for a cloud routine or an inherited team computer. */
+export function remoteComputerForTurn(input: {
+  organization: boolean;
+  runOnCloud: boolean;
+  hasTeamComputer: boolean;
+}): { skipRemote: boolean; forceCloud: boolean } {
+  if (input.organization) return { skipRemote: true, forceCloud: input.runOnCloud };
+  return { skipRemote: false, forceCloud: input.runOnCloud || input.hasTeamComputer };
+}
+
+/** A screen of a person's cloud computer on an organization server reaches
+ * that person only, and only while the turn still names them. Anyone else,
+ * including an admin, gets nothing. Solo servers are unchanged. */
+export function screenVisibleToPrincipal(input: {
+  organization: boolean;
+  viewerId?: string;
+  workplacePrincipal?: string;
+}): boolean {
+  if (!input.organization) return true;
+  const viewer = input.viewerId?.trim().toLowerCase() ?? "";
+  const principal = input.workplacePrincipal?.trim().toLowerCase() ?? "";
+  return viewer.length > 0 && viewer === principal;
+}

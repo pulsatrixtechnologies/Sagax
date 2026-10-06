@@ -258,6 +258,21 @@ message starts no turn and notifies the other person only (`notify` kind
 picker offers the directory's active persons (never `service` accounts,
 nor oneself).
 
+A nudge (`POST /api/nudges`, `server/nudge.ts`) is organization only.
+`{ principalId }` shakes that person and writes the line in the direct
+conversation. `{ groupId }` shakes the other people of that group chat
+(listed people, `team:` members who are not managers, and the shared
+section's owner and members) and writes one line on the group, never a
+new direct conversation. The sender, service accounts and people who are
+out are skipped. Someone who cannot post is refused. The room shares one
+5 minute clock (`group:<id>`), separate from a direct nudge. A refusal
+writes nothing. The button is last in the composer when the room names
+someone else (`src/lib/group-nudge.ts`). A bot uses `nudgePerson` or
+`nudgeGroup`, both rewritten to that one POST. Tests:
+`server/nudge.test.ts`, `server/routes/nudges.test.ts`,
+`src/components/GroupView.test.ts`. The server image must be installed
+before an organization server accepts `{ groupId }`.
+
 ## Launch flow (desktop)
 
 First run on the desktop app's own window opens the launch screen
@@ -618,7 +633,8 @@ person's server environment (`user-sandbox`): the SPEAKER's for a
 conversation, the bot OWNER's for routines, the asker's or else the room
 creator's in a room (`sandboxPrincipalForTurn`). One isolated container per
 person, never per bot, never on the Sagax host (`docs/user-sandbox.md`).
-Keep these rules, each covered by `server/user-sandbox*.test.ts`,
+A cloud routine and a room stay on that environment. A team computer does
+not open a shared machine. Keep these rules, each covered by `server/user-sandbox*.test.ts`,
 `server/sandboxd*.test.ts` or `server/user-sandbox.e2e.test.ts`:
 
 - Only `sagax-sandboxd` (`server/sandboxd.ts`) holds the Docker socket; the
@@ -777,6 +793,7 @@ had no gh. Keep these rules, each covered by `server/org-connections.e2e.test.ts
 (OC-1 to OC-9), `server/person-connections.test.ts`,
 `server/org-person-connections.test.ts`,
 `server/github-connect.test.ts`, `server/bot-plugins.test.ts`,
+`server/plugin-turn.test.ts`, `server/bot-plugin-act.test.ts`,
 `server/sandbox-stdio-mcp.test.ts`, `server/sandboxd.test.ts` or
 `src/components/settings/MyConnectionsSettings.test.ts`:
 
@@ -806,16 +823,33 @@ had no gh. Keep these rules, each covered by `server/org-connections.e2e.test.ts
   token. The token goes into the person's environment for gh and git
   (`githubSandboxArgv`, through `SAGAX_GH_TOKEN`, never the argv), into their
   personal servers with auth `github`, and into Sagax's own fetches for them
-  (private skills, private marketplaces).
+  (private skills, private marketplaces). One connection per person. It is
+  not the organization's list of access tokens below.
+- Organization access tokens (`server/org-github-tokens.ts`,
+  `DATA_DIR/org-github-tokens.enc`, the mcp-oauth vault key, left out of
+  workspace backups): an admin keeps up to 20 labeled GitHub access tokens
+  on Settings > Organization > Plugins and GitHub. They are access tokens,
+  not extra OAuth App client ids. `PATCH /api/org/settings` applies one
+  change (`add`, `remove`, `rename`, `replace`). A rename carries no secret
+  and a replace is its own step. `GET /api/org` lists the label and a last-4
+  hint, or the word saved, for an admin only. No answer, audit row or log
+  contains the token. A bot uses the same route through `act` (the hold card
+  is the route summary, with no body). Tests:
+  `server/org-github-tokens.test.ts`, `server/perspicax-org-routes.test.ts`,
+  `src/components/settings/OrgPluginPolicy.test.ts`.
 - Plugins (`server/bot-plugins.ts`, `/api/bots/:id/plugins/*`): per bot, the
   owner or a person with manage changes them, use reads. Sagax clones the
   marketplace (git with the actor's GitHub token in an extra header, only the
   server's proxy, certificate and git config variables), copies a plugin
   without links, hooks, `.mcp.json`, `.lsp.json`, `bin/` or those manifest
-  keys, and a Claude turn (and its "/" list) loads each enabled one with
-  `--plugin-dir`. `organization.pluginMarketplaces` (any by default, or a
-  list of owner/repo, owner/* or https URLs; PATCH `/api/org/settings`)
-  applies to marketplaces and to a plugin's own repository.
+  keys. Claude loads each enabled plugin with `--plugin-dir`. Every other
+  harness of that bot gets the same enabled skills and commands in the skills
+  section of the turn prompt. Hooks, MCP, LSP and bin stay stripped. A bot
+  installs, updates, enables, disables and removes a plugin through `act`
+  (plugins actions: list, add marketplace, install, set enabled, uninstall,
+  remove marketplace), not an engine CLI. `organization.pluginMarketplaces`
+  (any by default, or a list of owner/repo, owner/* or https URLs; PATCH
+  `/api/org/settings`) applies to marketplaces and to a plugin's own repository.
 - Skills routes (`/api/bots/:id/skills*`, `skill-template`) are member scope
   on an organization server: use reads, owner or manage changes; an import
   from a private repository reads with the person's GitHub connection.
@@ -832,8 +866,9 @@ had no gh. Keep these rules, each covered by `server/org-connections.e2e.test.ts
   to `manage` mounts them on the next turn: `mountPersonalMcp` closes that
   person's stdio sessions and adds nothing, `syncGithubForTurn` and
   `usablePersonGithub` drop the token from the environment and from Sagax's
-  own fetches, and `pluginDirsFor` passes no `--plugin-dir`. Skills already
-  on a bot still load. The directory callback `onIntegrationRights` fires
+  own fetches, and `pluginDirsFor` passes no `--plugin-dir` and the turn
+  prompt lists no plugin skill or command. Skills already on a bot still load.
+  The directory callback `onIntegrationRights` fires
   only when the effective right changes (an organization admin stays
   `manage` even when the field is `off`; a disabled person is skipped; a 304
   does not re-fire) and closes stdio and clears or restores the GitHub
@@ -841,10 +876,12 @@ had no gh. Keep these rules, each covered by `server/org-connections.e2e.test.ts
   `/api/me/connections` and on the plugins listing (`canChange: false`),
   `viewer.integrationsManagedByAdmin`, edit controls hidden under "Votre
   administrateur gère les plugins et les serveurs MCP"
-  (`integrations.managedByAdmin`). `run_command` in their environment
-  refuses the engines' plugin, MCP and extension subcommands
-  (`engineIntegrationCommand`; a courtesy, the boundary is that a turn loads
-  only what Sagax keeps); `/plugin` and `/mcp` are managed for everyone. An
+  (`integrations.managedByAdmin`). `run_command` in their environment and on
+  their desktop refuses the engines' plugin, MCP and extension subcommands
+  (`enginePluginCommandRefusal`). The tool result tells the bot to install
+  through Sagax `act` plugin actions. When integrations are off, the
+  administrator sentence stays. The check is a courtesy: a turn loads only
+  what Sagax keeps. `/plugin` and `/mcp` are managed for everyone. An
   organization admin is never narrowed and changes a person's bot plugins
   and skills for them.
 - An organization admin lists and removes another person's connections
@@ -944,10 +981,11 @@ the bot engine's (`shared/harness-commands.ts`, `server/harness-commands.ts`,
 
 The bot's side panel (`src/components/BotSettingsDialog.tsx`, tabs in
 `bot-settings/panel-tabs.ts`) shows Details | Library | Computer | More. The
-name and label are edited where they show (`InlineEditableText`), the
-description behind the (i) beside the name (`DescriptionInfo`); there are no
-Name, Label or Description fields. Details lists Coding, Activity, then
-Routines (`ActivitySection`, `ActivityListModal`, `ActivityDetailModal`).
+name and label are edited where they show (`InlineEditableText`). The
+description is not a line under the label; `IdentitySection` still edits it.
+There are no Name or Label fields in this panel. Details lists Coding,
+Activity, then Routines (`ActivitySection`, `ActivityListModal`,
+`ActivityDetailModal`).
 Coding shows coding jobs only: the server marks an entry `coding` from its
 tool calls and folder (`server/activity-coding.ts`: source edits, git
 commit/push/worktree, pull requests, file changes inside a repository;
@@ -1102,8 +1140,10 @@ On an organization server the bot's Works on (or the conversation's pin)
 decides where it runs, never a per-person switch (2026-10-02,
 `resolveBotWorkplace`, `orgComputerFor` in `src/lib/place.ts`): Auto and
 Cloud ("Cloud (server environment)") run in the person's server
-environment, Local VM and This computer on their own computer through the
-desktop app; no Boat, VPS or host computer is claimed there. Settings >
+environment, including a cloud routine and a room. Local VM and This
+computer run on their own computer through the desktop app. No Boat, VPS
+or host computer is claimed there, and a team computer does not open a
+shared machine. Settings >
 Computer says so and holds the Local VM card and the compact server
 environment card (`settings/OrgComputerSettings.tsx`). VPS Computer and
 Boat Computer are experimental flags (`features.vpsComputer`,
@@ -1221,8 +1261,9 @@ rules, each covered by `shared/achievements-catalog.test.ts`,
 - A server without the routes (404) locks nothing.
 - The unlock frame (`kind: "achievements"`, `audience`) reaches that
   person's streams only (`achievementFrameAllowed`). Nobody reads another
-  person's record; `/api/achievements/public` lists only the points of people
-  who turned on "Show my points to colleagues". Unlock percentages show only
+  person's record; `/api/achievements/public` lists the points of people by
+  default, and leaves out anyone who turned "Show my points to colleagues"
+  off. Unlock percentages show only
   with five people or more.
 - The toast never shows while the person types, one at a time, its chime
   follows Notification sounds, and reduced motion stills it.

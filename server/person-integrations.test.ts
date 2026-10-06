@@ -6,7 +6,8 @@ import type { AddressInfo } from "node:net";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { json, readBody } from "./harness/http.ts";
-import { effectiveIntegrationRights, engineIntegrationCommand, INTEGRATIONS_ADMIN_ONLY, INTEGRATIONS_ADMIN_ONLY_COMMAND, integrationsPaused } from "./person-integrations.ts";
+import { effectiveIntegrationRights, engineIntegrationCommand, enginePluginCommandRefusal, INTEGRATIONS_ADMIN_ONLY, INTEGRATIONS_ADMIN_ONLY_COMMAND, integrationsPaused } from "./person-integrations.ts";
+import { handleDesktopBridgeMcp } from "./desktop-bridge-tools.ts";
 import type { RequestAuth } from "./request-auth.ts";
 import { createBotPluginRoutes } from "./routes/bot-plugins.ts";
 import { createPersonConnectionRoutes } from "./routes/person-connections.ts";
@@ -219,5 +220,42 @@ describe("engine plugin and MCP commands in the person's environment", () => {
     const allowed = await callUserSandboxTool("run_command", { command: "ls" }, exec as never);
     expect(allowed.isError).toBeUndefined();
     expect(ran).toEqual([["bash", "-lc", "ls"]]);
+  });
+
+  it("tells every person to install through Sagax, and keeps the administrator sentence when integrations are off", async () => {
+    for (const command of ["claude plugin install x@y", "grok plugin install x", "codex plugin install x"]) {
+      const text = enginePluginCommandRefusal(false, command);
+      expect(text, command).toContain("Sagax");
+      expect(text, command).toContain("act");
+      expect(text, command).not.toMatch(/Claude Code only/i);
+    }
+    expect(enginePluginCommandRefusal(true, "claude plugin install x@y")).toBe(INTEGRATIONS_ADMIN_ONLY_COMMAND);
+    expect(enginePluginCommandRefusal(false, "ls")).toBeNull();
+
+    const ran: string[][] = [];
+    const exec = {
+      exec: async (input: { argv: string[] }) => { ran.push(input.argv); return { stdout: "ok", stderr: "", exitCode: 0, truncated: false, timedOut: false }; },
+      overQuota: async () => false,
+      commandRefusal: (command: string) => enginePluginCommandRefusal(false, command),
+    };
+    const refused = await callUserSandboxTool("run_command", { command: "grok plugin install x" }, exec as never);
+    expect(JSON.stringify(refused)).toContain("Sagax");
+    expect(JSON.stringify(refused)).not.toMatch(/Claude Code only/i);
+    expect(ran).toEqual([]);
+
+    const calls: string[] = [];
+    const desktop = await handleDesktopBridgeMcp("tools/call", { name: "run_command", arguments: { command: "grok plugin install x" } }, async () => {
+      calls.push("called");
+      return { content: [{ type: "text", text: "ran" }] };
+    }, { commandRefusal: (command) => enginePluginCommandRefusal(false, command) });
+    expect(calls).toEqual([]);
+    expect(JSON.stringify(desktop)).toContain("Sagax");
+    expect(JSON.stringify(desktop)).not.toMatch(/Claude Code only/i);
+    const vm = await handleDesktopBridgeMcp("tools/call", { name: "local_vm", arguments: { action: "run", command: "codex plugin install x" } }, async () => {
+      calls.push("vm");
+      return { content: [{ type: "text", text: "ran" }] };
+    }, { commandRefusal: (command) => enginePluginCommandRefusal(false, command) });
+    expect(calls).toEqual([]);
+    expect(JSON.stringify(vm)).toContain("Sagax");
   });
 });

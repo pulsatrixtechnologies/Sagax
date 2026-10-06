@@ -4,7 +4,7 @@ By default, bots keep notes between tasks. The notes are plain markdown files in
 folder on the computer running Sagax — nothing is stored anywhere else,
 and you can open, edit, or delete any of it in any editor. **Bot Settings →
 Memory** shows the same files with a gauge of how much of them actually loads,
-an editor that never overwrites something the bot wrote while you were typing,
+an editor dialog that never overwrites something the bot wrote while you were typing,
 and a journal of every change with one-click undo.
 
 The **Let this bot use memory** switch is on by default. Turn it off while the
@@ -40,10 +40,9 @@ its group.
 
 The folder is the bot's private workspace: the directory its file tools work in
 when it has no project folder set. It is created the first time the bot runs a
-turn. **Open in Obsidian** and **Show in Finder** (Explorer, or your file
-manager) in the Memory panel open this folder; because it is on the server's
-disk, those buttons only work from the computer running Sagax — a
-paired phone or a remote browser is shown the path instead.
+turn. Bot Settings opens a file in an editor dialog. The files stay plain
+markdown on the computer running Sagax, so any editor on that computer can
+open the same folder.
 
 Files are written with owner-only permissions (`0600`), atomically (a crash
 mid-write leaves the old file intact, never a torn one), and anything that

@@ -11,8 +11,10 @@
 // rate limited per person and type, an event with an id counts once, and an
 // achievement unlocks once: replaying anything never unlocks twice.
 //
-// Private: a person reads only their own record. Others see their points
-// only when they turn on "Show my points to colleagues" (publicPoints).
+// Private: a person reads only their own record. Others see a card (points,
+// the chosen title id, unlocked achievement ids) by default. An explicit off
+// ("Show my points to colleagues") stays private (publicPoints). Locked ids
+// stay off that card.
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { ACHIEVEMENTS } from "../shared/achievements-catalog.ts";
@@ -40,9 +42,10 @@ import {
   type AchievementSettings,
   type AchievementSnapshot,
   type AchievementUnlock,
+  type PublicAchievementCard,
 } from "../shared/achievements.ts";
 
-export type { AchievementItemState, AchievementSettings, AchievementSnapshot, AchievementUnlock };
+export type { AchievementItemState, AchievementSettings, AchievementSnapshot, AchievementUnlock, PublicAchievementCard };
 import { writeFileAtomic } from "./atomic.ts";
 
 export interface AchievementEvent {
@@ -55,7 +58,8 @@ export interface AchievementEvent {
   id?: string;
 }
 
-export const DEFAULT_ACHIEVEMENT_SETTINGS: AchievementSettings = Object.freeze({ showPoints: true, toasts: true, native: false, public: false });
+// `public` is shared unless the stored record says false. A missing flag is not an opt-out.
+export const DEFAULT_ACHIEVEMENT_SETTINGS: AchievementSettings = Object.freeze({ showPoints: true, toasts: true, native: false, public: true });
 
 interface PersonRecord extends AchievementProgress {
   settings: AchievementSettings;
@@ -71,8 +75,8 @@ export interface AchievementStore {
   /** Count events for a person; returns what they unlocked. `source` client refuses server events. */
   record(person: string, events: readonly AchievementEvent[], source: "server" | "client"): { accepted: number; unlocked: AchievementUnlock[] };
   updateSettings(person: string, patch: unknown): AchievementSettings;
-  /** Points of the people who chose to show them. */
-  publicPoints(people: readonly string[]): Record<string, { points: number; level: number }>;
+  /** Cards of people who share them (the default). Absent when they stored public false, or have no record. */
+  publicPoints(people: readonly string[]): Record<string, PublicAchievementCard>;
   remove(person: string): void;
   /** Write pending changes now (tests, shutdown). */
   flush(): void;
@@ -340,12 +344,23 @@ export function createAchievementStore(options: AchievementStoreOptions): Achiev
 
     publicPoints(ids) {
       const all = load();
-      const out: Record<string, { points: number; level: number }> = {};
+      const out: Record<string, PublicAchievementCard> = {};
       for (const id of ids.slice(0, 500)) {
         const record = all[id];
         if (!record?.settings.public) continue;
         const points = pointsOf(record.unlocked, catalog);
-        out[id] = { points, level: levelFor(points).level };
+        // Unlocked ids only. A locked secret is not in this list, and nothing
+        // here carries a name or a progress fraction. The client has the catalog.
+        const unlocked = catalog.flatMap((item) => {
+          const unlockedAt = record.unlocked[item.id];
+          return typeof unlockedAt === "number" ? [{ id: item.id, points: item.points, unlockedAt }] : [];
+        });
+        out[id] = {
+          points,
+          level: levelFor(points).level,
+          ...(record.settings.title ? { title: record.settings.title } : {}),
+          unlocked,
+        };
       }
       return out;
     },

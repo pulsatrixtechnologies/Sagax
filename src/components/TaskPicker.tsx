@@ -5,7 +5,7 @@
 // own transcript and its own provider session — so sensitive work, a
 // long job and a quick question can sit side by side under one agent.
 import { Fragment, useEffect, useRef, useState } from "react";
-import { Activity, Check, FolderInput, MessagesSquare, Pencil, Pin, PinOff, Plus, Search, Trash2 } from "lucide-react";
+import { Activity, Check, ChevronLeft, FolderInput, MessagesSquare, Pencil, Pin, PinOff, Plus, Search, Trash2 } from "lucide-react";
 import { useStore, type Bot, type BotProject, type Group, type Task } from "@/state/store";
 import { cn } from "@/lib/cn";
 import { CIRCLE_BUTTON } from "@/lib/circle-button";
@@ -450,6 +450,37 @@ export function BotActivityPicker({ bot }: { bot: Bot }) {
         </option>)}
       </select>
       <span className="truncate text-[12px] text-ink-secondary">{bot.tasks?.find((task) => task.threadId === bot.threadId)?.title}</span>
+    </div>
+  );
+}
+
+/** The conversation a thread chip left behind. Shown in the chat column,
+ * threads on or off, until that conversation is on screen again. */
+export function ThreadReturnLink({ ownerId, threadId }: { ownerId: string; threadId: string }) {
+  const { state, dispatch } = useStore();
+  const back = state.threadReturn;
+  if (!back || (back.ownerId === ownerId && back.threadId === threadId)) return null;
+  const bot = state.bots.find((candidate) => candidate.id === back.ownerId);
+  const group = state.groups?.find((candidate) => candidate.id === back.ownerId);
+  const title = (bot ?? group)?.tasks?.find((task) => task.threadId === back.threadId)?.title;
+  return (
+    <div className="flex shrink-0 items-center px-5 py-1" data-thread-return>
+      <button
+        type="button"
+        title={title}
+        onClick={() => {
+          if (back.ownerId !== ownerId) dispatch({ type: "select", id: back.ownerId });
+          if (group) {
+            if (group.threadId !== back.threadId) dispatch({ type: "switchGroupTask", groupId: group.id, threadId: back.threadId });
+            return;
+          }
+          if (!bot || bot.threadId !== back.threadId) dispatch({ type: "switchTask", botId: back.ownerId, threadId: back.threadId });
+        }}
+        className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-hairline/40 bg-panel px-3 py-1 text-[12.5px] text-ink hover:bg-raised"
+      >
+        <ChevronLeft size={13} aria-hidden="true" />
+        <span className="truncate">{t("task.backToConversation")}</span>
+      </button>
     </div>
   );
 }

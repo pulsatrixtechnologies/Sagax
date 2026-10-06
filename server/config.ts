@@ -318,6 +318,9 @@ const featureConfigSchema = z.object({
   /** Boat Computer (a cloud computer, "Boat"): Settings card, bot pickers,
    * team map. Off unless explicitly enabled (experimental). */
   boatComputer: z.boolean().optional(),
+  /** Settings > Decision model. Off unless explicitly enabled (experimental).
+   * Does not change whether the decider runs. */
+  decisionModel: z.boolean().optional(),
   /** Experimental built-in browser. Off until explicitly enabled; each bot
    * also has its own switch. */
   browser: z.boolean().optional(),
@@ -547,13 +550,15 @@ const appConfigSchema = z.object({
   /** Voice settings and the selected voice id. `provider` picks the
    * engine: "elevenlabs" (default; needs `key`), "fish" (needs its own
    * `fishKey`; `fishModel` picks its speech model), "system" (the Mac's
-   * built-in voices, no key), "xai" (Grok TTS, reusing `xai.key`), or
-   * "chatterbox" (a local OpenAI-compatible Chatterbox server; `baseUrl`
-   * and `model` are settings, not secrets). Cloud keys stay separate so
-   * switching providers never overwrites or misuses the other key. */
+   * built-in voices, no key), "xai" (Grok TTS, its own `xaiKey`, never
+   * the bot `xai.key`), or "chatterbox" (a local OpenAI-compatible
+   * Chatterbox server; `baseUrl` and `model` are settings, not secrets).
+   * Cloud keys stay separate so switching providers never overwrites or
+   * misuses the other key. */
   tts: z.object({
     key: optionalText,
     fishKey: optionalText,
+    xaiKey: optionalText,
     voice: optionalText,
     provider: z.enum(["elevenlabs", "fish", "system", "chatterbox", "xai"]).optional(),
     baseUrl: z
@@ -730,7 +735,7 @@ export interface AppConfig {
   /** A named host from the user's SSH config. Authentication stays with SSH. */
   vps?: { sshAlias?: string };
   opencodeGo?: { apiKey?: string };
-  tts?: { key?: string; fishKey?: string; voice?: string; provider?: "elevenlabs" | "fish" | "system" | "chatterbox" | "xai"; baseUrl?: string; model?: string; fishModel?: FishTtsModel };
+  tts?: { key?: string; fishKey?: string; xaiKey?: string; voice?: string; provider?: "elevenlabs" | "fish" | "system" | "chatterbox" | "xai"; baseUrl?: string; model?: string; fishModel?: FishTtsModel };
   /** The decision model; see the schema above and server/decider. */
   decider?: { enabled?: boolean; provider?: "jev" | "off"; key?: string; baseUrl?: string; jobs?: { roomRouting?: boolean } };
   imageGen?: ImageGenerationConfig;
@@ -745,7 +750,7 @@ export interface AppConfig {
    * seats shared by all conversations, with per-thread affinity (#1654). */
   localVm?: { mode?: "shared" | "per-bot" | "pool"; maxInstances?: number; idleTimeoutMinutes?: number };
   /** Opt-in product experiments. Every flag defaults to disabled. */
-  features?: { skillAuthoring?: boolean; showToolCalls?: boolean; browser?: boolean; sharedComputers?: boolean; claudeUserMcp?: boolean; llmThreadTitles?: boolean; autoRecall?: boolean; computerClaimIdleRelease?: boolean; cloudOverflow?: boolean; routinesInConversation?: boolean; connectedApps?: boolean; templates?: boolean; vpsComputer?: boolean; boatComputer?: boolean; skillsLibrary?: boolean };
+  features?: { skillAuthoring?: boolean; showToolCalls?: boolean; browser?: boolean; sharedComputers?: boolean; claudeUserMcp?: boolean; llmThreadTitles?: boolean; autoRecall?: boolean; computerClaimIdleRelease?: boolean; cloudOverflow?: boolean; routinesInConversation?: boolean; connectedApps?: boolean; templates?: boolean; vpsComputer?: boolean; boatComputer?: boolean; decisionModel?: boolean; skillsLibrary?: boolean };
   /** #1655: consented cloud overflow for local computer waits. The cost is
    * the operator's own per-second rate; unset keeps the feature inert. */
   cloudOverflow?: { perSecondCostUsd?: number; idleStopMs?: number; allowlistedThreads?: string[] };
@@ -1051,6 +1056,12 @@ export function boatComputerEnabled(cfg: AppConfig): boolean {
   return cfg.features?.boatComputer === true;
 }
 
+/** Settings > Decision model. Off unless explicitly enabled. The decider
+ * itself is unchanged: this only shows or hides that Settings section. */
+export function decisionModelEnabled(cfg: AppConfig): boolean {
+  return cfg.features?.decisionModel === true;
+}
+
 export function templatesEnabled(cfg: AppConfig): boolean {
   return cfg.features?.templates === true;
 }
@@ -1314,6 +1325,7 @@ export function loadConfig(): AppConfig {
   const presetVoice = process.env.SAGAX_TTS_DEFAULT_VOICE?.trim();
   if (presetVoice && !cfg.tts.voice?.trim() && (cfg.tts.provider ?? "elevenlabs") === "elevenlabs") cfg.tts.voice = presetVoice;
   if (process.env.SAGAX_FISH_AUDIO_API_KEY !== undefined) cfg.tts.fishKey = process.env.SAGAX_FISH_AUDIO_API_KEY;
+  if (process.env.SAGAX_XAI_VOICE_KEY !== undefined) cfg.tts.xaiKey = process.env.SAGAX_XAI_VOICE_KEY;
   cfg.decider = { ...cfg.decider };
   if (process.env.SAGAX_JEV_API_KEY !== undefined) cfg.decider.key = process.env.SAGAX_JEV_API_KEY;
   cfg.live = { ...cfg.live };
@@ -1379,6 +1391,7 @@ export function syncCredentialEnv(patch: Partial<Omit<AppConfig, "threads">>): v
     [patch.opencodeGo?.apiKey, "OPENCODE_API_KEY"],
     [patch.tts?.key, "SAGAX_TTS_KEY"],
     [patch.tts?.fishKey, "SAGAX_FISH_AUDIO_API_KEY"],
+    [patch.tts?.xaiKey, "SAGAX_XAI_VOICE_KEY"],
     [patch.decider?.key, "SAGAX_JEV_API_KEY"],
     [patch.imageGen?.key, "SAGAX_OPENAI_IMAGE_KEY"],
     [patch.imageGen?.customApiKey, "SAGAX_CUSTOM_IMAGE_KEY"],
@@ -1425,6 +1438,7 @@ export const WORKSPACE_CREDENTIAL_ENV = [
   "OPENCODE_API_KEY",
   "SAGAX_TTS_KEY",
   "SAGAX_FISH_AUDIO_API_KEY",
+  "SAGAX_XAI_VOICE_KEY",
   "SAGAX_JEV_API_KEY",
   "SAGAX_OPENAI_IMAGE_KEY",
   "SAGAX_CUSTOM_IMAGE_KEY",

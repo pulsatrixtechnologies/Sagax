@@ -4,14 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { MemoryCapacity, MemoryFileInfo, MemoryJournalRow } from "@/lib/memory";
 
-// DesktopCapabilities reads `window.ogb` at module scope for its context
-// default; the src suite runs under vitest's "node" environment (no
-// window), so it is stubbed the way AccessSection.test.ts does.
-vi.mock("../DesktopCapabilities", () => ({
-  useDesktopCapabilities: () => ({ capabilities: { host: { homeDir: undefined, platform: "other" } } }),
-}));
-
-const { ConflictNotice, LendingReviewNotice, MemoryFileRows, MemoryGauge, MemoryJournalList, MemoryUpkeepCard } = await import("./MemorySection");
+const { ConflictNotice, LendingReviewNotice, MemoryEditorDialog, MemoryFileRows, MemoryGauge, MemoryJournalList, MemoryUpkeepCard } = await import("./MemorySection");
 
 // renderToStaticMarkup HTML-escapes quotes and apostrophes; decode before
 // comparing against plain-text fixtures.
@@ -147,7 +140,8 @@ describe("MemoryUpkeepCard", () => {
   it("explains the switch and hides the tidy button while off", () => {
     const markup = render(createElement(MemoryUpkeepCard, { enabled: false, status: null, tidying: false, onToggle: noop, onTidy: noop }));
     expect(markup).toContain("Memory upkeep");
-    expect(markup).toContain("you can remove any");
+    expect(markup).toContain("you can undo it");
+    expect(markup).not.toContain("you can remove any");
     expect(markup).not.toContain("Tidy up now");
   });
 
@@ -164,6 +158,56 @@ describe("MemoryUpkeepCard", () => {
     expect(markup).toContain("can't make the quick background model call");
     const noticed = render(createElement(MemoryUpkeepCard, { enabled: true, status: { enabled: true, modelSteps: true, lastCapture: { at: Date.now() - 60_000, added: 1, topics: 2, aboutMe: 1 } }, tidying: false, onToggle: noop, onTidy: noop }));
     expect(noticed).toContain("Last noticed 3 facts");
+  });
+});
+
+describe("MemoryEditorDialog", () => {
+  const editing = {
+    path: "memory/work-style.md",
+    text: "hello note",
+    hash: "h",
+    dirty: true,
+    readOnly: false,
+  };
+  const props = {
+    editing,
+    botName: "Scout",
+    conflict: null,
+    saving: false,
+    savedDraft: null,
+    onChange: vi.fn(),
+    onSave: vi.fn(),
+    onDiscard: vi.fn(),
+    onClose: vi.fn(),
+    onReload: vi.fn(),
+    onOverwrite: vi.fn(),
+    onDismissDraft: vi.fn(),
+    onOpenIndex: vi.fn(),
+  };
+
+  it("shows the file in a dialog, with save and a way back to the index", () => {
+    const markup = render(createElement(MemoryEditorDialog, props));
+    expect(markup).toContain('role="dialog"');
+    expect(markup).toContain("memory/work-style.md");
+    expect(markup).toContain("hello note");
+    expect(markup).toContain(">Save<");
+    expect(markup).toContain("Back to MEMORY.md");
+    expect(markup).toContain('aria-label="Close memory editor"');
+  });
+
+  it("hides the index shortcut when the open file is MEMORY.md", () => {
+    const markup = render(createElement(MemoryEditorDialog, { ...props, editing: { ...editing, path: "MEMORY.md", dirty: false } }));
+    expect(markup).not.toContain("Back to MEMORY.md");
+    expect(markup).toContain(">Save<");
+  });
+
+  it("keeps a daily log read-only", () => {
+    const markup = render(createElement(MemoryEditorDialog, {
+      ...props,
+      editing: { path: "memory/log/2026-10-05.md", text: "did the work", hash: "h", dirty: false, readOnly: true },
+    }));
+    expect(markup).toContain("read-only here");
+    expect(markup).not.toContain(">Save<");
   });
 });
 

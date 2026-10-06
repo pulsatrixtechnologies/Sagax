@@ -30,13 +30,17 @@ function bot(): Bot {
 const member = { viewer: { operator: false, principalId: "pr_zara", email: "zara@example.test", name: "zara", role: "member", canCreateBots: true } } as ConfigStatus;
 
 describe("ModelSection", () => {
-  it("hides backup models from an organization member and keeps them otherwise", () => {
+  it("shows backup models only while automatic recovery is on, and never to an organization member", () => {
+    const html = () => renderToStaticMarkup(createElement(StoreProvider, null, createElement(ModelSection, { bot: bot() })));
     fixture.config = member;
-    const hidden = renderToStaticMarkup(createElement(StoreProvider, null, createElement(ModelSection, { bot: bot() })));
-    expect(hidden).toContain("Default model");
-    expect(hidden).not.toContain("Backup models for this bot");
+    expect(html()).toContain("Default model");
+    expect(html()).not.toContain("Backup models for this bot");
+    fixture.config = { automaticRecovery: { enabled: false } } as ConfigStatus;
+    expect(html()).not.toContain("Backup models for this bot");
+    expect(html()).not.toContain("Automatic recovery is off");
     fixture.config = null;
-    const shown = renderToStaticMarkup(createElement(StoreProvider, null, createElement(ModelSection, { bot: bot() })));
-    expect(shown).toContain("Backup models for this bot");
+    expect(html()).not.toContain("Backup models for this bot");
+    fixture.config = { automaticRecovery: { enabled: true, backup: { instanceId: "backup", model: "m" } } } as ConfigStatus;
+    expect(html()).toContain("Backup models for this bot");
   });
 });

@@ -1,0 +1,156 @@
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, describe, expect, it } from "vitest";
+
+import { desktopModelApiKey, withDesktopModelPerson } from "./desktop-model-grant.ts";
+import { DESKTOP_MODEL_UNAVAILABLE, DesktopLocalModels, injectHostId } from "./desktop-local-models.ts";
+import type { DesktopBridgeOperation } from "./desktop-bridge.ts";
+import {
+  applyOpenAIInject,
+  clearDesktopInjectHosts,
+  decodeInjectId,
+  encodeInjectId,
+  localHost,
+  mergeLocalInject,
+  setDesktopInjectModels,
+  upsertDesktopInjectHost,
+} from "./drivers/local-inject.ts";
+
+const dirs: string[] = [];
+const services: DesktopLocalModels[] = [];
+
+afterEach(() => {
+  for (const service of services.splice(0)) service.close();
+  for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+  clearDesktopInjectHosts();
+  setDesktopInjectModels(() => []);
+});
+
+function grant(person: string): string {
+  let token = "";
+  withDesktopModelPerson(person, () => { token = desktopModelApiKey(); });
+  return token;
+}
+
+async function start() {
+  const dir = mkdtempSync(join(tmpdir(), "sagax-desktop-models-"));
+  dirs.push(dir);
+  const calls: { person: string | null; operation: DesktopBridgeOperation }[] = [];
+  const online = new Set<string>();
+  const bridge = {
+    calls,
+    online,
+    connected(person: string | null) { return Boolean(person && online.has(person)); },
+    current(person: string | null) { return person && online.has(person) ? { name: "Mac" } : null; },
+    async request(person: string | null, operation: DesktopBridgeOperation) {
+      calls.push({ person, operation });
+      return { localModel: { status: 200, contentType: "application/json", body: "{\"ok\":true}" } };
+    },
+  };
+  const service = new DesktopLocalModels(dir, bridge);
+  services.push(service);
+  await service.listen();
+  return { service, bridge };
+}
+
+async function post(port: number, hostId: string, token: string, path = "/chat/completions") {
+  return fetch(`http://127.0.0.1:${port}/d/${hostId}/v1${path}`, {
+    method: "POST",
+    headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+    body: JSON.stringify({ model: "qwen3" }),
+  });
+}
+
+describe("desktop local models", () => {
+  it("keeps both switches off until the person turns them on", async () => {
+    const { service } = await start();
+    const view = service.read("pr_owner");
+    expect(view.expose).toBe(false);
+    expect(view.share).toBe(false);
+    expect(view.endpoints.map((row) => row.id)).toEqual(expect.arrayContaining(["desk8002", "desk9337", "desk9338", "desk11434"]));
+    const refused = service.update("pr_owner", { endpoints: [{ label: "nope", baseUrl: "http://10.1.2.3:8002/v1" }] });
+    expect(refused.ok).toBe(false);
+    if (!refused.ok) expect(refused.error).not.toContain("10.1.2.3");
+  });
+
+  it("rejects another person when sharing is off and allows them when sharing is on", async () => {
+    const { service, bridge } = await start();
+    const owner = "pr_owner";
+    const other = "pr_other";
+    bridge.online.add(owner);
+    expect(service.update(owner, { expose: true, share: false }).ok).toBe(true);
+    expect(service.publish(owner, { endpoints: [{ id: "desk8002", label: "DwarfStar", models: ["qwen3"], baseUrl: "http://127.0.0.1:8002/v1" }] }).ok).toBe(false);
+    expect(service.publish(owner, { endpoints: [{ id: "desk8002", label: "DwarfStar", models: ["qwen3"] }] }).ok).toBe(true);
+    const hostId = injectHostId(owner, "desk8002");
+    const denied = await post(service.portNumber(), hostId, grant(other));
+    expect(denied.status).toBe(403);
+    expect(await denied.text()).toBe(DESKTOP_MODEL_UNAVAILABLE);
+    expect(bridge.calls).toHaveLength(0);
+    expect(service.modelsFor(other)).toEqual([]);
+    const ownerCall = await post(service.portNumber(), hostId, grant(owner));
+    expect(ownerCall.status).toBe(200);
+    expect(service.update(owner, { share: true }).ok).toBe(true);
+    bridge.calls.length = 0;
+    const allowed = await post(service.portNumber(), hostId, grant(other));
+    expect(allowed.status).toBe(200);
+    expect(await allowed.json()).toEqual({ ok: true });
+    expect(bridge.calls[0]?.person).toBe(owner);
+    expect(bridge.calls[0]?.operation).toMatchObject({ action: "local_model", endpoint: "desk8002", http_method: "POST", http_path: "/chat/completions" });
+    expect(bridge.calls[0]?.operation.url).toBeUndefined();
+    expect(JSON.stringify(bridge.calls[0]?.operation)).not.toContain("8002/v1");
+    expect(service.modelsFor(other)[0]?.label).toBe("qwen3 (Mac, DwarfStar)");
+    expect(injectHostId(owner, "desk8002")).not.toBe(injectHostId(other, "desk8002"));
+  });
+
+  it("round-trips a desktop inject id onto the server proxy, not the Mac address", async () => {
+    const { service, bridge } = await start();
+    const owner = "pr_owner";
+    bridge.online.add(owner);
+    service.update(owner, { expose: true });
+    service.publish(owner, { endpoints: [{ id: "desk8002", label: "DwarfStar", models: ["qwen3"] }] });
+    const hostId = injectHostId(owner, "desk8002");
+    const modelId = encodeInjectId(hostId, "qwen3");
+    expect(decodeInjectId(modelId)).toEqual({ host: hostId, model: "qwen3" });
+    const host = localHost(hostId);
+    expect(host).toBeTruthy();
+    expect(host!.baseUrl).toBe(`http://127.0.0.1:${service.portNumber()}/d/${hostId}/v1`);
+    expect(host!.baseUrl).not.toBe("http://127.0.0.1:8002/v1");
+    const env: Record<string, string | undefined> = {};
+    expect(applyOpenAIInject(env, modelId)).toEqual({ model: "qwen3", injected: true });
+    expect(env.OPENAI_BASE_URL).toBe(host!.baseUrl);
+    expect(() => upsertDesktopInjectHost({ id: "deskabc123", label: "x", baseUrl: "http://10.0.0.2:9/d/deskabc123/v1" })).toThrow(/refused/);
+    expect(() => upsertDesktopInjectHost({ id: "deskabc123", label: "x", baseUrl: "http://127.0.0.1:8002/v1" })).toThrow(/refused/);
+    setDesktopInjectModels(() => service.modelsFor(owner));
+    const catalog = await mergeLocalInject({ default: "cloud", options: [{ id: "cloud", label: "Cloud" }] });
+    expect(catalog.options.some((row) => row.id === modelId && row.custom === true)).toBe(true);
+    const messages = await fetch(`http://127.0.0.1:${service.portNumber()}/d/${hostId}/v1/messages`, {
+      headers: { authorization: `Bearer ${grant(owner)}` },
+    });
+    expect(messages.status).toBe(404);
+    expect(bridge.calls).toHaveLength(0);
+  });
+
+  it("hides an offline desktop and fails the turn as unavailable", async () => {
+    const { service, bridge } = await start();
+    const owner = "pr_owner";
+    bridge.online.add(owner);
+    service.update(owner, { expose: true, share: true });
+    service.publish(owner, { endpoints: [{ id: "desk8002", label: "DwarfStar", models: ["qwen3"] }] });
+    const hostId = injectHostId(owner, "desk8002");
+    const modelId = encodeInjectId(hostId, "qwen3");
+    bridge.online.delete(owner);
+    expect(service.modelsFor(owner)).toEqual([]);
+    expect(service.modelsFor("pr_other")).toEqual([]);
+    expect(localHost(hostId)?.baseUrl.startsWith("http://127.0.0.1:")).toBe(true);
+    expect(() => service.assertAvailable(owner, modelId)).toThrow(DESKTOP_MODEL_UNAVAILABLE);
+    const response = await post(service.portNumber(), hostId, grant(owner));
+    expect(response.status).toBe(503);
+    expect(await response.text()).toBe(DESKTOP_MODEL_UNAVAILABLE);
+    expect(bridge.calls).toHaveLength(0);
+    service.update(owner, { expose: false });
+    expect(localHost(hostId)).toBeUndefined();
+    expect(() => service.assertAvailable(owner, modelId)).toThrow(DESKTOP_MODEL_UNAVAILABLE);
+    expect(() => service.assertAvailable(owner, "claude-sonnet-5")).not.toThrow();
+  });
+});

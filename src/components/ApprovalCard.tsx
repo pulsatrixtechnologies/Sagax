@@ -50,6 +50,16 @@ export function approvalCardOutcome(card: OptionCardData): string | undefined {
   return t("approval.status.allowed");
 }
 
+/** A permission ask stays in the chat only while it is still waiting.
+ *  Allowed, denied, dismissed and expired asks leave the transcript.
+ *  The message stays stored. A question or a quiz is not this card. */
+export function approvalCardStaysInChat(
+  card: Pick<OptionCardData, "requestId" | "tool" | "answered" | "expired" | "dismissed"> | undefined,
+): boolean {
+  if (!card?.requestId || !card.tool) return false;
+  return !card.answered && card.expired !== true && card.dismissed !== true;
+}
+
 /** The tool's own name is noise to a human: Bash is "run a command",
  * mcp__perspicax_pulsatrix_flow_jc__cw_psa_schedule__query is "view the
  * schedule in ConnectWise PSA". `input` (the card's JSON arguments) lets a

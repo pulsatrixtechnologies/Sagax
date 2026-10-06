@@ -48,14 +48,7 @@ recreating a removed fixture directory.
    **Update OpenCode on this server**. Click each and confirm the fixture error
    appears with its button usable again. Terminal commands remain under
    **Prefer a terminal?**. These clicks never perform a real installation.
-7. Expand Codex, choose **Google Gemini** under **Provider icon**, and reload.
-   The selected icon should persist while sibling instances keep their icons.
-   Upload a small PNG, JPEG, or WebP and check that it renders in the card and
-   picker. Reject unsupported or invalid images with a visible error. **Reset**
-   restores the default icon. Check the controls in both themes at desktop and
-   narrow widths. The server API test separately verifies on-disk persistence;
-   this preview's synthetic state does not survive process restart.
-8. Expand **ChatGPT plan**. Its setup card offers **Continue with ChatGPT**,
+7. Expand **ChatGPT plan**. Its setup card offers **Continue with ChatGPT**,
    not a device code or terminal login. Toggle the sample plan connection:
    the first-use dialog should focus **Got it**, fit at 390px, and explain
    ChatGPT plan usage separately from Sagax Pro. Dismiss it, disconnect

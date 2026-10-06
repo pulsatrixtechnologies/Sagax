@@ -5,6 +5,7 @@ import { t } from "@/lib/i18n";
 import { api } from "@/state/store";
 import { isOwnerOrAdmin, readSessionState, type SessionState } from "../lib/session";
 import { readMembership } from "../lib/membership";
+import { loadPerspicaxOrg } from "../lib/perspicax-org";
 import { revealPhonePairing } from "../lib/phone-pairing";
 import { Card, cardCount } from "./SettingsPrimitives";
 
@@ -45,6 +46,18 @@ export function shownDevices(devices: PairedDevice[], cloudHome: boolean): Paire
   return cloudHome ? devices.filter((device) => device.scopes.includes("admin")) : devices;
 }
 
+/** Pairing codes are for a solo or local server. An organisation signs people
+ * in with OAuth: a Perspicax link that is present (not missing) or a portal
+ * membership. pairingCodes false is the hosted workspace's own answer. */
+export function pairingCodesOffered(input: {
+  pairingCodes: boolean;
+  authority: "local" | "portal";
+  perspicaxLinked: boolean;
+}): boolean {
+  if (input.perspicaxLinked || input.authority === "portal") return false;
+  return input.pairingCodes;
+}
+
 export function minutesLeft(expiresAt: number, now = Date.now()): number {
   return Math.max(0, Math.ceil((expiresAt - now) / 60_000));
 }
@@ -73,11 +86,14 @@ const quiet = "rounded-md border border-hairline/50 px-3 py-1.5 text-[13px] text
  * devices listed, and one line saying why. `focusRequest` counts up when
  * "Connect your phone" opened Settings here: the card scrolls into view with
  * focus on Create pairing code, once it knows what it may show. */
-export function ServerPairingCard({ initialSession = null, initialPairingCodes = true, cloudHome = false, focusRequest = 0 }: { initialSession?: SessionState | null; initialPairingCodes?: boolean; cloudHome?: boolean; focusRequest?: number }) {
+export function ServerPairingCard({ initialSession = null, initialPairingCodes = true, initialAuthority = "local", perspicaxLinked = false, cloudHome = false, focusRequest = 0 }: { initialSession?: SessionState | null; initialPairingCodes?: boolean; initialAuthority?: "local" | "portal"; perspicaxLinked?: boolean; cloudHome?: boolean; focusRequest?: number }) {
   const [session, setSession] = useState<SessionState | null>(initialSession);
-  // A hosted workspace refuses pairing codes: people sign in through the
-  // organisation's portal. Offer only the signed-in devices there.
+  // A hosted workspace, a portal membership, or a linked Perspicax
+  // organisation refuses pairing codes: people sign in with OAuth.
+  // Offer only the signed-in devices there.
   const [pairingCodes, setPairingCodes] = useState(initialPairingCodes);
+  const [authority, setAuthority] = useState<"local" | "portal">(initialAuthority);
+  const [linkedFromOrg, setLinkedFromOrg] = useState(false);
   const [scope, setScope] = useState<"admin" | "client">("admin");
   const [offer, setOffer] = useState<PairingOffer | null>(null);
   const [devices, setDevices] = useState<PairedDevice[]>([]);
@@ -104,7 +120,12 @@ export function ServerPairingCard({ initialSession = null, initialPairingCodes =
       setSession(state);
       if (canPairDevices(state)) void loadDevices();
       if (state.kind === "loopback" || state.kind === "session") {
-        void api("/api/config").then((config) => setPairingCodes(readMembership(config).pairingCodes)).catch(() => {});
+        void api("/api/config").then((config) => {
+          const membership = readMembership(config);
+          setPairingCodes(membership.pairingCodes);
+          setAuthority(membership.authority);
+        }).catch(() => {});
+        void loadPerspicaxOrg().then((org) => setLinkedFromOrg(Boolean(org && org.link.state !== "missing"))).catch(() => {});
       }
     });
   }, []);
@@ -122,12 +143,13 @@ export function ServerPairingCard({ initialSession = null, initialPairingCodes =
     return () => clearInterval(timer);
   }, [offer]);
 
+  const offered = pairingCodesOffered({ pairingCodes, authority, perspicaxLinked: perspicaxLinked || linkedFromOrg });
   if (!canPairDevices(session)) {
     if (pairingBlockedReason(session) !== "chat-only") return null;
     return (
       <div ref={root} tabIndex={-1} data-phone-pairing="server" className="scroll-mt-4 rounded-xl focus:outline-none">
-        <Card collapsible cardId="companion.pairing" title={t("remote.serverPairing.title")} subtitle={t(pairingCodes ? "remote.serverPairing.subtitle" : "remote.serverPairing.portalSubtitle")} summary={t("settings.card.chatOnly")}>
-          <p data-server-pairing-chat-only className="mt-3 text-[13px] text-ink-secondary">{t(pairingCodes ? "remote.serverPairing.chatOnly" : "remote.serverPairing.portalChatOnly")}</p>
+        <Card collapsible cardId="companion.pairing" title={t("remote.serverPairing.title")} subtitle={t(offered ? "remote.serverPairing.subtitle" : "remote.serverPairing.portalSubtitle")} summary={t("settings.card.chatOnly")}>
+          <p data-server-pairing-chat-only className="mt-3 text-[13px] text-ink-secondary">{t(offered ? "remote.serverPairing.chatOnly" : "remote.serverPairing.portalChatOnly")}</p>
         </Card>
       </div>
     );
@@ -176,11 +198,11 @@ export function ServerPairingCard({ initialSession = null, initialPairingCodes =
       collapsible
       cardId="companion.pairing"
       title={t("remote.serverPairing.title")}
-      subtitle={t(pairingCodes ? "remote.serverPairing.subtitle" : "remote.serverPairing.portalSubtitle")}
+      subtitle={t(offered ? "remote.serverPairing.subtitle" : "remote.serverPairing.portalSubtitle")}
       summary={cardCount("devices", devices.length)}
     >
-      {pairingCodes && cloudHome ? <p data-server-pairing-personal className="mt-3 text-[13px] text-ink-secondary">{t("remote.serverPairing.cloudPersonal")}</p> : null}
-      {pairingCodes ? <div className="mt-3 flex flex-wrap items-center gap-3">
+      {offered && cloudHome ? <p data-server-pairing-personal className="mt-3 text-[13px] text-ink-secondary">{t("remote.serverPairing.cloudPersonal")}</p> : null}
+      {offered ? <div className="mt-3 flex flex-wrap items-center gap-3">
         {cloudHome ? null : <>
           <label className="flex items-center gap-1.5 text-[13px] text-ink">
             <input type="radio" name="server-pairing-scope" checked={scope === "admin"} onChange={() => setScope("admin")} />
@@ -195,7 +217,7 @@ export function ServerPairingCard({ initialSession = null, initialPairingCodes =
           {busy ? t("remote.serverPairing.creating") : t("remote.serverPairing.create")}
         </button>
       </div> : <p data-server-pairing-portal className="mt-3 text-[13px] text-ink-secondary">{t("remote.serverPairing.portal")}</p>}
-      {pairingCodes && offer ? (
+      {offered && offer ? (
         <div className="mt-4 rounded-lg border border-hairline/40 bg-inset p-4">
           {expired ? (
             <p className="text-[13px] text-ink-secondary">{t("remote.serverPairing.expired")}</p>
@@ -224,7 +246,7 @@ export function ServerPairingCard({ initialSession = null, initialPairingCodes =
           )}
         </div>
       ) : null}
-      <div className="mt-5 text-[13px] font-medium text-ink">{t(pairingCodes ? "remote.serverPairing.devices" : "remote.serverPairing.portalDevices")}</div>
+      <div className="mt-5 text-[13px] font-medium text-ink">{t(offered ? "remote.serverPairing.devices" : "remote.serverPairing.portalDevices")}</div>
       {listed.length === 0 ? (
         <p className="mt-1 text-[12.5px] text-ink-secondary">{t("remote.serverPairing.noDevices")}</p>
       ) : (

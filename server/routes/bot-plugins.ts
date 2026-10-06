@@ -30,7 +30,7 @@ export interface BotPluginRouteDeps<B extends { id: string }> {
   /** An admin manages this person's plugins (never an organization admin). */
   managedByAdmin?: (auth: RequestAuth) => boolean;
   policy: () => MarketplacePolicy | undefined;
-  /** Whether the bot's engine loads plugins (Claude Code only). */
+  /** Whether the bot's engine loads plugin skills and commands. */
   engineLoadsPlugins: (bot: B) => boolean;
   /** After a change: the bot's next turn starts a fresh engine process. */
   changed?: (bot: B, action: string, detail: Record<string, unknown>, auth: RequestAuth) => void;

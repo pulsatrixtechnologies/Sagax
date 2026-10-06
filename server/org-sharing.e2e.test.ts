@@ -237,11 +237,13 @@ posixOnly("Perspicax organization, slice 3: directory, sharing with a user, acce
   it("S3-4 (B): shared with bob, answered with the org key; dave sees none of it", async () => {
     // The organization's key serves by itself (2026-10-01): bob has no
     // subscription and no key of his own. Slice 8: the settings also carry
-    // the interim attach window (none here). #117: the org's GitHub OAuth App
-    // (none) and the plugin marketplace policy (any, the default).
+    // the interim attach window (none here). The org's GitHub OAuth App
+    // (none), the plugin marketplace policy (any, the default) and the
+    // labeled access tokens (none).
     expect((await api("GET", "/api/org", alice)).body.settings).toEqual({
       orgKeyConfigured: true, allowFullAccess: true, interimAttach: { until: null, people: 0 },
       github: { clientId: null, fromEnvironment: false }, pluginMarketplaces: { mode: "any" },
+      githubTokens: [],
     });
     shared = await createBot(alice, "Xavier", "claude");
     const refusals = [

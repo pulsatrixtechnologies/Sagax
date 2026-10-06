@@ -340,6 +340,8 @@ describe("the picker opens as a modal like Settings", () => {
     const profile = { contained: true, threadId: undefined, label: "Default model" };
     const closed = render(onClaude, profile).html;
     expect(closed).toContain("Default model");
+    expect(closed).toContain("flex w-full flex-col gap-3");
+    expect(closed).not.toContain("justify-between gap-4");
     expect(closed).not.toContain("data-model-picker-backdrop");
     const opened = open(onClaude, profile);
     const html = menu(opened.html);

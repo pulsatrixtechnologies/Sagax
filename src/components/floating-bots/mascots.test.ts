@@ -41,6 +41,20 @@ describe("the heart and the triangle (stored ids bean and pick)", () => {
     expect(SHAPE_ART.pick.face[1]).toBeLessThan(62);
     expect(SHAPE_ART.pick.face[1]).toBeGreaterThan(48);
   });
+  it("draws the teardrop as a soft drop, point toward the top left and a round belly", () => {
+    const d = SHAPE_ART.drop.d;
+    expect(d.startsWith("M")).toBe(true);
+    expect(d).toContain("C");
+    expect(d).not.toMatch(/A\d/);
+    const nums = [...d.matchAll(/(-?[\d.]+) (-?[\d.]+)/g)].map((m) => [Number(m[1]), Number(m[2])] as const);
+    const on = [nums[0], ...nums.filter((_, index) => index > 0 && index % 3 === 0)];
+    const minX = Math.min(...on.map(([x]) => x));
+    const maxX = Math.max(...on.map(([x]) => x));
+    const top = on.reduce((best, point) => (point[1] < best[1] ? point : best));
+    expect(top[0]).toBeLessThan((minX + maxX) / 2);
+    expect(top[0]).toBeGreaterThan(minX + 4);
+    expect(SHAPE_ART.drop.face).toEqual([57, 54]);
+  });
 });
 
 describe("a bot's character and its look", () => {

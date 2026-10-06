@@ -18,6 +18,13 @@ import Combine
 import CompanionCore
 import SwiftUI
 
+/// How long one voice call ran. The transcript card reads it. A relaunch
+/// has none, and the card falls back to the first and last spoken lines.
+struct CallClockRecord: Equatable {
+    var startedAt: Date
+    var endedAt: Date?
+}
+
 @MainActor
 final class CallController: ObservableObject {
     static let shared = CallController()
@@ -74,7 +81,8 @@ final class CallController: ObservableObject {
     private var conversation = CallConversation(existing: [])
     private var stateSink: AnyCancellable?
     private var observers: [NSObjectProtocol] = []
-    private var callId = ""
+    @Published private(set) var callClocks: [String: CallClockRecord] = [:]
+    private(set) var callId = ""
     private var devicesStarted = false
     private var lastBusy: Bool?
     private var members: [Bot] = []
@@ -151,6 +159,7 @@ final class CallController: ObservableObject {
         voicesError = nil
         startedAt = Date()
         callId = "call-" + UUID().uuidString.lowercased()
+        noteCallClockRunning()
         devicesStarted = false
         lastBusy = nil
         members = []
@@ -174,6 +183,7 @@ final class CallController: ObservableObject {
             guard await MicrophonePermission.request() else {
                 unavailable = Unavailable(title: String(localized: "Call unavailable"), lines: [String(localized: "Allow microphone access for Sagax in Settings, then try again.")], keysUrl: nil)
                 CallQuiet.shared.set(threadId, live: false)
+                noteCallClockEnded()
                 target = nil
                 return
             }
@@ -321,9 +331,25 @@ final class CallController: ObservableObject {
         if let session { observe(session.state) }
     }
 
+    private func noteCallClockRunning() {
+        guard !callId.isEmpty else { return }
+        var next = callClocks
+        next[callId] = CallClockRecord(startedAt: startedAt, endedAt: nil)
+        callClocks = next
+    }
+
+    private func noteCallClockEnded() {
+        guard !callId.isEmpty, var clock = callClocks[callId], clock.endedAt == nil else { return }
+        clock.endedAt = Date()
+        var next = callClocks
+        next[callId] = clock
+        callClocks = next
+    }
+
     /// Hang up (the red X, CallKit's end button, or another call).
     func end(fromSystem: Bool = false) {
         guard target != nil else { return }
+        noteCallClockEnded()
         CallQuiet.shared.set(threadId, live: false)
         callAlive?.invalidate()
         callAlive = nil

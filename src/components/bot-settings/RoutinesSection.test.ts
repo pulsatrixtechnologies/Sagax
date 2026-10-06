@@ -90,9 +90,8 @@ describe("RoutinesSection", () => {
     expect(markup).toContain("No schedules yet.");
   });
 
-  // The bot panel lists routines in the compact Sagax layout (1e6839895,
-  // d3fb98f22): name, state and a pause switch per row; the schedule, next
-  // run and latest result open in the routine's detail and the run logs.
+  // The bot panel lists each routine with its name, when it runs, and a
+  // pause switch. The instruction opens in the detail. Run logs stay separate.
   it("renders each routine's name with its pause switch", () => {
     const markup = render([activeRoutine, pausedRoutine], []);
     expect(markup).toContain("Morning brief");
@@ -101,10 +100,11 @@ describe("RoutinesSection", () => {
     expect(markup).toContain('aria-label="Resume"');
   });
 
-  it("chips an enabled routine Active and a disabled one Paused", () => {
+  it("shows when an enabled routine runs, and marks a disabled one paused", () => {
     const markup = render([activeRoutine, pausedRoutine], []);
-    expect(markup).toContain(">Active<");
-    expect(markup).toContain(">Paused<");
+    expect(markup).toContain("Every weekday at");
+    expect(markup).toContain("· Paused");
+    expect(markup).not.toContain(">Active<");
   });
 
   it("lists the active routine before the paused one", () => {

@@ -665,6 +665,7 @@
               "opencodeGoApiKey",
               "ttsKey",
               "fishAudioKey",
+              "xaiVoiceKey",
               "openaiImageApiKey"
             ],
             "description": "The credential the current task requires."
@@ -1342,7 +1343,7 @@
     },
     {
       "name": "act",
-      "description": "Act as the signed-in person. Send either ui and input (a screen or button in their open Sagax app) or method, path, and optional query and body (an /api route, which also works when they have no desktop window). You are that person: a route they cannot call is refused, and you cannot do more than they can. Reads and screen changes run now. A write waits for their Allow on a card unless this bot's approval mode is auto or full. Do not retry a held write. /api/internal and /api/testing are refused.",
+      "description": "Act as the signed-in person. Send either ui and input (a screen or button in their open Sagax app) or method, path, and optional query and body (an /api route, which also works when they have no desktop window). You are that person: a route they cannot call is refused, and you cannot do more than they can. Reads and screen changes run now. A write waits for their Allow on a card unless this bot's approval mode is auto or full. Do not retry a held write. /api/internal and /api/testing are refused. Plugins: send plugins instead of a route. action is list, addMarketplace (source, optional ref), install (marketplace and plugin; also updates), setEnabled (key and enabled), uninstall (key) or removeMarketplace (marketplace). Omit botId for this bot. A write still waits for Allow unless this bot is auto or full.",
       "inputSchema": {
         "type": "object",
         "additionalProperties": false,
@@ -1386,6 +1387,54 @@
             "type": "object",
             "additionalProperties": true,
             "description": "JSON object sent with POST, PUT, PATCH, or DELETE."
+          },
+          "plugins": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "action"
+            ],
+            "description": "Install or change a plugin through Sagax. Omit botId for this bot.",
+            "properties": {
+              "action": {
+                "type": "string",
+                "enum": [
+                  "list",
+                  "addMarketplace",
+                  "install",
+                  "setEnabled",
+                  "uninstall",
+                  "removeMarketplace"
+                ]
+              },
+              "botId": {
+                "type": "string",
+                "maxLength": 80
+              },
+              "source": {
+                "type": "string",
+                "maxLength": 500
+              },
+              "ref": {
+                "type": "string",
+                "maxLength": 200
+              },
+              "marketplace": {
+                "type": "string",
+                "maxLength": 64
+              },
+              "plugin": {
+                "type": "string",
+                "maxLength": 64
+              },
+              "key": {
+                "type": "string",
+                "maxLength": 129
+              },
+              "enabled": {
+                "type": "boolean"
+              }
+            }
           }
         }
       }

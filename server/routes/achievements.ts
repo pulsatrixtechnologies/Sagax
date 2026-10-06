@@ -2,12 +2,14 @@
 // (request-auth.ts CLIENT_ALLOW): everyone reads and feeds only their own,
 // keyed by the session's person (organization server) or the local operator
 // (solo server). Nobody reads another person's record, an admin included;
-// /api/achievements/public answers only the points people chose to show.
+// /api/achievements/public answers the card by default (points, the chosen
+// title id, and unlocked achievement ids). A stored public false stays off
+// that list. Locked ids are never on the card.
 //
 //   GET  /api/me/achievements           the snapshot
 //   POST /api/me/achievements/events    { events: [{ type, key?, value? }] } client events only
 //   PUT  /api/me/achievements/settings  { settings: { showPoints, toasts, native, public, title, tzOffset } }
-//   GET  /api/achievements/public?ids=  { points: { <person>: { points, level } } }
+//   GET  /api/achievements/public?ids=  { points: { <person>: { points, level, title?, unlocked } } }
 import type { AchievementEvent, AchievementStore, AchievementUnlock } from "../achievements.ts";
 import type { RequestAuth } from "../request-auth.ts";
 import { PASS, type RouteHandler } from "./table.ts";

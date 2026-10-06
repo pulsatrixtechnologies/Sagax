@@ -23,9 +23,11 @@ import {
   extractArchive,
   extractedFolderName,
   listArchive,
+  readSmallArchiveTexts,
   type ArchiveManifest,
 } from "../electron/archive-extract.mjs";
 import { ATTACHMENTS_DIR } from "./attachments.ts";
+import { INLINE_FILE_MAX_BYTES, INLINE_TOTAL_MAX_BYTES } from "./attachment-staging.ts";
 
 export { ARCHIVE_LIMITS, archiveKind, extractedFolderName };
 export type { ArchiveManifest };
@@ -135,6 +137,21 @@ export function manifestTree(manifest: ArchiveManifest, maxLines = NOTE_MAX_LINE
   return lines;
 }
 
+/** Text already inside a small archive. Nothing is written beside the upload. */
+export function archiveInlineTexts(serverPath: string): { path: string; text: string }[] {
+  return readSmallArchiveTexts(serverPath, {
+    fileMax: INLINE_FILE_MAX_BYTES,
+    totalMax: INLINE_TOTAL_MAX_BYTES,
+    archiveMax: INLINE_TOTAL_MAX_BYTES,
+  });
+}
+
+const ARCHIVE_TEXT_READY = "The text files below are already this archive. Do not download it, do not open a browser, and do not sign in to read it. Apply a bot profile from this text onto yourself with the tools you already have: propose_profile for the title, the description and the standing instructions (soul); skill_manage for each skill; memory_update for memory; propose_routine only for a routine the person asked for. Do not create a new bot unless they asked for one.";
+
+function inlineBlocks(texts: readonly { path: string; text: string }[]): string {
+  return texts.map((item) => `<attached-file-content name="${escapeAttribute(item.path)}">\n${item.text}\n</attached-file-content>`).join("\n");
+}
+
 const SKIP_LABEL: Record<string, string> = {
   link: "links",
   special: "device or pipe entries",
@@ -152,11 +169,18 @@ export function archiveNote(input: {
   manifest: StoredArchiveManifest | null;
   extractedPath: string | null;
   when: "ready" | "first-tool";
+  /** Text members already read from the archive. The bot must use these. */
+  texts?: readonly { path: string; text: string }[];
 }): string {
   const { name, manifest } = input;
+  const texts = input.texts ?? [];
   if (!manifest) {
-    return `<attached-archive name="${escapeAttribute(name)}">\nAn archive; its contents were not listed. Unpack it yourself if you need them, without following links or paths that leave the folder.\n</attached-archive>`;
+    const listed = texts.length ? `\n${ARCHIVE_TEXT_READY}\n${inlineBlocks(texts)}` : "";
+    return `<attached-archive name="${escapeAttribute(name)}">\nAn archive; its contents were not listed. Unpack it yourself if you need them, without following links or paths that leave the folder.${listed}\n</attached-archive>`;
   }
+  const inlinedPaths = new Set(texts.map((item) => item.path));
+  const fullyInlined = texts.length > 0 && !manifest.truncated && manifest.files === texts.length
+    && manifest.entries.every((entry) => inlinedPaths.has(entry.path));
   const attributes = [
     `name="${escapeAttribute(name)}"`,
     `kind="${manifest.kind ?? "unknown"}"`,
@@ -166,7 +190,9 @@ export function archiveNote(input: {
   ];
   const lines: string[] = [];
   const unpackable = manifest.status === "ok";
-  if (unpackable && input.extractedPath && (input.when === "first-tool" || manifest.extracted)) {
+  if (fullyInlined) {
+    lines.push(ARCHIVE_TEXT_READY);
+  } else if (unpackable && input.extractedPath && (input.when === "first-tool" || manifest.extracted)) {
     attributes.push(`extracted-path="${escapeAttribute(input.extractedPath)}"`);
     lines.push(input.when === "ready"
       ? "Sagax unpacked it into extracted-path, next to the archive. Read the files there."
@@ -190,6 +216,11 @@ export function archiveNote(input: {
     const reasons = [...new Set(manifest.skipped.map((entry) => SKIP_LABEL[entry.reason] ?? entry.reason))];
     lines.push(`Left out of the unpacked folder: ${manifest.skippedCount} entries (${reasons.join(", ")}).`);
   }
+  if (texts.length && !fullyInlined) {
+    lines.push(ARCHIVE_TEXT_READY);
+    lines.push("Some files are not included below. Read only those from extracted-path when it is set. Do not download the archive and do not open a browser.");
+  }
+  if (texts.length) lines.push(inlineBlocks(texts));
   return `<attached-archive ${attributes.join(" ")}>\n${lines.join("\n")}\n</attached-archive>`;
 }
 

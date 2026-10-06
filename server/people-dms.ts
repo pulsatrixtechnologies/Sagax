@@ -12,7 +12,8 @@
 //   both people to agree, and the first such bot would carry the transcript
 //   to its own owner; a group chat already is the place for that.
 // - Its people, name, section, folder and instructions never change, and it
-//   has no shared memory (server/group-memory.ts).
+//   has no shared memory (server/group-memory.ts). Unread and the home pin
+//   are display flags, the same ones a member already sets on a room.
 // - A message is a person's message: it starts no turn, marks the
 //   conversation unread and notifies the other person only.
 
@@ -48,10 +49,11 @@ export function otherPerson(group: PeopleDmLike, viewerId: string): string | und
 }
 
 /** A PATCH on a person-to-person conversation may only mark it read or
- * unread. Anything else is refused with the field's name. */
+ * unread, or set its home pin. Anything else is refused with the field's
+ * name. */
 export function peopleDmPatchRefusal(body: unknown): string | null {
   if (!body || typeof body !== "object" || Array.isArray(body)) return null;
-  const field = Object.keys(body).find((name) => name !== "unread");
+  const field = Object.keys(body).find((name) => name !== "unread" && name !== "pinned");
   return field ?? null;
 }
 

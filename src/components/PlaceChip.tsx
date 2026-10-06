@@ -128,7 +128,6 @@ export function PlaceChip({ bot, task, live, disabled = false, onPin, initialOpe
           <PlaceIcon place={effective} size={16} className="shrink-0 opacity-80" aria-hidden="true" />
           {showLive && <span className="absolute -right-0.5 -top-0.5 size-1.5 animate-pulse rounded-full bg-success" aria-label={t("place.live")} />}
         </span>
-        <span>{t("place.forConversation")}</span>
       </button>
       {motion.shown && (
         // Same surface and scale as the right-click menus. The title stays

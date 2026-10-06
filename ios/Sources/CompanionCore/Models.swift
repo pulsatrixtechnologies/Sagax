@@ -342,6 +342,8 @@ public struct Message: Codable, Hashable, Identifiable, Sendable {
     public var aside: Bool? = nil
     /// "api" when a user line arrived through the server's HTTP API.
     public var via: String? = nil
+    /// Words said on a voice call. The thread draws one card per callId.
+    public var voiceCall: VoiceCallMeta? = nil
     /// Which signed-in person sent a user line on a shared workspace.
     public var sender: MessageAuthor? = nil
     /// A user-role line another bot delivered into this conversation.

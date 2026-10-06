@@ -9,7 +9,6 @@ import { Check, ChevronDown, Loader2, RefreshCw, TriangleAlert } from "lucide-re
 
 import { api, useStore, type InstanceInfo } from "@/state/store";
 import { EngineCard, EngineSections, RefreshEngines, engineReady } from "./EngineLibrary";
-import { ProviderIconPicker } from "./ProviderIconPicker";
 import { cn } from "@/lib/cn";
 import { useMenuMotion } from "./MenuMotion";
 import { t } from "@/lib/i18n";
@@ -273,7 +272,7 @@ function EngineRow({ instance, mine, member = false }: { instance: InstanceInfo;
     <span className="font-medium text-ink">{t("policy.managedBy", { organization: instance.policy.organizationName })}</span> · {instance.policy.reason}
   </p>;
   // An organization member: their own access only. The server's engine
-  // (its CLI, its updates, its icon) is the admins' to change.
+  // (its CLI and its updates) is the admins' to change.
   if (member && mine) return (
     <EngineCard instance={instance} personal={{ ready: mine.myTurns !== "none", line: myTurnsText(mine), turns: mine.myTurns }}>
       {policyNote}
@@ -290,7 +289,6 @@ function EngineRow({ instance, mine, member = false }: { instance: InstanceInfo;
     <EngineCard instance={instance} personal={mine && { ready: mine.myTurns !== "none", line: myTurnsText(mine), turns: mine.myTurns }}>
       {policyNote}
       {mine && <div className="mb-3"><MyEngineAccess engine={mine} /></div>}
-      <ProviderIconPicker instance={instance} />
       {!mine && !engineReady(instance) && <EngineSetup instance={instance} intent={instance.access === "custom" ? "inject" : "cloud"} unframed />}
       {instance.snapshot.update && <EngineUpdateNotice update={instance.snapshot.update} instance={instance} className="mt-3" />}
       {instance.snapshot.warning && <EngineWarningNotice warning={instance.snapshot.warning} className="mt-3" />}

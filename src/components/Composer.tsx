@@ -43,6 +43,7 @@ import { ApprovalModeSelector } from "./ApprovalModeSelector";
 import { ModelPicker } from "./ModelPicker";
 import { CallButton } from "./CallView";
 import { GroupCallButton } from "./GroupCallView";
+import { NudgeButton } from "./NudgeButton";
 import { CommandAllowlistDialog } from "./CommandAllowlistDialog";
 import { approvalModeFor, type ApprovalMode } from "../../shared/approval-mode";
 import {
@@ -126,6 +127,8 @@ export function Composer({
   group,
   members,
   onEditLast,
+  nudgePeer = null,
+  nudgeGroup = null,
   replyTo,
   onClearReply,
   onConsumeReply,
@@ -135,6 +138,10 @@ export function Composer({
   group?: Group;
   members?: Bot[];
   onEditLast?: () => void;
+  /** The other person, only on a person-to-person conversation. */
+  nudgePeer?: { id: string; name: string } | null;
+  /** The group chat, when it names someone other than the viewer. */
+  nudgeGroup?: { id: string; name: string } | null;
   replyTo?: Message | null;
   onClearReply?: () => void;
   onConsumeReply?: () => void;
@@ -1338,6 +1345,8 @@ export function Composer({
             {retroSkin && <span className="r98-send-label">{t("chat.send")}</span>}
           </button>
           )}
+          {nudgePeer && <NudgeButton principalId={nudgePeer.id} name={nudgePeer.name} />}
+          {!nudgePeer && nudgeGroup && <NudgeButton groupId={nudgeGroup.id} name={nudgeGroup.name} />}
           </div>
         </div>
         </div>

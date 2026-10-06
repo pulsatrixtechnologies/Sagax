@@ -8,8 +8,9 @@
 import { useEffect, useRef, useState } from "react";
 import { ExternalLink, Loader2 } from "lucide-react";
 
-import { api } from "@/state/store";
+import { ApiError, api } from "@/state/store";
 import { t } from "@/lib/i18n";
+import { openExternalLink } from "@/lib/app-links";
 import { perspicaxKeysUrl, reloadMyEngines, type MyEngine } from "@/lib/perspicax-org";
 
 interface LoginState {
@@ -17,6 +18,25 @@ interface LoginState {
   authorizationUrl: string | null;
   userCode?: string;
   phase: string;
+  message?: string;
+}
+
+/** https only, with no embedded credentials. The server already limits device
+ * pages to the provider's own host. */
+function signInPage(value: string | null | undefined): string | null {
+  if (!value) return null;
+  try {
+    const url = new URL(value);
+    if (url.protocol !== "https:" || url.username || url.password) return null;
+    return url.href;
+  } catch {
+    return null;
+  }
+}
+
+function signInError(cause: unknown): string {
+  const message = cause instanceof Error ? cause.message.trim() : "";
+  return message || t("myEngines.failed");
 }
 
 /** The one "Manage my keys in Perspicax" link of the page. */
@@ -48,15 +68,21 @@ export function MyEngineAccess({ engine, onChanged = () => { void reloadMyEngine
   const watch = (flowId: string) => {
     stopPolling();
     poll.current = setInterval(() => {
-      void api<{ auth: { phase: string } }>(`/api/me/engines/${id}/login/status?flowId=${encodeURIComponent(flowId)}`)
+      void api<{ auth: LoginState }>(`/api/me/engines/${id}/login/status?flowId=${encodeURIComponent(flowId)}`)
         .then(({ auth }) => {
           if (auth.phase === "waiting") return;
           stopPolling();
           setLogin(null);
-          if (auth.phase !== "succeeded") setError(t("myEngines.failed"));
+          if (auth.phase !== "succeeded") setError(auth.message?.trim() || t("myEngines.failed"));
           onChanged();
         })
-        .catch(() => { stopPolling(); setLogin(null); setError(t("myEngines.failed")); });
+        .catch((cause) => {
+          // The server is still writing the flow. The next poll asks again.
+          if (cause instanceof ApiError && cause.status === 409) return;
+          stopPolling();
+          setLogin(null);
+          setError(signInError(cause));
+        });
     }, 1500);
   };
   const post = (action: string, body: unknown = {}) =>
@@ -72,9 +98,11 @@ export function MyEngineAccess({ engine, onChanged = () => { void reloadMyEngine
         return;
       }
       setLogin(auth);
+      const page = signInPage(auth.authorizationUrl);
+      if (page) void openExternalLink(page).catch(() => {});
       if (auth.flowId) watch(auth.flowId);
-    } catch {
-      setError(t("myEngines.failed"));
+    } catch (cause) {
+      setError(signInError(cause));
     } finally {
       setBusy(false);
     }
@@ -85,8 +113,8 @@ export function MyEngineAccess({ engine, onChanged = () => { void reloadMyEngine
     try {
       await post("complete", { flowId: login.flowId, code: code.trim() });
       setCode("");
-    } catch {
-      setError(t("myEngines.failed"));
+    } catch (cause) {
+      setError(signInError(cause));
     } finally {
       setBusy(false);
     }
@@ -102,8 +130,8 @@ export function MyEngineAccess({ engine, onChanged = () => { void reloadMyEngine
     try {
       await post("sign-out");
       onChanged();
-    } catch {
-      setError(t("myEngines.failed"));
+    } catch (cause) {
+      setError(signInError(cause));
     } finally {
       setBusy(false);
     }
@@ -126,8 +154,8 @@ export function MyEngineAccess({ engine, onChanged = () => { void reloadMyEngine
       {login && (
         <div className="flex flex-col gap-2 rounded-lg border border-hairline/40 p-3">
           {login.userCode && <span className="font-mono text-[13px] text-ink">{t("myEngines.code", { code: login.userCode })}</span>}
-          {login.authorizationUrl && (
-            <a href={login.authorizationUrl} target="_blank" rel="noreferrer noopener" className="text-[12px] text-accent underline">{t("myEngines.openLink")}</a>
+          {signInPage(login.authorizationUrl) && (
+            <button type="button" className="w-fit text-left text-[12px] text-accent underline" onClick={() => void openExternalLink(signInPage(login.authorizationUrl)!)}>{t("myEngines.openLink")}</button>
           )}
           {!login.userCode && (
             <div className="flex flex-wrap gap-2">

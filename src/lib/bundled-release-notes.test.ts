@@ -7,7 +7,8 @@ describe("bundledReleaseCatalog", () => {
     expect(catalog["0.4.4"]).toContain("## English");
     expect(catalog["0.4.6"]).toContain("## English");
     expect(catalog["0.4.8"]).toContain("## English");
-    expect(Object.keys(catalog).sort()).toEqual(["0.4.0", "0.4.1", "0.4.2", "0.4.3", "0.4.4", "0.4.5", "0.4.6", "0.4.7", "0.4.8"]);
+    expect(catalog["0.4.9"]).toContain("## English");
+    expect(Object.keys(catalog).sort()).toEqual(["0.4.0", "0.4.1", "0.4.2", "0.4.3", "0.4.4", "0.4.5", "0.4.6", "0.4.7", "0.4.8", "0.4.9"]);
   });
 
   it("reads a version from the file name and picks the language section", () => {

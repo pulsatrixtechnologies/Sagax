@@ -386,7 +386,8 @@ posixOnly("organization server: the desktop bridge", () => {
     const unpack = docker.execs.find((entry) => entry.exec.Cmd.includes("python3") && entry.exec.Cmd.some((arg) => /^\/workspace\/attachments\/[0-9a-f]{8}-data$/.test(arg)));
     expect(unpack).toBeTruthy();
     expect(unpack!.exec.Cmd.some((arg) => /^\/workspace\/attachments\/[0-9a-f]{8}-data\.zip$/.test(arg))).toBe(true);
-    expect(lastPrompt()).toMatch(/extracted-path=\\"\/workspace\/attachments\/[0-9a-f]{8}-data\\"/);
+    expect(lastPrompt()).toContain("a,b\\n1,2\\n");
+    expect(lastPrompt()).toContain("Do not download it, do not open a browser, and do not sign in");
     expect(desktop.operations.length).toBe(before);
   }, 120_000);
 

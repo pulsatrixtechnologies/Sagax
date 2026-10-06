@@ -105,15 +105,23 @@ export function hostedWorkspaceConfiguration(env: NodeJS.ProcessEnv = process.en
   } catch { return null; }
 }
 
+/** Perspicax wrote a link file for this organisation. The directory uses the
+ * same two variables (SAGAX_IDENTITY=perspicax and SAGAX_PERSPICAX_LINK_FILE).
+ * A hosted Admin workspace is a different switch. */
+export function perspicaxOrganisationLinked(env: NodeJS.ProcessEnv = process.env): boolean {
+  return env.SAGAX_IDENTITY?.trim().toLowerCase() === "perspicax" && Boolean(env.SAGAX_PERSPICAX_LINK_FILE?.trim());
+}
+
 /** Who decides who may use this workspace, for Settings → People and
  * Remote access. On a portal-membership workspace the organisation's Admin
  * does, and `peopleUrl` opens its People page for this workspace (identifiers
  * only; Admin authorizes its own visitor). A hosted workspace never issues
- * pairing codes or email sign-in: people come in through the portal. */
+ * pairing codes or email sign-in: people come in through the portal. A
+ * linked Perspicax organisation does not either: people sign in with OAuth. */
 export function workspaceMembership(env: NodeJS.ProcessEnv = process.env):
   { authority: "local" | "portal"; pairingCodes: boolean; peopleUrl?: string } {
   const hosted = hostedWorkspaceConfiguration(env);
-  const pairingCodes = !hostedWorkspaceConfigured(env);
+  const pairingCodes = !hostedWorkspaceConfigured(env) && !perspicaxOrganisationLinked(env);
   if (!hosted?.portalMembership) return { authority: "local", pairingCodes };
   const people = new URL("/people", hosted.admin);
   people.search = new URLSearchParams({ workspace: hosted.workspace }).toString();

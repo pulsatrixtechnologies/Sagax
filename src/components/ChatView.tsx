@@ -14,8 +14,6 @@ import {
   Pin,
   PinOff,
   RefreshCw,
-
-  Square,
   Webhook,
   X,
 } from "lucide-react";
@@ -31,6 +29,7 @@ import {
   formatTime,
   messageVersions,
   openNotificationTarget,
+  openThread,
   visibleMessages,
   type Bot,
   type InstanceInfo,
@@ -63,7 +62,7 @@ import { useShowRunCard } from "@/lib/run-card-preferences";
 import { ToolActivity } from "./ToolActivity";
 import { ThreadRefText } from "./ThreadRefs";
 import { OptionCard, shouldHideOnboardingCard } from "./OptionCard";
-import { ApprovalCard } from "./ApprovalCard";
+import { ApprovalCard, approvalCardStaysInChat } from "./ApprovalCard";
 import { OwnerSettled, OwnerWait } from "./OwnerWait";
 import { QuestionCard } from "./QuestionCard";
 import { Composer } from "./Composer";
@@ -78,7 +77,7 @@ import { prefersWideBubble } from "@/lib/rich-blocks";
 import { ScreenFrame } from "./ScreenFrame";
 import { CompactionChip, DigestChip, TurnAccessChip } from "./DigestChip";
 import { RenameTitle } from "./RenameTitle";
-import { BotActivityPicker, TaskPicker, ThreadsOffReturnLink } from "./TaskPicker";
+import { BotActivityPicker, TaskPicker, ThreadReturnLink, ThreadsOffReturnLink } from "./TaskPicker";
 
 import { ExportTranscriptMenu } from "./ExportTranscriptMenu";
 import { CitationSelectionToolbar, SentCitations } from "./CitationUI";
@@ -94,9 +93,12 @@ import { usePerspicaxOrg } from "@/lib/perspicax-org";
 import { showPrivateConversationHint } from "@/lib/private-threads";
 import { viewerActorId } from "@/lib/viewer";
 import { isViewersPrimaryBot } from "@/lib/primary-bot";
-import { COMPACT_BUBBLE } from "@/lib/compact-chip";
 import { useFocusMessage } from "@/lib/focus-message";
-import { groupTranscript, isStatusActivity } from "@/lib/activity-runs";
+import { groupTranscript, isStatusActivity, type TranscriptItem } from "@/lib/activity-runs";
+import { collapseBotExchanges, startsNewStretch, visibleEdge, type ExchangeRun } from "@/lib/bot-exchange";
+import { foldCollapsedEntry, voiceCallPlan, voiceCallVisibleSpan } from "@/lib/voice-call-transcript";
+import { VoiceCallCard } from "./VoiceCallCard";
+import { BotExchangeChip, ExchangeColumnProvider, TranscriptDate, useExchangeColumn } from "./BotExchangeChip";
 import { StatusActivityRow } from "@/components/StatusActivityRow";
 import { ActivityRun } from "./ActivityRun";
 import { TurnNarrationRun } from "./TurnNarrationRun";
@@ -127,24 +129,10 @@ const USER_COLLAPSE_CHARS = 600;
 const USER_COLLAPSE_LINES = 8;
 const noop = () => {};
 
-/** "Today" / "Yesterday" / "Mon, Aug 11" — real dates, not a hardcoded label. */
-function dayLabel(at: number): string {
-  const d = new Date(at);
-  const now = new Date();
-  const startOfDay = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
-  const diffDays = Math.round((startOfDay(now) - startOfDay(d)) / 86_400_000);
-  if (diffDays === 0) return t("chat.day.today");
-  if (diffDays === 1) return t("chat.day.yesterday");
-  return d.toLocaleDateString(activeLocale(), { weekday: "short", month: "short", day: "numeric" });
-}
-
-function DaySeparator({ at }: { at: number }) {
-  return (
-    <div className="py-3 text-center text-[13px] text-ink-secondary">
-      {dayLabel(at)} {formatTime(at)}
-    </div>
-  );
-}
+type ListedItem =
+  | TranscriptItem
+  | { kind: "exchange"; run: ExchangeRun }
+  | { kind: "voiceCall"; callId: string; messages: Message[] };
 
 /** Hover/focus-revealed copy control shared by user + bot bubbles. */
 function CopyButton({ text, className }: { text: string; className?: string }) {
@@ -739,9 +727,43 @@ const MessagesList = memo(function MessagesList({
 }) {
   const { state, dispatch } = useStore();
   const showToolCalls = showToolCallsEnabled(state.config);
-  // Finished tool chips become compact runs; settled assistant narration
-  // becomes one reversible turn row while the terminal answer stays visible.
-  const items = useMemo(() => groupTranscript(messages), [messages, locale]);
+  // Bot-to-bot lines become one chip per run first, so a tool fold never
+  // swallows them. Person lines and replies to the person stay in the groups.
+  const items = useMemo(() => {
+    // The plan reads the whole transcript. A tail window still hides every
+    // spoken line of a call that started above it.
+    const plan = voiceCallPlan(transcript);
+    const seen = new Set<string>();
+    const collapsed = collapseBotExchanges(messages, {
+      selfBotId: bot.id,
+      self: { id: bot.id, name: bot.name, color: bot.color },
+      lookup: transcript,
+    });
+    const listed: ListedItem[] = [];
+    let pending: Message[] = [];
+    const flush = () => {
+      if (!pending.length) return;
+      listed.push(...groupTranscript(pending));
+      pending = [];
+    };
+    for (const entry of collapsed) {
+      for (const piece of foldCollapsedEntry(entry, plan, seen)) {
+        if (piece.kind === "message") {
+          pending.push(piece.message);
+          continue;
+        }
+        flush();
+        if (piece.kind === "card") {
+          listed.push({ kind: "voiceCall", callId: piece.card.callId, messages: piece.card.messages });
+        } else {
+          listed.push(piece);
+        }
+      }
+    }
+    flush();
+    return listed;
+  }, [messages, transcript, bot.id, bot.name, bot.color, locale]);
+  const windowIds = useMemo(() => new Set(messages.map((message) => message.id)), [messages]);
   // Where this conversation works, for the place icon on screen and page tools.
   const place = effectivePlace(bot, bot.tasks?.find((task) => task.threadId === bot.threadId));
   const newestMessageId = messages.at(-1)?.id;
@@ -780,14 +802,48 @@ const MessagesList = memo(function MessagesList({
         </div>
       )}
       {items.map((item, i) => {
-        const previous = items[i - 1];
-        const prev = previous && (previous.kind === "message" ? previous.message : previous.messages.at(-1));
-        const first = item.kind === "message" ? item.message : item.messages[0];
-        const newDay = !prev || new Date(prev.at).toDateString() !== new Date(first.at).toDateString();
+        const edgeOf = (entry: ListedItem) =>
+          entry.kind === "voiceCall" ? voiceCallVisibleSpan(entry.messages, windowIds) : visibleEdge(entry);
+        const prev = i > 0 ? edgeOf(items[i - 1]!).last : undefined;
+        const first = edgeOf(item).first;
+        const newDay = startsNewStretch(prev?.at, first.at);
+        if (item.kind === "exchange") {
+          return (
+            <div key={item.run.id} className="contents">
+              {newDay && <TranscriptDate at={first.at} />}
+              <BotExchangeChip
+                run={item.run}
+                bots={state.bots}
+                forceOpen={item.run.messages.some((message) => message.id === focusedId)}
+                onGo={() => {
+                  const target = state.bots.find((candidate) => candidate.id === item.run.party.id);
+                  if (!target) return false;
+                  openThread(dispatch, { botId: target.id, threadId: target.threadId }, state);
+                  return true;
+                }}
+              />
+            </div>
+          );
+        }
+        if (item.kind === "voiceCall") {
+          const hit = item.messages.find((message) => message.id === focusedId);
+          return (
+            <div key={`voice:${item.callId}`} className="contents" data-mid={hit?.id ?? item.messages[0]?.id}>
+              {newDay && <TranscriptDate at={first.at} />}
+              <VoiceCallCard
+                threadId={bot.threadId}
+                botName={bot.name}
+                callId={item.callId}
+                messages={item.messages}
+                forceOpen={Boolean(hit)}
+              />
+            </div>
+          );
+        }
         if (item.kind === "turn") {
           return (
             <div key={item.id} className="contents">
-              {newDay && <DaySeparator at={first.at} />}
+              {newDay && <TranscriptDate at={first.at} />}
               <TurnNarrationRun
                 label={item.label}
                 forceOpen={item.messages.some((message) => message.id === focusedId)}
@@ -817,7 +873,7 @@ const MessagesList = memo(function MessagesList({
           if (!showToolCalls) return null;
           return (
             <div key={item.id} className="contents">
-              {newDay && <DaySeparator at={first.at} />}
+              {newDay && <TranscriptDate at={first.at} />}
               <ActivityRun messages={item.messages} forceOpen={item.messages.some((step) => step.id === focusedId)}>
                 {item.messages.map((step) => (
                   <div key={step.id} className="contents" data-mid={step.id}>
@@ -855,7 +911,7 @@ const MessagesList = memo(function MessagesList({
               const card = m.card?.requestId && m.card.questionRequest ? (
                 <QuestionCard threadId={bot.threadId} bot={bot} message={m} />
               ) : m.card?.requestId && m.card.tool ? (
-                <ApprovalCard bot={bot} message={m} />
+                approvalCardStaysInChat(m.card) ? <ApprovalCard bot={bot} message={m} /> : null
               ) : shouldHideOnboardingCard(m, transcript) ? null : (
                 <OptionCard botId={bot.id} threadId={bot.threadId} message={m} />
               );
@@ -939,7 +995,7 @@ const MessagesList = memo(function MessagesList({
         if (!row) return null;
         return (
           <div key={m.id} className="contents" data-mid={m.id}>
-            {newDay && <DaySeparator at={m.at} />}
+            {newDay && <TranscriptDate at={m.at} />}
             {row}
           </div>
         );
@@ -1014,6 +1070,7 @@ export function ChatView({ bot: profile }: { bot: Bot }) {
   // their own; several people talk together in a group.
   const perspicaxOrg = usePerspicaxOrg();
   const privateHint = showPrivateConversationHint({ org: perspicaxOrg !== null, viewerId: viewerActorId(state.config), bot });
+  const exchangeColumn = useExchangeColumn();
   const scrollRef = useRef<HTMLDivElement>(null);
   const transcriptRef = useRef<HTMLDivElement>(null);
   const composerDockRef = useRef<HTMLDivElement>(null);
@@ -1317,7 +1374,8 @@ export function ChatView({ bot: profile }: { bot: Bot }) {
   const canOpenResults = resultsThreadId && [...state.bots, ...state.groups].some((owner) => owner.threadId === resultsThreadId || owner.tasks?.some((task) => task.threadId === resultsThreadId));
 
   return (
-    <main className="app-glow relative flex h-full min-w-0 flex-1 flex-col bg-app">
+    <ExchangeColumnProvider node={exchangeColumn.node}>
+    <main ref={exchangeColumn.ref} className="app-glow relative isolate flex h-full min-w-0 flex-1 flex-col bg-app">
       {/* The older call mode covers the thread while the bot is on the line;
           a voice mode call docks at the top of the banner stack below */}
       <CallOverlay bot={bot} />
@@ -1374,19 +1432,6 @@ export function ChatView({ bot: profile }: { bot: Bot }) {
             messages={messages}
             botName={bot.name}
           />}
-          {(bot.busy || bot.waitingForTeammates) && (
-            <button
-              onClick={() => dispatch({ type: "interrupt", botId: bot.id, threadId: bot.threadId })}
-              className={cn(
-                "flex items-center gap-1.5 rounded-full border border-hairline/40 bg-raised/60 px-2.5 py-1 text-[13px] text-ink-secondary hover:bg-raised hover:text-ink",
-                COMPACT_BUBBLE,
-              )}
-              title={t("chat.stopTurn")}
-            >
-              <Square size={12} className="fill-current" />
-              <span className="@max-4xl/chathead:hidden">{t("chat.stop")}</span>
-            </button>
-          )}
           <TaskPicker bot={bot} />
           {/* Share, Inspector and the panel toggle move into the bot panel's
               top bar while it is open, the way Grok Bot's do. */}
@@ -1421,6 +1466,7 @@ export function ChatView({ bot: profile }: { bot: Bot }) {
       <VoiceCallDock bot={bot} />
       <BotActivityPicker bot={bot} />
       <ThreadsOffReturnLink bot={bot} />
+      <ThreadReturnLink ownerId={bot.id} threadId={bot.threadId} />
       {privateHint && <p data-private-conversation-hint className="mx-5 mb-2 text-[11.5px] text-ink-secondary">{t("chat.privateConversation")}</p>}
       {routineExecution && <div className="mx-5 mb-2 flex flex-wrap items-center gap-2 rounded-lg border border-hairline/40 bg-inset px-3 py-2 text-[11.5px] text-ink-secondary">
         <span className="min-w-0 flex-1 truncate">{t("routines.executionDetails", { name: routineExecution.routineName })}</span>
@@ -1651,6 +1697,7 @@ export function ChatView({ bot: profile }: { bot: Bot }) {
       </div>
 
     </main>
+    </ExchangeColumnProvider>
   );
 }
 

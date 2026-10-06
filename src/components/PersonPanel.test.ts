@@ -2,6 +2,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Bot, Group } from "@/state/store";
+import { resetPublicAchievementsForTests } from "@/lib/public-achievements";
 
 const fixture = vi.hoisted(() => ({ role: "member" as "admin" | "member", groups: [] as unknown[], bots: [] as unknown[] }));
 vi.mock("./DesktopCapabilities", () => ({ useCaptionChrome: () => ({ padClass: "" }), useMacInsetChrome: () => ({ macInset: false, browser: false }) }));
@@ -26,6 +27,7 @@ function render(personId = "pr_ada") {
 
 describe("PersonPanel", () => {
   beforeEach(() => {
+    resetPublicAchievementsForTests();
     fixture.role = "member";
     fixture.groups = [
       { id: "ops", name: "Operations", humanIds: ["pr_me", "pr_ada"], memberIds: [], messages: [], unread: false } as unknown as Group,
@@ -67,5 +69,34 @@ describe("PersonPanel", () => {
   it("lists their bots shared with you", () => {
     fixture.bots = [{ id: "rex", name: "Rex", title: "Reports", ownerUserId: "pr_ada", color: "green", messages: [], unread: false } as unknown as Bot];
     expect(render()).toContain("Rex");
+  });
+
+  it("lists the public title and score under the name, and the achievements on their tab", () => {
+    resetPublicAchievementsForTests({
+      pr_ada: {
+        points: 220,
+        level: 3,
+        title: "rookie",
+        unlocked: [{ id: "hello-bot", points: 10, unlockedAt: 1 }],
+      },
+    });
+    const html = render();
+    const nameAt = html.indexOf("Ada Example");
+    const lineAt = html.indexOf("data-member-line");
+    expect(nameAt).toBeGreaterThan(-1);
+    expect(lineAt).toBeGreaterThan(nameAt);
+    expect(html.slice(lineAt, html.indexOf("</div>", lineAt))).toContain("Rookie");
+    expect(html.slice(lineAt, html.indexOf("</div>", lineAt))).toContain(">220<");
+    expect(html).toContain('data-person-tab="achievements"');
+    expect(html).toContain('data-person-tabpanel="achievements"');
+    expect(html).toContain('data-achievement="hello-bot"');
+    expect(html).not.toContain("data-member-variant=\"blade\"");
+  });
+
+  it("keeps a private card off the name line and says so on the achievements tab", () => {
+    const html = render();
+    expect(html).not.toContain("data-member-line");
+    expect(html).toContain('data-person-tab="achievements"');
+    expect(html).toContain("This person keeps their achievements private.");
   });
 });

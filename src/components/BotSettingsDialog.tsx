@@ -50,7 +50,7 @@ import { useOwnerOrAdmin } from "@/lib/use-owner-or-admin";
 import type { PromptPreviewData } from "./bot-settings/PromptPreview";
 import { servedPage } from "@/lib/desktop";
 import { canEditBotField, canStepPrimary } from "@/lib/bot-capabilities";
-import { viewerBotsReadOnly } from "@/lib/viewer";
+import { viewerBotsReadOnly, viewerIsOrgMember } from "@/lib/viewer";
 
 const sectionLabel = (entry: (typeof BOT_SECTIONS)[number]) => (entry.labelKey ? t(entry.labelKey) : entry.label);
 
@@ -143,6 +143,8 @@ export function BotSettingsDialog({ bot, onOpenVmWorkspace }: {
     .filter((entry) => entry.id !== "access" || canEditBotField(state.config, bot, "computer") || canEditBotField(state.config, bot, "cwd"))
     .filter((entry) => entry.id !== "worksOn" || canEditBotField(state.config, bot, "computer"))
     .filter((entry) => entry.id !== "memory" || canEditBotField(state.config, bot, "memoryEnabled"))
+    .filter((entry) => entry.id !== "soul" || canEditBotField(state.config, bot, "soul"))
+    .filter((entry) => entry.id !== "history" || !viewerIsOrgMember(state.config))
     .filter((entry) => entry.id !== "permissions" || canStepPrimary(state.config, bot) || canEditBotField(state.config, bot, "approvalMode"))
     .filter((entry) => advanced || !simpleHidesBotSection(entry.id));
   const visibleSections = sections.filter((entry) => sectionMatches(entry, q));
@@ -259,11 +261,12 @@ export function BotSettingsDialog({ bot, onOpenVmWorkspace }: {
       });
   }, [bot.id, flushBotPatches]);
 
+  const historyAllowed = !viewerIsOrgMember(state.config);
   useEffect(() => {
-    if (section !== "history") return;
+    if (!historyAllowed || section !== "history") return;
     void loadHistory();
     return () => { historyRequest.current++; };
-  }, [section, loadHistory]);
+  }, [section, loadHistory, historyAllowed]);
 
   // A rollback failure (the row's soul text no longer round-trips the
   // server's validation, say) still reloads history so the list matches
@@ -351,6 +354,7 @@ export function BotSettingsDialog({ bot, onOpenVmWorkspace }: {
           />
         );
       case "soul":
+        if (!canEditBotField(state.config, bot, "soul")) return null;
         return <SoulSection bot={bot} patch={derived.patch} />;
       case "slack":
         return slackUrl ? <SlackSection managementUrl={slackUrl} /> : null;
@@ -382,6 +386,7 @@ export function BotSettingsDialog({ bot, onOpenVmWorkspace }: {
       case "perspicax":
         return <PerspicaxSection bot={bot} />;
       case "history":
+        if (!historyAllowed) return null;
         return historyRows === null && historyError ? (
           <div className="rounded-xl bg-card p-4 text-[13px] text-ink-secondary">Couldn’t load history.</div>
         ) : (
@@ -497,8 +502,8 @@ export function BotSettingsDialog({ bot, onOpenVmWorkspace }: {
           {/* Who this is, then the tabs */}
           <div className="flex shrink-0 flex-col items-center px-4 pb-3">
             <BotProfileAvatarCard bot={bot} activeState={derived.activeState} mascotMotion={derived.mascotMotion} onPatch={derived.patch} />
-            {/* Name, label and description are edited where they show; the
-                name stays centered on its own line. */}
+            {/* Name and label are edited where they show; the name stays
+                centered on its own line. The description is not shown here. */}
             <div className="mt-2 flex max-w-full items-center justify-center">
               <InlineEditableText
                 id="bot-settings-title"
@@ -506,7 +511,7 @@ export function BotSettingsDialog({ bot, onOpenVmWorkspace }: {
                 required
                 maxLength={BOT_PROFILE_LIMITS.name}
                 ariaLabel={t("botPanel.name.edit")}
-                onSave={(name) => derived.patch({ name })}
+                onSave={canEditBotField(state.config, bot, "name") ? (name) => derived.patch({ name }) : undefined}
                 className="text-[17px] font-medium leading-6 text-ink"
               />
             </div>
@@ -515,18 +520,9 @@ export function BotSettingsDialog({ bot, onOpenVmWorkspace }: {
               maxLength={BOT_PROFILE_LIMITS.title}
               placeholder={t("botPanel.label.add")}
               ariaLabel={t("botPanel.label.edit")}
-              onSave={(title) => derived.patch({ title })}
+              onSave={canEditBotField(state.config, bot, "title") ? (title) => derived.patch({ title }) : undefined}
               muted
               className="mt-0.5 text-[12.5px] leading-4"
-            />
-            <InlineEditableText
-              value={bot.description ?? ""}
-              maxLength={BOT_PROFILE_LIMITS.description}
-              placeholder={t("botPanel.description.placeholder")}
-              ariaLabel={t("botPanel.description.label")}
-              onSave={(description) => derived.patch({ description })}
-              muted
-              className="mt-0.5 max-w-full text-[11.5px] leading-4"
             />
             <div className="mt-1 w-full max-w-full empty:hidden"><ProposalStatus bot={bot} kind="chief" /></div>
             <div

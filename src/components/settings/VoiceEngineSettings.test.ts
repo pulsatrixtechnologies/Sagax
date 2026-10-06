@@ -30,6 +30,15 @@ describe("VoiceEngineSettings", () => {
     expect(html).not.toContain("Read replies aloud");
   });
 
+  it("asks for a Grok voice key, separate from the bot xAI key", () => {
+    fixture.config = { tts: { configured: false, provider: "xai" } };
+    const html = renderToStaticMarkup(createElement(VoiceEngineSettings));
+    expect(html).toContain('aria-label="Grok key"');
+    expect(html).toContain("This key is only for Grok voice. Bots keep their own xAI key.");
+    expect(html).not.toContain("existing xAI key");
+    expect(html).not.toContain("ElevenLabs key");
+  });
+
   it("asks for the Chatterbox server instead of a cloud key", () => {
     fixture.config = { tts: { configured: false, provider: "chatterbox", baseUrl: "", model: "" } };
     const html = renderToStaticMarkup(createElement(VoiceEngineSettings));

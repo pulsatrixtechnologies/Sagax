@@ -4,7 +4,7 @@ import { t } from "@/lib/i18n";
 import { loadRoutineDelegation, startRoutineDelegation } from "@/lib/routine-delegation";
 import type { Routine, RoutineRun } from "@/lib/routines";
 import type { RoutineSuspendReason } from "../../../shared/routines";
-import { routineScheduleState } from "@/lib/routine-display";
+import { routineWhenLabel } from "@/lib/routine-display";
 import type { Bot } from "@/state/store";
 import { Switch } from "../SettingsPrimitives";
 
@@ -75,25 +75,28 @@ export function RoutineList({ routines, loading, error, onOpen, onToggle, viewer
     {!loading && !error && sorted.length === 0 && <div className="rounded-xl border border-dashed border-hairline/50 p-5 text-center text-[13px] text-ink-secondary"><Repeat2 size={20} className="mx-auto mb-2 opacity-60" />{t("routines.empty")}</div>}
     {sorted.length > 0 && (
       <div className={grouped ? "flex flex-col overflow-hidden rounded-xl border border-hairline-weak bg-card" : "flex flex-col gap-0.5"}>
-        {sorted.map((routine) => (
-          <div key={routine.id} data-routine-row className={grouped ? "flex items-center gap-2.5 border-b border-hairline-weak px-3 py-2.5 last:border-b-0 hover:bg-hover" : "flex items-center gap-2.5 rounded-lg px-2 py-1.5 hover:bg-hover"}>
-            <button type="button" onClick={() => onOpen(routine)} className="min-w-0 flex-1 text-left">
-              <span className="block truncate text-[13px] leading-[18px] text-ink">{routine.name}</span>
-              <span className="block truncate text-[13px] leading-[18px] text-ink-secondary">{routineScheduleState(routine)}</span>
-              {(routine.runAs || routine.suspended) && (
-                <span className="mt-0.5 flex flex-wrap gap-1.5">
-                  {routine.runAs && <span data-routine-run-as className="truncate rounded-md bg-inset px-1.5 text-[11.5px] leading-[18px] text-ink-secondary">{t("routines.runAs", { name: routine.runAs.name || routine.runAs.principalId })}</span>}
-                  {routine.suspended && <span data-routine-suspended={routine.suspended.reason} className="truncate rounded-md bg-warning/10 px-1.5 text-[11.5px] leading-[18px] text-warning">{routineSuspendedText(routine.suspended.reason)}</span>}
-                </span>
-              )}
-            </button>
-            <Switch
-              checked={routine.enabled}
-              aria-label={routine.enabled ? t("botPanel.routines.pause") : t("botPanel.routines.resume")}
-              onClick={() => onToggle?.(routine)}
-            />
-          </div>
-        ))}
+        {sorted.map((routine) => {
+          const when = routineWhenLabel(routine);
+          return (
+            <div key={routine.id} data-routine-row className={grouped ? "flex items-center gap-2.5 border-b border-hairline-weak px-3 py-2.5 last:border-b-0 hover:bg-hover" : "flex items-center gap-2.5 rounded-lg px-2 py-1.5 hover:bg-hover"}>
+              <button type="button" onClick={() => onOpen(routine)} className="min-w-0 flex-1 text-left">
+                <span className="block truncate text-[13px] leading-[18px] text-ink">{routine.name}</span>
+                <span data-routine-when={when} title={when} className="line-clamp-2 text-[13px] leading-[18px] text-ink-secondary">{when}</span>
+                {(routine.runAs || routine.suspended) && (
+                  <span className="mt-0.5 flex flex-wrap gap-1.5">
+                    {routine.runAs && <span data-routine-run-as className="truncate rounded-md bg-inset px-1.5 text-[11.5px] leading-[18px] text-ink-secondary">{t("routines.runAs", { name: routine.runAs.name || routine.runAs.principalId })}</span>}
+                    {routine.suspended && <span data-routine-suspended={routine.suspended.reason} className="truncate rounded-md bg-warning/10 px-1.5 text-[11.5px] leading-[18px] text-warning">{routineSuspendedText(routine.suspended.reason)}</span>}
+                  </span>
+                )}
+              </button>
+              <Switch
+                checked={routine.enabled}
+                aria-label={routine.enabled ? t("botPanel.routines.pause") : t("botPanel.routines.resume")}
+                onClick={() => onToggle?.(routine)}
+              />
+            </div>
+          );
+        })}
       </div>
     )}
   </div>;

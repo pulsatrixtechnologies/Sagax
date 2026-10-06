@@ -11,6 +11,8 @@
 //             Write... are in --disallowedTools)
 //   settings  each person reads their own environment
 //   per-bot   no VM or VPS per bot on an organization server (409)
+//   cloud     a room and a cloud routine stay on that one environment.
+//             The bot computer routes do not open a shared machine.
 import { spawn, type ChildProcess } from "node:child_process";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
@@ -110,6 +112,43 @@ async function createBot(auth: Auth, name: string): Promise<{ id: string; thread
 }
 
 const containersExecuted = () => [...new Set(docker.execs.filter((e) => e.exec.Cmd[0] === "timeout").map((e) => e.name))];
+
+/** `auth` allows their routines to act in their name. The consent at the
+ * fake provider signs `as` in. Returns where the callback landed. */
+async function consent(auth: Auth, as: FakeOidcUser): Promise<string> {
+  idp.user = { ...as };
+  const started = await fetch(`${BASE}/api/org/routine-delegation`, { method: "POST", headers: { cookie: auth.cookie!, "content-type": "application/json" }, body: "{}" });
+  expect(started.status, await started.clone().text()).toBe(200);
+  const binding = started.headers.getSetCookie().find((c) => c.includes("_oidc="))!;
+  const { authorizationUrl } = await started.json() as { authorizationUrl: string };
+  const authorize = await fetch(authorizationUrl, { redirect: "manual" });
+  const back = await fetch(authorize.headers.get("location")!, { redirect: "manual", headers: { cookie: cookiePair(binding) } });
+  expect(back.status).toBe(303);
+  return back.headers.get("location") ?? "";
+}
+
+type Run = { id: string; routineId: string; status: string; error?: string };
+async function runsOf(auth: Auth, routineId: string): Promise<Run[]> {
+  return (((await api("GET", "/api/routines", auth)).body.runs ?? []) as Run[]).filter((run) => run.routineId === routineId);
+}
+async function runNow(auth: Auth, routineId: string): Promise<Run> {
+  const started = await api("POST", `/api/routines/${routineId}/run`, auth, {});
+  expect(started.status, started.text).toBe(201);
+  const id = started.body.run.id as string;
+  return waitFor(async () => (await runsOf(auth, routineId)).find((run) => run.id === id && ["completed", "failed", "cancelled"].includes(run.status)), 60_000);
+}
+
+async function roomTurn(auth: Auth, room: { id: string; threadId: string }, botId: string, text: string): Promise<string> {
+  const before = (await threadMessages(auth, room.threadId)).filter((message) => message.role === "bot" && message.kind === "text").length;
+  const sent = await api("POST", `/api/groups/${room.id}/messages`, auth, { threadId: room.threadId, text });
+  expect(sent.status, sent.text).toBe(202);
+  const reply = await waitFor(async () => {
+    const replies = (await threadMessages(auth, room.threadId)).filter((message) => message.role === "bot" && message.kind === "text" && message.text);
+    return replies.length > before ? replies.at(-1)! : null;
+  }, 40_000);
+  await waitFor(async () => !((await api("GET", "/api/bots", auth)).body.bots as Array<{ id: string; busy?: boolean }>).find((bot) => bot.id === botId)?.busy);
+  return reply.text ?? "";
+}
 
 posixOnly("organization server environments (user-sandbox)", () => {
   let alice: Auth;
@@ -253,5 +292,69 @@ posixOnly("organization server environments (user-sandbox)", () => {
     const vps = await api("PATCH", `/api/bots/${x.id}`, alice, { cloudBackend: "vps" });
     expect(vps.status).toBe(409);
     expect(vps.body.code).toBe("org_user_sandbox");
+  });
+
+  it("runs a cloud room in the speaker's environment, not a second machine", async () => {
+    const aliceContainer = sandboxNames(sandboxKeyForPrincipal(INSTANCE, ids.alice!)).container;
+    const bobContainer = sandboxNames(sandboxKeyForPrincipal(INSTANCE, ids.bob!)).container;
+    const bots = (await api("GET", "/api/bots", alice)).body.bots as Array<{ id: string; name: string }>;
+    const x = bots.find((bot) => bot.name === "Xavier")!;
+    expect((await api("PATCH", `/api/bots/${x.id}`, alice, { computer: "cloud" })).status).toBe(200);
+    const created = await api("POST", "/api/groups", alice, {
+      name: "Cloud room",
+      memberIds: [x.id],
+      humanIds: [ids.alice, ids.bob],
+      setup: { bulletin: "", defaultResponder: { kind: "member", botId: x.id } },
+    });
+    expect(created.status, created.text).toBe(201);
+    const room = { id: created.body.group.id as string, threadId: created.body.group.threadId as string };
+    const aliceExecs = docker.execs.filter((entry) => entry.name === aliceContainer).length;
+    const bobExecs = docker.execs.filter((entry) => entry.name === bobContainer).length;
+    expect(await roomTurn(bob, room, x.id, "run it in the room")).toContain("mcp:run_command:ok");
+    expect(docker.execs.filter((entry) => entry.name === aliceContainer).length).toBe(aliceExecs);
+    expect(docker.execs.filter((entry) => entry.name === bobContainer).length).toBeGreaterThan(bobExecs);
+    expect(docker.containers.size).toBe(2);
+  }, 120_000);
+
+  it("runs a cloud routine in the bot owner's environment, not a second machine", async () => {
+    const aliceContainer = sandboxNames(sandboxKeyForPrincipal(INSTANCE, ids.alice!)).container;
+    const bots = (await api("GET", "/api/bots", alice)).body.bots as Array<{ id: string; name: string }>;
+    const x = bots.find((bot) => bot.name === "Xavier")!;
+    expect(await consent(alice, ALICE)).toBe("/#routine-delegation=ok");
+    const created = await api("POST", "/api/routines", alice, {
+      name: "Cloud check",
+      botId: x.id,
+      prompt: "Run the check.",
+      runOn: "cloud",
+      enabled: false,
+      schedule: { type: "interval", everyMinutes: 60, anchorAt: Date.now() + 86_400_000 },
+    });
+    expect(created.status, created.text).toBe(201);
+    const aliceExecs = docker.execs.filter((entry) => entry.name === aliceContainer).length;
+    const run = await runNow(alice, created.body.routine.id as string);
+    expect(run.status, run.error ?? "").toBe("completed");
+    expect(docker.execs.filter((entry) => entry.name === aliceContainer).length).toBeGreaterThan(aliceExecs);
+    expect(docker.containers.size).toBe(2);
+  }, 180_000);
+
+  it("does not let anyone drive a shared cloud computer from the bot", async () => {
+    const bots = (await api("GET", "/api/bots", alice)).body.bots as Array<{ id: string; name: string }>;
+    const x = bots.find((bot) => bot.name === "Xavier")!;
+    const execs = docker.execs.length;
+    const bobShot = await api("POST", `/api/bots/${x.id}/computer/screenshot`, bob, {});
+    const bobExec = await api("POST", `/api/bots/${x.id}/computer/exec`, bob, { command: "echo hi" });
+    expect(bobShot.status, bobShot.text).toBe(403);
+    expect(bobExec.status, bobExec.text).toBe(403);
+    const aliceShot = await api("POST", `/api/bots/${x.id}/computer/screenshot`, alice, {});
+    const aliceExec = await api("POST", `/api/bots/${x.id}/computer/exec`, alice, { command: "echo hi" });
+    expect(aliceShot.status, aliceShot.text).toBe(409);
+    expect(aliceShot.body.code).toBe("org_user_sandbox");
+    expect(aliceExec.status, aliceExec.text).toBe(409);
+    expect(aliceExec.body.code).toBe("org_user_sandbox");
+    expect(docker.execs.length).toBe(execs);
+    expect(docker.containers.size).toBe(2);
+    const got = await api("GET", `/api/bots/${x.id}/computer`, alice);
+    expect(got.status, got.text).toBe(200);
+    expect(got.body).toMatchObject({ backend: "sandbox", configured: true });
   });
 });

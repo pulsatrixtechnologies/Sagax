@@ -12,7 +12,7 @@ import { useEffect, useRef, useState } from "react";
 import { useStore, type Bot } from "@/state/store";
 import { useBotEditor } from "./BotEditorContext";
 import { skillAuthoringEnabled, skillsLibraryEnabled } from "@/lib/feature-flags";
-import { viewerIntegrationsManagedByAdmin } from "@/lib/viewer";
+import { viewerBotsReadOnly, viewerIntegrationsManagedByAdmin } from "@/lib/viewer";
 import { IntegrationsManagedNotice } from "../settings/MyConnectionsSettings";
 import { Switch } from "../SettingsPrimitives";
 import { inputCls } from "./field";
@@ -289,8 +289,11 @@ export function SkillsSection({ bot }: { bot: Bot }) {
   const featureEnabled = skillAuthoringEnabled(state.config);
   const libraryOn = skillsLibraryEnabled(state.config);
   // Perspicax `sagax_integrations: off`: an admin manages this person's
-  // skills; the bot's skills stay listed and in use, read-only.
-  const locked = viewerIntegrationsManagedByAdmin(state.config);
+  // skills. A read-only person is capped at use, so a skill change is 403.
+  // The list stays. Team or section manage is not on the viewer, so those
+  // writes stay visible and the server still refuses a person who lacks them.
+  const integrationsLocked = viewerIntegrationsManagedByAdmin(state.config);
+  const skillWrites = !integrationsLocked && !viewerBotsReadOnly(state.config);
   const {
     skills, staged, loading, working, setWorking, error, setError, reviewing, setReviewing, refresh, toggle, enableReviewed,
     libraryPool, addFromLibrary, setAddFromLibrary, assignmentBusy, putAssignments, addToBot,
@@ -415,9 +418,9 @@ export function SkillsSection({ bot }: { bot: Bot }) {
           {featureEnabled ? t("skills.learned.hintOn") : t("skills.learned.hintOff")}
         </div>
 
-        {locked ? (
+        {integrationsLocked ? (
           <div className="mt-3"><IntegrationsManagedNotice /></div>
-        ) : libraryOn ? (
+        ) : skillWrites && libraryOn ? (
           <div className="mt-3 flex flex-col gap-1.5">
             {libraryPool.length > 0 ? (
               <div className="flex items-center gap-2">
@@ -447,7 +450,7 @@ export function SkillsSection({ bot }: { bot: Bot }) {
             )}
 
           </div>
-        ) : (
+        ) : skillWrites ? (
           <>
             <form
               className="mt-3 flex items-center gap-2"
@@ -473,7 +476,7 @@ export function SkillsSection({ bot }: { bot: Bot }) {
             </form>
             {importMessage && <div className="mt-1 text-[12px] text-ink-secondary">{importMessage}</div>}
           </>
-        )}
+        ) : null}
 
         {loading ? (
           <div className="mt-3 text-[12px] text-ink-secondary">{t("botPanel.loading")}</div>
@@ -498,7 +501,7 @@ export function SkillsSection({ bot }: { bot: Bot }) {
                     <div className="mt-0.5 line-clamp-2 text-[11.5px] text-ink-secondary">{skill.description}</div>
                     <div className="mt-0.5 text-[10.5px] text-ink-secondary">{t("botPanel.skills.whenRelevant")}</div>
                   </button>
-                  {!locked && (
+                  {skillWrites && (
                     <>
                       <Switch
                         checked={skill.enabled}
@@ -534,9 +537,9 @@ export function SkillsSection({ bot }: { bot: Bot }) {
         {error && <div role="alert" className="mt-2 text-[12px] text-danger">{error}</div>}
       </div>
 
-      {!locked && <OrgSkillsCard bot={bot} onAdded={() => void refresh()} />}
+      {skillWrites && <OrgSkillsCard bot={bot} onAdded={() => void refresh()} />}
 
-      {reviewing && (
+      {skillWrites && reviewing && (
         <SkillReviewDialog
           skill={reviewing.skill}
           text={reviewing.text}

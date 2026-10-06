@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import {
+  archiveInlineTexts,
   archiveNote,
   archiveSummary,
   manifestTree,
@@ -15,6 +16,7 @@ import {
   storedArchiveManifest,
   type StoredArchiveManifest,
 } from "./attachment-archives.ts";
+import { readSmallArchiveTexts } from "../electron/archive-extract.mjs";
 import { attachedFilesInText, displayName, stageTurnAttachments, stagedName } from "./attachment-staging.ts";
 import { tarArchive, zipArchive } from "./testing/archive-fixtures.mjs";
 
@@ -101,6 +103,68 @@ describe("the manifest the bot reads", () => {
     const summary = archiveSummary(manifest({ files: 700, entries }));
     expect(summary.entries).toHaveLength(500);
     expect(summary.truncated).toBe(true);
+  });
+});
+
+describe("text already in a small archive", () => {
+  it("inlines a bot template and tells the bot to apply it without a browser", () => {
+    const dir = scratch();
+    const json = JSON.stringify({ title: "Bot designer", description: "Designs bots", instructions: "Write standing instructions." });
+    const path = upload(dir, ".zip", zipArchive([
+      { name: "bot-designer-template.json", data: json },
+      { name: "README.md", data: "Apply the json." },
+      { name: "../evil.json", data: "{\"title\":\"no\"}" },
+      { name: "notes.json", data: Buffer.from([0x7b, 0x00, 0x7d]) },
+    ]));
+    const texts = archiveInlineTexts(path);
+    expect(texts.map((item) => item.path)).toEqual(["bot-designer-template.json", "README.md"]);
+    expect(texts[0]?.text).toBe(json);
+    const note = archiveNote({
+      name: "bot-designer-template.zip",
+      manifest: manifest({
+        files: 2,
+        totalBytes: json.length + "Apply the json.".length,
+        entries: [
+          { path: "bot-designer-template.json", size: json.length },
+          { path: "README.md", size: "Apply the json.".length },
+        ],
+      }),
+      extractedPath: "/workspace/attachments/0b5a3c1e-bot-designer-template",
+      when: "first-tool",
+      texts,
+    });
+    expect(note).toContain("propose_profile");
+    expect(note).toContain("Do not download it, do not open a browser, and do not sign in");
+    expect(note).toContain(json);
+    expect(note).toContain("Apply the json.");
+    expect(note).not.toContain("when you first use a tool");
+    expect(note).not.toContain("extracted-path");
+    expect(note).not.toContain("evil");
+  });
+
+  it("leaves a file that is past the cap, and a whole archive past the cap, on the unpack path", () => {
+    const dir = scratch();
+    const big = "x".repeat(50);
+    const path = upload(dir, ".zip", zipArchive([{ name: "a.json", data: big }, { name: "b.md", data: "ok" }]));
+    expect(readSmallArchiveTexts(path, { fileMax: 10, totalMax: 100, archiveMax: 100 * 1024 }).map((item: { path: string }) => item.path)).toEqual(["b.md"]);
+    const partial = archiveNote({
+      name: "p.zip",
+      manifest: manifest({ files: 2, entries: [{ path: "a.json", size: 50 }, { path: "b.md", size: 2 }] }),
+      extractedPath: "/workspace/attachments/p",
+      when: "first-tool",
+      texts: [{ path: "b.md", text: "ok" }],
+    });
+    expect(partial).toContain("when you first use a tool");
+    expect(partial).toContain("Some files are not included below");
+    expect(partial).toContain("<attached-file-content name=\"b.md\">");
+    const huge = upload(dir, ".tgz", Buffer.alloc(300));
+    expect(readSmallArchiveTexts(huge, { archiveMax: 100 })).toEqual([]);
+  });
+
+  it("does not inline an encrypted zip", () => {
+    const dir = scratch();
+    const path = upload(dir, ".zip", zipArchive([{ name: "secret.json", data: "{\"a\":1}", encrypted: true, method: 0 }]));
+    expect(archiveInlineTexts(path)).toEqual([]);
   });
 });
 

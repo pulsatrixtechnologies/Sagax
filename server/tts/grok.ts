@@ -1,4 +1,4 @@
-// xAI TTS runs on the harness and reuses the existing workspace xAI key.
+// xAI TTS runs on the harness with the Grok voice key, not the bot xAI key.
 import { z } from "zod";
 import type { Audio, Voice } from "./elevenlabs.ts";
 

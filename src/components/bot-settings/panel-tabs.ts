@@ -1,6 +1,7 @@
 // The bot panel's tabs and which one a settings section lives on. Details
 // holds what the bot is doing (its coding activity), its routines and who it
-// is (name, label and description are edited in place at the panel's top);
+// is (name and label are edited in place at the panel's top; the
+// description stays on the bot and is edited in IdentitySection);
 // Library holds its files; Computer is the computer view; More keeps every
 // other section behind one searchable list, so a deep link to a section
 // lands on the tab that holds it.

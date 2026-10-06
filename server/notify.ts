@@ -121,6 +121,19 @@ export function buildNotification(
   return notification;
 }
 
+/** The same frame as buildNotification, without the bot-wide switch. Delivery
+ * decides per person (viewerWantsBotNotification): a viewer who turned
+ * notifications on still hears a bot whose owner turned them off. */
+export function deliverableNotification(
+  kind: NotifyKind,
+  bot: NotifyBot,
+  threadId: string,
+  detail: string,
+  extra?: { avatarUrl?: string; group?: { id: string; name: string } },
+): Notification | null {
+  return buildNotification(kind, { ...bot, notifications: undefined }, threadId, detail, extra);
+}
+
 /** A conversation on a live voice call does not buzz: the person hears the
  * bot answer, ask and finish on the call itself (the phone and the desktop
  * stand their own alerts down for the thread on a call; this keeps the

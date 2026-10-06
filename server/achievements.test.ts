@@ -1,7 +1,7 @@
 // The achievement engine (server/achievements.ts) and its routes
 // (server/routes/achievements.ts): idempotent unlocks, progress, anti-spam,
 // grandfathering, the Trombi command, privacy.
-import { mkdtempSync, readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -111,16 +111,50 @@ describe("achievement engine", () => {
     expect(store.snapshot(ADA).points).toBe(0);
   });
 
-  it("keeps each person private, settings validated, points public only by choice", () => {
+  it("shares points by default, validates settings, and keeps an explicit off private", () => {
     const { dir, store } = setup();
     store.record(ADA, [{ type: "message.sent" }], "server");
+    expect(store.snapshot(ADA).settings.public).toBe(true);
     expect(store.snapshot(BOB).points).toBe(0);
-    expect(store.publicPoints([ADA, BOB])).toEqual({});
+    expect(store.snapshot(BOB).settings.public).toBe(true);
+    const open = store.publicPoints([ADA, BOB]);
+    expect(open[ADA]).toEqual({
+      points: 5,
+      level: 1,
+      unlocked: [{ id: "first-words", points: 5, unlockedAt: expect.any(Number) }],
+    });
+    expect(open[BOB]).toEqual({ points: 0, level: 1, unlocked: [] });
+    expect(open[ADA]!.unlocked.map((item) => item.id)).not.toContain("konami");
     expect(store.updateSettings(ADA, { public: true, showPoints: false, title: "rookie", tzOffset: -240, junk: 1 })).toEqual({ showPoints: false, toasts: true, native: false, public: true, title: "rookie", tzOffset: -240 });
-    // a title not unlocked is refused
-    expect(store.updateSettings(BOB, { title: "platinum" }).title).toBeUndefined();
-    expect(store.publicPoints([ADA, BOB])).toEqual({ [ADA]: { points: 5, level: 1 } });
+    // a title not unlocked is refused; public false is an opt-out
+    const bob = store.updateSettings(BOB, { public: false, title: "platinum" });
+    expect(bob.public).toBe(false);
+    expect(bob.title).toBeUndefined();
+    // a later patch that omits public does not turn the opt-out back on
+    expect(store.updateSettings(BOB, { toasts: false }).public).toBe(false);
+    // Bob opted out. Ada's card has points, the title she chose and
+    // the achievement she unlocked, and not the locked secret (konami).
+    const pub = store.publicPoints([ADA, BOB]);
+    expect(pub[BOB]).toBeUndefined();
+    expect(pub[ADA]).toEqual({
+      points: 5,
+      level: 1,
+      title: "rookie",
+      unlocked: [{ id: "first-words", points: 5, unlockedAt: expect.any(Number) }],
+    });
+    expect(pub[ADA]!.unlocked.map((item) => item.id)).not.toContain("konami");
+    expect(JSON.stringify(pub[ADA])).not.toContain("Up Up Down Down");
+    // once the secret is unlocked it is an id on the card, still without its name
+    store.record(ADA, [{ type: "konami" }], "client");
+    const shown = store.publicPoints([ADA])[ADA]!;
+    expect(shown.unlocked.map((item) => item.id)).toEqual(["first-words", "konami"]);
+    expect(shown.unlocked.find((item) => item.id === "konami")).toEqual({ id: "konami", points: 50, unlockedAt: expect.any(Number) });
+    expect(JSON.stringify(shown)).not.toContain("Up Up Down Down");
     expect(readFileSync(join(dir, "achievements.json"), "utf8")).toContain(ADA);
+    const again = createAchievementStore({ dataDir: dir, persistDelayMs: 0 });
+    expect(again.snapshot(BOB).settings.public).toBe(false);
+    expect(again.publicPoints([BOB])[BOB]).toBeUndefined();
+    expect(again.publicPoints([ADA])[ADA]).toMatchObject({ title: "rookie" });
     store.remove(ADA);
     expect(readFileSync(join(dir, "achievements.json"), "utf8")).not.toContain(ADA);
     expect(() => store.snapshot("../etc")).toThrow(/not a person/);
@@ -132,6 +166,32 @@ describe("achievement engine", () => {
     expect(store.snapshot(ADA).items[0]!.percent).toBeUndefined();
     for (let i = 0; i < MIN_PEOPLE_FOR_PERCENT; i += 1) store.snapshot(`pr_person-${i}`);
     expect(store.snapshot(ADA).items.find((item) => item.id === "first-words")?.percent).toBe(17);
+  });
+
+  it("treats a missing public flag as shared and does not migrate a stored false", () => {
+    const dir = mkdtempSync(join(tmpdir(), "sagax-achievements-"));
+    const file = join(dir, "achievements.json");
+    writeFileSync(file, `${JSON.stringify({
+      version: 1,
+      people: {
+        [ADA]: { settings: { showPoints: true, toasts: true, native: false, public: false }, migrated: true, unlocked: { "first-words": 1 }, updatedAt: 1 },
+        [BOB]: { settings: { showPoints: true, toasts: true, native: false }, migrated: true, unlocked: { "first-words": 1 }, updatedAt: 1 },
+      },
+    })}\n`);
+    const store = createAchievementStore({ dataDir: dir, persistDelayMs: 0 });
+    expect(store.snapshot(ADA).settings.public).toBe(false);
+    expect(store.snapshot(BOB).settings.public).toBe(true);
+    const pub = store.publicPoints([ADA, BOB]);
+    expect(pub[ADA]).toBeUndefined();
+    expect(pub[BOB]).toEqual({
+      points: 5,
+      level: 1,
+      unlocked: [{ id: "first-words", points: 5, unlockedAt: 1 }],
+    });
+    expect(pub[BOB]!.unlocked.map((item) => item.id)).not.toContain("konami");
+    const saved = JSON.parse(readFileSync(file, "utf8")) as { people: Record<string, { settings: { public?: boolean } }> };
+    expect(saved.people[ADA]!.settings.public).toBe(false);
+    expect(saved.people[BOB]!.settings.public).toBeUndefined();
   });
 });
 
@@ -212,8 +272,16 @@ describe("/api/me/achievements", () => {
     expect(posted).toMatchObject({ status: 200, body: { accepted: 1, unlocked: [{ id: "trombi-summoned" }] } });
     expect(told).toEqual([`${ADA}:trombi-summoned`]);
     expect(await call(route, { method: "POST", path: `${ACHIEVEMENTS_PATH}/events`, person: ADA, body: { events: "x" } })).toMatchObject({ status: 400 });
-    expect(await call(route, { method: "PUT", path: `${ACHIEVEMENTS_PATH}/settings`, person: ADA, body: { settings: { toasts: false } } })).toMatchObject({ status: 200, body: { settings: { toasts: false } } });
+    expect(await call(route, { method: "PUT", path: `${ACHIEVEMENTS_PATH}/settings`, person: ADA, body: { settings: { toasts: false } } })).toMatchObject({ status: 200, body: { settings: { toasts: false, public: true } } });
     expect(await call(route, { method: "PUT", path: `${ACHIEVEMENTS_PATH}/settings`, person: ADA, type: "text/plain", body: { settings: {} } })).toMatchObject({ status: 415 });
+    const shared = await call(route, { method: "GET", path: `/api/achievements/public?ids=${ADA}`, person: BOB });
+    expect(shared).toMatchObject({
+      status: 200,
+      body: { points: { [ADA]: { points: 20, level: 1, unlocked: [{ id: "trombi-summoned", points: 20 }] } } },
+    });
+    expect(JSON.stringify(shared)).not.toContain("konami");
+    expect(JSON.stringify(shared)).not.toContain("Up Up Down Down");
+    expect(await call(route, { method: "PUT", path: `${ACHIEVEMENTS_PATH}/settings`, person: ADA, body: { settings: { public: false } } })).toMatchObject({ status: 200, body: { settings: { public: false, toasts: false } } });
     expect(await call(route, { method: "GET", path: `/api/achievements/public?ids=${ADA}`, person: BOB })).toMatchObject({ status: 200, body: { points: {} } });
   });
 

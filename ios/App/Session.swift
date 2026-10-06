@@ -977,6 +977,9 @@ final class Session: ObservableObject {
                         continue
                     }
                     state.apply(frame)
+                    if case .nudge = frame.frame {
+                        Haptics.impact(.light)
+                    }
                     if case let .notify(notification) = frame.frame {
                         NotificationCoordinator.shared.deliver(notification, sequence: frame.seq)
                     }

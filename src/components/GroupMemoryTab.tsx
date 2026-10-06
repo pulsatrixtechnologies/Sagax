@@ -98,12 +98,12 @@ export function GroupMemoryBody({ view, draft, conflict, error, saving, onDraft,
           <div className="text-[13px] font-medium text-ink">{t("groupMemory.title")}</div>
           <p className="mt-1 text-[12.5px] leading-relaxed text-ink-secondary">{t("groupMemory.detail")}</p>
         </div>
-        <Switch
+        {view.canEdit && <Switch
           checked={view.enabled}
-          disabled={!view.canEdit || saving}
+          disabled={saving}
           aria-label={t("groupMemory.switch")}
           onClick={onToggle}
-        />
+        />}
       </div>
       {!view.canEdit && <p className="text-[12px] text-ink-secondary">{t("groupMemory.readOnly")}</p>}
       {!view.enabled && <p className="text-[12px] text-ink-secondary">{t("groupMemory.off")}</p>}
@@ -122,7 +122,7 @@ export function GroupMemoryBody({ view, draft, conflict, error, saving, onDraft,
           <div className="font-medium">{t("groupMemory.conflict")}</div>
           <div className="mt-2 flex gap-2">
             <button type="button" className={buttonCls} disabled={saving} onClick={onReload}>{t("groupMemory.reload")}</button>
-            <button type="button" className={buttonCls} disabled={saving} onClick={onOverwrite}>{t("groupMemory.overwrite")}</button>
+            {view.canEdit && <button type="button" className={buttonCls} disabled={saving} onClick={onOverwrite}>{t("groupMemory.overwrite")}</button>}
           </div>
         </div>
       )}

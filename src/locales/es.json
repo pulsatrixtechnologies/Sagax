@@ -1743,7 +1743,6 @@
   "botPanel.memory.delete": "Eliminar {name}",
   "botPanel.memory.deleteTitle": "Eliminar",
   "botPanel.memory.upkeep": "Mantenimiento de la memoria",
-  "botPanel.memory.upkeepHelp": "Mantiene estas notas en orden sin que el bot tenga que acordarse: nota los hechos que mencionas en los chats y los archiva, los hechos esenciales aquí, el detalle en archivos de tema que crea, y ordena cada noche. Las notas caducadas se archivan, los duplicados se fusionan, las notas contradichas se tachan. Los hechos sobre ti se añaden a Sobre mí (Ajustes, General), donde cada bot los lee y puedes quitar cualquiera. Cada cambio aparece abajo y se puede deshacer.",
   "botPanel.memory.noSteps": "El motor de este bot no puede hacer la llamada rápida al modelo en segundo plano que usa el mantenimiento. Solo archiva notas caducadas y fusiona duplicados exactos. Claude y los motores de modelo de chat pueden hacer el resto.",
   "botPanel.memory.tidying": "Ordenando…",
   "botPanel.memory.tidyNow": "Ordenar ahora",

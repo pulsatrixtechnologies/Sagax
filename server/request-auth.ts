@@ -306,10 +306,13 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   { methods: ["GET"], path: /^\/api\/auth\/session$/ },
   // own preferences (organization server; the handler answers the session's person only)
   { methods: ["GET", "PUT"], path: /^\/api\/me\/preferences$/ },
+  // own model, effort and notification choices for a bot this person does not own
+  { methods: ["GET"], path: /^\/api\/me\/bot-overrides$/ },
+  { methods: ["PUT"], path: /^\/api\/me\/bot-overrides\/[\w-]+$/ },
   // the desktop's look on a personal computer, for the phone's "Same as my computer"
   { methods: ["GET", "PUT"], path: /^\/api\/me\/appearance$/ },
   // own achievements (server/routes/achievements.ts: the session's person only),
-  // and the points colleagues chose to show
+  // and colleagues' points (shared unless that person stored public false)
   { methods: ["GET"], path: /^\/api\/me\/achievements$/ },
   { methods: ["POST"], path: /^\/api\/me\/achievements\/events$/ },
   { methods: ["PUT"], path: /^\/api\/me\/achievements\/settings$/ },
@@ -342,9 +345,10 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   // (server/desktop-bridge-routes.ts). The handler answers the session's own
   // person only, binds poll/results to a private desktop secret, and 404s on
   // a solo server.
-  { methods: ["POST"], path: /^\/api\/desktop-bridge\/(?:connect|[0-9a-f-]{36}\/(?:poll|lease|result|disconnect|system))$/ },
+  { methods: ["POST"], path: /^\/api\/desktop-bridge\/(?:connect|[0-9a-f-]{36}\/(?:poll|lease|result|disconnect|system|local-models))$/ },
   { methods: ["GET"], path: /^\/api\/me\/desktop-bridge$/ },
   { methods: ["POST"], path: /^\/api\/me\/desktop-bridge\/local-vm$/ },
+  { methods: ["GET", "PUT"], path: /^\/api\/me\/local-models$/ },
   // Organization server (SAGAX_IDENTITY=perspicax): a member pairs their own
   // phone or computer. The handler binds the code to the member's person and
   // clamps its scopes to the session's own.
@@ -452,6 +456,9 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   { methods: ["GET", "PUT"], path: /^\/api\/groups\/[\w-]+\/memory$/ },
   // a direct conversation with another person of the organization (server/people-dms.ts)
   { methods: ["POST"], path: /^\/api\/people-dms$/ },
+  // Shake that person's Sagax (server/routes/nudges.ts). The handler checks
+  // the person and the 5 minute cooldown.
+  { methods: ["POST"], path: /^\/api\/nudges$/ },
   // Organization server: a group's owner deletes it (server/group-ownership.ts);
   // the route refuses a client session anywhere else.
   { methods: ["DELETE"], path: /^\/api\/groups\/[\w-]+$/ },

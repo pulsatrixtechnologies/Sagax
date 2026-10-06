@@ -3,7 +3,11 @@
 // you share, their bots shared with you, and what you can do (write to
 // them, hide or show them in your sidebar, and for an admin, their page in
 // the Perspicax console). Nothing from a private thread shows here.
-import { ExternalLink, EyeOff, Eye, Mail, MessageSquare, PanelRight, Users } from "lucide-react";
+// A public achievement card puts the chosen title and the score under the
+// name. The Achievements tab lists only what that card carried. A private
+// card stays a private note: nobody reads another person's record.
+import { useState } from "react";
+import { ExternalLink, EyeOff, Eye, Mail, MessageSquare, PanelRight, Trophy, Users } from "lucide-react";
 
 import { useStore } from "@/state/store";
 import { t } from "@/lib/i18n";
@@ -26,6 +30,9 @@ import { hiddenKey, hideFromSidebar, showInSidebar, useSidebarHidden } from "@/l
 import { BotAvatar } from "./Avatar";
 import { PersonConnectionsSection } from "./PersonConnectionsSection";
 import { PersonAvatar } from "./MessageAuthor";
+import { achievementTitleName, MemberCard, publicMemberRows } from "./achievements/MemberCard";
+import { formatPoints } from "./achievements/AchievementsPage";
+import { usePublicAchievement } from "@/lib/public-achievements";
 import { useCaptionChrome, useMacInsetChrome } from "./DesktopCapabilities";
 import { useOrgDirectory } from "./GroupPeoplePicker";
 
@@ -67,6 +74,12 @@ export function PersonPanel({ personId, directory: given }: { personId: string; 
   const manageUrl = personManageUrl(person, org?.viewerRole ?? null);
   const canMessage = canMessagePerson(person, viewerId);
   const isHidden = hidden.items.some((item) => hiddenKey(item.kind, item.id) === hiddenKey("person", personId));
+  const publicCard = usePublicAchievement(personId);
+  const titleName = publicCard ? achievementTitleName(publicCard.title) : null;
+  const pointsText = publicCard ? formatPoints(publicCard.points) : null;
+  const achievementRows = publicCard ? publicMemberRows(publicCard.unlocked) : [];
+  const [tab, setTab] = useState<"profile" | "achievements">("profile");
+  const tabs = ["profile", "achievements"] as const;
   const close = () => dispatch({ type: "openPersonPanel", personId: null });
 
   return (
@@ -88,6 +101,17 @@ export function PersonPanel({ personId, directory: given }: { personId: string; 
         <div className="flex shrink-0 flex-col items-center px-4 pb-3">
           <PersonAvatar avatarUrl={avatarUrl} initials={personInitials(name)} size={88} />
           <h2 id="person-panel-title" className="mt-3 max-w-full truncate text-[17px] font-medium leading-6 text-ink">{name}</h2>
+          {(titleName || pointsText) && (
+            <div className="mt-1 flex max-w-full items-center justify-center gap-2" data-member-line="">
+              {titleName ? <span data-member-title="" className="min-w-0 truncate text-[13px] leading-5 text-ink">{titleName}</span> : null}
+              {pointsText ? (
+                <span data-member-points="" className="inline-flex shrink-0 items-center gap-1 text-[13px] leading-5 tabular-nums text-ink">
+                  <Trophy size={13} strokeWidth={2.4} className="shrink-0 text-[#e0a82e]" aria-hidden="true" />
+                  {pointsText}
+                </span>
+              ) : null}
+            </div>
+          )}
           {person && (
             <span className="mt-0.5 text-[12.5px] leading-4 text-ink-secondary">
               {person.role === "admin" ? t("personPanel.role.admin") : t("personPanel.role.member")}
@@ -121,9 +145,42 @@ export function PersonPanel({ personId, directory: given }: { personId: string; 
               </button>
             )}
           </div>
+          <div
+            role="tablist"
+            aria-label={t("personPanel.tabsAria")}
+            onKeyDown={(event) => {
+              const step = event.key === "ArrowRight" ? 1 : event.key === "ArrowLeft" ? -1 : 0;
+              if (!step) return;
+              event.preventDefault();
+              const next = tabs[(tabs.indexOf(tab) + step + tabs.length) % tabs.length]!;
+              setTab(next);
+              event.currentTarget.querySelector<HTMLElement>(`[data-person-tab="${next}"]`)?.focus();
+            }}
+            className="mt-4 flex max-w-full flex-wrap items-center justify-center gap-0.5"
+          >
+            {tabs.map((id) => (
+              <button
+                key={id}
+                type="button"
+                role="tab"
+                id={`person-tab-${id}`}
+                data-person-tab={id}
+                aria-selected={tab === id}
+                aria-controls={`person-panel-${id}`}
+                tabIndex={tab === id ? 0 : -1}
+                onClick={() => setTab(id)}
+                className={cn(
+                  "rounded-md px-1.5 py-1 text-[13px] leading-5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60",
+                  tab === id ? "bg-elevated-hover text-ink" : "text-ink-secondary hover:text-ink",
+                )}
+              >
+                {id === "profile" ? t("personPanel.tab.profile") : t("personPanel.tab.achievements")}
+              </button>
+            ))}
+          </div>
         </div>
 
-        <div className="flex flex-col gap-6 px-4 pb-6 pt-2">
+        <div role="tabpanel" id="person-panel-profile" aria-labelledby="person-tab-profile" hidden={tab !== "profile"} className="flex flex-col gap-6 px-4 pb-6 pt-2">
           {!person && directory && (
             <p role="note" className="rounded-lg bg-raised/60 px-3 py-2 text-[12.5px] text-ink-secondary">{t("personPanel.notInDirectory")}</p>
           )}
@@ -192,6 +249,29 @@ export function PersonPanel({ personId, directory: given }: { personId: string; 
               {t("personPanel.manage")}
             </a>
           )}
+        </div>
+        <div
+          role="tabpanel"
+          id="person-panel-achievements"
+          aria-labelledby="person-tab-achievements"
+          data-person-tabpanel="achievements"
+          hidden={tab !== "achievements"}
+          className="px-4 pb-6 pt-2"
+        >
+          {publicCard ? (
+            achievementRows.length > 0 ? (
+              <MemberCard
+                variant="panel"
+                name={name}
+                initials={personInitials(name)}
+                avatarUrl={avatarUrl}
+                title={null}
+                pointsText={null}
+                level={publicCard.level}
+                rows={achievementRows}
+              />
+            ) : <p className="text-[12.5px] text-ink-secondary">{t("personPanel.achievements.empty")}</p>
+          ) : <p className="text-[12.5px] text-ink-secondary">{t("personPanel.achievements.private")}</p>}
         </div>
       </div>
     </aside>

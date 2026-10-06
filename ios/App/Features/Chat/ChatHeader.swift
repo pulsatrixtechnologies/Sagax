@@ -159,23 +159,32 @@ extension ChatView {
         Task { await call.start(chat, session: session) }
     }
 
-    /// The row voice mode's pill takes under the name capsule.
-    static let callPillRow: CGFloat = 56
-
     var callPillShown: Bool {
         if case .bot = current { return call.isOnCall(current) }
         return false
     }
 
+    /// Full-screen call. The chevron folds it; the conversation stays underneath.
     @ViewBuilder
-    var callPill: some View {
-        if case let .bot(bot) = current, call.isOnCall(current) {
-            CallPillView(bot: bot, call: call)
-                .padding(.horizontal, 12)
+    var callStage: some View {
+        if case let .bot(bot) = current, call.isOnCall(current), !callCollapsed {
+            CallPillView(bot: bot, call: call, onCollapse: { callCollapsed = true })
+                .ignoresSafeArea()
+        }
+    }
+
+    /// A short in-flow row. It does not cover the first message.
+    @ViewBuilder
+    var callCollapsedBar: some View {
+        if callCollapsedBarShown, case let .bot(bot) = current {
+            CallCollapsedBar(bot: bot, call: call, onExpand: { callCollapsed = false })
                 .padding(.top, Self.topBarHeight + (pinnedPreview == nil ? 0 : Self.pinnedBannerHeight) + 4)
                 .frame(maxWidth: .infinity)
-                .transition(.move(edge: .top).combined(with: .opacity))
         }
+    }
+
+    var callCollapsedBarShown: Bool {
+        callCollapsed && callPillShown
     }
 
     @ViewBuilder

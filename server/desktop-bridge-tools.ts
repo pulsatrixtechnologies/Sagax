@@ -213,6 +213,7 @@ export async function handleDesktopBridgeMcp(
   method: string,
   params: unknown,
   request: (operation: DesktopBridgeOperation) => Promise<unknown>,
+  options?: { commandRefusal?: (command: string) => string | null },
 ): Promise<unknown> {
   if (method === "tools/list") return { tools: DESKTOP_BRIDGE_TOOLS };
   if (method === "tools/call") {
@@ -224,6 +225,10 @@ export async function handleDesktopBridgeMcp(
     if (call.name === "local_vm" && args.action === "tools") return text(localVmComputerCatalogText());
     let operation: DesktopBridgeOperation;
     try { operation = desktopToolOperation(call.name, args); } catch (error) { return text(error instanceof Error ? error.message : String(error), true); }
+    if ((operation.action === "run_command" || operation.action === "vm_run_command") && operation.command) {
+      const refusal = options?.commandRefusal?.(operation.command);
+      if (refusal) return text(refusal, true);
+    }
     try {
       const result = desktopToolResult(await request(operation));
       const staleDesktop = result.isError && result.content[0]?.type === "text" && (result.content[0].text === "Invalid request" || result.content[0].text === "Unsupported operation");

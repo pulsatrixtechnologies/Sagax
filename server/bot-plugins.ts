@@ -1,10 +1,12 @@
 // Claude Code plugins on a bot (the bot panel's Library > Plugins). Sagax
 // fetches a marketplace (a git repository with .claude-plugin/marketplace.json)
-// itself, copies the plugins the owner picks into the bot's own folder and
-// hands each enabled one to Claude Code with `--plugin-dir` at every turn.
-// Nothing here goes through a bot's shell: on an organization server the
-// host Bash is denied (withholdHostTools), so `claude plugin marketplace add`
-// typed by a bot could never run there, whatever SAGAX_CLAUDE_ALLOW says.
+// itself and copies the plugins the owner picks into the bot's own folder.
+// Claude loads each enabled folder with `--plugin-dir`. Every other engine
+// gets the same enabled skills and commands in the turn prompt
+// (server/plugin-turn.ts). Nothing here goes through a bot's shell: on an
+// organization server the host Bash is denied (withholdHostTools), so
+// `claude plugin marketplace add` typed by a bot could never run there,
+// whatever SAGAX_CLAUDE_ALLOW says.
 //
 // Rules:
 //   - Per bot: DATA_DIR/bot-plugins/<botId>/{state.json, marketplaces/, plugins/}.
@@ -565,7 +567,7 @@ export class BotPlugins {
     });
   }
 
-  /** The folders Claude Code loads for this bot's turns (`--plugin-dir`). */
+  /** Enabled plugin folders. Claude loads them with `--plugin-dir`. */
   pluginDirs(botId: string): string[] {
     if (!BOT_ID.test(botId)) return [];
     return this.listPlugins(botId)

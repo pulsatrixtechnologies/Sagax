@@ -64,4 +64,21 @@ describe("ArchivedBotRow", () => {
     expect(markup).toContain(">Restore</button>");
     expect(markup).toContain(">Delete</button>");
   });
+
+  it("hides restore and delete when this person cannot do them", () => {
+    const markup = renderToStaticMarkup(createElement(ArchivedBotRow, {
+      bot: waffle(),
+      restoring: false,
+      deleting: false,
+      disabled: false,
+      showRestore: false,
+      showDelete: false,
+      onRestore: vi.fn(),
+      onDelete: vi.fn(),
+    }));
+    expect(markup).toContain("Waffle");
+    expect(markup).not.toContain(">Restore</button>");
+    expect(markup).not.toContain(">Delete</button>");
+    expect(markup).not.toContain("<button");
+  });
 });

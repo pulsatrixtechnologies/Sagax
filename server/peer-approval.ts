@@ -15,7 +15,7 @@
 // `alwaysAllow`, so the two sides never disagree about what was granted.
 
 import { newId } from "./contracts.ts";
-import { buildNotification, type Notification } from "./notify.ts";
+import { deliverableNotification, type Notification } from "./notify.ts";
 import { peerAllowKey, type PeerAction } from "./peer-approval-key.ts";
 import type { BotRecord, Message, Store } from "./store.ts";
 
@@ -165,7 +165,7 @@ function announceCard(bus: ApprovalBus, from: BotRecord, card: Message, sourceTh
   const group = room && !room.dm ? { id: room.id, name: room.name } : undefined;
   const title = card.card?.title ?? "";
   const detail = card.card?.subtitle ? `${title} — ${card.card.subtitle}` : title;
-  bus.notify?.(buildNotification("approval", from, sourceThreadId, detail, { avatarUrl: from.avatarUrl, group }));
+  bus.notify?.(deliverableNotification("approval", from, sourceThreadId, detail, { avatarUrl: from.avatarUrl, group }));
 }
 
 /** Ask the user (in the source task thread) whether `from` may `action` `target`.

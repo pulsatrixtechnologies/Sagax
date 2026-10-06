@@ -1,11 +1,9 @@
 // The call's screens, ported from the desktop:
 //
-// - CallPillView: voice mode's pill (src/components/voice-mode/VoiceModeBar.tsx),
-//   centred under the bot's name capsule: the bot's face, a dotted live
-//   waveform, then Settings, Transcript, Mic and the red X. Settings or
-//   Transcript expand it downward into a card of the same width that hangs
-//   over the thread (the settings of VoiceModeSettingsPanel.tsx, with Hold;
-//   the transcript as bubbles, the live line last).
+// - CallPillView: voice mode's stage (src/components/voice-mode/VoiceModeBar.tsx).
+//   Chevron, large face, name, timer, Voice / Speed / Language, then Mic,
+//   Settings and the red End. The gear opens the rest of the call settings.
+//   The chevron folds back to a short row that does not cover the thread.
 // - GroupCallOverlay: a room's call (src/components/GroupCallView.tsx): every
 //   member's face in a row, the one speaking or working in focus, the room's
 //   name and state, what is being said, Interrupt and Hang up.
@@ -39,16 +37,14 @@ extension CallState {
     }
 }
 
-// MARK: - The pill
+// MARK: - The call stage
 
 struct CallPillView: View {
     let bot: Bot
     @ObservedObject var call: CallController
-    @EnvironmentObject private var session: Session
-    @State private var panel: Panel?
+    var onCollapse: () -> Void = {}
     @State private var list: CallSettingsPanel.List?
-
-    enum Panel { case settings, transcript }
+    @State private var extras = false
 
     private var status: String { CallController.phaseLabel(call.state) }
     private var line: String {
@@ -58,131 +54,131 @@ struct CallPillView: View {
         default: ""
         }
     }
-    private var alert: Bool { call.note != nil || call.notice != nil }
-    private var expanded: Bool { panel != nil || alert }
 
     var body: some View {
-        VStack(spacing: 0) {
-            row
-            if expanded {
-                Rectangle().fill(CallTheme.hairline.opacity(0.6)).frame(height: 0.5)
-                ScrollViewReader { proxy in
-                    ScrollView {
-                        VStack(alignment: .leading, spacing: 0) {
-                            if panel == .settings {
-                                CallSettingsPanel(call: call, open: $list)
-                                holdButton
-                            }
-                            if panel == .transcript {
-                                CallTranscriptPanel(bot: bot, call: call, status: status, line: line)
-                            }
-                            alerts
-                            Color.clear.frame(height: 1).id("call-card-bottom")
-                        }
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 10)
+        ZStack {
+            Color.black.ignoresSafeArea()
+            VStack(spacing: 0) {
+                HStack {
+                    Button(action: onCollapse) {
+                        Image(systemName: "chevron.up")
+                            .font(.system(size: 17, weight: .semibold))
+                            .foregroundStyle(CallTheme.ink)
+                            .frame(width: 44, height: 44)
+                            .background(Color.white.opacity(0.12), in: Circle())
                     }
-                    .frame(maxHeight: min(UIScreen.main.bounds.height * 0.55, 360))
-                    .fixedSize(horizontal: false, vertical: true)
-                    .onValueChange(of: panel == .transcript ? "\(session.state.visibleTranscript(forThread: call.threadId).count)|\(line)" : "") { _ in
-                        if panel == .transcript { proxy.scrollTo("call-card-bottom", anchor: .bottom) }
-                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(Text(String(localized: "Back to the conversation")))
+                    .accessibilityIdentifier("call-collapse")
+                    Spacer()
                 }
-                .accessibilityIdentifier("call-card")
+                .padding(.horizontal, 16)
+                .padding(.top, 8)
+
+                BotMascotView(bot: bot, size: 88, state: call.state.mascot, animated: true)
+                    .padding(.top, 8)
+                    .accessibilityIdentifier("call-avatar")
+                Text(bot.name)
+                    .font(.system(size: 22, weight: .semibold))
+                    .foregroundStyle(CallTheme.ink)
+                    .padding(.top, 16)
+                TimelineView(.periodic(from: .now, by: 1)) { context in
+                    Text(formatCallTime(context.date.timeIntervalSince(call.startedAt)))
+                        .font(.system(size: 15))
+                        .foregroundStyle(CallTheme.inkSecondary)
+                        .monospacedDigit()
+                        .accessibilityIdentifier("call-timer")
+                }
+                .padding(.top, 4)
+
+                Text(verbatim: line.isEmpty ? status : line)
+                    .font(.system(size: 1))
+                    .opacity(0.01)
+                    .frame(width: 1, height: 1)
+                    .accessibilityLabel(Text(verbatim: line.isEmpty ? status : line))
+                    .accessibilityIdentifier("call-status")
+
+                CallSettingsPanel(call: call, open: $list, showsExtras: extras)
+                    .padding(.horizontal, 20)
+                    .padding(.top, 28)
+
+                if extras { holdButton.padding(.horizontal, 20).padding(.top, 12) }
+                alerts.padding(.horizontal, 20)
+
+                Spacer(minLength: 0)
+
+                HStack(spacing: 16) {
+                    muteButton
+                    gearButton
+                    if call.callSettings.input == .push { pushButton }
+                    Spacer(minLength: 0)
+                    endButton
+                }
+                .padding(.horizontal, 28)
+                .padding(.bottom, 28)
             }
         }
-        .frame(maxWidth: 420)
-        .background(CallTheme.elevated, in: RoundedRectangle(cornerRadius: expanded ? 22 : 24, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: expanded ? 22 : 24, style: .continuous).strokeBorder(CallTheme.hairline.opacity(0.7), lineWidth: 0.5))
-        .shadow(color: .black.opacity(0.28), radius: 14, y: 8)
-        .animation(.easeOut(duration: 0.15), value: expanded)
         .accessibilityElement(children: .contain)
         .accessibilityLabel(Text(String(localized: "Voice call with \(bot.name)")))
         .accessibilityIdentifier("call-pill")
-        .onValueChange(of: panel) { open in
-            if open == .settings { call.loadVoices() }
-        }
+        .onAppear { call.loadVoices() }
     }
 
-    private var row: some View {
-        HStack(spacing: 6) {
-            Button {
-                if call.state.botAudible { call.interrupt() }
-            } label: {
-                BotMascotView(bot: bot, size: 30, state: call.state.mascot, animated: true)
-                    .frame(width: 32, height: 32)
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel(call.state.botAudible ? Text(String(localized: "Interrupt")) : Text(bot.name))
-            .accessibilityIdentifier("call-avatar")
-
-            // the state, for VoiceOver and the tests
-            Text(verbatim: line.isEmpty ? status : line)
-                .font(.system(size: 1))
-                .opacity(0.01)
-                .frame(width: 1, height: 1)
-                .accessibilityLabel(Text(verbatim: line.isEmpty ? status : line))
-                .accessibilityIdentifier("call-status")
-
-            CallWaveform(call: call)
-                .frame(maxWidth: .infinity)
-                .frame(height: 24)
-                .padding(.horizontal, 2)
-
-            HStack(spacing: 6) {
-                if call.callSettings.input == .push { pushButton }
-                round(systemImage: "gearshape", label: String(localized: "Voice settings"), id: "call-settings", selected: panel == .settings) {
-                    toggle(.settings)
-                }
-                Button { toggle(.transcript) } label: {
-                    Image(systemName: "text.bubble")
-                        .font(.system(size: 14, weight: .medium))
-                        .foregroundStyle(panel == .transcript ? Theme.bg : CallTheme.inkSecondary)
-                        .frame(width: 32, height: 32)
-                        .background(panel == .transcript ? CallTheme.ink : CallTheme.raised, in: Circle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(Text(String(localized: "Transcript")))
-                .accessibilityIdentifier("call-transcript-toggle")
-                Button {
-                    Haptics.selection()
-                    call.setMuted(!call.state.muted)
-                } label: {
-                    Image(systemName: call.state.muted ? "mic.slash" : "mic")
-                        .font(.system(size: 14, weight: .medium))
-                        .foregroundStyle(call.state.muted ? CallTheme.danger : CallTheme.inkSecondary)
-                        .frame(width: 32, height: 32)
-                        .background(CallTheme.raised, in: Circle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(call.state.muted ? Text(String(localized: "Unmute microphone")) : Text(String(localized: "Mute microphone")))
-                .accessibilityAddTraits(call.state.muted ? .isSelected : [])
-                .accessibilityIdentifier("call-mute")
-                Button {
-                    Haptics.impact(.medium)
-                    call.end()
-                } label: {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 14, weight: .bold))
-                        .foregroundStyle(Color.white)
-                        .frame(width: 32, height: 32)
-                        .background(CallTheme.danger, in: Circle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(Text(String(localized: "End voice mode")))
-                .accessibilityIdentifier("call-end")
-            }
+    private var muteButton: some View {
+        Button {
+            Haptics.selection()
+            call.setMuted(!call.state.muted)
+        } label: {
+            Image(systemName: call.state.muted ? "mic.slash" : "mic")
+                .font(.system(size: 22, weight: .medium))
+                .foregroundStyle(call.state.muted ? CallTheme.danger : CallTheme.ink)
+                .frame(width: 56, height: 56)
+                .background(Color.white.opacity(0.12), in: Circle())
         }
-        .padding(.horizontal, 8)
-        .frame(height: 48)
+        .buttonStyle(.plain)
+        .accessibilityLabel(call.state.muted ? Text(String(localized: "Unmute microphone")) : Text(String(localized: "Mute microphone")))
+        .accessibilityIdentifier("call-mute")
+    }
+
+    private var gearButton: some View {
+        Button {
+            Haptics.selection()
+            withAnimation(.easeOut(duration: 0.15)) { extras.toggle() }
+            list = nil
+        } label: {
+            Image(systemName: "gearshape")
+                .font(.system(size: 22, weight: .medium))
+                .foregroundStyle(Color.black)
+                .frame(width: 56, height: 56)
+                .background(Color.white, in: Circle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(Text(String(localized: "Voice settings")))
+        .accessibilityIdentifier("call-settings")
+    }
+
+    private var endButton: some View {
+        Button {
+            Haptics.impact(.medium)
+            call.end()
+        } label: {
+            Image(systemName: "xmark")
+                .font(.system(size: 22, weight: .bold))
+                .foregroundStyle(Color.white)
+                .frame(width: 56, height: 56)
+                .background(CallTheme.danger, in: Circle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(Text(String(localized: "End voice mode")))
+        .accessibilityIdentifier("call-end")
     }
 
     private var pushButton: some View {
         Image(systemName: "hand.raised")
-            .font(.system(size: 14, weight: .medium))
-            .foregroundStyle(call.state.phase == .hearing ? Color.white : CallTheme.inkSecondary)
-            .frame(width: 32, height: 32)
-            .background(call.state.phase == .hearing ? CallTheme.accent : CallTheme.raised, in: Circle())
+            .font(.system(size: 22, weight: .medium))
+            .foregroundStyle(call.state.phase == .hearing ? Color.white : CallTheme.ink)
+            .frame(width: 56, height: 56)
+            .background(call.state.phase == .hearing ? CallTheme.accent : Color.white.opacity(0.12), in: Circle())
             .opacity(call.state.muted || call.state.phase == .held ? 0.4 : 1)
             .gesture(
                 DragGesture(minimumDistance: 0)
@@ -194,26 +190,6 @@ struct CallPillView: View {
             .accessibilityIdentifier("call-ptt")
     }
 
-    private func round(systemImage: String, label: String, id: String, selected: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: systemImage)
-                .font(.system(size: 14, weight: .medium))
-                .foregroundStyle(selected ? CallTheme.ink : CallTheme.inkSecondary)
-                .frame(width: 32, height: 32)
-                .background(CallTheme.raised, in: Circle())
-                .overlay(Circle().strokeBorder(selected ? CallTheme.ink.opacity(0.4) : .clear, lineWidth: 2))
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(Text(label))
-        .accessibilityIdentifier(id)
-    }
-
-    private func toggle(_ next: Panel) {
-        Haptics.selection()
-        withAnimation(.easeOut(duration: 0.15)) { panel = panel == next ? nil : next }
-        list = nil
-    }
-
     private var holdButton: some View {
         let held = call.state.phase == .held
         return Button {
@@ -222,15 +198,14 @@ struct CallPillView: View {
             HStack(spacing: 8) {
                 Image(systemName: held ? "play.fill" : "pause.fill").font(.system(size: 12))
                 Text(held ? String(localized: "Resume the call") : String(localized: "Put the call on hold"))
-                    .font(.system(size: 13))
+                    .font(.system(size: 15))
             }
             .foregroundStyle(held ? CallTheme.warning : CallTheme.ink)
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 7)
-            .background(CallTheme.raised, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .padding(.vertical, 14)
+            .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         }
         .buttonStyle(.plain)
-        .padding(.bottom, 4)
         .accessibilityIdentifier("call-hold")
     }
 
@@ -243,14 +218,11 @@ struct CallPillView: View {
                 Button(String(localized: "Try again")) { call.retry() }
                     .font(.system(size: 12))
                     .foregroundStyle(CallTheme.warning)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 3)
-                    .overlay(Capsule().strokeBorder(CallTheme.warning.opacity(0.4)))
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 6)
             .background(CallTheme.warning.opacity(0.1), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-            .padding(.vertical, 4)
+            .padding(.top, 12)
             .accessibilityIdentifier("call-note")
         } else if let notice = call.notice {
             Text(notice)
@@ -259,13 +231,66 @@ struct CallPillView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 6)
-                .background(CallTheme.raised.opacity(0.6), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                .padding(.vertical, 4)
+                .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .padding(.top, 12)
                 .onTapGesture { call.dismissNotice() }
                 .accessibilityIdentifier("call-notice")
         }
     }
 }
+
+/// The short row that brings the stage back. It sits in the banner flow, so it does not cover the first message.
+struct CallCollapsedBar: View {
+    let bot: Bot
+    @ObservedObject var call: CallController
+    var onExpand: () -> Void
+
+    var body: some View {
+        HStack(spacing: 8) {
+            BotMascotView(bot: bot, size: 28, state: call.state.mascot, animated: false)
+            Text(bot.name).font(.system(size: 13)).lineLimit(1)
+            TimelineView(.periodic(from: .now, by: 1)) { context in
+                Text(formatCallTime(context.date.timeIntervalSince(call.startedAt)))
+                    .font(.system(size: 13))
+                    .foregroundStyle(CallTheme.inkSecondary)
+                    .monospacedDigit()
+            }
+            Spacer(minLength: 0)
+            Button(action: onExpand) {
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 14, weight: .semibold))
+                    .frame(width: 32, height: 32)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(Text(String(localized: "Return to the call")))
+            .accessibilityIdentifier("call-expand")
+            Button {
+                call.setMuted(!call.state.muted)
+            } label: {
+                Image(systemName: call.state.muted ? "mic.slash" : "mic")
+                    .frame(width: 32, height: 32)
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("call-mute")
+            Button {
+                call.end()
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(Color.white)
+                    .frame(width: 32, height: 32)
+                    .background(CallTheme.danger, in: Circle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(Text(String(localized: "End voice mode")))
+            .accessibilityIdentifier("call-end")
+        }
+        .padding(.horizontal, 12)
+        .frame(height: 44)
+        .accessibilityIdentifier("call-pill")
+    }
+}
+
 
 // MARK: - The waveform
 
@@ -333,18 +358,23 @@ struct CallSettingsPanel: View {
 
     @ObservedObject var call: CallController
     @Binding var open: List?
+    /// Microphone, end of turn and call sounds. The stage keeps these behind the gear.
+    var showsExtras: Bool = true
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
+            VStack(spacing: 0) {
             if call.voiceModeAvailable {
                 row(String(localized: "Voice"), value: voiceName, list: .voice)
                 if open == .voice { voiceList }
+                Rectangle().fill(CallTheme.hairline.opacity(0.45)).frame(height: 0.5).padding(.horizontal, 16)
                 row(String(localized: "Speed"), value: VoiceModeSettings.speedLabel(call.voiceSettings.speed), list: .speed)
                 if open == .speed {
                     options(VoiceModeSettings.speeds.map { (String($0), VoiceModeSettings.speedLabel($0)) }, selected: String(call.voiceSettings.speed)) {
                         call.voiceSettings.speed = Double($0) ?? 1
                     }
                 }
+                Rectangle().fill(CallTheme.hairline.opacity(0.45)).frame(height: 0.5).padding(.horizontal, 16)
             }
             row(String(localized: "Language"), value: languageName, list: .language)
             if open == .language {
@@ -355,6 +385,9 @@ struct CallSettingsPanel: View {
                 }
                 .frame(maxHeight: 224)
             }
+            }
+            .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            if showsExtras {
             Rectangle().fill(CallTheme.hairline.opacity(0.5)).frame(height: 0.5).padding(.vertical, 6)
             HStack {
                 Text(String(localized: "Microphone")).font(.system(size: 13)).foregroundStyle(CallTheme.inkSecondary)
@@ -391,9 +424,10 @@ struct CallSettingsPanel: View {
             .tint(Theme.toggleOn)
             .padding(.vertical, 4)
             .accessibilityIdentifier("call-earcons")
+            }
         }
-        .padding(.horizontal, 4)
-        .padding(.bottom, 8)
+        .padding(.horizontal, showsExtras ? 4 : 0)
+        .padding(.bottom, showsExtras ? 8 : 0)
     }
 
     private var voiceName: String {
@@ -407,30 +441,23 @@ struct CallSettingsPanel: View {
     }
 
     private func row(_ label: String, value: String, list: List) -> some View {
-        HStack(spacing: 12) {
-            Text(label).font(.system(size: 13)).foregroundStyle(CallTheme.inkSecondary)
-            Spacer()
-            Button {
-                withAnimation(.easeOut(duration: 0.12)) { open = open == list ? nil : list }
-            } label: {
-                HStack(spacing: 8) {
-                    Text(value).lineLimit(1)
-                    Spacer(minLength: 0)
-                    Image(systemName: "chevron.down")
-                        .font(.system(size: 11, weight: .semibold))
-                        .rotationEffect(.degrees(open == list ? 180 : 0))
-                }
-                .font(.system(size: 13))
-                .foregroundStyle(CallTheme.ink)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 6)
-                .frame(minWidth: 136)
-                .background(CallTheme.raised, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        Button {
+            withAnimation(.easeOut(duration: 0.12)) { open = open == list ? nil : list }
+        } label: {
+            HStack(spacing: 12) {
+                Text(label).font(.system(size: 16)).foregroundStyle(CallTheme.ink)
+                Spacer(minLength: 8)
+                Text(value).lineLimit(1).font(.system(size: 15)).foregroundStyle(CallTheme.inkSecondary)
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(CallTheme.inkTertiary)
             }
-            .buttonStyle(.plain)
-            .accessibilityIdentifier("call-list-\(list)")
+            .padding(.horizontal, 16)
+            .padding(.vertical, 14)
+            .contentShape(Rectangle())
         }
-        .padding(.vertical, 6)
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("call-list-\(list)")
     }
 
     private var voiceList: some View {

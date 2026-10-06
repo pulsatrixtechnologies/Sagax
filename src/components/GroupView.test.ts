@@ -2,6 +2,8 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
+import { setLocale } from "@/lib/i18n";
+import { nudgeLineText } from "@/lib/nudge-line";
 import { StoreProvider, type Group, type Message } from "@/state/store";
 
 // Replaced whole: its context default reads window.ogb at import time. An
@@ -42,7 +44,8 @@ describe("RoomToolChip", () => {
       threadRef: { botId: "scout", threadId: "qa-245", title: "QA PR 245" },
     }));
     expect(markup).toContain("<button");
-    expect(markup).toContain("Opened thread #QA PR 245 on Scout");
+    expect(markup).toContain("Go to conversation");
+    expect(markup).not.toContain("Opened thread #QA PR 245 on Scout");
     expect(markup).toContain('title="Open #QA PR 245"');
   });
 
@@ -84,5 +87,108 @@ describe("room header", () => {
     }
     expect(markup).toContain("@container/chathead");
     expect(markup).toMatch(/<span class="truncate[^"]*">Launch planning<\/span>/);
+    expect(markup).not.toContain("data-nudge");
+  });
+
+  it("offers a nudge on a group chat that names someone else", () => {
+    vi.stubGlobal("window", { ogb: undefined });
+    const roomWithPeople: Group = {
+      ...room,
+      name: "Launch planning",
+      humanIds: ["local-owner", "pr_ada"],
+    };
+    let markup: string;
+    try {
+      markup = renderToStaticMarkup(createElement(StoreProvider, null, createElement(GroupView, { group: roomWithPeople })));
+    } finally {
+      vi.unstubAllGlobals();
+    }
+    const actionsAt = markup.indexOf("data-composer-actions");
+    const actionsEnd = markup.indexOf("pointer-events-auto", actionsAt);
+    const actions = markup.slice(actionsAt, actionsEnd);
+    const buttons = [...actions.matchAll(/<button\b[^>]*>/g)].map((match) => match[0]);
+    expect(buttons.at(-1)).toContain('data-nudge="room"');
+    expect(actions).toContain('aria-label="Nudge Launch planning"');
+  });
+
+  it("hides the group nudge when the viewer is the only person listed", () => {
+    vi.stubGlobal("window", { ogb: undefined });
+    const alone: Group = { ...room, humanIds: ["local-owner", "user:local-owner"] };
+    let markup: string;
+    try {
+      markup = renderToStaticMarkup(createElement(StoreProvider, null, createElement(GroupView, { group: alone })));
+    } finally {
+      vi.unstubAllGlobals();
+    }
+    expect(markup).not.toContain("data-nudge");
+  });
+
+  it("offers a nudge only on a conversation with a person, last in the composer", () => {
+    vi.stubGlobal("window", { ogb: undefined });
+    const dm: Group = {
+      ...room,
+      id: "dm",
+      name: "Ada",
+      peopleDm: true,
+      humanIds: ["local-owner", "pr_ada"],
+    };
+    let markup: string;
+    try {
+      markup = renderToStaticMarkup(createElement(StoreProvider, null, createElement(GroupView, { group: dm })));
+    } finally {
+      vi.unstubAllGlobals();
+    }
+    const actionsAt = markup.indexOf("data-composer-actions");
+    expect(actionsAt).toBeGreaterThan(0);
+    expect(markup.slice(0, actionsAt)).not.toContain("data-nudge");
+    const actions = markup.slice(actionsAt).match(/data-composer-actions[\s\S]*?<\/div>/)?.[0] ?? "";
+    const buttons = [...actions.matchAll(/<button\b[^>]*>/g)].map((match) => match[0]);
+    expect(buttons.at(-1)).toContain('data-nudge="pr_ada"');
+    expect(actions).toContain('aria-label="Nudge Ada"');
+    expect(markup).not.toContain("Nudge sent");
+    expect(markup).not.toContain("Secousse envoyée");
+  });
+
+  it("draws an accepted nudge as its own line, for the sender and the other person", () => {
+    const note = { fromId: "pr_jean", fromName: "Jean-Christophe", toId: "pr_ada", toName: "Ada" };
+    expect(nudgeLineText(note, "pr_jean")).toBe("You sent a nudge to Ada.");
+    expect(nudgeLineText(note, "pr_ada")).toBe("Jean-Christophe sent you a nudge.");
+    const groupNote = { ...note, toId: "room", toName: "Launch planning", groupId: "room" };
+    expect(nudgeLineText(groupNote, "pr_jean")).toBe("You sent a nudge in Launch planning.");
+    expect(nudgeLineText(groupNote, "pr_ada")).toBe("Jean-Christophe sent a nudge in this chat.");
+    setLocale("fr");
+    try {
+      expect(nudgeLineText(note, "pr_jean")).toBe("Tu as envoyé une secousse à Ada.");
+      expect(nudgeLineText(note, "PR_ADA")).toBe("Jean-Christophe t'a envoyé une secousse.");
+      expect(nudgeLineText(groupNote, "pr_jean")).toBe("Tu as envoyé une secousse dans Launch planning.");
+      expect(nudgeLineText(groupNote, "pr_ada")).toBe("Jean-Christophe a envoyé une secousse dans cette conversation.");
+    } finally {
+      setLocale("en");
+    }
+
+    vi.stubGlobal("window", { ogb: undefined });
+    const dm: Group = {
+      ...room,
+      id: "dm",
+      name: "Ada",
+      peopleDm: true,
+      humanIds: ["local-owner", "pr_ada"],
+      messages: [{
+        id: "nudge-1",
+        role: "bot",
+        kind: "nudge",
+        at: 2,
+        nudge: { fromId: "local-owner", fromName: "Jean-Christophe", toId: "pr_ada", toName: "Ada" },
+      }],
+    };
+    let markup: string;
+    try {
+      markup = renderToStaticMarkup(createElement(StoreProvider, null, createElement(GroupView, { group: dm })));
+    } finally {
+      vi.unstubAllGlobals();
+    }
+    expect(markup).toContain('data-nudge-line');
+    expect(markup).toContain("You sent a nudge to Ada.");
+    expect(markup).not.toContain("data-chat-bubble");
   });
 });

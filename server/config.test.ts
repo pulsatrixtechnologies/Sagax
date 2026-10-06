@@ -29,7 +29,7 @@ import { cacheUntilConfigChanges,
   showToolCallsEnabled,
   routinesInConversationEnabled,
   connectedAppsEnabled,
-  templatesEnabled, vpsComputerEnabled, boatComputerEnabled,
+  templatesEnabled, vpsComputerEnabled, boatComputerEnabled, decisionModelEnabled,
   saveConfig,
   skillAuthoringEnabled,
   sharedComputersEnabled,
@@ -49,6 +49,7 @@ import { cacheUntilConfigChanges,
   LIVE_IDLE_MINUTES_DEFAULT,
   type AppConfig,
 } from "./config.ts";
+import { describeVoice } from "./tts/index.ts";
 
 describe("configuration boundaries", () => {
   it("requires an explicit backup to opt into automatic recovery without reloading engines", () => {
@@ -97,6 +98,16 @@ describe("configuration boundaries", () => {
       voice: "fish-voice",
     });
     expect(() => parseConfigPatch({ tts: { provider: "unknown" } })).toThrow("provider");
+  });
+
+  it("keeps the Grok voice key on tts.xaiKey and never copies it onto the bot xAI key", () => {
+    const parsed = parseConfigPatch({
+      xai: { key: "bot-key" },
+      tts: { provider: "xai", xaiKey: "voice-key", key: "eleven-key" },
+    });
+    expect(parsed.tts).toEqual({ provider: "xai", xaiKey: "voice-key", key: "eleven-key" });
+    expect(parsed.xai).toEqual({ key: "bot-key" });
+    expect(parsed.tts?.xaiKey).not.toBe(parsed.xai?.key);
   });
 
   it("accepts only known Fish Audio speech models", () => {
@@ -622,6 +633,10 @@ describe("configuration boundaries", () => {
     expect(vpsComputerEnabled({ features: { vpsComputer: true } })).toBe(true);
     expect(boatComputerEnabled({})).toBe(false);
     expect(boatComputerEnabled({ features: { boatComputer: true } })).toBe(true);
+    expect(decisionModelEnabled({})).toBe(false);
+    expect(decisionModelEnabled({ features: { decisionModel: false } })).toBe(false);
+    expect(parseConfigPatch({ features: { decisionModel: true } })).toEqual({ features: { decisionModel: true } });
+    expect(decisionModelEnabled({ features: { decisionModel: true } })).toBe(true);
   });
 
   it("keeps tool-call chips off by default and accepts an explicit opt-in", () => {
@@ -1231,6 +1246,7 @@ describe("credential env preference", () => {
     "OPENCODE_API_KEY",
     "SAGAX_TTS_KEY",
     "SAGAX_FISH_AUDIO_API_KEY",
+    "SAGAX_XAI_VOICE_KEY",
     "SAGAX_OPENAI_IMAGE_KEY",
     "COMPOSIO_API_KEY",
   ] as const;
@@ -1596,6 +1612,38 @@ describe("credential env preference", () => {
     expect(process.env.SAGAX_FISH_AUDIO_API_KEY).toBe("fish-new");
   });
 
+  it("keeps provider xai when a voice-key save sends only tts.xaiKey", () => {
+    saveConfig({ tts: { provider: "xai", voice: "ara", key: "eleven-kept" }, xai: { key: "bot-kept" } });
+    const patch = parseConfigPatch({ tts: { xaiKey: "voice-secret" } });
+    expect(patch).toEqual({ tts: { xaiKey: "voice-secret" } });
+    saveConfig(patch);
+    const cfg = loadConfig();
+    expect(cfg.tts).toMatchObject({ provider: "xai", voice: "ara", key: "eleven-kept", xaiKey: "voice-secret" });
+    expect(cfg.xai?.key).toBe("bot-kept");
+    const status = describeVoice(cfg);
+    expect(status).toMatchObject({ configured: true, provider: "xai", voice: "ara" });
+    expect(status).not.toHaveProperty("xaiKey");
+    expect(status).not.toHaveProperty("key");
+    const echoed = JSON.stringify(status);
+    expect(echoed).not.toContain("voice-secret");
+    expect(echoed).not.toContain("bot-kept");
+    expect(echoed).not.toContain("eleven-kept");
+  });
+
+  it("syncCredentialEnv stores the Grok voice key apart from the bot xAI key", () => {
+    process.env.XAI_API_KEY = "bot-kept";
+    syncCredentialEnv({ tts: { xaiKey: "voice-new" } });
+    expect(process.env.SAGAX_XAI_VOICE_KEY).toBe("voice-new");
+    expect(process.env.XAI_API_KEY).toBe("bot-kept");
+    writeFileSync(join(DATA_DIR, "config.json"), JSON.stringify({ xai: { key: "file-bot" }, tts: { provider: "xai", xaiKey: "file-voice" } }));
+    expect(loadConfig().tts?.xaiKey).toBe("voice-new");
+    expect(loadConfig().xai?.key).toBe("bot-kept");
+    delete process.env.SAGAX_XAI_VOICE_KEY;
+    delete process.env.XAI_API_KEY;
+    expect(loadConfig().tts?.xaiKey).toBe("file-voice");
+    expect(loadConfig().xai?.key).toBe("file-bot");
+  });
+
   it("syncCredentialEnv keeps model and provider env in step with a save", () => {
     // loadConfig() prefers OPENAI_COMPAT_MODEL/PROVIDER over the file, so a
     // mid-session save must update them like key/url or the boot-injected
@@ -1673,6 +1721,7 @@ describe("workspace credential env strip", () => {
     expect(WORKSPACE_CREDENTIAL_ENV).toContain("SAGAX_CLOUD_VOICE_TOKEN");
     expect(WORKSPACE_CREDENTIAL_ENV).toContain("SAGAX_CLOUD_DECIDER_TOKEN");
     expect(WORKSPACE_CREDENTIAL_ENV).toContain("SAGAX_FISH_AUDIO_API_KEY");
+    expect(WORKSPACE_CREDENTIAL_ENV).toContain("SAGAX_XAI_VOICE_KEY");
     expect(WORKSPACE_CREDENTIAL_ENV).toContain("SAGAX_OPENAI_IMAGE_KEY");
     expect(WORKSPACE_CREDENTIAL_ENV).toContain("SAGAX_BROWSER_CONNECTION");
     expect(WORKSPACE_CREDENTIAL_ENV).toContain("SAGAX_USER_DATA");

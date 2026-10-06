@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { ConfigStatus } from "@/state/store";
-import { canEditBotField, canStepPrimary, viewerOwnsBot } from "./bot-capabilities";
+import { canEditBotField, canStepPrimary, showBotArchive, showBotDelete, showBotRename, showServerSectionMove, viewerOwnsBot } from "./bot-capabilities";
 
 const ZARA = "pr_00000000-0000-4000-8000-000000000002";
 const member = {
@@ -41,6 +41,37 @@ describe("canEditBotField", () => {
     const readOnly = { viewer: { ...member.viewer!, botsReadOnly: true } } as ConfigStatus;
     expect(canEditBotField(readOnly, own, "name")).toBe(false);
     expect(canEditBotField(readOnly, own, "color")).toBe(false);
+  });
+});
+
+describe("sidebar actions a member may not see", () => {
+  const admin = { viewer: { ...member.viewer!, role: "admin" } } as ConfigStatus;
+  const readOnly = { viewer: { ...member.viewer!, botsReadOnly: true } } as ConfigStatus;
+
+  it("hides rename for a member who does not own the bot", () => {
+    expect(showBotRename(member, own)).toBe(true);
+    expect(showBotRename(member, other)).toBe(false);
+    expect(showBotRename(admin, other)).toBe(true);
+    expect(showBotRename(readOnly, own)).toBe(false);
+  });
+
+  it("hides archive for every organization member, including the owner", () => {
+    expect(showBotArchive(member)).toBe(false);
+    expect(showBotArchive(admin)).toBe(true);
+    expect(showBotArchive(null)).toBe(true);
+  });
+
+  it("hides delete unless the member owns the bot, and always for a read-only person", () => {
+    expect(showBotDelete(member, own)).toBe(true);
+    expect(showBotDelete(member, other)).toBe(false);
+    expect(showBotDelete(readOnly, own)).toBe(false);
+    expect(showBotDelete(admin, other)).toBe(true);
+  });
+
+  it("keeps a personal section move and hides a server section move for a member", () => {
+    expect(showServerSectionMove(member, true)).toBe(true);
+    expect(showServerSectionMove(member, false)).toBe(false);
+    expect(showServerSectionMove(admin, false)).toBe(true);
   });
 });
 

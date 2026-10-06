@@ -20,6 +20,7 @@ import { gamertagText } from "./Gamertag";
 import { AchievementToast } from "./AchievementToaster";
 import { AchievementsPage } from "./AchievementsPage";
 import { ACHIEVEMENT_ICONS } from "./icons";
+import { MemberCard, memberCardRows, publicMemberRows } from "./MemberCard";
 
 function snapshot(partial: Partial<AchievementSnapshot> = {}): AchievementSnapshot {
   return {
@@ -64,8 +65,69 @@ describe("gamertag", () => {
     expect(html).toContain("data-gamertag");
     expect(html).toContain("<span>1,240</span>");
     expect(html).toContain('aria-label="1,240 points, level 7. Open achievements"');
-    // the gamertag is its own button, never inside the menu's
+    // the points pill is its own button, never inside the menu's
     expect(html.indexOf("data-gamertag")).toBeGreaterThan(html.lastIndexOf("</button>", html.indexOf("data-gamertag")));
+    // no chosen title, so the line does not leave an empty gap
+    expect(html).not.toContain("data-member-title");
+  });
+
+  it("puts the chosen title on the same line as the points", () => {
+    resetAchievementsForTests({ status: "ready", snapshot: snapshot({ settings: { showPoints: true, toasts: true, native: false, public: false, title: "rookie" } }) });
+    const html = renderToStaticMarkup(createElement(SidebarProfileMenu, {}));
+    expect(html).toContain("data-member-line");
+    expect(html).toContain("data-member-title");
+    expect(html).toContain(">Rookie</button>");
+    expect(html).toContain("data-gamertag");
+    expect(html).toContain("<span>1,240</span>");
+    expect(html).toContain('aria-label="1,240 points, level 7. Open achievements"');
+  });
+
+  it("lists an unlocked achievement and hides a locked secret", () => {
+    const rows = memberCardRows(snapshot());
+    expect(rows.some((row) => row.id === "hello-bot" && row.unlocked)).toBe(true);
+    expect(rows.some((row) => row.id === "konami")).toBe(false);
+    const html = renderToStaticMarkup(createElement(MemberCard, {
+      name: "Ada Lovelace",
+      initials: "AL",
+      title: "Rookie",
+      pointsText: "1,240",
+      level: 7,
+      rows,
+      onOpenPage: () => {},
+    }));
+    expect(html).toContain("data-member-card");
+    expect(html).toContain("Ada Lovelace");
+    expect(html).toContain("Rookie");
+    expect(html).toContain("1,240");
+    expect(html).toContain("Level 7");
+    expect(html).toMatch(/It(?:'|&#x27;)s Alive!/);
+    expect(html).toContain('data-achievement="hello-bot"');
+    expect(html).toContain("data-unlocked");
+    expect(html).not.toContain("Up Up Down Down");
+    expect(html).not.toContain('data-achievement="konami"');
+    // a locked achievement that is not a secret stays, dim, with progress
+    expect(html).toContain('data-achievement="small-family"');
+    expect(html).toContain("data-locked");
+    expect(html).toContain("2/3");
+    expect(html).toContain("View achievements");
+    expect(html).toContain("member-card-list");
+    // a public card only has unlocked ids, so a locked secret cannot appear
+    const shared = publicMemberRows([
+      { id: "first-words", points: 5 },
+      { id: "konami", points: 50 },
+    ]);
+    expect(shared.map((row) => row.name)).toEqual(["First Words", "Up Up Down Down"]);
+    const hidden = renderToStaticMarkup(createElement(MemberCard, {
+      name: "Ada Lovelace",
+      initials: "AL",
+      title: null,
+      pointsText: "5",
+      level: 1,
+      rows: publicMemberRows([{ id: "first-words", points: 5 }]),
+    }));
+    expect(hidden).toContain("First Words");
+    expect(hidden).not.toContain("Up Up Down Down");
+    expect(hidden).not.toContain('data-achievement="konami"');
   });
 
   it("stays away when hidden or on a server without achievements", () => {

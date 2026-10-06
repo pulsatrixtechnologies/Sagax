@@ -19,15 +19,17 @@
 // An organization admin is never narrowed, and a solo server never reads
 // the field.
 //
-// The engine's own plugin and MCP commands are refused for their turns too:
-// `/plugin`, `/plugins`, `/mcp` and `/reload-*` typed in the chat are
+// The engine's own plugin and MCP commands are refused for every person's
+// turns: `/plugin`, `/plugins`, `/mcp` and `/reload-*` typed in the chat are
 // managed by Sagax for everyone (shared/harness-commands.ts), the host Bash
-// is denied on an organization server (withholdHostTools), and in the
-// person's server environment `run_command` refuses the CLIs' plugin, MCP
-// and extension subcommands (`engineIntegrationCommand`). That last check
-// is a courtesy, not the boundary: nothing a person installs in their
-// environment reaches a bot's turn, which loads only the plugins Sagax
-// keeps (`--plugin-dir`) and the servers Sagax mounts.
+// is denied on an organization server (withholdHostTools), and `run_command`
+// (the person's server environment and their desktop, including a Local VM
+// command) refuses the CLIs' plugin, MCP and extension subcommands
+// (`enginePluginCommandRefusal`). The tool result tells the bot to install
+// through Sagax `act` plugin actions. When integrations are `off`, the
+// administrator sentence stays. That check is a courtesy, not the boundary:
+// nothing a person installs in their environment reaches a bot's turn, which
+// loads only the plugins Sagax keeps and the servers Sagax mounts.
 
 /** The refusal a person gets on a change an admin keeps. */
 export const INTEGRATIONS_ADMIN_ONLY = {
@@ -65,4 +67,16 @@ const ENGINE_COMMAND = new RegExp(
  * `claude mcp add ...`, `codex mcp add ...`, `gemini extensions install`). */
 export function engineIntegrationCommand(command: string): boolean {
   return ENGINE_COMMAND.test(command);
+}
+
+/** What `run_command` says instead of running an engine plugin command.
+ * Integrations off keeps the administrator sentence. Otherwise the bot
+ * installs through Sagax `act`, on every engine. */
+export const PLUGIN_ACT_COMMAND =
+  "Refused: Sagax installs plugins for this bot. Do not run an engine plugin, MCP or extension command. Call act with plugins.action set to list, addMarketplace, install, setEnabled, uninstall or removeMarketplace. Skills and commands then load on every engine. Hooks and MCP from a plugin stay out.";
+
+export function enginePluginCommandRefusal(integrationsOff: boolean, command: string): string | null {
+  if (!engineIntegrationCommand(command)) return null;
+  if (integrationsOff) return INTEGRATIONS_ADMIN_ONLY_COMMAND;
+  return PLUGIN_ACT_COMMAND;
 }

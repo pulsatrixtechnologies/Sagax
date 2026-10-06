@@ -16,6 +16,7 @@ import { ServerComputerScreen, useDesktopLocalVm } from "../computer/OrgComputer
 import { screenStateLabel } from "../computer/ComputerScreen";
 import { Card } from "../SettingsPrimitives";
 import { BotWorkplaceSettings } from "./BotWorkplaceSettings";
+import { LocalModelsSettings } from "./LocalModelsSettings";
 import { serverEnvironmentStateText } from "./MyServerEnvironment";
 
 export function OrgComputerSettings({ bridge, initialLocal = null, initialServer = null, confirm = (text: string) => window.confirm(text) }: {
@@ -27,6 +28,7 @@ export function OrgComputerSettings({ bridge, initialLocal = null, initialServer
   return (
     <>
       <BotWorkplaceSettings status={bridge} />
+      <LocalModelsSettings />
       <LocalVmCard bridge={bridge} initial={initialLocal} confirm={confirm} />
       <ServerEnvironmentCard initial={initialServer} confirm={confirm} />
     </>

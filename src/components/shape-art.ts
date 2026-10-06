@@ -110,7 +110,8 @@ export const SHAPE_ART: Record<MascotShape, ShapeArt> = {
   bean: { d: smoothClosed(heart()), face: [50, 47] },
   // (7) an eight-lobe scalloped flower
   flower: { d: smoothClosed(polar(50, 50, (a) => 38 + 6 * Math.abs(Math.cos(4 * a)) ** 0.7, 160)), face: [55, 45] },
-  // (8) a teardrop, its point at the top left
+  // (8) a soft drop, point toward the top left, round belly. The belly
+  // reaches further left than the point, so the point is not a sharp corner.
   drop: { d: smoothClosed(rotate(polar(52, 54, (a) => 38 + 22 * Math.max(0, Math.cos(a)) ** 10, 120), 52, 54, -45)), face: [57, 54] },
   // (9) a pill, lying down
   pill: { d: roundedPolygon([[2, 20], [98, 20], [98, 80], [2, 80]], 30), face: [56, 48] },

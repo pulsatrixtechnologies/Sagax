@@ -2,7 +2,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
-import { canPairDevices, lastSeen, minutesLeft, pairingBlockedReason, ServerPairingCard, shownDevices } from "./ServerPairingCard";
+import { canPairDevices, lastSeen, minutesLeft, pairingBlockedReason, pairingCodesOffered, ServerPairingCard, shownDevices } from "./ServerPairingCard";
 
 describe("pairing devices from a hosted server's settings", () => {
   it("is offered to the owner on the box and to admin sessions, never to chat-only sessions", () => {
@@ -80,5 +80,34 @@ describe("pairing devices from a hosted server's settings", () => {
     ];
     expect(shownDevices(devices, true).map((device) => device.id)).toEqual(["a"]);
     expect(shownDevices(devices, false).map((device) => device.id)).toEqual(["a", "b"]);
+  });
+
+  it("hides pairing codes on a linked Perspicax organisation or a portal membership", () => {
+    expect(pairingCodesOffered({ pairingCodes: true, authority: "local", perspicaxLinked: false })).toBe(true);
+    expect(pairingCodesOffered({ pairingCodes: false, authority: "local", perspicaxLinked: false })).toBe(false);
+    expect(pairingCodesOffered({ pairingCodes: true, authority: "local", perspicaxLinked: true })).toBe(false);
+    expect(pairingCodesOffered({ pairingCodes: true, authority: "portal", perspicaxLinked: false })).toBe(false);
+
+    const admin = { kind: "session" as const, id: "s", label: "Org", scopes: ["admin", "client"], expiresAt: 1 };
+    const linked = renderToStaticMarkup(createElement(ServerPairingCard, { initialSession: admin, initialPairingCodes: true, perspicaxLinked: true }));
+    expect(linked).toContain("data-server-pairing-portal");
+    expect(linked).toContain("Signed-in devices");
+    expect(linked).not.toContain("Full access");
+    expect(linked).not.toContain("Chat and approvals only");
+    expect(linked).not.toContain("Create pairing code");
+    expect(linked).not.toContain("five minutes");
+
+    const portal = renderToStaticMarkup(createElement(ServerPairingCard, { initialSession: admin, initialPairingCodes: true, initialAuthority: "portal" }));
+    expect(portal).toContain("data-server-pairing-portal");
+    expect(portal).toContain("Signed-in devices");
+    expect(portal).not.toContain("Create pairing code");
+    expect(portal).not.toContain("five minutes");
+
+    const chatOnly = { ...admin, scopes: ["client"] as ["client"] };
+    const chat = renderToStaticMarkup(createElement(ServerPairingCard, { initialSession: chatOnly, perspicaxLinked: true, initialPairingCodes: true }));
+    expect(chat).toContain("data-server-pairing-chat-only");
+    expect(chat).not.toContain("five minutes");
+    expect(chat).not.toContain("openmausbot pair");
+    expect(chat).toContain("Browsers and devices signed in to this installation.");
   });
 });

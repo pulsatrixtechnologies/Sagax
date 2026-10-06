@@ -1,6 +1,6 @@
 # Provider icon sources
 
-The provider icon picker vendors SVG paths so the app never fetches provider
+Provider marks are vendored SVG paths so the app never fetches provider
 artwork at runtime.
 
 - Google Gemini, DeepSeek, Meta, Mistral AI, and OpenRouter: Simple Icons

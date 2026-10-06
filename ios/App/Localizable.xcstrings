@@ -5875,6 +5875,60 @@
         }
       }
     },
+    "voiceCall.title": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Voice" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Appel vocal" } }
+      }
+    },
+    "voiceCall.menu": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Voice call menu" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Menu de l'appel vocal" } }
+      }
+    },
+    "voiceCall.copy": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Copy transcript" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Copier la transcription" } }
+      }
+    },
+    "voiceCall.copied": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Copied" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Copié" } }
+      }
+    },
+    "voiceCall.collapse": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Collapse voice call" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Réduire l'appel vocal" } }
+      }
+    },
+    "voiceCall.up": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Thumbs up" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Pouce vers le haut" } }
+      }
+    },
+    "voiceCall.down": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Thumbs down" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Pouce vers le bas" } }
+      }
+    },
+    "voiceCall.empty": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Nothing said yet." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Rien de dit encore." } }
+      }
+    },
+    "voiceCall.you": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "You" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Toi" } }
+      }
+    },
     "Voice": {
       "localizations": {
         "en": {

@@ -115,6 +115,7 @@ describe("routine badges (slice 6)", () => {
   it("says who a routine runs as and why it is paused", () => {
     const markup = renderToStaticMarkup(createElement(RoutineList, { routines: [routine], runs: [], onOpen: () => {} }));
     expect(markup).toContain("Runs as Bob");
+    expect(markup).toContain("Cron 0 * * * * · UTC");
     expect(markup).toContain("Paused: not allowed yet");
     expect(routineSuspendedText("person_out")).toBe("Paused: person signed out");
   });

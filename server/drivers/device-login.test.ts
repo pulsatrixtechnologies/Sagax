@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
-import { DEVICE_LOGIN_SPECS, DeviceLoginController, deviceLoginPrompt } from "./device-login.ts";
+import { DEVICE_LOGIN_SPECS, DeviceLoginController, deviceLoginFailure, deviceLoginPrompt } from "./device-login.ts";
 
 const grok = DEVICE_LOGIN_SPECS.grokAgent;
 const kimi = DEVICE_LOGIN_SPECS.kimiAgent;
@@ -29,6 +29,36 @@ describe("deviceLoginPrompt", () => {
     expect(deviceLoginPrompt(kimi, "https://www.kimi.ai/code/authorize_device?user_code=G45W-1N1J")).toBeNull();
   });
 });
+
+describe("deviceLoginFailure", () => {
+  it("says the server could not reach the sign-in service, without the address or the code", () => {
+    const message = deviceLoginFailure(grok, "Error: error sending request for url (https://auth.x.ai/oauth2/device/code): client error (Connect): tcp connect error: Connection refused (os error 111) ABCD-EFGH\n");
+    expect(message).toBe("Grok could not reach its sign-in service from this server. Check the server's outbound connection, then try again.");
+    expect(message).not.toMatch(/https?:|auth\.x\.ai|ABCD-EFGH/i);
+  });
+
+  it("says when this server's CLI does not understand subscription sign-in", () => {
+    expect(deviceLoginFailure(kimi, "error: unexpected argument '--device-auth' found\n")).toBe("This server's Kimi CLI needs updating for subscription sign-in.");
+  });
+
+  it("keeps a short sanitized reason and drops a device code inside it", () => {
+    const message = deviceLoginFailure(grok, "Error: access denied for code ABCD-EFGH\n");
+    expect(message).toContain("access denied");
+    expect(message).not.toContain("ABCD-EFGH");
+  });
+});
+
+/** A fake CLI that dies before a code, the way grok exits when auth.x.ai refuses the connection. */
+function unreachableCli(): string {
+  const dir = mkdtempSync(join(tmpdir(), "device-login-cli-"));
+  const path = join(dir, "cli.mjs");
+  writeFileSync(path, `#!/usr/bin/env node
+process.stderr.write("Error: error sending request for url (https://auth.x.ai/oauth2/device/code): Connection refused (os error 111) ABCD-EFGH\\n");
+process.exit(1);
+`);
+  chmodSync(path, 0o755);
+  return path;
+}
 
 /** A fake CLI: prints the prompt, then writes the credential file and exits 0. */
 function fakeCli(engine: "grokAgent" | "kimiAgent", fail = false): string {
@@ -91,6 +121,12 @@ describe("DeviceLoginController", () => {
     const controller = new DeviceLoginController({ engine: "grokAgent", cli: fakeCli("grokAgent", true), home, environment: () => ({ PATH: process.env.PATH }) });
     const started = await controller.start();
     await expect.poll(async () => (await controller.get(started.flowId!)).phase, { timeout: 5000 }).toBe("failed");
+  });
+
+  it("a CLI that cannot reach the sign-in service rejects start without the address or the code", async () => {
+    const home = mkdtempSync(join(tmpdir(), "device-login-home-"));
+    const controller = new DeviceLoginController({ engine: "grokAgent", cli: unreachableCli(), home, environment: () => ({ PATH: process.env.PATH }) });
+    await expect(controller.start()).rejects.toThrow("Grok could not reach its sign-in service from this server. Check the server's outbound connection, then try again.");
   });
 
   it("cancel ends a waiting flow", async () => {

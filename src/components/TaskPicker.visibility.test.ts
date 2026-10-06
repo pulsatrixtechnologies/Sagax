@@ -3,14 +3,24 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Bot, Group } from "@/state/store";
 
-const fixture = vi.hoisted(() => ({ showThreads: true, queued: {} as Record<string, unknown[]>, bots: [] as Bot[], dispatch: vi.fn() }));
+const fixture = vi.hoisted(() => ({
+  showThreads: true,
+  queued: {} as Record<string, unknown[]>,
+  bots: [] as Bot[],
+  groups: [] as Group[],
+  threadReturn: null as null | { ownerId: string; threadId: string },
+  dispatch: vi.fn(),
+}));
 vi.mock("@/lib/thread-preferences", () => ({ useShowThreads: () => fixture.showThreads }));
 vi.mock("@/state/store", async (importOriginal) => ({
   ...await importOriginal<typeof import("@/state/store")>(),
-  useStore: () => ({ state: { bots: fixture.bots, pendingQueued: fixture.queued }, dispatch: fixture.dispatch }),
+  useStore: () => ({
+    state: { bots: fixture.bots, groups: fixture.groups, pendingQueued: fixture.queued, threadReturn: fixture.threadReturn },
+    dispatch: fixture.dispatch,
+  }),
 }));
 
-const { TaskPicker, BotActivityPicker, GroupTaskPicker, ThreadsOffReturnLink } = await import("./TaskPicker");
+const { TaskPicker, BotActivityPicker, GroupTaskPicker, ThreadReturnLink, ThreadsOffReturnLink } = await import("./TaskPicker");
 const bot: Bot = {
   id: "pepper", name: "Pepper", color: "green", threadId: "current", title: "", description: "",
   notifications: true, unread: false, busy: true, messages: [], modelSelection: { instanceId: "fake", model: "fake" },
@@ -23,7 +33,14 @@ const bot: Bot = {
     { threadId: "unread", title: "Finished reply", createdAt: 6, unread: true },
   ],
 };
-beforeEach(() => { fixture.showThreads = true; fixture.queued = {}; fixture.bots = []; fixture.dispatch.mockClear(); });
+beforeEach(() => {
+  fixture.showThreads = true;
+  fixture.queued = {};
+  fixture.bots = [];
+  fixture.groups = [];
+  fixture.threadReturn = null;
+  fixture.dispatch.mockClear();
+});
 
 describe("optional bot thread picker", () => {
   it("keeps the usual picker when threads are shown", () => {
@@ -108,6 +125,21 @@ describe("way back to the conversation while threads are hidden", () => {
     renderToStaticMarkup(createElement(() => { tree = ThreadsOffReturnLink({ bot: trapped }); return tree as never; }));
     find(tree)?.props.onClick?.();
     expect(fixture.dispatch).toHaveBeenCalledExactlyOnceWith({ type: "switchTask", botId: "pepper", threadId: "main" });
+  });
+
+  it("offers the conversation a thread chip left, even while threads stay hidden", () => {
+    fixture.showThreads = false;
+    fixture.bots = [bot];
+    fixture.threadReturn = { ownerId: "pepper", threadId: "idle" };
+    const markup = renderToStaticMarkup(createElement(ThreadReturnLink, { ownerId: "pepper", threadId: "current" }));
+    expect(markup).toContain("data-thread-return");
+    expect(markup).toContain("Back to conversation");
+    expect(markup).toContain('title="Quiet history"');
+    const link = ThreadReturnLink({ ownerId: "pepper", threadId: "current" });
+    const button = link?.props.children;
+    button.props.onClick();
+    expect(fixture.dispatch).toHaveBeenCalledExactlyOnceWith({ type: "switchTask", botId: "pepper", threadId: "idle" });
+    expect(renderToStaticMarkup(createElement(ThreadReturnLink, { ownerId: "pepper", threadId: "idle" }))).toBe("");
   });
 
   it("stays out of the way at home and when threads are shown", () => {

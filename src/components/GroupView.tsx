@@ -11,6 +11,7 @@ import {
   useStreaming,
   formatTime,
   openNotificationTarget,
+  openThread,
   type Bot,
   type Group,
   type GroupDefaultResponder,
@@ -31,6 +32,7 @@ import { viewerActorId } from "@/lib/viewer";
 import { viewerIsOrgAdmin, viewerOwnsGroup } from "@/lib/group-owner";
 import { PersonAvatar, RoomPersonLabel } from "./MessageAuthor";
 import { peopleDmPeer } from "@/lib/people-dm";
+import { groupNudgeTarget } from "@/lib/group-nudge";
 import { continuesRun, roomAuthor, runCorners } from "@/lib/room-authors";
 import type { OrgDirectoryPerson } from "@/lib/perspicax-org";
 import { StatusActivityRow } from "@/components/StatusActivityRow";
@@ -40,7 +42,7 @@ import { ChatMarkdown } from "./ChatMarkdown";
 import { CitationSelectionToolbar, SentCitations } from "./CitationUI";
 import { Composer } from "./Composer";
 import { ChatFindBar } from "./ChatFindBar";
-import { GroupTaskPicker } from "./TaskPicker";
+import { GroupTaskPicker, ThreadReturnLink } from "./TaskPicker";
 import { ExportTranscriptMenu } from "./ExportTranscriptMenu";
 import { ReplyQuote } from "./ReplyQuote";
 import { ConnectorCard } from "./ConnectorCard";
@@ -55,7 +57,7 @@ import { VoiceNoteBubble, type VoiceNoteAttachment } from "./VoiceNoteBubble";
 import { OptionCard } from "./OptionCard";
 import { GroupCallOverlay } from "./GroupCallView";
 
-import { ApprovalCard } from "./ApprovalCard";
+import { ApprovalCard, approvalCardStaysInChat } from "./ApprovalCard";
 import { OwnerSettled, OwnerWait } from "./OwnerWait";
 import { QuestionCard } from "./QuestionCard";
 import { ChannelMembers, channelRosterActions } from "./ChannelMembers";
@@ -65,7 +67,12 @@ import { groupHumanLabel } from "@/lib/private-threads";
 import { ManageMembersPanel } from "./ManageMembersPanel";
 import { GroupAvatarStack, GroupPanel } from "./GroupPanel";
 import { CIRCLE_BUTTON } from "@/lib/circle-button";
-import { groupActivityRuns, isStatusActivity } from "@/lib/activity-runs";
+import { NudgeLine } from "./NudgeLine";
+import { groupActivityRuns, isStatusActivity, type ActivityTranscriptItem } from "@/lib/activity-runs";
+import { collapseBotExchanges, startsNewStretch, visibleEdge, type ExchangeRun } from "@/lib/bot-exchange";
+import { foldCollapsedEntry, voiceCallPlan, voiceCallVisibleSpan } from "@/lib/voice-call-transcript";
+import { VoiceCallCard } from "./VoiceCallCard";
+import { BotExchangeChip, ExchangeColumnProvider, TranscriptDate, useExchangeColumn } from "./BotExchangeChip";
 import { ActivityRun } from "./ActivityRun";
 import { useDesktopCapabilities, useCaptionChrome, useMacInsetChrome } from "./DesktopCapabilities";
 import { cn } from "@/lib/cn";
@@ -94,15 +101,10 @@ import { groupMemberBots } from "@/lib/group-members";
 import { botPublicProfile } from "../../shared/bot-public-profile";
 import { personAvatarSrc } from "@/lib/profile-management";
 
-function dayLabel(at: number): string {
-  const d = new Date(at);
-  const now = new Date();
-  const startOfDay = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
-  const diffDays = Math.round((startOfDay(now) - startOfDay(d)) / 86_400_000);
-  if (diffDays === 0) return t("chat.day.today");
-  if (diffDays === 1) return t("chat.day.yesterday");
-  return d.toLocaleDateString(activeLocale(), { weekday: "short", month: "short", day: "numeric" });
-}
+type RoomItem =
+  | ActivityTranscriptItem
+  | { kind: "exchange"; run: ExchangeRun }
+  | { kind: "voiceCall"; callId: string; messages: Message[] };
 
 /** One finished tool step in a room. Same pill the 1:1 chat uses, minus the
  * status glyph — a room reads as a conversation, not a build log. A chip
@@ -224,10 +226,45 @@ export const Transcript = memo(function Transcript({
   const { state, dispatch } = useStore();
   const showToolCalls = showToolCallsEnabled(state.config);
   const memberOf = (id?: string) => members.find((b) => b.id === id);
-  // Several bots working at once turn a room into a wall of chips; fold the
-  // finished ones the same way a 1:1 chat does.
-  const items = useMemo(() => groupActivityRuns(messages.filter(message =>
-    message.kind !== "activity" || roomActivityVisible(message, showToolCalls))), [messages, showToolCalls]);
+  const pairChannel = Boolean(group.dm) && !group.peopleDm;
+  // Bot-to-bot lines become one chip per run first. A shared room's replies
+  // to people stay inline; only a pair channel, a peer line, or a room
+  // request collapses.
+  const items = useMemo(() => {
+    const plan = voiceCallPlan(transcript);
+    const seen = new Set<string>();
+    const visible = messages.filter((message) =>
+      message.kind !== "activity" || roomActivityVisible(message, showToolCalls));
+    const collapsed = collapseBotExchanges(visible, {
+      pairChannel,
+      members: members.map((member) => ({ id: member.id, name: member.name, color: member.color })),
+      lookup: transcript,
+    });
+    const listed: RoomItem[] = [];
+    let pending: Message[] = [];
+    const flush = () => {
+      if (!pending.length) return;
+      listed.push(...groupActivityRuns(pending));
+      pending = [];
+    };
+    for (const entry of collapsed) {
+      for (const piece of foldCollapsedEntry(entry, plan, seen)) {
+        if (piece.kind === "message") {
+          pending.push(piece.message);
+          continue;
+        }
+        flush();
+        if (piece.kind === "card") {
+          listed.push({ kind: "voiceCall", callId: piece.card.callId, messages: piece.card.messages });
+        } else {
+          listed.push(piece);
+        }
+      }
+    }
+    flush();
+    return listed;
+  }, [messages, showToolCalls, pairChannel, members, transcript]);
+  const windowIds = useMemo(() => new Set(messages.map((message) => message.id)), [messages]);
   const newestMessageId = messages.at(-1)?.id;
   const newestUserMessageId = [...messages].reverse().find((message) => message.role === "user")?.id;
   const focus = state.focusMessage;
@@ -237,6 +274,11 @@ export const Transcript = memo(function Transcript({
   const runs = useMemo(() => {
     const directory = people ?? NO_PEOPLE;
     const entries = items.map((item) => {
+      if (item.kind === "exchange" || item.kind === "voiceCall") {
+        const edge = item.kind === "voiceCall" ? voiceCallVisibleSpan(item.messages, windowIds) : visibleEdge(item);
+        const key = item.kind === "exchange" ? `exchange:${item.run.id}` : `voice:${item.callId}`;
+        return { first: edge.first, last: edge.last, author: { kind: "none" as const, key } };
+      }
       const first = item.kind === "run" ? item.messages[0] : item.message;
       const last = item.kind === "run" ? item.messages.at(-1)! : item.message;
       return { first, last, author: roomAuthor(first, state.config, directory) };
@@ -246,24 +288,39 @@ export const Transcript = memo(function Transcript({
       return continuesRun(prev && { at: prev.last.at, comm: prev.last.comm, author: prev.author }, { at: entry.first.at, author: entry.author });
     });
     return entries.map((entry, i) => ({ author: entry.author, joinsAbove: joinsAbove[i]!, joinsBelow: joinsAbove[i + 1] ?? false }));
-  }, [items, people, state.config]);
+  }, [items, people, state.config, windowIds]);
   return (
     <>
       {items.map((item, i) => {
-        const previous = items[i - 1];
-        const prev = previous && (previous.kind === "run" ? previous.messages.at(-1) : previous.message);
-        const first = item.kind === "run" ? item.messages[0] : item.message;
-        const newDay = !prev || new Date(prev.at).toDateString() !== new Date(first.at).toDateString();
+        const edgeOf = (entry: RoomItem) =>
+          entry.kind === "voiceCall" ? voiceCallVisibleSpan(entry.messages, windowIds) : visibleEdge(entry);
+        const prev = i > 0 ? edgeOf(items[i - 1]!).last : undefined;
+        const first = edgeOf(item).first;
+        const newDay = startsNewStretch(prev?.at, first.at);
+        if (item.kind === "exchange") {
+          return (
+            <div key={item.run.id} className="contents">
+              {newDay && <TranscriptDate at={first.at} />}
+              <BotExchangeChip
+                run={item.run}
+                bots={members}
+                forceOpen={item.run.messages.some((message) => message.id === focusedId)}
+                onGo={() => {
+                  const target = state.bots.find((candidate) => candidate.id === item.run.party.id);
+                  if (!target) return false;
+                  openThread(dispatch, { botId: target.id, threadId: target.threadId }, state);
+                  return true;
+                }}
+              />
+            </div>
+          );
+        }
         if (item.kind === "run") {
           if (!showToolCalls) return null;
           const cluster = !runs[i]!.joinsAbove;
           return (
             <div key={item.id} className="contents">
-              {newDay && (
-                <div className="py-3 text-center text-[13px] text-ink-secondary">
-                  {dayLabel(first.at)} {formatTime(first.at)}
-                </div>
-              )}
+              {newDay && <TranscriptDate at={first.at} />}
               {first.from && cluster && (
                 <ClusterLabel bot={memberOf(first.from.botId)} name={first.from.name} color={first.from.color} />
               )}
@@ -274,6 +331,21 @@ export const Transcript = memo(function Transcript({
                   </div>
                 ))}
               </ActivityRun>
+            </div>
+          );
+        }
+        if (item.kind === "voiceCall") {
+          const hit = item.messages.find((message) => message.id === focusedId);
+          return (
+            <div key={`voice:${item.callId}`} className="contents" data-mid={hit?.id ?? item.messages[0]?.id}>
+              {newDay && <TranscriptDate at={first.at} />}
+              <VoiceCallCard
+                threadId={group.threadId}
+                botName={group.name}
+                callId={item.callId}
+                messages={item.messages}
+                forceOpen={Boolean(hit)}
+              />
             </div>
           );
         }
@@ -316,9 +388,11 @@ export const Transcript = memo(function Transcript({
               <QuestionCard threadId={group.threadId} bot={memberOf(m.from?.botId)} message={m} />
             </div>
           ) : m.kind === "options" && m.card?.requestId && m.card.tool ? (
-            <div className="flex justify-start">
-              <ApprovalCard bot={memberOf(m.from?.botId)} message={m} />
-            </div>
+            approvalCardStaysInChat(m.card) ? (
+              <div className="flex justify-start">
+                <ApprovalCard bot={memberOf(m.from?.botId)} message={m} />
+              </div>
+            ) : null
           ) : m.kind === "options" && m.card && m.from?.botId ? (
             // a QUESTION from a member. Without this branch the card fell
             // through to null: invisible on screen, and the asking bot sat
@@ -359,6 +433,8 @@ export const Transcript = memo(function Transcript({
             showToolCalls
               ? <DigestChip message={m} viewerPrincipalId={state.config?.viewer?.principalId ?? null} />
               : <TurnAccessChip message={m} viewerPrincipalId={state.config?.viewer?.principalId ?? null} />
+          ) : m.kind === "nudge" && m.nudge ? (
+            <NudgeLine note={m.nudge} />
           ) : m.kind === "text" && (m.text || m.attachments?.length) ? (
             <div
               data-author={mine ? "self" : person ? "person" : "bot"}
@@ -473,11 +549,7 @@ export const Transcript = memo(function Transcript({
         if (!row) return null;
         return (
           <div key={m.id} className="contents" data-mid={m.id}>
-            {newDay && (
-              <div className="py-3 text-center text-[13px] text-ink-secondary">
-                {dayLabel(m.at)} {formatTime(m.at)}
-              </div>
-            )}
+            {newDay && <TranscriptDate at={m.at} />}
             {!user && m.from && newCluster && !(m.kind === "activity" && m.comm) && (
               <ClusterLabel bot={memberOf(m.from.botId)} name={m.from.name} color={m.from.color} />
             )}
@@ -657,7 +729,9 @@ export function GroupView({ group: stored }: { group: Group }) {
   const group = useMemo(() => (stored.peopleDm ? { ...stored, dm: true } : stored), [stored]);
   const { state, dispatch } = useStore();
   const directPeople = useOrgPeople();
-  const peer = peopleDmPeer(stored, viewerActorId(state.config), directPeople);
+  const viewerId = viewerActorId(state.config);
+  const peer = peopleDmPeer(stored, viewerId, directPeople);
+  const roomNudge = groupNudgeTarget(stored, viewerId, state.config?.profile?.email);
   const remoteClient = window.ogb?.remoteClient?.active === true;
   const [remoteActor, setRemoteActor] = useState<{ id: string; role: "owner" | "admin" | "member" | null }>({ id: "", role: null });
   useEffect(() => {
@@ -685,6 +759,7 @@ export function GroupView({ group: stored }: { group: Group }) {
   const { macInset, browser } = useMacInsetChrome();
   const stream = useStreaming();
   const streaming = stream.streaming[group.threadId];
+  const exchangeColumn = useExchangeColumn();
   const scrollRef = useRef<HTMLDivElement>(null);
   const transcriptRef = useRef<HTMLDivElement>(null);
   const composerDockRef = useRef<HTMLDivElement>(null);
@@ -731,7 +806,6 @@ export function GroupView({ group: stored }: { group: Group }) {
   // The server's word on who is looking, when it gives one; before that,
   // the remote client's own lookup, else the operator.
   const viewer = state.config?.viewer;
-  const viewerId = viewerActorId(state.config);
   // Organization server: only the group's owner edits its settings; the
   // others read them and may leave (src/lib/group-owner.ts).
   const ownsRoom = viewerOwnsGroup(group, state.config);
@@ -1005,7 +1079,8 @@ export function GroupView({ group: stored }: { group: Group }) {
 
   return (
     <main className="app-glow relative flex h-full min-w-0 flex-1 bg-app">
-      <div className="flex min-w-0 flex-1 flex-col">
+      <ExchangeColumnProvider node={exchangeColumn.node}>
+      <div ref={exchangeColumn.ref} className="relative isolate flex min-w-0 flex-1 flex-col">
       <GroupCallOverlay group={group} members={members} />
       {membersOpen && !remoteClient && !group.dm && (
         <ManageMembersPanel group={group} onClose={closeMembers} triggerRef={membersTriggerRef} />
@@ -1081,6 +1156,7 @@ export function GroupView({ group: stored }: { group: Group }) {
       </div>
 
       <div className="content-card-body flex min-h-0 flex-1 flex-col">
+      <ThreadReturnLink ownerId={group.id} threadId={group.threadId} />
       {findOpen && <ChatFindBar threadId={group.threadId} onClose={() => setFindOpen(false)} />}
 
       {/* An Auto room answers like lead mode while the decision model is off: say so, once. */}
@@ -1312,6 +1388,8 @@ export function GroupView({ group: stored }: { group: Group }) {
         key={group.threadId}
         group={group}
         members={members}
+        nudgePeer={peer}
+        nudgeGroup={roomNudge}
         replyTo={replyTo}
         onClearReply={clearReply}
         onConsumeReply={consumeReply}
@@ -1326,6 +1404,7 @@ export function GroupView({ group: stored }: { group: Group }) {
       </div>
       </div>
       </div>
+      </ExchangeColumnProvider>
       {panelOpen && (
         <GroupPanel
           key={`panel:${group.id}`}

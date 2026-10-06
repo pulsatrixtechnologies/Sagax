@@ -1745,7 +1745,6 @@
   "botPanel.memory.delete": "{name} を削除",
   "botPanel.memory.deleteTitle": "削除",
   "botPanel.memory.upkeep": "メモリの整備",
-  "botPanel.memory.upkeepHelp": "bot が覚えなくても、これらのノートを整えます。チャットで述べた事実を拾い、中心はここ、詳細は作ったトピックファイルに分け、毎晩整えます。期限切れはアーカイブし、重複はまとめ、矛盾したノートは取り消します。あなたについての事実は「私について」(設定、一般) に追加され、すべての bot が読み、どれでも外せます。すべての変更は下に出て、元に戻せます。",
   "botPanel.memory.noSteps": "この bot のエンジンは、整備が使う素早いバックグラウンドのモデル呼び出しができません。期限切れのアーカイブと完全な重複の統合だけをします。残りは Claude とチャットモデルのエンジンができます。",
   "botPanel.memory.tidying": "整備中…",
   "botPanel.memory.tidyNow": "今すぐ整える",

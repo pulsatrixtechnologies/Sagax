@@ -244,12 +244,12 @@ The key never reaches the client. Order for the person who speaks
 (`server/voice-mode.ts` `resolveVoiceKey`):
 
 - Organization server: their own xAI key in Perspicax (provider `xai`), else
-  the organization's xAI key (Settings > Connections, `config.xai.key` or
-  `XAI_API_KEY`), else refused with an access card shown in their bar only,
+  the organization's Grok voice key (Settings > API keys, `config.tts.xaiKey`
+  or `SAGAX_XAI_VOICE_KEY`), else refused with an access card shown in their bar only,
   under the audience rule of every access card (`accessCardAudience`: the
   person it is about; the organization's key hint only for an admin).
   A disabled person is refused and never falls back on the organization.
-- Solo server: the server's xAI key.
+- Solo server: the server's Grok voice key. The xAI key bots run on is not used.
 
 Each speak and transcribe is booked in the usage ledger (`driverKind`
 `xai-voice`, model `grok-tts` or `grok-stt`, `access` = the via,

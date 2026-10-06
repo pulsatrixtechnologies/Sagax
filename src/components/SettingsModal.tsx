@@ -8,7 +8,7 @@ import { FLOATING_LIVELINESS, floatingBotPrefs, setFloatingFlyAway, setFloatingL
 import { Archive, Coins, FlaskConical, KeyRound, Mail, Monitor, Palette, Plug, ScrollText, Search, TabletSmartphone, Terminal, Trophy, User, Users, X, Building2, Zap } from "lucide-react";
 import { AchievementsPage } from "./achievements/AchievementsPage";
 import { api, useStore, type AppSettingsSection, type ConfigStatus } from "@/state/store";
-import { browserAvailable, builtInBrowserEnabled, boatComputerEnabled, connectedAppsEnabled, routinesInConversationEnabled, showToolCallsEnabled, skillAuthoringEnabled, templatesEnabled, vpsComputerEnabled } from "@/lib/feature-flags";
+import { browserAvailable, builtInBrowserEnabled, boatComputerEnabled, connectedAppsEnabled, decisionModelEnabled, routinesInConversationEnabled, showToolCallsEnabled, skillAuthoringEnabled, templatesEnabled, vpsComputerEnabled } from "@/lib/feature-flags";
 import { usePerspicaxOrg } from "@/lib/perspicax-org";
 import { localeChoices, type LocaleKey } from "@/locales";
 import { t } from "@/lib/i18n";
@@ -703,7 +703,7 @@ function ToolCallsRow() {
   );
 }
 
-type ExperimentalFeature = "skillAuthoring" | "browser" | "templates" | "connectedApps" | "vpsComputer" | "boatComputer";
+type ExperimentalFeature = "skillAuthoring" | "browser" | "templates" | "connectedApps" | "decisionModel";
 
 function ExperimentalFeaturesRow() {
   const { state, dispatch } = useStore();
@@ -711,8 +711,7 @@ function ExperimentalFeaturesRow() {
   const browser = builtInBrowserEnabled(state.config);
   const templates = templatesEnabled(state.config);
   const connectedApps = connectedAppsEnabled(state.config);
-  const vpsComputer = vpsComputerEnabled(state.config);
-  const boatComputer = boatComputerEnabled(state.config);
+  const decisionModel = decisionModelEnabled(state.config);
   const desktopBrowser = browserAvailable(state.config);
   const browserInstallable = state.config?.browserEngine?.installable === true;
   const browserBlockedOnWindows = window.ogb?.platform === "win32" && !desktopBrowser && !browserInstallable;
@@ -742,7 +741,7 @@ function ExperimentalFeaturesRow() {
       cardId="experimental.features"
       title={t("settings.experimental.title")}
       subtitle={t("settings.experimental.subtitle")}
-      summary={t("settings.card.countOn", { count: Number(skillAuthoring) + Number(browser) + Number(templates) + Number(connectedApps) + Number(vpsComputer) + Number(boatComputer), total: 6 })}
+      summary={t("settings.card.countOn", { count: Number(skillAuthoring) + Number(browser) + Number(templates) + Number(connectedApps) + Number(decisionModel), total: 5 })}
     >
       <div className="flex items-center justify-between gap-4">
         <div className="min-w-0">
@@ -816,21 +815,19 @@ function ExperimentalFeaturesRow() {
           className="disabled:cursor-wait disabled:opacity-50"
         />
       </div>
-      {([["vpsComputer", vpsComputer], ["boatComputer", boatComputer]] as const).map(([feature, on]) => (
-        <div key={feature} className="mt-4 flex items-center justify-between gap-4 border-t border-hairline/30 pt-4" data-experimental-feature={feature}>
-          <div className="min-w-0">
-            <div className="text-[14px] font-medium text-ink">{t(`settings.experimental.${feature}`)}</div>
-            <div className="mt-0.5 text-[12px] leading-relaxed text-ink-secondary">{t(`settings.experimental.${feature}Detail`)}</div>
-          </div>
-          <Switch
-            checked={on}
-            aria-label={t(`settings.experimental.${feature}`)}
-            disabled={saving !== null}
-            onClick={() => void toggle(feature, !on)}
-            className="disabled:cursor-wait disabled:opacity-50"
-          />
+      <div className="mt-4 flex items-center justify-between gap-4 border-t border-hairline/30 pt-4" data-experimental-feature="decisionModel">
+        <div className="min-w-0">
+          <div className="text-[14px] font-medium text-ink">{t("settings.experimental.decisionModel")}</div>
+          <div className="mt-0.5 text-[12px] leading-relaxed text-ink-secondary">{t("settings.experimental.decisionModelDetail")}</div>
         </div>
-      ))}
+        <Switch
+          checked={decisionModel}
+          aria-label={t("settings.experimental.decisionModel")}
+          disabled={saving !== null}
+          onClick={() => void toggle("decisionModel", !decisionModel)}
+          className="disabled:cursor-wait disabled:opacity-50"
+        />
+      </div>
       {error ? <p role="alert" className="mt-2 text-[12px] text-danger">{error}</p> : null}
     </Card>
   );
@@ -976,6 +973,8 @@ export function SettingsModal() {
     .filter((entry) => entry.id !== "activity" || (servedPage() && ownerOrAdmin === true))
     // Installation writes the server refuses with 403: hide the section.
     .filter((entry) => !memberHidesSection(entry.id, { editConfig, manageComputers, viewUsage, manageBackups, organization }))
+    // Decision model is an experimental section, off until its switch is on.
+    .filter((entry) => entry.id !== "decisionModel" || decisionModelEnabled(state.config))
     // Simple hides technical sections. Their saved values stay.
     .filter((entry) => advanced || !simpleHidesSettingsSection(entry.id));
   const visibleSections = availableSections.filter((entry) => sectionMatches(entry, q));
@@ -1348,7 +1347,7 @@ export function SettingsModal() {
               </>
             )}
 
-            {section === "decisionModel" && <DecisionModelSettings />}
+            {section === "decisionModel" && decisionModelEnabled(state.config) && <DecisionModelSettings />}
 
             {section === "engines" && (
               <EnginesSettings />
@@ -1365,7 +1364,12 @@ export function SettingsModal() {
                     a remote client of a hosted workspace: its requests carry that server's session, and
                     Settings there is the only place that server's phones can be paired from (MOCA-84).
                     The server decides who may act — an owner or an admin session — not this gate. */}
-                <ServerPairingCard focusRequest={computerPairs ? 0 : state.appSettingsPhonePairing} />
+                <ServerPairingCard
+                  focusRequest={computerPairs ? 0 : state.appSettingsPhonePairing}
+                  initialPairingCodes={readMembership(state.config).pairingCodes}
+                  initialAuthority={readMembership(state.config).authority}
+                  perspicaxLinked={perspicaxOrg !== null && perspicaxOrg.link.state !== "missing"}
+                />
                 {lockedServer
                   ? <ManagedByOrganization cardId="companion.managed" title={t("remote.desktopOnly.title", { app: brand().name })} />
                   : !remoteActive && <CompanionSection profileEmail={state.config?.profile?.email} focusRequest={computerPairs ? state.appSettingsPhonePairing : 0} />}

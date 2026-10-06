@@ -1,7 +1,7 @@
 import { t } from "./i18n";
 
 export interface FeatureFlagConfig {
-  features?: { skillAuthoring?: boolean; showToolCalls?: boolean; browser?: boolean; sharedComputers?: boolean; claudeUserMcp?: boolean; routinesInConversation?: boolean; llmThreadTitles?: boolean; connectedApps?: boolean; templates?: boolean; vpsComputer?: boolean; boatComputer?: boolean; skillsLibrary?: boolean };
+  features?: { skillAuthoring?: boolean; showToolCalls?: boolean; browser?: boolean; sharedComputers?: boolean; claudeUserMcp?: boolean; routinesInConversation?: boolean; llmThreadTitles?: boolean; connectedApps?: boolean; templates?: boolean; vpsComputer?: boolean; boatComputer?: boolean; decisionModel?: boolean; skillsLibrary?: boolean };
   browserEngine?: { kind: "engine" | "unavailable"; reason?: string; installable?: boolean; installing?: boolean; installError?: string };
 }
 
@@ -76,6 +76,12 @@ export function vpsComputerEnabled(config: FeatureFlagConfig | null | undefined)
  * boatComputerEnabled. */
 export function boatComputerEnabled(config: FeatureFlagConfig | null | undefined): boolean {
   return config?.features?.boatComputer === true;
+}
+
+/** Settings > Decision model. Off unless the experimental switch is on.
+ * Absent means off. Does not change decider routing. */
+export function decisionModelEnabled(config: FeatureFlagConfig | null | undefined): boolean {
+  return config?.features?.decisionModel === true;
 }
 
 /** Opt-in computer sharing — lending this desktop's folders, terminal or

@@ -2,8 +2,13 @@
 // The auth gate answers first (403 for a session-less local request under
 // service trust, 401 for a session that expired or was revoked; see
 // server/org-routines.e2e.test.ts); this is what the route itself answers.
-import { describe, expect, it } from "vitest";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, describe, expect, it } from "vitest";
 
+import { decideBotAct } from "../shared/bot-act.ts";
+import { OrgGithubTokens } from "./org-github-tokens.ts";
 import { createPerspicaxOrgRoutes } from "./perspicax-org-routes.ts";
 import type { RequestAuth } from "./request-auth.ts";
 import { PASS, type RouteContext } from "./routes/table.ts";
@@ -161,5 +166,171 @@ describe("/api/org/settings githubClientId", () => {
     for (const githubClientId of ["", "   ", "bad\nid", "a".repeat(129)]) {
       expect(await patchGithub({ role: "admin", body: { githubClientId } })).toMatchObject({ status: 400, saved: [] });
     }
+  });
+});
+
+describe("/api/org/settings github access tokens", () => {
+  const ALPHA = "fake-alpha-token-1111";
+  const BRAVO = "fake-bravo-token-2222";
+  const CHARLIE = "fake-charlie-token-3333";
+  const CHARLIE_NEXT = "fake-charlie-token-4444";
+  const SECRETS = [ALPHA, BRAVO, CHARLIE, CHARLIE_NEXT];
+  const dirs: string[] = [];
+  afterEach(() => {
+    for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+  });
+
+  function apiFor(unavailable = false) {
+    const dir = mkdtempSync(join(tmpdir(), "sagax-org-gh-route-"));
+    dirs.push(dir);
+    const store = new OrgGithubTokens(dir, () => unavailable
+      ? { kind: "unavailable", reason: "The encrypted credential store could not be read on this launch." }
+      : { kind: "key", key: Buffer.alloc(32, 11) });
+    async function call(input: { role: "admin" | "member"; method?: "GET" | "PATCH"; body?: unknown }) {
+      const method = input.method ?? "PATCH";
+      const path = method === "GET" ? "/api/org" : "/api/org/settings";
+      const out: { status?: number; body?: { settings?: { githubTokens?: { id: string; label: string; hint: string }[]; githubTokensUnavailable?: boolean } } } = {};
+      const routes = createPerspicaxOrgRoutes({
+        issuer: "https://px.example.test",
+        orgName: "Acme",
+        directory: () => null,
+        bySubject: () => null,
+        viewerRole: () => input.role,
+        settings: () => ({
+          orgKeyConfigured: false,
+          allowFullAccess: true,
+          github: { clientId: null, fromEnvironment: false },
+          pluginMarketplaces: { mode: "any" as const },
+        }),
+        pendingAdminApprovals: () => [],
+        saveGithubClientId: () => {},
+        githubTokens: {
+          list: () => store.list(),
+          change: (change) => { store.change(change); },
+        },
+      });
+      const ctx = {
+        req: {},
+        res: { setHeader: () => {}, headersSent: false, writableEnded: false },
+        url: new URL(`http://127.0.0.1${path}`),
+        path,
+        method,
+        auth: session({ principalId: "pr_admin" }),
+        json: (_res: unknown, status: number, body: unknown) => {
+          out.status = status;
+          out.body = body as typeof out.body;
+        },
+        readBody: async () => input.body ?? {},
+      } as unknown as RouteContext;
+      await routes(ctx);
+      return out;
+    }
+    return { store, call };
+  }
+
+  function assertNoSecret(body: unknown) {
+    const text = JSON.stringify(body);
+    for (const secret of SECRETS) expect(text.includes(secret)).toBe(false);
+  }
+
+  it("adds, lists redacted, removes one of several, and never returns the token", async () => {
+    const { store, call } = apiFor();
+    const first = await call({ role: "admin", body: { githubTokens: { op: "add", label: "Alpha org", token: `  ${ALPHA}  ` } } });
+    expect(first.status).toBe(200);
+    assertNoSecret(first.body);
+    expect(first.body?.settings?.githubTokens).toEqual([
+      { id: expect.stringMatching(/^gt_[0-9a-f]{16}$/), label: "Alpha org", hint: "1111" },
+    ]);
+    await call({ role: "admin", body: { githubTokens: { op: "add", label: "Bravo org", token: BRAVO } } });
+    const added = await call({ role: "admin", body: { githubTokens: { op: "add", label: "Charlie org", token: CHARLIE } } });
+    assertNoSecret(added.body);
+    const listed = added.body!.settings!.githubTokens!;
+    expect(listed.map((entry) => entry.label)).toEqual(["Alpha org", "Bravo org", "Charlie org"]);
+    const bravo = listed[1]!;
+    const removed = await call({ role: "admin", body: { githubTokens: { op: "remove", id: bravo.id } } });
+    expect(removed.status).toBe(200);
+    assertNoSecret(removed.body);
+    expect(removed.body?.settings?.githubTokens?.map((entry) => entry.label)).toEqual(["Alpha org", "Charlie org"]);
+    expect(store.tokenFor(listed[0]!.id)).toBe(ALPHA);
+    expect(store.tokenFor(listed[2]!.id)).toBe(CHARLIE);
+    expect(store.tokenFor(bravo.id)).toBeUndefined();
+
+    const adminGet = await call({ role: "admin", method: "GET" });
+    expect(adminGet.body?.settings?.githubTokens?.map((entry) => entry.hint)).toEqual(["1111", "3333"]);
+    assertNoSecret(adminGet.body);
+    const memberGet = await call({ role: "member", method: "GET" });
+    expect(memberGet.body?.settings).not.toHaveProperty("githubTokens");
+    assertNoSecret(memberGet.body);
+
+    const memberPatch = await call({ role: "member", body: { githubTokens: { op: "remove", id: listed[0]!.id } } });
+    expect(memberPatch.status).toBe(403);
+    assertNoSecret(memberPatch.body);
+    expect(store.list().map((entry) => entry.label)).toEqual(["Alpha org", "Charlie org"]);
+
+    const wiped = await call({ role: "admin", body: { githubTokens: [{ op: "remove", id: listed[0]!.id }] } });
+    expect(wiped.status).toBe(400);
+    assertNoSecret(wiped.body);
+    expect(store.list()).toHaveLength(2);
+
+    const mixed = await call({ role: "admin", body: { githubTokens: { op: "rename", id: listed[0]!.id, label: "Alpha renamed", token: CHARLIE_NEXT } } });
+    expect(mixed.status).toBe(400);
+    assertNoSecret(mixed.body);
+    expect(store.tokenFor(listed[0]!.id)).toBe(ALPHA);
+
+    const renamed = await call({ role: "admin", body: { githubTokens: { op: "rename", id: listed[0]!.id, label: "Alpha renamed" } } });
+    expect(renamed.status).toBe(200);
+    expect(renamed.body?.settings?.githubTokens?.[0]).toMatchObject({ label: "Alpha renamed", hint: "1111" });
+    expect(store.tokenFor(listed[0]!.id)).toBe(ALPHA);
+    assertNoSecret(renamed.body);
+
+    const replaced = await call({ role: "admin", body: { githubTokens: { op: "replace", id: listed[2]!.id, token: CHARLIE_NEXT } } });
+    expect(replaced.status).toBe(200);
+    expect(replaced.body?.settings?.githubTokens?.find((entry) => entry.id === listed[2]!.id)?.hint).toBe("4444");
+    expect(store.tokenFor(listed[2]!.id)).toBe(CHARLIE_NEXT);
+    expect(store.tokenFor(listed[0]!.id)).toBe(ALPHA);
+    assertNoSecret(replaced.body);
+
+    const echoed = await call({ role: "admin", body: { githubTokens: { op: "add", label: ALPHA, token: ALPHA } } });
+    expect(echoed.status).toBe(400);
+    assertNoSecret(echoed.body);
+    expect(store.list()).toHaveLength(2);
+  });
+
+  it("answers 503 without the submitted secret when the vault cannot be read", async () => {
+    const { call } = apiFor(true);
+    const refused = await call({ role: "admin", body: { githubTokens: { op: "add", label: "Alpha org", token: ALPHA } } });
+    expect(refused.status).toBe(503);
+    assertNoSecret(refused.body);
+    const listed = await call({ role: "admin", method: "GET" });
+    expect(listed.body?.settings?.githubTokensUnavailable).toBe(true);
+    expect(listed.body?.settings).not.toHaveProperty("githubTokens");
+    assertNoSecret(listed.body);
+  });
+
+  it("lets a bot act list, add and remove only inside the person's permission, with no secret on the card", () => {
+    const secret = ALPHA;
+    const neededScope = (method: string) => (method === "GET" ? "client" as const : "admin" as const);
+    const add = decideBotAct({
+      raw: { method: "PATCH", path: "/api/org/settings", body: { githubTokens: { op: "add", label: "Alpha org", token: secret } } },
+      mode: "ask",
+      scopes: ["admin", "client"],
+      neededScope,
+    });
+    expect(add).toMatchObject({ ok: true, effect: "hold", summary: "PATCH /api/org/settings" });
+    if (add.ok) expect(add.summary.includes(secret)).toBe(false);
+    const remove = decideBotAct({
+      raw: { method: "PATCH", path: "/api/org/settings", body: { githubTokens: { op: "remove", id: "gt_0123456789abcdef" } } },
+      mode: "ask",
+      scopes: ["client"],
+      neededScope,
+    });
+    expect(remove).toMatchObject({ ok: false, status: 403 });
+    const list = decideBotAct({
+      raw: { method: "GET", path: "/api/org" },
+      mode: "ask",
+      scopes: ["admin", "client"],
+      neededScope,
+    });
+    expect(list).toMatchObject({ ok: true, effect: "run", summary: "GET /api/org" });
   });
 });

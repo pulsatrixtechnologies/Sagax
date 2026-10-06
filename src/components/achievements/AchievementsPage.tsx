@@ -2,8 +2,9 @@
 // the current streak, recent unlocks, then every achievement by category
 // (unlocked, locked with its progress, secret until found), each with its
 // points, its rarity (or the share of this server's people who have it,
-// when there are enough people to say so) and what it unlocks. The settings
-// that hide the points or the toasts sit at the bottom.
+// when there are enough people to say so) and what it unlocks. Category,
+// unlocked or locked, reward and search narrow that list together. The
+// settings that hide the points or the toasts sit at the bottom.
 import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import { Flame, Lock, Trophy } from "lucide-react";
 import { ACHIEVEMENTS } from "../../../shared/achievements-catalog";
@@ -15,6 +16,7 @@ import { cn } from "@/lib/cn";
 import type { LocaleKey } from "@/locales";
 import { SettingRow, Switch } from "../SettingsPrimitives";
 import { achievementIcon } from "./icons";
+import { ACHIEVEMENT_REWARD_FILTERS, achievementMatches, achievementRewardFilterLabel, type AchievementRewardFilter, type AchievementStatusFilter } from "./achievement-filters";
 import "./achievements.css";
 
 const RewardPreview = lazy(() => import("./RewardPreview"));
@@ -44,8 +46,6 @@ export function formatPoints(points: number, locale = activeLocale()): string {
     return String(points);
   }
 }
-
-type Filter = "all" | "unlocked" | "locked";
 
 function AchievementCard({ item, state }: { item: AchievementDefinition; state?: AchievementItemState }) {
   const unlocked = Boolean(state?.unlockedAt);
@@ -96,7 +96,9 @@ function AchievementCard({ item, state }: { item: AchievementDefinition; state?:
 export function AchievementsPage() {
   const { status, snapshot } = useAchievements();
   const [category, setCategory] = useState<AchievementCategory | "all">("all");
-  const [filter, setFilter] = useState<Filter>("all");
+  const [filter, setFilter] = useState<AchievementStatusFilter>("all");
+  const [reward, setReward] = useState<AchievementRewardFilter>("all");
+  const [search, setSearch] = useState("");
 
   useEffect(() => {
     void loadAchievements();
@@ -104,11 +106,7 @@ export function AchievementsPage() {
   }, []);
 
   const states = useMemo(() => new Map((snapshot?.items ?? []).map((item) => [item.id, item])), [snapshot]);
-  const shown = ACHIEVEMENTS.filter((item) => {
-    if (category !== "all" && item.category !== category) return false;
-    const unlocked = Boolean(states.get(item.id)?.unlockedAt);
-    return filter === "all" || (filter === "unlocked" ? unlocked : !unlocked);
-  });
+  const shown = ACHIEVEMENTS.filter((item) => achievementMatches(item, states.get(item.id)?.unlockedAt, { category, status: filter, reward, search }));
 
   if (status === "unavailable") {
     return <p className="px-1 text-[13px] text-ink-secondary" data-achievements-unavailable="">{t("achievements.unavailable")}</p>;
@@ -205,10 +203,28 @@ export function AchievementsPage() {
               </button>
             ))}
           </div>
+          <input
+            type="search"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder={t("achievements.search")}
+            aria-label={t("achievements.searchLabel")}
+            data-achievement-search=""
+            className="w-36 rounded-lg border border-border bg-ink/[0.03] px-2 py-1 text-[12px] text-ink placeholder:text-ink-tertiary"
+          />
+          <select
+            value={reward}
+            aria-label={t("achievements.rewardFilter")}
+            data-achievement-reward=""
+            onChange={(event) => setReward(event.target.value as AchievementRewardFilter)}
+            className="rounded-lg border border-border bg-ink/[0.03] px-2 py-1 text-[12px] text-ink"
+          >
+            {ACHIEVEMENT_REWARD_FILTERS.map((id) => <option key={id} value={id}>{achievementRewardFilterLabel(id)}</option>)}
+          </select>
           <select
             value={filter}
             aria-label={t("achievements.filter")}
-            onChange={(event) => setFilter(event.target.value as Filter)}
+            onChange={(event) => setFilter(event.target.value as AchievementStatusFilter)}
             className="ml-auto rounded-lg border border-border bg-ink/[0.03] px-2 py-1 text-[12px] text-ink"
           >
             <option value="all">{t("achievements.filter.all")}</option>

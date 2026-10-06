@@ -8,9 +8,10 @@
 //               -> <dir>/credentials/kimi-code.json
 //
 // A fixed login command, not a remote terminal: its output stays in bounded
-// private memory and only a device link on the provider's own host and its
-// one-time code ever leave this file. Signed in means the command exited 0
-// AND the CLI's credential file exists in that home.
+// private memory. A device link on the provider's own host, its one-time
+// code, or a short failure line with those removed, are the only text that
+// leaves this file. Signed in means the command exited 0 AND the CLI's
+// credential file exists in that home.
 import type { ChildProcess } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
@@ -61,6 +62,32 @@ export const DEVICE_LOGIN_SPECS: Readonly<Record<DeviceLoginEngine, DeviceLoginS
     ],
   },
 };
+
+/** A short reason from a login command that exited without a saved login.
+ * URLs, device codes and long tokens never leave this file. */
+export function deviceLoginFailure(spec: DeviceLoginSpec, output: string): string {
+  const generic = `${spec.label} sign-in did not finish. Start sign-in again.`;
+  const clean = stripVTControlCharacters(output)
+    .replace(/https?:\/\/\S+/gi, "")
+    .replace(/\b[A-Z0-9]{4,8}-[A-Z0-9]{4,8}\b/g, "")
+    .replace(/[A-Za-z0-9+/=_-]{24,}/g, "")
+    .replace(/\(\s*\)/g, "");
+  if (/connection refused|failed to connect|could not connect|name or service not known|network is unreachable|timed out|certificate|os error 111/i.test(clean)) {
+    return `${spec.label} could not reach its sign-in service from this server. Check the server's outbound connection, then try again.`;
+  }
+  if (/unrecognized|unknown option|unexpected argument/i.test(clean)) {
+    return `This server's ${spec.label} CLI needs updating for subscription sign-in.`;
+  }
+  if (/not found|not installed|no such file|command not found/i.test(clean)) {
+    return `${spec.label} is not installed on this server.`;
+  }
+  const reason = clean
+    .split(/\r?\n/)
+    .map((line) => line.replace(/\s+/g, " ").trim())
+    .find((line) => line.length > 8 && !/^waiting\b/i.test(line) && !/^confirm this code\b/i.test(line) && !/could not open browser/i.test(line) && /error|fail|unable|could not|denied/i.test(line));
+  if (!reason) return generic;
+  return `${generic} ${reason.slice(0, 180)}`;
+}
 
 /** The device link and code in a login command's output, or null. Only a
  * link to the provider's own device page, with no query but the same code,
@@ -168,15 +195,17 @@ export class DeviceLoginController {
       child.stdin?.end();
       let output = "";
       const receive = (chunk: Buffer) => {
-        if (flow.status.phase !== "waiting" || flow.ready) return;
-        if (output.length + chunk.length > MAX_OUTPUT) {
+        if (flow.status.phase !== "waiting") return;
+        // Keep a bounded tail after the code is shown. A CLI that prints the
+        // code and then dies still has a reason, with the code stripped later.
+        if (output.length < MAX_OUTPUT) output += chunk.toString("utf8").slice(0, MAX_OUTPUT - output.length);
+        if (flow.ready) return;
+        if (output.length >= MAX_OUTPUT && !deviceLoginPrompt(this.spec, output)) {
           this.finish(flow, "failed", `${this.spec.label} returned an unexpected sign-in response.`);
           return;
         }
-        output += chunk.toString("utf8");
         const prompt = deviceLoginPrompt(this.spec, output);
         if (!prompt) return;
-        output = "";
         flow.status = { ...flow.status, ...prompt };
         flow.ready = true;
         clearTimeout(flow.startupTimer);
@@ -191,7 +220,7 @@ export class DeviceLoginController {
         if (flow.child === child) flow.child = null;
         if (flow.status.phase !== "waiting") return;
         if (code === 0 && this.signedIn()) this.finish(flow, "succeeded");
-        else this.finish(flow, "failed", `${this.spec.label} sign-in did not finish. Start sign-in again.`);
+        else this.finish(flow, "failed", deviceLoginFailure(this.spec, output));
       });
     });
   }

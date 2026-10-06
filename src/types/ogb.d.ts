@@ -312,6 +312,9 @@ const __SAGAX_DEFAULT_SERVER__: string;
       onOpenReleaseNotes?(cb: () => void): () => void;
       /** Updates the native Dock/taskbar unread indicator. */
       setUnreadCount?(count: number): void;
+      /** Focus the main window and shake it once. The shell ignores a
+       * second call while that shake is still running. */
+      nudgeWindow?(): void;
       /** Opens a live desktop as a sandboxed window owned by Sagax. */
       desktopViewer?: {
         open(url: string, title: string, contextId: string): Promise<boolean>;
@@ -350,7 +353,7 @@ const __SAGAX_DEFAULT_SERVER__: string;
       saveFile?(filePath: string): Promise<string | null>;
       /** Save a provider credential through Electron's OS-backed store. */
       setCredential?(
-        name: "composioApiKey" | "xaiApiKey" | "boxToken" | "opencodeGoApiKey" | "ttsKey" | "fishAudioKey" | "jevApiKey" | "openaiImageApiKey" | "customImageApiKey" | "openaiLiveKey",
+        name: "composioApiKey" | "xaiApiKey" | "boxToken" | "opencodeGoApiKey" | "ttsKey" | "fishAudioKey" | "xaiVoiceKey" | "jevApiKey" | "openaiImageApiKey" | "customImageApiKey" | "openaiLiveKey",
         value: string,
       ): Promise<ConfigStatus>;
       /** In-app auto-update (packaged app only; dormant in dev). onState

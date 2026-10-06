@@ -164,7 +164,7 @@ app.whenReady().then(async () => {
     const el = document.querySelector("[data-voice-unavailable]");
     return el ? { cause: el.dataset.voiceUnavailable, text: el.innerText, actions: [...el.querySelectorAll("[data-voice-action]")].map((b) => b.dataset.voiceAction) } : null;
   })()`), 10_000).catch(() => null);
-  check("the popover is the speaker's access card, never the legacy This computer gate", card?.cause === "no_credentials" && /xAI access for voice mode/.test(card.text) && !/This computer|on-device|your Mac/i.test(card.text), JSON.stringify(card));
+  check("the popover is the speaker's access card, never the legacy This computer gate", card?.cause === "no_credentials" && /Grok voice key/.test(card.text) && !/This computer|on-device|your Mac/i.test(card.text), JSON.stringify(card));
   check("an admin also reads the organization's key hint and gets Open Settings > Connections", /As an admin/.test(card?.text ?? "") && (card?.actions ?? []).includes("open-connections"), JSON.stringify(card?.actions));
   const noBar = await win.webContents.executeJavaScript(`!document.querySelector("[data-voice-bar]")`);
   check("no voice bar opens without a key", noBar);
@@ -175,11 +175,11 @@ app.whenReady().then(async () => {
   win.webContents.sendInputEvent({ type: "keyUp", keyCode: "Escape" });
   await wait(500);
 
-  // 2. The admin adds the organization's xAI key (what Settings > Connections saves).
-  const put = await win.webContents.executeJavaScript(`fetch("/api/config", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ xai: { key: ${JSON.stringify(fakeKey)} } }) }).then(r => r.status)`);
-  check("the admin saves the organization's xAI key", put < 300, `HTTP ${put}`);
+  // 2. The admin adds the Grok voice key (Settings > API keys). A bot xAI key does not count.
+  const put = await win.webContents.executeJavaScript(`fetch("/api/config", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ tts: { xaiKey: ${JSON.stringify(fakeKey)} } }) }).then(r => r.status)`);
+  check("the admin saves the Grok voice key", put < 300, `HTTP ${put}`);
   const status = await win.webContents.executeJavaScript(`fetch("/api/bots/${bot.id}/voice/status").then(r => r.text())`);
-  check("voice mode is available with the organization's xAI key, and the status carries no key", status.includes('"available":true') && status.includes('"via":"org-key"') && !status.includes(fakeKey.slice(8, 20)), status);
+  check("voice mode is available with the Grok voice key, and the status carries no key", status.includes('"available":true') && status.includes('"via":"org-key"') && !status.includes(fakeKey.slice(8, 20)), status);
   const button = await callButton();
   check("the call button asks the server again on click (it still shows the old answer)", button?.voiceMode === "unavailable", JSON.stringify(button));
 

@@ -1761,7 +1761,6 @@
   "botPanel.memory.delete": "{name} löschen",
   "botPanel.memory.deleteTitle": "Löschen",
   "botPanel.memory.upkeep": "Gedächtnispflege",
-  "botPanel.memory.upkeepHelp": "Hält diese Notizen in Form, ohne dass der Bot daran denken muss: merkt Fakten, die du in Chats nennst, und legt sie ab, Kernfakten hier, Einzelheiten in Themendateien, die er anlegt, und räumt jede Nacht auf. Abgelaufene Notizen werden archiviert, Duplikate zusammengeführt, widersprochene Notizen durchgestrichen. Fakten über dich kommen zu Über mich (Einstellungen, Allgemein), wo jeder Bot sie liest und du welche entfernen kannst. Jede Änderung steht unten und lässt sich rückgängig machen.",
   "botPanel.memory.noSteps": "Die Engine dieses Bots kann den schnellen Hintergrund-Modellaufruf nicht machen, den die Pflege nutzt. Sie archiviert nur abgelaufene Notizen und führt exakte Duplikate zusammen. Claude und Chat-Modell-Engines können den Rest.",
   "botPanel.memory.tidying": "Aufräumen…",
   "botPanel.memory.tidyNow": "Jetzt aufräumen",

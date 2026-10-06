@@ -8,7 +8,7 @@ let contentType = "audio/mpeg";
 let audio = Buffer.from([0xff, 0xfb, 0x90, 0x00]);
 let voices: unknown = { voices: [{ voice_id: "ara", name: "Ara", description: "Warm" }] };
 const seen: Array<{ url: string; authorization?: string; body: string }> = [];
-const config: AppConfig = { xai: { key: "fixture-xai-key" }, tts: { provider: "xai", voice: "ara" } };
+const config: AppConfig = { xai: { key: "fixture-bot-key" }, tts: { provider: "xai", xaiKey: "fixture-voice-key", voice: "ara" } };
 const voice = () => import("./index.ts");
 
 beforeAll(async () => {
@@ -50,16 +50,18 @@ beforeEach(() => {
 });
 
 describe("Grok voice", () => {
-  it("uses only the existing xAI key and never exposes it in status", async () => {
+  it("uses only the Grok voice key and never the bot xAI key", async () => {
     const { describeVoice, providerConfigured, voiceReady, speak, listVoices } = await voice();
-    const missing: AppConfig = { tts: { provider: "xai", key: "eleven-key", fishKey: "fish-key", voice: "ara" } };
+    const missing: AppConfig = { xai: { key: "fixture-bot-key" }, tts: { provider: "xai", key: "eleven-key", fishKey: "fish-key", voice: "ara" } };
     expect(providerConfigured(missing)).toBe(false);
     expect(voiceReady(missing)).toBe(false);
-    expect(() => speak(missing, "hi")).toThrow("Add an xAI key");
+    expect(() => speak(missing, "hi")).toThrow("separate from the xAI key");
     expect(await listVoices(missing)).toEqual([]);
     expect(seen).toHaveLength(0);
     expect(describeVoice(config)).toEqual({ configured: true, ready: true, provider: "xai", voice: "ara", baseUrl: "", model: "" });
-    const noVoice: AppConfig = { xai: config.xai, tts: { provider: "xai" } };
+    expect(JSON.stringify(describeVoice(config))).not.toContain("fixture-voice-key");
+    expect(JSON.stringify(describeVoice(config))).not.toContain("fixture-bot-key");
+    const noVoice: AppConfig = { xai: config.xai, tts: { provider: "xai", xaiKey: config.tts?.xaiKey } };
     expect(voiceReady(noVoice)).toBe(false);
     expect(voiceReady(noVoice, "eve")).toBe(true);
     expect(() => speak(noVoice, "hi")).toThrow("Pick a voice");
@@ -68,7 +70,7 @@ describe("Grok voice", () => {
   it("loads the provider's current voice catalogue", async () => {
     const { listVoices } = await voice();
     expect(await listVoices(config)).toEqual([{ id: "ara", label: "Ara", description: "Warm" }]);
-    expect(seen[0]).toMatchObject({ url: "/v1/tts/voices", authorization: "Bearer fixture-xai-key" });
+    expect(seen[0]).toMatchObject({ url: "/v1/tts/voices", authorization: "Bearer fixture-voice-key" });
     voices = { voices: [{ name: "Missing ID" }] };
     await expect(listVoices(config)).rejects.toThrow("invalid voice list");
   });
@@ -78,7 +80,7 @@ describe("Grok voice", () => {
     const result = await speak(config, "Cześć, sprawdzamy polską mowę.", "eve");
     expect(result.mime).toBe("audio/mpeg");
     expect(Buffer.from(result.bytes)).toEqual(audio);
-    expect(seen[0]).toMatchObject({ url: "/v1/tts", authorization: "Bearer fixture-xai-key" });
+    expect(seen[0]).toMatchObject({ url: "/v1/tts", authorization: "Bearer fixture-voice-key" });
     expect(JSON.parse(seen[0].body)).toEqual({ text: "Cześć, sprawdzamy polską mowę.", voice_id: "eve", language: "auto", output_format: { codec: "mp3" } });
   });
 
@@ -88,7 +90,7 @@ describe("Grok voice", () => {
     for (const operation of [() => speak(config, "hi"), () => listVoices(config)]) {
       const promise = operation();
       await expect(promise).rejects.toThrow(/xAI|Grok/);
-      await expect(promise).rejects.not.toThrow(/fixture-xai-key|private text/);
+      await expect(promise).rejects.not.toThrow(/fixture-voice-key|fixture-bot-key|private text/);
     }
   });
 

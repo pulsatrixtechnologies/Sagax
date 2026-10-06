@@ -5,7 +5,9 @@ isolated Linux environment on the server: their "server environment"
 (`user-sandbox`). Shell, file and browser tools run there whenever the turn
 does not target the person's own computer (`user-desktop`). There is never
 one environment per bot, and an organization server never runs a bot's tools
-on the Sagax host or inside the Sagax container.
+on the Sagax host or inside the Sagax container. A cloud routine and a room
+whose computer is Cloud use that same environment. A team computer does not
+open a shared machine.
 
 | Target | When | Where |
 |---|---|---|
@@ -289,3 +291,6 @@ without it; `--build-arg WITH_DESKTOP=0` leaves it out.
 
 Settings > Local VM no longer offers a VM per bot on an organization server,
 and a bot's cloud backend cannot be a per-bot VPS there (409 `org_user_sandbox`).
+Cloud there, including a cloud routine and a room, is the person's one
+server environment. The bot computer routes do not open a shared machine
+(the same 409).

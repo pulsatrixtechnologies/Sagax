@@ -241,11 +241,11 @@ export function ApprovalModeSelector({
       >
         {wide ? (
           <span className="flex min-w-0 items-center gap-2">
-            <CurrentIcon size={14} className={cn("shrink-0", mode === "full" ? "text-danger" : "opacity-70")} />
+            <CurrentIcon size={14} className="shrink-0 opacity-70" />
             <span className="truncate">{current.label}</span>
           </span>
         ) : (
-          <CurrentIcon size={16} className={cn("shrink-0", mode === "full" ? "text-danger" : "opacity-80")} />
+          <CurrentIcon size={16} className="shrink-0 opacity-80" />
         )}
         {wide && <span aria-hidden className="text-[11px] text-ink-secondary">⌄</span>}
       </button>
@@ -292,7 +292,7 @@ export function ApprovalModeSelector({
                     optionDisabled && "cursor-not-allowed opacity-45 hover:bg-transparent",
                   )}
                 >
-                  <Icon size={16} className={cn("mt-px shrink-0", option.mode === "full" ? "text-danger" : "text-ink")} />
+                  <Icon size={16} className="mt-px shrink-0 text-ink" />
                   <span className="flex min-w-0 flex-1 flex-col">
                     <span className="flex items-center justify-between gap-3 text-[13px] leading-[18px] text-ink">
                       {option.label}

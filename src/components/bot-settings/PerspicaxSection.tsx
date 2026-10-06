@@ -52,6 +52,69 @@ const ERROR_KEYS: Record<string, LocaleKey> = {
   unknown_profile: "botSettings.perspicax.error.unknown_profile",
 };
 
+/** A disabled row is a profile this person cannot toggle. The name stays;
+ * the checkbox does not. */
+export function perspicaxShowsCheckbox(row: Pick<PerspicaxRow, "disabled">): boolean {
+  return !row.disabled;
+}
+
+function perspicaxProfileLabel(row: PerspicaxRow) {
+  return (
+    <span className="flex min-w-0 flex-col">
+      <span className="truncate text-[13px] text-ink">
+        {row.profile.name}
+        {row.notHeld && <span className="ml-2 text-[11px] text-ink-secondary">{t("botSettings.perspicax.notHeld")}</span>}
+      </span>
+      {row.profile.description && <span className="text-[12px] text-ink-secondary">{row.profile.description}</span>}
+    </span>
+  );
+}
+
+/** One profile row. A person who cannot change it sees the name only. */
+export function PerspicaxProfileControl({
+  row,
+  saving,
+  canRemove,
+  onToggle,
+  onRemove,
+}: {
+  row: PerspicaxRow;
+  saving: boolean;
+  canRemove: boolean;
+  onToggle: (on: boolean) => void;
+  onRemove: () => void;
+}) {
+  const label = perspicaxProfileLabel(row);
+  return (
+    <li className="py-2" data-perspicax-profile={row.profile.id}>
+      {perspicaxShowsCheckbox(row) ? (
+        <label className="flex min-w-0 cursor-pointer items-start gap-2">
+          <input
+            type="checkbox"
+            className="mt-0.5 shrink-0"
+            checked={row.checked}
+            disabled={saving}
+            onChange={(event) => onToggle(event.target.checked)}
+          />
+          {label}
+        </label>
+      ) : (
+        <div className="flex min-w-0 items-start gap-2">{label}</div>
+      )}
+      {canRemove && row.notHeld && row.checked && (
+        <button
+          type="button"
+          disabled={saving}
+          onClick={onRemove}
+          className="ml-6 mt-1 rounded-md bg-control px-2 py-0.5 text-[12px] text-ink hover:bg-control/70 disabled:opacity-50"
+        >
+          {t("botSettings.perspicax.remove")}
+        </button>
+      )}
+    </li>
+  );
+}
+
 /** The message for a refused save. */
 export function perspicaxErrorKey(code: unknown): LocaleKey {
   return (typeof code === "string" && ERROR_KEYS[code]) || "botSettings.perspicax.error.failed";
@@ -121,34 +184,14 @@ export function PerspicaxSection({ bot }: { bot: Pick<Bot, "id"> }) {
       ) : (
         <ul className="flex flex-col divide-y divide-hairline/40" aria-label={t("botSettings.perspicax.title")}>
           {rows.map((row) => (
-            <li key={row.profile.id} className="py-2" data-perspicax-profile={row.profile.id}>
-              <label className={`flex min-w-0 items-start gap-2 ${row.disabled ? "" : "cursor-pointer"}`}>
-                <input
-                  type="checkbox"
-                  className="mt-0.5 shrink-0"
-                  checked={row.checked}
-                  disabled={row.disabled || saving || (row.notHeld && !answer.canEdit)}
-                  onChange={(event) => toggle(row.profile.id, event.target.checked)}
-                />
-                <span className="flex min-w-0 flex-col">
-                  <span className="truncate text-[13px] text-ink">
-                    {row.profile.name}
-                    {row.notHeld && <span className="ml-2 text-[11px] text-ink-secondary">{t("botSettings.perspicax.notHeld")}</span>}
-                  </span>
-                  {row.profile.description && <span className="text-[12px] text-ink-secondary">{row.profile.description}</span>}
-                </span>
-              </label>
-              {row.notHeld && answer.canEdit && row.checked && (
-                <button
-                  type="button"
-                  disabled={saving}
-                  onClick={() => toggle(row.profile.id, false)}
-                  className="ml-6 mt-1 rounded-md bg-control px-2 py-0.5 text-[12px] text-ink hover:bg-control/70 disabled:opacity-50"
-                >
-                  {t("botSettings.perspicax.remove")}
-                </button>
-              )}
-            </li>
+            <PerspicaxProfileControl
+              key={row.profile.id}
+              row={row}
+              saving={saving}
+              canRemove={answer.canEdit}
+              onToggle={(on) => toggle(row.profile.id, on)}
+              onRemove={() => toggle(row.profile.id, false)}
+            />
           ))}
         </ul>
       )}

@@ -3,7 +3,8 @@
 // mount ~1026, Notifications ~1028-1046).
 import { t } from "@/lib/i18n";
 import { requestNotificationPermission } from "@/lib/notify";
-import type { Bot } from "@/state/store";
+import { useStore, type Bot } from "@/state/store";
+import { saveViewerBotOverride, useViewerBotOverride, viewerLocalBotSettings } from "@/lib/viewer-bot-overrides";
 import { Switch } from "../SettingsPrimitives";
 import { VoiceSettings } from "../VoiceSettings";
 import type { useBotSettingsDerived } from "./useBotSettingsDerived";
@@ -18,9 +19,14 @@ export function VoiceSection({
 }) {
   const { patch } = derived;
   const { draft } = useBotEditor();
+  const { state, dispatch } = useStore();
   // Voice, read-aloud and voice notes are not member fields, and the
-  // engine key is an installation write. Notifications stay.
+  // engine key is an installation write. Notifications stay, and on a
+  // shared bot they are this person's own.
   const showVoice = !derived.canEdit || derived.canEdit("voice");
+  const viewerLocal = viewerLocalBotSettings(state.config, bot);
+  const override = useViewerBotOverride(bot.id, viewerLocal);
+  const notifications = viewerLocal && override?.notifications !== undefined ? override.notifications : bot.notifications !== false;
 
   return (
     <div className="flex flex-col gap-4">
@@ -30,15 +36,21 @@ export function VoiceSection({
         <div>
           <div className="text-[13px] font-medium text-ink">{t("botPanel.remote.notifications")}</div>
           <div className="mt-0.5 text-[13px] text-ink-secondary">
-            {t("botPanel.voice.notifyHelp")}
+            {viewerLocal ? t("botPanel.voice.notifyForYou") : t("botPanel.voice.notifyHelp")}
           </div>
         </div>
         <Switch
-          checked={bot.notifications}
+          checked={notifications}
           aria-label={t("botPanel.remote.notificationsAria")}
           onClick={() => {
-            const enabled = !bot.notifications;
+            const enabled = !notifications;
             if (enabled && !draft) void requestNotificationPermission();
+            if (viewerLocal) {
+              void saveViewerBotOverride(bot.id, { notifications: enabled }).then((ok) => {
+                if (!ok) dispatch({ type: "error", message: t("botPanel.viewerLocal.saveError") });
+              });
+              return;
+            }
             patch({ notifications: enabled });
           }}
         />

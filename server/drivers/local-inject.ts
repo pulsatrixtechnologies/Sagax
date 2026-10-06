@@ -7,6 +7,8 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 
 import type { ModelCatalog } from "../contracts.ts";
+import { desktopModelApiKey } from "../desktop-model-grant.ts";
+import { isDesktopHostId } from "../../shared/desktop-local-models.ts";
 
 export interface LocalHost {
   id: string;
@@ -29,7 +31,53 @@ export const LOCAL_HOSTS: LocalHost[] = [
 export const INJECT_SEP = "::";
 
 const HOST_BY_ID = new Map(LOCAL_HOSTS.map((host) => [host.id, host]));
+/** Desktop hosts. The base URL is always this server's loopback proxy. */
+const DESKTOP_HOSTS = new Map<string, LocalHost>();
 const MODEL_ID = /^[\w][\w./:+-]*$/;
+
+let desktopInjectModels: () => InjectedModel[] = () => [];
+
+function hostById(id: string): LocalHost | undefined {
+  return HOST_BY_ID.get(id) ?? DESKTOP_HOSTS.get(id);
+}
+
+/** Rows the organization server adds for connected desktops. Empty unless that server set a loader. */
+export function setDesktopInjectModels(load: () => InjectedModel[]): void {
+  desktopInjectModels = load;
+}
+
+/**
+ * Register a desktop inject host. The base URL must already be this server's
+ * proxy (`http://127.0.0.1:<proxy>/d/<id>/v1`). A Mac address or any other
+ * host is refused, so a desktop id cannot become an open redirect.
+ */
+export function upsertDesktopInjectHost(host: LocalHost): void {
+  if (!isDesktopHostId(host.id)) throw new Error("desktop host id refused");
+  let url: URL;
+  try { url = new URL(host.baseUrl); } catch { throw new Error("desktop host url refused"); }
+  if (url.protocol !== "http:" || url.hostname !== "127.0.0.1") throw new Error("desktop host url refused");
+  if (url.username || url.password || url.search || url.hash) throw new Error("desktop host url refused");
+  if (!url.port) throw new Error("desktop host url refused");
+  const path = url.pathname.replace(/\/$/, "");
+  if (path !== `/d/${host.id}/v1`) throw new Error("desktop host url refused");
+  DESKTOP_HOSTS.set(host.id, { id: host.id, label: host.label, baseUrl: `http://127.0.0.1:${url.port}/d/${host.id}/v1` });
+}
+
+export function removeDesktopInjectHost(id: string): void {
+  DESKTOP_HOSTS.delete(id);
+}
+
+export function clearDesktopInjectHosts(): void {
+  DESKTOP_HOSTS.clear();
+}
+
+/** True for a desktop inject id even when that host is not registered right now. */
+export function isDesktopInjectModel(id: string | null | undefined): boolean {
+  if (!id) return false;
+  const sep = id.indexOf(INJECT_SEP);
+  if (sep <= 0) return false;
+  return isDesktopHostId(id.slice(0, sep)) && MODEL_ID.test(id.slice(sep + INJECT_SEP.length));
+}
 
 export interface InjectedModel {
   id: string;
@@ -76,12 +124,12 @@ export function decodeInjectId(id: string | null | undefined): { host: string; m
   if (sep <= 0) return null;
   const host = id.slice(0, sep);
   const model = id.slice(sep + INJECT_SEP.length);
-  if (!HOST_BY_ID.has(host) || !MODEL_ID.test(model)) return null;
+  if (!hostById(host) || !MODEL_ID.test(model)) return null;
   return { host, model };
 }
 
 export function localHost(id: string): LocalHost | undefined {
-  return HOST_BY_ID.get(id);
+  return hostById(id);
 }
 
 export function injectedApiModel(id: string | null | undefined): string | null {
@@ -111,6 +159,7 @@ export function anthropicBaseUrl(host: LocalHost): string {
 }
 
 export function hostApiKey(host: LocalHost, env: Record<string, string | undefined> = process.env): string {
+  if (isDesktopHostId(host.id)) return desktopModelApiKey();
   if (host.apiKeyEnv && env[host.apiKeyEnv]) return env[host.apiKeyEnv]!;
   if (host.apiKey) return host.apiKey;
   if (host.id === "unsloth" || host.id === "unsloth_api") {
@@ -360,8 +409,8 @@ export async function mergeLocalInject(
 ): Promise<ModelCatalog> {
   const vitest = env.VITEST ?? process.env.VITEST;
   const probe = env.SAGAX_PROBE_LOCAL_INJECT ?? process.env.SAGAX_PROBE_LOCAL_INJECT;
-  if (vitest === "true" && probe !== "1") return catalog;
-  const extras = await probeLocalInjects(env, fetchImpl);
+  const probed = vitest === "true" && probe !== "1" ? [] : await probeLocalInjects(env, fetchImpl);
+  const extras = [...probed, ...desktopInjectModels()];
   if (!extras.length) return catalog;
   const liveApiIds = new Set(extras.map((extra) => extra.model));
   // A settings leftover that is just the API id of a live inject is not a

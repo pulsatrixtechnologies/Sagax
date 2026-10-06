@@ -32,11 +32,54 @@ final class ChatPreferencesTests: XCTestCase {
 
     // MARK: - Full
 
-    func testFullKeepsEveryMessageInOrder() {
+    func testFullDropsToolActivityAndKeepsTextInOrder() {
         let messages = [text("a"), activity("b"), activity("c"), text("d")]
         let rows = transcriptRows(messages, detail: .full)
-        XCTAssertEqual(rows.map(\.id), ["a", "b", "c", "d"])
-        XCTAssertTrue(rows.allSatisfy { if case .message = $0 { return true } else { return false } })
+        XCTAssertEqual(rows.map(\.id), ["a", "d"])
+        XCTAssertEqual(messages.map(\.id), ["a", "b", "c", "d"], "hiding a row does not drop the stored message")
+    }
+
+    /// The phone transcript: tool Success and Error lines go, the reply and
+    /// the question card stay, and a finished turn may still say "Worked for".
+    func testToolActivityRowIsDroppedAndTextAndQuestionCardStay() {
+        var user = Message(id: "user", role: .user, kind: .text, at: 1_000)
+        user.text = "can you import this bot"
+        user.attachments = [MessageImageAttachment(kind: "file", path: "export.json", mime: "application/json", name: "export-connectwise-psa.json", durationMs: nil)]
+
+        var succeeded = activity("ok", at: 2_000)
+        succeeded.tool = ToolActivity(name: "mcp_sagax-environment__run_command", ok: true)
+        var failed = activity("bad", at: 3_000, ok: false)
+        failed.tool = ToolActivity(name: "mcp_agents__create_bot", ok: false)
+
+        var progress = Message(id: "progress", role: .bot, kind: .text, at: 4_000)
+        progress.text = "Importing the bot"
+        progress.turnId = "turn"
+        var answer = Message(id: "answer", role: .bot, kind: .text, at: 44_000)
+        answer.text = "The bot is ready"
+        answer.turnId = "turn"
+        answer.turnTerminal = true
+
+        var question = Message(id: "ask", role: .bot, kind: .options, at: 45_000)
+        var card = OptionCard(title: "Update @Connectwise PSA's profile?", subtitle: "Whose profile: @Connectwise PSA", options: ["Allow", "Deny"])
+        card.requestId = "req-ask"
+        card.questionRequest = QuestionRequestCardData(
+            questions: [AskQuestion(question: "Whose profile?", options: [AskQuestionOption(label: "@Connectwise PSA")])]
+        )
+        question.card = card
+
+        let messages = [user, succeeded, failed, progress, answer, question]
+        for detail in ActivityDetail.allCases {
+            let rows = transcriptRows(messages, detail: detail)
+            XCTAssertEqual(rows.map(\.id), ["user", "turn.turn", "answer", "ask"], "\(detail)")
+            guard case let .assistantTurn(turn) = rows[1] else { return XCTFail("the worked summary stays") }
+            XCTAssertEqual(turn.label, "Worked for 43s")
+            guard case let .message(kept) = rows[0] else { return XCTFail("the text stays") }
+            XCTAssertEqual(kept.attachments?.first?.name, "export-connectwise-psa.json")
+            guard case let .message(asked) = rows[3] else { return XCTFail("the question card stays") }
+            XCTAssertEqual(asked.kind, .options)
+            XCTAssertEqual(asked.card?.questions.first?.question, "Whose profile?")
+        }
+        XCTAssertTrue(messages.contains { isToolActivityRow($0) })
     }
 
     // MARK: - Hidden
@@ -54,11 +97,11 @@ final class ChatPreferencesTests: XCTestCase {
         XCTAssertEqual(transcriptRows(messages, detail: .hidden).map(\.id), ["a", "d"])
     }
 
-    func testReducedKeepsACompactionAsItsOwnRowAndBreaksTheRun() {
+    func testReducedKeepsACompactionAndDropsTheToolRowsAroundIt() {
         let messages = [activity("a"), activity("b"), compaction("c"), activity("d"), activity("e")]
         let rows = transcriptRows(messages, detail: .reduced)
-        XCTAssertEqual(rows.map(\.id), ["run.a", "c", "run.d"])
-        XCTAssertEqual(rows[1].kind, .compaction)
+        XCTAssertEqual(rows.map(\.id), ["c"])
+        XCTAssertEqual(rows[0].kind, .compaction)
     }
 
     private func compaction(_ id: String, at: Double = 1) -> Message {
@@ -75,21 +118,14 @@ final class ChatPreferencesTests: XCTestCase {
 
     // MARK: - Reduced
 
-    func testReducedCollapsesConsecutiveActivityIntoOneRun() {
+    func testReducedDropsToolActivityInsteadOfFoldingIt() {
         let messages = [text("a"), activity("b"), activity("c"), activity("d"), text("e")]
-        let rows = transcriptRows(messages, detail: .reduced)
-        XCTAssertEqual(rows.count, 3)
-        guard case let .activityRun(items) = rows[1] else { return XCTFail("expected a run") }
-        XCTAssertEqual(items.map(\.id), ["b", "c", "d"])
+        XCTAssertEqual(transcriptRows(messages, detail: .reduced).map(\.id), ["a", "e"])
     }
 
-    func testReducedLeavesALoneActivityAlone() {
-        // A run of one is not a run — collapsing it would replace a chip
-        // with a chip that says there is one chip.
+    func testReducedDropsALoneToolActivity() {
         let messages = [text("a"), activity("b"), text("c")]
-        let rows = transcriptRows(messages, detail: .reduced)
-        XCTAssertEqual(rows.map(\.id), ["a", "b", "c"])
-        guard case .message = rows[1] else { return XCTFail("expected a plain message") }
+        XCTAssertEqual(transcriptRows(messages, detail: .reduced).map(\.id), ["a", "c"])
     }
 
     func testStatusNoticeIsNeverHiddenOrFolded() {
@@ -99,45 +135,42 @@ final class ChatPreferencesTests: XCTestCase {
         notice.tool = ToolActivity(name: "notice: Qwen is waiting on its model", ok: true)
         let messages = [activity("a"), activity("b"), notice, activity("c"), activity("d")]
         XCTAssertEqual(transcriptRows(messages, detail: .hidden).map(\.id), ["n"])
-        let rows = transcriptRows(messages, detail: .reduced)
-        XCTAssertEqual(rows.count, 3)
-        guard case let .message(alone) = rows[1] else { return XCTFail("expected the notice alone") }
-        XCTAssertEqual(alone.id, "n")
+        XCTAssertEqual(transcriptRows(messages, detail: .reduced).map(\.id), ["n"])
+        XCTAssertEqual(transcriptRows(messages, detail: .full).map(\.id), ["n"])
     }
 
-    func testReducedBreaksOutAFailureOnItsOwn() {
-        // The whole point of reduced: noise folds, failures never do.
+    func testAFailedToolCallIsDroppedWithTheOtherToolRows() {
+        // An Error badge on a tool receipt is still a tool row. A failed
+        // turn, whose name starts with "error:", is a different row and stays.
         let messages = [activity("a"), activity("b"), activity("c", ok: false), activity("d"), activity("e")]
-        let rows = transcriptRows(messages, detail: .reduced)
-        XCTAssertEqual(rows.count, 3)
-        guard case let .activityRun(before) = rows[0] else { return XCTFail("expected a run") }
-        XCTAssertEqual(before.map(\.id), ["a", "b"])
-        guard case let .message(failed) = rows[1] else { return XCTFail("expected the failure alone") }
-        XCTAssertEqual(failed.id, "c")
-        guard case let .activityRun(after) = rows[2] else { return XCTFail("expected a run") }
-        XCTAssertEqual(after.map(\.id), ["d", "e"])
+        for detail in ActivityDetail.allCases {
+            XCTAssertTrue(transcriptRows(messages, detail: detail).isEmpty, "\(detail)")
+        }
+        var turn = activity("err", ok: false)
+        turn.tool = ToolActivity(name: "error: boom", ok: false)
+        XCTAssertEqual(transcriptRows(messages + [turn], detail: .full).map(\.id), ["err"])
     }
 
-    func testReducedSplitsRunsAroundOtherMessages() {
+    func testReducedDropsToolRowsOnEitherSideOfText() {
         let messages = [activity("a"), activity("b"), text("c"), activity("d"), activity("e")]
-        let rows = transcriptRows(messages, detail: .reduced)
-        XCTAssertEqual(rows.count, 3)
-        guard case .activityRun = rows[0] else { return XCTFail("expected a run") }
-        guard case .message = rows[1] else { return XCTFail("expected the text") }
-        guard case .activityRun = rows[2] else { return XCTFail("expected a run") }
+        XCTAssertEqual(transcriptRows(messages, detail: .reduced).map(\.id), ["c"])
     }
 
-    func testReducedRunReportsStillRunningWhileAStepHasNoVerdict() {
+    func testARunningToolCallIsDroppedToo() {
         let messages = [activity("a"), activity("b", ok: nil)]
-        let rows = transcriptRows(messages, detail: .reduced)
-        guard case let .activityRun(items) = rows[0] else { return XCTFail("expected a run") }
-        XCTAssertTrue(items.contains { $0.tool?.ok == nil })
+        XCTAssertTrue(transcriptRows(messages, detail: .full).isEmpty)
+        XCTAssertTrue(transcriptRows(messages, detail: .reduced).isEmpty)
     }
 
     func testRowCarriesTheTimeAndSenderOfItsFirstMessage() {
         // The transcript's date separators and bubble tails read these off
         // the row rather than the message, so a run must answer for itself.
-        let rows = transcriptRows([activity("a", at: 500), activity("b", at: 900)], detail: .reduced)
+        // Opened-thread chips are not tool rows, so reduced still folds them.
+        var first = activity("a", at: 500)
+        first.threadRef = ThreadRef(botId: "b", threadId: "t1", title: "Opened")
+        var second = activity("b", at: 900)
+        second.threadRef = ThreadRef(botId: "b", threadId: "t2", title: "Opened later")
+        let rows = transcriptRows([first, second], detail: .reduced)
         XCTAssertEqual(rows[0].at, 500)
         XCTAssertEqual(rows[0].kind, .activity)
         XCTAssertEqual(rows[0].role, .bot)
@@ -211,8 +244,8 @@ final class ChatPreferencesTests: XCTestCase {
     // own row — a chip — beside the tool chips it sums up, never among them.
     func testADigestIsItsOwnRowAtFullAndReduced() {
         let messages = [text("a"), activity("b"), digest("c"), text("d"), digest("e")]
-        XCTAssertEqual(transcriptRows(messages, detail: .full).map(\.id), ["a", "b", "c", "d", "e"])
-        XCTAssertEqual(transcriptRows(messages, detail: .reduced).map(\.id), ["a", "b", "c", "d", "e"])
+        XCTAssertEqual(transcriptRows(messages, detail: .full).map(\.id), ["a", "c", "d", "e"])
+        XCTAssertEqual(transcriptRows(messages, detail: .reduced).map(\.id), ["a", "c", "d", "e"])
     }
 
     func testADigestIsHiddenWithTheActivityItSummarises() {
@@ -223,14 +256,40 @@ final class ChatPreferencesTests: XCTestCase {
     func testADigestIsNeverFoldedIntoARunOfActivity() {
         let messages = [activity("a"), activity("b"), digest("c"), activity("d"), activity("e")]
         let rows = transcriptRows(messages, detail: .reduced)
-        XCTAssertEqual(rows.map(\.id), ["run.a", "c", "run.d"])
-        guard case let .message(receipt) = rows[1] else { return XCTFail("digest should be a message row") }
+        XCTAssertEqual(rows.map(\.id), ["c"])
+        guard case let .message(receipt) = rows[0] else { return XCTFail("digest should be a message row") }
         XCTAssertEqual(receipt.kind, .digest)
-        for row in rows {
-            if case let .activityRun(items) = row {
-                XCTAssertFalse(items.contains { $0.kind == .digest }, "a digest is not a step")
-            }
-        }
+        XCTAssertFalse(rows.contains { if case .activityRun = $0 { return true } else { return false } })
+    }
+
+    func testVoiceCallTurnsAreOneCard() throws {
+        let json = """
+        [
+          {"id":"u","role":"user","kind":"text","at":1000,"text":"hello there","voiceCall":{"callId":"call-1"}},
+          {"id":"ask","role":"bot","kind":"options","at":2000,"text":"Allow this?"},
+          {"id":"n","role":"bot","kind":"text","at":30000,"text":"working on it","turnId":"turn"},
+          {"id":"b","role":"bot","kind":"text","at":35000,"text":"hi back","turnId":"turn","turnTerminal":true},
+          {"id":"t","role":"user","kind":"text","at":40000,"text":"after","via":"call"}
+        ]
+        """
+        let messages = try JSONDecoder().decode([Message].self, from: Data(json.utf8))
+        XCTAssertEqual(messages[0].voiceCall?.callId, "call-1")
+        let rows = transcriptRows(messages, detail: .full)
+        XCTAssertEqual(rows.map(\.id), ["voice.call-1", "ask", "t"])
+        guard case let .voiceCall(card) = rows[0] else { return XCTFail("one card") }
+        XCTAssertEqual(spokenLines(card.messages).map(\.text), ["hello there", "working on it", "hi back"])
+        XCTAssertEqual(formatVoiceCallDuration(voiceCallDurationMs(card.messages, now: 0, clock: nil)), "00:34")
+        XCTAssertEqual(rosterPreview(messages, detail: .full), "after")
+        XCTAssertFalse(rows.contains { if case .assistantTurn = $0 { return true } else { return false } })
+
+        var fragment = Message(id: "f1", role: .user, kind: .text, at: 1)
+        fragment.text = "hel"
+        fragment.voiceCall = VoiceCallMeta(callId: "c")
+        var whole = Message(id: "f2", role: .user, kind: .text, at: 2)
+        whole.text = "hello"
+        whole.voiceCall = VoiceCallMeta(callId: "c", continues: true)
+        XCTAssertEqual(spokenLines([fragment, whole]).map(\.text), ["hello"])
+        XCTAssertEqual(formatVoiceCallDuration(90_000), "01:30")
     }
 
     // A turn that touched nothing has nothing for the chip to open.

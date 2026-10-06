@@ -59,6 +59,16 @@ describe("workspace backup data boundary", () => {
     for (const path of ["mcp-oauth.enc.md", "workspaces/bot/mcp-oauth.key", "notes/mcp-oauth.enc"]) expect(excludedWorkspaceAuthPath(path)).toBe(false);
   });
 
+  it("never exports or restores the organization GitHub access tokens", () => {
+    for (const path of [
+      "org-github-tokens.enc",
+      "org-github-tokens.enc.4242.05a7b3e0-1234-4abc-8def-0123456789ab.tmp",
+    ]) expect(excludedWorkspaceAuthPath(path)).toBe(true);
+    for (const path of ["org-github-tokens.enc.md", "workspaces/bot/org-github-tokens.enc", "notes/org-github-tokens.enc"]) {
+      expect(excludedWorkspaceAuthPath(path)).toBe(false);
+    }
+  });
+
   it("never exports the per-turn hook token directory, and only that directory", () => {
     for (const path of ["hook-tokens", "hook-tokens/0123456789abcdef01234567.token", "sessions.json.open"]) expect(ephemeralWorkspaceTokenPath(path)).toBe(true);
     for (const path of ["hook-tokens.md", "workspaces/bot/hook-tokens/notes.md", "attachments/api.token", "sessions.json.opened", "workspaces/bot/sessions.json.open"]) expect(ephemeralWorkspaceTokenPath(path)).toBe(false);

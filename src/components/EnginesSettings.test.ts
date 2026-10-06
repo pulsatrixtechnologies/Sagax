@@ -34,9 +34,8 @@ describe("Settings → Engines → Codex", () => {
   it("makes browser sign-in discoverable in Settings, not only the model picker", () => {
     const html = render(false);
     expect(html).toContain("Connect ChatGPT");
-    expect(html).toContain("Provider icon");
-    expect(html).toContain("Google Gemini");
-    expect(html).toContain("Upload a custom provider icon for Codex");
+    expect(html).not.toContain("Provider icon");
+    expect(html).not.toContain("Upload a custom provider icon for Codex");
   });
 
   it("shows a connected account without offering to replace it", () => {

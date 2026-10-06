@@ -1,6 +1,6 @@
 // A bot's grants on a server signed in with Perspicax (slice 4): people and
 // teams, a level each (Talk, Run routines, Edit, Manage sharing), remove,
-// and a picker to add. Levels above what the caller may give are disabled;
+// and a picker to add. Levels above what the caller may give are omitted;
 // the server decides (GET/PUT/DELETE /api/bots/:id/grants).
 import { useEffect, useMemo, useState } from "react";
 import { Loader2, UserMinus, UserPlus, Users } from "lucide-react";
@@ -107,8 +107,8 @@ export function GrantEditor({ botId, ownerId, initialGrants, initialAdminister, 
                       onChange={(event) => void put(grant.target, event.target.value as GrantLevel)}
                       className="rounded-md border border-hairline/40 bg-inset px-2 py-1 text-[12px] text-ink"
                     >
-                      {GRANT_LEVELS.map((level) => (
-                        <option key={level} value={level} disabled={!administer || !levelAllowed(level, administer.maxLevel)}>{levelLabel(level)}</option>
+                      {GRANT_LEVELS.filter((level) => administer && levelAllowed(level, administer.maxLevel)).map((level) => (
+                        <option key={level} value={level}>{levelLabel(level)}</option>
                       ))}
                     </select>
                   ) : (

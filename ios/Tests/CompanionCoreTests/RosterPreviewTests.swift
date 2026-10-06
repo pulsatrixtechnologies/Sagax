@@ -39,11 +39,13 @@ final class RosterPreviewTests: XCTestCase {
         return message
     }
 
-    // MARK: - Full keeps what shipped
+    // MARK: - Tool receipts are not the line
 
-    func testFullShowsTheToolNameWhenActivityLanded() {
+    func testToolActivityNeverBecomesTheRosterLine() {
         let messages = [text("a", "hello"), activity("b", "auto-approved shell: export PATH=…")]
-        XCTAssertEqual(rosterPreview(messages, detail: .full), "auto-approved shell: export PATH=…")
+        for detail in ActivityDetail.allCases {
+            XCTAssertEqual(rosterPreview(messages, detail: detail), "hello")
+        }
     }
 
     // MARK: - Hidden — the reported bug
@@ -79,26 +81,29 @@ final class RosterPreviewTests: XCTestCase {
         XCTAssertEqual(rosterPreview(messages, detail: .hidden), "Run this?")
     }
 
-    // MARK: - Reduced summarises rather than hides
+    // MARK: - Reduced does not surface tool receipts either
 
-    func testReducedSummarisesATrailingRun() {
+    func testReducedDoesNotSummariseAToolRun() {
         let messages = [text("a", "hi"), activity("b", "shell"), activity("c", "read"), activity("d", "write")]
-        XCTAssertEqual(rosterPreview(messages, detail: .reduced), "Ran 3 steps")
+        XCTAssertEqual(rosterPreview(messages, detail: .reduced), "hi")
     }
 
-    func testReducedSaysRunningWhileAStepIsUnfinished() {
+    func testARunningToolCallDoesNotPreview() {
         let messages = [activity("a", "shell"), activity("b", "read", ok: nil)]
-        XCTAssertEqual(rosterPreview(messages, detail: .reduced), "Running 2 steps")
+        XCTAssertEqual(rosterPreview(messages, detail: .reduced), "")
+        XCTAssertEqual(rosterPreview(messages, detail: .full), "")
     }
 
-    func testReducedLeavesALoneActivityAsItsToolName() {
+    func testReducedDoesNotPreviewALoneTool() {
         let messages = [text("a", "hi"), activity("b", "shell")]
-        XCTAssertEqual(rosterPreview(messages, detail: .reduced), "shell")
+        XCTAssertEqual(rosterPreview(messages, detail: .reduced), "hi")
     }
 
-    func testReducedStillShowsAFailureRatherThanFoldingIt() {
+    func testAFailedToolCallDoesNotPreview() {
         let messages = [activity("a", "shell"), activity("b", "deploy", ok: false)]
-        XCTAssertEqual(rosterPreview(messages, detail: .reduced), "deploy")
+        for detail in ActivityDetail.allCases {
+            XCTAssertEqual(rosterPreview(messages, detail: detail), "")
+        }
     }
 
     // MARK: - Everything else is untouched by the setting

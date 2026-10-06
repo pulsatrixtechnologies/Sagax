@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { builtInBrowserEnabled, connectedAppsEnabled, llmThreadTitlesEnabled, routinesInConversationEnabled, sharedComputersEnabled, showToolCallsEnabled, skillAuthoringEnabled } from "./feature-flags";
+import { builtInBrowserEnabled, connectedAppsEnabled, decisionModelEnabled, llmThreadTitlesEnabled, routinesInConversationEnabled, sharedComputersEnabled, showToolCallsEnabled, skillAuthoringEnabled } from "./feature-flags";
 
 describe("experimental feature flags", () => {
   it("keeps skill authoring on by default, before and after the config arrives", () => {
@@ -43,6 +43,14 @@ describe("experimental feature flags", () => {
     expect(sharedComputersEnabled({ features: {} })).toBe(false);
     expect(sharedComputersEnabled({ features: { sharedComputers: false } })).toBe(false);
     expect(sharedComputersEnabled({ features: { sharedComputers: true } })).toBe(true);
+  });
+
+  it("keeps the Decision model section off unless the experimental option is on", () => {
+    expect(decisionModelEnabled(null)).toBe(false);
+    expect(decisionModelEnabled({})).toBe(false);
+    expect(decisionModelEnabled({ features: {} })).toBe(false);
+    expect(decisionModelEnabled({ features: { decisionModel: false } })).toBe(false);
+    expect(decisionModelEnabled({ features: { decisionModel: true } })).toBe(true);
   });
 
   it("offers Regenerate title only while the server has generated titles on", () => {

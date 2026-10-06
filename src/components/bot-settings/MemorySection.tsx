@@ -1,17 +1,17 @@
 // Memory: what this bot believes, as a panel a person can read, fix, and
-// audit. Four regions: where the folder is (open it in Obsidian or the
-// file manager — it is plain markdown), a gauge that says out loud what
-// loadMemory() cuts silently, an editor for MEMORY.md and the topic files
-// that refuses to overwrite what the bot wrote while the person was
-// typing, and the journal of every change with one-click undo.
+// audit. The switch turns memory on or off. A gauge says what loadMemory()
+// cuts. Clicking a file opens it in an editor dialog that refuses to
+// overwrite what the bot wrote while the person was typing. The journal
+// lists every change with one-click undo.
 //
 // Fetched when the section becomes active, not on mount: settings opens
-// for every bot and most visits never look at memory — and a re-activation
+// for every bot and most visits never look at memory. A re-activation
 // re-reads, so notes the bot wrote mid-session show up on the next look.
 // The dialog keeps this mounted while hidden so an unsaved draft survives
-// a visit to another section.
-import { FileText, FolderOpen, RotateCcw, Trash2 } from "lucide-react";
-import { useEffect, useState } from "react";
+// a visit to another section. A file opens only when the person clicks it.
+import { FileText, RotateCcw, Trash2, X } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
@@ -22,11 +22,9 @@ import {
   fetchMemoryDoc,
   fetchMemoryJournal,
   fetchMemoryOverview,
-  fileManagerLabel,
   formatBytes,
   journalSource,
   journalSummary,
-  openMemoryLocation,
   relativeTime,
   revertMemoryChange,
   saveMemoryDoc,
@@ -43,10 +41,8 @@ import {
   type LendingReview,
   markMemoryReviewed,
 } from "@/lib/memory";
-import { shortPath } from "@/lib/short-path";
 import { ApiError, useStore, type Bot } from "@/state/store";
 import { Switch } from "../SettingsPrimitives";
-import { useDesktopCapabilities } from "../DesktopCapabilities";
 import { inputCls } from "./field";
 
 const buttonCls = "rounded-lg bg-control px-3 py-1.5 text-[13px] text-ink hover:bg-raised-hover disabled:opacity-50";
@@ -69,6 +65,163 @@ interface Conflict {
 }
 
 const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e));
+
+/** The file body lives in this dialog, not in the settings column. Escape
+ * and the backdrop close it. A dirty draft asks before it is dropped. */
+export function MemoryEditorDialog({
+  editing,
+  botName,
+  conflict,
+  saving,
+  savedDraft,
+  onChange,
+  onSave,
+  onDiscard,
+  onClose,
+  onReload,
+  onOverwrite,
+  onDismissDraft,
+  onOpenIndex,
+}: {
+  editing: Editing;
+  botName: string;
+  conflict: Conflict | null;
+  saving: boolean;
+  savedDraft: string | null;
+  onChange: (text: string) => void;
+  onSave: () => void;
+  onDiscard: () => void;
+  onClose: () => void;
+  onReload: () => void;
+  onOverwrite: () => void;
+  onDismissDraft: () => void;
+  onOpenIndex: () => void;
+}) {
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const root = dialogRef.current;
+    const area = root?.querySelector("textarea");
+    if (area instanceof HTMLTextAreaElement && !area.readOnly) area.focus();
+    else root?.focus();
+
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        event.stopPropagation();
+        onCloseRef.current();
+        return;
+      }
+      if (event.key !== "Tab" || !root) return;
+      const focusable = [...root.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), textarea:not([disabled]), input:not([disabled]), [href], [tabindex]:not([tabindex="-1"])',
+      )];
+      if (focusable.length === 0) {
+        event.preventDefault();
+        root.focus();
+        return;
+      }
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => {
+      window.removeEventListener("keydown", onKey, true);
+      previousFocus?.focus();
+    };
+  }, [editing.path]);
+
+  const content = (
+    <div
+      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4 sm:p-6"
+      onMouseDown={(event) => event.target === event.currentTarget && onClose()}
+    >
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="memory-editor-title"
+        tabIndex={-1}
+        className="animate-pop-in flex max-h-[min(820px,calc(100dvh-2rem))] w-full max-w-[760px] flex-col overflow-hidden rounded-[14px] border border-border bg-elevated outline-none"
+      >
+        <header className="flex items-center justify-between gap-3 border-b border-hairline/40 px-5 py-4">
+          <h2 id="memory-editor-title" className="min-w-0 truncate font-mono text-[13px] font-medium text-ink">
+            {editing.path}
+          </h2>
+          <div className="flex shrink-0 items-center gap-1">
+            {editing.path !== MEMORY_INDEX && (
+              <button type="button" className={quietButtonCls} onClick={onOpenIndex}>
+                {t("botPanel.memory.back")}
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label={t("botPanel.memory.closeEditor")}
+              className="flex size-8 items-center justify-center rounded-full text-ink-tertiary hover:bg-ink/10 hover:text-ink"
+            >
+              <X size={18} />
+            </button>
+          </div>
+        </header>
+        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-5 py-4">
+          {conflict && (
+            <ConflictNotice botName={botName} busy={saving} onReload={onReload} onOverwrite={onOverwrite} />
+          )}
+          <textarea
+            className={cn(inputCls, "min-h-[320px] flex-1 resize-y font-mono text-[13px] leading-relaxed", conflict && "mt-2")}
+            value={editing.text}
+            readOnly={editing.readOnly}
+            placeholder={editing.path === MEMORY_INDEX ? t("botPanel.memory.indexPlaceholder") : t("botPanel.memory.write")}
+            aria-label={editing.path === MEMORY_INDEX ? t("botPanel.memory.aria") : t("botPanel.memory.fileAria", { path: editing.path })}
+            onChange={(event) => onChange(event.target.value)}
+          />
+          {savedDraft !== null && (
+            <div className="mt-3">
+              <div className="mb-1 text-[12px] text-ink-secondary">{t("botPanel.memory.draft")}</div>
+              <pre className="max-h-[160px] overflow-auto whitespace-pre-wrap rounded-lg border border-hairline/40 bg-inset p-3 font-mono text-[12px] leading-relaxed text-ink">
+                {savedDraft}
+              </pre>
+              <button type="button" className={cn(quietButtonCls, "mt-1")} onClick={onDismissDraft}>
+                {t("botPanel.memory.dismiss")}
+              </button>
+            </div>
+          )}
+        </div>
+        <footer className="flex items-center justify-end gap-2 border-t border-hairline/40 px-5 py-3">
+          {editing.readOnly ? (
+            <p className="mr-auto text-[12px] text-ink-secondary">{t("botPanel.memory.logsReadOnly")}</p>
+          ) : (
+            <>
+              {editing.dirty && (
+                <button type="button" className={quietButtonCls} disabled={saving} onClick={onDiscard}>
+                  {t("botPanel.memory.discard")}
+                </button>
+              )}
+              <button type="button" onClick={onSave} disabled={saving || !editing.dirty} className={buttonCls}>
+                {saving ? t("botPanel.memory.saving") : t("common.save")}
+              </button>
+            </>
+          )}
+        </footer>
+      </div>
+    </div>
+  );
+
+  if (typeof document === "undefined" || !document.body) return content;
+  return createPortal(content, document.body);
+}
 
 /** On an OMB Cloud home: this bot's memory changed in a conversation the
  * owner did not write, so its turns cannot use the owner's lent Mac until
@@ -97,7 +250,6 @@ export function LendingReviewNotice({ changed, stale, busy, onReviewed }: { chan
 }
 
 export function MemorySection({ bot, active = true, onToggle }: { bot: Bot; active?: boolean; onToggle: (enabled: boolean) => void }) {
-  const { capabilities } = useDesktopCapabilities();
   const [overview, setOverview] = useState<MemoryOverview | null>(null);
   const [journal, setJournal] = useState<MemoryJournalRow[] | null>(null);
   const [editing, setEditing] = useState<Editing | null>(null);
@@ -138,7 +290,7 @@ export function MemorySection({ bot, active = true, onToggle }: { bot: Bot; acti
     setError(null);
     // a dirty draft survives a re-activation; everything else re-reads
     const keepDraft = editing?.dirty === true;
-    refresh(keepDraft ? undefined : (editing?.path ?? MEMORY_INDEX)).catch((e: unknown) => {
+    refresh(keepDraft ? undefined : editing?.path).catch((e: unknown) => {
       if (!cancelled) setError(errorText(e));
     });
     return () => {
@@ -146,15 +298,26 @@ export function MemorySection({ bot, active = true, onToggle }: { bot: Bot; acti
     };
   }, [active, bot.id]);
 
-  const open = async (path: string) => {
+  const open = async (path: string): Promise<boolean> => {
+    if (editing?.dirty && editing.path !== path && !window.confirm(t("botPanel.memory.closeDirty"))) return false;
     setError(null);
     setConflict(null);
+    if (editing?.path !== path) setSavedDraft(null);
     try {
       const doc = await fetchMemoryDoc(bot.id, path);
       setEditing({ path: doc.path, text: doc.text, hash: doc.hash, dirty: false, readOnly: path.startsWith("memory/log/") });
+      return true;
     } catch (e) {
       setError(errorText(e));
+      return false;
     }
+  };
+
+  const requestClose = () => {
+    if (editing?.dirty && !window.confirm(t("botPanel.memory.closeDirty"))) return;
+    setEditing(null);
+    setConflict(null);
+    setSavedDraft(null);
   };
 
   const save = async (expectedHash: string | undefined) => {
@@ -208,8 +371,9 @@ export function MemorySection({ bot, active = true, onToggle }: { bot: Bot; acti
       setError(t("botPanel.memory.badTopic"));
       return;
     }
+    const opened = await open(`memory/${name}`);
+    if (!opened) return;
     setNewTopic("");
-    await open(`memory/${name}`);
     setEditing((current) => (current ? { ...current, dirty: true, text: current.text || topicTemplate(name) } : current));
   };
 
@@ -228,16 +392,6 @@ export function MemorySection({ bot, active = true, onToggle }: { bot: Bot; acti
       setError(errorText(e));
     } finally {
       setReverting(null);
-    }
-  };
-
-  const openLocation = async (target: "obsidian" | "folder") => {
-    setError(null);
-    setNotice(null);
-    try {
-      await openMemoryLocation(bot.id, target);
-    } catch (e) {
-      setError(errorText(e));
     }
   };
 
@@ -265,8 +419,6 @@ export function MemorySection({ bot, active = true, onToggle }: { bot: Bot; acti
     }
   };
 
-  const home = capabilities.host.homeDir;
-
   return (
     <div className="flex flex-col gap-4">
       <div className="rounded-xl border border-hairline/40 p-4">
@@ -275,27 +427,10 @@ export function MemorySection({ bot, active = true, onToggle }: { bot: Bot; acti
           <input type="checkbox" checked={bot.memoryEnabled !== false} disabled={bot.busy} onChange={(event) => onToggle(event.target.checked)} />
           {t("botPanel.memory.let")}
         </label>
-        <p className="mt-1 text-[12px] text-ink-secondary">
+        <p className="mt-1 text-[12px] leading-relaxed text-ink-secondary">
           {t("botPanel.memory.off")}
           {bot.busy ? t("botPanel.memory.busy") : ""}
         </p>
-        <p className="mt-1 text-[13px] leading-relaxed text-ink-secondary">
-          {t("botPanel.memory.notes")}
-        </p>
-        {overview && (
-          <div className="mt-3 flex flex-wrap items-center gap-2">
-            <span className="min-w-0 flex-1 truncate font-mono text-[12px] text-ink-secondary" title={overview.workspacePath}>
-              {shortPath(overview.workspacePath, home)}
-            </span>
-            <button type="button" className={buttonCls} onClick={() => void openLocation("obsidian")}>
-              {t("botPanel.memory.obsidian")}
-            </button>
-            <button type="button" className={cn(buttonCls, "inline-flex items-center gap-1.5")} onClick={() => void openLocation("folder")}>
-              <FolderOpen size={14} />
-              {fileManagerLabel(capabilities.host.platform)}
-            </button>
-          </div>
-        )}
       </div>
 
       {lendingReview && (
@@ -331,65 +466,37 @@ export function MemorySection({ bot, active = true, onToggle }: { bot: Bot; acti
       />}
 
       {editing && (
-        <div className="rounded-xl border border-hairline/40 p-4">
-          <div className="flex items-center justify-between gap-2">
-            <span className="truncate font-mono text-[12.5px] text-ink">{editing.path}</span>
-            {editing.path !== MEMORY_INDEX && (
-              <button type="button" className={quietButtonCls} onClick={() => void open(MEMORY_INDEX)}>
-                {t("botPanel.memory.back")}
-              </button>
-            )}
-          </div>
-          {conflict && (
-            <ConflictNotice
-              botName={bot.name}
-              busy={saving}
-              onReload={reloadFromConflict}
-              onOverwrite={() => void save(conflict.currentHash)}
-            />
-          )}
-          <textarea
-            className={cn(inputCls, "mt-2 min-h-[200px] resize-y font-mono text-[12.5px] leading-relaxed")}
-            value={editing.text}
-            readOnly={editing.readOnly}
-            placeholder={
-              editing.path === MEMORY_INDEX
-                ? t("botPanel.memory.indexPlaceholder")
-                : t("botPanel.memory.write")
-            }
-            aria-label={editing.path === MEMORY_INDEX ? t("botPanel.memory.aria") : t("botPanel.memory.fileAria", { path: editing.path })}
-            onChange={(e) => setEditing({ ...editing, text: e.target.value, dirty: true })}
-          />
-          {editing.readOnly ? (
-            <p className="mt-2 text-[12px] text-ink-secondary">{t("botPanel.memory.logsReadOnly")}</p>
-          ) : (
-            <div className="mt-2 flex items-center gap-3">
-              <button type="button" onClick={() => void save(editing.hash)} disabled={saving || !editing.dirty} className={buttonCls}>
-                {saving ? t("botPanel.memory.saving") : t("common.save")}
-              </button>
-              {editing.dirty && (
-                <button type="button" className={quietButtonCls} disabled={saving} onClick={() => void open(editing.path)}>
-                  {t("botPanel.memory.discard")}
-                </button>
-              )}
-            </div>
-          )}
-          {savedDraft !== null && (
-            <div className="mt-3">
-              <div className="mb-1 text-[12px] text-ink-secondary">{t("botPanel.memory.draft")}</div>
-              <pre className="max-h-[160px] overflow-auto whitespace-pre-wrap rounded-lg border border-hairline/40 bg-inset p-3 font-mono text-[12px] leading-relaxed text-ink">
-                {savedDraft}
-              </pre>
-              <button type="button" className={cn(quietButtonCls, "mt-1")} onClick={() => setSavedDraft(null)}>
-                {t("botPanel.memory.dismiss")}
-              </button>
-            </div>
-          )}
-        </div>
+        <MemoryEditorDialog
+          editing={editing}
+          botName={bot.name}
+          conflict={conflict}
+          saving={saving}
+          savedDraft={savedDraft}
+          onChange={(text) => setEditing({ ...editing, text, dirty: true })}
+          onSave={() => void save(editing.hash)}
+          onDiscard={() => void open(editing.path)}
+          onClose={requestClose}
+          onReload={reloadFromConflict}
+          onOverwrite={() => { if (conflict) void save(conflict.currentHash); }}
+          onDismissDraft={() => setSavedDraft(null)}
+          onOpenIndex={() => void open(MEMORY_INDEX)}
+        />
       )}
 
       {overview && (
         <div className="rounded-xl border border-hairline/40 p-4">
+          <button
+            type="button"
+            onClick={() => void open(MEMORY_INDEX)}
+            aria-label={t("botPanel.memory.aria")}
+            className={cn(
+              "mb-4 flex w-full items-center gap-2 rounded-lg border border-hairline/40 px-3 py-2 text-left hover:bg-control/40",
+              editing?.path === MEMORY_INDEX && "bg-control/60",
+            )}
+          >
+            <FileText size={14} className="shrink-0 text-ink-secondary" />
+            <span className="truncate font-mono text-[12.5px] text-ink">MEMORY.md</span>
+          </button>
           <MemoryFileRows
             title={t("botPanel.memory.topics")}
             hint={t("botPanel.memory.topicsHint")}

@@ -7,7 +7,7 @@ import { api, useStore, type ConfigStatus } from "@/state/store";
 import { useDesktopCapabilities } from "@/components/DesktopCapabilities";
 import { t } from "@/lib/i18n";
 import { cn } from "@/lib/cn";
-import { voiceKeyDraftValue, type VoiceKeyDraft } from "@/lib/voice-key-draft";
+import { saveCloudVoiceKey, voiceKeyDraftValue, type VoiceKeyDraft } from "@/lib/voice-key-draft";
 
 const FISH_MODELS = [
   { value: "s2.1-pro", label: "voice.fish.modelPro" },
@@ -48,7 +48,15 @@ export function VoiceEngineSettings() {
           configField: "key" as const,
           keyUrl: "https://elevenlabs.io/app/settings/api-keys",
         }
-      : null;
+      : provider === "xai"
+        ? {
+            id: "xai" as const,
+            name: "Grok",
+            credential: "xaiVoiceKey" as const,
+            configField: "xaiKey" as const,
+            keyUrl: "https://console.x.ai/",
+          }
+        : null;
   const key = cloudProvider ? voiceKeyDraftValue(keyDraft, cloudProvider.id) : "";
   // A settings test can mount this card with an empty capabilities object.
   const host = (capabilities as { host?: { platform?: string } }).host;
@@ -84,18 +92,24 @@ export function VoiceEngineSettings() {
     if (!nextKey || !cloudProvider || keyDraft.provider !== cloudProvider.id) return Promise.resolve();
     setSaving(true);
     setError(null);
-    const request = window.ogb?.setCredential
-      ? window.ogb.setCredential(cloudProvider.credential, nextKey)
-      : api("/api/config", {
-          method: "PUT",
-          body: JSON.stringify({ tts: { [cloudProvider.configField]: nextKey } }),
-        });
-    return request
-      .then((status: ConfigStatus) => {
-        dispatch({ type: "configStatus", config: status });
+    // Server mode refuses the desktop credential channel. The key then goes
+    // to this page's API. A 200 that still leaves the key disconnected is
+    // not a save: the draft stays and the error is shown.
+    return saveCloudVoiceKey(
+      { credential: cloudProvider.credential, configField: cloudProvider.configField, key: nextKey },
+      {
+        setCredential: window.ogb?.setCredential,
+        putConfig: (body) => api("/api/config", { method: "PUT", body: JSON.stringify(body) }),
+      },
+    )
+      .then((result) => {
+        if (!result.ok) {
+          setError(result.reason === "rejected" ? result.message : t("voice.engine.notSaved"));
+          return;
+        }
+        dispatch({ type: "configStatus", config: result.status });
         setKeyDraft({ provider: null, value: "" });
       })
-      .catch((e: Error) => setError(e.message))
       .finally(() => setSaving(false));
   };
 
@@ -191,6 +205,9 @@ export function VoiceEngineSettings() {
               {t("voice.engine.getKey", { name: cloudProvider.name })}
             </a>
           )}
+          {cloudProvider.id === "xai" && (
+            <p className="mt-1.5 text-[12px] leading-relaxed text-ink-secondary">{t("voice.grok.separate")}</p>
+          )}
         </div>
       )}
 
@@ -212,12 +229,6 @@ export function VoiceEngineSettings() {
           </select>
           <div className="mt-1.5 text-[11.5px] leading-relaxed text-ink-secondary">{t("voice.fish.modelHint")}</div>
         </div>
-      )}
-
-      {provider === "xai" && (
-        <p className="mt-4 text-[13px] text-ink-secondary">
-          {configured ? t("voice.grok.ready") : t("voice.grok.missingKey")}
-        </p>
       )}
 
       {provider === "chatterbox" && (

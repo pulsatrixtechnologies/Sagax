@@ -248,10 +248,9 @@ final class CallUITests: XCTestCase {
         XCTAssertNotEqual(first.voiceCall?.interrupted, true)
         XCTAssertEqual(second.voiceCall?.interrupted, true, "the bot is told it was interrupted")
 
-        // the transcript card shows both sides
-        app.buttons["call-transcript-toggle"].tap()
-        XCTAssertTrue(app.descendants(matching: .any)["call-transcript"].waitForExistence(timeout: 5))
-        attach("Transcript card", app)
+        // the call is the stage, not a pill over the first bubble
+        XCTAssertTrue(app.descendants(matching: .any)["call-pill"].exists)
+        attach("Call stage", app)
 
         // hang up: the call is gone, the conversation stays
         app.buttons["call-end"].tap()

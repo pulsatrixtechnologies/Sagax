@@ -2639,7 +2639,6 @@
   "botPanel.memory.delete": "刪除 {name}",
   "botPanel.memory.deleteTitle": "刪除",
   "botPanel.memory.upkeep": "記憶整理",
-  "botPanel.memory.upkeepHelp": "不必讓 bot 自己記得，也會整理這些筆記: 記下你在聊天中提到的事實並歸檔，核心事實在這裡，細節在它建立的主題檔案中，並且每晚整理。過期筆記會封存，重複項會合併，被否定的筆記會劃掉。關於你的事實會加到「關於我」(設定, 一般)，每個 bot 都會讀到，你也可以移除任何一則。每項變更都顯示在下面，並且可以復原。",
   "botPanel.memory.noSteps": "此 bot 的引擎無法進行整理所用的快速背景模型呼叫，因此它只會封存過期筆記並合併完全重複的內容。Claude 和聊天模型引擎可以完成其餘部分。",
   "botPanel.memory.tidying": "正在整理…",
   "botPanel.memory.tidyNow": "立即整理",

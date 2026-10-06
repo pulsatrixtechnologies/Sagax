@@ -26,6 +26,7 @@ import type { BotAvatarCrop } from "../../shared/bot-avatar";
 import type { BotPublicProfile } from "../../shared/bot-public-profile";
 import { approvalModeFor, type ApprovalMode } from "../../shared/approval-mode";
 import { uiCommandToAction } from "../../shared/bot-act";
+import { onDesktopNudge } from "@/lib/desktop-nudge";
 import type { MascotBodyId } from "../../shared/mascot-bodies";
 import type { MascotSkinId } from "../../shared/mascot-skins";
 import type { QuestionRequestCardData } from "../../shared/ask-question";
@@ -173,8 +174,11 @@ export interface SecretRequestCardData {
 export interface Message {
   id: string;
   role: "bot" | "user";
-  kind: "text" | "options" | "activity" | "screen" | "connector" | "secret" | "routine.run" | "goal.run" | "digest" | "compaction" | "access";
+  kind: "text" | "options" | "activity" | "screen" | "connector" | "secret" | "routine.run" | "goal.run" | "digest" | "compaction" | "access" | "nudge";
   text?: string;
+  /** An accepted nudge. Drawn per viewer from these names, not as a bubble.
+   * `groupId` is set when the line belongs to that group chat. */
+  nudge?: { fromId: string; fromName: string; toId: string; toName: string; groupId?: string };
   /** access messages: a turn that could not run on this organization server. */
   access?: import("../../shared/wire").WireAccessCard;
   /** digest messages: what the turn did, rendered in `text` and structured here. */
@@ -202,6 +206,9 @@ export interface Message {
   /** a user message that did not come from typing here: through the
    * server's API, or spoken during a Live call. */
   via?: "api" | "call";
+  /** Words said on a voice call. The thread draws every turn of one callId
+   * as a single card; the send itself stays an ordinary message. */
+  voiceCall?: VoiceCallMark;
   /** user messages: the signed-in person who sent it. Absent for the
    * operator's own sends (see shared/wire.ts). */
   sender?: import("../../shared/wire").WireMessage["sender"];
@@ -264,6 +271,8 @@ export interface Group {
   defaultResponder: GroupDefaultResponder;
   bulletin: string;
   unread: boolean;
+  /** Kept in the home's pinned row, like a bot. Only true is a pin. */
+  pinned?: boolean;
   createdAt: number;
   /** auto-created bot⇄bot channel (ask_bot exchanges mirror here) */
   dm?: boolean;
@@ -762,7 +771,7 @@ export interface ConfigStatus {
   /** UI language override; "" (or absent) follows the system language. */
   language?: string;
   /** Opt-in flags. Absent means off. */
-  features?: { skillAuthoring: boolean; showToolCalls?: boolean; browser?: boolean; sharedComputers?: boolean; claudeUserMcp?: boolean; llmThreadTitles?: boolean; routinesInConversation?: boolean; templates?: boolean; connectedApps?: boolean; vpsComputer?: boolean; boatComputer?: boolean; skillsLibrary?: boolean };
+  features?: { skillAuthoring: boolean; showToolCalls?: boolean; browser?: boolean; sharedComputers?: boolean; claudeUserMcp?: boolean; llmThreadTitles?: boolean; routinesInConversation?: boolean; templates?: boolean; connectedApps?: boolean; vpsComputer?: boolean; boatComputer?: boolean; decisionModel?: boolean; skillsLibrary?: boolean };
   /** First-run progress: whether the welcome tour was finished and which
    * one-time hints were dismissed. Server-owned so it follows the workspace. */
   onboarding?: OnboardingStatus;
@@ -1110,6 +1119,11 @@ export interface AppState {
   /** a thread the person asked to open (chip or #Title link): the sidebar
    * expands its bot and scrolls the row into view once it is current */
   revealThread: { threadId: string; nonce: number } | null;
+  /** The conversation on screen before a thread chip (or #Title) opened
+   * another one. Threads are hidden by default, and the opened thread is
+   * the newest, so the ordinary "back" link never appears. This is the way
+   * out, until the person returns or picks a different conversation. */
+  threadReturn: { ownerId: string; threadId: string } | null;
   mascotMotion: {
     botId: string;
     nonce: number;
@@ -1247,6 +1261,10 @@ export type Action =
   /** Open (or create) the direct conversation with another person of the
    * organization (server/people-dms.ts). */
   | { type: "openPeopleDm"; principalId: string }
+  /** Nudge that person (POST /api/nudges). The server enforces the cooldown. */
+  | { type: "nudgePerson"; principalId: string }
+  /** Nudge the other people of a group chat (POST /api/nudges). */
+  | { type: "nudgeGroup"; groupId: string }
   | {
       type: "sendGroup";
       groupId: string;
@@ -1260,7 +1278,7 @@ export type Action =
   | {
       type: "patchGroup";
       groupId: string;
-      patch: Partial<Pick<Group, "name" | "bulletin" | "memberIds" | "humanIds" | "defaultResponder" | "pinnedMessageId" | "section">>;
+      patch: Partial<Pick<Group, "name" | "bulletin" | "memberIds" | "humanIds" | "defaultResponder" | "pinnedMessageId" | "section" | "unread" | "pinned">>;
     }
   | { type: "deleteGroup"; groupId: string }
   | { type: "newGroupTask"; groupId: string }
@@ -1369,6 +1387,7 @@ export type Action =
   | { type: "error"; message: string | null }
   | { type: "notice"; notice: AppState["notice"] }
   | { type: "revealThread"; threadId: string }
+  | { type: "setThreadReturn"; threadReturn: AppState["threadReturn"] }
   | { type: "toggleSettings"; open?: boolean; section?: BotSettingsSection; botId?: string }
   | { type: "openPersonPanel"; personId: string | null }
   /** Open a bot's panel on Details with one Coding activity item shown
@@ -1487,6 +1506,17 @@ export interface ThreadTarget {
 
 interface ThreadOpeningState extends NotificationRoutingState {
   bots: Array<NotificationThreadOwner & { name: string }>;
+  /** The conversation on screen. Absent only in callers that have no view. */
+  selectedId?: string;
+}
+
+/** Where a thread chip should return. Null when nothing is on screen, or
+ * the chip opens the conversation already showing. */
+function threadReturnFor(state: ThreadOpeningState, targetThreadId: string): AppState["threadReturn"] {
+  const owner = state.bots.find((candidate) => candidate.id === state.selectedId)
+    ?? state.groups.find((candidate) => candidate.id === state.selectedId);
+  if (!owner || owner.threadId === targetThreadId) return null;
+  return { ownerId: owner.id, threadId: owner.threadId };
 }
 
 /** Open a thread the person clicked: select its bot (or room) and switch
@@ -1503,8 +1533,10 @@ export function openThread(
   const owns = (owner: NotificationThreadOwner) =>
     owner.threadId === target.threadId || (owner.tasks ?? []).some((task) => task.threadId === target.threadId);
   if (state.groups.some(owns) || state.bots.some(owns)) {
+    const threadReturn = threadReturnFor(state, target.threadId);
     openNotificationTarget(dispatch, target, state);
     dispatch({ type: "revealThread", threadId: target.threadId });
+    if (threadReturn) dispatch({ type: "setThreadReturn", threadReturn });
     return true;
   }
   const bot = state.bots.find((candidate) => candidate.id === target.botId);
@@ -1583,6 +1615,7 @@ function optimisticUserMessage(
   replyToId?: string,
   parentId?: string | null,
   channelMode?: "chat" | "goal",
+  voiceCall?: VoiceCallMark,
 ): Message {
   return {
     id: optimisticMessageId(sendId),
@@ -1594,6 +1627,7 @@ function optimisticUserMessage(
     replyToId,
     sendId,
     channelMode,
+    ...(voiceCall ? { voiceCall } : {}),
   };
 }
 
@@ -1610,6 +1644,15 @@ export function panelFollowsSelection(state: Pick<AppState, "personPanelId" | "s
     return other ? { personPanelId: other, settingsOpen: false } : {};
   }
   return state.personPanelId ? { personPanelId: null, settingsOpen: !group?.dm } : {};
+}
+
+/** Drop the way-back once the remembered conversation is the one on screen. */
+function clearThreadReturnIfHome(state: AppState): AppState {
+  const back = state.threadReturn;
+  if (!back || state.selectedId !== back.ownerId) return state;
+  const owner = state.bots.find((candidate) => candidate.id === back.ownerId)
+    ?? state.groups.find((candidate) => candidate.id === back.ownerId);
+  return owner?.threadId === back.threadId ? { ...state, threadReturn: null } : state;
 }
 
 export function reducer(state: AppState, action: Action): AppState {
@@ -1786,7 +1829,7 @@ export function reducer(state: AppState, action: Action): AppState {
             hasMore: action.group.messages ? Boolean(action.group.hasMore) : g.hasMore,
           } : g))
         : [{ ...(action.group as Group), messages: action.group.messages ?? [] }, ...fenced.groups];
-      return { ...fenced, groups };
+      return clearThreadReturnIfHome({ ...fenced, groups });
     }
     case "groupDeleted": {
       const groups = state.groups.filter((g) => g.id !== action.groupId);
@@ -1809,31 +1852,33 @@ export function reducer(state: AppState, action: Action): AppState {
         config: { ...state.config, profile: { name: "", email: "", ...state.config.profile, ...action.profile } },
       } : state;
     case "select": {
-      if (state.groups.some((g) => g.id === action.id)) {
-        return {
-          ...state,
-          ...panelFollowsSelection(state, action.id),
+      const leaving = Boolean(state.threadReturn) && action.id !== state.selectedId && action.id !== state.threadReturn?.ownerId;
+      const base = leaving ? { ...state, threadReturn: null } : state;
+      if (base.groups.some((g) => g.id === action.id)) {
+        return clearThreadReturnIfHome({
+          ...base,
+          ...panelFollowsSelection(base, action.id),
           activeView: "chat",
           selectedId: action.id,
-          botSettingsSection: action.id !== state.selectedId ? "overview" : state.botSettingsSection,
-          groups: state.groups.map((g) => (g.id === action.id ? { ...g, unread: false } : g)),
-        };
+          botSettingsSection: action.id !== base.selectedId ? "overview" : base.botSettingsSection,
+          groups: base.groups.map((g) => (g.id === action.id ? { ...g, unread: false } : g)),
+        });
       }
-      return updateBot(
+      return clearThreadReturnIfHome(updateBot(
         withMascotMotion(
           {
-            ...state,
-            ...panelFollowsSelection(state, action.id),
+            ...base,
+            ...panelFollowsSelection(base, action.id),
             activeView: "chat",
             selectedId: action.id,
-            botSettingsSection: action.id !== state.selectedId ? "overview" : state.botSettingsSection,
+            botSettingsSection: action.id !== base.selectedId ? "overview" : base.botSettingsSection,
           },
           action.id,
           "switch",
         ),
         action.id,
         (b) => ({ ...b, unread: Boolean(b.tasks?.some((task) => task.threadId !== b.threadId && task.unread)), tasks: b.tasks?.map((task) => task.threadId === b.threadId ? { ...task, unread: false } : task) }),
-      );
+      ));
     }
     // optimistic card settle; the server's message.patch confirms it later
     case "answerCard": {
@@ -2230,6 +2275,8 @@ export function reducer(state: AppState, action: Action): AppState {
       return { ...state, notice: action.notice };
     case "revealThread":
       return { ...state, revealThread: { threadId: action.threadId, nonce: (state.revealThread?.nonce ?? 0) + 1 } };
+    case "setThreadReturn":
+      return { ...state, threadReturn: action.threadReturn };
     case "focusMessage":
       return {
         ...state,
@@ -2462,11 +2509,15 @@ export function reducer(state: AppState, action: Action): AppState {
       const threadId = action.threadId ?? bot?.threadId;
       if (!bot || threadId !== bot.threadId) return animated;
       if (bot.messages.some((message) => message.sendId === action.sendId)) return animated;
+      const liveCallId = voiceCallId(action.botId);
+      const voiceCall = action.voiceCall ?? (liveCallId ? { callId: liveCallId } : undefined);
       const message = optimisticUserMessage(
         action.text,
         action.sendId,
         action.replyToId,
         bot.activeLeafId,
+        undefined,
+        voiceCall,
       );
       return bumpThreadUpdatedAt(updateBot(animated, bot.id, (current) => ({
         ...current,
@@ -2563,7 +2614,7 @@ export function reducer(state: AppState, action: Action): AppState {
       for (const frame of state.backgroundThreadEvents[action.bot.threadId] ?? []) switched = reducer(switched, frame);
       const { [action.bot.threadId]: _settled, ...backgroundThreadEvents } = switched.backgroundThreadEvents;
       switched = { ...switched, backgroundThreadEvents };
-      return reconcileModelVariantSessions(reconcileSnapshotQueues(switched, [action.bot]));
+      return clearThreadReturnIfHome(reconcileModelVariantSessions(reconcileSnapshotQueues(switched, [action.bot])));
     }
     case "newBot":
     case "duplicateBot":
@@ -2574,6 +2625,8 @@ export function reducer(state: AppState, action: Action): AppState {
     case "interrupt":
     case "createGroup":
     case "openPeopleDm":
+    case "nudgePerson":
+    case "nudgeGroup":
     case "deleteGroup":
     case "interruptGroup":
     case "steerGroupQueued":
@@ -2665,6 +2718,7 @@ export const initialState: AppState = {
   error: null,
   notice: null,
   revealThread: null,
+  threadReturn: null,
   mascotMotion: null,
   pendingQueued: {},
   consumedQueueIds: {},
@@ -3720,6 +3774,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             })
             .catch(showError);
           break;
+        case "nudgePerson":
+          api(`/api/nudges`, { method: "POST", body: JSON.stringify({ principalId: action.principalId }) })
+            .then(() => onDesktopNudge())
+            .catch(showError);
+          break;
+        case "nudgeGroup":
+          api(`/api/nudges`, { method: "POST", body: JSON.stringify({ groupId: action.groupId }) })
+            .then(() => onDesktopNudge())
+            .catch(showError);
+          break;
         case "sendGroup": {
           const threadId =
             action.threadId ?? stateRef.current.groups.find((group) => group.id === action.groupId)?.threadId;
@@ -4293,6 +4357,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           if (command) dispatch(command.action as Action);
           break;
         }
+        case "nudge":
+          onDesktopNudge();
+          break;
         // a key changed and the fleet hot-reloaded — refresh the picker so
         // newly available providers un-dim immediately
         case "config":

@@ -482,8 +482,13 @@ export interface WireMessage {
   roomRequest?: { id: string; phase: "request" | "result" };
   id: string;
   role: "bot" | "user";
-  kind: "text" | "options" | "activity" | "screen" | "connector" | "secret" | "routine.run" | "goal.run" | "digest" | "compaction" | "access";
+  kind: "text" | "options" | "activity" | "screen" | "connector" | "secret" | "routine.run" | "goal.run" | "digest" | "compaction" | "access" | "nudge";
   text?: string;
+  /** An accepted nudge. The app draws one line from these names: first
+   * person for the sender, the sender's name for everyone else. `groupId`
+   * marks a line in that group chat. A direct nudge has no groupId. A
+   * refusal does not write this. */
+  nudge?: { fromId: string; fromName: string; toId: string; toName: string; groupId?: string };
   /** kind "access" (organization server, slice 3): a turn that could not run
    * for lack of engine access. Never provider text, except `detail` on
    * key_refused (redacted, at most 200 characters), which only the bot's
@@ -900,6 +905,8 @@ export type ServerFrame =
   | { kind: "achievements"; audience: string; unlocked: Array<{ id: string; points: number; unlockedAt: number }> }
   /** A screen or button for one person's open desktop app. iOS and Android ignore this kind. */
   | { kind: "bot-act"; audience: string; action: string; input?: Record<string, unknown> }
+  /** Shake this person's desktop window. Their streams only (server/nudge.ts). */
+  | { kind: "nudge"; audience: string; fromId: string; fromName: string; at: number }
   | { kind: "live.call"; botId: string; threadId: string; call: LiveCallState | null }
   /** The config status object spread flat into the frame; its full typing
    * is the deferred client-model extraction (see j1-phase-bc-progress). */

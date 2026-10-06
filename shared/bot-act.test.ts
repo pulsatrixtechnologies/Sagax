@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { actorForTurn, botActFrameAllowed, decideBotAct, uiCommandToAction, type TurnFacts } from "./bot-act.ts";
+import { actorForTurn, botActFrameAllowed, decideBotAct, fillPluginBot, uiCommandToAction, type TurnFacts } from "./bot-act.ts";
 
 const client = (method: string, path: string) => path.startsWith("/api/admin") ? "admin" as const : "client" as const;
 
@@ -86,6 +86,50 @@ describe("decideBotAct", () => {
   });
 });
 
+describe("plugin act", () => {
+  const decide = (plugins: Record<string, unknown>, mode: "ask" | "full" = "full") =>
+    decideBotAct({ raw: { plugins }, mode, scopes: ["client"], neededScope: client });
+
+  it("holds an install in ask mode and runs it in full", () => {
+    const held = decide({ action: "install", botId: "scout", marketplace: "acme-tools", plugin: "reviewer" }, "ask");
+    expect(held).toMatchObject({ ok: true, effect: "hold", summary: "POST /api/bots/scout/plugins/install" });
+    if (held.ok && held.target.kind === "route") expect(held.target.body).toEqual({ marketplace: "acme-tools", plugin: "reviewer" });
+    expect(decide({ action: "install", botId: "scout", marketplace: "acme-tools", plugin: "reviewer" })).toMatchObject({ effect: "run" });
+  });
+
+  it("runs a list immediately and maps the other plugin actions onto their routes", () => {
+    expect(decide({ action: "list", botId: "scout" }, "ask")).toMatchObject({ effect: "run", summary: "GET /api/bots/scout/plugins" });
+    expect(decide({ action: "addMarketplace", botId: "scout", source: "acme/tools", ref: "main" })).toMatchObject({
+      effect: "run", target: { method: "POST", path: "/api/bots/scout/plugins/marketplaces", body: { source: "acme/tools", ref: "main" } },
+    });
+    const toggled = decide({ action: "setEnabled", botId: "scout", key: "reviewer@acme-tools", enabled: false }, "ask");
+    expect(toggled).toMatchObject({ effect: "hold", target: { method: "PATCH", path: "/api/bots/scout/plugins/reviewer@acme-tools", body: { enabled: false } } });
+    const removed = decide({ action: "uninstall", botId: "scout", key: "reviewer@acme-tools" });
+    expect(removed).toMatchObject({ target: { method: "DELETE", path: "/api/bots/scout/plugins/reviewer@acme-tools" } });
+    if (removed.ok && removed.target.kind === "route") expect(removed.target.body).toBeUndefined();
+    expect(decide({ action: "removeMarketplace", botId: "scout", marketplace: "acme-tools" })).toMatchObject({
+      target: { method: "DELETE", path: "/api/bots/scout/plugins/marketplaces/acme-tools" },
+    });
+  });
+
+  it("refuses a bad action, an extra field, and a plugin action mixed with a route", () => {
+    expect(decide({ action: "explode", botId: "scout" })).toMatchObject({ ok: false, status: 400 });
+    expect(decide({ action: "list", botId: "scout", source: "acme/tools" }).ok).toBe(false);
+    expect(decideBotAct({ raw: { plugins: { action: "list", botId: "scout" }, method: "GET", path: "/api/bots" }, mode: "full", scopes: ["client"], neededScope: client }).ok).toBe(false);
+  });
+
+  it("fills the current bot id when the model omits it, without mutating the call", () => {
+    const raw = { plugins: { action: "list" } };
+    const filled = fillPluginBot(raw, "scout");
+    expect(raw).toEqual({ plugins: { action: "list" } });
+    expect(decideBotAct({ raw: filled, mode: "ask", scopes: ["client"], neededScope: client })).toMatchObject({
+      ok: true, effect: "run", summary: "GET /api/bots/scout/plugins",
+    });
+    expect(fillPluginBot({ plugins: { action: "list", botId: "other" } }, "scout")).toEqual({ plugins: { action: "list", botId: "other" } });
+    expect(fillPluginBot({ plugins: { action: "list" } }, "../x")).toEqual({ plugins: { action: "list" } });
+  });
+});
+
 describe("uiCommandToAction", () => {
   it("keeps a null person panel and drops callbacks", () => {
     expect(uiCommandToAction("openPersonPanel", { personId: null })?.action).toEqual({ type: "openPersonPanel", personId: null });
@@ -95,6 +139,39 @@ describe("uiCommandToAction", () => {
       input: { botId: "b1" },
     });
     expect(uiCommandToAction("messageAdded", {})).toBeNull();
+    expect(uiCommandToAction("nudgePerson", { principalId: "pr_bob" })?.action).toEqual({ type: "nudgePerson", principalId: "pr_bob" });
+  });
+});
+
+describe("nudgePerson", () => {
+  it("is the nudge route, so the server runs it once as this person", () => {
+    const decision = decideBotAct({
+      raw: { ui: "nudgePerson", input: { principalId: "pr_bob" } },
+      mode: "auto",
+      scopes: ["client"],
+      neededScope: () => "client",
+    });
+    expect(decision).toMatchObject({
+      ok: true,
+      effect: "run",
+      summary: "Nudge",
+      target: { kind: "route", method: "POST", path: "/api/nudges", body: { principalId: "pr_bob" } },
+    });
+  });
+
+  it("nudges a group chat through the same route, once", () => {
+    const decision = decideBotAct({
+      raw: { ui: "nudgeGroup", input: { groupId: "room-1" } },
+      mode: "auto",
+      scopes: ["client"],
+      neededScope: () => "client",
+    });
+    expect(decision).toMatchObject({
+      ok: true,
+      effect: "run",
+      summary: "Nudge",
+      target: { kind: "route", method: "POST", path: "/api/nudges", body: { groupId: "room-1" } },
+    });
   });
 });
 

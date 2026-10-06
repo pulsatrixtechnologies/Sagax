@@ -34,6 +34,12 @@ export const CREDENTIAL_TARGETS = {
     placeholder: "Paste your Fish Audio API key",
     helpUrl: "https://fish.audio/app/api-keys/",
   },
+  xaiVoiceKey: {
+    label: "Grok voice API key",
+    description: "Used only for Grok voice. Bots keep their own xAI key.",
+    placeholder: "xai-…",
+    helpUrl: "https://console.x.ai/",
+  },
   openaiImageApiKey: {
     label: "OpenAI API key",
     description: "Used only to generate custom bot avatar images.",
@@ -48,7 +54,7 @@ export type CredentialConfig = {
   // The persisted config section keeps its historical name: cfg.box.
   box?: { token?: string };
   opencodeGo?: { apiKey?: string };
-  tts?: { key?: string; fishKey?: string };
+  tts?: { key?: string; fishKey?: string; xaiKey?: string };
   imageGen?: { key?: string };
 };
 
@@ -68,6 +74,8 @@ export function credentialConfigPatch(id: CredentialTargetId, value: string): Cr
       return { tts: { key: value } };
     case "fishAudioKey":
       return { tts: { fishKey: value } };
+    case "xaiVoiceKey":
+      return { tts: { xaiKey: value } };
     case "openaiImageApiKey":
       return { imageGen: { key: value } };
   }
@@ -85,6 +93,8 @@ export function credentialIsConfigured(config: CredentialConfig, id: CredentialT
       return Boolean(config.tts?.key);
     case "fishAudioKey":
       return Boolean(config.tts?.fishKey);
+    case "xaiVoiceKey":
+      return Boolean(config.tts?.xaiKey);
     case "openaiImageApiKey":
       return Boolean(config.imageGen?.key);
   }

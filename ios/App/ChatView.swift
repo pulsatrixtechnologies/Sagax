@@ -48,6 +48,8 @@ struct ChatView: View {
     @State var panelTab: DesktopPanelTab = .details
     /// The live call (the composer's white capsule): the desktop's voice mode.
     @ObservedObject var call = CallController.shared
+    /// The call stage is folded back to a short row, so the conversation shows.
+    @State var callCollapsed = false
     @Environment(\.isPresented) var isPresented
     @Environment(\.openURL) var openURL
     /// WP11: the Room info sheet (RM6), opened by a room's header.
@@ -454,6 +456,12 @@ struct ChatView: View {
                                         revealedMessageId: revealedMessageId,
                                         scrollToMessage: { proxy.scrollTo($0, anchor: .center) }
                                     )
+                                case let .voiceCall(card):
+                                    VoiceCallCard(
+                                        chat: current,
+                                        card: card,
+                                        forceOpen: card.messages.contains { $0.id == revealedMessageId }
+                                    )
                                 }
                             }
                             .id(row.id)
@@ -467,11 +475,11 @@ struct ChatView: View {
                         // one arrives — the store clears it on the same frame
                         // that appends the message, so there is never a beat
                         // where both are on screen.
-                        if let live = session.state.streaming[threadId], !live.isEmpty {
+                        if !(call.active && call.isOnCall(current)), let live = session.state.streaming[threadId], !live.isEmpty {
                             StreamingBubble(text: live, reasoning: nil, color: current.color)
                                 .padding(.top, Self.rowGap)
                                 .id(Self.liveBubbleId)
-                        } else if activityDetail != ActivityDetail.hidden.rawValue,
+                        } else if !(call.active && call.isOnCall(current)), activityDetail != ActivityDetail.hidden.rawValue,
                                   let thinking = session.state.reasoning[threadId], !thinking.isEmpty {
                             // Only while there is no answer yet. Once tokens
                             // of the reply exist, the reasoning is behind us
@@ -511,7 +519,7 @@ struct ChatView: View {
                     // capsule (and under the pinned banner when there is one)
                     Color.clear.frame(height: Self.topBarHeight
                         + (pinnedPreview == nil ? 0 : Self.pinnedBannerHeight)
-                        + (callPillShown ? Self.callPillRow : 0))
+                        + (callCollapsedBarShown ? 44 : 0))
                 }
                 // iPad desktop: an open find bar sits in the column's flow,
                 // so the transcript is cut under it (ChatView.tsx)
@@ -526,7 +534,7 @@ struct ChatView: View {
                 }
                 .overlay(alignment: .top) { pinnedBanner }
                 .overlay(alignment: .top) { chatHeaderSlot }
-                .overlay(alignment: .top) { callPill }
+                .overlay(alignment: .top) { callCollapsedBar }
                 .overlay(alignment: .bottom) {
                     if !follow.following, !transcript.isEmpty {
                         JumpToLatestButton {
@@ -623,6 +631,9 @@ struct ChatView: View {
                         if case let .assistantTurn(turn) = row {
                             return turn.messages.contains { $0.id == messageId }
                         }
+                        if case let .voiceCall(card) = row {
+                            return card.messages.contains { $0.id == messageId }
+                        }
                         return false
                     }
                     proxy.scrollTo(folded?.id ?? messageId, anchor: .center)
@@ -652,6 +663,10 @@ struct ChatView: View {
         .background(chatBackground)
         .overlay(alignment: .bottom) { plusSheet }
         .overlay { groupCall }
+        .overlay { callStage }
+        .onValueChange(of: callPillShown) { shown in
+            if !shown { callCollapsed = false }
+        }
 #if DEBUG
         .overlay(alignment: .bottomLeading) {
             if CallDebug.injecting && call.active { CallDebugPanel(call: call).padding(.leading, 2).padding(.bottom, 120) }

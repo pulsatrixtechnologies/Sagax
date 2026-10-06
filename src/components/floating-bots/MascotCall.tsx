@@ -7,7 +7,7 @@
 // only draws what the brain sends (FloatingCall) and reports clicks
 // ({ type: "call", action }); the call runs in the app.
 import { useEffect, useRef, useState } from "react";
-import { Hand, MessageSquareMore, Mic, MicOff, Pause, Play, Settings, X } from "lucide-react";
+import { Hand, Mic, MicOff, Pause, Play, X } from "lucide-react";
 
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
@@ -18,66 +18,11 @@ import type { FloatingCall, FloatingCallAction, FloatingCallLevels, FloatingEven
 export type MascotCallCard = "settings" | "transcript" | null;
 export type LevelSource = (listener: (levels: FloatingCallLevels) => void) => () => void;
 
-const DOT = 4; // px between dot columns and rows, as in the app's pill
-const ROWS = 5;
-
 /** The newest levels at the right, scrolling left: one column per level report. Exported for tests. */
 export function pushLevel(history: number[], level: number, columns: number): number[] {
   const next = history.length >= columns ? history.slice(history.length - columns + 1) : history.slice();
   next.push(Math.max(0, Math.min(1, level)));
   return next;
-}
-
-/** Both sides of the call as a row of dots (the bot's voice in the accent, the person's in ink). */
-function Waveform({ levels, quiet }: { levels?: LevelSource; quiet: boolean }) {
-  const canvas = useRef<HTMLCanvasElement>(null);
-  useEffect(() => {
-    const element = canvas.current;
-    const context = element?.getContext?.("2d");
-    if (!element || !context) return;
-    let bot: number[] = [];
-    let mic: number[] = [];
-    const draw = () => {
-      const ratio = window.devicePixelRatio || 1;
-      const width = element.clientWidth;
-      const height = element.clientHeight;
-      if (element.width !== Math.round(width * ratio) || element.height !== Math.round(height * ratio)) {
-        element.width = Math.round(width * ratio);
-        element.height = Math.round(height * ratio);
-      }
-      context.setTransform(ratio, 0, 0, ratio, 0, 0);
-      context.clearRect(0, 0, width, height);
-      const columns = Math.max(1, Math.floor(width / DOT));
-      const style = getComputedStyle(element);
-      const ink = style.color;
-      const accent = style.getPropertyValue("--color-accent").trim() || ink;
-      const offset = (width - (columns - 1) * DOT) / 2;
-      for (let i = 0; i < columns; i++) {
-        const theirs = quiet ? 0 : bot[bot.length - columns + i] ?? 0;
-        const mine = quiet ? 0 : mic[mic.length - columns + i] ?? 0;
-        const level = Math.max(theirs, mine);
-        const reach = Math.round((level * (ROWS - 1)) / 2);
-        context.fillStyle = theirs >= mine && level > 0.05 ? accent : ink;
-        for (let row = -reach; row <= reach; row++) {
-          context.globalAlpha = Math.min(1, 0.22 + level * 0.75 - Math.abs(row) * 0.08);
-          context.beginPath();
-          context.arc(offset + i * DOT, height / 2 + row * DOT, 1, 0, Math.PI * 2);
-          context.fill();
-        }
-      }
-      context.globalAlpha = 1;
-    };
-    draw();
-    if (!levels) return;
-    // drawn only when a level comes (a few times a second at most), never in a loop of its own
-    return levels((next) => {
-      const columns = Math.max(1, Math.floor(element.clientWidth / DOT));
-      bot = pushLevel(bot, next.bot, columns);
-      mic = pushLevel(mic, next.mic, columns);
-      draw();
-    });
-  }, [levels, quiet]);
-  return <canvas ref={canvas} className="block h-5 w-full text-ink" aria-hidden="true" />;
 }
 
 /** Ticks once a second from the call's start. */
@@ -105,15 +50,11 @@ export interface MascotCallProps {
 const act = (onEvent: MascotCallProps["onEvent"], action: FloatingCallAction, extra: { voice?: string; patch?: Record<string, string | number | boolean> } = {}) =>
   onEvent({ type: "call", action, ...extra });
 
-/** The compact pill under the mascot. */
-export function MascotCallPill({ call, name, card, onCard, onEvent, hover, levels }: MascotCallProps) {
+/** A short row under the mascot: time, mic and end. Settings live on the call stage in the chat, not in a card over the window. */
+export function MascotCallPill({ call, name, onEvent, hover }: MascotCallProps) {
   const held = call.phase === "held";
   const status = phaseLabel(call.phase, call.muted);
   const time = formatCallTime(useElapsed(call.startedAt));
-  const toggle = (next: Exclude<MascotCallCard, null>) => {
-    if (next === "settings" && card !== "settings") act(onEvent, "voices");
-    onCard(card === next ? null : next);
-  };
   return (
     <section
       className="fb-call-pill pointer-events-auto flex h-9 items-center gap-1 rounded-full border border-hairline-weak bg-elevated pl-2.5 pr-1 text-ink shadow-[0_6px_20px_rgba(0,0,0,0.28)]"
@@ -125,9 +66,7 @@ export function MascotCallPill({ call, name, card, onCard, onEvent, hover, level
       onPointerLeave={() => hover(false)}
     >
       <span className="sr-only" aria-live="polite" data-voice-status>{call.line || status}</span>
-      <div className="min-w-0 flex-1" data-voice-waveform>
-        <Waveform levels={levels} quiet={held || call.phase === "connecting"} />
-      </div>
+      <span className="min-w-0 flex-1 truncate px-1 text-[12px] tabular-nums text-ink-secondary" data-voice-timer>{time}</span>
       {call.push && (
         <button
           type="button"
@@ -146,12 +85,6 @@ export function MascotCallPill({ call, name, card, onCard, onEvent, hover, level
           <Hand size={12} />
         </button>
       )}
-      <button type="button" aria-label={t("voiceMode.settings")} title={t("voiceMode.settings")} aria-expanded={card === "settings"} data-voice-gear onClick={() => toggle("settings")} className={cn(ROUND, card === "settings" && "text-ink ring-2 ring-ink/40")}>
-        <Settings size={12} />
-      </button>
-      <button type="button" aria-label={t("voiceMode.transcript")} title={t("voiceMode.transcript")} aria-expanded={card === "transcript"} data-voice-transcript-toggle onClick={() => toggle("transcript")} className={cn(ROUND, card === "transcript" && "bg-ink text-panel hover:text-panel")}>
-        <MessageSquareMore size={12} />
-      </button>
       <button
         type="button"
         aria-label={call.muted ? t("voiceMode.unmute") : t("voiceMode.mute")}
@@ -201,7 +134,9 @@ export function MascotCallCardView({ call, name, card, onEvent, hover, style }: 
     return () => window.removeEventListener("keydown", onKey, true);
   }, [list]);
   const alert = call.note || call.notice;
-  if (!card && !alert) return null;
+  // Settings and the transcript live on the call stage in the chat. This card
+  // only carries a note, so a floating call does not cover the window.
+  if (card || !alert) return null;
   return (
     <div
       className="fb-call-card pointer-events-auto overflow-hidden rounded-[18px] border border-hairline-weak bg-elevated text-ink shadow-[0_8px_28px_rgba(0,0,0,0.28)]"

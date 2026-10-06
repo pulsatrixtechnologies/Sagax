@@ -36,6 +36,8 @@ export const desktopBridgeRegistration = z.object({
   attachmentsDir: z.string().min(2).max(1024).regex(ABSOLUTE_PATH).regex(NO_CONTROL),
   capabilities: z.object({
     shell: z.boolean(), files: z.boolean(), fetch: z.boolean(), browser: z.boolean(), computer: z.boolean(), localVm: z.boolean(),
+    /** Optional so a desktop that predates local models still registers. */
+    localModels: z.boolean().optional(),
   }).strict(),
   version: z.string().max(40).optional(),
 }).strict();
@@ -64,6 +66,8 @@ export const DESKTOP_BRIDGE_ACTIONS = [
   "extract_archive",
   // The person's own Local VM from their Computer tab (desktop-bridge-routes.ts).
   "vm_stop", "vm_pause", "vm_resume", "vm_setup", "vm_install", "vm_screenshot", "vm_computer_call",
+  // One allowlisted call to a loopback model the desktop published (endpoint id, never a URL).
+  "local_model",
 ] as const;
 export type DesktopBridgeAction = (typeof DESKTOP_BRIDGE_ACTIONS)[number];
 
@@ -87,6 +91,12 @@ export const desktopBridgeOperation = z.object({
   /** stage_file, extract_archive: the file name in the desktop's attachments folder. */
   name: z.string().max(255).optional(),
   final: z.boolean().optional(),
+  /** local_model: an endpoint id the desktop published. Not a URL. */
+  endpoint: z.string().max(40).optional(),
+  http_method: z.enum(["GET", "POST"]).optional(),
+  http_path: z.enum(["/models", "/chat/completions"]).optional(),
+  /** local_model JSON body. Never logged. */
+  json: z.string().max(1_000_000).optional(),
 }).strict();
 export type DesktopBridgeOperation = z.infer<typeof desktopBridgeOperation>;
 
@@ -100,6 +110,7 @@ export function desktopBridgeCapability(action: DesktopBridgeAction): keyof Desk
     case "computer_tools": case "computer_call": return "computer";
     case "vm_status": case "vm_start": case "vm_run_command": case "vm_create":
     case "vm_stop": case "vm_pause": case "vm_resume": case "vm_setup": case "vm_install": case "vm_screenshot": case "vm_computer_call": return "localVm";
+    case "local_model": return "localModels";
   }
 }
 

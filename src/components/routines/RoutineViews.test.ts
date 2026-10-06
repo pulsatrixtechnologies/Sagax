@@ -21,14 +21,15 @@ function logs(props: Partial<Parameters<typeof RoutineLogs>[0]> = {}) {
 
 afterEach(() => vi.useRealTimers());
 
-// The list is the compact Sagax layout (8a563e929, 1e6839895): a row per
-// routine with its name, its state and a pause switch. Latest results, skips
-// and failure streaks live in the routine's detail and in the run logs.
+// A row shows the name, when it runs, and a pause switch. Active is the
+// switch. Latest results, skips and failure streaks stay in the detail
+// and in the run logs.
 describe("routine list", () => {
-  it("shows each routine's name, state and pause switch, nothing more", () => {
+  it("shows each routine's name, when it runs and a pause switch, nothing more", () => {
     const markup = list({ routines: [{ ...routine, skippedRuns: 3, lastSkippedAt: 100, failureStreak: 2 }] });
     expect(markup).toContain("Morning brief");
-    expect(markup).toContain(">Active<");
+    expect(markup).toContain('data-routine-when="Every hour"');
+    expect(markup).not.toContain(">Active<");
     expect(markup).toContain('aria-label="Pause"');
     expect(markup).not.toContain("Brief prepared.");
     expect(markup).not.toContain("Scheduled occurrences skipped while busy");
@@ -52,14 +53,17 @@ describe("routine list", () => {
     vi.useFakeTimers();
     vi.setSystemTime(10_000);
     const markup = list({ routines: [{ ...routine, schedule: { type: "once", at: 10 }, enabled: false, nextRunAt: null }], runs: [{ ...run, status: "failed", error: "Provider disconnected." }] });
-    expect(markup.match(/Finished schedule/g)).toHaveLength(1);
+    expect(markup).toContain("Finished schedule");
     expect(markup).not.toContain(">Paused<");
+    expect(markup).not.toContain("· Paused");
     expect(markup).toContain('aria-label="Resume"');
   });
 
   it("never advertises a stale next timestamp for a paused routine", () => {
     expect(routineNextLabel({ ...routine, enabled: false })).toBe("Paused");
-    expect(list({ routines: [{ ...routine, enabled: false }] })).not.toContain("Next Jan");
+    const paused = list({ routines: [{ ...routine, enabled: false }] });
+    expect(paused).toContain("Every hour · Paused");
+    expect(paused).not.toContain("Next Jan");
   });
 
   it("lists enabled routines first, then by next run and name", () => {

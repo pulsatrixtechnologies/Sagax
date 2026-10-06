@@ -28,6 +28,8 @@ import { myTurnsText, reloadMyEngines, useMyEngines, usePerspicaxOrg } from "@/l
 import { orgEngineState } from "@/lib/model-payers";
 import { ModelPickerPayers } from "./ModelPickerPayers";
 import { COMPACT_SQUARE } from "@/lib/compact-chip";
+import { saveViewerBotOverride } from "@/lib/viewer-bot-overrides";
+import type { ViewerBotOverridePatch } from "../../shared/viewer-bot-overrides";
 
 type ModelOption = InstanceInfo["models"]["options"][number];
 const COMPACT_MODEL_COUNT = 5;
@@ -38,6 +40,16 @@ function modelLabel(instance: InstanceInfo | undefined, model: string): string {
 
 function modelProvider(instance: InstanceInfo | undefined, model: string): string | undefined {
   return instance?.models.options.find((option) => option.id === model)?.provider;
+}
+
+function saveViewerChoice(
+  dispatch: (action: { type: "error"; message: string }) => void,
+  botId: string,
+  patch: ViewerBotOverridePatch,
+): void {
+  void saveViewerBotOverride(botId, patch).then((ok) => {
+    if (!ok) dispatch({ type: "error", message: t("botPanel.viewerLocal.saveError") });
+  });
 }
 
 export function engineStatus(instance: InstanceInfo): string {
@@ -81,6 +93,12 @@ export function offersLocalModels(instance: InstanceInfo | undefined, localCount
   return localCount > 0 || (instance.driverKind === "claudeAgent" && !needsCli(instance) && !instance.policy);
 }
 
+/** A desktop bridge inject id (desk host, then ::, then the model). Organization mode shows only these in Custom. */
+export function isDesktopLocalModel(id: string): boolean {
+  const sep = id.indexOf("::");
+  return sep > 0 && /^desk[a-z0-9]+$/.test(id.slice(0, sep));
+}
+
 /** The others capitalize cleanly; "xhigh" would read "Xhigh". */
 export function effortLabel(level: EffortLevel): string {
   return level === "xhigh" ? "X-High" : level[0].toUpperCase() + level.slice(1);
@@ -98,6 +116,7 @@ export function EffortRow({
   bot,
   threadId,
   updateBotDefault,
+  viewerLocal = false,
   className,
   label,
   compact = false,
@@ -105,6 +124,8 @@ export function EffortRow({
   bot: Bot;
   threadId?: string;
   updateBotDefault?: boolean;
+  /** Write this person's own effort. Do not patch the bot. */
+  viewerLocal?: boolean;
   className?: string;
   label?: ReactNode;
   compact?: boolean;
@@ -113,7 +134,7 @@ export function EffortRow({
   const selection = bot.modelSelection;
   const instance = state.instances.find((candidate) => candidate.instanceId === selection.instanceId);
   if (instance?.capabilities?.modelVariants) {
-    return <ModelVariantRow bot={bot} threadId={threadId} updateBotDefault={updateBotDefault} className={className} label={label} compact={compact} />;
+    return <ModelVariantRow bot={bot} threadId={threadId} updateBotDefault={updateBotDefault} viewerLocal={viewerLocal} className={className} label={label} compact={compact} />;
   }
   const levels = instance?.capabilities?.effortLevels;
   // An engine with no levels gets no control at all, not an empty one.
@@ -123,8 +144,15 @@ export function EffortRow({
     <label className={cn("flex items-center justify-between gap-3", className)}>
       {label}
       <select aria-label="Reasoning effort" value={selection.effort ?? ""}
-        onChange={(event) => dispatch({ type: "setModel", botId: bot.id, threadId, ...(updateBotDefault ? { updateBotDefault: true } : {}),
-          selection: { ...selection, effort: levels.find((level) => level === event.target.value) } })}
+        onChange={(event) => {
+          const effort = levels.find((level) => level === event.target.value);
+          if (viewerLocal) {
+            saveViewerChoice(dispatch, bot.id, { effort: effort ?? null });
+            return;
+          }
+          dispatch({ type: "setModel", botId: bot.id, threadId, ...(updateBotDefault ? { updateBotDefault: true } : {}),
+            selection: { ...selection, effort } });
+        }}
         className="min-w-0 max-w-[65%] rounded-lg border border-hairline/40 bg-inset px-2 py-1.5 text-[12px] text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/70">
         <option value="">Default</option>
         {levels.map((level) => <option key={level} value={level}>{effortLabel(level)}</option>)}
@@ -148,7 +176,13 @@ export function EffortRow({
                 ? "Send no effort level and let the provider decide"
                 : `Ask for ${effortLabel(level)} reasoning effort`
             }
-            onClick={() => dispatch({ type: "setModel", botId: bot.id, threadId, ...(updateBotDefault ? { updateBotDefault: true } : {}), selection: { ...selection, effort: level } })}
+            onClick={() => {
+              if (viewerLocal) {
+                saveViewerChoice(dispatch, bot.id, { effort: level ?? null });
+                return;
+              }
+              dispatch({ type: "setModel", botId: bot.id, threadId, ...(updateBotDefault ? { updateBotDefault: true } : {}), selection: { ...selection, effort: level } });
+            }}
             className={cn(
               "rounded-full border px-2.5 py-1 text-[12px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/70",
               selection.effort === level
@@ -169,10 +203,11 @@ function variantLabel(option: ModelVariantOption): string {
 }
 
 /** ACP variant ids are opaque; their model/session declares the available choices. */
-export function ModelVariantRow({ bot, threadId, updateBotDefault, className, label, compact = false }: {
+export function ModelVariantRow({ bot, threadId, updateBotDefault, viewerLocal = false, className, label, compact = false }: {
   bot: Bot;
   threadId?: string;
   updateBotDefault?: boolean;
+  viewerLocal?: boolean;
   className?: string;
   label?: ReactNode;
   compact?: boolean;
@@ -189,6 +224,10 @@ export function ModelVariantRow({ bot, threadId, updateBotDefault, className, la
   const unavailable = missing && reported !== undefined;
   const current = reported?.currentValue;
   const choose = (variant?: string) => {
+    if (viewerLocal) {
+      saveViewerChoice(dispatch, bot.id, { variant: variant ?? null });
+      return;
+    }
     const { effort: _effort, variant: _variant, ...model } = selection;
     dispatch({ type: "setModel", botId: bot.id, threadId, ...(updateBotDefault ? { updateBotDefault: true } : {}),
       selection: { ...model, ...(variant !== undefined ? { variant } : {}) } });
@@ -497,17 +536,20 @@ export function ModelPicker({
   className,
   contained = false,
   inComposer = false,
+  viewerLocal = false,
   label,
 }: {
   bot: Bot;
   threadId?: string;
   className?: string;
-  /** Profile row: the label sits beside the pill. The menu is still the
+  /** Profile row: the label sits above the pill. The menu is still the
    * same modal as the composer. The profile card already has Effort, so
    * the modal does not repeat it. */
   contained?: boolean;
   /** Sit in the composer as a text row. */
   inComposer?: boolean;
+  /** Settings of a shared bot: save this person's model, not the owner's. */
+  viewerLocal?: boolean;
   label?: ReactNode;
 }) {
   const { state, dispatch, refreshInstances, refreshModels: refreshInstanceModels } = useStore();
@@ -573,10 +615,7 @@ export function ModelPicker({
   const hasOfficialModels = Boolean(railInstance?.snapshot.chatgptPlan || railInstance?.models.options.some((option) => !option.custom));
   const customOnly = isCustomOnly(railInstance);
   useEffect(() => {
-    if (orgMode) {
-      setPane("main");
-      return;
-    }
+    if (orgMode) return;
     if (railId !== null && railId !== displayedInstanceId) {
       // A refresh can remove the provider being browsed. Reset its list, not
       // the saved model selection or the pane chosen when reopening the menu.
@@ -701,10 +740,10 @@ export function ModelPicker({
   };
 
   const openLocalModels = (instance: InstanceInfo) => {
-    if (orgMode) return;
     setPane("custom");
     resetList();
-    if (needsCli(instance) || instance.policy || probingLocal === instance.instanceId) return;
+    // Organization mode already has the desktop catalog. Do not probe this server's localhost.
+    if (orgMode || needsCli(instance) || instance.policy || probingLocal === instance.instanceId) return;
     setProbingLocal(instance.instanceId);
     void probeLocalModels(instance.instanceId, refreshInstanceModels).then(() =>
       setProbingLocal((current) => (current === instance.instanceId ? null : current)));
@@ -726,6 +765,11 @@ export function ModelPicker({
 
   const pick = (instance: InstanceInfo, model: string) => {
     if (bot.busy || instance.policy) return;
+    if (viewerLocal) {
+      saveViewerChoice(dispatch, bot.id, { model: { instanceId: instance.instanceId, model } });
+      setOpen(false);
+      return;
+    }
     const nextSelection = modelSelectionForPick(selection, instance, model);
     const updateBotDefault = !threadId || scope === "bot";
     const profile = state.bots.find((candidate) => candidate.id === bot.id) ?? bot;
@@ -749,7 +793,9 @@ export function ModelPicker({
   };
 
   const official = railInstance?.models.options.filter((option) => !option.custom) ?? [];
-  const custom = orgMode ? [] : railInstance?.models.options.filter((option) => option.custom) ?? [];
+  const custom = (orgMode
+    ? railInstance?.models.options.filter((option) => option.custom && isDesktopLocalModel(option.id))
+    : railInstance?.models.options.filter((option) => option.custom)) ?? [];
   const currentModel = selection.instanceId === railInstance?.instanceId ? selection.model : undefined;
   const filteredOfficial = filterCustomModels(official, query);
   const compactOfficial = railInstance
@@ -1142,7 +1188,7 @@ export function ModelPicker({
     />
   );
 
-  const localEntry = advanced && railInstance && (orgMode ? (
+  const localEntry = advanced && railInstance && (orgMode && custom.length === 0 ? (
     <p data-model-local-hidden className="text-[11.5px] leading-relaxed text-ink-tertiary">{t("model.org.localHidden")}</p>
   ) : pane === "main" && offersLocalModels(railInstance, custom.length) && (
     <button
@@ -1251,9 +1297,9 @@ export function ModelPicker({
   return (
     <div ref={rootRef} className={cn(contained ? "w-full" : "relative", className)}>
       {contained ? (
-        <div className="flex items-center justify-between gap-4">
+        <div className="flex w-full flex-col gap-3">
           {label}
-          {trigger}
+          <div className="self-start">{trigger}</div>
         </div>
       ) : (
         trigger

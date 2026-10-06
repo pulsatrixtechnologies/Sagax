@@ -20,11 +20,11 @@ export function ThreadChip({ message }: { message: Message }) {
         type="button"
         data-thread-chip={ref.threadId}
         onClick={() => openThread(dispatch, ref, state)}
-        title={t("chat.openThread", { title: ref.title })}
+        title={ref.title ? t("chat.openThread", { title: ref.title }) : t("chat.goToConversation")}
         className="flex items-center gap-2 rounded-full border border-hairline/40 bg-panel px-3 py-1.5 text-[13px] text-ink-secondary hover:bg-raised hover:text-ink"
       >
         {bot ? <BotAvatar bot={bot} state="happy" size={16} animated={false} /> : <MessagesSquare size={13} aria-hidden="true" />}
-        <span className="max-w-[480px] truncate">{tool.name}</span>
+        <span className="max-w-[480px] truncate">{t("chat.goToConversation")}</span>
         <ChevronRight size={13} />
       </button>
     </div>

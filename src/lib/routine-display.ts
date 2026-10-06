@@ -1,5 +1,6 @@
 import type { Routine, RoutineRun } from "./routines";
 import { activeLocale, t } from "./i18n";
+import { scheduleLabel } from "./schedule-label";
 
 export function routineRunTime(run: RoutineRun): number {
   return run.createdAt || run.startedAt || run.scheduledFor;
@@ -31,6 +32,15 @@ export function routineScheduleState(routine: Routine): string {
   // A consumed one-shot has no next date. It is not a paused recurring schedule.
   if (routine.schedule.type === "once" && routine.nextRunAt == null && routine.schedule.at <= Date.now()) return t("routines.finishedSchedule");
   return routine.enabled ? t("routines.activeSchedule") : t("routines.pausedSchedule");
+}
+
+/** The line under the name: when the routine runs. Active is the switch.
+ * A paused or finished schedule keeps that word after the when. */
+export function routineWhenLabel(routine: Routine): string {
+  const when = scheduleLabel(routine.schedule);
+  const state = routineScheduleState(routine);
+  if (state === t("routines.activeSchedule")) return when;
+  return `${when} · ${state}`;
 }
 
 export function routineNextLabel(routine: Routine): string {

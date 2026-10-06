@@ -189,6 +189,7 @@ extension ChatView {
     private func rowId(for message: Message) -> String {
         rows.first { row in
             if case let .assistantTurn(turn) = row { return turn.messages.contains { $0.id == message.id } }
+            if case let .voiceCall(card) = row { return card.messages.contains { $0.id == message.id } }
             return row.id == message.id
         }?.id ?? message.id
     }

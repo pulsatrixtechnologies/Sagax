@@ -36,7 +36,7 @@ describe("GroupMemoryTab", () => {
     const html = render(view({ canEdit: false }));
     expect(html).toContain('readOnly=""');
     expect(html).toContain("Only the owner of this group can change its memory.");
-    expect(html).toMatch(/<button disabled=""[^>]*role="switch"/);
+    expect(html).not.toContain('role="switch"');
     expect(html).not.toContain(">Save<");
   });
 

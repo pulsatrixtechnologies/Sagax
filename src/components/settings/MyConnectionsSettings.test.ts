@@ -112,10 +112,10 @@ describe("Library > Plugins", () => {
     expect(html).toContain(">Install<");
   });
 
-  it("is read-only for a person who only uses the bot, and says when the engine is not Claude Code", () => {
+  it("is read-only for a person who only uses the bot, and says Sagax installs plugins for every engine", () => {
     const html = renderToStaticMarkup(createElement(BotPluginsCard, { bot: { id: "b1" }, initial: { ...view, canChange: false, engine: { loadsPlugins: false }, policy: { mode: "list", allow: ["acme/*"] } } }));
     expect(html).toContain("Only the bot&#x27;s owner, or someone who manages it");
-    expect(html).toContain("only when this bot runs on Claude Code");
+    expect(html).toContain("Sagax installs the plugin and its skills and commands are there for every engine.");
     expect(html).toContain("Your organization allows: acme/*");
     expect(html).not.toContain("Add a marketplace");
     expect(html).not.toContain(">Install<");

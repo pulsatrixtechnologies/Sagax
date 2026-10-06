@@ -17,7 +17,7 @@ describe("voice mode call button on an organization server", () => {
 
   it("shows the speaker's private access card, never the legacy This computer gate", () => {
     const view = voiceUnavailableView(ready({ available: false, refusal: { cause: "no_credentials", keysUrl: "https://keys.example.test" } }))!;
-    expect(view.lines).toEqual(["You don't have xAI access for voice mode: add your xAI key in Perspicax."]);
+    expect(view.lines).toEqual(["Voice mode needs a Grok voice key. Add one in Settings > API keys. It is separate from the xAI key bots use."]);
     expect(view.actions).toEqual(["add-key"]);
     expect(JSON.stringify(view)).not.toMatch(/This computer|on-device|your Mac/);
   });
@@ -25,7 +25,7 @@ describe("voice mode call button on an organization server", () => {
   it("adds the organization's key hint and Open Settings > Connections for an admin only", () => {
     const view = voiceUnavailableView(ready({ available: false, refusal: { cause: "no_credentials", admin: true } }))!;
     expect(view.lines).toEqual([
-      "You don't have xAI access for voice mode: add your xAI key in Perspicax.",
+      "Voice mode needs a Grok voice key. Add one in Settings > API keys. It is separate from the xAI key bots use.",
       "As an admin, you can also set the organization's key in Settings > Connections.",
     ]);
     expect(view.actions).toEqual(["open-connections"]);

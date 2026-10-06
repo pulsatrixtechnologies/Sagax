@@ -36,9 +36,13 @@ describe("people dm rules", () => {
     expect(otherPerson(dm, "pr_alice")).toBe("pr_bob");
   });
 
-  it("only marks read, only takes messages", () => {
+  it("only marks read or the home pin, only takes messages", () => {
     expect(peopleDmPatchRefusal({ unread: false })).toBeNull();
+    expect(peopleDmPatchRefusal({ unread: true })).toBeNull();
+    expect(peopleDmPatchRefusal({ pinned: false })).toBeNull();
+    expect(peopleDmPatchRefusal({ pinned: true })).toBeNull();
     expect(peopleDmPatchRefusal({ unread: false, name: "x" })).toBe("name");
+    expect(peopleDmPatchRefusal({ section: "Ops" })).toBe("section");
     expect(peopleDmRouteRefusal("GET", "/api/threads/t1/messages")).toBeNull();
     expect(peopleDmRouteRefusal("POST", "/api/groups/g1/messages")).toBeNull();
     expect(peopleDmRouteRefusal("POST", "/api/groups/g1/read")).toBeNull();

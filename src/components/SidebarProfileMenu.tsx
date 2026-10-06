@@ -1,6 +1,7 @@
 // The profile row at the very bottom of the sidebar, and the menu it opens.
 //
-// The row is an avatar and a full name. The menu leads with Team map and
+// The row is an avatar and a full name, and the achievement line under the
+// name shares that same rounded highlight. The menu leads with Team map and
 // Automations, then a hairline, then settings. Archived bots, when there
 // are any, sit above that pair with their own hairline. Your phone and
 // Help Center are not in this menu: the phone stays in Settings and on
@@ -36,6 +37,8 @@ import { t } from "@/lib/i18n";
 import { useAchievements } from "@/lib/achievements";
 import { isRoutineProblemRun } from "@/lib/routines";
 import { Gamertag, gamertagText } from "./achievements/Gamertag";
+import { achievementTitleName, AnchoredMemberCard, memberCardRows, MemberTitleButton } from "./achievements/MemberCard";
+import { formatPoints } from "./achievements/AchievementsPage";
 
 /** "Milind Soni" → "MS", "milind" → "M", "you@x.dev" → "Y", unset → "?" */
 export function profileInitials(profile?: { name?: string; email?: string }): string {
@@ -287,8 +290,14 @@ export function SidebarProfileMenu({ avatarOnly = false, places = [] }: {
   const triggerRef = useRef<HTMLSpanElement>(null);
   const achievements = useAchievements();
   const openAchievements = () => dispatch({ type: "toggleAppSettings", open: true, section: "achievements" });
-  // the gamertag line under the name (points, like a console's gamertag)
-  const gamertag = gamertagText({ status: achievements.status, points: achievements.snapshot?.points, showPoints: achievements.snapshot?.settings.showPoints }) !== null;
+  const [cardOpen, setCardOpen] = useState(false);
+  const lineRef = useRef<HTMLDivElement>(null);
+  const snapshot = achievements.snapshot;
+  // points stay behind showPoints. The title is separate: no title, no gap.
+  const pointsText = gamertagText({ status: achievements.status, points: snapshot?.points, showPoints: snapshot?.settings.showPoints });
+  const titleName = achievements.status === "ready" ? achievementTitleName(snapshot?.settings.title) : null;
+  const showLine = Boolean(titleName || pointsText);
+  const toggleCard = () => setCardOpen((open) => !open);
 
   const profile = state.config?.profile;
   const viewer = state.config?.viewer;
@@ -344,72 +353,107 @@ export function SidebarProfileMenu({ avatarOnly = false, places = [] }: {
     </span>
   );
 
+  // The points open the achievement card, so they stay outside the menu
+  // button. The highlight is the wrapper around both, one rounded block.
+  const accountRow = (
+    <SidebarPopoverMenu
+      items={items}
+      ariaLabel={name}
+      menuClassName={avatarOnly ? "left-0 w-64" : undefined}
+      renderTrigger={({ open }) => avatarOnly ? (
+        <span
+          ref={triggerRef}
+          title={name}
+          className={cn(
+            "relative flex size-9 items-center justify-center rounded-full transition-[filter]",
+            open ? "ring-2 ring-accent/60" : "hover:brightness-90",
+          )}
+        >
+          {avatar(36)}
+          {noteworthy && (
+            <span
+              title={noteworthy.label}
+              aria-label={noteworthy.label}
+              className={cn(
+                "absolute -right-0.5 -top-0.5 size-3 rounded-full border-2 border-sidebar",
+                noteworthy.phase === "error" ? "bg-danger" : "bg-accent",
+              )}
+            />
+          )}
+        </span>
+      ) : (
+        // One row, like Perspicax's account footer: the avatar and the full
+        // name, which ellipsizes only when it truly runs out of room.
+        <span
+          ref={triggerRef}
+          data-sidebar-account
+          className={cn("flex w-full min-w-0 gap-2.5 text-left", showLine ? "items-start" : "items-center")}
+        >
+          {avatar(40)}
+          <span className={cn("flex min-w-0 flex-1 flex-col", showLine && "pt-0.5")}>
+            <span title={name} className="min-w-0 truncate text-[14px] font-medium leading-[18px] text-sidebar-ink">{name}</span>
+          </span>
+          {/* an update is the one thing worth interrupting the name for, so
+            * it sits on the row rather than waiting to be found in the menu */}
+          {noteworthy && (
+            <span
+              title={noteworthy.label}
+              aria-label={noteworthy.label}
+              className={cn(
+                "flex size-6 shrink-0 items-center justify-center rounded-full",
+                noteworthy.phase === "error" ? "bg-danger/15 text-danger" : "bg-accent/15 text-accent",
+              )}
+            >
+              <UpdateIcon phase={noteworthy.phase} pending={noteworthy.pending} size={14} />
+            </span>
+          )}
+          {placeAttention && !open && (
+            <span data-testid="footer-attention" aria-hidden="true" className="size-2 shrink-0 rounded-full bg-danger" />
+          )}
+        </span>
+      )}
+    />
+  );
+  const achievementLine = showLine && !avatarOnly && snapshot ? (
+    // 46px lines the title glyph up with the name: 40px avatar, 10px gap,
+    // minus the title button's 4px padding. Points alone stay at 50px
+    // because the trophy already cancels its own padding. The pull-up
+    // sits the line a few pixels closer to the name, without collapsing it.
+    <div ref={lineRef} className={cn("-mt-[21px] flex min-w-0 items-center gap-1", titleName ? "pl-[46px]" : "pl-[50px]")} data-member-line="">
+      {titleName && <MemberTitleButton title={titleName} onOpen={toggleCard} footer />}
+      {pointsText && <Gamertag onOpen={toggleCard} iconSize={13} footer />}
+    </div>
+  ) : null;
+
   return (
     <div className="relative">
-      <SidebarPopoverMenu
-        items={items}
-        ariaLabel={name}
-        menuClassName={avatarOnly ? "left-0 w-64" : undefined}
-        renderTrigger={({ open }) => avatarOnly ? (
-          <span
-            ref={triggerRef}
-            title={name}
-            className={cn(
-              "relative flex size-9 items-center justify-center rounded-full transition-[filter]",
-              open ? "ring-2 ring-accent/60" : "hover:brightness-90",
-            )}
-          >
-            {avatar(36)}
-            {noteworthy && (
-              <span
-                title={noteworthy.label}
-                aria-label={noteworthy.label}
-                className={cn(
-                  "absolute -right-0.5 -top-0.5 size-3 rounded-full border-2 border-sidebar",
-                  noteworthy.phase === "error" ? "bg-danger" : "bg-accent",
-                )}
-              />
-            )}
-          </span>
-        ) : (
-          // One row, like Perspicax's account footer: the avatar and the full
-          // name, which ellipsizes only when it truly runs out of room.
-          <span
-            ref={triggerRef}
-            data-sidebar-account
-            className={cn(
-              "flex w-full min-w-0 items-center gap-2.5 rounded-lg px-2 text-left transition-colors",
-              gamertag ? "h-12" : "h-10",
-              open ? "bg-sidebar-hover" : "hover:bg-sidebar-hover",
-            )}
-          >
-            {avatar(28)}
-            <span className="flex min-w-0 flex-1 flex-col">
-              <span title={name} className="min-w-0 truncate text-[13px] font-medium leading-5 text-sidebar-ink">{name}</span>
-              {/* room for the gamertag, drawn over it below (a button cannot hold a button) */}
-              {gamertag && <span aria-hidden="true" className="h-4" />}
-            </span>
-            {/* an update is the one thing worth interrupting the name for, so
-              * it sits on the row rather than waiting to be found in the menu */}
-            {noteworthy && (
-              <span
-                title={noteworthy.label}
-                aria-label={noteworthy.label}
-                className={cn(
-                  "flex size-6 shrink-0 items-center justify-center rounded-full",
-                  noteworthy.phase === "error" ? "bg-danger/15 text-danger" : "bg-accent/15 text-accent",
-                )}
-              >
-                <UpdateIcon phase={noteworthy.phase} pending={noteworthy.pending} size={14} />
-              </span>
-            )}
-            {placeAttention && !open && (
-              <span data-testid="footer-attention" aria-hidden="true" className="size-2 shrink-0 rounded-full bg-danger" />
-            )}
-          </span>
-        )}
-      />
-      {gamertag && !avatarOnly && <Gamertag onOpen={openAchievements} className="absolute bottom-[6px] left-[46px]" />}
+      {avatarOnly ? accountRow : (
+        <div
+          data-sidebar-account-row=""
+          className="rounded-lg px-2 py-1.5 transition-colors hover:bg-sidebar-hover has-[[aria-expanded=true]]:bg-sidebar-hover"
+        >
+          {accountRow}
+          {achievementLine}
+        </div>
+      )}
+      {cardOpen && snapshot && (
+        <AnchoredMemberCard
+          open
+          anchorRef={lineRef}
+          onClose={() => setCardOpen(false)}
+          name={name}
+          initials={initials}
+          avatarUrl={profile?.avatarUrl}
+          title={titleName}
+          pointsText={formatPoints(snapshot.points)}
+          level={snapshot.level.level}
+          rows={memberCardRows(snapshot)}
+          onOpenPage={() => {
+            setCardOpen(false);
+            openAchievements();
+          }}
+        />
+      )}
       <AboutDialog open={aboutOpen} onClose={() => setAboutOpen(false)} />
     </div>
   );

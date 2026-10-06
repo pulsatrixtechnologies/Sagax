@@ -175,21 +175,21 @@ function snapshot(over: Partial<FloatingSnapshot> = {}): FloatingSnapshot {
 }
 
 describe("the mascot's call pill", () => {
-  it("is the app's pill scaled down: waveform, Settings, Transcript, Mic and a red End", () => {
+  it("is a short row under the mascot: the time, Mic and a red End, without the settings form", () => {
     const html = renderToStaticMarkup(createElement(MascotCallPill, { call: CALL, name: "Sagax", card: null, onCard: () => undefined, onEvent: () => undefined, hover: () => undefined }));
-    for (const part of ["data-voice-waveform", "data-voice-gear", "data-voice-transcript-toggle", "data-voice-mute", "data-voice-end", "bg-danger", 'data-voice-phase="speaking"']) expect(html).toContain(part);
+    for (const part of ["data-voice-timer", "data-voice-mute", "data-voice-end", "bg-danger", 'data-voice-phase="speaking"']) expect(html).toContain(part);
+    expect(html).not.toContain("data-voice-waveform");
+    expect(html).not.toContain("data-voice-gear");
+    expect(html).not.toContain("data-voice-transcript-toggle");
     expect(html).not.toContain("data-voice-ptt");
     expect(renderToStaticMarkup(createElement(MascotCallPill, { call: { ...CALL, push: true }, name: "Sagax", card: null, onCard: () => undefined, onEvent: () => undefined, hover: () => undefined }))).toContain("data-voice-ptt");
   });
 
-  it("expands into the transcript or the settings, like the app", () => {
-    const transcript = renderToStaticMarkup(createElement(MascotCallCardView, { call: CALL, name: "Sagax", card: "transcript", onEvent: () => undefined, hover: () => undefined }));
-    expect(transcript).toContain("What time is it?");
-    expect(transcript).toContain('data-voice-line="live"');
-    expect(transcript).toContain("1:05");
+  it("does not cover the window with the settings form; a note still shows", () => {
     const settings = renderToStaticMarkup(createElement(MascotCallCardView, { call: CALL, name: "Sagax", card: "settings", onEvent: () => undefined, hover: () => undefined }));
-    expect(settings).toContain("data-voice-call-settings");
-    expect(settings).toContain("data-voice-hold");
+    expect(settings).not.toContain("data-voice-call-settings");
+    const noted = renderToStaticMarkup(createElement(MascotCallCardView, { call: { ...CALL, note: "The microphone is busy" }, name: "Sagax", card: null, onEvent: () => undefined, hover: () => undefined }));
+    expect(noted).toContain("The microphone is busy");
   });
 
   it("stands under the mascot, which takes its call pose; the balloon offers the call", () => {

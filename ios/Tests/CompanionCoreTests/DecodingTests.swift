@@ -798,6 +798,17 @@ final class DecodingTests: XCTestCase {
         XCTAssertEqual(frame.frame.threadId, "t1")
     }
 
+    func testDecodesANudgeFrame() throws {
+        let frame = try JSONDecoder().decode(
+            StreamFrame.self,
+            from: Data(#"{"kind":"nudge","audience":"pr_bob","fromId":"pr_ada","fromName":"Ada","at":1,"seq":4}"#.utf8)
+        )
+        guard case .nudge = frame.frame else {
+            return XCTFail("expected .nudge")
+        }
+        XCTAssertEqual(frame.seq, 4)
+    }
+
     // MARK: - A newer computer than the phone
 
     // The harness gains message kinds when it ships; the phone gains them

@@ -160,21 +160,22 @@ describe("Settings > Organization on a Perspicax server", () => {
     viewerRole: "admin" as const,
     settings: { orgKeyConfigured: false },
   };
-  it("shows the link, the role, the console link and who pays for a turn (no org key switch any more)", () => {
+  it("shows the link, the role and the console link", () => {
     const markup = renderToStaticMarkup(createElement(PerspicaxOrgSettings, { org, onChanged: () => {} }));
-    expect(markup).toContain("Linked to Perspicax");
+    expect(markup).toContain("You are linked to Pulsatrix");
     expect(markup).toContain("You are an admin of this organization.");
+    expect(markup).toContain("Manage in Perspicax");
     expect(markup).toContain('href="https://px.example.test/console/"');
     expect(markup).not.toContain("type=\"checkbox\"");
-    expect(markup).toContain("Who pays for a turn");
-    expect(markup).toContain("No organization key is set on this server.");
-    expect(renderToStaticMarkup(createElement(PerspicaxOrgSettings, { org: { ...org, settings: { orgKeyConfigured: true } }, onChanged: () => {} }))).toContain("An organization key is set on this server");
+    expect(markup).not.toContain("Who pays for a turn");
+    expect(markup).not.toContain("data-pay-order");
+    expect(markup).not.toContain("Last sync");
     expect(markup).toContain("Commands waiting for an admin");
     // 2026-10-01: no copy-file import card, no My engines (Model providers has the sign-in)
     expect(markup).not.toContain("Bring bots from a solo Sagax");
     expect(markup).not.toContain("My subscriptions and keys");
     expect(markup).not.toContain("data-my-engines");
-    expect(markup).toContain("Routines in my name");
+    expect(markup).not.toContain("Routines in my name");
   });
   it("gives an admin the force actions menu on every bot, and a member none (OrgSharing.test.ts has the rest)", async () => {
     const { OrgSharing } = await import("../settings/OrgSharing");
@@ -197,7 +198,10 @@ describe("Settings > Organization on a Perspicax server", () => {
     const markup = renderToStaticMarkup(createElement(PerspicaxOrgSettings, { org: { ...org, viewerRole: "member", link: { state: "error", error: "link_refused" } }, onChanged: () => {} }));
     expect(markup).toContain("The link to Perspicax has a problem (link_refused).");
     expect(markup).toContain("You are a member of this organization.");
-    expect(markup).toContain("Who pays for a turn");
+    expect(markup).not.toContain("You are linked to Pulsatrix");
+    expect(markup).not.toContain("Who pays for a turn");
+    expect(markup).not.toContain("Last sync");
+    expect(markup).not.toContain("Routines in my name");
     expect(markup).not.toContain("Commands waiting for an admin");
   });
   it("keeps the interim card after the last attach so its notice stays visible, and hides it once closed", () => {

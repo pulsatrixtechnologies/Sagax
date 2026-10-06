@@ -19,7 +19,7 @@ describe("bot panel tabs", () => {
   });
 
   it("land a deep link on the tab that holds the section", () => {
-    // Name, label and description are edited at the panel's top.
+    // Name and label are edited at the panel's top.
     expect(tabForSection("details")).toBe("details");
     // Routines are a section of Details.
     expect(tabForSection("routines")).toBe("details");

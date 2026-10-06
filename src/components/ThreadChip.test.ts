@@ -40,7 +40,8 @@ describe("ThreadChip", () => {
   it("renders the receipt as a pill named for the thread it opens", () => {
     const markup = renderToStaticMarkup(createElement(ThreadChip, { message: receipt() }));
     expect(markup).toContain("<button");
-    expect(markup).toContain("Opened thread #QA PR 245 on Scout");
+    expect(markup).toContain("Go to conversation");
+    expect(markup).not.toContain("Opened thread #QA PR 245 on Scout");
     expect(markup).toContain('title="Open #QA PR 245"');
     expect(markup).toContain('data-thread-chip="qa-245"');
   });

@@ -173,7 +173,7 @@ export interface AchievementSettings {
   toasts: boolean;
   /** A system notification when an unlock lands while the app is in the background. */
   native: boolean;
-  /** Colleagues may see my points (organization server). */
+  /** Colleagues may see my points. On unless this record stored false. */
   public: boolean;
   /** The title shown on my achievements page, one I unlocked. */
   title?: string;
@@ -185,6 +185,20 @@ export interface AchievementUnlock {
   id: string;
   points: number;
   unlockedAt: number;
+}
+
+/**
+ * What colleagues may see of one person (GET /api/achievements/public).
+ * Sharing is on unless `settings.public` is false. Locked achievements are not
+ * here: no locked ids, no secret names, no progress.
+ */
+export interface PublicAchievementCard {
+  points: number;
+  level: number;
+  /** The title id they chose. Absent when they chose none. */
+  title?: string;
+  /** Unlocked achievements only, catalog order. */
+  unlocked: AchievementUnlock[];
 }
 
 export interface AchievementItemState {

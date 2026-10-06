@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { createWorkspaceAccess, describeEdition, editionForMembers, editionStatus, enterpriseLayerDirs, entitled, hostedWorkspaceConfiguration, hostedWorkspaceConfigured, licenseWarning, sharedWorkspaceFullAccessConfigured, loadEnterpriseLayer } from "./enterprise.ts";
+import { createWorkspaceAccess, describeEdition, editionForMembers, editionStatus, enterpriseLayerDirs, entitled, hostedWorkspaceConfiguration, hostedWorkspaceConfigured, licenseWarning, perspicaxOrganisationLinked, sharedWorkspaceFullAccessConfigured, loadEnterpriseLayer, workspaceMembership } from "./enterprise.ts";
 import { SessionRegistry } from "./sessions.ts";
 
 const dirs: string[] = [];
@@ -44,6 +44,19 @@ describe("enterprise hook point", () => {
     const sessions = new SessionRegistry({ file: join(dir, "sessions.json") });
     expect(createWorkspaceAccess({ sessions, cookieName: "session", closeSessionStreams() {}, env: {} })).toBeNull();
     expect(createWorkspaceAccess({ sessions, cookieName: "session", closeSessionStreams() {}, env: { SAGAX_ADMIN_WORKSPACE: "acme" } })).toBeNull();
+  });
+  it("reports pairing codes off when a Perspicax organisation is linked, even without a hosted workspace", () => {
+    expect(workspaceMembership({})).toEqual({ authority: "local", pairingCodes: true });
+    expect(perspicaxOrganisationLinked({ SAGAX_IDENTITY: "perspicax" })).toBe(false);
+    expect(workspaceMembership({ SAGAX_IDENTITY: "perspicax" })).toEqual({ authority: "local", pairingCodes: true });
+    expect(workspaceMembership({ SAGAX_IDENTITY: " Perspicax ", SAGAX_PERSPICAX_LINK_FILE: "  " })).toEqual({ authority: "local", pairingCodes: true });
+    expect(workspaceMembership({ SAGAX_PERSPICAX_LINK_FILE: "/var/lib/sagax/link.json" })).toEqual({ authority: "local", pairingCodes: true });
+    const linked = { SAGAX_IDENTITY: "perspicax", SAGAX_PERSPICAX_LINK_FILE: "/var/lib/sagax/link.json" };
+    expect(perspicaxOrganisationLinked(linked)).toBe(true);
+    expect(workspaceMembership(linked)).toEqual({ authority: "local", pairingCodes: false });
+    const portal = { SAGAX_ADMIN_URL: "https://admin.example.test", SAGAX_ADMIN_WORKSPACE: "acme", SAGAX_PUBLIC_URL: "https://acme.example.test", SAGAX_ADMIN_MEMBERSHIP: "portal" };
+    expect(workspaceMembership(portal)).toMatchObject({ authority: "portal", pairingCodes: false });
+    expect(workspaceMembership({ ...portal, ...linked })).toMatchObject({ authority: "portal", pairingCodes: false });
   });
   it("requires complete valid hosted configuration before opting into portal membership", () => {
     const env = { SAGAX_ADMIN_URL: "https://admin.example.test", SAGAX_ADMIN_WORKSPACE: "acme", SAGAX_PUBLIC_URL: "https://acme.example.test" };

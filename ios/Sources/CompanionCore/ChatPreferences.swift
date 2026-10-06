@@ -114,6 +114,7 @@ public enum TranscriptRow: Identifiable, Hashable, Sendable {
     case message(Message)
     case activityRun([Message])
     case assistantTurn(AssistantTurnFold)
+    case voiceCall(VoiceCallCardModel)
 
     /// The message a row answers for — its first, which is the one whose
     /// time and sender the transcript reads.
@@ -122,6 +123,7 @@ public enum TranscriptRow: Identifiable, Hashable, Sendable {
         case let .message(message): message
         case let .activityRun(items): items[0]
         case let .assistantTurn(turn): turn.messages[0]
+        case let .voiceCall(card): card.messages[0]
         }
     }
 
@@ -130,6 +132,7 @@ public enum TranscriptRow: Identifiable, Hashable, Sendable {
         case let .message(message): message.id
         case let .activityRun(items): "run.\(items[0].id)"
         case let .assistantTurn(turn): "turn.\(turn.turnId)"
+        case let .voiceCall(card): "voice.\(card.callId)"
         }
     }
 
@@ -141,6 +144,7 @@ public enum TranscriptRow: Identifiable, Hashable, Sendable {
         case let .message(message): message.at
         case let .activityRun(items): items.last?.at ?? head.at
         case let .assistantTurn(turn): turn.messages.last?.at ?? head.at
+        case let .voiceCall(card): card.messages.last?.at ?? head.at
         }
     }
     public var role: Message.Role { head.role }
@@ -150,11 +154,10 @@ public enum TranscriptRow: Identifiable, Hashable, Sendable {
 
 /// The one line a roster row shows under a chat's name.
 ///
-/// Folded by the same rule as the transcript, and for the same reason: a
-/// reader who has turned activity off has said they do not want to see tool
-/// calls, and the roster is where they see the most of them — one per chat,
-/// on the screen they spend the most time on. Reading the preview off the
-/// raw last message made "Hidden" mean "hidden in one place".
+/// Folded by the same rule as the transcript. Tool receipts are not
+/// transcript rows at any level, so they are not the roster line either.
+/// Reading the preview off the raw last message made a hidden tool call
+/// the line under every chat.
 public func rosterPreview(_ messages: [Message], detail: ActivityDetail) -> String {
     // The digest is a row in the chat now, as a chip, but never the line
     // under a chat's name: it follows every reply, so it would be the
@@ -169,6 +172,8 @@ public func rosterPreview(_ messages: [Message], detail: ActivityDetail) -> Stri
         return "\(running ? "Running" : "Ran") \(items.count) steps"
     case let .assistantTurn(turn):
         return turn.label
+    case let .voiceCall(card):
+        return spokenLines(card.messages).last?.text ?? ""
     }
 }
 
@@ -255,6 +260,22 @@ public func isStatusNotice(_ message: Message) -> Bool {
     message.kind == .activity && (message.tool?.name.hasPrefix("notice:") ?? false)
 }
 
+/// A per-tool receipt, the Success and Error lines such as
+/// `mcp_sagax-environment__run_command`. It stays in the store and is left
+/// out of the transcript at every activity level. Phone and iPad share
+/// `transcriptRows`, so this is the only filter.
+///
+/// Not a tool row: a status notice, a failed turn (`error:`), a parallel
+/// task card, or a chip that opens another conversation.
+public func isToolActivityRow(_ message: Message) -> Bool {
+    guard message.kind == .activity, message.tool != nil else { return false }
+    if message.parallelTask?.isCard == true { return false }
+    if ErrorRowRules.isError(message) { return false }
+    if isStatusNotice(message) { return false }
+    if message.comm != nil || message.threadRef != nil { return false }
+    return true
+}
+
 public func isActivityReceipt(_ message: Message) -> Bool {
     switch message.kind {
     case .activity, .digest, .compaction: return true
@@ -264,22 +285,27 @@ public func isActivityReceipt(_ message: Message) -> Bool {
 
 /// Folds a transcript to the requested level of detail.
 ///
-/// A failed step is never folded away: the reason to turn activity down is
-/// the successful noise, and losing the one chip that says something went
-/// wrong would make `reduced` a worse default than `full`.
+/// Per-tool activity is omitted at every level. The Success and Error
+/// receipts stay stored and never become rows. A status notice, a failed
+/// turn, a parallel task card, and a chip that opens another conversation
+/// stay. A link chip whose step failed is never folded into a run.
 ///
 /// A digest is a row of its own, drawn as a chip: never folded into a run
 /// of the tool chips it summarises, never counted as one of their steps,
 /// and gone with them when activity is hidden.
 public func transcriptRows(_ messages: [Message], detail: ActivityDetail) -> [TranscriptRow] {
+    let voice = makeVoiceCallPlan(messages)
     // Fold only explicitly completed turns; never guess that the last reply
     // is final on an older server or while the bot is still working.
+    // Spoken call lines are already in the voice card, so they are not a
+    // second "Worked for" chip.
     var narration: [String: [Message]] = [:]
     var startedAt: [String: Double] = [:]
     var lastUserAt: Double?
     var folds: [String: AssistantTurnFold] = [:]
     var hiddenIDs = Set<String>()
     for message in messages {
+        if voice.hidden.contains(message.id) { continue }
         if message.role == .user { lastUserAt = message.at }
         guard message.role == .bot, message.kind == .text,
               let turnID = message.turnId, !turnID.isEmpty else { continue }
@@ -309,13 +335,26 @@ public func transcriptRows(_ messages: [Message], detail: ActivityDetail) -> [Tr
         run.removeAll()
     }
 
+    var seenVoice = Set<String>()
     for message in messages {
+        switch foldVoiceMessage(message, plan: voice, seen: &seenVoice) {
+        case let .card(card):
+            flush()
+            rows.append(.voiceCall(card))
+            continue
+        case .skip:
+            continue
+        case .keep:
+            break
+        }
         if let turn = folds[message.id] {
             flush()
             rows.append(.assistantTurn(turn))
             continue
         }
         if hiddenIDs.contains(message.id) { continue }
+        // Display only. The message remains in the thread store.
+        if isToolActivityRow(message) { continue }
         // A parallel task's live card and a failed turn are not receipts:
         // the desktop draws them whatever the tool-call setting says, and
         // never folds them into a run (they carry Stop, Open and Retry).

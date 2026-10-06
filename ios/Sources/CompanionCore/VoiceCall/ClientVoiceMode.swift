@@ -36,7 +36,7 @@ public struct VoiceModeVoice: Decodable, Hashable, Identifiable, Sendable {
 
 /// `Message.voiceCall` on a send: the turn was said on a live call, so the
 /// server adds its hidden phone-call instruction (server/voice-call-prompt.ts).
-public struct VoiceCallMeta: Codable, Equatable, Sendable {
+public struct VoiceCallMeta: Codable, Hashable, Sendable {
     public var callId: String
     public var interrupted: Bool?
     public var language: String?

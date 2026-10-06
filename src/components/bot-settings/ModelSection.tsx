@@ -9,6 +9,7 @@ import { canEditBotField } from "@/lib/bot-capabilities";
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
 import { useStore, type Bot } from "@/state/store";
+import { botWithViewerSettings, useViewerBotOverride, viewerLocalBotSettings } from "@/lib/viewer-bot-overrides";
 import { useBotEditor } from "./BotEditorContext";
 import { ProposalStatus } from "./ProposalStatus";
 
@@ -16,18 +17,22 @@ export function ModelSection({ bot }: { bot: Bot }) {
   const advanced = useAdvancedMode();
   const { state, dispatch } = useStore();
   const { draft } = useBotEditor();
-  const modelVariants = state.instances.find((instance) => instance.instanceId === bot.modelSelection.instanceId)?.capabilities?.modelVariants;
+  const viewerLocal = viewerLocalBotSettings(state.config, bot);
+  const override = useViewerBotOverride(bot.id, viewerLocal);
+  const shown = viewerLocal ? botWithViewerSettings(bot, override) : bot;
+  const modelVariants = state.instances.find((instance) => instance.instanceId === shown.modelSelection.instanceId)?.capabilities?.modelVariants;
   return (
     <div className="flex flex-col gap-4">
       <div className="rounded-xl border border-hairline/40 p-4">
         <ModelPicker
-          bot={bot}
+          bot={shown}
           contained
+          viewerLocal={viewerLocal}
           label={
             <div>
               <div className="text-[13px] font-medium text-ink">{t("botPanel.model.default")}</div>
               <div className="mt-0.5 text-[13px] text-ink-secondary">
-                {draft ? t("botPanel.model.starting") : t("botPanel.model.groups")}
+                {viewerLocal ? t("botPanel.model.forYou") : draft ? t("botPanel.model.starting") : t("botPanel.model.groups")}
               </div>
               <ProposalStatus bot={bot} kind="chief" />
             </div>
@@ -38,7 +43,8 @@ export function ModelSection({ bot }: { bot: Bot }) {
       {/* Share the model picker's effort choices, but edit the profile default.
           Simple keeps the saved effort and does not show the control. */}
       {advanced && <EffortRow
-        bot={bot}
+        bot={shown}
+        viewerLocal={viewerLocal}
         className="rounded-xl border border-hairline/40 p-4"
         label={
           <div>
@@ -49,15 +55,17 @@ export function ModelSection({ bot }: { bot: Bot }) {
                 we could not keep for a thread that had already been sent
                 one. Sending nothing is true on every engine. */}
             <div className="mt-0.5 text-[13px] text-ink-secondary">
-              {modelVariants
+              {viewerLocal
+                ? t("botPanel.model.forYou")
+                : modelVariants
                 ? (draft ? t("botPanel.model.reasoningStart") : t("botPanel.model.reasoningGroups"))
-                : `${t("botPanel.model.effortHelp")}${bot.modelSelection.effort ? "" : t("botPanel.model.effortDefault")}`}
+                : `${t("botPanel.model.effortHelp")}${shown.modelSelection.effort ? "" : t("botPanel.model.effortDefault")}`}
             </div>
             <ProposalStatus bot={bot} kind="chief" />
           </div>
         }
       />}
-      {advanced && !draft && canEditBotField(state.config, bot, "fallback") && <FallbackChain bot={bot} onChange={(fallback) => dispatch({ type: "updateBot", botId: bot.id, patch: { fallback } })} />}
+      {advanced && !draft && state.config?.automaticRecovery?.enabled === true && canEditBotField(state.config, bot, "fallback") && <FallbackChain bot={bot} onChange={(fallback) => dispatch({ type: "updateBot", botId: bot.id, patch: { fallback } })} />}
     </div>
   );
 }
@@ -88,7 +96,6 @@ function FallbackChain({ bot, onChange }: { bot: Bot; onChange: (fallback: Bot["
       <div className="mt-0.5 text-[13px] text-ink-secondary">
         {t("botPanel.model.backupsHelp")}
       </div>
-      {!state.config?.automaticRecovery?.enabled && <p className="mt-2 text-[12px] text-ink-secondary">{t("botPanel.model.recoveryOff")}</p>}
       {chain.length > 0 && (
         <ol className="mt-3 flex flex-col gap-1">
           {chain.map((entry, index) => (

@@ -1757,7 +1757,6 @@
   "botPanel.memory.delete": "Excluir {name}",
   "botPanel.memory.deleteTitle": "Excluir",
   "botPanel.memory.upkeep": "Manutenção da memória",
-  "botPanel.memory.upkeepHelp": "Mantém estas notas em ordem sem o bot precisar lembrar: nota fatos que você menciona nas conversas e os arquiva, os fatos centrais aqui, o detalhe em arquivos de tema que ele cria, e arruma toda noite. Notas vencidas são arquivadas, duplicatas fundidas, notas contraditas riscadas. Fatos sobre você vão para Sobre mim (Ajustes, Geral), onde cada bot os lê e você pode remover qualquer um. Cada mudança aparece abaixo e pode ser desfeita.",
   "botPanel.memory.noSteps": "O mecanismo deste bot não consegue fazer a chamada rápida de modelo em segundo plano que a manutenção usa, então só arquiva notas vencidas e funde duplicatas exatas. Claude e os mecanismos de modelo de conversa fazem o resto.",
   "botPanel.memory.tidying": "Arrumando…",
   "botPanel.memory.tidyNow": "Arrumar agora",

@@ -25,6 +25,7 @@ import { createLendingActivity } from "./lending-activity.mjs";
 import { openDesktopTunnel } from "./desktop-tunnel.mjs";
 import { createLocalVm } from "./local-vm.mjs";
 import { archiveKind, extractArchive, extractedFolderName } from "./archive-extract.mjs";
+import { executeLocalModel, normalizeLoopbackBase, probeLoopbackModels } from "./local-models.mjs";
 
 export { createLocalVm };
 
@@ -71,8 +72,9 @@ const WRITE_MAX = 1024 * 1024;
 const FETCH_MAX = 256 * 1024;
 /** The server's largest upload (an archive, server/attachments.ts). */
 const STAGE_MAX = 90 * 1024 * 1024;
-const ACTIONS = new Set(["run_command", "read_file", "write_file", "list_files", "search_files", "fetch_url", "browse", "computer_tools", "computer_call", "vm_status", "vm_start", "vm_run_command", "vm_create", "vm_stop", "vm_pause", "vm_resume", "vm_setup", "vm_install", "vm_screenshot", "vm_computer_call", "stage_file", "extract_archive"]);
-const KEYS = new Set(["action", "path", "content", "encoding", "offset", "max_bytes", "command", "cwd", "timeout_seconds", "pattern", "glob", "url", "screenshot", "tool_name", "arguments", "container", "name", "final"]);
+const ACTIONS = new Set(["run_command", "read_file", "write_file", "list_files", "search_files", "fetch_url", "browse", "computer_tools", "computer_call", "vm_status", "vm_start", "vm_run_command", "vm_create", "vm_stop", "vm_pause", "vm_resume", "vm_setup", "vm_install", "vm_screenshot", "vm_computer_call", "stage_file", "extract_archive", "local_model"]);
+const KEYS = new Set(["action", "path", "content", "encoding", "offset", "max_bytes", "command", "cwd", "timeout_seconds", "pattern", "glob", "url", "screenshot", "tool_name", "arguments", "container", "name", "final", "endpoint", "http_method", "http_path", "json"]);
+const LOCAL_MODEL_PROBE_MS = 15_000;
 const uuid = value => typeof value === "string" && /^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(value);
 const text = value => ({ content: [{ type: "text", text: typeof value === "string" ? value : JSON.stringify(value) }] });
 const failure = message => ({ ...text(message), isError: true });
@@ -89,6 +91,16 @@ export function validBridgeOperation(operation) {
     if (operation[key] !== undefined && (typeof operation[key] !== "number" || !Number.isFinite(operation[key]) || operation[key] < 0)) return false;
   }
   if (operation.arguments !== undefined && (!operation.arguments || typeof operation.arguments !== "object" || Array.isArray(operation.arguments))) return false;
+  if (operation.endpoint !== undefined && (typeof operation.endpoint !== "string" || !/^desk[a-z0-9]{3,24}$/.test(operation.endpoint))) return false;
+  if (operation.http_method !== undefined && operation.http_method !== "GET" && operation.http_method !== "POST") return false;
+  if (operation.http_path !== undefined && operation.http_path !== "/models" && operation.http_path !== "/chat/completions") return false;
+  if (operation.json !== undefined && (typeof operation.json !== "string" || operation.json.length > 1_000_000)) return false;
+  if (operation.action === "local_model") {
+    if (operation.url !== undefined) return false;
+    if (operation.http_method !== "GET" && operation.http_method !== "POST") return false;
+    if (operation.http_path !== "/models" && operation.http_path !== "/chat/completions") return false;
+    if (typeof operation.endpoint !== "string") return false;
+  }
   return true;
 }
 
@@ -324,6 +336,8 @@ export async function executeBridgeOperation(operation, deps, signal) {
       if (!result.extracted) return failure(`Not unpacked: ${result.manifest.reason ?? result.manifest.status}`);
       return text(`unpacked ${result.manifest.files} files into ${path.join(dir, extractedFolderName(name))}`);
     }
+    case "local_model":
+      return executeLocalModel(operation, deps.localModelBase ?? (() => null), deps.fetchUrl, signal);
     default:
       throw new Error("Unsupported operation");
   }
@@ -336,6 +350,7 @@ const describe = operation => {
     case "fetch_url": case "browse": try { return new URL(operation.url).host; } catch { return ""; }
     case "computer_call": case "vm_computer_call": return String(operation.tool_name ?? "");
     case "stage_file": case "extract_archive": return String(operation.name ?? "");
+    case "local_model": return `${operation.endpoint ?? ""} ${operation.http_path ?? ""}`.trim().slice(0, 300);
     default: return "";
   }
 };
@@ -385,10 +400,17 @@ export function createDesktopBridge({
         try {
           const session = await request(env, "/api/auth/session");
           if (session?.kind !== "session" || session?.identity !== "perspicax") throw Object.assign(new Error("Sign in to this server first"), { quiet: true });
-          await request(env, "/api/desktop-bridge/connect", {
+          const registration = {
             id, name: hostname.slice(0, 120) || "Computer", platform: ["darwin", "win32", "linux"].includes(platform) ? platform : "linux", attachmentsDir,
             capabilities: { shell: true, files: true, fetch: true, browser: Boolean(browse), computer: Boolean(cuaConnection), localVm: true },
-          }, signal, secret);
+          };
+          try {
+            await request(env, "/api/desktop-bridge/connect", { ...registration, capabilities: { ...registration.capabilities, localModels: true } }, signal, secret);
+          } catch (error) {
+            // A server that predates local models rejects the extra capability. Connect without it.
+            if (error?.status !== 400) throw error;
+            await request(env, "/api/desktop-bridge/connect", registration, signal, secret);
+          }
           registered = { id, secret };
           set({ connected: true, error: undefined });
           const preferences = async () => {
@@ -414,6 +436,34 @@ export function createDesktopBridge({
           void system();
           const systemTimer = setInterval(() => void system(), SYSTEM_REFRESH_MS);
           live.addEventListener("abort", () => clearInterval(systemTimer), { once: true });
+          // Loopback models this desktop has published. The server never receives the URL.
+          const localCatalog = new Map();
+          let probingModels = false;
+          const refreshLocalModels = async () => {
+            if (probingModels || live.aborted) return;
+            probingModels = true;
+            try {
+              const record = await request(env, "/api/me/local-models");
+              if (!record?.expose) { localCatalog.clear(); return; }
+              const next = new Map();
+              const published = [];
+              for (const endpoint of Array.isArray(record.endpoints) ? record.endpoints : []) {
+                const base = normalizeLoopbackBase(endpoint?.baseUrl);
+                if (!base || typeof endpoint?.id !== "string") continue;
+                const models = await probeLoopbackModels(base, fetchUrl);
+                if (!models?.length) continue;
+                next.set(endpoint.id, base);
+                published.push({ id: endpoint.id, label: String(endpoint.label ?? "").slice(0, 80), models });
+              }
+              localCatalog.clear();
+              for (const [endpointId, base] of next) localCatalog.set(endpointId, base);
+              await request(env, `/api/desktop-bridge/${id}/local-models`, { endpoints: published }, live, secret);
+            } catch { /* optional: an older server answers 404 */ }
+            finally { probingModels = false; }
+          };
+          void refreshLocalModels();
+          const modelTimer = setInterval(() => void refreshLocalModels(), LOCAL_MODEL_PROBE_MS);
+          live.addEventListener("abort", () => clearInterval(modelTimer), { once: true });
           // The tunnel: the cookie and the secret ride its handshake only.
           const startTunnel = async () => {
             if (!WebSocketImpl || live.aborted) return;
@@ -459,6 +509,7 @@ export function createDesktopBridge({
             try {
               result = await executeBridgeOperation(operation, {
                 home, attachmentsDir, protectedPaths: roots, fetchUrl, browse, localVm, progress,
+                localModelBase: (endpoint) => localCatalog.get(endpoint) ?? null,
                 computer: cuaConnection ? async (op, sig) => {
                   if (hostControl) control = await hostControl(job.id, sig);
                   if (!cua) {

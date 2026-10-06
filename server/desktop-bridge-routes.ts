@@ -8,6 +8,9 @@
 //   POST /api/desktop-bridge/<id>/system   coarse OS, CPU, memory, disk facts
 //   POST /api/me/desktop-bridge/local-vm   the person's own Local VM through
 //                                          their desktop: { action: status|start }
+//   GET/PUT /api/me/local-models           this person's expose and share switches
+//   POST /api/desktop-bridge/<id>/local-models
+//                                          catalog the desktop probed (ids only)
 //
 // Every call is the session's own person: the person is read from the
 // session, never from the body, and a private secret (x-sagax-bridge-secret,
@@ -25,6 +28,8 @@ import { PASS, type RouteHandler } from "./routes/table.ts";
 
 const ID_ROUTE = /^\/api\/desktop-bridge\/([0-9a-f-]{36})\/(poll|lease|progress|result|disconnect|system)$/;
 const LOCAL_VM_ROUTE = "/api/me/desktop-bridge/local-vm";
+const LOCAL_MODELS_ROUTE = "/api/me/local-models";
+const LOCAL_MODELS_PUBLISH = /^\/api\/desktop-bridge\/([0-9a-f-]{36})\/local-models$/;
 /** What the person's Computer tab may ask of their own Local VM. */
 const LOCAL_VM_ACTIONS: Record<string, DesktopBridgeOperation["action"]> = {
   status: "vm_status", start: "vm_start", stop: "vm_stop", pause: "vm_pause", resume: "vm_resume",
@@ -88,9 +93,16 @@ export function createDesktopBridgeRoutes(deps: {
   audit: BridgeAudit;
   /** The person's workplace preference as the server applies it. */
   workplace: (person: string) => unknown;
+  /** This person's Mac models. Absent in tests that only exercise the Local VM. */
+  localModels?: {
+    read(person: string): unknown;
+    update(person: string, body: unknown): { ok: true; value: unknown } | { ok: false; error: string };
+    publish(person: string, body: unknown): { ok: true } | { ok: false; error: string };
+  };
 }): RouteHandler {
   return async ({ req, res, path, method, auth, json, readBody }) => {
-    if (path !== "/api/me/desktop-bridge" && path !== "/api/desktop-bridge/connect" && path !== LOCAL_VM_ROUTE && !ID_ROUTE.test(path)) return PASS;
+    const publishMatch = LOCAL_MODELS_PUBLISH.exec(path);
+    if (path !== "/api/me/desktop-bridge" && path !== "/api/desktop-bridge/connect" && path !== LOCAL_VM_ROUTE && path !== LOCAL_MODELS_ROUTE && !publishMatch && !ID_ROUTE.test(path)) return PASS;
     res.setHeader("cache-control", "no-store");
     if (!deps.organization()) return json(res, 404, { error: `no route: ${method} ${path}` });
     const person = auth.kind === "session" ? auth.session.principalId?.trim().toLowerCase() : undefined;
@@ -104,6 +116,15 @@ export function createDesktopBridgeRoutes(deps: {
         workplace: deps.workplace(person),
         activity: deps.audit.recent(person),
       });
+    }
+    if (path === LOCAL_MODELS_ROUTE) {
+      if (!deps.localModels) return json(res, 404, { error: `no route: ${method} ${path}` });
+      if (method === "GET") return json(res, 200, deps.localModels.read(person));
+      if (method !== "PUT") return json(res, 405, { error: "method not allowed" });
+      if (!/^application\/json\b/i.test(String(req.headers["content-type"] ?? ""))) return json(res, 415, { error: "JSON required" });
+      const updated = deps.localModels.update(person, await readBody(req, 64_000));
+      if (!updated.ok) return json(res, 400, { error: updated.error });
+      return json(res, 200, updated.value);
     }
     if (method !== "POST") return json(res, 405, { error: "method not allowed" });
     if (!/^application\/json\b/i.test(String(req.headers["content-type"] ?? ""))) return json(res, 415, { error: "JSON required" });
@@ -129,6 +150,13 @@ export function createDesktopBridgeRoutes(deps: {
     }
     const secret = String(req.headers["x-sagax-bridge-secret"] ?? "");
     try {
+      if (publishMatch) {
+        if (!deps.localModels) return json(res, 404, { error: `no route: ${method} ${path}` });
+        if (!deps.bridges.owns(publishMatch[1]!, auth.session.id, secret)) return json(res, 403, { error: "This desktop is not connected as you." });
+        const published = deps.localModels.publish(person, body);
+        if (!published.ok) return json(res, 400, { error: published.error });
+        return json(res, 200, { ok: true });
+      }
       if (path === "/api/desktop-bridge/connect") {
         const parsed = desktopBridgeRegistration.safeParse(body);
         if (!parsed.success) return json(res, 400, { error: "Invalid desktop registration" });

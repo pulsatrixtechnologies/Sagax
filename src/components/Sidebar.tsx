@@ -35,6 +35,7 @@ import { approvalModeFor } from "../../shared/approval-mode";
 import { peerLine } from "@/lib/peer-message";
 import { viewerMayDeleteGroup, viewerOwnsGroup } from "@/lib/group-owner";
 import { viewerActorId } from "@/lib/viewer";
+import { showBotArchive, showBotDelete, showBotRename, showServerSectionMove } from "@/lib/bot-capabilities";
 import { liveActivityLabel } from "@/lib/live-activity";
 import { connectedAppsEnabled, llmThreadTitlesEnabled, templatesEnabled } from "@/lib/feature-flags";
 import { useAdvancedMode } from "@/lib/interface-mode";
@@ -51,6 +52,9 @@ import { isViewersPrimaryBot, viewerOwnsBot } from "@/lib/primary-bot";
 import { PrimaryBotPicker } from "./PrimaryBotPicker";
 import { useOrgPeople, usePerspicaxOrg } from "@/lib/perspicax-org";
 import { peopleDmPeer } from "@/lib/people-dm";
+import { nudgeLineText } from "@/lib/nudge-line";
+import { usePublicAchievement } from "@/lib/public-achievements";
+import { ColleagueAchievementLine } from "./achievements/MemberCard";
 import { Eye, UserRound } from "lucide-react";
 import { entriesToUnhide, hiddenKey, hiddenKeySet, hideFromSidebar, showInSidebar, useSidebarHidden } from "@/lib/sidebar-hidden";
 import { groupHiddenKey, hiddenSidebarRows, withoutHiddenEntries } from "@/lib/sidebar-hidden-entries";
@@ -253,7 +257,7 @@ function openBotContextMenu(onMenu: (menu: MenuState) => void, botId: string, ev
   onMenu({ botId, x: event.clientX, y: event.clientY });
 }
 
-function groupPreview(group: Group, bots: Bot[]): string {
+function groupPreview(group: Group, bots: Bot[], viewerId: string): string {
   if (group.busyBotId) {
     return t("sidebar.preview.botWorking", {
       name: bots.find((b) => b.id === group.busyBotId)?.name ?? t("sidebar.preview.aBot"),
@@ -262,6 +266,7 @@ function groupPreview(group: Group, bots: Bot[]): string {
   if (group.working) return t("sidebar.preview.teamWorking");
   const last = lastNonReceipt(group.messages);
   if (!last) return t("sidebar.preview.noMessages");
+  if (last.kind === "nudge" && last.nudge) return nudgeLineText(last.nudge, viewerId);
   const text = last.kind === "activity" && last.tool
     ? last.tool.name
     : last.kind === "goal.run" && last.goalRun
@@ -337,6 +342,10 @@ export function GroupListItem({
   const orgPeople = useOrgPeople();
   const peer = peopleDmPeer(group, viewerActorId(state.config), orgPeople);
   const rowName = peer?.name ?? group.name;
+  // A colleague's title and points, only when they made the card public.
+  // Icons have no room for the line; the person panel still shows it.
+  const publicCard = usePublicAchievement(peer && density !== "icons" ? peer.id : null);
+  const previewShown = !expanded && (!quiet || groupStatus);
   return (
     <>
     <div className="group relative">
@@ -366,7 +375,7 @@ export function GroupListItem({
         density !== "icons" && (showThreads ? "pl-6" : "pl-2"),
         selected && !expanded ? "bg-sidebar-selected" : "hover:bg-sidebar-hover",
       )}
-      title={density === "icons" ? rowName : undefined}
+      title={density === "icons" ? rowName : publicCard && previewShown ? groupPreview(group, state.bots, viewerActorId(state.config)) : undefined}
       aria-label={density === "icons" ? rowName : undefined}
       data-people-dm={peer ? peer.id : undefined}
     >
@@ -379,8 +388,8 @@ export function GroupListItem({
           {selected && last && !expanded && <span className="shrink-0 text-[12px] leading-4 text-sidebar-ink-secondary">{formatTime(last.at)}</span>}
           {(expanded || (quiet && !groupStatus)) && group.unread && <span className="size-1.5 shrink-0 rounded-full bg-accent" aria-label={t("task.unreadMany")} />}
         </div>
-        {!expanded && (!quiet || groupStatus) && <div className="flex items-center justify-between gap-2">
-          <span className="truncate text-[13px] leading-[18px] text-sidebar-ink-secondary">{groupPreview(group, state.bots)}</span>
+        {publicCard ? <span className="block h-[18px]" aria-hidden="true" /> : previewShown && <div className="flex items-center justify-between gap-2">
+          <span className="truncate text-[13px] leading-[18px] text-sidebar-ink-secondary">{groupPreview(group, state.bots, viewerActorId(state.config))}</span>
           {group.unread && <span className="size-2 shrink-0 rounded-full bg-accent" />}
         </div>}
       </div>
@@ -395,6 +404,26 @@ export function GroupListItem({
     {!group.dm && !group.peopleDm && density !== "icons" && <button type="button" disabled={roomBusy} aria-label={t("task.newShort")} title={t(roomBusy ? "task.newBusy" : "task.newShort")}
       onClick={() => { setThreadsOpen(true); dispatch({ type: "newGroupTask", groupId: group.id }); }}
       className="pointer-events-none absolute right-1 top-1/2 flex size-7 -translate-y-1/2 items-center justify-center rounded text-sidebar-ink-secondary opacity-0 hover:bg-sidebar-hover hover:text-sidebar-ink disabled:opacity-40 group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100 max-md:pointer-events-auto max-md:opacity-70 touch:pointer-events-auto touch:opacity-70 touch:disabled:opacity-40"><Plus size={14} /></button>}
+    {publicCard && peer && (
+      <div
+        className={cn(
+          "pointer-events-none absolute inset-0 flex items-center",
+          density === "compact" ? "gap-2 py-1.5 pr-9" : "gap-2 py-2 pr-2",
+          showThreads ? "pl-6" : "pl-2",
+        )}
+      >
+        <span className={cn("shrink-0", density === "compact" ? "size-7" : "size-9")} aria-hidden="true" />
+        <span className="flex min-w-0 flex-1 flex-col">
+          <span className="h-5" aria-hidden="true" />
+          <span className="pointer-events-auto flex h-[18px] min-w-0 items-center gap-2">
+            <span className="min-w-0 flex-1">
+              <ColleagueAchievementLine card={publicCard} name={rowName} initials={peer.initials} avatarUrl={peer.avatarUrl} />
+            </span>
+            {previewShown && group.unread && <span className="size-2 shrink-0 rounded-full bg-accent" />}
+          </span>
+        </span>
+      </div>
+    )}
     </div>
     {expanded && <GroupThreadList group={group} selected={selected} density={density} query={group.name.toLowerCase().includes(query.toLowerCase()) ? "" : query} />}
     </>
@@ -435,6 +464,19 @@ export function GroupThreadList({ group, selected, density = "comfortable", quer
   </div>;
 }
 
+export type MemberMenuItem = "viewProfile" | "copyConversationId" | "hide" | "unpin" | "moveTo" | "markUnread";
+
+/** Right-click on a person row (a people-DM). Unpin only while that row is
+ * pinned. No rename, no delete, no force-stop. */
+export function memberMenuItems(row: { peer: boolean; pinned: boolean }): MemberMenuItem[] {
+  const items: MemberMenuItem[] = [];
+  if (row.peer) items.push("viewProfile");
+  items.push("copyConversationId", "hide");
+  if (row.pinned) items.push("unpin");
+  items.push("moveTo", "markUnread");
+  return items;
+}
+
 /** Copy for the room delete confirmation. Deleting a room drops its messages
  * and every thread in it and turns off the routines that run there; the bots
  * in it are untouched. Bot⇄bot rooms are labelled threads in the menu. */
@@ -450,7 +492,7 @@ export function roomDeleteCopy(group: Pick<Group, "name" | "dm">) {
   };
 }
 
-function RoomContextMenu({
+export function RoomContextMenu({
   menu,
   onClose,
   onMoveToSection,
@@ -493,6 +535,8 @@ function RoomContextMenu({
   if (!motion.shown || !group || !shown) return null;
   const isBotChat = Boolean(group.dm);
   const peerId = group.peopleDm ? peopleDmPeer(group, viewerActorId(state.config), new Map())?.id : undefined;
+  const member = group.peopleDm ? memberMenuItems({ peer: Boolean(peerId), pinned: group.pinned === true }) : [];
+  const memberHas = (item: MemberMenuItem) => member.includes(item);
   const ownsRoom = viewerOwnsGroup(group, state.config);
   const mayDelete = viewerMayDeleteGroup(group, state.config);
   const saveRename = () => {
@@ -500,12 +544,13 @@ function RoomContextMenu({
     if (name) dispatch({ type: "patchGroup", groupId: group.id, patch: { name } });
     onClose();
   };
-  const top = Math.min(shown.y, window.innerHeight - 204);
+  const top = Math.min(shown.y, window.innerHeight - (group.peopleDm ? 280 : 204));
   const left = Math.min(shown.x, window.innerWidth - 240);
   return createPortal(
     <div
       data-room-menu
       data-sidebar
+      data-member-menu={group.peopleDm ? "" : undefined}
       style={{ top, left }}
       className={cn("fixed z-40 w-[228px] min-w-[200px] overflow-hidden rounded-xl border-[0.5px] border-border bg-elevated p-1.5 flex flex-col gap-0.5 text-[13px] leading-[18px]", motion.className)} {...motion.exitProps}
     >
@@ -606,6 +651,47 @@ function RoomContextMenu({
         <EyeOff size={16} className="text-ink" />
         {t("sidebar.hidden.hide")}
       </button>
+      {memberHas("unpin") && (
+        <button
+          type="button"
+          onClick={() => {
+            dispatch({ type: "patchGroup", groupId: group.id, patch: { pinned: false } });
+            onClose();
+          }}
+          className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] leading-[18px] text-ink hover:bg-hover"
+        >
+          <PinOff size={16} className="text-ink" />
+          {t("sidebar.bot.unpin")}
+        </button>
+      )}
+      {memberHas("moveTo") && (
+        <MoveToSectionItem
+          itemKind="group"
+          itemId={group.id}
+          fallbackSection={group.section}
+          dismissAttr="data-room-menu"
+          onAssign={(section) => {
+            // Personal folders on an organization server. A people-DM refuses
+            // a section patch, so this never writes the server's section.
+            const failed = assignPersonalSection("group", group.id, section);
+            if (failed) dispatch({ type: "error", message: failed });
+            onClose();
+          }}
+        />
+      )}
+      {memberHas("markUnread") && (
+        <button
+          type="button"
+          onClick={() => {
+            dispatch({ type: "patchGroup", groupId: group.id, patch: { unread: true } });
+            onClose();
+          }}
+          className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] leading-[18px] text-ink hover:bg-hover"
+        >
+          <BellDot size={16} className="text-ink" />
+          {t("sidebar.bot.markUnread")}
+        </button>
+      )}
       {!group.peopleDm && !remoteClient && mayDelete && <button
         onClick={() => {
           onClose();
@@ -800,7 +886,21 @@ function SectionPicker({
   );
 }
 
-function MoveToSectionItem({ bot, onAssign }: { bot: Bot; onAssign: (section: string) => void }) {
+function MoveToSectionItem({
+  itemKind,
+  itemId,
+  fallbackSection,
+  dismissAttr,
+  onAssign,
+}: {
+  itemKind: SectionItemKind;
+  itemId: string;
+  /** The server's section, used only when sections are not personal. */
+  fallbackSection?: string | undefined;
+  /** Keeps a click in the submenu from dismissing the menu that opened it. */
+  dismissAttr: "data-bot-menu" | "data-room-menu";
+  onAssign: (section: string) => void;
+}) {
   const { state } = useStore();
   const personal = usePersonalLayout();
   const [open, setOpen] = useState(false);
@@ -813,7 +913,7 @@ function MoveToSectionItem({ bot, onAssign }: { bot: Bot; onAssign: (section: st
     ...state.bots.flatMap((item) => item.section ? [item.section] : []),
     ...state.groups.flatMap((group) => group.section ? [group.section] : []),
   ])];
-  const current = (personal ? personalSectionOf(personal, itemKey("bot", bot.id)) : bot.section)?.trim() ?? "";
+  const current = (personal ? personalSectionOf(personal, itemKey(itemKind, itemId)) : fallbackSection)?.trim() ?? "";
   const create = () => {
     const name = draft.trim();
     if (!name || name.length > 60) return;
@@ -862,7 +962,7 @@ function MoveToSectionItem({ bot, onAssign }: { bot: Bot; onAssign: (section: st
       {open && submenuStyle && createPortal(
         <div
           role="menu"
-          data-bot-menu
+          {...{ [dismissAttr]: "" }}
           aria-label="Move to"
           onMouseEnter={show}
           onMouseLeave={hide}
@@ -1000,6 +1100,10 @@ export function BotContextMenu({
   }, [menu, onClose]);
 
   if (!motion.shown || !bot || !shown) return null;
+  const canRename = showBotRename(state.config, bot);
+  const canArchive = showBotArchive(state.config);
+  const canDelete = showBotDelete(state.config, bot);
+  const canMoveSection = showServerSectionMove(state.config, personal !== null);
   const deleting = state.deletingBots[bot.id] === true;
   const visibleBotCount = state.bots.filter((candidate) => !candidate.hidden).length;
   const archiveBlocked = Boolean(bot.chiefOfStaff) || visibleBotCount <= 1;
@@ -1070,10 +1174,10 @@ export function BotContextMenu({
       {floatItem}
       {divider("float")}
       {remoteClient ? [
-        item(<FolderPlus size={16} className="text-ink" />, t("sidebar.bot.moveToSection"), () => {
+        ...(canMoveSection ? [item(<FolderPlus size={16} className="text-ink" />, t("sidebar.bot.moveToSection"), () => {
           onClose();
           onMoveToSection(bot.id);
-        }),
+        })] : []),
         item(<Pencil size={16} className="text-ink" />, t("sidebar.bot.editProfile"), () => {
           dispatch({ type: "select", id: bot.id });
           dispatch({ type: "toggleSettings", open: true });
@@ -1087,9 +1191,12 @@ export function BotContextMenu({
           bot.pinned ? t("sidebar.bot.unpin") : t("sidebar.bot.pin"),
           () => dispatch({ type: "updateBot", botId: bot.id, patch: { pinned: !bot.pinned } }),
         ),
-        <MoveToSectionItem
+        ...(canMoveSection ? [<MoveToSectionItem
           key="move"
-          bot={bot}
+          itemKind="bot"
+          itemId={bot.id}
+          fallbackSection={bot.section}
+          dismissAttr="data-bot-menu"
           onAssign={(section) => {
             if (personal) {
               const failed = assignPersonalSection("bot", bot.id, section);
@@ -1099,12 +1206,12 @@ export function BotContextMenu({
             }
             onClose();
           }}
-        />,
+        />] : []),
         item(<BellDot size={16} className="text-ink" />, t("sidebar.bot.markUnread"), () =>
           dispatch({ type: "markUnread", botId: bot.id }),
         ),
         divider("d1"),
-        item(<Pencil size={16} className="text-ink" />, "Rename Bot", () => onRename(bot.id)),
+        ...(canRename ? [item(<Pencil size={16} className="text-ink" />, "Rename Bot", () => onRename(bot.id))] : []),
         item(<ClipboardCopy size={16} className="text-ink" />, t("sidebar.copyConversationId"), () => {
           void navigator.clipboard?.writeText(bot.threadId);
         }),
@@ -1112,7 +1219,7 @@ export function BotContextMenu({
         // Only this person's sidebar: the bot, its owner and everyone else
         // keep it; Archive (below) is the bot-wide action.
         item(<EyeOff size={16} className="text-ink" />, t("sidebar.hidden.hide"), () => hideFromSidebar("bot", bot.id)),
-        item(
+        ...(canArchive ? [item(
           <Archive size={16} className="text-ink" />,
           t("sidebar.bot.archive"),
           () => onArchive(bot),
@@ -1120,15 +1227,15 @@ export function BotContextMenu({
             disabled: archiveBlocked,
             hint: archiveHint,
           },
-        ),
-        <BotDeleteMenuItem
+        )] : []),
+        ...(canDelete ? [<BotDeleteMenuItem
           key="delete"
           deleting={deleting}
           onClick={() => {
             onClose();
             onDelete(bot);
           }}
-        />,
+        />] : []),
       ]}
       {primaryItem && <>{divider("primary")}{primaryItem}</>}
     </div>,
@@ -1662,6 +1769,8 @@ export function ArchivedBotRow({
   restoring,
   deleting,
   disabled,
+  showRestore = true,
+  showDelete = true,
   onRestore,
   onDelete,
 }: {
@@ -1669,6 +1778,10 @@ export function ArchivedBotRow({
   restoring: boolean;
   deleting: boolean;
   disabled: boolean;
+  /** Absent when archive is refused for this person. */
+  showRestore?: boolean;
+  /** Absent when delete is refused for this person. */
+  showDelete?: boolean;
   onRestore: () => void;
   onDelete: () => void;
 }) {
@@ -1679,16 +1792,16 @@ export function ArchivedBotRow({
         <div className="truncate text-[14px] font-medium text-ink">{bot.name}</div>
         <div className="mt-0.5 truncate text-[12.5px] text-ink-secondary">{bot.title || t("sidebar.archived.botFallback")}</div>
       </div>
-      <div className="flex shrink-0 items-center gap-1.5">
-        <button
+      {(showRestore || showDelete) && <div className="flex shrink-0 items-center gap-1.5">
+        {showRestore && <button
           onClick={onRestore}
           disabled={disabled || deleting}
           className="flex min-w-[78px] items-center justify-center gap-1.5 rounded-full bg-raised px-3.5 py-2 text-[12.5px] text-ink hover:bg-raised-hover disabled:opacity-40"
         >
           {restoring && <Loader2 size={13} className="animate-spin" />}
           {t("sidebar.archived.restore")}
-        </button>
-        <button
+        </button>}
+        {showDelete && <button
           type="button"
           onClick={onDelete}
           disabled={disabled || deleting}
@@ -1697,8 +1810,8 @@ export function ArchivedBotRow({
         >
           {deleting ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
           {t("common.delete")}
-        </button>
-      </div>
+        </button>}
+      </div>}
     </div>
   );
 }
@@ -1720,6 +1833,8 @@ function ArchivedBotsPanel({
   const [error, setError] = useState("");
   const deleting = bots.some((bot) => Boolean(state.deletingBots[bot.id]));
   const locked = restoringAll || Boolean(busyId) || deleting || Boolean(pendingDelete);
+  const allowRestore = showBotArchive(state.config);
+  const allowDelete = (bot: Bot) => showBotDelete(state.config, bot);
 
   useEffect(() => {
     if (bots.length === 0) onClose();
@@ -1800,7 +1915,7 @@ function ArchivedBotsPanel({
             <p className="mt-1 text-[13px] text-ink-secondary">{t("sidebar.archived.subtitle")}</p>
           </div>
           <div className="flex items-center gap-1">
-            {bots.length > 1 && (
+            {allowRestore && bots.length > 1 && (
               <button
                 onClick={() => void restoreAll()}
                 disabled={locked}
@@ -1810,7 +1925,7 @@ function ArchivedBotsPanel({
                 {t("sidebar.archived.restoreAll")}
               </button>
             )}
-            {bots.length > 0 && (
+            {bots.length > 0 && bots.every(allowDelete) && (
               <button
                 type="button"
                 onClick={() => setPendingDelete("all")}
@@ -1841,6 +1956,8 @@ function ArchivedBotsPanel({
                 restoring={busyId === bot.id}
                 deleting={Boolean(state.deletingBots[bot.id])}
                 disabled={locked}
+                showRestore={allowRestore}
+                showDelete={allowDelete(bot)}
                 onRestore={() => void restore(bot)}
                 onDelete={() => setPendingDelete(bot)}
               />
@@ -2301,7 +2418,10 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
     .sort((a, b) => teamOrder(a.key) - teamOrder(b.key))
     .filter((team) => {
       if (team.key) return true;
-      return team.chiefs.length + team.members.length + unsectionedRooms.length > 0;
+      // Pinned bots already sit in the pin grid, so they are not rows here.
+      // An Unassigned header with nothing under it stays off. A room still keeps it.
+      const botRows = [...team.chiefs, ...team.members].filter((bot) => !bot.pinned).length;
+      return botRows + unsectionedRooms.length > 0;
     });
   const naturalSectionIds = [
     ...teamMap.map((team) => (team.key ? userSectionId(team.key) : GENERAL_SECTION_ID)),
@@ -2560,7 +2680,7 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
           <SectionNameInput onSave={createOrgSection} onCancel={() => setSectionEdit(null)} />
         )}
         {pinnedBots.length > 0 && (
-          <div className={cn("mb-2 grid py-1.5", density === "icons" ? "grid-cols-1 gap-1" : "grid-cols-[repeat(auto-fit,minmax(80px,max-content))] justify-center gap-x-2 gap-y-3")}>
+          <div className={cn("mb-2 grid py-1.5", density === "icons" ? "grid-cols-1 gap-1" : "grid-cols-[repeat(auto-fit,minmax(122px,max-content))] justify-center gap-x-2 gap-y-3")}>
             {pinnedBots.map((bot) => {
               const selected = state.activeView === "chat" && state.selectedId === bot.id;
               const title = bot.title.trim();
@@ -2575,7 +2695,12 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
                     setMenu({ botId: bot.id, x: event.clientX, y: event.clientY });
                   }}
                   aria-current={selected ? "page" : undefined}
-                  className={cn("flex w-20 min-w-0 flex-col items-center gap-1.5 rounded-xl px-1 pb-1 pt-1.5", selected ? "bg-sidebar-selected" : "hover:bg-sidebar-hover")}
+                  className={cn(
+                    density === "icons"
+                      ? "flex w-20 min-w-0 flex-col items-center gap-1.5 rounded-xl px-1 pb-1 pt-1.5"
+                      : "flex h-[122px] w-[122px] shrink-0 flex-col items-center justify-center gap-0.5 rounded-md px-1.5 py-1",
+                    selected ? "bg-sidebar-selected" : "hover:bg-sidebar-hover",
+                  )}
                 >
                   <BotAvatar bot={bot} primary={isViewersPrimaryBot(bot, viewerId)} primaryRingClassName="ring-sidebar" state="idle" size={density === "icons" ? 36 : 72} animated={false} />
                   {density !== "icons" && <span className="w-full truncate text-center text-[11px] leading-4 tracking-[.005em] text-sidebar-ink">{bot.name}</span>}

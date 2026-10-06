@@ -7,6 +7,7 @@ import { useEffect, useState } from "react";
 import { api } from "@/state/store";
 import { t } from "@/lib/i18n";
 import { personAvatarSrc } from "@/lib/profile-management";
+import type { OrgGithubTokenPublic } from "../../shared/org-github-tokens";
 
 export interface PerspicaxOrg {
   org: { name: string; identity: { kind: "perspicax"; issuer: string; serverId?: string } };
@@ -24,6 +25,10 @@ export interface PerspicaxOrg {
     pluginMarketplaces?: { mode: "any" } | { mode: "list"; allow: string[] };
     /** The organization's GitHub OAuth App for "Connecter GitHub". */
     github?: { clientId: string | null; fromEnvironment: boolean };
+    /** Admin only: labeled GitHub access tokens. Labels and hints, never the token. */
+    githubTokens?: OrgGithubTokenPublic[];
+    /** Admin only: the encrypted list could not be read. Nothing was cleared. */
+    githubTokensUnavailable?: boolean;
   };
 }
 

@@ -23,6 +23,7 @@ import { stageDurations } from "@/lib/voice-mode/latency";
 import type { CallState } from "@/lib/voice-mode/call-machine";
 import { readVoiceModeSettings } from "@/lib/voice-mode/settings";
 import { publishLiveCall, retractLiveCall, useLiveCall, type LiveCallData, type LiveCallMetrics } from "@/lib/voice-mode/live-call-store";
+import { noteVoiceCallEnded, noteVoiceCallRunning } from "@/lib/voice-call-clock";
 import { t } from "@/lib/i18n";
 import { isRoutineApproval, isSkillApproval, pendingApprovals, spokenApprovalPrompt } from "../PendingApproval";
 import { VoiceModeBar, type VoiceAccessCard } from "./VoiceModeBar";
@@ -343,6 +344,10 @@ export function LiveCallEngine({ bot }: { bot: Bot }) {
     [bot.id, call, state, startedAt, heard, caption, note, notice, transcript, metrics],
   );
   useEffect(() => {
+    noteVoiceCallRunning({ botId: bot.id, callId, startedAt });
+    return () => noteVoiceCallEnded(callId);
+  }, [bot.id, callId, startedAt]);
+  useEffect(() => {
     if (data) publishLiveCall(data);
   }, [data]);
   useEffect(() => {
@@ -352,8 +357,8 @@ export function LiveCallEngine({ bot }: { bot: Bot }) {
   return null;
 }
 
-/** The app's call pill for this bot, over the call the engine runs. */
-export function LiveCall({ bot }: { bot: Bot }) {
+/** The call stage for this bot, over the call the engine runs. */
+export function LiveCall({ bot, collapsed, onCollapse, onExpand }: { bot: Bot; collapsed?: boolean; onCollapse?: () => void; onExpand?: () => void }) {
   const live = useLiveCall();
   const data = live?.botId === bot.id ? live : null;
   const call = data?.call ?? null;
@@ -408,6 +413,9 @@ export function LiveCall({ bot }: { bot: Bot }) {
       startedAt={data.startedAt}
       onRetry={data.retry}
       onEnd={() => endCall(bot.id)}
+      collapsed={collapsed}
+      onCollapse={onCollapse}
+      onExpand={onExpand}
     />
   );
 }

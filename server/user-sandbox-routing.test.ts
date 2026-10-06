@@ -9,7 +9,7 @@ import type { SandboxExecOutput } from "./sandboxd-core.ts";
 import type { UserSandboxManager } from "./user-sandbox-manager.ts";
 import { restorePrefixedEnvironment, userSandboxProxyRequest } from "./user-sandbox-proxy.ts";
 import { createUserSandboxRoutes } from "./user-sandbox-routes.ts";
-import { resolveExecutionTarget, sandboxPrincipalForTurn, USER_SANDBOX_MCP_NAME } from "./user-sandbox-routing.ts";
+import { remoteComputerForTurn, resolveExecutionTarget, sandboxPrincipalForTurn, screenVisibleToPrincipal, USER_SANDBOX_MCP_NAME } from "./user-sandbox-routing.ts";
 import { browsableUrl, callUserSandboxTool, handleUserSandboxMcp, type ToolExec } from "./user-sandbox-tools.ts";
 
 describe("resolveExecutionTarget", () => {
@@ -52,6 +52,32 @@ describe("sandboxPrincipalForTurn", () => {
 
   it("mounts nothing when nobody is known (fail closed)", () => {
     expect(sandboxPrincipalForTurn({ botOwnerPrincipalId: owner, routine: false, speakerPrincipalId: "" })).toBeNull();
+  });
+});
+
+describe("remoteComputerForTurn", () => {
+  it("keeps an organization turn off Boat, VPS and shared team computers", () => {
+    expect(remoteComputerForTurn({ organization: true, runOnCloud: false, hasTeamComputer: true })).toEqual({ skipRemote: true, forceCloud: false });
+    expect(remoteComputerForTurn({ organization: true, runOnCloud: true, hasTeamComputer: true })).toEqual({ skipRemote: true, forceCloud: true });
+  });
+
+  it("still forces Cloud on a solo server for a cloud routine or a team computer", () => {
+    expect(remoteComputerForTurn({ organization: false, runOnCloud: true, hasTeamComputer: false })).toEqual({ skipRemote: false, forceCloud: true });
+    expect(remoteComputerForTurn({ organization: false, runOnCloud: false, hasTeamComputer: true })).toEqual({ skipRemote: false, forceCloud: true });
+    expect(remoteComputerForTurn({ organization: false, runOnCloud: false, hasTeamComputer: false })).toEqual({ skipRemote: false, forceCloud: false });
+  });
+});
+
+describe("screenVisibleToPrincipal", () => {
+  it("shows an organization screen only to the person whose turn it is", () => {
+    expect(screenVisibleToPrincipal({ organization: true, viewerId: "Pr_Alice", workplacePrincipal: "pr_alice" })).toBe(true);
+    expect(screenVisibleToPrincipal({ organization: true, viewerId: "pr_bob", workplacePrincipal: "pr_alice" })).toBe(false);
+    expect(screenVisibleToPrincipal({ organization: true, viewerId: "pr_alice" })).toBe(false);
+    expect(screenVisibleToPrincipal({ organization: true, workplacePrincipal: "pr_alice" })).toBe(false);
+  });
+
+  it("leaves solo screens unchanged", () => {
+    expect(screenVisibleToPrincipal({ organization: false, viewerId: "pr_bob", workplacePrincipal: "pr_alice" })).toBe(true);
   });
 });
 
