@@ -2,7 +2,8 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
-import { ApprovalCard } from "./ApprovalCard";
+import { adminWillAnswerLine, ApprovalCard } from "./ApprovalCard";
+import { approvalWho } from "./PerspicaxOrgSettings";
 import { pendingApprovals, PendingApprovalPanel, spokenApprovalPrompt, type Pending } from "./PendingApproval";
 import type { Bot, Message } from "@/state/store";
 import { skillRequestBehavior } from "../../shared/skill-request";
@@ -642,5 +643,29 @@ describe("ApprovalCard for a change that applied on its own", () => {
     const confirmed = routineCard(createRoutineOperation, { name: "Backlog review" });
     confirmed.card = { ...confirmed.card!, autoApplied: undefined, options: ["Confirm", "Cancel"] };
     expect(render(confirmed)).toContain("Routine scheduled");
+  });
+});
+
+describe("a card waiting for an organization admin (2026-10-08)", () => {
+  it("says what happens next and names the admins when known", () => {
+    expect(adminWillAnswerLine(["Alice", "JC"])).toBe(
+      "An admin (Alice, JC) sees it in Settings > Organization. Your bot continues as soon as it is approved, or skips this step if it is denied.",
+    );
+    expect(adminWillAnswerLine([" "])).toContain("The organization's admins see it in Settings > Organization.");
+    expect(adminWillAnswerLine(undefined)).toContain("The organization's admins");
+  });
+  it("shows the member's waiting card with that line, and what happens next", () => {
+    const message = {
+      id: "m-admin", role: "bot", kind: "options", at: 1,
+      card: { title: "Approval needed", subtitle: "agents__vm_exec", options: ["Allow", "Deny"], requestId: "r-admin", requestType: "permission", tool: "other", adminApproval: true, adminNames: ["Alice"] },
+    } as unknown as Message;
+    const html = renderToStaticMarkup(createElement(ApprovalCard, { bot: { name: "Sprout" }, message }));
+    expect(html).toContain("This command runs on the server: waiting for an admin to approve it.");
+    expect(html).toContain("An admin (Alice) sees it in Settings &gt; Organization.");
+  });
+  it("tells the admin whose request it is", () => {
+    expect(approvalWho({ botName: "Sprout", requestedBy: "Erin", ownerName: "Erin" })).toBe("Sprout, asked by Erin");
+    expect(approvalWho({ botName: "Sprout", ownerName: "Erin" })).toBe("Sprout, owned by Erin");
+    expect(approvalWho({ botName: "Sprout" })).toBe("Sprout");
   });
 });

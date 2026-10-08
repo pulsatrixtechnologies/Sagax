@@ -119,6 +119,25 @@ describe("the admin gate on a member's bot", () => {
     // one path out is enough
     expect(gate("Edit", [join(root, "thread-1", "a.ts"), "/etc/passwd"])).toBe(true);
   });
+  it("lets the owner answer a built-in Sagax tool that stays in the member's own scope (2026-10-08)", () => {
+    // the reported case: a member's bot listing the bots it sees
+    expect(gate("agents__list_bots")).toBe(false);
+    expect(gate("mcp__agents__list_bots")).toBe(false);
+    expect(gate("agents__list_threads")).toBe(false);
+    expect(gate("agents__session_read")).toBe(false);
+    expect(gate("agents__ask_bot")).toBe(false);
+    expect(gate("agents__memory_update")).toBe(false);
+    expect(gate("agents__propose_routine")).toBe(false);
+  });
+  it("still needs an admin for a host-level agents tool or a command dressed as one", () => {
+    expect(gate("agents__act")).toBe(true);
+    expect(gate("agents__add_mcp_server")).toBe(true);
+    expect(gate("agents__attach_file")).toBe(true);
+    expect(gate("agents__vm_exec")).toBe(true);
+    expect(gate("agents__shared_computer")).toBe(true);
+    expect(gate("agents__list_bots", undefined, { command: "ls", cwd: root })).toBe(true);
+    expect(gate("other")).toBe(true);
+  });
   it("needs an admin for every other tool and every server command", () => {
     expect(gate("Bash", [join(root, "thread-1")], { command: "ls", cwd: root })).toBe(true);
     expect(gate("WebFetch")).toBe(true);

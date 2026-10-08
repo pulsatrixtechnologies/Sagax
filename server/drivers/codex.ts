@@ -1448,6 +1448,9 @@ export const CodexDriver: ProviderDriver<CodexConfig> = {
           requestType: isQuestion ? "question" : "permission",
           tool,
           summary,
+          // the server Codex named in its own ask, with the tool it parsed
+          ...(isLegacyMcpPermission && mcpTool && typeof params.serverName === "string" && /^[\w-]{1,64}$/.test(params.serverName)
+            ? { mcpTool: `${params.serverName}__${mcpTool}` } : {}),
           command: method === "execCommandApproval" || method === "item/commandExecution/requestApproval"
             ? permissionCommand(params.command, params.cwd ?? (
               // Helpers may have a different workspace from their parent.

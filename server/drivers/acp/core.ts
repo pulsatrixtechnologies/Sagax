@@ -1336,6 +1336,13 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
           }
           const tool = kind === "execute" ? "shell" : kind === "edit" ? "edit" : kind || "tool";
           const isShellCommand = !isQuestion && kind === "execute" && !/^mcp(?:__|[.:])/i.test(String(toolCall.title ?? ""));
+          // An MCP tool's ask carries the agent's own `<server>__<tool>`
+          // title (Grok: "agents__list_bots"), never a command or a file
+          // change; the summary below may come from the model's arguments.
+          const mcpTitle = typeof toolCall.title === "string" ? toolCall.title.trim() : "";
+          const mcpTool = !isQuestion && !["execute", "edit", "delete", "move"].includes(kind) && /^(?:mcp__)?[a-z][\w-]{0,63}__[a-z][a-z0-9_]{0,63}$/i.test(mcpTitle)
+            ? mcpTitle
+            : undefined;
           const rawSummary = String(toolCall.rawInput?.command ?? toolCall.title ?? tool);
           const summary = rawSummary.slice(0, isQuestion ? MAX_QUESTION_TEXT : 200);
           // One structured question beside the flat choices: the richer card
@@ -1412,6 +1419,7 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
             requestType: isQuestion ? "question" : "permission",
             tool,
             summary,
+            ...(mcpTool ? { mcpTool } : {}),
             command: isShellCommand ? acpPermissionCommand(toolCall.rawInput, commandCwd) : undefined,
             requiresExplicitApproval: isShellCommand && (
               toolCall.rawInput?.dangerouslyDisableSandbox === true || toolCall.rawInput?.sandbox_permissions === "require_escalated"

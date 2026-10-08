@@ -137,6 +137,13 @@ export type RuntimeEvent = RuntimeEventBase &
         requestType: "permission" | "question";
         tool: string;
         summary: string;
+        /** The MCP tool a permission ask is for, as the engine itself named
+         * it, qualified with its server (`agents__list_bots`), when `tool`
+         * does not already say so (an ACP agent reports a kind such as
+         * "other", Codex the bare tool name). Never taken from the model's
+         * arguments. The organization admin gate reads it
+         * (server/member-tool-scope.ts). */
+        mcpTool?: string;
         /** Complete native shell input and its effective working directory.
          * Used for exact-command grants; never reconstructed from a display
          * summary, tool title, or argv. Absent when either value is unknown. */

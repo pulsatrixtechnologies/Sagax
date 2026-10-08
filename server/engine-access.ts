@@ -9,6 +9,8 @@
 import { realpathSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
+import { memberOwnScopeTool } from "./member-tool-scope.ts";
+
 export type EngineAccessRefusal = "engine_missing" | "no_access";
 
 /** Who a turn speaks for, stated by the path that starts it (the gate
@@ -125,9 +127,15 @@ function realLocation(path: string): string {
  * The owner answers only a file tool (Read, Write, Edit, ...) whose every
  * path is absolute and, symlinks resolved, stays inside the bot's own task
  * workspace outside any dot folder (.claude, .git, .mcp.json can hold
- * commands). Everything else, a shell command first, needs an admin. */
+ * commands), and a built-in Sagax tool that stays in the member's own scope
+ * (./member-tool-scope.ts: list_bots, the bot's threads, memory, its own
+ * setup, messages to its own bots). Everything else, a shell command first,
+ * needs an admin. `tool` is the provider's own name for the tool, an MCP
+ * tool qualified with its server (`agents__list_bots`), never the model's
+ * arguments. */
 export function memberBotAdminApproval(input: { tool?: string; command?: unknown; paths?: string[]; workspaceRoot: string }): boolean {
   if (serverCommandApproval(input)) return true;
+  if (memberOwnScopeTool(input.tool?.trim())) return false;
   const tool = input.tool?.trim().toLowerCase() ?? "";
   if (!WORKSPACE_FILE_TOOLS.has(tool)) return true;
   if (!input.paths?.length) return true;

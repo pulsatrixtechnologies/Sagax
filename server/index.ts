@@ -7512,6 +7512,11 @@ function broadcast(payload: Record<string, unknown>, options: { adminOnly?: bool
     const id = (payload.bot as { id?: unknown }).id;
     if (typeof id === "string") announceProfileChange(id);
   }
+  // an admin card opened, answered, dismissed or expired: tell the admins
+  if ((kind === "message" || kind === "message.patch") && payload.message && typeof payload.message === "object") {
+    const card = (payload.message as { card?: { adminApproval?: unknown } }).card;
+    if (card?.adminApproval) scheduleAdminApprovalsAnnounce();
+  }
 }
 
 function approvalHostOf(bot: BotRecord): BotHost {
@@ -7646,11 +7651,74 @@ function pendingApprovalCards(): Array<{ bot: BotRecord; threadId: string; messa
 function pendingAdminApprovals(): PendingAdminApproval[] {
   return pendingApprovalCards()
     .filter((entry) => entry.card.adminApproval)
-    .map(({ bot, threadId, message, card }) => ({
-      botId: bot.id, botName: bot.name, threadId, requestId: card.requestId!,
-      ownerPrincipalId: effectiveBotOwner(bot), tool: card.tool, summary: card.subtitle?.slice(0, 500), at: message.at,
-    }))
+    .map(({ bot, threadId, message, card }) => {
+      const ownerPrincipalId = effectiveBotOwner(bot);
+      const requester = cardRequesterKey(threadId, card.requestId!);
+      const requestedBy = requester && isPrincipalId(requester) && principals.byId(requester) ? adminPerson(requester).name : undefined;
+      const summary = typeof card.subtitle === "string" && card.subtitle ? redactSecretsInText(card.subtitle).slice(0, 500) : undefined;
+      return {
+        botId: bot.id, botName: bot.name, threadId, requestId: card.requestId!,
+        ownerPrincipalId, ownerName: adminPerson(ownerPrincipalId).name,
+        ...(requestedBy ? { requestedBy } : {}),
+        ...(card.tool ? { tool: String(card.tool).slice(0, 200) } : {}),
+        ...(summary ? { summary } : {}),
+        at: message.at,
+      };
+    })
     .sort((a, b) => a.at - b.at).slice(0, 200);
+}
+
+/** The organization admins people can be told about (2026-10-08): signed in
+ * with Perspicax, not disabled. Their names go on a member's waiting card. */
+function orgAdminNames(): string[] {
+  if (IDENTITY.kind !== "perspicax") return [];
+  return principals.list()
+    .filter((person) => person.orgRole === "admin" && person.subject && person.disabledAt === undefined)
+    .map((person) => (person.name || person.login || "").trim())
+    .filter(Boolean)
+    .slice(0, 5);
+}
+
+/** Admin approvals reach the admins (2026-10-08). Before, a member's
+ * waiting card was announced to the bot's audience only (its owner): no
+ * admin was told, and the list in Settings > Organization was read once
+ * when that page opened. Every change to an admin card now sends the
+ * admins' streams an `org.approvals` frame (sseFrameFor keeps it from
+ * everyone else) with the count, for the badge, and the requests that just
+ * arrived, for a notification. Debounced: a burst of patches is one frame. */
+let adminApprovalsAnnounce: NodeJS.Timeout | null = null;
+let announcedAdminApprovals = new Set<string>();
+function scheduleAdminApprovalsAnnounce(): void {
+  if (IDENTITY.kind !== "perspicax" || adminApprovalsAnnounce) return;
+  adminApprovalsAnnounce = setTimeout(() => {
+    adminApprovalsAnnounce = null;
+    const pending = pendingAdminApprovals();
+    const keys = new Set(pending.map((entry) => `${entry.threadId}:${entry.requestId}`));
+    const added = pending.filter((entry) => !announcedAdminApprovals.has(`${entry.threadId}:${entry.requestId}`));
+    const changed = added.length > 0 || keys.size !== announcedAdminApprovals.size;
+    announcedAdminApprovals = keys;
+    if (!changed) return;
+    broadcast({
+      kind: "org.approvals",
+      count: pending.length,
+      added: added.slice(-5).map((entry) => ({
+        requestId: entry.requestId, botName: entry.botName, ownerName: entry.ownerName,
+        ...(entry.requestedBy ? { requestedBy: entry.requestedBy } : {}),
+        ...(entry.tool ? { tool: entry.tool } : {}),
+        ...(entry.summary ? { summary: entry.summary.slice(0, 200) } : {}),
+      })),
+    });
+  }, 50);
+  adminApprovalsAnnounce.unref?.();
+}
+
+/** Whether a stream belongs to an organization admin: the only streams an
+ * `org.approvals` frame reaches. A loopback stream is the operator's. */
+function orgAdminStream(client: SseClient): boolean {
+  if (IDENTITY.kind !== "perspicax") return false;
+  if (!client.viewerId) return client.admin;
+  const person = principals.byId(client.viewerId);
+  return person?.local === true || person?.orgRole === "admin";
 }
 
 /** Slice 7: what kind of decision a card asks for. */
@@ -8002,6 +8070,8 @@ function sseFrameFor(
 ): string | null {
   if (payload && !peopleDmFrameAllowed(payload, client.viewerId)) return null;
   if (payload && viewerNotificationMuted(payload, client.viewerId)) return null;
+  // the approvals waiting for an organization admin reach the admins only
+  if (payload?.kind === "org.approvals" && !orgAdminStream(client)) return null;
   // a person's unlocks reach that person's streams only
   if (payload?.kind === "achievements" && !achievementFrameAllowed(payload, client.viewerId, localPrincipalId())) return null;
   if (payload?.kind === "nudge" && !nudgeFrameAllowed(payload, client.viewerId, localPrincipalId())) return null;
@@ -10015,8 +10085,11 @@ bus.subscribe((event: RuntimeEvent) => {
       // so a write to the shared settings or a read of a secret is as good as
       // a command (memberBotAdminApproval).
       const memberAsker = Boolean(permission && asker && memberOwnedInOrg(asker));
+      // `mcpTool`: the engine's own `<server>__<tool>` name when `tool` is a
+      // kind (ACP "other") or a bare name (Codex), so a built-in Sagax tool
+      // in the member's own scope (member-tool-scope.ts) is recognized.
       const adminApproval = Boolean(memberAsker && asker && memberBotAdminApproval({
-        tool: event.tool, command: event.command, paths: event.paths,
+        tool: event.mcpTool ?? event.tool, command: event.command, paths: event.paths,
         workspaceRoot: join(realpathSync(DATA_DIR), "task-workspaces", asker.id),
       }));
       const command = permission && asker && event.requestId && !event.requiresExplicitApproval && event.command && !adminApproval && !guestDriven
@@ -10134,6 +10207,8 @@ bus.subscribe((event: RuntimeEvent) => {
           // a guest's turn either: an "always" for it would outlive it.
           allowSession: permission && event.allowSession && !event.requiresExplicitApproval && !adminApproval && !memberAsker && !guestDriven ? true : undefined,
           ...(adminApproval ? { adminApproval: true } : {}),
+          // who will answer it, for the member's waiting line
+          ...(adminApproval && orgAdminNames().length ? { adminNames: orgAdminNames() } : {}),
           // The text stays for cards saved before heldCode existed, and for
           // clients that do not know the key yet.
           held: approvalHeldReason(heldContext),

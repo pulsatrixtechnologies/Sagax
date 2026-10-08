@@ -15,10 +15,13 @@
 //   S3-7b its cards that reach past its own workspace (a shell command, a
 //         write to the shared Claude settings, a read of the config) wait for
 //         an organization admin; a file inside its workspace is the owner's
+//   S3-7c a built-in Sagax read (list_bots) of a member's bot is its owner's
+//         to answer; a server command reaches every admin's stream at once
+//         (org.approvals), lists who asked, and the admin's Allow releases it
 //   S3-10 the directory is the backstop: a disabled person's session ends
 //   S3-11 the authenticated health lists the engines and whether installed
 import { spawn, type ChildProcess } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { connect, type Socket } from "node:net";
 import { request } from "node:http";
 import { tmpdir } from "node:os";
@@ -628,6 +631,72 @@ posixOnly("Perspicax organization, slice 3: directory, sharing with a user, acce
     } finally {
       for (const socket of sockets) socket.destroy();
       await api("POST", `/api/bots/${wren.id}/interrupt`, erin, {});
+    }
+  }, 60_000);
+
+  it("S3-7c: list_bots runs for a member without an admin; a server command reaches the admins live and their answer releases it", async () => {
+    const erin = await signIn(ERIN);
+    const bram = await createBot(erin, "Bram", "hold");
+    const holdDump = join(home, "hold-dump.json");
+    rmSync(holdDump, { force: true });
+    const adminStream = await openStream(alice);
+    const memberStream = await openStream(erin);
+    expect((await api("POST", `/api/bots/${bram.id}/messages`, erin, { text: "which bots do you see" })).status).toBe(202);
+    await waitFor(async () => existsSync(holdDump), 20_000);
+    const socketPath = (JSON.parse(readFileSync(holdDump, "utf8")) as { mcpConfig: any }).mcpConfig.mcpServers.ogb.args.at(-1) as string;
+    const sockets: Socket[] = [];
+    const ask = async (tool: string, input: Record<string, unknown>) => {
+      const socket = connect(socketPath);
+      sockets.push(socket);
+      await new Promise<void>((resolve, reject) => { socket.once("connect", resolve); socket.once("error", reject); });
+      const id = `s37c-${tool}-${sockets.length}`;
+      let answer: any;
+      let buffer = "";
+      socket.on("data", (chunk) => { buffer += chunk; if (buffer.includes("\n")) answer = JSON.parse(buffer.split("\n")[0]!); });
+      socket.write(JSON.stringify({ t: "ask", id, kind: "permission", tool, input }) + "\n");
+      const card = await waitFor(async () => {
+        const got = await api("GET", `/api/threads/${bram.threadId}/messages?limit=100`, erin);
+        return (got.body.messages as Array<{ card?: any }> | undefined)?.find((m) => m.card?.requestId === id)?.card ?? null;
+      });
+      return { id, card, answer: () => answer };
+    };
+    const respond = (auth: Auth, requestId: string) =>
+      api("POST", `/api/threads/${bram.threadId}/respond`, auth, { requestId, behavior: "allow" });
+    try {
+      // a built-in read in the member's own scope: the owner's card, no admin
+      const list = await ask("mcp__agents__list_bots", {});
+      expect(list.card.adminApproval).toBeUndefined();
+      const owned = await respond(erin, list.id);
+      expect(owned.status, owned.text).toBe(200);
+      await waitFor(async () => list.answer()?.behavior === "allow");
+
+      // a command on the server waits for an admin and says who
+      const shell = await ask("Bash", { command: "cat /etc/hostname" });
+      expect(shell.card.adminApproval).toBe(true);
+      expect(shell.card.adminNames).toContain("Alice");
+      expect((await respond(erin, shell.id)).body.code).toBe("admin_approval_required");
+      // every admin's stream hears of it at once; a member's never does
+      await waitFor(async () => adminStream.text().includes(`"kind":"org.approvals"`) && adminStream.text().includes(shell.id));
+      expect(memberStream.text()).not.toContain(`"kind":"org.approvals"`);
+      const waiting = (await api("GET", "/api/org/approvals", alice)).body.approvals as Array<Record<string, unknown>>;
+      expect(waiting.find((entry) => entry.requestId === shell.id)).toMatchObject({ botName: "Bram", ownerName: "Erin", requestedBy: "Erin", tool: "Bash" });
+      expect(waiting.some((entry) => entry.requestId === list.id)).toBe(false);
+
+      // the admin's Allow releases the member's turn and settles the card for both
+      const approved = await respond(alice, shell.id);
+      expect(approved.status, approved.text).toBe(200);
+      await waitFor(async () => shell.answer()?.behavior === "allow");
+      await waitFor(async () => {
+        const got = await api("GET", `/api/threads/${bram.threadId}/messages?limit=100`, erin);
+        return Boolean((got.body.messages as Array<{ card?: any }>).find((m) => m.card?.requestId === shell.id)?.card?.answered);
+      });
+      await waitFor(async () => /"kind":"org.approvals","count":0/.test(adminStream.text()));
+      expect(((await api("GET", "/api/org/approvals", alice)).body.approvals as Array<{ requestId: string }>).some((entry) => entry.requestId === shell.id)).toBe(false);
+    } finally {
+      for (const socket of sockets) socket.destroy();
+      adminStream.close();
+      memberStream.close();
+      await api("POST", `/api/bots/${bram.id}/interrupt`, erin, {});
     }
   }, 60_000);
 

@@ -64,6 +64,15 @@ const PROFILE_FIELD_LABEL: Record<ProfileRequestField, LocaleKey> = {
 /** What a settled approval card says happened, or undefined while it is
  * still open. The card's own status line and the sidebar row both read this,
  * so a chat that ends on the card never says one thing in each place. */
+/** What happens to a card waiting for an organization admin, naming the
+ * admins when the server knows them. */
+export function adminWillAnswerLine(adminNames: readonly string[] | undefined): string {
+  const names = (adminNames ?? []).map((name) => name.trim()).filter(Boolean);
+  return names.length
+    ? t("approval.adminWillAnswer", { admins: names.join(", ") })
+    : t("approval.adminWillAnswerUnnamed");
+}
+
 export function approvalCardOutcome(card: OptionCardData): string | undefined {
   if (card.expired === true) return t("approval.status.expired");
   if (!card.answered) return undefined;
@@ -440,6 +449,9 @@ export function ApprovalCard({
           </>
         )}
       </div>
+      {open && card.adminApproval && (
+        <p className="mt-1 text-[12.5px] text-ink-secondary">{adminWillAnswerLine(card.adminNames)}</p>
+      )}
       {view && !open && (view.args || card.tool) && (
         <TechnicalDetails tool={card.tool} server={view.server} args={view.args} />
       )}
