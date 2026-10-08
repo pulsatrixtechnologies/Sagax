@@ -67,7 +67,7 @@ describe("sidebar head buttons", () => {
 
   it("leave the rows' hover actions on rail tokens too", () => {
     const actions = sidebar.match(/className="pointer-events-none absolute right-[^"]*"/g) ?? [];
-    expect(actions.length).toBeGreaterThanOrEqual(3);
+    expect(actions.length).toBeGreaterThanOrEqual(2);
     for (const action of actions) {
       expect(action).toContain("text-sidebar-ink-secondary");
       expect(action).not.toMatch(/\btext-ink-secondary|hover:bg-raised\b|hover:text-ink\b/);

@@ -259,6 +259,7 @@
   /* ink carried by a filled accent / danger surface (see the rule at the
      bottom of this file, which is what makes them take effect) */
   --color-accent-ink: #111111;
+  --color-unread: #3c76f4;
   --color-danger-ink: #ffffff;
   /* ink carried by the user's own bubble. A hex rather than the ink token so
      the contrast check can measure it; every dark skin repeats its ink here. */
@@ -283,6 +284,14 @@
   --app-topbar-height: 56px;
   --app-frame-gap: 8px;
   --app-chat-min-width: 360px;
+}
+
+/* The unread dot follows the skin's accent (--color-unread: var(--color-accent)
+   in each skin), except in the skins whose accent is a neutral grey (Midnight,
+   Graphite, Linen): there it read as a plain white spot with no meaning, so
+   they set the Pulsatrix blue instead. */
+@utility bg-unread {
+  background-color: var(--color-unread);
 }
 
 /* The popover tokens, resolved per skin context. `@theme` puts them on
@@ -372,6 +381,7 @@
   --color-ink-tertiary: #8d99b5;   /* quiet text; clears 4.5:1 on raised-hover */
 
   --color-accent: #3c76f4;
+  --color-unread: var(--color-accent);
   --color-accent-border: #4f86f7;
   --color-accent-text: #c8e4ff;
   --color-focus: #4f86f7;
@@ -458,6 +468,7 @@
   --color-ink-tertiary: #4f5868;   /* = ink-secondary: the light ground leaves no room below it */
 
   --color-accent: #2f62dd;
+  --color-unread: var(--color-accent);
   --color-accent-border: #3c76f4;
   --color-accent-text: #2652bd;     /* darkened from accent for 4.5:1 on the app ground */
   --color-focus: #2652bd;          /* 3:1 on control too, where a focused field paints its border */
@@ -521,6 +532,7 @@
   --color-ink-secondary: #fcfcfc99;
   --color-ink-tertiary: #fcfcfc90;
   --color-accent: #d6d6d6;
+  --color-unread: #3c76f4;
   --color-accent-border: #a3a3a3;
   --color-accent-text: #e8e8e8;
   --color-focus: #bdbdbd;    /* = @theme default: unchanged */
@@ -582,6 +594,7 @@
 
   /* Two accent tones: the fill carries white, the text stands on white. */
   --color-accent: #a05f25;        /* #b06a2c darkened → 5.05:1 */
+  --color-unread: var(--color-accent);
   --color-accent-border: #b06a2c; /* the original tone lives on as the border */
   --color-accent-text: #96551f;   /* for links on a light ground — 5.81:1 */
   --color-focus: #96551f;         /* the ring rides the accent, not Grok blue */
@@ -651,6 +664,7 @@
 
   /* Brass. Bright fill, dark lettering — the inversion described above. */
   --color-accent: #d99a3e;
+  --color-unread: var(--color-accent);
   --color-accent-border: #e8b25e;
   --color-accent-text: #e0a44c;   /* 8.6:1 on the ground, for links */
   --color-focus: #e0a44c;         /* the ring rides the accent, not Grok blue */
@@ -725,6 +739,7 @@
   --color-ink-tertiary: #4b5655;
 
   --color-accent: #11736d;        /* deep teal, carries white at 5.68:1 */
+  --color-unread: var(--color-accent);
   --color-accent-border: #14807a;
   --color-accent-text: #0d5f5a;   /* 7.5:1 on a card */
   --color-focus: #0d5f5a;         /* the ring rides the accent, not Grok blue */
@@ -781,6 +796,7 @@
   --color-ink-tertiary: #9fa4ad;
 
   --color-accent: #d0d4da;
+  --color-unread: #3c76f4;
   --color-accent-border: #9aa3ad;
   --color-accent-text: #e4e7ec;
   --color-focus: #b3b8c2;
@@ -835,6 +851,7 @@
   --color-ink-tertiary: #515863;   /* = ink-secondary: the hover and selected washes leave no room below it */
 
   --color-accent: #2a2a2a;
+  --color-unread: #3c76f4;
   --color-accent-border: #3a3a3a;
   --color-accent-text: #2a2a2a;
   --color-focus: #2a2a2a;
@@ -890,6 +907,7 @@
   --color-ink-tertiary: #a49ca8;
 
   --color-accent: #9474a3;   /* #765683 measured 2.6:1 as a check mark or icon on a card; lifted to 3:1 on raised-hover */
+  --color-unread: var(--color-accent);
   --color-accent-border: #9670a3;
   --color-accent-text: #c49bd2;
   --color-focus: #c49bd2;
@@ -955,6 +973,7 @@
      unread dot it is mostly used for, not for a filled button's label. The
      fill is darkened until white clears AA; the dot keeps reading as blue. */
   --color-accent: #2a2a2a;
+  --color-unread: var(--color-accent);
   --color-accent-border: #3a3a3a;
   --color-accent-text: #2a2a2a;
   --color-focus: #2a2a2a;
@@ -1018,6 +1037,7 @@
   --color-ink-tertiary: #3c3c3c;   /* = ink-secondary, as on the other light skins */
 
   --color-accent: #000080;        /* the era's selection navy */
+  --color-unread: var(--color-accent);
   --color-accent-border: #000080;
   --color-accent-text: #000080;
   --color-focus: #000000;
@@ -1074,6 +1094,7 @@
   --color-ink-tertiary: #4d5a52;   /* = ink-secondary: the selected wash leaves no room below it */
 
   --color-accent: #1a7a48;
+  --color-unread: var(--color-accent);
   --color-accent-border: #1f8a52;
   --color-accent-text: #176b3f;
   --color-focus: #1a7a48;
