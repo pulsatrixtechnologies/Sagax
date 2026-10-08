@@ -4365,6 +4365,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           break;
         case "presence.changed":
           applyPresenceFrame(frame);
+          break;
         // a read position moved (src/lib/read-receipts-feed.ts)
         case "thread.read":
           receiveThreadReadFrame(frame);
