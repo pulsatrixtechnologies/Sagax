@@ -1,8 +1,8 @@
 import { Fragment, useEffect, useRef, useState } from "react";
-import { Check, FilePen, Hand, ListChecks, Settings, ShieldCheck, TriangleAlert } from "lucide-react";
+import { Check, ChevronDown, FilePen, Hand, ListChecks, Settings, ShieldCheck, TriangleAlert } from "lucide-react";
 import { reportAchievement } from "@/lib/achievements";
 
-import { approvalModeFor, hasNativeAutoReview, supportsApprovalMode, type ApprovalMode } from "../../shared/approval-mode";
+import { approvalModeFor, hasNativeAutoReview, isApprovalMode, supportsApprovalMode, type ApprovalMode } from "../../shared/approval-mode";
 import { cn } from "@/lib/cn";
 import { useAdvancedMode } from "@/lib/interface-mode";
 import { useMenuMotion } from "./MenuMotion";
@@ -73,6 +73,21 @@ export function approvalModeOptionsFor(driverKind: string, trustedModesAvailable
     });
 }
 
+function menuItems(menu: HTMLElement | null): HTMLElement[] {
+  return menu ? Array.from(menu.querySelectorAll<HTMLElement>('[role^="menuitem"]:not([disabled])')) : [];
+}
+
+/** Arrow, Home and End movement inside a menu of `count` rows, wrapping at
+ * both ends. `null` for any other key. */
+export function nextMenuIndex(at: number, count: number, key: string): number | null {
+  if (count === 0) return null;
+  if (key === "ArrowDown") return at < 0 ? 0 : (at + 1) % count;
+  if (key === "ArrowUp") return at < 0 ? count - 1 : (at - 1 + count) % count;
+  if (key === "Home") return 0;
+  if (key === "End") return count - 1;
+  return null;
+}
+
 export function approvalModeSelectionRequiresLocalDesktop(
   currentMode: ApprovalMode,
   trustedModesAvailable: boolean,
@@ -84,9 +99,10 @@ export function approvalModeSelectionRequiresLocalDesktop(
 }
 
 /** How much this bot may do on its own. Advanced is an icon beside the
- * message field that opens the full menu. Simple is Ask and Decide, on their
- * own row, so the message field stays a normal chat bar. `wide` stacks the
- * same two choices on bot settings. */
+ * message field that opens the full menu. Simple is a chip beside the model
+ * chip ("Ask me first", "Decide for me") whose menu holds the two choices,
+ * so the message field stays a normal chat bar. `wide` stacks the same two
+ * choices on bot settings. */
 export function ApprovalModeSelector({
   approvalMode,
   autoApprove,
@@ -121,6 +137,7 @@ export function ApprovalModeSelector({
   const motion = useMenuMotion(open);
   const wrapperRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
   const savedMode = approvalModeFor({ approvalMode, autoApprove });
   // Old Antigravity Auto settings still ask. Do not display or silently grant
   // the new Auto/full-access behavior until the user explicitly selects it.
@@ -161,6 +178,33 @@ export function ApprovalModeSelector({
     return () => document.removeEventListener("keydown", closeOnEscape);
   }, [open]);
 
+  // The Simple chip's menu takes focus on open (the checked row, else the
+  // first) so Enter, the arrows and Escape work without the mouse.
+  useEffect(() => {
+    if (!open || advanced) return;
+    const items = menuItems(menuRef.current);
+    (items.find((item) => item.getAttribute("aria-checked") === "true") ?? items[0])?.focus();
+  }, [open, advanced]);
+
+  const handleMenuKey = (event: { key: string; preventDefault: () => void }) => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      setOpen(false);
+      triggerRef.current?.focus();
+      return;
+    }
+    if (event.key === "Tab") {
+      setOpen(false);
+      return;
+    }
+    const items = menuItems(menuRef.current);
+    const at = items.findIndex((item) => item === document.activeElement);
+    const next = nextMenuIndex(at, items.length, event.key);
+    if (next === null) return;
+    event.preventDefault();
+    items[next]?.focus();
+  };
+
   const CurrentIcon = current.Icon;
   const triggerDisabled = disabled && !onManageCommandAllowlist;
   const modesDisabled = disabled || requiresLocalDesktop;
@@ -181,41 +225,105 @@ export function ApprovalModeSelector({
   );
   // Simple offers two choices and leaves any other saved level untouched
   // until the person picks one of them. Decide is absent when this engine
-  // has no auto mode (hiding, not a disabled row).
+  // has no auto mode (hiding, not a disabled row). In the composer they sit
+  // behind a chip beside the model chip; bot settings (`wide`) stacks them.
   if (!advanced) {
     const canDecide = visibleOptions.some((option) => option.mode === "auto");
     const known = mode === "ask" || (mode === "auto" && canDecide);
+    const choices = [
+      { mode: "ask" as const, label: t("approvalMode.simple.ask"), hint: t("approvalMode.simple.askHint") },
+      ...(canDecide ? [{ mode: "auto" as const, label: t("approvalMode.simple.decide"), hint: t("approvalMode.simple.decideHint") }] : []),
+    ];
+    if (!wide) {
+      const currentChoice = known ? choices.find((choice) => choice.mode === mode) : undefined;
+      const chipLabel = currentChoice?.label ?? t("approvalMode.simple.customChip");
+      // No level saved yet: the chip reads the default, with a dot.
+      const unset = !isApprovalMode(approvalMode) && autoApprove === undefined;
+      return (
+        <div data-approval-simple className="relative flex min-w-0 items-center" ref={wrapperRef}>
+          <button
+            ref={triggerRef}
+            type="button"
+            data-approval-chip
+            aria-haspopup="menu"
+            aria-expanded={open && !disabled}
+            aria-label={t("approvalMode.triggerAria", { mode: chipLabel, provider: providerName })}
+            disabled={disabled}
+            title={disabled ? t("approvalMode.busy") : unset ? t("approvalMode.simple.unset") : currentChoice?.hint ?? t("approvalMode.simple.custom")}
+            onClick={() => setOpen((value) => !value)}
+            className="flex max-w-full items-center gap-1 rounded-lg px-1.5 py-1 text-[13px] text-ink-secondary hover:bg-raised hover:text-ink disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {unset && <span aria-hidden data-approval-unset className="size-1.5 shrink-0 rounded-full bg-accent" />}
+            <span className="truncate">{chipLabel}</span>
+            <ChevronDown size={14} className={cn("shrink-0 transition-transform", open && "rotate-180")} />
+          </button>
+          {motion.shown && !disabled && (
+            <div
+              ref={menuRef}
+              role="menu"
+              aria-label={t("approvalMode.menuAria", { provider: providerName })}
+              onKeyDown={(event) => handleMenuKey(event)}
+              {...motion.exitProps}
+              className={cn(
+                "absolute z-40 flex w-[260px] flex-col gap-0.5 overflow-hidden rounded-xl border-[0.5px] border-border bg-elevated p-1.5",
+                menuDirection === "up" ? "bottom-full mb-2" : "top-full mt-2",
+                align === "right" ? "right-0" : "left-0",
+                motion.className,
+              )}
+            >
+              {choices.map((choice) => {
+                const selected = known && choice.mode === mode;
+                return (
+                  <button
+                    key={choice.mode}
+                    type="button"
+                    role="menuitemradio"
+                    aria-checked={selected}
+                    data-approval-choice={choice.mode}
+                    onClick={() => {
+                      onSelect(choice.mode);
+                      setOpen(false);
+                      triggerRef.current?.focus();
+                    }}
+                    className="flex items-start gap-2 rounded-md px-2 py-1.5 text-left hover:bg-hover focus:bg-hover focus:outline-none"
+                  >
+                    <span className="flex min-w-0 flex-1 flex-col">
+                      <span className="flex items-center justify-between gap-3 text-[13px] leading-[18px] text-ink">
+                        {choice.label}
+                        {selected && <Check size={14} className="shrink-0" />}
+                      </span>
+                      <span className="text-[12px] leading-4 text-ink-tertiary">{choice.hint}</span>
+                    </span>
+                  </button>
+                );
+              })}
+              {!known && <p data-approval-custom className="px-2 pb-1 pt-0.5 text-[12px] leading-4 text-ink-secondary">{t("approvalMode.simple.custom")}</p>}
+            </div>
+          )}
+        </div>
+      );
+    }
     const choiceClass = cn(
       "flex min-w-0 flex-1 flex-col rounded-lg border px-2.5 py-1.5 text-left",
       "border-hairline/40 bg-inset hover:bg-raised disabled:cursor-not-allowed disabled:opacity-45",
     );
     return (
       <div data-approval-simple className="flex w-full min-w-0 flex-col gap-1">
-        <div className={cn("flex w-full min-w-0 gap-1", wide && "flex-col")}>
-          <button
-            type="button"
-            data-approval-choice="ask"
-            aria-pressed={known && mode === "ask"}
-            disabled={disabled}
-            onClick={() => { if (!disabled) onSelect("ask"); }}
-            className={cn(choiceClass, known && mode === "ask" && "border-accent/40 bg-accent/10")}
-          >
-            <span className="text-[13px] leading-[18px] text-ink">{t("approvalMode.simple.ask")}</span>
-            <span className="text-[11.5px] leading-4 text-ink-tertiary">{t("approvalMode.simple.askHint")}</span>
-          </button>
-          {canDecide && (
+        <div className="flex w-full min-w-0 flex-col gap-1">
+          {choices.map((choice) => (
             <button
+              key={choice.mode}
               type="button"
-              data-approval-choice="auto"
-              aria-pressed={known && mode === "auto"}
+              data-approval-choice={choice.mode}
+              aria-pressed={known && mode === choice.mode}
               disabled={disabled}
-              onClick={() => { if (!disabled) onSelect("auto"); }}
-              className={cn(choiceClass, known && mode === "auto" && "border-accent/40 bg-accent/10")}
+              onClick={() => { if (!disabled) onSelect(choice.mode); }}
+              className={cn(choiceClass, known && mode === choice.mode && "border-accent/40 bg-accent/10")}
             >
-              <span className="text-[13px] leading-[18px] text-ink">{t("approvalMode.simple.decide")}</span>
-              <span className="text-[11.5px] leading-4 text-ink-tertiary">{t("approvalMode.simple.decideHint")}</span>
+              <span className="text-[13px] leading-[18px] text-ink">{choice.label}</span>
+              <span className="text-[11.5px] leading-4 text-ink-tertiary">{choice.hint}</span>
             </button>
-          )}
+          ))}
         </div>
         {!known && <p data-approval-custom className="text-[12px] leading-4 text-ink-secondary">{t("approvalMode.simple.custom")}</p>}
       </div>

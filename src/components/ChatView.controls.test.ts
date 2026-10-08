@@ -57,15 +57,17 @@ describe("thread control placement", () => {
     expect(markup).toMatch(/<textarea[^>]*disabled=""[^>]*aria-busy="true"/);
     expect(markup).not.toContain("Finish group setup");
   });
-  it("puts simple approval choices above the message line", () => {
+  it("puts the simple approval chip in the composer row, left of the model chip", () => {
     const markup = renderToStaticMarkup(createElement(ChatView, { bot: { ...bot, busy: false } }));
+    expect(markup).not.toContain("data-composer-approval");
     const rowAt = markup.indexOf("data-composer-row");
-    const approvalAt = markup.indexOf("data-composer-approval");
-    expect(approvalAt).toBeGreaterThan(-1);
-    expect(rowAt).toBeGreaterThan(approvalAt);
-    const row = markup.slice(rowAt);
-    expect(row).not.toContain("data-test-approval-control");
-    expect(row).toContain("Message Pepper");
+    const approvalAt = markup.indexOf("data-test-approval-control");
+    expect(rowAt).toBeGreaterThan(-1);
+    expect(approvalAt).toBeGreaterThan(markup.indexOf("<textarea"));
+    expect(approvalAt).toBeGreaterThan(markup.indexOf("data-composer-actions"));
+    expect(approvalAt).toBeLessThan(markup.indexOf("data-test-model-control"));
+    expect(fixture.approval).toMatchObject({ align: "right" });
+    expect(markup.slice(rowAt)).toContain("Message Pepper");
   });
 
   it("offers trusted modes in the composer without requiring a Full bot default", () => {
@@ -222,7 +224,7 @@ describe("thread control placement", () => {
     expect(markup.indexOf("data-test-model-control")).toBeGreaterThan(markup.indexOf('data-tour="composer"'));
     expect(markup.indexOf('data-tour="composer"')).toBeGreaterThan(-1);
     expect(markup.indexOf("data-test-approval-control")).toBeGreaterThan(markup.indexOf('data-tour="composer"'));
-    expect(markup.indexOf("data-test-approval-control")).toBeLessThan(markup.indexOf("<textarea"));
+    expect(markup.indexOf("data-test-approval-control")).toBeLessThan(markup.indexOf("data-test-model-control"));
     expect(markup).not.toContain('aria-label="Thread settings"');
     expect(fixture.model).toMatchObject({ threadId: "selected", bot: { busy: false, modelSelection: { model: "thread-model" } } });
     expect(fixture.approval).toMatchObject({ approvalMode: "ask", disabled: false, trustedModesAvailable: false });
