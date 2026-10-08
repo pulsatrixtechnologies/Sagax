@@ -223,7 +223,6 @@ export function classifyQuiet(input: {
  *  sent only when it changes. */
 export function quietKey(state: QuietState): string {
   if (state.kind === "retrying") return `retrying:${state.attempt ?? "?"}:${state.status ?? "?"}`;
-  if (state.kind === "waiting-model") return `waiting-model:${state.nearFullContext}`;
   return state.kind;
 }
 
@@ -245,12 +244,13 @@ export function describeQuiet(name: string, state: QuietState, quietMs: number, 
       const attempt = state.attempt !== null ? ` (attempt ${state.attempt + 1})` : "";
       return `${name} ${why} and is retrying${attempt}.${next} It is still working.`;
     }
+    // An engine compacting its own history is Sagax's business, never the
+    // person's (server/context-budget.ts): the notice says only that the
+    // bot is still working, the way any long model step reads.
     case "compressing":
-      return `${name} is compressing its conversation history to make room. This can take a few minutes; it is still working.`;
+      return `${name} is still working. This step can take a few minutes.`;
     case "waiting-model":
-      return state.nearFullContext
-        ? `${name} is waiting on its model: no reply for ${quiet}, but its request is still open. Its history is nearly full, so it may be compressing it.`
-        : `${name} is waiting on its model: no reply for ${quiet}, but its request is still open. Slow models and rate limits look like this.`;
+      return `${name} is waiting on its model: no reply for ${quiet}, but its request is still open. Slow models and rate limits look like this.`;
     case "busy":
       return `${name} is busy on this computer but has sent nothing for ${quiet}.`;
     case "between-requests":
@@ -268,7 +268,7 @@ export function describeQuiet(name: string, state: QuietState, quietMs: number, 
 export function lastSeenPhrase(state: QuietState): string {
   switch (state.kind) {
     case "retrying": return "retrying a failed model request";
-    case "compressing": return "compressing its history";
+    case "compressing": return "working on a long model step";
     case "waiting-model": return "waiting on its model with a request open";
     case "busy": return "busy on this computer";
     case "between-requests": return "no request open to its model";

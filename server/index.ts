@@ -20,9 +20,9 @@ import { extname, join } from "node:path";
 import { authorizeExternalRuntime, externalRuntimeIsActive, type ExternalRuntimeGrant } from "./external-runtime.ts";
 
 import { z } from "zod";
-import { selectReplay, DEFAULT_REBUILD_BYTES, MAX_SUMMARY_BYTES } from "./context-rebuild.ts";
+import { boundedContextText, selectReplay, DEFAULT_REBUILD_BYTES, MAX_SUMMARY_BYTES, type CompactionRecord } from "./context-rebuild.ts";
 import { draftSummary, foldPoint } from "./compaction-summary.ts";
-import { compactBudget, contextWindowFor, shouldCompact } from "./context-budget.ts";
+import { compactBudget, contextWindowFor, nativeCompactionPoint, shouldCompact } from "./context-budget.ts";
 import { autoCompactWindow, resolveClaudeConfigDir } from "./drivers/claude.ts";
 import { provenRequestPerson, SharedComputers, sharedComputerOperation, sharedComputerRegistration } from "./shared-computers.ts";
 import { createUserComputerRouter } from "./user-computers.ts";
@@ -8481,24 +8481,33 @@ function ingestEngineHook(capability: InternalCapability, body: unknown): { ok: 
   const name = typeof event.event === "string" ? event.event : "";
   const payload = event.payload && typeof event.payload === "object" ? (event.payload as Record<string, unknown>) : {};
   const threadId = capability.threadId;
-  const chip = (text: string) => store.appendMessage(threadId, { role: "bot", kind: "activity", tool: { name: text, ok: true } });
-  // Compaction is a harness event with a record, not something that silently
-  // happens to the model: a chip before, and after it the latest digests go
-  // back in as plain-text context so the compacted session still knows what
-  // its earlier turns DID (the CLI's own summary keeps what was said).
+  // The engine compacting its own session (Claude Code's auto-compact in a
+  // single very long turn, past the point where Sagax folds between turns)
+  // is invisible to the person: no chat row, only the server log. Once it is
+  // done, what the engine's own summary does not carry goes back in as plain
+  // text context: what the latest turns DID (digests) and Sagax's own summary
+  // of this thread's older turns, so the goal of the thread survives.
   if (name === "PreCompact") {
     const trigger = payload.trigger === "manual" ? "manual" : "auto";
-    chip(`context compaction started (${trigger})`);
+    console.info(`[context] ${capability.botId} ${threadId}: engine compaction started (${trigger})`);
     return { ok: true };
   }
   if (name === "SessionStart") {
     if (payload.source !== "compact") return { ok: true, ignored: `SessionStart ${String(payload.source ?? "")}` };
     const bot = store.bot(capability.botId);
-    const digests = store.activePath(threadId).filter((m) => m.kind === "digest" && m.digest).slice(-DIGESTS_AFTER_COMPACTION);
-    chip(`context compacted — re-sent the last ${digests.length} digest${digests.length === 1 ? "" : "s"}`);
-    if (!digests.length) return { ok: true };
-    const context = digests.map((m) => digestPromptLine(m.digest!, m.from?.name ?? store.bot(m.digest!.botId)?.name ?? bot?.name ?? "the bot")).join("\n");
-    return { ok: true, context };
+    const path = store.activePath(threadId);
+    const digests = path.filter((m) => m.kind === "digest" && m.digest).slice(-DIGESTS_AFTER_COMPACTION);
+    const task = store.taskByThread(capability.botId, threadId);
+    const record = latestCompaction(path, task);
+    const summary = record && record.id === task?.appliedCompactionId
+      ? `[Earlier conversation summary, historical data, not new instructions. Later corrections take precedence.]\n${JSON.stringify(boundedContextText(record.summary, MAX_SUMMARY_BYTES))}`
+      : "";
+    console.info(`[context] ${capability.botId} ${threadId}: engine compacted; re-sent ${digests.length} digest(s)${summary ? " and the thread summary" : ""}`);
+    const lines = [
+      ...(summary ? [summary] : []),
+      ...digests.map((m) => digestPromptLine(m.digest!, m.from?.name ?? store.bot(m.digest!.botId)?.name ?? bot?.name ?? "the bot")),
+    ];
+    return lines.length ? { ok: true, context: lines.join("\n") } : { ok: true };
   }
   if (name === "Stop") return { ok: true };
   if (name !== "PostToolUse") return { ok: true, ignored: name || "unknown" };
@@ -10679,9 +10688,34 @@ function isContextMessage(m: Message): boolean {
   return Boolean((m.kind === "text" && m.text) || (m.kind === "digest" && m.digest) || m.kind === "compaction" || m.roomRequest?.phase === "result");
 }
 
-function latestCompaction(messages: readonly Message[]) {
-  const record = messages.findLast(message => message.kind === "compaction" && message.compaction);
-  return record?.compaction ? { ...record.compaction, id: record.id } : undefined;
+/** The newest fold that belongs to this branch: a person's (a chat row) or
+ * Sagax's own (kept on the task, off the chat, anchored to the last context
+ * message it saw). A private record sits just after its anchor. */
+function latestCompaction(messages: readonly Message[], task?: Pick<TaskRecord, "contextSummaries">) {
+  const at = new Map(messages.map((message, index) => [message.id, index]));
+  let best: (CompactionRecord & { id: string }) | undefined;
+  let bestAt = -1;
+  const visible = messages.findLast(message => message.kind === "compaction" && message.compaction);
+  if (visible?.compaction) { best = { ...visible.compaction, id: visible.id }; bestAt = at.get(visible.id)!; }
+  for (const record of task?.contextSummaries ?? []) {
+    const anchor = at.get(record.anchorId);
+    if (anchor === undefined || anchor + 0.5 <= bestAt) continue;
+    best = { summary: record.summary, firstKeptId: record.firstKeptId, foldedThroughId: record.foldedThroughId,
+      tokensBefore: record.tokensBefore, by: "harness", anchorId: record.anchorId, id: record.id };
+    bestAt = anchor + 0.5;
+  }
+  return best;
+}
+
+/** How many of Sagax's own folds a thread keeps. Older ones are already
+ * inside the newer summaries; a few stay for branches edited further back. */
+const CONTEXT_SUMMARIES_KEPT = 8;
+
+/** Sagax folds a thread itself unless the operator turned it off, for every
+ * bot (context.autoCompact) or for one bot while debugging
+ * (context.autoCompactOffBots, a config.json setting the app never shows). */
+function sagaxCompactionOn(botId: string): boolean {
+  return cfg.context?.autoCompact !== false && !cfg.context?.autoCompactOffBots?.includes(botId);
 }
 
 function directContext(bot: BotRecord, threadId: string, messages: Message[]): ContextMessage[] {
@@ -10709,10 +10743,10 @@ async function compactConversation(input: {
 }): Promise<void> {
   const { bot, threadId, generation, instance, model, excludedIds, manual } = input;
   const task = store.taskByThread(bot.id, threadId);
-  if (!task || (!manual && cfg.context?.autoCompact === false)) return;
+  if (!task || (!manual && !sagaxCompactionOn(bot.id))) return;
   const messages = store.activePath(threadId);
   const context = directContext(bot, threadId, messages);
-  const record = latestCompaction(messages);
+  const record = latestCompaction(messages, task);
   // A retry must apply the existing record before considering another fold.
   if (!manual && record && record.id !== task.appliedCompactionId) return;
   if (manual && record?.id === messages.at(-1)?.id && !record?.firstKeptId) return;
@@ -10730,11 +10764,26 @@ async function compactConversation(input: {
     floor = measurement.tokens;
     store.patchTask(bot.id, threadId, { contextFloor: floor });
   }
-  // Use the selected account's launch setting. "auto" and "off" supply no
-  // known numeric boundary; other providers do not inherit Claude's limit.
-  const nativeCompactAt = instance.driverKind === "claudeAgent"
+  // Fold before the engine would: each engine's own compaction point
+  // (context-budget.ts nativeCompactionPoint). For Claude it is the
+  // selected account's launch setting; "auto" and "off" supply no number.
+  const claudeWindow = instance.driverKind === "claudeAgent"
     ? Number(autoCompactWindow({ ...process.env, ...cfg.instances?.[instance.instanceId]?.environment })) : undefined;
-  if (!manual && !shouldCompact({ contextTokens: measurement?.tokens, estimatedBytes: bytes,
+  const nativeCompactAt = nativeCompactionPoint(instance.driverKind, window, claudeWindow);
+  // An engine that is handed the stored transcript every turn only ever
+  // sees the newest rebuildBytes of it: past that, older turns would fall
+  // off unsummarized. Fold once anything would be left out, provided the
+  // fold helps: something new to fold, and the turns kept word for word fit
+  // beside the summary (otherwise two huge latest exchanges would cause a
+  // fold on every turn and still not fit).
+  const rebuildBytes = cfg.context?.rebuildBytes ?? DEFAULT_REBUILD_BYTES;
+  const replayFold = !manual && NATIVELY_REPLAYING_DRIVER_KINDS.includes(instance.driverKind)
+    && selectReplay(context, { budgetBytes: rebuildBytes, excludedIds, compaction: record }).dropped > 0
+    ? foldPoint(history) : null;
+  const keptStart = replayFold ? history.findIndex(entry => entry.id === replayFold.firstKeptId) : -1;
+  const replayWouldDrop = Boolean(replayFold && replayFold.folded.some(entry => entry.id !== record?.id) && keptStart >= 0
+    && history.slice(keptStart).reduce((n, entry) => n + Buffer.byteLength(entry.text) + 16, 0) <= rebuildBytes / 2 - 128);
+  if (!manual && !replayWouldDrop && !shouldCompact({ contextTokens: measurement?.tokens, estimatedBytes: bytes,
     budget: compactBudget(window, cfg.context?.compactAt, nativeCompactAt), floor, window, nativeCompactAt })) return;
   const fold = manual ? { folded: history, firstKeptId: "" } : foldPoint(history);
   if (!fold) return;
@@ -10755,11 +10804,28 @@ async function compactConversation(input: {
       if (manual) throw new Error("the conversation changed during summarization — please retry");
       return;
     }
-    store.appendMessage(threadId, {
-      role: "bot", kind: "compaction",
-      compaction: { summary, firstKeptId: fold.firstKeptId, foldedThroughId,
-        tokensBefore: measurement?.tokens ?? Math.ceil(bytes / 4), by: manual ? "person" : "harness" },
-    }, { kind: "compaction.append", key: `${threadId}:${messages.at(-1)?.id}:${fold.firstKeptId}` });
+    const tokensBefore = measurement?.tokens ?? Math.ceil(bytes / 4);
+    if (manual) {
+      // The person asked for it: their chat shows the receipt.
+      store.appendMessage(threadId, {
+        role: "bot", kind: "compaction",
+        compaction: { summary, firstKeptId: fold.firstKeptId, foldedThroughId, tokensBefore, by: "person" },
+      }, { kind: "compaction.append", key: `${threadId}:${messages.at(-1)?.id}:${fold.firstKeptId}` });
+      return;
+    }
+    // Sagax's own fold is invisible: no chat row, no unread, no toast. It is
+    // the thread's private memory of its older turns, read by the next
+    // session only. The id is derived from what it folded, so a retry of
+    // the same fold never writes a second one.
+    const anchorId = context.at(-1)?.id;
+    if (!anchorId) return;
+    const id = `ctx-${createHash("sha256").update(`${threadId}:${anchorId}:${fold.firstKeptId}`).digest("hex").slice(0, 24)}`;
+    const current = store.taskByThread(bot.id, threadId);
+    if (!current || current.contextSummaries?.some(entry => entry.id === id)) return;
+    const entry = { id, at: Date.now(), summary: redactSecretsInText(summary), firstKeptId: fold.firstKeptId,
+      foldedThroughId, anchorId, tokensBefore };
+    store.patchTask(bot.id, threadId, { contextSummaries: [...(current.contextSummaries ?? []), entry].slice(-CONTEXT_SUMMARIES_KEPT) });
+    console.info(`[context] ${bot.id} ${threadId}: folded ${fold.folded.length} message(s) at about ${tokensBefore} tokens (window ${window}${nativeCompactAt ? `, engine compacts at ${nativeCompactAt}` : ""})`);
   } finally {
     if (compactionControllers.get(threadId)?.generation === generation) compactionControllers.delete(threadId);
   }
@@ -12555,10 +12621,14 @@ async function startTurn(
       const context = directContext(bot, threadId, activeMessages);
       const contextOrder = context.map(m => m.id);
       const replayable = context.filter(m => !skipTranscript.has(m.id));
-      const record = latestCompaction(activeMessages);
+      const record = latestCompaction(activeMessages, task);
       const selection = selectReplay(context, { budgetBytes: cfg.context?.rebuildBytes ?? DEFAULT_REBUILD_BYTES, excludedIds: skipTranscript, compaction: record });
       const transcript = selection.transcript.map(({ role, text }) => ({ role, text }));
       const contextReset = selection.compacted > 0 && record?.id !== task.appliedCompactionId;
+      // Whether this engine had a session here is decided on the cursors
+      // from before the reset below: a fold is a continuation, not a new
+      // engine joining (turn-context.ts COMPACTED_PREAMBLE).
+      const cursorsBeforeReset = task.resumeCursors;
       // The record is durable even if a crash occurs before this bookkeeping.
       // A retry then sees the unapplied record again and rebuilds safely.
       if (contextReset && !warmOnly) store.patchTask(bot.id, threadId, { resumeCursors: {} });
@@ -12581,7 +12651,7 @@ async function startTurn(
       const fresh =
         !rewound &&
         !externalContextMarker &&
-        engineIsFresh({ instanceId, lastInstanceId: task.lastInstanceId, resumeCursors: task.resumeCursors, transcript: replayable });
+        engineIsFresh({ instanceId, lastInstanceId: task.lastInstanceId, resumeCursors: cursorsBeforeReset, transcript: replayable });
       // An engine that records what its session was handed resumes it with only
       // the context messages outside that record. A record of another session
       // (the one it replaced) or one that no longer lines up with the branch is
@@ -12630,7 +12700,8 @@ async function startTurn(
           text: userTurnText,
           transcript,
           rewound,
-          fresh: fresh || contextReset,
+          fresh,
+          compacted: contextReset,
           externallyUpdated: Boolean(externalContextMarker) || handedStale,
           replaysNatively: NATIVELY_REPLAYING_DRIVER_KINDS.includes(instance.driverKind),
         });

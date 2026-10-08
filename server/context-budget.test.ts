@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { compactBudget, contextWindowFor, shouldCompact, DEFAULT_CONTEXT_WINDOW } from "./context-budget.ts";
+import { compactBudget, contextWindowFor, nativeCompactionPoint, shouldCompact, DEFAULT_CONTEXT_WINDOW } from "./context-budget.ts";
 
 it("keeps compaction reachable below small model windows", () => {
   expect(compactBudget(8_000)).toBe(6_400);
@@ -31,4 +31,21 @@ it("does not let the regrowth floor outrun a known native compaction threshold",
   expect(budget).toBe(180_000);
   expect(shouldCompact({ contextTokens: 180_000, estimatedBytes: 0, budget, floor: 175_000, window, nativeCompactAt })).toBe(true);
   expect(shouldCompact({ contextTokens: 179_999, estimatedBytes: 0, budget, floor: 175_000, window, nativeCompactAt })).toBe(false);
+});
+
+it("folds before each engine's own compaction point", () => {
+  expect(nativeCompactionPoint("claudeAgent", 1_000_000, 200_000)).toBe(200_000);
+  expect(nativeCompactionPoint("claudeAgent", 1_000_000, NaN)).toBeUndefined();
+  expect(nativeCompactionPoint("codex", 272_000)).toBe(244_800);
+  expect(nativeCompactionPoint("geminiAgent", 1_000_000)).toBe(500_000);
+  expect(nativeCompactionPoint("qwenAgent", 200_000)).toBe(167_000);
+  expect(nativeCompactionPoint("piAgent", 131_072)).toBe(114_688);
+  for (const kind of ["kimiAgent", "grokAgent", "opencodeGo", "customAcp"]) expect(nativeCompactionPoint(kind, 256_000)).toBe(204_800);
+  // Engines rebuilt from the stored transcript have no session to lose.
+  for (const kind of ["openai-compat", "grok", "minimax", "boxAgent"]) expect(nativeCompactionPoint(kind, 128_000)).toBeUndefined();
+  // Sagax's own budget stays under the engine's point, Gemini's included.
+  const gemini = nativeCompactionPoint("geminiAgent", 1_000_000);
+  expect(compactBudget(1_000_000, undefined, gemini)).toBe(450_000);
+  expect(shouldCompact({ contextTokens: 460_000, estimatedBytes: 0, budget: compactBudget(1_000_000, undefined, gemini), window: 1_000_000, nativeCompactAt: gemini })).toBe(true);
+  expect(shouldCompact({ contextTokens: 440_000, estimatedBytes: 0, budget: compactBudget(1_000_000, undefined, gemini), window: 1_000_000, nativeCompactAt: gemini })).toBe(false);
 });
