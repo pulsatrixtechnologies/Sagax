@@ -353,6 +353,47 @@ local models are not offered. Tests: `ModelPicker.interaction.test.ts`,
 (org) and `pnpm exec electron scripts/smoke-approval-modes.cjs --model-ui-only`
 (solo).
 
+## Auto model (2026-10-08)
+
+`ModelSelection.auto: true` (design: `docs/plans/2026-10-08-auto-model.md`).
+The selection's `instanceId` and `model` stay the bot's engine and fallback,
+so any path or client that ignores Auto still runs a valid model; picking a
+model in the chip clears it (a pin). Rules:
+
+- Pure logic in `server/model-auto.ts` (`classifyTask`, `pickOrchestrationModel`,
+  `pickWorkerModel`, `TIER_TABLE`): engines, model lists and catalogue facts
+  come in as data. The table holds id patterns per engine family and tier,
+  never ids; a pick is always a model the engine lists now and the models.dev
+  catalogue knows (`ModelCatalogStore`, read with `fetchDisabled`, no fetch).
+- Orchestration (a person's turn, an ordinary room round): the `top` tier on
+  the bot's own engine when the payer can use it, else on the next engine of
+  `ENGINE_ORDER` (Claude, Codex, Grok Build, Gemini, Kimi, pi, then by id).
+- Worker (a peer hop: `delegate_bot`, `ask_bot`, `start_thread`, a fresh
+  `coordinate_bots` hop; a routine run; a parallel task a bot opens; a goal
+  run step): the class of the work (text, attachment tags, the bot's title
+  and soul) maps to a tier (`CLASS_TIER`). Continuations keep the thread's
+  last pick (`task.autoModel`) while it can still run.
+- Candidates (`autoEnginesFor` in `server/index.ts`): enabled, not changing,
+  allowed by the managed policy and hosted models; organization mode: the
+  payer can pay (`resolveEngineAccess`) and the engine withholds host tools;
+  solo: the probe cache says signed in. Another engine also needs
+  `modelSwitchNeedsAsk` false (Full and Custom stay on their engine) and
+  `recoveryCapabilityError` empty. The bot's own engine counts while unknown.
+- Refusals: a `TurnNotStartedError` climbs the chain once (`autoRetried`),
+  then the engine's own error shows; a model refusal in `runtime.error`
+  (`isModelRefusal`) is skipped for that payer for 30 minutes.
+- A viewer's own model pin on a shared bot drops the owner's Auto for them.
+  A Primary Bot on Auto creates specialists on Auto (`create_bot` without a
+  model, team setup creates: the card reads "Auto, on engine/model").
+- Seen: the chip "Auto · model" (`src/lib/auto-model.ts`), the picker's Auto
+  row and sentence (`GET /api/bots/:id/auto-model`), the worker's status row
+  and the delegation card (`Message.autoModel`), `check_delegation` receipts
+  (`workerModel`), Settings > Model providers (one paragraph).
+
+Tests: `server/model-auto.test.ts`, `server/auto-model.e2e.test.ts`,
+`server/team-setup-requests.test.ts`, `shared/viewer-bot-overrides.test.ts`,
+`src/lib/auto-model.test.ts`, `src/components/ModelPicker.interaction.test.ts`.
+
 ## Bot actions
 
 A bot calls the same function as the button or the route (`act` in the

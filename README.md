@@ -52,6 +52,14 @@ Sagax is made by Pulsatrix Technologies inc. It is based on OpenMausBot (see
   Codex, Grok, Cursor, OpenCode, any ACP-speaking CLI or an OpenAI-compatible
   endpoint ([docs/custom-engines.md](docs/custom-engines.md)). Switch a bot's
   model mid-conversation from the model picker.
+- **Auto model.** Set a bot to Auto in the model picker and it picks its model
+  on every turn: the strongest general model you can pay for runs its own
+  turns, and every piece of work it hands out (delegations, routines, goal
+  steps, parallel tasks) gets the model that fits it, from a fast and cheap
+  one for a quick lookup to a top reasoning one for planning. It only uses
+  engines your subscription, your key or the organization's key can pay for,
+  and a bot pinned to a model keeps it. The chip shows "Auto · model" and the
+  sentence why ([docs/plans/2026-10-08-auto-model.md](docs/plans/2026-10-08-auto-model.md)).
 - **Primary Bot.** Your main contact among your bots, marked with an orange
   star. It coordinates the others, proposes new bots and sets up teams. One
   per person.
