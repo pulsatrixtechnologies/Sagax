@@ -106,7 +106,7 @@ export const isSnoozed = (task: Pick<Task, "snoozedUntil">, now = Date.now()): b
 /** The next local 6 PM — "later today", rolling to tomorrow evening once
  * tonight's is already past. Local on purpose: it is the person's evening;
  * the server stores the absolute moment either way. */
-const nextSixPm = () => {
+export const nextSixPm = () => {
   const when = new Date();
   when.setHours(18, 0, 0, 0);
   if (when.getTime() <= Date.now()) when.setDate(when.getDate() + 1);
@@ -114,7 +114,7 @@ const nextSixPm = () => {
 };
 
 /** Tomorrow morning at 9 local: a clean overnight break, no new deps. */
-const tomorrowNineAm = () => {
+export const tomorrowNineAm = () => {
   const when = new Date();
   when.setDate(when.getDate() + 1);
   when.setHours(9, 0, 0, 0);

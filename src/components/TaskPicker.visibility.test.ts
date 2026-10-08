@@ -110,19 +110,24 @@ describe("the header picker lists only the open bot's threads", () => {
     { threadId: "peer-opened", title: "@Talon · work", createdAt: 7, openedBy: { botId: "talon", name: "Talon", at: 7 } },
     { threadId: "routine-run", title: "Nightly", createdAt: 8, routineRunId: "run-1" }] };
 
-  it("hands the picker this bot's own threads and nothing from other bots or rooms", () => {
+  it("lists this bot's own threads and nothing from other bots or rooms", () => {
     fixture.bots = [pepper, talon];
     fixture.groups = [room];
-    const picker = TaskPicker({ bot: pepper })!;
-    const ids = (picker.props.tasks as Array<{ threadId: string }>).map((task) => task.threadId);
-    expect(new Set(ids)).toEqual(new Set(["current", "idle", "waiting", "working", "queued", "unread", "peer-opened"]));
-    expect(ids).not.toContain("talon-main");
-    expect(ids).not.toContain("talon-wait");
-    expect(ids).not.toContain("crew-main");
-    expect(ids).not.toContain("routine-run");
-    expect(picker.props).not.toHaveProperty("attention");
-    expect(picker.props).not.toHaveProperty("onAttentionJump");
-    expect(botPickerThreads(pepper).map((task) => task.threadId)).toEqual(ids);
+    const markup = renderToStaticMarkup(createElement(TaskPicker, { bot: pepper, initialOpen: true }));
+    for (const title of ["Current chat", "Quiet history", "Approval needed", "Research", "Next job", "Finished reply", "@Talon · work"]) expect(markup).toContain(title);
+    expect(markup).toContain("opened by Talon");
+    for (const title of ["Talon work", "Talon approval", "Crew chat", "Nightly", "Active Threads"]) expect(markup).not.toContain(title);
+    expect(botPickerThreads(pepper).map((task) => task.threadId).sort())
+      .toEqual(["current", "idle", "waiting", "working", "queued", "unread", "peer-opened"].sort());
+  });
+
+  it("gives each row the actions the sidebar rows had, and each folder its actions", () => {
+    const filed: Bot = { ...pepper, projects: [{ id: "research", name: "Research" }],
+      tasks: pepper.tasks!.map((task) => task.threadId === "idle" ? { ...task, projectId: "research" } : task) };
+    const markup = renderToStaticMarkup(createElement(TaskPicker, { bot: filed, initialOpen: true }));
+    expect(markup).toContain('aria-label="Actions for Quiet history"');
+    expect(markup).toContain('aria-label="Actions for Research folder"');
+    expect(markup).toContain('data-picker-folder="research"');
   });
 
   it("keeps a peer-opened thread, labelled by who opened it", () => {

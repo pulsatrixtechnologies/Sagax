@@ -13,7 +13,7 @@ vi.mock("./DesktopCapabilities", () => ({
 }));
 
 import { ConfirmDialogCard } from "./ConfirmDialog";
-import { BotListItem, BotThreadList, botConfirmCopy, roomDeleteCopy } from "./Sidebar";
+import { BotListItem, botConfirmCopy, roomDeleteCopy } from "./Sidebar";
 
 const bot = (overrides: Partial<Bot> = {}): Bot => ({
   id: "atlas",
@@ -48,14 +48,6 @@ afterEach(() => {
 });
 
 describe("sidebar rows", () => {
-  it("translates a legacy thread's fallback title", () => {
-    setLocale("ja");
-    const markup = renderToStaticMarkup(createElement(StoreProvider, null,
-      createElement(BotThreadList, { bot: bot(), selected: true })));
-    expect(markup).toContain(`title="${t("task.newShort")}"`);
-    expect(markup).not.toContain('title="New thread"');
-  });
-
   it("translates the row's own copy and its actions", () => {
     setLocale("pt-br");
     const markup = renderRow(bot({ chiefOfStaff: true, busy: true }));

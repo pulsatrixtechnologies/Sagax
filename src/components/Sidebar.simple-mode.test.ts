@@ -13,7 +13,7 @@ vi.mock("@/state/store", async (importOriginal) => {
   return { ...original, useStore: () => ({ state: { ...original.initialState, ...fixture.state }, dispatch: fixture.dispatch }) };
 });
 
-import { BotContextMenu, BotListItem, BotThreadList, GroupListItem } from "./Sidebar";
+import { BotContextMenu, BotListItem, GroupListItem } from "./Sidebar";
 import { SidebarBotActivity, sidebarBotActivityTasks } from "./SidebarBotActivity";
 
 const bot: Bot = {
@@ -150,16 +150,6 @@ describe("bot-first sidebar", () => {
     expect(markup).toContain('aria-label="Atlas: Review permission · Waiting for you…"');
     expect(markup).toContain('aria-label="Atlas: Next job · Queued"');
     expect(markup).toContain('aria-label="Atlas: Finished reply · Unread"');
-  });
-
-  it("removes child controls and portals from a retained hidden folder list", () => {
-    const markup = renderToStaticMarkup(createElement(BotThreadList, { bot, selected: true, hidden: true }));
-    expect(markup).toContain('hidden=""');
-    expect(markup).not.toContain("<button");
-    expect(markup).not.toContain("data-sidebar-thread-row");
-    const shown = renderToStaticMarkup(createElement(BotThreadList, { bot, selected: true }));
-    expect(shown).toContain('data-sidebar-folder-row="private-folder"');
-    expect(shown).toContain('data-sidebar-thread-row="idle-history"');
   });
 
   it("only hides thread/folder creation in the bot context menu", () => {

@@ -5,19 +5,26 @@
 // own transcript and its own provider session — so sensitive work, a
 // long job and a quick question can sit side by side under one agent.
 import { Fragment, useEffect, useRef, useState } from "react";
-import { Check, ChevronLeft, FolderInput, MessagesSquare, Pencil, Pin, PinOff, Plus, Search, Trash2 } from "lucide-react";
-import { useStore, type Bot, type BotProject, type Group, type Task } from "@/state/store";
+import { Archive, ArchiveRestore, BellOff, Check, ChevronLeft, Clock, FolderInput, Link2, Loader2, MessagesSquare, MoreHorizontal, Pencil, Pin, PinOff, Plus, RefreshCw, Search, Trash2 } from "lucide-react";
+import { api, currentTaskBot, useStore, type Bot, type BotProject, type Group, type Task } from "@/state/store";
+import { approvalModeFor } from "../../shared/approval-mode";
+import { llmThreadTitlesEnabled } from "@/lib/feature-flags";
+import { moveFolder } from "@/lib/folder-order";
+import { folderUnreadThreadIds, markFolderRead } from "@/lib/folder-read";
+import { threadRefUrl } from "@/lib/thread-refs";
+import { FullAccessWarning } from "./FullAccessWarning";
+import { LocalComputerAutoWarning } from "./LocalComputerAutoWarning";
 import { cn } from "@/lib/cn";
 import { CIRCLE_BUTTON } from "@/lib/circle-button";
 import { useMenuMotion } from "./MenuMotion";
 import { t } from "@/lib/i18n";
 import { formatTaskTokens, headlineTokens, usageDetail } from "@/lib/usage";
 import { nextRename } from "@/lib/rename";
-import { FolderIcon, NewThreadButton } from "./BotProjects";
+import { BotProjectDialog, FolderActions, FolderIcon, NewThreadButton } from "./BotProjects";
 import { useShowThreads } from "@/lib/thread-preferences";
 import { threadsOffReturnTarget } from "./thread-home";
 import { threadsWhenTreeHidden } from "./SidebarBotActivity";
-import { formatUpdatedAt, orderedThreadList, threadByline, threadRecency, threadUpdatedLabel, useRelativeNow } from "./SidebarThreadRow";
+import { formatUpdatedAt, isArchived, isSnoozed, nextSixPm, orderedThreadList, threadByline, threadRecency, threadUpdatedLabel, tomorrowNineAm, useRelativeNow, useSnoozeExpiry } from "./SidebarThreadRow";
 
 /** Click-to-switch used to close this menu immediately, which unmounted the
  * row before a double-click (or right-click) could start a rename. Linger
@@ -89,6 +96,58 @@ export function groupThreadTasks(tasks: PickerTask[], projects: BotProject[], qu
   }).filter((group) => group.tasks.length > 0);
 }
 
+export type PickerThreadActions = {
+  onCopyLink?: (threadId: string) => void;
+  /** Present only where generated titles are on. Calls back once settled. */
+  onRegenerateTitle?: (threadId: string, onSettled: (ok: boolean) => void) => void;
+  onArchive?: (threadId: string, archivedAt: number | null) => void;
+  onSnooze?: (threadId: string, snoozedUntil: number | null) => void;
+  onRefreshPermissions?: (threadId: string) => void;
+};
+
+export type PickerFolderActions = {
+  saving: boolean;
+  canMove: (projectId: string, direction: -1 | 1) => boolean;
+  canMarkRead: (projectId: string) => boolean;
+  onEdit: (projectId: string) => void;
+  onMove: (projectId: string, direction: -1 | 1, onSaved: () => void) => void;
+  onMarkRead: (projectId: string, onSaved: () => void) => void;
+};
+
+const PANEL_ITEM = "flex w-full items-center gap-2 rounded px-2.5 py-1.5 text-left text-[12px] text-ink hover:bg-raised disabled:opacity-40";
+
+/** The extra actions of one picker row, unfolded under it: what the sidebar
+ * thread row's menu offered (JC, 2026-10-08: the header button is the only
+ * way to reach a bot's threads). Rename, pin, move and delete stay on the row. */
+export function ThreadActionsPanel({ task, actions, regenerating, onRegenerate, onDone }: {
+  task: PickerTask;
+  actions: PickerThreadActions;
+  regenerating: boolean;
+  onRegenerate: () => void;
+  onDone: () => void;
+}) {
+  const working = Boolean(task.busy) || task.activity === "working";
+  const archived = isArchived(task);
+  const snoozed = isSnoozed(task);
+  return (
+    <div role="group" aria-label={t("task.actions", { title: task.title })} data-picker-thread-actions={task.threadId} className="mx-2.5 mb-1.5 rounded-lg border border-hairline/40 bg-inset/60 p-1">
+      {actions.onCopyLink && <button type="button" onClick={() => { actions.onCopyLink?.(task.threadId); onDone(); }} className={PANEL_ITEM}><Link2 size={12} />{t("task.copyLink")}</button>}
+      {actions.onRegenerateTitle && <button type="button" disabled={regenerating} aria-busy={regenerating} onClick={onRegenerate} className={PANEL_ITEM}>{regenerating ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}{regenerating ? t("task.regeneratingTitle") : t("task.regenerateTitle")}</button>}
+      {actions.onArchive && <button type="button" disabled={working} onClick={() => { actions.onArchive?.(task.threadId, archived ? null : Date.now()); onDone(); }} className={PANEL_ITEM}>{archived ? <ArchiveRestore size={12} /> : <Archive size={12} />}{archived ? t("task.unarchive") : t("task.archive")}</button>}
+      {actions.onSnooze && <div className="px-2.5 pt-1">
+        <span className="flex items-center gap-2 text-[11px] text-ink-secondary"><Clock size={12} />{t("task.snooze")}</span>
+        <div className="mt-0.5">
+          {[{ label: t("task.snoozeUntilActivity"), at: 0 }, { label: t("task.snoozeTonight"), at: nextSixPm() }, { label: t("task.snoozeTomorrow"), at: tomorrowNineAm() }].map((preset) => (
+            <button key={preset.label} type="button" disabled={working} onClick={() => { actions.onSnooze?.(task.threadId, preset.at); onDone(); }} className={PANEL_ITEM}>{preset.label}</button>
+          ))}
+        </div>
+      </div>}
+      {actions.onSnooze && snoozed && <button type="button" onClick={() => { actions.onSnooze?.(task.threadId, null); onDone(); }} className={PANEL_ITEM}><BellOff size={12} />{t("task.stopSnoozing")}</button>}
+      {actions.onRefreshPermissions && <button type="button" disabled={working} title={t("task.refreshPermissionsHint")} onClick={() => { actions.onRefreshPermissions?.(task.threadId); onDone(); }} className={PANEL_ITEM}><RefreshCw size={12} />{t("task.refreshPermissions")}</button>}
+    </div>
+  );
+}
+
 function ConversationTaskPicker({
   threadId,
   tasks,
@@ -100,6 +159,9 @@ function ConversationTaskPicker({
   onDelete,
   onMove,
   onPin,
+  threadActions,
+  folderActions,
+  initialOpen = false,
 }: {
   threadId: string;
   tasks: PickerTask[];
@@ -111,16 +173,27 @@ function ConversationTaskPicker({
   onDelete: (threadId: string) => void;
   onMove?: (threadId: string, projectId: string | null) => void;
   onPin?: (threadId: string, pinned: boolean) => void;
+  /** The thread actions the sidebar rows used to carry, behind a row's "...". */
+  threadActions?: PickerThreadActions;
+  /** Folder header actions: edit (name and icon), mark read, move up/down. */
+  folderActions?: PickerFolderActions;
+  /** Opens on mount (tests render the open popover this way). */
+  initialOpen?: boolean;
 }) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(initialOpen);
   const motion = useMenuMotion(open);
   const [renaming, setRenaming] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
   const [query, setQuery] = useState("");
+  const [actionsFor, setActionsFor] = useState<string | null>(null);
+  const [regenerating, setRegenerating] = useState<string | null>(null);
+  const [folderMenu, setFolderMenu] = useState<{ projectId: string; left: number; top: number } | null>(null);
   const ref = useRef<HTMLDivElement>(null);
   const dismissTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const finishingRename = useRef(false);
   const now = useRelativeNow();
+  // a timed snooze ends on the clock: re-render then so "Snoozed" lifts
+  useSnoozeExpiry(tasks);
 
   const current = tasks.find((t) => t.threadId === threadId);
 
@@ -133,6 +206,8 @@ function ConversationTaskPicker({
 
   const closeMenu = () => {
     clearDismiss();
+    setActionsFor(null);
+    setFolderMenu(null);
     setRenaming(null);
     setQuery("");
     setOpen(false);
@@ -160,6 +235,8 @@ function ConversationTaskPicker({
 
   useEffect(() => {
     if (!open) {
+      setActionsFor(null);
+      setFolderMenu(null);
       if (dismissTimer.current) {
         clearTimeout(dismissTimer.current);
         dismissTimer.current = null;
@@ -288,7 +365,14 @@ function ConversationTaskPicker({
               const heading = grouped?.find((group) => group.tasks[0]?.threadId === task.threadId)?.project;
               return (
                 <Fragment key={task.threadId}>
-                {bot?.projects?.length && heading ? <div className={cn("flex items-center gap-1.5 px-3 pb-1 pt-2 text-[11px] font-medium text-ink-secondary", index > 0 && "border-t border-hairline/30")}>{heading.id && <FolderIcon emoji={heading.emoji} size={12} />}{heading.name}</div> : null}
+                {bot?.projects?.length && heading ? <div data-picker-folder={heading.id || undefined} className={cn("group/folder flex items-center gap-1.5 px-3 pb-1 pt-2 text-[11px] font-medium text-ink-secondary", index > 0 && "border-t border-hairline/30")}>{heading.id && <FolderIcon emoji={heading.emoji} size={12} />}<span className="min-w-0 flex-1 truncate">{heading.name}</span>
+                  {heading.id && folderActions && <FolderActions project={heading} canMoveUp={folderActions.canMove(heading.id, -1)} canMoveDown={folderActions.canMove(heading.id, 1)}
+                    canMarkRead={folderActions.canMarkRead(heading.id)} saving={folderActions.saving}
+                    menu={folderMenu?.projectId === heading.id ? folderMenu : null}
+                    onMenuChange={(menu) => { clearDismiss(); setFolderMenu(menu ? { ...menu, projectId: heading.id } : null); }}
+                    onEdit={() => folderActions.onEdit(heading.id)} onMove={(direction, onSaved) => folderActions.onMove(heading.id, direction, onSaved)}
+                    onMarkRead={(onSaved) => folderActions.onMarkRead(heading.id, onSaved)} />}
+                </div> : null}
                 <div
                   className={cn("group flex items-center gap-2 px-2.5 py-2", active ? "bg-raised/60" : "hover:bg-raised/40")}
                 >
@@ -379,6 +463,18 @@ function ConversationTaskPicker({
                       {bot.projects?.map((project) => <option key={project.id} value={project.id}>{project.emoji ? `${project.emoji} ` : ""}{project.name}</option>)}
                     </select>
                   </label>}
+                  {threadActions && renaming !== task.threadId && (
+                    <button
+                      type="button"
+                      onClick={() => { clearDismiss(); setActionsFor((current) => current === task.threadId ? null : task.threadId); }}
+                      aria-label={t("task.actions", { title: task.title })}
+                      title={t("task.actions", { title: task.title })}
+                      aria-expanded={actionsFor === task.threadId}
+                      className={cn("rounded p-1 text-ink-secondary hover:bg-raised hover:text-ink focus-visible:opacity-100 group-hover:opacity-100 touch:opacity-70", actionsFor === task.threadId ? "opacity-100" : "opacity-0")}
+                    >
+                      <MoreHorizontal size={13} />
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={() => onDelete(task.threadId)}
@@ -390,6 +486,14 @@ function ConversationTaskPicker({
                     <Trash2 size={13} />
                   </button>
                 </div>
+                {threadActions && actionsFor === task.threadId && <ThreadActionsPanel task={task} actions={threadActions}
+                  regenerating={regenerating === task.threadId}
+                  onRegenerate={() => {
+                    if (!threadActions.onRegenerateTitle || regenerating) return;
+                    setRegenerating(task.threadId);
+                    threadActions.onRegenerateTitle(task.threadId, (ok) => { setRegenerating(null); if (ok) setActionsFor(null); });
+                  }}
+                  onDone={() => setActionsFor(null)} />}
                 </Fragment>
               );
             })}
@@ -504,11 +608,64 @@ export function botPickerThreads(bot: Pick<Bot, "tasks">): Task[] {
   return orderedThreadList((bot.tasks ?? []).filter((task) => !task.routineRunId));
 }
 
-export function TaskPicker({ bot }: { bot: Bot }) {
-  const { dispatch } = useStore();
+export function TaskPicker({ bot, initialOpen = false }: { bot: Bot; initialOpen?: boolean }) {
+  const { state, dispatch } = useStore();
   const showThreads = useShowThreads();
+  const [permissionRefresh, setPermissionRefresh] = useState<{ threadId: string; kind: "full" | "local-auto" } | null>(null);
+  const [editingProject, setEditingProject] = useState<string | null>(null);
+  const [folderSaving, setFolderSaving] = useState(false);
+  const [folderError, setFolderError] = useState<string | null>(null);
   if (!showThreads) return null;
+  const projects = bot.projects ?? [];
+  const projectIds = projects.map((project) => project.id);
+  const threadActions: PickerThreadActions = {
+    onCopyLink: (threadId) => {
+      navigator.clipboard?.writeText(threadRefUrl({ botId: bot.id, threadId })).catch(() => {
+        // clipboard write rejected: the link stays available to copy again
+      });
+    },
+    onRegenerateTitle: llmThreadTitlesEnabled(state.config)
+      ? (threadId, onSettled) => dispatch({ type: "regenerateTaskTitle", botId: bot.id, threadId, onSettled })
+      : undefined,
+    onArchive: (threadId, archivedAt) => dispatch({ type: "updateTask", botId: bot.id, threadId, patch: { archivedAt } }),
+    onSnooze: (threadId, snoozedUntil) => dispatch({ type: "updateTask", botId: bot.id, threadId, patch: { snoozedUntil } }),
+    // the same checks as the sidebar row had: a wider approval level asks first
+    onRefreshPermissions: (threadId) => {
+      const mode = approvalModeFor(bot);
+      const threadMode = approvalModeFor(currentTaskBot(bot, threadId));
+      if (mode === "full" && threadMode !== "full") { setPermissionRefresh({ threadId, kind: "full" }); return; }
+      if (mode === "auto" && bot.computer === "local" && threadMode !== "auto") { setPermissionRefresh({ threadId, kind: "local-auto" }); return; }
+      dispatch({ type: "refreshTaskPermissions", botId: bot.id, threadId });
+    },
+  };
+  const folderActions: PickerFolderActions = {
+    saving: folderSaving,
+    canMove: (projectId, direction) => {
+      const index = projectIds.indexOf(projectId);
+      return index >= 0 && index + direction >= 0 && index + direction < projectIds.length;
+    },
+    canMarkRead: (projectId) => folderUnreadThreadIds(bot, projectId).length > 0,
+    onEdit: (projectId) => setEditingProject(projectId),
+    onMove: (projectId, direction, onSaved) => {
+      const ids = moveFolder(projectIds, projectId, direction);
+      if (folderSaving || ids.every((id, index) => id === projectIds[index])) return;
+      setFolderSaving(true); setFolderError(null);
+      dispatch({ type: "reorderProjects", botId: bot.id, projectIds: ids,
+        onSaved: () => { setFolderSaving(false); onSaved(); },
+        onError: (message) => { setFolderSaving(false); setFolderError(message); } });
+    },
+    onMarkRead: (projectId, onSaved) => {
+      if (folderSaving) return;
+      setFolderSaving(true); setFolderError(null);
+      markFolderRead(bot, projectId, api, (updated) => dispatch({ type: "botPatched", bot: updated }))
+        .then(() => onSaved())
+        .catch((error: unknown) => setFolderError(error instanceof Error ? error.message : String(error)))
+        .finally(() => setFolderSaving(false));
+    },
+  };
+  const projectToEdit = projects.find((project) => project.id === editingProject);
   return (
+    <>
     <ConversationTaskPicker
       threadId={bot.threadId}
       tasks={botPickerThreads(bot)}
@@ -520,7 +677,32 @@ export function TaskPicker({ bot }: { bot: Bot }) {
       onDelete={(threadId) => dispatch({ type: "deleteTask", botId: bot.id, threadId })}
       onMove={(threadId, projectId) => dispatch({ type: "updateTask", botId: bot.id, threadId, patch: { projectId } })}
       onPin={(threadId, pinned) => dispatch({ type: "updateTask", botId: bot.id, threadId, patch: { pinned } })}
+      threadActions={threadActions}
+      folderActions={projects.length ? folderActions : undefined}
+      initialOpen={initialOpen}
     />
+    {folderError && <p role="alert" data-thread-overlay className="fixed bottom-4 right-4 z-50 max-w-[320px] rounded-lg border border-hairline/50 bg-card px-3 py-2 text-[12px] text-danger shadow-xl" onClick={() => setFolderError(null)}>{folderError}</p>}
+    <FullAccessWarning
+      open={permissionRefresh?.kind === "full"}
+      scope="thread"
+      onCancel={() => setPermissionRefresh(null)}
+      onConfirm={() => {
+        const threadId = permissionRefresh?.threadId;
+        setPermissionRefresh(null);
+        if (threadId) dispatch({ type: "refreshTaskPermissions", botId: bot.id, threadId });
+      }}
+    />
+    <LocalComputerAutoWarning
+      open={permissionRefresh?.kind === "local-auto"}
+      onCancel={() => setPermissionRefresh(null)}
+      onConfirm={() => {
+        const threadId = permissionRefresh?.threadId;
+        setPermissionRefresh(null);
+        if (threadId) dispatch({ type: "refreshTaskPermissions", botId: bot.id, threadId, acknowledgeLocalAuto: true });
+      }}
+    />
+    {projectToEdit && <BotProjectDialog bot={bot} project={projectToEdit} onClose={() => setEditingProject(null)} />}
+    </>
   );
 }
 
