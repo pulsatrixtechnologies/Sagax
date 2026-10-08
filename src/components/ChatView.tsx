@@ -1461,8 +1461,9 @@ export function ChatView({ bot: profile }: { bot: Bot }) {
       {/* Banners sit below the floating header; the wrapper vanishes when
           none is showing so the transcript can run to the top. */}
       <div className="chat-banners pt-[52px] empty:hidden">
-      {/* Voice mode's call: first in the stack. A call starts as a short
-          row under the name chip. The chevron opens the stage over the thread. */}
+      {/* Voice mode's call pill: first in the stack, centered right under
+          the name chip; collapsed it keeps its own small row, expanded its
+          card hangs over the thread */}
       <VoiceCallDock bot={bot} />
       <BotActivityPicker bot={bot} />
       <ThreadsOffReturnLink bot={bot} />

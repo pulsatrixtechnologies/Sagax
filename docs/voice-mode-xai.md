@@ -151,7 +151,10 @@ the configured TTS provider, half duplex).
   (the bot's voice in the accent), Settings, Transcript, mute and end; the
   card it opens holds the transcript as bubbles or the settings (with hold);
   hands-free or push to talk (hold Space or the hand button), set per
-  computer in `omb.voiceCall.v1`.
+  computer in `omb.voiceCall.v1`. On the desktop the pill is the whole call
+  UI: it floats over the top of the thread and never becomes a full-column
+  stage (0.4.9 had one; the 0.4.8 pill came back on 2026-10-08). The iPhone
+  has its own call screen and shows the call as a card in the conversation.
 - **Approvals** are read aloud and answered by a spoken yes or no (English
   or French), as in calls.
 
