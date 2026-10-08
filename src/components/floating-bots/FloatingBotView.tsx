@@ -33,14 +33,16 @@ import { CHAT_BALLOON, dockedWindowSize, type Size } from "./window-frame";
 import { effectLane, effectSide, type ChatPlacement, type EffectSide } from "./placement";
 import { useHeldMenuMotion } from "@/components/MenuMotion";
 import { MascotCallCardView, MascotCallPill, type LevelSource, type MascotCallCard } from "./MascotCall";
+import { CAPTIONS_WIDTH, MascotCaptions, MascotHoverControls, MascotTray } from "./MascotControls";
+import { DRAG_SLOP as CLICK_SLOP, hoverControlsShown, isDrag, mascotClick } from "./hover-controls";
 import type { MascotLook } from "../../../shared/mascot-look";
 
 // The Hibou 98 extras (retro balloon stylesheet, Trombi's sparkle) load only
 // while that skin is worn, so a device that never found the egg never fetches them.
 const RetroDecor = lazy(() => import("./RetroDecor"));
 
-/** How far the pointer must travel before a press becomes a drag. */
-const DRAG_SLOP = 4;
+/** How far the pointer must travel before a press becomes a drag (hover-controls.ts, shared with the click rule). */
+const DRAG_SLOP = CLICK_SLOP;
 /** A press held this long opens the menu where there is no right click (touch). */
 const LONG_PRESS_MS = 550;
 /** A second click within this long is a double click (the balloon), not a game. */
@@ -323,6 +325,9 @@ export function FloatingBotView({ snapshot: given, onEvent, mover, interactive, 
   const [menuOpen, setMenuOpen] = useState(false);
   const drag = useRef<{ x: number; y: number; moved: boolean; id: number; timer?: ReturnType<typeof setTimeout>; menu?: boolean } | null>(null);
   const hovering = useRef(false);
+  // the hover controls: whether the pointer is over the character or them, since when, and whether they show
+  const controlsHoverRef = useRef(false);
+  const [controls, setControls] = useState({ over: false, since: 0, shown: false });
   const stageRef = useRef<HTMLDivElement>(null);
   const reduced = snapshot.reduced;
   // Trombi talks in the Hibou 98 look, whatever the skin
@@ -522,7 +527,9 @@ export function FloatingBotView({ snapshot: given, onEvent, mover, interactive, 
     if (!call) setCallCard(null);
   }, [call]);
   const callCardShown = Boolean(call && (callCard || call.note || call.notice));
-  const panelOpen = balloonOpen || callCardShown;
+  // the activity tray (the hover controls' bell) opens where the chat goes
+  const tray = away ? null : snapshot.tray ?? null;
+  const panelOpen = balloonOpen || callCardShown || Boolean(tray);
   chattingRef.current = balloonOpen || Boolean(call);
   useLayoutEffect(() => {
     if (!panelOpen || desk) return;
@@ -566,6 +573,24 @@ export function FloatingBotView({ snapshot: given, onEvent, mover, interactive, 
   }, [desk, fxShown, activity, burst]);
   const fxSide: EffectSide = desk?.fx ?? ownFx;
   const lane = effectLane(fxSide, OWL_BOX);
+  const controlsBlocked = away || menuOpen || Boolean(drag.current?.moved);
+  useEffect(() => {
+    const next = hoverControlsShown({ over: controls.over, since: controls.since, now: now(), shown: controls.shown, blocked: controlsBlocked });
+    if (next.shown !== controls.shown) setControls((current) => ({ ...current, shown: next.shown }));
+    if (next.recheckIn === null) return;
+    const later = setTimeout(() => setControls((current) => ({ ...current })), next.recheckIn);
+    return () => clearTimeout(later);
+  }, [controls, controlsBlocked]);
+  // the captions beside the character during a call: on the side the window holds room on
+  // (the chat's, empty during a call), past the controls' lane when that is the same side
+  const captionSide: "left" | "right" = desk ? (desk.side.right ? "right" : "left") : fxSide === "left" ? "left" : "right";
+  const captionGap = 8 + (captionSide === fxSide ? lane.width + 2 : 0);
+  const captionBox = {
+    x: captionSide === "right" ? OWL_BOX.left + OWL_BOX.size + captionGap : OWL_BOX.left - captionGap - CAPTIONS_WIDTH,
+    y: Math.max(0, OWL_BOX.top - 8),
+    width: CAPTIONS_WIDTH,
+    height: OWL_SIZE,
+  };
 
   // On a call the mascot bounces with its bot's voice (the stage's --fb-voice, set
   // straight on the element: no render per level) and leans in while the person talks
@@ -585,11 +610,12 @@ export function FloatingBotView({ snapshot: given, onEvent, mover, interactive, 
       if (event.key !== "Escape") return;
       if (menuOpen) setMenuOpen(false);
       else if (callCard) setCallCard(null);
+      else if (tray) onEvent({ type: "tray", open: false });
       else if (balloon) onEvent({ type: "dismiss" });
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [menuOpen, callCard, balloon, onEvent]);
+  }, [menuOpen, callCard, tray, balloon, onEvent]);
 
   // With no balloon to type in, give the keyboard back to whatever had it (the balloon takes it when it opens).
   const hasInput = Boolean(balloon?.input);
@@ -621,6 +647,18 @@ export function FloatingBotView({ snapshot: given, onEvent, mover, interactive, 
     owlHoverRef.current = on;
     setOwlHover(on);
     hover(on);
+    controlsOver();
+  };
+  // The hover controls: over the character or the controls themselves, they come after a
+  // moment and stay a moment after the pointer leaves (hover-controls.ts)
+  const controlsOver = () => {
+    const over = owlHoverRef.current || controlsHoverRef.current;
+    setControls((current) => (current.over === over ? current : { ...current, over, since: now() }));
+  };
+  const controlsHover = (on: boolean) => {
+    controlsHoverRef.current = on;
+    hover(on);
+    controlsOver();
   };
   const stroke = (event: ReactPointerEvent) => {
     if (event.pointerType === "touch") return;
@@ -662,7 +700,7 @@ export function FloatingBotView({ snapshot: given, onEvent, mover, interactive, 
     const here = point(event);
     const dx = here.x - start.x;
     const dy = here.y - start.y;
-    if (!start.moved && Math.hypot(dx, dy) < DRAG_SLOP) return;
+    if (!start.moved && !isDrag(dx, dy, DRAG_SLOP)) return;
     if (!start.moved) {
       clearTimeout(start.timer);
       dispatch({ type: "drag", now: now(), on: true });
@@ -680,16 +718,16 @@ export function FloatingBotView({ snapshot: given, onEvent, mover, interactive, 
     if (start.moved) {
       mover.moved();
       dispatch({ type: "drag", now: now(), on: false });
-    } else if (!start.menu && snapshot.call?.botAudible) {
-      // on a call the mascot is the pill's avatar: a click while its bot speaks cuts it, as in the app
-      setMenuOpen(false);
-      onEvent({ type: "call", action: "interrupt" });
     } else if (!start.menu) {
       setMenuOpen(false);
-      // a click opens the chat at once; a second click soon after opens the app instead
+      // a plain click on the idle character opens the call (ChatGPT Pets); on a call it only
+      // cuts the bot's voice while it speaks; a second click soon after opens the app
       const gesture = clickGesture(lastClick.current, now());
       lastClick.current = gesture === "double" ? null : now();
-      for (const event of eventsForClick(gesture)) onEvent(event);
+      const click = mascotClick({ moved: false, menu: false, onCall: Boolean(snapshot.call), botAudible: Boolean(snapshot.call?.botAudible), canCall: Boolean(snapshot.hints.call), gesture });
+      if (click === "call") onEvent({ type: "call", action: "start" });
+      else if (click === "interrupt") onEvent({ type: "call", action: "interrupt" });
+      else if (click === "chat" || click === "open") for (const event of eventsForClick(gesture)) onEvent(event);
     }
     if (!hovering.current) interactive?.(false);
   };
@@ -736,6 +774,10 @@ export function FloatingBotView({ snapshot: given, onEvent, mover, interactive, 
       {call && callCardShown && (
         // right above the character's head, over the stage's empty room (no gap of empty stage between them)
         <MascotCallCardView call={call} name={snapshot.name} card={callCard} onEvent={onEvent} hover={hover} style={side.below ? undefined : { marginBottom: -(STAGE.top - CARD_GAP + 8) }} />
+      )}
+      {tray && !balloon && (
+        // where the chat goes, right above the character's head (as the call's card)
+        <MascotTray tray={tray} name={snapshot.name} onEvent={onEvent} hover={hover} style={side.below ? undefined : { marginBottom: -(STAGE.top - CARD_GAP + 8) }} />
       )}
       {menuOpen && (
         <div role="menu" aria-label={snapshot.name} className={cn("fb-menu", retro && "r98-menu")} onPointerEnter={() => hover(true)} onPointerLeave={() => hover(false)}>
@@ -784,6 +826,7 @@ export function FloatingBotView({ snapshot: given, onEvent, mover, interactive, 
           className="fb-fx"
           data-character={snapshot.mascot?.character ?? "owl"}
           data-side={fxSide}
+          data-controls={controls.shown ? "" : undefined}
           aria-hidden="true"
           style={{ left: lane.x, top: lane.y, width: lane.width, height: lane.height }}
         >
@@ -802,6 +845,22 @@ export function FloatingBotView({ snapshot: given, onEvent, mover, interactive, 
             </Suspense>
           )}
         </span>
+        <MascotHoverControls
+          lane={lane}
+          side={fxSide}
+          shown={controls.shown && !controlsBlocked}
+          reduced={reduced}
+          chatOpen={balloonOpen}
+          trayOpen={Boolean(tray)}
+          canCall={Boolean(snapshot.hints.call) || Boolean(call)}
+          onCall={Boolean(call)}
+          onEvent={onEvent}
+          hover={controlsHover}
+          name={snapshot.name}
+        />
+        {call && (
+          <MascotCaptions call={call} box={captionBox} side={captionSide} captions={call.captions !== false} />
+        )}
         <button
           type="button"
           className="fb-art"

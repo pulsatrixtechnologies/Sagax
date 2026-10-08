@@ -1243,3 +1243,145 @@ html[data-floating-bot] #root {
     animation: none;
   }
 }
+
+/* The hover controls (quick chat, voice, activity), ChatGPT Pets style: a
+   column of round buttons in the effects' lane beside the character, never
+   over it. They fade in 150 ms after the pointer arrives and out 400 ms
+   after it leaves (hover-controls.ts times both; the fade is the CSS's);
+   under reduced motion they show and go without a fade. The effects in the
+   same lane step aside while they show. */
+.fb-root .fb-controls {
+  position: absolute;
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease-out;
+}
+.fb-root .fb-controls[data-side="above"] {
+  flex-direction: row;
+  align-items: flex-end;
+}
+.fb-root .fb-controls[data-shown] {
+  opacity: 1;
+  pointer-events: auto;
+}
+.fb-root .fb-controls > button {
+  pointer-events: inherit;
+}
+.fb-root .fb-fx[data-controls] {
+  opacity: 0;
+  transition: opacity 0.15s ease-out;
+}
+.fb-root .fb-controls[data-reduced],
+.fb-root[data-reduced] .fb-fx[data-controls] {
+  transition: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .fb-root .fb-controls,
+  .fb-root .fb-fx[data-controls] {
+    transition: none;
+  }
+}
+
+/* The activity tray: where the chat goes, like the call's card. */
+.fb-root .fb-tray {
+  position: relative;
+  z-index: 2;
+  width: 280px;
+  max-width: calc(100vw - 16px);
+  animation: fb-pop 0.16s ease-out both;
+}
+.fb-root[data-reduced] .fb-tray {
+  animation: none;
+}
+
+/* The call's status chip and live captions beside the character, on the
+   side the window holds room on: three lines at most, the newest at the
+   bottom, the person's words lighter than the bot's. */
+.fb-root .fb-captions {
+  position: absolute;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  pointer-events: none;
+}
+.fb-root .fb-captions[data-side="left"] {
+  align-items: flex-end;
+}
+.fb-root .fb-captions[data-side="right"] {
+  align-items: flex-start;
+}
+.fb-root .fb-captions-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 22px;
+  padding: 0 9px;
+  border: 1px solid var(--color-hairline-weak, rgba(127, 127, 127, 0.25));
+  border-radius: 999px;
+  background: var(--color-elevated);
+  color: var(--color-ink-secondary);
+  font-size: 11.5px;
+  white-space: nowrap;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.22);
+}
+.fb-root .fb-captions-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--color-ink-tertiary);
+}
+.fb-root .fb-captions[data-phase="listening"] .fb-captions-dot,
+.fb-root .fb-captions[data-phase="hearing"] .fb-captions-dot {
+  background: var(--color-success, #3fb950);
+}
+.fb-root .fb-captions[data-phase="thinking"] .fb-captions-dot {
+  background: var(--color-warning, #e78531);
+}
+.fb-root .fb-captions[data-phase="speaking"] .fb-captions-dot {
+  background: var(--fb-owl, var(--color-accent));
+}
+.fb-root .fb-captions[data-phase="muted"] .fb-captions-dot {
+  background: var(--color-danger, #e5484d);
+}
+.fb-root .fb-captions-text {
+  display: flex;
+  flex-direction: column;
+  max-width: 100%;
+  padding: 6px 10px;
+  border: 1px solid var(--color-hairline-weak, rgba(127, 127, 127, 0.25));
+  border-radius: 14px;
+  background: var(--color-elevated);
+  color: var(--color-ink);
+  font-size: 12.5px;
+  line-height: 1.35;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.26);
+}
+.fb-root .fb-captions-text[data-caption-who="you"] {
+  color: var(--color-ink-secondary);
+}
+.fb-root .fb-captions-line {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  animation: fb-caption-in 0.24s ease-out both;
+}
+@keyframes fb-caption-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: none; }
+}
+.fb-root[data-reduced] .fb-captions-line {
+  animation: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .fb-root .fb-captions-line,
+  .fb-root .fb-tray {
+    animation: none;
+  }
+}

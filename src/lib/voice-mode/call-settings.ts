@@ -21,12 +21,14 @@ export interface CallSettings {
   pause: CallPause;
   /** the settings card's Advanced zone is open (closed by default) */
   advancedOpen: boolean;
+  /** live captions beside the desktop mascot during a call (on when absent) */
+  captions?: boolean;
 }
 
 export type CallPause = "short" | "normal" | "patient";
 export const CALL_PAUSES: readonly CallPause[] = ["short", "normal", "patient"];
 
-export const DEFAULT_CALL_SETTINGS: CallSettings = { input: "auto", onlyMyVoice: true, earcons: true, thinkingCue: true, pause: "normal", advancedOpen: false };
+export const DEFAULT_CALL_SETTINGS: CallSettings = { input: "auto", onlyMyVoice: true, earcons: true, thinkingCue: true, pause: "normal", advancedOpen: false, captions: true };
 
 type Storage = Pick<globalThis.Storage, "getItem" | "setItem">;
 const watchers = new Set<() => void>();
@@ -49,6 +51,7 @@ export function cleanCallSettings(value: unknown): CallSettings {
     thinkingCue: typeof record.thinkingCue === "boolean" ? record.thinkingCue : DEFAULT_CALL_SETTINGS.thinkingCue,
     pause: CALL_PAUSES.includes(record.pause as CallPause) ? (record.pause as CallPause) : DEFAULT_CALL_SETTINGS.pause,
     advancedOpen: typeof record.advancedOpen === "boolean" ? record.advancedOpen : DEFAULT_CALL_SETTINGS.advancedOpen,
+    captions: typeof record.captions === "boolean" ? record.captions : DEFAULT_CALL_SETTINGS.captions,
   };
 }
 

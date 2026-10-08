@@ -85,7 +85,32 @@ export interface FloatingCall {
   voicesError: string | null;
   enrollment: { state: "none" | "enrolled" | "failed" } | { state: "recording"; share: number };
   previewing: { id: string; loading: boolean } | null;
+  /** Live captions beside the mascot (the call settings' switch; on when absent). */
+  captions?: boolean;
 }
+
+/** A row of the mascot's activity tray: an approval its bot waits on, or work it runs (tray.ts). */
+export interface FloatingTrayItem {
+  /** Opaque ("a0", "r1"): the brain keeps what it stands for. */
+  id: string;
+  kind: "approval" | "running";
+  title: string;
+  detail: string;
+  /** Stop shows (an approval's Stop declines it). */
+  canStop: boolean;
+  /** The row opens its thread in the app. */
+  canOpen: boolean;
+}
+
+/** The activity tray, while it is open. */
+export interface FloatingTray {
+  loading: boolean;
+  items: FloatingTrayItem[];
+}
+
+/** A tray row's buttons: Allow (an approval), Stop, or open its thread in the app. */
+export type FloatingWorkAction = "allow" | "stop" | "open";
+export const TRAY_ID = /^[ar][0-9]{1,2}$/;
 
 /** What the mascot's call controls ask of the brain. */
 export type FloatingCallAction =
@@ -138,6 +163,8 @@ export interface FloatingSnapshot {
   theme?: FloatingTheme;
   /** The live voice call with this bot, when there is one. */
   call?: FloatingCall | null;
+  /** The activity tray, while it is open (the hover controls' bell). */
+  tray?: FloatingTray | null;
 }
 
 
@@ -149,7 +176,11 @@ export type FloatingEvent =
   | { type: "click" | "context" | "dismiss" | "open" | "play" | "pet" }
   | { type: "menu"; id: string }
   | { type: "send"; text: string }
-  | { type: "call"; action: FloatingCallAction; voice?: string; patch?: Record<string, string | number | boolean> };
+  | { type: "call"; action: FloatingCallAction; voice?: string; patch?: Record<string, string | number | boolean> }
+  /** The hover controls' bell: open or close the activity tray. */
+  | { type: "tray"; open: boolean }
+  /** A tray row's button. */
+  | { type: "work"; action: FloatingWorkAction; id: string };
 
 export interface FloatingRect {
   x: number;
@@ -212,6 +243,10 @@ export interface FloatingBotsBridge {
   onWant?(cb: (value: { botId: string }) => void): () => void;
   /** "Switch bot": that window now stands for another bot, in place (optional: an older preload lacks it). */
   rekey?(fromId: string, toId: string): Promise<boolean>;
+  /** The mascot's call hotkey: on or off, its keys, and whether holds are read (optional: an older preload lacks it). */
+  hotkey?(config: { enabled: boolean; accelerator: string; hold: boolean }): Promise<{ registered: string | null; conflict: boolean } | null>;
+  /** The hotkey was pressed: a tap, a hold or the release of a hold (optional: an older preload lacks it). */
+  onHotkey?(cb: (value: { kind: string }) => void): () => void;
 }
 
 const POSES = new Set<FloatingPose>(["idle", "think", "speak", "celebrate", "alert", "sleep"]);
@@ -255,5 +290,7 @@ export function isFloatingEvent(value: unknown): value is FloatingEvent {
   if (event.type === "call") return CALL_ACTIONS.has(event.action as FloatingCallAction);
   if (event.type === "menu") return typeof event.id === "string" && MENU_ID.test(event.id);
   if (event.type === "send") return typeof event.text === "string" && event.text.trim().length > 0;
+  if (event.type === "tray") return typeof (event as { open?: unknown }).open === "boolean";
+  if (event.type === "work") return (event.action === "allow" || event.action === "stop" || event.action === "open") && typeof event.id === "string" && TRAY_ID.test(event.id);
   return ["click", "context", "dismiss", "open", "play", "pet"].includes(event.type as string);
 }

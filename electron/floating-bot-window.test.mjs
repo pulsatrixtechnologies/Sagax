@@ -22,6 +22,8 @@ import {
   REMEMBER_DELAY_MS,
   waitForPage,
   sanitizeCall,
+  sanitizeTray,
+  TRAY_MAX,
   menuPopupPoint,
   sanitizeFloatingEvent,
   sanitizeFloatingSnapshot,
@@ -677,6 +679,39 @@ describe("floating bots: payload validation", () => {
   });
 });
 
+describe("floating bots: the hover controls' activity tray", () => {
+  it("passes opaque ids and short texts only, bounded", () => {
+    const tray = sanitizeTray({
+      loading: true,
+      threadId: "t-secret",
+      items: [
+        { id: "a0", kind: "approval", title: "x".repeat(300), detail: "y".repeat(300), canStop: true, canOpen: true, requestId: "req-1", threadId: "t9" },
+        { id: "thread:t1", kind: "running", title: "bad id" },
+        { id: "r0", kind: "routine", title: "bad kind" },
+        ...Array.from({ length: 20 }, (_, i) => ({ id: `r${i + 1}`, kind: "running", title: "Export", canStop: "yes" })),
+      ],
+    });
+    expect(tray.loading).toBe(true);
+    expect(tray.items).toHaveLength(TRAY_MAX);
+    expect(tray.items[0]).toEqual({ id: "a0", kind: "approval", title: "x".repeat(80), detail: "y".repeat(140), canStop: true, canOpen: true });
+    expect(tray.items[1]).toMatchObject({ id: "r1", canStop: false, canOpen: false });
+    expect(JSON.stringify(tray)).not.toMatch(/req-1|t9|t-secret/);
+    expect(sanitizeTray(null)).toBeNull();
+    expect(sanitizeFloatingSnapshot({ ...SNAPSHOT, tray: { items: [{ id: "a0", kind: "approval", title: "Needs you" }] } }).tray.items).toHaveLength(1);
+    expect(sanitizeFloatingSnapshot(SNAPSHOT).tray).toBeNull();
+  });
+
+  it("takes back the bell and a row's buttons only with a listed id's shape", () => {
+    expect(sanitizeFloatingEvent({ type: "tray", open: true, botId: "other" })).toEqual({ type: "tray", open: true });
+    expect(sanitizeFloatingEvent({ type: "tray", open: "yes" })).toBeNull();
+    expect(sanitizeFloatingEvent({ type: "work", action: "allow", id: "a0", requestId: "x" })).toEqual({ type: "work", action: "allow", id: "a0" });
+    expect(sanitizeFloatingEvent({ type: "work", action: "stop", id: "r12" })).toEqual({ type: "work", action: "stop", id: "r12" });
+    expect(sanitizeFloatingEvent({ type: "work", action: "delete", id: "a0" })).toBeNull();
+    expect(sanitizeFloatingEvent({ type: "work", action: "allow", id: "thread:t1" })).toBeNull();
+    expect(sanitizeFloatingEvent({ type: "work", action: "open", id: "r100" })).toBeNull();
+  });
+});
+
 describe("floating bots: a voice call with the mascot", () => {
   it("passes the call's states, short texts and settings only, bounded", () => {
     const call = sanitizeCall({
@@ -709,6 +744,12 @@ describe("floating bots: a voice call with the mascot", () => {
     // the end-of-turn pause (Short / Normal / Patient) travels too
     expect(sanitizeFloatingEvent({ type: "call", action: "call-settings", patch: { pause: "short" } })).toMatchObject({ patch: { pause: "short" } });
     expect(sanitizeFloatingEvent({ type: "call", action: "call-settings", patch: { pause: "forever" } })).toBeNull();
+  });
+
+  it("passes the captions switch (on unless turned off)", () => {
+    expect(sanitizeCall({ phase: "speaking" }).captions).toBe(true);
+    expect(sanitizeCall({ phase: "speaking", captions: false }).captions).toBe(false);
+    expect(sanitizeCall({ phase: "speaking", captions: "no" }).captions).toBe(true);
   });
 
   it("relays the call's levels from the app page to that bot's window only", () => {

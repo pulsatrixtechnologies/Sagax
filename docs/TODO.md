@@ -44,4 +44,14 @@ Open questions for JC (full text in the plan):
 
 Started first (easy, high value): mascot hover controls (quick chat, voice, activity), a global hotkey for the call, live captions beside the mascot during a call; the rest waits for JC's answers.
 
+JC's answers (2026-10-08): a click on the idle mascot opens the call; the mascot call coexists with the main window's call bar (one engine, two surfaces); Control+Option+Space is the hotkey; captions on by default.
+
+Slice 2 (`feat/mascot-desktop-2`):
+
+- [x] Hover controls beside the character (quick chat, voice, activity tray with Allow / Stop), 150 ms in, 400 ms out (`hover-controls.ts`, `MascotControls.tsx`, `tray.ts`).
+- [x] Click = call on the idle mascot; a drag stays a drag, a click on a call ends nothing (`mascotClick`).
+- [x] Global hotkey Control+Option+Space: press to call, again to mute, hold to talk in push-to-talk mode (`electron/mascot-hotkey.mjs`, `hotkey.ts`, Settings > Appearance).
+- [x] Captions and the phase's status chip beside the mascot during a call, on by default (`captions.ts`, Settings > Appearance; stored with the call settings).
+- [ ] Still open from the design: the call rail's task chips inside the call, the compact transcript, per-phase clips for each character, the captions switch inside the call bar's settings panel (that panel is being reworked on `fix/call-bar-card-animation`), slice 3 (pointer).
+
 Plan: `docs/plans/2026-10-08-mascot-full-mode.md` (research on ChatGPT Pets and Voice, Clicky, the current code, and the full design).

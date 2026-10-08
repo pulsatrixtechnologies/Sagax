@@ -938,6 +938,39 @@ Electron restart (no HMR); launch-test them before committing.
   microphone is the app page's (its permission), never the mascot window's.
   Main sanitizes `call`, its events and their settings patches. Measured in
   `verify-mascot-chat.mjs` (call leg); the app's call: `verify-voice-mode.ts`.
+- Mascot mode, slice 2 (ChatGPT Pets style). A plain click on the idle
+  character starts the call (`mascotClick` in `hover-controls.ts`: a press
+  that travels `DRAG_SLOP` is a drag, a long press or right click is the
+  menu, a double click opens the app, a click on a call never ends it; no
+  voice mode for the bot: the chat bubble as before). Hover controls (quick
+  chat, voice, activity) sit in the effects' lane (`MascotHoverControls`),
+  shown `HOVER_IN_MS` after the pointer arrives and kept `HOVER_OUT_MS`
+  after it leaves (`hoverControlsShown`), without a fade under reduced
+  motion. The bell opens the activity tray where the chat goes
+  (`MascotTray`, events `tray` and `work`): the brain builds it from the bot
+  panel's list (`loadBotActivity`, running only) and the approvals its
+  threads wait on (`tray.ts` `buildTray`); the window only sees opaque ids
+  (`a0`, `r1`, `TRAY_ID`), the brain keeps the thread and request and answers
+  through `decideRequest` or `interrupt`. During a call the status chip and
+  live captions (`captions.ts`: the person's words as heard, the bot's
+  sentence word by word at the voice's pace, three lines at most) stand beside
+  the character on the side the window holds room on (`MascotCaptions`);
+  the switch is `captions` in the call settings (Settings > Appearance). The
+  mascot's pose follows the phase (`callPose`).
+- The call hotkey (`electron/mascot-hotkey.mjs`, Control+Option+Space by
+  default, `HOTKEY_CHOICES`, Settings > Appearance) is registered with
+  `globalShortcut` only while the brain asks (setting on and a mascot shown,
+  `hotkeyConfig`), never twice, and let go when no mascot is shown, when the
+  main page goes and at quit. Main reports `tap`, `hold` and `release`
+  (`floating-bots:hotkey`); holds are read only on the mascot's push-to-talk
+  call, through a short-lived macOS probe of the chord's modifiers
+  (osascript, `NSEvent.modifierFlags`; elsewhere every press is a tap). The
+  brain decides (`hotkeyAction` in `hotkey.ts`): start the call with the
+  mascot's bot, mute or unmute, talk while held. Tests:
+  `electron/mascot-hotkey.node-test.mjs`, `hotkey.test.ts`,
+  `hover-controls.test.ts`, `captions.test.ts`, `tray.test.ts`; real Electron:
+  `node scripts/verify-mascot-desktop.mjs` (hover controls and click-to-call
+  legs, screenshots next to the report).
 - The desktop mascot's menu (right click, long press, the menu key or
   Shift+F10) is main's native menu, popped exactly at the pointer
   (`floating-bots:menu`, `menuPopupPoint`: the page's CSS pixels times its
