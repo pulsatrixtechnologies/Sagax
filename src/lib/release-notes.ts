@@ -195,8 +195,19 @@ export function readSeenRelease(raw: string | null): string | null {
   }
 }
 
-export function seenReleaseRecord(version: string): string {
-  return JSON.stringify({ version });
+/** The version that was installed before the one recorded as seen, when known. */
+export function readPreviousRelease(raw: string | null): string | null {
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as { previous?: unknown };
+    return typeof parsed?.previous === "string" && parsed.previous ? parsed.previous : null;
+  } catch {
+    return null;
+  }
+}
+
+export function seenReleaseRecord(version: string, previous?: string | null): string {
+  return JSON.stringify(previous && previous !== version ? { version, previous } : { version });
 }
 
 /**

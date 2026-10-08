@@ -1612,6 +1612,32 @@ Last sync: 2026-10-03, upstream `milind-soni/OpenMausBot` main at
   `mcp-oauth.key`, both left out of workspace backups). Upstream's own
   MCP sign-in manager and routes were not taken.
 
+## Release notes in the app
+
+Every release has `docs/releases/<version>.md`: the French part first, then a
+`## English` section (`scripts/check-release-notes.mjs` refuses a release
+without it). The files are compiled into the renderer by `import.meta.glob`
+in `src/lib/bundled-release-notes.ts`, so the notes work offline and an
+organization server serves the same bundle. Three ways in, all through
+`src/components/ReleaseNotesPrompt.tsx`:
+
+- "What's new" opens once after an update (`whatsNewDecision`), never on a
+  fresh install or a dev build. Before an update the feed's release body is
+  shown by `UpdateBanner`.
+- Account menu > "Release notes" (`profileMenuItems`, key `release-notes`,
+  above Check for updates) opens the same sheet in browse mode:
+  a version picker (newest first, the running version marked current) and,
+  when the previous version is known, "Changes since my last version". The
+  seen record in localStorage (`sagax.releaseNotes.seen.v1`) keeps
+  `{ version, previous }`.
+- About and the Help menu open the running version alone.
+
+The French UI gets the French part, every other language the English one; a
+file with no English section is shown whole. A new release only needs its
+file in `docs/releases`; no list to edit. Tests:
+`src/lib/bundled-release-notes.test.ts`, `src/lib/release-notes.test.ts`,
+`src/components/SidebarProfileMenu.test.ts`.
+
 ## No phone-home
 
 Sagax contacts no service of the original OpenMausBot project and sends no

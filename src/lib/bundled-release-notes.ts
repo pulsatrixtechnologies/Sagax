@@ -1,6 +1,6 @@
 // docs/releases/*.md are compiled into the renderer so "What's new" works
 // offline, including the first launch after an update with no network.
-import { releaseNotesSection } from "./release-notes";
+import { compareVersions, releaseNotesSection, type ReleaseNoteEntry } from "./release-notes";
 
 const rawModules = import.meta.glob("../../docs/releases/*.md", {
   eager: true,
@@ -28,4 +28,24 @@ export function bundledNotesFor(
   if (!body) return null;
   const section = releaseNotesSection(body, language).trim();
   return section || null;
+}
+
+/** Every bundled version, newest first. */
+export function bundledVersions(catalog: Record<string, string> = bundledReleaseCatalog()): string[] {
+  return Object.keys(catalog).sort((a, b) => compareVersions(b, a));
+}
+
+/**
+ * Bundled versions after `previous` up to and including `current`, newest
+ * first, as whole files (the viewer picks the language). Empty when
+ * `previous` is not older than `current`.
+ */
+export function bundledNotesSince(
+  previous: string,
+  current: string,
+  catalog: Record<string, string> = bundledReleaseCatalog(),
+): ReleaseNoteEntry[] {
+  return bundledVersions(catalog)
+    .filter((version) => compareVersions(version, previous) > 0 && compareVersions(version, current) <= 0)
+    .map((version) => ({ version, note: catalog[version]! }));
 }
