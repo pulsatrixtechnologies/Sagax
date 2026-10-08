@@ -892,6 +892,30 @@ it. Keep these rules, each covered by `server/desktop-bridge*.test.ts`,
 A change under `server/` needs the server image redeployed; under `electron/`
 a desktop rebuild.
 
+## Bot files for the Perspicax console (2026-10-08)
+
+The Perspicax console's file browser reads a bot's files through the
+organization admin API (`server/org-admin-files.ts`, under
+`/api/org/admin/files/<bot>/*`, the console assertion as the only
+credential; `docs/verification/perspicax-sign-in.md`). Slice 1 is read only:
+roots, list, stat, read (128 KiB) and download (100 MiB). Keep these rules,
+each covered by `server/org-admin-files.test.ts` or
+`server/org-admin.e2e.test.ts` (S7-G):
+
+- Managers in reach and admins only (the bots route's `botInReach`); a bot
+  out of reach is 404, never 403.
+- Never a host path on the wire: roots are ids (`workspace`, `tasks`,
+  `project`, `attachments`, `sandbox`, `desktop`), paths are relative to
+  them, attachments are named by their opaque thread-file id.
+- The project folder is served only when it lies inside the data folder.
+  The people's server environments and a person's own computer (desktop
+  bridge) are listed as unavailable: the server never opens them for the
+  console.
+- No `.`, `..`, empty segment, backslash or NUL; every segment is walked
+  with lstat and a link anywhere is refused; reads open with O_NOFOLLOW.
+- Each read and download is a `bot.files.read` or `bot.files.download` row
+  of the admin activity log (category `bot`, actor the console person).
+
 ## A person's own connections, plugins and skills (organization mode, 2026-10-02)
 
 Owner report: on GOX nobody could add the GitHub MCP, log into GitHub or
@@ -1332,6 +1356,47 @@ peer threads reached the whole organization. Keep these rules, covered by
   `effectiveBotOwner` gives a bot with no recorded owner to the local
   operator, so such a bot is in the operator's scope, not shut out.
 - A solo server sets no scope and is unchanged.
+
+## Skins and contrast (2026-10-08)
+
+Skins are blocks of tokens in `src/styles.css` (`[data-skin="x"]`), listed
+in `src/lib/skins.ts`: Pulsatrix, Pulsatrix Light, Midnight, Atelier,
+Foundry, Lagoon, Graphite, Linen, Dusk, Daylight, Hibou 98 (`retro98`, plus
+its structural `src/styles/retro98.css`) and Meadow. Each skin is one mode
+(light or dark); there is no separate light/dark switch per skin.
+
+- Never hard-code a colour in a component. Fix a failing pair in the skin
+  block (or in `retro98.css` for Hibou 98), never in the `.tsx`.
+- Every popover, menu, picker, sheet and floating card wears
+  `popover-surface` next to its background class. The class points the
+  generic tokens (`ink`, `ink-secondary`, `ink-tertiary`, `panel`, `inset`,
+  `hairline`, `raised`) back at the `--color-popover-*` set, which each skin
+  resolves once at its root. Without it a popover opened from a band that
+  re-points `ink` (Pulsatrix Light's navy `.content-topbar`, the inverted
+  bubbles of Daylight and Meadow) inherits the band's light ink onto a
+  white card: the thread picker measured 1.11:1 that way.
+- New popover code paints from the popover tokens directly: `bg-popover`,
+  `text-popover-ink`, `text-popover-ink-secondary`,
+  `placeholder:text-popover-placeholder`, `bg-popover-field`,
+  `border-popover-border` (a field outline, 3:1), `border-popover-hairline`,
+  `bg-popover-hover`, `text-popover-accent`. `TaskPicker` is the reference.
+- Targets, measured on the surface the thing is actually drawn on: 4.5:1
+  for text (body and secondary alike, placeholders included), 3:1 for
+  icons, check marks, the focus ring and field borders, a just-perceptible
+  step for decorative hairlines and surface-on-surface fills.
+- `pnpm check:contrast` (`scripts/check-skin-contrast.mjs`) measures every
+  skin at its root and inside every context that re-declares tokens (a
+  `[data-skin="x"] .class { … }` band, `.popover-surface`, the bubble
+  `@scope` blocks), including translucent washes (`hover`, `selected`,
+  status tints like `bg-danger/10`) composited over what they sit on. It
+  runs inside `pnpm test:unit` via `src/lib/popover-contrast.test.ts`. A new
+  band or a new token pair goes in that script, not in a one-off test.
+- Run it after touching any palette value. For the real app, launch the
+  harness
+  (`node --experimental-strip-types scripts/control-omb.ts ui launch`), set
+  the skin with `ui eval --js "localStorage.setItem('omb-skin','<id>');
+  location.reload()"`, open the surface, and screenshot or measure its
+  computed colours with `ui eval`.
 
 ## Account menu
 
