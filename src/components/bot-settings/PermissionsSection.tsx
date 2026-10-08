@@ -134,7 +134,6 @@ export function PermissionsSection({
                   : t("botPanel.permissions.makePrimary")}
         </div>
         {primaryError && <div role="alert" className="mt-2 text-[12px] text-danger">{primaryError}</div>}
-        <ProposalStatus bot={bot} kind="chief" />
         {showTeams && bot.chiefOfStaff && <ManagedTeamsSettings
           key={bot.id + JSON.stringify(bot.managedSections ?? [])}
           name={bot.name} ownTeam={bot.section?.trim() || ""}
@@ -142,7 +141,7 @@ export function PermissionsSection({
           allowed={bot.managedSections ?? []}
           onSave={managedSections => patch({ managedSections, acknowledgePeerScope: true })}
         />}
-        {showTeams && bot.chiefOfStaff && <ProposalStatus bot={bot} kind="owner" />}
+        {showTeams && bot.chiefOfStaff && <ProposalStatus bot={bot} />}
       </div>}
 
       {showContactUi && <div className="flex items-center justify-between gap-4 rounded-xl border border-hairline/40 p-4">
@@ -153,7 +152,7 @@ export function PermissionsSection({
               ? t("botPanel.permissions.askOn")
               : t("botPanel.permissions.askOff")}
           </div>
-          <ProposalStatus bot={bot} kind="owner" />
+          <ProposalStatus bot={bot} />
         </div>
         <Switch
           checked={Boolean(bot.approvePeerComms)}
@@ -170,7 +169,7 @@ export function PermissionsSection({
         <div className="mt-0.5 text-[13px] text-ink-secondary">
           {draft ? t("botPanel.permissions.approvalDraft") : t("botPanel.permissions.approvalHelp")}
         </div>
-        <ProposalStatus bot={bot} kind="owner" />
+        <ProposalStatus bot={bot} />
         <div className="mt-3">
           <ApprovalModeSelector
             approvalMode={bot.approvalMode}

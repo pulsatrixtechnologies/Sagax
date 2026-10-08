@@ -1941,7 +1941,6 @@
   "activity.actor.loopback": "This computer",
   "activity.actor.worker": "Local service",
   "activity.actor.cli": "Command line",
-  "botSettings.proposal.chief": "The Primary Bot can propose this; it arrives as a card you confirm.",
   "botSettings.proposal.owner": "Owner-only: never arrives as a proposal.",
   "botSettings.visibility.title": "Who can see it",
   "botSettings.visibility.subtitle": "Choose who sees this bot, its conversations, the rooms it is in and its files. Admins always can.",

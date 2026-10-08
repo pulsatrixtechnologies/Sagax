@@ -11,7 +11,6 @@ import { t } from "@/lib/i18n";
 import { useStore, type Bot } from "@/state/store";
 import { botWithViewerSettings, useViewerBotOverride, viewerLocalBotSettings } from "@/lib/viewer-bot-overrides";
 import { useBotEditor } from "./BotEditorContext";
-import { ProposalStatus } from "./ProposalStatus";
 
 export function ModelSection({ bot }: { bot: Bot }) {
   const advanced = useAdvancedMode();
@@ -34,7 +33,6 @@ export function ModelSection({ bot }: { bot: Bot }) {
               <div className="mt-0.5 text-[13px] text-ink-secondary">
                 {viewerLocal ? t("botPanel.model.forYou") : draft ? t("botPanel.model.starting") : t("botPanel.model.groups")}
               </div>
-              <ProposalStatus bot={bot} kind="chief" />
             </div>
           }
         />
@@ -61,7 +59,6 @@ export function ModelSection({ bot }: { bot: Bot }) {
                 ? (draft ? t("botPanel.model.reasoningStart") : t("botPanel.model.reasoningGroups"))
                 : `${t("botPanel.model.effortHelp")}${shown.modelSelection.effort ? "" : t("botPanel.model.effortDefault")}`}
             </div>
-            <ProposalStatus bot={bot} kind="chief" />
           </div>
         }
       />}

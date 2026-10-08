@@ -1,7 +1,6 @@
-// Boundary markers: a Chief-proposable group says its changes arrive as a
-// card the owner confirms; an owner-only group says it never arrives as a
-// proposal. Both hide when no other Chief covers the bot's section and in
-// the draft editor, and sections with nothing proposal-eligible carry none.
+// Boundary marker: an owner-only group says it never arrives as a proposal.
+// It hides when no other Chief covers the bot's section and in the draft
+// editor. The removed Chief-proposable copy must stay out of every section.
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -80,9 +79,9 @@ function makeDerived(): ReturnType<typeof import("./useBotSettingsDerived").useB
   } as ReturnType<typeof import("./useBotSettingsDerived").useBotSettingsDerived>;
 }
 
-function renderMarker(bot: Bot, kind: "chief" | "owner") {
+function renderMarker(bot: Bot) {
   return renderToStaticMarkup(
-    createElement(StoreProvider, null, createElement(ProposalStatus, { bot, kind })),
+    createElement(StoreProvider, null, createElement(ProposalStatus, { bot })),
   );
 }
 
@@ -93,45 +92,43 @@ describe("ProposalStatus", () => {
   });
   afterEach(() => vi.unstubAllGlobals());
 
-  it("shows both markers when another bot is the section's Chief", () => {
+  it("shows the owner-only marker when another bot is the section's Chief", () => {
     fixture.bots = [makeBot(), makeBot({ id: "chief-1", name: "Atlas", chiefOfStaff: true })];
-    expect(renderMarker(makeBot(), "chief")).toContain(CHIEF_COPY);
-    expect(renderMarker(makeBot(), "owner")).toContain(OWNER_COPY);
+    expect(renderMarker(makeBot())).toContain(OWNER_COPY);
   });
 
-  it("hides both markers when no Chief covers the section", () => {
+  it("hides the marker when no Chief covers the section", () => {
     fixture.bots = [makeBot()];
-    expect(renderMarker(makeBot(), "chief")).toBe("");
-    expect(renderMarker(makeBot(), "owner")).toBe("");
+    expect(renderMarker(makeBot())).toBe("");
   });
 
-  it("shows markers when a Chief of another section manages this one", () => {
+  it("shows the marker when a Chief of another section manages this one", () => {
     fixture.bots = [
       makeBot({ section: "General" }),
       makeBot({ id: "chief-1", name: "Atlas", section: "Elsewhere", chiefOfStaff: true, managedSections: ["General"] }),
     ];
-    expect(renderMarker(makeBot({ section: "General" }), "chief")).toContain(CHIEF_COPY);
+    expect(renderMarker(makeBot({ section: "General" }))).toContain(OWNER_COPY);
   });
 
-  it("hides markers for a Chief outside the section it does not manage", () => {
+  it("hides the marker for a Chief outside the section it does not manage", () => {
     fixture.bots = [
       makeBot({ section: "General" }),
       makeBot({ id: "chief-1", name: "Atlas", section: "Elsewhere", chiefOfStaff: true, managedSections: ["Other"] }),
     ];
-    expect(renderMarker(makeBot({ section: "General" }), "chief")).toBe("");
+    expect(renderMarker(makeBot({ section: "General" }))).toBe("");
   });
 
-  it("hides markers when the bot itself is the only Chief", () => {
+  it("hides the marker when the bot itself is the only Chief", () => {
     fixture.bots = [makeBot({ chiefOfStaff: true })];
-    expect(renderMarker(makeBot(), "chief")).toBe("");
+    expect(renderMarker(makeBot())).toBe("");
   });
 
-  it("hides markers in the new-bot draft editor", () => {
+  it("hides the marker in the new-bot draft editor", () => {
     fixture.bots = [makeBot(), makeBot({ id: "chief-1", chiefOfStaff: true })];
     const markup = renderToStaticMarkup(createElement(
       BotEditorContext.Provider,
       { value: { request: api, draft: true } },
-      createElement(ProposalStatus, { bot: makeBot(), kind: "chief" }),
+      createElement(ProposalStatus, { bot: makeBot() }),
     ));
     expect(markup).toBe("");
   });
@@ -141,7 +138,7 @@ describe("ProposalStatus", () => {
       makeBot({ section: " General " }),
       makeBot({ id: "chief-1", section: "General", chiefOfStaff: true }),
     ];
-    expect(renderMarker(makeBot({ section: " General " }), "chief")).toContain(CHIEF_COPY);
+    expect(renderMarker(makeBot({ section: " General " }))).toContain(OWNER_COPY);
   });
 });
 
@@ -153,14 +150,12 @@ describe("Edit Profile boundary markers in sections", () => {
   });
   afterEach(() => vi.unstubAllGlobals());
 
-  it("marks the Access groups: working folder Chief-proposable, works-on owner-only", () => {
+  it("marks the Access groups: works-on owner-only, no Chief copy", () => {
     fixture.bots = [makeBot(), makeBot({ id: "chief-1", chiefOfStaff: true })];
     const markup = renderToStaticMarkup(
       createElement(StoreProvider, null, createElement(AccessSection, { bot: makeBot(), derived: makeDerived() })),
     );
-    expect(markup).toContain(
-      'Where this bot runs its shell and file tools.</div><div class="mt-1 text-[11.5px] leading-snug text-ink-secondary">The Primary Bot can propose this',
-    );
+    expect(markup).not.toContain(CHIEF_COPY);
     expect(markup).toContain(
       'This server has no browser engine.</div><div class="mt-1 text-[11.5px] leading-snug text-ink-secondary">Owner-only',
     );
@@ -190,7 +185,7 @@ describe("Edit Profile boundary markers in sections", () => {
     const markup = renderToStaticMarkup(
       createElement(StoreProvider, null, createElement(PermissionsSection, { bot: makeBot({ chiefOfStaff: true }), derived: makeDerived() })),
     );
-    expect(markup).toContain(CHIEF_COPY);
+    expect(markup).not.toContain(CHIEF_COPY);
     expect(markup).toContain(OWNER_COPY);
   });
 
