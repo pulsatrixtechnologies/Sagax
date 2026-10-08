@@ -22,7 +22,7 @@ import { t } from "@/lib/i18n";
 import { formatTaskTokens, headlineTokens, usageDetail } from "@/lib/usage";
 import { nextRename } from "@/lib/rename";
 import { BotProjectDialog, FolderActions, FolderIcon, NewThreadButton } from "./BotProjects";
-import { useShowThreads } from "@/lib/thread-preferences";
+import { useShowThreads, useThreadsLocationChoice } from "@/lib/thread-preferences";
 import { threadsOffReturnTarget } from "./thread-home";
 import { threadsWhenTreeHidden } from "./SidebarBotActivity";
 import { formatUpdatedAt, isArchived, isSnoozed, nextSixPm, orderedThreadList, threadByline, threadRecency, threadUpdatedLabel, tomorrowNineAm, useRelativeNow, useSnoozeExpiry } from "./SidebarThreadRow";
@@ -611,7 +611,11 @@ export function botPickerThreads(bot: Pick<Bot, "tasks">): Task[] {
 
 export function TaskPicker({ bot, initialOpen = false }: { bot: Bot; initialOpen?: boolean }) {
   const { state, dispatch } = useStore();
-  const showThreads = useShowThreads();
+  // Threads on and located in the header. In the sidebar location the picker
+  // is hidden: the two places are exclusive.
+  const threadsOn = useShowThreads();
+  const location = useThreadsLocationChoice();
+  const showThreads = threadsOn && location === "header";
   const [permissionRefresh, setPermissionRefresh] = useState<{ threadId: string; kind: "full" | "local-auto" } | null>(null);
   const [editingProject, setEditingProject] = useState<string | null>(null);
   const [folderSaving, setFolderSaving] = useState(false);

@@ -5888,5 +5888,10 @@
   "connectApps.providers.notSignedIn": "Not signed in",
   "connectApps.providers.unavailable": "Not set up",
   "connectApps.providers.signedIn": "Signed in",
-  "connectApps.manage.noSkills": "No private skills yet. A plugin from a marketplace can bring some."
+  "connectApps.manage.noSkills": "No private skills yet. A plugin from a marketplace can bring some.",
+  "settings.threadsLocation.title": "Threads location",
+  "settings.threadsLocation.subtitle": "Where threads and folders live. One place at a time: the chat header or the left sidebar. Applies to this device only.",
+  "settings.threadsLocation.aria": "Threads location",
+  "settings.threadsLocation.header": "In the chat header",
+  "settings.threadsLocation.sidebar": "In the sidebar"
 }

@@ -11,7 +11,7 @@ const fixture = vi.hoisted(() => ({
   threadReturn: null as null | { ownerId: string; threadId: string },
   dispatch: vi.fn(),
 }));
-vi.mock("@/lib/thread-preferences", () => ({ useShowThreads: () => fixture.showThreads }));
+vi.mock("@/lib/thread-preferences", () => ({ useShowThreads: () => fixture.showThreads, useThreadsLocationChoice: () => "header" }));
 vi.mock("@/state/store", async (importOriginal) => ({
   ...await importOriginal<typeof import("@/state/store")>(),
   useStore: () => ({

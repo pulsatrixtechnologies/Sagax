@@ -82,3 +82,52 @@ export function useShowThreadsChoice(): boolean {
 export function useShowThreads(): boolean {
   return useShowThreadsChoice();
 }
+
+// Where thread mode lists threads and folders. One place at a time, never both:
+// "header" is the chat header's thread button (default), "sidebar" lists them
+// under each bot in the left sidebar. A per-device renderer preference: the
+// key is not synced to an organization server.
+export const THREADS_LOCATION_KEY = "omb-threads-location";
+export type ThreadsLocation = "header" | "sidebar";
+export const THREADS_LOCATION_DEFAULT: ThreadsLocation = "header";
+let sessionLocation: ThreadsLocation | undefined;
+
+function threadsLocation(): ThreadsLocation {
+  if (sessionLocation !== undefined) return sessionLocation;
+  try {
+    return storage()?.getItem(THREADS_LOCATION_KEY) === "sidebar" ? "sidebar" : THREADS_LOCATION_DEFAULT;
+  } catch {
+    return THREADS_LOCATION_DEFAULT;
+  }
+}
+
+function onLocationStorage(event: StorageEvent) {
+  if (event.key !== THREADS_LOCATION_KEY && event.key !== null) return;
+  if (event.storageArea && event.storageArea !== storage()) return;
+  sessionLocation = undefined;
+  notify();
+}
+
+function subscribeLocation(listener: () => void): () => void {
+  listeners.add(listener);
+  if (typeof window !== "undefined") window.addEventListener("storage", onLocationStorage);
+  return () => {
+    listeners.delete(listener);
+    if (typeof window !== "undefined") window.removeEventListener("storage", onLocationStorage);
+  };
+}
+
+export function setThreadsLocation(location: ThreadsLocation): void {
+  sessionLocation = location;
+  try {
+    storage()?.setItem(THREADS_LOCATION_KEY, location);
+  } catch {
+    // The visible setting still changes for this session when storage is full.
+  }
+  notify();
+}
+
+/** The person's own choice in Settings > Appearance (applies when threads are on). */
+export function useThreadsLocationChoice(): ThreadsLocation {
+  return useSyncExternalStore(subscribeLocation, threadsLocation, () => THREADS_LOCATION_DEFAULT);
+}

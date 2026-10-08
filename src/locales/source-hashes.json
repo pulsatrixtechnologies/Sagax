@@ -7557,7 +7557,12 @@
       "connectApps.providers.apiKey": "16f0ee47f993d6270c9059450473eea493ca8ae037f8877782ae2bc176f24d18",
       "connectApps.providers.notSignedIn": "491fc91cd76e51571a745d780f0fc91f8ae62622e790cb113828988bba2e3c2c",
       "connectApps.providers.unavailable": "94b768af74236a6780055999a95a6db3486c2252347f643bf057d2a746a8163e",
-      "connectApps.providers.signedIn": "ca566c8968e7e881d55617e7caaf0c126924ab1cb64ca80edb2f37ef386492d8"
+      "connectApps.providers.signedIn": "ca566c8968e7e881d55617e7caaf0c126924ab1cb64ca80edb2f37ef386492d8",
+      "settings.threadsLocation.title": "2e8323eed6a2f2c3b101f4ab90e2bc73c1e9299a0cd6de4efbe790dae6fbb388",
+      "settings.threadsLocation.subtitle": "06f3c6fa4e8815b7364d61662745d1519a4e35380afd5a5bea0c6b44eba135d4",
+      "settings.threadsLocation.aria": "2e8323eed6a2f2c3b101f4ab90e2bc73c1e9299a0cd6de4efbe790dae6fbb388",
+      "settings.threadsLocation.header": "c0b0df6a47aa21f6a925f3006538f15a1e37a23a57accfa77e001902b1322627",
+      "settings.threadsLocation.sidebar": "765ed28beb02eba4864fa4e5d03e3f3f4be6a7ef8bb84688e9137c37e9976a1d"
     },
     "hi": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",
@@ -13395,7 +13400,12 @@
       "connectApps.providers.apiKey": "16f0ee47f993d6270c9059450473eea493ca8ae037f8877782ae2bc176f24d18",
       "connectApps.providers.notSignedIn": "491fc91cd76e51571a745d780f0fc91f8ae62622e790cb113828988bba2e3c2c",
       "connectApps.providers.unavailable": "94b768af74236a6780055999a95a6db3486c2252347f643bf057d2a746a8163e",
-      "connectApps.providers.signedIn": "ca566c8968e7e881d55617e7caaf0c126924ab1cb64ca80edb2f37ef386492d8"
+      "connectApps.providers.signedIn": "ca566c8968e7e881d55617e7caaf0c126924ab1cb64ca80edb2f37ef386492d8",
+      "settings.threadsLocation.title": "2e8323eed6a2f2c3b101f4ab90e2bc73c1e9299a0cd6de4efbe790dae6fbb388",
+      "settings.threadsLocation.subtitle": "06f3c6fa4e8815b7364d61662745d1519a4e35380afd5a5bea0c6b44eba135d4",
+      "settings.threadsLocation.aria": "2e8323eed6a2f2c3b101f4ab90e2bc73c1e9299a0cd6de4efbe790dae6fbb388",
+      "settings.threadsLocation.header": "c0b0df6a47aa21f6a925f3006538f15a1e37a23a57accfa77e001902b1322627",
+      "settings.threadsLocation.sidebar": "765ed28beb02eba4864fa4e5d03e3f3f4be6a7ef8bb84688e9137c37e9976a1d"
     },
     "uk": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",

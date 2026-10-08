@@ -3876,5 +3876,10 @@
   "connectApps.providers.notSignedIn": "Non connecté",
   "connectApps.providers.unavailable": "Non configuré",
   "connectApps.providers.signedIn": "Connecté",
-  "connectApps.manage.noSkills": "Aucune compétence privée pour l'instant. Un plugin d'une marketplace peut en apporter."
+  "connectApps.manage.noSkills": "Aucune compétence privée pour l'instant. Un plugin d'une marketplace peut en apporter.",
+  "settings.threadsLocation.title": "Emplacement des fils",
+  "settings.threadsLocation.subtitle": "Où se trouvent les fils et les dossiers. Un seul endroit à la fois : l'en-tête de la conversation ou la barre latérale gauche. S'applique à cet appareil seulement.",
+  "settings.threadsLocation.aria": "Emplacement des fils",
+  "settings.threadsLocation.header": "Dans l'en-tête de la conversation",
+  "settings.threadsLocation.sidebar": "Dans la barre latérale"
 }
