@@ -1132,6 +1132,22 @@ the bot-wide action. Tests: `src/lib/sidebar-hidden*.test.ts`,
 `PersonConnectionsSection.test.ts`,
 `src/state/person-panel.reducer.test.ts`.
 
+## Thread mode is on by default
+
+Thread mode (Settings > Appearance > Show threads: the thread picker in the
+chat header, thread lists and "new thread" controls, and nothing under a bot
+row when it is off) is ON for a person who never set it (JC, 2026-10-08).
+The preference is the renderer's `omb-show-threads` in localStorage
+(`src/lib/thread-preferences.ts`, `SHOW_THREADS_DEFAULT`, covered by
+`src/lib/thread-preferences.test.ts`); on an organization server it travels
+as a synced key (`shared/user-preferences.ts`, `/api/me/preferences`), where
+an absent key means unset. The server holds no default of its own, so the
+renderer fallback is the single source of truth. The switch writes "1" or "0";
+unset (key missing, storage unreadable, no storage) is on, any stored value
+other than "1" keeps reading as off, so nobody who turned it off is moved. Do
+not seed the key at first run or in onboarding; leave it unset. The phone
+apps keep their own fallback (`ios/`).
+
 ## Sidebar sections are personal
 
 On an organization server a sidebar section is one person's folder and
