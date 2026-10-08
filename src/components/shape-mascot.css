@@ -1,18 +1,11 @@
-/* The mascot shapes (ShapeMascot.tsx) and Trombi as an avatar:
-   a slow breath, a blink every few seconds, a bounce while working. */
+/* The mascot shapes (ShapeMascot.tsx) and Trombi as an avatar. The shapes'
+   breath, blink and gaze run in shape-engine.ts; CSS only adds the bounce
+   while working. */
 
-.shape-mascot-live .shape-body {
+.shape-mascot-live.shape-mood-working .shape-body {
   transform-box: fill-box;
   transform-origin: 50% 100%;
-  animation: shape-breathe 3.4s ease-in-out infinite;
-}
-.shape-mascot-live.shape-mood-working .shape-body {
   animation: shape-bounce 0.9s ease-in-out infinite;
-}
-.shape-mascot-live .shape-eye {
-  transform-box: fill-box;
-  transform-origin: 50% 50%;
-  animation: shape-blink 4.2s ease-in-out infinite;
 }
 
 /* Trombi's Retro 98 skin, over his own drawing (the others paint him: skin-fx/trombi-skins.tsx) */
@@ -20,23 +13,14 @@
   filter: grayscale(0.35) contrast(1.15);
 }
 
-@keyframes shape-breathe {
-  0%, 100% { transform: scale(1, 1); }
-  50% { transform: scale(1.02, 0.98); }
-}
 @keyframes shape-bounce {
   0%, 100% { transform: translateY(0) scale(1, 1); }
   45% { transform: translateY(-6%) scale(0.98, 1.03); }
   70% { transform: translateY(0) scale(1.04, 0.96); }
 }
-@keyframes shape-blink {
-  0%, 92%, 100% { transform: scaleY(1); }
-  95% { transform: scaleY(0.1); }
-}
 
 @media (prefers-reduced-motion: reduce) {
-  .shape-mascot-live .shape-body,
-  .shape-mascot-live .shape-eye {
+  .shape-mascot-live .shape-body {
     animation: none;
   }
 }

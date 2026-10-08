@@ -17,8 +17,10 @@ import { fxPalette } from "./skin-fx";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const css = readFileSync(join(here, "skin-fx.css"), "utf8");
+/** The eyes a shape's fill cuts out: its outline's closed subpaths after the body's own. */
+const eyeCuts = (html: string) => (/class="shape-fill" d="([^"]+)" fill-rule="evenodd"/.exec(html)?.[1] ?? "").split("M").filter(Boolean).slice(1);
 const shape = (skin: string, size: number, extra: Record<string, unknown> = {}) =>
-  renderToStaticMarkup(createElement(BotAvatar, { bot: { color: "blue", mascotLook: { character: "shape", shape: "star", skins: { shape: skin } } } as never, size, ...extra }));
+  renderToStaticMarkup(createElement(BotAvatar, { bot: { color: "blue", mascotLook: { character: "shape", shape: "hexagon", skins: { shape: skin } } } as never, size, ...extra }));
 const trombi = (skin: string, size: number, extra: Record<string, unknown> = {}) =>
   renderToStaticMarkup(createElement(BotAvatar, { bot: { color: "blue", mascotLook: { character: "trombi", skins: { trombi: skin } } } as never, size, ...extra }));
 
@@ -30,21 +32,22 @@ describe("premium skins render at every size", () => {
       expect(big).toContain(`data-skin-tier="${SHAPE_SKIN_TIER[skin]}"`);
       expect(big).toContain('data-fx="full"');
       expect(big).toContain("skin-fx-live");
-      expect((big.match(/class="shape-eye"/g) ?? []).length).toBe(2);
+      expect(eyeCuts(big)).toHaveLength(2);
       const small = shape(skin, 24);
       expect(small).toContain('data-fx="static"');
       expect(small).not.toContain("skin-fx-live");
       expect(small).not.toContain("<filter");
       expect(small).not.toMatch(/class="fx-(boil|current|pulse|ember|heat|twinkle|glint)/);
-      expect((small.match(/class="shape-eye"/g) ?? []).length).toBe(2);
+      expect(eyeCuts(small)).toHaveLength(2);
       // a thumbnail (not animated) is still too
       expect(shape(skin, 112, { animated: false })).toContain('data-fx="static"');
     }
   });
 
-  it("keeps the eyes identical on every skin: same ovals, same place", () => {
-    const eyes = (skin: string) => [...shape(skin, 60, { animated: false }).matchAll(/<ellipse class="shape-eye" cx="([\d.-]+)" cy="([\d.-]+)" rx="([\d.]+)" ry="([\d.]+)"/g)].map((m) => m.slice(1).join(","));
+  it("keeps the eyes identical on every skin: same cut-outs, same place", () => {
+    const eyes = (skin: string) => eyeCuts(shape(skin, 60, { animated: false }));
     const plain = eyes("plain");
+    expect(plain).toHaveLength(2);
     for (const skin of SHAPE_SKINS) expect(eyes(skin), skin).toEqual(plain);
   });
 
@@ -167,8 +170,8 @@ describe("the holographic foil glides without a seam", () => {
   });
 
   it("renders the same markup twice (stable ids and classes, nothing that remounts the foil)", () => {
-    const a = renderToStaticMarkup(createElement(ShapeMascot, { shape: "star", skin: "holo", color: "blue", size: 112 }));
-    const b = renderToStaticMarkup(createElement(ShapeMascot, { shape: "star", skin: "holo", color: "blue", size: 112 }));
+    const a = renderToStaticMarkup(createElement(ShapeMascot, { shape: "hexagon", skin: "holo", color: "blue", size: 112 }));
+    const b = renderToStaticMarkup(createElement(ShapeMascot, { shape: "hexagon", skin: "holo", color: "blue", size: 112 }));
     expect(a).toBe(b);
     expect(a).toContain('class="fx-foil-diag"');
     expect(a).toContain('class="fx-foil-rev"');
@@ -176,7 +179,7 @@ describe("the holographic foil glides without a seam", () => {
 });
 
 describe("no layer edges and no flash", () => {
-  const appShape = (skin: (typeof SHAPE_SKINS)[number], size = 112) => renderToStaticMarkup(createElement(ShapeMascot, { shape: "star", skin, color: "blue", size }));
+  const appShape = (skin: (typeof SHAPE_SKINS)[number], size = 112) => renderToStaticMarkup(createElement(ShapeMascot, { shape: "hexagon", skin, color: "blue", size }));
   const keyframe = (name: string) => css.slice(css.indexOf(`@keyframes ${name} {`), css.indexOf("}\n}", css.indexOf(`@keyframes ${name} {`)));
 
   it("never masks a moving rectangle: the iridescent rims are the outline stroked in the foil", () => {
