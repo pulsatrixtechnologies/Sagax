@@ -1219,6 +1219,13 @@ A failed automation still dots the closed account row. The guided tour's
 `tools` anchor sits on the places stack, or on the foot when that stack is
 empty. Tests: `SidebarProfileMenu.test.ts`, `Sidebar.header.test.ts`.
 
+The guided tour (`GuidedTour.tsx`) never starts by itself: not after the
+welcome flow, not on a new bot, not per version. It runs only when opened on
+purpose (Settings > General > App tour sets `tourOpen`) or when a tour the
+person had already begun is resumed after a reload (`tourInProgress`). The
+first-conversation spotlights (`FirstConversationTour.tsx`) are not mounted
+for the same reason. Tests: `GuidedTour.test.ts`, `guided-tour.test.ts`.
+
 ## Computer tab and Local VM on an organization server
 
 The Computer tab (`src/components/computer/OrgComputerTab.tsx`) draws the

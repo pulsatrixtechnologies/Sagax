@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { EMPTY_ONBOARDING } from "./onboarding";
-import { ANCHOR_EFFECTS, currentStep, stepNumber, TOUR_STEPS, withTourFinished, withTourReset } from "./guided-tour";
+import { ANCHOR_EFFECTS, currentStep, stepNumber, TOUR_STEPS, tourInProgress, withTourFinished, withTourReset } from "./guided-tour";
 
 const withDone = (ids: string[]) => ({ ...EMPTY_ONBOARDING, hintsSeen: ids });
 const step = (id: string) => TOUR_STEPS.find((s) => s.id === id)!;
@@ -16,6 +16,14 @@ describe("guided tour", () => {
     expect(currentStep(withDone(["tour.composer", "tour.model"]))?.id).toBe("tour.computer");
     expect(currentStep(withDone(TOUR_STEPS.map((s) => s.id)))).toBeNull();
     expect(currentStep(withDone(["spot.composer"]))?.id).toBe("tour.composer");
+  });
+
+  it("counts a tour as in progress only once a step is done and not all of them", () => {
+    expect(tourInProgress(undefined)).toBe(false);
+    expect(tourInProgress(withDone([]))).toBe(false);
+    expect(tourInProgress(withDone(["spot.composer"]))).toBe(false);
+    expect(tourInProgress(withDone(["tour.composer"]))).toBe(true);
+    expect(tourInProgress(withDone(TOUR_STEPS.map((s) => s.id)))).toBe(false);
   });
 
   it("numbers steps without counting the closing card", () => {
