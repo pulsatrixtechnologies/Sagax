@@ -14,6 +14,9 @@ import { isRoutineProblemRun } from "../shared/routines.ts";
 import { zonedParts, zonedTimeToUtc } from "../shared/zoned-time.ts";
 import { ROUTINE_PARTS, type PartPair, type RoutinePart } from "./package-parts.ts";
 
+/** A driver stop reason that is a code, not a sentence (rpc_error, auth_required). */
+const ROUTINE_STOP_CODE = /^[a-z][a-z0-9_]*$/;
+
 export interface RoutineIntervalWindow {
   start: string;
   end: string;
@@ -1880,10 +1883,14 @@ export class RoutineManager {
       if (event.cost != null) run.cost = (run.cost ?? 0) + event.cost;
       if (event.denials?.length) run.denials = [...new Set([...(run.denials ?? []), ...event.denials])];
       if (!event.ok) {
-        const genericStopReason = event.stopReason === "error" || event.stopReason === "tool_error";
+        // A stop reason that is a driver's code (rpc_error, auth_required,
+        // error, tool_error...) says nothing to the person: the engine's own
+        // words from runtime.error (what refused and what to do) win over
+        // it. A stop reason in words still stands as given.
+        const codeStopReason = !event.stopReason || ROUTINE_STOP_CODE.test(event.stopReason);
         this.failRun(
           run,
-          (genericStopReason ? run.error : undefined) ??
+          (codeStopReason ? run.error : undefined) ??
             event.stopReason ??
             run.error ??
             "The bot did not complete this run",

@@ -2429,6 +2429,12 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
               // not the process's: the child that reported it is healthy, so it
               // stays pooled and the retry after a fix starts warm.
               const accountError = isAccountError(code);
+              // The server log keeps the RPC failure itself (its JSON-RPC
+              // code, the classified cause, the method and the vendor's
+              // words, redacted): a turn that ends in rpc_error must never
+              // leave nothing between its [omb-turn] line and the next one.
+              const rpcCode = (e as any)?.code;
+              console.error(`[acp] ${support.displayName} turn failed: rpc ${typeof rpcCode === "number" || typeof rpcCode === "string" ? rpcCode : "none"}${code ? ` (${code})` : ""}: ${redactSecretsInText(message).slice(0, 400)}`);
               const failure = classifyError({ text: message });
               const transientStartup = failure.transient || (failure.reason === "unknown" && code === "upstream_outage");
               const denied = /\b(?:(?:permission|access) denied|(?:approval|permission) (?:required|denied|rejected)|requires? (?:approval|permission)|policy (?:restriction|violation)|(?:blocked|denied|restricted) by (?:the )?policy)\b/i.test(message);

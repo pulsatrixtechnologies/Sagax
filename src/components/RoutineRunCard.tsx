@@ -1,7 +1,7 @@
 import { ArrowRight, Loader2 } from "lucide-react";
 
 import { cn } from "@/lib/cn";
-import { routineDateTime } from "@/lib/routine-display";
+import { routineDateTime, routineRunError } from "@/lib/routine-display";
 import { t } from "@/lib/i18n";
 import type { RoutineRunCardData } from "../../shared/routine-run";
 import type { Message } from "@/state/store";
@@ -78,8 +78,8 @@ export function RoutineRunCard({
       : COPY[run.status];
   const detail = compactDetail(
     run.status === "failed" || run.status === "missed"
-      ? (run.error ?? run.summary)
-      : (run.summary ?? run.error),
+      ? (routineRunError(run.error) ?? run.summary)
+      : (run.summary ?? routineRunError(run.error)),
   );
   const actionLabel = run.goalStatus === "needs-input" ? "Review" : "Open run";
 

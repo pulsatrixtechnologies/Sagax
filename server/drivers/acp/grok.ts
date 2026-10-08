@@ -9,11 +9,11 @@ import { dirname, join, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { parse as parseYaml } from "yaml";
 
-import type { ModelCatalog, TurnAccessInput } from "../../contracts.ts";
+import type { ModelCatalog, ProviderErrorCode, TurnAccessInput } from "../../contracts.ts";
 import { harnessHome, splitCliString } from "../../env-path.ts";
 import type { DeviceSignIn } from "../device-auth.ts";
 import { decodeInjectId, hostApiKey, localHost, mergeLocalInject } from "../local-inject.ts";
-import { createAcpDriver, type AcpSupport } from "./core.ts";
+import { createAcpDriver, type AccountErrorCode, type AcpSupport } from "./core.ts";
 import { grokHostToolArgs, grokOrgAgentProfile } from "../host-tools.ts";
 import { allowsTool, canUseMcpServer, narrowsNativeTools, parseToolScope } from "../../../shared/tool-scope.ts";
 
@@ -555,6 +555,43 @@ function grokPinsModelInProfile(turn: { withholdHostTools?: boolean; toolScope?:
   return turn.withholdHostTools === true || narrowsNativeTools(turn.toolScope);
 }
 
+/** Grok Build reports an account refusal from xAI as a JSON-RPC internal
+ * error whose data carries the HTTP status and xAI's words. Recorded on the
+ * GOX organization server, grok 1.0.50, 2026-10-08:
+ * `{code: -32603, message: "Internal error", data: {message: "API error
+ * (status 402 Payment Required): Grok Build usage balance exhausted",
+ * http_status: 402}}`. Without this the turn ended as a bare rpc_error. */
+export function classifyGrokError(error: unknown): ProviderErrorCode | undefined {
+  const value = error && typeof error === "object" ? error as Record<string, unknown> : {};
+  const data = value.data && typeof value.data === "object" && !Array.isArray(value.data)
+    ? value.data as Record<string, unknown>
+    : {};
+  const status = typeof data.http_status === "number" ? data.http_status : undefined;
+  const text = [value.message, data.message, data.details].filter((part) => typeof part === "string").join(" ");
+  if (status === 402 || /\b402\b|payment required|(?:usage |credit )?balance (?:is )?(?:exhausted|used up|depleted)|out of credits?|insufficient (?:funds|balance|credits?)/iu.test(text)) {
+    return "insufficient_funds";
+  }
+  if (status === 401 || /\b401\b|unauthori[sz]ed|invalid api key|authentication (?:failed|required)/iu.test(text)) return "invalid_credentials";
+  if (status === 403 && /\bsubscription\b/iu.test(text)) return "inactive_subscription";
+  if (/\bquota\b|usage limit|(?:hourly|daily|weekly|monthly) limit/iu.test(text)) return "quota_or_region_restriction";
+  return undefined;
+}
+
+/** Plain words for a Grok account failure: what refused, and what to do. */
+export function describeGrokAccountError(code: AccountErrorCode, model?: string): string {
+  const which = model ? ` (model ${model})` : "";
+  switch (code) {
+    case "insufficient_funds":
+      return `Grok refused this turn${which}: the usage balance of the Grok account it runs on is used up (xAI answered 402 Payment Required). Add credit to that Grok account at grok.com, or choose another model for this bot.`;
+    case "invalid_credentials":
+      return `Grok refused this turn${which}: the Grok sign-in or xAI key it runs on was rejected. Sign in to Grok again in engine setup, or replace the xAI key.`;
+    case "inactive_subscription":
+      return `Grok refused this turn${which}: the Grok account it runs on has no active subscription. Renew it at grok.com, or choose another model for this bot.`;
+    case "quota_or_region_restriction":
+      return `Grok refused this turn${which}: the Grok account it runs on reached its usage limit. Wait for it to reset, or choose another model for this bot.`;
+  }
+}
+
 const support: AcpSupport = {
   driverKind: "grokAgent",
   displayName: "Grok",
@@ -583,6 +620,8 @@ const support: AcpSupport = {
   withholdsHostTools: true,
   defaultCli: "grok",
   nativeSource: "grok.acp",
+  classifyError: classifyGrokError,
+  describeAccountError: describeGrokAccountError,
   loginNote: "Grok is not signed in to your grok.com account — choose Sign in to Grok in engine setup",
 
   // No Windows one-liner: the installer is a POSIX shell script, and offering
