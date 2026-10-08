@@ -1,7 +1,7 @@
 // The desktop mascot's hover controls and its click, as pure rules (tested in
 // hover-controls.test.ts): when the small row of round controls beside the
 // character shows (quick chat, voice, activity, like ChatGPT Pets), and what
-// a plain click on the character does (it opens the call).
+// a plain click on the character does (it opens the chat balloon, never a call).
 
 /** The controls show this long after the pointer comes over the character (a pointer passing by shows nothing). */
 export const HOVER_IN_MS = 150;
@@ -43,11 +43,9 @@ export const DRAG_SLOP = 4;
 export const isDrag = (dx: number, dy: number, slop = DRAG_SLOP) => Math.hypot(dx, dy) >= slop;
 
 export type MascotClick =
-  /** start the call with this bot (the app's call) */
-  | "call"
   /** cut the bot's voice (a click while it speaks, as in the app's call) */
   | "interrupt"
-  /** open or close the chat bubble (no voice mode for this bot) */
+  /** open or close the chat bubble */
   | "chat"
   /** the second click of a double click: the app on this bot's thread */
   | "open"
@@ -57,20 +55,19 @@ export type MascotClick =
 /**
  * What a press released on the character does. A drag moves it and a long
  * press opens the menu (slice 1); a plain click on the idle character opens
- * the call when voice mode serves its bot, else the chat bubble; on a call a
- * click only cuts the bot's voice while it speaks and never ends anything
+ * the chat bubble and never starts a call (the hover call button and the
+ * hotkey do); on a call a click only cuts the bot's voice while it speaks and never ends anything
  * (the pill's red button does). A double click still opens the app.
  */
-export function mascotClick({ moved, menu, onCall, botAudible, canCall, gesture }: {
+export function mascotClick({ moved, menu, onCall, botAudible, gesture }: {
   moved: boolean;
   menu: boolean;
   onCall: boolean;
   botAudible: boolean;
-  canCall: boolean;
   gesture: "single" | "double";
 }): MascotClick {
   if (moved || menu) return "none";
   if (onCall) return botAudible ? "interrupt" : gesture === "double" ? "open" : "none";
   if (gesture === "double") return "open";
-  return canCall ? "call" : "chat";
+  return "chat";
 }

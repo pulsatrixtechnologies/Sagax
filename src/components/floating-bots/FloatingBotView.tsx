@@ -720,13 +720,12 @@ export function FloatingBotView({ snapshot: given, onEvent, mover, interactive, 
       dispatch({ type: "drag", now: now(), on: false });
     } else if (!start.menu) {
       setMenuOpen(false);
-      // a plain click on the idle character opens the call (ChatGPT Pets); on a call it only
+      // a plain click on the idle character opens the chat balloon, never a call; on a call it only
       // cuts the bot's voice while it speaks; a second click soon after opens the app
       const gesture = clickGesture(lastClick.current, now());
       lastClick.current = gesture === "double" ? null : now();
-      const click = mascotClick({ moved: false, menu: false, onCall: Boolean(snapshot.call), botAudible: Boolean(snapshot.call?.botAudible), canCall: Boolean(snapshot.hints.call), gesture });
-      if (click === "call") onEvent({ type: "call", action: "start" });
-      else if (click === "interrupt") onEvent({ type: "call", action: "interrupt" });
+      const click = mascotClick({ moved: false, menu: false, onCall: Boolean(snapshot.call), botAudible: Boolean(snapshot.call?.botAudible), gesture });
+      if (click === "interrupt") onEvent({ type: "call", action: "interrupt" });
       else if (click === "chat" || click === "open") for (const event of eventsForClick(gesture)) onEvent(event);
     }
     if (!hovering.current) interactive?.(false);

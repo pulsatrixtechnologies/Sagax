@@ -158,8 +158,9 @@ any screen, right into a corner: it reacts beside itself while its bot works,
 shows replies in a chat bubble that opens on the side with room (with the
 app's composer: clip, model chip, voice button), and takes your messages.
 Right-click it to talk, call, open it in the app, switch it to another bot,
-play a move, or hide it for an hour. Click it to start a voice call: live
-captions and the call's status show beside it. Hover it for quick chat, voice
+play a move, or hide it for an hour. Click it to open its chat balloon; the call
+starts from the hover call button or the hotkey, and live captions and the
+call's status show beside it. Hover it for quick chat, voice
 and an activity tray (Allow or Stop what its bot is doing), or press
 Control+Option+Space anywhere to call, mute, or hold to talk.
 Characters: **Owl**, **Shapes** (thirteen shapes) and **Trombi**, the paperclip.
