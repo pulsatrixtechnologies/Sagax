@@ -414,6 +414,12 @@ export const BoatAgentDriver: ProviderDriver<BoatAgentConfig> = {
           flushAssistantText();
           heldAsks.delete(threadId);
           active.delete(threadId);
+          // A run the person stopped can report itself cancelled with a
+          // message. That is the stop, not an error row.
+          if (cancelled) {
+            emit({ ...base(threadId, turnId), type: "turn.completed", ok: false, stopReason: "interrupted", cost: null });
+            return;
+          }
           emit({ ...base(threadId, turnId), type: "runtime.error", message: (e as Error).message });
           emit({ ...base(threadId, turnId), type: "turn.completed", ok: false, stopReason: "error", cost: null });
         }

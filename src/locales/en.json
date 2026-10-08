@@ -4428,7 +4428,18 @@
   "activity.steer.sent": "Sent to the task",
   "botPanel.activity.parallel": "Parallel task",
   "composer.placeholder.busyChoice": "{name} is working · Enter asks what to do with your message",
-  "botPanel.live.idle": "Nothing running.",
+  "botPanel.code.pullRequests": "Pull requests",
+  "botPanel.code.branches": "Branches",
+  "botPanel.code.commits": "Commits",
+  "botPanel.code.pr.opened": "Opened",
+  "botPanel.code.pr.merged": "Merged",
+  "botPanel.code.pr.closed": "Closed",
+  "botPanel.code.pr.updated": "Updated",
+  "botPanel.code.pr.numbered": "Pull request #{number}",
+  "botPanel.code.pr.new": "New pull request",
+  "botPanel.code.pushed": "Pushed",
+  "botPanel.code.notPushed": "Not pushed",
+  "botPanel.code.openAria": "Open {name} in the browser",
   "botPanel.history.open": "Open history",
   "botPanel.history.title": "History",
   "botPanel.history.statusAria": "Status",
@@ -5446,5 +5457,7 @@
   "approvalMode.simple.askHint": "The bot stops and asks before it acts.",
   "approvalMode.simple.decide": "Decide for me",
   "approvalMode.simple.decideHint": "The bot acts, and checks in when unsure.",
-  "approvalMode.simple.custom": "A custom level is saved. It stays until you choose one of these."
+  "approvalMode.simple.custom": "A custom level is saved. It stays until you choose one of these.",
+  "approvalMode.simple.customChip": "Custom level",
+  "approvalMode.simple.unset": "No level chosen yet. The bot uses this default until you pick one."
 }

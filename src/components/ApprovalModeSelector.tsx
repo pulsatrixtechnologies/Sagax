@@ -83,10 +83,11 @@ export function approvalModeSelectionRequiresLocalDesktop(
   return currentMode === "custom" && !trustedModesAvailable;
 }
 
-/** How much this bot may do on its own. Advanced is an icon beside the
- * message field that opens the full menu. Simple is Ask and Decide, on their
- * own row, so the message field stays a normal chat bar. `wide` stacks the
- * same two choices on bot settings. */
+/** How much this bot may do on its own. In the composer it is an icon
+ * beside the message field that opens the full menu, the same in Simple and
+ * Advanced mode. `wide` is the bot settings control: the full menu in
+ * Advanced, the two stacked choices ("Ask me first", "Decide for me") in
+ * Simple. */
 export function ApprovalModeSelector({
   approvalMode,
   autoApprove,
@@ -179,43 +180,38 @@ export function ApprovalModeSelector({
       {t("commandAllowlist.title")}
     </button>
   );
-  // Simple offers two choices and leaves any other saved level untouched
-  // until the person picks one of them. Decide is absent when this engine
-  // has no auto mode (hiding, not a disabled row).
-  if (!advanced) {
+  // Bot settings in Simple offer two choices and leave any other saved level
+  // untouched until the person picks one of them. Decide is absent when this
+  // engine has no auto mode (hiding, not a disabled row). The composer always
+  // shows the icon and the full menu below, whatever the mode.
+  if (!advanced && wide) {
     const canDecide = visibleOptions.some((option) => option.mode === "auto");
     const known = mode === "ask" || (mode === "auto" && canDecide);
+    const choices = [
+      { mode: "ask" as const, label: t("approvalMode.simple.ask"), hint: t("approvalMode.simple.askHint") },
+      ...(canDecide ? [{ mode: "auto" as const, label: t("approvalMode.simple.decide"), hint: t("approvalMode.simple.decideHint") }] : []),
+    ];
     const choiceClass = cn(
       "flex min-w-0 flex-1 flex-col rounded-lg border px-2.5 py-1.5 text-left",
       "border-hairline/40 bg-inset hover:bg-raised disabled:cursor-not-allowed disabled:opacity-45",
     );
     return (
       <div data-approval-simple className="flex w-full min-w-0 flex-col gap-1">
-        <div className={cn("flex w-full min-w-0 gap-1", wide && "flex-col")}>
-          <button
-            type="button"
-            data-approval-choice="ask"
-            aria-pressed={known && mode === "ask"}
-            disabled={disabled}
-            onClick={() => { if (!disabled) onSelect("ask"); }}
-            className={cn(choiceClass, known && mode === "ask" && "border-accent/40 bg-accent/10")}
-          >
-            <span className="text-[13px] leading-[18px] text-ink">{t("approvalMode.simple.ask")}</span>
-            <span className="text-[11.5px] leading-4 text-ink-tertiary">{t("approvalMode.simple.askHint")}</span>
-          </button>
-          {canDecide && (
+        <div className="flex w-full min-w-0 flex-col gap-1">
+          {choices.map((choice) => (
             <button
+              key={choice.mode}
               type="button"
-              data-approval-choice="auto"
-              aria-pressed={known && mode === "auto"}
+              data-approval-choice={choice.mode}
+              aria-pressed={known && mode === choice.mode}
               disabled={disabled}
-              onClick={() => { if (!disabled) onSelect("auto"); }}
-              className={cn(choiceClass, known && mode === "auto" && "border-accent/40 bg-accent/10")}
+              onClick={() => { if (!disabled) onSelect(choice.mode); }}
+              className={cn(choiceClass, known && mode === choice.mode && "border-accent/40 bg-accent/10")}
             >
-              <span className="text-[13px] leading-[18px] text-ink">{t("approvalMode.simple.decide")}</span>
-              <span className="text-[11.5px] leading-4 text-ink-tertiary">{t("approvalMode.simple.decideHint")}</span>
+              <span className="text-[13px] leading-[18px] text-ink">{choice.label}</span>
+              <span className="text-[11.5px] leading-4 text-ink-tertiary">{choice.hint}</span>
             </button>
-          )}
+          ))}
         </div>
         {!known && <p data-approval-custom className="text-[12px] leading-4 text-ink-secondary">{t("approvalMode.simple.custom")}</p>}
       </div>

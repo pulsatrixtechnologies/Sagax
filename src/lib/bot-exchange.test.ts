@@ -3,6 +3,8 @@ import { describe, expect, it } from "vitest";
 import {
   chipParty,
   collapseBotExchanges,
+  exchangeBody,
+  exchangeSheetRow,
   startsNewStretch,
   transcriptDateLabel,
   type ExchangeParty,
@@ -125,6 +127,36 @@ describe("collapseBotExchanges", () => {
     expect(left[1].message.id).toBe("tail");
   });
 
+  // The reported transcript: a teammate's request, then only tool calls
+  // (search_tool, use_tool) stamped with that request. They were drawn as
+  // eight lines by Cryptic.
+  it("never makes a tool call a line of the exchange, whatever its request", () => {
+    const peer = line("p", "user", NOTE, 1, { peerAsk: { botId: "cry", name: "Cryptic" } });
+    const tool = (id: string, name: string, at: number, ok?: boolean) =>
+      ({ id, role: "bot", kind: "activity", at, requestMessageId: "p", tool: { name, ...(ok === undefined ? {} : { ok }) } }) as Message;
+    const steps = [tool("t1", "search_tool", 2, true), tool("t2", "use_tool", 3), tool("t3", "use_tool", 4, false)];
+    const items = collapseBotExchanges([peer, ...steps], { selfBotId: "un" });
+    expect(items.map((item) => item.kind)).toEqual(["exchange", "message", "message", "message"]);
+    if (items[0]?.kind !== "exchange") throw new Error("expected a run");
+    expect(items[0].run.messages.map((message) => message.id)).toEqual(["p"]);
+
+    const reply = line("r", "bot", "on it", 9, { requestMessageId: "p" });
+    const absorbed = collapseBotExchanges([peer, steps[0]!, steps[1]!, reply], { selfBotId: "un" });
+    expect(absorbed).toHaveLength(1);
+    if (absorbed[0]?.kind !== "exchange") throw new Error("expected a run");
+    expect(absorbed[0].run.messages.map((message) => message.id)).toEqual(["p", "t1", "t2", "r"]);
+    // a failed step stays inline, where the chat's own rules apply
+    expect(collapseBotExchanges([peer, steps[2]!, reply], { selfBotId: "un" }).map((item) => item.kind))
+      .toEqual(["exchange", "message", "exchange"]);
+  });
+
+  it("keeps another bot's tool call out of a pair channel's lines", () => {
+    const ping = line("a", "bot", "ping", 1, { from: unraid });
+    const step = { id: "t", role: "bot", kind: "activity", at: 2, from: cryptic, tool: { name: "use_tool", ok: false } } as Message;
+    expect(collapseBotExchanges([step], { pairChannel: true, members }).map((item) => item.kind)).toEqual(["message"]);
+    expect(collapseBotExchanges([ping, step], { pairChannel: true, members }).map((item) => item.kind)).toEqual(["exchange", "message"]);
+  });
+
   it("resolves a request that sits above the mounted window", () => {
     const peer = line("p", "user", NOTE, 1, { peerAsk: { botId: "cry", name: "Cryptic" } });
     const reply = line("r", "bot", "on it", 2, { requestMessageId: "p" });
@@ -133,6 +165,18 @@ describe("collapseBotExchanges", () => {
     if (items[0]?.kind !== "exchange") throw new Error("expected a run");
     expect(items[0].run.party.name).toBe("Cryptic");
     expect(items[0].run.messages.map((message) => message.id)).toEqual(["r"]);
+  });
+});
+
+describe("the open sheet", () => {
+  const step = { id: "t", role: "bot", kind: "activity", at: 1, tool: { name: "search_tool", ok: true } } as Message;
+
+  it("gives a tool call no words, and shows it only as a chip with Tool calls on", () => {
+    expect(exchangeBody(step)).toBe("");
+    expect(exchangeSheetRow(step, false)).toBeNull();
+    expect(exchangeSheetRow(step, true)).toBe("tool");
+    expect(exchangeSheetRow({ id: "s", role: "bot", kind: "screen", at: 1 } as Message, true)).toBeNull();
+    expect(exchangeSheetRow(line("r", "bot", "on it", 2), false)).toBe("line");
   });
 });
 

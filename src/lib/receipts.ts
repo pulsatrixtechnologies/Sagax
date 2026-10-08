@@ -7,11 +7,20 @@ export function isReceipt(message: { kind: string }): boolean {
   return message.kind === "digest" || message.kind === "compaction";
 }
 
+/** A stop the person asked for, stored by an older build as an error row
+ * ("turn stopped"). The chat hides it, so the preview and the mood must not
+ * read it either. Same test as isTurnStoppedNotice in activity-runs.ts. */
+function isStoppedNotice(message: { kind: string }): boolean {
+  if (message.kind !== "activity") return false;
+  const name = (message as { tool?: { name?: unknown } }).tool?.name;
+  return typeof name === "string" && name.replace(/^error:\s*/, "").trim() === "turn stopped";
+}
+
 /** The newest message that is not a receipt, or undefined. */
 export function lastNonReceipt<T extends { kind: string }>(messages: readonly T[] | undefined): T | undefined {
   if (!messages) return undefined;
   for (let i = messages.length - 1; i >= 0; i -= 1) {
-    if (!isReceipt(messages[i]!)) return messages[i];
+    if (!isReceipt(messages[i]!) && !isStoppedNotice(messages[i]!)) return messages[i];
   }
   return undefined;
 }

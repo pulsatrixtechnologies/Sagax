@@ -872,10 +872,11 @@ export function ModelPicker({
     />
   );
 
+  // The composer chip reads the same in Simple and Advanced, effort included.
   const composerLabel = autoOn ? autoChipLabel(autoRecord) : [
     modelLabel(active, selection.model),
     selectedVariantLabel,
-    !selectedVariantLabel && advanced && selection.effort ? effortLabel(selection.effort) : "",
+    !selectedVariantLabel && selection.effort ? effortLabel(selection.effort) : "",
   ].filter(Boolean).join(" ");
 
   const toggle = () => {

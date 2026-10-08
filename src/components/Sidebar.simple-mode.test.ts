@@ -13,7 +13,7 @@ vi.mock("@/state/store", async (importOriginal) => {
   return { ...original, useStore: () => ({ state: { ...original.initialState, ...fixture.state }, dispatch: fixture.dispatch }) };
 });
 
-import { BotContextMenu, BotListItem, BotThreadList, GroupListItem } from "./Sidebar";
+import { BotContextMenu, BotListItem, GroupListItem } from "./Sidebar";
 import { SidebarBotActivity, sidebarBotActivityTasks } from "./SidebarBotActivity";
 
 const bot: Bot = {
@@ -55,8 +55,8 @@ afterEach(() => { vi.unstubAllGlobals(); });
 
 describe("bot-first sidebar", () => {
   it.each([
-    { enabled: true, density: "comfortable", size: 36, spacing: ["min-h-[54px]", "gap-2", "py-2", "pl-6"] },
-    { enabled: true, density: "compact", size: 28, spacing: ["gap-1.5", "py-1", "pl-6"] },
+    { enabled: true, density: "comfortable", size: 36, spacing: ["min-h-[54px]", "gap-2", "py-2", "pl-2"] },
+    { enabled: true, density: "compact", size: 28, spacing: ["gap-2", "py-1.5", "pl-2"] },
     { enabled: true, density: "icons", size: 36, spacing: ["justify-center", "px-1", "py-1.5"] },
     { enabled: false, density: "comfortable", size: 36, spacing: ["min-h-[54px]", "gap-2", "py-2", "pl-2"] },
     { enabled: false, density: "compact", size: 28, spacing: ["gap-2", "py-1.5", "pl-2"] },
@@ -113,11 +113,26 @@ describe("bot-first sidebar", () => {
     }
   });
 
-  it.each(densities)("keeps selection separate from expansion in %s density", (density) => {
+  it.each(densities)("lists nothing under the bot with threads on in %s density", (density) => {
     fixture.state.selectedId = bot.id;
     const markup = renderToStaticMarkup(createElement(BotListItem, rowProps(density)));
+    // no thread rows, folders, activity rows, "My conversations" heading, or toggle
     expect(markup).not.toContain("data-sidebar-thread-row");
-    if (density !== "icons") expect(markup).toContain('aria-label="Expand Atlas threads" aria-expanded="false"');
+    expect(markup).not.toContain("data-sidebar-folder-row");
+    expect(markup).not.toContain("data-sidebar-activity-row");
+    expect(markup).not.toContain("data-sidebar-bot-activity");
+    expect(markup).not.toContain("data-sidebar-my-threads");
+    expect(markup).not.toContain("My conversations");
+    expect(markup).not.toContain("Idle history");
+    expect(markup).not.toContain("Quiet folder");
+    expect(markup).not.toContain("Atlas threads");
+    // the row itself still says a sibling waits, and that something is unread
+    expect(markup).toContain('data-testid="waiting-dot"');
+    if (density !== "icons") {
+      expect(markup).toContain('aria-current="page"');
+      expect(markup).toContain('aria-label="Unread threads"');
+      expect(markup).toContain('aria-label="New thread"');
+    }
   });
 
   it.each(densities)("hides thread browsing and creation but keeps attention accessible in %s density", (density) => {
@@ -137,16 +152,6 @@ describe("bot-first sidebar", () => {
     expect(markup).toContain('aria-label="Atlas: Finished reply · Unread"');
   });
 
-  it("removes child controls and portals from a retained hidden folder list", () => {
-    const markup = renderToStaticMarkup(createElement(BotThreadList, { bot, selected: true, hidden: true }));
-    expect(markup).toContain('hidden=""');
-    expect(markup).not.toContain("<button");
-    expect(markup).not.toContain("data-sidebar-thread-row");
-    const shown = renderToStaticMarkup(createElement(BotThreadList, { bot, selected: true }));
-    expect(shown).toContain('data-sidebar-folder-row="private-folder"');
-    expect(shown).toContain('data-sidebar-thread-row="idle-history"');
-  });
-
   it("only hides thread/folder creation in the bot context menu", () => {
     const render = () => renderToStaticMarkup(createElement(BotContextMenu, {
       menu: { botId: bot.id, x: 0, y: 0 }, onClose: vi.fn(), onArchive: vi.fn(), onDelete: vi.fn(), onMoveToSection: vi.fn(), onNewFolder: vi.fn(), onRename: vi.fn(),
@@ -163,13 +168,6 @@ describe("bot-first sidebar", () => {
     expect(disabled).not.toContain("New thread");
   });
 
-  it("reveals a matching sole thread when searching a bot", () => {
-    const single = { ...bot, projects: [], tasks: [bot.tasks![0]], unread: false };
-    const markup = renderToStaticMarkup(createElement(BotListItem, {
-      bot: single, density: "comfortable", query: "last selected", onMenu: vi.fn(),
-    }));
-    expect(markup).toContain('data-sidebar-thread-row="last-selected"');
-  });
 
   it("does not change group collaboration histories or creation", () => {
     fixture.showThreads = false;
@@ -204,17 +202,38 @@ describe("group rows line up with bot rows", () => {
   const rowClass = (markup: string, marker: string) => markup.match(new RegExp(`${marker}[^>]*class="([^"]*)"`))?.[1]
     ?? markup.match(new RegExp(`class="([^"]*)"[^>]*${marker}`))?.[1] ?? "";
 
-  it.each([true, false])("uses the bot row inset with showThreads=%s and draws no outline around stacked faces", (showThreads) => {
+  it.each([true, false])("keeps the bot row inset fixed and the room row inset for its chevron with showThreads=%s, no outline around stacked faces", (showThreads) => {
     fixture.showThreads = showThreads;
     fixture.state.bots = [bot, pepper];
     const groupMarkup = renderToStaticMarkup(createElement(GroupListItem, { group: twoBots, density: "comfortable", onMenu: vi.fn() }));
     const botMarkup = renderToStaticMarkup(createElement(BotListItem, { bot: pepper, density: "comfortable", onMenu: vi.fn() }));
-    const inset = showThreads ? "pl-6" : "pl-2";
-    expect(rowClass(groupMarkup, 'data-sidebar-group-row="group"').split(" ")).toContain(inset);
-    expect(rowClass(botMarkup, 'data-sidebar-bot-row="pepper"').split(" ")).toContain(inset);
+    // rooms keep a chevron in thread mode; bot rows never move
+    expect(rowClass(groupMarkup, 'data-sidebar-group-row="group"').split(" ")).toContain(showThreads ? "pl-6" : "pl-2");
+    expect(rowClass(botMarkup, 'data-sidebar-bot-row="pepper"').split(" ")).toContain("pl-2");
+    expect(rowClass(botMarkup, 'data-sidebar-bot-row="pepper"').split(" ")).not.toContain("pl-6");
     // same 36px avatar footprint as the bot row
     expect(groupMarkup).toContain("relative shrink-0 size-9");
     expect(groupMarkup).not.toMatch(/ring-2 ring-panel/);
+  });
+});
+
+describe("bot row does not move with thread mode", () => {
+  const stripButtonPadding = (cls: string) => cls.split(" ").filter((c) => !/pr-\[5\.75rem\]/.test(c)).sort();
+  it.each(["comfortable", "compact", "icons"] as const)("has the same wrapper and avatar classes with threads on and off, %s density", (density) => {
+    const grab = (showThreads: boolean) => {
+      fixture.showThreads = showThreads;
+      let tree: ReactNode;
+      function Capture() { tree = BotListItem({ ...rowProps(density), bot }); return tree; }
+      const markup = renderToStaticMarkup(createElement(Capture));
+      const row = findElement(tree, "data-sidebar-bot-row", bot.id)!;
+      const avatar = markup.match(/<span class="relative flex shrink-0"[^>]*>/)?.[0];
+      return { row: stripButtonPadding(String(row.props.className)), avatar };
+    };
+    const on = grab(true);
+    const off = grab(false);
+    expect(on.row).toEqual(off.row);
+    expect(on.avatar).toBeDefined();
+    expect(on.avatar).toEqual(off.avatar);
   });
 });
 

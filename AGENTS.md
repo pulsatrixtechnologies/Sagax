@@ -334,6 +334,28 @@ launch screen hands this computer's own values over once at join
 (`orgJoin.join({ preferences })`, `takePreferences`). Device-only state
 (drafts, sizes, floating list and positions, mood, voices) never travels.
 
+## Composer: one bar in Simple and Advanced (2026-10-08)
+
+JC's decision: the chat bar is the same in both modes, and it is the
+Advanced one. `src/components/Composer.tsx` reads no interface mode. Keep
+these rules, covered by `src/components/ChatView.controls.test.ts` ("renders
+the same composer row in Simple and Advanced mode"),
+`src/components/ApprovalModeSelector.simple.test.ts` and
+`src/components/ModelPicker.simple.test.ts`:
+
+- One row: paperclip, the approval icon and its full menu (a warning sign for
+  Full access, the command allowlist for an owner or admin), the "where the
+  bot works" chip, the message field, the model chip (effort included), voice
+  and send. No approval chip or cards in Simple.
+- The slash menu lists the same commands in both modes.
+- Guards stay where they are, whatever the mode: the Full access and local
+  Auto warnings, the packaged-desktop rule for Full and Custom, the
+  organization's Full access switch.
+- Simple still hides settings sections, bot panel sections and the model
+  picker's engine controls (`src/lib/interface-visibility.ts`,
+  `ModelPicker.tsx`). Bot settings in Simple keep the two stacked approval
+  choices (`ApprovalModeSelector` with `wide`).
+
 ## Model picker
 
 The model chip (composer and chat header, `src/components/ModelPicker.tsx`)
@@ -463,7 +485,10 @@ chat column under the name chip (`VoiceCallDock`, first in ChatView's banner
 stack: collapsed it keeps its own 48px row, never covering a message;
 Settings or Transcript expand it into a card over the thread that closes on
 Escape or a click outside; hold lives in the settings card; states pinned
-by `VoiceModeBar.layout.test.ts`), when `GET /api/bots/<id>/voice/status` says
+by `VoiceModeBar.layout.test.ts`; on the desktop this pill is the whole call
+UI, no folded row and no full-column stage, restored from 0.4.8 on
+2026-10-08 at JC's request; the iPhone keeps its own call screen and the
+call card in the conversation, under `ios/`), when `GET /api/bots/<id>/voice/status` says
 xAI voice mode serves the person; otherwise a solo Mac keeps the older call
 (macOS dictation helper). Keep these rules, each covered by
 `server/voice-mode.test.ts`, `src/lib/voice-mode/voice-mode.test.ts`,
@@ -1027,17 +1052,34 @@ description is not a line under the label; `IdentitySection` still edits it.
 There are no Name or Label fields in this panel. Details lists Coding,
 Activity, then Routines (`ActivitySection`, `ActivityListModal`,
 `ActivityDetailModal`).
-Coding shows coding jobs only: the server marks an entry `coding` from its
+Coding is code work only: the server marks an entry `coding` from its
 tool calls and folder (`server/activity-coding.ts`: source edits, git
 commit/push/worktree, pull requests, file changes inside a repository;
 never the title, never the bot's own SOUL.md/MEMORY.md or its folder, never
 a sub-agent's request or a heredoc's text quoting git; a sub-agent's own
-calls count like any other). Activity holds everything else plus the
-sub-agents the listed threads started. Both show live work only: running
-(elapsed time, current step, Stop when `canStop`), and an entry seen
-running that settled reads Finished for 5 s, fades and leaves
-(`LiveActivity`); with nothing running a section is its header and a quiet
-line. The section title opens the history (`ActivityListModal`: coding or
+calls count like any other). A coding entry carries `code`
+(`server/activity-code-work.ts`): its folder's repository root, checked-out
+branch and origin (read from `.git` on the server, credentials stripped;
+a folder on the person's computer is not read), and the pull requests,
+branches and commits its own successful git, gh and GitHub tool calls
+produced, read off the calls and their output (`gh pr create` prints the
+address, `git commit` prints `[branch sha]`, `git push` prints `To <remote>`).
+There is no pull request record and nothing asks GitHub: a pull request
+shows what the bot did to it (opened, merged, closed, updated), not its
+live state. The section lists running coding jobs with their repository
+and branch, then the pull requests, branches and commits of the window's
+coding jobs (`codingWork`, 5 of each, newest first), each opening in the
+system browser (`openExternalLink`). Activity is parallel work only
+(`isParallelWork`): routine runs, work handed over, sub-agents, parallel
+tasks and jobs the bot opened on itself; a conversation's own running turn
+is the chat, never listed. Running entries show elapsed time, current step
+and Stop when `canStop`; an entry seen running that settled reads Finished
+for 5 s, fades and leaves (`LiveActivity`). A section with nothing to show
+is not drawn, title included (`panelSections`); with both hidden, one quiet
+History row takes their place and opens the history. A first list load that
+failed is one quiet line ("Couldn't load this bot's activity."); a later
+failed refresh keeps the last list. The section title opens the history
+(`ActivityListModal`: coding or
 other, newest first, running/finished/failed, search). A thread with no user turn is not
 listed. Both read
 `GET /api/bots/:id/activity` and `/activity/item`
@@ -1051,7 +1093,8 @@ in another person's private thread there, with its actions, and nothing else
 of that thread. The owner's notification of such a run names no thread, only
 `routineRunId` (`routineAccessNotifications`), and opens the run there
 (`openBotActivity`); the run's person keeps the thread link. Tests:
-`server/routes/bot-activity.test.ts`, `server/activity-coding.test.ts`, `ActivitySection.test.ts`,
+`server/routes/bot-activity.test.ts`, `server/activity-coding.test.ts`,
+`server/activity-code-work.test.ts`, `ActivitySection.test.ts`,
 `InlineEditableText.test.ts`, `BotSettingsDialog.caption.test.ts`,
 `server/org-routines.e2e.test.ts` (owner pays).
 
@@ -1152,6 +1195,42 @@ shares nothing (JC, 2026-10-02). Keep these rules, covered by
   `botSharesMigratedAt` in `section-channels.json`); the records stay and
   rooms keep reading them. `PUT /api/org/sections/:id/members|bots` answers
   410 `sections_are_personal`.
+
+## Which bots a bot reaches (organization server, 2026-10-06)
+
+Owner report: a member's bots kept naming a bot ("Cryptic") the member
+could not see. Why: once sections became personal, `bot.section` stayed
+empty for everyone, so the section rule of `reachablePeers`
+(`server/peer-roster.ts`) put every person's bots in one "General" team.
+Each bot's roster, `list_bots`, @mentions, `ask_bot`, `delegate_bot` and
+peer threads reached the whole organization. Keep these rules, covered by
+`server/peer-scope.test.ts`, `server/incidents.test.ts` and S3-12 in
+`server/org-sharing.e2e.test.ts`:
+
+- On an organization server a bot reaches only its owner's bots and the
+  bots shared with that owner (any level, `botLevel`), the bots the owner
+  sees in the sidebar (`orgPeerInScope` in `server/peer-scope.ts`,
+  installed by index.ts through `setPeerScope`). It is the owner's, not the
+  speaker's, and it is not symmetric: sharing a bot with Bob opens it to
+  Bob's bots, never Bob's bots to it.
+- Every peer path checks it: `canReachPeer` (roster, `list_bots`, names,
+  results withheld when access changed), the direct routes next to their
+  `canAccessTeam` check, team setup's bot list and the delegation dispatch
+  (`dropIfUnreachable`). A new peer route checks `peerInScope` too.
+- Rooms keep their own rule (`roomHandoffProblem`): their members were
+  added by people, so bots of different owners in one room still work
+  together there. That holds only for a room the sender is a member of.
+  `coordinate_bots` (what a chat turn uses, since it answers `ask_bot` and
+  `delegate_bot` with 409) into another bot's direct thread or into a room
+  the sender is not in needs every reader of the destination in scope, and
+  `list_room_targets` lists such a room only on the same condition.
+- A failure report goes to a Primary Bot of the failing bot's own owner
+  (`chiefForBot` with `primaryBotSameOwner`), never the first Primary Bot
+  of the organization.
+- `orgPeerInScope` refuses an empty owner, but index.ts never passes one:
+  `effectiveBotOwner` gives a bot with no recorded owner to the local
+  operator, so such a bot is in the operator's scope, not shut out.
+- A solo server sets no scope and is unchanged.
 
 ## Account menu
 

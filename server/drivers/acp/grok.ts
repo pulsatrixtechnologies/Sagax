@@ -338,6 +338,11 @@ export function grokToolScopeProfile(scope: unknown, init: unknown, inherited?: 
   };
 }
 
+/** Turns whose session profile names the model, so set_model is never sent. */
+function grokPinsModelInProfile(turn: { withholdHostTools?: boolean; toolScope?: unknown }): boolean {
+  return turn.withholdHostTools === true || narrowsNativeTools(turn.toolScope);
+}
+
 const support: AcpSupport = {
   driverKind: "grokAgent",
   displayName: "Grok",
@@ -420,9 +425,18 @@ const support: AcpSupport = {
   },
   toolScopeCacheKey: ({ config, env, cwd }) => JSON.stringify(grokInheritedProfile(config.cli, env, cwd) ?? null),
 
+  // Grok 1.0.46 session/load restores the stored session's model, whatever
+  // -m and the profile's model say (verified: a session made on grok-4.7,
+  // loaded by `agent -m grok-4.6` with a grok-4.6 profile, reports grok-4.7;
+  // session/new on that process reports grok-4.6). Where the profile pins
+  // the model, switching in place is not safe (see configureSession), so a
+  // model change opens a fresh session that carries the thread's history.
+  acceptsLoadedSession: ({ turn, currentModelId }) =>
+    !(turn.model && currentModelId && currentModelId !== turn.model && grokPinsModelInProfile(turn)),
+
   // -m on argv is necessary but not sufficient: session/new still starts on
   // [models].default. Pin the slug over the wire, same as Hermes/Droid.
-  async configureSession({ request, sessionId, turn, currentModelId }) {
+  async configureSession({ request, sessionId, turn, currentModelId, notice }) {
     if (turn.toolScope !== undefined) {
       const available = new Set([
         ...(turn.integrations?.agents ? ["agents"] : []), ...(turn.integrations?.composio ? ["composio"] : []),
@@ -452,21 +466,27 @@ const support: AcpSupport = {
       }
     }
     if (!turn.model) return;
-    if (turn.withholdHostTools === true && !narrowsNativeTools(turn.toolScope)) {
-      // The profile already names the model. set_model can drop that profile.
-      // A runtime that reports a different model fails closed; one that has
-      // not reported yet keeps the profile rather than rebuilding host tools.
-      if (currentModelId && currentModelId !== turn.model) {
-        throw new Error("Grok could not confirm the selected model without replacing its tool profile. Start a new conversation or choose a model with a supported Grok profile. No prompt was sent.");
+    if (grokPinsModelInProfile(turn)) {
+      // The session profile already names the model (toolScopeSessionParams).
+      // set_model can rebuild the harness and drop that profile, restoring
+      // Grok's default tools (the host shell on an organization server), so
+      // it is never sent here. A resumed session on another model was not
+      // adopted (acceptsLoadedSession): this one was just opened on the pick.
+      if (!currentModelId) {
+        // An organization turn keeps the profile rather than rebuilding host
+        // tools; a narrowed native selection needs the runtime's word.
+        if (narrowsNativeTools(turn.toolScope)) {
+          throw new Error("Grok did not report its model, so it could not confirm the selected model. No prompt was sent.");
+        }
+        return;
       }
-      return;
-    }
-    if (narrowsNativeTools(turn.toolScope)) {
       if (currentModelId !== turn.model) {
-        throw new Error("Grok could not confirm the selected model without replacing its tool profile. Start a new conversation or choose a model with a supported Grok profile. No prompt was sent.");
+        // A fresh session that still runs another model is Grok's own answer:
+        // it does not offer this id (it falls back to its default silently).
+        // Say so once and send the prompt on the model Grok runs.
+        notice?.(`Grok does not offer ${turn.model}, so this conversation uses ${currentModelId}. Choose another model for this bot to stop seeing this.`);
+        return { model: currentModelId };
       }
-      // The inline profile already pins this model. Repeating set_model can
-      // rebuild the harness, or reject an otherwise valid resumed profile.
       return;
     }
     try {
