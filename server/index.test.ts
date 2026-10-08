@@ -11338,6 +11338,9 @@ describe("harness HTTP API", () => {
     const legacy = await fetch(`${created.body.credential.endpointUrl}/${rotated.body.credential.token}`, { method: "POST", body: "{}" });
     expect(legacy.status).toBe(401);
 
+    // a token created or regenerated here is never revealed a second time
+    expect((await api("POST", `/api/webhooks/${created.body.webhook.id}/reveal`)).status).toBe(404);
+
     expect((await api("DELETE", `/api/webhooks/${created.body.webhook.id}`)).status).toBe(200);
     expect((await api("GET", "/api/webhooks")).body.webhooks).toHaveLength(0);
     if (process.platform !== "win32") {
