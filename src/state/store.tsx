@@ -17,6 +17,7 @@ import {
 import { flushSync } from "react-dom";
 import type { BotVisibility, CardAnswerer, CloudBackend, ConnectorToolGrant, EffortLevel, InstalledPackageMetadata, LiveCallState, LiveSettings, ServerFrame, GroupThreadUsage, SteerQueueReason, VoiceCallMark } from "../../shared/wire";
 import type { TurnDigest } from "../../shared/digest";
+import type { AutoModelRecord } from "../../shared/auto-model";
 import type { BusySendMode, ParallelTaskRef, TaskParallelOf } from "../../shared/parallel-tasks";
 import type { ToolScope } from "../../shared/tool-scope";
 import type { ViewerCapabilities } from "../../shared/viewer-capabilities";
@@ -233,6 +234,9 @@ export interface Message {
    * (ask_bot, delegate_bot, start_thread): the words are that bot's, not
    * the person's. Rendered as the peer speaking — see lib/peer-message. */
   peerAsk?: { botId: string; name: string; unattended?: boolean };
+  /** Auto: the model this delivered work ran on (the delegation card and the
+   * worker's activity row). */
+  autoModel?: AutoModelRecord;
   /** emoji reactions; by = "user" or a member botId. */
   reactions?: Array<{ emoji: string; by: string }>;
   /** comm chips: "Messaged @X" linking to the bot⇄bot channel. */
@@ -333,6 +337,9 @@ export interface ModelSelection {
   model: string;
   effort?: EffortLevel;
   variant?: string;
+  /** Auto (docs/plans/2026-10-08-auto-model.md): each turn picks its model;
+   * instanceId and model stay the bot's engine and fallback. */
+  auto?: true;
 }
 
 /** One of a bot's separate contexts: its own thread, transcript and
@@ -355,6 +362,8 @@ export interface Task {
    * legacy home-folder session; absent = not pinned yet */
   cwd?: string | null;
   modelSelection?: ModelSelection;
+  /** Auto: the model the last turn here ran on, and why. Server-derived. */
+  autoModel?: AutoModelRecord;
   approvalMode?: ApprovalMode;
   autoApprove?: boolean;
   alwaysAllow?: string[];

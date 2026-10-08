@@ -30,6 +30,8 @@ import { ModelPickerPayers } from "./ModelPickerPayers";
 import { COMPACT_SQUARE } from "@/lib/compact-chip";
 import { saveViewerBotOverride } from "@/lib/viewer-bot-overrides";
 import type { ViewerBotOverridePatch } from "../../shared/viewer-bot-overrides";
+import { autoChipLabel, autoReasonSentence } from "@/lib/auto-model";
+import { useAutoModelPreview } from "@/lib/auto-model-preview";
 
 type ModelOption = InstanceInfo["models"]["options"][number];
 const COMPACT_MODEL_COUNT = 5;
@@ -582,7 +584,15 @@ export function ModelPicker({
   const modal = true;
 
   const selection = bot.modelSelection;
+  // Auto (docs/plans/2026-10-08-auto-model.md): the chip names what this
+  // thread's last turn ran on, else what the next one would.
+  const autoOn = selection.auto === true && !viewerLocal;
+  const autoTask = state.bots?.find((candidate) => candidate.id === bot.id)?.tasks
+    ?.find((task) => task.threadId === (threadId ?? bot.threadId));
+  const autoPreview = useAutoModelPreview(bot.id, threadId, autoOn);
+  const autoRecord = autoOn ? autoTask?.autoModel ?? autoPreview : null;
   const active = state.instances.find((instance) => instance.instanceId === selection.instanceId);
+  const autoInstance = autoRecord ? state.instances.find((instance) => instance.instanceId === autoRecord.instanceId) ?? active : active;
   const configured = configuredModelInstances(state.instances, selection.instanceId);
   // An organization server offers an engine only when that engine's own
   // shell, file and web tools stay off the Sagax server. The bot's current
@@ -792,6 +802,19 @@ export function ModelPicker({
     setOpen(false);
   };
 
+  // Auto keeps the engine and base model; choosing a model above pins it.
+  const chooseAuto = () => {
+    if (bot.busy || viewerLocal || autoOn) return;
+    dispatch({
+      type: "setModel",
+      botId: bot.id,
+      threadId: threadId ?? bot.threadId,
+      updateBotDefault: !threadId || scope === "bot",
+      selection: { ...selection, auto: true },
+    });
+    setOpen(false);
+  };
+
   const official = railInstance?.models.options.filter((option) => !option.custom) ?? [];
   const custom = (orgMode
     ? railInstance?.models.options.filter((option) => option.custom && isDesktopLocalModel(option.id))
@@ -843,13 +866,13 @@ export function ModelPicker({
     <ModelRow
       key={option.id}
       option={option}
-      current={selection.instanceId === railInstance?.instanceId && selection.model === option.id}
+      current={!autoOn && selection.instanceId === railInstance?.instanceId && selection.model === option.id}
       defaultId={railInstance?.models.default ?? ""}
       onPick={() => railInstance && pick(railInstance, option.id)}
     />
   );
 
-  const composerLabel = [
+  const composerLabel = autoOn ? autoChipLabel(autoRecord) : [
     modelLabel(active, selection.model),
     selectedVariantLabel,
     !selectedVariantLabel && advanced && selection.effort ? effortLabel(selection.effort) : "",
@@ -905,6 +928,8 @@ export function ModelPicker({
       title={
         bot.busy
           ? t(threadId ? "model.threadBusy" : "model.busy")
+          : autoOn
+          ? autoRecord ? autoReasonSentence(autoRecord) : autoChipLabel(null)
           : active
           ? `${active.displayName} · ${modelLabel(active, selection.model)}${
               modelProvider(active, selection.model) ? ` · ${modelProvider(active, selection.model)}` : ""
@@ -912,17 +937,17 @@ export function ModelPicker({
           : selection.model
       }
     >
-      {active && <InstanceProviderMark instance={active} size={14} />}
+      {autoInstance && <InstanceProviderMark instance={autoInstance} size={14} />}
       {!contained && active && showActiveAccount && (
         <span data-model-account-compact className="hidden max-w-20 truncate @max-4xl/chathead:inline">{active.displayName}</span>
       )}
       <span className={cn("flex min-w-0 items-center gap-1", !contained && active && "@max-4xl/chathead:hidden")}>
         <span className="max-w-[160px] truncate">
-          {active && showActiveAccount && (
+          {active && showActiveAccount && !autoOn && (
             <span data-model-account className="text-ink-secondary">{active.displayName} · </span>
           )}
-          {modelLabel(active, selection.model)}
-          {active && modelProvider(active, selection.model) && (
+          {autoOn ? <span data-model-auto-chip>{autoChipLabel(autoRecord)}</span> : modelLabel(active, selection.model)}
+          {!autoOn && active && modelProvider(active, selection.model) && (
             <span className="text-ink-secondary"> · {modelProvider(active, selection.model)}</span>
           )}
         </span>
@@ -1029,6 +1054,33 @@ export function ModelPicker({
         <p data-model-host-tools className="mt-2 text-[11.5px] leading-relaxed text-ink-tertiary">
           {t("model.org.hostTools", { name: railInstance.displayName })}
         </p>
+      )}
+    </div>
+  );
+
+  // One choice for the whole bot, above the engines' own lists. A shared
+  // bot's viewer pins their own model; the owner's Auto stays the owner's.
+  const autoSection = !viewerLocal && (
+    <div data-model-auto className={cn("rounded-xl border px-3 py-2.5", autoOn ? "border-accent/40 bg-accent/5" : "border-hairline/40")}>
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="text-[12.5px] font-medium text-ink">{t("model.auto.title")}</div>
+          <p className="mt-0.5 text-[11.5px] leading-relaxed text-ink-secondary">{t("model.auto.hint")}</p>
+        </div>
+        <button
+          type="button"
+          data-model-auto-toggle
+          aria-pressed={autoOn}
+          disabled={Boolean(bot.busy) || autoOn}
+          onClick={chooseAuto}
+          className={cn("shrink-0 rounded-lg border px-2.5 py-1.5 text-[12px]",
+            autoOn ? "border-accent/40 text-accent" : "border-hairline/40 text-ink hover:bg-control/60")}
+        >
+          {autoOn ? <span className="flex items-center gap-1"><Check size={12} aria-hidden="true" />{t("model.auto.on")}</span> : t("model.auto.use")}
+        </button>
+      </div>
+      {autoOn && (autoPreview ?? autoRecord) && (
+        <p data-model-auto-reason className="mt-1.5 text-[11.5px] leading-relaxed text-ink">{autoReasonSentence((autoPreview ?? autoRecord)!)}</p>
       )}
     </div>
   );
@@ -1276,6 +1328,7 @@ export function ModelPicker({
                     the choice does, and who pays follows. */}
                 {payersFirst && payers}
                 {scopeControl}
+                {autoSection}
                 <div>
                   <div className="mb-1 text-[12.5px] font-medium text-ink">{t("model.models")}</div>
                   {listSection}

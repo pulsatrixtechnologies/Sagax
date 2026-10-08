@@ -479,3 +479,57 @@ describe("on an organization server", () => {
     expect(html).not.toContain("Nothing pays for this provider yet");
   });
 });
+
+describe("ModelPicker Auto (docs/plans/2026-10-08-auto-model.md)", () => {
+  const record = {
+    instanceId: "claude", model: "claude-opus-5-5", engineLabel: "Claude", modelLabel: "Opus 5.5",
+    role: "orchestration" as const, tier: "top" as const, reason: "strongest-own" as const, via: "subscription" as const, at: 1,
+  };
+
+  it("offers Auto above the models and turns it on for the thread, keeping the engine and base model", () => {
+    fixture.instances = [signedIn()];
+    const forBot = bot("claude", "claude-sonnet-5");
+    const opened = open(forBot);
+    const toggle = opened.nodes.find((node) => node.props["data-model-auto-toggle"] !== undefined)!;
+    expect(toggle.props["aria-pressed"]).toBe(false);
+    expect(menu(opened.html)).toContain("Auto: the best model per task");
+    (toggle.props.onClick as () => void)();
+    expect(fixture.dispatch).toHaveBeenCalledWith({
+      type: "setModel", botId: "atlas", threadId: "thread-atlas", updateBotDefault: false,
+      selection: { instanceId: "claude", model: "claude-sonnet-5", auto: true },
+    });
+  });
+
+  it("names the thread's last pick on the chip and explains it in the picker", () => {
+    fixture.instances = [signedIn()];
+    const forBot = { ...bot("claude", "claude-sonnet-5"), modelSelection: { instanceId: "claude", model: "claude-sonnet-5", auto: true as const } };
+    fixture.bots = [{ ...forBot, tasks: [{ threadId: "thread-atlas", title: "t", createdAt: 1, autoModel: record }] }];
+    const closed = render(forBot).html;
+    expect(closed).toContain("data-model-auto-chip");
+    expect(closed).toContain("Auto · Opus 5.5");
+    const opened = open(forBot);
+    const toggle = opened.nodes.find((node) => node.props["data-model-auto-toggle"] !== undefined)!;
+    expect(toggle.props["aria-pressed"]).toBe(true);
+    expect(menu(opened.html)).toContain("Auto: Opus 5.5 for this bot, because it is the strongest general model your subscription can run on Claude, the engine this bot runs on.");
+    // Under Auto no model row reads as the pinned choice.
+    expect(opened.nodes.filter((node) => node.props.current === true)).toHaveLength(0);
+  });
+
+  it("pins a model again when one is chosen", () => {
+    fixture.instances = [signedIn()];
+    const forBot = { ...bot("claude", "claude-sonnet-5"), modelSelection: { instanceId: "claude", model: "claude-sonnet-5", auto: true as const } };
+    const opened = open(forBot);
+    const row = opened.nodes.find((node) => (node.props.option as { id?: string } | undefined)?.id === "claude-opus-5-5")!;
+    (row.props.onPick as () => void)();
+    const call = (fixture.dispatch as ReturnType<typeof vi.fn>).mock.calls.at(-1)![0] as { selection: Record<string, unknown> };
+    expect(call.selection).toEqual({ instanceId: "claude", model: "claude-opus-5-5" });
+  });
+
+  it("shows plain Auto before any pick is known", () => {
+    fixture.instances = [signedIn()];
+    const forBot = { ...bot("claude", "claude-sonnet-5"), modelSelection: { instanceId: "claude", model: "claude-sonnet-5", auto: true as const } };
+    const html = render(forBot).html;
+    expect(html).toContain(">Auto<");
+    expect(html).not.toContain(">Sonnet 5<");
+  });
+});

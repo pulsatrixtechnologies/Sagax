@@ -8,6 +8,7 @@
 import type { Message } from "@/state/store";
 import { formatElapsed } from "@/lib/working-time";
 import { t } from "@/lib/i18n";
+import { autoWorkerLine } from "@/lib/auto-model";
 
 export type ActivityTranscriptItem =
   | { kind: "message"; message: Message }
@@ -23,7 +24,11 @@ export type TranscriptItem =
 export function statusActivity(message: Message): { kind: "recovery" | "notice"; text: string } | null {
   const name = message.kind === "activity" ? message.tool?.name : undefined;
   if (name?.startsWith("recovery:")) return { kind: "recovery", text: name.slice("recovery:".length).trim() };
-  if (name?.startsWith("notice:")) return { kind: "notice", text: name.slice("notice:".length).trim() };
+  if (name?.startsWith("notice:")) {
+    // Auto's worker row reads in the person's language (src/lib/auto-model.ts).
+    if (message.autoModel?.role === "worker") return { kind: "notice", text: autoWorkerLine(message.autoModel) };
+    return { kind: "notice", text: name.slice("notice:".length).trim() };
+  }
   return null;
 }
 

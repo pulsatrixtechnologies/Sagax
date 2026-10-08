@@ -404,6 +404,11 @@ export function EnginesSettings() {
       {/* The claude.ai connectors of the person's own Claude account live in
           Connected apps; while that experiment is off, their read-only
           status shows here, next to the Claude sign-in that brings them. */}
+      {/* Auto (docs/plans/2026-10-08-auto-model.md), in one paragraph. */}
+      <section data-auto-model-explainer className="max-w-2xl">
+        <h2 className="text-[13px] font-semibold text-ink">{t("model.auto.settings.title")}</h2>
+        <p className="mt-1 text-[12.5px] leading-relaxed text-ink-secondary">{t("model.auto.settings.body")}</p>
+      </section>
       {!connectedAppsEnabled(state.config) && <HarnessConnectorsSection placement="settings" />}
       <EngineSections
         instances={shown}
