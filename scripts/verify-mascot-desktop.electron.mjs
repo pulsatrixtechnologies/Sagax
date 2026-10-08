@@ -11,7 +11,17 @@
 //  - menu: the right click pops main's native menu with JC's items, and
 //    Moves plays the move in the window;
 //  - effects: a sign and the thought dots are drawn beside the character,
-//    never over it, on the side the screen leaves room on.
+//    never over it, on the side the screen leaves room on;
+//  - slice 2, hover controls: the pointer over the character shows quick
+//    chat, voice and activity after 150 ms, beside it and never over it, and
+//    they go 400 ms after it leaves; the bell opens the activity tray (where
+//    the chat goes) and its Allow reaches the brain;
+//  - slice 2, click to call: a plain click on the idle character asks the
+//    brain for the call (a drag does not), the stand-in brain then plays the
+//    fake call of scripts/verify-voice-mode.ts (its transcript, 4 s spoken
+//    sentences): the pill stays under the feet, the status chip follows the
+//    phase and the captions reveal the bot's words beside the character; a
+//    click during the call ends nothing.
 // Screenshots of the window (capturePage) go next to the report.
 import { app, BrowserWindow, ipcMain, screen } from "electron";
 import fs from "node:fs";
@@ -49,8 +59,9 @@ const MENU = [
   { id: "settings", label: "Settings…" },
 ];
 
-function snapshot({ balloon = false, mascot = { character: "owl" }, pose = "idle", theme = { skin: "midnight" } } = {}) {
+function snapshot({ balloon = false, mascot = { character: "owl" }, pose = "idle", theme = { skin: "midnight" }, call = null, tray = null } = {}) {
   return {
+    call, tray,
     v: 1, id: BOT, name: "Sagax", label: "Sagax", color: "green", skin: "none", avatar: null, pose,
     reduced: false, retro: false, sparkle: 0, locale: "en", menu: MENU,
     task: "idle", mood: 0.8, flyAway: false, hints: { mood: "", working: "", pin: "Put back", call: "Call Sagax", hoot: "Hoot!" }, liveliness: "calm",
@@ -290,6 +301,204 @@ async function effects(win, all) {
   return out;
 }
 
+/* ------------------------------------------------------------ slice 2 */
+
+/** A page point with its screen point (the mascot drags in screen coordinates). */
+const pagePoint = (win, x, y) => {
+  const b = win.getBounds();
+  return { x: Math.round(x), y: Math.round(y), globalX: Math.round(b.x + x), globalY: Math.round(b.y + y) };
+};
+const pointerAt = (win, x, y) => win.webContents.sendInputEvent({ type: "mouseMove", ...pagePoint(win, x, y) });
+/** A press and release at one spot (a click), or with a few moves in between (a drag of dx px). */
+async function press(win, x, y, dx = 0) {
+  pointerAt(win, x, y);
+  await wait(30);
+  const start = win.getBounds();
+  const at = (px) => ({ x: Math.round(px - (win.getBounds().x - start.x)), y: Math.round(y - (win.getBounds().y - start.y)), globalX: Math.round(start.x + px), globalY: Math.round(start.y + y) });
+  win.webContents.sendInputEvent({ type: "mouseDown", button: "left", clickCount: 1, ...at(x) });
+  for (let i = 1; i <= 4 && dx; i += 1) {
+    await wait(20);
+    win.webContents.sendInputEvent({ type: "mouseMove", button: "left", ...at(x + (dx * i) / 4) });
+  }
+  await wait(30);
+  win.webContents.sendInputEvent({ type: "mouseUp", button: "left", clickCount: 1, ...at(x + dx) });
+  await wait(dx ? 900 : 120);
+}
+const controlsState = (win) => js(win, `(() => {
+  const bar = document.querySelector(".fb-controls");
+  const buttons = [...document.querySelectorAll(".fb-controls button")].map((b) => { const r = b.getBoundingClientRect(); return { control: b.dataset.control, x: r.left, y: r.top, width: r.width, height: r.height }; });
+  return { shown: Boolean(bar?.hasAttribute("data-shown")), opacity: bar ? Number(getComputedStyle(bar).opacity) : 0, side: bar?.dataset.side ?? null, buttons };
+})()`);
+const brainSince = (from) => brainEvents.slice(from).filter((e) => e.channel === "floating-bots:event").map((e) => e.payload.event);
+
+async function hoverControls(win, all) {
+  const area = all[0];
+  update(snapshot());
+  await wait(300);
+  await placeBody(win, area.x + Math.round(area.width / 2), area.y + Math.round(area.height / 2), { x: 1, y: 1 });
+  const b = await boxes(win);
+  const center = { x: b.body.x + b.body.width / 2, y: b.body.y + b.body.height / 2 };
+  // far from the character first, then over it
+  pointerAt(win, 2, 2);
+  await wait(500);
+  pointerAt(win, center.x, center.y);
+  pointerAt(win, center.x + 2, center.y + 1);
+  await wait(60);
+  const early = await controlsState(win);
+  await wait(300);
+  const shown = await controlsState(win);
+  const bounds = win.getBounds();
+  const shot = path.join(dir, "hover-controls.png");
+  fs.writeFileSync(shot, (await win.webContents.capturePage()).toPNG());
+  const overCharacter = shown.buttons.some((button) => overlaps(button, b.body));
+  const onDisplay = shown.buttons.every((button) => inside(onScreen(button, bounds), area));
+  // away from it: they stay a moment, then go
+  pointerAt(win, 2, 2);
+  await wait(150);
+  const lingering = await controlsState(win);
+  await wait(500);
+  const gone = await controlsState(win);
+  // the bell: the tray opens where the chat goes; Allow reaches the brain
+  pointerAt(win, center.x, center.y);
+  await wait(400);
+  const from = brainEvents.length;
+  const bell = (await controlsState(win)).buttons.find((button) => button.control === "activity");
+  // the pointer rests on the bell first, as a person's would
+  pointerAt(win, bell.x + bell.width / 2, bell.y + bell.height / 2);
+  await wait(250);
+  await press(win, bell.x + bell.width / 2, bell.y + bell.height / 2);
+  const asked = brainSince(from);
+  update(snapshot({ tray: { loading: false, items: [
+    { id: "a0", kind: "approval", title: "Needs you: click", detail: "Click Export in Excel", canStop: true, canOpen: true },
+    { id: "r0", kind: "running", title: "Weekly report", detail: "Running · 1 min 12 s · read_file", canStop: true, canOpen: true },
+  ] } }));
+  await wait(700);
+  const tray = await js(win, `(() => { const r = document.querySelector("[data-tray]")?.getBoundingClientRect(); return r ? { x: r.left, y: r.top, width: r.width, height: r.height } : null; })()`);
+  const trayShot = path.join(dir, "activity-tray.png");
+  fs.writeFileSync(trayShot, (await win.webContents.capturePage()).toPNG());
+  const allow = await js(win, `(() => { const r = document.querySelector("[data-tray-allow]")?.getBoundingClientRect(); return r ? { x: r.left + r.width / 2, y: r.top + r.height / 2 } : null; })()`);
+  const before = brainEvents.length;
+  if (allow) await press(win, allow.x, allow.y);
+  const allowed = brainSince(before);
+  update(snapshot());
+  await wait(400);
+  return {
+    side: shown.side,
+    before150ms: early.shown,
+    shownAfterHover: shown.shown && shown.opacity > 0.9,
+    controls: shown.buttons.map((button) => button.control),
+    overCharacter,
+    onDisplay,
+    lingeringAfterLeave: lingering.shown,
+    goneAfterLeave: !gone.shown,
+    bellAsked: asked.some((event) => event.type === "tray" && event.open === true),
+    tray,
+    trayCoversCharacter: Boolean(tray && overlaps(tray, (await boxes(win)).body)),
+    trayOnDisplay: Boolean(tray && inside(onScreen(tray, bounds), area)),
+    allowReached: allowed.some((event) => event.type === "work" && event.action === "allow" && event.id === "a0"),
+    screenshots: [shot, trayShot],
+  };
+}
+
+/** The fake call of scripts/verify-voice-mode.ts, as the brain would show it: the person's sentence, then the bot's answer in 4 s sentences. */
+const FAKE_HEARD = "Hello Cryptic from voice mode";
+const FAKE_ANSWER = ["Hello! I can hear you clearly from the desktop mascot.", "Ask me anything and I will answer out loud."];
+function fakeCall(phase, extra = {}) {
+  return {
+    phase, muted: false, botAudible: phase === "speaking", push: false, startedAt: Date.now() - 8000, line: "", transcript: [], note: null, notice: null,
+    settings: { voice: "eve", speed: 1, language: "auto" }, callSettings: { input: "auto", onlyMyVoice: false, earcons: true, pause: "normal" },
+    voices: null, voicesError: null, enrollment: { state: "none" }, previewing: null, captions: true, ...extra,
+  };
+}
+const captionsState = (win) => js(win, `(() => {
+  const box = document.querySelector("[data-voice-captions]");
+  const r = box?.getBoundingClientRect();
+  return {
+    box: r ? { x: r.left, y: r.top, width: r.width, height: r.height } : null,
+    chip: document.querySelector("[data-caption-chip]")?.textContent ?? null,
+    lines: [...document.querySelectorAll("[data-caption-line]")].map((line) => line.textContent),
+    pill: Boolean(document.querySelector("[data-voice-pill]")),
+  };
+})()`);
+
+async function clickToCall(win, all) {
+  const area = all[0];
+  update(snapshot());
+  await wait(300);
+  await placeBody(win, area.x + Math.round(area.width / 2), area.y + Math.round(area.height / 2), { x: 1, y: 1 });
+  const b = await boxes(win);
+  const center = { x: b.body.x + b.body.width / 2, y: b.body.y + b.body.height / 2 };
+  // a drag is not a click
+  let from = brainEvents.length;
+  await press(win, center.x, center.y, 30);
+  const dragged = brainSince(from);
+  const b2 = await boxes(win);
+  const c2 = { x: b2.body.x + b2.body.width / 2, y: b2.body.y + b2.body.height / 2 };
+  // a plain click on the idle character asks for the call
+  await wait(400);
+  from = brainEvents.length;
+  await press(win, c2.x, c2.y);
+  const clicked = brainSince(from);
+  const started = clicked.some((event) => event.type === "call" && event.action === "start");
+  const phases = [];
+  // the stand-in brain plays the fake call
+  update(snapshot({ call: fakeCall("connecting") }));
+  await wait(300);
+  update(snapshot({ call: fakeCall("listening") }));
+  await wait(300);
+  phases.push({ phase: "listening", ...(await captionsState(win)) });
+  update(snapshot({ call: fakeCall("hearing", { line: FAKE_HEARD }) }));
+  await wait(300);
+  phases.push({ phase: "hearing", ...(await captionsState(win)) });
+  update(snapshot({ pose: "think", call: fakeCall("thinking", { transcript: [{ id: "m1", who: "you", text: FAKE_HEARD }] }) }));
+  await wait(300);
+  phases.push({ phase: "thinking", ...(await captionsState(win)) });
+  update(snapshot({ pose: "speak", call: fakeCall("speaking", { line: FAKE_ANSWER[0], transcript: [{ id: "m1", who: "you", text: FAKE_HEARD }] }) }));
+  await wait(200);
+  const first = await captionsState(win);
+  await wait(1300);
+  const later = await captionsState(win);
+  const bounds = win.getBounds();
+  const shot = path.join(dir, "call-captions.png");
+  fs.writeFileSync(shot, (await win.webContents.capturePage()).toPNG());
+  phases.push({ phase: "speaking", ...later });
+  // a click on the character while the bot is not speaking ends nothing
+  update(snapshot({ call: fakeCall("listening", { transcript: [{ id: "m1", who: "you", text: FAKE_HEARD }, { id: "m2", who: "bot", text: FAKE_ANSWER[0] }] }) }));
+  await wait(300);
+  from = brainEvents.length;
+  await press(win, c2.x, c2.y);
+  const duringCall = brainSince(from);
+  const end = await captionsState(win);
+  update(snapshot({ call: fakeCall("speaking", { line: FAKE_ANSWER[1] }) }));
+  await wait(2600);
+  const second = await captionsState(win);
+  const secondShot = path.join(dir, "call-captions-2.png");
+  fs.writeFileSync(secondShot, (await win.webContents.capturePage()).toPNG());
+  update(snapshot());
+  await wait(400);
+  const body = (await boxes(win)).body;
+  const wordCount = (lines) => lines.join(" ").split(/\s+/).filter(Boolean).length;
+  return {
+    dragEvents: dragged,
+    dragAskedNothing: !dragged.some((event) => event.type === "call" || event.type === "click"),
+    clickStartedCall: started,
+    clickEvents: clicked,
+    phases: phases.map((p) => ({ phase: p.phase, chip: p.chip, lines: p.lines })),
+    pill: later.pill,
+    wordsAtStart: wordCount(first.lines),
+    wordsAfter1500ms: wordCount(later.lines),
+    revealedWordByWord: wordCount(first.lines) < wordCount(later.lines),
+    captionLinesMax: Math.max(...phases.map((p) => p.lines.length), second.lines.length),
+    captionsCoverCharacter: Boolean(later.box && overlaps(later.box, body)),
+    captionsInWindow: Boolean(later.box && inside(later.box, { x: 0, y: 0, width: bounds.width, height: bounds.height })),
+    captionsOnDisplay: Boolean(later.box && inside(onScreen(later.box, bounds), area)),
+    clickDuringCall: duringCall,
+    clickDuringCallEndedNothing: !duringCall.some((event) => event.type === "call" && (event.action === "end" || event.action === "start")),
+    keptLastLine: end.lines.length > 0,
+    screenshots: [shot, secondShot],
+  };
+}
+
 app.on("window-all-closed", () => undefined);
 
 app.whenReady().then(async () => {
@@ -323,6 +532,8 @@ app.whenReady().then(async () => {
     report.restart = { before: restarted.before, after: restarted.after, same: restarted.same };
     report.menu = await menu(win);
     report.effects = await effects(win, areas);
+    report.hoverControls = await hoverControls(win, areas);
+    report.clickToCall = await clickToCall(win, areas);
     floats.dispose();
     const failures = [
       ...report.corners.filter((c) => !c.inCorner || !c.balloonOnDisplay || !c.balloonInWindow || c.balloonCoversCharacter || c.characterMovedWhenOpened > 1).map((c) => `corner ${c.display} ${c.corner}`),
@@ -330,6 +541,14 @@ app.whenReady().then(async () => {
       ...(!report.seam || (report.seam.onSecond && report.seam.followedPx <= 1) ? [] : ["seam"]),
       ...(report.menu.danced === "dance" ? [] : ["menu move"]),
       ...report.effects.filter((e) => e.emoteOverCharacter || e.thoughtOverCharacter || !e.emoteOnDisplay).map((e) => `effects ${e.spot}`),
+      ...(() => {
+        const h = report.hoverControls;
+        return !h.before150ms && h.shownAfterHover && !h.overCharacter && h.onDisplay && h.lingeringAfterLeave && h.goneAfterLeave && h.bellAsked && h.tray && !h.trayCoversCharacter && h.trayOnDisplay && h.allowReached ? [] : ["hover controls"];
+      })(),
+      ...(() => {
+        const c = report.clickToCall;
+        return c.dragAskedNothing && c.clickStartedCall && c.pill && c.revealedWordByWord && c.captionLinesMax <= 3 && !c.captionsCoverCharacter && c.captionsInWindow && c.captionsOnDisplay && c.clickDuringCallEndedNothing ? [] : ["click to call"];
+      })(),
     ];
     report.ok = failures.length === 0;
     report.failures = failures;
