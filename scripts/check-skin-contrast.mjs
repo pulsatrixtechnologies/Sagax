@@ -437,7 +437,7 @@ export function checkContrast(css, { verbose = false } = {}) {
     const pairs = light
       ? [["--mascot-white", "--color-mascot-plinth", 3], ["--color-mascot-plinth", "--color-card", 1.5], ["--color-mascot-plinth", "--color-inset", 1.5]]
       : [["--color-mascot-plinth", "--color-card", 1.05]];
-    if (light && !/^rgba\(/.test(raw["--mascot-shadow-color"] ?? "")) {
+    if (light && !(raw["--mascot-shadow-color"] ?? "").startsWith("rgba(")) {
       failed = true;
       failingPairs++;
       out.push(`✗ ${id} mascot: a light skin sets no --mascot-shadow-color`);
