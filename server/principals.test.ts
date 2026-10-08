@@ -12,6 +12,24 @@ function registry() {
 }
 
 describe("principal registry", () => {
+  it("keeps a person's label across a restart, clears it with null, and reads a malformed one as absent", () => {
+    const { path, reg } = registry();
+    const a = reg.forSubject({ iss: "https://px.example", sub: "u1", claims: { name: "Ada" } });
+    expect(a.label).toBeUndefined();
+    expect(reg.setLabel(a.id, "CTO")?.label).toBe("CTO");
+    expect(reg.setLabel("pr_00000000-0000-4000-8000-0000000000ff", "x")).toBeNull();
+    const again = new PrincipalRegistry({ path, now: () => 2000, newId: () => "unused" });
+    expect(again.byId(a.id)?.label).toBe("CTO");
+    expect(again.setLabel(a.id, null)?.label).toBeUndefined();
+    expect(JSON.parse(readFileSync(path, "utf8")).principals[0]).not.toHaveProperty("label");
+    const file = JSON.parse(readFileSync(path, "utf8"));
+    file.principals[0].label = 42;
+    writeFileSync(path, JSON.stringify(file));
+    const tolerant = new PrincipalRegistry({ path, now: () => 3000, newId: () => "unused" });
+    expect(tolerant.byId(a.id)).toMatchObject({ id: a.id, name: "Ada" });
+    expect(tolerant.byId(a.id)?.label).toBeUndefined();
+  });
+
   it("creates one principal per account and finds it again", () => {
     const { reg } = registry();
     const a = reg.forAccount({ email: "Zach@Gox.ca", controlPlaneUserId: "cp_1" });

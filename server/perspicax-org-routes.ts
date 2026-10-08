@@ -68,6 +68,8 @@ export interface OrgDirectoryEntry {
   /** Admins only: this person's page in the Perspicax console
    * (`<issuer>/console/users/<sub>`). Never sent to a member. */
   manageUrl?: string;
+  /** Their custom label, Sagax's own (server/routes/person-labels.ts). */
+  label?: string;
 }
 
 export interface OrgDirectoryTeam {
@@ -168,6 +170,7 @@ export function orgDirectoryEntries(issuer: string, people: DirectoryPerson[], b
       login: person.login,
       ...(avatarUrl ? { avatarUrl } : {}),
       ...(email ? { email } : {}),
+      ...(principal.label ? { label: principal.label } : {}),
       role: person.role === "admin" ? "admin" : "member",
       disabled: person.status === "disabled",
       ...(person.kind === "service" || person.type === "service" ? { service: true as const } : {}),

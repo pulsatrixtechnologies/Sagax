@@ -40,6 +40,11 @@ const principalSchema = z.object({
   /** Slice 4: the Perspicax teams this person is in (member or manager),
    * from the id_token `teams` claim or the directory, whichever came last. */
   teams: z.array(teamMembershipSchema).max(MAX_PRINCIPAL_TEAMS).optional(),
+  /** A custom label shown beside the name, as a bot's label is ("CTO").
+   * Sagax's own field (server/person-labels.ts), never from Perspicax;
+   * absent: no label. A malformed one reads as absent, never drops the
+   * person. */
+  label: z.string().min(1).max(200).optional().catch(undefined),
   /** Slice 4: the Perspicax role verbatim (admin, manager, employee). */
   perspicaxRole: z.enum(["admin", "manager", "employee"]).optional(),
   /** Set when the identity provider signalled that this person is out
@@ -479,6 +484,18 @@ export class PrincipalRegistry {
     local.linkedSubjects = [...kept, entry].slice(-20);
     this.persist();
     return { ...local };
+  }
+
+  /** Set (or with null clear) a person's label, already normalized
+   * (shared/person-label.ts). Null for an unknown id. */
+  setLabel(id: string, label: string | null): Principal | null {
+    const found = this.principals.find((p) => p.id === id);
+    if (!found) return null;
+    if ((found.label ?? null) === label) return { ...found };
+    if (label) found.label = label;
+    else delete found.label;
+    this.persist();
+    return { ...found };
   }
 
   setEmail(id: string, email: string): Principal | null {

@@ -317,6 +317,11 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   { methods: ["POST"], path: /^\/api\/me\/achievements\/events$/ },
   { methods: ["PUT"], path: /^\/api\/me\/achievements\/settings$/ },
   { methods: ["GET"], path: /^\/api\/achievements\/public$/ },
+  // People's custom labels (server/routes/person-labels.ts): everyone reads
+  // them; the handler lets a person change their own, an organization admin
+  // anyone's and a team manager their team's people.
+  { methods: ["GET"], path: /^\/api\/people\/labels$/ },
+  { methods: ["PUT"], path: /^\/api\/people\/pr_[0-9a-f-]{36}\/label$/ },
   // The bot settings of the phone's Settings sheet (auto-review default, time
   // zone): the person's own on an organization server; on a solo server the
   // handler lets only the owner change the server's.

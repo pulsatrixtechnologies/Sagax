@@ -615,7 +615,7 @@ import {
   sessionCookieName,
 } from "./request-auth.ts";
 import { cookieMaxAgeSeconds, formatPairingCode, SessionRegistry, type Scope, type SessionRecord } from "./sessions.ts";
-import { isAccountEmail, isPrincipalId, PrincipalRegistry } from "./principals.ts";
+import { isAccountEmail, isPrincipalId, PrincipalRegistry, type Principal } from "./principals.ts";
 import { OrgTeams } from "./org-teams.ts";
 import { keyVia, materializeEngineAccess, providersOfDriver, resolveEngineAccess, subscriptionDriver, turnPayer, type AccessPayer, type SubscriptionDriver, type EngineCredentialInput, type EngineCredentialPlan, type NoAccessCause, type TurnAccess } from "./engine-credentials.ts";
 import { isLoginDriver, loginCliFor, PrincipalEngineLogins } from "./principal-engine-logins.ts";
@@ -727,6 +727,7 @@ import { createGroupMemoryRoutes } from "./routes/group-memory.ts";
 import { createTtsProviderRoutes } from "./routes/tts-provider.ts";
 import { createPeopleDmRoutes } from "./routes/people-dms.ts";
 import { createNudgeRoutes } from "./routes/nudges.ts";
+import { createPersonLabelRoutes } from "./routes/person-labels.ts";
 import { NudgeCooldown, nudgeFrameAllowed, recordNudgeLine } from "./nudge.ts";
 import { findPeopleDm, isPeopleDmParticipant, otherPerson, peopleDmPatchRefusal, peopleDmRouteRefusal } from "./people-dms.ts";
 import { deleteGroupMemory, groupMemoryEnabled, groupMemorySystemPrompt, updateGroupMemory } from "./group-memory.ts";
@@ -19803,6 +19804,42 @@ ROUTES.push(createNudgeRoutes({
     append: (threadId, message) => { store.appendMessage(threadId, message); },
     markUnread: (groupId) => { store.patchGroup(groupId, { unread: true }); },
   }, line),
+}));
+// People's custom labels (server/routes/person-labels.ts): the directory's
+// people on an organization server, the operator on a solo one.
+const labeledPerson = (principal: Principal): boolean =>
+  !principal.mergedInto && (IDENTITY.kind === "perspicax" ? Boolean(principal.subject) || principal.local === true : principal.local === true);
+ROUTES.push(createPersonLabelRoutes({
+  caller: (auth) => {
+    const principalId = auth.kind === "session" ? auth.session.principalId?.trim().toLowerCase() || null
+      : auth.kind === "loopback" && auth.trust !== "service" ? localPrincipalId() : null;
+    const admin = IDENTITY.kind === "perspicax" ? orgAdminCaller(auth)
+      : auth.kind === "loopback" ? auth.trust !== "service" : auth.scopes.includes("admin");
+    const person = IDENTITY.kind === "perspicax" && principalId ? principals.byId(principalId) : null;
+    return { principalId, admin, managedTeamIds: (person?.teams ?? []).filter((team) => team.manager).map((team) => team.id) };
+  },
+  person: (principalId) => {
+    const principal = principals.byId(principalId);
+    return principal && labeledPerson(principal) ? { id: principal.id, ...(principal.label ? { label: principal.label } : {}), teams: principal.teams ?? [] } : null;
+  },
+  labels: () => Object.fromEntries(principals.list().filter((principal) => labeledPerson(principal) && principal.label).map((principal) => [principal.id, principal.label!])),
+  save: (principalId, label) => principals.setLabel(principalId, label) !== null,
+  changed: ({ principalId, before, after, right, auth }) => {
+    broadcast({ kind: "person.label", principalId, label: after });
+    // A change made for someone else (an admin, a team manager) is an
+    // admin action; a person's own label is not.
+    if (right === "self" || !(IDENTITY.kind === "perspicax" || adminActivityRecording())) return;
+    const name = personDisplayName(principals.byId(principalId));
+    appendAdminAction(DATA_DIR, {
+      category: "people",
+      action: "people.label",
+      target: { kind: "person", id: principalId, ...(name ? { name } : {}) },
+      changed: ["label"],
+      before: { label: before },
+      after: { label: after, by: right },
+      actor: IDENTITY.kind === "perspicax" ? orgAuditActor(auth) : decisionActorFor(auth),
+    });
+  },
 }));
 /** A person's message in a conversation between two people: it starts no
  * turn, marks the conversation unread and notifies the other person only. */
