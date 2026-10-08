@@ -54,6 +54,17 @@
 //                     (a JSON array of lines) to Qwen's debug log for this
 //                     session, one line every FAKE_ACP_LOG_EVERY_MS (default
 //                     100), repeating the last, as Qwen does while it retries)
+//                   | voice (a spoken answer with a real CLI's timing,
+//                     docs/voice-mode-xai.md "Latency": initialize answers
+//                     FAKE_ACP_COLD_MS after process boot, session/new and
+//                     session/load|resume each take FAKE_ACP_LOAD_MS (MCP
+//                     servers reconnected, history read back), a prompt
+//                     waits FAKE_ACP_FIRST_TOKEN_MS, then streams
+//                     FAKE_ACP_VOICE_REPLY word by word FAKE_ACP_TOKEN_MS
+//                     apart. With FAKE_ACP_VOICE_TOOL=<tool>, each prompt
+//                     first calls that tool on the injected agents MCP
+//                     server and ends its reply with "mcp:<tool>:ok" or
+//                     "mcp:<tool>:error")
 //                   | lend-question (call list_shared_computers through the
 //                     injected agents MCP, ask a question card, call it again
 //                     once the card is answered, and reply
@@ -564,6 +575,16 @@ function playReasoningTurn() {
   out({ jsonrpc: "2.0", method: "session/update", params: { update: { sessionUpdate: "agent_thought_chunk", content: { text: " without ever producing an answer" } } } });
 }
 
+// voice mode: what a real agent spends before it answers each request
+const bootAt = Date.now();
+const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, Math.max(0, ms)));
+const envMs = (name: string) => Math.max(0, Number(process.env[name]) || 0);
+let voiceQueue: Promise<void> = Promise.resolve();
+async function voiceDelay(msg: any): Promise<void> {
+  if (msg.method === "initialize") await pause(bootAt + envMs("FAKE_ACP_COLD_MS") - Date.now());
+  else if (msg.method === "session/new" || msg.method === "session/load" || msg.method === "session/resume") await pause(envMs("FAKE_ACP_LOAD_MS"));
+}
+
 let buf = "";
 process.stdin.on("data", (c) => {
   buf += c;
@@ -578,7 +599,10 @@ process.stdin.on("data", (c) => {
     } catch {
       continue;
     }
-    handle(msg);
+    if (mode === "voice") {
+      // in order, each request after its own real-world cost
+      voiceQueue = voiceQueue.then(() => voiceDelay(msg)).then(() => { handle(msg); }, () => { handle(msg); });
+    } else handle(msg);
   }
 });
 
@@ -691,7 +715,7 @@ function handle(msg: any) {
         break;
       }
       const cachedLiveLoad = process.env.FAKE_ACP_CACHED_LIVE_LOAD === "1" && liveSession === msg.params?.sessionId;
-      if (mode === "safe-agent-reads" && !cachedLiveLoad) {
+      if ((mode === "safe-agent-reads" || mode === "voice") && !cachedLiveLoad) {
         agentsMcp = (msg.params?.mcpServers ?? []).find((server: any) => server.name === "agents") ?? null;
       }
       if (process.env.FAKE_ACP_DUMP) {
@@ -859,6 +883,24 @@ function handle(msg: any) {
             : { stopReason: "end_turn", _meta: { inputTokens: 10, outputTokens: 5 } },
         );
       };
+      if (mode === "voice") {
+        void (async () => {
+          await pause(envMs("FAKE_ACP_FIRST_TOKEN_MS"));
+          let reply = process.env.FAKE_ACP_VOICE_REPLY || "Sure. It is sunny in Montreal today, with a high of twenty degrees and a light wind. Do you want the forecast for tomorrow too?";
+          const tool = process.env.FAKE_ACP_VOICE_TOOL;
+          if (tool) {
+            const ok = agentsMcp ? await driveMcp(agentsMcp, [{ name: tool, args: () => ({}) }], true).then(() => true, () => false) : false;
+            reply += ` mcp:${tool}:${ok ? "ok" : "error"}`;
+          }
+          const tokenMs = envMs("FAKE_ACP_TOKEN_MS");
+          for (const word of reply.match(/\S+\s*/g) ?? [reply]) {
+            out({ jsonrpc: "2.0", method: "session/update", params: { update: { sessionUpdate: "agent_message_chunk", content: { text: word } } } });
+            if (tokenMs) await pause(tokenMs);
+          }
+          complete();
+        })();
+        return;
+      }
       if (mode === "quiet-then-answer") {
         const lines: string[] = process.env.FAKE_ACP_QWEN_LOG ? JSON.parse(process.env.FAKE_ACP_QWEN_LOG) : [];
         let logTimer: ReturnType<typeof setInterval> | null = null;

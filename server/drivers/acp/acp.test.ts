@@ -2274,6 +2274,72 @@ describe("ACP turns (fake CLI)", () => {
       expect(calls().filter((m) => m === "initialize")).toHaveLength(1);
     });
 
+    it("warms a call: handshake and session/load with no prompt, then the first turn is a bare prompt", async () => {
+      countFile = join(scratch, "launches");
+      const appendFile = join(scratch, "rpc-all.jsonl");
+      process.env.FAKE_ACP_LAUNCH_COUNT_FILE = countFile;
+      process.env.FAKE_ACP_RPC_APPEND_FILE = appendFile;
+      await create();
+      expect(instance.adapter.capabilities.warmSession).toBe(true);
+      const agents = (token: string) => ({ agents: { command: process.execPath, args: [FAKE_CLI], env: { SAGAX_COMMS_TOKEN: token } } });
+      const calls = () => readFileSync(appendFile, "utf8").trim().split("\n").map((line) => JSON.parse(line).method as string)
+        .filter((method) => !method.endsWith(".result"));
+      const warmed = await instance.adapter.sendTurn({
+        threadId: "t-call-warmup", botId: "bot-warm", text: "", resumeCursor: "fake-acp-session",
+        keepWarm: true, warmOnly: true, integrations: agents("token-warm"),
+      });
+      // the warm is done when sendTurn returns, and the thread saw nothing
+      expect(calls()).toEqual(["initialize", "authenticate", "session/load"]);
+      expect(recorder.events.filter((e) => e.threadId === "t-call-warmup")).toEqual([]);
+      expect(instance.adapter.hasSession("t-call-warmup")).toBe(false);
+      expect(warmed.reused).toBeUndefined();
+      // a second warm of the same call finds the session ready
+      expect((await instance.adapter.sendTurn({
+        threadId: "t-call-warmup", botId: "bot-warm", text: "", resumeCursor: "fake-acp-session",
+        keepWarm: true, warmOnly: true, integrations: agents("token-warm-2"),
+      })).reused).toBe(true);
+      const first = await instance.adapter.sendTurn({
+        threadId: "t-call-warmup", botId: "bot-warm", text: "first spoken turn", resumeCursor: "fake-acp-session",
+        keepWarm: true, integrations: agents("token-one"),
+      });
+      expect(first.reused).toBe(true);
+      expect(await recorder.until((e) => e.type === "turn.completed" && e.turnId === first.turnId)).toMatchObject({ ok: true });
+      expect(calls()).toEqual(["initialize", "authenticate", "session/load", "session/prompt"]);
+      expect(launches()).toBe(1);
+      // hangup closes the idle process; the next turn starts a new one
+      instance.adapter.releaseWarmSession?.("t-call-warmup");
+      const after = await instance.adapter.sendTurn({ threadId: "t-call-warmup", text: "in writing", resumeCursor: "fake-acp-session" });
+      expect(await recorder.until((e) => e.type === "turn.completed" && e.turnId === after.turnId)).toMatchObject({ ok: true });
+      expect(launches()).toBe(2);
+    });
+
+    it("warms a new conversation with session/new, and a hangup during the call's wait closes it", async () => {
+      countFile = join(scratch, "launches");
+      const appendFile = join(scratch, "rpc-all.jsonl");
+      process.env.FAKE_ACP_LAUNCH_COUNT_FILE = countFile;
+      process.env.FAKE_ACP_RPC_APPEND_FILE = appendFile;
+      await create();
+      const calls = () => readFileSync(appendFile, "utf8").trim().split("\n").map((line) => JSON.parse(line).method as string)
+        .filter((method) => !method.endsWith(".result"));
+      await instance.adapter.sendTurn({ threadId: "t-call-new", text: "", keepWarm: true, warmOnly: true });
+      expect(calls()).toEqual(["initialize", "authenticate", "session/new"]);
+      const first = await instance.adapter.sendTurn({ threadId: "t-call-new", text: "hello", keepWarm: true });
+      expect(first.reused).toBe(true);
+      await recorder.until((e) => e.type === "turn.completed" && e.turnId === first.turnId);
+      // the cursor is recorded by the turn, not by the warm
+      expect(recorder.events.find((e) => e.type === "session.started" && e.turnId === first.turnId)).toMatchObject({ sessionId: "fake-acp-session" });
+      expect(calls()).toEqual(["initialize", "authenticate", "session/new", "session/prompt"]);
+
+      const hangup = new AbortController();
+      await instance.adapter.sendTurn({ threadId: "t-call-abort", text: "", keepWarm: true, warmOnly: true, warmSignal: hangup.signal });
+      expect(launches()).toBe(2);
+      hangup.abort();
+      const next = await instance.adapter.sendTurn({ threadId: "t-call-abort", text: "later", keepWarm: true });
+      expect(next.reused).toBeUndefined();
+      await recorder.until((e) => e.type === "turn.completed" && e.turnId === next.turnId);
+      expect(launches()).toBe(3);
+    });
+
     it("does not load or prompt Qwen after Stop during old-process cleanup", async () => {
       const appendFile = join(scratch, "rpc-all.jsonl");
       process.env.FAKE_ACP_RPC_APPEND_FILE = appendFile;

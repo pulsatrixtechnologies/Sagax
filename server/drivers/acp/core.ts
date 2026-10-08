@@ -356,6 +356,11 @@ export interface AcpSupport {
   acceptsLoadedSession?(ctx: { turn: SendTurnInput; currentModelId?: string }): boolean;
   /** Some agents acknowledge a live load without applying new MCP credentials. */
   restartOnMcpChange?: boolean;
+  /** sendTurn honours warmOnly (a voice call being accepted): the pooled
+   * process is started and pays initialize, authenticate and session/load
+   * (or session/new) with no prompt and no turn events, so the call's first
+   * spoken turn is a bare session/prompt. Opt-in per harness. */
+  warmSession?: boolean;
   /** Route workspace file access through ACP so edits retain approval cards. */
   clientFileSystem?: boolean;
   /** Do not retain stderr from providers that may place OAuth material there. */
@@ -739,6 +744,9 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
       // contract prompts the live session instead of paying the handshake
       // again. An idle session closes after SESSION_IDLE_MS of quiet.
       const sessions = new Map<string, AcpSession>();
+      // A call's warm in flight per thread (warmOnly): a real turn waits
+      // for it instead of racing it on the same process.
+      const warming = new Map<string, Promise<void>>();
       // Closing removes a session from the pool, not its native writer lease.
       // Retain every closing Qwen child until its process tree is gone, even
       // when Stop or a failed turn lets another turn start during cleanup.
@@ -1563,6 +1571,12 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
           throw new Error(`${support.displayName}: native tool selection is not supported by this engine. Keep native:* in the selection or choose a supported engine.`);
         }
         const { threadId } = turn;
+        if (turn.warmOnly === true && (!support.warmSession || turn.sessionReset)) {
+          // Nothing to keep: a reset turn closes whatever a warm would start.
+          return { turnId: newId() };
+        }
+        const warmInFlight = warming.get(threadId);
+        if (warmInFlight) await warmInFlight;
         if (active.has(threadId)) throw new Error("a turn is already running on this thread");
         // Provider-instance `fullAuto` predates per-bot approval levels. Every
         // harness turn now carries the bot's mode, so Ask/Auto must explicitly
@@ -1587,6 +1601,7 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
           && !skipSubscriptionAuthForLocalInject(turn.model)
           && !(await support.isAuthenticated(env, turnConfig, instanceId))
         ) {
+          if (turn.warmOnly === true) throw new Error(support.loginNote);
           emit({ ...base(threadId, turnId), type: "turn.started" });
           emit({ ...base(threadId, turnId), type: "runtime.error", message: support.loginNote, setup: true });
           emit({ ...base(threadId, turnId), type: "turn.completed", ok: false, stopReason: "auth_required", cost: null });
@@ -1627,6 +1642,8 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
             ? await support.resolveCommand(env, turnConfig, instanceId)
             : { command: turnConfig.cli };
         } catch (error) {
+          // a warm shows nothing in the thread: the call's first turn reports it
+          if (turn.warmOnly === true) throw error;
           emit({ ...base(threadId, turnId), type: "turn.started" });
           emit({
             ...base(threadId, turnId),
@@ -1728,6 +1745,116 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
           idleMessage?: string | (() => string),
         ): Promise<any> =>
           session.acp.request(method, params, timeoutMs, receive, idleMs, idleMessage);
+        const initialize = () => request(
+          "initialize",
+          {
+            protocolVersion: 1,
+            clientInfo: { name: "openmausbot", version: "0.0.0" },
+            clientCapabilities: {
+              fs: {
+                readTextFile: support.clientFileSystem === true,
+                writeTextFile: support.clientFileSystem === true,
+              },
+              terminal: false,
+            },
+          },
+          INIT_TIMEOUT,
+        );
+        // authenticate is once per process; a turn that skips subscription
+        // auth neither checks nor marks the flag
+        const authenticateOnce = async () => {
+          if (skipSubscriptionAuthForLocalInject(turn.model) || session.authenticated) return;
+          const methods: Array<{ id?: string }> = Array.isArray(session.initResult?.authMethods)
+            ? session.initResult.authMethods
+            : [];
+          const methodId = support.pickAuthMethod(methods, launchEnv);
+          if (methodId) {
+            try {
+              await request("authenticate", { methodId }, INIT_TIMEOUT);
+              session.authenticated = true;
+            } catch {
+              if (support.authFailure === "fail") throw new Error(support.loginNote);
+              // else: proceed on an ambient login
+            }
+          } else if (support.authFailure === "fail") {
+            throw new Error(support.loginNote);
+          }
+        };
+        // What session/new and session/load|resume establish with.
+        const sessionInputs = (init: any) => {
+          // stdio is every agent's baseline; a url server rides only with
+          // an agent that advertised its transport, so an agent without
+          // http/sse never sees an entry it would refuse the session over
+          const sessionServers = mcpServers.filter((server) =>
+            !("type" in server) || init?.agentCapabilities?.mcpCapabilities?.[server.type] === true);
+          // A withheld turn sends its profile even when the bot did not narrow
+          // native tools. Otherwise session/new would keep the CLI defaults.
+          const selectionParams = (narrowsNativeTools(turn.toolScope) || turn.withholdHostTools === true) && support.toolScopeSessionParams
+            ? support.toolScopeSessionParams(turn, init, sessionServers.length > 0, { config: turnConfig, env, cwd }) : {};
+          return { sessionServers, selectionParams };
+        };
+
+        // A call was accepted (warmOnly): pay the handshake and establish the
+        // native session now, with no prompt and no turn events, and park the
+        // process until the call's first turn adopts it. A warm that fails
+        // leaves the turn path to start over; it never shows in the thread.
+        if (turn.warmOnly === true) {
+          const result = { turnId, ...(reused ? { reused: true } : {}) };
+          if (!reused) {
+            const warm = (async () => {
+              if (!session.initResult) session.initResult = await initialize();
+              await authenticateOnce();
+              const { sessionServers, selectionParams } = sessionInputs(session.initResult);
+              if (cursor) {
+                try {
+                  await request(
+                    support.resumeMethod === "resume" ? "session/resume" : "session/load",
+                    { sessionId: cursor, cwd, mcpServers: sessionServers, ...selectionParams },
+                    LOAD_SESSION_TIMEOUT,
+                    (loaded) => {
+                      if (!loaded) return;
+                      if (support.acceptsLoadedSession && !support.acceptsLoadedSession({
+                        turn: cliTurn, currentModelId: loaded?.models?.currentModelId,
+                      })) return;
+                      session.sessionId = cursor;
+                      session.sessionKey = sessionKey;
+                      session.sessionConfigResult = loaded;
+                    },
+                  );
+                } catch {
+                  // the session is gone or the load was refused: the turn
+                  // decides (a fresh process, or a new session with history)
+                }
+              } else {
+                await request("session/new", { cwd, mcpServers: sessionServers, ...selectionParams }, NEW_SESSION_TIMEOUT, (created) => {
+                  session.sessionId = typeof created?.sessionId === "string" ? created.sessionId : null;
+                  session.sessionKey = sessionKey;
+                  session.sessionConfigResult = created;
+                });
+              }
+            })();
+            const settled = warm.then(() => {}, () => {});
+            warming.set(threadId, settled);
+            try {
+              await warm;
+            } catch (error) {
+              if (sessions.get(threadId) === session && !session.current) closeSession(threadId, "warm-failed");
+              throw error;
+            } finally {
+              if (warming.get(threadId) === settled) warming.delete(threadId);
+            }
+          }
+          const signal = turn.warmSignal;
+          const releaseIfIdle = () => {
+            if (sessions.get(threadId) === session && !session.current && !active.has(threadId)) closeSession(threadId, "call ended");
+          };
+          if (signal?.aborted) releaseIfIdle();
+          else {
+            signal?.addEventListener("abort", releaseIfIdle, { once: true });
+            if (sessions.get(threadId) === session && !session.current) armIdle(threadId);
+          }
+          return result;
+        }
 
         const state: AcpTurn["state"] = { settled: false, promptSent: false, text: "", producedItem: false, startupActivity: false, stopped: false, usagePeak: null, usageLast: null, usageCompacted: false };
         let acknowledge = () => {};
@@ -1843,42 +1970,8 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
                 }
               }
               if (state.settled || session.closing) throw new Error("session closed");
-              if (!session.initResult) {
-                session.initResult = await request(
-                  "initialize",
-                  {
-                    protocolVersion: 1,
-                    clientInfo: { name: "openmausbot", version: "0.0.0" },
-                    clientCapabilities: {
-                      fs: {
-                        readTextFile: support.clientFileSystem === true,
-                        writeTextFile: support.clientFileSystem === true,
-                      },
-                      terminal: false,
-                    },
-                  },
-                  INIT_TIMEOUT,
-                );
-              }
-              // authenticate is once per process; a turn that skips
-              // subscription auth neither checks nor marks the flag
-              if (!skipSubscriptionAuthForLocalInject(turn.model) && !session.authenticated) {
-                const methods: Array<{ id?: string }> = Array.isArray(session.initResult?.authMethods)
-                  ? session.initResult.authMethods
-                  : [];
-                const methodId = support.pickAuthMethod(methods, launchEnv);
-                if (methodId) {
-                  try {
-                    await request("authenticate", { methodId }, INIT_TIMEOUT);
-                    session.authenticated = true;
-                  } catch {
-                    if (support.authFailure === "fail") throw new Error(support.loginNote);
-                    // else: proceed on an ambient login
-                  }
-                } else if (support.authFailure === "fail") {
-                  throw new Error(support.loginNote);
-                }
-              }
+              if (!session.initResult) session.initResult = await initialize();
+              await authenticateOnce();
               const images = turn.images ?? [];
               const accepts = session.initResult?.agentCapabilities?.promptCapabilities?.image === true ||
                 support.acceptsUnadvertisedImages?.(session.initResult) === true;
@@ -1904,15 +1997,7 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
                 // no fresh session bookkeeping
                 break;
               }
-              // stdio is every agent's baseline; a url server rides only with
-              // an agent that advertised its transport, so an agent without
-              // http/sse never sees an entry it would refuse the session over
-              const sessionServers = mcpServers.filter((server) =>
-                !("type" in server) || init?.agentCapabilities?.mcpCapabilities?.[server.type] === true);
-              // A withheld turn sends its profile even when the bot did not narrow
-              // native tools. Otherwise session/new would keep the CLI defaults.
-              const selectionParams = (narrowsNativeTools(turn.toolScope) || turn.withholdHostTools === true) && support.toolScopeSessionParams
-                ? support.toolScopeSessionParams(turn, init, sessionServers.length > 0, { config: turnConfig, env, cwd }) : {};
+              const { sessionServers, selectionParams } = sessionInputs(init);
               let loaded = false;
               let replaceLoaded = false;
               if (cursor) {
@@ -2377,6 +2462,7 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
             // Direct adapter calls that omit it still fail closed in sendTurn.
             localComputerMcp: true,
             ...(support.withholdsHostTools ? { withholdsHostTools: true as const } : {}),
+            ...(support.warmSession ? { warmSession: true } : {}),
           },
           sendTurn,
           interruptTurn: async (threadId) => active.get(threadId)?.interrupt(),
@@ -2387,6 +2473,13 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
             return finish(decision.behavior, "user", decision.message, decision.always === true);
           },
           hasSession: (threadId) => active.has(threadId),
+          releaseWarmSession: (threadId) => {
+            const live = sessions.get(threadId);
+            // A running turn owns the process. Hangup closes only an idle
+            // one, including the process kept warm between call turns.
+            if (!live || live.current || live.closing || active.has(threadId)) return;
+            closeSession(threadId, "call ended");
+          },
           stopAll: async () => {
             for (const { stop } of active.values()) stop();
             // idle pooled sessions have no running turn — close them too
