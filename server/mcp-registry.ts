@@ -10,6 +10,8 @@ export interface StoredStdioMcpServer extends StdioMcpSpec {
   /** Tools of this server bots never see (the Plugins detail page's
    * switches). Absent or empty: every tool. */
   disabledTools?: string[];
+  /** The marketplace it was added from (Plugins); absent: added by hand. */
+  source?: string;
 }
 /** An app registered in advance with the server's authorization server,
  * for servers that do not let apps register themselves. The secret is a
@@ -23,6 +25,7 @@ export interface StoredRemoteMcpServer extends RemoteMcpSpec {
   enabled: boolean;
   oauth?: McpOAuthClientConfig;
   disabledTools?: string[];
+  source?: string;
 }
 export type StoredMcpServer = StoredStdioMcpServer | StoredRemoteMcpServer;
 
@@ -34,6 +37,7 @@ export interface StdioMcpServerListing {
   envKeys: string[];
   enabled: boolean;
   disabledTools?: string[];
+  source?: string;
 }
 export interface RemoteMcpServerListing {
   name: string;
@@ -44,6 +48,7 @@ export interface RemoteMcpServerListing {
   /** present when a pre-registered sign-in app is set */
   oauth?: { clientId: string; scopes: string[]; clientSecretConfigured: boolean };
   disabledTools?: string[];
+  source?: string;
 }
 export type McpServerListing = StdioMcpServerListing | RemoteMcpServerListing;
 
@@ -63,6 +68,14 @@ export const MAX_DISABLED_TOOLS = 256;
 const TOOL_NAME = /^[^*\x00-\x1f\x7f]{1,256}$/;
 const disabledToolsSchema = z.array(z.string().regex(TOOL_NAME, "A tool name is one line of text without *."))
   .max(MAX_DISABLED_TOOLS, `Disable at most ${MAX_DISABLED_TOOLS} tools per server.`);
+
+const sourceSchema = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/, "A source is a marketplace name.");
+
+/** The marketplace a server came from: a new one, else the saved one. */
+function sourceFor(incoming: string | undefined, existing?: StoredMcpServer): { source?: string } {
+  const source = incoming ?? existing?.source;
+  return source ? { source } : {};
+}
 
 /** The disabled tool list to store: a new one, else the saved one. */
 function disabledToolsFor(incoming: string[] | undefined, existing?: StoredMcpServer): { disabledTools?: string[] } {
@@ -129,6 +142,7 @@ const stdioEntrySchema = z.object({
   env: z.record(z.string(), z.string().max(16_384)).optional(),
   enabled: z.boolean().optional(),
   disabledTools: disabledToolsSchema.optional(),
+  source: sourceSchema.optional(),
 }).strict();
 
 const stdioMutationSchema = stdioEntrySchema.extend({
@@ -156,6 +170,7 @@ const remoteEntrySchema = z.object({
   oauth: oauthClientSchema.optional(),
   enabled: z.boolean().optional(),
   disabledTools: disabledToolsSchema.optional(),
+  source: sourceSchema.optional(),
 }).strict();
 
 const remoteMutationSchema = remoteEntrySchema.extend({
@@ -248,6 +263,7 @@ function parseStdio(raw: unknown, mutation: boolean, existing?: StoredMcpServer)
       env: env.values,
       enabled: enabledFor(parsed.data.enabled, mutation, existing),
       ...disabledToolsFor(parsed.data.disabledTools, existing),
+      ...sourceFor(parsed.data.source, existing),
     },
   };
 }
@@ -278,6 +294,7 @@ function parseRemote(raw: unknown, mutation: boolean, existing?: StoredMcpServer
       ...(oauth.value ? { oauth: oauth.value } : {}),
       enabled: enabledFor(parsed.data.enabled, mutation, existing),
       ...disabledToolsFor(parsed.data.disabledTools, existing),
+      ...sourceFor(parsed.data.source, existing),
     },
   };
 }
@@ -362,6 +379,7 @@ export function listMcpServers(raw: Record<string, unknown> | undefined): McpSer
           oauth: { clientId: server.oauth.clientId, scopes: server.oauth.scopes ?? [], clientSecretConfigured: Boolean(server.oauth.clientSecret) },
         } : {}),
         ...(server.disabledTools?.length ? { disabledTools: server.disabledTools } : {}),
+        ...(server.source ? { source: server.source } : {}),
       }];
     }
     return [{
@@ -371,6 +389,7 @@ export function listMcpServers(raw: Record<string, unknown> | undefined): McpSer
       envKeys: Object.keys(server.env).sort(),
       enabled: server.enabled,
       ...(server.disabledTools?.length ? { disabledTools: server.disabledTools } : {}),
+        ...(server.source ? { source: server.source } : {}),
     }];
   });
 }

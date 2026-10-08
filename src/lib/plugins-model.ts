@@ -3,7 +3,7 @@
 // of one kind. Pure functions only, so the three views and their tests share
 // the same sorting, search and sections.
 
-export type PluginKind = "app" | "mcp" | "featured" | "skill";
+export type PluginKind = "app" | "mcp" | "featured" | "skill" | "plugin";
 export type PluginCategory = "productivity" | "communication" | "design" | "code" | "passwords" | "other";
 /** A chip of the main view: everything, a category, a kind, or a source. */
 export type PluginFilter = "all" | PluginCategory | "apps" | "mcp" | "skills" | `source:${string}`;
@@ -28,8 +28,11 @@ export interface PluginItem {
   /** where it came from: "manual", "catalog", "composio", "local" or a
    * marketplace name */
   source: string;
-  /** the item this one is shown under (Whop's server) */
+  /** the item this one is shown under: the marketplace plugin that
+   * brought this server or skill, or Whop for its server */
   parent?: string;
+  /** a marketplace plugin's version */
+  version?: string;
 }
 
 /** Words that place an app in a category, matched against its slug, name
@@ -69,6 +72,10 @@ interface McpListing {
 }
 interface FeaturedListing { id: string; name: string; description: string; url: string; domain: string; auth: string; installed?: boolean }
 interface SkillListing { name: string; description: string; source: string; enabled: boolean }
+interface MarketplaceListing {
+  name: string;
+  plugins: Array<{ name: string; description?: string; version?: string; category?: string; installed: boolean; servers: string[]; skills: string[] }>;
+}
 
 export interface PluginSources {
   cards?: readonly AppCard[] | null;
@@ -76,12 +83,16 @@ export interface PluginSources {
   servers?: readonly McpListing[] | null;
   featured?: readonly FeaturedListing[] | null;
   skills?: readonly SkillListing[] | null;
+  marketplaces?: readonly MarketplaceListing[] | null;
   /** Whop, an MCP server connected like an app (#2411): its server's name
    * once added, and whether it is signed in and on. */
   whop?: { description: string; server?: string; connected: boolean } | null;
 }
 
 export const WHOP_KEY = "whop:whop";
+
+/** The key of a marketplace plugin row. */
+export const marketplacePluginKey = (marketplace: string, plugin: string) => `plugin:${plugin}@${marketplace}`;
 
 function hostOf(url: string | undefined): string | null {
   if (!url) return null;
@@ -132,6 +143,18 @@ export function buildPluginItems(sources: PluginSources): PluginItem[] {
       source: "catalog",
     });
   }
+  // What each installed marketplace plugin brought, so its servers and
+  // skills show under it rather than twice.
+  const serverParent = new Map<string, string>();
+  const skillParent = new Map<string, string>();
+  for (const market of sources.marketplaces ?? []) {
+    for (const plugin of market.plugins) {
+      if (!plugin.installed) continue;
+      const key = marketplacePluginKey(market.name, plugin.name);
+      for (const server of plugin.servers) serverParent.set(server, key);
+      for (const skill of plugin.skills) skillParent.set(skill, key);
+    }
+  }
   const serverUrls = new Set<string>();
   for (const server of sources.servers ?? []) {
     if (server.url) serverUrls.add(server.url);
@@ -149,6 +172,7 @@ export function buildPluginItems(sources: PluginSources): PluginItem[] {
       status: !server.enabled || server.managedBy ? "off" : needsAuth ? "needs_auth" : "connected",
       action: null,
       source: server.source ?? "manual",
+      ...(server.source && serverParent.has(server.name) ? { parent: serverParent.get(server.name) } : {}),
       ...(sources.whop?.server === server.name ? { parent: WHOP_KEY } : {}),
     });
   }
@@ -180,7 +204,25 @@ export function buildPluginItems(sources: PluginSources): PluginItem[] {
       status: skill.enabled ? "connected" : "off",
       action: null,
       source: skill.source === "local-import" ? "local" : skill.source,
+      ...(skillParent.has(skill.name) && skill.source !== "local-import" ? { parent: skillParent.get(skill.name) } : {}),
     });
+  }
+  for (const market of sources.marketplaces ?? []) {
+    for (const plugin of market.plugins) {
+      items.push({
+        key: marketplacePluginKey(market.name, plugin.name),
+        kind: "plugin",
+        id: `${plugin.name}@${market.name}`,
+        name: plugin.name,
+        description: plugin.description ?? "",
+        category: categoryFor(plugin.category, plugin.name, plugin.description),
+        installed: plugin.installed,
+        status: plugin.installed ? "connected" : "available",
+        action: plugin.installed ? null : "add",
+        source: market.name,
+        ...(plugin.version ? { version: plugin.version } : {}),
+      });
+    }
   }
   return items;
 }
@@ -197,7 +239,7 @@ export function matchesFilter(item: PluginItem, filter: PluginFilter): boolean {
   if (filter === "apps") return item.kind === "app";
   if (filter === "mcp") return item.kind === "mcp" || item.kind === "featured";
   if (filter === "skills") return item.kind === "skill";
-  if (filter.startsWith("source:")) return item.source === filter.slice("source:".length);
+  if (filter.startsWith("source:")) return item.source === filter.slice("source:".length) && !item.parent;
   return item.kind !== "skill" && item.category === filter;
 }
 
@@ -239,7 +281,7 @@ export function mainSections(items: readonly PluginItem[], query: string, filter
   };
   preview("recommended", "mcp", visible.filter((item) => item.kind === "featured"));
   for (const source of extraSources) {
-    preview(`source:${source}`, `source:${source}`, visible.filter((item) => item.source === source).sort(byInstalledThenName));
+    preview(`source:${source}`, `source:${source}`, visible.filter((item) => item.source === source && !item.parent).sort(byInstalledThenName));
   }
   for (const category of CATEGORY_ORDER) {
     if (category === "other") continue;
@@ -251,8 +293,8 @@ export function mainSections(items: readonly PluginItem[], query: string, filter
   return sections;
 }
 
-/** Installed plugins for the Manage page (skills have their own list; an
- * item that stands for a server, like Whop, shows instead of that server). */
+/** Installed plugins for the Manage page (skills have their own list; an item
+ * that stands for servers, a marketplace plugin or Whop, shows instead). */
 export function installedPlugins(items: readonly PluginItem[]): PluginItem[] {
   return items.filter((item) => item.installed && item.kind !== "skill" && !item.parent).sort((a, b) => a.name.localeCompare(b.name));
 }

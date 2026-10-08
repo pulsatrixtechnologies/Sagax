@@ -66,3 +66,7 @@ Request: the Plugins panel works like the "Connect Apps" screens of Claude Deskt
 - Per-tool switches for connected apps: the detail page of a Composio app has no Tools card; its tools are chosen per bot in Access settings (`connectorTools` grants). A workspace-wide switch would sit beside the per-bot grants.
 - Uninstall a private skill from the panel: the skills library has no delete endpoint (`/api/skills-library/:name` reads and switches only).
 - Bot templates link from the Manage page (the reference has one); Sagax templates live in the bot creation flow.
+- Marketplace tokens for private repositories: a marketplace clones with this computer's git credentials, or the acting person's GitHub connection for github.com. No per-marketplace token is stored (a token field per marketplace, kept like MCP header values, would cover GitLab and other hosts).
+- Agents and commands of a marketplace plugin: "Add" in the Plugins panel installs its MCP servers and skills for every bot; its `agents/` and `commands/` load only through a bot's own Library > Plugins (`server/bot-plugins.ts`).
+- Updating an installed marketplace plugin: refreshing a marketplace offers its new plugins; an installed plugin is updated by uninstalling and adding it again.
+- A marketplace added by the address of its marketplace.json (not a repository) installs a plugin's MCP servers (`.mcp.json`, plugin.json) read over https, not its skills (a folder listing needs a repository).

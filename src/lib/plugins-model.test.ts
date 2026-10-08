@@ -71,6 +71,36 @@ describe("the Plugins panel's one list", () => {
   });
 });
 
+describe("marketplace plugins in the list", () => {
+  const withMarket = {
+    ...sources,
+    servers: [...sources.servers, { name: "devjc-notes", enabled: true, url: "https://notes.example.com/mcp", source: "devjc" }],
+    skills: [...sources.skills, { name: "triage", description: "Triage", source: "devjc", enabled: false }],
+    marketplaces: [{
+      name: "devjc",
+      plugins: [
+        { name: "notes", description: "Notes for bots", version: "1.0.0", installed: true, servers: ["devjc-notes"], skills: ["triage"] },
+        { name: "figma-kit", description: "Design helpers", installed: false, servers: [], skills: [] },
+      ],
+    }],
+  };
+
+  it("shows a marketplace's plugins under its own chip, with what they brought folded under them", () => {
+    const items = buildPluginItems(withMarket);
+    const byKey = Object.fromEntries(items.map((item) => [item.key, item]));
+    expect(byKey["plugin:notes@devjc"]).toMatchObject({ kind: "plugin", installed: true, source: "devjc", version: "1.0.0" });
+    expect(byKey["plugin:figma-kit@devjc"]).toMatchObject({ action: "add", category: "design" });
+    expect(byKey["mcp:devjc-notes"]).toMatchObject({ source: "devjc", parent: "plugin:notes@devjc" });
+    expect(byKey["skill:triage"]).toMatchObject({ parent: "plugin:notes@devjc" });
+    const sections = mainSections(items, "", "all", ["devjc"]);
+    expect(sections.find((section) => section.id === "source:devjc")!.items.map((item) => item.key))
+      .toEqual(["plugin:notes@devjc", "plugin:figma-kit@devjc"]);
+    // installed once, as the plugin, not again as its server
+    expect(installedPlugins(items).map((item) => item.key)).toContain("plugin:notes@devjc");
+    expect(installedPlugins(items).map((item) => item.key)).not.toContain("mcp:devjc-notes");
+  });
+});
+
 describe("Whop, an MCP server connected like an app", () => {
   it("is one app row with Connect until signed in, then shows as connected and folds its server under it", () => {
     const before = buildPluginItems({ ...sources, whop: { description: "Sell on Whop", connected: false } });

@@ -553,6 +553,7 @@ import type { WebhookTrigger } from "../shared/webhooks.ts";
 import { SPAWNED_PROXIES } from "./proxy-paths.ts";
 import {
   installLibrarySkill,
+  removeLibrarySkillFrom,
   listLibrarySkills,
   loadBundledSkills,
   loadUserSkills,
@@ -720,6 +721,8 @@ import { createBotSettingsRoutes } from "./routes/bot-settings.ts";
 import { createAutoReviewRuleRoutes } from "./routes/auto-review-rules.ts";
 import { createComputerStatusRoutes, diskStateForFree } from "./routes/computer-status.ts";
 import { createPluginRoutes, pluginServerName, type InstalledPlugin } from "./routes/plugins.ts";
+import { createMarketplaceRoutes } from "./routes/marketplaces.ts";
+import { PluginMarketplaces, marketplaceServerName } from "./plugin-marketplaces.ts";
 import { createAccountRoutes } from "./routes/account.ts";
 import { createRegistrySearch } from "./plugin-registry.ts";
 import { BotPluginError, BotPlugins, marketplacePolicySchema, normalizePolicyEntry, type MarketplacePolicy } from "./bot-plugins.ts";
@@ -20511,6 +20514,100 @@ ROUTES.push(createComputerStatusRoutes({
 // Plugins (server/routes/plugins.ts): the curated catalog and the MCP
 // Registry, what is installed, and adding one with its sign-in.
 const pluginRegistry = createRegistrySearch();
+// Plugins > Manage > Marketplaces (server/routes/marketplaces.ts): plugin
+// marketplaces of the whole installation; Add maps a plugin onto MCP
+// servers (source: the marketplace) and library skills.
+const pluginMarketplaces = new PluginMarketplaces({
+  dataDir: DATA_DIR,
+  gitEnvironment: (actor) => githubGitEnvironment(usablePersonGithub(actor)?.token),
+  policy: pluginMarketplacePolicy,
+});
+ROUTES.push(createMarketplaceRoutes({
+  store: pluginMarketplaces,
+  mayManage: (auth) => computerOwner(auth),
+  actor: (auth) => sessionPrincipal(auth) ?? undefined,
+  install: async (marketplace, plugin, { auth }) => {
+    if (pluginMarketplaces.installed().some((entry) => entry.key === `${plugin}@${marketplace}`)) {
+      return { status: 409, body: { error: "This plugin is already installed. Uninstall it first to install it again.", code: "already_installed" } };
+    }
+    const { plan, version } = await pluginMarketplaces.prepare(marketplace, plugin, sessionPrincipal(auth) ?? undefined);
+    const addedServers: string[] = [];
+    const skipped = [...plan.skipped];
+    if (plan.servers.length) {
+      if (mcpConfigBusy) return { status: 409, body: { error: "MCP servers are already being updated." } };
+      mcpConfigBusy = true;
+      try {
+        const current = { ...cfg.mcpServers };
+        const taken = new Set(Object.keys(current));
+        for (const server of plan.servers) {
+          const name = marketplaceServerName(server.name, plugin, taken);
+          if (Object.keys(current).length >= MAX_MCP_SERVERS) {
+            skipped.push(`MCP server ${server.name} (at most ${MAX_MCP_SERVERS} servers)`);
+            continue;
+          }
+          const remote = "url" in server.entry;
+          if (IDENTITY.kind === "perspicax" && !remote) {
+            skipped.push(`MCP server ${server.name} (a command would run on the Sagax server)`);
+            continue;
+          }
+          // A remote server is on at once (one that needs a sign-in is never
+          // mounted before it); a command stays off until it was tested.
+          const parsed = parseMcpServerMutation(name, { ...server.entry, source: marketplace });
+          if (!parsed.ok) {
+            skipped.push(`MCP server ${server.name} (${parsed.error})`);
+            continue;
+          }
+          parsed.server.enabled = remote;
+          const refusal = mcpPolicyRefusal(name, parsed.server);
+          if (refusal) {
+            skipped.push(`MCP server ${server.name} (${refusal})`);
+            continue;
+          }
+          current[name] = parsed.server;
+          taken.add(name);
+          addedServers.push(name);
+        }
+        if (addedServers.length) persistMcpServers(current);
+      } finally {
+        mcpConfigBusy = false;
+      }
+      for (const name of addedServers) await mcpOAuth.forget(name).catch(() => undefined);
+      if (addedServers.length) await probeMcpOAuth(addedServers);
+    }
+    const addedSkills: string[] = [];
+    for (const skill of plan.skills) {
+      const installed = installLibrarySkill({
+        name: skill.name, instructions: skill.text, source: marketplace,
+        warnings: scanSkillText(skill.text), reviewState: "disabled",
+      });
+      if ("error" in installed) skipped.push(`skill ${skill.name} (${installed.error})`);
+      else addedSkills.push(skill.name);
+    }
+    const record = pluginMarketplaces.recordInstall(marketplace, plugin, { ...(version ? { version } : {}), servers: addedServers, skills: addedSkills });
+    return { status: 200, body: { plugin: record, skipped, servers: mcpServerResponse().servers } };
+  },
+  uninstall: async (marketplace, plugin) => {
+    const record = pluginMarketplaces.recordUninstall(marketplace, plugin);
+    if (record.servers.length) {
+      if (mcpConfigBusy) return { status: 409, body: { error: "MCP servers are already being updated." } };
+      mcpConfigBusy = true;
+      try {
+        const next = { ...cfg.mcpServers };
+        for (const name of record.servers) {
+          const parsed = next[name] === undefined ? null : parseStoredMcpServer(name, next[name]);
+          // Only a server that still comes from this marketplace.
+          if (parsed?.ok && parsed.server.source === marketplace) delete next[name];
+        }
+        persistMcpServers(next);
+      } finally {
+        mcpConfigBusy = false;
+      }
+      for (const name of record.servers) await mcpOAuth.forget(name).catch(() => undefined);
+    }
+    for (const skill of record.skills) removeLibrarySkillFrom(skill, marketplace);
+    return { status: 200, body: { removed: record, servers: mcpServerResponse().servers } };
+  },
+}));
 ROUTES.push(createPluginRoutes({
   registry: pluginRegistry,
   installed: async () => {
