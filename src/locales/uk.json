@@ -1879,7 +1879,6 @@
   "personPanel.connections.created": "Додано {date}",
   "personPanel.connections.lastUsed": "Востаннє {date}",
   "personPanel.connections.removeError": "Не вдалося вилучити з’єднання.",
-  "model.org.hostTools": "{name} запускає власні інструменти на сервері Sagax. Оберіть рушій, який працює у вашому серверному середовищі.",
   "settings.scope.installation": "Усі на цьому сервері",
   "settings.scope.me": "Слідує за вашим обліковим записом",
   "settings.scope.device": "Лише цей пристрій",

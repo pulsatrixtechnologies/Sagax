@@ -1357,7 +1357,6 @@
   "personPanel.connections.created": "Hinzugefügt {date}",
   "personPanel.connections.lastUsed": "Zuletzt verwendet {date}",
   "personPanel.connections.removeError": "Die Verbindung konnte nicht entfernt werden.",
-  "model.org.hostTools": "{name} führt eigene Tools auf dem Sagax-Server aus. Wählen Sie eine Engine, die in Ihrer Serverumgebung funktioniert.",
   "settings.scope.installation": "Alle auf diesem Server",
   "settings.scope.me": "Folgt deinem Konto",
   "settings.scope.device": "Nur dieses Gerät",

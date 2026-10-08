@@ -1,3 +1,5 @@
+import { CONTOUR_MS, contourVerdict, type ContourPoint, type ContourVerdict } from "./prosody";
+
 // When the person starts and stops talking, from one voice probability per
 // 32 ms frame (Silero VAD, vad.ts) and the frame's level. Pure: no browser
 // API, so the unit tests drive every rule with a fake clock.
@@ -29,6 +31,16 @@
 //   after them is confident (the VAD is sure nobody speaks, not just under
 //   its threshold). A pause inside a sentence never ends it early, and a
 //   person who goes on after it is joined back (call.ts CONTINUATION_MS).
+// - How the voice ends counts too ("Faster end of turn", `prosody`, Short
+//   and Normal only): the pitch and energy of the last 400 ms before the
+//   silence (prosody.ts). A finished contour (a fall that fades out, or a
+//   clear rise) ends the turn on the same short, confident silence as final
+//   punctuation, even before the words carry any; a flat contour held on a
+//   filler keeps the long delay; a French linking word ending a sentence the
+//   contour says is finished waits half of `incompleteMs`. The confident
+//   silence is the safety: every frame of the short window under
+//   QUIET_PROBABILITY, so a word is never cut in its middle, and a person
+//   who goes on within CONTOUR_CONTINUATION_MS is joined back (call.ts).
 
 export const FRAME_MS = 32;
 
@@ -42,20 +54,51 @@ export const PAUSE_PRESETS = {
 /** Under this voice probability a silent frame is a confident one. */
 export const QUIET_PROBABILITY = 0.15;
 
+/** A turn ended on its contour and the person spoke again this soon after:
+ * it was a wrong cut, the new words continue it (call.ts). */
+export const CONTOUR_CONTINUATION_MS = 600;
+
 export type PausePreset = keyof typeof PAUSE_PRESETS;
 
 /** Words a sentence does not end on (English and French): a clause that
  * stops on one is still going. */
-const CONTINUING_WORDS = new Set([
-  // English
+const CONTINUING_EN = [
   "and", "or", "but", "so", "because", "to", "the", "a", "an", "of", "in", "on", "at", "for", "with", "from", "about",
   "my", "your", "our", "their", "his", "her", "its", "if", "that", "when", "which", "who", "is", "are", "was", "be",
   "into", "like", "than", "then", "as", "by", "me", "uh", "um", "erm", "hmm", "please",
-  // French
+];
+const CONTINUING_FR = [
   "et", "ou", "mais", "donc", "parce", "que", "qu", "qui", "de", "du", "des", "le", "la", "les", "l", "un", "une",
   "au", "aux", "pour", "avec", "dans", "sur", "en", "mon", "ma", "mes", "ton", "ta", "tes", "son", "sa", "ses",
   "notre", "votre", "leur", "si", "quand", "est", "c", "ce", "cette", "comme", "euh", "ben", "puis",
-]);
+];
+const CONTINUING_WORDS = new Set([...CONTINUING_EN, ...CONTINUING_FR]);
+/** Sounds, not words: a turn held on one is never a French ending to trust. */
+const FILLERS = new Set(["uh", "um", "erm", "hmm", "euh", "ben"]);
+const ENGLISH = new Set(CONTINUING_EN);
+
+function lastWords(text: string): string[] {
+  return text.trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").match(/[a-z0-9]+/g) ?? [];
+}
+
+/** The words so far end on a filler or a linking word ("euh", "um", "de",
+ * "pour", "and"...), whatever the punctuation. */
+export function endsOnContinuingWord(text: string): boolean {
+  const last = lastWords(text).at(-1);
+  return last !== undefined && CONTINUING_WORDS.has(last);
+}
+
+/** The words so far are unfinished only because of a French linking word
+ * ("c'est comme", "on verra puis"), not a filler, a comma or an English
+ * word: the case where a finished intonation may shorten the wait. */
+export function frenchEnding(text: string): boolean {
+  const trimmed = text.trim();
+  if (!trimmed || /[,;:\u2013-]$/.test(trimmed)) return false;
+  const words = lastWords(trimmed);
+  const last = words.at(-1);
+  if (!last || words.length <= 2) return false;
+  return CONTINUING_WORDS.has(last) && !ENGLISH.has(last) && !FILLERS.has(last);
+}
 
 /** The words so far are a finished sentence: closed by final punctuation
  * (the recognizer's own judgment: "what my next meeting is?" ends on "is")
@@ -105,6 +148,9 @@ export interface TurnOptions {
   /** the endpoint once the words so far are a finished sentence and the
    * silence is confident (0: never early) */
   completeMs?: number;
+  /** read the voice's ending (pitch and energy) to end a turn sooner or
+   * later ("Faster end of turn"; off in Patient) */
+  prosody?: boolean;
 }
 
 export interface FrameInput {
@@ -116,6 +162,9 @@ export interface FrameInput {
   botAudible?: boolean;
   /** the echo guard says the microphone is only the bot's echo */
   echo?: boolean;
+  /** the frame's pitch (Hz, prosody.ts estimatePitch), null when unvoiced;
+   * only read while `prosody` is on */
+  pitch?: number | null;
 }
 
 export type TurnEvent =
@@ -126,7 +175,7 @@ export type TurnEvent =
   /** the candidate died out before `start`, or the turn was too short */
   | { type: "cancel" }
   /** the person stopped talking */
-  | { type: "end"; speechMs: number; endpointMs: number; early?: boolean };
+  | { type: "end"; speechMs: number; endpointMs: number; early?: boolean; contour?: ContourVerdict; onContour?: boolean };
 
 type State = "idle" | "candidate" | "speaking";
 
@@ -147,6 +196,12 @@ export class TurnDetector {
   private complete = false;
   /** consecutive confidently silent frames (ms) */
   private quietMs = 0;
+  /** the words recognized so far in this turn */
+  private words = "";
+  /** the last 2 x CONTOUR_MS of the turn's voiced frames */
+  private contour: ContourPoint[] = [];
+  /** what the voice's ending says, read when a silence begins */
+  private verdict: ContourVerdict = "unknown";
 
   constructor(options: TurnOptions = {}) {
     this.o = {
@@ -163,6 +218,7 @@ export class TurnDetector {
       nearShare: 0.22,
       incompleteMs: 0,
       completeMs: 0,
+      prosody: false,
       ...options,
     };
     this.endpoint = this.o.endpointMs;
@@ -176,7 +232,28 @@ export class TurnDetector {
   /** The silence that ends the current turn: the endpoint, longer while
    * the words so far are an unfinished clause. */
   get effectiveEndpointMs(): number {
-    return this.endpoint + (this.unfinished ? this.o.incompleteMs : 0);
+    if (this.o.prosody && this.verdict === "unfinished") return this.endpoint + this.o.incompleteMs;
+    if (!this.unfinished) return this.endpoint;
+    // a French linking word on a contour that says the sentence is over
+    if (this.o.prosody && this.verdict === "finished" && frenchEnding(this.words)) return this.endpoint + Math.round(this.o.incompleteMs / 2);
+    return this.endpoint + this.o.incompleteMs;
+  }
+
+  /** "Faster end of turn": read the voice's ending (never in Patient, the
+   * caller decides). */
+  setProsody(on: boolean): void {
+    if (this.o.prosody === on) return;
+    this.o.prosody = on;
+    this.verdict = "unknown";
+  }
+
+  get prosody(): boolean {
+    return this.o.prosody;
+  }
+
+  /** What the voice's ending said at the current silence (diagnostics, tests). */
+  get contourVerdict(): ContourVerdict {
+    return this.verdict;
   }
 
   /** The pause preference changed: a new range, the learned place kept in it. */
@@ -192,13 +269,27 @@ export class TurnDetector {
   hint(text: string): void {
     this.unfinished = this.state === "idle" ? false : incompleteClause(text);
     this.complete = this.state === "idle" ? false : completeClause(text);
+    this.words = this.state === "idle" ? "" : text;
+    // words that arrive during the silence change what the contour means
+    if (this.silenceMs > 0 && this.o.prosody) this.readContour();
   }
 
   /** The silence that ends the current turn early, when its words are a
    * finished sentence (else null). */
   get earlyEndpointMs(): number | null {
-    if (!this.complete || !this.o.completeMs) return null;
-    return Math.min(this.endpoint, this.o.completeMs);
+    if (!this.o.completeMs) return null;
+    if (this.complete || this.contourEarly) return Math.min(this.endpoint, this.o.completeMs);
+    return null;
+  }
+
+  /** The turn may end early on its contour alone: finished, and the words
+   * so far (if any) are not an unfinished clause. */
+  private get contourEarly(): boolean {
+    return this.o.prosody && this.verdict === "finished" && !this.unfinished;
+  }
+
+  private readContour(): void {
+    this.verdict = contourVerdict(this.contour, endsOnContinuingWord(this.words));
   }
 
   get speaking(): boolean {
@@ -230,6 +321,9 @@ export class TurnDetector {
     this.unfinished = false;
     this.complete = false;
     this.quietMs = 0;
+    this.words = "";
+    this.contour = [];
+    this.verdict = "unknown";
   }
 
   private voiced(frame: FrameInput): boolean {
@@ -264,6 +358,7 @@ export class TurnDetector {
           this.speechMs = this.voicedMs;
           this.turnMs = this.voicedMs;
           this.longestPauseMs = 0;
+          if (this.o.prosody) this.remember(frame, frameMs);
           return { type: "start", bargeIn: this.bargeIn };
         }
         return null;
@@ -283,10 +378,18 @@ export class TurnDetector {
       this.silenceMs = 0;
       this.quietMs = 0;
       this.speechMs += frameMs;
+      if (this.o.prosody) {
+        this.remember(frame, frameMs);
+        this.verdict = "unknown";
+      }
     } else {
+      // the silence begins: how did the voice end?
+      if (this.silenceMs === 0 && this.o.prosody) this.readContour();
       this.silenceMs += frameMs;
       this.quietMs = frame.probability < QUIET_PROBABILITY ? this.quietMs + frameMs : 0;
     }
+    const contourEnd = this.contourEarly && !this.complete;
+    const verdict = this.verdict;
     const early = this.earlyEndpointMs;
     const endsEarly = early !== null && this.quietMs >= early && this.silenceMs < this.effectiveEndpointMs;
     if (endsEarly || this.silenceMs >= this.effectiveEndpointMs || this.turnMs >= this.o.maxTurnMs) {
@@ -297,9 +400,22 @@ export class TurnDetector {
       if (speechMs < this.o.minTurnMs) return { type: "cancel" };
       // an early end says nothing about the person's pauses: no adaptation
       if (!endsEarly) this.adapt(longest);
-      return { type: "end", speechMs, endpointMs, ...(endsEarly ? { early: true } : {}) };
+      return {
+        type: "end", speechMs, endpointMs,
+        ...(endsEarly ? { early: true } : {}),
+        ...(this.o.prosody && verdict !== "unknown" ? { contour: verdict } : {}),
+        ...(endsEarly && contourEnd ? { onContour: true } : {}),
+      };
     }
     return null;
+  }
+
+  /** Keep the voiced frame in the contour window. */
+  private remember(frame: FrameInput, frameMs: number): void {
+    this.contour.push({ pitch: frame.pitch ?? null, level: frame.level });
+    // twice the window: the voice's own end is found in it (prosody.ts endOfVoice)
+    const keep = Math.max(8, Math.round((2 * CONTOUR_MS) / frameMs));
+    if (this.contour.length > keep) this.contour.splice(0, this.contour.length - keep);
   }
 
   /** A pause close to the endpoint inside a turn means this person thinks

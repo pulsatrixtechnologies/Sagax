@@ -229,13 +229,61 @@ What keeps it short:
   turn ends after 288, 352 or 576 ms (Short, Normal, Patient) instead of the
   adaptive endpoint. A pause inside a sentence never ends it early; words
   said right after are joined back (`voiceCall.continues`).
+- **The voice's ending counts ("Faster end of turn", Advanced, on by
+  default).** The call reads the pitch and energy of the last 400 ms of
+  speech before a silence, on this computer (`src/lib/voice-mode/prosody.ts`:
+  a normalized autocorrelation pitch over 70 to 400 Hz per 32 ms frame,
+  octave slips dropped, the least squares slope in semitones). A fall of
+  1.5 semitones or more that fades out (a statement), or a rise of 3 or more
+  (a question), is finished: the turn ends on the same short confident
+  window as final punctuation (288 or 352 ms, Short or Normal) even before the
+  words carry any. A flat pitch held on a filler or a linking word ("euh",
+  "um", "de", "pour") keeps the long delay (the endpoint plus
+  `incompleteMs`). A French linking word ending a sentence the contour says
+  is finished ("on se voit demain puis") waits half of `incompleteMs`; an
+  English one keeps all of it. Anything else (too few voiced frames, a pitch
+  that wobbles, a sound cut at full strength as in the middle of a word)
+  changes nothing. Safety: every frame of the short window must be under
+  Silero 0.15, so a word is never cut in its middle; and a person who speaks
+  again within 600 ms of a turn ended this way continues it
+  (`CONTOUR_CONTINUATION_MS`, `voiceCall.continues`), even over the bot's
+  first words, which stop: a wrong cut costs only those words. Patient is
+  never affected, nor push to talk. Off: the endpoint is the one above.
 - **Sent on the stable words.** A turn whose streamed words are a stable
   sentence is sent at once; the final words are checked when they come. A
   material difference (any word beyond case, punctuation, accents and
   fillers) stops that answer before it is spoken and sends the final words
   as its complete version (`voiceCall.continues`).
-- **The first clause speaks first.** The first sentence is cut at a comma
-  after about six words.
+- **The first clause speaks first.** Over POST, the first sentence is cut at
+  a comma after about six words (36 characters). With the streaming voice
+  there is no character wait: the first clause goes at its first comma once
+  it has two words (`STREAMING_CLAUSES`), since the socket is already open.
+- **Streaming voice (Advanced, on by default).** One socket for the call:
+  the page opens `GET /voice/speech` (voice, speed and language in the
+  query) when the call starts, and the server opens xAI's streaming text to
+  speech socket for it (`wss://api.x.ai/v1/tts`, `codec=pcm`,
+  `sample_rate=24000`, `optimize_streaming_latency=2`, the key in the
+  `Authorization` header; `server/tts/grok.ts` `openSpeechStream`). Each
+  clause of the answer is sent the moment it is written (`{"type":"say"}`)
+  and becomes one xAI utterance (`text.delta`, `text.done`), spoken one after
+  the other on the same socket; its PCM comes back to the page as binary
+  frames between `start` and `done` and plays through the same player as a
+  POST body (`src/lib/voice-mode/speech-stream.ts`). Barge-in, hold, hang-up
+  and a reissued turn cancel a clause (`{"type":"cancel"}`): dropped from the
+  queue, or, when it is the one speaking, cleared at xAI (`text.clear`,
+  confirmed by `audio.clear`); nothing of it reaches the page after. The
+  server session is `server/voice-speech-session.ts`. Safety nets: the page
+  falls back to POST `/voice/stream` for the rest of the call when the socket
+  is not ready within 1.5 s, errors twice in one call, closes, or when the
+  server gives up; the server reopens a dropped xAI socket with a backoff
+  (250, 750, 2000 ms), at most 3 times in a row, then sends `fallback` and
+  logs it once. A clause the socket failed before any of its audio arrived is
+  spoken over POST; one cut mid-way ends where it was cut (never said twice).
+  A clause without audio progress for 8 s, or a clear not confirmed in 2 s,
+  counts as a dropped socket. Changing the voice, speed or language mid-call
+  opens a socket for them at the next clause, which waits for it (a clause
+  said while another is still in flight goes over POST). Hold, mute,
+  hang-up, the transcript card and the thread card are the same either way.
 - **A warm connection to xAI's speech.** Each turn's end (`finalize`) opens
   a pooled connection to api.x.ai (at most every 2 s), so the first
   sentence does not pay a new TLS handshake after the person spoke.
@@ -256,12 +304,11 @@ each engine of `BENCH_ENGINES` (`claude,grok`), the fake Claude CLI in
 `FAKE_ACP_TOKEN_MS`). The Grok report counts each turn's ACP session
 establishments (`establishPerTurn`): 0 on a warm call turn.
 
-xAI also offers a text to speech WebSocket (`wss://api.x.ai/v1/tts`,
-`text.delta` in, `audio.delta` out, `optimize_streaming_latency` 0 to 2,
-`text.clear` for barge-in:
-<https://docs.x.ai/developers/model-capabilities/audio/text-to-speech>). It
-is not used yet; it could start the voice on the first words rather than
-the first clause.
+The bench's knobs for the two switches: `BENCH_SPEECH` (`socket`, the
+default, or `post`), `BENCH_FASTER_END` (1 or 0), `BENCH_UNPUNCTUATED=1`
+(the words never carry punctuation) and `BENCH_REPLY` (the engine's
+answer). Its microphone's voiced frames are a voice-like tone whose last
+400 ms fall and fade, so the pitch reading sees a statement end.
 
 ## Stable tools during a call
 
@@ -314,7 +361,9 @@ Voice ("Not set" is xAI's default voice), Speed (0.75x, 1x, 1.25x, 1.5x) and
 Language (Auto-detect and the languages of `shared/voice-mode.ts`) live in
 localStorage under `omb.voiceMode.v1`, which travels with the person on an
 organization server (`shared/user-preferences.ts`). The call's own settings
-(hands-free or push to talk, Only my voice, call sounds) and the voiceprint
+(hands-free or push to talk, Only my voice, call sounds, and under
+Advanced "Streaming voice" and "Faster end of turn", both on by default)
+and the voiceprint
 stay on the computer (`omb.voiceCall.v1`, `omb.voiceCall.voiceprint.v1`). A language xAI text to
 speech does not take is spoken as `auto`; speech to text gets the base
 language as a hint when xAI supports it, else it detects.
@@ -346,9 +395,13 @@ An xAI API key from console.x.ai with access to the voice endpoints:
   call; the response body streams the audio as it is made), and
   `GET https://api.x.ai/v1/tts/voices`:
   <https://docs.x.ai/developers/model-capabilities/audio/text-to-speech>.
-  xAI also offers a text to speech WebSocket (`wss://api.x.ai/v1/tts`, text
-  deltas in, audio deltas out); sentence requests on a pooled connection give
-  the same first-audio time here and cancel by aborting one request.
+- Streaming text to speech, `wss://api.x.ai/v1/tts` (query `language`,
+  `voice`, `codec=pcm`, `sample_rate=24000`, `speed`,
+  `optimize_streaming_latency=2`; client `text.delta`, `text.done`,
+  `text.clear`; server `audio.delta` base64, `audio.done`, `audio.clear`,
+  `error`; the socket stays open between utterances):
+  <https://docs.x.ai/developers/model-capabilities/audio/text-to-speech#streaming-tts-websocket>.
+  The live call's "Streaming voice" uses it; POST `/v1/tts` is its fallback.
 
 xAI's ephemeral client secrets (`POST /v1/realtime/client_secrets`,
 <https://docs.x.ai/developers/model-capabilities/audio/ephemeral-tokens>)
@@ -362,9 +415,20 @@ the server's own voice routes.
 
 - `server/voice-mode.test.ts`: authorization, payer order, refusal card, no
   key in any answer, validation, rate limit, usage.
-- `server/voice-call.e2e.test.ts`: the listen WebSocket and the streamed
-  speech over real sockets against a fake xAI, same-origin only, and no xAI
-  path but speech to text and text to speech.
+- `server/voice-call.e2e.test.ts`: the listen WebSocket, the streamed
+  speech and the streaming voice socket (clauses, barge-in `text.clear`, a
+  dropped xAI socket reconnected, a refused one answered 502) over real
+  sockets against a fake xAI, same-origin only, and no xAI path but speech
+  to text and text to speech.
+- `server/voice-speech-session.test.ts`: the streaming voice's server
+  session (one clause at a time, clear, drop and backoff, three failed
+  reconnects then fallback, stuck clause or clear).
+- `src/lib/voice-mode/speech-stream.test.ts`: the page's side (open,
+  stream, cancel, a failed clause over POST, two errors, the 1.5 s open,
+  a server fallback) and the clauses without the 36 character wait.
+- `src/lib/voice-mode/prosody.test.ts`: the pitch estimate and the contour
+  verdict on synthetic contours (falling, rising, flat filler, mid-word),
+  and the turn detector using it.
 - `server/tts/grok.test.ts`: the xAI requests (speed, language, STT form).
 - `src/lib/voice-mode/call-logic.test.ts`: the call's state machine (barge-in,
   cancellation, hold, mute), endpointing and its adaptation, the echo guard,
@@ -386,7 +450,10 @@ the server's own voice routes.
 - `electron/app-permissions.node-test.mjs`: the microphone in server mode.
 - Real Electron, server mode, fake xAI (`server/testing/fake-xai-voice.ts`),
   a recorded sentence as the microphone: first audio of the answer after the
-  person stops, barge-in, hold, and no xAI path but voice:
+  person stops, the turn ended on the voice's falling end with no
+  punctuation, the answer over one streaming voice socket, barge-in cleared
+  at xAI, hold, the POST fallback after xAI's socket drops for good, and no
+  xAI path but voice:
   `pnpm exec vite build && node --experimental-strip-types scripts/verify-voice-mode.ts`.
   It drives the call through `window.__sagaxVoiceCall`, which exists only
   when `localStorage["omb.voiceCall.debug"]` is `"1"`.

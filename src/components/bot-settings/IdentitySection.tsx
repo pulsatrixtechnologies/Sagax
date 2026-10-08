@@ -16,7 +16,6 @@ import { Field, inputCls } from "./field";
 import type { BotPatch } from "./useBotSettingsDerived";
 import { useBotEditor } from "./BotEditorContext";
 import { PackageProvenance } from "./PackageProvenance";
-import { ProposalStatus } from "./ProposalStatus";
 import { randomBotName } from "@/lib/random-bot-name";
 import { t } from "@/lib/i18n";
 
@@ -57,7 +56,6 @@ export function IdentitySection({
             >{t(kind === "female" ? "newBot.randomFemaleName" : "newBot.randomMaleName")}</button>)}
           </div>}
         </div>
-        <ProposalStatus bot={bot} kind="chief" />
         <input
           id={`bot-name-${bot.id}`}
           className={inputCls}
@@ -68,7 +66,6 @@ export function IdentitySection({
         />
       </div>
       <Field label={t("botPanel.identity.label")}>
-        <ProposalStatus bot={bot} kind="chief" />
         <input
           className={inputCls}
           maxLength={BOT_PROFILE_LIMITS.title}
@@ -90,7 +87,6 @@ export function IdentitySection({
             <BookOpen size={12} /> {t("botPanel.identity.viewFull")}
           </button>
         </div>
-        <ProposalStatus bot={bot} kind="chief" />
         <textarea
           id={`bot-instructions-${bot.id}`}
           className={cn(inputCls, "min-h-[72px] resize-y leading-relaxed")}

@@ -17,7 +17,16 @@
 //   MCP servers reconnected and the history read back), BENCH_FIRST_TOKEN_MS
 //   (600: the model's first token), BENCH_STT_FINAL_MS (250),
 //   BENCH_TTS_FIRST_MS (300), BENCH_TLS_MS (150: a new connection to
-//   api.x.ai), BENCH_OUT (a JSON file).
+//   api.x.ai), BENCH_SPEECH (socket: the streaming voice, GET /voice/speech,
+//   the default setting; post: one POST /voice/stream per sentence),
+//   BENCH_FASTER_END (1: "Faster end of turn", the default setting; 0: off),
+//   BENCH_UNPUNCTUATED (1: the words never carry punctuation, so only the
+//   voice's ending can shorten the endpoint), BENCH_REPLY (the engine's
+//   answer), BENCH_OUT (a JSON file).
+//
+// The microphone's voiced frames are a voice-like tone (a fundamental and a
+// harmonic) whose last 400 ms fall in pitch and fade, as a statement ends,
+// so the call's own pitch reading sees what it would see of a person.
 //
 // BENCH_COLD_MS starts when the call is accepted: the fake CLI waits it at
 // process boot. The first utterance pays only what remains. A short first
@@ -36,6 +45,7 @@ import { verificationServerEnvironment } from "./control-omb.ts";
 import { startFakeXaiVoice } from "../server/testing/fake-xai-voice.ts";
 import { freePortBlock } from "../server/testing/ports.ts";
 import { VoiceCall } from "../src/lib/voice-mode/call.ts";
+import { SpeechSocket } from "../src/lib/voice-mode/speech-stream.ts";
 import { DEFAULT_CALL_SETTINGS } from "../src/lib/voice-mode/call-settings.ts";
 import type { PcmPlayer, Sentence } from "../src/lib/voice-mode/player.ts";
 import { LiveTranscriber } from "../src/lib/voice-mode/stt-stream.ts";
@@ -67,6 +77,10 @@ export interface BenchTurn {
   playback?: number;
   total?: number;
   earlyEnd?: boolean;
+  /** ended on the voice's ending alone (no punctuation) */
+  contourEnd?: boolean;
+  /** spoken over the streaming voice socket */
+  streamed?: boolean;
   earlyStart?: boolean;
   reissued?: boolean;
 }
@@ -146,6 +160,22 @@ function frame(probability: number, level: number): Float32Array {
   return out;
 }
 
+/** A voiced frame of the bench's "person": 175 Hz, falling to 125 Hz and
+ * fading over the last 400 ms before `remainingMs` reaches 0. */
+let voicePhase = 0;
+function voicedFrame(remainingMs: number): Float32Array {
+  const t = remainingMs >= 400 ? 0 : Math.min(1, Math.max(0, 1 - remainingMs / 400));
+  const hz = 175 * (125 / 175) ** t;
+  const amplitude = 0.08 * (1 - 0.75 * t);
+  const out = new Float32Array(VAD_FRAME);
+  for (let i = 0; i < VAD_FRAME; i++) {
+    voicePhase += (2 * Math.PI * hz) / 16_000;
+    out[i] = amplitude * (Math.sin(voicePhase) + 0.5 * Math.sin(2 * voicePhase)) / 1.5;
+  }
+  out[0] = 0.92 / 1000;
+  return out;
+}
+
 async function startServer(engine: BenchEngine, env: Record<string, string>) {
   const port = await freePortBlock([0, 1]);
   const dataDir = mkdtempSync(join(tmpdir(), "omb-voice-bench-"));
@@ -187,7 +217,11 @@ const ESTABLISH = new Set(["session/load", "session/resume", "session/new"]);
 
 export async function runVoiceLatencyBench(engine: BenchEngine = "claude"): Promise<{ engine: BenchEngine; turns: BenchTurn[]; serverLog: string; acp?: string[] }> {
   const turns = knob("BENCH_TURNS", 12);
-  const transcripts = Array.from({ length: turns }, (_, i) => QUESTIONS[i % QUESTIONS.length]!);
+  const useSocket = (process.env.BENCH_SPEECH ?? "socket") !== "post";
+  const fasterEnd = knob("BENCH_FASTER_END", 1) !== 0;
+  const unpunctuated = knob("BENCH_UNPUNCTUATED", 0) === 1;
+  const transcripts = Array.from({ length: turns }, (_, i) => QUESTIONS[i % QUESTIONS.length]!).map((q) => (unpunctuated ? q.replace(/[?.!]+$/, "") : q));
+  const reply = process.env.BENCH_REPLY ? { FAKE_CLAUDE_VOICE_REPLY: process.env.BENCH_REPLY, FAKE_ACP_VOICE_REPLY: process.env.BENCH_REPLY } : {};
   const xai = await startFakeXaiVoice({
     transcripts,
     sttFinalizeMs: knob("BENCH_STT_FINAL_MS", 250),
@@ -206,12 +240,14 @@ export async function runVoiceLatencyBench(engine: BenchEngine = "claude"): Prom
     FAKE_ACP_TOKEN_MS: "25",
     FAKE_ACP_RPC_APPEND_FILE: acpLog,
     SAGAX_XAI_TTS_API: `${xai.url}/v1`,
+    ...reply,
   } : {
     FAKE_CLAUDE_MODE: "voice",
     FAKE_CLAUDE_COLD_MS: String(knob("BENCH_COLD_MS", 2600)),
     FAKE_CLAUDE_FIRST_TOKEN_MS: String(knob("BENCH_FIRST_TOKEN_MS", 600)),
     FAKE_CLAUDE_TOKEN_MS: "25",
     SAGAX_XAI_TTS_API: `${xai.url}/v1`,
+    ...reply,
   });
   const origin = server.url;
   const headers = { "content-type": "application/json", origin };
@@ -251,15 +287,23 @@ export async function runVoiceLatencyBench(engine: BenchEngine = "claude"): Prom
       }));
       return { body, sampleRate: Number(response.headers.get("x-voice-sample-rate")) || 24_000 };
     };
+    const voiceSettings = () => ({ voice: "", speed: 1, language: "en" }) as never;
+    const speechSocket = useSocket ? new SpeechSocket({
+      botId: bot.id,
+      threadId: () => threadId,
+      voice: voiceSettings,
+      socket: (url) => new WebSocket(url.replace(/^ws:\/\/localhost/, origin.replace(/^http/, "ws")), { headers: { origin } }) as unknown as globalThis.WebSocket,
+      post: speech as never,
+    }) : null;
     call = new VoiceCall({
       botId: bot.id,
       threadId: () => threadId,
-      voice: () => ({ voice: "", speed: 1, language: "en" }) as never,
-      settings: () => ({ ...DEFAULT_CALL_SETTINGS, onlyMyVoice: false, earcons: false, thinkingCue: false, pause: "normal" }) as never,
+      voice: voiceSettings,
+      settings: () => ({ ...DEFAULT_CALL_SETTINGS, onlyMyVoice: false, earcons: false, thinkingCue: false, pause: "normal", streamingVoice: useSocket, fasterEndOfTurn: fasterEnd }) as never,
       player: new ClockPlayer() as unknown as PcmPlayer,
       transcriber,
       models: async () => ({ vad: scriptedVad, embedder: null }),
-      speech: speech as never,
+      ...(speechSocket ? { speechSocket } : { speech: speech as never }),
       voiceprint: null,
       getUserMedia: async () => ({ getTracks: () => [], getAudioTracks: () => [] }) as unknown as MediaStream,
       createCaptureContext: () => ({
@@ -322,24 +366,29 @@ export async function runVoiceLatencyBench(engine: BenchEngine = "claude"): Prom
     await sleep(300);
     // the microphone: real-time 32 ms frames, speech then silence
     let speaking = false;
+    let speakUntil = 0;
     let stopMic = false;
     const mic = (async () => {
       const t0 = performance.now();
       for (let i = 0; !stopMic; i++) {
         await sleep(t0 + i * 32 - performance.now());
-        live.frame(speaking ? frame(0.92, 0.05) : frame(0.03, 0.001));
+        live.frame(speaking ? voicedFrame(speakUntil - performance.now()) : frame(0.03, 0.001));
       }
     })();
     for (let turn = 1; turn <= turns; turn++) {
       current = { text: "" };
       metrics = {};
       const establishedBefore = acpMethods(acpLog).filter((method) => ESTABLISH.has(method)).length;
+      const speakMs = transcripts[turn - 1]!.split(/\s+/).length * WORD_MS;
+      speakUntil = performance.now() + speakMs;
       speaking = true;
-      await sleep(transcripts[turn - 1]!.split(/\s+/).length * WORD_MS);
+      await sleep(speakMs);
       speaking = false;
       const deadline = performance.now() + 20_000;
       while (metrics.firstAudioAt === undefined && performance.now() < deadline) await sleep(20);
-      const m = metrics as Record<string, number | undefined> & { earlyEnd?: boolean; earlyStart?: boolean; reissued?: boolean };
+      const m = metrics as Record<string, number | undefined> & { earlyEnd?: boolean; contourEnd?: boolean; streamed?: boolean; earlyStart?: boolean; reissued?: boolean };
+      // over the socket, the call's own first-bytes mark (the POST wrapper above sees nothing)
+      current.ttsFirstByte ??= m.ttsFirstByteAt;
       const d = (a?: number, b?: number) => (a === undefined || b === undefined ? undefined : Math.round(b - a));
       results.push({
         turn,
@@ -352,6 +401,8 @@ export async function runVoiceLatencyBench(engine: BenchEngine = "claude"): Prom
         playback: d(current.ttsFirstByte, m.firstAudioAt),
         total: d(m.stoppedAt, m.firstAudioAt),
         ...(m.earlyEnd ? { earlyEnd: true } : {}),
+        ...(m.contourEnd ? { contourEnd: true } : {}),
+        ...(m.streamed ? { streamed: true } : {}),
         ...(m.earlyStart ? { earlyStart: true } : {}),
         ...(m.reissued ? { reissued: true } : {}),
         ...(engine === "grok" ? { establish: acpMethods(acpLog).filter((method) => ESTABLISH.has(method)).length - establishedBefore } : {}),

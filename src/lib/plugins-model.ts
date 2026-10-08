@@ -28,6 +28,8 @@ export interface PluginItem {
   /** where it came from: "manual", "catalog", "composio", "local" or a
    * marketplace name */
   source: string;
+  /** the item this one is shown under (Whop's server) */
+  parent?: string;
 }
 
 /** Words that place an app in a category, matched against its slug, name
@@ -249,9 +251,10 @@ export function mainSections(items: readonly PluginItem[], query: string, filter
   return sections;
 }
 
-/** Installed plugins for the Manage page (skills have their own list). */
+/** Installed plugins for the Manage page (skills have their own list; an
+ * item that stands for a server, like Whop, shows instead of that server). */
 export function installedPlugins(items: readonly PluginItem[]): PluginItem[] {
-  return items.filter((item) => item.installed && item.kind !== "skill").sort((a, b) => a.name.localeCompare(b.name));
+  return items.filter((item) => item.installed && item.kind !== "skill" && !item.parent).sort((a, b) => a.name.localeCompare(b.name));
 }
 
 /** The header's "N connected": what reaches bots, with up to four icons. */
