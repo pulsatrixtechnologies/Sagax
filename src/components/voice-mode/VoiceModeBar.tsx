@@ -3,10 +3,12 @@
 // dotted live waveform, then Settings, Transcript, Mic and End. Collapsed,
 // it takes only its own small row of the layout (ChatView's banner stack).
 // Settings or Transcript expand it downward into a card of the same width
-// that overlays the thread and closes on Escape or a click outside. On a
-// narrow column the waveform shrinks first, then folds away; the controls
-// never shrink.
-import { useCallback, useEffect, useId, useRef, useState } from "react";
+// that overlays the thread and closes on Escape or a click outside. The card
+// grows out of the pill row's bottom edge (height and opacity, the menus'
+// motion) and folds back into it; the row itself never moves. On a narrow
+// column the waveform shrinks first, then folds away; the controls never
+// shrink.
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { Hand, MessageSquareMore, Mic, MicOff, Pause, Play, Settings, X } from "lucide-react";
 
 import { useStore, type Bot } from "@/state/store";
@@ -22,6 +24,7 @@ import { forgetVoiceprint } from "@/lib/voice-mode/speaker-id";
 import type { VoiceModeRefusalCause } from "../../../shared/voice-mode";
 import { BotAvatar } from "../Avatar";
 import { requestSettingsCard } from "../SettingsPrimitives";
+import { HEIGHT_MOTION_CLASS, MENU_MOTION_MS, reducedMotion, useHeightReveal } from "../MenuMotion";
 import type { CallMetrics } from "./LiveCall";
 import { formatCallTime, phaseLabel } from "@/lib/voice-mode/call-labels";
 
@@ -76,7 +79,9 @@ export interface VoiceModeBarProps {
   defaultPanel?: "settings" | "transcript";
 }
 
-const DOT = 4; // px between dot columns and rows (CSS pixels)
+const COLUMN = 7; // px between dot columns (CSS pixels)
+const ROW = 6; // px between dots in a column
+const RADIUS = 2; // a dot is 4px wide
 const ROWS = 5; // dots in the tallest column
 
 /** Time since the call started (or the bar opened), ticking once a second. */
@@ -126,7 +131,7 @@ function Waveform({ call, state }: { call: VoiceCall; state: CallState }) {
       }
       context.setTransform(ratio, 0, 0, ratio, 0, 0);
       context.clearRect(0, 0, cssWidth, cssHeight);
-      const columns = Math.max(1, Math.floor(cssWidth / DOT));
+      const columns = Math.max(1, Math.floor(cssWidth / COLUMN));
       const { mic, bot } = call.analysers;
       const theirs = quiet ? [] : amplitude(bot, data, columns);
       const mine = quiet || muted ? [] : amplitude(mic, data, columns);
@@ -134,7 +139,7 @@ function Waveform({ call, state }: { call: VoiceCall; state: CallState }) {
       const ink = style.color;
       const accent = style.getPropertyValue("--color-accent").trim() || ink;
       const middle = cssHeight / 2;
-      const offset = (cssWidth - (columns - 1) * DOT) / 2;
+      const offset = (cssWidth - (columns - 1) * COLUMN) / 2;
       for (let i = 0; i < columns; i++) {
         const shimmer = quiet ? 0 : 0.08 * Math.abs(Math.sin(time / 600 + i * 0.45));
         const level = Math.max(theirs[i] ?? 0, mine[i] ?? 0);
@@ -143,7 +148,7 @@ function Waveform({ call, state }: { call: VoiceCall; state: CallState }) {
         for (let row = -reach; row <= reach; row++) {
           context.globalAlpha = Math.min(1, 0.22 + shimmer + level * 0.75 - Math.abs(row) * 0.08);
           context.beginPath();
-          context.arc(offset + i * DOT, middle + row * DOT, 1.1, 0, Math.PI * 2);
+          context.arc(offset + i * COLUMN, middle + row * ROW, RADIUS, 0, Math.PI * 2);
           context.fill();
         }
       }
@@ -153,11 +158,14 @@ function Waveform({ call, state }: { call: VoiceCall; state: CallState }) {
     frame = requestAnimationFrame(draw);
     return () => cancelAnimationFrame(frame);
   }, [call, quiet, muted]);
-  return <canvas ref={canvas} className="block h-6 w-full text-ink" aria-hidden="true" />;
+  return <canvas ref={canvas} className="block h-8 w-full text-ink" aria-hidden="true" />;
 }
 
 /** A round control of the pill. */
-const ROUND = "flex size-8 shrink-0 items-center justify-center rounded-full bg-raised text-ink-secondary transition-colors hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent";
+const ROUND = "flex size-10 shrink-0 items-center justify-center rounded-full bg-raised text-ink-secondary transition-colors hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent";
+
+/** The icons of the round controls (px). */
+const ICON = 18;
 
 type Panel = "settings" | "transcript" | null;
 
@@ -225,11 +233,18 @@ export function VoiceModeBar(props: VoiceModeBarProps) {
   const push = callSettings.input === "push";
   const time = formatCallTime(elapsed);
 
-  // The transcript follows the conversation to its last line.
-  useEffect(() => {
+  // The transcript follows the conversation to its last line, before the
+  // frame is painted (never a visible jump).
+  const toLastLine = useCallback(() => {
     const element = scroller.current;
-    if (transcriptOpen && element) element.scrollTop = element.scrollHeight;
-  }, [transcriptOpen, transcript.length, transcript[transcript.length - 1]?.text, line]);
+    if (element) element.scrollTop = element.scrollHeight;
+  }, []);
+  const toTop = useCallback(() => {
+    if (scroller.current) scroller.current.scrollTop = 0;
+  }, []);
+  useLayoutEffect(() => {
+    if (transcriptOpen) toLastLine();
+  }, [transcriptOpen, transcript.length, transcript[transcript.length - 1]?.text, line, toLastLine]);
 
   const preview = useCallback(
     (voiceId: string) => {
@@ -275,14 +290,106 @@ export function VoiceModeBar(props: VoiceModeBarProps) {
     setList(null);
   };
   const alert = Boolean(refusal || note || notice);
-  const expanded = Boolean(panel) || alert;
+  // What the card under the row shows: a panel, or an alert alone.
+  const cardKey: string | null = panel ?? (alert ? "alert" : null);
+  const expanded = cardKey !== null;
+  // Closing, the card keeps drawing the panel it had while it folds away.
+  const heldPanel = useRef<Panel>(panel);
+  if (cardKey !== null) heldPanel.current = panel;
+  const shownPanel = cardKey !== null ? panel : heldPanel.current;
+  // Settings to Transcript (or back): the old panel fades out over the new
+  // one fading in while the card goes from one height to the other.
+  const [lastPanel, setLastPanel] = useState<Panel>(panel);
+  const [leaving, setLeaving] = useState<Exclude<Panel, null> | null>(null);
+  if (panel !== lastPanel) {
+    setLastPanel(panel);
+    setLeaving(panel && lastPanel && !reducedMotion() ? lastPanel : null);
+  }
+  useEffect(() => {
+    if (!leaving) return;
+    const timer = window.setTimeout(() => setLeaving(null), MENU_MOTION_MS);
+    return () => window.clearTimeout(timer);
+  }, [leaving]);
+  const shell = useRef<HTMLDivElement>(null);
+  const card = useRef<HTMLDivElement>(null);
+  const cardMotion = useHeightReveal(expanded, shell, card, cardKey, panel === "transcript" ? toLastLine : toTop);
+
+  const body = (which: Exclude<Panel, null>) => which === "settings" ? (
+    <>
+      <VoiceModeSettingsPanel
+        settings={settings}
+        voices={voices}
+        voicesError={voicesError}
+        open={list}
+        previewing={previewing}
+        onOpen={setList}
+        onChange={(patch) => writeVoiceModeSettings(patch)}
+        onPreview={preview}
+        call={callSettings}
+        enrollment={enrollment}
+        onCallChange={(patch) => writeCallSettings(patch)}
+        onEnroll={enroll}
+        onForget={forget}
+        latency={callDebug() ? metrics?.stages ?? null : null}
+      />
+      <button
+        type="button"
+        aria-pressed={held}
+        data-voice-hold
+        onClick={() => (held ? call.resume() : call.hold())}
+        className={cn("mb-1 flex w-full items-center justify-center gap-2 rounded-lg bg-raised px-3 py-1.5 text-[13px] hover:brightness-110", held ? "text-warning" : "text-ink")}
+      >
+        {held ? <Play size={14} /> : <Pause size={14} />}
+        {held ? t("voiceMode.resume") : t("voiceMode.hold")}
+      </button>
+    </>
+  ) : (
+    <div aria-label={t("voiceMode.transcript")} data-voice-transcript>
+      <div className="mb-2 flex items-baseline justify-between gap-2 text-[11.5px] text-ink-tertiary" data-voice-transcript-head>
+        <span className="truncate">{bot.name}</span>
+        <span className="shrink-0 tabular-nums" data-voice-timer>{time} · {status}</span>
+      </div>
+      {transcript.length === 0 && !line ? (
+        <div className="py-1 text-[13px] text-ink-tertiary">{t("voiceMode.transcriptEmpty")}</div>
+      ) : (
+        <div className="flex flex-col gap-1.5 text-[13px] leading-snug">
+          {transcript.map((entry) => (
+            <div
+              key={entry.id}
+              className={cn("max-w-[85%] rounded-2xl px-3 py-1.5", entry.who === "you" ? "self-end rounded-br-md bg-raised text-ink" : "self-start rounded-bl-md bg-inset text-ink")}
+              data-voice-line={entry.who}
+              data-voice-interrupted={entry.interrupted ? "" : undefined}
+            >
+              {entry.text}
+              {entry.interrupted && <span className="ml-1.5 rounded bg-panel/60 px-1 text-[11px] text-ink-tertiary">{t("voiceMode.interruptedMark")}</span>}
+              {entry.unheard && (
+                <span className="mt-0.5 block text-[12px] text-ink-tertiary" data-voice-unheard>
+                  {t("voiceMode.unheardMark")} <span className="italic">{entry.unheard}</span>
+                </span>
+              )}
+            </div>
+          ))}
+          {line && (
+            <div
+              className={cn("max-w-[85%] rounded-2xl px-3 py-1.5 opacity-70", state.phase === "speaking" ? "self-start rounded-bl-md bg-inset" : "self-end rounded-br-md bg-raised")}
+              data-voice-line="live"
+            >
+              {line}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
 
   return (
     <section
       ref={pill}
       className={cn(
-        "@container/callpill pointer-events-auto mx-auto w-full max-w-[420px] overflow-hidden border border-hairline-weak bg-elevated text-ink shadow-[0_8px_28px_rgba(0,0,0,0.28)] transition-[border-radius] duration-150 motion-reduce:transition-none",
-        expanded ? "rounded-[22px]" : "rounded-full",
+        // The radius only moves between finite values (half the row, then
+        // the card's corners at the bottom), with the card's own motion.
+        "@container/callpill pointer-events-auto mx-auto w-full max-w-[420px] overflow-hidden rounded-t-[32px] border border-hairline-weak bg-elevated text-ink shadow-[0_8px_28px_rgba(0,0,0,0.28)] transition-[border-radius] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none",
+        expanded ? "rounded-b-[22px]" : "rounded-b-[32px]",
       )}
       aria-label={t("voiceMode.callWith", { name: bot.name })}
       data-voice-bar
@@ -297,26 +404,26 @@ export function VoiceModeBar(props: VoiceModeBarProps) {
       data-voice-endpoint-ms={call.endpointMs}
       data-voice-models={call.modelsReady ? "on-device" : "level"}
     >
-      <div className="flex h-12 items-center gap-1.5 px-2" data-voice-pill-row>
+      <div className="flex h-16 items-center gap-2 px-3" data-voice-pill-row>
         <button
           type="button"
           onClick={state.botAudible ? () => call.interrupt() : undefined}
-          className="shrink-0 rounded-[9px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+          className="shrink-0 rounded-[12px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
           aria-label={state.botAudible ? t("voiceMode.interrupt") : bot.name}
           title={`${bot.name} · ${time} · ${status}`}
           data-voice-avatar
         >
           <BotAvatar
             bot={bot}
-            size={30}
+            size={40}
             state={state.phase === "listening" || state.phase === "hearing" ? "listening" : state.phase === "speaking" ? "sending" : state.phase === "thinking" || state.phase === "interrupted" ? "thinking" : "working"}
           />
         </button>
         <span className="sr-only" aria-live="polite" data-voice-status>{line || status}</span>
-        <div className="hidden min-w-0 flex-1 px-1 @[17.5rem]/callpill:block" data-voice-waveform>
+        <div className="hidden min-w-0 flex-1 px-1 @[21rem]/callpill:block" data-voice-waveform>
           <Waveform call={call} state={state} />
         </div>
-        <div className="ml-auto flex shrink-0 items-center gap-1.5" data-voice-controls>
+        <div className="ml-auto flex shrink-0 items-center gap-2" data-voice-controls>
           {push && (
             <button
               type="button"
@@ -332,7 +439,7 @@ export function VoiceModeBar(props: VoiceModeBarProps) {
               onPointerCancel={() => call.pushToTalk(false)}
               className={cn(ROUND, "disabled:opacity-40", state.phase === "hearing" && "bg-accent text-accent-ink")}
             >
-              <Hand size={15} />
+              <Hand size={ICON} />
             </button>
           )}
           <button
@@ -346,7 +453,7 @@ export function VoiceModeBar(props: VoiceModeBarProps) {
             onClick={() => toggle("settings")}
             className={cn(ROUND, settingsOpen && "text-ink ring-2 ring-ink/40")}
           >
-            <Settings size={15} />
+            <Settings size={ICON} />
           </button>
           <button
             ref={bubble}
@@ -359,7 +466,7 @@ export function VoiceModeBar(props: VoiceModeBarProps) {
             onClick={() => toggle("transcript")}
             className={cn(ROUND, transcriptOpen && "bg-ink text-panel hover:text-panel")}
           >
-            <MessageSquareMore size={15} />
+            <MessageSquareMore size={ICON} />
           </button>
           <button
             type="button"
@@ -370,7 +477,7 @@ export function VoiceModeBar(props: VoiceModeBarProps) {
             onClick={() => call.setMuted(!muted)}
             className={cn(ROUND, muted && "text-danger hover:text-danger")}
           >
-            {muted ? <MicOff size={15} /> : <Mic size={15} />}
+            {muted ? <MicOff size={ICON} /> : <Mic size={ICON} />}
           </button>
           <button
             type="button"
@@ -378,126 +485,73 @@ export function VoiceModeBar(props: VoiceModeBarProps) {
             title={t("voiceMode.end")}
             data-voice-end
             onClick={onEnd}
-            className="flex size-8 shrink-0 items-center justify-center rounded-full bg-danger text-white hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+            className="flex size-10 shrink-0 items-center justify-center rounded-full bg-danger text-white hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
           >
-            <X size={16} strokeWidth={2.5} />
+            <X size={ICON} strokeWidth={2.5} />
           </button>
         </div>
       </div>
-      {expanded && (
-        <div id={cardId} className="border-t border-hairline-weak" data-voice-card>
-          <div ref={scroller} className="max-h-[min(55vh,360px)] overflow-y-auto px-3 py-2.5" data-voice-callbar-panels>
-            {settingsOpen && (
-              <>
-                <VoiceModeSettingsPanel
-                  settings={settings}
-                  voices={voices}
-                  voicesError={voicesError}
-                  open={list}
-                  previewing={previewing}
-                  onOpen={setList}
-                  onChange={(patch) => writeVoiceModeSettings(patch)}
-                  onPreview={preview}
-                  call={callSettings}
-                  enrollment={enrollment}
-                  onCallChange={(patch) => writeCallSettings(patch)}
-                  onEnroll={enroll}
-                  onForget={forget}
-                  latency={callDebug() ? metrics?.stages ?? null : null}
-                />
-                <button
-                  type="button"
-                  aria-pressed={held}
-                  data-voice-hold
-                  onClick={() => (held ? call.resume() : call.hold())}
-                  className={cn("mb-1 flex w-full items-center justify-center gap-2 rounded-lg bg-raised px-3 py-1.5 text-[13px] hover:brightness-110", held ? "text-warning" : "text-ink")}
-                >
-                  {held ? <Play size={14} /> : <Pause size={14} />}
-                  {held ? t("voiceMode.resume") : t("voiceMode.hold")}
-                </button>
-              </>
-            )}
-            {transcriptOpen && (
-              <div aria-label={t("voiceMode.transcript")} data-voice-transcript>
-                <div className="mb-2 flex items-baseline justify-between gap-2 text-[11.5px] text-ink-tertiary" data-voice-transcript-head>
-                  <span className="truncate">{bot.name}</span>
-                  <span className="shrink-0 tabular-nums" data-voice-timer>{time} · {status}</span>
+      {cardMotion.shown && (
+        <div ref={shell} className={cn("relative overflow-hidden", HEIGHT_MOTION_CLASS)} data-voice-card-motion {...cardMotion.exitProps}>
+          <div ref={card} id={cardId} className="border-t border-hairline-weak" data-voice-card>
+            <div ref={scroller} className="max-h-[min(55vh,360px)] overflow-y-auto px-3 py-2.5" data-voice-callbar-panels>
+              {shownPanel && (
+                <div key={shownPanel} className={leaving ? "animate-card-fade-in" : undefined} data-voice-card-body={shownPanel}>
+                  {body(shownPanel)}
                 </div>
-                {transcript.length === 0 && !line ? (
-                  <div className="py-1 text-[13px] text-ink-tertiary">{t("voiceMode.transcriptEmpty")}</div>
-                ) : (
-                  <div className="flex flex-col gap-1.5 text-[13px] leading-snug">
-                    {transcript.map((entry) => (
-                      <div
-                        key={entry.id}
-                        className={cn("max-w-[85%] rounded-2xl px-3 py-1.5", entry.who === "you" ? "self-end rounded-br-md bg-raised text-ink" : "self-start rounded-bl-md bg-inset text-ink")}
-                        data-voice-line={entry.who}
-                        data-voice-interrupted={entry.interrupted ? "" : undefined}
-                      >
-                        {entry.text}
-                        {entry.interrupted && <span className="ml-1.5 rounded bg-panel/60 px-1 text-[11px] text-ink-tertiary">{t("voiceMode.interruptedMark")}</span>}
-                        {entry.unheard && (
-                          <span className="mt-0.5 block text-[12px] text-ink-tertiary" data-voice-unheard>
-                            {t("voiceMode.unheardMark")} <span className="italic">{entry.unheard}</span>
-                          </span>
-                        )}
-                      </div>
-                    ))}
-                    {line && (
-                      <div
-                        className={cn("max-w-[85%] rounded-2xl px-3 py-1.5 opacity-70", state.phase === "speaking" ? "self-start rounded-bl-md bg-inset" : "self-end rounded-br-md bg-raised")}
-                        data-voice-line="live"
-                      >
-                        {line}
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            )}
-            {refusal && (
-              <div role="alert" className="my-1 rounded-xl border border-warning/40 bg-warning/10 px-3 py-2 text-[12.5px] text-ink" data-voice-access-card>
-                {voiceAccessCardText(refusal).map((line, index) => (
-                  <div key={index} className={index === 0 ? "font-medium" : "mt-0.5 text-ink-secondary"}>{line}</div>
-                ))}
-                {refusal.admin && refusal.cause === "no_credentials" && (
-                  <button
-                    type="button"
-                    data-voice-action="open-connections"
-                    onClick={() => {
-                      requestSettingsCard("connections.providers");
-                      dispatch({ type: "toggleAppSettings", open: true, section: "connections" });
-                    }}
-                    className="mr-1.5 mt-1.5 rounded-lg bg-accent px-2.5 py-1 text-[12px] font-medium text-accent-ink hover:brightness-110"
-                  >
-                    {t("voiceMode.openConnections")}
-                  </button>
-                )}
-                {refusal.keysUrl && refusal.cause === "no_credentials" && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (window.ogb?.openExternal) void window.ogb.openExternal(refusal.keysUrl!);
-                      else window.open(refusal.keysUrl, "_blank", "noopener");
-                    }}
-                    className="mt-1.5 rounded-lg bg-accent px-2.5 py-1 text-[12px] font-medium text-accent-ink hover:brightness-110"
-                  >
-                    {t("voiceMode.addOwnKey")}
-                  </button>
-                )}
-              </div>
-            )}
-            {(note || notice) && !refusal && (
-              <div className={cn("my-1 flex items-center justify-between gap-2 rounded-xl px-3 py-1.5 text-[12.5px]", note ? "bg-warning/10 text-warning" : "bg-raised/60 text-ink-secondary")} role={note ? "alert" : "status"}>
-                <span>{note ?? notice}</span>
-                {note && (
-                  <button type="button" onClick={onRetry} className="shrink-0 rounded-full border border-warning/40 px-2.5 py-0.5 text-[12px] hover:bg-warning/10">
-                    {t("voiceMode.retry")}
-                  </button>
-                )}
-              </div>
-            )}
+              )}
+              {refusal && (
+                <div role="alert" className="my-1 rounded-xl border border-warning/40 bg-warning/10 px-3 py-2 text-[12.5px] text-ink" data-voice-access-card>
+                  {voiceAccessCardText(refusal).map((line, index) => (
+                    <div key={index} className={index === 0 ? "font-medium" : "mt-0.5 text-ink-secondary"}>{line}</div>
+                  ))}
+                  {refusal.admin && refusal.cause === "no_credentials" && (
+                    <button
+                      type="button"
+                      data-voice-action="open-connections"
+                      onClick={() => {
+                        requestSettingsCard("connections.providers");
+                        dispatch({ type: "toggleAppSettings", open: true, section: "connections" });
+                      }}
+                      className="mr-1.5 mt-1.5 rounded-lg bg-accent px-2.5 py-1 text-[12px] font-medium text-accent-ink hover:brightness-110"
+                    >
+                      {t("voiceMode.openConnections")}
+                    </button>
+                  )}
+                  {refusal.keysUrl && refusal.cause === "no_credentials" && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (window.ogb?.openExternal) void window.ogb.openExternal(refusal.keysUrl!);
+                        else window.open(refusal.keysUrl, "_blank", "noopener");
+                      }}
+                      className="mt-1.5 rounded-lg bg-accent px-2.5 py-1 text-[12px] font-medium text-accent-ink hover:brightness-110"
+                    >
+                      {t("voiceMode.addOwnKey")}
+                    </button>
+                  )}
+                </div>
+              )}
+              {(note || notice) && !refusal && (
+                <div className={cn("my-1 flex items-center justify-between gap-2 rounded-xl px-3 py-1.5 text-[12.5px]", note ? "bg-warning/10 text-warning" : "bg-raised/60 text-ink-secondary")} role={note ? "alert" : "status"}>
+                  <span>{note ?? notice}</span>
+                  {note && (
+                    <button type="button" onClick={onRetry} className="shrink-0 rounded-full border border-warning/40 px-2.5 py-0.5 text-[12px] hover:bg-warning/10">
+                      {t("voiceMode.retry")}
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
+          {leaving && (
+            // the panel just left: a picture of it, fading out over the new one
+            <div aria-hidden inert className="animate-card-fade-out pointer-events-none absolute inset-x-0 top-0 border-t border-transparent" data-voice-card-leaving={leaving}>
+              <div className="flex max-h-[min(55vh,360px)] flex-col justify-end overflow-hidden px-3 py-2.5">
+                {body(leaving)}
+              </div>
+            </div>
+          )}
         </div>
       )}
     </section>

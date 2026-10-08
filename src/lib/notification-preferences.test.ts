@@ -149,3 +149,19 @@ describe("notification sounds preference", () => {
     expect(preference.useNotificationSounds()).toBe(true);
   });
 });
+
+describe("nudge sound preference", () => {
+  it("defaults on, persists both choices, and does not touch the notification sounds", async () => {
+    let preference = await import("./notification-preferences");
+    expect(preference.nudgeSoundEnabled()).toBe(true);
+    preference.setNudgeSound(false);
+    expect(local.getItem(preference.NUDGE_SOUND_KEY)).toBe("0");
+    expect(preference.useNudgeSound()).toBe(false);
+    expect(preference.notificationSoundsEnabled()).toBe(true);
+    vi.resetModules();
+    preference = await import("./notification-preferences");
+    expect(preference.nudgeSoundEnabled()).toBe(false);
+    preference.setNudgeSound(true);
+    expect(local.getItem(preference.NUDGE_SOUND_KEY)).toBe("1");
+  });
+});

@@ -47,6 +47,7 @@ import { createBotActService, type BotActAnswerer, type BotActService, type Perf
 import { createApprovalModeSupport } from "./harness-capabilities.ts";
 import { escapeAttribute } from "../src/lib/composer-attachments.ts";
 import { threadRefUrl } from "../src/lib/thread-refs.ts";
+import { markDeadThreadChip } from "./dead-thread-chips.ts";
 import {
   CREDENTIAL_TARGETS,
   credentialResumeOutcome,
@@ -223,7 +224,7 @@ import { augmentedPath, findCliCandidates, resetPathCache } from "./env-path.ts"
 import { registerEnginesBinDir } from "./engine-install.ts";
 import { EngineSelfCheck, readEngineManifest, runEngineSelfCheck, type EngineCheck } from "./engines-self-check.ts";
 import { appendUsage, parseUsageRange, readUsage, summarizeUsage, usageCsv, USAGE_GROUPINGS, flushUsageLedger, type UsageGroupBy, type UsageRow, type UsageTrigger } from "./usage-ledger.ts";
-import { loadPlanUsage, planAccountsFromInstances } from "./plan-usage.ts";
+import { loadPlanUsage, orgPlanAccounts, planAccountsFromInstances } from "./plan-usage.ts";
 import { GroupUsageReader } from "./group-thread-usage.ts";
 import { ledgerCost } from "./model-prices.ts";
 import type { PriceList } from "./prices.ts";
@@ -729,6 +730,9 @@ import { createGroupMemoryRoutes } from "./routes/group-memory.ts";
 import { createTtsProviderRoutes } from "./routes/tts-provider.ts";
 import { createPeopleDmRoutes } from "./routes/people-dms.ts";
 import { createNudgeRoutes } from "./routes/nudges.ts";
+import { createPresenceRoutes, presenceFrameAllowed, type PresenceViewer } from "./routes/presence.ts";
+import { PresenceTracker } from "./presence.ts";
+import { PRESENCE_SWEEP_MS, PRESENCE_VISIBLE_PREFERENCE, presenceHidden, publicPresence, type PresenceView } from "../shared/presence.ts";
 import { NudgeCooldown, nudgeFrameAllowed, recordNudgeLine } from "./nudge.ts";
 import { findPeopleDm, isPeopleDmParticipant, otherPerson, peopleDmPatchRefusal, peopleDmRouteRefusal } from "./people-dms.ts";
 import { deleteGroupMemory, groupMemoryEnabled, groupMemorySystemPrompt, updateGroupMemory } from "./group-memory.ts";
@@ -803,6 +807,7 @@ const MIME: Record<string, string> = {
   ".txt": "text/plain; charset=utf-8",
   ".svg": "image/svg+xml",
   ".png": "image/png",
+  ".mp3": "audio/mpeg",
   ".ico": "image/x-icon",
   ".json": "application/json",
   ".woff2": "font/woff2",
@@ -7183,6 +7188,9 @@ interface SseClient {
    * anyone else sees themselves (server/viewer-identity.ts). Read at each
    * frame, so a changed role is current. Absent for a local service. */
   identity?: () => ViewerIdentity | null;
+  /** A person of this organization's directory: receives presence.changed
+   * (server/routes/presence.ts). Never a service account or the loopback. */
+  presence?: boolean;
 }
 const sseClients = new Set<SseClient>();
 
@@ -7666,6 +7674,12 @@ function notifyAccess(notification: Notification | null, access: WireAccessCard,
   for (const copy of copies) notify(copy);
 }
 
+/** Whether a thread exists for any bot or room, whoever the viewer is. */
+function threadStillExists(threadId: string): boolean {
+  return Boolean(store.groupByThread(threadId)) || store.bots.some((bot) =>
+    bot.threadId === threadId || Boolean(bot.tasks?.some((task) => task.threadId === threadId)));
+}
+
 function projectMessages<T>(threadId: string, messages: T[], viewer: ApprovalViewer): T[] {
   let changed = false;
   if (messages.some((message) => privateRowHidden(message, viewer))) {
@@ -7673,7 +7687,7 @@ function projectMessages<T>(threadId: string, messages: T[], viewer: ApprovalVie
     changed = true;
   }
   const next = messages.map((message) => {
-    const projected = scopeApprovalMessage(threadId, message, viewer);
+    const projected = markDeadThreadChip(scopeApprovalMessage(threadId, message, viewer), threadStillExists);
     if (projected !== message) changed = true;
     return projected;
   });
@@ -7853,6 +7867,7 @@ function sseFrameFor(
   // a person's unlocks reach that person's streams only
   if (payload?.kind === "achievements" && !achievementFrameAllowed(payload, client.viewerId, localPrincipalId())) return null;
   if (payload?.kind === "nudge" && !nudgeFrameAllowed(payload, client.viewerId, localPrincipalId())) return null;
+  if (payload?.kind === "presence.changed" && !presenceFrameAllowed(payload, client)) return null;
   // A read position in a conversation between two people follows both
   // people's "Send read receipts" choice (server/read-receipts.ts).
   if (payload?.kind === "thread.read" && !threadReadFrameAllowed(payload, client.viewerId)) return null;
@@ -19472,6 +19487,8 @@ ROUTES.push(createUserPreferenceRoutes({
     put: (principalId, input) => {
       const before = personSendsReadReceipts(principalId);
       const saved = userPreferenceStore.put(principalId, input);
+      // "Show when I am online" travels with the preferences: tell the others at once.
+      presence.refresh(principalId);
       if (personSendsReadReceipts(principalId) !== before) {
         for (const group of store.groups) {
           if (group.peopleDm && isPeopleDmParticipant(group, principalId)) broadcast({ kind: "thread.read", threadId: group.threadId, reset: true });
@@ -19794,6 +19811,7 @@ ROUTES.push(createAccountRoutes({
     }
     await userSandbox?.removeNow(principalId).catch((error: unknown) => console.warn(`account deletion: server environment not removed: ${String(error)}`));
     userPreferenceStore.remove(principalId);
+    presence.forget(principalId);
     viewerBotOverrideStore.remove(principalId);
     achievementStore.remove(principalId);
     botSettings.forgetPerson(principalId);
@@ -21539,6 +21557,56 @@ if (ownerIdentity) {
   // desktop handed it over, at the route an organization server uses.
   ROUTES.push(createOwnerAvatarRoute({ store: ownerIdentity, localPrincipalId }));
 }
+// ── presence: online, away, offline (organization server) ────────────
+// shared/presence.ts, server/presence.ts, server/routes/presence.ts. In
+// memory only: never written to a chat, the journal or a backup.
+function presenceViewer(auth: RequestAuth): PresenceViewer {
+  const id = auth.kind === "session" ? auth.session.principalId?.trim() : undefined;
+  if (IDENTITY.kind !== "perspicax" || auth.kind !== "session" || !id) return { ok: false, code: "session_required" };
+  const principal = principals.byId(id);
+  if (!principal?.subject || principal.subject.iss !== IDENTITY.issuer || principal.disabledAt != null || principal.mergedInto) {
+    return { ok: false, code: "other_organization" };
+  }
+  // Before the first directory sync the issuer is the only word there is.
+  const directory = perspicaxDirectory?.directory();
+  if (directory) {
+    const listed = directory.people.find((entry) => entry.sub === principal.subject!.sub);
+    if (!listed || listed.status === "disabled") return { ok: false, code: "other_organization" };
+    if (listed.kind === "service" || listed.type === "service") return { ok: false, code: "service_account" };
+  }
+  return { ok: true, id: principal.id, sessionId: auth.session.id };
+}
+function presenceHiddenFor(principalId: string): boolean {
+  try {
+    return presenceHidden(userPreferenceStore.get(principalId).preferences[PRESENCE_VISIBLE_PREFERENCE]);
+  } catch {
+    return false;
+  }
+}
+function broadcastPresence(view: PresenceView): void {
+  const principal = principals.byId(view.principalId);
+  const principalId = principal?.id ?? view.principalId;
+  const hidden = presenceHiddenFor(principalId);
+  // everyone of the organization: the public view (offline when hidden)
+  broadcast({ kind: "presence.changed", people: [{ ...publicPresence(view, hidden), principalId }] });
+  // the person's own streams: their real state, for their account row
+  broadcast({ kind: "presence.changed", audience: principalId, people: [{ ...view, principalId, ...(hidden ? { hidden: true } : {}) }] });
+}
+const presence = new PresenceTracker({ onChange: broadcastPresence });
+if (IDENTITY.kind === "perspicax") setInterval(() => presence.sweep(), PRESENCE_SWEEP_MS).unref();
+ROUTES.push(createPresenceRoutes({
+  organization: () => IDENTITY.kind === "perspicax",
+  viewer: presenceViewer,
+  people: () => {
+    if (IDENTITY.kind !== "perspicax" || !perspicaxDirectory) return [];
+    return orgDirectoryEntries(IDENTITY.issuer, perspicaxDirectory.people(), (iss, sub) => principals.bySubject(iss, sub))
+      .filter((entry) => !entry.service && !entry.disabled)
+      .map((entry) => entry.principalId);
+  },
+  view: (principalId) => presence.view(principalId),
+  hidden: presenceHiddenFor,
+  heartbeat: (principalId, sessionId, beat) => presence.heartbeat(principalId, sessionId, beat),
+}));
 if (IDENTITY.kind === "perspicax") {
   const issuer = IDENTITY.issuer;
   // A person's Perspicax avatar (personAvatarUrl), read through the link and
@@ -26379,6 +26447,10 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       }
       if (!(auth.kind === "loopback" && auth.trust === "service")) client.identity = () => viewerIdentity(auth);
       if (viewerId) client.viewerId = viewerId;
+      // A person of the organization: this stream is one of their clients.
+      const presenceOf = presenceViewer(auth);
+      const presenceClose = presenceOf.ok ? presence.connect(presenceOf.id, presenceOf.sessionId) : null;
+      if (presenceOf.ok) client.presence = true;
       res.writeHead(200, {
         "content-type": "text/event-stream",
         "cache-control": "no-cache",
@@ -26442,11 +26514,13 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         }
         try {
           res.write(`: keepalive\n\ndata: ${JSON.stringify({ kind: "ping" })}\n\n`);
+          if (presenceOf.ok) presence.touch(presenceOf.id, presenceOf.sessionId);
         } catch {}
       }, SSE_HEARTBEAT_MS);
       req.on("close", () => {
         clearInterval(keepalive);
         sseClients.delete(client);
+        presenceClose?.();
       });
       return;
     }
@@ -31504,14 +31578,44 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     }
 
     // Subscription windows (5-hour and weekly), not the token ledger above.
-    // Same admin gate as /api/usage: this route is unlisted, so it stays admin.
+    // Solo: this computer's own logins, admin only (unlisted). Organization
+    // server: the asking person's own subscription logins, never the
+    // server's, the organization's key or another person's
+    // (server/plan-usage.ts); a member may read their own
+    // (request-auth.ts CLIENT_ALLOW, orgDirectory).
     if (method === "GET" && path === "/api/plan-usage") {
       res.setHeader("cache-control", "no-store");
-      const report = await loadPlanUsage({
-        accounts: planAccountsFromInstances(instanceConfigs(cfg)),
-        refresh: url.searchParams.get("refresh") === "1",
+      const refresh = url.searchParams.get("refresh") === "1";
+      const instances = instanceConfigs(cfg);
+      // A key row (no plan windows) is listed only when a key is kept for
+      // that provider: the workspace key of Settings > Connections, or one in
+      // the engine's own environment.
+      const planKeyConfigured = (driver: string, instanceId: string): boolean => {
+        const workspace = driver === "claudeAgent" ? cfg.anthropic?.key : driver === "codex" ? cfg.openai?.key : driver === "grokAgent" ? cfg.xai?.key : undefined;
+        return Boolean(workspace?.trim()) || driverKeyBacked(cfg, driver, instanceId);
+      };
+      if (IDENTITY.kind === "perspicax" && engineLogins) {
+        const principalId = auth.kind === "session" ? auth.session.principalId?.trim() || "" : localPrincipalId();
+        if (!principalId || !isPrincipalId(principalId)) return json(res, 403, { error: "sign in as a person first" });
+        const person = principals.byId(principalId);
+        const sub = person?.subject?.iss === IDENTITY.issuer ? person.subject.sub : undefined;
+        const held = sub ? perspicaxDirectory?.providerKeys(sub) ?? [] : [];
+        const logins = engineLogins;
+        const accounts = orgPlanAccounts(instances, {
+          loginDir: (driver) => logins.loginDir(principalId, driver),
+          signedIn: (driver) => logins.signedIn(principalId, driver),
+          apiKeyConfigured: (_driver, instanceId) => {
+            const driver = instances[instanceId]?.driver ?? "";
+            return providersOfDriver(driver).some((provider) => held.includes(provider)) || planKeyConfigured(driver, instanceId);
+          },
+        });
+        return json(res, 200, await loadPlanUsage({ accounts, refresh }));
+      }
+      if (!auth.scopes.includes("admin")) return json(res, 403, { error: "admin only" });
+      const accounts = planAccountsFromInstances(instances, {
+        apiKeyConfigured: (_driver, instanceId) => planKeyConfigured(instances[instanceId]?.driver ?? "", instanceId),
       });
-      return json(res, 200, report);
+      return json(res, 200, await loadPlanUsage({ accounts, refresh }));
     }
 
     // ── provider key check: does a pasted or saved key open the provider's door ──

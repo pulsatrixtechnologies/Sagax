@@ -82,7 +82,9 @@ export function percentile(values: readonly number[], p: number): number | undef
 }
 
 /** Words that tell nothing apart (fillers, case, accents, punctuation). */
-function normalizedWords(text: string): string[] {
+/** The words of a line, for comparing what was heard: lowercase, no
+ * accents, no punctuation, no fillers. */
+export function normalizedWords(text: string): string[] {
   return (text.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").match(/[a-z0-9]+/g) ?? [])
     .filter((word) => !FILLERS.has(word));
 }

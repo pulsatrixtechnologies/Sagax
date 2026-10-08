@@ -4,7 +4,8 @@
 // them, hide or show them in your sidebar, and for an admin, their page in
 // the Perspicax console). Nothing from a private thread shows here.
 // A public achievement card puts the chosen title and the score under the
-// name. The Achievements tab lists only what that card carried. A private
+// name, each only when the person left it on ("Show my title", "Show my
+// points"); with neither, nothing sits under the name. The Achievements tab lists only what that card carried. A private
 // card stays a private note: nobody reads another person's record.
 import { useState } from "react";
 import { ExternalLink, EyeOff, Eye, Mail, MessageSquare, PanelRight, Trophy, Users } from "lucide-react";
@@ -35,16 +36,7 @@ import { formatPoints } from "./achievements/AchievementsPage";
 import { usePublicAchievement } from "@/lib/public-achievements";
 import { useCaptionChrome, useMacInsetChrome } from "./DesktopCapabilities";
 import { useOrgDirectory } from "./GroupPeoplePicker";
-
-const PANEL_WIDTH_KEY = "omb-settings-panel-width";
-
-function panelWidth(): number {
-  try {
-    const stored = Number(localStorage.getItem(PANEL_WIDTH_KEY));
-    if (Number.isFinite(stored) && stored >= 320 && stored <= 720) return stored;
-  } catch { /* default width */ }
-  return 360;
-}
+import { DockedPanelResizeHandle, useDockedPanelWidth } from "./DockedPanelResize";
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -76,10 +68,13 @@ export function PersonPanel({ personId, directory: given }: { personId: string; 
   const isHidden = hidden.items.some((item) => hiddenKey(item.kind, item.id) === hiddenKey("person", personId));
   const publicCard = usePublicAchievement(personId);
   const titleName = publicCard ? achievementTitleName(publicCard.title) : null;
-  const pointsText = publicCard ? formatPoints(publicCard.points) : null;
+  // the person's own "Show my points" / "Show my title": the server leaves
+  // what they hid off the card, for everyone, the viewer included
+  const pointsText = publicCard?.points !== undefined ? formatPoints(publicCard.points) : null;
   const achievementRows = publicCard ? publicMemberRows(publicCard.unlocked) : [];
   const [tab, setTab] = useState<"profile" | "achievements">("profile");
   const tabs = ["profile", "achievements"] as const;
+  const dockedPanel = useDockedPanelWidth();
   const close = () => dispatch({ type: "openPersonPanel", personId: null });
 
   return (
@@ -87,10 +82,11 @@ export function PersonPanel({ personId, directory: given }: { personId: string; 
       role="dialog"
       aria-labelledby="person-panel-title"
       data-person-panel={personId}
-      style={{ width: panelWidth() }}
+      style={{ width: dockedPanel.width }}
       className="app-docked-panel animate-panel-in relative flex h-full min-w-0 shrink-0 flex-col border-l-[0.5px] border-hairline-weak bg-app outline-none max-lg:absolute max-lg:inset-0 max-lg:z-40 max-lg:w-auto"
       onKeyDown={(event) => { if (event.key === "Escape") close(); }}
     >
+      <DockedPanelResizeHandle label={t("computer.resizeAria")} panel={dockedPanel} />
       {(macInset || browser) && <div className="content-topbar-strip" />}
       <div className={cn("content-topbar relative flex h-12 shrink-0 items-center justify-end px-3", padClass)}>
         <button type="button" onClick={close} aria-label={t("personPanel.close")} title={t("personPanel.close")} className={CIRCLE_BUTTON}>
@@ -99,7 +95,7 @@ export function PersonPanel({ personId, directory: given }: { personId: string; 
       </div>
       <div className="content-card-body flex min-h-0 flex-1 flex-col overflow-y-auto">
         <div className="flex shrink-0 flex-col items-center px-4 pb-3">
-          <PersonAvatar avatarUrl={avatarUrl} initials={personInitials(name)} size={88} />
+          <PersonAvatar avatarUrl={avatarUrl} initials={personInitials(name)} size={88} presenceId={personId} presenceRing="border-panel" />
           <h2 id="person-panel-title" className="mt-3 max-w-full truncate text-[17px] font-medium leading-6 text-ink">{name}</h2>
           {(titleName || pointsText) && (
             <div className="mt-1 flex max-w-full items-center justify-center gap-2" data-member-line="">
