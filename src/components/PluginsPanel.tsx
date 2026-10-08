@@ -30,7 +30,7 @@ import {
   useMcpServers,
   type McpServerListing,
 } from "./McpServersPanel";
-import { HarnessConnectorsSection } from "./HarnessConnectorsSection";
+import { ProvidersSection } from "./plugins/ProvidersSection";
 import { requestSettingsCard } from "./SettingsPrimitives";
 import {
   botsMissingConnectedApps,
@@ -363,6 +363,7 @@ export function PluginsPanel() {
         addTitle={mcp.restricted && mcp.policy ? t("policy.managedBy", { organization: mcp.policy.organizationName }) : undefined}
         refreshing={refreshing}
         onRefresh={refreshAll}
+        providers={<ProvidersSection instances={state.instances} />}
         forms={(
           <>
             {mcp.restricted && mcp.policy && <p role="status" className="mt-3 text-[12.5px] leading-relaxed text-ink-secondary">{t("policy.mcpRestricted", { organization: mcp.policy.organizationName })}</p>}
@@ -383,9 +384,6 @@ export function PluginsPanel() {
         <section className="mt-6">
           <h3 className="mb-2 text-[13px] font-semibold text-ink">{t("connectApps.manage.settings")}</h3>
           <ClaudeMcpSwitch />
-        </section>
-        <section className="mt-6">
-          <HarnessConnectorsSection placement="settings" />
         </section>
       </ManageView>
     );

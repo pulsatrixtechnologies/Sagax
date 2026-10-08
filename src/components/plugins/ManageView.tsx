@@ -29,18 +29,47 @@ export interface ManageViewProps {
   forms?: ReactNode;
   /** sections after the skills (marketplaces, settings) */
   children?: ReactNode;
+  /** the Providers tab: engine accounts and the connectors they bring */
+  providers?: ReactNode;
 }
 
+export type ManageTab = "plugins" | "providers";
+
 export function ManageView(props: ManageViewProps) {
-  const { items, countLabel, sourceLabel, onBack, onClose, onOpenItem, onAddManually, onPasteConfig, addDisabled, addTitle, refreshing, onRefresh, forms, children } = props;
+  const { items, countLabel, sourceLabel, onBack, onClose, onOpenItem, onAddManually, onPasteConfig, addDisabled, addTitle, refreshing, onRefresh, forms, children, providers } = props;
   const [showAll, setShowAll] = useState(false);
+  const [tab, setTab] = useState<ManageTab>("plugins");
   const installed = installedPlugins(items);
   const shown = showAll ? installed : installed.slice(0, INSTALLED_PREVIEW);
   const skills = items.filter((item) => item.kind === "skill").sort((a, b) => a.name.localeCompare(b.name));
   return (
     <>
       <PluginPageHeader titleId="plugins-title" title={t("connectApps.manage.title")} backLabel={t("connectApps.backToMain")} onBack={onBack} onClose={onClose} />
-      <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-7 pt-1 sm:px-8" data-plugins-manage>
+      {providers && (
+        <div className="px-6 sm:px-8">
+          <div className="flex gap-1 border-b border-hairline/60" role="tablist" aria-label={t("connectApps.manage.tabsAria")}>
+            {(["plugins", "providers"] as const).map((item) => (
+              <button
+                key={item}
+                type="button"
+                role="tab"
+                aria-selected={tab === item}
+                onClick={() => setTab(item)}
+                className={cn(
+                  "-mb-px border-b-2 px-2.5 pb-2 text-[13px] transition-colors",
+                  tab === item ? "border-accent font-medium text-ink" : "border-transparent text-ink-secondary hover:text-ink",
+                )}
+              >
+                {t(item === "plugins" ? "connectApps.manage.tabPlugins" : "connectApps.manage.tabProviders")}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+      {tab === "providers" && providers ? (
+        <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-7 pt-4 sm:px-8" role="tabpanel" data-plugins-manage="providers">{providers}</div>
+      ) : (
+      <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-7 pt-3 sm:px-8" data-plugins-manage>
         <div className="flex flex-wrap items-center gap-2">
           <button type="button" onClick={onAddManually} disabled={addDisabled} title={addTitle} className="flex items-center gap-1.5 rounded-lg bg-accent px-3 py-2 text-[12.5px] font-medium text-accent-ink disabled:opacity-40">
             <Plus size={14} /> {t("connectApps.manage.addManually")}
@@ -113,6 +142,7 @@ export function ManageView(props: ManageViewProps) {
         </section>
         {children}
       </div>
+      )}
     </>
   );
 }

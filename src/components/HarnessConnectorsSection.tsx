@@ -44,7 +44,10 @@ export function harnessUnavailableKey(reason: Unavailable | undefined): LocaleKe
   return UNAVAILABLE_KEY[reason ?? "unknown"] ?? UNAVAILABLE_KEY.unknown;
 }
 
-export function HarnessConnectorsSection({ placement = "panel" }: { placement?: "panel" | "settings" } = {}) {
+/** `provider`: inside Plugins > Manage > Providers, under the Claude
+ * accounts, which already carry the title and the Manage link: only the
+ * connectors and Check again. */
+export function HarnessConnectorsSection({ placement = "panel" }: { placement?: "panel" | "settings" | "provider" } = {}) {
   const [answer, setAnswer] = useState<HarnessConnectorsAnswer | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -68,7 +71,22 @@ export function HarnessConnectorsSection({ placement = "panel" }: { placement?: 
   const claude = answer?.claude;
   return (
     <section aria-labelledby="harness-connectors-title" data-harness-connectors={placement}
-      className={cn("rounded-xl border border-border bg-inset px-4 py-3", placement === "panel" && "mx-6 mb-3 sm:mx-8")}>
+      className={cn(placement !== "provider" && "rounded-xl border border-border bg-inset px-4 py-3", placement === "panel" && "mx-6 mb-3 sm:mx-8")}>
+      {placement === "provider" ? (
+        <div className="flex items-center justify-between gap-3">
+          <h4 id="harness-connectors-title" className="text-[12px] font-medium text-ink-secondary">{t("connectApps.providers.connectors")}</h4>
+          <button
+            type="button"
+            onClick={() => void load(true)}
+            disabled={loading}
+            className="ui-icon-button disabled:opacity-50"
+            title={t("harnessConnectors.refresh")}
+            aria-label={t("harnessConnectors.refresh")}
+          >
+            <RefreshCw size={14} className={cn(loading && "animate-spin")} />
+          </button>
+        </div>
+      ) : (
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <h3 id="harness-connectors-title" className="text-[13px] font-semibold text-ink">{t("harnessConnectors.title")}</h3>
@@ -94,6 +112,7 @@ export function HarnessConnectorsSection({ placement = "panel" }: { placement?: 
           </button>
         </div>
       </div>
+      )}
 
       {loading && !answer ? (
         <div className="mt-2 flex items-center gap-2 text-[12px] text-ink-secondary">
@@ -126,7 +145,7 @@ export function HarnessConnectorsSection({ placement = "panel" }: { placement?: 
         </ul>
       ) : null}
 
-      {answer && !answer.codex.available && (
+      {answer && !answer.codex.available && placement !== "provider" && (
         <p className="mt-2 text-[11.5px] text-ink-tertiary">{t("harnessConnectors.codex")}</p>
       )}
 
