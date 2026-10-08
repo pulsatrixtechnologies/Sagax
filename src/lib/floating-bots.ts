@@ -11,7 +11,12 @@ export interface FloatingBotEntry {
   top: boolean;
   /** Browser and phone: the character's offset from the viewport's bottom-right corner. */
   pos?: { right: number; bottom: number };
+  /** "Hide for 1 hour": the mascot stays off the desktop until then (ms since the epoch). */
+  hiddenUntil?: number;
 }
+
+/** How long "Hide for 1 hour" hides a mascot. */
+export const SNOOZE_MS = 60 * 60 * 1000;
 
 export type FloatingStorage = Pick<Storage, "getItem" | "setItem">;
 
@@ -44,11 +49,12 @@ export function readFloatingBots(storage: FloatingStorage | undefined = defaultS
   const entries: FloatingBotEntry[] = [];
   for (const item of list) {
     if (!item || typeof item !== "object") continue;
-    const value = item as { id?: unknown; top?: unknown; pos?: { right?: unknown; bottom?: unknown } };
+    const value = item as { id?: unknown; top?: unknown; pos?: { right?: unknown; bottom?: unknown }; hiddenUntil?: unknown };
     if (typeof value.id !== "string" || !BOT_ID.test(value.id) || seen.has(value.id)) continue;
     seen.add(value.id);
     const pos = value.pos && finite(value.pos.right) && finite(value.pos.bottom) ? { right: value.pos.right, bottom: value.pos.bottom } : undefined;
-    entries.push({ id: value.id, top: value.top !== false, ...(pos ? { pos } : {}) });
+    const hiddenUntil = finite(value.hiddenUntil) && value.hiddenUntil > 0 ? value.hiddenUntil : undefined;
+    entries.push({ id: value.id, top: value.top !== false, ...(pos ? { pos } : {}), ...(hiddenUntil ? { hiddenUntil } : {}) });
     if (entries.length >= MAX_FLOATING_BOTS) break;
   }
   return entries;
@@ -118,6 +124,35 @@ export function setFloatingBotOnTop(botId: string, top: boolean, storage?: Float
   commit(list.map((entry) => (entry.id === botId ? { ...entry, top } : entry)), storage);
 }
 
+/** "Hide for 1 hour": the mascot leaves the desktop and comes back by itself at `until`. */
+export function snoozeFloatingBot(botId: string, until: number, storage?: FloatingStorage): void {
+  if (!finite(until)) return;
+  const list = entries();
+  if (!list.some((entry) => entry.id === botId)) return;
+  commit(list.map((entry) => (entry.id === botId ? { ...entry, hiddenUntil: until } : entry)), storage);
+}
+
+/** Whether a floating bot is on the desktop now (not hidden for a while). */
+export const floatingShown = (entry: FloatingBotEntry, now: number): boolean => !entry.hiddenUntil || entry.hiddenUntil <= now;
+
+/** The next time a hidden mascot comes back, or null when none is hidden. */
+export function nextFloatingReturn(list: readonly FloatingBotEntry[], now: number): number | null {
+  const times = list.map((entry) => entry.hiddenUntil ?? 0).filter((time) => time > now);
+  return times.length ? Math.min(...times) : null;
+}
+
+/**
+ * "Switch bot": the mascot now stands for another bot, in the same place in
+ * the list and on the desktop. False when the other bot already floats (or a
+ * bad id).
+ */
+export function switchFloatingBot(fromId: string, toId: string, storage?: FloatingStorage): boolean {
+  if (!BOT_ID.test(toId) || fromId === toId) return false;
+  const list = entries();
+  if (!list.some((entry) => entry.id === fromId) || list.some((entry) => entry.id === toId)) return false;
+  commit(list.map((entry) => (entry.id === fromId ? { ...entry, id: toId, hiddenUntil: undefined } : entry)), storage);
+  return true;
+}
 
 /** Browser and phone: remember where the character was dropped. */
 export function setFloatingBotPosition(botId: string, pos: { right: number; bottom: number }, storage?: FloatingStorage): void {
