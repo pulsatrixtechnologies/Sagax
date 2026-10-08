@@ -439,7 +439,7 @@
 
    --color-accent is v3's own --accent-brand, --color-accent-border and
    --color-focus are its --accent-brand-hover/--ring (identical in v3).
-   --color-danger is v3's --destructive verbatim; its fill is dark enough
+   --color-danger is v3's --destructive, darkened one step so its text clears 4.5:1 on its own 15% pill tint; its fill is dark enough
    that white clears AA outright, unlike Pulsatrix's own red, so danger-ink
    stays v3's own --destructive-fg instead of borrowing the app's ink.
    Success and warning are not top-level v3 tokens, so they are drawn from

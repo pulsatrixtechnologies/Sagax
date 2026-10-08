@@ -240,6 +240,16 @@ const PAIRS = [
   ]),
   ["--color-accent-text", "--color-accent/10", 4.5, "--color-card"],
   ["--color-accent-text", "--color-accent/15", 4.5, "--color-card"],
+  // On, active, connected, paused, waiting and scheduled wear this tint
+  // (`bg-accent/15 text-accent-text`), on a card or on the panel, never the
+  // success green or the warning amber (their own tints are held above).
+  ["--color-accent-text", "--color-accent/15", 4.5, "--color-panel"],
+  // The standard switch, on: an `accent` track (never the success green) with
+  // an `accent-border` ring and an `accent-ink` thumb (4.5:1 on the track,
+  // paired above). The track is a UI component, so 3:1 against every surface
+  // a switch sits on, through its ring: Dusk's muted accent fill alone is
+  // 2.4:1 on raised.
+  ...["--color-panel", "--color-card", "--color-raised"].map((s) => ["--color-accent-border", s, 3]),
   // The accent as a glyph: check marks, the active-row tick, toggles and
   // the accent icons on menus and cards. A glyph is held to 3:1.
   ...["--color-app", "--color-panel", "--color-card", "--color-menu", "--color-raised-hover", "--color-composer"].map((s) => ["--color-accent", s, 3]),

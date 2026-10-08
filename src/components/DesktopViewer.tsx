@@ -163,7 +163,7 @@ export function DesktopViewer() {
         <div className={cn("flex max-h-full w-14 shrink-0 flex-col items-center gap-1 overflow-y-auto rounded-2xl border border-hairline bg-panel p-1 shadow-xl", slide, expanded ? "translate-x-0 opacity-100" : "-translate-x-12 opacity-0")}>
           <div className="relative flex h-11 w-11 shrink-0 items-center justify-center text-ink-secondary" title={status}>
             <Monitor size={20} aria-hidden="true" />
-            <span className={cn("absolute right-2 bottom-2 size-2 rounded-full ring-2 ring-panel", connected ? "bg-success" : "bg-warning")} />
+            <span className={cn("absolute right-2 bottom-2 size-2 rounded-full ring-2 ring-panel", connected ? "bg-accent" : "bg-warning")} />
           </div>
           <div className="my-1 h-px w-7 shrink-0 bg-hairline" />
           {sandbox && <ViewerTool id="control" label={t(control ? "sandboxDesktop.releaseControl" : "sandboxDesktop.takeControl")} icon={Hand} active={control} onClick={() => setControl(!control)} />}

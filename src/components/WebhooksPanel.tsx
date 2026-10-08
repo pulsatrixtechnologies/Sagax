@@ -50,8 +50,8 @@ export function suggestedName(prompt: string, bot?: Bot) {
 
 export function statusFor(webhook: WebhookTrigger) {
   if (webhook.verificationPending) return { label: "Waiting for test", tone: "text-accent", dot: "bg-accent animate-pulse" };
-  if (webhook.verifiedAt && !webhook.enabled) return { label: "Ready to enable", tone: "text-warning", dot: "bg-warning" };
-  if (webhook.enabled) return { label: "Active", tone: "text-success", dot: "bg-success" };
+  if (webhook.verifiedAt && !webhook.enabled) return { label: "Ready to enable", tone: "text-accent-text", dot: "bg-accent" };
+  if (webhook.enabled) return { label: "Active", tone: "text-accent-text", dot: "bg-accent" };
   return { label: "Paused", tone: "text-ink-secondary", dot: "bg-ink-secondary/50" };
 }
 

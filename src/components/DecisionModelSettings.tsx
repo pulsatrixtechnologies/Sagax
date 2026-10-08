@@ -138,7 +138,7 @@ export function DecisionModelSettings() {
 
       <Card title={t("decider.key.label")}>
         <div role="status" className="mb-2 flex items-center gap-2 text-[13px] text-ink-secondary">
-          <span className={cn("size-1.5 rounded-full", configured ? "bg-success" : "bg-raised-hover")} />
+          <span className={cn("size-1.5 rounded-full", configured ? "bg-accent" : "bg-raised-hover")} />
           <span className={configured ? "text-success" : undefined}>
             {included ? t("keys.includedWithCloudPro") : configured ? t("decider.status.connected") : t("decider.status.notConnected")}
           </span>

@@ -44,9 +44,9 @@ function EdgeRow({ edge, bots }: { edge: TeamMapEdge; bots: Bot[] }) {
         className={cn(
           "rounded-full px-2 py-0.5 text-[10.5px] font-medium",
           edge.state === "running"
-            ? "bg-success/15 text-success"
+            ? "bg-accent/15 text-accent-text"
             : edge.state === "queued"
-              ? "bg-warning/15 text-warning"
+              ? "bg-accent/15 text-accent-text"
               : "bg-control text-ink-secondary",
         )}
       >

@@ -215,10 +215,10 @@ export function CompanionSection({ profileEmail = "", focusRequest = 0 }: { prof
               {panelStatus && (
                 <div
                   className={`flex items-center gap-2 rounded-full px-2.5 py-1 text-[11.5px] ${
-                    panelStatus.good ? "bg-success/10 text-success" : "bg-control text-ink-secondary"
+                    panelStatus.good ? "bg-accent/15 text-accent-text" : "bg-control text-ink-secondary"
                   }`}
                 >
-                  <span className={`size-1.5 rounded-full ${panelStatus.good ? "bg-success" : "bg-ink-secondary/50"}`} />
+                  <span className={`size-1.5 rounded-full ${panelStatus.good ? "bg-accent" : "bg-ink-secondary/50"}`} />
                   {panelStatus.label}
                 </div>
               )}

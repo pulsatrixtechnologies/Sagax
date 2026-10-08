@@ -275,7 +275,7 @@ export function OrgBotRow({ bot, expanded, onToggle, owner, admin, busy, onStop,
           </span>
           {bot.running !== undefined && (
             <span className="flex shrink-0 items-center gap-1.5 text-[11.5px] text-ink-secondary" data-org-bot-status={bot.running ? "running" : "idle"} title={bot.running ? t("organization.sharing.running") : t("organization.sharing.idle")}>
-              <span aria-hidden="true" className={cn("size-[7px] rounded-full", bot.running ? "bg-success" : "bg-ink-secondary/40")} />
+              <span aria-hidden="true" className={cn("size-[7px] rounded-full", bot.running ? "bg-accent" : "bg-ink-secondary/40")} />
               <span className="max-sm:sr-only">{bot.running ? t("organization.sharing.running") : t("organization.sharing.idle")}</span>
             </span>
           )}

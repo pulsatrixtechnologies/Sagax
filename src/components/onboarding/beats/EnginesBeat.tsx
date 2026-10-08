@@ -33,7 +33,7 @@ function StatusPill({ ready }: { ready: boolean }) {
     <span
       className={cn(
         "inline-flex shrink-0 items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-medium",
-        ready ? "bg-success/15 text-success" : "bg-warning/15 text-warning",
+        ready ? "bg-accent/15 text-accent-text" : "bg-warning/15 text-warning",
       )}
     >
       <span className={cn("size-1.5 rounded-full", ready ? "bg-success" : "bg-warning")} aria-hidden="true" />

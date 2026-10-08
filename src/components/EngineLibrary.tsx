@@ -48,8 +48,8 @@ export function EngineCard({ instance, personal, children }: {
           <ChevronDown size={16} aria-hidden="true" className="shrink-0 text-ink-secondary transition-transform group-open/engine:rotate-180 motion-reduce:transition-none" />
         </div>
         <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
-          <span className={cn("inline-flex items-center gap-1.5 rounded-full px-2 py-1 text-[11px] font-medium", ready ? "bg-success/10 text-success" : "bg-control text-ink-secondary")}>
-            {ready ? <Check size={12} aria-hidden="true" /> : <span className="size-1.5 rounded-full bg-warning" aria-hidden="true" />}
+          <span className={cn("inline-flex items-center gap-1.5 rounded-full px-2 py-1 text-[11px] font-medium", ready ? "bg-accent/15 text-accent-text" : "bg-control text-ink-secondary")}>
+            {ready ? <Check size={12} aria-hidden="true" /> : <span className="size-1.5 rounded-full bg-accent" aria-hidden="true" />}
             {ready ? t("onboarding.engines.ready") : t("onboarding.engines.needsSetup")}
           </span>
           {ready ? (

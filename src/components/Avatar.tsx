@@ -189,7 +189,7 @@ export function PrimaryBotBadge({ size, ringClassName = "ring-panel", label }: {
       aria-label={label}
       aria-hidden={label ? undefined : true}
       title={label}
-      className={`pointer-events-none absolute -bottom-0.5 -right-0.5 flex items-center justify-center rounded-full bg-orange-500 text-white ring-2 ${ringClassName}`}
+      className={`pointer-events-none absolute -bottom-0.5 -right-0.5 flex items-center justify-center rounded-full bg-accent ring-2 ${ringClassName}`}
       style={{ width: badge, height: badge }}
     >
       <svg viewBox="0 0 24 24" width={Math.round(badge * 0.66)} height={Math.round(badge * 0.66)} fill="currentColor" aria-hidden="true">

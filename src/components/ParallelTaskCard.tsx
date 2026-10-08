@@ -50,7 +50,7 @@ export function ParallelTaskCard({ message, botId }: { message: Message; botId: 
     <div className="flex justify-start" data-parallel-card={ref.threadId} data-parallel-state={status}>
       <div className={cn(
         "flex max-w-[560px] items-center gap-2.5 rounded-xl border px-3 py-2 text-[13px]",
-        status === "waiting" ? "border-warning/50 bg-warning/[0.06]" : "border-hairline/40 bg-panel",
+        status === "waiting" ? "border-accent/50 bg-accent/10" : "border-hairline/40 bg-panel",
       )}>
         {live && status !== "waiting"
           ? <Loader2 size={14} className="shrink-0 animate-spin text-accent" aria-hidden="true" />

@@ -466,7 +466,7 @@ export function VpsComputersCard({
                     className={cn(
                       "rounded-full px-2 py-0.5 text-[11px]",
                       instance.inUse || kind === "running"
-                        ? "bg-success/15 text-success"
+                        ? "bg-accent/15 text-accent-text"
                         : kind === "stopped" || kind === "paused"
                           ? "bg-control text-ink-secondary"
                           : "bg-warning/15 text-warning",
@@ -607,7 +607,7 @@ export function CloudComputersCard({
                     className={cn(
                       "rounded-full px-2 py-0.5 text-[11px]",
                       instance.inUse || kind === "running"
-                        ? "bg-success/15 text-success"
+                        ? "bg-accent/15 text-accent-text"
                         : kind === "sleeping" || kind === "going-to-sleep"
                           ? "bg-control text-ink-secondary"
                           : "bg-warning/15 text-warning",
@@ -1460,7 +1460,7 @@ export function LocalComputerSection() {
             aria-live="polite"
             className={cn(
               "flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[12.5px]",
-              headerReady ? "bg-success/15 text-success" : "bg-control text-ink-secondary",
+              headerReady ? "bg-accent/15 text-accent-text" : "bg-control text-ink-secondary",
             )}
           >
             {loading ? <Loader2 size={12} className="animate-spin" /> : headerReady ? <Check size={12} /> : <Circle size={9} />}

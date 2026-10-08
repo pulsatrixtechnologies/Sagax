@@ -167,7 +167,7 @@ export function LocalScreenPreview() {
             {preview.interaction === "portal-picker" ? screenLabel : t("vm.dest.local")}
           </span>
           <span className="flex items-center gap-1.5 text-success">
-            <span className="h-1.5 w-1.5 rounded-full bg-success" /> {t("computer.screen.sharing")}
+            <span className="h-1.5 w-1.5 rounded-full bg-accent" /> {t("computer.screen.sharing")}
           </span>
         </div>
       )}
