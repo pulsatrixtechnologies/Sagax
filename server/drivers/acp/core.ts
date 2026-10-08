@@ -2169,7 +2169,8 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
             }
             const reason = result?.stopReason;
             if (reason === "end_turn") settle(threadId, session, true, null);
-            else if (reason === "cancelled") settle(threadId, session, true, "cancelled");
+            // After Stop, whatever reason the agent gives is the stop.
+            else if (reason === "cancelled" || state.stopped) settle(threadId, session, true, "cancelled");
             else {
               const errorMessage = typeof result?.error === "string" && result.error
                 ? result.error
@@ -2191,9 +2192,11 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
             }
             if (!state.settled) {
               const message = e instanceof Error ? e.message : String(e);
-              // Stop before the prompt is a cancellation. It is not a failure
-              // to leave in the chat.
-              if (message === "turn stopped") {
+              // A stop the person asked for is a cancellation, not a failure
+              // to leave in the chat: before the prompt ("turn stopped"), or
+              // during the handshake, where closing the session rejects the
+              // pending request ("session closed").
+              if (message === "turn stopped" || state.stopped) {
                 settle(threadId, session, true, "cancelled");
                 return;
               }

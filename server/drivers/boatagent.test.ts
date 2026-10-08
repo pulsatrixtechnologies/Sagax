@@ -268,6 +268,36 @@ describe("BoatAgentDriver turns (fake API)", () => {
     expect(texts()).toEqual(["Working.", "Shipped."]);
   });
 
+  it("settles a stopped run quietly when the boat reports it cancelled with a message", async () => {
+    let polls = 0;
+    const previous = globalThis.fetch;
+    globalThis.fetch = (async (input: string | URL, init?: RequestInit) => {
+      const url = String(input);
+      const method = String(init?.method ?? "GET").toUpperCase();
+      if (url.endsWith("/me")) return json({ ok: true });
+      if (method === "POST" && /\/boxes\/[^/]+\/prompt$/.test(url)) return json({ promptRun: { id: PROMPT } });
+      if (method === "POST" && url.includes("/interrupt")) return json({ ok: true });
+      if (url.includes("/events")) return json({ events: [] });
+      if (url.includes(`/prompts/${PROMPT}`)) {
+        polls += 1;
+        if (polls < 2) return json({ promptRun: { status: "running" } });
+        // Stop lands while this poll is in flight; the boat answers with
+        // the cancelled run and its own words for it.
+        await instance.adapter.interruptTurn("t-cancel-message");
+        return json({ promptRun: { status: "cancelled", message: "Run cancelled by user" } });
+      }
+      return json({ error: `unexpected ${method} ${url}` }, 404);
+    }) as typeof fetch;
+    restoreFetch = () => {
+      globalThis.fetch = previous;
+    };
+    await create();
+    await instance.adapter.sendTurn({ threadId: "t-cancel-message", text: "go", integrations: { computer } });
+    const done = await recorder.until((e) => e.type === "turn.completed");
+    expect(done).toMatchObject({ ok: false, stopReason: "interrupted" });
+    expect(recorder.events.some((e) => e.type === "runtime.error")).toBe(false);
+  });
+
   it("does not open a held ask when the turn is interrupted before settle", async () => {
     const askText = "Working.\n\n" + askBlock([{ question: "Proceed?" }]);
     restoreFetch = installFakeBoat([
