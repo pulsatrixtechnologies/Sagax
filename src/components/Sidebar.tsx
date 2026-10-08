@@ -51,8 +51,6 @@ import { PrimaryBotPicker } from "./PrimaryBotPicker";
 import { useOrgPeople, usePerspicaxOrg } from "@/lib/perspicax-org";
 import { peopleDmPeer } from "@/lib/people-dm";
 import { nudgeLineText } from "@/lib/nudge-line";
-import { usePublicAchievement } from "@/lib/public-achievements";
-import { ColleagueAchievementLine } from "./achievements/MemberCard";
 import { Eye, UserRound } from "lucide-react";
 import { entriesToUnhide, hiddenKey, hiddenKeySet, hideFromSidebar, showInSidebar, useSidebarHidden } from "@/lib/sidebar-hidden";
 import { groupHiddenKey, hiddenSidebarRows, withoutHiddenEntries } from "@/lib/sidebar-hidden-entries";
@@ -79,6 +77,7 @@ import {
 import type { LocaleKey } from "@/locales";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { WorkingDots } from "./WorkingIndicator";
+import { StatusDot } from "./StatusDot";
 import { nextRename } from "@/lib/rename";
 import { useDesktopCapabilities } from "./DesktopCapabilities";
 import { MIN_QUERY } from "./SearchResults";
@@ -345,9 +344,7 @@ export function GroupListItem({
   const orgPeople = useOrgPeople();
   const peer = peopleDmPeer(group, viewerActorId(state.config), orgPeople);
   const rowName = peer?.name ?? group.name;
-  // A colleague's title and points, only when they made the card public.
-  // Icons have no room for the line; the person panel still shows it.
-  const publicCard = usePublicAchievement(peer && density !== "icons" ? peer.id : null);
+  // No achievement title or points here: they live in the person panel.
   const previewShown = !expanded && (!quiet || groupStatus);
   return (
     <>
@@ -373,17 +370,18 @@ export function GroupListItem({
       className={cn(
         "relative flex w-full items-center rounded-lg text-left outline-none focus-visible:ring-1 focus-visible:ring-accent/60",
         density === "icons" ? "justify-center px-1 py-1.5" : density === "compact" ? "gap-2 py-1.5 pr-9" : "min-h-[54px] gap-2 py-2 pr-2",
-        // Same inset as BotListItem so the group and its bots line up; the
-        // disclosure chevron sits inside it.
-        density !== "icons" && (showThreads ? "pl-6" : "pl-2"),
+        // Same inset as BotListItem so the group and its bots line up; a
+        // room's disclosure chevron sits inside its thread-mode inset. A
+        // person's row has no chevron and never moves, like a bot row (#152).
+        density !== "icons" && (showThreads && !group.peopleDm ? "pl-6" : "pl-2"),
         selected && !expanded ? "bg-sidebar-selected" : "hover:bg-sidebar-hover",
       )}
-      title={density === "icons" ? rowName : publicCard && previewShown ? groupPreview(group, state.bots, viewerActorId(state.config)) : undefined}
+      title={density === "icons" ? rowName : undefined}
       aria-label={density === "icons" ? rowName : undefined}
       data-people-dm={peer ? peer.id : undefined}
     >
       {peer
-        ? <span className={cn("flex shrink-0 items-center justify-center", density === "icons" ? "size-12" : density === "compact" ? "size-7" : "size-9")}><PersonAvatar avatarUrl={peer.avatarUrl} initials={peer.initials} size={density === "icons" ? 44 : density === "compact" ? 28 : 36} /></span>
+        ? <span className={cn("flex shrink-0 items-center justify-center", density === "icons" ? "size-12" : density === "compact" ? "size-7" : "size-9")}><PersonAvatar avatarUrl={peer.avatarUrl} initials={peer.initials} size={density === "icons" ? 44 : density === "compact" ? 28 : 36} presenceId={peer.id} presenceRing="border-sidebar" /></span>
         : <StackedMauses members={members} density={density} viewerId={viewerActorId(state.config)} />}
       <div className={cn("min-w-0 flex-1", density === "icons" && "hidden")}>
         <div className="flex items-baseline justify-between gap-2">
@@ -391,7 +389,7 @@ export function GroupListItem({
           {selected && last && !expanded && <span className="shrink-0 text-[12px] leading-4 text-sidebar-ink-secondary">{formatTime(last.at)}</span>}
           {(expanded || (quiet && !groupStatus)) && group.unread && <span className="size-1.5 shrink-0 rounded-full bg-accent" aria-label={t("task.unreadMany")} />}
         </div>
-        {publicCard ? <span className="block h-[18px]" aria-hidden="true" /> : previewShown && <div className="flex items-center justify-between gap-2">
+        {previewShown && <div className="flex items-center justify-between gap-2">
           <span className="truncate text-[13px] leading-[18px] text-sidebar-ink-secondary">{groupPreview(group, state.bots, viewerActorId(state.config))}</span>
           {group.unread && <span className="size-2 shrink-0 rounded-full bg-accent" />}
         </div>}
@@ -400,33 +398,13 @@ export function GroupListItem({
         <span className="absolute bottom-1.5 right-1.5 size-2 rounded-full border border-sidebar bg-accent" />
       )}
     </button>
-    {!group.dm && density !== "icons" && hasThreadList && <button type="button" aria-label={t(expanded ? "task.collapseNamed" : "task.expandNamed", { name: group.name })} aria-expanded={expanded}
+    {!group.dm && !group.peopleDm && density !== "icons" && hasThreadList && <button type="button" aria-label={t(expanded ? "task.collapseNamed" : "task.expandNamed", { name: group.name })} aria-expanded={expanded}
       onClick={() => setThreadsOpen((open) => !open)} className="absolute left-0.5 top-1/2 flex size-5 -translate-y-1/2 items-center justify-center rounded text-sidebar-ink-secondary outline-none hover:text-sidebar-ink focus-visible:ring-1 focus-visible:ring-accent/60">
       <ChevronRight aria-hidden="true" size={12} className={cn("transition-transform", expanded && "rotate-90")} />
     </button>}
     {!group.dm && !group.peopleDm && density !== "icons" && <button type="button" disabled={roomBusy} aria-label={t("task.newShort")} title={t(roomBusy ? "task.newBusy" : "task.newShort")}
       onClick={() => { setThreadsOpen(true); dispatch({ type: "newGroupTask", groupId: group.id }); }}
       className="pointer-events-none absolute right-1 top-1/2 flex size-7 -translate-y-1/2 items-center justify-center rounded text-sidebar-ink-secondary opacity-0 hover:bg-sidebar-hover hover:text-sidebar-ink disabled:opacity-40 group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100 max-md:pointer-events-auto max-md:opacity-70 touch:pointer-events-auto touch:opacity-70 touch:disabled:opacity-40"><Plus size={14} /></button>}
-    {publicCard && peer && (
-      <div
-        className={cn(
-          "pointer-events-none absolute inset-0 flex items-center",
-          density === "compact" ? "gap-2 py-1.5 pr-9" : "gap-2 py-2 pr-2",
-          showThreads ? "pl-6" : "pl-2",
-        )}
-      >
-        <span className={cn("shrink-0", density === "compact" ? "size-7" : "size-9")} aria-hidden="true" />
-        <span className="flex min-w-0 flex-1 flex-col">
-          <span className="h-5" aria-hidden="true" />
-          <span className="pointer-events-auto flex h-[18px] min-w-0 items-center gap-2">
-            <span className="min-w-0 flex-1">
-              <ColleagueAchievementLine card={publicCard} name={rowName} initials={peer.initials} avatarUrl={peer.avatarUrl} />
-            </span>
-            {previewShown && group.unread && <span className="size-2 shrink-0 rounded-full bg-accent" />}
-          </span>
-        </span>
-      </div>
-    )}
     </div>
     {expanded && <GroupThreadList group={group} selected={selected} density={density} query={group.name.toLowerCase().includes(query.toLowerCase()) ? "" : query} />}
     </>
@@ -1385,24 +1363,14 @@ export function BotListItem({
           motionKey={mascotMotion?.nonce ?? 0}
           animated={mascotRowAnimated(bot, state.pendingQueued, mascotMotion?.kind)}
         />
-        {working && (
-          // presence dot: green while the bot is working, ringed in the row's
-          // ground so it reads on both a photo and the mascot. Also the only
-          // activity signal in icons-only density, where the text is hidden.
-          <span
-            data-testid="working-dot"
-            className={cn(
-              "absolute -right-0.5 rounded-full border-2 border-sidebar bg-success", dotCorner,
-              iconOnly ? "size-3" : "size-2.5",
-            )}
-          />
-        )}
-        {waiting && <span data-testid="waiting-dot" role="status" aria-label={t("sidebar.preview.waiting")} title={t("sidebar.preview.waiting")}
-          className={cn("absolute -right-0.5 rounded-full border-2 border-sidebar bg-warning", dotCorner, iconOnly ? "size-3" : "size-2.5")} />}
-        {teammateWait && <span data-testid="teammate-wait-dot" role="status" aria-label={t("sidebar.preview.waitingOnTeammate")} title={t("sidebar.preview.waitingOnTeammate")}
-          className={cn("absolute -right-0.5 rounded-full border-2 border-sidebar bg-accent", dotCorner, iconOnly ? "size-3" : "size-2.5")} />}
-        {!teammateWait && !waiting && !working && queued && <span data-testid="queued-dot" role="status" aria-label={t("task.queued")} title={t("task.queued")}
-          className={cn("absolute -right-0.5 rounded-full border-2 border-sidebar bg-sidebar-ink-secondary", dotCorner, iconOnly ? "size-3" : "size-2.5")} />}
+        {/* status dot (StatusDot, the same one a person's presence wears):
+            green while the bot is working, ringed in the row's ground so it
+            reads on both a photo and the mascot. Also the only activity
+            signal in icons-only density, where the text is hidden. */}
+        {working && <StatusDot tone="success" testId="working-dot" className={cn("absolute -right-0.5", dotCorner)} sizeClassName={iconOnly ? "size-3" : "size-2.5"} />}
+        {waiting && <StatusDot tone="warning" testId="waiting-dot" role="status" label={t("sidebar.preview.waiting")} className={cn("absolute -right-0.5", dotCorner)} sizeClassName={iconOnly ? "size-3" : "size-2.5"} />}
+        {teammateWait && <StatusDot tone="accent" testId="teammate-wait-dot" role="status" label={t("sidebar.preview.waitingOnTeammate")} className={cn("absolute -right-0.5", dotCorner)} sizeClassName={iconOnly ? "size-3" : "size-2.5"} />}
+        {!teammateWait && !waiting && !working && queued && <StatusDot tone="queued" testId="queued-dot" role="status" label={t("task.queued")} className={cn("absolute -right-0.5", dotCorner)} sizeClassName={iconOnly ? "size-3" : "size-2.5"} />}
       </span>
       <div className={cn("min-w-0 flex-1", iconOnly && "hidden")}>
         <div className="flex items-baseline justify-between gap-2">

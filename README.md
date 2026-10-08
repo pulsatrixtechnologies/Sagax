@@ -126,8 +126,12 @@ solo or on an organization server
 
 ### A mascot on your desktop
 
-Put a bot on the desktop and it stands there in its own window: it reacts
-while its bot works, shows replies in a balloon, and takes your messages.
+Put a bot on the desktop and it stands there in its own window, anywhere on
+any screen, right into a corner: it reacts beside itself while its bot works,
+shows replies in a chat bubble that opens on the side with room (with the
+app's composer: clip, model chip, voice button), and takes your messages.
+Right-click it to talk, call, open it in the app, switch it to another bot,
+play a move, or hide it for an hour.
 Characters: **Owl**, **Shapes** (thirteen shapes) and **Trombi**, the paperclip.
 Premium skins (Gold, Neon, Holo, Galaxy, Molten and more) come with their own
 effects and moves.
@@ -166,8 +170,10 @@ effects and moves.
   by its owner.
 - **Nudge.** In a conversation with a person, or in a group, the button at
   the right of the composer sends a nudge. A bot conversation does not show
-  it. The windows of the people involved come forward and shake, and a line
-  in the thread says the nudge was sent. While the wait runs, the button
+  it. The windows of the people involved come forward and shake, with the
+  classic "wizz" sound on the receiving computer (Settings > Appearance >
+  Nudge sound turns it off), and a line in the thread says the nudge was
+  sent. While the wait runs, the button
   stays gray and the explanation is in the tooltip.
 - **Engine slash commands.** Type `/` to list Sagax's own commands and the
   engine's (Claude Code commands and skills, Codex skills), per bot, even in a
@@ -206,6 +212,9 @@ effects and moves.
 - **Admin controls.** Admins see every bot, force-stop or delete any of them,
   and read the organization's activity log. Profiles, names and avatars come
   from Perspicax.
+- **Who is here.** A green, amber or grey dot on each person shows whether
+  they are online, away or offline ("last seen 2 h ago"), and anyone can
+  hide theirs in Settings > Privacy.
 
 <table>
 <tr>
