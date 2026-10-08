@@ -746,6 +746,12 @@ describe("floating bots: a voice call with the mascot", () => {
     expect(sanitizeFloatingEvent({ type: "call", action: "call-settings", patch: { pause: "forever" } })).toBeNull();
   });
 
+  it("passes the captions switch (on unless turned off)", () => {
+    expect(sanitizeCall({ phase: "speaking" }).captions).toBe(true);
+    expect(sanitizeCall({ phase: "speaking", captions: false }).captions).toBe(false);
+    expect(sanitizeCall({ phase: "speaking", captions: "no" }).captions).toBe(true);
+  });
+
   it("relays the call's levels from the app page to that bot's window only", () => {
     const { emit, open, fromMain } = setup();
     const a = open("bot_a");

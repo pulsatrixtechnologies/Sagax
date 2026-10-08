@@ -85,6 +85,8 @@ export interface FloatingCall {
   voicesError: string | null;
   enrollment: { state: "none" | "enrolled" | "failed" } | { state: "recording"; share: number };
   previewing: { id: string; loading: boolean } | null;
+  /** Live captions beside the mascot (the call settings' switch; on when absent). */
+  captions?: boolean;
 }
 
 /** A row of the mascot's activity tray: an approval its bot waits on, or work it runs (tray.ts). */

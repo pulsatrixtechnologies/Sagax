@@ -613,8 +613,8 @@ export function FloatingBots() {
     if (canCall) item.snapshot.hints = { ...item.snapshot.hints, call: t("floatingBots.call", { name: bot.name }) };
     if (thisCall) {
       item.snapshot.call = mascotCallSnapshot(thisCall, callPanel, voiceSettings, callSettings);
-      // the mascot talks while its bot's voice does, and thinks while it writes
-      item.snapshot.pose = thisCall.state.phase === "speaking" ? "speak" : thisCall.state.phase === "thinking" ? "think" : item.snapshot.pose === "celebrate" || item.snapshot.pose === "alert" ? item.snapshot.pose : "idle";
+      // the mascot takes the pose of the call's phase (its status chip names it)
+      item.snapshot.pose = callPose(thisCall.state.phase, item.snapshot.pose);
     }
     if (trayFor === bot.id && trayData?.botId === bot.id) {
       const built = buildTray({ botId: bot.id, list: trayData.list, approvals: trayData.approvals, loading: trayData.loading, now: Date.now(), title: (tool) => t("floatingBots.tray.needsYou", { tool }) });

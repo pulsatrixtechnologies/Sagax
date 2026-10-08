@@ -33,6 +33,8 @@ import { CHAT_BALLOON, dockedWindowSize, type Size } from "./window-frame";
 import { effectLane, effectSide, type ChatPlacement, type EffectSide } from "./placement";
 import { useHeldMenuMotion } from "@/components/MenuMotion";
 import { MascotCallCardView, MascotCallPill, type LevelSource, type MascotCallCard } from "./MascotCall";
+import { CAPTIONS_WIDTH, MascotCaptions, MascotHoverControls, MascotTray } from "./MascotControls";
+import { DRAG_SLOP as CLICK_SLOP, hoverControlsShown, isDrag, mascotClick } from "./hover-controls";
 import type { MascotLook } from "../../../shared/mascot-look";
 
 // The Hibou 98 extras (retro balloon stylesheet, Trombi's sparkle) load only
@@ -571,6 +573,24 @@ export function FloatingBotView({ snapshot: given, onEvent, mover, interactive, 
   }, [desk, fxShown, activity, burst]);
   const fxSide: EffectSide = desk?.fx ?? ownFx;
   const lane = effectLane(fxSide, OWL_BOX);
+  const controlsBlocked = away || menuOpen || Boolean(drag.current?.moved);
+  useEffect(() => {
+    const next = hoverControlsShown({ over: controls.over, since: controls.since, now: now(), shown: controls.shown, blocked: controlsBlocked });
+    if (next.shown !== controls.shown) setControls((current) => ({ ...current, shown: next.shown }));
+    if (next.recheckIn === null) return;
+    const later = setTimeout(() => setControls((current) => ({ ...current })), next.recheckIn);
+    return () => clearTimeout(later);
+  }, [controls, controlsBlocked]);
+  // the captions beside the character during a call: on the side the window holds room on
+  // (the chat's, empty during a call), past the controls' lane when that is the same side
+  const captionSide: "left" | "right" = desk ? (desk.side.right ? "right" : "left") : fxSide === "left" ? "left" : "right";
+  const captionGap = 8 + (captionSide === fxSide ? lane.width + 2 : 0);
+  const captionBox = {
+    x: captionSide === "right" ? OWL_BOX.left + OWL_BOX.size + captionGap : OWL_BOX.left - captionGap - CAPTIONS_WIDTH,
+    y: Math.max(0, OWL_BOX.top - 8),
+    width: CAPTIONS_WIDTH,
+    height: OWL_SIZE,
+  };
 
   // On a call the mascot bounces with its bot's voice (the stage's --fb-voice, set
   // straight on the element: no render per level) and leans in while the person talks
@@ -825,6 +845,22 @@ export function FloatingBotView({ snapshot: given, onEvent, mover, interactive, 
             </Suspense>
           )}
         </span>
+        <MascotHoverControls
+          lane={lane}
+          side={fxSide}
+          shown={controls.shown && !controlsBlocked}
+          reduced={reduced}
+          chatOpen={balloonOpen}
+          trayOpen={Boolean(tray)}
+          canCall={Boolean(snapshot.hints.call) || Boolean(call)}
+          onCall={Boolean(call)}
+          onEvent={onEvent}
+          hover={controlsHover}
+          name={snapshot.name}
+        />
+        {call && (
+          <MascotCaptions call={call} box={captionBox} side={captionSide} captions={call.captions !== false} />
+        )}
         <button
           type="button"
           className="fb-art"
