@@ -47,9 +47,11 @@ const sectionKey = (section?: string): string => section?.trim() || "";
  * a Primary Bot the owner let coordinate that section. A Primary Bot has no Primary Bot — its
  * own failures are the person's to hear about — and a hidden Primary Bot is not on
  * duty. */
-export function chiefForBot<T extends IncidentBot>(bots: readonly T[], bot: IncidentBot): T | null {
+export function chiefForBot<T extends IncidentBot>(bots: readonly T[], bot: IncidentBot, onDuty?: (chief: T) => boolean): T | null {
   if (bot.chiefOfStaff) return null;
-  const chiefs = bots.filter((candidate) => candidate.chiefOfStaff && !candidate.hidden && candidate.id !== bot.id);
+  // onDuty: an organization server keeps the bot's owner's Primary Bots
+  // only; its sections are all empty, so the rule below matches anyone's.
+  const chiefs = bots.filter((candidate) => candidate.chiefOfStaff && !candidate.hidden && candidate.id !== bot.id && (!onDuty || onDuty(candidate)));
   return chiefs.find((chief) => sectionKey(chief.section) === sectionKey(bot.section))
     ?? chiefs.find((chief) => canAccessTeam(chief, bot.section))
     ?? null;
