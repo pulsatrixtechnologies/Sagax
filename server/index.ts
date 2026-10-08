@@ -478,6 +478,7 @@ import { LocalVmSeatPool, type LocalVmSeatHolder } from "./local-vm-seat-pool.ts
 import { RepeatDetector, callKey } from "./repeat-detector.ts";
 import { redactSecretsInText } from "./redact.ts";
 import * as vps from "./vps-computer.ts";
+import { runAsOptions, runAsRefusal, type RunAsChooser, type RunAsPerson } from "./routine-run-as.ts";
 import { RoutineManager, setRoutineTimeZone, type Routine, type RoutineAdmission, type RoutineRun, type RoutineRunOn, type RoutineRunTrigger, type RoutineSuspendReason } from "./routines.ts";
 import { RoutineConsents, routineRenewMs, type RoutineConsentEnd } from "./org-routine-consent.ts";
 import { CalendarCallManager, type CalendarCall } from "./calendar-calls.ts";
@@ -10515,6 +10516,99 @@ function effectiveRunAs(run: { runAs?: string; botId: string }): string | undefi
   if (run.runAs) return run.runAs;
   const bot = store.bot(run.botId);
   return bot ? effectiveBotOwner(bot) || undefined : undefined;
+}
+/** The routine modal's run-as chooser (server/routine-run-as.ts): the
+ * signed-in person of an organization request, null otherwise. */
+function runAsChooserFor(auth: RequestAuth): RunAsChooser | null {
+  if (IDENTITY.kind !== "perspicax" || auth.kind !== "session") return null;
+  const principalId = auth.session.principalId?.trim();
+  if (!principalId) return null;
+  const person = principals.byId(principalId);
+  return {
+    principalId,
+    admin: orgAdminCaller(auth),
+    managedTeamIds: (person?.teams ?? []).filter((team) => team.manager).map((team) => team.id),
+    manager: person?.perspicaxRole === "manager",
+  };
+}
+/** The people a routine may run as: the directory's persons (never a
+ * service account; interim and local principals are not in it). */
+function runAsPeople(): RunAsPerson[] {
+  if (IDENTITY.kind !== "perspicax" || !perspicaxDirectory) return [];
+  return orgDirectoryEntries(IDENTITY.issuer, perspicaxDirectory.people(), (iss, sub) => principals.bySubject(iss, sub)).map((entry) => ({
+    principalId: entry.principalId,
+    name: entry.name,
+    ...(entry.avatarUrl ? { avatarUrl: entry.avatarUrl } : {}),
+    disabled: entry.disabled || principals.byId(entry.principalId)?.disabledAt !== undefined,
+    ...(entry.service ? { service: true } : {}),
+    teams: principals.byId(entry.principalId)?.teams ?? entry.teams ?? [],
+  }));
+}
+/** The run-as person a routine create or update asks for (`runAs`, a
+ * principal id): nothing when none was sent, or when the unchanged person
+ * was sent by someone who could not choose them (D5 then applies), else the
+ * person or a refusal. */
+function routineRunAsChoice(auth: RequestAuth, body: unknown, existing?: Routine): { runAs?: string } | { refusal: { status: number; error: string; code: string } } {
+  const raw = body && typeof body === "object" ? (body as { runAs?: unknown }).runAs : undefined;
+  if (raw === undefined || raw === null || raw === "") return {};
+  if (typeof raw !== "string" || raw.length > 64) return { refusal: { status: 400, error: "runAs must be a person's principal id", code: "run_as_invalid" } };
+  if (IDENTITY.kind !== "perspicax") return { refusal: { status: 400, error: "Only an organization server can choose who a routine runs as.", code: "run_as_solo" } };
+  const chooser = runAsChooserFor(auth);
+  if (!chooser) return { refusal: { status: 403, error: "Sign in with Pulsatrix to choose who a routine runs as.", code: "run_as_not_allowed" } };
+  const fields = body as { botId?: unknown; target?: unknown; groupId?: unknown };
+  const botId = typeof fields.botId === "string" ? fields.botId : existing?.botId ?? "";
+  const target = typeof fields.target === "string" ? fields.target : existing?.target;
+  const groupId = typeof fields.groupId === "string" ? fields.groupId : fields.groupId === null ? undefined : existing?.groupId;
+  const bot = store.bot(botId);
+  const people = runAsPeople();
+  const refusal = runAsRefusal({
+    chooser,
+    principalId: raw,
+    person: people.find((person) => person.principalId.toLowerCase() === raw.toLowerCase()) ?? null,
+    botOwnerId: bot ? effectiveBotOwner(bot) || undefined : undefined,
+    mayRun: (principalId) => principalMayRunRoutine(principalId, { botId, ...(target ? { target } : {}), ...(groupId ? { groupId } : {}) }),
+  });
+  if (!refusal) return { runAs: raw };
+  if (existing && effectiveRunAs(existing) === raw) return {};
+  return { refusal };
+}
+/** Every change of the person a routine runs as, in the admin activity log
+ * with who made it. */
+function auditRoutineRunAs(auth: RequestAuth, routine: Routine, before: string | undefined): void {
+  const after = effectiveRunAs(routine);
+  if (IDENTITY.kind !== "perspicax" || !after || after === before) return;
+  const label = (principalId: string) => {
+    const person = principals.byId(principalId);
+    return { principalId, ...(person?.name || person?.login ? { name: person.name || person.login } : {}) };
+  };
+  orgAudit({
+    category: "bot", action: "routine.run_as", target: { kind: "routine", id: routine.id, name: routine.name }, changed: ["runAs"],
+    before: before ? { runAs: label(before) } : {}, after: { runAs: label(after) },
+    actor: orgAuditActor(auth),
+  });
+}
+/** Run now (JC, 2026-10-08): on an organization server, the bot's owner,
+ * the person the routine runs as, or an admin. A solo server, the operator
+ * and the loopback keep the bot-level rule (`run`). */
+function mayRunRoutineNow(auth: RequestAuth, routine: Routine): boolean {
+  if (IDENTITY.kind !== "perspicax" || auth.kind !== "session") return true;
+  if (orgAdminCaller(auth)) return true;
+  const principalId = auth.session.principalId?.trim();
+  if (!principalId) return false;
+  const bot = store.bot(routine.botId);
+  return principalId === (bot ? effectiveBotOwner(bot) : undefined) || principalId === effectiveRunAs(routine);
+}
+/** Whether a run of this routine is queued, running or waiting. */
+function routineRunInFlight(routineId: string): boolean {
+  return (routines?.listRuns() ?? []).some((run) => run.routineId === routineId && ["queued", "running", "waiting"].includes(run.status));
+}
+/** A run started by hand, in the admin activity log with who clicked. */
+function auditRoutineRunNow(auth: RequestAuth, routine: Routine, run: RoutineRun): void {
+  appendAdminAction(DATA_DIR, {
+    category: "bot", action: "routine.run_now", target: { kind: "routine", id: routine.id, name: routine.name },
+    after: { runId: run.id, trigger: "manual", ...(run.runAs ? { runAs: run.runAs } : {}) },
+    actor: IDENTITY.kind === "perspicax" ? orgAuditActor(auth) : decisionActorFor(auth),
+  });
 }
 /** The speaker of a routine run's turns. */
 function routineRunSpeaker(run: { runAs?: string; botId: string }): TurnSpeaker {
@@ -26126,8 +26220,11 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (routineNeedsRun(auth, (body as { botId?: unknown } | null)?.botId)) return json(res, 403, NEEDS_RUN);
       const notYours = routineResultsRefusal(body);
       if (notYours) return json(res, 403, { error: notYours });
+      const runAsChoice = routineRunAsChoice(auth, body);
+      if ("refusal" in runAsChoice) return json(res, runAsChoice.refusal.status, { error: runAsChoice.refusal.error, code: runAsChoice.refusal.code });
       const writer = auth.kind === "session" ? actorKey(auth) : CLOUD_NOBODY_KEY;
-      const routine = withRoutineWriter(writer, () => routines!.create(body, undefined, routineActor(auth)));
+      const routine = withRoutineWriter(writer, () => routines!.create(body, undefined, { ...routineActor(auth), ...runAsChoice }));
+      auditRoutineRunAs(auth, routine, routineActor(auth)?.actorPrincipalId);
       // On a Cloud home, a routine the owner writes from their own device may
       // use their lent Mac when it runs (server/cloud-lending.ts).
       if (cloudRoutineAuthors && cloudOwnerSession(auth)) cloudRoutineAuthors.record(routine.id, routine);
@@ -26142,9 +26239,47 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     let routineMatch = path.match(/^\/api\/routines\/([\w-]+)\/run$/);
     if (routineMatch && method === "POST") {
       if (routineNeedsRun(auth, routineBotId(routineMatch[1]))) return json(res, 403, NEEDS_RUN);
+      // Run now (JC, 2026-10-08): the bot's owner, the person it runs as or
+      // an admin; one run of a routine in flight at a time.
+      const target = routines!.listRoutines().find((candidate) => candidate.id === routineMatch![1]);
+      if (target && !mayRunRoutineNow(auth, target)) return json(res, 403, { error: "Only the bot's owner, the person this routine runs as or an admin can run it now.", code: "run_now_not_allowed" });
+      if (target && routineRunInFlight(target.id)) return json(res, 409, { error: "A run of this routine is already in progress.", code: "run_in_flight" });
       const run = routines!.runNow(routineMatch[1]);
+      if (run && target) auditRoutineRunNow(auth, target, run);
       if (run && CLOUD_HOME && cloudOwnerSession(auth)) ownerStartedRoutineRuns.add(run.id);
       return run ? json(res, 201, { run }) : json(res, 404, { error: "no such routine" });
+    }
+    // The routine modal's "Runs as" dropdown (server/routine-run-as.ts):
+    // whom the caller may choose for a routine of this bot.
+    if (path === "/api/routines/run-as-options" && method === "GET") {
+      res.setHeader("cache-control", "no-store");
+      const routineId = url.searchParams.get("routineId") ?? "";
+      const existing = routineId ? routines!.listRoutines().find((routine) => routine.id === routineId) : undefined;
+      if (routineId && (!existing || !routineVisible(existing, visible) || (viewerId && !routineSeenBy(existing, viewerId)))) return json(res, 404, { error: "no such routine" });
+      const botId = url.searchParams.get("botId") || existing?.botId || "";
+      if (hiddenRoutineTarget({ botId }, visible)) return json(res, 404, { error: "no such bot" });
+      const bot = store.bot(botId);
+      const chooser = runAsChooserFor(auth);
+      if (!bot || !chooser) return json(res, 200, { canChoose: false, people: [] });
+      const target = url.searchParams.get("target") || existing?.target;
+      const groupId = url.searchParams.get("groupId") || existing?.groupId;
+      const options = runAsOptions({
+        chooser,
+        people: runAsPeople(),
+        botOwnerId: effectiveBotOwner(bot) || undefined,
+        mayRun: (principalId) => principalMayRunRoutine(principalId, { botId, ...(target ? { target } : {}), ...(groupId ? { groupId } : {}) }),
+        delegated: (principalId) => routineConsents?.status(principalId).state === "active",
+      });
+      const currentId = existing ? effectiveRunAs(existing) : chooser.principalId;
+      const currentPerson = currentId ? principals.byId(currentId) : null;
+      return json(res, 200, {
+        ...options,
+        ...(currentId ? { current: {
+          principalId: currentId,
+          name: currentPerson?.name || currentPerson?.login || "",
+          ...(routineConsents?.status(currentId).state === "active" ? {} : { pending: true }),
+        } } : {}),
+      });
     }
     routineMatch = path.match(/^\/api\/routines\/([\w-]+)$/);
     if (routineMatch && method === "PATCH") {
@@ -26154,6 +26289,10 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (routineNeedsRun(auth, routineBotId(routineMatch[1])) || routineNeedsRun(auth, (body as { botId?: unknown } | null)?.botId)) return json(res, 403, NEEDS_RUN);
       const notYours = routineResultsRefusal(body);
       if (notYours) return json(res, 403, { error: notYours });
+      const existingRoutine = routines!.listRoutines().find((candidate) => candidate.id === routineMatch![1]);
+      const runAsChoice = routineRunAsChoice(auth, body, existingRoutine);
+      if ("refusal" in runAsChoice) return json(res, runAsChoice.refusal.status, { error: runAsChoice.refusal.error, code: runAsChoice.refusal.code });
+      const runAsBefore = existingRoutine ? effectiveRunAs(existingRoutine) : undefined;
       const before = cloudRoutineAuthors ? routines!.listRoutines().find((candidate) => candidate.id === routineMatch![1]) : undefined;
       const wasOwners = Boolean(before && cloudRoutineAuthors?.authored(before.id, before));
       const previous = cloudRoutineAuthors?.writer(routineMatch[1]);
@@ -26171,7 +26310,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       const writer = ownerAuthors && CLOUD_OWNER_KEY ? CLOUD_OWNER_KEY
         : auth.kind === "session" && !cloudOwnerSession(auth) ? actorKey(auth)
           : previous && !cloudOwnerPerson(previous) ? previous : CLOUD_NOBODY_KEY;
-      const routine = withRoutineWriter(writer, () => routines!.update(routineMatch![1], body, undefined, routineActor(auth)));
+      const routine = withRoutineWriter(writer, () => routines!.update(routineMatch![1], body, undefined, { ...routineActor(auth), ...runAsChoice }));
+      if (routine) auditRoutineRunAs(auth, routine, runAsBefore);
       // The owner's own edit keeps (or, when it rewrites the instructions,
       // makes) the routine theirs. Anyone else's edit, of any field (its
       // schedule, where its results go, whether it is on), makes it no longer

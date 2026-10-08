@@ -123,6 +123,57 @@ Covered by `src/components/SettingsModal.orgCleanup.test.ts`,
   neutral line. `/api/org/routine-delegation` is GET only. A disabled or
   deleted account still stops its routines. Needs Perspicax to accept that
   exchange (it refuses it up to 1.8.13: the run is then skipped).
+- Who a routine runs as is chosen in the routine modal (JC, 2026-10-08;
+  `server/routine-run-as.ts`, `src/components/routines/RunAsField.tsx`).
+  The record keeps `runAs` (a principal id); a routine without one runs as
+  its bot's owner (`effectiveRunAs`), so older records need no migration.
+  `POST /api/routines` and `PATCH /api/routines/:id` accept `runAs`; an
+  explicit choice wins over D5 (whoever rewrites the work runs it), which
+  still applies when none is sent. `GET /api/routines/run-as-options`
+  (`botId`, `routineId`, `target`, `groupId`) lists whom the caller may
+  choose. Rules: organization server only (solo: no dropdown, `runAs`
+  refused 400 `run_as_solo`). An admin (`orgAdminCaller`) reaches every
+  active person of the directory; a team manager the people of the teams
+  they manage (`teams[].manager`) and themselves; a manager with no team
+  here themselves and the bot's owner; anyone else only themselves (no
+  dropdown, 403 `run_as_not_allowed`). Only people are listed: never a
+  service account, a disabled person, an interim or local principal
+  (`run_as_not_person`). The person must be able to run the bot's routines
+  (`principalMayRunRoutine`: owner, or a grant at `run` or above, and the
+  room for a goal); otherwise listed disabled with the reason and refused
+  403 `run_as_no_right`. A manager out of reach gets 403
+  `run_as_out_of_scope`; the unchanged person sent back by someone who could
+  not choose them is ignored (D5 decides). Every change of the effective
+  person is one `routine.run_as` row in the admin activity log (`bot`,
+  before and after, `orgAuditActor`). The runner already resolves
+  `effectiveRunAs` (run snapshot `runAs`): the chosen person's delegation
+  acts, the bot's owner still pays (2026-10-01). A person with no
+  delegation yet (never signed in since #149) is marked `pending` and the
+  modal says "Will run once Name signs in"; a run then is skipped with
+  #149's line, never paused. Choosing another person clears the previous
+  person's pause.
+- Run now (JC, 2026-10-08; `src/components/routines/RunNowButton.tsx`):
+  first in the bot panel routine footer (Run now, Pause, Edit, delete) and
+  in the calendar details footer. `POST /api/routines/:id/run` (the
+  scheduler's own path, `RoutineManager.runNow`: the routine's run-as
+  person, their delegation, the owner pays, #149's skip rule) leaves the
+  schedule and the Active switch alone; a paused routine runs and stays
+  paused. On an organization server only the bot's owner, the person the
+  routine runs as or an admin may (`mayRunRoutineNow`, else 403
+  `run_now_not_allowed`; the renderer hides the button with
+  `canRunRoutineNow`); a solo server keeps the bot-level `run` rule. A run
+  queued, running or waiting refuses another (409 `run_in_flight`; the
+  button is disabled with a tooltip). Each one writes `routine.run_now`
+  (`trigger: "manual"`, the run id and run-as person, who clicked) to the
+  admin activity log; the run reaches the lists at once through the run
+  event and `routineRunPatched`.
+- The calendar's routine details modal is wide (JC, 2026-10-08):
+  `min(92vw, 960px)` from 720 px, height capped to the viewport, two
+  columns when there are instructions (left 320 px: schedule, next runs,
+  clock-change note, bot, Runs as, limits, last run; right: the
+  instructions in a 68ch measure, scrolling on their own), footer full
+  width. Under 720 px or without instructions, the single column as before
+  (`data-event-details`, `RoutineCalendarPage.test.ts`).
 - An organization admin force-stops or force-deletes any bot
   (`POST /api/org/bots/<id>/force-stop|force-delete`, delete confirmed with
   the bot's name): admin scope, `orgAdminCaller`, audited
