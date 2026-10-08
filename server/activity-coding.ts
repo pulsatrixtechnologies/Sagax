@@ -66,7 +66,7 @@ export function isCodeFile(path: string): boolean {
 
 /** A shell command's text with heredoc bodies left out: what a heredoc
  * writes (a SOUL.md that quotes "git push") is data, not a command. */
-function withoutHeredocs(text: string): string {
+export function withoutHeredocs(text: string): string {
   return text
     .replace(/<<-?\s*(['"]?)(\w+)\1[^\n]*\n[\s\S]*?\n\s*\2(?=\n|$)/g, "")
     .replace(/<<-?\s*(['"]?)\w+\1[^\n]*\n[\s\S]*$/, "");
@@ -74,7 +74,7 @@ function withoutHeredocs(text: string): string {
 
 /** The command a tool call ran: its `command` field, from an object or the
  * JSON preview the chat kept (a preview cut short is unescaped by hand). */
-function commandOf(input: unknown): string {
+export function commandOf(input: unknown): string {
   if (Array.isArray(input)) return input.filter((part) => typeof part === "string").join(" ");
   if (input && typeof input === "object") return commandOf((input as { command?: unknown }).command);
   if (typeof input !== "string") return "";

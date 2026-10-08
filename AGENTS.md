@@ -989,17 +989,32 @@ description is not a line under the label; `IdentitySection` still edits it.
 There are no Name or Label fields in this panel. Details lists Coding,
 Activity, then Routines (`ActivitySection`, `ActivityListModal`,
 `ActivityDetailModal`).
-Coding shows coding jobs only: the server marks an entry `coding` from its
+Coding is code work only: the server marks an entry `coding` from its
 tool calls and folder (`server/activity-coding.ts`: source edits, git
 commit/push/worktree, pull requests, file changes inside a repository;
 never the title, never the bot's own SOUL.md/MEMORY.md or its folder, never
 a sub-agent's request or a heredoc's text quoting git; a sub-agent's own
-calls count like any other). Activity holds everything else plus the
-sub-agents the listed threads started. Both show live work only: running
-(elapsed time, current step, Stop when `canStop`), and an entry seen
-running that settled reads Finished for 5 s, fades and leaves
-(`LiveActivity`); with nothing running a section is its header and a quiet
-line. The section title opens the history (`ActivityListModal`: coding or
+calls count like any other). A coding entry carries `code`
+(`server/activity-code-work.ts`): its folder's repository root, checked-out
+branch and origin (read from `.git` on the server, credentials stripped;
+a folder on the person's computer is not read), and the pull requests,
+branches and commits its own successful git, gh and GitHub tool calls
+produced, read off the calls and their output (`gh pr create` prints the
+address, `git commit` prints `[branch sha]`, `git push` prints `To <remote>`).
+There is no pull request record and nothing asks GitHub: a pull request
+shows what the bot did to it (opened, merged, closed, updated), not its
+live state. The section lists running coding jobs with their repository
+and branch, then the pull requests, branches and commits of the window's
+coding jobs (`codingWork`, 5 of each, newest first), each opening in the
+system browser (`openExternalLink`). Activity is parallel work only
+(`isParallelWork`): routine runs, work handed over, sub-agents, parallel
+tasks and jobs the bot opened on itself; a conversation's own running turn
+is the chat, never listed. Running entries show elapsed time, current step
+and Stop when `canStop`; an entry seen running that settled reads Finished
+for 5 s, fades and leaves (`LiveActivity`). A section with nothing to show
+is not drawn, title included (`panelSections`), so with nothing running and
+no code work Details starts at Routines. The section title opens the history
+(`ActivityListModal`: coding or
 other, newest first, running/finished/failed, search). A thread with no user turn is not
 listed. Both read
 `GET /api/bots/:id/activity` and `/activity/item`
@@ -1013,7 +1028,8 @@ in another person's private thread there, with its actions, and nothing else
 of that thread. The owner's notification of such a run names no thread, only
 `routineRunId` (`routineAccessNotifications`), and opens the run there
 (`openBotActivity`); the run's person keeps the thread link. Tests:
-`server/routes/bot-activity.test.ts`, `server/activity-coding.test.ts`, `ActivitySection.test.ts`,
+`server/routes/bot-activity.test.ts`, `server/activity-coding.test.ts`,
+`server/activity-code-work.test.ts`, `ActivitySection.test.ts`,
 `InlineEditableText.test.ts`, `BotSettingsDialog.caption.test.ts`,
 `server/org-routines.e2e.test.ts` (owner pays).
 
