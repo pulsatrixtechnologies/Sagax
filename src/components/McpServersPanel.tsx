@@ -984,7 +984,7 @@ export function McpServersPanel({ embedded = false, whopCard = false, hideWhop =
                           aria-label={t("mcp.oauth.disconnectAria", { name: server.name })}
                         >
                           {busy === `oauth:${server.name}` ? <Loader2 size={13} className="animate-spin" /> : <LogOut size={13} />}
-                          {t("mcp.oauth.disconnect")}
+                          {t(whop ? "whop.disconnect" : "mcp.oauth.disconnect")}
                         </button>
                       )}
                       <button type="button" disabled={busy !== null || signingIn !== null} onClick={() => void test(server)} className="flex items-center gap-1.5 rounded-lg px-2.5 py-2 text-[12px] text-ink-secondary hover:bg-raised hover:text-ink disabled:opacity-40">

@@ -33,9 +33,8 @@ function render(embedded: boolean, whopCard = false) {
   return renderToStaticMarkup(createElement(Capture));
 }
 
-/** useState order in McpServersPanel: the server whose sign-in is open, then its flow. */
-const SIGNING_IN = 7;
-const SIGN_IN_FLOW = 8;
+// Upstream's paste-back sign-in step is not here: Sagax keeps its own MCP
+// sign-in (server/mcp-oauth.ts), which returns through its callback page.
 
 beforeEach(() => {
   vi.stubGlobal("window", {});
@@ -81,7 +80,8 @@ describe("Your MCP servers inside the Apps pop-up", () => {
   });
 
   it("recognizes an existing Whop URL under any name and exposes access and disconnect", () => {
-    fixture.servers = [{ name: "business", type: "http", url: "https://mcp.whop.com/mcp", headerKeys: [], enabled: true, auth: "signed-in" }];
+    // Sagax's MCP sign-in reports a finished sign-in as "connected".
+    fixture.servers = [{ name: "business", type: "http", url: "https://mcp.whop.com/mcp", headerKeys: [], enabled: true, auth: "connected" }];
     const html = render(true);
     expect(html).toContain('data-whop-server="business"');
     expect(html).toContain("Disconnect Whop");
@@ -94,24 +94,5 @@ describe("Your MCP servers inside the Apps pop-up", () => {
     const html = render(true);
     expect(html).not.toContain("data-whop-setup");
     expect(html).not.toContain("data-whop-server");
-  });
-
-  it.each([true, false])("shows the paste step openly only when the browser cannot come back (pasteBack %s)", (pasteBack) => {
-    fixture.servers = [{ name: "whop", type: "http", url: "https://mcp.whop.com/mcp", headerKeys: [], enabled: true, auth: "needs-sign-in" }];
-    fixture.seeded = {
-      [SIGNING_IN]: "whop",
-      [SIGN_IN_FLOW]: { phase: "waiting", flowId: "00000000-0000-4000-8000-000000000000", authorizationUrl: "https://whop.example/authorize", ...(pasteBack ? { pasteBack } : {}) },
-    };
-    for (const html of [render(true, true), render(true)]) {
-      expect(html).toContain('id="mcp-callback-whop"');
-      if (pasteBack) {
-        expect(html).toContain("your browser shows a page that can&#x27;t load. Copy that page&#x27;s full address and paste it here.");
-        expect(html).not.toContain("Signing in from another computer?");
-      } else {
-        expect(html).toContain("<summary");
-        expect(html).toContain("Signing in from another computer?");
-        expect(html).not.toContain("a page that can&#x27;t load");
-      }
-    }
   });
 });

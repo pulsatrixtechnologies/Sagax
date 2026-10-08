@@ -26,9 +26,9 @@ it("shows this app's update where the desktop app answers, with no Download step
   const downloading = render({ status: "downloading", version: "0.2.0", percent: 40 });
   expect(downloading).toContain("Downloading 40%");
   expect(downloading).toContain("disabled");
-  // Named: on My Cloud's Settings it is this app that restarts, not the Cloud.
+  // Sagax's own wording (no OMB Cloud page to tell apart from this app).
   const ready = render({ status: "downloaded", version: "0.2.0" });
-  expect(ready).toContain("Sagax 0.2.0 is ready — restart the app to apply");
+  expect(ready).toContain("0.2.0 ready. Restart to apply");
   expect(ready).toContain("Restart and install");
-  expect(render({ status: "downloaded", version: "0.2.0", installMode: "handoff" })).toContain("Sagax 0.2.0 is ready — install it in a terminal");
+  expect(render({ status: "downloaded", version: "0.2.0", installMode: "handoff" })).toContain("0.2.0 ready. Install in a terminal");
 });

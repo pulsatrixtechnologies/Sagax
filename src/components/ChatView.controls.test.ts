@@ -124,7 +124,8 @@ describe("thread control placement", () => {
     } as InstanceInfo;
     const markup = renderToStaticMarkup(createElement(FailedTurnRow, { tool: { name: "error: Not logged in · Please run /login", ok: false, setup: true }, engine: claude, onRetry: () => {} }));
     expect(markup).toContain(">Claude isn&#x27;t signed in yet. Sign in below, then send your message again.</span>");
-    expect(markup).toContain("Sign in to Claude</button>");
+    // the minimal engine card (#160): one Connect button
+    expect(markup).toContain("Connect Claude</button>");
     expect(markup).toMatch(/<summary[^>]*>Details<\/summary><p[^>]*>Not logged in · Please run \/login<\/p>/);
     expect(markup).not.toContain(">Retry<");
     // an update offer is not a sign-in: the row keeps the engine's words,
