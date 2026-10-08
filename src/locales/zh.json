@@ -1991,7 +1991,6 @@
   "connectors.perBot.body": "在此连接应用程序不代表已授权机器人使用。每个机器人都有自己的“设置 → 访问权 → 已连接的应用程序”开关；打开前，机器人不会知道此应用程序存在。",
   "connectors.perBot.allow": "允许 {name}",
   "connectors.marketplace.partialStalled": "连接服务只传回部分目录",
-  "mcp.trustNotice": "指令会在这部电脑上运行，并使用你提供的环境变量；URL 服务器会收到你提供的标头。只添加你信任的软件与网址。新服务器在激活前会保持关闭。",
   "mcp.import": "粘贴设置",
   "mcp.importHint": "粘贴来自 Claude Code、Cursor 或 Claude Desktop 的 {\"mcpServers\": {…}} 区块。服务器会以关闭状态添加；请逐一测试后再打开。",
   "mcp.importAction": "添加服务器",
