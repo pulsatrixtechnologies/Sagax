@@ -28,6 +28,7 @@ import { t } from "@/lib/i18n";
 import { reloadMyEngines, useMyEngines, usePerspicaxOrg } from "@/lib/perspicax-org";
 import { orgEngineState } from "@/lib/model-payers";
 import { ModelPickerPayers } from "./ModelPickerPayers";
+import { OrgHostToolsNote, orgRefusesEngine } from "./OrgHostToolsNote";
 import { paysWithText } from "./EngineConnect";
 import { COMPACT_SQUARE } from "@/lib/compact-chip";
 import { saveViewerBotOverride } from "@/lib/viewer-bot-overrides";
@@ -655,7 +656,7 @@ export function ModelPicker({
   // shell, file and web tools stay off the Sagax server. The bot's current
   // engine stays so its state is explained.
   const pickerInstances = orgMode
-    ? configured.filter((instance) => instance.instanceId === selection.instanceId || instance.capabilities?.withholdsHostTools === true)
+    ? configured.filter((instance) => instance.instanceId === selection.instanceId || !orgRefusesEngine(instance))
     : configured;
   const selectedVariantLabel = selection.variant === undefined ? undefined : variantLabel(
     active?.models.options.find((option) => option.id === selection.model)?.variants?.find((option) => option.id === selection.variant)
@@ -1181,11 +1182,7 @@ export function ModelPicker({
       {railInstance.access === "api"
         ? <div className="mt-0.5 text-[11.5px] text-ink-secondary">{t("model.apiKeyHint")}</div>
         : pane === "custom" && <div className="mt-0.5 text-[11.5px] text-ink-secondary">{t("model.localHint")}</div>}
-      {advanced && orgMode && railInstance.capabilities?.withholdsHostTools !== true && (
-        <p data-model-host-tools className="mt-2 text-[11.5px] leading-relaxed text-ink-tertiary">
-          {t("model.org.hostTools", { name: railInstance.displayName })}
-        </p>
-      )}
+      {orgMode && orgRefusesEngine(railInstance) && <OrgHostToolsNote instance={railInstance} className="mt-2" />}
     </div>
   );
 

@@ -780,11 +780,62 @@ driver's default `cli`.
 - Engines run in the Sagax server container, never in the per-person
   sandbox (`deploy/sandbox/Dockerfile` is unchanged). Being installed does
   not lift the host-tools rule: on an organization server an engine that
-  cannot withhold its own tools (every ACP engine except Grok Build) is still
-  refused with 409 `host_tools` and hidden from the model picker.
+  cannot withhold its own tools (Droid, Cursor Agent, Antigravity, a custom
+  ACP agent: "Engines on an organization server" below) is still refused
+  with 409 `host_tools` and hidden from the model picker.
 - Bumping an engine: change the lock only (version, and the hashes for a
   native or Python engine). Perspicax reads the lock from the Sagax checkout
   at its next `build-push.sh`.
+
+## Engines on an organization server (2026-10-08)
+
+An organization server runs an engine's turn only when the engine gets NO
+shell, file system or outbound network tool of its own on the Sagax server:
+the model call plus the MCP tools Sagax injects (agents, Perspicax, the
+person's allowed MCP servers through the desktop link) and nothing else
+(decision 2026-10-04, widened to every provider at JC's request on
+2026-10-08). The driver says so with `withholdsHostTools`; the server checks
+it on every turn (`server/org-engine-admission.ts`) and otherwise answers
+409 `host_tools` with the engine's reason (`shared/org-engines.ts`), the
+words the picker and the engine card show
+(`src/components/OrgHostToolsNote.tsx`, `model.org.hostTools*`). Running the
+engine inside the person's environment (sagax-sandboxd) is not built
+(docs/user-sandbox.md); no engine uses it.
+
+| Engine (driver) | Mechanism (`server/drivers/host-tools.ts`) | Verified how | Allowed on org |
+|---|---|---|---|
+| Claude Code (`claudeAgent`) | `--disallowedTools` host tools | `scripts/smoke-host-tools.ts`, real CLI | yes |
+| Codex (`codex`) | features off, read-only sandbox, requests declined | `server/drivers/codex.test.ts` | yes |
+| Grok Build (`grokAgent`) | ACP `agentProfile` with `search_tool`, `use_tool` only | real 1.0.46, `scripts/verify-tool-scope.ts` | yes |
+| pi (`piAgent`) | `--no-builtin-tools --exclude-tools --no-extensions` | `scripts/verify-pi-tool-scope.ts` | yes |
+| Gemini CLI (`geminiAgent`) | `--admin-policy` deny of every host tool (top tier: a denied tool is not offered), `-e none`, `--skip-trust` with `--allowed-mcp-server-names` = Sagax's servers, empty workspace | real 0.62.0, `scripts/verify-org-host-tools.ts gemini` | yes |
+| Qwen Code (`qwenAgent`) | `--core-tools` allowlist (`tool_search`, `tool_call`, `ask_user_question`), `--exclude-tools`, `--allowed-mcp-server-names`, system settings (`QWEN_CODE_SYSTEM_SETTINGS_PATH`): no memory, dream or skill agent, no hook; empty workspace | real 0.24.7, `scripts/verify-org-host-tools.ts qwen` | yes |
+| Kimi Code (`kimiAgent`) | `<KIMI_CODE_HOME>/agents/agent.md` overriding the default profile: `tools` allowlist (questions, plan, goals, todo, `mcp__*`), `disallowedTools`; empty workspace | real 2.1.1, `scripts/verify-org-host-tools.ts kimi` | yes |
+| OpenCode (`opencodeGo`) | `OPENCODE_PERMISSION` with every host permission `deny` (a denied tool is not offered), `OPENCODE_DISABLE_PROJECT_CONFIG=1`, empty workspace | real 1.18.34, `scripts/verify-org-host-tools.ts opencode` | yes |
+| Hermes Agent (`hermesAgent`) | `HERMES_HOME` of Sagax's (`<data>/engine-policies/hermes-org`): the server's config with `platform_toolsets.acp: []`, every host toolset disabled, no `mcp_servers`, hooks, plugins or skills; `.env` and `auth.json` linked, not copied; empty workspace | real 0.21.5, `scripts/verify-org-host-tools.ts hermes` | yes |
+| Droid (`droidAgent`) | none: `droid exec -o acp` ignores `--only-tools` and `--remove-tools`, its ACP session takes no tool selection | real 0.230.0: Execute, Read, Edit and the rest still offered | no |
+| Cursor Agent (`cursorAgent`) | none: Cursor's service picks the tools and the model; deny rules only refuse a call, and no stand-in model can check it | not verifiable offline | no |
+| Antigravity, Custom ACP | none verified | - | no |
+
+Keep these rules, each covered by `server/drivers/acp/org-host-tools.test.ts`,
+`server/org-engine-admission.test.ts`, `src/components/EnginesSettings.org.test.ts`
+or `src/components/ModelPicker.interaction.test.ts`:
+
+- A withheld ACP turn also declines any `session/request_permission` to run
+  a command or change, move or delete a file (`acpHostToolRequest`) before
+  a card or the Full-access auto-accept.
+- An engine that reads workspace files (Gemini, Qwen, Kimi, OpenCode,
+  Hermes) runs a withheld turn in an empty folder Sagax owns
+  (`withheldWorkspace`, `<data>/engine-policies/workspace`): a `.gemini/` or
+  `.qwen/` file could otherwise start an MCP server or a hook, both commands
+  on the server.
+- Gemini 0.62 skips a system settings file whose folder is not owned by
+  root; the admin policy carries its guarantee instead.
+- Admit an engine only after `scripts/verify-org-host-tools.ts <engine>`
+  passes against its real CLI (fake model on 127.0.0.1, Full access, every
+  card approved): no host tool in any model request, the shell and file
+  requests did not act, the Sagax MCP fixture still answers. Re-run it on
+  every bump of `engines.lock.json`; a renamed tool fails the check.
 
 ## Voice mode (xAI)
 
@@ -1143,8 +1194,9 @@ not open a shared machine. Keep these rules, each covered by `server/user-sandbo
   a bot parameter. Every create body passes `assertSandboxIsolation()`.
 - Engines get no shell, file or fetch tool of their own there
   (`withholdHostTools`, `server/drivers/host-tools.ts`); an engine that
-  cannot withhold them is refused. `scripts/smoke-host-tools.ts` checks the
-  real Claude Code CLI.
+  cannot withhold them is refused (409 `host_tools`, matrix in "Engines on
+  an organization server" below). `scripts/smoke-host-tools.ts` checks the
+  real Claude Code CLI, `scripts/verify-org-host-tools.ts` the ACP ones.
 - Server code runs under `--experimental-strip-types`: no TypeScript
   parameter properties in these files.
 - `scripts/smoke-user-sandbox.ts` proves isolation on a real Docker host and

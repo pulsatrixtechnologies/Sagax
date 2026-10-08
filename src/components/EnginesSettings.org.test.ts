@@ -103,6 +103,31 @@ describe("Model providers on an organization server", () => {
     expect(html).not.toContain("server-login@example.test");
   });
 
+  it("says on the card of an engine that cannot hold back its own tools why it never runs here", async () => {
+    orgFixture();
+    fixture.instances = [
+      { ...instance("claude", "claudeAgent", "Claude"), capabilities: { withholdsHostTools: true } },
+      { ...instance("gemini", "geminiAgent", "Gemini CLI"), capabilities: { withholdsHostTools: true } },
+      instance("droid", "droidAgent", "Droid"),
+      instance("cursor", "cursorAgent", "Cursor Agent"),
+    ];
+    fixture.mine = [mine("claude", "claudeAgent", "Claude"), mine("gemini", "geminiAgent", "Gemini CLI"), mine("droid", "droidAgent", "Droid"), mine("cursor", "cursorAgent", "Cursor Agent")];
+    const html = await render();
+    expect(html).not.toContain('data-model-host-tools="claude"');
+    expect(html).not.toContain('data-model-host-tools="gemini"');
+    expect(html).toContain('data-model-host-tools="droid"');
+    expect(html).toContain("Droid cannot hold back its own tools on this server. Its ACP mode ignores the tool selection, so its shell and file tools would run there.");
+    expect(html).toContain("Cursor Agent cannot hold back its own tools on this server. Its service chooses the tools it offers, and no setting removes its shell and file tools.");
+    setLocale("fr");
+    expect(await render()).toContain("Droid ne peut pas retenir ses propres outils sur ce serveur. Son mode ACP ignore la sélection d’outils");
+    setLocale("pt-br");
+    expect(await render()).toContain("Cursor Agent não consegue reter as próprias ferramentas neste servidor.");
+    // a solo server says nothing of it
+    setLocale("en");
+    fixture.org = null; fixture.mine = null;
+    expect(await render()).not.toContain("data-model-host-tools");
+  });
+
   it("gives a member (not an admin) their own sign-in on each engine, from the server's redacted rows", async () => {
     orgFixture();
     fixture.viewer = { role: "member" };

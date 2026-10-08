@@ -74,7 +74,6 @@ function WorkingFolder({ bot }: { bot: Bot }) {
     <div className="rounded-xl border border-hairline/40 p-4">
       <div className="text-[13px] font-medium text-ink">{t("botPanel.access.folder")}</div>
       <div className="mt-0.5 text-[13px] text-ink-secondary">{t("botPanel.access.folderHelp")}</div>
-      <ProposalStatus bot={bot} kind="chief" />
       {canPick ? (
         <div className="mt-3 flex items-center gap-2">
           <div className="min-w-0 flex-1 truncate rounded-lg border border-hairline/40 bg-inset px-3 py-2 font-mono text-[12.5px] text-ink" title={bot.cwd}>
@@ -147,7 +146,7 @@ function McpServersCard({ bot, patch }: { bot: Bot; patch: (patch: { mcpServers:
           <div className="mt-0.5 text-[13px] text-ink-secondary">
             {t("botAccess.mcpDescription")}
           </div>
-          <ProposalStatus bot={bot} kind="owner" />
+          <ProposalStatus bot={bot} />
         </div>
       </div>
       {error && (
@@ -623,7 +622,7 @@ export function AccessSection({
                         : t("botPanel.access.appsOn")
                     : t("botPanel.access.appsOff")}
             </div>
-            <ProposalStatus bot={bot} kind="owner" />
+            <ProposalStatus bot={bot} />
           </div>
           <Switch
             checked={connectedAppsEnabled}
@@ -683,7 +682,7 @@ export function AccessSection({
                       ? t("botPanel.access.browserOn")
                       : t("botPanel.access.browserKeepOff")}
           </div>
-          <ProposalStatus bot={bot} kind="owner" />
+          <ProposalStatus bot={bot} />
         </div>
         <Switch
           checked={browserEnabled && bot.computer !== "off"}
@@ -701,7 +700,7 @@ export function AccessSection({
       {!draft && <div className="rounded-xl border border-hairline/40 p-4">
         <div className="text-[13px] font-medium text-ink">{t("botPanel.access.webhooks")}</div>
         <div className="mt-0.5 text-[13px] text-ink-secondary">{t("botPanel.access.webhooksHelp")}</div>
-        <ProposalStatus bot={bot} kind="owner" />
+        <ProposalStatus bot={bot} />
         {webhooks.length === 0 ? (
           <div className="mt-3 rounded-lg bg-inset px-3 py-2 text-[12px] text-ink-secondary">{t("botPanel.access.noWebhooks")}</div>
         ) : (
@@ -729,7 +728,7 @@ export function AccessSection({
       {!draft && <div className="rounded-xl border border-hairline/40 p-4">
         <div className="text-[13px] font-medium text-ink">{t("botPanel.access.always")}</div>
         <div className="mt-0.5 text-[13px] text-ink-secondary">{t("botPanel.access.alwaysHelp")}</div>
-        <ProposalStatus bot={bot} kind="owner" />
+        <ProposalStatus bot={bot} />
         {alwaysAllow.length === 0 ? (
           <div className="mt-3 rounded-lg bg-inset px-3 py-2 text-[12px] text-ink-secondary">{t("botPanel.access.nothing")}</div>
         ) : (

@@ -14,6 +14,7 @@ import type { ModelCatalog } from "../../contracts.ts";
 import { harnessHome } from "../../env-path.ts";
 import { resolveCli } from "../../procs.ts";
 import { decodeInjectId, hostApiKey, INJECT_SEP, localHost, mergeLocalInject } from "../local-inject.ts";
+import { hermesHostToolEnv, withheldWorkspace } from "../host-tools.ts";
 import { createAcpDriver, type AcpSupport } from "./core.ts";
 
 const EMPTY: ModelCatalog = { default: "", options: [] };
@@ -435,6 +436,12 @@ const support: AcpSupport = {
     signInCommand: "hermes setup",
   },
   spawnArgs: () => ["acp"],
+  // Organization server: no shell, file, web, browser, code, subagent,
+  // memory or skill tool of Hermes's own (server/drivers/host-tools.ts;
+  // verified on 0.21.5 with scripts/verify-org-host-tools.ts).
+  withholdsHostTools: true,
+  withheldWorkspace,
+  applyTurnEnv: (env, { withholdHostTools }) => hermesHostToolEnv(env, withholdHostTools === true, env.HERMES_HOME || harnessHome("hermes", env)),
   transformEnv: (env) => {
     // A leftover OPENAI_API_KEY makes Hermes auto-resolve to OpenRouter and
     // send no Authorization header. ACP also reloads ~/.hermes/.env, so the
