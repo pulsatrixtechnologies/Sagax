@@ -4559,7 +4559,7 @@
   "model.simple.signInForOwn": "Sign in for {name}'s own models",
   "model.simple.reasoning": "Reasoning",
   "model.localGroup": "Local",
-  "model.localUnavailable.anthropic": "Claude Code cannot run a model from your computer here: it needs the Anthropic protocol. Pick it on pi, Codex or Grok.",
+  "model.localUnavailable.anthropic": "This local server does not speak the Anthropic protocol.",
   "model.localUnavailable.engine": "{engine} cannot run a local model.",
   "task.refreshPermissions": "Refresh permissions",
   "task.refreshPermissionsHint": "Apply this bot's current approval level and saved approvals to this thread. Other threads stay as they are.",

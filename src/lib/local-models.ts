@@ -5,7 +5,7 @@ import { isDesktopModelId, localModelUnavailable, type LocalModelUnavailable } f
 
 export { isDesktopModelId };
 
-type Row = { id: string; local?: boolean; custom?: boolean };
+type Row = { id: string; local?: boolean; custom?: boolean; anthropic?: boolean };
 
 /** Local rows for the Local group. On an organization server only the
  * person's own computer counts: the server's own loopback models would run
@@ -17,8 +17,8 @@ export function localModelRows<T extends Row>(options: readonly T[], orgMode: bo
 }
 
 /** Null when the engine can run this row, else why it cannot. */
-export function localRowUnavailable(driverKind: string | undefined, id: string): LocalModelUnavailable | null {
-  return localModelUnavailable(driverKind, isDesktopModelId(id) ? "desktop" : "loopback");
+export function localRowUnavailable(driverKind: string | undefined, id: string, speaksAnthropic?: boolean): LocalModelUnavailable | null {
+  return localModelUnavailable(driverKind, isDesktopModelId(id) ? "desktop" : "loopback", speaksAnthropic);
 }
 
 /** Whether this engine lists and runs this machine's loopback models (solo). */

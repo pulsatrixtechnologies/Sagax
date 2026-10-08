@@ -394,10 +394,11 @@ name) and `context_length` becomes `contextWindow`.
 - Which engines run them: `shared/local-model-engines.ts`. pi, Codex, Grok
   CLI, Kimi, Qwen, Droid, Hermes and OpenCode take an OpenAI-compatible base
   URL. Claude Code runs a loopback row (solo: the server answers
-  `/v1/messages`, as DwarfStar, Ollama, LM Studio and llama-server do) but not
-  a desktop row: the bridge carries `/v1/models` and `/v1/chat/completions`
-  only, and there is no protocol proxy. Any other engine keeps its own
-  endpoint. The picker greys a row the engine cannot run, with one line
+  `/v1/messages`, as DwarfStar, Ollama, LM Studio and llama-server do) and a
+  desktop row when the desktop's probe saw `/v1/messages` answer on that
+  server (`anthropic: true` on the published endpoint and the option; else the
+  row is greyed with "This local server does not speak the Anthropic
+  protocol."). Any other engine keeps its own endpoint. The picker greys a row the engine cannot run, with one line
   saying why, and `DesktopLocalModels.assertAvailable` refuses it at turn time.
 - Solo: `server/drivers/local-inject.ts` `LOCAL_HOSTS` probes the same ports
   as the desktop (`shared/desktop-local-models.ts` `SEED_ENDPOINTS`).
@@ -407,6 +408,21 @@ name) and `context_length` becomes `contextWindow`.
   URLs (`electron/desktop-bridge.mjs`). Own bots may use them by default
   (`expose` defaults on when the person never chose); `share` stays off until
   turned on. A failed probe is not cached.
+- Claude Code on an organization server (`/v1/messages` through the desktop
+  link). Scope, do not widen: the bridge forwards `POST /v1/messages` only to
+  a loopback endpoint (127.0.0.1 or localhost, the allowlisted ports) that
+  the desktop itself probed and published as speaking the Anthropic protocol
+  (`probeAnthropicMessages` in `electron/local-models.mjs`: one POST with no
+  messages, 404/405/501/5xx means no, cached 5 s). The desktop re-checks that
+  flag before it fetches (`executeLocalModel` `allowMessages`), and the server
+  route refuses `/messages` for an unpublished endpoint or a GET. Own bots
+  only, by the same rule as chat completions: another person needs `share`,
+  which stays off by default. The injected key is the server's desktop grant
+  token (`desktopModelApiKey`), never a real key; the base URL is the
+  server's loopback proxy (`applyClaudeInject` strips `/v1`). Same request
+  cap, same timeout (240 s), path and endpoint id audited, body never logged.
+  The bridge returns one body, so a streamed answer reaches Claude Code at
+  the end, not token by token.
 - Refresh on open: the picker calls `refreshLocalModelsOnOpen` (10 s fresh
   window). Solo re-reads the engine's catalog; server mode calls
   `ogb.serverMode.refreshLocalModels()` (IPC `server-mode:refresh-local-models`,

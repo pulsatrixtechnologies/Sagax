@@ -4,9 +4,10 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { desktopModelApiKey, withDesktopModelPerson } from "./desktop-model-grant.ts";
-import { DESKTOP_MODEL_UNAVAILABLE, DESKTOP_MODEL_WRONG_ENGINE, DesktopLocalModels, injectHostId } from "./desktop-local-models.ts";
+import { DESKTOP_MODEL_NO_ANTHROPIC, DESKTOP_MODEL_UNAVAILABLE, DESKTOP_MODEL_WRONG_ENGINE, DesktopLocalModels, injectHostId } from "./desktop-local-models.ts";
 import type { DesktopBridgeOperation } from "./desktop-bridge.ts";
 import {
+  applyClaudeInject,
   applyOpenAIInject,
   clearDesktopInjectHosts,
   decodeInjectId,
@@ -130,11 +131,97 @@ describe("desktop local models", () => {
     setDesktopInjectModels(() => service.modelsFor(owner));
     const catalog = await mergeLocalInject({ default: "cloud", options: [{ id: "cloud", label: "Cloud" }] });
     expect(catalog.options.some((row) => row.id === modelId && row.custom === true)).toBe(true);
-    const messages = await fetch(`http://127.0.0.1:${service.portNumber()}/d/${hostId}/v1/messages`, {
-      headers: { authorization: `Bearer ${grant(owner)}` },
-    });
+    // /messages is refused for an endpoint the desktop did not publish as speaking the Anthropic protocol.
+    const messages = await post(service.portNumber(), hostId, grant(owner), "/messages");
     expect(messages.status).toBe(404);
+    expect(await messages.text()).toBe(DESKTOP_MODEL_NO_ANTHROPIC);
     expect(bridge.calls).toHaveLength(0);
+    // Other paths and a non-desk host id stay refused.
+    expect((await post(service.portNumber(), hostId, grant(owner), "/embeddings")).status).toBe(404);
+    expect((await post(service.portNumber(), "deskzzzzzz", grant(owner), "/messages")).status).toBe(403);
+    expect(bridge.calls).toHaveLength(0);
+  });
+
+  it("forwards /v1/messages for an endpoint the desktop probed, to the owner's bots only", async () => {
+    const { service, bridge } = await start();
+    const owner = "pr_owner";
+    const other = "pr_other";
+    bridge.online.add(owner);
+    service.publish(owner, { endpoints: [
+      { id: "desk8002", label: "DwarfStar", models: ["qwen3"], anthropic: true },
+      { id: "desk9337", label: "llama-server", models: ["gguf"] },
+    ] });
+    const hostId = injectHostId(owner, "desk8002");
+    const ok = await post(service.portNumber(), hostId, grant(owner), "/messages");
+    expect(ok.status).toBe(200);
+    expect(bridge.calls[0]?.person).toBe(owner);
+    expect(bridge.calls[0]?.operation).toMatchObject({ action: "local_model", endpoint: "desk8002", http_method: "POST", http_path: "/messages", timeout_seconds: 240 });
+    expect(bridge.calls[0]?.operation.url).toBeUndefined();
+    expect(JSON.stringify(bridge.calls[0]?.operation)).not.toContain("8002/v1");
+    // A probed-no endpoint on the same computer is refused without reaching the desktop.
+    bridge.calls.length = 0;
+    const no = await post(service.portNumber(), injectHostId(owner, "desk9337"), grant(owner), "/messages");
+    expect(no.status).toBe(404);
+    // GET is not a way in.
+    const get = await fetch(`http://127.0.0.1:${service.portNumber()}/d/${hostId}/v1/messages`, { headers: { authorization: `Bearer ${grant(owner)}` } });
+    expect(get.status).toBe(405);
+    // Another person is refused while sharing is off (the default), allowed once the owner turns it on.
+    const denied = await post(service.portNumber(), hostId, grant(other), "/messages");
+    expect(denied.status).toBe(403);
+    expect(bridge.calls).toHaveLength(0);
+    // The body cap still applies.
+    const big = await fetch(`http://127.0.0.1:${service.portNumber()}/d/${hostId}/v1/messages`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${grant(owner)}`, "content-type": "application/json" },
+      body: "x".repeat(1_000_001),
+    }).catch(() => null);
+    if (big) expect(big.status).toBe(413);
+    expect(bridge.calls).toHaveLength(0);
+    // A re-publish that no longer reports the protocol closes the path again.
+    service.publish(owner, { endpoints: [{ id: "desk8002", label: "DwarfStar", models: ["qwen3"], anthropic: false }] });
+    expect((await post(service.portNumber(), hostId, grant(owner), "/messages")).status).toBe(404);
+    expect(service.publish(owner, { endpoints: [{ id: "desk8002", label: "DwarfStar", models: ["qwen3"], anthropic: "yes" }] }).ok).toBe(false);
+  });
+
+  it("runs Claude Code on an organization server against the person's local model", async () => {
+    const { service, bridge } = await start();
+    const owner = "pr_owner";
+    bridge.online.add(owner);
+    service.publish(owner, { endpoints: [
+      { id: "desk8002", label: "DwarfStar", models: ["qwen3"], anthropic: true },
+      { id: "desk9337", label: "llama-server", models: ["gguf"] },
+    ] });
+    const hostId = injectHostId(owner, "desk8002");
+    const modelId = encodeInjectId(hostId, "qwen3");
+    // The picker row says the server speaks the protocol; the other does not.
+    const [instance] = service.overlay([{ models: { default: "cloud", options: [{ id: "cloud", label: "Cloud" }] as { id: string; label: string; custom?: boolean; local?: boolean; anthropic?: boolean }[] } }], owner);
+    const rows = instance!.models.options.filter((option) => option.local);
+    expect(rows.find((row) => row.id === modelId)?.anthropic).toBe(true);
+    expect(rows.find((row) => row.id === encodeInjectId(injectHostId(owner, "desk9337"), "gguf"))?.anthropic).toBeUndefined();
+    // The turn guard passes the probed row on Claude Code and refuses the other with the protocol line.
+    expect(() => service.assertAvailable(owner, modelId, "claudeAgent")).not.toThrow();
+    expect(() => service.assertAvailable(owner, encodeInjectId(injectHostId(owner, "desk9337"), "gguf"), "claudeAgent")).toThrow(DESKTOP_MODEL_NO_ANTHROPIC);
+    expect(() => service.assertAvailable(owner, modelId, "geminiAgent")).toThrow(DESKTOP_MODEL_WRONG_ENGINE);
+    expect(() => service.assertAvailable("pr_other", modelId, "claudeAgent")).toThrow(DESKTOP_MODEL_UNAVAILABLE);
+    // The driver points Claude at this server's loopback proxy with the desktop grant, never the Mac address or a real key.
+    const env: Record<string, string | undefined> = { ANTHROPIC_API_KEY: "sk-ant-real" };
+    withDesktopModelPerson(owner, () => {
+      expect(applyClaudeInject(env, modelId)).toEqual({ model: "qwen3", injected: true });
+    });
+    expect(env.ANTHROPIC_BASE_URL).toBe(`http://127.0.0.1:${service.portNumber()}/d/${hostId}`);
+    expect(env.ANTHROPIC_MODEL).toBe("qwen3");
+    expect(env.ANTHROPIC_AUTH_TOKEN).toBe(env.ANTHROPIC_API_KEY);
+    expect(env.ANTHROPIC_API_KEY).not.toBe("sk-ant-real");
+    expect(env.ANTHROPIC_AUTH_TOKEN).toMatch(/^[a-f0-9]{64}$/);
+    expect(JSON.stringify(env)).not.toContain("127.0.0.1:8002");
+    // What Claude Code sends (base + /v1/messages) reaches the forwarder.
+    const sent = await fetch(`${env.ANTHROPIC_BASE_URL}/v1/messages`, {
+      method: "POST",
+      headers: { "x-api-key": env.ANTHROPIC_API_KEY!, "content-type": "application/json" },
+      body: JSON.stringify({ model: "qwen3", max_tokens: 1, messages: [{ role: "user", content: "hi" }] }),
+    });
+    expect(sent.status).toBe(200);
+    expect(bridge.calls.at(-1)?.operation).toMatchObject({ http_path: "/messages", endpoint: "desk8002" });
   });
 
   it("labels the DwarfStar catalog by name and keeps its context window", async () => {
@@ -172,7 +259,8 @@ describe("desktop local models", () => {
     bridge.online.add(owner);
     service.publish(owner, { endpoints: [{ id: "desk8002", label: "DwarfStar", models: ["qwen3"] }] });
     const modelId = encodeInjectId(injectHostId(owner, "desk8002"), "qwen3");
-    expect(() => service.assertAvailable(owner, modelId, "claudeAgent")).toThrow(DESKTOP_MODEL_WRONG_ENGINE);
+    // This server was not probed as speaking the Anthropic protocol.
+    expect(() => service.assertAvailable(owner, modelId, "claudeAgent")).toThrow(DESKTOP_MODEL_NO_ANTHROPIC);
     expect(() => service.assertAvailable(owner, modelId, "geminiAgent")).toThrow(DESKTOP_MODEL_WRONG_ENGINE);
     for (const kind of ["piAgent", "codex", "grokAgent", "kimiAgent", "opencodeGo"]) {
       expect(() => service.assertAvailable(owner, modelId, kind)).not.toThrow();

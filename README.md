@@ -194,9 +194,9 @@ effects and moves.
   run on pi, Codex, Grok, Kimi, Qwen, Droid, Hermes, OpenCode, and on Claude
   Code when the server answers the Anthropic protocol. On an organization
   server, the models on your own computer serve your own bots by default
-  through the desktop app, on every engine above except Claude Code, which
-  needs the Anthropic protocol. Sharing them with other people stays off
-  until you turn it on. The server's own local models are never offered.
+  through the desktop app, on every engine above, Claude Code included when
+  that local server answers the Anthropic protocol (otherwise its row stays
+  greyed). Sharing them with other people stays off until you turn it on. The server's own local models are never offered.
 - **Desktop bridge.** In server mode the desktop app is the bridge to your PC:
   bots working for you run their tools (shell, files, browser, computer use,
   Local VM) on your own computer, and their network traffic leaves through it,

@@ -832,7 +832,7 @@ export function ModelPicker({
   const filteredLocal = filterCustomModels(localRows, query);
   const unavailableText = (id: string): string | undefined => {
     if (!railInstance || !localIds.has(id)) return undefined;
-    const reason = localRowUnavailable(railInstance.driverKind, id);
+    const reason = localRowUnavailable(railInstance.driverKind, id, localRows.find((option) => option.id === id)?.anthropic);
     if (!reason) return undefined;
     return reason === "anthropic" ? t("model.localUnavailable.anthropic") : t("model.localUnavailable.engine", { engine: railInstance.displayName });
   };

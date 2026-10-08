@@ -1450,7 +1450,7 @@
   "model.org.hostTools": "{name} executa as próprias ferramentas no servidor Sagax. Escolha um mecanismo que funcione no seu ambiente de servidor.",
   "model.org.localHidden": "Os modelos do seu próprio computador aparecem aqui enquanto este app está conectado e um servidor local responde (Configurações, Computador, Modelos locais). Os modelos locais do servidor não são oferecidos.",
   "model.localGroup": "Local",
-  "model.localUnavailable.anthropic": "O Claude Code não pode rodar um modelo do seu computador aqui: ele exige o protocolo Anthropic. Escolha-o no pi, Codex ou Grok.",
+  "model.localUnavailable.anthropic": "Este servidor local não fala o protocolo Anthropic.",
   "model.localUnavailable.engine": "{engine} não pode rodar um modelo local.",
   "settings.scope.installation": "Todas as pessoas neste servidor",
   "settings.scope.me": "Segue a sua conta",

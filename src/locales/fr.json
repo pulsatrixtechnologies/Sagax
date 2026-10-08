@@ -572,7 +572,7 @@
   "model.payer.signInTitle": "Se connecter avec votre compte {name}",
   "model.payer.signInHint": "Votre propre abonnement, gardé sur le serveur de l’organisation pour vous seulement. Il paie vos tours, sur vos bots et sur ceux partagés avec vous ; les personnes avec qui vous partagez un bot paient avec les leurs.",
   "model.localGroup": "Local",
-  "model.localUnavailable.anthropic": "Claude Code ne peut pas exécuter un modèle de votre ordinateur ici : il exige le protocole Anthropic. Choisissez-le sur pi, Codex ou Grok.",
+  "model.localUnavailable.anthropic": "Ce serveur local ne parle pas le protocole Anthropic.",
   "model.localUnavailable.engine": "{engine} ne peut pas exécuter un modèle local.",
   "rename.aria": "Renommer",
   "rename.named": "Renommer {name}",

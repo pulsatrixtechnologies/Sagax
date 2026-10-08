@@ -24,6 +24,7 @@ import {
 
 export const DESKTOP_MODEL_UNAVAILABLE = "This local model is unavailable. The computer is offline, or it is not shared with you.";
 export const DESKTOP_MODEL_WRONG_ENGINE = "This engine cannot run a model from your computer. Pick it on pi, Codex, Grok or another engine that takes an OpenAI-compatible endpoint.";
+export const DESKTOP_MODEL_NO_ANTHROPIC = "This local server does not speak the Anthropic protocol.";
 const INVALID_BASE = "Use http://127.0.0.1 or http://localhost, and a path ending in /v1.";
 const REQUEST_CAP = 1_000_000;
 const RESPONSE_CAP = 1_500_000;
@@ -39,6 +40,8 @@ interface PublishedEndpoint {
   id: string;
   label: string;
   models: string[];
+  /** The desktop's probe saw /v1/messages answer on this server (Claude Code can run it). */
+  anthropic?: boolean;
   /** Display name and context window per model id, when the server reports them. */
   details?: Record<string, { name?: string; contextWindow?: number }>;
 }
@@ -57,7 +60,7 @@ export interface DesktopLocalModelView {
   connected: boolean;
 }
 
-type ModelOption = { id: string; label: string; custom?: boolean; local?: boolean; contextWindow?: number };
+type ModelOption = { id: string; label: string; custom?: boolean; local?: boolean; anthropic?: boolean; contextWindow?: number };
 
 /** Own bots may use this computer's models until the person turns that off.
  * Other people never do until the person turns sharing on. */
@@ -295,7 +298,8 @@ export class DesktopLocalModels {
     for (const item of record.endpoints) {
       if (!item || typeof item !== "object" || Array.isArray(item)) return { ok: false, error: "Invalid local model catalog." };
       const row = item as Record<string, unknown>;
-      if (Object.keys(row).some((name) => name !== "id" && name !== "label" && name !== "models" && name !== "details")) return { ok: false, error: "Invalid local model catalog." };
+      if (Object.keys(row).some((name) => name !== "id" && name !== "label" && name !== "models" && name !== "details" && name !== "anthropic")) return { ok: false, error: "Invalid local model catalog." };
+      if (row.anthropic !== undefined && typeof row.anthropic !== "boolean") return { ok: false, error: "Invalid local model catalog." };
       if (typeof row.id !== "string" || !allowed.has(row.id) || !Array.isArray(row.models)) continue;
       const models: string[] = [];
       for (const model of row.models) {
@@ -307,7 +311,7 @@ export class DesktopLocalModels {
       const details = parseDetails(row.details, models);
       if (details === null) return { ok: false, error: "Invalid local model catalog." };
       const saved = settings.endpoints.find((endpoint) => endpoint.id === row.id);
-      endpoints.push({ id: row.id, label: cleanLabel(row.label, saved?.label ?? ""), models, ...(details ? { details } : {}) });
+      endpoints.push({ id: row.id, label: cleanLabel(row.label, saved?.label ?? ""), models, ...(row.anthropic === true ? { anthropic: true } : {}), ...(details ? { details } : {}) });
     }
     this.published.set(key, { endpoints });
     return { ok: true };
@@ -335,7 +339,7 @@ export class DesktopLocalModels {
         const labels = localModelLabels(server, endpoint.models.map((model) => ({ id: model, ...(endpoint.details?.[model]?.name ? { name: endpoint.details[model]!.name } : {}) })));
         for (const model of endpoint.models) {
           const contextWindow = endpoint.details?.[model]?.contextWindow;
-          out.push({ id: encodeInjectId(hostId, model), host: hostId, model, label: labels.get(model) ?? model, ...(contextWindow ? { contextWindow } : {}) });
+          out.push({ id: encodeInjectId(hostId, model), host: hostId, model, label: labels.get(model) ?? model, ...(endpoint.anthropic ? { anthropic: true } : {}), ...(contextWindow ? { contextWindow } : {}) });
         }
       }
     }
@@ -343,12 +347,24 @@ export class DesktopLocalModels {
   }
 
   /** A desk inject id that this person may not run, or that this engine
-   * cannot run (Claude Code needs the Anthropic protocol, the bridge
-   * carries OpenAI-compatible calls only), fails the turn before any CLI starts. */
+   * cannot run (Claude Code needs a server the desktop probed as speaking
+   * the Anthropic protocol), fails the turn before any CLI starts. */
   assertAvailable(person: string | null, model: string | null | undefined, driverKind?: string): void {
     if (!isDesktopInjectModel(model)) return;
-    if (driverKind !== undefined && localModelUnavailable(driverKind, "desktop")) throw new Error(DESKTOP_MODEL_WRONG_ENGINE);
+    if (driverKind !== undefined) {
+      const reason = localModelUnavailable(driverKind, "desktop", this.speaksAnthropic(model ?? ""));
+      if (reason === "anthropic") throw new Error(DESKTOP_MODEL_NO_ANTHROPIC);
+      if (reason) throw new Error(DESKTOP_MODEL_WRONG_ENGINE);
+    }
     if (!this.available(person, model ?? "")) throw new Error(DESKTOP_MODEL_UNAVAILABLE);
+  }
+
+  /** True when the desktop's last probe saw this row's server answer /v1/messages. */
+  private speaksAnthropic(modelId: string): boolean {
+    const decoded = decodeInjectId(modelId);
+    const meta = decoded ? this.hostMeta.get(decoded.host) : undefined;
+    if (!meta) return false;
+    return this.published.get(meta.person)?.endpoints.find((row) => row.id === meta.endpointId)?.anthropic === true;
   }
 
   available(person: string | null, modelId: string): boolean {
@@ -369,7 +385,7 @@ export class DesktopLocalModels {
     const rows = this.modelsFor(person);
     return instances.map((instance) => {
       const options = instance.models.options.filter((option) => !isDesktopInjectModel(option.id));
-      for (const row of rows) options.push({ id: row.id, label: row.label, custom: true, local: true, ...(row.contextWindow ? { contextWindow: row.contextWindow } : {}) });
+      for (const row of rows) options.push({ id: row.id, label: row.label, custom: true, local: true, ...(row.anthropic ? { anthropic: true } : {}), ...(row.contextWindow ? { contextWindow: row.contextWindow } : {}) });
       return { ...instance, models: { ...instance.models, options } };
     });
   }
@@ -409,14 +425,20 @@ export class DesktopLocalModels {
       res.end("This local model request was refused.");
       return;
     }
-    const match = /^\/d\/(desk[a-z0-9]{3,24})\/v1(\/models|\/chat\/completions)$/.exec(url.pathname);
+    const match = /^\/d\/(desk[a-z0-9]{3,24})\/v1(\/models|\/chat\/completions|\/messages)$/.exec(url.pathname);
     if (!match) {
       res.writeHead(404, textHeaders);
       res.end("This local model request was refused.");
       return;
     }
     const hostId = match[1]!;
-    const httpPath = match[2] as "/models" | "/chat/completions";
+    const httpPath = match[2] as "/models" | "/chat/completions" | "/messages";
+    // /messages is POST only, and only for a server the desktop probed as speaking it.
+    if (httpPath === "/messages" && method !== "POST") {
+      res.writeHead(405, textHeaders);
+      res.end("This local model request was refused.");
+      return;
+    }
     const meta = this.hostMeta.get(hostId);
     const caller = personForDesktopGrant(tokenFrom(req));
     if (!meta || !caller) {
@@ -441,13 +463,19 @@ export class DesktopLocalModels {
       res.end(DESKTOP_MODEL_UNAVAILABLE);
       return;
     }
+    if (httpPath === "/messages" && this.published.get(meta.person)?.endpoints.find((row) => row.id === meta.endpointId)?.anthropic !== true) {
+      res.writeHead(404, textHeaders);
+      res.end(DESKTOP_MODEL_NO_ANTHROPIC);
+      return;
+    }
     const json = method === "POST" ? await readLimited(req, REQUEST_CAP) : "";
     if (json === null) {
       res.writeHead(413, textHeaders);
       res.end("This local model request was refused.");
       return;
     }
-    // The bridge returns one complete() result, so a chat completion is
+    // The bridge returns one complete() result, so a chat completion (or a
+    // Claude Code /v1/messages stream, which arrives as one SSE body) is
     // buffered up to the body cap and the bridge job timeout. There is no
     // second channel.
     let result: unknown;

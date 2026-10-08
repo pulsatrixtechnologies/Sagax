@@ -7,7 +7,8 @@
 //   the organization server's own machine). The engine talks to it directly.
 // - "desktop": a model on the signed-in person's own computer, reached
 //   through the desktop bridge (server/desktop-local-models.ts). The bridge
-//   carries the OpenAI-compatible calls only (/v1/models, /v1/chat/completions).
+//   carries /v1/models and /v1/chat/completions, and /v1/messages only to a
+//   loopback server the desktop probed as speaking the Anthropic protocol.
 
 export type LocalModelKind = "loopback" | "desktop";
 
@@ -27,18 +28,24 @@ const OPENAI_BASE_URL_ENGINES = new Set([
 ]);
 
 export type LocalModelUnavailable =
-  /** Claude Code speaks the Anthropic protocol; the computer link does not carry it. */
+  /** Claude Code speaks the Anthropic protocol; this local server does not answer /v1/messages. */
   | "anthropic"
   /** The engine keeps its own endpoint and does not take a local base URL. */
   | "engine";
 
 /** Null when this engine can run that kind of local row. */
-export function localModelUnavailable(driverKind: string | undefined, kind: LocalModelKind): LocalModelUnavailable | null {
+export function localModelUnavailable(
+  driverKind: string | undefined,
+  kind: LocalModelKind,
+  /** Desktop rows: the desktop's probe saw /v1/messages answer. */
+  speaksAnthropic?: boolean,
+): LocalModelUnavailable | null {
   if (OPENAI_BASE_URL_ENGINES.has(driverKind ?? "")) return null;
   // Claude Code sets ANTHROPIC_BASE_URL. A loopback server that answers
-  // /v1/messages (DwarfStar, Ollama, LM Studio, llama-server) works; the
-  // desktop bridge forwards OpenAI-compatible paths only.
-  if (driverKind === "claudeAgent") return kind === "loopback" ? null : "anthropic";
+  // /v1/messages (DwarfStar, Ollama, LM Studio, llama-server) works. A
+  // desktop row works when the desktop probed that server for /v1/messages
+  // (the bridge then forwards it); a server that does not answer keeps it greyed.
+  if (driverKind === "claudeAgent") return kind === "loopback" || speaksAnthropic === true ? null : "anthropic";
   return "engine";
 }
 
