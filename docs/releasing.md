@@ -86,6 +86,14 @@ Sagax releases are built on a Mac, not by the workflows above:
    with every installer, zip, blockmap and both feeds, as a full release.
    The release body is that file. Do not write a different body: the
    desktop updater shows it as the notes for the version.
+   This repository has immutable releases: once a release is published, no
+   asset can be added, replaced or removed (`gh release upload` answers
+   HTTP 422 "Cannot upload assets to an immutable release"). Build macOS and
+   Windows first, then create the release with every asset in ONE
+   `gh release create` call. Publishing macOS first and adding Windows later is
+   not possible. A Latest release without `latest.yml` breaks the Windows
+   update check, so never publish without both feeds (0.4.11 shipped macOS
+   only for this reason).
 
 ## Updater migration invariant
 
