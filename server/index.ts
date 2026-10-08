@@ -584,6 +584,7 @@ import { createVoiceModeRoutes } from "./voice-mode.ts";
 import { parseVoiceCallMeta, voiceCallSection, voiceCallSteerPrompt, voiceCallTurnPrompt } from "./voice-call-prompt.ts";
 import { VoiceCallSessions } from "./voice-call-session.ts";
 import { VoiceCallWarmup } from "./voice-call-warmup.ts";
+import { callTurnEffort } from "./voice-call-effort.ts";
 import { VoiceLatencyLog } from "./voice-latency.ts";
 import { unansweredCallMessage, VOICE_CALL_WATCHDOG_MS, voiceCallRecoveryPrompt } from "./voice-call-watchdog.ts";
 import * as grokVoice from "./tts/grok.ts";
@@ -13620,6 +13621,12 @@ async function startTurn(
       const contextStillPending = Boolean(engineCommand && dispatchContext.sessionReset && transcript.length > 0 &&
         !NATIVELY_REPLAYING_DRIVER_KINDS.includes(instance.driverKind));
       if (!warmOnly) voiceLatency.mark(threadId, "dispatch");
+      // A call turn (and the warm that prepares its process, so the two share
+      // one spawn contract) runs at the engine's low effort: the person is
+      // waiting for the first word (server/voice-call-effort.ts).
+      const turnEffort = onCall || warmOnly
+        ? callTurnEffort({ driverKind: instance.driverKind, levels: instance.adapter.capabilities.effortLevels, effort })
+        : effort;
       const dispatch = await guardTurnDispatch(withDesktopModelPerson(turnPlace.principal, () => {
         if (IDENTITY.kind === "perspicax") desktopLocalModels.assertAvailable(turnPlace.principal, model, instance.driverKind);
         return instance.adapter.sendTurn({
@@ -13639,7 +13646,7 @@ async function startTurn(
         toolScope,
         ...(guestConfined ? { guestConfined: true, confinedWhy: confinedWhy(threadId) } : {}),
         model,
-        effort,
+        effort: turnEffort,
         variant,
         // a rewound thread never resumes the abandoned branch's session
         // the active task's own session — another task's cursor would

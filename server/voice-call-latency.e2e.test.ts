@@ -39,7 +39,7 @@ async function fixture() {
     "#!/usr/bin/env node",
     'import { appendFileSync } from "node:fs";',
     // one line per turn process (not the version and sign-in probes)
-    `if (process.argv.includes("--input-format")) appendFileSync(${JSON.stringify(launches)}, JSON.stringify({ pid: process.pid }) + "\\n");`,
+    `if (process.argv.includes("--input-format")) appendFileSync(${JSON.stringify(launches)}, JSON.stringify({ pid: process.pid, argv: process.argv.slice(2) }) + "\\n");`,
     // each turn lists the bot's teammates through the agents proxy
     `process.env.FAKE_CLAUDE_MCP_CALLS = ${JSON.stringify(JSON.stringify([{ server: "agents", tool: "list_bots", arguments: {} }]))};`,
     'process.stdin.on("end", () => process.exit(0));',
@@ -51,11 +51,12 @@ async function fixture() {
   const messages = async () => (await api("GET", `/api/threads/${thread}/messages?limit=200`)).messages as any[];
   const replies = async () => (await messages()).filter((m) => m.role === "bot" && m.turnTerminal);
   const send = (body: Record<string, unknown>) => api("POST", `/api/bots/${bot.id}/messages`, { threadId: thread, ...body }, 202);
-  const pids = () => (existsSync(launches) ? readFileSync(launches, "utf8").trim().split("\n").filter(Boolean).map((line) => (JSON.parse(line) as { pid: number }).pid) : []);
+  const launched = () => (existsSync(launches) ? readFileSync(launches, "utf8").trim().split("\n").filter(Boolean).map((line) => JSON.parse(line) as { pid: number; argv: string[] }) : []);
+  const pids = () => launched().map((launch) => launch.pid);
   const processes = () => pids().length;
   const alive = (pid: number) => { try { process.kill(pid, 0); return true; } catch { return false; } };
   const log = () => readFileSync(logPath, "utf8");
-  return { server, api, bot, thread, messages, replies, send, processes, pids, alive, log };
+  return { server, api, bot, thread, messages, replies, send, processes, pids, launched, alive, log };
 }
 
 it("keeps one engine process for a whole call, its tools working on every turn", async () => {
@@ -82,6 +83,9 @@ it("keeps one engine process for a whole call, its tools working on every turn",
     await t.send({ text: "in writing now" });
     await expect.poll(async () => (await t.replies()).length, { timeout: 15_000 }).toBe(4);
     expect(t.processes()).toBe(2);
+    // the call ran at low effort; the written turn at the bot's own (none set)
+    const effort = (argv: string[]) => (argv.includes("--effort") ? argv[argv.indexOf("--effort") + 1] : undefined);
+    expect(t.launched().map((launch) => effort(launch.argv))).toEqual(["low", undefined]);
   } finally {
     await t.server.close();
   }
@@ -220,6 +224,9 @@ it("Grok: warms at call start, then every call turn is a bare prompt whose tools
     await expect.poll(async () => (await t.replies()).length, { timeout: 15_000 }).toBe(4);
     expect(t.processes()).toHaveLength(2);
     expect(establishing(t.rpc()).slice(6)).toEqual(["initialize", "authenticate", "session/load", "session/prompt"]);
+    // the call's process ran at low effort; the written turn's at the bot's own (none set)
+    const effort = (argv: string[]) => (argv.includes("--reasoning-effort") ? argv[argv.indexOf("--reasoning-effort") + 1] : undefined);
+    expect(t.processes().map((launch) => effort(launch.argv))).toEqual(["low", undefined]);
     expect(String((await t.replies())[3].text)).toContain("mcp:list_bots:ok");
   } finally {
     await t.close();
