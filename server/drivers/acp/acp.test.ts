@@ -2228,6 +2228,52 @@ describe("ACP turns (fake CLI)", () => {
       ]);
     });
 
+    it("keeps one native session through a call: a new turn token is a prompt, not a session/load", async () => {
+      countFile = join(scratch, "launches");
+      const appendFile = join(scratch, "rpc-all.jsonl");
+      const dump = join(scratch, "dump.json");
+      process.env.FAKE_ACP_LAUNCH_COUNT_FILE = countFile;
+      process.env.FAKE_ACP_RPC_APPEND_FILE = appendFile;
+      process.env.FAKE_ACP_DUMP = dump;
+      await create();
+      const agents = (token: string) => ({ agents: { command: process.execPath, args: [FAKE_CLI], env: { SAGAX_COMMS_TOKEN: token, SAGAX_BOT_ID: "bot-call" } } });
+      const calls = () => readFileSync(appendFile, "utf8").trim().split("\n").map((line) => JSON.parse(line).method as string)
+        .filter((method) => !method.endsWith(".result"));
+      const turn = async (text: string, token: string, keepWarm: boolean) => {
+        const started = await instance.adapter.sendTurn({
+          threadId: "t-call-warm", botId: "bot-call", text, resumeCursor: "fake-acp-session",
+          integrations: agents(token), ...(keepWarm ? { keepWarm: true } : {}),
+        });
+        expect(await recorder.until((e) => e.type === "turn.completed" && e.turnId === started.turnId)).toMatchObject({ ok: true });
+        return started;
+      };
+      // a written turn before the call: the session exists on the process
+      const before = await turn("before the call", "token-zero", false);
+      expect(before.reused).toBeUndefined();
+      expect(calls().filter((m) => m === "session/load")).toHaveLength(1);
+      // the call's first turn re-establishes once (its servers now name the token file)
+      const first = await turn("call one", "token-one", true);
+      expect(first.reused).toBeUndefined();
+      expect(calls().filter((m) => m === "session/load")).toHaveLength(2);
+      const tokenFile = (JSON.parse(readFileSync(`${dump}.mcp.json`, "utf8")) as Array<{ name: string; env: Array<{ name: string; value: string }> }>)
+        .find((server) => server.name === "agents")!.env.find((entry) => entry.name === "SAGAX_COMMS_TOKEN_FILE")?.value;
+      expect(tokenFile).toBeTruthy();
+      expect(readFileSync(tokenFile!, "utf8")).toBe("token-one");
+      // the call's later turns: a new token each, the same session, prompt only
+      const second = await turn("call two", "token-two", true);
+      const third = await turn("call three", "token-three", true);
+      expect(second.reused).toBe(true);
+      expect(third.reused).toBe(true);
+      expect(readFileSync(tokenFile!, "utf8")).toBe("token-three");
+      expect(calls().filter((m) => m === "session/load")).toHaveLength(2);
+      expect(calls().slice(-2)).toEqual(["session/prompt", "session/prompt"]);
+      // after the call a written turn hands its own token over the wire again
+      await turn("after the call", "token-four", false);
+      expect(calls().filter((m) => m === "session/load")).toHaveLength(3);
+      expect(launches()).toBe(1);
+      expect(calls().filter((m) => m === "initialize")).toHaveLength(1);
+    });
+
     it("does not load or prompt Qwen after Stop during old-process cleanup", async () => {
       const appendFile = join(scratch, "rpc-all.jsonl");
       process.env.FAKE_ACP_RPC_APPEND_FILE = appendFile;

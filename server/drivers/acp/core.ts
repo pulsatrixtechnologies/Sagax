@@ -87,6 +87,7 @@ import { sessionIdlePolicy } from "../session-idle.ts";
 import { classifyError } from "../retry.ts";
 import { canUseMcpServer, narrowsNativeTools, parseToolScope } from "../../../shared/tool-scope.ts";
 import { gateServer } from "../../mcp-gate-config.ts";
+import { TURN_TOKEN_ENV, warmCommsEnv } from "../spawn-contract.ts";
 
 /** Failures the person fixes on their provider account, not by retrying:
  * the process that reported one is healthy and stays pooled. */
@@ -1602,7 +1603,24 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
           resolvedModel !== undefined && resolvedModel !== turn.model
             ? { ...turn, model: resolvedModel }
             : turn;
-        const mcpServers = acpMcpServers(turn);
+        // On a call (keepWarm) the pooled process keeps one native session
+        // from turn to turn. The comms token is minted per turn, so it rides
+        // a file the agents proxy re-reads on every request (the Claude
+        // driver's mechanism, server/drivers/agents-client.ts) and is masked
+        // out of the session inputs below: a new turn's token alone never
+        // re-establishes the session (no session/load, no MCP reconnect).
+        const callAgents = turn.keepWarm === true && turn.integrations?.agents?.env?.SAGAX_COMMS_TOKEN
+          ? turn.integrations.agents : undefined;
+        const withAgentsEnv = (agentsEnv: Record<string, string>): SendTurnInput =>
+          ({ ...turn, integrations: { ...turn.integrations, agents: { ...callAgents!, env: agentsEnv } } });
+        const callAgentsEnv = callAgents ? warmCommsEnv(threadId, turn.botId, callAgents.env) : undefined;
+        const mcpServers = acpMcpServers(callAgentsEnv ? withAgentsEnv(callAgentsEnv) : turn);
+        const sessionServersKey = callAgentsEnv
+          ? acpMcpServers(withAgentsEnv({
+            ...callAgentsEnv,
+            ...Object.fromEntries(TURN_TOKEN_ENV.filter((key) => key in callAgentsEnv).map((key) => [key, "(turn token)"])),
+          }))
+          : mcpServers;
         let launch: { command: string; args?: string[]; env?: Record<string, string | undefined> };
         try {
           launch = support.resolveCommand
@@ -1668,7 +1686,7 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
           launchedThisTurn = true;
           return opened;
         };
-        const sessionKey = JSON.stringify([mcpServers, turn.toolScope ?? null, inheritedScopeFingerprint, turn.withholdHostTools === true]);
+        const sessionKey = JSON.stringify([sessionServersKey, turn.toolScope ?? null, inheritedScopeFingerprint, turn.withholdHostTools === true]);
 
         if (turn.sessionReset) {
           closeSession(threadId, "reset");
@@ -1692,6 +1710,12 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
           session = launchSession();
           sessions.set(threadId, session);
         }
+        const cursor = !turn.sessionReset && typeof turn.resumeCursor === "string" ? turn.resumeCursor : null;
+        // The turn reaches a live process whose native session it can
+        // prompt as is: no handshake, no session/load (the voice latency log
+        // reads this, server/voice-latency.ts).
+        const reused = session === pooled && session.sessionId !== null && session.sessionKey === sessionKey
+          && (cursor === null || cursor === session.sessionId);
         // `session` rebinds mid-turn: when the establishment retry below
         // respawns the child, every wire call must reach the live record, so
         // nothing captures the connection off it.
@@ -1708,8 +1732,9 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
         const state: AcpTurn["state"] = { settled: false, promptSent: false, text: "", producedItem: false, startupActivity: false, stopped: false, usagePeak: null, usageLast: null, usageCompacted: false };
         let acknowledge = () => {};
         let rejectStartup = (_error: TurnNotStartedError) => {};
-        const startupAck = turn.startupRecovery ? new Promise<{ turnId: string }>((resolve, reject) => {
-          acknowledge = () => resolve({ turnId });
+        const started = { turnId, ...(reused ? { reused: true } : {}) };
+        const startupAck = turn.startupRecovery ? new Promise<{ turnId: string; reused?: boolean }>((resolve, reject) => {
+          acknowledge = () => resolve(started);
           rejectStartup = reject;
         }) : null;
         const asks = new Map<string, AcpAskFinish>();
@@ -1867,7 +1892,6 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
             let runtimeAcceptsImages = await handshake();
             let init = session.initResult;
 
-            const cursor = !turn.sessionReset && typeof turn.resumeCursor === "string" ? turn.resumeCursor : null;
             let sessionResult: any = null;
             let promptTurn = turn;
             let rebuiltFromReplay = false;
@@ -2310,7 +2334,7 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
           }
         })();
 
-        return startupAck ?? { turnId };
+        return startupAck ?? started;
       };
 
       const snapshot = async (): Promise<ProviderSnapshot> => {
