@@ -183,7 +183,6 @@ import {
   boatComputerEnabled,
   decisionModelEnabled,
   claudeUserMcpEnabled,
-  claudeAiConnectorsEnabled,
   skillAuthoringEnabled,
   autoRecallEnabled,
   captureQuietMs,
@@ -19001,7 +19000,6 @@ function claudeAiConnectorsFor(bot: BotRecord, instance: { instanceId: string; d
   }
   return claudeAiConnectorsForTurn({
     identity: IDENTITY.kind,
-    enabled: claudeAiConnectorsEnabled(cfg),
     restrictedByPolicy: managedPolicy.restrictsMcp(),
     driver: instance.driverKind,
     ...(planned ? { via: planned } : {}),
@@ -21792,16 +21790,10 @@ ROUTES.push(createVoiceModeRoutes({
 }));
 
 // The caller's own claude.ai connectors, read through their own Claude
-// account (server/harness-connectors.ts); an admin can turn them off.
+// account (server/harness-connectors.ts); always on, no server switch.
 const claudeAiInventory = new ClaudeAiConnectorInventory({ run: runClaudeCli });
 ROUTES.push(createHarnessConnectorRoutes({
   organization: IDENTITY.kind === "perspicax",
-  enabled: () => claudeAiConnectorsEnabled(cfg),
-  setEnabled: (next) => {
-    const block = { ...cfg.harnessConnectors, claudeAi: next };
-    saveConfig({ harnessConnectors: block });
-    cfg.harnessConnectors = block;
-  },
   restrictedByPolicy: () => managedPolicy.restrictsMcp(),
   principalFor: (auth) => {
     if (auth.kind === "loopback" && auth.trust === "service") return "";
