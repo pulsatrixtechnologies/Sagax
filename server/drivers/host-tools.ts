@@ -3,7 +3,26 @@
 // a turn withholds them (SendTurnInput.withholdHostTools) and shell and files
 // go through the person's server environment instead
 // (server/user-sandbox-tools.ts, docs/user-sandbox.md).
+import { chmodSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+
+
 import { allowsTool, parseToolScope } from "../../shared/tool-scope.ts";
+import { DATA_DIR } from "../config.ts";
+
+/** A policy file Sagax owns for withheld turns (a system settings file, a
+ * config an engine reads through an environment variable). Written under
+ * the data directory, never in a person's home, rewritten only on change. */
+export function writeEnginePolicy(name: string, content: string): string {
+  const dir = join(DATA_DIR, "engine-policies");
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
+  const path = join(dir, name);
+  let current: string | null = null;
+  try { current = readFileSync(path, "utf8"); } catch { current = null; }
+  if (current !== content) writeFileSync(path, content, { mode: 0o600 });
+  try { chmodSync(path, 0o600); } catch { /* best effort */ }
+  return path;
+}
 
 /** Claude Code built-ins that run commands, read or write local files, or
  * fetch URLs from this machine (which could reach internal services).
@@ -126,6 +145,16 @@ export function piHostToolArgs(withhold: boolean): string[] {
   return ["--no-builtin-tools", "--exclude-tools", PI_HOST_TOOLS.join(","), "--no-extensions"];
 }
 
+/** An ACP `session/request_permission` that would act on this machine: a
+ * command, a file change, a move or a delete, not a call to one of Sagax's
+ * MCP tools (titled `mcp__…`, `mcp.…` or `mcp:…`). Declined outright on a
+ * withheld turn (acp/core.ts). */
+export function acpHostToolRequest(toolCall: { kind?: unknown; title?: unknown }): boolean {
+  const kind = String(toolCall.kind ?? "");
+  if (!["execute", "edit", "delete", "move"].includes(kind)) return false;
+  return !/^mcp(?:__|[.:_])/i.test(String(toolCall.title ?? ""));
+}
+
 /** The approval parameters of a withheld Codex turn: read-only, asking (so
  * every write or command becomes a request the driver declines). */
 export const CODEX_WITHHELD_APPROVAL = {
@@ -141,3 +170,48 @@ export const CODEX_WITHHELD_FULL_APPROVAL = {
   thread: { approvalPolicy: "never", approvalsReviewer: "user", sandbox: "read-only" },
   turn: { approvalPolicy: "never", approvalsReviewer: "user", sandboxPolicy: { type: "readOnly" } },
 } as const;
+
+/** The folder a withheld turn of an engine that reads workspace files runs
+ * in: empty, owned by Sagax. Without file tools the engine needs no folder
+ * of the person's, and a `.gemini/` or `.qwen/` file in the turn's folder
+ * could otherwise declare a hook or an MCP server, both commands run here. */
+export function withheldWorkspace(): string {
+  const dir = join(DATA_DIR, "engine-policies", "workspace");
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
+  return dir;
+}
+
+/** The MCP server names Sagax passes an ACP engine for a turn (the same
+ * names as acp/core.ts mcpServersFor, before a tool scope filter). */
+export function sagaxMcpServerNames(integrations: {
+  agents?: unknown; composio?: unknown; browser?: unknown; localComputer?: unknown; custom?: Record<string, unknown>;
+} | undefined): string[] {
+  const names = [
+    ...(integrations?.agents ? ["agents"] : []), ...(integrations?.composio ? ["composio"] : []),
+    ...(integrations?.browser ? ["browser"] : []), ...(integrations?.localComputer ? ["computer"] : []),
+    ...Object.keys(integrations?.custom ?? {}),
+  ];
+  return [...new Set(names)];
+}
+
+/** Droid 0.230.0 built-ins that act on this machine or run an agent, a
+ * schedule or a remote action of Factory's (`droid exec --list-tools`, and
+ * what `droid exec -o acp` offered the model). */
+export const DROID_HOST_TOOLS: readonly string[] = [
+  "Execute", "Read", "LS", "Edit", "Create", "ApplyPatch", "MultiEdit", "Grep", "Glob",
+  "FetchUrl", "WebSearch", "Task", "TaskOutput", "TaskStop", "Skill", "GenerateImage", "GenerateDroid",
+  "Loop", "CreateAutomation", "DeleteAutomation", "EditAutomation", "ListAutomations",
+  "ListAutomationTemplates", "ReadAutomation", "StageSettingsChanges", "ProposeMission",
+  "StartMissionRun", "EndFeatureRun", "DismissHandoffItems",
+];
+
+/* Droid stays refused on an organization server: `droid exec -o acp`
+ * ignores `--only-tools` and `--remove-tools` (0.230.0 still offered the
+ * model Execute, Read, Edit and the rest with them) and its ACP session
+ * takes no tool selection, so nothing withholds these tools there. */
+
+/** Host tool names per ACP engine, as each real CLI offered them to the
+ * model (scripts/verify-org-host-tools.ts). */
+export const HOST_TOOL_NAMES_BY_ENGINE: Readonly<Record<string, readonly string[]>> = {
+  droid: DROID_HOST_TOOLS,
+};

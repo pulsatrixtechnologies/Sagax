@@ -22,6 +22,7 @@ import { HarnessConnectorsSection } from "./HarnessConnectorsSection";
 import { reloadMyEngines, useMyEngines, usePerspicaxOrg, type MyEngine } from "@/lib/perspicax-org";
 import { viewerIsOrgMember } from "@/lib/viewer";
 import { connectedAppsEnabled } from "@/lib/feature-flags";
+import { OrgHostToolsNote, orgRefusesEngine } from "./OrgHostToolsNote";
 
 interface ProbeResult {
   ok: boolean;
@@ -274,9 +275,13 @@ function EngineRow({ instance, mine, member = false, issuer = "" }: { instance: 
   </p>;
   // An organization member: their own access only. The server's engine
   // (its CLI and its updates) is the admins' to change.
+  // On an organization server an engine whose own tools cannot be held back
+  // never runs a turn there (409 host_tools); its card says why.
+  const hostToolsNote = (member || mine !== undefined) && orgRefusesEngine(instance) && <OrgHostToolsNote instance={instance} className="mb-3 text-[12px]" />;
   if (member && mine) return (
     <EngineCard instance={instance} personal={{ ready: mine.myTurns !== "none", line: paysWithText(mine), turns: mine.myTurns }}>
       {policyNote}
+      {hostToolsNote}
       <div data-member-engine={instance.instanceId}><EngineConnect engine={mine} issuer={issuer} onChanged={reloadMyEngines} /></div>
     </EngineCard>
   );
@@ -289,6 +294,7 @@ function EngineRow({ instance, mine, member = false, issuer = "" }: { instance: 
   return (
     <EngineCard instance={instance} personal={mine && { ready: mine.myTurns !== "none", line: paysWithText(mine), turns: mine.myTurns }}>
       {policyNote}
+      {hostToolsNote}
       {mine && <EngineConnect engine={mine} issuer={issuer} onChanged={reloadMyEngines} className="mb-3" />}
       {!mine && !engineReady(instance) && <EngineSetup instance={instance} intent={instance.access === "custom" ? "inject" : "cloud"} unframed />}
       {instance.snapshot.update && <EngineUpdateNotice update={instance.snapshot.update} instance={instance} className="mt-3" />}

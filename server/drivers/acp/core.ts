@@ -87,6 +87,7 @@ import { sessionIdlePolicy } from "../session-idle.ts";
 import { classifyError } from "../retry.ts";
 import { canUseMcpServer, narrowsNativeTools, parseToolScope } from "../../../shared/tool-scope.ts";
 import { gateServer } from "../../mcp-gate-config.ts";
+import { acpHostToolRequest } from "../host-tools.ts";
 
 /** Failures the person fixes on their provider account, not by retrying:
  * the process that reported one is healthy and stays pooled. */
@@ -266,6 +267,11 @@ export interface AcpSupport {
   /** The spawned command and the session profile withhold this CLI's own
    * shell, file and web tools when the turn sets withholdHostTools. */
   withholdsHostTools?: boolean;
+  /** A withheld turn runs in this folder instead of the turn's: an empty
+   * one Sagax owns, so no workspace file (settings, hooks, MCP servers,
+   * context) of the turn's folder is read by an engine that would load it
+   * (server/drivers/host-tools.ts withheldWorkspace). */
+  withheldWorkspace?(): string;
   /** Discover and select opaque model variants through ACP config options. */
   modelVariants?: boolean;
   /** Default CLI binary name if the instance config doesn't override it. */
@@ -1253,6 +1259,18 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
 
           const toolCall = params.toolCall ?? {};
           const isQuestion = String(toolCall.toolCallId ?? "").startsWith("interaction_");
+          // Organization server: the engine's own tools are withheld by its
+          // profile (server/drivers/host-tools.ts). Should one still ask to
+          // run a command or change a file here, it is declined before any
+          // card or Full-access auto-accept, as for Codex.
+          if (current.turn.withholdHostTools === true && !isQuestion && acpHostToolRequest(toolCall)) {
+            const reject = optionFor("reject");
+            return send({
+              jsonrpc: "2.0",
+              id: msg.id,
+              result: reject ? { outcome: { outcome: "selected", optionId: reject } } : cancelled,
+            });
+          }
           if (current.turnConfig.fullAuto && current.turn.approvalMode === undefined && !isQuestion) {
             const allow = optionFor("allow");
             if (!allow) missing("allow");
@@ -1578,7 +1596,9 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
           throw new Error("local computer control requires interactive provider approvals");
         }
         const turnId = newId();
-        const cwd = turn.cwd ?? turnConfig.workspace ?? homedir();
+        const cwd = turn.withholdHostTools === true && support.withheldWorkspace
+          ? support.withheldWorkspace()
+          : turn.cwd ?? turnConfig.workspace ?? homedir();
         const env = childEnv(turnConfig);
         if (turn.access) support.applyAccess?.(env, turn.access, input.environment);
         if (

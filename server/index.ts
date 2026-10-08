@@ -274,6 +274,7 @@ import {
 import type { GroupGoalRunCardData, GroupGoalRunStatus } from "../shared/group-goal-run.ts";
 
 import { BUILT_IN_DRIVERS } from "./drivers/builtIn.ts";
+import { orgWithholdHostTools } from "./org-engine-admission.ts";
 import { openCodeProviderKeysAllowed, setOpenCodeProviderKeyPolicy } from "./drivers/acp/opencode-go.ts";
 import { getOrCreateChannel, mirrorActivity, mirrorExchange, mirrorReply, type CommsBus } from "./comms-visibility.ts";
 import { readMessageText, recallMessages, recentMessages, searchMessagesAsync, closeMessageSearch, closeMessageDb, chatFollowups, cancelledChatFollowup, settleChatFollowups, threadsReferencing } from "./message-db.ts";
@@ -4047,13 +4048,10 @@ async function stagePendingAttachments(threadId: string, generation: string): Pr
 
 /** Organization server: an engine never gets its own shell, file or fetch
  * tools on the Sagax server (server/drivers/host-tools.ts). An engine that
- * cannot withhold them is refused rather than let loose in the container. */
+ * cannot withhold them is refused (409 host_tools, server/org-engine-admission.ts)
+ * rather than let loose in the container. */
 function withholdHostToolsFor(instance: { adapter: { capabilities: { withholdsHostTools?: boolean } }; displayName?: string; driverKind: string }): boolean {
-  if (IDENTITY.kind !== "perspicax") return false;
-  if (instance.adapter.capabilities.withholdsHostTools !== true) {
-    throw Object.assign(new Error(`${engineDisplayName(instance)} runs its own tools on the Sagax server. On an organization server, choose an engine that works in your server environment.`), { status: 409, code: "host_tools" });
-  }
-  return true;
+  return orgWithholdHostTools(instance, IDENTITY.kind === "perspicax", engineDisplayName(instance));
 }
 
 function phoneIntegration(botId: string, threadId: string, generation: string) {

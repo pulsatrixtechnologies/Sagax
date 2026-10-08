@@ -1346,11 +1346,13 @@ describe("ACP turns (fake CLI)", () => {
     expect(JSON.stringify(seenB)).not.toContain(homeA);
   });
 
-  it("does not claim Gemini or Kimi withhold their own tools", async () => {
-    await create(GeminiAgentDriver);
+  // Gemini and Kimi withhold their tools since 2026-10-08 (verified with
+  // their real CLIs, org-host-tools.test.ts); Droid and Cursor still cannot.
+  it("does not claim Droid or Cursor withhold their own tools", async () => {
+    await create(DroidAgentDriver);
     expect(instance.adapter.capabilities.withholdsHostTools).toBeUndefined();
     await instance.dispose();
-    await create(KimiAgentDriver);
+    await create(CursorAgentDriver);
     expect(instance.adapter.capabilities.withholdsHostTools).toBeUndefined();
   });
 
