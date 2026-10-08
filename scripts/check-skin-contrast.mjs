@@ -417,6 +417,39 @@ export function checkContrast(css, { verbose = false } = {}) {
     }
   }
 
+  // Mascots. The Neutral white character (shared/mascot-colors.ts) is
+  // near-white, so on a light surface alone it has no contrast to speak of;
+  // every preview and thumbnail therefore sits on a mid-tone plinth
+  // (--color-mascot-plinth) and the silhouette has to clear 3:1 against it
+  // (WCAG 1.4.11, a graphic object). The plinth itself has to be seen against
+  // the surfaces it lands on; on a dark skin it is a notch lighter than the
+  // card. The white-on-surface figures are printed for the record (the
+  // "before"); they are not gated, the plinth is the fix.
+  const mascotWhite = /white:\s*"(#[0-9a-fA-F]{6})"/.exec(readFileSync(join(dirname(fileURLToPath(import.meta.url)), "..", "shared", "mascot-colors.ts"), "utf8"))?.[1];
+  if (!mascotWhite) {
+    failed = true;
+    out.push("✗ mascot: cannot find the Neutral white in shared/mascot-colors.ts");
+  }
+  for (const [id, raw] of skins) {
+    if (!mascotWhite) break;
+    const tokens = { ...resolve({ ...base, ...raw }, {}, inline), "--mascot-white": parseHex(mascotWhite) };
+    const light = (raw["--code-color-scheme"] ?? base["--code-color-scheme"]) === "light";
+    const pairs = light
+      ? [["--mascot-white", "--color-mascot-plinth", 3], ["--color-mascot-plinth", "--color-card", 1.5], ["--color-mascot-plinth", "--color-inset", 1.5]]
+      : [["--color-mascot-plinth", "--color-card", 1.05]];
+    if (light && !(raw["--mascot-shadow-color"] ?? "").startsWith("rgba(")) {
+      failed = true;
+      failingPairs++;
+      out.push(`✗ ${id} mascot: a light skin sets no --mascot-shadow-color`);
+    }
+    report(id, "mascot", measure(tokens, pairs));
+    if (light) {
+      const alone = ["--color-app", "--color-panel", "--color-card", "--color-inset"].map((s) => `${s.slice(8)} ${contrast(tokens["--mascot-white"], tokens[s])?.toFixed(2)}`).join(", ");
+      const onPlinth = contrast(tokens["--mascot-white"], tokens["--color-mascot-plinth"]);
+      out.push(`  ${id} mascot white alone: ${alone}; on plinth ${onPlinth?.toFixed(2)}:1`);
+    }
+  }
+
   // The inverted bubbles (Daylight's ink-black, Meadow's green-black) have
   // their own inherited context: the editor, labels, quotes and file chips
   // explicitly use these tokens, not parent color.
