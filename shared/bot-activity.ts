@@ -50,6 +50,60 @@ export interface BotActivityItem {
   /** A parallel task of a conversation (shared/parallel-tasks.ts): the
    * person can steer it (send it a message) and stop it on its own. */
   parallel?: boolean;
+  /** A coding entry's code work (server/activity-code-work.ts): its
+   * repository folder and branch, and the pull requests, branches and
+   * commits its own git, gh and GitHub tool calls produced. Absent for
+   * everything else. */
+  code?: BotCodeWork;
+}
+
+/** What the bot did to a pull request, read off its own calls (`gh pr
+ * create` opened it, `gh pr merge` merged it, ...). Not GitHub's live
+ * state: nothing here asks GitHub. */
+export type BotCodePullAction = "opened" | "merged" | "closed" | "updated";
+
+export interface BotCodePullRequest {
+  /** owner/name, when known. */
+  repo?: string;
+  number?: number;
+  title?: string;
+  /** The pull request's web page, when known. */
+  url?: string;
+  action: BotCodePullAction;
+  at: number;
+}
+
+export interface BotCodeBranch {
+  name: string;
+  repo?: string;
+  /** Pushed to a remote (else only created where the bot works). */
+  pushed: boolean;
+  url?: string;
+  at: number;
+}
+
+export interface BotCodeCommit {
+  sha: string;
+  message?: string;
+  branch?: string;
+  repo?: string;
+  pushed: boolean;
+  url?: string;
+  at: number;
+}
+
+export interface BotCodeWork {
+  /** The folder its turns run in, when it is a git repository on the
+   * server (a folder on the person's computer is not read). */
+  folder?: string;
+  /** That folder's checked-out branch now. */
+  branch?: string;
+  /** owner/name of that folder's origin remote. */
+  repo?: string;
+  repoUrl?: string;
+  pullRequests: BotCodePullRequest[];
+  branches: BotCodeBranch[];
+  commits: BotCodeCommit[];
 }
 
 /** GET /api/bots/:id/activity: the entries (`?filter=coding|other`), and

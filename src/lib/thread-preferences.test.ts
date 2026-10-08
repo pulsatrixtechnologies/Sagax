@@ -47,15 +47,23 @@ afterEach(() => {
 });
 
 describe("local thread visibility", () => {
-  it("defaults off and ignores malformed values without writing anything", async () => {
+  it("unset means on, without writing anything", async () => {
     const preference = await import("./thread-preferences");
-    expect(preference.useShowThreads()).toBe(false);
-    expect(hook.serverSnapshot!()).toBe(false);
+    expect(local.getItem(preference.SHOW_THREADS_KEY)).toBeNull();
+    expect(preference.useShowThreads()).toBe(true);
+    expect(hook.serverSnapshot!()).toBe(true);
+    expect(local.setItem).not.toHaveBeenCalled();
+  });
+
+  it("an explicit off stays off, and any stored value other than 1 is a recorded off", async () => {
+    const preference = await import("./thread-preferences");
     for (const value of ["", "false", "broken", "0"]) {
       local.setItem(preference.SHOW_THREADS_KEY, value);
       expect(preference.useShowThreads()).toBe(false);
     }
     local.setItem(preference.SHOW_THREADS_KEY, "1");
+    expect(preference.useShowThreads()).toBe(true);
+    local.removeItem(preference.SHOW_THREADS_KEY);
     expect(preference.useShowThreads()).toBe(true);
     local.setItem.mockClear();
     preference.useShowThreads();
@@ -64,6 +72,7 @@ describe("local thread visibility", () => {
 
   it("persists both choices through a renderer reload", async () => {
     let preference = await import("./thread-preferences");
+    expect(preference.useShowThreads()).toBe(true);
     preference.setShowThreads(false);
     expect(local.getItem(preference.SHOW_THREADS_KEY)).toBe("0");
     expect(preference.useShowThreads()).toBe(false);
@@ -116,7 +125,7 @@ describe("local thread visibility", () => {
     local.clear();
     storageEvent(null);
     expect(listener).toHaveBeenCalledTimes(2);
-    expect(hook.snapshot!()).toBe(false);
+    expect(hook.snapshot!()).toBe(true);
     unsubscribe();
     storageEvent(null);
     expect(listener).toHaveBeenCalledTimes(2);
@@ -132,7 +141,7 @@ describe("local thread visibility", () => {
       if (failure === "read") local.getItem.mockImplementation(() => { throw new Error("blocked"); });
     }
     const preference = await import("./thread-preferences");
-    expect(preference.useShowThreads()).toBe(false);
+    expect(preference.useShowThreads()).toBe(true);
     preference.setShowThreads(false);
     expect(preference.useShowThreads()).toBe(false);
     preference.setShowThreads(true);

@@ -159,6 +159,10 @@ const __SAGAX_DEFAULT_SERVER__: string;
       serverMode?: {
         state: () => Promise<{ active: false } | { active: true; id: string; name: string; origin: string }>;
         leave: () => Promise<{ left: boolean }>;
+        /** Probe this computer's loopback model servers now and publish
+         * them to the server (electron/desktop-bridge.mjs). Absent on an
+         * older desktop. */
+        refreshLocalModels?: () => Promise<{ refreshed: boolean }>;
       };
       /** Saved servers and the active one (desktop Server menu). Present on
        * the local server's UI; a remote server's page sees a reduced bridge. */

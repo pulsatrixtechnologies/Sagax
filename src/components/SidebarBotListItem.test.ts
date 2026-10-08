@@ -60,22 +60,17 @@ describe("BotListItem", () => {
     tasks: [{ threadId: "thread-atlas", title: "Current", createdAt: 2 }, { threadId: "thread-earlier", title: "Earlier", createdAt: 1 }],
   });
 
-  it("shows the thread toggle only once there is a list to open", () => {
-    // one thread is the bot itself: no disclosure, no duplicate row
-    expect(renderRow(bot())).not.toContain("Expand Atlas threads");
-    expect(renderRow(bot())).not.toContain('data-sidebar-thread-row=');
-    expect(renderRow(bot(twoThreads()))).toContain("Expand Atlas threads");
-    // a folder is a list too, even with one thread in it
-    expect(renderRow(bot({ projects: [{ id: "p1", name: "Research" }] }))).toContain("Expand Atlas threads");
-  });
-
-  it("keeps the native thread toggle beside, not inside, the selectable bot row", () => {
-    const markup = renderRow(bot(twoThreads()));
-    expect(markup).toContain('role="button" tabindex="0"');
-    expect(markup).toContain('</div><button type="button" aria-label="Expand Atlas threads" aria-expanded="false"');
-    const toggle = markup.match(/<button[^>]*aria-label="Expand Atlas threads"[^>]*>/)?.[0];
-    expect(toggle).toContain("focus-visible:ring-1");
-    expect(toggle).not.toContain("hover:bg-");
+  // Threads on: nothing under the bot, so no disclosure to fold it either
+  // (JC, 2026-10-08). The chat header's picker lists the threads.
+  it("draws no thread toggle and no thread rows, whatever the bot holds", () => {
+    for (const candidate of [bot(), bot(twoThreads()), bot({ projects: [{ id: "p1", name: "Research" }] })]) {
+      const markup = renderRow(candidate);
+      expect(markup).toContain('role="button" tabindex="0"');
+      expect(markup).not.toContain("Atlas threads");
+      expect(markup).not.toContain("aria-expanded");
+      expect(markup).not.toContain("data-sidebar-thread-row=");
+      expect(markup).not.toContain("data-sidebar-folder-row=");
+    }
   });
 
   // Phase 0 writes a digest row after every turn, so the last row of an idle

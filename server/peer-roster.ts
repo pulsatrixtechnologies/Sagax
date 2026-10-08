@@ -120,8 +120,22 @@ export const peerAllowed = (
   return typeof target === "string" || sameAudience(from.visibility, target.visibility);
 };
 
+/** Who a bot may reach at all, beyond sections and peer lists. index.ts sets
+ * it on an organization server (peer-scope.ts: the owner's own bots and the
+ * bots shared with them). Unset, every bot is in scope: a solo server is one
+ * person's. */
+let peerScope: ((from: RosterMember, target: RosterMember) => boolean) | null = null;
+
+export function setPeerScope(scope: ((from: RosterMember, target: RosterMember) => boolean) | null): void {
+  peerScope = scope;
+}
+
+export function peerInScope(from: RosterMember, target: RosterMember): boolean {
+  return !peerScope || peerScope(from, target);
+}
+
 export function canReachPeer(from: RosterMember, target: RosterMember): boolean {
-  return from.id !== target.id && !target.hidden && canAccessTeam(from, target.section) && peerAllowed(from, target);
+  return from.id !== target.id && !target.hidden && canAccessTeam(from, target.section) && peerAllowed(from, target) && peerInScope(from, target);
 }
 
 /** The peers a bot can both see and reach right now. The roster, list_bots

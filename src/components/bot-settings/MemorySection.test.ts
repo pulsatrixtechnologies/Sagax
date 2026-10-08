@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { MemoryCapacity, MemoryFileInfo, MemoryJournalRow } from "@/lib/memory";
 
-const { ConflictNotice, LendingReviewNotice, MemoryEditorDialog, MemoryFileRows, MemoryGauge, MemoryJournalList, MemoryUpkeepCard } = await import("./MemorySection");
+const { MemoryToggleCard, ConflictNotice, LendingReviewNotice, MemoryEditorDialog, MemoryFileRows, MemoryGauge, MemoryJournalList, MemoryUpkeepCard } = await import("./MemorySection");
 
 // renderToStaticMarkup HTML-escapes quotes and apostrophes; decode before
 // comparing against plain-text fixtures.
@@ -227,5 +227,23 @@ describe("LendingReviewNotice", () => {
   it("says so when the memory changed again after the owner looked", () => {
     const markup = render(createElement(LendingReviewNotice, { changed, stale: true, busy: false, onReviewed: vi.fn() }));
     expect(markup).toContain("The memory changed again after you looked");
+  });
+});
+
+describe("MemoryToggleCard", () => {
+  it("renders memory as a switch, checked when on, with the description", () => {
+    const markup = render(createElement(MemoryToggleCard, { enabled: true, busy: false, onToggle: vi.fn() }));
+    expect(markup).toContain('role="switch"');
+    expect(markup).toContain('aria-checked="true"');
+    expect(markup).not.toContain('type="checkbox"');
+    expect(markup).toContain("Let this bot use memory");
+    expect(markup).toContain("Off stops memory prompts");
+    expect(markup).toContain("<label");
+  });
+
+  it("is unchecked when off and disabled while the bot is busy", () => {
+    const markup = render(createElement(MemoryToggleCard, { enabled: false, busy: true, onToggle: vi.fn() }));
+    expect(markup).toContain('aria-checked="false"');
+    expect(markup).toContain("disabled");
   });
 });

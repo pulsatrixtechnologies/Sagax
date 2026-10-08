@@ -65,11 +65,14 @@ describe("bot panel header and tabs", () => {
     expect(html).not.toContain('id="bot-instructions-bot-1"');
   });
 
-  it("shows Details, Library, Computer and More, with Coding then Routines on Details", () => {
+  it("shows Details, Library, Computer and More, with Routines on Details and no empty Coding or Activity", () => {
     const html = panel();
     const tabs = [...html.matchAll(/data-panel-tab="(\w+)"/g)].map((match) => match[1]);
     expect(tabs).toEqual(["details", "library", "computer", "more"]);
-    expect(html.indexOf('data-bot-settings-section="coding"')).toBeGreaterThan(-1);
-    expect(html.indexOf('data-bot-settings-section="coding"')).toBeLessThan(html.indexOf('data-bot-settings-section="routines"'));
+    expect(html.indexOf('data-bot-settings-section="routines"')).toBeGreaterThan(-1);
+    // nothing running and no code work yet: neither section is drawn
+    expect(html).not.toContain('data-bot-settings-section="coding"');
+    expect(html).not.toContain('data-bot-settings-section="activity"');
+    expect(html).not.toContain("Nothing running.");
   });
 });

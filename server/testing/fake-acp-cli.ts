@@ -117,6 +117,13 @@
 //                        exists, "empty" answers without configOptions (the
 //                        switch cannot be confirmed) and "error" refuses it,
 //                        leaving the session in its previous mode either way
+//   FAKE_ACP_SESSION_MODEL_STORE  path of a file holding each session's
+//                        model, the way Grok 1.0.46 behaves with
+//                        FAKE_ACP_SESSION_MODELS: session/new starts on the
+//                        _meta.agentProfile.model when it is offered (else on
+//                        the first, silently) and records it; session/load
+//                        reports the recorded model, whatever the new profile
+//                        or -m asks for
 //
 // With FAKE_ACP_DUMP and FAKE_ACP_MODES or FAKE_ACP_MODELS, every
 // session/prompt appends {"pid","sessionId","mode","model"} to
@@ -234,8 +241,22 @@ const acpModels = (process.env.FAKE_ACP_SESSION_MODELS ?? "")
     const [modelId, name] = entry.split("|");
     return name ? { modelId, name } : { modelId };
   });
-const sessionModels = () =>
-  acpModels.length ? { currentModelId: acpModels[0].modelId, availableModels: acpModels } : null;
+const sessionModelStore = process.env.FAKE_ACP_SESSION_MODEL_STORE ?? "";
+const storedSessionModels = (): Record<string, string> => {
+  try { return JSON.parse(readFileSync(sessionModelStore, "utf8")); } catch { return {}; }
+};
+const sessionModels = (current?: string) =>
+  acpModels.length ? { currentModelId: current ?? acpModels[0].modelId, availableModels: acpModels } : null;
+/** Grok-shaped model of a new session: the profile's model when offered. */
+const newSessionModel = (params: any, sessionId: string): string | undefined => {
+  if (!sessionModelStore || !acpModels.length) return undefined;
+  const wanted = params?._meta?.agentProfile?.model;
+  const model = acpModels.some((entry) => entry.modelId === wanted) ? wanted : acpModels[0].modelId;
+  writeFileSync(sessionModelStore, JSON.stringify({ ...storedSessionModels(), [sessionId]: model }));
+  return model;
+};
+const loadedSessionModel = (sessionId: unknown): string | undefined =>
+  sessionModelStore && typeof sessionId === "string" ? storedSessionModels()[sessionId] : undefined;
 
 const argv = process.argv.slice(2);
 const dumpEnv = Object.fromEntries(
@@ -643,7 +664,7 @@ function handle(msg: any) {
         writeFileSync(`${process.env.FAKE_ACP_DUMP}.mcp.json`, JSON.stringify(servers, null, 2));
       }
       const opts = configOptions();
-      const mdls = sessionModels();
+      const mdls = sessionModels(newSessionModel(msg.params, "fake-acp-session"));
       liveSession = "fake-acp-session";
       resultAndConfigUpdates(msg.id, {
         sessionId: "fake-acp-session",
@@ -677,7 +698,7 @@ function handle(msg: any) {
         writeFileSync(`${process.env.FAKE_ACP_DUMP}.mcp.json`, JSON.stringify(msg.params?.mcpServers ?? []));
       }
       const opts = configOptions();
-      const mdls = sessionModels();
+      const mdls = sessionModels(loadedSessionModel(msg.params?.sessionId));
       liveSession = typeof msg.params?.sessionId === "string" ? msg.params.sessionId : liveSession;
       resultAndConfigUpdates(msg.id, { ...(opts ? { configOptions: opts } : {}), ...(mdls ? { models: mdls } : {}) }, "session/load", msg.params.sessionId);
       break;
@@ -1223,9 +1244,13 @@ function handle(msg: any) {
       break;
     }
     case "session/cancel":
-      // the interrupted prompt resolves as cancelled
+      // the interrupted prompt resolves as cancelled. FAKE_ACP_CANCEL_REPLY
+      // = "error" rejects it instead, any other value is the stopReason the
+      // agent answers with (agents differ on how a cancel settles).
       if (hangingPromptId !== null) {
-        result(hangingPromptId, { stopReason: "cancelled", _meta: {} });
+        const cancelReply = process.env.FAKE_ACP_CANCEL_REPLY;
+        if (cancelReply === "error") out({ jsonrpc: "2.0", id: hangingPromptId, error: { code: -32800, message: "Request cancelled" } });
+        else result(hangingPromptId, { stopReason: cancelReply || "cancelled", _meta: {} });
         if (hangKeepAlive) clearInterval(hangKeepAlive);
         hangingPromptId = null;
         hangKeepAlive = null;

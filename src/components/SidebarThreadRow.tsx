@@ -106,7 +106,7 @@ export const isSnoozed = (task: Pick<Task, "snoozedUntil">, now = Date.now()): b
 /** The next local 6 PM — "later today", rolling to tomorrow evening once
  * tonight's is already past. Local on purpose: it is the person's evening;
  * the server stores the absolute moment either way. */
-const nextSixPm = () => {
+export const nextSixPm = () => {
   const when = new Date();
   when.setHours(18, 0, 0, 0);
   if (when.getTime() <= Date.now()) when.setDate(when.getDate() + 1);
@@ -114,7 +114,7 @@ const nextSixPm = () => {
 };
 
 /** Tomorrow morning at 9 local: a clean overnight break, no new deps. */
-const tomorrowNineAm = () => {
+export const tomorrowNineAm = () => {
   const when = new Date();
   when.setDate(when.getDate() + 1);
   when.setHours(9, 0, 0, 0);
@@ -348,7 +348,7 @@ export function SidebarThreadRow({ task, ownerId, current, compact, folders, onS
       </button>
     </div>
     {menuMotion.shown && menuMotion.value && createPortal(<div ref={menuRef} data-thread-overlay role="group" aria-label={t("task.actions", { title: task.title })} style={menuMotion.value}
-      className={cn("fixed z-50 max-h-[calc(100vh-16px)] w-[220px] overflow-y-auto rounded-lg border border-hairline/50 bg-card p-1 shadow-xl", menuMotion.className)} {...menuMotion.exitProps}
+      className={cn("fixed z-50 max-h-[calc(100vh-16px)] w-[220px] overflow-y-auto rounded-lg border border-hairline/50 popover-surface bg-card p-1 shadow-xl", menuMotion.className)} {...menuMotion.exitProps}
       onKeyDown={(event) => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); setMenu(null); actionRef.current?.focus(); } }}>
       <button type="button" onClick={copyLink} className="flex w-full items-center gap-2 rounded px-2.5 py-2 text-left text-[12px] text-ink hover:bg-raised"><Link2 size={12} />{t("task.copyLink")}</button>
       <button type="button" onClick={startRename} className="flex w-full items-center gap-2 rounded px-2.5 py-2 text-left text-[12px] text-ink hover:bg-raised"><Pencil size={12} />{t("task.renameAria")}</button>

@@ -12,11 +12,11 @@ vi.mock("react", async (original) => ({ ...await original<typeof import("react")
   useEffect: (effect: EffectCallback) => { fixture.effects.push(effect); },
 }));
 import { useRelativeNow } from "./SidebarThreadRow";
-import { BotThreadList } from "./Sidebar";
-import type { Bot } from "@/state/store";
+import { GroupThreadList } from "./Sidebar";
+import type { Group } from "@/state/store";
 vi.mock("@/state/store", async (importOriginal) => ({
   ...await importOriginal<typeof import("@/state/store")>(),
-  useStore: () => ({ state: { pendingQueued: {} }, dispatch: vi.fn() }),
+  useStore: () => ({ state: { pendingQueued: {}, bots: [], revealThread: null }, dispatch: vi.fn() }),
 }));
 vi.mock("./DesktopCapabilities", () => ({ useDesktopCapabilities: () => ({}) }));
 
@@ -108,16 +108,16 @@ describe("relative clock tick", () => {
 
   it("runs the shared clock from the production thread list: one timer for every row", () => {
     const now = Date.now();
-    const bot: Bot = {
-      id: "maus", threadId: "current", name: "Maus", title: "", description: "", notifications: true,
-      color: "green", unread: false, busy: false, messages: [], modelSelection: { instanceId: "fake", model: "fake" },
+    const group: Group = {
+      id: "crew", threadId: "current", name: "Crew", memberIds: [], defaultResponder: { kind: "everyone" }, bulletin: "",
+      unread: false, createdAt: now - 10_000, messages: [],
       tasks: [
-        { threadId: "current", title: "Current chat", createdAt: now - 10_000, busy: false, activity: "idle" },
-        { threadId: "older", title: "Older thread", createdAt: now - 5 * 60_000, busy: false, activity: "idle" },
+        { threadId: "current", title: "Current chat", createdAt: now - 10_000 },
+        { threadId: "older", title: "Older thread", createdAt: now - 5 * 60_000 },
       ],
     };
     fixture.index = 0; fixture.effects = [];
-    const markup = renderToStaticMarkup(createElement(BotThreadList, { bot, selected: true }));
+    const markup = renderToStaticMarkup(createElement(GroupThreadList, { group, selected: true }));
     expect(markup).toContain("just now");
     expect(markup).toContain("5 min ago");
     runEffects();

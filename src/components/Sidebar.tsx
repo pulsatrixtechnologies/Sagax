@@ -29,22 +29,20 @@ import {
   X,
   PictureInPicture2,
 } from "lucide-react";
-import { api, useStore, formatTime, visibleMessages, currentTaskBot, type AppState, type Bot, type Group } from "@/state/store";
-import { approvalModeFor } from "../../shared/approval-mode";
+import { api, useStore, formatTime, visibleMessages, type AppState, type Bot, type Group } from "@/state/store";
 
 import { peerLine } from "@/lib/peer-message";
 import { viewerMayDeleteGroup, viewerOwnsGroup } from "@/lib/group-owner";
 import { viewerActorId } from "@/lib/viewer";
 import { showBotArchive, showBotDelete, showBotRename, showServerSectionMove } from "@/lib/bot-capabilities";
-import { liveActivityLabel } from "@/lib/live-activity";
-import { connectedAppsEnabled, llmThreadTitlesEnabled, templatesEnabled } from "@/lib/feature-flags";
+import { connectedAppsEnabled, templatesEnabled } from "@/lib/feature-flags";
 import { useAdvancedMode } from "@/lib/interface-mode";
 
 import { BotAvatar, InitialsAvatar } from "./Avatar";
 import { stateForBot } from "@/lib/mascot";
 import { mascotRowAnimated } from "@/lib/mascot-animate";
 import { cn } from "@/lib/cn";
-import { CIRCLE_BUTTON } from "@/lib/circle-button";
+import { SIDEBAR_CIRCLE_BUTTON } from "@/lib/circle-button";
 import { useHeldMenuMotion } from "./MenuMotion";
 import { lastNonReceipt } from "@/lib/receipts";
 import { t } from "@/lib/i18n";
@@ -53,8 +51,6 @@ import { PrimaryBotPicker } from "./PrimaryBotPicker";
 import { useOrgPeople, usePerspicaxOrg } from "@/lib/perspicax-org";
 import { peopleDmPeer } from "@/lib/people-dm";
 import { nudgeLineText } from "@/lib/nudge-line";
-import { usePublicAchievement } from "@/lib/public-achievements";
-import { ColleagueAchievementLine } from "./achievements/MemberCard";
 import { Eye, UserRound } from "lucide-react";
 import { entriesToUnhide, hiddenKey, hiddenKeySet, hideFromSidebar, showInSidebar, useSidebarHidden } from "@/lib/sidebar-hidden";
 import { groupHiddenKey, hiddenSidebarRows, withoutHiddenEntries } from "@/lib/sidebar-hidden-entries";
@@ -80,8 +76,6 @@ import {
 } from "@/lib/personal-sections";
 import type { LocaleKey } from "@/locales";
 import { ConfirmDialog } from "./ConfirmDialog";
-import { FullAccessWarning } from "./FullAccessWarning";
-import { LocalComputerAutoWarning } from "./LocalComputerAutoWarning";
 import { WorkingDots } from "./WorkingIndicator";
 import { nextRename } from "@/lib/rename";
 import { useDesktopCapabilities } from "./DesktopCapabilities";
@@ -94,10 +88,9 @@ import { TeamLibraryPanel } from "./TeamLibraryPanel";
 import { ShareTeamDialog } from "./ShareTeamDialog";
 import { TeamDialog } from "./TeamDialog";
 import { RenameTitle } from "./RenameTitle";
-import { BotProjectDialog, FolderActions, FolderIcon, navigateThreadMenu } from "./BotProjects";
-import { draggedFolder, FOLDER_DRAG_TYPE, moveFolder, placeFolder } from "@/lib/folder-order";
-import { folderUnreadThreadIds, markFolderRead } from "@/lib/folder-read";
-import { orderedThreadList, SidebarThreadRow, useRelativeNow, useSnoozeExpiry, visibleSidebarThreads } from "./SidebarThreadRow";
+import { BotProjectDialog, navigateThreadMenu } from "./BotProjects";
+import { FOLDER_DRAG_TYPE } from "@/lib/folder-order";
+import { orderedThreadList, SidebarThreadRow, useRelativeNow, visibleSidebarThreads } from "./SidebarThreadRow";
 import {
   loadCollapsedSections,
   loadSectionOrder,
@@ -159,13 +152,21 @@ const SIDEBAR_MIN_WIDTH = 240;
 const SIDEBAR_MAX_WIDTH = 400;
 const SIDEBAR_DEFAULT_WIDTH = 280;
 /** The head's round buttons (search, New): the header's 36px circle (share,
- * panel), in the sidebar's own ink, with the same focus ring as its
- * neighbours. There is no collapse button: dragging the sidebar's edge
- * narrower than the snap width collapses it (see `sidebarDragTarget`). */
-const SIDEBAR_HEAD_BUTTON = cn(
-  CIRCLE_BUTTON,
-  "text-sidebar-ink-secondary hover:text-sidebar-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60",
+ * panel), painted from the sidebar's own tokens (surface, hairline, ink), with
+ * the same focus ring as its neighbours. There is no collapse button: dragging
+ * the sidebar's edge narrower than the snap width collapses it (see
+ * `sidebarDragTarget`). */
+export const SIDEBAR_HEAD_BUTTON = cn(
+  SIDEBAR_CIRCLE_BUTTON,
+  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60",
 );
+/** The head's brand row: the chat header's height (ChatView's
+ * `.content-topbar`: `min-h-[52px] py-2.5` around 36px circles, so 56px with
+ * them centred at 28px), flush under the macOS inset strip (36px, the same
+ * strip the chat column draws) and with no extra top margin elsewhere, so
+ * the search and New circles sit on the same line as share and the panel
+ * toggle on every platform. */
+export const SIDEBAR_HEAD_ROW = "flex h-14 items-center justify-between gap-2 pl-4 pr-3";
 
 /** The palette chord as this platform spells it: "⌘K" on macOS, "Ctrl+K"
  * on Windows and Linux, for the search button's tooltip. */
@@ -288,7 +289,7 @@ export function StackedMauses({ members, density, viewerId }: { members: Bot[]; 
     const b = members[0];
     return (
       <div className={cn("flex shrink-0 items-center justify-center", slotSize)}>
-        {b ? <BotAvatar bot={b} primary={isViewersPrimaryBot(b, viewerId)} primaryRingClassName="ring-sidebar" state="happy" size={singleSize} animated={false} /> : <Users size={24} className="text-ink-secondary" />}
+        {b ? <BotAvatar bot={b} primary={isViewersPrimaryBot(b, viewerId)} primaryRingClassName="ring-sidebar" state="happy" size={singleSize} animated={false} /> : <Users size={24} className="text-sidebar-ink-secondary" />}
       </div>
     );
   }
@@ -342,9 +343,7 @@ export function GroupListItem({
   const orgPeople = useOrgPeople();
   const peer = peopleDmPeer(group, viewerActorId(state.config), orgPeople);
   const rowName = peer?.name ?? group.name;
-  // A colleague's title and points, only when they made the card public.
-  // Icons have no room for the line; the person panel still shows it.
-  const publicCard = usePublicAchievement(peer && density !== "icons" ? peer.id : null);
+  // No achievement title or points here: they live in the person panel.
   const previewShown = !expanded && (!quiet || groupStatus);
   return (
     <>
@@ -370,12 +369,13 @@ export function GroupListItem({
       className={cn(
         "relative flex w-full items-center rounded-lg text-left outline-none focus-visible:ring-1 focus-visible:ring-accent/60",
         density === "icons" ? "justify-center px-1 py-1.5" : density === "compact" ? "gap-2 py-1.5 pr-9" : "min-h-[54px] gap-2 py-2 pr-2",
-        // Same inset as BotListItem so the group and its bots line up; the
-        // disclosure chevron sits inside it.
-        density !== "icons" && (showThreads ? "pl-6" : "pl-2"),
+        // Same inset as BotListItem so the group and its bots line up; a
+        // room's disclosure chevron sits inside its thread-mode inset. A
+        // person's row has no chevron and never moves, like a bot row (#152).
+        density !== "icons" && (showThreads && !group.peopleDm ? "pl-6" : "pl-2"),
         selected && !expanded ? "bg-sidebar-selected" : "hover:bg-sidebar-hover",
       )}
-      title={density === "icons" ? rowName : publicCard && previewShown ? groupPreview(group, state.bots, viewerActorId(state.config)) : undefined}
+      title={density === "icons" ? rowName : undefined}
       aria-label={density === "icons" ? rowName : undefined}
       data-people-dm={peer ? peer.id : undefined}
     >
@@ -388,7 +388,7 @@ export function GroupListItem({
           {selected && last && !expanded && <span className="shrink-0 text-[12px] leading-4 text-sidebar-ink-secondary">{formatTime(last.at)}</span>}
           {(expanded || (quiet && !groupStatus)) && group.unread && <span className="size-1.5 shrink-0 rounded-full bg-accent" aria-label={t("task.unreadMany")} />}
         </div>
-        {publicCard ? <span className="block h-[18px]" aria-hidden="true" /> : previewShown && <div className="flex items-center justify-between gap-2">
+        {previewShown && <div className="flex items-center justify-between gap-2">
           <span className="truncate text-[13px] leading-[18px] text-sidebar-ink-secondary">{groupPreview(group, state.bots, viewerActorId(state.config))}</span>
           {group.unread && <span className="size-2 shrink-0 rounded-full bg-accent" />}
         </div>}
@@ -397,33 +397,13 @@ export function GroupListItem({
         <span className="absolute bottom-1.5 right-1.5 size-2 rounded-full border border-sidebar bg-accent" />
       )}
     </button>
-    {!group.dm && density !== "icons" && hasThreadList && <button type="button" aria-label={t(expanded ? "task.collapseNamed" : "task.expandNamed", { name: group.name })} aria-expanded={expanded}
+    {!group.dm && !group.peopleDm && density !== "icons" && hasThreadList && <button type="button" aria-label={t(expanded ? "task.collapseNamed" : "task.expandNamed", { name: group.name })} aria-expanded={expanded}
       onClick={() => setThreadsOpen((open) => !open)} className="absolute left-0.5 top-1/2 flex size-5 -translate-y-1/2 items-center justify-center rounded text-sidebar-ink-secondary outline-none hover:text-sidebar-ink focus-visible:ring-1 focus-visible:ring-accent/60">
       <ChevronRight aria-hidden="true" size={12} className={cn("transition-transform", expanded && "rotate-90")} />
     </button>}
     {!group.dm && !group.peopleDm && density !== "icons" && <button type="button" disabled={roomBusy} aria-label={t("task.newShort")} title={t(roomBusy ? "task.newBusy" : "task.newShort")}
       onClick={() => { setThreadsOpen(true); dispatch({ type: "newGroupTask", groupId: group.id }); }}
       className="pointer-events-none absolute right-1 top-1/2 flex size-7 -translate-y-1/2 items-center justify-center rounded text-sidebar-ink-secondary opacity-0 hover:bg-sidebar-hover hover:text-sidebar-ink disabled:opacity-40 group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100 max-md:pointer-events-auto max-md:opacity-70 touch:pointer-events-auto touch:opacity-70 touch:disabled:opacity-40"><Plus size={14} /></button>}
-    {publicCard && peer && (
-      <div
-        className={cn(
-          "pointer-events-none absolute inset-0 flex items-center",
-          density === "compact" ? "gap-2 py-1.5 pr-9" : "gap-2 py-2 pr-2",
-          showThreads ? "pl-6" : "pl-2",
-        )}
-      >
-        <span className={cn("shrink-0", density === "compact" ? "size-7" : "size-9")} aria-hidden="true" />
-        <span className="flex min-w-0 flex-1 flex-col">
-          <span className="h-5" aria-hidden="true" />
-          <span className="pointer-events-auto flex h-[18px] min-w-0 items-center gap-2">
-            <span className="min-w-0 flex-1">
-              <ColleagueAchievementLine card={publicCard} name={rowName} initials={peer.initials} avatarUrl={peer.avatarUrl} />
-            </span>
-            {previewShown && group.unread && <span className="size-2 shrink-0 rounded-full bg-accent" />}
-          </span>
-        </span>
-      </div>
-    )}
     </div>
     {expanded && <GroupThreadList group={group} selected={selected} density={density} query={group.name.toLowerCase().includes(query.toLowerCase()) ? "" : query} />}
     </>
@@ -460,7 +440,7 @@ export function GroupThreadList({ group, selected, density = "comfortable", quer
       onRename={(title) => dispatch({ type: "renameGroupTask", groupId: group.id, threadId: task.threadId, title })}
       onDelete={() => dispatch({ type: "deleteGroupTask", groupId: group.id, threadId: task.threadId })}
       onPin={(pinned) => dispatch({ type: "pinGroupTask", groupId: group.id, threadId: task.threadId, pinned, title: task.title })} />)}
-    {!query && !showAll && tasks.length > visible.length && <button type="button" onClick={() => setShowAll(true)} className="pl-6 pr-3 py-1.5 text-[11px] text-ink-secondary hover:text-ink">{t("task.showAll", { count: tasks.length })}</button>}
+    {!query && !showAll && tasks.length > visible.length && <button type="button" onClick={() => setShowAll(true)} className="pl-6 pr-3 py-1.5 text-[11px] text-sidebar-ink-secondary hover:text-sidebar-ink">{t("task.showAll", { count: tasks.length })}</button>}
   </div>;
 }
 
@@ -552,7 +532,7 @@ export function RoomContextMenu({
       data-sidebar
       data-member-menu={group.peopleDm ? "" : undefined}
       style={{ top, left }}
-      className={cn("fixed z-40 w-[228px] min-w-[200px] overflow-hidden rounded-xl border-[0.5px] border-border bg-elevated p-1.5 flex flex-col gap-0.5 text-[13px] leading-[18px]", motion.className)} {...motion.exitProps}
+      className={cn("fixed z-40 w-[228px] min-w-[200px] overflow-hidden rounded-xl border-[0.5px] border-border popover-surface bg-elevated p-1.5 flex flex-col gap-0.5 text-[13px] leading-[18px]", motion.className)} {...motion.exitProps}
     >
       {peerId && (
         <button
@@ -820,7 +800,7 @@ function SectionPicker({
     <div
       data-section-picker
       style={{ top, left }}
-      className={cn("fixed z-40 w-[236px] min-w-[200px] overflow-hidden rounded-xl border-[0.5px] border-border bg-elevated p-1.5 flex flex-col gap-0.5 text-[13px] leading-[18px]", motion.className)} {...motion.exitProps}
+      className={cn("fixed z-40 w-[236px] min-w-[200px] overflow-hidden rounded-xl border-[0.5px] border-border popover-surface bg-elevated p-1.5 flex flex-col gap-0.5 text-[13px] leading-[18px]", motion.className)} {...motion.exitProps}
     >
       <div className="px-2 pb-1 pt-0.5 text-[12px] leading-4 text-ink-secondary">
         {t("sidebar.section.moveToContext")}
@@ -967,7 +947,7 @@ function MoveToSectionItem({
           onMouseEnter={show}
           onMouseLeave={hide}
           style={{ top: submenuStyle.top, left: submenuStyle.left }}
-          className="fixed z-50 max-h-[calc(100dvh-16px)] w-[240px] min-w-[200px] overflow-y-auto overscroll-contain rounded-xl border-[0.5px] border-border bg-elevated p-1.5 flex flex-col gap-0.5 text-[13px] leading-[18px]"
+          className="fixed z-50 max-h-[calc(100dvh-16px)] w-[240px] min-w-[200px] overflow-y-auto overscroll-contain rounded-xl border-[0.5px] border-border popover-surface bg-elevated p-1.5 flex flex-col gap-0.5 text-[13px] leading-[18px]"
         >
           {sections.map((section) => (
             <button
@@ -1164,7 +1144,7 @@ export function BotContextMenu({
       aria-label={t("sidebar.bot.actions", { name: bot.name })}
       onKeyDown={navigateThreadMenu}
       style={{ top: shown.y, left: shown.x }}
-      className={cn("fixed z-40 max-h-[calc(100dvh-16px)] w-[228px] min-w-[200px] max-w-[calc(100vw-16px)] overflow-y-auto overscroll-contain rounded-xl border-[0.5px] border-border bg-elevated p-1.5 flex flex-col gap-0.5 text-[13px] leading-[18px]", motion.className)} {...motion.exitProps}
+      className={cn("fixed z-40 max-h-[calc(100dvh-16px)] w-[228px] min-w-[200px] max-w-[calc(100vw-16px)] overflow-y-auto overscroll-contain rounded-xl border-[0.5px] border-border popover-surface bg-elevated p-1.5 flex flex-col gap-0.5 text-[13px] leading-[18px]", motion.className)} {...motion.exitProps}
     >
       {showThreads && <>
         {item(<Plus size={16} className="text-ink" />, t("task.newShort"), () => dispatch({ type: "newTask", botId: bot.id }))}
@@ -1301,231 +1281,18 @@ export function BotDeleteMenuItem({ deleting, onClick }: { deleting: boolean; on
   );
 }
 
-/** The thread tree under one bot row: project folders, then ungrouped rows.
- * Visibility folds old threads away. Pins stay, then the newest update.
- * Waiting and working stay visible as status, not as a sort key. */
-export function BotThreadList({ bot, selected, density = "comfortable", query = "", hidden = false, mine = false }: {
-  bot: Bot; selected: boolean; density?: SidebarDensity; query?: string; hidden?: boolean;
-  /** An organization server sends each person only their own threads with
-   * a bot: the list says so. */
-  mine?: boolean;
-}) {
-  const { state, dispatch } = useStore();
-  const now = useRelativeNow();
-  const tasks = (bot.tasks ?? [{ threadId: bot.threadId, title: t("task.newShort"), createdAt: 0 }])
-    .filter((task) => !task.routineRunId)
-    .map((task) => ({ ...task, queued: Boolean(state.pendingQueued[task.threadId]?.length) }));
-  const projects = bot.projects ?? [];
-  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
-  const [editingProject, setEditingProject] = useState<string | null>(null);
-  const [folderMenu, setFolderMenu] = useState<{ projectId: string; left: number; top: number } | null>(null);
-  const [markingRead, setMarkingRead] = useState(false);
-  const [readError, setReadError] = useState<string | null>(null);
-  const [readStatus, setReadStatus] = useState("");
-  const [reordering, setReordering] = useState(false);
-  const [reorderError, setReorderError] = useState<string | null>(null);
-  const [reorderStatus, setReorderStatus] = useState("");
-  const [folderDrop, setFolderDrop] = useState<{ id: string; place: "before" | "after" } | null>(null);
-  const draggingFolder = useRef<string | null>(null);
-  const [showAll, setShowAll] = useState(false);
-  const [permissionRefresh, setPermissionRefresh] = useState<{ threadId: string; kind: "full" | "local-auto" } | null>(null);
-  const currentProjectId = tasks.find((task) => task.threadId === bot.threadId)?.projectId;
-  useEffect(() => {
-    if (selected && currentProjectId) setCollapsed((previous) => {
-      if (!previous.has(currentProjectId)) return previous;
-      const next = new Set(previous);
-      next.delete(currentProjectId);
-      return next;
-    });
-  }, [selected, currentProjectId]);
-  useSnoozeExpiry(tasks);
-  // Pin, then newest update. Search keeps the same order among matches.
-  const visibleTasks = orderedThreadList(visibleSidebarThreads(tasks, bot.threadId, query, projects, showAll));
-  // A folder rises with the thread of its that sits highest in that order.
-  // An empty index sorts last. Saved order breaks ties, and still governs
-  // move up and down.
-  const visibleProjectIndex = (projectId: string) => visibleTasks.findIndex((task) => task.projectId === projectId);
-  const folderRank = (projectId: string) => {
-    const index = visibleProjectIndex(projectId);
-    return index < 0 ? Number.POSITIVE_INFINITY : index;
-  };
-  const orderedProjects = query ? projects : [...projects].sort((a, b) => folderRank(a.id) - folderRank(b.id) || projects.indexOf(a) - projects.indexOf(b));
-  useRevealedThreadRow(state.revealThread, selected ? bot.threadId : null);
-  // the same live verb the chat pane derives from the visible tail
-  // ("Reading a file"), passed to the active thread's row while it works
-  const activeActivityLabel = liveActivityLabel(visibleMessages(bot).at(-1));
-  const generatedTitles = llmThreadTitlesEnabled(state.config);
-  const renderThread = (task: (typeof tasks)[number]) => {
-    const thread = currentTaskBot(bot, task.threadId);
-    return <SidebarThreadRow key={task.threadId} task={{ ...task, busy: thread.busy, activity: thread.activity, waitingForTeammates: thread.waitingForTeammates }} ownerId={bot.id} current={selected && task.threadId === bot.threadId} compact={density === "compact"} folders={projects} activityLabel={task.threadId === bot.threadId ? activeActivityLabel : undefined}
-      now={now}
-      onSelect={() => { if (task.threadId !== bot.threadId) dispatch({ type: "switchTask", botId: bot.id, threadId: task.threadId }); else dispatch({ type: "select", id: bot.id }); }}
-      onRename={(title) => dispatch({ type: "renameTask", botId: bot.id, threadId: task.threadId, title })}
-      onRegenerateTitle={generatedTitles ? (onSettled) => dispatch({ type: "regenerateTaskTitle", botId: bot.id, threadId: task.threadId, onSettled }) : undefined}
-      onDelete={() => dispatch({ type: "deleteTask", botId: bot.id, threadId: task.threadId })}
-      onMove={(projectId) => dispatch({ type: "updateTask", botId: bot.id, threadId: task.threadId, patch: { projectId } })}
-      onArchive={(archivedAt) => dispatch({ type: "updateTask", botId: bot.id, threadId: task.threadId, patch: { archivedAt } })}
-      onPin={(pinned) => dispatch({ type: "updateTask", botId: bot.id, threadId: task.threadId, patch: { pinned } })}
-      onSnooze={(snoozedUntil) => dispatch({ type: "updateTask", botId: bot.id, threadId: task.threadId, patch: { snoozedUntil } })}
-      onRefreshPermissions={() => {
-        const mode = approvalModeFor(bot);
-        const threadMode = approvalModeFor(thread);
-        if (mode === "full" && threadMode !== "full") {
-          setPermissionRefresh({ threadId: task.threadId, kind: "full" });
-          return;
-        }
-        if (mode === "auto" && bot.computer === "local" && threadMode !== "auto") {
-          setPermissionRefresh({ threadId: task.threadId, kind: "local-auto" });
-          return;
-        }
-        dispatch({ type: "refreshTaskPermissions", botId: bot.id, threadId: task.threadId });
-      }} />;
-  };
-  const ungrouped = visibleTasks.filter((task) => !projects.some((project) => project.id === task.projectId));
-  const projectToEdit = projects.find((project) => project.id === editingProject);
-  const projectIds = projects.map((project) => project.id);
-  const saveOrder = (ids: string[], onSaved?: () => void) => {
-    if (reordering || ids.every((id, index) => id === projectIds[index])) return;
-    setReordering(true); setReorderError(null); setReorderStatus(t("folder.reordering"));
-    dispatch({ type: "reorderProjects", botId: bot.id, projectIds: ids,
-      onSaved: () => { setReordering(false); setReorderStatus(t("folder.reordered")); onSaved?.(); },
-      onError: (message) => { setReordering(false); setReorderStatus(""); setReorderError(message); } });
-  };
-  const resetFolderDrag = () => { draggingFolder.current = null; setFolderDrop(null); };
-  const readFolder = async (projectId: string, onSaved: () => void) => {
-    if (markingRead) return;
-    setMarkingRead(true); setReadError(null); setReadStatus(t("folder.markingRead"));
-    try {
-      await markFolderRead(bot, projectId, api, (updated) => dispatch({ type: "botPatched", bot: updated }));
-      setReadStatus(t("folder.markedRead"));
-      onSaved();
-    } catch (error) {
-      setReadError(error instanceof Error ? error.message : String(error));
-      setReadStatus("");
-    } finally { setMarkingRead(false); }
-  };
-  return (
-    <div hidden={hidden} className="mb-2 space-y-0.5" role="group" aria-label={t("task.namedList", { name: bot.name })}
-      onDragOver={(event) => { if (event.dataTransfer.types.includes(FOLDER_DRAG_TYPE)) event.stopPropagation(); }}
-      onDrop={(event) => { if (event.dataTransfer.types.includes(FOLDER_DRAG_TYPE)) { event.preventDefault(); event.stopPropagation(); resetFolderDrag(); } }}>
-      {!hidden && <>
-      {mine && <div data-sidebar-my-threads className="px-2 pt-1 text-[11px] font-medium text-sidebar-ink-secondary">{t("sidebar.threads.mine")}</div>}
-      {orderedProjects.map((project) => {
-        const index = projects.indexOf(project);
-        const projectTasks = tasks.filter((task) => task.projectId === project.id);
-        const visible = visibleTasks.filter((task) => task.projectId === project.id);
-        if (query && visible.length === 0 && !project.name.toLowerCase().includes(query.toLowerCase())) return null;
-        const open = Boolean(query) || !collapsed.has(project.id);
-        const waiting = projectTasks.some((task) => task.activity === "waiting-on-you");
-        const working = projectTasks.some((task) => task.busy);
-        return <div key={project.id} data-sidebar-project={project.id}>
-          <div data-sidebar-folder-row={project.id} draggable={!reordering}
-            onContextMenu={(event) => { event.preventDefault(); event.stopPropagation(); setFolderMenu({ projectId: project.id, left: event.clientX, top: event.clientY }); }}
-            onDragStart={(event) => {
-              event.stopPropagation();
-              event.dataTransfer.effectAllowed = "move";
-              event.dataTransfer.setData(FOLDER_DRAG_TYPE, JSON.stringify({ botId: bot.id, projectId: project.id }));
-              draggingFolder.current = project.id;
-            }}
-            onDragEnd={(event) => { event.stopPropagation(); resetFolderDrag(); }}
-            onDragOver={(event) => {
-              if (!event.dataTransfer.types.includes(FOLDER_DRAG_TYPE)) return;
-              event.stopPropagation();
-              if (!draggingFolder.current || reordering) { event.dataTransfer.dropEffect = "none"; return; }
-              event.preventDefault(); event.dataTransfer.dropEffect = "move";
-              const rect = event.currentTarget.getBoundingClientRect();
-              setFolderDrop({ id: project.id, place: event.clientY < rect.top + rect.height / 2 ? "before" : "after" });
-            }}
-            onDragLeave={(event) => { if (!(event.relatedTarget instanceof Node) || !event.currentTarget.contains(event.relatedTarget)) setFolderDrop(null); }}
-            onDrop={(event) => {
-              if (!event.dataTransfer.types.includes(FOLDER_DRAG_TYPE)) return;
-              event.preventDefault(); event.stopPropagation();
-              const from = draggedFolder(event.dataTransfer.getData(FOLDER_DRAG_TYPE), bot.id, projectIds);
-              const rect = event.currentTarget.getBoundingClientRect();
-              if (from) saveOrder(placeFolder(projectIds, from, project.id, event.clientY < rect.top + rect.height / 2 ? "before" : "after"));
-              resetFolderDrag();
-            }}
-            className={cn("group/folder flex items-center gap-0.5 rounded-md pl-0.5 text-sidebar-ink-secondary hover:bg-sidebar-hover",
-              folderDrop?.id === project.id && draggingFolder.current !== project.id && (folderDrop.place === "before" ? "shadow-[0_-2px_var(--color-accent)]" : "shadow-[0_2px_var(--color-accent)]"))}>
-            <button type="button" aria-expanded={open} onClick={() => setCollapsed((previous) => {
-              const next = new Set(previous);
-              if (next.has(project.id)) next.delete(project.id); else next.add(project.id);
-              return next;
-            })} className="flex size-6 shrink-0 items-center justify-center rounded outline-none hover:text-sidebar-ink focus-visible:ring-1 focus-visible:ring-accent/60" aria-label={t(open ? "task.collapseNamed" : "task.expandNamed", { name: project.name })}>
-              <ChevronRight aria-hidden="true" size={11} className={cn("shrink-0 transition-transform", open && "rotate-90")} />
-            </button>
-            <button type="button" aria-label={t("folder.iconNamed", { name: project.name })} title={t("folder.iconNamed", { name: project.name })} onClick={() => setEditingProject(project.id)} className="flex size-6 shrink-0 items-center justify-center rounded hover:bg-sidebar-hover"><FolderIcon emoji={project.emoji} size={14} /></button>
-            <button type="button" data-sidebar-folder-label={project.id} draggable={!reordering} aria-expanded={open} onClick={() => setCollapsed((previous) => {
-              const next = new Set(previous);
-              if (next.has(project.id)) next.delete(project.id); else next.add(project.id);
-              return next;
-            })} className="flex min-h-8 min-w-0 flex-1 cursor-grab select-none items-center gap-1.5 py-1 text-left text-[13px] font-semibold active:cursor-grabbing" title={project.name}>
-              <span className="truncate">{project.name}</span>
-              <span className="shrink-0 text-[10px] font-normal opacity-50">{projectTasks.length}</span>
-              {!open && (waiting ? <span className="text-[10px] text-warning">{t("task.waiting")}</span> : working ? <Loader2 size={10} className="shrink-0 animate-spin text-success" /> : projectTasks.some((task) => task.unread) ? <span className="size-1.5 shrink-0 rounded-full bg-accent" aria-label={t("task.unreadMany")} /> : null)}
-            </button>
-            <button type="button" title={t("task.newIn", { name: project.name })} aria-label={t("task.newIn", { name: project.name })} onClick={() => dispatch({ type: "newTask", botId: bot.id, projectId: project.id })}
-              className="flex size-6 items-center justify-center rounded opacity-0 hover:bg-sidebar-hover hover:text-sidebar-ink focus-visible:opacity-100 group-hover/folder:opacity-100 max-md:opacity-70 touch:opacity-70"><Plus size={12} /></button>
-            <FolderActions project={project} canMoveUp={index > 0} canMoveDown={index < projects.length - 1} canMarkRead={folderUnreadThreadIds(bot, project.id).length > 0} saving={reordering || markingRead}
-              menu={folderMenu?.projectId === project.id ? folderMenu : null} onMenuChange={(menu) => setFolderMenu(menu ? { ...menu, projectId: project.id } : null)}
-              onEdit={() => setEditingProject(project.id)} onMove={(direction, onSaved) => saveOrder(moveFolder(projectIds, project.id, direction), onSaved)}
-              onMarkRead={(onSaved) => { void readFolder(project.id, onSaved); }} />
-          </div>
-          {open && <div role="group" aria-label={t("task.namedList", { name: project.name })}>
-            {visible.map(renderThread)}
-            {projectTasks.length === 0 && <p className="px-2.5 py-1 text-[11px] text-sidebar-ink-secondary/70">{t("task.empty")}</p>}
-          </div>}
-        </div>;
-      })}
-      {reorderError && <p role="alert" className="px-2.5 py-1 text-[12px] text-danger">{reorderError}</p>}
-      <span role="status" className="sr-only">{reorderStatus}</span>
-      {readError && <p role="alert" className="px-2.5 py-1 text-[12px] text-danger">{readError}</p>}
-      <span role="status" className="sr-only">{readStatus}</span>
-      {projects.length > 0 && ungrouped.length > 0 && <div className="pl-6 pr-3 pb-1 pt-2 text-[10.5px] text-sidebar-ink-secondary/70">{t("task.list")}</div>}
-      {ungrouped.map(renderThread)}
-      {!query && !showAll && tasks.length > visibleTasks.length && <button type="button" onClick={() => setShowAll(true)} className="pl-6 pr-3 py-1.5 text-[11px] text-sidebar-ink-secondary hover:text-sidebar-ink">{t("task.showAll", { count: tasks.length })}</button>}
-      <FullAccessWarning
-        open={permissionRefresh?.kind === "full"}
-        scope="thread"
-        onCancel={() => setPermissionRefresh(null)}
-        onConfirm={() => {
-          const threadId = permissionRefresh?.threadId;
-          setPermissionRefresh(null);
-          if (threadId) dispatch({ type: "refreshTaskPermissions", botId: bot.id, threadId });
-        }}
-      />
-      <LocalComputerAutoWarning
-        open={permissionRefresh?.kind === "local-auto"}
-        onCancel={() => setPermissionRefresh(null)}
-        onConfirm={() => {
-          const threadId = permissionRefresh?.threadId;
-          setPermissionRefresh(null);
-          if (threadId) dispatch({ type: "refreshTaskPermissions", botId: bot.id, threadId, acknowledgeLocalAuto: true });
-        }}
-      />
-      {projectToEdit && <BotProjectDialog bot={bot} project={projectToEdit} onClose={() => setEditingProject(null)} />}
-      </>}
-    </div>
-  );
-}
-
 export function BotListItem({
   bot,
   density,
   quiet = false,
-  query = "",
   onMenu,
   startRename = false,
   onRenameStarted,
-  mine = false,
 }: {
   bot: Bot;
   density: SidebarDensity;
-  /** Organization server: the thread list holds only the viewer's own. */
-  mine?: boolean;
   /** Quiet rows: name and status only (see sidebar-preferences). */
   quiet?: boolean;
-  query?: string;
   onMenu: (menu: MenuState) => void;
   startRename?: boolean;
   onRenameStarted?: () => void;
@@ -1536,20 +1303,9 @@ export function BotListItem({
   const [renaming, setRenaming] = useState(false);
   const [creatingProject, setCreatingProject] = useState(false);
   const selected = state.activeView === "chat" && state.selectedId === bot.id;
-  const [threadsOpen, setThreadsOpen] = useState(Boolean(query));
-  useEffect(() => { if (query && showThreads) setThreadsOpen(true); }, [query, showThreads]);
-  // a thread opened from a chip or #Title link: unfold this bot so the row
-  // it lands on is on screen (BotThreadList scrolls it into view)
-  const reveal = state.revealThread;
-  const revealHere = Boolean(reveal && (bot.threadId === reveal.threadId || bot.tasks?.some((task) => task.threadId === reveal.threadId)));
-  useEffect(() => { if (revealHere && showThreads) setThreadsOpen(true); }, [reveal, revealHere, showThreads]);
   const deleting = state.deletingBots[bot.id] === true;
-  // one thread is the bot itself; the disclosure only earns its place once
-  // there is a list (a second thread or a folder) to open
-  const hasThreadList = (bot.tasks?.filter((task) => !task.routineRunId).length ?? 1) > 1 || (bot.projects?.length ?? 0) > 0 || Boolean(query);
   const mascotMotion = selected && state.mascotMotion?.botId === bot.id ? state.mascotMotion : null;
   const iconOnly = density === "icons";
-  const expanded = showThreads && !iconOnly && threadsOpen && hasThreadList;
   useEffect(() => {
     if (iconOnly) setRenaming(false);
   }, [iconOnly]);
@@ -1561,13 +1317,17 @@ export function BotListItem({
   // (#866, #871) always traded the name's width against the title's; its own
   // line above the name lets both truncate independently instead.
   const title = bot.title.trim();
+  // Same wrapper classes with threads on or off: the thread mode adds the New
+  // thread and New folder buttons (hence the wider right padding on hover),
+  // never a left inset. Room rows keep their own inset for their chevron.
+  const buttonsPad = showThreads ? " group-hover:pr-[5.75rem] group-focus-within:pr-[5.75rem] max-md:pr-[5.75rem] touch:pr-[5.75rem]" : "";
   const rowClass = cn(
     "flex w-full items-center rounded-lg text-left outline-none focus-visible:ring-1 focus-visible:ring-accent/60",
     iconOnly
       ? "justify-center px-1 py-1.5"
       : density === "compact"
-        ? cn(showThreads ? "gap-1.5 py-1" : "gap-2 py-1.5", showThreads ? "pl-6 pr-9 group-hover:pr-[5.75rem] group-focus-within:pr-[5.75rem] max-md:pr-[5.75rem] touch:pr-[5.75rem]" : "pl-2 pr-9")
-        : cn("min-h-[54px] gap-2 py-2", showThreads ? "pl-6 pr-9 group-hover:pr-[5.75rem] group-focus-within:pr-[5.75rem] max-md:pr-[5.75rem] touch:pr-[5.75rem]" : "pl-2 pr-9"),
+        ? cn("gap-2 py-1.5 pl-2 pr-9", buttonsPad)
+        : cn("min-h-[54px] gap-2 py-2 pl-2 pr-9", buttonsPad),
     // The Primary Bot is called out by the star on its avatar, not by
     // tinting the whole row: an accent border and fill read as "selected"
     // even when another bot was active.
@@ -1649,14 +1409,14 @@ export function BotListItem({
               <span className="max-w-[46%] shrink truncate rounded-[5px] border border-sidebar-hairline bg-sidebar-hover px-1.5 text-[11px] leading-4 text-sidebar-ink-secondary">{title}</span>
             )}
           </span>
-          {selected && last && !renaming && !expanded && (
+          {selected && last && !renaming && (
             <span className="shrink-0 text-[12px] leading-4 text-sidebar-ink-secondary transition-opacity group-hover:opacity-0 group-focus-within:opacity-0 touch:opacity-0">
               {formatTime(last.at)}
             </span>
           )}
-          {(expanded || (quiet && !statusLine)) && unread && <span className="size-1.5 shrink-0 rounded-full bg-accent" aria-label={t("task.unreadMany")} />}
+          {quiet && !statusLine && unread && <span className="size-1.5 shrink-0 rounded-full bg-accent" aria-label={t("task.unreadMany")} />}
         </div>
-        {(!expanded || deleting) && (!quiet || statusLine) && <div className="flex items-center justify-between gap-2">
+        {(!quiet || statusLine) && <div className="flex items-center justify-between gap-2">
           {deleting ? (
             <span role="status" className="flex min-w-0 items-center gap-1.5 truncate text-[13px] leading-[18px] text-sidebar-ink-secondary">
               <Loader2 size={12} className="shrink-0 animate-spin" />
@@ -1715,8 +1475,8 @@ export function BotListItem({
             : undefined
         }
         aria-busy={deleting || undefined}
-        // with no thread list open, the row is the conversation being looked at
-        aria-current={selected && !expanded && !renaming ? "page" : undefined}
+        // no thread list sits under the row: it is the conversation being looked at
+        aria-current={selected && !renaming ? "page" : undefined}
         data-sidebar-bot-row={bot.id}
         onClick={onSelect}
         onKeyDown={(event) => {
@@ -1731,23 +1491,16 @@ export function BotListItem({
       >
         {body}
       </div>
-      {showThreads && !iconOnly && hasThreadList && <button
-        type="button"
-        aria-label={t(threadsOpen ? "task.collapseNamed" : "task.expandNamed", { name: bot.name })}
-        aria-expanded={threadsOpen}
-        onClick={() => setThreadsOpen((open) => !open)}
-        className="absolute left-0.5 top-1/2 flex size-5 -translate-y-1/2 items-center justify-center rounded text-ink-secondary outline-none hover:text-ink focus-visible:ring-1 focus-visible:ring-accent/60"
-      ><ChevronRight aria-hidden="true" size={13} className={cn("transition-transform", threadsOpen && "rotate-90")} /></button>}
       {!renaming && iconOnly && unread && (
-        <span className="pointer-events-none absolute bottom-1.5 right-1.5 size-2 rounded-full border border-panel bg-accent" />
+        <span className="pointer-events-none absolute bottom-1.5 right-1.5 size-2 rounded-full border border-sidebar bg-accent" />
       )}
       {!renaming && !deleting && !iconOnly && <>
-        {showThreads && <button type="button" aria-label={t("task.newShort")} title={t("task.newShort")} onClick={() => { setThreadsOpen(true); dispatch({ type: "newTask", botId: bot.id }); }}
-          className="pointer-events-none absolute right-[3.75rem] top-1/2 flex size-7 -translate-y-1/2 items-center justify-center rounded text-ink-secondary opacity-0 hover:bg-raised hover:text-ink group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100 max-md:pointer-events-auto max-md:opacity-70 touch:pointer-events-auto touch:opacity-70"><Plus size={14} /></button>}
-        {showThreads && <button type="button" aria-label={t("folder.newNamed", { name: bot.name })} title={t("folder.new")} onClick={() => { setThreadsOpen(true); setCreatingProject(true); }}
-          className="pointer-events-none absolute right-8 top-1/2 flex size-7 -translate-y-1/2 items-center justify-center rounded text-ink-secondary opacity-0 hover:bg-raised hover:text-ink group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100 max-md:pointer-events-auto max-md:opacity-70 touch:pointer-events-auto touch:opacity-70"><FolderPlus size={14} /></button>}
+        {showThreads && <button type="button" aria-label={t("task.newShort")} title={t("task.newShort")} onClick={() => dispatch({ type: "newTask", botId: bot.id })}
+          className="pointer-events-none absolute right-[3.75rem] top-1/2 flex size-7 -translate-y-1/2 items-center justify-center rounded text-sidebar-ink-secondary opacity-0 hover:bg-sidebar-hover hover:text-sidebar-ink group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100 max-md:pointer-events-auto max-md:opacity-70 touch:pointer-events-auto touch:opacity-70"><Plus size={14} /></button>}
+        {showThreads && <button type="button" aria-label={t("folder.newNamed", { name: bot.name })} title={t("folder.new")} onClick={() => setCreatingProject(true)}
+          className="pointer-events-none absolute right-8 top-1/2 flex size-7 -translate-y-1/2 items-center justify-center rounded text-sidebar-ink-secondary opacity-0 hover:bg-sidebar-hover hover:text-sidebar-ink group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100 max-md:pointer-events-auto max-md:opacity-70 touch:pointer-events-auto touch:opacity-70"><FolderPlus size={14} /></button>}
         <button type="button" aria-label={t("sidebar.bot.actions", { name: bot.name })} title={t("sidebar.bot.actions", { name: bot.name })} aria-haspopup="menu" onClick={(event) => { const rect = event.currentTarget.getBoundingClientRect(); onMenu({ botId: bot.id, x: rect.left, y: rect.bottom }); }}
-          className="pointer-events-none absolute right-1 top-1/2 flex size-7 -translate-y-1/2 items-center justify-center rounded text-ink-secondary opacity-0 hover:bg-raised hover:text-ink group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100 max-md:pointer-events-auto max-md:opacity-70 touch:pointer-events-auto touch:opacity-70"><MoreHorizontal size={15} /></button>
+          className="pointer-events-none absolute right-1 top-1/2 flex size-7 -translate-y-1/2 items-center justify-center rounded text-sidebar-ink-secondary opacity-0 hover:bg-sidebar-hover hover:text-sidebar-ink group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100 max-md:pointer-events-auto max-md:opacity-70 touch:pointer-events-auto touch:opacity-70"><MoreHorizontal size={15} /></button>
       </>}
       {deleting && iconOnly && (
         <span className="pointer-events-none absolute bottom-1 right-1 rounded-full bg-card p-1 text-ink-secondary">
@@ -1755,10 +1508,11 @@ export function BotListItem({
         </span>
       )}
     </div>
-    {/* Keep folder expansion state mounted while the preference is off. The
-        hidden list omits its children, including any thread-menu portals. */}
-    {!iconOnly && threadsOpen && hasThreadList && <BotThreadList bot={bot} selected={selected} density={density} hidden={!showThreads} mine={mine} query={bot.name.toLowerCase().includes(query.toLowerCase()) || bot.title.toLowerCase().includes(query.toLowerCase()) ? "" : query} />}
-    {!expanded && <SidebarBotActivity bot={bot} density={density} />}
+    {/* Threads on: nothing sits under the bot (JC, 2026-10-08). The chat
+        header's thread picker (TaskPicker) is the one place to pick, open
+        or start one of its threads; the row's dots still say a sibling is
+        working, waiting or unread. Threads off: only the activity rows. */}
+    {!showThreads && <SidebarBotActivity bot={bot} density={density} />}
     {showThreads && creatingProject && <BotProjectDialog bot={bot} onClose={() => setCreatingProject(false)} />}
     </>
   );
@@ -2359,19 +2113,7 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
   const browser = capabilities.host.label === "Browser";
   // macOS owns inset traffic lights; Windows hides the native bar and draws
   // caption buttons over the header's right end. Either way this top row is
-  // the window's drag handle (ChatView/GroupView headers do the same).
-  const draggableChrome = macInset || capabilities.windowChrome === "win-caption";
-  // SAFETY: Electron's documented -webkit-app-region CSS property is not in
-  // React's CSSProperties type, but the renderer accepts it as an inline style.
-  const windowDragStyle = draggableChrome
-    ? ({ WebkitAppRegion: "drag" } as React.CSSProperties)
-    : undefined;
-  // SAFETY: Same Electron-only CSS property as windowDragStyle; interactive
-  // buttons must explicitly opt out of the draggable title-bar region.
-  const windowNoDragStyle = draggableChrome
-    ? ({ WebkitAppRegion: "no-drag" } as React.CSSProperties)
-    : undefined;
-
+  // the window's drag handle (`.window-drag`, see styles.css).
   const q: string = "";
 
   const viewerId = orgViewerId(state);
@@ -2596,7 +2338,7 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
           round New button; the edge collapses it, see the separator). macOS owns inset traffic lights above the
           brand row; the whole head is the window's drag handle there and on
           Windows, with every control opted out. */}
-      <div data-sidebar-head style={windowDragStyle} className="shrink-0">
+      <div data-sidebar-head className="window-drag shrink-0">
         {(macInset || browser) && (
           <div className={cn("flex h-9 items-center", density === "icons" ? "justify-center" : "px-4")} aria-hidden={browser ? true : undefined}>
             {browser && (
@@ -2609,7 +2351,7 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
           </div>
         )}
         {density === "icons" ? (
-          <div className="flex flex-col items-center gap-2 px-2 pb-2 pt-1" style={windowNoDragStyle}>
+          <div className="flex flex-col items-center gap-2 px-2 pb-2 pt-1 window-no-drag">
             <button
               type="button"
               data-sidebar-search
@@ -2636,14 +2378,14 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
           </div>
         ) : (
           <>
-            <div className={cn("flex h-11 items-center justify-between gap-2 pl-4 pr-3", !(macInset || browser) && "mt-2")}>
+            <div className={SIDEBAR_HEAD_ROW}>
               {showLogo && (
                 <span className="flex min-w-0 items-center gap-2 text-sidebar-ink" data-sidebar-brand>
                   <PulsatrixMark size={22} />
                   <span className="truncate text-[16px] font-semibold leading-5 tracking-[-0.01em]">{APP_NAME}</span>
                 </span>
               )}
-              <span className="ml-auto flex shrink-0 items-center gap-2" style={windowNoDragStyle}>
+              <span className="ml-auto flex shrink-0 items-center gap-2 window-no-drag">
                 <button
                   type="button"
                   data-sidebar-search
@@ -2795,11 +2537,9 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
                           bot={bot}
                           density={density}
                           quiet={quietRows}
-                          query={q}
                           onMenu={setMenu}
                           startRename={renameBotId === bot.id}
                           onRenameStarted={() => setRenameBotId(null)}
-                          mine={orgMode}
                         />
                       </div>
                     ))}
@@ -2820,11 +2560,9 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
                           bot={bot}
                           density={density}
                           quiet={quietRows}
-                          query={q}
                           onMenu={setMenu}
                           startRename={renameBotId === bot.id}
                           onRenameStarted={() => setRenameBotId(null)}
-                          mine={orgMode}
                         />
                       </div>
                     ))}

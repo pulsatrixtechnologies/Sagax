@@ -1,4 +1,7 @@
 import { Component, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { botSeenCaption, messageParticipant, seenCaption as seenCaptionText, seenTooltip } from "@/lib/read-receipts";
+import { useReportRead, useThreadReads } from "@/lib/read-receipts-feed";
+import { SeenCaption } from "./SeenBy";
 import {
   AlertTriangle,
   ArrowDown,
@@ -705,6 +708,7 @@ const MessagesList = memo(function MessagesList({
   onSubmitEdit,
   onRegenerate,
   onReply,
+  seen,
 }: {
   bot: Bot;
   messages: Message[];
@@ -724,6 +728,8 @@ const MessagesList = memo(function MessagesList({
   onSubmitEdit: (id: string, text: string) => void;
   onRegenerate: () => void;
   onReply: (message: Message) => void;
+  /** The bot's "Seen" caption, under the last message it consumed. */
+  seen?: { messageId: string; text: string; title: string } | null;
 }) {
   const { state, dispatch } = useStore();
   const showToolCalls = showToolCallsEnabled(state.config);
@@ -734,7 +740,9 @@ const MessagesList = memo(function MessagesList({
     // spoken line of a call that started above it.
     const plan = voiceCallPlan(transcript);
     const seen = new Set<string>();
-    const collapsed = collapseBotExchanges(messages, {
+    // A stop the person asked for leaves no row, stored ones included.
+    const shown = messages.filter((message) => !isTurnStoppedNotice(message));
+    const collapsed = collapseBotExchanges(shown, {
       selfBotId: bot.id,
       self: { id: bot.id, name: bot.name, color: bot.color },
       lookup: transcript,
@@ -814,6 +822,7 @@ const MessagesList = memo(function MessagesList({
               <BotExchangeChip
                 run={item.run}
                 bots={state.bots}
+                showToolCalls={showToolCalls}
                 forceOpen={item.run.messages.some((message) => message.id === focusedId)}
                 onGo={() => {
                   const target = state.bots.find((candidate) => candidate.id === item.run.party.id);
@@ -968,7 +977,9 @@ const MessagesList = memo(function MessagesList({
                 ? <DigestChip message={m} viewerPrincipalId={state.config?.viewer?.principalId ?? null} />
                 : <TurnAccessChip message={m} viewerPrincipalId={state.config?.viewer?.principalId ?? null} />;
             case "compaction":
-              return <CompactionChip message={m} />;
+              // Sagax's own folds are invisible (older threads still hold
+              // them as rows); only a fold the person asked for shows.
+              return m.compaction?.by === "harness" ? null : <CompactionChip message={m} />;
             case "screen":
               return m.png ? <ScreenFrame png={m.png} mime={m.mime} /> : null;
             default:
@@ -998,6 +1009,7 @@ const MessagesList = memo(function MessagesList({
           <div key={m.id} className="contents" data-mid={m.id}>
             {newDay && <TranscriptDate at={m.at} />}
             {row}
+            {seen?.messageId === m.id && <SeenCaption text={seen.text} title={seen.title} />}
           </div>
         );
       })}
@@ -1104,6 +1116,28 @@ export function ChatView({ bot: profile }: { bot: Bot }) {
 
   // only the active branch is rendered; forks stay reachable via ‹ › nav
   const messages = useMemo(() => visibleMessages(bot), [bot]);
+  // Seen (src/lib/read-receipts.ts): under the last message this bot's turn
+  // consumed, until it answers; and this person's own position while the
+  // window has focus.
+  const threadReads = useThreadReads(bot.threadId);
+  useReportRead(bot.threadId, scrollRef, messages.at(-1)?.id);
+  const seenCaption = useMemo(() => {
+    const byId = new Map(messages.map((message) => [message.id, message]));
+    const anchorable = new Set(messages.filter((message) => message.role === "user" && message.kind === "text").map((message) => message.id));
+    const place = botSeenCaption({
+      order: messages,
+      anchorable,
+      reads: threadReads.reads,
+      botId: bot.id,
+      authorOf: (id) => {
+        const message = byId.get(id);
+        return message ? messageParticipant(message, bot.id) : null;
+      },
+    });
+    const sent = place ? byId.get(place.messageId) : undefined;
+    if (!place || !sent) return null;
+    return { messageId: place.messageId, text: seenCaptionText(sent.at, place.at, formatTime), title: seenTooltip([{ name: bot.name, at: place.at }], formatTime) };
+  }, [messages, threadReads.reads, bot.id, bot.name]);
   // The bot's run in the current ask — every command it ran, the control-CLI
   // ones verified — for the run card. Saving mirrors the /learn gate: the
   // flag, an engine with the agents tools, and a bot that can take a message
@@ -1461,8 +1495,9 @@ export function ChatView({ bot: profile }: { bot: Bot }) {
       {/* Banners sit below the floating header; the wrapper vanishes when
           none is showing so the transcript can run to the top. */}
       <div className="chat-banners pt-[52px] empty:hidden">
-      {/* Voice mode's call: first in the stack. A call starts as a short
-          row under the name chip. The chevron opens the stage over the thread. */}
+      {/* Voice mode's call pill: first in the stack, centered right under
+          the name chip; collapsed it keeps its own small row, expanded its
+          card hangs over the thread */}
       <VoiceCallDock bot={bot} />
       <BotActivityPicker bot={bot} />
       <ThreadsOffReturnLink bot={bot} />
@@ -1588,6 +1623,7 @@ export function ChatView({ bot: profile }: { bot: Bot }) {
             onSubmitEdit={submitEdit}
             onRegenerate={regenerate}
             onReply={selectReply}
+            seen={seenCaption}
           />
           </ConversationGalleryProvider>
           {laterCount > 0 && (

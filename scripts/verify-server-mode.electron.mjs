@@ -253,7 +253,8 @@ app.whenReady().then(async () => {
   }
 
   // 9. The composer's model chip opens the model picker, a modal, on the
-  // server: the person's payer order, no local model from the server.
+  // server: the person's minimal engine card (what pays, Connect or
+  // Disconnect, no payer chain), no local model from the server.
   await until("the composer model chip", async () => win.webContents.executeJavaScript(`Boolean(document.querySelector('[data-tour=model]'))`), 15_000).catch(() => null);
   const shoot = async (name) => {
     if (!process.env.VERIFY_SHOT_DIR) return;
@@ -269,7 +270,8 @@ app.whenReady().then(async () => {
     const rect = panel.getBoundingClientRect();
     return { found: true, width: Math.round(rect.width), height: Math.round(rect.height), top: Math.round(rect.top), bottom: Math.round(rect.bottom),
       left: Math.round(rect.left), right: Math.round(rect.right), innerWidth, innerHeight, modal: panel.getAttribute('aria-modal'),
-      focusInside: panel.contains(document.activeElement), payers: [...panel.querySelectorAll('[data-payer]')].map((row) => row.dataset.payer),
+      focusInside: panel.contains(document.activeElement), paysWith: panel.querySelector('[data-pays-with]')?.dataset.paysWith ?? null,
+      payerRows: panel.querySelectorAll('[data-payer]').length, connect: Boolean(panel.querySelector('[data-engine-connect-button], [data-engine-connected]')),
       localHidden: Boolean(panel.querySelector('[data-model-local-hidden]')), localEntry: Boolean(panel.querySelector('[data-model-local-entry]')),
       providers: panel.querySelectorAll('[data-model-provider-column] [data-rail-provider]').length };
   })()`);
@@ -277,13 +279,13 @@ app.whenReady().then(async () => {
   await win.webContents.executeJavaScript(`document.querySelector('[data-tour=model]').click(); true`);
   const picker = await until("the model picker", async () => {
     const value = await measure();
-    return value.found && value.payers.length ? value : null;
+    return value.found && value.paysWith ? value : null;
   }, 10_000).catch(measure);
   await wait(600);
   Object.assign(picker, await measure());
   check("the composer's model chip opens a model picker modal inside the window", picker.found && picker.modal === "true" && picker.height > 300 && picker.top >= 0 && picker.bottom <= picker.innerHeight && picker.left >= 0 && picker.right <= picker.innerWidth, JSON.stringify(picker));
   check("the modal takes focus", picker.focusInside === true);
-  check("the modal shows the speaker's payer order (subscription, own key, organization key; no server sign-in, even for an admin)", JSON.stringify(picker.payers) === JSON.stringify(["subscription", "key", "org-key"]), JSON.stringify(picker.payers));
+  check("the modal shows one line on what pays and Connect or Disconnect, no payer chain (no server sign-in, even for an admin)", Boolean(picker.paysWith) && picker.connect && picker.payerRows === 0, JSON.stringify({ paysWith: picker.paysWith, connect: picker.connect, payerRows: picker.payerRows }));
   check("no local model from the server's machine, with a note", picker.localHidden && !picker.localEntry);
   await wait(300);
   await shoot("model-picker-server-1200.png");
@@ -301,7 +303,7 @@ app.whenReady().then(async () => {
   await wait(600); // the opening animation scales the panel
   const sheet = await until("the sheet", async () => {
     const value = await measure();
-    return value.found && value.payers.length ? value : null;
+    return value.found && value.paysWith ? value : null;
   }, 10_000).catch(measure);
   check("on a narrow window the picker is a sheet along the bottom edge", sheet.found && sheet.left === 0 && sheet.right === sheet.innerWidth && Math.abs(sheet.bottom - sheet.innerHeight) <= 1 && sheet.top > 0, JSON.stringify(sheet));
   await wait(300);

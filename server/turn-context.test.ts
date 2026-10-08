@@ -21,6 +21,23 @@ describe("buildTurnContext", () => {
     expect(out.turnText.endsWith("hi")).toBe(true);
   });
 
+  it("tells a Sagax fold as a continuation, never as a hand-over or a rewind", () => {
+    const out = buildTurnContext({ text: "hi", transcript, rewound: false, fresh: false, externallyUpdated: false, replaysNatively: false, compacted: true });
+    expect(out.resume).toBe(false);
+    expect(out.turnText).toContain("This is your ongoing conversation with this user");
+    expect(out.turnText).toContain("do not mention the summary");
+    expect(out.turnText).not.toContain("joining this conversation");
+    expect(out.turnText).not.toContain("rewound");
+    expect(out.turnText).toContain("User: my dog is named Biscuit");
+    expect(out.turnText.endsWith("hi")).toBe(true);
+    // A real model switch at the same time keeps its own, truer preamble.
+    const both = buildTurnContext({ text: "hi", transcript, rewound: false, fresh: true, externallyUpdated: false, replaysNatively: false, compacted: true });
+    expect(both.turnText).toContain("joining this conversation");
+    // A transcript-replay engine gets the history as messages, not inline.
+    const native = buildTurnContext({ text: "hi", transcript, rewound: false, fresh: false, externallyUpdated: false, replaysNatively: true, compacted: true });
+    expect(native).toEqual({ turnText: "hi", resume: false });
+  });
+
   it("replays inline for a fresh engine with prior history — the model-switch fix", () => {
     const out = buildTurnContext({ text: "hi", transcript, rewound: false, fresh: true, externallyUpdated: false, replaysNatively: false });
     expect(out.resume).toBe(false);

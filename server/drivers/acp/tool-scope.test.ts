@@ -166,3 +166,65 @@ it("refuses unsupported ACP native restrictions before a prompt even in Full acc
   await expect(f.instance.adapter.sendTurn({ threadId: "unsupported", text: "Must not run", approvalMode: "full", toolScope: { allow: [] } })).rejects.toThrow(/native tool selection.*not supported/i);
   expect(existsSync(`${f.dump}.mcp.json`)).toBe(false);
 });
+
+// Grok 1.0.46 session/load keeps the stored session's model; a profile turn
+// never sends set_model. A model change must still reach the engine, with the
+// thread's history and the typed message, and no error row.
+it.each<[string, { withholdHostTools?: boolean; toolScope?: { allow: string[] } }]>([
+  ["an organization turn", { withholdHostTools: true }],
+  ["a narrowed native selection", { toolScope: { allow: [] } }],
+])("switches the Grok model mid-conversation on %s and still sends the prompt", async (_label, scope) => {
+  const store = join(mkdtempSync(join(tmpdir(), "omb-grok-switch-")), "models.json"); directories.push(dirname(store));
+  const rpc = join(dirname(store), "requests.json");
+  const f = await fixture(GrokAgentDriver, {
+    FAKE_ACP_GROK_VERSION: "1.0.41", FAKE_ACP_SESSION_MODELS: "grok-4.7,grok-4.6",
+    FAKE_ACP_SESSION_MODEL_STORE: store, FAKE_ACP_DUMP_PROMPT: "1", FAKE_ACP_RPC_DUMP: rpc,
+  });
+  const first = await f.instance.adapter.sendTurn({ threadId: "switch", text: "first question", model: "grok-4.7", ...scope });
+  await f.recorder.until(event => event.type === "turn.completed" && event.turnId === first.turnId);
+  expect(JSON.parse(readFileSync(store, "utf8"))).toEqual({ "fake-acp-session": "grok-4.7" });
+
+  const second = await f.instance.adapter.sendTurn({
+    threadId: "switch", text: "second question", model: "grok-4.6", resumeCursor: "fake-acp-session",
+    recoveryText: "User: first question\nAssistant: fixture answer\nUser: second question", ...scope,
+  });
+  await f.recorder.until(event => event.type === "turn.completed" && event.turnId === second.turnId);
+  const events = f.recorder.events.filter(event => event.turnId === second.turnId);
+  expect(events.filter(event => event.type === "runtime.error")).toEqual([]);
+  expect(events.find(event => event.type === "turn.completed")).toMatchObject({ ok: true });
+  expect(events.find(event => event.type === "session.started")).toMatchObject({ model: "grok-4.6", rebuilt: true });
+  // the restored session was not adopted: a fresh one opened on grok-4.6
+  const methods = JSON.parse(readFileSync(rpc, "utf8")) as string[];
+  expect(methods).toEqual(expect.arrayContaining(["session/load", "session/new", "session/prompt"]));
+  expect(methods).not.toContain("session/set_model");
+  expect(methods.indexOf("session/new")).toBeGreaterThan(methods.indexOf("session/load"));
+  const profile = JSON.parse(readFileSync(`${f.dump}.session.json`, "utf8"))._meta.agentProfile;
+  expect(profile.model).toBe("grok-4.6");
+  expect(profile.injectDefaultTools).toBe(false);
+  expect(JSON.parse(readFileSync(store, "utf8"))["fake-acp-session"]).toBe("grok-4.6");
+  // the typed message is sent, with the history before it
+  const prompt = JSON.stringify(JSON.parse(readFileSync(`${f.dump}.prompt.json`, "utf8")));
+  expect(prompt).toContain("first question");
+  expect(prompt).toContain("second question");
+});
+
+it("passes an unknown Grok model to the engine and runs on the engine's answer with one plain notice", async () => {
+  const store = join(mkdtempSync(join(tmpdir(), "omb-grok-unknown-")), "models.json"); directories.push(dirname(store));
+  const f = await fixture(GrokAgentDriver, {
+    FAKE_ACP_SESSION_MODELS: "grok-4.7,grok-4.6", FAKE_ACP_SESSION_MODEL_STORE: store, FAKE_ACP_DUMP_PROMPT: "1",
+  });
+  for (const text of ["hello", "again"]) {
+    const { turnId } = await f.instance.adapter.sendTurn({ threadId: "unknown", text, model: "grok-9-preview", withholdHostTools: true });
+    await f.recorder.until(event => event.type === "turn.completed" && event.turnId === turnId);
+    expect(f.recorder.events.find(event => event.type === "turn.completed" && event.turnId === turnId)).toMatchObject({ ok: true });
+    expect(JSON.stringify(JSON.parse(readFileSync(`${f.dump}.prompt.json`, "utf8")))).toContain(text);
+  }
+  // the engine was asked for the id as given
+  expect(JSON.parse(readFileSync(`${f.dump}.session.json`, "utf8"))._meta.agentProfile.model).toBe("grok-9-preview");
+  expect(f.recorder.events.filter(event => event.type === "runtime.error")).toEqual([]);
+  const notices = f.recorder.events.filter(event => event.type === "runtime.notice");
+  expect(notices).toHaveLength(1);
+  expect(notices[0]).toMatchObject({ message: expect.stringContaining("Grok does not offer grok-9-preview, so this conversation uses grok-4.7") });
+  expect(JSON.stringify(notices)).not.toMatch(/new conversation/i);
+  expect(f.recorder.events.find(event => event.type === "session.started")).toMatchObject({ model: "grok-4.7" });
+});

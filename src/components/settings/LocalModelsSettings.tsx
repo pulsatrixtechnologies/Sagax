@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 
 import { t } from "@/lib/i18n";
 import { loadLocalModels, normalizeLoopbackBase, saveLocalModels, type LocalModelSettings } from "@/lib/desktop-local-models";
-import { Card } from "../SettingsPrimitives";
+import { Card, SwitchRow } from "../SettingsPrimitives";
 
 const OFF: LocalModelSettings = { expose: false, share: false, endpoints: [], published: [], connected: false };
 
@@ -46,16 +46,8 @@ export function LocalModelsSettings() {
     <Card cardId="computer.localModels" title={t("localModels.title")} summary={settings.expose ? t("localModels.expose") : t("localModels.title")}>
       <div className="flex flex-col gap-3 text-[13px]" data-local-models={settings.expose ? "on" : "off"} data-local-models-share={settings.share ? "on" : "off"}>
         <p className="text-[12px] leading-relaxed text-ink-secondary">{t("localModels.help")}</p>
-        <label className="flex min-h-[44px] items-center gap-2 md:min-h-0">
-          <input type="checkbox" checked={settings.expose} onChange={(event) => save({ expose: event.target.checked })} />
-          <span>{t("localModels.expose")}</span>
-        </label>
-        <p className="text-[12px] leading-relaxed text-ink-secondary">{t("localModels.exposeHelp")}</p>
-        <label className="flex min-h-[44px] items-center gap-2 md:min-h-0">
-          <input type="checkbox" checked={settings.share} onChange={(event) => save({ share: event.target.checked })} />
-          <span>{t("localModels.share")}</span>
-        </label>
-        <p className="text-[12px] leading-relaxed text-ink-secondary">{t("localModels.shareHelp")}</p>
+        <SwitchRow label={t("localModels.expose")} description={t("localModels.exposeHelp")} checked={settings.expose} onChange={(next) => save({ expose: next })} />
+        <SwitchRow label={t("localModels.share")} description={t("localModels.shareHelp")} checked={settings.share} onChange={(next) => save({ share: next })} />
         <div className="flex flex-col gap-1">
           <span className="text-ink-secondary">{t("localModels.endpoints")}</span>
           <p className="text-[12px] leading-relaxed text-ink-secondary">{t("localModels.endpointsHelp")}</p>

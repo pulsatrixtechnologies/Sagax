@@ -25,7 +25,7 @@ import { createLendingActivity } from "./lending-activity.mjs";
 import { openDesktopTunnel } from "./desktop-tunnel.mjs";
 import { createLocalVm } from "./local-vm.mjs";
 import { archiveKind, extractArchive, extractedFolderName } from "./archive-extract.mjs";
-import { executeLocalModel, normalizeLoopbackBase, probeLoopbackModels } from "./local-models.mjs";
+import { executeLocalModel, normalizeLoopbackBase, probeLoopbackCatalog } from "./local-models.mjs";
 
 export { createLocalVm };
 
@@ -75,6 +75,8 @@ const STAGE_MAX = 90 * 1024 * 1024;
 const ACTIONS = new Set(["run_command", "read_file", "write_file", "list_files", "search_files", "fetch_url", "browse", "computer_tools", "computer_call", "vm_status", "vm_start", "vm_run_command", "vm_create", "vm_stop", "vm_pause", "vm_resume", "vm_setup", "vm_install", "vm_screenshot", "vm_computer_call", "stage_file", "extract_archive", "local_model"]);
 const KEYS = new Set(["action", "path", "content", "encoding", "offset", "max_bytes", "command", "cwd", "timeout_seconds", "pattern", "glob", "url", "screenshot", "tool_name", "arguments", "container", "name", "final", "endpoint", "http_method", "http_path", "json"]);
 const LOCAL_MODEL_PROBE_MS = 15_000;
+/** A picker that opens right after a probe reuses it instead of probing again. */
+export const LOCAL_MODEL_FRESH_MS = 5_000;
 const uuid = value => typeof value === "string" && /^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(value);
 const text = value => ({ content: [{ type: "text", text: typeof value === "string" ? value : JSON.stringify(value) }] });
 const failure = message => ({ ...text(message), isError: true });
@@ -361,6 +363,7 @@ export function createDesktopBridge({
   environment, fetch: fetchImpl, cookieHeader, home = os.homedir(), attachmentsDir, protectedPaths = [], activityFile,
   fetchUrl = globalThis.fetch, browse, cuaConnection, hostControl, resolveProxy, proxyCredentials, lookup, tunnelConnect, WebSocketImpl = globalThis.WebSocket,
   platform = process.platform, hostname = os.hostname(), onChange = () => {}, localVm = createLocalVm(), retryMs = 5000,
+  localModelFreshMs = LOCAL_MODEL_FRESH_MS,
 }) {
   const roots = [...protectedPaths, ...personalSecretPaths(home)];
   const activity = createLendingActivity(activityFile);
@@ -390,6 +393,8 @@ export function createDesktopBridge({
     let tunnel = null;
     let cua = null;
     let registered = null;
+    // The current registration's on-demand probe (the model picker opening).
+    let refreshNow = null;
     const loop = async () => {
       while (!signal.aborted) {
         const id = randomUUID();
@@ -437,30 +442,52 @@ export function createDesktopBridge({
           const systemTimer = setInterval(() => void system(), SYSTEM_REFRESH_MS);
           live.addEventListener("abort", () => clearInterval(systemTimer), { once: true });
           // Loopback models this desktop has published. The server never receives the URL.
+          // A failed probe is not remembered: the next tick, or the picker
+          // opening (refreshLocalModels below), looks again.
           const localCatalog = new Map();
-          let probingModels = false;
-          const refreshLocalModels = async () => {
-            if (probingModels || live.aborted) return;
-            probingModels = true;
+          let probing = null;
+          let probedAt = 0;
+          let plainCatalog = false;
+          const probeAndPublish = async () => {
+            const record = await request(env, "/api/me/local-models");
+            if (!record?.expose) { localCatalog.clear(); return; }
+            const next = new Map();
+            const published = [];
+            for (const endpoint of Array.isArray(record.endpoints) ? record.endpoints : []) {
+              const base = normalizeLoopbackBase(endpoint?.baseUrl);
+              if (!base || typeof endpoint?.id !== "string") continue;
+              const probed = await probeLoopbackCatalog(base, fetchUrl);
+              if (!probed?.models.length) continue;
+              next.set(endpoint.id, base);
+              published.push({ id: endpoint.id, label: String(endpoint.label ?? "").slice(0, 80), models: probed.models, details: probed.details });
+            }
+            localCatalog.clear();
+            for (const [endpointId, base] of next) localCatalog.set(endpointId, base);
+            const plain = () => published.map(({ details: _details, ...row }) => row);
+            if (plainCatalog) {
+              await request(env, `/api/desktop-bridge/${id}/local-models`, { endpoints: plain() }, live, secret);
+              return;
+            }
             try {
-              const record = await request(env, "/api/me/local-models");
-              if (!record?.expose) { localCatalog.clear(); return; }
-              const next = new Map();
-              const published = [];
-              for (const endpoint of Array.isArray(record.endpoints) ? record.endpoints : []) {
-                const base = normalizeLoopbackBase(endpoint?.baseUrl);
-                if (!base || typeof endpoint?.id !== "string") continue;
-                const models = await probeLoopbackModels(base, fetchUrl);
-                if (!models?.length) continue;
-                next.set(endpoint.id, base);
-                published.push({ id: endpoint.id, label: String(endpoint.label ?? "").slice(0, 80), models });
-              }
-              localCatalog.clear();
-              for (const [endpointId, base] of next) localCatalog.set(endpointId, base);
               await request(env, `/api/desktop-bridge/${id}/local-models`, { endpoints: published }, live, secret);
-            } catch { /* optional: an older server answers 404 */ }
-            finally { probingModels = false; }
+            } catch (error) {
+              // A server that predates model names refuses the extra field. Send ids only.
+              if (error?.status !== 400) throw error;
+              plainCatalog = true;
+              await request(env, `/api/desktop-bridge/${id}/local-models`, { endpoints: plain() }, live, secret);
+            }
           };
+          const refreshLocalModels = ({ freshMs = 0 } = {}) => {
+            if (live.aborted) return Promise.resolve();
+            if (probing) return probing;
+            if (freshMs > 0 && Date.now() - probedAt < freshMs) return Promise.resolve();
+            probing = probeAndPublish()
+              .catch(() => { /* optional: an older server answers 404 */ })
+              .finally(() => { probedAt = Date.now(); probing = null; });
+            return probing;
+          };
+          refreshNow = () => refreshLocalModels({ freshMs: localModelFreshMs });
+          live.addEventListener("abort", () => { refreshNow = null; }, { once: true });
           void refreshLocalModels();
           const modelTimer = setInterval(() => void refreshLocalModels(), LOCAL_MODEL_PROBE_MS);
           live.addEventListener("abort", () => clearInterval(modelTimer), { once: true });
@@ -554,6 +581,7 @@ export function createDesktopBridge({
         registered = null;
         set({ connected: false, tunnel: false });
       },
+      refreshLocalModels: () => (refreshNow ? refreshNow() : Promise.resolve()),
     };
   };
 
@@ -567,6 +595,9 @@ export function createDesktopBridge({
       if (env) running = { origin: env.origin, ...run(env) };
     },
     state: () => ({ ...state }),
+    /** Probe this computer's loopback model servers now (the model picker
+     * opened) unless a probe finished in the last LOCAL_MODEL_FRESH_MS. */
+    refreshLocalModels: () => running?.refreshLocalModels() ?? Promise.resolve(),
     activity: limit => activity.list(limit),
     close() { running?.stop(); running = null; },
   };

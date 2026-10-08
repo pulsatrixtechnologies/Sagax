@@ -18,6 +18,19 @@ describe("chiefForBot", () => {
     // Research's own Chief is hidden; Maya may coordinate Research
     expect(chiefForBot(bots, bots[2]!)?.id).toBe("maya");
   });
+  it("on an organization server keeps the bot's owner's Primary Bots only", () => {
+    // every section is empty there, so the section rule alone matched anyone's
+    const org = [
+      { id: "alice-chief", name: "A", chiefOfStaff: true, owner: "alice" },
+      { id: "bob-chief", name: "B", chiefOfStaff: true, owner: "bob" },
+      { id: "bob-bot", name: "C", owner: "bob" },
+      { id: "carl-bot", name: "D", owner: "carl" },
+    ];
+    const sameOwner = (bot: { owner: string }) => (chief: { owner: string }) => chief.owner === bot.owner;
+    expect(chiefForBot(org, org[2]!)?.id).toBe("alice-chief");
+    expect(chiefForBot(org, org[2]!, sameOwner(org[2]!))?.id).toBe("bob-chief");
+    expect(chiefForBot(org, org[3]!, sameOwner(org[3]!))).toBeNull();
+  });
   it("gives a Chief no Chief, and a section with none goes to the person", () => {
     expect(chiefForBot(bots, bots[0]!)).toBeNull();
     expect(chiefForBot(bots, bots[4]!)).toBeNull();

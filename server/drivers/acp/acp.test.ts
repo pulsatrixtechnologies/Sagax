@@ -229,6 +229,7 @@ describe("ACP turns (fake CLI)", () => {
 
   afterEach(async () => {
     delete process.env.FAKE_ACP_MODE;
+    delete process.env.FAKE_ACP_CANCEL_REPLY;
     delete process.env.FAKE_ACP_DUMP;
     delete process.env.FAKE_ACP_RPC_DUMP;
     delete process.env.FAKE_ACP_RPC_APPEND_FILE;
@@ -472,6 +473,15 @@ describe("ACP turns (fake CLI)", () => {
     usage();
     expect(await send("turn 4")).toBe(FULL + "\n\nturn 4");
     expect(await send("turn 5")).toBe("turn 5");
+  });
+
+  it("reports the agent's current context size and window so Sagax folds before the agent compacts", async () => {
+    const { usage, send } = await usageThread("context-size");
+    usage(90000, 120000);
+    recorder.events.length = 0;
+    await send("turn 1");
+    const reported = recorder.events.filter((event) => event.type === "thread.token-usage.updated").at(-1);
+    expect(reported).toMatchObject({ contextTokens: 120000, contextWindow: 200000 });
   });
 
   it("keeps the split through an ordinary context dip", async () => {
@@ -1458,6 +1468,17 @@ describe("ACP turns (fake CLI)", () => {
     expect(done).toMatchObject({ type: "turn.completed" });
   });
 
+  it.each(["error", "refusal"])("a stop during the prompt leaves no error row when the agent answers the cancel with %s", async (reply) => {
+    process.env.FAKE_ACP_CANCEL_REPLY = reply;
+    await create(GrokAgentDriver, "hang");
+    await instance.adapter.sendTurn({ threadId: "t-int-reply", text: "go" });
+    await recorder.until((e) => e.type === "session.started");
+    await instance.adapter.interruptTurn("t-int-reply");
+    const done = await recorder.until((e) => e.type === "turn.completed");
+    expect(done).toMatchObject({ ok: true, stopReason: "cancelled" });
+    expect(recorder.events.some((e) => e.type === "runtime.error")).toBe(false);
+  });
+
   it("an exit before result becomes runtime.error + failed turn", async () => {
     await create(GrokAgentDriver, "exit-early");
     await instance.adapter.sendTurn({ threadId: "t-crash", text: "go" });
@@ -1900,7 +1921,11 @@ describe("ACP turns (fake CLI)", () => {
       await instance.adapter.interruptTurn("startup-stop");
       const ack = await pending;
       await recorder.until((event) => event.type === "turn.completed" && event.turnId === ack.turnId);
-      expect(recorder.events.some((event) => event.type === "runtime.error" && event.message === "turn stopped")).toBe(false);
+      // Closing the session rejects the pending handshake ("session closed"):
+      // that is the stop, not an error row.
+      expect(recorder.events.some((event) => event.type === "runtime.error")).toBe(false);
+      expect(recorder.events.find((event) => event.type === "turn.completed" && event.turnId === ack.turnId))
+        .toMatchObject({ ok: true, stopReason: "cancelled" });
       expect(instance.adapter.hasSession("startup-stop")).toBe(false);
     });
 

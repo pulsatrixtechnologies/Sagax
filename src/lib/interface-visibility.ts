@@ -1,8 +1,8 @@
-// What Simple mode hides. Advanced shows the screen as it is. Hiding never
-// changes a stored value, and nothing in these lists is required to chat:
-// engine sign-in stays on the model picker and the empty-engines screen.
+// What Simple mode hides. Advanced shows the screen as it is. The composer is
+// the same in both modes and is not listed here. Hiding never changes a
+// stored value, and nothing in these lists is required to chat: engine
+// sign-in stays on the model picker and the empty-engines screen.
 import type { AppSettingsSection, BotSettingsSection } from "@/state/store";
-import type { ComposerMenuItem } from "./composer-commands";
 
 const HIDDEN_SETTINGS: ReadonlySet<AppSettingsSection> = new Set([
   "experimental",
@@ -38,9 +38,4 @@ export function simpleHidesBotSection(id: BotSettingsSection): boolean {
 
 export function simpleHidesPanelTab(id: string): boolean {
   return id === "computer";
-}
-
-/** Simple keeps /goal. Engine, plugin and MCP rows, and /learn and /setup, go. */
-export function simpleKeepsComposerItem(item: ComposerMenuItem): boolean {
-  return item.kind === "sagax" && item.command.id === "goal";
 }

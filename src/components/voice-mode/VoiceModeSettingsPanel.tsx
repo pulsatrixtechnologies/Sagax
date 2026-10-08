@@ -4,7 +4,7 @@
 // the bar holds which list is open and what the voices are, so this draws
 // the same thing for the same props and the tests can read it directly.
 import type { ReactNode } from "react";
-import { Check, ChevronsUpDown, Loader2, Play, Square } from "lucide-react";
+import { Check, ChevronDown, Loader2, Play, Square } from "lucide-react";
 
 import { CALL_PAUSES, type CallSettings } from "@/lib/voice-mode/call-settings";
 import { LATENCY_STAGES, type LatencyStage } from "@/lib/voice-mode/latency";
@@ -143,20 +143,20 @@ function LatencyLine({ latency }: { latency: NonNullable<VoiceModeSettingsPanelP
 function Row({ label, value, list, open, onOpen }: { label: string; value: string; list: VoiceModeList; open: VoiceModeList | null; onOpen(list: VoiceModeList | null): void }) {
   const expanded = open === list;
   return (
-    <button
-      type="button"
-      data-voice-list={list}
-      aria-haspopup="listbox"
-      aria-expanded={expanded}
-      onClick={() => onOpen(expanded ? null : list)}
-      className="flex w-full items-center gap-3 px-4 py-3.5 text-left text-[16px] text-ink hover:bg-white/5"
-    >
-      <span>{label}</span>
-      <span className="ml-auto flex min-w-0 items-center gap-1.5 text-[15px] text-ink-secondary">
+    <div className="flex items-center justify-between gap-3 py-1.5">
+      <span className="text-[13px] text-ink-secondary">{label}</span>
+      <button
+        type="button"
+        data-voice-list={list}
+        aria-haspopup="listbox"
+        aria-expanded={expanded}
+        onClick={() => onOpen(expanded ? null : list)}
+        className="flex min-w-[8.5rem] items-center justify-between gap-2 rounded-lg bg-raised px-3 py-1.5 text-[13px] text-ink hover:brightness-110"
+      >
         <span className="truncate">{value}</span>
-        <ChevronsUpDown size={14} className="shrink-0 opacity-60" />
-      </span>
-    </button>
+        <ChevronDown size={14} className={cn("shrink-0 transition-transform", expanded && "rotate-180")} />
+      </button>
+    </div>
   );
 }
 
@@ -185,11 +185,10 @@ export function VoiceModeSettingsPanel(props: VoiceModeSettingsPanelProps) {
     onOpen(null);
   };
   return (
-    <div className="flex flex-col" data-voice-settings>
-      <div className="overflow-hidden rounded-2xl bg-inset" data-voice-rows>
+    <div className="flex flex-col px-1 pb-2" data-voice-settings>
       <Row label={t("voiceMode.voice")} value={voiceName} list="voice" open={open} onOpen={onOpen} />
       {open === "voice" && (
-        <ul role="listbox" aria-label={t("voiceMode.voice")} className="max-h-56 overflow-y-auto border-t border-hairline/60 bg-panel p-1">
+        <ul role="listbox" aria-label={t("voiceMode.voice")} className="max-h-56 overflow-y-auto rounded-lg border border-hairline/60 bg-panel p-1">
           <Option selected={settings.voice === ""} value="" label={t("voiceMode.notSet")} onSelect={() => select({ voice: "" })} />
           {voices === null && !voicesError && (
             <li className="flex items-center gap-2 px-2 py-1.5 text-[12.5px] text-ink-tertiary">
@@ -215,19 +214,17 @@ export function VoiceModeSettingsPanel(props: VoiceModeSettingsPanelProps) {
           })}
         </ul>
       )}
-      <div className="mx-4 h-px bg-hairline/70" />
       <Row label={t("voiceMode.speed")} value={speedLabel(settings.speed)} list="speed" open={open} onOpen={onOpen} />
       {open === "speed" && (
-        <ul role="listbox" aria-label={t("voiceMode.speed")} className="border-t border-hairline/60 bg-panel p-1">
+        <ul role="listbox" aria-label={t("voiceMode.speed")} className="rounded-lg border border-hairline/60 bg-panel p-1">
           {VOICE_MODE_SPEEDS.map((speed) => (
             <Option key={speed} selected={settings.speed === speed} value={String(speed)} label={speedLabel(speed)} onSelect={() => select({ speed })} />
           ))}
         </ul>
       )}
-      <div className="mx-4 h-px bg-hairline/70" />
       <Row label={t("voiceMode.language")} value={settings.language === "auto" ? t("voiceMode.autoDetect") : languageLabel(settings.language)} list="language" open={open} onOpen={onOpen} />
       {open === "language" && (
-        <ul role="listbox" aria-label={t("voiceMode.language")} className="max-h-56 overflow-y-auto border-t border-hairline/60 bg-panel p-1">
+        <ul role="listbox" aria-label={t("voiceMode.language")} className="max-h-56 overflow-y-auto rounded-lg border border-hairline/60 bg-panel p-1">
           {VOICE_MODE_LANGUAGES.map((language) => (
             <Option
               key={language.code}
@@ -239,7 +236,6 @@ export function VoiceModeSettingsPanel(props: VoiceModeSettingsPanelProps) {
           ))}
         </ul>
       )}
-      </div>
       {call && enrollment && onCallChange && onEnroll && onForget && (
         <CallSection call={call} enrollment={enrollment} onCallChange={onCallChange} onEnroll={onEnroll} onForget={onForget} />
       )}

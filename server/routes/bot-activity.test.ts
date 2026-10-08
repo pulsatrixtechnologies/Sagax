@@ -227,6 +227,35 @@ describe("bot activity API", () => {
     expect(other.body.items!.map((item) => item.id)).toEqual(["thread:t-soul", "thread:t-routine"]);
   });
 
+  it("gives a coding entry its code work: folder, branch, and the pull request its calls opened", async () => {
+    const extra: ActivityTask[] = [
+      { threadId: "t-pr", title: "Ship the lexer", createdAt: NOW - 9_000, updatedAt: NOW - 2_000, ownerPrincipalId: "alice", cwd: "/repo/src" },
+    ];
+    const extraMessages: Record<string, ActivityMessage[]> = {
+      "t-pr": [
+        { id: "p0", role: "user", kind: "text", at: NOW - 8_000, text: "ship it" },
+        { id: "p1", role: "bot", kind: "activity", at: NOW - 7_000, tool: { name: "Bash", ok: true, input: "{\"command\":\"gh pr create --title \\\"Split the lexer\\\"\"}", output: "https://github.com/acme/parser/pull/42" } },
+        // a request that quotes gh is no pull request
+        { id: "p2", role: "bot", kind: "activity", at: NOW - 6_000, tool: { name: "Agent", ok: true, input: "{\"prompt\":\"then gh pr create\"}", output: "https://github.com/acme/parser/pull/43" } },
+      ],
+    };
+    const base = await serve(deps({
+      tasks: (botId) => (botId === "pepper" ? [...tasks, ...extra] : []),
+      threadReadable: (_botId, threadId, viewerId) => !viewerId || [...tasks, ...extra].find((task) => task.threadId === threadId)?.ownerPrincipalId === viewerId,
+      messages: (threadId, limit) => ({ messages: (extraMessages[threadId] ?? messages[threadId] ?? []).slice(-limit), hasMore: false }),
+      repository: (cwd) => (cwd === "/repo/src" ? { root: "/repo", branch: "fix/lexer", origin: { repo: "acme/parser", url: "https://github.com/acme/parser" } } : undefined),
+    }));
+    const coding = await get(base, "/api/bots/pepper/activity?filter=coding", "alice");
+    const entry = coding.body.items!.find((item) => item.id === "thread:t-pr")!;
+    expect(entry.code).toMatchObject({ folder: "/repo", branch: "fix/lexer", repo: "acme/parser", repoUrl: "https://github.com/acme/parser" });
+    expect(entry.code!.pullRequests).toEqual([{ repo: "acme/parser", number: 42, url: "https://github.com/acme/parser/pull/42", title: "Split the lexer", action: "opened", at: NOW - 7_000 }]);
+    // not coding, no code work
+    const other = await get(base, "/api/bots/pepper/activity?filter=other", "alice");
+    expect(other.body.items!.every((item) => !item.code)).toBe(true);
+    // bob sees none of it
+    expect((await get(base, "/api/bots/pepper/activity", "bob")).body.items!.some((item) => item.id === "thread:t-pr")).toBe(false);
+  });
+
   it("lists the sub-agents a person's own threads started, without others' request text", async () => {
     const base = await serve();
     const alice = await get(base, "/api/bots/pepper/activity", "alice");

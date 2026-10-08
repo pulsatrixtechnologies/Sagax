@@ -15,10 +15,11 @@ beforeAll(() => {
 });
 afterAll(() => vi.unstubAllGlobals());
 
-function run() {
+function run(steps: Message[] = []) {
   const now = Date.now();
   const messages = [
     { id: "p", role: "user", kind: "text", text: NOTE, at: now, peerAsk: { botId: "cry", name: "Cryptic" } },
+    ...steps,
     { id: "r", role: "bot", kind: "text", text: "unRAID → Cryptic, pour info", at: now + 1000, requestMessageId: "p" },
   ] as Message[];
   const items = collapseBotExchanges(messages, {
@@ -63,6 +64,23 @@ describe("BotExchangeChip", () => {
     };
     expect(click(tree!)).toBe(true);
     expect(onGo).toHaveBeenCalledOnce();
+  });
+
+  it("never draws a tool call as a line, and shows it as a chip only with Tool calls on", () => {
+    const now = Date.now();
+    const steps = [
+      { id: "t1", role: "bot", kind: "activity", at: now + 100, requestMessageId: "p", tool: { name: "search_tool", ok: true } },
+      { id: "t2", role: "bot", kind: "activity", at: now + 200, requestMessageId: "p", tool: { name: "use_tool", ok: true } },
+    ] as unknown as Message[];
+    const hidden = renderToStaticMarkup(createElement(BotExchangeChip, { run: run(steps), forceOpen: true }));
+    expect(hidden).toContain("pour info");
+    expect(hidden).not.toContain("search_tool");
+    expect(hidden).not.toContain("use_tool");
+    const shown = renderToStaticMarkup(createElement(BotExchangeChip, { run: run(steps), forceOpen: true, showToolCalls: true }));
+    expect(shown).toContain('data-testid="tool-activity"');
+    expect(shown).toContain("search_tool");
+    // a chip, not a bubble: the tool name never sits in a speech bubble
+    expect(shown).not.toMatch(/rounded-\[18px\][^>]*>(search_tool|use_tool)</);
   });
 
   it("opens the stored lines in the chat column, not over the viewport", () => {

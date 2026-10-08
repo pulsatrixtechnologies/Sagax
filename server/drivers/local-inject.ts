@@ -9,6 +9,7 @@ import { join } from "node:path";
 import type { ModelCatalog } from "../contracts.ts";
 import { desktopModelApiKey } from "../desktop-model-grant.ts";
 import { isDesktopHostId } from "../../shared/desktop-local-models.ts";
+import { localModelLabels } from "../../shared/local-model-engines.ts";
 
 export interface LocalHost {
   id: string;
@@ -19,6 +20,10 @@ export interface LocalHost {
 }
 
 export const LOCAL_HOSTS: LocalHost[] = [
+  // The same loopback servers the desktop probes (shared/desktop-local-models.ts SEED_ENDPOINTS).
+  { id: "dwarfstar", label: "DwarfStar", baseUrl: "http://127.0.0.1:8002/v1" },
+  { id: "llamaserver", label: "llama-server", baseUrl: "http://127.0.0.1:9337/v1" },
+  { id: "bonsai", label: "Bonsai", baseUrl: "http://127.0.0.1:9338/v1" },
   { id: "omlx", label: "oMLX", baseUrl: "http://127.0.0.1:8080/v1", apiKey: "omlx" },
   { id: "ollama", label: "Ollama", baseUrl: "http://127.0.0.1:11434/v1", apiKey: "ollama" },
   { id: "local_ollama", label: "Ollama", baseUrl: "http://127.0.0.1:11434/v1", apiKey: "ollama" },
@@ -239,6 +244,26 @@ function readUnslothKey(env: Record<string, string | undefined>): string | null 
   }
 }
 
+/** `name` and `context_length` a server adds to its /v1/models rows
+ * (DwarfStar, OpenRouter-style catalogs), keyed by model id. */
+export function modelFactsFromPayload(payload: unknown): Map<string, { name?: string; contextWindow?: number }> {
+  const out = new Map<string, { name?: string; contextWindow?: number }>();
+  const records = payload && typeof payload === "object" && Array.isArray((payload as { data?: unknown }).data)
+    ? (payload as { data: unknown[] }).data
+    : Array.isArray(payload) ? payload : [];
+  for (const record of records) {
+    if (!record || typeof record !== "object") continue;
+    const row = record as { id?: unknown; name?: unknown; context_length?: unknown; top_provider?: { context_length?: unknown } };
+    if (typeof row.id !== "string" || !MODEL_ID.test(row.id)) continue;
+    // oxlint-disable-next-line no-control-regex -- strip control characters from a model name
+    const name = typeof row.name === "string" ? row.name.replace(/[\u0000-\u001f\u007f]/g, "").trim().slice(0, 80) : "";
+    const raw = row.context_length ?? row.top_provider?.context_length;
+    const contextWindow = typeof raw === "number" && Number.isSafeInteger(raw) && raw > 0 && raw <= 100_000_000 ? raw : undefined;
+    out.set(row.id, { ...(name && name !== row.id ? { name } : {}), ...(contextWindow ? { contextWindow } : {}) });
+  }
+  return out;
+}
+
 function idsFromModelsPayload(payload: unknown): string[] {
   const records = Array.isArray(payload)
     ? payload
@@ -382,17 +407,19 @@ export async function probeLocalInjects(
       const loaded = loadedIdsFromPayloads(host, catalog ?? extra, extra);
       const ids = [...new Set([...catalogIds, ...extraIds, ...loaded])];
       const windows = contextWindowsFromPs(extra);
-      return { host, ids, loaded, windows };
+      const facts = modelFactsFromPayload(catalog);
+      return { host, ids, loaded, windows, facts };
     }),
   );
-  for (const { host, ids, loaded, windows } of pages) {
+  for (const { host, ids, loaded, windows, facts } of pages) {
+    const labels = localModelLabels(host.label, ids.map((id) => ({ id, ...(facts.get(id)?.name ? { name: facts.get(id)!.name } : {}) })));
     for (const model of ids) {
-      const contextWindow = windows.get(model);
+      const contextWindow = windows.get(model) ?? facts.get(model)?.contextWindow;
       found.push({
         id: encodeInjectId(host.id, model),
         host: host.id,
         model,
-        label: `${model} (${host.label})`,
+        label: labels.get(model) ?? `${host.label}: ${model}`,
         loaded: loaded.has(model),
         ...(contextWindow ? { contextWindow } : {}),
       });
@@ -422,6 +449,7 @@ export async function mergeLocalInject(
   for (const extra of extras) {
     const existing = options.find((option) => option.id === extra.id);
     if (existing) {
+      existing.local = true;
       if (extra.loaded) existing.loaded = true;
       if (extra.contextWindow) existing.contextWindow = extra.contextWindow;
       continue;
@@ -431,6 +459,7 @@ export async function mergeLocalInject(
       id: extra.id,
       label: extra.label,
       custom: true,
+      local: true,
       ...(extra.loaded ? { loaded: true } : {}),
       ...(extra.contextWindow ? { contextWindow: extra.contextWindow } : {}),
     });

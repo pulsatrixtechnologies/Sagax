@@ -63,7 +63,8 @@ Sagax is made by Pulsatrix Technologies inc. It is based on OpenMausBot (see
 - **Groups with people and bots.** A group chat holds people and bots side by
   side. Mention a bot to ask it, or let the group's lead answer. Each group
   keeps a shared memory its bots read and update. Only the group's owner
-  changes its settings.
+  changes its settings. Small avatars under a message show who has seen it,
+  people and bots alike (a bot has seen what its turn read).
 - **Private threads.** On an organization server, a conversation with a shared
   bot is private to you; group chats are the only shared conversations.
 - **Memory.** Each bot keeps plain Markdown notes, editable in its panel, with
@@ -104,9 +105,11 @@ Take control at any time. A bot can work in:
 
 ### Voice calls
 
-Press the call button on a bot and talk, like a phone call. The call starts
-as a short row. The chevron opens the stage over the chat, with the
-settings, the transcript, hold, mute and hang up. The microphone stays open:
+Press the call button on a bot and talk, like a phone call. On the desktop
+the call is a rounded bar that floats at the top of the chat, under the
+bot's name: its avatar, a live waveform, then settings, transcript, mute and
+hang up. The gear opens Voice, Speed and Language under the bar, and the
+speech bubble shows what was said; the chat stays visible behind. The microphone stays open:
 interrupt the bot at any time and it stops talking. Hold, mute and push to
 talk are one click away. The bot is still the one answering: every sentence
 you say becomes an ordinary message in the thread, and xAI is used only for
@@ -183,13 +186,19 @@ effects and moves.
 - **Shared bots and who pays.** Share a bot with people or Perspicax teams.
   The person who speaks pays for the turn: their own subscription first, then
   their own key in Perspicax, then the organization's key. Each engine card in
-  Settings > Model providers shows what pays for your turns.
+  Settings > Model providers shows one line on what pays today ("Pays with:
+  your subscription") and one Connect or Disconnect button.
 - **Engines and keys.** Each engine signs in with its own command. On an
   organization server, Grok signs in with the grok CLI. A person can save
-  more than one GitHub key. On a Mac, local models can serve
-  organization-server bots when the harness already injects a local
-  endpoint. Sharing those models with other people stays off until it is
-  turned on.
+  more than one GitHub key. Local models (DwarfStar, llama-server, Ollama,
+  LM Studio, oMLX, EXO, Unsloth) show under Local in the model picker, in
+  Simple and Advanced. Opening the picker looks for them again. In solo they
+  run on pi, Codex, Grok, Kimi, Qwen, Droid, Hermes, OpenCode, and on Claude
+  Code when the server answers the Anthropic protocol. On an organization
+  server, the models on your own computer serve your own bots by default
+  through the desktop app, on every engine above except Claude Code, which
+  needs the Anthropic protocol. Sharing them with other people stays off
+  until you turn it on. The server's own local models are never offered.
 - **Desktop bridge.** In server mode the desktop app is the bridge to your PC:
   bots working for you run their tools (shell, files, browser, computer use,
   Local VM) on your own computer, and their network traffic leaves through it,

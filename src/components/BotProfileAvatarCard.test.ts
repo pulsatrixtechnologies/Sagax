@@ -4,7 +4,8 @@ import { describe, expect, it, vi } from "vitest";
 
 import { StoreProvider, type Bot } from "@/state/store";
 import { MAUS_COLOR_NAMES } from "@/lib/mascot";
-import { BotProfileAvatarCard } from "./BotProfileAvatarCard";
+import { BotProfileAvatarCard, editorDismissRoot } from "./BotProfileAvatarCard";
+import { popoverClosesOnKey, popoverClosesOnPointer } from "@/hooks/use-popover-dismiss";
 import MascotLookEditor from "./floating-bots/MascotLookEditor";
 
 function makeBot(overrides: Partial<Bot> = {}): Bot {
@@ -137,5 +138,36 @@ describe("BotProfileAvatarCard skins and moves", () => {
     const markup = renderCard(makeBot({ avatarUrl: "/api/attachments/cat.webp", avatarCrop: "rounded" }));
     expect(markup).not.toContain("data-mascot-skin-option");
     expect(markup).not.toContain("data-mascot-move");
+  });
+});
+
+describe("avatar editor dismissal", () => {
+  const node = (...inside: unknown[]) => ({ contains: (target: unknown) => target === undefined ? false : inside.includes(target) });
+  const button = { id: "button", closest: () => null };
+  const panel = { id: "panel" };
+  const swatch = { id: "swatch", closest: () => null };
+  const page = { id: "page", closest: () => null };
+  const root = editorDismissRoot(
+    { current: node(button) as unknown as Node },
+    { current: node(panel, swatch) as unknown as Node },
+  );
+
+  it("closes on a press outside the panel and the avatar", () => {
+    expect(popoverClosesOnPointer(page as unknown as EventTarget, root)).toBe(true);
+  });
+
+  it("stays open on the panel's controls and on the avatar button itself", () => {
+    expect(popoverClosesOnPointer(swatch as unknown as EventTarget, root)).toBe(false);
+    expect(popoverClosesOnPointer(panel as unknown as EventTarget, root)).toBe(false);
+    expect(popoverClosesOnPointer(button as unknown as EventTarget, root)).toBe(false);
+  });
+
+  it("closes on Escape", () => {
+    expect(popoverClosesOnKey({ key: "Escape", defaultPrevented: false, isComposing: false })).toBe(true);
+  });
+
+  it("is outside everywhere while the panel is closed", () => {
+    const closed = editorDismissRoot({ current: null }, { current: null });
+    expect(closed.contains(page)).toBe(false);
   });
 });

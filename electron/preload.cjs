@@ -373,6 +373,8 @@ const bridge = {
   serverMode: {
     state: () => ipcRenderer.invoke("server-mode:state"),
     leave: () => ipcRenderer.invoke("server-mode:leave"),
+    /** Probe this computer's local model servers now (the model picker opened). */
+    refreshLocalModels: () => ipcRenderer.invoke("server-mode:refresh-local-models"),
   },
 
   /** Saved servers and the active one (Server menu). Switching, adding and

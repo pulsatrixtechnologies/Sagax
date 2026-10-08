@@ -8,8 +8,10 @@ import { formatTime, type Bot } from "@/state/store";
 import { BotAvatar } from "./Avatar";
 import { activeLocale, t } from "@/lib/i18n";
 import { mausInk, type MausColor } from "@/lib/mascot";
+import { ToolActivity } from "./ToolActivity";
 import {
   exchangeBody,
+  exchangeSheetRow,
   exchangeSpeaker,
   startsNewStretch,
   transcriptDateLabel,
@@ -58,7 +60,7 @@ export function TranscriptDate({ at }: { at: number }) {
   );
 }
 
-function ExchangeSheet({ run, bots, onClose }: { run: ExchangeRun; bots?: readonly Bot[]; onClose: () => void }) {
+function ExchangeSheet({ run, bots, showToolCalls, onClose }: { run: ExchangeRun; bots?: readonly Bot[]; showToolCalls: boolean; onClose: () => void }) {
   const column = useContext(ExchangeColumnContext);
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -71,6 +73,12 @@ function ExchangeSheet({ run, bots, onClose }: { run: ExchangeRun; bots?: readon
     return () => window.removeEventListener("keydown", onKey, true);
   }, [onClose]);
   const fallback = run.ends[0];
+  // A tool step is never a line with a speaker: it is a chip with Tool
+  // calls on, and nothing at all otherwise.
+  const rows = run.messages.flatMap((message) => {
+    const shape = exchangeSheetRow(message, showToolCalls);
+    return shape ? [{ message, shape }] : [];
+  });
   const sheet = (
     <div
       className="absolute inset-0 z-20 flex min-h-0 flex-col bg-app"
@@ -95,13 +103,24 @@ function ExchangeSheet({ run, bots, onClose }: { run: ExchangeRun; bots?: readon
         </div>
       </div>
       <div className="mx-auto flex min-h-0 w-full max-w-xl flex-1 flex-col gap-4 overflow-y-auto px-6 py-6" onClick={(event) => event.stopPropagation()}>
-        {run.messages.map((message, index) => {
-          const previous = run.messages[index - 1];
+        {rows.map(({ message, shape }, index) => {
+          const previous = rows[index - 1]?.message;
+          const stamp = startsNewStretch(previous?.at, message.at) && <TranscriptDate at={message.at} />;
+          if (shape === "tool") {
+            return (
+              <div key={message.id} className="contents">
+                {stamp}
+                <div data-mid={message.id} className="ps-4">
+                  <ToolActivity tool={message.tool!} />
+                </div>
+              </div>
+            );
+          }
           const speaker = exchangeSpeaker(message, fallback);
           const bot = avatarBot(speaker, bots);
           return (
             <div key={message.id} className="contents">
-              {startsNewStretch(previous?.at, message.at) && <TranscriptDate at={message.at} />}
+              {stamp}
               <div data-mid={message.id} className="relative ps-4">
                 <div className="mb-1 text-[12px] font-medium" style={{ color: mausInk(bot.color) }}>{speaker.name}</div>
                 <div className="whitespace-pre-wrap rounded-[18px] bg-card px-3 py-2 text-[13px] leading-5 text-ink">
@@ -136,10 +155,13 @@ export function BotExchangeChip({
   run,
   bots,
   forceOpen = false,
+  showToolCalls = false,
   onGo,
 }: {
   run: ExchangeRun;
   bots?: readonly Bot[];
+  /** Settings > Tool calls: tool steps inside the run show as chips. */
+  showToolCalls?: boolean;
   /** A search hit inside the run opens the sheet, the same way a folded tool run does. */
   forceOpen?: boolean;
   /** Opens that bot's conversation. False when there is no conversation to open, and the sheet stays. */
@@ -174,6 +196,7 @@ export function BotExchangeChip({
         <ExchangeSheet
           run={run}
           bots={bots}
+          showToolCalls={showToolCalls}
           onClose={() => {
             setOpen(false);
             setHeld(true);

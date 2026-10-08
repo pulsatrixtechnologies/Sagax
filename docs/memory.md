@@ -114,6 +114,37 @@ through `session_search`, which discloses it. `features.autoRecall: false` in
 `config.json` switches recall off. The server log names every recall
 (`auto-recall: … got N note and M conversation passage(s)`).
 
+## Long conversations
+
+Every engine has a context window, and most of them compact their own
+session when it fills: they summarize the older part in their own words,
+sometimes in the middle of a task, and some say so in the chat. Sagax does
+not leave that to the engine. Before a turn, it measures the thread
+(the engine's own reading when it reports one, else an estimate) and folds
+it itself well before the engine's own compaction point: the two latest
+exchanges and the new message stay word for word, everything older becomes
+a short summary written by the bot's engine.
+
+That summary is the thread's own memory of its older turns. It is stored
+with the conversation on the computer running Sagax, never shown in the
+chat and never added to `MEMORY.md`. The next turn starts a fresh engine
+session with the bot's full instructions, its `MEMORY.md`, recall, the
+summary and the latest turns, so the bot carries on with the same goal and
+the same notes. The person sees nothing: no notice, no extra message, only
+the usual typing state. The full conversation stays in the app; only what
+the engine reads is condensed. Editing an earlier message starts another
+branch, which does not inherit a summary of turns it no longer has.
+
+If an engine still compacts on its own (one very long task), Sagax hides
+that as well and gives the engine back what its own summary may drop: the
+latest turn digests, the thread summary, and the changing part of the
+instructions (memory, teammates).
+
+Asking for it with `/compact` still shows a summary card, because the
+person asked. For debugging only, `context.autoCompact: false` in
+`config.json` turns Sagax's own folding off, and
+`context.autoCompactOffBots: ["<botId>"]` turns it off for one bot.
+
 ## Memory upkeep
 
 **Bot Settings → Memory → Memory upkeep** is on for every bot unless switched

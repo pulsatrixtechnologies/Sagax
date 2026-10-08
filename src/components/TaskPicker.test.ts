@@ -1,8 +1,12 @@
-import { describe, expect, it } from "vitest";
+import { createElement, isValidElement, Children, type ReactNode } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { describe, expect, it, vi } from "vitest";
 
 import { t } from "@/lib/i18n";
 import {
   TASK_PICKER_DISMISS_MS,
+  ThreadActionsPanel,
+  type PickerThreadActions,
   filterTasks,
   groupThreadTasks,
   taskPickerPointerIntent,
@@ -97,5 +101,53 @@ describe("filterTasks", () => {
 
   it("returns nothing when nothing matches", () => {
     expect(filterTasks(tasks, "zzzz")).toEqual([]);
+  });
+});
+
+describe("picker row actions (moved from the sidebar thread rows)", () => {
+  const task = { threadId: "t1", title: "Weekly report", createdAt: 1 };
+  const actions = () => ({ onCopyLink: vi.fn(), onRegenerateTitle: vi.fn(), onArchive: vi.fn(), onSnooze: vi.fn(), onRefreshPermissions: vi.fn() });
+  const render = (candidate: Parameters<typeof ThreadActionsPanel>[0]["task"], given: PickerThreadActions = actions()) =>
+    renderToStaticMarkup(createElement(ThreadActionsPanel, { task: candidate, actions: given, regenerating: false, onRegenerate: vi.fn(), onDone: vi.fn() }));
+  function buttons(node: ReactNode): Array<{ props: { onClick?: () => void; children?: ReactNode } }> {
+    const found: Array<{ props: { onClick?: () => void; children?: ReactNode } }> = [];
+    for (const child of Children.toArray(node)) {
+      if (!isValidElement<{ onClick?: () => void; children?: ReactNode }>(child)) continue;
+      if (child.type === "button") found.push(child);
+      found.push(...buttons(child.props.children));
+    }
+    return found;
+  }
+  const label = (node: ReactNode) => renderToStaticMarkup(createElement("span", null, node));
+
+  it("offers copy link, regenerate title, archive, snooze and refresh permissions", () => {
+    const markup = render(task);
+    for (const text of ["Copy link", "Regenerate title", "Archive", "Until new activity", "Refresh permissions"]) expect(markup).toContain(text);
+    expect(markup).not.toContain("Stop snoozing");
+    expect(markup).not.toContain("Unarchive");
+  });
+
+  it("offers the way back for an archived or snoozed thread", () => {
+    const markup = render({ ...task, archivedAt: 5, snoozedUntil: 0 });
+    expect(markup).toContain("Unarchive");
+    expect(markup).toContain("Stop snoozing");
+  });
+
+  it("leaves regenerate out where generated titles are off", () => {
+    const given = actions();
+    const { onRegenerateTitle: _off, ...rest } = given;
+    expect(render(task, rest)).not.toContain("Regenerate title");
+  });
+
+  it("archives and snoozes the row's own thread", () => {
+    const given = actions();
+    const onDone = vi.fn();
+    const tree = ThreadActionsPanel({ task, actions: given, regenerating: false, onRegenerate: vi.fn(), onDone });
+    const all = buttons(tree.props.children);
+    all.find((button) => label(button.props.children).includes("Archive"))!.props.onClick!();
+    expect(given.onArchive).toHaveBeenCalledWith("t1", expect.any(Number));
+    all.find((button) => label(button.props.children).includes("Until new activity"))!.props.onClick!();
+    expect(given.onSnooze).toHaveBeenCalledWith("t1", 0);
+    expect(onDone).toHaveBeenCalledTimes(2);
   });
 });

@@ -7,9 +7,11 @@
 // Each thread entry says whether it is coding work (`coding`,
 // server/activity-coding.ts: read off its tool calls and folder, never its
 // title), so the panel lists coding jobs under Coding and everything else
-// under Activity. `?filter=coding|other` narrows the list the same way, and
-// the list also carries `subagents`: the sub-agents its listed threads
-// started, running or recent.
+// under Activity; a coding entry also carries its code work (`code`,
+// server/activity-code-work.ts: repository, branch, and the pull requests,
+// branches and commits its calls produced). `?filter=coding|other` narrows
+// the list the same way, and the list also carries `subagents`: the
+// sub-agents its listed threads started, running or recent.
 //
 // Authorization (shared/bot-activity.ts): the gate in index.ts already hides
 // a bot the viewer cannot see. Here every thread passes `threadReadable`
@@ -34,9 +36,11 @@ import {
   type BotActivityItem,
   type BotActivityStatus,
   type BotActivityStep,
+  type BotCodeWork,
 } from "../../shared/bot-activity.ts";
 import { PASS, type RouteHandler } from "./table.ts";
 import { addCodingSignal, isCodingWork, type CodingSignals } from "../activity-coding.ts";
+import { CodeWorkCollector, type RepositoryInfo } from "../activity-code-work.ts";
 
 export interface ActivityBot {
   id: string;
@@ -109,11 +113,15 @@ export interface BotActivityRouteDeps {
   runAccessCard?(run: RoutineRun, viewerId: string | undefined): WireAccessCard | undefined;
   /** The folder is inside a git repository (or worktree) on this server. */
   inRepository?(cwd: string): boolean;
+  /** That repository's root, checked-out branch and origin remote. */
+  repository?(cwd: string): RepositoryInfo | undefined;
   now?: () => number;
 }
 
 /** How far back a thread's tool calls are read to tell coding work. */
 const CODING_SCAN = 500;
+/** A running thread's coding scan is reused this long. */
+const CODING_RESCAN_MS = 3_000;
 /** What a running entry is doing now is read off its newest messages. */
 const CURRENT_SCAN = 30;
 const SUBAGENT_LIMIT = 20;
@@ -203,6 +211,7 @@ export function createBotActivityRoutes(deps: BotActivityRouteDeps): RouteHandle
     const children = deps.children(bot.id, task.threadId);
     const active = activityStatusActive(status);
     const current = active ? currentStep(task.threadId, run) : undefined;
+    const coding = codingThread(task);
     return {
       id: `thread:${task.threadId}`,
       kind: run || task.routineRunId ? "routine" : task.openedBy && task.openedBy.botId !== bot.id ? "hop" : "session",
@@ -216,7 +225,7 @@ export function createBotActivityRoutes(deps: BotActivityRouteDeps): RouteHandle
       ...(deps.threadReadable(bot.id, task.threadId, viewerId) ? { threadId: task.threadId } : {}),
       ...(startedBy(task, run) ? { startedBy: startedBy(task, run) } : {}),
       ...(children.length ? { childCount: children.length } : {}),
-      ...(codingThread(task) ? { coding: true } : {}),
+      ...(coding ? { coding: true, code: coding } : {}),
       ...(current ? { currentStep: current } : {}),
       ...(active && deps.threadWritable(bot.id, task.threadId, viewerId) ? { canStop: true } : {}),
       ...(task.parallelOf ? { parallel: true } : {}),
@@ -224,21 +233,36 @@ export function createBotActivityRoutes(deps: BotActivityRouteDeps): RouteHandle
   }
 
   /** Coding work is sticky: once a thread committed or edited code it stays
-   * coding, and a settled thread is read once per change. */
-  const codingCache = new Map<string, { at: number; signals: CodingSignals; coding: boolean }>();
-  function codingThread(task: ActivityTask): boolean {
+   * coding. A settled thread is read once per change, a running one at most
+   * every CODING_RESCAN_MS. A coding thread also carries its code work
+   * (server/activity-code-work.ts): its repository folder and branch, and
+   * the pull requests, branches and commits its calls produced. */
+  const codingCache = new Map<string, { at: number; scannedAt: number; coding: boolean; code?: BotCodeWork }>();
+  function codingThread(task: ActivityTask): BotCodeWork | undefined {
     const at = task.updatedAt ?? task.createdAt;
     const cached = codingCache.get(task.threadId);
-    if (cached && (cached.coding || (cached.at === at && !task.busy))) return cached.coding;
+    if (cached && cached.at === at && (!task.busy || now() - cached.scannedAt < CODING_RESCAN_MS)) return cached.code;
     const signals: CodingSignals = { edits: 0, codeFiles: 0, vcs: false };
+    const repository = task.cwd ? deps.repository?.(task.cwd) : undefined;
+    const collector = new CodeWorkCollector(repository?.origin);
     for (const message of deps.messages(task.threadId, CODING_SCAN).messages) {
-      if (message.tool) addCodingSignal(signals, message.tool);
+      if (!message.tool) continue;
+      addCodingSignal(signals, message.tool);
+      collector.add(message.tool, message.at);
     }
     const inRepository = Boolean(task.cwd && signals.edits > 0 && deps.inRepository?.(task.cwd));
-    const coding = isCodingWork(signals, inRepository);
+    const coding = Boolean(cached?.coding) || isCodingWork(signals, inRepository);
+    const code: BotCodeWork | undefined = coding
+      ? {
+        ...(repository ? { folder: repository.root } : {}),
+        ...(repository?.branch ? { branch: repository.branch } : {}),
+        ...(repository?.origin ? { repo: repository.origin.repo, ...(repository.origin.url ? { repoUrl: repository.origin.url } : {}) } : {}),
+        ...collector.result(),
+      }
+      : undefined;
     if (codingCache.size > 2_000) codingCache.clear();
-    codingCache.set(task.threadId, { at, signals, coding });
-    return coding;
+    codingCache.set(task.threadId, { at, scannedAt: now(), coding, code });
+    return code;
   }
 
   /** A running entry's current step: the tool call in flight, else the

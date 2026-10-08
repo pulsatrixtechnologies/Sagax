@@ -9,6 +9,7 @@ import { createServer } from "node:http";
 import { join } from "node:path";
 
 import { isDesktopHostId, normalizeLoopbackBase, SEED_ENDPOINTS, type LoopbackEndpoint } from "../shared/desktop-local-models.ts";
+import { localModelLabels, localModelUnavailable } from "../shared/local-model-engines.ts";
 import { writeFileAtomic } from "./atomic.ts";
 import { personForDesktopGrant } from "./desktop-model-grant.ts";
 import type { DesktopBridgeOperation } from "./desktop-bridge.ts";
@@ -22,6 +23,7 @@ import {
 } from "./drivers/local-inject.ts";
 
 export const DESKTOP_MODEL_UNAVAILABLE = "This local model is unavailable. The computer is offline, or it is not shared with you.";
+export const DESKTOP_MODEL_WRONG_ENGINE = "This engine cannot run a model from your computer. Pick it on pi, Codex, Grok or another engine that takes an OpenAI-compatible endpoint.";
 const INVALID_BASE = "Use http://127.0.0.1 or http://localhost, and a path ending in /v1.";
 const REQUEST_CAP = 1_000_000;
 const RESPONSE_CAP = 1_500_000;
@@ -37,6 +39,8 @@ interface PublishedEndpoint {
   id: string;
   label: string;
   models: string[];
+  /** Display name and context window per model id, when the server reports them. */
+  details?: Record<string, { name?: string; contextWindow?: number }>;
 }
 
 interface BridgeClient {
@@ -53,7 +57,30 @@ export interface DesktopLocalModelView {
   connected: boolean;
 }
 
-type ModelOption = { id: string; label: string; custom?: boolean };
+type ModelOption = { id: string; label: string; custom?: boolean; local?: boolean; contextWindow?: number };
+
+/** Own bots may use this computer's models until the person turns that off.
+ * Other people never do until the person turns sharing on. */
+function defaultSettings(): PersonSettings {
+  return { expose: true, share: false, endpoints: SEED_ENDPOINTS.map((row) => ({ ...row })) };
+}
+
+function parseDetails(value: unknown, models: readonly string[]): PublishedEndpoint["details"] | null {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value) || value.length > 200) return null;
+  const out: NonNullable<PublishedEndpoint["details"]> = {};
+  for (const item of value) {
+    if (!item || typeof item !== "object" || Array.isArray(item)) return null;
+    const row = item as Record<string, unknown>;
+    if (Object.keys(row).some((name) => name !== "id" && name !== "name" && name !== "contextLength")) return null;
+    if (typeof row.id !== "string" || !models.includes(row.id)) continue;
+    const name = cleanLabel(row.name, "");
+    const raw = row.contextLength;
+    const contextWindow = typeof raw === "number" && Number.isSafeInteger(raw) && raw > 0 && raw <= 100_000_000 ? raw : undefined;
+    out[row.id] = { ...(name && name !== row.id ? { name } : {}), ...(contextWindow ? { contextWindow } : {}) };
+  }
+  return out;
+}
 
 function usableModel(id: string): boolean {
   if (!MODEL_ID.test(id)) return false;
@@ -200,7 +227,7 @@ export class DesktopLocalModels {
     this.load();
     const key = person.trim().toLowerCase();
     const stored = key ? this.people.get(key) : undefined;
-    const settings = stored ?? { expose: false, share: false, endpoints: SEED_ENDPOINTS.map((row) => ({ ...row })) };
+    const settings = stored ?? defaultSettings();
     const pub = key && settings.expose ? this.published.get(key) : undefined;
     return {
       expose: settings.expose,
@@ -220,7 +247,7 @@ export class DesktopLocalModels {
     for (const name of Object.keys(record)) {
       if (name !== "expose" && name !== "share" && name !== "endpoints") return { ok: false, error: INVALID_BASE };
     }
-    const current = this.people.get(key) ?? { expose: false, share: false, endpoints: SEED_ENDPOINTS.map((row) => ({ ...row })) };
+    const current = this.people.get(key) ?? defaultSettings();
     let expose = current.expose;
     let share = current.share;
     let endpoints = current.endpoints.map((row) => ({ ...row }));
@@ -248,6 +275,12 @@ export class DesktopLocalModels {
   publish(person: string, body: unknown): { ok: true } | { ok: false; error: string } {
     this.load();
     const key = person.trim().toLowerCase();
+    // Someone who never changed the switches publishes under the defaults.
+    // Held in memory only: the file keeps what the person chose.
+    if (key && !this.people.has(key)) {
+      this.people.set(key, defaultSettings());
+      this.syncPerson(key);
+    }
     const settings = key ? this.people.get(key) : undefined;
     if (!settings?.expose) {
       if (key) this.published.delete(key);
@@ -262,7 +295,7 @@ export class DesktopLocalModels {
     for (const item of record.endpoints) {
       if (!item || typeof item !== "object" || Array.isArray(item)) return { ok: false, error: "Invalid local model catalog." };
       const row = item as Record<string, unknown>;
-      if (Object.keys(row).some((name) => name !== "id" && name !== "label" && name !== "models")) return { ok: false, error: "Invalid local model catalog." };
+      if (Object.keys(row).some((name) => name !== "id" && name !== "label" && name !== "models" && name !== "details")) return { ok: false, error: "Invalid local model catalog." };
       if (typeof row.id !== "string" || !allowed.has(row.id) || !Array.isArray(row.models)) continue;
       const models: string[] = [];
       for (const model of row.models) {
@@ -271,8 +304,10 @@ export class DesktopLocalModels {
         if (models.length >= 200) break;
       }
       if (!models.length) continue;
+      const details = parseDetails(row.details, models);
+      if (details === null) return { ok: false, error: "Invalid local model catalog." };
       const saved = settings.endpoints.find((endpoint) => endpoint.id === row.id);
-      endpoints.push({ id: row.id, label: cleanLabel(row.label, saved?.label ?? ""), models });
+      endpoints.push({ id: row.id, label: cleanLabel(row.label, saved?.label ?? ""), models, ...(details ? { details } : {}) });
     }
     this.published.set(key, { endpoints });
     return { ok: true };
@@ -294,18 +329,25 @@ export class DesktopLocalModels {
         if (!settings.endpoints.some((row) => row.id === endpoint.id)) continue;
         const hostId = injectHostId(owner, endpoint.id);
         if (!hostId || !this.hostMeta.has(hostId)) continue;
+        // Your own computer reads "DwarfStar: Qwen3.8 Flash Next"; someone
+        // else's shared one names that computer too.
+        const server = who === owner ? endpoint.label || computer : `${endpoint.label || "Local"} (${computer})`;
+        const labels = localModelLabels(server, endpoint.models.map((model) => ({ id: model, ...(endpoint.details?.[model]?.name ? { name: endpoint.details[model]!.name } : {}) })));
         for (const model of endpoint.models) {
-          const label = endpoint.label ? `${model} (${computer}, ${endpoint.label})` : `${model} (${computer})`;
-          out.push({ id: encodeInjectId(hostId, model), host: hostId, model, label });
+          const contextWindow = endpoint.details?.[model]?.contextWindow;
+          out.push({ id: encodeInjectId(hostId, model), host: hostId, model, label: labels.get(model) ?? model, ...(contextWindow ? { contextWindow } : {}) });
         }
       }
     }
     return out;
   }
 
-  /** A desk inject id that this person may not run fails the turn before any CLI starts. */
-  assertAvailable(person: string | null, model: string | null | undefined): void {
+  /** A desk inject id that this person may not run, or that this engine
+   * cannot run (Claude Code needs the Anthropic protocol, the bridge
+   * carries OpenAI-compatible calls only), fails the turn before any CLI starts. */
+  assertAvailable(person: string | null, model: string | null | undefined, driverKind?: string): void {
     if (!isDesktopInjectModel(model)) return;
+    if (driverKind !== undefined && localModelUnavailable(driverKind, "desktop")) throw new Error(DESKTOP_MODEL_WRONG_ENGINE);
     if (!this.available(person, model ?? "")) throw new Error(DESKTOP_MODEL_UNAVAILABLE);
   }
 
@@ -327,7 +369,7 @@ export class DesktopLocalModels {
     const rows = this.modelsFor(person);
     return instances.map((instance) => {
       const options = instance.models.options.filter((option) => !isDesktopInjectModel(option.id));
-      for (const row of rows) options.push({ id: row.id, label: row.label, custom: true });
+      for (const row of rows) options.push({ id: row.id, label: row.label, custom: true, local: true, ...(row.contextWindow ? { contextWindow: row.contextWindow } : {}) });
       return { ...instance, models: { ...instance.models, options } };
     });
   }

@@ -30,6 +30,35 @@ export function Switch({
   );
 }
 
+/** A standalone on/off setting: label (and optional description) at the left,
+ * the Switch at the right. The whole row is a <label>, so a click on the text
+ * toggles and Space on the focused switch toggles. */
+export function SwitchRow({
+  label,
+  description,
+  checked,
+  disabled,
+  onChange,
+  className,
+}: {
+  label: React.ReactNode;
+  description?: React.ReactNode;
+  checked: boolean;
+  disabled?: boolean;
+  onChange: (next: boolean) => void;
+  className?: string;
+}) {
+  return (
+    <label className={cn("flex min-w-0 items-center justify-between gap-4 text-[13px] text-ink", disabled ? "cursor-not-allowed" : "cursor-pointer", className)}>
+      <span className="min-w-0">
+        <span className="block leading-[18px]">{label}</span>
+        {description && <span className="mt-0.5 block text-[12px] leading-relaxed text-ink-secondary">{description}</span>}
+      </span>
+      <Switch checked={checked} disabled={disabled} onClick={() => onChange(!checked)} />
+    </label>
+  );
+}
+
 type CountKey = "people" | "devices" | "backups" | "turns" | "computers" | "entries" | "workspaces" | "profiles";
 
 /** "1 person" / "3 people" for a collapsed card's summary, by the active
@@ -211,7 +240,7 @@ export function HelpTip({ label, children }: { label: string; children: React.Re
       >
         <CircleHelp size={13} aria-hidden="true" />
       </summary>
-      <div className="absolute left-0 z-30 mt-1 w-64 rounded-xl border border-hairline bg-panel p-3 text-[12px] leading-[17px] text-ink-secondary shadow-xl">
+      <div className="absolute left-0 z-30 mt-1 w-64 rounded-xl border border-hairline popover-surface bg-panel p-3 text-[12px] leading-[17px] text-ink-secondary shadow-xl">
         {children}
       </div>
     </details>

@@ -156,6 +156,8 @@ interface AcpTurn {
     usagePeak: number | null;
     usageLast: number | null;
     usageCompacted: boolean;
+    /** The context window the agent reports beside `used` (ACP `size`). */
+    usageSize?: number | null;
   };
   acknowledge: () => void;
   asks: Map<string, AcpAskFinish>;
@@ -343,6 +345,14 @@ export interface AcpSupport {
   ): Promise<ProviderSnapshot>;
   /** Google Antigravity resumes through session/resume, not session/load. */
   resumeMethod?: "load" | "resume";
+  /** After a successful session/load|resume: whether the restored native
+   * session can serve this turn as asked. False when the runtime keeps the
+   * stored session's own settings on load (Grok restores the session's model
+   * and ignores the new profile's model) and switching them in place is not
+   * safe. The core then opens a fresh native session on the same process,
+   * with the same establishment inputs, and carries the thread's history in
+   * the prompt (session.started says `rebuilt`), as when the session is gone. */
+  acceptsLoadedSession?(ctx: { turn: SendTurnInput; currentModelId?: string }): boolean;
   /** Some agents acknowledge a live load without applying new MCP credentials. */
   restartOnMcpChange?: boolean;
   /** Route workspace file access through ACP so edits retain approval cards. */
@@ -408,7 +418,10 @@ export interface AcpSupport {
   /** Apply per-session settings between session/new (or session/load) and the
    * first session/prompt. Some CLIs ignore argv and take the model/mode over
    * the wire instead (droid), so this is the only place the pick can land; a
-   * throw here fails the turn rather than silently running another model. */
+   * throw here fails the turn rather than silently running another model.
+   * It may instead return the model the session actually runs, when the
+   * runtime answered with another one (an id it does not offer) and said so
+   * through `notice`: the turn then reports that model. */
   configureSession?(ctx: {
     request: (method: string, params: unknown, timeoutMs?: number) => Promise<any>;
     sessionId: string;
@@ -422,7 +435,9 @@ export interface AcpSupport {
     sessionModels: Array<{ modelId?: string; name?: string }>;
     /** Last model acknowledged by session/new/load, preserved for pooled turns. */
     currentModelId?: string;
-  }): Promise<void>;
+    /** Show the person one plain line (a runtime.notice) for this turn. */
+    notice?(message: string): void;
+  }): Promise<void | { model?: string }>;
 }
 
 const envOr = (key: string, fallback: number): number => Number(process.env[key] ?? fallback);
@@ -1431,6 +1446,8 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
               }
               if (current.state.usagePeak === null || used > current.state.usagePeak) current.state.usagePeak = used;
               current.state.usageLast = used;
+              const size = u.size ?? u.usage?.size;
+              if (typeof size === "number" && size > 0) current.state.usageSize = size;
               break;
             }
           }
@@ -1873,6 +1890,7 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
               const selectionParams = (narrowsNativeTools(turn.toolScope) || turn.withholdHostTools === true) && support.toolScopeSessionParams
                 ? support.toolScopeSessionParams(turn, init, sessionServers.length > 0, { config: turnConfig, env, cwd }) : {};
               let loaded = false;
+              let replaceLoaded = false;
               if (cursor) {
                 try {
                   await request(
@@ -1880,12 +1898,20 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
                     { sessionId: cursor, cwd, mcpServers: sessionServers, ...selectionParams },
                     LOAD_SESSION_TIMEOUT,
                     (result) => {
-                      if (result) {
-                        loaded = true;
-                        session.sessionId = cursor;
-                        session.sessionKey = sessionKey;
-                        receiveModelVariants(result);
+                      if (!result) return;
+                      // A restored session that cannot serve this turn as
+                      // asked (Grok keeps the stored session's model) is not
+                      // adopted: a fresh session below gets the history.
+                      if (support.acceptsLoadedSession && !support.acceptsLoadedSession({
+                        turn: cliTurn, currentModelId: result?.models?.currentModelId,
+                      })) {
+                        replaceLoaded = true;
+                        return;
                       }
+                      loaded = true;
+                      session.sessionId = cursor;
+                      session.sessionKey = sessionKey;
+                      receiveModelVariants(result);
                     },
                   );
                 } catch (error) {
@@ -1904,7 +1930,7 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
                 }
               }
               if (loaded) break;
-              if (cursor && liveSessionId === cursor) {
+              if (cursor && liveSessionId === cursor && !replaceLoaded) {
                 // The agent refused (or never answered) re-establishing its
                 // own live session on this process. Continuity outranks the
                 // saved handshake: close the pooled child and resume the
@@ -2017,7 +2043,7 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
 
               if (support.configureSession) {
                 approvalUnconfirmed = support.sessionScopedApproval === true;
-                await support.configureSession({
+                const configured = await support.configureSession({
                   request: (method, params, timeoutMs) =>
                     request(method, params, timeoutMs ?? SESSION_CONFIG_TIMEOUT),
                   sessionId,
@@ -2027,8 +2053,21 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
                     ? sessionResult.models.availableModels
                     : [],
                   currentModelId: session.sessionConfigResult?.models?.currentModelId,
+                  notice: (message) => {
+                    // once per live session, like the fallback notice above
+                    if (session.fallbackNotice === message) return;
+                    session.fallbackNotice = message;
+                    emit({ ...base(threadId, turnId), type: "runtime.notice", message });
+                  },
                 });
                 approvalUnconfirmed = false;
+                if (configured && typeof configured.model === "string" && configured.model !== cliTurn.model) {
+                  cliTurn = { ...cliTurn, model: configured.model };
+                  current.turn = cliTurn;
+                  reportedModel = configured.model;
+                  selectedModel = configured.model;
+                  variant = undefined;
+                }
                 // initialize's currentModelId is the CLI default,
                 // not the model this turn asked for. After a successful pin,
                 // report the slug we set so the UI does not claim otherwise.
@@ -2165,11 +2204,16 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
                 ...(cachedRead !== null
                   ? { cachedInput: exclusive ? cachedRead : Math.min(cachedRead, input) }
                   : {}),
+                // What fills the window now, so Sagax folds the thread before
+                // the agent compacts it on its own (server/context-budget.ts).
+                ...(state.usageLast !== null && state.usageLast > 0 ? { contextTokens: state.usageLast } : {}),
+                ...(state.usageSize ? { contextWindow: state.usageSize } : {}),
               });
             }
             const reason = result?.stopReason;
             if (reason === "end_turn") settle(threadId, session, true, null);
-            else if (reason === "cancelled") settle(threadId, session, true, "cancelled");
+            // After Stop, whatever reason the agent gives is the stop.
+            else if (reason === "cancelled" || state.stopped) settle(threadId, session, true, "cancelled");
             else {
               const errorMessage = typeof result?.error === "string" && result.error
                 ? result.error
@@ -2191,9 +2235,11 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
             }
             if (!state.settled) {
               const message = e instanceof Error ? e.message : String(e);
-              // Stop before the prompt is a cancellation. It is not a failure
-              // to leave in the chat.
-              if (message === "turn stopped") {
+              // A stop the person asked for is a cancellation, not a failure
+              // to leave in the chat: before the prompt ("turn stopped"), or
+              // during the handshake, where closing the session rejects the
+              // pending request ("session closed").
+              if (message === "turn stopped" || state.stopped) {
                 settle(threadId, session, true, "cancelled");
                 return;
               }
