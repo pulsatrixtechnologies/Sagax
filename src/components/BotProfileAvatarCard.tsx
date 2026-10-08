@@ -374,7 +374,7 @@ export function BotProfileAvatarCard({
           aria-label={t("botPanel.avatar.edit")}
           aria-expanded={editorOpen}
           onClick={() => setEditorOpen((open) => !open)}
-          className={cn("rounded-full outline-none focus-visible:ring-2 focus-visible:ring-accent", crop === "mascot" && "mascot-plinth p-2")}
+          className="rounded-full outline-none focus-visible:ring-2 focus-visible:ring-accent"
         >
           <BotAvatar
             bot={bot}
