@@ -1145,7 +1145,13 @@ html[data-floating-bot] #root {
   background: var(--color-raised, var(--color-hover));
   color: var(--color-ink);
 }
-.fb-root .fb-composer :focus-visible {
+/* the field shows its focus through the pill's border, as in the app; the buttons get a ring */
+.fb-root .fb-composer .fb-composer-field:focus,
+.fb-root .fb-composer .fb-composer-field:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+.fb-root .fb-composer button:focus-visible {
   outline: 2px solid var(--color-accent);
   outline-offset: 1px;
 }
