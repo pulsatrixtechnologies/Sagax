@@ -55,7 +55,7 @@ import { liveCallNow, useLiveCall } from "@/lib/voice-mode/live-call-store";
 import { readVoiceModeSettings, useVoiceModeSettings, writeVoiceModeSettings } from "@/lib/voice-mode/settings";
 import { forgetVoiceprint } from "@/lib/voice-mode/speaker-id";
 import { callLevels, mascotCallSnapshot, NO_PANEL, runMascotCallEvent, type MascotCallDeps, type MascotCallPanel } from "./mascot-call";
-import { characterMoves } from "./moves";
+import { characterMoves, isMoveClip } from "./moves";
 import { COMPOSER_ATTACH_EVENT } from "@/components/Composer";
 import { COMPOSER_MODEL_EVENT, composerModelLabel } from "@/components/ModelPicker";
 
@@ -495,7 +495,8 @@ export function FloatingBots() {
         menu: {
           call: thisCall ? "end" : canCall ? "start" : null,
           bots: switchable,
-          moves: characterMoves(bot.mascotLook ?? undefined).map((move) => ({ clip: move.clip, label: t(move.label) })),
+          // only the moves the desktop mascot can play (a behavior clip; Shapes moves play in the popover preview)
+          moves: characterMoves(bot.mascotLook ?? undefined).filter((move) => isMoveClip(move.clip)).map((move) => ({ clip: move.clip, label: t(move.label) })),
         },
       }),
     };

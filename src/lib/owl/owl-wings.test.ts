@@ -25,10 +25,12 @@ describe("the black owl", () => {
     expect(owlPalette(MAUS_COLORS.black, "dark")).toMatchObject(OWL_BLACK_PALETTE);
   });
 
-  it("is the only bot color with a rim light", () => {
+  it("is, with the Clay palette's ink, the only bot color with a rim light", () => {
     expect(isBlackOwlColor(MAUS_COLORS.black)).toBe(true);
     expect(owlRim(MAUS_COLORS.black)).toBe(OWL_BLACK_RIM);
-    for (const name of MAUS_COLOR_NAMES.filter((color) => color !== "black")) {
+    // ink (Clay, near black) needs the same rim to read on a dark page
+    expect(owlRim(MAUS_COLORS.ink)).toBe(OWL_BLACK_RIM);
+    for (const name of MAUS_COLOR_NAMES.filter((color) => color !== "black" && color !== "ink")) {
       expect(owlRim(MAUS_COLORS[name])).toBeNull();
     }
   });

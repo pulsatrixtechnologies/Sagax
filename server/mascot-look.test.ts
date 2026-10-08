@@ -28,7 +28,7 @@ describe("a bot's character is stored with the bot", () => {
     const parsed = parseBotProfilePatch({ mascotLook: { character: "shape", shape: "star", skins: { shape: "nebula", trombi: "molten" } } } as never);
     if (!parsed.ok) throw new Error(parsed.error);
     store.patchBotProfile(bot.id, parsed.patch);
-    expect(new Store(selection).bot(bot.id)?.mascotLook).toEqual({ character: "shape", shape: "star", skins: { shape: "galaxy", trombi: "molten" } });
+    expect(new Store(selection).bot(bot.id)?.mascotLook).toEqual({ character: "shape", shape: "hexagon", skins: { shape: "galaxy", trombi: "molten" } });
     expect(parseBotProfilePatch({ mascotLook: { character: "shape", skins: { shape: "plasma" } } } as never).ok).toBe(false);
   });
 });

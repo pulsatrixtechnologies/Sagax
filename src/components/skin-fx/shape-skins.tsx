@@ -2,7 +2,7 @@
 // size draws, and for the premium skins the layers that make them premium:
 // light, texture and an idle effect clipped to the body, an edge, an aura
 // behind it and a few particles around it. Everything sits in the shape's
-// 0..100 box and works on any of the thirteen outlines. `full` adds the
+// 0..100 box and works on any of the eight outlines. `full` adds the
 // filters and the animated layers; still (small avatars, thumbnails, reduced
 // motion) keeps the skin's look with no filter and nothing moving.
 //

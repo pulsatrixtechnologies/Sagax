@@ -14,6 +14,7 @@ import { owlFxPalette } from "@/components/OwlSkinFx";
 import { EquipFx, MoveFx } from "@/components/skin-fx/SkinFx";
 import { OwlAvatar } from "@/components/OwlAvatar";
 import { ShapeMascot, type ShapeMood } from "@/components/ShapeMascot";
+import { SHAPE_MOVES, type ShapeExpression, type ShapeMove } from "@/components/shape-engine";
 import type { TrombiPose } from "@/components/retro-assistant/Trombi";
 import { SkinnedTrombi } from "@/components/skin-fx/SkinnedTrombi";
 import { BUNBU_EARFLOP_CLIP, BunbuMascot, type BunbuAction, type BunbuMood } from "@/components/BunbuMascot";
@@ -63,10 +64,10 @@ export interface MascotDefinition {
   capabilities: MascotCapabilities;
   /** What the avatar popover offers for it: the bot colors, the owl skins. */
   paint: { colors: boolean; skins: boolean };
-  /** The moves the avatar popover can preview for a character without wings (the owl keeps its wing moves). */
-  moves: readonly MascotActivity[];
+  /** The moves the avatar popover can preview for a character without wings (the owl keeps its wing moves): clips, or the Shapes moves. */
+  moves: readonly string[];
   /** A move's own name for this character (Bunbu's ear flop is the ruffle clip). */
-  moveLabels?: Partial<Record<MascotActivity, LocaleKey>>;
+  moveLabels?: Partial<Record<string, LocaleKey>>;
   Render: ComponentType<MascotRenderProps>;
   Thumb: ComponentType<MascotThumbProps>;
 }
@@ -182,11 +183,62 @@ export function useClipFx(activity: MascotActivity): FxMoveRequest | null {
   return last.current.request;
 }
 
+/** The Shapes move a desktop clip plays (the rest keep the body and change the face). */
+export function shapeMoveForClip(activity: MascotActivity): ShapeMove | null {
+  switch (activity) {
+    case "think":
+      return "thinking";
+    case "wink":
+      return "wink";
+    case "surprised":
+      return "wide";
+    case "startled":
+      return "exclaim";
+    case "celebrate":
+      return "swirl";
+    default:
+      return null;
+  }
+}
+
+/** The face a desktop clip wears on a shape, over its mood's. */
+export function shapeExpressionForClip(activity: MascotActivity): ShapeExpression | undefined {
+  switch (activity) {
+    case "angry":
+      return "angry";
+    case "sad":
+      return "sad";
+    case "shy":
+      return "shy";
+    case "confused":
+      return "confused";
+    case "love":
+    case "petted":
+      return "laughing";
+    case "yawn":
+    case "sleep":
+      return "sleepy";
+    default:
+      return undefined;
+  }
+}
+
+/** A new move request each time a clip with a Shapes move starts. */
+function useShapeClipMove(activity: MascotActivity): FxMoveRequest | null {
+  const last = useRef<{ activity: MascotActivity; request: FxMoveRequest | null }>({ activity: "idle", request: null });
+  if (last.current.activity !== activity) {
+    const move = shapeMoveForClip(activity);
+    last.current = { activity, request: move ? { clip: move, key: Date.now() } : null };
+  }
+  return last.current.request;
+}
+
 function ShapeRender({ color, look, size, activity, pose, frame, fps, onHitTest }: MascotRenderProps) {
-  const move = useClipFx(activity);
+  const fx = useClipFx(activity);
+  const own = useShapeClipMove(activity);
   return (
     <Motion25D size={size} frame={frame} fps={fps} onHitTest={onHitTest}>
-      <ShapeMascot shape={look.shape} skin={look.skins.shape} color={color} size={size * 0.8} mood={shapeMoodForClip(activity, pose)} detail="full" move={move} label={null} />
+      <ShapeMascot shape={look.shape} skin={look.skins.shape} color={color} size={size * 0.8} mood={shapeMoodForClip(activity, pose)} expression={shapeExpressionForClip(activity)} detail="full" move={own ?? fx} label={null} />
     </Motion25D>
   );
 }
@@ -266,7 +318,7 @@ function BunbuThumb({ color, look, size }: MascotThumbProps) {
 
 export const MASCOTS: readonly MascotDefinition[] = [
   { id: "owl", capabilities: { walk: true, fly: true, wings: true, blink: true, turn: true, flip: true }, paint: { colors: true, skins: true }, moves: [], Render: OwlRender, Thumb: OwlThumb },
-  { id: "shape", capabilities: { walk: true, fly: false, wings: false, blink: true, turn: true, flip: true }, paint: { colors: true, skins: true }, moves: ["wave", "dance", "jump", "hop", "love"], Render: ShapeRender, Thumb: ShapeThumb },
+  { id: "shape", capabilities: { walk: true, fly: false, wings: false, blink: true, turn: true, flip: true }, paint: { colors: true, skins: true }, moves: SHAPE_MOVES, Render: ShapeRender, Thumb: ShapeThumb },
   { id: "trombi", capabilities: { walk: true, fly: false, wings: false, blink: false, turn: true, flip: true }, paint: { colors: false, skins: true }, moves: ["hop", "jump", "dance", "hoot"], Render: TrombiRender, Thumb: TrombiThumb },
   {
     id: "bunbu",

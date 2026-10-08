@@ -11,8 +11,8 @@
  * contrast (eyeInkOn), the owl's eye sits in its own dark socket.
  */
 
-/** The palettes, in the popover's tab order. */
-export const MASCOT_COLOR_GROUPS = ["vivid", "pastel", "deep", "neon", "neutral"] as const;
+/** The palettes, in the popover's tab order. Clay is the Shapes palette (shown for Shapes, and to a bot already wearing one of its colors). */
+export const MASCOT_COLOR_GROUPS = ["vivid", "pastel", "deep", "neon", "neutral", "clay"] as const;
 export type MascotColorGroup = (typeof MASCOT_COLOR_GROUPS)[number];
 
 /** Each palette's colors, in the swatch row's order, with their values. */
@@ -79,6 +79,21 @@ export const MASCOT_COLOR_PALETTES = {
     copper: "#C2643A",
     brass: "#C7A13D",
   },
+  // the Shapes colors (2026-10-08): saturated and a little warm, so the clay
+  // light reads on every one; brown (neutral) is the twelfth swatch of the row
+  clay: {
+    ink: "#0A0A0C",
+    tomato: "#E8483F",
+    tangerine: "#F08A24",
+    honey: "#F0B429",
+    jade: "#3ECF8E",
+    turquoise: "#2FBFA0",
+    cobalt: "#3B93F0",
+    violet: "#8B5CF6",
+    rose: "#E152B0",
+    ash: "#A3A3A3",
+    cream: "#F1EFE9",
+  },
 } as const satisfies Record<MascotColorGroup, Record<string, `#${string}`>>;
 
 /** The original fifteen, in their historical order (new bots still rotate through the first ten). */
@@ -103,9 +118,21 @@ export function mascotColorGroup(color: string | null | undefined): MascotColorG
   return MASCOT_COLOR_GROUPS.find((group) => Object.hasOwn(MASCOT_COLOR_PALETTES[group], color)) ?? "vivid";
 }
 
-/** A palette's color names, in the swatch row's order. */
+/** A palette's color names (each name belongs to one palette only). */
 export function mascotColorsIn(group: MascotColorGroup): MascotColorName[] {
   return Object.keys(MASCOT_COLOR_PALETTES[group]) as MascotColorName[];
+}
+
+/** Colors of another palette a palette's swatch row also shows, and where. */
+const GUEST_SWATCHES: Partial<Record<MascotColorGroup, readonly { name: MascotColorName; at: number }[]>> = {
+  clay: [{ name: "brown", at: 1 }],
+};
+
+/** A palette's swatch row: its own colors, with its guests in their places (the Clay row shows brown second). */
+export function paletteSwatches(group: MascotColorGroup): MascotColorName[] {
+  const row = mascotColorsIn(group);
+  for (const guest of GUEST_SWATCHES[group] ?? []) row.splice(guest.at, 0, guest.name);
+  return row;
 }
 
 /* ------------------------------------------------------------- contrast */

@@ -28,7 +28,7 @@ import { Balloon, BALLOON_MAX_W, readBalloonPlace, splitOffset, type BalloonSide
 import { completeMascotLook } from "../../../shared/mascot-look";
 import { mascotStage } from "./fit";
 import { mascotFields, type FloatingEvent, type FloatingMenuItem, type FloatingPose, type FloatingSnapshot } from "./protocol";
-import { characterMoves } from "./moves";
+import { characterMoves, isMoveClip } from "./moves";
 import { CHAT_BALLOON, dockedWindowSize, type Size } from "./window-frame";
 import { effectLane, effectSide, type ChatPlacement, type EffectSide } from "./placement";
 import { useHeldMenuMotion } from "@/components/MenuMotion";
@@ -407,7 +407,7 @@ export function FloatingBotView({ snapshot: given, onEvent, mover, interactive, 
   const lookKey = snapshot.mascot ? JSON.stringify(snapshot.mascot) : "";
   const playMove = useCallback((clip: string) => {
     const move = characterMoves(lookKey ? (JSON.parse(lookKey) as MascotLook) : undefined).find((candidate) => candidate.clip === clip);
-    if (move) dispatchRef.current({ type: "move", now: now(), clip: move.clip });
+    if (move && isMoveClip(move.clip)) dispatchRef.current({ type: "move", now: now(), clip: move.clip });
   }, [lookKey]);
   useEffect(() => onMove?.(playMove), [onMove, playMove]);
   /** A choice in the menu: a move plays here; anything else is the brain's. */

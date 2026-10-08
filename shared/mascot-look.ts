@@ -7,8 +7,8 @@
  * - owl: the Sagax owl; its color is the bot's color and its skin the bot's
  *   mascotSkin (shared/mascot-skins.ts). A stored `style` of `3d` still
  *   validates. The desktop always draws the flat owl.
- * - shape: one of the shapes (a body with two small eyes), in the
- *   bot's color, with a shape skin.
+ * - shape: one of the eight shapes (a clay body with two eyes cut
+ *   through it), in the bot's color, with a shape skin (plain is clay).
  * - trombi: the Hibou 98 paperclip, with a Trombi skin.
  * - bunbu: Bunbu, our own collectible-vinyl little monster (long upright
  *   ears, plush body, a toothy grin), in the bot's color, with a Bunbu skin.
@@ -21,12 +21,31 @@ import { z } from "zod";
 export const MASCOT_CHARACTERS = ["owl", "shape", "trombi", "bunbu"] as const;
 export type MascotCharacter = (typeof MASCOT_CHARACTERS)[number];
 
-/** The shapes, in the picker's order (the owner's reference grid, read left to right). */
-export const MASCOT_SHAPES = ["circle", "cloud", "squircle", "sparkle", "clover", "bean", "flower", "drop", "pill", "pick", "house", "star", "hexagon"] as const;
+/**
+ * The eight shapes, in the picker's order (clean-room set of 2026-10-08):
+ * Circle, Pebble, Squircle, Capsule, Triangle, Hexagon, Cloud, Droplet. The
+ * stored ids are the ones older builds and the server already know (bean is
+ * the pebble, pill the capsule, pick the triangle, drop the droplet).
+ */
+export const MASCOT_SHAPES = ["circle", "bean", "squircle", "pill", "pick", "hexagon", "cloud", "drop"] as const;
 export type MascotShape = (typeof MASCOT_SHAPES)[number];
 
-/** Shapes from the first set, renamed or replaced: a stored look keeps working. */
-export const LEGACY_SHAPES: Readonly<Record<string, MascotShape>> = { blob: "bean", triangle: "pick" };
+/**
+ * Shapes from earlier sets, and the shapes' display names: a stored look
+ * keeps working, on the nearest of the eight.
+ */
+export const LEGACY_SHAPES: Readonly<Record<string, MascotShape>> = {
+  blob: "bean",
+  pebble: "bean",
+  triangle: "pick",
+  capsule: "pill",
+  droplet: "drop",
+  sparkle: "squircle",
+  clover: "cloud",
+  flower: "cloud",
+  house: "hexagon",
+  star: "hexagon",
+};
 
 /**
  * Skins for the shapes; every one renders on every shape. The first four are
@@ -137,7 +156,7 @@ export const mascotLookSchema = z
   .object({
     character: z.enum(MASCOT_CHARACTERS),
     style: z.enum(["2d", "3d"]).optional(),
-    shape: z.preprocess((value) => (typeof value === "string" && value in LEGACY_SHAPES ? LEGACY_SHAPES[value] : value), z.enum(MASCOT_SHAPES)).optional(),
+    shape: z.preprocess((value) => (typeof value === "string" && Object.hasOwn(LEGACY_SHAPES, value) ? LEGACY_SHAPES[value] : value), z.enum(MASCOT_SHAPES)).optional(),
     skins: z
       .object({
         shape: z.preprocess(legacy(LEGACY_SHAPE_SKINS), z.enum(SHAPE_SKINS)).optional(),

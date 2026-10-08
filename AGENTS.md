@@ -929,7 +929,7 @@ Electron restart (no HMR); launch-test them before committing.
 - Main retries a page that fails to load, reloads a dead or silent one, keeps
   a state sent before its window exists, and logs the page's errors; the
   window falls back to the plain owl rather than drawing nothing.
-- The character (owl, original shape, Trombi, Bunbu) and its look live with the bot
+- The character (owl, Shapes, Trombi, Bunbu) and its look live with the bot
   (`bot.mascotLook`, `shared/mascot-look.ts`, validated by the server), chosen
   in the avatar popover (`MascotLookEditor.tsx`) and drawn by `BotAvatar` for
   every bot avatar in the app; never draw a bot's mascot outside `BotAvatar`.
@@ -949,6 +949,36 @@ Electron restart (no HMR); launch-test them before committing.
   finishes from `shape-skins.tsx` plus Plush and Velvet); its signature ear
   flop is the `ruffle` clip (the registry's `moveLabels`). iOS shows the owl
   for it until ported (`ios/README.md`).
+- Shapes: clean-room, 2026-10-08. The Shapes character matches the look
+  and behaviour JC measured on a public avatar studio, written entirely in
+  our own code: no code, data table, path or asset of that site was copied
+  (it has no licence; do not open or paste from it). Facts matched: one SVG
+  body from 64 radii smoothed into a closed outline, radius unit R; eight
+  shapes (Circle, Pebble, Squircle, Capsule, Triangle, Hexagon, Cloud,
+  Droplet), each derived from our own figure (`shape-art.ts`: superellipse,
+  stadium, grown triangle and hexagon, five-circle union, two-circle hull,
+  two-wave pebble) and sliding into one another over 0.45 s; the clay finish
+  (the Clay skin, id `plain`: a light upper left to a darker rim in four
+  steps, 62% white, 20% white, the color, 40% near black); eyes as rounded
+  bars cut through the body (fill-rule evenodd, the page shows through),
+  placed on an imaginary head turned 28 and tilted 29 degrees,
+  foreshortened, pushed to the outline, kept inside it by our gaze solver,
+  an eye turning away fades (`shape-engine.ts`); sixteen faces and twelve
+  Clay colors (`shared/mascot-colors.ts` palette `clay`, cobalt #3b93f0)
+  blended over 0.45 s; idle wander on five slow loops, drift and breath on
+  3.4 s, blinks every 1.9 to 4.6 s (0.18 s, sometimes double); the face turns
+  toward the pointer (16 degrees sideways, 13 up or down, easing over
+  0.85 s, touch ignored); fourteen moves (`shape-moves.ts`: Thinking, Wink,
+  Wide eyes, Alert, Notification, Exclamation, Sleep, Egg, Hexagon, Play,
+  Orbit, Swirl, Burst, Comet) with our own 3D ring and ribbon generators.
+  Reduced motion draws the still pose and plays no move; avatars under 44 px
+  draw the still pose. The stored shape ids stay the ones the server and the
+  phone know (`bean` is the pebble, `pill` the capsule, `pick` the triangle,
+  `drop` the droplet); the five retired shapes map to the nearest one
+  (`LEGACY_SHAPES`). The Clay colors are new color names: the server needs
+  this build to save them, and the phone shows them only once ported
+  (`src/lib/mascot.test.ts` exempts them until then). Tests:
+  `src/components/shape-engine.test.ts`.
 - Bot colors live in `shared/mascot-colors.ts` (palettes Vivid, Pastel, Deep,
   Neon, Neutral; the original fifteen ids keep their values) and every skin,
   the owl's included (`OWL_SKIN_TIER`, `LEGACY_OWL_SKINS`), has a rarity. The
