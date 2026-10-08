@@ -9,8 +9,6 @@ import { useMenuMotion } from "./MenuMotion";
 import { activeLocale, t } from "@/lib/i18n";
 import { consumeRetroCommand, retroSignal } from "@/lib/retro98";
 import { reportAchievement } from "@/lib/achievements";
-import { useAdvancedMode } from "@/lib/interface-mode";
-import { simpleKeepsComposerItem } from "@/lib/interface-visibility";
 import { useOwnerOrAdmin } from "@/lib/use-owner-or-admin";
 
 import {
@@ -151,7 +149,6 @@ export function Composer({
   const locked = Boolean(bot?.awaitingThreadSnapshot);
   const { state, dispatch } = useStore();
   const ownerOrAdmin = useOwnerOrAdmin();
-  const advanced = useAdvancedMode();
   const { threads, currentBotId } = useThreadRefs();
   const { capabilities } = useDesktopCapabilities();
   const remoteClient = window.ogb?.remoteClient?.active === true;
@@ -396,15 +393,14 @@ export function Composer({
       label: "/setup",
       description: t("composer.command.setupDesc"),
     });
-    const menu = group
+    return group
       ? composerGroupCommandMenu(groupSlashBotId ? [] : available, groupTargets.map((target): GroupEngineCommands => ({
         bot: { id: target.bot.id, name: target.bot.name },
         commands: groupEngineCommands.lists.find((list) => list.botId === target.bot.id)?.answer.commands ?? [],
         mention: target.mention,
       })), slash.query)
       : composerCommandMenu(available, engineCommands.answer?.commands ?? [], slash.query);
-    return advanced ? menu : menu.filter(simpleKeepsComposerItem);
-  }, [slash, dismissedSlashAt, group, members, bot, state.config, state.instances, locale, engineCommands.answer, groupTargets, groupEngineCommands.lists, groupSlashBotId, advanced]);
+  }, [slash, dismissedSlashAt, group, members, bot, state.config, state.instances, locale, engineCommands.answer, groupTargets, groupEngineCommands.lists, groupSlashBotId]);
   const commandPickerOpen = commandCandidates.length > 0;
 
   // Tag another bot; the agent reaches it via ask_bot.
@@ -654,8 +650,7 @@ export function Composer({
     }
     dispatch({ type: "updateTask", botId: modeBot.id, threadId: modeBot.threadId, patch: { approvalMode: mode } });
   };
-  // Advanced: an icon left of the message field. Simple: a chip left of the
-  // model chip, never a row of cards above the field.
+  // An icon left of the message field, the same in Simple and Advanced.
   const approvalControl = modeBot && approvalEngine && !remoteClient ? (
     <ApprovalModeSelector
       approvalMode={modeBot.approvalMode}
@@ -663,11 +658,11 @@ export function Composer({
       providerName={approvalEngine.displayName}
       driverKind={approvalEngine.driverKind}
       onSelect={setApprovalMode}
-      align={advanced ? "left" : "right"}
+      align="left"
       disabled={Boolean(modeBot.busy)}
       trustedModesAvailable={trustedThreadAccess}
       orgFullAccess={orgFullAccess}
-      onManageCommandAllowlist={advanced && ownerOrAdmin === true ? () => setCommandAllowlistTarget({ botId: modeBot.id, botName: modeBot.name, threadId: modeBot.threadId }) : undefined}
+      onManageCommandAllowlist={ownerOrAdmin === true ? () => setCommandAllowlistTarget({ botId: modeBot.id, botName: modeBot.name, threadId: modeBot.threadId }) : undefined}
     />
   ) : null;
 
@@ -1075,7 +1070,7 @@ export function Composer({
         {/* One row while it fits: chips, editor, mic. Below the container
             width where the chips and the placeholder cannot share a line,
             the editor takes a full line of its own above the chips.
-            Simple's approval chip sits beside the model chip. */}
+            The same row in Simple and Advanced mode. */}
         <div data-tour="composer" className="@container/composer relative z-[1] min-h-11 rounded-[22px] border-[0.5px] border-border bg-composer px-2 py-1.5 shadow-[0_2px_8px_-1px_#0000000d,0_1px_2px_#00000008,0_0_0_1px_#e4e4e40a] transition-colors hover:border-border-strong focus-within:border-border-strong">
         <div data-composer-row className="flex items-end gap-1 @max-[30rem]/composer:flex-wrap">
           <input
@@ -1132,8 +1127,8 @@ export function Composer({
                   {effectiveChannelMode === "goal" ? "/goal" : t("composer.goal.chip")}
                 </button>
               )}
-              {advanced && approvalControl}
-              {advanced && modeBot && !remoteClient && (
+              {approvalControl}
+              {modeBot && !remoteClient && (
                 <PlaceChip
                   bot={modeBot}
                   task={composerTask}
@@ -1278,7 +1273,6 @@ export function Composer({
             className="block max-h-[7.5rem] min-h-6 w-full resize-none overflow-y-auto bg-transparent chat-input-text px-1 py-1.5 placeholder:text-ink-secondary focus:outline-none"
           />
           <div data-composer-actions className="flex items-center gap-1 @max-[30rem]/composer:ml-auto">
-          {!locked && !advanced && approvalControl}
           {bot && !group && !remoteClient && (
             <ModelPicker inComposer key={bot.threadId} bot={bot} threadId={threadId} />
           )}
