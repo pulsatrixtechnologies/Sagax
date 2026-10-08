@@ -3876,5 +3876,11 @@
   "connectApps.providers.notSignedIn": "Non connecté",
   "connectApps.providers.unavailable": "Non configuré",
   "connectApps.providers.signedIn": "Connecté",
-  "connectApps.manage.noSkills": "Aucune compétence privée pour l'instant. Un plugin d'une marketplace peut en apporter."
+  "connectApps.manage.noSkills": "Aucune compétence privée pour l'instant. Un plugin d'une marketplace peut en apporter.",
+  "approval.adminWillAnswer": "Un admin ({admins}) la voit dans Paramètres > Organisation. Votre bot continue dès qu'elle est approuvée, ou saute cette étape si elle est refusée.",
+  "approval.adminWillAnswerUnnamed": "Les admins de l'organisation la voient dans Paramètres > Organisation. Votre bot continue dès qu'elle est approuvée, ou saute cette étape si elle est refusée.",
+  "organization.adminApprovals.requestedBy": "{bot}, demandé par {person}",
+  "organization.adminApprovals.ownedBy": "{bot}, appartenant à {person}",
+  "organization.adminApprovals.notifyTitle": "{bot} a besoin de l'approbation d'un admin",
+  "organization.adminApprovals.badge": "{count} en attente d'un admin"
 }

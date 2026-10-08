@@ -14,7 +14,7 @@ import { cn } from "@/lib/cn";
 import { t, tFromServer } from "@/lib/i18n";
 import type { LocaleKey } from "@/locales";
 import { SkillRequestPreview } from "@/components/SkillRequestPreview";
-import { toolApprovalView, toolLabel } from "./ApprovalCard";
+import { adminWillAnswerLine, toolApprovalView, toolLabel } from "./ApprovalCard";
 import { ApprovalHeading, TechnicalDetails } from "./ApprovalParts";
 import { describeApproval, isTechnicalText } from "@/lib/approval-describe";
 import { reviewedSkillSha256 } from "../../shared/skill-request";
@@ -333,7 +333,10 @@ export function PendingApprovalActions({
         <button type="button" onClick={onCancelTurn} className={quiet}>
           {t("approval.action.cancelTurn")}
         </button>
-        <span role="status" className="text-[12.5px] text-ink-secondary">{t("approval.waitingForAdmin")}</span>
+        <span role="status" className="flex min-w-0 flex-col text-[12.5px] text-ink-secondary">
+          <span>{t("approval.waitingForAdmin")}</span>
+          <span>{adminWillAnswerLine(pending.message.card.adminNames)}</span>
+        </span>
       </div>
     );
   }

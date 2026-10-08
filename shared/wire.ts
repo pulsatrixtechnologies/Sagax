@@ -691,6 +691,9 @@ export interface OptionCardData {
    * whose owner is not an organization admin. Only an admin answers it; the
    * owner sees it waiting for an admin. Never remembered. */
   adminApproval?: boolean;
+  /** The organization admins who can answer an adminApproval card (at most
+   * five names), so the member's waiting line can say who. */
+  adminNames?: string[];
   /** The bot's change applied without a person (a change to the bot itself,
    * or Full access): clients show a one-line receipt with Undo instead of
    * the approval box. */
@@ -974,6 +977,9 @@ export type ServerFrame =
   /** A person's custom label changed (server/routes/person-labels.ts); null
    * cleared it. Every stream. */
   | { kind: "person.label"; principalId: string; label: string | null }
+  /** Organization server (2026-10-08), admins' streams only: how many
+   * approvals wait for an organization admin, and the ones that just arrived. */
+  | { kind: "org.approvals"; count: number; added: Array<{ requestId: string; botName: string; ownerName?: string; requestedBy?: string; tool?: string; summary?: string }> }
   /** People whose presence changed (shared/presence.ts). The organization's
    * people only; with `audience`, that person's own real state (`hidden`
    * when others see them offline), to their streams only. */

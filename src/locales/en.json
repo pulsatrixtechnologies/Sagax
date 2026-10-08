@@ -5888,5 +5888,11 @@
   "connectApps.providers.notSignedIn": "Not signed in",
   "connectApps.providers.unavailable": "Not set up",
   "connectApps.providers.signedIn": "Signed in",
-  "connectApps.manage.noSkills": "No private skills yet. A plugin from a marketplace can bring some."
+  "connectApps.manage.noSkills": "No private skills yet. A plugin from a marketplace can bring some.",
+  "approval.adminWillAnswer": "An admin ({admins}) sees it in Settings > Organization. Your bot continues as soon as it is approved, or skips this step if it is denied.",
+  "approval.adminWillAnswerUnnamed": "The organization's admins see it in Settings > Organization. Your bot continues as soon as it is approved, or skips this step if it is denied.",
+  "organization.adminApprovals.requestedBy": "{bot}, asked by {person}",
+  "organization.adminApprovals.ownedBy": "{bot}, owned by {person}",
+  "organization.adminApprovals.notifyTitle": "{bot} needs an admin's approval",
+  "organization.adminApprovals.badge": "{count} waiting for an admin"
 }

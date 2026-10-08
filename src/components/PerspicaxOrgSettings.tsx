@@ -15,6 +15,7 @@ import { ExternalLink } from "lucide-react";
 
 import { t } from "@/lib/i18n";
 import type { PerspicaxOrg } from "@/lib/perspicax-org";
+import { setOrgApprovalsCount, useOrgApprovalsVersion } from "@/lib/org-approvals";
 import { api } from "@/state/store";
 import { Card } from "./SettingsPrimitives";
 import { OrgSharing } from "./settings/OrgSharing";
@@ -28,9 +29,18 @@ interface PendingAdminApproval {
   botName: string;
   threadId: string;
   requestId: string;
+  ownerName?: string;
+  requestedBy?: string;
   tool?: string;
   summary?: string;
   at: number;
+}
+
+/** Whose request it is: the person whose turn asked, else the bot's owner. */
+export function approvalWho(approval: Pick<PendingAdminApproval, "botName" | "ownerName" | "requestedBy">): string {
+  if (approval.requestedBy) return t("organization.adminApprovals.requestedBy", { bot: approval.botName, person: approval.requestedBy });
+  if (approval.ownerName) return t("organization.adminApprovals.ownedBy", { bot: approval.botName, person: approval.ownerName });
+  return approval.botName;
 }
 
 /** `<issuer>/console/`, the Perspicax console. */
@@ -60,15 +70,19 @@ export function PerspicaxOrgSettings({ org, onChanged }: { org: PerspicaxOrg; on
   const interimVisible = showInterimCard(admin, interim, interimShown);
   useEffect(() => { if (interimVisible) setInterimShown(true); }, [interimVisible]);
 
+  // reloads whenever the server says the waiting list changed (org.approvals)
+  const approvalsVersion = useOrgApprovalsVersion();
   const loadApprovals = async () => {
     if (!admin) return;
     try {
-      setApprovals((await api<{ approvals: PendingAdminApproval[] }>("/api/org/approvals")).approvals ?? []);
+      const list = (await api<{ approvals: PendingAdminApproval[] }>("/api/org/approvals")).approvals ?? [];
+      setApprovals(list);
+      setOrgApprovalsCount(list.length);
     } catch {
       setApprovals([]);
     }
   };
-  useEffect(() => { void loadApprovals(); }, [admin]);
+  useEffect(() => { void loadApprovals(); }, [admin, approvalsVersion]);
 
   const answer = async (approval: PendingAdminApproval, behavior: "allow" | "deny") => {
     setAnswering(approval.requestId);
@@ -123,7 +137,7 @@ export function PerspicaxOrgSettings({ org, onChanged }: { org: PerspicaxOrg; on
               {approvals.map((approval) => (
                 <li key={`${approval.threadId}:${approval.requestId}`} className="flex min-w-0 flex-col gap-2 py-2">
                   <div className="flex min-w-0 items-baseline justify-between gap-2">
-                    <span className="truncate text-[13px] text-ink">{approval.botName}</span>
+                    <span className="truncate text-[13px] text-ink">{approvalWho(approval)}</span>
                     {approval.tool && <span className="shrink-0 font-mono text-[11px] text-ink-secondary">{approval.tool}</span>}
                   </div>
                   {approval.summary && (

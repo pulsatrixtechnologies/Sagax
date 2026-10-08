@@ -2172,5 +2172,11 @@
   "connectApps.providers.notSignedIn": "Não conectado",
   "connectApps.providers.unavailable": "Não configurado",
   "connectApps.providers.signedIn": "Conectado",
-  "connectApps.manage.noSkills": "Nenhuma habilidade privada ainda. Um plugin de um marketplace pode trazer algumas."
+  "connectApps.manage.noSkills": "Nenhuma habilidade privada ainda. Um plugin de um marketplace pode trazer algumas.",
+  "approval.adminWillAnswer": "Um admin ({admins}) vê o pedido em Configurações > Organização. Seu bot continua assim que ele for aprovado, ou pula esta etapa se for recusado.",
+  "approval.adminWillAnswerUnnamed": "Os admins da organização veem o pedido em Configurações > Organização. Seu bot continua assim que ele for aprovado, ou pula esta etapa se for recusado.",
+  "organization.adminApprovals.requestedBy": "{bot}, pedido por {person}",
+  "organization.adminApprovals.ownedBy": "{bot}, de {person}",
+  "organization.adminApprovals.notifyTitle": "{bot} precisa da aprovação de um admin",
+  "organization.adminApprovals.badge": "{count} aguardando um admin"
 }

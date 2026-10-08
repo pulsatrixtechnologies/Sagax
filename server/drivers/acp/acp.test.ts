@@ -1083,6 +1083,22 @@ describe("ACP turns (fake CLI)", () => {
     await recorder.until((event) => event.type === "turn.completed");
   });
 
+  it.each([
+    { name: "Grok's agents tool", toolCall: { kind: "other", title: "agents__list_bots", rawInput: {} }, mcpTool: "agents__list_bots" },
+    { name: "a qualified MCP title", toolCall: { kind: "read", title: "mcp__agents__session_read", rawInput: {} }, mcpTool: "mcp__agents__session_read" },
+    { name: "a shell command titled like a tool", toolCall: { kind: "execute", title: "agents__list_bots", rawInput: { command: "agents__list_bots" } }, mcpTool: undefined },
+    { name: "a file edit", toolCall: { kind: "edit", title: "agents__list_bots", rawInput: {} }, mcpTool: undefined },
+    { name: "a descriptive title", toolCall: { kind: "other", title: "List the bots", rawInput: {} }, mcpTool: undefined },
+  ])("names the MCP tool of a permission ask from the agent's own title: $name", async ({ toolCall, mcpTool }) => {
+    process.env.FAKE_ACP_PERMISSION_TOOL_CALL = JSON.stringify(toolCall);
+    await create(GrokAgentDriver, "permission");
+    await instance.adapter.sendTurn({ threadId: "t-acp-mcp-tool", text: "go", cwd: scratch });
+    const opened = await recorder.until((event) => event.type === "request.opened");
+    expect((opened as { mcpTool?: string }).mcpTool).toBe(mcpTool);
+    await instance.adapter.respondToRequest("t-acp-mcp-tool", opened.requestId!, { behavior: "deny" });
+    await recorder.until((event) => event.type === "turn.completed");
+  });
+
   it("uses an explicit ACP shell directory and rejects conflicting directory metadata", async () => {
     const command = "pwd";
     const directory = join(scratch, "execution-directory");

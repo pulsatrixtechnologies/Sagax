@@ -7557,7 +7557,13 @@
       "connectApps.providers.apiKey": "16f0ee47f993d6270c9059450473eea493ca8ae037f8877782ae2bc176f24d18",
       "connectApps.providers.notSignedIn": "491fc91cd76e51571a745d780f0fc91f8ae62622e790cb113828988bba2e3c2c",
       "connectApps.providers.unavailable": "94b768af74236a6780055999a95a6db3486c2252347f643bf057d2a746a8163e",
-      "connectApps.providers.signedIn": "ca566c8968e7e881d55617e7caaf0c126924ab1cb64ca80edb2f37ef386492d8"
+      "connectApps.providers.signedIn": "ca566c8968e7e881d55617e7caaf0c126924ab1cb64ca80edb2f37ef386492d8",
+      "approval.adminWillAnswer": "90510fed7b245397eda817222d15cabce5c8b74025ff507d04cb456601082622",
+      "approval.adminWillAnswerUnnamed": "4f0934d6b0c758b63b0562504d86d3f13c4080dcef1aef2b0d23cd495360f82d",
+      "organization.adminApprovals.requestedBy": "7d010b683be5e35dadd5a6b0e031147c6ee9ea7206c2e56cadf42ba735cff196",
+      "organization.adminApprovals.ownedBy": "33b3bce7710b5f3d64a8570668cf60fbea9dca5f8669e50bb8c042e7f7cb19c3",
+      "organization.adminApprovals.notifyTitle": "998273dc65925114dd94a363ff201c249cb264cfe01d473cb1c61fd49012650e",
+      "organization.adminApprovals.badge": "faeecef11b75a914f977ee2931b3786769c5594b6b3b26c2e43450ad245acd37"
     },
     "hi": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",
@@ -13395,7 +13401,13 @@
       "connectApps.providers.apiKey": "16f0ee47f993d6270c9059450473eea493ca8ae037f8877782ae2bc176f24d18",
       "connectApps.providers.notSignedIn": "491fc91cd76e51571a745d780f0fc91f8ae62622e790cb113828988bba2e3c2c",
       "connectApps.providers.unavailable": "94b768af74236a6780055999a95a6db3486c2252347f643bf057d2a746a8163e",
-      "connectApps.providers.signedIn": "ca566c8968e7e881d55617e7caaf0c126924ab1cb64ca80edb2f37ef386492d8"
+      "connectApps.providers.signedIn": "ca566c8968e7e881d55617e7caaf0c126924ab1cb64ca80edb2f37ef386492d8",
+      "approval.adminWillAnswer": "90510fed7b245397eda817222d15cabce5c8b74025ff507d04cb456601082622",
+      "approval.adminWillAnswerUnnamed": "4f0934d6b0c758b63b0562504d86d3f13c4080dcef1aef2b0d23cd495360f82d",
+      "organization.adminApprovals.requestedBy": "7d010b683be5e35dadd5a6b0e031147c6ee9ea7206c2e56cadf42ba735cff196",
+      "organization.adminApprovals.ownedBy": "33b3bce7710b5f3d64a8570668cf60fbea9dca5f8669e50bb8c042e7f7cb19c3",
+      "organization.adminApprovals.notifyTitle": "998273dc65925114dd94a363ff201c249cb264cfe01d473cb1c61fd49012650e",
+      "organization.adminApprovals.badge": "faeecef11b75a914f977ee2931b3786769c5594b6b3b26c2e43450ad245acd37"
     },
     "uk": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",

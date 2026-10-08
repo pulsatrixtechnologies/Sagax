@@ -30,8 +30,11 @@ import {
   ScrollText,
   RefreshCw,
   Settings as SettingsIcon,
+  ShieldCheck,
   Trophy,
 } from "lucide-react";
+import { usePerspicaxOrg } from "@/lib/perspicax-org";
+import { useOrgApprovalsCount } from "@/lib/org-approvals";
 
 import { InitialsAvatar } from "./Avatar";
 import { PresenceDot, presenceDotSize } from "./PresenceDot";
@@ -316,6 +319,11 @@ export function SidebarProfileMenu({ avatarOnly = false, places = [] }: {
   const titleName = snapshot && snapshot.settings.showTitle !== false ? achievementTitleName(snapshot.settings.title) : null;
   const pointsText = snapshot && snapshot.settings.showPoints !== false ? formatPoints(snapshot.points) : null;
   const showLine = Boolean(titleName || pointsText);
+  // Organization admins: the approvals waiting for an admin, live
+  // (org.approvals frames); the count opens Settings > Organization.
+  const orgAdmin = usePerspicaxOrg()?.viewerRole === "admin";
+  const adminApprovals = useOrgApprovalsCount(orgAdmin);
+  const openAdminApprovals = () => dispatch({ type: "toggleAppSettings", open: true, section: "organization" });
 
   const profile = state.config?.profile;
   const viewer = state.config?.viewer;
@@ -478,8 +486,30 @@ export function SidebarProfileMenu({ avatarOnly = false, places = [] }: {
     </div>
   ) : null;
 
+  const approvalsLabel = t("organization.adminApprovals.badge", { count: adminApprovals });
+  const approvalsBadge = adminApprovals > 0 ? (
+    <button
+      type="button"
+      data-admin-approvals={adminApprovals}
+      title={approvalsLabel}
+      aria-label={approvalsLabel}
+      onClick={(event) => {
+        event.stopPropagation();
+        openAdminApprovals();
+      }}
+      className={cn(
+        "inline-flex shrink-0 items-center gap-1 rounded-md px-1 text-[13px] leading-[18px] tabular-nums text-warning hover:bg-sidebar-hover",
+        avatarOnly && "absolute -left-1 -top-1 z-10 rounded-full bg-sidebar px-1 py-0 text-[11px]",
+      )}
+    >
+      <ShieldCheck size={avatarOnly ? 11 : 13} strokeWidth={2.2} aria-hidden="true" />
+      <span>{adminApprovals}</span>
+    </button>
+  ) : null;
+
   return (
     <div className="relative">
+      {avatarOnly && approvalsBadge}
       {avatarOnly ? accountRow : (
         <div
           data-sidebar-account-row=""
@@ -487,6 +517,7 @@ export function SidebarProfileMenu({ avatarOnly = false, places = [] }: {
         >
           <div className="flex items-center gap-1">
             <div className="min-w-0 flex-1">{accountRow}</div>
+            {approvalsBadge}
             {routinesBadge}
           </div>
         </div>

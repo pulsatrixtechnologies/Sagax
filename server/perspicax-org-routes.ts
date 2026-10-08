@@ -93,6 +93,9 @@ export interface PendingAdminApproval {
   threadId: string;
   requestId: string;
   ownerPrincipalId: string;
+  /** The bot owner's name, and the person whose turn asked, when known. */
+  ownerName?: string;
+  requestedBy?: string;
   tool?: string;
   summary?: string;
   at: number;

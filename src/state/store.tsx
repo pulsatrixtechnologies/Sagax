@@ -31,6 +31,7 @@ import { uiCommandToAction } from "../../shared/bot-act";
 import { onDesktopNudge, onNudgeReceived } from "@/lib/desktop-nudge";
 import { sameModelSelection } from "../../shared/thread-model";
 import { applyPresenceFrame } from "@/lib/presence";
+import { receiveOrgApprovalsFrame } from "@/lib/org-approvals";
 import type { MascotBodyId } from "../../shared/mascot-bodies";
 import type { MascotSkinId } from "../../shared/mascot-skins";
 import type { QuestionRequestCardData } from "../../shared/ask-question";
@@ -91,6 +92,8 @@ export interface OptionCardData {
   /** Organization server: only an organization admin can answer this card
    * (a server command asked by a member's bot). */
   adminApproval?: boolean;
+  /** Who can answer an adminApproval card: the organization admins' names. */
+  adminNames?: string[];
   /** Distinguishes a provider question from an approval after its live run ends. */
   requestType?: "permission" | "question";
   /** what each option means, keyed by its label — a question that came with
@@ -4425,6 +4428,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           break;
         case "presence.changed":
           applyPresenceFrame(frame);
+          break;
+        // organization admins only: the approvals waiting for an admin
+        case "org.approvals":
+          receiveOrgApprovalsFrame(frame, () => dispatch({ type: "toggleAppSettings", open: true, section: "organization" }));
           break;
         case "person.label":
           applyPersonLabel(frame.principalId, frame.label);
