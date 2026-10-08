@@ -79,7 +79,7 @@ export type ResolveModelRequestResult =
   | { claimed: true; state: "applied"; targetBotId: string; settlementPending?: true; message?: string };
 
 const sameSelection = (a: ModelSelection, b: ModelSelection) =>
-  a.instanceId === b.instanceId && a.model === b.model && a.effort === b.effort && a.variant === b.variant;
+  a.instanceId === b.instanceId && a.model === b.model && a.effort === b.effort && a.variant === b.variant && a.auto === b.auto;
 
 function reasonText(value: unknown): string {
   if (typeof value !== "string") throw new ModelRequestError("reason is required");
