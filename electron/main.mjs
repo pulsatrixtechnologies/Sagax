@@ -1,6 +1,6 @@
 // First: SAGAX_* settings onto the names the code reads (legacy-names.mjs).
 import "./legacy-env-boot.mjs";
-import { app, autoUpdater as nativeAutoUpdater, BrowserWindow, Tray, WebContentsView, clipboard, desktopCapturer, dialog, globalShortcut, ipcMain, Menu, nativeImage, net, powerMonitor, powerSaveBlocker, safeStorage, screen, session, shell, systemPreferences, utilityProcess } from "electron";
+import { app, autoUpdater as nativeAutoUpdater, BrowserWindow, Notification, Tray, WebContentsView, clipboard, desktopCapturer, dialog, globalShortcut, ipcMain, Menu, nativeImage, net, powerMonitor, powerSaveBlocker, safeStorage, screen, session, shell, systemPreferences, utilityProcess } from "electron";
 import { createRequire } from "node:module";
 import { randomBytes, randomUUID } from "node:crypto";
 import fs from "node:fs";
@@ -33,6 +33,7 @@ import { createOrgJoin, forgetDetail } from "./org-join.mjs";
 import { createOwnerIdentitySync } from "./owner-identity.mjs";
 import { trafficLightsForSkin, windowChromeOptions } from "./window-chrome.mjs";
 import { createWindowNudger } from "./window-nudge.mjs";
+import { createDesktopAttention } from "./desktop-attention.mjs";
 import { createAllWindowsClosedQuit } from "./window-all-closed.mjs";
 import { createStartupScreen } from "./startup-screen.mjs";
 import { createSystemTray } from "./system-tray.mjs";
@@ -255,7 +256,7 @@ function applyUnreadBadge(win = mainWindow) {
     );
     return;
   }
-  if (process.platform === "darwin" || process.platform === "linux") app.setBadgeCount(count);
+  if (process.platform === "darwin" || process.platform === "linux") desktopAttention.setBadge(count);
 }
 
 // GNOME groups the window with its installed desktop entry only when both
@@ -284,7 +285,13 @@ if (!app.requestSingleInstanceLock()) {
 // electron-updater re-emits it on the same object before app.quit()), so the
 // lock is released on that event — never in before-quit, where a normal quit
 // would allow a concurrent second instance.
-nativeAutoUpdater.on("before-quit-for-update", () => releaseSingleInstanceLock(app));
+// An update closes every window before app.quit() runs (so before
+// before-quit): the macOS close-to-hide below must let those closes through.
+let quittingForUpdate = false;
+nativeAutoUpdater.on("before-quit-for-update", () => {
+  quittingForUpdate = true;
+  releaseSingleInstanceLock(app);
+});
 
 function deliverPackageInstall(win) {
   if (!pendingPackageInstallUrl || !win || win.isDestroyed()) return;
@@ -2051,13 +2058,44 @@ ipcMain.handle("desktop:system-idle", (event) => {
   return systemIdleSnapshot(powerMonitor);
 });
 
-ipcMain.on("desktop:nudge", (event) => {
+/** The main window's top frame, the only page that may ask for attention. */
+function fromMainWindowTop(event) {
   const sender = BrowserWindow.fromWebContents(event.sender);
-  if (!sender || sender !== mainWindow || sender.isDestroyed()) return;
+  if (!sender || sender !== mainWindow || sender.isDestroyed()) return false;
   const frame = event.senderFrame;
   const mainFrame = event.sender?.mainFrame;
-  if (frame && mainFrame && frame !== mainFrame) return;
+  return !(frame && mainFrame && frame !== mainFrame);
+}
+
+// Native notifications, the Dock bounce and the taskbar flash
+// (electron/desktop-attention.mjs). A click brings the window forward and
+// tells the page which conversation to open.
+const desktopAttention = createDesktopAttention({
+  platform: process.platform,
+  app,
+  Notification,
+  getWindow: () => mainWindow,
+  onClick: (id) => {
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send("desktop:notification-click", id);
+  },
+});
+
+// A nudge RECEIVED on this computer (the page never asks for the sender):
+// bounce the Dock icon until the person looks (macOS), flash the taskbar
+// button (Windows, Linux), then bring the window forward and shake it,
+// unless this computer turned the shake off.
+ipcMain.on("desktop:nudge", (event, options) => {
+  if (!fromMainWindowTop(event)) return;
+  desktopAttention.requestAttention({ bounce: "critical", flash: true });
+  if (options && typeof options === "object" && options.shake === false) return;
   windowNudger.nudge(mainWindow);
+});
+
+// A notification the page decided on (src/lib/attention.ts): shown by the
+// shell so it can stay until dismissed and bring the window back on click.
+ipcMain.on("desktop:notify", (event, request) => {
+  if (!fromMainWindowTop(event)) return;
+  desktopAttention.notify(request);
 });
 
 // ── environments: this computer's server, or a paired remote one ──────
@@ -2797,10 +2835,24 @@ function createWindow({ deferNavigation = false } = {}) {
   });
   mainWindow = win;
   win.on("show", () => desktopTray?.windowShown(win));
+  win.on("focus", () => desktopAttention.settle());
   win.on("close", (event) => {
     if (process.platform === "win32" && !desktopShutdownStarted && desktopTray) {
       event.preventDefault();
       desktopTray.hide(win);
+      return;
+    }
+    // macOS: the red button hides the window, as a chat app does, so its
+    // page keeps the live stream and a nudge or a message still reaches
+    // this computer. Quit (Cmd+Q, the Dock menu) closes it for real.
+    if (process.platform === "darwin" && !desktopShutdownStarted && !quittingForUpdate && process.env.SAGAX_SMOKE_TEST !== "1") {
+      event.preventDefault();
+      if (win.isFullScreen()) {
+        win.once("leave-full-screen", () => { if (!win.isDestroyed()) win.hide(); });
+        win.setFullScreen(false);
+      } else {
+        win.hide();
+      }
     }
   });
   win.setTitle(workspaceWindowTitle(environmentsState, desktopRemoteAccess));
@@ -4212,6 +4264,13 @@ app.whenReady().then(async () => {
   refreshApplicationMenu();
   app.on("activate", () => {
     if (desktopTray?.show()) return;
+    // the window the red button hid (macOS) comes back as it was
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.show();
+      mainWindow.focus();
+      return;
+    }
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
 }).finally(() => allWindowsClosedQuit.settleStartup());

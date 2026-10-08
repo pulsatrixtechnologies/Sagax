@@ -135,6 +135,27 @@ function parseLiveFrame(data: string): LiveFrame | null {
   return candidate as LiveFrame;
 }
 
+/** Inside the desktop app (the shell's bridge is there). */
+function desktopShell(): boolean {
+  try {
+    return Boolean((globalThis as { ogb?: unknown }).ogb);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Whether the stream may (re)connect now. A browser tab in the background
+ * waits until it is shown again. The desktop app never waits: its window is
+ * minimized, hidden (macOS red button, Windows tray) or covered by another
+ * app most of the day, and a stream that a proxy closed meanwhile would stay
+ * closed, so a nudge or a direct message would reach nobody until the
+ * person happened to look (the reported bug).
+ */
+export function liveEventsVisible(doc: Pick<Document, "visibilityState"> | undefined, desktop: boolean): boolean {
+  return desktop || !doc || doc.visibilityState === "visible";
+}
+
 function browserPlatform(overrides: Partial<LiveEventsPlatform>): LiveEventsPlatform | null {
   const NativeEventSource = globalThis.EventSource;
   const createEventSource =
@@ -177,7 +198,7 @@ function browserPlatform(overrides: Partial<LiveEventsPlatform>): LiveEventsPlat
           }
         : undefined),
     isVisible:
-      overrides.isVisible ?? (() => !browserDocument || browserDocument.visibilityState === "visible"),
+      overrides.isVisible ?? (() => liveEventsVisible(browserDocument, desktopShell())),
     isOnline: overrides.isOnline ?? (() => globalThis.navigator?.onLine !== false),
     now: overrides.now ?? Date.now,
   };

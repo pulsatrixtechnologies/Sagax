@@ -25,6 +25,7 @@ const SECTION_LABEL = {
   workspaces: "settings.section.workspaces",
   achievements: "settings.section.achievements",
   privacy: "settings.section.privacy",
+  notifications: "settings.section.notifications",
 } as const satisfies Record<AppSettingsSection, LocaleKey>;
 
 export type SettingsLinkTarget = { section: AppSettingsSection; cardId?: string };

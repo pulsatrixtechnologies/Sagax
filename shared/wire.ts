@@ -853,6 +853,11 @@ export interface WireGroup {
   /** Organization server: a direct conversation between two people
    * (`humanIds`), with no bot (server/people-dms.ts). Only those two read it. */
   peopleDm?: boolean;
+  /** A conversation between two people: which of the two have not read it
+   * yet (principal ids). Each person's own `unread` is drawn from it, so
+   * the sender reading it never clears it for the recipient. Server-side;
+   * a client never gets it (server/people-dms.ts peopleDmForViewer). */
+  unreadFor?: string[];
   /** The group's shared memory (server/group-memory.ts); absent = on. */
   memoryEnabled?: boolean;
   /** transient: the member currently running a turn. */
@@ -973,7 +978,7 @@ export type ServerFrame =
   /** A screen or button for one person's open desktop app. iOS and Android ignore this kind. */
   | { kind: "bot-act"; audience: string; action: string; input?: Record<string, unknown> }
   /** Shake this person's desktop window. Their streams only (server/nudge.ts). */
-  | { kind: "nudge"; audience: string; fromId: string; fromName: string; at: number }
+  | { kind: "nudge"; audience: string; fromId: string; fromName: string; at: number; open?: { groupId: string; threadId: string } }
   /** A person's custom label changed (server/routes/person-labels.ts); null
    * cleared it. Every stream. */
   | { kind: "person.label"; principalId: string; label: string | null }

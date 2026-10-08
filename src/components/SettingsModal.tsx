@@ -6,7 +6,7 @@ import { useRetroSkin } from "./RetroChromeHost";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { FLOATING_LIVELINESS, floatingBotPrefs, HOTKEY_CHOICES, hotkeyLabel, setFloatingFlyAway, setFloatingHotkey, setFloatingLiveliness, subscribeFloatingBots, type FloatingLiveliness, type HotkeyChoice } from "@/lib/floating-bots";
 import { useCallSettings, writeCallSettings } from "@/lib/voice-mode/call-settings";
-import { Archive, Coins, FlaskConical, KeyRound, Mail, Monitor, Palette, Plug, ScrollText, Search, ShieldCheck, TabletSmartphone, Terminal, Trophy, User, Users, X, Building2, Zap } from "lucide-react";
+import { Archive, Bell, Coins, FlaskConical, KeyRound, Mail, Monitor, Palette, Plug, ScrollText, Search, ShieldCheck, TabletSmartphone, Terminal, Trophy, User, Users, X, Building2, Zap } from "lucide-react";
 import { AchievementsPage } from "./achievements/AchievementsPage";
 import { api, useStore, type AppSettingsSection, type ConfigStatus } from "@/state/store";
 import { browserAvailable, builtInBrowserEnabled, boatComputerEnabled, connectedAppsEnabled, decisionModelEnabled, routinesInConversationEnabled, showToolCallsEnabled, skillAuthoringEnabled, templatesEnabled, vpsComputerEnabled } from "@/lib/feature-flags";
@@ -40,6 +40,7 @@ import { ThisComputerSettings } from "./DesktopWorkspaceSwitcher";
 import { OrganizationSettings } from "./OrganizationSettings";
 import { Card, SettingRow, Switch, requestSettingsCard, cardCount } from "./SettingsPrimitives";
 import { PrivacySettings } from "./PrivacySettings";
+import { NotificationSettings } from "./NotificationSettings";
 import { BrowserUnavailableNote, SettingsText } from "./SettingsLink";
 
 import { shortcutLabel } from "./ShortcutHint";
@@ -70,7 +71,6 @@ import { WorkspaceBackupSettings } from "./WorkspaceBackupSettings";
 import { cn } from "@/lib/cn";
 import { setAdvancedMode, useAdvancedMode } from "@/lib/interface-mode";
 import { simpleHidesSettingsSection } from "@/lib/interface-visibility";
-import { setNotificationSounds, setNudgeSound, useNotificationSounds, useNudgeSound } from "@/lib/notification-preferences";
 import { setShowThreads, setThreadsLocation, useShowThreadsChoice, useThreadsLocationChoice, type ThreadsLocation } from "@/lib/thread-preferences";
 import { parseSidebarDensity, setSidebarDensity, SIDEBAR_DENSITIES, useSidebarDensity, type SidebarDensity } from "@/lib/sidebar-preferences";
 import { currentPhonePairingTarget } from "@/lib/phone-pairing";
@@ -93,7 +93,8 @@ export const SECTIONS: Array<{
 }> = [
   { id: "general", labelKey: "settings.section.general", icon: User, keywords: ["profile", "name", "email", "about me", "about", "suggestions", "suggested", "memory", "updates", "effort", "new bots", "reasoning", "threads", "parallel", "concurrency", "cleanup", "retention", "event log", "event-log", "log size", "automatic recovery", "backup model", "fallback", "routines", "conversation", "schedule"] },
   { id: "organization", labelKey: "settings.section.organization", icon: Building2, keywords: ["company", "organization", "organisation", "sign in", "enroll", "managed", "models", "disconnect", "workspace", "cloud", "hosted", "vps", "server", "servers", "connect", "pair", "switch", "local"] },
-  { id: "appearance", labelKey: "settings.section.appearance", icon: Palette, keywords: ["skin", "theme", "appearance", "advanced", "simple", "mode", "tools", "tool calls", "threads", "show threads", "hide threads", "sidebar", "hidden", "hide", "show", "density", "compact", "comfortable", "avatars", "display", "run", "this run", "run card", "commands", "notifications", "sound", "sounds", "mute", "silent", "chime", "mascot", "owl", "desktop", "fly", "floating", "app icon", "dock", "icon", "taskbar"] },
+  { id: "appearance", labelKey: "settings.section.appearance", icon: Palette, keywords: ["skin", "theme", "appearance", "advanced", "simple", "mode", "tools", "tool calls", "threads", "show threads", "hide threads", "sidebar", "hidden", "hide", "show", "density", "compact", "comfortable", "avatars", "display", "run", "this run", "run card", "commands", "mascot", "owl", "desktop", "fly", "floating", "app icon", "dock", "icon", "taskbar"] },
+  { id: "notifications", labelKey: "settings.section.notifications", icon: Bell, keywords: ["notifications", "notification", "sound", "sounds", "mute", "silent", "chime", "alert", "alerts", "banner", "badge", "dock", "unread", "nudge", "wizz", "shake", "secousse", "son", "persistent", "stay"] },
   { id: "privacy", labelKey: "settings.section.privacy", icon: ShieldCheck, keywords: ["privacy", "read receipts", "seen", "vu", "confidentialité", "accusés de lecture", "presence", "online", "away", "offline", "last seen", "status", "en ligne", "absent", "hors ligne", "privacidade"] },
   { id: "achievements", labelKey: "settings.section.achievements", icon: Trophy, keywords: ["achievements", "trophies", "trophy", "points", "gamerscore", "level", "unlock", "succès", "trophées"] },
   { id: "experimental", labelKey: "settings.section.experimental", icon: FlaskConical, keywords: ["early", "preview", "learn", "skill", "authoring", "browser", "profiles"] },
@@ -564,32 +565,6 @@ function FloatingCaptionsRow() {
   );
 }
 
-function NotificationSoundsRow() {
-  const enabled = useNotificationSounds();
-  return (
-    <SettingRow title={t("settings.notificationSounds.title")} subtitle={t("settings.notificationSounds.short")} help={t("settings.notificationSounds.subtitle")}>
-      <Switch
-        checked={enabled}
-        aria-label={t("settings.notificationSounds.play")}
-        onClick={() => setNotificationSounds(!enabled)}
-      />
-    </SettingRow>
-  );
-}
-
-function NudgeSoundRow() {
-  const enabled = useNudgeSound();
-  return (
-    <SettingRow title={t("settings.nudgeSound.title")} subtitle={t("settings.nudgeSound.short")}>
-      <Switch
-        checked={enabled}
-        aria-label={t("settings.nudgeSound.title")}
-        onClick={() => setNudgeSound(!enabled)}
-      />
-    </SettingRow>
-  );
-}
-
 function FontRow() {
   const [current, setCurrent] = useState<FontId>(readFont);
   return (
@@ -1006,7 +981,7 @@ export function SettingsModal() {
   // computer's phone flow, or the server's pairing code.
   const computerPairs = currentPhonePairingTarget(false) === "computer";
   const section: AppSettingsSection =
-    remoteActive && state.appSettingsSection !== "appearance" && state.appSettingsSection !== "organization"
+    remoteActive && state.appSettingsSection !== "appearance" && state.appSettingsSection !== "organization" && state.appSettingsSection !== "notifications"
       ? "companion"
       : state.appSettingsSection;
   const dialogRef = useRef<HTMLDivElement>(null);
@@ -1034,7 +1009,7 @@ export function SettingsModal() {
     dispatch({ type: "toggleAppSettings", open: false, section: "general" });
     dispatch({ type: "toggleLaunch", open: true, mode: "server" });
   }, [soloDesktop, state.appSettingsSection, dispatch]);
-  const availableSections = SECTIONS.filter((entry) => !remoteActive || entry.id === "companion" || entry.id === "appearance" || entry.id === "organization" || entry.id === "privacy")
+  const availableSections = SECTIONS.filter((entry) => !remoteActive || entry.id === "companion" || entry.id === "appearance" || entry.id === "organization" || entry.id === "privacy" || entry.id === "notifications")
     // the desktop app in "No server" mode has no organization to show; it
     // joins one from General > Server, which brings this section back
     .filter((entry) => entry.id !== "organization" || !soloDesktop)
@@ -1336,8 +1311,6 @@ export function SettingsModal() {
                   <ShowThreadsRow />
                   <ThreadsLocationRow />
                   <SidebarHiddenSettings />
-                  <NotificationSoundsRow />
-                  <NudgeSoundRow />
                   <FloatingFlyAwayRow />
                   <FloatingLivelinessRow />
                   <FloatingHotkeyRow />
@@ -1485,6 +1458,7 @@ export function SettingsModal() {
             {section === "workspaces" && <WorkspacesSection />}
             {section === "achievements" && <AchievementsPage />}
             {section === "privacy" && <PrivacySettings />}
+            {section === "notifications" && <NotificationSettings />}
             </div>
           </div>
           )}

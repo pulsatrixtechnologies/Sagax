@@ -9,7 +9,7 @@
 // the clock when the chat has no one else to shake.
 import { z } from "zod";
 
-import { groupNudgeKey, groupNudgeTargets, nudgeCooldownError, type NudgeCooldown, type NudgeDirectoryPerson } from "../nudge.ts";
+import { groupNudgeKey, groupNudgeTargets, nudgeCooldownError, type NudgeConversation, type NudgeCooldown, type NudgeDirectoryPerson } from "../nudge.ts";
 import type { RequestAuth } from "../request-auth.ts";
 import { PASS, type RouteHandler } from "./table.ts";
 
@@ -36,10 +36,13 @@ export interface NudgeRouteDeps {
   displayName(principalId: string): string;
   now(): number;
   cooldown: NudgeCooldown;
-  deliver(frame: { audience: string; fromId: string; fromName: string; at: number }): void;
+  /** `open` is the conversation the line was written in, so the person
+   * nudged can open it from the notification. */
+  deliver(frame: { audience: string; fromId: string; fromName: string; at: number; open?: NudgeConversation }): void;
   /** Persist the accepted nudge. Not called when the nudge is refused.
-   * `groupId` writes the line on that group chat. */
-  record(line: { fromId: string; fromName: string; toId: string; toName: string; at: number; groupId?: string }): void;
+   * `groupId` writes the line on that group chat. Returns the conversation
+   * the line went to, when there is one. */
+  record(line: { fromId: string; fromName: string; toId: string; toName: string; at: number; groupId?: string }): NudgeConversation | undefined | void;
 }
 
 const personBody = z.object({ principalId: z.string().min(1).max(200) }).strict();
@@ -85,8 +88,8 @@ export function createNudgeRoutes(deps: NudgeRouteDeps): RouteHandler {
         });
       }
       const toName = found.room.name.trim() || found.room.id;
-      deps.record({ fromId: self, fromName, toId: found.room.id, toName, at, groupId: found.room.id });
-      for (const person of targets) deps.deliver({ audience: person.id, fromId: self, fromName, at });
+      const open = deps.record({ fromId: self, fromName, toId: found.room.id, toName, at, groupId: found.room.id }) || undefined;
+      for (const person of targets) deps.deliver({ audience: person.id, fromId: self, fromName, at, ...(open ? { open } : {}) });
       return json(res, 200, { ok: true });
     }
     const target = deps.person(parsed.data.principalId);
@@ -107,8 +110,8 @@ export function createNudgeRoutes(deps: NudgeRouteDeps): RouteHandler {
       });
     }
     const toName = target.name.trim() || target.id;
-    deps.record({ fromId: self, fromName, toId: target.id, toName, at });
-    deps.deliver({ audience: target.id, fromId: self, fromName, at });
+    const open = deps.record({ fromId: self, fromName, toId: target.id, toName, at }) || undefined;
+    deps.deliver({ audience: target.id, fromId: self, fromName, at, ...(open ? { open } : {}) });
     return json(res, 200, { ok: true });
   };
 }

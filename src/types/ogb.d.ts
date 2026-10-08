@@ -322,9 +322,22 @@ const __SAGAX_DEFAULT_SERVER__: string;
       onOpenReleaseNotes?(cb: () => void): () => void;
       /** Updates the native Dock/taskbar unread indicator. */
       setUnreadCount?(count: number): void;
-      /** Focus the main window and shake it once. The shell ignores a
-       * second call while that shake is still running. */
-      nudgeWindow?(): void;
+      /** A nudge was received here: bounce the Dock / flash the taskbar,
+       * then focus the main window and shake it once (unless `shake` is
+       * false). The shell ignores a second shake while one is running. */
+      nudgeWindow?(options?: { shake?: boolean }): void;
+      /** A native notification shown by the shell (src/lib/attention.ts). */
+      notify?(request: {
+        id: string;
+        title: string;
+        body: string;
+        sound: boolean;
+        persistent: boolean;
+        bounce: "critical" | "informational" | null;
+        flash: boolean;
+      }): void;
+      /** The id of a shell notification the person clicked. */
+      onNotificationClick?(cb: (id: string) => void): () => void;
       /** Presence: the computer's idle state and seconds since the last
        * input (Electron powerMonitor). Null outside the main window. */
       systemIdle?(): Promise<{ state: "active" | "idle" | "locked" | "unknown"; idleSeconds: number } | null>;

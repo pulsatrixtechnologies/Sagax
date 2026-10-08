@@ -40,6 +40,9 @@ import { shouldOpenKeyboardShortcuts } from "@/lib/keyboard-shortcuts";
 import { effectiveLanguage, useLanguageChoice } from "@/lib/language-preference";
 import { openThreadVisible, pageOpenThreadTarget, type OpenThreadTarget } from "@/lib/open-thread-hash";
 import { botShowsUnread } from "@/lib/bot-unread";
+import { badgeCount } from "@/lib/attention";
+import { dockBadge, useLocalSwitch } from "@/lib/notification-preferences";
+import { primeNudgeSound } from "@/lib/nudge-sound";
 import { viewerBotsReadOnly, viewerCanCreateBots } from "@/lib/viewer";
 import { phonePairingSettingsAction, takePhonePairingRequest } from "@/lib/phone-pairing";
 
@@ -197,9 +200,17 @@ function Shell() {
     return () => window.removeEventListener("keydown", onKey);
   }, [state.bots, state.selectedId, state.shortcutsOpen, composeOpen, dispatch]);
 
+  // The Dock / taskbar count: every unread conversation (a person's direct
+  // message included), unless this computer turned the badge off.
+  const showBadge = useLocalSwitch(dockBadge);
   useEffect(() => {
-    window.ogb?.setUnreadCount?.(unreadCount);
-  }, [unreadCount]);
+    window.ogb?.setUnreadCount?.(badgeCount(unreadCount, { badge: showBadge }));
+  }, [unreadCount, showBadge]);
+  // Load the nudge sound now: the first nudge rings at once, even before
+  // any click in the page.
+  useEffect(() => {
+    primeNudgeSound();
+  }, []);
 
   // Warm connected-account state as soon as the local server is available.
   // The modal then opens with the correct Connect/Add account buttons and

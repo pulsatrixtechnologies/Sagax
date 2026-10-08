@@ -761,7 +761,7 @@ import { createPresenceRoutes, presenceFrameAllowed, type PresenceViewer } from 
 import { PresenceTracker } from "./presence.ts";
 import { PRESENCE_SWEEP_MS, PRESENCE_VISIBLE_PREFERENCE, presenceHidden, publicPresence, type PresenceView } from "../shared/presence.ts";
 import { NudgeCooldown, nudgeFrameAllowed, recordNudgeLine } from "./nudge.ts";
-import { findPeopleDm, isPeopleDmParticipant, otherPerson, peopleDmPatchRefusal, peopleDmRouteRefusal } from "./people-dms.ts";
+import { findPeopleDm, isPeopleDmParticipant, otherPerson, peopleDmForViewer, peopleDmPatchRefusal, peopleDmRouteRefusal, peopleDmUnreadPatch } from "./people-dms.ts";
 import { deleteGroupMemory, groupMemoryEnabled, groupMemorySystemPrompt, updateGroupMemory } from "./group-memory.ts";
 import type { OrgRecord } from "./org-record.ts";
 import { createOidcLoginRoutes, identityConfigFromEnv, identityDescriptor, INTERIM_SIGNIN_REFUSAL, isInterimSignInRoute, MANAGED_PROFILE_REFUSAL, oidcSessionFields, profileManagement, writesManagedProfile } from "./oidc-login.ts";
@@ -8070,6 +8070,14 @@ function sseFrameFor(
 ): string | null {
   if (payload && !peopleDmFrameAllowed(payload, client.viewerId)) return null;
   if (payload && viewerNotificationMuted(payload, client.viewerId)) return null;
+  // A conversation between two people carries each person's own unread
+  // state, and never who else has read it (server/people-dms.ts).
+  if (payload?.kind === "group" && payload.group && typeof payload.group === "object" && Array.isArray((payload.group as { unreadFor?: unknown }).unreadFor)) {
+    payload = { ...payload, group: peopleDmForViewer(payload.group as { peopleDm?: boolean; unread?: boolean; unreadFor?: string[] }, client.viewerId || client.approvalUserId || localPrincipalId()) };
+    const serialized = `id: ${STREAM_ID}:${seq}\ndata: ${JSON.stringify({ ...payload, seq })}\n\n`;
+    frame = serialized;
+    if (clientFrame !== null) clientFrame = serialized;
+  }
   // the approvals waiting for an organization admin reach the admins only
   if (payload?.kind === "org.approvals" && !orgAdminStream(client)) return null;
   // a person's unlocks reach that person's streams only
@@ -20942,7 +20950,10 @@ ROUTES.push(createNudgeRoutes({
       return group ? { id: group.id, threadId: group.threadId } : undefined;
     },
     append: (threadId, message) => { store.appendMessage(threadId, message); },
-    markUnread: (groupId) => { store.patchGroup(groupId, { unread: true }); },
+    markUnread: (groupId, personId) => {
+      const group = store.group(groupId);
+      store.patchGroup(groupId, group?.peopleDm && personId ? peopleDmUnreadPatch(group, personId, true) : { unread: true });
+    },
   }, line),
 }));
 // People's custom labels (server/routes/person-labels.ts): the directory's
@@ -20994,9 +21005,10 @@ function sendPeopleDmMessage(group: GroupRecord, auth: RequestAuth, text: string
   }
   const sender = messageSender(auth);
   const message = store.appendMessage(threadId, { role: "user", kind: "text", text, replyToId: replyTo?.id, sendId, sender });
-  store.patchGroup(group.id, { unread: true });
   const from = channelViewerId(auth);
   const to = from ? otherPerson(group, from) : undefined;
+  // unread for the recipient only: the sender reading it clears nothing
+  store.patchGroup(group.id, to ? peopleDmUnreadPatch(store.group(group.id) ?? group, to, true) : { unread: true });
   if (to && sender) {
     const avatarUrl = personAvatarUrl(principals.byId(from!));
     broadcast({ kind: "notify", notification: {
@@ -21192,6 +21204,12 @@ function actorPrincipalId(auth: RequestAuth): string {
  * operator's bots; its scope still gates it). On an organization server a
  * session without a principal (an interim-era pairing, a chat-only code made
  * from this computer) stays filtered: it sees no one's Directs or sections. */
+/** The person reading a conversation between two people: the signed-in
+ * person, or the operator at this computer. */
+function groupReaderId(auth: RequestAuth): string | undefined {
+  if (auth.kind === "session") return channelViewerId(auth);
+  return auth.kind === "loopback" && auth.trust !== "service" ? localPrincipalId() : undefined;
+}
 function channelFilterViewerId(auth: RequestAuth): string | undefined {
   const viewerId = channelViewerId(auth);
   if (!viewerId) return undefined;
@@ -27678,7 +27696,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         botQueuedMessages: threadKeyedForViewer(visible.everything ? queued : Object.fromEntries(Object.entries(queued).filter(([threadId]) => visible.thread(threadId))), viewerId),
         sections: orgVisibleSections(visible.sections(store.sections), viewerId),
         groups: store.groups.filter((g) => visible.group(g.id) && groupVisible(g, viewerId)).map((g) => {
-          const room = { ...publicGroupState(g), ...messagePage(g.threadId, limit, null, viewerForApproval(auth)) };
+          const room = peopleDmForViewer({ ...publicGroupState(g), ...messagePage(g.threadId, limit, null, viewerForApproval(auth)) }, groupReaderId(auth));
           return visible.everything ? room : memberGroup(room);
         }),
         computerControl: Object.fromEntries(
@@ -28257,7 +28275,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     if (method === "GET" && path === "/api/groups") {
       return json(res, 200, {
         groups: store.groups.filter((g) => visible.group(g.id) && groupVisible(g, viewerId)).map((g) => {
-          const room = publicGroupState(g);
+          const room = peopleDmForViewer(publicGroupState(g), groupReaderId(auth));
           return visible.everything ? room : memberGroup(room);
         }),
       });
@@ -28808,6 +28826,16 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (existingGroup?.peopleDm) {
         const field = peopleDmPatchRefusal(body);
         if (field) return json(res, 400, { error: `a conversation between two people cannot change "${field}"`, code: "people_dm" });
+        // read or unread for the person marking it only
+        const reader = groupReaderId(auth);
+        if (reader && body && typeof body === "object" && typeof (body as { unread?: unknown }).unread === "boolean") {
+          const { unread, ...rest } = body as { unread: boolean };
+          let marked = store.patchGroup(existingGroup.id, peopleDmUnreadPatch(existingGroup, reader, unread));
+          if (marked && Object.keys(rest).length > 0) marked = updateChannel(existingGroup.id, rest);
+          if (!marked) return json(res, 404, { error: "no such room" });
+          broadcast({ kind: "group", group: publicGroupState(marked) });
+          return json(res, 200, { group: peopleDmForViewer(publicGroupState(marked), reader) });
+        }
       }
       // A bot-to-bot dm keeps its existing member refusal. Placement checks
       // apply only when this patch adds a bot to a channel.
@@ -28852,10 +28880,14 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     }
     m = path.match(/^\/api\/groups\/([\w-]+)\/read$/);
     if (m && method === "POST") {
-      const group = store.patchGroup(m[1], { unread: false });
+      // A conversation between two people is read by the person reading it,
+      // never for the other one (server/people-dms.ts).
+      const existing = store.group(m[1]);
+      const reader = groupReaderId(auth);
+      const group = store.patchGroup(m[1], existing?.peopleDm && reader ? peopleDmUnreadPatch(existing, reader, false) : { unread: false });
       if (!group) return json(res, 404, { error: "no such room" });
       broadcast({ kind: "group", group: publicGroupState(group) });
-      return json(res, 200, { group: publicGroupState(group) });
+      return json(res, 200, { group: peopleDmForViewer(publicGroupState(group), reader) });
     }
     m = path.match(/^\/api\/groups\/([\w-]+)$/);
     if (m && method === "DELETE") {

@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-const sounds = vi.hoisted(() => ({ enabled: true }));
+const sounds = vi.hoisted(() => ({ enabled: true, persistent: true }));
 vi.mock("./notification-preferences", () => ({
-  notificationSoundsEnabled: () => sounds.enabled,
+  attentionSettings: () => ({ sound: sounds.enabled, persistent: sounds.persistent, badge: true, nudgeSound: true, nudgeShake: true }),
 }));
 
 import {
@@ -41,6 +41,7 @@ function installNotification(permission: NotificationPermission, focused = false
 afterEach(() => {
   vi.unstubAllGlobals();
   sounds.enabled = true;
+  sounds.persistent = true;
 });
 
 describe("desktop notifications", () => {
@@ -155,5 +156,46 @@ describe("buildNotificationOptions", () => {
       tag: "openmausbot:bot-9",
       icon: undefined,
     });
+  });
+});
+
+describe("notifications that stay", () => {
+  it("a browser notification stays until the person acts on it, unless turned off", () => {
+    const { notices } = installNotification("granted");
+    showNotification(frame, vi.fn());
+    expect(notices[0]?.options?.requireInteraction).toBe(true);
+    sounds.persistent = false;
+    showNotification(frame, vi.fn());
+    expect(notices[1]?.options?.requireInteraction).toBe(false);
+  });
+
+  it("the desktop shell shows it, with sound, persistent, a Dock bounce for a person, and a click opens the thread", () => {
+    const sent: Array<Record<string, unknown>> = [];
+    let click: ((id: string) => void) | undefined;
+    vi.stubGlobal("document", { hasFocus: () => false });
+    vi.stubGlobal("window", {
+      focus: vi.fn(),
+      ogb: {
+        notify: (request: Record<string, unknown>) => sent.push(request),
+        onNotificationClick: (cb: (id: string) => void) => { click = cb; return () => {}; },
+      },
+    });
+    const onOpen = vi.fn();
+    showNotification({ ...frame, kind: "message", botId: "", title: "Alice", body: "lunch?", threadId: "dm-thread", groupId: "dm-1" }, onOpen);
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toMatchObject({ title: "Alice", body: "lunch?", sound: true, persistent: true, bounce: "critical", flash: true });
+    click?.(sent[0]!.id as string);
+    expect(onOpen).toHaveBeenCalledWith({ botId: "", threadId: "dm-thread" });
+    // a second click on the same id does nothing
+    click?.(sent[0]!.id as string);
+    expect(onOpen).toHaveBeenCalledOnce();
+  });
+
+  it("the desktop shell is not asked while the person reads that conversation", () => {
+    const sent: unknown[] = [];
+    vi.stubGlobal("document", { hasFocus: () => true });
+    vi.stubGlobal("window", { focus: vi.fn(), ogb: { notify: (request: unknown) => sent.push(request) } });
+    showNotification({ ...frame, kind: "message" }, vi.fn(), undefined, frame.threadId);
+    expect(sent).toHaveLength(0);
   });
 });

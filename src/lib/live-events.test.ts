@@ -4,6 +4,7 @@ import {
   LIVE_EVENTS_STALE_MS,
   isLivePing,
   liveEventsUrl,
+  liveEventsVisible,
   openLiveEvents,
   shouldReconnectLiveEvents,
   type LiveEventSourceLike,
@@ -332,5 +333,39 @@ describe("live event liveness predicates", () => {
     expect(isLivePing({ kind: "message" })).toBe(false);
     expect(shouldReconnectLiveEvents(0, LIVE_EVENTS_STALE_MS - 1)).toBe(false);
     expect(shouldReconnectLiveEvents(0, LIVE_EVENTS_STALE_MS)).toBe(true);
+  });
+});
+
+describe("live events in the desktop app", () => {
+  it("a browser tab in the background waits, the desktop app never does", () => {
+    expect(liveEventsVisible({ visibilityState: "hidden" }, false)).toBe(false);
+    expect(liveEventsVisible({ visibilityState: "visible" }, false)).toBe(true);
+    // a minimized, hidden or covered desktop window keeps its stream
+    expect(liveEventsVisible({ visibilityState: "hidden" }, true)).toBe(true);
+    expect(liveEventsVisible(undefined, false)).toBe(true);
+  });
+
+  it("a hidden desktop window reconnects after a proxy closed its stream", () => {
+    const test = harness();
+    const stop = openLiveEvents(
+      { onFrame: vi.fn(), onSnapshotRequired: async () => true },
+      { ...test.platform, isVisible: () => liveEventsVisible({ visibilityState: "hidden" }, true) },
+    );
+    expect(test.sources).toHaveLength(1);
+    test.sources[0].open();
+    test.sources[0].error();
+    vi.advanceTimersByTime(15_000);
+    expect(test.sources.length).toBeGreaterThan(1);
+    stop();
+  });
+
+  it("a hidden browser tab whose stream closed waits until it is shown", () => {
+    const test = harness({ visible: false });
+    const stop = openLiveEvents({ onFrame: vi.fn(), onSnapshotRequired: async () => true }, test.platform);
+    test.sources[0].open();
+    test.sources[0].error();
+    vi.advanceTimersByTime(15_000);
+    expect(test.sources).toHaveLength(1);
+    stop();
   });
 });
