@@ -667,8 +667,9 @@ const appConfigSchema = z.object({
    * skipped entry (customMcpServers), never to a vanished config. */
   mcpServers: z.record(z.string(), z.unknown()).optional(),
   /** Connectors the engines bring with a person's own account
-   * (server/harness-connectors.ts). `claudeAi` unset means on; an admin
-   * turns it off through PUT /api/harness-connectors/settings only. */
+   * (server/harness-connectors.ts). Retired: they are always on and nothing
+   * reads this block any more. It stays in the schema only so a config that
+   * still holds `claudeAi: false` keeps loading (the value is ignored). */
   harnessConnectors: z.object({ claudeAi: z.boolean().optional() }).strict().optional(),
 });
 const storedAppConfigSchema = appConfigSchema.extend({
@@ -1088,12 +1089,6 @@ export function builtInBrowserEnabled(cfg: AppConfig): boolean {
  * (`{"features": {"sharedComputers": true}}`) and restarts the server. */
 export function sharedComputersEnabled(cfg: AppConfig): boolean {
   return cfg.features?.sharedComputers === true;
-}
-
-/** The speaker's own claude.ai connectors reach their Claude turns unless
- * an admin turned them off (server/harness-connectors.ts). */
-export function claudeAiConnectorsEnabled(cfg: AppConfig): boolean {
-  return cfg.harnessConnectors?.claudeAi !== false;
 }
 
 /** Claude bots also see the MCP servers of this machine's own Claude Code

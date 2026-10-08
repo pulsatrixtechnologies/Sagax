@@ -6194,7 +6194,6 @@
       "harnessConnectors.unavailable.key": "c72be1768485c46a1025f00bfca3bc0af48e936d0d54031a09d892e70fdf183a",
       "harnessConnectors.unavailable.unknown": "60edc92c093ae64a5825a76071385cb78d68e4bd8531b1499a659976ad937039",
       "harnessConnectors.codex": "4260df4dcf1173f9ebdbc98a33a4ec704028a67aeb749175f457e19c7cf0b583",
-      "harnessConnectors.adminToggle": "896f16f3dd58096a5c76d765549549af6cf2ec39835d77aa1a0dedc1115cbb7e",
       "voiceMode.start": "26e63b8ba4a7e42a83469afe70f8e41145a2025056d71c087fe77a0f6470cc38",
       "voiceMode.unavailableLabel": "f01471e21d675c91f5f4fb4b693404c72b4280eea1b28a6bc32f4e503d255962",
       "voiceMode.unavailableReason": "0b0a9ab9e7f490fdf60707f3f90840673ebe4dc19c472021c3c7c415773716f3",

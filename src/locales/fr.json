@@ -2461,7 +2461,6 @@
   "harnessConnectors.unavailable.key": "Connectez votre abonnement Claude pour utiliser vos connecteurs. Une clé API n'en apporte aucun.",
   "harnessConnectors.unavailable.unknown": "Claude Code n'a pas répondu. Vérifiez qu'il est installé et connecté.",
   "harnessConnectors.codex": "Codex : les connecteurs ChatGPT ne servent pas les bots dans Sagax.",
-  "harnessConnectors.adminToggle": "Permettre les connecteurs Claude sur ce serveur",
   "voiceMode.start": "Parler avec {name} (mode vocal)",
   "voiceMode.unavailableLabel": "Le mode vocal demande une clé voix Grok",
   "voiceMode.unavailableReason": "Ajoute une clé voix Grok dans Réglages > Clés API. Elle est distincte de la clé xAI des bots.",
