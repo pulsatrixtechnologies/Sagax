@@ -1,11 +1,11 @@
 // The profile row at the very bottom of the sidebar, and the menu it opens.
 //
-// The row is an avatar and a full name. Under the name, a quiet line counts
-// the viewer's active routines (the routines icon and a number); it opens
-// Automations and shares the row's rounded highlight. With no active routine
-// the line is gone and the name sits centred beside the avatar. The sidebar
-// never shows achievement titles or points: those live in a person's detail
-// and on Settings > Achievements. The menu leads with Team map and
+// The row is an avatar and a full name. Under the name, the viewer's own
+// title and points, each only while "Show my title" / "Show my points" is on;
+// with both off the name sits centred beside the avatar. The routines badge
+// (icon and count of active routines) sits at the right edge of the row and
+// opens Automations. Other people's rows never show title or points: those
+// live in a person's detail and on Settings > Achievements. The menu leads with Team map and
 // Automations, then a hairline, then settings. Archived bots, when there
 // are any, sit above that pair with their own hairline. Your phone and
 // Help Center are not in this menu: the phone stays in Settings and on
@@ -48,6 +48,9 @@ import { useAchievements } from "@/lib/achievements";
 import { isRoutineProblemRun } from "@/lib/routines";
 import { activeRoutineCount } from "@/lib/active-routines";
 import { viewerActorId } from "@/lib/viewer";
+import { achievementTitleName } from "./achievements/MemberCard";
+import { formatPoints } from "./achievements/AchievementsPage";
+import "./achievements/achievements.css";
 
 /** "Milind Soni" → "MS", "milind" → "M", "you@x.dev" → "Y", unset → "?" */
 export function profileInitials(profile?: { name?: string; email?: string }): string {
@@ -304,10 +307,15 @@ export function SidebarProfileMenu({ avatarOnly = false, places = [] }: {
   const triggerRef = useRef<HTMLSpanElement>(null);
   const achievements = useAchievements();
   const openAchievements = () => dispatch({ type: "toggleAppSettings", open: true, section: "achievements" });
-  // No title and no points here, ever: the line under the name counts the
-  // viewer's active routines, and is gone at zero.
+  // The routines badge sits at the right edge of the row; under the name,
+  // the viewer's own title and points, each only while its "Show my ..."
+  // switch is on. Nothing under the name when both are off.
   const activeRoutines = activeRoutineCount(state.routines, state.bots, viewerActorId(state.config));
-  const showLine = activeRoutines > 0;
+  const showBadge = activeRoutines > 0;
+  const snapshot = achievements.status === "ready" ? achievements.snapshot : undefined;
+  const titleName = snapshot && snapshot.settings.showTitle !== false ? achievementTitleName(snapshot.settings.title) : null;
+  const pointsText = snapshot && snapshot.settings.showPoints !== false ? formatPoints(snapshot.points) : null;
+  const showLine = Boolean(titleName || pointsText);
 
   const profile = state.config?.profile;
   const viewer = state.config?.viewer;
@@ -402,11 +410,22 @@ export function SidebarProfileMenu({ avatarOnly = false, places = [] }: {
         <span
           ref={triggerRef}
           data-sidebar-account
-          className={cn("flex w-full min-w-0 gap-2.5 text-left", showLine ? "items-start" : "items-center")}
+          className="flex w-full min-w-0 items-center gap-2.5 text-left"
         >
           {avatar(40)}
-          <span className={cn("flex min-w-0 flex-1 flex-col", showLine && "pt-0.5")}>
+          <span className="flex min-w-0 flex-1 flex-col justify-center">
             <span title={name} className="min-w-0 truncate text-[14px] font-medium leading-[18px] text-sidebar-ink">{name}</span>
+            {showLine && !avatarOnly && (
+              <span data-member-line="" className="flex min-w-0 items-center gap-2 text-[13px] leading-[18px] text-sidebar-ink-secondary">
+                {titleName && <span data-member-title="" className="min-w-0 truncate">{titleName}</span>}
+                {pointsText && (
+                  <span data-gamertag="" data-footer="" className="achievement-gamertag shrink-0">
+                    <Trophy size={13} strokeWidth={2.4} aria-hidden="true" />
+                    <span>{pointsText}</span>
+                  </span>
+                )}
+              </span>
+            )}
           </span>
           {/* an update is the one thing worth interrupting the name for, so
             * it sits on the row rather than waiting to be found in the menu */}
@@ -435,11 +454,9 @@ export function SidebarProfileMenu({ avatarOnly = false, places = [] }: {
       : (activeRoutines === 1 ? "sidebar.profile.activeRoutinesOne" : "sidebar.profile.activeRoutines"),
     { count: activeRoutines },
   );
-  const routinesLine = showLine && !avatarOnly ? (
-    // 46px lines the icon up with the name: 40px avatar, 10px gap, minus the
-    // button's 4px padding. The pull-up sits the line a few pixels closer to
-    // the name, without collapsing it.
-    <div className="-mt-[21px] flex min-w-0 items-center pl-[46px]" data-routines-line="">
+  const routinesBadge = showBadge && !avatarOnly ? (
+    // the right edge of the row, vertically centred against the avatar
+    <div className="flex shrink-0 items-center" data-routines-line="">
       <button
         type="button"
         data-active-routines={activeRoutines}
@@ -468,8 +485,10 @@ export function SidebarProfileMenu({ avatarOnly = false, places = [] }: {
           data-sidebar-account-row=""
           className="rounded-lg px-2 py-1.5 transition-colors hover:bg-sidebar-hover has-[[aria-expanded=true]]:bg-sidebar-hover"
         >
-          {accountRow}
-          {routinesLine}
+          <div className="flex items-center gap-1">
+            <div className="min-w-0 flex-1">{accountRow}</div>
+            {routinesBadge}
+          </div>
         </div>
       )}
       <AboutDialog open={aboutOpen} onClose={() => setAboutOpen(false)} />
