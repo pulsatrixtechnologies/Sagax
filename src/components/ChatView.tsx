@@ -88,7 +88,7 @@ import { AttachmentGallery, collectMessageFiles, splitMessageAttachments } from 
 import { ConversationGalleryProvider } from "./ConversationGallery";
 import { prefersWideBubble } from "@/lib/rich-blocks";
 import { ScreenFrame } from "./ScreenFrame";
-import { CompactionChip, DigestChip, TurnAccessChip } from "./DigestChip";
+import { CompactionChip, DigestChip } from "./DigestChip";
 import { RenameTitle } from "./RenameTitle";
 import { BotActivityPicker, TaskPicker, ThreadReturnLink, ThreadsOffReturnLink } from "./TaskPicker";
 
@@ -1101,10 +1101,7 @@ const MessagesList = memo(function MessagesList({
             }
             case "digest":
               // the summary of the turn's tool chips: shown under the same setting
-              // which credentials paid stays visible either way (organization server)
-              return showToolCalls
-                ? <DigestChip message={m} viewerPrincipalId={state.config?.viewer?.principalId ?? null} />
-                : <TurnAccessChip message={m} viewerPrincipalId={state.config?.viewer?.principalId ?? null} />;
+              return showToolCalls ? <DigestChip message={m} /> : null;
             case "compaction":
               // Sagax's own folds are invisible (older threads still hold
               // them as rows); only a fold the person asked for shows.

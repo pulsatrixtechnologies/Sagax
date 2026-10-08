@@ -3679,7 +3679,6 @@
   "myEngines.turns.key": "Your turns use your key in Perspicax",
   "myEngines.turns.orgKey": "Your turns use the organization's key",
   "myEngines.turns.none": "Can't answer you yet: sign in or add your key",
-  "turnAccess.label": "Paid with: {label}",
   "turnAccess.yourSubscription": "Your subscription",
   "turnAccess.yourKey": "Your key",
   "turnAccess.speakerSubscription": "The speaker's subscription",

@@ -26,7 +26,7 @@ import { ToolActivity } from "./ToolActivity";
 import { ThreadRefText } from "./ThreadRefs";
 import { TurnPresence } from "./TurnPresence";
 import { showToolCallsEnabled } from "@/lib/feature-flags";
-import { CompactionChip, DigestChip, TurnAccessChip } from "./DigestChip";
+import { CompactionChip, DigestChip } from "./DigestChip";
 import { roomActivityVisible } from "@/lib/room-activity";
 import { viewerActorId } from "@/lib/viewer";
 import { viewerIsOrgAdmin, viewerOwnsGroup } from "@/lib/group-owner";
@@ -686,9 +686,7 @@ export const Transcript = memo(function Transcript({
           ) : m.kind === "compaction" ? (
             m.compaction?.by === "harness" ? null : <CompactionChip message={m} />
           ) : m.kind === "digest" ? (
-            showToolCalls
-              ? <DigestChip message={m} viewerPrincipalId={state.config?.viewer?.principalId ?? null} />
-              : <TurnAccessChip message={m} viewerPrincipalId={state.config?.viewer?.principalId ?? null} />
+            showToolCalls ? <DigestChip message={m} /> : null
           ) : m.kind === "nudge" && m.nudge ? (
             <NudgeLine note={m.nudge} />
           ) : m.kind === "text" && (m.text || m.attachments?.length) ? (
