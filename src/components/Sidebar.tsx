@@ -42,7 +42,7 @@ import { BotAvatar, InitialsAvatar } from "./Avatar";
 import { stateForBot } from "@/lib/mascot";
 import { mascotRowAnimated } from "@/lib/mascot-animate";
 import { cn } from "@/lib/cn";
-import { CIRCLE_BUTTON } from "@/lib/circle-button";
+import { SIDEBAR_CIRCLE_BUTTON } from "@/lib/circle-button";
 import { useHeldMenuMotion } from "./MenuMotion";
 import { lastNonReceipt } from "@/lib/receipts";
 import { t } from "@/lib/i18n";
@@ -154,13 +154,21 @@ const SIDEBAR_MIN_WIDTH = 240;
 const SIDEBAR_MAX_WIDTH = 400;
 const SIDEBAR_DEFAULT_WIDTH = 280;
 /** The head's round buttons (search, New): the header's 36px circle (share,
- * panel), in the sidebar's own ink, with the same focus ring as its
- * neighbours. There is no collapse button: dragging the sidebar's edge
- * narrower than the snap width collapses it (see `sidebarDragTarget`). */
-const SIDEBAR_HEAD_BUTTON = cn(
-  CIRCLE_BUTTON,
-  "text-sidebar-ink-secondary hover:text-sidebar-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60",
+ * panel), painted from the sidebar's own tokens (surface, hairline, ink), with
+ * the same focus ring as its neighbours. There is no collapse button: dragging
+ * the sidebar's edge narrower than the snap width collapses it (see
+ * `sidebarDragTarget`). */
+export const SIDEBAR_HEAD_BUTTON = cn(
+  SIDEBAR_CIRCLE_BUTTON,
+  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60",
 );
+/** The head's brand row: the chat header's height (ChatView's
+ * `.content-topbar`: `min-h-[52px] py-2.5` around 36px circles, so 56px with
+ * them centred at 28px), flush under the macOS inset strip (36px, the same
+ * strip the chat column draws) and with no extra top margin elsewhere, so
+ * the search and New circles sit on the same line as share and the panel
+ * toggle on every platform. */
+export const SIDEBAR_HEAD_ROW = "flex h-14 items-center justify-between gap-2 pl-4 pr-3";
 
 /** The palette chord as this platform spells it: "⌘K" on macOS, "Ctrl+K"
  * on Windows and Linux, for the search button's tooltip. */
@@ -283,7 +291,7 @@ export function StackedMauses({ members, density, viewerId }: { members: Bot[]; 
     const b = members[0];
     return (
       <div className={cn("flex shrink-0 items-center justify-center", slotSize)}>
-        {b ? <BotAvatar bot={b} primary={isViewersPrimaryBot(b, viewerId)} primaryRingClassName="ring-sidebar" state="happy" size={singleSize} animated={false} /> : <Users size={24} className="text-ink-secondary" />}
+        {b ? <BotAvatar bot={b} primary={isViewersPrimaryBot(b, viewerId)} primaryRingClassName="ring-sidebar" state="happy" size={singleSize} animated={false} /> : <Users size={24} className="text-sidebar-ink-secondary" />}
       </div>
     );
   }
@@ -455,7 +463,7 @@ export function GroupThreadList({ group, selected, density = "comfortable", quer
       onRename={(title) => dispatch({ type: "renameGroupTask", groupId: group.id, threadId: task.threadId, title })}
       onDelete={() => dispatch({ type: "deleteGroupTask", groupId: group.id, threadId: task.threadId })}
       onPin={(pinned) => dispatch({ type: "pinGroupTask", groupId: group.id, threadId: task.threadId, pinned, title: task.title })} />)}
-    {!query && !showAll && tasks.length > visible.length && <button type="button" onClick={() => setShowAll(true)} className="pl-6 pr-3 py-1.5 text-[11px] text-ink-secondary hover:text-ink">{t("task.showAll", { count: tasks.length })}</button>}
+    {!query && !showAll && tasks.length > visible.length && <button type="button" onClick={() => setShowAll(true)} className="pl-6 pr-3 py-1.5 text-[11px] text-sidebar-ink-secondary hover:text-sidebar-ink">{t("task.showAll", { count: tasks.length })}</button>}
   </div>;
 }
 
@@ -1507,15 +1515,15 @@ export function BotListItem({
         {body}
       </div>
       {!renaming && iconOnly && unread && (
-        <span className="pointer-events-none absolute bottom-1.5 right-1.5 size-2 rounded-full border border-panel bg-accent" />
+        <span className="pointer-events-none absolute bottom-1.5 right-1.5 size-2 rounded-full border border-sidebar bg-accent" />
       )}
       {!renaming && !deleting && !iconOnly && <>
         {showThreads && <button type="button" aria-label={t("task.newShort")} title={t("task.newShort")} onClick={() => dispatch({ type: "newTask", botId: bot.id })}
-          className="pointer-events-none absolute right-[3.75rem] top-1/2 flex size-7 -translate-y-1/2 items-center justify-center rounded text-ink-secondary opacity-0 hover:bg-raised hover:text-ink group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100 max-md:pointer-events-auto max-md:opacity-70 touch:pointer-events-auto touch:opacity-70"><Plus size={14} /></button>}
+          className="pointer-events-none absolute right-[3.75rem] top-1/2 flex size-7 -translate-y-1/2 items-center justify-center rounded text-sidebar-ink-secondary opacity-0 hover:bg-sidebar-hover hover:text-sidebar-ink group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100 max-md:pointer-events-auto max-md:opacity-70 touch:pointer-events-auto touch:opacity-70"><Plus size={14} /></button>}
         {showThreads && <button type="button" aria-label={t("folder.newNamed", { name: bot.name })} title={t("folder.new")} onClick={() => setCreatingProject(true)}
-          className="pointer-events-none absolute right-8 top-1/2 flex size-7 -translate-y-1/2 items-center justify-center rounded text-ink-secondary opacity-0 hover:bg-raised hover:text-ink group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100 max-md:pointer-events-auto max-md:opacity-70 touch:pointer-events-auto touch:opacity-70"><FolderPlus size={14} /></button>}
+          className="pointer-events-none absolute right-8 top-1/2 flex size-7 -translate-y-1/2 items-center justify-center rounded text-sidebar-ink-secondary opacity-0 hover:bg-sidebar-hover hover:text-sidebar-ink group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100 max-md:pointer-events-auto max-md:opacity-70 touch:pointer-events-auto touch:opacity-70"><FolderPlus size={14} /></button>}
         <button type="button" aria-label={t("sidebar.bot.actions", { name: bot.name })} title={t("sidebar.bot.actions", { name: bot.name })} aria-haspopup="menu" onClick={(event) => { const rect = event.currentTarget.getBoundingClientRect(); onMenu({ botId: bot.id, x: rect.left, y: rect.bottom }); }}
-          className="pointer-events-none absolute right-1 top-1/2 flex size-7 -translate-y-1/2 items-center justify-center rounded text-ink-secondary opacity-0 hover:bg-raised hover:text-ink group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100 max-md:pointer-events-auto max-md:opacity-70 touch:pointer-events-auto touch:opacity-70"><MoreHorizontal size={15} /></button>
+          className="pointer-events-none absolute right-1 top-1/2 flex size-7 -translate-y-1/2 items-center justify-center rounded text-sidebar-ink-secondary opacity-0 hover:bg-sidebar-hover hover:text-sidebar-ink group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100 max-md:pointer-events-auto max-md:opacity-70 touch:pointer-events-auto touch:opacity-70"><MoreHorizontal size={15} /></button>
       </>}
       {deleting && iconOnly && (
         <span className="pointer-events-none absolute bottom-1 right-1 rounded-full bg-card p-1 text-ink-secondary">
@@ -2405,7 +2413,7 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
           </div>
         ) : (
           <>
-            <div className={cn("flex h-11 items-center justify-between gap-2 pl-4 pr-3", !(macInset || browser) && "mt-2")}>
+            <div className={SIDEBAR_HEAD_ROW}>
               {showLogo && (
                 <span className="flex min-w-0 items-center gap-2 text-sidebar-ink" data-sidebar-brand>
                   <PulsatrixMark size={22} />
