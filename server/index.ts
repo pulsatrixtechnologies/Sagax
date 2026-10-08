@@ -13501,7 +13501,7 @@ async function startTurn(
         !NATIVELY_REPLAYING_DRIVER_KINDS.includes(instance.driverKind));
       if (!warmOnly) voiceLatency.mark(threadId, "dispatch");
       const dispatch = await guardTurnDispatch(withDesktopModelPerson(turnPlace.principal, () => {
-        if (IDENTITY.kind === "perspicax") desktopLocalModels.assertAvailable(turnPlace.principal, model);
+        if (IDENTITY.kind === "perspicax") desktopLocalModels.assertAvailable(turnPlace.principal, model, instance.driverKind);
         return instance.adapter.sendTurn({
         threadId,
         botId: bot.id,
@@ -16237,7 +16237,7 @@ async function runGroupMemberTurn(
     };
     guardTurnDispatch(withDesktopModelPerson(roomPlace.principal, () => Promise.resolve().then(() => {
       const selectedModel = instance.instanceId === readyBot.modelSelection.instanceId ? readyBot.modelSelection.model : instance.models.default;
-      if (IDENTITY.kind === "perspicax") desktopLocalModels.assertAvailable(roomPlace.principal, selectedModel);
+      if (IDENTITY.kind === "perspicax") desktopLocalModels.assertAvailable(roomPlace.principal, selectedModel, instance.driverKind);
       return IDENTITY.kind === "perspicax" ? orgTurnAccess(threadId, readyBot, instance, roomSpeaker).then(sendRoomTurn) : sendRoomTurn(undefined);
     })), () => abandoned || Boolean(isCancelled?.()), async () => {
         // Stop may have landed while the adapter was authenticating, before
