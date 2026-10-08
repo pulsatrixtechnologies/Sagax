@@ -1997,5 +1997,10 @@
   "presence.hiddenSelf": "{state} (oculto para os outros)",
   "settings.privacy.presence.title": "Mostrar quando estou online",
   "settings.privacy.presence.subtitle": "As pessoas da sua organização veem um ponto verde, âmbar ou cinza na sua foto. Desativado: você aparece offline para todos, sem horário de última atividade.",
-  "voiceMode.call.advanced": "Avançado"
+  "voiceMode.call.advanced": "Avançado",
+  "personLabel.add": "Adicionar um rótulo",
+  "personLabel.edit": "Editar rótulo",
+  "personLabel.mine": "Meu rótulo",
+  "personLabel.mineHint": "Exibido ao lado do seu nome, como o rótulo de um bot.",
+  "personLabel.saveError": "Não foi possível salvar o rótulo."
 }

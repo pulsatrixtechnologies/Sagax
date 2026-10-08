@@ -55,6 +55,7 @@ import { createBotPatchQueue, type BotUpdatePatch } from "./bot-patch-queue";
 import type { OnboardingStatus } from "@/lib/onboarding";
 import { openLiveEvents } from "@/lib/live-events";
 import { receiveAchievementsFrame } from "@/lib/achievements";
+import { applyPersonLabel } from "@/lib/person-labels";
 
 const MAX_ROUTINE_RUNS = 2_000;
 const ACTIVE_ROUTINE_RUN_STATUSES = new Set<RoutineRun["status"]>(["queued", "running", "waiting"]);
@@ -4362,6 +4363,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           break;
         case "presence.changed":
           applyPresenceFrame(frame);
+          break;
+        case "person.label":
+          applyPersonLabel(frame.principalId, frame.label);
           break;
         // a read position moved (src/lib/read-receipts-feed.ts)
         case "thread.read":

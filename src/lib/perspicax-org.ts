@@ -45,6 +45,8 @@ export interface OrgDirectoryPerson {
   service?: true;
   /** Admins only: this person's page in the Perspicax console. */
   manageUrl?: string;
+  /** Their custom label (src/lib/person-labels.ts keeps the live copy). */
+  label?: string;
 }
 
 let peoplePending: Promise<Map<string, OrgDirectoryPerson>> | null = null;

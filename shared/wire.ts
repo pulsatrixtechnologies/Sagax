@@ -929,6 +929,9 @@ export type ServerFrame =
   | { kind: "bot-act"; audience: string; action: string; input?: Record<string, unknown> }
   /** Shake this person's desktop window. Their streams only (server/nudge.ts). */
   | { kind: "nudge"; audience: string; fromId: string; fromName: string; at: number }
+  /** A person's custom label changed (server/routes/person-labels.ts); null
+   * cleared it. Every stream. */
+  | { kind: "person.label"; principalId: string; label: string | null }
   /** People whose presence changed (shared/presence.ts). The organization's
    * people only; with `audience`, that person's own real state (`hidden`
    * when others see them offline), to their streams only. */
