@@ -8,7 +8,7 @@
 // calls no API.
 import { Component, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ErrorInfo, type ReactNode } from "react";
 import { OwlAvatar } from "@/components/OwlAvatar";
-import { FloatingBotView, MASCOT_SIZE, type FloatingMover } from "./FloatingBotView";
+import { FloatingBotView, MASCOT_SIZE, OWL_BOX, type FloatingMover } from "./FloatingBotView";
 import { createWindowPilot } from "./pilot";
 import type { BalloonSide } from "./Balloon";
 import { isFloatingSnapshot, mascotFields, type FloatingEvent, type FloatingSnapshot, type FloatingWindowBridge } from "./protocol";
@@ -24,6 +24,25 @@ const RESERVES_ROOM = typeof navigator === "undefined" || !/Linux/.test(navigato
 
 /** With nothing to draw this long, the window shows the plain owl rather than nothing. */
 export const BLANK_FALLBACK_MS = 2000;
+
+type Rect = { x: number; y: number; width: number; height: number };
+
+/**
+ * Where the character is drawn in the window (window coordinates): its own
+ * box in the stage (layout values, so a hop or a bounce does not move it),
+ * the parked badge while away, the plain owl's button in the fallback.
+ */
+export function bodyRectIn(root: HTMLElement | null): Rect | null {
+  const stage = root?.querySelector<HTMLElement>(".fb-stage");
+  if (!stage) return null;
+  const box = stage.getBoundingClientRect();
+  if (!box.width || !box.height) return null;
+  const owl = stage.hasAttribute("data-away") || root?.hasAttribute("data-fallback") ? null : OWL_BOX;
+  const rect = owl ? { x: box.left + owl.left, y: box.top + owl.top, width: owl.size, height: owl.size } : { x: box.left, y: box.top, width: box.width, height: box.height };
+  return { x: Math.round(rect.x), y: Math.round(rect.y), width: Math.round(rect.width), height: Math.round(rect.height) };
+}
+
+const sameRect = (a: Rect | null, b: Rect | null) => Boolean(a && b && a.x === b.x && a.y === b.y && a.width === b.width && a.height === b.height);
 
 /**
  * The plain owl, standing where the mascot would: never an empty, invisible
@@ -146,12 +165,26 @@ export function FloatingBotWindow({ bridge = typeof window === "undefined" ? und
   // balloon then happen inside it, with no window resize per frame. Reports
   // are coalesced to one per frame, and never sent while the mascot is dragged.
   const frame = useRef({ size: null as Size | null, reserve: null as Size | null, exact: false, scheduled: false, dragging: false, report: () => undefined as void });
+  // Where the character is drawn: main keeps that box on screen, and only that
+  // box, so the mascot can stand right in a corner with its room hanging off.
+  const body = useRef<Rect | null>(null);
+  const reportBody = useCallback(() => {
+    const rect = bodyRectIn(root.current);
+    if (!rect || sameRect(rect, body.current)) return;
+    body.current = rect;
+    bridge?.setBody?.(rect);
+  }, [bridge]);
+  useEffect(() => {
+    window.addEventListener("resize", reportBody);
+    return () => window.removeEventListener("resize", reportBody);
+  }, [reportBody]);
   useLayoutEffect(() => {
     const node = root.current;
     if (!node || !bridge || typeof ResizeObserver === "undefined") return;
     const state = frame.current;
     const send = () => {
       state.scheduled = false;
+      reportBody();
       if (state.dragging) return;
       const content = { width: Math.ceil(node.scrollWidth), height: Math.ceil(node.scrollHeight) };
       const exact = state.exact || !state.reserve;
@@ -164,6 +197,8 @@ export function FloatingBotWindow({ bridge = typeof window === "undefined" ? und
         const bounds = placed as Partial<Size> | null;
         // main may clamp it to the screen: remember what the window really is
         if (bounds && typeof bounds.width === "number" && typeof bounds.height === "number") state.size = { width: bounds.width, height: bounds.height };
+        // the window has its new size: the character's box in it, again
+        reportBody();
       }, () => undefined);
     };
     state.report = () => {
@@ -179,7 +214,7 @@ export function FloatingBotWindow({ bridge = typeof window === "undefined" ? und
       observer.disconnect();
       state.report = () => undefined;
     };
-  }, [bridge, snapshot === null, blank, failed]);
+  }, [bridge, reportBody, snapshot === null, blank, failed]);
   /** The room the open balloon may take (null once closed); `exact` fits the window to it now. */
   const onReserve = useCallback((reserve: Size | null, exact: boolean) => {
     const state = frame.current;

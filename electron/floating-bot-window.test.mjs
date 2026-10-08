@@ -2,7 +2,12 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   AVATAR_MAX,
+  bodyAfterResize,
+  clampBodyToDisplays,
   createFloatingBotWindows,
+  FLOAT_BODY,
+  FLOAT_HOME,
+  sanitizeBody,
   FLOAT_MAX,
   FLOATING_QUERY,
   floatingDefaultBounds,
@@ -383,7 +388,8 @@ describe("floating bots: positions and screens", () => {
     first.emit("floating-bots:moved", from);
     const spot = win.getBounds();
     const key = displaySignature([PRIMARY]);
-    expect(first.saved.positions[key].bot_a).toEqual({ x: spot.x + spot.width, y: spot.y + spot.height });
+    // the character's own corner, marked as such (v 2)
+    expect(first.saved.positions[key].bot_a).toEqual({ x: spot.x + FLOAT_BODY.x + FLOAT_BODY.width, y: spot.y + FLOAT_BODY.y + FLOAT_BODY.height, v: 2 });
 
     const again = setup({ positions: first.saved.positions });
     expect(again.open("bot_a").win.getBounds()).toMatchObject({ x: spot.x, y: spot.y });
@@ -394,11 +400,12 @@ describe("floating bots: positions and screens", () => {
     const { win, from } = open("bot_a");
     const home = win.getBounds();
     const geometry = invoke("floating-bots:geometry", from);
-    expect(geometry).toEqual({ bounds: home, workArea: PRIMARY.workArea, cursor: { x: 700, y: 400 } });
+    const bodyAt = (b) => ({ x: b.x + FLOAT_BODY.x, y: b.y + FLOAT_BODY.y, width: FLOAT_BODY.width, height: FLOAT_BODY.height });
+    expect(geometry).toEqual({ bounds: home, workArea: PRIMARY.workArea, cursor: { x: 700, y: 400 }, body: bodyAt(home) });
     emit("floating-bots:autopilot", from, true);
-    // a flight cannot leave the screens (the window is the quick chat's room, so a spot keeps its y only while that room fits)
-    expect(invoke("floating-bots:move-to", from, { x: -5000, y: 100 })).toMatchObject({ x: 0, y: 100 });
-    expect(invoke("floating-bots:move-to", from, { x: 100, y: -900 })).toMatchObject({ x: 100, y: PRIMARY.workArea.y });
+    // a flight cannot take the character off the screens (the window's empty room may hang off)
+    expect(invoke("floating-bots:move-to", from, { x: -5000, y: 100 })).toMatchObject({ x: -FLOAT_BODY.x, y: 100 });
+    expect(invoke("floating-bots:move-to", from, { x: 100, y: -900 })).toMatchObject({ x: 100, y: PRIMARY.workArea.y - FLOAT_BODY.y });
     win.events.get("moved")?.forEach((fn) => fn());
     emit("floating-bots:moved", from);
     expect(saved.positions).toBeUndefined();
@@ -418,8 +425,83 @@ describe("floating bots: positions and screens", () => {
     const key = displaySignature([PRIMARY, SECOND]);
     const { open } = setup({ displays: [PRIMARY, SECOND], positions: { [key]: { bot_a: { x: 99999, y: -5000 } } } });
     const bounds = open("bot_a").win.getBounds();
-    expect(bounds.x + bounds.width).toBeLessThanOrEqual(SECOND.workArea.x + SECOND.workArea.width);
-    expect(bounds.y).toBeGreaterThanOrEqual(SECOND.workArea.y);
+    // the character is fully on the second display (its room may hang off)
+    expect(bounds.x + FLOAT_BODY.x + FLOAT_BODY.width).toBeLessThanOrEqual(SECOND.workArea.x + SECOND.workArea.width);
+    expect(bounds.y + FLOAT_BODY.y).toBeGreaterThanOrEqual(SECOND.workArea.y);
+  });
+
+  it("lets the character stand in any corner of any display, its room hanging off, and puts it back there exactly", () => {
+    const first = setup({ displays: [PRIMARY, SECOND] });
+    const { win, from } = first.open("bot_a");
+    const corners = [
+      { x: PRIMARY.workArea.x, y: PRIMARY.workArea.y },
+      { x: PRIMARY.workArea.x + PRIMARY.workArea.width - FLOAT_BODY.width, y: PRIMARY.workArea.y + PRIMARY.workArea.height - FLOAT_BODY.height },
+      { x: SECOND.workArea.x + SECOND.workArea.width - FLOAT_BODY.width, y: SECOND.workArea.y },
+      { x: SECOND.workArea.x, y: SECOND.workArea.y + SECOND.workArea.height - FLOAT_BODY.height },
+    ];
+    // dragged past each corner (never toward the other display): it stops with the character exactly in it
+    const past = [{ x: -50, y: -50 }, { x: 0, y: 50 }, { x: 50, y: -50 }, { x: 0, y: 50 }];
+    corners.forEach((corner, index) => {
+      first.invoke("floating-bots:move-to", from, { x: corner.x - FLOAT_BODY.x + past[index].x, y: corner.y - FLOAT_BODY.y + past[index].y });
+      const at = win.getBounds();
+      expect({ x: at.x + FLOAT_BODY.x, y: at.y + FLOAT_BODY.y }).toEqual(corner);
+    });
+    // the top-left corner of the primary display: the window's room hangs off the screen
+    first.invoke("floating-bots:move-to", from, { x: -2000, y: -2000 });
+    const spot = win.getBounds();
+    expect(spot.x).toBeLessThan(PRIMARY.workArea.x);
+    expect(spot.y).toBeLessThan(PRIMARY.workArea.y);
+    first.emit("floating-bots:moved", from);
+    // a restart with the same displays: exactly there, no snap back to a default spot
+    const again = setup({ displays: [PRIMARY, SECOND], positions: first.saved.positions });
+    expect(again.open("bot_a").win.getBounds()).toMatchObject({ x: spot.x, y: spot.y });
+    // that display setup gone: the default spot on what is there
+    const other = setup({ displays: [SECOND], positions: first.saved.positions });
+    const fallback = other.open("bot_a").win.getBounds();
+    expect(fallback.x + FLOAT_BODY.x).toBeGreaterThanOrEqual(SECOND.workArea.x);
+  });
+
+  it("reads an older save (the window's corner) as before", () => {
+    const key = displaySignature([PRIMARY]);
+    const { open } = setup({ positions: { [key]: { bot_a: { x: 900, y: 800 } } } });
+    expect(open("bot_a").win.getBounds()).toMatchObject({ x: 900 - FLOAT_HOME.width, y: 800 - FLOAT_HOME.height });
+  });
+
+  it("keeps on screen the box the page reports, and a new layout keeps the character where it stands", () => {
+    const { open, emit, invoke } = setup();
+    const { win, from } = open("bot_a");
+    // the chat's room now below and to the right: the character is near the window's top-left corner
+    const body = { x: 56, y: 71, width: 120, height: 120 };
+    const before = win.getBounds();
+    const placed = invoke("floating-bots:frame", from, { width: FLOAT_HOME.width, height: FLOAT_HOME.height, body });
+    expect(placed.x + body.x).toBe(before.x + FLOAT_BODY.x);
+    expect(placed.y + body.y).toBe(before.y + FLOAT_BODY.y);
+    // from now on that box is what stays on screen
+    invoke("floating-bots:move-to", from, { x: 5000, y: 5000 });
+    const end = win.getBounds();
+    expect(end.x + body.x + body.width).toBe(PRIMARY.workArea.x + PRIMARY.workArea.width);
+    expect(end.y + body.y + body.height).toBe(PRIMARY.workArea.y + PRIMARY.workArea.height);
+    // a box reported outside its window, or of no size, is refused
+    emit("floating-bots:body", from, { x: 5000, y: 5000, width: 120, height: 120 });
+    emit("floating-bots:body", from, { x: 1, y: 1, width: 0, height: 120 });
+    expect(invoke("floating-bots:frame", from, { width: 300, height: 300, body: null })).toBeNull();
+    expect(invoke("floating-bots:frame", { sender: {} }, { width: 300, height: 300, body })).toBeNull();
+  });
+
+  it("clamps only the character's box, the nearest display's when it is off every screen", () => {
+    const areas = [PRIMARY.workArea, SECOND.workArea];
+    const body = { x: 177, y: 535, width: 120, height: 120 };
+    // right in the top-left corner of the primary, the window above and left of the screen
+    expect(clampBodyToDisplays({ x: -400, y: -900, width: 352, height: 716 }, body, areas)).toMatchObject({ x: -177, y: 25 - 535 });
+    // past the far edge of the second display
+    expect(clampBodyToDisplays({ x: 9000, y: 9000, width: 352, height: 716 }, body, areas)).toMatchObject({ x: 3360 - 297, y: 1040 - 655 });
+    // inside: untouched
+    expect(clampBodyToDisplays({ x: 600, y: 100, width: 352, height: 716 }, body, areas)).toMatchObject({ x: 600, y: 100 });
+    expect(sanitizeBody({ x: 10, y: 10, width: 999, height: 20 }, { width: 100, height: 100 })).toEqual({ x: 10, y: 10, width: 90, height: 20 });
+    expect(sanitizeBody({ x: "1", y: 1, width: 20, height: 20 }, { width: 100, height: 100 })).toBeNull();
+    // a window that grows up and to the left: the box keeps its distance to the bottom-right corner
+    expect(bodyAfterResize(body, { width: 352, height: 716 }, { width: 500, height: 800 })).toEqual({ x: 325, y: 619, width: 120, height: 120 });
+    expect(bodyAfterResize(body, { width: 352, height: 716 }, { width: 500, height: 800 }, { x: "left", y: "top" })).toEqual(body);
   });
 
   it("grows a window from the mascot's corner: bottom-right, or the one the balloon opened away from", () => {
@@ -435,7 +517,8 @@ describe("floating bots: positions and screens", () => {
     const { invoke, open } = setup();
     const { win, from } = open("bot_a");
     invoke("floating-bots:move-by", from, { dx: -1e9, dy: -1e9 });
-    expect(win.bounds).toMatchObject({ x: PRIMARY.workArea.x, y: PRIMARY.workArea.y });
+    // the character in the corner, the window's room past the screen's edge
+    expect(win.bounds).toMatchObject({ x: PRIMARY.workArea.x - FLOAT_BODY.x, y: PRIMARY.workArea.y - FLOAT_BODY.y });
     expect(invoke("floating-bots:move-by", from, { dx: Number.NaN, dy: 0 })).toBeNull();
     invoke("floating-bots:resize", from, { width: 99999, height: 99999 });
     expect(win.bounds.width).toBeLessThanOrEqual(FLOAT_MAX.width);
@@ -671,7 +754,7 @@ describe("floating bots: a smooth chat", () => {
       expect(saved.positions).toBeUndefined();
       vi.advanceTimersByTime(REMEMBER_DELAY_MS);
       const spot = win.getBounds();
-      expect(Object.values(saved.positions)[0].bot_a).toEqual({ x: spot.x + spot.width, y: spot.y + spot.height });
+      expect(Object.values(saved.positions)[0].bot_a).toEqual({ x: spot.x + FLOAT_BODY.x + FLOAT_BODY.width, y: spot.y + FLOAT_BODY.y + FLOAT_BODY.height, v: 2 });
     } finally {
       vi.useRealTimers();
     }

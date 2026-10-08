@@ -149,6 +149,8 @@ export interface FloatingGeometry {
   bounds: FloatingRect;
   workArea: FloatingRect;
   cursor: { x: number; y: number } | null;
+  /** The character's own box on the screen, once the page has reported it (main keeps it on a display). */
+  body?: FloatingRect;
 }
 
 /** window.floatingBotWindow, from electron/floating-bot-preload.cjs. */
@@ -162,6 +164,10 @@ export interface FloatingWindowBridge {
   moved(): void;
   /** Size the window to what is drawn, keeping the character's corner in place (bottom-right unless said otherwise). */
   resize(width: number, height: number, anchor?: { x: "left" | "right"; y: "top" | "bottom" }): Promise<unknown>;
+  /** Where the character is drawn in the window: main keeps that box on screen (optional: an older preload lacks it). */
+  setBody?(rect: FloatingRect): void;
+  /** A new layout of the window: this size, moved so the character stays put on the screen (optional: an older preload lacks it). */
+  frame?(width: number, height: number, body: FloatingRect): Promise<FloatingRect | null>;
   setInteractive(on: boolean): void;
   setFocusable(on: boolean): void;
   send(event: FloatingEvent): void;

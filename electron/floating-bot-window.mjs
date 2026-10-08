@@ -35,6 +35,15 @@ export const FLOAT_SIZE = Object.freeze({ width: 156, height: 172 });
  * Kept equal by the window-frame test.
  */
 export const FLOAT_HOME = Object.freeze({ width: 352, height: 716 });
+/**
+ * The character's own box in the FLOAT_HOME window (window coordinates): what
+ * must stay on screen. The rest of the window is transparent room (for the
+ * chat, hops and spread wings) and may hang off the screen's edge, so the
+ * mascot itself can stand right in a corner. The page reports its real box
+ * (`floating-bots:body`); this is the box until it does. Kept equal to
+ * `homeBody` in window-frame.ts by the window-frame test.
+ */
+export const FLOAT_BODY = Object.freeze({ x: 177, y: 535, width: 120, height: 120 });
 export const FLOAT_MIN = Object.freeze({ width: 60, height: 60 });
 /** Room for the mascot and a resized, moved balloon (the balloon itself caps at about 60 % of the work area). */
 export const FLOAT_MAX = Object.freeze({ width: 1100, height: 1100 });
@@ -85,6 +94,45 @@ export function floatingDefaultBounds(primaryWorkArea, index = 0, size = FLOAT_H
     width: size.width,
     height: size.height,
   };
+}
+
+/**
+ * Keeps the character fully visible and nothing more: the window moves so
+ * that `body` (the character's box, in window coordinates) lies inside one
+ * display's work area, the one it overlaps most, else the nearest. The
+ * window's transparent room may hang off the screen, so the character can
+ * stand in any corner or along any edge of any display.
+ */
+export function clampBodyToDisplays(bounds, body, workAreas) {
+  if (!workAreas.length) return { ...bounds };
+  const box = { x: bounds.x + body.x, y: bounds.y + body.y, width: body.width, height: body.height };
+  const placed = clampToDisplays(box, workAreas);
+  return { x: Math.round(bounds.x + placed.x - box.x), y: Math.round(bounds.y + placed.y - box.y), width: bounds.width, height: bounds.height };
+}
+
+/** The character's box as the page reports it: inside its window, a sane size, or null. */
+export function sanitizeBody(value, size) {
+  if (!value || typeof value !== "object") return null;
+  const { x, y, width, height } = value;
+  if (![x, y, width, height].every(isFiniteNumber) || width < 8 || height < 8) return null;
+  const left = clampNumber(Math.round(x), 0, Math.max(0, size.width - 8));
+  const top = clampNumber(Math.round(y), 0, Math.max(0, size.height - 8));
+  return {
+    x: left,
+    y: top,
+    width: Math.round(clampNumber(width, 8, size.width - left)),
+    height: Math.round(clampNumber(height, 8, size.height - top)),
+  };
+}
+
+/**
+ * Where the character's box lands after a resize that keeps one corner of
+ * the window in place: it keeps its distance to that corner.
+ */
+export function bodyAfterResize(body, from, to, anchor = {}) {
+  const x = anchor.x === "left" ? body.x : body.x + (to.width - from.width);
+  const y = anchor.y === "top" ? body.y : body.y + (to.height - from.height);
+  return sanitizeBody({ x, y, width: body.width, height: body.height }, to);
 }
 
 /* ---------------------------------------------------------------- payloads */
@@ -366,7 +414,11 @@ export function sanitizeFloatingEvent(value) {
   return { type: value.type };
 }
 
-/** Positions on disk: per display setup, per bot, the character's bottom-right corner. */
+/**
+ * Positions on disk: per display setup, per bot, a bottom-right corner. With
+ * `v: 2` it is the character's own box's; without, an older save of the
+ * window's corner.
+ */
 export function sanitizePositions(value) {
   const clean = {};
   if (!value || typeof value !== "object" || Array.isArray(value)) return clean;
@@ -374,7 +426,7 @@ export function sanitizePositions(value) {
     if (typeof signature !== "string" || signature.length > 512 || !bots || typeof bots !== "object") continue;
     const entry = {};
     for (const [botId, spot] of Object.entries(bots).slice(0, 64)) {
-      if (isBotId(botId) && spot && isFiniteNumber(spot.x) && isFiniteNumber(spot.y)) entry[botId] = { x: spot.x, y: spot.y };
+      if (isBotId(botId) && spot && isFiniteNumber(spot.x) && isFiniteNumber(spot.y)) entry[botId] = { x: spot.x, y: spot.y, ...(spot.v === 2 ? { v: 2 } : {}) };
     }
     clean[signature] = entry;
   }
@@ -457,15 +509,33 @@ export function createFloatingBotWindows(deps) {
     if (main && !main.isDestroyed()) main.webContents.send(channel, payload);
   };
 
+  /** The character's box in its window: as the page reported it, else the home window's. */
+  const bodyOf = (entry) => {
+    if (entry.body) return entry.body;
+    const { width, height } = entry.win.getBounds();
+    return width === FLOAT_HOME.width && height === FLOAT_HOME.height ? FLOAT_BODY : null;
+  };
+  /** A window spot, moved so the character is fully on a screen (the whole window when its box is not known yet). */
+  const clampFor = (entry, bounds) => {
+    const body = entry ? bodyOf(entry) : null;
+    return body ? clampBodyToDisplays(bounds, body, workAreas()) : clampToDisplays(bounds, workAreas());
+  };
+  /** The id a window speaks for now (a switch may have given it another bot). */
+  const idOf = (entry) => {
+    for (const [botId, candidate] of floats) if (candidate === entry) return botId;
+    return null;
+  };
+
   const remember = (botId) => {
     const entry = floats.get(botId);
     // the mascot flying off or wandering is not the person choosing a spot
     if (!live(entry) || entry.autopilot) return;
     const { x, y, width, height } = entry.win.getBounds();
+    const body = bodyOf(entry) ?? { x: 0, y: 0, width, height };
     const all = savedPositions();
     const key = signature();
-    // the character stands at the bottom-right corner whatever the balloon does
-    all[key] = { ...all[key], [botId]: { x: x + width, y: y + height } };
+    // the character's own corner, whatever the balloon and the window's room do
+    all[key] = { ...all[key], [botId]: { x: x + body.x + body.width, y: y + body.y + body.height, v: 2 } };
     try {
       deps.writePositions?.(all);
     } catch {
@@ -475,10 +545,13 @@ export function createFloatingBotWindows(deps) {
 
   const startBounds = (botId) => {
     const saved = savedPositions()[signature()]?.[botId];
+    // the spot kept for this display setup, exactly (a setup that changed starts from the default spot)
     const bounds = saved
-      ? { x: saved.x - FLOAT_HOME.width, y: saved.y - FLOAT_HOME.height, ...FLOAT_HOME }
+      ? saved.v === 2
+        ? { x: saved.x - FLOAT_BODY.x - FLOAT_BODY.width, y: saved.y - FLOAT_BODY.y - FLOAT_BODY.height, ...FLOAT_HOME }
+        : { x: saved.x - FLOAT_HOME.width, y: saved.y - FLOAT_HOME.height, ...FLOAT_HOME }
       : floatingDefaultBounds(screen.getPrimaryDisplay().workArea, floats.size);
-    return clampToDisplays(bounds, workAreas());
+    return clampBodyToDisplays(bounds, FLOAT_BODY, workAreas());
   };
 
   /** Move or size a window only when that changes something; a move alone keeps its size untouched. */
@@ -512,7 +585,7 @@ export function createFloatingBotWindows(deps) {
     // throttled when hidden or covered, so the 3D mascot stops drawing (and spending battery) there
     const created = new BrowserWindow({ ...options, alwaysOnTop, webPreferences: { ...options.webPreferences, backgroundThrottling: true } });
     // interactive and focusable as last set, so a repeated request costs nothing (and never flickers)
-    const entry = { win: created, snapshot: existing?.snapshot ?? pending.get(botId) ?? null, onTop: alwaysOnTop, autopilot: false, interactive: !clickThrough, focusable: false };
+    const entry = { win: created, snapshot: existing?.snapshot ?? pending.get(botId) ?? null, onTop: alwaysOnTop, autopilot: false, interactive: !clickThrough, focusable: false, body: null };
     pending.delete(botId);
     floats.set(botId, entry);
     applyOnTop(created, alwaysOnTop);
@@ -533,15 +606,19 @@ export function createFloatingBotWindows(deps) {
       clearTimeout(entry.rememberTimer);
       // a step of the mascot's own flight is not a spot to keep
       if (entry.autopilot) return;
-      entry.rememberTimer = setTimeout(() => remember(botId), REMEMBER_DELAY_MS);
+      entry.rememberTimer = setTimeout(() => {
+        const id = idOf(entry);
+        if (id) remember(id);
+      }, REMEMBER_DELAY_MS);
     });
     created.once("closed", () => {
       clearTimeout(entry.watchdog);
       clearTimeout(entry.rememberTimer);
-      if (floats.get(botId)?.win !== created) return;
-      floats.delete(botId);
+      const id = idOf(entry);
+      if (!id) return;
+      floats.delete(id);
       // closed from outside the brain (a window shortcut): the bot goes back in the app
-      if (!silent) notifyMain("floating-bots:closed", { botId });
+      if (!silent) notifyMain("floating-bots:closed", { botId: id });
     });
     keepAlive(botId, entry);
     void load(entry);
@@ -593,13 +670,12 @@ export function createFloatingBotWindows(deps) {
     }, READY_TIMEOUT_MS);
   }
 
-  /** A display was removed, added or resized: every mascot back inside what is left. */
+  /** A display was removed, added or resized: every character back inside what is left (its room may hang off). */
   const reclamp = () => {
-    const areas = workAreas();
     for (const [botId, entry] of floats) {
       if (!live(entry)) continue;
       const bounds = entry.win.getBounds();
-      const next = clampToDisplays(bounds, areas);
+      const next = clampFor(entry, bounds);
       if (next.x !== bounds.x || next.y !== bounds.y || next.width !== bounds.width || next.height !== bounds.height) {
         entry.win.setBounds(next);
         log(`floating bot ${botId}: moved back on screen after a display change`);
@@ -661,10 +737,7 @@ export function createFloatingBotWindows(deps) {
       if (!found || !delta || !isFiniteNumber(delta.dx) || !isFiniteNumber(delta.dy)) return null;
       const { win } = found.entry;
       const bounds = win.getBounds();
-      const next = clampToDisplays(
-        { ...bounds, x: bounds.x + clampNumber(delta.dx, -MAX_MOVE, MAX_MOVE), y: bounds.y + clampNumber(delta.dy, -MAX_MOVE, MAX_MOVE) },
-        workAreas(),
-      );
+      const next = clampFor(found.entry, { ...bounds, x: bounds.x + clampNumber(delta.dx, -MAX_MOVE, MAX_MOVE), y: bounds.y + clampNumber(delta.dy, -MAX_MOVE, MAX_MOVE) });
       place(win, next);
       return { x: next.x, y: next.y };
     },
@@ -672,7 +745,7 @@ export function createFloatingBotWindows(deps) {
       const found = senderFloat(event);
       if (!found || !point || !isFiniteNumber(point.x) || !isFiniteNumber(point.y)) return null;
       const { win } = found.entry;
-      const next = clampToDisplays({ ...win.getBounds(), x: Math.round(point.x), y: Math.round(point.y) }, workAreas());
+      const next = clampFor(found.entry, { ...win.getBounds(), x: Math.round(point.x), y: Math.round(point.y) });
       place(win, next);
       return next;
     },
@@ -682,8 +755,10 @@ export function createFloatingBotWindows(deps) {
       const bounds = found.entry.win.getBounds();
       const areas = workAreas();
       if (!areas.length) return null;
-      // the display the window stands on: clamping a copy of it picks the same area main would
-      const clamped = clampToDisplays(bounds, areas);
+      // the display the character stands on (its box, else the window): clamping a copy picks the same area main would
+      const known = bodyOf(found.entry);
+      const box = known ? { x: bounds.x + known.x, y: bounds.y + known.y, width: known.width, height: known.height } : bounds;
+      const clamped = clampToDisplays(box, areas);
       const workArea = areas.find((area) =>
         clamped.x >= area.x && clamped.y >= area.y && clamped.x + clamped.width <= area.x + area.width && clamped.y + clamped.height <= area.y + area.height,
       ) ?? areas[0];
@@ -694,26 +769,55 @@ export function createFloatingBotWindows(deps) {
       } catch {
         /* no pointer to follow: the mascot looks ahead */
       }
-      return { bounds, workArea: { x: workArea.x, y: workArea.y, width: workArea.width, height: workArea.height }, cursor };
+      return { bounds, workArea: { x: workArea.x, y: workArea.y, width: workArea.width, height: workArea.height }, cursor, ...(known ? { body: box } : {}) };
     },
     "floating-bots:resize": (event, size) => {
       const found = senderFloat(event);
       if (!found || !size || !isFiniteNumber(size.width) || !isFiniteNumber(size.height)) return null;
       const { win } = found.entry;
       const bounds = win.getBounds();
-      const width = Math.round(clampNumber(size.width, FLOAT_MIN.width, FLOAT_MAX.width));
-      const height = Math.round(clampNumber(size.height, FLOAT_MIN.height, FLOAT_MAX.height));
+      // never larger than the largest display's work area (macOS would cut it there anyway)
+      const areas = workAreas();
+      const most = { width: Math.max(FLOAT_MIN.width, ...areas.map((area) => area.width)), height: Math.max(FLOAT_MIN.height, ...areas.map((area) => area.height)) };
+      const width = Math.round(clampNumber(size.width, FLOAT_MIN.width, Math.min(FLOAT_MAX.width, most.width)));
+      const height = Math.round(clampNumber(size.height, FLOAT_MIN.height, Math.min(FLOAT_MAX.height, most.height)));
       // the character's corner stays where it was: by default the bottom-right (the window grows
       // up and to the left); a balloon flipped below or to the right asks for the other corner
       const fromLeft = size.anchorX === "left";
       const fromTop = size.anchorY === "top";
-      const next = clampToDisplays({
+      const sized = {
         x: fromLeft ? bounds.x : bounds.x + bounds.width - width,
         y: fromTop ? bounds.y : bounds.y + bounds.height - height,
         width,
         height,
-      }, workAreas());
+      };
+      // the character keeps its distance to that corner until the page reports where it really is
+      const body = bodyOf(found.entry);
+      found.entry.body = body ? bodyAfterResize(body, bounds, sized, { x: fromLeft ? "left" : "right", y: fromTop ? "top" : "bottom" }) : null;
+      const next = clampFor(found.entry, sized);
       place(win, next);
+      return next;
+    },
+    /*
+     * The page laid the window out again (the chat's room moved to another
+     * side of the character): the window takes this size and moves so the
+     * character stays exactly where it is on the screen.
+     */
+    "floating-bots:frame": (event, frame) => {
+      const found = senderFloat(event);
+      if (!found || !frame || !isFiniteNumber(frame.width) || !isFiniteNumber(frame.height)) return null;
+      const { entry } = found;
+      const bounds = entry.win.getBounds();
+      const size = {
+        width: Math.round(clampNumber(frame.width, FLOAT_MIN.width, FLOAT_MAX.width)),
+        height: Math.round(clampNumber(frame.height, FLOAT_MIN.height, FLOAT_MAX.height)),
+      };
+      const body = sanitizeBody(frame.body, size);
+      if (!body) return null;
+      const was = bodyOf(entry) ?? body;
+      entry.body = body;
+      const next = clampFor(entry, { x: bounds.x + was.x - body.x, y: bounds.y + was.y - body.y, ...size });
+      place(entry.win, next);
       return next;
     },
   };
@@ -830,6 +934,13 @@ export function createFloatingBotWindows(deps) {
       } catch {
         /* keep the last state */
       }
+    },
+    // where the character is drawn in its window: what main keeps on screen
+    "floating-bots:body": (event, value) => {
+      const found = senderFloat(event);
+      if (!found) return;
+      const body = sanitizeBody(value, found.entry.win.getBounds());
+      if (body) found.entry.body = body;
     },
     "floating-bots:autopilot": (event, on) => {
       const found = senderFloat(event);

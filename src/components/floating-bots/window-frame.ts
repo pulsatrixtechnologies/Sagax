@@ -92,6 +92,33 @@ export function balloonReserve({ stage, room, place, maxWidth }: {
   return { width: Math.ceil(Math.max(stage.width, width) + 12), height: Math.ceil(height + 8 + stage.height + 12) };
 }
 
+export interface Rect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/** The character's box in its stage (FloatingBotView OWL_BOX). */
+export interface OwlBox {
+  left: number;
+  top: number;
+  size: number;
+}
+
+/** The desktop window root's padding (floating-bots.css `.fb-root.fb-window`). */
+export const ROOT_PAD = { top: 8, right: 6, bottom: 4, left: 6 } as const;
+
+/**
+ * The character's box in the home window (window coordinates), for the side
+ * the chat opens on: the character stands in the opposite corner.
+ */
+export function homeBody(stage: Size, owl: OwlBox, home: Size, side: { below: boolean; right: boolean } = { below: false, right: false }): Rect {
+  const x = side.right ? ROOT_PAD.left + owl.left : home.width - ROOT_PAD.right - stage.width + owl.left;
+  const y = side.below ? ROOT_PAD.top + owl.top : home.height - ROOT_PAD.bottom - stage.height + owl.top;
+  return { x, y, width: owl.size, height: owl.size };
+}
+
 export interface MoveCoalescer {
   /** Add a move by hand; it reaches the window on the next frame. */
   add(dx: number, dy: number): void;

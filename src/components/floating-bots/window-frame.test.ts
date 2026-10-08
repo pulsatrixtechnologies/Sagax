@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { FLOAT_HOME } from "../../../electron/floating-bot-window.mjs";
+import { FLOAT_BODY, FLOAT_HOME } from "../../../electron/floating-bot-window.mjs";
 import { mascotStage } from "./fit";
-import { balloonReserve, chatHomeSize, createMoveCoalescer, dockedWindowSize, GROW_AHEAD, nextWindowSize } from "./window-frame";
+import { balloonReserve, chatHomeSize, createMoveCoalescer, dockedWindowSize, GROW_AHEAD, homeBody, nextWindowSize } from "./window-frame";
 
 describe("the mascot window's size", () => {
   const mascot = { width: 156, height: 172 };
@@ -49,6 +49,16 @@ describe("the mascot window's size", () => {
     const grown = dockedWindowSize(stage, { w: 640, h: 520, dx: -80, dy: -40 });
     expect(grown.width).toBeGreaterThan(home.width);
     expect(grown.height).toBeGreaterThan(home.height);
+  });
+
+  it("knows where the character stands in the home window, for each side the chat opens on", () => {
+    const stage = mascotStage(120);
+    const owl = { left: stage.left, top: stage.top, size: 120 };
+    // main keeps this box on screen before the page reports it
+    expect(homeBody(stage, owl, FLOAT_HOME)).toEqual(FLOAT_BODY);
+    // the chat below and to the right: the character in the window's top-left corner
+    expect(homeBody(stage, owl, FLOAT_HOME, { below: true, right: true })).toEqual({ x: 6 + stage.left, y: 8 + stage.top, width: 120, height: 120 });
+    expect(homeBody(stage, owl, FLOAT_HOME, { below: false, right: true })).toMatchObject({ x: 6 + stage.left, y: FLOAT_BODY.y });
   });
 
   it("reserves the balloon's widest and tallest, its offset, the stage and the paddings", () => {
@@ -117,5 +127,27 @@ describe("moving the mascot by hand", () => {
     moves.add(Number.NaN, 2);
     await moves.flush();
     expect(sent).toEqual([]);
+  });
+});
+
+describe("the character's box the window reports to main", () => {
+  const stage = mascotStage(120);
+  const fakeRoot = (rect: { left: number; top: number; width: number; height: number }, attrs: { away?: boolean; fallback?: boolean } = {}) => {
+    const stageEl = { getBoundingClientRect: () => rect, hasAttribute: (name: string) => name === "data-away" && Boolean(attrs.away) };
+    return { querySelector: () => stageEl, hasAttribute: (name: string) => name === "data-fallback" && Boolean(attrs.fallback) } as unknown as HTMLElement;
+  };
+
+  it("is the character's own box in its stage, not the stage's empty room", async () => {
+    const { bodyRectIn } = await import("./FloatingBotWindow");
+    const rect = bodyRectIn(fakeRoot({ left: 127, top: 472, width: stage.width, height: stage.height }));
+    expect(rect).toEqual({ x: 127 + stage.left, y: 472 + stage.top, width: 120, height: 120 });
+  });
+
+  it("is the parked badge while away, the plain owl's stage in the fallback, nothing before a layout", async () => {
+    const { bodyRectIn } = await import("./FloatingBotWindow");
+    expect(bodyRectIn(fakeRoot({ left: 4, top: 6, width: 52, height: 52 }, { away: true }))).toEqual({ x: 4, y: 6, width: 52, height: 52 });
+    expect(bodyRectIn(fakeRoot({ left: 0, top: 0, width: 219, height: 240 }, { fallback: true }))).toEqual({ x: 0, y: 0, width: 219, height: 240 });
+    expect(bodyRectIn(fakeRoot({ left: 0, top: 0, width: 0, height: 0 }))).toBeNull();
+    expect(bodyRectIn(null)).toBeNull();
   });
 });
