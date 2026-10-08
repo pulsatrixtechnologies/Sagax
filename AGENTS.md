@@ -1012,8 +1012,10 @@ tasks and jobs the bot opened on itself; a conversation's own running turn
 is the chat, never listed. Running entries show elapsed time, current step
 and Stop when `canStop`; an entry seen running that settled reads Finished
 for 5 s, fades and leaves (`LiveActivity`). A section with nothing to show
-is not drawn, title included (`panelSections`), so with nothing running and
-no code work Details starts at Routines. The section title opens the history
+is not drawn, title included (`panelSections`); with both hidden, one quiet
+History row takes their place and opens the history. A first list load that
+failed is one quiet line ("Couldn't load this bot's activity."); a later
+failed refresh keeps the last list. The section title opens the history
 (`ActivityListModal`: coding or
 other, newest first, running/finished/failed, search). A thread with no user turn is not
 listed. Both read
