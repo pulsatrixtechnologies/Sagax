@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { mascotColorsIn } from "../../shared/mascot-colors";
 import { describe, expect, it } from "vitest";
 
 import { MAUS_COLORS, MAUS_COLOR_NAMES, mausInk, stateForBot, swatchStyle } from "./mascot";
@@ -59,8 +60,9 @@ describe("iOS MausPalette", () => {
     expect(table.grey).toBe(MAUS_COLORS.grey);
   });
 
-  it("carries every desktop colour", () => {
-    for (const name of Object.keys(MAUS_COLORS)) expect(table[name], name).toBeDefined();
+  it("carries every desktop colour (the Shapes-only Clay palette waits for the phone's Shapes port)", () => {
+    const clay = new Set<string>(mascotColorsIn("clay"));
+    for (const name of Object.keys(MAUS_COLORS)) if (!clay.has(name)) expect(table[name], name).toBeDefined();
   });
 
   it("has no colour that drifts from the desktop, apart from the phone's own black", () => {
