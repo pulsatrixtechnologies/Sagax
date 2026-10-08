@@ -15,7 +15,7 @@ The short version:
 
 ## Enforcement
 
-Unacceptable behavior can be reported privately to **conduct@pulsatrix.ca**, or by contacting a
+Unacceptable behavior can be reported privately to **hello@pulsatrix.ca**, or by contacting a
 maintainer of [pulsatrixtechnologies/sagax](https://github.com/pulsatrixtechnologies/sagax)
 directly. Reports are handled confidentially, and the reporter's identity is not shared without
 consent. Pulsatrix Technologies inc. maintains Sagax and is responsible for enforcement.

@@ -17,7 +17,7 @@ Please **do not open a public issue** for security problems.
   tab, "Report a vulnerability"):
   <https://github.com/pulsatrixtechnologies/sagax/security/advisories/new>. The
   report stays visible only to you and the maintainers until a fix is published.
-- **Or email** **security@pulsatrix.ca** with the details: version, platform,
+- **Or email** **hello@pulsatrix.ca** with the details: version, platform,
   what you did, what happened, and what you expected.
 
 What to expect:
