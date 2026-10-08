@@ -191,6 +191,7 @@ describe("live frames for a member", () => {
       { kind: "message", threadId: "t-hr", message: { id: "x" } },
       { kind: "message.patch", threadId: "t-room-mixed", message: { id: "x" } },
       { kind: "thread", threadId: "t-hr", activeLeafId: "x" },
+      { kind: "thread.read", threadId: "t-hr", participantId: "bot:hr", read: { messageId: "x", at: 1 } },
       { kind: "bot", bot: { id: "hr" } },
       { kind: "group", group: { id: "room-mixed" } },
       { kind: "bot.deleted", botId: "hr" },

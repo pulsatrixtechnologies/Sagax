@@ -77,8 +77,6 @@ export function connectorPrincipalFor(input: ConnectorPrincipalInput): string {
 }
 
 export interface ClaudeAiTurnInput extends ConnectorPrincipalInput {
-  /** The server setting (on unless an admin turned it off). */
-  enabled: boolean;
   /** An enrolled desktop whose organization restricts MCP servers. */
   restrictedByPolicy: boolean;
   driver: string;
@@ -89,7 +87,7 @@ export interface ClaudeAiTurnInput extends ConnectorPrincipalInput {
 /** Whether a Claude turn keeps the claude.ai connectors of the account it
  * runs on: only when that account is the speaker's own. */
 export function claudeAiConnectorsForTurn(input: ClaudeAiTurnInput): boolean {
-  if (!input.enabled || input.restrictedByPolicy || input.driver !== "claudeAgent") return false;
+  if (input.restrictedByPolicy || input.driver !== "claudeAgent") return false;
   if (input.identity === "perspicax") return input.via === "subscription";
   const principal = connectorPrincipalFor(input);
   return Boolean(principal) && principal === input.localPrincipalId.trim().toLowerCase();
@@ -218,7 +216,6 @@ export class ClaudeAiConnectorInventory {
 
 /** Why a person's Claude connectors do not reach their turns. */
 export type ClaudeAiUnavailable =
-  | "disabled"          // an admin turned them off for this server
   | "managed_policy"    // the organization restricts MCP servers here
   | "no_engine"         // no Claude engine on this server
   | "not_signed_in"     // org: the person has no Claude sign-in of their own
@@ -228,9 +225,6 @@ export type ClaudeAiUnavailable =
 
 export interface HarnessConnectorRouteDeps {
   organization: boolean;
-  /** The server setting; true unless an admin turned it off. */
-  enabled(): boolean;
-  setEnabled(next: boolean): void;
   restrictedByPolicy(): boolean;
   /** The caller as a principal, "" when not a known person. */
   principalFor(auth: RequestAuth): string;
@@ -248,7 +242,7 @@ function isAdminScope(auth: RequestAuth): boolean {
 }
 
 /** GET  /api/me/harness-connectors        the caller's own claude.ai connectors
- *  PUT  /api/harness-connectors/settings  admin: { claudeAi: boolean }
+ *  PUT  /api/harness-connectors/settings  retired no-op (always on), kept for older clients
  * Nothing returned names the account (no email, no organization, no URL). */
 export function createHarnessConnectorRoutes(deps: HarnessConnectorRouteDeps): RouteHandler {
   return async ({ req, res, url, path, method, auth, json, readBody }) => {
@@ -265,16 +259,15 @@ export function createHarnessConnectorRoutes(deps: HarnessConnectorRouteDeps): R
       if (!body || typeof body !== "object" || Object.keys(body).some((key) => key !== "claudeAi") || typeof body.claudeAi !== "boolean") {
         return json(res, 400, { error: "Send { \"claudeAi\": true | false }." });
       }
-      deps.setEnabled(body.claudeAi);
-      return json(res, 200, { claudeAi: deps.enabled() });
+      // Claude connectors are always allowed on a server: nothing is stored.
+      return json(res, 200, { claudeAi: true });
     }
     if (method !== "GET") return json(res, 405, { error: "method not allowed" });
     const principalId = deps.principalFor(auth);
     if (!principalId) return json(res, 403, { error: "sign in as a person first" });
-    const base = { manageUrl: CLAUDE_AI_CONNECTORS_URL, canManage: admin, enabled: deps.enabled() };
+    const base = { manageUrl: CLAUDE_AI_CONNECTORS_URL, canManage: admin, enabled: true };
     const answer = (claude: { available: boolean; reason?: ClaudeAiUnavailable; connectors: ClaudeAiConnector[] }) =>
       json(res, 200, { ...base, claude, codex: { available: false, reason: "not_supported" } });
-    if (!deps.enabled()) return answer({ available: false, reason: "disabled", connectors: [] });
     if (deps.restrictedByPolicy()) return answer({ available: false, reason: "managed_policy", connectors: [] });
     if (!deps.organization && principalId !== deps.localPrincipalId().trim().toLowerCase()) {
       return answer({ available: false, reason: "not_operator", connectors: [] });
