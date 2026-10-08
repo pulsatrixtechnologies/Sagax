@@ -127,6 +127,8 @@ function CallSection({ call, enrollment, onCallChange, onEnroll, onForget }: Req
       <Toggle label={t("voiceMode.call.earcons")} checked={call.earcons} data="earcons" onChange={(earcons) => onCallChange({ earcons })} />
       <Toggle label={t("voiceMode.call.thinkingCue")} checked={call.thinkingCue} data="thinking-cue" onChange={(thinkingCue) => onCallChange({ thinkingCue })} />
       {mac && <p className="pb-1 text-[11.5px] leading-snug text-ink-tertiary">{t("voiceMode.call.voiceIsolation")}</p>}
+      <Toggle label={t("voiceMode.call.streamingVoice")} description={t("voiceMode.call.streamingVoiceHelp")} checked={call.streamingVoice} data="streaming-voice" onChange={(streamingVoice) => onCallChange({ streamingVoice })} />
+      <Toggle label={t("voiceMode.call.fasterEndOfTurn")} description={t("voiceMode.call.fasterEndOfTurnHelp")} checked={call.fasterEndOfTurn} data="faster-end-of-turn" onChange={(fasterEndOfTurn) => onCallChange({ fasterEndOfTurn })} />
     </div>
   );
 }
