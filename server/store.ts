@@ -139,10 +139,6 @@ export function toWireTask(task: TaskRecord, botModel: ModelSelection): WireTask
   return surfaceSource === "auto" && wire.surface !== undefined ? { ...wire, surfaceAuto: true } : wire;
 }
 
-/** The level a thread drops to when its engine changes under a level the new
- * engine would have to confirm (modelSwitchNeedsAsk), as on every switch. */
-const ASK_NOW = { approvalMode: "ask" as const, autoApprove: false, alwaysAllow: [] as string[] };
-
 const TASK_PATCH_FIELDS = [
   "title", "projectId", "modelSelection", "approvalMode", "autoApprove", "alwaysAllow",
   "unread", "rewound", "archivedAt", "pinned", "pinnedMessageId", "resumeCursors", "lastInstanceId", "cwd",
@@ -695,7 +691,6 @@ export class Store {
   private threads = new Map<string, ThreadState>();
   private defaultSelection: () => ModelSelection;
   private completeNewBotSelection: (selection: ModelSelection) => ModelSelection;
-  private driverKindOf: (instanceId: string) => string | undefined;
   private listeners = new Set<(change: StoreChange) => void>();
   /** A broken team registry must not prevent loading independent chat data. */
   private registeringInitialSections = true;
@@ -708,14 +703,9 @@ export class Store {
     /** Template effort applied to every new bot's selection, whichever path
      * created it. */
     completeNewBotSelection: (selection: ModelSelection) => ModelSelection = (selection) => selection,
-    /** The driver an engine instance runs, for the level a thread keeps when
-     * its engine changes (modelSwitchNeedsAsk). Unknown counts as another
-     * driver, so Full and Custom fall back to Ask. */
-    driverKindOf: (instanceId: string) => string | undefined = () => undefined,
   ) {
     this.defaultSelection = defaultSelection;
     this.completeNewBotSelection = completeNewBotSelection;
-    this.driverKindOf = driverKindOf;
     mkdirSync(DATA_DIR, { recursive: true });
     for (const file of [BOTS_FILE, GROUPS_FILE]) tightenRegistryFile(file);
     // Whether the bot list is the real one. Room repair below trusts it to
@@ -2069,7 +2059,7 @@ export class Store {
         if (at < 0) throw new Error("A setup target no longer exists");
         const previous = nextBots[at];
         next = { ...previous, ...operation.fields };
-        if (operation.fields.modelSelection) next.tasks = this.withDefaultModel(previous, operation.fields.modelSelection);
+        if (operation.fields.modelSelection) next.tasks = this.withDefaultModel(previous);
         nextBots[at] = next;
       }
       if (operation.fields.chiefOfStaff === false) delete next.managedSections;
@@ -2101,27 +2091,16 @@ export class Store {
     return result;
   }
 
-  /** Moving this thread from one model to another takes its level back to
-   * Ask where the new engine would have to confirm it (modelSwitchNeedsAsk),
-   * as on every engine switch. Read before anything changes. */
-  private switchNeedsAsk(botId: string, threadId: string, from: ModelSelection, to: ModelSelection): boolean {
-    if (from.instanceId === to.instanceId) return false;
-    const thread = this.projectBotForTask(botId, threadId);
-    return Boolean(thread) && modelSwitchNeedsAsk(approvalModeFor(thread!), this.driverKindOf(from.instanceId), this.driverKindOf(to.instanceId));
-  }
-
   /** A bot's threads as a change of its model to `next` leaves them. Each
    * keeps the level it runs at now (older threads may still inherit the
    * bot's, which may change in the same write); one that follows the bot
-   * moves with it, back to Ask where the new engine would have to confirm
-   * its level; a thread's own model stays. */
-  private withDefaultModel(bot: BotRecord, next: ModelSelection): TaskRecord[] | undefined {
+   * moves with it, at the same level; a thread's own model stays. */
+  private withDefaultModel(bot: BotRecord): TaskRecord[] | undefined {
     return bot.tasks?.map((task) => ({
       ...task,
       approvalMode: approvalModeFor(this.projectBotForTask(bot.id, task.threadId)!),
       autoApprove: task.autoApprove ?? bot.autoApprove,
       alwaysAllow: structuredClone(task.alwaysAllow ?? bot.alwaysAllow ?? []),
-      ...(task.modelSelection === undefined && this.switchNeedsAsk(bot.id, task.threadId, bot.modelSelection, next) ? structuredClone(ASK_NOW) : {}),
     }));
   }
 
@@ -2132,7 +2111,7 @@ export class Store {
   applyModelDefault(id: string, modelSelection: ModelSelection): BotRecord | null {
     const previous = this.bot(id);
     if (!previous) return null;
-    const next: BotRecord = { ...previous, modelSelection: structuredClone(modelSelection), tasks: this.withDefaultModel(previous, modelSelection) };
+    const next: BotRecord = { ...previous, modelSelection: structuredClone(modelSelection), tasks: this.withDefaultModel(previous) };
     this.saveBots(this.bots.map((candidate) => candidate.id === id ? next : candidate));
     this.bots = this.bots.map((candidate) => candidate.id === id ? next : candidate);
     this.emit({ type: "bot", botId: id });
@@ -2243,15 +2222,9 @@ export class Store {
       patch = { ...patch };
       delete patch.toolScope;
     }
-    // A new model moves the threads that follow the bot; one whose level the
-    // new engine would have to confirm goes back to Ask. That is a
-    // revocation, so it holds in memory like the others below.
-    const toAsk = patch.modelSelection ? (bot.tasks ?? []).filter((task) => task.modelSelection === undefined &&
-      this.switchNeedsAsk(id, task.threadId, bot.modelSelection, patch.modelSelection!)) : [];
     // Runtime revocations must become effective in memory even when disk is
     // unavailable. Profile edits use the separate atomic path below.
     Object.assign(bot, patch);
-    for (const task of toAsk) Object.assign(task, structuredClone(ASK_NOW));
     const task = this.activeTask(id);
     if (task) {
       for (const key of ["resumeCursors", "rewound", "pinnedMessageId", "unread"] as const) {
@@ -3018,19 +2991,18 @@ export class Store {
    * downgrade, or change the default while leaving the selected thread
    * behind after a write failure. */
   switchTaskModel(botId: string, threadId: string, selection: ModelSelection,
-    updateBotDefault: boolean, resetApprovalToAsk: boolean, taskPatch: TaskPatch = {}): TaskRecord | null {
+    updateBotDefault: boolean, taskPatch: TaskPatch = {}): TaskRecord | null {
     const bot = this.bot(botId);
     const task = this.taskByThread(botId, threadId);
     if (!bot || !task) return null;
-    const approval = resetApprovalToAsk ? structuredClone(ASK_NOW) : {};
     const own = sameModelSelection(selection, updateBotDefault ? selection : bot.modelSelection) ? undefined : structuredClone(selection);
-    const nextTask = persistedPin({ ...task, ...taskPatch, modelSelection: own, ...approval,
+    const nextTask = persistedPin({ ...task, ...taskPatch, modelSelection: own,
       ...(typeof taskPatch.title === "string" ? { title: taskPatch.title.trim().slice(0, 80) || UNTITLED_THREAD } : {}) });
     // A new bot model moves the threads that follow it (withDefaultModel);
     // every other thread keeps its model and the level it runs at now.
-    const others = updateBotDefault ? this.withDefaultModel(bot, selection)! : bot.tasks!;
+    const others = updateBotDefault ? this.withDefaultModel(bot)! : bot.tasks!;
     const nextTasks = bot.tasks!.map((candidate, index) => candidate === task ? nextTask : others[index]!);
-    const botPatch = updateBotDefault ? { modelSelection: structuredClone(selection), ...approval } : {};
+    const botPatch = updateBotDefault ? { modelSelection: structuredClone(selection) } : {};
     this.saveBots(this.bots.map((candidate) => candidate === bot ? { ...bot, ...botPatch, tasks: nextTasks } : candidate));
     bot.tasks!.forEach((candidate, index) => Object.assign(candidate, nextTasks[index]));
     Object.assign(bot, botPatch);
@@ -3040,8 +3012,7 @@ export class Store {
 
   /** These threads follow their bot's model again: each one's own model is
    * cleared ("Switch them too", "Use the bot's model", or a model that can't
-   * run here). A level the bot's engine would have to confirm goes back to
-   * Ask, as on every engine switch, and `reset` adds what a changed model
+   * run here). The level of each stays as it is, and `reset` adds what a changed model
    * needs (a hosted workspace's fresh session). One write. Returns the
    * threads that changed; a listed thread that already follows stays as it is. */
   followBotModel(botId: string, threadIds: readonly string[],
@@ -3052,7 +3023,6 @@ export class Store {
     const patches = bot.tasks.map((task): Partial<TaskRecord> | null => !listed.has(task.threadId) || task.modelSelection === undefined ? null : {
       ...reset(task.modelSelection, bot.modelSelection),
       modelSelection: undefined,
-      ...(this.switchNeedsAsk(botId, task.threadId, task.modelSelection, bot.modelSelection) ? structuredClone(ASK_NOW) : {}),
     });
     const moved = bot.tasks.filter((_, index) => patches[index]).map((task) => task.threadId);
     if (!moved.length) return [];

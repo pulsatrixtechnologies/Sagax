@@ -17,7 +17,7 @@ const sonnet: ModelSelection = { instanceId: "claude", model: "claude-sonnet-5" 
 const opus: ModelSelection = { instanceId: "claude", model: "claude-opus-5" };
 const codex: ModelSelection = { instanceId: "codex", model: "gpt-5-codex" };
 const drivers: Record<string, string> = { claude: "claudeAgent", spare: "claudeAgent", codex: "codex" };
-const open = () => new Store(() => sonnet, undefined, (instanceId) => drivers[instanceId]);
+const open = () => new Store(() => sonnet);
 const ownModel = (store: Store, botId: string, threadId: string) => store.taskByThread(botId, threadId)?.modelSelection;
 const runsOn = (store: Store, botId: string, threadId: string) => store.projectBotForTask(botId, threadId)!.modelSelection;
 
@@ -42,7 +42,7 @@ describe("threads follow their bot's model", () => {
     expect(runsOn(store, bot.id, second.threadId)).toEqual(codex);
     // Changing the bot's model from one thread moves every follower too, and
     // the thread it was changed from follows the bot rather than copying it.
-    store.switchTaskModel(bot.id, first, sonnet, true, false);
+    store.switchTaskModel(bot.id, first, sonnet, true);
     expect(ownModel(store, bot.id, first)).toBeUndefined();
     expect(runsOn(store, bot.id, second.threadId)).toEqual(sonnet);
 
@@ -60,12 +60,12 @@ describe("threads follow their bot's model", () => {
     const bot = store.createBot();
     const picked = store.createTask(bot.id, "Picked")!;
     const follower = store.createTask(bot.id, "Follower")!;
-    store.switchTaskModel(bot.id, picked.threadId, codex, false, false);
+    store.switchTaskModel(bot.id, picked.threadId, codex, false);
     expect(ownModel(store, bot.id, picked.threadId)).toEqual(codex);
 
     store.patchBot(bot.id, { modelSelection: opus });
     store.applyModelDefault(bot.id, { ...opus, effort: "high" });
-    store.switchTaskModel(bot.id, follower.threadId, sonnet, true, false);
+    store.switchTaskModel(bot.id, follower.threadId, sonnet, true);
     store.applyTeamSetup({ version: 1, requestId: "setup", botId: bot.id, threadId: bot.threadId, reason: "Requested", createdAt: 1,
       requesterRevision: "fixture", newTeams: [], operations: [{ action: "update", botId: bot.id, fields: { modelSelection: opus } }] } as TeamSetupRequest);
     expect(runsOn(store, bot.id, picked.threadId)).toEqual(codex);
@@ -76,8 +76,8 @@ describe("threads follow their bot's model", () => {
   it("picking the bot's own model in a thread is following the bot", () => {
     const store = open();
     const bot = store.createBot();
-    store.switchTaskModel(bot.id, bot.threadId, codex, false, false);
-    store.switchTaskModel(bot.id, bot.threadId, sonnet, false, false);
+    store.switchTaskModel(bot.id, bot.threadId, codex, false);
+    store.switchTaskModel(bot.id, bot.threadId, sonnet, false);
     expect(ownModel(store, bot.id, bot.threadId)).toBeUndefined();
     store.patchBot(bot.id, { modelSelection: opus });
     expect(runsOn(store, bot.id, bot.threadId)).toEqual(opus);
@@ -137,7 +137,7 @@ describe("threads follow their bot's model", () => {
     expect(ownModel(open(), "legacy", "copy")).toBeUndefined();
   });
 
-  it("followBotModel clears exactly the listed threads' own model, in one write, and Ask where the bot's engine would have to confirm", () => {
+  it("followBotModel clears exactly the listed threads' own model, in one write, and keeps every level", () => {
     const store = open();
     const bot = store.createBot();
     const first = bot.threadId;
@@ -146,30 +146,29 @@ describe("threads follow their bot's model", () => {
     const asks = store.createTask(bot.id, "Ask on Claude")!;
     const same = store.createTask(bot.id, "Full on the same engine")!;
     const untouched = store.createTask(bot.id, "Not listed")!;
-    store.switchTaskModel(bot.id, full.threadId, sonnet, false, false, { approvalMode: "full", autoApprove: false, alwaysAllow: ["Bash"] });
-    store.switchTaskModel(bot.id, asks.threadId, sonnet, false, false, { approvalMode: "ask" });
-    store.switchTaskModel(bot.id, same.threadId, { ...codex, effort: "high" }, false, false, { approvalMode: "full" });
-    store.switchTaskModel(bot.id, untouched.threadId, opus, false, false);
+    store.switchTaskModel(bot.id, full.threadId, sonnet, false, { approvalMode: "full", autoApprove: false, alwaysAllow: ["Bash"] });
+    store.switchTaskModel(bot.id, asks.threadId, sonnet, false, { approvalMode: "ask" });
+    store.switchTaskModel(bot.id, same.threadId, { ...codex, effort: "high" }, false, { approvalMode: "full" });
+    store.switchTaskModel(bot.id, untouched.threadId, opus, false);
     const resets: Array<[ModelSelection, ModelSelection]> = [];
     const moved = store.followBotModel(bot.id, [full.threadId, asks.threadId, same.threadId, first], (from, to) => {
       resets.push([from, to]);
       return { rewound: true };
     });
     expect(moved.sort()).toEqual([full.threadId, asks.threadId, same.threadId].sort());
-    expect(store.taskByThread(bot.id, full.threadId)).toMatchObject({ approvalMode: "ask", autoApprove: false, alwaysAllow: [], rewound: true });
+    expect(store.taskByThread(bot.id, full.threadId)).toMatchObject({ approvalMode: "full", autoApprove: false, alwaysAllow: ["Bash"], rewound: true });
     expect(store.taskByThread(bot.id, full.threadId)?.modelSelection).toBeUndefined();
     expect(store.taskByThread(bot.id, asks.threadId)).toMatchObject({ approvalMode: "ask" });
-    // Another model on the same engine: the level stays.
     expect(store.taskByThread(bot.id, same.threadId)).toMatchObject({ approvalMode: "full" });
     expect(ownModel(store, bot.id, untouched.threadId)).toEqual(opus);
     expect(resets.map(([, to]) => to)).toEqual([codex, codex, codex]);
     const reloaded = open();
     expect(ownModel(reloaded, bot.id, full.threadId)).toBeUndefined();
-    expect(reloaded.taskByThread(bot.id, full.threadId)?.approvalMode).toBe("ask");
+    expect(reloaded.taskByThread(bot.id, full.threadId)?.approvalMode).toBe("full");
     expect(ownModel(reloaded, bot.id, untouched.threadId)).toEqual(opus);
   });
 
-  it("a following thread's Full access goes back to Ask when the bot moves to another engine, never on the same engine", () => {
+  it("a following thread keeps its Full access and approvals when the bot moves to another engine", () => {
     const store = open();
     const bot = store.createBot();
     const full = store.createTask(bot.id, "Full")!;
@@ -177,13 +176,13 @@ describe("threads follow their bot's model", () => {
     store.patchBot(bot.id, { modelSelection: opus });
     expect(store.taskByThread(bot.id, full.threadId)).toMatchObject({ approvalMode: "full", alwaysAllow: ["Bash"] });
     store.patchBot(bot.id, { modelSelection: codex });
-    expect(store.taskByThread(bot.id, full.threadId)).toMatchObject({ approvalMode: "ask", autoApprove: false, alwaysAllow: [] });
-    expect(open().taskByThread(bot.id, full.threadId)?.approvalMode).toBe("ask");
+    expect(store.taskByThread(bot.id, full.threadId)).toMatchObject({ approvalMode: "full", autoApprove: false, alwaysAllow: ["Bash"] });
+    expect(open().taskByThread(bot.id, full.threadId)).toMatchObject({ approvalMode: "full", alwaysAllow: ["Bash"] });
 
     const other = store.createTask(bot.id, "Full again")!;
     store.patchTask(bot.id, other.threadId, { approvalMode: "full", autoApprove: false });
     store.applyModelDefault(bot.id, sonnet);
-    expect(store.taskByThread(bot.id, other.threadId)?.approvalMode).toBe("ask");
+    expect(store.taskByThread(bot.id, other.threadId)?.approvalMode).toBe("full");
   });
 
   it("the wire carries the model a thread runs on and whether it follows the bot", () => {
@@ -191,7 +190,7 @@ describe("threads follow their bot's model", () => {
     const bot = store.createBot();
     const first = bot.threadId;
     const picked = store.createTask(bot.id, "Picked")!;
-    store.switchTaskModel(bot.id, picked.threadId, codex, false, false);
+    store.switchTaskModel(bot.id, picked.threadId, codex, false);
     const tasks = store.tasks(bot.id);
     const follower = tasks.find((task) => task.threadId === first)!;
     expect(toWireTask(follower, sonnet)).toMatchObject({ modelSelection: sonnet, followsBotModel: true });

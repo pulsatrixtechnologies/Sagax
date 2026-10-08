@@ -131,12 +131,6 @@ app.whenReady().then(async () => {
     return;
   }
   if (process.argv.includes("--ui-only")) { await verifyUi(); return; }
-  if (process.argv.includes("--model-ui-only")) {
-    await require("./testing/model-switch-ui-smoke.cjs")({ root, url: `http://127.0.0.1:${port}`, api, until,
-      grant: (botId, mode, options) => coordinator.request(child, botId, mode, options),
-    });
-    return;
-  }
   // One explicit grant covers old, archived and future threads, even if their
   // provider differs. Use the real private bridge, not fixture state edits.
   const whole = (await api("/api/bots", "POST", { name: "All threads fixture", modelSelection: { instanceId: "claude", model: "claude-sonnet-5" } })).body.bot;

@@ -16,8 +16,9 @@
 //    chat, voice and activity after 150 ms, beside it and never over it, and
 //    they go 400 ms after it leaves; the bell opens the activity tray (where
 //    the chat goes) and its Allow reaches the brain;
-//  - slice 2, click to call: a plain click on the idle character asks the
-//    brain for the call (a drag does not), the stand-in brain then plays the
+//  - slice 2, click is chat, not call: a plain click on the idle character
+//    asks the brain for the chat balloon and never for a call (a drag asks
+//    nothing); the call starts from the hover button or the hotkey. The stand-in brain then plays the
 //    fake call of scripts/verify-voice-mode.ts (its transcript, 4 s spoken
 //    sentences): the pill stays under the feet, the status chip follows the
 //    phase and the captions reveal the bot's words beside the character; a
@@ -434,12 +435,13 @@ async function clickToCall(win, all) {
   const dragged = brainSince(from);
   const b2 = await boxes(win);
   const c2 = { x: b2.body.x + b2.body.width / 2, y: b2.body.y + b2.body.height / 2 };
-  // a plain click on the idle character asks for the call
+  // a plain click on the idle character opens the chat and never asks for the call
   await wait(400);
   from = brainEvents.length;
   await press(win, c2.x, c2.y);
   const clicked = brainSince(from);
-  const started = clicked.some((event) => event.type === "call" && event.action === "start");
+  const started = clicked.some((event) => event.type === "call");
+  const openedChat = clicked.some((event) => event.type === "click");
   const phases = [];
   // the stand-in brain plays the fake call
   update(snapshot({ call: fakeCall("connecting") }));
@@ -482,6 +484,7 @@ async function clickToCall(win, all) {
     dragEvents: dragged,
     dragAskedNothing: !dragged.some((event) => event.type === "call" || event.type === "click"),
     clickStartedCall: started,
+    clickOpenedChat: openedChat,
     clickEvents: clicked,
     phases: phases.map((p) => ({ phase: p.phase, chip: p.chip, lines: p.lines })),
     pill: later.pill,
@@ -547,7 +550,7 @@ app.whenReady().then(async () => {
       })(),
       ...(() => {
         const c = report.clickToCall;
-        return c.dragAskedNothing && c.clickStartedCall && c.pill && c.revealedWordByWord && c.captionLinesMax <= 3 && !c.captionsCoverCharacter && c.captionsInWindow && c.captionsOnDisplay && c.clickDuringCallEndedNothing ? [] : ["click to call"];
+        return c.dragAskedNothing && !c.clickStartedCall && c.clickOpenedChat && c.pill && c.revealedWordByWord && c.captionLinesMax <= 3 && !c.captionsCoverCharacter && c.captionsInWindow && c.captionsOnDisplay && c.clickDuringCallEndedNothing ? [] : ["click opens chat, not call"];
       })(),
     ];
     report.ok = failures.length === 0;

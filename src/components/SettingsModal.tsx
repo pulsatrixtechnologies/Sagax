@@ -71,7 +71,7 @@ import { cn } from "@/lib/cn";
 import { setAdvancedMode, useAdvancedMode } from "@/lib/interface-mode";
 import { simpleHidesSettingsSection } from "@/lib/interface-visibility";
 import { setNotificationSounds, setNudgeSound, useNotificationSounds, useNudgeSound } from "@/lib/notification-preferences";
-import { setShowThreads, useShowThreadsChoice } from "@/lib/thread-preferences";
+import { setShowThreads, setThreadsLocation, useShowThreadsChoice, useThreadsLocationChoice, type ThreadsLocation } from "@/lib/thread-preferences";
 import { parseSidebarDensity, setSidebarDensity, SIDEBAR_DENSITIES, useSidebarDensity, type SidebarDensity } from "@/lib/sidebar-preferences";
 import { currentPhonePairingTarget } from "@/lib/phone-pairing";
 import { setShowRunCard, useShowRunCard } from "@/lib/run-card-preferences";
@@ -641,6 +641,25 @@ function ShowThreadsRow() {
         aria-label={t("settings.threadDisplay.show")}
         onClick={() => setShowThreads(!enabled)}
       />
+    </SettingRow>
+  );
+}
+
+function ThreadsLocationRow() {
+  const enabled = useShowThreadsChoice();
+  const location = useThreadsLocationChoice();
+  return (
+    <SettingRow title={t("settings.threadsLocation.title")} subtitle={t("settings.threadsLocation.subtitle")}>
+      <select
+        aria-label={t("settings.threadsLocation.aria")}
+        value={location}
+        disabled={!enabled}
+        onChange={(event) => setThreadsLocation(event.target.value as ThreadsLocation)}
+        className="rounded-lg border border-border bg-ink/[0.03] px-2.5 py-1.5 text-[13px] leading-[18px] text-ink focus:border-border-strong focus:outline-none disabled:opacity-50"
+      >
+        <option value="header">{t("settings.threadsLocation.header")}</option>
+        <option value="sidebar">{t("settings.threadsLocation.sidebar")}</option>
+      </select>
     </SettingRow>
   );
 }
@@ -1315,6 +1334,7 @@ export function SettingsModal() {
                   <SidebarLogoRow />
                   {advanced && <InspectorButtonRow />}
                   <ShowThreadsRow />
+                  <ThreadsLocationRow />
                   <SidebarHiddenSettings />
                   <NotificationSoundsRow />
                   <NudgeSoundRow />

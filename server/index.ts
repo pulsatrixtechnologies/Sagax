@@ -4466,7 +4466,7 @@ function checkedModelSelection(
 }
 
 function checkedTaskModelSwitch(current: BotRecord, raw: unknown, updateBotDefault: boolean,
-  resetApprovalToAsk: boolean, requireAvailableModel = false, trusted = false) {
+  requireAvailableModel = false) {
   if (current.approvalGrant) return { ok: false as const, status: 409, error: "Wait for the approval change to finish before switching models" };
   const checked = checkedModelSelection(raw, {
     selection: current.modelSelection, busy: threadBusy(current.id, current.threadId),
@@ -4478,21 +4478,6 @@ function checkedTaskModelSwitch(current: BotRecord, raw: unknown, updateBotDefau
       selection: profile.modelSelection, busy: Boolean(activeGroupTurnForBot(current.id)),
     });
     if (!defaults.ok) return defaults;
-  }
-  for (const target of updateBotDefault ? [current, profile] : [current]) {
-    const mode = approvalModeFor(target);
-    if (resetApprovalToAsk && mode === "custom" && !trusted) {
-      return { ok: false as const, status: 403, error: "Leaving Custom approval requires confirmation in the packaged desktop app" };
-    }
-    if (!resetApprovalToAsk && modelSwitchNeedsAsk(mode,
-      registry.cliTarget(target.modelSelection.instanceId)?.driverKind,
-      registry.cliTarget(checked.selection.instanceId)?.driverKind)) {
-      return { ok: false as const, status: 400, error: "Confirm switching this model with Ask permissions first (resetApprovalToAsk)" };
-    }
-  }
-  if (resetApprovalToAsk && (threadBusy(current.id, current.threadId) ||
-    (updateBotDefault && activeGroupTurnForBot(current.id)))) {
-    return { ok: false as const, status: 409, error: "Stop work in the selected scope before switching its permissions" };
   }
   return checked;
 }
@@ -4757,7 +4742,6 @@ const presetStore = createPresetStore();
 const store = new Store(
   () => bootSelection,
   (selection) => withNewBotEffort(selection, cfg.newBotDefaults?.profile.modelSelection?.effort, registry.get(selection.instanceId)?.adapter.capabilities.effortLevels),
-  (instanceId) => registry.cliTarget(instanceId)?.driverKind,
 );
 const teamComputers = new TeamComputers(join(DATA_DIR, "team-computers.json"), ENVIRONMENT_ID);
 let followupsReady = false;
@@ -5871,25 +5855,6 @@ function handleDesktopTrustedApprovalMessage(raw: unknown): boolean {
       store.patchTask(botId, target.threadId, { approvalMode: mode, autoApprove: mode === "auto", alwaysAllow: [] });
     }
     respond({ ok: true, bot: wireTrustedApprovalBot(store.bot(botId)!) });
-    return true;
-  }
-  if (message.modelSelection !== undefined) {
-    const target = typeof threadId === "string" ? store.projectBotForTask(botId, threadId) : null;
-    if (mode !== "ask" || !target || typeof message.updateBotDefault !== "boolean") {
-      respond({ ok: false, error: "A confirmed model switch must select a thread and Ask permissions" });
-      return true;
-    }
-    const checked = checkedTaskModelSwitch(target, message.modelSelection, message.updateBotDefault, true, false, true);
-    if (!checked.ok) { respond({ ok: false, error: checked.error }); return true; }
-    try {
-      store.switchTaskModel(botId, threadId as string, checked.selection, message.updateBotDefault, true,
-        hostedModels?.resetTask(target.modelSelection, checked.selection));
-      const fresh = { ...wireBot(store.bot(botId)!), approvalMode: approvalModeFor(store.bot(botId)!) };
-      broadcast({ kind: "bot", bot: fresh });
-      respond({ ok: true, bot: fresh });
-    } catch {
-      respond({ ok: false, error: "The model switch could not be saved. No settings were changed." });
-    }
     return true;
   }
   if (threadId !== undefined) {
@@ -14340,7 +14305,7 @@ async function startTurn(
         // replacement: a newer send or Stop must never lose to a stale retry.
         store.setTaskActivity(bot.id, threadId, "idle");
         directTurnBots.delete(threadId);
-        const checked = checkedTaskModelSwitch(current, backup, false, false, true);
+        const checked = checkedTaskModelSwitch(current, backup, false, true);
         const target = checked.ok ? registry.get(checked.selection.instanceId) : null;
         const refusal = !checked.ok ? checked.error : !target || !target.enabled ? "The backup engine is unavailable."
           : !store.taskByThread(bot.id, threadId)?.cwd ? "This older thread has no pinned working folder. Choose its backup manually."
@@ -14350,7 +14315,7 @@ async function startTurn(
         if (!refusal && checked.ok && target) {
           try {
             assertWithinBudget(cfg, DATA_DIR);
-            store.switchTaskModel(bot.id, threadId, checked.selection, false, false, {
+            store.switchTaskModel(bot.id, threadId, checked.selection, false, {
               ...hostedModels?.resetTask(current.modelSelection, checked.selection), rewound: true,
             });
             store.appendMessage(threadId, { role: "bot", kind: "activity", tool: {
@@ -29584,16 +29549,6 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         const groupChecked = checkedModelSelection(checked.selection, { selection: existing.modelSelection, busy: true });
         if (!groupChecked.ok) return json(res, groupChecked.status, { error: groupChecked.error });
       }
-      if ([existing, selected].some((owner) => {
-        const mode = approvalModeFor(owner);
-        return (mode === "full" || mode === "custom") &&
-          (!supportsApprovalMode(checked.selection, mode) ||
-            registry.cliTarget(checked.selection.instanceId)?.driverKind !== registry.cliTarget(owner.modelSelection.instanceId)?.driverKind);
-      })) {
-        return json(res, 400, {
-          error: "Changing providers with elevated permissions requires choosing Ask first",
-        });
-      }
       // patchBot persists first and emits the canonical bot change, which the
       // store listener above turns into the slim wire-format SSE broadcast.
       // Every thread that follows the bot moves with it; the selected thread
@@ -30088,17 +30043,9 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         patch.autoApprove = requestedApprovalMode === "auto";
       }
       const targetSelection = normalizedSelection ?? existingBot?.modelSelection;
-      if (normalizedSelection && selectedTask) {
-        const mode = approvalModeFor(selectedTask);
-        if ((mode === "full" || mode === "custom") &&
-          (!supportsApprovalMode(normalizedSelection, mode) ||
-            registry.cliTarget(normalizedSelection.instanceId)?.driverKind !== registry.cliTarget(selectedTask.modelSelection.instanceId)?.driverKind)) {
-          return json(res, 400, { error: "Choose Ask for the selected thread before changing providers with elevated permissions" });
-        }
-      }
       if (
         (requestedApprovalMode === "full" || requestedApprovalMode === "custom") &&
-        (body.approvalMode !== undefined || normalizedSelection !== undefined) &&
+        body.approvalMode !== undefined &&
         (!targetSelection || !supportsApprovalMode(targetSelection, requestedApprovalMode) ||
           (existingBot && normalizedSelection && registry.cliTarget(normalizedSelection.instanceId)?.driverKind !== registry.cliTarget(existingBot.modelSelection.instanceId)?.driverKind))
       ) {
@@ -31807,7 +31754,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (!body || typeof body !== "object" || Array.isArray(body)) return json(res, 400, { error: "body must be a JSON object" });
       const current = store.projectBotForTask(m[1], m[2]);
       if (!current) return json(res, 404, { error: "no such task" });
-      const allowed = new Set(["title", "projectId", "modelSelection", "updateBotDefault", "resetApprovalToAsk", "approvalMode", "autoApprove", "requireAvailableModel", "pinnedMessageId", "acknowledgeLocalAuto", "confirmFullAccess", "archivedAt", "pinned", "snoozedUntil", "surface", "refreshPermissions"]);
+      const allowed = new Set(["title", "projectId", "modelSelection", "updateBotDefault", "approvalMode", "autoApprove", "requireAvailableModel", "pinnedMessageId", "acknowledgeLocalAuto", "confirmFullAccess", "archivedAt", "pinned", "snoozedUntil", "surface", "refreshPermissions"]);
       if (Object.keys(body).some((key) => !allowed.has(key))) return json(res, 400, { error: "unsupported thread setting" });
       const notYours = cloudThreadRefusal(auth, m[2]);
       if (notYours) return json(res, 403, { error: notYours });
@@ -31818,7 +31765,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         (body.approvalMode !== undefined || body.autoApprove !== undefined || body.acknowledgeLocalAuto !== undefined || body.updateBotDefault === true || body.refreshPermissions === true)) {
         return json(res, 403, { error: "On this Cloud only its owner can change how a bot asks for approval, or its default model." });
       }
-      for (const key of ["requireAvailableModel", "acknowledgeLocalAuto", "confirmFullAccess", "updateBotDefault", "resetApprovalToAsk"] as const) {
+      for (const key of ["requireAvailableModel", "acknowledgeLocalAuto", "confirmFullAccess", "updateBotDefault"] as const) {
         if (body[key] !== undefined && typeof body[key] !== "boolean") return json(res, 400, { error: `${key} must be a boolean` });
       }
       if (body.requireAvailableModel === true && body.modelSelection === undefined) return json(res, 400, { error: "requireAvailableModel requires modelSelection" });
@@ -31829,10 +31776,6 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (body.updateBotDefault === true) {
         const refusal = ownerSettingsForbidden(auth, store.bot(m[1]) ?? current, { model: true });
         if (refusal) return json(res, 403, refusal);
-      }
-      if (body.resetApprovalToAsk === true && (body.modelSelection === undefined ||
-        (body.approvalMode !== undefined && body.approvalMode !== "ask") || body.autoApprove === true)) {
-        return json(res, 400, { error: "resetApprovalToAsk requires a model selection and cannot be combined with another approval mode" });
       }
       if (body.refreshPermissions !== undefined && body.refreshPermissions !== true) {
         return json(res, 400, { error: "refreshPermissions must be true" });
@@ -31956,13 +31899,13 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (patch.modelSelection) {
         const checked = checkedTaskModelSwitch({ ...current,
           ...(patch.approvalMode ? { approvalMode: patch.approvalMode, autoApprove: patch.autoApprove } : {}),
-        }, patch.modelSelection, body.updateBotDefault === true, body.resetApprovalToAsk === true, body.requireAvailableModel === true);
+        }, patch.modelSelection, body.updateBotDefault === true, body.requireAvailableModel === true);
         if (!checked.ok) return json(res, checked.status, { error: checked.error });
       }
       const modeBefore = approvalModeFor(current);
       if (orgFullGrant) store.patchBot(m[1], { fullAccessConsent: { principalId: sessionPrincipal(auth)!, at: Date.now() } });
       const task = patch.modelSelection
-        ? store.switchTaskModel(m[1], m[2], patch.modelSelection, body.updateBotDefault === true, body.resetApprovalToAsk === true,
+        ? store.switchTaskModel(m[1], m[2], patch.modelSelection, body.updateBotDefault === true,
           { ...patch, ...hostedModels?.resetTask(current.modelSelection, patch.modelSelection) })!
         : store.patchTask(m[1], m[2], patch)!;
       if (patch.approvalMode) auditApprovalModeChange(auth, m[1], modeBefore, patch.approvalMode, m[2]);

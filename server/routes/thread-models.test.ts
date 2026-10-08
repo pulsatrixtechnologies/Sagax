@@ -59,12 +59,12 @@ function fixture() {
   const onCodex = store.createTask(bot.id, "On Codex")!.threadId;
   const onOpus = store.createTask(bot.id, "On Opus")!.threadId;
   const running = store.createTask(bot.id, "Running")!.threadId;
-  store.switchTaskModel(bot.id, onCodex, codex, false, false);
-  store.switchTaskModel(bot.id, onOpus, opus, false, false);
-  store.switchTaskModel(bot.id, running, codex, false, false);
+  store.switchTaskModel(bot.id, onCodex, codex, false);
+  store.switchTaskModel(bot.id, onOpus, opus, false);
+  store.switchTaskModel(bot.id, running, codex, false);
   const other = store.createBot({ name: "Grace" });
   const othersThread = store.createTask(other.id, "Grace's own")!.threadId;
-  store.switchTaskModel(other.id, othersThread, codex, false, false);
+  store.switchTaskModel(other.id, othersThread, codex, false);
   return { store, bot, follower, onCodex, onOpus, running, other, othersThread };
 }
 
