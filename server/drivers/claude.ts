@@ -46,7 +46,7 @@ import { askInputDetail, askInputSummary, commandSummary, toolDetailPreview } fr
 import { filesField, writtenFilesFromToolInput } from "../thread-files.ts";
 import { classifyError, computeBackoff, interruptibleDelay, RETRY_MAX_ATTEMPTS } from "./retry.ts";
 import { sessionIdlePolicy } from "./session-idle.ts";
-import { contractChanges, withoutTurnTokens } from "./spawn-contract.ts";
+import { contractChanges, warmCommsEnv, withoutTurnTokens } from "./spawn-contract.ts";
 import { parseVersionTriple, versionAtLeast } from "./acp/core.ts";
 import {
   applyClaudeInject,
@@ -677,15 +677,10 @@ const fakeTimerScale = (name: string) => Number(process.env[name] ?? "1") || 1;
 const steerGraceScale = () => fakeTimerScale("FAKE_CLAUDE_STEER_GRACE_SCALE");
 const steerSilenceScale = () => fakeTimerScale("FAKE_CLAUDE_STEER_SILENCE_SCALE");
 
+export { commsTokenFile } from "./spawn-contract.ts";
+
 /** Where the hook helper reads this thread's current turn token. Stable per
  * thread (so the CLI's environment can name it once) and private. */
-/** Where a warm (call) session's agents proxy reads the current turn's
- * comms token: per thread, 0600, rewritten every turn. */
-export function commsTokenFile(threadId: string, botId?: string): string {
-  const digest = createHash("sha256").update(`${botId ?? ""}\0${threadId}`).digest("hex").slice(0, 24);
-  return join(DATA_DIR, "comms-tokens", `${digest}.token`);
-}
-
 export function hookTokenFile(threadId: string, botId?: string): string {
   const digest = createHash("sha256").update(`${botId ?? ""}\0${threadId}`).digest("hex").slice(0, 24);
   return join(DATA_DIR, "hook-tokens", `${digest}.token`);
@@ -1648,10 +1643,7 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
         // token (new every turn) rides a file the proxy reads on each call,
         // and leaves the spawn contract (warmTurnTokens below).
         if (turn.keepWarm && turn.integrations.agents.env?.SAGAX_COMMS_TOKEN) {
-          const tokenPath = commsTokenFile(threadId, botId);
-          mkdirSync(dirname(tokenPath), { recursive: true, mode: 0o700 });
-          writeFileAtomic(tokenPath, turn.integrations.agents.env.SAGAX_COMMS_TOKEN, { mode: 0o600 });
-          mcpServers.agents = { ...turn.integrations.agents, env: { ...turn.integrations.agents.env, SAGAX_COMMS_TOKEN_FILE: tokenPath }, alwaysLoad: true };
+          mcpServers.agents = { ...turn.integrations.agents, env: warmCommsEnv(threadId, botId, turn.integrations.agents.env), alwaysLoad: true };
         }
         allowed.push(...agentsAllowedTools(turn.integrations.agents.env));
       }

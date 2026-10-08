@@ -177,7 +177,9 @@ under the turn's `utteranceId` (ids and milliseconds, never the words):
 - The server (`server/voice-latency.ts`) logs, under the same id,
   `received->dispatch`, `dispatch->engine` (warm, or cold start) and
   `engine->first-token`. A Claude relaunch logs which spawn contract fields
-  changed (names only, `server/drivers/spawn-contract.ts`).
+  changed (names only, `server/drivers/spawn-contract.ts`). A Grok turn is
+  "warm" when it prompts the live native session as is (no handshake, no
+  `session/load`).
 
 What keeps it short:
 
@@ -189,12 +191,39 @@ What keeps it short:
   per-thread file (`SAGAX_COMMS_TOKEN_FILE`, read on each request) and
   leaves the contract. Claude starts that process when the call is accepted
   (`POST /voice/call`), before the first utterance, and the first spoken
-  turn reuses it (`server/voice-call-latency.e2e.test.ts`). A hangup before
-  any turn closes the idle process. Codex and the API drivers are not warmed
-  this way: a Codex warm would be the ACP handshake and `session/new` before
-  `session/prompt`, which is not done here, so a Codex call's first spoken
-  turn still pays that handshake. API drivers cannot start without a prompt,
-  and no hidden prompt is sent.
+  turn reuses it (`server/voice-call-latency.e2e.test.ts`). A hangup closes
+  the idle process.
+- **Grok keeps one native session for the call.** Grok runs over ACP: one
+  pooled process per thread, whose native session is re-established
+  (`session/load`, every MCP server reconnected, the history read back)
+  whenever its session inputs change. The comms token was one of them, so
+  every Grok call turn paid a `session/load`. On a call the token now rides
+  the same token file and is masked out of the session inputs: a call turn
+  is a bare `session/prompt`. Grok is also warmed when the call is
+  accepted: the process pays initialize, authenticate and `session/load`
+  (or `session/new` for a new conversation) with no prompt and no event in
+  the thread, so the first spoken turn is a bare prompt too
+  (`AcpSupport.warmSession`). What is warm, then: Claude (one process) and
+  Grok (one process, one native session) for the whole call; Codex and the
+  API drivers are not warmed (a Codex warm would need its handshake and
+  `session/new`, not done here; API drivers cannot start without a prompt,
+  and no hidden prompt is sent).
+- **Low reasoning effort on a call.** A call turn, and the warm that starts
+  its process (so both share one spawn contract), runs at the engine's low
+  effort: Grok `--reasoning-effort low`, Claude `--effort low`, Codex
+  `effort: low` (`server/voice-call-effort.ts`). The rule: "low" where the
+  engine offers it, else its lowest level but "none" (which turns reasoning
+  off: another answer, not a faster one); a bot already set lower keeps its
+  level; a Codex bot with no effort is left alone, since Codex would keep
+  the call's level for the turns after the call. Written turns keep the
+  bot's own effort, so the first written turn after a call starts a new
+  Grok or Claude process. The model is not changed here: a faster model
+  for calls belongs to the Auto mode (PR #153).
+- **The server environment stays up.** sandboxd stops a person's
+  environment after 10 minutes without use. The call's start and each
+  heartbeat (about every 5 minutes) count as use of the environment the
+  call's turns work in (`UserSandboxManager.markUsed`, sandboxd
+  `POST /v1/sandboxes/<key>/used`), which starts nothing.
 - **A finished sentence ends sooner.** When the streamed words close with
   final punctuation and the silence is confident (Silero under 0.15), the
   turn ends after 288, 352 or 576 ms (Short, Normal, Patient) instead of the
@@ -219,8 +248,13 @@ What keeps it short:
 
 Bench: `SAGAX_VOICE_BENCH=1 BENCH_OUT=out.json pnpm exec vitest run
 scripts/voice-latency-bench.test.ts` runs the call engine against the real
-server, a fake xAI and the fake CLI in `FAKE_CLAUDE_MODE=voice`
-(`FAKE_CLAUDE_COLD_MS`, `FAKE_CLAUDE_FIRST_TOKEN_MS`, `FAKE_CLAUDE_TOKEN_MS`).
+server (given the fake key as `SAGAX_XAI_VOICE_KEY`), a fake xAI and, for
+each engine of `BENCH_ENGINES` (`claude,grok`), the fake Claude CLI in
+`FAKE_CLAUDE_MODE=voice` (`FAKE_CLAUDE_COLD_MS`, `FAKE_CLAUDE_FIRST_TOKEN_MS`,
+`FAKE_CLAUDE_TOKEN_MS`) or the fake ACP CLI in `FAKE_ACP_MODE=voice`
+(`FAKE_ACP_COLD_MS`, `FAKE_ACP_LOAD_MS`, `FAKE_ACP_FIRST_TOKEN_MS`,
+`FAKE_ACP_TOKEN_MS`). The Grok report counts each turn's ACP session
+establishments (`establishPerTurn`): 0 on a warm call turn.
 
 xAI also offers a text to speech WebSocket (`wss://api.x.ai/v1/tts`,
 `text.delta` in, `audio.delta` out, `optimize_streaming_latency` 0 to 2,

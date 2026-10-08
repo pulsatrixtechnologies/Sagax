@@ -330,6 +330,17 @@ export class SandboxService {
     this.lastUsed.set(key, this.now());
   }
 
+  /** Count now as use of a running sandbox, so the idle sweep leaves it up
+   * (a voice call's heartbeat: the person is talking to a bot that works
+   * there). Starts nothing: a stopped, paused or missing sandbox stays so. */
+  async markUsed(key: string): Promise<SandboxStatus> {
+    this.checkKey(key);
+    const container = await this.docker.inspectContainer(sandboxNames(key).container);
+    if (container && !this.owned(container.labels, key)) throw new SandboxError(409, "conflict", "a container with this name is not managed by this provisioner");
+    if (container?.running && !container.paused) this.touch(key);
+    return this.status(key);
+  }
+
   async exec(key: string, input: SandboxExecInput): Promise<SandboxExecOutput> {
     this.checkKey(key);
     if (!Array.isArray(input.argv) || input.argv.length === 0 || input.argv.length > 64 || input.argv.some((arg) => typeof arg !== "string" || arg.includes("\u0000"))) {

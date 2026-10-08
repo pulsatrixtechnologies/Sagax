@@ -102,6 +102,23 @@ describe("sandbox lifecycle", () => {
     expect((await service.status(alice)).state).toBe("stopped");
   });
 
+  it("counts a marked use as use: the idle stop waits again, and nothing is started", async () => {
+    const { docker, service, advance } = setup();
+    await service.installEgressPolicy();
+    expect((await service.markUsed(alice)).state).toBe("missing");
+    expect(docker.calls.filter((call) => call.startsWith("create") || call.startsWith("start"))).toEqual([]);
+    await service.exec(alice, { argv: ["true"] });
+    advance(9 * 60_000);
+    await service.markUsed(alice);
+    advance(9 * 60_000);
+    expect(await service.sweepIdle()).toEqual([]);
+    advance(60_000 + 1);
+    expect(await service.sweepIdle()).toEqual([alice]);
+    const starts = docker.calls.filter((call) => call.startsWith("start")).length;
+    expect((await service.markUsed(alice)).state).toBe("stopped");
+    expect(docker.calls.filter((call) => call.startsWith("start"))).toHaveLength(starts);
+  });
+
   it("counts a sandbox first seen running after a provisioner restart from now", async () => {
     const { docker, service, advance } = setup();
     await service.installEgressPolicy();
