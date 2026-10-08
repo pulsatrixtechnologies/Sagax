@@ -633,6 +633,32 @@ Electron restart (no HMR); launch-test them before committing.
 - `fit.ts` sizes the stage for the widest pose; `pilot.ts` moves the window
   (flights, walks) through `floating-bots:geometry`, `move-to` and
   `autopilot`; main clamps every move and never saves spots flown to.
+- Position anywhere: main keeps only the character's own box on screen
+  (`clampBodyToDisplays`), never the whole window: the page reports that box
+  (`floating-bots:body`, `bodyRectIn`), main uses `FLOAT_BODY` until it does
+  (kept equal to `homeBody` by the window-frame test), and the window's
+  transparent room may hang off a screen's edge (larger-than-screen windows,
+  put back after creation and show). A drag follows the pointer's own path
+  (`entry.drag`, so it crosses seams in small steps and loses no ground at an
+  edge). Spots are saved per display setup as the character's own corner
+  (`v: 2`; an older save reads as the window's corner); a restart puts it back
+  exactly, a setup that is gone falls back to the default spot. macOS undoes
+  a move that puts more than about a fifth of a window on a neighbouring
+  display: there the room stays within `SEAM_SHARE` (`keepOffNeighbours`),
+  geometry sends the `limits` and the chat's room opens away from the seam
+  (`sideWithin`). Measure with `node scripts/verify-mascot-desktop.mjs`
+  (corners of every display, the seam, a restart, the menu, the bubble,
+  the effects; screenshots next to the report).
+- Placement rules live in `placement.ts` (pure, `placement.test.ts`):
+  `placeChat` picks the chat's side from where the character stands (above
+  and left by default; below near the top, right near the left edge) and its
+  room on that display (60 % of its height at most); `effectSide` and
+  `effectLane` put the effects beside the character, never over it. The
+  window holds the chat's room on that side: `FloatingBotWindow` reads the
+  layout when the mascot comes to rest (a drop, a walk, the chat opening, a
+  display change) and, when the side flips, moves the window to its new
+  corner with `floating-bots:frame` (the page hidden for that frame, the box
+  it drew just before sent along), so the character never jumps.
 - The chat stays put (`window-frame.ts`): while the mascot is home the
   window already holds the quick chat's room (`chatHomeSize`,
   `FLOAT_HOME`), anchored on the character's bottom-right corner, so
@@ -652,7 +678,17 @@ Electron restart (no HMR); launch-test them before committing.
   character and click-through of the transparent parts, theme).
 - The balloon has no shield: dragged by its header it comes right up to
   the character from any side (over the stage's empty room, touching its
-  box), never over its face (`clampBalloon` in `Balloon.tsx`). Only the part
+  box), never over it (`clampBalloon` in `Balloon.tsx`, `FACE_INSET` 0).
+  The quick chat keeps the width its window holds (288 px) unless the person
+  sizes it, grows in height up to the room on its display and then scrolls
+  (`balloonSize`), and slides back onto the display when the stage hangs off
+  the edge (`shift`). It wears the main chat's tokens and type (18 px
+  corners, 13 px on a 20 px line, the user bubble) and the app's composer row
+  at its scale: clip, field, model chip, voice button (Send once typed). The
+  clip and the chip are menu events (`attach`, `model`): main brings the app
+  forward and the brain opens that bot's own composer file picker or model
+  picker (`COMPOSER_ATTACH_EVENT`, `COMPOSER_MODEL_EVENT`). It opens and
+  closes with `useHeldMenuMotion` (the open played backwards). Only the part
   of its offset away from the mascot grows the window; the part toward it is
   a `translate` inside the window it has. It sits above the art (z-index 2),
   under the effects (z-index 3).
@@ -660,8 +696,8 @@ Electron restart (no HMR); launch-test them before committing.
   engine (`LiveCallEngine`) runs once in the app page (`CallEngineHost` in
   App, for the bot `useOnCall()` names) and publishes the call
   (`src/lib/voice-mode/live-call-store.ts`); the app's pill (`LiveCall`) and
-  the mascot only show and drive it. The mascot's call button (balloon header,
-  `hints.call`, and the menu's "call") starts that same call for its bot
+  the mascot only show and drive it. The mascot's call button (the balloon
+  composer's voice button, `hints.call`, and the menu's "call") starts that same call for its bot
   (`mascot-call.ts`, `runMascotCallEvent`): one call at a time across app and
   mascots (`lib/call.ts`). The brain sends `snapshot.call` (`FloatingCall`)
   and the levels on their own channel (`floating-bots:level`, 20 Hz, rounded);
@@ -671,11 +707,23 @@ Electron restart (no HMR); launch-test them before committing.
   microphone is the app page's (its permission), never the mascot window's.
   Main sanitizes `call`, its events and their settings patches. Measured in
   `verify-mascot-chat.mjs` (call leg); the app's call: `verify-voice-mode.ts`.
-- The desktop mascot's menu (right click, long press, the menu key) is main's
-  native menu, popped exactly at the pointer (`floating-bots:menu`,
-  `menuPopupPoint`: the page's CSS pixels times its zoom, kept inside the work
-  area of the display under it); the drawn `.fb-menu` stays for the in-app
-  overlay and an older preload.
+- The desktop mascot's menu (right click, long press, the menu key or
+  Shift+F10) is main's native menu, popped exactly at the pointer
+  (`floating-bots:menu`, `menuPopupPoint`: the page's CSS pixels times its
+  zoom, kept inside the work area of the display under it); the drawn
+  `.fb-menu` stays for the in-app overlay and an older preload. Its items
+  come from the brain (`floatingMenu` in `brain.ts`): Talk, Start a voice
+  call, Open in Sagax; Switch bot (`switch:<botId>`) and Moves
+  (`move:<clip>`, the list of `moves.ts`, shared with the avatar popover);
+  Hide for 1 hour (`snooze`, `hiddenUntil`, the window reopens by itself) and
+  Hide (`dock`); On the desktop (always on top, fly away, activity) and
+  Settings (Settings > Appearance). Items may be separators, greyed or one
+  level of submenu (`menuTemplate`). A move goes from main straight to that
+  window (`floating-bot:move`), never through the brain. A switch re-keys the
+  window in main (`floating-bots:rekey`): same mascot, same spot.
+- Effects (signs, thought dots, Zzz, hearts, sparkles, confetti, Trombi's
+  sparkle) are drawn in the lane beside the character (`.fb-fx[data-side]`),
+  never over it; add a new one there.
 - The balloon wears the app's theme: the brain sends `theme` (the skin and
   the brand accent, `theme.ts`, followed live) and the window stamps it;
   Trombi keeps its Hibou 98 balloon whatever the theme.
