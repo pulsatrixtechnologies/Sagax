@@ -253,6 +253,16 @@
      every skin sets its own */
   --sidebar-mark-on-dark: inline-block;
   --sidebar-mark-on-light: none;
+  /* The app frame, shared by the chat column (and every page in its place)
+     and the docked bot panel beside it, in every skin. The header row is
+     the sidebar head's height (#156), so all three rows of 36px circles
+     share one centre line. The gap is the inset frame's margin on Pulsatrix
+     Light: around each light card and between the two cards. The chat
+     column keeps at least its minimum width while a panel is docked; the
+     panel gives way instead of running past the window's right edge. */
+  --app-topbar-height: 56px;
+  --app-frame-gap: 8px;
+  --app-chat-min-width: 360px;
 }
 
 /* ── Pulsatrix ─────────────────────────────────────────────────────────────
@@ -1120,6 +1130,34 @@
 [data-skin="pulsatrix-light"] .app-shell-row {
   background: var(--color-sidebar);
 }
+/* The app frame in every skin (tokens on `:root`). Every page header and
+   every docked panel's top bar carries `.content-topbar`; one height for
+   all of them puts the chat column's top edge (or, inset, its card's) and
+   the panel's on the same line, and every header circle on the sidebar
+   head's centre line. Unlayered, so it outranks a Tailwind `h-12` or
+   `min-h-[52px]` on the element. On a desktop row the docked panel may
+   shrink (its inline width is a preferred width, set by its resize
+   handle) and the chat column holds its minimum, so the stored width
+   never pushes the panel past the window's right edge. */
+.content-topbar {
+  min-height: var(--app-topbar-height);
+}
+@media (min-width: 1024px) {
+  .app-docked-panel {
+    flex-shrink: 1;
+  }
+  .app-content-frame:has(~ .app-docked-panel) {
+    min-width: var(--app-chat-min-width);
+  }
+}
+
+/* Card margins on the frame, Pulsatrix Light: every card keeps the gap
+   above, below and on its right; the chat column's card (and the single
+   card fallback) also keeps it on its left, against the rail, while a
+   docked panel's card does not, since the card before it already leaves
+   that gap. So the chat card and the panel card are two siblings with the
+   same top, bottom, radius and border, one gap apart, and the panel's
+   right margin equals the chat card's left margin. */
 [data-skin="pulsatrix-light"] .app-content-frame,
 [data-skin="pulsatrix-light"] .app-docked-panel {
   /* `h-full` (Tailwind, height: 100%) plus a non-zero margin would overflow
@@ -1128,10 +1166,13 @@
      flex default, unset by `.app-shell-row`) size this item to the row's
      cross size minus its margin instead, the same fill, correctly. */
   height: auto;
-  margin: 8px 8px 8px 0;
+  margin: var(--app-frame-gap) var(--app-frame-gap) var(--app-frame-gap) 0;
   border-radius: var(--radius-xl);
   border: 1px solid var(--color-hairline);
   overflow: hidden;
+}
+[data-skin="pulsatrix-light"] .app-content-frame {
+  margin-left: var(--app-frame-gap);
 }
 [data-skin="pulsatrix-light"] .app-content-frame:has(.content-card-body),
 [data-skin="pulsatrix-light"] .app-docked-panel:has(.content-card-body) {
@@ -1148,28 +1189,14 @@
 [data-skin="pulsatrix-light"] .app-content-frame:has(.content-card-body) > main {
   background: var(--color-sidebar);
 }
-/* With a docked panel open, the chat and the panel read as ONE light frame
-   split by a hairline, not two cards with a navy seam between them. */
-@media (min-width: 1024px) {
-  [data-skin="pulsatrix-light"] .app-content-frame:has(~ .app-docked-panel) .content-card-body {
-    margin-right: 0;
-    border-right: 0;
-    border-top-right-radius: 0;
-    border-bottom-right-radius: 0;
-  }
-  [data-skin="pulsatrix-light"] .app-content-frame ~ .app-docked-panel .content-card-body {
-    border-top-left-radius: 0;
-    border-bottom-left-radius: 0;
-  }
-}
 
 /* The navy top band. `.content-topbar-strip` mirrors the sidebar's own
    macOS-inset spacer (same `useMacInsetChrome` check, same 36px); it is
    only ever rendered when that check is true, so it costs the DOM node
    but never the height anywhere else. `.content-topbar` is the page's own
    header row (floating over the transcript in Chat, a normal block
-   elsewhere) turned into a plain, non-floating band the same height as
-   before (52px), holding its own ink/panel/hairline/raised tokens so
+   elsewhere) turned into a plain, non-floating band, its height the
+   shared `--app-topbar-height` (rule below the frame), holding its own ink/panel/hairline/raised tokens so
    every button and pill already built from them (CIRCLE_BUTTON, the bot
    pill, chips) recolors for navy without each needing its own class. */
 [data-skin="pulsatrix-light"] .content-topbar-strip {
@@ -1180,7 +1207,6 @@
 [data-skin="pulsatrix-light"] .content-topbar {
   position: relative;
   flex: none;
-  min-height: 52px;
   background: var(--color-sidebar);
   --color-ink: var(--color-sidebar-ink);
   --color-ink-secondary: var(--color-sidebar-ink-secondary);
@@ -1199,11 +1225,14 @@
 [data-skin="pulsatrix-light"] .content-card-body {
   flex: 1;
   min-height: 0;
-  margin: 8px 8px 8px 0;
+  margin: var(--app-frame-gap) var(--app-frame-gap) var(--app-frame-gap) 0;
   border-radius: var(--radius-xl);
   border: 1px solid var(--color-hairline);
   overflow: hidden;
   background: var(--color-app);
+}
+[data-skin="pulsatrix-light"] .app-content-frame .content-card-body {
+  margin-left: var(--app-frame-gap);
 }
 
 /* Every column resize handle (sidebar edge, docked settings panels, the
