@@ -113,7 +113,8 @@ export function entriesToUnhide(
 ): string[] {
   const out: string[] = [];
   for (const item of prefs.items) {
-    const on = item.kind === "bot" ? prefs.unhideOnMessage.bots : prefs.unhideOnMessage.people;
+    // a closed direct conversation always comes back on a new message
+    const on = item.kind === "bot" ? prefs.unhideOnMessage.bots : item.kind === "person" ? true : prefs.unhideOnMessage.people;
     if (!on) continue;
     const entry = item.kind === "bot"
       ? input.bots.find((bot) => bot.id === item.id)

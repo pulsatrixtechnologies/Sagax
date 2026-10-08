@@ -181,7 +181,7 @@ describe("person row menu", () => {
   const personLabels = (pinned: boolean) => [
     t("personPanel.view"),
     t("sidebar.copyConversationId"),
-    t("sidebar.hidden.hide"),
+    t("sidebar.hidden.close"),
     ...(pinned ? [t("sidebar.bot.unpin")] : []),
     "Move to",
     t("sidebar.bot.markUnread"),
@@ -210,7 +210,7 @@ describe("person row menu", () => {
     click(open.buttons, t("sidebar.copyConversationId"));
     expect(navigator.clipboard.writeText).toHaveBeenCalledWith("thread-zach");
 
-    click(open.buttons, t("sidebar.hidden.hide"));
+    click(open.buttons, t("sidebar.hidden.close"));
     expect(readSidebarHidden().items).toEqual([expect.objectContaining({ kind: "person", id: "pr_zach" })]);
     expect(hiddenKey("person", "pr_zach")).toBe("person:pr_zach");
 

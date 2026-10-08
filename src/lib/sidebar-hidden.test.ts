@@ -76,7 +76,9 @@ describe("sidebar hidden entries", () => {
       personGroup: (id: string) => (id === "pr_ada" ? { id: "dm", ...fresh } : undefined),
     };
     expect(entriesToUnhide(prefs, input)).toEqual(["person:pr_ada"]);
-    expect(entriesToUnhide({ ...prefs, unhideOnMessage: { people: false, bots: true } }, input)).toEqual(["bot:maya"]);
+    expect(entriesToUnhide({ ...prefs, unhideOnMessage: { people: false, bots: true } }, input)).toEqual(["bot:maya", "person:pr_ada"]);
+    // a closed direct conversation comes back whatever the people setting says
+    expect(entriesToUnhide({ ...prefs, unhideOnMessage: { people: false, bots: false } }, input)).toEqual(["person:pr_ada"]);
     // read already: stays hidden
     expect(entriesToUnhide(prefs, { ...input, personGroup: () => ({ id: "dm", ...fresh, unread: false }) })).toEqual([]);
   });
