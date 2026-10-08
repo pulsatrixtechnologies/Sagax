@@ -44,8 +44,10 @@ async function setup(hang: boolean, fakeEnv: NodeJS.ProcessEnv) {
     };
     const turns = () => existsSync(`${plan}.evidence.jsonl`) ? readFileSync(`${plan}.evidence.jsonl`, "utf8")
       .trim().split("\n").filter(Boolean).map(line => JSON.parse(line)) : [];
+    // Sagax's own folds: private to the task, never a chat row.
+    const folds = () => (task().contextSummaries ?? []) as any[];
     ready = true;
-    return { session, api, cli, bot, thread, messages, task, idle, send, turns,
+    return { session, api, cli, bot, thread, messages, task, folds, idle, send, turns,
       compact: () => api(`/api/bots/${bot.id}/compact`, { threadId: thread }),
       restart: async (beforeLaunch?: () => void) => {
         await waitForExit(restarted ?? session.child, { signal: "SIGTERM" });
@@ -123,16 +125,54 @@ it("automatically folds old exchanges while keeping the two latest and the incom
   await f.send("SECOND_EXCHANGE keep verbatim");
   await f.send("THIRD_EXCHANGE correction -5 != 5");
   await f.send("INCOMING do not summarize this request");
-  const records = (await f.messages()).filter(m => m.kind === "compaction");
+  // Transparent: the chat holds only what the person and the bot said.
+  const chat = await f.messages();
+  expect(chat.filter(m => m.kind === "compaction")).toHaveLength(0);
+  expect(chat.filter(m => m.kind === "text").map(m => m.role === "user" ? m.text : "bot")).toEqual([
+    "bot", "FIRST_EXCHANGE historical request", "bot", "SECOND_EXCHANGE keep verbatim", "bot",
+    "THIRD_EXCHANGE correction -5 != 5", "bot", "INCOMING do not summarize this request", "bot",
+  ].slice(chat[0]?.role === "user" ? 1 : 0));
+  // The summary is stored with the thread, anchored to the request it ran before.
+  const records = f.folds();
   expect(records).toHaveLength(1);
-  expect(records[0].compaction.by).toBe("harness");
-  expect(records[0].compaction.summary).not.toContain("INCOMING");
+  expect(records[0].summary).toContain("FIRST_EXCHANGE");
+  expect(records[0].summary).not.toContain("INCOMING");
+  expect(records[0].anchorId).toBe(chat.findLast(m => m.role === "user").id);
+  expect(f.task().appliedCompactionId).toBe(records[0].id);
+  // The engine gets a new session carrying the summary and the latest turns
+  // word for word, told as a continuation, never as a hand-over.
   const prompt = String(f.turns().at(-1).prompt.message.content);
+  expect(prompt).toContain("Earlier conversation summary");
+  expect(prompt).toContain("This is your ongoing conversation with this user");
+  expect(prompt).not.toContain("switched this bot over to you");
   expect(prompt).toContain("SECOND_EXCHANGE keep verbatim");
   expect(prompt).toContain("THIRD_EXCHANGE correction -5 != 5");
   expect(prompt).toContain("INCOMING do not summarize this request");
   expect(f.turns().at(-1).resumed).toBe(false);
-}), 70_000);
+  // The bot's standing instructions ride the new session's system prompt.
+  expect(JSON.stringify(f.turns().at(-1).system)).toContain("Context probe");
+  // Under the threshold again, the next turn resumes the new session.
+  await f.api("/api/config", { context: { compactAt: 0.8 } }, "PATCH");
+  const session = f.task().resumeCursors.claude;
+  await f.send("AFTER the fold");
+  expect(f.folds()).toHaveLength(1);
+  expect(String(f.turns().at(-1).prompt.message.content)).not.toContain("Earlier conversation summary");
+  expect(f.task().resumeCursors.claude).toBe(session);
+}), 90_000);
+
+it("does not fold a bot listed in context.autoCompactOffBots (debugging only)", () => fixture(async f => {
+  await f.api("/api/config", { context: { compactAt: 1, autoCompactOffBots: [f.bot.id] } }, "PATCH");
+  await f.send("ONE");
+  const session = f.task().resumeCursors.claude;
+  for (const text of ["TWO", "THREE", "FOUR"]) await f.send(text);
+  expect(f.folds()).toHaveLength(0);
+  expect(f.task().resumeCursors.claude).toBe(session);
+  expect(f.turns().some(turn => String(turn.prompt.message.content).includes("Earlier conversation summary"))).toBe(false);
+  await f.api("/api/config", { context: { autoCompactOffBots: [] } }, "PATCH");
+  await f.send("FIVE");
+  expect(f.folds()).toHaveLength(1);
+  expect(String(f.turns().at(-1).prompt.message.content)).toContain("Earlier conversation summary");
+}), 90_000);
 
 it("Stop cancels a stalled summary without writing a late record or starting an agent", () => fixture(async f => {
   await f.send("Keep this original chat intact");
@@ -179,7 +219,8 @@ it.each([
   }, "PATCH");
   for (const text of ["FIRST historical request", "SECOND keep recent", "THIRD correction", "INCOMING follow-up"]) await f.send(text);
   expect(f.task().usage.context).toMatchObject({ tokens, window: 1_000_000 });
-  expect((await f.messages()).filter(m => m.kind === "compaction")).toHaveLength(compactions);
+  expect((await f.messages()).filter(m => m.kind === "compaction")).toHaveLength(0);
+  expect(f.folds()).toHaveLength(compactions);
   const launch = JSON.parse(readFileSync(f.session.fixtureDumpPath, "utf8"));
   if (native === "off") expect(launch.argv).not.toContain("--autocompact");
   else expect(launch.argv[launch.argv.indexOf("--autocompact") + 1]).toBe(native ?? "200000");
@@ -187,7 +228,7 @@ it.each([
     // Even an irreducible prompt close to the native boundary must not let
     // the regrowth floor postpone the next harness fold beyond that boundary.
     await f.send("NEXT keep the native headroom after the first fold");
-    expect((await f.messages()).filter(m => m.kind === "compaction")).toHaveLength(2);
+    expect(f.folds()).toHaveLength(2);
     expect(f.turns().at(-1).resumed).toBe(false);
   }
 }, false, { FAKE_CLAUDE_CONTEXT_TOKENS: String(tokens) }), 90_000);

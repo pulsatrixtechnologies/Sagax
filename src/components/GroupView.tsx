@@ -475,7 +475,7 @@ export const Transcript = memo(function Transcript({
           ) : m.kind === "screen" ? (
             m.png ? <ScreenFrame png={m.png} mime={m.mime} /> : null
           ) : m.kind === "compaction" ? (
-            <CompactionChip message={m} />
+            m.compaction?.by === "harness" ? null : <CompactionChip message={m} />
           ) : m.kind === "digest" ? (
             showToolCalls
               ? <DigestChip message={m} viewerPrincipalId={state.config?.viewer?.principalId ?? null} />

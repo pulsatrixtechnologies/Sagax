@@ -86,6 +86,11 @@ describe("configuration boundaries", () => {
     for (const value of [512, 1_024.1, 1_000_001]) {
       expect(() => parseConfigPatch({ context: { rebuildBytes: value } })).toThrow();
     }
+    // The per-bot debugging switch: a list of bot ids, never shown in the app.
+    expect(parseConfigPatch({ context: { autoCompactOffBots: ["bot-1"] } })).toEqual({ context: { autoCompactOffBots: ["bot-1"] } });
+    for (const value of ["bot-1", [""], [1], null]) {
+      expect(() => parseConfigPatch({ context: { autoCompactOffBots: value } })).toThrow();
+    }
   });
   it("keeps Fish Audio and ElevenLabs voice credentials separate", () => {
     const parsed = parseConfigPatch({
