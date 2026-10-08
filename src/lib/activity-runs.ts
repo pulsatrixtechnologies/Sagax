@@ -36,6 +36,12 @@ export function isStatusActivity(message: Message): boolean {
   return statusActivity(message) !== null;
 }
 
+/** A stop the person asked for. It is not a failure row in the chat. */
+export function isTurnStoppedNotice(message: Message): boolean {
+  const name = message.kind === "activity" ? message.tool?.name : undefined;
+  return name?.replace(/^error:\s*/, "").trim() === "turn stopped";
+}
+
 /** A step that may be folded away: finished, a real tool, and not a
  * bot⇄bot or opened-thread chip (those are navigation, not work) or a
  * failed turn (that renders as an error). A step still running stays out,

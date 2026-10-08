@@ -277,20 +277,24 @@ export function CallOverlay({ bot }: { bot: Bot }) {
 const CALL_DOCK_EXIT_MS = 180;
 
 /** Voice mode (xAI): a live, full-duplex call (voice-mode/LiveCall.tsx).
- * The stage fills the chat column. The chevron folds it to a short row in
- * the banner stack, which does not cover a message. When the call ends,
- * that row folds away. */
+ * A call starts as a short row in the banner stack. The chevron opens the
+ * stage over the chat column. When the call ends, that row folds away. */
 export function VoiceCallDock({ bot }: { bot: Bot }) {
   const active = useOnCall() === bot.id;
   const voiceMode = useVoiceModeStatus(bot.id);
   const live = active && voiceMode?.available === true;
-  const [collapsed, setCollapsed] = useState(false);
+  const [collapsed, setCollapsed] = useState(true);
   const motion = useMenuMotion(live);
   const dock = useRef<HTMLDivElement>(null);
   const height = useRef(0);
-  useEffect(() => {
-    if (live) setCollapsed(false);
-  }, [live, bot.id]);
+  // Each new call starts folded, before paint, so the stage never flashes
+  // open. Expanding stays open until this call ends and the next one starts.
+  const callKey = live ? bot.id : null;
+  const [foldedFor, setFoldedFor] = useState<string | null>(callKey);
+  if (callKey !== foldedFor) {
+    setFoldedFor(callKey);
+    if (callKey) setCollapsed(true);
+  }
   useEffect(() => {
     const element = dock.current;
     if (!live || !collapsed || !element || typeof ResizeObserver === "undefined") return;

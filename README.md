@@ -6,7 +6,7 @@
 
 [![License: PolyForm Noncommercial 1.0.0](https://img.shields.io/badge/license-PolyForm%20Noncommercial%201.0.0-38d591)](LICENSE)
 [![Latest release](https://img.shields.io/github/v/release/pulsatrixtechnologies/sagax?include_prereleases&label=release&color=1084fe&cacheSeconds=300)](https://github.com/pulsatrixtechnologies/sagax/releases)
-![Platforms](https://img.shields.io/badge/platforms-macOS%20arm64%20%7C%20x64%20%C2%B7%20Windows%20x64%20%7C%20arm64-2B2E3A)
+![Platforms](https://img.shields.io/badge/platforms-macOS%20arm64%20%7C%20x64%20%C2%B7%20Windows%20x64%20%7C%20arm64%20%C2%B7%20iPhone%20%7C%20iPad-2B2E3A)
 ![Engines](https://img.shields.io/badge/engines-Claude%20Code%20%C2%B7%20Codex%20%C2%B7%20more-d97757)
 
 <img src="docs/images/readme/hero.webp" alt="Sagax main window: the sidebar lists bots and group chats; the Launch room group shows two people and three bots working on a website launch" width="900">
@@ -97,20 +97,23 @@ Take control at any time. A bot can work in:
 <tr>
 <td width="50%" valign="top">
 
-<img src="docs/images/readme/voice-mode.webp" alt="Voice mode: a live call with Atlas in a floating bar above the composer, listening, with a waveform and buttons for settings, transcript, hold, mute and hang up" width="100%">
+<img src="docs/images/readme/voice-mode.webp" alt="Voice mode: a live call with Atlas, listening, with a waveform and buttons for settings, transcript, hold, mute and hang up" width="100%">
 
 </td>
 <td width="50%" valign="top">
 
 ### Voice calls
 
-Press the call button on a bot and talk, like a phone call. The microphone
-stays open: interrupt the bot at any time and it stops talking. Hold, mute
-and push to talk are one click away. The bot is still the one answering:
-every sentence you say becomes an ordinary message in the thread, and xAI is
-used only for speech to text and text to speech, on the server, so the key
-never reaches the app. Voice detection runs on your computer. Works on macOS
-and Windows, solo or on an organization server
+Press the call button on a bot and talk, like a phone call. The call starts
+as a short row. The chevron opens the stage over the chat, with the
+settings, the transcript, hold, mute and hang up. The microphone stays open:
+interrupt the bot at any time and it stops talking. Hold, mute and push to
+talk are one click away. The bot is still the one answering: every sentence
+you say becomes an ordinary message in the thread, and xAI is used only for
+speech to text and text to speech, on the server, so the key never reaches
+the app. Voice detection runs on your computer. On iPhone the same call
+shows as a card in the conversation. Works on macOS, Windows and iPhone,
+solo or on an organization server
 ([docs/voice-mode-xai.md](docs/voice-mode-xai.md)).
 
 </td>
@@ -143,7 +146,9 @@ effects and moves.
 
 - **Approvals.** Shell commands, file edits and questions show up as cards in
   the chat: allow, deny or answer. On a shared bot the card goes to the bot's
-  owner only ([docs/approval-levels.md](docs/approval-levels.md)).
+  owner only ([docs/approval-levels.md](docs/approval-levels.md)). Approve
+  for me approves for you and starts the bots. A stop you asked for is not
+  written in the chat. A real failure still is.
 - **Full access mode.** For a bot you trust, let it act without asking. On the
   solo app it is granted from the desktop app only; on an organization server
   the bot's owner grants it once per bot, and an admin can turn it off for the
@@ -151,9 +156,16 @@ effects and moves.
   still apply.
 - **Routines.** Run work once, on weekdays or every few minutes, with
   webhooks for outside triggers
-  ([docs/routine-schedules.md](docs/routine-schedules.md)). On an
+  ([docs/routine-schedules.md](docs/routine-schedules.md)). The card says
+  when the routine runs: every hour, every weekday, or once. Active stays
+  the switch. A paused or finished routine says so after the schedule. On an
   organization server a routine runs with its owner's credentials and is paid
   by its owner.
+- **Nudge.** In a conversation with a person, or in a group, the button at
+  the right of the composer sends a nudge. A bot conversation does not show
+  it. The windows of the people involved come forward and shake, and a line
+  in the thread says the nudge was sent. While the wait runs, the button
+  stays gray and the explanation is in the tooltip.
 - **Engine slash commands.** Type `/` to list Sagax's own commands and the
   engine's (Claude Code commands and skills, Codex skills), per bot, even in a
   group.
@@ -171,6 +183,12 @@ effects and moves.
   The person who speaks pays for the turn: their own subscription first, then
   their own key in Perspicax, then the organization's key. Each engine card in
   Settings > Model providers shows what pays for your turns.
+- **Engines and keys.** Each engine signs in with its own command. On an
+  organization server, Grok signs in with the grok CLI. A person can save
+  more than one GitHub key. On a Mac, local models can serve
+  organization-server bots when the harness already injects a local
+  endpoint. Sharing those models with other people stays off until it is
+  turned on.
 - **Desktop bridge.** In server mode the desktop app is the bridge to your PC:
   bots working for you run their tools (shell, files, browser, computer use,
   Local VM) on your own computer, and their network traffic leaves through it,
@@ -211,9 +229,12 @@ browser engine and the Android platform tools. The app itself, computer use and 
 
 First launch notes:
 
-- **macOS Gatekeeper.** A build that is not signed and notarized is blocked the
-  first time. Right-click Sagax in Applications, choose **Open**, then confirm;
+- **macOS Gatekeeper.** Releases are signed with a Developer ID and notarized
+  by Apple. A build that is not signed and notarized is blocked the first
+  time. Right-click Sagax in Applications, choose **Open**, then confirm;
   or allow it in System Settings > Privacy & Security > **Open Anyway**.
+- **iPhone and iPad.** Install from TestFlight. A voice call shows as a card
+  in the conversation.
 - **Windows SmartScreen.** The installer is not signed, so SmartScreen shows an
   unknown publisher. Choose **More info**, then **Run anyway**.
 - **Engines.** The computer that runs your bots needs at least one engine

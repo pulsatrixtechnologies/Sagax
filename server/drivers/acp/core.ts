@@ -2191,6 +2191,12 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
             }
             if (!state.settled) {
               const message = e instanceof Error ? e.message : String(e);
+              // Stop before the prompt is a cancellation. It is not a failure
+              // to leave in the chat.
+              if (message === "turn stopped") {
+                settle(threadId, session, true, "cancelled");
+                return;
+              }
               const code = support.classifyError?.(e);
               // Authentication setup is a user action, not a retry. The
               // classifier is preferred; loginNote remains a compatibility

@@ -94,7 +94,7 @@ describe("the voice call stage", () => {
 });
 
 describe("where the stage lives", () => {
-  it("fills the chat column; the chevron folds it to a row in the banner stack", () => {
+  it("starts folded; the chevron opens the stage over the chat column", () => {
     const chat = readFileSync(new URL("../ChatView.tsx", import.meta.url), "utf8");
     expect(chat).toMatch(/<div className="chat-banners[^"]*">\s*\{\/\*[\s\S]*?\*\/\}\s*<VoiceCallDock bot=\{bot\} \/>/);
     const view = readFileSync(new URL("../CallView.tsx", import.meta.url), "utf8");
@@ -102,8 +102,12 @@ describe("where the stage lives", () => {
     expect(overlay).not.toContain("<LiveCall");
     expect(overlay).toContain("voiceMode?.available === true) return null");
     const dock = view.slice(view.indexOf("export function VoiceCallDock"), view.indexOf("/** The older call: the macOS"));
+    expect(dock).toContain("const [collapsed, setCollapsed] = useState(true)");
+    expect(dock).toContain("if (callKey) setCollapsed(true)");
+    expect(dock).not.toMatch(/if \(live\) setCollapsed\(false\)/);
     expect(dock).toContain('className="absolute inset-0 z-30 flex min-h-0 flex-col bg-app" data-voice-call-dock data-voice-stage');
     expect(dock).toContain("onCollapse={() => setCollapsed(true)}");
+    expect(dock).toContain("onExpand={() => setCollapsed(false)}");
     expect(dock).not.toContain("h-12");
   });
 });
