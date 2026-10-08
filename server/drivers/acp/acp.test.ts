@@ -1900,6 +1900,7 @@ describe("ACP turns (fake CLI)", () => {
       await instance.adapter.interruptTurn("startup-stop");
       const ack = await pending;
       await recorder.until((event) => event.type === "turn.completed" && event.turnId === ack.turnId);
+      expect(recorder.events.some((event) => event.type === "runtime.error" && event.message === "turn stopped")).toBe(false);
       expect(instance.adapter.hasSession("startup-stop")).toBe(false);
     });
 

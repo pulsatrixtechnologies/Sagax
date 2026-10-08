@@ -9931,6 +9931,8 @@ bus.subscribe((event: RuntimeEvent) => {
       pushMessage({ role: "bot", kind: "activity", tool: { name: `notice: ${event.message.slice(0, 240)}`, ok: true } });
       break;
     case "runtime.error": {
+      // A stop the person asked for is not a row in the chat.
+      if (event.message.trim() === "turn stopped") break;
       // Organization server: a key-backed engine whose provider refused the
       // key gets the key_refused card, not the generic error row.
       const refusedInstance = bot ? registry.get(event.providerInstanceId ?? bot.modelSelection.instanceId) : null;

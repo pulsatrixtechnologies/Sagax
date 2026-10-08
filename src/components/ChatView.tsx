@@ -94,7 +94,7 @@ import { showPrivateConversationHint } from "@/lib/private-threads";
 import { viewerActorId } from "@/lib/viewer";
 import { isViewersPrimaryBot } from "@/lib/primary-bot";
 import { useFocusMessage } from "@/lib/focus-message";
-import { groupTranscript, isStatusActivity, type TranscriptItem } from "@/lib/activity-runs";
+import { groupTranscript, isStatusActivity, isTurnStoppedNotice, type TranscriptItem } from "@/lib/activity-runs";
 import { collapseBotExchanges, startsNewStretch, visibleEdge, type ExchangeRun } from "@/lib/bot-exchange";
 import { foldCollapsedEntry, voiceCallPlan, voiceCallVisibleSpan } from "@/lib/voice-call-transcript";
 import { VoiceCallCard } from "./VoiceCallCard";
@@ -946,6 +946,7 @@ const MessagesList = memo(function MessagesList({
               // bot⇄bot comm chips and opened-thread chips stay because they
               // link to another conversation.
               // plain tool runs stay out unless Settings → Tool calls is on.
+              if (isTurnStoppedNotice(m)) return null;
               if (m.tool?.name.startsWith("error:")) {
                 return (
                   <ErrorRow
@@ -1460,9 +1461,8 @@ export function ChatView({ bot: profile }: { bot: Bot }) {
       {/* Banners sit below the floating header; the wrapper vanishes when
           none is showing so the transcript can run to the top. */}
       <div className="chat-banners pt-[52px] empty:hidden">
-      {/* Voice mode's call pill: first in the stack, centered right under
-          the name chip; collapsed it keeps its own small row, expanded its
-          card hangs over the thread */}
+      {/* Voice mode's call: first in the stack. A call starts as a short
+          row under the name chip. The chevron opens the stage over the thread. */}
       <VoiceCallDock bot={bot} />
       <BotActivityPicker bot={bot} />
       <ThreadsOffReturnLink bot={bot} />

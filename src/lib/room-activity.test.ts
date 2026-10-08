@@ -30,6 +30,12 @@ describe("roomActivityVisible", () => {
     expect(roomActivityVisible(chip({ tool: { name: "error: engine missing" } }), false)).toBe(true);
   });
 
+  it("leaves a stopped turn out of the chat", () => {
+    const stopped = chip({ tool: { name: "error: turn stopped", ok: false } });
+    expect(roomActivityVisible(stopped, false)).toBe(false);
+    expect(roomActivityVisible(stopped, true)).toBe(false);
+  });
+
   // the trace that a teammate was consulted must not depend on a developer
   // flag that is off for everyone
   it("always shows an opened-thread chip, the only trace a bot started a thread", () => {
