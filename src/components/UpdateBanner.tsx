@@ -1,5 +1,7 @@
-// Update prompt. An available or downloaded update opens a notes dialog.
-// Errors and the Linux package hand-off stay on the small bottom-left card.
+// Update prompt. Updates download by themselves (upstream #2342), so nothing
+// shows while one checks or downloads. A downloaded update opens a notes
+// dialog before the restart; errors and the Linux package hand-off stay on
+// the small bottom-left card.
 import { useEffect, useRef, useState } from "react";
 import { ArrowDownToLine, Loader2, PackageOpen, RefreshCw, Sparkles, X } from "lucide-react";
 import { brand } from "@/lib/brand";
@@ -11,7 +13,7 @@ import { ReleaseNotesBody } from "./ReleaseNotesMarkdown";
 const primaryAction =
   "flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-accent py-1.5 text-[13px] font-medium text-accent-ink transition-colors disabled:cursor-default disabled:bg-control disabled:text-ink-secondary";
 
-const NOTES_STATUS = new Set<UpdaterState["status"]>(["available", "downloading", "preparing", "downloaded", "installing"]);
+const NOTES_STATUS = new Set<UpdaterState["status"]>(["preparing", "downloaded", "installing"]);
 
 function friendlyError(message?: string): string {
   if (!message) return "Something went wrong.";
@@ -22,7 +24,7 @@ function friendlyError(message?: string): string {
   return message.split("\n")[0].slice(0, 140);
 }
 
-function busyLabel(s: UpdaterState, pending: "download" | "install" | "check" | null): string {
+function busyLabel(s: UpdaterState, pending: "install" | "check" | null): string {
   if (s.status === "preparing") return t("settings.updates.preparingShort");
   if (s.status === "installing" || pending === "install") {
     return s.installMode === "handoff" ? t("settings.updates.opening") : t("releaseNotes.restarting");
@@ -45,38 +47,20 @@ function notesTitle(s: UpdaterState): string {
 export function UpdateBanner() {
   const s = useUpdaterState();
   const [dismissed, setDismissed] = useState<string | null>(null);
-  const [pending, setPending] = useState<"download" | "install" | "check" | null>(null);
-  // "Update and restart" downloads, then installs when the file is ready.
-  const installAfter = useRef(false);
+  const [pending, setPending] = useState<"install" | "check" | null>(null);
   const status = s?.status;
+  useEffect(() => setPending(null), [status]);
 
-  useEffect(() => {
-    if (installAfter.current && status === "downloaded") {
-      installAfter.current = false;
-      setPending("install");
-      void window.ogb?.updater?.install();
-      return;
-    }
-    if (status === "error" || status === "idle" || status === "handed-off") installAfter.current = false;
-    setPending(null);
-  }, [status]);
-
-  if (!s || s.status === "idle" || s.status === "checking") return null;
+  if (!s || s.status === "idle" || s.status === "checking" || s.status === "downloading") return null;
   const key = `${s.status}:${s.version ?? ""}`;
   if (dismissed === key) return null;
 
   const dismiss = () => setDismissed(key);
   const beginUpdate = () => {
     const updater = window.ogb?.updater;
-    if (!updater) return;
-    if (s.status === "downloaded") {
-      setPending("install");
-      void updater.install();
-      return;
-    }
-    installAfter.current = true;
-    setPending("download");
-    void updater.download();
+    if (!updater || s.status !== "downloaded") return;
+    setPending("install");
+    void updater.install();
   };
 
   if (NOTES_STATUS.has(s.status)) {
@@ -105,7 +89,7 @@ function UpdateNotesDialog({
   onUpdate,
 }: {
   state: UpdaterState;
-  pending: "download" | "install" | "check" | null;
+  pending: "install" | "check" | null;
   onDismiss: () => void;
   onUpdate: () => void;
 }) {
@@ -129,11 +113,7 @@ function UpdateNotesDialog({
     return () => window.removeEventListener("keydown", onKey);
   }, [busy, onDismiss]);
 
-  const primaryLabel = handoff
-    ? s.status === "downloaded" || pending === "install"
-      ? t("settings.updates.install")
-      : t("settings.updates.download")
-    : t("releaseNotes.updateRestart");
+  const primaryLabel = handoff ? t("settings.updates.install") : t("releaseNotes.updateRestart");
 
   return (
     <div
@@ -232,7 +212,7 @@ function UpdateProblemCard({
   onRetry,
 }: {
   state: UpdaterState;
-  pending: "download" | "install" | "check" | null;
+  pending: "install" | "check" | null;
   onDismiss: () => void;
   onRetry: () => void;
 }) {

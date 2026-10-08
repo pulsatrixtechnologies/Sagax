@@ -261,7 +261,7 @@ describe("activity-only escape hatch", () => {
 
   it("switches directly to the requested work and offers no thread-management actions", () => {
     let tree: ReactNode;
-    function Capture() { tree = SidebarBotActivity({ bot, density: "comfortable" }); return tree; }
+    function Capture() { tree = SidebarBotActivity({ bot, density: "comfortable", pendingQueued: fixture.state.pendingQueued!, dispatch: fixture.dispatch }); return tree; }
     const markup = renderToStaticMarkup(createElement(Capture));
     findElement(tree, "data-sidebar-activity-row", "approval")!.props.onClick!({} as MouseEvent);
     expect(fixture.dispatch).toHaveBeenCalledExactlyOnceWith({ type: "switchTask", botId: bot.id, threadId: "approval" });
@@ -272,7 +272,7 @@ describe("activity-only escape hatch", () => {
 
   it("removes selected and settled activity but keeps unread completed replies", () => {
     const selected = { ...bot, threadId: "approval", tasks: bot.tasks!.map((task) => task.threadId === "working" ? { ...task, busy: false, activity: "idle" as const } : task) };
-    const markup = renderToStaticMarkup(createElement(SidebarBotActivity, { bot: selected, density: "compact" }));
+    const markup = renderToStaticMarkup(createElement(SidebarBotActivity, { bot: selected, density: "compact", pendingQueued: fixture.state.pendingQueued!, dispatch: fixture.dispatch }));
     expect(markup).not.toContain('data-sidebar-activity-row="approval"');
     expect(markup).not.toContain('data-sidebar-activity-row="working"');
     expect(markup).toContain('data-sidebar-activity-row="unread"');

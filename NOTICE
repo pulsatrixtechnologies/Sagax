@@ -29,9 +29,9 @@ Selected provider icon paths are from Simple Icons, used under CC0 1.0.
 The Cohere provider icon path is from Lobe Icons, Copyright 2023 LobeHub,
 used under the MIT License.
 
-The OpenMausBot name and mascot are trademarks of Milind Soni. This product
-does not use those marks as its name. Apache License 2.0 section 6 does not
-grant trademark rights.
+The OpenMausBot name and mascot are trademarks of Supamaus Software Private
+Limited. This product does not use those marks as its name. Apache License
+2.0 section 6 does not grant trademark rights.
 
 Voice mode bundles on-device models run with onnxruntime-web (Microsoft, MIT
 License): Silero VAD v5 (Silero Team, MIT License, unmodified) and the

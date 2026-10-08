@@ -42,12 +42,15 @@ describe("chiefOfStaffSystemPrompt", () => {
     { id: "personal", name: "Scout", title: "Travel planner", section: "Personal" },
   ];
 
-  it("describes visible teammates, roles, and availability", () => {
+  it("describes visible teammates and roles, but not who is busy", () => {
     const prompt = chiefOfStaffSystemPrompt("chief", bots, true);
 
     expect(prompt).toContain("Your home team is the Work section");
-    expect(prompt).toContain("Quill — Writer: Drafts concise copy (available)");
-    expect(prompt).toContain("Patch — Engineer (working right now)");
+    expect(prompt).toContain("Quill — Writer: Drafts concise copy [id: writer]");
+    expect(prompt).toContain("Patch — Engineer [id: coder]");
+    // availability changes turn to turn; it rides the volatile half instead
+    expect(prompt).not.toContain("working right now");
+    expect(prompt).not.toContain("(available)");
     expect(prompt).not.toContain("Secret");
     expect(prompt).not.toContain("Scout");
     expect(prompt).not.toContain("Atlas —");
@@ -90,8 +93,8 @@ describe("chiefOfStaffSystemPrompt", () => {
         "Use list_bots to confirm the live roster and IDs. When assigning work to a teammate, use delegate_bot: it returns immediately, keeps you available to the user, and delivers the teammate's outcome back into this conversation automatically — success or failure. When the result arrives you are woken with it: report it to the user and act. If the teammate fails or stalls, tell the user plainly and decide the next step yourself. After delegate_bot accepts the task, acknowledge the handoff and continue with any independent work or end your turn. Do not call wait_delegation or repeatedly poll check_delegation in the same turn. Use ask_bot only for a brief consultation whose answer you must have before writing your current response. Never use ask_bot for an assigned task, background work, or anything potentially long-running. Delegate with a clear, self-contained brief. Say that the task is assigned, not completed; only claim completion after the teammate's result has actually arrived. A refusal from delegate_bot or ask_bot means nothing was sent: fix what it names (usually the id — copy it from list_bots or your roster) and retry. You may assign work to more than one teammate when the request genuinely benefits. Stay responsive while they work, then combine their returned results when the user asks for a synthesis.",
         "When the user asks you to assemble or configure a team, use list_team_setup for the exact authorized teams, bot IDs and model catalog, then propose_team_setup once with all named specialists and their profile/model changes. Include new teams explicitly; the plan covers their creation and your access. Existing thread models and other bots' execution permissions stay unchanged. Follow the tool result: granted Full Access may apply the plan immediately; after an applied result, continue already-requested work without another confirmation. Only if review is pending, end your turn: the user's decision automatically resumes you once with a structured result. Report failed or cancelled results honestly. Do not ask for another yes, poll, or repeat the proposal. After successful setup, use the available coordination tools for already requested work. Use create_bot only for a single specialist when no combined setup was requested. For explicitly requested bot deletion, use propose_bot_deletion separately and follow its applied or pending result too. Do not create duplicate or unnecessary bots.",
         "Current Work section team:",
-        "- Quill — Writer: Drafts concise copy (available) [id: writer]",
-        "- Patch — Engineer (working right now) [id: coder]",
+        "- Quill — Writer: Drafts concise copy [id: writer]",
+        "- Patch — Engineer [id: coder]",
       ].join("\n"),
     );
   });
@@ -105,7 +108,7 @@ describe("chiefOfStaffSystemPrompt", () => {
       true,
     );
 
-    expect(prompt).toContain("Patch — Engineer (working right now)");
+    expect(prompt).toContain("Patch — Engineer [id: coder]");
     expect(prompt).not.toContain("Quill");
   });
 });

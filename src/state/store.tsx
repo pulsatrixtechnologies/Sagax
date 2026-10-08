@@ -27,6 +27,7 @@ import type { BotPublicProfile } from "../../shared/bot-public-profile";
 import { approvalModeFor, type ApprovalMode } from "../../shared/approval-mode";
 import { uiCommandToAction } from "../../shared/bot-act";
 import { onDesktopNudge } from "@/lib/desktop-nudge";
+import { sameModelSelection } from "../../shared/thread-model";
 import type { MascotBodyId } from "../../shared/mascot-bodies";
 import type { MascotSkinId } from "../../shared/mascot-skins";
 import type { QuestionRequestCardData } from "../../shared/ask-question";
@@ -35,6 +36,7 @@ import type { ModelRequestCardData } from "../../shared/model-request";
 import type { RoutineRequestCardData } from "../../shared/routine-request";
 import type { RoutineRunCardData } from "../../shared/routine-run";
 import type { GroupGoalRunCardData } from "../../shared/group-goal-run";
+import type { PlaceRow } from "../../shared/place-view";
 import {
   reviewedSkillSha256,
   skillRequestBehavior,
@@ -43,6 +45,7 @@ import {
 import type { Routine, RoutineInput, RoutineRun, RoutineRunStatusFilter } from "@/lib/routines";
 import type { WebhookAttempt, WebhookIngressStatus, WebhookTrigger } from "@/lib/webhooks";
 import { botShowsUnread } from "@/lib/bot-unread";
+import type { ComputerStart } from "@/lib/computer-start";
 import { answerResponse, dismissResponse } from "@/lib/card-answer";
 import { currentCall, voiceCallId } from "@/lib/call";
 import { showNotification, type NotificationTarget } from "@/lib/notify";
@@ -51,7 +54,7 @@ import { roleProfilePatch, type BotRole } from "@/lib/bot-roles";
 import { t } from "@/lib/i18n";
 import { createBotPatchQueue, type BotUpdatePatch } from "./bot-patch-queue";
 import type { OnboardingStatus } from "@/lib/onboarding";
-import { openLiveEvents } from "@/lib/live-events";
+import { openLiveEvents, publishLiveFrame, publishMissedFrames } from "@/lib/live-events";
 import { receiveAchievementsFrame } from "@/lib/achievements";
 
 const MAX_ROUTINE_RUNS = 2_000;
@@ -125,11 +128,18 @@ export interface OptionCardData {
   /** Exact provider command eligible for a durable, folder-scoped allow. */
   commandAllowlist?: { command: string; cwd: string; providerInstanceId: string };
   approvalScope?: "local-computer";
+  /** The bot's change applied without a person (a change to itself, or Full
+   * access): shown as one line with Undo instead of the approval box. */
+  autoApplied?: boolean;
+  /** A person undid that change. */
+  undone?: boolean;
   /** Persisted proposal used by the server when the user confirms it. */
   routineRequest?: RoutineRequestCardData;
   /** Staged learned-skill change; applied only after the user confirms this card. */
   skillRequest?: SkillRequestCardData;
-  outboundRequest?: { tool: string; app: string | null };
+  /** calls: one per outbound call the card covers, in subtitle order. Absent
+   * on cards from older computers. */
+  outboundRequest?: { tool: string; app: string | null; calls?: Array<{ app: string | null; label: string }> };
   teamMemoryRequest?: { section: string; entryId: string; kind: string };
   /** Persisted profile proposal used by the server when the user confirms it. */
   profileRequest?: ProfileRequestCardData;
@@ -200,7 +210,7 @@ export interface Message {
    * narration of the same chip ("reading a file"), used by call mode. */
   /** `setup` marks an error fixed by installing something, not by retrying.
    * `summary` is the call's input on one redacted line (the shell command). */
-  tool?: { name: string; ok?: boolean; spoken?: string; setup?: boolean; claudeUpdate?: boolean; summary?: string; input?: string; output?: string ; itemId?: string; outputPath?: string; fullResult?: boolean };
+  tool?: { name: string; ok?: boolean; spoken?: string; setup?: boolean; claudeUpdate?: boolean; place?: PlaceRow; summary?: string; input?: string; output?: string ; itemId?: string; outputPath?: string; fullResult?: boolean };
   /** user messages sent into a running turn — the model saw it mid-turn */
   steered?: boolean;
   /** a user message that did not come from typing here: through the
@@ -216,7 +226,11 @@ export interface Message {
   turnId?: string;
   /** Last assistant text item from a settled provider turn. */
   turnTerminal?: boolean;
-  /** screen messages: a frame of the bot's computer (base64) */
+  /** screen messages: the server holds a frame of the bot's computer,
+   * served by `/api/threads/:threadId/messages/:id/image`. */
+  hasImage?: boolean;
+  /** screen messages in the full (unpaged) shape: the same frame, inline as
+   * base64. Shown through the image route all the same. */
   png?: string;
   mime?: string;
   at: number;
@@ -305,6 +319,9 @@ export interface Group {
   /** Set at creation: rooms have no pending setup step any more. */
   setupCompletedAt?: number | null;
   setupSkippedAt?: number | null;
+  /** A direct-message conversation's turn ceiling. Null or absent uses the
+   * global group limit. Channel conversations store theirs on each task. */
+  turnTimeoutMinutes?: number | null;
   /** Separate conversations in this channel. DMs deliberately stay on one
    * thread and omit this collection. */
   tasks?: GroupTask[];
@@ -326,6 +343,9 @@ export interface GroupTask {
   pinned?: boolean;
   /** Newest message time, or createdAt. Server-derived. */
   updatedAt?: number;
+  /** This conversation's turn ceiling, in whole minutes. Absent uses the
+   * global group limit. */
+  turnTimeoutMinutes?: number;
 }
 
 export interface ModelSelection {
@@ -354,7 +374,12 @@ export interface Task {
   /** folder this task's turns run in, pinned on its first turn; null =
    * legacy home-folder session; absent = not pinned yet */
   cwd?: string | null;
+  /** The model this thread runs on: its own when a person picked one here,
+   * else its bot's (followsBotModel). */
   modelSelection?: ModelSelection;
+  /** true: runs on its bot's model and moves with it; false: a model a person
+   * picked in this thread. Absent from servers older than the field. */
+  followsBotModel?: boolean;
   approvalMode?: ApprovalMode;
   autoApprove?: boolean;
   alwaysAllow?: string[];
@@ -658,7 +683,7 @@ function rewindThreadUpdatedAt(state: AppState, threadId: string, messages: { at
 
 /** The visible conversation: walk parentId links from the active leaf back
  * to the root. Falls back to the flat list for pre-branching payloads. */
-export function visibleMessages(bot: Bot): Message[] {
+export function visibleMessages(bot: Pick<Bot, "messages" | "activeLeafId">): Message[] {
   const leafId = bot.activeLeafId;
   if (!leafId) return bot.messages;
   const byId = new Map(bot.messages.map((m) => [m.id, m]));
@@ -670,17 +695,6 @@ export function visibleMessages(bot: Bot): Message[] {
     cur = cur.parentId ? byId.get(cur.parentId) : undefined;
   }
   return path.reverse();
-}
-
-/** All versions of a user message (itself + the forks that replaced it),
- * oldest first. Length 1 = never edited. */
-export function messageVersions(bot: Bot, message: Message): Message[] {
-  if (message.role !== "user" || message.kind !== "text") return [message];
-  return bot.messages
-    .filter(
-      (m) => m.role === "user" && m.kind === "text" && (m.parentId ?? null) === (message.parentId ?? null),
-    )
-    .sort((a, b) => a.at - b.at);
 }
 
 /** GET /api/config — configured flags only; secrets are never echoed. */
@@ -710,6 +724,9 @@ export interface ConfigStatus {
   box: { configured: boolean; included?: boolean };
   vps: { configured: boolean; sshAlias: string };
   rooms: { turnTimeoutMinutes: number };
+  /** Per-call ceiling (minutes) for a bot's MCP tools. Absent from servers
+   * older than the setting; read it with mcpCallTimeoutMinutes(). */
+  mcp?: { callTimeoutMinutes: number };
   /** Visible slice of the new-bot template. Absent effort means no level is sent. */
   newBotDefaults?: {
     profile?: {
@@ -721,7 +738,9 @@ export interface ConfigStatus {
   threads?: { maxConcurrentPerBot: number; maxParallelPerPerson?: number; eventLogMaxBytes?: number; eventLogRetentionDays?: number };
   automaticRecovery?: { enabled: boolean; backup?: ModelSelection };
   localVm: { mode: "shared" | "per-bot" | "pool"; maxInstances: number; idleTimeoutMinutes?: number };
-  opencodeGo?: { configured: boolean };
+  /** `providerKeys`: names of the keys saved for OpenCode's other
+   * providers, never the keys. */
+  opencodeGo?: { configured: boolean; providerKeys?: string[] };
   /** Voice. `configured` = the engine has what it needs (an ElevenLabs or
    * Fish Audio key, or a Chatterbox server address); `ready` = that AND a voice, which is
    * what it takes to actually speak. The key itself is never echoed back;
@@ -783,6 +802,10 @@ export interface ConfigStatus {
   /** The enrolled organisation's read-only desktop policy; null when this
    * desktop is not enrolled or its Admin sends no policy. */
   managedPolicy?: ManagedPolicySummary | null;
+  /** An OMB Cloud home in the upstream project. Sagax runs no Cloud, so no
+   * server of ours sets it; kept optional so the shared place logic
+   * (src/lib/place-view.ts) reads it as absent. */
+  cloudHome?: boolean;
 }
 
 /** Mirrors ViewerIdentity in server/viewer-identity.ts. */
@@ -846,7 +869,7 @@ export interface BrowserProfile {
 // Settings shows (a saved key's Test button used to vanish that way).
 export type ConfigStatusFrame = Pick<
   ConfigStatus,
-  "xai" | "mistral" | "cerebras" | "anthropic" | "openai" | "openrouter" | "openaiCompat" | "fleet" | "composio" | "box" | "vps" | "rooms" | "threads" | "automaticRecovery" | "localVm" | "opencodeGo" | "tts" | "decider" | "imageGen" | "live" | "profile" | "language" | "features" | "onboarding" | "browserEngine" | "browserProfiles" | "edition" | "budgets" | "billing" | "managedPolicy" | "viewer"
+  "xai" | "mistral" | "cerebras" | "anthropic" | "openai" | "openrouter" | "openaiCompat" | "fleet" | "composio" | "box" | "vps" | "rooms" | "mcp" | "threads" | "automaticRecovery" | "localVm" | "opencodeGo" | "tts" | "decider" | "imageGen" | "live" | "profile" | "language" | "features" | "onboarding" | "browserEngine" | "browserProfiles" | "edition" | "budgets" | "billing" | "managedPolicy" | "viewer"
 >;
 
 export function configStatusFromFrame(frame: ConfigStatusFrame): ConfigStatus {
@@ -863,6 +886,7 @@ export function configStatusFromFrame(frame: ConfigStatusFrame): ConfigStatus {
     box: frame.box,
     vps: frame.vps,
     rooms: frame.rooms,
+    mcp: frame.mcp,
     threads: frame.threads,
     automaticRecovery: frame.automaticRecovery,
     localVm: frame.localVm,
@@ -1098,10 +1122,8 @@ export interface AppState {
   /** A Coding activity item the bot panel opens once (openBotActivity);
    * cleared by the panel when it shows it. */
   botActivityTarget: { botId: string; itemId: string } | null;
-  /** latest live frame of a bot's computer, per botId */
-  screens: Record<string, { png: string; mime: string; threadId?: string }>;
-  /** bots whose cloud computer is being provisioned */
-  provisioning: Record<string, boolean>;
+  /** bots whose computer is starting for a turn (src/lib/computer-start.ts) */
+  computerStarts: Record<string, ComputerStart>;
   /** Bot removals waiting for the server to verify that no persistent
    * computer would be orphaned. The bot stays visible until that succeeds. */
   deletingBots: Record<string, true>;
@@ -1285,6 +1307,7 @@ export type Action =
   | { type: "switchGroupTask"; groupId: string; threadId: string }
   | { type: "renameGroupTask"; groupId: string; threadId: string; title: string }
   | { type: "pinGroupTask"; groupId: string; threadId: string; pinned: boolean; title: string }
+  | { type: "setConversationTurnLimit"; groupId: string; threadId: string; minutes: number | null; dm: boolean }
   | { type: "deleteGroupTask"; groupId: string; threadId: string }
   | { type: "interruptGroup"; groupId: string; threadId?: string; onError?: () => void }
   | { type: "instances"; instances: InstanceInfo[] }
@@ -1360,6 +1383,8 @@ export type Action =
   | { type: "botCreationPending"; on: boolean }
   | { type: "updateTask"; botId: string; threadId: string; patch: TaskUpdatePatch }
   | { type: "refreshTaskPermissions"; botId: string; threadId: string; acknowledgeLocalAuto?: boolean }
+  /** "Switch them too": every thread of this bot on a model of its own follows the bot's. */
+  | { type: "followBotModel"; botId: string }
   | { type: "createProject"; botId: string; name: string; emoji?: string | null; onCreated?: (project: BotProject) => void; onError?: (message: string) => void }
   | { type: "updateProject"; botId: string; projectId: string; patch: ProjectUpdatePatch; onSaved?: () => void; onError?: (message: string) => void }
   | { type: "deleteProject"; botId: string; projectId: string; onDeleted?: () => void; onError?: (message: string) => void }
@@ -1377,8 +1402,7 @@ export type Action =
   /** `restoreLeafId` puts back the branch an optimistic edit replaced; a
    * plain send falls back to the removed row's parent. */
   | { type: "optimisticMessageRemoved"; threadId: string; sendId: string; restoreLeafId?: string | null }
-  | { type: "screenFrame"; botId: string; threadId?: string; png: string; mime: string }
-  | { type: "provisioning"; botId: string; on: boolean }
+  | { type: "computerStart"; botId: string; start: ComputerStart | null }
   | { type: "computerControl"; botId: string; held: boolean; helpReason: string | null }
   | { type: "modelVariantRuntime"; event: RuntimeEvent }
   | { type: "setModel"; botId: string; selection: ModelSelection; threadId?: string; updateBotDefault?: boolean; resetApprovalToAsk?: boolean }
@@ -1822,6 +1846,9 @@ export function reducer(state: AppState, action: Action): AppState {
             ...g, ...action.group,
             section: typeof action.group.threadId === "string" || Object.hasOwn(action.group, "section") ? action.group.section : g.section,
             tasks: action.group.tasks ? mergeTaskStamps(g.tasks, action.group.tasks) : g.tasks,
+            turnTimeoutMinutes: Object.hasOwn(action.group, "turnTimeoutMinutes")
+              ? (action.group.turnTimeoutMinutes ?? undefined)
+              : g.turnTimeoutMinutes,
             messages: action.group.messages ?? g.messages,
             // A payload that carries a transcript answers the scrollback
             // question with it: a bounded page says so, and a frame sent
@@ -1949,7 +1976,10 @@ export function reducer(state: AppState, action: Action): AppState {
             : action.bot.busy === false && before?.busy
               ? "celebrate"
               : null;
-      const animated = kind ? withMascotMotion(state, action.bot.id, kind) : state;
+      const motioned = kind ? withMascotMotion(state, action.bot.id, kind) : state;
+      // A start that failed never sends a first frame: its line ends with the turn.
+      const animated = action.bot.busy === false && before?.busy && motioned.computerStarts[action.bot.id]
+        ? reducer(motioned, { type: "computerStart", botId: action.bot.id, start: null }) : motioned;
       // One Primary Bot per person, not per section.
       const next = action.bot.chiefOfStaff
         ? { ...animated, bots: withPrimaryBot(animated.bots, { ...before, ...action.bot } as Bot) }
@@ -1993,6 +2023,11 @@ export function reducer(state: AppState, action: Action): AppState {
         // Clear immediately on deletion: old approvals must never be sent
         // to the replacement thread while waiting for its transcript.
         messages: switchedThread ? [] : b.messages,
+        // This branch keeps the transcript it holds, so it keeps that
+        // transcript's scrollback answer too. A frame's hasMore describes
+        // the page it carries (often another thread's); taskSwitched takes
+        // it together with that page.
+        hasMore: switchedThread ? undefined : b.hasMore,
       }));
       return reconcileModelVariantSessions(patched);
     }
@@ -2057,19 +2092,7 @@ export function reducer(state: AppState, action: Action): AppState {
         // turn artifact (settle-time screenshot) — the leaf must stay put,
         // or the follow-up send it raced would fall off the active branch.
         const adoptsLeaf = (action.message.parentId ?? null) === (b.activeLeafId ?? null);
-        let messages = [...b.messages, action.message];
-        // base64 screen frames are big; a long computer-use session would
-        // grow memory without bound. Keep the newest few frames' pixels and
-        // strip the rest (the message row survives as a placeholder).
-        if (action.message.kind === "screen") {
-          const withPng = messages.filter((m) => m.kind === "screen" && m.png);
-          const excess = withPng.length - MAX_KEPT_SCREEN_FRAMES;
-          if (excess > 0) {
-            const dropIds = new Set(withPng.slice(0, excess).map((m) => m.id));
-            messages = messages.map((m) => (dropIds.has(m.id) ? { ...m, png: undefined } : m));
-          }
-        }
-        return { ...b, messages, activeLeafId: adoptsLeaf ? action.message.id : b.activeLeafId };
+        return { ...b, messages: [...b.messages, action.message], activeLeafId: adoptsLeaf ? action.message.id : b.activeLeafId };
       });
       const motion =
         action.message.role === "user" && action.message.kind === "text" && Boolean(action.message.queueId)
@@ -2145,17 +2168,13 @@ export function reducer(state: AppState, action: Action): AppState {
         messages: b.messages.map((m) => (m.id === action.message.id ? action.message : m)),
       }));
     }
-    case "screenFrame":
+    case "computerStart": {
+      const { [action.botId]: _ended, ...others } = state.computerStarts;
       return {
-        ...withMascotMotion(state, action.botId, "success"),
-        screens: { ...state.screens, [action.botId]: { png: action.png, mime: action.mime, threadId: action.threadId } },
-        provisioning: { ...state.provisioning, [action.botId]: false },
+        ...(action.start ? withMascotMotion(state, action.botId, "launch") : state),
+        computerStarts: action.start ? { ...others, [action.botId]: action.start } : others,
       };
-    case "provisioning":
-      return {
-        ...(action.on ? withMascotMotion(state, action.botId, "launch") : state),
-        provisioning: { ...state.provisioning, [action.botId]: action.on },
-      };
+    }
     case "computerControl":
       return {
         ...state,
@@ -2189,8 +2208,13 @@ export function reducer(state: AppState, action: Action): AppState {
       return state;
     }
     case "setModel":
-      if (action.threadId) return reducer(state, { type: "updateTask", botId: action.botId, threadId: action.threadId,
-        patch: { modelSelection: action.selection, resetApprovalToAsk: action.resetApprovalToAsk } });
+      if (action.threadId) {
+        const picked = reducer(state, { type: "updateTask", botId: action.botId, threadId: action.threadId,
+          patch: { modelSelection: action.selection, resetApprovalToAsk: action.resetApprovalToAsk } });
+        // Picking the bot's model, or making the pick the bot's, is following it.
+        return updateBot(picked, action.botId, (bot) => ({ ...bot, tasks: bot.tasks?.map((task) => task.threadId !== action.threadId ? task
+          : { ...task, followsBotModel: Boolean(action.updateBotDefault) || sameModelSelection(action.selection, bot.modelSelection) }) }));
+      }
       return reconcileModelVariantSessions(updateBot(state, action.botId, (b) => ({ ...b, modelSelection: action.selection })));
     case "updateTask": {
       const patch = taskPatchFields(action.patch);
@@ -2599,6 +2623,22 @@ export function reducer(state: AppState, action: Action): AppState {
             : group,
         ),
       };
+    case "setConversationTurnLimit":
+      return {
+        ...state,
+        groups: state.groups.map((group) => {
+          if (group.id !== action.groupId) return group;
+          if (action.dm) return { ...group, turnTimeoutMinutes: action.minutes ?? undefined };
+          return {
+            ...group,
+            tasks: (group.tasks ?? []).map((task) =>
+              task.threadId === action.threadId
+                ? { ...task, turnTimeoutMinutes: action.minutes ?? undefined }
+                : task,
+            ),
+          };
+        }),
+      };
     case "taskSwitched": {
       let switched = updateBot(bumpTranscriptGeneration(state, action.bot.threadId), action.bot.id, (bot) => ({
         ...bot,
@@ -2638,6 +2678,7 @@ export function reducer(state: AppState, action: Action): AppState {
     case "markRoutineRunSeen":
     case "markAllRoutineRunsSeen":
     case "refreshTaskPermissions":
+    case "followBotModel":
       return state;
     case "sendGroup": {
       if (!action.sendId) return state;
@@ -2661,9 +2702,6 @@ export function reducer(state: AppState, action: Action): AppState {
     }
   }
 }
-
-/** Newest screen frames whose pixels stay in memory per thread. */
-const MAX_KEPT_SCREEN_FRAMES = 8;
 
 export const initialState: AppState = {
   modelVariantSessions: {},
@@ -2709,8 +2747,7 @@ export const initialState: AppState = {
   botSettingsSection: "overview",
   botSettingsExpandAccordion: false,
   botActivityTarget: null,
-  screens: {},
-  provisioning: {},
+  computerStarts: {},
   deletingBots: {},
   computerControl: {},
   focusMessage: null,
@@ -3011,10 +3048,21 @@ export async function loadSnapshotBoundary<Key extends string>(
   return chat.status === "fulfilled";
 }
 
+/** The chat shows a reply once it is finished (the turn's busy state is
+ * what a reader sees while it works). Runtime frames feed the reducer only
+ * through the model-variant fold; streamed deltas go to the stream buffer
+ * below, which only Sagax's Live call and floating bots read. */
+export function runtimeFrameAction(event: RuntimeEvent): Action | null {
+  return event.type === "turn.started" || event.type === "session.model-variants" || event.type === "turn.completed"
+    ? { type: "modelVariantRuntime", event }
+    : null;
+}
+
 /** Per-frame stream state lives in its OWN context: token frames update only
- * the components that read this hook (the chat's streaming tail), while every
- * useStore consumer — sidebar, mascots, pickers, the settled transcript —
- * keeps its render tree untouched during a stream. */
+ * the components that read this hook (the Live call's spoken reply and the
+ * floating bots' balloons), while every useStore consumer (sidebar, mascots,
+ * pickers, the settled transcript) keeps its render tree untouched during a
+ * stream. */
 interface StreamState {
   /** in-flight assistant text per threadId */
   streaming: Record<string, string>;
@@ -3120,11 +3168,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const clearStream = (threadId: string) => {
     // Drop the thread's un-flushed deltas too: the settled message that
     // triggered this clear already contains them. Without this, the pending
-    // rAF re-creates a "ghost" stream bubble holding the tail fragment —
-    // it renders below any card/chip that settled next (so a permission
-    // card looks glued to the top), keeps the caret blinking while the bot
-    // is actually waiting, and the next block's deltas append onto the
-    // duplicated tail instead of starting a fresh bubble.
+    // rAF re-creates a "ghost" stream holding the tail fragment, and the
+    // next block's deltas append onto the duplicated tail instead of
+    // starting fresh.
     deltaBuffer.clear(threadId);
     setStream((prev) => {
       if (!(threadId in prev.streaming) && !(threadId in prev.reasoning)) return prev;
@@ -3133,7 +3179,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       return { streaming, reasoning };
     });
   };
-
   const botPatchQueue = useMemo(
     () =>
       createBotPatchQueue({
@@ -3887,6 +3932,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           }).catch(showError);
           break;
         }
+        case "followBotModel":
+          void api<{ bot: BotAnnouncement }>(`/api/bots/${action.botId}/threads/follow-model`, { method: "POST", body: "{}" })
+            .then(({ bot }) => rawDispatch({ type: "botPatched", bot: withTaskWrites(bot) }))
+            .catch(showError);
+          break;
         case "createProject":
           api(`/api/bots/${action.botId}/projects`, { method: "POST", body: JSON.stringify({ name: action.name, emoji: action.emoji }) })
             .then(({ bot, project }) => {
@@ -3978,6 +4028,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           api(`/api/groups/${action.groupId}/tasks/${action.threadId}`, {
             method: "PATCH",
             body: JSON.stringify({ pinned: action.pinned, title: action.title }),
+          }).catch(showError);
+          break;
+        case "setConversationTurnLimit":
+          api(action.dm ? `/api/groups/${action.groupId}` : `/api/groups/${action.groupId}/tasks/${action.threadId}`, {
+            method: "PATCH",
+            body: JSON.stringify({ turnTimeoutMinutes: action.minutes }),
           }).catch(showError);
           break;
         case "deleteGroupTask":
@@ -4315,9 +4371,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           break;
         case "runtime": {
           const event = frame.event;
-          if (event.type === "turn.started" || event.type === "session.model-variants" || event.type === "turn.completed") {
-            rawDispatch({ type: "modelVariantRuntime", event });
-          }
+          const action = runtimeFrameAction(event);
+          if (action) rawDispatch(action);
           if (event.type === "content.delta") {
             deltaBuffer.push(event.threadId, event.streamKind, event.delta);
           } else if (event.type === "turn.completed") {
@@ -4328,10 +4383,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           break;
         }
         case "screen":
-          rawDispatch({ type: "screenFrame", botId: frame.botId, threadId: frame.threadId, png: frame.png, mime: frame.mime ?? "image/png" });
+          // The picture went to the Computer panel (publishLiveFrame). For
+          // the store, a first frame only means the computer is set up.
+          if (stateRef.current.computerStarts[frame.botId]) {
+            rawDispatch({ type: "computerStart", botId: frame.botId, start: null });
+          }
           break;
         case "computer":
-          rawDispatch({ type: "provisioning", botId: frame.botId, on: frame.state === "provisioning" });
+          rawDispatch({ type: "computerStart", botId: frame.botId,
+            start: { state: frame.state, ...(frame.place ? { place: frame.place } : {}) } });
           break;
         case "computer-control":
           rawDispatch({
@@ -4383,12 +4443,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       onError: () => rawDispatch({ type: "connected", value: false }),
       onSnapshotRequired: () => {
         clearTimeout(hydrationFallback);
+        publishMissedFrames();
         // Frames buffered before this non-resumable stream belong to an
         // abandoned generation. Keep the new generation behind hydrate().
         pendingFrames.splice(0);
         return hydrate();
       },
       onFrame: (frame) => {
+        // Open panels read what the store does not keep (live screens, raw
+        // runtime events) from this same stream.
+        publishLiveFrame(frame as ServerFrame);
         if (hydrated) handleFrame(frame as ServerFrame);
         else pendingFrames.push(frame as ServerFrame);
       },
@@ -4465,9 +4529,13 @@ export function BotEditorStore({ value, children }: { value: ReturnType<typeof u
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;
 }
 
+// Building a formatter costs far more than formatting with one, and every
+// row shows a time: build it once. No locale given, as before: times follow
+// the system's clock style, not the app language.
+const TIME_FORMAT = new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" });
+
 export function formatTime(at: number) {
-  return new Date(at).toLocaleTimeString([], {
-    hour: "numeric",
-    minute: "2-digit",
-  });
+  const date = new Date(at);
+  // what toLocaleTimeString says, where a formatter would throw
+  return Number.isNaN(date.getTime()) ? "Invalid Date" : TIME_FORMAT.format(date);
 }

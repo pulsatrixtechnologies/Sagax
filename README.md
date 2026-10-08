@@ -44,6 +44,25 @@ Sagax is made by Pulsatrix Technologies inc. It is based on OpenMausBot (see
 - [License](#license)
 - [Support](#support)
 
+## The open-source alternative to Grok Bot, Muse, dots and Cue
+
+Four closed personal-agent products shipped in seven weeks of 2026, and each one keeps the model, the
+computer and your data on its maker's side of the line. Sagax is the open-source version of that
+shape: a team of agents in a chat app, each with its own model, its own computer and its own connected
+apps, running on your machine under Apache 2.0. If you searched for an *open Muse*, *open dots*, an
+*open-source Grok Bot*, an *open Instinct* or an *open Cue*, this is the repository.
+
+| Looking for | What it is | How Sagax differs | Read more |
+| --- | --- | --- | --- |
+| **Open source Grok Bot** | xAI's roster of bots on one shared cloud computer, Grok only, from a SuperGrok or Cursor plan | Same roster shape; any model per bot; your own machine; approval cards | [Grok Bot vs Sagax](https://www.openmausbot.com/blog/grok-bot-vs-openmausbot) |
+| **Open Muse** | Meta's single personal agent in a Meta cloud VM, US and Canada only | A team instead of one agent; runs anywhere; data in `~/.sagax` | [Meta Muse alternative](https://www.openmausbot.com/blog/open-source-alternative-to-meta-muse) |
+| **Open dots** | OpenAI's always-on agent inside ChatGPT, GPT only, Pro and Business Premium plans | Several agents; your Claude, ChatGPT or Grok login; no plan required | [OpenAI dots alternative](https://www.openmausbot.com/blog/openai-dots-alternative) |
+| **Open Cue** | Manus's invite-only agents with their own phone, email and wallet | No invite; OAuth instead of passwords; open source | [Cue by Manus alternative](https://www.openmausbot.com/blog/open-source-alternative-to-cue-by-manus) |
+| **Open Instinct** | Spear Street's invite-only agent that holds your passwords on a cloud computer | Asks before it acts; signs in over OAuth; your machine | [Instinct AI alternative](https://www.openmausbot.com/blog/instinct-ai-alternative) |
+
+All five side by side: [Muse vs Grok Bot vs Dots vs Cue](https://www.openmausbot.com/blog/muse-vs-grok-bot-vs-dots-vs-cue),
+and a decision guide in five questions: [Which AI agent should I use?](https://www.openmausbot.com/blog/which-ai-agent-should-i-use)
+
 ## Features
 
 ### Bots, teams and groups
@@ -385,11 +404,12 @@ bundling it, needs a license from Pulsatrix Technologies inc. See
 
 Sagax is based on OpenMausBot, Copyright 2026 Milind Soni and OpenMausBot
 contributors, under the [Apache License 2.0](LICENSE-APACHE). The parts that
-come unchanged from Sagax stay under Apache 2.0; the changes and
+come unchanged from the OpenMausBot project stay under Apache 2.0; the changes and
 additions made by Pulsatrix Technologies inc. are under the PolyForm
 Noncommercial License only. Copies published before 2026-10-02 under Apache
-2.0 keep that license. The Sagax notices are kept in [NOTICE](NOTICE).
-The Sagax name and mascot are trademarks of Milind Soni and are not this
+2.0 keep that license. The OpenMausBot project notices are kept in
+[NOTICE](NOTICE). The original OpenMausBot and MausBot names and the mascot
+are trademarks of Supamaus Software Private Limited and are not this
 product's name. The source-available `enterprise/` directory of the original
 project is not part of this tree.
 

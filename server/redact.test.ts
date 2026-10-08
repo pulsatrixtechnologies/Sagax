@@ -11,9 +11,11 @@ const flat = (value: unknown) => JSON.stringify(value);
 describe("redactSecrets", () => {
   it("omits private MCP descriptors even when a credential uses an ordinary header name", () => {
     const descriptor = JSON.stringify({ url: "https://example.test/mcp", headers: { "x-tenant": "private-synthetic-value" } });
-    const logged = redactSecrets({ params: { mcpServers: [{ env: [{ name: "SAGAX_GATE_UPSTREAM", value: descriptor }] }] }, env: { SAGAX_REMOTE_MCP_SERVER: descriptor } });
+    const record = `SAGAX_REMOTE_MCP_CONFIG_${"0".repeat(64)}`;
+    const logged = redactSecrets({ params: { mcpServers: [{ env: [{ name: "SAGAX_GATE_UPSTREAM", value: descriptor }] }] }, env: { SAGAX_REMOTE_MCP_SERVER: descriptor, [record]: JSON.stringify({ SAGAX_REMOTE_MCP_SERVER: descriptor }) } });
     expect(flat(logged)).not.toContain("private-synthetic-value");
     expect(flat(logged)).toContain("SAGAX_GATE_UPSTREAM");
+    expect(flat(logged)).toContain(record);
   });
   it("masks the tokens in an ACP session/new, keeping the shape", () => {
     const sessionNew = {

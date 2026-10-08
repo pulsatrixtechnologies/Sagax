@@ -6,15 +6,15 @@ import type { Bot, InstanceInfo } from "@/state/store";
 const fixture = vi.hoisted(() => {
   vi.stubGlobal("window", {});
   vi.stubGlobal("localStorage", { getItem: () => null, setItem: () => {} });
-  return { instances: [] as InstanceInfo[] };
+  return { instances: [] as InstanceInfo[], bots: [] as Bot[], dispatch: vi.fn() as (...args: unknown[]) => void };
 });
 vi.mock("@/lib/interface-mode", () => ({ useAdvancedMode: () => false, setAdvancedMode: () => {} }));
 vi.mock("./MenuMotion", () => ({ useMenuMotion: () => ({ shown: true, closing: false, className: "", exitProps: {} }) }));
 vi.mock("@/state/store", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/state/store")>()),
   useStore: () => ({
-    state: { instances: fixture.instances, modelVariantSessions: {}, bots: [] },
-    dispatch: vi.fn(),
+    state: { instances: fixture.instances, modelVariantSessions: {}, bots: fixture.bots },
+    dispatch: fixture.dispatch,
     refreshInstances: vi.fn(),
     refreshModels: vi.fn(),
   }),
@@ -85,5 +85,40 @@ describe("model picker in Simple mode", () => {
     expect(markup).toContain("Sign in to Claude");
     expect(markup).not.toContain("data-model-add-api-keys");
     expect(markup).not.toContain("data-model-engines-link");
+  });
+});
+
+describe("a thread's picker and its bot's model", () => {
+  const opus = { instanceId: "claude", model: "claude-opus" };
+  const haiku = { instanceId: "claude", model: "claude-haiku" };
+  /** The bot as the store holds it (its model is Opus), and the thread's view of it. */
+  function scout(threadModel: typeof opus | null): Bot {
+    const profile: Bot = { ...bot(), modelSelection: opus, tasks: [
+      { threadId: "thread-atlas", title: "This one", createdAt: 1, modelSelection: threadModel ?? opus, followsBotModel: threadModel === null },
+    ] };
+    fixture.bots = [profile];
+    return { ...profile, modelSelection: threadModel ?? opus };
+  }
+  const threadPicker = (forBot: Bot) => renderToStaticMarkup(createElement(ModelPicker, { bot: forBot, threadId: "thread-atlas" }));
+
+  it("offers the bot's model to a thread on its own", () => {
+    fixture.instances = [claude(true)];
+    const markup = threadPicker(scout(haiku));
+    expect(markup).toContain("Use Atlas&#x27;s model");
+    expect(markup).toContain("Claude · Opus");
+    expect(markup).toContain('data-follow-bot-model="true" aria-pressed="false"');
+  });
+
+  it("shows a thread that follows its bot as following, and says so in the chip's tooltip", () => {
+    fixture.instances = [claude(true)];
+    const markup = threadPicker(scout(null));
+    expect(markup).toContain('data-follow-bot-model="true" aria-pressed="true"');
+    expect(markup).toContain("Uses Atlas&#x27;s model");
+  });
+
+  it("offers nothing a server too old to say whether a thread follows its bot could not do", () => {
+    fixture.instances = [claude(true)];
+    fixture.bots = [];
+    expect(threadPicker(bot())).not.toContain("data-follow-bot-model");
   });
 });

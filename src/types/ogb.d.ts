@@ -172,7 +172,8 @@ const __SAGAX_DEFAULT_SERVER__: string;
         switch: (id: string) => Promise<void>;
         addFromLink: (link: string, name?: string) => Promise<boolean | void>;
         forget: (id: string) => Promise<void>;
-        onOpenSettings?: (callback: (computerId?: string | null) => void) => () => void;
+        /** `panel` "copy": that server's Copy this computer here panel; otherwise its Computer access. */
+        onOpenSettings?: (callback: (computerId?: string | null, panel?: "copy") => void) => () => void;
       };
       /** Slice 8, "Join a Perspicax server": probe, stage and join answer
        * only the local renderer; staged, take, finished and removeLocal answer only
@@ -262,8 +263,11 @@ const __SAGAX_DEFAULT_SERVER__: string;
       getPathForFile?(file: File): string;
       /** {mic} TCC status: granted|denied|not-determined|unknown. Screen
        * status is deliberately absent — macOS 15+ caches it per-process,
-       * so it lies for the whole session after a grant. */
-      permStatus(): Promise<{ mic: string }>;
+       * so it lies for the whole session after a grant. `pageMic`: whether
+       * this app lets the asking page use the microphone (this computer's
+       * page always; a server's page only on the person's own Cloud).
+       * Absent in older builds of the shell. */
+      permStatus(): Promise<{ mic: string; pageMic?: "allowed" | "refused" }>;
       /** Triggers the macOS microphone prompt; resolves true when granted. */
       permRequestMic(): Promise<boolean>;
       /** Opens System Settings on a privacy pane: mic|screen|speech|accessibility. */
@@ -273,6 +277,8 @@ const __SAGAX_DEFAULT_SERVER__: string;
       /** Copies an engine install command and opens a blank terminal. False
        * when no terminal could be launched; the clipboard still has it. */
       openInstallTerminal?(command: string): Promise<boolean>;
+      /** Writes plain text to the system clipboard; false on failure. Absent on older builds. */
+      copyText?(text: string): Promise<boolean>;
       /** Opens an http(s) link in the user's default browser. */
       openExternal?(url: string): Promise<boolean>;
       /** Recolor the native window chrome for a skin; absent on older builds. */
@@ -351,17 +357,22 @@ const __SAGAX_DEFAULT_SERVER__: string;
        * it there and reveals it. Resolves the chosen path, or null if the
        * user cancelled the dialog. */
       saveFile?(filePath: string): Promise<string | null>;
+      /** Points this computer's file manager at a file a bot linked outside
+       * its workspace, without opening or reading it. Local app only. */
+      revealInFolder?(filePath: string): Promise<"shown" | "missing" | "invalid">;
       /** Save a provider credential through Electron's OS-backed store. */
       setCredential?(
         name: "composioApiKey" | "xaiApiKey" | "boxToken" | "opencodeGoApiKey" | "ttsKey" | "fishAudioKey" | "xaiVoiceKey" | "jevApiKey" | "openaiImageApiKey" | "customImageApiKey" | "openaiLiveKey",
         value: string,
       ): Promise<ConfigStatus>;
-      /** In-app auto-update (packaged app only; dormant in dev). onState
-       * fires immediately with the current state, then on transitions. */
+      /** In-app auto-update (packaged app only; dormant in dev). Updates
+       * download by themselves. On this computer's page and the person's own
+       * Cloud page; any other server's page gets no state. onState fires
+       * with the current state, then on transitions. */
       updater?: {
         check(): Promise<void>;
-        download(): Promise<void>;
-        /** apply the download: quit-and-install, or copy the command and open a terminal */
+        /** apply the download: quit-and-install, or copy the command and open
+         * a terminal. On a server's page, only from the person's click. */
         install(): Promise<void>;
         /** opt in or out of pre-release versions from Sagax's GitHub releases */
         setPrereleases?(enabled: boolean): Promise<UpdaterState>;
@@ -388,7 +399,6 @@ export interface UpdaterState {
   status:
     | "idle"
     | "checking"
-    | "available"
     | "downloading"
     /** downloaded bytes are being staged by the native macOS updater */
     | "preparing"

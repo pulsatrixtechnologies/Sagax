@@ -431,6 +431,7 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   // approvals and cards
   { methods: ["POST"], path: /^\/api\/bots\/[\w-]+\/respond$/ },
   { methods: ["POST"], path: /^\/api\/threads\/[\w-]+\/respond$/ },
+  { methods: ["POST"], path: /^\/api\/threads\/[\w-]+\/undo$/ }, // whoever may answer the card: see the handler
   { methods: ["PATCH"], path: /^\/api\/bots\/[\w-]+\/cards\/[\w-]+$/ },
   { methods: ["POST"], path: /^\/api\/bots\/[\w-]+\/secret-cards\/[\w-]+\/(?:resume|dismiss)$/ },
   { methods: ["GET"], path: /^\/api\/bots\/[\w-]+\/connector-cards\/[\w-]+\/status$/ },
@@ -633,7 +634,7 @@ export function clientSessionIsComputerOwner(
 
 /** Same for a room: name, reading state, and the roster. humanIds and
  * memberIds are not refused here. canEditHumans and canPlaceBot decide them. */
-const CLIENT_GROUP_PATCH_FIELDS = new Set(["name", "bulletin", "unread", "pinned", "pinnedMessageId", "section", "humanIds", "memberIds"]);
+const CLIENT_GROUP_PATCH_FIELDS = new Set(["name", "bulletin", "unread", "pinned", "pinnedMessageId", "section", "humanIds", "memberIds", "turnTimeoutMinutes"]);
 export function clientGroupPatchViolation(body: unknown, extra: readonly string[] = []): string | null {
   if (!body || typeof body !== "object" || Array.isArray(body)) return "body";
   for (const key of Object.keys(body)) if (!CLIENT_GROUP_PATCH_FIELDS.has(key) && !extra.includes(key)) return key;

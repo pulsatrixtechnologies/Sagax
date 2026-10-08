@@ -25,7 +25,9 @@ export function currentCall(): string | null {
 export function startCall(targetId: string) {
   if (current === targetId) return;
   // Switching calls must silence both halves before ownership changes; the
-  // old overlay may not unmount until React's next render.
+  // old overlay may not unmount until React's next render. A server's page
+  // in the desktop app (My Cloud) has no speech bridge (electron/preload.cjs
+  // REMOTE_SAFE): nothing listens there, and its Live call goes on.
   speaker.stop();
   void window.ogb?.speechStop?.();
   current = targetId;

@@ -56,15 +56,12 @@ describe("updatePhase", () => {
   // the acknowledgement is only for a genuinely quiet result — a found
   // update must not be papered over by a stale "up to date"
   it("lets a real status outrank the acknowledgement", () => {
-    expect(updatePhase(state({ status: "available" }), true)).toBe("available");
+    expect(updatePhase(state({ status: "downloading" }), true)).toBe("downloading");
   });
 });
 
 describe("updateLabel", () => {
-  it("names the version it found and the one it is ready to install", () => {
-    expect(updateLabel("available", state({ status: "available", version: "0.2.0" }))).toBe(
-      "Version 0.2.0 available · Download",
-    );
+  it("names the version it is ready to install", () => {
     expect(updateLabel("downloaded", state({ status: "downloaded", version: "0.2.0" }))).toBe(
       "Version 0.2.0 ready · Restart",
     );
@@ -110,16 +107,15 @@ describe("updateBusy", () => {
     expect(updateBusy("downloading")).toBe(true);
     expect(updateBusy("preparing")).toBe(true);
     expect(updateBusy("installing")).toBe(true);
-    expect(updateBusy("available")).toBe(false);
     expect(updateBusy("downloaded")).toBe(false);
     expect(updateBusy("idle")).toBe(false);
   });
 
   // the click starts a round-trip through main; until it lands, the status
-  // still reads "available" and the row would otherwise invite a second click
+  // still reads "downloaded" and the row would otherwise invite a second click
   it("blocks the gap between the click and the bridge catching up", () => {
-    expect(updateBusy("available", true)).toBe(true);
     expect(updateBusy("downloaded", true)).toBe(true);
+    expect(updateBusy("error", true)).toBe(true);
   });
 });
 
@@ -135,7 +131,6 @@ describe("platformLabel", () => {
 
 describe("updateNoteworthy", () => {
   it("puts a real update on the profile row", () => {
-    expect(updateNoteworthy("available")).toBe(true);
     expect(updateNoteworthy("downloading")).toBe(true);
     expect(updateNoteworthy("preparing")).toBe(true);
     expect(updateNoteworthy("downloaded")).toBe(true);

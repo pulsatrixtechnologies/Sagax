@@ -6,7 +6,7 @@ credentials, SQLite data, transcripts, and computers. The iPhone trusts a Mac
 by scanning the QR code shown in desktop **Settings → Remote access**; it does not need
 a Sagax account of its own.
 
-## Use your Cloud on your phone
+## Use My Cloud on your phone
 
 With OMB Cloud, pair the phone with your Cloud instead of your computer, and
 it keeps working while the computer is off.
@@ -15,7 +15,7 @@ it keeps working while the computer is off.
    phone app**: the App Store for iPhone, or the APK for Android. Scan its code
    with the phone's camera.
 2. In the same menu, choose **Connect your phone · to your Cloud (always on)**.
-   (**Settings → OMB Cloud → Use your Cloud on your phone** does the same.) The
+   (**Settings → Sagax Cloud → Use My Cloud on your phone** does the same.) The
    app opens your Cloud in its window, at the Cloud's phone pairing.
 3. Choose **Create pairing code** and scan the QR code with the phone app.
 
@@ -644,12 +644,6 @@ companion/
   src/origin.ts       private per-launch hosted origin listener
   src/control.ts      loopback-only control plane
   src/mdns.ts         Bonjour advertisement
-
-ios/
-  Sources/CompanionCore/   models, HTTP, SSE, state fold
-  Tests/CompanionCoreTests/ captured-contract and core tests
-  App/                     SwiftUI, lifecycle, discovery, Keychain
-  project.yml              generated Xcode project specification
 ```
 
 ## Verification contract

@@ -22,6 +22,8 @@ import { updateMcpServers } from "@/lib/mcp-servers";
 import { api, useStore, type ConfigStatus } from "@/state/store";
 
 import { Switch } from "./SettingsPrimitives";
+import { WhopIcon } from "./WhopIcon";
+import { WHOP_MCP_URL, isWhopServer, whopServerName } from "@/lib/whop-integration";
 
 /** A server this computer starts (a command) or one reached at a URL —
  * the two shapes the server stores. Secrets arrive as names only. */
@@ -69,10 +71,34 @@ interface McpDraft {
   headers: string;
 }
 
-interface ProbeResult {
+export interface ProbeResult {
   ok: boolean;
   tools?: Array<{ name: string; description?: string }>;
+  /** how many tools the server advertised, when `tools` shows only the first */
+  total?: number;
   error?: string;
+}
+
+/** After a sign-in, list the server's tools once. A failure is one plain
+ * line that keeps the test's own reason (a timeout, an HTTP status), which is
+ * already safe to show; the card's Connect button is the retry. */
+export async function signedInToolsCheck(
+  name: string,
+  request: (path: string, init?: RequestInit) => Promise<ProbeResult>,
+  signal: AbortSignal,
+): Promise<ProbeResult> {
+  let tested: ProbeResult;
+  try {
+    tested = await request(`/api/mcp/servers/${name}/test`, { method: "POST", signal });
+  } catch (cause) {
+    if (signal.aborted) throw cause;
+    tested = { ok: false, error: cause instanceof Error ? cause.message : String(cause) };
+  }
+  if (tested.ok) return tested;
+  // A proxy's "504 Gateway Timeout" or a browser's "Failed to fetch" has no
+  // closing period; add one so the reason does not run into the next sentence.
+  const reason = (tested.error ?? "").trim();
+  return { ...tested, error: t("whop.testFailed", { reason: reason && !/[.!?]$/.test(reason) ? `${reason}.` : reason }) };
 }
 
 interface McpMessage {
@@ -155,12 +181,14 @@ export function parseMcpHeaders(
   return { ok: true, headers };
 }
 
-function probeToolsLabel(tools: ProbeResult["tools"]): string {
+function probeToolsLabel(tools: ProbeResult["tools"], total?: number): string {
   if (!tools?.length) return t("mcp.probe.noTools");
-  const names = tools.map((tool) => tool.name).join(", ");
-  return tools.length === 1
+  // A big server (Whop lists 425) sends its first hundred names only.
+  const count = Math.max(total ?? 0, tools.length);
+  const names = tools.map((tool) => tool.name).join(", ") + (count > tools.length ? ", …" : "");
+  return count === 1
     ? t("mcp.probe.toolsOne", { names })
-    : t("mcp.probe.toolsMany", { count: tools.length, names });
+    : t("mcp.probe.toolsMany", { count, names });
 }
 
 function draftFor(server: McpServerListing): McpDraft {
@@ -187,8 +215,15 @@ function draftFor(server: McpServerListing): McpDraft {
 
 /** `embedded`: a section of the Apps pop-up's one scrolling view, rather
  * than a page that owns its own scroll. */
-export function McpServersPanel({ embedded = false }: { embedded?: boolean } = {}) {
-  const { state: store } = useStore();
+export function McpServersPanel({ embedded = false, whopCard = false, hideWhop = false, refreshKey = 0, onWhopConnection }: {
+  embedded?: boolean;
+  /** Use the same OAuth lifecycle as a normal app tile, without MCP controls. */
+  whopCard?: boolean;
+  hideWhop?: boolean;
+  refreshKey?: number;
+  onWhopConnection?: (connected: boolean) => void;
+} = {}) {
+  const { state: store, dispatch } = useStore();
   // While enrolled with custom servers off, only approved servers can be added.
   const policy = store.config?.managedPolicy;
   const restricted = Boolean(policy && !policy.mcp.allowCustom);
@@ -206,6 +241,19 @@ export function McpServersPanel({ embedded = false }: { embedded?: boolean } = {
   const [waiting, setWaiting] = useState<Record<string, boolean>>({});
   const [clientDraft, setClientDraft] = useState<Record<string, ClientDraft>>({});
   const waiters = useRef(new Map<string, { timer: ReturnType<typeof setInterval>; until: number }>());
+  /** The server whose sign-in this panel is waiting on, if any: other row
+   * actions wait for it. */
+  const signingIn = Object.keys(waiting).find((name) => waiting[name]) ?? null;
+  const mounted = useRef(true);
+  const whopServer = servers?.find((server) => isRemoteMcpListing(server) && isWhopServer(server));
+  const whopConnected = Boolean(whopServer?.enabled && isRemoteMcpListing(whopServer) && whopServer.auth === "connected");
+  useEffect(() => { if (servers !== null) onWhopConnection?.(whopConnected); }, [servers, whopConnected, onWhopConnection]);
+  /** Whop is switched on only once its sign-in landed and its tools listed:
+   * the names whose sign-in should finish that way, and the running check. */
+  const enableAfterSignIn = useRef(new Set<string>());
+  const whopCheck = useRef<AbortController | null>(null);
+  const [whopLoading, setWhopLoading] = useState(false);
+  const afterSignIn = useRef<(name: string) => Promise<void>>(async () => {});
 
   // Paste-to-add: the same block Claude Code, Cursor and Claude Desktop
   // write. The server applies the form's rules and adds them switched off.
@@ -253,14 +301,16 @@ export function McpServersPanel({ embedded = false }: { embedded?: boolean } = {
   }, []);
 
   useEffect(() => {
+    mounted.current = true;
     void load();
     const pending = waiters.current;
     return () => {
+      mounted.current = false;
       loadGeneration.current += 1;
       for (const { timer } of pending.values()) clearInterval(timer);
       pending.clear();
     };
-  }, [load]);
+  }, [load, refreshKey]);
 
   const stopWaiting = useCallback((name: string) => {
     const waiter = waiters.current.get(name);
@@ -294,6 +344,7 @@ export function McpServersPanel({ embedded = false }: { embedded?: boolean } = {
       void (async () => {
         if (Date.now() > until) {
           stopWaiting(name);
+          enableAfterSignIn.current.delete(name);
           setOauthError((current) => ({ ...current, [name]: { key: "mcp.oauth.timedOut" } }));
           return;
         }
@@ -301,10 +352,16 @@ export function McpServersPanel({ embedded = false }: { embedded?: boolean } = {
           const status = await api(`/api/mcp/servers/${encodeURIComponent(name)}/oauth/status`);
           if (status.auth === "connected") {
             stopWaiting(name);
+            if (enableAfterSignIn.current.has(name)) {
+              await reloadQuietly();
+              await afterSignIn.current(name);
+              return;
+            }
             setNotice({ key: "mcp.oauth.done", params: { name } });
             await reloadQuietly();
           } else if (!status.pending) {
             stopWaiting(name);
+            enableAfterSignIn.current.delete(name);
             if (status.authError) setOauthError((current) => ({ ...current, [name]: String(status.authError) }));
             await reloadQuietly();
           }
@@ -347,6 +404,7 @@ export function McpServersPanel({ embedded = false }: { embedded?: boolean } = {
       });
       if (typeof result.authorizationUrl !== "string") throw new Error(t("mcp.oauth.error"));
       if (!(await openSignInPage(result.authorizationUrl))) {
+        enableAfterSignIn.current.delete(name);
         setOauthError((current) => ({ ...current, [name]: { key: "mcp.oauth.popupBlocked" } }));
         return;
       }
@@ -363,6 +421,7 @@ export function McpServersPanel({ embedded = false }: { embedded?: boolean } = {
         setClientDraft((current) => ({ ...current, [name]: { redirectUri, clientId: current[name]?.clientId ?? "", clientSecret: current[name]?.clientSecret ?? "" } }));
         return;
       }
+      enableAfterSignIn.current.delete(name);
       setOauthError((current) => ({ ...current, [name]: cause instanceof Error ? cause.message : String(cause) }));
     } finally {
       setBusy(null);
@@ -374,7 +433,18 @@ export function McpServersPanel({ embedded = false }: { embedded?: boolean } = {
     setBusy(`oauth:${name}`);
     stopWaiting(name);
     loadGeneration.current += 1;
+    setProbe((current) => {
+      const next = { ...current };
+      delete next[name];
+      return next;
+    });
     try {
+      // Whop goes off with its sign-in: it is on only while connected.
+      if (isRemoteMcpListing(server) && isWhopServer(server) && server.enabled) {
+        const paused = await api(`/api/mcp/servers/${name}`, { method: "PATCH", body: JSON.stringify({ enabled: false }) });
+        setServers(paused.servers ?? []);
+        updateMcpServers(paused.servers ?? []);
+      }
       const result = await api(`/api/mcp/servers/${encodeURIComponent(name)}/oauth/disconnect`, { method: "POST", body: "{}" });
       setServers(result.servers ?? []);
       updateMcpServers(result.servers ?? []);
@@ -492,6 +562,74 @@ export function McpServersPanel({ embedded = false }: { embedded?: boolean } = {
     }
   };
 
+  // Whop's card (an app tile): add the official server switched off, sign in
+  // with this server's own MCP sign-in (server/mcp-oauth.ts), list its tools
+  // once, and only then switch it on.
+  afterSignIn.current = async (name: string) => {
+    if (!enableAfterSignIn.current.delete(name)) return;
+    const controller = new AbortController();
+    whopCheck.current = controller;
+    setWhopLoading(true);
+    try {
+      const tested = await signedInToolsCheck(name, api, controller.signal);
+      if (controller.signal.aborted || !mounted.current) return;
+      setProbe((current) => ({ ...current, [name]: tested }));
+      if (!tested.ok) return;
+      const enabled = await api(`/api/mcp/servers/${name}`, { method: "PATCH", body: JSON.stringify({ enabled: true }) });
+      if (!mounted.current) return;
+      setServers(enabled.servers ?? []);
+      updateMcpServers(enabled.servers ?? []);
+      setNotice({ key: "whop.connected" });
+    } catch (cause) {
+      if (mounted.current && !controller.signal.aborted) setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      if (whopCheck.current === controller) whopCheck.current = null;
+      if (mounted.current) setWhopLoading(false);
+    }
+  };
+
+  const connectWhop = async () => {
+    if (!servers || busy !== null || signingIn !== null) return;
+    setError(null);
+    setNotice(null);
+    const existing = servers.find((server) => isRemoteMcpListing(server) && isWhopServer(server));
+    if (existing) {
+      setProbe((current) => {
+        const next = { ...current };
+        delete next[existing.name];
+        return next;
+      });
+      enableAfterSignIn.current.add(existing.name);
+      if (isRemoteMcpListing(existing) && existing.auth === "connected") { await afterSignIn.current(existing.name); return; }
+      await signIn(existing);
+      return;
+    }
+    setBusy("whop");
+    loadGeneration.current += 1;
+    let added: McpServerListing | undefined;
+    try {
+      const name = whopServerName(servers);
+      const result = await api("/api/mcp/servers", { method: "POST", body: JSON.stringify({ name, type: "http", url: WHOP_MCP_URL, enabled: false }) });
+      if (!mounted.current) return;
+      setServers(result.servers ?? []);
+      updateMcpServers(result.servers ?? []);
+      added = result.servers?.find((server: McpServerListing) => server.name === name && isRemoteMcpListing(server) && isWhopServer(server));
+      if (!added) throw new Error(t("whop.setupFailed"));
+    } catch (cause) {
+      if (mounted.current) setError(cause instanceof Error ? cause.message : String(cause));
+    } finally { if (mounted.current) setBusy(null); }
+    if (added && mounted.current) {
+      enableAfterSignIn.current.add(added.name);
+      await signIn(added);
+    }
+  };
+
+  const cancelWhop = (name: string) => {
+    enableAfterSignIn.current.delete(name);
+    whopCheck.current?.abort();
+    stopWaiting(name);
+  };
+
   const remove = async (server: McpServerListing) => {
     if (!window.confirm(t("mcp.removeConfirm", { name: server.name }))) return;
     setBusy(`delete:${server.name}`);
@@ -513,6 +651,57 @@ export function McpServersPanel({ embedded = false }: { embedded?: boolean } = {
       setBusy(null);
     }
   };
+
+  if (whopCard) {
+    const result = whopServer && probe[whopServer.name];
+    const whopError = whopServer && oauthError[whopServer.name];
+    const failed = error || whopError || (result && !result.ok ? result.error : null);
+    const whopWaiting = Boolean(whopServer && waiting[whopServer.name]);
+    const pending = busy !== null || signingIn !== null || whopLoading;
+    return <div data-app-tile="whop" className="glass-card flex min-h-[132px] min-w-0 flex-col rounded-2xl p-4">
+      <div className="flex items-start gap-3">
+        <WhopIcon />
+        <div className="min-w-0 flex-1"><div className="text-[14px] font-medium text-ink">Whop</div><p className="mt-0.5 line-clamp-1 text-[12px] text-ink-secondary" title={t("whop.description")}>{t("whop.description")}</p></div>
+      </div>
+      <div className="mt-auto flex items-center justify-between gap-2 pt-3">
+        <span className="text-[12px] font-medium text-success">{whopConnected ? t("apps.connected") : ""}</span>
+        {(whopWaiting || whopLoading) && whopServer ? <button type="button" onClick={() => cancelWhop(whopServer.name)} className="rounded-full bg-control px-3 py-1.5 text-[12px] text-ink">{t("mcp.auth.cancel")}</button> :
+          <button type="button" aria-label={t(whopConnected ? "whop.disconnect" : "whop.connect")}
+            disabled={pending || (servers !== null && !whopConnected && (Boolean(whopServer?.managedBy) || (restricted && !policy?.mcp.allowlist.length)))}
+            onClick={() => void (servers === null ? load() : whopConnected && whopServer ? signOut(whopServer) : connectWhop())}
+            className="flex min-w-[80px] items-center justify-center gap-1.5 rounded-full bg-control px-3 py-1.5 text-[12px] text-ink hover:bg-raised-hover disabled:opacity-40">
+            {pending ? <Loader2 size={13} className="animate-spin" /> : servers === null ? t("connectors.action.retry") : t(whopConnected ? "connectors.disconnect" : "connectors.action.connect")}
+          </button>}
+      </div>
+      {(whopWaiting || whopLoading) && (
+        <div role="status" className="mt-3 flex items-center gap-2 rounded-lg bg-raised px-3 py-2 text-[12px] text-ink-secondary">
+          <Loader2 size={13} className="shrink-0 animate-spin" /> {t(whopLoading ? "whop.loadingTools" : "mcp.oauth.waiting")}
+        </div>
+      )}
+      {whopServer && clientDraft[whopServer.name] && (
+        <McpClientForm
+          draft={clientDraft[whopServer.name]!}
+          disabled={busy !== null}
+          onChange={(next) => setClientDraft((current) => ({ ...current, [whopServer.name]: next }))}
+          onCancel={() => setClientDraft((current) => {
+            const next = { ...current };
+            delete next[whopServer.name];
+            return next;
+          })}
+          onSubmit={() => void signIn(whopServer)}
+        />
+      )}
+      {failed && !whopWaiting && !whopLoading && <p role="alert" className="mt-3 text-[12px] text-danger">{typeof failed === "string" ? failed : t(failed.key, failed.params)}</p>}
+      <details className="mt-3 text-[12px] text-ink-secondary">
+        <summary className="cursor-pointer">{t("whop.access")}</summary>
+        <p className="mt-2 leading-relaxed">{t("whop.notice")}</p>
+        <p className="mt-2 leading-relaxed">{t("whop.accessHint")}</p>
+        <div className="mt-2 flex flex-wrap gap-2">{(store.bots ?? []).filter((bot) => !bot.hidden).map((bot) => <button key={bot.id} type="button" onClick={() => { dispatch({ type: "togglePlugins", open: false }); dispatch({ type: "toggleSettings", open: true, section: "access", botId: bot.id }); }} className="rounded-lg bg-control px-2.5 py-1.5 text-ink hover:bg-raised-hover">{t("whop.botSettings", { name: bot.name })}</button>)}</div>
+      </details>
+    </div>;
+  }
+
+  const visibleServers = servers?.filter((server) => !hideWhop || !isRemoteMcpListing(server) || !isWhopServer(server));
 
   return (
     <section
@@ -743,25 +932,26 @@ export function McpServersPanel({ embedded = false }: { embedded?: boolean } = {
 
         {servers === null ? (
           <div className="flex items-center justify-center gap-2 py-24 text-[13px] text-ink-secondary"><Loader2 size={14} className="animate-spin" /> {t("mcp.loading")}</div>
-        ) : servers.length === 0 && !editing ? (
-          <div className="mt-5 flex min-h-64 flex-col items-center justify-center rounded-2xl border border-dashed border-hairline/60 text-center">
+        ) : visibleServers?.length === 0 && !editing ? (
+          <div className="mt-5 flex min-h-32 flex-col items-center justify-center rounded-2xl border border-dashed border-hairline/60 text-center">
             <div className="flex size-11 items-center justify-center rounded-xl bg-raised text-ink-secondary"><ServerCog size={21} /></div>
             <div className="mt-3 text-[14px] font-medium text-ink">{t("mcp.empty.title")}</div>
             <div className="mt-1 max-w-sm text-[12.5px] text-ink-secondary">{t("mcp.empty.desc")}</div>
           </div>
         ) : (
           <div className="mt-5 space-y-3">
-            {servers.map((server) => {
+            {visibleServers?.map((server) => {
+              const whop = isRemoteMcpListing(server) && isWhopServer(server);
               const result = probe[server.name];
               return (
-                <div key={server.name} className="rounded-2xl border border-hairline/50 bg-card px-4 py-4 sm:px-5">
+                <div key={server.name} data-whop-server={whop ? server.name : undefined} className="rounded-2xl border border-hairline/50 bg-card px-4 py-4 sm:px-5">
                   <div data-mcp-row className="flex flex-wrap items-center gap-3">
                     <div className={cn("flex size-10 shrink-0 items-center justify-center rounded-xl", server.enabled ? "bg-success/10 text-success" : "bg-raised text-ink-secondary")}>
-                      {isRemoteMcpListing(server) ? <Globe size={19} /> : <ServerCog size={19} />}
+                      {whop ? <WhopIcon /> : isRemoteMcpListing(server) ? <Globe size={19} /> : <ServerCog size={19} />}
                     </div>
                     <div className="min-w-0 flex-[1_1_220px]">
                       <div className="flex flex-wrap items-center gap-2">
-                        <span className="min-w-0 truncate text-[14px] font-medium text-ink">{server.name}</span>
+                        <span className="min-w-0 truncate text-[14px] font-medium text-ink">{whop ? "Whop" : server.name}</span>
                         <span className={cn("rounded-full px-2 py-0.5 text-[10.5px]", server.enabled ? "bg-success/10 text-success" : "bg-raised text-ink-secondary")}>{t(server.enabled ? "mcp.badge.on" : "mcp.badge.off")}</span>
                         {server.managedBy && <span className="rounded-full bg-raised px-2 py-0.5 text-[10.5px] text-ink-secondary">{t("policy.managedBy", { organization: server.managedBy })}</span>}
                       </div>
@@ -797,16 +987,16 @@ export function McpServersPanel({ embedded = false }: { embedded?: boolean } = {
                           {t("mcp.oauth.disconnect")}
                         </button>
                       )}
-                      <button type="button" disabled={busy !== null} onClick={() => void test(server)} className="flex items-center gap-1.5 rounded-lg px-2.5 py-2 text-[12px] text-ink-secondary hover:bg-raised hover:text-ink disabled:opacity-40">
+                      <button type="button" disabled={busy !== null || signingIn !== null} onClick={() => void test(server)} className="flex items-center gap-1.5 rounded-lg px-2.5 py-2 text-[12px] text-ink-secondary hover:bg-raised hover:text-ink disabled:opacity-40">
                         {busy === `test:${server.name}` ? <Loader2 size={14} className="animate-spin" /> : <FlaskConical size={14} />} {t("mcp.test")}
                       </button>
-                      <button type="button" disabled={busy !== null} onClick={() => { setEditing(server.name); setDraft(draftFor(server)); setError(null); setNotice(null); }} className="rounded-lg p-2 text-ink-secondary hover:bg-raised hover:text-ink disabled:opacity-40" aria-label={t("mcp.editAria", { name: server.name })}><Pencil size={14} /></button>
-                      <button type="button" disabled={busy !== null} onClick={() => void remove(server)} className="rounded-lg p-2 text-ink-secondary hover:bg-danger/10 hover:text-danger disabled:opacity-40" aria-label={t("mcp.removeAria", { name: server.name })}><Trash2 size={14} /></button>
+                      <button type="button" disabled={busy !== null || signingIn !== null} onClick={() => { setEditing(server.name); setDraft(draftFor(server)); setError(null); setNotice(null); }} className="rounded-lg p-2 text-ink-secondary hover:bg-raised hover:text-ink disabled:opacity-40" aria-label={t("mcp.editAria", { name: server.name })}><Pencil size={14} /></button>
+                      <button type="button" disabled={busy !== null || signingIn !== null} onClick={() => void remove(server)} className="rounded-lg p-2 text-ink-secondary hover:bg-danger/10 hover:text-danger disabled:opacity-40" aria-label={t("mcp.removeAria", { name: server.name })}><Trash2 size={14} /></button>
                       <span className="ml-1 flex items-center">
                         {busy === `toggle:${server.name}` && <Loader2 size={13} className="mr-1.5 animate-spin text-ink-secondary" />}
                         <Switch
                           checked={server.enabled}
-                          disabled={busy !== null}
+                          disabled={busy !== null || signingIn !== null}
                           onClick={() => void toggle(server)}
                           aria-label={t("mcp.toggleAria", {
                             name: server.name,
@@ -817,6 +1007,14 @@ export function McpServersPanel({ embedded = false }: { embedded?: boolean } = {
                       </span>
                     </div>
                   </div>
+                  {whop && <div className="mt-3 text-[12px] leading-relaxed text-ink-secondary">
+                    <p>{t("whop.notice")}</p>
+                    <details className="mt-2">
+                      <summary className="cursor-pointer font-medium text-ink">{t("whop.access")}</summary>
+                      <p className="mt-2">{t("whop.accessHint")}</p>
+                      <div className="mt-2 flex flex-wrap gap-2">{(store.bots ?? []).filter((bot) => !bot.hidden).map((bot) => <button key={bot.id} type="button" onClick={() => { dispatch({ type: "togglePlugins", open: false }); dispatch({ type: "toggleSettings", open: true, section: "access", botId: bot.id }); }} className="rounded-lg bg-control px-2.5 py-1.5 text-ink hover:bg-raised-hover">{t("whop.botSettings", { name: bot.name })}</button>)}</div>
+                    </details>
+                  </div>}
                   {waiting[server.name] && (
                     <div role="status" className="mt-3 flex items-center gap-2 rounded-lg bg-raised/60 px-3 py-2 text-[12px] text-ink-secondary">
                       <Loader2 size={13} className="shrink-0 animate-spin" /> {t("mcp.oauth.waiting")}
@@ -846,7 +1044,7 @@ export function McpServersPanel({ embedded = false }: { embedded?: boolean } = {
                   {result && (
                     <div role="status" className={cn("mt-3 rounded-lg px-3 py-2 text-[12px]", result.ok ? "bg-success/10 text-success" : "bg-danger/10 text-danger")}>
                       {result.ok ? (
-                        <span className="flex items-start gap-2"><CheckCircle2 size={14} className="mt-px shrink-0" /> {t("mcp.probe.connected")} {probeToolsLabel(result.tools)}</span>
+                        <span className="flex items-start gap-2"><CheckCircle2 size={14} className="mt-px shrink-0" /> {t("mcp.probe.connected")} {probeToolsLabel(result.tools, result.total)}</span>
                       ) : result.error}
                     </div>
                   )}

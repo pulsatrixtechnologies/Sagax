@@ -39,7 +39,9 @@ export function ApprovalHeading({
   risk,
   aside,
 }: {
-  bot?: Bot;
+  /** A whole bot shows its avatar; a name alone (a 1:1 chat's row, which
+   * re-renders only with its own message) shows none. */
+  bot?: Bot | Pick<Bot, "name">;
   title: ReactNode;
   summary?: string;
   risk?: ApprovalRisk;
@@ -48,7 +50,7 @@ export function ApprovalHeading({
 }) {
   return (
     <div className="flex items-start gap-3">
-      {bot?.color && <BotAvatar bot={bot} size={30} animated={false} />}
+      {bot && "color" in bot && bot.color && <BotAvatar bot={bot} size={30} animated={false} />}
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
           <span className="text-[15px] font-semibold leading-snug text-ink">{title}</span>

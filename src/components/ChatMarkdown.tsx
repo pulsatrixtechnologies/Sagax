@@ -2,11 +2,8 @@
 // strikethrough, autolinks) with a chromed code block — language label, copy
 // button, lazy Shiki highlighting. Model output never reaches the DOM as raw
 // HTML: no rehype-raw, so HTML in the text renders as text; Shiki's output is
-// generator-escaped. While a message is still streaming, a code block renders
-// as plain <pre> until its content has held still for STREAM_SETTLE_MS (the
-// fence is very likely complete), then highlights and caches — so the settled
-// bubble, a fresh component instance, mounts straight from cache instead of
-// popping from plain to highlighted.
+// generator-escaped. A message renders once it is finished, so a code block
+// highlights straight away and caches the result for the next mount.
 //
 // Bidi: message text is written in the user's or the model's language, which
 // is independent of the UI language, so every block resolves its own
@@ -16,6 +13,7 @@
 // themselves, so a snippet never reorders and never scrambles the RTL
 // sentence holding it.
 import { memo, use, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
+import type { HighlighterCore } from "shiki/core";
 import Markdown, { defaultUrlTransform, type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
@@ -36,7 +34,9 @@ import {
   RotateCcw,
   TriangleAlert,
   WrapText,
+  X,
 } from "lucide-react";
+import { useCopyFeedback } from "@/lib/copy-text";
 import { remarkMentions, type MentionPeer } from "@/lib/mentions";
 
 import {
@@ -47,9 +47,10 @@ import {
   getSnippetFileName,
 } from "../lib/code-block";
 import { repairMarkdownTables } from "../lib/markdown-tables";
+import { TRANSCRIPT_WINDOW_SIZE } from "../lib/transcript-window";
 import { windowsPathDestinations } from "../../shared/markdown-windows-paths";
 import { looksLikeThreadRefUrl, parseThreadRefUrl, resolveThreadRefAddress, remarkThreadRefs } from "../lib/thread-refs";
-import { MarkdownImagePreview, useLocalFileSave, type MessageAttachmentContext } from "./AttachmentPreview";
+import { MarkdownImagePreview, MessageFolderFiles, OutsideWorkspaceFile, useLocalFileSave, type MessageAttachmentContext } from "./AttachmentPreview";
 import { ThreadLink, ThreadRefsContext, threadLinkFromProps, type ThreadRefsValue } from "./ThreadRefs";
 import { t } from "../lib/i18n";
 import {
@@ -65,26 +66,36 @@ import { EmailCard } from "./EmailCard";
 import { WidgetFrame } from "./WidgetFrame";
 import { ChartBlock } from "./ChartBlock";
 import { RichTable, tableModelFromDelimited, tableModelFromMarkdown } from "./RichTable";
+import { TableFileButton } from "./TableFilePreview";
 
-// tiny highlight cache so revisiting a thread doesn't re-tokenize settled
-// blocks; keys are content-hashed and capped. Streamed partials may land here
-// under their own hash — harmless (never collides with the final content's
-// key, and the cap evicts it), and the final content's entry is exactly what
-// makes the settled bubble render highlighted on mount.
+// highlighted code, so revisiting a thread doesn't re-tokenize settled
+// blocks; keys are content hashes. The two-theme HTML is about 20 to 28 times
+// the size of the code, so the cache is bounded by size as well as by count
+// (200 large blocks alone held 23 MB). Past either bound the oldest go first.
 const highlightCache = new Map<string, string>();
-const CACHE_MAX = 200;
+export const HIGHLIGHT_CACHE_MAX = 200;
+// about 4 MB of HTML, counted in characters; 200 typical snippets take ~1 MB
+export const HIGHLIGHT_CACHE_MAX_CHARS = 4 * 1024 * 1024;
+function rememberHighlight(key: string, html: string) {
+  // one block bigger than the whole bound would only push everything else out
+  if (html.length > HIGHLIGHT_CACHE_MAX_CHARS) return;
+  highlightCache.set(key, html);
+  let chars = 0;
+  for (const cached of highlightCache.values()) chars += cached.length;
+  for (const [oldest, oldestHtml] of highlightCache) {
+    if (highlightCache.size <= HIGHLIGHT_CACHE_MAX && chars <= HIGHLIGHT_CACHE_MAX_CHARS) break;
+    highlightCache.delete(oldest);
+    chars -= oldestHtml.length;
+  }
+}
 // rendered mermaid SVGs, keyed by skin scheme + content hash so revisiting a
 // thread re-mounts straight from cache — same idea as highlightCache, smaller
-// cap because SVGs are bigger than token streams
+// cap because SVGs are bigger than highlighted code
 const mermaidCache = new Map<string, string>();
 const MERMAID_CACHE_MAX = 50;
 // every mermaid.render() call needs an id no earlier call used, including the
 // calls that failed and may have left an orphan element behind
 let mermaidRenderId = 0;
-// how long a streaming block's content must be unchanged before we spend a
-// tokenize on it — long enough to skip per-token churn mid-fence, short
-// enough that the highlight lands before the stream settles
-const STREAM_SETTLE_MS = 250;
 // code blocks longer than this fold behind a "Show all" button
 export const CODE_COLLAPSE_LINES = 30;
 const hash = (s: string) => {
@@ -95,6 +106,137 @@ const hash = (s: string) => {
   }
   return (h >>> 0).toString(36);
 };
+
+// Shiki's package entry registers every grammar and theme (hundreds of
+// chunks). Chat only ever asks for the two GitHub themes and the languages
+// the code-block badge already names, so each of those is its own import and
+// the rest never enter the bundle. A fence loads its grammar the first time
+// it appears; a later fence for the same language waits on that load.
+const LIGHT_THEME = "github-light-default";
+const DARK_THEME = "github-dark-default";
+const grammarLoaders = {
+  javascript: () => import("shiki/langs/javascript.mjs"),
+  jsx: () => import("shiki/langs/jsx.mjs"),
+  typescript: () => import("shiki/langs/typescript.mjs"),
+  tsx: () => import("shiki/langs/tsx.mjs"),
+  json: () => import("shiki/langs/json.mjs"),
+  jsonc: () => import("shiki/langs/jsonc.mjs"),
+  json5: () => import("shiki/langs/json5.mjs"),
+  bash: () => import("shiki/langs/bash.mjs"),
+  powershell: () => import("shiki/langs/powershell.mjs"),
+  fish: () => import("shiki/langs/fish.mjs"),
+  python: () => import("shiki/langs/python.mjs"),
+  html: () => import("shiki/langs/html.mjs"),
+  css: () => import("shiki/langs/css.mjs"),
+  scss: () => import("shiki/langs/scss.mjs"),
+  sass: () => import("shiki/langs/sass.mjs"),
+  less: () => import("shiki/langs/less.mjs"),
+  markdown: () => import("shiki/langs/markdown.mjs"),
+  mdx: () => import("shiki/langs/mdx.mjs"),
+  yaml: () => import("shiki/langs/yaml.mjs"),
+  toml: () => import("shiki/langs/toml.mjs"),
+  xml: () => import("shiki/langs/xml.mjs"),
+  c: () => import("shiki/langs/c.mjs"),
+  cpp: () => import("shiki/langs/cpp.mjs"),
+  csharp: () => import("shiki/langs/csharp.mjs"),
+  rust: () => import("shiki/langs/rust.mjs"),
+  go: () => import("shiki/langs/go.mjs"),
+  ruby: () => import("shiki/langs/ruby.mjs"),
+  php: () => import("shiki/langs/php.mjs"),
+  java: () => import("shiki/langs/java.mjs"),
+  kotlin: () => import("shiki/langs/kotlin.mjs"),
+  swift: () => import("shiki/langs/swift.mjs"),
+  dart: () => import("shiki/langs/dart.mjs"),
+  r: () => import("shiki/langs/r.mjs"),
+  lua: () => import("shiki/langs/lua.mjs"),
+  sql: () => import("shiki/langs/sql.mjs"),
+  graphql: () => import("shiki/langs/graphql.mjs"),
+  proto: () => import("shiki/langs/proto.mjs"),
+  dockerfile: () => import("shiki/langs/dockerfile.mjs"),
+  makefile: () => import("shiki/langs/makefile.mjs"),
+  diff: () => import("shiki/langs/diff.mjs"),
+  wasm: () => import("shiki/langs/wasm.mjs"),
+};
+type GrammarFile = keyof typeof grammarLoaders;
+/** Fence ids that are not themselves the grammar file name. */
+const grammarAlias: Record<string, GrammarFile> = {
+  js: "javascript", node: "javascript",
+  ts: "typescript",
+  sh: "bash", zsh: "bash", shell: "bash",
+  ps1: "powershell",
+  py: "python",
+  htm: "html",
+  yml: "yaml",
+  md: "markdown",
+  svg: "xml",
+  "c++": "cpp", cc: "cpp", cxx: "cpp",
+  cs: "csharp", "c#": "csharp",
+  rs: "rust",
+  golang: "go",
+  rb: "ruby",
+  kt: "kotlin",
+  gql: "graphql",
+  protobuf: "proto",
+  docker: "dockerfile",
+  make: "makefile",
+};
+const PLAIN_LANGS = new Set(["", "text", "txt", "plaintext", "plain"]);
+let highlighterPromise: Promise<HighlighterCore> | undefined;
+const grammarLoading = new Map<string, Promise<void>>();
+
+function grammarFile(lang: string): GrammarFile | undefined {
+  const alias = grammarAlias[lang];
+  if (alias) return alias;
+  return Object.prototype.hasOwnProperty.call(grammarLoaders, lang) ? lang as GrammarFile : undefined;
+}
+
+function getHighlighter(): Promise<HighlighterCore> {
+  if (highlighterPromise) return highlighterPromise;
+  const created = (async () => {
+    const { createHighlighterCore } = await import("shiki/core");
+    const { createJavaScriptRegexEngine } = await import("shiki/engine/javascript");
+    return createHighlighterCore({
+      themes: [
+        import("shiki/themes/github-light-default.mjs").then((mod) => mod.default),
+        import("shiki/themes/github-dark-default.mjs").then((mod) => mod.default),
+      ],
+      langs: [],
+      engine: createJavaScriptRegexEngine(),
+    });
+  })().catch((error: unknown) => {
+    highlighterPromise = undefined;
+    throw error;
+  });
+  highlighterPromise = created;
+  return created;
+}
+
+function loadGrammar(highlighter: HighlighterCore, file: GrammarFile): Promise<void> {
+  const pending = grammarLoading.get(file);
+  if (pending) return pending;
+  const next = grammarLoaders[file]().then((mod) => highlighter.loadLanguage(mod.default)).catch((error: unknown) => {
+    grammarLoading.delete(file);
+    throw error;
+  });
+  grammarLoading.set(file, next);
+  return next;
+}
+
+/** Highlight with the two chat themes. A language outside the curated set
+ * rejects, and the code block keeps its plain text. */
+async function highlightFence(code: string, lang: string): Promise<string> {
+  const highlighter = await getHighlighter();
+  const requested = lang.trim().toLowerCase();
+  const plain = PLAIN_LANGS.has(requested);
+  const file = plain ? undefined : grammarFile(requested);
+  if (!plain && !file) throw new Error(`No bundled grammar for ${requested}`);
+  if (file) await loadGrammar(highlighter, file);
+  return highlighter.codeToHtml(code, {
+    lang: file ?? "text",
+    themes: { light: LIGHT_THEME, dark: DARK_THEME },
+    defaultColor: "light-dark()",
+  });
+}
 const highlightKey = (lang: string, code: string) => `${lang}:${hash(code)}`;
 const mermaidKey = (scheme: "dark" | "light", code: string) => `${scheme}:${hash(code)}`;
 
@@ -246,8 +388,6 @@ export interface CodeBlockProps {
   code: string;
   /** Language identifier from markdown fence, e.g. "ts", "python". */
   lang: string;
-  /** Whether the parent message is still actively receiving tokens. */
-  streaming: boolean;
 }
 
 /**
@@ -255,91 +395,38 @@ export interface CodeBlockProps {
  * Features syntax highlighting with Shiki, language normalization badge,
  * line count indicator, word wrap toggle, and accessible clipboard copy with status feedback.
  *
- * @param props - Component props containing code string, language identifier, and streaming flag.
+ * @param props - Component props containing code string and language identifier.
  * @returns Rendered code block element.
  */
-export function CodeBlock({ code, lang, streaming }: CodeBlockProps) {
+export function CodeBlock({ code, lang }: CodeBlockProps) {
   // a block highlighted before (revisiting a thread) paints highlighted in
   // its first frame instead of plain first and highlighted after the effect
   const [html, setHtml] = useState<string | null>(() => highlightCache.get(highlightKey(lang, code)) ?? null);
   // React compares dangerouslySetInnerHTML by identity: a fresh object each
   // render would rebuild the highlighted DOM on every re-render
   const markup = useMemo(() => (html ? { __html: html } : null), [html]);
-  const [copied, setCopied] = useState(false);
+  const { state: copied, copy } = useCopyFeedback(code);
   const [wrapLines, setWrapLines] = useState(false);
   const [expanded, setExpanded] = useState(false);
-  const copyTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(() => {
-    return () => {
-      if (copyTimeoutRef.current !== null) {
-        clearTimeout(copyTimeoutRef.current);
-      }
-    };
-  }, []);
 
   useEffect(() => {
     const key = highlightKey(lang, code);
     const cached = highlightCache.get(key);
     if (cached) return setHtml(cached);
     let alive = true;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const highlight = () => {
-      import("shiki")
-        .then((shiki) =>
-          shiki.codeToHtml(code, {
-            lang: lang || "text",
-            themes: {
-              light: "github-light-default",
-              dark: "github-dark-default",
-            },
-            defaultColor: "light-dark()",
-          }),
-        )
-        .then((out) => {
-          if (!alive) return;
-          if (highlightCache.size >= CACHE_MAX) {
-            const first = highlightCache.keys().next().value;
-            if (first) highlightCache.delete(first);
-          }
-          highlightCache.set(key, out);
-          setHtml(out);
-        })
-        .catch(() => {
-          /* unknown language or shiki failed — the plain <pre> stays */
-        });
-    };
-    if (streaming) {
-      // any earlier highlight is of a shorter snapshot — drop it so the
-      // growing plain <pre> shows the real content, then wait for the block
-      // to hold still. The effect re-runs (and this cleanup clears the timer)
-      // on every content change, which is the debounce.
-      setHtml(null);
-      timer = setTimeout(highlight, STREAM_SETTLE_MS);
-    } else {
-      highlight();
-    }
-    return () => {
-      alive = false;
-      if (timer !== undefined) clearTimeout(timer);
-    };
-  }, [code, lang, streaming]);
-
-  const copy = () => {
-    if (!navigator.clipboard?.writeText) return;
-    navigator.clipboard
-      .writeText(code)
-      .then(() => {
-        setCopied(true);
-        if (copyTimeoutRef.current !== null) {
-          clearTimeout(copyTimeoutRef.current);
-        }
-        copyTimeoutRef.current = setTimeout(() => setCopied(false), 1500);
+    highlightFence(code, lang || "text")
+      .then((out) => {
+        if (!alive) return;
+        rememberHighlight(key, out);
+        setHtml(out);
       })
       .catch(() => {
-        // Clipboard write rejected or failed silently
+        /* unknown language or shiki failed — the plain <pre> stays */
       });
-  };
+    return () => {
+      alive = false;
+    };
+  }, [code, lang]);
 
   const download = () => {
     const filename = getSnippetFileName(lang);
@@ -348,9 +435,8 @@ export function CodeBlock({ code, lang, streaming }: CodeBlockProps) {
 
   const displayLanguage = getLanguageDisplayName(lang);
   const lineCount = countLines(code);
-  // a long output folds to its first screenful; the stream never folds, so
-  // a growing block does not jump between states
-  const collapsible = !streaming && lineCount > CODE_COLLAPSE_LINES;
+  // a long output folds to its first screenful
+  const collapsible = lineCount > CODE_COLLAPSE_LINES;
   const folded = collapsible && !expanded;
 
   // Code reads left-to-right whatever language surrounds it, so the block pins
@@ -398,10 +484,15 @@ export function CodeBlock({ code, lang, streaming }: CodeBlockProps) {
             type="button"
             onClick={copy}
             className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] text-ink-secondary hover:bg-raised hover:text-ink transition-colors"
-            title={copied ? "Copied to clipboard" : "Copy code"}
-            aria-label={copied ? "Code copied to clipboard" : "Copy code to clipboard"}
+            title={copied === "copied" ? "Copied to clipboard" : copied === "failed" ? t("common.copyFailed") : "Copy code"}
+            aria-label={copied === "copied" ? "Code copied to clipboard" : copied === "failed" ? t("common.copyFailed") : "Copy code to clipboard"}
           >
-            {copied ? (
+            {copied === "failed" ? (
+              <>
+                <X size={12} className="text-danger" aria-hidden="true" />
+                <span className="text-danger font-medium hidden sm:inline">{t("common.copyFailed")}</span>
+              </>
+            ) : copied === "copied" ? (
               <>
                 <Check size={12} className="text-success" aria-hidden="true" />
                 <span className="text-success font-medium hidden sm:inline">Copied!</span>
@@ -471,8 +562,6 @@ function mermaidScheme(element: HTMLElement | null): "dark" | "light" {
 export interface MermaidDiagramProps {
   /** Mermaid diagram source from a fenced code block. */
   code: string;
-  /** Whether the parent message is still actively receiving tokens. */
-  streaming: boolean;
 }
 
 const MERMAID_FONT = '"Inter", -apple-system, BlinkMacSystemFont, "SF UI Text", "Segoe UI", system-ui, sans-serif';
@@ -483,13 +572,12 @@ const MERMAID_FONT = '"Inter", -apple-system, BlinkMacSystemFont, "SF UI Text", 
  * actually appears — the same lazy pattern Shiki uses. The SVG
  * mermaid.render() returns under securityLevel "strict" is the only thing
  * injected; a diagram that fails to parse falls back to its source with the
- * error above it, and a still-streaming block stays plain source so a
- * half-arrived diagram never flashes a parse error.
+ * error above it.
  *
- * @param props - Component props containing the mermaid source and streaming flag.
+ * @param props - Component props containing the mermaid source.
  * @returns Rendered diagram, or the source with the parse error.
  */
-export function MermaidDiagram({ code, streaming }: MermaidDiagramProps) {
+export function MermaidDiagram({ code }: MermaidDiagramProps) {
   const frame = useRef<HTMLDivElement | null>(null);
   const [skinEpoch, setSkinEpoch] = useState(0);
   // a diagram drawn before paints in its first frame, in the page's scheme;
@@ -500,8 +588,7 @@ export function MermaidDiagram({ code, streaming }: MermaidDiagramProps) {
   const markup = useMemo(() => (svg ? { __html: svg } : null), [svg]);
   const [error, setError] = useState<string | null>(null);
   const [showSource, setShowSource] = useState(false);
-  const [copied, setCopied] = useState(false);
-  const copyTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const { state: copied, copy } = useCopyFeedback(code);
 
   // Skins are stamped on <html>, a subtree could someday carry its own, so
   // watch the whole document for data-skin changes and re-render the diagram
@@ -523,76 +610,37 @@ export function MermaidDiagram({ code, streaming }: MermaidDiagramProps) {
       return;
     }
     let alive = true;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const render = () => {
-      import("mermaid")
-        .then((module) => {
-          mermaidRenderId += 1;
-          module.default.initialize({
-            startOnLoad: false,
-            securityLevel: "strict",
-            suppressErrorRendering: true,
-            theme: scheme === "light" ? "default" : "dark",
-            fontFamily: MERMAID_FONT,
-          });
-          return module.default.render(`omb-mermaid-${mermaidRenderId}`, code);
-        })
-        .then((out) => {
-          if (!alive) return;
-          if (mermaidCache.size >= MERMAID_CACHE_MAX) {
-            const first = mermaidCache.keys().next().value;
-            if (first) mermaidCache.delete(first);
-          }
-          mermaidCache.set(key, out.svg);
-          setSvg(out.svg);
-          setError(null);
-        })
-        .catch((cause: unknown) => {
-          // a streaming diagram is probably just incomplete: keep the source
-          // up and stay quiet until the stream settles and re-runs this effect
-          if (!alive || streaming) return;
-          const message = cause instanceof Error ? cause.message : String(cause);
-          setError(message.length > 300 ? `${message.slice(0, 300)}…` : message);
+    import("mermaid")
+      .then((module) => {
+        mermaidRenderId += 1;
+        module.default.initialize({
+          startOnLoad: false,
+          securityLevel: "strict",
+          suppressErrorRendering: true,
+          theme: scheme === "light" ? "default" : "dark",
+          fontFamily: MERMAID_FONT,
         });
-    };
-    if (streaming) {
-      // an earlier render is of a shorter snapshot — drop it so the growing
-      // source shows the real content, then wait for the block to hold still
-      setSvg(null);
-      setError(null);
-      timer = setTimeout(render, STREAM_SETTLE_MS);
-    } else {
-      render();
-    }
+        return module.default.render(`omb-mermaid-${mermaidRenderId}`, code);
+      })
+      .then((out) => {
+        if (!alive) return;
+        if (mermaidCache.size >= MERMAID_CACHE_MAX) {
+          const first = mermaidCache.keys().next().value;
+          if (first) mermaidCache.delete(first);
+        }
+        mermaidCache.set(key, out.svg);
+        setSvg(out.svg);
+        setError(null);
+      })
+      .catch((cause: unknown) => {
+        if (!alive) return;
+        const message = cause instanceof Error ? cause.message : String(cause);
+        setError(message.length > 300 ? `${message.slice(0, 300)}…` : message);
+      });
     return () => {
       alive = false;
-      if (timer !== undefined) clearTimeout(timer);
     };
-  }, [code, streaming, skinEpoch]);
-
-  useEffect(() => {
-    return () => {
-      if (copyTimeoutRef.current !== null) {
-        clearTimeout(copyTimeoutRef.current);
-      }
-    };
-  }, []);
-
-  const copy = () => {
-    if (!navigator.clipboard?.writeText) return;
-    navigator.clipboard
-      .writeText(code)
-      .then(() => {
-        setCopied(true);
-        if (copyTimeoutRef.current !== null) {
-          clearTimeout(copyTimeoutRef.current);
-        }
-        copyTimeoutRef.current = setTimeout(() => setCopied(false), 1500);
-      })
-      .catch(() => {
-        // Clipboard write rejected or failed silently
-      });
-  };
+  }, [code, skinEpoch]);
 
   // Diagrams read left-to-right whatever language surrounds them, so the
   // frame pins its own direction rather than inheriting the message's.
@@ -622,10 +670,15 @@ export function MermaidDiagram({ code, streaming }: MermaidDiagramProps) {
             type="button"
             onClick={copy}
             className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] text-ink-secondary hover:bg-raised hover:text-ink transition-colors"
-            title={copied ? "Copied to clipboard" : "Copy diagram source"}
-            aria-label={copied ? "Diagram source copied to clipboard" : "Copy diagram source to clipboard"}
+            title={copied === "copied" ? "Copied to clipboard" : copied === "failed" ? t("common.copyFailed") : "Copy diagram source"}
+            aria-label={copied === "copied" ? "Diagram source copied to clipboard" : copied === "failed" ? t("common.copyFailed") : "Copy diagram source to clipboard"}
           >
-            {copied ? (
+            {copied === "failed" ? (
+              <>
+                <X size={12} className="text-danger" aria-hidden="true" />
+                <span className="text-danger font-medium hidden sm:inline">{t("common.copyFailed")}</span>
+              </>
+            ) : copied === "copied" ? (
               <>
                 <Check size={12} className="text-success" aria-hidden="true" />
                 <span className="text-success font-medium hidden sm:inline">Copied!</span>
@@ -679,6 +732,7 @@ function LocalFileLink({ filePath, children, message }: { filePath: string; chil
 
   return (
     <span dir="ltr" className="inline-flex flex-wrap items-center gap-x-1.5 [unicode-bidi:isolate]">
+      <TableFileButton path={filePath} name={filePath.split(/[\\/]/).at(-1) ?? filePath} message={message} />
       <button
         type="button"
         onClick={() => void save.save()}
@@ -706,6 +760,12 @@ function LocalFileLink({ filePath, children, message }: { filePath: string; chil
           {save.state === "failed" ? save.reason : label}
         </span>
       )}
+      {save.state === "failed" && save.outsideWorkspace && (
+        <span className="inline-flex flex-wrap items-center gap-x-1.5 text-[12px]">
+          <OutsideWorkspaceFile filePath={filePath} />
+        </span>
+      )}
+      {save.folder && <MessageFolderFiles folderPath={filePath} listing={save.folder} message={message} />}
     </span>
   );
 }
@@ -822,8 +882,8 @@ function escapeLiteralDollars(text: string): string {
 
 /** Convert the TeX delimiters models commonly emit into remark-math syntax.
  * Fenced and inline code are protected so examples such as `\\(x\\)` remain
- * literal. Unmatched delimiters are left untouched while a response streams,
- * and dollar signs that read as money are escaped. */
+ * literal. Unmatched delimiters are left untouched, and dollar signs that
+ * read as money are escaped. */
 export function normalizeMathDelimiters(text: string, imageOffsets?: Map<number, number>): string {
   const protectedCode: Array<{ value: string; sourceOffset: number }> = [];
   const protect = (value: string, sourceOffset: number): string => {
@@ -875,6 +935,32 @@ export function normalizeMathDelimiters(text: string, imageOffsets?: Map<number,
     shift += value.length - token.length;
     return value;
   });
+  return normalized;
+}
+
+// Table repair and math normalization each parse the whole message on top of
+// react-markdown's own parse, and what they produce depends on the text alone.
+// Keep it per text, so a bubble that renders again (a thread list change under
+// a message holding a '#') or mounts again (a thread revisited, the raw view
+// toggled off) skips both parses. Two transcript windows' worth: the open
+// thread and the one before it.
+const normalizedCache = new Map<string, { source: string; imageOffsets?: Map<number, number> }>();
+const NORMALIZED_CACHE_MAX = TRANSCRIPT_WINDOW_SIZE * 2;
+
+function normalizeMessageMarkdown(text: string) {
+  const cached = normalizedCache.get(text);
+  if (cached) return cached;
+  // A near-miss table from a model renders as an unreadable run of pipes
+  // unless it is repaired before parsing. Table repair moves image source
+  // offsets, so image messages skip that repair but still normalize math.
+  const imageOffsets = text.includes(MARKDOWN_IMAGE) ? new Map<number, number>() : undefined;
+  const source = normalizeMathDelimiters(imageOffsets ? text : repairMarkdownTables(text), imageOffsets);
+  if (normalizedCache.size >= NORMALIZED_CACHE_MAX) {
+    const first = normalizedCache.keys().next().value;
+    if (first !== undefined) normalizedCache.delete(first);
+  }
+  const normalized = { source, imageOffsets };
+  normalizedCache.set(text, normalized);
   return normalized;
 }
 
@@ -975,8 +1061,8 @@ const MAY_LINK_THREAD = /#|openmausbot|sagax/i;
 const NO_THREAD_REFS: ThreadRefsValue = { threads: [] };
 
 /** Render message Markdown with math, protected code, scoped attachments, and mentions. */
-function ChatMarkdownComponent({ text, streaming = false, message, mentionPeers = NO_MENTION_PEERS, everyone = false }: {
-  text: string; streaming?: boolean; message?: MessageAttachmentContext;
+function ChatMarkdownComponent({ text, message, mentionPeers = NO_MENTION_PEERS, everyone = false }: {
+  text: string; message?: MessageAttachmentContext;
   mentionPeers?: readonly MentionPeer[]; everyone?: boolean;
 }) {
   // "#Title" mentions link to the threads the person can see (ThreadRefs);
@@ -985,13 +1071,8 @@ function ChatMarkdownComponent({ text, streaming = false, message, mentionPeers 
   // may be called conditionally), so opening or renaming a thread, renaming
   // a bot or changing the selection leaves every other bubble alone.
   const { threads, currentBotId } = MAY_LINK_THREAD.test(text) ? use(ThreadRefsContext) : NO_THREAD_REFS;
-  // A near-miss table from a model renders as an unreadable run of pipes
-  // unless it is repaired before parsing. Table repair moves image source
-  // offsets, so image messages skip that repair but still normalize math.
-  const imageOffsets = text.includes(MARKDOWN_IMAGE) ? new Map<number, number>() : undefined;
-  const source = normalizeMathDelimiters(imageOffsets
-    ? text
-    : repairMarkdownTables(text), imageOffsets);
+  // Table repair and math normalization, once per text (normalizeMessageMarkdown).
+  const { source, imageOffsets } = normalizeMessageMarkdown(text);
   // read by the memoized img renderer: the map is rebuilt with each text
   const imageOffsetsRef = useRef(imageOffsets);
   imageOffsetsRef.current = imageOffsets;
@@ -1005,13 +1086,12 @@ function ChatMarkdownComponent({ text, streaming = false, message, mentionPeers 
   const threadId = message?.threadId;
   const messageId = message?.messageId;
 
-  // One components map per (stream state, message, fence state), so a
+  // One components map per (message, fence state), so a
   // re-render with the same inputs keeps every custom block mounted: an
   // iframe widget or a chart is not torn down and rebuilt on each token.
   const components = useMemo<Components>(() => {
     const scopedMessage = threadId && messageId ? { threadId, messageId } : undefined;
     const pendingAt = (node: unknown) => {
-      if (streaming) return true;
       const offset = nodeOffset(node);
       return openFence >= 0 && offset !== undefined && offset >= openFence;
     };
@@ -1052,7 +1132,7 @@ function ChatMarkdownComponent({ text, streaming = false, message, mentionPeers 
         // a mermaid fence is a picture, not a program: hand it to the
         // diagram renderer instead of the highlighter
         if (lang.trim().toLowerCase() === "mermaid") {
-          return <MermaidDiagram code={code} streaming={pending} />;
+          return <MermaidDiagram code={code} />;
         }
         const kind = richFenceKind(lang);
         const email = kind === "email" || !kind ? parseEmailBlock(code, lang) : null;
@@ -1063,7 +1143,7 @@ function ChatMarkdownComponent({ text, streaming = false, message, mentionPeers 
           const model = tableModelFromDelimited(code, lang);
           if (model && model.header.length > 0) return <RichTable model={model} />;
         }
-        return <CodeBlock code={code} lang={lang} streaming={pending} />;
+        return <CodeBlock code={code} lang={lang} />;
       },
       img(props) {
         const { src, alt } = props;
@@ -1234,7 +1314,7 @@ function ChatMarkdownComponent({ text, streaming = false, message, mentionPeers 
         return <hr className="border-hairline/40" />;
       },
     } as Components;
-  }, [streaming, threadId, messageId, threads, currentBotId, openFence, prefix]);
+  }, [threadId, messageId, threads, currentBotId, openFence, prefix]);
   return (
     <div className="chat-md min-w-0 [&>*+*]:mt-2">
       <Markdown
@@ -1269,7 +1349,6 @@ export const ChatMarkdown = memo(ChatMarkdownComponent, (previous, next) => (
   previous.text === next.text
   && samePeers(previous.mentionPeers ?? NO_MENTION_PEERS, next.mentionPeers ?? NO_MENTION_PEERS)
   && previous.everyone === next.everyone
-  && Boolean(previous.streaming) === Boolean(next.streaming)
   && previous.message?.threadId === next.message?.threadId
   && previous.message?.messageId === next.message?.messageId
 ));

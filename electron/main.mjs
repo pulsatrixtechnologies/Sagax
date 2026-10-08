@@ -25,6 +25,7 @@ import { evictStartupCacheOnce } from "./startup-cache-eviction.mjs";
 import { activateExistingWindow, releaseSingleInstanceLock } from "./single-instance.mjs";
 import { pollServerIdentity } from "./server-boot-probe.mjs";
 import { createServerSupervisor } from "./server-supervisor.mjs";
+import { serverChildLaunch } from "./server-child-launch.mjs";
 import { packageUrlFromCommandLine, packageUrlFromDeepLink } from "./package-link.mjs";
 import { createOrganizationEntry, ORGANIZATION_DEEP_LINK, isOrganizationDeepLink, takeOrganizationDeepLink, organizationRestartIntent, withOrganizationRestartIntent, withoutOrganizationRestartIntent } from "./organization-entry.mjs";
 import { createRotatingLog } from "./log-file.mjs";
@@ -32,13 +33,15 @@ import { createOrgJoin, forgetDetail } from "./org-join.mjs";
 import { createOwnerIdentitySync } from "./owner-identity.mjs";
 import { trafficLightsForSkin, windowChromeOptions } from "./window-chrome.mjs";
 import { createWindowNudger } from "./window-nudge.mjs";
+import { createAllWindowsClosedQuit } from "./window-all-closed.mjs";
 import { createStartupScreen } from "./startup-screen.mjs";
 import { createSystemTray } from "./system-tray.mjs";
 let startupScreen = null;
 let desktopTray = null;
-import { collisionFreeDownloadPath, defaultSaveName, revealDownloadWhenDone, withSavableFile } from "./save-file.mjs";
+import { collisionFreeDownloadPath, defaultSaveName, revealDownloadWhenDone, revealInFolder, withSavableFile } from "./save-file.mjs";
 import { desktopViewerPermissionAllowed } from "./desktop-viewer-permissions.mjs";
-import { appPermissionAllowed, externalOpenUrl, externalWebUrl } from "./app-permissions.mjs";
+import { appPermissionHandlers, externalOpenUrl, externalWebUrl } from "./app-permissions.mjs";
+import { writeClipboardText } from "./clipboard-write.mjs";
 import {
   ensureManagedComposioCredentials,
   managedComposioAccess,
@@ -841,6 +844,9 @@ app.on("session-created", (created) => installSessionBlock(created, (line) => sl
  * const declared later would be in its temporal dead zone at module load.
  */
 const { desktopUiOnly, isDesktopUiSender, isLocalSender: senderIsLocal, localOnly, localOnlySync, setBundledOrigin, setLocalOrigin } = localOriginModule;
+// The updater changes THIS app: only this app's own UI reads and drives it,
+// the local page or the bundle drawn on an organization server (bundled-ui.cjs).
+const updaterPageAllowed = (event) => isDesktopUiSender(event);
 
 let companionPowerBlocker = null;
 
@@ -1268,6 +1274,9 @@ function ensureCompanionAccountService() {
     // Retry capacity/transient setup failures with backoff, and re-provision a
     // reclaimed endpoint behind the same address without a new sign-in.
     autoRecover: true,
+    // The failure code and support reference reach server.log, and with it
+    // the bug-report bundle.
+    log: (line) => slog(line),
   });
   return companionAccountService;
 }
@@ -1592,7 +1601,12 @@ function receivePhoneSecretSave(proc, rawMessage) {
 
 async function startServerOn(port) {
   if (desktopShutdownStarted) return { proc: null, abort: true };
-  const entry = path.join(process.resourcesPath, "server", "index.js");
+  // A bootstrap beside index.js that turns on Node's compile cache for this
+  // child, so a relaunch skips recompiling the server bundle.
+  const { entry, compileCacheDir } = serverChildLaunch({
+    resourcesPath: process.resourcesPath,
+    userData: app.getPath("userData"),
+  });
   const childEnv = managedComposioChildEnvironment(composioBrokerUrl(), secureCredentials, {
     ...process.env,
     // The desktop parent owns the durable data-directory lease. Each utility
@@ -1627,6 +1641,11 @@ async function startServerOn(port) {
       : {}),
   });
   delete childEnv.SAGAX_BROWSER_CONNECTION;
+  // Set here or not at all, never inherited from the launching shell. The
+  // bootstrap removes it before the server runs, so nothing the server
+  // spawns sees it.
+  delete childEnv.SAGAX_SERVER_COMPILE_CACHE;
+  if (compileCacheDir) childEnv.SAGAX_SERVER_COMPILE_CACHE = compileCacheDir;
   slog(`fork ${entry} port=${port}`);
   const proc = utilityProcess.fork(entry, [], {
     env: childEnv,
@@ -3082,6 +3101,10 @@ ipcMain.handle("engine:open-terminal", localOnly("engine:open-terminal", async (
   return openBlankTerminal();
 }));
 
+// Fallback for the renderer's copy button when the web Clipboard API rejects
+// (unfocused page, denied permission). Plain text only; resolves false on failure.
+ipcMain.handle("clipboard:write-text", localOnly("clipboard:write-text", (_event, text) => writeClipboardText(clipboard, text)));
+
 // OAuth/connect links are returned asynchronously, after Chromium's direct
 // click gesture has ended. Opening them through window.open can therefore be
 // rejected as a popup before setWindowOpenHandler ever sees the URL. Keep the
@@ -3169,6 +3192,14 @@ ipcMain.handle("app-icon:reset", desktopUiOnly("app-icon:reset", () => {
   appIconStore().clear();
   showAppIcon(null);
   return { platform: process.platform, id: null, updatedAt: null };
+}));
+
+// "Show in folder" for a bot-linked file outside its conversation's workspace.
+// The file must be on this computer: a window paired to another computer's
+// server is refused, because that server's paths mean nothing here.
+ipcMain.handle("desktop:reveal-file", localOnly("desktop:reveal-file", async (_event, rawPath) => {
+  if (desktopRemoteAccess) throw new Error("That file is on the computer this app is connected to");
+  return revealInFolder(rawPath, { reveal: (target) => shell.showItemInFolder(target) });
 }));
 
 // The renderer owns the skin, including the Windows caption buttons it draws
@@ -3311,11 +3342,17 @@ ipcMain.handle("desktop-viewer:state-now", localOnly("desktop-viewer:state-now",
   contextId: desktopViewerContextId,
 })));
 
-ipcMain.handle("perm:status", () => ({
+// The session's permission handlers (app-permissions.mjs), set once the app
+// is ready. perm:status asks them, so `pageMic` is the very rule that decides
+// a page's microphone request: a blocked Live call then says whether this app
+// refused the page (a web browser can make the call) or the computer did.
+let appPermissions = null;
+ipcMain.handle("perm:status", (event) => ({
   mic:
     nativeActions.appleMediaPermissions
       ? systemPreferences.getMediaAccessStatus?.("microphone") ?? "unknown"
       : "unsupported",
+  pageMic: appPermissions?.pageMicrophone(event) ?? "refused",
 }));
 ipcMain.handle("perm:request-mic", localOnly("perm:request-mic", async () => {
   if (!nativeActions.appleMediaPermissions) return false;
@@ -4016,7 +4053,7 @@ app.whenReady().then(async () => {
   }
   registerCuaIpc();
   androidDevice.registerIpc(ipcMain);
-  registerUpdaterIpc();
+  registerUpdaterIpc({ pageAllowed: updaterPageAllowed });
   // Start the CUA daemon before the window so the harness can pick up the
   // connection descriptor on first render. Never blocks window creation on
   // failure — computer use degrades to "unavailable", the rest still works.
@@ -4051,7 +4088,7 @@ app.whenReady().then(async () => {
     await startServerPackaged();
   }
   if (desktopShutdownStarted) return;
-  // The hosted OpenMausBot Admin portal does not start with the desktop:
+  // The hosted Sagax Admin portal does not start with the desktop:
   // no saved company connection, no company cloud backups, no portal policy.
   // The companion the user left on comes back without anyone finding the
   // toggle again — one attempt, after the harness port is settled, with the
@@ -4070,15 +4107,17 @@ app.whenReady().then(async () => {
   // serial) stay off. Client mode's loopback relay is the local UI.
   // Voice mode in server mode: the bundled UI drawn on the organization
   // server's origin (bundled-ui.cjs) may open the microphone, nothing else.
-  const microphoneOrigins = () => [bundledOrigin(environmentsState)];
-  session.defaultSession.setPermissionRequestHandler((contents, permission, callback, details) => {
-    const requesting = details?.requestingUrl ?? contents?.getURL?.() ?? "";
-    callback(appPermissionAllowed(permission, requesting, rendererOrigin(), details, { microphoneOrigins: microphoneOrigins() }));
+  // The active paired server, in this window's main frame, may also write
+  // the clipboard (its copy buttons); it never reads it, and each request is
+  // decided again, so a server switch withdraws it at once.
+  appPermissions = appPermissionHandlers({
+    rendererOrigin,
+    mainContents: () => (mainWindow && !mainWindow.isDestroyed() ? mainWindow.webContents : null),
+    microphoneOrigins: () => [bundledOrigin(environmentsState)],
+    activeRemoteOrigin: () => activeEnvironment(environmentsState)?.origin ?? null,
   });
-  session.defaultSession.setPermissionCheckHandler((contents, permission, requestingOrigin, details) => {
-    const requesting = requestingOrigin || contents?.getURL?.() || "";
-    return appPermissionAllowed(permission, requesting, rendererOrigin(), details, { microphoneOrigins: microphoneOrigins() });
-  });
+  session.defaultSession.setPermissionRequestHandler(appPermissions.request);
+  session.defaultSession.setPermissionCheckHandler(appPermissions.check);
   environmentsState = readEnvironments();
   syncBundledUi();
   // Server mode: this app bridges the organization's bots to this computer
@@ -4125,18 +4164,23 @@ app.whenReady().then(async () => {
       return credentials;
     }).finally(syncManagedComposioCredentials);
   }
-  // in-app auto-update (packaged only) — checks GitHub releases, downloads on
-  // the user's click, installs on "Restart to update"
+  // in-app auto-update (packaged only) — checks GitHub releases and downloads
+  // by itself; only "Restart to update", the person's click, installs
   startUpdater();
   refreshApplicationMenu();
   app.on("activate", () => {
     if (desktopTray?.show()) return;
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
-});
+}).finally(() => allWindowsClosedQuit.settleStartup());
 
-app.on("window-all-closed", () => {
-  if (process.platform !== "darwin") app.quit();
+// The startup splash is the only window while boot runs; its recovery
+// timers can destroy it mid-boot (issue #2028). An unconditional
+// last-window-closed quit would fire there, killing the app before the
+// server child forks — exactly the exit the recovery was meant to avoid.
+const allWindowsClosedQuit = createAllWindowsClosedQuit({
+  app,
+  allWindows: () => BrowserWindow.getAllWindows(),
 });
 
 // EMBEDDING.md lifecycle rule: defer the first quit until the embedded

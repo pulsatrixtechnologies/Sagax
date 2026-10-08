@@ -1,5 +1,5 @@
 import { approvalCardOutcome } from "./ApprovalCard";
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import {
   Archive,
@@ -29,7 +29,7 @@ import {
   X,
   PictureInPicture2,
 } from "lucide-react";
-import { api, useStore, formatTime, visibleMessages, type AppState, type Bot, type Group } from "@/state/store";
+import { api, useStore, formatTime, visibleMessages, type AppState, type Bot, type Group, type InstanceInfo, type Message } from "@/state/store";
 
 import { peerLine } from "@/lib/peer-message";
 import { viewerMayDeleteGroup, viewerOwnsGroup } from "@/lib/group-owner";
@@ -43,9 +43,12 @@ import { stateForBot } from "@/lib/mascot";
 import { mascotRowAnimated } from "@/lib/mascot-animate";
 import { cn } from "@/lib/cn";
 import { SIDEBAR_CIRCLE_BUTTON } from "@/lib/circle-button";
+import { searchMatchesThreads, useSearchDisclosure } from "@/lib/search-disclosure";
 import { useHeldMenuMotion } from "./MenuMotion";
 import { lastNonReceipt } from "@/lib/receipts";
-import { t } from "@/lib/i18n";
+import { activityPreview, botEngine } from "@/lib/failed-turn";
+import { activeLocale, t } from "@/lib/i18n";
+import { copyText } from "@/lib/copy-text";
 import { isViewersPrimaryBot, viewerOwnsBot } from "@/lib/primary-bot";
 import { PrimaryBotPicker } from "./PrimaryBotPicker";
 import { useOrgPeople, usePerspicaxOrg } from "@/lib/perspicax-org";
@@ -92,7 +95,7 @@ import { TeamDialog } from "./TeamDialog";
 import { RenameTitle } from "./RenameTitle";
 import { BotProjectDialog, navigateThreadMenu } from "./BotProjects";
 import { FOLDER_DRAG_TYPE } from "@/lib/folder-order";
-import { orderedThreadList, SidebarThreadRow, useRelativeNow, visibleSidebarThreads } from "./SidebarThreadRow";
+import { orderedThreadList, SidebarThreadRow, stampClock, threadRecency, useRelativeNow, visibleSidebarThreads } from "./SidebarThreadRow";
 import {
   loadCollapsedSections,
   loadSectionOrder,
@@ -117,6 +120,7 @@ import {
   partitionSidebarGroups,
   placeSection,
   sameSectionOrder,
+  sidebarConnectorPreview,
   sidebarGoalRunPreview,
   sidebarLayoutInteractive,
   sidebarSectionCollapsed,
@@ -227,22 +231,26 @@ function sectionLabel(id: string): string {
   return key ? t(key) : sidebarSectionLabel(id);
 }
 
-function preview(bot: Bot): string {
+/** `visible` is the bot's visible branch (visibleMessages), which the row
+ * already works out once per transcript. */
+function preview(bot: Bot, visible: Message[], instances: InstanceInfo[]): string {
   if (bot.activity === "waiting-on-you") return t("sidebar.preview.waiting");
   if (bot.waitingForTeammates) return t("sidebar.preview.waitingOnTeammate");
   if (bot.busy) return t("sidebar.preview.working");
   // the visible branch's tail — bot.messages holds every fork, so its last
   // entry can belong to a version the user switched away from — read past
   // the harness's receipts (digest, compaction) to the reply a person reads
-  const last = lastNonReceipt(visibleMessages(bot));
+  const last = lastNonReceipt(visible);
   if (!last) return "";
   // a settled approval card says what happened, as the card itself does;
   // its title is the question it asked, which nobody is waiting on now
   if (last.kind === "options" && last.card) {
     return (last.card.requestId && last.card.tool && !last.card.questionRequest && approvalCardOutcome(last.card)) || last.card.title;
   }
-  if (last.kind === "activity" && last.tool) return last.tool.name;
+  // a failed turn reads as the chat row says it, never "error: …"
+  if (last.kind === "activity" && last.tool) return activityPreview(last.tool, botEngine(bot, instances));
   if (last.kind === "screen") return t("sidebar.preview.screenFrame");
+  if (last.kind === "connector" && last.connector) return sidebarConnectorPreview(last.connector, t);
   const peer = peerLine(last);
   if (peer) return `${peer.name}: ${peer.body}`;
   return citationPreviewText(last.text ?? "");
@@ -260,7 +268,7 @@ function openBotContextMenu(onMenu: (menu: MenuState) => void, botId: string, ev
   onMenu({ botId, x: event.clientX, y: event.clientY });
 }
 
-function groupPreview(group: Group, bots: Bot[], viewerId: string): string {
+function groupPreview(group: Group, bots: Bot[], viewerId: string, instances: InstanceInfo[]): string {
   if (group.busyBotId) {
     return t("sidebar.preview.botWorking", {
       name: bots.find((b) => b.id === group.busyBotId)?.name ?? t("sidebar.preview.aBot"),
@@ -271,10 +279,12 @@ function groupPreview(group: Group, bots: Bot[], viewerId: string): string {
   if (!last) return t("sidebar.preview.noMessages");
   if (last.kind === "nudge" && last.nudge) return nudgeLineText(last.nudge, viewerId);
   const text = last.kind === "activity" && last.tool
-    ? last.tool.name
+    ? activityPreview(last.tool, botEngine(bots.find((bot) => bot.id === last.from?.botId), instances))
     : last.kind === "goal.run" && last.goalRun
       ? sidebarGoalRunPreview(last.goalRun)
-      : (last.text ?? "");
+      : last.kind === "connector" && last.connector
+        ? sidebarConnectorPreview(last.connector, t)
+        : (last.text ?? "");
   const readable = citationPreviewText(text);
   if (last.role === "user") return t("sidebar.preview.you", { text: readable });
   return last.from ? `${last.from.name}: ${readable}` : readable;
@@ -330,8 +340,16 @@ export function GroupListItem({
   const { state, dispatch } = useStore();
   const showThreads = useShowThreads();
   const selected = state.activeView === "chat" && state.selectedId === group.id;
-  const [threadsOpen, setThreadsOpen] = useState(selected || Boolean(query));
-  useEffect(() => { if (showThreads && (selected || query)) setThreadsOpen(true); }, [selected, query, showThreads]);
+  // a search opens this room only when it has a matching thread to show,
+  // and clearing it puts the room back as it was (MOCA-293)
+  const [threadsOpen, setThreadsOpen] = useSearchDisclosure(`group:${group.id}`, showThreads ? query ?? "" : "", searchMatchesThreads(query ?? "", group.tasks), selected);
+  const wasSelected = useRef(selected);
+  useEffect(() => {
+    // Search can unmount the selected room. Only a new selection opens it;
+    // remounting must preserve the person's remembered disclosure choice.
+    if (showThreads && selected && !wasSelected.current) setThreadsOpen(true);
+    wasSelected.current = selected;
+  }, [selected, showThreads, setThreadsOpen]);
   // one thread is the room itself; the disclosure and the list only earn
   // their place once there is a second thread to show
   const hasThreadList = showThreads && ((group.tasks?.length ?? 1) > 1 || Boolean(query));
@@ -378,7 +396,7 @@ export function GroupListItem({
         density !== "icons" && (showThreads ? "pl-6" : "pl-2"),
         selected && !expanded ? "bg-sidebar-selected" : "hover:bg-sidebar-hover",
       )}
-      title={density === "icons" ? rowName : publicCard && previewShown ? groupPreview(group, state.bots, viewerActorId(state.config)) : undefined}
+      title={density === "icons" ? rowName : publicCard && previewShown ? groupPreview(group, state.bots, viewerActorId(state.config), state.instances) : undefined}
       aria-label={density === "icons" ? rowName : undefined}
       data-people-dm={peer ? peer.id : undefined}
     >
@@ -392,7 +410,7 @@ export function GroupListItem({
           {(expanded || (quiet && !groupStatus)) && group.unread && <span className="size-1.5 shrink-0 rounded-full bg-accent" aria-label={t("task.unreadMany")} />}
         </div>
         {publicCard ? <span className="block h-[18px]" aria-hidden="true" /> : previewShown && <div className="flex items-center justify-between gap-2">
-          <span className="truncate text-[13px] leading-[18px] text-sidebar-ink-secondary">{groupPreview(group, state.bots, viewerActorId(state.config))}</span>
+          <span className="truncate text-[13px] leading-[18px] text-sidebar-ink-secondary">{groupPreview(group, state.bots, viewerActorId(state.config), state.instances)}</span>
           {group.unread && <span className="size-2 shrink-0 rounded-full bg-accent" />}
         </div>}
       </div>
@@ -456,13 +474,23 @@ export function GroupThreadList({ group, selected, density = "comfortable", quer
   }));
   const visible = orderedThreadList(visibleSidebarThreads(tasks, group.threadId, query, [], showAll));
   useRevealedThreadRow(state.revealThread, selected ? group.threadId : null);
+  // One set of row actions per room; they read the room as it is when used.
+  const latest = useRef(group);
+  latest.current = group;
+  const groupId = group.id;
+  const actions = useMemo(() => ({
+    onSelect: (task: { threadId: string }) => {
+      if (task.threadId !== latest.current.threadId) dispatch({ type: "switchGroupTask", groupId, threadId: task.threadId });
+      else dispatch({ type: "select", id: groupId });
+    },
+    onRename: (task: { threadId: string }, title: string) => dispatch({ type: "renameGroupTask", groupId, threadId: task.threadId, title }),
+    onDelete: (task: { threadId: string }) => dispatch({ type: "deleteGroupTask", groupId, threadId: task.threadId }),
+    onPin: (task: { threadId: string; title: string }, pinned: boolean) => dispatch({ type: "pinGroupTask", groupId, threadId: task.threadId, pinned, title: task.title }),
+  }), [groupId, dispatch]);
+  const locale = activeLocale();
   return <div className="mb-2 space-y-0.5" role="group" aria-label={t("task.namedList", { name: group.name })}>
     {visible.map((task) => <SidebarThreadRow key={task.threadId} task={task} ownerId={group.id} current={selected && task.threadId === group.threadId} compact={density === "compact"}
-      now={now}
-      onSelect={() => { if (task.threadId !== group.threadId) dispatch({ type: "switchGroupTask", groupId: group.id, threadId: task.threadId }); else dispatch({ type: "select", id: group.id }); }}
-      onRename={(title) => dispatch({ type: "renameGroupTask", groupId: group.id, threadId: task.threadId, title })}
-      onDelete={() => dispatch({ type: "deleteGroupTask", groupId: group.id, threadId: task.threadId })}
-      onPin={(pinned) => dispatch({ type: "pinGroupTask", groupId: group.id, threadId: task.threadId, pinned, title: task.title })} />)}
+      now={stampClock(threadRecency(task), now)} locale={locale} {...actions} />)}
     {!query && !showAll && tasks.length > visible.length && <button type="button" onClick={() => setShowAll(true)} className="pl-6 pr-3 py-1.5 text-[11px] text-sidebar-ink-secondary hover:text-sidebar-ink">{t("task.showAll", { count: tasks.length })}</button>}
   </div>;
 }
@@ -635,7 +663,7 @@ export function RoomContextMenu({
       )}
       <button
         onClick={() => {
-          void navigator.clipboard?.writeText(group.threadId);
+          void copyText(group.threadId);
           onClose();
         }}
         className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] leading-[18px] text-ink hover:bg-hover"
@@ -1186,7 +1214,7 @@ export function BotContextMenu({
           dispatch({ type: "toggleSettings", open: true });
         }),
         item(<ClipboardCopy size={16} className="text-ink" />, t("sidebar.copyConversationId"), () => {
-          void navigator.clipboard?.writeText(bot.threadId);
+          void copyText(bot.threadId);
         }),
       ] : [
         item(
@@ -1216,7 +1244,7 @@ export function BotContextMenu({
         divider("d1"),
         ...(canRename ? [item(<Pencil size={16} className="text-ink" />, "Rename Bot", () => onRename(bot.id))] : []),
         item(<ClipboardCopy size={16} className="text-ink" />, t("sidebar.copyConversationId"), () => {
-          void navigator.clipboard?.writeText(bot.threadId);
+          void copyText(bot.threadId);
         }),
         divider("d2"),
         // Only this person's sidebar: the bot, its owner and everyone else
@@ -1304,6 +1332,13 @@ export function BotDeleteMenuItem({ deleting, onClick }: { deleting: boolean; on
   );
 }
 
+/** The bot's visible branch, worked out again only when its transcript or
+ * active leaf changes, not on every change to the bot. */
+function useVisibleMessages(bot: Bot): Message[] {
+  const { messages, activeLeafId } = bot;
+  return useMemo(() => visibleMessages({ messages, activeLeafId }), [messages, activeLeafId]);
+}
+
 export function BotListItem({
   bot,
   density,
@@ -1328,13 +1363,15 @@ export function BotListItem({
   const selected = state.activeView === "chat" && state.selectedId === bot.id;
   const deleting = state.deletingBots[bot.id] === true;
   const mascotMotion = selected && state.mascotMotion?.botId === bot.id ? state.mascotMotion : null;
+  const pendingQueued = state.pendingQueued;
+  const instances = state.instances;
   const iconOnly = density === "icons";
   useEffect(() => {
     if (iconOnly) setRenaming(false);
   }, [iconOnly]);
   const avatarSize = iconOnly ? 36 : density === "compact" ? 28 : 36;
   // the visible branch, so a version switch changes the row with the chat
-  const visible = visibleMessages(bot);
+  const visible = useVisibleMessages(bot);
   const last = visible.at(-1);
   // the role from Bot Settings → Title. A badge or tooltip beside the name
   // (#866, #871) always traded the name's width against the title's; its own
@@ -1356,7 +1393,7 @@ export function BotListItem({
     // even when another bot was active.
     selected ? "bg-sidebar-selected" : "hover:bg-sidebar-hover",
   );
-  const activityTasks = sidebarBotActivityTasks(bot, state.pendingQueued);
+  const activityTasks = sidebarBotActivityTasks(bot, pendingQueued);
   const waiting = bot.activity === "waiting-on-you" || activityTasks.some((task) => task.activity === "waiting-on-you");
   // Real work in a sibling still outranks an idle coordination wait.
   const working = !waiting && (Boolean(bot.busy) || activityTasks.some((task) => task.busy || task.activity === "working"));
@@ -1455,7 +1492,7 @@ export function BotListItem({
                   <span className="sr-only">{t("sidebar.preview.working")}</span>
                 </span>
               ) : (
-                <span className="truncate">{waiting ? t("sidebar.preview.waiting") : teammateWait ? t("sidebar.preview.waitingOnTeammate") : queued ? t("task.queued") : preview(bot)}</span>
+                <span className="truncate">{waiting ? t("sidebar.preview.waiting") : teammateWait ? t("sidebar.preview.waitingOnTeammate") : queued ? t("task.queued") : preview(bot, visible, instances)}</span>
               )}
             </span>
           )}
@@ -1535,7 +1572,7 @@ export function BotListItem({
         header's thread picker (TaskPicker) is the one place to pick, open
         or start one of its threads; the row's dots still say a sibling is
         working, waiting or unread. Threads off: only the activity rows. */}
-    {!showThreads && <SidebarBotActivity bot={bot} density={density} />}
+    {!showThreads && <SidebarBotActivity bot={bot} density={density} pendingQueued={pendingQueued} dispatch={dispatch} />}
     {showThreads && creatingProject && <BotProjectDialog bot={bot} onClose={() => setCreatingProject(false)} />}
     </>
   );
@@ -2163,7 +2200,7 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
         !q ||
         b.name.toLowerCase().includes(q) ||
         (b.title ?? "").toLowerCase().includes(q) ||
-        preview(b).toLowerCase().includes(q) ||
+        preview(b, visibleMessages(b), state.instances).toLowerCase().includes(q) ||
         b.tasks?.some((task) => !task.routineRunId && task.title.toLowerCase().includes(q)) ||
         b.projects?.some((folder) => folder.name.toLowerCase().includes(q)),
     );

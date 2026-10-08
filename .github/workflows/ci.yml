@@ -23,8 +23,10 @@ concurrency:
   # other in October 2026). The running one always finishes. A release runs
   # CI on its own commit in a release-ci/v<version> lane when main's run for
   # it was replaced (scripts/release-ci.mjs). Merge-queue runs stay on their
-  # own refs.
-  group: ci-${{ github.event_name == 'merge_group' && github.event.merge_group.head_ref || github.ref }}
+  # own refs. A PR's group is named by its number, never by github.ref: a
+  # merged PR's closed event reports the base branch as github.ref, so a
+  # ref-named group let every merge cancel main's run (ci-stop-closed.yml).
+  group: ci-${{ github.event_name == 'merge_group' && github.event.merge_group.head_ref || github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
@@ -42,9 +44,12 @@ jobs:
     name: typecheck + lint
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    permissions:
+      contents: read
+      # ci-scope reads whether the commit before a push got its own green run
+      actions: read
     outputs:
       runtime: ${{ steps.scope.outputs.runtime }}
-      mobile: ${{ steps.scope.outputs.mobile }}
       vitest_os: ${{ steps.scope.outputs.vitest_os }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -60,6 +65,8 @@ jobs:
           cache: pnpm
       - name: Select checks for this change
         id: scope
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: node scripts/ci-scope.mjs
       - run: pnpm install --frozen-lockfile
       - name: Verify CI selection and documentation references
@@ -92,9 +99,9 @@ jobs:
         os: ${{ fromJSON(needs.static.outputs.vitest_os) }}
         shard: [1, 2, 3, 4]
     runs-on: ${{ matrix.os }}
-    # vitest splits by file count, not by duration, so the shard holding the
-    # heavy e2e files exceeds 20 minutes on macOS and 25 on Windows with
-    # tests still progressing. The cap catches a hang, not normal suite growth.
+    # scripts/testing/duration-sequencer.ts splits the files by their recorded
+    # CI seconds, not by count, so the heavy e2e files no longer share one
+    # shard. The cap catches a hang, not normal suite growth.
     timeout-minutes: ${{ matrix.os == 'ubuntu-latest' && 20 || 35 }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -113,7 +120,19 @@ jobs:
         # The github-actions reporter turns each failure into an annotation
         # on the PR, so the failing test and its assertion are readable
         # without opening the job log.
+        env:
+          # scripts/testing/ci-retry-runner.ts records each listed flaky test
+          # that needed a retry here (the runner context is step-level only).
+          SAGAX_VITEST_RETRY_LOG: ${{ runner.temp }}/vitest-retries.jsonl
         run: pnpm exec vitest run --shard=${{ matrix.shard }}/4 --reporter=default --reporter=github-actions
+      - name: Report flaky tests that needed a retry
+        # Known flakes (scripts/testing/ci-retry-list.json) get two retries in
+        # CI. A pass after a retry is still listed in the job summary, so the
+        # flake stays visible until its entry is fixed and removed.
+        if: ${{ !cancelled() }}
+        env:
+          SAGAX_VITEST_RETRY_LOG: ${{ runner.temp }}/vitest-retries.jsonl
+        run: node scripts/testing/ci-retry-summary.mjs
       - name: Broker and Electron unit tests
         if: matrix.shard == 1
         run: pnpm broker:test && pnpm test:electron

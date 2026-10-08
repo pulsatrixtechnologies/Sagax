@@ -15,7 +15,7 @@ import type { ModelVariantOption } from "../../shared/runtime-events";
 import { filterCustomModels, partitionCustomModels, suggestedModels } from "@/lib/custom-models";
 import { configuredModelInstances, isClaudeAccount, isCustomOnly, SIGN_IN_FAMILY_LABEL, signInFamily, splitEngineRail, type SignInFamily } from "@/lib/engine-rail";
 import { InstanceProviderMark } from "./ProviderIcons";
-import { EngineSetup, EngineUpdateNotice, needsCli, needsSignIn } from "./EngineSetup";
+import { EngineSetup, EngineUpdateNotice, hasSavedApiKey, needsCli, needsSignIn } from "./EngineSetup";
 import { EngineGroupLabel } from "./EngineGroupLabel";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { ChatGptPlanStatus } from "./ChatGptPlanStatus";
@@ -30,6 +30,8 @@ import { ModelPickerPayers } from "./ModelPickerPayers";
 import { COMPACT_SQUARE } from "@/lib/compact-chip";
 import { saveViewerBotOverride } from "@/lib/viewer-bot-overrides";
 import type { ViewerBotOverridePatch } from "../../shared/viewer-bot-overrides";
+import { threadsOnOwnModel } from "../../shared/thread-model";
+import { ThreadModelsLine } from "./ThreadModelsLine";
 
 type ModelOption = InstanceInfo["models"]["options"][number];
 const COMPACT_MODEL_COUNT = 5;
@@ -304,11 +306,14 @@ function ModelRow({
   option,
   current,
   defaultId,
+  botModel = false,
   onPick,
 }: {
   option: ModelOption;
   current: boolean;
   defaultId: string;
+  /** The bot's model, in a thread's picker: "(bot's model)". */
+  botModel?: boolean;
   onPick: () => void;
 }) {
   return (
@@ -336,8 +341,32 @@ function ModelRow({
         {option.loaded && (
           <span className="shrink-0 rounded bg-accent/10 px-1.5 py-px text-[10px] text-accent">Loaded</span>
         )}
+        {botModel && <span data-bot-model className="shrink-0 text-[11px] text-ink-secondary">{t("model.botModelTag")}</span>}
       </span>
       {current && <Check size={14} className="shrink-0 text-accent" />}
+    </button>
+  );
+}
+
+/** A thread's picker: back onto the bot's model, so the thread moves with
+ * the bot again. Checked while the thread follows the bot. */
+export function FollowBotModelRow({ name, model, follows, onPick }: { name: string; model: string; follows: boolean; onPick: () => void }) {
+  return (
+    <button
+      type="button"
+      data-follow-bot-model
+      aria-pressed={follows}
+      onClick={onPick}
+      className={cn(
+        "flex w-full shrink-0 items-center justify-between gap-2 border-b border-hairline/40 px-4 py-2.5 text-left text-[13px] text-ink hover:bg-control/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus",
+        follows && "bg-control/40",
+      )}
+    >
+      <span className="flex min-w-0 items-baseline gap-2">
+        <span className="shrink-0 font-medium">{t("model.useBotModel", { name })}</span>
+        <span className="truncate text-[12px] text-ink-secondary">{model}</span>
+      </span>
+      {follows && <Check size={14} className="shrink-0 text-accent" aria-hidden="true" />}
     </button>
   );
 }
@@ -372,6 +401,11 @@ function ModelSearch({
       </div>
     </div>
   );
+}
+
+/** Once any key is saved, the keys shortcut is also the way to fix one. */
+function apiKeysLabel(instances: InstanceInfo[]): string {
+  return t(instances.some(hasSavedApiKey) ? "model.addOrChangeApiKeys" : "model.addApiKeys");
 }
 
 export function ModelEngineRail({ instances, selectedInstance, claudeInstance, openaiInstance, onSelect, onAddApiKeys, wide = false, statusOf }: {
@@ -491,8 +525,8 @@ export function ModelEngineRail({ instances, selectedInstance, claudeInstance, o
           type="button"
           data-rail-add-api-key
           onClick={onAddApiKeys}
-          aria-label={t("model.addApiKeys")}
-          title={t("model.addApiKeys")}
+          aria-label={apiKeysLabel(instances)}
+          title={apiKeysLabel(instances)}
           className="flex size-9 items-center justify-center rounded-lg border border-dashed border-hairline text-ink-secondary hover:bg-control/60 hover:text-ink"
         >
           <Plus size={16} aria-hidden="true" />
@@ -567,6 +601,9 @@ export function ModelPicker({
   const rootRef = useRef<HTMLDivElement>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
+  // The bot's model just changed from this thread's picker: say how many
+  // threads kept a model of their own, until the picker opens again.
+  const [changedBotModel, setChangedBotModel] = useState(false);
   const refreshingRef = useRef(false);
   const lastClaudeIdRef = useRef<string | null>(null);
   const lastOpenaiIdRef = useRef<string | null>(null);
@@ -763,6 +800,32 @@ export function ModelPicker({
     resetList();
   };
 
+  // A thread's picker knows whether the thread follows its bot's model
+  // (absent from a server too old to say).
+  const profile = state.bots.find((candidate) => candidate.id === bot.id) ?? bot;
+  const follows = threadId ? profile.tasks?.find((task) => task.threadId === threadId)?.followsBotModel : undefined;
+  const botModelInstance = state.instances.find((instance) => instance.instanceId === profile.modelSelection.instanceId);
+  const botModelName = botModelInstance
+    ? `${botModelInstance.displayName} · ${modelLabel(botModelInstance, profile.modelSelection.model)}`
+    : profile.modelSelection.model;
+  const ownModelThreads = threadsOnOwnModel(profile.modelSelection, profile.tasks ?? []).length;
+
+  /** Back onto the bot's model: the server keeps no model of the thread's
+   * own for a pick that is the bot's. */
+  const pickBotModel = () => {
+    if (bot.busy) return;
+    setOpen(false);
+    if (follows !== false) return;
+    const target = currentTaskBot(profile, threadId ?? bot.threadId);
+    if (modelSwitchNeedsAsk(approvalModeFor(target),
+      state.instances.find((candidate) => candidate.instanceId === target.modelSelection.instanceId)?.driverKind,
+      botModelInstance?.driverKind)) {
+      setPendingSwitch({ botId: bot.id, threadId: threadId ?? bot.threadId, selection: profile.modelSelection, updateBotDefault: false, name: botModelName });
+      return;
+    }
+    dispatch({ type: "setModel", botId: bot.id, threadId: threadId ?? bot.threadId, updateBotDefault: false, selection: profile.modelSelection });
+  };
+
   const pick = (instance: InstanceInfo, model: string) => {
     if (bot.busy || instance.policy) return;
     if (viewerLocal) {
@@ -772,7 +835,6 @@ export function ModelPicker({
     }
     const nextSelection = modelSelectionForPick(selection, instance, model);
     const updateBotDefault = !threadId || scope === "bot";
-    const profile = state.bots.find((candidate) => candidate.id === bot.id) ?? bot;
     const targets = updateBotDefault ? [currentTaskBot(profile, threadId ?? bot.threadId), profile] : [bot];
     if (targets.some((target) => modelSwitchNeedsAsk(approvalModeFor(target),
       state.instances.find((candidate) => candidate.instanceId === target.modelSelection.instanceId)?.driverKind,
@@ -789,6 +851,7 @@ export function ModelPicker({
       updateBotDefault,
       selection: nextSelection,
     });
+    if (updateBotDefault && threadId) setChangedBotModel(true);
     setOpen(false);
   };
 
@@ -839,15 +902,27 @@ export function ModelPicker({
     ? orgMode && railEngine ? orgStatusOf(railInstance) : { label: pane === "custom" && !blocked && railInstance.access !== "api" ? t("model.localModels") : engineStatus(railInstance), attention: blocked }
     : null;
 
+  // In a thread's picker the bot's model says so, beside the thread's own.
+  const botModelId = follows !== undefined && profile.modelSelection.instanceId === railInstance?.instanceId
+    ? profile.modelSelection.model : undefined;
   const renderRow = (option: ModelOption) => (
     <ModelRow
       key={option.id}
       option={option}
       current={selection.instanceId === railInstance?.instanceId && selection.model === option.id}
       defaultId={railInstance?.models.default ?? ""}
+      botModel={option.id === botModelId}
       onPick={() => railInstance && pick(railInstance, option.id)}
     />
   );
+
+  // The idle tooltip's whole text, and the busy tooltip's first line.
+  const summary = active
+    ? `${active.displayName} · ${modelLabel(active, selection.model)}${
+        modelProvider(active, selection.model) ? ` · ${modelProvider(active, selection.model)}` : ""
+      }${selectedVariantLabel ? ` · ${selectedVariantLabel}` : advanced && selection.effort ? ` · ${effortLabel(selection.effort)} effort` : ""}`
+    : selection.model;
+  const followLine = follows === true ? `\n${t("model.followsBot", { name: profile.name })}` : follows === false ? `\n${t("model.ownModel")}` : "";
 
   // The composer chip reads the same in Simple and Advanced, effort included.
   const composerLabel = [
@@ -862,6 +937,7 @@ export function ModelPicker({
     if (active && signInFamily(active) === "openai") lastOpenaiIdRef.current = active.instanceId;
     const initial = pickerInstances.find((instance) => instance.instanceId === selection.instanceId) ?? pickerInstances[0];
     setRailId(initial?.instanceId ?? null);
+    setChangedBotModel(false);
     setOpen((wasOpen) => {
       const next = !wasOpen;
       if (next) openFor(initial);
@@ -877,11 +953,7 @@ export function ModelPicker({
       onClick={toggle}
       aria-expanded={open && !bot.busy}
       aria-haspopup="dialog"
-      title={
-        bot.busy
-          ? t(threadId ? "model.threadBusy" : "model.busy")
-          : composerLabel
-      }
+      title={bot.busy ? `${composerLabel}${followLine}\n${t(threadId ? "model.threadBusy" : "model.busy")}` : `${composerLabel}${followLine}`}
       className="flex max-w-full items-center gap-1 rounded-lg px-1.5 py-1 text-[13px] text-ink-secondary hover:bg-raised hover:text-ink disabled:cursor-not-allowed disabled:opacity-50"
     >
       <span className="truncate">{composerLabel}</span>
@@ -903,15 +975,7 @@ export function ModelPicker({
         // Multiple Claude accounts keep their name even in the compact chip.
         !contained && active && !showActiveAccount && COMPACT_SQUARE,
       )}
-      title={
-        bot.busy
-          ? t(threadId ? "model.threadBusy" : "model.busy")
-          : active
-          ? `${active.displayName} · ${modelLabel(active, selection.model)}${
-              modelProvider(active, selection.model) ? ` · ${modelProvider(active, selection.model)}` : ""
-            }${selectedVariantLabel ? ` · ${selectedVariantLabel}` : advanced && selection.effort ? ` · ${effortLabel(selection.effort)} effort` : ""}`
-          : selection.model
-      }
+      title={bot.busy ? `${summary}${followLine}\n${t(threadId ? "model.threadBusy" : "model.busy")}` : `${summary}${followLine}`}
     >
       {active && <InstanceProviderMark instance={active} size={14} />}
       {!contained && active && showActiveAccount && (
@@ -1097,6 +1161,11 @@ export function ModelPicker({
             />
           )}
 
+          {follows !== undefined && (
+            <div className={cn(!modal && "px-2")}>
+              <FollowBotModelRow name={profile.name} model={botModelName} follows={follows} onPick={pickBotModel} />
+            </div>
+          )}
           <div data-model-list className={cn(modal ? "pb-2" : "min-h-[min(180px,30dvh)] flex-1 overflow-y-auto px-2 pb-2")}>
             {pane === "main" ? (
               <>
@@ -1229,7 +1298,7 @@ export function ModelPicker({
       {window.ogb?.remoteClient?.active !== true && (
         <button type="button" data-model-add-api-keys onClick={openApiKeys} className="flex shrink-0 items-center gap-1.5 px-4 py-2.5 text-[12px] text-ink-secondary hover:bg-control/60 hover:text-ink">
           <KeyRound size={12} aria-hidden="true" />
-          {t("model.addApiKeys")}
+          {apiKeysLabel(pickerInstances)}
         </button>
       )}
     </div>
@@ -1312,6 +1381,16 @@ export function ModelPicker({
         // rendering in tests) the dialog renders in place.
         typeof document === "undefined" ? modalPanel : createPortal(modalPanel, document.body)
       )}
+      {!contained && changedBotModel && !open && ownModelThreads > 0 && (
+        <div data-thread-models-notice role="status"
+          className="absolute right-0 top-full z-30 mt-2 flex max-w-[calc(100vw-2rem)] items-center gap-2 rounded-xl border border-hairline/50 bg-card py-2 pl-3 pr-2 shadow-xl shadow-black/30">
+          <ThreadModelsLine bot={profile} />
+          <button type="button" aria-label={t("common.close")} onClick={() => setChangedBotModel(false)}
+            className="shrink-0 rounded-md p-1 text-ink-secondary hover:bg-control/60 hover:text-ink">
+            <X size={13} aria-hidden="true" />
+          </button>
+        </div>
+      )}
       <ConfirmDialog
         open={pendingSwitch !== null}
         title={t("model.providerSwitch.title")}
@@ -1328,6 +1407,7 @@ export function ModelPicker({
           dispatch({ type: "setModel", botId: pendingSwitch.botId, threadId: pendingSwitch.threadId,
             selection: pendingSwitch.selection, updateBotDefault: pendingSwitch.updateBotDefault,
             resetApprovalToAsk: true });
+          if (pendingSwitch.updateBotDefault && threadId) setChangedBotModel(true);
           setPendingSwitch(null);
         }}
       />

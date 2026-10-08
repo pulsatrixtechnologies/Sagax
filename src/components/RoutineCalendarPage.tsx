@@ -371,6 +371,7 @@ function EventEditor({
   );
   const [intervalTimeoutDefaultApplied, setIntervalTimeoutDefaultApplied] = useState(Boolean(existingRoutine));
   const [overlap, setOverlap] = useState<"skip" | "queue">(existingRoutine?.overlap ?? "skip");
+  const [continuity, setContinuity] = useState(Boolean(existingRoutine?.continuity));
   const [recurrence, setRecurrence] = useState<RecurrenceChoice>(recurrenceFor(schedule, initialAt));
   const [cronDraft, setCronDraft] = useState(() => cronDraftFor(schedule.type === "cron" ? schedule : undefined, initialAt));
   const [cronChanged, setCronChanged] = useState(false);
@@ -541,6 +542,8 @@ function EventEditor({
           durationMinutes,
           timeoutMinutes,
           overlap,
+          // Room goals can't carry a report yet, and a one-time run has no next run.
+          continuity: routineTarget === "bot" && recurrence !== "none" && continuity,
           attachments: routineTarget === "room-goal" ? [] : attachments as RoutineContextAttachment[],
           ...(routineTarget === "bot" ? { resultsThreadId } : {}),
         };
@@ -906,6 +909,15 @@ function EventEditor({
             <FileText size={18} className="mt-2.5 shrink-0 text-ink-secondary" />
             <textarea value={description} onChange={(event) => setDescription(event.target.value)} rows={5} placeholder={isRoomGoal ? "What should the team accomplish?" : kind === "routine" ? "Add instructions for the bot" : "Add description or agenda"} className="min-w-0 flex-1 resize-y rounded-lg border border-border bg-ink/[0.03] px-2.5 py-1.5 text-[13px] leading-[18px] text-ink outline-none placeholder:text-ink-secondary focus:border-border-strong" />
           </div>
+          {kind === "routine" && !isRoomGoal && recurrence !== "none" && (
+            <label className="ml-8 flex items-start gap-3 rounded-xl border border-hairline/40 bg-inset/40 px-3.5 py-3">
+              <input type="checkbox" aria-label={t("routines.continuityLabel")} checked={continuity} onChange={(event) => setContinuity(event.target.checked)} className="mt-0.5 accent-accent" />
+              <span>
+                <span className="block text-[12.5px] font-medium text-ink">{t("routines.continuityLabel")}</span>
+                <span className="mt-1 block text-[11px] leading-relaxed text-ink-secondary">{t("routines.continuityHelp")}</span>
+              </span>
+            </label>
+          )}
 
           <div className="flex items-start gap-4">
             <Paperclip size={18} className="mt-2.5 shrink-0 text-ink-secondary" />
@@ -1367,8 +1379,9 @@ export function EventDetails({
   const primary = invited[0];
   const executionOwner = isRoomGoal ? goalGroup : primary;
   const canOpenExecution = Boolean(executionThreadId && (executionOwner?.threadId === executionThreadId || executionOwner?.tasks?.some((task) => task.threadId === executionThreadId)));
-  const report = run ?? routine;
-  const resultsThreadId = report?.resultsThreadId ?? report?.sourceThreadId;
+  // A run snapshots where it reported (older runs: the chat that made the
+  // routine). A routine without a chosen thread reports to the main thread.
+  const resultsThreadId = run ? run.resultsThreadId ?? run.sourceThreadId : routine?.resultsThreadId;
   const canOpenResults = resultsThreadId && [...state.bots, ...state.groups].some((owner) => owner.threadId === resultsThreadId || owner.tasks?.some((task) => task.threadId === resultsThreadId));
   const title = call?.name ?? run?.routineName ?? routine?.name ?? "Routine";
   const description = call?.description ?? run?.prompt ?? routine?.prompt ?? "";

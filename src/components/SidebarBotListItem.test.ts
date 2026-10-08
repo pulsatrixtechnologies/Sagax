@@ -87,6 +87,19 @@ describe("BotListItem", () => {
     expect(markup).not.toContain("[digest]");
   });
 
+  // A failed turn's row is stored as "error: …"; the preview reads like the
+  // chat row (src/lib/failed-turn.ts), not like a log line.
+  it("previews a failed turn without its error marker", () => {
+    const markup = renderRow(bot({
+      messages: [
+        { id: "u1", role: "user", kind: "text", text: "check the site", at: 1 },
+        { id: "e1", role: "bot", kind: "activity", at: 2, tool: { name: "error: This computer isn't a place on your OMB Cloud: its bots run in the cloud.", ok: false } },
+      ] as Bot["messages"],
+    }));
+    expect(markup).toContain("This computer isn&#x27;t a place on your OMB Cloud: its bots run in the cloud.");
+    expect(markup).not.toContain("error:");
+  });
+
   // A turn can end on the approval card itself: Stop while it is open, or a
   // provider that settles the ask without writing more. The card then reads
   // Allowed or Denied, and the row must say the same, not "Approval needed".

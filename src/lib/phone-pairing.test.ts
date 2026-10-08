@@ -62,8 +62,8 @@ describe("Connect your phone in the account menu", () => {
     expect(connectPhoneEntry("computer", access(chatOnly, false))?.target).toBe("computer");
   });
 
-  it("on the person's own Cloud: to your Cloud, for the owner's session", () => {
-    expect(subtitle(connectPhoneEntry("cloud", access(admin)))).toBe("to your Cloud");
+  it("on the person's own Cloud: to My Cloud, for the owner's session", () => {
+    expect(subtitle(connectPhoneEntry("cloud", access(admin)))).toBe("to My Cloud");
     expect(connectPhoneEntry("cloud", access(chatOnly))).toBeNull();
   });
 

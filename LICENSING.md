@@ -32,8 +32,8 @@ long as the Apache terms are kept for the original work. So:
 
 The OpenMausBot copyright and attribution notices are kept in
 [NOTICE](NOTICE). Apache 2.0 section 6 does not grant trademark rights: the
-OpenMausBot name and mascot are trademarks of Milind Soni and are not used
-as this product's name.
+OpenMausBot and MausBot names and the mascot are trademarks of Supamaus
+Software Private Limited and are not used as this product's name.
 
 The `enterprise/` directory of the original project is not part of this
 tree. Its source and its license check were never copied here; with the

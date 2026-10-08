@@ -48,26 +48,30 @@ const flag = (on: boolean) => (on ? "1" : "0");
 /** Every combination server/index.ts agentsIntegration() can produce, plus the
  * standing external runtime (docs/self-hosting.md), which sets only its own
  * switch. The bot id is fixed because a room turn writes it into the
- * start_thread schema. */
+ * start_thread schema. A name without "+non-chief" is a Primary Bot's turn,
+ * which mounts the most. */
 function profiles(): Record<string, Profile> {
   const all: Record<string, Profile> = {};
-  for (const room of [false, true]) {
-    for (const ownThread of room ? [false, true] : [false]) {
-      for (const skills of [false, true]) {
-        for (const shared of [false, true]) {
-          for (const voice of [false, true]) {
-            const name = [room ? "room" : "direct", ownThread && "own-thread", skills && "skills", shared && "shared", voice && "voice"]
-              .filter(Boolean).join("+");
-            all[name] = {
-              family: room ? "room" : "direct",
-              env: {
-                SAGAX_ROOM_TURN: flag(room),
-                SAGAX_OWN_THREAD_CREATION: flag(ownThread),
-                SAGAX_SKILL_AUTHORING_ENABLED: flag(skills),
-                SAGAX_SHARED_COMPUTERS_ENABLED: flag(shared),
-                SAGAX_VOICE_NOTES: flag(voice),
-              },
-            };
+  for (const chief of [true, false]) {
+    for (const room of [false, true]) {
+      for (const ownThread of room ? [false, true] : [false]) {
+        for (const skills of [false, true]) {
+          for (const shared of [false, true]) {
+            for (const voice of [false, true]) {
+              const name = [room ? "room" : "direct", ownThread && "own-thread", skills && "skills", shared && "shared", voice && "voice", !chief && "non-chief"]
+                .filter(Boolean).join("+");
+              all[name] = {
+                family: room ? "room" : "direct",
+                env: {
+                  SAGAX_ROOM_TURN: flag(room),
+                  SAGAX_OWN_THREAD_CREATION: flag(ownThread),
+                  SAGAX_SKILL_AUTHORING_ENABLED: flag(skills),
+                  SAGAX_SHARED_COMPUTERS_ENABLED: flag(shared),
+                  SAGAX_VOICE_NOTES: flag(voice),
+                  SAGAX_CHIEF_OF_STAFF: flag(chief),
+                },
+              };
+            }
           }
         }
       }
@@ -84,12 +88,18 @@ function profiles(): Record<string, Profile> {
       SAGAX_SKILL_AUTHORING_ENABLED: "1",
       SAGAX_SHARED_COMPUTERS_ENABLED: "1",
       SAGAX_VOICE_NOTES: "1",
+      SAGAX_CHIEF_OF_STAFF: "1",
     },
   };
   return all;
 }
 
 const PROFILES = profiles();
+/** Refused by the server to every bot that is not a Primary Bot. */
+const CHIEF_ONLY_TOOLS = ["create_bot", "list_team_setup", "propose_team_setup", "propose_bot_deletion", "create_room", "manage_room", "retry_thread"];
+/** Their for_bot_id, changing another bot, is a Primary Bot's alone. */
+const CHIEF_TARGET_TOOLS = ["propose_profile", "propose_model"];
+const CHIEF_PROFILE_TARGET = " A Primary Bot may pass for_bot_id (from list_bots) for a requested change to another bot in its section.";
 /** The profile of each family that mounts the most: checked in whole, as
  * readable JSON. Every other profile is a by-name subset of one of these and
  * is pinned by tool names, byte count and sha256 in profiles.json. */
@@ -99,30 +109,54 @@ const FULL = { direct: "direct+skills+shared+voice", room: "room+own-thread+skil
  * by more than 2%, and may not undercut it by more than 2% either: a smaller
  * catalog is the goal, so lock the win in by lowering the number. */
 const BUDGET_BASELINE: Record<string, number> = {
-  "direct": 47074,
-  "direct+voice": 47815,
-  "direct+shared": 48819,
-  "direct+shared+voice": 49560,
-  "direct+skills": 49000,
-  "direct+skills+voice": 49741,
-  "direct+skills+shared": 50745,
-  "direct+skills+shared+voice": 51486,
-  "room": 45168,
-  "room+voice": 45909,
-  "room+shared": 46913,
-  "room+shared+voice": 47654,
-  "room+skills": 47094,
-  "room+skills+voice": 47835,
-  "room+skills+shared": 48839,
-  "room+skills+shared+voice": 49580,
-  "room+own-thread": 46778,
-  "room+own-thread+voice": 47519,
-  "room+own-thread+shared": 48523,
-  "room+own-thread+shared+voice": 49264,
-  "room+own-thread+skills": 48704,
-  "room+own-thread+skills+voice": 49445,
-  "room+own-thread+skills+shared": 50449,
-  "room+own-thread+skills+shared+voice": 51190,
+  "direct": 51329,
+  "direct+voice": 52070,
+  "direct+shared": 53074,
+  "direct+shared+voice": 53815,
+  "direct+skills": 53382,
+  "direct+skills+voice": 54123,
+  "direct+skills+shared": 55127,
+  "direct+skills+shared+voice": 55868,
+  "room": 49423,
+  "room+voice": 50164,
+  "room+shared": 51168,
+  "room+shared+voice": 51909,
+  "room+skills": 51476,
+  "room+skills+voice": 52217,
+  "room+skills+shared": 53221,
+  "room+skills+shared+voice": 53962,
+  "room+own-thread": 51033,
+  "room+own-thread+voice": 51774,
+  "room+own-thread+shared": 52778,
+  "room+own-thread+shared+voice": 53519,
+  "room+own-thread+skills": 53086,
+  "room+own-thread+skills+voice": 53827,
+  "room+own-thread+skills+shared": 54831,
+  "room+own-thread+skills+shared+voice": 55572,
+  "direct+non-chief": 41864,
+  "direct+voice+non-chief": 42605,
+  "direct+shared+non-chief": 43609,
+  "direct+shared+voice+non-chief": 44350,
+  "direct+skills+non-chief": 43917,
+  "direct+skills+voice+non-chief": 44658,
+  "direct+skills+shared+non-chief": 45662,
+  "direct+skills+shared+voice+non-chief": 46403,
+  "room+non-chief": 39958,
+  "room+voice+non-chief": 40699,
+  "room+shared+non-chief": 41703,
+  "room+shared+voice+non-chief": 42444,
+  "room+skills+non-chief": 42011,
+  "room+skills+voice+non-chief": 42752,
+  "room+skills+shared+non-chief": 43756,
+  "room+skills+shared+voice+non-chief": 44497,
+  "room+own-thread+non-chief": 41568,
+  "room+own-thread+voice+non-chief": 42309,
+  "room+own-thread+shared+non-chief": 43313,
+  "room+own-thread+shared+voice+non-chief": 44054,
+  "room+own-thread+skills+non-chief": 43621,
+  "room+own-thread+skills+voice+non-chief": 44362,
+  "room+own-thread+skills+shared+non-chief": 45366,
+  "room+own-thread+skills+shared+voice+non-chief": 46107,
   "external": 3030,
   "external+everything": 3030,
 };
@@ -220,9 +254,43 @@ describe("agents proxy tools/list golden", () => {
     for (const [name, profile] of Object.entries(PROFILES)) {
       const full = new Map(toolsOf(wires[FULL[profile.family]]!).map((tool) => [tool.name, JSON.stringify(tool)]));
       for (const tool of toolsOf(wires[name]!)) {
+        // A non-Primary Bot's propose_profile and propose_model are pinned by
+        // the next test.
+        if (profile.env.SAGAX_CHIEF_OF_STAFF === "0" && CHIEF_TARGET_TOOLS.includes(tool.name)) continue;
         expect(JSON.stringify(tool), `${name}: ${tool.name}`).toBe(full.get(tool.name));
       }
     }
+  });
+
+  it("shows only a Primary Bot the Primary-Bot-only tools, and for_bot_id on another bot's profile or model", () => {
+    // Every route behind these refuses a bot that is not a Primary Bot, so the rest
+    // are not shown them; otherwise the two catalogs are the same to the byte.
+    type SchemaTool = Tool & { description: string; inputSchema: { properties: Record<string, unknown> } };
+    const nonChief = Object.keys(PROFILES).filter((name) => PROFILES[name]!.env.SAGAX_CHIEF_OF_STAFF === "0");
+    expect(nonChief).toHaveLength(24);
+    for (const name of nonChief) {
+      const chiefTools = toolsOf(wires[name.replace("+non-chief", "")]!) as SchemaTool[];
+      const tools = new Map((toolsOf(wires[name]!) as SchemaTool[]).map((tool) => [tool.name, tool]));
+      expect(chiefTools.map((tool) => tool.name)).toEqual(expect.arrayContaining(CHIEF_ONLY_TOOLS));
+      expect([...tools.keys()], name).toEqual(chiefTools.map((tool) => tool.name).filter((tool) => !CHIEF_ONLY_TOOLS.includes(tool)));
+      for (const chiefTool of chiefTools.filter((tool) => tools.has(tool.name))) {
+        let expected: SchemaTool = chiefTool;
+        if (CHIEF_TARGET_TOOLS.includes(chiefTool.name)) {
+          const { for_bot_id: forBotId, ...properties } = chiefTool.inputSchema.properties;
+          expect(forBotId, `${name}: ${chiefTool.name}`).toBeDefined();
+          expected = { ...chiefTool, description: chiefTool.description.replace(CHIEF_PROFILE_TARGET, ""), inputSchema: { ...chiefTool.inputSchema, properties } };
+        }
+        expect(JSON.stringify(tools.get(chiefTool.name)), `${name}: ${chiefTool.name}`).toBe(JSON.stringify(expected));
+      }
+      expect(chiefTools.find((tool) => tool.name === "propose_profile")!.description).toContain(CHIEF_PROFILE_TARGET);
+      expect(JSON.stringify(CHIEF_TARGET_TOOLS.map((tool) => tools.get(tool)))).not.toContain("for_bot_id");
+      // Any bot may ask to change a reachable section peer's routine.
+      for (const routine of ["propose_routine", "propose_routine_action"]) {
+        expect(tools.get(routine)!.inputSchema.properties, `${name}: ${routine}`).toHaveProperty("for_bot_id");
+      }
+    }
+    // A standing external runtime is shown none of them, Primary Bot or not.
+    expect(wires["external+everything"]).toBe(wires.external);
   });
 
   it("is what the catalog module computes in-process, so another front end mounts the same tools", () => {

@@ -13,23 +13,18 @@ import { Sidebar } from "@/components/Sidebar";
 import { ChatView } from "@/components/ChatView";
 import { GroupView } from "@/components/GroupView";
 import { PersonPanel } from "@/components/PersonPanel";
-import { BotSettingsDialog } from "@/components/BotSettingsDialog";
-import { RemoteAgentSettingsPanel } from "@/components/RemoteAgentSettingsPanel";
-import { NewBotDialog } from "@/components/NewBotDialog";
 import { ComposeToPicker } from "@/components/ComposeToPicker";
 import { PluginsPanel, preloadConnectedApps } from "@/components/PluginsPanel";
-import { TriggersPanel } from "@/components/TriggersPanel";
-import { RemoteDesktopPanel } from "@/components/remote-desktop-panel";
-import { InspectorPanel } from "@/components/InspectorPanel";
-import { ActivityPanel } from "@/components/ActivityPanel";
-import { SettingsModal } from "@/components/SettingsModal";
+import {
+  ActivityPanel, BotSettingsDialog, InspectorPanel, KeyboardShortcutsModal, LocalVmWorkspace, NewBotDialog,
+  preloadScreens, RemoteAgentSettingsPanel, RemoteDesktopPanel, RoutinesPage, SettingsModal, TeamMapPage, TriggersPanel,
+} from "@/components/lazy-screens";
 import { useServerMode } from "@/components/ServerModeSettings";
 import { WorkspaceBackupRecovery } from "@/components/WorkspaceBackupSettings";
 import { ReleaseNotesPrompt } from "@/components/ReleaseNotesPrompt";
 import { UpdateBanner } from "@/components/UpdateBanner";
 import { DesktopCapabilitiesProvider, useDesktopCapabilities } from "@/components/DesktopCapabilities";
 import { WindowCaptionButtons } from "@/components/WindowCaptionButtons";
-import { RoutinesPage } from "@/components/RoutinesPage";
 import { NoEngines } from "@/components/NoEngines";
 
 import { CommandPalette } from "@/components/CommandPalette";
@@ -40,9 +35,6 @@ import { reportAchievement } from "@/lib/achievements";
 import { FloatingBotsHost } from "@/components/FloatingBotsHost";
 import { CallEngineHost } from "@/components/CallView";
 import { RetroBootSlot, RetroChromeSlot } from "@/components/RetroChromeHost";
-import { KeyboardShortcutsModal } from "@/components/KeyboardShortcutsModal";
-import { LocalVmWorkspace } from "@/components/LocalVmWorkspace";
-import { TeamMapPage } from "@/components/TeamMapPage";
 import { setLocale, t } from "@/lib/i18n";
 import { shouldOpenKeyboardShortcuts } from "@/lib/keyboard-shortcuts";
 import { effectiveLanguage, useLanguageChoice } from "@/lib/language-preference";
@@ -61,10 +53,11 @@ function Shell() {
   const remoteClient = window.ogb?.remoteClient?.active === true;
   useEffect(() => {
     if (!window.ogb?.environments) return;
-    const open = (computerId?: string | null) => {
+    // A saved server's Computer access panel, or ("copy") its Copy this computer here panel.
+    const open = (computerId?: string | null, panel?: "copy") => {
       if (computerId) {
         const target = new URL(window.location.href);
-        target.searchParams.set("share-computer", computerId);
+        target.searchParams.set(panel === "copy" ? "copy-to" : "share-computer", computerId);
         window.history.replaceState(null, "", `${target.pathname}${target.search}${target.hash}`);
       }
       dispatch({ type: "toggleAppSettings", open: true, section: "organization" });
@@ -221,6 +214,10 @@ function Shell() {
     if (!state.connected) return;
     void preloadConnectedApps().catch(() => {});
   }, [state.connected]);
+
+  // Settings, Routines and the other on-request screens stay out of the
+  // launch bundle; fetch them once the first paint is done and the app is idle.
+  useEffect(() => preloadScreens(), []);
 
   // Picking a conversation closes the drawer: on a phone the chat is what you
   // asked for, and leaving the list up would hide it. Watching activeView too

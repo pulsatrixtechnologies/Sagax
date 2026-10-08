@@ -12,9 +12,10 @@ import { EngineCard, EngineSections, RefreshEngines, engineReady } from "./Engin
 import { cn } from "@/lib/cn";
 import { useMenuMotion } from "./MenuMotion";
 import { t } from "@/lib/i18n";
-import { EngineSetup, EngineUpdateNotice, EngineWarningNotice } from "./EngineSetup";
+import { ApiKeyEngineManage, EngineSetup, EngineUpdateNotice, EngineWarningNotice, isApiKeyEngine } from "./EngineSetup";
 import { AddClaudeAccount, ClaudeAccountSettings } from "./ClaudeAccountSettings";
 import { AddChatGptAccount, CodexAccountSettings } from "./CodexAccountSettings";
+import { DEVICE_SIGN_IN_COPY, deviceSignInProvider } from "./DeviceSignIn";
 import { AntigravityFreeSpace } from "./AntigravityFreeSpace";
 import { ManageMyKeysLink, MyEngineAccess } from "./settings/MyEngines";
 import { HarnessConnectorsSection } from "./HarnessConnectorsSection";
@@ -290,19 +291,28 @@ function EngineRow({ instance, mine, member = false }: { instance: InstanceInfo;
       {policyNote}
       {mine && <div className="mb-3"><MyEngineAccess engine={mine} /></div>}
       {!mine && !engineReady(instance) && <EngineSetup instance={instance} intent={instance.access === "custom" ? "inject" : "cloud"} unframed />}
+      {!mine && engineReady(instance) && <ApiKeyEngineManage instance={instance} className="mt-3" />}
       {instance.snapshot.update && <EngineUpdateNotice update={instance.snapshot.update} instance={instance} className="mt-3" />}
       {instance.snapshot.warning && <EngineWarningNotice warning={instance.snapshot.warning} className="mt-3" />}
       {!mine && instance.claudeAccount && <ClaudeAccountSettings instance={instance} />}
       {!mine && engineReady(instance) && instance.snapshot.authenticated === true && (
-        instance.authentication?.method === "device-code" || instance.authentication?.method === "browser-pkce"
+        (instance.authentication?.method === "device-code" || instance.authentication?.method === "browser-pkce") && deviceSignInProvider(instance.driverKind) === "codex"
           ? <CodexAccountSettings instance={instance} />
+          : instance.authentication?.method === "device-code"
+          ? <p className="flex items-center gap-1.5 text-[12px] text-success"><Check size={13} />{t(DEVICE_SIGN_IN_COPY[deviceSignInProvider(instance.driverKind)].connectedAccount)}</p>
           : instance.authentication?.method === "paste-code" && !instance.claudeAccount && (
             <p className="flex items-center gap-1.5 text-[12px] text-success"><Check size={13} />{t("engineSetup.claude.connectedAccount")}</p>
           )
       )}
       {instance.freeUpSpace && <AntigravityFreeSpace instance={instance} />}
-      <details className="mt-3 rounded-xl border border-hairline/40 px-3 py-2.5">
-        <summary className="cursor-pointer text-[12px] font-medium text-ink-secondary hover:text-ink">{t("engines.library.advanced")}</summary>
+      {!member && instance.driverKind === "claudeAgent" && instance.access !== "custom" && (
+        <div className="mt-3"><AddClaudeAccount /></div>
+      )}
+      {!member && instance.snapshot.chatgptPlan && !instance.snapshot.authenticationUnavailableReason && (
+        <div className="mt-3"><AddChatGptAccount /></div>
+      )}
+      <details className="mt-4 border-t border-hairline/40 pt-3">
+        <summary className="cursor-pointer rounded-md py-1 text-[12px] font-medium text-ink-secondary outline-none hover:text-ink focus-visible:ring-2 focus-visible:ring-accent">{t("engines.library.advanced")}</summary>
         <p className="mt-2 text-[12px] leading-relaxed text-ink-secondary">{t("engines.footer")}</p>
         <div className="mt-3 flex flex-wrap items-center gap-2 text-[13px]">
           {instance.cli ? (
@@ -378,9 +388,11 @@ export function EnginesSettings() {
   // (and a Set CLI… path) for engines the running build doesn't recognize.
   // An organization member's copy of the engines carries no CLI fields
   // (server memberInstanceView): their rows are the engines the server
-  // reports to them (orgEngineRows keeps the installed ones).
+  // reports to them (orgEngineRows keeps the installed ones). Key engines
+  // have no CLI; keep them once their key is saved, or the card (and the
+  // only way back to a mistyped key) vanishes (MOCA-292).
   const member = viewerIsOrgMember(state.config);
-  const rows = state.instances.filter((i) => member || i.readOnly || i.cli !== undefined || i.cliDefault !== undefined || i.snapshot.state === "unavailable");
+  const rows = state.instances.filter((i) => member || i.readOnly || i.cli !== undefined || i.cliDefault !== undefined || i.snapshot.state === "unavailable" || isApiKeyEngine(i));
   // On an organization server each person signs in their own subscription
   // here, on each engine's card (it was a separate "My subscriptions and
   // keys" card until 2026-10-02), never the server's.
@@ -412,12 +424,6 @@ export function EnginesSettings() {
       />
       {member && org && myEngines !== null && shown.length === 0 && (
         <p className="text-[13px] text-ink-secondary" data-member-no-engines>{t("myEngines.noneOnServer")}</p>
-      )}
-      {!member && (
-        <div className="space-y-3 border-t border-hairline/40 pt-4">
-          <AddClaudeAccount />
-          {state.instances.some((instance) => instance.snapshot.chatgptPlan && !instance.readOnly && !instance.snapshot.authenticationUnavailableReason) && <AddChatGptAccount />}
-        </div>
       )}
     </div>
   );

@@ -1442,8 +1442,10 @@ it after an upstream merge instead of renaming by hand.
 
 ## Upstream sync
 
-Last sync: 2026-10-03, upstream `milind-soni/OpenMausBot` main at
-`04a8bef8` (0.1.95) merged into Sagax; `baseVersion` follows it. To repeat:
+Last sync: 2026-10-08, upstream `milind-soni/OpenMausBot` main at
+`2f3d74db` (0.1.101) merged into Sagax; `baseVersion` follows it. Upstream
+removed `ios/` and `android/` in 0.1.97 (#2382); Sagax keeps its own native
+apps, so those paths stay ours on every later merge. To repeat:
 
 - Keep the `upstream` remote fetch-only (`git remote set-url --push
   upstream no_push`). Never push, open a pull request or file an issue

@@ -7,7 +7,7 @@ import type { Bot } from "@/state/store";
 // render with React's real hooks; no DOM or live workspace is needed here.
 const fixture = vi.hoisted(() => ({
   capturing: false, cursor: 0, slots: [] as unknown[], effects: [] as EffectCallback[],
-  state: { activeView: "chat", selectedId: "atlas", deletingBots: {}, pendingQueued: {}, revealThread: null as null | { threadId: string } },
+  state: { activeView: "chat", selectedId: "atlas", deletingBots: {}, pendingQueued: {}, instances: [], revealThread: null as null | { threadId: string; nonce: number } },
 }));
 vi.mock("react", async (original) => {
   const actual = await original<typeof import("react")>();
@@ -24,6 +24,7 @@ vi.mock("react", async (original) => {
       if (fixture.capturing) fixture.effects.push(effect);
       else actual.useEffect(effect, dependencies);
     },
+    useMemo: <T,>(factory: () => T, dependencies: unknown[]) => fixture.capturing ? factory() : actual.useMemo(factory, dependencies),
   };
 });
 vi.mock("@/state/store", async (original) => ({ ...await original<typeof import("@/state/store")>(),
@@ -74,7 +75,7 @@ describe("bot row with threads on never expands", () => {
 
   it("does not unfold for a revealed sibling thread", () => {
     const multiple = { ...bot, tasks: [...bot.tasks!, { threadId: "older", title: "Earlier", createdAt: 0 }] };
-    fixture.state.revealThread = { threadId: "older" };
+    fixture.state.revealThread = { threadId: "older", nonce: 1 };
     render(multiple);
     fixture.effects.forEach(effect => effect());
     const markup = render(multiple);
@@ -87,7 +88,7 @@ describe("bot row with threads on never expands", () => {
     [{ activity: "waiting-on-you" }, '<span class="truncate">Waiting for you…'],
     [{ waitingForTeammates: true }, '<span class="truncate">Waiting on a teammate…'],
   ] as const)("keeps sole-thread activity visible after a reveal (%j)", (status, label) => {
-    fixture.state.revealThread = { threadId: "current" };
+    fixture.state.revealThread = { threadId: "current", nonce: 1 };
     render({ ...bot, ...status });
     fixture.effects.forEach(effect => effect());
     const markup = render({ ...bot, ...status });

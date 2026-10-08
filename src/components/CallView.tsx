@@ -220,18 +220,6 @@ export function CallTargetButton({
         >
           <div className="text-[13px] font-medium text-ink">Call unavailable</div>
           <div className="mt-1 text-[12px] leading-[1.45] text-ink-secondary">{reason}</div>
-          {capabilityHelp?.action === "choose-local-workspace" && (
-            <button
-              type="button"
-              onClick={() => {
-                setHelpOpen(false);
-                void window.ogb?.workspaces?.menu();
-              }}
-              className="mt-2.5 rounded-lg bg-accent px-3 py-1.5 text-[12px] font-medium text-accent-ink hover:brightness-110"
-            >
-              Choose This computer
-            </button>
-          )}
           {voiceSetupRequired && (
             <button
               type="button"
