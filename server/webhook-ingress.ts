@@ -80,11 +80,16 @@ export const WEBHOOK_AUTH_FAILURE_WINDOW_MS = 60_000;
  * header is attacker-controlled, so it is never trusted here. */
 export class AuthFailureLimiter {
   private failures = new Map<string, number[]>();
-  constructor(
-    private readonly limit = WEBHOOK_AUTH_FAILURE_LIMIT,
-    private readonly windowMs = WEBHOOK_AUTH_FAILURE_WINDOW_MS,
-    private readonly now: () => number = Date.now,
-  ) {}
+  private readonly limit: number;
+  private readonly windowMs: number;
+  private readonly now: () => number;
+
+  // No parameter properties: the server runs under node's strip-only type mode.
+  constructor(limit = WEBHOOK_AUTH_FAILURE_LIMIT, windowMs = WEBHOOK_AUTH_FAILURE_WINDOW_MS, now: () => number = Date.now) {
+    this.limit = limit;
+    this.windowMs = windowMs;
+    this.now = now;
+  }
 
   private recent(source: string): number[] {
     const cutoff = this.now() - this.windowMs;
