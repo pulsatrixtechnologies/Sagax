@@ -2,7 +2,8 @@
 // call engine (src/lib/voice-mode/call.ts: VAD frames, turn detector,
 // streaming speech to text, sentence by sentence speech) against the real
 // server (send route, context, engine driver, voice routes), with a fake xAI
-// and a fake Claude CLI that take the time the real ones take. Each turn is
+// and a fake engine CLI (Claude, or Grok over ACP) that take the time the
+// real ones take. Each turn is
 // timed from the person's last voiced frame to the first audio of the answer,
 // stage by stage, measured by this bench itself (so it runs the same on an
 // older checkout of the call engine).
@@ -10,16 +11,21 @@
 //   SAGAX_VOICE_BENCH=1 pnpm exec vitest run scripts/voice-latency-bench.test.ts
 //
 // Knobs (env), with the defaults measured or assumed for a real setup:
-//   BENCH_TURNS (12), BENCH_COLD_MS (2600: Claude CLI boot, MCP servers and
-//   session read back, from native logs), BENCH_FIRST_TOKEN_MS (600: the
-//   model's first token), BENCH_STT_FINAL_MS (250), BENCH_TTS_FIRST_MS (300),
-//   BENCH_TLS_MS (150: a new connection to api.x.ai), BENCH_OUT (a JSON file).
+//   BENCH_ENGINES (claude,grok), BENCH_TURNS (12), BENCH_COLD_MS (2600: CLI
+//   boot, MCP servers and session read back, from Claude's native logs),
+//   BENCH_LOAD_MS (900, assumed: one ACP session/load or session/new, the
+//   MCP servers reconnected and the history read back), BENCH_FIRST_TOKEN_MS
+//   (600: the model's first token), BENCH_STT_FINAL_MS (250),
+//   BENCH_TTS_FIRST_MS (300), BENCH_TLS_MS (150: a new connection to
+//   api.x.ai), BENCH_OUT (a JSON file).
 //
 // BENCH_COLD_MS starts when the call is accepted: the fake CLI waits it at
 // process boot. The first utterance pays only what remains. A short first
-// question can still overlap an unfinished cold start.
+// question can still overlap an unfinished cold start. The Grok case also
+// counts each turn's ACP session establishments (session/load, /resume,
+// /new): a warm call turn has none, only its session/prompt.
 import { spawn, type ChildProcess } from "node:child_process";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -46,8 +52,12 @@ const QUESTIONS = [
   "Can you summarize the last ticket for me?",
 ];
 
+export type BenchEngine = "claude" | "grok";
+
 export interface BenchTurn {
   turn: number;
+  /** Grok: the ACP session establishments (session/load, /resume, /new) this turn paid */
+  establish?: number;
   endpoint?: number;
   stt?: number;
   dispatch?: number;
@@ -136,19 +146,24 @@ function frame(probability: number, level: number): Float32Array {
   return out;
 }
 
-async function startServer(env: Record<string, string>) {
+async function startServer(engine: BenchEngine, env: Record<string, string>) {
   const port = await freePortBlock([0, 1]);
   const dataDir = mkdtempSync(join(tmpdir(), "omb-voice-bench-"));
   mkdirSync(join(dataDir, "tmp"), { recursive: true });
-  const wrapper = join(dataDir, "bench-claude.mjs");
+  const wrapper = join(dataDir, `bench-${engine}.mjs`);
+  const fake = engine === "grok" ? "fake-acp-cli.ts" : "fake-claude-cli.ts";
   writeFileSync(wrapper, [
     "#!/usr/bin/env node",
     ...Object.entries(env).map(([key, value]) => `process.env[${JSON.stringify(key)}] = ${JSON.stringify(value)};`),
-    'process.stdin.on("end", () => process.exit(0));',
-    `await import(${JSON.stringify(pathToFileURL(join(ROOT, "server", "testing", "fake-claude-cli.ts")).href)});`,
+    ...(engine === "claude" ? ['process.stdin.on("end", () => process.exit(0));'] : []),
+    `await import(${JSON.stringify(pathToFileURL(join(ROOT, "server", "testing", fake)).href)});`,
   ].join("\n"), { mode: 0o700 });
-  writeFileSync(join(dataDir, "config.json"), JSON.stringify({ instances: { claude: { driver: "claudeAgent", displayName: "Bench", config: { cli: wrapper } } } }));
-  const childEnv = { ...verificationServerEnvironment(process.env, dataDir, port), SAGAX_XAI_TTS_API: env.SAGAX_XAI_TTS_API!, XAI_API_KEY: FAKE_KEY };
+  writeFileSync(join(dataDir, "config.json"), JSON.stringify({ instances: engine === "grok"
+    ? { grok: { driver: "grokAgent", displayName: "Bench", config: { cli: wrapper, fullAuto: false } } }
+    : { claude: { driver: "claudeAgent", displayName: "Bench", config: { cli: wrapper } } } }));
+  // The server's own xAI voice key (server/config.ts): XAI_API_KEY is not
+  // read there, and a bench given only that one gets no speech at all.
+  const childEnv = { ...verificationServerEnvironment(process.env, dataDir, port), SAGAX_XAI_TTS_API: env.SAGAX_XAI_TTS_API!, SAGAX_XAI_VOICE_KEY: FAKE_KEY };
   let log = "";
   const child: ChildProcess = spawn(process.execPath, ["--experimental-strip-types", join(ROOT, "server", "index.ts")], { cwd: ROOT, env: childEnv, stdio: ["ignore", "pipe", "pipe"] });
   child.stdout!.on("data", (chunk) => (log += chunk));
@@ -163,7 +178,14 @@ async function startServer(env: Record<string, string>) {
   return { url, child, log: () => log };
 }
 
-export async function runVoiceLatencyBench(): Promise<{ turns: BenchTurn[]; serverLog: string }> {
+/** The ACP requests the fake Grok logged, in order. */
+function acpMethods(file: string): string[] {
+  if (!existsSync(file)) return [];
+  return readFileSync(file, "utf8").trim().split("\n").filter(Boolean).map((line) => (JSON.parse(line) as { method: string }).method);
+}
+const ESTABLISH = new Set(["session/load", "session/resume", "session/new"]);
+
+export async function runVoiceLatencyBench(engine: BenchEngine = "claude"): Promise<{ engine: BenchEngine; turns: BenchTurn[]; serverLog: string; acp?: string[] }> {
   const turns = knob("BENCH_TURNS", 12);
   const transcripts = Array.from({ length: turns }, (_, i) => QUESTIONS[i % QUESTIONS.length]!);
   const xai = await startFakeXaiVoice({
@@ -175,7 +197,16 @@ export async function runVoiceLatencyBench(): Promise<{ turns: BenchTurn[]; serv
     // xAI's interim words keep up with the person, a quarter second behind
     sttPartials: { msPerWord: WORD_MS - 30, latencyMs: 250 },
   });
-  const server = await startServer({
+  const acpLog = join(mkdtempSync(join(tmpdir(), "omb-voice-bench-acp-")), "rpc.jsonl");
+  const server = await startServer(engine, engine === "grok" ? {
+    FAKE_ACP_MODE: "voice",
+    FAKE_ACP_COLD_MS: String(knob("BENCH_COLD_MS", 2600)),
+    FAKE_ACP_LOAD_MS: String(knob("BENCH_LOAD_MS", 900)),
+    FAKE_ACP_FIRST_TOKEN_MS: String(knob("BENCH_FIRST_TOKEN_MS", 600)),
+    FAKE_ACP_TOKEN_MS: "25",
+    FAKE_ACP_RPC_APPEND_FILE: acpLog,
+    SAGAX_XAI_TTS_API: `${xai.url}/v1`,
+  } : {
     FAKE_CLAUDE_MODE: "voice",
     FAKE_CLAUDE_COLD_MS: String(knob("BENCH_COLD_MS", 2600)),
     FAKE_CLAUDE_FIRST_TOKEN_MS: String(knob("BENCH_FIRST_TOKEN_MS", 600)),
@@ -302,6 +333,7 @@ export async function runVoiceLatencyBench(): Promise<{ turns: BenchTurn[]; serv
     for (let turn = 1; turn <= turns; turn++) {
       current = { text: "" };
       metrics = {};
+      const establishedBefore = acpMethods(acpLog).filter((method) => ESTABLISH.has(method)).length;
       speaking = true;
       await sleep(transcripts[turn - 1]!.split(/\s+/).length * WORD_MS);
       speaking = false;
@@ -322,6 +354,7 @@ export async function runVoiceLatencyBench(): Promise<{ turns: BenchTurn[]; serv
         ...(m.earlyEnd ? { earlyEnd: true } : {}),
         ...(m.earlyStart ? { earlyStart: true } : {}),
         ...(m.reissued ? { reissued: true } : {}),
+        ...(engine === "grok" ? { establish: acpMethods(acpLog).filter((method) => ESTABLISH.has(method)).length - establishedBefore } : {}),
       });
       // the answer plays out, then the person thinks a moment
       while (live.player.busy || live.current.botBusy) await sleep(50);
@@ -335,7 +368,7 @@ export async function runVoiceLatencyBench(): Promise<{ turns: BenchTurn[]; serv
     server.child.kill("SIGTERM");
     await xai.close();
   }
-  return { turns: results, serverLog: server.log() };
+  return { engine, turns: results, serverLog: server.log(), ...(engine === "grok" ? { acp: acpMethods(acpLog) } : {}) };
 }
 
 /** p50 and p90 of each stage (nearest rank). */
