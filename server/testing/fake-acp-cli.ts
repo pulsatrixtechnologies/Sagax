@@ -361,6 +361,10 @@ const dumpEnv = Object.fromEntries(
     "ANTIGRAVITY_HARNESS_PATH",
     "AGY_ACP_DEFAULT_MODEL",
     "OPENCODE_DISABLE_PROJECT_CONFIG",
+    "OPENCODE_PERMISSION",
+    "QWEN_CODE_SYSTEM_SETTINGS_PATH",
+    "HERMES_HOME",
+    "KIMI_CODE_HOME",
     "GEMINI_API_KEY",
     "MISTRAL_API_KEY",
     "SAGAX_ANTHROPIC_API_KEY",
@@ -368,7 +372,7 @@ const dumpEnv = Object.fromEntries(
 );
 // pid rides along so a test can tell a respawned process (new pid, fresh
 // dump) from a pooled one whose dump was never rewritten
-const dumpState: Record<string, unknown> = { argv, env: dumpEnv, pid: process.pid };
+const dumpState: Record<string, unknown> = { argv, env: dumpEnv, pid: process.pid, cwd: process.cwd() };
 const modelProbe = process.env.SAGAX_GROK_MODEL_PROBE === "1";
 if (process.env.FAKE_ACP_DUMP && !modelProbe) {
   writeFileSync(process.env.FAKE_ACP_DUMP, JSON.stringify(dumpState, null, 2));
