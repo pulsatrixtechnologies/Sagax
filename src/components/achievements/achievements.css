@@ -236,31 +236,40 @@
 .member-card-open:hover { text-decoration: underline; }
 
 /* the page */
-.achievement-card {
+.achievement-row {
   --tier: #9aa3ad;
-  position: relative;
 }
-.achievement-card[data-tier="rare"] { --tier: #60a5fa; }
-.achievement-card[data-tier="epic"] { --tier: #c084fc; }
-.achievement-card[data-tier="legendary"] { --tier: #fbbf24; }
-.achievement-card-badge {
+.achievement-row:hover { background: var(--color-inset); }
+.achievement-row[data-tier="rare"] { --tier: #60a5fa; }
+.achievement-row[data-tier="epic"] { --tier: #c084fc; }
+.achievement-row[data-tier="legendary"] { --tier: #fbbf24; }
+.achievement-row-icon {
   display: grid;
   flex-shrink: 0;
   place-items: center;
-  width: 36px;
-  height: 36px;
+  width: 28px;
+  height: 28px;
   border-radius: 999px;
+  border: 1.5px solid var(--tier);
+  color: var(--color-ink-secondary);
 }
-.achievement-card[data-unlocked] .achievement-card-badge {
-  color: #10121a;
-  background: radial-gradient(circle at 35% 30%, #ffffff, var(--tier) 72%);
-  box-shadow: 0 0 10px -2px var(--tier);
+.achievement-row[data-unlocked] .achievement-row-icon {
+  color: var(--color-ink);
+  background: color-mix(in srgb, var(--tier) 22%, transparent);
 }
-.achievement-card:not([data-unlocked]) .achievement-card-badge {
-  color: var(--color-ink-tertiary);
-  background: var(--color-inset);
+.achievement-row:not([data-unlocked]) .achievement-row-icon { opacity: 0.5; }
+.achievement-row:not([data-unlocked]) { opacity: 0.85; }
+.achievement-new-tag {
+  flex-shrink: 0;
+  border-radius: 999px;
+  padding: 0 6px;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 15px;
+  color: var(--color-ink);
+  border: 1px solid var(--color-ink-tertiary);
 }
-.achievement-card-tier { color: var(--tier); }
+.achievement-row-reward { color: var(--color-ink-tertiary); }
 .achievement-progress {
   height: 4px;
   overflow: hidden;

@@ -6604,17 +6604,9 @@
       "achievements.streak": "5fabe9fd821f2cae05d34ccde99ab3ff888533457a7cce03733278a68a9280d9",
       "achievements.titleLabel": "7e8cd2056da73a7fefb6cd91f4e5d199d08d9058c517b9a2476b1b520324d674",
       "achievements.titleNone": "30a3b02cbee402e6f6ce1788dfd094e1ec4daab56a13774625d410623f445673",
-      "achievements.recent": "ae22d4fe0f712f854e0cf05e0d9eb7c4e7c85a5a21b2cfa62337a8634de3c77d",
       "achievements.categories": "b8b1d894c683725260dcd78f8ed64f979331a1ab61fc8311e9ccfc300fd5de20",
-      "achievements.filter": "0df6f1cad36c49da768a6efdcc2c4be102f5729f7381cb53e4ff8061d17eaeb6",
-      "achievements.filter.all": "a52ace420f2175d08b1577a1bea5445e36801229c074ef9ed6c55a73401fd9c2",
-      "achievements.filter.unlocked": "531c7b28abf276004c358d7ecc6f3a25dba8c2df6ca0beefa89fb2cd72bf6478",
-      "achievements.filter.locked": "a424e33d90931d1ed22f2af37a3f3491a5c9de0dfae079f6f3ff4edf0309e07f",
       "achievements.search": "49c266baaaa70981ea188fa714d5c40cf13830d786a861c9943ae0d26a7f3fe9",
       "achievements.searchLabel": "3cd71b01f4bc791b5040d7ebd5deed974415d15e5faffee185975c2f7cc2e2c4",
-      "achievements.rewardFilter": "55ac8cbae095aacceaf1e9d9efdf022f597a39780820ed9bc24e2f3e5271c351",
-      "achievements.rewardFilter.all": "dbea051f716adfc1c4ddc820b90cc1539abec70bc8c93b982a6a46430440d505",
-      "achievements.rewardFilter.title": "e711b7876f4290f9720da7e6dbdc810f406c9080251fe7bb4da500d77c53e8a7",
       "achievements.settings.showPoints": "208ad50d039fcd92b6ad497f850b12cfd038f086350a67df32456a1682b24ede",
       "achievements.settings.showPointsHint": "ff657eb7bd48971f81346ad1925487312ef515920aa597238cde47ad15588201",
       "achievements.settings.showTitle": "61900aa5637a88403ac26617a8d0435b9c0d356e27f68e8d3944ff12cad2ab4a",
@@ -7557,7 +7549,9 @@
       "connectApps.providers.apiKey": "16f0ee47f993d6270c9059450473eea493ca8ae037f8877782ae2bc176f24d18",
       "connectApps.providers.notSignedIn": "491fc91cd76e51571a745d780f0fc91f8ae62622e790cb113828988bba2e3c2c",
       "connectApps.providers.unavailable": "94b768af74236a6780055999a95a6db3486c2252347f643bf057d2a746a8163e",
-      "connectApps.providers.signedIn": "ca566c8968e7e881d55617e7caaf0c126924ab1cb64ca80edb2f37ef386492d8"
+      "connectApps.providers.signedIn": "ca566c8968e7e881d55617e7caaf0c126924ab1cb64ca80edb2f37ef386492d8",
+      "achievements.new": "18fdd549b2ed367ac0c74cbec1214644728515b30edbcb78e7d322757a7c8359",
+      "achievements.lockedOnly": "55583d233f8489e28d519739625e18c527cf733cf7ba837a73fd41b082995dc0"
     },
     "hi": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",
@@ -13395,7 +13389,9 @@
       "connectApps.providers.apiKey": "16f0ee47f993d6270c9059450473eea493ca8ae037f8877782ae2bc176f24d18",
       "connectApps.providers.notSignedIn": "491fc91cd76e51571a745d780f0fc91f8ae62622e790cb113828988bba2e3c2c",
       "connectApps.providers.unavailable": "94b768af74236a6780055999a95a6db3486c2252347f643bf057d2a746a8163e",
-      "connectApps.providers.signedIn": "ca566c8968e7e881d55617e7caaf0c126924ab1cb64ca80edb2f37ef386492d8"
+      "connectApps.providers.signedIn": "ca566c8968e7e881d55617e7caaf0c126924ab1cb64ca80edb2f37ef386492d8",
+      "achievements.new": "18fdd549b2ed367ac0c74cbec1214644728515b30edbcb78e7d322757a7c8359",
+      "achievements.lockedOnly": "55583d233f8489e28d519739625e18c527cf733cf7ba837a73fd41b082995dc0"
     },
     "uk": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",

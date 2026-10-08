@@ -1975,6 +1975,8 @@
   "settings.section.privacy": "Privacidade",
   "settings.privacy.readReceipts.title": "Enviar confirmações de leitura",
   "settings.privacy.readReceipts.subtitle": "Em conversas com outras pessoas, mostre quando você leu as mensagens delas. Desativado, você também não vê as delas. Grupos e bots sempre mostram quem viu uma mensagem.",
+  "achievements.new": "Novo",
+  "achievements.lockedOnly": "Somente bloqueadas",
   "achievements.settings.showTitle": "Mostrar meu título",
   "achievements.settings.showTitleHint": "O título que você escolheu, no seu cartão e onde os colegas o veem. A barra lateral nunca mostra títulos.",
   "mascot.shape.pebble": "Seixo",
