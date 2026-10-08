@@ -19,3 +19,8 @@ allowBuilds:
 onlyBuiltDependencies:
   - electron
   - esbuild
+# Dependabot: transitive copies below the fixed versions (miniflare pins sharp
+# 0.35.4; mermaid and rehype-katex pull katex 0.16.x).
+overrides:
+  sharp@<0.35.5: 0.35.5
+  katex@<0.18.2: 0.18.2
