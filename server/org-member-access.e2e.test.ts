@@ -13,6 +13,10 @@
 //         back to "manage" restores it; an admin is never narrowed
 //   MA-4  create_bot on the internal capability belongs to the Primary Bot's
 //         person (not the operator); sagax_bots "use" refuses that path too
+//   MA-5  Settings > Usage > Plan usage reads the asking person's own
+//         subscription login only: never the server's own login, never
+//         another person's; one row per provider; the org key is an API-key
+//         row with no plan windows (no network: only states that fetch nothing)
 import { spawn, type ChildProcess } from "node:child_process";
 import { chmodSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -372,4 +376,43 @@ posixOnly("Perspicax organization: a member's own engines and read-only bots", (
     const stored = ((await api("GET", "/api/bots", uma)).body.bots as Array<{ id: string; directGrants?: string[] }>).find((bot) => bot.id === own.id);
     expect(stored?.directGrants).toContain(ids.bob);
   }, 90_000);
+
+  it("MA-5: plan usage reads the person's own subscription, never the server's or another person's", async () => {
+    const expiredJwt = `h.${Buffer.from(JSON.stringify({ exp: Math.floor(Date.now() / 1000) - 600 })).toString("base64url")}.s`;
+    // The server's own Codex and Claude logins: an expired token next to a
+    // refresh token would show "renews on the next turn" if they were read.
+    mkdirSync(join(home, ".codex"), { recursive: true });
+    writeFileSync(join(home, ".codex", "auth.json"), JSON.stringify({ tokens: { access_token: expiredJwt, refresh_token: "server-refresh" } }));
+    mkdirSync(join(home, ".claude"), { recursive: true });
+    writeFileSync(join(home, ".claude", ".credentials.json"), JSON.stringify({ claudeAiOauth: { accessToken: "server-claude", expiresAt: Date.now() - 600_000, refreshToken: "server-refresh" } }));
+    // Bob's own Codex sign-in, where the login flow leaves it.
+    const bobCodex = join(home, ".sagax", "principals", ids.bob!, "codex");
+    mkdirSync(bobCodex, { recursive: true, mode: 0o700 });
+    writeFileSync(join(bobCodex, ".pulsabot-login.json"), JSON.stringify({ at: Date.now() }), { mode: 0o600 });
+    writeFileSync(join(bobCodex, "auth.json"), JSON.stringify({ tokens: { access_token: expiredJwt, refresh_token: "bob-refresh" } }), { mode: 0o600 });
+
+    type Row = { id: string; state: string; access: string; instanceId: string | null; failure: { kind: string } | null };
+    const rowsOf = async (auth: Auth) => {
+      const got = await api("GET", "/api/plan-usage?refresh=1", auth);
+      expect(got.status, got.text).toBe(200);
+      expect(got.text).not.toMatch(/server-claude|server-refresh|bob-refresh/);
+      return got.body.providers as Row[];
+    };
+    // a member reads their own
+    const bob = await signIn(BOB);
+    const bobs = await rowsOf(bob);
+    expect(bobs.map((row) => [row.id, row.state, row.failure?.kind ?? null])).toEqual([
+      ["claude", "signed-out", null],
+      ["codex", "error", "renewing"],
+      ["claudeApi", "no-windows", null],
+    ]);
+    expect(bobs.find((row) => row.id === "claude")?.instanceId).toBe("claude");
+    // the admin has no Codex sign-in of their own: not the server's, not Bob's
+    const alices = await rowsOf(alice);
+    expect(alices.map((row) => [row.id, row.state])).toEqual([
+      ["claude", "signed-out"],
+      ["codex", "signed-out"],
+      ["claudeApi", "no-windows"],
+    ]);
+  }, 60_000);
 });

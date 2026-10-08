@@ -1,7 +1,25 @@
 // Subscription allowance for the engines Sagax already signs in
 // (Claude, Codex, Grok). Parsers are pure. The fetcher takes fetch and a
 // credential reader so tests never touch the network or a real login file.
-// Access tokens stay in the request header only — never in the JSON result.
+// Access tokens stay in the request header only, never in the JSON result.
+//
+// Whose sign-in is read:
+//   - solo: this computer's own CLI logins (the server's HOME, an instance's
+//     CLAUDE_CONFIG_DIR / CODEX_HOME / GROK_HOME), as the turns use them;
+//   - organization server (Perspicax identity): the person asking, and only
+//     their own subscription login in ${DATA_DIR}/principals/<id>/<engine>
+//     (principal-engine-logins.ts). Never the server's own login, never the
+//     organization's key, never another person's directory.
+// One row per credential source: the ChatGPT plan instance reads the same
+// Codex login as Codex, so it folds into the Codex row. An API key has no
+// plan windows: it gets its own row only when a key is configured.
+//
+// Each row is in one state: windows, no-windows (API key, or a plan that
+// reports none), signed-out (no login: the card offers Connect) or error
+// ("Could not reach <product>: <reason>", the card offers refresh). Only a
+// missing login or a refused sign-in (401) is signed-out; a network failure,
+// a timeout, a 429, a 5xx or an access token waiting for its refresh is an
+// error with its reason.
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { readFileSync, statSync } from "node:fs";
@@ -42,13 +60,26 @@ export interface PlanWindows {
   models: PlanModelUsage[];
 }
 
+/** windows: the plan answered. no-windows: an API key, or a plan that
+ * reports none. signed-out: no login to read (Connect). error: the reason
+ * the windows could not be read (refresh). */
+export type PlanRowState = "windows" | "no-windows" | "signed-out" | "error";
+
 export interface PlanProviderRow {
   id: string;
   name: string;
   driver: string;
   plan: string | null;
+  /** `ok` and `error` stay for the phone apps, which read only them. */
   ok: boolean;
   error: string | null;
+  state: PlanRowState;
+  /** subscription: a plan login. api-key: a configured key (no windows). */
+  access: "subscription" | "api-key";
+  /** The engine instance whose Connect signs this provider in. */
+  instanceId: string | null;
+  /** state error: why, for the renderer's own words. */
+  failure: PlanFailure | null;
   fiveHour: PlanWindow;
   weekly: PlanWindow;
   extra: PlanExtra[];
@@ -66,12 +97,25 @@ export interface PlanAccount {
   driver: PlanDriver;
   environment: Record<string, string | undefined>;
   configDir?: string;
+  /** The engine instance this row signs in through (Connect). */
+  instanceId?: string;
+  /** api-key: a key row, nothing is read or fetched. Default subscription. */
+  access?: "subscription" | "api-key";
+  /** Organization server: the person has no sign-in marker for this
+   * engine, so nothing is read and the row is signed-out. */
+  signedOut?: boolean;
+  /** Organization server: read only this account's environment, never the
+   * server's own HOME or its default keychain entry. */
+  isolated?: boolean;
 }
 
 export interface PlanCredential {
   token: string | null;
   accountId: string | null;
   expired: boolean;
+  /** An expired access token next to a refresh token: the CLI renews it on
+   * its next turn, so the person is still signed in. */
+  refreshable?: boolean;
 }
 
 export interface CredentialReader {
@@ -137,22 +181,140 @@ const PRODUCT_NAME: Record<PlanDriver, string> = {
   grok: "Grok",
 };
 
-export function planAccountsFromInstances(instances: InstanceConfigMap): PlanAccount[] {
-  const accounts: PlanAccount[] = [];
+const LOGIN_DRIVER: Record<PlanDriver, "claudeAgent" | "codex" | "grokAgent"> = {
+  claude: "claudeAgent",
+  codex: "codex",
+  grok: "grokAgent",
+};
+
+export interface PlanInstanceOptions {
+  /** Whether a key is configured for this API-key instance. Without it,
+   * no API-key row is listed. */
+  apiKeyConfigured?: (driver: PlanDriver, instanceId: string) => boolean;
+}
+
+interface PlanInstance {
+  id: string;
+  driver: PlanDriver;
+  displayName: string | null;
+  environment: Record<string, string | undefined>;
+  configDir?: string;
+  apiKey: boolean;
+  chatgptPlan: boolean;
+}
+
+function planInstances(instances: InstanceConfigMap): PlanInstance[] {
+  const out: PlanInstance[] = [];
   for (const [id, entry] of Object.entries(instances)) {
     const driver = DRIVER_OF[entry.driver];
-    if (!driver) continue;
+    if (!driver || entry.enabled === false) continue;
     const config = asRecord(entry.config);
-    const configDir = typeof config?.configDir === "string" ? config.configDir : undefined;
-    accounts.push({
+    const configDir = typeof config?.configDir === "string" && config.configDir.trim() ? config.configDir : undefined;
+    out.push({
       id,
-      name: entry.displayName?.trim() || PRODUCT_NAME[driver],
       driver,
+      displayName: entry.displayName?.trim() || null,
       environment: { ...entry.environment },
       ...(configDir ? { configDir } : {}),
+      apiKey: entry.access === "api" || config?.requireApiKey === true,
+      chatgptPlan: config?.authMode === "chatgpt-plan",
     });
   }
-  return accounts;
+  // The engine named after its driver (claude, codex, grok) leads its
+  // credential source, so a folded row keeps the product's own name.
+  const rank = (entry: PlanInstance) => (entry.chatgptPlan ? 2 : entry.id === entry.driver ? 0 : 1);
+  return out.sort((a, b) => rank(a) - rank(b));
+}
+
+/** Where a subscription row reads its login: rows with the same source
+ * show the same plan, so they are one row. */
+function credentialSource(entry: PlanInstance): string {
+  const env = entry.environment;
+  if (entry.driver === "claude") return `claude\u0000${entry.configDir ?? env.CLAUDE_CONFIG_DIR ?? ""}\u0000${env.HOME ?? ""}`;
+  if (entry.driver === "codex") return `codex\u0000${env.CODEX_HOME ?? ""}\u0000${env.HOME ?? ""}`;
+  return `grok\u0000${env.GROK_HOME ?? ""}\u0000${env.HOME ?? ""}`;
+}
+
+function apiKeyRow(entry: PlanInstance): PlanAccount {
+  return {
+    id: entry.id,
+    name: `${PRODUCT_NAME[entry.driver]} (API key)`,
+    driver: entry.driver,
+    environment: {},
+    instanceId: entry.id,
+    access: "api-key",
+  };
+}
+
+/** Solo: one row per login this computer's engines read (the default fleet
+ * gives one Claude, one Codex, one Grok), plus an API-key row only for a
+ * key that is configured. */
+export function planAccountsFromInstances(instances: InstanceConfigMap, options: PlanInstanceOptions = {}): PlanAccount[] {
+  const accounts: PlanAccount[] = [];
+  const seen = new Set<string>();
+  const keys: PlanAccount[] = [];
+  for (const entry of planInstances(instances)) {
+    if (entry.apiKey) {
+      if (options.apiKeyConfigured?.(entry.driver, entry.id)) keys.push(apiKeyRow(entry));
+      continue;
+    }
+    const source = credentialSource(entry);
+    if (seen.has(source)) continue;
+    seen.add(source);
+    accounts.push({
+      id: entry.id,
+      name: entry.chatgptPlan || !entry.displayName ? PRODUCT_NAME[entry.driver] : entry.displayName,
+      driver: entry.driver,
+      environment: entry.environment,
+      instanceId: entry.id,
+      ...(entry.configDir ? { configDir: entry.configDir } : {}),
+    });
+  }
+  return [...accounts, ...keys];
+}
+
+export interface OrgPlanOptions {
+  /** The person's own login directory for a driver
+   * (PrincipalEngineLogins.loginDir). */
+  loginDir: (driver: "claudeAgent" | "codex" | "grokAgent") => string;
+  /** Their sign-in marker is there (PrincipalEngineLogins.signedIn). */
+  signedIn: (driver: "claudeAgent" | "codex" | "grokAgent") => boolean;
+  /** The key that would serve this person's turns on the engine: their own
+   * key in Perspicax, or the organization's. Shown as "no plan windows". */
+  apiKeyConfigured?: (driver: PlanDriver, instanceId: string) => boolean;
+}
+
+/** Organization server: one row per provider, read from the asking
+ * person's own login directory only. */
+export function orgPlanAccounts(instances: InstanceConfigMap, options: OrgPlanOptions): PlanAccount[] {
+  const accounts: PlanAccount[] = [];
+  const keys: PlanAccount[] = [];
+  const seen = new Set<PlanDriver>();
+  for (const entry of planInstances(instances)) {
+    if (entry.apiKey) {
+      if (options.apiKeyConfigured?.(entry.driver, entry.id) && !keys.some((key) => key.driver === entry.driver)) keys.push(apiKeyRow(entry));
+      continue;
+    }
+    if (seen.has(entry.driver)) continue;
+    seen.add(entry.driver);
+    const login = LOGIN_DRIVER[entry.driver];
+    const dir = options.loginDir(login);
+    const environment: Record<string, string | undefined> =
+      entry.driver === "claude" ? { HOME: dir, CLAUDE_CONFIG_DIR: dir }
+        : entry.driver === "codex" ? { HOME: dir, CODEX_HOME: dir }
+          : { HOME: dir, GROK_HOME: join(dir, ".grok") };
+    accounts.push({
+      id: entry.driver,
+      name: PRODUCT_NAME[entry.driver],
+      driver: entry.driver,
+      environment,
+      instanceId: entry.id,
+      isolated: true,
+      ...(entry.driver === "claude" ? { configDir: dir } : {}),
+      ...(options.signedIn(login) ? {} : { signedOut: true }),
+    });
+  }
+  return [...accounts, ...keys];
 }
 
 export function parseClaudeUsage(body: unknown): PlanWindows {
@@ -226,7 +388,7 @@ export function fileCredentialReader(source: CredentialSource): CredentialReader
   const now = source.now ?? Date.now;
   return {
     async read(account) {
-      const merged: NodeJS.ProcessEnv = { ...env, ...account.environment };
+      const merged: NodeJS.ProcessEnv = account.isolated ? { ...account.environment } : { ...env, ...account.environment };
       const at = now();
       if (account.driver === "claude") return readClaudeCredential(account, merged, source, at);
       if (account.driver === "codex") return readCodexCredential(merged, source.readText, at);
@@ -257,10 +419,12 @@ export async function fetchPlanUsage(accounts: PlanAccount[], deps: PlanUsageDep
   return { fetchedAt: new Date(now).toISOString(), providers };
 }
 
-let cachedReport: { at: number; key: string; report: PlanUsageReport } | null = null;
+// One report per credential set (on an organization server, per person).
+const PLAN_USAGE_CACHE_ENTRIES = 64;
+const cachedReports = new Map<string, { at: number; report: PlanUsageReport }>();
 
 export function clearPlanUsageCache(): void {
-  cachedReport = null;
+  cachedReports.clear();
 }
 
 export async function loadPlanUsage(input: {
@@ -274,16 +438,21 @@ export async function loadPlanUsage(input: {
 }): Promise<PlanUsageReport> {
   const now = input.now ?? Date.now();
   const key = planUsageCacheKey(input.accounts);
-  if (!input.refresh && cachedReport && cachedReport.key === key && now - cachedReport.at < PLAN_USAGE_CACHE_MS) {
-    return cachedReport.report;
-  }
+  const cached = cachedReports.get(key);
+  if (!input.refresh && cached && now - cached.at < PLAN_USAGE_CACHE_MS) return cached.report;
   const report = await fetchPlanUsage(input.accounts, {
     fetch: input.fetch ?? ((url, init) => globalThis.fetch(url, init)),
     credentials: input.credentials ?? defaultCredentialReader(input.env),
     now: () => now,
     timeoutMs: input.timeoutMs,
   });
-  cachedReport = { at: now, key, report };
+  cachedReports.delete(key);
+  cachedReports.set(key, { at: now, report });
+  while (cachedReports.size > PLAN_USAGE_CACHE_ENTRIES) {
+    const oldest = cachedReports.keys().next().value;
+    if (oldest === undefined) break;
+    cachedReports.delete(oldest);
+  }
   return report;
 }
 
@@ -372,20 +541,56 @@ function missingCredential(): PlanCredential {
   return { token: null, accountId: null, expired: false };
 }
 
-function expiredCredential(): PlanCredential {
-  return { token: null, accountId: null, expired: true };
+function expiredCredential(refreshable = false): PlanCredential {
+  return { token: null, accountId: null, expired: true, ...(refreshable ? { refreshable: true } : {}) };
 }
 
-function signInAgain(driver: PlanDriver): string {
-  return `Sign in again in ${PRODUCT_NAME[driver]}`;
+/** The `exp` of a JWT access token (Codex), unverified: only to know
+ * whether to ask with it. */
+function jwtExpiryMs(token: string): number | null {
+  const part = token.split(".")[1];
+  if (!part || part.length > 8_000) return null;
+  try {
+    const payload = asRecord(JSON.parse(Buffer.from(part, "base64url").toString("utf8")));
+    const exp = finiteNumber(payload?.exp);
+    return exp == null ? null : exp * 1000;
+  } catch {
+    return null;
+  }
 }
 
-function couldNotReach(driver: PlanDriver): string {
-  return `Could not reach ${PRODUCT_NAME[driver]}`;
+export const NOT_SIGNED_IN = "Not signed in";
+export const NO_PLAN_WINDOWS = "No plan windows for this provider";
+export const API_KEY_NO_WINDOWS = "API key: no plan windows";
+
+/** Why a provider's windows could not be read, in words a person can act on. */
+export type PlanFailure =
+  | { kind: "network"; code?: string }
+  | { kind: "timeout"; seconds?: number }
+  | { kind: "http"; status: number }
+  | { kind: "unexpected" }
+  | { kind: "renewing" }
+  | { kind: "unreadable" };
+
+export function planFailureReason(failure: PlanFailure, timeoutMs = PROVIDER_TIMEOUT_MS): string {
+  switch (failure.kind) {
+    case "network": return failure.code ? `network error (${failure.code})` : "network error";
+    case "timeout": return `no answer within ${failure.seconds ?? Math.max(1, Math.round(timeoutMs / 1000))} s`;
+    case "unexpected": return "unexpected usage response";
+    case "renewing": return "the sign-in token expired and renews on the next turn; refresh after it";
+    case "unreadable": return "the saved sign-in could not be read";
+    case "http":
+      if (failure.status === 429) return "rate limited (429), try again in a minute";
+      if (failure.status === 403) return "access refused (403)";
+      if (failure.status >= 500) return `service error (${failure.status})`;
+      return `unexpected answer (${failure.status})`;
+  }
 }
 
-function unexpectedUsage(driver: PlanDriver): string {
-  return `${PRODUCT_NAME[driver]} returned an unexpected usage response`;
+/** "Could not reach Claude: <reason>". Never a secret: reasons are fixed
+ * words, an HTTP status or a system error code. */
+export function planErrorMessage(driver: PlanDriver, failure: PlanFailure, timeoutMs?: number): string {
+  return `Could not reach ${PRODUCT_NAME[driver]}: ${planFailureReason(failure, timeoutMs)}`;
 }
 
 function claudeRoot(body: unknown): Record<string, unknown> | null {
@@ -610,7 +815,10 @@ function planUsageCacheKey(accounts: PlanAccount[]): string {
       .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
       .map(([name, value]) => `${name}=${value}`)
       .join("\n");
-    return [account.id, account.driver, account.name, account.configDir ?? "", environment].join("\u0000");
+    return [
+      account.id, account.driver, account.name, account.configDir ?? "", environment,
+      account.access ?? "subscription", account.instanceId ?? "", account.signedOut ? "out" : "", account.isolated ? "isolated" : "",
+    ].join("\u0000");
   }).join("\n");
 }
 
@@ -619,7 +827,7 @@ function claudeCredentialFromText(text: string | null, now: number): PlanCredent
   const token = secretString(oauth?.accessToken);
   if (!token) return missingCredential();
   const expiry = timeMs(oauth?.expiresAt);
-  if (expiry != null && expiry <= now) return expiredCredential();
+  if (expiry != null && expiry <= now) return expiredCredential(Boolean(secretString(oauth?.refreshToken)));
   return { token, accountId: null, expired: false };
 }
 
@@ -688,6 +896,7 @@ async function readClaudeCredential(
   const file = claudeCredentialFromText(source.readText(join(resolvedDir, ".credentials.json")), now);
   if (file.token || !source.readClaudeKeychain) return file;
   let sawExpired = file.expired;
+  let refreshable = Boolean(file.refreshable);
   for (const service of claudeKeychainServices(account, env, resolvedDir)) {
     let raw: string | null = null;
     try {
@@ -698,8 +907,9 @@ async function readClaudeCredential(
     const parsed = claudeCredentialFromText(decodeKeychainSecret(raw), now);
     if (parsed.token) return parsed;
     if (parsed.expired) sawExpired = true;
+    if (parsed.refreshable) refreshable = true;
   }
-  return sawExpired ? expiredCredential() : missingCredential();
+  return sawExpired ? expiredCredential(refreshable) : missingCredential();
 }
 
 function readCodexCredential(
@@ -714,8 +924,8 @@ function readCodexCredential(
   const tokens = asRecord(root.tokens);
   const token = secretString(tokens?.access_token) ?? secretString(root.access_token);
   if (!token) return missingCredential();
-  const expiry = timeMs(tokens?.expires_at ?? tokens?.expiresAt ?? root.expires_at ?? root.expiresAt);
-  if (expiry != null && expiry <= now) return expiredCredential();
+  const expiry = timeMs(tokens?.expires_at ?? tokens?.expiresAt ?? root.expires_at ?? root.expiresAt) ?? jwtExpiryMs(token);
+  if (expiry != null && expiry <= now) return expiredCredential(Boolean(secretString(tokens?.refresh_token) ?? secretString(root.refresh_token)));
   const accountId = secretString(tokens?.account_id) ?? secretString(root.account_id);
   return { token, accountId, expired: false };
 }
@@ -723,12 +933,13 @@ function readCodexCredential(
 interface GrokCandidate {
   token: string;
   expiresAt: number | null;
+  refreshable: boolean;
 }
 
 function grokCandidate(record: Record<string, unknown>): GrokCandidate | null {
   const token = secretString(record.access_token) ?? secretString(record.key);
   if (!token) return null;
-  return { token, expiresAt: timeMs(record.expires_at ?? record.expiresAt) };
+  return { token, expiresAt: timeMs(record.expires_at ?? record.expiresAt), refreshable: Boolean(secretString(record.refresh_token)) };
 }
 
 function readGrokCredential(
@@ -741,10 +952,11 @@ function readGrokCredential(
   if (!root) return missingCredential();
   const direct = grokCandidate(root);
   if (direct) {
-    if (direct.expiresAt != null && direct.expiresAt <= now) return expiredCredential();
+    if (direct.expiresAt != null && direct.expiresAt <= now) return expiredCredential(direct.refreshable);
     return { token: direct.token, accountId: null, expired: false };
   }
   let sawExpired = false;
+  let refreshable = false;
   let best: GrokCandidate | null = null;
   for (const value of Object.values(root)) {
     const record = asRecord(value);
@@ -753,6 +965,7 @@ function readGrokCredential(
     if (!candidate) continue;
     if (candidate.expiresAt != null && candidate.expiresAt <= now) {
       sawExpired = true;
+      if (candidate.refreshable) refreshable = true;
       continue;
     }
     const bestStamp = best?.expiresAt ?? Number.NEGATIVE_INFINITY;
@@ -760,17 +973,16 @@ function readGrokCredential(
     if (!best || stamp >= bestStamp) best = candidate;
   }
   if (best) return { token: best.token, accountId: null, expired: false };
-  return sawExpired ? expiredCredential() : missingCredential();
+  return sawExpired ? expiredCredential(refreshable) : missingCredential();
 }
 
-function errorRow(account: PlanAccount, error: string): PlanProviderRow {
+function baseRow(account: PlanAccount): Omit<PlanProviderRow, "ok" | "error" | "state" | "plan" | "failure"> {
   return {
     id: account.id,
     name: account.name,
     driver: account.driver,
-    plan: null,
-    ok: false,
-    error,
+    access: account.access ?? "subscription",
+    instanceId: account.instanceId ?? null,
     fiveHour: closedWindow(),
     weekly: closedWindow(),
     extra: [],
@@ -778,14 +990,28 @@ function errorRow(account: PlanAccount, error: string): PlanProviderRow {
   };
 }
 
+function errorRow(account: PlanAccount, failure: PlanFailure, timeoutMs = PROVIDER_TIMEOUT_MS): PlanProviderRow {
+  const stored: PlanFailure = failure.kind === "timeout" ? { kind: "timeout", seconds: Math.max(1, Math.round(timeoutMs / 1000)) } : failure;
+  return { ...baseRow(account), plan: null, ok: false, error: planErrorMessage(account.driver, stored, timeoutMs), state: "error", failure: stored };
+}
+
+function signedOutRow(account: PlanAccount): PlanProviderRow {
+  return { ...baseRow(account), plan: null, ok: false, error: NOT_SIGNED_IN, state: "signed-out", failure: null };
+}
+
+function apiKeyResultRow(account: PlanAccount): PlanProviderRow {
+  return { ...baseRow(account), plan: null, ok: false, error: API_KEY_NO_WINDOWS, state: "no-windows", failure: null };
+}
+
 function okRow(account: PlanAccount, windows: PlanWindows): PlanProviderRow {
+  const any = windows.fiveHour.available || windows.weekly.available || windows.extra.length > 0 || windows.models.length > 0;
   return {
-    id: account.id,
-    name: account.name,
-    driver: account.driver,
+    ...baseRow(account),
     plan: windows.plan,
     ok: true,
     error: null,
+    state: any ? "windows" : "no-windows",
+    failure: null,
     fiveHour: windows.fiveHour,
     weekly: windows.weekly,
     extra: windows.extra,
@@ -794,19 +1020,24 @@ function okRow(account: PlanAccount, windows: PlanWindows): PlanProviderRow {
 }
 
 async function fetchProvider(account: PlanAccount, deps: PlanUsageDeps): Promise<PlanProviderRow> {
+  if (account.access === "api-key") return apiKeyResultRow(account);
+  if (account.signedOut) return signedOutRow(account);
   let credential: PlanCredential;
   try {
     credential = await deps.credentials.read(account);
   } catch {
-    return errorRow(account, signInAgain(account.driver));
+    return errorRow(account, { kind: "unreadable" });
   }
-  if (credential.expired || !credential.token) return errorRow(account, signInAgain(account.driver));
+  if (credential.expired && credential.refreshable) {
+    return errorRow(account, { kind: "renewing" });
+  }
+  if (credential.expired || !credential.token) return signedOutRow(account);
   try {
     if (account.driver === "claude") return await fetchClaude(account, credential.token, deps);
     if (account.driver === "codex") return await fetchCodex(account, credential.token, credential.accountId, deps);
     return await fetchGrok(account, credential.token, deps);
   } catch {
-    return errorRow(account, couldNotReach(account.driver));
+    return errorRow(account, { kind: "unexpected" });
   }
 }
 
@@ -814,6 +1045,18 @@ interface HttpResult {
   status: number;
   ok: boolean;
   body: unknown;
+  /** Set when no HTTP answer came back (status 0). */
+  failure?: PlanFailure;
+}
+
+function transportFailure(error: unknown): PlanFailure {
+  const record = error && typeof error === "object" ? error as { name?: unknown; code?: unknown; cause?: unknown } : null;
+  if (record?.name === "TimeoutError" || record?.name === "AbortError") return { kind: "timeout" };
+  const cause = record?.cause && typeof record.cause === "object" ? record.cause as { code?: unknown; name?: unknown } : null;
+  if (cause?.name === "TimeoutError" || cause?.name === "ConnectTimeoutError") return { kind: "timeout" };
+  const raw = typeof cause?.code === "string" ? cause.code : typeof record?.code === "string" ? record.code : "";
+  const code = /^[A-Z][A-Z0-9_]{1,40}$/.test(raw) ? raw : undefined;
+  return code ? { kind: "network", code } : { kind: "network" };
 }
 
 async function fetchJson(
@@ -839,24 +1082,34 @@ async function fetchJson(
       }
     }
     return { status: response.status, ok: response.ok, body };
-  } catch {
-    return { status: 0, ok: false, body: null };
+  } catch (error) {
+    return { status: 0, ok: false, body: null, failure: transportFailure(error) };
   }
 }
 
-function authRejected(status: number): boolean {
-  return status === 401 || status === 403;
+/** The failure behind a result that brought no usable body. */
+function resultFailure(result: HttpResult): PlanFailure {
+  if (result.failure) return result.failure;
+  if (!result.ok) return { kind: "http", status: result.status };
+  return { kind: "unexpected" };
+}
+
+/** A refused sign-in: the person signs in again (Connect). 403 is not one:
+ * a scope or a plan refusal, reported as an error with its status. */
+function signInRefused(status: number): boolean {
+  return status === 401;
 }
 
 async function fetchClaude(account: PlanAccount, token: string, deps: PlanUsageDeps): Promise<PlanProviderRow> {
+  const timeout = deps.timeoutMs ?? PROVIDER_TIMEOUT_MS;
   const result = await fetchJson(deps.fetch, CLAUDE_USAGE_URL, {
     Authorization: `Bearer ${token}`,
     Accept: "application/json",
     "anthropic-beta": "oauth-2025-04-20",
-  }, deps.timeoutMs ?? PROVIDER_TIMEOUT_MS);
-  if (authRejected(result.status)) return errorRow(account, signInAgain("claude"));
+  }, timeout);
+  if (signInRefused(result.status)) return signedOutRow(account);
   if (!result.ok || result.body === null || typeof result.body !== "object") {
-    return errorRow(account, result.status === 0 || result.status >= 500 ? couldNotReach("claude") : unexpectedUsage("claude"));
+    return errorRow(account, resultFailure(result), timeout);
   }
   return okRow(account, parseClaudeUsage(result.body));
 }
@@ -867,15 +1120,16 @@ async function fetchCodex(
   accountId: string | null,
   deps: PlanUsageDeps,
 ): Promise<PlanProviderRow> {
+  const timeout = deps.timeoutMs ?? PROVIDER_TIMEOUT_MS;
   const headers: Record<string, string> = {
     Authorization: `Bearer ${token}`,
     Accept: "application/json",
   };
   if (accountId) headers["ChatGPT-Account-Id"] = accountId;
-  const result = await fetchJson(deps.fetch, CODEX_USAGE_URL, headers, deps.timeoutMs ?? PROVIDER_TIMEOUT_MS);
-  if (authRejected(result.status)) return errorRow(account, signInAgain("codex"));
+  const result = await fetchJson(deps.fetch, CODEX_USAGE_URL, headers, timeout);
+  if (signInRefused(result.status)) return signedOutRow(account);
   if (!result.ok || result.body === null || typeof result.body !== "object") {
-    return errorRow(account, result.status === 0 || result.status >= 500 ? couldNotReach("codex") : unexpectedUsage("codex"));
+    return errorRow(account, resultFailure(result), timeout);
   }
   return okRow(account, parseCodexUsage(result.body));
 }
@@ -892,15 +1146,13 @@ async function fetchGrok(account: PlanAccount, token: string, deps: PlanUsageDep
     fetchJson(deps.fetch, GROK_BILLING_URL, headers, timeout),
     fetchJson(deps.fetch, GROK_SETTINGS_URL, headers, timeout),
   ]);
-  if (authRejected(credits.status) || (authRejected(billing.status) && !credits.ok)) {
-    return errorRow(account, signInAgain("grok"));
-  }
+  if (signInRefused(credits.status) || (signInRefused(billing.status) && !credits.ok)) return signedOutRow(account);
   const creditsBody = credits.ok ? credits.body : null;
-  const billingBody = billing.ok && !authRejected(billing.status) ? billing.body : null;
+  const billingBody = billing.ok ? billing.body : null;
   if (creditsBody === null && billingBody === null) {
-    return errorRow(account, credits.status === 0 || credits.status >= 500 || billing.status === 0 || billing.status >= 500
-      ? couldNotReach("grok")
-      : unexpectedUsage("grok"));
+    // the credits answer names the failure; billing only when credits said nothing
+    const primary = credits.ok ? billing : credits;
+    return errorRow(account, resultFailure(primary), timeout);
   }
   const windows = parseGrokUsage(creditsBody, billingBody ?? undefined, settings.ok ? settings.body : undefined);
   return okRow(account, windows);

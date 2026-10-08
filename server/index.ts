@@ -223,7 +223,7 @@ import { ComputerControl } from "./computer-control.ts";
 import { augmentedPath, findCliCandidates, resetPathCache } from "./env-path.ts";
 import { registerEnginesBinDir } from "./engine-install.ts";
 import { appendUsage, parseUsageRange, readUsage, summarizeUsage, usageCsv, USAGE_GROUPINGS, flushUsageLedger, type UsageGroupBy, type UsageRow, type UsageTrigger } from "./usage-ledger.ts";
-import { loadPlanUsage, planAccountsFromInstances } from "./plan-usage.ts";
+import { loadPlanUsage, orgPlanAccounts, planAccountsFromInstances } from "./plan-usage.ts";
 import { GroupUsageReader } from "./group-thread-usage.ts";
 import { ledgerCost } from "./model-prices.ts";
 import type { PriceList } from "./prices.ts";
@@ -31277,14 +31277,44 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     }
 
     // Subscription windows (5-hour and weekly), not the token ledger above.
-    // Same admin gate as /api/usage: this route is unlisted, so it stays admin.
+    // Solo: this computer's own logins, admin only (unlisted). Organization
+    // server: the asking person's own subscription logins, never the
+    // server's, the organization's key or another person's
+    // (server/plan-usage.ts); a member may read their own
+    // (request-auth.ts CLIENT_ALLOW, orgDirectory).
     if (method === "GET" && path === "/api/plan-usage") {
       res.setHeader("cache-control", "no-store");
-      const report = await loadPlanUsage({
-        accounts: planAccountsFromInstances(instanceConfigs(cfg)),
-        refresh: url.searchParams.get("refresh") === "1",
+      const refresh = url.searchParams.get("refresh") === "1";
+      const instances = instanceConfigs(cfg);
+      // A key row (no plan windows) is listed only when a key is kept for
+      // that provider: the workspace key of Settings > Connections, or one in
+      // the engine's own environment.
+      const planKeyConfigured = (driver: string, instanceId: string): boolean => {
+        const workspace = driver === "claudeAgent" ? cfg.anthropic?.key : driver === "codex" ? cfg.openai?.key : driver === "grokAgent" ? cfg.xai?.key : undefined;
+        return Boolean(workspace?.trim()) || driverKeyBacked(cfg, driver, instanceId);
+      };
+      if (IDENTITY.kind === "perspicax" && engineLogins) {
+        const principalId = auth.kind === "session" ? auth.session.principalId?.trim() || "" : localPrincipalId();
+        if (!principalId || !isPrincipalId(principalId)) return json(res, 403, { error: "sign in as a person first" });
+        const person = principals.byId(principalId);
+        const sub = person?.subject?.iss === IDENTITY.issuer ? person.subject.sub : undefined;
+        const held = sub ? perspicaxDirectory?.providerKeys(sub) ?? [] : [];
+        const logins = engineLogins;
+        const accounts = orgPlanAccounts(instances, {
+          loginDir: (driver) => logins.loginDir(principalId, driver),
+          signedIn: (driver) => logins.signedIn(principalId, driver),
+          apiKeyConfigured: (_driver, instanceId) => {
+            const driver = instances[instanceId]?.driver ?? "";
+            return providersOfDriver(driver).some((provider) => held.includes(provider)) || planKeyConfigured(driver, instanceId);
+          },
+        });
+        return json(res, 200, await loadPlanUsage({ accounts, refresh }));
+      }
+      if (!auth.scopes.includes("admin")) return json(res, 403, { error: "admin only" });
+      const accounts = planAccountsFromInstances(instances, {
+        apiKeyConfigured: (_driver, instanceId) => planKeyConfigured(instances[instanceId]?.driver ?? "", instanceId),
       });
-      return json(res, 200, report);
+      return json(res, 200, await loadPlanUsage({ accounts, refresh }));
     }
 
     // ── provider key check: does a pasted or saved key open the provider's door ──

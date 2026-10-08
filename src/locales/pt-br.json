@@ -1925,5 +1925,22 @@
   "engineConnect.notConnected": "Não conectado",
   "engineConnect.paysWith.subscription": "Paga com: sua assinatura",
   "engineConnect.paysWith.key": "Paga com: sua chave no Perspicax",
-  "engineConnect.paysWith.orgKey": "Paga com: a chave da organização"
+  "engineConnect.paysWith.orgKey": "Paga com: a chave da organização",
+  "planUsage.notSignedIn": "Não conectado",
+  "planUsage.connect": "Conectar {name}",
+  "planUsage.noWindows": "Nenhuma janela de plano para este provedor",
+  "planUsage.apiKeyNoWindows": "Chave de API: sem janelas de plano",
+  "planUsage.apiKeyName": "{name} (chave de API)",
+  "planUsage.couldNotReach": "Não foi possível acessar {name}: {reason}",
+  "planUsage.tryAgain": "Tentar novamente",
+  "planUsage.reason.network": "erro de rede",
+  "planUsage.reason.networkCode": "erro de rede ({code})",
+  "planUsage.reason.timeout": "sem resposta em {seconds} s",
+  "planUsage.reason.rateLimited": "limite de requisições (429), tente novamente em um minuto",
+  "planUsage.reason.forbidden": "acesso recusado (403)",
+  "planUsage.reason.server": "erro do serviço ({status})",
+  "planUsage.reason.status": "resposta inesperada ({status})",
+  "planUsage.reason.unexpected": "resposta de uso inesperada",
+  "planUsage.reason.renewing": "o token de acesso expirou e é renovado no próximo turno; atualize depois",
+  "planUsage.reason.unreadable": "não foi possível ler o login salvo"
 }

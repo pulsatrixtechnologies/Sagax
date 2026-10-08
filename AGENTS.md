@@ -475,6 +475,28 @@ directory lists them. Tests: `server/engine-credentials.test.ts`,
 `server/drivers/acp/org-access.test.ts`, `server/drivers/device-login.test.ts`,
 `server/principal-engine-logins.test.ts`.
 
+Plan usage (Settings > Usage, `GET /api/plan-usage`, 2026-10-08) reads
+the windows of whoever pays, from where their login really is. On an
+organization server: the asking person's own subscription login only
+(`principals/<pid>/claude`, `codex`, `grok/.grok`, behind its sign-in
+marker), never the server's own HOME or default keychain entry, never the
+organization's key and never another person's directory (`orgPlanAccounts`
+in `server/plan-usage.ts`); a member may read their own. In solo: this
+computer's own CLI logins, admin only. One row per provider: rows that read
+the same login are one (the ChatGPT plan instance folds into Codex), with
+the plan name as a subtitle. A key row ("Claude (API key)") appears only
+when a key is configured and says "API key: no plan windows". Each row has
+one state: windows, no-windows, signed-out ("Not signed in" with Connect:
+the person's `EngineConnect` on an organization server, Settings > Model
+providers in solo) or error ("Could not reach <product>: <reason>" with Try
+again). Only a missing login or a 401 is signed-out; a network failure,
+timeout, 429, 403, 5xx or an expired access token next to a refresh token
+(it renews on the next turn) is an error with its reason, never "sign in
+again". `ok` and `error` stay on each row for the phone apps. Tests:
+`server/plan-usage.test.ts`, `server/plan-usage.modes.test.ts`,
+`src/components/PlanUsage.test.ts`, MA-5 in
+`server/org-member-access.e2e.test.ts`.
+
 ## Voice mode (xAI)
 
 The call button on a bot opens the voice call pill

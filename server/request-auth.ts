@@ -533,6 +533,10 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   // A person's own engines: what their own turns run on, and their own
   // subscription sign-in (server/principal-engine-logins.ts).
   { methods: ["GET"], path: /^\/api\/me\/engines$/, feature: "orgDirectory" },
+  // A person's own plan windows (5-hour, weekly) read from their own
+  // subscription logins only (server/plan-usage.ts orgPlanAccounts). On a
+  // solo server this path stays admin.
+  { methods: ["GET"], path: /^\/api\/plan-usage$/, feature: "orgDirectory" },
   // The server's engines and their models (Model providers, the model
   // picker): a member's copy drops the server's own account, CLI paths and
   // install details (memberInstanceView in server/index.ts). Changes stay admin.

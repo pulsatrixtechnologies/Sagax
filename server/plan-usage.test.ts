@@ -208,7 +208,7 @@ describe("plan usage fetcher", () => {
     ]);
     expect(fetchImpl).not.toHaveBeenCalled();
     expect(report.providers).toEqual([
-      expect.objectContaining({ id: "work", name: "Work Claude", driver: "claude", ok: false, error: "Sign in again in Claude" }),
+      expect.objectContaining({ id: "work", name: "Work Claude", driver: "claude", ok: false, error: "Not signed in", state: "signed-out" }),
     ]);
     expect(JSON.stringify(report)).not.toContain(SECRET);
   });
@@ -293,11 +293,11 @@ describe("plan usage fetcher", () => {
     });
     expect(services).toEqual([suffixed]);
     expect(fetchImpl).not.toHaveBeenCalled();
-    expect(report.providers[0]).toMatchObject({ ok: false, error: "Sign in again in Claude" });
+    expect(report.providers[0]).toMatchObject({ ok: false, error: "Not signed in", state: "signed-out" });
     expect(JSON.stringify(report)).not.toContain(defaultToken);
   });
 
-  it("turns a 401 into ok:false without throwing and still returns the other provider", async () => {
+  it("turns a 401 into signed-out without throwing and still returns the other provider", async () => {
     const fetchImpl = vi.fn<PlanFetch>(async (url) => {
       if (url.includes("anthropic.com")) return jsonResponse(SECRET, 401);
       return jsonResponse({
@@ -318,7 +318,7 @@ describe("plan usage fetcher", () => {
       },
     );
     expect(report.providers.map((provider) => [provider.driver, provider.ok, provider.error])).toEqual([
-      ["claude", false, "Sign in again in Claude"],
+      ["claude", false, "Not signed in"],
       ["codex", true, null],
     ]);
     expect(report.providers[1]?.fiveHour.remainingPercent).toBe(90);
@@ -412,9 +412,9 @@ describe("plan usage fetcher", () => {
       cursor: { driver: "cursorAgent", displayName: "Cursor" },
       api: { driver: "grok", displayName: "Grok API" },
     })).toEqual([
-      { id: "claude", name: "Personal Claude", driver: "claude", environment: {}, configDir: "/tmp/claude" },
-      { id: "codex", name: "Codex", driver: "codex", environment: {} },
-      { id: "grok", name: "Grok", driver: "grok", environment: { GROK_HOME: "/tmp/grok" } },
+      { id: "claude", name: "Personal Claude", driver: "claude", environment: {}, configDir: "/tmp/claude", instanceId: "claude" },
+      { id: "codex", name: "Codex", driver: "codex", environment: {}, instanceId: "codex" },
+      { id: "grok", name: "Grok", driver: "grok", environment: { GROK_HOME: "/tmp/grok" }, instanceId: "grok" },
     ]);
   });
 });
