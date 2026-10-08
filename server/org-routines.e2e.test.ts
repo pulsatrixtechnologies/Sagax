@@ -2,16 +2,19 @@
 // their person's name (scenario D). The fake provider keeps routine
 // delegation families apart from sign-in ones and reports them in its
 // directory; the fake Claude CLI really calls the Perspicax MCP profile of
-// the bot (FAKE_CLAUDE_MCP_CALLS).
+// the bot (FAKE_CLAUDE_MCP_CALLS). Since 2026-10-08 (JC) a routine always
+// acts in its owner's name: the delegation is issued at sign-in by token
+// exchange through the link, never asked, and cannot be turned off.
 //
-//   consent     alice allows her routines at Perspicax; the callback keeps
-//               the delegation and lands on #routine-delegation=ok
+//   sign-in     alice signs in: her delegation is issued, no consent; the
+//               route is read-only (no POST, no DELETE)
 //   scenario D  her routine runs while she has no session: the engine uses
 //               her key (the bot owner's), the MCP call runs as her through
 //               her delegation, the exchanged token is revoked after
 //   renewal     a run within the renewal window refreshes nothing
-//   revoke      from Sagax: delegation_revoked and exactly one card; from the
-//               console (the directory): delegation_ended
+//   revoke      a revoke in the console never pauses the routine: the next
+//               run gets a new delegation from her session
+//   old px      a Perspicax that cannot issue one only skips the run
 //   someone     bob's routine on alice's bot runs as bob (his delegation,
 //   else        alice's key, never his own subscription or key: the bot's
 //               routines always run on its owner's credentials, 2026-10-01),
@@ -21,7 +24,6 @@
 //               and when the owner is disabled; the owner's notification
 //               opens the run in the bot's Coding activity, where the card
 //               (hers alone) is, never bob's private thread
-//   subject     a consent finished as another account is refused and revoked
 //   transient   Perspicax unreachable: the run fails, the routine is kept
 //   person out  a disable pauses the routine person_out; no runs follow
 //   disk        no refresh or access token is ever written in clear
@@ -85,22 +87,6 @@ async function signIn(user: FakeOidcUser): Promise<Auth> {
   const session = callback.headers.getSetCookie().find((c) => c.startsWith("omb_session_") && !c.includes("_oidc="));
   expect(callback.headers.get("location"), log.slice(-2000)).toBe("/");
   return { cookie: cookiePair(session!) };
-}
-
-/** `auth` allows their routines to act in their name; the consent at the
- * fake provider signs `as` in. Returns where the callback landed. */
-async function consent(auth: Auth, as: FakeOidcUser): Promise<string> {
-  idp.user = { ...as };
-  const started = await fetch(`${BASE}/api/org/routine-delegation`, { method: "POST", headers: { cookie: auth.cookie!, "content-type": "application/json" }, body: "{}" });
-  expect(started.status, await started.clone().text()).toBe(200);
-  const binding = started.headers.getSetCookie().find((c) => c.includes("_oidc="))!;
-  expect(binding).toMatch(/; Path=\/auth\/oidc; HttpOnly; SameSite=Lax; Max-Age=600$/);
-  const { authorizationUrl } = await started.json() as { authorizationUrl: string };
-  expect(new URL(authorizationUrl).searchParams.get("scope")).toBe("openid profile email offline_access pulsabot:routines");
-  const authorize = await fetch(authorizationUrl, { redirect: "manual" });
-  const back = await fetch(authorize.headers.get("location")!, { redirect: "manual", headers: { cookie: cookiePair(binding) } });
-  expect(back.status).toBe(303);
-  return back.headers.get("location") ?? "";
 }
 
 async function waitFor<T>(read: () => Promise<T | null | undefined | false>, ms = 20_000): Promise<T> {
@@ -290,26 +276,35 @@ posixOnly("Perspicax organization, slice 6: routines in their person's name", ()
     if (home) removeTempDir(home);
   });
 
-  it("alice allows her routines to act in her name", async () => {
+  it("alice's routines act in her name as soon as she signs in: no consent, nothing to turn off", async () => {
     // a session that is gone is refused (the loopback without any session
     // is refused by the gate before the route)
     const gone = { cookie: `${alice.cookie!.split("=")[0]}=omb_s_gone` };
-    for (const method of ["GET", "POST", "DELETE"]) {
-      // fix 2 contract item 5: a session that expired or was revoked is the
-      // gate's 401; no session under service trust (the organization
-      // default) is the gate's 403.
-      const expired = await api(method, "/api/org/routine-delegation", gone, method === "POST" ? {} : undefined);
-      expect(expired.status, expired.text).toBe(401);
-      expect(expired.body.error).toMatch(/^unauthorized: this session has expired or was revoked; /);
-      const anonymous = await api(method, "/api/org/routine-delegation", undefined, method === "POST" ? {} : undefined);
-      expect(anonymous.status, anonymous.text).toBe(403);
-      expect(anonymous.body.error).toMatch(/^forbidden: on this shared server a local request without a session may only use the service routes; /);
-    }
-    expect((await api("GET", "/api/org/routine-delegation", alice)).body).toEqual({ state: "none", suspended: 0, manageUrl: `${idp.issuer.replace(/\/+$/, "")}/console/me/access#sagax`, principalId: expect.any(String) });
-    expect(await consent(alice, ALICE)).toBe("/#routine-delegation=ok");
-    const status = (await api("GET", "/api/org/routine-delegation", alice)).body;
-    expect(status).toMatchObject({ state: "active", suspended: 0, consentedAt: expect.any(Number), renewedAt: expect.any(Number) });
+    // fix 2 contract item 5: a session that expired or was revoked is the
+    // gate's 401; no session under service trust (the organization default)
+    // is the gate's 403.
+    const expired = await api("GET", "/api/org/routine-delegation", gone);
+    expect(expired.status, expired.text).toBe(401);
+    expect(expired.body.error).toMatch(/^unauthorized: this session has expired or was revoked; /);
+    const anonymous = await api("GET", "/api/org/routine-delegation");
+    expect(anonymous.status, anonymous.text).toBe(403);
+    expect(anonymous.body.error).toMatch(/^forbidden: on this shared server a local request without a session may only use the service routes; /);
+    // issued at her sign-in (beforeAll), through the link, never asked
+    const status = await waitFor(async () => {
+      const got = (await api("GET", "/api/org/routine-delegation", alice)).body;
+      return got.state === "active" ? got : null;
+    });
+    expect(status).toMatchObject({ state: "active", suspended: 0, consentedAt: expect.any(Number), renewedAt: expect.any(Number), principalId: ids.alice });
+    expect(status).not.toHaveProperty("manageUrl");
     expect(status.expiresAt - status.renewedAt).toBe(30 * 86_400_000);
+    expect(idp.delegationOf(ALICE.sub)).not.toBeNull();
+    expect(idp.delegationIssues.filter((issue) => issue.sub === ALICE.sub)).toEqual([{ sub: ALICE.sub, ok: true }]);
+    expect(idp.lastAuthorize?.scope ?? "").not.toContain("pulsabot:routines");
+    // no consent to start, nothing to revoke from Sagax
+    for (const method of ["POST", "DELETE"]) {
+      const refused = await api(method, "/api/org/routine-delegation", alice, method === "POST" ? {} : undefined);
+      expect(refused.status, refused.text).toBeGreaterThanOrEqual(400);
+    }
     expect(idp.delegationOf(ALICE.sub)).not.toBeNull();
   }, 30_000);
 
@@ -364,51 +359,35 @@ posixOnly("Perspicax organization, slice 6: routines in their person's name", ()
     expect((await api("GET", "/api/org/routine-delegation", alice)).body.state).toBe("active");
   }, 150_000);
 
-  it("a revoke from Sagax pauses the routine with exactly one card, and a consent resumes it", async () => {
-    expect((await api("DELETE", "/api/org/routine-delegation", alice)).body).toEqual({ revoked: true });
-    await waitFor(async () => idp.delegationOf(ALICE.sub) === null);
-    await waitFor(async () => (await routineOf(alice, r1))?.suspended?.reason === "delegation_revoked");
-    const refused = await runNow(alice, r1);
-    expect(refused.status).toBe("failed");
-    const cards = await waitFor(async () => { const found = await cardsFor(alice, r1Thread, r1); return found.length ? found : null; });
-    expect(cards).toHaveLength(1);
-    expect(cards[0]!.access).toMatchObject({ runAsPrincipalId: ids.alice, suspendReason: "delegation_revoked" });
-    expect(await cardsFor(alice, r1Thread, r1)).toHaveLength(1);
-    expect((await api("GET", "/api/org/routine-delegation", alice)).body).toMatchObject({ state: "none", suspended: 1 });
-    expect(await consent(alice, ALICE)).toBe("/#routine-delegation=ok");
+  it("a revoke in the console never pauses the routine: the next run gets a new delegation from her session", async () => {
+    const cardsBefore = (await cardsFor(alice, r1Thread, r1)).length;
+    const issuesBefore = idp.delegationIssues.length;
+    expect(idp.revokeDelegation(ALICE.sub)).toBe(1);
+    // the directory reports it within a poll; Sagax drops its copy
+    await waitFor(async () => (await api("GET", "/api/org/routine-delegation", alice)).body.state === "none", 20_000);
     expect((await routineOf(alice, r1))?.suspended).toBeUndefined();
+    const run = await runNow(alice, r1);
+    expect(run.status, run.error).toBe("completed");
+    expect(idp.delegationIssues.slice(issuesBefore)).toEqual([{ sub: ALICE.sub, ok: true }]);
+    expect(idp.delegationOf(ALICE.sub)).not.toBeNull();
+    expect((await api("GET", "/api/org/routine-delegation", alice)).body.state).toBe("active");
+    expect((await routineOf(alice, r1))?.suspended).toBeUndefined();
+    expect(await cardsFor(alice, r1Thread, r1)).toHaveLength(cardsBefore);
   }, 90_000);
 
-  it("a revoke in the console reaches Sagax through the directory: delegation_ended", async () => {
-    const cardsBefore = (await cardsFor(alice, r1Thread, r1)).length;
-    expect(idp.revokeDelegation(ALICE.sub)).toBe(1);
-    await waitFor(async () => (await routineOf(alice, r1))?.suspended?.reason === "delegation_ended", 20_000);
-    expect((await api("GET", "/api/org/routine-delegation", alice)).body.state).toBe("none");
-    expect(await cardsFor(alice, r1Thread, r1)).toHaveLength(cardsBefore + 1);
-    expect(await consent(alice, ALICE)).toBe("/#routine-delegation=ok");
-  }, 60_000);
-
-  it("a consent finished as another account is refused and revoked", async () => {
-    expect(await consent(alice, CAROL)).toBe("/#routine-delegation-error=routines_subject");
-    await waitFor(async () => idp.delegationOf(CAROL.sub) === null);
-    expect((await api("GET", "/api/org/routine-delegation", alice)).body.state).toBe("active");
-  }, 30_000);
-
   it("bob's routine on alice's bot runs as bob, on alice's key, then pauses no_right", async () => {
+    const refreshesBefore = idp.refreshes.length;
     bob = await signIn(BOB);
+    // his own delegation comes with his sign-in, never asked
+    await waitFor(async () => idp.delegationOf(BOB.sub) !== null);
     const created = await api("POST", "/api/routines", bob, { name: "Bob's check", botId: x.id, prompt: "Check for Bob.", enabled: false,
       schedule: { type: "interval", everyMinutes: 60, anchorAt: Date.now() + 86_400_000 } });
     expect(created.status, created.text).toBe(201);
     const r2 = created.body.routine.id as string;
     expect(created.body.routine.runAs).toEqual({ principalId: ids.bob, name: "Bob" });
-    const refreshesBefore = idp.refreshes.length;
-    const missing = await runNow(bob, r2);
-    expect(missing).toMatchObject({ status: "failed", error: "This routine cannot act in Bob's name: routines are not allowed yet" });
-    expect((await routineOf(bob, r2))?.suspended?.reason).toBe("delegation_missing");
-    // alice's delegation was not touched for bob's routine
-    expect(idp.refreshes.slice(refreshesBefore).filter((r) => r.sub === ALICE.sub)).toEqual([]);
-    expect(await consent(bob, BOB)).toBe("/#routine-delegation=ok");
     expect((await routineOf(bob, r2))?.suspended).toBeUndefined();
+    // alice's delegation was not touched for bob's routine
+    expect(idp.refreshes.slice(refreshesBefore).filter((r) => r.sub === ALICE.sub && r.delegation)).toEqual([]);
     // bob has his own subscription and key: they never pay for the bot's routine
     idp.providerKeys.set(`${BOB.sub}/anthropic`, BOB_KEY);
     const bobLogin = join(home, ".sagax", "principals", ids.bob!, "claude");
@@ -529,6 +508,32 @@ posixOnly("Perspicax organization, slice 6: routines in their person's name", ()
     expect(goal.status, goal.text).toBe(201);
     expect(goal.body.routine.runAs).toEqual({ principalId: ids.bob, name: "Bob" });
     expect(goal.body.routine.suspended).toBeUndefined();
+  }, 60_000);
+
+  it("a Perspicax that cannot issue a delegation only skips the run: never paused, no card", async () => {
+    idp.tamper = { noDelegationExchange: true };
+    try {
+      const carol = await signIn(CAROL);
+      // her delegation from an earlier sign-in ends in the console; this
+      // Perspicax cannot issue her a new one
+      idp.revokeDelegation(CAROL.sub);
+      await waitFor(async () => (await api("GET", "/api/org/routine-delegation", carol)).body.state === "none", 20_000);
+      const own = await api("POST", "/api/bots", carol, { name: "Zoe" });
+      expect(own.status, own.text).toBe(201);
+      const created = await api("POST", "/api/routines", carol, { name: "Carol's check", botId: own.body.bot.id, prompt: "Check.", enabled: false,
+        schedule: { type: "interval", everyMinutes: 60, anchorAt: Date.now() + 86_400_000 } });
+      expect(created.status, created.text).toBe(201);
+      const r3 = created.body.routine.id as string;
+      const skipped = await runNow(carol, r3);
+      expect(skipped).toMatchObject({ status: "failed", error: "Perspicax did not issue Carol's routine access yet; this run is skipped and the next one tries again" });
+      expect(idp.delegationIssues.filter((issue) => issue.sub === CAROL.sub).at(-1)).toEqual({ sub: CAROL.sub, ok: false, error: "invalid_request" });
+      expect((await routineOf(carol, r3))?.suspended).toBeUndefined();
+      expect(onDisk().routines.find((r) => r.id === r3)?.suspended).toBeUndefined();
+      expect(storedAccessCards(own.body.bot.threadId).filter((access) => access.reason === "routine_delegation")).toEqual([]);
+      expect(idp.delegationOf(CAROL.sub)).toBeNull();
+    } finally {
+      idp.tamper = {};
+    }
   }, 60_000);
 
   it("a disable in Perspicax pauses her routine person_out, and no run follows", async () => {

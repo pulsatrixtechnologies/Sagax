@@ -27,8 +27,11 @@ import { mascotFor } from "./mascots";
 import { Balloon, BALLOON_MAX_W, readBalloonPlace, splitOffset, type BalloonSide } from "./Balloon";
 import { completeMascotLook } from "../../../shared/mascot-look";
 import { mascotStage } from "./fit";
-import { mascotFields, type FloatingEvent, type FloatingPose, type FloatingSnapshot } from "./protocol";
-import { dockedWindowSize, type Size } from "./window-frame";
+import { mascotFields, type FloatingEvent, type FloatingMenuItem, type FloatingPose, type FloatingSnapshot } from "./protocol";
+import { characterMoves } from "./moves";
+import { CHAT_BALLOON, dockedWindowSize, type Size } from "./window-frame";
+import { effectLane, effectSide, type ChatPlacement, type EffectSide } from "./placement";
+import { useHeldMenuMotion } from "@/components/MenuMotion";
 import { MascotCallCardView, MascotCallPill, type LevelSource, type MascotCallCard } from "./MascotCall";
 import type { MascotLook } from "../../../shared/mascot-look";
 
@@ -56,8 +59,10 @@ const STAGE = mascotStage(OWL_SIZE);
 export const MASCOT_SIZE = { width: STAGE.width, height: STAGE.height } as const;
 /** The call card's gap to the character's head, px. */
 const CARD_GAP = 6;
-/** The character's own box in the stage: the balloon may come right up to it. */
-const OWL_BOX = { left: STAGE.left, top: STAGE.top, size: OWL_SIZE } as const;
+/** The character's own box in the stage: the balloon may come right up to it, and main keeps it on screen. */
+export const OWL_BOX = { left: STAGE.left, top: STAGE.top, size: OWL_SIZE } as const;
+/** The stage around the character (fit.ts). */
+export const MASCOT_STAGE = STAGE;
 
 /** A bot colour name or hex, as CSS (the parked badge wears it). */
 const owlHex = (color: string) => (MAUS_COLORS as Record<string, string>)[color] ?? (/^#[0-9a-fA-F]{3,8}$/.test(color) ? color : MAUS_COLORS.green);
@@ -113,6 +118,31 @@ export interface FloatingBotViewProps {
   onLevels?: LevelSource;
   /** Desktop: the menu opens natively at this point of the page (the pointer); the drawn menu otherwise. */
   menuAt?: (x: number, y: number) => void;
+  /** Desktop: a move picked in the native menu's "Moves" (the drawn menu plays its own). */
+  onMove?: (listener: (clip: string) => void) => () => void;
+  /**
+   * Desktop: where the chat goes, from where the character stands on its
+   * display (placement.ts). The window holds the chat's room on that side.
+   */
+  layout?: MascotLayout | null;
+}
+
+/** The desktop mascot's layout around its character: the chat's side and room. */
+export interface MascotLayout {
+  side: BalloonSide;
+  chat: ChatPlacement | null;
+  /** Where the effects go: beside the character, never over it. */
+  fx?: EffectSide;
+}
+
+/** The balloon's room from a placement: as big as that side of the display allows, and how far it may be dragged away. */
+export function chatRoomFor(chat: ChatPlacement): { x: number; y: number; w: number; h: number } {
+  return { x: Math.max(0, chat.room.w - CHAT_BALLOON.w), y: Math.max(0, chat.room.h - CHAT_BALLOON.h), w: chat.room.w, h: chat.room.h };
+}
+
+/** The drawn menu's rows: a submenu's items follow its title, indented. */
+export function drawnMenuRows(items: readonly FloatingMenuItem[]): { item: FloatingMenuItem; depth: 0 | 1 }[] {
+  return items.flatMap((item) => [{ item, depth: 0 as const }, ...(item.items ?? []).map((child) => ({ item: child, depth: 1 as const }))]);
 }
 
 interface CharacterProps {
@@ -287,7 +317,7 @@ function AwayBadge({ snapshot, onOpen, onMenu, hover }: { snapshot: FloatingSnap
   );
 }
 
-export function FloatingBotView({ snapshot: given, onEvent, mover, interactive, wantsKeyboard, rootRef, className, style, below, pilot = null, onSide, onReserve, onLevels, menuAt }: FloatingBotViewProps) {
+export function FloatingBotView({ snapshot: given, onEvent, mover, interactive, wantsKeyboard, rootRef, className, style, below, pilot = null, onSide, onReserve, onLevels, menuAt, onMove, layout = null }: FloatingBotViewProps) {
   // an older brain may not send the mascot's fields yet
   const snapshot: FloatingSnapshot = given.hints ? given : { ...given, ...mascotFields(given) };
   const [menuOpen, setMenuOpen] = useState(false);
@@ -372,6 +402,20 @@ export function FloatingBotView({ snapshot: given, onEvent, mover, interactive, 
     for (const effect of effects) runEffect(effect);
   }, [runEffect]);
   dispatchRef.current = dispatch;
+
+  // a move picked by name ("Moves"): only one this character has
+  const lookKey = snapshot.mascot ? JSON.stringify(snapshot.mascot) : "";
+  const playMove = useCallback((clip: string) => {
+    const move = characterMoves(lookKey ? (JSON.parse(lookKey) as MascotLook) : undefined).find((candidate) => candidate.clip === clip);
+    if (move) dispatchRef.current({ type: "move", now: now(), clip: move.clip });
+  }, [lookKey]);
+  useEffect(() => onMove?.(playMove), [onMove, playMove]);
+  /** A choice in the menu: a move plays here; anything else is the brain's. */
+  const chooseMenu = (id: string) => {
+    setMenuOpen(false);
+    if (id.startsWith("move:")) playMove(id.slice(5));
+    else onEvent({ type: "menu", id });
+  };
 
   // the bot's work, from the brain: fly off, come back
   useEffect(() => {
@@ -460,10 +504,17 @@ export function FloatingBotView({ snapshot: given, onEvent, mover, interactive, 
   }).current;
 
   const balloon = away ? null : snapshot.balloon;
+  // the balloon plays its close before it goes (the open pop backwards; at once under reduced motion)
+  const shown = useHeldMenuMotion(balloon);
   // Which way the balloon opens, decided when it opens and kept while it is open, so the
   // mascot never jumps: above unless the screen's top is too near, to the left unless its edge is
-  const [side, setSide] = useState<BalloonSide>({ below: Boolean(below), right: false });
-  const [room, setRoom] = useState({ x: 0, y: 0, w: BALLOON_MAX_W, h: 420 });
+  const [ownSide, setSide] = useState<BalloonSide>({ below: Boolean(below), right: false });
+  const [ownRoom, setRoom] = useState({ x: 0, y: 0, w: BALLOON_MAX_W, h: 420 });
+  // on the desktop the window's layout decides (FloatingBotWindow, from where the character stands)
+  const desk = pilot && layout ? layout : null;
+  const side = desk ? desk.side : ownSide;
+  const room = desk?.chat ? chatRoomFor(desk.chat) : ownRoom;
+  const shift = desk?.chat?.shift ?? 0;
   const balloonOpen = Boolean(balloon);
   // the call pill's card (settings, transcript) opens where the balloon goes
   const [callCard, setCallCard] = useState<MascotCallCard>(null);
@@ -474,7 +525,7 @@ export function FloatingBotView({ snapshot: given, onEvent, mover, interactive, 
   const panelOpen = balloonOpen || callCardShown;
   chattingRef.current = balloonOpen || Boolean(call);
   useLayoutEffect(() => {
-    if (!panelOpen) return;
+    if (!panelOpen || desk) return;
     const next = balloonSide(pilot ? "desktop" : "overlay", Boolean(below), STAGE.height);
     setSide(next.side);
     setRoom(next.room);
@@ -493,9 +544,28 @@ export function FloatingBotView({ snapshot: given, onEvent, mover, interactive, 
       return;
     }
     const saved = readBalloonPlace(snapshot.id ?? snapshot.name);
-    const held = splitOffset(saved, { below: false, right: false }).away;
-    onReserve(dockedWindowSize(STAGE, { w: saved.w, h: saved.h, dx: held.dx, dy: held.dy }), false);
-  }, [onReserve, pilot, panelOpen, away, snapshot.id, snapshot.name]);
+    const held = splitOffset(saved, side).away;
+    onReserve(dockedWindowSize(STAGE, { w: saved.w, h: saved.h, dx: held.dx + shift, dy: held.dy }), false);
+  }, [onReserve, pilot, panelOpen, away, snapshot.id, snapshot.name, side.below, side.right, shift]);
+
+  // The effects (signs, hearts, the thought dots, the Zzz) go beside the character, never over
+  // it: on the desktop the window's layout says which side; over the app, the viewport's room
+  const [ownFx, setOwnFx] = useState<EffectSide>("right");
+  const fxShown = activity !== "idle" || Boolean(burst) || snapshot.pose === "think";
+  useLayoutEffect(() => {
+    if (desk || !fxShown || typeof window === "undefined") return;
+    const rect = stageRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const next = effectSide({
+      body: { x: rect.left + OWL_BOX.left, y: rect.top + OWL_BOX.top, width: OWL_BOX.size, height: OWL_BOX.size },
+      workArea: { x: 0, y: 0, width: window.innerWidth, height: window.innerHeight },
+      chatSide: balloon ? side : null,
+    });
+    setOwnFx((current) => (current === next ? current : next));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [desk, fxShown, activity, burst]);
+  const fxSide: EffectSide = desk?.fx ?? ownFx;
+  const lane = effectLane(fxSide, OWL_BOX);
 
   // On a call the mascot bounces with its bot's voice (the stage's --fb-voice, set
   // straight on the element: no render per level) and leans in while the person talks
@@ -629,24 +699,33 @@ export function FloatingBotView({ snapshot: given, onEvent, mover, interactive, 
   return (
     <div
       ref={rootRef}
-      className={cn("fb-root", retro && "r98-root", (balloon ? side.below : below) && "fb-below", balloon && side.right && "fb-left", className)}
-      style={{ ...style, ...(balloon && side.right ? { alignItems: "flex-start" } : {}), "--fb-tail": `${Math.round(STAGE.width / 2) - 7}px`, "--fb-stage-h": `${STAGE.height}px` } as React.CSSProperties}
+      className={cn(
+        "fb-root",
+        retro && "r98-root",
+        // the desktop window keeps its corner whether the chat is open or not (it holds the chat's room there)
+        (desk ? side.below : balloon ? side.below : below) && "fb-below",
+        (desk ? side.right : balloon && side.right) && "fb-left",
+        className,
+      )}
+      style={{ ...style, ...((desk ? side.right : balloon && side.right) ? { alignItems: "flex-start" } : {}), "--fb-tail": `${Math.round(STAGE.width / 2) - 7}px`, "--fb-stage-h": `${STAGE.height}px` } as React.CSSProperties}
       data-reduced={snapshot.reduced ? "" : undefined}
       data-retro={retro ? "" : undefined}
       data-chatting={balloon ? "" : undefined}
       lang={snapshot.locale}
     >
-      {balloon && (
+      {shown.shown && shown.value && (
         <Balloon
           botId={snapshot.id ?? snapshot.name}
           name={snapshot.name}
-          balloon={balloon}
+          balloon={shown.value}
+          closing={shown.closing}
           retro={retro}
           side={side}
           room={room}
+          shift={shift}
           stage={STAGE}
           owl={OWL_BOX}
-          onReserve={onReserve}
+          onReserve={shown.closing ? undefined : onReserve}
           onEvent={onEvent}
           hover={hover}
           wantsKeyboard={wantsKeyboard}
@@ -660,22 +739,27 @@ export function FloatingBotView({ snapshot: given, onEvent, mover, interactive, 
       )}
       {menuOpen && (
         <div role="menu" aria-label={snapshot.name} className={cn("fb-menu", retro && "r98-menu")} onPointerEnter={() => hover(true)} onPointerLeave={() => hover(false)}>
-          {snapshot.menu.map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              role={item.checked === undefined ? "menuitem" : "menuitemcheckbox"}
-              aria-checked={item.checked}
-              className={cn("fb-menu-item", retro && "r98-menu-item")}
-              onClick={() => {
-                setMenuOpen(false);
-                onEvent({ type: "menu", id: item.id });
-              }}
-            >
-              <span className="fb-check" aria-hidden="true">{item.checked ? "✓" : ""}</span>
-              {item.label}
-            </button>
-          ))}
+          {drawnMenuRows(snapshot.menu).map(({ item, depth }) =>
+            item.type === "separator" ? (
+              <span key={item.id} role="separator" className="fb-menu-sep" />
+            ) : item.items ? (
+              <span key={item.id} role="presentation" className="fb-menu-group">{item.label}</span>
+            ) : (
+              <button
+                key={item.id}
+                type="button"
+                role={item.checked === undefined ? "menuitem" : "menuitemcheckbox"}
+                aria-checked={item.checked}
+                disabled={item.enabled === false}
+                data-depth={depth || undefined}
+                className={cn("fb-menu-item", retro && "r98-menu-item")}
+                onClick={() => chooseMenu(item.id)}
+              >
+                <span className="fb-check" aria-hidden="true">{item.checked ? "✓" : ""}</span>
+                {item.label}
+              </button>
+            ),
+          )}
         </div>
       )}
       <div
@@ -688,11 +772,6 @@ export function FloatingBotView({ snapshot: given, onEvent, mover, interactive, 
         data-call={call && !away ? (call.muted || call.phase === "held" ? "quiet" : call.phase) : undefined}
         style={{ "--fb-owl": owlHex(snapshot.color), ...(away ? {} : { width: STAGE.width, height: STAGE.height, "--fb-feet": `${STAGE.top + OWL_SIZE - 2}px` }) } as React.CSSProperties}
       >
-        {retro && !away && (
-          <Suspense fallback={null}>
-            <RetroDecor sparkle={snapshot.sparkle} reduced={snapshot.reduced} />
-          </Suspense>
-        )}
         {away ? (
           <AwayBadge snapshot={snapshot} hover={hover} onOpen={() => onEvent({ type: "open" })} onMenu={(x, y) => {
             onEvent({ type: "context" });
@@ -700,12 +779,13 @@ export function FloatingBotView({ snapshot: given, onEvent, mover, interactive, 
           }} />
         ) : (
         <>
-        {/* effects are anchored to the character's head, inside its own box */}
+        {/* effects beside the character's head (a lane of the stage's transparent room), never over it */}
         <span
           className="fb-fx"
           data-character={snapshot.mascot?.character ?? "owl"}
+          data-side={fxSide}
           aria-hidden="true"
-          style={{ left: STAGE.left, top: STAGE.top, width: OWL_SIZE, height: OWL_SIZE }}
+          style={{ left: lane.x, top: lane.y, width: lane.width, height: lane.height }}
         >
           {snapshot.pose === "think" && activity !== "flyOut" && activity !== "think" && (
             <span className="fb-thought"><span /><span /><span /></span>
@@ -715,6 +795,12 @@ export function FloatingBotView({ snapshot: given, onEvent, mover, interactive, 
           )}
           <Emote activity={activity} hoot={snapshot.hints.hoot} />
           {burst && <Burst key={burst.key} kind={burst.kind} reduced={reduced} />}
+          {retro && (
+            // Trombi's sparkle when a reply settles: beside it too
+            <Suspense fallback={null}>
+              <RetroDecor sparkle={snapshot.sparkle} reduced={snapshot.reduced} />
+            </Suspense>
+          )}
         </span>
         <button
           type="button"

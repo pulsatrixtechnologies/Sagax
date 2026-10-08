@@ -428,8 +428,10 @@ export type CardAnswerer = (
 };
 
 export interface WireAccessCard {
-  /** `routine_delegation` (slice 6): an organization routine paused because
-   * it cannot act in its person's name (`engine` is then ""). */
+  /** `routine_delegation` (slice 6): an organization routine the server
+   * paused, its person out or without `run` (`engine` is then ""). Since
+   * 2026-10-08 never for lack of a delegation; an older card with a
+   * delegation reason renders nothing. */
   reason: "engine_missing" | "no_access" | "key_refused" | "routine_delegation";
   /** The engine's display name, e.g. Claude. */
   engine: string;
@@ -605,9 +607,11 @@ export interface WireMessage {
   /** emoji reactions; by = "user" or a member botId. */
   reactions?: Array<{ emoji: string; by: string }>;
   /** comm chips: "Messaged @X", linking to the bot-bot channel. */
-  comm?: { groupId: string; threadId?: string; withBotId: string; withName: string; withColor: string };
+  /** `gone` is stamped at read time when the channel thread no longer exists. */
+  comm?: { groupId: string; threadId?: string; withBotId: string; withName: string; withColor: string; gone?: boolean };
   /** thread chips: "Opened thread #Title on @X". */
-  threadRef?: { botId: string; threadId: string; title: string };
+  /** `gone` is stamped at read time when the target thread no longer exists. */
+  threadRef?: { botId: string; threadId: string; title: string; gone?: boolean };
   /** user messages waiting in the steer-queue while the bot is mid-turn. */
   queued?: boolean;
   /** A parallel task this line belongs to (shared/parallel-tasks.ts): the
@@ -928,6 +932,10 @@ export type ServerFrame =
   /** A person's custom label changed (server/routes/person-labels.ts); null
    * cleared it. Every stream. */
   | { kind: "person.label"; principalId: string; label: string | null }
+  /** People whose presence changed (shared/presence.ts). The organization's
+   * people only; with `audience`, that person's own real state (`hidden`
+   * when others see them offline), to their streams only. */
+  | { kind: "presence.changed"; audience?: string; people: Array<{ principalId: string; state: "online" | "away" | "offline"; lastSeenAt: number | null; hidden?: true }> }
   | { kind: "live.call"; botId: string; threadId: string; call: LiveCallState | null }
   /** The config status object spread flat into the frame; its full typing
    * is the deferred client-model extraction (see j1-phase-bc-progress). */

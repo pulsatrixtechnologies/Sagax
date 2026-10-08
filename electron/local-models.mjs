@@ -16,7 +16,7 @@ export const SEED_ENDPOINTS = [
 ];
 
 const HOST_ID = /^desk[a-z0-9]{3,24}$/;
-const PATHS = new Set(["/models", "/chat/completions"]);
+const PATHS = new Set(["/models", "/chat/completions", "/messages"]);
 const METHODS = new Set(["GET", "POST"]);
 const MODEL_ID = /^[\w][\w./:+-]*$/;
 const RESPONSE_CAP = 1_500_000;
@@ -91,6 +91,42 @@ export async function probeLoopbackModels(base, fetchImpl = globalThis.fetch) {
   return probed ? probed.models : null;
 }
 
+const ANTHROPIC_FRESH_MS = 5000;
+const anthropicCache = new Map();
+
+/**
+ * Does this loopback server answer the Anthropic protocol at /v1/messages?
+ * One tiny request that no server runs a model for (no messages): a server
+ * that speaks it answers 200 or 4xx, one that does not answers 404, 405 or
+ * 501. A definite answer is cached for 5 s; a request that failed is not.
+ */
+export async function probeAnthropicMessages(base, fetchImpl = globalThis.fetch, now = Date.now) {
+  const normalized = normalizeLoopbackBase(base);
+  if (!normalized) return false;
+  const hit = anthropicCache.get(normalized);
+  if (hit && now() - hit.at < ANTHROPIC_FRESH_MS) return hit.ok;
+  try {
+    const response = await fetchImpl(`${normalized}/messages`, {
+      method: "POST",
+      redirect: "error",
+      headers: { Authorization: "Bearer local", "x-api-key": "local", "anthropic-version": "2023-06-01", "content-type": "application/json" },
+      body: JSON.stringify({ model: "probe", max_tokens: 1, messages: [] }),
+      signal: AbortSignal.timeout(1200),
+    });
+    await response.body?.cancel?.().catch(() => {});
+    const ok = response.status !== 404 && response.status !== 405 && response.status !== 501 && response.status < 500;
+    anthropicCache.set(normalized, { ok, at: now() });
+    return ok;
+  } catch {
+    return false;
+  }
+}
+
+/** Test hook. */
+export function resetAnthropicProbeCache() {
+  anthropicCache.clear();
+}
+
 /** Probe one loopback base. Returns ids and display details, or null when it does not answer. */
 export async function probeLoopbackCatalog(base, fetchImpl = globalThis.fetch) {
   const normalized = normalizeLoopbackBase(base);
@@ -104,7 +140,8 @@ export async function probeLoopbackCatalog(base, fetchImpl = globalThis.fetch) {
     });
     if (!response.ok) return null;
     const payload = await response.json();
-    return { models: modelIdsFromPayload(payload), details: modelDetailsFromPayload(payload) };
+    const models = modelIdsFromPayload(payload);
+    return { models, details: modelDetailsFromPayload(payload), anthropic: models.length ? await probeAnthropicMessages(normalized, fetchImpl) : false };
   } catch {
     return null;
   }
@@ -115,10 +152,12 @@ export async function probeLoopbackCatalog(base, fetchImpl = globalThis.fetch) {
  * The bridge returns one result, so the body is buffered up to the cap.
  * There is no second channel.
  */
-export async function executeLocalModel(operation, resolveBase, fetchImpl = globalThis.fetch, signal) {
+export async function executeLocalModel(operation, resolveBase, fetchImpl = globalThis.fetch, signal, allowMessages) {
   if (!operation || typeof operation !== "object") throw new Error("This local model request was refused.");
   if (operation.url !== undefined) throw new Error("This local model request was refused.");
   if (!METHODS.has(operation.http_method) || !PATHS.has(operation.http_path)) throw new Error("This local model request was refused.");
+  // /messages (Claude Code) is a POST to a base the desktop probed as speaking it.
+  if (operation.http_path === "/messages" && (operation.http_method !== "POST" || !(typeof allowMessages === "function" && allowMessages(operation.endpoint)))) throw new Error("This local model request was refused.");
   if (typeof operation.endpoint !== "string" || !HOST_ID.test(operation.endpoint)) throw new Error("This local model request was refused.");
   const base = normalizeLoopbackBase(typeof resolveBase === "function" ? resolveBase(operation.endpoint) : null);
   if (!base) throw new Error("This local model request was refused.");
@@ -136,7 +175,11 @@ export async function executeLocalModel(operation, resolveBase, fetchImpl = glob
   const response = await fetchImpl(target.href, {
     method: operation.http_method,
     redirect: "error",
-    headers: { Authorization: "Bearer local", ...(operation.http_method === "POST" ? { "content-type": "application/json" } : {}) },
+    headers: {
+      Authorization: "Bearer local",
+      ...(operation.http_path === "/messages" ? { "x-api-key": "local", "anthropic-version": "2023-06-01" } : {}),
+      ...(operation.http_method === "POST" ? { "content-type": "application/json" } : {}),
+    },
     ...(operation.http_method === "POST" ? { body: json } : {}),
     signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
   });

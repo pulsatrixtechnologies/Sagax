@@ -32,6 +32,18 @@ beforeEach(() => {
 });
 
 describe("EngineConnect", () => {
+  it("an engine the server image does not carry reads Not available on this server, with the reason as a tooltip", () => {
+    const html = render(engine({ installed: false, notAvailable: "Google's runtime is about 2 GB" }));
+    expect(html).toContain('data-pays-with="not-available"');
+    expect(html).toContain("Not available on this server");
+    expect(html).toContain("Google&#x27;s runtime is about 2 GB");
+    expect(html).not.toContain("<button");
+    expect(render(engine({ installed: false }))).toContain("Not installed on this server");
+    expect(paysWithText({ installed: false, myTurns: "none", notAvailable: "x" })).toBe("Not available on this server");
+    setLocale("fr");
+    expect(paysWithText({ installed: false, myTurns: "none", notAvailable: "x" })).toBe("Non disponible sur ce serveur");
+  });
+
   it("not connected: Not connected and one Connect button, no payer chain or device-code hint", () => {
     const html = render(engine());
     expect(html).toContain('data-pays-with="none"');

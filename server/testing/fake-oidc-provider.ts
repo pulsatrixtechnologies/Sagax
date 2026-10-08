@@ -44,6 +44,9 @@ export interface FakeOidcTamper {
   /** Slice 6: drop the `pulsabot:routines` marker from token answers (an
    * older Perspicax), so a delegation code answer lacks it. */
   omitRoutinesMarker?: boolean;
+  /** 2026-10-08: refuse to issue a routine delegation by token exchange (a
+   * Perspicax up to 1.8.13: only an access token may be requested). */
+  noDelegationExchange?: boolean;
 }
 
 export interface FakeDirectoryPerson {
@@ -118,6 +121,9 @@ export interface FakeOidcProvider {
   revokeDelegation(sub: string): number;
   /** Slice 6: the live delegation of this person, if any. */
   delegationOf(sub: string): { consentedAt: number; renewedAt: number } | null;
+  /** 2026-10-08: every routine delegation the linked server asked by token
+   * exchange (requested_token_type refresh_token), with its answer. */
+  delegationIssues: Array<{ sub: string | null; ok: boolean; error?: string }>;
   /** Refresh tokens that are live right now. */
   liveRefreshTokens(): string[];
   /** Refresh -> 400 invalid_grant for this subject from now on (disabled user). */
@@ -218,6 +224,10 @@ export async function startFakeOidcProvider(options: { clientId?: string; user?:
   let server: Server | null = null;
   /** Slice 5: sign-in access tokens (the exchange subjects) and exchanged MCP tokens. */
   const accessTokens = new Map<string, { sub: string; exp: number }>();
+  /** Access tokens of a routine delegation family: never a subject to issue one. */
+  const delegationFamilies = new Set<string>();
+  /** The person each sign-in code was issued to, by sub. */
+  const signedInUsers = new Map<string, FakeOidcUser>();
   const exchanged = new Map<string, { sub: string; profile: string; exp: number; revoked: boolean }>();
   const newAccess = (sub: string) => {
     const token = `pxlo1.${randomBytes(16).toString("hex")}`;
@@ -300,6 +310,7 @@ export async function startFakeOidcProvider(options: { clientId?: string; user?:
     profiles: [],
     profilesBySub: new Map(),
     exchanges: [],
+    delegationIssues: [],
     exchangeRevoked: [],
     mcpRequests: [],
     issuedAccessTokens: () => [...accessTokens.keys()],
@@ -478,6 +489,35 @@ export async function startFakeOidcProvider(options: { clientId?: string; user?:
           };
           if (!linkBasicOk(req.headers.authorization)) return fail(401, "invalid_client");
           if (form.subject_token_type !== "urn:ietf:params:oauth:token-type:access_token" || !form.subject_token || form.actor_token) return fail(400, "invalid_request");
+          if (form.requested_token_type === "urn:ietf:params:oauth:token-type:refresh_token") {
+            // 2026-10-08 (the Perspicax change Sagax needs): the linked
+            // server turns a person's live sign-in access token into their
+            // routine delegation family, no consent; it replaces the older one.
+            const refuse = (error: string, sub: string | null = null) => {
+              provider.delegationIssues.push({ sub, ok: false, error });
+              return send(res, 400, { error });
+            };
+            const subject = accessTokens.get(form.subject_token);
+            if (provider.tamper.noDelegationExchange) return refuse("invalid_request", subject?.sub ?? null);
+            if (!subject || subject.exp - Date.now() < 60_000 || disabled.has(subject.sub)) return refuse("invalid_grant", subject?.sub ?? null);
+            if (delegationFamilies.has(form.subject_token)) return refuse("invalid_grant", subject.sub);
+            if (!(form.scope ?? "").split(" ").includes(MARKER) || !form.resource) return refuse("invalid_scope", subject.sub);
+            const signedInAs = signedInUsers.get(subject.sub);
+            if (!signedInAs) return refuse("invalid_grant", subject.sub);
+            endDelegationsOf(subject.sub);
+            const family = randomBytes(8).toString("hex");
+            delegations.set(family, { sub: subject.sub, consentedAt: Date.now(), renewedAt: Date.now() });
+            const refresh = `pxlr1.${randomBytes(16).toString("hex")}`;
+            refreshTokens.set(refresh, { family, user: signedInAs, resource: form.resource });
+            const access = newAccess(subject.sub);
+            delegationFamilies.add(access);
+            provider.delegationIssues.push({ sub: subject.sub, ok: true });
+            return send(res, 200, {
+              access_token: access, refresh_token: refresh, token_type: "Bearer", expires_in: 3600,
+              issued_token_type: "urn:ietf:params:oauth:token-type:refresh_token",
+              scope: provider.tamper.omitRoutinesMarker ? "openid profile email offline_access" : `openid profile email offline_access ${MARKER}`,
+            });
+          }
           const subject = accessTokens.get(form.subject_token);
           if (!subject || subject.exp - Date.now() < 60_000 || disabled.has(subject.sub)) return fail(400, "invalid_grant", subject?.sub ?? null);
           let profile: string | null = null;
@@ -539,6 +579,7 @@ export async function startFakeOidcProvider(options: { clientId?: string; user?:
         const asked = grant.scope.split(" ");
         const marked = !provider.tamper.omitRoutinesMarker && asked.includes(MARKER) && asked.includes("openid") && asked.includes("offline_access") && Boolean(grant.resource);
         const family = randomBytes(8).toString("hex");
+        signedInUsers.set(grant.user.sub, { ...grant.user });
         if (marked) {
           endDelegationsOf(grant.user.sub);
           delegations.set(family, { sub: grant.user.sub, consentedAt: Date.now(), renewedAt: Date.now() });

@@ -32,6 +32,9 @@ export interface SandboxdClient {
   stop(key: string): Promise<SandboxStatus>;
   pause(key: string): Promise<SandboxStatus>;
   resume(key: string): Promise<SandboxStatus>;
+  /** Count now as use of a running sandbox (the idle stop waits again);
+   * starts nothing. */
+  markUsed(key: string): Promise<SandboxStatus>;
   stats(key: string): Promise<SandboxStats>;
   remove(key: string, options?: { keepWorkspace?: boolean }): Promise<SandboxStatus>;
   exec(key: string, input: SandboxExecInput): Promise<SandboxExecOutput>;
@@ -114,6 +117,7 @@ export function sandboxdClient(baseUrl: string, key: () => string, fetchImpl: ty
     stop: (sandboxKey) => call<SandboxStatus>("POST", keyPath(sandboxKey, "/stop"), {}),
     pause: (sandboxKey) => call<SandboxStatus>("POST", keyPath(sandboxKey, "/pause"), {}),
     resume: (sandboxKey) => call<SandboxStatus>("POST", keyPath(sandboxKey, "/resume"), {}),
+    markUsed: (sandboxKey) => call<SandboxStatus>("POST", keyPath(sandboxKey, "/used"), {}, 10_000),
     stats: (sandboxKey) => call<SandboxStats>("GET", keyPath(sandboxKey, "/stats"), undefined, 30_000),
     remove: (sandboxKey, options = {}) => call<SandboxStatus>("DELETE", keyPath(sandboxKey, options.keepWorkspace ? "?keepWorkspace=1" : "")),
     exec: (sandboxKey, input) => call<SandboxExecOutput>("POST", keyPath(sandboxKey, "/exec"), input, ((input.timeoutSec ?? 120) + 60) * 1000),

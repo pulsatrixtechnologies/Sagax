@@ -94,7 +94,7 @@ export const desktopBridgeOperation = z.object({
   /** local_model: an endpoint id the desktop published. Not a URL. */
   endpoint: z.string().max(40).optional(),
   http_method: z.enum(["GET", "POST"]).optional(),
-  http_path: z.enum(["/models", "/chat/completions"]).optional(),
+  http_path: z.enum(["/models", "/chat/completions", "/messages"]).optional(),
   /** local_model JSON body. Never logged. */
   json: z.string().max(1_000_000).optional(),
 }).strict();

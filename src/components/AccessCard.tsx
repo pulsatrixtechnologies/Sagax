@@ -6,23 +6,20 @@
 // with what to do (sign in with their own subscription, add their key in
 // Perspicax) and, for an admin only, where the organization's key lives. The
 // third-person lines remain for a viewer the card is not about (a card the
-// server still shares: a refused organization key). Slice 6: a routine
-// paused because it cannot act in its person's name; that person gets the
-// button to reconnect their routines.
-import { useState } from "react";
+// server still shares: a refused organization key). Slice 6: a routine the
+// server paused shows one neutral line (its person is out, or lost the
+// right to run the bot). Since 2026-10-08 a routine always acts in its
+// owner's name: there is no delegation card and no button, and an old card
+// for a missing, ended or revoked delegation shows nothing.
 import { KeyRound } from "lucide-react";
 
 import { t } from "@/lib/i18n";
 import { SettingsText } from "./SettingsLink";
-import { startRoutineDelegation } from "@/lib/routine-delegation";
 import type { WireAccessCard } from "../../shared/wire";
 
 export type AccessViewer = { principalId: string | null; admin: boolean };
 
 const ROUTINE_REASON_KEYS = {
-  delegation_missing: "access.routineDelegation.reason.delegation_missing",
-  delegation_ended: "access.routineDelegation.reason.delegation_ended",
-  delegation_revoked: "access.routineDelegation.reason.delegation_revoked",
   person_out: "access.routineDelegation.reason.person_out",
   no_right: "access.routineDelegation.reason.no_right",
 } as const;
@@ -36,23 +33,23 @@ export interface AccessCardLines {
   /** The viewer can sign in with their own subscription for this engine
    * (Settings > Model providers > My subscriptions and keys). */
   signIn?: boolean;
-  reconnect?: boolean;
+  /** A routine the server paused: one neutral status line, no card. */
+  plain?: boolean;
 }
 
 const same = (a: string | null | undefined, b: string | null | undefined) => Boolean(a && b && a.toLowerCase() === b.toLowerCase());
 
 /** The card's lines for this viewer: the reason, then what the person whose
- * credentials the turn needed can do, or an admin. */
-export function accessCardLines(access: WireAccessCard, viewer: AccessViewer): AccessCardLines {
+ * credentials the turn needed can do, or an admin. Null: nothing to show (an
+ * old routine delegation card). */
+export function accessCardLines(access: WireAccessCard, viewer: AccessViewer): AccessCardLines | null {
   const owner = same(viewer.principalId, access.ownerPrincipalId);
   if (access.reason === "routine_delegation") {
-    const runAs = Boolean(viewer.principalId && access.runAsPrincipalId && viewer.principalId.toLowerCase() === access.runAsPrincipalId.toLowerCase());
     const reason = access.suspendReason;
+    if (reason !== "person_out" && reason !== "no_right") return null;
     return {
-      text: t("access.routineDelegation", { routine: access.routineName ?? "", person: access.runAsName || t("access.routineDelegation.someone") }),
-      ...(reason ? { hint: t(ROUTINE_REASON_KEYS[reason]) } : {}),
-      // A consent only helps when the delegation is what is missing.
-      ...(runAs && reason !== "no_right" ? { reconnect: true } : {}),
+      text: t("access.routinePaused", { routine: access.routineName ?? "", reason: t(ROUTINE_REASON_KEYS[reason]) }),
+      plain: true,
     };
   }
   if (access.reason === "engine_missing") {
@@ -92,18 +89,10 @@ export function accessCardLines(access: WireAccessCard, viewer: AccessViewer): A
 
 export function AccessCard({ access, viewer, onSignIn }: { access: WireAccessCard; viewer: AccessViewer; onSignIn?: () => void }) {
   const lines = accessCardLines(access, viewer);
-  const [busy, setBusy] = useState(false);
-  const [failed, setFailed] = useState(false);
-  const reconnect = async () => {
-    setBusy(true);
-    setFailed(false);
-    try {
-      await startRoutineDelegation();
-    } catch {
-      setFailed(true);
-      setBusy(false);
-    }
-  };
+  if (!lines) return null;
+  if (lines.plain) {
+    return <p role="status" data-access-card={access.reason} className="break-words text-[12px] text-ink-secondary">{lines.text}</p>;
+  }
   return (
     <div role="status" data-access-card={access.reason} className="flex w-fit max-w-full items-start gap-2 rounded-xl border border-warning/30 bg-warning/5 px-3 py-2 text-[13px] text-ink">
       <KeyRound size={14} aria-hidden="true" className="mt-0.5 shrink-0 text-warning" />
@@ -127,12 +116,6 @@ export function AccessCard({ access, viewer, onSignIn }: { access: WireAccessCar
           </div>
         ) : null}
         {lines.detail && <code className="break-words text-[11.5px] text-ink-secondary">{lines.detail}</code>}
-        {lines.reconnect && (
-          <button type="button" className="ui-button mt-1 min-h-[44px] w-fit md:min-h-0" disabled={busy} onClick={() => void reconnect()}>
-            {t("access.routineDelegation.reconnect")}
-          </button>
-        )}
-        {failed && <span role="alert" className="text-[12px] text-danger">{t("org.routineDelegation.error.generic", { code: "unavailable" })}</span>}
       </div>
     </div>
   );

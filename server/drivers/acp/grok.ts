@@ -354,6 +354,10 @@ const support: AcpSupport = {
   // rejected level only logs and falls back. Offer the intersection shared
   // by every model in this driver's picker; notably, grok-4.5 rejects xhigh.
   effortLevels: ["low", "medium", "high"],
+  // A voice call warms the process when it is accepted (initialize,
+  // authenticate, session/load with no prompt): the first spoken turn is a
+  // bare session/prompt (docs/voice-mode-xai.md, "Latency").
+  warmSession: true,
   // Organization servers only spawn this driver when a turn sets
   // withholdHostTools. spawnArgs and the ACP profile below do the withholding.
   withholdsHostTools: true,

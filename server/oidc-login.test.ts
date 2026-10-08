@@ -158,6 +158,7 @@ describe("the sign-in routes (in process)", () => {
   let manager: IdpSessionManager;
   let vaultOk = true;
   const createdGrants: Array<{ bindBy: number; at: number }> = [];
+  const signedIn: Array<{ principalId: string; accessToken?: string }> = [];
   let rp: OidcRelyingParty;
   let consents: RoutineConsents;
 
@@ -187,6 +188,7 @@ describe("the sign-in routes (in process)", () => {
         backchannelLogout: (input) => manager.backchannelLogout(input),
         createRoutineDelegation: (input) => consents.create(input),
         sessionPrincipal: (id) => sessions.byId(id)?.principalId ?? null,
+        signedIn: (input) => signedIn.push({ principalId: input.principalId, ...(input.accessToken ? { accessToken: input.accessToken } : {}) }),
       },
       openPairing: (input) => sessions.openPairing(input),
       serverName: () => "Acme & Co bots",
@@ -220,6 +222,21 @@ describe("the sign-in routes (in process)", () => {
     const callback = await fetch(authorize.headers.get("location")!, { redirect: "manual", headers: { cookie: options.binding ?? bindingCookie } });
     return { start, callback, location: callback.headers.get("location") ?? "" };
   }
+
+  it("hands every sign-in's access token to the routine delegation, web and desktop, with no consent (2026-10-08)", async () => {
+    signedIn.length = 0;
+    expect((await walk()).location).toBe("/");
+    expect((await walk("desktop")).location).toMatch(/^openmausbot:\/\/auth/);
+    const person = principals.bySubject(provider.issuer, USER.sub)!;
+    expect(signedIn).toEqual([
+      { principalId: person.id, accessToken: expect.stringMatching(/^pxlo1\./) },
+      { principalId: person.id, accessToken: expect.stringMatching(/^pxlo1\./) },
+    ]);
+    // a refused sign-in hands nothing
+    vaultOk = false;
+    await walk();
+    expect(signedIn).toHaveLength(2);
+  });
 
   it("refuses an unknown client, and a start while grants cannot be kept", async () => {
     const bad = await walk("tablet");
@@ -376,7 +393,8 @@ describe("the sign-in routes (in process)", () => {
     expect(back.headers.getSetCookie().some((c) => c.startsWith("omb_session_test="))).toBe(false);
     expect(consents.status(principalId).state).toBe("active");
     expect(provider.delegationOf(USER.sub)).not.toBeNull();
-    consents.revoke(principalId);
+    // there is no revoke from Sagax any more (2026-10-08): forget it here
+    expect(consents.endForSubject(provider.issuer, USER.sub)).toBe(1);
   });
 
   it("refuses another subject, a gone session, a missing marker and a wrong binding, and revokes (slice 6)", async () => {
@@ -429,7 +447,7 @@ describe("the sign-in routes (in process)", () => {
       expect(consents.status(wrong.principalId).state).toBe("none");
     } finally {
       provider.user = { ...USER };
-      consents.revoke(own.principalId);
+      consents.endForSubject(provider.issuer, bob.sub);
     }
   });
 

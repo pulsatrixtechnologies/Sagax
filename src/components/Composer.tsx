@@ -120,6 +120,9 @@ interface ComposerDraftSnapshot extends ComposerSendSnapshot {
 }
 
 /** Renders the editable message composer and its pending attachments. */
+/** Asked by the desktop mascot's balloon (FloatingBots.tsx): `detail.botId`'s composer opens its file picker. */
+export const COMPOSER_ATTACH_EVENT = "omb:composer-attach";
+
 export function Composer({
   bot: profile,
   group,
@@ -567,6 +570,16 @@ export function Composer({
     return () => window.clearTimeout(timeout);
   }, [busy, pendingCount, steering]);
   const fileInput = useRef<HTMLInputElement>(null);
+  // the desktop mascot's clip (its balloon's composer row): the app comes forward and this composer picks files
+  const attachBotId = bot?.id;
+  useEffect(() => {
+    if (!attachBotId) return;
+    const onAttach = (event: Event) => {
+      if ((event as CustomEvent<{ botId?: string }>).detail?.botId === attachBotId) fileInput.current?.click();
+    };
+    window.addEventListener(COMPOSER_ATTACH_EVENT, onAttach);
+    return () => window.removeEventListener(COMPOSER_ATTACH_EVENT, onAttach);
+  }, [attachBotId]);
   const [approvalWarning, setApprovalWarning] = useState<{
     mode: "auto" | "full";
     botId: string;
