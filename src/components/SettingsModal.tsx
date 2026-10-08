@@ -67,7 +67,7 @@ import { WorkspaceBackupSettings } from "./WorkspaceBackupSettings";
 import { cn } from "@/lib/cn";
 import { setAdvancedMode, useAdvancedMode } from "@/lib/interface-mode";
 import { simpleHidesSettingsSection } from "@/lib/interface-visibility";
-import { setNotificationSounds, useNotificationSounds } from "@/lib/notification-preferences";
+import { setNotificationSounds, setNudgeSound, useNotificationSounds, useNudgeSound } from "@/lib/notification-preferences";
 import { setShowThreads, useShowThreads } from "@/lib/thread-preferences";
 import { parseSidebarDensity, setSidebarDensity, SIDEBAR_DENSITIES, useSidebarDensity, type SidebarDensity } from "@/lib/sidebar-preferences";
 import { currentPhonePairingTarget } from "@/lib/phone-pairing";
@@ -525,6 +525,19 @@ function NotificationSoundsRow() {
         checked={enabled}
         aria-label={t("settings.notificationSounds.play")}
         onClick={() => setNotificationSounds(!enabled)}
+      />
+    </SettingRow>
+  );
+}
+
+function NudgeSoundRow() {
+  const enabled = useNudgeSound();
+  return (
+    <SettingRow title={t("settings.nudgeSound.title")} subtitle={t("settings.nudgeSound.short")}>
+      <Switch
+        checked={enabled}
+        aria-label={t("settings.nudgeSound.title")}
+        onClick={() => setNudgeSound(!enabled)}
       />
     </SettingRow>
   );
@@ -1245,6 +1258,7 @@ export function SettingsModal() {
                   <ShowThreadsRow />
                   <SidebarHiddenSettings />
                   <NotificationSoundsRow />
+                  <NudgeSoundRow />
                   <FloatingFlyAwayRow />
                   <FloatingLivelinessRow />
                   {advanced && !remoteActive && editConfig && <ToolCallsRow />}

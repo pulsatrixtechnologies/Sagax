@@ -27,7 +27,7 @@ import type { BotAvatarCrop } from "../../shared/bot-avatar";
 import type { BotPublicProfile } from "../../shared/bot-public-profile";
 import { approvalModeFor, type ApprovalMode } from "../../shared/approval-mode";
 import { uiCommandToAction } from "../../shared/bot-act";
-import { onDesktopNudge } from "@/lib/desktop-nudge";
+import { onDesktopNudge, onNudgeReceived } from "@/lib/desktop-nudge";
 import { applyPresenceFrame } from "@/lib/presence";
 import type { MascotBodyId } from "../../shared/mascot-bodies";
 import type { MascotSkinId } from "../../shared/mascot-skins";
@@ -4361,7 +4361,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           break;
         }
         case "nudge":
-          onDesktopNudge();
+          onNudgeReceived();
           break;
         case "presence.changed":
           applyPresenceFrame(frame);

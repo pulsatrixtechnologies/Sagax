@@ -13,6 +13,7 @@ const styles = read("../styles.css");
 const retro98 = read("../styles/retro98.css");
 const chatView = read("./ChatView.tsx");
 const botPanel = read("./BotSettingsDialog.tsx");
+const personPanel = read("./PersonPanel.tsx");
 
 /** The body of the first rule whose selector list is exactly `selector`. */
 const rule = (css: string, selector: string) => {
@@ -42,11 +43,11 @@ describe("app frame tokens", () => {
 
 describe("chat column and bot panel", () => {
   it("both carry .content-topbar and .content-card-body", () => {
-    for (const source of [chatView, botPanel]) {
+    for (const source of [chatView, botPanel, personPanel]) {
       expect(source).toMatch(/"content-topbar[\s"]/);
       expect(source).toMatch(/className="content-card-body /);
     }
-    expect(botPanel).toMatch(/className="app-docked-panel /);
+    for (const source of [botPanel, personPanel]) expect(source).toMatch(/className="app-docked-panel /);
   });
 
   it("share one header height in every skin, outranking h-12 and min-h-[52px]", () => {
