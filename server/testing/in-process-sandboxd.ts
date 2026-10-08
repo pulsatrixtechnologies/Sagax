@@ -16,6 +16,7 @@ export function inProcessSandboxdClient(service: SandboxService, maxRunning = 3)
     stop: (key) => wire(() => service.stop(key)),
     pause: (key) => wire(() => service.pause(key)),
     resume: (key) => wire(() => service.resume(key)),
+    markUsed: (key) => wire(() => service.markUsed(key)),
     stats: (key) => wire(() => service.stats(key)),
     remove: (key, options) => wire(() => service.remove(key, options)),
     exec: (key, input) => wire(() => service.exec(key, input)),

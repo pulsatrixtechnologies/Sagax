@@ -21843,6 +21843,16 @@ ROUTES.push(createVoiceModeRoutes({
       if (!auth) return;
       const bot = store.bot(target.botId);
       if (!bot) return;
+      // Every start and heartbeat (about every 5 minutes, under sandboxd's
+      // 10 minute idle stop) counts as use of the server environment this
+      // call's turns work in (the one startTurn picks), so a call never
+      // loses it between two questions. Starts nothing.
+      if (userSandbox) {
+        const person = sandboxPrincipalForTurn({
+          botOwnerPrincipalId: effectiveBotOwner(bot), routine: false, speakerPrincipalId: orgSpeakerPrincipal(bot, speakerFor(auth)),
+        })?.trim().toLowerCase();
+        if (person) void userSandbox.markUsed(person);
+      }
       voiceWarmup.begin(target.threadId, callId, (signal) => new Promise<void>((resolve) => {
         void startTurn(bot.id, "", {
           threadId: target.threadId,

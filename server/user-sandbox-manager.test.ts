@@ -125,6 +125,30 @@ describe("UserSandboxManager", () => {
     expect(m.pendingDeletionAt(ALICE)).toBeNull();
   });
 
+  it("keeps a person's environment up through a voice call: each heartbeat counts as use, and starts nothing", async () => {
+    const m = manager();
+    // nothing to keep yet: a heartbeat does not create or start it
+    expect(await m.markUsed(ALICE)).toBe(true);
+    expect(docker.containers.size).toBe(0);
+    await m.exec(ALICE, { argv: ["true"] });
+    // a 30 minute call, a heartbeat every 5 minutes, no tool call after the first
+    for (let minute = 5; minute <= 30; minute += 5) {
+      now += 5 * 60_000;
+      await m.markUsed(ALICE);
+      expect(await service.sweepIdle()).toEqual([]);
+    }
+    expect((await m.status(ALICE)).state).toBe("running");
+    // hung up: the idle stop applies again
+    now += 10 * 60_000 + 1;
+    expect(await service.sweepIdle()).toEqual([m.keyFor(ALICE)]);
+    // a heartbeat never starts a stopped environment
+    await m.markUsed(ALICE);
+    expect((await m.status(ALICE)).state).toBe("stopped");
+    // nor touches the environment of a person signed out by Perspicax
+    await m.personOut(BOB);
+    expect(await m.markUsed(BOB)).toBe(false);
+  });
+
   it("reports unavailable instead of throwing when the provisioner is down", async () => {
     const down: SandboxdClient = {
       info: () => Promise.reject(new Error("down")), status: () => Promise.reject(new Error("down")),
@@ -132,10 +156,11 @@ describe("UserSandboxManager", () => {
       remove: () => Promise.reject(new Error("down")), exec: () => Promise.reject(new Error("down")),
       desktopStream: () => Promise.reject(new Error("down")), pause: () => Promise.reject(new Error("down")),
       resume: () => Promise.reject(new Error("down")), stats: () => Promise.reject(new Error("down")),
-      stdioStream: () => Promise.reject(new Error("down")),
+      stdioStream: () => Promise.reject(new Error("down")), markUsed: () => Promise.reject(new Error("down")),
     };
     const m = new UserSandboxManager({ client: down, instance: "default", stateFile: join(dir, "x.json") });
     expect((await m.status(ALICE)).state).toBe("unavailable");
+    expect(await m.markUsed(ALICE)).toBe(false);
     await expect(m.exec(ALICE, { argv: ["true"] })).rejects.toMatchObject({ code: "unreachable" });
   });
 
