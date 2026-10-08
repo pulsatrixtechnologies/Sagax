@@ -1918,5 +1918,13 @@
   "approvalMode.simple.decideHint": "O bot age e consulta quando hesita.",
   "approvalMode.simple.custom": "Um nível personalizado está salvo. Ele fica até você escolher um destes.",
   "approvalMode.simple.customChip": "Nível personalizado",
-  "approvalMode.simple.unset": "Nenhum nível escolhido. O bot usa este padrão até você escolher um."
+  "approvalMode.simple.unset": "Nenhum nível escolhido. O bot usa este padrão até você escolher um.",
+  "seen.by": "Visto por {list}",
+  "seen.entry": "{name} às {time}",
+  "seen.caption": "Visto",
+  "seen.captionAt": "Visto às {time}",
+  "seen.someone": "Alguém",
+  "settings.section.privacy": "Privacidade",
+  "settings.privacy.readReceipts.title": "Enviar confirmações de leitura",
+  "settings.privacy.readReceipts.subtitle": "Em conversas com outras pessoas, mostre quando você leu as mensagens delas. Desativado, você também não vê as delas. Grupos e bots sempre mostram quem viu uma mensagem."
 }
