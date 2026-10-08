@@ -55,3 +55,7 @@ third-party components under their own licenses, listed with the library.
 The nudge sound (public/nudge.mp3) is the owner's own copy of the classic
 instant-messenger "wizz" alert, supplied by the project owner for use in
 Sagax. It is not part of the PolyForm Noncommercial grant.
+
+The desktop mascot characters (Owl, Shapes, Trombi) are original work of
+Pulsatrix Technologies inc. The Shapes character was written from scratch in
+this repository; no reference code was copied from any other project.

@@ -408,12 +408,12 @@ bundling it, needs a license from Pulsatrix Technologies inc. See
 
 Sagax is based on OpenMausBot, Copyright 2026 Milind Soni and OpenMausBot
 contributors, under the [Apache License 2.0](LICENSE-APACHE). The parts that
-come unchanged from Sagax stay under Apache 2.0; the changes and
+come unchanged from OpenMausBot stay under Apache 2.0; the changes and
 additions made by Pulsatrix Technologies inc. are under the PolyForm
 Noncommercial License only. Copies published before 2026-10-02 under Apache
 2.0 keep that license. The Sagax notices are kept in [NOTICE](NOTICE).
-The Sagax name and mascot are trademarks of Milind Soni and are not this
-product's name. The source-available `enterprise/` directory of the original
+The OpenMausBot name and mascot are trademarks of the original project's
+owner and are not this product's name. The source-available `enterprise/` directory of the original
 project is not part of this tree.
 
 Bundled third-party components keep their own licenses; notices, license
