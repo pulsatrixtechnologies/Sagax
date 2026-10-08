@@ -309,7 +309,7 @@ export function SidebarProfileMenu({ avatarOnly = false, places = [] }: {
   const [aboutOpen, setAboutOpen] = useState(false);
   const triggerRef = useRef<HTMLSpanElement>(null);
   const achievements = useAchievements();
-  const openAchievements = () => dispatch({ type: "toggleAppSettings", open: true, section: "achievements" });
+  const openAchievements = () => dispatch({ type: "toggleAchievements", open: true });
   // The routines badge sits at the right edge of the row; under the name,
   // the viewer's own title and points, each only while its "Show my ..."
   // switch is on. Nothing under the name when both are off.
