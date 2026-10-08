@@ -629,6 +629,10 @@ const appConfigSchema = z.object({
     rebuildBytes: z.number().int().min(1_024).max(1_000_000).optional(),
     compactAt: z.number().positive().max(10_000_000).optional(),
     autoCompact: z.boolean().optional(),
+    /** Debugging only, never in the app: bots whose threads Sagax does not
+     * fold on its own. Their engines then compact the way they would
+     * without Sagax, and the person may notice it. */
+    autoCompactOffBots: z.array(z.string().min(1).max(200)).max(1_000).optional(),
   }).optional(),
   /** Memory upkeep timing, for bots with Memory upkeep switched on. */
   memory: z.object({
@@ -663,8 +667,9 @@ const appConfigSchema = z.object({
    * skipped entry (customMcpServers), never to a vanished config. */
   mcpServers: z.record(z.string(), z.unknown()).optional(),
   /** Connectors the engines bring with a person's own account
-   * (server/harness-connectors.ts). `claudeAi` unset means on; an admin
-   * turns it off through PUT /api/harness-connectors/settings only. */
+   * (server/harness-connectors.ts). Retired: they are always on and nothing
+   * reads this block any more. It stays in the schema only so a config that
+   * still holds `claudeAi: false` keeps loading (the value is ignored). */
   harnessConnectors: z.object({ claudeAi: z.boolean().optional() }).strict().optional(),
 });
 const storedAppConfigSchema = appConfigSchema.extend({
@@ -743,7 +748,7 @@ export interface AppConfig {
   profile?: { name?: string; email?: string; aboutMe?: string; avatarUrl?: string };
   rooms?: { turnTimeoutMinutes: number; handoffLifetimeMinutes?: number; handoffMinRunwayMinutes?: number; handoffHardCapMinutes?: number };
   threads?: { maxConcurrentPerBot: number; maxParallelPerPerson?: number; eventLogMaxBytes?: number; eventLogRetentionDays?: number };
-  context?: { rebuildBytes?: number; compactAt?: number; autoCompact?: boolean };
+  context?: { rebuildBytes?: number; compactAt?: number; autoCompact?: boolean; autoCompactOffBots?: string[] };
   memory?: { captureQuietMs?: number; tidyHour?: number };
   /** Shared preserves the historical singleton. Per-bot gives every bot a
    * separate container, durable workspace, viewer and lease. Pool runs N
@@ -1084,12 +1089,6 @@ export function builtInBrowserEnabled(cfg: AppConfig): boolean {
  * (`{"features": {"sharedComputers": true}}`) and restarts the server. */
 export function sharedComputersEnabled(cfg: AppConfig): boolean {
   return cfg.features?.sharedComputers === true;
-}
-
-/** The speaker's own claude.ai connectors reach their Claude turns unless
- * an admin turned them off (server/harness-connectors.ts). */
-export function claudeAiConnectorsEnabled(cfg: AppConfig): boolean {
-  return cfg.harnessConnectors?.claudeAi !== false;
 }
 
 /** Claude bots also see the MCP servers of this machine's own Claude Code

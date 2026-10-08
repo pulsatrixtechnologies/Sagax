@@ -9,7 +9,7 @@ import { useEffect, useState } from "react";
 import { activeLocale, t } from "@/lib/i18n";
 import { readWorkplace, useDesktopBridgeStatus, writeWorkplace, type DesktopBridgeActivity, type DesktopBridgeStatus } from "@/lib/desktop-bridge";
 import { DEFAULT_BOT_WORKPLACE, type BotWorkplace } from "../../../shared/bot-workplace";
-import { Card } from "../SettingsPrimitives";
+import { Card, SwitchRow } from "../SettingsPrimitives";
 
 function when(ms: number): string {
   return new Intl.DateTimeFormat(activeLocale(), { dateStyle: "short", timeStyle: "short" }).format(new Date(ms));
@@ -45,10 +45,7 @@ export function BotWorkplaceSettings({ status: given }: { status?: DesktopBridge
             ? t("botWorkplace.connected", { name: online[0]?.name ?? "" })
             : t("botWorkplace.notConnected")}
         </p>
-        <label className="flex min-h-[44px] items-center gap-2 md:min-h-0">
-          <input type="checkbox" checked={workplace.routines} onChange={(event) => change({ routines: event.target.checked })} />
-          <span>{t("botWorkplace.routines")}</span>
-        </label>
+        <SwitchRow label={t("botWorkplace.routines")} checked={workplace.routines} onChange={(next) => change({ routines: next })} />
         <fieldset className="flex flex-col gap-1">
           <legend className="text-ink-secondary">{t("botWorkplace.network")}</legend>
           <label className="flex min-h-[44px] items-center gap-2 md:min-h-0">
