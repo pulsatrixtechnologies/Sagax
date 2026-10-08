@@ -40,7 +40,7 @@ describe("orgPeerInScope", () => {
     expect(orgPeerInScope(ari, bee, deps)).toBe(false);
   });
 
-  it("fails closed for a bot with no owner", () => {
+  it("fails closed for an empty owner (index.ts gives an unrecorded one to the local operator)", () => {
     const orphan: Bot = { id: "orphan", name: "Orphan", ownerUserId: "" };
     expect(orgPeerInScope(orphan, { ...cryptic, ownerUserId: "" }, deps)).toBe(false);
   });

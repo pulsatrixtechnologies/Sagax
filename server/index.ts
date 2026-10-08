@@ -6346,6 +6346,14 @@ function roomHandoffProblem(node: Pick<RoomHandoff, "groupId" | "threadId" | "bo
     if ((!canAccessTeam(from, bot.section) && !sharedSupervisor) || (source && outsideSection(source, from))) return "Room work cannot cross the sender's section boundary";
     if (source && group && source.id === group.id && parent.threadId !== node.threadId) return "Same-room work must stay in the originating conversation";
     if (!peerAllowed(from, bot)) return "The recipient is not an allowed peer of the sender";
+    // A room the sender sits in keeps its own rule: people chose its
+    // members. Anywhere else (another bot's direct thread, a room the
+    // sender is not in) the organization scope applies, to every reader
+    // of the destination (server/peer-scope.ts).
+    if (!group?.memberIds.includes(from.id)) {
+      const readers = group ? group.memberIds.map(id => store.bot(id)).filter((member): member is BotRecord => Boolean(member)) : [bot];
+      if (readers.some(member => !peerInScope(from, member))) return "The recipient is outside the sender's owner's bots";
+    }
   }
 }
 
@@ -22954,6 +22962,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         kind: z.enum(["agents", "connectors", "computer"]).default("agents"),
         depth: z.number().int().min(0).max(MAX_COMMS_DEPTH).default(0),
         skillAuthoring: z.boolean().default(false),
+        // a chat turn's capability, so a test can reach coordinate_bots
+        roomCoordination: z.boolean().default(false),
       }).strict().safeParse(await readBody(req));
       if (!parsed.success || !store.bot(parsed.data.botId)) {
         return json(res, 400, { error: "invalid test capability" });
@@ -24655,6 +24665,9 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         const problem = roomHandoffProblem(address);
         if (problem) return json(res, 403, { error: problem });
         if (method === "GET" && path === "/api/internal/room-targets") {
+          // roomHandoffProblem drops every member of a room the sender is
+          // not in unless all of them are in its owner's scope, and a room
+          // with no member left is not listed (name, folder and ids stay private).
           const rooms = store.groups.filter(g => !g.dm).map(g => ({
             id: g.id, name: g.name, workingFolder: g.cwd || null,
             members: g.memberIds.map(id => store.bot(id)).filter(b => b && b.id !== internalSender.id &&

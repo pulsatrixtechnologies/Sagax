@@ -473,11 +473,11 @@ posixOnly("Perspicax organization, slice 3: directory, sharing with a user, acce
     const dot = await createBot(dave, "Dot", "claude");
     const dash = await createBot(dave, "Dash", "claude");
     const bee = (await botsOf(bob)).find((b) => (b as { name?: string }).name === "Bee")!;
-    const capability = async (bot: { id: string; threadId: string }) => {
+    const capability = async (bot: { id: string; threadId: string }, roomCoordination = false) => {
       const minted = await fetch(`${BASE}/api/testing/internal-capability`, {
         method: "POST",
         headers: { "content-type": "application/json", "x-openmausbot-test-capability": TEST_CAPABILITY_KEY },
-        body: JSON.stringify({ botId: bot.id, threadId: bot.threadId, kind: "agents" }),
+        body: JSON.stringify({ botId: bot.id, threadId: bot.threadId, kind: "agents", roomCoordination }),
       });
       expect(minted.status).toBe(201);
       return ((await minted.json()) as { token: string }).token;
@@ -506,6 +506,36 @@ posixOnly("Perspicax organization, slice 3: directory, sharing with a user, acce
     expect(hop.status).toBe(403);
     await sleep(300);
     expect(promptsNow()).not.toContain("hop from dot");
+
+    // A chat turn answers ask_bot with 409 and uses coordinate_bots: the
+    // same scope holds there, for a bot id and for a room dot is not in.
+    const room = await api("POST", "/api/groups", bob, { name: "Bob's desk", memberIds: [bee.id] });
+    expect(room.status, room.text).toBe(201);
+    const roomId = room.body.group.id as string;
+    const chatToken = await capability(dot, true);
+    const targets = await fetch(`${BASE}/api/internal/room-targets`, { headers: { authorization: `Bearer ${chatToken}` } });
+    const listed = (await targets.json()) as { bots: Array<{ id: string }>; rooms: Array<{ id: string; members: Array<{ id: string }> }> };
+    expect(targets.status, JSON.stringify(listed)).toBe(200);
+    expect(listed.bots.map((b) => b.id)).toEqual([dash.id]);
+    expect(listed.rooms.map((r) => r.id)).not.toContain(roomId);
+    expect(listed.rooms.flatMap((r) => r.members.map((m) => m.id)).every((id) => id === dash.id)).toBe(true);
+    const coordinate = async (body: Record<string, unknown>) => {
+      const sent = await fetch(`${BASE}/api/internal/coordinate-bots`, {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: `Bearer ${chatToken}` },
+        body: JSON.stringify(body),
+      });
+      return { status: sent.status, text: await sent.text() };
+    };
+    const direct = await coordinate({ botIds: [shared.id], message: "work from dot" });
+    expect(direct.status, direct.text).toBe(403);
+    const intoRoom = await coordinate({ groupId: roomId, botIds: [bee.id], message: "work from dot" });
+    expect(intoRoom.status, intoRoom.text).toBe(403);
+    // its owner's own bot is still reached
+    const own = await coordinate({ botIds: [dash.id], message: "work for dash" });
+    expect(own.status, own.text).toBe(200);
+    await sleep(300);
+    expect(promptsNow()).not.toContain("work from dot");
   }, 60_000);
 
   it("S3-7: Full access on a member's bot is its owner's choice, confirmed once; Custom never", async () => {

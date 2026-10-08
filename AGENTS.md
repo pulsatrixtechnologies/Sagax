@@ -1120,7 +1120,8 @@ empty for everyone, so the section rule of `reachablePeers`
 (`server/peer-roster.ts`) put every person's bots in one "General" team.
 Each bot's roster, `list_bots`, @mentions, `ask_bot`, `delegate_bot` and
 peer threads reached the whole organization. Keep these rules, covered by
-`server/peer-scope.test.ts` and S3-12 in `server/org-sharing.e2e.test.ts`:
+`server/peer-scope.test.ts` and S3-12 in
+`server/org-sharing.e2e.test.ts`:
 
 - On an organization server a bot reaches only its owner's bots and the
   bots shared with that owner (any level, `botLevel`), the bots the owner
@@ -1134,7 +1135,14 @@ peer threads reached the whole organization. Keep these rules, covered by
   (`dropIfUnreachable`). A new peer route checks `peerInScope` too.
 - Rooms keep their own rule (`roomHandoffProblem`): their members were
   added by people, so bots of different owners in one room still work
-  together there.
+  together there. That holds only for a room the sender is a member of.
+  `coordinate_bots` (what a chat turn uses, since it answers `ask_bot` and
+  `delegate_bot` with 409) into another bot's direct thread or into a room
+  the sender is not in needs every reader of the destination in scope, and
+  `list_room_targets` lists such a room only on the same condition.
+- `orgPeerInScope` refuses an empty owner, but index.ts never passes one:
+  `effectiveBotOwner` gives a bot with no recorded owner to the local
+  operator, so such a bot is in the operator's scope, not shut out.
 - A solo server sets no scope and is unchanged.
 
 ## Account menu
