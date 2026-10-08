@@ -594,16 +594,30 @@ fake xAI: `scripts/verify-voice-mode.ts`. Details: `docs/voice-mode-xai.md`.
   under its `utteranceId` on the page (`latency.ts`) and on the server
   (`server/voice-latency.ts`, `[voice-latency]` lines). A thread on a call
   passes `keepWarm` to the engine: the Claude driver keeps one process for
-  the call, the per-turn comms token in a file (`SAGAX_COMMS_TOKEN_FILE`),
-  never in the spawn contract. Claude starts that process when the call is
-  accepted (`POST /voice/call`); the first spoken turn reuses it. A hangup
-  before any turn closes the idle process. Codex and the API drivers are
-  not warmed this way (a Codex warm is the ACP handshake and `session/new`
-  before `session/prompt`, which is not done here, and no hidden prompt is
-  sent). Do not put a per-turn value in a pooled
-  process's contract: it relaunches the engine on every turn. Tests:
-  `server/voice-call-latency.e2e.test.ts`, `server/voice-call-warmup.test.ts`,
-  `call.test.ts` ("latency"), bench `scripts/voice-latency-bench.ts`.
+  the call, and Grok (ACP) keeps one process and one native session, the
+  per-turn comms token in a file (`SAGAX_COMMS_TOKEN_FILE`,
+  `server/drivers/spawn-contract.ts` `warmCommsEnv`), never in the spawn
+  contract nor in the ACP `sessionKey`: a Grok call turn is a bare
+  `session/prompt`, no `session/load`, no MCP reconnect, and reports
+  `reused`. Claude and Grok (`AcpSupport.warmSession`) start that process
+  when the call is accepted (`POST /voice/call`; Grok pays initialize,
+  authenticate and `session/load` or `session/new`, no prompt); the first
+  spoken turn reuses it. A hangup closes the idle process
+  (`releaseWarmSession`). Codex and the API drivers are not warmed (no
+  hidden prompt is sent). A call turn and its warm run at the engine's low
+  effort (`server/voice-call-effort.ts`: "low", never "none", a bot set
+  lower keeps its level, a Codex bot with no effort is left alone); the
+  model is unchanged (the call's model tier belongs to Auto, PR #153). The
+  call's start and each heartbeat mark the person's server environment
+  used (`UserSandboxManager.markUsed`, sandboxd `POST .../used`, starts
+  nothing) so its 10 minute idle stop never hits mid-call. Do not put a
+  per-turn value in a pooled process's contract or session inputs: it
+  relaunches or re-establishes the engine on every turn. Tests:
+  `server/voice-call-latency.e2e.test.ts` (Claude and Grok),
+  `server/drivers/acp/acp.test.ts` (call session, warm),
+  `server/voice-call-effort.test.ts`, `server/voice-call-warmup.test.ts`,
+  `server/user-sandbox-manager.test.ts`, `call.test.ts` ("latency"), bench
+  `scripts/voice-latency-bench.ts` (Claude and Grok).
 
 A change to `server/voice-mode.ts` needs the server image redeployed.
 
