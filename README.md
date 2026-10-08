@@ -161,8 +161,9 @@ effects and moves.
   ([docs/routine-schedules.md](docs/routine-schedules.md)). The card says
   when the routine runs: every hour, every weekday, or once. Active stays
   the switch. A paused or finished routine says so after the schedule. On an
-  organization server a routine runs with its owner's credentials and is paid
-  by its owner.
+  organization server a routine always acts in its owner's name, with no
+  permission to give or take back, runs with its owner's credentials and is
+  paid by its owner.
 - **Nudge.** In a conversation with a person, or in a group, the button at
   the right of the composer sends a nudge. A bot conversation does not show
   it. The windows of the people involved come forward and shake, and a line

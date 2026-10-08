@@ -27,8 +27,6 @@ function answer(auth: RequestAuth, method = "GET") {
     routineDelegation: {
       status: () => ({ state: "none" }),
       suspendedCount: () => 0,
-      start: async () => ({ ok: true, authorizationUrl: "https://px.example.test/oauth/authorize", cookie: "c=1" }),
-      revoke: () => true,
     },
   });
   const res = { setHeader: () => {}, headersSent: false, writableEnded: false };
@@ -49,24 +47,19 @@ const session = (overrides: Partial<SessionRecord> = {}): RequestAuth => ({
 
 describe("/api/org/routine-delegation", () => {
   it("answers 401 session_required to a local request under SAGAX_LOOPBACK_TRUST=owner", async () => {
-    for (const method of ["GET", "POST", "DELETE"]) {
-      expect(await answer({ kind: "loopback", scopes: ["admin", "client"] }, method)).toMatchObject({ status: 401, body: { code: "session_required" } });
-    }
+    expect(await answer({ kind: "loopback", scopes: ["admin", "client"] })).toMatchObject({ status: 401, body: { code: "session_required" } });
   });
 
   it("answers 403 identity_perspicax to a session without a principal or a provider account", async () => {
-    for (const method of ["GET", "POST", "DELETE"]) {
-      expect(await answer(session(), method)).toMatchObject({ status: 403, body: { code: "identity_perspicax" } });
-      expect(await answer(session({ principalId: "pr_alice" }), method)).toMatchObject({ status: 403, body: { code: "identity_perspicax" } });
-    }
+    expect(await answer(session())).toMatchObject({ status: 403, body: { code: "identity_perspicax" } });
+    expect(await answer(session({ principalId: "pr_alice" }))).toMatchObject({ status: 403, body: { code: "identity_perspicax" } });
   });
 
-  it("serves a person signed in with Pulsatrix, and DELETE keeps answering {revoked:true}", async () => {
+  it("serves a person signed in with Pulsatrix, read-only: no consent to start, nothing to revoke (2026-10-08)", async () => {
     const alice = session({ principalId: "pr_alice", idp: { iss: "https://px.example.test", sub: "A1", grantRef: "g1" } } as Partial<SessionRecord>);
-    expect(await answer(alice)).toMatchObject({ status: 200, body: { state: "none", suspended: 0 } });
-    // where the person revokes it: their own access page in the Perspicax console
-    expect((await answer(alice)).body).toMatchObject({ manageUrl: "https://px.example.test/console/me/access#sagax", principalId: "pr_alice" });
-    expect(await answer(alice, "DELETE")).toMatchObject({ status: 200, body: { revoked: true } });
+    expect(await answer(alice)).toMatchObject({ status: 200, body: { state: "none", suspended: 0, principalId: "pr_alice" } });
+    expect((await answer(alice)).body).not.toHaveProperty("manageUrl");
+    for (const method of ["POST", "DELETE"]) expect(await answer(alice, method)).toMatchObject({ status: 404 });
   });
 });
 

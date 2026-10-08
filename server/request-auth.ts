@@ -556,7 +556,7 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   // (server/harness-commands.ts): names, descriptions and hints only.
   { methods: ["GET"], path: /^\/api\/bots\/[\w-]+\/harness-commands$/ },
   // Slice 6: the caller's own routine delegation (allow, status, revoke).
-  { methods: ["GET", "POST", "DELETE"], path: /^\/api\/org\/routine-delegation$/, feature: "orgDirectory" },
+  { methods: ["GET"], path: /^\/api\/org\/routine-delegation$/, feature: "orgDirectory" },
   // Slice 8: a person copies their own bots from a solo Sagax (the handler
   // checks the session, the caller's right to create bots and the copy).
   { methods: ["POST"], path: /^\/api\/org\/import$/, feature: "orgDirectory" },

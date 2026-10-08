@@ -112,9 +112,9 @@ describe("the access card", () => {
     setLocale("fr");
     try {
       const bobs = { ...card, payer: "speaker" as const, payerPrincipalId: BOB, keysUrl: KEYS, subscriptionSignIn: true as const };
-      expect(accessCardLines(bobs, { principalId: BOB, admin: false }).text).toBe("Tu n'as pas d'accès Claude pour ce message : connecte ton abonnement Claude ou ajoute ta clé dans Perspicax.");
-      expect(accessCardLines(bobs, { principalId: BOB, admin: false }).hint).toBeUndefined();
-      expect(accessCardLines(bobs, { principalId: BOB, admin: true }).hint).toBe("Comme admin, tu peux aussi configurer la clé de l'organisation dans Paramètres > Connexions.");
+      expect(accessCardLines(bobs, { principalId: BOB, admin: false })?.text).toBe("Tu n'as pas d'accès Claude pour ce message : connecte ton abonnement Claude ou ajoute ta clé dans Perspicax.");
+      expect(accessCardLines(bobs, { principalId: BOB, admin: false })?.hint).toBeUndefined();
+      expect(accessCardLines(bobs, { principalId: BOB, admin: true })?.hint).toBe("Comme admin, tu peux aussi configurer la clé de l'organisation dans Paramètres > Connexions.");
       const markup = renderToStaticMarkup(createElement(AccessCard, { access: bobs, viewer: { principalId: BOB, admin: false }, onSignIn: () => {} }));
       expect(markup).toContain("Me connecter avec mon abonnement");
       expect(markup).toContain("Ajouter ma clé dans Perspicax");
@@ -129,7 +129,7 @@ describe("the access card", () => {
       text: "Your routine can't run: you don't have Claude access. Connect your Claude subscription or add your key in Perspicax.",
       signIn: true, link: { href: KEYS, label: "Add my key in Perspicax" },
     });
-    expect(accessCardLines(routine, { principalId: OWNER, admin: true }).hint).toBe("As an admin, you can also set the organization's key in Settings > Connections.");
+    expect(accessCardLines(routine, { principalId: OWNER, admin: true })?.hint).toBe("As an admin, you can also set the organization's key in Settings > Connections.");
     expect(accessCardLines(routine, { principalId: BOB, admin: false })).toEqual({ text: "This routine can't run: it uses its owner's credentials, and there is no Claude subscription, key or organization key for it." });
     expect(accessCardLines({ ...routine, cause: "payer_disabled" }, { principalId: BOB, admin: false })).toEqual({ text: "This bot's owner is disabled: their routines can't run." });
     expect(accessCardLines({ ...routine, cause: "payer_disabled" }, { principalId: OWNER, admin: false })).toEqual({ text: "Your account is disabled: your routines can't run." });
@@ -149,7 +149,7 @@ describe("the access card", () => {
       .toEqual({ text: "This bot uses Codex, which is not installed on this server.", hint: "Ask an admin." });
     const refused = { ...card, reason: "key_refused" as const, detail: "invalid x-api-key" };
     expect(accessCardLines(refused, { principalId: BOB, admin: false })).toEqual({ text: "The provider refused this bot's key." });
-    expect(accessCardLines(refused, { principalId: OWNER, admin: false }).detail).toBe("invalid x-api-key");
+    expect(accessCardLines(refused, { principalId: OWNER, admin: false })?.detail).toBe("invalid x-api-key");
   });
 });
 

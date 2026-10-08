@@ -842,11 +842,11 @@ describe("organization sharing routes (SAGAX_IDENTITY=perspicax, slice 3)", () =
     expect(requiredScope("GET", "/api/org/approvals", { orgDirectory: true, orgPairing: true })).toBe("admin");
   });
 
-  it("opens the caller's routine delegation to members on an organization server only (slice 6)", () => {
-    for (const method of ["GET", "POST", "DELETE"]) {
-      expect(requiredScope(method, "/api/org/routine-delegation", { orgDirectory: true })).toBe("client");
-      expect(requiredScope(method, "/api/org/routine-delegation")).toBe("admin");
-    }
+  it("opens the caller's routine delegation to members on an organization server only, read-only (slice 6, 2026-10-08)", () => {
+    expect(requiredScope("GET", "/api/org/routine-delegation", { orgDirectory: true })).toBe("client");
+    expect(requiredScope("GET", "/api/org/routine-delegation")).toBe("admin");
+    // no consent to start and nothing to revoke from Sagax any more
+    for (const method of ["POST", "DELETE"]) expect(requiredScope(method, "/api/org/routine-delegation", { orgDirectory: true })).toBe("admin");
     expect(requiredScope("PATCH", "/api/org/routine-delegation", { orgDirectory: true })).toBe("admin");
     expect(requiredScope("GET", "/api/org/routine-delegation/x", { orgDirectory: true })).toBe("admin");
   });

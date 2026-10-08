@@ -251,13 +251,13 @@ What Sagax does:
   fails with "Perspicax is rate limiting this server; this run is skipped". A
   routine is never paused for a rate limit; a real outage keeps "Perspicax is
   unreachable; this run is skipped".
-- **Sign-in and consent.** A rate-limited code exchange comes back as
+- **Sign-in.** A rate-limited code exchange comes back as
   `/pair#signin_error=rate_limited` ("Perspicax is busy right now. Wait a
-  minute and try again.") or `#routine-delegation-error=rate_limited` ("...
-  Wait a minute and allow your routines again.").
+  minute and try again."). The routine delegation has no consent of its own
+  since 2026-10-08: it is issued from the sign-in (see below).
 - **Durable revocations.** Every revocation at Perspicax (a session that
-  ends, a refused sign-in or consent, a replaced or withdrawn routine
-  delegation, a rotated token nobody can keep) goes through a queue sealed with
+  ends, a refused sign-in, a replaced routine delegation, a rotated token
+  nobody can keep) goes through a queue sealed with
   the sign-in vault key in `idp-revocations.enc` (0600, own AAD,
   `server/idp-revocations.ts`). It is paced by the budget above, retried until
   a 2xx or a definitive 400 (`invalid_request`, `unsupported_token_type`),
@@ -265,10 +265,29 @@ What Sagax does:
   failures, resumes on boot, and drops entries after 30 days or past 5000
   (oldest first; only the count is logged). When the vault cannot seal, one
   attempt is made at once and the log says the entry was not kept. No token is
-  ever logged. `DELETE /api/org/routine-delegation` still answers
-  `{revoked:true}` at once.
+  ever logged.
+- **Routines act in their owner's name (2026-10-08, JC).** On an
+  organization server a routine always acts in its owner's name; there is no
+  consent, no switch and no "Reconnect my routines". Sagax issues the
+  routine delegation itself, through the link, by RFC 8693 token exchange of
+  the person's live sign-in access token
+  (`requested_token_type=urn:ietf:params:oauth:token-type:refresh_token`,
+  `scope=openid profile email offline_access pulsabot:routines`, `resource`
+  the server's origin; `PerspicaxDirectory.issueRoutineDelegation`): at every
+  sign-in (web, desktop, phone), at each sign-in renewal while the person
+  keeps using Sagax (a delegation older than a day slides with it), and at a
+  run that finds none. A family Perspicax ended (a console revoke seen in the
+  directory, an `invalid_grant`) is issued again at the next run. A run
+  that cannot get one (nobody signed in since, or a Perspicax that refuses the
+  exchange: up to 1.8.13 it answers `invalid_request`) fails with
+  "Perspicax did not issue <name>'s routine access yet; this run is skipped
+  and the next one tries again" and the routine stays active. Only a person
+  Perspicax put out (`person_out`) or without `run` on the bot (`no_right`)
+  pauses a routine, with one neutral line in its thread. A routine paused
+  for a delegation before 2026-10-08 resumes from now when the server
+  starts.
 
-Who reaches `/api/org/routine-delegation` (GET, POST, DELETE):
+Who reaches `/api/org/routine-delegation` (GET only, read-only status):
 
 | Caller | Answer |
 |---|---|
@@ -283,7 +302,8 @@ pnpm exec vitest run server/oidc-rp.test.ts server/idp-token-pacer.test.ts \
   server/org-routine-consent.test.ts server/routines.test.ts \
   server/perspicax-mcp.test.ts server/oidc-login.test.ts \
   server/perspicax-org-routes.test.ts server/org-routines.e2e.test.ts \
-  src/pair/PairPage.test.ts src/components/settings/MyRoutineDelegation.test.ts
+  server/perspicax-link.test.ts \
+  src/pair/PairPage.test.ts src/components/routines/RoutineOwnerName.test.ts
 ```
 
 - `server/idp-token-pacer.test.ts`: with a budget of 5 the sixth refresh is

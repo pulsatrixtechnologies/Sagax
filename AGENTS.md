@@ -63,7 +63,7 @@ organization's mail; `organizationHidesSection` in `SettingsModal.tsx`).
 Covered by `src/components/SettingsModal.orgCleanup.test.ts`,
 `src/components/EnginesSettings.org.test.ts`,
 `src/components/Sidebar.header.test.ts`,
-`src/components/settings/MyRoutineDelegation.test.ts` and
+`src/components/routines/RoutineOwnerName.test.ts` and
 `server/org-bot-force.test.ts`:
 
 - Connected apps (Composio) is experimental (`features.connectedApps`, off):
@@ -103,10 +103,19 @@ Covered by `src/components/SettingsModal.orgCleanup.test.ts`,
   New bot and says "Votre administrateur vous permet d'utiliser les robots
   partagés seulement" (`bots.readOnly.notice`; MA-3, MA-4,
   `server/authz.test.ts`).
-- Routines in my name is read-only: allowed by default, revoked in the
-  Perspicax console (`manageUrl`, `/console/me/access#sagax`). Perspicax has no
-  silent authorization, so `ensureRoutineDelegation` starts the consent once,
-  after the person's first routine.
+- A routine always acts in its owner's name (JC, 2026-10-08). No consent,
+  no switch, no settings card, no "Reconnect my routines": Sagax issues the
+  routine delegation itself from the person's live sign-in, by RFC 8693
+  token exchange through the link (`issueRoutineDelegation`, asking a
+  refresh token with `pulsabot:routines`), at every sign-in, at a sign-in
+  renewal while they keep using Sagax (`RoutineConsents.keepAlive`, a
+  delegation older than a day slides) and at a run that finds none
+  (`prepare` and `ensure`). A family Perspicax ended is issued again; a run
+  that cannot get one is skipped, never paused. Only a person out
+  (`person_out`) or without `run` (`no_right`) pauses a routine, with one
+  neutral line. `/api/org/routine-delegation` is GET only. A disabled or
+  deleted account still stops its routines. Needs Perspicax to accept that
+  exchange (it refuses it up to 1.8.13: the run is then skipped).
 - An organization admin force-stops or force-deletes any bot
   (`POST /api/org/bots/<id>/force-stop|force-delete`, delete confirmed with
   the bot's name): admin scope, `orgAdminCaller`, audited

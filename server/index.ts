@@ -731,7 +731,7 @@ import { NudgeCooldown, nudgeFrameAllowed, recordNudgeLine } from "./nudge.ts";
 import { findPeopleDm, isPeopleDmParticipant, otherPerson, peopleDmPatchRefusal, peopleDmRouteRefusal } from "./people-dms.ts";
 import { deleteGroupMemory, groupMemoryEnabled, groupMemorySystemPrompt, updateGroupMemory } from "./group-memory.ts";
 import type { OrgRecord } from "./org-record.ts";
-import { createOidcLoginRoutes, identityConfigFromEnv, identityDescriptor, INTERIM_SIGNIN_REFUSAL, isInterimSignInRoute, MANAGED_PROFILE_REFUSAL, oidcBindingCookie, oidcSessionFields, profileManagement, writesManagedProfile } from "./oidc-login.ts";
+import { createOidcLoginRoutes, identityConfigFromEnv, identityDescriptor, INTERIM_SIGNIN_REFUSAL, isInterimSignInRoute, MANAGED_PROFILE_REFUSAL, oidcSessionFields, profileManagement, writesManagedProfile } from "./oidc-login.ts";
 import { OidcRelyingParty } from "./oidc-rp.ts";
 import { createOrgAdminRoutes, type AccessKind, type AdminApproval, type AdminBot, type AdminBotReach, type AdminPerson, type ApprovalAnswer, type ApprovalType, type OrgAdminViewer } from "./org-admin-routes.ts";
 import { RevocationQueue } from "./idp-revocations.ts";
@@ -10364,7 +10364,10 @@ function principalMayRunRoutine(principalId: string, run: { botId: string; targe
   return true;
 }
 /** Slice 6 (D4): an organization routine run needs its person, their right
- * to run the bot, and a live routine delegation. */
+ * to run the bot, and a live routine delegation. Since 2026-10-08 (JC) the
+ * delegation is issued automatically: one Perspicax cannot issue or renew
+ * only skips the run, it never pauses the routine; only a person put out
+ * (disabled, deleted, signed out by Perspicax) or without `run` pauses it. */
 async function routineAdmission(run: RoutineRun, _routine: Routine | undefined): Promise<RoutineAdmission> {
   if (IDENTITY.kind !== "perspicax") return { ok: true };
   const principalId = effectiveRunAs(run);
@@ -10380,12 +10383,11 @@ async function routineAdmission(run: RoutineRun, _routine: Routine | undefined):
   if (prepared.ok) return { ok: true };
   // Fix 2: a rate limit keeps the run queued (server/routines.ts retries it).
   if (prepared.error === "rate_limited") return { ok: false, error: "Perspicax is rate limiting this server; this run is retried", retryAfterMs: prepared.retryAfterMs };
-  if (prepared.error === "missing") return { ok: false, error: `This routine cannot act in ${name}'s name: routines are not allowed yet`, suspend: "delegation_missing" };
-  if (prepared.error === "ended") return { ok: false, error: `This routine can no longer act in ${name}'s name`, suspend: "delegation_ended" };
+  if (prepared.error === "missing" || prepared.error === "ended") return { ok: false, error: `Perspicax did not issue ${name}'s routine access yet; this run is skipped and the next one tries again` };
   return { ok: false, error: "Perspicax is unreachable; this run is skipped" };
 }
-/** Slice 6: one access card in the routine's results thread, and a
- * notification, when a routine is paused. */
+/** Slice 6: one neutral status line in the routine's results thread, and a
+ * notification, when a routine is paused (its person is out or lost `run`). */
 function routineSuspended(routine: Routine, run: RoutineRun | null, reason: RoutineSuspendReason): void {
   const bot = store.bot(routine.botId);
   const runAs = effectiveRunAs(routine);
@@ -10411,7 +10413,7 @@ function routineSuspended(routine: Routine, run: RoutineRun | null, reason: Rout
   } catch (error) {
     console.error(`routine: the pause card could not be written: ${error instanceof Error ? error.message : String(error)}`);
   }
-  notifyAccess(deliverableNotification("routine-failed", bot, threadId, `${redactSecretsInText(routine.name)}: paused, it cannot act in its person's name`), card, run?.id);
+  notifyAccess(deliverableNotification("routine-failed", bot, threadId, `${redactSecretsInText(routine.name)}: paused (${reason === "person_out" ? "its person was signed out by Perspicax" : "its person can no longer run this bot"})`), card, run?.id);
 }
 /** Slice 6: the audit rows of routine delegations and paused routines. */
 function routineAudit(action: string, principalId: string | undefined, extra: { routine?: Pick<Routine, "id" | "name">; reason?: string; auth?: RequestAuth } = {}): void {
@@ -10440,11 +10442,13 @@ function orgAudit(row: Omit<AdminActionRow, "at">): void {
   appendAdminAction(DATA_DIR, row);
 }
 const auditBotTarget = (botId: string) => ({ kind: "bot", id: botId, ...(store.bot(botId)?.name ? { name: store.bot(botId)!.name } : {}) });
-/** Slice 6: a person's routine delegation ended or was revoked. */
+/** Slice 6: a person's routine delegation ended. Only a person Perspicax
+ * put out pauses their routines; an ended family is issued again at the next
+ * run or sign-in (2026-10-08). */
 function routineConsentEnded(principalId: string, reason: RoutineConsentEnd): void {
   perspicaxMcp?.forgetPrincipal(principalId);
-  if (reason !== "delegation_revoked") routineAudit("routine_delegation.ended", principalId, { reason });
-  routines?.suspendFor(principalId, reason, (routine) => effectiveRunAs({ botId: routine.botId }));
+  routineAudit("routine_delegation.ended", principalId, { reason });
+  if (reason === "person_out") routines?.suspendFor(principalId, reason, (routine) => effectiveRunAs({ botId: routine.botId }));
 }
 
 /** Slice 6 (D5): the person a routine run acts as: its runAs, else the
@@ -21475,33 +21479,12 @@ if (IDENTITY.kind === "perspicax") {
         managedTeamIds: (person?.teams ?? []).filter((team) => team.manager).map((team) => team.id),
       };
     },
-    // Slice 6: the caller's routine delegation.
+    // Slice 6: the caller's routine delegation, read-only (2026-10-08: it
+    // is issued automatically and has no switch).
     routineDelegation: {
       status: (principalId) => routineConsents?.status(principalId) ?? { state: "none" as const },
       suspendedCount: (principalId) => (routines?.listRoutines() ?? [])
         .filter((routine) => routine.enabled && routine.suspended && effectiveRunAs(routine) === principalId).length,
-      start: async ({ principalId, sessionId }) => {
-        const person = principals.byId(principalId);
-        const unavailable = routineConsents?.unavailableReason();
-        if (!oidcRp || !routineConsents || unavailable) {
-          return { ok: false as const, status: 503, error: "Routine delegations cannot be kept on this server right now.", code: "unavailable" };
-        }
-        if (!person?.subject || person.subject.iss !== IDENTITY.issuer) {
-          return { ok: false as const, status: 403, error: "Routine delegation needs a person signed in with Pulsatrix.", code: "identity_perspicax" };
-        }
-        try {
-          const started = await oidcRp.start({ purpose: "routines", principalId, subject: { iss: person.subject.iss, sub: person.subject.sub }, sessionId });
-          return { ok: true as const, authorizationUrl: started.authorizationUrl, cookie: oidcBindingCookie(SESSION_COOKIE, IDENTITY.redirectUri, started.binding) };
-        } catch (error) {
-          console.warn(`routine delegation could not start: ${error instanceof Error ? error.message : String(error)}`);
-          return { ok: false as const, status: 503, error: "Perspicax could not be reached. Try again.", code: "unavailable" };
-        }
-      },
-      revoke: (principalId) => {
-        const revoked = routineConsents?.revoke(principalId) ?? false;
-        if (revoked) routineAudit("routine_delegation.revoked", principalId);
-        return revoked;
-      },
     },
   }));
 } else {
@@ -21939,6 +21922,12 @@ const idpSessions = oidcRp && idpVault
     refreshAfterMs: refreshAfterMs(process.env.SAGAX_OIDC_REFRESH_AFTER_SECONDS),
     teamNames: (teams) => { orgTeams.mergeFromClaims(teams); },
     ...(idpRevocations ? { revocations: idpRevocations } : {}),
+    // 2026-10-08: while the person keeps using Sagax, their routine
+    // delegation is issued or slid with their session.
+    onRenewed: (subject, access) => {
+      const person = principals.bySubject(subject.iss, subject.sub);
+      if (person && person.disabledAt === undefined) void routineConsents?.keepAlive(person.id, access);
+    },
   })
   : null;
 if (oidcRp && idpVault) {
@@ -21949,7 +21938,25 @@ if (oidcRp && idpVault) {
     renewMs: routineRenewMs(process.env.SAGAX_ROUTINE_RENEW_SECONDS),
     ...(idpRevocations ? { revocations: idpRevocations } : {}),
     onEnded: routineConsentEnded,
-    onActive: (principalId) => { routines?.resumeFor(principalId, (routine) => effectiveRunAs({ botId: routine.botId })); },
+    onActive: (principalId) => {
+      routineAudit("routine_delegation.granted", principalId);
+      routines?.resumeFor(principalId, (routine) => effectiveRunAs({ botId: routine.botId }));
+    },
+    // 2026-10-08 (JC): issued from the person's sign-in, never asked.
+    issue: (token) => perspicaxDirectory
+      ? perspicaxDirectory.issueRoutineDelegation(token)
+      : Promise.resolve({ ok: false as const, error: "link" as const }),
+    sessionSubject: (principalId) => {
+      const person = principals.byId(principalId);
+      if (!idpSessions || !person?.subject || person.disabledAt !== undefined) return Promise.resolve({ ok: false as const, error: "no_session" as const });
+      return idpSessions.subjectToken({ iss: person.subject.iss, sub: person.subject.sub });
+    },
+    subjectOf: (principalId) => {
+      const person = principals.byId(principalId);
+      return person?.subject && IDENTITY.kind === "perspicax" && person.subject.iss === IDENTITY.issuer && person.disabledAt === undefined
+        ? { iss: person.subject.iss, sub: person.subject.sub }
+        : null;
+    },
   });
 }
 if (idpSessions) {
@@ -22081,9 +22088,12 @@ const oidcLogin = IDENTITY.kind === "perspicax" && oidcRp && idpSessions
       createRoutineDelegation: (input) => {
         if (!routineConsents) throw new Error("routine delegations are unavailable");
         routineConsents.create(input);
-        routineAudit("routine_delegation.granted", input.principalId);
       },
       sessionPrincipal: (sessionId) => sessions.byId(sessionId)?.principalId ?? null,
+      // 2026-10-08: the routine delegation comes with the sign-in.
+      signedIn: ({ principalId, accessToken, accessExpiresAt }) => {
+        void routineConsents?.keepAlive(principalId, accessToken ? { token: accessToken, ...(accessExpiresAt !== undefined ? { expiresAt: accessExpiresAt } : {}) } : undefined);
+      },
     },
     openPairing: (input) => sessions.openPairing(input),
     serverName: () => environmentDescriptor({ environmentId: ENVIRONMENT_ID, desktopManaged: DESKTOP_MANAGED }).label,
