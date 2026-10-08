@@ -13,6 +13,7 @@ import { useStore, currentTaskBot, type Bot, type InstanceInfo, type ModelSelect
 import type { EffortLevel } from "../../shared/wire";
 import type { ModelVariantOption } from "../../shared/runtime-events";
 import { filterCustomModels, partitionCustomModels, suggestedModels } from "@/lib/custom-models";
+import { isDesktopModelId, localModelRows, localRowUnavailable, refreshLocalModelsOnOpen, runsLoopbackModels } from "@/lib/local-models";
 import { configuredModelInstances, isClaudeAccount, isCustomOnly, SIGN_IN_FAMILY_LABEL, signInFamily, splitEngineRail, type SignInFamily } from "@/lib/engine-rail";
 import { InstanceProviderMark } from "./ProviderIcons";
 import { EngineSetup, EngineUpdateNotice, needsCli, needsSignIn } from "./EngineSetup";
@@ -96,8 +97,7 @@ export function offersLocalModels(instance: InstanceInfo | undefined, localCount
 
 /** A desktop bridge inject id (desk host, then ::, then the model). Organization mode shows only these in Custom. */
 export function isDesktopLocalModel(id: string): boolean {
-  const sep = id.indexOf("::");
-  return sep > 0 && /^desk[a-z0-9]+$/.test(id.slice(0, sep));
+  return isDesktopModelId(id);
 }
 
 /** The others capitalize cleanly; "xhigh" would read "Xhigh". */
@@ -306,18 +306,25 @@ function ModelRow({
   current,
   defaultId,
   onPick,
+  unavailable,
 }: {
   option: ModelOption;
   current: boolean;
   defaultId: string;
   onPick: () => void;
+  /** Shown greyed, never pickable: this engine cannot run that local model. */
+  unavailable?: string;
 }) {
   return (
     <button
       type="button"
       onClick={onPick}
+      disabled={Boolean(unavailable)}
+      title={unavailable}
+      data-model-unavailable={unavailable ? "" : undefined}
       className={cn(
         "flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-2 text-left text-[13px] text-ink hover:bg-control/60",
+        "disabled:cursor-not-allowed disabled:text-ink-secondary/50 disabled:hover:bg-transparent",
         current && "bg-control",
       )}
     >
@@ -665,6 +672,24 @@ export function ModelPicker({
     if (orgMode) void reloadMyEngines();
   }, [open, orgMode, refreshLocalInstances]);
 
+  // Opening the picker looks for local models again (a server started after
+  // launch), at most once per LOCAL_REFRESH_FRESH_MS. Solo probes this
+  // machine through the engine's catalog; an organization server asks this
+  // desktop app to probe the person's own computer.
+  const railDriverKind = railInstance?.driverKind;
+  const railNeedsSetup = Boolean(railInstance && (needsCli(railInstance) || railInstance.policy));
+  useEffect(() => {
+    if (!open || !displayedInstanceId) return;
+    if (orgMode) {
+      const bridgeRefresh = window.ogb?.serverMode?.refreshLocalModels;
+      if (!bridgeRefresh) return;
+      void refreshLocalModelsOnOpen({ key: "desktop", orgMode: true, bridgeRefresh, reload: refreshInstances });
+      return;
+    }
+    if (railNeedsSetup || !runsLoopbackModels(railDriverKind)) return;
+    void refreshLocalModelsOnOpen({ key: displayedInstanceId, orgMode: false, refreshModels: () => refreshInstanceModels(displayedInstanceId) });
+  }, [open, displayedInstanceId, orgMode, railDriverKind, railNeedsSetup, refreshInstances, refreshInstanceModels]);
+
   useEffect(() => {
     if (bot.busy) setOpen(false);
   }, [bot.busy]);
@@ -766,6 +791,8 @@ export function ModelPicker({
 
   const pick = (instance: InstanceInfo, model: string) => {
     if (bot.busy || instance.policy) return;
+    if (instance.models.options.some((option) => option.id === model && (option.local || isDesktopModelId(option.id)))
+      && localRowUnavailable(instance.driverKind, model)) return;
     if (viewerLocal) {
       saveViewerChoice(dispatch, bot.id, { model: { instanceId: instance.instanceId, model } });
       setOpen(false);
@@ -797,6 +824,19 @@ export function ModelPicker({
   const custom = (orgMode
     ? railInstance?.models.options.filter((option) => option.custom && isDesktopLocalModel(option.id))
     : railInstance?.models.options.filter((option) => option.custom)) ?? [];
+  // Local: models on this machine (solo) or on the person's own computer
+  // (organization server), listed under the engine's own models in Simple
+  // and Advanced. An engine that cannot run them shows them greyed.
+  const localRows = railInstance ? localModelRows(railInstance.models.options, orgMode) : [];
+  const localIds = new Set(localRows.map((option) => option.id));
+  const filteredLocal = filterCustomModels(localRows, query);
+  const unavailableText = (id: string): string | undefined => {
+    if (!railInstance || !localIds.has(id)) return undefined;
+    const reason = localRowUnavailable(railInstance.driverKind, id);
+    if (!reason) return undefined;
+    return reason === "anthropic" ? t("model.localUnavailable.anthropic") : t("model.localUnavailable.engine", { engine: railInstance.displayName });
+  };
+  const localReason = filteredLocal.map((option) => unavailableText(option.id)).find(Boolean);
   const currentModel = selection.instanceId === railInstance?.instanceId ? selection.model : undefined;
   const filteredOfficial = filterCustomModels(official, query);
   const compactOfficial = railInstance
@@ -847,6 +887,7 @@ export function ModelPicker({
       current={selection.instanceId === railInstance?.instanceId && selection.model === option.id}
       defaultId={railInstance?.models.default ?? ""}
       onPick={() => railInstance && pick(railInstance, option.id)}
+      unavailable={unavailableText(option.id)}
     />
   );
 
@@ -1135,6 +1176,15 @@ export function ModelPicker({
                     {t("model.showSuggested")}
                   </button>
                 )}
+                {filteredLocal.length > 0 && (
+                  <div data-model-local-group className="mt-2 border-t border-hairline/40 pt-2">
+                    <EngineGroupLabel className="px-2 pb-1 pt-0.5">{t("model.localGroup")}</EngineGroupLabel>
+                    {localReason && (
+                      <p data-model-local-unavailable className="px-2 pb-1 text-[11.5px] leading-relaxed text-ink-tertiary">{localReason}</p>
+                    )}
+                    {filteredLocal.map(renderRow)}
+                  </div>
+                )}
               </>
             ) : (
               <>
@@ -1190,9 +1240,10 @@ export function ModelPicker({
     />
   );
 
+  const localListedInMain = custom.length > 0 && custom.every((option) => localIds.has(option.id));
   const localEntry = advanced && railInstance && (orgMode && custom.length === 0 ? (
     <p data-model-local-hidden className="text-[11.5px] leading-relaxed text-ink-tertiary">{t("model.org.localHidden")}</p>
-  ) : pane === "main" && offersLocalModels(railInstance, custom.length) && (
+  ) : pane === "main" && !localListedInMain && offersLocalModels(railInstance, custom.length) && (
     <button
       type="button"
       data-model-local-entry

@@ -5,8 +5,6 @@ import { usePerspicaxOrg } from "@/lib/perspicax-org";
 import { openNotificationTarget, StoreProvider, useStore } from "@/state/store";
 import { useWelcomeViewer, WelcomeGate } from "@/components/onboarding/WelcomeGate";
 import { mainConversation } from "@/lib/main-view";
-import { spotlightsQuiet } from "@/lib/onboarding";
-import { FirstConversationTour } from "@/components/onboarding/FirstConversationTour";
 import { GuidedTour } from "@/components/onboarding/GuidedTour";
 import { LiveCallHost } from "@/components/LiveCallHost";
 import { ThreadRefsProvider } from "@/components/ThreadRefs";
@@ -479,7 +477,6 @@ function Application() {
         <WelcomeGate viewer={viewer} />
         <GuidedTour />
         <LiveCallHost />
-        <FirstConversationTour quiet={spotlightsQuiet(viewer)} />
       </StoreProvider>
     </DesktopCapabilitiesProvider>
   );

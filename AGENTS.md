@@ -383,6 +383,37 @@ server's engine login; the server's local models are not offered. Tests: `ModelP
 (org) and `pnpm exec electron scripts/smoke-approval-modes.cjs --model-ui-only`
 (solo).
 
+### Local models in the picker
+
+Local rows (`host::model` inject ids, `local: true` on the option) show under
+a Local group below the engine's own models, in Simple and Advanced
+(`src/lib/local-models.ts`). Labels read "DwarfStar: Qwen3.8 Flash Next" from
+the server's `/v1/models` `name` (the id is added when several ids share one
+name) and `context_length` becomes `contextWindow`.
+
+- Which engines run them: `shared/local-model-engines.ts`. pi, Codex, Grok
+  CLI, Kimi, Qwen, Droid, Hermes and OpenCode take an OpenAI-compatible base
+  URL. Claude Code runs a loopback row (solo: the server answers
+  `/v1/messages`, as DwarfStar, Ollama, LM Studio and llama-server do) but not
+  a desktop row: the bridge carries `/v1/models` and `/v1/chat/completions`
+  only, and there is no protocol proxy. Any other engine keeps its own
+  endpoint. The picker greys a row the engine cannot run, with one line
+  saying why, and `DesktopLocalModels.assertAvailable` refuses it at turn time.
+- Solo: `server/drivers/local-inject.ts` `LOCAL_HOSTS` probes the same ports
+  as the desktop (`shared/desktop-local-models.ts` `SEED_ENDPOINTS`).
+- Organization server: only the person's own computer counts
+  (`isDesktopModelId`); the server's own loopback models are never offered.
+  The desktop probes every 15 s and publishes ids, labels and details, never
+  URLs (`electron/desktop-bridge.mjs`). Own bots may use them by default
+  (`expose` defaults on when the person never chose); `share` stays off until
+  turned on. A failed probe is not cached.
+- Refresh on open: the picker calls `refreshLocalModelsOnOpen` (10 s fresh
+  window). Solo re-reads the engine's catalog; server mode calls
+  `ogb.serverMode.refreshLocalModels()` (IPC `server-mode:refresh-local-models`,
+  5 s fresh window in the bridge), then reloads `/api/instances`.
+- Tests: `src/lib/local-models.test.ts`, `server/desktop-local-models.test.ts`,
+  `server/drivers/local-inject.test.ts`, `electron/local-models.node-test.mjs`.
+
 ## Bot actions
 
 A bot calls the same function as the button or the route (`act` in the
@@ -1140,6 +1171,22 @@ the bot-wide action. Tests: `src/lib/sidebar-hidden*.test.ts`,
 `PersonConnectionsSection.test.ts`,
 `src/state/person-panel.reducer.test.ts`.
 
+## Thread mode is on by default
+
+Thread mode (Settings > Appearance > Show threads: the thread picker in the
+chat header, thread lists and "new thread" controls, and nothing under a bot
+row when it is off) is ON for a person who never set it (JC, 2026-10-08).
+The preference is the renderer's `omb-show-threads` in localStorage
+(`src/lib/thread-preferences.ts`, `SHOW_THREADS_DEFAULT`, covered by
+`src/lib/thread-preferences.test.ts`); on an organization server it travels
+as a synced key (`shared/user-preferences.ts`, `/api/me/preferences`), where
+an absent key means unset. The server holds no default of its own, so the
+renderer fallback is the single source of truth. The switch writes "1" or "0";
+unset (key missing, storage unreadable, no storage) is on, any stored value
+other than "1" keeps reading as off, so nobody who turned it off is moved. Do
+not seed the key at first run or in onboarding; leave it unset. The phone
+apps keep their own fallback (`ios/`).
+
 ## Sidebar sections are personal
 
 On an organization server a sidebar section is one person's folder and
@@ -1210,6 +1257,13 @@ The phone stays in Settings and on the collapsed rail. Docs stay on About.
 A failed automation still dots the closed account row. The guided tour's
 `tools` anchor sits on the places stack, or on the foot when that stack is
 empty. Tests: `SidebarProfileMenu.test.ts`, `Sidebar.header.test.ts`.
+
+The guided tour (`GuidedTour.tsx`) never starts by itself: not after the
+welcome flow, not on a new bot, not per version. It runs only when opened on
+purpose (Settings > General > App tour sets `tourOpen`) or when a tour the
+person had already begun is resumed after a reload (`tourInProgress`). The
+first-conversation spotlights (`FirstConversationTour.tsx`) are not mounted
+for the same reason. Tests: `GuidedTour.test.ts`, `guided-tour.test.ts`.
 
 ## Computer tab and Local VM on an organization server
 
