@@ -334,6 +334,28 @@ launch screen hands this computer's own values over once at join
 (`orgJoin.join({ preferences })`, `takePreferences`). Device-only state
 (drafts, sizes, floating list and positions, mood, voices) never travels.
 
+## Composer: one bar in Simple and Advanced (2026-10-08)
+
+JC's decision: the chat bar is the same in both modes, and it is the
+Advanced one. `src/components/Composer.tsx` reads no interface mode. Keep
+these rules, covered by `src/components/ChatView.controls.test.ts` ("renders
+the same composer row in Simple and Advanced mode"),
+`src/components/ApprovalModeSelector.simple.test.ts` and
+`src/components/ModelPicker.simple.test.ts`:
+
+- One row: paperclip, the approval icon and its full menu (a warning sign for
+  Full access, the command allowlist for an owner or admin), the "where the
+  bot works" chip, the message field, the model chip (effort included), voice
+  and send. No approval chip or cards in Simple.
+- The slash menu lists the same commands in both modes.
+- Guards stay where they are, whatever the mode: the Full access and local
+  Auto warnings, the packaged-desktop rule for Full and Custom, the
+  organization's Full access switch.
+- Simple still hides settings sections, bot panel sections and the model
+  picker's engine controls (`src/lib/interface-visibility.ts`,
+  `ModelPicker.tsx`). Bot settings in Simple keep the two stacked approval
+  choices (`ApprovalModeSelector` with `wide`).
+
 ## Model picker
 
 The model chip (composer and chat header, `src/components/ModelPicker.tsx`)

@@ -73,6 +73,12 @@ describe("model picker in Simple mode", () => {
     expect(markup).not.toContain("Show all");
   });
 
+  it("labels the composer chip with the effort, as in Advanced", () => {
+    fixture.instances = [claude(true)];
+    const markup = renderToStaticMarkup(createElement(ModelPicker, { bot: bot(), inComposer: true }));
+    expect(markup).toMatch(/<span class="truncate">Opus High<\/span>/);
+  });
+
   it("keeps engine sign-in", () => {
     fixture.instances = [claude(false)];
     const markup = html();
