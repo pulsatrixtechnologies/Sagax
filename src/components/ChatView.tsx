@@ -66,6 +66,7 @@ import { VoiceNoteBubble, type VoiceNoteAttachment } from "./VoiceNoteBubble";
 import { RawMarkdownView, RawToggleAction } from "./RawMarkdownToggle";
 import { ParallelResultLabel, ParallelTaskCard } from "./ParallelTaskCard";
 import { ThreadChip } from "./ThreadChip";
+import { withoutDeadThreadChips } from "@/lib/dead-thread-chips";
 import { VerifyCard } from "./VerifyCard";
 import { askText, runSkill, runSteps, runSummary, showRun, skillPrompt } from "@/lib/verify-steps";
 import { useShowRunCard } from "@/lib/run-card-preferences";
@@ -898,6 +899,7 @@ const MessagesList = memo(function MessagesList({
   const { state } = useStore();
   const { botId, threadId, botName, bots, focus, showToolCalls, locale, dispatch } = useChatRows();
   const selfColor = bots.find((candidate) => candidate.id === botId)?.color;
+  const owners = useMemo(() => ({ bots: state.bots, groups: state.groups }), [state.bots, state.groups]);
   // Bot-to-bot lines become one chip per run first, so a tool fold never
   // swallows them. Person lines and replies to the person stay in the groups.
   // The locale refreshes the turn labels when the language changes.
@@ -907,7 +909,7 @@ const MessagesList = memo(function MessagesList({
     const plan = voiceCallPlan(transcript);
     const seen = new Set<string>();
     // A stop the person asked for leaves no row, stored ones included.
-    const shown = messages.filter((message) => !isTurnStoppedNotice(message));
+    const shown = withoutDeadThreadChips(messages, owners).filter((message) => !isTurnStoppedNotice(message));
     const collapsed = collapseBotExchanges(shown, {
       selfBotId: botId,
       self: { id: botId, name: botName, color: selfColor },
@@ -937,7 +939,7 @@ const MessagesList = memo(function MessagesList({
     flush();
     return listed;
     // eslint-disable-next-line react-hooks/exhaustive-deps -- the locale re-derives the turn labels
-  }, [messages, transcript, botId, botName, selfColor, locale]);
+  }, [messages, transcript, botId, botName, selfColor, locale, owners]);
   const windowIds = useMemo(() => new Set(messages.map((message) => message.id)), [messages]);
   const newestMessageId = messages.at(-1)?.id;
   let newestUserMessageId: string | undefined;

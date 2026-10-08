@@ -56,6 +56,16 @@ test("bundle files stay inside the bundle; pages fall back to the app shell, ass
   assert.equal(ui.bundleFile(null, "/"), null);
 });
 
+test("the nudge sound resolves from the bundle as audio/mpeg, and ships in public/", () => {
+  const dir = bundleDir();
+  writeFileSync(path.join(dir, "nudge.mp3"), "ID3");
+  const found = ui.bundleFile(dir, "/nudge.mp3");
+  assert.equal(found.file, path.join(dir, "nudge.mp3"));
+  assert.equal(found.type, "audio/mpeg");
+  assert.equal(found.fallback, false);
+  assert.ok(readFileSync(new URL("../public/nudge.mp3", import.meta.url)).length > 1000);
+});
+
 test("the document and its assets come from this app's bundle, not the server", async () => {
   const dir = bundleDir();
   const fetched = [];

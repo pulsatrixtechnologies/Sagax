@@ -49,6 +49,7 @@ import { createBotActService, type BotActAnswerer, type BotActService, type Perf
 import { createApprovalModeSupport } from "./harness-capabilities.ts";
 import { escapeAttribute } from "../src/lib/composer-attachments.ts";
 import { threadRefUrl } from "../src/lib/thread-refs.ts";
+import { markDeadThreadChip } from "./dead-thread-chips.ts";
 import {
   CREDENTIAL_TARGETS,
   credentialResumeOutcome,
@@ -820,6 +821,7 @@ const MIME: Record<string, string> = {
   ".txt": "text/plain; charset=utf-8",
   ".svg": "image/svg+xml",
   ".png": "image/png",
+  ".mp3": "audio/mpeg",
   ".ico": "image/x-icon",
   ".json": "application/json",
   ".woff2": "font/woff2",
@@ -7815,6 +7817,12 @@ function notifyAccess(notification: Notification | null, access: WireAccessCard,
   for (const copy of copies) notify(copy);
 }
 
+/** Whether a thread exists for any bot or room, whoever the viewer is. */
+function threadStillExists(threadId: string): boolean {
+  return Boolean(store.groupByThread(threadId)) || store.bots.some((bot) =>
+    bot.threadId === threadId || Boolean(bot.tasks?.some((task) => task.threadId === threadId)));
+}
+
 function projectMessages<T>(threadId: string, messages: T[], viewer: ApprovalViewer): T[] {
   let changed = false;
   if (messages.some((message) => privateRowHidden(message, viewer))) {
@@ -7822,7 +7830,7 @@ function projectMessages<T>(threadId: string, messages: T[], viewer: ApprovalVie
     changed = true;
   }
   const next = messages.map((message) => {
-    const projected = scopeApprovalMessage(threadId, message, viewer);
+    const projected = markDeadThreadChip(scopeApprovalMessage(threadId, message, viewer), threadStillExists);
     if (projected !== message) changed = true;
     return projected;
   });
