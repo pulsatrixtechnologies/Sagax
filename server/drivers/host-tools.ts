@@ -286,6 +286,55 @@ export function geminiHostToolArgs(withhold: boolean, mcpServerNames: readonly s
   ];
 }
 
+/** Kimi Code 2.1.1 built-ins that act on this machine (or run an agent or
+ * a schedule that would), as `kimi acp` offered them to the model. */
+export const KIMI_HOST_TOOLS: readonly string[] = [
+  "Bash", "Read", "ReadMediaFile", "Write", "Edit", "Glob", "Grep", "FetchURL", "WebSearch",
+  "Agent", "AgentSwarm", "Skill", "TaskList", "TaskOutput", "TaskStop", "WaitFor",
+  "CronCreate", "CronDelete", "CronList", "NotebookEdit",
+];
+
+/** The only Kimi built-ins an organization turn keeps (questions, plan mode,
+ * goals and the todo list: state of the conversation, not of this machine). */
+export const KIMI_KEPT_TOOLS: readonly string[] = [
+  "AskUserQuestion", "EnterPlanMode", "ExitPlanMode", "TodoList", "CreateGoal", "GetGoal", "SetGoalBudget", "UpdateGoal",
+];
+
+/** Kimi agent profile for a withheld turn. `kimi acp` ignores
+ * `--agent-file` (2.1.1 starts the ACP server without the CLI's agent
+ * options), so the profile replaces the default one, `agent`, the way Kimi
+ * documents: `<KIMI_CODE_HOME>/agents/agent.md` with `override: true`.
+ * `tools` is the allowlist (`mcp__*` keeps the MCP servers Sagax passed;
+ * without it Kimi drops them too), `disallowedTools` holds if a name moves,
+ * the body keeps Kimi's own system prompt. */
+export function kimiOrgAgentFile(): string {
+  return [
+    "---",
+    "name: agent",
+    "description: Sagax MCP tools only. Host shell, files and web stay off.",
+    "override: true",
+    `tools: [${[...KIMI_KEPT_TOOLS, "mcp__*"].join(", ")}]`,
+    `disallowedTools: [${KIMI_HOST_TOOLS.join(", ")}]`,
+    "subagents: []",
+    "---",
+    "${base_prompt}",
+    "",
+  ].join("\n");
+}
+
+/** Writes the profile into the turn's Kimi home (on an organization server
+ * the payer's own, principals/<pid>/kimi or a key home, both Sagax's). */
+export function kimiHostToolProfile(withhold: boolean, kimiHome: string): void {
+  if (!withhold) return;
+  const dir = join(kimiHome, "agents");
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
+  const path = join(dir, "agent.md");
+  const content = kimiOrgAgentFile();
+  let current: string | null = null;
+  try { current = readFileSync(path, "utf8"); } catch { current = null; }
+  if (current !== content) writeFileSync(path, content, { mode: 0o600 });
+}
+
 /** Droid 0.230.0 built-ins that act on this machine or run an agent, a
  * schedule or a remote action of Factory's (`droid exec --list-tools`, and
  * what `droid exec -o acp` offered the model). */
@@ -307,5 +356,6 @@ export const DROID_HOST_TOOLS: readonly string[] = [
 export const HOST_TOOL_NAMES_BY_ENGINE: Readonly<Record<string, readonly string[]>> = {
   qwen: QWEN_HOST_TOOLS,
   gemini: GEMINI_HOST_TOOLS,
+  kimi: KIMI_HOST_TOOLS,
   droid: DROID_HOST_TOOLS,
 };
