@@ -123,6 +123,11 @@ describe("sidebar footer row", () => {
     expect(html).not.toContain("pl-[46px]");
     expect(html).toContain('aria-label="2 active routines"');
     expect(html).toContain("lucide-calendar-clock");
+    // bigger and never red: 18 px icon, regular sidebar text size, accent tone
+    expect(html).toContain('width="18"');
+    expect(html).toContain("text-[14px]");
+    expect(html).toContain("text-accent-text");
+    expect(html).not.toContain("text-danger");
     expect(html).toContain("<span>2</span>");
     // the count is its own button, never inside the menu's
     expect(html.lastIndexOf("</button>", badgeAt)).toBeGreaterThan(nameAt);
@@ -154,7 +159,7 @@ describe("sidebar footer row", () => {
     expect(html).toContain('data-testid="footer-attention"');
   });
 
-  it("tints the routines count, not a red dot, when an automation failed, and clears it once seen", () => {
+  it("shows a tiny accent dot, never red, on the routines count when an automation failed, and clears it once seen", () => {
     fixture.state = {
       config: { profile: { name: "Jean-Christophe Proulx", email: "jc@example.com" } } as AppState["config"],
       bots: [{ id: "b1" }] as AppState["bots"],
@@ -164,7 +169,8 @@ describe("sidebar footer row", () => {
     const failed = renderToStaticMarkup(createElement(SidebarProfileMenu, {}));
     expect(failed).not.toContain('data-testid="footer-attention"');
     expect(failed).toContain("data-attention");
-    expect(failed).toContain("text-danger");
+    expect(failed).toContain('data-testid="routines-attention-dot"');
+    expect(failed).not.toContain("text-danger");
     expect(failed).toContain('aria-label="1 active routine. A run failed: open Automations"');
     fixture.state = {
       ...fixture.state,
@@ -172,6 +178,7 @@ describe("sidebar footer row", () => {
     };
     const seen = renderToStaticMarkup(createElement(SidebarProfileMenu, {}));
     expect(seen).not.toContain("data-attention");
+    expect(seen).not.toContain("routines-attention-dot");
     expect(seen).toContain('aria-label="1 active routine"');
   });
 
