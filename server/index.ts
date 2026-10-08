@@ -366,6 +366,7 @@ import { holdIncludedServices } from "./included-services.ts";
 import type { ProviderInstance, RemoteMcpSpec } from "./contracts.ts";
 import { selectDefaultModelSelection, withNewBotEffort } from "./default-model-selection.ts";
 import { threadModelFallback, type ThreadEngine } from "./thread-model.ts";
+import { sameModelSelection } from "../shared/thread-model.ts";
 import { computerEngineMoveText, removedComputerInstanceIds, writeComputerEngineMoveLines } from "./computer-engine-removal.ts";
 import { cancelPeerApprovalsFor, cancelPeerApprovalsForThread, dismissStalePeerCards, peerApprovalFailure, requestPeerApproval, resolvePeerComms, type ApprovalBus } from "./peer-approval.ts";
 import { peerDeliveryReceipt, type PeerDeliveryReceipt } from "./peer-delivery.ts";
@@ -4538,6 +4539,31 @@ function healThreadModel(botId: string, threadId: string): void {
   if (!store.followBotModel(botId, [threadId], (from, to) => hostedModels?.resetTask(from, to) ?? {}).length) return;
   store.appendMessage(threadId, { role: "bot", kind: "activity", tool: {
     name: `notice: This thread's model (${modelName(own)}) isn't available, so it now uses ${bot.name}'s model (${modelName(bot.modelSelection)}).`,
+    ok: true,
+  } });
+}
+
+/** Organization server: a thread's own model whose engine has no
+ * credentials here for the person this turn runs for (no_access /
+ * no_credentials) gives way to its bot's model when that one can run, the
+ * way healThreadModel does for a model that is gone. Without it a thread
+ * pinned to a model from someone's desktop (pi on a local model) refused
+ * every turn, the incident reports of failed routines included. */
+function healOrgRefusedThreadModel(botId: string, threadId: string, speaker: TurnSpeaker): void {
+  const bot = store.bot(botId);
+  const own = store.taskByThread(botId, threadId)?.modelSelection;
+  if (!bot || !own || own.auto === true || sameModelSelection(own, bot.modelSelection) || bot.approvalGrant || threadBusy(botId, threadId)) return;
+  const mine = registry.get(own.instanceId);
+  const theirs = registry.get(bot.modelSelection.instanceId);
+  if (!mine || !theirs || !theirs.enabled) return;
+  const refusal = orgEngineRefusal(bot, mine, speaker);
+  if (refusal?.reason !== "no_access" || refusal.cause !== "no_credentials") return;
+  if (orgEngineRefusal(bot, theirs, speaker)) return;
+  if (!store.followBotModel(botId, [threadId], (from, to) => hostedModels?.resetTask(from, to) ?? {}).length) return;
+  const person = (refusal.payerPrincipalId && principals.byId(refusal.payerPrincipalId)?.name) || "the person this turn runs for";
+  console.error(`[omb-turn] bot=${botId} thread model on ${own.instanceId} has no credentials here, now on ${bot.modelSelection.instanceId}`);
+  store.appendMessage(threadId, { role: "bot", kind: "activity", tool: {
+    name: `notice: This thread's model (${modelName(own)}) cannot run on this server: ${engineDisplayName(mine)} has no credentials here for ${person}. It now uses ${bot.name}'s model (${modelName(bot.modelSelection)}).`,
     ok: true,
   } });
 }
@@ -12680,6 +12706,18 @@ async function startTurn(
   }
   // A thread whose own model can't run runs on its bot's from now on.
   healThreadModel(botId, threadId);
+  // Organization server: the same, for a thread's own model that this
+  // turn's payer has no credentials for here (a model picked on a desktop,
+  // such as a local model on pi) while the bot's own model can run.
+  if (IDENTITY.kind === "perspicax") {
+    healOrgRefusedThreadModel(botId, threadId, resolveTurnSpeaker({
+      speaker: opts?.speaker,
+      sender: opts?.sender ?? (opts?.editedMessageId ? undefined : opts?.userMessage?.sender),
+      peerAsk: opts?.peerAsk ?? (opts?.editedMessageId ? undefined : opts?.userMessage?.peerAsk),
+      trigger: opts?.trigger,
+      automationSource: opts?.automationSource,
+    }));
+  }
   let bot = store.projectBotForTask(botId, threadId);
   if (!bot) throw Object.assign(new Error("no such task"), { status: 404 });
   // A person who does not own this bot runs on their own model and effort

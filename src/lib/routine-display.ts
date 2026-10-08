@@ -16,6 +16,23 @@ export function routineRunLabel(run: RoutineRun): string {
   return t(`routines.status.${run.status}`);
 }
 
+/** Driver stop codes a run's error can still be (a run recorded before the
+ * engine's own words were kept, or an engine that gave none). */
+const ROUTINE_FAILURE_KEYS = {
+  rpc_error: "routines.failure.rpc_error",
+  auth_required: "routines.failure.auth_required",
+  provider_safety: "routines.failure.provider_safety",
+} as const;
+
+/** A run's error as a person reads it: the engine's words as given, and a
+ * bare stop code (rpc_error) turned into a sentence that says what to do. */
+export function routineRunError(error: string | undefined): string | undefined {
+  const text = error?.trim();
+  if (!text || !/^[a-z][a-z0-9_]*$/.test(text)) return error;
+  const key = Object.hasOwn(ROUTINE_FAILURE_KEYS, text) ? ROUTINE_FAILURE_KEYS[text as keyof typeof ROUTINE_FAILURE_KEYS] : null;
+  return key ? t(key) : t("routines.failure.code", { code: text });
+}
+
 export function routineRunTone(run: RoutineRun): string {
   if (run.status === "waiting" || ["needs-input", "limit-reached", "paused"].includes(run.goalStatus ?? "")) return "text-warning";
   if (["failed", "missed"].includes(run.status) || ["failed", "blocked"].includes(run.goalStatus ?? "")) return "text-danger";

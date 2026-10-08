@@ -47,6 +47,7 @@ import { decodeCodexSelection, OFFICIAL_CODEX_PROVIDER, readCodexModelCatalog, S
 import { codexLocalProviderArgs } from "./local-inject.ts";
 import { augmentedPath, splitCliString } from "../env-path.ts";
 import { classifyError, computeBackoff, interruptibleDelay, RETRY_MAX_ATTEMPTS } from "./retry.ts";
+import { redactSecretsInText } from "../redact.ts";
 import { appendNative } from "./native.ts";
 import { permissionCommand, permissionLaunchCwd } from "./permission-command.ts";
 import { commandSummary, toolDetailPreview } from "../tool-summary.ts";
@@ -2162,6 +2163,8 @@ export const CodexDriver: ProviderDriver<CodexConfig> = {
         // abandoned marks an attempt retired by a retry; its late rpc
         // timeouts must neither report a spurious error nor relaunch again
         if (!state.settled && !abandoned) {
+          // Keep the cause in the server log: the run only records a code.
+          console.error(`[codex] turn failed: ${needsAuth ? "auth_required" : verdict.reason}: ${redactSecretsInText(message).slice(0, 400)}`);
           if (refused) loginRefused();
           emit({
             ...base(threadId, turnId),
