@@ -1468,6 +1468,10 @@ rules, each covered by `shared/achievements-catalog.test.ts`,
   unchanged by these switches. Tests: `server/achievements.test.ts`,
   `src/lib/public-achievements.test.ts`, `PersonPanel.test.ts`,
   `achievements-ui.test.ts`, `SidebarProfileMenu.footer.test.ts`.
+- People rows in the sidebar sit at the bot rows' inset (`pl-2`) with thread
+  mode on or off and carry no thread chevron, like bot rows since #152; only
+  room rows keep the thread-mode `pl-6` for their chevron
+  (`Sidebar.simple-mode.test.ts`).
 - The toast never shows while the person types, one at a time, its chime
   follows Notification sounds, and reduced motion stills it.
 

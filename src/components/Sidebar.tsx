@@ -369,9 +369,10 @@ export function GroupListItem({
       className={cn(
         "relative flex w-full items-center rounded-lg text-left outline-none focus-visible:ring-1 focus-visible:ring-accent/60",
         density === "icons" ? "justify-center px-1 py-1.5" : density === "compact" ? "gap-2 py-1.5 pr-9" : "min-h-[54px] gap-2 py-2 pr-2",
-        // Same inset as BotListItem so the group and its bots line up; the
-        // disclosure chevron sits inside it.
-        density !== "icons" && (showThreads ? "pl-6" : "pl-2"),
+        // Same inset as BotListItem so the group and its bots line up; a
+        // room's disclosure chevron sits inside its thread-mode inset. A
+        // person's row has no chevron and never moves, like a bot row (#152).
+        density !== "icons" && (showThreads && !group.peopleDm ? "pl-6" : "pl-2"),
         selected && !expanded ? "bg-sidebar-selected" : "hover:bg-sidebar-hover",
       )}
       title={density === "icons" ? rowName : undefined}
@@ -396,7 +397,7 @@ export function GroupListItem({
         <span className="absolute bottom-1.5 right-1.5 size-2 rounded-full border border-sidebar bg-accent" />
       )}
     </button>
-    {!group.dm && density !== "icons" && hasThreadList && <button type="button" aria-label={t(expanded ? "task.collapseNamed" : "task.expandNamed", { name: group.name })} aria-expanded={expanded}
+    {!group.dm && !group.peopleDm && density !== "icons" && hasThreadList && <button type="button" aria-label={t(expanded ? "task.collapseNamed" : "task.expandNamed", { name: group.name })} aria-expanded={expanded}
       onClick={() => setThreadsOpen((open) => !open)} className="absolute left-0.5 top-1/2 flex size-5 -translate-y-1/2 items-center justify-center rounded text-sidebar-ink-secondary outline-none hover:text-sidebar-ink focus-visible:ring-1 focus-visible:ring-accent/60">
       <ChevronRight aria-hidden="true" size={12} className={cn("transition-transform", expanded && "rotate-90")} />
     </button>}
