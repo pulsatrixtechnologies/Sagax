@@ -47,6 +47,20 @@ describe("mascot pilot: where the window goes", () => {
     expect(edgeTarget({ x: 3000, y: 500, width: 156, height: 172 }, second).x).toBe(1440 + 1920 - 156);
   });
 
+  it("parks and walks with the character itself at the edge, its window's room hanging off", () => {
+    const bounds = { x: 900, y: 300, width: 352, height: 716 };
+    const body = { x: 900 + 177, y: 300 + 535, width: 120, height: 120 };
+    const right = edgeTarget(bounds, AREA, body);
+    expect(right.side).toBe("right");
+    // the character's right side on the screen's edge
+    expect(right.x + 177 + 120).toBe(AREA.x + AREA.width);
+    const left = edgeTarget({ ...bounds, x: 100 }, AREA, { ...body, x: 100 + 177 });
+    expect(left.x + 177).toBe(AREA.x);
+    expect(left.x).toBeLessThan(AREA.x);
+    // a walk stops with the character at the edge, not the window
+    expect(wanderTarget({ ...bounds, x: 100 }, AREA, -5000, { ...body, x: 100 + 177 }).x + 177).toBe(AREA.x);
+  });
+
   it("comes home to the corner it left, whatever its size now", () => {
     expect(homeTarget({ right: 1356, bottom: 872 }, { x: 0, y: 0, width: 52, height: 52 })).toEqual({ x: 1304, y: 820 });
   });
