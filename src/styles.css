@@ -214,6 +214,16 @@
   --color-hairline-weak: color-mix(in srgb, var(--color-ink) 10%, transparent);
   --color-border: color-mix(in srgb, var(--color-ink) 15%, transparent);
   --color-border-strong: color-mix(in srgb, var(--color-ink) 30%, transparent);
+  /* The same three layers, built from the rail's own tokens, for a round
+     control that sits ON the rail (the head's search and New buttons). Every
+     skin but Pulsatrix Light sets --color-sidebar/--color-sidebar-ink to its
+     panel/ink, so these resolve to elevated/elevated-hover/hairline-weak
+     exactly; on Pulsatrix Light's navy rail they give a navy-tinted circle
+     with a light hairline instead of the light content frame's grey one,
+     the same circle its chat header draws (see `.content-topbar`). */
+  --color-sidebar-elevated: color-mix(in srgb, var(--color-sidebar-ink) 3%, var(--color-sidebar));
+  --color-sidebar-elevated-hover: color-mix(in srgb, #777777 20%, var(--color-sidebar-elevated));
+  --color-sidebar-hairline-weak: color-mix(in srgb, var(--color-sidebar-ink) 10%, transparent);
 }
 
 /* The text color that reads on the accent fill. It lives on :root (each skin
