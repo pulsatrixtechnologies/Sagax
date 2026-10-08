@@ -194,6 +194,49 @@ export function sagaxMcpServerNames(integrations: {
   return [...new Set(names)];
 }
 
+/** Qwen Code 0.24.7 built-ins that act on this machine, as `qwen --acp`
+ * offered them to the model, plus the older names of the same tools. */
+export const QWEN_HOST_TOOLS: readonly string[] = [
+  "run_shell_command", "read_file", "read_many_files", "write_file", "edit", "replace",
+  "glob", "grep_search", "search_file_content", "list_directory", "ls", "notebook_edit",
+  "web_fetch", "web_search", "google_web_search", "save_memory", "todo_write",
+  "agent", "task", "list_agents", "skill", "lsp", "monitor",
+];
+
+/** The only Qwen built-ins an organization turn keeps: MCP search and call
+ * (they reach Sagax's MCP servers only) and a question to the person. */
+export const QWEN_KEPT_TOOLS: readonly string[] = ["tool_search", "tool_call", "ask_user_question"];
+
+/** `--core-tools` is an allowlist (a non-empty one enables nothing else);
+ * `--exclude-tools` holds even if a later setting widens the list. Never
+ * `--bare` or `--safe-mode`: both drop the core-tools allowlist.
+ * `--allowed-mcp-server-names` keeps an MCP server a workspace or home file
+ * declares from starting on the server: only Sagax's servers connect. */
+export function qwenHostToolArgs(withhold: boolean, mcpServerNames: readonly string[] = []): string[] {
+  if (!withhold) return [];
+  return [
+    "--core-tools", ...QWEN_KEPT_TOOLS, "--exclude-tools", ...QWEN_HOST_TOOLS,
+    "--allowed-mcp-server-names", ...(mcpServerNames.length ? mcpServerNames : ["sagax-none"]),
+  ];
+}
+
+/** Qwen system settings for a withheld turn (QWEN_CODE_SYSTEM_SETTINGS_PATH,
+ * which outranks the user and workspace files). The same tool lists as the
+ * flags, and no background memory, dream or skill agent: on 0.24.7 the
+ * memory extractor runs with read_file, grep_search, glob, write_file and
+ * edit of its own, whatever `--core-tools` says. */
+export const QWEN_ORG_SETTINGS = {
+  tools: { core: [...QWEN_KEPT_TOOLS], exclude: [...QWEN_HOST_TOOLS] },
+  memory: { enableManagedAutoMemory: false, enableManagedAutoDream: false, enableAutoSkill: false, enableTeamMemory: false },
+  // a hook is a command run on this machine
+  disableAllHooks: true,
+} as const;
+
+export function qwenHostToolEnv(env: Record<string, string | undefined>, withhold: boolean): void {
+  if (!withhold) return;
+  env.QWEN_CODE_SYSTEM_SETTINGS_PATH = writeEnginePolicy("qwen-org-settings.json", `${JSON.stringify(QWEN_ORG_SETTINGS, null, 2)}\n`);
+}
+
 /** Gemini CLI 0.62.0 built-ins that act on this machine, as `gemini --acp`
  * offered them to the model, plus names of the same tools in other releases. */
 export const GEMINI_HOST_TOOLS: readonly string[] = [
@@ -262,6 +305,7 @@ export const DROID_HOST_TOOLS: readonly string[] = [
 /** Host tool names per ACP engine, as each real CLI offered them to the
  * model (scripts/verify-org-host-tools.ts). */
 export const HOST_TOOL_NAMES_BY_ENGINE: Readonly<Record<string, readonly string[]>> = {
+  qwen: QWEN_HOST_TOOLS,
   gemini: GEMINI_HOST_TOOLS,
   droid: DROID_HOST_TOOLS,
 };

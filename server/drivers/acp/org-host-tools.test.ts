@@ -15,9 +15,10 @@ import { ensureDirs } from "../../config.ts";
 import type { ProviderDriver, ProviderInstance } from "../../contracts.ts";
 import { removeTempDir } from "../../testing/cleanup.ts";
 import { recordEvents } from "../../testing/events.ts";
-import { acpHostToolRequest, GEMINI_HOST_TOOLS, sagaxMcpServerNames, withheldWorkspace } from "../host-tools.ts";
+import { acpHostToolRequest, GEMINI_HOST_TOOLS, QWEN_HOST_TOOLS, QWEN_KEPT_TOOLS, sagaxMcpServerNames, withheldWorkspace } from "../host-tools.ts";
 import type { AcpConfig } from "./core.ts";
 import { GeminiAgentDriver } from "./gemini.ts";
+import { QwenAgentDriver } from "./qwen.ts";
 
 const FAKE_CLI = join(dirname(fileURLToPath(import.meta.url)), "../../testing/fake-acp-cli.ts");
 const directories: string[] = [];
@@ -73,8 +74,23 @@ describe("organization server: each admitted ACP engine withholds its own tools"
     expect(real(org.cwd)).toBe(real(withheldWorkspace()));
   });
 
+  it("Qwen Code: a core-tools allowlist, the host tools excluded, no background memory agent or hook", async () => {
+    const f = await fixture(QwenAgentDriver);
+    const org = await turn(f, true);
+    const core = org.argv.slice(org.argv.indexOf("--core-tools") + 1, org.argv.indexOf("--exclude-tools"));
+    expect(core).toEqual([...QWEN_KEPT_TOOLS]);
+    expect(org.argv).toEqual(expect.arrayContaining([...QWEN_HOST_TOOLS]));
+    expect(org.argv.slice(org.argv.indexOf("--allowed-mcp-server-names"))).toEqual(["--allowed-mcp-server-names", "sagax-none"]);
+    const settings = JSON.parse(readFileSync(org.env.QWEN_CODE_SYSTEM_SETTINGS_PATH!, "utf8"));
+    expect(settings.memory).toEqual({ enableManagedAutoMemory: false, enableManagedAutoDream: false, enableAutoSkill: false, enableTeamMemory: false });
+    expect(settings.disableAllHooks).toBe(true);
+    expect(settings.tools.core).toEqual([...QWEN_KEPT_TOOLS]);
+    expect(real(org.cwd)).toBe(real(withheldWorkspace()));
+  });
+
   it.each([
     ["Gemini CLI", GeminiAgentDriver],
+    ["Qwen Code", QwenAgentDriver],
   ] as const)("%s: a request to run a command on the server is declined, even in Full access", async (_name, driver) => {
     const f = await fixture(driver, { FAKE_ACP_MODE: "permission" });
     // no approvalMode with fullAuto: the path that accepts every request
