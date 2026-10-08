@@ -128,7 +128,7 @@ export function VoiceModeCallButton({ targetId, targetName, botId, group, onStar
           role="group"
           aria-label={view.title}
           data-voice-unavailable={view.cause}
-          className={cn("absolute bottom-full right-0 z-30 mb-2 w-[300px] rounded-xl border border-hairline bg-panel p-3 text-left shadow-2xl", motion.className)}
+          className={cn("absolute bottom-full right-0 z-30 mb-2 w-[300px] rounded-xl border border-hairline popover-surface bg-panel p-3 text-left shadow-2xl", motion.className)}
           {...motion.exitProps}
         >
           <div className="text-[13px] font-medium text-ink">{view.title}</div>

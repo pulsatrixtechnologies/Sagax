@@ -59,6 +59,13 @@ function open(): DatabaseSync {
       thread_id TEXT PRIMARY KEY,
       active_leaf_id TEXT
     );
+    CREATE TABLE IF NOT EXISTS thread_reads (
+      thread_id TEXT NOT NULL,
+      participant_id TEXT NOT NULL,
+      message_id TEXT NOT NULL,
+      at INTEGER NOT NULL,
+      PRIMARY KEY (thread_id, participant_id)
+    );
     CREATE TABLE IF NOT EXISTS chat_followups (
       id TEXT PRIMARY KEY,
       kind TEXT NOT NULL,
@@ -519,7 +526,28 @@ export function deleteThread(threadId: string): void {
     connection.prepare("DELETE FROM chat_followups WHERE thread_id = ?").run(threadId);
     connection.prepare("DELETE FROM messages WHERE thread_id = ?").run(threadId);
     connection.prepare("DELETE FROM thread_state WHERE thread_id = ?").run(threadId);
+    connection.prepare("DELETE FROM thread_reads WHERE thread_id = ?").run(threadId);
   });
+}
+
+/** Read positions of one thread (server/read-receipts.ts): participant id
+ * to the newest message they have seen. A thread with no rows has none. */
+export function readThreadReads(threadId: string): Record<string, { messageId: string; at: number }> {
+  const rows = db()
+    .prepare("SELECT participant_id, message_id, at FROM thread_reads WHERE thread_id = ?")
+    .all(threadId) as Array<{ participant_id: string; message_id: string; at: number }>;
+  const out: Record<string, { messageId: string; at: number }> = {};
+  for (const row of rows) out[row.participant_id] = { messageId: row.message_id, at: row.at };
+  return out;
+}
+
+export function writeThreadRead(threadId: string, participantId: string, messageId: string, at: number): void {
+  db()
+    .prepare(
+      "INSERT INTO thread_reads (thread_id, participant_id, message_id, at) VALUES (?, ?, ?, ?) " +
+        "ON CONFLICT(thread_id, participant_id) DO UPDATE SET message_id = excluded.message_id, at = excluded.at",
+    )
+    .run(threadId, participantId, messageId, at);
 }
 
 /** Every thread whose stored messages mention `fragment` anywhere (an

@@ -114,7 +114,7 @@ export type PickerFolderActions = {
   onMarkRead: (projectId: string, onSaved: () => void) => void;
 };
 
-const PANEL_ITEM = "flex w-full items-center gap-2 rounded px-2.5 py-1.5 text-left text-[12px] text-ink hover:bg-raised disabled:opacity-40";
+const PANEL_ITEM = "flex w-full items-center gap-2 rounded px-2.5 py-1.5 text-left text-[12px] text-popover-ink hover:bg-popover-hover disabled:opacity-40";
 
 /** The extra actions of one picker row, unfolded under it: what the sidebar
  * thread row's menu offered (JC, 2026-10-08: the header button is the only
@@ -130,12 +130,12 @@ export function ThreadActionsPanel({ task, actions, regenerating, onRegenerate, 
   const archived = isArchived(task);
   const snoozed = isSnoozed(task);
   return (
-    <div role="group" aria-label={t("task.actions", { title: task.title })} data-picker-thread-actions={task.threadId} className="mx-2.5 mb-1.5 rounded-lg border border-hairline/40 bg-inset/60 p-1">
+    <div role="group" aria-label={t("task.actions", { title: task.title })} data-picker-thread-actions={task.threadId} className="mx-2.5 mb-1.5 rounded-lg border border-popover-hairline bg-popover-field p-1">
       {actions.onCopyLink && <button type="button" onClick={() => { actions.onCopyLink?.(task.threadId); onDone(); }} className={PANEL_ITEM}><Link2 size={12} />{t("task.copyLink")}</button>}
       {actions.onRegenerateTitle && <button type="button" disabled={regenerating} aria-busy={regenerating} onClick={onRegenerate} className={PANEL_ITEM}>{regenerating ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}{regenerating ? t("task.regeneratingTitle") : t("task.regenerateTitle")}</button>}
       {actions.onArchive && <button type="button" disabled={working} onClick={() => { actions.onArchive?.(task.threadId, archived ? null : Date.now()); onDone(); }} className={PANEL_ITEM}>{archived ? <ArchiveRestore size={12} /> : <Archive size={12} />}{archived ? t("task.unarchive") : t("task.archive")}</button>}
       {actions.onSnooze && <div className="px-2.5 pt-1">
-        <span className="flex items-center gap-2 text-[11px] text-ink-secondary"><Clock size={12} />{t("task.snooze")}</span>
+        <span className="flex items-center gap-2 text-[11px] text-popover-ink-secondary"><Clock size={12} />{t("task.snooze")}</span>
         <div className="mt-0.5">
           {[{ label: t("task.snoozeUntilActivity"), at: 0 }, { label: t("task.snoozeTonight"), at: nextSixPm() }, { label: t("task.snoozeTomorrow"), at: tomorrowNineAm() }].map((preset) => (
             <button key={preset.label} type="button" disabled={working} onClick={() => { actions.onSnooze?.(task.threadId, preset.at); onDone(); }} className={PANEL_ITEM}>{preset.label}</button>
@@ -322,10 +322,10 @@ function ConversationTaskPicker({
       </button>
 
       {motion.shown && (
-        <div className={cn("absolute right-0 top-full z-40 mt-1 w-[300px] overflow-hidden rounded-xl border border-hairline/50 bg-card py-1 shadow-2xl shadow-black/50", motion.className)} {...motion.exitProps}>
+        <div className={cn("absolute right-0 top-full z-40 mt-1 w-[300px] overflow-hidden rounded-xl border border-popover-hairline popover-surface bg-popover py-1 shadow-2xl shadow-black/50", motion.className)} {...motion.exitProps}>
           <div className="px-2 pb-1 pt-1.5">
-            <div className="flex items-center gap-2 rounded-lg border border-hairline/40 bg-inset px-2.5 py-1.5 focus-within:border-focus">
-              <Search size={13} className="shrink-0 text-ink-secondary" />
+            <div className="flex items-center gap-2 rounded-lg border border-popover-border bg-popover-field px-2.5 py-1.5 focus-within:border-focus">
+              <Search size={13} className="shrink-0 text-popover-ink-secondary" />
               <input
                 autoFocus
                 value={query}
@@ -350,13 +350,13 @@ function ConversationTaskPicker({
                 }}
                 placeholder={t("task.search")}
                 aria-label={t("task.search")}
-                className="w-full bg-transparent text-[12.5px] text-ink placeholder:text-ink-secondary focus:outline-none"
+                className="w-full bg-transparent text-[12.5px] text-popover-ink placeholder:text-popover-placeholder focus:outline-none"
               />
             </div>
           </div>
           <div className="max-h-[320px] overflow-y-auto" role="group" aria-label={looking ? t("task.matching", { count: visible.length }) : t("task.list")}>
             {visible.length === 0 ? (
-              <div className="px-3 py-6 text-center text-[13px] text-ink-secondary">
+              <div className="px-3 py-6 text-center text-[13px] text-popover-ink-secondary">
                 {t("task.noMatch", { query: looking })}
               </div>
             ) : visible.map((task, index) => {
@@ -365,7 +365,7 @@ function ConversationTaskPicker({
               const heading = grouped?.find((group) => group.tasks[0]?.threadId === task.threadId)?.project;
               return (
                 <Fragment key={task.threadId}>
-                {bot?.projects?.length && heading ? <div data-picker-folder={heading.id || undefined} className={cn("group/folder flex items-center gap-1.5 px-3 pb-1 pt-2 text-[11px] font-medium text-ink-secondary", index > 0 && "border-t border-hairline/30")}>{heading.id && <FolderIcon emoji={heading.emoji} size={12} />}<span className="min-w-0 flex-1 truncate">{heading.name}</span>
+                {bot?.projects?.length && heading ? <div data-picker-folder={heading.id || undefined} className={cn("group/folder flex items-center gap-1.5 px-3 pb-1 pt-2 text-[11px] font-medium text-popover-ink-secondary", index > 0 && "border-t border-popover-hairline")}>{heading.id && <FolderIcon emoji={heading.emoji} size={12} />}<span className="min-w-0 flex-1 truncate">{heading.name}</span>
                   {heading.id && folderActions && <FolderActions project={heading} canMoveUp={folderActions.canMove(heading.id, -1)} canMoveDown={folderActions.canMove(heading.id, 1)}
                     canMarkRead={folderActions.canMarkRead(heading.id)} saving={folderActions.saving}
                     menu={folderMenu?.projectId === heading.id ? folderMenu : null}
@@ -374,9 +374,9 @@ function ConversationTaskPicker({
                     onMarkRead={(onSaved) => folderActions.onMarkRead(heading.id, onSaved)} />}
                 </div> : null}
                 <div
-                  className={cn("group flex items-center gap-2 px-2.5 py-2", active ? "bg-raised/60" : "hover:bg-raised/40")}
+                  className={cn("group flex items-center gap-2 px-2.5 py-2", active ? "bg-popover-hover" : "hover:bg-popover-hover")}
                 >
-                  <Check size={13} className={cn("shrink-0", active ? "text-accent" : "opacity-0")} />
+                  <Check size={13} className={cn("shrink-0", active ? "text-popover-accent" : "opacity-0")} />
                   {renaming === task.threadId ? (
                     <input
                       autoFocus
@@ -400,7 +400,7 @@ function ConversationTaskPicker({
                           commitRename(task.threadId, false);
                         }
                       }}
-                      className="min-w-0 flex-1 rounded bg-inset px-1.5 py-0.5 text-[13px] text-ink focus:outline-none"
+                      className="min-w-0 flex-1 rounded bg-popover-field px-1.5 py-0.5 text-[13px] text-popover-ink focus:outline-none"
                     />
                   ) : (
                     <button
@@ -423,8 +423,8 @@ function ConversationTaskPicker({
                       className="min-w-0 flex-1 text-left"
                       title={t("task.renameHint")}
                     >
-                      <div className="truncate text-[13px] text-ink">{task.title}</div>
-                      <div className="text-[11px] text-ink-secondary">
+                      <div className="truncate text-[13px] text-popover-ink">{task.title}</div>
+                      <div className="text-[11px] text-popover-ink-secondary">
                         {task.activity === "waiting-on-you" ? `${t("task.waiting")} · ` : task.waitingForTeammates ? `${t("task.waitingOnTeammate")} · ` : task.busy ? `${t("chat.activity.working")} · ` : task.unread ? `${t("task.unread")} · ` : ""}
                         <TaskUpdatedTime task={task} now={now} />
                         <TaskUsage usage={task.usage} />
@@ -438,7 +438,7 @@ function ConversationTaskPicker({
                       onClick={() => onPin(task.threadId, task.pinned !== true)}
                       aria-label={task.pinned === true ? t("sidebar.bot.unpin") : t("sidebar.bot.pin")}
                       title={task.pinned === true ? t("sidebar.bot.unpin") : t("sidebar.bot.pin")}
-                      className="rounded p-1 text-ink-secondary opacity-0 hover:bg-raised hover:text-ink focus-visible:opacity-100 group-hover:opacity-100 touch:opacity-70"
+                      className="rounded p-1 text-popover-ink-secondary opacity-0 hover:bg-popover-hover hover:text-popover-ink focus-visible:opacity-100 group-hover:opacity-100 touch:opacity-70"
                     >
                       {task.pinned === true ? <PinOff size={13} /> : <Pin size={13} />}
                     </button>
@@ -449,12 +449,12 @@ function ConversationTaskPicker({
                       onClick={() => startRename(task)}
                       aria-label={t("task.renameNamed", { title: task.title })}
                       title={t("task.renameTitle")}
-                      className="rounded p-1 text-ink-secondary opacity-0 hover:bg-raised hover:text-ink focus-visible:opacity-100 group-hover:opacity-100 touch:opacity-70"
+                      className="rounded p-1 text-popover-ink-secondary opacity-0 hover:bg-popover-hover hover:text-popover-ink focus-visible:opacity-100 group-hover:opacity-100 touch:opacity-70"
                     >
                       <Pencil size={13} />
                     </button>
                   )}
-                  {bot && onMove && (bot.projects?.length ?? 0) > 0 && <label title={t("folder.move")} className="relative rounded p-1 text-ink-secondary opacity-0 hover:bg-raised hover:text-ink focus-within:opacity-100 group-hover:opacity-100 touch:opacity-70">
+                  {bot && onMove && (bot.projects?.length ?? 0) > 0 && <label title={t("folder.move")} className="relative rounded p-1 text-popover-ink-secondary opacity-0 hover:bg-popover-hover hover:text-popover-ink focus-within:opacity-100 group-hover:opacity-100 touch:opacity-70">
                     <FolderInput size={13} />
                     <select aria-label={t("folder.moveNamed", { title: task.title })} value={bot.projects?.some((project) => project.id === task.projectId) ? task.projectId : ""}
                       onFocus={clearDismiss} onChange={(event) => { clearDismiss(); onMove(task.threadId, event.target.value || null); }}
@@ -470,7 +470,7 @@ function ConversationTaskPicker({
                       aria-label={t("task.actions", { title: task.title })}
                       title={t("task.actions", { title: task.title })}
                       aria-expanded={actionsFor === task.threadId}
-                      className={cn("rounded p-1 text-ink-secondary hover:bg-raised hover:text-ink focus-visible:opacity-100 group-hover:opacity-100 touch:opacity-70", actionsFor === task.threadId ? "opacity-100" : "opacity-0")}
+                      className={cn("rounded p-1 text-popover-ink-secondary hover:bg-popover-hover hover:text-popover-ink focus-visible:opacity-100 group-hover:opacity-100 touch:opacity-70", actionsFor === task.threadId ? "opacity-100" : "opacity-0")}
                     >
                       <MoreHorizontal size={13} />
                     </button>
@@ -481,7 +481,7 @@ function ConversationTaskPicker({
                     disabled={Boolean(task.busy) || busy && active}
                     aria-label={t("task.deleteAria")}
                     title={t("task.deleteTitle")}
-                    className="rounded p-1 text-ink-secondary opacity-0 hover:bg-raised hover:text-danger focus-visible:opacity-100 group-hover:opacity-100 disabled:opacity-20 touch:opacity-70 touch:disabled:opacity-20"
+                    className="rounded p-1 text-popover-ink-secondary opacity-0 hover:bg-popover-hover hover:text-danger focus-visible:opacity-100 group-hover:opacity-100 disabled:opacity-20 touch:opacity-70 touch:disabled:opacity-20"
                   >
                     <Trash2 size={13} />
                   </button>
@@ -498,16 +498,16 @@ function ConversationTaskPicker({
               );
             })}
           </div>
-          {bot ? <NewThreadButton bot={bot} onCreated={closeMenu} className="mt-1 w-full rounded-none border-t border-hairline/40" /> : <button
+          {bot ? <NewThreadButton bot={bot} onCreated={closeMenu} className="mt-1 w-full rounded-none border-t border-popover-hairline" /> : <button
             type="button"
             onClick={() => {
               onNew();
               closeMenu();
             }}
             disabled={busy}
-            className="mt-1 flex w-full items-center gap-2 border-t border-hairline/40 px-3 py-2 text-left text-[13px] text-ink hover:bg-raised/50 disabled:opacity-40"
+            className="mt-1 flex w-full items-center gap-2 border-t border-popover-hairline px-3 py-2 text-left text-[13px] text-popover-ink hover:bg-popover-hover disabled:opacity-40"
           >
-            <Plus size={13} className="text-ink-secondary" /> {t("task.newShort")}
+            <Plus size={13} className="text-popover-ink-secondary" /> {t("task.newShort")}
           </button>}
         </div>
       )}

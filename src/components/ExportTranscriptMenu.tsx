@@ -122,7 +122,7 @@ export function ExportTranscriptMenu({
         <div
           role="menu"
           aria-label="Export options"
-          className={cn("absolute right-0 top-full z-40 mt-1 flex w-[220px] min-w-[200px] flex-col gap-0.5 overflow-hidden rounded-xl border-[0.5px] border-border bg-elevated p-1.5 text-[13px] leading-[18px]", motion.className)} {...motion.exitProps}
+          className={cn("absolute right-0 top-full z-40 mt-1 flex w-[220px] min-w-[200px] flex-col gap-0.5 overflow-hidden rounded-xl border-[0.5px] border-border popover-surface bg-elevated p-1.5 text-[13px] leading-[18px]", motion.className)} {...motion.exitProps}
         >
           <div className="px-2 py-1 text-[12px] leading-4 text-ink-secondary">
             Export Conversation

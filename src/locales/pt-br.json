@@ -1942,5 +1942,13 @@
   "planUsage.reason.status": "resposta inesperada ({status})",
   "planUsage.reason.unexpected": "resposta de uso inesperada",
   "planUsage.reason.renewing": "o token de acesso expirou e é renovado no próximo turno; atualize depois",
-  "planUsage.reason.unreadable": "não foi possível ler o login salvo"
+  "planUsage.reason.unreadable": "não foi possível ler o login salvo",
+  "seen.by": "Visto por {list}",
+  "seen.entry": "{name} às {time}",
+  "seen.caption": "Visto",
+  "seen.captionAt": "Visto às {time}",
+  "seen.someone": "Alguém",
+  "settings.section.privacy": "Privacidade",
+  "settings.privacy.readReceipts.title": "Enviar confirmações de leitura",
+  "settings.privacy.readReceipts.subtitle": "Em conversas com outras pessoas, mostre quando você leu as mensagens delas. Desativado, você também não vê as delas. Grupos e bots sempre mostram quem viu uma mensagem."
 }
