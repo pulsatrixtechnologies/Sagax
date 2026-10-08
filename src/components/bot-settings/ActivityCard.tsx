@@ -1,7 +1,9 @@
 // One Coding or Activity entry as a rounded card (status icon, truncated
 // title, status line, chevron) and the status icon the detail modal reuses.
 // Given `now`, a running entry reads its elapsed time and current step; given
-// `onStop`, a running entry the viewer may stop gets a Stop button.
+// `onStop`, a running entry the viewer may stop gets a Stop button; given
+// `where`, a third line says where it works (a coding job's repository and
+// branch).
 import { AlertCircle, CheckCircle2, ChevronRight, CircleSlash, Clock, Hand, Loader2, Square } from "lucide-react";
 
 import { t } from "@/lib/i18n";
@@ -25,8 +27,9 @@ export function ActivityStatusIcon({ status, size = 16 }: { status: BotActivityS
   }
 }
 
-export function ActivityCard({ item, onOpen, now, onStop, stopping = false }: {
+export function ActivityCard({ item, onOpen, now, onStop, stopping = false, where }: {
   item: BotActivityItem;
+  where?: string;
   onOpen: (item: BotActivityItem) => void;
   now?: number;
   onStop?: (item: BotActivityItem) => void;
@@ -50,6 +53,7 @@ export function ActivityCard({ item, onOpen, now, onStop, stopping = false }: {
             {item.parallel ? `${t("botPanel.activity.parallel")} · ` : ""}{activitySubtitle(item, now)}
             {item.childCount ? ` · ${t("botPanel.coding.subagents", { count: item.childCount })}` : ""}
           </span>
+          {where && <span data-activity-where className="block truncate text-[12px] leading-[17px] text-ink-tertiary">{where}</span>}
         </span>
         {!stoppable && <ChevronRight size={15} aria-hidden="true" className="shrink-0 text-ink-secondary" />}
       </button>

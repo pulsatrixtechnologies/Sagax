@@ -8,10 +8,10 @@ vi.mock("@/state/store", () => ({
 }));
 
 import type { BotActivityDetail, BotActivityItem } from "../../../shared/bot-activity";
-import { ActivityList, ActivitySection, SectionHeader } from "./ActivitySection";
+import { ActivityList, ActivitySection, CodeWorkList, PanelSections, panelSections, SectionHeader } from "./ActivitySection";
 import { ActivityDetailBody } from "./ActivityDetailModal";
 import { ActivityListModal } from "./ActivityListModal";
-import { activityLive, codingLive, FINISHED_FADE_MS, FINISHED_LINGER_MS, formatActivityDuration, historyItems, LiveActivity } from "@/lib/bot-activity";
+import { activityLive, codingLive, codingWhere, codingWork, FINISHED_FADE_MS, FINISHED_LINGER_MS, formatActivityDuration, historyItems, isParallelWork, LiveActivity } from "@/lib/bot-activity";
 import type { Bot } from "@/state/store";
 
 const NOW = 1_800_000_000_000;
@@ -156,6 +156,12 @@ describe("Coding, live only", () => {
   });
 });
 
+const liveOf = (items: BotActivityItem[]) => {
+  const tracker = new LiveActivity(() => {});
+  tracker.update(items);
+  return tracker.view();
+};
+
 describe("Activity, live only", () => {
   const routine = job("run:r1", { kind: "routine", status: "running", endedAt: undefined, updatedAt: NOW - 2_000, currentStep: "cw_psa__query" });
   const sub = job("thread:sub", { kind: "subagent", botName: "Echo", status: "running", endedAt: undefined, startedAt: NOW - 125_000, updatedAt: NOW - 125_000, canStop: true, threadId: "sub" });
@@ -168,8 +174,22 @@ describe("Activity, live only", () => {
     expect(activityLive([coding, routine, parallel], [sub], tracker.view()).map((item) => item.id)).toEqual(["run:r1", "thread:sub"]);
   });
 
+  it("shows parallel work only: never a conversation's own running turn", () => {
+    const chat = job("thread:chat", { status: "running", endedAt: undefined, updatedAt: NOW - 1_000, startedBy: { kind: "person", name: "Alice" } });
+    const task = job("thread:task", { parallel: true, status: "running", endedAt: undefined, updatedAt: NOW - 3_000 });
+    const self = job("thread:self", { status: "running", endedAt: undefined, updatedAt: NOW - 4_000, startedBy: { kind: "bot", name: "Pepper" } });
+    const hop = job("thread:hop", { kind: "hop", status: "waiting", endedAt: undefined, updatedAt: NOW - 5_000, startedBy: { kind: "bot", name: "Echo" } });
+    expect([chat, task, self, hop, routine, sub].map(isParallelWork)).toEqual([false, true, true, true, true, true]);
+    const tracker = new LiveActivity(() => {});
+    tracker.update([chat, task, self, hop, routine, sub]);
+    expect(activityLive([chat, task, self, hop, routine], [sub], tracker.view()).map((item) => item.id))
+      .toEqual(["run:r1", "thread:task", "thread:self", "thread:hop", "thread:sub"]);
+    // a conversation's turn alone: nothing in Activity
+    expect(activityLive([chat], [], tracker.view())).toEqual([]);
+  });
+
   it("draws live status: spinner, elapsed time, current step, and Stop where allowed", () => {
-    const html = renderToStaticMarkup(createElement(ActivityList, { items: [routine, sub], error: false, onOpen: () => {}, onStop: () => {}, now: NOW, emptyKey: "botPanel.live.idle" }));
+    const html = renderToStaticMarkup(createElement(ActivityList, { items: [routine, sub], error: false, onOpen: () => {}, onStop: () => {}, now: NOW }));
     expect(html).toContain("animate-spin");
     expect(html).toContain("Running · 1m · Routine · cw_psa__query");
     expect(html).toContain("Running · 2m · Echo");
@@ -177,10 +197,83 @@ describe("Activity, live only", () => {
     expect(html).not.toContain('data-activity-stop="run:r1"');
   });
 
-  it("is a quiet line when nothing runs", () => {
-    const html = renderToStaticMarkup(createElement(ActivityList, { items: [], error: false, onOpen: () => {}, emptyKey: "botPanel.live.idle" }));
-    expect(html).toContain("Nothing running.");
-    expect(html).not.toContain("data-activity-card");
+  it("is not drawn when nothing runs, title included", () => {
+    const sections = (list: Parameters<typeof PanelSections>[0]["list"]) => renderToStaticMarkup(createElement(PanelSections, { list, live: liveOf(list?.items ?? []), actions: { onOpen: () => {}, now: NOW }, onOpenHistory: () => {} }));
+    // not loaded yet, then loaded with nothing running
+    expect(sections(null)).toBe("");
+    const chat = job("thread:chat", { status: "running", endedAt: undefined });
+    const idle = sections({ items: [job("thread:old", { coding: true }), chat, parallel], subagents: [] });
+    expect(idle).toBe("");
+    expect(idle).not.toContain("Nothing running.");
+    // something parallel runs: Activity only
+    const busy = sections({ items: [routine, chat], subagents: [] });
+    expect(busy).toContain('data-bot-settings-section="activity"');
+    expect(busy).not.toContain('data-bot-settings-section="coding"');
+    expect(busy).toContain("data-activity-card=\"run:r1\"");
+    expect(busy).not.toContain("data-activity-card=\"thread:chat\"");
+  });
+});
+
+const codeJob = (id: string, over: Partial<BotActivityItem> = {}) => job(id, {
+  coding: true,
+  code: { pullRequests: [], branches: [], commits: [] },
+  ...over,
+});
+
+describe("Coding, code work only", () => {
+  const pr = { repo: "acme/parser", number: 42, title: "Split the lexer", url: "https://github.com/acme/parser/pull/42", action: "opened" as const, at: NOW - 3_600_000 };
+  const shipped = codeJob("thread:ship", {
+    code: {
+      folder: "/srv/repos/parser", branch: "fix/lexer", repo: "acme/parser", repoUrl: "https://github.com/acme/parser",
+      pullRequests: [pr],
+      branches: [{ name: "fix/lexer", repo: "acme/parser", pushed: true, url: "https://github.com/acme/parser/tree/fix/lexer", at: NOW - 3_700_000 }],
+      commits: [{ sha: "1a2b3c4d5e", message: "fix: split the lexer", branch: "fix/lexer", repo: "acme/parser", pushed: true, url: "https://github.com/acme/parser/commit/1a2b3c4d5e", at: NOW - 3_800_000 }],
+    },
+  });
+
+  it("gathers pull requests, branches and commits of coding jobs, newest first, each once", () => {
+    const merged = codeJob("thread:merge", { code: { pullRequests: [{ ...pr, action: "merged", at: NOW - 60_000 }], branches: [{ name: "spike", pushed: false, at: NOW - 30_000 }], commits: [] } });
+    const notCoding = job("thread:chat", { code: { pullRequests: [{ ...pr, number: 7, url: undefined }], branches: [], commits: [] } });
+    const work = codingWork([shipped, merged, notCoding]);
+    expect(work.pullRequests).toEqual([{ ...pr, action: "merged", at: NOW - 60_000 }]);
+    expect(work.branches.map((branch) => branch.name)).toEqual(["spike", "fix/lexer"]);
+    expect(work.commits.map((commit) => commit.sha)).toEqual(["1a2b3c4d5e"]);
+    expect(codingWork([job("thread:a"), codeJob("thread:b")])).toEqual({ pullRequests: [], branches: [], commits: [] });
+  });
+
+  it("draws the pull request, branch and commit rows with links to the browser", () => {
+    const html = renderToStaticMarkup(createElement(CodeWorkList, { work: codingWork([shipped]), now: NOW }));
+    expect(html).toContain(">Pull requests<");
+    expect(html).toContain("#42 Split the lexer");
+    expect(html).toContain("acme/parser · Opened · 1 h ago");
+    expect(html).toContain('data-code-link="https://github.com/acme/parser/pull/42"');
+    expect(html).toContain(">Branches<");
+    expect(html).toContain("acme/parser · Pushed");
+    expect(html).toContain(">Commits<");
+    expect(html).toContain("fix: split the lexer");
+    expect(html).toContain("1a2b3c4 · fix/lexer · Pushed");
+    // a row without a page is not a link
+    const local = renderToStaticMarkup(createElement(CodeWorkList, { work: { pullRequests: [], branches: [{ name: "spike", pushed: false, at: NOW }], commits: [] }, now: NOW }));
+    expect(local).toContain("Not pushed · just now");
+    expect(local).not.toContain("data-code-link");
+    expect(local).not.toContain("Pull requests");
+  });
+
+  it("shows a running coding job with its repository and branch, and is drawn for code work alone", () => {
+    const running = codeJob("thread:run", { status: "running", endedAt: undefined, code: { folder: "/srv/repos/parser", branch: "main", pullRequests: [], branches: [], commits: [] } });
+    expect(codingWhere(running)).toBe("parser · main");
+    expect(codingWhere(shipped)).toBe("acme/parser · fix/lexer");
+    const draw = (items: BotActivityItem[]) => renderToStaticMarkup(createElement(PanelSections, { list: { items, subagents: [] }, live: liveOf(items), actions: { onOpen: () => {}, now: NOW }, onOpenHistory: () => {} }));
+    const live = draw([running]);
+    expect(live).toContain('data-bot-settings-section="coding"');
+    expect(live).toContain("data-activity-where");
+    expect(live).toContain("parser · main");
+    // finished jobs are not listed, their pull request is
+    const done = draw([shipped]);
+    expect(done).toContain('data-bot-settings-section="coding"');
+    expect(done).not.toContain("data-activity-card");
+    expect(done).toContain("#42 Split the lexer");
+    expect(panelSections({ items: [codeJob("thread:empty")], subagents: [] }, liveOf([])).showCoding).toBe(false);
   });
 });
 
@@ -242,12 +335,18 @@ describe("section headers and history", () => {
   const bot = { id: "pepper", name: "Pepper", tasks: [] } as unknown as Bot;
 
   it("has no History button: the section titles open the history", () => {
-    const html = renderToStaticMarkup(createElement(ActivitySection, { bot }));
+    // nothing loaded yet: no section at all
+    expect(renderToStaticMarkup(createElement(ActivitySection, { bot }))).not.toContain("data-bot-settings-section");
+    const items = [
+      job("thread:code", { coding: true, status: "running", endedAt: undefined }),
+      job("run:r1", { kind: "routine", status: "running", endedAt: undefined }),
+    ];
+    const html = renderToStaticMarkup(createElement(PanelSections, { list: { items, subagents: [] }, actions: { onOpen: () => {}, now: NOW }, onOpenHistory: () => {} }));
     expect(html).not.toMatch(/>History</);
     expect(html).not.toContain("data-activity-see-all");
     expect(html).toContain('data-activity-history="coding"');
     expect(html).toContain('data-activity-history="other"');
-    expect(html).toContain('data-bot-settings-section="activity"');
+    expect(html.indexOf('data-bot-settings-section="coding"')).toBeLessThan(html.indexOf('data-bot-settings-section="activity"'));
   });
 
   it("opens the history modal for that section when its title is clicked", () => {

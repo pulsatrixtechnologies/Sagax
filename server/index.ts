@@ -721,6 +721,7 @@ import { grandfatheredFromBots } from "../shared/achievements.ts";
 import { createBotMemoryRoutes } from "./routes/bot-memory.ts";
 import { createBotActivityRoutes, type ActivityChildRef } from "./routes/bot-activity.ts";
 import { inGitRepository } from "./activity-coding.ts";
+import { repositoryInfo } from "./activity-code-work.ts";
 import { createGroupMemoryRoutes } from "./routes/group-memory.ts";
 import { createTtsProviderRoutes } from "./routes/tts-provider.ts";
 import { createPeopleDmRoutes } from "./routes/people-dms.ts";
@@ -19607,6 +19608,7 @@ ROUTES.push(createBotActivityRoutes({
   organization: () => IDENTITY.kind === "perspicax",
   runAccessCard: (run, viewerId) => routineRunAccessCard(run, viewerId),
   inRepository: (cwd) => inGitRepository(cwd),
+  repository: (cwd) => repositoryInfo(cwd),
 }));
 /** The access card a failed routine run left (refused for lack of
  * credentials, or paused), as this viewer may see it: on an organization
