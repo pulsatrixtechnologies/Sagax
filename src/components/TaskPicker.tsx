@@ -4,6 +4,7 @@
 // the only clean slate is a second bot. A task is a real boundary — its
 // own transcript and its own provider session — so sensitive work, a
 // long job and a quick question can sit side by side under one agent.
+import { copyText } from "@/lib/copy-text";
 import { Fragment, useEffect, useRef, useState } from "react";
 import { Archive, ArchiveRestore, BellOff, Check, ChevronLeft, Clock, FolderInput, Link2, Loader2, MessagesSquare, MoreHorizontal, Pencil, Pin, PinOff, Plus, RefreshCw, Search, Trash2 } from "lucide-react";
 import { api, currentTaskBot, useStore, type Bot, type BotProject, type Group, type Task } from "@/state/store";
@@ -423,7 +424,7 @@ function ConversationTaskPicker({
                       className="min-w-0 flex-1 text-left"
                       title={t("task.renameHint")}
                     >
-                      <div className="truncate text-[13px] text-popover-ink">{task.title}</div>
+                      <div dir="auto" className="truncate text-[13px] text-popover-ink">{task.title}</div>
                       <div className="text-[11px] text-popover-ink-secondary">
                         {task.activity === "waiting-on-you" ? `${t("task.waiting")} · ` : task.waitingForTeammates ? `${t("task.waitingOnTeammate")} · ` : task.busy ? `${t("chat.activity.working")} · ` : task.unread ? `${t("task.unread")} · ` : ""}
                         <TaskUpdatedTime task={task} now={now} />
@@ -539,7 +540,7 @@ export function BotActivityPicker({ bot }: { bot: Bot }) {
           {task.title} · {task.activity === "waiting-on-you" ? t("task.waiting") : task.waitingForTeammates ? t("task.waitingOnTeammate") : task.busy || task.activity === "working" ? t("chat.activity.working") : task.queued ? t("task.queued") : t("task.unread")}
         </option>)}
       </select>
-      <span className="truncate text-[12px] text-ink-secondary">{bot.tasks?.find((task) => task.threadId === bot.threadId)?.title}</span>
+      <span dir="auto" className="truncate text-[12px] text-ink-secondary">{bot.tasks?.find((task) => task.threadId === bot.threadId)?.title}</span>
     </div>
   );
 }
@@ -620,9 +621,8 @@ export function TaskPicker({ bot, initialOpen = false }: { bot: Bot; initialOpen
   const projectIds = projects.map((project) => project.id);
   const threadActions: PickerThreadActions = {
     onCopyLink: (threadId) => {
-      navigator.clipboard?.writeText(threadRefUrl({ botId: bot.id, threadId })).catch(() => {
-        // clipboard write rejected: the link stays available to copy again
-      });
+      // a refused write leaves the link available to copy again
+      void copyText(threadRefUrl({ botId: bot.id, threadId }));
     },
     onRegenerateTitle: llmThreadTitlesEnabled(state.config)
       ? (threadId, onSettled) => dispatch({ type: "regenerateTaskTitle", botId: bot.id, threadId, onSettled })

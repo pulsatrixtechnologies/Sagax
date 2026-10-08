@@ -33,6 +33,7 @@ import { cn } from "@/lib/cn";
 import { CIRCLE_BUTTON } from "@/lib/circle-button";
 import { useCaptionChrome } from "@/components/DesktopCapabilities";
 import { usePageVisible } from "@/lib/page-visible";
+import { listenLiveFrames } from "@/lib/live-events";
 import { CloudScreenPreview } from "./CloudScreenPreview";
 import { isActiveTurnRefusal, isRemoteScreenshotContention } from "@/lib/remote-desktop";
 import { useDesktopCapabilities } from "./DesktopCapabilities";
@@ -44,6 +45,7 @@ import { LinuxLocalControl } from "./LinuxLocalControl";
 import { MacLocalControl } from "./MacLocalControl";
 import { LocalComputerAutoWarning } from "./LocalComputerAutoWarning";
 import {
+  busyBoatView,
   instanceSupportsLocalComputer,
   localComputerDisabledReason,
   localComputerSelectable,
@@ -52,6 +54,8 @@ import {
   resolveBoatPanelAction,
   shouldPollCloudPreview,
 } from "@/lib/local-computer";
+import { openPlaceAction, placeBlocked, placeFacts, placeViewFor, usePlaceSeat } from "@/lib/place-view";
+import { cloudRefusal, type PlaceActionId, type PlaceFacts, type PlaceView } from "../../shared/place-view";
 import { t } from "@/lib/i18n";
 import type { LocaleKey } from "@/locales";
 import { requestSettingsCard } from "./SettingsPrimitives";
@@ -105,6 +109,8 @@ type Phase =
   | "show-ready-boat"
   | "show-sleeping-boat"
   | "show-pending-boat"
+  | "cloud-new"
+  | "cloud-asleep"
   | "browser"
   | "off"
   | "error";
@@ -255,6 +261,9 @@ export function ComputerPanel({
   const localSelectable = placeOffered("local", state.config) && localComputerSelectable({ capabilities, providerSupportsLocal });
   const [localAutoWarningTarget, setLocalAutoWarningTarget] = useState<string | null>(null);
   const localDisabledReason = localComputerDisabledReason({ capabilities, providerSupportsLocal });
+  // Where this app runs and who is looking: every place below is worded
+  // from it (shared/place-view.ts), the same as the chip and a failed row.
+  const placeSeat = usePlaceSeat(state.config, capabilities.host.platform);
   const [phase, setPhase] = useState<Phase>("checking");
   const [persistedComputerSelection, setPersistedComputerSelection] = useState<{
     botId: string;
@@ -406,11 +415,10 @@ export function ComputerPanel({
   }, [bot.id, bot.computer]);
   const vmSupported = Boolean(
     selectedInstance?.snapshot.state === "available" &&
-      selectedInstance.capabilities?.computerMcp &&
-      selectedInstance.driverKind !== "boxAgent",
+      selectedInstance.capabilities?.computerMcp,
   );
-  const vpsSupported = canWorkOnCloud(cloudEngineOf(selectedInstance), "vps");
-  const cloudSupported = canWorkOnCloud(cloudEngineOf(selectedInstance), cloudBackend === "vps" ? "vps" : "box");
+  // One rule for both cloud backends (shared/cloud-computer.ts).
+  const cloudSupported = canWorkOnCloud(cloudEngineOf(selectedInstance));
   const bridgeStatus = useDesktopBridgeStatus();
   const botRoutines = state.routines
     .filter((routine) => routine.botId === bot.id)
@@ -426,7 +434,6 @@ export function ComputerPanel({
     // or churn preview state while reading routine history.
     if (panelView !== "computer") return;
     let alive = true;
-    let boatRetryTimer: number | undefined;
     setResolvedComputerSelection(null);
     setTeamComputer(null);
     setPhase("checking");
@@ -523,17 +530,12 @@ export function ComputerPanel({
       };
     }
     if (bot.computer === "cloud" && !cloudSupported) {
-      setError(new LocalizedPanelError("computer.err.cloudEngine"));
+      // Its line is the cloud computer's own place view, below.
       setPhase("error");
       return;
     }
     if (bot.computer !== "cloud" && !capabilitiesReady) return;
     if (cloudBackend === "vps") {
-      if (!vpsSupported) {
-        setError(new LocalizedPanelError("computer.err.vpsEngine"));
-        setPhase("error");
-        return;
-      }
       api(threadPath("computer"))
         .then((rawStatus) => {
           if (!alive) return;
@@ -601,14 +603,17 @@ export function ComputerPanel({
         alive = false;
       };
     }
-    // Explicit Cloud may create/wake its Boat. Auto is observation-only here:
-    // even a ready Boat and the boat-native engine stay free of POSTs until the
-    // person deliberately chooses Cloud.
+    // Opening the panel only looks. With Cloud computer chosen, the bot's
+    // first computer call creates or wakes the Boat, or the person's own
+    // Start it now / Wake it now button does; on Auto the panel only reports
+    // an existing Boat.
     api(threadPath("computer"))
       .then((status) => {
         if (!alive) return;
         const action = resolveBoatPanelAction({
-          computer: canManageCloud ? "cloud" : undefined,
+          // This conversation is on the cloud computer: the bot's Works on,
+          // or a pin (the person's, or select_computer's).
+          computer: livePlace === "cloud" ? "cloud" : undefined,
           configured: Boolean(status.configured),
           boatState: typeof status.box?.state === "string" ? status.box.state : null,
           canUseCloud: cloudSupported,
@@ -635,57 +640,24 @@ export function ComputerPanel({
           return;
         }
         if (action === "attach-ready-boat" || (bot.computer === "cloud" && action === "show-ready-boat")) {
-          // The turn owns a ready boat; provisioning would be refused (409)
-          // and is not needed. Going straight to ready lets the turn's live
-          // frames and the screenshot poll show what the bot is doing.
+          // A ready boat, the bot's own or the one this conversation was
+          // moved to (select_computer): going straight to ready lets the
+          // turn's live frames and the screenshot poll show what the bot is
+          // doing.
           setBoatState(typeof status.box?.state === "string" ? status.box.state : null);
           setPhase("ready");
           return;
         }
-        if (action !== "ensure-boat") {
-          if (action === "show-ready-boat" || action === "show-sleeping-boat" || action === "show-pending-boat") {
-            setBoatState(typeof status.box?.state === "string" ? status.box.state : null);
-          }
-          setPhase(action);
-          return;
-        }
-        setPhase("starting");
-        return api(`/api/bots/${bot.id}/computer/provision`, { method: "POST" }).then((r) => {
-          if (!alive) return;
-          setBoatState(r.state ?? null);
-          setResolvedComputerSelection({
-            botId: bot.id,
-            threadId: bot.threadId,
-            computer: bot.computer,
-            cloudBackend,
-          });
-          setPhase("ready");
-        });
+        setBoatState(typeof status.box?.state === "string" ? status.box.state : null);
+        setPhase(action);
       })
       .catch((e) => {
         if (!alive) return;
-        // A turn that started while provision was in flight: not a fault,
-        // the panel waits for the turn (bot.busy re-runs this effect).
-        if (isActiveTurnRefusal(e)) {
-          setPhase("busy-boat");
-          return;
-        }
-        // The panel's own screenshot poll holds this boat's lifecycle claim
-        // while it captures, so a provision landing mid-capture is refused
-        // with a *different* 409. It is a wait too: re-resolve shortly
-        // instead of showing the fault this panel exists to stop showing.
-        if (isRemoteScreenshotContention({ status: Number((e as { status?: unknown })?.status ?? 0), message: String(e?.message ?? "") })) {
-          setError(null);
-          setPhase("checking");
-          boatRetryTimer = window.setTimeout(() => setRetry((n) => n + 1), 2000);
-          return;
-        }
         setError(e.message);
         setPhase("error");
       });
     return () => {
       alive = false;
-      if (boatRetryTimer !== undefined) window.clearTimeout(boatRetryTimer);
     };
   }, [
     bot.id,
@@ -702,12 +674,12 @@ export function ComputerPanel({
     selectedInstance?.driverKind,
     vmSupported,
     cloudSupported,
-    vpsSupported,
     state.config?.vps?.sshAlias,
     panelView,
     computerSelectionPersisted,
     surfaceReady,
     canManageCloud,
+    livePlace,
     threadPath,
   ]);
 
@@ -718,7 +690,9 @@ export function ComputerPanel({
     if (phase !== "busy-boat") return;
     let alive = true;
     const check = () => {
-      if (!profileBot.busy && canManageCloud) {
+      // The turn ended: settle on what this conversation's cloud computer
+      // is now (the bot's Works on, or a pin to it), and stop looking.
+      if (!profileBot.busy && livePlace === "cloud") {
         setRetry((n) => n + 1);
         return;
       }
@@ -726,10 +700,8 @@ export function ComputerPanel({
         .then((status) => {
           if (!alive) return;
           const state = typeof status.box?.state === "string" ? status.box.state : null;
-          if (isReadyBoatState(state)) {
-            setBoatState(state);
-            setPhase("ready");
-          }
+          setBoatState(state);
+          if (isReadyBoatState(state)) setPhase("ready");
         })
         .catch(() => { /* the next tick tries again */ });
     };
@@ -738,31 +710,28 @@ export function ComputerPanel({
       alive = false;
       window.clearInterval(timer);
     };
-  }, [phase, threadPath, profileBot.busy, canManageCloud]);
+  }, [phase, threadPath, profileBot.busy, livePlace]);
 
-  // Only frames received during this connection may replace its preview.
-  // A cached SSE frame must never mask every subsequent screenshot poll.
+  // Live frames of this conversation's screen come straight from the app's
+  // stream, never through the store. Only a frame heard while this preview is
+  // up may replace it, and the poll below waits while they keep coming.
   const pageVisible = usePageVisible();
-  const screen = state.screens[bot.id];
-  const live = screen?.threadId === bot.threadId || (!screen?.threadId && (profileBot.tasks?.length ?? 0) <= 1)
-    ? screen : undefined;
-  const latestLive = useRef({ frame: live, at: 0 });
+  const lastLiveAt = useRef(0);
   const previewBusy = useRef(bot.busy);
   useEffect(() => { previewBusy.current = bot.busy; }, [bot.busy]);
   useEffect(() => {
-    if (!cloudPreviewReady) {
-      latestLive.current = { frame: live, at: 0 };
-      return;
-    }
-    if (latestLive.current.frame === live) return;
-    latestLive.current = { frame: live, at: 0 };
-    if (cloudPreviewReady && live) {
-      latestLive.current.at = Date.now();
-      setPolledFrame(live);
-      setPreviewError(null);
-      setPreviewRefreshing(false);
-    }
-  }, [live, cloudPreviewReady]);
+    lastLiveAt.current = 0;
+    if (!cloudPreviewReady) return;
+    return listenLiveFrames({
+      onFrame: (frame) => {
+        if (frame.kind !== "screen" || frame.botId !== bot.id || frame.threadId !== bot.threadId) return;
+        lastLiveAt.current = Date.now();
+        setPolledFrame({ png: frame.png, mime: frame.mime ?? "image/png" });
+        setPreviewError(null);
+        setPreviewRefreshing(false);
+      },
+    });
+  }, [cloudPreviewReady, bot.id, bot.threadId]);
 
   useEffect(() => {
     if (panelView !== "computer" || !cloudPreviewReady || viewerOpen || !pageVisible || pending || controlPending) return;
@@ -778,7 +747,7 @@ export function ComputerPanel({
       if (Date.now() - lastAttemptAt < (retryDelay ?? (previewBusy.current ? 4000 : 30_000))) return;
       // Resume polling if a busy bot stops publishing frames. A single old
       // SSE event is not evidence of a working stream for the whole turn.
-      if (previewBusy.current && Date.now() - latestLive.current.at < 10_000) return;
+      if (previewBusy.current && Date.now() - lastLiveAt.current < 10_000) return;
       inFlight = true;
       retryDelay = null;
       const startedAt = Date.now();
@@ -787,7 +756,7 @@ export function ComputerPanel({
           method: "POST",
           signal: AbortSignal.any([controller.signal, AbortSignal.timeout(90_000)]),
         });
-        if (!controller.signal.aborted && latestLive.current.at <= startedAt) {
+        if (!controller.signal.aborted && lastLiveAt.current <= startedAt) {
           if (typeof png !== "string" || !png.trim()) throw new LocalizedPanelError("computer.err.emptyFrame");
           setPolledFrame({ png, mime: format === "jpeg" ? "image/jpeg" : "image/png" });
           setPreviewError(null);
@@ -795,7 +764,7 @@ export function ComputerPanel({
           contentionSince = null;
         }
       } catch (e) {
-        if (!controller.signal.aborted && latestLive.current.at <= startedAt) {
+        if (!controller.signal.aborted && lastLiveAt.current <= startedAt) {
           // A canceled client request can leave its capture running on the
           // host. Contention is temporary, not a disconnected computer.
           if (e instanceof ApiError && isRemoteScreenshotContention(e)) {
@@ -1060,13 +1029,36 @@ export function ComputerPanel({
           setResolvedComputerSelection(null);
           setBoatState(cloudBackend === "vps" ? "stopped" : "archived");
           if (cloudBackend === "vps") setPhase("vps-stopped");
-          // The deciders map an archived boat to the sleeping observation
-          // phase; re-resolving would see "ensure-boat" and wake it again.
-          else setPhase("show-sleeping-boat");
+          else setPhase(canManageCloud ? "cloud-asleep" : "show-sleeping-boat");
         }
       })
       .catch((e) => {
         setError(e.message);
+      })
+      .finally(() => setPending(null));
+  };
+
+  /** The person's own Start it now / Wake it now: the only way the panel
+   * starts a cloud computer. Choosing it or opening the panel never does. */
+  const startCloudComputer = () => {
+    setPending("provision");
+    setError(null);
+    setPhase("starting");
+    api(`/api/bots/${bot.id}/computer/provision`, { method: "POST" })
+      .then((result) => {
+        setBoatState(result.state ?? null);
+        setResolvedComputerSelection({ botId: bot.id, threadId: bot.threadId, computer: bot.computer, cloudBackend });
+        setPhase("ready");
+      })
+      .catch((e) => {
+        // A turn started meanwhile: it starts the computer it needs, and the
+        // panel watches.
+        if (isActiveTurnRefusal(e)) {
+          setPhase("busy-boat");
+          return;
+        }
+        setError(e.message);
+        setPhase("error");
       })
       .finally(() => setPending(null));
   };
@@ -1161,24 +1153,77 @@ export function ComputerPanel({
     dispatch({ type: "toggleAppSettings", open: true, section: "connections" });
   };
 
+  // While a turn holds this conversation's cloud computer: only one that is
+  // really starting spins (busyBoatView).
+  const busyBoat = busyBoatView(boatState, profileBot.busy === true);
+  // The live cloud computer, as this panel last saw it for this conversation
+  // (the bot's Works on, or a pin to it). Nothing starts it but the bot's
+  // first computer call or the person's own Start it now / Wake it now.
+  const cloudComputer: PlaceFacts["computer"] = !computerStatusCurrent || livePlace !== "cloud" || cloudBackend !== "box" ? undefined
+    : phase === "starting" ? "starting"
+      : phase === "busy-boat" ? (busyBoat.spinner ? "starting" : busyBoat.line === "computer.cloud.asleep" ? "asleep" : "none")
+        : phase === "ready" ? "on"
+          : boatState === "archived" || boatState === "stopped" ? "asleep" : undefined;
+  /** One place's state, line and action (shared/place-view.ts). */
+  const viewOf = (place: PlaceFacts["place"], refusal?: PlaceFacts["refusal"]): PlaceView => placeViewFor({
+    ...placeFacts({
+      bot, place, seat: placeSeat, config: state.config, instances: state.instances,
+      local: { ready: localSelectable, reason: localDisabledReason ?? t("computer.unavailableLocal") },
+      ...(place === "cloud" ? { computer: cloudComputer } : {}),
+      ...(place === "auto" && currentTeamComputer ? { teamComputer: currentTeamComputer.name } : {}),
+    }),
+    ...(refusal ? { refusal } : {}),
+  });
+  // A start this panel asked for and was refused (a plan limit, say) reads
+  // as the same state a failed turn's row does, never the relay's words.
+  const cloudRefused = bot.computer === "cloud" && cloudBackend === "box" && phase === "error" && error && !(error instanceof LocalizedPanelError)
+    ? cloudRefusal({ message: errorText ?? "", status: Number((error as { status?: unknown }).status ?? 0) || undefined }, state.config?.box?.included === true)
+    : undefined;
+  const cloudView = viewOf("cloud", cloudRefused);
+  const autoView = viewOf("auto");
+  /** A place's action from inside this panel: what the panel holds itself
+   * (start, wake, try again, Local VM setup) runs here; anything else opens
+   * where it is changed. */
+  const runPlaceAction = (id: PlaceActionId) => {
+    if (id === "start" || id === "wake") return startCloudComputer();
+    if (id === "try-again") return setRetry((n) => n + 1);
+    if (id === "open-vm-settings") return openVmSettings();
+    openPlaceAction(id, { botId: profileBot.id, threadId: profileBot.threadId }, dispatch);
+  };
+  /** Whether this panel offers the action: not one it already is (watching,
+   * the panel itself), and a start or wake only for this bot's own chosen
+   * cloud computer while no turn holds it. */
+  const panelOffers = (id: PlaceActionId | undefined): id is PlaceActionId => Boolean(id) && id !== "watch" && id !== "open-computer-panel"
+    && ((id !== "start" && id !== "wake") || (canManageCloud && !profileBot.busy));
+  const placeActionButton = (view: PlaceView, className = "mt-1 rounded-lg bg-control px-3 py-1.5 text-[12px] text-ink hover:bg-raised-hover") =>
+    view.action && panelOffers(view.action.id) ? (
+      <button type="button" data-testid="place-action" onClick={() => runPlaceAction(view.action!.id)} className={className}>
+        {view.action.label}
+      </button>
+    ) : null;
+
   const emptyState = {
     checking: t("computer.phase.checking"),
-    starting: t("computer.phase.starting"),
-    "busy-boat": t("computer.phase.busyBoat"),
-    unconfigured: t("computer.phase.unconfigured"),
-    "auto-unavailable": t("computer.phase.autoUnavailable"),
-    "team-boat": "This bot uses a shared team computer. Open Team map to view or manage it.",
+    starting: cloudBackend === "vps" ? t("computer.phase.starting") : cloudView.line,
+    // A turn that has not used its cloud computer yet has not started one
+    // (busyBoatView, read into the cloud computer's place view above).
+    "busy-boat": cloudView.line,
+    unconfigured: cloudView.line,
+    "auto-unavailable": autoView.line,
+    "team-boat": autoView.line,
     "show-ready-boat": t("computer.phase.showReadyBoat"),
     "show-sleeping-boat": t("computer.phase.showSleepingBoat"),
     "show-pending-boat": t("computer.phase.showPendingBoat"),
+    "cloud-new": cloudView.line,
+    "cloud-asleep": cloudView.line,
     "vps-unconfigured": t("computer.phase.vpsUnconfigured"),
     "vps-incompatible": t("computer.phase.vpsIncompatible"),
     "vps-stopped": t("computer.phase.vpsStopped"),
     "local-unavailable": localDisabledReason ?? t("computer.phase.localUnavailable"),
     "vm-unavailable": t("computer.phase.vmUnavailable"),
-    browser: t("computer.phase.browser"),
-    off: t("computer.phase.off"),
-    error: t("computer.phase.error"),
+    browser: viewOf("browser").line,
+    off: viewOf("off").line,
+    error: bot.computer === "cloud" && (cloudRefused || placeBlocked(cloudView)) ? cloudView.line : t("computer.phase.error"),
   } satisfies Record<Exclude<Phase, "ready" | "local" | "vm">, string>;
 
   const deviceBody = (
@@ -1186,7 +1231,7 @@ export function ComputerPanel({
           {/* Screen preview. Works on lives in More > Computer. */}
           <div className="mb-1.5 mt-2 flex items-center justify-between text-[13px] text-ink-secondary">
             <span>{t("computer.screenOf", { name: bot.name })}</span>
-            {currentTeamComputer && <span className="text-[11px]">Team default</span>}
+            {currentTeamComputer && <span className="text-[11px]">{autoView.short}</span>}
             {phase === "local" && <span className="text-[11px]">{t("computer.badge.local")}</span>}
             {phase === "vm" && <span className="text-[11px]">{t("vm.dest.vm")}</span>}
             {(phase === "show-ready-boat" || phase === "show-sleeping-boat" || phase === "show-pending-boat") && (
@@ -1208,7 +1253,7 @@ export function ComputerPanel({
               disabled={controlPending}
               onOpen={() => void openDesktop()}
               onRetry={(discardFrame) => {
-                latestLive.current.at = 0;
+                lastLiveAt.current = 0;
                 if (discardFrame) setPolledFrame(null);
                 setPreviewError(null);
                 setPreviewRefreshing(true);
@@ -1243,7 +1288,7 @@ export function ComputerPanel({
             />
           ) : (
             <div className="flex flex-col items-center gap-2 px-6 text-center text-ink-secondary">
-              {phase === "checking" || phase === "starting" || phase === "busy-boat" || phase === "vm" || (phase === "local" && !isLinux) ? (
+              {phase === "checking" || phase === "starting" || (phase === "busy-boat" && busyBoat.spinner) || phase === "vm" || (phase === "local" && !isLinux) ? (
                 <Loader2 size={18} className="animate-spin" />
               ) : phase === "off" ? (
                 <Power size={22} />
@@ -1252,7 +1297,7 @@ export function ComputerPanel({
               )}
               <span className="text-[12px]">
                 {currentTeamComputer
-                  ? `${currentTeamComputer.name} · ${boatState ?? "unavailable"}`
+                  ? autoView.line
                   : cloudPreviewReady
                   ? t("computer.waitingFrame")
                   : phase === "ready"
@@ -1269,13 +1314,8 @@ export function ComputerPanel({
                       ? t(pending === "vm-start" ? "vm.setup.starting" : "computer.phase.vmStopped")
                       : emptyState[phase]}
               </span>
-              {currentTeamComputer && <>
-                <p className="text-[12px]">Shared files and signed-in accounts. Auto uses this Boat, not a private computer.</p>
-                <button type="button" onClick={() => dispatch({ type: "showTeamMap" })}
-                  className="mt-1 rounded-lg bg-control px-3 py-1.5 text-[12px] text-ink hover:bg-raised-hover">Open Team map</button>
-                <button type="button" onClick={() => setRetry(n => n + 1)}
-                  className="text-[11px] text-ink-secondary hover:text-ink">Refresh shared computer status</button>
-              </>}
+              {currentTeamComputer && placeActionButton(autoView)}
+              {bot.computer === "cloud" && (phase === "unconfigured" || phase === "error") && cloudView.action?.id !== "add-boat-key" && placeActionButton(cloudView)}
               {phase === "local" && !isLinux && localMisses >= 3 && (
                 <button
                   onClick={() => window.ogb?.permOpenSettings?.("screen")}
@@ -1294,6 +1334,7 @@ export function ComputerPanel({
                   {t("computer.worksOn")}
                 </button>
               )}
+              {pending === null && (phase === "cloud-new" || phase === "cloud-asleep") && placeActionButton(cloudView)}
               {vmResumable && pending !== "vm-start" && (
                 <p className="text-[12px]">{t(vmStatus?.stop_reason === "idle" ? "vm.stopped.idle" : "vm.stopped.detail")}</p>
               )}
@@ -1364,7 +1405,7 @@ export function ComputerPanel({
           )}
         </div>
 
-        {errorText && (
+        {errorText && !cloudRefused && (
           <div className="mt-2 rounded-lg border border-danger/30 bg-danger/10 px-3 py-2 text-[12px] text-danger">
             {errorText}
           </div>

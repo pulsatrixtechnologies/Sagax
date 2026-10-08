@@ -12,6 +12,7 @@ import { useStore, type Bot } from "@/state/store";
 import { botWithViewerSettings, useViewerBotOverride, viewerLocalBotSettings } from "@/lib/viewer-bot-overrides";
 import { useBotEditor } from "./BotEditorContext";
 import { ProposalStatus } from "./ProposalStatus";
+import { ThreadModelsLine } from "../ThreadModelsLine";
 
 export function ModelSection({ bot }: { bot: Bot }) {
   const advanced = useAdvancedMode();
@@ -38,6 +39,8 @@ export function ModelSection({ bot }: { bot: Bot }) {
             </div>
           }
         />
+        {/* Right below the picker, so it shows the moment the model changes. */}
+        {!draft && <ThreadModelsLine bot={bot} className="mt-3" />}
       </div>
 
       {/* Share the model picker's effort choices, but edit the profile default.

@@ -320,6 +320,16 @@ export class RoomHandoffs {
   activeDirect(threadId: string) {
     return [...this.nodes.values()].some(n => !n.groupId && n.threadId === threadId && !terminal(n));
   }
+  /** The conversation that assigned the unsettled direct work running in
+   * this thread, or undefined when nothing it does is awaited. */
+  assignerOf(threadId: string): RoomHandoff | undefined {
+    for (const node of this.nodes.values()) {
+      if (terminal(node) || !node.parentId || node.groupId || node.threadId !== threadId) continue;
+      const parent = this.nodes.get(node.parentId);
+      if (parent) return parent;
+    }
+    return undefined;
+  }
   /** Work this conversation handed out that has not settled yet. The
    * conversation's own node is not outstanding — only what it waits on. */
   outstandingDirect(threadId: string): RoomHandoff[] {

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { readFileSync } from "node:fs";
-import { appPermissionAllowed, externalMailUrl, externalOpenUrl, externalWebUrl } from "./app-permissions.mjs";
+import { appPermissionAllowed, appPermissionHandlers, externalMailUrl, externalOpenUrl, externalWebUrl, remoteClipboardWriteAllowed } from "./app-permissions.mjs";
 
 const LOCAL_ORIGIN = "http://127.0.0.1:5199";
 const LOCAL_PAGE = "http://127.0.0.1:5199/chat?botId=bot-1";
@@ -125,4 +125,153 @@ test("voice mode in server mode: the organization server's bundled UI may open t
   assert.equal(appPermissionAllowed("media", "https://evil.example.test/", LOCAL_ORIGIN, { mediaTypes: ["audio"] }, extra), false);
   assert.equal(appPermissionAllowed("media", `${ORG}/chat`, LOCAL_ORIGIN, { mediaTypes: ["audio"] }), false);
   assert.equal(appPermissionAllowed("media", `${ORG}/chat`, LOCAL_ORIGIN, { mediaTypes: ["audio"] }, { microphoneOrigins: [null] }), false);
+});
+
+
+// ── The session's handlers: this computer's page, the organization server's
+// bundled UI, and the active paired server ──
+const ORG_UI = "https://sagax.example.test";
+function handlersFixture({ active = null, microphone = [] } = {}) {
+  const state = { active, main: { getURL: () => LOCAL_PAGE } };
+  const handlers = appPermissionHandlers({
+    rendererOrigin: () => LOCAL_ORIGIN,
+    mainContents: () => state.main,
+    microphoneOrigins: () => microphone,
+    activeRemoteOrigin: () => state.active,
+  });
+  const ask = (permission, details, contents = state.main) => {
+    let granted;
+    handlers.request(contents, permission, (value) => { granted = value; }, details);
+    return granted;
+  };
+  const check = (permission, requestingOrigin, details, contents = state.main) => handlers.check(contents, permission, requestingOrigin, details);
+  return { state, handlers, ask, check };
+}
+
+test("this computer's own page keeps its permissions through the same handlers", () => {
+  const { ask, check } = handlersFixture();
+  const local = { getURL: () => LOCAL_PAGE };
+  assert.equal(ask("media", { requestingUrl: LOCAL_PAGE, isMainFrame: true, mediaTypes: ["audio"] }, local), true);
+  assert.equal(ask("media", { requestingUrl: LOCAL_PAGE, isMainFrame: true, mediaTypes: [] }, local), true, "guarded display capture");
+  assert.equal(ask("media", { requestingUrl: LOCAL_PAGE, isMainFrame: true, mediaTypes: ["video"] }, local), false);
+  assert.equal(ask("notifications", { requestingUrl: LOCAL_PAGE, isMainFrame: true }, local), true);
+  // No requesting URL: the window's own address decides, as before.
+  assert.equal(ask("notifications", {}, local), true);
+  assert.equal(check("clipboard-read", "", { isMainFrame: true }, local), true);
+  assert.equal(check("clipboard-read", "https://other.example", { isMainFrame: true }, local), false);
+});
+
+test("the handlers give the organization server's bundled UI the microphone only", () => {
+  const { ask, check } = handlersFixture({ microphone: [ORG_UI] });
+  const page = { getURL: () => `${ORG_UI}/chat` };
+  assert.equal(ask("media", { requestingUrl: `${ORG_UI}/chat`, isMainFrame: true, mediaTypes: ["audio"] }, page), true);
+  assert.equal(ask("media", { requestingUrl: `${ORG_UI}/chat`, isMainFrame: true, mediaTypes: ["video"] }, page), false);
+  assert.equal(ask("media", { requestingUrl: `${ORG_UI}/chat`, isMainFrame: true, mediaTypes: [] }, page), false);
+  for (const permission of ["notifications", "clipboard-read", "fullscreen", "geolocation"]) {
+    assert.equal(check(permission, ORG_UI, { isMainFrame: true }, page), false, permission);
+  }
+});
+
+test("the app installs these handlers once, and perm:status asks them", () => {
+  const main = readFileSync(new URL("./main.mjs", import.meta.url), "utf8").replace(/\r\n/g, "\n");
+  assert.match(main, /setPermissionRequestHandler\(appPermissions\.request\)/);
+  assert.match(main, /setPermissionCheckHandler\(appPermissions\.check\)/);
+  // perm:status's pageMic asks these very handlers: one module-level set,
+  // never a second const that would leave perm:status answering "refused".
+  assert.match(main, /ipcMain\.handle\("perm:status", \(event\) => \(\{[^}]*pageMic: appPermissions\?\.pageMicrophone\(event\) \?\? "refused",/s);
+  assert.match(main, /^let appPermissions = null;$/m);
+  assert.match(main, /^  appPermissions = appPermissionHandlers\(\{$/m);
+  assert.doesNotMatch(main, /(const|let|var) appPermissions = appPermissionHandlers/);
+  // No hosted Cloud: nothing in main grants a Cloud page anything.
+  assert.doesNotMatch(main, /cloudHomeOrigin/);
+});
+
+// ── What a page is told when its microphone is refused ──
+// perm:status answers `pageMic` for the asking page, so a blocked Live call
+// can say who blocked it: this app (then a web browser can make the call) or
+// the computer (then its privacy settings can). The answer is the request
+// handler's own, never a second copy of the rule.
+const ipcFrom = (contents, frameUrl, { mainFrame = true } = {}) => {
+  const frame = { url: frameUrl };
+  if (mainFrame) contents.mainFrame = frame;
+  else contents.mainFrame ??= { url: contents.getURL() };
+  return { sender: contents, senderFrame: frame };
+};
+
+test("a page asking about its microphone hears whether this app lets it use it", () => {
+  const { state, handlers } = handlersFixture({ microphone: [ORG_UI] });
+  const local = { getURL: () => LOCAL_PAGE };
+  assert.equal(handlers.pageMicrophone(ipcFrom(local, LOCAL_PAGE)), "allowed", "this computer's own page");
+  const org = { getURL: () => `${ORG_UI}/chat` };
+  assert.equal(handlers.pageMicrophone(ipcFrom(org, `${ORG_UI}/chat`)), "allowed", "the organization server's bundled UI");
+  state.main = { getURL: () => "https://my-vps.example.com/chat" };
+  assert.equal(handlers.pageMicrophone(ipcFrom(state.main, "https://my-vps.example.com/chat")), "refused", "another server");
+  assert.equal(handlers.pageMicrophone({ sender: state.main, senderFrame: null }), "refused", "a frame that is gone");
+  assert.equal(handlers.pageMicrophone(undefined), "refused", "no sender");
+});
+
+test("the page's answer is the request handler's answer for its microphone", async () => {
+  const { state, handlers } = handlersFixture({ microphone: [ORG_UI] });
+  const local = { getURL: () => LOCAL_PAGE };
+  const other = { getURL: () => "https://my-vps.example.com/" };
+  for (const contents of [state.main, local, other]) {
+    for (const url of [`${ORG_UI}/chat`, LOCAL_PAGE, "https://my-vps.example.com/", "http://evil.example.test/"]) {
+      for (const mainFrame of [true, false]) {
+        const granted = await new Promise((resolve) => {
+          handlers.request(contents, "media", resolve, { requestingUrl: url, isMainFrame: mainFrame, mediaTypes: ["audio"] });
+        });
+        const label = JSON.stringify({ page: contents.getURL(), url, mainFrame });
+        assert.equal(handlers.pageMicrophone(ipcFrom(contents, url, { mainFrame })), granted ? "allowed" : "refused", label);
+      }
+    }
+  }
+});
+
+const REMOTE = "https://viernes.tail1.ts.net:9444";
+
+test("a remote server may write clipboard text only as the active origin's main frame", () => {
+  const write = "clipboard-sanitized-write";
+  assert.equal(remoteClipboardWriteAllowed(write, `${REMOTE}/chat?x=1`, REMOTE, { isMainFrame: true }), true);
+  assert.equal(remoteClipboardWriteAllowed(write, REMOTE, `${REMOTE}/`, { isMainFrame: true }), true);
+  // Read and everything else stay denied for the same trusted origin.
+  for (const permission of ["clipboard-read", "notifications", "fullscreen", "media", "geolocation", "camera", "openExternal", "unknown", undefined]) {
+    assert.equal(remoteClipboardWriteAllowed(permission, REMOTE, REMOTE, { isMainFrame: true }), false, String(permission));
+  }
+  // Frame requirement: a child frame, or no frame information, never counts.
+  for (const details of [{ isMainFrame: false }, {}, undefined, null, { isMainFrame: "true" }]) {
+    assert.equal(remoteClipboardWriteAllowed(write, REMOTE, REMOTE, details), false);
+  }
+  // Exact origin only.
+  for (const requesting of [
+    "https://viernes.tail1.ts.net:9445/", "https://viernes.tail1.ts.net/", "http://viernes.tail1.ts.net:9444/",
+    "https://other.tail1.ts.net:9444/", "https://viernes.tail1.ts.net.evil.test:9444/", "https://evil.test/#https://viernes.tail1.ts.net:9444",
+    "about:blank", "data:text/html,x", "javascript:alert(1)", "not a url", "", null, undefined,
+  ]) assert.equal(remoteClipboardWriteAllowed(write, requesting, REMOTE, { isMainFrame: true }), false, String(requesting));
+  // No active remote server (Local, or a damaged value): nothing to match.
+  for (const active of [undefined, null, "", "not a url", "about:blank", "data:text/html,x"]) {
+    assert.equal(remoteClipboardWriteAllowed(write, REMOTE, active, { isMainFrame: true }), false, String(active));
+    assert.equal(remoteClipboardWriteAllowed(write, "about:blank", active, { isMainFrame: true }), false);
+  }
+});
+
+test("the active remote server open in this window may write the clipboard through the handlers, and nothing else", () => {
+  const write = "clipboard-sanitized-write";
+  const { state, ask, check } = handlersFixture({ active: REMOTE });
+  state.main = { getURL: () => `${REMOTE}/chat` };
+  const onRemote = (fields = {}) => ({ requestingUrl: `${REMOTE}/chat`, isMainFrame: true, ...fields });
+  assert.equal(ask(write, onRemote()), true);
+  assert.equal(check(write, REMOTE, { isMainFrame: true }), true);
+  assert.equal(ask("clipboard-read", onRemote()), false);
+  assert.equal(ask("media", onRemote({ mediaTypes: ["audio"] })), false);
+  assert.equal(ask(write, onRemote({ isMainFrame: false })), false, "a subframe");
+  assert.equal(ask(write, onRemote(), { getURL: () => `${REMOTE}/` }), false, "another window");
+  // Switching back to this computer withdraws it at once.
+  state.active = null;
+  assert.equal(ask(write, onRemote()), false);
+});
+
+test("the base policy itself still grants a remote origin nothing", () => {
+  for (const permission of ["clipboard-sanitized-write", "clipboard-read", "notifications", "fullscreen"]) {
+    assert.equal(appPermissionAllowed(permission, REMOTE, LOCAL_ORIGIN, { isMainFrame: true }), false, permission);
+  }
 });

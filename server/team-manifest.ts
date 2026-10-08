@@ -6,6 +6,7 @@ import { MASCOT_COLOR_NAMES } from "../shared/mascot-colors.ts";
 import { botMascotBody, type MascotBodyId } from "../shared/mascot-bodies.ts";
 import { takeImportName } from "../shared/import-name.ts";
 import { BOT_PROFILE_LIMITS } from "../shared/bot-profile.ts";
+import { optionalText, requiredText } from "../shared/package-format.ts";
 
 export const TEAM_MANIFEST_FORMAT = "openmaus.team" as const;
 export const TEAM_MANIFEST_VERSION = 2 as const;
@@ -13,16 +14,6 @@ export const LEGACY_TEAM_MANIFEST_VERSION = 1 as const;
 export const MAX_TEAM_MEMBERS = 200;
 
 const COLORS = MASCOT_COLOR_NAMES satisfies readonly MausColor[];
-
-const requiredText = (max: number) =>
-  z.string({ error: "must be text" }).trim().min(1, { message: "is required" }).max(max, { message: "is too long" });
-
-const optionalText = (max: number) =>
-  z
-    .union([z.string({ error: "must be text" }), z.null(), z.undefined()])
-    .transform((value) => value?.trim() || undefined)
-    .refine((value) => value === undefined || value.length <= max, { message: "is too long" })
-    .optional();
 
 const RESPONDER_KINDS = new Set(["member", "everyone", "mentions", "auto"]);
 /** A responder kind from a newer release reads as "no responder": the room

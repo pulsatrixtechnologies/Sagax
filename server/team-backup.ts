@@ -106,6 +106,9 @@ export function createTeamBackup(store: Store, routines: Routine[], name: string
         ? { botId: task.closedBy.botId, name: task.closedBy.name, at: task.closedBy.at }
         : undefined,
       pinned: task.pinned === true ? true : undefined,
+      turnTimeoutMinutes: "turnTimeoutMinutes" in task && typeof task.turnTimeoutMinutes === "number"
+        ? task.turnTimeoutMinutes
+        : undefined,
       activeLeafId: store.activeLeaf(task.threadId),
       messages: store.messagesFor(task.threadId).map((message) => ({
         id: message.id, role: message.role, text: text(messageText(message)), at: message.at,
@@ -124,7 +127,12 @@ export function createTeamBackup(store: Store, routines: Routine[], name: string
         ? { kind: "mentions" as const }
         : group.defaultResponder.kind === "auto" && group.defaultResponder.fallbackBotId && !memberIds.includes(group.defaultResponder.fallbackBotId)
           ? { kind: "auto" as const } : group.defaultResponder,
-      activeTask: group.threadId, tasks: history(group),
+      activeTask: group.threadId,
+      tasks: history(group).map((task, index) =>
+        group.dm && index === 0 && typeof group.turnTimeoutMinutes === "number"
+          ? { ...task, turnTimeoutMinutes: group.turnTimeoutMinutes }
+          : task,
+      ),
     };
   });
   const validRoutines = routines.filter((routine) => {
@@ -265,8 +273,9 @@ export function importTeamBackup(store: Store, routines: RoutineManager, input: 
       const bot = store.bot(botIds.get(source.key)!)!;
       const tasks = source.tasks.map((task, i): TaskRecord => {
         const record: TaskRecord = {
+          // Each imported thread follows the imported bot's model.
           threadId: i === 0 ? bot.threadId : newId(), title: task.title, createdAt: task.createdAt, resumeCursors: {},
-          modelSelection: structuredClone(bot.modelSelection), activity: "idle" as const, busy: false, unread: false,
+          activity: "idle" as const, busy: false, unread: false,
           ...(task.titleFromFirstMessage ? { titleFromFirstMessage: true } : {}),
         };
         // Same rule as a message's `from`: the opener is remapped to its
@@ -300,7 +309,13 @@ export function importTeamBackup(store: Store, routines: RoutineManager, input: 
         channels.recordRoomPlacement(group.section, group.id);
       }
       const responder = source.defaultResponder;
-      store.patchGroup(group.id, { bulletin: source.bulletin, setupCompletedAt: Date.now(), defaultResponder:
+      store.patchGroup(group.id, {
+        bulletin: source.bulletin,
+        setupCompletedAt: Date.now(),
+        ...(source.dm && source.tasks[0]?.turnTimeoutMinutes != null
+          ? { turnTimeoutMinutes: source.tasks[0].turnTimeoutMinutes }
+          : {}),
+        defaultResponder:
         responder.kind === "member" ? { kind: "member", botId: botIds.get(responder.botId)! }
           : responder.kind === "auto" ? { kind: "auto", ...(responder.fallbackBotId ? { fallbackBotId: botIds.get(responder.fallbackBotId)! } : {}) }
             : responder });
@@ -319,6 +334,7 @@ export function importTeamBackup(store: Store, routines: RoutineManager, input: 
           updatedAt: task.messages.reduce((max, message) => Math.max(max, message.at), task.createdAt),
           ...(task.pinned === true ? { pinned: true as const } : {}),
           ...(task.titleFromFirstMessage ? { titleFromFirstMessage: true } : {}),
+          ...(task.turnTimeoutMinutes != null ? { turnTimeoutMinutes: task.turnTimeoutMinutes } : {}),
         }));
         store.switchGroupTask(group.id, threads[source.tasks.findIndex((task) => task.key === source.activeTask)]);
       }

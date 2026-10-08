@@ -1,8 +1,9 @@
-import { useEffect, useId, useRef, useState, useSyncExternalStore, type ComponentProps } from "react";
-import { Check, ChevronDown, CircleHelp, Copy } from "lucide-react";
+import { useId, useSyncExternalStore, type ComponentProps } from "react";
+import { Check, ChevronDown, CircleHelp, Copy, X } from "lucide-react";
 import { activeLocale, t } from "@/lib/i18n";
 import { cn } from "@/lib/cn";
 import { SWITCH_OFF, SWITCH_ON, SWITCH_THUMB_OFF, SWITCH_THUMB_ON } from "@/lib/status-tones";
+import { useCopyFeedback } from "@/lib/copy-text";
 
 export function Switch({
   checked,
@@ -283,26 +284,8 @@ export function SettingRow({
 
 /** A command the user is meant to run, with one-click copy. */
 export function CommandLine({ command, copyLabel = "Copy command" }: { command: string; copyLabel?: string }) {
-  const [copied, setCopied] = useState(false);
-  const resetTimer = useRef<number | null>(null);
-
-  useEffect(
-    () => () => {
-      if (resetTimer.current !== null) window.clearTimeout(resetTimer.current);
-    },
-    [],
-  );
-
-  const copy = async () => {
-    try {
-      await navigator.clipboard.writeText(command);
-      setCopied(true);
-      if (resetTimer.current !== null) window.clearTimeout(resetTimer.current);
-      resetTimer.current = window.setTimeout(() => setCopied(false), 1200);
-    } catch {
-      /* clipboard permission can be denied; leave the button unchanged */
-    }
-  };
+  // The command stays select-all when clipboard permission is denied.
+  const { state, copy } = useCopyFeedback(command);
 
   return (
     <div className="flex items-center gap-2 rounded-lg bg-inset px-3 py-2">
@@ -311,11 +294,11 @@ export function CommandLine({ command, copyLabel = "Copy command" }: { command: 
       </code>
       <button
         type="button"
-        onClick={() => void copy()}
-        aria-label={copyLabel}
+        onClick={copy}
+        aria-label={state === "failed" ? t("common.copyFailed") : copyLabel}
         className="ui-icon-button shrink-0"
       >
-        {copied ? <Check size={13} className="text-success" /> : <Copy size={13} />}
+        {state === "copied" ? <Check size={13} className="text-success" /> : state === "failed" ? <X size={13} className="text-danger" /> : <Copy size={13} />}
       </button>
     </div>
   );

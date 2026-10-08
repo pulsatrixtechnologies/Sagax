@@ -226,6 +226,24 @@ describe("addressed room request tree", () => {
     hooks.busy = () => false; engine.tick(); expect(node.status).toBe("running");
     engine.cancelRoom("A"); await flush(); expect(aborted).toBe(true); expect(node.status).toBe("cancelled");
   }));
+  it("names the conversation waiting on a teammate's direct thread until that work settles", () => fixture(async (engine, hooks) => {
+    // MOCA-274: a card in the teammate's thread is pointed out to whoever
+    // assigned the work, so the thread must lead back to that conversation.
+    const source = { botId: "clive", threadId: "clive-chat" };
+    let finish!: (result: { ok: boolean; text: string }) => void;
+    hooks.run = () => new Promise(resolve => { finish = resolve; });
+    const node = engine.enqueue(source, "turn", undefined, { botId: "lead", threadId: "lead-task" }, "build", "Build the CSV export").node;
+    engine.sourceSettled("turn", true);
+    engine.tick(); await flush();
+    expect(node.status).toBe("running");
+    expect(engine.assignerOf("lead-task")).toMatchObject({ botId: "clive", threadId: "clive-chat" });
+    expect(engine.assignerOf("clive-chat")).toBeUndefined();
+
+    finish({ ok: true, text: "done" });
+    await flush();
+    for (let i = 0; i < 3; i++) { engine.tick(); await flush(); }
+    expect(engine.assignerOf("lead-task")).toBeUndefined();
+  }));
   it("stops a conversation without aborting the teammate already working, and drops only what had not started", () => fixture(async (engine, hooks) => {
     const source = { botId: "clive", threadId: "clive-chat" };
     const runs: Array<{ id: string; resumed: boolean }> = [];

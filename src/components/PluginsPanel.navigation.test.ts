@@ -7,7 +7,11 @@ vi.mock("@/state/store", () => ({
   api: vi.fn(),
   useStore: () => ({ state: { pluginsSurface: fixture.surface }, dispatch: fixture.dispatch }),
 }));
-vi.mock("./McpServersPanel", () => ({ McpServersPanel: () => createElement("div", null, "MCP inventory") }));
+vi.mock("./McpServersPanel", () => ({
+  McpServersPanel: ({ whopCard }: { whopCard?: boolean }) => whopCard
+    ? createElement("div", { "data-whop-card": true }, "Connect Whop")
+    : createElement("div", null, "MCP inventory"),
+}));
 import { PluginsPanel } from "./PluginsPanel";
 
 type Node = ReactElement<{ children?: ReactNode; role?: string; "aria-selected"?: boolean; onClick?: () => void }>;

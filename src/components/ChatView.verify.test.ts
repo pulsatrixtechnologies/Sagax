@@ -39,7 +39,7 @@ vi.mock("./VerifyCard", async (importOriginal) => {
 // window chrome, and these tests render the desktop-neutral layout.
 vi.mock("./DesktopCapabilities", async (importOriginal) => ({
   ...await importOriginal<typeof import("./DesktopCapabilities")>(),
-  useDesktopCapabilities: () => ({ capabilities: { dictation: { available: false } }, ready: true }),
+  useDesktopCapabilities: () => ({ capabilities: { dictation: { available: false }, host: { platform: "darwin" } }, ready: true }),
 }));
 vi.mock("@/lib/analytics", () => ({ track: vi.fn() }));
 // The run card's visibility switch is a renderer preference, not what these

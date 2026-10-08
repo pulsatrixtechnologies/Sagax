@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -232,6 +232,74 @@ describe("failed authentication rate limit", () => {
       await new Promise<void>((resolve) => limited.server.close(() => resolve()));
     }
   });
+});
+
+describe("requests with a wrong secret", () => {
+  it("answers a malformed escape in the URL secret with 401, not 500", async () => {
+    const response = await fetch(`${ingress.baseUrl}/hooks/${endpointId}/%E0%A4%A`, { method: "POST", body: "{}" });
+    // a token in the path is never read (bearer header only), so this is a plain 401
+    expect(response.status).toBe(401);
+    expect(await response.json()).toEqual({ error: "Unauthorized" });
+  });
+
+  it("neither evicts real deliveries nor rewrites the file for each request", async () => {
+    const floodDir = mkdtempSync(join(tmpdir(), "omb-webhook-flood-"));
+    const file = join(floodDir, "webhooks.json");
+    const emitted = new Set<string>();
+    let runs = 0;
+    const flooded = new WebhookManager({
+      file,
+      botState: () => "ready",
+      enqueue: () => ({ id: `flood-run-${++runs}` }),
+      emit: (frame) => { if (frame.kind === "webhook.attempt") emitted.add(frame.attempt.id); },
+    });
+    const created = flooded.create({ name: "CI", prompt: "Review", botId: "maus-1" });
+    // a limiter wide enough for the flood, so the rolling record sees every request
+    const receiver = await listenWebhookIngress(flooded, { port: 0, limiter: new AuthFailureLimiter(10_000) });
+    const url = `${receiver.baseUrl}/hooks/${created.webhook.endpointId}`;
+    const deliver = (id: string) => fetch(url, {
+      method: "POST",
+      headers: { authorization: `Bearer ${created.secret}`, "content-type": "application/json", "idempotency-key": id },
+      body: "{}",
+    });
+    try {
+      expect((await deliver("real-1")).status).toBe(202);
+      const written = statSync(file);
+      // More bad requests than the shared history holds (2,000).
+      // The failure limiter answers 429 once a source keeps failing; the
+      // ones it lets through are recorded in the rolling record.
+      let unauthorized = 0;
+      for (let i = 0; i < 2_100; i += 1) {
+        const response = await fetch(url, { method: "POST", headers: { authorization: "Bearer wrong" }, body: "" });
+        expect([401, 429]).toContain(response.status);
+        if (response.status === 401) unauthorized += 1;
+        await response.arrayBuffer();
+      }
+      // The file was not written again.
+      const after = statSync(file);
+      expect([after.ino, after.mtimeMs]).toEqual([written.ino, written.mtimeMs]);
+
+      const attempts = flooded.listAttempts();
+      expect(attempts.filter((attempt) => attempt.outcome === "accepted").map((attempt) => attempt.deliveryId)).toEqual(["real-1"]);
+      const rejected = attempts.filter((attempt) => attempt.outcome === "rejected");
+      expect(rejected).toHaveLength(1);
+      expect(rejected[0]).toMatchObject({ statusCode: 401, reason: unauthorized > 1 ? `Invalid webhook URL or secret (${unauthorized} requests)` : "Invalid webhook URL or secret" });
+      // Clients get one record, updated in place, not one per request.
+      expect(emitted.size).toBe(2);
+
+      // The rolling record is saved with the next real change.
+      expect((await deliver("real-2")).status).toBe(202);
+      const reloaded = new WebhookManager({ file, botState: () => "ready", enqueue: () => ({ id: "unused" }) });
+      expect(reloaded.listAttempts().map((attempt) => [attempt.outcome, attempt.statusCode])).toEqual([
+        ["accepted", 202],
+        ["rejected", 401],
+        ["accepted", 202],
+      ]);
+    } finally {
+      await new Promise<void>((resolve) => receiver.server.close(() => resolve()));
+      rmSync(floodDir, { recursive: true, force: true });
+    }
+  }, 60_000);
 });
 
 describe("advertised base URL", () => {

@@ -16,7 +16,7 @@ import { cn } from "@/lib/cn";
 import { perspicaxKeysUrl, type MyEngine } from "@/lib/perspicax-org";
 import { keyProviderDriver } from "@/lib/model-payers";
 import { ClaudeSignIn } from "./ClaudeSignIn";
-import { CodexDeviceSignIn } from "./CodexDeviceSignIn";
+import { DeviceSignIn } from "./DeviceSignIn";
 import { MyEngineAccess } from "./settings/MyEngines";
 
 /** The name on the Connect button: the account people sign in with. */
@@ -86,7 +86,7 @@ export function EngineConnect({ engine, issuer, onChanged, className }: {
           {engine.driver === "claudeAgent"
             ? <ClaudeSignIn key={engine.instanceId} instanceId={engine.instanceId} base={loginBase} onSignedIn={onChanged} />
             : engine.driver === "codex"
-              ? <CodexDeviceSignIn key={engine.instanceId} instanceId={engine.instanceId} base={loginBase} onSignedIn={onChanged} />
+              ? <DeviceSignIn key={engine.instanceId} instanceId={engine.instanceId} base={loginBase} onSignedIn={onChanged} />
               // Grok Build and Kimi Code: a device code on the provider's own page
               : <MyEngineAccess key={engine.instanceId} engine={engine} label={t("engineConnect.connect", { name })} onChanged={() => { void onChanged(); }} />}
         </div>

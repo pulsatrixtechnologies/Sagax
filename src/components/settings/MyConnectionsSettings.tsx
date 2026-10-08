@@ -8,6 +8,7 @@
 // section is read-only under a short notice: what the person has stays
 // saved and is not usable, and only a sign-in again to one of their
 // servers is offered.
+import { copyText } from "@/lib/copy-text";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { openExternalLink } from "@/lib/app-links";
@@ -104,7 +105,7 @@ function GithubCard({ data, onChanged }: { data: MyConnections; onChanged: () =>
             <span className="text-ink-secondary">{t("myConnections.github.typeCode")}</span>
             <div className="flex flex-wrap items-center gap-3">
               <code className="rounded-lg bg-inset px-3 py-1.5 font-mono text-[18px] tracking-widest text-ink">{github.userCode}</code>
-              <button type="button" className="ui-button" onClick={() => void navigator.clipboard?.writeText(github.userCode).catch(() => undefined)}>{t("myConnections.github.copyCode")}</button>
+              <button type="button" className="ui-button" onClick={() => void copyText(github.userCode)}>{t("myConnections.github.copyCode")}</button>
               <button type="button" className="ui-button" onClick={() => void openExternalLink(github.verificationUri)}>{t("myConnections.github.openGithub")}</button>
             </div>
             <span className="text-[12px] text-ink-secondary">{t("myConnections.github.waiting")}</span>

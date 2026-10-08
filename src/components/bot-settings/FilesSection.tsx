@@ -4,6 +4,7 @@
 // its newest page, and it serves each one by an opaque id under the same
 // roots the message file route uses. Nothing in this tab turns a host path
 // into a request.
+import { copyText } from "@/lib/copy-text";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
@@ -361,9 +362,9 @@ export function FilesBrowser({ threadId, files, error, onRetry, onJump, initialF
   };
 
   const copyPath = (path: string) => {
-    void navigator.clipboard?.writeText(path)
-      .then(() => setStatus({ tone: "ok", text: t("botPanel.files.copied") }))
-      .catch(() => setStatus({ tone: "error", text: t("attach.saveFailed") }));
+    void copyText(path).then((result) => setStatus(result === "copied"
+      ? { tone: "ok", text: t("botPanel.files.copied") }
+      : { tone: "error", text: t("attach.saveFailed") }));
   };
 
   const actionButton = "flex size-7 shrink-0 items-center justify-center rounded-md text-ink-secondary transition-colors hover:bg-hover hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 disabled:cursor-not-allowed disabled:opacity-40";

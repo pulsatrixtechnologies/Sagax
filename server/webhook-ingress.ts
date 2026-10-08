@@ -158,7 +158,8 @@ export function createWebhookIngressHandler(
       // says whether the endpoint, the header or the token was wrong.
       if (!manager.authorize(match[1], token)) {
         limiter.fail(source);
-        manager.recordRejected(match[1], 401, token ? "Invalid bearer token" : "Missing bearer token", {
+        // one rolling record per webhook, so a flood never pushes real deliveries out
+        manager.recordUnauthorized(match[1], {
           contentType: header(req, "content-type"),
           eventName: eventName(req),
           deliveryId: deliveryId(req),

@@ -1,6 +1,7 @@
 // Pieces shared by the in-chat approval card and the composer's pending
 // approval panel, so both read the same way: avatar, a human title, a risk
 // chip, and the raw tool id + JSON only behind "See technical details".
+import { copyText } from "@/lib/copy-text";
 import { useEffect, useState, type ReactNode } from "react";
 import { Check, ChevronDown, Copy, Eye, PencilLine, Play, Trash2 } from "lucide-react";
 import type { Bot } from "@/state/store";
@@ -39,7 +40,9 @@ export function ApprovalHeading({
   risk,
   aside,
 }: {
-  bot?: Bot;
+  /** A whole bot shows its avatar; a name alone (a 1:1 chat's row, which
+   * re-renders only with its own message) shows none. */
+  bot?: Bot | Pick<Bot, "name">;
   title: ReactNode;
   summary?: string;
   risk?: ApprovalRisk;
@@ -48,7 +51,7 @@ export function ApprovalHeading({
 }) {
   return (
     <div className="flex items-start gap-3">
-      {bot?.color && <BotAvatar bot={bot} size={30} animated={false} />}
+      {bot && "color" in bot && bot.color && <BotAvatar bot={bot} size={30} animated={false} />}
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
           <span className="text-[15px] font-semibold leading-snug text-ink">{title}</span>
@@ -100,7 +103,7 @@ function CopyButton({ text }: { text: string }) {
     <button
       type="button"
       onClick={() => {
-        void navigator.clipboard?.writeText(text).then(() => setCopied(true), () => {});
+        void copyText(text).then((result) => { if (result === "copied") setCopied(true); });
       }}
       className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11.5px] text-ink-secondary hover:bg-control hover:text-ink"
     >
