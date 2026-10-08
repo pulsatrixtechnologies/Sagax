@@ -40,7 +40,9 @@ class, tier, reason) so the chip and the cards can show it; it never rewrites th
 
 ## Classification (`classifyTask`, deterministic)
 
-Signals from the task text (English and French keywords), the attachment tags in it
+Signals from the task text (English and French keywords, matched as whole words with
+Unicode-aware boundaries; everyday words such as "rapport", "minutes", "fonction", "options",
+"code" or "image" alone do not count), the attachment tags in it
 (`<attached-image>`, `<attached-file>` names and sizes) and the target bot's title and soul. Each
 class scores keyword hits; the role adds one point; fixed priority breaks ties.
 
@@ -50,8 +52,8 @@ class scores keyword hits; the role adds one point; fixed priority breaks ties.
 4. `coding`: code, refactor, bug, test, stack trace, code fences, source file names.
 5. `reasoning`: plan, design, architecture, strategy, root cause, trade-offs.
 6. `automation`: run, sync, import, browser, ticket, API, schedule (tool-heavy work).
-7. `quick`: a short message (under 280 characters) with lookup, format, translate, rename words,
-   or no other signal.
+7. `quick`: a short message (280 characters or less) with lookup, format, translate, rename words,
+   or no other signal; a short request for writing (a letter, an email) is `general` instead.
 8. `general`: anything else.
 
 ## Tiers and the table
@@ -67,7 +69,9 @@ highspeed). A pattern only matches what the engine lists right now AND what the 
 (`server/model-catalog`, models.dev snapshot or cache, read at run time, no fetch) knows; newest
 release first. `long` takes the largest catalogue context; `vision` needs image input in the
 catalogue. Unknown families (pi with other providers, custom and local engines) use the
-catalogue facts alone: strongest reasoning model by price, cheapest, largest context.
+catalogue facts alone: strongest reasoning model by price, cheapest, largest context. Rows an
+engine marks "availability unverified" are never picked, and variants (thinking, preview, pro,
+dated snapshots) are dropped before ranking unless nothing plainer is listed.
 
 ## Engines and the fallback chain
 
@@ -85,8 +89,11 @@ coding to top, long to top, fast to coding to top, coding to top, top to coding)
 base model. The first entry runs; up to three are kept on the pick.
 
 Refusals: a turn whose engine refuses to start (`TurnNotStartedError`) climbs the chain once and
-says so in the thread; a second refusal surfaces the engine's own error. A model refusal during a
-turn is remembered for 30 minutes for that payer, engine and model, so the next pick skips it.
+says so in the thread; when the chain is spent the configured automatic-recovery backup runs as
+for any bot, then the engine's own error shows. Only a real model refusal (unknown model, not
+available to this account, not permitted) is remembered for 30 minutes for that payer, engine
+and model; a network failure or a rate limit is not. A guest's turn on a Cloud home only picks
+an engine that confines it. The pick is recorded on the task after the turn is admitted.
 
 ## Orchestration rule
 

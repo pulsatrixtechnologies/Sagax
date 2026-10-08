@@ -12172,6 +12172,8 @@ async function startTurn(
   // The stored bot and thread keep Auto and their base model.
   let autoTurn: { pick: AutoPick; payer: string } | null = null;
   let autoContinuing = false;
+  /** The thread's own selection (Auto and its base) before the pick replaced it. */
+  const autoBaseSelection = bot.modelSelection;
   if (bot.modelSelection.auto === true) {
     const autoPeerAsk = opts?.peerAsk ?? (opts?.editedMessageId ? undefined : opts?.userMessage?.peerAsk);
     const autoSpeaker = resolveTurnSpeaker({
@@ -12189,14 +12191,13 @@ async function startTurn(
       bot, threadId, speaker: autoSpeaker, text,
       role: autoContinuing && !opts?.autoSkip?.length ? "continue" : worker ? "worker" : "orchestration",
       fallback: worker ? "worker" : "orchestration",
+      // A guest's turn on a Cloud home only goes to an engine that confines it.
+      guestConfined: cloudGuestDriven(threadId) || cloudGuestDrivenHandoff(opts?.coordination?.id),
       ...(opts?.autoSkip ? { skip: opts.autoSkip } : {}),
     });
-    if (autoTurn) {
-      bot = { ...bot, modelSelection: autoTurn.pick.selection };
-      store.patchTask(bot.id, threadId, { autoModel: autoModelRecord(autoTurn.pick, Date.now()) });
-      autoTurnsByThread.set(threadId, { payer: autoTurn.payer, entry: { instanceId: autoTurn.pick.selection.instanceId, model: autoTurn.pick.selection.model } });
-    }
-  } else autoTurnsByThread.delete(threadId);
+    // Recorded on the task once the turn is admitted (below), never before.
+    if (autoTurn) bot = { ...bot, modelSelection: autoTurn.pick.selection };
+  }
   // Routines and legacy peer delivery already have their own completion
   // owners. Only ordinary chats opt into this scheduler; its child turns
   // carry an exact node id rather than inheriting a routine's lifetime.
@@ -12370,15 +12371,6 @@ async function startTurn(
           ...(opts?.relayed ? { relayed: true } : {}),
         });
   }
-  // The worker's activity row: which model Auto gave this work, and why.
-  if (autoTurn?.pick.role === "worker" && !warmOnly && !autoContinuing) {
-    store.appendMessage(threadId, {
-      role: "bot",
-      kind: "activity",
-      autoModel: autoModelRecord(autoTurn.pick, Date.now()),
-      tool: { name: `notice: ${explainPick(autoTurn.pick)}`, ok: true },
-    });
-  }
   // Organization server (slice 3, D13): no turn without engine access. The
   // person's message stays; the thread gets the card saying why, the owner
   // a notification, and the sender an ordinary accepted send.
@@ -12461,6 +12453,20 @@ async function startTurn(
   const recoveryUserMessageId = opts?.coordination
     ? store.activePath(threadId).findLast(m => m.role === "user" && m.kind === "text")?.id
     : userMessage.id;
+  // Auto: the pick is this thread's now that the turn is admitted, and
+  // work handed out gets its activity row (which model, and why).
+  if (autoTurn) {
+    store.patchTask(bot.id, threadId, { autoModel: autoModelRecord(autoTurn.pick, Date.now()) });
+    autoTurnsByThread.set(threadId, { payer: autoTurn.payer, entry: { instanceId: autoTurn.pick.selection.instanceId, model: autoTurn.pick.selection.model } });
+    if (autoTurn.pick.role === "worker" && !warmOnly && !autoContinuing) {
+      store.appendMessage(threadId, {
+        role: "bot",
+        kind: "activity",
+        autoModel: autoModelRecord(autoTurn.pick, Date.now()),
+        tool: { name: `notice: ${explainPick(autoTurn.pick)}`, ok: true },
+      });
+    }
+  } else autoTurnsByThread.delete(threadId);
   // Admitted: every refusal above has passed and no other turn runs on this
   // thread, so this is the one moment the ledger's "who asked" may change.
   if (!warmOnly && opts?.trigger) turnTriggers.set(threadId, opts.trigger);
@@ -13766,7 +13772,9 @@ async function startTurn(
       // refusal is the engine's own error, below.
       if (mayRecover && autoTurn) {
         const refused = { instanceId, model };
-        rememberAutoRefusal(autoTurn.payer, refused);
+        // Only a real "this model is not yours" is remembered; a network
+        // blip or a rate limit is not held against the model.
+        if (isModelRefusal(message)) rememberAutoRefusal(autoTurn.payer, refused);
         const next = opts?.autoRetried ? null : nextInChain(autoTurn.pick, refused);
         if (next && !directRequestOwners.get(threadId)?.stopped && !hasQueuedSteeredMessages(bot.id, threadId) &&
             store.activePath(threadId).findLast(m => m.role === "user" && m.kind === "text")?.id === recoveryUserMessageId) {
@@ -13796,7 +13804,9 @@ async function startTurn(
       const backup = backups[nextIndex];
       if (mayRecover && backup && current && (!opts?.cardContinuation || opts.coordination) &&
           !directRequestOwners.get(threadId)?.stopped && !hasQueuedSteeredMessages(bot.id, threadId) &&
-          JSON.stringify(current.modelSelection) === JSON.stringify(bot.modelSelection) &&
+          // Unchanged since this turn began: an Auto turn compares the thread's
+          // own selection (Auto and its base), not the pick it ran on.
+          JSON.stringify(current.modelSelection) === JSON.stringify(autoTurn ? autoBaseSelection : bot.modelSelection) &&
           (backup.instanceId !== instanceId || backup.model !== model) &&
           store.activePath(threadId).findLast(m => m.role === "user" && m.kind === "text")?.id === recoveryUserMessageId) {
         // No await between releasing the failed attempt and admitting its
@@ -19032,7 +19042,7 @@ function autoRefusalsFor(payer: string): AutoChainEntry[] {
  * engine counts while its availability is unknown; another engine only when
  * it is known to work, the payer can pay for it, and moving there keeps the
  * bot's approval level, tools and workspace. */
-function autoEnginesFor(bot: BotRecord, speaker: TurnSpeaker): AutoEngine[] {
+function autoEnginesFor(bot: BotRecord, speaker: TurnSpeaker, guestConfined = false): AutoEngine[] {
   const base = registry.get(bot.modelSelection.instanceId);
   const mode = approvalModeFor(bot);
   const engines: AutoEngine[] = [];
@@ -19043,6 +19053,8 @@ function autoEnginesFor(bot: BotRecord, speaker: TurnSpeaker): AutoEngine[] {
   }
   for (const instance of registry.instances()) {
     if (!instance.enabled || providerInstancesChanging.has(instance.instanceId) || policyModelRefusal(instance)) continue;
+    // A guest's turn on a Cloud home runs only on an engine that confines it.
+    if (guestConfined && instance.adapter.capabilities.guestTurns !== "confined") continue;
     const own = instance.instanceId === base?.instanceId;
     if (!own) {
       if (!base) continue;
@@ -19089,6 +19101,8 @@ function autoPickForTurn(input: {
   role: "orchestration" | "worker" | "continue";
   /** A continuation with no usable earlier pick: what kind of turn it is. */
   fallback?: "orchestration" | "worker";
+  /** A guest drives this turn on a Cloud home. */
+  guestConfined?: boolean;
   text: string;
   skip?: readonly AutoChainEntry[];
 }): { pick: AutoPick; payer: string } | null {
@@ -19096,7 +19110,7 @@ function autoPickForTurn(input: {
   if (bot.modelSelection.auto !== true) return null;
   const payer = autoPayerKey(bot, input.speaker);
   const skip = [...autoRefusalsFor(payer), ...(input.skip ?? [])];
-  const engines = autoEnginesFor(bot, input.speaker);
+  const engines = autoEnginesFor(bot, input.speaker, input.guestConfined === true);
   const request = { base: bot.modelSelection, engines, catalog: autoCatalogLookup, skip };
   if (input.role === "continue") {
     const record = store.taskByThread(bot.id, input.threadId)?.autoModel;

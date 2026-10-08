@@ -402,8 +402,15 @@ model in the chip clears it (a pin). Rules:
   `modelSwitchNeedsAsk` false (Full and Custom stay on their engine) and
   `recoveryCapabilityError` empty. The bot's own engine counts while unknown.
 - Refusals: a `TurnNotStartedError` climbs the chain once (`autoRetried`),
-  then the engine's own error shows; a model refusal in `runtime.error`
-  (`isModelRefusal`) is skipped for that payer for 30 minutes.
+  then the automatic-recovery backup (its guard compares the thread's own
+  selection, Auto included, not the pick), then the engine's own error. Only
+  a real model refusal (`isModelRefusal`: unknown model, not available to
+  this account, not permitted) is skipped for that payer for 30 minutes.
+- Never picked: rows labelled "availability unverified"; variants unless
+  nothing plainer is listed; an unconfined engine for a guest on a Cloud
+  home. The pick is written to the task only once the turn is admitted.
+- Keywords are Unicode-aware whole words (`words()` in model-auto.ts); a
+  short request for writing goes to `general`, not `quick`.
 - A viewer's own model pin on a shared bot drops the owner's Auto for them.
   A Primary Bot on Auto creates specialists on Auto (`create_bot` without a
   model, team setup creates: the card reads "Auto, on engine/model").

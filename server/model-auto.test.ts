@@ -22,6 +22,7 @@ import {
   type CatalogLookup,
 } from "./model-auto.ts";
 import { unpackCatalog } from "./model-catalog/trim.ts";
+import { STATIC_CODEX_MODELS } from "./drivers/codex-catalog.ts";
 
 // A small fixture catalogue: what models.dev says, by bare id.
 const FACTS: Record<string, CatalogFacts> = {
@@ -117,6 +118,22 @@ describe("classifyTask", () => {
   ];
   it.each(cases)("%s", (_name, input, expected) => {
     expect(classifyTask(input).taskClass).toBe(expected);
+  });
+
+  it.each([
+    ["évaluer in French", "Peux-tu évaluer les deux fournisseurs et nous dire lequel garder?", "reasoning"],
+    ["a summary asked in French", "Fais un résumé de la réunion d'hier pour l'équipe.", "long-reading"],
+    ["par rapport à", "Est-ce que le prix a monté par rapport à l'an passé chez ce client? Dis-moi juste oui ou non.", "quick"],
+    ["5 minutes", "Remind me in 5 minutes to call the supplier back.", "quick"],
+    ["en fonction de", "Choisis la date en fonction de la disponibilité de Marie.", "quick"],
+    ["code postal", "Quel est le code postal de Victoriaville?", "quick"],
+    ["image de marque", "Notre image de marque doit rester sobre, note-le.", "quick"],
+    ["options for lunch", "What options do we have for lunch?", "quick"],
+    ["a letter", "Write a letter to the landlord about the broken heater.", "general"],
+    ["a short email", "Draft a short email thanking Paul for his help.", "general"],
+    ["un courriel", "Rédige un courriel à Julie pour confirmer la rencontre.", "general"],
+  ] as const)("reads everyday words as everyday words: %s", (_name, text, expected) => {
+    expect(classifyTask({ text }).taskClass).toBe(expected);
   });
 
   it("lets the bot's role break a tie", () => {
@@ -286,12 +303,27 @@ describe("helpers", () => {
     expect(orderEngines([local, grok, codex, claude], "ollama").map((engine) => engine.instanceId)).toEqual(["ollama", "claude", "codex", "grok-build"]);
   });
 
-  it("recognizes an engine refusing a model, and nothing else", () => {
-    expect(isModelRefusal("This model is not available to the selected ChatGPT plan.")).toBe(true);
-    expect(isModelRefusal("Grok could not confirm the selected model")).toBe(false);
-    expect(isModelRefusal("the selected model could not confirm access")).toBe(true);
-    expect(isModelRefusal("400 invalid_request: model 'gpt-9' does not exist")).toBe(true);
-    expect(isModelRefusal("rate limit reached, try again later")).toBe(false);
+  it.each([
+    "This model is not available to the selected ChatGPT plan.",
+    "400 invalid_request: model 'gpt-5.9-sol' does not exist",
+    "Unknown model: claude-opus-9",
+    "error: model_not_found",
+    "Your account does not have access to model claude-fable-5-1",
+    "You are not permitted to use this model",
+  ])("recognizes a real model refusal: %s", (message) => {
+    expect(isModelRefusal(message)).toBe(true);
+  });
+
+  it.each([
+    "The model returned an invalid tool call",
+    "model output was not valid JSON: invalid",
+    "the model is overloaded, unknown error",
+    "Grok could not confirm the selected model",
+    "rate limit reached for model gpt-6-sol, try again later",
+    "fetch failed: ECONNRESET",
+    "The model is not available right now due to high demand",
+  ])("does not take a transient failure for a refusal: %s", (message) => {
+    expect(isModelRefusal(message)).toBe(false);
   });
 
   it("drops the Auto flag from a concrete selection", () => {
@@ -313,6 +345,24 @@ describe("with the shipped catalogue and the drivers' own model lists", () => {
     expect(pickOrchestrationModel({ base: claudeBase, engines: [claudeReal], catalog: real }).modelLabel).toBe("Claude Fable 5.1");
     const noFable: AutoEngine = { ...claudeReal, models: { default: "claude-sonnet-5", options: claudeReal.models.options.filter((option) => !option.id.includes("fable")) } };
     expect(pickOrchestrationModel({ base: claudeBase, engines: [noFable], catalog: real }).modelLabel).toBe("Claude Opus 5.5");
+  });
+
+  it("never picks a Codex row marked availability unverified, nor a variant before a plain model", () => {
+    const codexReal: AutoEngine = { instanceId: "codex", driverKind: "codex", displayName: "Codex", via: "subscription", models: STATIC_CODEX_MODELS };
+    const top = modelForTier(codexReal, "top", real);
+    expect(top?.id).toBe("gpt-5.6-sol");
+    for (const tier of ["top", "coding", "fast", "long", "vision"] as const) {
+      expect(modelForTier(codexReal, tier, real)?.label ?? "").not.toMatch(/unverified/i);
+    }
+    // A newer variant does not outrank an older plain model; it is used
+    // only when nothing plainer is listed.
+    const variants: CatalogLookup = (driver, id) => bareModelId(id) === "gpt-6-sol-pro"
+      ? { name: "GPT-6 Sol Pro", reasoning: true, vision: true, context: 1_050_000, costInput: 20, costOutput: 80, releaseDate: "2026-10-01" }
+      : real(driver, id);
+    const withVariant: AutoEngine = { ...codexReal, models: { default: "gpt-5.6-sol", options: [{ id: "gpt-6-sol-pro", label: "Sol Pro" }, { id: "gpt-5.6-sol", label: "Sol" }] } };
+    expect(modelForTier(withVariant, "top", variants)?.id).toBe("gpt-5.6-sol");
+    const onlyVariant: AutoEngine = { ...codexReal, models: { default: "gpt-6-sol-pro", options: [{ id: "gpt-6-sol-pro", label: "Sol Pro" }] } };
+    expect(modelForTier(onlyVariant, "top", variants)?.id).toBe("gpt-6-sol-pro");
   });
 
   it("picks Haiku for a quick task", () => {

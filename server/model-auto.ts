@@ -185,43 +185,67 @@ const IMAGE_FILE = /\.(png|jpe?g|gif|webp|heic|bmp|tiff?)$/i;
 const DOC_FILE = /\.(pdf|docx?|odt|rtf|txt|md|markdown|pptx?|xlsx?|csv|html?|epub|log)$/i;
 const CODE_FILE = /\.(ts|tsx|js|jsx|mjs|cjs|py|rb|go|rs|java|kt|swift|c|cc|cpp|h|hpp|cs|php|sh|zsh|ps1|sql|ya?ml|toml|json|lua|scala|dart|vue|svelte)$/i;
 
-/** Keyword patterns per class, English and French. Word boundaries keep
- * "test" out of "latest" and "plan" out of "explanation". */
+/** A pattern matching whole words or phrases, Unicode-aware: \b is ASCII
+ * only even with the u flag, so "évaluer" or "résumé" would never match it.
+ * Letters, digits and _ around a hit mean it is part of another word. */
+function words(...alternatives: string[]): RegExp {
+  return new RegExp(`(?<![\\p{L}\\p{N}_])(?:${alternatives.join("|")})(?![\\p{L}\\p{N}_])`, "giu");
+}
+
+/** Keyword patterns per class, English and French. A word that is also
+ * everyday language ("rapport", "minutes", "fonction", "code" or "image"
+ * alone, "options") is left out or only counted inside a phrase. */
 const KEYWORDS: Readonly<Record<Exclude<TaskClass, "general" | "large-context">, readonly RegExp[]>> = {
   vision: [
-    /\b(screenshots?|captures? d'?écran|image|images|photos?|picture|diagram(me)?s?|figma|mockups?|maquettes?|ocr)\b/i,
-    /\b(look at|regarde|what do you see|qu'est-ce que tu vois)\b/i,
+    words("screenshots?", "captures? d['’]écran", "photos?", "pictures?", "diagrams?", "diagrammes?", "figma", "mockups?", "maquettes?", "ocr",
+      "(this|the|attached) (image|picture|photo)", "(cette|l['’]) ?image( jointe)?"),
+    words("look at (this|the) (image|picture|screen)", "what do you see", "qu['’]est-ce que tu vois"),
   ],
   "long-reading": [
-    /\b(summari[sz]e|summary|résume[rz]?|résumé|synth[eè]se|tl;?dr|digest)\b/i,
-    /\b(read|lis|lire|review the (document|report|contract)|relis|analy[sz]e the (document|report|pdf|transcript))\b/i,
-    /\b(documents?|reports?|rapports?|pdf|transcripts?|transcriptions?|contracts?|contrats?|minutes|procès-verbal|articles?|chapters?|chapitres?|books?|livres?)\b/i,
+    words("summari[sz]e", "summary", "résume[rz]?", "résumés?", "synthèse", "synthétise[rz]?", "tl;?dr", "digest"),
+    words("read (this|the)", "lis (ce|le|la|les)", "lire (ce|le|la|les)", "relis", "review the (document|report|contract)", "analy[sz]e the (document|report|pdf|transcript)"),
+    words("documents?", "reports?", "le rapport", "ce rapport", "un rapport", "pdf", "transcripts?", "transcriptions?", "contracts?", "contrats?",
+      "meeting minutes", "procès-verbal", "articles?", "chapters?", "chapitres?", "books?", "livres?"),
   ],
   coding: [
-    /\b(code|coding|refactor\w*|bugs?|bogues?|debug\w*|débogu\w*|fix(es|ed)?|corrige[rz]?|implement\w*|implément\w*|compile\w*|build|tests?|unit tests?|tests unitaires|typescript|javascript|python|rust|golang|swift|kotlin|sql|regex|api endpoint|function|fonction|class|classe|pull request|PR|commit|merge|branch|branche|lint\w*|stack ?trace|exception|segfault|repo(sitory)?|dépôt)\b/i,
+    words("coding", "codebase", "source code", "code source", "(the|this|my|your|our) code", "(le|ce|du|mon|ton|notre) code(?! (postal|promo|secret|qr|d['’]accès|de (la route|réduction|conduite|couleur)))", "code review", "revue de code",
+      "refactor\\w*", "bugs?", "bogues?", "debug\\w*", "débogu\\w*", "fix(es|ed)?", "corrige[rz]?", "implement\\w*", "implément\\w*", "compile\\w*",
+      "build", "tests?", "unit tests?", "tests unitaires", "typescript", "javascript", "python", "rust", "golang", "kotlin", "sql", "regex",
+      "api endpoint", "functions?", "méthodes?", "classes?", "pull request", "PR", "commit", "merge", "branch", "branche", "lint\\w*",
+      "stack ?trace", "exception", "segfault", "repo(sitory)?", "dépôt"),
     /```/,
     /\b[\w./-]+\.(ts|tsx|js|py|go|rs|java|swift|kt|rb|cs|cpp|c|h)\b/,
   ],
   reasoning: [
-    /\b(plan|planifie[rz]?|planning|design|conçois|concevoir|architecture|architect|strateg\w*|stratég\w*|roadmap|feuille de route|root cause|cause racine|trade-?offs?|compromis|decide|décide[rz]?|decision|décision|evaluate|évalue[rz]?|compare|comparer|prove|démontre[rz]?|reason through|why does|pourquoi|think through|réfléchis|options)\b/i,
+    words("plan", "planifie[rz]?", "planning", "design", "conçois", "concevoir", "architecture", "architect", "strateg\\w*", "stratég\\w*",
+      "roadmap", "feuille de route", "root cause", "cause racine", "trade-?offs?", "compromis", "decide", "décide[rz]?", "decision", "décision",
+      "evaluate", "évalue[rz]?", "compare", "comparer", "prove", "démontre[rz]?", "reason through", "why does", "pourquoi", "think through", "réfléchis"),
   ],
   automation: [
-    /\b(run|exécute[rz]?|lance[rz]?|sync\w*|synchronis\w*|import\w*|export\w*|upload|télévers\w*|download|télécharge[rz]?|browser|navigateur|click|clique[rz]?|fill (in|out)|remplis|scrape|crawl|tickets?|billets?|connectwise|api|webhook|schedule|planifie une tâche|cron|deploy\w*|déplo\w*|migrate|migre[rz]?|backup|sauvegarde|install\w*|configure[rz]?|send (an? )?emails?|envoie[rz]? (un )?courriels?)\b/i,
+    words("run", "exécute[rz]?", "lance[rz]?", "sync\\w*", "synchronis\\w*", "import\\w*", "export\\w*", "upload", "télévers\\w*", "download",
+      "télécharge[rz]?", "browser", "navigateur", "click", "clique[rz]?", "fill (in|out)", "remplis", "scrape", "crawl", "tickets?", "billets?",
+      "connectwise", "api", "webhook", "schedule", "planifie une tâche", "cron", "deploy\\w*", "déplo\\w*", "migrate", "migre[rz]?", "backup",
+      "sauvegarde", "install\\w*", "configure[rz]?", "send (an? )?emails?", "envoie[rz]? (un )?courriels?"),
   ],
   quick: [
-    /\b(look ?up|cherche[rz]?|find|trouve[rz]?|what is|what's|c'est quoi|qu'est-ce que|format\w*|reformat\w*|mets? en forme|translate|tradui[st]?|traduction|convert\w*|converti[rs]?|rename|renomme[rz]?|list|liste[rz]?|count|compte[rz]?|spell|orthographe|typo|status|statut|quick|rapide|short|court|one line|une ligne)\b/i,
+    words("look ?up", "cherche[rz]?", "find", "trouve[rz]?", "what is", "what's", "c['’]est quoi", "qu['’]est-ce que", "format\\w*", "reformat\\w*",
+      "mets? en forme", "translate", "tradui[st]?", "traduction", "convert\\w*", "converti[rs]?", "rename", "renomme[rz]?", "list", "liste[rz]?",
+      "count", "compte[rz]?", "spell", "orthographe", "typo", "status", "statut", "quick", "rapide", "short", "court", "one line", "une ligne"),
   ],
 };
+
+/** Asking for writing (a letter, an email, a post): never the cheap tier. */
+const WRITING = words("write", "draft", "rédige[rz]?", "écris", "écrire", "letters?", "lettres?", "e-?mails?", "courriels?", "posts?", "blog", "cover letter", "reply to");
 
 /** Ties go to the earlier class. */
 const CLASS_PRIORITY: readonly TaskClass[] = ["vision", "large-context", "long-reading", "coding", "reasoning", "automation", "quick", "general"];
 
 const ROLE_HINTS: ReadonlyArray<[TaskClass, RegExp]> = [
-  ["coding", /\b(developer|développeu\w*|engineer|ingénieu\w*|coder|programm\w*|devops|software|logiciel|frontend|backend|full-?stack|qa|tester)\b/i],
-  ["long-reading", /\b(writer|rédact\w*|editor|éditeu\w*|research\w*|recherch\w*|analyst|analyste|summar\w*|librarian|bibliothéc\w*|reader|lecteur|legal|juridique|lawyer|avocat)\b/i],
-  ["reasoning", /\b(architect\w*|strateg\w*|stratèg\w*|planner|planificat\w*|chief|lead|manager|gestionnaire|advisor|conseill\w*|cto|ceo|cfo)\b/i],
-  ["automation", /\b(ops|operations?|opérations?|dispatch\w*|support|technicien|technician|admin\w*|automation|automatisation|assistant)\b/i],
-  ["vision", /\b(designer|design|graphi\w*|illustrat\w*|photograph\w*|ui|ux)\b/i],
+  ["coding", words("developer", "développeu\\w*", "engineer", "ingénieu\\w*", "coder", "programm\\w*", "devops", "software", "logiciel", "frontend", "backend", "full-?stack", "qa", "tester")],
+  ["long-reading", words("writer", "rédact\\w*", "editor", "éditeu\\w*", "research\\w*", "recherch\\w*", "analyst", "analyste", "summar\\w*", "librarian", "bibliothéc\\w*", "reader", "lecteur", "legal", "juridique", "lawyer", "avocat")],
+  ["reasoning", words("architect\\w*", "strateg\\w*", "stratèg\\w*", "planner", "planificat\\w*", "chief", "lead", "manager", "gestionnaire", "advisor", "conseill\\w*", "cto", "ceo", "cfo")],
+  ["automation", words("ops", "operations?", "opérations?", "dispatch\\w*", "support", "technicien", "technician", "admin\\w*", "automation", "automatisation", "assistant")],
+  ["vision", words("designer", "design", "graphi\\w*", "illustrat\\w*", "photograph\\w*", "ui", "ux")],
 ];
 
 function countHits(patterns: readonly RegExp[], text: string): number {
@@ -232,6 +256,9 @@ function countHits(patterns: readonly RegExp[], text: string): number {
   }
   return hits;
 }
+
+/** Whether a pattern matches anywhere (stateless for global patterns). */
+const matches = (pattern: RegExp, text: string) => new RegExp(pattern.source, pattern.flags.replace("g", "")).test(text);
 
 const ATTACHMENT_TAG = /<attached-(image|file)\b[^>]*?(?:\bname="([^"\r\n]*)")?[^>]*\/?>/gi;
 
@@ -285,7 +312,7 @@ export function classifyTask(input: TaskInput): { taskClass: TaskClass; signals:
   const role = input.role?.trim();
   if (role) {
     for (const [cls, pattern] of ROLE_HINTS) {
-      if (pattern.test(role)) {
+      if (matches(pattern, role)) {
         add(cls, 1, `bot role (${cls})`);
         break;
       }
@@ -294,7 +321,8 @@ export function classifyTask(input: TaskInput): { taskClass: TaskClass; signals:
   // A short message with only lookup or formatting words stays cheap; a
   // short one with a stronger signal keeps that signal.
   const short = text.length <= QUICK_CHARS;
-  if (!short) score.set("quick", 0);
+  const writing = matches(WRITING, text);
+  if (!short || writing) score.set("quick", 0);
 
   let best: TaskClass = "general";
   let bestScore = 0;
@@ -304,6 +332,10 @@ export function classifyTask(input: TaskInput): { taskClass: TaskClass; signals:
       best = cls;
       bestScore = value;
     }
+  }
+  if (bestScore === 0 && writing) {
+    signals.push("writing");
+    return { taskClass: "general", signals };
   }
   if (bestScore === 0 && short && text.length > 0) {
     signals.push("short message");
@@ -340,8 +372,11 @@ interface Candidate {
 }
 
 function candidatesOf(engine: AutoEngine, catalog: CatalogLookup, skip: readonly AutoChainEntry[]): Candidate[] {
-  return engine.models.options
+  const all = engine.models.options
     .filter((option) => !option.custom)
+    // A row the engine itself marks as not confirmed for this account is
+    // never picked: it is a placeholder, not access.
+    .filter((option) => !/unverified/i.test(option.label))
     .filter((option) => !skip.some((entry) => entry.instanceId === engine.instanceId && entry.model === option.id))
     .flatMap((option) => {
       const facts = catalog(engine.driverKind, option.id);
@@ -351,10 +386,14 @@ function candidatesOf(engine: AutoEngine, catalog: CatalogLookup, skip: readonly
         id: option.id,
         label: option.label || facts.name || option.id,
         facts,
-        variant: VARIANT.test(bareModelId(option.id)) || /unverified/i.test(option.label),
+        variant: VARIANT.test(bareModelId(option.id)),
         context: facts.context ?? option.contextWindow ?? 0,
       }];
     });
+  // Variants (thinking, preview, pro, dated snapshots) only when the engine
+  // lists nothing plainer: dropped before ranking, not after.
+  const plain = all.filter((candidate) => !candidate.variant);
+  return plain.length ? plain : all;
 }
 
 /** Newest first: release date, then the version in the id, then plain over a variant. */
@@ -515,7 +554,15 @@ export function nextInChain(pick: Pick<AutoPick, "chain">, refused: AutoChainEnt
 
 /** An engine's words for "this model is not yours to use": Auto skips that
  * model for the payer for a while (the turn still shows the engine's error). */
-const MODEL_REFUSAL = /\bmodel\b[^\n]{0,80}\b(not (available|found|supported|allowed|accessible)|unknown|invalid|unsupported|does not exist|could not confirm|no access|not permitted)\b|\b(not available to|not allowed to use|no access to)\b[^\n]{0,40}\bmodel\b/i;
+const MODEL_REFUSAL = new RegExp([
+  // "unknown model", "model_not_found"
+  String.raw`\bunknown model\b|\bmodel_not_found\b`,
+  // "model 'x' does not exist / was not found / is not supported / is not available to ..."
+  String.raw`\bmodel\b[^\n]{0,60}\b(does not exist|was not found|not found|is not supported|not available (to|for|on|in))\b`,
+  // "your account does not have access to model x", "not permitted to use this model"
+  String.raw`\b(do(es)? not have access to|no access to|not allowed to use|not permitted to use)\b[^\n]{0,40}\bmodel\b`,
+  String.raw`\bmodel\b[^\n]{0,40}\bnot permitted\b`,
+].join("|"), "i");
 export function isModelRefusal(message: string): boolean {
   return MODEL_REFUSAL.test(message);
 }
