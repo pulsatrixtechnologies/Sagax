@@ -7,7 +7,7 @@ import os from "node:os";
 import path from "node:path";
 
 import { createDesktopBridge, validBridgeOperation } from "./desktop-bridge.mjs";
-import { executeLocalModel, modelDetailsFromPayload, modelIdsFromPayload, normalizeLoopbackBase, probeLoopbackCatalog, probeLoopbackModels } from "./local-models.mjs";
+import { executeLocalModel, modelDetailsFromPayload, modelIdsFromPayload, normalizeLoopbackBase, probeAnthropicMessages, probeLoopbackCatalog, probeLoopbackModels, resetAnthropicProbeCache } from "./local-models.mjs";
 
 test("a non-allowlisted path and a non-loopback base are refused before any fetch", async () => {
   assert.equal(normalizeLoopbackBase("http://10.0.0.8:8002/v1"), null);
@@ -20,13 +20,22 @@ test("a non-allowlisted path and a non-loopback base are refused before any fetc
   let fetched = false;
   const fetchImpl = () => { fetched = true; throw new Error("fetched"); };
   const chat = { action: "local_model", endpoint: "desk8002", http_method: "POST", http_path: "/chat/completions", json: "{}" };
-  await assert.rejects(() => executeLocalModel({ ...chat, http_path: "/messages" }, () => "http://127.0.0.1:8002/v1", fetchImpl));
+  // /messages needs a base the desktop probed as speaking it; anything else is refused before a fetch.
+  const messages = { ...chat, http_path: "/messages" };
+  await assert.rejects(() => executeLocalModel(messages, () => "http://127.0.0.1:8002/v1", fetchImpl));
+  await assert.rejects(() => executeLocalModel(messages, () => "http://127.0.0.1:8002/v1", fetchImpl, undefined, () => false));
+  await assert.rejects(() => executeLocalModel(messages, () => "http://10.0.0.8:8002/v1", fetchImpl, undefined, () => true));
+  await assert.rejects(() => executeLocalModel({ ...messages, http_method: "GET" }, () => "http://127.0.0.1:8002/v1", fetchImpl, undefined, () => true));
+  await assert.rejects(() => executeLocalModel({ ...messages, endpoint: "not-a-desk" }, () => "http://127.0.0.1:8002/v1", fetchImpl, undefined, () => true));
+  await assert.rejects(() => executeLocalModel({ ...messages, json: "x".repeat(1_000_001) }, () => "http://127.0.0.1:8002/v1", fetchImpl, undefined, () => true));
   await assert.rejects(() => executeLocalModel(chat, () => "http://10.0.0.8:8002/v1", fetchImpl));
   await assert.rejects(() => executeLocalModel({ ...chat, url: "http://10.0.0.8/v1" }, () => "http://127.0.0.1:8002/v1", fetchImpl));
   await assert.rejects(() => executeLocalModel({ ...chat, http_method: "GET", http_path: "/models" }, () => null, fetchImpl));
   assert.equal(fetched, false);
 
-  assert.equal(validBridgeOperation({ action: "local_model", endpoint: "desk8002", http_method: "POST", http_path: "/messages" }), false);
+  assert.equal(validBridgeOperation({ action: "local_model", endpoint: "desk8002", http_method: "POST", http_path: "/messages" }), true);
+  assert.equal(validBridgeOperation({ action: "local_model", endpoint: "desk8002", http_method: "POST", http_path: "/embeddings" }), false);
+  assert.equal(validBridgeOperation({ action: "local_model", endpoint: "desk8002", http_method: "POST", http_path: "/messages", url: "http://127.0.0.1:8002/v1" }), false);
   assert.equal(validBridgeOperation({ action: "local_model", endpoint: "desk8002", http_method: "POST", http_path: "/chat/completions", url: "http://127.0.0.1:8002/v1" }), false);
   assert.equal(validBridgeOperation({ action: "local_model", endpoint: "not-a-desk", http_method: "GET", http_path: "/models" }), false);
   assert.equal(validBridgeOperation({ action: "local_model", endpoint: "desk8002", http_method: "GET", http_path: "/models" }), true);
@@ -59,7 +68,12 @@ test("the DwarfStar /v1/models shape yields ids, names and context windows", asy
   const probed = await probeLoopbackCatalog("http://127.0.0.1:8002/v1", fetchImpl);
   assert.deepEqual(probed.models, ["qwen3.8-flash-next", "qwen3.8-flash-next-chat"]);
   assert.equal(probed.details[0].name, "Qwen3.8 Flash Next");
-  assert.deepEqual(urls, [{ url: "http://127.0.0.1:8002/v1/models", method: "GET", redirect: "error" }]);
+  // The catalog probe also asks /v1/messages once (no body that runs a model).
+  assert.deepEqual(urls, [
+    { url: "http://127.0.0.1:8002/v1/models", method: "GET", redirect: "error" },
+    { url: "http://127.0.0.1:8002/v1/messages", method: "POST", redirect: "error" },
+  ]);
+  assert.equal(probed.anthropic, true);
   assert.deepEqual(await probeLoopbackModels("http://127.0.0.1:8002/v1", fetchImpl), ["qwen3.8-flash-next", "qwen3.8-flash-next-chat"]);
   assert.equal(await probeLoopbackCatalog("http://10.0.0.8:8002/v1", fetchImpl), null);
   assert.equal(await probeLoopbackCatalog("http://127.0.0.1:8002/v1", async () => new Response("down", { status: 503 })), null);
@@ -127,4 +141,72 @@ test("the bridge publishes names, falls back for an older server, and probes aga
     org.close();
     modelServer.close();
   }
+});
+
+test("the bridge forwards /v1/messages to an allowed loopback base and nothing else", async () => {
+  const seen = [];
+  const fetchImpl = async (url, init) => {
+    seen.push({ url, method: init.method, redirect: init.redirect, headers: init.headers, body: init.body });
+    return new Response('{"type":"message"}', { status: 200, headers: { "content-type": "application/json" } });
+  };
+  const operation = { action: "local_model", endpoint: "desk8002", http_method: "POST", http_path: "/messages", json: '{"model":"m","max_tokens":1,"messages":[]}', timeout_seconds: 240 };
+  const result = await executeLocalModel(operation, () => "http://127.0.0.1:8002/v1", fetchImpl, undefined, endpoint => endpoint === "desk8002");
+  assert.equal(result.localModel.status, 200);
+  assert.equal(result.localModel.body, '{"type":"message"}');
+  assert.equal(seen.length, 1);
+  assert.equal(seen[0].url, "http://127.0.0.1:8002/v1/messages");
+  assert.equal(seen[0].redirect, "error");
+  assert.equal(seen[0].headers.Authorization, "Bearer local");
+  assert.equal(seen[0].headers["x-api-key"], "local");
+  // localhost is loopback too; another host or a base outside /v1 is not.
+  await executeLocalModel(operation, () => "http://localhost:11434/v1", fetchImpl, undefined, () => true);
+  assert.equal(seen[1].url, "http://localhost:11434/v1/messages");
+  await assert.rejects(() => executeLocalModel(operation, () => "http://192.168.1.5:8002/v1", fetchImpl, undefined, () => true));
+  await assert.rejects(() => executeLocalModel(operation, () => "http://127.0.0.1:8002/other", fetchImpl, undefined, () => true));
+  assert.equal(seen.length, 2);
+});
+
+test("the Anthropic probe is one body-less POST, cached for 5 s, and failures are not cached", async () => {
+  resetAnthropicProbeCache();
+  const base = "http://127.0.0.1:8002/v1";
+  let clock = 1000;
+  const now = () => clock;
+  const calls = [];
+  const answer = status => async (url, init) => { calls.push({ url, method: init.method, body: init.body }); return new Response("{}", { status }); };
+  assert.equal(await probeAnthropicMessages(base, answer(400), now), true);
+  assert.deepEqual(calls[0], { url: `${base}/messages`, method: "POST", body: '{"model":"probe","max_tokens":1,"messages":[]}' });
+  // Inside 5 s the answer is reused, whatever the server says now.
+  clock += 4000;
+  assert.equal(await probeAnthropicMessages(base, answer(404), now), true);
+  assert.equal(calls.length, 1);
+  clock += 1500;
+  assert.equal(await probeAnthropicMessages(base, answer(404), now), false);
+  assert.equal(calls.length, 2);
+  for (const status of [405, 501, 503]) {
+    resetAnthropicProbeCache();
+    assert.equal(await probeAnthropicMessages(base, answer(status), now), false, `status ${status}`);
+  }
+  resetAnthropicProbeCache();
+  assert.equal(await probeAnthropicMessages(base, answer(200), now), true);
+  // A connection failure is not cached: the next call asks again.
+  resetAnthropicProbeCache();
+  assert.equal(await probeAnthropicMessages(base, async () => { throw new Error("ECONNREFUSED"); }, now), false);
+  assert.equal(await probeAnthropicMessages(base, answer(400), now), true);
+  // Not a loopback base: no request at all.
+  resetAnthropicProbeCache();
+  const before = calls.length;
+  assert.equal(await probeAnthropicMessages("http://10.0.0.8:8002/v1", answer(200), now), false);
+  assert.equal(calls.length, before);
+});
+
+test("the catalog probe reports whether the server speaks the Anthropic protocol", async () => {
+  const models = { data: [{ id: "qwen3" }] };
+  const server = status => async url => String(url).endsWith("/messages")
+    ? new Response("{}", { status })
+    : new Response(JSON.stringify(models), { status: 200, headers: { "content-type": "application/json" } });
+  resetAnthropicProbeCache();
+  assert.equal((await probeLoopbackCatalog("http://127.0.0.1:8002/v1", server(400))).anthropic, true);
+  resetAnthropicProbeCache();
+  assert.equal((await probeLoopbackCatalog("http://127.0.0.1:8002/v1", server(404))).anthropic, false);
+  resetAnthropicProbeCache();
 });

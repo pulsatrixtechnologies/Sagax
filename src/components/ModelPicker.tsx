@@ -803,8 +803,8 @@ export function ModelPicker({
 
   const pick = (instance: InstanceInfo, model: string) => {
     if (bot.busy || instance.policy) return;
-    if (instance.models.options.some((option) => option.id === model && (option.local || isDesktopModelId(option.id)))
-      && localRowUnavailable(instance.driverKind, model)) return;
+    const localRow = instance.models.options.find((option) => option.id === model && (option.local || isDesktopModelId(option.id)));
+    if (localRow && localRowUnavailable(instance.driverKind, model, localRow.anthropic)) return;
     if (viewerLocal) {
       saveViewerChoice(dispatch, bot.id, { model: { instanceId: instance.instanceId, model } });
       setOpen(false);
@@ -844,7 +844,7 @@ export function ModelPicker({
   const filteredLocal = filterCustomModels(localRows, query);
   const unavailableText = (id: string): string | undefined => {
     if (!railInstance || !localIds.has(id)) return undefined;
-    const reason = localRowUnavailable(railInstance.driverKind, id);
+    const reason = localRowUnavailable(railInstance.driverKind, id, localRows.find((option) => option.id === id)?.anthropic);
     if (!reason) return undefined;
     return reason === "anthropic" ? t("model.localUnavailable.anthropic") : t("model.localUnavailable.engine", { engine: railInstance.displayName });
   };
