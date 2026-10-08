@@ -204,6 +204,9 @@ effects and moves.
 - **Admin controls.** Admins see every bot, force-stop or delete any of them,
   and read the organization's activity log. Profiles, names and avatars come
   from Perspicax.
+- **Who is here.** A green, amber or grey dot on each person shows whether
+  they are online, away or offline ("last seen 2 h ago"), and anyone can
+  hide theirs in Settings > Privacy.
 
 <table>
 <tr>

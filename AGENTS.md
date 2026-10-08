@@ -1163,6 +1163,69 @@ the bot-wide action. Tests: `src/lib/sidebar-hidden*.test.ts`,
 `PersonConnectionsSection.test.ts`,
 `src/state/person-panel.reducer.test.ts`.
 
+## Presence: online, away, offline (organization server, 2026-10-08)
+
+JC asked for an online / away / offline indicator on people. Keep these
+rules, covered by `shared/presence.test.ts`, `server/presence.test.ts`,
+`server/routes/presence.test.ts`, `server/presence.e2e.test.ts`,
+`src/lib/presence.test.ts`, `src/components/PresenceDot.test.ts` and
+`electron/system-idle.node-test.mjs`:
+
+- The thresholds and the state machine are one module,
+  `shared/presence.ts`: online (a client of the person is connected and
+  they used it within 5 minutes, `PRESENCE_AWAY_AFTER_MS`), away (connected
+  but idle longer, or the desktop says the computer is idle or the screen is
+  locked), offline (no client: every event stream closed and the 20 s
+  reconnect grace passed, or no sign of a client for 10 minutes,
+  `PRESENCE_OFFLINE_AFTER_MS`). A person is as present as their most
+  present client. Change a threshold there, nowhere else.
+- Server (`server/presence.ts`, `PresenceTracker`, in memory only): one
+  connection per signed-in session, from its `/api/events` streams
+  (`connect` on open, `touch` on each keepalive, close on close) and its
+  pages' heartbeats. `presenceViewer` in index.ts decides who counts: a
+  session of this issuer whose person is in the directory, not disabled,
+  not a `service` account. The loopback and a solo server never count. A
+  sweep every 15 s turns crossed thresholds into news.
+- Routes (`server/routes/presence.ts`, CLIENT_ALLOW with `orgDirectory`):
+  `GET /api/org/presence` lists every active person of the directory with
+  `state` and `lastSeenAt`; `POST /api/presence/heartbeat`
+  `{ pageId, kind: "desktop" | "web", idleMs, systemIdle? }`. A solo server
+  answers 404, a service account or another issuer 403, no session 401.
+  An admin sees exactly what a member sees.
+- Live: a change is broadcast as `presence.changed` (`shared/wire.ts`).
+  `sseFrameFor` passes it only to streams of the organization's people
+  (`presenceFrameAllowed`); the copy with `audience` (the person's own real
+  state) reaches that person only. Presence is never written to a chat, the
+  journal, a backup or a package.
+- Privacy: Settings > Privacy > "Show when I am online" (on by default) is
+  the synced preference `sagax.presenceVisible.v1` ("0" hides). A hidden
+  person reads as offline with no last-seen time for everyone else; they
+  still see their own state, "(hidden from others)". Saving the preference
+  re-announces the person at once (the preferences route calls
+  `presence.refresh`).
+- Renderer (`src/lib/presence.ts`, started from `src/main.tsx` for a
+  signed-in session): reads the list, applies the frames, re-reads every 5
+  minutes and when the page comes back into view, and beats every 60 s with
+  the page's idle time. The desktop app adds `window.ogb.systemIdle()`
+  (`desktop:system-idle`, `electron/system-idle.mjs`,
+  `powerMonitor.getSystemIdleState(300)` and the idle seconds; main window,
+  top frame only, safe on an organization page); using the computer counts
+  as being there. Coming back after an idle spell beats at once.
+- The dot is `StatusDot` (`src/components/StatusDot.tsx`), the same
+  component as a bot row's working / waiting / teammate / queued dots;
+  `PresenceDot` and `WithPresence` (`src/components/PresenceDot.tsx`) give
+  it the person's state, an accessible name and a tooltip ("Online",
+  "Away", "Offline, last seen 2 h ago"). `PersonAvatar` takes
+  `presenceId`. It shows on the sidebar's people rows, the direct
+  conversation's header chip, the person panel, a room's people list
+  (`ChannelMembers`), the To: picker, the sharing picker (`GrantEditor`),
+  the room's people picker (`GroupPeoplePicker`) and your own account row.
+  The Team map holds bots only and has no person to mark; there is no
+  @mention of people and no run-as picker yet: give them the dot when they
+  exist. Nothing shows where presence does not exist.
+- The phone apps neither send heartbeats nor show the dot yet; a phone's
+  open stream counts as connected (online for 5 minutes, then away).
+
 ## Thread mode is on by default
 
 Thread mode (Settings > Appearance > Show threads: the thread picker in the
