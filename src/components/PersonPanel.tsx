@@ -8,7 +8,7 @@
 // points"); with neither, nothing sits under the name. The Achievements tab lists only what that card carried. A private
 // card stays a private note: nobody reads another person's record.
 import { useState } from "react";
-import { ExternalLink, EyeOff, Eye, Mail, MessageSquare, PanelRight, Trophy, Users } from "lucide-react";
+import { ExternalLink, EyeOff, Mail, MessageSquare, PanelRight, Trophy, Users } from "lucide-react";
 
 import { useStore } from "@/state/store";
 import { t } from "@/lib/i18n";
@@ -108,17 +108,6 @@ export function PersonPanel({ personId, directory: given }: { personId: string; 
         <div className="flex shrink-0 flex-col items-center px-4 pb-3">
           <PersonAvatar avatarUrl={avatarUrl} initials={personInitials(name)} size={88} presenceId={personId} presenceRing="border-panel" />
           <h2 id="person-panel-title" className="mt-3 max-w-full truncate text-[17px] font-medium leading-6 text-ink">{name}</h2>
-          {/* The label, as under a bot's name in its panel: editable by the
-              person, an admin and their team manager; plain text otherwise. */}
-          <InlineEditableText
-            value={label}
-            maxLength={PERSON_LABEL_MAX}
-            placeholder={t("personLabel.add")}
-            ariaLabel={t("personLabel.edit")}
-            onSave={mayEditLabel ? (next) => { void savePersonLabel(personId, next).catch(() => dispatch({ type: "error", message: t("personLabel.saveError") })); } : undefined}
-            muted
-            className="mt-0.5 text-[12.5px] leading-4"
-          />
           {(titleName || pointsText) && (
             <div className="mt-1 flex max-w-full items-center justify-center gap-2" data-member-line="">
               {titleName ? <span data-member-title="" className="min-w-0 truncate text-[13px] leading-5 text-ink">{titleName}</span> : null}
@@ -130,10 +119,22 @@ export function PersonPanel({ personId, directory: given }: { personId: string; 
               ) : null}
             </div>
           )}
-          {person && (
+          {/* The label, as under a bot's name in its panel: editable by the
+              person, an admin and their team manager; plain text otherwise. */}
+          <InlineEditableText
+            value={label}
+            maxLength={PERSON_LABEL_MAX}
+            placeholder={t("personLabel.add")}
+            ariaLabel={t("personLabel.edit")}
+            onSave={mayEditLabel ? (next) => { void savePersonLabel(personId, next).catch(() => dispatch({ type: "error", message: t("personLabel.saveError") })); } : undefined}
+            muted
+            className="mt-0.5 text-[12.5px] leading-4"
+          />
+          {person && (person.role === "admin" || person.disabled) && (
             <span className="mt-0.5 text-[12.5px] leading-4 text-ink-secondary">
-              {person.role === "admin" ? t("personPanel.role.admin") : t("personPanel.role.member")}
-              {person.disabled ? ` · ${t("personPanel.disabled")}` : ""}
+              {person.role === "admin" ? t("personPanel.role.admin") : ""}
+              {person.role === "admin" && person.disabled ? " · " : ""}
+              {person.disabled ? t("personPanel.disabled") : ""}
             </span>
           )}
           <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
@@ -142,6 +143,7 @@ export function PersonPanel({ personId, directory: given }: { personId: string; 
                 type="button"
                 data-person-action="message"
                 onClick={() => {
+                  if (isHidden) showInSidebar(hiddenKey("person", personId));
                   if (dm) dispatch({ type: "select", id: dm.id });
                   else dispatch({ type: "openPeopleDm", principalId: person!.principalId });
                 }}
@@ -151,15 +153,15 @@ export function PersonPanel({ personId, directory: given }: { personId: string; 
                 {t("personPanel.message")}
               </button>
             )}
-            {dm && (
+            {dm && !isHidden && (
               <button
                 type="button"
-                data-person-action={isHidden ? "show" : "hide"}
-                onClick={() => (isHidden ? showInSidebar(hiddenKey("person", personId)) : hideFromSidebar("person", personId))}
+                data-person-action="close"
+                onClick={() => hideFromSidebar("person", personId)}
                 className="ui-button inline-flex items-center gap-1.5"
               >
-                {isHidden ? <Eye size={14} aria-hidden /> : <EyeOff size={14} aria-hidden />}
-                {isHidden ? t("sidebar.hidden.show") : t("sidebar.hidden.hide")}
+                <EyeOff size={14} aria-hidden />
+                {t("personPanel.closeConversation")}
               </button>
             )}
           </div>

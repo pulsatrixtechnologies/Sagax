@@ -43,10 +43,13 @@ describe("PersonPanel", () => {
     expect(html).toContain("Ada Example");
     expect(html).toContain("ada@example.test");
     expect(html).toContain("Support");
-    expect(html).toContain("Member");
+    expect(html).not.toContain(">Member<");
     expect(html).toContain("Operations");
     expect(html).toContain('data-person-action="message"');
-    expect(html).toContain('data-person-action="hide"');
+    expect(html).toContain('data-person-action="close"');
+    expect(html).toContain("Close conversation");
+    expect(html).not.toContain('data-person-action="hide"');
+    expect(html).not.toContain('data-person-action="show"');
     expect(html).not.toContain("Manage in Perspicax");
     expect(html).not.toContain('data-person-section="connections"');
   });
@@ -92,6 +95,25 @@ describe("PersonPanel", () => {
     expect(html).toContain('data-person-tabpanel="achievements"');
     expect(html).toContain('data-achievement="hello-bot"');
     expect(html).not.toContain("data-member-variant=\"blade\"");
+  });
+
+  it("orders the header: name, title and points, label, then the buttons, with no Member line", () => {
+    resetPublicAchievementsForTests({ pr_ada: { title: "rookie", points: 220, unlocked: [{ id: "hello-bot", points: 10, unlockedAt: 1 }] } });
+    resetPersonLabelsForTests({ pr_ada: "CTO" });
+    const html = render();
+    const order = ["Ada Example", "data-member-line", ">CTO<", 'data-person-action="message"'].map((marker) => html.indexOf(marker, html.indexOf("person-panel-title")));
+    expect(order.every((at) => at >= 0)).toBe(true);
+    expect(order).toEqual([...order].sort((a, b) => a - b));
+    expect(html).not.toContain(">Member<");
+    expect(html).not.toContain("Administrator");
+  });
+
+  it("keeps the role line for an administrator and for a disabled account", () => {
+    const admin = render("pr_ada", { ...directory, people: [{ ...ada, role: "admin" as never }] });
+    expect(admin).toContain("Administrator");
+    const disabled = render("pr_ada", { ...directory, people: [{ ...ada, disabled: true }] });
+    expect(disabled).toContain("Disabled");
+    expect(disabled).not.toContain(">Member<");
   });
 
   it("follows the person's own Show my title and Show my points choices", () => {

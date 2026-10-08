@@ -11,6 +11,14 @@ export function groupHiddenKey(group: Group, viewerId: string): string {
   return peer ? hiddenKey("person", peer.id) : hiddenKey("group", group.id);
 }
 
+/** The key of a closed direct conversation that selecting `selected` brings
+ * back, or null (not a direct conversation, or not closed). */
+export function closedDmToReopen(selected: Group | undefined, hidden: ReadonlySet<string>, viewerId: string): string | null {
+  if (!selected?.peopleDm) return null;
+  const key = groupHiddenKey(selected, viewerId);
+  return key.startsWith("person:") && hidden.has(key) ? key : null;
+}
+
 /** What the sidebar lists once the person's hidden entries are left out.
  * Nothing is removed from the store: search, the command palette and the
  * To: picker still reach them. */
@@ -22,8 +30,8 @@ export function withoutHiddenEntries<B extends Bot, G extends Group>(bots: reado
   };
 }
 
-/** The hidden entries as the "Hidden" row lists them: the ones that still
- * exist, with their names (a person's from the directory). */
+/** The hidden entries as the "Hidden" row lists them: the bots and groups that
+ * still exist, with their names. A closed person conversation is not listed. */
 export function hiddenSidebarRows(
   items: readonly HiddenEntry[],
   input: { bots: readonly Bot[]; groups: readonly Group[]; viewerId: string; people: ReadonlyMap<string, { name: string; login: string }> },
@@ -37,12 +45,9 @@ export function hiddenSidebarRows(
     } else if (item.kind === "group") {
       const group = input.groups.find((candidate) => candidate.id === item.id);
       if (group) rows.push({ key, kind: item.kind, id: item.id, name: group.name });
-    } else {
-      const group = input.groups.find((candidate) => candidate.peopleDm && groupHiddenKey(candidate, input.viewerId) === key);
-      if (!group) continue;
-      const person = input.people.get(item.id);
-      rows.push({ key, kind: item.kind, id: item.id, name: person?.name || person?.login || group.name || item.id });
     }
+    // A closed direct conversation (kind "person") is simply gone from the
+    // sidebar: no row here. Only bots and groups are listed as hidden.
   }
   return rows.sort((a, b) => a.name.localeCompare(b.name));
 }

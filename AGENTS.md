@@ -1726,9 +1726,12 @@ A person of the organization opens in the right panel like a bot
 group's person label, the group's People list and another person's name in
 a bot chat. It shows the directory's fields (name, login, email,
 avatar, role, teams), the groups the viewer shares with them, their bots the
-viewer already sees, Message, Hide/Show, and for an admin "Manage in
+viewer already sees, Message, Close conversation, and for an admin "Manage in
 Perspicax": `GET /api/org/directory` adds `manageUrl`
-(`<issuer>/console/users/<sub>`) for admins only. An admin also sees
+(`<issuer>/console/users/<sub>`) for admins only. The header reads, top to
+bottom: avatar, name, the title and points line (`data-member-line`), the
+label (`InlineEditableText`), then the buttons; the role line shows only for
+an administrator or a disabled account, never for a plain member. An admin also sees
 Connections for a person who is in the directory
 (`PersonConnectionsSection`): each MCP server, the GitHub connection and
 the plugins on that person's bots, with Remove and Remove all behind a
@@ -1737,8 +1740,14 @@ thread. Hiding is per person and view-only (`src/lib/sidebar-hidden.ts`,
 key `sagax.sidebarHidden.v1`, synced by `/api/me/preferences` on an
 organization server): bots by id, groups by id, people by principal; still
 reached by search, the palette and the To: picker; a "Hidden (N)" row and
-Settings > Appearance show them back. A new unread message unhides people
-and groups by default, bots only when the person turns it on. Archive stays
+Settings > Appearance show bots and groups back. A conversation with a
+person is not hidden but closed (menu "Close", panel "Close conversation",
+same `person:` entry): it simply leaves the sidebar and is listed nowhere
+(`hiddenSidebarRows` skips it; the "Hidden" category is for bots and
+groups). Selecting it again (person panel Message, To: picker, search, a
+nudge: `closedDmToReopen` in `Sidebar`) or any new unread message from the
+person brings it back, whatever the people setting says. A new unread
+message unhides groups by default, bots only when the person turns it on. Archive stays
 the bot-wide action. Tests: `src/lib/sidebar-hidden*.test.ts`,
 `src/lib/person-panel.test.ts`, `PersonPanel.test.ts`,
 `PersonConnectionsSection.test.ts`,

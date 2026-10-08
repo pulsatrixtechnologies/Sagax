@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Bot, Group } from "@/state/store";
 import { hiddenKey } from "./sidebar-hidden";
-import { groupHiddenKey, hiddenSidebarRows, withoutHiddenEntries } from "./sidebar-hidden-entries";
+import { closedDmToReopen, groupHiddenKey, hiddenSidebarRows, withoutHiddenEntries } from "./sidebar-hidden-entries";
 
 const bot = (id: string, name: string, extra: Partial<Bot> = {}) => ({ id, name, threadId: `t-${id}`, title: "", description: "", unread: false, messages: [], ...extra }) as unknown as Bot;
 const group = (id: string, name: string, extra: Partial<Group> = {}) => ({ id, name, threadId: `t-${id}`, memberIds: [], unread: false, messages: [], createdAt: 1, bulletin: "", defaultResponder: { kind: "lead" }, ...extra }) as unknown as Group;
@@ -28,7 +28,7 @@ describe("hidden sidebar entries", () => {
     expect(withoutHiddenEntries(bots, groups, new Set(), ME).groups).toHaveLength(3);
   });
 
-  it("names each hidden entry that still exists, a person from the directory", () => {
+  it("names each hidden bot and group that still exists, and never a closed person conversation", () => {
     const rows = hiddenSidebarRows(
       [
         { kind: "bot", id: "maya", at: 1 },
@@ -40,9 +40,17 @@ describe("hidden sidebar entries", () => {
       { bots, groups, viewerId: ME, people: new Map([["pr_ada", { name: "Ada Example", login: "ada" }]]) },
     );
     expect(rows.map((row) => [row.key, row.name])).toEqual([
-      ["person:pr_ada", "Ada Example"],
       ["bot:maya", "Maya"],
       ["group:ops", "Ops"],
     ]);
+  });
+
+  it("brings a closed direct conversation back when it is selected, and only that", () => {
+    const closed = new Set([hiddenKey("person", "pr_ada"), hiddenKey("group", "ops")]);
+    expect(closedDmToReopen(groups[1], closed, ME)).toBe("person:pr_ada");
+    expect(closedDmToReopen(groups[2], closed, ME)).toBeNull();
+    // a hidden room keeps today's behaviour: selecting it does not unhide it
+    expect(closedDmToReopen(groups[0], closed, ME)).toBeNull();
+    expect(closedDmToReopen(undefined, closed, ME)).toBeNull();
   });
 });

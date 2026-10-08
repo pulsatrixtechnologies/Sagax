@@ -58,7 +58,7 @@ import { LabelTag, PersonLabelTag } from "./LabelTag";
 import { nudgeLineText } from "@/lib/nudge-line";
 import { Eye, UserRound } from "lucide-react";
 import { entriesToUnhide, hiddenKey, hiddenKeySet, hideFromSidebar, showInSidebar, useSidebarHidden } from "@/lib/sidebar-hidden";
-import { groupHiddenKey, hiddenSidebarRows, withoutHiddenEntries } from "@/lib/sidebar-hidden-entries";
+import { closedDmToReopen, groupHiddenKey, hiddenSidebarRows, withoutHiddenEntries } from "@/lib/sidebar-hidden-entries";
 import { PersonAvatar } from "./MessageAuthor";
 import { OrgSectionMenuItems, SectionNameInput, orgSectionMenuItems, type OrgSectionMenuActions } from "./OrgSectionMenu";
 import {
@@ -668,7 +668,7 @@ export function RoomContextMenu({
         className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] leading-[18px] text-ink hover:bg-hover"
       >
         <EyeOff size={16} className="text-ink" />
-        {t("sidebar.hidden.hide")}
+        {peerId ? t("sidebar.hidden.close") : t("sidebar.hidden.hide")}
       </button>
       {memberHas("unpin") && (
         <button
@@ -2156,6 +2156,15 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
     });
     if (keys.length) showInSidebar(keys);
   }, [sidebarHidden, state.bots, state.groups, state.config]);
+  // Selecting a closed direct conversation (person panel, To: picker,
+  // search, a nudge) brings it back. Only a change of selection counts, so
+  // closing the conversation that is open leaves it closed.
+  useEffect(() => {
+    if (state.activeView !== "chat" || !state.selectedId) return;
+    const key = closedDmToReopen(state.groups.find((candidate) => candidate.id === state.selectedId), hiddenKeySet(sidebarHidden), orgViewerId(state));
+    if (key) showInSidebar(key);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.selectedId, state.activeView]);
   const [orgMenu, setOrgMenu] = useState<{ name: string | null; id: string | null; x: number; y: number } | null>(null);
   const [sectionEdit, setSectionEdit] = useState<{ mode: "new" } | { mode: "rename"; name: string } | null>(null);
   // Organization: the viewer's own sections (personal-sections.ts). The
