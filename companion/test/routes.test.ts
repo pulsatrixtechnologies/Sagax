@@ -92,6 +92,8 @@ describe("what the app may do", () => {
     ["GET", "/api/threads/th_1/messages/msg_2/image"],
     ["POST", "/api/threads/th_1/messages/msg_2/file"],
     ["POST", "/api/threads/th_1/messages/msg_2/reactions"],
+    ["GET", "/api/threads/th_1/read"],
+    ["POST", "/api/threads/th_1/read"],
     ["GET", "/api/threads/th_1/export"],
     ["POST", "/api/threads/th_1/respond"],
     ["GET", "/api/search"],
