@@ -261,7 +261,6 @@ describe("person row menu", () => {
       onArchive: vi.fn(),
       onDelete: vi.fn(),
       onMoveToSection: vi.fn(),
-      onNewFolder: vi.fn(),
       onRename: vi.fn(),
     }));
     const labels = labelsOf(fixture.portal);
@@ -297,7 +296,6 @@ describe("person row menu", () => {
       onArchive: vi.fn(),
       onDelete: vi.fn(),
       onMoveToSection: vi.fn(),
-      onNewFolder: vi.fn(),
       onRename: vi.fn(),
     }));
     const labels = labelsOf(fixture.portal);

@@ -22,7 +22,7 @@ vi.mock("./DesktopCapabilities", async (importOriginal) => ({
 vi.mock("@/lib/analytics", () => ({ track: vi.fn() }));
 
 const { initialState } = await import("@/state/store");
-const { RoutinesPage, RoutineEditor } = await import("./RoutineCalendarPage");
+const { RoutinesPage, RoutineEditor, EventDetails } = await import("./RoutineCalendarPage");
 
 const bot: Bot = {
   id: "runner", threadId: "execution", name: "Runner", title: "", description: "", color: "green",
@@ -121,5 +121,54 @@ describe("routine setup", () => {
   it("offers the Boat runner only behind the experimental Boat flag", () => {
     fixture.state = { ...fixture.state!, config: { ...fixture.state!.config, features: { boatComputer: true }, box: { configured: false } } as unknown as AppState["config"] };
     expect(editorMarkup()).toContain("Boat-hosted agent");
+  });
+});
+
+describe("the routine details modal (JC, 2026-10-08: larger, less vertical)", () => {
+  const routine = {
+    id: "dispatch", name: "Dispatch matin TN", prompt: "Read the board.\n".repeat(40), target: "bot", botId: bot.id, runOn: "maus", enabled: true,
+    schedule: { type: "daily", time: "06:00", weekdays: [1, 2, 3, 4, 5] }, durationMinutes: 30, nextRunAt: null, createdAt: 1, updatedAt: 1,
+    runAs: { principalId: "pr_bob", name: "Bob" },
+  } as unknown as import("@/lib/routines").Routine;
+  function details(prompt: string) {
+    const item = { kind: "routine" as const, id: "dispatch", at: Date.parse("2026-10-09T10:00:00Z"), durationMinutes: 30, routine: { ...routine, prompt }, run: null };
+    return renderToStaticMarkup(createElement(EventDetails, { item, bots: [bot], onClose: vi.fn(), onEdit: vi.fn(), onCallChanged: vi.fn(), onOpenRoom: vi.fn() }));
+  }
+
+  it("is wide with two columns: schedule, bot and Runs as on the left, the instructions on the right, each scrolling", () => {
+    const html = details(routine.prompt);
+    expect(html).toContain('data-event-details="two-column"');
+    expect(html).toContain("min-[720px]:w-[min(92vw,960px)]");
+    expect(html).toContain("max-h-[calc(100dvh-24px)]");
+    expect(html).toContain("min-[720px]:grid-cols-[320px_minmax(0,1fr)]");
+    const side = html.indexOf("data-event-details-side");
+    const instructions = html.indexOf("data-event-details-instructions");
+    expect(side).toBeGreaterThan(-1);
+    expect(instructions).toBeGreaterThan(side);
+    // the left column carries the schedule, the bot and who it runs as
+    const left = html.slice(side, instructions);
+    expect(left).toContain("Assigned bot");
+    expect(left).toContain("Runner");
+    expect(left).toContain("data-event-details-run-as");
+    expect(left).toContain("Bob");
+    expect(left).not.toContain("Read the board.");
+    // the instructions read in a measure, scrolling on their own
+    const right = html.slice(instructions);
+    expect(right).toContain("max-w-[68ch]");
+    expect(right).toContain("min-[720px]:overflow-y-auto");
+    expect(right).toContain("Read the board.");
+    // the footer stays full width with its buttons
+    expect(html.indexOf("Run now")).toBeGreaterThan(instructions);
+  });
+
+  it("falls back to one column under 720 px (and with nothing to read)", () => {
+    const html = details(routine.prompt);
+    // without the 720 px variant the dialog keeps the narrow single column
+    expect(html).toMatch(/class="[^"]*\bmax-w-\[520px\] min-\[720px\]:w-\[min\(92vw,960px\)\] min-\[720px\]:max-w-none/);
+    expect(html).not.toMatch(/class="[^"]*(?<!min-\[720px\]:)\bgrid-cols-\[320px/);
+    const empty = details("");
+    expect(empty).toContain('data-event-details="single"');
+    expect(empty).not.toContain("data-event-details-instructions");
+    expect(empty).not.toContain("min-[720px]:grid");
   });
 });

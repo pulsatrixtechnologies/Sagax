@@ -1,7 +1,5 @@
-import { useEffect, useState } from "react";
 import { Loader2, Repeat2 } from "lucide-react";
 import { t } from "@/lib/i18n";
-import { loadRoutineDelegation, startRoutineDelegation } from "@/lib/routine-delegation";
 import type { Routine, RoutineRun } from "@/lib/routines";
 import type { RoutineSuspendReason } from "../../../shared/routines";
 import { routineWhenLabel } from "@/lib/routine-display";
@@ -9,51 +7,18 @@ import type { Bot } from "@/state/store";
 import { Switch } from "../SettingsPrimitives";
 
 const SUSPEND_REASON_KEYS = {
-  delegation_missing: "routines.suspendReason.delegation_missing",
-  delegation_ended: "routines.suspendReason.delegation_ended",
-  delegation_revoked: "routines.suspendReason.delegation_revoked",
   person_out: "routines.suspendReason.person_out",
   no_right: "routines.suspendReason.no_right",
 } as const;
 
-/** Slice 6: "Paused: <why>" for a routine the server paused. */
+/** Slice 6: "Paused: <why>" for a routine the server paused (its person is
+ * out or lost the right to run the bot; since 2026-10-08 never for lack of a
+ * delegation, which is issued automatically). */
 export function routineSuspendedText(reason: RoutineSuspendReason): string {
   return t("routines.suspended", { reason: t(SUSPEND_REASON_KEYS[reason]) });
 }
 
-/** Slice 6: the viewer runs routines here but has not allowed them to act
- * in their name (organization server). */
-export function RoutineDelegationBanner({ routines, viewerPrincipalId, initial }: {
-  routines: Routine[];
-  viewerPrincipalId: string | null | undefined;
-  initial?: "active" | "none";
-}) {
-  const mine = Boolean(viewerPrincipalId) && routines.some((routine) => routine.enabled && routine.runAs?.principalId === viewerPrincipalId);
-  const [state, setState] = useState<"active" | "none" | null>(initial ?? null);
-  const [busy, setBusy] = useState(false);
-  useEffect(() => {
-    if (!mine || initial) return;
-    let live = true;
-    void loadRoutineDelegation().then((status) => { if (live) setState(status.state); }, () => {});
-    return () => { live = false; };
-  }, [mine, initial]);
-  if (!mine || state !== "none") return null;
-  return (
-    <div role="status" data-routine-delegation-banner className="mb-2 flex flex-wrap items-center gap-2 rounded-lg border border-warning/30 bg-warning/5 p-3 text-[12px] text-ink">
-      <span className="min-w-0 flex-1 break-words">{t("routines.delegationBanner")}</span>
-      <button
-        type="button"
-        className="ui-button min-h-[44px] md:min-h-0"
-        disabled={busy}
-        onClick={() => { setBusy(true); void startRoutineDelegation().catch(() => setBusy(false)); }}
-      >
-        {t("org.routineDelegation.allow")}
-      </button>
-    </div>
-  );
-}
-
-export function RoutineList({ routines, loading, error, onOpen, onToggle, viewerPrincipalId, grouped = false }: {
+export function RoutineList({ routines, loading, error, onOpen, onToggle, grouped = false }: {
   routines: Routine[];
   /** Slice 6: the signed-in person on an organization server. */
   viewerPrincipalId?: string | null;
@@ -69,7 +34,6 @@ export function RoutineList({ routines, loading, error, onOpen, onToggle, viewer
 }) {
   const sorted = [...routines].sort((a, b) => Number(b.enabled) - Number(a.enabled) || (a.nextRunAt ?? Infinity) - (b.nextRunAt ?? Infinity) || a.name.localeCompare(b.name));
   return <div aria-label={t("routines.list")}>
-    <RoutineDelegationBanner routines={routines} viewerPrincipalId={viewerPrincipalId} />
     {error && <div role="alert" className="rounded-lg bg-danger/10 p-3 text-[12px] text-danger">{t("routines.loadError")}</div>}
     {loading && <p role="status" className="flex items-center gap-2 p-3 text-[12px] text-ink-secondary"><Loader2 size={14} className="animate-spin" />{t("routines.loading")}</p>}
     {!loading && !error && sorted.length === 0 && <div className="rounded-xl border border-dashed border-hairline/50 p-5 text-center text-[13px] text-ink-secondary"><Repeat2 size={20} className="mx-auto mb-2 opacity-60" />{t("routines.empty")}</div>}

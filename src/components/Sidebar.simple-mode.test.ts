@@ -131,7 +131,7 @@ describe("bot-first sidebar", () => {
     if (density !== "icons") {
       expect(markup).toContain('aria-current="page"');
       expect(markup).toContain('aria-label="Unread threads"');
-      expect(markup).toContain('aria-label="New thread"');
+      expect(markup).not.toContain('aria-label="New thread"');
     }
   });
 
@@ -152,14 +152,16 @@ describe("bot-first sidebar", () => {
     expect(markup).toContain('aria-label="Atlas: Finished reply · Unread"');
   });
 
-  it("only hides thread/folder creation in the bot context menu", () => {
+  it("never offers thread or folder creation in the bot context menu", () => {
     const render = () => renderToStaticMarkup(createElement(BotContextMenu, {
-      menu: { botId: bot.id, x: 0, y: 0 }, onClose: vi.fn(), onArchive: vi.fn(), onDelete: vi.fn(), onMoveToSection: vi.fn(), onNewFolder: vi.fn(), onRename: vi.fn(),
+      menu: { botId: bot.id, x: 0, y: 0 }, onClose: vi.fn(), onArchive: vi.fn(), onDelete: vi.fn(), onMoveToSection: vi.fn(), onRename: vi.fn(),
     }));
     const enabled = render();
     expect(enabled).toContain("Move to");
     expect(enabled).toContain("Rename Bot");
     expect(enabled).toContain("Hide from sidebar");
+    expect(enabled).not.toContain("New thread");
+    expect(enabled).not.toContain("New folder");
     fixture.showThreads = false;
     const disabled = render();
     expect(disabled).toContain("Move to");
@@ -214,6 +216,36 @@ describe("group rows line up with bot rows", () => {
     // same 36px avatar footprint as the bot row
     expect(groupMarkup).toContain("relative shrink-0 size-9");
     expect(groupMarkup).not.toMatch(/ring-2 ring-panel/);
+  });
+});
+
+describe("people rows line up with bot rows", () => {
+  const person: Group = {
+    id: "dm-ada", name: "Ada Example", peopleDm: true, humanIds: ["pr_me", "pr_ada"], threadId: "dm-thread", memberIds: [], defaultResponder: { kind: "mentions" }, bulletin: "", unread: false, createdAt: 0, messages: [],
+    tasks: [{ threadId: "dm-thread", title: "Ada", createdAt: 2 }, { threadId: "dm-earlier", title: "Earlier", createdAt: 1 }],
+  } as Group;
+  const inset = (cls: string) => cls.split(" ").filter((c) => /^(pl|px)-/.test(c));
+  const classOf = (markup: string, marker: string) => markup.match(new RegExp(`${marker}[^>]*class="([^"]*)"`))?.[1]
+    ?? markup.match(new RegExp(`class="([^"]*)"[^>]*${marker}`))?.[1] ?? "";
+
+  it.each([
+    { showThreads: true, density: "comfortable" as const },
+    { showThreads: false, density: "comfortable" as const },
+    { showThreads: true, density: "compact" as const },
+    { showThreads: false, density: "compact" as const },
+  ])("shares the bot row's left inset with showThreads=$showThreads, $density density, and has no chevron", ({ showThreads, density }) => {
+    fixture.showThreads = showThreads;
+    fixture.state.bots = [bot];
+    const personMarkup = renderToStaticMarkup(createElement(GroupListItem, { group: person, density, onMenu: vi.fn() }));
+    const botMarkup = renderToStaticMarkup(createElement(BotListItem, { bot, density, onMenu: vi.fn() }));
+    const personInset = inset(classOf(personMarkup, 'data-sidebar-group-row="dm-ada"'));
+    const botInset = inset(classOf(botMarkup, `data-sidebar-bot-row="${bot.id}"`));
+    expect(personInset).toEqual(["pl-2"]);
+    expect(personInset).toEqual(botInset);
+    expect(personMarkup).not.toContain("Ada Example threads");
+    // no achievement title or points on a person's row
+    expect(personMarkup).not.toContain("data-member-line");
+    expect(personMarkup).not.toContain("data-gamertag");
   });
 });
 

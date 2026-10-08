@@ -12,7 +12,10 @@
 // never closed (a crash, a lost network) expires after VOICE_CALL_IDLE_MS
 // without a turn. A call's tools stay stable through it: Perspicax keeps
 // the call's tokens between turns (server/perspicax-mcp.ts keepWarm), and
-// every change of a call turn's MCP set is logged (noteMcp).
+// every change of a call turn's MCP set is logged (noteMcp). The call's
+// start and each heartbeat also count as use of the person's server
+// environment (UserSandboxManager.markUsed), so its idle stop never takes
+// it away mid-call.
 import type { VoiceCallMeta } from "./voice-call-prompt.ts";
 
 /** A call with no turn and no keep-alive for this long has ended. */

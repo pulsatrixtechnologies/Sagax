@@ -47,6 +47,7 @@ import { createBotActService, type BotActAnswerer, type BotActService, type Perf
 import { createApprovalModeSupport } from "./harness-capabilities.ts";
 import { escapeAttribute } from "../src/lib/composer-attachments.ts";
 import { threadRefUrl } from "../src/lib/thread-refs.ts";
+import { markDeadThreadChip } from "./dead-thread-chips.ts";
 import {
   CREDENTIAL_TARGETS,
   credentialResumeOutcome,
@@ -221,8 +222,9 @@ import { sweepThreadEventLogs, type ThreadLogRetentionCandidate } from "./thread
 import { ComputerControl } from "./computer-control.ts";
 import { augmentedPath, findCliCandidates, resetPathCache } from "./env-path.ts";
 import { registerEnginesBinDir } from "./engine-install.ts";
+import { EngineSelfCheck, readEngineManifest, runEngineSelfCheck, type EngineCheck } from "./engines-self-check.ts";
 import { appendUsage, parseUsageRange, readUsage, summarizeUsage, usageCsv, USAGE_GROUPINGS, flushUsageLedger, type UsageGroupBy, type UsageRow, type UsageTrigger } from "./usage-ledger.ts";
-import { loadPlanUsage, planAccountsFromInstances } from "./plan-usage.ts";
+import { loadPlanUsage, orgPlanAccounts, planAccountsFromInstances } from "./plan-usage.ts";
 import { GroupUsageReader } from "./group-thread-usage.ts";
 import { ledgerCost } from "./model-prices.ts";
 import type { PriceList } from "./prices.ts";
@@ -477,6 +479,7 @@ import { LocalVmSeatPool, type LocalVmSeatHolder } from "./local-vm-seat-pool.ts
 import { RepeatDetector, callKey } from "./repeat-detector.ts";
 import { redactSecretsInText } from "./redact.ts";
 import * as vps from "./vps-computer.ts";
+import { runAsOptions, runAsRefusal, type RunAsChooser, type RunAsPerson } from "./routine-run-as.ts";
 import { RoutineManager, setRoutineTimeZone, type Routine, type RoutineAdmission, type RoutineRun, type RoutineRunOn, type RoutineRunTrigger, type RoutineSuspendReason } from "./routines.ts";
 import { RoutineConsents, routineRenewMs, type RoutineConsentEnd } from "./org-routine-consent.ts";
 import { CalendarCallManager, type CalendarCall } from "./calendar-calls.ts";
@@ -584,6 +587,7 @@ import { createVoiceModeRoutes } from "./voice-mode.ts";
 import { parseVoiceCallMeta, voiceCallSection, voiceCallSteerPrompt, voiceCallTurnPrompt } from "./voice-call-prompt.ts";
 import { VoiceCallSessions } from "./voice-call-session.ts";
 import { VoiceCallWarmup } from "./voice-call-warmup.ts";
+import { callTurnEffort } from "./voice-call-effort.ts";
 import { VoiceLatencyLog } from "./voice-latency.ts";
 import { unansweredCallMessage, VOICE_CALL_WATCHDOG_MS, voiceCallRecoveryPrompt } from "./voice-call-watchdog.ts";
 import * as grokVoice from "./tts/grok.ts";
@@ -728,11 +732,14 @@ import { createGroupMemoryRoutes } from "./routes/group-memory.ts";
 import { createTtsProviderRoutes } from "./routes/tts-provider.ts";
 import { createPeopleDmRoutes } from "./routes/people-dms.ts";
 import { createNudgeRoutes } from "./routes/nudges.ts";
+import { createPresenceRoutes, presenceFrameAllowed, type PresenceViewer } from "./routes/presence.ts";
+import { PresenceTracker } from "./presence.ts";
+import { PRESENCE_SWEEP_MS, PRESENCE_VISIBLE_PREFERENCE, presenceHidden, publicPresence, type PresenceView } from "../shared/presence.ts";
 import { NudgeCooldown, nudgeFrameAllowed, recordNudgeLine } from "./nudge.ts";
 import { findPeopleDm, isPeopleDmParticipant, otherPerson, peopleDmPatchRefusal, peopleDmRouteRefusal } from "./people-dms.ts";
 import { deleteGroupMemory, groupMemoryEnabled, groupMemorySystemPrompt, updateGroupMemory } from "./group-memory.ts";
 import type { OrgRecord } from "./org-record.ts";
-import { createOidcLoginRoutes, identityConfigFromEnv, identityDescriptor, INTERIM_SIGNIN_REFUSAL, isInterimSignInRoute, MANAGED_PROFILE_REFUSAL, oidcBindingCookie, oidcSessionFields, profileManagement, writesManagedProfile } from "./oidc-login.ts";
+import { createOidcLoginRoutes, identityConfigFromEnv, identityDescriptor, INTERIM_SIGNIN_REFUSAL, isInterimSignInRoute, MANAGED_PROFILE_REFUSAL, oidcSessionFields, profileManagement, writesManagedProfile } from "./oidc-login.ts";
 import { OidcRelyingParty } from "./oidc-rp.ts";
 import type { BotAttachment, BotFileRoot } from "./org-admin-files.ts";
 import { createOrgAdminRoutes, type AccessKind, type AdminApproval, type AdminBot, type AdminBotReach, type AdminPerson, type ApprovalAnswer, type ApprovalType, type OrgAdminViewer } from "./org-admin-routes.ts";
@@ -802,6 +809,7 @@ const MIME: Record<string, string> = {
   ".txt": "text/plain; charset=utf-8",
   ".svg": "image/svg+xml",
   ".png": "image/png",
+  ".mp3": "audio/mpeg",
   ".ico": "image/x-icon",
   ".json": "application/json",
   ".woff2": "font/woff2",
@@ -1173,6 +1181,13 @@ const supportsApprovalMode = createApprovalModeSupport(registry);
 // Engines installed from Settings live under the data directory and win over
 // any other copy on PATH.
 registerEnginesBinDir();
+// The engines baked into this image (engines.lock.json): each CLI's
+// `--version` once, logged, then their installed state for good
+// (server/engines-self-check.ts). No manifest: nothing changes.
+let engineSelfCheck = new EngineSelfCheck(null);
+void runEngineSelfCheck(readEngineManifest())
+  .then((result) => { engineSelfCheck = result; })
+  .catch((error) => console.error(`[engines] self-check failed: ${error instanceof Error ? error.message : String(error)}`));
 
 // Who asked for the turn running (or last run) on each thread, read by the
 // usage ledger when it settles. It is set when a turn is ADMITTED, from the
@@ -7175,6 +7190,9 @@ interface SseClient {
    * anyone else sees themselves (server/viewer-identity.ts). Read at each
    * frame, so a changed role is current. Absent for a local service. */
   identity?: () => ViewerIdentity | null;
+  /** A person of this organization's directory: receives presence.changed
+   * (server/routes/presence.ts). Never a service account or the loopback. */
+  presence?: boolean;
 }
 const sseClients = new Set<SseClient>();
 
@@ -7658,6 +7676,12 @@ function notifyAccess(notification: Notification | null, access: WireAccessCard,
   for (const copy of copies) notify(copy);
 }
 
+/** Whether a thread exists for any bot or room, whoever the viewer is. */
+function threadStillExists(threadId: string): boolean {
+  return Boolean(store.groupByThread(threadId)) || store.bots.some((bot) =>
+    bot.threadId === threadId || Boolean(bot.tasks?.some((task) => task.threadId === threadId)));
+}
+
 function projectMessages<T>(threadId: string, messages: T[], viewer: ApprovalViewer): T[] {
   let changed = false;
   if (messages.some((message) => privateRowHidden(message, viewer))) {
@@ -7665,7 +7689,7 @@ function projectMessages<T>(threadId: string, messages: T[], viewer: ApprovalVie
     changed = true;
   }
   const next = messages.map((message) => {
-    const projected = scopeApprovalMessage(threadId, message, viewer);
+    const projected = markDeadThreadChip(scopeApprovalMessage(threadId, message, viewer), threadStillExists);
     if (projected !== message) changed = true;
     return projected;
   });
@@ -7845,6 +7869,7 @@ function sseFrameFor(
   // a person's unlocks reach that person's streams only
   if (payload?.kind === "achievements" && !achievementFrameAllowed(payload, client.viewerId, localPrincipalId())) return null;
   if (payload?.kind === "nudge" && !nudgeFrameAllowed(payload, client.viewerId, localPrincipalId())) return null;
+  if (payload?.kind === "presence.changed" && !presenceFrameAllowed(payload, client)) return null;
   // A read position in a conversation between two people follows both
   // people's "Send read receipts" choice (server/read-receipts.ts).
   if (payload?.kind === "thread.read" && !threadReadFrameAllowed(payload, client.viewerId)) return null;
@@ -10414,7 +10439,10 @@ function principalMayRunRoutine(principalId: string, run: { botId: string; targe
   return true;
 }
 /** Slice 6 (D4): an organization routine run needs its person, their right
- * to run the bot, and a live routine delegation. */
+ * to run the bot, and a live routine delegation. Since 2026-10-08 (JC) the
+ * delegation is issued automatically: one Perspicax cannot issue or renew
+ * only skips the run, it never pauses the routine; only a person put out
+ * (disabled, deleted, signed out by Perspicax) or without `run` pauses it. */
 async function routineAdmission(run: RoutineRun, _routine: Routine | undefined): Promise<RoutineAdmission> {
   if (IDENTITY.kind !== "perspicax") return { ok: true };
   const principalId = effectiveRunAs(run);
@@ -10430,12 +10458,11 @@ async function routineAdmission(run: RoutineRun, _routine: Routine | undefined):
   if (prepared.ok) return { ok: true };
   // Fix 2: a rate limit keeps the run queued (server/routines.ts retries it).
   if (prepared.error === "rate_limited") return { ok: false, error: "Perspicax is rate limiting this server; this run is retried", retryAfterMs: prepared.retryAfterMs };
-  if (prepared.error === "missing") return { ok: false, error: `This routine cannot act in ${name}'s name: routines are not allowed yet`, suspend: "delegation_missing" };
-  if (prepared.error === "ended") return { ok: false, error: `This routine can no longer act in ${name}'s name`, suspend: "delegation_ended" };
+  if (prepared.error === "missing" || prepared.error === "ended") return { ok: false, error: `Perspicax did not issue ${name}'s routine access yet; this run is skipped and the next one tries again` };
   return { ok: false, error: "Perspicax is unreachable; this run is skipped" };
 }
-/** Slice 6: one access card in the routine's results thread, and a
- * notification, when a routine is paused. */
+/** Slice 6: one neutral status line in the routine's results thread, and a
+ * notification, when a routine is paused (its person is out or lost `run`). */
 function routineSuspended(routine: Routine, run: RoutineRun | null, reason: RoutineSuspendReason): void {
   const bot = store.bot(routine.botId);
   const runAs = effectiveRunAs(routine);
@@ -10461,7 +10488,7 @@ function routineSuspended(routine: Routine, run: RoutineRun | null, reason: Rout
   } catch (error) {
     console.error(`routine: the pause card could not be written: ${error instanceof Error ? error.message : String(error)}`);
   }
-  notifyAccess(deliverableNotification("routine-failed", bot, threadId, `${redactSecretsInText(routine.name)}: paused, it cannot act in its person's name`), card, run?.id);
+  notifyAccess(deliverableNotification("routine-failed", bot, threadId, `${redactSecretsInText(routine.name)}: paused (${reason === "person_out" ? "its person was signed out by Perspicax" : "its person can no longer run this bot"})`), card, run?.id);
 }
 /** Slice 6: the audit rows of routine delegations and paused routines. */
 function routineAudit(action: string, principalId: string | undefined, extra: { routine?: Pick<Routine, "id" | "name">; reason?: string; auth?: RequestAuth } = {}): void {
@@ -10490,11 +10517,13 @@ function orgAudit(row: Omit<AdminActionRow, "at">): void {
   appendAdminAction(DATA_DIR, row);
 }
 const auditBotTarget = (botId: string) => ({ kind: "bot", id: botId, ...(store.bot(botId)?.name ? { name: store.bot(botId)!.name } : {}) });
-/** Slice 6: a person's routine delegation ended or was revoked. */
+/** Slice 6: a person's routine delegation ended. Only a person Perspicax
+ * put out pauses their routines; an ended family is issued again at the next
+ * run or sign-in (2026-10-08). */
 function routineConsentEnded(principalId: string, reason: RoutineConsentEnd): void {
   perspicaxMcp?.forgetPrincipal(principalId);
-  if (reason !== "delegation_revoked") routineAudit("routine_delegation.ended", principalId, { reason });
-  routines?.suspendFor(principalId, reason, (routine) => effectiveRunAs({ botId: routine.botId }));
+  routineAudit("routine_delegation.ended", principalId, { reason });
+  if (reason === "person_out") routines?.suspendFor(principalId, reason, (routine) => effectiveRunAs({ botId: routine.botId }));
 }
 
 /** Slice 6 (D5): the person a routine run acts as: its runAs, else the
@@ -10503,6 +10532,99 @@ function effectiveRunAs(run: { runAs?: string; botId: string }): string | undefi
   if (run.runAs) return run.runAs;
   const bot = store.bot(run.botId);
   return bot ? effectiveBotOwner(bot) || undefined : undefined;
+}
+/** The routine modal's run-as chooser (server/routine-run-as.ts): the
+ * signed-in person of an organization request, null otherwise. */
+function runAsChooserFor(auth: RequestAuth): RunAsChooser | null {
+  if (IDENTITY.kind !== "perspicax" || auth.kind !== "session") return null;
+  const principalId = auth.session.principalId?.trim();
+  if (!principalId) return null;
+  const person = principals.byId(principalId);
+  return {
+    principalId,
+    admin: orgAdminCaller(auth),
+    managedTeamIds: (person?.teams ?? []).filter((team) => team.manager).map((team) => team.id),
+    manager: person?.perspicaxRole === "manager",
+  };
+}
+/** The people a routine may run as: the directory's persons (never a
+ * service account; interim and local principals are not in it). */
+function runAsPeople(): RunAsPerson[] {
+  if (IDENTITY.kind !== "perspicax" || !perspicaxDirectory) return [];
+  return orgDirectoryEntries(IDENTITY.issuer, perspicaxDirectory.people(), (iss, sub) => principals.bySubject(iss, sub)).map((entry) => ({
+    principalId: entry.principalId,
+    name: entry.name,
+    ...(entry.avatarUrl ? { avatarUrl: entry.avatarUrl } : {}),
+    disabled: entry.disabled || principals.byId(entry.principalId)?.disabledAt !== undefined,
+    ...(entry.service ? { service: true } : {}),
+    teams: principals.byId(entry.principalId)?.teams ?? entry.teams ?? [],
+  }));
+}
+/** The run-as person a routine create or update asks for (`runAs`, a
+ * principal id): nothing when none was sent, or when the unchanged person
+ * was sent by someone who could not choose them (D5 then applies), else the
+ * person or a refusal. */
+function routineRunAsChoice(auth: RequestAuth, body: unknown, existing?: Routine): { runAs?: string } | { refusal: { status: number; error: string; code: string } } {
+  const raw = body && typeof body === "object" ? (body as { runAs?: unknown }).runAs : undefined;
+  if (raw === undefined || raw === null || raw === "") return {};
+  if (typeof raw !== "string" || raw.length > 64) return { refusal: { status: 400, error: "runAs must be a person's principal id", code: "run_as_invalid" } };
+  if (IDENTITY.kind !== "perspicax") return { refusal: { status: 400, error: "Only an organization server can choose who a routine runs as.", code: "run_as_solo" } };
+  const chooser = runAsChooserFor(auth);
+  if (!chooser) return { refusal: { status: 403, error: "Sign in with Pulsatrix to choose who a routine runs as.", code: "run_as_not_allowed" } };
+  const fields = body as { botId?: unknown; target?: unknown; groupId?: unknown };
+  const botId = typeof fields.botId === "string" ? fields.botId : existing?.botId ?? "";
+  const target = typeof fields.target === "string" ? fields.target : existing?.target;
+  const groupId = typeof fields.groupId === "string" ? fields.groupId : fields.groupId === null ? undefined : existing?.groupId;
+  const bot = store.bot(botId);
+  const people = runAsPeople();
+  const refusal = runAsRefusal({
+    chooser,
+    principalId: raw,
+    person: people.find((person) => person.principalId.toLowerCase() === raw.toLowerCase()) ?? null,
+    botOwnerId: bot ? effectiveBotOwner(bot) || undefined : undefined,
+    mayRun: (principalId) => principalMayRunRoutine(principalId, { botId, ...(target ? { target } : {}), ...(groupId ? { groupId } : {}) }),
+  });
+  if (!refusal) return { runAs: raw };
+  if (existing && effectiveRunAs(existing) === raw) return {};
+  return { refusal };
+}
+/** Every change of the person a routine runs as, in the admin activity log
+ * with who made it. */
+function auditRoutineRunAs(auth: RequestAuth, routine: Routine, before: string | undefined): void {
+  const after = effectiveRunAs(routine);
+  if (IDENTITY.kind !== "perspicax" || !after || after === before) return;
+  const label = (principalId: string) => {
+    const person = principals.byId(principalId);
+    return { principalId, ...(person?.name || person?.login ? { name: person.name || person.login } : {}) };
+  };
+  orgAudit({
+    category: "bot", action: "routine.run_as", target: { kind: "routine", id: routine.id, name: routine.name }, changed: ["runAs"],
+    before: before ? { runAs: label(before) } : {}, after: { runAs: label(after) },
+    actor: orgAuditActor(auth),
+  });
+}
+/** Run now (JC, 2026-10-08): on an organization server, the bot's owner,
+ * the person the routine runs as, or an admin. A solo server, the operator
+ * and the loopback keep the bot-level rule (`run`). */
+function mayRunRoutineNow(auth: RequestAuth, routine: Routine): boolean {
+  if (IDENTITY.kind !== "perspicax" || auth.kind !== "session") return true;
+  if (orgAdminCaller(auth)) return true;
+  const principalId = auth.session.principalId?.trim();
+  if (!principalId) return false;
+  const bot = store.bot(routine.botId);
+  return principalId === (bot ? effectiveBotOwner(bot) : undefined) || principalId === effectiveRunAs(routine);
+}
+/** Whether a run of this routine is queued, running or waiting. */
+function routineRunInFlight(routineId: string): boolean {
+  return (routines?.listRuns() ?? []).some((run) => run.routineId === routineId && ["queued", "running", "waiting"].includes(run.status));
+}
+/** A run started by hand, in the admin activity log with who clicked. */
+function auditRoutineRunNow(auth: RequestAuth, routine: Routine, run: RoutineRun): void {
+  appendAdminAction(DATA_DIR, {
+    category: "bot", action: "routine.run_now", target: { kind: "routine", id: routine.id, name: routine.name },
+    after: { runId: run.id, trigger: "manual", ...(run.runAs ? { runAs: run.runAs } : {}) },
+    actor: IDENTITY.kind === "perspicax" ? orgAuditActor(auth) : decisionActorFor(auth),
+  });
 }
 /** The speaker of a routine run's turns. */
 function routineRunSpeaker(run: { runAs?: string; botId: string }): TurnSpeaker {
@@ -13620,6 +13742,12 @@ async function startTurn(
       const contextStillPending = Boolean(engineCommand && dispatchContext.sessionReset && transcript.length > 0 &&
         !NATIVELY_REPLAYING_DRIVER_KINDS.includes(instance.driverKind));
       if (!warmOnly) voiceLatency.mark(threadId, "dispatch");
+      // A call turn (and the warm that prepares its process, so the two share
+      // one spawn contract) runs at the engine's low effort: the person is
+      // waiting for the first word (server/voice-call-effort.ts).
+      const turnEffort = onCall || warmOnly
+        ? callTurnEffort({ driverKind: instance.driverKind, levels: instance.adapter.capabilities.effortLevels, effort })
+        : effort;
       const dispatch = await guardTurnDispatch(withDesktopModelPerson(turnPlace.principal, () => {
         if (IDENTITY.kind === "perspicax") desktopLocalModels.assertAvailable(turnPlace.principal, model, instance.driverKind);
         return instance.adapter.sendTurn({
@@ -13639,7 +13767,7 @@ async function startTurn(
         toolScope,
         ...(guestConfined ? { guestConfined: true, confinedWhy: confinedWhy(threadId) } : {}),
         model,
-        effort,
+        effort: turnEffort,
         variant,
         // a rewound thread never resumes the abandoned branch's session
         // the active task's own session — another task's cursor would
@@ -18904,17 +19032,37 @@ function persistMcpServers(next: Record<string, unknown>): void {
 // The existing CLI probes (each instance's snapshot), cached for a minute so
 // a turn never waits on one: an organization turn on an engine whose CLI is
 // missing gets the engine_missing card, and GET /api/health lists them.
-interface EngineProbe { instanceId: string; driver: string; installed: boolean; version?: string; at: number }
+interface EngineProbe { instanceId: string; driver: string; installed: boolean; version?: string; at: number; /** from the startup self-check: never stale */ pinned?: boolean }
 let engineProbes = new Map<string, EngineProbe>();
 let engineProbeFlight: Promise<void> | null = null;
 const ENGINE_PROBE_TTL_MS = 60_000;
 const ENGINE_PROBE_TIMEOUT_MS = 10_000;
 const CLI_MISSING = /not found|not installed|ENOENT|no such file|command not found|cannot find/i;
+/** The startup self-check's result for this instance, when the image
+ * installed its CLI and the instance runs it by its default name. */
+function selfCheckedEngine(instanceId: string): EngineCheck | null {
+  const target = registry.cliTarget(instanceId);
+  return target ? engineSelfCheck.forInstance(target.driverKind, target.cli) : null;
+}
+function engineProbeOf(instanceId: string, check: EngineCheck, at: number): EngineProbe {
+  const driver = registry.cliTarget(instanceId)?.driverKind ?? check.drivers[0] ?? "";
+  return { instanceId, driver, installed: check.ok, ...(check.version ? { version: check.version } : {}), at, pinned: true };
+}
+/** Why this image does not carry the engine an instance runs, if it says so. */
+function engineNotAvailableReason(instanceId: string): string | undefined {
+  const driver = registry.cliTarget(instanceId)?.driverKind;
+  return driver ? engineSelfCheck.notAvailableReason(driver) : undefined;
+}
 function probeEngines(): Promise<void> {
   engineProbeFlight ??= (async () => {
     const next = new Map<string, EngineProbe>();
     await Promise.all(registry.entries().map(async (entry) => {
       const at = Date.now();
+      const pinned = selfCheckedEngine(entry.instanceId);
+      if (pinned) {
+        next.set(entry.instanceId, engineProbeOf(entry.instanceId, pinned, at));
+        return;
+      }
       if (!entry.live) {
         next.set(entry.instanceId, { instanceId: entry.instanceId, driver: entry.shadow.driverKind, installed: false, at });
         return;
@@ -18939,6 +19087,10 @@ function probeEngines(): Promise<void> {
 /** Whether an instance's CLI is installed, from the cache; an instance not
  * probed yet counts as installed (and is probed in the background). */
 function engineInstalled(instanceId: string): boolean {
+  // An engine of this image's lock answers from the startup self-check: no
+  // probe on a page load or a turn.
+  const pinned = selfCheckedEngine(instanceId);
+  if (pinned) return pinned.ok;
   const probe = engineProbes.get(instanceId);
   if (!probe || Date.now() - probe.at > ENGINE_PROBE_TTL_MS) void probeEngines().catch(() => {});
   return probe?.installed ?? true;
@@ -19440,6 +19592,8 @@ ROUTES.push(createUserPreferenceRoutes({
     put: (principalId, input) => {
       const before = personSendsReadReceipts(principalId);
       const saved = userPreferenceStore.put(principalId, input);
+      // "Show when I am online" travels with the preferences: tell the others at once.
+      presence.refresh(principalId);
       if (personSendsReadReceipts(principalId) !== before) {
         for (const group of store.groups) {
           if (group.peopleDm && isPeopleDmParticipant(group, principalId)) broadcast({ kind: "thread.read", threadId: group.threadId, reset: true });
@@ -19762,6 +19916,7 @@ ROUTES.push(createAccountRoutes({
     }
     await userSandbox?.removeNow(principalId).catch((error: unknown) => console.warn(`account deletion: server environment not removed: ${String(error)}`));
     userPreferenceStore.remove(principalId);
+    presence.forget(principalId);
     viewerBotOverrideStore.remove(principalId);
     achievementStore.remove(principalId);
     botSettings.forgetPerson(principalId);
@@ -21164,11 +21319,15 @@ if (IDENTITY.kind === "perspicax" && engineLogins) {
         // the order of engine-credentials.ts for this person speaking
         const myTurns = !installed || person?.disabledAt !== undefined ? "none" : signedIn ? "subscription" : myKey ? "key" : orgKey ? "org-key" : "none";
         const live = registry.get(entry.instanceId);
+        const notAvailable = installed ? undefined : engineNotAvailableReason(entry.instanceId);
         return {
           instanceId: entry.instanceId,
           driver,
           displayName: live ? engineDisplayName(live) : entry.instanceId,
           installed,
+          // "Not available on this server" rather than "Not installed": the
+          // image deliberately does not carry it (engines.lock.json).
+          ...(notAvailable ? { notAvailable } : {}),
           subscription: { supported, signedIn },
           myKey,
           orgKey,
@@ -21503,6 +21662,56 @@ if (ownerIdentity) {
   // desktop handed it over, at the route an organization server uses.
   ROUTES.push(createOwnerAvatarRoute({ store: ownerIdentity, localPrincipalId }));
 }
+// ── presence: online, away, offline (organization server) ────────────
+// shared/presence.ts, server/presence.ts, server/routes/presence.ts. In
+// memory only: never written to a chat, the journal or a backup.
+function presenceViewer(auth: RequestAuth): PresenceViewer {
+  const id = auth.kind === "session" ? auth.session.principalId?.trim() : undefined;
+  if (IDENTITY.kind !== "perspicax" || auth.kind !== "session" || !id) return { ok: false, code: "session_required" };
+  const principal = principals.byId(id);
+  if (!principal?.subject || principal.subject.iss !== IDENTITY.issuer || principal.disabledAt != null || principal.mergedInto) {
+    return { ok: false, code: "other_organization" };
+  }
+  // Before the first directory sync the issuer is the only word there is.
+  const directory = perspicaxDirectory?.directory();
+  if (directory) {
+    const listed = directory.people.find((entry) => entry.sub === principal.subject!.sub);
+    if (!listed || listed.status === "disabled") return { ok: false, code: "other_organization" };
+    if (listed.kind === "service" || listed.type === "service") return { ok: false, code: "service_account" };
+  }
+  return { ok: true, id: principal.id, sessionId: auth.session.id };
+}
+function presenceHiddenFor(principalId: string): boolean {
+  try {
+    return presenceHidden(userPreferenceStore.get(principalId).preferences[PRESENCE_VISIBLE_PREFERENCE]);
+  } catch {
+    return false;
+  }
+}
+function broadcastPresence(view: PresenceView): void {
+  const principal = principals.byId(view.principalId);
+  const principalId = principal?.id ?? view.principalId;
+  const hidden = presenceHiddenFor(principalId);
+  // everyone of the organization: the public view (offline when hidden)
+  broadcast({ kind: "presence.changed", people: [{ ...publicPresence(view, hidden), principalId }] });
+  // the person's own streams: their real state, for their account row
+  broadcast({ kind: "presence.changed", audience: principalId, people: [{ ...view, principalId, ...(hidden ? { hidden: true } : {}) }] });
+}
+const presence = new PresenceTracker({ onChange: broadcastPresence });
+if (IDENTITY.kind === "perspicax") setInterval(() => presence.sweep(), PRESENCE_SWEEP_MS).unref();
+ROUTES.push(createPresenceRoutes({
+  organization: () => IDENTITY.kind === "perspicax",
+  viewer: presenceViewer,
+  people: () => {
+    if (IDENTITY.kind !== "perspicax" || !perspicaxDirectory) return [];
+    return orgDirectoryEntries(IDENTITY.issuer, perspicaxDirectory.people(), (iss, sub) => principals.bySubject(iss, sub))
+      .filter((entry) => !entry.service && !entry.disabled)
+      .map((entry) => entry.principalId);
+  },
+  view: (principalId) => presence.view(principalId),
+  hidden: presenceHiddenFor,
+  heartbeat: (principalId, sessionId, beat) => presence.heartbeat(principalId, sessionId, beat),
+}));
 if (IDENTITY.kind === "perspicax") {
   const issuer = IDENTITY.issuer;
   // A person's Perspicax avatar (personAvatarUrl), read through the link and
@@ -21635,33 +21844,12 @@ if (IDENTITY.kind === "perspicax") {
         managedTeamIds: (person?.teams ?? []).filter((team) => team.manager).map((team) => team.id),
       };
     },
-    // Slice 6: the caller's routine delegation.
+    // Slice 6: the caller's routine delegation, read-only (2026-10-08: it
+    // is issued automatically and has no switch).
     routineDelegation: {
       status: (principalId) => routineConsents?.status(principalId) ?? { state: "none" as const },
       suspendedCount: (principalId) => (routines?.listRoutines() ?? [])
         .filter((routine) => routine.enabled && routine.suspended && effectiveRunAs(routine) === principalId).length,
-      start: async ({ principalId, sessionId }) => {
-        const person = principals.byId(principalId);
-        const unavailable = routineConsents?.unavailableReason();
-        if (!oidcRp || !routineConsents || unavailable) {
-          return { ok: false as const, status: 503, error: "Routine delegations cannot be kept on this server right now.", code: "unavailable" };
-        }
-        if (!person?.subject || person.subject.iss !== IDENTITY.issuer) {
-          return { ok: false as const, status: 403, error: "Routine delegation needs a person signed in with Pulsatrix.", code: "identity_perspicax" };
-        }
-        try {
-          const started = await oidcRp.start({ purpose: "routines", principalId, subject: { iss: person.subject.iss, sub: person.subject.sub }, sessionId });
-          return { ok: true as const, authorizationUrl: started.authorizationUrl, cookie: oidcBindingCookie(SESSION_COOKIE, IDENTITY.redirectUri, started.binding) };
-        } catch (error) {
-          console.warn(`routine delegation could not start: ${error instanceof Error ? error.message : String(error)}`);
-          return { ok: false as const, status: 503, error: "Perspicax could not be reached. Try again.", code: "unavailable" };
-        }
-      },
-      revoke: (principalId) => {
-        const revoked = routineConsents?.revoke(principalId) ?? false;
-        if (revoked) routineAudit("routine_delegation.revoked", principalId);
-        return revoked;
-      },
     },
   }));
 } else {
@@ -21836,6 +22024,16 @@ ROUTES.push(createVoiceModeRoutes({
       if (!auth) return;
       const bot = store.bot(target.botId);
       if (!bot) return;
+      // Every start and heartbeat (about every 5 minutes, under sandboxd's
+      // 10 minute idle stop) counts as use of the server environment this
+      // call's turns work in (the one startTurn picks), so a call never
+      // loses it between two questions. Starts nothing.
+      if (userSandbox) {
+        const person = sandboxPrincipalForTurn({
+          botOwnerPrincipalId: effectiveBotOwner(bot), routine: false, speakerPrincipalId: orgSpeakerPrincipal(bot, speakerFor(auth)),
+        })?.trim().toLowerCase();
+        if (person) void userSandbox.markUsed(person);
+      }
       voiceWarmup.begin(target.threadId, callId, (signal) => new Promise<void>((resolve) => {
         void startTurn(bot.id, "", {
           threadId: target.threadId,
@@ -22093,6 +22291,12 @@ const idpSessions = oidcRp && idpVault
     refreshAfterMs: refreshAfterMs(process.env.SAGAX_OIDC_REFRESH_AFTER_SECONDS),
     teamNames: (teams) => { orgTeams.mergeFromClaims(teams); },
     ...(idpRevocations ? { revocations: idpRevocations } : {}),
+    // 2026-10-08: while the person keeps using Sagax, their routine
+    // delegation is issued or slid with their session.
+    onRenewed: (subject, access) => {
+      const person = principals.bySubject(subject.iss, subject.sub);
+      if (person && person.disabledAt === undefined) void routineConsents?.keepAlive(person.id, access);
+    },
   })
   : null;
 if (oidcRp && idpVault) {
@@ -22103,7 +22307,25 @@ if (oidcRp && idpVault) {
     renewMs: routineRenewMs(process.env.SAGAX_ROUTINE_RENEW_SECONDS),
     ...(idpRevocations ? { revocations: idpRevocations } : {}),
     onEnded: routineConsentEnded,
-    onActive: (principalId) => { routines?.resumeFor(principalId, (routine) => effectiveRunAs({ botId: routine.botId })); },
+    onActive: (principalId) => {
+      routineAudit("routine_delegation.granted", principalId);
+      routines?.resumeFor(principalId, (routine) => effectiveRunAs({ botId: routine.botId }));
+    },
+    // 2026-10-08 (JC): issued from the person's sign-in, never asked.
+    issue: (token) => perspicaxDirectory
+      ? perspicaxDirectory.issueRoutineDelegation(token)
+      : Promise.resolve({ ok: false as const, error: "link" as const }),
+    sessionSubject: (principalId) => {
+      const person = principals.byId(principalId);
+      if (!idpSessions || !person?.subject || person.disabledAt !== undefined) return Promise.resolve({ ok: false as const, error: "no_session" as const });
+      return idpSessions.subjectToken({ iss: person.subject.iss, sub: person.subject.sub });
+    },
+    subjectOf: (principalId) => {
+      const person = principals.byId(principalId);
+      return person?.subject && IDENTITY.kind === "perspicax" && person.subject.iss === IDENTITY.issuer && person.disabledAt === undefined
+        ? { iss: person.subject.iss, sub: person.subject.sub }
+        : null;
+    },
   });
 }
 if (idpSessions) {
@@ -22235,9 +22457,12 @@ const oidcLogin = IDENTITY.kind === "perspicax" && oidcRp && idpSessions
       createRoutineDelegation: (input) => {
         if (!routineConsents) throw new Error("routine delegations are unavailable");
         routineConsents.create(input);
-        routineAudit("routine_delegation.granted", input.principalId);
       },
       sessionPrincipal: (sessionId) => sessions.byId(sessionId)?.principalId ?? null,
+      // 2026-10-08: the routine delegation comes with the sign-in.
+      signedIn: ({ principalId, accessToken, accessExpiresAt }) => {
+        void routineConsents?.keepAlive(principalId, accessToken ? { token: accessToken, ...(accessExpiresAt !== undefined ? { expiresAt: accessExpiresAt } : {}) } : undefined);
+      },
     },
     openPairing: (input) => sessions.openPairing(input),
     serverName: () => environmentDescriptor({ environmentId: ENVIRONMENT_ID, desktopManaged: DESKTOP_MANAGED }).label,
@@ -26108,8 +26333,11 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (routineNeedsRun(auth, (body as { botId?: unknown } | null)?.botId)) return json(res, 403, NEEDS_RUN);
       const notYours = routineResultsRefusal(body);
       if (notYours) return json(res, 403, { error: notYours });
+      const runAsChoice = routineRunAsChoice(auth, body);
+      if ("refusal" in runAsChoice) return json(res, runAsChoice.refusal.status, { error: runAsChoice.refusal.error, code: runAsChoice.refusal.code });
       const writer = auth.kind === "session" ? actorKey(auth) : CLOUD_NOBODY_KEY;
-      const routine = withRoutineWriter(writer, () => routines!.create(body, undefined, routineActor(auth)));
+      const routine = withRoutineWriter(writer, () => routines!.create(body, undefined, { ...routineActor(auth), ...runAsChoice }));
+      auditRoutineRunAs(auth, routine, routineActor(auth)?.actorPrincipalId);
       // On a Cloud home, a routine the owner writes from their own device may
       // use their lent Mac when it runs (server/cloud-lending.ts).
       if (cloudRoutineAuthors && cloudOwnerSession(auth)) cloudRoutineAuthors.record(routine.id, routine);
@@ -26124,9 +26352,47 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     let routineMatch = path.match(/^\/api\/routines\/([\w-]+)\/run$/);
     if (routineMatch && method === "POST") {
       if (routineNeedsRun(auth, routineBotId(routineMatch[1]))) return json(res, 403, NEEDS_RUN);
+      // Run now (JC, 2026-10-08): the bot's owner, the person it runs as or
+      // an admin; one run of a routine in flight at a time.
+      const target = routines!.listRoutines().find((candidate) => candidate.id === routineMatch![1]);
+      if (target && !mayRunRoutineNow(auth, target)) return json(res, 403, { error: "Only the bot's owner, the person this routine runs as or an admin can run it now.", code: "run_now_not_allowed" });
+      if (target && routineRunInFlight(target.id)) return json(res, 409, { error: "A run of this routine is already in progress.", code: "run_in_flight" });
       const run = routines!.runNow(routineMatch[1]);
+      if (run && target) auditRoutineRunNow(auth, target, run);
       if (run && CLOUD_HOME && cloudOwnerSession(auth)) ownerStartedRoutineRuns.add(run.id);
       return run ? json(res, 201, { run }) : json(res, 404, { error: "no such routine" });
+    }
+    // The routine modal's "Runs as" dropdown (server/routine-run-as.ts):
+    // whom the caller may choose for a routine of this bot.
+    if (path === "/api/routines/run-as-options" && method === "GET") {
+      res.setHeader("cache-control", "no-store");
+      const routineId = url.searchParams.get("routineId") ?? "";
+      const existing = routineId ? routines!.listRoutines().find((routine) => routine.id === routineId) : undefined;
+      if (routineId && (!existing || !routineVisible(existing, visible) || (viewerId && !routineSeenBy(existing, viewerId)))) return json(res, 404, { error: "no such routine" });
+      const botId = url.searchParams.get("botId") || existing?.botId || "";
+      if (hiddenRoutineTarget({ botId }, visible)) return json(res, 404, { error: "no such bot" });
+      const bot = store.bot(botId);
+      const chooser = runAsChooserFor(auth);
+      if (!bot || !chooser) return json(res, 200, { canChoose: false, people: [] });
+      const target = url.searchParams.get("target") || existing?.target;
+      const groupId = url.searchParams.get("groupId") || existing?.groupId;
+      const options = runAsOptions({
+        chooser,
+        people: runAsPeople(),
+        botOwnerId: effectiveBotOwner(bot) || undefined,
+        mayRun: (principalId) => principalMayRunRoutine(principalId, { botId, ...(target ? { target } : {}), ...(groupId ? { groupId } : {}) }),
+        delegated: (principalId) => routineConsents?.status(principalId).state === "active",
+      });
+      const currentId = existing ? effectiveRunAs(existing) : chooser.principalId;
+      const currentPerson = currentId ? principals.byId(currentId) : null;
+      return json(res, 200, {
+        ...options,
+        ...(currentId ? { current: {
+          principalId: currentId,
+          name: currentPerson?.name || currentPerson?.login || "",
+          ...(routineConsents?.status(currentId).state === "active" ? {} : { pending: true }),
+        } } : {}),
+      });
     }
     routineMatch = path.match(/^\/api\/routines\/([\w-]+)$/);
     if (routineMatch && method === "PATCH") {
@@ -26136,6 +26402,10 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (routineNeedsRun(auth, routineBotId(routineMatch[1])) || routineNeedsRun(auth, (body as { botId?: unknown } | null)?.botId)) return json(res, 403, NEEDS_RUN);
       const notYours = routineResultsRefusal(body);
       if (notYours) return json(res, 403, { error: notYours });
+      const existingRoutine = routines!.listRoutines().find((candidate) => candidate.id === routineMatch![1]);
+      const runAsChoice = routineRunAsChoice(auth, body, existingRoutine);
+      if ("refusal" in runAsChoice) return json(res, runAsChoice.refusal.status, { error: runAsChoice.refusal.error, code: runAsChoice.refusal.code });
+      const runAsBefore = existingRoutine ? effectiveRunAs(existingRoutine) : undefined;
       const before = cloudRoutineAuthors ? routines!.listRoutines().find((candidate) => candidate.id === routineMatch![1]) : undefined;
       const wasOwners = Boolean(before && cloudRoutineAuthors?.authored(before.id, before));
       const previous = cloudRoutineAuthors?.writer(routineMatch[1]);
@@ -26153,7 +26423,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       const writer = ownerAuthors && CLOUD_OWNER_KEY ? CLOUD_OWNER_KEY
         : auth.kind === "session" && !cloudOwnerSession(auth) ? actorKey(auth)
           : previous && !cloudOwnerPerson(previous) ? previous : CLOUD_NOBODY_KEY;
-      const routine = withRoutineWriter(writer, () => routines!.update(routineMatch![1], body, undefined, routineActor(auth)));
+      const routine = withRoutineWriter(writer, () => routines!.update(routineMatch![1], body, undefined, { ...routineActor(auth), ...runAsChoice }));
+      if (routine) auditRoutineRunAs(auth, routine, runAsBefore);
       // The owner's own edit keeps (or, when it rewrites the instructions,
       // makes) the routine theirs. Anyone else's edit, of any field (its
       // schedule, where its results go, whether it is on), makes it no longer
@@ -26343,6 +26614,10 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       }
       if (!(auth.kind === "loopback" && auth.trust === "service")) client.identity = () => viewerIdentity(auth);
       if (viewerId) client.viewerId = viewerId;
+      // A person of the organization: this stream is one of their clients.
+      const presenceOf = presenceViewer(auth);
+      const presenceClose = presenceOf.ok ? presence.connect(presenceOf.id, presenceOf.sessionId) : null;
+      if (presenceOf.ok) client.presence = true;
       res.writeHead(200, {
         "content-type": "text/event-stream",
         "cache-control": "no-cache",
@@ -26406,11 +26681,13 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         }
         try {
           res.write(`: keepalive\n\ndata: ${JSON.stringify({ kind: "ping" })}\n\n`);
+          if (presenceOf.ok) presence.touch(presenceOf.id, presenceOf.sessionId);
         } catch {}
       }, SSE_HEARTBEAT_MS);
       req.on("close", () => {
         clearInterval(keepalive);
         sseClients.delete(client);
+        presenceClose?.();
       });
       return;
     }
@@ -31336,13 +31613,16 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (detail === "capabilities") return json(res, 200, { ...HEALTH_IDENTITY, capabilities });
       // The engines installed on this server (slice 3, D16), from the CLI
       // probes: refreshed here when stale, within a bounded wait.
-      const stale = !engineProbes.size || [...engineProbes.values()].some((probe) => Date.now() - probe.at > ENGINE_PROBE_TTL_MS)
+      const stale = !engineProbes.size || [...engineProbes.values()].some((probe) => !probe.pinned && Date.now() - probe.at > ENGINE_PROBE_TTL_MS)
         || registry.entries().some((entry) => !engineProbes.has(entry.instanceId));
       // Solo servers (the desktop's boot probe polls this route) never wait
       // and never probe from here: they list what an earlier probe found.
       if (stale && IDENTITY.kind === "perspicax") await settledWithin(probeEngines(), ENGINE_PROBE_TIMEOUT_MS + 1_000);
       const engines = [...engineProbes.values()]
-        .map(({ instanceId, driver, installed, version }) => ({ instanceId, driver, installed, ...(version ? { version } : {}) }))
+        .map(({ instanceId, driver, installed, version }) => {
+          const notAvailable = installed ? undefined : engineNotAvailableReason(instanceId);
+          return { instanceId, driver, installed, ...(version ? { version } : {}), ...(notAvailable ? { notAvailable } : {}) };
+        })
         .sort((a, b) => a.instanceId.localeCompare(b.instanceId));
       // app: "openmausbot" stays one release beside product: "sagax" (deployed
       // health checks grep the body for it; legacy-names.mjs HEALTH_IDENTITY).
@@ -31465,14 +31745,44 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     }
 
     // Subscription windows (5-hour and weekly), not the token ledger above.
-    // Same admin gate as /api/usage: this route is unlisted, so it stays admin.
+    // Solo: this computer's own logins, admin only (unlisted). Organization
+    // server: the asking person's own subscription logins, never the
+    // server's, the organization's key or another person's
+    // (server/plan-usage.ts); a member may read their own
+    // (request-auth.ts CLIENT_ALLOW, orgDirectory).
     if (method === "GET" && path === "/api/plan-usage") {
       res.setHeader("cache-control", "no-store");
-      const report = await loadPlanUsage({
-        accounts: planAccountsFromInstances(instanceConfigs(cfg)),
-        refresh: url.searchParams.get("refresh") === "1",
+      const refresh = url.searchParams.get("refresh") === "1";
+      const instances = instanceConfigs(cfg);
+      // A key row (no plan windows) is listed only when a key is kept for
+      // that provider: the workspace key of Settings > Connections, or one in
+      // the engine's own environment.
+      const planKeyConfigured = (driver: string, instanceId: string): boolean => {
+        const workspace = driver === "claudeAgent" ? cfg.anthropic?.key : driver === "codex" ? cfg.openai?.key : driver === "grokAgent" ? cfg.xai?.key : undefined;
+        return Boolean(workspace?.trim()) || driverKeyBacked(cfg, driver, instanceId);
+      };
+      if (IDENTITY.kind === "perspicax" && engineLogins) {
+        const principalId = auth.kind === "session" ? auth.session.principalId?.trim() || "" : localPrincipalId();
+        if (!principalId || !isPrincipalId(principalId)) return json(res, 403, { error: "sign in as a person first" });
+        const person = principals.byId(principalId);
+        const sub = person?.subject?.iss === IDENTITY.issuer ? person.subject.sub : undefined;
+        const held = sub ? perspicaxDirectory?.providerKeys(sub) ?? [] : [];
+        const logins = engineLogins;
+        const accounts = orgPlanAccounts(instances, {
+          loginDir: (driver) => logins.loginDir(principalId, driver),
+          signedIn: (driver) => logins.signedIn(principalId, driver),
+          apiKeyConfigured: (_driver, instanceId) => {
+            const driver = instances[instanceId]?.driver ?? "";
+            return providersOfDriver(driver).some((provider) => held.includes(provider)) || planKeyConfigured(driver, instanceId);
+          },
+        });
+        return json(res, 200, await loadPlanUsage({ accounts, refresh }));
+      }
+      if (!auth.scopes.includes("admin")) return json(res, 403, { error: "admin only" });
+      const accounts = planAccountsFromInstances(instances, {
+        apiKeyConfigured: (_driver, instanceId) => planKeyConfigured(instances[instanceId]?.driver ?? "", instanceId),
       });
-      return json(res, 200, report);
+      return json(res, 200, await loadPlanUsage({ accounts, refresh }));
     }
 
     // ── provider key check: does a pasted or saved key open the provider's door ──

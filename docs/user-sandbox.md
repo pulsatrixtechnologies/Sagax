@@ -211,6 +211,14 @@ exactly that). So on an organization server every turn sets
   server (409 `host_tools`) rather than run in the container.
 
 Shell, files and pages then go through `sagax-environment`.
+
+The engine CLIs therefore live in the Sagax server image, not in this one:
+`engines.lock.json` pins them and an organization build (`ENGINE_SET=all`,
+Perspicax's `build-push.sh`) installs every one of them there
+([Engines baked into a server image](custom-engines.md#engines-baked-into-a-server-image)).
+`deploy/sandbox/Dockerfile` carries no engine. Being installed does not lift
+the rule above: an engine that cannot withhold its own tools (every ACP
+engine except Grok Build) is still refused on an organization server.
 `scripts/smoke-host-tools.ts` starts the real Claude Code CLI with the
 driver's flags (no model request) and checks its tool list has no `Bash`.
 

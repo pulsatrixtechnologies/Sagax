@@ -63,7 +63,7 @@ organization's mail; `organizationHidesSection` in `SettingsModal.tsx`).
 Covered by `src/components/SettingsModal.orgCleanup.test.ts`,
 `src/components/EnginesSettings.org.test.ts`,
 `src/components/Sidebar.header.test.ts`,
-`src/components/settings/MyRoutineDelegation.test.ts` and
+`src/components/routines/RoutineOwnerName.test.ts` and
 `server/org-bot-force.test.ts`:
 
 - Connected apps (Composio) is experimental (`features.connectedApps`, off):
@@ -110,10 +110,70 @@ Covered by `src/components/SettingsModal.orgCleanup.test.ts`,
   New bot and says "Votre administrateur vous permet d'utiliser les robots
   partagés seulement" (`bots.readOnly.notice`; MA-3, MA-4,
   `server/authz.test.ts`).
-- Routines in my name is read-only: allowed by default, revoked in the
-  Perspicax console (`manageUrl`, `/console/me/access#sagax`). Perspicax has no
-  silent authorization, so `ensureRoutineDelegation` starts the consent once,
-  after the person's first routine.
+- A routine always acts in its owner's name (JC, 2026-10-08). No consent,
+  no switch, no settings card, no "Reconnect my routines": Sagax issues the
+  routine delegation itself from the person's live sign-in, by RFC 8693
+  token exchange through the link (`issueRoutineDelegation`, asking a
+  refresh token with `pulsabot:routines`), at every sign-in, at a sign-in
+  renewal while they keep using Sagax (`RoutineConsents.keepAlive`, a
+  delegation older than a day slides) and at a run that finds none
+  (`prepare` and `ensure`). A family Perspicax ended is issued again; a run
+  that cannot get one is skipped, never paused. Only a person out
+  (`person_out`) or without `run` (`no_right`) pauses a routine, with one
+  neutral line. `/api/org/routine-delegation` is GET only. A disabled or
+  deleted account still stops its routines. Needs Perspicax to accept that
+  exchange (it refuses it up to 1.8.13: the run is then skipped).
+- Who a routine runs as is chosen in the routine modal (JC, 2026-10-08;
+  `server/routine-run-as.ts`, `src/components/routines/RunAsField.tsx`).
+  The record keeps `runAs` (a principal id); a routine without one runs as
+  its bot's owner (`effectiveRunAs`), so older records need no migration.
+  `POST /api/routines` and `PATCH /api/routines/:id` accept `runAs`; an
+  explicit choice wins over D5 (whoever rewrites the work runs it), which
+  still applies when none is sent. `GET /api/routines/run-as-options`
+  (`botId`, `routineId`, `target`, `groupId`) lists whom the caller may
+  choose. Rules: organization server only (solo: no dropdown, `runAs`
+  refused 400 `run_as_solo`). An admin (`orgAdminCaller`) reaches every
+  active person of the directory; a team manager the people of the teams
+  they manage (`teams[].manager`) and themselves; a manager with no team
+  here themselves and the bot's owner; anyone else only themselves (no
+  dropdown, 403 `run_as_not_allowed`). Only people are listed: never a
+  service account, a disabled person, an interim or local principal
+  (`run_as_not_person`). The person must be able to run the bot's routines
+  (`principalMayRunRoutine`: owner, or a grant at `run` or above, and the
+  room for a goal); otherwise listed disabled with the reason and refused
+  403 `run_as_no_right`. A manager out of reach gets 403
+  `run_as_out_of_scope`; the unchanged person sent back by someone who could
+  not choose them is ignored (D5 decides). Every change of the effective
+  person is one `routine.run_as` row in the admin activity log (`bot`,
+  before and after, `orgAuditActor`). The runner already resolves
+  `effectiveRunAs` (run snapshot `runAs`): the chosen person's delegation
+  acts, the bot's owner still pays (2026-10-01). A person with no
+  delegation yet (never signed in since #149) is marked `pending` and the
+  modal says "Will run once Name signs in"; a run then is skipped with
+  #149's line, never paused. Choosing another person clears the previous
+  person's pause.
+- Run now (JC, 2026-10-08; `src/components/routines/RunNowButton.tsx`):
+  first in the bot panel routine footer (Run now, Pause, Edit, delete) and
+  in the calendar details footer. `POST /api/routines/:id/run` (the
+  scheduler's own path, `RoutineManager.runNow`: the routine's run-as
+  person, their delegation, the owner pays, #149's skip rule) leaves the
+  schedule and the Active switch alone; a paused routine runs and stays
+  paused. On an organization server only the bot's owner, the person the
+  routine runs as or an admin may (`mayRunRoutineNow`, else 403
+  `run_now_not_allowed`; the renderer hides the button with
+  `canRunRoutineNow`); a solo server keeps the bot-level `run` rule. A run
+  queued, running or waiting refuses another (409 `run_in_flight`; the
+  button is disabled with a tooltip). Each one writes `routine.run_now`
+  (`trigger: "manual"`, the run id and run-as person, who clicked) to the
+  admin activity log; the run reaches the lists at once through the run
+  event and `routineRunPatched`.
+- The calendar's routine details modal is wide (JC, 2026-10-08):
+  `min(92vw, 960px)` from 720 px, height capped to the viewport, two
+  columns when there are instructions (left 320 px: schedule, next runs,
+  clock-change note, bot, Runs as, limits, last run; right: the
+  instructions in a 68ch measure, scrolling on their own), footer full
+  width. Under 720 px or without instructions, the single column as before
+  (`data-event-details`, `RoutineCalendarPage.test.ts`).
 - An organization admin force-stops or force-deletes any bot
   (`POST /api/org/bots/<id>/force-stop|force-delete`, delete confirmed with
   the bot's name): admin scope, `orgAdminCaller`, audited
@@ -275,7 +335,16 @@ out are skipped. Someone who cannot post is refused. The room shares one
 5 minute clock (`group:<id>`), separate from a direct nudge. A refusal
 writes nothing. The button is last in the composer when the room names
 someone else (`src/lib/group-nudge.ts`). A bot uses `nudgePerson` or
-`nudgeGroup`, both rewritten to that one POST. Tests:
+`nudgeGroup`, both rewritten to that one POST. A nudge RECEIVED (the `nudge`
+frame in `src/state/store.tsx`) shakes the window and plays
+`public/nudge.mp3` once (`onNudgeReceived` in `src/lib/desktop-nudge.ts`,
+`playNudgeSound` in `src/lib/nudge-sound.ts`, volume 0.6, a refused play is
+logged once and ignored). The sender's own window shakes without the sound,
+and the server skips the sender, so a group member hears it once. Settings >
+Appearance > "Nudge sound" (`omb-nudge-sound`, per computer, on by default,
+`src/lib/notification-preferences.ts`). The file is served like
+`app-icon.svg`: vite copies `public/` to `dist/`, which the packaged app
+carries as `resources/ui` (outside the asar) and serves from there. Tests: `src/lib/nudge-sound.test.ts`,
 `server/nudge.test.ts`, `server/routes/nudges.test.ts`,
 `src/components/GroupView.test.ts`. The server image must be installed
 before an organization server accepts `{ groupId }`.
@@ -440,10 +509,11 @@ name) and `context_length` becomes `contextWindow`.
 - Which engines run them: `shared/local-model-engines.ts`. pi, Codex, Grok
   CLI, Kimi, Qwen, Droid, Hermes and OpenCode take an OpenAI-compatible base
   URL. Claude Code runs a loopback row (solo: the server answers
-  `/v1/messages`, as DwarfStar, Ollama, LM Studio and llama-server do) but not
-  a desktop row: the bridge carries `/v1/models` and `/v1/chat/completions`
-  only, and there is no protocol proxy. Any other engine keeps its own
-  endpoint. The picker greys a row the engine cannot run, with one line
+  `/v1/messages`, as DwarfStar, Ollama, LM Studio and llama-server do) and a
+  desktop row when the desktop's probe saw `/v1/messages` answer on that
+  server (`anthropic: true` on the published endpoint and the option; else the
+  row is greyed with "This local server does not speak the Anthropic
+  protocol."). Any other engine keeps its own endpoint. The picker greys a row the engine cannot run, with one line
   saying why, and `DesktopLocalModels.assertAvailable` refuses it at turn time.
 - Solo: `server/drivers/local-inject.ts` `LOCAL_HOSTS` probes the same ports
   as the desktop (`shared/desktop-local-models.ts` `SEED_ENDPOINTS`).
@@ -453,6 +523,21 @@ name) and `context_length` becomes `contextWindow`.
   URLs (`electron/desktop-bridge.mjs`). Own bots may use them by default
   (`expose` defaults on when the person never chose); `share` stays off until
   turned on. A failed probe is not cached.
+- Claude Code on an organization server (`/v1/messages` through the desktop
+  link). Scope, do not widen: the bridge forwards `POST /v1/messages` only to
+  a loopback endpoint (127.0.0.1 or localhost, the allowlisted ports) that
+  the desktop itself probed and published as speaking the Anthropic protocol
+  (`probeAnthropicMessages` in `electron/local-models.mjs`: one POST with no
+  messages, 404/405/501/5xx means no, cached 5 s). The desktop re-checks that
+  flag before it fetches (`executeLocalModel` `allowMessages`), and the server
+  route refuses `/messages` for an unpublished endpoint or a GET. Own bots
+  only, by the same rule as chat completions: another person needs `share`,
+  which stays off by default. The injected key is the server's desktop grant
+  token (`desktopModelApiKey`), never a real key; the base URL is the
+  server's loopback proxy (`applyClaudeInject` strips `/v1`). Same request
+  cap, same timeout (240 s), path and endpoint id audited, body never logged.
+  The bridge returns one body, so a streamed answer reaches Claude Code at
+  the end, not token by token.
 - Refresh on open: the picker calls `refreshLocalModelsOnOpen` (10 s fresh
   window). Solo re-reads the engine's catalog; server mode calls
   `ogb.serverMode.refreshLocalModels()` (IPC `server-mode:refresh-local-models`,
@@ -520,6 +605,74 @@ anthropic, openai and xai keys; google and moonshot are read as soon as its
 directory lists them. Tests: `server/engine-credentials.test.ts`,
 `server/drivers/acp/org-access.test.ts`, `server/drivers/device-login.test.ts`,
 `server/principal-engine-logins.test.ts`.
+
+Plan usage (Settings > Usage, `GET /api/plan-usage`, 2026-10-08) reads
+the windows of whoever pays, from where their login really is. On an
+organization server: the asking person's own subscription login only
+(`principals/<pid>/claude`, `codex`, `grok/.grok`, behind its sign-in
+marker), never the server's own HOME or default keychain entry, never the
+organization's key and never another person's directory (`orgPlanAccounts`
+in `server/plan-usage.ts`); a member may read their own. In solo: this
+computer's own CLI logins, admin only. One row per provider: rows that read
+the same login are one (the ChatGPT plan instance folds into Codex), with
+the plan name as a subtitle. A key row ("Claude (API key)") appears only
+when a key is configured and says "API key: no plan windows". Each row has
+one state: windows, no-windows, signed-out ("Not signed in" with Connect:
+the person's `EngineConnect` on an organization server, Settings > Model
+providers in solo) or error ("Could not reach <product>: <reason>" with Try
+again). Only a missing login or a 401 is signed-out; a network failure,
+timeout, 429, 403, 5xx or an expired access token next to a refresh token
+(it renews on the next turn) is an error with its reason, never "sign in
+again". `ok` and `error` stay on each row for the phone apps. Tests:
+`server/plan-usage.test.ts`, `server/plan-usage.modes.test.ts`,
+`src/components/PlanUsage.test.ts`, MA-5 in
+`server/org-member-access.e2e.test.ts`.
+
+## Every engine preinstalled on an organization server (2026-10-08)
+
+`engines.lock.json` (repository root) is the ONE place the engine CLIs of the
+server image are pinned: npm package and version, native download URL and
+SHA-256 per architecture, the Python engine's source archive and SHA-256,
+licence, `redistributable`, plus the engines deliberately not preinstalled
+(`notPreinstalled`, with the reason) and the API engines that need no
+install (`noInstall`). `server/engines-self-check.test.ts` fails when a
+built-in driver is missing from the lock or a pin's `bin` differs from the
+driver's default `cli`.
+
+- Dockerfile: `scripts/install-engines.mjs` installs the selection named by
+  `ENGINE_SET` (`none` default, the public image; `all`, what Perspicax's
+  `infra/scripts/build-push.sh` passes; `open`, only redistributable
+  licences; or ids), runs each `<cli> --version` (the build fails if one does
+  not start) and writes `/app/engines/manifest.json`. The legacy `ENGINES`
+  (npm specs) and `NATIVE_ENGINES` (native ids) build arguments still
+  override the lock's npm and native sets; `none` drops a kind.
+- Installed by `ENGINE_SET=all`: Claude Code, Codex, pi, Gemini CLI, Kimi
+  Code, Qwen Code, OpenCode, Droid (npm, global), Grok Build and Cursor Agent
+  (native, `/opt/sagax-engines/<id>/<version>`, linked in `/usr/local/bin`),
+  Hermes Agent (Python venv from the v2026.9.24 source archive).
+- Not preinstalled: Antigravity (about 2 GB, Google's terms, the app's own
+  managed install already exists, and organization turns are refused because
+  it runs its own tools), mmx-cli (not needed by the MiniMax engine, no
+  licence published). API engines (Grok API, OpenAI-compatible, Mistral,
+  Cerebras, MiniMax), Boat and custom ACP need no install.
+- Startup self-check (`server/engines-self-check.ts`, `SAGAX_ENGINES_MANIFEST`):
+  each preinstalled CLI runs `--version` once at boot, the result is logged
+  (`[engines] claude: ...`) and is the instance's installed state from then
+  on (`selfCheckedEngine` in `server/index.ts`): `engineInstalled` and
+  `/api/health` no longer probe those engines per request. An instance with
+  its own `config.cli` is probed as before. An engine of `notPreinstalled`
+  that is absent answers `notAvailable` (the reason) on `/api/me/engines` and
+  `/api/health`; the UI then reads "Not available on this server"
+  (`myEngines.notAvailable`, `model.org.state.notAvailable`) instead of "Not
+  installed".
+- Engines run in the Sagax server container, never in the per-person
+  sandbox (`deploy/sandbox/Dockerfile` is unchanged). Being installed does
+  not lift the host-tools rule: on an organization server an engine that
+  cannot withhold its own tools (every ACP engine except Grok Build) is still
+  refused with 409 `host_tools` and hidden from the model picker.
+- Bumping an engine: change the lock only (version, and the hashes for a
+  native or Python engine). Perspicax reads the lock from the Sagax checkout
+  at its next `build-push.sh`.
 
 ## Voice mode (xAI)
 
@@ -594,16 +747,30 @@ fake xAI: `scripts/verify-voice-mode.ts`. Details: `docs/voice-mode-xai.md`.
   under its `utteranceId` on the page (`latency.ts`) and on the server
   (`server/voice-latency.ts`, `[voice-latency]` lines). A thread on a call
   passes `keepWarm` to the engine: the Claude driver keeps one process for
-  the call, the per-turn comms token in a file (`SAGAX_COMMS_TOKEN_FILE`),
-  never in the spawn contract. Claude starts that process when the call is
-  accepted (`POST /voice/call`); the first spoken turn reuses it. A hangup
-  before any turn closes the idle process. Codex and the API drivers are
-  not warmed this way (a Codex warm is the ACP handshake and `session/new`
-  before `session/prompt`, which is not done here, and no hidden prompt is
-  sent). Do not put a per-turn value in a pooled
-  process's contract: it relaunches the engine on every turn. Tests:
-  `server/voice-call-latency.e2e.test.ts`, `server/voice-call-warmup.test.ts`,
-  `call.test.ts` ("latency"), bench `scripts/voice-latency-bench.ts`.
+  the call, and Grok (ACP) keeps one process and one native session, the
+  per-turn comms token in a file (`SAGAX_COMMS_TOKEN_FILE`,
+  `server/drivers/spawn-contract.ts` `warmCommsEnv`), never in the spawn
+  contract nor in the ACP `sessionKey`: a Grok call turn is a bare
+  `session/prompt`, no `session/load`, no MCP reconnect, and reports
+  `reused`. Claude and Grok (`AcpSupport.warmSession`) start that process
+  when the call is accepted (`POST /voice/call`; Grok pays initialize,
+  authenticate and `session/load` or `session/new`, no prompt); the first
+  spoken turn reuses it. A hangup closes the idle process
+  (`releaseWarmSession`). Codex and the API drivers are not warmed (no
+  hidden prompt is sent). A call turn and its warm run at the engine's low
+  effort (`server/voice-call-effort.ts`: "low", never "none", a bot set
+  lower keeps its level, a Codex bot with no effort is left alone); the
+  model is unchanged (the call's model tier belongs to Auto, PR #153). The
+  call's start and each heartbeat mark the person's server environment
+  used (`UserSandboxManager.markUsed`, sandboxd `POST .../used`, starts
+  nothing) so its 10 minute idle stop never hits mid-call. Do not put a
+  per-turn value in a pooled process's contract or session inputs: it
+  relaunches or re-establishes the engine on every turn. Tests:
+  `server/voice-call-latency.e2e.test.ts` (Claude and Grok),
+  `server/drivers/acp/acp.test.ts` (call session, warm),
+  `server/voice-call-effort.test.ts`, `server/voice-call-warmup.test.ts`,
+  `server/user-sandbox-manager.test.ts`, `call.test.ts` ("latency"), bench
+  `scripts/voice-latency-bench.ts` (Claude and Grok).
 
 A change to `server/voice-mode.ts` needs the server image redeployed.
 
@@ -633,6 +800,32 @@ Electron restart (no HMR); launch-test them before committing.
 - `fit.ts` sizes the stage for the widest pose; `pilot.ts` moves the window
   (flights, walks) through `floating-bots:geometry`, `move-to` and
   `autopilot`; main clamps every move and never saves spots flown to.
+- Position anywhere: main keeps only the character's own box on screen
+  (`clampBodyToDisplays`), never the whole window: the page reports that box
+  (`floating-bots:body`, `bodyRectIn`), main uses `FLOAT_BODY` until it does
+  (kept equal to `homeBody` by the window-frame test), and the window's
+  transparent room may hang off a screen's edge (larger-than-screen windows,
+  put back after creation and show). A drag follows the pointer's own path
+  (`entry.drag`, so it crosses seams in small steps and loses no ground at an
+  edge). Spots are saved per display setup as the character's own corner
+  (`v: 2`; an older save reads as the window's corner); a restart puts it back
+  exactly, a setup that is gone falls back to the default spot. macOS undoes
+  a move that puts more than about a fifth of a window on a neighbouring
+  display: there the room stays within `SEAM_SHARE` (`keepOffNeighbours`),
+  geometry sends the `limits` and the chat's room opens away from the seam
+  (`sideWithin`). Measure with `node scripts/verify-mascot-desktop.mjs`
+  (corners of every display, the seam, a restart, the menu, the bubble,
+  the effects; screenshots next to the report).
+- Placement rules live in `placement.ts` (pure, `placement.test.ts`):
+  `placeChat` picks the chat's side from where the character stands (above
+  and left by default; below near the top, right near the left edge) and its
+  room on that display (60 % of its height at most); `effectSide` and
+  `effectLane` put the effects beside the character, never over it. The
+  window holds the chat's room on that side: `FloatingBotWindow` reads the
+  layout when the mascot comes to rest (a drop, a walk, the chat opening, a
+  display change) and, when the side flips, moves the window to its new
+  corner with `floating-bots:frame` (the page hidden for that frame, the box
+  it drew just before sent along), so the character never jumps.
 - The chat stays put (`window-frame.ts`): while the mascot is home the
   window already holds the quick chat's room (`chatHomeSize`,
   `FLOAT_HOME`), anchored on the character's bottom-right corner, so
@@ -652,7 +845,17 @@ Electron restart (no HMR); launch-test them before committing.
   character and click-through of the transparent parts, theme).
 - The balloon has no shield: dragged by its header it comes right up to
   the character from any side (over the stage's empty room, touching its
-  box), never over its face (`clampBalloon` in `Balloon.tsx`). Only the part
+  box), never over it (`clampBalloon` in `Balloon.tsx`, `FACE_INSET` 0).
+  The quick chat keeps the width its window holds (288 px) unless the person
+  sizes it, grows in height up to the room on its display and then scrolls
+  (`balloonSize`), and slides back onto the display when the stage hangs off
+  the edge (`shift`). It wears the main chat's tokens and type (18 px
+  corners, 13 px on a 20 px line, the user bubble) and the app's composer row
+  at its scale: clip, field, model chip, voice button (Send once typed). The
+  clip and the chip are menu events (`attach`, `model`): main brings the app
+  forward and the brain opens that bot's own composer file picker or model
+  picker (`COMPOSER_ATTACH_EVENT`, `COMPOSER_MODEL_EVENT`). It opens and
+  closes with `useHeldMenuMotion` (the open played backwards). Only the part
   of its offset away from the mascot grows the window; the part toward it is
   a `translate` inside the window it has. It sits above the art (z-index 2),
   under the effects (z-index 3).
@@ -660,8 +863,8 @@ Electron restart (no HMR); launch-test them before committing.
   engine (`LiveCallEngine`) runs once in the app page (`CallEngineHost` in
   App, for the bot `useOnCall()` names) and publishes the call
   (`src/lib/voice-mode/live-call-store.ts`); the app's pill (`LiveCall`) and
-  the mascot only show and drive it. The mascot's call button (balloon header,
-  `hints.call`, and the menu's "call") starts that same call for its bot
+  the mascot only show and drive it. The mascot's call button (the balloon
+  composer's voice button, `hints.call`, and the menu's "call") starts that same call for its bot
   (`mascot-call.ts`, `runMascotCallEvent`): one call at a time across app and
   mascots (`lib/call.ts`). The brain sends `snapshot.call` (`FloatingCall`)
   and the levels on their own channel (`floating-bots:level`, 20 Hz, rounded);
@@ -671,11 +874,23 @@ Electron restart (no HMR); launch-test them before committing.
   microphone is the app page's (its permission), never the mascot window's.
   Main sanitizes `call`, its events and their settings patches. Measured in
   `verify-mascot-chat.mjs` (call leg); the app's call: `verify-voice-mode.ts`.
-- The desktop mascot's menu (right click, long press, the menu key) is main's
-  native menu, popped exactly at the pointer (`floating-bots:menu`,
-  `menuPopupPoint`: the page's CSS pixels times its zoom, kept inside the work
-  area of the display under it); the drawn `.fb-menu` stays for the in-app
-  overlay and an older preload.
+- The desktop mascot's menu (right click, long press, the menu key or
+  Shift+F10) is main's native menu, popped exactly at the pointer
+  (`floating-bots:menu`, `menuPopupPoint`: the page's CSS pixels times its
+  zoom, kept inside the work area of the display under it); the drawn
+  `.fb-menu` stays for the in-app overlay and an older preload. Its items
+  come from the brain (`floatingMenu` in `brain.ts`): Talk, Start a voice
+  call, Open in Sagax; Switch bot (`switch:<botId>`) and Moves
+  (`move:<clip>`, the list of `moves.ts`, shared with the avatar popover);
+  Hide for 1 hour (`snooze`, `hiddenUntil`, the window reopens by itself) and
+  Hide (`dock`); On the desktop (always on top, fly away, activity) and
+  Settings (Settings > Appearance). Items may be separators, greyed or one
+  level of submenu (`menuTemplate`). A move goes from main straight to that
+  window (`floating-bot:move`), never through the brain. A switch re-keys the
+  window in main (`floating-bots:rekey`): same mascot, same spot.
+- Effects (signs, thought dots, Zzz, hearts, sparkles, confetti, Trombi's
+  sparkle) are drawn in the lane beside the character (`.fb-fx[data-side]`),
+  never over it; add a new one there.
 - The balloon wears the app's theme: the brain sends `theme` (the skin and
   the brand accent, `theme.ts`, followed live) and the window stamps it;
   Trombi keeps its Hibou 98 balloon whatever the theme.
@@ -1282,6 +1497,70 @@ the bot-wide action. Tests: `src/lib/sidebar-hidden*.test.ts`,
 `PersonConnectionsSection.test.ts`,
 `src/state/person-panel.reducer.test.ts`.
 
+## Presence: online, away, offline (organization server, 2026-10-08)
+
+JC asked for an online / away / offline indicator on people. Keep these
+rules, covered by `shared/presence.test.ts`, `server/presence.test.ts`,
+`server/routes/presence.test.ts`, `server/presence.e2e.test.ts`,
+`src/lib/presence.test.ts`, `src/components/PresenceDot.test.ts` and
+`electron/system-idle.node-test.mjs`:
+
+- The thresholds and the state machine are one module,
+  `shared/presence.ts`: online (a client of the person is connected and
+  they used it within 5 minutes, `PRESENCE_AWAY_AFTER_MS`), away (connected
+  but idle longer, or the desktop says the computer is idle or the screen is
+  locked), offline (no client: every event stream closed and the 20 s
+  reconnect grace passed, or no sign of a client for 10 minutes,
+  `PRESENCE_OFFLINE_AFTER_MS`). A person is as present as their most
+  present client. Change a threshold there, nowhere else.
+- Server (`server/presence.ts`, `PresenceTracker`, in memory only): one
+  connection per signed-in session, from its `/api/events` streams
+  (`connect` on open, `touch` on each keepalive, close on close) and its
+  pages' heartbeats. `presenceViewer` in index.ts decides who counts: a
+  session of this issuer whose person is in the directory, not disabled,
+  not a `service` account. The loopback and a solo server never count. A
+  sweep every 15 s turns crossed thresholds into news.
+- Routes (`server/routes/presence.ts`, CLIENT_ALLOW with `orgDirectory`):
+  `GET /api/org/presence` lists every active person of the directory with
+  `state` and `lastSeenAt`; `POST /api/presence/heartbeat`
+  `{ pageId, kind: "desktop" | "web", idleMs, systemIdle? }`. A solo server
+  answers 404, a service account or another issuer 403, no session 401.
+  An admin sees exactly what a member sees.
+- Live: a change is broadcast as `presence.changed` (`shared/wire.ts`).
+  `sseFrameFor` passes it only to streams of the organization's people
+  (`presenceFrameAllowed`); the copy with `audience` (the person's own real
+  state) reaches that person only. Presence is never written to a chat, the
+  journal, a backup or a package.
+- Privacy: Settings > Privacy (`src/components/PrivacySettings.tsx`, next
+  to "Send read receipts") > "Show when I am online" (on by default) is the
+  synced preference `sagax.presenceVisible.v1` ("0" hides). A hidden
+  person reads as offline with no last-seen time for everyone else; they
+  still see their own state, "(hidden from others)". Saving the preference
+  re-announces the person at once (the preferences route calls
+  `presence.refresh`).
+- Renderer (`src/lib/presence.ts`, started from `src/main.tsx` for a
+  signed-in session): reads the list, applies the frames, re-reads every 5
+  minutes and when the page comes back into view, and beats every 60 s with
+  the page's idle time. The desktop app adds `window.ogb.systemIdle()`
+  (`desktop:system-idle`, `electron/system-idle.mjs`,
+  `powerMonitor.getSystemIdleState(300)` and the idle seconds; main window,
+  top frame only, safe on an organization page); using the computer counts
+  as being there. Coming back after an idle spell beats at once.
+- The dot is `StatusDot` (`src/components/StatusDot.tsx`), the same
+  component as a bot row's working / waiting / teammate / queued dots;
+  `PresenceDot` and `WithPresence` (`src/components/PresenceDot.tsx`) give
+  it the person's state, an accessible name and a tooltip ("Online",
+  "Away", "Offline, last seen 2 h ago"). `PersonAvatar` takes
+  `presenceId`. It shows on the sidebar's people rows, the direct
+  conversation's header chip, the person panel, a room's people list
+  (`ChannelMembers`), the To: picker, the sharing picker (`GrantEditor`),
+  the room's people picker (`GroupPeoplePicker`) and your own account row.
+  The Team map holds bots only and has no person to mark; there is no
+  @mention of people and no run-as picker yet: give them the dot when they
+  exist. Nothing shows where presence does not exist.
+- The phone apps neither send heartbeats nor show the dot yet; a phone's
+  open stream counts as connected (online for 5 minutes, then away).
+
 ## Thread mode is on by default
 
 Thread mode (Settings > Appearance > Show threads: the thread picker in the
@@ -1406,9 +1685,18 @@ pair. Archived bots, when there are any, sit above the pair. Connected
 apps and Templates stay rows above that row when their experimental flags
 are on (`SidebarPlaces`). Your phone and Help Center are not in the menu.
 The phone stays in Settings and on the collapsed rail. Docs stay on About.
-A failed automation still dots the closed account row. The guided tour's
+The row is the avatar and the name, and under the name a quiet line with the
+routines icon (`CalendarClock`, as in the bot panel's Routines section) and
+the count of the viewer's active routines (`src/lib/active-routines.ts`:
+the Active switch on, not suspended, a next run still due, on a bot the
+viewer owns). The count opens Automations and follows routine frames live.
+At zero the line is gone and the name sits centred beside the avatar. A
+failed automation no longer dots the row: it tints the count red and keeps
+its dot on the Automations item in the menu; a place in the menu that asks
+for attention still dots the closed row. The guided tour's
 `tools` anchor sits on the places stack, or on the foot when that stack is
-empty. Tests: `SidebarProfileMenu.test.ts`, `Sidebar.header.test.ts`.
+empty. Tests: `SidebarProfileMenu.test.ts`, `SidebarProfileMenu.footer.test.ts`,
+`src/lib/active-routines.test.ts`, `Sidebar.header.test.ts`.
 
 The guided tour (`GuidedTour.tsx`) never starts by itself: not after the
 welcome flow, not on a new bot, not per version. It runs only when opened on
@@ -1558,6 +1846,25 @@ rules, each covered by `shared/achievements-catalog.test.ts`,
   default, and leaves out anyone who turned "Show my points to colleagues"
   off. Unlock percentages show only
   with five people or more.
+- Visibility (2026-10-08). The left sidebar never shows an achievement title
+  or points, for anyone: not on the viewer's account row, not on people
+  rows. Titles and points show only in a person's detail (the person panel,
+  from a people row or a DM header, the viewer's own included) and on
+  Settings > Achievements. Two switches there, same style, stored in the
+  person's settings on the server (so every device follows): "Show my
+  points" (`showPoints`) and "Show my title" (`showTitle`, a missing flag
+  means on). Each is the person's own choice for everyone who looks:
+  `publicPoints` leaves `points` and `level`, or `title`, off their card,
+  and the person panel draws only what the card carries. With neither, no
+  line sits under the name; the member card centres the name beside the
+  avatar. Settings > Achievements itself and the unlock toasts are
+  unchanged by these switches. Tests: `server/achievements.test.ts`,
+  `src/lib/public-achievements.test.ts`, `PersonPanel.test.ts`,
+  `achievements-ui.test.ts`, `SidebarProfileMenu.footer.test.ts`.
+- People rows in the sidebar sit at the bot rows' inset (`pl-2`) with thread
+  mode on or off and carry no thread chevron, like bot rows since #152; only
+  room rows keep the thread-mode `pl-6` for their chevron
+  (`Sidebar.simple-mode.test.ts`).
 - The toast never shows while the person types, one at a time, its chime
   follows Notification sounds, and reduced motion stills it.
 

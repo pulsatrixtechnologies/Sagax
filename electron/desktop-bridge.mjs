@@ -95,12 +95,12 @@ export function validBridgeOperation(operation) {
   if (operation.arguments !== undefined && (!operation.arguments || typeof operation.arguments !== "object" || Array.isArray(operation.arguments))) return false;
   if (operation.endpoint !== undefined && (typeof operation.endpoint !== "string" || !/^desk[a-z0-9]{3,24}$/.test(operation.endpoint))) return false;
   if (operation.http_method !== undefined && operation.http_method !== "GET" && operation.http_method !== "POST") return false;
-  if (operation.http_path !== undefined && operation.http_path !== "/models" && operation.http_path !== "/chat/completions") return false;
+  if (operation.http_path !== undefined && operation.http_path !== "/models" && operation.http_path !== "/chat/completions" && operation.http_path !== "/messages") return false;
   if (operation.json !== undefined && (typeof operation.json !== "string" || operation.json.length > 1_000_000)) return false;
   if (operation.action === "local_model") {
     if (operation.url !== undefined) return false;
     if (operation.http_method !== "GET" && operation.http_method !== "POST") return false;
-    if (operation.http_path !== "/models" && operation.http_path !== "/chat/completions") return false;
+    if (operation.http_path !== "/models" && operation.http_path !== "/chat/completions" && operation.http_path !== "/messages") return false;
     if (typeof operation.endpoint !== "string") return false;
   }
   return true;
@@ -339,7 +339,7 @@ export async function executeBridgeOperation(operation, deps, signal) {
       return text(`unpacked ${result.manifest.files} files into ${path.join(dir, extractedFolderName(name))}`);
     }
     case "local_model":
-      return executeLocalModel(operation, deps.localModelBase ?? (() => null), deps.fetchUrl, signal);
+      return executeLocalModel(operation, deps.localModelBase ?? (() => null), deps.fetchUrl, signal, deps.localModelAnthropic ?? (() => false));
     default:
       throw new Error("Unsupported operation");
   }
@@ -445,12 +445,14 @@ export function createDesktopBridge({
           // A failed probe is not remembered: the next tick, or the picker
           // opening (refreshLocalModels below), looks again.
           const localCatalog = new Map();
+          // Endpoint ids whose server answered /v1/messages on the last probe.
+          const localAnthropic = new Set();
           let probing = null;
           let probedAt = 0;
           let plainCatalog = false;
           const probeAndPublish = async () => {
             const record = await request(env, "/api/me/local-models");
-            if (!record?.expose) { localCatalog.clear(); return; }
+            if (!record?.expose) { localCatalog.clear(); localAnthropic.clear(); return; }
             const next = new Map();
             const published = [];
             for (const endpoint of Array.isArray(record.endpoints) ? record.endpoints : []) {
@@ -459,11 +461,13 @@ export function createDesktopBridge({
               const probed = await probeLoopbackCatalog(base, fetchUrl);
               if (!probed?.models.length) continue;
               next.set(endpoint.id, base);
-              published.push({ id: endpoint.id, label: String(endpoint.label ?? "").slice(0, 80), models: probed.models, details: probed.details });
+              published.push({ id: endpoint.id, label: String(endpoint.label ?? "").slice(0, 80), models: probed.models, details: probed.details, anthropic: probed.anthropic === true });
             }
             localCatalog.clear();
+            localAnthropic.clear();
             for (const [endpointId, base] of next) localCatalog.set(endpointId, base);
-            const plain = () => published.map(({ details: _details, ...row }) => row);
+            for (const row of published) if (row.anthropic) localAnthropic.add(row.id);
+            const plain = () => published.map(({ details: _details, anthropic: _anthropic, ...row }) => row);
             if (plainCatalog) {
               await request(env, `/api/desktop-bridge/${id}/local-models`, { endpoints: plain() }, live, secret);
               return;
@@ -537,6 +541,7 @@ export function createDesktopBridge({
               result = await executeBridgeOperation(operation, {
                 home, attachmentsDir, protectedPaths: roots, fetchUrl, browse, localVm, progress,
                 localModelBase: (endpoint) => localCatalog.get(endpoint) ?? null,
+                localModelAnthropic: (endpoint) => localAnthropic.has(endpoint),
                 computer: cuaConnection ? async (op, sig) => {
                   if (hostControl) control = await hostControl(job.id, sig);
                   if (!cua) {

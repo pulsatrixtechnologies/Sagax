@@ -124,11 +124,14 @@ export interface Routine {
 }
 
 /** Slice 6 (D9): why an organization routine is paused by the server. */
-export type RoutineSuspendReason = "delegation_missing" | "delegation_ended" | "delegation_revoked" | "person_out" | "no_right";
-export const ROUTINE_SUSPEND_REASONS: readonly RoutineSuspendReason[] = ["delegation_missing", "delegation_ended", "delegation_revoked", "person_out", "no_right"];
+export type RoutineSuspendReason = "person_out" | "no_right";
+export const ROUTINE_SUSPEND_REASONS: readonly RoutineSuspendReason[] = ["person_out", "no_right"];
+/** Pauses from before 2026-10-08 (JC: a routine always acts in its owner's
+ * name): a routine loaded with one of these resumes from now. */
+export const RETIRED_SUSPEND_REASONS: readonly string[] = ["delegation_missing", "delegation_ended", "delegation_revoked"];
 export interface RoutineSuspension { reason: RoutineSuspendReason; at: number }
-/** The reasons a fresh consent of the person clears. */
-const CONSENT_REASONS: ReadonlySet<RoutineSuspendReason> = new Set(["delegation_missing", "delegation_ended", "delegation_revoked", "person_out"]);
+/** The reasons a fresh delegation of the person clears. */
+const CONSENT_REASONS: ReadonlySet<RoutineSuspendReason> = new Set(["person_out"]);
 
 function loadRunAs(value: unknown): string | undefined {
   return typeof value === "string" && value.length > 0 && value.length <= 64 ? value : undefined;
@@ -385,6 +388,11 @@ export interface RoutineManagerOptions {
   /** Slice 6: raised when a suspension is cleared. */
   onResumed?: (routine: Routine) => void;
 }
+
+/** Slice 6: who writes a routine. `actorPrincipalId`: the signed-in person
+ * (D5: whoever rewrites the work runs it); `runAs`: the person chosen in the
+ * routine modal, already authorized by the route, which wins. */
+export interface RoutineWriteMeta { actorPrincipalId?: string; runAs?: string }
 
 /** Slice 6: routine fields whose edit moves runAs to the editor. */
 const WORK_FIELDS = ["prompt", "botId", "groupId", "target", "attachments"] as const;
@@ -938,6 +946,10 @@ export class RoutineManager {
             if (loaded.installedPackage === undefined) delete loaded.installedPackage;
             if (loaded.runAs === undefined) delete loaded.runAs;
             if (loaded.suspended === undefined) delete loaded.suspended;
+            const retired = (routine.suspended as { reason?: unknown } | undefined)?.reason;
+            if (typeof retired === "string" && RETIRED_SUSPEND_REASONS.includes(retired) && loaded.enabled && schedule.type !== "once") {
+              loaded.nextRunAt = this.initialOccurrence(schedule, this.now(), loaded);
+            }
             delete loaded.failureStreak;
             return [loaded];
           })
@@ -1156,7 +1168,7 @@ export class RoutineManager {
     return run ? cloneRun(run) : null;
   }
 
-  create(input: RoutineInput, request?: RoutineRequestCommitFor<"create">, meta?: { actorPrincipalId?: string }): Routine {
+  create(input: RoutineInput, request?: RoutineRequestCommitFor<"create">, meta?: RoutineWriteMeta): Routine {
     if (request) {
       const receipt = this.matchingRoutineRequestReceipt(request);
       if (receipt) {
@@ -1178,7 +1190,7 @@ export class RoutineManager {
       // Only a confirmed chat card supplies `request`; the public calendar
       // API cannot choose an arbitrary transcript as a reporting target.
       sourceThreadId: request?.threadId,
-      ...(meta?.actorPrincipalId ? { runAs: meta.actorPrincipalId } : {}),
+      ...(meta?.runAs || meta?.actorPrincipalId ? { runAs: meta.runAs || meta.actorPrincipalId } : {}),
       nextRunAt,
       createdAt: at,
       updatedAt: at,
@@ -1196,7 +1208,7 @@ export class RoutineManager {
     id: string,
     patch: Partial<RoutineInput>,
     request?: RoutineRequestCommitFor<"update" | "pause" | "resume">,
-    meta?: { actorPrincipalId?: string },
+    meta?: RoutineWriteMeta,
   ): Routine | null {
     if (request) {
       const receipt = this.matchingRoutineRequestReceipt(request);
@@ -1238,7 +1250,9 @@ export class RoutineManager {
     // Slice 6 (D5): whoever rewrites the work is the person it runs as.
     const workChanged = WORK_FIELDS.some((field) =>
       JSON.stringify((clean as Record<string, unknown>)[field] ?? null) !== JSON.stringify((routine as unknown as Record<string, unknown>)[field] ?? null));
-    const actor = workChanged ? meta?.actorPrincipalId : undefined;
+    // An explicit choice (the routine modal, server/routine-run-as.ts) wins
+    // over the editor; the route checked who may make it.
+    const actor = meta?.runAs || (workChanged ? meta?.actorPrincipalId : undefined);
     const discardResults = this.applyResultsInput(destination, patch.resultsThreadId);
     const cancelledRuns: RoutineRun[] = [];
     this.commitMutation(() => {
@@ -1257,8 +1271,12 @@ export class RoutineManager {
         delete routine.timeoutMinutes;
       }
       if (actor) {
+        const moved = routine.runAs !== actor;
         routine.runAs = actor;
         if (routine.suspended?.reason === "no_right") delete routine.suspended;
+        // A person chosen in the modal is active and may run the bot (the
+        // route checked it): a pause of the previous person no longer holds.
+        if (meta?.runAs && moved) delete routine.suspended;
       }
       if (patch.enabled === false) {
         for (const run of this.runs) {
@@ -1945,7 +1963,7 @@ export class RoutineManager {
     const touched: Routine[] = [];
     const message = reason === "person_out"
       ? "The person this routine runs as was signed out by Perspicax"
-      : "This routine can no longer act in its person's name";
+      : "The person this routine runs as can no longer run this bot's routines";
     for (const routine of this.routines) {
       if (!routine.enabled || (routine.runAs ?? ownerOf(cloneRoutine(routine))) !== principalId) continue;
       if (this.suspendRoutine(routine.id, reason, null)) touched.push(cloneRoutine(routine));
