@@ -1332,15 +1332,17 @@ export function BotListItem({
   // (#866, #871) always traded the name's width against the title's; its own
   // line above the name lets both truncate independently instead.
   const title = bot.title.trim();
-  // Threads on keeps the pl-6 inset with no chevron in it, so a bot row's
-  // avatar still lines up with a room row's (rooms keep their thread toggle).
+  // Same wrapper classes with threads on or off: the thread mode adds the New
+  // thread and New folder buttons (hence the wider right padding on hover),
+  // never a left inset. Room rows keep their own inset for their chevron.
+  const buttonsPad = showThreads ? " group-hover:pr-[5.75rem] group-focus-within:pr-[5.75rem] max-md:pr-[5.75rem] touch:pr-[5.75rem]" : "";
   const rowClass = cn(
     "flex w-full items-center rounded-lg text-left outline-none focus-visible:ring-1 focus-visible:ring-accent/60",
     iconOnly
       ? "justify-center px-1 py-1.5"
       : density === "compact"
-        ? cn(showThreads ? "gap-1.5 py-1" : "gap-2 py-1.5", showThreads ? "pl-6 pr-9 group-hover:pr-[5.75rem] group-focus-within:pr-[5.75rem] max-md:pr-[5.75rem] touch:pr-[5.75rem]" : "pl-2 pr-9")
-        : cn("min-h-[54px] gap-2 py-2", showThreads ? "pl-6 pr-9 group-hover:pr-[5.75rem] group-focus-within:pr-[5.75rem] max-md:pr-[5.75rem] touch:pr-[5.75rem]" : "pl-2 pr-9"),
+        ? cn("gap-2 py-1.5 pl-2 pr-9", buttonsPad)
+        : cn("min-h-[54px] gap-2 py-2 pl-2 pr-9", buttonsPad),
     // The Primary Bot is called out by the star on its avatar, not by
     // tinting the whole row: an accent border and fill read as "selected"
     // even when another bot was active.
