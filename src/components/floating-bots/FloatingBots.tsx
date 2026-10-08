@@ -16,7 +16,12 @@ import { botAvatarProfile } from "../../../shared/bot-avatar";
 import {
   floatingBotPrefs,
   floatingBots,
+  floatingShown,
+  nextFloatingReturn,
   nextLiveliness,
+  SNOOZE_MS,
+  snoozeFloatingBot,
+  switchFloatingBot,
   setFloatingBotOnTop,
   setFloatingFlyAway,
   setFloatingLiveliness,
@@ -50,6 +55,7 @@ import { liveCallNow, useLiveCall } from "@/lib/voice-mode/live-call-store";
 import { readVoiceModeSettings, useVoiceModeSettings, writeVoiceModeSettings } from "@/lib/voice-mode/settings";
 import { forgetVoiceprint } from "@/lib/voice-mode/speaker-id";
 import { callLevels, mascotCallSnapshot, NO_PANEL, runMascotCallEvent, type MascotCallDeps, type MascotCallPanel } from "./mascot-call";
+import { characterMoves } from "./moves";
 
 /** A picture bigger than this stays in the app; the window shows the owl instead. */
 const AVATAR_BYTES_MAX = 280_000;
@@ -57,7 +63,7 @@ const CELEBRATE_MS = 1400;
 
 function labelsFor(bot: Pick<Bot, "name">, liveliness: FloatingLiveliness = "normal"): FloatingLabels {
   const name = bot.name;
-  return {
+  const labels: FloatingLabels = {
     character: t("floatingBots.aria", { name }),
     inputLabel: t("floatingBots.input.label", { name }),
     placeholder: t("floatingBots.input.placeholder", { name }),
@@ -83,7 +89,19 @@ function labelsFor(bot: Pick<Bot, "name">, liveliness: FloatingLiveliness = "nor
     hoot: t("floatingBots.hoot"),
     pin: t("floatingBots.pin"),
     menuLively: t("floatingBots.menu.lively", { level: t(`floatingBots.lively.${liveliness}`) }),
+    menuTalk: t("floatingBots.menu.talk"),
+    menuCloseChat: t("floatingBots.menu.closeChat"),
+    menuCall: t("floatingBots.menu.startCall"),
+    menuHangUp: t("floatingBots.menu.hangUp"),
+    menuSwitch: t("floatingBots.menu.switch"),
+    menuMoves: t("floatingBots.menu.moves"),
+    menuSnooze: t("floatingBots.menu.snooze"),
+    menuHideMascot: t("floatingBots.menu.hideMascot"),
+    menuOptions: t("floatingBots.menu.options"),
+    menuSettings: t("floatingBots.menu.settings"),
   };
+  // "Open in Sagax" (the brand's name), the item that focuses the app on this bot
+  return { ...labels, menuOpen: t("floatingBots.menu.openIn", { app: brand().name }) };
 }
 
 function useReducedMotion(): boolean {
@@ -200,7 +218,16 @@ export function FloatingBots() {
   // a new call (or none) starts with a closed settings card
   useEffect(() => setCallPanel(NO_PANEL), [live?.call]);
 
+  // "Hide for 1 hour": a hidden mascot is left out until its time, then comes back by itself
+  const [now, setNow] = useState(() => Date.now());
+  const comesBack = nextFloatingReturn(entries, now);
+  useEffect(() => {
+    if (comesBack === null) return;
+    const later = setTimeout(() => setNow(Date.now()), Math.max(0, comesBack - Date.now()) + 50);
+    return () => clearTimeout(later);
+  }, [comesBack]);
   const floated = entries
+    .filter((entry) => floatingShown(entry, now))
     .map((entry) => ({ entry, bot: state.bots.find((candidate) => candidate.id === entry.id) }))
     .filter((item): item is { entry: FloatingBotEntry; bot: Bot } => Boolean(item.bot));
 
@@ -286,6 +313,27 @@ export function FloatingBots() {
     patch(bot.id, (current) => ({ open: true, threadId, sendId, asked: text, error: false, lastReply: "", celebrate: false, history: withHistory(current) }));
     dispatch({ type: "send", botId: bot.id, text, threadId, sendId, onError: () => patch(bot.id, { error: true, open: true }) });
   }, [dispatch, patch]);
+
+  // Open a window per floated bot, close the ones taken back (the effect below).
+  const opened = useRef(new Map<string, boolean>());
+  const sent = useRef(new Map<string, string>());
+
+  /** "Switch bot": the same mascot, in the same spot, now for another of the person's bots. */
+  const switchMascot = useCallback((fromId: string, toId: string) => {
+    const target = stateRef.current.bots.find((candidate) => candidate.id === toId && !candidate.hidden);
+    if (!target || floatingBots().some((entry) => entry.id === toId)) return;
+    const move = () => {
+      // the window (if any) is already that bot's: it neither closes nor opens
+      const top = opened.current.get(fromId);
+      opened.current.delete(fromId);
+      sent.current.delete(fromId);
+      sent.current.delete(toId);
+      if (top !== undefined) opened.current.set(toId, top);
+      switchFloatingBot(fromId, toId);
+    };
+    if (bridge?.rekey && opened.current.has(fromId)) void bridge.rekey(fromId, toId).then((ok) => (ok ? move() : switchFloatingBot(fromId, toId)), () => switchFloatingBot(fromId, toId));
+    else switchFloatingBot(fromId, toId);
+  }, [bridge]);
 
   /** What the mascot's call controls do: on the app's call (mascot-call.ts). */
   const callDeps = useCallback((botId: string): MascotCallDeps => {
@@ -380,6 +428,11 @@ export function FloatingBots() {
         else if (event.id === "open") openInApp();
         else if (event.id === "balloon") patch(botId, { open: !session.open });
         else if (event.id === "dock") unfloatBot(botId);
+        else if (event.id === "snooze") {
+          setNow(Date.now());
+          snoozeFloatingBot(botId, Date.now() + SNOOZE_MS);
+        } else if (event.id === "settings") dispatch({ type: "toggleAppSettings", open: true, section: "appearance" });
+        else if (event.id.startsWith("switch:")) switchMascot(botId, event.id.slice("switch:".length));
         else if (event.id === "fly") setFloatingFlyAway(!floatingBotPrefs().flyAway);
         else if (event.id === "lively") setFloatingLiveliness(nextLiveliness(floatingBotPrefs().liveliness));
         else if (event.id === "top") {
@@ -393,18 +446,23 @@ export function FloatingBots() {
       default:
         break;
     }
-  }, [bridge, callDeps, cheer, dispatch, patch, send]);
+  }, [bridge, callDeps, cheer, dispatch, patch, send, switchMascot]);
 
   /* ------------------------------------------------------------ desktop */
 
   const avatarUrls = floated.map(({ bot }) => avatarBase(bot)?.url).filter((url): url is string => Boolean(url));
   const avatarData = useAvatarData(avatarUrls, Boolean(bridge));
 
+  // "Switch bot": the person's bots (not hidden), the ones already on the desktop marked
+  const floatingIds = new Set(entries.map((entry) => entry.id));
+  const switchable = state.bots.filter((candidate) => !candidate.hidden).map((candidate) => ({ id: candidate.id, name: candidate.name, floating: floatingIds.has(candidate.id) }));
   const snapshots = statuses.map(({ bot, session, status }) => {
     const base = avatarBase(bot);
     const entry = entries.find((candidate) => candidate.id === bot.id);
     const src = base ? (bridge ? avatarData[base.url] : base.url) : undefined;
     const avatar: FloatingAvatar | null = base && src ? { src, crop: base.crop, zoom: base.zoom, focusX: base.focusX, focusY: base.focusY } : null;
+    const canCall = callable[bot.id] === true;
+    const thisCall = live && live.botId === bot.id && onCall === bot.id ? live : null;
     const item = {
       bot,
       entry,
@@ -423,14 +481,16 @@ export function FloatingBots() {
         liveliness: prefs.liveliness,
         mascot: bot.mascotLook ?? undefined,
         context: floatingContext(bot.tasks?.find((task) => task.threadId === (session.threadId ?? bot.threadId))?.usage),
+        menu: {
+          call: thisCall ? "end" : canCall ? "start" : null,
+          bots: switchable,
+          moves: characterMoves(bot.mascotLook ?? undefined).map((move) => ({ clip: move.clip, label: t(move.label) })),
+        },
       }),
     };
     if (theme) item.snapshot.theme = theme;
     // voice calls: the button where voice mode serves this bot, and the call itself when it is this bot's
-    const canCall = callable[bot.id] === true;
-    const thisCall = live && live.botId === bot.id && onCall === bot.id ? live : null;
     if (canCall) item.snapshot.hints = { ...item.snapshot.hints, call: t("floatingBots.call", { name: bot.name }) };
-    if (canCall || thisCall) item.snapshot.menu = [{ id: "call", label: thisCall ? t("floatingBots.menu.hangUp") : t("floatingBots.menu.call") }, ...item.snapshot.menu];
     if (thisCall) {
       item.snapshot.call = mascotCallSnapshot(thisCall, callPanel, voiceSettings, callSettings);
       // the mascot talks while its bot's voice does, and thinks while it writes
@@ -439,9 +499,6 @@ export function FloatingBots() {
     return item;
   });
 
-  // Open a window per floated bot, close the ones taken back.
-  const opened = useRef(new Map<string, boolean>());
-  const sent = useRef(new Map<string, string>());
   const floatedKey = floated.map(({ entry }) => `${entry.id}:${entry.top}`).join("|");
   useEffect(() => {
     if (!bridge) return;

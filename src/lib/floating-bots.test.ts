@@ -6,7 +6,12 @@ import {
   floatBot,
   floatingBotPrefs,
   floatingBots,
+  floatingShown,
   isBotFloating,
+  nextFloatingReturn,
+  SNOOZE_MS,
+  snoozeFloatingBot,
+  switchFloatingBot,
   MAX_FLOATING_BOTS,
   nextLiveliness,
   readFloatingBotPrefs,
@@ -44,6 +49,42 @@ describe("floating bots: the per-device list", () => {
     expect(isBotFloating("bot_a")).toBe(false);
     expect(readFloatingBots(storage)).toEqual([]);
     expect(changes).toBe(2);
+  });
+
+  it("hides a mascot for an hour and brings it back by itself (the right-click menu)", () => {
+    const storage = memoryStorage();
+    floatBot("bot_a", storage);
+    floatBot("bot_b", storage);
+    const now = 1_000_000;
+    snoozeFloatingBot("bot_a", now + SNOOZE_MS, storage);
+    expect(SNOOZE_MS).toBe(3_600_000);
+    // still on the list (its place and settings kept), just not shown until then
+    const saved = readFloatingBots(storage);
+    expect(saved[0]).toEqual({ id: "bot_a", top: true, hiddenUntil: now + SNOOZE_MS });
+    expect(floatingShown(saved[0], now)).toBe(false);
+    expect(floatingShown(saved[0], now + SNOOZE_MS)).toBe(true);
+    expect(floatingShown(saved[1], now)).toBe(true);
+    expect(nextFloatingReturn(saved, now)).toBe(now + SNOOZE_MS);
+    expect(nextFloatingReturn(saved, now + SNOOZE_MS)).toBeNull();
+    // a bot not on the desktop, or a time that is not one, changes nothing
+    snoozeFloatingBot("bot_z", now, storage);
+    snoozeFloatingBot("bot_b", Number.NaN, storage);
+    expect(readFloatingBots(storage)[1]).toEqual({ id: "bot_b", top: true });
+  });
+
+  it("switches a mascot to another bot in place (the right-click menu's Switch bot)", () => {
+    const storage = memoryStorage();
+    floatBot("bot_a", storage);
+    floatBot("bot_b", storage);
+    setFloatingBotOnTop("bot_a", false, storage);
+    snoozeFloatingBot("bot_a", 5, storage);
+    expect(switchFloatingBot("bot_a", "bot_c", storage)).toBe(true);
+    // same place in the list, same always-on-top choice, shown
+    expect(readFloatingBots(storage)).toEqual([{ id: "bot_c", top: false }, { id: "bot_b", top: true }]);
+    // not onto a bot that already floats, nor from one that does not, nor to a bad id
+    expect(switchFloatingBot("bot_c", "bot_b", storage)).toBe(false);
+    expect(switchFloatingBot("bot_x", "bot_d", storage)).toBe(false);
+    expect(switchFloatingBot("bot_c", "bad id", storage)).toBe(false);
   });
 
   it("keeps several bots, their always-on-top choice and their in-app spot", () => {

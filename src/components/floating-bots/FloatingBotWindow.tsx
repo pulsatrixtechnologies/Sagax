@@ -263,6 +263,9 @@ export function FloatingBotWindow({ bridge = typeof window === "undefined" ? und
   // the voice call's levels, straight from main (an older preload has none)
   const onLevels = useMemo(() => (bridge?.onLevel ? (listener: Parameters<NonNullable<FloatingWindowBridge["onLevel"]>>[0]) => bridge.onLevel!(listener) : undefined), [bridge]);
 
+  // a move picked in the native menu (an older preload has none)
+  const onMove = useMemo(() => (bridge?.onMove ? (listener: (clip: string) => void) => bridge.onMove!(listener) : undefined), [bridge]);
+
   if (!snapshot) return blank ? <PlainOwl color="green" rootRef={root} bridge={bridge} /> : <div ref={root} className="fb-root fb-window" />;
   return (
     <Fallback color={snapshot.color} rootRef={root} bridge={bridge} onFail={() => setFailed(true)}>
@@ -279,6 +282,7 @@ export function FloatingBotWindow({ bridge = typeof window === "undefined" ? und
       onReserve={onReserve}
       onLevels={onLevels}
       menuAt={menuAt}
+      onMove={onMove}
     />
     </Fallback>
   );

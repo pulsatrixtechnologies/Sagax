@@ -18,7 +18,16 @@ export interface FloatingMenuItem {
   id: string;
   label: string;
   checked?: boolean;
+  /** A line between groups (its label is not shown). */
+  type?: "separator";
+  /** Greyed out: shown, not chosen. */
+  enabled?: boolean;
+  /** A submenu (one level): "Switch bot", "Moves", the desktop options. */
+  items?: FloatingMenuItem[];
 }
+
+/** A menu item's id: "switch:" and a bot id fit. */
+export const MENU_ID = /^[a-zA-Z0-9:_-]{1,80}$/;
 
 export interface FloatingAvatar {
   /** A data: URL on the desktop (the window fetches nothing); the app's own URL in the browser overlay. */
@@ -177,6 +186,8 @@ export interface FloatingWindowBridge {
   popupMenu?(x: number, y: number): void;
   /** The call's levels (optional: an older preload lacks it). */
   onLevel?(callback: (levels: FloatingCallLevels) => void): () => void;
+  /** A move chosen in the native menu's "Moves" (optional: an older preload lacks it). */
+  onMove?(callback: (clip: string) => void): () => void;
 }
 
 /** window.ogb.floatingBots, from electron/preload.cjs (the local main page only). */
@@ -192,9 +203,10 @@ export interface FloatingBotsBridge {
   onClosed(cb: (value: { botId: string }) => void): () => void;
   /** A window is ready but has no state: send it again (optional: an older preload lacks it). */
   onWant?(cb: (value: { botId: string }) => void): () => void;
+  /** "Switch bot": that window now stands for another bot, in place (optional: an older preload lacks it). */
+  rekey?(fromId: string, toId: string): Promise<boolean>;
 }
 
-const ID = /^[a-zA-Z0-9:_-]{1,64}$/;
 const POSES = new Set<FloatingPose>(["idle", "think", "speak", "celebrate", "alert", "sleep"]);
 const TASKS = new Set<MascotTask>(["idle", "working", "waiting", "error"]);
 
@@ -225,7 +237,7 @@ export function isFloatingSnapshot(value: unknown): value is FloatingSnapshot {
     typeof snapshot.name === "string" &&
     POSES.has(snapshot.pose as FloatingPose) &&
     Array.isArray(snapshot.menu) &&
-    snapshot.menu.every((item) => item && ID.test(item.id) && typeof item.label === "string")
+    snapshot.menu.every((item) => item && MENU_ID.test(item.id) && typeof item.label === "string" && (item.items === undefined || Array.isArray(item.items)))
   );
 }
 
@@ -234,7 +246,7 @@ export function isFloatingEvent(value: unknown): value is FloatingEvent {
   if (!value || typeof value !== "object") return false;
   const event = value as { type?: unknown; id?: unknown; text?: unknown; action?: unknown };
   if (event.type === "call") return CALL_ACTIONS.has(event.action as FloatingCallAction);
-  if (event.type === "menu") return typeof event.id === "string" && ID.test(event.id);
+  if (event.type === "menu") return typeof event.id === "string" && MENU_ID.test(event.id);
   if (event.type === "send") return typeof event.text === "string" && event.text.trim().length > 0;
   return ["click", "context", "dismiss", "open", "play", "pet"].includes(event.type as string);
 }

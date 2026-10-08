@@ -208,17 +208,51 @@ export const AVATAR_MAX = 400_000;
 const text = (value, max) => (typeof value === "string" ? value.slice(0, max) : undefined);
 const flag = (value) => value === true;
 
-function menuItems(value) {
+/** A menu item's id: "switch:" and a bot id fit. */
+export const MENU_ID_RE = /^[a-zA-Z0-9:_-]{1,80}$/;
+/** Items at the menu's top level, and in a submenu (the person's bots, a character's moves). */
+export const MENU_MAX = 16;
+export const SUBMENU_MAX = 32;
+/** A move asked of the mascot by name (a clip of clips.ts); the window checks it against its character's list. */
+export const MOVE_RE = /^[a-zA-Z]{1,24}$/;
+
+function menuItems(value, depth = 0) {
   if (!Array.isArray(value)) return [];
   return value
-    .slice(0, 8)
-    .filter((item) => item && typeof item === "object" && ID_RE.test(item.id) && typeof item.label === "string")
-    .map((item) => ({
-      id: item.id,
-      label: item.label.slice(0, 80),
-      ...(typeof item.checked === "boolean" ? { checked: item.checked } : {}),
-    }));
+    .slice(0, depth ? SUBMENU_MAX : MENU_MAX)
+    .filter((item) => item && typeof item === "object" && MENU_ID_RE.test(item.id) && typeof item.label === "string")
+    .map((item) => {
+      if (item.type === "separator") return { id: item.id, label: "", type: "separator" };
+      const items = depth === 0 && Array.isArray(item.items) ? menuItems(item.items, 1) : null;
+      return {
+        id: item.id,
+        label: item.label.slice(0, 80),
+        ...(typeof item.checked === "boolean" ? { checked: item.checked } : {}),
+        ...(item.enabled === false ? { enabled: false } : {}),
+        ...(items ? { items } : {}),
+      };
+    });
 }
+
+/**
+ * The native menu's template for the snapshot's items: separators, checks,
+ * greyed items and one level of submenus. `choose` gets the item's id.
+ */
+export function menuTemplate(items, choose) {
+  return items.map((item) => {
+    if (item.type === "separator") return { type: "separator" };
+    if (item.items) return { label: item.label, ...(item.enabled === false ? { enabled: false } : {}), submenu: menuTemplate(item.items, choose) };
+    return {
+      label: item.label,
+      ...(typeof item.checked === "boolean" ? { type: "checkbox", checked: item.checked } : {}),
+      ...(item.enabled === false ? { enabled: false } : {}),
+      click: () => choose(item.id),
+    };
+  });
+}
+
+/** Menu choices that bring the app's window forward (the brain then shows the thread, the settings, the composer). */
+const FOCUS_IDS = new Set(["open", "settings", "attach", "model"]);
 
 function avatar(value) {
   if (!value || typeof value !== "object") return null;
@@ -394,7 +428,7 @@ export const SEND_MAX = 4000;
 /** What a floating window may report back: a click, a menu choice, or typed text. */
 export function sanitizeFloatingEvent(value) {
   if (!value || typeof value !== "object" || !EVENT_TYPES.has(value.type)) return null;
-  if (value.type === "menu") return ID_RE.test(value.id ?? "") ? { type: "menu", id: value.id } : null;
+  if (value.type === "menu") return MENU_ID_RE.test(value.id ?? "") ? { type: "menu", id: value.id } : null;
   if (value.type === "send") {
     if (typeof value.text !== "string") return null;
     const typed = value.text.slice(0, SEND_MAX);
@@ -728,6 +762,20 @@ export function createFloatingBotWindows(deps) {
       applyOnTop(entry.win, request.on);
       return true;
     },
+    // "Switch bot": the window (and its spot) now stands for another bot; the brain sends that bot's state next
+    "floating-bots:rekey": (event, request) => {
+      if (!isMain(event) || !request || !isBotId(request.from) || !isBotId(request.to) || request.from === request.to) return false;
+      const entry = floats.get(request.from);
+      if (!live(entry) || floats.has(request.to)) return false;
+      floats.delete(request.from);
+      floats.set(request.to, entry);
+      entry.snapshot = pending.get(request.to) ?? null;
+      pending.delete(request.to);
+      if (entry.snapshot) entry.win.webContents.send("floating-bot:state", entry.snapshot);
+      // the new bot keeps this spot
+      remember(request.to);
+      return true;
+    },
     "floating-bots:list": (event) => {
       if (!isMain(event)) return [];
       return [...floats.keys()];
@@ -857,22 +905,26 @@ export function createFloatingBotWindows(deps) {
         /* the default zoom */
       }
       const point = menuPopupPoint(at, zoom, win.getBounds(), workAreas());
+      const entry = found.entry;
       const choose = (id) => {
-        if (id === "open") {
+        // a move is the mascot's own business: straight to its window, the brain has nothing to decide
+        if (id.startsWith("move:")) {
+          const clip = id.slice(5);
+          if (MOVE_RE.test(clip) && live(entry)) entry.win.webContents.send("floating-bot:move", clip);
+          return;
+        }
+        if (FOCUS_IDS.has(id)) {
           try {
             deps.focusMain?.();
           } catch {
             /* the brain still switches the thread */
           }
         }
-        // the bot id comes from which window asked, never from the payload
-        notifyMain("floating-bots:event", { botId: found.botId, event: { type: "menu", id } });
+        // the bot id comes from which window asked (now: a switch may have given it another), never from the payload
+        const botId = idOf(entry);
+        if (botId) notifyMain("floating-bots:event", { botId, event: { type: "menu", id } });
       };
-      const menu = deps.Menu.buildFromTemplate(items.map((item) => ({
-        label: item.label,
-        ...(typeof item.checked === "boolean" ? { type: "checkbox", checked: item.checked } : {}),
-        click: () => choose(item.id),
-      })));
+      const menu = deps.Menu.buildFromTemplate(menuTemplate(items, choose));
       menu.popup({ window: win, x: point.x, y: point.y });
     },
     // the call's levels, many times a second: straight to that bot's window, never kept
@@ -897,8 +949,8 @@ export function createFloatingBotWindows(deps) {
       if (!found) return;
       const clean = sanitizeFloatingEvent(value);
       if (!clean) return;
-      // "Open in the app" brings the app forward from here: the window is not focused
-      if (clean.type === "open" || (clean.type === "menu" && clean.id === "open")) {
+      // "Open in the app" (and the settings, the composer's clip and model chip) bring the app forward from here: the window is not focused
+      if (clean.type === "open" || (clean.type === "menu" && FOCUS_IDS.has(clean.id))) {
         try {
           deps.focusMain?.();
         } catch {

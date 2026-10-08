@@ -7,7 +7,10 @@ import {
   createFloatingBotWindows,
   FLOAT_BODY,
   FLOAT_HOME,
+  MENU_MAX,
+  menuTemplate,
   sanitizeBody,
+  SUBMENU_MAX,
   FLOAT_MAX,
   FLOATING_QUERY,
   floatingDefaultBounds,
@@ -558,7 +561,7 @@ describe("floating bots: payload validation", () => {
       balloon: { ...SNAPSHOT.balloon, kind: "chat", text: "y".repeat(9000), asked: "z".repeat(900) },
     });
     expect(clean).toMatchObject({ locale: "en", color: "blue", skin: "none", sparkle: 0 });
-    expect(clean.menu).toHaveLength(8);
+    expect(clean.menu).toHaveLength(MENU_MAX);
     expect(clean.menu[0].label.length).toBe(80);
     expect(clean.balloon.text.length).toBe(4000);
     expect(clean.balloon.asked.length).toBe(300);
@@ -722,6 +725,102 @@ describe("floating bots: the menu opens at the pointer", () => {
     // the app page cannot pop a mascot's menu
     emit("floating-bots:menu", fromMain, { x: 1, y: 1 });
     expect(popup).toHaveBeenCalledOnce();
+  });
+});
+
+describe("floating bots: the mascot's right-click menu", () => {
+  const MENU = [
+    { id: "balloon", label: "Talk" },
+    { id: "call", label: "Start a voice call" },
+    { id: "open", label: "Open in Sagax" },
+    { id: "sep-1", label: "", type: "separator" },
+    { id: "switch", label: "Switch bot", items: [{ id: "switch:bot_a", label: "Ada", checked: true }, { id: "switch:bot_b", label: "Bo" }, { id: "switch:bot_c", label: "Cy", enabled: false }] },
+    { id: "moves", label: "Moves", items: [{ id: "move:wave", label: "Wave" }, { id: "move:dance", label: "Dance" }] },
+    { id: "sep-2", label: "", type: "separator" },
+    { id: "snooze", label: "Hide for 1 hour" },
+    { id: "dock", label: "Hide" },
+    { id: "sep-3", label: "", type: "separator" },
+    { id: "options", label: "On the desktop", items: [{ id: "top", label: "Always on top", checked: true }] },
+    { id: "settings", label: "Settings" },
+  ];
+  const popMenu = () => {
+    const popup = vi.fn();
+    let template = null;
+    const Menu = { buildFromTemplate: vi.fn((items) => { template = items; return { popup }; }) };
+    const ctx = setup({ Menu });
+    const a = ctx.open("bot_a");
+    ctx.emit("floating-bots:update", ctx.fromMain, { botId: "bot_a", snapshot: { ...SNAPSHOT, menu: MENU } });
+    ctx.emit("floating-bots:menu", a.from, { x: 10, y: 10 });
+    return { ...ctx, a, popup, template: () => template };
+  };
+  const sentToBrain = (fake) => fake.main.webContents.sent.filter(([channel]) => channel === "floating-bots:event").map(([, value]) => value.event.id);
+
+  it("keeps separators, greyed items and one level of submenus, bounded", () => {
+    const clean = sanitizeFloatingSnapshot({ ...SNAPSHOT, menu: MENU }).menu;
+    expect(clean).toEqual(MENU);
+    const deep = sanitizeFloatingSnapshot({ ...SNAPSHOT, menu: [{ id: "a", label: "A", items: [{ id: "b", label: "B", items: [{ id: "c", label: "C" }] }] }] }).menu;
+    // no submenu inside a submenu
+    expect(deep[0].items[0]).toEqual({ id: "b", label: "B" });
+    const many = sanitizeFloatingSnapshot({ ...SNAPSHOT, menu: [{ id: "switch", label: "Switch", items: Array.from({ length: 50 }, (_, i) => ({ id: `switch:b${i}`, label: "x" })) }] }).menu;
+    expect(many[0].items).toHaveLength(SUBMENU_MAX);
+    // a menu id may carry a 64-character bot id
+    expect(sanitizeFloatingEvent({ type: "menu", id: `switch:${"b".repeat(64)}` })).toEqual({ type: "menu", id: `switch:${"b".repeat(64)}` });
+    expect(sanitizeFloatingEvent({ type: "menu", id: "x".repeat(81) })).toBeNull();
+  });
+
+  it("builds the native menu with its separators, submenus and greyed items", () => {
+    const choose = vi.fn();
+    const template = menuTemplate(sanitizeFloatingSnapshot({ ...SNAPSHOT, menu: MENU }).menu, choose);
+    expect(template.map((item) => item.type === "separator" ? "-" : item.label)).toEqual(["Talk", "Start a voice call", "Open in Sagax", "-", "Switch bot", "Moves", "-", "Hide for 1 hour", "Hide", "-", "On the desktop", "Settings"]);
+    expect(template[4].submenu.map((item) => item.label)).toEqual(["Ada", "Bo", "Cy"]);
+    expect(template[4].submenu[0]).toMatchObject({ type: "checkbox", checked: true });
+    expect(template[4].submenu[2]).toMatchObject({ enabled: false });
+    template[4].submenu[1].click();
+    expect(choose).toHaveBeenCalledWith("switch:bot_b");
+  });
+
+  it("sends each choice to the brain for this window's bot, and brings the app forward for Open and Settings", () => {
+    const { template, fake, focusMain } = popMenu();
+    const items = template();
+    for (const label of ["Talk", "Start a voice call", "Hide for 1 hour", "Hide"]) items.find((item) => item.label === label).click();
+    expect(focusMain).not.toHaveBeenCalled();
+    items.find((item) => item.label === "Open in Sagax").click();
+    expect(focusMain).toHaveBeenCalledTimes(1);
+    items.find((item) => item.label === "Settings").click();
+    expect(focusMain).toHaveBeenCalledTimes(2);
+    items.find((item) => item.label === "Switch bot").submenu[1].click();
+    expect(sentToBrain(fake)).toEqual(["balloon", "call", "snooze", "dock", "open", "settings", "switch:bot_b"]);
+  });
+
+  it("plays a move in the mascot's own window, without the brain", () => {
+    const { template, fake, a } = popMenu();
+    template().find((item) => item.label === "Moves").submenu[1].click();
+    expect(a.win.webContents.sent.at(-1)).toEqual(["floating-bot:move", "dance"]);
+    expect(sentToBrain(fake)).toEqual([]);
+  });
+
+  it("switches a window to another bot in place: same spot, the new bot's state, and its later choices", () => {
+    const { invoke, emit, fromMain, fake, controller, a, template, saved } = popMenu();
+    const spot = a.win.getBounds();
+    emit("floating-bots:update", fromMain, { botId: "bot_b", snapshot: { ...SNAPSHOT, name: "Bo" } });
+    expect(invoke("floating-bots:rekey", fromMain, { from: "bot_a", to: "bot_b" })).toBe(true);
+    expect(controller.window("bot_b")).toBe(a.win);
+    expect(controller.window("bot_a")).toBeNull();
+    expect(a.win.getBounds()).toEqual(spot);
+    // the state kept for the new bot reaches the window at once, and the new bot keeps the spot
+    expect(a.win.webContents.sent.at(-1)[1]).toMatchObject({ name: "Bo" });
+    expect(Object.values(saved.positions)[0].bot_b).toBeDefined();
+    // a choice in a menu opened before the switch speaks for the new bot
+    template().find((item) => item.label === "Talk").click();
+    expect(fake.main.webContents.sent.at(-1)).toEqual(["floating-bots:event", { botId: "bot_b", event: { type: "menu", id: "balloon" } }]);
+    // only the app page, a known window, a free id
+    expect(invoke("floating-bots:rekey", a.from, { from: "bot_b", to: "bot_c" })).toBe(false);
+    expect(invoke("floating-bots:rekey", fromMain, { from: "nope", to: "bot_c" })).toBe(false);
+    invoke("floating-bots:open", fromMain, { botId: "bot_c" });
+    expect(invoke("floating-bots:rekey", fromMain, { from: "bot_b", to: "bot_c" })).toBe(false);
+    // closed from outside after a switch: the brain hears of the new bot
+    a.win.destroy();
+    expect(fake.main.webContents.sent.at(-1)).toEqual(["floating-bots:closed", { botId: "bot_b" }]);
   });
 });
 

@@ -41,6 +41,14 @@ contextBridge.exposeInMainWorld("floatingBotWindow", {
     ipcRenderer.on("floating-bot:state", handler);
     return () => ipcRenderer.removeListener("floating-bot:state", handler);
   },
+  // a move chosen in the native menu's "Moves": main sends the clip's name
+  onMove: (callback) => {
+    const handler = (_event, clip) => {
+      if (typeof clip === "string") callback(clip);
+    };
+    ipcRenderer.on("floating-bot:move", handler);
+    return () => ipcRenderer.removeListener("floating-bot:move", handler);
+  },
   onLevel: (callback) => {
     const handler = (_event, levels) => callback(levels);
     ipcRenderer.on("floating-bot:level", handler);

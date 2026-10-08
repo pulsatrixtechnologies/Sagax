@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { Message } from "@/state/store";
 import {
   buildFloatingSnapshot,
+  floatingMenu,
   clampOverlayPosition,
   defaultOverlayPosition,
   floatingStatus,
@@ -13,7 +14,7 @@ import {
   type FloatingBot,
   type FloatingLabels,
 } from "./brain";
-import { isFloatingEvent, isFloatingSnapshot, mascotFields } from "./protocol";
+import { isFloatingEvent, isFloatingSnapshot, mascotFields, type FloatingMenuItem } from "./protocol";
 
 const labels: FloatingLabels = Object.fromEntries(
   ["character", "inputLabel", "placeholder", "send", "open", "close", "hello", "thinking", "approvalTitle", "approval", "errorTitle", "error", "menuOpen", "menuHide", "menuShow", "menuTop", "menuDock", "menuFly", "moodLow", "moodOk", "moodHappy", "working"].map((key) => [key, key]),
@@ -78,9 +79,43 @@ describe("floating bot brain: poses and balloons", () => {
   });
 
   it("offers the right-click menu, with always-on-top only on the desktop", () => {
-    expect(snapshot(bot()).menu.map((item) => item.id)).toEqual(["open", "balloon", "top", "fly", "dock"]);
+    const ids = (menu: FloatingMenuItem[]) => menu.filter((item) => item.type !== "separator").map((item) => item.id);
+    expect(ids(snapshot(bot()).menu)).toEqual(["balloon", "open", "dock", "top", "fly"]);
     expect(snapshot(bot(), newFloatingSession(), undefined, false).menu.find((item) => item.id === "top")).toMatchObject({ checked: false });
-    expect(snapshot(bot(), newFloatingSession(), undefined, null).menu.map((item) => item.id)).toEqual(["open", "balloon", "fly", "dock"]);
+    expect(ids(snapshot(bot(), newFloatingSession(), undefined, null).menu)).toEqual(["balloon", "open", "dock", "fly"]);
+  });
+
+  const full = { ...labels, ...Object.fromEntries(["menuTalk", "menuCloseChat", "menuCall", "menuHangUp", "menuSwitch", "menuMoves", "menuSnooze", "menuHideMascot", "menuOptions", "menuSettings", "menuLively"].map((key) => [key, key])) } as FloatingLabels;
+  const bots = [{ id: "bot_a", name: "Ada", floating: true }, { id: "bot_b", name: "Bo", floating: false }, { id: "bot_c", name: "Cy", floating: true }];
+  const moves = [{ clip: "wave", label: "Wave" }, { clip: "dance", label: "Dance" }];
+
+  it("lays the menu out as JC asked: talk, call, open; switch bot and moves; hide; options and settings", () => {
+    const menu = floatingMenu(full, newFloatingSession(), true, true, { call: "start", bots, moves }, "bot_a");
+    expect(menu.map((item) => item.type === "separator" ? "-" : item.id)).toEqual(["balloon", "call", "open", "-", "switch", "moves", "-", "snooze", "dock", "-", "options", "settings"]);
+    expect(menu.map((item) => item.label).filter(Boolean)).toEqual(["menuTalk", "menuCall", "menuOpen", "menuSwitch", "menuMoves", "menuSnooze", "menuHideMascot", "menuOptions", "menuSettings"]);
+    // Switch bot: the person's bots, this one checked, one already on the desktop greyed out
+    const switching = menu.find((item) => item.id === "switch")!.items!;
+    expect(switching.map((item) => item.id)).toEqual(["switch:bot_a", "switch:bot_b", "switch:bot_c"]);
+    expect(switching[0]).toMatchObject({ checked: true });
+    expect(switching[1].enabled).toBeUndefined();
+    expect(switching[2]).toMatchObject({ enabled: false });
+    // Moves: the character's, by clip
+    expect(menu.find((item) => item.id === "moves")!.items).toEqual([{ id: "move:wave", label: "Wave" }, { id: "move:dance", label: "Dance" }]);
+    // the desktop options in their own submenu
+    expect(menu.find((item) => item.id === "options")!.items!.map((item) => item.id)).toEqual(["top", "fly", "lively"]);
+  });
+
+  it("names the chat item after its state, the call item after the call, and leaves out what has nothing to offer", () => {
+    const open = floatingMenu(full, { ...newFloatingSession(), open: true }, null, true, { call: "end", bots: bots.slice(0, 1), moves: [] }, "bot_a");
+    expect(open[0]).toMatchObject({ id: "balloon", label: "menuCloseChat" });
+    expect(open.find((item) => item.id === "call")).toMatchObject({ label: "menuHangUp" });
+    // one bot: no switch; no moves: no Moves
+    expect(open.some((item) => item.id === "switch" || item.id === "moves")).toBe(false);
+    expect(floatingMenu(full, newFloatingSession(), null, true, {}, "bot_a").some((item) => item.id === "call")).toBe(false);
+    // every id fits the protocol's (a switch to a 64-character bot id included)
+    const long = floatingMenu(full, newFloatingSession(), true, true, { bots: [...bots, { id: "b".repeat(64), name: "Long", floating: false }] }, "bot_a");
+    expect(isFloatingSnapshot({ ...snapshot(bot()), menu: long })).toBe(true);
+    expect(isFloatingEvent({ type: "menu", id: `switch:${"b".repeat(64)}` })).toBe(true);
   });
 
   it("checks what comes back from a window", () => {

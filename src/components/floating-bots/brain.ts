@@ -82,6 +82,27 @@ export interface FloatingLabels {
   pin?: string;
   /** "Activity: normal", the menu item that cycles the activity level. */
   menuLively?: string;
+  /** The right-click menu as JC set it out (absent: the older, flat menu's labels). */
+  menuTalk?: string;
+  menuCloseChat?: string;
+  menuCall?: string;
+  menuHangUp?: string;
+  menuSwitch?: string;
+  menuMoves?: string;
+  menuSnooze?: string;
+  menuHideMascot?: string;
+  menuOptions?: string;
+  menuSettings?: string;
+}
+
+/** What the menu offers besides the brain's own state: the call, the person's bots, the character's moves. */
+export interface FloatingMenuExtras {
+  /** "start" where voice mode serves the bot, "end" during its call, null otherwise. */
+  call?: "start" | "end" | null;
+  /** The person's bots for "Switch bot": this one checked, one already on the desktop greyed. */
+  bots?: { id: string; name: string; floating: boolean }[];
+  /** The character's moves, named. */
+  moves?: { clip: string; label: string }[];
 }
 
 export type FloatingBot = Pick<Bot, "id" | "name" | "color" | "mascotSkin" | "threadId" | "messages" | "busy" | "activity"> & {
@@ -151,14 +172,49 @@ export function floatingStatus(bot: FloatingBot, session: FloatingSession, strea
   };
 }
 
-export function floatingMenu(labels: FloatingLabels, session: FloatingSession, alwaysOnTop: boolean | null, flyAway = true): FloatingMenuItem[] {
-  return [
-    { id: "open", label: labels.menuOpen },
-    { id: "balloon", label: session.open ? labels.menuHide : labels.menuShow },
+/** Bots offered in "Switch bot" (a native submenu stays short). */
+export const SWITCH_BOTS_MAX = 24;
+
+/**
+ * The mascot's right-click menu: Talk, Start a voice call, Open in the app;
+ * Switch bot and Moves (submenus); Hide for 1 hour and Hide; the desktop
+ * options (always on top, fly away, activity) and Settings. Ids: "balloon",
+ * "call", "open", "switch:<botId>", "move:<clip>", "snooze", "dock", "top",
+ * "fly", "lively", "settings".
+ */
+export function floatingMenu(labels: FloatingLabels, session: FloatingSession, alwaysOnTop: boolean | null, flyAway = true, extras: FloatingMenuExtras = {}, botId = ""): FloatingMenuItem[] {
+  const options: FloatingMenuItem[] = [
     ...(alwaysOnTop === null ? [] : [{ id: "top", label: labels.menuTop, checked: alwaysOnTop }]),
     { id: "fly", label: labels.menuFly, checked: flyAway },
     ...(labels.menuLively ? [{ id: "lively", label: labels.menuLively }] : []),
-    { id: "dock", label: labels.menuDock },
+  ];
+  const bots = (extras.bots ?? []).slice(0, SWITCH_BOTS_MAX);
+  const moves = extras.moves ?? [];
+  const sep = (n: number): FloatingMenuItem => ({ id: `sep-${n}`, label: "", type: "separator" });
+  return [
+    { id: "balloon", label: session.open ? labels.menuCloseChat ?? labels.menuHide : labels.menuTalk ?? labels.menuShow },
+    ...(extras.call ? [{ id: "call", label: extras.call === "end" ? labels.menuHangUp ?? "" : labels.menuCall ?? "" }] : []),
+    { id: "open", label: labels.menuOpen },
+    ...(bots.length > 1 || moves.length ? [sep(1)] : []),
+    ...(bots.length > 1 && labels.menuSwitch
+      ? [{
+          id: "switch",
+          label: labels.menuSwitch,
+          items: bots.map((bot) => ({
+            id: `switch:${bot.id}`,
+            label: bot.name,
+            ...(bot.id === botId ? { checked: true } : {}),
+            ...(bot.floating && bot.id !== botId ? { enabled: false } : {}),
+          })),
+        }]
+      : []),
+    ...(moves.length && labels.menuMoves ? [{ id: "moves", label: labels.menuMoves, items: moves.map((move) => ({ id: `move:${move.clip}`, label: move.label })) }] : []),
+    sep(2),
+    ...(labels.menuSnooze ? [{ id: "snooze", label: labels.menuSnooze }] : []),
+    { id: "dock", label: labels.menuHideMascot ?? labels.menuDock },
+    sep(3),
+    ...(labels.menuOptions ? [{ id: "options", label: labels.menuOptions, items: options }] : options),
+    ...(labels.menuSettings ? [{ id: "settings", label: labels.menuSettings }] : []),
   ];
 }
 
@@ -195,6 +251,8 @@ export interface FloatingInput {
   context?: FloatingContext | null;
   /** The character the bot wears on the desktop. */
   mascot?: MascotLook;
+  /** The menu's call item, the person's bots and the character's moves. */
+  menu?: FloatingMenuExtras;
 }
 
 /** The pose and balloon for this moment, as one snapshot. */
@@ -248,7 +306,7 @@ export function buildFloatingSnapshot(input: FloatingInput): FloatingSnapshot {
     retro: input.retro,
     sparkle: session.sparkle,
     locale: input.locale,
-    menu: floatingMenu(labels, session, input.alwaysOnTop, flyAway),
+    menu: floatingMenu(labels, session, input.alwaysOnTop, flyAway, input.menu, bot.id),
     balloon,
     task: floatingTask(bot, session, status),
     mood,

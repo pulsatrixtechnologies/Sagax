@@ -239,3 +239,29 @@ describe("the avatar popover's Bot tab", () => {
     expect((html.match(/data-character-move=/g) ?? []).length).toBe(MASCOTS.find((entry) => entry.id === "trombi")!.moves.length);
   });
 });
+
+describe("the moves a character plays on request (the popover's Moves, the desktop menu's Moves)", () => {
+  it("gives the owl its wing moves and every other character its registry list, each a timed clip with a name", async () => {
+    const { characterMoves, isMoveClip } = await import("./moves");
+    const { MASCOTS } = await import("./mascots");
+    expect(characterMoves(undefined).map((move) => move.clip)).toEqual(["wave", "hop", "jump", "dance", "hoot"]);
+    expect(characterMoves({ character: "owl" }).every((move) => move.owl)).toBe(true);
+    for (const entry of MASCOTS.filter((candidate) => candidate.id !== "owl")) {
+      const moves = characterMoves({ character: entry.id });
+      expect(moves.map((move) => move.clip)).toEqual([...entry.moves]);
+      for (const move of moves) {
+        expect(isMoveClip(move.clip)).toBe(true);
+        expect(move.label).toMatch(/^(floatingBots\.move|mascot\.motion)\./);
+      }
+    }
+    expect(isMoveClip("sleep")).toBe(false);
+  });
+});
+
+describe("the drawn menu (in-app overlay)", () => {
+  it("lists a submenu's items after its title, indented", async () => {
+    const { drawnMenuRows } = await import("./FloatingBotView");
+    const rows = drawnMenuRows([{ id: "balloon", label: "Talk" }, { id: "sep-1", label: "", type: "separator" }, { id: "moves", label: "Moves", items: [{ id: "move:wave", label: "Wave" }] }]);
+    expect(rows.map(({ item, depth }) => `${depth}:${item.id}`)).toEqual(["0:balloon", "0:sep-1", "0:moves", "1:move:wave"]);
+  });
+});

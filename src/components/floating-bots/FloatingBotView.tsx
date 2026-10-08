@@ -27,7 +27,8 @@ import { mascotFor } from "./mascots";
 import { Balloon, BALLOON_MAX_W, readBalloonPlace, splitOffset, type BalloonSide } from "./Balloon";
 import { completeMascotLook } from "../../../shared/mascot-look";
 import { mascotStage } from "./fit";
-import { mascotFields, type FloatingEvent, type FloatingPose, type FloatingSnapshot } from "./protocol";
+import { mascotFields, type FloatingEvent, type FloatingMenuItem, type FloatingPose, type FloatingSnapshot } from "./protocol";
+import { characterMoves } from "./moves";
 import { dockedWindowSize, type Size } from "./window-frame";
 import { MascotCallCardView, MascotCallPill, type LevelSource, type MascotCallCard } from "./MascotCall";
 import type { MascotLook } from "../../../shared/mascot-look";
@@ -115,6 +116,13 @@ export interface FloatingBotViewProps {
   onLevels?: LevelSource;
   /** Desktop: the menu opens natively at this point of the page (the pointer); the drawn menu otherwise. */
   menuAt?: (x: number, y: number) => void;
+  /** Desktop: a move picked in the native menu's "Moves" (the drawn menu plays its own). */
+  onMove?: (listener: (clip: string) => void) => () => void;
+}
+
+/** The drawn menu's rows: a submenu's items follow its title, indented. */
+export function drawnMenuRows(items: readonly FloatingMenuItem[]): { item: FloatingMenuItem; depth: 0 | 1 }[] {
+  return items.flatMap((item) => [{ item, depth: 0 as const }, ...(item.items ?? []).map((child) => ({ item: child, depth: 1 as const }))]);
 }
 
 interface CharacterProps {
@@ -289,7 +297,7 @@ function AwayBadge({ snapshot, onOpen, onMenu, hover }: { snapshot: FloatingSnap
   );
 }
 
-export function FloatingBotView({ snapshot: given, onEvent, mover, interactive, wantsKeyboard, rootRef, className, style, below, pilot = null, onSide, onReserve, onLevels, menuAt }: FloatingBotViewProps) {
+export function FloatingBotView({ snapshot: given, onEvent, mover, interactive, wantsKeyboard, rootRef, className, style, below, pilot = null, onSide, onReserve, onLevels, menuAt, onMove }: FloatingBotViewProps) {
   // an older brain may not send the mascot's fields yet
   const snapshot: FloatingSnapshot = given.hints ? given : { ...given, ...mascotFields(given) };
   const [menuOpen, setMenuOpen] = useState(false);
@@ -374,6 +382,20 @@ export function FloatingBotView({ snapshot: given, onEvent, mover, interactive, 
     for (const effect of effects) runEffect(effect);
   }, [runEffect]);
   dispatchRef.current = dispatch;
+
+  // a move picked by name ("Moves"): only one this character has
+  const lookKey = snapshot.mascot ? JSON.stringify(snapshot.mascot) : "";
+  const playMove = useCallback((clip: string) => {
+    const move = characterMoves(lookKey ? (JSON.parse(lookKey) as MascotLook) : undefined).find((candidate) => candidate.clip === clip);
+    if (move) dispatchRef.current({ type: "move", now: now(), clip: move.clip });
+  }, [lookKey]);
+  useEffect(() => onMove?.(playMove), [onMove, playMove]);
+  /** A choice in the menu: a move plays here; anything else is the brain's. */
+  const chooseMenu = (id: string) => {
+    setMenuOpen(false);
+    if (id.startsWith("move:")) playMove(id.slice(5));
+    else onEvent({ type: "menu", id });
+  };
 
   // the bot's work, from the brain: fly off, come back
   useEffect(() => {
@@ -662,22 +684,27 @@ export function FloatingBotView({ snapshot: given, onEvent, mover, interactive, 
       )}
       {menuOpen && (
         <div role="menu" aria-label={snapshot.name} className={cn("fb-menu", retro && "r98-menu")} onPointerEnter={() => hover(true)} onPointerLeave={() => hover(false)}>
-          {snapshot.menu.map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              role={item.checked === undefined ? "menuitem" : "menuitemcheckbox"}
-              aria-checked={item.checked}
-              className={cn("fb-menu-item", retro && "r98-menu-item")}
-              onClick={() => {
-                setMenuOpen(false);
-                onEvent({ type: "menu", id: item.id });
-              }}
-            >
-              <span className="fb-check" aria-hidden="true">{item.checked ? "✓" : ""}</span>
-              {item.label}
-            </button>
-          ))}
+          {drawnMenuRows(snapshot.menu).map(({ item, depth }) =>
+            item.type === "separator" ? (
+              <span key={item.id} role="separator" className="fb-menu-sep" />
+            ) : item.items ? (
+              <span key={item.id} role="presentation" className="fb-menu-group">{item.label}</span>
+            ) : (
+              <button
+                key={item.id}
+                type="button"
+                role={item.checked === undefined ? "menuitem" : "menuitemcheckbox"}
+                aria-checked={item.checked}
+                disabled={item.enabled === false}
+                data-depth={depth || undefined}
+                className={cn("fb-menu-item", retro && "r98-menu-item")}
+                onClick={() => chooseMenu(item.id)}
+              >
+                <span className="fb-check" aria-hidden="true">{item.checked ? "✓" : ""}</span>
+                {item.label}
+              </button>
+            ),
+          )}
         </div>
       )}
       <div

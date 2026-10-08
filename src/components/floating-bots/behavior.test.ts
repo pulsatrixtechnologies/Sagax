@@ -376,3 +376,22 @@ describe("mascot behavior: no seizures", () => {
     }
   });
 });
+
+describe("mascot behavior: a move picked by name", () => {
+  it("plays that clip at once and rests after it, even under reduced motion", () => {
+    for (const options of [desk(), desk({ reduced: true })]) {
+      const start = newMascotState(0);
+      const { state } = run(start, [{ type: "move", now: 100, clip: "dance" }], options);
+      expect(state.activity).toBe("dance");
+      expect(state.until).toBe(100 + CLIP_MS.dance);
+      expect(settle(state, 100, options).state.activity).toBe("idle");
+    }
+  });
+
+  it("waits while the mascot is dragged, away or walking, and refuses a clip that never ends", () => {
+    const dragged = run(newMascotState(0), [{ type: "drag", now: 10, on: true }, { type: "move", now: 20, clip: "wave" }]).state;
+    expect(dragged.activity).toBe("drag");
+    const sleeping = run(newMascotState(0), [{ type: "move", now: 20, clip: "sleep" }]).state;
+    expect(sleeping.activity).toBe("idle");
+  });
+});

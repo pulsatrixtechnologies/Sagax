@@ -26,7 +26,7 @@ import "@/components/achievements/achievements.css";
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
 import type { LocaleKey } from "@/locales";
-import { MAUS_COLORS, MAUS_WING_MOTIONS, swatchStyle, type MausColor, type MausMotion } from "@/lib/mascot";
+import { MAUS_COLORS, swatchStyle, type MausColor, type MausMotion } from "@/lib/mascot";
 import { MausAvatar } from "@/components/Avatar";
 import { MASCOT_SKIN_IDS, OWL_SKIN_TIER, botMascotSkin, type MascotSkinId } from "../../../shared/mascot-skins";
 import type { MascotColorGroup } from "../../../shared/mascot-colors";
@@ -37,7 +37,8 @@ import { BunbuMascot } from "@/components/BunbuMascot";
 import "@/components/skin-fx/skin-fx.css";
 import type { MascotActivity } from "./behavior";
 import { colorTabFor, colorTabs, nextTab, skinTabFor, skinTierTabs } from "./editor-tabs";
-import { MASCOTS, mascotFor, SHAPE_CHOICES } from "./mascots";
+import { MASCOTS, SHAPE_CHOICES } from "./mascots";
+import { characterMoves, type OwlMove } from "./moves";
 
 export interface MascotLookPatch {
   color?: MausColor;
@@ -150,32 +151,6 @@ export const COLOR_GROUP_LABEL = {
   neon: "mascot.color.group.neon",
   neutral: "mascot.color.group.neutral",
 } satisfies Record<MascotColorGroup, LocaleKey>;
-
-const OWL_MOVE_LABEL = {
-  "spread-wings": "mascot.motion.spreadWings",
-  flap: "mascot.motion.flap",
-  "take-off": "mascot.motion.takeOff",
-  shake: "mascot.motion.shake",
-  hoot: "mascot.motion.hoot",
-} satisfies Record<(typeof MAUS_WING_MOTIONS)[number], LocaleKey>;
-
-/** The skin effect each of the owl's wing moves plays on the preview (SkinFx.tsx MoveFx). */
-const OWL_MOVE_FX: Record<(typeof MAUS_WING_MOTIONS)[number], MascotActivity> = {
-  "spread-wings": "wave",
-  flap: "hop",
-  "take-off": "jump",
-  shake: "dance",
-  hoot: "hoot",
-};
-
-const MOVE_LABEL: Partial<Record<MascotActivity, LocaleKey>> = {
-  wave: "floatingBots.move.wave",
-  dance: "floatingBots.move.dance",
-  jump: "floatingBots.move.jump",
-  hop: "floatingBots.move.hop",
-  love: "floatingBots.move.love",
-  hoot: "floatingBots.move.hoot",
-};
 
 // A section's title row stays on top while its options scroll under it, so a
 // long popover keeps its bearings; it spans the popover's padding (p-3.5, so it
@@ -389,10 +364,8 @@ export default function MascotLookEditor({ bot, disabled, onPatch: savePatch, on
 
   const colors = <ColorPicker color={bot.color} disabled={disabled} onSelect={(color) => onPatch({ color })} />;
 
-  const moves: { id: string; label: string; clip: MascotActivity; owl?: (typeof MAUS_WING_MOTIONS)[number] }[] =
-    look.character === "owl"
-      ? MAUS_WING_MOTIONS.map((owlMove) => ({ id: owlMove, label: t(OWL_MOVE_LABEL[owlMove]), clip: OWL_MOVE_FX[owlMove], owl: owlMove }))
-      : mascotFor(look).moves.map((clip) => ({ id: clip, label: t(mascotFor(look).moveLabels?.[clip] ?? MOVE_LABEL[clip] ?? "floatingBots.move.hop"), clip }));
+  // the same moves, with the same names, as the desktop mascot's "Moves" menu (moves.ts)
+  const moves: { id: string; label: string; clip: MascotActivity; owl?: OwlMove }[] = characterMoves(look).map((move) => ({ ...move, label: t(move.label) }));
 
   return (
     <div data-mascot-look-editor="">

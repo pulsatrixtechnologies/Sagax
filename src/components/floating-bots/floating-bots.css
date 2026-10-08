@@ -330,6 +330,25 @@ html[data-floating-bot] #root {
   background: var(--color-hover);
   outline: none;
 }
+/* the drawn menu (in-app overlay): groups, their items indented, lines between groups */
+.fb-root .fb-menu-item[data-depth] {
+  padding-left: 20px;
+}
+.fb-root .fb-menu-item:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+.fb-root .fb-menu-group {
+  padding: 6px 8px 2px;
+  color: var(--color-ink-secondary);
+  font-size: 11px;
+  font-weight: 600;
+}
+.fb-root .fb-menu-sep {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--color-border);
+}
 .fb-root .fb-check {
   display: inline-block;
   width: 12px;

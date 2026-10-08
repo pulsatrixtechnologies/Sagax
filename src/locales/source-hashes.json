@@ -7403,7 +7403,17 @@
       "seen.someone": "864c855e3d64399dc06fa30ebb75526c2c2e73db7216b16a3d4cf03e8a52ec3b",
       "settings.section.privacy": "54a57c3147c49f33de5898b87084ad2b14c4ab308f762454bf92aca907478ad5",
       "settings.privacy.readReceipts.title": "b037590d42808754244f7cc7ebe552758f05ff0035220726c0fe345bd9cd4953",
-      "settings.privacy.readReceipts.subtitle": "48961f606dfc7a5e02b2138f1e0b3294b63bb614176860157111b48f7953356b"
+      "settings.privacy.readReceipts.subtitle": "48961f606dfc7a5e02b2138f1e0b3294b63bb614176860157111b48f7953356b",
+      "floatingBots.menu.talk": "449f5a775762cdc561ee231300af1b02be67c56b81e503058a1c777ea1dc8b55",
+      "floatingBots.menu.closeChat": "2725d37100069c13362b3eea8285fc270a0742b400c9365de05fa3b164f3c2cd",
+      "floatingBots.menu.startCall": "c438221102af4fb58e93e619e745e59aa6c1c9829dc412dae640d3fb1be8db51",
+      "floatingBots.menu.openIn": "f30fd61ae722021cc8125e226e92a9d1efb069f2033f3fdf833acbd08b2bec3b",
+      "floatingBots.menu.switch": "90890cf141ae3b6250d115e56c8728bd7743a1c66a886a2a3638aa1038cecd12",
+      "floatingBots.menu.moves": "26c84ac387ac996af2c942cad012da5b8bb36ed0108fd117f0e5cd3a00f41fd6",
+      "floatingBots.menu.snooze": "41edebad091a7db68ea8e5275c178af1299c9b79a74925858cdf90b3f0b514e3",
+      "floatingBots.menu.hideMascot": "ac20a57bfde0bbc40bfe70895eb1cfacc944aaff06ca784053623c569b3e1b3d",
+      "floatingBots.menu.options": "b1e0eb2c3cf5a82c94c958558d4bf66ff9e3cecab859c86ec56d79193f50b5fd",
+      "floatingBots.menu.settings": "7a04083baf8daa20973e671fc0138a81a70c797ef1f28b77e78edbd1acbc57bc"
     },
     "hi": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",
@@ -13054,7 +13064,17 @@
       "seen.someone": "864c855e3d64399dc06fa30ebb75526c2c2e73db7216b16a3d4cf03e8a52ec3b",
       "settings.section.privacy": "54a57c3147c49f33de5898b87084ad2b14c4ab308f762454bf92aca907478ad5",
       "settings.privacy.readReceipts.title": "b037590d42808754244f7cc7ebe552758f05ff0035220726c0fe345bd9cd4953",
-      "settings.privacy.readReceipts.subtitle": "48961f606dfc7a5e02b2138f1e0b3294b63bb614176860157111b48f7953356b"
+      "settings.privacy.readReceipts.subtitle": "48961f606dfc7a5e02b2138f1e0b3294b63bb614176860157111b48f7953356b",
+      "floatingBots.menu.talk": "449f5a775762cdc561ee231300af1b02be67c56b81e503058a1c777ea1dc8b55",
+      "floatingBots.menu.closeChat": "2725d37100069c13362b3eea8285fc270a0742b400c9365de05fa3b164f3c2cd",
+      "floatingBots.menu.startCall": "c438221102af4fb58e93e619e745e59aa6c1c9829dc412dae640d3fb1be8db51",
+      "floatingBots.menu.openIn": "f30fd61ae722021cc8125e226e92a9d1efb069f2033f3fdf833acbd08b2bec3b",
+      "floatingBots.menu.switch": "90890cf141ae3b6250d115e56c8728bd7743a1c66a886a2a3638aa1038cecd12",
+      "floatingBots.menu.moves": "26c84ac387ac996af2c942cad012da5b8bb36ed0108fd117f0e5cd3a00f41fd6",
+      "floatingBots.menu.snooze": "41edebad091a7db68ea8e5275c178af1299c9b79a74925858cdf90b3f0b514e3",
+      "floatingBots.menu.hideMascot": "ac20a57bfde0bbc40bfe70895eb1cfacc944aaff06ca784053623c569b3e1b3d",
+      "floatingBots.menu.options": "b1e0eb2c3cf5a82c94c958558d4bf66ff9e3cecab859c86ec56d79193f50b5fd",
+      "floatingBots.menu.settings": "7a04083baf8daa20973e671fc0138a81a70c797ef1f28b77e78edbd1acbc57bc"
     },
     "uk": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",
