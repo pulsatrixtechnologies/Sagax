@@ -1200,7 +1200,6 @@ export function GroupView({ group: stored }: { group: Group }) {
             messages={group.messages}
             isGroup
           />}
-          {!panelOpen && <ConversationTurnLimit group={group} />}
           {!group.dm && <GroupTaskPicker group={group} />}
           {group.dm && memberMauses}
           {!group.dm && !panelOpen && <button
@@ -1541,6 +1540,10 @@ export function GroupView({ group: stored }: { group: Group }) {
                 <section>
                   <h3 className="mb-1.5 text-[13px] text-ink-secondary">{t("room.responder.aria")}</h3>
                   <DefaultResponderSelect group={group} members={members} disabled={!ownsRoom} />
+                </section>
+                <section>
+                  <h3 className="mb-1.5 text-[13px] text-ink-secondary">{t("room.turnLimit.aria")}</h3>
+                  <ConversationTurnLimit group={group} />
                 </section>
                 <section>
                   <h3 className="mb-1.5 text-[13px] text-ink-secondary">{t("room.folder.title")}</h3>

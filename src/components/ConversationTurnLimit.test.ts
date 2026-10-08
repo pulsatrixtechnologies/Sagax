@@ -1,5 +1,6 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
+import { readFileSync } from "node:fs";
 import { afterAll, describe, expect, it, vi } from "vitest";
 import type { Group } from "@/state/store";
 
@@ -51,5 +52,14 @@ describe("conversation turn limit", () => {
       }),
     ));
     expect(markup).toContain('value="30" selected');
+  });
+
+  it("is gone from the chat header and lives in the room settings Advanced tab", () => {
+    const source = readFileSync(new URL("./GroupView.tsx", import.meta.url), "utf8");
+    const uses = source.split("<ConversationTurnLimit group={group} />");
+    expect(uses).toHaveLength(2);
+    const header = source.slice(source.indexOf("controlsShiftStyle}"), source.indexOf("<GroupTaskPicker"));
+    expect(header).not.toContain("ConversationTurnLimit");
+    expect(source.indexOf("advanced={")).toBeLessThan(source.indexOf("<ConversationTurnLimit group={group} />"));
   });
 });
