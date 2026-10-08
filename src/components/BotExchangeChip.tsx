@@ -6,6 +6,7 @@ import { createPortal } from "react-dom";
 import { ArrowLeftRight } from "lucide-react";
 import { formatTime, type Bot } from "@/state/store";
 import { BotAvatar } from "./Avatar";
+import { ConversationLink } from "./ConversationLink";
 import { activeLocale, t } from "@/lib/i18n";
 import { mausInk, type MausColor } from "@/lib/mascot";
 import { ToolActivity } from "./ToolActivity";
@@ -174,24 +175,19 @@ export function BotExchangeChip({
   }, [forceOpen]);
   const shown = open || (forceOpen && !held);
   const party = avatarBot(run.party, bots);
-  const phrase = t("chat.goToConversation");
   return (
-    <div className="flex justify-center py-1">
-      <button
-        type="button"
-        data-testid="bot-exchange-chip"
-        onClick={() => {
-          if (onGo?.()) return;
-          setHeld(false);
-          setOpen(true);
-        }}
-        aria-label={t("chat.goToConversationWith", { name: run.party.name })}
-        className="flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[12px] text-ink-secondary hover:bg-raised"
-      >
-        <span>{phrase}</span>
-        <BotAvatar bot={party} state="happy" size={16} animated={false} />
-        <span className="font-medium" style={{ color: mausInk(party.color) }}>{run.party.name}</span>
-      </button>
+    <ConversationLink
+      bot={party}
+      name={run.party.name}
+      color={party.color}
+      testId="bot-exchange-chip"
+      label={t("chat.goToConversationWith", { name: run.party.name })}
+      onClick={() => {
+        if (onGo?.()) return;
+        setHeld(false);
+        setOpen(true);
+      }}
+    >
       {shown && (
         <ExchangeSheet
           run={run}
@@ -203,6 +199,6 @@ export function BotExchangeChip({
           }}
         />
       )}
-    </div>
+    </ConversationLink>
   );
 }

@@ -56,6 +56,7 @@ import { VoiceNoteBubble, type VoiceNoteAttachment } from "./VoiceNoteBubble";
 import { RawMarkdownView, RawToggleAction } from "./RawMarkdownToggle";
 import { ParallelResultLabel, ParallelTaskCard } from "./ParallelTaskCard";
 import { ThreadChip } from "./ThreadChip";
+import { withoutDeadThreadChips } from "@/lib/dead-thread-chips";
 import { VerifyCard } from "./VerifyCard";
 import { askText, runSteps, runSummary, showRun, skillPrompt, skillStaged } from "@/lib/verify-steps";
 import { useShowRunCard } from "@/lib/run-card-preferences";
@@ -727,6 +728,7 @@ const MessagesList = memo(function MessagesList({
 }) {
   const { state, dispatch } = useStore();
   const showToolCalls = showToolCallsEnabled(state.config);
+  const owners = useMemo(() => ({ bots: state.bots, groups: state.groups }), [state.bots, state.groups]);
   // Bot-to-bot lines become one chip per run first, so a tool fold never
   // swallows them. Person lines and replies to the person stay in the groups.
   const items = useMemo(() => {
@@ -735,7 +737,7 @@ const MessagesList = memo(function MessagesList({
     const plan = voiceCallPlan(transcript);
     const seen = new Set<string>();
     // A stop the person asked for leaves no row, stored ones included.
-    const shown = messages.filter((message) => !isTurnStoppedNotice(message));
+    const shown = withoutDeadThreadChips(messages, owners).filter((message) => !isTurnStoppedNotice(message));
     const collapsed = collapseBotExchanges(shown, {
       selfBotId: bot.id,
       self: { id: bot.id, name: bot.name, color: bot.color },
@@ -764,7 +766,7 @@ const MessagesList = memo(function MessagesList({
     }
     flush();
     return listed;
-  }, [messages, transcript, bot.id, bot.name, bot.color, locale]);
+  }, [messages, transcript, bot.id, bot.name, bot.color, locale, owners]);
   const windowIds = useMemo(() => new Set(messages.map((message) => message.id)), [messages]);
   // Where this conversation works, for the place icon on screen and page tools.
   const place = effectivePlace(bot, bot.tasks?.find((task) => task.threadId === bot.threadId));

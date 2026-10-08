@@ -236,9 +236,9 @@ export interface Message {
   /** emoji reactions; by = "user" or a member botId. */
   reactions?: Array<{ emoji: string; by: string }>;
   /** comm chips: "Messaged @X" linking to the bot⇄bot channel. */
-  comm?: { groupId: string; threadId?: string; withBotId: string; withName: string; withColor: MausColor };
+  comm?: { groupId: string; threadId?: string; withBotId: string; withName: string; withColor: MausColor; gone?: boolean };
   /** thread chips: "Opened thread #Title on Bot" linking to that thread */
-  threadRef?: { botId: string; threadId: string; title: string };
+  threadRef?: { botId: string; threadId: string; title: string; gone?: boolean };
   /** A parallel task this line belongs to (shared/parallel-tasks.ts). */
   parallelTask?: ParallelTaskRef;
   /** sent while the bot was mid-turn; auto-sends when the turn settles.

@@ -1,32 +1,34 @@
 // The receipt a bot leaves when it opens a thread — "Opened thread #QA PR
-// 245 on Scout" — as the same clickable pill a bot⇄bot comm chip uses.
-// Clicking shows that thread; it never redirects work (openThread). Like a
-// comm chip it stays visible with Tool calls hidden: it is the only trace,
-// where the person is reading, that a new thread now exists.
-import { ChevronRight, MessagesSquare } from "lucide-react";
+// 245 on Scout" — drawn as the same centered "Go to conversation" line a
+// collapsed bot-to-bot exchange uses (ConversationLink). Clicking shows that
+// thread; it never redirects work (openThread). Like a comm chip it stays
+// visible with Tool calls hidden: it is the only trace, where the person is
+// reading, that a new thread now exists. When the thread has since been
+// deleted the receipt is not drawn at all (lib/dead-thread-chips).
 import { openThread, useStore, type Message } from "@/state/store";
 import { t } from "@/lib/i18n";
-import { BotAvatar } from "./Avatar";
+import { navigationTargetGone } from "@/lib/dead-thread-chips";
+import { ConversationLink } from "./ConversationLink";
+import type { MausColor } from "@/lib/mascot";
 
 export function ThreadChip({ message }: { message: Message }) {
   const { state, dispatch } = useStore();
   const ref = message.threadRef;
   const tool = message.tool;
   if (!ref || !tool) return null;
+  if (navigationTargetGone(message, state)) return null;
   const bot = state.bots.find((candidate) => candidate.id === ref.botId);
+  const group = bot ? undefined : state.groups.find((candidate) => candidate.id === ref.botId);
+  const name = bot?.name ?? group?.name ?? ref.title;
+  const color = (bot?.color ?? "blue") as MausColor;
   return (
-    <div className="flex justify-start">
-      <button
-        type="button"
-        data-thread-chip={ref.threadId}
-        onClick={() => openThread(dispatch, ref, state)}
-        title={ref.title ? t("chat.openThread", { title: ref.title }) : t("chat.goToConversation")}
-        className="flex items-center gap-2 rounded-full border border-hairline/40 bg-panel px-3 py-1.5 text-[13px] text-ink-secondary hover:bg-raised hover:text-ink"
-      >
-        {bot ? <BotAvatar bot={bot} state="happy" size={16} animated={false} /> : <MessagesSquare size={13} aria-hidden="true" />}
-        <span className="max-w-[480px] truncate">{t("chat.goToConversation")}</span>
-        <ChevronRight size={13} />
-      </button>
-    </div>
+    <ConversationLink
+      bot={bot ?? { name, color }}
+      name={name}
+      color={color}
+      attributes={{ "data-thread-chip": ref.threadId }}
+      title={ref.title ? t("chat.openThread", { title: ref.title }) : t("chat.goToConversation")}
+      onClick={() => openThread(dispatch, ref, state)}
+    />
   );
 }

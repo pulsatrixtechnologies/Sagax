@@ -22,6 +22,7 @@ import { PlaceIcon } from "./PlaceIcon";
 import { ScreenFrame } from "./ScreenFrame";
 import { effectivePlace, placeLabelKey } from "@/lib/place";
 import { ThreadChip } from "./ThreadChip";
+import { withoutDeadThreadChips } from "@/lib/dead-thread-chips";
 import { ToolActivity } from "./ToolActivity";
 import { ThreadRefText } from "./ThreadRefs";
 import { TurnPresence } from "./TurnPresence";
@@ -225,6 +226,7 @@ export const Transcript = memo(function Transcript({
 }) {
   const { state, dispatch } = useStore();
   const showToolCalls = showToolCallsEnabled(state.config);
+  const owners = useMemo(() => ({ bots: state.bots, groups: state.groups }), [state.bots, state.groups]);
   const memberOf = (id?: string) => members.find((b) => b.id === id);
   const pairChannel = Boolean(group.dm) && !group.peopleDm;
   // Bot-to-bot lines become one chip per run first. A shared room's replies
@@ -233,7 +235,7 @@ export const Transcript = memo(function Transcript({
   const items = useMemo(() => {
     const plan = voiceCallPlan(transcript);
     const seen = new Set<string>();
-    const visible = messages.filter((message) =>
+    const visible = withoutDeadThreadChips(messages, owners).filter((message) =>
       message.kind !== "activity" || roomActivityVisible(message, showToolCalls));
     const collapsed = collapseBotExchanges(visible, {
       pairChannel,
@@ -263,7 +265,7 @@ export const Transcript = memo(function Transcript({
     }
     flush();
     return listed;
-  }, [messages, showToolCalls, pairChannel, members, transcript]);
+  }, [messages, showToolCalls, pairChannel, members, transcript, owners]);
   const windowIds = useMemo(() => new Set(messages.map((message) => message.id)), [messages]);
   const newestMessageId = messages.at(-1)?.id;
   const newestUserMessageId = [...messages].reverse().find((message) => message.role === "user")?.id;

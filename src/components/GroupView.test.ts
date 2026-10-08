@@ -49,6 +49,15 @@ describe("RoomToolChip", () => {
     expect(markup).toContain('title="Open #QA PR 245"');
   });
 
+  it("draws no opened-thread chip when the server marked its thread gone", () => {
+    const base = chip({
+      tool: { name: "Opened thread #QA PR 245 on Scout", ok: true },
+      threadRef: { botId: "scout", threadId: "qa-245", title: "QA PR 245", gone: true },
+    });
+    expect(render(base)).toBe("");
+    expect(render({ ...base, threadRef: { ...base.threadRef!, gone: false } })).toContain("Go to conversation");
+  });
+
   it("leaves an ordinary step as a plain pill", () => {
     const markup = render(chip());
     expect(markup).not.toContain("<button");
