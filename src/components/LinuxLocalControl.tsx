@@ -65,7 +65,7 @@ export function LinuxLocalControl() {
           className={cn(
             "shrink-0 rounded-full px-2 py-1 text-[10px] font-medium",
             ready
-              ? "bg-success/10 text-success"
+              ? "bg-accent/15 text-accent-text"
               : waylandSafetyBlocked
                 ? "bg-danger/10 text-danger"
                 : local.enabled

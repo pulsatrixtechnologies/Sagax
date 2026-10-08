@@ -1264,7 +1264,7 @@ export function SettingsModal() {
               <>
                 <p className="text-[13px] leading-[18px] text-ink-secondary">{t("settings.connections.subtitle")}</p>
                 {state.config?.composio.mode === "managed" ? (
-                  <div className="rounded-lg border border-success/25 bg-success/10 px-3 py-2 text-[13px] text-success">
+                  <div className="rounded-lg border border-accent/25 bg-accent/10 px-3 py-2 text-[13px] text-accent-text">
                     {t("settings.connections.ready")}
                   </div>
                 ) : null}

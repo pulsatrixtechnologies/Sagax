@@ -171,7 +171,7 @@ export function VoiceEngineSettings() {
       {cloudProvider && (
         <div className="mt-4">
           <div className="mb-1.5 flex items-center gap-2 text-[13px] text-ink-secondary">
-            <span className={cn("size-1.5 rounded-full", configured ? "bg-success" : "bg-raised-hover")} />
+            <span className={cn("size-1.5 rounded-full", configured ? "bg-accent" : "bg-raised-hover")} />
             <span>{t("voice.engine.key", { name: cloudProvider.name })}</span>
             {configured && <span className="text-[11px] text-success">{included ? t("keys.includedWithCloudPro") : t("keys.connected")}</span>}
           </div>
@@ -234,7 +234,7 @@ export function VoiceEngineSettings() {
       {provider === "chatterbox" && (
         <div className="mt-4">
           <div className="mb-1.5 flex items-center gap-2 text-[13px] text-ink-secondary">
-            <span className={cn("size-1.5 rounded-full", configured ? "bg-success" : "bg-raised-hover")} />
+            <span className={cn("size-1.5 rounded-full", configured ? "bg-accent" : "bg-raised-hover")} />
             <span>{t("voice.engine.server")}</span>
             {configured && <span className="text-[11px] text-success">{t("voice.engine.saved")}</span>}
           </div>

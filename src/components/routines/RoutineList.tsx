@@ -6,6 +6,7 @@ import type { Routine, RoutineRun } from "@/lib/routines";
 import type { RoutineSuspendReason } from "../../../shared/routines";
 import { routineWhenLabel } from "@/lib/routine-display";
 import type { Bot } from "@/state/store";
+import { PILL_INFO } from "@/lib/status-tones";
 import { Switch } from "../SettingsPrimitives";
 
 const SUSPEND_REASON_KEYS = {
@@ -39,7 +40,7 @@ export function RoutineDelegationBanner({ routines, viewerPrincipalId, initial }
   }, [mine, initial]);
   if (!mine || state !== "none") return null;
   return (
-    <div role="status" data-routine-delegation-banner className="mb-2 flex flex-wrap items-center gap-2 rounded-lg border border-warning/30 bg-warning/5 p-3 text-[12px] text-ink">
+    <div role="status" data-routine-delegation-banner className="mb-2 flex flex-wrap items-center gap-2 rounded-lg border border-accent/30 bg-accent/10 p-3 text-[12px] text-ink">
       <span className="min-w-0 flex-1 break-words">{t("routines.delegationBanner")}</span>
       <button
         type="button"
@@ -85,7 +86,7 @@ export function RoutineList({ routines, loading, error, onOpen, onToggle, viewer
                 {(routine.runAs || routine.suspended) && (
                   <span className="mt-0.5 flex flex-wrap gap-1.5">
                     {routine.runAs && <span data-routine-run-as className="truncate rounded-md bg-inset px-1.5 text-[11.5px] leading-[18px] text-ink-secondary">{t("routines.runAs", { name: routine.runAs.name || routine.runAs.principalId })}</span>}
-                    {routine.suspended && <span data-routine-suspended={routine.suspended.reason} className="truncate rounded-md bg-warning/10 px-1.5 text-[11.5px] leading-[18px] text-warning">{routineSuspendedText(routine.suspended.reason)}</span>}
+                    {routine.suspended && <span data-routine-suspended={routine.suspended.reason} className={`truncate rounded-md ${PILL_INFO} px-1.5 text-[11.5px] leading-[18px]`}>{routineSuspendedText(routine.suspended.reason)}</span>}
                   </span>
                 )}
               </button>

@@ -87,6 +87,33 @@ function contrast(fgHex, bgHex) {
   return (hi + 0.05) / (lo + 0.05);
 }
 
+/** A translucent tint (`bg-accent/15`) laid over an opaque surface, as the
+ * hex the eye sees. Lets a pill's text be measured against its real fill. */
+function mix(tintHex, surfaceHex, alpha) {
+  const tint = parseHex(tintHex);
+  const surface = parseHex(surfaceHex);
+  if (!tint || !surface || surface.a !== 1) return null;
+  const f = flatten({ ...tint, a: alpha }, surface);
+  const hex = (v) => Math.round(v).toString(16).padStart(2, "0");
+  return `#${hex(f.r)}${hex(f.g)}${hex(f.b)}`;
+}
+
+/** The pill fills the components paint: `bg-<tone>/15` on a card or a panel.
+ * Derived per skin so the pair is measured on the shipped palette. */
+const PILL_ALPHA = 0.15;
+const PILL_GROUNDS = ["card", "panel"];
+const PILL_TONES = ["accent", "success", "warning", "danger"];
+function withDerived(tokens) {
+  const out = { ...tokens };
+  for (const tone of PILL_TONES) {
+    for (const ground of PILL_GROUNDS) {
+      const hex = tokens[`--color-${tone}`] && tokens[`--color-${ground}`] ? mix(tokens[`--color-${tone}`], tokens[`--color-${ground}`], PILL_ALPHA) : null;
+      if (hex) out[`--pill-${tone}-on-${ground}`] = hex;
+    }
+  }
+  return out;
+}
+
 // Pairs taken from what the components render, not from what looks plausible:
 // body copy sits on all five surfaces, the filled accent/danger buttons carry
 // their own ink token, and the status colours are used as text on cards.
@@ -109,6 +136,17 @@ const PAIRS = [
   ["--color-danger", "--color-card", 4.5],
   ["--color-success", "--color-card", 4.5],
   ["--color-warning", "--color-card", 4.5],
+  // The standard switch, on: an `accent` track (never the success green) with
+  // an `accent-border` ring and an `accent-ink` thumb. The track is a UI
+  // component, so it is held to 3:1 against every surface a switch sits on
+  // through that ring (Dusk's muted accent fill alone is 2.4:1 on raised);
+  // the thumb carries the paired ink, 4.5:1 on the track.
+  ...["--color-panel", "--color-card", "--color-raised"].map((s) => ["--color-accent-border", s, 3]),
+  // Status pills. On, active, connected, paused, waiting and scheduled wear
+  // the accent tint (`bg-accent/15 text-accent-text`); success, warning and
+  // error keep their own tones for the work that earns them. Text is held to
+  // 4.5:1 on the tinted fill, as laid over a card or a panel.
+  ...PILL_GROUNDS.map((g) => ["--color-accent-text", `--pill-accent-on-${g}`, 4.5]),
   // borders and dots are UI components, not text — AA asks 3:1 of them
   ["--color-hairline", "--color-app", 1.5],
   ["--color-accent", "--color-app", 3],
@@ -153,6 +191,15 @@ const PAIRS = [
   ["--color-panel", "--color-app", 1.03],
 ];
 
+// success, warning and error pills are held on the two Pulsatrix skins, which
+// this change retuned; the other skins keep the palettes they shipped.
+const PULSATRIX = new Set(["pulsatrix", "pulsatrix-light"]);
+const PULSATRIX_PILL_PAIRS = PILL_GROUNDS.flatMap((g) => [
+  ["--color-success", `--pill-success-on-${g}`, 4.5],
+  ["--color-warning", `--pill-warning-on-${g}`, 4.5],
+  ["--color-danger", `--pill-danger-on-${g}`, 4.5],
+]);
+
 const skins = parseSkins(css);
 // Midnight faithfully keeps two upstream contrast gaps. They may improve, but
 // must not get worse; every other below-target pair is a regression.
@@ -163,12 +210,13 @@ const BASELINE_FLOORS = new Map([
 const BASELINE_DRIFT = 0.01;
 
 let failed = false;
-for (const [id, tokens] of skins) {
+for (const [id, skinTokens] of skins) {
+  const tokens = withDerived(skinTokens);
   const problems = [];
   const missing = [];
   const unmeasurable = [];
   let measured = 0;
-  for (const [fg, bg, min] of PAIRS) {
+  for (const [fg, bg, min] of [...PAIRS, ...(PULSATRIX.has(id) ? PULSATRIX_PILL_PAIRS : [])]) {
     // A pair we cannot measure is reported, never silently skipped: an
     // unmeasured pair used to be counted as a passing one.
     if (!tokens[fg] || !tokens[bg]) {

@@ -105,7 +105,7 @@ export function AccessCard({ access, viewer, onSignIn }: { access: WireAccessCar
     }
   };
   return (
-    <div role="status" data-access-card={access.reason} className="flex w-fit max-w-full items-start gap-2 rounded-xl border border-warning/30 bg-warning/5 px-3 py-2 text-[13px] text-ink">
+    <div role="status" data-access-card={access.reason} className="flex w-fit max-w-full items-start gap-2 rounded-xl border border-accent/30 bg-accent/10 px-3 py-2 text-[13px] text-ink">
       <KeyRound size={14} aria-hidden="true" className="mt-0.5 shrink-0 text-warning" />
       <div className="flex min-w-0 flex-col gap-1">
         <span className="break-words">{lines.text}</span>

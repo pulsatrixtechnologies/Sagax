@@ -319,7 +319,7 @@
   --color-bubble-user-ink: #eef2fb;   /* = ink: unchanged */
 
   --color-success: #38d591;
-  --color-danger: #f2555f;
+  --color-danger: #f5606a;      /* was #f2555f: 4.46:1 as text on its own 15% tint */
   --color-danger-ink: #030b17;      /* white measures 3.37:1 here; see above */
   --color-success-ink: #072114;
   --color-warning: #ff9800;
@@ -350,7 +350,7 @@
 
    --color-accent is v3's own --accent-brand, --color-accent-border and
    --color-focus are its --accent-brand-hover/--ring (identical in v3).
-   --color-danger is v3's --destructive verbatim; its fill is dark enough
+   --color-danger is v3's --destructive, darkened one step so its text clears 4.5:1 on its own 15% pill tint; its fill is dark enough
    that white clears AA outright, unlike Pulsatrix's own red, so danger-ink
    stays v3's own --destructive-fg instead of borrowing the app's ink.
    Success and warning are not top-level v3 tokens, so they are drawn from
@@ -405,7 +405,7 @@
   --color-bubble-user-ink: #0b1526;   /* = ink: unchanged */
 
   --color-success: #0f5132;
-  --color-danger: #d92d3e;
+  --color-danger: #b82336;      /* was #d92d3e: 3.6:1 (v3 destructive) as text on its own 15% tint */
   --color-danger-ink: #ffffff;
   --color-success-ink: #ffffff;
   --color-warning: #7d4d09;

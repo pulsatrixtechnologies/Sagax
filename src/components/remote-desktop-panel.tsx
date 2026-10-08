@@ -294,7 +294,7 @@ export function RemoteDesktopPanel({ bot }: { bot: Bot }) {
                   onClick={() => dispatch({ type: "showRoutines" })}
                   className="flex w-full items-center gap-2 rounded-lg bg-inset px-3 py-2 text-left hover:bg-control/60"
                 >
-                  <span className={cn("size-1.5 shrink-0 rounded-full", routine.enabled ? "bg-success" : "bg-ink-secondary/40")} />
+                  <span className={cn("size-1.5 shrink-0 rounded-full", routine.enabled ? "bg-accent" : "bg-ink-secondary/40")} />
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-[12.5px] font-medium text-ink">{routine.name}</span>
                     <span className="block truncate text-[10.5px] text-ink-secondary">

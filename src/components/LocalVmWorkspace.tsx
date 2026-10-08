@@ -446,10 +446,8 @@ function LocalVmPane({
             <span
               className={cn(
                 "h-1.5 w-1.5 rounded-full",
-                active
+                active || nativeState.status === "ready"
                   ? "bg-accent"
-                  : nativeState.status === "ready"
-                    ? "bg-success"
                     : nativeState.status === "error"
                       ? "bg-danger"
                       : "bg-ink-secondary/50",
