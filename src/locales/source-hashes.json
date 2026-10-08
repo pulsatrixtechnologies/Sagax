@@ -7386,7 +7386,14 @@
       "approvalMode.simple.decideHint": "79c6c2f01653ce756e70c621846253d796c688817ef083029ca3699c2db07f92",
       "approvalMode.simple.custom": "4eb2e86fd814cf021e68d1424af8bc8aae4417f8a2d8a6a37cef2c7775e19ff1",
       "approvalMode.simple.customChip": "36306d9dd4e83d5d925f1d41a9b26120f0cec57fa927852ef03d53fec248d034",
-      "approvalMode.simple.unset": "4b49670558d9c027b5b9c2380dba061d86ac9b8345917db4e0820ed0412e036e"
+      "approvalMode.simple.unset": "4b49670558d9c027b5b9c2380dba061d86ac9b8345917db4e0820ed0412e036e",
+      "engineConnect.connect": "d25d823e6a27ceb9d39108c0930e1ca94a24793efa4dcfe4c62cea2ddd1b420c",
+      "engineConnect.connected": "22965568d22a14ee17af055d2870b50afcfe9fd94a83eec3196e266932297bb2",
+      "engineConnect.disconnect": "acfc5be785a9bb3da11c9f05adb69bd5633096f09002aa44813a1b3207e912ad",
+      "engineConnect.notConnected": "0303e182467081801f8b614862519a3b174c0ae84ff08b70e7d126080c3f4b95",
+      "engineConnect.paysWith.subscription": "40c5935a1bebab9f5f3fc585e8f82227dd765b71951a56e5180dc097cc233d4d",
+      "engineConnect.paysWith.key": "5fff1fd0de293e82f4c5e32c666c2c255dd47f3a1363f3481c748e9b6e4872e4",
+      "engineConnect.paysWith.orgKey": "6fbe6fa6b7ccec02cd2b62e203b651ab09c7e80d3c8daebd12751573468854d9"
     },
     "hi": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",
@@ -13017,7 +13024,14 @@
       "approvalMode.simple.decideHint": "79c6c2f01653ce756e70c621846253d796c688817ef083029ca3699c2db07f92",
       "approvalMode.simple.custom": "4eb2e86fd814cf021e68d1424af8bc8aae4417f8a2d8a6a37cef2c7775e19ff1",
       "approvalMode.simple.customChip": "36306d9dd4e83d5d925f1d41a9b26120f0cec57fa927852ef03d53fec248d034",
-      "approvalMode.simple.unset": "4b49670558d9c027b5b9c2380dba061d86ac9b8345917db4e0820ed0412e036e"
+      "approvalMode.simple.unset": "4b49670558d9c027b5b9c2380dba061d86ac9b8345917db4e0820ed0412e036e",
+      "engineConnect.connect": "d25d823e6a27ceb9d39108c0930e1ca94a24793efa4dcfe4c62cea2ddd1b420c",
+      "engineConnect.connected": "22965568d22a14ee17af055d2870b50afcfe9fd94a83eec3196e266932297bb2",
+      "engineConnect.disconnect": "acfc5be785a9bb3da11c9f05adb69bd5633096f09002aa44813a1b3207e912ad",
+      "engineConnect.notConnected": "0303e182467081801f8b614862519a3b174c0ae84ff08b70e7d126080c3f4b95",
+      "engineConnect.paysWith.subscription": "40c5935a1bebab9f5f3fc585e8f82227dd765b71951a56e5180dc097cc233d4d",
+      "engineConnect.paysWith.key": "5fff1fd0de293e82f4c5e32c666c2c255dd47f3a1363f3481c748e9b6e4872e4",
+      "engineConnect.paysWith.orgKey": "6fbe6fa6b7ccec02cd2b62e203b651ab09c7e80d3c8daebd12751573468854d9"
     },
     "uk": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",

@@ -1913,5 +1913,12 @@
   "approvalMode.simple.decideHint": "O bot age e consulta quando hesita.",
   "approvalMode.simple.custom": "Um nível personalizado está salvo. Ele fica até você escolher um destes.",
   "approvalMode.simple.customChip": "Nível personalizado",
-  "approvalMode.simple.unset": "Nenhum nível escolhido. O bot usa este padrão até você escolher um."
+  "approvalMode.simple.unset": "Nenhum nível escolhido. O bot usa este padrão até você escolher um.",
+  "engineConnect.connect": "Conectar {name}",
+  "engineConnect.connected": "Conectado",
+  "engineConnect.disconnect": "Desconectar",
+  "engineConnect.notConnected": "Não conectado",
+  "engineConnect.paysWith.subscription": "Paga com: sua assinatura",
+  "engineConnect.paysWith.key": "Paga com: sua chave no Perspicax",
+  "engineConnect.paysWith.orgKey": "Paga com: a chave da organização"
 }

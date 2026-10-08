@@ -24,9 +24,10 @@ import { cn } from "@/lib/cn";
 import { useMenuMotion } from "./MenuMotion";
 import { useAdvancedMode } from "@/lib/interface-mode";
 import { t } from "@/lib/i18n";
-import { myTurnsText, reloadMyEngines, useMyEngines, usePerspicaxOrg } from "@/lib/perspicax-org";
+import { reloadMyEngines, useMyEngines, usePerspicaxOrg } from "@/lib/perspicax-org";
 import { orgEngineState } from "@/lib/model-payers";
 import { ModelPickerPayers } from "./ModelPickerPayers";
+import { paysWithText } from "./EngineConnect";
 import { COMPACT_SQUARE } from "@/lib/compact-chip";
 import { saveViewerBotOverride } from "@/lib/viewer-bot-overrides";
 import type { ViewerBotOverridePatch } from "../../shared/viewer-bot-overrides";
@@ -973,7 +974,7 @@ export function ModelPicker({
           <h2 id={modal ? "model-picker-title" : undefined} className={cn("truncate font-semibold text-ink", modal ? "text-[16px]" : "text-[14px]")}>
             {signInFamily(railInstance) ? SIGN_IN_FAMILY_LABEL[signInFamily(railInstance)!] : railInstance.displayName}
           </h2>
-          {railEngine && !modal && <div data-my-turns={railEngine.myTurns} className="truncate text-[11px] text-ink-secondary">{myTurnsText(railEngine)}</div>}
+          {railEngine && !modal && <div data-my-turns={railEngine.myTurns} className="truncate text-[11px] text-ink-secondary">{paysWithText(railEngine)}</div>}
         </div>
         <div className={cn("flex shrink-0 items-center gap-1", modal && "pr-10")}>
           <button

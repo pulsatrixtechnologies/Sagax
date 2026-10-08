@@ -184,7 +184,8 @@ effects and moves.
 - **Shared bots and who pays.** Share a bot with people or Perspicax teams.
   The person who speaks pays for the turn: their own subscription first, then
   their own key in Perspicax, then the organization's key. Each engine card in
-  Settings > Model providers shows what pays for your turns.
+  Settings > Model providers shows one line on what pays today ("Pays with:
+  your subscription") and one Connect or Disconnect button.
 - **Engines and keys.** Each engine signs in with its own command. On an
   organization server, Grok signs in with the grok CLI. A person can save
   more than one GitHub key. On a Mac, local models can serve
