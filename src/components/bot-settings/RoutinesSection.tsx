@@ -1,12 +1,33 @@
 // Shared by bot settings and the bot's side panel.
-import { CalendarClock, ChevronLeft, ChevronsRight, FileText, Plus, Trash2 } from "lucide-react";
+import { CalendarClock, ChevronLeft, FileText, PanelRight, Plus, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { useStore, type Bot } from "@/state/store";
 import type { Routine, RoutineRun, RoutineRunOn } from "@/lib/routines";
 import { t } from "@/lib/i18n";
+import { cn } from "@/lib/cn";
+import { CIRCLE_BUTTON } from "@/lib/circle-button";
+import { useCaptionChrome, useMacInsetChrome } from "../DesktopCapabilities";
 import { RoutineEditor } from "../RoutinesPage";
 import { RoutineList } from "../routines/RoutineList";
 import { RunNowButton } from "../routines/RunNowButton";
+
+// The routine page covers the whole panel, so it draws its own top bar the way
+// the panel's does (BotSettingsDialog): a .content-topbar row, whose buttons
+// the stylesheet makes no-drag (they were dead under the panel's drag strip
+// before), the shared round CIRCLE_BUTTON back control on the left, the panel
+// close control on the right, and the name centered.
+export function RoutineDetailHeader({ name, onBack, onClose }: { name: string; onBack: () => void; onClose: () => void }) {
+  const { padClass } = useCaptionChrome();
+  const { macInset, browser } = useMacInsetChrome();
+  return <>
+    {(macInset || browser) && <div className="content-topbar-strip" />}
+    <div data-routine-detail-header className={cn("content-topbar relative flex h-12 shrink-0 items-center justify-between px-3", padClass)}>
+      <button type="button" aria-label={t("botPanel.routines.back")} onClick={onBack} className={CIRCLE_BUTTON}><ChevronLeft size={18} strokeWidth={1.75} /></button>
+      <span className="pointer-events-none absolute inset-x-14 truncate text-center text-[14px] font-semibold text-ink">{name}</span>
+      <button type="button" aria-label={t("botPanel.routines.close")} title={t("botPanel.routines.close")} onClick={onClose} className={CIRCLE_BUTTON}><PanelRight size={18} strokeWidth={1.75} /></button>
+    </div>
+  </>;
+}
 
 export function RoutinesSection({ bot, routines, runs, defaultRunOn, grouped = false }: { bot: Bot; routines: Routine[]; runs: RoutineRun[]; defaultRunOn?: RoutineRunOn; grouped?: boolean }) {
   const { state, dispatch } = useStore();
@@ -17,11 +38,11 @@ export function RoutinesSection({ bot, routines, runs, defaultRunOn, grouped = f
 
   if (detail) {
     return <div className="absolute inset-0 z-20 flex flex-col bg-panel">
-      <div className="relative flex h-11 shrink-0 items-center justify-center px-12">
-        <button type="button" aria-label={t("botPanel.routines.back")} onClick={() => setDetailId(null)} className="absolute left-3 flex size-8 items-center justify-center rounded-full bg-raised text-ink-secondary hover:text-ink"><ChevronLeft size={16} /></button>
-        <span className="truncate text-[14px] font-semibold text-ink">{detail.name}</span>
-        <button type="button" aria-label={t("botPanel.routines.close")} title={t("botPanel.routines.close")} onClick={() => dispatch({ type: "toggleComputer", open: false })} className="absolute right-3 flex size-8 items-center justify-center rounded-full bg-raised text-ink-secondary hover:text-ink"><ChevronsRight size={16} /></button>
-      </div>
+      <RoutineDetailHeader
+        name={detail.name}
+        onBack={() => setDetailId(null)}
+        onClose={() => { dispatch({ type: "toggleSettings", open: false }); dispatch({ type: "toggleComputer", open: false }); }}
+      />
       <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
         <div className="text-[13px] font-medium text-ink">{t("botPanel.routines.instruction")}</div>
         <p className="mt-2 whitespace-pre-wrap text-[13px] leading-relaxed text-ink">{detail.prompt}</p>

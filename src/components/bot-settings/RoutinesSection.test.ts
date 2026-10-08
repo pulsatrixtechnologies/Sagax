@@ -1,5 +1,7 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
+import { readFileSync } from "node:fs";
+import { CIRCLE_BUTTON } from "@/lib/circle-button";
 import { describe, expect, it, vi } from "vitest";
 
 import type { Bot } from "@/state/store";
@@ -12,6 +14,8 @@ import type { Routine, RoutineRun } from "@/lib/routines";
 // (no window), so it must be stubbed as SidebarBotListItem.test.ts does.
 vi.mock("@/components/DesktopCapabilities", () => ({
   useDesktopCapabilities: () => ({ capabilities: { host: { homeDir: undefined } } }),
+  useCaptionChrome: () => ({ padClass: "" }),
+  useMacInsetChrome: () => ({ macInset: false, browser: false }),
 }));
 
 vi.mock("@/state/store", () => ({
@@ -19,7 +23,7 @@ vi.mock("@/state/store", () => ({
   useStore: () => ({ state: { routinesLoadState: "ready" }, dispatch: vi.fn() }),
 }));
 
-const { RoutinesSection } = await import("./RoutinesSection");
+const { RoutinesSection, RoutineDetailHeader } = await import("./RoutinesSection");
 
 const bot: Bot = {
   id: "bot-1",
@@ -117,5 +121,49 @@ describe("RoutinesSection", () => {
     expect(markup).toContain('aria-label="Create schedule"');
     expect(markup).toContain('aria-label="Run logs"');
     expect(markup).not.toContain("Next ");
+  });
+});
+
+// JC, 2026-10-08: the routine page's round back and close buttons did nothing
+// (the panel's drag strip swallowed them) and did not look like the panel's
+// own top bar. The header is now the panel's .content-topbar row with the
+// shared CIRCLE_BUTTON, back returns to the list and close closes the panel.
+describe("RoutineDetailHeader", () => {
+  type El = { props: { children?: unknown; onClick?: () => void; "aria-label"?: string } };
+  const buttons = (node: unknown, out: El[] = []): El[] => {
+    if (Array.isArray(node)) node.forEach((n) => buttons(n, out));
+    else if (node && typeof node === "object" && "props" in node) {
+      const el = node as El;
+      if (el.props.onClick) out.push(el);
+      buttons(el.props.children, out);
+    }
+    return out;
+  };
+
+  it("back and close call their handlers", () => {
+    const onBack = vi.fn();
+    const onClose = vi.fn();
+    const tree = RoutineDetailHeader({ name: "Dispatch matin TN", onBack, onClose });
+    const found = buttons(tree);
+    expect(found.map((b) => b.props["aria-label"])).toEqual(["Back", "Close"]);
+    found[0]!.props.onClick!();
+    expect(onBack).toHaveBeenCalledTimes(1);
+    expect(onClose).not.toHaveBeenCalled();
+    found[1]!.props.onClick!();
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("uses the panel's top bar row and the shared round button", () => {
+    const markup = renderToStaticMarkup(createElement(RoutineDetailHeader, { name: "Dispatch matin TN", onBack: vi.fn(), onClose: vi.fn() }));
+    expect(markup).toContain("content-topbar");
+    expect(markup).toContain(CIRCLE_BUTTON);
+    expect(markup).toContain("Dispatch matin TN");
+    expect(markup.match(new RegExp(CIRCLE_BUTTON, "g"))).toHaveLength(2);
+  });
+
+  it("is the header the detail page renders", () => {
+    const src = readFileSync(new URL("./RoutinesSection.tsx", import.meta.url), "utf8");
+    expect(src).toContain("<RoutineDetailHeader");
+    expect(src).not.toContain("ChevronsRight");
   });
 });
