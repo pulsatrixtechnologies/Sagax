@@ -203,13 +203,19 @@ effects and moves.
 - **Shared bots and who pays.** Share a bot with people or Perspicax teams.
   The person who speaks pays for the turn: their own subscription first, then
   their own key in Perspicax, then the organization's key. Each engine card in
-  Settings > Model providers shows what pays for your turns.
+  Settings > Model providers shows one line on what pays today ("Pays with:
+  your subscription") and one Connect or Disconnect button.
 - **Engines and keys.** Each engine signs in with its own command. On an
   organization server, Grok signs in with the grok CLI. A person can save
-  more than one GitHub key. On a Mac, local models can serve
-  organization-server bots when the harness already injects a local
-  endpoint. Sharing those models with other people stays off until it is
-  turned on.
+  more than one GitHub key. Local models (DwarfStar, llama-server, Ollama,
+  LM Studio, oMLX, EXO, Unsloth) show under Local in the model picker, in
+  Simple and Advanced. Opening the picker looks for them again. In solo they
+  run on pi, Codex, Grok, Kimi, Qwen, Droid, Hermes, OpenCode, and on Claude
+  Code when the server answers the Anthropic protocol. On an organization
+  server, the models on your own computer serve your own bots by default
+  through the desktop app, on every engine above except Claude Code, which
+  needs the Anthropic protocol. Sharing them with other people stays off
+  until you turn it on. The server's own local models are never offered.
 - **Desktop bridge.** In server mode the desktop app is the bridge to your PC:
   bots working for you run their tools (shell, files, browser, computer use,
   Local VM) on your own computer, and their network traffic leaves through it,

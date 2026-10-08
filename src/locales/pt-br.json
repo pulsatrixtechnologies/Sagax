@@ -1936,5 +1936,17 @@
   "place.view.ccNew.short": "Pronto",
   "place.view.ccAtOnce.short": "Em uso",
   "place.view.localUnavailable.short": "Não está pronto",
-  "place.view.autoTeam.short": "Compartilhado"
+  "place.view.autoTeam.short": "Compartilhado",
+  "localModels.help": "Seus próprios bots neste servidor podem usar os modelos que rodam neste computador. Outras pessoas não podem até você ativar o compartilhamento. Só você pode mudar estas chaves.",
+  "model.org.localHidden": "Os modelos do seu próprio computador aparecem aqui enquanto este app está conectado e um servidor local responde (Configurações, Computador, Modelos locais). Os modelos locais do servidor não são oferecidos.",
+  "model.localGroup": "Local",
+  "model.localUnavailable.anthropic": "O Claude Code não pode rodar um modelo do seu computador aqui: ele exige o protocolo Anthropic. Escolha-o no pi, Codex ou Grok.",
+  "model.localUnavailable.engine": "{engine} não pode rodar um modelo local.",
+  "engineConnect.connect": "Conectar {name}",
+  "engineConnect.connected": "Conectado",
+  "engineConnect.disconnect": "Desconectar",
+  "engineConnect.notConnected": "Não conectado",
+  "engineConnect.paysWith.subscription": "Paga com: sua assinatura",
+  "engineConnect.paysWith.key": "Paga com: sua chave no Perspicax",
+  "engineConnect.paysWith.orgKey": "Paga com: a chave da organização"
 }

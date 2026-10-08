@@ -23,6 +23,7 @@ import {
   loadedIdsFromPayloads,
   LOCAL_HOSTS,
   mergeLocalInject,
+  modelFactsFromPayload,
   resolveInjectId,
 } from "./local-inject.ts";
 
@@ -236,6 +237,51 @@ describe("mergeLocalInject", () => {
     expect(catalog.options[0]).toEqual({ id: "claude-sonnet-5", label: "Claude Sonnet 5" });
     expect(catalog.options.some((option) => option.id === "omlx::GLM-5.2-fp8" && option.custom)).toBe(true);
     expect(catalog.options.some((option) => option.id.includes("nomic"))).toBe(false);
+  });
+
+  it("lists DwarfStar on :8002 by name, with its context window, as local rows", async () => {
+    // The shape `curl http://127.0.0.1:8002/v1/models` returns (ds4.c).
+    const row = (id: string) => ({
+      id, object: "model", created: 1767225600, owned_by: "ds4.c", name: "Qwen3.8 Flash Next", context_length: 262144,
+      top_provider: { context_length: 262144, max_completion_tokens: 262144, is_moderated: false },
+      supported_parameters: ["tools", "tool_choice", "max_tokens", "temperature", "stream", "reasoning_effort"],
+    });
+    const seen: string[] = [];
+    const catalog = await mergeLocalInject(
+      { default: "claude-sonnet-5", options: [{ id: "claude-sonnet-5", label: "Claude Sonnet 5" }] },
+      { VITEST: "true", SAGAX_PROBE_LOCAL_INJECT: "1" },
+      async (url) => {
+        seen.push(String(url));
+        if (String(url) === "http://127.0.0.1:8002/v1/models") {
+          return new Response(JSON.stringify({ object: "list", data: [row("qwen3.8-flash-next"), row("qwen3.8-flash-next-chat")] }), { status: 200 });
+        }
+        return new Response("nope", { status: 500 });
+      },
+    );
+    expect(seen).toContain("http://127.0.0.1:8002/v1/models");
+    const local = catalog.options.filter((option) => option.local);
+    expect(local).toEqual([
+      { id: "dwarfstar::qwen3.8-flash-next", label: "DwarfStar: Qwen3.8 Flash Next (qwen3.8-flash-next)", custom: true, local: true, contextWindow: 262144 },
+      { id: "dwarfstar::qwen3.8-flash-next-chat", label: "DwarfStar: Qwen3.8 Flash Next (qwen3.8-flash-next-chat)", custom: true, local: true, contextWindow: 262144 },
+    ]);
+    expect(catalog.options[0]).toEqual({ id: "claude-sonnet-5", label: "Claude Sonnet 5" });
+    const env: Record<string, string | undefined> = {};
+    expect(applyOpenAIInject(env, "dwarfstar::qwen3.8-flash-next-chat")).toEqual({ model: "qwen3.8-flash-next-chat", injected: true });
+    expect(env.OPENAI_BASE_URL).toBe("http://127.0.0.1:8002/v1");
+  });
+
+  it("reads a server's model names and context windows from /v1/models", () => {
+    const facts = modelFactsFromPayload({ data: [
+      { id: "a", name: "Model A", context_length: 32768 },
+      { id: "b", name: "b", top_provider: { context_length: 8192 } },
+      { id: "c", context_length: -1 },
+      { id: "bad id with spaces", name: "x" },
+    ] });
+    expect(facts.get("a")).toEqual({ name: "Model A", contextWindow: 32768 });
+    expect(facts.get("b")).toEqual({ contextWindow: 8192 });
+    expect(facts.get("c")).toEqual({});
+    expect(facts.has("bad id with spaces")).toBe(false);
+    expect(modelFactsFromPayload(null).size).toBe(0);
   });
 
   it("drops a leftover custom API id that a live inject already covers", async () => {

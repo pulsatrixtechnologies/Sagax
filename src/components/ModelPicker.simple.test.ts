@@ -79,6 +79,16 @@ describe("model picker in Simple mode", () => {
     expect(markup).toMatch(/<span class="truncate">Opus High<\/span>/);
   });
 
+  it("lists local models under Local in Simple too", () => {
+    const instance = claude(true);
+    instance.models.options.push({ id: "dwarfstar::qwen3.8-flash-next-chat", label: "DwarfStar: Qwen3.8 Flash Next", custom: true, local: true });
+    fixture.instances = [instance];
+    const markup = html();
+    expect(markup).toContain("data-model-local-group");
+    expect(markup).toContain("DwarfStar: Qwen3.8 Flash Next");
+    expect(markup).not.toContain("data-model-local-entry");
+  });
+
   it("keeps engine sign-in", () => {
     fixture.instances = [claude(false)];
     const markup = html();

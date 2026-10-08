@@ -17,9 +17,10 @@ import { AddClaudeAccount, ClaudeAccountSettings } from "./ClaudeAccountSettings
 import { AddChatGptAccount, CodexAccountSettings } from "./CodexAccountSettings";
 import { DEVICE_SIGN_IN_COPY, deviceSignInProvider } from "./DeviceSignIn";
 import { AntigravityFreeSpace } from "./AntigravityFreeSpace";
-import { ManageMyKeysLink, MyEngineAccess } from "./settings/MyEngines";
+import { ManageMyKeysLink } from "./settings/MyEngines";
+import { EngineConnect, paysWithText } from "./EngineConnect";
 import { HarnessConnectorsSection } from "./HarnessConnectorsSection";
-import { myTurnsText, useMyEngines, usePerspicaxOrg, type MyEngine } from "@/lib/perspicax-org";
+import { reloadMyEngines, useMyEngines, usePerspicaxOrg, type MyEngine } from "@/lib/perspicax-org";
 import { viewerIsOrgMember } from "@/lib/viewer";
 import { connectedAppsEnabled } from "@/lib/feature-flags";
 
@@ -213,10 +214,10 @@ export function orgEngineRows(instances: InstanceInfo[], mine: readonly MyEngine
 }
 
 /** `mine`: on an organization server, the signed-in person's own access to
- * this engine. The card then shows who pays for their turns and their own
- * subscription sign-in, never the server's account (which serves no one's
- * turns there: server/engine-credentials.ts). */
-function EngineRow({ instance, mine, member = false }: { instance: InstanceInfo; mine?: MyEngine; member?: boolean }) {
+ * this engine. The card then shows one line on what pays for their turns and
+ * their own Connect or Disconnect (EngineConnect), never the server's account
+ * (which serves no one's turns there: server/engine-credentials.ts). */
+function EngineRow({ instance, mine, member = false, issuer = "" }: { instance: InstanceInfo; mine?: MyEngine; member?: boolean; issuer?: string }) {
   const { refreshInstances } = useStore();
   const [open, setOpen] = useState(false);
   const cliMotion = useMenuMotion(open);
@@ -275,9 +276,9 @@ function EngineRow({ instance, mine, member = false }: { instance: InstanceInfo;
   // An organization member: their own access only. The server's engine
   // (its CLI and its updates) is the admins' to change.
   if (member && mine) return (
-    <EngineCard instance={instance} personal={{ ready: mine.myTurns !== "none", line: myTurnsText(mine), turns: mine.myTurns }}>
+    <EngineCard instance={instance} personal={{ ready: mine.myTurns !== "none", line: paysWithText(mine), turns: mine.myTurns }}>
       {policyNote}
-      <div data-member-engine={instance.instanceId}><MyEngineAccess engine={mine} /></div>
+      <div data-member-engine={instance.instanceId}><EngineConnect engine={mine} issuer={issuer} onChanged={reloadMyEngines} /></div>
     </EngineCard>
   );
   if (instance.readOnly) return <EngineCard instance={instance}>
@@ -287,9 +288,9 @@ function EngineRow({ instance, mine, member = false }: { instance: InstanceInfo;
   </EngineCard>;
 
   return (
-    <EngineCard instance={instance} personal={mine && { ready: mine.myTurns !== "none", line: myTurnsText(mine), turns: mine.myTurns }}>
+    <EngineCard instance={instance} personal={mine && { ready: mine.myTurns !== "none", line: paysWithText(mine), turns: mine.myTurns }}>
       {policyNote}
-      {mine && <div className="mb-3"><MyEngineAccess engine={mine} /></div>}
+      {mine && <EngineConnect engine={mine} issuer={issuer} onChanged={reloadMyEngines} className="mb-3" />}
       {!mine && !engineReady(instance) && <EngineSetup instance={instance} intent={instance.access === "custom" ? "inject" : "cloud"} unframed />}
       {!mine && engineReady(instance) && <ApiKeyEngineManage instance={instance} className="mt-3" />}
       {instance.snapshot.update && <EngineUpdateNotice update={instance.snapshot.update} instance={instance} className="mt-3" />}
@@ -419,7 +420,7 @@ export function EnginesSettings() {
       {!connectedAppsEnabled(state.config) && <HarnessConnectorsSection placement="settings" />}
       <EngineSections
         instances={shown}
-        renderEngine={(instance) => <EngineRow instance={instance} mine={mineOf(instance)} member={member} />}
+        renderEngine={(instance) => <EngineRow instance={instance} mine={mineOf(instance)} member={member} issuer={org?.org.identity.issuer} />}
         isReady={(instance) => { const mine = mineOf(instance); return mine ? mine.myTurns !== "none" : engineReady(instance); }}
       />
       {member && org && myEngines !== null && shown.length === 0 && (

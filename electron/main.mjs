@@ -3734,6 +3734,14 @@ ipcMain.handle("server-mode:state", desktopUiOnly("server-mode:state", workspace
   return locked ? { active: true, id: locked.id, name: locked.name, origin: locked.origin } : { active: false };
 })));
 ipcMain.handle("server-mode:leave", desktopUiOnly("server-mode:leave", workspaceOnly(() => leaveServerMode())));
+// The model picker opened: probe this computer's loopback model servers now
+// (a server started after launch shows up) and publish the ids. Nothing
+// comes back to the page: it reloads the server's catalog afterwards.
+ipcMain.handle("server-mode:refresh-local-models", desktopUiOnly("server-mode:refresh-local-models", workspaceOnly(async () => {
+  if (!serverModeEnvironment(environmentsState)) return { refreshed: false };
+  await desktopBridge().refreshLocalModels();
+  return { refreshed: true };
+})));
 // The preload asks once per page whether it is this app's bundle drawn on
 // the active organization server (bundled-ui.cjs): only then does it expose
 // the desktop-UI parts of the bridge. The main window's top frame only.
