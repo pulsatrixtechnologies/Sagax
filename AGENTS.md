@@ -1115,6 +1115,42 @@ shares nothing (JC, 2026-10-02). Keep these rules, covered by
   rooms keep reading them. `PUT /api/org/sections/:id/members|bots` answers
   410 `sections_are_personal`.
 
+## Which bots a bot reaches (organization server, 2026-10-06)
+
+Owner report: a member's bots kept naming a bot ("Cryptic") the member
+could not see. Why: once sections became personal, `bot.section` stayed
+empty for everyone, so the section rule of `reachablePeers`
+(`server/peer-roster.ts`) put every person's bots in one "General" team.
+Each bot's roster, `list_bots`, @mentions, `ask_bot`, `delegate_bot` and
+peer threads reached the whole organization. Keep these rules, covered by
+`server/peer-scope.test.ts`, `server/incidents.test.ts` and S3-12 in
+`server/org-sharing.e2e.test.ts`:
+
+- On an organization server a bot reaches only its owner's bots and the
+  bots shared with that owner (any level, `botLevel`), the bots the owner
+  sees in the sidebar (`orgPeerInScope` in `server/peer-scope.ts`,
+  installed by index.ts through `setPeerScope`). It is the owner's, not the
+  speaker's, and it is not symmetric: sharing a bot with Bob opens it to
+  Bob's bots, never Bob's bots to it.
+- Every peer path checks it: `canReachPeer` (roster, `list_bots`, names,
+  results withheld when access changed), the direct routes next to their
+  `canAccessTeam` check, team setup's bot list and the delegation dispatch
+  (`dropIfUnreachable`). A new peer route checks `peerInScope` too.
+- Rooms keep their own rule (`roomHandoffProblem`): their members were
+  added by people, so bots of different owners in one room still work
+  together there. That holds only for a room the sender is a member of.
+  `coordinate_bots` (what a chat turn uses, since it answers `ask_bot` and
+  `delegate_bot` with 409) into another bot's direct thread or into a room
+  the sender is not in needs every reader of the destination in scope, and
+  `list_room_targets` lists such a room only on the same condition.
+- A failure report goes to a Primary Bot of the failing bot's own owner
+  (`chiefForBot` with `primaryBotSameOwner`), never the first Primary Bot
+  of the organization.
+- `orgPeerInScope` refuses an empty owner, but index.ts never passes one:
+  `effectiveBotOwner` gives a bot with no recorded owner to the local
+  operator, so such a bot is in the operator's scope, not shut out.
+- A solo server sets no scope and is unchanged.
+
 ## Account menu
 
 Team map and Automations open from the account row at the foot of the
