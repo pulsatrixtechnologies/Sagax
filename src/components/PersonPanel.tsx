@@ -104,7 +104,7 @@ export function PersonPanel({ personId, directory: given }: { personId: string; 
           <PanelRight size={18} strokeWidth={1.75} />
         </button>
       </div>
-      <div className="content-card-body flex min-h-0 flex-1 flex-col overflow-y-auto">
+      <div className="content-card-body flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden [&>*]:shrink-0">
         <div className="flex shrink-0 flex-col items-center px-4 pb-3">
           <PersonAvatar avatarUrl={avatarUrl} initials={personInitials(name)} size={88} presenceId={personId} presenceRing="border-panel" />
           <h2 id="person-panel-title" className="mt-3 max-w-full truncate text-[17px] font-medium leading-6 text-ink">{name}</h2>

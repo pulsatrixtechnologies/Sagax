@@ -444,7 +444,7 @@ export function BotSettingsDialog({ bot, onOpenVmWorkspace }: {
           </div>
         </div>
 
-        <div className="content-card-body flex min-h-0 flex-1 flex-col overflow-y-auto">
+        <div className="content-card-body flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden [&>*]:shrink-0">
           {viewerBotsReadOnly(state.config) && (
             <p role="note" data-bots-read-only className="mx-4 mb-2 rounded-lg bg-raised/60 px-3 py-2 text-center text-[12.5px] leading-snug text-ink-secondary">{t("bots.readOnly.notice")}</p>
           )}
