@@ -1110,7 +1110,7 @@ export function GroupView({ group: stored }: { group: Group }) {
               title={t("personPanel.open", { name: peer.name })}
               aria-label={t("personPanel.open", { name: peer.name })}
             >
-              <PersonAvatar avatarUrl={peer.avatarUrl} initials={peer.initials} size={24} />
+              <PersonAvatar avatarUrl={peer.avatarUrl} initials={peer.initials} size={24} presenceId={peer.id} presenceRing="border-elevated" />
               <span className="truncate text-[14px] font-medium leading-5 text-ink">{peer.name}</span>
             </button>
           ) : group.dm ? (

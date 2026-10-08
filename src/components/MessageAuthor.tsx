@@ -3,6 +3,7 @@
 // lines carry no name, as before.
 import { otherAuthorName } from "@/lib/viewer";
 import { InitialsAvatar } from "./Avatar";
+import { WithPresence } from "./PresenceDot";
 import { useStore, type Message } from "@/state/store";
 import { t } from "@/lib/i18n";
 
@@ -28,13 +29,17 @@ export function OtherAuthorLabel({ message }: { message: Pick<Message, "role" | 
 }
 
 /** A person's round avatar: their Perspicax picture when this server serves
- * one, else their initials (the same look as the group's people list). */
-export function PersonAvatar({ avatarUrl, initials, size = 20 }: { avatarUrl?: string; initials: string; size?: number }) {
-  return avatarUrl ? (
+ * one, else their initials (the same look as the group's people list). With
+ * `presenceId`, their online / away / offline dot on its corner, ringed in
+ * `presenceRing` (the surface behind the avatar). */
+export function PersonAvatar({ avatarUrl, initials, size = 20, presenceId, presenceRing }: { avatarUrl?: string; initials: string; size?: number; presenceId?: string | null; presenceRing?: string }) {
+  const face = avatarUrl ? (
     <img src={avatarUrl} alt="" width={size} height={size} className="shrink-0 rounded-full object-cover" style={{ width: size, height: size }} />
   ) : (
     <InitialsAvatar initials={initials} size={size} />
   );
+  if (!presenceId) return face;
+  return <WithPresence principalId={presenceId} avatarSize={size} ringClassName={presenceRing}>{face}</WithPresence>;
 }
 
 /** Above the first line of another person's run in a group: avatar and name.

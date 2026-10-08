@@ -3656,5 +3656,17 @@
   "approvalMode.simple.decideHint": "Le bot agit et vous consulte s'il hésite.",
   "approvalMode.simple.custom": "Un niveau personnalisé est enregistré. Il reste jusqu'à votre choix.",
   "approvalMode.simple.customChip": "Niveau personnalisé",
-  "approvalMode.simple.unset": "Aucun niveau choisi. Le bot utilise ce réglage par défaut jusqu'à votre choix."
+  "approvalMode.simple.unset": "Aucun niveau choisi. Le bot utilise ce réglage par défaut jusqu'à votre choix.",
+  "presence.online": "En ligne",
+  "presence.away": "Absent",
+  "presence.offline": "Hors ligne",
+  "presence.offlineSeen": "Hors ligne, vu {when}",
+  "presence.seen.justNow": "à l’instant",
+  "presence.seen.minutes": "il y a {count} min",
+  "presence.seen.hours": "il y a {count} h",
+  "presence.seen.days": "il y a {count} j",
+  "presence.hiddenSelf": "{state} (masqué pour les autres)",
+  "settings.section.privacy": "Confidentialité",
+  "settings.privacy.presence.title": "Montrer quand je suis en ligne",
+  "settings.privacy.presence.subtitle": "Les personnes de votre organisation voient un point vert, ambre ou gris sur votre photo. Désactivé : vous paraissez hors ligne pour tout le monde, sans heure de dernière présence."
 }

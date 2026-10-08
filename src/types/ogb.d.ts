@@ -319,6 +319,9 @@ const __SAGAX_DEFAULT_SERVER__: string;
       /** Focus the main window and shake it once. The shell ignores a
        * second call while that shake is still running. */
       nudgeWindow?(): void;
+      /** Presence: the computer's idle state and seconds since the last
+       * input (Electron powerMonitor). Null outside the main window. */
+      systemIdle?(): Promise<{ state: "active" | "idle" | "locked" | "unknown"; idleSeconds: number } | null>;
       /** Opens a live desktop as a sandboxed window owned by Sagax. */
       desktopViewer?: {
         open(url: string, title: string, contextId: string): Promise<boolean>;

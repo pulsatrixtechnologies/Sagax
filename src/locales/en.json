@@ -5436,5 +5436,17 @@
   "approvalMode.simple.decideHint": "The bot acts, and checks in when unsure.",
   "approvalMode.simple.custom": "A custom level is saved. It stays until you choose one of these.",
   "approvalMode.simple.customChip": "Custom level",
-  "approvalMode.simple.unset": "No level chosen yet. The bot uses this default until you pick one."
+  "approvalMode.simple.unset": "No level chosen yet. The bot uses this default until you pick one.",
+  "presence.online": "Online",
+  "presence.away": "Away",
+  "presence.offline": "Offline",
+  "presence.offlineSeen": "Offline, last seen {when}",
+  "presence.seen.justNow": "just now",
+  "presence.seen.minutes": "{count} min ago",
+  "presence.seen.hours": "{count} h ago",
+  "presence.seen.days": "{count} d ago",
+  "presence.hiddenSelf": "{state} (hidden from others)",
+  "settings.section.privacy": "Privacy",
+  "settings.privacy.presence.title": "Show when I am online",
+  "settings.privacy.presence.subtitle": "People in your organization see a green, amber or grey dot on your picture. Off: you appear offline to everyone, with no last-seen time."
 }

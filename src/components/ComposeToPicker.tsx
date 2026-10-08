@@ -325,7 +325,7 @@ export function ComposeToPicker({ onClose }: { onClose: () => void }) {
                     selected ? "bg-raised/80" : "hover:bg-raised/60",
                   )}
                 >
-                  <PersonAvatar avatarUrl={personAvatarSrc(person.avatarUrl)} initials={personInitials(person.name || person.login)} size={28} />
+                  <PersonAvatar avatarUrl={personAvatarSrc(person.avatarUrl)} initials={personInitials(person.name || person.login)} size={28} presenceId={person.principalId} />
                   <span className="min-w-0 flex-1 truncate">{person.name || person.login}</span>
                   <span className={cn("shrink-0 text-[13px] text-ink-secondary", selected ? "inline" : "hidden group-hover:inline")}>{t("compose.directMessage")}</span>
                   {shortcut && (

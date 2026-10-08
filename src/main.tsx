@@ -12,6 +12,7 @@ import { BrowserSignInPage } from "./pair/BrowserSignInPage";
 import { PairPage } from "./pair/PairPage";
 import { rememberOpenThreadHash } from "./lib/open-thread-hash";
 import { syncUserPreferences } from "./lib/user-preferences-sync";
+import { startPresence } from "./lib/presence";
 import { installAnimationPause } from "./lib/animation-pause";
 import { syncDesktopAppearance } from "./lib/desktop-appearance-sync";
 import { JoinPage, takeInviteTokenFromLocation } from "./pair/JoinPage";
@@ -82,6 +83,8 @@ async function chooseRoot(): Promise<React.ReactNode> {
     await syncUserPreferences();
     applySkin(readSkin());
     applyFont(readFont());
+    // online, away, offline (organization server; elsewhere the route answers 404)
+    void startPresence();
   }
   // The desktop app on a personal computer hands its look to the paired
   // phone (Same as my computer) and wears a look the phone chose

@@ -27,6 +27,7 @@ import type { BotPublicProfile } from "../../shared/bot-public-profile";
 import { approvalModeFor, type ApprovalMode } from "../../shared/approval-mode";
 import { uiCommandToAction } from "../../shared/bot-act";
 import { onDesktopNudge } from "@/lib/desktop-nudge";
+import { applyPresenceFrame } from "@/lib/presence";
 import type { MascotBodyId } from "../../shared/mascot-bodies";
 import type { MascotSkinId } from "../../shared/mascot-skins";
 import type { QuestionRequestCardData } from "../../shared/ask-question";
@@ -992,7 +993,8 @@ export type AppSettingsSection =
   | "activity"
   | "backups"
   | "workspaces"
-  | "achievements";
+  | "achievements"
+  | "privacy";
 
 export type BotSettingsSection =
   | "overview"
@@ -4359,6 +4361,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         }
         case "nudge":
           onDesktopNudge();
+          break;
+        case "presence.changed":
+          applyPresenceFrame(frame);
           break;
         // a key changed and the fleet hot-reloaded — refresh the picker so
         // newly available providers un-dim immediately

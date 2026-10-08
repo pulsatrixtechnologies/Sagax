@@ -824,6 +824,7 @@ import {
   stopCompanion,
 } from "./companion.mjs";
 import { createRoutineWakeHold, rememberRoutineWake, routineWakeSettings } from "./routine-wake.mjs";
+import { systemIdleSnapshot } from "./system-idle.mjs";
 import { installFetchGuard, installSessionBlock } from "./upstream-hosts.mjs";
 
 // No request from this app reaches the original OpenMausBot services, the
@@ -2018,6 +2019,18 @@ const windowNudger = createWindowNudger(undefined, () => {
     app.focus();
   }
 });
+// Presence (shared/presence.ts): whether the person is at this computer.
+// The main window only, its top frame only; the answer is a state and a
+// number of seconds, so an organization server's page may ask too.
+ipcMain.handle("desktop:system-idle", (event) => {
+  const sender = BrowserWindow.fromWebContents(event.sender);
+  if (!sender || sender !== mainWindow || sender.isDestroyed()) return null;
+  const frame = event.senderFrame;
+  const mainFrame = event.sender?.mainFrame;
+  if (frame && mainFrame && frame !== mainFrame) return null;
+  return systemIdleSnapshot(powerMonitor);
+});
+
 ipcMain.on("desktop:nudge", (event) => {
   const sender = BrowserWindow.fromWebContents(event.sender);
   if (!sender || sender !== mainWindow || sender.isDestroyed()) return;
