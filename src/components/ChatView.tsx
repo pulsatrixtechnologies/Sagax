@@ -734,7 +734,9 @@ const MessagesList = memo(function MessagesList({
     // spoken line of a call that started above it.
     const plan = voiceCallPlan(transcript);
     const seen = new Set<string>();
-    const collapsed = collapseBotExchanges(messages, {
+    // A stop the person asked for leaves no row, stored ones included.
+    const shown = messages.filter((message) => !isTurnStoppedNotice(message));
+    const collapsed = collapseBotExchanges(shown, {
       selfBotId: bot.id,
       self: { id: bot.id, name: bot.name, color: bot.color },
       lookup: transcript,
@@ -814,6 +816,7 @@ const MessagesList = memo(function MessagesList({
               <BotExchangeChip
                 run={item.run}
                 bots={state.bots}
+                showToolCalls={showToolCalls}
                 forceOpen={item.run.messages.some((message) => message.id === focusedId)}
                 onGo={() => {
                   const target = state.bots.find((candidate) => candidate.id === item.run.party.id);
