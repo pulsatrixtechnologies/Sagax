@@ -10,6 +10,7 @@ import { ATTACHMENTS_DIR } from "../../attachments.ts";
 import { DATA_DIR } from "../../config.ts";
 import { hostedWorkspaceConfigured } from "../../enterprise.ts";
 import { decodeInjectId, hostApiKey, localHost, mergeLocalInject } from "../local-inject.ts";
+import { opencodeHostToolEnv, withheldWorkspace } from "../host-tools.ts";
 import { createAcpDriver, offeredModels, type AccountErrorCode, type AcpSupport } from "./core.ts";
 import type { ModelCatalog, ProviderErrorCode } from "../../contracts.ts";
 import { titleCaseModelId } from "../../contracts.ts";
@@ -863,7 +864,16 @@ const support = (loadCatalog: OpenCodeCatalogLoader): AcpSupport => ({
   resolveTurnModel: (model, env) => model ? ensureOpenCodeInjectModel(model, env) : model,
   transformEnv: withholdProviderKeysWhenManaged,
   spawnFingerprint: openCodeLoginsFingerprint,
-  applyTurnEnv: (env, { fullAuto, botId, cwd }) => {
+  // Organization server: no shell, file, web, subagent or skill tool of
+  // OpenCode's own (server/drivers/host-tools.ts; verified on 1.18.34 with
+  // scripts/verify-org-host-tools.ts).
+  withholdsHostTools: true,
+  withheldWorkspace,
+  applyTurnEnv: (env, { fullAuto, botId, cwd, withholdHostTools }) => {
+    if (withholdHostTools === true) {
+      opencodeHostToolEnv(env, true, fullAuto);
+      return;
+    }
     // In Sagax's own folders nothing is the person's project: a bot wrote
     // it, and OpenCode would otherwise take it as configuration.
     if (sagaxOwnsWorkingFolder(cwd)) env.OPENCODE_DISABLE_PROJECT_CONFIG = "1";

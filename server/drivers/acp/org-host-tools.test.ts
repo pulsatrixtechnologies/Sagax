@@ -16,14 +16,19 @@ import type { ProviderDriver, ProviderInstance } from "../../contracts.ts";
 import { removeTempDir } from "../../testing/cleanup.ts";
 import { recordEvents } from "../../testing/events.ts";
 import {
-  acpHostToolRequest, GEMINI_HOST_TOOLS, KIMI_HOST_TOOLS, QWEN_HOST_TOOLS, QWEN_KEPT_TOOLS, sagaxMcpServerNames, withheldWorkspace,
+  acpHostToolRequest, GEMINI_HOST_TOOLS, KIMI_HOST_TOOLS, OPENCODE_HOST_PERMISSIONS, QWEN_HOST_TOOLS, QWEN_KEPT_TOOLS, sagaxMcpServerNames, withheldWorkspace,
 } from "../host-tools.ts";
 import type { AcpConfig } from "./core.ts";
 import { GeminiAgentDriver } from "./gemini.ts";
 import { KimiAgentDriver } from "./kimi.ts";
+import { createOpenCodeDriver } from "./opencode-go.ts";
 import { QwenAgentDriver } from "./qwen.ts";
 
 const FAKE_CLI = join(dirname(fileURLToPath(import.meta.url)), "../../testing/fake-acp-cli.ts");
+const OpenCodeDriver = createOpenCodeDriver(async () => ({
+  default: "opencode/fixture-model",
+  options: [{ id: "opencode/fixture-model", label: "Fixture model" }],
+}));
 const directories: string[] = [];
 const instances: ProviderInstance[] = [];
 afterEach(async () => {
@@ -103,10 +108,21 @@ describe("organization server: each admitted ACP engine withholds its own tools"
     expect(real(org.cwd)).toBe(real(withheldWorkspace()));
   });
 
+  it("OpenCode: every host permission denied (a denied tool is not offered), no project configuration", async () => {
+    const f = await fixture(OpenCodeDriver);
+    const org = await turn(f, true);
+    const permission = JSON.parse(org.env.OPENCODE_PERMISSION!);
+    for (const key of OPENCODE_HOST_PERMISSIONS) expect(permission[key]).toBe("deny");
+    expect(permission["*"]).toBe("allow");
+    expect(org.env.OPENCODE_DISABLE_PROJECT_CONFIG).toBe("1");
+    expect(real(org.cwd)).toBe(real(withheldWorkspace()));
+  });
+
   it.each([
     ["Gemini CLI", GeminiAgentDriver],
     ["Qwen Code", QwenAgentDriver],
     ["Kimi Code", KimiAgentDriver],
+    ["OpenCode", OpenCodeDriver],
   ] as const)("%s: a request to run a command on the server is declined, even in Full access", async (_name, driver) => {
     const f = await fixture(driver, { FAKE_ACP_MODE: "permission" });
     // no approvalMode with fullAuto: the path that accepts every request

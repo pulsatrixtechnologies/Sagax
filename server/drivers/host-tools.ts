@@ -335,6 +335,39 @@ export function kimiHostToolProfile(withhold: boolean, kimiHome: string): void {
   if (current !== content) writeFileSync(path, content, { mode: 0o600 });
 }
 
+/** OpenCode 1.18.34 built-ins that act on this machine, as `opencode acp`
+ * offered them to the model (write, patch and multiedit ride the `edit`
+ * permission; list and lsp their own). */
+export const OPENCODE_HOST_TOOLS: readonly string[] = [
+  "bash", "read", "write", "edit", "patch", "multiedit", "apply_patch", "glob", "grep", "list",
+  "lsp", "task", "skill", "webfetch", "websearch", "codesearch",
+];
+
+/** OpenCode permission keys a withheld turn denies. A tool whose permission
+ * is a plain `deny` is left out of the tools the model is offered, not only
+ * refused when called (verified 1.18.34). */
+export const OPENCODE_HOST_PERMISSIONS: readonly string[] = [
+  "bash", "read", "edit", "glob", "grep", "list", "lsp", "task", "skill",
+  "webfetch", "websearch", "codesearch", "external_directory",
+];
+
+/** OPENCODE_PERMISSION for a withheld turn: every host permission denied;
+ * the rest (Sagax's MCP tools, the todo list) asks, or runs in Full. */
+export function opencodeOrgPermission(fullAuto: boolean): string {
+  return JSON.stringify({
+    "*": fullAuto ? "allow" : "ask",
+    todoread: "allow", todowrite: "allow", doom_loop: fullAuto ? "allow" : "ask",
+    ...Object.fromEntries(OPENCODE_HOST_PERMISSIONS.map((permission) => [permission, "deny"])),
+  });
+}
+
+export function opencodeHostToolEnv(env: Record<string, string | undefined>, withhold: boolean, fullAuto: boolean): void {
+  if (!withhold) return;
+  env.OPENCODE_PERMISSION = opencodeOrgPermission(fullAuto);
+  // no opencode.json, agent, command or plugin of a project folder loads
+  env.OPENCODE_DISABLE_PROJECT_CONFIG = "1";
+}
+
 /** Droid 0.230.0 built-ins that act on this machine or run an agent, a
  * schedule or a remote action of Factory's (`droid exec --list-tools`, and
  * what `droid exec -o acp` offered the model). */
@@ -357,5 +390,6 @@ export const HOST_TOOL_NAMES_BY_ENGINE: Readonly<Record<string, readonly string[
   qwen: QWEN_HOST_TOOLS,
   gemini: GEMINI_HOST_TOOLS,
   kimi: KIMI_HOST_TOOLS,
+  opencode: OPENCODE_HOST_TOOLS,
   droid: DROID_HOST_TOOLS,
 };
