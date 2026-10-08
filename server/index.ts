@@ -563,7 +563,10 @@ import {
   renderSkillInstructions,
   selectBundledSkills,
   setLibrarySkillReviewState,
+  updateLibrarySkill,
+  deleteLibrarySkill,
 } from "./skill-library.ts";
+import { composeSkillMd } from "../shared/skill-md.ts";
 import type { SkillsLibrarySkillWire } from "../shared/wire.ts";
 import { runSkillsLibraryBootSweep } from "./skills-library-migration.ts";
 import { installedPlaybookInstructions } from "./installed-playbooks.ts";
@@ -30595,6 +30598,45 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       const result = setLibrarySkillReviewState(m[1]!, parsed.data.enabled ? "approved" : "disabled");
       if ("error" in result) return json(res, 404, { error: result.error });
       return json(res, 200, { skill: result });
+    }
+    // Plugins > Manage > a private skill: Save and Delete Skill. The owner of
+    // this computer or an admin only (an organization member never changes
+    // the server's library); a skill an organization package or a marketplace
+    // plugin brought is changed where it came from.
+    if (m && (method === "PUT" || method === "DELETE")) {
+      if (!skillsLibraryEnabled(cfg)) return json(res, 404, { error: "skills library is not enabled" });
+      if (!computerOwner(auth)) return json(res, 403, { error: "forbidden: only this computer's owner or an admin can change the skills library" });
+      const name = m[1]!;
+      const plugin = pluginMarketplaces.installed().find((entry) => entry.skills.includes(name) && readSkillLibraryIndex()[name]?.source === entry.marketplace);
+      if (plugin) {
+        return json(res, 409, { error: `this skill comes with the plugin ${plugin.name} (${plugin.marketplace}): uninstall the plugin to remove it`, code: "plugin_skill" });
+      }
+      if (method === "DELETE") {
+        const removed = deleteLibrarySkill(name);
+        if ("error" in removed) return json(res, removed.status, { error: removed.error });
+        for (const bot of store.bots) {
+          if (bot.assignedSkills?.includes(name)) store.patchBot(bot.id, { assignedSkills: bot.assignedSkills.filter((entry) => entry !== name) });
+        }
+        return json(res, 200, { ok: true });
+      }
+      const parsed = z.object({
+        name: z.string().min(1).max(64),
+        description: z.string().min(1).max(1024),
+        instructions: z.string().max(256 * 1024),
+      }).strict().safeParse(await readBody(req));
+      if (!parsed.success) return json(res, 400, { error: "name, description and instructions are required" });
+      const previous = readLibrarySkillFile(name);
+      const text = composeSkillMd(previous, { name: parsed.data.name, description: parsed.data.description, body: parsed.data.instructions });
+      const updated = updateLibrarySkill(name, { text, warnings: scanSkillText(text) });
+      if ("error" in updated) return json(res, updated.status, { error: updated.error });
+      if (updated.renamedFrom) {
+        for (const bot of store.bots) {
+          if (bot.assignedSkills?.includes(name)) {
+            store.patchBot(bot.id, { assignedSkills: bot.assignedSkills.map((entry) => entry === name ? updated.skill.name : entry) });
+          }
+        }
+      }
+      return json(res, 200, { skill: updated.skill });
     }
     m = path.match(/^\/api\/bots\/([\w-]+)\/skills-library$/);
     if (m && method === "PUT") {

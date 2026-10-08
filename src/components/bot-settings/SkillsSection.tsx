@@ -5,7 +5,7 @@
 // dialog's own z-50, plus: an Import from GitHub row, a static "when it's
 // used" line on every row (learned skills have no triggers to show), and a
 // read-only click-through view of a skill's full text.
-import { BookOpen, Trash2 } from "lucide-react";
+import { ArrowUpRight, BookOpen, Trash2 } from "lucide-react";
 import { t } from "@/lib/i18n";
 import { useEffect, useRef, useState } from "react";
 
@@ -285,7 +285,7 @@ export function SkillReviewDialog({
 
 export function SkillsSection({ bot }: { bot: Bot }) {
   const { request: api } = useBotEditor();
-  const { state } = useStore();
+  const { state, dispatch } = useStore();
   const featureEnabled = skillAuthoringEnabled(state.config);
   const libraryOn = skillsLibraryEnabled(state.config);
   // Perspicax `sagax_integrations: off`: an admin manages this person's
@@ -448,6 +448,18 @@ export function SkillsSection({ bot }: { bot: Bot }) {
             ) : (
               <div className="text-[12px] text-ink-secondary">{t("botPanel.skills.allAssigned")}</div>
             )}
+            {/* The library itself (new, edit, delete) is in Connect apps. */}
+            <button
+              type="button"
+              data-manage-in-connect-apps="skills"
+              onClick={() => {
+                dispatch({ type: "toggleSettings", open: false });
+                dispatch({ type: "togglePlugins", open: true });
+              }}
+              className="flex items-center gap-1 self-start rounded-lg px-1 py-1 text-[12.5px] font-medium text-accent-text hover:underline"
+            >
+              {t("botAccess.manageInConnectApps")} <ArrowUpRight size={13} aria-hidden="true" />
+            </button>
 
           </div>
         ) : skillWrites ? (

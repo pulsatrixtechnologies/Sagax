@@ -37,12 +37,18 @@ export interface PluginListing {
   icon?: string;
   iconUrl?: string;
   docsUrl?: string;
+  /** Featured: the provider's own site (notion.com, not mcp.notion.com), for
+   * its icon. */
+  site?: string;
+  /** Featured: the Connect apps category from the catalog. */
+  category?: string;
 }
 
 export function featuredListing(entry: PluginCatalogEntry): PluginListing {
   return {
     id: entry.id, name: entry.name, description: entry.description, url: entry.url, transport: entry.transport,
     domain: new URL(entry.url).hostname, auth: entry.auth, source: "featured", reviewed: true, icon: entry.icon, docsUrl: entry.docsUrl,
+    site: entry.domain, ...(entry.category ? { category: entry.category } : {}),
   };
 }
 

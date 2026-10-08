@@ -2,13 +2,19 @@
 // know from desktop assistants.
 //
 //   - Connect apps (main): every connected app, MCP server, catalog plugin
-//     and skill in one list, with search across all of them, category chips
-//     (Connected apps / MCP servers / Skills are chips too) and a section per
-//     category. "N connected" opens Manage.
-//   - Manage: installed plugins, private skills, Add manually / Paste config
-//     for MCP servers, and the settings that apply to all of them.
+//     and skill in one list (one row per app, whatever its sources), with
+//     search across all of them, category chips, a small type filter and a
+//     section per category. "N connected" opens Manage.
+//   - Manage: installed plugins, private skills (each opens its skill page),
+//     a person's own connections on an organization server, and in Advanced:
+//     Add manually / Paste config, marketplaces, the settings for every
+//     MCP server.
 //   - Detail: one plugin's accounts, tools (a switch per MCP tool, applied to
 //     every bot) and details, with Uninstall.
+//
+// This panel is the only place that adds, removes, configures or lists
+// plugins, servers, apps, skills and marketplaces. Other screens link here
+// or choose among them for one bot; keys stay in Settings > API keys.
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Loader2, TriangleAlert } from "lucide-react";
 
@@ -16,8 +22,12 @@ import { api, useStore } from "@/state/store";
 import { t } from "@/lib/i18n";
 import { managedConnectorUnavailableReason } from "../../shared/connector-availability";
 import { isWhopServer } from "@/lib/whop-integration";
+import { skillsLibraryEnabled, templatesEnabled } from "@/lib/feature-flags";
+import { requestTemplates } from "@/lib/open-templates";
+import { usePerspicaxOrg } from "@/lib/perspicax-org";
+import { useOwnerOrAdmin } from "@/lib/use-owner-or-admin";
 import type { SkillsLibrarySkillWire } from "../../shared/wire";
-import { WHOP_KEY, buildPluginItems, marketplacePluginKey, type PluginFilter, type PluginItem } from "@/lib/plugins-model";
+import { WHOP_KEY, buildPluginItems, marketplacePluginKey, type PluginFilter, type PluginItem, type PluginTypeFilter } from "@/lib/plugins-model";
 import {
   ClaudeMcpSwitch,
   McpAuthLine,
@@ -25,11 +35,13 @@ import {
   McpImportForm,
   McpMessages,
   McpServerEditor,
-  WhopTile,
+  WhopAction,
+  WhopBelow,
   isRemoteMcpListing,
   useMcpServers,
-  type McpServerListing,
 } from "./McpServersPanel";
+import { MyConnectionsSettings } from "./settings/MyConnectionsSettings";
+import { useServerMode } from "./ServerModeSettings";
 import { ProvidersSection } from "./plugins/ProvidersSection";
 import { requestSettingsCard } from "./SettingsPrimitives";
 import {
@@ -46,6 +58,7 @@ import { ManageView } from "./plugins/ManageView";
 import { MarketplacesSection } from "./plugins/MarketplacesSection";
 import { PluginStatusLabel } from "./plugins/PluginParts";
 import { AddAccountButton, PluginDetailView, SignInButton, type DetailAccount, type PluginDetailProps } from "./plugins/PluginDetailView";
+import { SkillPage } from "./plugins/SkillPage";
 
 export * from "./plugins/connected-apps";
 
@@ -57,9 +70,35 @@ interface MarketplaceListing {
   plugins: Array<{ name: string; description?: string; version?: string; category?: string; installed: boolean; servers: string[]; skills: string[] }>;
 }
 
-interface FeaturedListing { id: string; name: string; description: string; url: string; domain: string; auth: string; installed?: boolean }
+interface FeaturedListing {
+  id: string; name: string; description: string; url: string; domain: string; auth: string; installed?: boolean; site?: string; category?: string; iconUrl?: string;
+}
 
-type Page = { page: "main" } | { page: "manage" } | { page: "detail"; key: string; from: "main" | "manage" };
+type Page =
+  | { page: "main" }
+  | { page: "manage" }
+  | { page: "detail"; key: string; from: "main" | "manage" }
+  /** a private skill's page; no name: a new skill */
+  | { page: "skill"; name?: string; from: "main" | "manage" };
+
+/** Connectors a Claude account brings to bots (Manage > Providers lists
+ * them); "N connected" counts the connected ones. */
+function useClaudeConnectorCount(): number {
+  const [count, setCount] = useState(0);
+  useEffect(() => {
+    let cancelled = false;
+    api("/api/me/harness-connectors", { timeoutMs: 90_000 })
+      .then((answer) => {
+        const connectors: Array<{ status?: string }> = answer?.claude?.available ? answer.claude.connectors ?? [] : [];
+        if (!cancelled) setCount(connectors.filter((connector) => connector.status === "connected").length);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  return count;
+}
 
 /** The label of a plugin's source, for Manage and the details. */
 export function pluginSourceLabel(source: string): string {
@@ -78,7 +117,13 @@ export function PluginsPanel() {
   const mcp = useMcpServers();
   const [page, setPage] = useState<Page>({ page: "main" });
   const [search, setSearch] = useState("");
-  const [filter, setFilter] = useState<PluginFilter>(state.pluginsSurface === "mcp" ? "mcp" : "all");
+  const [filter, setFilter] = useState<PluginFilter>("all");
+  const [type, setType] = useState<PluginTypeFilter>(state.pluginsSurface === "mcp" ? "mcp" : "any");
+  const claudeConnectors = useClaudeConnectorCount();
+  const ownerOrAdmin = useOwnerOrAdmin();
+  const serverMode = useServerMode();
+  const perspicaxOrg = usePerspicaxOrg();
+  const organization = Boolean(serverMode?.active) || perspicaxOrg !== null;
   const [featured, setFeatured] = useState<FeaturedListing[] | null>(null);
   const [skills, setSkills] = useState<SkillsLibrarySkillWire[] | null>(null);
   const [installing, setInstalling] = useState<string | null>(null);
@@ -107,7 +152,15 @@ export function PluginsPanel() {
   }, [loadFeatured, loadSkills, loadMarketplaces]);
 
   const close = useCallback(() => dispatch({ type: "togglePlugins", open: false }), [dispatch]);
-  const back = useCallback(() => setPage((current) => current.page === "detail" ? { page: current.from } : { page: "main" }), []);
+  const skillsLibraryOn = skillsLibraryEnabled(state.config);
+  /** Bot templates: the Templates library when it is on, else the new bot
+   * dialog (where a bot starts from a template or from scratch). */
+  const openBotTemplates = () => {
+    close();
+    if (templatesEnabled(state.config)) requestTemplates();
+    else dispatch({ type: "toggleNewBot", open: true });
+  };
+  const back = useCallback(() => setPage((current) => current.page === "detail" || current.page === "skill" ? { page: current.from } : { page: "main" }), []);
 
   // Focus and keys: Escape steps back one page, then closes.
   const pageRef = useRef(page);
@@ -158,7 +211,9 @@ export function PluginsPanel() {
     skills,
     marketplaces,
     whop: { description: t("whop.description"), server: mcp.whopServer?.name, connected: mcp.whopConnected },
-  }), [apps.cards, apps.status, mcp.servers, featured, skills, marketplaces, mcp.whopServer?.name, mcp.whopConnected]);
+    // Until the catalog answers, assume apps can be connected (no flicker).
+    composioUsable: apps.cards === null || apps.configured,
+  }), [apps.cards, apps.status, apps.configured, mcp.servers, featured, skills, marketplaces, mcp.whopServer?.name, mcp.whopConnected]);
 
   const refreshAll = () => {
     void apps.loadConnectionInventory(true);
@@ -170,6 +225,10 @@ export function PluginsPanel() {
   const refreshing = apps.refreshing || mcp.busy === "load";
 
   const openItem = (item: PluginItem) => {
+    if (item.kind === "skill") {
+      setPage((current) => ({ page: "skill", name: item.id, from: current.page === "manage" ? "manage" : "main" }));
+      return;
+    }
     // Whop's page is its MCP server's page.
     const key = item.key === WHOP_KEY && mcp.whopServer ? `mcp:${mcp.whopServer.name}` : item.key;
     setPage((current) => ({ page: "detail", key, from: current.page === "manage" ? "manage" : "main" }));
@@ -256,6 +315,7 @@ export function PluginsPanel() {
   };
 
   const renderAction = (item: PluginItem) => {
+    if (item.key === WHOP_KEY) return <WhopAction mcp={mcp} />;
     if (item.kind === "plugin") {
       if (item.installed) return null;
       return (
@@ -276,6 +336,7 @@ export function PluginsPanel() {
   };
 
   const renderBelow = (item: PluginItem) => {
+    if (item.key === WHOP_KEY) return <WhopBelow mcp={mcp} />;
     if (item.kind !== "app") return null;
     return <AppBelow apps={apps} item={item} draft={aliasDraft} onDraft={setAliasDraft} />;
   };
@@ -343,20 +404,58 @@ export function PluginsPanel() {
   const detailItem = page.page === "detail" ? items.find((item) => item.key === page.key) : undefined;
   // An item that went away (uninstalled, or removed elsewhere) leaves its page.
   const detailMissing = page.page === "detail" && !detailItem && mcp.servers !== null && apps.cards !== null && skills !== null && marketplaces !== null;
+  // A skill deleted or renamed elsewhere leaves its page too.
+  const skillMissing = page.page === "skill" && Boolean(page.name) && skills !== null && !skills.some((entry) => entry.name === page.name);
   useEffect(() => {
-    if (detailMissing) back();
-  }, [detailMissing, back]);
+    if (detailMissing || skillMissing) back();
+  }, [detailMissing, skillMissing, back]);
+
+  const skillsOn = skills !== null && skillsLibraryOn;
+  const pageSkill = page.page === "skill" && page.name ? skills?.find((entry) => entry.name === page.name) : undefined;
+  const skillReadOnly = (skill: SkillsLibrarySkillWire): string | undefined => {
+    if (ownerOrAdmin === false) return t("connectApps.skill.readOnlyOwner");
+    if (skill.version) return t("connectApps.skill.readOnlyOrganization");
+    const plugin = marketplaces?.find((market) => market.name === skill.source)?.plugins.find((entry) => entry.installed && entry.skills.includes(skill.name));
+    if (plugin) return t("connectApps.skill.readOnlyPlugin", { plugin: plugin.name });
+    return undefined;
+  };
 
   let content;
-  if (page.page === "manage") {
+  if (page.page === "skill" && (pageSkill || !page.name)) {
+    content = (
+      <SkillPage
+        key={page.name ?? "new"}
+        skill={pageSkill}
+        readOnlyReason={pageSkill ? skillReadOnly(pageSkill) : undefined}
+        onBack={back}
+        onClose={close}
+        onSaved={async (name) => {
+          await loadSkills();
+          setPage((current) => current.page === "skill" ? { ...current, name } : current);
+        }}
+        onDeleted={async () => {
+          await loadSkills();
+          setPage((current) => current.page === "skill" ? { page: current.from } : current);
+        }}
+      />
+    );
+  } else if (page.page === "manage") {
     content = (
       <ManageView
         items={items}
-        countLabel={(item) => countLabel(item, apps, mcp.servers, marketplaces)}
+        countLabel={(item) => countLabel(item, marketplaces)}
         sourceLabel={pluginSourceLabel}
         onBack={back}
         onClose={close}
         onOpenItem={openItem}
+        onNewSkill={skillsOn && ownerOrAdmin !== false ? () => setPage({ page: "skill", from: "manage" }) : undefined}
+        personal={organization ? (
+          <section className="mt-6" data-plugins-personal>
+            <h3 className="mb-2 text-[13px] font-semibold text-ink">{t("connectApps.manage.personal")}</h3>
+            <MyConnectionsSettings />
+          </section>
+        ) : undefined}
+        advancedOpen={mcp.editing === "new" || mcp.importOpen}
         onAddManually={mcp.startAdd}
         onPasteConfig={mcp.toggleImport}
         addDisabled={mcp.busy !== null || mcp.restricted}
@@ -390,7 +489,7 @@ export function PluginsPanel() {
   } else if (page.page === "detail" && detailItem) {
     content = (
       <PluginDetailView
-        {...detailProps(detailItem, { apps, mcp, skills, aliasDraft, setAliasDraft, reloadSkills: loadSkills, bots: state.bots, instances: state.instances,
+        {...detailProps(detailItem, { apps, mcp, aliasDraft, setAliasDraft, bots: state.bots, instances: state.instances,
           items, marketplaces, installing, openItem, uninstallPlugin: (item) => void uninstallPlugin(item),
           openBotAccess: (botId) => {
             close();
@@ -400,7 +499,7 @@ export function PluginsPanel() {
         onClose={close}
       />
     );
-  } else if (page.page === "detail") {
+  } else if (page.page === "detail" || page.page === "skill") {
     content = (
       <div className="flex flex-1 items-center justify-center gap-2 text-[13px] text-ink-secondary">
         <Loader2 size={14} className="animate-spin" /> {t("connectors.loadingCatalog")}
@@ -414,14 +513,18 @@ export function PluginsPanel() {
         search={search}
         onSearch={setSearch}
         filter={filter}
-        onFilter={(next) => {
-          setFilter(next);
-          if (next === "mcp" || next === "apps" || next === "all") {
+        onFilter={setFilter}
+        type={type}
+        onType={(next) => {
+          setType(next);
+          if (next === "mcp" || next === "apps" || next === "any") {
             dispatch({ type: "togglePlugins", open: true, surface: next === "mcp" ? "mcp" : "apps" });
           }
         }}
         sourceLabel={pluginSourceLabel}
         extraSources={(marketplaces ?? []).map((market) => market.name)}
+        extraConnected={claudeConnectors}
+        onBotTemplates={remoteClient ? undefined : openBotTemplates}
         refreshing={refreshing}
         onRefresh={refreshAll}
         onClose={close}
@@ -429,7 +532,6 @@ export function PluginsPanel() {
         onOpenItem={openItem}
         renderAction={renderAction}
         renderBelow={renderBelow}
-        renderRow={(item) => item.key === WHOP_KEY ? <WhopTile key={item.key} mcp={mcp} /> : undefined}
         notices={notices}
       />
     );
@@ -464,11 +566,17 @@ function AppActionButton({ apps, slug }: { apps: ConnectedApps; slug: string }) 
   const accounts = serviceStatus?.accounts ?? [];
   const busy = apps.busySlug === slug;
   const unavailable = Boolean(managedConnectorUnavailableReason(apps.mode, slug));
+  // Dimmed only when connecting cannot work right now, and then it says why.
+  const why = unavailable ? t("connectors.selfHostOnlyReason")
+    : !apps.configured ? t("connectApps.unavailable.noKey")
+    : apps.inventoryPhase === "loading" ? t("connectApps.unavailable.checking")
+    : apps.inventoryPhase === "error" ? t("connectApps.unavailable.error")
+    : undefined;
   return (
     <button
       type="button"
-      disabled={!apps.configured || apps.inventoryPhase !== "ready" || busy || unavailable}
-      title={unavailable ? t("connectors.selfHostOnlyReason") : undefined}
+      disabled={busy || why !== undefined}
+      title={why}
       onClick={() => apps.primaryAction(slug)}
       className="ui-button min-w-[76px] disabled:opacity-40"
     >
@@ -544,30 +652,26 @@ function AliasForm({ apps, slug, name, draft, onDraft, hasAccounts }: {
   );
 }
 
-/** Installed card subline: what the plugin brings. */
-function countLabel(item: PluginItem, apps: ConnectedApps, servers: McpServerListing[] | null, marketplaces: MarketplaceListing[] | null): string {
+/** Installed card subline, as the reference: how many connectors it brings
+ * (an app or a server is one; a marketplace plugin, its servers). */
+function countLabel(item: PluginItem, marketplaces: MarketplaceListing[] | null): string {
+  let count = 1;
   if (item.kind === "plugin") {
     const [plugin, marketplace] = item.id.split("@");
     const entry = marketplaces?.find((market) => market.name === marketplace)?.plugins.find((candidate) => candidate.name === plugin);
-    return t("connectApps.count.plugin", { servers: entry?.servers.length ?? 0, skills: entry?.skills.length ?? 0 });
+    count = entry?.servers.length ?? 0;
+    if (count === 0 && entry?.skills.length) {
+      return entry.skills.length === 1 ? t("connectApps.count.skillOne") : t("connectApps.count.skillMany", { count: entry.skills.length });
+    }
   }
-  if (item.kind === "app") {
-    const count = apps.status[item.id]?.accounts?.length ?? 0;
-    if (count === 0) return t("connectApps.count.connectorOne");
-    return count === 1 ? t("connectApps.count.accountOne") : t("connectApps.count.accountMany", { count });
-  }
-  const server = servers?.find((entry) => entry.name === item.id);
-  if (server && isRemoteMcpListing(server)) return t("connectApps.count.mcpRemote", { type: server.type === "sse" ? "SSE" : "HTTP" });
-  return t("connectApps.count.mcpLocal");
+  return count === 1 ? t("connectApps.count.connectorOne") : t("connectApps.count.connectorMany", { count });
 }
 
 interface DetailContext {
   apps: ConnectedApps;
   mcp: ReturnType<typeof useMcpServers>;
-  skills: SkillsLibrarySkillWire[] | null;
   aliasDraft: string;
   setAliasDraft: (value: string) => void;
-  reloadSkills: () => Promise<unknown>;
   bots: ReturnType<typeof useStore>["state"]["bots"];
   instances: ReturnType<typeof useStore>["state"]["instances"];
   openBotAccess: (botId: string) => void;
@@ -582,7 +686,6 @@ type DetailBase = Omit<PluginDetailProps, "onBack" | "onClose">;
 
 function detailProps(item: PluginItem, context: DetailContext): DetailBase {
   if (item.kind === "app") return appDetail(item, context);
-  if (item.kind === "skill") return skillDetail(item, context);
   if (item.kind === "plugin") return pluginDetail(item, context);
   return mcpDetail(item, context);
 }
@@ -788,63 +891,6 @@ function pluginDetail(item: PluginItem, { items, marketplaces, installing, openI
       </section>
     ),
   };
-}
-
-function skillDetail(item: PluginItem, { skills, reloadSkills }: DetailContext): DetailBase {
-  const skill = skills?.find((entry) => entry.name === item.id);
-  return {
-    item,
-    subtitle: pluginSourceLabel(item.source),
-    busy: false,
-    details: [
-      { label: t("connectApps.detail.source"), value: pluginSourceLabel(item.source) },
-      { label: t("connectApps.detail.usedBy"), value: skill?.assignedBots.length ? skill.assignedBots.map((bot) => bot.name).join(", ") : t("connectApps.detail.usedByNone") },
-      ...(skill?.version ? [{ label: t("connectApps.detail.version"), value: skill.version }] : []),
-    ],
-    children: <SkillBody name={item.id} enabled={item.status !== "off"} description={item.description} warnings={skill?.warnings ?? []} onChanged={reloadSkills} />,
-  };
-}
-
-/** A skill's text, read before it is turned on: turning it on is the review. */
-function SkillBody({ name, enabled, description, warnings, onChanged }: { name: string; enabled: boolean; description: string; warnings: string[]; onChanged: () => Promise<unknown> }) {
-  const [text, setText] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  useEffect(() => {
-    let cancelled = false;
-    api(`/api/skills-library/${encodeURIComponent(name)}`)
-      .then((result) => !cancelled && setText(typeof result.text === "string" ? result.text : ""))
-      .catch((cause) => !cancelled && setError(cause instanceof Error ? cause.message : String(cause)));
-    return () => {
-      cancelled = true;
-    };
-  }, [name]);
-  const toggle = async () => {
-    setSaving(true);
-    setError(null);
-    try {
-      await api(`/api/skills-library/${encodeURIComponent(name)}`, { method: "PATCH", body: JSON.stringify({ enabled: !enabled }) });
-      await onChanged();
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
-    } finally {
-      setSaving(false);
-    }
-  };
-  return (
-    <section className="rounded-2xl border border-border bg-card px-4 py-3.5 sm:px-5">
-      <div className="flex items-start justify-between gap-3">
-        <p className="min-w-0 text-[12.5px] leading-relaxed text-ink-secondary">{description}</p>
-        <button type="button" disabled={saving || text === null} onClick={() => void toggle()} className={enabled ? "ui-button text-[12px]" : "ui-button ui-button-primary text-[12px]"}>
-          {saving ? <Loader2 size={13} className="animate-spin" /> : t(enabled ? "connectApps.skill.turnOff" : "connectApps.skill.turnOn")}
-        </button>
-      </div>
-      {!enabled && <p className="mt-2 text-[11.5px] text-ink-secondary">{t("connectApps.skill.reviewHint")}</p>}
-      {warnings.length > 0 && <ul className="mt-2 list-disc pl-5 text-[11.5px] text-warning">{warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul>}
-      {error && <p role="alert" className="mt-2 rounded-lg bg-danger/10 px-3 py-2 text-[12px] text-danger">{error}</p>}
-      {text !== null && <pre className="mt-3 max-h-72 overflow-auto whitespace-pre-wrap rounded-lg bg-inset px-3 py-2.5 font-mono text-[11.5px] leading-relaxed text-ink">{text}</pre>}
-    </section>
-  );
 }
 
 function safeHost(url: string): string {

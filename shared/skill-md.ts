@@ -89,3 +89,25 @@ export function scanSkillText(raw: string): string[] {
   }
   return warnings;
 }
+
+/** A SKILL.md with this name, description and instructions. The other
+ * frontmatter lines of `previous` (license, tags, compatibility...) are
+ * kept as they were; a new skill gets the two required keys only. The
+ * description is one line: the reader above takes single-line values. */
+export function composeSkillMd(previous: string | null, fields: { name: string; description: string; body: string }): string {
+  const description = fields.description.replace(/\s+/g, " ").trim();
+  const body = fields.body.replace(/\r\n/g, "\n").trim();
+  const kept: string[] = [];
+  const match = previous?.replace(/^﻿/, "").match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?/);
+  if (match) {
+    let dropping = false;
+    for (const line of match[1]!.split(/\r?\n/)) {
+      const key = line.match(/^([A-Za-z][\w-]*):/)?.[1]?.toLowerCase();
+      // an indented line continues the value above: it goes with it
+      if (!key && /^\s/.test(line) && dropping) continue;
+      dropping = key === "name" || key === "description";
+      if (!dropping) kept.push(line);
+    }
+  }
+  return ["---", `name: ${fields.name.trim()}`, `description: ${description}`, ...kept, "---", "", body, ""].join("\n");
+}

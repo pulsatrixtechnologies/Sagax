@@ -1342,36 +1342,39 @@ export interface ToolkitCard {
   noAuth?: boolean;
   /** used for the client-side favicon fallback when logo is null/broken */
   domain: string | null;
+  /** Composio's own category names ("productivity", "crm"...): the panel
+   * files the app under its chips from these. */
+  categories?: string[];
 }
 
 // Curated fallback — the services agentcal's connectors page ships plus the
 // long marketplace tail. Logos resolve client-side:
 // logo → favicon(domain) → monogram.
 const CURATED: ToolkitCard[] = [
-  { slug: "slack", label: "Slack", blurb: "Post updates and read channels", domain: "slack.com", logo: null },
-  { slug: "github", label: "GitHub", blurb: "Issues, pull requests, and code", domain: "github.com", logo: null },
-  { slug: "gmail", label: "Gmail", blurb: "Read and send email", domain: "gmail.com", logo: null },
-  { slug: "googlecalendar", label: "Google Calendar", blurb: "Read and create events", domain: "calendar.google.com", logo: null },
-  { slug: "googlesheets", label: "Google Sheets", blurb: "Read and update spreadsheets", domain: "sheets.google.com", logo: null },
-  { slug: "googledocs", label: "Google Docs", blurb: "Read and write documents", domain: "docs.google.com", logo: null },
-  { slug: "googledrive", label: "Google Drive", blurb: "Browse and manage files", domain: "drive.google.com", logo: null },
-  { slug: "notion", label: "Notion", blurb: "Pages and databases", domain: "notion.so", logo: null },
-  { slug: "linear", label: "Linear", blurb: "Issues and project tracking", domain: "linear.app", logo: null },
-  { slug: "sentry", label: "Sentry", blurb: "Errors and alerts", domain: "sentry.io", logo: null },
-  { slug: "posthog", label: "PostHog", blurb: "Analytics, feature flags, experiments", domain: "posthog.com", logo: null },
-  { slug: "discord", label: "Discord", blurb: "Messages and channels", domain: "discord.com", logo: null },
-  { slug: "twitter", label: "X (Twitter)", blurb: "Post and read on X", domain: "x.com", logo: null },
-  { slug: "reddit", label: "Reddit", blurb: "Browse and post", domain: "reddit.com", logo: null },
-  { slug: "zapier", label: "Zapier", blurb: "Connect 9,000+ apps", domain: "zapier.com", logo: null },
-  { slug: "hubspot", label: "HubSpot", blurb: "CRM search & updates", domain: "hubspot.com", logo: null },
-  { slug: "salesforce", label: "Salesforce", blurb: "CRM records and reports", domain: "salesforce.com", logo: null },
-  { slug: "jira", label: "Jira", blurb: "Issues and sprints", domain: "atlassian.com", logo: null },
-  { slug: "asana", label: "Asana", blurb: "Tasks and projects", domain: "asana.com", logo: null },
-  { slug: "trello", label: "Trello", blurb: "Boards and cards", domain: "trello.com", logo: null },
-  { slug: "dropbox", label: "Dropbox", blurb: "Files and folders", domain: "dropbox.com", logo: null },
-  { slug: "airtable", label: "Airtable", blurb: "Bases and records", domain: "airtable.com", logo: null },
-  { slug: "figma", label: "Figma", blurb: "Files and comments", domain: "figma.com", logo: null },
-  { slug: "stripe", label: "Stripe", blurb: "Payments and customers", domain: "stripe.com", logo: null },
+  { slug: "slack", label: "Slack", blurb: "Post updates and read channels", domain: "slack.com", logo: null, categories: ["communication"] },
+  { slug: "github", label: "GitHub", blurb: "Issues, pull requests, and code", domain: "github.com", logo: null, categories: ["developer tools"] },
+  { slug: "gmail", label: "Gmail", blurb: "Read and send email", domain: "gmail.com", logo: null, categories: ["email"] },
+  { slug: "googlecalendar", label: "Google Calendar", blurb: "Read and create events", domain: "calendar.google.com", logo: null, categories: ["scheduling"] },
+  { slug: "googlesheets", label: "Google Sheets", blurb: "Read and update spreadsheets", domain: "sheets.google.com", logo: null, categories: ["productivity"] },
+  { slug: "googledocs", label: "Google Docs", blurb: "Read and write documents", domain: "docs.google.com", logo: null, categories: ["productivity"] },
+  { slug: "googledrive", label: "Google Drive", blurb: "Browse and manage files", domain: "drive.google.com", logo: null, categories: ["productivity"] },
+  { slug: "notion", label: "Notion", blurb: "Pages and databases", domain: "notion.so", logo: null, categories: ["productivity"] },
+  { slug: "linear", label: "Linear", blurb: "Issues and project tracking", domain: "linear.app", logo: null, categories: ["productivity"] },
+  { slug: "sentry", label: "Sentry", blurb: "Errors and alerts", domain: "sentry.io", logo: null, categories: ["developer tools"] },
+  { slug: "posthog", label: "PostHog", blurb: "Analytics, feature flags, experiments", domain: "posthog.com", logo: null, categories: ["analytics"] },
+  { slug: "discord", label: "Discord", blurb: "Messages and channels", domain: "discord.com", logo: null, categories: ["communication"] },
+  { slug: "twitter", label: "X (Twitter)", blurb: "Post and read on X", domain: "x.com", logo: null, categories: ["social media"] },
+  { slug: "reddit", label: "Reddit", blurb: "Browse and post", domain: "reddit.com", logo: null, categories: ["social media"] },
+  { slug: "zapier", label: "Zapier", blurb: "Connect 9,000+ apps", domain: "zapier.com", logo: null, categories: ["productivity"] },
+  { slug: "hubspot", label: "HubSpot", blurb: "CRM search & updates", domain: "hubspot.com", logo: null, categories: ["crm"] },
+  { slug: "salesforce", label: "Salesforce", blurb: "CRM records and reports", domain: "salesforce.com", logo: null, categories: ["crm"] },
+  { slug: "jira", label: "Jira", blurb: "Issues and sprints", domain: "atlassian.com", logo: null, categories: ["productivity"] },
+  { slug: "asana", label: "Asana", blurb: "Tasks and projects", domain: "asana.com", logo: null, categories: ["productivity"] },
+  { slug: "trello", label: "Trello", blurb: "Boards and cards", domain: "trello.com", logo: null, categories: ["productivity"] },
+  { slug: "dropbox", label: "Dropbox", blurb: "Files and folders", domain: "dropbox.com", logo: null, categories: ["productivity"] },
+  { slug: "airtable", label: "Airtable", blurb: "Bases and records", domain: "airtable.com", logo: null, categories: ["productivity"] },
+  { slug: "figma", label: "Figma", blurb: "Files and comments", domain: "figma.com", logo: null, categories: ["design"] },
+  { slug: "stripe", label: "Stripe", blurb: "Payments and customers", domain: "stripe.com", logo: null, categories: ["finance"] },
 ];
 
 let toolkitCache: { at: number; cards: ToolkitCard[]; identity: string; pagination: CatalogPagination } | null = null;
@@ -1411,6 +1414,17 @@ export interface CatalogPagination {
  * Marketplace catalog. Tries the v3 toolkits API (official names,
  * descriptions, logos — cached 10 min); falls back to the curated list.
  */
+/** Composio lists a toolkit's categories as `{ name, slug }` objects (or,
+ * through some brokers, plain strings). Names only, at most four. */
+export function toolkitCategories(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const names = value
+    .map((entry) => typeof entry === "string" ? entry : entry && typeof entry === "object" ? (entry as { name?: unknown; slug?: unknown }).name ?? (entry as { slug?: unknown }).slug : null)
+    .filter((name): name is string => typeof name === "string" && name.trim() !== "")
+    .map((name) => name.trim().toLowerCase().slice(0, 60));
+  return names.length ? [...new Set(names)].slice(0, 4) : undefined;
+}
+
 export async function listToolkits(cfg: AppConfig): Promise<{ cards: ToolkitCard[]; source: "api" | "curated"; pagination?: CatalogPagination }> {
   const backendKey = projectApiKey(cfg);
   const broker = backendKey ? null : brokerAccess();
@@ -1505,6 +1519,7 @@ export async function listToolkits(cfg: AppConfig): Promise<{ cards: ToolkitCard
           logo: t.meta?.logo ?? t.logo ?? null,
           noAuth: t.no_auth === true,
           domain: null,
+          categories: toolkitCategories(t.meta?.categories ?? t.categories),
         }));
         const uniqueCards = cards.filter(
           (card, index) => card.slug && cards.findIndex((candidate) => candidate.slug === card.slug) === index,

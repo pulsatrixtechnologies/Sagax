@@ -7,7 +7,7 @@
 // always-allowed list (the first read-only view of standing grants) are new.
 import { useEffect, useState } from "react";
 import { boatComputerEnabled, connectedAppsEnabled as connectedAppsFeatureEnabled, vpsComputerEnabled } from "@/lib/feature-flags";
-import { ChevronDown, ChevronRight, FolderOpen, Plus } from "lucide-react";
+import { ArrowUpRight, ChevronDown, ChevronRight, FolderOpen } from "lucide-react";
 
 import { api, useStore, type Bot } from "@/state/store";
 import { useBotEditor } from "./BotEditorContext";
@@ -121,8 +121,26 @@ function WorkingFolder({ bot }: { bot: Bot }) {
 /** Which app-wide MCP servers this bot mounts. Absent list = all enabled
  * (the pre-existing behavior); the first switch flip writes an explicit
  * list so later additions in Plugins do not silently reach this bot. */
-function McpServersCard({ bot, patch }: { bot: Bot; patch: (patch: { mcpServers: string[] | null }) => void }) {
+/** Servers and apps are added, removed and set up in Connect apps only;
+ * here a bot only picks among them. This link opens the panel there. */
+function ManageInConnectApps({ surface }: { surface: "apps" | "mcp" }) {
   const { dispatch } = useStore();
+  return (
+    <button
+      type="button"
+      data-manage-in-connect-apps={surface}
+      onClick={() => {
+        dispatch({ type: "toggleSettings", open: false });
+        dispatch({ type: "togglePlugins", open: true, surface });
+      }}
+      className="flex items-center gap-1 rounded-lg px-1 py-1.5 text-[12.5px] font-medium text-accent-text hover:underline"
+    >
+      {t("botAccess.manageInConnectApps")} <ArrowUpRight size={13} aria-hidden="true" />
+    </button>
+  );
+}
+
+function McpServersCard({ bot, patch }: { bot: Bot; patch: (patch: { mcpServers: string[] | null }) => void }) {
   const { servers, error, refresh } = useMcpServers();
   const mounted = new Set((servers ? mcpServersForBot(servers, bot.mcpServers) : []).map((server) => server.name));
   const usesAll = bot.mcpServers == null;
@@ -133,11 +151,6 @@ function McpServersCard({ bot, patch }: { bot: Bot; patch: (patch: { mcpServers:
     const next = current.includes(name) ? current.filter((item) => item !== name) : [...current, name];
     patch({ mcpServers: next });
   };
-  const openPlugins = () => {
-    dispatch({ type: "toggleSettings", open: false });
-    dispatch({ type: "togglePlugins", open: true, surface: "mcp" });
-  };
-
   return (
     <div className="rounded-xl border border-hairline/40 p-4">
       <div className="flex items-center justify-between gap-4">
@@ -178,9 +191,7 @@ function McpServersCard({ bot, patch }: { bot: Bot; patch: (patch: { mcpServers:
         </div>
       )}
       <div className="mt-3 flex items-center gap-2">
-        <button type="button" onClick={openPlugins} className="flex items-center gap-1.5 rounded-lg bg-control px-3 py-2 text-[13px] text-ink hover:bg-raised-hover">
-          <Plus size={14} /> {t("botAccess.mcpAdd")}
-        </button>
+        <ManageInConnectApps surface="mcp" />
         {!usesAll && servers && servers.length > 0 && (
           <button type="button" disabled={!!bot.busy || error} onClick={() => { if (!bot.busy && !error) patch({ mcpServers: null }); }} className="rounded-lg px-2 py-2 text-[13px] text-ink-secondary hover:text-ink disabled:opacity-50">
             {t("botAccess.mcpUseAll")}
@@ -517,7 +528,7 @@ export function AccessSection({
   derived: ReturnType<typeof useBotSettingsDerived>;
 }) {
   const { draft } = useBotEditor();
-  const { state, dispatch } = useStore();
+  const { state } = useStore();
   // Organization server: bots work in their owner's server environment.
   const organization = usePerspicaxOrg() !== null;
   const {
@@ -647,18 +658,7 @@ export function AccessSection({
             <ConnectorToolsGrants bot={bot} patch={patch} slugs={connectedSlugs} />
           </>
         )}
-        {connectedAppsEnabled && connectedAppsConfigured && (
-          <button
-            type="button"
-            onClick={() => {
-              dispatch({ type: "toggleSettings", open: false });
-              dispatch({ type: "togglePlugins", open: true, surface: "apps" });
-            }}
-            className="mt-3 flex items-center gap-1.5 rounded-lg bg-control px-3 py-2 text-[13px] text-ink hover:bg-raised-hover"
-          >
-            <Plus size={14} /> {t("botAccess.connectApp")}
-          </button>
-        )}
+        {connectedAppsEnabled && connectedAppsConfigured && <div className="mt-2"><ManageInConnectApps surface="apps" /></div>}
       </div>}
 
       <McpServersCard bot={bot} patch={patch} />

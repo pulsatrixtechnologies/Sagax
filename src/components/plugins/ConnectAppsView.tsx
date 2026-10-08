@@ -3,23 +3,29 @@
 // a short section per category. Installed rows open their detail page; the
 // others carry Add (nothing to sign in to) or Connect (an account).
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { ChevronDown, ChevronRight, Loader2, RefreshCw, Search, X } from "lucide-react";
+import { ChevronDown, ChevronRight, ExternalLink, Loader2, RefreshCw, Search, SlidersHorizontal, X } from "lucide-react";
 
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
 import type { LocaleKey } from "@/locales";
 import {
+  MAIN_CATEGORIES,
+  MORE_CATEGORIES,
   connectedSummary,
   mainSections,
   type PluginFilter,
   type PluginItem,
   type PluginSection,
+  type PluginTypeFilter,
 } from "@/lib/plugins-model";
 import { PluginIcon, PluginStatusLabel } from "./PluginParts";
 
-/** The chips in the row, in order; the rest sit under More. */
-export const MAIN_CHIPS: PluginFilter[] = ["all", "productivity", "communication", "design", "code", "passwords"];
-export const MORE_CHIPS: PluginFilter[] = ["apps", "mcp", "skills", "other"];
+/** The chips in the row, in order (the reference's); more categories sit
+ * under More. Kinds and sources are not chips: they are the small type
+ * filter at the end of the row. */
+export const MAIN_CHIPS: PluginFilter[] = ["all", ...MAIN_CATEGORIES];
+export const MORE_CHIPS: PluginFilter[] = [...MORE_CATEGORIES];
+export const TYPE_FILTERS: PluginTypeFilter[] = ["any", "apps", "mcp", "skills"];
 
 const FILTER_KEY: Record<string, LocaleKey> = {
   all: "connectApps.filter.all",
@@ -28,28 +34,28 @@ const FILTER_KEY: Record<string, LocaleKey> = {
   design: "connectApps.filter.design",
   code: "connectApps.filter.code",
   passwords: "connectApps.filter.passwords",
+  data: "connectApps.filter.data",
+  sales: "connectApps.filter.sales",
+  finance: "connectApps.filter.finance",
+  marketing: "connectApps.filter.marketing",
+  research: "connectApps.filter.research",
+  support: "connectApps.filter.support",
   other: "connectApps.filter.other",
+  any: "connectApps.type.any",
   apps: "connectApps.filter.apps",
   mcp: "connectApps.filter.mcp",
   skills: "connectApps.filter.skills",
 };
 
 const SECTION_KEY: Record<string, LocaleKey> = {
+  ...FILTER_KEY,
   recommended: "connectApps.section.recommended",
   results: "connectApps.section.results",
-  productivity: "connectApps.filter.productivity",
-  communication: "connectApps.filter.communication",
-  design: "connectApps.filter.design",
-  code: "connectApps.filter.code",
-  passwords: "connectApps.filter.passwords",
   other: "connectApps.section.other",
-  apps: "connectApps.filter.apps",
   mcp: "connectApps.section.mcp",
-  skills: "connectApps.filter.skills",
-  all: "connectApps.section.all",
 };
 
-/** A chip's or section's label. A marketplace source is shown by name. */
+/** A chip's, type's or section's label. A marketplace source is shown by name. */
 export function filterLabel(filter: string, sourceLabel?: (source: string) => string): string {
   if (filter.startsWith("source:")) {
     const source = filter.slice("source:".length);
@@ -63,6 +69,68 @@ export function sectionTitle(section: Pick<PluginSection, "id">, sourceLabel?: (
   return t(SECTION_KEY[section.id] ?? "connectApps.section.other");
 }
 
+/** A small menu under a pill: More categories, or the type filter. */
+function Dropdown<T extends string>({ label, active, options, value, onSelect, labelOf, align = "left", icon, ariaLabel }: {
+  label: string;
+  active: boolean;
+  options: T[];
+  value: string;
+  onSelect: (value: T) => void;
+  labelOf: (value: T) => string;
+  align?: "left" | "right";
+  icon?: ReactNode;
+  ariaLabel?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const close = (event: MouseEvent) => {
+      if (!ref.current?.contains(event.target as Node)) setOpen(false);
+    };
+    window.addEventListener("mousedown", close);
+    return () => window.removeEventListener("mousedown", close);
+  }, [open]);
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        type="button"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label={ariaLabel}
+        onClick={() => setOpen((current) => !current)}
+        className={cn(
+          "flex h-7 items-center gap-1 rounded-full border px-3 text-[12.5px] transition-colors",
+          active ? "border-transparent bg-accent text-accent-ink" : "border-border text-ink-secondary hover:bg-hover hover:text-ink",
+        )}
+      >
+        {icon}
+        {label}
+        <ChevronDown size={13} aria-hidden="true" />
+      </button>
+      {open && (
+        <div role="menu" className={cn("absolute top-8 z-10 min-w-[180px] rounded-xl border-[0.5px] border-border popover-surface bg-elevated p-1", align === "right" ? "right-0" : "left-0")}>
+          {options.map((option) => (
+            <button
+              key={option}
+              type="button"
+              role="menuitemradio"
+              aria-checked={value === option}
+              onClick={() => {
+                onSelect(option);
+                setOpen(false);
+              }}
+              className={cn("block w-full truncate rounded-lg px-3 py-1.5 text-left text-[12.5px]", value === option ? "bg-hover text-ink" : "text-ink-secondary hover:bg-hover hover:text-ink")}
+            >
+              {labelOf(option)}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 const PAGE = 60;
 
 export interface ConnectAppsViewProps {
@@ -72,8 +140,15 @@ export interface ConnectAppsViewProps {
   onSearch: (value: string) => void;
   filter: PluginFilter;
   onFilter: (filter: PluginFilter) => void;
-  /** marketplace (or other) sources that get their own chip and section */
+  /** the type filter at the end of the chip row */
+  type?: PluginTypeFilter;
+  onType?: (type: PluginTypeFilter) => void;
+  /** marketplace (or other) sources: a type of their own and a section */
   extraSources?: string[];
+  /** connectors a Claude account brings, counted in "N connected" */
+  extraConnected?: number;
+  /** "Bot templates", beside the search (absent: no button) */
+  onBotTemplates?: () => void;
   sourceLabel?: (source: string) => string;
   refreshing: boolean;
   onRefresh: () => void;
@@ -86,31 +161,24 @@ export interface ConnectAppsViewProps {
   renderBelow?: (item: PluginItem) => ReactNode;
   /** notices between the chips and the list */
   notices?: ReactNode;
-  /** a row drawn by its owner (Whop's connect flow) */
-  renderRow?: (item: PluginItem) => ReactNode | undefined;
 }
 
 export function ConnectAppsView(props: ConnectAppsViewProps) {
-  const { items, loading, search, onSearch, filter, onFilter, extraSources = [], sourceLabel, refreshing, onRefresh, onClose,
-    onOpenManage, onOpenItem, renderAction, renderBelow, notices, renderRow } = props;
+  const { items, loading, search, onSearch, filter, onFilter, type = "any", onType, extraSources = [], extraConnected = 0, onBotTemplates, sourceLabel,
+    refreshing, onRefresh, onClose, onOpenManage, onOpenItem, renderAction, renderBelow, notices } = props;
   const [limit, setLimit] = useState(PAGE);
-  const [moreOpen, setMoreOpen] = useState(false);
-  const moreRef = useRef<HTMLDivElement>(null);
-  useEffect(() => setLimit(PAGE), [filter, search]);
-  useEffect(() => {
-    if (!moreOpen) return;
-    const close = (event: MouseEvent) => {
-      if (!moreRef.current?.contains(event.target as Node)) setMoreOpen(false);
-    };
-    window.addEventListener("mousedown", close);
-    return () => window.removeEventListener("mousedown", close);
-  }, [moreOpen]);
+  useEffect(() => setLimit(PAGE), [filter, type, search]);
 
-  const sections = mainSections(items, search, filter, extraSources);
-  const summary = connectedSummary(items);
-  const moreChips: PluginFilter[] = [...extraSources.map((source) => `source:${source}` as PluginFilter), ...MORE_CHIPS];
-  const moreActive = moreChips.includes(filter);
-  const single = sections.length === 1 && (search.trim() !== "" || filter !== "all");
+  const sections = mainSections(items, search, filter, type, extraSources);
+  const summary = connectedSummary(items, extraConnected);
+  const types: PluginTypeFilter[] = [...TYPE_FILTERS, ...extraSources.map((source) => `source:${source}` as PluginTypeFilter)];
+  const moreActive = MORE_CHIPS.includes(filter);
+  const single = sections.length === 1 && (search.trim() !== "" || filter !== "all" || type !== "any");
+  const viewAll = (section: PluginSection) => {
+    if (!section.filter) return;
+    if ("filter" in section.filter) onFilter(section.filter.filter);
+    else onType?.(section.filter.type);
+  };
 
   return (
     <>
@@ -152,16 +220,29 @@ export function ConnectAppsView(props: ConnectAppsViewProps) {
       </header>
 
       <div className="px-6 sm:px-8">
-        <label className="flex w-full items-center gap-2.5 rounded-[14px] border border-transparent bg-hover px-4 py-2.5 focus-within:border-border-strong">
-          <Search size={16} className="shrink-0 text-ink-secondary" />
-          <input
-            value={search}
-            onChange={(event) => onSearch(event.target.value)}
-            placeholder={t("connectApps.searchPlaceholder")}
-            aria-label={t("connectApps.searchPlaceholder")}
-            className="min-w-0 flex-1 bg-transparent text-[13px] leading-[18px] text-ink placeholder:text-ink-secondary focus:outline-none"
-          />
-        </label>
+        <div className="flex items-center gap-2">
+          <label className="flex min-w-0 flex-1 items-center gap-2.5 rounded-[14px] border border-transparent bg-hover px-4 py-2.5 focus-within:border-border-strong">
+            <Search size={16} className="shrink-0 text-ink-secondary" />
+            <input
+              value={search}
+              onChange={(event) => onSearch(event.target.value)}
+              placeholder={t("connectApps.searchPlaceholder")}
+              aria-label={t("connectApps.searchPlaceholder")}
+              className="min-w-0 flex-1 bg-transparent text-[13px] leading-[18px] text-ink placeholder:text-ink-secondary focus:outline-none"
+            />
+          </label>
+          {onBotTemplates && (
+            <button
+              type="button"
+              data-plugins-bot-templates
+              onClick={onBotTemplates}
+              className="flex shrink-0 items-center gap-1.5 rounded-[14px] border border-border px-3.5 py-2.5 text-[13px] leading-[18px] text-ink hover:bg-hover"
+            >
+              {t("connectApps.botTemplates")}
+              <ExternalLink size={13} className="text-ink-secondary" aria-hidden="true" />
+            </button>
+          )}
+        </div>
         <div className="mt-3 flex flex-wrap items-center gap-1.5" role="toolbar" aria-label={t("connectApps.filtersAria")}>
           {MAIN_CHIPS.map((chip) => (
             <button
@@ -177,40 +258,29 @@ export function ConnectAppsView(props: ConnectAppsViewProps) {
               {filterLabel(chip, sourceLabel)}
             </button>
           ))}
-          <div className="relative" ref={moreRef}>
-            <button
-              type="button"
-              aria-haspopup="menu"
-              aria-expanded={moreOpen}
-              onClick={() => setMoreOpen((open) => !open)}
-              className={cn(
-                "flex h-7 items-center gap-1 rounded-full border px-3 text-[12.5px] transition-colors",
-                moreActive ? "border-transparent bg-accent text-accent-ink" : "border-border text-ink-secondary hover:bg-hover hover:text-ink",
-              )}
-            >
-              {moreActive ? filterLabel(filter, sourceLabel) : t("connectApps.filter.more")}
-              <ChevronDown size={13} aria-hidden="true" />
-            </button>
-            {moreOpen && (
-              <div role="menu" className="absolute left-0 top-8 z-10 min-w-[180px] rounded-xl border-[0.5px] border-border popover-surface bg-elevated p-1">
-                {moreChips.map((chip) => (
-                  <button
-                    key={chip}
-                    type="button"
-                    role="menuitemradio"
-                    aria-checked={filter === chip}
-                    onClick={() => {
-                      onFilter(chip);
-                      setMoreOpen(false);
-                    }}
-                    className={cn("block w-full truncate rounded-lg px-3 py-1.5 text-left text-[12.5px]", filter === chip ? "bg-hover text-ink" : "text-ink-secondary hover:bg-hover hover:text-ink")}
-                  >
-                    {filterLabel(chip, sourceLabel)}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
+          <Dropdown
+            label={moreActive ? filterLabel(filter, sourceLabel) : t("connectApps.filter.more")}
+            active={moreActive}
+            options={MORE_CHIPS}
+            value={filter}
+            onSelect={onFilter}
+            labelOf={(chip) => filterLabel(chip, sourceLabel)}
+          />
+          {onType && (
+            <div className="ml-auto" data-plugins-type>
+              <Dropdown
+                label={filterLabel(type, sourceLabel)}
+                active={type !== "any"}
+                options={types}
+                value={type}
+                onSelect={onType}
+                labelOf={(option) => filterLabel(option, sourceLabel)}
+                align="right"
+                icon={<SlidersHorizontal size={12} aria-hidden="true" />}
+                ariaLabel={t("connectApps.typeAria", { type: filterLabel(type, sourceLabel) })}
+              />
+            </div>
+          )}
         </div>
       </div>
 
@@ -234,13 +304,13 @@ export function ConnectAppsView(props: ConnectAppsViewProps) {
                 <div className="mb-1.5 flex items-center justify-between gap-3">
                   <h3 className="text-[13px] font-semibold text-ink">{sectionTitle(section, sourceLabel)}</h3>
                   {!single && section.filter && section.total > section.items.length && (
-                    <button type="button" onClick={() => onFilter(section.filter!)} className="text-[12px] text-ink-secondary hover:text-ink">
+                    <button type="button" onClick={() => viewAll(section)} className="text-[12px] text-ink-secondary hover:text-ink">
                       {t("connectApps.viewAll")}
                     </button>
                   )}
                 </div>
                 <div className="grid grid-cols-1 gap-x-2 gap-y-0.5 md:grid-cols-2">
-                  {shown.map((item) => renderRow?.(item) ?? (
+                  {shown.map((item) => (
                     <PluginRow key={item.key} item={item} onOpen={onOpenItem} action={renderAction(item)} below={renderBelow?.(item)} />
                   ))}
                 </div>

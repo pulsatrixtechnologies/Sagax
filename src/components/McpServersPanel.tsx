@@ -9,7 +9,6 @@ import { updateMcpServers } from "@/lib/mcp-servers";
 import { api, useStore, type ConfigStatus } from "@/state/store";
 
 import { Switch } from "./SettingsPrimitives";
-import { WhopIcon } from "./WhopIcon";
 import { WHOP_MCP_URL, isWhopServer, whopServerName } from "@/lib/whop-integration";
 
 /** A server this computer starts (a command) or one reached at a URL —
@@ -693,35 +692,45 @@ export function useMcpServers() {
 
 export type McpServers = ReturnType<typeof useMcpServers>;
 
-/** Whop: an MCP server people connect like an app (#2411). Connect adds the
- * official server switched off, signs in, lists its tools once and only then
- * switches it on; its row in Connect apps shows this. */
-export function WhopTile({ mcp }: { mcp: McpServers }) {
-  const { store, dispatch, servers, probe, oauthError, error, waiting, busy, signingIn, whopServer, whopConnected, whopLoading, restricted, policy,
-    load, signOut, connectWhop, cancelWhop, clientDraft, setClientDraft, signIn } = mcp;
+/** Whop's button on its Connect apps row (a row like every other app's):
+ * Connect, Cancel while its sign-in waits, nothing once connected (the row
+ * opens its page, where Disconnect is). */
+export function WhopAction({ mcp }: { mcp: McpServers }) {
+  const { servers, busy, signingIn, whopServer, whopConnected, whopLoading, waiting, restricted, policy, load, connectWhop, cancelWhop } = mcp;
+  const whopWaiting = Boolean(whopServer && waiting[whopServer.name]);
+  const pending = busy !== null || signingIn !== null || whopLoading;
+  if ((whopWaiting || whopLoading) && whopServer) {
+    return <button type="button" onClick={() => cancelWhop(whopServer.name)} className="ui-button min-w-[76px]">{t("mcp.auth.cancel")}</button>;
+  }
+  if (whopConnected) return null;
+  const blocked = servers !== null && (Boolean(whopServer?.managedBy) || (restricted && !policy?.mcp.allowlist.length));
+  return (
+    <button
+      type="button"
+      aria-label={t("whop.connect")}
+      disabled={pending || blocked}
+      title={blocked && policy ? t("policy.managedBy", { organization: policy.organizationName }) : undefined}
+      onClick={() => void (servers === null ? load() : connectWhop())}
+      className="ui-button min-w-[76px] disabled:opacity-40"
+    >
+      {pending ? <Loader2 size={13} className="mx-auto animate-spin" /> : servers === null ? t("connectors.action.retry") : t("connectors.action.connect")}
+    </button>
+  );
+}
 
-    const result = whopServer && probe[whopServer.name];
-    const whopError = whopServer && oauthError[whopServer.name];
-    const failed = error || whopError || (result && !result.ok ? result.error : null);
-    const whopWaiting = Boolean(whopServer && waiting[whopServer.name]);
-    const pending = busy !== null || signingIn !== null || whopLoading;
-    // A row of Connect apps: the same shape as every other app.
-    return <div data-app-tile="whop" className="rounded-2xl p-2.5 hover:bg-ink/5">
-      <div className="flex items-center gap-3">
-        <span className="flex size-10 shrink-0 items-center justify-center"><WhopIcon /></span>
-        <div className="min-w-0 flex-1"><div className="truncate text-[13px] font-medium leading-[18px] text-ink">Whop</div><p className="truncate text-[12px] leading-[18px] text-ink-tertiary" title={t("whop.description")}>{t("whop.description")}</p></div>
-        {whopConnected && <span className="shrink-0 text-[12px] font-medium text-success">{t("apps.connected")}</span>}
-        {(whopWaiting || whopLoading) && whopServer ? <button type="button" onClick={() => cancelWhop(whopServer.name)} className="ui-button min-w-[76px]">{t("mcp.auth.cancel")}</button> :
-          <button type="button" aria-label={t(whopConnected ? "whop.disconnect" : "whop.connect")}
-            disabled={pending || (servers !== null && !whopConnected && (Boolean(whopServer?.managedBy) || (restricted && !policy?.mcp.allowlist.length)))}
-            onClick={() => void (servers === null ? load() : whopConnected && whopServer ? signOut(whopServer) : connectWhop())}
-            className="ui-button min-w-[76px] disabled:opacity-40">
-            {pending ? <Loader2 size={13} className="mx-auto animate-spin" /> : servers === null ? t("connectors.action.retry") : t(whopConnected ? "connectors.disconnect" : "connectors.action.connect")}
-          </button>}
-      </div>
-      <div className="ml-[52px]">
+/** Under Whop's row, only while it matters: the sign-in in flight, the
+ * client id form a server without registration needs, or the error. */
+export function WhopBelow({ mcp }: { mcp: McpServers }) {
+  const { probe, oauthError, error, waiting, busy, whopServer, whopLoading, clientDraft, setClientDraft, signIn } = mcp;
+  const result = whopServer && probe[whopServer.name];
+  const whopError = whopServer && oauthError[whopServer.name];
+  const failed = error || whopError || (result && !result.ok ? result.error : null);
+  const whopWaiting = Boolean(whopServer && waiting[whopServer.name]);
+  if (!whopWaiting && !whopLoading && !failed && !(whopServer && clientDraft[whopServer.name])) return null;
+  return (
+    <div className="ml-[52px]">
       {(whopWaiting || whopLoading) && (
-        <div role="status" className="mt-3 flex items-center gap-2 rounded-lg bg-raised px-3 py-2 text-[12px] text-ink-secondary">
+        <div role="status" className="mt-2 flex items-center gap-2 rounded-lg bg-raised px-3 py-2 text-[12px] text-ink-secondary">
           <Loader2 size={13} className="shrink-0 animate-spin" /> {t(whopLoading ? "whop.loadingTools" : "mcp.oauth.waiting")}
         </div>
       )}
@@ -738,16 +747,10 @@ export function WhopTile({ mcp }: { mcp: McpServers }) {
           onSubmit={() => void signIn(whopServer)}
         />
       )}
-      {failed && !whopWaiting && !whopLoading && <p role="alert" className="mt-3 text-[12px] text-danger">{typeof failed === "string" ? failed : t(failed.key, failed.params)}</p>}
-      <details className="mt-2 text-[12px] text-ink-secondary">
-        <summary className="cursor-pointer">{t("whop.access")}</summary>
-        <p className="mt-2 leading-relaxed">{t("whop.notice")}</p>
-        <p className="mt-2 leading-relaxed">{t("whop.accessHint")}</p>
-        <div className="mt-2 flex flex-wrap gap-2">{(store.bots ?? []).filter((bot) => !bot.hidden).map((bot) => <button key={bot.id} type="button" onClick={() => { dispatch({ type: "togglePlugins", open: false }); dispatch({ type: "toggleSettings", open: true, section: "access", botId: bot.id }); }} className="rounded-lg bg-control px-2.5 py-1.5 text-ink hover:bg-raised-hover">{t("whop.botSettings", { name: bot.name })}</button>)}</div>
-      </details>
-      </div>
-    </div>;
-  }
+      {failed && !whopWaiting && !whopLoading && <p role="alert" className="mt-2 text-[12px] text-danger">{typeof failed === "string" ? failed : t(failed.key, failed.params)}</p>}
+    </div>
+  );
+}
 
 /** Paste a config block (the shape Claude Code, Cursor and Claude Desktop
  * write) to add several servers at once. */

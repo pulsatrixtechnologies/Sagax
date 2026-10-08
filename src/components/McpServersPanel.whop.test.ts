@@ -24,14 +24,19 @@ vi.mock("@/lib/mcp-sign-in", async (original) => ({
 vi.mock("@/lib/app-links", () => ({ openExternalLink: vi.fn(async () => {}) }));
 vi.mock("@/lib/mcp-servers", () => ({ updateMcpServers: vi.fn() }));
 
-import { WhopTile, useMcpServers } from "./McpServersPanel";
+import { WhopAction, WhopBelow, useMcpServers } from "./McpServersPanel";
 
 // Sagax signs in with its own MCP sign-in (server/mcp-oauth.ts, covered by
 // its own tests), so here Whop is already signed in and Connect goes
 // straight to the tools check this file is about.
 const whop = { name: "whop", type: "http", url: "https://mcp.whop.com/mcp", headerKeys: [], enabled: false, auth: "connected" };
 
-function WhopCard() { return WhopTile({ mcp: useMcpServers() }); }
+// Whop's row in Connect apps is a row like every other: its button, and
+// under it only what the sign-in in flight needs.
+function WhopCard() {
+  const mcp = useMcpServers();
+  return createElement("div", { "data-app-tile": "whop" }, createElement(WhopAction, { mcp }), createElement(WhopBelow, { mcp }));
+}
 
 let host: HTMLDivElement;
 let root: Root;
