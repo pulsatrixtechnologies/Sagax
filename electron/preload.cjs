@@ -46,7 +46,7 @@ ipcRenderer.on("release-notes:open", () => {
 // helpers here. Main enforces the same rule on the sensitive channels.
 const localOrigin = process.argv.find((arg) => arg.startsWith("--omb-local-origin="))?.slice("--omb-local-origin=".length) ?? null;
 const isLocalPage = !localOrigin || location.origin === localOrigin;
-const REMOTE_SAFE = new Set(["platform", "getCapabilities", "onCapabilitiesChanged", "applySkin", "setUnreadCount", "nudgeWindow", "permStatus", "workspaces", "takeSignInReturn", "pulsatrixSignIn", "orgJoin"]);
+const REMOTE_SAFE = new Set(["platform", "getCapabilities", "onCapabilitiesChanged", "applySkin", "setUnreadCount", "nudgeWindow", "systemIdle", "permStatus", "workspaces", "takeSignInReturn", "pulsatrixSignIn", "orgJoin"]);
 // An organization server's page drawn from THIS app's bundle
 // (electron/bundled-ui.cjs) is the desktop's own UI on that server, so it
 // also gets the desktop-UI parts that hold no local data: floating bots and
@@ -290,6 +290,10 @@ const bridge = {
    * Main accepts it only from the main window, and ignores a repeat while
    * the shake is still running. */
   nudgeWindow: () => ipcRenderer.send("desktop:nudge"),
+  /** Presence: whether the person is at this computer ("active", "idle",
+   * "locked" or "unknown") and the seconds since their last input. Safe on
+   * an organization page: a state and a number, nothing else. */
+  systemIdle: () => ipcRenderer.invoke("desktop:system-idle"),
   /** Live VNC/noVNC in a sandboxed window owned by the app window. */
   desktopViewer: {
     open: (url, title, contextId) => ipcRenderer.invoke("desktop-viewer:open", url, title, contextId),
