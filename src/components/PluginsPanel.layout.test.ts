@@ -7,6 +7,7 @@ import { ConnectAppsView } from "./plugins/ConnectAppsView";
 import { ManageView } from "./plugins/ManageView";
 import { ProvidersSection } from "./plugins/ProvidersSection";
 import { PluginDetailView } from "./plugins/PluginDetailView";
+import { SkillPage } from "./plugins/SkillPage";
 
 const items = buildPluginItems({
   cards: [
@@ -28,13 +29,20 @@ describe("Plugins panel views", () => {
   it("main view: title, connected count, search, chips and sections of two-column rows", () => {
     const html = renderToStaticMarkup(createElement(ConnectAppsView, {
       items, loading: false, search: "", onSearch: noop, filter: "all", onFilter: noop, refreshing: false, onRefresh: noop, onClose: noop,
-      onOpenManage: noop, onOpenItem: noop,
+      onOpenManage: noop, onOpenItem: noop, type: "any", onType: noop, onBotTemplates: noop, extraConnected: 1,
       renderAction: (item) => item.action ? createElement("button", { type: "button" }, item.action === "connect" ? "Connect" : "Add") : null,
     }));
     expect(html).toContain("Connect apps");
-    expect(html).toContain("2 connected");
+    // Slack, the glitcho server and one Claude connector
+    expect(html).toContain("3 connected");
     expect(html).toContain('placeholder="Search across apps and skills"');
-    for (const chip of ["All", "Productivity", "Communication", "Design", "Code", "Password managers", "More"]) expect(html).toContain(`>${chip}<`);
+    expect(html).toMatch(/data-plugins-bot-templates[^>]*>Bot templates<svg/);
+    // the reference's chips, in its order; types are not chips
+    const chips = [...html.matchAll(/aria-pressed="(?:true|false)"[^>]*>([^<]+)</g)].map((match) => match[1]);
+    expect(chips).toEqual(["All", "Password managers", "Productivity", "Communication", "Design", "Code"]);
+    expect(html).toMatch(/aria-haspopup="menu"[^>]*>More</);
+    expect(html).not.toMatch(/aria-pressed="false"[^>]*>(Connected apps|MCP servers|Skills)</);
+    expect(html).toMatch(/data-plugins-type[\s\S]*?All types/);
     // no top-level Connected apps / MCP servers tabs any more
     expect(html).not.toContain('role="tab"');
     expect(html).toContain('data-plugins-section="recommended"');
@@ -53,13 +61,38 @@ describe("Plugins panel views", () => {
     }));
     expect(html).toContain("Manage plugins and skills");
     expect(html).toContain('aria-label="Back to Connect apps"');
-    expect(html).toContain("Add manually");
-    expect(html).toContain("Paste config");
     expect(html).toMatch(/data-plugin-card="app:slack"[\s\S]*?1 connector[\s\S]*?Connected/);
     expect(html).toContain('data-plugin-card="mcp:glitcho"');
+    // Add manually, Paste config and the rest wait in a collapsed Advanced zone, after the skills
+    expect(html).toMatch(/data-plugins-skills[\s\S]*<details[^>]*data-plugins-advanced[^>]*>[\s\S]*Advanced[\s\S]*Add manually[\s\S]*Paste config/);
+    expect(html).not.toMatch(/<details[^>]*data-plugins-advanced[^>]*open/);
     expect(html).not.toContain('data-plugin-card="skill:');
     expect(html).toContain("Private skills");
     expect(html).toContain("Created locally · Writes notes");
+  });
+
+  it("manage page: a card that is not connected says so, muted", () => {
+    const offline = buildPluginItems({ servers: [{ name: "vault", enabled: true, url: "https://vault.example.net/mcp", auth: "required" }] });
+    const html = renderToStaticMarkup(createElement(ManageView, {
+      items: offline, countLabel: () => "1 connector", sourceLabel: (source) => source, onBack: noop, onClose: noop, onOpenItem: noop,
+      onAddManually: noop, onPasteConfig: noop, refreshing: false, onRefresh: noop, onNewSkill: noop,
+    }));
+    expect(html).toMatch(/data-plugin-card="mcp:vault"[\s\S]*?data-plugin-status="needs_auth" class="[^"]*text-ink-secondary[^"]*">Not connected</);
+    expect(html).toContain("New skill");
+  });
+
+  it("skill page: header, Delete Skill in red, the description, then Name, Description, Instructions and Save", () => {
+    const skill = { name: "release-notes", description: "Writes notes", source: "local-import", enabled: true, tags: [], version: null, importedAt: "2026-10-08T00:00:00Z", warnings: [], assignedBots: [] };
+    const html = renderToStaticMarkup(createElement(SkillPage, { skill, onBack: noop, onClose: noop, onSaved: noop, onDeleted: noop }));
+    expect(html).toContain("Private skill");
+    expect(html).toMatch(/data-skill-delete[^>]*class="[^"]*text-danger[^"]*"[\s\S]*?Delete Skill/);
+    expect(html).not.toContain("Publish");
+    expect(html).toContain("Writes notes");
+    for (const field of ["name", "description", "instructions"]) expect(html).toContain(`data-skill-field="${field}"`);
+    expect(html).toMatch(/type="submit"[^>]*>Save</);
+    const readOnly = renderToStaticMarkup(createElement(SkillPage, { skill, readOnlyReason: "The plugin kit brought this skill: uninstall the plugin to remove it.", onBack: noop, onClose: noop, onSaved: noop, onDeleted: noop }));
+    expect(readOnly).not.toContain("Delete Skill");
+    expect(readOnly).not.toContain('type="submit"');
   });
 
   it("detail page: header with Uninstall, accounts, collapsible tools, details", () => {

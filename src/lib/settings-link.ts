@@ -12,7 +12,6 @@ const SECTION_LABEL = {
   appearance: "settings.section.appearance",
   experimental: "settings.section.experimental",
   connections: "settings.section.connections",
-  myConnections: "settings.section.myConnections",
   decisionModel: "settings.section.decisionModel",
   engines: "settings.section.engines",
   companion: "settings.section.companion",

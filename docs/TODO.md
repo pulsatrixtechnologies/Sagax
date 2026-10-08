@@ -60,12 +60,14 @@ Plan: `docs/plans/2026-10-08-mascot-full-mode.md` (research on ChatGPT Pets and 
 
 Request: the Plugins panel works like the "Connect Apps" screens of Claude Desktop (main view, Manage plugins and skills, plugin detail). These parts of the reference screens are not done yet:
 
-- Categories taxonomy: apps are placed in Productivity, Communication, Design, Code, Password managers or Other by a word list on the client (`src/lib/plugins-model.ts`, `CATEGORY_WORDS`). Composio's catalog carries categories of its own; reading them from `/api/connectors/catalog` would place the long tail correctly.
+- Categories come from the catalog tags (Composio's toolkit categories, a marketplace plugin's category, `category` in `shared/plugin-catalog.json`), read by `categoryFromTags` in `src/lib/plugins-model.ts`; an untagged app is under Other. The tag rules are English words: a Composio category name in another language would land under Other.
 - "Recommended for you" is the reviewed plugin catalog (`shared/plugin-catalog.json`), the same for everyone. Nothing is personalised yet.
 - Several accounts per MCP server: an MCP server has one sign-in (one "default" account row). "+ Add another account" exists only for connected apps (Composio). Several OAuth profiles per server need `server/mcp-oauth.ts` to key tokens by server and profile.
 - Per-tool switches for connected apps: the detail page of a Composio app has no Tools card; its tools are chosen per bot in Access settings (`connectorTools` grants). A workspace-wide switch would sit beside the per-bot grants.
-- Uninstall a private skill from the panel: the skills library has no delete endpoint (`/api/skills-library/:name` reads and switches only).
-- Bot templates link from the Manage page (the reference has one); Sagax templates live in the bot creation flow.
+- Publish a private skill to the organization library: a desktop has no path to publish (the organization's Admin publishes packages), so the skill page has no Publish button.
+- Bot templates: the button beside the search opens the Templates library, or the new bot dialog when Templates is off. There is no template gallery filtered by the apps a template uses.
+- Two marketplace systems: Connect apps > Manage > Advanced > Marketplaces installs a plugin's MCP servers and skills for every bot, while a bot's Library > Plugins (`server/bot-plugins.ts`, member scope) adds its own marketplaces and installs Claude Code plugins (agents, commands) on that one bot. Folding the per-bot one into Connect apps needs the per-bot store to read the panel's marketplaces.
+- Admin oversight of a person's connections (person panel, `PersonConnectionsSection`) and the organization's allowed marketplaces (Settings > Organization) stay where they are: they govern other people, they do not add or set up anyone's own plugins.
 - Marketplace tokens for private repositories: a marketplace clones with this computer's git credentials, or the acting person's GitHub connection for github.com. No per-marketplace token is stored (a token field per marketplace, kept like MCP header values, would cover GitLab and other hosts).
 - Agents and commands of a marketplace plugin: "Add" in the Plugins panel installs its MCP servers and skills for every bot; its `agents/` and `commands/` load only through a bot's own Library > Plugins (`server/bot-plugins.ts`).
 - Updating an installed marketplace plugin: refreshing a marketplace offers its new plugins; an installed plugin is updated by uninstalling and adding it again.

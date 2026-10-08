@@ -19,6 +19,8 @@ export interface ToolkitCard {
   logo: string | null;
   noAuth?: boolean;
   domain: string | null;
+  /** Composio's category names, for the Connect apps chips */
+  categories?: string[];
 }
 
 export interface ConnectorStatus {

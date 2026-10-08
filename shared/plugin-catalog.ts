@@ -18,6 +18,8 @@ export const pluginCatalogEntrySchema = z.object({
   auth: z.enum(PLUGIN_AUTH),
   icon: z.string().regex(/^[a-z0-9-]{1,40}$/),
   domain: z.string().regex(/^[a-z0-9.-]+\.[a-z]{2,}$/),
+  /** The Connect apps chip it sits under (src/lib/plugins-model.ts). */
+  category: z.enum(["passwords", "productivity", "communication", "design", "code", "data", "sales", "finance", "marketing", "research", "support"]).optional(),
   docsUrl: z.string().url().refine((value) => value.startsWith("https://"), { error: "docsUrl must be https" }),
   /** For a server without dynamic client registration. */
   clientId: z.string().min(1).max(512).optional(),

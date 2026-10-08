@@ -416,3 +416,77 @@ export function removeLibrarySkillFrom(
   skillLibraryEvents.emit("invalidate", { kind: "remove", name });
   return { removed: true };
 }
+
+/** A library skill the Plugins panel may not edit or delete: one an
+ * organization package put there (its Admin publishes it; the organization
+ * library withdraws it). */
+export function librarySkillManagedByOrganization(name: string, root: string = skillsLibraryRoot()): boolean {
+  return Boolean(readSkillLibraryIndex(root)[name]?.package);
+}
+
+/** Replace a library skill's SKILL.md (Plugins > Manage > a skill > Save),
+ * renaming it when the text names another skill. The review state stays:
+ * the person who edits it is the one who reviews it. A rename moves the
+ * folder; the caller moves the bots' assignments. */
+export function updateLibrarySkill(
+  name: string,
+  input: { text: string; warnings: string[] },
+  root: string = skillsLibraryRoot(),
+): { skill: LibrarySkillListing; renamedFrom?: string } | { error: string; status: number } {
+  if (!isSkillName(name)) return { error: "invalid skill name", status: 400 };
+  if (Buffer.byteLength(input.text, "utf8") > SKILL_FILE_MAX_BYTES) {
+    return { error: `SKILL.md is larger than ${SKILL_FILE_MAX_BYTES / 1024}KB`, status: 413 };
+  }
+  const parsed = parseSkillMd(input.text);
+  if ("error" in parsed) return { error: parsed.error, status: 400 };
+  const indexRead = readSkillLibraryIndexState(root);
+  if ("error" in indexRead) return { error: indexRead.error, status: 500 };
+  const index = indexRead.index;
+  const entry = index[name];
+  if (!entry) return { error: `no library skill named "${name}"`, status: 404 };
+  if (entry.package) return { error: "this skill comes from your organization's library and cannot be changed here", status: 409 };
+  const renamed = parsed.name !== name;
+  if (renamed && index[parsed.name]) return { error: `a skill named "${parsed.name}" is already in the library: choose a different name`, status: 409 };
+  const next: SkillLibraryEntry = {
+    ...entry,
+    name: parsed.name,
+    description: parsed.description,
+    sha256: sha256Hex(input.text),
+    ...(parsed.license ? { license: parsed.license } : {}),
+    ...(parsed.compatibility ? { compatibility: parsed.compatibility } : {}),
+    ...(parsed.tags?.length ? { tags: parsed.tags } : {}),
+    warnings: input.warnings,
+  };
+  if (!parsed.license) delete next.license;
+  if (!parsed.compatibility) delete next.compatibility;
+  if (!parsed.tags?.length) delete next.tags;
+  // Bytes first, index second (the index is the commit point).
+  mkdirSync(librarySkillDirectory(root, parsed.name), { recursive: true, mode: 0o700 });
+  writeFileAtomic(join(librarySkillDirectory(root, parsed.name), "SKILL.md"), input.text, { mode: 0o600 });
+  if (renamed) delete index[name];
+  index[parsed.name] = next;
+  writeSkillLibraryIndex(root, index);
+  if (renamed) rmSync(librarySkillDirectory(root, name), { recursive: true, force: true });
+  skillLibraryEvents.emit("invalidate", { kind: "update", name: parsed.name, ...(renamed ? { previous: name } : {}) });
+  return { skill: librarySkillListing(root, next), ...(renamed ? { renamedFrom: name } : {}) };
+}
+
+/** Delete a library skill (Plugins > Manage > a skill > Delete Skill). One
+ * an organization package put there is refused; the caller refuses one a
+ * marketplace plugin still brings and unassigns it from bots. */
+export function deleteLibrarySkill(
+  name: string,
+  root: string = skillsLibraryRoot(),
+): { removed: true; source: string } | { error: string; status: number } {
+  if (!isSkillName(name)) return { error: "invalid skill name", status: 400 };
+  const indexRead = readSkillLibraryIndexState(root);
+  if ("error" in indexRead) return { error: indexRead.error, status: 500 };
+  const entry = indexRead.index[name];
+  if (!entry) return { error: `no library skill named "${name}"`, status: 404 };
+  if (entry.package) return { error: "this skill comes from your organization's library and cannot be deleted here", status: 409 };
+  delete indexRead.index[name];
+  writeSkillLibraryIndex(root, indexRead.index);
+  rmSync(librarySkillDirectory(root, name), { recursive: true, force: true });
+  skillLibraryEvents.emit("invalidate", { kind: "remove", name });
+  return { removed: true, source: entry.source };
+}

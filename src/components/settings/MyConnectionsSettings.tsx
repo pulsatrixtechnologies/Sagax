@@ -1,4 +1,5 @@
-// Settings > Mes connexions (organization server only): the person's own
+// Connect apps > Manage > Your connections (organization server only; it
+// was Settings > Mes connexions): the person's own
 // GitHub account ("Connecter GitHub": a code to type at GitHub, or a token)
 // and their own MCP servers ("Ajouter un serveur MCP": an address with no
 // sign-in, a token, OAuth through this server, or their GitHub account; or

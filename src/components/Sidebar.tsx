@@ -36,6 +36,7 @@ import { viewerMayDeleteGroup, viewerOwnsGroup } from "@/lib/group-owner";
 import { viewerActorId } from "@/lib/viewer";
 import { showBotArchive, showBotDelete, showBotRename, showServerSectionMove } from "@/lib/bot-capabilities";
 import { connectedAppsEnabled, llmThreadTitlesEnabled, templatesEnabled } from "@/lib/feature-flags";
+import { OPEN_TEMPLATES_EVENT } from "@/lib/open-templates";
 import { useAdvancedMode } from "@/lib/interface-mode";
 
 import { BotAvatar, InitialsAvatar } from "./Avatar";
@@ -2300,6 +2301,13 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
     return () => document.removeEventListener("keydown", closeOnEscape);
   }, [open, onClose, confirm, deletingRoom]);
 
+
+  // Connect apps > Bot templates
+  useEffect(() => {
+    const open = () => setTeamLibraryOpen(true);
+    window.addEventListener(OPEN_TEMPLATES_EVENT, open);
+    return () => window.removeEventListener(OPEN_TEMPLATES_EVENT, open);
+  }, []);
 
   useEffect(() => {
     if (remoteClient) return;

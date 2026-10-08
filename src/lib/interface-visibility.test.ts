@@ -7,7 +7,7 @@ import {
 
 describe("simple visibility", () => {
   it("hides technical settings sections and keeps the ones a person needs", () => {
-    for (const id of ["experimental", "connections", "myConnections", "decisionModel", "engines", "computer", "usage", "mail", "activity", "backups", "workspaces", "people"] as const) {
+    for (const id of ["experimental", "connections", "decisionModel", "engines", "computer", "usage", "mail", "activity", "backups", "workspaces", "people"] as const) {
       expect(simpleHidesSettingsSection(id), id).toBe(true);
     }
     for (const id of ["general", "appearance", "achievements", "organization", "companion"] as const) {

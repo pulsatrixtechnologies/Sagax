@@ -140,27 +140,32 @@ describe("AccessSection always-allowed list", () => {
   it("hides the bot's Connected apps switch while the experimental feature is off", () => {
     const off = render(makeBot());
     expect(off).not.toContain('aria-label="Allow this bot to use connected apps"');
-    expect(off).not.toContain("Connect an app");
+    expect(off).not.toContain('data-manage-in-connect-apps="apps"');
     fixture.config = { features: { connectedApps: false } };
     expect(render(makeBot())).not.toContain('aria-label="Allow this bot to use connected apps"');
     fixture.config = { features: { connectedApps: true }, composio: { configured: true } };
     const on = render(makeBot());
     expect(on).toContain('aria-label="Allow this bot to use connected apps"');
-    expect(on).toContain("Connect an app");
+    // servers and apps are set up in Connect apps only: here, a link there
+    expect(on).toContain('data-manage-in-connect-apps="apps"');
+    expect(on).toContain('data-manage-in-connect-apps="mcp"');
+    expect(on).not.toContain("Connect an app");
+    expect(on).not.toContain("Add an MCP server");
   });
 
-  it("opens the established app connection flow without authorizing a second way", () => {
+  it("Manage in Connect apps opens the panel without authorizing a second way", () => {
     fixture.config = { features: { connectedApps: true }, composio: { configured: true } };
     let tree!: ReturnType<typeof AccessSection>;
     function Capture() { tree = AccessSection({ bot: makeBot(), derived: makeDerived() }); return tree; }
     renderToStaticMarkup(createElement(StoreProvider, null, createElement(Capture)));
-    type Node = ReactElement<{ children?: ReactNode; onClick?: () => void }>;
+    type Node = ReactElement<{ children?: ReactNode; onClick?: () => void; surface?: string }>;
     const nodes = (value: ReactNode): Node[] => {
       if (!isValidElement(value)) return [];
       const node = value as Node;
       return [node, ...Children.toArray(node.props.children).flatMap(nodes)];
     };
-    const connect = nodes(tree).find((node) => node.type === "button" && renderToStaticMarkup(node).includes("Connect an app"))!;
+    const link = nodes(tree).find((node) => node.props.surface === "apps")!;
+    const connect = (link.type as (props: unknown) => Node)(link.props);
     connect.props.onClick!();
     expect(fixture.dispatch.mock.calls).toEqual([
       [{ type: "toggleSettings", open: false }],

@@ -7,7 +7,6 @@ import type { AppSettingsSection, BotSettingsSection } from "@/state/store";
 const HIDDEN_SETTINGS: ReadonlySet<AppSettingsSection> = new Set([
   "experimental",
   "connections",
-  "myConnections",
   "decisionModel",
   "engines",
   "computer",

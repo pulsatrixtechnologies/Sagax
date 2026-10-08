@@ -6,10 +6,14 @@ import { ArrowLeft, BookOpen, Puzzle, ServerCog, X } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
 import type { LocaleKey } from "@/locales";
-import type { PluginItem, PluginStatus } from "@/lib/plugins-model";
+import { WHOP_KEY, type PluginItem, type PluginStatus } from "@/lib/plugins-model";
+import { WhopIcon } from "../WhopIcon";
 import { ServiceIcon } from "./connected-apps";
 
-export function PluginIcon({ item, className = "size-10" }: { item: Pick<PluginItem, "kind" | "name" | "logo" | "domain">; className?: string }) {
+export function PluginIcon({ item, className = "size-10" }: { item: Pick<PluginItem, "kind" | "name" | "logo" | "domain"> & { key?: string }; className?: string }) {
+  if (item.key === WHOP_KEY) {
+    return <WhopIcon className={className} />;
+  }
   if (item.kind === "skill") {
     return (
       <div className={cn("flex shrink-0 items-center justify-center rounded-xl bg-raised text-ink-secondary", className)}>
@@ -31,7 +35,7 @@ export function PluginIcon({ item, className = "size-10" }: { item: Pick<PluginI
       </div>
     );
   }
-  return <ServiceIcon card={{ logo: item.logo ?? null, domain: item.domain ?? null, label: item.name }} className={cn("shrink-0", className)} />;
+  return <ServiceIcon key={item.logo ?? item.domain ?? ""} card={{ logo: item.logo ?? null, domain: item.domain ?? null, label: item.name }} className={cn("shrink-0", className)} />;
 }
 
 const STATUS_KEY: Record<PluginStatus, LocaleKey> = {

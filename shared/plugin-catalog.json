@@ -10,6 +10,7 @@
       "auth": "oauth",
       "icon": "notion",
       "domain": "notion.com",
+      "category": "productivity",
       "docsUrl": "https://developers.notion.com/docs/mcp"
     },
     {
@@ -21,6 +22,7 @@
       "auth": "oauth",
       "icon": "linear",
       "domain": "linear.app",
+      "category": "productivity",
       "docsUrl": "https://linear.app/docs/mcp"
     },
     {
@@ -32,6 +34,7 @@
       "auth": "oauth",
       "icon": "atlassian",
       "domain": "atlassian.com",
+      "category": "productivity",
       "docsUrl": "https://support.atlassian.com/atlassian-rovo-mcp-server/"
     },
     {
@@ -43,6 +46,7 @@
       "auth": "oauth",
       "icon": "asana",
       "domain": "asana.com",
+      "category": "productivity",
       "docsUrl": "https://developers.asana.com/docs/using-asanas-mcp-server"
     },
     {
@@ -54,6 +58,7 @@
       "auth": "oauth",
       "icon": "sentry",
       "domain": "sentry.io",
+      "category": "code",
       "docsUrl": "https://docs.sentry.io/product/sentry-mcp/"
     },
     {
@@ -65,6 +70,7 @@
       "auth": "oauth",
       "icon": "stripe",
       "domain": "stripe.com",
+      "category": "finance",
       "docsUrl": "https://docs.stripe.com/mcp"
     },
     {
@@ -76,6 +82,7 @@
       "auth": "oauth",
       "icon": "vercel",
       "domain": "vercel.com",
+      "category": "code",
       "docsUrl": "https://vercel.com/docs/mcp/vercel-mcp"
     },
     {
@@ -87,6 +94,7 @@
       "auth": "oauth",
       "icon": "figma",
       "domain": "figma.com",
+      "category": "design",
       "docsUrl": "https://help.figma.com/hc/en-us/articles/32132100833559"
     },
     {
@@ -98,6 +106,7 @@
       "auth": "oauth",
       "icon": "canva",
       "domain": "canva.com",
+      "category": "design",
       "docsUrl": "https://www.canva.dev/docs/connect/canva-mcp-server-setup/"
     },
     {
@@ -109,6 +118,7 @@
       "auth": "oauth",
       "icon": "higgsfield",
       "domain": "higgsfield.ai",
+      "category": "design",
       "docsUrl": "https://higgsfield.ai"
     },
     {
@@ -120,6 +130,7 @@
       "auth": "oauth",
       "icon": "supabase",
       "domain": "supabase.com",
+      "category": "code",
       "docsUrl": "https://supabase.com/docs/guides/getting-started/mcp"
     },
     {
@@ -131,6 +142,7 @@
       "auth": "oauth",
       "icon": "neon",
       "domain": "neon.tech",
+      "category": "code",
       "docsUrl": "https://neon.com/docs/ai/neon-mcp-server"
     },
     {
@@ -142,6 +154,7 @@
       "auth": "oauth",
       "icon": "paypal",
       "domain": "paypal.com",
+      "category": "finance",
       "docsUrl": "https://developer.paypal.com/tools/mcp-server/"
     },
     {
@@ -153,6 +166,7 @@
       "auth": "oauth",
       "icon": "intercom",
       "domain": "intercom.com",
+      "category": "support",
       "docsUrl": "https://developers.intercom.com/docs/guides/mcp"
     },
     {
@@ -164,6 +178,7 @@
       "auth": "none",
       "icon": "huggingface",
       "domain": "huggingface.co",
+      "category": "code",
       "docsUrl": "https://huggingface.co/docs/hub/agents-mcp"
     },
     {
@@ -175,6 +190,7 @@
       "auth": "none",
       "icon": "context7",
       "domain": "context7.com",
+      "category": "code",
       "docsUrl": "https://github.com/upstash/context7"
     },
     {
@@ -186,6 +202,7 @@
       "auth": "none",
       "icon": "deepwiki",
       "domain": "deepwiki.com",
+      "category": "code",
       "docsUrl": "https://docs.devin.ai/work-with-devin/deepwiki-mcp"
     },
     {
@@ -197,6 +214,7 @@
       "auth": "none",
       "icon": "cloudflare",
       "domain": "cloudflare.com",
+      "category": "code",
       "docsUrl": "https://developers.cloudflare.com/agents/model-context-protocol/mcp-servers-for-cloudflare/"
     }
   ]

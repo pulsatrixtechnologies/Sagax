@@ -39,10 +39,6 @@ export const ALLOWED = [
     why: "Composio's app catalog: a person may connect their own PostHog account",
     test: (match, around) => /^posthog$/i.test(match) && /slug: "posthog", label: "PostHog", blurb: "Analytics, feature flags, experiments", domain: "posthog\.com"/.test(around),
   },
-  {
-    why: "Connect apps category keywords (src/lib/plugins-model.ts): the word sorts a person's own PostHog app under Code, no host",
-    test: (match, around) => /^posthog$/i.test(match) && /jira[".`, ]+posthog[".`, ]+datadog/i.test(around) && /pagerduty/i.test(around),
-  },
 ];
 
 const SKIP_FILE = /(?:\.test\.|\.node-test\.|\.electron\.test\.|\.d\.mts$|\.map$|\.png$|\.jpe?g$|\.webp$|\.gif$|\.ico$|\.icns$|\.woff2?$|\.ttf$|\.otf$|\.mp3$|\.wav$|\.glb$|\.zip$|\.wasm$)/i;

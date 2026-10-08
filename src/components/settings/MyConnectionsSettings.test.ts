@@ -1,5 +1,6 @@
-// Settings > Mes connexions (organization server) and the bot panel's
-// Library > Plugins: what each state draws, in English and in French.
+// Connect apps > Manage > Your connections (organization server) and the
+// bot panel's Library > Plugins: what each state draws, in English and in
+// French.
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it } from "vitest";
@@ -8,7 +9,7 @@ import { setLocale } from "@/lib/i18n";
 import { parseArgsLine, parseEnvLines, suggestServerName, type BotPluginsView, type MyConnections } from "@/lib/my-connections";
 import { BotPluginsCard } from "../bot-settings/BotPluginsCard";
 import { LIBRARY_VIEWS } from "../bot-settings/LibraryTab";
-import { organizationHidesSection } from "../SettingsModal";
+import { SECTIONS, organizationHidesSection } from "../SettingsModal";
 import { MyConnectionsSettings } from "./MyConnectionsSettings";
 
 afterEach(() => setLocale("en"));
@@ -16,10 +17,10 @@ afterEach(() => setLocale("en"));
 const base: MyConnections = { github: { state: "none", deviceFlow: true }, servers: [], sandbox: true };
 
 describe("Mes connexions", () => {
-  it("is a section of an organization server only", () => {
-    expect(organizationHidesSection("myConnections", false)).toBe(true);
-    expect(organizationHidesSection("myConnections", true)).toBe(false);
+  it("is no Settings section any more: it lives in Connect apps", () => {
+    expect(SECTIONS.map((section) => section.id)).not.toContain("myConnections");
     expect(organizationHidesSection("mail", true)).toBe(true);
+    expect(organizationHidesSection("privacy", false)).toBe(true);
   });
 
   it("offers Connect GitHub and a token, and Add an MCP server", () => {
