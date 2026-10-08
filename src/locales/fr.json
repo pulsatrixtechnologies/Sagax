@@ -1849,6 +1849,8 @@
   "settings.inspectorButton.subtitle": "Afficher le bouton Inspecteur (journal d'exécution, événements, brut) dans l'en-tête du chat.",
   "settings.inspectorButton.show": "Afficher le bouton Inspecteur",
   "settings.notificationSounds.short": "Jouer un son quand un agent termine ou a besoin de vous.",
+  "settings.nudgeSound.title": "Son de la secousse",
+  "settings.nudgeSound.short": "Jouer un son sur cet ordinateur quand quelqu'un te secoue.",
   "settings.toolCalls.short": "Afficher chaque outil utilisé par un bot dans la conversation.",
   "settings.diagnostics.short": "Versions et journaux caviardés, à transmettre au soutien technique.",
   "attach.zoomIn": "Zoom avant",

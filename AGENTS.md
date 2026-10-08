@@ -268,7 +268,16 @@ out are skipped. Someone who cannot post is refused. The room shares one
 5 minute clock (`group:<id>`), separate from a direct nudge. A refusal
 writes nothing. The button is last in the composer when the room names
 someone else (`src/lib/group-nudge.ts`). A bot uses `nudgePerson` or
-`nudgeGroup`, both rewritten to that one POST. Tests:
+`nudgeGroup`, both rewritten to that one POST. A nudge RECEIVED (the `nudge`
+frame in `src/state/store.tsx`) shakes the window and plays
+`public/nudge.mp3` once (`onNudgeReceived` in `src/lib/desktop-nudge.ts`,
+`playNudgeSound` in `src/lib/nudge-sound.ts`, volume 0.6, a refused play is
+logged once and ignored). The sender's own window shakes without the sound,
+and the server skips the sender, so a group member hears it once. Settings >
+Appearance > "Nudge sound" (`omb-nudge-sound`, per computer, on by default,
+`src/lib/notification-preferences.ts`). The file is served like
+`app-icon.svg`: vite copies `public/` to `dist/`, which the packaged app
+carries as `resources/ui` (outside the asar) and serves from there. Tests: `src/lib/nudge-sound.test.ts`,
 `server/nudge.test.ts`, `server/routes/nudges.test.ts`,
 `src/components/GroupView.test.ts`. The server image must be installed
 before an organization server accepts `{ groupId }`.

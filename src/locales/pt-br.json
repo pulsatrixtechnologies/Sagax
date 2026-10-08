@@ -1918,5 +1918,7 @@
   "approvalMode.simple.decideHint": "O bot age e consulta quando hesita.",
   "approvalMode.simple.custom": "Um nível personalizado está salvo. Ele fica até você escolher um destes.",
   "approvalMode.simple.customChip": "Nível personalizado",
-  "approvalMode.simple.unset": "Nenhum nível escolhido. O bot usa este padrão até você escolher um."
+  "approvalMode.simple.unset": "Nenhum nível escolhido. O bot usa este padrão até você escolher um.",
+  "settings.nudgeSound.title": "Som do nudge",
+  "settings.nudgeSound.short": "Tocar um som neste computador quando alguém enviar um nudge para você."
 }

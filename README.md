@@ -165,8 +165,10 @@ effects and moves.
   by its owner.
 - **Nudge.** In a conversation with a person, or in a group, the button at
   the right of the composer sends a nudge. A bot conversation does not show
-  it. The windows of the people involved come forward and shake, and a line
-  in the thread says the nudge was sent. While the wait runs, the button
+  it. The windows of the people involved come forward and shake, with the
+  classic "wizz" sound on the receiving computer (Settings > Appearance >
+  Nudge sound turns it off), and a line in the thread says the nudge was
+  sent. While the wait runs, the button
   stays gray and the explanation is in the tooltip.
 - **Engine slash commands.** Type `/` to list Sagax's own commands and the
   engine's (Claude Code commands and skills, Codex skills), per bot, even in a

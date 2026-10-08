@@ -3732,6 +3732,8 @@
       "approvalMode.simple.custom": "4eb2e86fd814cf021e68d1424af8bc8aae4417f8a2d8a6a37cef2c7775e19ff1"
     },
     "fr": {
+      "settings.nudgeSound.title": "ddf741235283c988e4e09e15d93cf01a50e522d59cb98d3fb8b5415ffd0d9d93",
+      "settings.nudgeSound.short": "6ea5a88c1555ccc15b3de749f656b8a74396e906aa95a084a2460ae7a2d518d9",
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",
       "noEngines.intro": "54c4903681f6ed529d0dfbbbf8ce96b0449f39a88e5cd8ebe63a20218ac224a6",
       "engines.cloud": "b977b950c1ae31e5aeb9ef778cc20a66fc034eb81e738e0206104b677962c465",
@@ -11106,6 +11108,8 @@
       "approvalMode.simple.custom": "4eb2e86fd814cf021e68d1424af8bc8aae4417f8a2d8a6a37cef2c7775e19ff1"
     },
     "pt-br": {
+      "settings.nudgeSound.title": "ddf741235283c988e4e09e15d93cf01a50e522d59cb98d3fb8b5415ffd0d9d93",
+      "settings.nudgeSound.short": "6ea5a88c1555ccc15b3de749f656b8a74396e906aa95a084a2460ae7a2d518d9",
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",
       "noEngines.intro": "54c4903681f6ed529d0dfbbbf8ce96b0449f39a88e5cd8ebe63a20218ac224a6",
       "engines.cloud": "b977b950c1ae31e5aeb9ef778cc20a66fc034eb81e738e0206104b677962c465",

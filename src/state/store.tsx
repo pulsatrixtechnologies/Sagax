@@ -26,7 +26,7 @@ import type { BotAvatarCrop } from "../../shared/bot-avatar";
 import type { BotPublicProfile } from "../../shared/bot-public-profile";
 import { approvalModeFor, type ApprovalMode } from "../../shared/approval-mode";
 import { uiCommandToAction } from "../../shared/bot-act";
-import { onDesktopNudge } from "@/lib/desktop-nudge";
+import { onDesktopNudge, onNudgeReceived } from "@/lib/desktop-nudge";
 import type { MascotBodyId } from "../../shared/mascot-bodies";
 import type { MascotSkinId } from "../../shared/mascot-skins";
 import type { QuestionRequestCardData } from "../../shared/ask-question";
@@ -4358,7 +4358,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           break;
         }
         case "nudge":
-          onDesktopNudge();
+          onNudgeReceived();
           break;
         // a key changed and the fleet hot-reloaded — refresh the picker so
         // newly available providers un-dim immediately

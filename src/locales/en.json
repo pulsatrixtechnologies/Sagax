@@ -447,6 +447,8 @@
   "settings.routinesInConversation.short": "Post routine work in the chat instead of a hidden thread.",
   "settings.threadDisplay.short": "Show thread lists and controls.",
   "settings.notificationSounds.short": "Play a sound when an agent finishes or needs you.",
+  "settings.nudgeSound.title": "Nudge sound",
+  "settings.nudgeSound.short": "Play a sound on this computer when someone nudges you.",
   "settings.toolCalls.short": "Show each tool a bot runs in the transcript.",
   "settings.diagnostics.short": "Versions and redacted logs, to share with support.",
   "settings.skin.title": "Skin",
