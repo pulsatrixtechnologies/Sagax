@@ -1145,6 +1145,44 @@ person). Keep these rules, each covered by `server/parallel-tasks.test.ts`,
   request and report, and a running task takes a message (steer). Claude's
   own sub-agents cannot be steered or stopped apart from their turn.
 
+## Context compaction is Sagax's, and invisible (2026-10-08)
+
+- Sagax folds a long thread itself, between turns, before the engine would
+  compact its own session: `compactConversation` in `server/index.ts`, with
+  the budget in `server/context-budget.ts` (80% of the window, and 10% under
+  `nativeCompactionPoint`: Claude's `--autocompact` window, Codex 90%,
+  Gemini CLI 50%, Qwen 83.5%, pi window less 16384, other ACP agents 80%).
+  The engines that are handed the stored transcript every turn (the OpenAI
+  chat drivers) are folded as soon as the replay (`context.rebuildBytes`)
+  would drop a message and the kept turns fit beside the summary.
+- The fold keeps the two latest exchanges and the incoming request word for
+  word and summarizes the rest with the engine's tool-free `generateText`
+  (bounded, with a deterministic fallback). The summary is the thread's
+  memory of its older turns: `TaskRecord.contextSummaries` (server-private,
+  never on the wire), anchored to the last context message it saw, so an
+  edit further back (another branch) never inherits it. No chat row, no
+  unread, no toast. The next turn starts a new engine session with the
+  system prompt rebuilt as on every turn (memory, recall, roster), the
+  summary and the latest turns, under `COMPACTED_PREAMBLE`
+  (`server/turn-context.ts`): a continuation, never "the user switched this
+  bot over to you".
+- `/compact` (the person's own) still writes a visible `kind: "compaction"`
+  row; older threads may hold harness rows from before, which the web chat
+  no longer draws (`CompactionChip` returns nothing for `by: "harness"`).
+- An engine that still compacts on its own (a single very long turn) is
+  hidden too: Claude's PreCompact and SessionStart(compact) hooks only log,
+  and SessionStart hands back the latest digests plus Sagax's summary; the
+  Claude driver re-delivers the volatile prompt half after a
+  `compact_boundary`; Codex `contextCompaction` items and pi compaction
+  events never reach the chat; ACP quiet notices never say "compressing".
+  ACP agents now report `contextTokens`/`contextWindow` from `usage_update`.
+- Debugging only (never in the app): `context.autoCompact: false` turns
+  Sagax's fold off for every bot, `context.autoCompactOffBots: [botId]` for
+  one. Server log lines start with `[context]`.
+- Tests: `server/context-compaction.e2e.test.ts`,
+  `server/context-compaction-replay.e2e.test.ts`, the compaction block of
+  `server/hooks.e2e.test.ts` (mid tool call), `server/context-budget.test.ts`.
+
 ## Person panel and hidden sidebar entries
 
 A person of the organization opens in the right panel like a bot
