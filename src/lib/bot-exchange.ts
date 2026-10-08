@@ -75,16 +75,25 @@ function blocksExchange(message: Message): boolean {
   return false;
 }
 
-/** Finished tool, screen, or digest noise that may sit inside a run. */
+/** A tool step, a screen frame or a digest: work, not words. It never
+ * names or starts a run, so a tool call is never drawn as a line of the
+ * exchange. */
+function quietRow(message: Message): boolean {
+  return message.kind === "activity" || message.kind === "screen" || message.kind === "digest";
+}
+
+/** Tool, screen, or digest noise that may sit inside a run. A step still
+ * running, or one a stop left without an outcome, is absorbed too; a failed
+ * step stays inline, where the chat decides whether to show it. */
 function absorbable(message: Message): boolean {
   if (blocksExchange(message) || message.parallelTask) return false;
   if (message.kind === "screen" || message.kind === "digest") return true;
-  return message.kind === "activity" && message.tool?.ok === true;
+  return message.kind === "activity" && message.tool?.ok !== false;
 }
 
 /** Who the line is for, when the line itself is bot-to-bot. No request walk. */
 function audienceParty(message: Message, options: CollapseOptions): ExchangeParty | null {
-  if (blocksExchange(message)) return null;
+  if (blocksExchange(message) || quietRow(message)) return null;
   const peer = peerLine(message);
   if (peer) return { id: peer.botId, name: peer.name };
   const extra = wire(message);
@@ -103,7 +112,7 @@ function audienceParty(message: Message, options: CollapseOptions): ExchangePart
 }
 
 function directParty(message: Message, options: CollapseOptions, byId: ReadonlyMap<string, Message>): ExchangeParty | null {
-  if (blocksExchange(message)) return null;
+  if (blocksExchange(message) || quietRow(message)) return null;
   const direct = audienceParty(message, options);
   if (direct) return direct;
   // This bot's own line joins only when its stored request is bot-to-bot.
@@ -229,12 +238,21 @@ export function visibleEdge(item:
   return { first: item.messages[0]!, last: item.messages.at(-1)! };
 }
 
-/** Words to show inside the sheet. A peer line drops its provenance note. */
+/** Words to show inside the sheet. A peer line drops its provenance note.
+ * A tool step has no words: its name is never a line of the exchange. */
 export function exchangeBody(message: Message): string {
   const peer = peerLine(message);
   if (peer) return peer.body;
-  if (message.text) return message.text;
-  return message.tool?.name ?? "";
+  if (quietRow(message)) return "";
+  return message.text ?? "";
+}
+
+/** How the open sheet draws one stored row: a line (speaker, bubble), a
+ * tool chip (only with Settings > Tool calls on, like the chat itself), or
+ * nothing (screen frames, digests, and tool steps with Tool calls off). */
+export function exchangeSheetRow(message: Message, showToolCalls: boolean): "line" | "tool" | null {
+  if (message.kind === "activity") return showToolCalls && message.tool ? "tool" : null;
+  return quietRow(message) ? null : "line";
 }
 
 /** Who the sheet credits: the peer, else `from`, else the viewer's bot. */

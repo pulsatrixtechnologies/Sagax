@@ -357,8 +357,8 @@ export function LiveCallEngine({ bot }: { bot: Bot }) {
   return null;
 }
 
-/** The call stage for this bot, over the call the engine runs. */
-export function LiveCall({ bot, collapsed, onCollapse, onExpand }: { bot: Bot; collapsed?: boolean; onCollapse?: () => void; onExpand?: () => void }) {
+/** The app's call pill for this bot, over the call the engine runs. */
+export function LiveCall({ bot }: { bot: Bot }) {
   const live = useLiveCall();
   const data = live?.botId === bot.id ? live : null;
   const call = data?.call ?? null;
@@ -413,9 +413,6 @@ export function LiveCall({ bot, collapsed, onCollapse, onExpand }: { bot: Bot; c
       startedAt={data.startedAt}
       onRetry={data.retry}
       onEnd={() => endCall(bot.id)}
-      collapsed={collapsed}
-      onCollapse={onCollapse}
-      onExpand={onExpand}
     />
   );
 }

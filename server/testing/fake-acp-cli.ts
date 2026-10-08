@@ -1244,9 +1244,13 @@ function handle(msg: any) {
       break;
     }
     case "session/cancel":
-      // the interrupted prompt resolves as cancelled
+      // the interrupted prompt resolves as cancelled. FAKE_ACP_CANCEL_REPLY
+      // = "error" rejects it instead, any other value is the stopReason the
+      // agent answers with (agents differ on how a cancel settles).
       if (hangingPromptId !== null) {
-        result(hangingPromptId, { stopReason: "cancelled", _meta: {} });
+        const cancelReply = process.env.FAKE_ACP_CANCEL_REPLY;
+        if (cancelReply === "error") out({ jsonrpc: "2.0", id: hangingPromptId, error: { code: -32800, message: "Request cancelled" } });
+        else result(hangingPromptId, { stopReason: cancelReply || "cancelled", _meta: {} });
         if (hangKeepAlive) clearInterval(hangKeepAlive);
         hangingPromptId = null;
         hangKeepAlive = null;
