@@ -2734,7 +2734,6 @@
   "orgComputer.localVmStatus": "État de la VM locale",
   "orgComputer.localVmStart": "Démarrer la VM locale",
   "teamShare.part.leader": "Robot principal",
-  "botSettings.proposal.chief": "Le robot principal peut le proposer ; la proposition arrive comme une carte à confirmer.",
   "primaryBot.badge": "Robot principal",
   "sidebar.bot.makePrimary": "Définir comme robot principal",
   "sidebar.bot.replacePrimary": "Remplacer par un autre robot",

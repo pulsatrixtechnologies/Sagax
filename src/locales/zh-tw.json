@@ -3343,7 +3343,6 @@
   "activity.actor.loopback": "這台電腦",
   "activity.actor.worker": "本機服務",
   "activity.actor.cli": "命令列",
-  "botSettings.proposal.chief": "可由幕僚長提議，會以卡片形式送來讓你確認。",
   "botSettings.proposal.owner": "僅限擁有者，不會以提議形式送來。",
   "botSettings.visibility.title": "誰可以看到",
   "botSettings.visibility.subtitle": "選擇誰可以看到這個機器人、它的對話、它所在的聊天室與它的檔案。管理員一律可以看到。",
