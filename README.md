@@ -204,6 +204,9 @@ effects and moves.
 - **Admin controls.** Admins see every bot, force-stop or delete any of them,
   and read the organization's activity log. Profiles, names and avatars come
   from Perspicax.
+- **People's labels.** Give yourself a label such as "CTO" or "Dispatch" and it
+  shows beside your name in everyone's sidebar, like a bot's label; an admin
+  or your team manager can set it for you.
 
 <table>
 <tr>

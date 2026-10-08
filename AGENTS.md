@@ -1163,6 +1163,44 @@ the bot-wide action. Tests: `src/lib/sidebar-hidden*.test.ts`,
 `PersonConnectionsSection.test.ts`,
 `src/state/person-panel.reducer.test.ts`.
 
+## People's labels (2026-10-08)
+
+A person can carry one custom label ("CTO", "Dispatch"), shown the way a
+bot's label is. Keep these rules, each covered by
+`shared/person-label.test.ts`, `server/routes/person-labels.test.ts`,
+`server/principals.test.ts`, `server/person-labels.e2e.test.ts` (PL-1 to
+PL-4), `src/lib/person-labels.test.ts`, `src/components/PersonLabel.test.ts`,
+`src/components/PersonLabel.edit.test.ts` or `PersonPanel.test.ts`:
+
+- Free text, one line, trimmed, at most 40 characters
+  (`normalizePersonLabel`, `PERSON_LABEL_MAX` in `shared/person-label.ts`);
+  blank or null clears it.
+- Stored by Sagax on the principal (`Principal.label`,
+  `PrincipalRegistry.setLabel`), never in Perspicax. Absent means no label;
+  a malformed stored value reads as absent and never drops the person. No
+  migration.
+- `GET /api/people/labels` lists every listed person's label (the
+  directory's people on an organization server, the operator on a solo one);
+  `GET /api/org/directory` carries `label` too. `PUT
+  /api/people/<principalId>/label` `{ label }` lets the person change their
+  own, an organization admin (the operator at this computer) anyone's and a
+  Perspicax manager the people of a team they manage; anyone else gets 403
+  `person_label_forbidden`, an unknown or merged person 404, a bad label 400
+  `label_too_long`, `label_one_line` or `label_type`. Both are in
+  `CLIENT_ALLOW`; the handler decides (`personLabelRight`).
+- Each change goes to every stream as `{ kind: "person.label", principalId,
+  label }` (null cleared it); the renderer patches `src/lib/person-labels.ts`
+  from it. A change made for someone else (admin or manager) is written to
+  the admin activity log (`people.label`, `after.by`); a person's own is not.
+- One tag for both (`src/components/LabelTag.tsx`): the bot row's tag markup,
+  `tone` sidebar or surface. A person's label shows beside the name in the
+  sidebar people rows (not in quiet rows), the direct conversation's header
+  chip, a room's member list and the people pickers (To:, add to a group). The
+  Team map has no people. Empty renders nothing; "Add a label" appears only
+  where it can be edited: under the name on the person sheet (the person, an
+  admin, their team's manager; `canEditPersonLabel`) and in Settings >
+  General for your own (`settings/MyLabelField.tsx`).
+
 ## Thread mode is on by default
 
 Thread mode (Settings > Appearance > Show threads: the thread picker in the
