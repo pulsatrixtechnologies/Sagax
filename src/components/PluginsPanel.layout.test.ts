@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { buildPluginItems } from "@/lib/plugins-model";
 import { ConnectAppsView } from "./plugins/ConnectAppsView";
 import { ManageView } from "./plugins/ManageView";
+import { ProvidersSection } from "./plugins/ProvidersSection";
 import { PluginDetailView } from "./plugins/PluginDetailView";
 
 const items = buildPluginItems({
@@ -18,6 +19,7 @@ const items = buildPluginItems({
   skills: [{ name: "release-notes", description: "Writes notes", source: "local-import", enabled: true }],
 });
 const noop = () => {};
+vi.mock("@/state/store", () => ({ api: vi.fn(() => new Promise(() => {})), useStore: () => ({ state: {}, dispatch: vi.fn() }) }));
 
 beforeEach(() => vi.stubGlobal("window", { addEventListener: noop, removeEventListener: noop }));
 afterEach(() => vi.unstubAllGlobals());
@@ -77,5 +79,28 @@ describe("Plugins panel views", () => {
     expect(html).toContain('aria-expanded="false"');
     expect(html).toContain("Added manually");
     expect(html).toContain("HTTP");
+  });
+
+  it("manage page has a Providers tab listing every provider with its honest line", () => {
+    const html = renderToStaticMarkup(createElement(ManageView, {
+      items, countLabel: () => "", sourceLabel: (source) => source, onBack: noop, onClose: noop, onOpenItem: noop,
+      onAddManually: noop, onPasteConfig: noop, refreshing: false, onRefresh: noop, providers: createElement("div", null, "PROVIDERS"),
+    }));
+    expect(html).toMatch(/role="tab" aria-selected="true"[^>]*>Plugins and skills</);
+    expect(html).toMatch(/role="tab" aria-selected="false"[^>]*>Providers</);
+    const instances = [
+      { instanceId: "claude", driverKind: "claudeAgent", displayName: "Claude", snapshot: { state: "available", account: { email: "jc@example.com" } } },
+      { instanceId: "codex", driverKind: "codex", displayName: "Codex", snapshot: { state: "available" } },
+      { instanceId: "grok", driverKind: "grokAgent", displayName: "Grok", snapshot: { state: "available", authenticated: false } },
+      { instanceId: "gemini", driverKind: "geminiAgent", displayName: "Gemini CLI", snapshot: { state: "available" } },
+    ];
+    const providers = renderToStaticMarkup(createElement(ProvidersSection, { instances: instances as never }));
+    for (const id of ["claude", "openai", "xai", "google"]) expect(providers).toContain(`data-provider="${id}"`);
+    expect(providers).toContain("jc@example.com");
+    expect(providers).toContain('data-harness-connectors="provider"');
+    expect(providers).toContain("Codex: ChatGPT connectors do not reach bots in Sagax.");
+    expect(providers).toContain("Grok: its connectors do not reach bots in Sagax.");
+    expect(providers).toContain("Gemini: Google&#x27;s extensions do not reach bots in Sagax.");
+    expect(providers).toContain("Manage on ChatGPT / Codex");
   });
 });
