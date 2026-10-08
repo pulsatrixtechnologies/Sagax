@@ -1925,5 +1925,11 @@
   "engineConnect.notConnected": "Não conectado",
   "engineConnect.paysWith.subscription": "Paga com: sua assinatura",
   "engineConnect.paysWith.key": "Paga com: sua chave no Perspicax",
-  "engineConnect.paysWith.orgKey": "Paga com: a chave da organização"
+  "engineConnect.paysWith.orgKey": "Paga com: a chave da organização",
+  "triggers.copyCommand": "Copiar comando",
+  "triggers.showToken": "Mostrar token",
+  "triggers.regenerateToken": "Regenerar token",
+  "triggers.tokenOnce": "Copie agora. O token completo aparece apenas desta vez.",
+  "triggers.tokenEnding": "Token bearer terminado em {last4}. O token completo foi exibido uma vez; regenere-o para obter um novo (o atual para de funcionar imediatamente).",
+  "triggers.tokenPendingBanner": "Este webhook agora exige um token bearer; copie-o aqui. A URL antiga não funciona mais."
 }

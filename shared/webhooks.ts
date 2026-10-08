@@ -29,6 +29,12 @@ export interface WebhookTrigger {
   /** Unfinished runs this webhook may hold before new deliveries get 429.
    * Absent means the default (3). */
   maxPendingRuns?: number;
+  /** Last 4 characters of the bearer token: all that is shown once the full
+   *  token has been copied. */
+  tokenLast4?: string;
+  /** A token was generated for this older webhook at server start and has not
+   *  been copied yet (POST /api/webhooks/:id/reveal hands it over once). */
+  tokenPending?: boolean;
 }
 
 export interface WebhookTriggerInput {

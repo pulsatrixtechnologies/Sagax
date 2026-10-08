@@ -3663,5 +3663,11 @@
   "engineConnect.notConnected": "Non connecté",
   "engineConnect.paysWith.subscription": "Payé par : votre abonnement",
   "engineConnect.paysWith.key": "Payé par : votre clé dans Perspicax",
-  "engineConnect.paysWith.orgKey": "Payé par : la clé de l’organisation"
+  "engineConnect.paysWith.orgKey": "Payé par : la clé de l’organisation",
+  "triggers.copyCommand": "Copier la commande",
+  "triggers.showToken": "Afficher le jeton",
+  "triggers.regenerateToken": "Régénérer le jeton",
+  "triggers.tokenOnce": "Copiez-le maintenant. Le jeton complet n’est affiché qu’une seule fois.",
+  "triggers.tokenEnding": "Jeton bearer se terminant par {last4}. Le jeton complet a été affiché une fois; régénérez-le pour en obtenir un nouveau (l’actuel cesse de fonctionner immédiatement).",
+  "triggers.tokenPendingBanner": "Ce webhook exige maintenant un jeton bearer; copiez-le ici. Son ancienne URL ne fonctionne plus."
 }

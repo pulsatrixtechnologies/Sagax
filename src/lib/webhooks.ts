@@ -13,11 +13,13 @@ export type {
   WebhookIngressStatus,
 } from "../../shared/webhooks";
 
+/** Returned once, when a token is created, regenerated or revealed. The URL
+ * carries no secret: the token travels only in the Authorization header. */
 export interface WebhookCredential {
   endpointUrl: string;
-  secret: string;
-  /** Capability URL for senders that cannot configure an Authorization header. */
-  url: string;
+  token: string;
+  /** `curl -X POST <url> -H "Authorization: Bearer <token>"` */
+  command: string;
 }
 
 /** New local webhooks are ready to execute immediately. Editing an existing

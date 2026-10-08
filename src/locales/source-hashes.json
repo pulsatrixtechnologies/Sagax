@@ -7396,7 +7396,13 @@
       "engineConnect.notConnected": "0303e182467081801f8b614862519a3b174c0ae84ff08b70e7d126080c3f4b95",
       "engineConnect.paysWith.subscription": "40c5935a1bebab9f5f3fc585e8f82227dd765b71951a56e5180dc097cc233d4d",
       "engineConnect.paysWith.key": "5fff1fd0de293e82f4c5e32c666c2c255dd47f3a1363f3481c748e9b6e4872e4",
-      "engineConnect.paysWith.orgKey": "6fbe6fa6b7ccec02cd2b62e203b651ab09c7e80d3c8daebd12751573468854d9"
+      "engineConnect.paysWith.orgKey": "6fbe6fa6b7ccec02cd2b62e203b651ab09c7e80d3c8daebd12751573468854d9",
+      "triggers.copyCommand": "9a01feecae675f2fb94baefe9b95c9b6f2970d7b4ccaf64e774335626cba785a",
+      "triggers.showToken": "2faef0ba40dc420f67de983b6c1be8f0f4b9b60f18409f2d2368b53b3c28a7bd",
+      "triggers.regenerateToken": "be83e6fcc400097d74abe38bde9a1caeb851097df478ec2dfbe651b114a8cec5",
+      "triggers.tokenOnce": "c6c3748e1982808dde9bf798a94bfbae159e97d0f0454f8dc45c62a92794360a",
+      "triggers.tokenEnding": "3ec3e01a8b06699da678224a9b6684be68337e659c8422498fe8fd6d765f9f45",
+      "triggers.tokenPendingBanner": "e1147450d61cc3825ec7baad9eab21fd8c9f62061430ab8d62d6a7eb7b86f4d4"
     },
     "hi": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",
@@ -13039,7 +13045,13 @@
       "engineConnect.notConnected": "0303e182467081801f8b614862519a3b174c0ae84ff08b70e7d126080c3f4b95",
       "engineConnect.paysWith.subscription": "40c5935a1bebab9f5f3fc585e8f82227dd765b71951a56e5180dc097cc233d4d",
       "engineConnect.paysWith.key": "5fff1fd0de293e82f4c5e32c666c2c255dd47f3a1363f3481c748e9b6e4872e4",
-      "engineConnect.paysWith.orgKey": "6fbe6fa6b7ccec02cd2b62e203b651ab09c7e80d3c8daebd12751573468854d9"
+      "engineConnect.paysWith.orgKey": "6fbe6fa6b7ccec02cd2b62e203b651ab09c7e80d3c8daebd12751573468854d9",
+      "triggers.copyCommand": "9a01feecae675f2fb94baefe9b95c9b6f2970d7b4ccaf64e774335626cba785a",
+      "triggers.showToken": "2faef0ba40dc420f67de983b6c1be8f0f4b9b60f18409f2d2368b53b3c28a7bd",
+      "triggers.regenerateToken": "be83e6fcc400097d74abe38bde9a1caeb851097df478ec2dfbe651b114a8cec5",
+      "triggers.tokenOnce": "c6c3748e1982808dde9bf798a94bfbae159e97d0f0454f8dc45c62a92794360a",
+      "triggers.tokenEnding": "3ec3e01a8b06699da678224a9b6684be68337e659c8422498fe8fd6d765f9f45",
+      "triggers.tokenPendingBanner": "e1147450d61cc3825ec7baad9eab21fd8c9f62061430ab8d62d6a7eb7b86f4d4"
     },
     "uk": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",

@@ -1,37 +1,33 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  loadWebhookCredentials,
-  removeWebhookCredential,
-  saveWebhookCredential,
-} from "./webhook-credentials.js";
+import { purgeStoredWebhookCredentials } from "./webhook-credentials.js";
 
-function memoryStore() {
-  const values = new Map<string, string>();
+function memoryStore(initial: Record<string, string> = {}) {
+  const values = new Map(Object.entries(initial));
   return {
     getItem: (key: string) => values.get(key) ?? null,
     setItem: (key: string, value: string) => void values.set(key, value),
+    removeItem: (key: string) => void values.delete(key),
   };
 }
 
-const credential = {
-  endpointUrl: "http://127.0.0.1:8800/hooks/wh_demo",
-  secret: "whsec_demo",
-  url: "http://127.0.0.1:8800/hooks/wh_demo/whsec_demo",
-};
-
 describe("webhook credential storage", () => {
-  it("keeps a one-time private URL available after the panel remounts", () => {
-    const store = memoryStore();
-    saveWebhookCredential(store, "hook-1", credential);
-    expect(loadWebhookCredentials(store)).toEqual({ "hook-1": credential });
+  it("deletes the private URLs an older build kept in local storage, leaving the rest", () => {
+    const store = memoryStore({
+      "omb-webhook-credentials": JSON.stringify({ "hook-1": { url: "http://127.0.0.1:8800/hooks/wh_demo/whsec_demo" } }),
+      "omb-skin": "daylight",
+    });
+    purgeStoredWebhookCredentials(store);
+    expect(store.getItem("omb-webhook-credentials")).toBeNull();
+    expect(store.getItem("omb-skin")).toBe("daylight");
   });
 
-  it("ignores malformed entries and removes deleted webhooks", () => {
-    const store = memoryStore();
-    store.setItem("omb-webhook-credentials", JSON.stringify({ broken: { url: 3 }, "hook-1": credential }));
-    expect(loadWebhookCredentials(store)).toEqual({ "hook-1": credential });
-    removeWebhookCredential(store, "hook-1");
-    expect(loadWebhookCredentials(store)).toEqual({});
+  it("does not throw when storage is missing or blocked", () => {
+    expect(() => purgeStoredWebhookCredentials(undefined)).not.toThrow();
+    expect(() => purgeStoredWebhookCredentials({
+      getItem: () => null,
+      setItem: () => {},
+      removeItem: () => { throw new Error("blocked"); },
+    })).not.toThrow();
   });
 });

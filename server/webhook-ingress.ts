@@ -102,7 +102,7 @@ export class AuthFailureLimiter {
     const recent = this.recent(source);
     recent.push(this.now());
     this.failures.set(source, recent);
-    if (this.failures.size > 5_000) for (const key of [...this.failures.keys()]) this.recent(key);
+    if (this.failures.size > 5_000) for (const key of this.failures.keys()) this.recent(key);
   }
 }
 
