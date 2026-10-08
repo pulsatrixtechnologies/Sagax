@@ -28,7 +28,7 @@ import type { BotAvatarCrop } from "../../shared/bot-avatar";
 import type { BotPublicProfile } from "../../shared/bot-public-profile";
 import { approvalModeFor, type ApprovalMode } from "../../shared/approval-mode";
 import { uiCommandToAction } from "../../shared/bot-act";
-import { onDesktopNudge, onNudgeReceived } from "@/lib/desktop-nudge";
+import { onNudgeReceived } from "@/lib/desktop-nudge";
 import { sameModelSelection } from "../../shared/thread-model";
 import { applyPresenceFrame } from "@/lib/presence";
 import { receiveOrgApprovalsFrame } from "@/lib/org-approvals";
@@ -1017,6 +1017,7 @@ export interface InstanceInfo {
 export type AppSettingsSection =
   | "general"
   | "privacy"
+  | "notifications"
   | "organization"
   | "appearance"
   | "experimental"
@@ -3842,12 +3843,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           break;
         case "nudgePerson":
           api(`/api/nudges`, { method: "POST", body: JSON.stringify({ principalId: action.principalId }) })
-            .then(() => onDesktopNudge())
             .catch(showError);
           break;
         case "nudgeGroup":
           api(`/api/nudges`, { method: "POST", body: JSON.stringify({ groupId: action.groupId }) })
-            .then(() => onDesktopNudge())
             .catch(showError);
           break;
         case "sendGroup": {
@@ -4437,8 +4436,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           if (command) dispatch(command.action as Action);
           break;
         }
+        // addressed to this person only (server/nudge.ts): ring, shake, notify
         case "nudge":
-          onNudgeReceived();
+          void onNudgeReceived(frame, (target) => openNotificationTarget(dispatch, target, stateRef.current));
           break;
         case "presence.changed":
           applyPresenceFrame(frame);

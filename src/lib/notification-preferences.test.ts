@@ -165,3 +165,48 @@ describe("nudge sound preference", () => {
     expect(local.getItem(preference.NUDGE_SOUND_KEY)).toBe("1");
   });
 });
+
+describe("Settings > Notifications defaults", () => {
+  it("every switch is on by default, with nothing written", async () => {
+    const preference = await import("./notification-preferences");
+    expect(preference.attentionSettings()).toEqual({ sound: true, persistent: true, badge: true, nudgeSound: true, nudgeShake: true });
+    expect(local.setItem).not.toHaveBeenCalled();
+    expect(preference.useLocalSwitch(preference.persistentNotifications)).toBe(true);
+    expect(hook.serverSnapshot!()).toBe(true);
+  });
+
+  it("each switch turns off on its own and is kept on this computer", async () => {
+    const preference = await import("./notification-preferences");
+    preference.persistentNotifications.set(false);
+    preference.dockBadge.set(false);
+    expect(local.getItem("omb-notification-persistent")).toBe("0");
+    expect(local.getItem("omb-dock-badge")).toBe("0");
+    expect(preference.attentionSettings()).toEqual({ sound: true, persistent: false, badge: false, nudgeSound: true, nudgeShake: true });
+    preference.nudgeShake.set(false);
+    expect(preference.attentionSettings().nudgeShake).toBe(false);
+    preference.nudgeShake.set(true);
+    expect(preference.attentionSettings().nudgeShake).toBe(true);
+  });
+
+  it("another window's change reaches the hook", async () => {
+    const preference = await import("./notification-preferences");
+    const listener = vi.fn();
+    const stop = preference.dockBadge.subscribe(listener);
+    local.setItem("omb-dock-badge", "0");
+    storageEvent("omb-dock-badge");
+    expect(listener).toHaveBeenCalledOnce();
+    expect(preference.dockBadge.enabled()).toBe(false);
+    stop();
+  });
+
+  it("blocked storage keeps the choice for this session", async () => {
+    vi.stubGlobal("localStorage", {
+      getItem: () => { throw new Error("blocked"); },
+      setItem: () => { throw new Error("blocked"); },
+    });
+    const preference = await import("./notification-preferences");
+    expect(preference.nudgeShake.enabled()).toBe(true);
+    preference.nudgeShake.set(false);
+    expect(preference.nudgeShake.enabled()).toBe(false);
+  });
+});

@@ -121,3 +121,88 @@ export function setNudgeSound(enabled: boolean): void {
 export function useNudgeSound(): boolean {
   return useSyncExternalStore(subscribeNudge, nudgeSoundEnabled, () => true);
 }
+
+// Switches of Settings > Notifications that only THIS computer reads, all on
+// by default. Same storage rules as the sounds above: a session choice
+// survives blocked storage, and another window's storage event supersedes it.
+export interface LocalSwitch {
+  key: string;
+  enabled(): boolean;
+  set(enabled: boolean): void;
+  subscribe(listener: () => void): () => void;
+}
+
+function localSwitch(key: string): LocalSwitch {
+  let session: boolean | undefined;
+  const own = new Set<() => void>();
+  const enabled = () => {
+    if (session !== undefined) return session;
+    try {
+      return storage()?.getItem(key) !== "0";
+    } catch {
+      return true;
+    }
+  };
+  const onStorageEvent = (event: StorageEvent) => {
+    if (event.key !== key && event.key !== null) return;
+    if (event.storageArea && event.storageArea !== storage()) return;
+    session = undefined;
+    for (const listener of own) listener();
+  };
+  const subscribeOwn = (listener: () => void) => {
+    own.add(listener);
+    if (own.size === 1 && typeof window !== "undefined") window.addEventListener("storage", onStorageEvent);
+    return () => {
+      own.delete(listener);
+      if (own.size === 0 && typeof window !== "undefined") window.removeEventListener("storage", onStorageEvent);
+    };
+  };
+  return {
+    key,
+    enabled,
+    set(next: boolean) {
+      session = next;
+      try {
+        const local = storage();
+        const value = next ? "1" : "0";
+        local?.setItem(key, value);
+        if (local?.getItem(key) === value) session = undefined;
+      } catch {
+        // The visible setting still changes for this session when storage is full.
+      }
+      for (const listener of own) listener();
+    },
+    subscribe: subscribeOwn,
+  };
+}
+
+/** A switch's current value, re-rendering when it changes. */
+export function useLocalSwitch(choice: LocalSwitch): boolean {
+  return useSyncExternalStore(choice.subscribe, choice.enabled, () => true);
+}
+
+/** Notifications stay on screen until dismissed (where the system allows). */
+export const persistentNotifications = localSwitch("omb-notification-persistent");
+/** The unread count on the Dock / taskbar icon. */
+export const dockBadge = localSwitch("omb-dock-badge");
+/** A received nudge shakes the window. */
+export const nudgeShake = localSwitch("omb-nudge-shake");
+
+/** Everything the attention rules read, as this computer has it now. */
+export interface AttentionSettings {
+  sound: boolean;
+  persistent: boolean;
+  badge: boolean;
+  nudgeSound: boolean;
+  nudgeShake: boolean;
+}
+
+export function attentionSettings(): AttentionSettings {
+  return {
+    sound: notificationSoundsEnabled(),
+    persistent: persistentNotifications.enabled(),
+    badge: dockBadge.enabled(),
+    nudgeSound: nudgeSoundEnabled(),
+    nudgeShake: nudgeShake.enabled(),
+  };
+}

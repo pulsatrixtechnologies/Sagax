@@ -46,7 +46,7 @@ ipcRenderer.on("release-notes:open", () => {
 // helpers here. Main enforces the same rule on the sensitive channels.
 const localOrigin = process.argv.find((arg) => arg.startsWith("--omb-local-origin="))?.slice("--omb-local-origin=".length) ?? null;
 const isLocalPage = !localOrigin || location.origin === localOrigin;
-const REMOTE_SAFE = new Set(["platform", "getCapabilities", "onCapabilitiesChanged", "applySkin", "setUnreadCount", "nudgeWindow", "systemIdle", "permStatus", "workspaces", "takeSignInReturn", "pulsatrixSignIn", "orgJoin"]);
+const REMOTE_SAFE = new Set(["platform", "getCapabilities", "onCapabilitiesChanged", "applySkin", "setUnreadCount", "nudgeWindow", "notify", "onNotificationClick", "systemIdle", "permStatus", "workspaces", "takeSignInReturn", "pulsatrixSignIn", "orgJoin"]);
 // An organization server's page drawn from THIS app's bundle
 // (electron/bundled-ui.cjs) is the desktop's own UI on that server, so it
 // also gets the desktop-UI parts that hold no local data: floating bots and
@@ -292,7 +292,18 @@ const bridge = {
    * Safe on an organization page: it moves no files and reads no secret.
    * Main accepts it only from the main window, and ignores a repeat while
    * the shake is still running. */
-  nudgeWindow: () => ipcRenderer.send("desktop:nudge"),
+  nudgeWindow: (options) => ipcRenderer.send("desktop:nudge", { shake: !(options && options.shake === false) }),
+  /** A native notification shown by the shell (it can stay until it is
+   * dismissed, bounce the Dock, flash the taskbar). Safe on an organization
+   * page: text the page already shows, capped by main; main accepts it only
+   * from the main window's top frame. */
+  notify: (request) => ipcRenderer.send("desktop:notify", request),
+  /** The person clicked one of those notifications: its id. */
+  onNotificationClick: (cb) => {
+    const listener = (_event, id) => { if (typeof id === "string") cb(id); };
+    ipcRenderer.on("desktop:notification-click", listener);
+    return () => ipcRenderer.removeListener("desktop:notification-click", listener);
+  },
   /** Presence: whether the person is at this computer ("active", "idle",
    * "locked" or "unknown") and the seconds since their last input. Safe on
    * an organization page: a state and a number, nothing else. */

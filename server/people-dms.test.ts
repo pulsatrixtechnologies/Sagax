@@ -11,7 +11,9 @@ import {
   isPeopleDmParticipant,
   otherPerson,
   peopleDmCandidate,
+  peopleDmForViewer,
   peopleDmPatchRefusal,
+  peopleDmUnreadPatch,
   peopleDmRouteRefusal,
 } from "./people-dms.ts";
 import type { RequestAuth } from "./request-auth.ts";
@@ -19,6 +21,26 @@ import { createPeopleDmRoutes } from "./routes/people-dms.ts";
 import { dispatchRoutes } from "./routes/table.ts";
 
 const dm = { id: "g1", peopleDm: true, humanIds: ["pr_alice", "pr_bob"] };
+
+describe("people dm unread, per person", () => {
+  it("a new message is unread for the recipient only, and reading clears it for the reader only", () => {
+    const sent = peopleDmUnreadPatch({}, "PR_Bob", true);
+    expect(sent).toEqual({ unread: true, unreadFor: ["pr_bob"] });
+    const dm = { peopleDm: true, unread: sent.unread, unreadFor: sent.unreadFor };
+    expect(peopleDmForViewer(dm, "pr_bob")).toEqual({ peopleDm: true, unread: true });
+    // the sender, reading the conversation, has nothing unread
+    expect(peopleDmForViewer(dm, "pr_alice")).toEqual({ peopleDm: true, unread: false });
+    expect(peopleDmUnreadPatch(dm, "pr_alice", false)).toEqual({ unread: true, unreadFor: ["pr_bob"] });
+    expect(peopleDmUnreadPatch(dm, "pr_bob", false)).toEqual({ unread: false, unreadFor: [] });
+    expect(peopleDmUnreadPatch({ unreadFor: ["pr_bob"] }, "pr_alice", true)).toEqual({ unread: true, unreadFor: ["pr_alice", "pr_bob"] });
+  });
+
+  it("an older conversation keeps its shared flag; a room is left as it is", () => {
+    expect(peopleDmForViewer({ peopleDm: true, unread: true }, "pr_alice")).toEqual({ peopleDm: true, unread: true });
+    expect(peopleDmForViewer({ unread: true, unreadFor: ["pr_bob"] }, "pr_alice")).toEqual({ unread: true, unreadFor: ["pr_bob"] });
+    expect(peopleDmForViewer({ peopleDm: true, unread: true, unreadFor: ["pr_bob"] }, undefined)).toEqual({ peopleDm: true, unread: false });
+  });
+});
 
 describe("people dm rules", () => {
   it("lets only its two people in, never a viewer without an id", () => {

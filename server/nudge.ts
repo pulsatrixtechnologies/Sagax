@@ -144,7 +144,17 @@ export interface NudgeLineStore {
     at: number;
     nudge: { fromId: string; fromName: string; toId: string; toName: string; groupId?: string };
   }): void;
-  markUnread(groupId: string): void;
+  /** `personId`: a direct nudge is unread for the person nudged only. */
+  markUnread(groupId: string, personId?: string): void;
+}
+
+/** The conversation a nudge line was written in: the frame carries it so
+ * the person nudged opens it from the notification. Not `groupId` or
+ * `threadId` at the top of the frame: the frame filters read those, and
+ * the nudge's own audience rule (nudgeFrameAllowed) is the one that holds. */
+export interface NudgeConversation {
+  groupId: string;
+  threadId: string;
 }
 
 /** Write the accepted nudge into the conversation. A direct nudge uses the
@@ -152,7 +162,7 @@ export interface NudgeLineStore {
  * A group nudge writes one line on that group chat and never opens a direct
  * conversation. Call this only after the nudge is accepted: a refusal must
  * not leave a line. */
-export function recordNudgeLine(store: NudgeLineStore, line: NudgeTranscriptLine): void {
+export function recordNudgeLine(store: NudgeLineStore, line: NudgeTranscriptLine): NudgeConversation | undefined {
   const note = {
     fromId: line.fromId,
     fromName: line.fromName,
@@ -162,10 +172,10 @@ export function recordNudgeLine(store: NudgeLineStore, line: NudgeTranscriptLine
   };
   if (line.groupId) {
     const group = store.findGroup?.(line.groupId);
-    if (!group) return;
+    if (!group) return undefined;
     store.append(group.threadId, { role: "bot", kind: "nudge", at: line.at, nudge: note });
     store.markUnread(group.id);
-    return;
+    return { groupId: group.id, threadId: group.threadId };
   }
   const group = store.find(line.fromId, line.toId) ?? store.create({
     a: line.fromId,
@@ -173,5 +183,6 @@ export function recordNudgeLine(store: NudgeLineStore, line: NudgeTranscriptLine
     name: `${line.fromName}, ${line.toName}`,
   });
   store.append(group.threadId, { role: "bot", kind: "nudge", at: line.at, nudge: note });
-  store.markUnread(group.id);
+  store.markUnread(group.id, line.toId);
+  return { groupId: group.id, threadId: group.threadId };
 }

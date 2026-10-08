@@ -20,6 +20,8 @@ const fixture = vi.hoisted(() => ({
   nudgeSound: true,
   setNudgeSound: vi.fn(),
   setNotificationSounds: vi.fn(),
+  locals: {} as Record<string, boolean>,
+  setLocal: vi.fn(),
   api: vi.fn(),
   dispatch: vi.fn(),
   switches: [] as ComponentProps<typeof Switch>[],
@@ -48,12 +50,19 @@ vi.mock("@/lib/sidebar-preferences", async (importOriginal) => ({
   useSidebarDensity: () => fixture.sidebarDensity,
   setSidebarDensity: fixture.setSidebarDensity,
 }));
-vi.mock("@/lib/notification-preferences", () => ({
-  useNotificationSounds: () => fixture.notificationSounds,
-  useNudgeSound: () => fixture.nudgeSound,
-  setNudgeSound: fixture.setNudgeSound,
-  setNotificationSounds: fixture.setNotificationSounds,
-}));
+vi.mock("@/lib/notification-preferences", () => {
+  const local = (key: string) => ({ key, enabled: () => fixture.locals[key] ?? true, set: (value: boolean) => fixture.setLocal(key, value), subscribe: () => () => {} });
+  return {
+    useNotificationSounds: () => fixture.notificationSounds,
+    useNudgeSound: () => fixture.nudgeSound,
+    setNudgeSound: fixture.setNudgeSound,
+    setNotificationSounds: fixture.setNotificationSounds,
+    persistentNotifications: local("omb-notification-persistent"),
+    dockBadge: local("omb-dock-badge"),
+    nudgeShake: local("omb-nudge-shake"),
+    useLocalSwitch: (choice: { enabled: () => boolean }) => choice.enabled(),
+  };
+});
 vi.mock("@/lib/analytics", () => ({ analyticsEnabled: () => false, setAnalyticsEnabled: vi.fn() }));
 vi.mock("./SettingsPrimitives", async (importOriginal) => {
   const original = await importOriginal<typeof import("./SettingsPrimitives")>();
@@ -74,6 +83,7 @@ beforeEach(() => {
   fixture.sidebarDensity = "comfortable";
   fixture.notificationSounds = true;
   fixture.nudgeSound = true;
+  fixture.locals = {};
   fixture.switches = [];
   vi.stubGlobal("window", {});
   vi.stubGlobal("document", { documentElement: { dataset: {} } });
@@ -116,28 +126,10 @@ describe("Settings → Appearance", () => {
     expect(fixture.dispatch).not.toHaveBeenCalled();
   });
 
-  it.each([true, false])("mutes notification sounds on this computer only when the switch is %s", (enabled) => {
-    fixture.notificationSounds = enabled;
+  it("no longer holds the notification switches: they have their own section", () => {
     const html = render();
-    expect(html).toContain('aria-label="Notification sounds"');
-    expect(html).toContain("keep the banners but lose the chime");
-    const toggle = fixture.switches.find((props) => props["aria-label"] === "Notification sounds")!;
-    expect(toggle.checked).toBe(enabled);
-    toggle.onClick!({} as never);
-    expect(fixture.setNotificationSounds).toHaveBeenCalledWith(!enabled);
-    expect(fixture.api).not.toHaveBeenCalled();
-    expect(fixture.dispatch).not.toHaveBeenCalled();
-  });
-
-  it.each([true, false])("toggles the nudge sound on this computer only when the switch is %s", (enabled) => {
-    fixture.nudgeSound = enabled;
-    render();
-    const toggle = fixture.switches.find((props) => props["aria-label"] === "Nudge sound")!;
-    expect(toggle.checked).toBe(enabled);
-    toggle.onClick!({} as never);
-    expect(fixture.setNudgeSound).toHaveBeenCalledWith(!enabled);
-    expect(fixture.api).not.toHaveBeenCalled();
-    expect(fixture.dispatch).not.toHaveBeenCalled();
+    expect(html).not.toContain('aria-label="Notification sounds"');
+    expect(html).not.toContain('aria-label="Nudge sound"');
   });
 
   it.each([
@@ -204,7 +196,8 @@ describe("Settings → Appearance", () => {
     expect(html).not.toContain('<option value="backups">');
     expect(html).toContain("Midnight");
     expect(html).toContain('aria-label="Show threads"');
-    expect(html).toContain('aria-label="Notification sounds"');
+    // this computer's notification switches stay reachable from a remote page
+    expect(html).toContain('<option value="notifications">Notifications</option>');
     expect(html).toContain('aria-label="Choose sidebar density"');
     expect(html).not.toContain('aria-label="Show tool calls in chat"');
   });
@@ -251,5 +244,62 @@ describe("Settings → Appearance", () => {
     expect(html).toContain('<option value="organization" selected="">Organization</option>');
     fixture.section = "appearance";
     expect(render()).toContain("Midnight");
+  });
+});
+
+describe("Settings → Notifications", () => {
+  it.each([true, false])("mutes notification sounds on this computer only when the switch is %s", (enabled) => {
+    fixture.notificationSounds = enabled;
+    fixture.section = "notifications";
+    const html = render();
+    expect(html).toContain('aria-label="Notification sounds"');
+    expect(html).toContain("keep the banners but lose the chime");
+    const toggle = fixture.switches.find((props) => props["aria-label"] === "Notification sounds")!;
+    expect(toggle.checked).toBe(enabled);
+    toggle.onClick!({} as never);
+    expect(fixture.setNotificationSounds).toHaveBeenCalledWith(!enabled);
+    expect(fixture.api).not.toHaveBeenCalled();
+    expect(fixture.dispatch).not.toHaveBeenCalled();
+  });
+
+  it.each([true, false])("toggles the nudge sound on this computer only when the switch is %s", (enabled) => {
+    fixture.nudgeSound = enabled;
+    fixture.section = "notifications";
+    render();
+    const toggle = fixture.switches.find((props) => props["aria-label"] === "Nudge sound")!;
+    expect(toggle.checked).toBe(enabled);
+    toggle.onClick!({} as never);
+    expect(fixture.setNudgeSound).toHaveBeenCalledWith(!enabled);
+    expect(fixture.api).not.toHaveBeenCalled();
+    expect(fixture.dispatch).not.toHaveBeenCalled();
+  });
+
+  it("has its own section with every switch on by default", () => {
+    fixture.section = "notifications";
+    const html = render();
+    expect(html).toContain('<option value="notifications" selected="">Notifications</option>');
+    for (const label of ["Notification sounds", "Keep notifications on screen", "Unread count on the app icon", "Nudge sound", "Shake on nudge"]) {
+      const toggle = fixture.switches.find((props) => props["aria-label"] === label);
+      expect(toggle?.checked, label).toBe(true);
+    }
+  });
+
+  it.each([
+    ["Keep notifications on screen", "omb-notification-persistent"],
+    ["Unread count on the app icon", "omb-dock-badge"],
+    ["Shake on nudge", "omb-nudge-shake"],
+  ])("%s turns off on this computer only", (label, key) => {
+    fixture.section = "notifications";
+    render();
+    fixture.switches.find((props) => props["aria-label"] === label)!.onClick!({} as never);
+    expect(fixture.setLocal).toHaveBeenCalledWith(key, false);
+    expect(fixture.api).not.toHaveBeenCalled();
+    expect(fixture.dispatch).not.toHaveBeenCalled();
+  });
+
+  it("says how to keep a notification on screen on macOS", () => {
+    fixture.section = "notifications";
+    const html = render();
+    expect(html).toContain("Alerts");
   });
 });

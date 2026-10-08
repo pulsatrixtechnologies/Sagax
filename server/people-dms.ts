@@ -48,6 +48,37 @@ export function otherPerson(group: PeopleDmLike, viewerId: string): string | und
   return (group.humanIds ?? []).find((id) => key(id) !== viewer);
 }
 
+/** Mark the conversation unread (or read) for ONE of its two people. The
+ * shared `unread` flag stays true while anyone still has it unread, for the
+ * clients that read it as it was before. */
+export function peopleDmUnreadPatch(
+  group: { unreadFor?: readonly string[] },
+  personId: string,
+  unread: boolean,
+): { unread: boolean; unreadFor: string[] } {
+  const people = new Set((group.unreadFor ?? []).map(key).filter(Boolean));
+  const person = key(personId);
+  if (person) {
+    if (unread) people.add(person);
+    else people.delete(person);
+  }
+  const unreadFor = [...people].sort();
+  return { unread: unreadFor.length > 0, unreadFor };
+}
+
+/** The conversation as one person sees it: their own unread state, and not
+ * who else has read it. A conversation from before `unreadFor` existed keeps
+ * its shared flag. Anything else is returned as it is. */
+export function peopleDmForViewer<T extends { peopleDm?: boolean; unread?: boolean; unreadFor?: string[] }>(
+  group: T,
+  viewerId: string | undefined,
+): T {
+  if (!group.peopleDm || !Array.isArray(group.unreadFor)) return group;
+  const { unreadFor, ...rest } = group;
+  const viewer = viewerId ? key(viewerId) : "";
+  return { ...rest, unread: Boolean(viewer) && unreadFor.some((id) => key(id) === viewer) } as T;
+}
+
 /** A PATCH on a person-to-person conversation may only mark it read or
  * unread, or set its home pin. Anything else is refused with the field's
  * name. */

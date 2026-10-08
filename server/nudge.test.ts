@@ -60,7 +60,7 @@ describe("nudge transcript line", () => {
         return { id: "dm-new", threadId: "thread-new" };
       },
       append: (threadId, message) => { appended.push({ threadId, message }); },
-      markUnread: (groupId) => { unread.push(groupId); },
+      markUnread: (groupId, personId) => { unread.push(personId ? `${groupId}:${personId}` : groupId); },
     };
     return { store, appended, unread, created };
   }
@@ -69,9 +69,11 @@ describe("nudge transcript line", () => {
 
   it("appends the line to the conversation the two people already share", () => {
     const fixture = harness({ id: "dm-1", threadId: "thread-1" });
-    recordNudgeLine(fixture.store, line);
+    // the conversation goes back in the frame so a click opens it
+    expect(recordNudgeLine(fixture.store, line)).toEqual({ groupId: "dm-1", threadId: "thread-1" });
     expect(fixture.created).toEqual([]);
-    expect(fixture.unread).toEqual(["dm-1"]);
+    // unread for the person nudged, not for the sender
+    expect(fixture.unread).toEqual(["dm-1:pr_ada"]);
     expect(fixture.appended).toEqual([{
       threadId: "thread-1",
       message: {
@@ -88,13 +90,13 @@ describe("nudge transcript line", () => {
     recordNudgeLine(fixture.store, line);
     expect(fixture.created).toEqual(["Jean-Christophe, Ada"]);
     expect(fixture.appended[0]?.threadId).toBe("thread-new");
-    expect(fixture.unread).toEqual(["dm-new"]);
+    expect(fixture.unread).toEqual(["dm-new:pr_ada"]);
   });
 
   it("writes one line on the group chat and does not open a direct conversation", () => {
     const fixture = harness();
     fixture.store.findGroup = () => ({ id: "room-1", threadId: "room-thread" });
-    recordNudgeLine(fixture.store, { ...line, toId: "room-1", toName: "Launch planning", groupId: "room-1" });
+    expect(recordNudgeLine(fixture.store, { ...line, toId: "room-1", toName: "Launch planning", groupId: "room-1" })).toEqual({ groupId: "room-1", threadId: "room-thread" });
     expect(fixture.created).toEqual([]);
     expect(fixture.unread).toEqual(["room-1"]);
     expect(fixture.appended).toEqual([{
