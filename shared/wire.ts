@@ -907,6 +907,10 @@ export type ServerFrame =
   | { kind: "bot-act"; audience: string; action: string; input?: Record<string, unknown> }
   /** Shake this person's desktop window. Their streams only (server/nudge.ts). */
   | { kind: "nudge"; audience: string; fromId: string; fromName: string; at: number }
+  /** People whose presence changed (shared/presence.ts). The organization's
+   * people only; with `audience`, that person's own real state (`hidden`
+   * when others see them offline), to their streams only. */
+  | { kind: "presence.changed"; audience?: string; people: Array<{ principalId: string; state: "online" | "away" | "offline"; lastSeenAt: number | null; hidden?: true }> }
   | { kind: "live.call"; botId: string; threadId: string; call: LiveCallState | null }
   /** The config status object spread flat into the frame; its full typing
    * is the deferred client-model extraction (see j1-phase-bc-progress). */

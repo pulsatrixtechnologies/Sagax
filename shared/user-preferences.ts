@@ -48,6 +48,8 @@ export const USER_PREFERENCE_KEYS = [
   "omb.voiceMode.v1",
   // what a message sent to a busy conversation does (shared/parallel-tasks.ts)
   "sagax.busySend.v1",
+  // privacy: "Show when I am online" ("0" hides; shared/presence.ts)
+  "sagax.presenceVisible.v1",
 ] as const;
 
 export type UserPreferenceKey = (typeof USER_PREFERENCE_KEYS)[number];

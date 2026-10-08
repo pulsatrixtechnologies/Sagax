@@ -459,6 +459,11 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   // Shake that person's Sagax (server/routes/nudges.ts). The handler checks
   // the person and the 5 minute cooldown.
   { methods: ["POST"], path: /^\/api\/nudges$/ },
+  // Who of the organization is online, away or offline, and this app's
+  // heartbeat (server/routes/presence.ts). The handler answers a person of
+  // the directory only: not a service account, not another issuer.
+  { methods: ["GET"], path: /^\/api\/org\/presence$/, feature: "orgDirectory" },
+  { methods: ["POST"], path: /^\/api\/presence\/heartbeat$/, feature: "orgDirectory" },
   // Organization server: a group's owner deletes it (server/group-ownership.ts);
   // the route refuses a client session anywhere else.
   { methods: ["DELETE"], path: /^\/api\/groups\/[\w-]+$/ },

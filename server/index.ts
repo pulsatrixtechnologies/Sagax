@@ -727,6 +727,9 @@ import { createGroupMemoryRoutes } from "./routes/group-memory.ts";
 import { createTtsProviderRoutes } from "./routes/tts-provider.ts";
 import { createPeopleDmRoutes } from "./routes/people-dms.ts";
 import { createNudgeRoutes } from "./routes/nudges.ts";
+import { createPresenceRoutes, presenceFrameAllowed, type PresenceViewer } from "./routes/presence.ts";
+import { PresenceTracker } from "./presence.ts";
+import { PRESENCE_SWEEP_MS, PRESENCE_VISIBLE_PREFERENCE, presenceHidden, publicPresence, type PresenceView } from "../shared/presence.ts";
 import { NudgeCooldown, nudgeFrameAllowed, recordNudgeLine } from "./nudge.ts";
 import { findPeopleDm, isPeopleDmParticipant, otherPerson, peopleDmPatchRefusal, peopleDmRouteRefusal } from "./people-dms.ts";
 import { deleteGroupMemory, groupMemoryEnabled, groupMemorySystemPrompt, updateGroupMemory } from "./group-memory.ts";
@@ -7170,6 +7173,9 @@ interface SseClient {
    * anyone else sees themselves (server/viewer-identity.ts). Read at each
    * frame, so a changed role is current. Absent for a local service. */
   identity?: () => ViewerIdentity | null;
+  /** A person of this organization's directory: receives presence.changed
+   * (server/routes/presence.ts). Never a service account or the loopback. */
+  presence?: boolean;
 }
 const sseClients = new Set<SseClient>();
 
@@ -7807,6 +7813,7 @@ function sseFrameFor(
   // a person's unlocks reach that person's streams only
   if (payload?.kind === "achievements" && !achievementFrameAllowed(payload, client.viewerId, localPrincipalId())) return null;
   if (payload?.kind === "nudge" && !nudgeFrameAllowed(payload, client.viewerId, localPrincipalId())) return null;
+  if (payload?.kind === "presence.changed" && !presenceFrameAllowed(payload, client)) return null;
   if (payload?.kind === "bot-act" && !botActFrameAllowed(typeof payload.audience === "string" ? payload.audience : "", client.viewerId, localPrincipalId())) return null;
   if (payload) {
     const scoped = scopeChannelApproval(payload, approvalViewerOf(client));
@@ -19289,7 +19296,18 @@ ROUTES.push(createTtsProviderRoutes({
 }));
 // Server mode: a person's appearance, language, notifications and mascot
 // settings follow them across devices (shared/user-preferences.ts).
-ROUTES.push(createUserPreferenceRoutes({ store: userPreferenceStore, organization: () => IDENTITY.kind === "perspicax" }));
+ROUTES.push(createUserPreferenceRoutes({
+  // "Show when I am online" travels with the preferences: tell the others at once.
+  store: {
+    ...userPreferenceStore,
+    put: (principalId, preferences) => {
+      const saved = userPreferenceStore.put(principalId, preferences);
+      presence.refresh(principalId);
+      return saved;
+    },
+  },
+  organization: () => IDENTITY.kind === "perspicax",
+}));
 ROUTES.push(createViewerBotOverrideRoutes({
   store: viewerBotOverrideStore,
   organization: () => IDENTITY.kind === "perspicax",
@@ -19602,6 +19620,7 @@ ROUTES.push(createAccountRoutes({
     }
     await userSandbox?.removeNow(principalId).catch((error: unknown) => console.warn(`account deletion: server environment not removed: ${String(error)}`));
     userPreferenceStore.remove(principalId);
+    presence.forget(principalId);
     viewerBotOverrideStore.remove(principalId);
     achievementStore.remove(principalId);
     botSettings.forgetPerson(principalId);
@@ -21343,6 +21362,56 @@ if (ownerIdentity) {
   // desktop handed it over, at the route an organization server uses.
   ROUTES.push(createOwnerAvatarRoute({ store: ownerIdentity, localPrincipalId }));
 }
+// ── presence: online, away, offline (organization server) ────────────
+// shared/presence.ts, server/presence.ts, server/routes/presence.ts. In
+// memory only: never written to a chat, the journal or a backup.
+function presenceViewer(auth: RequestAuth): PresenceViewer {
+  const id = auth.kind === "session" ? auth.session.principalId?.trim() : undefined;
+  if (IDENTITY.kind !== "perspicax" || auth.kind !== "session" || !id) return { ok: false, code: "session_required" };
+  const principal = principals.byId(id);
+  if (!principal?.subject || principal.subject.iss !== IDENTITY.issuer || principal.disabledAt != null || principal.mergedInto) {
+    return { ok: false, code: "other_organization" };
+  }
+  // Before the first directory sync the issuer is the only word there is.
+  const directory = perspicaxDirectory?.directory();
+  if (directory) {
+    const listed = directory.people.find((entry) => entry.sub === principal.subject!.sub);
+    if (!listed || listed.status === "disabled") return { ok: false, code: "other_organization" };
+    if (listed.kind === "service" || listed.type === "service") return { ok: false, code: "service_account" };
+  }
+  return { ok: true, id: principal.id, sessionId: auth.session.id };
+}
+function presenceHiddenFor(principalId: string): boolean {
+  try {
+    return presenceHidden(userPreferenceStore.get(principalId).preferences[PRESENCE_VISIBLE_PREFERENCE]);
+  } catch {
+    return false;
+  }
+}
+function broadcastPresence(view: PresenceView): void {
+  const principal = principals.byId(view.principalId);
+  const principalId = principal?.id ?? view.principalId;
+  const hidden = presenceHiddenFor(principalId);
+  // everyone of the organization: the public view (offline when hidden)
+  broadcast({ kind: "presence.changed", people: [{ ...publicPresence(view, hidden), principalId }] });
+  // the person's own streams: their real state, for their account row
+  broadcast({ kind: "presence.changed", audience: principalId, people: [{ ...view, principalId, ...(hidden ? { hidden: true } : {}) }] });
+}
+const presence = new PresenceTracker({ onChange: broadcastPresence });
+if (IDENTITY.kind === "perspicax") setInterval(() => presence.sweep(), PRESENCE_SWEEP_MS).unref();
+ROUTES.push(createPresenceRoutes({
+  organization: () => IDENTITY.kind === "perspicax",
+  viewer: presenceViewer,
+  people: () => {
+    if (IDENTITY.kind !== "perspicax" || !perspicaxDirectory) return [];
+    return orgDirectoryEntries(IDENTITY.issuer, perspicaxDirectory.people(), (iss, sub) => principals.bySubject(iss, sub))
+      .filter((entry) => !entry.service && !entry.disabled)
+      .map((entry) => entry.principalId);
+  },
+  view: (principalId) => presence.view(principalId),
+  hidden: presenceHiddenFor,
+  heartbeat: (principalId, sessionId, beat) => presence.heartbeat(principalId, sessionId, beat),
+}));
 if (IDENTITY.kind === "perspicax") {
   const issuer = IDENTITY.issuer;
   // A person's Perspicax avatar (personAvatarUrl), read through the link and
@@ -26108,6 +26177,10 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       }
       if (!(auth.kind === "loopback" && auth.trust === "service")) client.identity = () => viewerIdentity(auth);
       if (viewerId) client.viewerId = viewerId;
+      // A person of the organization: this stream is one of their clients.
+      const presenceOf = presenceViewer(auth);
+      const presenceClose = presenceOf.ok ? presence.connect(presenceOf.id, presenceOf.sessionId) : null;
+      if (presenceOf.ok) client.presence = true;
       res.writeHead(200, {
         "content-type": "text/event-stream",
         "cache-control": "no-cache",
@@ -26171,11 +26244,13 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         }
         try {
           res.write(`: keepalive\n\ndata: ${JSON.stringify({ kind: "ping" })}\n\n`);
+          if (presenceOf.ok) presence.touch(presenceOf.id, presenceOf.sessionId);
         } catch {}
       }, SSE_HEARTBEAT_MS);
       req.on("close", () => {
         clearInterval(keepalive);
         sseClients.delete(client);
+        presenceClose?.();
       });
       return;
     }
