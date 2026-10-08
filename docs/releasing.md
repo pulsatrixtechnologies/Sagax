@@ -139,8 +139,8 @@ The Developer ID Application certificate, exported from the Mac that
 currently signs releases:
 
 ```sh
-# Keychain Access → My Certificates → "Developer ID Application: Milind Soni
-# (993D98NH4J)" → right-click → Export… → .p12 with a strong password, then:
+# Keychain Access → My Certificates → "Developer ID Application: Jean-Christophe Proulx
+# (PP546MZVHZ)" → right-click → Export… → .p12 with a strong password, then:
 base64 -i DeveloperID.p12 | pbcopy   # → MAC_CERT_P12_BASE64
 # the export password             → MAC_CERT_PASSWORD
 ```
