@@ -9,6 +9,11 @@
 // host sensors and devices exposed if an untrusted payload ever executes.
 // The allow-list also applies only to the verified renderer origin; any
 // opaque or cross-origin request is refused outright.
+//
+// Two narrow exceptions: the organization server's bundled UI may use the
+// microphone (voice mode in server mode), and the paired remote server open
+// in the main window may write the clipboard (the copy button), following
+// the one rule in remoteClipboardWriteAllowed. Nothing else.
 
 const ALLOWED_APP_PERMISSIONS = new Set([
   "notifications",
@@ -74,6 +79,73 @@ function audioOnly(details) {
     return Array.isArray(details.mediaTypes) && details.mediaTypes.length > 0 && details.mediaTypes.every((type) => type === "audio");
   }
   return details?.mediaType === "audio";
+}
+
+/**
+ * The one capability a paired remote server's page gets on this computer:
+ * writing the clipboard (navigator.clipboard.writeText asks Chromium for
+ * "clipboard-sanitized-write", which covers text and the HTML/images Chromium
+ * sanitizes). It is granted only to the main frame of the server the person is
+ * viewing right now, matched by exact origin against the active saved
+ * environment, so switching servers withdraws it at once. Reading the
+ * clipboard and every other permission stay local-only.
+ *
+ * It relies on Chromium's transient user activation (~5 s after a user
+ * interaction): without one, Chromium requests "clipboard-read", which stays
+ * denied here. No separate activation tracking is done.
+ *
+ * @param {string} permission The Electron/Chromium permission name
+ * @param {string} requestingUrlOrOrigin The URL or origin requesting the permission
+ * @param {string | null | undefined} activeRemoteOrigin Origin of the active saved environment, if any
+ * @param {{ isMainFrame?: boolean }} [details] Optional request details
+ * @returns {boolean} True only for a main-frame clipboard write from the active remote origin
+ */
+export function remoteClipboardWriteAllowed(permission, requestingUrlOrOrigin, activeRemoteOrigin, details = {}) {
+  if (permission !== "clipboard-sanitized-write") return false;
+  if (details?.isMainFrame !== true) return false;
+  const requesting = webOrigin(requestingUrlOrOrigin);
+  const active = webOrigin(activeRemoteOrigin);
+  return Boolean(requesting && active && requesting === active);
+}
+
+/**
+ * The session's permission handlers. This computer's own page gets
+ * appPermissionAllowed (with the organization server's bundled UI allowed the
+ * microphone only, for voice mode); the active remote server, in the main
+ * window's main frame, gets clipboard writes.
+ *
+ * @param {{ rendererOrigin: () => string, mainContents: () => unknown,
+ *   microphoneOrigins?: () => Array<string | null | undefined>, activeRemoteOrigin?: () => string | null }} context
+ *   `mainContents`: the main window's webContents, or null;
+ *   `microphoneOrigins`: appPermissionAllowed's extra microphone origins;
+ *   `activeRemoteOrigin`: the active saved environment's origin, or null on
+ *   this computer, asked on every request so a server switch withdraws it.
+ */
+export function appPermissionHandlers({ rendererOrigin, mainContents, microphoneOrigins = () => [], activeRemoteOrigin = () => null }) {
+  // The active remote server's page, in the main window's own main frame, writing the clipboard.
+  const clipboardWrite = (contents, permission, requesting, details) =>
+    Boolean(contents) && contents === mainContents() &&
+    remoteClipboardWriteAllowed(permission, requesting, activeRemoteOrigin(), details);
+  const allowed = (contents, permission, requesting, details) =>
+    appPermissionAllowed(permission, requesting, rendererOrigin(), details, { microphoneOrigins: microphoneOrigins() }) ||
+    clipboardWrite(contents, permission, requesting, details);
+  return {
+    request: (contents, permission, callback, details) => {
+      const requesting = details?.requestingUrl ?? contents?.getURL?.() ?? "";
+      callback(allowed(contents, permission, requesting, details));
+    },
+    check: (contents, permission, requestingOrigin, details) =>
+      allowed(contents, permission, requestingOrigin || contents?.getURL?.() || "", details),
+    /** perm:status's `pageMic`: what `request` answers the asking page's
+     * microphone request, so a blocked Live call can say whether this app
+     * refused it (a web browser can make the call) or the computer did. */
+    pageMicrophone: (event) => {
+      const contents = event?.sender;
+      const frame = event?.senderFrame;
+      const isMainFrame = Boolean(frame) && frame === contents?.mainFrame;
+      return allowed(contents, "media", frame?.url ?? "", { isMainFrame, mediaTypes: ["audio"] }) ? "allowed" : "refused";
+    },
+  };
 }
 
 // Both explicit IPC links and window.open must use the same web-only policy.

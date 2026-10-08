@@ -12,6 +12,7 @@ import { join } from "node:path";
 
 import type { ModelCatalog, TurnAccessInput } from "../../contracts.ts";
 import { decodeInjectId, hostApiKey, LOCAL_HOSTS, localHost, mergeLocalInject } from "../local-inject.ts";
+import { kimiHostToolProfile, withheldWorkspace } from "../host-tools.ts";
 import { createAcpDriver, type AcpSupport } from "./core.ts";
 
 const STATIC_KIMI_MODELS: ModelCatalog = {
@@ -571,6 +572,11 @@ const support: AcpSupport = {
   // A Moonshot key turn runs the key's model whatever the subscription
   // alias the picker shows (kimi-code/* needs the Kimi Code login).
   resolveTurnModel: (model, env) => (env[KIMI_KEY_MARK] ? KIMI_MOONSHOT_MODEL : model ? ensureKimiInjectAlias(model, env) : model),
+  // Organization server: no shell, file, web, subagent or schedule tool of
+  // Kimi's own (server/drivers/host-tools.ts; verified on 2.1.1 with
+  // scripts/verify-org-host-tools.ts).
+  withholdsHostTools: true,
+  withheldWorkspace,
   spawnArgs: (_config, turn) => {
     const model = turn.model;
     return [...(model ? ["-m", model] : []), "acp"];
@@ -585,8 +591,9 @@ const support: AcpSupport = {
     // subscription models. applyTurnEnv puts the inject back per turn.
     stripKimiModelEnv(env);
   },
-  applyTurnEnv: (env, { requestedModel }) => {
+  applyTurnEnv: (env, { requestedModel, withholdHostTools }) => {
     applyKimiLocalModelEnv(env, requestedModel);
+    kimiHostToolProfile(withholdHostTools === true, kimiDataRoot(env));
   },
   applyAccess: (env, access) => kimiApplyAccess(env, access),
 

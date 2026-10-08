@@ -16,7 +16,7 @@ vi.mock("@/state/store", async (importOriginal) => ({
 }));
 
 import { EngineConnect, connectName, paysWithText } from "./EngineConnect";
-import { deviceCodeHintShown } from "./CodexDeviceSignIn";
+import { deviceCodeHintShown } from "./DeviceSignIn";
 
 const issuer = "https://px.example.test";
 const engine = (patch: Partial<MyEngine> = {}): MyEngine => ({

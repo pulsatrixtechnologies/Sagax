@@ -80,25 +80,34 @@ export function createStartupScreen({
   });
   // The page may load after main already reported a phase or a failure.
   splash.webContents.on("did-finish-load", publish);
-  splash.once("ready-to-show", () => {
-    if (!disposed && !isQuitting()) {
-      clearTimeout(fallback); splash.show(); resolveReady();
-      // A spinner is never the only thing a person sees for long: if no
-      // workspace window takes over in time, say so and offer a way out,
-      // while startup keeps going underneath (it may still succeed).
-      stall = setTimeout(() => fail(STALL_MESSAGE), stallAfterMs);
-      stall.unref?.();
-    }
+  let shown = false;
+  const showSplash = () => {
+    if (shown || disposed || isQuitting()) return;
+    shown = true; splash.show(); resolveReady();
+    // A spinner is never the only thing a person sees for long: if no
+    // workspace window takes over in time, say so and offer a way out,
+    // while startup keeps going underneath (it may still succeed).
+    stall = setTimeout(() => fail(STALL_MESSAGE), stallAfterMs);
+    stall.unref?.();
+  };
+  splash.once("ready-to-show", showSplash);
+  // Some Wayland compositors (COSMIC) never paint a hidden window, so
+  // ready-to-show never comes. Show the loaded page after a short grace.
+  splash.webContents.once("did-finish-load", () => {
+    const grace = setTimeout(showSplash, 500);
+    grace.unref?.();
   });
   splash.on("show", () => onShow?.(splash));
   splash.once("closed", resolveReady);
   // Server startup waits on ready. A failed loading renderer must not keep
-  // it from ever reaching the main window's own bounded recovery path.
-  splash.webContents.once("render-process-gone", dispose);
-  fallback = setTimeout(dispose, 10_000);
-  fallback.unref?.();
+  // it from ever reaching the main window's own bounded recovery path. The
+  // splash stays until that window replaces it: it can be the app's only
+  // window, and destroying it then quits the app (window-all-closed).
+  splash.webContents.once("render-process-gone", resolveReady);
+  const startupFallback = setTimeout(resolveReady, 10_000);
+  startupFallback.unref?.();
   void splash.loadURL("data:text/html;charset=utf-8," + encodeURIComponent(startupScreenHtml(iconPath)))
-    .catch(dispose);
+    .catch(resolveReady);
   const setStatus = (status) => { state = { ...state, status: String(status) }; publish(); };
   const fail = (problem) => {
     if (disposed) return;

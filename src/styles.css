@@ -120,6 +120,20 @@
    rendered values rather than reading the hex. `scripts/check-skin-contrast.mjs`
    re-runs that check.
    ───────────────────────────────────────────────────────────────────────── */
+.table-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 30px;
+  min-height: 30px;
+  border-radius: 6px;
+  color: var(--color-ink-secondary);
+  cursor: pointer;
+}
+.table-action:hover, .table-action[aria-pressed="true"] { background: var(--color-raised); color: var(--color-ink); }
+.table-action:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 1px; }
+@media (pointer: coarse) { .table-action { min-width: 40px; min-height: 40px; } }
+
 @theme {
   --animate-panel-in: panel-in 0.24s cubic-bezier(0.22, 1, 0.36, 1);
   --animate-workspace-in: workspace-in 0.18s cubic-bezier(0.22, 1, 0.36, 1);
@@ -284,11 +298,9 @@
   --app-topbar-height: 56px;
   --app-frame-gap: 8px;
   --app-chat-min-width: 360px;
-  /* Mascot plinth: a disc behind a character where it is previewed, and a drop
-     shadow on light skins so a white character reads on a light surface. Dark
-     skins take the lighter-disc rule just below and no shadow. Light skins set
-     the plinth and the two shadow colours; see the rules at the end of the file. */
-  --color-mascot-plinth: #2e2e2e;
+  /* Mascot shadow: a drop shadow that follows the character's silhouette on light
+     skins, so a white character reads on a light surface. Dark skins take none.
+     Light skins set the two shadow colours; see the rules at the end of the file. */
   --mascot-shadow-color: transparent;
   --mascot-shadow-wide: transparent;
   --mascot-filter: none;
@@ -302,14 +314,9 @@
   background-color: var(--color-unread);
 }
 
-/* A dark skin's plinth is a notch lighter than its card; a light skin overrides it with a hex. */
-[data-skin] {
-  --color-mascot-plinth: color-mix(in srgb, #ffffff 9%, var(--color-card));
-}
-
 /* Light skins: the character wears a soft drop shadow (colour from the skin). */
 :is([data-skin="pulsatrix-light"], [data-skin="atelier"], [data-skin="lagoon"], [data-skin="linen"], [data-skin="daylight"], [data-skin="retro98"], [data-skin="meadow"]) {
-  --mascot-filter: drop-shadow(0 1px 2px var(--mascot-shadow-color)) drop-shadow(0 3px 8px var(--mascot-shadow-wide));
+  --mascot-filter: drop-shadow(0 0 1px var(--mascot-shadow-color)) drop-shadow(0 1px 2px var(--mascot-shadow-color)) drop-shadow(0 3px 8px var(--mascot-shadow-wide));
 }
 
 /* The popover tokens, resolved per skin context. `@theme` puts them on
@@ -459,7 +466,6 @@
    ───────────────────────────────────────────────────────────────────────── */
 [data-skin="pulsatrix-light"] {
   --code-color-scheme: light;
-  --color-mascot-plinth: #7f8cab;   /* mid-tone disc behind a light character (3:1 for #f4f4f4) */
   --mascot-shadow-color: rgba(20,24,40,0.35);
   --mascot-shadow-wide: rgba(20,24,40,0.18);
   --color-app: #eef2f8;
@@ -586,7 +592,6 @@
    ───────────────────────────────────────────────────────────────────────── */
 [data-skin="atelier"] {
   --code-color-scheme: light;
-  --color-mascot-plinth: #8c806c;   /* mid-tone disc behind a light character (3:1 for #f4f4f4) */
   --mascot-shadow-color: rgba(40,30,16,0.35);
   --mascot-shadow-wide: rgba(40,30,16,0.18);
   --color-app: #f5f1eb;           /* outermost ground */
@@ -727,7 +732,6 @@
    ───────────────────────────────────────────────────────────────────────── */
 [data-skin="lagoon"] {
   --code-color-scheme: light;
-  --color-mascot-plinth: #6f8f8c;   /* mid-tone disc behind a light character (3:1 for #f4f4f4) */
   --mascot-shadow-color: rgba(12,36,34,0.35);
   --mascot-shadow-wide: rgba(12,36,34,0.18);
   /* The tint is the point, so it is carried by the surfaces, not by a button:
@@ -853,7 +857,6 @@
    ───────────────────────────────────────────────────────────────────────── */
 [data-skin="linen"] {
   --code-color-scheme: light;
-  --color-mascot-plinth: #848c9b;   /* mid-tone disc behind a light character (3:1 for #f4f4f4) */
   --mascot-shadow-color: rgba(20,24,36,0.35);
   --mascot-shadow-wide: rgba(20,24,36,0.18);
   --color-app: #eceff3;
@@ -973,7 +976,6 @@
    ───────────────────────────────────────────────────────────────────────── */
 [data-skin="daylight"] {
   --code-color-scheme: light;
-  --color-mascot-plinth: #858585;   /* mid-tone disc behind a light character (3:1 for #f4f4f4) */
   --mascot-shadow-color: rgba(20,20,20,0.35);
   --mascot-shadow-wide: rgba(20,20,20,0.18);
   --color-app: #fcfcfc;           /* the thread */
@@ -1045,7 +1047,6 @@
    ───────────────────────────────────────────────────────────────────────── */
 [data-skin="retro98"] {
   --code-color-scheme: light;
-  --color-mascot-plinth: #6e6e6e;   /* mid-tone disc behind a light character (3:1 for #f4f4f4) */
   --mascot-shadow-color: rgba(0,0,0,0.35);
   --mascot-shadow-wide: rgba(0,0,0,0.18);
   --color-app: #ffffff;           /* a window's white client area */
@@ -1108,7 +1109,6 @@
 [data-skin="meadow"] {
   --app-glow: none;
   --code-color-scheme: light;
-  --color-mascot-plinth: #7c917e;   /* mid-tone disc behind a light character (3:1 for #f4f4f4) */
   --mascot-shadow-color: rgba(16,32,20,0.35);
   --mascot-shadow-wide: rgba(16,32,20,0.18);
   --color-app: #ffffff;           /* the thread */
@@ -1586,10 +1586,20 @@ body {
    header float over their scroller, which runs on underneath them. The glass
    is a layer behind the bar's own controls: the tint of the surface the bar
    sits on, so at rest the bar reads as that surface, over a blur of whatever
-   scrolls beneath. Its inner edge fades out across --glass-edge, so content
-   melts into the glass instead of meeting a hard line. The layer is a
-   pseudo-element, so the bar itself never becomes a containing block for
-   the fixed-position menus it opens. */
+   scrolls beneath. A top bar's inner edge fades out across --glass-edge, so
+   content melts into the glass instead of meeting a hard line. A bottom bar
+   can be one short row (Simple mode's profile row), where a fade inside it
+   left a half-sharp strip of text showing above the row: its glass is solid
+   to the bar's edge and reaches --glass-reach past it instead, fading there,
+   and the list gets that much more room at its end so a resting row is never
+   blurred. The layer is a pseudo-element, so the bar itself never becomes a
+   containing block for the fixed-position menus it opens. */
+[data-glass-frame] {
+  --glass-reach: 24px;
+}
+[data-glass-frame]:has(> [data-glass-bar="bottom"]) {
+  --glass-bottom-reach: var(--glass-reach);
+}
 .glass-bar {
   --glass-edge: 20px;
   isolation: isolate;
@@ -1608,14 +1618,15 @@ body {
   mask-image: linear-gradient(to bottom, black calc(100% - var(--glass-edge)), transparent);
 }
 .glass-bar[data-glass-bar="bottom"]::before {
-  mask-image: linear-gradient(to top, black calc(100% - var(--glass-edge)), transparent);
+  top: calc(-1 * var(--glass-reach, 0px));
+  mask-image: linear-gradient(to top, black calc(100% - var(--glass-reach, 0px)), transparent);
 }
 /* The frame publishes its bars' heights. Rows rest clear of the glass,
    keyboard focus scrolls them clear, and the scrollbar runs only between the
    bars (a bar over it would swallow the drag). */
 .glass-scroller {
   scroll-padding-top: var(--glass-top, 0px);
-  scroll-padding-bottom: var(--glass-bottom, 0px);
+  scroll-padding-bottom: calc(var(--glass-bottom, 0px) + var(--glass-bottom-reach, 0px));
 }
 .glass-scroller::-webkit-scrollbar-track {
   margin-top: var(--glass-top, 0px);
@@ -1623,7 +1634,7 @@ body {
 }
 .glass-scroller-content {
   padding-top: var(--glass-top, 0px);
-  padding-bottom: var(--glass-bottom, 0px);
+  padding-bottom: calc(var(--glass-bottom, 0px) + var(--glass-bottom-reach, 0px));
 }
 @media (prefers-reduced-transparency: reduce) {
   .glass-bar::before {
@@ -1676,6 +1687,15 @@ body {
   color: var(--color-ink);
 }
 
+/* Scrollbars: a slim pill in each skin's own --color-scrollbar, never a
+   full-height slab. At rest it is a 2px line, enough to say "this scrolls";
+   with the pointer on it (anywhere across the 8px gutter, since the
+   transparent border is part of the thumb) or while dragged it widens to a
+   6px pill and darkens, as macOS and Windows 11 scrollbars do. The gutter
+   never changes width, so nothing reflows, and the track stays clear, so no
+   gray rail runs down a panel. (Widening on hover of the scrolling area
+   instead, via `*:hover::-webkit-scrollbar-thumb`, does not repaint in
+   Chromium, so it is not used.) */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
@@ -1685,6 +1705,8 @@ body {
   background: color-mix(in srgb, var(--color-ink) 14%, transparent);
   border-radius: 9999px;
 }
+::-webkit-scrollbar-thumb:vertical { min-height: 40px; }
+::-webkit-scrollbar-thumb:horizontal { min-width: 40px; }
 /* the thumb was inert — it never acknowledged the pointer */
 ::-webkit-scrollbar-thumb:hover {
   background: color-mix(in srgb, var(--color-ink) 21%, transparent);
@@ -2641,75 +2663,12 @@ button:disabled.bg-danger {
   background-color: color-mix(in srgb, var(--color-accent) 35%, transparent);
 }
 
-/* "Paid with" stays out of the way and never moves the conversation: the
-   chip takes no height, sits just under its reply, and fades in after the
-   pointer has rested on that reply (or the chip) for 2 seconds; keyboard
-   focus shows it at once. */
-[data-testid="turn-access-chip"] {
-  position: relative;
-  height: 0;
-  overflow: visible;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 120ms ease 0s;
-}
-[data-testid="turn-access-chip"] > * {
-  position: absolute;
-  top: 2px;
-  left: 0;
-  z-index: 5;
-}
-[data-mid]:hover > [data-testid="turn-access-chip"],
-[data-mid]:hover + [data-mid] > [data-testid="turn-access-chip"],
-[data-mid]:hover + [data-mid] [data-testid="turn-access-chip"],
-[data-mid]:hover [data-testid="turn-access-chip"] {
-  opacity: 1;
-  pointer-events: auto;
-  transition: opacity 160ms ease 2s;
-}
-[data-mid]:focus-within > [data-testid="turn-access-chip"] {
-  opacity: 1;
-  pointer-events: auto;
-  transition: opacity 120ms ease 0s;
-}
-@media (prefers-reduced-motion: reduce) {
-  [data-testid="turn-access-chip"] { transition: none; }
-}
-
-/* ── Mascot plinth ────────────────────────────────────────────────────────
+/* ── Mascot shadow ───────────────────────────────────────────────────────
    Every character root (shape, owl, Bunbu, Trombi) takes the skin's drop
-   shadow, which is "none" on dark skins. The plinth is a disc in
-   --color-mascot-plinth behind a preview or a thumbnail, so a white
-   character reads on a light surface: a flat one and a shaded one alike. The
-   editor lives in floating-bots/, so its thumbnails are reached by their data
-   attributes. A hairline outlines the disc without touching a selection ring
-   (that one is a box-shadow). */
+   shadow, which is "none" on dark skins. It follows the silhouette, so a white
+   character reads on a light surface without any disc or tile behind it. */
 :is(.shape-mascot, [data-owl], .bunbu-mascot, .trombi-avatar) {
   filter: var(--mascot-filter, none);
-}
-.mascot-plinth {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 9999px;
-  background-color: var(--color-mascot-plinth);
-  outline: 1px solid color-mix(in srgb, var(--color-ink) 18%, transparent);
-  outline-offset: -1px;
-}
-[data-mascot-look-editor] [data-character-option] > span:first-child,
-[data-mascot-look-editor] .skin-card > span:first-child {
-  border-radius: 9999px;
-  background-color: var(--color-mascot-plinth);
-  outline: 1px solid color-mix(in srgb, var(--color-ink) 18%, transparent);
-  outline-offset: -1px;
-}
-[data-mascot-look-editor] [data-character-shape] {
-  background-color: var(--color-mascot-plinth);
-  outline: 1px solid color-mix(in srgb, var(--color-ink) 18%, transparent);
-  outline-offset: -1px;
-}
-[data-mascot-look-editor] [data-character-shape]:hover {
-  background-color: color-mix(in srgb, var(--color-ink) 8%, var(--color-mascot-plinth));
 }
 
 /* Window drag regions. The whole top strip of the window moves the window:

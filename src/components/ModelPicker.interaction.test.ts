@@ -221,6 +221,19 @@ describe("the way into API keys", () => {
     expect(fixture.dispatch).toHaveBeenCalledWith({ type: "toggleAppSettings", open: true, section: "connections" });
   });
 
+  // MOCA-292: once a key is saved, this shortcut is also how a mistyped key gets fixed.
+  it("says the shortcut changes keys too once a key is saved", () => {
+    const openai: InstanceInfo = {
+      instanceId: "openai", driverKind: "openai-compat", displayName: "OpenAI", access: "api",
+      snapshot: { state: "available", authenticated: true, version: null },
+      models: { default: "gpt-5", options: [{ id: "gpt-5", label: "GPT-5" }] },
+    };
+    fixture.instances = [codex, openai];
+    const opened = open(bot("codex", "gpt-5.6"));
+    expect(opened.html).toContain("Add or change API keys");
+    expect(opened.html).not.toContain(">Add API keys<");
+  });
+
   it("ends the rail's API keys group with a way to add one", () => {
     fixture.instances = [codex];
     const opened = open(bot("codex", "gpt-5.6"));
@@ -486,19 +499,21 @@ describe("on an organization server", () => {
       models: { default: "openai/gpt-4o", options: [{ id: "openai/gpt-4o", label: "gpt-4o", custom: true }] },
       capabilities: { withholdsHostTools: true },
     };
-    const gemini: InstanceInfo = {
-      instanceId: "gemini", driverKind: "geminiAgent", displayName: "Gemini", access: "subscription",
+    const droid: InstanceInfo = {
+      instanceId: "droid", driverKind: "droidAgent", displayName: "Droid", access: "subscription",
       snapshot: { state: "available", authenticated: true },
-      models: { default: "gemini-pro", options: [{ id: "gemini-pro", label: "Gemini Pro" }] },
+      models: { default: "droid-pro", options: [{ id: "droid-pro", label: "Droid Pro" }] },
     };
-    fixture.instances = [signedOut(), grok, pi, gemini, ollama];
-    const opened = open(bot("gemini", "gemini-pro"));
-    expect(rail(opened)!.props.instances.map((instance) => instance.instanceId)).toEqual(["claude", "grok", "pi", "gemini"]);
+    const cursor: InstanceInfo = { ...droid, instanceId: "cursor", driverKind: "cursorAgent", displayName: "Cursor Agent" };
+    fixture.instances = [signedOut(), grok, pi, droid, cursor, ollama];
+    const opened = open(bot("droid", "droid-pro"));
+    // a refused engine other than the bot's own is not offered
+    expect(rail(opened)!.props.instances.map((instance) => instance.instanceId)).toEqual(["claude", "grok", "pi", "droid"]);
     const html = menu(opened.html);
-    expect(html).toContain("data-model-host-tools");
-    expect(html).toContain("Gemini runs its own tools on the Sagax server.");
+    expect(html).toContain('data-model-host-tools="droid"');
+    expect(html).toContain("Droid cannot hold back its own tools on this server. Its ACP mode ignores the tool selection, so its shell and file tools would run there.");
     rail(opened)!.props.onSelect(grok);
-    expect(menu(render(bot("gemini", "gemini-pro")).html)).not.toContain("data-model-host-tools");
+    expect(menu(render(bot("droid", "droid-pro")).html)).not.toContain("data-model-host-tools");
   });
 
   it("lists the person's own computer under Local, pickable on Codex and greyed on Claude Code when the server does not speak the Anthropic protocol", () => {

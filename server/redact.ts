@@ -21,6 +21,7 @@ const SECRET_KEY_PARTS = ["token", "secret", "password", "passwd", "apikey", "ap
 function isSecretName(name: string): boolean {
   const lower = name.toLowerCase();
   if (["sagax_gate_upstream", "sagax_remote_mcp_server", "omb_gate_upstream", "omb_remote_mcp_server"].includes(lower)) return true;
+  if (lower.startsWith("sagax_remote_mcp_config_") || lower.startsWith("omb_remote_mcp_config_")) return true;
   if (SECRET_KEY_PARTS.some((part) => lower.includes(part))) return true;
   return /(^|[_.-])keys?$/.test(lower);
 }

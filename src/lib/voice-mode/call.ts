@@ -13,9 +13,13 @@
 //     -> speaker verification of the turn (on this computer, when enrolled)
 //     -> the words go to the BOT as an ordinary message (CallView dispatches
 //        the normal send: the bot's engine, tools, memory and approvals)
-//   the bot's answer, sentence by sentence as it is written
-//     -> POST /voice/stream (xAI text to speech, the person's Voice, Speed and
-//        Language) -> Web Audio, the next sentence fetched while this one plays
+//   the bot's answer, clause by clause as it is written
+//     -> "Streaming voice" (default): one socket for the call
+//        (GET /voice/speech, speech-stream.ts) to xAI's streaming text to
+//        speech, each clause sent the moment it is written; else, or when
+//        that socket fails, POST /voice/stream per sentence (the person's
+//        Voice, Speed and Language) -> Web Audio, the next sentence fetched
+//        while this one plays
 //
 // xAI is ears and a voice only; it never answers. call-machine.ts holds the
 // states and decides; this file runs the devices and the effects.
@@ -27,11 +31,13 @@ import { INITIAL_CALL, step, type CallEffect, type CallEvent, type CallState } f
 import { EchoGuard } from "./echo";
 import { loadOrt } from "./onnx";
 import { PcmPlayer, type PlaybackCut, type Sentence } from "./player";
-import { SentenceStream } from "./sentences";
+import { SentenceStream, STREAMING_CLAUSES } from "./sentences";
+import { SpeechSocket } from "./speech-stream";
+import { estimatePitch } from "./prosody";
 import { spokenPart } from "./spoken";
 import { judge, readVoiceprint, saveVoiceprint, SpeakerEmbedder, voiceprintOf, type Voiceprint } from "./speaker-id";
 import { LiveTranscriber } from "./stt-stream";
-import { completeClause, FRAME_MS, incompleteClause, TurnDetector } from "./turns";
+import { completeClause, CONTOUR_CONTINUATION_MS, FRAME_MS, incompleteClause, TurnDetector } from "./turns";
 import { formatTimeline, materiallyDifferent, normalizedWords, type TurnMetrics } from "./latency";
 import { LevelVad, SileroVad, VAD_FRAME, type VoiceProbability } from "./vad";
 import type { VoiceModeSettings } from "../../../shared/voice-mode";
@@ -132,6 +138,9 @@ export interface VoiceCallOptions {
   transcriber?: LiveTranscriber;
   models?: () => Promise<{ vad: VoiceProbability; embedder: SpeakerEmbedder | null }>;
   speech?: typeof streamVoiceModeSpeech;
+  /** the streaming voice socket (default: one per call when the setting is
+   * on and no `speech` is injected) */
+  speechSocket?: SpeechSocket | null;
   /** the enrolled voice (default: this computer's, from localStorage) */
   voiceprint?: Voiceprint | null;
   now?: () => number;
@@ -197,6 +206,10 @@ export class VoiceCall {
   private lastVoicedAt = 0;
   private speechWaiters: Array<(heard: boolean) => void> = [];
   private reply: SentenceStream | null = null;
+  /** the call's streaming voice, while it holds (else POST per sentence) */
+  private speechSocket: SpeechSocket | null = null;
+  /** when the current candidate turn's first voiced frame came */
+  private candidateAt = 0;
   private turn: TurnMetrics | null = null;
   private bargeIn: BargeInMetrics | null = null;
   /** the person cut the bot since the last turn sent */
@@ -206,7 +219,7 @@ export class VoiceCall {
   /** the answer's text so far, as last handed to replyProgress */
   private replyText = "";
   /** the last utterance sent, and whether the bot has spoken since */
-  private lastSent: { text: string; endedAt: number; botSpoke: boolean } | null = null;
+  private lastSent: { text: string; endedAt: number; botSpoke: boolean; onContour?: boolean } | null = null;
   /** the turn being heard continues the last one (it was cut by a pause) */
   private continuing = false;
   /** the words recognized so far in the turn being heard, and when */
@@ -305,6 +318,13 @@ export class VoiceCall {
       },
     );
     const ears = this.transcriber.connect();
+    // the voice's socket opens beside the ears; the call never waits on it
+    // (its own SPEECH_OPEN_MS decides, then POST speaks)
+    this.speechSocket = this.o.speechSocket !== undefined ? this.o.speechSocket
+      : !this.o.speech && this.o.settings().streamingVoice !== false
+        ? new SpeechSocket({ botId: this.o.botId, threadId: this.o.threadId, voice: this.o.voice })
+        : null;
+    void this.speechSocket?.connect();
     try {
       await this.openMicrophone();
     } catch (error) {
@@ -366,7 +386,7 @@ export class VoiceCall {
    * Resolves true once heard, false when cut. */
   say(text: string): Promise<boolean> {
     if (this.state.phase === "held" || this.state.phase === "ended") return Promise.resolve(false);
-    const stream = new SentenceStream();
+    const stream = this.sentences();
     const sentences = stream.finish(text);
     for (const sentence of sentences) this.enqueue(sentence);
     if (!sentences.length) return Promise.resolve(true);
@@ -377,7 +397,7 @@ export class VoiceCall {
   replyProgress(text: string): void {
     if (this.state.phase === "held" || this.state.phase === "ended") return;
     if (this.turn && this.turn.sentAt !== undefined && this.turn.firstTokenAt === undefined && text.trim()) this.turn.firstTokenAt = this.now();
-    this.reply ??= new SentenceStream();
+    this.reply ??= this.sentences();
     this.replyText = spokenPart(text);
     for (const sentence of this.reply.feed(this.replyText)) this.enqueue(sentence);
   }
@@ -385,7 +405,7 @@ export class VoiceCall {
   /** The answer (or this block of it) is complete. */
   replyDone(text: string): Promise<boolean> {
     if (this.turn && this.turn.sentAt !== undefined && this.turn.firstTokenAt === undefined && text.trim()) this.turn.firstTokenAt = this.now();
-    const stream = this.reply ?? new SentenceStream();
+    const stream = this.reply ?? this.sentences();
     this.reply = null;
     const rest = stream.finish(spokenPart(text));
     for (const sentence of rest) this.enqueue(sentence);
@@ -398,13 +418,24 @@ export class VoiceCall {
     return this.reply?.position ?? 0;
   }
 
+  /** The streaming voice speaks from the first clause, no character wait. */
+  private get streaming(): boolean {
+    return this.speechSocket?.streaming === true;
+  }
+
+  private sentences(): SentenceStream {
+    return new SentenceStream(this.streaming ? STREAMING_CLAUSES : {});
+  }
+
   private enqueue(text: string): void {
     if (this.state.phase === "held" || this.state.phase === "ended") return;
     const turn = this.turn;
     const first = Boolean(turn && turn.firstSentenceAt === undefined && turn.sentAt !== undefined);
     if (first) turn!.firstSentenceAt = this.now();
     const controller = new AbortController();
-    const speech = this.o.speech ?? streamVoiceModeSpeech;
+    const socket = this.streaming ? this.speechSocket : null;
+    if (first && socket) turn!.streamed = true;
+    const speech = this.o.speech ?? socket?.speak ?? streamVoiceModeSpeech;
     let audio = speech(this.o.botId, text, this.o.voice(), this.o.threadId(), controller.signal);
     // the first sentence of an answer: when its first audio bytes arrive
     if (first) audio = audio.then((spoken) => (spoken ? { ...spoken, body: firstChunk(spoken.body, () => { turn!.ttsFirstByteAt ??= this.now(); }) } : spoken));
@@ -545,6 +576,7 @@ export class VoiceCall {
     this.capture = null;
     void capture?.close().catch(() => {});
     this.transcriber.close();
+    this.speechSocket?.close();
     // let the end earcon play before the voice closes
     setTimeout(() => void this.player.close(), 400);
     const waiters = this.speechWaiters;
@@ -576,9 +608,14 @@ export class VoiceCall {
 
   private async process(frame: Float32Array): Promise<void> {
     if (this.closed || this.state.muted || this.state.phase === "held") return;
-    this.turns.setPause(this.o.settings().pause ?? "normal");
+    const settings = this.o.settings();
+    const pause = settings.pause ?? "normal";
+    this.turns.setPause(pause);
+    // "Faster end of turn": how the voice ends counts (never in Patient)
+    this.turns.setProsody(settings.fasterEndOfTurn !== false && pause !== "patient" && settings.input !== "push");
     const level = rms(frame);
     const probability = await this.vad.probability(frame);
+    const pitch = this.turns.prosody && probability >= 0.3 ? estimatePitch(frame) : null;
     const playback = this.player.level();
     const echo = this.guard.update(level, playback);
     const botAudible = this.state.botAudible || playback > 0.004;
@@ -601,7 +638,7 @@ export class VoiceCall {
       return;
     }
 
-    const event = this.turns.feed({ probability, level, botAudible, echo });
+    const event = this.turns.feed({ probability, level, botAudible, echo, pitch });
     if (!event) {
       if (this.turns.active) {
         this.transcriber.push(frame);
@@ -621,6 +658,7 @@ export class VoiceCall {
         this.preroll = [];
         this.turnLevel = { sum: level, frames: 1 };
         this.lastVoicedAt = this.now();
+        this.candidateAt = this.now();
         if (event.bargeIn) this.bargeIn = { candidateAt: this.now() };
         this.dispatch({ type: "speech-candidate" });
         return;
@@ -633,7 +671,8 @@ export class VoiceCall {
         this.dispatch({ type: "speech-cancel" });
         return;
       case "end":
-        this.beginTurnMetrics(this.lastVoicedAt, event.early === true);
+        this.beginTurnMetrics(this.lastVoicedAt, event.early === true, event.onContour === true);
+        if (this.turn && event.contour && event.contour !== "unknown") this.turn.contour = event.contour;
         this.dispatch({ type: "speech-end" });
         return;
     }
@@ -644,9 +683,9 @@ export class VoiceCall {
     if (this.preroll.length > PREROLL_FRAMES) this.preroll.shift();
   }
 
-  private beginTurnMetrics(stoppedAt: number, earlyEnd = false): void {
+  private beginTurnMetrics(stoppedAt: number, earlyEnd = false, contourEnd = false): void {
     this.disarmCue();
-    this.turn = { stoppedAt, endedAt: this.now(), ...(earlyEnd ? { earlyEnd: true } : {}) };
+    this.turn = { stoppedAt, endedAt: this.now(), ...(earlyEnd ? { earlyEnd: true } : {}), ...(contourEnd ? { contourEnd: true } : {}) };
   }
 
   /** The server took the turn's send (LiveCall, from its receipt). */
@@ -690,17 +729,23 @@ export class VoiceCall {
     // A turn that starts right after the last one, before the bot said a
     // word, is the same utterance cut by a pause: it is sent whole, and the
     // turn the fragment started is cancelled.
-    if (event.type === "speech-start" && !this.state.botAudible && this.lastSent && !this.lastSent.botSpoke &&
-      this.now() - this.lastSent.endedAt <= CONTINUATION_MS) {
+    // A turn ended on its contour alone (no punctuation) and the person
+    // spoke again within CONTOUR_CONTINUATION_MS: a wrong cut. The same,
+    // even over the bot's first words, which stop (nothing is lost but them).
+    const wrongCut = event.type === "speech-start" && this.lastSent?.onContour === true &&
+      this.candidateAt - this.lastSent.endedAt <= CONTOUR_CONTINUATION_MS;
+    if (event.type === "speech-start" && this.lastSent && (wrongCut || (!this.state.botAudible && !this.lastSent.botSpoke &&
+      this.now() - this.lastSent.endedAt <= CONTINUATION_MS))) {
       this.continuing = true;
-      if (this.state.botBusy) this.emit("interrupt-bot");
+      // over the bot's voice the barge-in itself stops its turn
+      if (this.state.botBusy && !this.state.botAudible) this.emit("interrupt-bot");
     }
     if (event.type === "bot-audio-start" && this.lastSent) this.lastSent.botSpoke = true;
     const { state, effects } = step(this.state, event);
     const changed = state !== this.state;
     this.state = state;
     // the person cut the bot: the next turn they send says so
-    if ((event.type === "speech-start" && state.phase === "interrupted") ||
+    if ((event.type === "speech-start" && state.phase === "interrupted" && !wrongCut) ||
       (event.type === "interrupt" && effects.some((effect) => effect.type === "cancel-speech"))) this.cutBot = true;
     for (const effect of effects) this.run(effect);
     if (changed) this.emit("state", state);
@@ -751,7 +796,7 @@ export class VoiceCall {
         const continues = this.continuing && this.lastSent !== null;
         const text = continues ? continuedTurn(this.lastSent!.text, effect.text) : effect.text;
         this.continuing = false;
-        this.lastSent = { text, endedAt: this.turn?.endedAt ?? this.now(), botSpoke: false };
+        this.lastSent = { text, endedAt: this.turn?.endedAt ?? this.now(), botSpoke: false, ...(this.turn?.contourEnd ? { onContour: true } : {}) };
         this.emit("utterance", text, this.turn ?? { stoppedAt: this.now(), endedAt: this.now(), utteranceId }, {
           interrupted: this.cutBot,
           ...(this.cutBot && this.lastCut ? { cut: this.lastCut } : {}),

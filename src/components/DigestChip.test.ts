@@ -2,7 +2,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import type { Message } from "@/state/store";
-import { CompactionChip, DigestChip, TurnAccessChip } from "./DigestChip";
+import { CompactionChip, DigestChip } from "./DigestChip";
 
 const message: Message = {
   id: "receipt", role: "bot", kind: "digest", at: 1, text: "Observed work, not a completion verdict",
@@ -70,21 +70,9 @@ describe("DigestChip", () => {
   });
 });
 
-describe("which credentials a turn ran with (organization server, 2026-10-01)", () => {
-  const BOB = "pr_00000000-0000-4000-8000-0000000000b0";
-  const OWNER = "pr_00000000-0000-4000-8000-0000000000a0";
-  const withAccess = (access: NonNullable<NonNullable<Message["digest"]>["access"]>): Message => ({ ...message, digest: { ...message.digest!, access } });
-
-  it("adds it to the digest chip and shows it alone when tool chips are hidden", () => {
-    const mine = withAccess({ via: "subscription", payer: "speaker", payerPrincipalId: BOB });
-    expect(renderToStaticMarkup(createElement(DigestChip, { message: mine, viewerPrincipalId: BOB }))).toContain("Paid with: Your subscription");
-    expect(renderToStaticMarkup(createElement(TurnAccessChip, { message: mine, viewerPrincipalId: OWNER }))).toContain("Paid with: The speaker&#x27;s subscription");
-    expect(renderToStaticMarkup(createElement(TurnAccessChip, { message: withAccess({ via: "owner-key", payer: "owner", payerPrincipalId: OWNER, routine: true }), viewerPrincipalId: BOB }))).toContain("Owner&#x27;s credentials");
-    expect(renderToStaticMarkup(createElement(TurnAccessChip, { message: withAccess({ via: "org-key", payer: "organization" }) }))).toContain("Organization&#x27;s key");
-  });
-
-  it("shows nothing on a solo server's digest", () => {
-    expect(renderToStaticMarkup(createElement(TurnAccessChip, { message }))).toBe("");
-    expect(renderToStaticMarkup(createElement(DigestChip, { message }))).not.toContain("Paid with");
+describe("who paid for a turn is never shown (2026-10-08)", () => {
+  it("keeps the payer out of the digest chip", () => {
+    const paid: Message = { ...message, digest: { ...message.digest!, access: { via: "subscription", payer: "speaker", payerPrincipalId: "pr_00000000-0000-4000-8000-0000000000b0" } } };
+    expect(renderToStaticMarkup(createElement(DigestChip, { message: paid }))).not.toContain("Paid with");
   });
 });

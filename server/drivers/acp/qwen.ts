@@ -10,6 +10,7 @@ import { qualifiedModelLabel } from "../../contracts.ts";
 import { harnessHome } from "../../env-path.ts";
 import { parseQwenLogLine } from "./quiet-status.ts";
 import { decodeInjectId, hostApiKey, localHost, mergeLocalInject } from "../local-inject.ts";
+import { qwenHostToolArgs, qwenHostToolEnv, sagaxMcpServerNames, withheldWorkspace } from "../host-tools.ts";
 import { createAcpDriver, type AcpSupport } from "./core.ts";
 
 const EMPTY: ModelCatalog = { default: "", options: [] };
@@ -235,7 +236,7 @@ const support: AcpSupport = {
   },
   // A raw -m only changes the model within the saved provider. ACP switches
   // the complete route and confirms it before any prompt leaves OMB.
-  spawnArgs: (config, turn) => ["--acp", ...qwenApprovalArgs(config.fullAuto, turn.approvalMode)],
+  spawnArgs: (config, turn) => ["--acp", ...qwenApprovalArgs(config.fullAuto, turn.approvalMode), ...qwenHostToolArgs(turn.withholdHostTools === true, sagaxMcpServerNames(turn.integrations))],
   // Qwen's live session/load returns its cached MCP clients, ignoring fresh
   // credentials. Cold-load the same conversation when those inputs change.
   restartOnMcpChange: true,
@@ -251,6 +252,12 @@ const support: AcpSupport = {
     if (env.QWEN_DEBUG_LOG_FILE === undefined) env.QWEN_DEBUG_LOG_FILE = "1";
   },
   statusLog: { path: qwenDebugLogPath, parse: parseQwenLogLine },
+  // Organization server: no shell, file, web, subagent or background memory
+  // agent of Qwen's own (server/drivers/host-tools.ts; verified on 0.24.7
+  // with scripts/verify-org-host-tools.ts).
+  withholdsHostTools: true,
+  withheldWorkspace,
+  applyTurnEnv: (env, { withholdHostTools }) => qwenHostToolEnv(env, withholdHostTools === true),
 };
 
 export const QwenAgentDriver = createAcpDriver(support);

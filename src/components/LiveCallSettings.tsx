@@ -2,6 +2,7 @@ import { useCallback, useId, useState } from "react";
 
 import { LIVE_VOICE_OPTIONS } from "../../shared/live-call";
 import { t } from "@/lib/i18n";
+import { liveDisclosure } from "@/lib/call-mode";
 import { api, useStore, type ConfigStatus } from "@/state/store";
 import type { LiveSettings } from "../../shared/wire";
 import { SettingsText } from "./SettingsLink";
@@ -143,7 +144,7 @@ export function LiveCallInstallationSettings() {
         </span>
       </div>
       {changingKey && <LiveKeySetup compact onSaved={() => setChangingKey(false)} />}
-      <div className="text-[11.5px] text-ink-tertiary">{t("call.live.disclosure")} {t("call.live.cost")}</div>
+      <div className="text-[11.5px] text-ink-tertiary">{liveDisclosure()} {t("call.live.cost")}</div>
       {error && <div className="text-[12px] text-danger">{error}</div>}
     </div>
   );

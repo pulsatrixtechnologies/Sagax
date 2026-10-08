@@ -14,6 +14,12 @@ export interface TurnMetrics {
   endedAt: number;
   /** it ended early: the words were a finished sentence */
   earlyEnd?: boolean;
+  /** it ended early on the voice's ending alone (prosody.ts), no punctuation */
+  contourEnd?: boolean;
+  /** what the voice's ending said ("Faster end of turn" on) */
+  contour?: "finished" | "unfinished";
+  /** the answer was spoken over the streaming voice socket (speech-stream.ts) */
+  streamed?: boolean;
   /** the words were ready (a stable partial, or speech to text's final) */
   transcribedAt?: number;
   /** speech to text's final words (after an early start, they come later) */
@@ -69,7 +75,7 @@ export function stageDurations(m: TurnMetrics): Partial<Record<LatencyStage | "t
 export function formatTimeline(m: TurnMetrics): string {
   const d = stageDurations(m);
   const parts = [...LATENCY_STAGES, "total" as const].filter((stage) => d[stage] !== undefined).map((stage) => `${stage}=${d[stage]}ms`);
-  const flags = [m.earlyEnd ? "early-end" : "", m.earlyStart ? "early-start" : "", m.reissued ? "reissued" : "", m.cueAt !== undefined ? "cue" : ""].filter(Boolean);
+  const flags = [m.earlyEnd ? "early-end" : "", m.contourEnd ? "contour" : "", m.streamed ? "streamed" : "", m.earlyStart ? "early-start" : "", m.reissued ? "reissued" : "", m.cueAt !== undefined ? "cue" : ""].filter(Boolean);
   return `[voice-latency] utt=${m.utteranceId ?? "?"} ${parts.join(" ")}${flags.length ? ` (${flags.join(", ")})` : ""}`;
 }
 

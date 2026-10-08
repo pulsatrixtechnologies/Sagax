@@ -48,7 +48,14 @@ recreating a removed fixture directory.
    **Update OpenCode on this server**. Click each and confirm the fixture error
    appears with its button usable again. Terminal commands remain under
    **Prefer a terminal?**. These clicks never perform a real installation.
-7. Expand **ChatGPT plan**. Its setup card offers **Continue with ChatGPT**,
+7. Expand Claude and use **Add Claude account** inside its card. Enter an
+   account name, collapse/reopen the card, and confirm the draft remains.
+   Cancel, then repeat with **Add ChatGPT account** in the ChatGPT plan card.
+   Submit once to check that the fixture-only error stays inside that card and
+   the form remains editable. Neither action should appear below the engine
+   grid, in unrelated providers, or in read-only managed cards. Provider-icon
+   editing controls should not appear. Repeat at a 390px viewport.
+8. Expand **ChatGPT plan**. Its setup card offers **Continue with ChatGPT**,
    not a device code or terminal login. Toggle the sample plan connection:
    the first-use dialog should focus **Got it**, fit at 390px, and explain
    ChatGPT plan usage separately from Sagax Pro. Dismiss it, disconnect
@@ -60,7 +67,7 @@ Automated coverage:
 
 ```sh
 pnpm exec vitest run scripts/verify-engines-ui.test.mjs
-pnpm exec vitest run src/components/EngineLibrary.test.ts src/components/EnginesSettings.test.ts src/components/EngineSetup.test.ts src/components/ClaudeAccountSettings.test.ts src/components/CodexAccountSettings.test.ts src/components/ClaudeSignIn.test.ts src/components/CodexDeviceSignIn.test.ts src/components/EngineUpdateNotice.test.ts src/components/SettingsModal.appearance.test.ts src/components/ModelPicker.test.ts
+pnpm exec vitest run src/components/EngineLibrary.test.ts src/components/EnginesSettings.test.ts src/components/EngineSetup.test.ts src/components/ClaudeAccountSettings.test.ts src/components/CodexAccountSettings.test.ts src/components/ClaudeSignIn.test.ts src/components/DeviceSignIn.test.ts src/components/GrokSignIn.interaction.test.ts src/components/EngineSetup.grok.test.ts src/components/EngineUpdateNotice.test.ts src/components/SettingsModal.appearance.test.ts src/components/ModelPicker.test.ts
 pnpm typecheck
 pnpm i18n:check
 pnpm build

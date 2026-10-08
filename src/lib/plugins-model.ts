@@ -28,7 +28,8 @@ export interface PluginItem {
   /** where it came from: "manual", "catalog", "composio", "local" or a
    * marketplace name */
   source: string;
-  /** a marketplace plugin that brought this server or skill */
+  /** the item this one is shown under: the marketplace plugin that
+   * brought this server or skill, or Whop for its server */
   parent?: string;
   /** a marketplace plugin's version */
   version?: string;
@@ -83,7 +84,12 @@ export interface PluginSources {
   featured?: readonly FeaturedListing[] | null;
   skills?: readonly SkillListing[] | null;
   marketplaces?: readonly MarketplaceListing[] | null;
+  /** Whop, an MCP server connected like an app (#2411): its server's name
+   * once added, and whether it is signed in and on. */
+  whop?: { description: string; server?: string; connected: boolean } | null;
 }
+
+export const WHOP_KEY = "whop:whop";
 
 /** The key of a marketplace plugin row. */
 export const marketplacePluginKey = (marketplace: string, plugin: string) => `plugin:${plugin}@${marketplace}`;
@@ -122,6 +128,21 @@ export function buildPluginItems(sources: PluginSources): PluginItem[] {
       source: "composio",
     });
   }
+  if (sources.whop) {
+    items.push({
+      key: WHOP_KEY,
+      kind: "featured",
+      id: "whop",
+      name: "Whop",
+      description: sources.whop.description,
+      domain: "whop.com",
+      category: "other",
+      installed: sources.whop.connected,
+      status: sources.whop.connected ? "connected" : "available",
+      action: sources.whop.connected ? null : "connect",
+      source: "catalog",
+    });
+  }
   // What each installed marketplace plugin brought, so its servers and
   // skills show under it rather than twice.
   const serverParent = new Map<string, string>();
@@ -152,6 +173,7 @@ export function buildPluginItems(sources: PluginSources): PluginItem[] {
       action: null,
       source: server.source ?? "manual",
       ...(server.source && serverParent.has(server.name) ? { parent: serverParent.get(server.name) } : {}),
+      ...(sources.whop?.server === server.name ? { parent: WHOP_KEY } : {}),
     });
   }
   for (const listing of sources.featured ?? []) {
@@ -271,8 +293,8 @@ export function mainSections(items: readonly PluginItem[], query: string, filter
   return sections;
 }
 
-/** Installed plugins for the Manage page (skills have their own list; a
- * marketplace plugin stands for the servers it brought). */
+/** Installed plugins for the Manage page (skills have their own list; an item
+ * that stands for servers, a marketplace plugin or Whop, shows instead). */
 export function installedPlugins(items: readonly PluginItem[]): PluginItem[] {
   return items.filter((item) => item.installed && item.kind !== "skill" && !item.parent).sort((a, b) => a.name.localeCompare(b.name));
 }

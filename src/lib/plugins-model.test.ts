@@ -101,3 +101,19 @@ describe("marketplace plugins in the list", () => {
   });
 });
 
+describe("Whop, an MCP server connected like an app", () => {
+  it("is one app row with Connect until signed in, then shows as connected and folds its server under it", () => {
+    const before = buildPluginItems({ ...sources, whop: { description: "Sell on Whop", connected: false } });
+    expect(before.find((item) => item.key === "whop:whop")).toMatchObject({ name: "Whop", action: "connect", installed: false });
+    const after = buildPluginItems({
+      ...sources,
+      servers: [...sources.servers, { name: "business", enabled: true, url: "https://mcp.whop.com/mcp", auth: "connected" }],
+      whop: { description: "Sell on Whop", server: "business", connected: true },
+    });
+    expect(after.find((item) => item.key === "whop:whop")).toMatchObject({ installed: true, status: "connected", action: null });
+    expect(after.find((item) => item.key === "mcp:business")).toMatchObject({ parent: "whop:whop" });
+    expect(installedPlugins(after).map((item) => item.key)).toContain("whop:whop");
+    expect(installedPlugins(after).map((item) => item.key)).not.toContain("mcp:business");
+  });
+});
+

@@ -9,6 +9,8 @@ import { updateMcpServers } from "@/lib/mcp-servers";
 import { api, useStore, type ConfigStatus } from "@/state/store";
 
 import { Switch } from "./SettingsPrimitives";
+import { WhopIcon } from "./WhopIcon";
+import { WHOP_MCP_URL, isWhopServer, whopServerName } from "@/lib/whop-integration";
 
 /** A server this computer starts (a command) or one reached at a URL —
  * the two shapes the server stores. Secrets arrive as names only. */
@@ -62,10 +64,34 @@ interface McpDraft {
   headers: string;
 }
 
-interface ProbeResult {
+export interface ProbeResult {
   ok: boolean;
   tools?: Array<{ name: string; description?: string }>;
+  /** how many tools the server advertised, when `tools` shows only the first */
+  total?: number;
   error?: string;
+}
+
+/** After a sign-in, list the server's tools once. A failure is one plain
+ * line that keeps the test's own reason (a timeout, an HTTP status), which is
+ * already safe to show; the card's Connect button is the retry. */
+export async function signedInToolsCheck(
+  name: string,
+  request: (path: string, init?: RequestInit) => Promise<ProbeResult>,
+  signal: AbortSignal,
+): Promise<ProbeResult> {
+  let tested: ProbeResult;
+  try {
+    tested = await request(`/api/mcp/servers/${name}/test`, { method: "POST", signal });
+  } catch (cause) {
+    if (signal.aborted) throw cause;
+    tested = { ok: false, error: cause instanceof Error ? cause.message : String(cause) };
+  }
+  if (tested.ok) return tested;
+  // A proxy's "504 Gateway Timeout" or a browser's "Failed to fetch" has no
+  // closing period; add one so the reason does not run into the next sentence.
+  const reason = (tested.error ?? "").trim();
+  return { ...tested, error: t("whop.testFailed", { reason: reason && !/[.!?]$/.test(reason) ? `${reason}.` : reason }) };
 }
 
 interface McpMessage {
@@ -148,12 +174,14 @@ export function parseMcpHeaders(
   return { ok: true, headers };
 }
 
-export function probeToolsLabel(tools: ProbeResult["tools"]): string {
+export function probeToolsLabel(tools: ProbeResult["tools"], total?: number): string {
   if (!tools?.length) return t("mcp.probe.noTools");
-  const names = tools.map((tool) => tool.name).join(", ");
-  return tools.length === 1
+  // A big server (Whop lists 425) sends its first hundred names only.
+  const count = Math.max(total ?? 0, tools.length);
+  const names = tools.map((tool) => tool.name).join(", ") + (count > tools.length ? ", …" : "");
+  return count === 1
     ? t("mcp.probe.toolsOne", { names })
-    : t("mcp.probe.toolsMany", { count: tools.length, names });
+    : t("mcp.probe.toolsMany", { count, names });
 }
 
 function draftFor(server: McpServerListing): McpDraft {
@@ -178,8 +206,11 @@ function draftFor(server: McpServerListing): McpDraft {
   };
 }
 
+/** The MCP servers of this installation and everything the Plugins panel
+ * does with them: add, edit, paste a config, test, sign in and out, switch a
+ * server or one of its tools, remove, and Whop's own connect flow. */
 export function useMcpServers() {
-  const { state: store } = useStore();
+  const { state: store, dispatch } = useStore();
   // While enrolled with custom servers off, only approved servers can be added.
   const policy = store.config?.managedPolicy;
   const restricted = Boolean(policy && !policy.mcp.allowCustom);
@@ -197,6 +228,18 @@ export function useMcpServers() {
   const [waiting, setWaiting] = useState<Record<string, boolean>>({});
   const [clientDraft, setClientDraft] = useState<Record<string, ClientDraft>>({});
   const waiters = useRef(new Map<string, { timer: ReturnType<typeof setInterval>; until: number }>());
+  /** The server whose sign-in this panel is waiting on, if any: other row
+   * actions wait for it. */
+  const signingIn = Object.keys(waiting).find((name) => waiting[name]) ?? null;
+  const mounted = useRef(true);
+  const whopServer = servers?.find((server) => isRemoteMcpListing(server) && isWhopServer(server));
+  const whopConnected = Boolean(whopServer?.enabled && isRemoteMcpListing(whopServer) && whopServer.auth === "connected");
+  /** Whop is switched on only once its sign-in landed and its tools listed:
+   * the names whose sign-in should finish that way, and the running check. */
+  const enableAfterSignIn = useRef(new Set<string>());
+  const whopCheck = useRef<AbortController | null>(null);
+  const [whopLoading, setWhopLoading] = useState(false);
+  const afterSignIn = useRef<(name: string) => Promise<void>>(async () => {});
 
   // Paste-to-add: the same block Claude Code, Cursor and Claude Desktop
   // write. The server applies the form's rules and adds them switched off.
@@ -244,9 +287,11 @@ export function useMcpServers() {
   }, []);
 
   useEffect(() => {
+    mounted.current = true;
     void load();
     const pending = waiters.current;
     return () => {
+      mounted.current = false;
       loadGeneration.current += 1;
       for (const { timer } of pending.values()) clearInterval(timer);
       pending.clear();
@@ -285,6 +330,7 @@ export function useMcpServers() {
       void (async () => {
         if (Date.now() > until) {
           stopWaiting(name);
+          enableAfterSignIn.current.delete(name);
           setOauthError((current) => ({ ...current, [name]: { key: "mcp.oauth.timedOut" } }));
           return;
         }
@@ -292,10 +338,16 @@ export function useMcpServers() {
           const status = await api(`/api/mcp/servers/${encodeURIComponent(name)}/oauth/status`);
           if (status.auth === "connected") {
             stopWaiting(name);
+            if (enableAfterSignIn.current.has(name)) {
+              await reloadQuietly();
+              await afterSignIn.current(name);
+              return;
+            }
             setNotice({ key: "mcp.oauth.done", params: { name } });
             await reloadQuietly();
           } else if (!status.pending) {
             stopWaiting(name);
+            enableAfterSignIn.current.delete(name);
             if (status.authError) setOauthError((current) => ({ ...current, [name]: String(status.authError) }));
             await reloadQuietly();
           }
@@ -338,6 +390,7 @@ export function useMcpServers() {
       });
       if (typeof result.authorizationUrl !== "string") throw new Error(t("mcp.oauth.error"));
       if (!(await openSignInPage(result.authorizationUrl))) {
+        enableAfterSignIn.current.delete(name);
         setOauthError((current) => ({ ...current, [name]: { key: "mcp.oauth.popupBlocked" } }));
         return;
       }
@@ -354,6 +407,7 @@ export function useMcpServers() {
         setClientDraft((current) => ({ ...current, [name]: { redirectUri, clientId: current[name]?.clientId ?? "", clientSecret: current[name]?.clientSecret ?? "" } }));
         return;
       }
+      enableAfterSignIn.current.delete(name);
       setOauthError((current) => ({ ...current, [name]: cause instanceof Error ? cause.message : String(cause) }));
     } finally {
       setBusy(null);
@@ -365,7 +419,18 @@ export function useMcpServers() {
     setBusy(`oauth:${name}`);
     stopWaiting(name);
     loadGeneration.current += 1;
+    setProbe((current) => {
+      const next = { ...current };
+      delete next[name];
+      return next;
+    });
     try {
+      // Whop goes off with its sign-in: it is on only while connected.
+      if (isRemoteMcpListing(server) && isWhopServer(server) && server.enabled) {
+        const paused = await api(`/api/mcp/servers/${name}`, { method: "PATCH", body: JSON.stringify({ enabled: false }) });
+        setServers(paused.servers ?? []);
+        updateMcpServers(paused.servers ?? []);
+      }
       const result = await api(`/api/mcp/servers/${encodeURIComponent(name)}/oauth/disconnect`, { method: "POST", body: "{}" });
       setServers(result.servers ?? []);
       updateMcpServers(result.servers ?? []);
@@ -483,6 +548,74 @@ export function useMcpServers() {
     }
   };
 
+  // Whop's card (an app tile): add the official server switched off, sign in
+  // with this server's own MCP sign-in (server/mcp-oauth.ts), list its tools
+  // once, and only then switch it on.
+  afterSignIn.current = async (name: string) => {
+    if (!enableAfterSignIn.current.delete(name)) return;
+    const controller = new AbortController();
+    whopCheck.current = controller;
+    setWhopLoading(true);
+    try {
+      const tested = await signedInToolsCheck(name, api, controller.signal);
+      if (controller.signal.aborted || !mounted.current) return;
+      setProbe((current) => ({ ...current, [name]: tested }));
+      if (!tested.ok) return;
+      const enabled = await api(`/api/mcp/servers/${name}`, { method: "PATCH", body: JSON.stringify({ enabled: true }) });
+      if (!mounted.current) return;
+      setServers(enabled.servers ?? []);
+      updateMcpServers(enabled.servers ?? []);
+      setNotice({ key: "whop.connected" });
+    } catch (cause) {
+      if (mounted.current && !controller.signal.aborted) setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      if (whopCheck.current === controller) whopCheck.current = null;
+      if (mounted.current) setWhopLoading(false);
+    }
+  };
+
+  const connectWhop = async () => {
+    if (!servers || busy !== null || signingIn !== null) return;
+    setError(null);
+    setNotice(null);
+    const existing = servers.find((server) => isRemoteMcpListing(server) && isWhopServer(server));
+    if (existing) {
+      setProbe((current) => {
+        const next = { ...current };
+        delete next[existing.name];
+        return next;
+      });
+      enableAfterSignIn.current.add(existing.name);
+      if (isRemoteMcpListing(existing) && existing.auth === "connected") { await afterSignIn.current(existing.name); return; }
+      await signIn(existing);
+      return;
+    }
+    setBusy("whop");
+    loadGeneration.current += 1;
+    let added: McpServerListing | undefined;
+    try {
+      const name = whopServerName(servers);
+      const result = await api("/api/mcp/servers", { method: "POST", body: JSON.stringify({ name, type: "http", url: WHOP_MCP_URL, enabled: false }) });
+      if (!mounted.current) return;
+      setServers(result.servers ?? []);
+      updateMcpServers(result.servers ?? []);
+      added = result.servers?.find((server: McpServerListing) => server.name === name && isRemoteMcpListing(server) && isWhopServer(server));
+      if (!added) throw new Error(t("whop.setupFailed"));
+    } catch (cause) {
+      if (mounted.current) setError(cause instanceof Error ? cause.message : String(cause));
+    } finally { if (mounted.current) setBusy(null); }
+    if (added && mounted.current) {
+      enableAfterSignIn.current.add(added.name);
+      await signIn(added);
+    }
+  };
+
+  const cancelWhop = (name: string) => {
+    enableAfterSignIn.current.delete(name);
+    whopCheck.current?.abort();
+    stopWaiting(name);
+  };
+
   const remove = async (server: McpServerListing) => {
     if (!window.confirm(t("mcp.removeConfirm", { name: server.name }))) return;
     setBusy(`delete:${server.name}`);
@@ -551,13 +684,70 @@ export function useMcpServers() {
   });
 
   return {
-    servers, policy, restricted, editing, draft, setDraft, busy, error, notice, probe, importOpen, setImportOpen, importText, setImportText,
-    oauthError, waiting, clientDraft, setClientDraft, forgetClientDraft, load, signIn, signOut, save, toggle, test, remove,
+    store, dispatch, servers, policy, restricted, editing, draft, setDraft, busy, error, notice, probe, importOpen, setImportOpen, importText, setImportText,
+    oauthError, waiting, signingIn, clientDraft, setClientDraft, forgetClientDraft, load, signIn, signOut, save, toggle, test, remove,
     importServers, closeEditor, setDisabledTools, startAdd, startEdit, toggleImport,
+    whopServer, whopConnected, whopLoading, connectWhop, cancelWhop,
   };
 }
 
 export type McpServers = ReturnType<typeof useMcpServers>;
+
+/** Whop: an MCP server people connect like an app (#2411). Connect adds the
+ * official server switched off, signs in, lists its tools once and only then
+ * switches it on; its row in Connect apps shows this. */
+export function WhopTile({ mcp }: { mcp: McpServers }) {
+  const { store, dispatch, servers, probe, oauthError, error, waiting, busy, signingIn, whopServer, whopConnected, whopLoading, restricted, policy,
+    load, signOut, connectWhop, cancelWhop, clientDraft, setClientDraft, signIn } = mcp;
+
+    const result = whopServer && probe[whopServer.name];
+    const whopError = whopServer && oauthError[whopServer.name];
+    const failed = error || whopError || (result && !result.ok ? result.error : null);
+    const whopWaiting = Boolean(whopServer && waiting[whopServer.name]);
+    const pending = busy !== null || signingIn !== null || whopLoading;
+    // A row of Connect apps: the same shape as every other app.
+    return <div data-app-tile="whop" className="rounded-2xl p-2.5 hover:bg-ink/5">
+      <div className="flex items-center gap-3">
+        <span className="flex size-10 shrink-0 items-center justify-center"><WhopIcon /></span>
+        <div className="min-w-0 flex-1"><div className="truncate text-[13px] font-medium leading-[18px] text-ink">Whop</div><p className="truncate text-[12px] leading-[18px] text-ink-tertiary" title={t("whop.description")}>{t("whop.description")}</p></div>
+        {whopConnected && <span className="shrink-0 text-[12px] font-medium text-success">{t("apps.connected")}</span>}
+        {(whopWaiting || whopLoading) && whopServer ? <button type="button" onClick={() => cancelWhop(whopServer.name)} className="ui-button min-w-[76px]">{t("mcp.auth.cancel")}</button> :
+          <button type="button" aria-label={t(whopConnected ? "whop.disconnect" : "whop.connect")}
+            disabled={pending || (servers !== null && !whopConnected && (Boolean(whopServer?.managedBy) || (restricted && !policy?.mcp.allowlist.length)))}
+            onClick={() => void (servers === null ? load() : whopConnected && whopServer ? signOut(whopServer) : connectWhop())}
+            className="ui-button min-w-[76px] disabled:opacity-40">
+            {pending ? <Loader2 size={13} className="mx-auto animate-spin" /> : servers === null ? t("connectors.action.retry") : t(whopConnected ? "connectors.disconnect" : "connectors.action.connect")}
+          </button>}
+      </div>
+      <div className="ml-[52px]">
+      {(whopWaiting || whopLoading) && (
+        <div role="status" className="mt-3 flex items-center gap-2 rounded-lg bg-raised px-3 py-2 text-[12px] text-ink-secondary">
+          <Loader2 size={13} className="shrink-0 animate-spin" /> {t(whopLoading ? "whop.loadingTools" : "mcp.oauth.waiting")}
+        </div>
+      )}
+      {whopServer && clientDraft[whopServer.name] && (
+        <McpClientForm
+          draft={clientDraft[whopServer.name]!}
+          disabled={busy !== null}
+          onChange={(next) => setClientDraft((current) => ({ ...current, [whopServer.name]: next }))}
+          onCancel={() => setClientDraft((current) => {
+            const next = { ...current };
+            delete next[whopServer.name];
+            return next;
+          })}
+          onSubmit={() => void signIn(whopServer)}
+        />
+      )}
+      {failed && !whopWaiting && !whopLoading && <p role="alert" className="mt-3 text-[12px] text-danger">{typeof failed === "string" ? failed : t(failed.key, failed.params)}</p>}
+      <details className="mt-2 text-[12px] text-ink-secondary">
+        <summary className="cursor-pointer">{t("whop.access")}</summary>
+        <p className="mt-2 leading-relaxed">{t("whop.notice")}</p>
+        <p className="mt-2 leading-relaxed">{t("whop.accessHint")}</p>
+        <div className="mt-2 flex flex-wrap gap-2">{(store.bots ?? []).filter((bot) => !bot.hidden).map((bot) => <button key={bot.id} type="button" onClick={() => { dispatch({ type: "togglePlugins", open: false }); dispatch({ type: "toggleSettings", open: true, section: "access", botId: bot.id }); }} className="rounded-lg bg-control px-2.5 py-1.5 text-ink hover:bg-raised-hover">{t("whop.botSettings", { name: bot.name })}</button>)}</div>
+      </details>
+      </div>
+    </div>;
+  }
 
 /** Paste a config block (the shape Claude Code, Cursor and Claude Desktop
  * write) to add several servers at once. */

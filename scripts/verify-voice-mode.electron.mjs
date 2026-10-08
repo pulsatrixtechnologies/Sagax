@@ -219,7 +219,7 @@ app.whenReady().then(async () => {
   // Preview Ara: xAI speech with the chosen voice, speed and language, on the organization's key.
   await click('[data-voice-list="voice"]');
   await until("the preview button", async () => click('[data-preview="ara"]'), 5_000);
-  const tts = await until("xAI's speech request", async () => (await xaiRequests()).find((r) => r.path === "/v1/tts") ?? null, 10_000).catch(() => null);
+  const tts = await until("xAI's speech request", async () => (await xaiRequests()).find((r) => r.path === "/v1/tts" && !r.websocket) ?? null, 10_000).catch(() => null);
   check("a preview asks xAI for speech with voice ara, speed 1.25, language fr", tts?.json?.voice_id === "ara" && tts.json.speed === 1.25 && tts.json.language === "fr", JSON.stringify(tts?.json));
   check("xAI received the organization's key from the server", tts?.authorization === `Bearer ${fakeKey}`);
 
@@ -230,6 +230,8 @@ app.whenReady().then(async () => {
   await win.webContents.executeJavaScript(`(() => {
     const call = window.__sagaxVoiceCall;
     window.__voiceTurns = [];
+    window.__voiceMetrics = [];
+    call.on("metrics", (turn) => { if (turn) window.__voiceMetrics.push({ ...turn }); });
     call.on("utterance", (text) => {
       window.__voiceTurns.push({ text, at: performance.now() });
       if (window.__voiceTurns.length === 1) {
@@ -258,8 +260,22 @@ app.whenReady().then(async () => {
     return bar?.dataset.voiceFirstAudioMs ? { firstAudio: Number(bar.dataset.voiceFirstAudioMs), sent: Number(bar.dataset.voiceSentMs), endpoint: Number(bar.dataset.voiceEndpointMs) } : null;
   })()`), 15_000).catch(() => null);
   check("first audio of the answer under 1.5 s after the person stopped talking (instant engine)", Boolean(latency) && latency.firstAudio < 1500, JSON.stringify(latency));
-  const streamed = (await xaiRequests()).filter((r) => r.path === "/v1/tts" && r.json?.output_format?.codec === "pcm");
-  check("the answer is spoken sentence by sentence with streamed PCM, with Ara, 1.25x, fr", streamed.length >= 1 && streamed.every((r) => r.json.voice_id === "ara" && r.json.speed === 1.25 && r.json.language === "fr"), `${streamed.length} sentence(s)`);
+  // Faster end of turn: "Hello Cryptic from voice mode" carries no
+  // punctuation; the recording's falling, fading end ends the turn on the
+  // short confident window (352 ms) instead of the 560 to 1100 ms endpoint
+  const firstMetrics = await win.webContents.executeJavaScript(`(() => { const m = window.__voiceMetrics.find((t) => t.sentAt !== undefined); return m ? { endpoint: Math.round(m.endedAt - m.stoppedAt), contour: m.contour ?? null, contourEnd: m.contourEnd ?? false, earlyEnd: m.earlyEnd ?? false } : null; })()`);
+  check("no punctuation: the voice's falling end ends the turn on the short window (Faster end of turn)", firstMetrics?.contourEnd === true && firstMetrics.endpoint > 0 && firstMetrics.endpoint < 450, JSON.stringify(firstMetrics));
+  // Streaming voice: one xAI text to speech socket for the call, clause by clause
+  const ttsSockets = () => xaiRequests().then((all) => all.filter((r) => r.websocket && r.path === "/v1/tts"));
+  // the call opened its socket with the settings of the call's start; the
+  // panel's Ara, 1.25x, fr opened one for them before the first answer
+  const speechSockets = (await ttsSockets()).filter((r) => (r.utterances ?? []).length);
+  const spoken = speechSockets.flatMap((r) => r.utterances ?? []);
+  check("the answer is spoken over one xAI streaming text to speech socket (wss /v1/tts), PCM, lowest latency, Ara, 1.25x, fr",
+    speechSockets.length === 1 && spoken.length >= 1 && speechSockets.every((r) => r.query?.voice === "ara" && r.query?.speed === "1.25" && r.query?.language === "fr" && r.query?.codec === "pcm" && r.query?.optimize_streaming_latency === "2" && r.authorization === `Bearer ${fakeKey}`),
+    JSON.stringify((await ttsSockets()).map((r) => ({ query: r.query, utterances: r.utterances }))));
+  const posted = (await xaiRequests()).filter((r) => r.path === "/v1/tts" && !r.websocket && r.json?.output_format?.codec === "pcm");
+  check("no sentence of the answer went over POST while the socket held", posted.length === 0, `${posted.length} POST sentence(s)`);
   const speaking = await until("the bot speaking", async () => win.webContents.executeJavaScript(`document.querySelector("[data-voice-bar]")?.dataset.voicePhase === "speaking"`), 10_000).catch(() => false);
   check("the bar says the bot is speaking", speaking);
 
@@ -271,8 +287,10 @@ app.whenReady().then(async () => {
   check("talking over the bot ducks it at once and cuts it within 250 ms of the first voiced frame", Boolean(barge) && barge.duck <= 50 && barge.cancel <= 250, JSON.stringify(barge));
   const secondTurn = await until("the turn after the barge-in", async () => win.webContents.executeJavaScript(`window.__voiceTurns[1] ?? null`), 20_000).catch(() => null);
   check("the words said over the bot become the next turn", secondTurn?.text === "Hello Cryptic from voice mode", JSON.stringify(secondTurn));
-  const ttsAfter = (await xaiRequests()).filter((r) => r.path === "/v1/tts" && r.json?.output_format?.codec === "pcm").length;
+  const afterCut = (await ttsSockets()).filter((r) => (r.utterances ?? []).length);
+  const ttsAfter = afterCut.flatMap((r) => r.utterances ?? []).length + (await xaiRequests()).filter((r) => r.path === "/v1/tts" && !r.websocket && r.json?.output_format?.codec === "pcm").length;
   check("the rest of the cut answer was not synthesized again", ttsAfter <= 3, `${ttsAfter} sentence request(s)`);
+  check("the barge-in cleared the clause speaking at xAI (text.clear), on the same socket", afterCut.length === 1 && (afterCut[0].clears ?? 0) >= 1, JSON.stringify(afterCut.map((r) => ({ clears: r.clears, utterances: r.utterances?.length }))));
 
   // Hold (in the pill's settings card): silence both ways, then resume.
   await click("[data-voice-gear]");
@@ -301,6 +319,25 @@ app.whenReady().then(async () => {
   };
   await wait(400); // the card's fold back (200 ms) is over
   await checkPill("wide");
+
+  // Streaming voice fallback: xAI's socket drops and will not come back. The
+  // server tries 3 reconnects with a backoff, then tells the page, which
+  // speaks over POST /voice/stream for the rest of the call.
+  const socketsBefore = (await ttsSockets()).length;
+  await fetch(`${xaiUrl}/__speech`, { method: "POST", body: JSON.stringify({ refuse: true, dropAfter: 1 }) });
+  await win.webContents.executeJavaScript(`void window.__sagaxVoiceCall.say("This sentence makes the socket drop."); true`);
+  const tries = await until("the reconnect attempts", async () => ((await ttsSockets()).length - socketsBefore >= 3 ? (await ttsSockets()).length - socketsBefore : null), 15_000).catch(async () => (await ttsSockets()).length - socketsBefore);
+  await wait(500);
+  await win.webContents.executeJavaScript(`void window.__sagaxVoiceCall.say("And this one is spoken after it."); true`);
+  const fellBack = await until("the POST fallback", async () => {
+    const posts = (await xaiRequests()).filter((r) => r.path === "/v1/tts" && !r.websocket && r.json?.output_format?.codec === "pcm");
+    return posts.some((r) => /spoken after it/.test(String(r.json.text))) ? posts : null;
+  }, 10_000).catch(() => null);
+  const triesAfter = (await ttsSockets()).length - socketsBefore;
+  check("when xAI's speech socket drops for good, the call speaks over POST (3 reconnects, then fallback)", Boolean(fellBack) && tries === 3 && triesAfter === 3 && fellBack.every((r) => r.json.voice_id === "ara" && r.json.speed === 1.25 && r.json.language === "fr"), `${triesAfter} reconnect attempt(s), ${fellBack?.length ?? 0} POST sentence(s)`);
+  await fetch(`${xaiUrl}/__speech`, { method: "POST", body: JSON.stringify({ refuse: false, dropAfter: 0 }) });
+  const stillOn = await win.webContents.executeJavaScript(`document.querySelector("[data-voice-bar]")?.dataset.voicePhase ?? null`);
+  check("the call itself carries on after the fallback", Boolean(stillOn) && stillOn !== "ended", String(stillOn));
 
   const other = (await xaiRequests()).filter((r) => !["/v1/tts", "/v1/tts/voices", "/v1/stt"].includes(r.path));
   check("xAI was never asked to answer (only speech to text and text to speech)", other.length === 0, JSON.stringify(other.map((r) => r.path)));

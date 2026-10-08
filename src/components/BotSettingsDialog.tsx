@@ -40,7 +40,6 @@ import { isMoreSection, PANEL_TABS, tabForSection, type PanelTab } from "./bot-s
 import { ActivitySection } from "./bot-settings/ActivitySection";
 import { InlineEditableText } from "./bot-settings/InlineEditableText";
 import { PackageProvenance } from "./bot-settings/PackageProvenance";
-import { ProposalStatus } from "./bot-settings/ProposalStatus";
 import { BOT_PROFILE_LIMITS } from "../../shared/bot-profile";
 import { ComputerPanel } from "./ComputerPanel";
 import { WorksOnSetting } from "./computer/WorksOnSetting";
@@ -474,7 +473,6 @@ export function BotSettingsDialog({ bot, onOpenVmWorkspace }: {
               muted
               className="mt-0.5 text-[12.5px] leading-4"
             />
-            <div className="mt-1 w-full max-w-full empty:hidden"><ProposalStatus bot={bot} kind="chief" /></div>
             <div
               role="tablist"
               aria-label={t("botPanel.tabsAria")}

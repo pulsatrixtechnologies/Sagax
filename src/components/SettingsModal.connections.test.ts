@@ -8,15 +8,17 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("@/lib/interface-mode", () => ({ useAdvancedMode: () => true, setAdvancedMode: () => {} }));
 import { setLocale } from "@/lib/i18n";
 
+const fixture = vi.hoisted(() => ({ config: undefined as import("@/state/store").ConfigStatus | undefined }));
 vi.mock("./DesktopCapabilities", () => ({ useDesktopCapabilities: () => ({ capabilities: {} }) }));
 vi.mock("@/state/store", async (importOriginal) => ({
   ...await importOriginal<typeof import("@/state/store")>(),
   api: vi.fn(),
-  useStore: () => ({ state: { appSettingsSection: "connections", instances: [] }, dispatch: vi.fn() }),
+  useStore: () => ({ state: { appSettingsSection: "connections", instances: [], config: fixture.config }, dispatch: vi.fn() }),
 }));
 vi.mock("@/lib/analytics", () => ({ analyticsEnabled: () => false, setAnalyticsEnabled: vi.fn() }));
 
 beforeEach(() => {
+  fixture.config = undefined;
   vi.stubGlobal("window", {});
   vi.stubGlobal("document", { documentElement: { dataset: {} } });
   setLocale("en");
@@ -40,5 +42,15 @@ describe("Settings → Connections", () => {
     const html = renderToStaticMarkup(createElement(SettingsModal));
     expect(html).toContain("More providers for OpenCode bots");
     expect(html).toContain('<code class="font-mono">opencode auth login</code>');
+  });
+
+  // A Cloud has no terminal: a key for any OpenCode provider is saved here.
+  it("offers keys for other OpenCode providers next to the OpenCode key", async () => {
+    const { SettingsModal } = await import("./SettingsModal");
+    const html = renderToStaticMarkup(createElement(SettingsModal));
+    const opencode = html.indexOf('data-api-key-row="opencodeGo"');
+    expect(opencode).toBeGreaterThan(0);
+    expect(html.indexOf("data-opencode-provider-keys")).toBeGreaterThan(opencode);
+    expect(html).toContain("Keys for other OpenCode providers");
   });
 });

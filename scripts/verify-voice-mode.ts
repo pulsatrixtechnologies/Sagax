@@ -4,9 +4,12 @@
 // capture device, fed a recorded sentence then silence, looped), streams it
 // to "xAI" speech to text through the server (a loopback fake), and the words
 // reach the bot's thread as the signed-in person. Then the live call: the
-// answer is spoken sentence by sentence (time to first audio measured), the
-// next sentence on the microphone barges in while the bot talks (duck and
-// cut measured), hold and resume, and xAI is never asked to answer. The settings panel's
+// turn (no punctuation) ends on the recording's falling end, the answer is
+// spoken clause by clause over one streaming voice socket (time to first
+// audio measured), the next sentence on the microphone barges in while the
+// bot talks (duck and cut measured, the clause cleared at xAI), hold and
+// resume, the POST fallback once xAI's speech socket drops for good, and
+// xAI is never asked to answer. The settings panel's
 // Voice, Speed and Language go to xAI's speech request and to the person's
 // server preferences. First without any xAI key: the call button shows the
 // speaker's access card (never the legacy "This computer" gate); then the
@@ -34,8 +37,9 @@ const RESERVED = [18790, 5199, 8799];
 const FAKE_KEY = "xai-VERIFYfakeKq7Zp2Lw9Rt4Mn6Bv";
 
 const idp = await startFakeOidcProvider({ user: { sub: "01J9VERIFYVOICEMODE0000000", email: "ada@example.test", name: "Ada", preferred_username: "ada", role: "admin" } });
-// each streamed sentence of the answer lasts 4 s: long enough to talk over
-const xai = await startFakeXaiVoice({ transcript: "Hello Cryptic from voice mode", ttsSeconds: 4 });
+// each streamed sentence of the answer lasts 4 s, made in real time: long
+// enough to talk over while it is still being made
+const xai = await startFakeXaiVoice({ transcript: "Hello Cryptic from voice mode", ttsSeconds: 4, ttsChunkMs: 100 });
 const port = await freePortBlock([0, 1]);
 if (RESERVED.includes(port) || RESERVED.includes(port + 1)) throw new Error("reserved port, run again");
 const origin = `http://127.0.0.1:${port}`;

@@ -11,6 +11,7 @@ import { parse as parseYaml } from "yaml";
 
 import type { ModelCatalog, TurnAccessInput } from "../../contracts.ts";
 import { harnessHome, splitCliString } from "../../env-path.ts";
+import type { DeviceSignIn } from "../device-auth.ts";
 import { decodeInjectId, hostApiKey, localHost, mergeLocalInject } from "../local-inject.ts";
 import { createAcpDriver, type AcpSupport } from "./core.ts";
 import { grokHostToolArgs, grokOrgAgentProfile } from "../host-tools.ts";
@@ -31,11 +32,48 @@ export const STATIC_GROK_MODELS: ModelCatalog = {
 
 const SLUG = /^[a-z0-9][a-z0-9._-]*$/i;
 
-type GrokCloudModel = ModelCatalog["options"][number];
-
-function grokHome(env: Record<string, string | undefined>): string {
+/** Grok's own home: `$GROK_HOME`, else `~/.grok`. Its grok.com sign-in,
+ * config and catalog all live here. */
+export function grokHome(env: Record<string, string | undefined> = process.env): string {
   return env.GROK_HOME || harnessHome("grok", env);
 }
+
+/** The grok.com sign-in a turn runs on is stored. */
+export function grokSignedIn(env: Record<string, string | undefined>): boolean {
+  return existsSync(join(grokHome(env), "auth.json"));
+}
+
+function grokLoginFailure(output: string): string {
+  if (/(unexpected argument|unrecognized (argument|option)|unknown option).*device-(auth|code)/i.test(output)) {
+    return "This server's Grok is too old to sign in with a code. Update Grok on the server, then try again.";
+  }
+  if (/device-code login is not available/i.test(output)) {
+    return "This Grok account can't sign in with a code. Use an xAI API key instead.";
+  }
+  if (/expired/i.test(output)) return "The Grok sign-in code expired. Start sign-in again for a new code.";
+  if (/denied|rejected/i.test(output)) return "Grok sign-in was declined in the browser. Start sign-in again to try once more.";
+  return "Grok sign-in did not finish. Check the server's connection, then try again.";
+}
+
+/** Grok Build's half of the in-app sign-in (device-auth.ts): `grok login
+ * --device-auth` on the grok.com subscription. Grok has no status command,
+ * so nothing is checked first, and a stored login that a failed turn just
+ * refused is signed in again; the sign-in is confirmed the way a turn checks
+ * it. Checked against grok 1.0.25 and 1.0.41: `login --help` and the
+ * device-code text in their binaries. */
+export const GROK_DEVICE_SIGN_IN: DeviceSignIn = {
+  provider: "grok",
+  product: "Grok",
+  account: "Grok",
+  homeEnv: "GROK_HOME",
+  homeDir: ".grok",
+  loginArgs: ["login", "--device-auth"],
+  install: "Install it with xAI's installer (https://x.ai/cli), then try again.",
+  failure: grokLoginFailure,
+  signedIn: grokSignedIn,
+};
+
+type GrokCloudModel = ModelCatalog["options"][number];
 
 /** The account catalog Grok itself caches (`models_cache.json`, written from
  * cli-chat-proxy.grok.com/v1/models). Null when absent or unreadable. */
@@ -296,7 +334,7 @@ export function ensureGrokInjectSlug(
   const host = localHost(inject.host);
   if (!host) return modelId;
 
-  const path = join(env.GROK_HOME || harnessHome("grok", env), "config.toml");
+  const path = join(grokHome(env), "config.toml");
   let text = "";
   try {
     text = readFileSync(path, "utf8");
@@ -437,7 +475,7 @@ export function grokInheritedProfile(cli: string, env: Record<string, string | u
   const flag = flags[0] ?? -1;
   let path = flag >= 0 ? (args[flag]!.includes("=") ? args[flag]!.slice(args[flag]!.indexOf("=") + 1) : args[flag + 1]) : undefined;
   if (flag >= 0 && (!path || path.startsWith("-"))) return unsupported();
-  const files = [join(env.GROK_HOME || harnessHome("grok", env), "config.toml")];
+  const files = [join(grokHome(env), "config.toml")];
   for (let directory = resolve(cwd);;) {
     const file = join(directory, ".grok", "config.toml"); if (!files.includes(file)) files.push(file);
     const parent = dirname(directory); if (parent === directory) break; directory = parent;
@@ -545,7 +583,7 @@ const support: AcpSupport = {
   withholdsHostTools: true,
   defaultCli: "grok",
   nativeSource: "grok.acp",
-  loginNote: "Grok CLI is not signed in — run `grok login` in a terminal",
+  loginNote: "Grok is not signed in to your grok.com account — choose Sign in to Grok in engine setup",
 
   // No Windows one-liner: the installer is a POSIX shell script, and offering
   // `curl … | bash` there would be advice that cannot run. Windows falls back
@@ -556,8 +594,11 @@ const support: AcpSupport = {
       linux: "curl -fsSL https://x.ai/cli/install.sh | bash",
     },
     docsUrl: "https://x.ai/cli",
+    // The terminal route, for people who prefer it; the app's own sign-in
+    // is the device code below, which needs no terminal.
     signInCommand: "grok login",
   },
+  deviceSignIn: GROK_DEVICE_SIGN_IN,
 
   // Write the [model.slug] block with the instance HOME/GROK_HOME, then pass
   // the slug on argv. spawnArgs must not call ensureGrokInjectSlug itself —
@@ -730,7 +771,7 @@ const support: AcpSupport = {
   // unauthenticated CLI stays a user action, not something to paper over.
   pickAuthMethod: grokPickAuthMethod,
   authFailure: "fail",
-  isAuthenticated: (env) => existsSync(join(harnessHome("grok", env), "auth.json")) || Boolean(env.XAI_API_KEY?.trim()),
+  isAuthenticated: (env) => grokSignedIn(env) || Boolean(env.XAI_API_KEY?.trim()),
 
   // `--append-system-prompt`/`--rules` are accepted by the CLI but do NOT
   // reach the agent-stdio system prompt (verified against 1.0.0), so the

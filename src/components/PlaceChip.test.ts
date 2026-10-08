@@ -4,7 +4,7 @@ import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import type { Bot, InstanceInfo } from "@/state/store";
 
 vi.stubGlobal("window", {});
-const fixture = vi.hoisted(() => ({ config: null as unknown, organization: false }));
+const fixture = vi.hoisted(() => ({ config: null as unknown, organization: false, computerMcp: true }));
 vi.mock("@/lib/perspicax-org", async (importOriginal) => ({
   ...await importOriginal<typeof import("@/lib/perspicax-org")>(),
   usePerspicaxOrg: () => (fixture.organization ? { org: { identity: { kind: "perspicax" } } } : null),
@@ -22,7 +22,7 @@ vi.mock("@/state/store", async (importOriginal) => {
           driverKind: "grokAgent",
           displayName: "Grok",
           snapshot: { state: "available" },
-          capabilities: { computerMcp: true, browserMcp: true },
+          capabilities: { computerMcp: fixture.computerMcp, browserMcp: true },
         } as InstanceInfo],
       },
       dispatch: vi.fn(),
@@ -148,5 +148,21 @@ describe("the composer's place menu (regression: #54 left only Follow this bot's
       const items = menuItems(config.features.boatComputer ? {} : { cloudBackend: "vps" });
       expect(items).toEqual(["Auto", "Cloud computer", "Local VM", "This computer"]);
     }
+  });
+});
+
+describe("J11: the chip names a place's problem in the panel's words", () => {
+  afterEach(() => { fixture.config = null; fixture.computerMcp = true; });
+
+  it("greys out the cloud computer for a model that can't use one, with the same few words and line", () => {
+    // An unreachable place is left out unless it is the conversation's
+    // current pin, so pin it to Cloud to see how it reads.
+    fixture.config = { features: { boatComputer: true } };
+    fixture.computerMcp = false;
+    const html = renderToStaticMarkup(createElement(PlaceChip, { bot, task: { surface: "cloud" }, live: false, onPin: () => {}, initialOpen: true }));
+    const row = html.split('role="menuitemradio"').slice(1).find((entry) => entry.includes("Cloud computer"))!;
+    expect(row).toContain('disabled=""');
+    expect(row).toContain("Not with this model");
+    expect(row).toContain("title=\"grok-4.6 can&#x27;t use a computer. Choose a model that can, such as Claude or ChatGPT.\"");
   });
 });

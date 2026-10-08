@@ -70,6 +70,15 @@ export function setShowThreads(enabled: boolean): void {
   notify();
 }
 
-export function useShowThreads(): boolean {
+/** The person's own choice in Settings > Appearance, whatever the mode. */
+export function useShowThreadsChoice(): boolean {
   return useSyncExternalStore(subscribe, showThreads, () => SHOW_THREADS_DEFAULT);
+}
+
+/** Whether the sidebar shows threads: the person's choice, in Simple and
+ * Advanced mode alike. Thread mode is on by default for everyone (AGENTS.md,
+ * "Thread mode is on by default"), so Simple mode does not hide it the way
+ * the upstream project does. */
+export function useShowThreads(): boolean {
+  return useShowThreadsChoice();
 }
