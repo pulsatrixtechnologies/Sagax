@@ -45,10 +45,10 @@ const bot: Bot = {
   messages: [{ id: "reply", role: "bot", kind: "text", text: "The latest reply", at: 1 }],
   tasks: [{ threadId: "current", title: "Current", createdAt: 1 }],
 };
-function render(candidate = bot, query = "") {
+function render(candidate = bot) {
   fixture.cursor = 0; fixture.effects = []; fixture.capturing = true;
   let row;
-  try { row = BotListItem({ bot: candidate, query, density: "comfortable", onMenu: vi.fn() }); }
+  try { row = BotListItem({ bot: candidate, density: "comfortable", onMenu: vi.fn() }); }
   finally { fixture.capturing = false; }
   return renderToStaticMarkup(row);
 }
@@ -56,27 +56,30 @@ const ownerTag = (markup: string) => markup.match(/<div[^>]*data-sidebar-bot-row
 function expectSoleRow(markup: string) {
   expect(ownerTag(markup)).toContain('aria-current="page"');
   expect(markup).not.toContain('data-sidebar-thread-row=');
-  expect(markup).not.toContain("Collapse Atlas threads");
+  expect(markup).not.toContain("Atlas threads");
 }
 beforeEach(() => { fixture.slots = []; fixture.state.revealThread = null; });
 
-describe("bot row expansion follows the visible thread tree", () => {
-  it("restores the sole conversation preview after clearing a thread search", () => {
-    expect(render(bot, "Current")).toContain('data-sidebar-thread-row="current"');
-    const markup = render();
+// Threads on: nothing unfolds under a bot any more (JC, 2026-10-08). The row
+// stays the conversation being looked at, with its preview, whatever the bot
+// holds and whatever thread a chip asked to reveal.
+describe("bot row with threads on never expands", () => {
+  it("keeps the sole conversation row and preview with several threads and a folder", () => {
+    const multiple = { ...bot, projects: [{ id: "p1", name: "Research" }], tasks: [...bot.tasks!, { threadId: "older", title: "Earlier", createdAt: 0, projectId: "p1" }] };
+    const markup = render(multiple);
     expectSoleRow(markup);
+    expect(markup).not.toContain("Earlier");
     expect(markup).toContain("The latest reply");
   });
 
-  it("restores the owner row when an expanded list loses its second thread", () => {
+  it("does not unfold for a revealed sibling thread", () => {
     const multiple = { ...bot, tasks: [...bot.tasks!, { threadId: "older", title: "Earlier", createdAt: 0 }] };
-    render(multiple, "Current");
-    const expanded = render(multiple);
-    expect(expanded).toContain('data-sidebar-thread-row="older"');
-    expect(ownerTag(expanded)).not.toContain('aria-current="page"');
-    const sole = render();
-    expectSoleRow(sole);
-    expect(sole).toContain("The latest reply");
+    fixture.state.revealThread = { threadId: "older" };
+    render(multiple);
+    fixture.effects.forEach(effect => effect());
+    const markup = render(multiple);
+    expectSoleRow(markup);
+    expect(markup).not.toContain('data-sidebar-thread-row="older"');
   });
 
   it.each([
