@@ -2,8 +2,7 @@
 // connectors of the caller's own Claude account (server/harness-connectors.ts).
 // While Connected apps is switched off (Settings > Experimental), the same
 // read-only status shows in Settings > Model providers instead.
-// Read-only here: people add, sign in to and remove them on claude.ai. An
-// admin can turn them off for the whole server.
+// Read-only here: people add, sign in to and remove them on claude.ai.
 import { useCallback, useEffect, useState } from "react";
 import { ExternalLink, Loader2, Plug, RefreshCw } from "lucide-react";
 import { api } from "@/state/store";
@@ -48,7 +47,6 @@ export function harnessUnavailableKey(reason: Unavailable | undefined): LocaleKe
 export function HarnessConnectorsSection({ placement = "panel" }: { placement?: "panel" | "settings" } = {}) {
   const [answer, setAnswer] = useState<HarnessConnectorsAnswer | null>(null);
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async (refresh = false) => {
@@ -66,19 +64,6 @@ export function HarnessConnectorsSection({ placement = "panel" }: { placement?: 
   useEffect(() => {
     void load();
   }, [load]);
-
-  const toggle = async (next: boolean) => {
-    setSaving(true);
-    setError(null);
-    try {
-      await api("/api/harness-connectors/settings", { method: "PUT", body: JSON.stringify({ claudeAi: next }) });
-      await load();
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
-    } finally {
-      setSaving(false);
-    }
-  };
 
   const claude = answer?.claude;
   return (
@@ -143,18 +128,6 @@ export function HarnessConnectorsSection({ placement = "panel" }: { placement?: 
 
       {answer && !answer.codex.available && (
         <p className="mt-2 text-[11.5px] text-ink-tertiary">{t("harnessConnectors.codex")}</p>
-      )}
-
-      {answer?.canManage && (
-        <label className="mt-3 flex items-center gap-2 text-[12px] text-ink-secondary">
-          <input
-            type="checkbox"
-            checked={answer.enabled}
-            disabled={saving}
-            onChange={(event) => void toggle(event.target.checked)}
-          />
-          {t("harnessConnectors.adminToggle")}
-        </label>
       )}
 
       {error && <div role="alert" className="mt-2 rounded-lg bg-danger/10 px-3 py-2 text-[12px] text-danger">{error}</div>}

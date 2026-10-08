@@ -33,7 +33,10 @@ import { viewerIsOrgAdmin, viewerOwnsGroup } from "@/lib/group-owner";
 import { PersonAvatar, RoomPersonLabel } from "./MessageAuthor";
 import { peopleDmPeer } from "@/lib/people-dm";
 import { groupNudgeTarget } from "@/lib/group-nudge";
-import { continuesRun, roomAuthor, runCorners } from "@/lib/room-authors";
+import { continuesRun, personDisplayName, personInitials, roomAuthor, runCorners } from "@/lib/room-authors";
+import { botIdOfParticipant, messageParticipant, seenRows, type ThreadReads } from "@/lib/read-receipts";
+import { useReportRead, useThreadReads } from "@/lib/read-receipts-feed";
+import { SeenByRow, SEEN_AVATAR_SIZE, type SeenFace } from "./SeenBy";
 import type { OrgDirectoryPerson } from "@/lib/perspicax-org";
 import { StatusActivityRow } from "@/components/StatusActivityRow";
 import { mausInk, normalizeState } from "@/lib/mascot";
@@ -209,6 +212,8 @@ export const Transcript = memo(function Transcript({
   emergingId,
   onReply,
   people,
+  reads,
+  reader,
 }: {
   group: Group;
   members: Bot[];
@@ -222,6 +227,10 @@ export const Transcript = memo(function Transcript({
   onReply: (message: Message) => void;
   /** The organization's people (display names, avatars); empty elsewhere. */
   people?: ReadonlyMap<string, OrgDirectoryPerson>;
+  /** Read positions this viewer may see (src/lib/read-receipts.ts). */
+  reads?: ThreadReads;
+  /** The viewer's own participant id: never drawn. */
+  reader?: string | null;
 }) {
   const { state, dispatch } = useStore();
   const showToolCalls = showToolCallsEnabled(state.config);
@@ -265,6 +274,43 @@ export const Transcript = memo(function Transcript({
     return listed;
   }, [messages, showToolCalls, pairChannel, members, transcript]);
   const windowIds = useMemo(() => new Set(messages.map((message) => message.id)), [messages]);
+  // Seen by: each participant once, under the last line they have read.
+  const seen = useMemo(() => {
+    if (!reads || !Object.keys(reads).length) return new Map<string, SeenFace[]>();
+    const anchorable = new Set(items.flatMap((item) =>
+      item.kind === "message" && item.message.kind === "text" && (item.message.text || item.message.attachments?.length) ? [item.message.id] : []));
+    const byId = new Map(transcript.map((message) => [message.id, message]));
+    const rows = seenRows({
+      order: transcript,
+      anchorable,
+      reads,
+      self: reader ?? null,
+      authorOf: (id) => {
+        const message = byId.get(id);
+        return message ? messageParticipant(message) : null;
+      },
+    });
+    const directory = people ?? NO_PEOPLE;
+    const senderNames = new Map(transcript.flatMap((message) => message.sender?.id ? [[message.sender.id.trim().toLowerCase(), message.sender.name] as const] : []));
+    const faces = new Map<string, SeenFace[]>();
+    for (const [messageId, entries] of rows) {
+      const row: SeenFace[] = [];
+      for (const entry of entries) {
+        const botId = botIdOfParticipant(entry.participantId);
+        if (botId) {
+          const bot = members.find((member) => member.id === botId);
+          if (!bot) continue;
+          row.push({ ...entry, name: bot.name, avatar: <BotAvatar bot={bot} state="happy" size={SEEN_AVATAR_SIZE} motion="none" motionKey={0} animated={false} /> });
+          continue;
+        }
+        const person = directory.get(entry.participantId);
+        const name = (person && personDisplayName(person)) || senderNames.get(entry.participantId) || t("seen.someone");
+        row.push({ ...entry, name, avatar: <PersonAvatar avatarUrl={personAvatarSrc(person?.avatarUrl)} initials={personInitials(name)} size={SEEN_AVATAR_SIZE} /> });
+      }
+      if (row.length) faces.set(messageId, row);
+    }
+    return faces;
+  }, [items, transcript, reads, reader, people, members]);
   const newestMessageId = messages.at(-1)?.id;
   const newestUserMessageId = [...messages].reverse().find((message) => message.role === "user")?.id;
   const focus = state.focusMessage;
@@ -556,6 +602,7 @@ export const Transcript = memo(function Transcript({
             )}
             {person && newCluster && <RoomPersonLabel name={person.name} initials={person.initials} avatarUrl={person.avatarUrl} personId={person.personId} onOpen={(personId) => dispatch({ type: "openPersonPanel", personId })} />}
             {row}
+            {seen.has(m.id) && <SeenByRow faces={seen.get(m.id)!} end={mine} time={formatTime} />}
           </div>
         );
       })}
@@ -802,6 +849,10 @@ export function GroupView({ group: stored }: { group: Group }) {
   // Every bot in the room, someone else's included (its public profile).
   const members = useMemo(() => groupMemberBots(group, state.bots), [group, state.bots]);
   const orgPeople = useOrgPeople();
+  // Seen by (src/lib/read-receipts-feed.ts): who has read what, live, and
+  // this person's own position while the window has focus.
+  const threadReads = useThreadReads(group.threadId);
+  useReportRead(group.threadId, scrollRef, group.messages.at(-1)?.id);
   const viewerEmail = state.config?.profile?.email?.trim().toLowerCase() || "";
   const viewerName = state.config?.profile?.name?.trim() || viewerEmail || "Vous";
   // The server's word on who is looking, when it gives one; before that,
@@ -1331,6 +1382,8 @@ export function GroupView({ group: stored }: { group: Group }) {
             emergingId={popping?.id}
             onReply={selectReply}
             people={orgPeople}
+            reads={threadReads.reads}
+            reader={threadReads.self}
           />
           {laterCount > 0 && (
             <div className="flex justify-center">

@@ -63,7 +63,8 @@ Sagax is made by Pulsatrix Technologies inc. It is based on OpenMausBot (see
 - **Groups with people and bots.** A group chat holds people and bots side by
   side. Mention a bot to ask it, or let the group's lead answer. Each group
   keeps a shared memory its bots read and update. Only the group's owner
-  changes its settings.
+  changes its settings. Small avatars under a message show who has seen it,
+  people and bots alike (a bot has seen what its turn read).
 - **Private threads.** On an organization server, a conversation with a shared
   bot is private to you; group chats are the only shared conversations.
 - **Memory.** Each bot keeps plain Markdown notes, editable in its panel, with

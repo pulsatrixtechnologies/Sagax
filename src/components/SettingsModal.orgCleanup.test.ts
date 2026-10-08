@@ -64,12 +64,18 @@ describe("Settings on an organization server", () => {
     expect(organizationHidesSection("mail", true)).toBe(true);
     expect(organizationHidesSection("mail", false)).toBe(false);
     expect(organizationHidesSection("engines", true)).toBe(false);
+    // Privacy (read receipts between people) exists on an organization server only
+    expect(organizationHidesSection("privacy", true)).toBe(false);
+    expect(organizationHidesSection("privacy", false)).toBe(true);
 
     fixture.section = "usage";
     const solo = await render();
     expect(solo).toContain(">Email<");
+    expect(solo).not.toContain(">Privacy<");
     fixture.org = ORG;
-    expect(await render()).not.toContain(">Email<");
+    const org = await render();
+    expect(org).not.toContain(">Email<");
+    expect(org).toContain(">Privacy<");
   });
 
   it("names the Local VM page Computer (Ordinateur), with the same content", async () => {

@@ -1,5 +1,5 @@
-// The achievements' drawing: the gamertag under the name in the sidebar
-// footer, the unlock toast, the catalog's icons, and the page.
+// The achievements' drawing: never in the sidebar footer, the member card,
+// the unlock toast, the catalog's icons, and the page.
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -16,7 +16,6 @@ vi.mock("@/state/store", async (importOriginal) => {
 });
 
 import { SidebarProfileMenu } from "../SidebarProfileMenu";
-import { gamertagText } from "./Gamertag";
 import { AchievementToast } from "./AchievementToaster";
 import { AchievementsPage } from "./AchievementsPage";
 import { ACHIEVEMENT_ICONS } from "./icons";
@@ -33,7 +32,7 @@ function snapshot(partial: Partial<AchievementSnapshot> = {}): AchievementSnapsh
     rewards: [],
     recent: ["hello-bot"],
     items: ACHIEVEMENTS.map((item) => ({ id: item.id, current: item.id === "small-family" ? 2 : 0, target: item.id === "small-family" ? 3 : 1, ...(item.id === "hello-bot" || item.id === "first-words" ? { unlockedAt: 1 } : {}) })),
-    settings: { showPoints: true, toasts: true, native: false, public: false },
+    settings: { showPoints: true, showTitle: true, toasts: true, native: false, public: false },
     ...partial,
   };
 }
@@ -48,38 +47,34 @@ afterEach(() => {
   resetAchievementsForTests();
 });
 
-describe("gamertag", () => {
-  it("shows the points grouped the person's way, or nothing", () => {
-    expect(gamertagText({ status: "ready", points: 1240, showPoints: true })).toBe("1,240");
-    setLocale("fr");
-    expect(gamertagText({ status: "ready", points: 1240, showPoints: true })?.replace(/\s/g, " ")).toBe("1 240");
-    expect(gamertagText({ status: "ready", points: 10, showPoints: false })).toBeNull();
-    expect(gamertagText({ status: "unavailable", points: 10 })).toBeNull();
-    expect(gamertagText({ status: "loading" })).toBeNull();
+describe("member card", () => {
+  it("keeps the title and the points out of the sidebar footer, whatever the toggles say", () => {
+    for (const settings of [
+      { showPoints: true, showTitle: true, toasts: true, native: false, public: true, title: "rookie" },
+      { showPoints: false, showTitle: true, toasts: true, native: false, public: true, title: "rookie" },
+      { showPoints: true, showTitle: false, toasts: true, native: false, public: true, title: "rookie" },
+    ]) {
+      resetAchievementsForTests({ status: "ready", snapshot: snapshot({ settings }) });
+      const html = renderToStaticMarkup(createElement(SidebarProfileMenu, {}));
+      expect(html).toContain(">Ada Lovelace</span>");
+      expect(html).not.toContain("data-gamertag");
+      expect(html).not.toContain("data-member-line");
+      expect(html).not.toContain(">Rookie<");
+      expect(html).not.toContain("1,240");
+    }
   });
 
-  it("sits under the name in the sidebar footer, a trophy and the points, opening the achievements", () => {
-    resetAchievementsForTests({ status: "ready", snapshot: snapshot() });
-    const html = renderToStaticMarkup(createElement(SidebarProfileMenu, {}));
-    expect(html).toContain(">Ada Lovelace</span>");
-    expect(html).toContain("data-gamertag");
-    expect(html).toContain("<span>1,240</span>");
-    expect(html).toContain('aria-label="1,240 points, level 7. Open achievements"');
-    // the points pill is its own button, never inside the menu's
-    expect(html.indexOf("data-gamertag")).toBeGreaterThan(html.lastIndexOf("</button>", html.indexOf("data-gamertag")));
-    // no chosen title, so the line does not leave an empty gap
-    expect(html).not.toContain("data-member-title");
-  });
-
-  it("puts the chosen title on the same line as the points", () => {
-    resetAchievementsForTests({ status: "ready", snapshot: snapshot({ settings: { showPoints: true, toasts: true, native: false, public: false, title: "rookie" } }) });
-    const html = renderToStaticMarkup(createElement(SidebarProfileMenu, {}));
-    expect(html).toContain("data-member-line");
-    expect(html).toContain("data-member-title");
-    expect(html).toContain(">Rookie</button>");
-    expect(html).toContain("data-gamertag");
-    expect(html).toContain("<span>1,240</span>");
-    expect(html).toContain('aria-label="1,240 points, level 7. Open achievements"');
+  it("centres the name beside the avatar when the card has no title and no points", () => {
+    const bare = renderToStaticMarkup(createElement(MemberCard, { name: "Ada Lovelace", initials: "AL", title: null, pointsText: null, rows: [] }));
+    expect(bare).toContain("member-card-head");
+    expect(bare).not.toContain("Level");
+    expect(bare).not.toContain("lucide-trophy");
+    // the name is the only line next to the avatar: no empty second line
+    const head = bare.slice(bare.indexOf("member-card-head"), bare.indexOf("member-card-list"));
+    expect(head).toContain('<div class="min-w-0 flex-1"><div class="truncate text-[14px] font-medium leading-5 text-ink">Ada Lovelace</div></div></div>');
+    const titled = renderToStaticMarkup(createElement(MemberCard, { name: "Ada Lovelace", initials: "AL", title: "Rookie", pointsText: null, rows: [] }));
+    expect(titled).toContain(">Rookie<");
+    expect(titled).not.toContain("lucide-trophy");
   });
 
   it("lists an unlocked achievement and hides a locked secret", () => {
@@ -128,13 +123,6 @@ describe("gamertag", () => {
     expect(hidden).toContain("First Words");
     expect(hidden).not.toContain("Up Up Down Down");
     expect(hidden).not.toContain('data-achievement="konami"');
-  });
-
-  it("stays away when hidden or on a server without achievements", () => {
-    resetAchievementsForTests({ status: "ready", snapshot: snapshot({ settings: { showPoints: false, toasts: true, native: false, public: false } }) });
-    expect(renderToStaticMarkup(createElement(SidebarProfileMenu, {}))).not.toContain("data-gamertag");
-    resetAchievementsForTests({ status: "unavailable" });
-    expect(renderToStaticMarkup(createElement(SidebarProfileMenu, {}))).not.toContain("data-gamertag");
   });
 });
 
