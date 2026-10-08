@@ -237,6 +237,24 @@ posixOnly("an organization member's identity and bots", () => {
     expect((await api("PATCH", `/api/bots/${zaraBot}`, { as: "zara", body: { approvalMode: "auto" } })).status).toBe(403);
   });
 
+  it("lets a member pick Works on for her own bot on an organization server", async () => {
+    const vm = await api("PATCH", `/api/bots/${zaraBot}`, { as: "zara", body: { computer: "vm" } });
+    expect(vm.status, vm.text).toBe(200);
+    expect(vm.body.bot.computer).toBe("vm");
+    // This computer on Approve for me still needs the warning's proof.
+    expect((await api("PATCH", `/api/bots/${zaraBot}`, { as: "zara", body: { computer: "local" } })).status).toBe(400);
+    const local = await api("PATCH", `/api/bots/${zaraBot}`, { as: "zara", body: { computer: "local", acknowledgeLocalAuto: true } });
+    expect(local.status, local.text).toBe(200);
+    expect(local.body.bot.computer).toBe("local");
+    const auto = await api("PATCH", `/api/bots/${zaraBot}`, { as: "zara", body: { computer: null } });
+    expect(auto.status, auto.text).toBe(200);
+    expect(auto.body.bot.computer).toBeUndefined();
+    // Works on does not open the folder nor the approval level.
+    expect((await api("PATCH", `/api/bots/${zaraBot}`, { as: "zara", body: { computer: "vm", cwd: "/" } })).status).toBe(403);
+    // Another person's bot stays refused.
+    expect((await api("PATCH", `/api/bots/${zaraBot}`, { as: "max", body: { computer: "vm" } })).status).toBe(404);
+  });
+
   it("lets a member edit and delete only her own bots", async () => {
     const renamed = await api("PATCH", `/api/bots/${zaraBot}`, { as: "zara", body: { name: "Scout 2", soul: "Be very brief." } });
     expect(renamed.status, renamed.text).toBe(200);

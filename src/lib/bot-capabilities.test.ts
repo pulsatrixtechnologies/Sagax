@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { ConfigStatus } from "@/state/store";
-import { canEditBotField, canStepPrimary, showBotArchive, showBotDelete, showBotRename, showServerSectionMove, viewerOwnsBot } from "./bot-capabilities";
+import { botSectionEditable, canEditBotField, canStepPrimary, showBotArchive, showBotDelete, showBotRename, showServerSectionMove, viewerOwnsBot } from "./bot-capabilities";
 
 const ZARA = "pr_00000000-0000-4000-8000-000000000002";
 const member = {
@@ -26,6 +26,28 @@ describe("canEditBotField", () => {
     for (const field of ["cwd", "computer", "approvalMode", "mcpServers", "fallback", "voice", "speakReplies", "memoryEnabled", "chiefOfStaff", "outbound", "approvePeerComms"]) {
       expect(canEditBotField(member, own, field), field).toBe(false);
     }
+  });
+
+  it("lets the owner on an organization server pick Works on, not a draft nor another person's bot", () => {
+    const orgMember = { viewer: { ...member.viewer!, profileManagedBy: "perspicax" } } as ConfigStatus;
+    expect(canEditBotField(orgMember, own, "computer")).toBe(true);
+    expect(canEditBotField(orgMember, other, "computer")).toBe(false);
+    expect(canEditBotField(orgMember, { ownerUserId: undefined }, "computer", { draft: true })).toBe(false);
+    for (const field of ["cwd", "approvalMode", "browser", "memoryEnabled"]) {
+      expect(canEditBotField(orgMember, own, field), field).toBe(false);
+    }
+    const readOnly = { viewer: { ...orgMember.viewer!, botsReadOnly: true } } as ConfigStatus;
+    expect(canEditBotField(readOnly, own, "computer")).toBe(false);
+  });
+
+  it("lists More > Computer for that owner, never Access, Memory or History", () => {
+    const orgMember = { viewer: { ...member.viewer!, profileManagedBy: "perspicax" } } as ConfigStatus;
+    expect(botSectionEditable(orgMember, own, "worksOn")).toBe(true);
+    for (const section of ["access", "memory", "history"]) expect(botSectionEditable(orgMember, own, section), section).toBe(false);
+    expect(botSectionEditable(orgMember, other, "worksOn")).toBe(false);
+    expect(botSectionEditable(member, own, "worksOn")).toBe(false);
+    const admin = { viewer: { ...orgMember.viewer!, role: "admin" } } as ConfigStatus;
+    for (const section of ["access", "worksOn", "memory", "history"]) expect(botSectionEditable(admin, other, section), section).toBe(true);
   });
 
   it("lets a member who does not own the bot change only how it looks", () => {

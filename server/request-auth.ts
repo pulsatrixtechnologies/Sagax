@@ -585,8 +585,9 @@ export const clientBotPatchViolation = sharedClientBotPatchViolation;
 
 /** What an organization member may set on a bot they own, at creation and
  * afterwards: how it looks, its name and instructions, and which of the
- * server's engines it runs on. Never where it runs, what it may reach or
- * how much it may do unasked (computer, folder, approval level, MCP servers,
+ * server's engines it runs on. Once the bot exists, its owner on an
+ * organization server also picks Works on (`orgOwner`). Never what it may
+ * reach or how much it may do unasked (folder, approval level, MCP servers,
  * browser profile, peers, teams): those stay server admin settings. */
 export const memberBotFieldViolation = sharedMemberBotFieldViolation;
 

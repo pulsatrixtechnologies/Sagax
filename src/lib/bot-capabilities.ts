@@ -24,7 +24,9 @@ export function viewerOwnsBot(
 
 /** A read-only person edits nothing. Solo, an admin, and a missing viewer
  * edit everything. An organization member edits the member field set on a
- * bot they own or are drafting, and only how any other bot looks. */
+ * bot they own or are drafting, and only how any other bot looks. On an
+ * organization server the owner of an existing bot also picks Works on
+ * (`computer`), as the server allows (ORG_OWNER_BOT_FIELDS). */
 export function canEditBotField(
   config: ConfigStatus | null | undefined,
   bot: { ownerUserId?: string | null },
@@ -33,8 +35,31 @@ export function canEditBotField(
 ): boolean {
   if (viewerBotsReadOnly(config)) return false;
   if (!viewerIsOrgMember(config)) return true;
-  if (options?.draft || viewerOwnsBot(config, bot)) return isMemberBotField(field);
+  if (options?.draft) return isMemberBotField(field);
+  if (viewerOwnsBot(config, bot)) {
+    return isMemberBotField(field) || (field === "computer" && config?.viewer?.profileManagedBy === "perspicax");
+  }
   return isClientBotPatchField(field);
+}
+
+/** Whether the bot panel lists a More section: an organization member never
+ * sees one whose fields the server refuses. Access holds the folder, browser
+ * and MCP switches too, so a member who may pick Works on still gets only
+ * its own Computer section. */
+export function botSectionEditable(
+  config: ConfigStatus | null | undefined,
+  bot: { ownerUserId?: string | null },
+  section: string,
+): boolean {
+  switch (section) {
+    case "access": return !viewerIsOrgMember(config) || canEditBotField(config, bot, "cwd");
+    case "worksOn": return canEditBotField(config, bot, "computer");
+    case "memory": return canEditBotField(config, bot, "memoryEnabled");
+    case "soul": return canEditBotField(config, bot, "soul");
+    case "history": return !viewerIsOrgMember(config);
+    case "permissions": return canStepPrimary(config, bot) || canEditBotField(config, bot, "approvalMode");
+    default: return true;
+  }
 }
 
 /** The Primary Bot switch. Taking and leaving the role is the owner's own

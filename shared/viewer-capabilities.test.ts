@@ -44,4 +44,14 @@ describe("viewer capabilities", () => {
     expect(MEMBER_BOT_FIELDS).toContain("modelSelection");
     expect(MEMBER_BOT_FIELDS).not.toContain("approvalMode");
   });
+
+  it("lets the owner on an organization server also pick Works on, and nothing else", () => {
+    expect(memberBotFieldViolation({ computer: "local", acknowledgeLocalAuto: true })).toBe("computer");
+    expect(memberBotFieldViolation({ computer: "local", acknowledgeLocalAuto: true }, { orgOwner: true })).toBeNull();
+    expect(memberBotFieldViolation({ name: "Scout", computer: null }, { orgOwner: true })).toBeNull();
+    for (const field of ["cwd", "approvalMode", "mcpServers", "browser", "browserProfile", "cloudBackend", "peers", "memoryEnabled"]) {
+      expect(memberBotFieldViolation({ computer: "vm", [field]: null }, { orgOwner: true }), field).toBe(field);
+    }
+    expect(isMemberBotField("computer")).toBe(false);
+  });
 });

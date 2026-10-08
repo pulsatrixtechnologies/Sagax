@@ -1154,6 +1154,16 @@ organization)`). Tests: `OrgComputerTab.test.ts`,
 `experimental-computers.test.ts`, `PlaceChip.test.ts`,
 `AccessSection.test.ts`, `server/desktop-bridge.test.ts`.
 
+The owner of a bot picks its Works on there, member or admin (JC,
+2026-10-07): every place is the speaker's own, never the host.
+`memberBotFieldViolation(body, { orgOwner })` adds `computer` and
+`acknowledgeLocalAuto` (`ORG_OWNER_BOT_FIELDS`) for the owner of an
+existing bot on an organization server only; an editor, a draft, a `use`
+person and a solo server keep the member fields. The member sees More >
+Computer, never Access (folder, browser and MCP stay admin). Tests:
+`shared/viewer-capabilities.test.ts`, `src/lib/bot-capabilities.test.ts`,
+`server/member-identity.e2e.test.ts`.
+
 The Local VM in server mode lives on the person's computer
 (`electron/local-vm.mjs`, `POST /api/me/desktop-bridge/local-vm`):
 

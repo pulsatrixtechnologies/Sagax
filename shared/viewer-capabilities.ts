@@ -19,7 +19,15 @@ export const MEMBER_BOT_FIELDS = [
   "name", "title", "description", "soul", "notifications", "avatarUrl", "modelSelection", "requireAvailableModel",
 ] as const;
 
+/** The owner of a bot on an organization server also picks Works on: every
+ * place there is the speaker's own (their server environment, their own
+ * computer through the Sagax app), never the server host.
+ * `acknowledgeLocalAuto` is the warning's proof that rides with This
+ * computer on Approve for me. */
+export const ORG_OWNER_BOT_FIELDS = [...MEMBER_BOT_FIELDS, "computer", "acknowledgeLocalAuto"] as const;
+
 const MEMBER_BOT_FIELD_SET = new Set<string>(MEMBER_BOT_FIELDS);
+const ORG_OWNER_BOT_FIELD_SET = new Set<string>(ORG_OWNER_BOT_FIELDS);
 const CLIENT_BOT_PATCH_SET = new Set<string>(CLIENT_BOT_PATCH_FIELDS);
 
 export function isMemberBotField(field: string): boolean {
@@ -30,10 +38,12 @@ export function isClientBotPatchField(field: string): boolean {
   return CLIENT_BOT_PATCH_SET.has(field);
 }
 
-/** First field a member may not send, or null when every field is allowed. */
-export function memberBotFieldViolation(body: unknown): string | null {
+/** First field a member may not send, or null when every field is allowed.
+ * `orgOwner`: the member owns this existing bot on an organization server. */
+export function memberBotFieldViolation(body: unknown, options?: { orgOwner?: boolean }): string | null {
   if (!body || typeof body !== "object" || Array.isArray(body)) return "body";
-  for (const key of Object.keys(body)) if (!MEMBER_BOT_FIELD_SET.has(key)) return key;
+  const allowed = options?.orgOwner ? ORG_OWNER_BOT_FIELD_SET : MEMBER_BOT_FIELD_SET;
+  for (const key of Object.keys(body)) if (!allowed.has(key)) return key;
   return null;
 }
 

@@ -49,7 +49,7 @@ import { t } from "@/lib/i18n";
 import { useOwnerOrAdmin } from "@/lib/use-owner-or-admin";
 import type { PromptPreviewData } from "./bot-settings/PromptPreview";
 import { servedPage } from "@/lib/desktop";
-import { canEditBotField, canStepPrimary } from "@/lib/bot-capabilities";
+import { botSectionEditable, canEditBotField } from "@/lib/bot-capabilities";
 import { viewerBotsReadOnly, viewerIsOrgMember } from "@/lib/viewer";
 
 const sectionLabel = (entry: (typeof BOT_SECTIONS)[number]) => (entry.labelKey ? t(entry.labelKey) : entry.label);
@@ -139,13 +139,7 @@ export function BotSettingsDialog({ bot, onOpenVmWorkspace }: {
     .filter((entry) => entry.id !== "visibility" || (servedPage() && ownerOrAdmin === true && perspicaxOrg === null))
     .filter((entry) => entry.id !== "sharing" || perspicaxOrg !== null)
     .filter((entry) => entry.id !== "perspicax" || perspicaxOrg !== null)
-    // An organization member never sees a section whose fields the server refuses.
-    .filter((entry) => entry.id !== "access" || canEditBotField(state.config, bot, "computer") || canEditBotField(state.config, bot, "cwd"))
-    .filter((entry) => entry.id !== "worksOn" || canEditBotField(state.config, bot, "computer"))
-    .filter((entry) => entry.id !== "memory" || canEditBotField(state.config, bot, "memoryEnabled"))
-    .filter((entry) => entry.id !== "soul" || canEditBotField(state.config, bot, "soul"))
-    .filter((entry) => entry.id !== "history" || !viewerIsOrgMember(state.config))
-    .filter((entry) => entry.id !== "permissions" || canStepPrimary(state.config, bot) || canEditBotField(state.config, bot, "approvalMode"))
+    .filter((entry) => botSectionEditable(state.config, bot, entry.id))
     .filter((entry) => advanced || !simpleHidesBotSection(entry.id));
   const visibleSections = sections.filter((entry) => sectionMatches(entry, q));
   // A deep link into a section Simple hides shows Overview instead. The

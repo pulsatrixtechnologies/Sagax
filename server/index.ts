@@ -28318,11 +28318,15 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         // member (MEMBER_BOT_FIELDS); never the approval level or anything
         // that decides where or how far the bot runs.
         const editor = !own && Boolean(target) && IDENTITY.kind === "perspicax" && atLeast(viewerBotLevel(auth, target!), "edit");
-        const field = own || editor ? memberBotFieldViolation(body) : clientBotPatchViolation(body);
+        // The owner on an organization server also picks Works on: each place
+        // there is the speaker's own environment or computer, never the host
+        // (ORG_OWNER_BOT_FIELDS). An editor and a solo server do not.
+        const orgOwner = own && IDENTITY.kind === "perspicax";
+        const field = own || editor ? memberBotFieldViolation(body, { orgOwner }) : clientBotPatchViolation(body);
         if (field) {
           return json(res, 403, {
             error: own || editor
-              ? `forbidden: a member may change their bot's name, look, instructions and model, not "${field}"`
+              ? `forbidden: a member may change their bot's name, look, instructions and model${orgOwner ? ", and where it works" : ""}, not "${field}"`
               : `forbidden: this session may change how a bot looks, not "${field}" (needs the admin scope)`,
           });
         }

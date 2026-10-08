@@ -91,6 +91,9 @@ export function WorksOnSetting({ bot }: { bot: Bot }) {
   const disabled: Partial<Record<"local" | "browser", string>> = {};
   if (!derived.localSelectable) disabled.local = derived.localDisabledReason ?? t("place.unavailable");
   if (!derived.browserSelectable) disabled.browser = derived.browserDisabledReason;
+  // Browser only on a bot whose browser is switched off turns it back on,
+  // which an organization member may not save (Access stays an admin's).
+  else if (bot.browser === false && !derived.canEdit("browser")) disabled.browser = t("botPanel.access.browserDenied");
   return (
     <>
       <WorksOnControl
@@ -101,7 +104,7 @@ export function WorksOnSetting({ bot }: { bot: Bot }) {
         onChange={(mode) => {
           if (mode === "local" && derived.approvalMode === "auto") setWarnLocal(true);
           // a browser-only bot must actually have its browser
-          else if (mode === "browser") derived.patch({ computer: mode, browser: true });
+          else if (mode === "browser" && bot.browser === false) derived.patch({ computer: mode, browser: true });
           else derived.patch({ computer: mode });
         }}
       />
