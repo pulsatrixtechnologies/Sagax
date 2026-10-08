@@ -203,7 +203,7 @@ describe("Activity, live only", () => {
     expect(sections(null)).toBe("");
     const chat = job("thread:chat", { status: "running", endedAt: undefined });
     const idle = sections({ items: [job("thread:old", { coding: true }), chat, parallel], subagents: [] });
-    expect(idle).toBe("");
+    expect(idle).not.toContain("data-bot-settings-section");
     expect(idle).not.toContain("Nothing running.");
     // something parallel runs: Activity only
     const busy = sections({ items: [routine, chat], subagents: [] });
@@ -218,6 +218,42 @@ const codeJob = (id: string, over: Partial<BotActivityItem> = {}) => job(id, {
   coding: true,
   code: { pullRequests: [], branches: [], commits: [] },
   ...over,
+});
+
+describe("history and errors with both sections hidden", () => {
+  const props = (over: Partial<Parameters<typeof PanelSections>[0]> = {}) => ({ list: { items: [], subagents: [] }, live: liveOf([]), actions: { onOpen: () => {}, now: NOW }, onOpenHistory: () => {}, ...over });
+
+  it("keeps the history reachable through one quiet History row, only when both are hidden", () => {
+    const html = renderToStaticMarkup(createElement(PanelSections, props()));
+    expect(html).toContain('data-activity-history="all"');
+    expect(html).toContain(">History<");
+    expect(html).toContain("text-ink-tertiary");
+    expect(html).not.toContain("data-bot-settings-section");
+    const onOpenHistory = vi.fn();
+    const row = PanelSections(props({ onOpenHistory })) as unknown as { props: { onClick: () => void } };
+    row.props.onClick();
+    expect(onOpenHistory).toHaveBeenCalledWith("coding");
+    // a section is drawn: its title opens the history, no extra row
+    const routine = job("run:r1", { kind: "routine", status: "running", endedAt: undefined });
+    const busy = renderToStaticMarkup(createElement(PanelSections, props({ list: { items: [routine], subagents: [] }, live: liveOf([routine]) })));
+    expect(busy).toContain('data-activity-history="other"');
+    expect(busy).not.toContain('data-activity-history="all"');
+    // still loading: nothing at all
+    expect(renderToStaticMarkup(createElement(PanelSections, props({ list: null })))).toBe("");
+  });
+
+  it("says once, quietly, that the list could not load", () => {
+    const html = renderToStaticMarkup(createElement(PanelSections, props({ list: null, error: true })));
+    expect(html).toContain("data-activity-error");
+    expect(html).toContain("Couldn&#x27;t load this bot&#x27;s activity.");
+    expect(html).toContain("text-ink-tertiary");
+    expect(html).not.toContain('role="alert"');
+    expect(html).not.toContain("data-activity-history");
+    // a failed refresh keeps the last list on screen
+    const kept = renderToStaticMarkup(createElement(PanelSections, props({ error: true })));
+    expect(kept).toContain('data-activity-history="all"');
+    expect(kept).not.toContain("data-activity-error");
+  });
 });
 
 describe("Coding, code work only", () => {

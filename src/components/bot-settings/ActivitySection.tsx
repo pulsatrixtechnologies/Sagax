@@ -19,7 +19,7 @@
 // list refetches when the bot's threads change (the store's event stream)
 // and polls while work runs.
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
-import { Activity, ChevronRight, GitBranch, GitCommitHorizontal, GitMerge, GitPullRequest, GitPullRequestClosed, Loader2, SquareTerminal } from "lucide-react";
+import { Activity, ChevronRight, History, GitBranch, GitCommitHorizontal, GitMerge, GitPullRequest, GitPullRequestClosed, Loader2, SquareTerminal } from "lucide-react";
 
 import { api, useStore, type Bot } from "@/state/store";
 import { t } from "@/lib/i18n";
@@ -253,14 +253,37 @@ export function SectionHeader({ icon, title, name, onOpenHistory }: { icon: Reac
 }
 
 /** Coding then Activity as Details draws them, each only when it has
- * something to show. Split out so it renders without the fetching. */
-export function PanelSections({ list, live, actions, onOpenHistory }: {
+ * something to show. With both hidden, one quiet History row keeps the
+ * history reachable (the section titles open it otherwise). A first load
+ * that failed is one quiet line; a later failed refresh keeps the last list.
+ * Split out so it renders without the fetching. */
+export function PanelSections({ list, live, actions, onOpenHistory, error = false }: {
   list: BotActivityList | null;
   live?: LiveView;
   actions: CardActions;
   onOpenHistory: (filter: BotActivityFilter) => void;
+  /** The newest list fetch failed. */
+  error?: boolean;
 }) {
   const { coding, work, other, showCoding, showActivity } = panelSections(list, live);
+  if (list === null) {
+    return error ? <p role="status" data-activity-error className="px-0.5 text-[12.5px] text-ink-tertiary">{t("botPanel.coding.error")}</p> : null;
+  }
+  if (!showCoding && !showActivity) {
+    return (
+      <button
+        type="button"
+        data-activity-history="all"
+        onClick={() => onOpenHistory("coding")}
+        aria-haspopup="dialog"
+        title={t("botPanel.history.open")}
+        className="-mx-1 flex items-center gap-2 self-start rounded-md px-1 py-0.5 text-left text-[12.5px] leading-[18px] text-ink-tertiary hover:text-ink-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
+      >
+        <History size={14} aria-hidden="true" className="shrink-0" />
+        <span>{t("botPanel.history.title")}</span>
+      </button>
+    );
+  }
   return (
     <>
       {showCoding && (
@@ -293,6 +316,7 @@ export function PanelSections({ list, live, actions, onOpenHistory }: {
 export function ActivitySection({ bot }: { bot: Bot }) {
   const { state, dispatch } = useStore();
   const [list, setList] = useState<BotActivityList | null>(null);
+  const [error, setError] = useState(false);
   const [open, setOpen] = useState<BotActivityItem | null>(null);
   const [all, setAll] = useState<BotActivityFilter | null>(null);
   // Finished work leaves the panel a few seconds after it finished.
@@ -313,13 +337,18 @@ export function ActivitySection({ bot }: { bot: Bot }) {
         tracker.current?.update([...next.items, ...next.subagents]);
         setList(next);
         setNow(Date.now());
+        setError(false);
       })
-      // A failed fetch keeps what is on screen; the next poll tries again.
-      .catch(() => {});
+      // A failed fetch keeps what is on screen (a first one says so); the
+      // next poll tries again.
+      .catch(() => {
+        if (id === request.current) setError(true);
+      });
   }, [bot.id]);
 
   useEffect(() => {
     setList(null);
+    setError(false);
     setOpen(null);
     setAll(null);
     tracker.current?.dispose();
@@ -370,7 +399,7 @@ export function ActivitySection({ bot }: { bot: Bot }) {
 
   return (
     <>
-      <PanelSections list={list} live={live} actions={actions} onOpenHistory={setAll} />
+      <PanelSections list={list} live={live} actions={actions} onOpenHistory={setAll} error={error} />
       {all && (
         <ActivityListModal
           botId={bot.id}
