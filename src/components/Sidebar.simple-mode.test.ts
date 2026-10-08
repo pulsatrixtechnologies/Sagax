@@ -55,8 +55,8 @@ afterEach(() => { vi.unstubAllGlobals(); });
 
 describe("bot-first sidebar", () => {
   it.each([
-    { enabled: true, density: "comfortable", size: 36, spacing: ["min-h-[54px]", "gap-2", "py-2", "pl-6"] },
-    { enabled: true, density: "compact", size: 28, spacing: ["gap-1.5", "py-1", "pl-6"] },
+    { enabled: true, density: "comfortable", size: 36, spacing: ["min-h-[54px]", "gap-2", "py-2", "pl-2"] },
+    { enabled: true, density: "compact", size: 28, spacing: ["gap-2", "py-1.5", "pl-2"] },
     { enabled: true, density: "icons", size: 36, spacing: ["justify-center", "px-1", "py-1.5"] },
     { enabled: false, density: "comfortable", size: 36, spacing: ["min-h-[54px]", "gap-2", "py-2", "pl-2"] },
     { enabled: false, density: "compact", size: 28, spacing: ["gap-2", "py-1.5", "pl-2"] },
@@ -202,17 +202,38 @@ describe("group rows line up with bot rows", () => {
   const rowClass = (markup: string, marker: string) => markup.match(new RegExp(`${marker}[^>]*class="([^"]*)"`))?.[1]
     ?? markup.match(new RegExp(`class="([^"]*)"[^>]*${marker}`))?.[1] ?? "";
 
-  it.each([true, false])("uses the bot row inset with showThreads=%s and draws no outline around stacked faces", (showThreads) => {
+  it.each([true, false])("keeps the bot row inset fixed and the room row inset for its chevron with showThreads=%s, no outline around stacked faces", (showThreads) => {
     fixture.showThreads = showThreads;
     fixture.state.bots = [bot, pepper];
     const groupMarkup = renderToStaticMarkup(createElement(GroupListItem, { group: twoBots, density: "comfortable", onMenu: vi.fn() }));
     const botMarkup = renderToStaticMarkup(createElement(BotListItem, { bot: pepper, density: "comfortable", onMenu: vi.fn() }));
-    const inset = showThreads ? "pl-6" : "pl-2";
-    expect(rowClass(groupMarkup, 'data-sidebar-group-row="group"').split(" ")).toContain(inset);
-    expect(rowClass(botMarkup, 'data-sidebar-bot-row="pepper"').split(" ")).toContain(inset);
+    // rooms keep a chevron in thread mode; bot rows never move
+    expect(rowClass(groupMarkup, 'data-sidebar-group-row="group"').split(" ")).toContain(showThreads ? "pl-6" : "pl-2");
+    expect(rowClass(botMarkup, 'data-sidebar-bot-row="pepper"').split(" ")).toContain("pl-2");
+    expect(rowClass(botMarkup, 'data-sidebar-bot-row="pepper"').split(" ")).not.toContain("pl-6");
     // same 36px avatar footprint as the bot row
     expect(groupMarkup).toContain("relative shrink-0 size-9");
     expect(groupMarkup).not.toMatch(/ring-2 ring-panel/);
+  });
+});
+
+describe("bot row does not move with thread mode", () => {
+  const stripButtonPadding = (cls: string) => cls.split(" ").filter((c) => !/pr-\[5\.75rem\]/.test(c)).sort();
+  it.each(["comfortable", "compact", "icons"] as const)("has the same wrapper and avatar classes with threads on and off, %s density", (density) => {
+    const grab = (showThreads: boolean) => {
+      fixture.showThreads = showThreads;
+      let tree: ReactNode;
+      function Capture() { tree = BotListItem({ ...rowProps(density), bot }); return tree; }
+      const markup = renderToStaticMarkup(createElement(Capture));
+      const row = findElement(tree, "data-sidebar-bot-row", bot.id)!;
+      const avatar = markup.match(/<span class="relative flex shrink-0"[^>]*>/)?.[0];
+      return { row: stripButtonPadding(String(row.props.className)), avatar };
+    };
+    const on = grab(true);
+    const off = grab(false);
+    expect(on.row).toEqual(off.row);
+    expect(on.avatar).toBeDefined();
+    expect(on.avatar).toEqual(off.avatar);
   });
 });
 
