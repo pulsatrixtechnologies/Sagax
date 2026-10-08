@@ -10,7 +10,7 @@ vi.mock("./DesktopCapabilities", () => ({
   useCaptionChrome: () => ({}),
   useMacInsetChrome: () => ({}),
 }));
-vi.mock("@/lib/thread-preferences", () => ({ useShowThreads: () => true }));
+vi.mock("@/lib/thread-preferences", () => ({ useShowThreads: () => true, useThreadsLocationChoice: () => "header" }));
 
 const { LabelTag, PersonLabelTag } = await import("./LabelTag");
 const { BotListItem, GroupListItem } = await import("./Sidebar");

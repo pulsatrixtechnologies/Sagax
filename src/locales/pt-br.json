@@ -2172,5 +2172,10 @@
   "connectApps.providers.notSignedIn": "Não conectado",
   "connectApps.providers.unavailable": "Não configurado",
   "connectApps.providers.signedIn": "Conectado",
-  "connectApps.manage.noSkills": "Nenhuma habilidade privada ainda. Um plugin de um marketplace pode trazer algumas."
+  "connectApps.manage.noSkills": "Nenhuma habilidade privada ainda. Um plugin de um marketplace pode trazer algumas.",
+  "settings.threadsLocation.title": "Local das conversas",
+  "settings.threadsLocation.subtitle": "Onde ficam as conversas e as pastas. Um só lugar por vez: o cabeçalho do chat ou a barra lateral esquerda. Vale apenas para este dispositivo.",
+  "settings.threadsLocation.aria": "Local das conversas",
+  "settings.threadsLocation.header": "No cabeçalho do chat",
+  "settings.threadsLocation.sidebar": "Na barra lateral"
 }
