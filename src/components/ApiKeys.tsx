@@ -218,7 +218,7 @@ function CredentialHelp({ section }: { section: ConfigSection }) {
           id={popoverId}
           role="group"
           aria-label={t("keys.helpAria", { label: credential.label })}
-          className={cn("absolute right-0 z-30 mt-1.5 w-[270px] rounded-xl border border-hairline bg-panel p-3 text-left shadow-2xl", motion.className)} {...motion.exitProps}
+          className={cn("absolute right-0 z-30 mt-1.5 w-[270px] rounded-xl border border-hairline popover-surface bg-panel p-3 text-left shadow-2xl", motion.className)} {...motion.exitProps}
         >
           <div className="text-[12px] leading-[1.45] text-ink-secondary">{credential.description}</div>
           <a

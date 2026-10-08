@@ -212,7 +212,7 @@ function ChartBlockComponent({ code, pending = false }: { code: string; pending?
           {active !== null && spec.labels[active] !== undefined && (
             <div
               role="status"
-              className="pointer-events-none absolute top-2 z-[2] min-w-32 max-w-60 rounded-lg border border-hairline/50 bg-menu px-2.5 py-1.5 text-[11.5px] shadow-lg"
+              className="pointer-events-none absolute top-2 z-[2] min-w-32 max-w-60 rounded-lg border border-hairline/50 popover-surface bg-menu px-2.5 py-1.5 text-[11.5px] shadow-lg"
               style={pie ? { left: "50%", transform: "translateX(-50%)" } : {
                 left: `${Math.min(78, Math.max(4, ((M.left + (PLOT_W / count) * (active + 0.5)) / W) * 100))}%`,
                 transform: "translateX(-50%)",

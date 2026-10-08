@@ -58,7 +58,7 @@ function CitationEditor({
       ref={ref}
       role="dialog"
       aria-label="Comment on citation"
-      className="fixed z-50 w-[min(28rem,calc(100vw-1rem))] rounded-xl border border-hairline/50 bg-panel p-3 text-ink shadow-2xl"
+      className="fixed z-50 w-[min(28rem,calc(100vw-1rem))] rounded-xl border border-hairline/50 popover-surface bg-panel p-3 text-ink shadow-2xl"
       style={point}
       onKeyDown={(event) => {
         event.stopPropagation();
@@ -258,7 +258,7 @@ export function CitationBadge({
         <div
           role="dialog"
           aria-label="Citation details"
-          className="fixed z-50 w-[min(30rem,calc(100vw-1rem))] rounded-xl border border-hairline/50 bg-panel p-3 text-left text-ink shadow-2xl"
+          className="fixed z-50 w-[min(30rem,calc(100vw-1rem))] rounded-xl border border-hairline/50 popover-surface bg-panel p-3 text-left text-ink shadow-2xl"
           style={point}
           ref={(element) => {
             detailsRef.current = element;

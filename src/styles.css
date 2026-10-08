@@ -158,6 +158,24 @@
      a shade too grey for a menu. */
   --color-menu: #262626;
   --color-card: #262626;
+  /* The popover surface: every popover, menu, sheet and picker paints from
+     these, and `.popover-surface` (below) points the generic tokens back at
+     them for whatever is nested inside. Each one is resolved ONCE, at the
+     skin's root (see the `[data-skin]` block below), so a popover reads the
+     same wherever it opens, including from Pulsatrix Light's navy header,
+     which re-points `ink` at the rail's light ink for its own subtree. */
+  --color-popover: var(--color-menu);
+  --color-popover-ink: var(--color-ink);
+  --color-popover-ink-secondary: var(--color-ink-secondary);
+  --color-popover-placeholder: var(--color-ink-tertiary);
+  --color-popover-hover: var(--color-raised-hover);
+  --color-popover-field: var(--color-inset);
+  --color-popover-accent: var(--color-accent-text);
+  --color-popover-hairline: var(--color-hairline);
+  --color-popover-panel: var(--color-panel);
+  /* the outline of a field inside a popover, and of the popover itself:
+     3:1 on both (WCAG 1.4.11), set per skin */
+  --color-popover-border: #707070;
   --color-inset: #191919;
   /* a control ON a card. The dark skins take their `raised` value, so this
      is a no-op for them; the light skins need a tone of their own, because
@@ -255,6 +273,46 @@
   --sidebar-mark-on-light: none;
 }
 
+/* The popover tokens, resolved per skin context. `@theme` puts them on
+   :root, but a `[data-skin]` subtree (the skin picker's live miniatures)
+   must resolve them against ITS ink, not the document's. Declared before
+   the skin blocks, so a skin can still set any of them outright. */
+[data-skin] {
+  --color-popover: var(--color-menu);
+  --color-popover-ink: var(--color-ink);
+  --color-popover-ink-secondary: var(--color-ink-secondary);
+  --color-popover-placeholder: var(--color-ink-tertiary);
+  --color-popover-hover: var(--color-raised-hover);
+  --color-popover-field: var(--color-inset);
+  --color-popover-accent: var(--color-accent-text);
+  --color-popover-hairline: var(--color-hairline);
+  --color-popover-panel: var(--color-panel);
+}
+
+/* Worn by every floating surface: popovers, menus, pickers, sheets. A band
+   that re-points the generic tokens for its subtree (Pulsatrix Light's navy
+   `.content-topbar`, the inverted bubbles of Daylight and Meadow) would
+   otherwise hand its light ink to a white popover opened from it: the
+   thread picker's rows measured 1.11:1 there. This points the generic
+   tokens back at the popover set, so shared pieces nested in a popover (a
+   menu row, the New thread button) read right without knowing where they
+   are. `raised` takes the hover tone: on the light skins `raised` is the
+   same white as the popover, so a `hover:bg-raised` row was invisible.
+   Measured by pnpm check:contrast, over the root and over every band. */
+@layer components {
+  .popover-surface {
+    --color-ink: var(--color-popover-ink);
+    --color-ink-secondary: var(--color-popover-ink-secondary);
+    --color-ink-tertiary: var(--color-popover-placeholder);
+    --color-panel: var(--color-popover-panel);
+    --color-hairline: var(--color-popover-hairline);
+    --color-inset: var(--color-popover-field);
+    --color-raised: var(--color-popover-hover);
+    --color-raised-hover: var(--color-popover-hover);
+    color: var(--color-popover-ink);
+  }
+}
+
 /* ── Pulsatrix ─────────────────────────────────────────────────────────────
    Pulsatrix v3's own dark palette (console/src/index.css), carried over
    verbatim: deep navy ground, blue-violet accent, and a soft ice-glow
@@ -284,7 +342,8 @@
   --color-composer-ring: transparent;
   --color-card: #0d192c;
   --color-menu: #0d1729;
-  --color-inset: #081427;
+  --color-popover-border: #5b667d;   /* field and popover outline: 3:1 on both */
+  --color-inset: #081225;   /* #081427 measured 1.03:1 on the menu: a search field in a popover did not read as a field */
   --color-control: #16233c;       /* = raised: unchanged */
   --color-hairline: #223353;
   --color-sidebar: #060f20;              /* = panel: unchanged */
@@ -309,7 +368,7 @@
   --color-bubble-user-ink: #eef2fb;   /* = ink: unchanged */
 
   --color-success: #38d591;
-  --color-danger: #f2555f;
+  --color-danger: #f25a64;
   --color-danger-ink: #030b17;      /* white measures 3.37:1 here; see above */
   --color-success-ink: #072114;
   --color-warning: #ff9800;
@@ -383,8 +442,8 @@
   --sidebar-mark-on-light: none;
 
   --color-ink: #0b1526;
-  --color-ink-secondary: #545e6e;   /* v3's #5a6577 darkened one notch for 4.5:1 on inset */
-  --color-ink-tertiary: #545e6e;   /* = ink-secondary: the light ground leaves no room below it */
+  --color-ink-secondary: #4f5868;   /* v3's #5a6577 darkened for 4.5:1 on inset and on the selected row's wash */
+  --color-ink-tertiary: #4f5868;   /* = ink-secondary: the light ground leaves no room below it */
 
   --color-accent: #2f62dd;
   --color-accent-border: #3c76f4;
@@ -395,7 +454,7 @@
   --color-bubble-user-ink: #0b1526;   /* = ink: unchanged */
 
   --color-success: #0f5132;
-  --color-danger: #d92d3e;
+  --color-danger: #c02936;   /* v3's #d92d3e measured 3.8:1 as error text on its own 15% tint */
   --color-danger-ink: #ffffff;
   --color-success-ink: #ffffff;
   --color-warning: #7d4d09;
@@ -410,6 +469,7 @@
     "Segoe UI", system-ui, sans-serif;
   --radius-lg: 0.5rem;
   --radius-xl: 0.75rem;
+  --color-popover-border: #7b828e;   /* field and popover outline: 3:1 on both */
 }
 
 /* ── Midnight ──────────────────────────────────────────────────────────────
@@ -417,10 +477,10 @@
    (rather than relying on the `@theme` defaults) so that a `[data-skin]`
    subtree can switch *back* to it — the picker needs that.
 
-   Two upstream contrast gaps are preserved deliberately, because this skin's
-   job is to be the original: white on the accent fill measures 3.65:1 and
-   white on the danger fill 3.32:1, both short of AA for the 13–15px labels
-   they carry. Atelier and Foundry fix this via --color-accent-ink.
+   The upstream white labels on the accent and danger fills (3.65:1 and
+   3.10:1) are gone: the accent carries a dark ink, and the red was lifted so
+   error text clears 4.5:1 on its own tint, so its label takes the app's
+   black too (7.6:1). Readable beats faithful here.
    ───────────────────────────────────────────────────────────────────────── */
 [data-skin="midnight"] {
   --code-color-scheme: dark;
@@ -432,6 +492,7 @@
   --color-composer-ring: transparent;
   --color-card: #262626;
   --color-menu: #262626;    /* = card: unchanged */
+  --color-popover-border: #707070;   /* field and popover outline: 3:1 on both */
   --color-inset: #191919;
   --color-control: #2f2f2f;       /* = raised: Midnight is unchanged */
   --color-hairline: #333333;
@@ -455,8 +516,8 @@
   --color-bubble-user: #5a5a5a;
   --color-bubble-user-ink: #fcfcfc;   /* = ink: unchanged */
   --color-success: #38d591;
-  --color-danger: #ff5667;
-  --color-danger-ink: #ffffff;
+  --color-danger: #ff7280;
+  --color-danger-ink: #070707;   /* white measured 3.10:1 on the danger fill; the app's black reads 7.6:1 */
   --color-success-ink: #072114;
   --color-warning: #ff9800;
   --color-scrollbar: #3d3d3d;
@@ -488,6 +549,7 @@
   --color-composer-ring: transparent;
   --color-card: #ffffff;
   --color-menu: #ffffff;    /* = card: unchanged */
+  --color-popover-border: #8d8982;   /* field and popover outline: 3:1 on both */
   --color-inset: #f5f1eb;         /* inset surfaces pick the rail tone back up */
   --color-control: #ece4d6;       /* raised is white here and so is a card, so
                                      a control needs its own tone: 1.26:1 on a
@@ -495,7 +557,7 @@
   --color-hairline: #c8bda8;      /* #ece7dd was 1.11:1 on the rail → 1.65:1 */
   --color-sidebar: #fbf8f2;              /* = panel: unchanged */
   --color-sidebar-ink: #1a1a18;           /* = ink: unchanged */
-  --color-sidebar-ink-secondary: #6b6559; /* = ink-secondary: unchanged */
+  --color-sidebar-ink-secondary: #5c564d; /* = ink-secondary: unchanged */
   --color-sidebar-hover: #7777772c;       /* = hover: unchanged */
   --color-sidebar-selected: #77777752;    /* = selected: unchanged */
   --color-sidebar-hairline: #c8bda8;      /* = hairline: unchanged */
@@ -503,8 +565,8 @@
   --sidebar-mark-on-light: inline-block; /* a light rail: the navy-bar mark */
 
   --color-ink: #1a1a18;           /* 17.4:1 on white */
-  --color-ink-secondary: #6b6559; /* #8b8578 was 3.67:1 → 5.78:1 */
-  --color-ink-tertiary: #6d685c;
+  --color-ink-secondary: #5c564d; /* #8b8578 was 3.67:1 → 5.78:1 */
+  --color-ink-tertiary: #5c564d;   /* = ink-secondary: the hover and selected washes leave no room below it */
 
   /* Two accent tones: the fill carries white, the text stands on white. */
   --color-accent: #a05f25;        /* #b06a2c darkened → 5.05:1 */
@@ -558,6 +620,7 @@
   --color-composer-ring: transparent;
   --color-card: #1e1a14;
   --color-menu: #1e1a14;    /* = card: unchanged */
+  --color-popover-border: #6e675c;   /* field and popover outline: 3:1 on both */
   --color-inset: #0b0a08;         /* inset sinks below the ground */
   --color-control: #262019;       /* = raised: Foundry is unchanged */
   --color-hairline: #3d3529;      /* visible on purpose — this UI has edges */
@@ -572,7 +635,7 @@
 
   --color-ink: #f4efe4;           /* warm off-white, never pure #fff */
   --color-ink-secondary: #b0a696; /* 6.7:1 on raised, 5.9:1 on hover */
-  --color-ink-tertiary: #9c9384;
+  --color-ink-tertiary: #a59c8f;
 
   /* Brass. Bright fill, dark lettering — the inversion described above. */
   --color-accent: #d99a3e;
@@ -584,7 +647,7 @@
   --color-bubble-user-ink: #f4efe4;   /* = ink: unchanged */
 
   --color-success: #57b078;
-  --color-danger: #e0685e;        /* a lamp, not a paint chip */
+  --color-danger: #e27168;        /* a lamp, not a paint chip */
   --color-danger-ink: #1c0d0b;
   --color-success-ink: #1c150c;
   --color-warning: #dfa441;
@@ -637,7 +700,7 @@
   --color-hairline: #aebfbd;      /* 1.60:1 — level with the other three */
   --color-sidebar: #ecf4f3;              /* = panel: unchanged */
   --color-sidebar-ink: #14201f;           /* = ink: unchanged */
-  --color-sidebar-ink-secondary: #4d5c5b; /* = ink-secondary: unchanged */
+  --color-sidebar-ink-secondary: #495655; /* = ink-secondary: unchanged */
   --color-sidebar-hover: #7777772c;       /* = hover: unchanged */
   --color-sidebar-selected: #77777752;    /* = selected: unchanged */
   --color-sidebar-hairline: #aebfbd;      /* = hairline: unchanged */
@@ -646,8 +709,8 @@
 
   --color-ink: #14201f;           /* dark petrol; a neutral black would read
                                      as a foreign object on a tinted ground */
-  --color-ink-secondary: #4d5c5b; /* 7.0:1 on white, 5.8:1 on the ground */
-  --color-ink-tertiary: #566564;
+  --color-ink-secondary: #495655; /* 7.0:1 on white, 5.8:1 on the ground */
+  --color-ink-tertiary: #4b5655;
 
   --color-accent: #11736d;        /* deep teal, carries white at 5.68:1 */
   --color-accent-border: #14807a;
@@ -670,6 +733,7 @@
     Roboto, sans-serif;
   --radius-lg: 8px;
   --radius-xl: 14px;
+  --color-popover-border: #788281;   /* field and popover outline: 3:1 on both */
 }
 
 /* ── Graphite ─────────────────────────────────────────────────────────────
@@ -687,6 +751,7 @@
   --color-composer-ring: transparent;
   --color-card: #22252a;
   --color-menu: #22252a;    /* = card: unchanged */
+  --color-popover-border: #6c7078;   /* field and popover outline: 3:1 on both */
   --color-inset: #0d0e10;
   --color-control: #2a2d32;
   --color-hairline: #3b4048;
@@ -712,7 +777,7 @@
   --color-bubble-user-ink: #f2f4f7;   /* = ink: unchanged */
 
   --color-success: #63b58a;
-  --color-danger: #dd6b73;
+  --color-danger: #e3838b;
   --color-danger-ink: #1e0b0e;
   --color-success-ink: #101a14;
   --color-warning: #d3a150;
@@ -746,7 +811,7 @@
   --color-hairline: #b4bbc5;
   --color-sidebar: #f5f6f8;              /* = panel: unchanged */
   --color-sidebar-ink: #1d2229;           /* = ink: unchanged */
-  --color-sidebar-ink-secondary: #59616c; /* = ink-secondary: unchanged */
+  --color-sidebar-ink-secondary: #515863; /* = ink-secondary: unchanged */
   --color-sidebar-hover: #7777772c;       /* = hover: unchanged */
   --color-sidebar-selected: #77777752;    /* = selected: unchanged */
   --color-sidebar-hairline: #b4bbc5;      /* = hairline: unchanged */
@@ -754,8 +819,8 @@
   --sidebar-mark-on-light: inline-block; /* a light rail: the navy-bar mark */
 
   --color-ink: #1d2229;
-  --color-ink-secondary: #59616c;
-  --color-ink-tertiary: #5f6671;
+  --color-ink-secondary: #515863;
+  --color-ink-tertiary: #515863;   /* = ink-secondary: the hover and selected washes leave no room below it */
 
   --color-accent: #2a2a2a;
   --color-accent-border: #3a3a3a;
@@ -778,6 +843,7 @@
     Roboto, sans-serif;
   --radius-lg: 8px;
   --radius-xl: 12px;
+  --color-popover-border: #7e838c;   /* field and popover outline: 3:1 on both */
 }
 
 /* ── Dusk ─────────────────────────────────────────────────────────────────
@@ -794,6 +860,7 @@
   --color-composer-ring: transparent;
   --color-card: #231f27;
   --color-menu: #231f27;    /* = card: unchanged */
+  --color-popover-border: #716a75;   /* field and popover outline: 3:1 on both */
   --color-inset: #0d0b0f;
   --color-control: #2b2630;
   --color-hairline: #403847;
@@ -808,18 +875,18 @@
 
   --color-ink: #f4eff6;
   --color-ink-secondary: #b9afbd;
-  --color-ink-tertiary: #a199a5;
+  --color-ink-tertiary: #a49ca8;
 
-  --color-accent: #765683;
+  --color-accent: #9474a3;   /* #765683 measured 2.6:1 as a check mark or icon on a card; lifted to 3:1 on raised-hover */
   --color-accent-border: #9670a3;
   --color-accent-text: #c49bd2;
   --color-focus: #c49bd2;
-  --color-accent-ink: #ffffff;
+  --color-accent-ink: #121014;   /* = app: white no longer clears 4.5:1 on the lifted accent */
   --color-bubble-user: #332b38;
   --color-bubble-user-ink: #f4eff6;   /* = ink: unchanged */
 
   --color-success: #6fad83;
-  --color-danger: #db727a;
+  --color-danger: #de7e86;
   --color-danger-ink: #210c10;
   --color-success-ink: #101812;
   --color-warning: #d0a35d;
@@ -870,7 +937,7 @@
 
   --color-ink: #0d0d0d;
   --color-ink-secondary: #575757;
-  --color-ink-tertiary: #5c5c5c;
+  --color-ink-tertiary: #575757;   /* = ink-secondary: the selected wash leaves no room below it */
 
   /* The upstream blue is #1084fe, which carries white at 3.1:1 — fine for the
      unread dot it is mostly used for, not for a filled button's label. The
@@ -888,11 +955,11 @@
   --color-bubble-user: #070707;   /* your own messages, inverted */
   --color-bubble-user-ink: #fcfcfc;
 
-  --color-success: #1f7a4d;
-  --color-danger: #c02b3a;
+  --color-success: #1a6943;
+  --color-danger: #af2834;
   --color-danger-ink: #ffffff;
   --color-success-ink: #ffffff;
-  --color-warning: #8a5a00;
+  --color-warning: #825400;
   --color-scrollbar: #c4c4c4;
   --color-maus-line: #5f5f5f;
   --app-glow: none;
@@ -901,6 +968,7 @@
     "Segoe UI", system-ui, sans-serif;
   --radius-lg: 8px;
   --radius-xl: 14px;
+  --color-popover-border: #828282;   /* field and popover outline: 3:1 on both */
 }
 
 /* ── Hibou 98 (secret) ─────────────────────────────────────────────────────
@@ -917,7 +985,7 @@
   --color-panel: #c0c0c0;         /* the silver chrome */
   --color-sidebar: #c0c0c0;              /* = panel: the silver chrome */
   --color-sidebar-ink: #000000;
-  --color-sidebar-ink-secondary: #3c3c3c;
+  --color-sidebar-ink-secondary: #2b2b2b;   /* #3c3c3c measured 4.0:1 on the selected row's navy wash */
   --color-sidebar-hover: #00008014;
   --color-sidebar-selected: #00008033;
   --color-sidebar-hairline: #808080;
@@ -945,11 +1013,11 @@
   --color-bubble-user: #ffffff;    /* the log has no bubbles: plain rows */
   --color-bubble-user-ink: #000000;
 
-  --color-success: #005000;
-  --color-danger: #a00000;
+  --color-success: #004c00;
+  --color-danger: #820000;
   --color-danger-ink: #ffffff;
   --color-success-ink: #ffffff;
-  --color-warning: #5a4000;
+  --color-warning: #543c00;
   --color-scrollbar: #808080;
   --color-maus-line: #3c3c3c;
   --app-glow: none;
@@ -958,6 +1026,7 @@
   --radius-lg: 0px;
   --radius-xl: 0px;
   color-scheme: light;
+  --color-popover-border: #5a5a5a;   /* the dark half of a sunken field's bevel; 3:1 on the silver face */
 }
 
 /* ── Meadow ───────────────────────────────────────────────────────────────
@@ -990,7 +1059,7 @@
 
   --color-ink: #0f1a13;
   --color-ink-secondary: #4d5a52;
-  --color-ink-tertiary: #4f5c54;
+  --color-ink-tertiary: #4d5a52;   /* = ink-secondary: the selected wash leaves no room below it */
 
   --color-accent: #1a7a48;
   --color-accent-border: #1f8a52;
@@ -1003,11 +1072,11 @@
   --color-bubble-user: #0f1a13;   /* your own messages, inverted */
   --color-bubble-user-ink: #ffffff;
 
-  --color-success: #1a7a48;
-  --color-danger: #c02b3a;
+  --color-success: #176f42;
+  --color-danger: #b42936;
   --color-danger-ink: #ffffff;
   --color-success-ink: #ffffff;
-  --color-warning: #8a5a00;
+  --color-warning: #865700;
   --color-scrollbar: #c3cdc6;
   --color-maus-line: #5a675f;
 
@@ -1015,6 +1084,7 @@
     "Segoe UI", system-ui, sans-serif;
   --radius-lg: 10px;
   --radius-xl: 16px;
+  --color-popover-border: #7f8882;   /* field and popover outline: 3:1 on both */
 }
 
 /* Shiki emits both palettes so cached blocks follow the nearest skin without

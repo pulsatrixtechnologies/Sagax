@@ -341,7 +341,7 @@ export function TeamMapPage() {
             if (event.key === "Escape") { event.currentTarget.removeAttribute("open"); event.currentTarget.querySelector("summary")?.focus(); }
           }}>
             <summary aria-label="Add to team map" className="flex h-9 cursor-pointer list-none items-center gap-1.5 rounded-lg border border-hairline/50 bg-panel px-3 text-[12px] font-medium text-ink hover:bg-raised [&::-webkit-details-marker]:hidden"><Plus size={15} /> Add</summary>
-            <div className="absolute right-0 top-full z-40 mt-2 flex w-52 min-w-[200px] flex-col gap-0.5 rounded-xl border-[0.5px] border-border bg-elevated p-1.5 text-[13px] leading-[18px]" onClick={(event) => {
+            <div className="absolute right-0 top-full z-40 mt-2 flex w-52 min-w-[200px] flex-col gap-0.5 rounded-xl border-[0.5px] border-border popover-surface bg-elevated p-1.5 text-[13px] leading-[18px]" onClick={(event) => {
               const details = event.currentTarget.closest("details"); details?.querySelector("summary")?.focus(); details?.removeAttribute("open");
             }}>
               <button className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] leading-[18px] text-ink hover:bg-hover" onClick={() => setTeamEditor({})}><Users size={16} />{t("team.create")}</button>

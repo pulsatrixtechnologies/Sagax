@@ -132,7 +132,7 @@ export function PlaceChip({ bot, task, live, disabled = false, onPin, initialOpe
       {motion.shown && (
         // Same surface and scale as the right-click menus. The title stays
         // on the menu's aria-label only.
-        <div role="menu" aria-label={t("place.chipTitle")} className={cn("absolute bottom-full left-0 z-40 mb-2 w-[260px] overflow-hidden rounded-xl border-[0.5px] border-border bg-elevated p-1.5", motion.className)} {...motion.exitProps}>
+        <div role="menu" aria-label={t("place.chipTitle")} className={cn("absolute bottom-full left-0 z-40 mb-2 w-[260px] overflow-hidden rounded-xl border-[0.5px] border-border popover-surface bg-elevated p-1.5", motion.className)} {...motion.exitProps}>
           <div className="flex flex-col gap-0.5">
             <button
               type="button"
