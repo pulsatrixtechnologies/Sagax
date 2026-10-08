@@ -4282,7 +4282,7 @@
       "model.scope.threadHint": "0b01449fb36f9c718efb84d32651fcd7ebe3714d1adb8d6f739bdd9942328db6",
       "model.scope.botHint": "47f49bbf7dd0dd4452aeac1431cba313c5b88ed652636c3ebef0f7215f5f81d5",
       "model.org.noModels": "01dcd70c5500eb059a01173a10367cd27dbc25fd98cef4b9f826b2e5ab856a73",
-      "model.org.localHidden": "ca604c727c84b467188608923044ed749924393b10f949f1b289ef1641b52cec",
+      "model.org.localHidden": "549c5497a2562cec04faa2b5d168c054a9d1c70ef1f18609a763d3ec1b5c6bef",
       "model.org.hostTools": "3fc5efd8e8190249f9f80da95fa048662b9f79331a089ca547e56be57c913df3",
       "model.org.state.connected": "22965568d22a14ee17af055d2870b50afcfe9fd94a83eec3196e266932297bb2",
       "model.org.state.signInRequired": "288685d3684c345acfa964d4483a2598a3ccf7486f11d09d82bc49793eab0952",
@@ -6270,7 +6270,7 @@
       "botWorkplace.activity.direct": "18e4bd3407731c1af610efc8a14c8262e872e6c871d34554e5167080d669e384",
       "botWorkplace.activity.failed": "5d28a90f4498a81461efbaf6f628a19d9778390bb5c81a393dd936181cc3d826",
       "localModels.title": "8e4bf4368b03c136e86af2f7e6fa9d95553c7fede5041bce62c81f66b5cb218c",
-      "localModels.help": "99fc34a295de6d03970735829d11446350a6aa756862d11b38e814c4d78c4021",
+      "localModels.help": "e77bec66b0e0586aa10d8bafebac5a0f7ccc4c64786c6baf270e04c13c4bf148",
       "localModels.expose": "cfc16397dc322628abb7d7a38bbdfb5bb962c9d61117323091a6fd5be9a17e22",
       "localModels.exposeHelp": "f462d65dc89c768cb6da884fb437825425b2ec4fc686b6fe997cace7f776ae57",
       "localModels.share": "2b53ea30096381af65463e1704abdb3161bf9446a272ab6ef97a9c1c73d5eca7",
@@ -7386,7 +7386,10 @@
       "approvalMode.simple.decideHint": "79c6c2f01653ce756e70c621846253d796c688817ef083029ca3699c2db07f92",
       "approvalMode.simple.custom": "4eb2e86fd814cf021e68d1424af8bc8aae4417f8a2d8a6a37cef2c7775e19ff1",
       "approvalMode.simple.customChip": "36306d9dd4e83d5d925f1d41a9b26120f0cec57fa927852ef03d53fec248d034",
-      "approvalMode.simple.unset": "4b49670558d9c027b5b9c2380dba061d86ac9b8345917db4e0820ed0412e036e"
+      "approvalMode.simple.unset": "4b49670558d9c027b5b9c2380dba061d86ac9b8345917db4e0820ed0412e036e",
+      "model.localGroup": "8c31e6e7223097e2e4847773c47a4efab6aaf79deeecc92a7759891c74976dde",
+      "model.localUnavailable.anthropic": "7e3dc1ebd5ca1174f8da5609dd2002c8f33ba7af14fe107404909038ccce14c1",
+      "model.localUnavailable.engine": "46a27b47fdbe2a70859d9023be76c86b55bb82c105dcd753900fda4689c7d9cc"
     },
     "hi": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",
@@ -13017,7 +13020,12 @@
       "approvalMode.simple.decideHint": "79c6c2f01653ce756e70c621846253d796c688817ef083029ca3699c2db07f92",
       "approvalMode.simple.custom": "4eb2e86fd814cf021e68d1424af8bc8aae4417f8a2d8a6a37cef2c7775e19ff1",
       "approvalMode.simple.customChip": "36306d9dd4e83d5d925f1d41a9b26120f0cec57fa927852ef03d53fec248d034",
-      "approvalMode.simple.unset": "4b49670558d9c027b5b9c2380dba061d86ac9b8345917db4e0820ed0412e036e"
+      "approvalMode.simple.unset": "4b49670558d9c027b5b9c2380dba061d86ac9b8345917db4e0820ed0412e036e",
+      "model.localGroup": "8c31e6e7223097e2e4847773c47a4efab6aaf79deeecc92a7759891c74976dde",
+      "model.localUnavailable.anthropic": "7e3dc1ebd5ca1174f8da5609dd2002c8f33ba7af14fe107404909038ccce14c1",
+      "model.localUnavailable.engine": "46a27b47fdbe2a70859d9023be76c86b55bb82c105dcd753900fda4689c7d9cc",
+      "model.org.localHidden": "549c5497a2562cec04faa2b5d168c054a9d1c70ef1f18609a763d3ec1b5c6bef",
+      "localModels.help": "e77bec66b0e0586aa10d8bafebac5a0f7ccc4c64786c6baf270e04c13c4bf148"
     },
     "uk": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",
