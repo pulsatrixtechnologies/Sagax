@@ -27,7 +27,7 @@ import type { BotAvatarCrop } from "../../shared/bot-avatar";
 import type { BotPublicProfile } from "../../shared/bot-public-profile";
 import { approvalModeFor, type ApprovalMode } from "../../shared/approval-mode";
 import { uiCommandToAction } from "../../shared/bot-act";
-import { onDesktopNudge } from "@/lib/desktop-nudge";
+import { onDesktopNudge, onNudgeReceived } from "@/lib/desktop-nudge";
 import type { MascotBodyId } from "../../shared/mascot-bodies";
 import type { MascotSkinId } from "../../shared/mascot-skins";
 import type { QuestionRequestCardData } from "../../shared/ask-question";
@@ -4360,7 +4360,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           break;
         }
         case "nudge":
-          onDesktopNudge();
+          onNudgeReceived();
           break;
         // a read position moved (src/lib/read-receipts-feed.ts)
         case "thread.read":

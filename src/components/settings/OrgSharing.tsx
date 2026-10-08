@@ -341,7 +341,7 @@ function OrgBotMenu({ bot, busy, onStop, onDelete }: { bot: OrgBot; busy: boolea
           role="menu"
           aria-label={label}
           style={position}
-          className={cn("fixed z-50 w-[220px] rounded-lg border border-hairline/50 bg-card p-1 shadow-xl", motion.className)}
+          className={cn("fixed z-50 w-[220px] rounded-lg border border-hairline/50 popover-surface bg-card p-1 shadow-xl", motion.className)}
           {...motion.exitProps}
           onMouseDown={(event) => event.stopPropagation()}
           onKeyDown={(event) => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); close(); } else navigateThreadMenu(event); }}
