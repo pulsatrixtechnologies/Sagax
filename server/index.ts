@@ -2684,6 +2684,8 @@ type InternalCapability = {
   attachedFiles?: number;
   /** post_to_room calls this turn has made. */
   roomPosts?: number;
+  /** Group memory updates refused this turn (bot memory archives at the cap instead). */
+  memoryRefusals?: number;
   /** Delegations this turn handed out: their ids may not be checked or
    * waited on until a later turn, so the teammate gets to work first. */
   delegatedThisTurn?: Set<string>;
@@ -2691,6 +2693,9 @@ type InternalCapability = {
 };
 const MAX_ATTACHED_FILES_PER_TURN = 10;
 const MAX_ROOM_POSTS_PER_TURN = 3;
+// A refused group memory update gets one re-read and one corrected retry,
+// not a loop: the third refusal in a turn closes the tool for that turn.
+const MAX_MEMORY_REFUSALS_PER_TURN = 3;
 const MAX_CREATED_BOTS_PER_TURN = 4;
 // A capability lives for the exact provider-turn generation, including while
 // that turn is parked on a human approval. The long ceiling is only an orphan
@@ -23635,8 +23640,12 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         if (!room || !groupMemoryWritable(room, internalSender.id)) {
           return json(res, 403, { error: "This conversation has no group memory you can write: it is not a group you are in, or its memory is off." });
         }
+        if ((internalCapability.memoryRefusals ?? 0) >= MAX_MEMORY_REFUSALS_PER_TURN) {
+          return json(res, 429, { error: `Memory updates are closed for the rest of this turn: ${MAX_MEMORY_REFUSALS_PER_TURN} were refused. Do not retry.` });
+        }
         const body = await readInternalBody();
         const result = updateGroupMemory(room.id, { action: body.action, text: body.text, oldText: body.oldText, ...(body.until !== undefined ? { until: body.until } : {}) }, { source: memorySource() });
+        if (!result.ok) internalCapability.memoryRefusals = (internalCapability.memoryRefusals ?? 0) + 1;
         return json(res, result.ok ? 200 : result.code === "conflict" ? 409 : result.code === "over-budget" ? 413 : 400, result);
       }
       // Notes written from a room fewer people can see than this bot would
