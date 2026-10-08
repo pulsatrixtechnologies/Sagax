@@ -46,8 +46,8 @@ describe("every modal dialog closes", () => {
 
   it.each(modalFiles.map((file) => [relative(ROOT, file.path), file] as const))("%s closes on Escape", (name, file) => {
     const host = ESCAPE_HOST[name];
-    // useModalDialog (hooks/use-modal-dialog.ts) closes its dialog on Escape
-    expect(host ? readFileSync(join(ROOT, host), "utf8") : file.source).toMatch(/["']Escape["']|\buseModalDialog\(/);
+    // useModalDialog (hooks/use-modal-dialog.ts) and usePopoverDismiss (hooks/use-popover-dismiss.ts) close their dialog on Escape
+    expect(host ? readFileSync(join(ROOT, host), "utf8") : file.source).toMatch(/["']Escape["']|\buseModalDialog\(|\busePopoverDismiss\(/);
   });
 
   it.each(modalFiles.map((file) => [relative(ROOT, file.path), file] as const))("%s wires its Cancel and Close buttons", (_name, file) => {

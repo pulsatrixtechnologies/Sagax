@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type RefObject, type WheelEvent as ReactWheelEvent } from "react";
+import { lazy, Suspense, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type RefObject, type WheelEvent as ReactWheelEvent } from "react";
 import { createPortal } from "react-dom";
 import { ImagePlus, Loader2, Trash2 } from "lucide-react";
 
@@ -16,6 +16,7 @@ import {
   clampAvatarFocus,
   clampAvatarZoom,
 } from "../../shared/bot-avatar";
+import { usePopoverDismiss } from "@/hooks/use-popover-dismiss";
 import { BotAvatar } from "./Avatar";
 import { AvatarImageGenerator } from "./AvatarImageGenerator";
 import type { FxMoveRequest } from "./skin-fx/skin-fx";
@@ -30,12 +31,18 @@ const FRAME_SIZE = 168;
 const POPOVER_WIDTH = 452;
 const MARGIN = 12;
 
+/** What counts as inside the avatar editor: the avatar button that opened it and its portaled panel. */
+export function editorDismissRoot(anchor: RefObject<Node | null>, popover: RefObject<Node | null>) {
+  return { contains: (target: unknown) => !!(anchor.current?.contains(target as Node) || popover.current?.contains(target as Node)) };
+}
+
 /**
  * Where the popover stands: under the avatar, centered on it, shifted to stay
  * inside the window, flipped above when there is no room below, never taller
- * than the window. Follows resizes and scrolls; Escape closes it.
+ * than the window. Follows resizes and scrolls. Dismissal (Escape, a press
+ * outside) is usePopoverDismiss, wired in BotProfileAvatarCard.
  */
-function usePopoverPlace(open: boolean, anchor: RefObject<HTMLElement | null>, popover: RefObject<HTMLElement | null>, close: () => void) {
+function usePopoverPlace(open: boolean, anchor: RefObject<HTMLElement | null>, popover: RefObject<HTMLElement | null>) {
   const [place, setPlace] = useState({ left: 0, top: 0, width: POPOVER_WIDTH, maxHeight: 600, ready: false });
   const measure = () => {
     const box = anchor.current?.getBoundingClientRect();
@@ -70,14 +77,6 @@ function usePopoverPlace(open: boolean, anchor: RefObject<HTMLElement | null>, p
     // measure reads the refs; it only needs to rerun when the popover opens
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") close();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [open, close]);
   return place;
 }
 
@@ -190,7 +189,15 @@ export function BotProfileAvatarCard({
   const [editorOpen, setEditorOpen] = useState(false);
   const anchor = useRef<HTMLButtonElement>(null);
   const popover = useRef<HTMLDivElement>(null);
-  const place = usePopoverPlace(editorOpen, anchor, popover, () => setEditorOpen(false));
+  const place = usePopoverPlace(editorOpen, anchor, popover);
+  // The popover is portaled out of the card, so "inside" is the avatar button
+  // (its own click toggles) plus the panel. Focus goes back to the button only
+  // when it was inside the panel, so a press on another control keeps its focus.
+  const dismissRoot = useRef(editorDismissRoot(anchor, popover));
+  usePopoverDismiss(editorOpen, dismissRoot, () => {
+    if (popover.current?.contains(document.activeElement)) anchor.current?.focus();
+    setEditorOpen(false);
+  });
   const crop = bot.avatarCrop ?? "mascot";
   // A custom picture opens on its own tab, where its zoom and framing live.
   const [editorTab, setEditorTab] = useState<"bot" | "generate" | "upload" | "reset">(
