@@ -80,6 +80,65 @@ entry:
   also depends on the chosen model; the driver cannot add vision to a text-only
   model. See [tool verification](verification/openai-tools.md) for scope and tests.
 
+## Engines baked into a server image
+
+A server image can carry every engine CLI Sagax drives, so the people of an
+organization server only sign in or add a key. The pins live in ONE file,
+[`engines.lock.json`](../engines.lock.json); the
+[`Dockerfile`](../Dockerfile) installs them with
+[`scripts/install-engines.mjs`](../scripts/install-engines.mjs), and
+Perspicax's `infra/scripts/build-push.sh` (the GOX organization server)
+builds with `ENGINE_SET=all` from the same file.
+
+```sh
+docker build -t sagax .                                  # no engine CLI (the public image)
+docker build --build-arg ENGINE_SET=all -t sagax .       # every engine of the lock
+docker build --build-arg ENGINE_SET=open -t sagax .      # only the open-source licences
+docker build --build-arg ENGINE_SET="claude codex" -t sagax .
+```
+
+The legacy `ENGINES` (npm specs) and `NATIVE_ENGINES` (native ids such as
+`grok`) arguments still replace the lock's npm or native set; `none` drops
+that kind. Each installed CLI must answer `--version` or the build fails.
+
+| Engine | Driver | Installed as | Pinned | Licence |
+|---|---|---|---|---|
+| Claude Code | `claudeAgent` | npm `@anthropic-ai/claude-code` | 2.1.288 | Anthropic Commercial Terms |
+| Codex (and the ChatGPT plan instance) | `codex` | npm `@openai/codex` | 0.160.0 | Apache-2.0 |
+| pi | `piAgent` | npm `@earendil-works/pi-coding-agent` | 1.0.1 | MIT |
+| Gemini CLI | `geminiAgent` | npm `@google/gemini-cli` | 0.62.0 | Apache-2.0 |
+| Kimi Code | `kimiAgent` | npm `@moonshot-ai/kimi-code` | 2.1.1 | MIT |
+| Qwen Code | `qwenAgent` | npm `@qwen-code/qwen-code` | 0.24.7 | Apache-2.0 |
+| OpenCode | `opencodeGo` | npm `opencode-ai` | 1.18.34 | MIT |
+| Droid | `droidAgent` | npm `@factory/cli` | 0.230.0 | Factory proprietary |
+| Grok Build | `grokAgent` | x.ai release binary, SHA-256 per architecture | 1.0.46 | Apache-2.0 |
+| Cursor Agent | `cursorAgent` | downloads.cursor.com package, SHA-256 per architecture | 2026.10.01-e373342 | Cursor proprietary |
+| Hermes Agent | `hermesAgent` | Python venv, editable install of the v2026.9.24 source archive (SHA-256) | 0.21.5 | MIT |
+
+Not preinstalled, and why (the card then reads "Not available on this
+server" instead of "Not installed"):
+
+- **Antigravity** (`antigravityAgent`): Google's runtime is about 2 GB
+  unpacked under Google's own terms; Sagax already downloads and verifies it
+  itself (Settings) where it can run. On an organization server it would run
+  its own tools on the Sagax host, so organization turns are refused anyway.
+- **mmx-cli**: the MiniMax engine calls the API with a key; the CLI is only
+  a sign-in helper and publishes no licence.
+
+No install needed: Grok (API), OpenAI, OpenRouter and other
+OpenAI-compatible endpoints, Mistral, Cerebras, MiniMax (a key each), the
+Boat agent (runs on its cloud computer) and custom ACP agents (your own
+command, above).
+
+Proprietary CLIs (Claude Code, Droid, Cursor Agent) are installed only in an
+image you build for your own servers (`ENGINE_SET=all`); never publish such
+an image. At startup the server runs each baked CLI's `--version` once, logs
+it (`[engines] claude: 2.1.288 (Claude Code) (pinned 2.1.288, ...)`) and
+uses that result as the engine's installed state, so no page or turn probes
+it again. An instance with its own `config.cli` is still probed as before.
+To move an engine to a new release, change its version (and hashes) in the
+lock only.
+
 ## Notes
 
 - `config.json` is written with mode 0600; values in `environment` are stored

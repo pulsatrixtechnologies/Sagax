@@ -202,6 +202,10 @@ export interface MyEngine {
   driver: string;
   displayName: string;
   installed: boolean;
+  /** Set when the server's image deliberately does not carry this engine
+   * (engines.lock.json, notPreinstalled): why, in English, for a tooltip.
+   * The line then reads "Not available on this server". */
+  notAvailable?: string;
   subscription: { supported: boolean; signedIn: boolean };
   /** The person's own key for this engine's provider is in Perspicax. */
   myKey: boolean;
@@ -254,8 +258,8 @@ export function useMyEngines(): MyEngine[] | null {
 }
 
 /** The one line saying what the person's own turns on this engine use. */
-export function myTurnsText(engine: Pick<MyEngine, "myTurns" | "installed">): string {
-  if (!engine.installed) return t("myEngines.notInstalled");
+export function myTurnsText(engine: Pick<MyEngine, "myTurns" | "installed" | "notAvailable">): string {
+  if (!engine.installed) return engine.notAvailable ? t("myEngines.notAvailable") : t("myEngines.notInstalled");
   if (engine.myTurns === "subscription") return t("myEngines.turns.subscription");
   if (engine.myTurns === "key") return t("myEngines.turns.key");
   if (engine.myTurns === "org-key") return t("myEngines.turns.orgKey");

@@ -221,6 +221,7 @@ import { sweepThreadEventLogs, type ThreadLogRetentionCandidate } from "./thread
 import { ComputerControl } from "./computer-control.ts";
 import { augmentedPath, findCliCandidates, resetPathCache } from "./env-path.ts";
 import { registerEnginesBinDir } from "./engine-install.ts";
+import { EngineSelfCheck, readEngineManifest, runEngineSelfCheck, type EngineCheck } from "./engines-self-check.ts";
 import { appendUsage, parseUsageRange, readUsage, summarizeUsage, usageCsv, USAGE_GROUPINGS, flushUsageLedger, type UsageGroupBy, type UsageRow, type UsageTrigger } from "./usage-ledger.ts";
 import { loadPlanUsage, planAccountsFromInstances } from "./plan-usage.ts";
 import { GroupUsageReader } from "./group-thread-usage.ts";
@@ -1173,6 +1174,13 @@ const supportsApprovalMode = createApprovalModeSupport(registry);
 // Engines installed from Settings live under the data directory and win over
 // any other copy on PATH.
 registerEnginesBinDir();
+// The engines baked into this image (engines.lock.json): each CLI's
+// `--version` once, logged, then their installed state for good
+// (server/engines-self-check.ts). No manifest: nothing changes.
+let engineSelfCheck = new EngineSelfCheck(null);
+void runEngineSelfCheck(readEngineManifest())
+  .then((result) => { engineSelfCheck = result; })
+  .catch((error) => console.error(`[engines] self-check failed: ${error instanceof Error ? error.message : String(error)}`));
 
 // Who asked for the turn running (or last run) on each thread, read by the
 // usage ledger when it settles. It is set when a turn is ADMITTED, from the
@@ -18904,17 +18912,37 @@ function persistMcpServers(next: Record<string, unknown>): void {
 // The existing CLI probes (each instance's snapshot), cached for a minute so
 // a turn never waits on one: an organization turn on an engine whose CLI is
 // missing gets the engine_missing card, and GET /api/health lists them.
-interface EngineProbe { instanceId: string; driver: string; installed: boolean; version?: string; at: number }
+interface EngineProbe { instanceId: string; driver: string; installed: boolean; version?: string; at: number; /** from the startup self-check: never stale */ pinned?: boolean }
 let engineProbes = new Map<string, EngineProbe>();
 let engineProbeFlight: Promise<void> | null = null;
 const ENGINE_PROBE_TTL_MS = 60_000;
 const ENGINE_PROBE_TIMEOUT_MS = 10_000;
 const CLI_MISSING = /not found|not installed|ENOENT|no such file|command not found|cannot find/i;
+/** The startup self-check's result for this instance, when the image
+ * installed its CLI and the instance runs it by its default name. */
+function selfCheckedEngine(instanceId: string): EngineCheck | null {
+  const target = registry.cliTarget(instanceId);
+  return target ? engineSelfCheck.forInstance(target.driverKind, target.cli) : null;
+}
+function engineProbeOf(instanceId: string, check: EngineCheck, at: number): EngineProbe {
+  const driver = registry.cliTarget(instanceId)?.driverKind ?? check.drivers[0] ?? "";
+  return { instanceId, driver, installed: check.ok, ...(check.version ? { version: check.version } : {}), at, pinned: true };
+}
+/** Why this image does not carry the engine an instance runs, if it says so. */
+function engineNotAvailableReason(instanceId: string): string | undefined {
+  const driver = registry.cliTarget(instanceId)?.driverKind;
+  return driver ? engineSelfCheck.notAvailableReason(driver) : undefined;
+}
 function probeEngines(): Promise<void> {
   engineProbeFlight ??= (async () => {
     const next = new Map<string, EngineProbe>();
     await Promise.all(registry.entries().map(async (entry) => {
       const at = Date.now();
+      const pinned = selfCheckedEngine(entry.instanceId);
+      if (pinned) {
+        next.set(entry.instanceId, engineProbeOf(entry.instanceId, pinned, at));
+        return;
+      }
       if (!entry.live) {
         next.set(entry.instanceId, { instanceId: entry.instanceId, driver: entry.shadow.driverKind, installed: false, at });
         return;
@@ -18939,6 +18967,10 @@ function probeEngines(): Promise<void> {
 /** Whether an instance's CLI is installed, from the cache; an instance not
  * probed yet counts as installed (and is probed in the background). */
 function engineInstalled(instanceId: string): boolean {
+  // An engine of this image's lock answers from the startup self-check: no
+  // probe on a page load or a turn.
+  const pinned = selfCheckedEngine(instanceId);
+  if (pinned) return pinned.ok;
   const probe = engineProbes.get(instanceId);
   if (!probe || Date.now() - probe.at > ENGINE_PROBE_TTL_MS) void probeEngines().catch(() => {});
   return probe?.installed ?? true;
@@ -21164,11 +21196,15 @@ if (IDENTITY.kind === "perspicax" && engineLogins) {
         // the order of engine-credentials.ts for this person speaking
         const myTurns = !installed || person?.disabledAt !== undefined ? "none" : signedIn ? "subscription" : myKey ? "key" : orgKey ? "org-key" : "none";
         const live = registry.get(entry.instanceId);
+        const notAvailable = installed ? undefined : engineNotAvailableReason(entry.instanceId);
         return {
           instanceId: entry.instanceId,
           driver,
           displayName: live ? engineDisplayName(live) : entry.instanceId,
           installed,
+          // "Not available on this server" rather than "Not installed": the
+          // image deliberately does not carry it (engines.lock.json).
+          ...(notAvailable ? { notAvailable } : {}),
           subscription: { supported, signedIn },
           myKey,
           orgKey,
@@ -31336,13 +31372,16 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (detail === "capabilities") return json(res, 200, { ...HEALTH_IDENTITY, capabilities });
       // The engines installed on this server (slice 3, D16), from the CLI
       // probes: refreshed here when stale, within a bounded wait.
-      const stale = !engineProbes.size || [...engineProbes.values()].some((probe) => Date.now() - probe.at > ENGINE_PROBE_TTL_MS)
+      const stale = !engineProbes.size || [...engineProbes.values()].some((probe) => !probe.pinned && Date.now() - probe.at > ENGINE_PROBE_TTL_MS)
         || registry.entries().some((entry) => !engineProbes.has(entry.instanceId));
       // Solo servers (the desktop's boot probe polls this route) never wait
       // and never probe from here: they list what an earlier probe found.
       if (stale && IDENTITY.kind === "perspicax") await settledWithin(probeEngines(), ENGINE_PROBE_TIMEOUT_MS + 1_000);
       const engines = [...engineProbes.values()]
-        .map(({ instanceId, driver, installed, version }) => ({ instanceId, driver, installed, ...(version ? { version } : {}) }))
+        .map(({ instanceId, driver, installed, version }) => {
+          const notAvailable = installed ? undefined : engineNotAvailableReason(instanceId);
+          return { instanceId, driver, installed, ...(version ? { version } : {}), ...(notAvailable ? { notAvailable } : {}) };
+        })
         .sort((a, b) => a.instanceId.localeCompare(b.instanceId));
       // app: "openmausbot" stays one release beside product: "sagax" (deployed
       // health checks grep the body for it; legacy-names.mjs HEALTH_IDENTITY).

@@ -105,7 +105,9 @@ async function start() {
   child = spawn(process.execPath, ["--experimental-strip-types", join(SERVER_DIR, "index.ts")], {
     cwd: join(SERVER_DIR, ".."),
     env: {
-      ...(process.env.PATH ? { PATH: process.env.PATH } : {}),
+      // engines/bin holds the one CLI the image manifest below "installed"
+      PATH: [join(home, "engines", "bin"), process.env.PATH].filter(Boolean).join(":"),
+      SAGAX_ENGINES_MANIFEST: join(home, "engines", "manifest.json"),
       HOME: home, USERPROFILE: home, SAGAX_LOCAL_VM_TEST_NAMESPACE: process.env.SAGAX_LOCAL_VM_TEST_NAMESPACE ?? "", SAGAX_PORT: String(PORT), SAGAX_WEBHOOK_PORT: String(PORT + 1),
       SAGAX_IDENTITY: "perspicax",
       SAGAX_PERSPICAX_ISSUER: idp.issuer,
@@ -160,11 +162,22 @@ posixOnly("Perspicax organization: a member's own engines and read-only bots", (
     writeFileSync(join(home, "link", "pulsabot.json"), JSON.stringify({
       version: 1, issuer: idp.issuer, client_id: "pulsa-bot", server_id: idp.serverId, origin: BASE, link_token: idp.linkToken,
     }), { mode: 0o640 });
+    // The image's engines manifest (scripts/install-engines.mjs): Qwen Code
+    // baked in, Cursor deliberately not (engines.lock.json notPreinstalled).
+    mkdirSync(join(home, "engines", "bin"), { recursive: true });
+    writeFileSync(join(home, "engines", "bin", "qwen"), "#!/bin/sh\necho 0.24.7\n", { mode: 0o755 });
+    writeFileSync(join(home, "engines", "manifest.json"), JSON.stringify({
+      lockVersion: 1, engineSet: "all", arch: "arm64",
+      installed: [{ id: "qwen", name: "Qwen Code", drivers: ["qwenAgent"], kind: "npm", version: "0.24.7", bin: "qwen" }],
+      notPreinstalled: [{ id: "cursor", name: "Cursor Agent", drivers: ["cursorAgent"], reason: "Cursor is not carried by this test image." }],
+    }));
     dump = join(home, "claude-dump.json");
     writeFileSync(join(data, "config.json"), JSON.stringify({
       instances: {
         claude: { driver: "claudeAgent", environment: { FAKE_CLAUDE_DUMP: dump }, config: { cli: FAKE_CLAUDE, fullAuto: true } },
         codex: { driver: "codex", environment: { SAGAX_DEVICE_AUTH_FIXTURE: "1" }, config: { cli: FAKE_CODEX_LOGIN } },
+        // absent on this server whatever the machine has installed
+        cursor: { driver: "cursorAgent", config: { cli: "sagax-test-no-such-cursor-agent" } },
       },
     }));
     await start();
@@ -202,6 +215,24 @@ posixOnly("Perspicax organization: a member's own engines and read-only bots", (
     expect(admin.find((row) => row.instanceId === "codex")?.cli).toBe(FAKE_CODEX_LOGIN);
     // and a member changes nothing there
     expect((await api("PATCH", "/api/instances/codex", bob, { cli: "" })).status).toBe(403);
+  }, 60_000);
+
+  it("MA-1b: the image's engines answer from the startup self-check, the ones it leaves out read not available", async () => {
+    await waitFor(async () => log.includes("[engines] self-check:"));
+    expect(log).toContain("[engines] qwen: 0.24.7 (pinned 0.24.7, ");
+    expect(log).toContain("[engines] self-check: 1/1 preinstalled engine(s) start (image set all)");
+    const bob = await signIn(BOB);
+    const engines = (await api("GET", "/api/me/engines", bob)).body.engines as Array<Record<string, any>>;
+    expect(engines.find((engine) => engine.instanceId === "qwen")).toMatchObject({ installed: true });
+    expect(engines.find((engine) => engine.instanceId === "qwen")?.notAvailable).toBeUndefined();
+    await waitFor(async () => {
+      const rows = (await api("GET", "/api/me/engines", bob)).body.engines as Array<Record<string, any>>;
+      return rows.find((engine) => engine.instanceId === "cursor")?.installed === false;
+    });
+    const cursor = ((await api("GET", "/api/me/engines", bob)).body.engines as Array<Record<string, any>>).find((engine) => engine.instanceId === "cursor");
+    expect(cursor).toMatchObject({ installed: false, notAvailable: "Cursor is not carried by this test image." });
+    const health = (await api("GET", "/api/health", alice)).body.engines as Array<Record<string, any>>;
+    expect(health.find((engine) => engine.instanceId === "qwen")).toMatchObject({ installed: true, version: "0.24.7" });
   }, 60_000);
 
   it("MA-2: a member signs in to their own Codex subscription and talks to a shared bot with it", async () => {

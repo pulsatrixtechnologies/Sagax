@@ -521,6 +521,52 @@ directory lists them. Tests: `server/engine-credentials.test.ts`,
 `server/drivers/acp/org-access.test.ts`, `server/drivers/device-login.test.ts`,
 `server/principal-engine-logins.test.ts`.
 
+## Every engine preinstalled on an organization server (2026-10-08)
+
+`engines.lock.json` (repository root) is the ONE place the engine CLIs of the
+server image are pinned: npm package and version, native download URL and
+SHA-256 per architecture, the Python engine's source archive and SHA-256,
+licence, `redistributable`, plus the engines deliberately not preinstalled
+(`notPreinstalled`, with the reason) and the API engines that need no
+install (`noInstall`). `server/engines-self-check.test.ts` fails when a
+built-in driver is missing from the lock or a pin's `bin` differs from the
+driver's default `cli`.
+
+- Dockerfile: `scripts/install-engines.mjs` installs the selection named by
+  `ENGINE_SET` (`none` default, the public image; `all`, what Perspicax's
+  `infra/scripts/build-push.sh` passes; `open`, only redistributable
+  licences; or ids), runs each `<cli> --version` (the build fails if one does
+  not start) and writes `/app/engines/manifest.json`. The legacy `ENGINES`
+  (npm specs) and `NATIVE_ENGINES` (native ids) build arguments still
+  override the lock's npm and native sets; `none` drops a kind.
+- Installed by `ENGINE_SET=all`: Claude Code, Codex, pi, Gemini CLI, Kimi
+  Code, Qwen Code, OpenCode, Droid (npm, global), Grok Build and Cursor Agent
+  (native, `/opt/sagax-engines/<id>/<version>`, linked in `/usr/local/bin`),
+  Hermes Agent (Python venv from the v2026.9.24 source archive).
+- Not preinstalled: Antigravity (about 2 GB, Google's terms, the app's own
+  managed install already exists, and organization turns are refused because
+  it runs its own tools), mmx-cli (not needed by the MiniMax engine, no
+  licence published). API engines (Grok API, OpenAI-compatible, Mistral,
+  Cerebras, MiniMax), Boat and custom ACP need no install.
+- Startup self-check (`server/engines-self-check.ts`, `SAGAX_ENGINES_MANIFEST`):
+  each preinstalled CLI runs `--version` once at boot, the result is logged
+  (`[engines] claude: ...`) and is the instance's installed state from then
+  on (`selfCheckedEngine` in `server/index.ts`): `engineInstalled` and
+  `/api/health` no longer probe those engines per request. An instance with
+  its own `config.cli` is probed as before. An engine of `notPreinstalled`
+  that is absent answers `notAvailable` (the reason) on `/api/me/engines` and
+  `/api/health`; the UI then reads "Not available on this server"
+  (`myEngines.notAvailable`, `model.org.state.notAvailable`) instead of "Not
+  installed".
+- Engines run in the Sagax server container, never in the per-person
+  sandbox (`deploy/sandbox/Dockerfile` is unchanged). Being installed does
+  not lift the host-tools rule: on an organization server an engine that
+  cannot withhold its own tools (every ACP engine except Grok Build) is still
+  refused with 409 `host_tools` and hidden from the model picker.
+- Bumping an engine: change the lock only (version, and the hashes for a
+  native or Python engine). Perspicax reads the lock from the Sagax checkout
+  at its next `build-push.sh`.
+
 ## Voice mode (xAI)
 
 The call button on a bot opens the voice call pill

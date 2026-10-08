@@ -1,0 +1,191 @@
+{
+  "_comment": [
+    "The one place the engine CLIs baked into the Sagax server image are pinned.",
+    "Read by scripts/install-engines.mjs (the Dockerfile's engines step), by the",
+    "server's startup self-check (server/engines-self-check.ts, through the",
+    "manifest the install step writes) and by Perspicax's infra/scripts/build-push.sh.",
+    "Bump a version and its hashes together; docs/custom-engines.md lists the set.",
+    "redistributable false: the vendor's licence is not an open-source one, so the",
+    "engine is installed only in an image you build for your own servers",
+    "(ENGINE_SET=all), never in the public image (ENGINE_SET=open or none)."
+  ],
+  "lockVersion": 1,
+  "engines": [
+    {
+      "id": "claude",
+      "name": "Claude Code",
+      "drivers": ["claudeAgent"],
+      "kind": "npm",
+      "package": "@anthropic-ai/claude-code",
+      "version": "2.1.288",
+      "bin": "claude",
+      "license": "Anthropic Commercial Terms",
+      "redistributable": false
+    },
+    {
+      "id": "codex",
+      "name": "Codex",
+      "drivers": ["codex"],
+      "kind": "npm",
+      "package": "@openai/codex",
+      "version": "0.160.0",
+      "bin": "codex",
+      "license": "Apache-2.0",
+      "redistributable": true
+    },
+    {
+      "id": "pi",
+      "name": "pi",
+      "drivers": ["piAgent"],
+      "kind": "npm",
+      "package": "@earendil-works/pi-coding-agent",
+      "version": "1.0.1",
+      "bin": "pi",
+      "license": "MIT",
+      "redistributable": true
+    },
+    {
+      "id": "gemini",
+      "name": "Gemini CLI",
+      "drivers": ["geminiAgent"],
+      "kind": "npm",
+      "package": "@google/gemini-cli",
+      "version": "0.62.0",
+      "bin": "gemini",
+      "license": "Apache-2.0",
+      "redistributable": true
+    },
+    {
+      "id": "kimi",
+      "name": "Kimi Code",
+      "drivers": ["kimiAgent"],
+      "kind": "npm",
+      "package": "@moonshot-ai/kimi-code",
+      "version": "2.1.1",
+      "bin": "kimi",
+      "license": "MIT",
+      "redistributable": true
+    },
+    {
+      "id": "qwen",
+      "name": "Qwen Code",
+      "drivers": ["qwenAgent"],
+      "kind": "npm",
+      "package": "@qwen-code/qwen-code",
+      "version": "0.24.7",
+      "bin": "qwen",
+      "license": "Apache-2.0",
+      "redistributable": true
+    },
+    {
+      "id": "opencode",
+      "name": "OpenCode",
+      "drivers": ["opencodeGo"],
+      "kind": "npm",
+      "package": "opencode-ai",
+      "version": "1.18.34",
+      "bin": "opencode",
+      "license": "MIT",
+      "redistributable": true
+    },
+    {
+      "id": "droid",
+      "name": "Droid (Factory)",
+      "drivers": ["droidAgent"],
+      "kind": "npm",
+      "package": "@factory/cli",
+      "version": "0.230.0",
+      "bin": "droid",
+      "license": "Factory proprietary (UNLICENSED)",
+      "redistributable": false
+    },
+    {
+      "id": "grok",
+      "name": "Grok Build",
+      "drivers": ["grokAgent"],
+      "kind": "native",
+      "version": "1.0.46",
+      "bin": "grok",
+      "license": "Apache-2.0",
+      "redistributable": true,
+      "_note": "xAI publishes no checksum file: these hashes were taken from the artifacts whose MD5 matched the origin bucket's x-goog-hash.",
+      "artifacts": {
+        "arm64": {
+          "url": "https://x.ai/cli/grok-1.0.46-linux-aarch64.gz",
+          "sha256": "69a7bdf9eb570435ac381213ff4648e5f31dc4e7546313758a7744fd54d8639f",
+          "format": "gz"
+        },
+        "amd64": {
+          "url": "https://x.ai/cli/grok-1.0.46-linux-x86_64.gz",
+          "sha256": "0cc2a4aa40c2bf2a7a2c7933a738ea09b7c9fdafd200b53705e1d411617cd70f",
+          "format": "gz"
+        }
+      }
+    },
+    {
+      "id": "cursor",
+      "name": "Cursor Agent",
+      "drivers": ["cursorAgent"],
+      "kind": "native",
+      "version": "2026.10.01-e373342",
+      "bin": "cursor-agent",
+      "license": "Cursor proprietary",
+      "redistributable": false,
+      "_note": "The package https://cursor.com/install downloads; Cursor publishes no checksum, the hashes are of the artifacts fetched on 2026-10-08.",
+      "artifacts": {
+        "arm64": {
+          "url": "https://downloads.cursor.com/lab/2026.10.01-e373342/linux/arm64/agent-cli-package.tar.gz",
+          "sha256": "785c5f6bf2a60eb1121e27ed8c14f5ee07ed1b5b6692324f2d9a997238245eb5",
+          "format": "tar.gz",
+          "entry": "cursor-agent"
+        },
+        "amd64": {
+          "url": "https://downloads.cursor.com/lab/2026.10.01-e373342/linux/x64/agent-cli-package.tar.gz",
+          "sha256": "a79726c6e644520e993970be4c45775a6889802b67abe461a677a53219ae28e8",
+          "format": "tar.gz",
+          "entry": "cursor-agent"
+        }
+      }
+    },
+    {
+      "id": "hermes",
+      "name": "Hermes Agent",
+      "drivers": ["hermesAgent"],
+      "kind": "python",
+      "package": "hermes-agent",
+      "extras": ["acp", "mcp"],
+      "version": "0.21.5",
+      "bin": "hermes",
+      "license": "MIT",
+      "redistributable": true,
+      "_note": "Release v2026.9.24 (Hermes 0.21.5) from its source archive: PyPI stops at 0.19.0 and the official install.sh clones main with uv and asks questions.",
+      "source": {
+        "url": "https://github.com/NousResearch/hermes-agent/archive/refs/tags/v2026.9.24.tar.gz",
+        "sha256": "15b15ce4e6ec8ea424a081823709d1e17f0943e7b42b59597d24ebb94cbd1742"
+      }
+    }
+  ],
+  "notPreinstalled": [
+    {
+      "id": "antigravity",
+      "name": "Antigravity",
+      "drivers": ["antigravityAgent"],
+      "reason": "Google's runtime is about 2 GB unpacked under Google's own terms, and Sagax already downloads and verifies it itself (Settings, managed install) where it can run; on an organization server it runs its own tools on the Sagax host, so organization turns are refused anyway."
+    },
+    {
+      "id": "minimax-cli",
+      "name": "MiniMax CLI (mmx)",
+      "drivers": [],
+      "reason": "Not needed: the MiniMax engine calls the MiniMax API with the key saved in Settings or MINIMAX_API_KEY; mmx-cli is only a sign-in helper and publishes no licence."
+    }
+  ],
+  "noInstall": [
+    { "id": "grok-api", "name": "Grok (API) and xAI", "drivers": ["grok"], "reason": "Calls the xAI API; needs a key only." },
+    { "id": "openai-compat", "name": "OpenAI, OpenRouter and OpenAI-compatible endpoints", "drivers": ["openai-compat"], "reason": "Calls the endpoint; needs a key only." },
+    { "id": "mistral", "name": "Mistral", "drivers": ["mistral"], "reason": "Calls the Mistral API; needs a key only." },
+    { "id": "cerebras", "name": "Cerebras", "drivers": ["cerebras"], "reason": "Calls the Cerebras API; needs a key only." },
+    { "id": "minimax", "name": "MiniMax", "drivers": ["minimax"], "reason": "Calls the MiniMax API; needs a key only." },
+    { "id": "boat", "name": "Boat (cloud computer)", "drivers": ["boxAgent"], "reason": "Runs on the bot's own cloud computer, not on this server." },
+    { "id": "custom", "name": "Custom ACP agent", "drivers": ["customAcp"], "reason": "Whatever command its owner configures (docs/custom-engines.md)." }
+  ]
+}

@@ -24,7 +24,7 @@ export interface PayerOrder {
   current: PayerId | null;
 }
 
-type EngineFacts = Pick<MyEngine, "installed" | "subscription" | "myKey" | "orgKey" | "myTurns"> & { driver: string };
+type EngineFacts = Pick<MyEngine, "installed" | "notAvailable" | "subscription" | "myKey" | "orgKey" | "myTurns"> & { driver: string };
 
 /** Drivers whose provider key a person can keep in Perspicax
  * (server/engine-credentials.ts providersOfDriver). */
@@ -40,11 +40,11 @@ export function payerOrder(engine: EngineFacts): PayerOrder {
   return { rows, current: engine.myTurns === "none" ? null : engine.myTurns };
 }
 
-export type OrgEngineState = "connected" | "signInRequired" | "noAccess" | "notInstalled";
+export type OrgEngineState = "connected" | "signInRequired" | "noAccess" | "notInstalled" | "notAvailable";
 
 /** One word for the provider column: connected, or what is missing. */
 export function orgEngineState(engine: EngineFacts): OrgEngineState {
-  if (!engine.installed) return "notInstalled";
+  if (!engine.installed) return engine.notAvailable ? "notAvailable" : "notInstalled";
   if (engine.myTurns !== "none") return "connected";
   return engine.subscription.supported ? "signInRequired" : "noAccess";
 }

@@ -32,8 +32,8 @@ export function connectName(engine: Pick<MyEngine, "driver" | "displayName">): s
 }
 
 /** The one status line: what pays for the person's turns today. */
-export function paysWithText(engine: Pick<MyEngine, "myTurns" | "installed">): string {
-  if (!engine.installed) return t("myEngines.notInstalled");
+export function paysWithText(engine: Pick<MyEngine, "myTurns" | "installed" | "notAvailable">): string {
+  if (!engine.installed) return engine.notAvailable ? t("myEngines.notAvailable") : t("myEngines.notInstalled");
   if (engine.myTurns === "subscription") return t("engineConnect.paysWith.subscription");
   if (engine.myTurns === "key") return t("engineConnect.paysWith.key");
   if (engine.myTurns === "org-key") return t("engineConnect.paysWith.orgKey");
@@ -69,7 +69,9 @@ export function EngineConnect({ engine, issuer, onChanged, className }: {
 
   return (
     <section data-engine-connect={engine.instanceId} className={cn("flex min-w-0 flex-col gap-2", className)}>
-      <p data-pays-with={engine.installed ? engine.myTurns : "not-installed"} className="text-[12px] text-ink-secondary">{paysWithText(engine)}</p>
+      <p data-pays-with={engine.installed ? engine.myTurns : engine.notAvailable ? "not-available" : "not-installed"}
+        title={engine.installed ? undefined : engine.notAvailable}
+        className="text-[12px] text-ink-secondary">{paysWithText(engine)}</p>
       {engine.installed && supported && (signedIn ? (
         <div data-engine-connected className="flex min-w-0 flex-wrap items-center justify-between gap-2">
           <span className="flex items-center gap-1.5 text-[12.5px] text-success"><Check size={13} aria-hidden="true" />{t("engineConnect.connected")}</span>
