@@ -106,6 +106,7 @@ describe("ThreadLink", () => {
       { type: "select", id: "scout" },
       { type: "switchTask", botId: "scout", threadId: "qa-245" },
       { type: "revealThread", threadId: "qa-245" },
+      { type: "setThreadReturn", threadReturn: { ownerId: "scout", threadId: "scout-main" } },
     ]);
   });
 

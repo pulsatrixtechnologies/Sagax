@@ -275,7 +275,16 @@ out are skipped. Someone who cannot post is refused. The room shares one
 5 minute clock (`group:<id>`), separate from a direct nudge. A refusal
 writes nothing. The button is last in the composer when the room names
 someone else (`src/lib/group-nudge.ts`). A bot uses `nudgePerson` or
-`nudgeGroup`, both rewritten to that one POST. Tests:
+`nudgeGroup`, both rewritten to that one POST. A nudge RECEIVED (the `nudge`
+frame in `src/state/store.tsx`) shakes the window and plays
+`public/nudge.mp3` once (`onNudgeReceived` in `src/lib/desktop-nudge.ts`,
+`playNudgeSound` in `src/lib/nudge-sound.ts`, volume 0.6, a refused play is
+logged once and ignored). The sender's own window shakes without the sound,
+and the server skips the sender, so a group member hears it once. Settings >
+Appearance > "Nudge sound" (`omb-nudge-sound`, per computer, on by default,
+`src/lib/notification-preferences.ts`). The file is served like
+`app-icon.svg`: vite copies `public/` to `dist/`, which the packaged app
+carries as `resources/ui` (outside the asar) and serves from there. Tests: `src/lib/nudge-sound.test.ts`,
 `server/nudge.test.ts`, `server/routes/nudges.test.ts`,
 `src/components/GroupView.test.ts`. The server image must be installed
 before an organization server accepts `{ groupId }`.
@@ -655,6 +664,32 @@ Electron restart (no HMR); launch-test them before committing.
 - `fit.ts` sizes the stage for the widest pose; `pilot.ts` moves the window
   (flights, walks) through `floating-bots:geometry`, `move-to` and
   `autopilot`; main clamps every move and never saves spots flown to.
+- Position anywhere: main keeps only the character's own box on screen
+  (`clampBodyToDisplays`), never the whole window: the page reports that box
+  (`floating-bots:body`, `bodyRectIn`), main uses `FLOAT_BODY` until it does
+  (kept equal to `homeBody` by the window-frame test), and the window's
+  transparent room may hang off a screen's edge (larger-than-screen windows,
+  put back after creation and show). A drag follows the pointer's own path
+  (`entry.drag`, so it crosses seams in small steps and loses no ground at an
+  edge). Spots are saved per display setup as the character's own corner
+  (`v: 2`; an older save reads as the window's corner); a restart puts it back
+  exactly, a setup that is gone falls back to the default spot. macOS undoes
+  a move that puts more than about a fifth of a window on a neighbouring
+  display: there the room stays within `SEAM_SHARE` (`keepOffNeighbours`),
+  geometry sends the `limits` and the chat's room opens away from the seam
+  (`sideWithin`). Measure with `node scripts/verify-mascot-desktop.mjs`
+  (corners of every display, the seam, a restart, the menu, the bubble,
+  the effects; screenshots next to the report).
+- Placement rules live in `placement.ts` (pure, `placement.test.ts`):
+  `placeChat` picks the chat's side from where the character stands (above
+  and left by default; below near the top, right near the left edge) and its
+  room on that display (60 % of its height at most); `effectSide` and
+  `effectLane` put the effects beside the character, never over it. The
+  window holds the chat's room on that side: `FloatingBotWindow` reads the
+  layout when the mascot comes to rest (a drop, a walk, the chat opening, a
+  display change) and, when the side flips, moves the window to its new
+  corner with `floating-bots:frame` (the page hidden for that frame, the box
+  it drew just before sent along), so the character never jumps.
 - The chat stays put (`window-frame.ts`): while the mascot is home the
   window already holds the quick chat's room (`chatHomeSize`,
   `FLOAT_HOME`), anchored on the character's bottom-right corner, so
@@ -674,7 +709,17 @@ Electron restart (no HMR); launch-test them before committing.
   character and click-through of the transparent parts, theme).
 - The balloon has no shield: dragged by its header it comes right up to
   the character from any side (over the stage's empty room, touching its
-  box), never over its face (`clampBalloon` in `Balloon.tsx`). Only the part
+  box), never over it (`clampBalloon` in `Balloon.tsx`, `FACE_INSET` 0).
+  The quick chat keeps the width its window holds (288 px) unless the person
+  sizes it, grows in height up to the room on its display and then scrolls
+  (`balloonSize`), and slides back onto the display when the stage hangs off
+  the edge (`shift`). It wears the main chat's tokens and type (18 px
+  corners, 13 px on a 20 px line, the user bubble) and the app's composer row
+  at its scale: clip, field, model chip, voice button (Send once typed). The
+  clip and the chip are menu events (`attach`, `model`): main brings the app
+  forward and the brain opens that bot's own composer file picker or model
+  picker (`COMPOSER_ATTACH_EVENT`, `COMPOSER_MODEL_EVENT`). It opens and
+  closes with `useHeldMenuMotion` (the open played backwards). Only the part
   of its offset away from the mascot grows the window; the part toward it is
   a `translate` inside the window it has. It sits above the art (z-index 2),
   under the effects (z-index 3).
@@ -682,8 +727,8 @@ Electron restart (no HMR); launch-test them before committing.
   engine (`LiveCallEngine`) runs once in the app page (`CallEngineHost` in
   App, for the bot `useOnCall()` names) and publishes the call
   (`src/lib/voice-mode/live-call-store.ts`); the app's pill (`LiveCall`) and
-  the mascot only show and drive it. The mascot's call button (balloon header,
-  `hints.call`, and the menu's "call") starts that same call for its bot
+  the mascot only show and drive it. The mascot's call button (the balloon
+  composer's voice button, `hints.call`, and the menu's "call") starts that same call for its bot
   (`mascot-call.ts`, `runMascotCallEvent`): one call at a time across app and
   mascots (`lib/call.ts`). The brain sends `snapshot.call` (`FloatingCall`)
   and the levels on their own channel (`floating-bots:level`, 20 Hz, rounded);
@@ -693,11 +738,23 @@ Electron restart (no HMR); launch-test them before committing.
   microphone is the app page's (its permission), never the mascot window's.
   Main sanitizes `call`, its events and their settings patches. Measured in
   `verify-mascot-chat.mjs` (call leg); the app's call: `verify-voice-mode.ts`.
-- The desktop mascot's menu (right click, long press, the menu key) is main's
-  native menu, popped exactly at the pointer (`floating-bots:menu`,
-  `menuPopupPoint`: the page's CSS pixels times its zoom, kept inside the work
-  area of the display under it); the drawn `.fb-menu` stays for the in-app
-  overlay and an older preload.
+- The desktop mascot's menu (right click, long press, the menu key or
+  Shift+F10) is main's native menu, popped exactly at the pointer
+  (`floating-bots:menu`, `menuPopupPoint`: the page's CSS pixels times its
+  zoom, kept inside the work area of the display under it); the drawn
+  `.fb-menu` stays for the in-app overlay and an older preload. Its items
+  come from the brain (`floatingMenu` in `brain.ts`): Talk, Start a voice
+  call, Open in Sagax; Switch bot (`switch:<botId>`) and Moves
+  (`move:<clip>`, the list of `moves.ts`, shared with the avatar popover);
+  Hide for 1 hour (`snooze`, `hiddenUntil`, the window reopens by itself) and
+  Hide (`dock`); On the desktop (always on top, fly away, activity) and
+  Settings (Settings > Appearance). Items may be separators, greyed or one
+  level of submenu (`menuTemplate`). A move goes from main straight to that
+  window (`floating-bot:move`), never through the brain. A switch re-keys the
+  window in main (`floating-bots:rekey`): same mascot, same spot.
+- Effects (signs, thought dots, Zzz, hearts, sparkles, confetti, Trombi's
+  sparkle) are drawn in the lane beside the character (`.fb-fx[data-side]`),
+  never over it; add a new one there.
 - The balloon wears the app's theme: the brain sends `theme` (the skin and
   the brand accent, `theme.ts`, followed live) and the window stamps it;
   Trombi keeps its Hibou 98 balloon whatever the theme.
@@ -1428,9 +1485,18 @@ pair. Archived bots, when there are any, sit above the pair. Connected
 apps and Templates stay rows above that row when their experimental flags
 are on (`SidebarPlaces`). Your phone and Help Center are not in the menu.
 The phone stays in Settings and on the collapsed rail. Docs stay on About.
-A failed automation still dots the closed account row. The guided tour's
+The row is the avatar and the name, and under the name a quiet line with the
+routines icon (`CalendarClock`, as in the bot panel's Routines section) and
+the count of the viewer's active routines (`src/lib/active-routines.ts`:
+the Active switch on, not suspended, a next run still due, on a bot the
+viewer owns). The count opens Automations and follows routine frames live.
+At zero the line is gone and the name sits centred beside the avatar. A
+failed automation no longer dots the row: it tints the count red and keeps
+its dot on the Automations item in the menu; a place in the menu that asks
+for attention still dots the closed row. The guided tour's
 `tools` anchor sits on the places stack, or on the foot when that stack is
-empty. Tests: `SidebarProfileMenu.test.ts`, `Sidebar.header.test.ts`.
+empty. Tests: `SidebarProfileMenu.test.ts`, `SidebarProfileMenu.footer.test.ts`,
+`src/lib/active-routines.test.ts`, `Sidebar.header.test.ts`.
 
 The guided tour (`GuidedTour.tsx`) never starts by itself: not after the
 welcome flow, not on a new bot, not per version. It runs only when opened on
@@ -1580,6 +1646,25 @@ rules, each covered by `shared/achievements-catalog.test.ts`,
   default, and leaves out anyone who turned "Show my points to colleagues"
   off. Unlock percentages show only
   with five people or more.
+- Visibility (2026-10-08). The left sidebar never shows an achievement title
+  or points, for anyone: not on the viewer's account row, not on people
+  rows. Titles and points show only in a person's detail (the person panel,
+  from a people row or a DM header, the viewer's own included) and on
+  Settings > Achievements. Two switches there, same style, stored in the
+  person's settings on the server (so every device follows): "Show my
+  points" (`showPoints`) and "Show my title" (`showTitle`, a missing flag
+  means on). Each is the person's own choice for everyone who looks:
+  `publicPoints` leaves `points` and `level`, or `title`, off their card,
+  and the person panel draws only what the card carries. With neither, no
+  line sits under the name; the member card centres the name beside the
+  avatar. Settings > Achievements itself and the unlock toasts are
+  unchanged by these switches. Tests: `server/achievements.test.ts`,
+  `src/lib/public-achievements.test.ts`, `PersonPanel.test.ts`,
+  `achievements-ui.test.ts`, `SidebarProfileMenu.footer.test.ts`.
+- People rows in the sidebar sit at the bot rows' inset (`pl-2`) with thread
+  mode on or off and carry no thread chevron, like bot rows since #152; only
+  room rows keep the thread-mode `pl-6` for their chevron
+  (`Sidebar.simple-mode.test.ts`).
 - The toast never shows while the person types, one at a time, its chime
   follows Notification sounds, and reduced motion stills it.
 
