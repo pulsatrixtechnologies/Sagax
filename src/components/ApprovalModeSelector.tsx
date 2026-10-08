@@ -254,7 +254,7 @@ export function ApprovalModeSelector({
           className={cn(
             // Same surface and scale as the right-click menus: no heading,
             // 13px rows, and nothing listed that cannot be picked here.
-            "absolute z-40 flex w-[260px] flex-col gap-0.5 overflow-hidden rounded-xl border-[0.5px] border-border bg-elevated p-1.5",
+            "absolute z-40 flex w-[260px] flex-col gap-0.5 overflow-hidden rounded-xl border-[0.5px] border-border popover-surface bg-elevated p-1.5",
             menuDirection === "up" ? "bottom-full mb-2" : "top-full mt-2",
             align === "right" ? "right-0" : "left-0",
             wide && "w-full min-w-[260px]",
