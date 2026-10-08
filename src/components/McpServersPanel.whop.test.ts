@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// Connecting Whop from its app card: OAuth succeeds, then the app lists
+// Connecting Whop from its row in Connect apps: OAuth succeeds, then the app lists
 // Whop's tools once before turning the server on. When that list fails, the
 // card says why in one line (the test's own reason) and Connect retries;
 // while it runs, the card says it is loading tools and Cancel stops it.
@@ -24,14 +24,14 @@ vi.mock("@/lib/mcp-sign-in", async (original) => ({
 vi.mock("@/lib/app-links", () => ({ openExternalLink: vi.fn(async () => {}) }));
 vi.mock("@/lib/mcp-servers", () => ({ updateMcpServers: vi.fn() }));
 
-import { McpServersPanel } from "./McpServersPanel";
+import { WhopTile, useMcpServers } from "./McpServersPanel";
 
 // Sagax signs in with its own MCP sign-in (server/mcp-oauth.ts, covered by
 // its own tests), so here Whop is already signed in and Connect goes
 // straight to the tools check this file is about.
 const whop = { name: "whop", type: "http", url: "https://mcp.whop.com/mcp", headerKeys: [], enabled: false, auth: "connected" };
 
-function WhopCard() { return McpServersPanel({ whopCard: true }); }
+function WhopCard() { return WhopTile({ mcp: useMcpServers() }); }
 
 let host: HTMLDivElement;
 let root: Root;
