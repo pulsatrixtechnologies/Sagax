@@ -5442,5 +5442,13 @@
   "approvalMode.simple.decideHint": "The bot acts, and checks in when unsure.",
   "approvalMode.simple.custom": "A custom level is saved. It stays until you choose one of these.",
   "approvalMode.simple.customChip": "Custom level",
-  "approvalMode.simple.unset": "No level chosen yet. The bot uses this default until you pick one."
+  "approvalMode.simple.unset": "No level chosen yet. The bot uses this default until you pick one.",
+  "seen.by": "Seen by {list}",
+  "seen.entry": "{name} at {time}",
+  "seen.caption": "Seen",
+  "seen.captionAt": "Seen at {time}",
+  "seen.someone": "Someone",
+  "settings.section.privacy": "Privacy",
+  "settings.privacy.readReceipts.title": "Send read receipts",
+  "settings.privacy.readReceipts.subtitle": "In conversations with other people, let them see when you have read their messages. When off, you do not see theirs either. Group chats and bots always show who has seen a message."
 }

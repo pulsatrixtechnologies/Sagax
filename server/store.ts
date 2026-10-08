@@ -33,6 +33,7 @@ import { isMentionBoundary, isMentionNameContinuation } from "../shared/mention-
 import type { HandedState } from "./delta-context.ts";
 import type { AgentPart, PartPair, RoomPart } from "./package-parts.ts";
 import type { BotHost } from "./turn-route.ts";
+import { advancesPosition, type ReadMap, type ReadPosition } from "./read-receipts.ts";
 import type {
   BotActivity, GroupDefaultResponder, GroupTask as GroupTaskRecord, MausColor,
   ConnectorToolGrant, OptionCardData, TaskClosedBy, TaskOpenedBy, TaskUsage, WireBot, WireGroup,
@@ -325,6 +326,8 @@ export type StoreChange =
   | { type: "message"; threadId: string; message: Message }
   | { type: "message.patch"; threadId: string; message: Message }
   | { type: "thread"; threadId: string; activeLeafId: string }
+  /** A participant's read position moved (server/read-receipts.ts). */
+  | { type: "thread.read"; threadId: string; participantId: string; read: ReadPosition }
   | { type: "thread.deleted"; threadId: string }
   | { type: "bot"; botId: string }
   | { type: "bot.deleted"; botId: string }
@@ -1596,6 +1599,26 @@ export class Store {
     this.saveGroups();
     this.emit({ type: "group", groupId });
     return group;
+  }
+
+  /** Every participant's read position on this thread (server/read-receipts.ts). */
+  threadReads(threadId: string): ReadMap {
+    return mdb.readThreadReads(threadId);
+  }
+
+  /** Move a participant's read position to `messageId`, forward only. The
+   * message must be in this thread. Returns the new position, or null when
+   * nothing moved. Never touches the transcript. */
+  markRead(threadId: string, participantId: string, messageId: string, at: number = Date.now()): ReadPosition | null {
+    if (!participantId) return null;
+    const messages = this.thread(threadId).messages;
+    const order = new Map(messages.map((message, index) => [message.id, index]));
+    const current = mdb.readThreadReads(threadId)[participantId];
+    if (!advancesPosition(current, messageId, (id) => order.get(id))) return null;
+    const read = { messageId, at };
+    mdb.writeThreadRead(threadId, participantId, messageId, at);
+    this.emit({ type: "thread.read", threadId, participantId, read });
+    return read;
   }
 
   /** Toggle an emoji reaction on a message ("user" or a member botId). */
