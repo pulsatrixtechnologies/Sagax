@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Bot } from "@/state/store";
 
-// The Primary Bot (formerly Chief of Staff) in the app: the orange star on
+// The Primary Bot (formerly Chief of Staff) in the app: the accent star on
 // its avatar, the sidebar menu actions and the "Choose a primary Bot" modal.
 const fixture = vi.hoisted(() => ({
   portal: null as ReactElement | null,
@@ -69,11 +69,12 @@ function menuFor(bot: Bot, handlers = { onMakePrimary: vi.fn(), onReplacePrimary
 }
 
 describe("Primary Bot badge", () => {
-  it("draws the orange star at the avatar's corner only when asked", () => {
+  it("draws the accent star at the avatar's corner only when asked", () => {
     const marked = renderToStaticMarkup(createElement(BotAvatar, { bot: cryptic, size: 32, animated: false, primary: true }));
     expect(marked).toContain('data-testid="primary-bot-badge"');
-    expect(marked).toContain("bg-orange-500");
-    expect(marked).toContain("text-white");
+    // #188 moved the badge from fixed orange to the skin accent
+    expect(marked).toContain("bg-accent");
+    expect(marked).not.toContain("bg-orange-500");
     expect(marked).toContain('aria-label="Primary Bot"');
     expect(renderToStaticMarkup(createElement(BotAvatar, { bot: cryptic, size: 32, animated: false }))).not.toContain("primary-bot-badge");
   });

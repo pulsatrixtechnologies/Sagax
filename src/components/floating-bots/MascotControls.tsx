@@ -3,12 +3,13 @@
 // effects' lane, the activity tray where the chat goes, and the call's
 // captions with its status chip. They only draw what the brain sends and
 // report clicks; the rules live in hover-controls.ts and captions.ts.
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Bell, Check, ExternalLink, Loader2, MessageCircle, Phone, PhoneOff, Square, X } from "lucide-react";
 
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
 import { phaseLabel } from "@/lib/voice-mode/call-labels";
+import { popoverClosesOnKey, popoverClosesOnPointer } from "@/hooks/use-popover-dismiss";
 import { captionFeed, captionLines, captionText, nextWordIn, WORDS_PER_SECOND, type CaptionState } from "./captions";
 import type { FloatingCall, FloatingEvent, FloatingTray } from "./protocol";
 import type { EffectSide } from "./placement";
@@ -94,8 +95,31 @@ export function MascotHoverControls({ lane, side, shown, reduced, chatOpen, tray
 
 /** This bot's running work and its approvals, where the chat goes: Allow / Stop, and a row opens its thread in the app. */
 export function MascotTray({ tray, name, onEvent, hover, style }: { tray: FloatingTray; name: string; onEvent: (event: FloatingEvent) => void; hover: (on: boolean) => void; style?: React.CSSProperties }) {
+  const root = useRef<HTMLElement>(null);
+  const onEventRef = useRef(onEvent);
+  onEventRef.current = onEvent;
+  // Escape, or a press outside the tray, closes it. The hover controls are left
+  // to their own toggle (the bell would otherwise close the tray and reopen it).
+  useEffect(() => {
+    const close = () => onEventRef.current({ type: "tray", open: false });
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && popoverClosesOnKey(event)) close();
+    };
+    const onDown = (event: PointerEvent) => {
+      const target = event.target as Partial<Element> | null;
+      if (typeof target?.closest === "function" && target.closest(".fb-controls")) return;
+      if (popoverClosesOnPointer(event.target, root.current)) close();
+    };
+    window.addEventListener("keydown", onKey);
+    window.addEventListener("pointerdown", onDown);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("pointerdown", onDown);
+    };
+  }, []);
   return (
     <section
+      ref={root}
       className="fb-tray pointer-events-auto overflow-hidden rounded-[18px] border border-hairline-weak bg-elevated text-ink shadow-[0_8px_28px_rgba(0,0,0,0.28)]"
       role="dialog"
       aria-label={t("floatingBots.tray.title", { name })}
