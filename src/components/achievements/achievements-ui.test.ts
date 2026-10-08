@@ -151,6 +151,10 @@ describe("achievements page", () => {
     expect(html).toContain("2 of");
     expect(html).toContain("4-day streak");
     expect(html).toMatch(/data-unlocked="" data-achievement="hello-bot"/);
+    // recently unlocked ones carry a New tag, unlocked ones come first in a category
+    expect(html).toContain('data-achievement-new=""');
+    expect(html.indexOf('data-achievement="hello-bot"')).toBeLessThan(html.indexOf('data-achievement="grok-linked"'));
+    expect(html).not.toContain("data-recent-achievement");
     expect(html).toContain('aria-valuenow="2"');
     // a secret stays a secret until found
     expect(html).toMatch(/data-achievement="konami" data-secret=""/);
