@@ -17,6 +17,8 @@ const fixture = vi.hoisted(() => ({
   sidebarDensity: "comfortable" as "comfortable" | "compact" | "icons",
   setSidebarDensity: vi.fn(),
   notificationSounds: true,
+  nudgeSound: true,
+  setNudgeSound: vi.fn(),
   setNotificationSounds: vi.fn(),
   api: vi.fn(),
   dispatch: vi.fn(),
@@ -44,6 +46,8 @@ vi.mock("@/lib/sidebar-preferences", async (importOriginal) => ({
 }));
 vi.mock("@/lib/notification-preferences", () => ({
   useNotificationSounds: () => fixture.notificationSounds,
+  useNudgeSound: () => fixture.nudgeSound,
+  setNudgeSound: fixture.setNudgeSound,
   setNotificationSounds: fixture.setNotificationSounds,
 }));
 vi.mock("@/lib/analytics", () => ({ analyticsEnabled: () => false, setAnalyticsEnabled: vi.fn() }));
@@ -65,6 +69,7 @@ beforeEach(() => {
   fixture.showRunCard = true;
   fixture.sidebarDensity = "comfortable";
   fixture.notificationSounds = true;
+  fixture.nudgeSound = true;
   fixture.switches = [];
   vi.stubGlobal("window", {});
   vi.stubGlobal("document", { documentElement: { dataset: {} } });
@@ -116,6 +121,17 @@ describe("Settings → Appearance", () => {
     expect(toggle.checked).toBe(enabled);
     toggle.onClick!({} as never);
     expect(fixture.setNotificationSounds).toHaveBeenCalledWith(!enabled);
+    expect(fixture.api).not.toHaveBeenCalled();
+    expect(fixture.dispatch).not.toHaveBeenCalled();
+  });
+
+  it.each([true, false])("toggles the nudge sound on this computer only when the switch is %s", (enabled) => {
+    fixture.nudgeSound = enabled;
+    render();
+    const toggle = fixture.switches.find((props) => props["aria-label"] === "Nudge sound")!;
+    expect(toggle.checked).toBe(enabled);
+    toggle.onClick!({} as never);
+    expect(fixture.setNudgeSound).toHaveBeenCalledWith(!enabled);
     expect(fixture.api).not.toHaveBeenCalled();
     expect(fixture.dispatch).not.toHaveBeenCalled();
   });

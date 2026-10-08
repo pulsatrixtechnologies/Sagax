@@ -34,7 +34,7 @@ describe("resize handles", () => {
     expect(rule(".app-resize-handle:focus-visible")).toContain("outline: none");
   });
 
-  it.each(["Sidebar.tsx", "GroupPanel.tsx", "BotSettingsDialog.tsx", "ComputerPanel.tsx"])(
+  it.each(["Sidebar.tsx", "GroupPanel.tsx", "DockedPanelResize.tsx", "ComputerPanel.tsx"])(
     "%s uses the shared handle, not a bright bar of its own",
     (file) => {
       const source = readFileSync(join(here, file), "utf8");
@@ -47,4 +47,26 @@ describe("resize handles", () => {
       }
     },
   );
+
+  describe("docked right panel (bot settings and person)", () => {
+    const read = (file: string) => readFileSync(join(here, file), "utf8");
+    const shared = read("DockedPanelResize.tsx");
+
+    it("is one 320 to 720 px column with one stored width and keyboard steps", () => {
+      expect(shared).toContain('DOCKED_PANEL_WIDTH_KEY = "omb-settings-panel-width"');
+      expect(shared).toContain("DOCKED_PANEL_MIN_WIDTH = 320");
+      expect(shared).toContain("DOCKED_PANEL_MAX_WIDTH = 720");
+      expect(shared).toContain('event.key === "ArrowLeft"');
+      expect(shared).toContain("hidden lg:block");
+    });
+
+    it.each(["BotSettingsDialog.tsx", "PersonPanel.tsx"])("%s uses the shared hook and handle, with no copy of its own", (file) => {
+      const source = read(file);
+      expect(source).toContain("useDockedPanelWidth()");
+      expect(source).toContain("<DockedPanelResizeHandle");
+      expect(source).toContain("style={{ width: dockedPanel.width }}");
+      expect(source).not.toContain('role="separator"');
+      expect(source).not.toContain("omb-settings-panel-width");
+    });
+  });
 });

@@ -542,10 +542,27 @@ without an assertion is 401. Every answer carries `X-Sagax-Admin-Api: 1` and
 `Cache-Control: no-store`; errors are `{ code, message, error }`.
 `/api/health` lists `capabilities.orgAdminApi: 1` on an organization server.
 
+Bot files (2026-10-08, slice 1 of the Perspicax file browser, read only,
+`server/org-admin-files.ts`): `GET /api/org/admin/files/<bot>/roots`,
+`list?root&path`, `stat?root&path`, `read?root&path&offset&length` (at most
+128 KiB, `binary` instead of `text` for bytes that are not UTF-8) and
+`download?root&path` (`application/octet-stream`, `Content-Disposition:
+attachment`, `X-Sagax-File-Type`, at most 100 MiB, else 413 `too_large`).
+Managers in reach (the bots route's reach) and admins; any other bot is 404.
+Roots: `workspace`, `tasks`, `project` (only inside the data folder),
+`attachments` (by opaque id), and `sandbox` and `desktop` listed as
+unavailable. Paths are relative, `/`-separated, no `.`, `..`, empty segment,
+backslash or NUL, at most 1,024 bytes; a link anywhere is 403
+`link_refused`. Each read and download writes `bot.files.read` or
+`bot.files.download` (category `bot`, actor the console person, `after`
+root, path, bytes) to the admin activity log. `/api/health` adds
+`capabilities.orgAdminFiles: 1`. Tests: `server/org-admin-files.test.ts`,
+`server/org-admin.e2e.test.ts` (S7-G).
+
 ### Automated
 
 ```sh
-pnpm exec vitest run server/oidc-rp.test.ts server/org-admin-routes.test.ts server/usage-ledger.test.ts \
+pnpm exec vitest run server/oidc-rp.test.ts server/org-admin-routes.test.ts server/org-admin-files.test.ts server/usage-ledger.test.ts \
   server/admin-activity.test.ts server/bot-grants.test.ts server/section-channels.test.ts \
   src/lib/open-thread-hash.test.ts server/org-admin.e2e.test.ts \
   server/org-routines.e2e.test.ts server/org-mcp.e2e.test.ts server/org-sharing.e2e.test.ts \
