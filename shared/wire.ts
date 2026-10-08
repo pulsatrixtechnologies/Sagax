@@ -605,9 +605,11 @@ export interface WireMessage {
   /** emoji reactions; by = "user" or a member botId. */
   reactions?: Array<{ emoji: string; by: string }>;
   /** comm chips: "Messaged @X", linking to the bot-bot channel. */
-  comm?: { groupId: string; threadId?: string; withBotId: string; withName: string; withColor: string };
+  /** `gone` is stamped at read time when the channel thread no longer exists. */
+  comm?: { groupId: string; threadId?: string; withBotId: string; withName: string; withColor: string; gone?: boolean };
   /** thread chips: "Opened thread #Title on @X". */
-  threadRef?: { botId: string; threadId: string; title: string };
+  /** `gone` is stamped at read time when the target thread no longer exists. */
+  threadRef?: { botId: string; threadId: string; title: string; gone?: boolean };
   /** user messages waiting in the steer-queue while the bot is mid-turn. */
   queued?: boolean;
   /** A parallel task this line belongs to (shared/parallel-tasks.ts): the

@@ -29,6 +29,8 @@ function findElement(tree: ReactNode, attribute: string): ReactElement<ElementPr
   for (const child of Children.toArray(tree)) {
     if (!isValidElement<ElementProps>(child)) continue;
     if (attribute in child.props) return child;
+    const attributes = child.props.attributes as Record<string, string> | undefined;
+    if (attributes && attribute in attributes) return child;
     const found = findElement(child.props.children, attribute);
     if (found) return found;
   }
@@ -37,10 +39,15 @@ function findElement(tree: ReactNode, attribute: string): ReactElement<ElementPr
 beforeEach(() => fixture.dispatch.mockClear());
 
 describe("ThreadChip", () => {
-  it("renders the receipt as a pill named for the thread it opens", () => {
+  it("renders the receipt as the centered quiet line, not a pill, naming the bot", () => {
     const markup = renderToStaticMarkup(createElement(ThreadChip, { message: receipt() }));
     expect(markup).toContain("<button");
+    expect(markup).toContain("justify-center");
+    expect(markup).not.toContain("justify-start");
+    expect(markup).not.toContain("border-hairline");
+    expect(markup).not.toContain("lucide-chevron-right");
     expect(markup).toContain("Go to conversation");
+    expect(markup).toContain("Scout");
     expect(markup).not.toContain("Opened thread #QA PR 245 on Scout");
     expect(markup).toContain('title="Open #QA PR 245"');
     expect(markup).toContain('data-thread-chip="qa-245"');
@@ -62,14 +69,15 @@ describe("ThreadChip", () => {
     ]);
   });
 
-  it("falls back to the bot with a notice when the thread was deleted", () => {
-    let tree: ReactNode;
-    function Capture() { tree = ThreadChip({ message: receipt("gone") }); return tree; }
-    renderToStaticMarkup(createElement(Capture));
-    findElement(tree, "data-thread-chip")!.props.onClick!();
-    expect(fixture.dispatch.mock.calls.map(([action]) => action)).toEqual([
-      { type: "select", id: "scout" },
-      { type: "notice", notice: { kind: "thread-gone", botName: "Scout" } },
-    ]);
+  it("draws nothing when the thread was deleted", () => {
+    expect(renderToStaticMarkup(createElement(ThreadChip, { message: receipt("gone") }))).toBe("");
+  });
+
+  it("draws nothing for a bot the viewer cannot see once the server marked the thread gone", () => {
+    const unseen = receipt("elsewhere");
+    unseen.threadRef = { botId: "other-org-bot", threadId: "elsewhere", title: "Away", gone: true };
+    expect(renderToStaticMarkup(createElement(ThreadChip, { message: unseen }))).toBe("");
+    unseen.threadRef = { botId: "other-org-bot", threadId: "elsewhere", title: "Away" };
+    expect(renderToStaticMarkup(createElement(ThreadChip, { message: unseen }))).toContain("Go to conversation");
   });
 });
