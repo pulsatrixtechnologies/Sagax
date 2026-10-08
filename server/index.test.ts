@@ -11294,16 +11294,20 @@ describe("harness HTTP API", () => {
     });
     expect(created.status).toBe(201);
     expect(created.body.ingress).toMatchObject({ available: true, baseUrl: WEBHOOK_BASE });
-    expect(created.body.credential.url).toMatch(new RegExp(`^${WEBHOOK_BASE}/hooks/wh_`));
+    expect(created.body.credential.endpointUrl).toMatch(new RegExp(`^${WEBHOOK_BASE}/hooks/wh_[\\w-]+$`));
+    expect(created.body.credential.token.length).toBeGreaterThan(40);
+    expect(created.body.credential.command).toContain(`-H "Authorization: Bearer ${created.body.credential.token}"`);
+    expect(created.body.webhook.tokenLast4).toBe(created.body.credential.token.slice(-4));
 
     const listed = await api("GET", "/api/webhooks");
     expect(listed.body.webhooks).toHaveLength(1);
     expect(listed.body.attempts).toEqual([]);
-    expect(JSON.stringify(listed.body)).not.toContain(created.body.credential.secret);
+    expect(JSON.stringify(listed.body)).not.toContain(created.body.credential.token);
 
-    const deliver = () => fetch(created.body.credential.url, {
+    const token = { current: created.body.credential.token as string };
+    const deliver = () => fetch(created.body.credential.endpointUrl, {
       method: "POST",
-      headers: { "content-type": "application/json", "idempotency-key": "build-42" },
+      headers: { "content-type": "application/json", "idempotency-key": "build-42", authorization: `Bearer ${token.current}` },
       body: JSON.stringify({ status: "failed", build: 42 }),
     });
     const first = await deliver();
@@ -11326,8 +11330,13 @@ describe("harness HTTP API", () => {
 
     const rotated = await api("POST", `/api/webhooks/${created.body.webhook.id}/rotate`);
     expect(rotated.status).toBe(200);
-    expect(rotated.body.credential.url).not.toBe(created.body.credential.url);
+    expect(rotated.body.credential.token).not.toBe(created.body.credential.token);
     expect((await deliver()).status).toBe(401);
+    token.current = rotated.body.credential.token;
+    expect((await deliver()).status).toBe(202);
+    // the old capability URL (secret in the path) is refused
+    const legacy = await fetch(`${created.body.credential.endpointUrl}/${rotated.body.credential.token}`, { method: "POST", body: "{}" });
+    expect(legacy.status).toBe(401);
 
     expect((await api("DELETE", `/api/webhooks/${created.body.webhook.id}`)).status).toBe(200);
     expect((await api("GET", "/api/webhooks")).body.webhooks).toHaveLength(0);

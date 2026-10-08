@@ -64,10 +64,46 @@ function header(req: IncomingMessage, name: string): string | undefined {
   return Array.isArray(value) ? value[0] : value;
 }
 
-function bearerSecret(req: IncomingMessage): string {
-  const authorization = header(req, "authorization") ?? "";
-  const match = authorization.match(/^Bearer\s+(.+)$/i);
-  return match?.[1]?.trim() || header(req, "x-openmaus-secret")?.trim() || "";
+/** The only place a webhook token is read from. Never the URL (path or query)
+ * and never the body: those end up in logs, proxies and chat history. */
+function bearerToken(req: IncomingMessage): string {
+  const match = (header(req, "authorization") ?? "").match(/^Bearer\s+(\S+)\s*$/i);
+  return match?.[1] ?? "";
+}
+
+/** Failed authentications a single source may make in the window before it is
+ * answered 429 (even with a good token) until the window passes. */
+export const WEBHOOK_AUTH_FAILURE_LIMIT = 10;
+export const WEBHOOK_AUTH_FAILURE_WINDOW_MS = 60_000;
+
+/** Per-source failure counter. The key is the socket address: a forwarded
+ * header is attacker-controlled, so it is never trusted here. */
+export class AuthFailureLimiter {
+  private failures = new Map<string, number[]>();
+  constructor(
+    private readonly limit = WEBHOOK_AUTH_FAILURE_LIMIT,
+    private readonly windowMs = WEBHOOK_AUTH_FAILURE_WINDOW_MS,
+    private readonly now: () => number = Date.now,
+  ) {}
+
+  private recent(source: string): number[] {
+    const cutoff = this.now() - this.windowMs;
+    const recent = (this.failures.get(source) ?? []).filter((at) => at > cutoff);
+    if (recent.length) this.failures.set(source, recent);
+    else this.failures.delete(source);
+    return recent;
+  }
+
+  blocked(source: string): boolean {
+    return this.recent(source).length >= this.limit;
+  }
+
+  fail(source: string): void {
+    const recent = this.recent(source);
+    recent.push(this.now());
+    this.failures.set(source, recent);
+    if (this.failures.size > 5_000) for (const key of [...this.failures.keys()]) this.recent(key);
+  }
 }
 
 function deliveryId(req: IncomingMessage): string | undefined {
@@ -88,7 +124,11 @@ function eventName(req: IncomingMessage): string | undefined {
   )?.trim() || undefined;
 }
 
-export function createWebhookIngressHandler(manager: WebhookManager, claimRequest?: () => () => void) {
+export function createWebhookIngressHandler(
+  manager: WebhookManager,
+  claimRequest?: () => () => void,
+  limiter: AuthFailureLimiter = new AuthFailureLimiter(),
+) {
   return async (req: IncomingMessage, res: ServerResponse) => {
     const url = new URL(req.url ?? "/", "http://localhost");
     if (req.method === "GET" && url.pathname === "/health") {
@@ -101,21 +141,29 @@ export function createWebhookIngressHandler(manager: WebhookManager, claimReques
     let release: (() => void) | undefined;
     try {
       release = claimRequest?.();
-      const pathSecret = match[2] ? decodeURIComponent(match[2]) : "";
-      const secret = pathSecret || bearerSecret(req);
-      // Reject bad capability URLs before buffering or parsing attacker input.
-      if (!manager.authorize(match[1], secret)) {
-        manager.recordRejected(match[1], 401, "Invalid webhook URL or secret", {
+      const source = req.socket.remoteAddress ?? "unknown";
+      if (limiter.blocked(source)) {
+        res.setHeader("retry-after", String(Math.ceil(WEBHOOK_AUTH_FAILURE_WINDOW_MS / 1000)));
+        return json(res, 429, { error: "Too many failed attempts" });
+      }
+      // A token in the path (the old capability URL) is never read: it is a
+      // failure like any other call without the right Authorization header.
+      const token = match[2] ? "" : bearerToken(req);
+      // Reject before buffering or parsing attacker input. The response never
+      // says whether the endpoint, the header or the token was wrong.
+      if (!manager.authorize(match[1], token)) {
+        limiter.fail(source);
+        manager.recordRejected(match[1], 401, token ? "Invalid bearer token" : "Missing bearer token", {
           contentType: header(req, "content-type"),
           eventName: eventName(req),
           deliveryId: deliveryId(req),
         });
-        return json(res, 401, { error: "Invalid webhook URL or secret" });
+        return json(res, 401, { error: "Unauthorized" });
       }
       const raw = await readRawBody(req);
       const contentType = header(req, "content-type")?.split(";")[0]?.trim().toLowerCase() ?? "text/plain";
       const payload = parsePayload(raw, contentType);
-      const result = manager.receive(match[1], secret, {
+      const result = manager.receive(match[1], token, {
         payload,
         contentType,
         eventName: eventName(req),
@@ -164,11 +212,11 @@ export function advertisedWebhookBase(raw: string): string {
 
 export async function listenWebhookIngress(
   manager: WebhookManager,
-  options: { host?: string; port: number; publicBaseUrl?: string; claimRequest?: () => () => void },
+  options: { host?: string; port: number; publicBaseUrl?: string; claimRequest?: () => () => void; limiter?: AuthFailureLimiter },
 ): Promise<WebhookIngress> {
   const host = options.host ?? "127.0.0.1";
   const advertised = options.publicBaseUrl === undefined ? undefined : advertisedWebhookBase(options.publicBaseUrl);
-  const server = createServer(createWebhookIngressHandler(manager, options.claimRequest));
+  const server = createServer(createWebhookIngressHandler(manager, options.claimRequest, options.limiter));
   await new Promise<void>((resolve, reject) => {
     const onError = (error: Error) => reject(error);
     server.once("error", onError);
@@ -190,11 +238,17 @@ export async function listenWebhookIngress(
   };
 }
 
-export function webhookCredential(baseUrl: string, endpointId: string, secret: string) {
+/** What the owner copies once: the endpoint and the bearer token. The URL
+ * carries no secret; the token travels only in the Authorization header. */
+export function webhookCredential(baseUrl: string, endpointId: string, token: string) {
   const endpointUrl = `${baseUrl.replace(/\/$/, "")}/hooks/${endpointId}`;
   return {
     endpointUrl,
-    secret,
-    url: `${endpointUrl}/${encodeURIComponent(secret)}`,
+    token,
+    command: webhookCurlCommand(endpointUrl, token),
   };
+}
+
+export function webhookCurlCommand(endpointUrl: string, token: string): string {
+  return `curl -X POST ${endpointUrl} -H "Authorization: Bearer ${token}"`;
 }

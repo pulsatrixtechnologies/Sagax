@@ -26014,8 +26014,20 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         credential: webhookCredential(ingress.baseUrl, created.webhook.endpointId, created.secret),
       });
     }
-    let webhookMatch = path.match(/^\/api\/webhooks\/([\w-]+)\/(rotate|test)$/);
+    let webhookMatch = path.match(/^\/api\/webhooks\/([\w-]+)\/(rotate|test|reveal)$/);
     if (webhookMatch && method === "POST") {
+      if (webhookMatch[2] === "reveal") {
+        // The one-time copy of a token generated at start for a webhook that
+        // predates the bearer rule. A second call finds nothing to reveal.
+        const revealed = webhooks.revealPendingToken(webhookMatch[1]);
+        if (!revealed) return json(res, 404, { error: "no token to reveal" });
+        const ingress = webhookIngressStatus();
+        return json(res, 200, {
+          webhook: revealed.webhook,
+          ingress,
+          credential: webhookCredential(ingress.baseUrl, revealed.webhook.endpointId, revealed.secret),
+        });
+      }
       if (webhookMatch[2] === "test") {
         const result = webhooks.test(webhookMatch[1], await readBody(req));
         return result ? json(res, 202, result) : json(res, 404, { error: "no such webhook" });

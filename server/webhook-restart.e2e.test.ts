@@ -54,7 +54,7 @@ it("does not run a delivery twice after a process dies between the queue and ing
       hooks.receive(input.endpointId, input.secret, { deliveryId: 'restart-event', payload: { item: 1 } });
     `], {
       env, timeout: 10_000, encoding: "utf8",
-      input: JSON.stringify({ endpointId: created.webhook.endpointId, secret: created.credential.secret }),
+      input: JSON.stringify({ endpointId: created.webhook.endpointId, secret: created.credential.token }),
     });
     expect(crash.status, crash.stderr).toBe(86);
     const committed = JSON.parse(readFileSync(join(dataDir, "routines.json"), "utf8")).runs[0] as RoutineRun;
@@ -69,8 +69,8 @@ it("does not run a delivery twice after a process dies between the queue and ing
       return runs.find((run) => run.id === committed.id)?.status;
     }, { timeout: 20_000, interval: 150 }).toBe("completed");
 
-    const response = await fetch(created.credential.url, {
-      method: "POST", headers: { "content-type": "application/json", "idempotency-key": "restart-event" },
+    const response = await fetch(created.credential.endpointUrl, {
+      method: "POST", headers: { "content-type": "application/json", "idempotency-key": "restart-event", authorization: `Bearer ${created.credential.token}` },
       body: JSON.stringify({ item: 1 }), signal: AbortSignal.timeout(2_000),
     });
     expect(response.status).toBe(202);
