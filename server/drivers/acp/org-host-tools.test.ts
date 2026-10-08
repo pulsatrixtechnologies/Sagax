@@ -17,10 +17,14 @@ import type { ProviderDriver, ProviderInstance } from "../../contracts.ts";
 import { removeTempDir } from "../../testing/cleanup.ts";
 import { recordEvents } from "../../testing/events.ts";
 import {
-  acpHostToolRequest, GEMINI_HOST_TOOLS, hermesOrgConfig, HERMES_HOST_TOOLSETS, KIMI_HOST_TOOLS, OPENCODE_HOST_PERMISSIONS, QWEN_HOST_TOOLS, QWEN_KEPT_TOOLS, sagaxMcpServerNames, withheldWorkspace,
+  acpHostToolRequest, GEMINI_HOST_TOOLS, hermesOrgConfig, HERMES_HOST_TOOLSETS, KIMI_HOST_TOOLS, OPENCODE_HOST_PERMISSIONS,
+  QWEN_HOST_TOOLS, QWEN_KEPT_TOOLS, sagaxMcpServerNames, withheldWorkspace,
 } from "../host-tools.ts";
 import type { AcpConfig } from "./core.ts";
+import { CursorAgentDriver } from "./cursor.ts";
+import { DroidAgentDriver } from "./droid.ts";
 import { GeminiAgentDriver } from "./gemini.ts";
+import { GrokAgentDriver } from "./grok.ts";
 import { HermesAgentDriver } from "./hermes.ts";
 import { KimiAgentDriver } from "./kimi.ts";
 import { createOpenCodeDriver } from "./opencode-go.ts";
@@ -177,5 +181,15 @@ describe("organization server: each admitted ACP engine withholds its own tools"
   it("names exactly the MCP servers Sagax passes a turn", () => {
     expect(sagaxMcpServerNames(undefined)).toEqual([]);
     expect(sagaxMcpServerNames({ agents: {}, browser: {}, custom: { notes: {}, agents: {} } })).toEqual(["agents", "browser", "notes"]);
+  });
+});
+
+describe("organization server admission flag per engine", () => {
+  it.each([
+    [GrokAgentDriver, true], [GeminiAgentDriver, true], [QwenAgentDriver, true], [KimiAgentDriver, true],
+    [OpenCodeDriver, true], [HermesAgentDriver, true], [DroidAgentDriver, false], [CursorAgentDriver, false],
+  ] as const)("%s.driverKind withholds host tools: %s", async (driver, admitted) => {
+    const f = await fixture(driver as ProviderDriver<AcpConfig>);
+    expect(f.instance.adapter.capabilities.withholdsHostTools === true).toBe(admitted);
   });
 });

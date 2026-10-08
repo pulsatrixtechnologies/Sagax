@@ -207,12 +207,28 @@ exactly that). So on an organization server every turn sets
   Full-access auto-accept.
 - **Chat engines** (OpenAI-compatible) and the Boat agent never run anything
   on this machine.
-- **Any other engine** (pi, ACP engines, ...) is refused on an organization
-  server (409 `host_tools`) rather than run in the container.
+- **Grok Build, pi, Gemini CLI, Qwen Code, Kimi Code, OpenCode, Hermes
+  Agent:** each one's own tool profile leaves it Sagax's MCP tools only
+  (AGENTS.md, "Engines on an organization server", has the mechanism per
+  engine), in an empty folder Sagax owns, and a request to run a command
+  or change a file is declined before any card.
+- **Droid, Cursor Agent, Antigravity, a custom ACP agent** are refused on an
+  organization server (409 `host_tools`, with the engine's reason on its
+  card and in the picker) rather than run in the container: Droid's ACP
+  mode ignores its tool selection, Cursor's service picks its own tools.
+
+Running an engine inside the person's own environment instead (the CLI in
+the sandbox, its egress policy around it) is still not built: none of the
+engines above needs it, and the two refused ones would bring their own
+service login into it.
 
 Shell, files and pages then go through `sagax-environment`.
 `scripts/smoke-host-tools.ts` starts the real Claude Code CLI with the
 driver's flags (no model request) and checks its tool list has no `Bash`.
+`scripts/verify-org-host-tools.ts <engine>` drives a real ACP CLI through
+its driver against a fake model on 127.0.0.1 and checks the tools it offers
+the model, that a shell or file request does not act, and that the Sagax
+MCP tools still work.
 
 ## A person's own MCP servers and GitHub account
 
