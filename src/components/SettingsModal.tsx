@@ -5,8 +5,7 @@
 import { useRetroSkin } from "./RetroChromeHost";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { FLOATING_LIVELINESS, floatingBotPrefs, setFloatingFlyAway, setFloatingLiveliness, subscribeFloatingBots, type FloatingLiveliness } from "@/lib/floating-bots";
-import { Archive, Coins, EyeOff, FlaskConical, KeyRound, Mail, Monitor, Palette, Plug, ScrollText, Search, TabletSmartphone, Terminal, Trophy, User, Users, X, Building2, Zap } from "lucide-react";
-import { setPresenceVisible, usePresenceVisible } from "@/lib/presence";
+import { Archive, Coins, FlaskConical, KeyRound, Mail, Monitor, Palette, Plug, ScrollText, Search, ShieldCheck, TabletSmartphone, Terminal, Trophy, User, Users, X, Building2, Zap } from "lucide-react";
 import { AchievementsPage } from "./achievements/AchievementsPage";
 import { api, useStore, type AppSettingsSection, type ConfigStatus } from "@/state/store";
 import { browserAvailable, builtInBrowserEnabled, boatComputerEnabled, connectedAppsEnabled, decisionModelEnabled, routinesInConversationEnabled, showToolCallsEnabled, skillAuthoringEnabled, templatesEnabled, vpsComputerEnabled } from "@/lib/feature-flags";
@@ -40,6 +39,7 @@ import { BrowserProfilesManager } from "./BrowserProfilesManager";
 import { ThisComputerSettings } from "./DesktopWorkspaceSwitcher";
 import { OrganizationSettings } from "./OrganizationSettings";
 import { Card, SettingRow, Switch, requestSettingsCard, cardCount } from "./SettingsPrimitives";
+import { PrivacySettings } from "./PrivacySettings";
 import { BrowserUnavailableNote, SettingsText } from "./SettingsLink";
 
 import { shortcutLabel } from "./ShortcutHint";
@@ -89,7 +89,7 @@ export const SECTIONS: Array<{
   { id: "general", labelKey: "settings.section.general", icon: User, keywords: ["profile", "name", "email", "about me", "about", "suggestions", "suggested", "memory", "updates", "effort", "new bots", "reasoning", "threads", "parallel", "concurrency", "cleanup", "retention", "event log", "event-log", "log size", "automatic recovery", "backup model", "fallback", "routines", "conversation", "schedule"] },
   { id: "organization", labelKey: "settings.section.organization", icon: Building2, keywords: ["company", "organization", "organisation", "sign in", "enroll", "managed", "models", "disconnect", "workspace", "cloud", "hosted", "vps", "server", "servers", "connect", "pair", "switch", "local"] },
   { id: "appearance", labelKey: "settings.section.appearance", icon: Palette, keywords: ["skin", "theme", "appearance", "advanced", "simple", "mode", "tools", "tool calls", "threads", "show threads", "hide threads", "sidebar", "hidden", "hide", "show", "density", "compact", "comfortable", "avatars", "display", "run", "this run", "run card", "commands", "notifications", "sound", "sounds", "mute", "silent", "chime", "mascot", "owl", "desktop", "fly", "floating", "app icon", "dock", "icon", "taskbar"] },
-  { id: "privacy", labelKey: "settings.section.privacy", icon: EyeOff, keywords: ["privacy", "presence", "online", "away", "offline", "last seen", "status", "confidentialité", "en ligne", "absent", "hors ligne", "privacidade"] },
+  { id: "privacy", labelKey: "settings.section.privacy", icon: ShieldCheck, keywords: ["privacy", "read receipts", "seen", "vu", "confidentialité", "accusés de lecture", "presence", "online", "away", "offline", "last seen", "status", "en ligne", "absent", "hors ligne", "privacidade"] },
   { id: "achievements", labelKey: "settings.section.achievements", icon: Trophy, keywords: ["achievements", "trophies", "trophy", "points", "gamerscore", "level", "unlock", "succès", "trophées"] },
   { id: "experimental", labelKey: "settings.section.experimental", icon: FlaskConical, keywords: ["early", "preview", "learn", "skill", "authoring", "browser", "profiles"] },
   { id: "connections", labelKey: "settings.section.connections", icon: KeyRound, keywords: ["keys", "api", "api key", "api keys", "connections", "composio", "box", "xai", "mistral", "vps", "router", "openrouter", "base url", "openai", "anthropic", "groq", "opencode", "provider"] },
@@ -133,7 +133,8 @@ export function cardsMatching(query: string): string[] {
  * sends its own sign-in codes and invitations. */
 export function organizationHidesSection(id: AppSettingsSection, organization: boolean): boolean {
   // Mes connexions is a person's own, on an organization server only.
-  return organization ? id === "mail" : id === "myConnections";
+  // Privacy holds read receipts between people, which exist there only.
+  return organization ? id === "mail" : id === "myConnections" || id === "privacy";
 }
 
 /** Sections whose every control writes the installation. Hidden (not greyed)
@@ -571,22 +572,6 @@ function SidebarDensityRow() {
   );
 }
 
-/** Settings > Privacy: whether the others see you online, away or offline
- * (src/lib/presence.ts). Off: you read as offline to everyone, with no
- * last-seen time; you still see your own state. On by default. */
-function PresenceVisibleRow() {
-  const visible = usePresenceVisible();
-  return (
-    <SettingRow title={t("settings.privacy.presence.title")} subtitle={t("settings.privacy.presence.subtitle")}>
-      <Switch
-        checked={visible}
-        aria-label={t("settings.privacy.presence.title")}
-        onClick={() => setPresenceVisible(!visible)}
-      />
-    </SettingRow>
-  );
-}
-
 function ShowThreadsRow() {
   const enabled = useShowThreads();
   return (
@@ -971,8 +956,6 @@ export function SettingsModal() {
     dispatch({ type: "toggleLaunch", open: true, mode: "server" });
   }, [soloDesktop, state.appSettingsSection, dispatch]);
   const availableSections = SECTIONS.filter((entry) => !remoteActive || entry.id === "companion" || entry.id === "appearance" || entry.id === "organization" || entry.id === "privacy")
-    // presence exists on an organization server only (shared/presence.ts)
-    .filter((entry) => entry.id !== "privacy" || organization)
     // the desktop app in "No server" mode has no organization to show; it
     // joins one from General > Server, which brings this section back
     .filter((entry) => entry.id !== "organization" || !soloDesktop)
@@ -1405,11 +1388,7 @@ export function SettingsModal() {
             {section === "activity" && <ActivitySection />}
             {section === "workspaces" && <WorkspacesSection />}
             {section === "achievements" && <AchievementsPage />}
-            {section === "privacy" && (
-              <div className="rounded-[14px] border-[0.5px] border-border py-1">
-                <PresenceVisibleRow />
-              </div>
-            )}
+            {section === "privacy" && <PrivacySettings />}
             </div>
           </div>
           )}

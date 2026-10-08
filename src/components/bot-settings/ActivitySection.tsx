@@ -233,13 +233,13 @@ export function panelSections(list: BotActivityList | null, live?: LiveView) {
 }
 
 /** A section header; its title opens the section's history. */
-export function SectionHeader({ icon, title, name, onOpenHistory }: { icon: React.ReactNode; title: string; name: BotActivityFilter; onOpenHistory: (filter: BotActivityFilter) => void }) {
+export function SectionHeader({ icon, title, name, onOpenHistory }: { icon: React.ReactNode; title: string; name: BotActivityFilter | "all"; onOpenHistory: (filter: BotActivityFilter) => void }) {
   return (
     <h2 className="flex">
       <button
         type="button"
         data-activity-history={name}
-        onClick={() => onOpenHistory(name)}
+        onClick={() => onOpenHistory(name === "all" ? "coding" : name)}
         aria-haspopup="dialog"
         title={t("botPanel.history.open")}
         className="group -mx-1 flex min-w-0 items-center gap-2 rounded-md px-1 py-0.5 text-left text-[13px] font-normal leading-[18px] text-ink-secondary hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
@@ -270,18 +270,16 @@ export function PanelSections({ list, live, actions, onOpenHistory, error = fals
     return error ? <p role="status" data-activity-error className="px-0.5 text-[12.5px] text-ink-tertiary">{t("botPanel.coding.error")}</p> : null;
   }
   if (!showCoding && !showActivity) {
+    // Same header as Coding, Activity and Routines; 28px like Routines' row.
     return (
-      <button
-        type="button"
-        data-activity-history="all"
-        onClick={() => onOpenHistory("coding")}
-        aria-haspopup="dialog"
-        title={t("botPanel.history.open")}
-        className="-mx-1 flex items-center gap-2 self-start rounded-md px-1 py-0.5 text-left text-[12.5px] leading-[18px] text-ink-tertiary hover:text-ink-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
-      >
-        <History size={14} aria-hidden="true" className="shrink-0" />
-        <span>{t("botPanel.history.title")}</span>
-      </button>
+      <div className="flex min-h-7 items-center">
+        <SectionHeader
+          icon={<History size={16} aria-hidden="true" className="text-ink-secondary" />}
+          title={t("botPanel.history.title")}
+          name="all"
+          onOpenHistory={onOpenHistory}
+        />
+      </div>
     );
   }
   return (

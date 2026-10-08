@@ -1926,6 +1926,14 @@
   "engineConnect.paysWith.subscription": "Paga com: sua assinatura",
   "engineConnect.paysWith.key": "Paga com: sua chave no Perspicax",
   "engineConnect.paysWith.orgKey": "Paga com: a chave da organização",
+  "seen.by": "Visto por {list}",
+  "seen.entry": "{name} às {time}",
+  "seen.caption": "Visto",
+  "seen.captionAt": "Visto às {time}",
+  "seen.someone": "Alguém",
+  "settings.section.privacy": "Privacidade",
+  "settings.privacy.readReceipts.title": "Enviar confirmações de leitura",
+  "settings.privacy.readReceipts.subtitle": "Em conversas com outras pessoas, mostre quando você leu as mensagens delas. Desativado, você também não vê as delas. Grupos e bots sempre mostram quem viu uma mensagem.",
   "presence.online": "Online",
   "presence.away": "Ausente",
   "presence.offline": "Offline",
@@ -1935,7 +1943,6 @@
   "presence.seen.hours": "há {count} h",
   "presence.seen.days": "há {count} d",
   "presence.hiddenSelf": "{state} (oculto para os outros)",
-  "settings.section.privacy": "Privacidade",
   "settings.privacy.presence.title": "Mostrar quando estou online",
   "settings.privacy.presence.subtitle": "As pessoas da sua organização veem um ponto verde, âmbar ou cinza na sua foto. Desativado: você aparece offline para todos, sem horário de última atividade."
 }

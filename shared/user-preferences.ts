@@ -48,6 +48,9 @@ export const USER_PREFERENCE_KEYS = [
   "omb.voiceMode.v1",
   // what a message sent to a busy conversation does (shared/parallel-tasks.ts)
   "sagax.busySend.v1",
+  // Settings > Privacy: send read receipts in conversations between people
+  // (server/read-receipts.ts). "off" turns them off both ways; absent is on.
+  "sagax.readReceipts.v1",
   // privacy: "Show when I am online" ("0" hides; shared/presence.ts)
   "sagax.presenceVisible.v1",
 ] as const;
