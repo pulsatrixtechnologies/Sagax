@@ -29,3 +29,36 @@ export function shouldCompact(input: { contextTokens?: number; estimatedBytes: n
   const threshold = Math.min(ceiling, positive(input.floor) ? Math.max(input.budget, input.floor * 1.25) : input.budget);
   return size >= threshold;
 }
+
+/** Where an engine starts compacting its own session, in tokens, when Sagax
+ * can know it. Sagax folds the thread itself below this point (compactBudget
+ * keeps 10% under it), so the engine's own summarizer, which drops what it
+ * likes and says so in its own words, is the rare backstop of a single very
+ * long turn rather than the normal path.
+ *
+ * Values are the engines' documented or observed defaults on 2026-10-08:
+ * - Claude Code: the --autocompact window Sagax passes (claudeWindow).
+ * - Codex: model_auto_compact_token_limit defaults near 90% of the window.
+ * - Gemini CLI: model.compressionThreshold, 0.5 of the window in recent
+ *   releases (0.7 in older ones); the lower one is used.
+ * - Qwen Code: its debug log reports auto=167000 of a 200000 limit.
+ * - pi: compacts when the context passes the window less 16384 reserved.
+ * - Other ACP agents (Kimi Code, Grok, OpenCode, Cursor, Droid, Hermes,
+ *   custom): undocumented, so 80% is assumed, the earliest seen in practice.
+ * Engines that resend the stored transcript every turn (the OpenAI chat
+ * drivers) and the boat's remote agent have no session Sagax could lose
+ * to a native compaction here: undefined. */
+export function nativeCompactionPoint(driverKind: string, window: number, claudeWindow?: number): number | undefined {
+  if (!positive(window)) return undefined;
+  switch (driverKind) {
+    case "claudeAgent": return positive(claudeWindow) ? claudeWindow : undefined;
+    case "codex": return Math.floor(window * 0.9);
+    case "geminiAgent": return Math.floor(window * 0.5);
+    case "qwenAgent": return Math.floor(window * 0.835);
+    case "piAgent": return window > 32_768 ? window - 16_384 : Math.floor(window * 0.5);
+    case "kimiAgent": case "grokAgent": case "opencodeGo": case "cursorAgent": case "droidAgent":
+    case "hermesAgent": case "customAcp": case "antigravityAgent":
+      return Math.floor(window * 0.8);
+    default: return undefined;
+  }
+}

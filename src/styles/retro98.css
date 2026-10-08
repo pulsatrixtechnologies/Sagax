@@ -985,6 +985,7 @@
 }
 [data-skin="retro98"] .app-docked-panel > div.h-12 {
   height: 20px !important;
+  min-height: 0 !important;
   margin: 0 0 2px;
   padding: 0 2px !important;
   background: linear-gradient(90deg, #000080, #1084d0);
