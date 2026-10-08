@@ -289,6 +289,52 @@ carries as `resources/ui` (outside the asar) and serves from there. Tests: `src/
 `src/components/GroupView.test.ts`. The server image must be installed
 before an organization server accepts `{ groupId }`.
 
+## Seen by: read receipts (2026-10-08)
+
+Who has seen a message, people and bots (JC, 2026-10-08). Keep these rules,
+covered by `server/read-receipts.test.ts`, `server/read-receipts.e2e.test.ts`,
+`src/lib/read-receipts.test.ts`, `src/components/SeenBy.test.ts` and
+`src/components/GroupView.seenBy.test.ts`:
+
+- Model (`server/read-receipts.ts`): one position per participant per thread,
+  `readUpTo[participantId] = { messageId, at }`, in the `thread_reads` table
+  of `messages.db` (`server/message-db.ts`); a thread without rows has no
+  receipts (no migration) and its rows go with the thread. A person is their
+  principal id (lowercase), a bot is `bot:<botId>`. `Store.markRead` only
+  moves a position forward, onto a message of that thread, and emits the
+  `thread.read` store change, broadcast as the `thread.read` frame. Never the
+  transcript, the canonical event log (`bus.publish` tees to it, so it is not
+  used) nor the admin audit.
+- A person: `POST /api/threads/<id>/read { messageId }` from the renderer
+  (`useReportRead` in `src/lib/read-receipts-feed.ts`): the last stored
+  `[data-mid]` row on screen, debounced, only while the window has focus and
+  is visible. `GET` answers `{ reads, self }` filtered for the viewer. In a
+  room only its listed people, owner or creator leave one (403
+  `not_member`); a bot-to-bot channel has none; the usual thread gates
+  (bot visibility, private threads, people DMs) answer 404 first. Client
+  scope and the companion allowlist carry both methods.
+- A bot: set by the server at prompt build, before `sendTurn`
+  (`noteBotRead`). A direct turn: the newest of the person's lines the turn
+  carries (`userMessage` and drained queue lines); a card continuation, the
+  newest text line of the context it resumes. A room turn: the newest text
+  line of `roomContextRows` (never a digest or a teammate's report: a summary
+  is not seeing it), marked once the turn is dispatched. A line steered into
+  a running turn counts when the next prompt carries it. Delivery to a peer
+  bot through ask_bot keeps its own receipt (`peerDeliveryReceipt`).
+- Privacy: in a conversation between two people, a person whose preference
+  `sagax.readReceipts.v1` is `off` (Settings > Privacy > Send read receipts,
+  organization server only, synced through `/api/me/preferences`) is shown
+  to nobody, sees nobody's, and leaves no new position. Rooms and bots always
+  show. Changing the choice sends `{ kind: "thread.read", threadId, reset }`
+  to those conversations so clients fetch again.
+- UI: a room or a people DM draws a `SeenByRow` (16px overlapping avatars,
+  oldest reader first, on the viewer's side under their own line, tooltip
+  "Seen by Alice at 14:02, Cryptic at 14:03") under the newest drawn bubble
+  at or before each position that the reader did not write; the viewer is
+  never drawn. A 1:1 with a bot draws only a `SeenCaption` ("Seen", or "Seen
+  at 14:03" a minute or more later) under the last line the bot consumed,
+  until it answers below it.
+
 ## Launch flow (desktop)
 
 First run on the desktop app's own window opens the launch screen
@@ -999,8 +1045,11 @@ these rules, each covered by `server/harness-connectors.test.ts` or
   approval flow. An engine tool denial blocks host built-ins, never them.
 - Connected apps (or Model providers while Connected apps is off) shows them read-only (`GET /api/me/harness-connectors`, the
   caller's own account only, no email or URL) with a link to
-  claude.ai/customize/connectors; an admin turns them off with
-  `PUT /api/harness-connectors/settings` (`config.harnessConnectors.claudeAi`).
+  claude.ai/customize/connectors. Always on: there is no server switch (the
+  admin checkbox and `config.harnessConnectors.claudeAi` are retired, a stored
+  false is ignored, `PUT /api/harness-connectors/settings` is a no-op kept for
+  older clients). `SAGAX_CLAUDE_ALLOW` is a separate thing (standing tool allow
+  rules, see docs/self-hosting.md) and stays.
 - Codex: ChatGPT connectors need Codex's own ChatGPT login, which Sagax's
   ChatGPT plan mode and API keys do not have, so Codex turns get none.
 
