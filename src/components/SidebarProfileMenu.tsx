@@ -15,7 +15,7 @@
 //
 // The update entry is the one item that reports progress in place, so it
 // keeps the menu open and re-labels itself as it works. A failed automation
-// tints the routines count red while the menu is closed, and keeps its dot
+// adds a tiny accent dot to the routines count (never red) while the menu is closed, and keeps its dot
 // on the Automations item inside the menu.
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
@@ -368,7 +368,7 @@ export function SidebarProfileMenu({ avatarOnly = false, places = [] }: {
   const items = footerMenuItems(places, profileItems);
   const noteworthy = update && updateNoteworthy(update.phase, update.pending) ? update : null;
   // a place in the menu asking for attention while the menu is folded away
-  // (a failed automation tints the routines count instead)
+  // (a failed automation adds an accent dot to the routines count instead)
   const placeAttention = places.some((item) => item.attention);
 
   const avatar = (size: number) => (
@@ -476,12 +476,12 @@ export function SidebarProfileMenu({ avatarOnly = false, places = [] }: {
           dispatch({ type: "showRoutines" });
         }}
         className={cn(
-          "inline-flex shrink-0 items-center gap-1 rounded-md px-1 text-[13px] leading-[18px] tabular-nums hover:bg-sidebar-hover",
-          routineAttention ? "text-danger" : "text-sidebar-ink-secondary hover:text-sidebar-ink",
+          "inline-flex shrink-0 items-center gap-1.5 rounded-md px-2 py-1 text-[14px] font-medium leading-[20px] tabular-nums text-accent-text hover:bg-sidebar-hover",
         )}
       >
-        <CalendarClock size={13} strokeWidth={2.2} aria-hidden="true" />
+        <CalendarClock size={18} strokeWidth={2.2} aria-hidden="true" />
         <span>{activeRoutines}</span>
+        {routineAttention && <span data-testid="routines-attention-dot" aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-accent-text" />}
       </button>
     </div>
   ) : null;
