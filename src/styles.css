@@ -1363,6 +1363,13 @@
   overflow: hidden;
   background: var(--color-app);
 }
+/* A card that scrolls (docked bot, person and group panels carry the
+   `overflow-y-auto` utility) keeps its scroll: the unlayered `overflow:
+   hidden` above would otherwise beat the utility and freeze it. */
+[data-skin="pulsatrix-light"] .content-card-body.overflow-y-auto {
+  overflow-x: hidden;
+  overflow-y: auto;
+}
 [data-skin="pulsatrix-light"] .app-content-frame .content-card-body {
   margin-left: var(--app-frame-gap);
 }
