@@ -136,7 +136,8 @@ import { chiefOfStaffSystemPrompt } from "./chief-of-staff.ts";
 import { buildRecall, CALL_RECALL_BUDGET, type RecallBudget } from "./recall.ts";
 import { createMemoryUpkeep, upkeepEnabled } from "./memory-upkeep.ts";
 import { appendAboutMe, commitLearned, planLearned } from "./profile-learned.ts";
-import { canAccessTeam, canReachPeer, coordinatorSupervises, livePeerRoster, livePeerRosterBlock, peerAllowed, peerName, peerRosterSystemPrompt, peerStatus, peerStatusWords, reachablePeers, resolveTeammate, roomPeerRosterSystemPrompt, roomRosterLine, PEER_ACCESS_HELP } from "./peer-roster.ts";
+import { canAccessTeam, canReachPeer, coordinatorSupervises, livePeerRoster, livePeerRosterBlock, peerAllowed, peerName, peerRosterSystemPrompt, peerStatus, peerInScope, peerStatusWords, reachablePeers, resolveTeammate, setPeerScope, roomPeerRosterSystemPrompt, roomRosterLine, PEER_ACCESS_HELP } from "./peer-roster.ts";
+import { orgPeerInScope } from "./peer-scope.ts";
 import {
   containerComputerAction,
   containerComputerExists,
@@ -721,6 +722,7 @@ import { grandfatheredFromBots } from "../shared/achievements.ts";
 import { createBotMemoryRoutes } from "./routes/bot-memory.ts";
 import { createBotActivityRoutes, type ActivityChildRef } from "./routes/bot-activity.ts";
 import { inGitRepository } from "./activity-coding.ts";
+import { repositoryInfo } from "./activity-code-work.ts";
 import { createGroupMemoryRoutes } from "./routes/group-memory.ts";
 import { createTtsProviderRoutes } from "./routes/tts-provider.ts";
 import { createPeopleDmRoutes } from "./routes/people-dms.ts";
@@ -4718,6 +4720,21 @@ principals.localOperator(cfg.profile?.email);
 // unrecorded owner is the operator), then the one-time migration from one
 // Chief of Staff per section runs (idempotent, so at every boot).
 store.botOwnerKey = (bot) => effectiveBotOwner(bot);
+// Organization server: a bot reaches its owner's bots and the bots shared
+// with them, never the rest of the organization (server/peer-scope.ts).
+if (IDENTITY.kind === "perspicax") {
+  setPeerScope((from, target) => {
+    const fromBot = store.bot(from.id);
+    const targetBot = store.bot(target.id);
+    return Boolean(fromBot && targetBot) && orgPeerInScope(fromBot!, targetBot!, {
+      ownerOf: (bot) => effectiveBotOwner(bot),
+      personSeesBot: (principalId, bot) => {
+        const viewer = authzViewerFromId(principalId);
+        return Boolean(viewer && botLevel({ viewer, ...botFacts(bot) }));
+      },
+    });
+  });
+}
 {
   const steppedDown = store.enforceOnePrimaryPerOwner();
   if (steppedDown.length) console.log(`[primary-bot] one Primary Bot per person: ${steppedDown.length} former Chief(s) of Staff stepped down`);
@@ -6330,6 +6347,14 @@ function roomHandoffProblem(node: Pick<RoomHandoff, "groupId" | "threadId" | "bo
     if ((!canAccessTeam(from, bot.section) && !sharedSupervisor) || (source && outsideSection(source, from))) return "Room work cannot cross the sender's section boundary";
     if (source && group && source.id === group.id && parent.threadId !== node.threadId) return "Same-room work must stay in the originating conversation";
     if (!peerAllowed(from, bot)) return "The recipient is not an allowed peer of the sender";
+    // A room the sender sits in keeps its own rule: people chose its
+    // members. Anywhere else (another bot's direct thread, a room the
+    // sender is not in) the organization scope applies, to every reader
+    // of the destination (server/peer-scope.ts).
+    if (!group?.memberIds.includes(from.id)) {
+      const readers = group ? group.memberIds.map(id => store.bot(id)).filter((member): member is BotRecord => Boolean(member)) : [bot];
+      if (readers.some(member => !peerInScope(from, member))) return "The recipient is outside the sender's owner's bots";
+    }
   }
 }
 
@@ -10541,7 +10566,9 @@ function reportIncident(input: { kind: IncidentKind; bot: BotRecord; threadId: s
   const count = incidentLedger.note(threadId);
   // a crash loop is one incident, not a storm
   if (count.muted) return;
-  const chief = chiefForBot(store.bots, bot);
+  // On an organization server the report (title, room, detail, link) goes
+  // to a Primary Bot of the bot's own owner only, never the first one found.
+  const chief = chiefForBot(store.bots, bot, IDENTITY.kind === "perspicax" ? (candidate) => primaryBotSameOwner(candidate, bot) : undefined);
   // A run that could not start and a failed routine have already buzzed
   // the person (turn-failed, routine-failed) by the time they get here; a
   // failure or stall mid-run has not. One notification per failure, never two.
@@ -19607,6 +19634,7 @@ ROUTES.push(createBotActivityRoutes({
   organization: () => IDENTITY.kind === "perspicax",
   runAccessCard: (run, viewerId) => routineRunAccessCard(run, viewerId),
   inRepository: (cwd) => inGitRepository(cwd),
+  repository: (cwd) => repositoryInfo(cwd),
 }));
 /** The access card a failed routine run left (refused for lack of
  * credentials, or paused), as this viewer may see it: on an organization
@@ -22940,6 +22968,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         kind: z.enum(["agents", "connectors", "computer"]).default("agents"),
         depth: z.number().int().min(0).max(MAX_COMMS_DEPTH).default(0),
         skillAuthoring: z.boolean().default(false),
+        // a chat turn's capability, so a test can reach coordinate_bots
+        roomCoordination: z.boolean().default(false),
       }).strict().safeParse(await readBody(req));
       if (!parsed.success || !store.bot(parsed.data.botId)) {
         return json(res, 400, { error: "invalid test capability" });
@@ -23907,7 +23937,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         if (!chief.chiefOfStaff || chief.hidden) return json(res, 403, { error: "Only an active Primary Bot may plan team setup" });
         return json(res, 200, {
           teams: teamSetupTeams().filter((name) => canAccessTeam(chief, name)),
-          bots: store.bots.filter((bot) => !bot.hidden && canAccessTeam(chief, bot.section) && (bot.id === chief.id || peerAllowed(chief, bot)))
+          bots: store.bots.filter((bot) => !bot.hidden && canAccessTeam(chief, bot.section) && (bot.id === chief.id || (peerAllowed(chief, bot) && peerInScope(chief, bot))))
             .map((bot) => ({ id: bot.id, name: bot.name, title: bot.title, section: bot.section ?? "", modelSelection: bot.modelSelection, chiefOfStaff: Boolean(bot.chiefOfStaff) })),
           instances: instances.map((instance) => ({ instanceId: instance.instanceId, driverKind: instance.driverKind, displayName: instance.displayName,
             state: instance.snapshot.state, models: instance.models, effortLevels: instance.capabilities?.effortLevels ?? [] })),
@@ -24182,7 +24212,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         // unresolvable id the cheapest way past the gate, so it is now a
         // hard refusal — every peer turn has an accountable sender.
         const from = internalSender;
-        if (!canAccessTeam(from, target.section) || target.hidden) {
+        if (!canAccessTeam(from, target.section) || target.hidden || !peerInScope(from, target)) {
           return json(res, 403, { error: `that bot belongs to a different section or is unavailable. ${PEER_ACCESS_HELP}` });
         }
         // The sender's allow-list, when it has one. Checked here rather than
@@ -24322,7 +24352,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           const freshFrom = store.bot(fromBotId);
           const freshTarget = store.bot(toBotId);
           if (!freshFrom || !freshTarget) return json(res, 404, { error: "no such bot" });
-          if (!canAccessTeam(freshFrom, freshTarget.section) || freshTarget.hidden) {
+          if (!canAccessTeam(freshFrom, freshTarget.section) || freshTarget.hidden || !peerInScope(freshFrom, freshTarget)) {
             return json(res, 200, { error: "that bot moved to a different section", receipt: peerDeliveryReceipt({
               // Access no longer permits reading the peer's current profile.
               botId: toBotId, outcome: "failed",
@@ -24519,7 +24549,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         const note = typeof body.note === "string" ? body.note.trim().slice(0, 300) : "";
         const target = store.bot(botId);
         if (!target || target.id === from.id) return json(res, 404, { error: "no such teammate" });
-        if (target.hidden || !canAccessTeam(from, target.section) || !peerAllowed(from, target)) {
+        if (target.hidden || !canAccessTeam(from, target.section) || !peerAllowed(from, target) || !peerInScope(from, target)) {
           return json(res, 403, { error: "that bot is not on this Primary Bot's team — call list_bots for the ones you can reach" });
         }
         if (store.groupByThread(threadId)) return json(res, 400, { error: "that is a room thread — use coordinate_bots in the room instead" });
@@ -24563,7 +24593,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         const toBotId = resolvedTo.id;
         const target = store.bot(toBotId);
         if (!target) return json(res, 404, { error: "no such bot" });
-        if (!canAccessTeam(from, target.section) || target.hidden) {
+        if (!canAccessTeam(from, target.section) || target.hidden || !peerInScope(from, target)) {
           return json(res, 403, { error: `that bot belongs to a different section or is unavailable. ${PEER_ACCESS_HELP}` });
         }
         if (!peerAllowed(from, target)) {
@@ -24641,6 +24671,9 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         const problem = roomHandoffProblem(address);
         if (problem) return json(res, 403, { error: problem });
         if (method === "GET" && path === "/api/internal/room-targets") {
+          // roomHandoffProblem drops every member of a room the sender is
+          // not in unless all of them are in its owner's scope, and a room
+          // with no member left is not listed (name, folder and ids stay private).
           const rooms = store.groups.filter(g => !g.dm).map(g => ({
             id: g.id, name: g.name, workingFolder: g.cwd || null,
             members: g.memberIds.map(id => store.bot(id)).filter(b => b && b.id !== internalSender.id &&
@@ -25076,7 +25109,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         if (!oneWay && depth >= MAX_COMMS_DEPTH) {
           return json(res, 200, { error: "thread chains are limited to one hop — open the thread on yourself, or do this one here" });
         }
-        if (!canAccessTeam(from, target.section) || target.hidden) {
+        if (!canAccessTeam(from, target.section) || target.hidden || !peerInScope(from, target)) {
           return json(res, 403, { error: `that bot belongs to a different section or is unavailable. ${PEER_ACCESS_HELP}` });
         }
         if (!peerAllowed(from, target)) {

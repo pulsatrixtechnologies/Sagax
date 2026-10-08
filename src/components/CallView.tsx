@@ -276,43 +276,32 @@ export function CallOverlay({ bot }: { bot: Bot }) {
 /** Same length as `--animate-call-dock-out` in styles.css. */
 const CALL_DOCK_EXIT_MS = 180;
 
-/** Voice mode (xAI): a live, full-duplex call (voice-mode/LiveCall.tsx).
- * A call starts as a short row in the banner stack. The chevron opens the
- * stage over the chat column. When the call ends, that row folds away. */
+/** Voice mode (xAI): a live, full-duplex call (voice-mode/LiveCall.tsx),
+ * shown as a compact pill centered at the top of the chat column, under the
+ * bot's name chip. The collapsed pill keeps its own small row in the layout
+ * (never covering a message); its expanded card (settings, transcript)
+ * hangs below that row over the thread. When the call ends the row folds
+ * away (the call itself is already over by then). */
 export function VoiceCallDock({ bot }: { bot: Bot }) {
   const active = useOnCall() === bot.id;
   const voiceMode = useVoiceModeStatus(bot.id);
   const live = active && voiceMode?.available === true;
-  const [collapsed, setCollapsed] = useState(true);
   const motion = useMenuMotion(live);
   const dock = useRef<HTMLDivElement>(null);
   const height = useRef(0);
-  // Each new call starts folded, before paint, so the stage never flashes
-  // open. Expanding stays open until this call ends and the next one starts.
-  const callKey = live ? bot.id : null;
-  const [foldedFor, setFoldedFor] = useState<string | null>(callKey);
-  if (callKey !== foldedFor) {
-    setFoldedFor(callKey);
-    if (callKey) setCollapsed(true);
-  }
   useEffect(() => {
     const element = dock.current;
-    if (!live || !collapsed || !element || typeof ResizeObserver === "undefined") return;
+    if (!live || !element || typeof ResizeObserver === "undefined") return;
     const observer = new ResizeObserver(() => (height.current = element.offsetHeight));
     observer.observe(element);
     return () => observer.disconnect();
-  }, [live, collapsed]);
-  if (live && !collapsed) {
-    return (
-      <div className="absolute inset-0 z-30 flex min-h-0 flex-col bg-app" data-voice-call-dock data-voice-stage>
-        <LiveCall bot={bot} onCollapse={() => setCollapsed(true)} />
-      </div>
-    );
-  }
+  }, [live]);
   if (live) {
     return (
-      <div ref={dock} className="relative z-20 mb-2 px-3" data-voice-call-dock>
-        <LiveCall bot={bot} collapsed onExpand={() => setCollapsed(false)} />
+      <div ref={dock} className="animate-call-dock-in relative z-20 mb-2 h-12 px-3" data-voice-call-dock>
+        <div className="pointer-events-none absolute inset-x-3 top-0">
+          <LiveCall bot={bot} />
+        </div>
       </div>
     );
   }

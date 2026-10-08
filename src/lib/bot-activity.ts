@@ -10,9 +10,13 @@ import {
   type BotActivityList,
   type BotActivityStatus,
   type BotActivityStep,
+  type BotCodeBranch,
+  type BotCodeCommit,
+  type BotCodePullAction,
+  type BotCodePullRequest,
 } from "../../shared/bot-activity";
 
-export type { BotActivityDetail, BotActivityItem, BotActivityList, BotActivityStatus, BotActivityStep };
+export type { BotActivityDetail, BotActivityItem, BotActivityList, BotActivityStatus, BotActivityStep, BotCodeBranch, BotCodeCommit, BotCodePullRequest };
 export { activityStatusActive };
 
 type Api = <T>(path: string, init?: RequestInit) => Promise<T>;
@@ -108,13 +112,91 @@ export function codingLive(items: readonly BotActivityItem[], live: LiveView = S
     .sort(newestRunningFirst);
 }
 
-/** Details > Activity: everything that is not a coding job, plus the
- * sub-agents this bot's threads started (coding or not); running entries
- * and those that just finished while they leave. */
+/** Work running beside the conversation, for Details > Activity: a routine
+ * run, work another bot handed over, a sub-agent, a parallel task, a job the
+ * bot opened on itself (start_thread). A conversation's own turn is the chat
+ * itself, not parallel work. */
+export function isParallelWork(item: BotActivityItem): boolean {
+  if (item.kind === "routine" || item.kind === "hop" || item.kind === "subagent") return true;
+  return Boolean(item.parallel) || item.startedBy?.kind === "bot";
+}
+
+/** Details > Activity: parallel work only (isParallelWork) that is not a
+ * coding job, plus the sub-agents this bot's threads started (coding or
+ * not); running entries and those that just finished while they leave.
+ * Empty, the section is not drawn. */
 export function activityLive(items: readonly BotActivityItem[], subagents: readonly BotActivityItem[], live: LiveView = SHOW_ALL): BotActivityItem[] {
-  return uniqueItems([...items.filter((item) => !item.coding), ...subagents])
+  return uniqueItems([...items.filter((item) => !item.coding && isParallelWork(item)), ...subagents])
     .filter((item) => live.visible(item))
     .sort(newestRunningFirst);
+}
+
+/** How many of each kind of code work the Coding section lists. */
+export const CODE_WORK_SHOWN = 5;
+
+export interface CodingWork {
+  pullRequests: BotCodePullRequest[];
+  branches: BotCodeBranch[];
+  commits: BotCodeCommit[];
+}
+
+/** Details > Coding below the running jobs: the pull requests, branches
+ * and commits the bot's coding jobs of the window produced (the server's
+ * `code`, read off their own git, gh and GitHub calls), newest first, each
+ * once, CODE_WORK_SHOWN of each at most. */
+export function codingWork(items: readonly BotActivityItem[]): CodingWork {
+  const pulls = new Map<string, BotCodePullRequest>();
+  const branches = new Map<string, BotCodeBranch>();
+  const commits = new Map<string, BotCodeCommit>();
+  const newer = <T extends { at: number }>(map: Map<string, T>, key: string, value: T) => {
+    const before = map.get(key);
+    if (!before || before.at < value.at) map.set(key, value);
+  };
+  for (const item of items) {
+    if (!item.coding || !item.code) continue;
+    for (const pull of item.code.pullRequests) {
+      newer(pulls, pull.url ?? (pull.number !== undefined ? `${pull.repo ?? ""}#${pull.number}` : `${item.id}:${pull.title ?? pull.at}`), pull);
+    }
+    for (const branch of item.code.branches) newer(branches, `${branch.repo ?? ""}:${branch.name}`, branch);
+    for (const commit of item.code.commits) newer(commits, commit.sha, commit);
+  }
+  const newest = <T extends { at: number }>(values: Iterable<T>) => [...values].sort((a, b) => b.at - a.at).slice(0, CODE_WORK_SHOWN);
+  return { pullRequests: newest(pulls.values()), branches: newest(branches.values()), commits: newest(commits.values()) };
+}
+
+export function codingWorkEmpty(work: CodingWork): boolean {
+  return !work.pullRequests.length && !work.branches.length && !work.commits.length;
+}
+
+/** A running coding job's place: its repository folder's name and branch. */
+export function codingWhere(item: BotActivityItem): string | undefined {
+  const folder = item.code?.folder?.replace(/\\/g, "/").split("/").filter(Boolean).at(-1);
+  const parts = [item.code?.repo ?? folder, item.code?.branch].filter(Boolean);
+  return parts.length ? parts.join(" · ") : undefined;
+}
+
+const PULL_ACTION_KEYS: Record<BotCodePullAction, LocaleKey> = {
+  opened: "botPanel.code.pr.opened",
+  merged: "botPanel.code.pr.merged",
+  closed: "botPanel.code.pr.closed",
+  updated: "botPanel.code.pr.updated",
+};
+
+export function pullActionLabel(action: BotCodePullAction): string {
+  return t(PULL_ACTION_KEYS[action]);
+}
+
+/** "just now", "12 min ago", "3 h ago", "yesterday", "4 d ago", then the date. */
+export function codeWorkWhen(at: number, now: number): string {
+  const seconds = Math.max(0, Math.round((now - at) / 1000));
+  if (seconds < 45) return t("task.updated.justNow");
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) return t("task.updated.minutes", { count: minutes });
+  if (seconds < 86_400) return t("task.updated.hours", { count: Math.round(minutes / 60) });
+  const days = Math.round(seconds / 86_400);
+  if (days === 1) return t("task.updated.yesterday");
+  if (seconds < 7 * 86_400) return t("task.updated.days", { count: days });
+  return new Date(at).toLocaleDateString([], { month: "short", day: "numeric" });
 }
 
 function uniqueItems(items: readonly BotActivityItem[]): BotActivityItem[] {
