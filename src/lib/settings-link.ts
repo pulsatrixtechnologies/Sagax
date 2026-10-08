@@ -24,6 +24,7 @@ const SECTION_LABEL = {
   backups: "settings.section.backups",
   workspaces: "settings.section.workspaces",
   achievements: "settings.section.achievements",
+  privacy: "settings.section.privacy",
 } as const satisfies Record<AppSettingsSection, LocaleKey>;
 
 export type SettingsLinkTarget = { section: AppSettingsSection; cardId?: string };
