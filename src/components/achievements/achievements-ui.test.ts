@@ -1,5 +1,5 @@
 // The achievements' drawing: never in the sidebar footer, the member card,
-// the unlock toast, the catalog's icons, and the page.
+// the unlock toast, the catalog's icons, the page, and its own modal.
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -18,6 +18,8 @@ vi.mock("@/state/store", async (importOriginal) => {
 import { SidebarProfileMenu } from "../SidebarProfileMenu";
 import { AchievementToast } from "./AchievementToaster";
 import { AchievementsPage } from "./AchievementsPage";
+import { AchievementsModal, ACHIEVEMENTS_MODAL_CATEGORIES, achievementCategoryCounts } from "./AchievementsModal";
+import { SECTIONS } from "../SettingsModal";
 import { ACHIEVEMENT_ICONS } from "./icons";
 import { MemberCard, memberCardRows, publicMemberRows } from "./MemberCard";
 
@@ -142,26 +144,118 @@ describe("unlock toast", () => {
 });
 
 describe("achievements page", () => {
-  it("shows the total, the level, progress and secrets kept secret", () => {
-    resetAchievementsForTests({ status: "ready", snapshot: snapshot() });
-    const html = renderToStaticMarkup(createElement(AchievementsPage));
+  it("shows the header card, recent unlocks, the filters and a two-column grid of cards on All", () => {
+    resetAchievementsForTests({ status: "ready", snapshot: snapshot({ settings: { showPoints: true, showTitle: true, toasts: true, native: false, public: false } }) });
+    const html = renderToStaticMarkup(createElement(AchievementsPage, { category: "all" }));
     expect(html).toContain("data-achievements-page");
+    // header card: trophy, points, level with its bar and the rest to the next level, count, streak
+    expect(html).toContain("lucide-trophy");
     expect(html).toContain("1,240");
     expect(html).toContain("Level 7");
+    expect(html).toContain('aria-valuenow="190"');
+    expect(html).toContain("160 to the next level");
     expect(html).toContain("2 of");
     expect(html).toContain("4-day streak");
-    expect(html).toMatch(/data-unlocked="" data-achievement="hello-bot"/);
-    // recently unlocked ones carry a New tag, unlocked ones come first in a category
-    expect(html).toContain('data-achievement-new=""');
-    expect(html.indexOf('data-achievement="hello-bot"')).toBeLessThan(html.indexOf('data-achievement="grok-linked"'));
-    expect(html).not.toContain("data-recent-achievement");
+    // the title picker at the right, with the titles unlocked so far
+    expect(html).toContain(">Title<select");
+    expect(html).toContain('<option value="rookie">Rookie</option>');
+    // recent unlocks, a horizontal row of cards
+    expect(html).toContain(">Recent unlocks</h3>");
+    expect(html).toContain('data-recent-achievement="hello-bot"');
+    // search, rewards and status, and no category chips: the modal's left column has them
+    expect(html).toContain('data-achievement-search=""');
+    expect(html).toContain('aria-label="Reward"');
+    expect(html).toContain('aria-label="Show"');
+    expect(html).not.toContain('role="tablist"');
+    expect(html).not.toContain("data-achievement-category=");
+    // the cards: two columns, icon, name, points, rarity and reward
+    expect(html).toContain("grid grid-cols-1 gap-2 sm:grid-cols-2");
+    expect(html).toMatch(/class="achievement-card[^"]*" data-tier="[a-z]+" data-unlocked="" data-achievement="hello-bot"/);
+    expect(html).toContain("achievement-card-badge");
+    expect(html).toContain("achievement-card-tier");
     expect(html).toContain('aria-valuenow="2"');
+    for (const item of ACHIEVEMENTS) expect(html).toContain(`data-achievement="${item.id}"`);
     // a secret stays a secret until found
     expect(html).toMatch(/data-achievement="konami" data-secret=""/);
     expect(html).not.toContain("Up Up Down Down");
+    // the switches that hide the points and the toasts sit at the bottom
+    expect(html.indexOf("Show my points")).toBeGreaterThan(html.indexOf('data-achievement="konami"'));
+  });
+
+  it("shows one category's cards, keeps the header card, and leaves recent unlocks to All", () => {
+    resetAchievementsForTests({ status: "ready", snapshot: snapshot() });
+    const html = renderToStaticMarkup(createElement(AchievementsPage, { category: "voice" }));
+    expect(html).toContain("1,240");
+    expect(html).toContain("Level 7");
+    expect(html).not.toContain("Recent unlocks");
+    expect(html).not.toContain("data-recent-achievement");
+    const voice = ACHIEVEMENTS.filter((item) => item.category === "voice");
+    expect(voice.length).toBeGreaterThan(0);
+    for (const item of ACHIEVEMENTS) expect(html.includes(`data-achievement="${item.id}"`), item.id).toBe(item.category === "voice");
+    const secrets = renderToStaticMarkup(createElement(AchievementsPage, { category: "secrets" }));
+    expect(secrets).toMatch(/data-achievement="konami" data-secret=""/);
+    expect(secrets).not.toContain("Up Up Down Down");
   });
 
   it("has an icon for every achievement", () => {
     for (const item of ACHIEVEMENTS) expect(ACHIEVEMENT_ICONS[item.icon], item.icon).toBeTruthy();
+  });
+});
+
+describe("achievements modal", () => {
+  it("lists every category on the left with its unlocked count, All first and selected", () => {
+    resetAchievementsForTests({ status: "ready", snapshot: snapshot() });
+    const html = renderToStaticMarkup(createElement(AchievementsModal));
+    expect(html).toContain('role="dialog"');
+    expect(html).toContain('aria-modal="true"');
+    expect(html).toContain("data-achievements-modal");
+    // the Settings shell: same size, a left column, a close button
+    expect(html).toContain("h-[min(700px,calc(100dvh-96px))] w-[min(900px,calc(100vw-40px))]");
+    expect(html).toContain("w-[198px]");
+    expect(html).toContain('aria-label="Close"');
+    const labels = ["All", "Getting started", "Productivity", "Power user", "Voice", "Together", "Streaks", "Mastery", "Secrets"];
+    expect(ACHIEVEMENTS_MODAL_CATEGORIES).toEqual(["all", "onboarding", "productivity", "power", "voice", "collaboration", "streaks", "mastery", "secrets"]);
+    const nav = html.slice(html.indexOf("data-achievements-nav"), html.indexOf("</nav>"));
+    let at = 0;
+    for (const label of labels) {
+      const next = nav.indexOf(`>${label}</span>`, at);
+      expect(next, label).toBeGreaterThan(at);
+      at = next;
+    }
+    expect(nav).toMatch(/data-achievement-category="all" aria-current="page"/);
+    expect(nav).toContain(`>2/${ACHIEVEMENTS.length}</span>`);
+    const onboarding = ACHIEVEMENTS.filter((item) => item.category === "onboarding").length;
+    expect(nav).toContain(`>2/${onboarding}</span>`);
+    // the pane: the category's title, then the page on All with its recent unlocks
+    expect(html).toContain(">All</h2>");
+    expect(html).toContain("data-recent-achievement");
+  });
+
+  it("opens on a category and shows only that category", () => {
+    resetAchievementsForTests({ status: "ready", snapshot: snapshot() });
+    const html = renderToStaticMarkup(createElement(AchievementsModal, { initialCategory: "secrets" }));
+    expect(html).toMatch(/data-achievement-category="secrets" aria-current="page"/);
+    expect(html).toContain(">Secrets</h2>");
+    expect(html).not.toContain("data-recent-achievement");
+    expect(html).not.toContain('data-achievement="hello-bot"');
+    setLocale("fr");
+    const fr = renderToStaticMarkup(createElement(AchievementsModal));
+    expect(fr).toContain(">Succès</div>");
+    expect(fr).toContain(">Premiers pas</span>");
+    expect(fr).toContain(">Débloqués récemment</h3>");
+  });
+
+  it("counts unlocked and total per category", () => {
+    const counts = achievementCategoryCounts(new Set(["hello-bot", "first-words", "konami"]));
+    expect(counts.all).toEqual({ unlocked: 3, total: ACHIEVEMENTS.length });
+    expect(counts.onboarding.unlocked).toBe(2);
+    expect(counts.secrets.unlocked).toBe(1);
+    expect(counts.voice.unlocked).toBe(0);
+    const sum = ACHIEVEMENTS_MODAL_CATEGORIES.filter((id) => id !== "all").reduce((total, id) => total + counts[id].total, 0);
+    expect(sum).toBe(ACHIEVEMENTS.length);
+  });
+
+  it("is no longer a Settings section", () => {
+    expect(SECTIONS.map((section) => section.id)).not.toContain("achievements");
   });
 });

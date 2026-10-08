@@ -23,7 +23,6 @@ const SECTION_LABEL = {
   activity: "settings.section.activity",
   backups: "settings.section.backups",
   workspaces: "settings.section.workspaces",
-  achievements: "settings.section.achievements",
   privacy: "settings.section.privacy",
 } as const satisfies Record<AppSettingsSection, LocaleKey>;
 

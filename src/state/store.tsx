@@ -1031,8 +1031,7 @@ export type AppSettingsSection =
   | "mail"
   | "activity"
   | "backups"
-  | "workspaces"
-  | "achievements";
+  | "workspaces";
 
 export type BotSettingsSection =
   | "overview"
@@ -1114,6 +1113,9 @@ export interface AppState {
   activityOpen: boolean;
   appSettingsOpen: boolean;
   appSettingsSection: AppSettingsSection;
+  /** The achievements modal (src/components/achievements/AchievementsModal.tsx),
+   * its own window beside Settings: one or the other is open, never both. */
+  achievementsOpen: boolean;
   /** A settings sub-page pushed inside the section (src/components/
    * SettingsSubPage.tsx), e.g. General > About me; null shows the section.
    * Any toggleAppSettings that names none (another section, closing) clears it. */
@@ -1444,6 +1446,7 @@ export type Action =
   | { type: "focusMessage"; threadId: string; messageId: string; matchText?: string }
   | { type: "focusMessageConsumed"; nonce: number }
   | { type: "toggleAppSettings"; open?: boolean; section?: AppSettingsSection; subPage?: string; phonePairing?: boolean }
+  | { type: "toggleAchievements"; open?: boolean }
   | { type: "toggleShortcuts"; open?: boolean }
   | { type: "toggleWelcome"; open?: boolean }
   | { type: "toggleLaunch"; open?: boolean; mode?: "solo" | "server" }
@@ -1787,6 +1790,7 @@ export function reducer(state: AppState, action: Action): AppState {
         inspectorOpen: false,
         activityOpen: false,
         appSettingsOpen: false,
+        achievementsOpen: false,
         pluginsOpen: false,
         triggersOpen: false,
       };
@@ -1801,6 +1805,7 @@ export function reducer(state: AppState, action: Action): AppState {
         inspectorOpen: false,
         activityOpen: false,
         appSettingsOpen: false,
+        achievementsOpen: false,
         pluginsOpen: false,
         triggersOpen: false,
       };
@@ -2291,7 +2296,7 @@ export function reducer(state: AppState, action: Action): AppState {
         ...state,
         pluginsOpen: open,
         pluginsSurface: action.surface ?? state.pluginsSurface,
-        ...(open ? { settingsOpen: false, appSettingsOpen: false, newBotOpen: false, shortcutsOpen: false, triggersOpen: false } : {}),
+        ...(open ? { settingsOpen: false, appSettingsOpen: false, achievementsOpen: false, newBotOpen: false, shortcutsOpen: false, triggersOpen: false } : {}),
       };
     }
     case "toggleTriggers": {
@@ -2299,7 +2304,7 @@ export function reducer(state: AppState, action: Action): AppState {
       return {
         ...state,
         triggersOpen: open,
-        ...(open ? { settingsOpen: false, appSettingsOpen: false, newBotOpen: false, shortcutsOpen: false, pluginsOpen: false } : {}),
+        ...(open ? { settingsOpen: false, appSettingsOpen: false, achievementsOpen: false, newBotOpen: false, shortcutsOpen: false, pluginsOpen: false } : {}),
       };
     }
     case "botCreationPending":
@@ -2308,7 +2313,7 @@ export function reducer(state: AppState, action: Action): AppState {
       const open = (action.open ?? !state.newBotOpen) && state.config?.viewer?.canCreateBots !== false;
       return {
         ...state, newBotOpen: open,
-        ...(open ? { settingsOpen: false, appSettingsOpen: false, pluginsOpen: false, shortcutsOpen: false, triggersOpen: false } : {}),
+        ...(open ? { settingsOpen: false, appSettingsOpen: false, achievementsOpen: false, pluginsOpen: false, shortcutsOpen: false, triggersOpen: false } : {}),
       };
     }
     case "notice":
@@ -2381,6 +2386,15 @@ export function reducer(state: AppState, action: Action): AppState {
         inspectorOpen: open ? false : state.inspectorOpen,
         pluginsOpen: open ? false : state.pluginsOpen,
         triggersOpen: open ? false : state.triggersOpen,
+        achievementsOpen: open ? false : state.achievementsOpen,
+      };
+    }
+    case "toggleAchievements": {
+      const open = action.open ?? !state.achievementsOpen;
+      return {
+        ...state,
+        achievementsOpen: open,
+        ...(open ? { appSettingsOpen: false, appSettingsSubPage: null, settingsOpen: false, personPanelId: null, pluginsOpen: false, triggersOpen: false, newBotOpen: false, shortcutsOpen: false } : {}),
       };
     }
     case "toggleShortcuts": {
@@ -2753,6 +2767,7 @@ export const initialState: AppState = {
   activityOpen: false,
   appSettingsOpen: false,
   appSettingsSection: "general",
+  achievementsOpen: false,
   appSettingsSubPage: null,
   appSettingsPhonePairing: 0,
   shortcutsOpen: false,
