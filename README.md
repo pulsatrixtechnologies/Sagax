@@ -104,9 +104,11 @@ Take control at any time. A bot can work in:
 
 ### Voice calls
 
-Press the call button on a bot and talk, like a phone call. The call starts
-as a short row. The chevron opens the stage over the chat, with the
-settings, the transcript, hold, mute and hang up. The microphone stays open:
+Press the call button on a bot and talk, like a phone call. On the desktop
+the call is a rounded bar that floats at the top of the chat, under the
+bot's name: its avatar, a live waveform, then settings, transcript, mute and
+hang up. The gear opens Voice, Speed and Language under the bar, and the
+speech bubble shows what was said; the chat stays visible behind. The microphone stays open:
 interrupt the bot at any time and it stops talking. Hold, mute and push to
 talk are one click away. The bot is still the one answering: every sentence
 you say becomes an ordinary message in the thread, and xAI is used only for

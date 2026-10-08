@@ -422,7 +422,10 @@ chat column under the name chip (`VoiceCallDock`, first in ChatView's banner
 stack: collapsed it keeps its own 48px row, never covering a message;
 Settings or Transcript expand it into a card over the thread that closes on
 Escape or a click outside; hold lives in the settings card; states pinned
-by `VoiceModeBar.layout.test.ts`), when `GET /api/bots/<id>/voice/status` says
+by `VoiceModeBar.layout.test.ts`; on the desktop this pill is the whole call
+UI, no folded row and no full-column stage, restored from 0.4.8 on
+2026-10-08 at JC's request; the iPhone keeps its own call screen and the
+call card in the conversation, under `ios/`), when `GET /api/bots/<id>/voice/status` says
 xAI voice mode serves the person; otherwise a solo Mac keeps the older call
 (macOS dictation helper). Keep these rules, each covered by
 `server/voice-mode.test.ts`, `src/lib/voice-mode/voice-mode.test.ts`,
