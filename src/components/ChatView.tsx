@@ -814,6 +814,7 @@ const MessagesList = memo(function MessagesList({
               <BotExchangeChip
                 run={item.run}
                 bots={state.bots}
+                showToolCalls={showToolCalls}
                 forceOpen={item.run.messages.some((message) => message.id === focusedId)}
                 onGo={() => {
                   const target = state.bots.find((candidate) => candidate.id === item.run.party.id);

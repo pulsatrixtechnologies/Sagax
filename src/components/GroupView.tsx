@@ -304,6 +304,7 @@ export const Transcript = memo(function Transcript({
               <BotExchangeChip
                 run={item.run}
                 bots={members}
+                showToolCalls={showToolCalls}
                 forceOpen={item.run.messages.some((message) => message.id === focusedId)}
                 onGo={() => {
                   const target = state.bots.find((candidate) => candidate.id === item.run.party.id);
