@@ -2136,7 +2136,6 @@
   "connectors.perBot.body": "在此連線應用程式不代表已授權機器人使用。每個機器人都有自己的「設定 → 存取權 → 已連線的應用程式」開關；開啟前，機器人不會知道此應用程式存在。",
   "connectors.perBot.allow": "允許 {name}",
   "connectors.marketplace.partialStalled": "連線服務只傳回部分目錄",
-  "mcp.trustNotice": "指令會在這部電腦上執行，並使用你提供的環境變數；URL 伺服器會收到你提供的標頭。只新增你信任的軟體與網址。新伺服器在啟用前會保持關閉。",
   "mcp.transport.stdio": "執行指令",
   "mcp.transport.remote": "連線至 URL",
   "mcp.field.url": "伺服器 URL",

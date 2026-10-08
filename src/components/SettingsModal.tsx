@@ -20,7 +20,6 @@ import { servedPage } from "@/lib/desktop";
 import { brand } from "@/lib/brand";
 import { ManagedByOrganization, ServerModeCard, useServerMode } from "./ServerModeSettings";
 import { AnthropicEveryClaudeBot, ApiKeyRow, OpenAiCompatUrl, VpsConnection } from "./ApiKeys";
-import { COMPOSIO_PLATFORM_URL } from "./ConnectedAppsSetup";
 import { DecisionModelSettings } from "./DecisionModelSettings";
 import { LiveCallInstallationSettings } from "./LiveCallSettings";
 import { ImageGenerationSettings } from "./settings/ImageGenerationSettings";
@@ -77,6 +76,8 @@ import { setShowRunCard, useShowRunCard } from "@/lib/run-card-preferences";
 import { setShowSidebarLogo, useShowSidebarLogo } from "@/lib/sidebar-logo-preferences";
 import { setShowInspectorButton, useShowInspectorButton } from "@/lib/inspector-preferences";
 import { effectiveLanguage, setLanguageChoice, useLanguageChoice } from "@/lib/language-preference";
+
+const COMPOSIO_PLATFORM_URL = "https://platform.composio.dev";
 
 // `labelKey`, not a label: t() reads the active pack when it is called, so a
 // label resolved here at module scope would freeze the language the app booted
