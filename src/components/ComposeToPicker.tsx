@@ -15,6 +15,7 @@ import { personInitials } from "@/lib/people-dm";
 import { useCaptionChrome } from "./DesktopCapabilities";
 import { useShowThreads } from "@/lib/thread-preferences";
 import { openBotConversationActions } from "./thread-home";
+import { PersonLabelTag } from "./LabelTag";
 
 type ComposeMode = "browse" | "group";
 type ComposeRow = { kind: "create-bot" } | { kind: "create-group" } | { kind: "bot"; bot: Bot } | { kind: "person"; person: OrgDirectoryPerson };
@@ -326,7 +327,7 @@ export function ComposeToPicker({ onClose }: { onClose: () => void }) {
                   )}
                 >
                   <PersonAvatar avatarUrl={personAvatarSrc(person.avatarUrl)} initials={personInitials(person.name || person.login)} size={28} />
-                  <span className="min-w-0 flex-1 truncate">{person.name || person.login}</span>
+                  <span className="flex min-w-0 flex-1 items-center gap-1.5"><span className="min-w-0 truncate">{person.name || person.login}</span><PersonLabelTag principalId={person.principalId} tone="surface" className="max-w-[46%] shrink" /></span>
                   <span className={cn("shrink-0 text-[13px] text-ink-secondary", selected ? "inline" : "hidden group-hover:inline")}>{t("compose.directMessage")}</span>
                   {shortcut && (
                     <span className={cn(selected ? "hidden" : "group-hover:hidden")}>

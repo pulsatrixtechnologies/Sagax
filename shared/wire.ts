@@ -907,6 +907,9 @@ export type ServerFrame =
   | { kind: "bot-act"; audience: string; action: string; input?: Record<string, unknown> }
   /** Shake this person's desktop window. Their streams only (server/nudge.ts). */
   | { kind: "nudge"; audience: string; fromId: string; fromName: string; at: number }
+  /** A person's custom label changed (server/routes/person-labels.ts); null
+   * cleared it. Every stream. */
+  | { kind: "person.label"; principalId: string; label: string | null }
   | { kind: "live.call"; botId: string; threadId: string; call: LiveCallState | null }
   /** The config status object spread flat into the frame; its full typing
    * is the deferred client-model extraction (see j1-phase-bc-progress). */

@@ -9,6 +9,7 @@ import { api } from "@/state/store";
 import { t } from "@/lib/i18n";
 import type { OrgDirectory } from "@/lib/perspicax-org";
 import { groupPeopleCandidates } from "@/lib/private-threads";
+import { PersonLabelTag } from "./LabelTag";
 
 /** The organization directory, once `enabled`; null until it answers. */
 export function useOrgDirectory(enabled: boolean): OrgDirectory | null {
@@ -52,7 +53,7 @@ export function GroupPeoplePicker({ directory, taken, onAdd, onDone }: {
           {candidates.map((person) => (
             <li key={person.principalId} className="flex min-w-0 items-center justify-between gap-3 px-3 py-2">
               <span className="min-w-0">
-                <span className="block truncate text-[13px] text-ink">{person.name || person.login}</span>
+                <span className="flex min-w-0 items-center gap-1.5 text-[13px] text-ink"><span className="min-w-0 truncate">{person.name || person.login}</span><PersonLabelTag principalId={person.principalId} tone="surface" className="max-w-[46%] shrink" /></span>
                 {person.name && person.login && <span className="block truncate text-[11.5px] text-ink-secondary">{person.login}</span>}
               </span>
               <button

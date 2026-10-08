@@ -50,6 +50,7 @@ import { isViewersPrimaryBot, viewerOwnsBot } from "@/lib/primary-bot";
 import { PrimaryBotPicker } from "./PrimaryBotPicker";
 import { useOrgPeople, usePerspicaxOrg } from "@/lib/perspicax-org";
 import { peopleDmPeer } from "@/lib/people-dm";
+import { LabelTag, PersonLabelTag } from "./LabelTag";
 import { nudgeLineText } from "@/lib/nudge-line";
 import { usePublicAchievement } from "@/lib/public-achievements";
 import { ColleagueAchievementLine } from "./achievements/MemberCard";
@@ -387,7 +388,10 @@ export function GroupListItem({
         : <StackedMauses members={members} density={density} viewerId={viewerActorId(state.config)} />}
       <div className={cn("min-w-0 flex-1", density === "icons" && "hidden")}>
         <div className="flex items-baseline justify-between gap-2">
-          <span className={cn("truncate text-[14px] leading-5 text-sidebar-ink", selected && !expanded ? "font-semibold" : "font-medium")}>{rowName}</span>
+          <span className={cn("flex min-w-0 grow items-center gap-1.5 text-[14px] leading-5 text-sidebar-ink", selected && !expanded ? "font-semibold" : "font-medium")}>
+            <span className="min-w-0 truncate">{rowName}</span>
+            {peer && !quiet && <PersonLabelTag principalId={peer.id} className="max-w-[46%] shrink" />}
+          </span>
           {selected && last && !expanded && <span className="shrink-0 text-[12px] leading-4 text-sidebar-ink-secondary">{formatTime(last.at)}</span>}
           {(expanded || (quiet && !groupStatus)) && group.unread && <span className="size-1.5 shrink-0 rounded-full bg-accent" aria-label={t("task.unreadMany")} />}
         </div>
@@ -1429,7 +1433,7 @@ export function BotListItem({
               inputClassName="w-full rounded bg-inset px-1 py-0.5 text-[14px] font-medium"
             />
             {title && !renaming && !quiet && (
-              <span className="max-w-[46%] shrink truncate rounded-[5px] border border-sidebar-hairline bg-sidebar-hover px-1.5 text-[11px] leading-4 text-sidebar-ink-secondary">{title}</span>
+              <LabelTag text={title} className="max-w-[46%] shrink" />
             )}
           </span>
           {selected && last && !renaming && (
@@ -2482,7 +2486,7 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
                   <BotAvatar bot={bot} primary={isViewersPrimaryBot(bot, viewerId)} primaryRingClassName="ring-sidebar" state="idle" size={density === "icons" ? 36 : 72} animated={false} />
                   {density !== "icons" && <span className="w-full truncate text-center text-[11px] leading-4 tracking-[.005em] text-sidebar-ink">{bot.name}</span>}
                   {density !== "icons" && title ? (
-                    <span className="max-w-full truncate rounded-[5px] border border-sidebar-hairline bg-sidebar-hover px-1.5 text-[10px] leading-4 text-sidebar-ink-secondary">{title}</span>
+                    <LabelTag text={title} size="small" className="max-w-full" />
                   ) : null}
                 </button>
               );

@@ -53,6 +53,7 @@ import { createBotPatchQueue, type BotUpdatePatch } from "./bot-patch-queue";
 import type { OnboardingStatus } from "@/lib/onboarding";
 import { openLiveEvents } from "@/lib/live-events";
 import { receiveAchievementsFrame } from "@/lib/achievements";
+import { applyPersonLabel } from "@/lib/person-labels";
 
 const MAX_ROUTINE_RUNS = 2_000;
 const ACTIVE_ROUTINE_RUN_STATUSES = new Set<RoutineRun["status"]>(["queued", "running", "waiting"]);
@@ -4359,6 +4360,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         }
         case "nudge":
           onDesktopNudge();
+          break;
+        case "person.label":
+          applyPersonLabel(frame.principalId, frame.label);
           break;
         // a key changed and the fleet hot-reloaded — refresh the picker so
         // newly available providers un-dim immediately

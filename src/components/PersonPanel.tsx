@@ -35,6 +35,9 @@ import { formatPoints } from "./achievements/AchievementsPage";
 import { usePublicAchievement } from "@/lib/public-achievements";
 import { useCaptionChrome, useMacInsetChrome } from "./DesktopCapabilities";
 import { useOrgDirectory } from "./GroupPeoplePicker";
+import { InlineEditableText } from "./bot-settings/InlineEditableText";
+import { canEditPersonLabel, savePersonLabel, usePersonLabel } from "@/lib/person-labels";
+import { PERSON_LABEL_MAX } from "../../shared/person-label";
 
 const PANEL_WIDTH_KEY = "omb-settings-panel-width";
 
@@ -74,6 +77,14 @@ export function PersonPanel({ personId, directory: given }: { personId: string; 
   const manageUrl = personManageUrl(person, org?.viewerRole ?? null);
   const canMessage = canMessagePerson(person, viewerId);
   const isHidden = hidden.items.some((item) => hiddenKey(item.kind, item.id) === hiddenKey("person", personId));
+  const label = usePersonLabel(personId);
+  const mayEditLabel = canEditPersonLabel({
+    personId,
+    viewerId,
+    viewerAdmin: org?.viewerRole === "admin",
+    managedTeamIds: directory?.viewer?.managedTeamIds,
+    personTeamIds: (person?.teams ?? []).map((team) => team.id),
+  });
   const publicCard = usePublicAchievement(personId);
   const titleName = publicCard ? achievementTitleName(publicCard.title) : null;
   const pointsText = publicCard ? formatPoints(publicCard.points) : null;
@@ -101,6 +112,17 @@ export function PersonPanel({ personId, directory: given }: { personId: string; 
         <div className="flex shrink-0 flex-col items-center px-4 pb-3">
           <PersonAvatar avatarUrl={avatarUrl} initials={personInitials(name)} size={88} />
           <h2 id="person-panel-title" className="mt-3 max-w-full truncate text-[17px] font-medium leading-6 text-ink">{name}</h2>
+          {/* The label, as under a bot's name in its panel: editable by the
+              person, an admin and their team manager; plain text otherwise. */}
+          <InlineEditableText
+            value={label}
+            maxLength={PERSON_LABEL_MAX}
+            placeholder={t("personLabel.add")}
+            ariaLabel={t("personLabel.edit")}
+            onSave={mayEditLabel ? (next) => { void savePersonLabel(personId, next).catch(() => dispatch({ type: "error", message: t("personLabel.saveError") })); } : undefined}
+            muted
+            className="mt-0.5 text-[12.5px] leading-4"
+          />
           {(titleName || pointsText) && (
             <div className="mt-1 flex max-w-full items-center justify-center gap-2" data-member-line="">
               {titleName ? <span data-member-title="" className="min-w-0 truncate text-[13px] leading-5 text-ink">{titleName}</span> : null}

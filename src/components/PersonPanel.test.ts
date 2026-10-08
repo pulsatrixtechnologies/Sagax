@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Bot, Group } from "@/state/store";
 import { resetPublicAchievementsForTests } from "@/lib/public-achievements";
+import { resetPersonLabelsForTests } from "@/lib/person-labels";
 
 const fixture = vi.hoisted(() => ({ role: "member" as "admin" | "member", groups: [] as unknown[], bots: [] as unknown[] }));
 vi.mock("./DesktopCapabilities", () => ({ useCaptionChrome: () => ({ padClass: "" }), useMacInsetChrome: () => ({ macInset: false, browser: false }) }));
@@ -21,8 +22,8 @@ const { PersonPanel } = await import("./PersonPanel");
 const ada = { principalId: "pr_ada", name: "Ada Example", login: "ada", email: "ada@example.test", role: "member" as const, disabled: false, teams: [{ id: "t1", manager: false }], manageUrl: "https://px.example.test/console/users/u1" };
 const directory = { people: [ada], teams: [{ id: "t1", name: "Support", managers: [], members: [] }] };
 
-function render(personId = "pr_ada") {
-  return renderToStaticMarkup(createElement(PersonPanel, { personId, directory }));
+function render(personId = "pr_ada", given: typeof directory & { viewer?: { principalId: string | null; orgRole: "admin" | "member"; managedTeamIds: string[] } } = directory) {
+  return renderToStaticMarkup(createElement(PersonPanel, { personId, directory: given }));
 }
 
 describe("PersonPanel", () => {
@@ -98,5 +99,42 @@ describe("PersonPanel", () => {
     expect(html).not.toContain("data-member-line");
     expect(html).toContain('data-person-tab="achievements"');
     expect(html).toContain("This person keeps their achievements private.");
+  });
+
+  describe("label", () => {
+    const editLabel = 'aria-label="Edit label"';
+    beforeEach(() => resetPersonLabelsForTests());
+
+    it("shows a colleague's label under the name as plain text to a member", () => {
+      resetPersonLabelsForTests({ pr_ada: "CTO" });
+      const html = render();
+      expect(html.indexOf(">CTO<")).toBeGreaterThan(html.indexOf("Ada Example"));
+      expect(html).not.toContain(editLabel);
+      expect(html).not.toContain("Add a label");
+    });
+
+    it("shows nothing to a member when the colleague has no label", () => {
+      expect(render()).not.toContain("Add a label");
+    });
+
+    it("offers Add a label to an admin, to a manager of their team and on your own sheet", () => {
+      fixture.role = "admin";
+      const admin = render();
+      expect(admin).toContain(editLabel);
+      expect(admin).toContain("Add a label");
+      fixture.role = "member";
+      const managed = render("pr_ada", { ...directory, viewer: { principalId: "pr_me", orgRole: "member", managedTeamIds: ["t1"] } });
+      expect(managed).toContain(editLabel);
+      const otherTeam = render("pr_ada", { ...directory, viewer: { principalId: "pr_me", orgRole: "member", managedTeamIds: ["t9"] } });
+      expect(otherTeam).not.toContain(editLabel);
+      expect(render("pr_me")).toContain(editLabel);
+    });
+
+    it("lets an editor change an existing label in place", () => {
+      resetPersonLabelsForTests({ pr_ada: "CTO" });
+      fixture.role = "admin";
+      const html = render();
+      expect(html).toMatch(/aria-label="Edit label"[^>]*data-inline-edit="text"[\s\S]*?>CTO</);
+    });
   });
 });

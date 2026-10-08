@@ -56,6 +56,7 @@ import { SettingsSubPage, SettingsSubPageRow } from "./SettingsSubPage";
 import { InitialsAvatar } from "./Avatar";
 import { profileInitials, profileLabel } from "./SidebarProfileMenu";
 import { ManagedProfileIdentity } from "./ManagedProfileIdentity";
+import { MyLabelField } from "./settings/MyLabelField";
 import { managedProfile } from "@/lib/profile-management";
 import { ThreadConcurrencySettings } from "./ThreadConcurrencySettings";
 import { AutomaticRecoverySettings } from "./AutomaticRecoverySettings";
@@ -194,10 +195,12 @@ function ProfileFields() {
   const { state } = useStore();
   const viewer = state.config?.viewer;
   const managed = managedProfile(viewer);
-  if (managed) return <ManagedProfileIdentity profile={managed} flat />;
-  if (viewer && !viewer.operator) return <SignedInIdentity name={viewer.name} email={viewer.email} />;
-  return <OperatorProfileFields />;
+  const identity = managed
+    ? <ManagedProfileIdentity profile={managed} flat />
+    : viewer && !viewer.operator ? <SignedInIdentity name={viewer.name} email={viewer.email} /> : <OperatorProfileFields />;
+  return <>{identity}<MyLabelField /></>;
 }
+
 
 function SignedInIdentity({ name, email }: { name: string; email: string }) {
   return (

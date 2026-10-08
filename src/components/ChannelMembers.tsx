@@ -4,6 +4,7 @@ import { Plus, X } from "lucide-react";
 
 import type { MausColor } from "@/lib/mascot";
 import { BotAvatar, InitialsAvatar, type BotAvatarProps } from "./Avatar";
+import { PersonLabelTag } from "./LabelTag";
 
 export function channelRosterActions(input: {
   actorRole: "owner" | "admin" | "member" | null;
@@ -64,7 +65,7 @@ export function ChannelMembers(props: {
                         <InitialsAvatar initials={initialsFor(label)} size={32} />
                       )}
                       <div className="min-w-0 flex-1">
-                        <div className="truncate text-[14px] font-medium text-ink">{label}</div>
+                        <div className="flex min-w-0 items-center gap-1.5 text-[14px] font-medium text-ink"><span className="min-w-0 truncate">{label}</span><PersonLabelTag principalId={human.id} tone="surface" className="max-w-[46%] shrink" /></div>
                         {human.detail && <div className="truncate text-[12px] text-ink-secondary">{human.detail}</div>}
                       </div>
                     </>

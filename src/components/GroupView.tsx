@@ -32,6 +32,7 @@ import { viewerActorId } from "@/lib/viewer";
 import { viewerIsOrgAdmin, viewerOwnsGroup } from "@/lib/group-owner";
 import { PersonAvatar, RoomPersonLabel } from "./MessageAuthor";
 import { peopleDmPeer } from "@/lib/people-dm";
+import { PersonLabelTag } from "./LabelTag";
 import { groupNudgeTarget } from "@/lib/group-nudge";
 import { continuesRun, roomAuthor, runCorners } from "@/lib/room-authors";
 import type { OrgDirectoryPerson } from "@/lib/perspicax-org";
@@ -1112,6 +1113,7 @@ export function GroupView({ group: stored }: { group: Group }) {
             >
               <PersonAvatar avatarUrl={peer.avatarUrl} initials={peer.initials} size={24} />
               <span className="truncate text-[14px] font-medium leading-5 text-ink">{peer.name}</span>
+              <PersonLabelTag principalId={peer.id} tone="surface" className="max-w-[40%] shrink" />
             </button>
           ) : group.dm ? (
             <span className="flex min-w-0 items-center gap-2 rounded-full border-[0.5px] border-hairline-weak bg-elevated py-[7.5px] pl-[7.5px] pr-[13.5px]">
