@@ -398,6 +398,7 @@ export function frameForMember(payload: Record<string, unknown>, ctx: FrameConte
     case "message":
     case "message.patch":
     case "thread":
+    case "thread.read":
       return visible.thread(str(payload.threadId)) ? payload : undefined;
     case "bot": {
       const bot = field("bot");

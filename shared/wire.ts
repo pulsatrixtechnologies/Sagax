@@ -880,12 +880,30 @@ export interface BotAssignedSkillsWire {
   skills: string[];
 }
 
+/** One participant's read position on a thread: the newest message they
+ * have seen, and when (server/read-receipts.ts). */
+export interface ThreadReadPosition {
+  messageId: string;
+  at: number;
+}
+
+/** GET /api/threads/<id>/read: the positions this viewer may see, keyed by
+ * participant id, and which participant is the viewer (null: nobody). */
+export interface ThreadReadsResponse {
+  reads: Record<string, ThreadReadPosition>;
+  self: string | null;
+}
+
 export type ServerFrame =
   | { kind: "sections"; sections: string[] }
   | { kind: "bot.queued"; queues: BotQueuedMessages }
   | { kind: "message"; threadId: string; message: WireMessage }
   | { kind: "message.patch"; threadId: string; message: WireMessage }
   | { kind: "thread"; threadId: string; activeLeafId: string }
+  /** A read position moved (server/read-receipts.ts): `participantId` is a
+   * person's principal id or `bot:<botId>`. `reset` alone (no participant)
+   * means someone's read receipt choice changed: fetch the positions again. */
+  | { kind: "thread.read"; threadId: string; participantId?: string; read?: ThreadReadPosition; reset?: true }
   | { kind: "bot"; bot: WireBot }
   | { kind: "group"; group: WireGroup }
   | { kind: "notify"; notification: Notification }

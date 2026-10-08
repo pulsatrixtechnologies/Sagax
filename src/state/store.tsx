@@ -2,6 +2,7 @@
 // it dispatches typed commands over HTTP and folds the one SSE event
 // stream from the harness server into local state. The reducer stays
 // pure; everything async lives in the wrapped dispatch + SSE fold.
+import { receiveThreadReadFrame } from "@/lib/read-receipts-feed";
 import { withPrimaryBot } from "@/lib/primary-bot";
 import {
   createContext,
@@ -978,6 +979,7 @@ export interface InstanceInfo {
 
 export type AppSettingsSection =
   | "general"
+  | "privacy"
   | "organization"
   | "appearance"
   | "experimental"
@@ -4363,6 +4365,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           break;
         case "person.label":
           applyPersonLabel(frame.principalId, frame.label);
+          break;
+        // a read position moved (src/lib/read-receipts-feed.ts)
+        case "thread.read":
+          receiveThreadReadFrame(frame);
           break;
         // a key changed and the fleet hot-reloaded — refresh the picker so
         // newly available providers un-dim immediately

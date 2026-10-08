@@ -39,7 +39,7 @@ describe("connectorPrincipalFor (whose connections a turn uses)", () => {
 
 describe("claudeAiConnectorsForTurn", () => {
   const turn = (patch: Partial<ClaudeAiTurnInput>): ClaudeAiTurnInput => ({
-    identity: "perspicax", enabled: true, restrictedByPolicy: false, driver: "claudeAgent",
+    identity: "perspicax", restrictedByPolicy: false, driver: "claudeAgent",
     speaker: { origin: "person", principalId: ADA }, ownerPrincipalId: ADA, localPrincipalId: LOCAL, ...patch,
   });
   it("organization: only on the speaker's own subscription", () => {
@@ -53,7 +53,6 @@ describe("claudeAiConnectorsForTurn", () => {
     expect(claudeAiConnectorsForTurn(turn({ identity: "solo", speaker: { origin: "person", principalId: BOB } }))).toBe(false);
   });
   it("never when turned off, restricted by policy, or on another engine", () => {
-    expect(claudeAiConnectorsForTurn(turn({ via: "subscription", enabled: false }))).toBe(false);
     expect(claudeAiConnectorsForTurn(turn({ via: "subscription", restrictedByPolicy: true }))).toBe(false);
     expect(claudeAiConnectorsForTurn(turn({ via: "subscription", driver: "codex" }))).toBe(false);
   });
@@ -116,12 +115,9 @@ function session(principalId: string, scopes: Array<"admin" | "client">): Reques
 }
 
 function harness(overrides: Partial<HarnessConnectorRouteDeps> = {}) {
-  let enabled = true;
   const accounts: string[] = [];
   const deps: HarnessConnectorRouteDeps = {
     organization: true,
-    enabled: () => enabled,
-    setEnabled: (next) => { enabled = next; },
     restrictedByPolicy: () => false,
     principalFor: (auth) => (auth.kind === "session" ? auth.session.principalId ?? "" : LOCAL),
     localPrincipalId: () => LOCAL,
@@ -146,7 +142,7 @@ function harness(overrides: Partial<HarnessConnectorRouteDeps> = {}) {
     const result = await route(ctx);
     return { ...out, passed: result === PASS };
   };
-  return { call, accounts, enabled: () => enabled };
+  return { call, accounts };
 }
 
 describe("GET /api/me/harness-connectors", () => {
@@ -178,20 +174,33 @@ describe("GET /api/me/harness-connectors", () => {
   });
 });
 
-describe("PUT /api/harness-connectors/settings", () => {
-  it("lets an admin turn them off for the server, and every person then sees why", async () => {
+describe("PUT /api/harness-connectors/settings (retired)", () => {
+  it("is a no-op: Claude connectors stay allowed whatever an admin sends", async () => {
     const h = harness();
     const member = await h.call({ method: "PUT", path: "/api/harness-connectors/settings", auth: session(BOB, ["admin", "client"]), body: { claudeAi: false } });
     expect(member.status).toBe(403);
-    expect(h.enabled()).toBe(true);
     const admin = await h.call({ method: "PUT", path: "/api/harness-connectors/settings", auth: session(ADA, ["admin", "client"]), body: { claudeAi: false } });
-    expect(admin).toMatchObject({ status: 200, body: { claudeAi: false } });
+    expect(admin).toMatchObject({ status: 200, body: { claudeAi: true } });
     const seen = await h.call({ method: "GET", path: "/api/me/harness-connectors", auth: session(BOB, ["client"]) });
-    expect(seen.body).toMatchObject({ enabled: false, claude: { available: false, reason: "disabled" } });
+    expect(seen.body).toMatchObject({ enabled: true });
+    expect(seen.body.claude.reason).not.toBe("disabled");
+    const ada = await h.call({ method: "GET", path: "/api/me/harness-connectors", auth: session(ADA, ["client"]) });
+    expect(ada.body.claude.available).toBe(true);
   });
   it("accepts only { claudeAi: boolean }", async () => {
     const h = harness();
     const bad = await h.call({ method: "PUT", path: "/api/harness-connectors/settings", auth: session(ADA, ["admin", "client"]), body: { claudeAi: "no", extra: 1 } });
     expect(bad.status).toBe(400);
+  });
+});
+
+describe("a stored claudeAi: false", () => {
+  it("is ignored: the config still loads and the turn keeps the connectors", async () => {
+    const { parseStoredConfig } = await import("./config.ts");
+    expect(() => parseStoredConfig({ harnessConnectors: { claudeAi: false } })).not.toThrow();
+    expect(claudeAiConnectorsForTurn({
+      identity: "perspicax", restrictedByPolicy: false, driver: "claudeAgent", via: "subscription",
+      speaker: { origin: "person", principalId: ADA }, ownerPrincipalId: ADA, localPrincipalId: LOCAL,
+    } as ClaudeAiTurnInput)).toBe(true);
   });
 });
