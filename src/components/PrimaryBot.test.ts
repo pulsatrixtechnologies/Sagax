@@ -63,7 +63,7 @@ const text = (element: ReactElement<Record<string, unknown>>): string =>
 function menuFor(bot: Bot, handlers = { onMakePrimary: vi.fn(), onReplacePrimary: vi.fn() }) {
   const html = renderToStaticMarkup(createElement(BotContextMenu, {
     menu: { botId: bot.id, x: 10, y: 10 }, onClose: vi.fn(), onArchive: vi.fn(), onDelete: vi.fn(),
-    onMoveToSection: vi.fn(), onNewFolder: vi.fn(), onRename: vi.fn(), ...handlers,
+    onMoveToSection: vi.fn(), onRename: vi.fn(), ...handlers,
   }));
   return { html, handlers, buttons: elements(fixture.portal).filter((element) => element.type === "button") };
 }

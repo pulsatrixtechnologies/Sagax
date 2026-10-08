@@ -49,10 +49,11 @@ afterEach(() => {
 });
 
 describe("BotListItem", () => {
-  it("offers direct New thread and New folder icons and a keyboard-accessible bot menu", () => {
+  it("has no New thread or New folder buttons, only a keyboard-accessible bot menu", () => {
     const markup = renderRow(bot());
-    expect(markup).toContain('aria-label="New thread"');
-    expect(markup).toContain('aria-label="New folder under Atlas"');
+    expect(markup).not.toContain('aria-label="New thread"');
+    expect(markup).not.toContain("New folder");
+    expect(markup).not.toContain("5.75rem");
     expect(markup).toContain('aria-label="Actions for Atlas"');
     expect(markup).toContain('aria-haspopup="menu"');
   });
@@ -303,6 +304,24 @@ describe("bot deletion feedback", () => {
       expect(renderRow(bot({ busy: true }), true)).toContain('class="sr-only">Working…');
       expect(renderRow(bot({ activity: "waiting-on-you" }), true)).toContain("Waiting for you…");
       expect(renderRow(bot({ waitingForTeammates: true, busy: false }), true)).toContain("Waiting on a teammate…");
+    });
+
+    it("renders no dot at all for an idle bot row", () => {
+      for (const quiet of [false, true]) {
+        const markup = renderRow(bot(), quiet);
+        expect(markup).not.toContain("rounded-full");
+        expect(markup).not.toContain("-dot");
+        expect(markup).not.toContain('aria-label="Unread threads"');
+      }
+    });
+
+    it("keeps a coloured dot for working, waiting and unread", () => {
+      expect(renderRow(bot({ busy: true }))).toContain('data-testid="working-dot"');
+      expect(renderRow(bot({ activity: "waiting-on-you" }))).toContain('data-testid="waiting-dot"');
+      const unread = renderRow(bot({ unread: true }));
+      expect(unread).toContain('aria-label="Unread threads"');
+      expect(unread).toContain("bg-unread");
+      expect(unread).not.toContain("bg-white");
     });
 
     it("keeps the unread dot in the name line when the preview line is gone", () => {

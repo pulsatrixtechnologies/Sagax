@@ -131,7 +131,7 @@ describe("bot-first sidebar", () => {
     if (density !== "icons") {
       expect(markup).toContain('aria-current="page"');
       expect(markup).toContain('aria-label="Unread threads"');
-      expect(markup).toContain('aria-label="New thread"');
+      expect(markup).not.toContain('aria-label="New thread"');
     }
   });
 
@@ -152,14 +152,16 @@ describe("bot-first sidebar", () => {
     expect(markup).toContain('aria-label="Atlas: Finished reply · Unread"');
   });
 
-  it("only hides thread/folder creation in the bot context menu", () => {
+  it("never offers thread or folder creation in the bot context menu", () => {
     const render = () => renderToStaticMarkup(createElement(BotContextMenu, {
-      menu: { botId: bot.id, x: 0, y: 0 }, onClose: vi.fn(), onArchive: vi.fn(), onDelete: vi.fn(), onMoveToSection: vi.fn(), onNewFolder: vi.fn(), onRename: vi.fn(),
+      menu: { botId: bot.id, x: 0, y: 0 }, onClose: vi.fn(), onArchive: vi.fn(), onDelete: vi.fn(), onMoveToSection: vi.fn(), onRename: vi.fn(),
     }));
     const enabled = render();
     expect(enabled).toContain("Move to");
     expect(enabled).toContain("Rename Bot");
     expect(enabled).toContain("Hide from sidebar");
+    expect(enabled).not.toContain("New thread");
+    expect(enabled).not.toContain("New folder");
     fixture.showThreads = false;
     const disabled = render();
     expect(disabled).toContain("Move to");

@@ -339,7 +339,7 @@ export function SidebarThreadRow({ task, ownerId, current, compact, folders, onS
         {updatedLabel && <time dateTime={new Date(updatedAt).toISOString()} className="shrink-0 tabular-nums text-[10px] text-sidebar-ink-secondary">{updatedLabel}</time>}
         {task.pinned === true && <Pin size={11} className="shrink-0 text-sidebar-ink-secondary" aria-label={t("sidebar.bot.pin")} />}
         {task.activity === "waiting-on-you" ? <span className="shrink-0 text-[10px] font-medium text-warning">{t("task.waiting")}</span> : isWaitingOnTeammate(task) ? <Clock3 size={11} className="shrink-0 text-sidebar-ink-secondary" aria-label={t("task.waitingOnTeammate")} /> : isWorking(task) ? <Loader2 size={11} className="shrink-0 animate-spin text-success" aria-label={activityLabel ?? t("chat.activity.working")} /> : task.queued ? <span className="shrink-0 text-[10px] text-sidebar-ink-secondary">{t("task.queued")}</span> : null}
-        {task.unread && <span className="size-1.5 shrink-0 rounded-full bg-accent" aria-label={t("task.unread")} />}
+        {task.unread && <span className="size-1.5 shrink-0 rounded-full bg-unread" aria-label={t("task.unread")} />}
       </button>}
       <button ref={actionRef} type="button" aria-label={t("task.actions", { title: task.title })} aria-expanded={Boolean(menu)}
         onClick={(event) => { if (menu) { setMenu(null); return; } const rect = event.currentTarget.getBoundingClientRect(); openMenu(rect.left, rect.bottom); }}
