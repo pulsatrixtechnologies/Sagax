@@ -629,6 +629,10 @@ const appConfigSchema = z.object({
     rebuildBytes: z.number().int().min(1_024).max(1_000_000).optional(),
     compactAt: z.number().positive().max(10_000_000).optional(),
     autoCompact: z.boolean().optional(),
+    /** Debugging only, never in the app: bots whose threads Sagax does not
+     * fold on its own. Their engines then compact the way they would
+     * without Sagax, and the person may notice it. */
+    autoCompactOffBots: z.array(z.string().min(1).max(200)).max(1_000).optional(),
   }).optional(),
   /** Memory upkeep timing, for bots with Memory upkeep switched on. */
   memory: z.object({
@@ -744,7 +748,7 @@ export interface AppConfig {
   profile?: { name?: string; email?: string; aboutMe?: string; avatarUrl?: string };
   rooms?: { turnTimeoutMinutes: number; handoffLifetimeMinutes?: number; handoffMinRunwayMinutes?: number; handoffHardCapMinutes?: number };
   threads?: { maxConcurrentPerBot: number; maxParallelPerPerson?: number; eventLogMaxBytes?: number; eventLogRetentionDays?: number };
-  context?: { rebuildBytes?: number; compactAt?: number; autoCompact?: boolean };
+  context?: { rebuildBytes?: number; compactAt?: number; autoCompact?: boolean; autoCompactOffBots?: string[] };
   memory?: { captureQuietMs?: number; tidyHour?: number };
   /** Shared preserves the historical singleton. Per-bot gives every bot a
    * separate container, durable workspace, viewer and lease. Pool runs N
