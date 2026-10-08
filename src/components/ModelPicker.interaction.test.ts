@@ -403,6 +403,30 @@ describe("local models in solo", () => {
   });
 });
 
+describe("the Grok list", () => {
+  // The server builds it from the engine's own answer (server/drivers/acp/grok.ts
+  // probeGrokModels), and opening the picker in solo re-reads it.
+  const grok: InstanceInfo = {
+    instanceId: "grok", driverKind: "grokAgent", displayName: "Grok", access: "subscription",
+    snapshot: { state: "available", version: "1.0.50", authenticated: true },
+    models: { default: "grok-4.7", options: [
+      { id: "grok-4.7", label: "Grok 4.7" }, { id: "grok-4.7-build-fast", label: "Grok 4.7 Fast" },
+      { id: "dwarfstar::qwen3.8-flash-next", label: "DwarfStar: Qwen3.8 Flash Next", custom: true, local: true },
+    ] },
+    capabilities: { withholdsHostTools: true },
+  };
+
+  it("shows what the engine offers, nothing it does not, and a local row Grok can run", () => {
+    fixture.instances = [grok];
+    const html = menu(open(bot("grok", "grok-4.7")).html);
+    expect(html).toContain(">Grok 4.7 Fast<");
+    expect(html).not.toContain("Grok 4.5");
+    expect(html).not.toContain("Grok 4.6");
+    expect(html).toContain("DwarfStar: Qwen3.8 Flash Next");
+    expect(html).not.toContain("data-model-unavailable");
+  });
+});
+
 describe("on an organization server", () => {
   const issuer = "https://px.example.test";
   const orgOf = (viewerRole: "admin" | "member") => ({

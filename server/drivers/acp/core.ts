@@ -738,6 +738,8 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
       // contract prompts the live session instead of paying the handshake
       // again. An idle session closes after SESSION_IDLE_MS of quiet.
       const sessions = new Map<string, AcpSession>();
+      // The last configureSession notice shown per thread (see notice below).
+      const threadNotices = new Map<string, string>();
       // Closing removes a session from the pool, not its native writer lease.
       // Retain every closing Qwen child until its process tree is gone, even
       // when Stop or a failed turn lets another turn start during cleanup.
@@ -2054,9 +2056,12 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
                     : [],
                   currentModelId: session.sessionConfigResult?.models?.currentModelId,
                   notice: (message) => {
-                    // once per live session, like the fallback notice above
-                    if (session.fallbackNotice === message) return;
+                    // once per conversation: a model switch opens a new
+                    // process (a new session record), so the live session
+                    // alone would repeat it on every turn
+                    if (session.fallbackNotice === message || threadNotices.get(threadId) === message) return;
                     session.fallbackNotice = message;
+                    threadNotices.set(threadId, message);
                     emit({ ...base(threadId, turnId), type: "runtime.notice", message });
                   },
                 });
