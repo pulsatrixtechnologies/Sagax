@@ -240,7 +240,7 @@ export function HelpTip({ label, children }: { label: string; children: React.Re
       >
         <CircleHelp size={13} aria-hidden="true" />
       </summary>
-      <div className="absolute left-0 z-30 mt-1 w-64 rounded-xl border border-hairline bg-panel p-3 text-[12px] leading-[17px] text-ink-secondary shadow-xl">
+      <div className="absolute left-0 z-30 mt-1 w-64 rounded-xl border border-hairline popover-surface bg-panel p-3 text-[12px] leading-[17px] text-ink-secondary shadow-xl">
         {children}
       </div>
     </details>

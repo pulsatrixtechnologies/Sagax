@@ -394,7 +394,7 @@ export function BotProfileAvatarCard({
             data-avatar-popover=""
             role="dialog"
             aria-label={t("botPanel.avatar.edit")}
-            className="fixed z-[1000] overflow-y-auto overscroll-contain rounded-2xl border border-hairline/50 bg-card p-3.5 shadow-2xl shadow-black/50"
+            className="fixed z-[1000] overflow-y-auto overscroll-contain rounded-2xl border border-hairline/50 popover-surface bg-card p-3.5 shadow-2xl shadow-black/50"
             style={{ left: place.left, top: place.top, width: place.width, maxHeight: place.maxHeight, visibility: place.ready ? "visible" : "hidden" }}
           >
             {body}
