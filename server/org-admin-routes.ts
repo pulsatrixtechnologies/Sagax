@@ -6,6 +6,8 @@
 //   GET  /api/org/admin/approvals                any role
 //   POST /api/org/admin/approvals/{t}/{r}        any role, { decision }
 //   GET  /api/org/admin/audit?from&to&limit&before  admin
+//   GET  /api/org/admin/files/{bot}/roots|list|stat|read|download
+//                                                manager, admin (org-admin-files.ts)
 //
 // Answered before the auth gate and before loopback trust: the only
 // credential is a console assertion Perspicax signs per request (typ
@@ -15,12 +17,16 @@
 //
 // Every answer is metadata: no message text, no instructions, no memory, no
 // routine prompt, no credential (decision T7: admins administer without
-// reading private Directs).
+// reading private Directs). The one exception is the files routes
+// (org-admin-files.ts, JC 2026-10-08: "access to all features of every bot,
+// view their files"): a bot's files, for managers in reach and admins, each
+// read and download written to the admin activity log.
 import type { IncomingMessage, ServerResponse } from "node:http";
 
 import { aggregateOrgUsage, ORG_USAGE_MAX_ROWS, parseOrgUsageRange, type OrgUsageAggregate, type UsageRow } from "./usage-ledger.ts";
 import type { ConsoleAssertion, OidcTeamClaim } from "./oidc-rp.ts";
 import type { IdentifiedAdminAction } from "./admin-activity.ts";
+import { ADMIN_FILES_ROUTE, answerBotFiles, type OrgAdminFilesDeps } from "./org-admin-files.ts";
 
 export const ORG_ADMIN_PREFIX = "/api/org/admin/";
 export const ORG_ADMIN_JTI_MAX = 10_000;
@@ -124,6 +130,9 @@ export interface OrgAdminRouteDeps {
   audit(input: { from?: number; to?: number; limit: number; before?: string | null }): { rows: IdentifiedAdminAction[]; next: string | null };
   /** The person rows of the audit actors (`nameOf`). */
   now?: () => number;
+  /** A bot's files (read only, org-admin-files.ts) and what a manager's
+   * reach is checked against for that bot; absent, every files path is 404. */
+  files?: OrgAdminFilesDeps & { reach(botId: string): AdminBotReach | null };
 }
 
 /** Seen assertion ids: each kept until its exp plus a minute, pruned on each
@@ -337,6 +346,39 @@ export function createOrgAdminRoutes(deps: OrgAdminRouteDeps): (req: IncomingMes
       teams: assertion.teams,
     };
     const sub = path.startsWith(ORG_ADMIN_PREFIX) ? path.slice(ORG_ADMIN_PREFIX.length) : "";
+    const filesMatch = ADMIN_FILES_ROUTE.exec(sub);
+    if (filesMatch) {
+      if (!deps.files) {
+        refuse(res, 404, "not_found", "No such admin route.");
+        return true;
+      }
+      if (method !== "GET") {
+        res.setHeader("allow", "GET");
+        refuse(res, 405, "method_not_allowed", "Use GET here.");
+        return true;
+      }
+      if (ROLE_RANK[viewer.role] < ROLE_RANK.manager) {
+        refuse(res, 403, "forbidden_role", "This needs the manager role in Perspicax.");
+        return true;
+      }
+      const botId = filesMatch[1]!;
+      const facts = deps.files.reach(botId);
+      const reach = managedReach(viewer, deps.teamPeople);
+      const managedTeams = new Set(viewer.teams.filter((team) => team.manager).map((team) => team.id));
+      // Out of a manager's reach reads as no such bot: the id says nothing.
+      if (!facts || !botInReach(reach, managedTeams, facts)) {
+        refuse(res, 404, "not_found", "No such bot.");
+        return true;
+      }
+      await answerBotFiles({
+        req, res, url, botId,
+        action: filesMatch[2] as "roots" | "list" | "stat" | "read" | "download",
+        principalId: viewer.principalId,
+        deps: deps.files,
+        send,
+      });
+      return true;
+    }
     const answerMatch = /^approvals\/([^/]+)\/([^/]+)$/.exec(sub);
     const route = sub === "bots" || sub === "usage" || sub === "audit" || sub === "approvals"
       ? { name: sub, method: "GET", min: sub === "audit" ? "admin" as const : sub === "approvals" ? "employee" as const : "manager" as const }
