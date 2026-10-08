@@ -194,6 +194,55 @@ export function sagaxMcpServerNames(integrations: {
   return [...new Set(names)];
 }
 
+/** Gemini CLI 0.62.0 built-ins that act on this machine, as `gemini --acp`
+ * offered them to the model, plus names of the same tools in other releases. */
+export const GEMINI_HOST_TOOLS: readonly string[] = [
+  "run_shell_command", "list_background_processes", "read_background_output",
+  "read_file", "read_many_files", "write_file", "replace", "edit",
+  "glob", "grep_search", "search_file_content", "list_directory",
+  "web_fetch", "google_web_search", "save_memory", "write_todos",
+  "invoke_agent", "codebase_investigator", "activate_skill",
+];
+
+/** Gemini admin policy for a withheld turn (`--admin-policy`, the top
+ * policy tier, above YOLO's allow-all and any user or workspace rule). A
+ * tool an unconditional deny matches is left out of the tools the model is
+ * offered (PolicyEngine.getExcludedTools, 0.62.0), not only refused when
+ * called. Priority 999 is the highest within the tier. */
+export function geminiOrgPolicy(): string {
+  return [
+    "# Sagax organization server: Gemini CLI gets no tool that acts on the",
+    "# Sagax server. Written by server/drivers/host-tools.ts.",
+    "[[rule]]",
+    `toolName = [${GEMINI_HOST_TOOLS.map((name) => JSON.stringify(name)).join(", ")}]`,
+    'decision = "deny"',
+    "priority = 999",
+    'denyMessage = "This tool is not available on an organization server."',
+    "",
+  ].join("\n");
+}
+
+/* No Gemini system settings file: 0.62.0 skips one whose folder is not
+ * owned by root ("Security Warning: Skipping system settings file"), and
+ * the Sagax server does not run as root. The admin policy, the empty
+ * workspace and the MCP allowlist below carry the guarantee. */
+
+/** `--admin-policy` holds the deny rules; `-e none` loads no extension (an
+ * extension can add tools, hooks or policies). `--skip-trust`: Gemini
+ * connects no MCP server in an untrusted folder (verified 0.62.0), and
+ * Sagax's own MCP servers are the only tools left; `--allowed-mcp-server-names`
+ * then keeps a server a workspace file might declare out, so only the
+ * servers Sagax passed this turn connect. */
+export function geminiHostToolArgs(withhold: boolean, mcpServerNames: readonly string[] = []): string[] {
+  if (!withhold) return [];
+  return [
+    "--admin-policy", writeEnginePolicy("gemini-org-policy.toml", geminiOrgPolicy()),
+    "--extensions", "none",
+    "--skip-trust",
+    "--allowed-mcp-server-names", ...(mcpServerNames.length ? mcpServerNames : ["sagax-none"]),
+  ];
+}
+
 /** Droid 0.230.0 built-ins that act on this machine or run an agent, a
  * schedule or a remote action of Factory's (`droid exec --list-tools`, and
  * what `droid exec -o acp` offered the model). */
@@ -213,5 +262,6 @@ export const DROID_HOST_TOOLS: readonly string[] = [
 /** Host tool names per ACP engine, as each real CLI offered them to the
  * model (scripts/verify-org-host-tools.ts). */
 export const HOST_TOOL_NAMES_BY_ENGINE: Readonly<Record<string, readonly string[]>> = {
+  gemini: GEMINI_HOST_TOOLS,
   droid: DROID_HOST_TOOLS,
 };

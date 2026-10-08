@@ -22,14 +22,15 @@
 // but never hard-fail the turn on it, unlike Grok's subscription-bound
 // cached_token.
 //
-// NOTE: untested against a live `gemini` CLI on this machine (not installed);
-// the ACP flag + auth method ids follow the published Gemini CLI ACP contract
-// and should be re-verified end-to-end once the CLI is present.
+// The ACP flag + auth method ids follow the published Gemini CLI ACP
+// contract. The organization-server profile (withheld tools) was verified
+// end to end against the real 0.62.0 CLI with scripts/verify-org-host-tools.ts.
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import type { TurnAccessInput } from "../../contracts.ts";
 import { userHome } from "../../env-path.ts";
+import { geminiHostToolArgs, sagaxMcpServerNames, withheldWorkspace } from "../host-tools.ts";
 import { createAcpDriver, type AcpSupport } from "./core.ts";
 
 // Prefer an explicit key method, then personal OAuth, then Vertex — but fall
@@ -115,7 +116,15 @@ const support: AcpSupport = {
 
   // --acp is the stable Gemini CLI surface. --experimental-acp remains an
   // alias for older releases, but using it now emits a deprecation warning.
-  spawnArgs: (config, turn) => ["--acp", ...geminiApprovalArgs(config.fullAuto, turn.approvalMode), ...(turn.model ? ["-m", turn.model] : [])],
+  spawnArgs: (config, turn) => [
+    "--acp", ...geminiApprovalArgs(config.fullAuto, turn.approvalMode), ...(turn.model ? ["-m", turn.model] : []),
+    ...geminiHostToolArgs(turn.withholdHostTools === true, sagaxMcpServerNames(turn.integrations)),
+  ],
+  // Organization server: no shell, file, web, subagent or skill tool of
+  // Gemini's own (server/drivers/host-tools.ts; verified on 0.62.0 with
+  // scripts/verify-org-host-tools.ts).
+  withholdsHostTools: true,
+  withheldWorkspace,
   credentialEnv: ["GEMINI_API_KEY", "GOOGLE_API_KEY"],
   applyAccess: (env, access) => geminiApplyAccess(env, access),
 

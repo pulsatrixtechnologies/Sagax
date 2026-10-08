@@ -1,10 +1,92 @@
-// Organization server: the ACP rules every withheld turn shares (each
-// engine's own profile is pinned beside it as it is admitted).
-import { describe, expect, it } from "vitest";
+// Organization server, per engine: a withheld turn (withholdHostTools) starts
+// the CLI with the tool profile that leaves it no shell, file or web tool of
+// its own on the Sagax server, in an empty folder Sagax owns, and a request
+// to run a command there is declined before any card or Full-access
+// auto-accept. The real CLIs are checked by scripts/verify-org-host-tools.ts
+// (AGENTS.md "Engines on an organization server"); this pins the driver side
+// against the scripted ACP peer.
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { afterEach, describe, expect, it } from "vitest";
 
-import { acpHostToolRequest, sagaxMcpServerNames } from "../host-tools.ts";
+import { ensureDirs } from "../../config.ts";
+import type { ProviderDriver, ProviderInstance } from "../../contracts.ts";
+import { removeTempDir } from "../../testing/cleanup.ts";
+import { recordEvents } from "../../testing/events.ts";
+import { acpHostToolRequest, GEMINI_HOST_TOOLS, sagaxMcpServerNames, withheldWorkspace } from "../host-tools.ts";
+import type { AcpConfig } from "./core.ts";
+import { GeminiAgentDriver } from "./gemini.ts";
+
+const FAKE_CLI = join(dirname(fileURLToPath(import.meta.url)), "../../testing/fake-acp-cli.ts");
+const directories: string[] = [];
+const instances: ProviderInstance[] = [];
+afterEach(async () => {
+  for (const instance of instances.splice(0)) await instance.dispose();
+  for (const directory of directories.splice(0)) await removeTempDir(directory);
+});
+
+async function fixture(driver: ProviderDriver<AcpConfig>, environment: Record<string, string> = {}) {
+  ensureDirs();
+  const home = mkdtempSync(join(tmpdir(), "omb-org-host-tools-")); directories.push(home);
+  const dump = join(home, "spawn.json"), answer = join(home, "permission.txt");
+  const instance = await driver.create({
+    instanceId: `org-${driver.driverKind}`, displayName: "Org fixture", enabled: true,
+    config: { cli: FAKE_CLI, fullAuto: true },
+    environment: {
+      HOME: home, USERPROFILE: home, SAGAX_PROBE_LOCAL_INJECT: "0",
+      FAKE_ACP_DUMP: dump, FAKE_ACP_PERMISSION_ANSWER: answer, OPENCODE_API_KEY: "fixture-only", ...environment,
+    },
+  });
+  instances.push(instance);
+  return { instance, home, dump, answer, recorder: recordEvents(instance.adapter) };
+}
+
+/** One turn; returns what the CLI was started with. */
+async function turn(f: Awaited<ReturnType<typeof fixture>>, withholdHostTools: boolean, extra: Record<string, unknown> = {}) {
+  const work = join(f.home, "work"); mkdirSync(work, { recursive: true });
+  const { turnId } = await f.instance.adapter.sendTurn({
+    threadId: `org-${withholdHostTools}`, cwd: work, text: "Fixture", approvalMode: "full",
+    ...(withholdHostTools ? { withholdHostTools: true } : {}), ...extra,
+  });
+  await f.recorder.until((event) => event.type === "turn.completed" && event.turnId === turnId);
+  return { ...JSON.parse(readFileSync(f.dump, "utf8")) as { argv: string[]; env: Record<string, string>; cwd: string }, work, turnId };
+}
+
+const real = (path: string) => realpathSync(path);
 
 describe("organization server: each admitted ACP engine withholds its own tools", () => {
+  it("Gemini CLI: an admin policy denying every host tool, no extension, only Sagax's MCP servers, an empty folder", async () => {
+    const f = await fixture(GeminiAgentDriver);
+    const solo = await turn(f, false);
+    expect(solo.argv).not.toContain("--admin-policy");
+    expect(real(solo.cwd)).toBe(real(solo.work));
+    const org = await turn(f, true, { integrations: { custom: { notes: { command: "node", args: ["notes"], env: {} } } } });
+    const policyPath = org.argv[org.argv.indexOf("--admin-policy") + 1]!;
+    const policy = readFileSync(policyPath, "utf8");
+    for (const tool of GEMINI_HOST_TOOLS) expect(policy).toContain(JSON.stringify(tool));
+    expect(policy).toMatch(/decision = "deny"\npriority = 999/);
+    expect(org.argv.slice(org.argv.indexOf("--extensions"), org.argv.indexOf("--extensions") + 2)).toEqual(["--extensions", "none"]);
+    expect(org.argv.slice(org.argv.indexOf("--allowed-mcp-server-names"))).toEqual(["--allowed-mcp-server-names", "notes"]);
+    expect(org.argv).toContain("--skip-trust");
+    expect(real(org.cwd)).toBe(real(withheldWorkspace()));
+  });
+
+  it.each([
+    ["Gemini CLI", GeminiAgentDriver],
+  ] as const)("%s: a request to run a command on the server is declined, even in Full access", async (_name, driver) => {
+    const f = await fixture(driver, { FAKE_ACP_MODE: "permission" });
+    // no approvalMode with fullAuto: the path that accepts every request
+    const org = await turn(f, true, { approvalMode: undefined });
+    expect(readFileSync(f.answer, "utf8")).toBe("reject");
+    expect(f.recorder.events.some((event) => event.type === "request.opened" && event.turnId === org.turnId)).toBe(false);
+    // the same request on a solo turn in Full access is accepted, so the
+    // refusal above is the organization rule and not the fixture
+    await turn(f, false, { approvalMode: undefined });
+    expect(readFileSync(f.answer, "utf8")).toBe("allow-once");
+  });
+
   it("lets a call to one of Sagax's MCP tools through and declines commands, edits, moves and deletes", () => {
     expect(acpHostToolRequest({ kind: "execute", title: "echo hi" })).toBe(true);
     expect(acpHostToolRequest({ kind: "edit", title: "write notes.txt" })).toBe(true);
