@@ -1,6 +1,6 @@
 // First: SAGAX_* settings onto the names the code reads (legacy-names.mjs).
 import "./legacy-env-boot.mjs";
-import { app, autoUpdater as nativeAutoUpdater, BrowserWindow, Tray, WebContentsView, clipboard, desktopCapturer, dialog, ipcMain, Menu, nativeImage, net, powerMonitor, powerSaveBlocker, safeStorage, screen, session, shell, systemPreferences, utilityProcess } from "electron";
+import { app, autoUpdater as nativeAutoUpdater, BrowserWindow, Tray, WebContentsView, clipboard, desktopCapturer, dialog, globalShortcut, ipcMain, Menu, nativeImage, net, powerMonitor, powerSaveBlocker, safeStorage, screen, session, shell, systemPreferences, utilityProcess } from "electron";
 import { createRequire } from "node:module";
 import { randomBytes, randomUUID } from "node:crypto";
 import fs from "node:fs";
@@ -73,6 +73,7 @@ import {
 import { isKnownSkin, skinChrome } from "./skin-overlay.cjs";
 import { createRetroAssistantWindow, DETACHED_QUERY } from "./retro-assistant-window.mjs";
 import { createFloatingBotWindows, FLOATING_QUERY, waitForPage as waitForFloatingPage } from "./floating-bot-window.mjs";
+import { createMascotHotkey, createModifierProbe } from "./mascot-hotkey.mjs";
 import { readSecureCredentials } from "./secure-credentials.mjs";
 import { createControlPlaneClient } from "./control-plane-client.mjs";
 import {
@@ -2798,10 +2799,12 @@ function createWindow({ deferNavigation = false } = {}) {
     // the detached Hibou 98 assistant is driven by this window's page
     retroAssistantWindow.mainWindowGone();
     floatingBotWindows.mainWindowGone();
+    mascotHotkey.disable();
   });
   win.webContents.on("render-process-gone", () => {
     retroAssistantWindow.mainWindowGone();
     floatingBotWindows.mainWindowGone();
+    mascotHotkey.disable();
   });
 
   win.webContents.setWindowOpenHandler(({ url }) => {
@@ -3239,6 +3242,24 @@ const floatingBotWindows = createFloatingBotWindows({
     // in development the floating windows' troubles show in the terminal too
     if (!app.isPackaged) console.log(`[floating-bots] ${line}`);
   },
+});
+
+// The desktop mascot's call hotkey (Control+Option+Space by default): the
+// brain (the main page) asks for it while the setting is on and a mascot is
+// shown; a press goes back to it. Let go when every mascot is hidden, when
+// the main page goes and when the app quits. See electron/mascot-hotkey.mjs.
+const mascotHotkey = createMascotHotkey({
+  globalShortcut,
+  probe: createModifierProbe(),
+  notify: (kind) => {
+    const win = mainWindow && !mainWindow.isDestroyed() ? mainWindow : null;
+    win?.webContents.send("floating-bots:hotkey", { kind });
+  },
+  log: (line) => slog(line),
+});
+ipcMain.handle("floating-bots:hotkey", (event, config) => {
+  if (!isDesktopUiSender(event)) return null;
+  return mascotHotkey.configure(config);
 });
 
 // Caption controls for the overlay-less frameless window. The renderer's
@@ -4172,6 +4193,7 @@ app.on("before-quit", (e) => {
   desktopShutdownStarted = true;
   retroAssistantWindow.close();
   floatingBotWindows.closeAll();
+  mascotHotkey.dispose();
   startupScreen?.dispose();
   companyBackupSchedule?.close();
   orgLibrary?.close();
@@ -4232,4 +4254,6 @@ function releaseDesktopDataDirLease() {
 // process hook covers app.exit()/fatal exits that bypass it.
 app.on("will-quit", releaseDesktopDataDirLease);
 app.on("will-quit", () => desktopTray?.destroy());
+// the global key goes with the app, whatever path the quit took
+app.on("will-quit", () => mascotHotkey.dispose());
 process.once("exit", releaseDesktopDataDirLease);

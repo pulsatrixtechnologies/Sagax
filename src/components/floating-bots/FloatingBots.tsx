@@ -56,7 +56,9 @@ import { notifyCallSettings, readCallSettings, useCallSettings, writeCallSetting
 import { liveCallNow, useLiveCall } from "@/lib/voice-mode/live-call-store";
 import { readVoiceModeSettings, useVoiceModeSettings, writeVoiceModeSettings } from "@/lib/voice-mode/settings";
 import { forgetVoiceprint } from "@/lib/voice-mode/speaker-id";
-import { callLevels, mascotCallSnapshot, NO_PANEL, runMascotCallEvent, type MascotCallDeps, type MascotCallPanel } from "./mascot-call";
+import { callLevels, callPose, mascotCallSnapshot, NO_PANEL, runMascotCallEvent, type MascotCallDeps, type MascotCallPanel } from "./mascot-call";
+import { hotkeyAction, hotkeyBot, hotkeyConfig, type HotkeyKind } from "./hotkey";
+import { buildTray, type TrayApproval, type TrayTarget } from "./tray";
 import { characterMoves } from "./moves";
 import { COMPOSER_ATTACH_EVENT } from "@/components/Composer";
 import { COMPOSER_MODEL_EVENT, composerModelLabel } from "@/components/ModelPicker";
@@ -516,7 +518,54 @@ export function FloatingBots() {
       default:
         break;
     }
-  }, [bridge, callDeps, cheer, dispatch, patch, send, switchMascot]);
+  }, [bridge, callDeps, cheer, dispatch, patch, send, switchMascot, trayFor]);
+
+  /* ------------------------------------------------- the call hotkey */
+
+  // Main owns the key (electron/mascot-hotkey.mjs): on while the setting is and a mascot is shown,
+  // reading holds only when they mean push to talk on this mascot's call
+  const shownIds = floated.map(({ bot }) => bot.id);
+  const shownRef = useRef(shownIds);
+  shownRef.current = shownIds;
+  // a key nobody can use is not taken from other apps: only while voice mode serves that mascot's bot
+  const keyBot = hotkeyBot(shownIds, onCall);
+  const hotkeyWish = hotkeyConfig({ enabled: prefs.hotkey, accelerator: prefs.hotkeyKeys, botId: keyBot && callable[keyBot] === true ? keyBot : null, callBot: onCall, push: callSettings.input === "push" });
+  const hotkeyKey = `${hotkeyWish.enabled}:${hotkeyWish.accelerator}:${hotkeyWish.hold}`;
+  useEffect(() => {
+    if (!bridge?.hotkey) return;
+    void bridge.hotkey(hotkeyWish).catch(() => undefined);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bridge, hotkeyKey]);
+  useEffect(() => () => void bridge?.hotkey?.({ enabled: false, accelerator: prefs.hotkeyKeys, hold: false }).catch(() => undefined), [bridge]);
+  const talking = useRef<string | null>(null);
+  useEffect(() => {
+    if (!bridge?.onHotkey) return;
+    return bridge.onHotkey((value) => {
+      const kind = value?.kind as HotkeyKind | undefined;
+      if (kind !== "tap" && kind !== "hold" && kind !== "release") return;
+      const callBot = currentCall();
+      const botId = hotkeyBot(shownRef.current, callBot);
+      const liveNow = liveCallNow();
+      const action = hotkeyAction(kind, {
+        enabled: floatingBotPrefs().hotkey,
+        botId,
+        canCall: botId ? callableRef.current[botId] === true : false,
+        callBot,
+        muted: Boolean(liveNow && liveNow.botId === callBot && liveNow.state.muted),
+        push: readCallSettings().input === "push",
+        talking: talking.current !== null,
+      });
+      if (action === "release") {
+        const bot = talking.current;
+        talking.current = null;
+        if (bot) runMascotCallEvent(bot, "release", {}, callDeps(bot));
+        return;
+      }
+      if (action === "none" || !botId) return;
+      if (action === "talk") talking.current = botId;
+      runMascotCallEvent(botId, action, {}, callDeps(botId));
+    });
+  }, [bridge, callDeps]);
 
   /* ------------------------------------------------------------ desktop */
 

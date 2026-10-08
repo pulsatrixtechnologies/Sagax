@@ -15,6 +15,10 @@ import {
   MAX_FLOATING_BOTS,
   nextLiveliness,
   readFloatingBotPrefs,
+  setFloatingHotkey,
+  hotkeyLabel,
+  HOTKEY_CHOICES,
+  DEFAULT_HOTKEY,
   readFloatingBots,
   resetFloatingBotsForTests,
   setFloatingFlyAway,
@@ -144,35 +148,53 @@ describe("floating bots: the per-device list", () => {
 describe("floating bots: the fly-away setting", () => {
   it("is on by default and survives a reload once switched off", () => {
     const storage = memoryStorage();
-    expect(readFloatingBotPrefs(storage)).toEqual({ flyAway: true, liveliness: "normal" });
+    expect(readFloatingBotPrefs(storage)).toEqual({ flyAway: true, liveliness: "normal", hotkey: true, hotkeyKeys: "Control+Alt+Space" });
     let changes = 0;
     subscribeFloatingBots(() => (changes += 1));
     setFloatingFlyAway(false, storage);
     setFloatingFlyAway(false, storage);
     expect(floatingBotPrefs().flyAway).toBe(false);
     expect(changes).toBe(1);
-    expect(readFloatingBotPrefs(storage)).toEqual({ flyAway: false, liveliness: "normal" });
+    expect(readFloatingBotPrefs(storage)).toEqual({ flyAway: false, liveliness: "normal", hotkey: true, hotkeyKeys: "Control+Alt+Space" });
     setFloatingFlyAway(true, storage);
-    expect(readFloatingBotPrefs(storage)).toEqual({ flyAway: true, liveliness: "normal" });
+    expect(readFloatingBotPrefs(storage)).toEqual({ flyAway: true, liveliness: "normal", hotkey: true, hotkeyKeys: "Control+Alt+Space" });
   });
 
   it("reads a broken or missing record as the default", () => {
     const storage = memoryStorage();
     storage.setItem("omb.floatingBots.prefs.v1", "{nope");
-    expect(readFloatingBotPrefs(storage)).toEqual({ flyAway: true, liveliness: "normal" });
+    expect(readFloatingBotPrefs(storage)).toEqual({ flyAway: true, liveliness: "normal", hotkey: true, hotkeyKeys: "Control+Alt+Space" });
     storage.setItem("omb.floatingBots.prefs.v1", JSON.stringify({ flyAway: "no" }));
-    expect(readFloatingBotPrefs(storage)).toEqual({ flyAway: true, liveliness: "normal" });
-    expect(readFloatingBotPrefs(undefined)).toEqual({ flyAway: true, liveliness: "normal" });
+    expect(readFloatingBotPrefs(storage)).toEqual({ flyAway: true, liveliness: "normal", hotkey: true, hotkeyKeys: "Control+Alt+Space" });
+    expect(readFloatingBotPrefs(undefined)).toEqual({ flyAway: true, liveliness: "normal", hotkey: true, hotkeyKeys: "Control+Alt+Space" });
   });
 
   it("keeps an activity level, cycled by the menu, and ignores an unknown one", () => {
     const storage = memoryStorage();
     setFloatingLiveliness("lively", storage);
-    expect(readFloatingBotPrefs(storage)).toEqual({ flyAway: true, liveliness: "lively" });
+    expect(readFloatingBotPrefs(storage)).toEqual({ flyAway: true, liveliness: "lively", hotkey: true, hotkeyKeys: "Control+Alt+Space" });
     setFloatingLiveliness("wild" as never, storage);
     expect(readFloatingBotPrefs(storage).liveliness).toBe("lively");
     expect(nextLiveliness("calm")).toBe("normal");
     expect(nextLiveliness("lively")).toBe("calm");
+  });
+
+  it("keeps the call hotkey on by default, its keys among the choices", () => {
+    const storage = memoryStorage();
+    setFloatingHotkey({ on: false }, storage);
+    expect(readFloatingBotPrefs(storage)).toMatchObject({ hotkey: false, hotkeyKeys: "Control+Alt+Space" });
+    setFloatingHotkey({ on: true, keys: "Alt+Shift+Space" }, storage);
+    expect(readFloatingBotPrefs(storage)).toMatchObject({ hotkey: true, hotkeyKeys: "Alt+Shift+Space" });
+    setFloatingHotkey({ keys: "Command+Q" as never }, storage);
+    expect(readFloatingBotPrefs(storage).hotkeyKeys).toBe("Alt+Shift+Space");
+    storage.setItem("omb.floatingBots.prefs.v1", JSON.stringify({ hotkeyKeys: "F1" }));
+    expect(readFloatingBotPrefs(storage)).toMatchObject({ hotkey: true, hotkeyKeys: "Control+Alt+Space" });
+    expect(HOTKEY_CHOICES).toContain(DEFAULT_HOTKEY);
+  });
+
+  it("names the hotkey as each system does", () => {
+    expect(hotkeyLabel("Control+Alt+Space", true)).toBe("Control+Option+Space");
+    expect(hotkeyLabel("Control+Alt+Space", false)).toBe("Ctrl+Alt+Space");
   });
 
   it("keeps three.js out of every chunk but the floating mascot's", () => {
