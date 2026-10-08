@@ -6,6 +6,7 @@ import type { Routine, RoutineRun, RoutineRunOn } from "@/lib/routines";
 import { t } from "@/lib/i18n";
 import { RoutineEditor } from "../RoutinesPage";
 import { RoutineList } from "../routines/RoutineList";
+import { RunNowButton } from "../routines/RunNowButton";
 
 export function RoutinesSection({ bot, routines, runs, defaultRunOn, grouped = false }: { bot: Bot; routines: Routine[]; runs: RoutineRun[]; defaultRunOn?: RoutineRunOn; grouped?: boolean }) {
   const { state, dispatch } = useStore();
@@ -26,6 +27,7 @@ export function RoutinesSection({ bot, routines, runs, defaultRunOn, grouped = f
         <p className="mt-2 whitespace-pre-wrap text-[13px] leading-relaxed text-ink">{detail.prompt}</p>
       </div>
       <div className="flex items-center gap-2 border-t border-hairline/40 px-3 py-3">
+        <RunNowButton routine={detail} bot={bot} className="flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-hairline/50 bg-panel py-2.5 text-[13px] font-medium text-ink hover:bg-raised disabled:opacity-50" />
         <button type="button" onClick={() => toggle(detail)} className="flex-1 rounded-lg border border-hairline/50 bg-panel py-2.5 text-[13px] font-medium text-ink hover:bg-raised">{detail.enabled ? t("botPanel.routines.pause") : t("botPanel.routines.resume")}</button>
         <button type="button" onClick={() => setEditing(detail)} className="flex-1 rounded-lg border border-hairline/50 bg-panel py-2.5 text-[13px] font-medium text-ink hover:bg-raised">{t("botPanel.routines.edit")}</button>
         <button type="button" aria-label={t("common.delete")} onClick={() => { dispatch({ type: "deleteRoutine", routineId: detail.id }); setDetailId(null); }} className="flex size-10 items-center justify-center rounded-lg border border-hairline/50 text-ink-secondary hover:bg-raised hover:text-danger"><Trash2 size={16} /></button>

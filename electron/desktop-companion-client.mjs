@@ -37,6 +37,7 @@ const MIME = {
   ".ico": "image/x-icon",
   ".json": "application/json",
   ".woff2": "font/woff2",
+  ".mp3": "audio/mpeg",
 };
 
 const cleanLabel = (value, fallback) => {

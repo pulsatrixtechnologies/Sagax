@@ -84,7 +84,7 @@ export function DescriptionInfo({
             event.nativeEvent.stopImmediatePropagation?.();
             close();
           }}
-          className="absolute left-1/2 top-full z-30 mt-2 w-[min(280px,calc(100vw-32px))] -translate-x-1/2 rounded-xl border border-hairline-weak bg-elevated p-3 text-left shadow-xl"
+          className="absolute left-1/2 top-full z-30 mt-2 w-[min(280px,calc(100vw-32px))] -translate-x-1/2 rounded-xl border border-hairline-weak popover-surface bg-elevated p-3 text-left shadow-xl"
         >
           <div className="mb-1.5 text-[11.5px] font-medium uppercase tracking-wide text-ink-secondary">{label}</div>
           {editing ? (

@@ -35,6 +35,7 @@ import {
   Search,
   Target,
   Trash2,
+  UserRound,
   UserRoundPlus,
   UsersRound,
   Video,
@@ -49,6 +50,8 @@ import { CalendarSidebar } from "@/components/routines/CalendarSidebar";
 import { RoutineList } from "@/components/routines/RoutineList";
 import { RoutineLogs } from "@/components/routines/RoutineLogs";
 import { ResultsDestination } from "@/components/routines/ResultsDestination";
+import { RunAsField, useRunAsOptions } from "@/components/routines/RunAsField";
+import { canRunRoutineNow, routineRunInFlight } from "@/components/routines/RunNowButton";
 import { CronScheduleFields, CronSchedulePreview } from "@/components/routines/CronScheduleFields";
 import { cronChoiceFor, cronDraftFor, cronEditorValue, isCronChoice, type CronChoice } from "@/components/routines/cron-editor";
 import { routineRunLabel } from "@/lib/routine-display";
@@ -100,7 +103,6 @@ import {
 } from "@/lib/routines";
 import { api, openNotificationTarget, useStore, type Bot, type Group } from "@/state/store";
 import { viewerCanCreateBots } from "@/lib/viewer";
-import { ensureRoutineDelegation } from "@/lib/routine-delegation";
 
 const HOUR_HEIGHT = 64;
 const DAY_CHIP_LABELS = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
@@ -399,6 +401,18 @@ function EventEditor({
   const [attachments, setAttachments] = useState<Array<RoutineContextAttachment | CalendarCallAttachment>>(
     existingRoutine?.target === "room-goal" ? [] : existingRoutine?.attachments ?? existingCall?.attachments ?? [],
   );
+  // Organization server: who the routine runs as (routines/RunAsField.tsx).
+  const runAsOptions = useRunAsOptions({
+    botId: kind === "routine" || routinesOnly ? lockedBotId ?? botIds[0] : undefined,
+    ...(existingRoutine ? { routineId: existingRoutine.id } : {}),
+    target: routineTarget,
+    ...(routineTarget === "room-goal" && groupId ? { groupId } : {}),
+  });
+  const [runAs, setRunAs] = useState<string | undefined>(undefined);
+  useEffect(() => {
+    // A person who cannot run the newly chosen bot is no longer the choice.
+    if (runAs && runAsOptions && !runAsOptions.people.some((person) => person.principalId === runAs && person.selectable)) setRunAs(undefined);
+  }, [runAs, runAsOptions]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [attachmentNotice, setAttachmentNotice] = useState("");
@@ -529,7 +543,8 @@ function EventEditor({
           endsAt: intervalEndsAt,
         });
         if (!nextSchedule) throw new Error(cron?.error || "Choose a valid schedule.");
-        const input: RoutineInput = {
+        // `runAs` (organization server): the person chosen in the modal.
+        const input: RoutineInput & { runAs?: string } = {
           name,
           prompt: description,
           target: routineTarget,
@@ -543,15 +558,14 @@ function EventEditor({
           overlap,
           attachments: routineTarget === "room-goal" ? [] : attachments as RoutineContextAttachment[],
           ...(routineTarget === "bot" ? { resultsThreadId } : {}),
+          // Sent only when the person was changed in the dropdown.
+          ...(runAs && runAs !== runAsOptions?.current?.principalId ? { runAs } : {}),
         };
         const response = await editorRequest(existingRoutine ? `/api/routines/${existingRoutine.id}` : "/api/routines", {
           method: existingRoutine ? "PATCH" : "POST",
           body: JSON.stringify(input),
         });
         dispatch({ type: "routinePatched", routine: response.routine });
-        // Organization server: the first routine asks Perspicax once to let
-        // routines act in the person's name (allowed by default).
-        if (!existingRoutine) void ensureRoutineDelegation();
       } else {
         if (recurrence === "interval" || isCronChoice(recurrence)) throw new Error("Choose a supported call schedule.");
         const nextSchedule = makeCalendarSchedule(recurrence, at, weekdays);
@@ -902,6 +916,9 @@ function EventEditor({
           {kind === "routine" && !isRoomGoal && <div className="ml-8">
             <ResultsDestination bot={bots.find((bot) => bot.id === botIds[0])} value={resultsThreadId} allowCurrent={Boolean(existingRoutine)} onChange={setResultsThreadId} />
           </div>}
+          {kind === "routine" && runAsOptions && (runAsOptions.canChoose || runAsOptions.current) && <div className="ml-8">
+            <RunAsField options={runAsOptions} value={runAs} onChange={setRunAs} />
+          </div>}
           <div className="flex items-start gap-4">
             <FileText size={18} className="mt-2.5 shrink-0 text-ink-secondary" />
             <textarea value={description} onChange={(event) => setDescription(event.target.value)} rows={5} placeholder={isRoomGoal ? "What should the team accomplish?" : kind === "routine" ? "Add instructions for the bot" : "Add description or agenda"} className="min-w-0 flex-1 resize-y rounded-lg border border-border bg-ink/[0.03] px-2.5 py-1.5 text-[13px] leading-[18px] text-ink outline-none placeholder:text-ink-secondary focus:border-border-strong" />
@@ -1038,7 +1055,6 @@ function QuickComposer({
           } satisfies RoutineInput),
         });
         onSavedRoutine(response.routine);
-        void ensureRoutineDelegation();
       } else {
         const response = await api("/api/calendar-calls", {
           method: "POST",
@@ -1062,7 +1078,7 @@ function QuickComposer({
 
   const valid = Boolean(name.trim() && botIds.length && (kind === "call" || description.trim()));
   return (
-    <div ref={dialogRef} role="dialog" aria-label="Quick create" style={dialogPosition ?? undefined} className={cn("fixed z-50 max-h-[calc(100vh-24px)] w-[min(430px,calc(100vw-24px))] overflow-y-auto rounded-[14px] border border-border bg-elevated", !dialogPosition && "left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2")}>
+    <div ref={dialogRef} role="dialog" aria-label="Quick create" style={dialogPosition ?? undefined} className={cn("fixed z-50 max-h-[calc(100vh-24px)] w-[min(430px,calc(100vw-24px))] overflow-y-auto rounded-[14px] border border-border popover-surface bg-elevated", !dialogPosition && "left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2")}>
       <div className="flex items-center justify-between bg-raised/70 px-4 py-2.5">
         <div className="text-[12px] font-medium text-ink-secondary">New calendar event</div>
         <button onClick={onClose} className="rounded-full p-1.5 text-ink-secondary hover:bg-inset hover:text-ink" aria-label="Close"><X size={16} /></button>
@@ -1375,6 +1391,11 @@ export function EventDetails({
   const attachments = call?.attachments ?? run?.attachments ?? routine?.attachments ?? [];
   const roomId = call?.botIds.length === 1 ? primary?.id : undefined;
   const safetyLimit = run ? run.timeoutMinutes : routine?.timeoutMinutes;
+  // Two columns on a wide window when there are instructions to read.
+  const wide = Boolean(description);
+  const descriptionBlock = description
+    ? <div className="flex items-start gap-3"><FileText size={17} className="mt-1 shrink-0 text-ink-secondary" /><div data-event-details-prose className="min-w-0 max-w-[68ch] whitespace-pre-wrap break-words text-[13px] leading-relaxed text-ink">{description}</div></div>
+    : null;
 
   const openRunTask = () => {
     if (!executionThreadId) return;
@@ -1402,8 +1423,9 @@ export function EventDetails({
     }
   };
 
+  const routineInFlight = Boolean(routine && routineRunInFlight(state.routineRuns, routine.id));
   const runRoutineNow = () => {
-    if (!routine || working || runNowPending.current) return;
+    if (!routine || working || routineInFlight || runNowPending.current) return;
     runNowPending.current = true;
     setStarting(true);
     setSubmittedRun(null);
@@ -1454,21 +1476,27 @@ export function EventDetails({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-3" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
-      <div ref={dialogRef} role="dialog" aria-modal="true" aria-label="Calendar event details" tabIndex={-1} className="w-full max-w-[520px] overflow-hidden rounded-[14px] border border-border bg-elevated">
-        <div className="flex items-start gap-4 border-b border-hairline/40 px-5 py-4">
+      <div ref={dialogRef} role="dialog" aria-modal="true" aria-label="Calendar event details" tabIndex={-1} data-event-details={wide ? "two-column" : "single"} className={cn("flex max-h-[calc(100dvh-24px)] w-full flex-col overflow-hidden rounded-[14px] border border-border bg-elevated", wide ? "max-w-[520px] min-[720px]:w-[min(92vw,960px)] min-[720px]:max-w-none" : "max-w-[520px]")}>
+        <div className="flex shrink-0 items-start gap-4 border-b border-hairline/40 px-5 py-4">
           <span className={cn("mt-1 size-4 shrink-0 rounded", isCall ? "bg-[#6d7cff]" : "bg-accent")} />
           <div className="min-w-0 flex-1">
             <div className="text-[19px] font-semibold text-ink">{title}</div>
-            <div className="mt-1 text-[12.5px] text-ink-secondary">
+          </div>
+          <button onClick={onClose} className="rounded-full p-2 text-ink-secondary hover:bg-raised hover:text-ink" aria-label="Close"><X size={17} /></button>
+        </div>
+
+        {/* Wide window: the schedule, the bot and who it runs as on the left
+            (about 320 px), the instructions on the right in a readable
+            measure, each scrolling on its own. Under 720 px: one column. */}
+        <div className={cn("min-h-0 flex-1 overflow-y-auto", wide && "min-[720px]:grid min-[720px]:grid-cols-[320px_minmax(0,1fr)] min-[720px]:overflow-hidden")}>
+        <div data-event-details-side className={cn("space-y-4 px-5 py-4", wide && "min-[720px]:min-h-0 min-[720px]:overflow-y-auto min-[720px]:border-r min-[720px]:border-hairline/40")}>
+          <div>
+            <div className="text-[12.5px] text-ink-secondary">
               {niceDate(item.at)} · {niceTime(item.at)}{isCall ? ` – ${niceTime(item.at + item.durationMinutes * 60_000)}` : ""}
             </div>
             {(routine || call) && <div className="mt-1 text-[11.5px] text-ink-secondary">{scheduleLabel((routine ?? call)!.schedule)}</div>}
             {routine?.schedule.type === "cron" && <div className="mt-3"><CronSchedulePreview schedule={routine.schedule} paused={!routine.enabled} /></div>}
           </div>
-          <button onClick={onClose} className="rounded-full p-2 text-ink-secondary hover:bg-raised hover:text-ink" aria-label="Close"><X size={17} /></button>
-        </div>
-
-        <div className="max-h-[58vh] space-y-4 overflow-y-auto px-5 py-4">
           <div className="flex items-start gap-3">
             {isRoomGoal ? <Target size={17} className="mt-1 shrink-0 text-ink-secondary" /> : <UserRoundPlus size={17} className="mt-1 shrink-0 text-ink-secondary" />}
             <div className="min-w-0 flex-1">
@@ -1478,6 +1506,7 @@ export function EventDetails({
               </div>
             </div>
           </div>
+          {routine?.runAs && <div data-event-details-run-as className="flex items-start gap-3"><UserRound size={17} className="mt-1 shrink-0 text-ink-secondary" /><div className="min-w-0 flex-1"><div className="text-[11px] font-medium uppercase tracking-wider text-ink-secondary">{t("routines.runAsField.label")}</div><div className="mt-1 truncate text-[12.5px] text-ink">{routine.runAs.name || routine.runAs.principalId}</div></div></div>}
           {isRoomGoal && (
             <div className="flex items-start gap-3">
               <UsersRound size={17} className="mt-1 shrink-0 text-ink-secondary" />
@@ -1487,7 +1516,7 @@ export function EventDetails({
               </div>
             </div>
           )}
-          {description && <div className="flex items-start gap-3"><FileText size={17} className="mt-1 shrink-0 text-ink-secondary" /><div className="whitespace-pre-wrap text-[12.5px] leading-relaxed text-ink">{description}</div></div>}
+          {!wide && descriptionBlock}
           {attachments.length > 0 && <div className="flex items-start gap-3"><Paperclip size={17} className="mt-1 shrink-0 text-ink-secondary" /><div className="min-w-0 flex-1 space-y-2"><AttachmentChips attachments={attachments} />{call && <div className="text-[11px] leading-relaxed text-ink-secondary">{call.botIds.length > 1 ? "These references will be shared in the group when the event starts." : "These references stay with the event and are available when you join the group."}</div>}</div></div>}
           {!isCall && <div className="flex items-start gap-3"><Clock3 size={17} className="mt-1 shrink-0 text-ink-secondary" /><div><div className="text-[11px] font-medium uppercase tracking-wider text-ink-secondary">Run limit</div><div className="mt-1 text-[12.5px] text-ink">{safetyLimit == null ? "No time limit" : `Stops if still running after ${durationLabel(safetyLimit)}`}</div></div></div>}
           {run && <div role="status" aria-live="polite" className="rounded-xl border border-hairline/40 bg-inset p-3"><div className="flex items-center gap-2 text-[12px] font-medium text-ink">{run.status === "running" && <Loader2 size={13} className="animate-spin text-accent" />}{routineRunLabel(run)}</div>{run.output && <div className="mt-2 whitespace-pre-wrap text-[11.5px] leading-relaxed text-ink-secondary">{run.output}</div>}{run.error && <div className="mt-2 text-[11.5px] text-danger">{run.error}</div>}</div>}
@@ -1495,12 +1524,14 @@ export function EventDetails({
           {run?.status === "waiting" && !run.attention && <div className="rounded-xl border border-warning/30 bg-warning/10 px-3 py-2.5 text-[11.5px] text-warning">This run is waiting. Open its execution thread for more context.</div>}
           {error && <div role="alert" className="rounded-lg bg-danger/10 px-3 py-2 text-[11.5px] text-danger">{error}</div>}
         </div>
+        {wide && <div data-event-details-instructions className="px-5 py-4 min-[720px]:min-h-0 min-[720px]:overflow-y-auto">{descriptionBlock}</div>}
+        </div>
 
         <div className="flex flex-wrap items-center gap-2 border-t border-hairline/40 px-4 py-3">
           {roomId && <button onClick={() => onOpenRoom(roomId)} className="flex items-center gap-1.5 rounded-lg bg-accent px-3 py-2 text-[12px] font-semibold text-accent-ink hover:brightness-110"><ExternalLink size={13} />Join group</button>}
           {call && call.botIds.length > 1 && <button onClick={joinRoom} disabled={working} className="flex items-center gap-1.5 rounded-lg bg-accent px-3 py-2 text-[12px] font-semibold text-accent-ink hover:brightness-110 disabled:opacity-50"><ExternalLink size={13} />Join group</button>}
           {isRoomGoal && goalGroup && !executionThreadId && <button onClick={() => { onOpenRoom(goalGroup.id); onClose(); }} className="flex items-center gap-1.5 rounded-lg bg-accent px-3 py-2 text-[12px] font-semibold text-accent-ink hover:brightness-110"><ExternalLink size={13} />Open group</button>}
-          {routine && <button onClick={runRoutineNow} disabled={working} className="flex items-center gap-1.5 rounded-lg bg-accent px-3 py-2 text-[12px] font-semibold text-accent-ink hover:brightness-110 disabled:opacity-50">{starting ? <Loader2 size={13} className="animate-spin" /> : <Play size={13} />}{starting ? "Starting…" : "Run now"}</button>}
+          {routine && canRunRoutineNow(state.config, routine, primary) && <button type="button" data-run-now onClick={runRoutineNow} disabled={working || routineInFlight} title={routineInFlight ? t("routines.runNow.inFlight") : undefined} className="flex items-center gap-1.5 rounded-lg bg-accent px-3 py-2 text-[12px] font-semibold text-accent-ink hover:brightness-110 disabled:opacity-50">{starting ? <Loader2 size={13} className="animate-spin" /> : <Play size={13} />}{starting ? t("routines.runNow.starting") : t("routines.runNow")}</button>}
           {canOpenExecution && <button onClick={openRunTask} className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-[12px] text-ink-secondary hover:bg-raised hover:text-ink"><ExternalLink size={13} />{isRoomGoal ? "Open group thread" : "Open thread"}</button>}
           {canOpenResults && resultsThreadId && <button type="button" onClick={() => { openNotificationTarget(dispatch, { botId: botIds[0], threadId: resultsThreadId }, state); onClose(); }} className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-[12px] text-ink-secondary hover:bg-raised hover:text-ink"><ExternalLink size={13} />{t("routines.results.open")}</button>}
           {routine && <button type="button" onClick={() => { dispatch({ type: "showRoutines", section: "logs", routineId: routine.id, botId: routine.botId }); onClose(); }} className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-[12px] text-ink-secondary hover:bg-raised hover:text-ink"><FileText size={13} />{t("routines.logs")}</button>}
@@ -1754,7 +1785,7 @@ export function RoutinesPage({ onBack: _onBack, onOpenRoom, embedded = false, fi
             <summary aria-label="Automation menu" className="flex size-9 cursor-pointer list-none items-center justify-center rounded-lg border border-hairline/50 bg-panel text-ink hover:bg-raised [&::-webkit-details-marker]:hidden">
               <Menu size={16} />
             </summary>
-            <div role="menu" className="absolute right-0 top-full z-40 mt-1.5 w-[220px] flex min-w-[200px] flex-col gap-0.5 rounded-xl border-[0.5px] border-border bg-elevated p-1.5 text-[13px] leading-[18px]">
+            <div role="menu" className="absolute right-0 top-full z-40 mt-1.5 w-[220px] flex min-w-[200px] flex-col gap-0.5 rounded-xl border-[0.5px] border-border popover-surface bg-elevated p-1.5 text-[13px] leading-[18px]">
               <button type="button" role="menuitem" onClick={() => { navMenuRef.current?.removeAttribute("open"); setSection("calendar"); }} className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] leading-[18px] text-ink hover:bg-hover"><CalendarDays size={16} className="text-ink" />{routinesOnly ? "Scheduled routines" : "Schedule"}</button>
               <button type="button" role="menuitem" onClick={() => { navMenuRef.current?.removeAttribute("open"); setSection("logs"); setRoutineFilter(undefined); }} className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] leading-[18px] text-ink hover:bg-hover"><FileText size={16} className="text-ink" />{t("routines.logs")}{unseenFailures > 0 && <span className="ml-auto rounded-full bg-danger/10 px-1.5 text-[10px] text-danger">{unseenFailures}</span>}</button>
               {!routinesOnly && <button type="button" role="menuitem" onClick={() => { navMenuRef.current?.removeAttribute("open"); setSection("webhooks"); }} className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] leading-[18px] text-ink hover:bg-hover"><Webhook size={16} className="text-ink" />Webhooks{state.webhooks.length > 0 && <span className="ml-auto rounded-full bg-raised px-1.5 text-[10px] text-ink-secondary">{state.webhooks.length}</span>}</button>}
@@ -1765,7 +1796,7 @@ export function RoutinesPage({ onBack: _onBack, onOpenRoom, embedded = false, fi
             <summary role="button" aria-label="Create an automation" className="flex h-9 cursor-pointer list-none items-center gap-1.5 rounded-lg border border-hairline/50 bg-panel px-3 text-[12px] font-medium text-ink hover:bg-raised focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 [&::-webkit-details-marker]:hidden">
               <Plus size={15} aria-hidden="true" />New
             </summary>
-            <div role="group" aria-label="New automation" className="absolute right-0 top-full z-40 mt-1.5 w-[280px] flex min-w-[200px] flex-col gap-0.5 rounded-xl border-[0.5px] border-border bg-elevated p-1.5 text-[13px] leading-[18px]">
+            <div role="group" aria-label="New automation" className="absolute right-0 top-full z-40 mt-1.5 w-[280px] flex min-w-[200px] flex-col gap-0.5 rounded-xl border-[0.5px] border-border popover-surface bg-elevated p-1.5 text-[13px] leading-[18px]">
               <button type="button" aria-label="Create a scheduled task" onClick={() => { newMenuRef.current?.removeAttribute("open"); setSection("calendar"); openCreate({ kind: "routine" }); }} className="flex w-full items-start gap-2 rounded-md px-2 py-1.5 text-left hover:bg-hover">
                 <Clock3 size={16} className="mt-0.5 shrink-0 text-accent" aria-hidden="true" />
                 <span><span className="block text-[12.5px] font-medium text-ink">Scheduled task</span><span className="mt-0.5 block text-[10.5px] leading-relaxed text-ink-secondary">Ask a bot to do something later.</span></span>

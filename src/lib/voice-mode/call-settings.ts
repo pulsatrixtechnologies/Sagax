@@ -19,12 +19,14 @@ export interface CallSettings {
   /** how long a pause ends a turn: short (fast answers), normal, or
    * patient (the person thinks between phrases) */
   pause: CallPause;
+  /** the settings card's Advanced zone is open (closed by default) */
+  advancedOpen: boolean;
 }
 
 export type CallPause = "short" | "normal" | "patient";
 export const CALL_PAUSES: readonly CallPause[] = ["short", "normal", "patient"];
 
-export const DEFAULT_CALL_SETTINGS: CallSettings = { input: "auto", onlyMyVoice: true, earcons: true, thinkingCue: true, pause: "normal" };
+export const DEFAULT_CALL_SETTINGS: CallSettings = { input: "auto", onlyMyVoice: true, earcons: true, thinkingCue: true, pause: "normal", advancedOpen: false };
 
 type Storage = Pick<globalThis.Storage, "getItem" | "setItem">;
 const watchers = new Set<() => void>();
@@ -46,6 +48,7 @@ export function cleanCallSettings(value: unknown): CallSettings {
     earcons: typeof record.earcons === "boolean" ? record.earcons : DEFAULT_CALL_SETTINGS.earcons,
     thinkingCue: typeof record.thinkingCue === "boolean" ? record.thinkingCue : DEFAULT_CALL_SETTINGS.thinkingCue,
     pause: CALL_PAUSES.includes(record.pause as CallPause) ? (record.pause as CallPause) : DEFAULT_CALL_SETTINGS.pause,
+    advancedOpen: typeof record.advancedOpen === "boolean" ? record.advancedOpen : DEFAULT_CALL_SETTINGS.advancedOpen,
   };
 }
 

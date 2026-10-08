@@ -95,6 +95,8 @@ export interface InjectedModel {
    * for running models in /api/ps) — sizes the model-facing rebuild instead
    * of guessing from the name */
   contextWindow?: number;
+  /** Desktop rows: the desktop probed this server and /v1/messages answers. */
+  anthropic?: boolean;
 }
 
 /** Ollama's /api/ps lists running models with their context_length; a
@@ -450,6 +452,7 @@ export async function mergeLocalInject(
     const existing = options.find((option) => option.id === extra.id);
     if (existing) {
       existing.local = true;
+      if (extra.anthropic) existing.anthropic = true;
       if (extra.loaded) existing.loaded = true;
       if (extra.contextWindow) existing.contextWindow = extra.contextWindow;
       continue;
@@ -460,6 +463,7 @@ export async function mergeLocalInject(
       label: extra.label,
       custom: true,
       local: true,
+      ...(extra.anthropic ? { anthropic: true } : {}),
       ...(extra.loaded ? { loaded: true } : {}),
       ...(extra.contextWindow ? { contextWindow: extra.contextWindow } : {}),
     });

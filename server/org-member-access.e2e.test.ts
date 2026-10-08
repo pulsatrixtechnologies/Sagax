@@ -13,6 +13,10 @@
 //         back to "manage" restores it; an admin is never narrowed
 //   MA-4  create_bot on the internal capability belongs to the Primary Bot's
 //         person (not the operator); sagax_bots "use" refuses that path too
+//   MA-5  Settings > Usage > Plan usage reads the asking person's own
+//         subscription login only: never the server's own login, never
+//         another person's; one row per provider; the org key is an API-key
+//         row with no plan windows (no network: only states that fetch nothing)
 import { spawn, type ChildProcess } from "node:child_process";
 import { chmodSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -105,7 +109,9 @@ async function start() {
   child = spawn(process.execPath, ["--experimental-strip-types", join(SERVER_DIR, "index.ts")], {
     cwd: join(SERVER_DIR, ".."),
     env: {
-      ...(process.env.PATH ? { PATH: process.env.PATH } : {}),
+      // engines/bin holds the one CLI the image manifest below "installed"
+      PATH: [join(home, "engines", "bin"), process.env.PATH].filter(Boolean).join(":"),
+      SAGAX_ENGINES_MANIFEST: join(home, "engines", "manifest.json"),
       HOME: home, USERPROFILE: home, SAGAX_LOCAL_VM_TEST_NAMESPACE: process.env.SAGAX_LOCAL_VM_TEST_NAMESPACE ?? "", SAGAX_PORT: String(PORT), SAGAX_WEBHOOK_PORT: String(PORT + 1),
       SAGAX_IDENTITY: "perspicax",
       SAGAX_PERSPICAX_ISSUER: idp.issuer,
@@ -160,11 +166,22 @@ posixOnly("Perspicax organization: a member's own engines and read-only bots", (
     writeFileSync(join(home, "link", "pulsabot.json"), JSON.stringify({
       version: 1, issuer: idp.issuer, client_id: "pulsa-bot", server_id: idp.serverId, origin: BASE, link_token: idp.linkToken,
     }), { mode: 0o640 });
+    // The image's engines manifest (scripts/install-engines.mjs): Qwen Code
+    // baked in, Cursor deliberately not (engines.lock.json notPreinstalled).
+    mkdirSync(join(home, "engines", "bin"), { recursive: true });
+    writeFileSync(join(home, "engines", "bin", "qwen"), "#!/bin/sh\necho 0.24.7\n", { mode: 0o755 });
+    writeFileSync(join(home, "engines", "manifest.json"), JSON.stringify({
+      lockVersion: 1, engineSet: "all", arch: "arm64",
+      installed: [{ id: "qwen", name: "Qwen Code", drivers: ["qwenAgent"], kind: "npm", version: "0.24.7", bin: "qwen" }],
+      notPreinstalled: [{ id: "cursor", name: "Cursor Agent", drivers: ["cursorAgent"], reason: "Cursor is not carried by this test image." }],
+    }));
     dump = join(home, "claude-dump.json");
     writeFileSync(join(data, "config.json"), JSON.stringify({
       instances: {
         claude: { driver: "claudeAgent", environment: { FAKE_CLAUDE_DUMP: dump }, config: { cli: FAKE_CLAUDE, fullAuto: true } },
         codex: { driver: "codex", environment: { SAGAX_DEVICE_AUTH_FIXTURE: "1" }, config: { cli: FAKE_CODEX_LOGIN } },
+        // absent on this server whatever the machine has installed
+        cursor: { driver: "cursorAgent", config: { cli: "sagax-test-no-such-cursor-agent" } },
       },
     }));
     await start();
@@ -202,6 +219,24 @@ posixOnly("Perspicax organization: a member's own engines and read-only bots", (
     expect(admin.find((row) => row.instanceId === "codex")?.cli).toBe(FAKE_CODEX_LOGIN);
     // and a member changes nothing there
     expect((await api("PATCH", "/api/instances/codex", bob, { cli: "" })).status).toBe(403);
+  }, 60_000);
+
+  it("MA-1b: the image's engines answer from the startup self-check, the ones it leaves out read not available", async () => {
+    await waitFor(async () => log.includes("[engines] self-check:"));
+    expect(log).toContain("[engines] qwen: 0.24.7 (pinned 0.24.7, ");
+    expect(log).toContain("[engines] self-check: 1/1 preinstalled engine(s) start (image set all)");
+    const bob = await signIn(BOB);
+    const engines = (await api("GET", "/api/me/engines", bob)).body.engines as Array<Record<string, any>>;
+    expect(engines.find((engine) => engine.instanceId === "qwen")).toMatchObject({ installed: true });
+    expect(engines.find((engine) => engine.instanceId === "qwen")?.notAvailable).toBeUndefined();
+    await waitFor(async () => {
+      const rows = (await api("GET", "/api/me/engines", bob)).body.engines as Array<Record<string, any>>;
+      return rows.find((engine) => engine.instanceId === "cursor")?.installed === false;
+    });
+    const cursor = ((await api("GET", "/api/me/engines", bob)).body.engines as Array<Record<string, any>>).find((engine) => engine.instanceId === "cursor");
+    expect(cursor).toMatchObject({ installed: false, notAvailable: "Cursor is not carried by this test image." });
+    const health = (await api("GET", "/api/health", alice)).body.engines as Array<Record<string, any>>;
+    expect(health.find((engine) => engine.instanceId === "qwen")).toMatchObject({ installed: true, version: "0.24.7" });
   }, 60_000);
 
   it("MA-2: a member signs in to their own Codex subscription and talks to a shared bot with it", async () => {
@@ -372,4 +407,43 @@ posixOnly("Perspicax organization: a member's own engines and read-only bots", (
     const stored = ((await api("GET", "/api/bots", uma)).body.bots as Array<{ id: string; directGrants?: string[] }>).find((bot) => bot.id === own.id);
     expect(stored?.directGrants).toContain(ids.bob);
   }, 90_000);
+
+  it("MA-5: plan usage reads the person's own subscription, never the server's or another person's", async () => {
+    const expiredJwt = `h.${Buffer.from(JSON.stringify({ exp: Math.floor(Date.now() / 1000) - 600 })).toString("base64url")}.s`;
+    // The server's own Codex and Claude logins: an expired token next to a
+    // refresh token would show "renews on the next turn" if they were read.
+    mkdirSync(join(home, ".codex"), { recursive: true });
+    writeFileSync(join(home, ".codex", "auth.json"), JSON.stringify({ tokens: { access_token: expiredJwt, refresh_token: "server-refresh" } }));
+    mkdirSync(join(home, ".claude"), { recursive: true });
+    writeFileSync(join(home, ".claude", ".credentials.json"), JSON.stringify({ claudeAiOauth: { accessToken: "server-claude", expiresAt: Date.now() - 600_000, refreshToken: "server-refresh" } }));
+    // Bob's own Codex sign-in, where the login flow leaves it.
+    const bobCodex = join(home, ".sagax", "principals", ids.bob!, "codex");
+    mkdirSync(bobCodex, { recursive: true, mode: 0o700 });
+    writeFileSync(join(bobCodex, ".pulsabot-login.json"), JSON.stringify({ at: Date.now() }), { mode: 0o600 });
+    writeFileSync(join(bobCodex, "auth.json"), JSON.stringify({ tokens: { access_token: expiredJwt, refresh_token: "bob-refresh" } }), { mode: 0o600 });
+
+    type Row = { id: string; state: string; access: string; instanceId: string | null; failure: { kind: string } | null };
+    const rowsOf = async (auth: Auth) => {
+      const got = await api("GET", "/api/plan-usage?refresh=1", auth);
+      expect(got.status, got.text).toBe(200);
+      expect(got.text).not.toMatch(/server-claude|server-refresh|bob-refresh/);
+      return got.body.providers as Row[];
+    };
+    // a member reads their own
+    const bob = await signIn(BOB);
+    const bobs = await rowsOf(bob);
+    expect(bobs.map((row) => [row.id, row.state, row.failure?.kind ?? null])).toEqual([
+      ["claude", "signed-out", null],
+      ["codex", "error", "renewing"],
+      ["claudeApi", "no-windows", null],
+    ]);
+    expect(bobs.find((row) => row.id === "claude")?.instanceId).toBe("claude");
+    // the admin has no Codex sign-in of their own: not the server's, not Bob's
+    const alices = await rowsOf(alice);
+    expect(alices.map((row) => [row.id, row.state])).toEqual([
+      ["claude", "signed-out"],
+      ["codex", "signed-out"],
+      ["claudeApi", "no-windows"],
+    ]);
+  }, 60_000);
 });

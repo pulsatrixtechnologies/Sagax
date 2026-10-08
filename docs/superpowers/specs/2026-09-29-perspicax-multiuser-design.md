@@ -260,7 +260,9 @@ Le jeton obtenu est un jeton MCP ordinaire: le journal de Perspicax (`mcp_reques
 
 ### Délégation pour les routines
 
-Une routine qui tourne pendant que son propriétaire est hors ligne n'a pas de jeton d'accès vivant à échanger. Le propriétaire consent une fois (« Autoriser mes routines à agir en mon nom »): un flux d'autorisation séparé avec `scope=openid offline_access pulsabot:routines` crée une famille de refresh distincte de celle de sa session, scellée sur le serveur Pulsa Bot. Avant chaque routine: rafraîchir cette famille (vol unique par principal), échanger, exécuter, révoquer. La famille survit à la déconnexion des appareils, pas à la désactivation du compte ni à une révocation depuis Pulsa Bot ou la console Perspicax.
+**Décision de JC, 2026-10-08 (remplace le consentement ci-dessous) :** sur un serveur d'organisation, une routine agit toujours au nom de son propriétaire. Aucun consentement, aucun interrupteur, aucune carte « reconnecter mes routines ». Sagax obtient la délégation lui-même, par le lien, avec un échange de jeton RFC 8693 du jeton d'accès de connexion de la personne (`requested_token_type` refresh token, `scope=openid profile email offline_access pulsabot:routines`, `resource` l'origine du serveur) : à chaque connexion, à chaque renouvellement de connexion tant que la personne utilise Sagax (glissement quotidien), et à une exécution qui n'en trouve pas. Une famille terminée par Perspicax est réémise ; une exécution qui ne peut pas en obtenir une est sautée, jamais suspendue. Seule une personne désactivée, supprimée ou déconnectée par Perspicax (`person_out`), ou sans `run` sur le bot (`no_right`), suspend une routine. Perspicax doit accepter cet échange (refusé jusqu'à 1.8.13) et retirer la révocation en libre-service (#166).
+
+Historique : une routine qui tourne pendant que son propriétaire est hors ligne n'a pas de jeton d'accès vivant à échanger. Le propriétaire consent une fois (« Autoriser mes routines à agir en mon nom »): un flux d'autorisation séparé avec `scope=openid offline_access pulsabot:routines` crée une famille de refresh distincte de celle de sa session, scellée sur le serveur Pulsa Bot. Avant chaque routine: rafraîchir cette famille (vol unique par principal), échanger, exécuter, révoquer. La famille survit à la déconnexion des appareils, pas à la désactivation du compte ni à une révocation depuis Pulsa Bot ou la console Perspicax.
 
 ### Injection par engine: un pont stdio tenu par le harness
 
@@ -320,7 +322,7 @@ Jamais un tour qui échoue en silence. Chaque cas donne une carte dans le fil, �
 | aucun accès résolu | « Aucun accès Claude pour votre tour. » avec « Me connecter avec mon abonnement » et « Ajouter ma clé dans Perspicax », ou demander à un admin la clé de l'organisation (pour une routine: la carte va au propriétaire) | rien pour le tour d'une autre personne; pour une routine, la même carte |
 | clé refusée par le fournisseur (401, quota) | « Le fournisseur a refusé la clé de ce bot. » | le message du fournisseur, caviardé (`provider-key-check.ts`) |
 | profil MCP non détenu par qui parle | le bot répond sans l'outil et dit pourquoi (note système au tour) | rien |
-| délégation de routine expirée | la routine est suspendue, pas relancée en boucle | carte « reconnecter mes routines » |
+| délégation de routine expirée (2026-10-08) | une nouvelle est émise depuis la connexion de la personne; sinon l'exécution est sautée, la routine n'est jamais suspendue | aucune carte |
 
 Dans Mes engines et le choix d'engine, une ligne dit ce que les tours de la personne utilisent sur cet engine (« Vos tours utilisent votre abonnement », « votre clé dans Perspicax », « la clé de l'organisation », ou rien encore).
 

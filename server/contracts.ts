@@ -587,6 +587,9 @@ export interface ModelCatalog {
      * server's loopback, or the person's own computer through the desktop
      * bridge. The picker lists these under Local (shared/local-model-engines.ts). */
     local?: boolean;
+    /** A desktop local row whose server answered /v1/messages on the desktop's
+     * probe, so Claude Code can run it (shared/local-model-engines.ts). */
+    anthropic?: boolean;
     /** upstream provider id (e.g. "zai", "nous") when the engine can report
      * it — the picker shows it as a muted badge so BYOK duplicates of the
      * same model id stay distinguishable. */

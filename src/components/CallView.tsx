@@ -216,7 +216,7 @@ export function CallTargetButton({
           id={helpId}
           role="group"
           aria-label="Call unavailable"
-          className={cn("absolute bottom-full right-0 z-30 mb-2 w-[280px] rounded-xl border border-hairline bg-panel p-3 text-left shadow-2xl", helpMotion.className)} {...helpMotion.exitProps}
+          className={cn("absolute bottom-full right-0 z-30 mb-2 w-[280px] rounded-xl border border-hairline popover-surface bg-panel p-3 text-left shadow-2xl", helpMotion.className)} {...helpMotion.exitProps}
         >
           <div className="text-[13px] font-medium text-ink">Call unavailable</div>
           <div className="mt-1 text-[12px] leading-[1.45] text-ink-secondary">{reason}</div>
@@ -298,7 +298,7 @@ export function VoiceCallDock({ bot }: { bot: Bot }) {
   }, [live]);
   if (live) {
     return (
-      <div ref={dock} className="animate-call-dock-in relative z-20 mb-2 h-12 px-3" data-voice-call-dock>
+      <div ref={dock} className="animate-call-dock-in relative z-20 mb-2 h-16 px-3" data-voice-call-dock>
         <div className="pointer-events-none absolute inset-x-3 top-0">
           <LiveCall bot={bot} />
         </div>

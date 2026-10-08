@@ -127,3 +127,75 @@ describe("menu motion", () => {
     expect(closing.exitProps).toEqual({ inert: true, "aria-hidden": true });
   });
 });
+
+describe("a panel revealed by its height", () => {
+  /** A stand-in element: its inline style writes are recorded in order. */
+  function box(height: number) {
+    const writes: string[] = [];
+    const style: Record<string, string> = {};
+    const proxy = new Proxy(style, {
+      set(target, key: string, value: string) {
+        target[key] = value;
+        if (key === "height" || key === "opacity") writes.push(`${key}=${value}`);
+        return true;
+      },
+    });
+    const element = { style: proxy, offsetHeight: height, getBoundingClientRect: () => ({ height: element.offsetHeight }) };
+    return { element, writes };
+  }
+
+  it("opens from 0 to the content's measured height with its opacity, readies the content first, then releases the height", async () => {
+    const { useHeightReveal } = await import("./MenuMotion");
+    const shell = box(0);
+    const content = box(120);
+    const shellRef = { current: shell.element as unknown as HTMLElement };
+    const contentRef = { current: content.element as unknown as HTMLElement };
+    const ready = vi.fn(() => expect(shell.writes).toEqual([]));
+    react.render(() => useHeightReveal(false, shellRef, contentRef, null, ready));
+    react.render(() => useHeightReveal(true, shellRef, contentRef, "transcript", ready));
+    expect(ready).toHaveBeenCalledTimes(1);
+    expect(shell.writes).toEqual(["height=0px", "opacity=0", "height=120px", "opacity=1"]);
+    vi.advanceTimersByTime(MENU_MOTION_MS + 20);
+    expect(shell.writes.slice(-2)).toEqual(["height=", "opacity="]);
+  });
+
+  it("switches panels from one height to the other without folding to zero", async () => {
+    const { useHeightReveal } = await import("./MenuMotion");
+    const shell = box(120);
+    const content = box(120);
+    const shellRef = { current: shell.element as unknown as HTMLElement };
+    const contentRef = { current: content.element as unknown as HTMLElement };
+    react.render(() => useHeightReveal(true, shellRef, contentRef, "transcript"));
+    vi.advanceTimersByTime(MENU_MOTION_MS + 20);
+    shell.writes.length = 0;
+    content.element.offsetHeight = 260;
+    react.render(() => useHeightReveal(true, shellRef, contentRef, "settings"));
+    expect(shell.writes).toEqual(["height=120px", "height=260px", "opacity=1"]);
+  });
+
+  it("closes from the height on screen back to 0, fading", async () => {
+    const { useHeightReveal } = await import("./MenuMotion");
+    const shell = box(140);
+    const content = box(140);
+    const shellRef = { current: shell.element as unknown as HTMLElement };
+    const contentRef = { current: content.element as unknown as HTMLElement };
+    react.render(() => useHeightReveal(true, shellRef, contentRef, "settings"));
+    vi.advanceTimersByTime(MENU_MOTION_MS + 20);
+    shell.writes.length = 0;
+    const closing = react.render(() => useHeightReveal(false, shellRef, contentRef, null));
+    expect(closing).toMatchObject({ shown: true, closing: true });
+    expect(shell.writes).toEqual(["height=140px", "height=0px", "opacity=0"]);
+  });
+
+  it("under reduced motion the panel simply appears and goes: no height is ever set", async () => {
+    reduced = true;
+    const { useHeightReveal } = await import("./MenuMotion");
+    const shell = box(0);
+    const content = box(120);
+    const shellRef = { current: shell.element as unknown as HTMLElement };
+    const contentRef = { current: content.element as unknown as HTMLElement };
+    react.render(() => useHeightReveal(true, shellRef, contentRef, "transcript"));
+    expect(shell.writes).toEqual(["height=", "opacity="]);
+    expect(react.render(() => useHeightReveal(false, shellRef, contentRef, null)).shown).toBe(false);
+  });
+});
