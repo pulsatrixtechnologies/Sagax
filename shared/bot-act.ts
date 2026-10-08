@@ -165,7 +165,7 @@ const COMMANDS: Record<string, CommandSpec> = {
   duplicateBot: { write: true, fields: { botId: "s" } },
   markUnread: { write: true, fields: { botId: "s" } },
   playMascotMotion: { write: true, fields: { botId: "s", kind: "m" } },
-  setModel: { write: true, fields: { botId: "s", selection: "o", threadId: "s?", updateBotDefault: "b?", resetApprovalToAsk: "b?" } },
+  setModel: { write: true, fields: { botId: "s", selection: "o", threadId: "s?", updateBotDefault: "b?" } },
   interrupt: { write: true, fields: { botId: "s", threadId: "s?" } },
   updateBot: { write: true, fields: { botId: "s", patch: "o" } },
 };

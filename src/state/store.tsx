@@ -629,7 +629,6 @@ export type TaskUpdatePatch = Partial<Pick<Task, "modelSelection" | "approvalMod
   organizationFullAccess?: boolean;
   acknowledgeLocalAuto?: boolean;
   updateBotDefault?: boolean;
-  resetApprovalToAsk?: boolean;
   projectId?: string | null;
   archivedAt?: number | null;
   snoozedUntil?: number | null;
@@ -640,8 +639,8 @@ export type TaskUpdatePatch = Partial<Pick<Task, "modelSelection" | "approvalMod
 };
 
 function taskPatchFields(patch: TaskUpdatePatch): Partial<Task> {
-  const { confirmFullAccess: _fullConsent, organizationFullAccess: _orgFull, acknowledgeLocalAuto: _localAck, updateBotDefault: _modelDefault, resetApprovalToAsk, projectId, archivedAt, snoozedUntil, surface, pinned, ...fields } = patch;
-  return { ...fields, ...(resetApprovalToAsk ? { approvalMode: "ask", autoApprove: false, alwaysAllow: [] } : {}),
+  const { confirmFullAccess: _fullConsent, organizationFullAccess: _orgFull, acknowledgeLocalAuto: _localAck, updateBotDefault: _modelDefault, projectId, archivedAt, snoozedUntil, surface, pinned, ...fields } = patch;
+  return { ...fields,
     ...(projectId === undefined ? {} : { projectId: projectId ?? undefined }),
     ...(archivedAt === undefined ? {} : { archivedAt: archivedAt ?? undefined }),
     ...(snoozedUntil === undefined ? {} : { snoozedUntil: snoozedUntil ?? undefined }),
@@ -1419,7 +1418,7 @@ export type Action =
   | { type: "computerStart"; botId: string; start: ComputerStart | null }
   | { type: "computerControl"; botId: string; held: boolean; helpReason: string | null }
   | { type: "modelVariantRuntime"; event: RuntimeEvent }
-  | { type: "setModel"; botId: string; selection: ModelSelection; threadId?: string; updateBotDefault?: boolean; resetApprovalToAsk?: boolean }
+  | { type: "setModel"; botId: string; selection: ModelSelection; threadId?: string; updateBotDefault?: boolean }
   | { type: "interrupt"; botId: string; threadId?: string; onError?: () => void }
   | { type: "connected"; value: boolean }
   | { type: "error"; message: string | null }
@@ -2224,7 +2223,7 @@ export function reducer(state: AppState, action: Action): AppState {
     case "setModel":
       if (action.threadId) {
         const picked = reducer(state, { type: "updateTask", botId: action.botId, threadId: action.threadId,
-          patch: { modelSelection: action.selection, resetApprovalToAsk: action.resetApprovalToAsk } });
+          patch: { modelSelection: action.selection } });
         // Picking the bot's model, or making the pick the bot's, is following it.
         return updateBot(picked, action.botId, (bot) => ({ ...bot, tasks: bot.tasks?.map((task) => task.threadId !== action.threadId ? task
           : { ...task, followsBotModel: Boolean(action.updateBotDefault) || sameModelSelection(action.selection, bot.modelSelection) }) }));
@@ -3279,14 +3278,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         ? [...taskWrites.values()].filter((write) => write.botId === botId) : [];
       const promise = Promise.all([previous?.promise, ...defaults.map((write) => write.promise)].map((save) => save?.catch(() => {})))
         .then(async () => {
-          // The private path is required for Custom; use it for every
-          // confirmed desktop switch so optimistic Ask cannot hide the
-          // original mode while a pending write waits its turn.
-          if (patch.resetApprovalToAsk && window.ogb?.approvals) {
-            return window.ogb.approvals.setMode(botId, "ask", {
-              threadId, modelSelection: patch.modelSelection, updateBotDefault: Boolean(patch.updateBotDefault),
-            });
-          }
           return persistTaskApproval(botId, threadId, patch, window.ogb?.approvals);
         });
       // Later edits still get saved after an earlier failure, but a send
@@ -3902,7 +3893,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             persistTaskPatch(action.botId, action.threadId, {
               modelSelection: action.selection,
               ...(action.updateBotDefault ? { updateBotDefault: true } : {}),
-              ...(action.resetApprovalToAsk ? { resetApprovalToAsk: true } : {}),
             });
             break;
           }
