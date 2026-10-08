@@ -1470,7 +1470,6 @@ export function ChatView({ bot: profile }: { bot: Bot }) {
             />
             <span className="truncate text-[14px] font-medium leading-5 text-ink">{bot.name}</span>
           </button>
-          {bot.busy && <WorkingDots className="text-ink-secondary" />}
           {!bot.busy && bot.waitingForTeammates && <span className="truncate text-[12px] text-ink-secondary" role="status">Teammates working</span>}
         </div>
         <div
