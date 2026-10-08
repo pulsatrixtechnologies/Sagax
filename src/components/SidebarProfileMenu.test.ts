@@ -177,6 +177,7 @@ describe("profileMenuItems", () => {
     onAchievements: () => {},
     onShortcuts: () => {},
     onAbout: () => {},
+    onReleaseNotes: () => {},
   };
   const items = (patch: Partial<Parameters<typeof profileMenuItems>[0]> = {}) => profileMenuItems({
     teamMapLabel: "Team map",
@@ -184,6 +185,7 @@ describe("profileMenuItems", () => {
     settingsLabel: "Settings",
     achievementsLabel: "Achievements",
     aboutLabel: "About",
+    releaseNotesLabel: "Release notes",
     teamMapActive: false,
     automationsActive: true,
     routineAttention: true,
@@ -192,10 +194,22 @@ describe("profileMenuItems", () => {
     ...patch,
   });
 
+  it("puts Release notes right above Check for updates and opens the browse sheet", () => {
+    const calls: string[] = [];
+    const update = { key: "update", label: "Check for updates", onSelect: () => {} };
+    const menu = items({ updateItem: update as never, handlers: { ...handlers, onReleaseNotes: () => calls.push("browse") } });
+    const keys = menu.map((entry) => entry.key);
+    expect(keys.indexOf("release-notes")).toBe(keys.indexOf("update") - 1);
+    const entry = menu.find((item) => item.key === "release-notes");
+    expect(entry?.label).toBe("Release notes");
+    entry?.onSelect();
+    expect(calls).toEqual(["browse"]);
+  });
+
   it("leads with Team map and Automations, then a hairline, and leaves out phone and help", () => {
     const menu = items();
     expect(menu.map((entry) => entry.key)).toEqual([
-      "team-map", "routines", "settings", "achievements", "shortcuts", "about",
+      "team-map", "routines", "settings", "achievements", "shortcuts", "release-notes", "about",
     ]);
     expect(menu.find((entry) => entry.key === "settings")?.separatorBefore).toBe(true);
     expect(menu.find((entry) => entry.key === "about")?.separatorBefore).toBe(true);
@@ -210,7 +224,7 @@ describe("profileMenuItems", () => {
 
   it("drops achievements when they are not ready and keeps one hairline under the pair", () => {
     const menu = items({ achievementsLabel: null, routineAttention: false, automationsActive: false });
-    expect(menu.map((entry) => entry.key)).toEqual(["team-map", "routines", "settings", "shortcuts", "about"]);
+    expect(menu.map((entry) => entry.key)).toEqual(["team-map", "routines", "settings", "shortcuts", "release-notes", "about"]);
     expect(menu.filter((entry) => entry.separatorBefore).map((entry) => entry.key)).toEqual(["settings", "about"]);
   });
 });

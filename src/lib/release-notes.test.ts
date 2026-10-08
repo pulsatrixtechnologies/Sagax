@@ -6,6 +6,7 @@ import {
   releaseNotesPriorInstall,
   releaseNotesSection,
   sanitizeReleaseMarkdown,
+  readPreviousRelease,
   seenReleaseRecord,
   whatsNewDecision,
 } from "./release-notes";
@@ -175,6 +176,10 @@ describe("whatsNewDecision", () => {
 
   it("round-trips the seen record", () => {
     expect(readSeenRelease(seenReleaseRecord("0.4.5"))).toBe("0.4.5");
+    expect(readPreviousRelease(seenReleaseRecord("0.4.5"))).toBeNull();
+    expect(readPreviousRelease(seenReleaseRecord("0.4.5", "0.4.2"))).toBe("0.4.2");
+    expect(readSeenRelease(seenReleaseRecord("0.4.5", "0.4.2"))).toBe("0.4.5");
+    expect(readPreviousRelease("not json")).toBeNull();
     expect(readSeenRelease(null)).toBe(null);
     expect(readSeenRelease("not json")).toBe(null);
     expect(readSeenRelease("{}")).toBe(null);

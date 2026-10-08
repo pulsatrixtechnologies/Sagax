@@ -258,7 +258,14 @@ posixOnly("Perspicax organization, slice 4: rights, teams, owner keys, sections"
     // is hers alone, so bob does not even see it; run opens it to him
     expect(run.status).toBe(404);
     await api("PUT", `/api/bots/${x.id}/grants`, alice, { target: `user:${ids.bob}`, level: "run" });
-    expect((await api("POST", `/api/routines/${routine.body.routine.id}/run`, bob)).status).toBe(201);
+    // Run now (2026-10-08): alice's routine is for her (the owner), the
+    // person it runs as or an admin; at run, bob runs routines of his own
+    const notHis = await api("POST", `/api/routines/${routine.body.routine.id}/run`, bob);
+    expect(notHis.status).toBe(403);
+    expect(notHis.body.code).toBe("run_now_not_allowed");
+    const his = await api("POST", "/api/routines", bob, { name: "Bob's", botId: x.id, prompt: "Report.", enabled: false, schedule: { type: "interval", everyMinutes: 60, anchorAt: Date.now() + 3_600_000 } });
+    expect(his.status, his.text).toBe(201);
+    expect((await api("POST", `/api/routines/${his.body.routine.id}/run`, bob)).status).toBe(201);
     await api("PUT", `/api/bots/${x.id}/grants`, alice, { target: `user:${ids.bob}`, level: "edit" });
     expect((await api("PATCH", `/api/bots/${x.id}`, bob, { name: "Xavier 2" })).status).toBe(200);
     expect((await api("PATCH", `/api/bots/${x.id}`, bob, { approvalMode: "full" })).status).toBe(403);

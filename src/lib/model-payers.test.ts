@@ -34,6 +34,9 @@ describe("payerOrder (server/engine-credentials.ts, the speaker pays)", () => {
 
   it("names the provider column state", () => {
     expect(orgEngineState(claude({ installed: false }))).toBe("notInstalled");
+    // the server image deliberately does not carry it (engines.lock.json)
+    expect(orgEngineState(claude({ installed: false, notAvailable: "too big" }))).toBe("notAvailable");
+    expect(orgEngineState(claude({ notAvailable: "too big" }))).toBe("signInRequired");
     expect(orgEngineState(claude())).toBe("signInRequired");
     expect(orgEngineState(claude({ orgKey: true, myTurns: "org-key" }))).toBe("connected");
   });

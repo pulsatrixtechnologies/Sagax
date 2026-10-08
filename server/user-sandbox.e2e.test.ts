@@ -113,20 +113,6 @@ async function createBot(auth: Auth, name: string): Promise<{ id: string; thread
 
 const containersExecuted = () => [...new Set(docker.execs.filter((e) => e.exec.Cmd[0] === "timeout").map((e) => e.name))];
 
-/** `auth` allows their routines to act in their name. The consent at the
- * fake provider signs `as` in. Returns where the callback landed. */
-async function consent(auth: Auth, as: FakeOidcUser): Promise<string> {
-  idp.user = { ...as };
-  const started = await fetch(`${BASE}/api/org/routine-delegation`, { method: "POST", headers: { cookie: auth.cookie!, "content-type": "application/json" }, body: "{}" });
-  expect(started.status, await started.clone().text()).toBe(200);
-  const binding = started.headers.getSetCookie().find((c) => c.includes("_oidc="))!;
-  const { authorizationUrl } = await started.json() as { authorizationUrl: string };
-  const authorize = await fetch(authorizationUrl, { redirect: "manual" });
-  const back = await fetch(authorize.headers.get("location")!, { redirect: "manual", headers: { cookie: cookiePair(binding) } });
-  expect(back.status).toBe(303);
-  return back.headers.get("location") ?? "";
-}
-
 type Run = { id: string; routineId: string; status: string; error?: string };
 async function runsOf(auth: Auth, routineId: string): Promise<Run[]> {
   return (((await api("GET", "/api/routines", auth)).body.runs ?? []) as Run[]).filter((run) => run.routineId === routineId);
@@ -320,7 +306,8 @@ posixOnly("organization server environments (user-sandbox)", () => {
     const aliceContainer = sandboxNames(sandboxKeyForPrincipal(INSTANCE, ids.alice!)).container;
     const bots = (await api("GET", "/api/bots", alice)).body.bots as Array<{ id: string; name: string }>;
     const x = bots.find((bot) => bot.name === "Xavier")!;
-    expect(await consent(alice, ALICE)).toBe("/#routine-delegation=ok");
+    // her routines act in her name since her sign-in, never asked (2026-10-08)
+    await waitFor(async () => (await api("GET", "/api/org/routine-delegation", alice)).body.state === "active");
     const created = await api("POST", "/api/routines", alice, {
       name: "Cloud check",
       botId: x.id,

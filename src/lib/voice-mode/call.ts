@@ -32,7 +32,7 @@ import { spokenPart } from "./spoken";
 import { judge, readVoiceprint, saveVoiceprint, SpeakerEmbedder, voiceprintOf, type Voiceprint } from "./speaker-id";
 import { LiveTranscriber } from "./stt-stream";
 import { completeClause, FRAME_MS, incompleteClause, TurnDetector } from "./turns";
-import { formatTimeline, materiallyDifferent, type TurnMetrics } from "./latency";
+import { formatTimeline, materiallyDifferent, normalizedWords, type TurnMetrics } from "./latency";
 import { LevelVad, SileroVad, VAD_FRAME, type VoiceProbability } from "./vad";
 import type { VoiceModeSettings } from "../../../shared/voice-mode";
 
@@ -76,6 +76,17 @@ export const THINKING_CUE_MS = 1_200;
 export function stablePartial(text: string, partialAt: number, stoppedAt: number): boolean {
   const words = text.trim().split(/\s+/).filter(Boolean);
   return words.length >= 2 && !incompleteClause(text) && (partialAt >= stoppedAt || completeClause(text));
+}
+
+/** The whole sentence of a turn that carries on the one sent just before
+ * (cut by a pause): the fragment, then the new words. When the new words
+ * already start with the fragment (speech to text heard it again), they are
+ * the whole sentence alone, never the fragment twice. */
+export function continuedTurn(previous: string, next: string): string {
+  const before = normalizedWords(previous).join(" ");
+  const after = normalizedWords(next).join(" ");
+  if (before && (after === before || after.startsWith(`${before} `))) return next;
+  return `${previous} ${next}`;
 }
 
 export interface BargeInMetrics {
@@ -738,7 +749,7 @@ export class VoiceCall {
           this.armCue(this.turn);
         }
         const continues = this.continuing && this.lastSent !== null;
-        const text = continues ? `${this.lastSent!.text} ${effect.text}` : effect.text;
+        const text = continues ? continuedTurn(this.lastSent!.text, effect.text) : effect.text;
         this.continuing = false;
         this.lastSent = { text, endedAt: this.turn?.endedAt ?? this.now(), botSpoke: false };
         this.emit("utterance", text, this.turn ?? { stoppedAt: this.now(), endedAt: this.now(), utteranceId }, {

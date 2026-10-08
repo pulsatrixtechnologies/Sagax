@@ -27,12 +27,14 @@ import {
   Keyboard,
   Loader2,
   Network,
+  ScrollText,
   RefreshCw,
   Settings as SettingsIcon,
   Trophy,
 } from "lucide-react";
 
 import { InitialsAvatar } from "./Avatar";
+import { PresenceDot, presenceDotSize } from "./PresenceDot";
 import { AboutDialog } from "./AboutDialog";
 import { SidebarPopoverMenu, type SidebarMenuItem } from "./SidebarPopoverMenu";
 import { ShortcutHint } from "./ShortcutHint";
@@ -40,6 +42,7 @@ import { useStore } from "@/state/store";
 import { useUpdaterState, type UpdaterState } from "@/lib/updater";
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
+import { requestReleaseNotes } from "@/lib/release-notes-ui";
 import { useAchievements } from "@/lib/achievements";
 import { isRoutineProblemRun } from "@/lib/routines";
 import { activeRoutineCount } from "@/lib/active-routines";
@@ -215,6 +218,7 @@ export interface ProfileMenuHandlers {
   onAchievements: () => void;
   onShortcuts: () => void;
   onAbout: () => void;
+  onReleaseNotes: () => void;
 }
 
 /** Team map, Automations, a hairline, then the account items. Phone and
@@ -225,6 +229,7 @@ export function profileMenuItems(input: {
   settingsLabel: string;
   achievementsLabel: string | null;
   aboutLabel: string;
+  releaseNotesLabel: string;
   teamMapActive: boolean;
   automationsActive: boolean;
   routineAttention: boolean;
@@ -271,6 +276,12 @@ export function profileMenuItems(input: {
       trailing: input.shortcutsTrailing,
       onSelect: input.handlers.onShortcuts,
     },
+    {
+      key: "release-notes",
+      label: input.releaseNotesLabel,
+      icon: <ScrollText size={18} />,
+      onSelect: input.handlers.onReleaseNotes,
+    },
     ...(input.updateItem ? [input.updateItem] : []),
     {
       key: "about",
@@ -290,6 +301,7 @@ export function SidebarProfileMenu({ avatarOnly = false, places = [] }: {
   places?: SidebarMenuItem[];
 }) {
   const { state, dispatch } = useStore();
+  const selfPrincipalId = viewerActorId(state.config);
   const update = useUpdateItem();
   const [aboutOpen, setAboutOpen] = useState(false);
   const triggerRef = useRef<HTMLSpanElement>(null);
@@ -320,6 +332,7 @@ export function SidebarProfileMenu({ avatarOnly = false, places = [] }: {
     settingsLabel: t("sidebar.menu.settings"),
     achievementsLabel: achievements.status === "ready" ? t("achievements.menu") : null,
     aboutLabel: t("sidebar.menu.about"),
+    releaseNotesLabel: t("releaseNotes.menu"),
     teamMapActive: state.activeView === "team-map",
     automationsActive: state.activeView === "routines",
     routineAttention,
@@ -336,6 +349,7 @@ export function SidebarProfileMenu({ avatarOnly = false, places = [] }: {
         dispatch({ type: "toggleShortcuts", open: true });
       },
       onAbout: () => setAboutOpen(true),
+      onReleaseNotes: () => requestReleaseNotes("browse"),
     },
   });
   const items = footerMenuItems(places, profileItems);
@@ -345,13 +359,15 @@ export function SidebarProfileMenu({ avatarOnly = false, places = [] }: {
   const placeAttention = places.some((item) => item.attention);
 
   const avatar = (size: number) => (
-    // the footer avatar, always in its real colours
-    <span className="flex shrink-0 rounded-full">
+    // the footer avatar, always in its real colours, with your own presence
+    // (organization server: your real state, "hidden from others" when hidden)
+    <span className="relative flex shrink-0 rounded-full">
       {profile?.avatarUrl ? (
         <img src={profile.avatarUrl} alt="" style={{ width: size, height: size }} className="rounded-full object-cover" />
       ) : (
         <InitialsAvatar initials={initials} size={size} />
       )}
+      <PresenceDot principalId={selfPrincipalId} className="absolute -bottom-0.5 -right-0.5" ringClassName="border-sidebar" sizeClassName={presenceDotSize(size)} />
     </span>
   );
 

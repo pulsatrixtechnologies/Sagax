@@ -1,9 +1,14 @@
-// The thirteen original mascot shapes (shared/mascot-look.ts), as outlines in
-// a 0..100 box, and the one face they all wear. Every shape gets exactly the
-// same eyes (EYES): only where the face sits (its anchor) changes per shape,
-// never the eyes themselves. Most outlines are generated (a radius function
-// around a center, or a polygon with rounded corners) and smoothed into
-// cubic curves, so each reads as a soft, filled body at any size.
+// The Shapes geometry (clean room, 2026-10-08). Every body is one closed
+// outline drawn from 64 radii around its middle, smoothed into cubic curves,
+// so any two bodies morph by blending their radii. The radius unit R is the
+// circle's radius; the drawing box is 0..100 with the middle at BODY.center
+// and one R worth BODY.unit box units.
+//
+// Each table comes from our own geometry: a figure described as "is this
+// point inside?" (a superellipse, a stadium, a triangle or hexagon grown by a
+// radius, a union of five circles, the hull of two circles) and a ray cast
+// from the middle at each of the 64 angles. Nothing here is copied from
+// another drawing: change a number below and the tables follow.
 import type { MascotShape } from "../../shared/mascot-look";
 
 type Point = [number, number];
@@ -26,115 +31,236 @@ export function smoothClosed(points: Point[], tension = 1): string {
   return `${d}Z`;
 }
 
-/** Points around a center at radius r(angle), angle 0 pointing up, clockwise. */
-function polar(cx: number, cy: number, r: (angle: number) => number, count = 96, turn = 0): Point[] {
-  return Array.from({ length: count }, (_, i) => {
-    const a = (i / count) * Math.PI * 2;
-    const radius = r(a);
-    return [cx + radius * Math.sin(a + turn), cy - radius * Math.cos(a + turn)];
+/** How many radii make a body. */
+export const RADII_COUNT = 64;
+
+/** Where the body sits in the 0..100 box, and how many box units one R is. */
+export const BODY = { center: [50, 50] as Point, unit: 40 } as const;
+
+/** A body: one radius (in R) per angle, angle 0 straight up, clockwise. */
+export type Radii = readonly number[];
+
+/** The angle of radius i, radians (0 up, clockwise). */
+export const angleOf = (i: number) => (i / RADII_COUNT) * Math.PI * 2;
+
+/** The point of radius i in R units (x right, y down). */
+export const radiusPoint = (radii: Radii, i: number): Point => {
+  const a = angleOf(i);
+  return [radii[i] * Math.sin(a), -radii[i] * Math.cos(a)];
+};
+
+/** The body's radius toward any angle (radians, 0 up, clockwise), read between the two nearest radii. */
+export function radiusAt(radii: Radii, angle: number): number {
+  const turn = (((angle / (Math.PI * 2)) % 1) + 1) % 1;
+  const at = turn * RADII_COUNT;
+  const i = Math.floor(at) % RADII_COUNT;
+  const j = (i + 1) % RADII_COUNT;
+  const f = at - Math.floor(at);
+  return radii[i] * (1 - f) + radii[j] * f;
+}
+
+/** The body's radius toward a point (R units). */
+export const radiusToward = (radii: Radii, x: number, y: number) => radiusAt(radii, Math.atan2(x, -y));
+
+/** Two bodies blended (t 0..1). */
+export function blendRadii(from: Radii, to: Radii, t: number): number[] {
+  return from.map((r, i) => r + (to[i] - r) * t);
+}
+
+/** Shared easing and math for the shapes' motion. */
+export const clamp01 = (t: number) => Math.min(1, Math.max(0, t));
+export const easeOutQuint = (t: number) => 1 - (1 - clamp01(t)) ** 5;
+export const easeInOut = (t: number) => {
+  const x = clamp01(t);
+  return x * x * (3 - 2 * x);
+};
+export const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
+export const RAD = Math.PI / 180;
+
+/** A point in R units (from the body's middle) in the 0..100 box. */
+export const toBox = ([x, y]: Point): Point => [BODY.center[0] + x * BODY.unit, BODY.center[1] + y * BODY.unit];
+
+/** A body's outline in box units, at a scale (1 = R is BODY.unit). */
+export function outlinePath(radii: Radii, scale = 1): string {
+  const [cx, cy] = BODY.center;
+  const u = BODY.unit * scale;
+  return smoothClosed(Array.from({ length: RADII_COUNT }, (_, i) => {
+    const [x, y] = radiusPoint(radii, i);
+    return [cx + x * u, cy + y * u] as Point;
+  }));
+}
+
+/* ------------------------------------------------------------ figures */
+
+type Inside = (x: number, y: number) => boolean;
+
+/** Casts a ray from the middle at each angle and keeps the farthest point still inside the figure. */
+export function radiiOf(inside: Inside, reach = 2.4): number[] {
+  return Array.from({ length: RADII_COUNT }, (_, i) => {
+    const a = angleOf(i);
+    const dx = Math.sin(a);
+    const dy = -Math.cos(a);
+    // walk in from outside so a figure with dents keeps its outermost edge
+    let r = reach;
+    const step = 0.01;
+    while (r > 0 && !inside(dx * r, dy * r)) r -= step;
+    let lo = Math.max(0, r);
+    let hi = Math.min(reach, r + step);
+    for (let k = 0; k < 14; k += 1) {
+      const mid = (lo + hi) / 2;
+      if (inside(dx * mid, dy * mid)) lo = mid;
+      else hi = mid;
+    }
+    return Math.round(lo * 10000) / 10000;
   });
 }
 
-/** A polygon with each corner rounded by `radius`, drawn with quadratic curves at the corners. */
-export function roundedPolygon(points: Point[], radius: number): string {
-  const n = points.length;
-  const at = (i: number) => points[(i + n) % n];
-  let d = "";
-  for (let i = 0; i < n; i += 1) {
-    const prev = at(i - 1);
-    const p = at(i);
-    const next = at(i + 1);
-    const toPrev = Math.hypot(prev[0] - p[0], prev[1] - p[1]);
-    const toNext = Math.hypot(next[0] - p[0], next[1] - p[1]);
-    const r1 = Math.min(radius, toPrev / 2);
-    const r2 = Math.min(radius, toNext / 2);
-    const a: Point = [p[0] + ((prev[0] - p[0]) / toPrev) * r1, p[1] + ((prev[1] - p[1]) / toPrev) * r1];
-    const b: Point = [p[0] + ((next[0] - p[0]) / toNext) * r2, p[1] + ((next[1] - p[1]) / toNext) * r2];
-    d += `${i === 0 ? "M" : "L"}${round(a[0])} ${round(a[1])}Q${round(p[0])} ${round(p[1])} ${round(b[0])} ${round(b[1])}`;
-  }
-  return `${d}Z`;
+/** Distance from a point to a segment. */
+function toSegment(px: number, py: number, ax: number, ay: number, bx: number, by: number): number {
+  const vx = bx - ax;
+  const vy = by - ay;
+  const t = Math.max(0, Math.min(1, ((px - ax) * vx + (py - ay) * vy) / (vx * vx + vy * vy || 1)));
+  return Math.hypot(px - (ax + vx * t), py - (ay + vy * t));
 }
 
-/** A regular polygon's corners around a center, the first at `turn` degrees from straight up. */
-function regular(cx: number, cy: number, r: number, sides: number, turnDeg = 0): Point[] {
+/** Whether a point lies inside a convex polygon (any winding). */
+function inConvex(points: Point[], x: number, y: number): boolean {
+  let sign = 0;
+  for (let i = 0; i < points.length; i += 1) {
+    const [ax, ay] = points[i];
+    const [bx, by] = points[(i + 1) % points.length];
+    const cross = (bx - ax) * (y - ay) - (by - ay) * (x - ax);
+    if (cross === 0) continue;
+    const s = Math.sign(cross);
+    if (sign === 0) sign = s;
+    else if (s !== sign) return false;
+  }
+  return true;
+}
+
+/** A convex polygon grown outward by `grow`: its corners come out round. */
+function grownPolygon(points: Point[], grow: number): Inside {
+  return (x, y) => {
+    if (inConvex(points, x, y)) return true;
+    for (let i = 0; i < points.length; i += 1) {
+      const [ax, ay] = points[i];
+      const [bx, by] = points[(i + 1) % points.length];
+      if (toSegment(x, y, ax, ay, bx, by) <= grow) return true;
+    }
+    return false;
+  };
+}
+
+/** A regular polygon's corners around (cx, cy), the first `turn` degrees clockwise from straight up. */
+function regular(sides: number, radius: number, turn = 0, cx = 0, cy = 0): Point[] {
   return Array.from({ length: sides }, (_, i) => {
-    const a = ((i / sides) * 360 + turnDeg) * (Math.PI / 180);
-    return [cx + r * Math.sin(a), cy - r * Math.cos(a)];
+    const a = ((i / sides) * 360 + turn) * (Math.PI / 180);
+    return [cx + radius * Math.sin(a), cy - radius * Math.cos(a)] as Point;
   });
 }
 
-/** Rotates points about a center by degrees (clockwise on screen). */
-function rotate(points: Point[], cx: number, cy: number, deg: number): Point[] {
-  const a = (deg * Math.PI) / 180;
-  return points.map(([x, y]) => [cx + (x - cx) * Math.cos(a) - (y - cy) * Math.sin(a), cy + (x - cx) * Math.sin(a) + (y - cy) * Math.cos(a)]);
+/** The convex hull of two circles (a big belly and a small tip): a drop. */
+function circleHull(a: { x: number; y: number; r: number }, b: { x: number; y: number; r: number }): Inside {
+  const d = Math.hypot(b.x - a.x, b.y - a.y);
+  const ux = (b.x - a.x) / d;
+  const uy = (b.y - a.y) / d;
+  // the outer tangents touch both circles at the same angle from the axis
+  const beta = Math.acos((a.r - b.r) / d);
+  const turn = (s: number): Point => [ux * Math.cos(s) - uy * Math.sin(s), ux * Math.sin(s) + uy * Math.cos(s)];
+  const [p, q] = [turn(beta), turn(-beta)];
+  const quad: Point[] = [
+    [a.x + p[0] * a.r, a.y + p[1] * a.r],
+    [b.x + p[0] * b.r, b.y + p[1] * b.r],
+    [b.x + q[0] * b.r, b.y + q[1] * b.r],
+    [a.x + q[0] * a.r, a.y + q[1] * a.r],
+  ];
+  return (x, y) => Math.hypot(x - a.x, y - a.y) <= a.r || Math.hypot(x - b.x, y - b.y) <= b.r || inConvex(quad, x, y);
 }
 
-/**
- * A symmetric heart filling the box: the classic heart curve, sampled, with
- * the samples at the top dip and the bottom point left out so the smoothing
- * rounds both (a soft dip, a rounded point, never a cusp).
- */
-function heart(count = 72): Point[] {
-  const scale = 2.75;
-  const points: Point[] = [];
-  for (let i = 0; i < count; i += 1) {
-    const t = (i / count) * Math.PI * 2;
-    const fromDip = Math.min(t, Math.PI * 2 - t);
-    if (fromDip < 0.2 || Math.abs(t - Math.PI) < 0.3) continue;
-    const x = 16 * Math.sin(t) ** 3;
-    const y = 13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t);
-    points.push([50 + x * scale, 40 - y * scale]);
-  }
-  return points;
+const circle = (r: number): number[] => Array.from({ length: RADII_COUNT }, () => r);
+
+/** A soft river stone: a circle pushed out of round by two slow waves, leaning a little. */
+function pebble(): number[] {
+  const raw = Array.from({ length: RADII_COUNT }, (_, i) => {
+    const a = angleOf(i);
+    return 1 + 0.07 * Math.cos(2 * a - 1.85) + 0.032 * Math.cos(3 * a + 0.7) - 0.012 * Math.cos(a + 0.4);
+  });
+  const mean = raw.reduce((sum, r) => sum + r, 0) / raw.length;
+  return raw.map((r) => Math.round((r / mean) * 1.01 * 10000) / 10000);
 }
 
-/** One shape: its outline and where its face sits. */
+/** A rounded square: the superellipse |x|^4 + |y|^4 = s^4. */
+const squircle = () => radiiOf((x, y) => (Math.abs(x) / 0.93) ** 4 + (Math.abs(y) / 0.93) ** 4 <= 1);
+
+/** A capsule lying down: every point within 0.6 of a short horizontal segment. */
+const capsule = () => radiiOf((x, y) => toSegment(x, y, -0.44, 0, 0.44, 0) <= 0.6);
+
+/** A triangle standing on its base, its three corners rounded. */
+const triangle = () => radiiOf(grownPolygon(regular(3, 0.9, 0, 0, 0.12), 0.27));
+
+/** A hexagon with its flat sides up and down, corners rounded. */
+const hexagon = (turn = 30) => radiiOf(grownPolygon(regular(6, 0.85, turn), 0.23));
+
+/** Five round puffs: a wide one low in the middle, two on the sides, two on top. */
+const CLOUD_PUFFS = [
+  { x: 0, y: 0.18, r: 0.6 },
+  { x: -0.6, y: 0.24, r: 0.42 },
+  { x: 0.6, y: 0.24, r: 0.42 },
+  { x: -0.27, y: -0.3, r: 0.47 },
+  { x: 0.3, y: -0.26, r: 0.52 },
+];
+const cloud = () => radiiOf((x, y) => CLOUD_PUFFS.some((puff) => Math.hypot(x - puff.x, y - puff.y) <= puff.r));
+
+/** A drop: a round belly low, a small rounded tip on top. */
+const droplet = () => radiiOf(circleHull({ x: 0, y: 0.24, r: 0.72 }, { x: 0, y: -1.04, r: 0.06 }));
+
+/** An egg: an ellipse, narrower at the top. */
+const egg = () => radiiOf((x, y) => (x / (0.8 * (1 + 0.13 * y))) ** 2 + ((y - 0.02) / 1.04) ** 2 <= 1);
+
+/** An exclamation mark's stroke: a tall capsule standing on the middle. */
+const bar = () => radiiOf((x, y) => toSegment(x, y, 0, -0.82, 0, 0.18) <= 0.15);
+
+/** The eight bodies, in R units. */
+export const SHAPE_RADII: Readonly<Record<MascotShape, Radii>> = {
+  circle: circle(1),
+  bean: pebble(),
+  squircle: squircle(),
+  pill: capsule(),
+  pick: triangle(),
+  hexagon: hexagon(),
+  cloud: cloud(),
+  drop: droplet(),
+};
+
+/** The bodies some moves turn into. */
+export const MOVE_RADII = {
+  dot: circle(0.165),
+  sleepDot: circle(0.16),
+  burstDot: circle(0.166),
+  cometDot: circle(0.13),
+  egg: egg(),
+  hexagon: hexagon(0),
+  triangle: triangle(),
+  bar: bar(),
+} as const satisfies Record<string, Radii>;
+
+/** One shape: its outline (box units) and where its face sits at rest. */
 export interface ShapeArt {
   d: string;
-  /** The middle between the two eyes. */
+  /** The middle between the two eyes at rest (box units). */
   face: Point;
 }
 
-export const SHAPE_ART: Record<MascotShape, ShapeArt> = {
-  // (1) a circle
-  circle: { d: smoothClosed(polar(50, 50, () => 42, 48)), face: [56, 42] },
-  // (2) a puffy cloud: six soft bumps
-  cloud: { d: smoothClosed(polar(50, 52, (a) => 38 + 5 * Math.abs(Math.cos(3 * a)), 120)), face: [56, 44] },
-  // (3) a rounded square, tilted a little
-  squircle: { d: roundedPolygon(rotate([[14, 14], [86, 14], [86, 86], [14, 86]], 50, 50, -15), 18), face: [56, 42] },
-  // (4) a four-point sparkle with soft, hollow sides
-  sparkle: { d: smoothClosed(polar(50, 50, (a) => 31 + 18 * Math.abs(Math.cos(2 * a)) ** 1.6, 64)), face: [55, 48] },
-  // (5) a four-lobe clover
-  clover: { d: smoothClosed(polar(50, 50, (a) => 28 + 16 * Math.abs(Math.cos(2 * a)) ** 0.6, 128, Math.PI / 4)), face: [55, 45] },
-  // (6) a heart (id "bean", kept for stored looks): two even lobes on top, a soft rounded point at the bottom
-  bean: { d: smoothClosed(heart()), face: [50, 47] },
-  // (7) an eight-lobe scalloped flower
-  flower: { d: smoothClosed(polar(50, 50, (a) => 38 + 6 * Math.abs(Math.cos(4 * a)) ** 0.7, 160)), face: [55, 45] },
-  // (8) a soft drop, point toward the top left, round belly. The belly
-  // reaches further left than the point, so the point is not a sharp corner.
-  drop: { d: smoothClosed(rotate(polar(52, 54, (a) => 38 + 22 * Math.max(0, Math.cos(a)) ** 10, 120), 52, 54, -45)), face: [57, 54] },
-  // (9) a pill, lying down
-  pill: { d: roundedPolygon([[2, 20], [98, 20], [98, 80], [2, 80]], 30), face: [56, 48] },
-  // (10) a triangle (id "pick", kept for stored looks): upright, tilted a little like the others, corners rounded about 12%
-  pick: { d: roundedPolygon(rotate([[50, 4], [97, 88], [3, 88]], 50, 60, -6), 12), face: [51, 57] },
-  // (11) a rounded pentagon, a little house, tilted slightly
-  house: { d: roundedPolygon(rotate([[50, 5], [95, 39], [84, 93], [16, 93], [5, 39]], 50, 52, 8), 14), face: [56, 50] },
-  // (12) a six-point soft star
-  star: { d: smoothClosed(polar(50, 50, (a) => 40 + 8 * Math.cos(6 * a), 144)), face: [55, 46] },
-  // (13) a hexagon with rounded corners
-  hexagon: { d: roundedPolygon(regular(50, 50, 46, 6, 0), 12), face: [56, 44] },
-};
+export const SHAPE_ART: Record<MascotShape, ShapeArt> = Object.fromEntries(
+  (Object.keys(SHAPE_RADII) as MascotShape[]).map((shape) => [shape, { d: outlinePath(SHAPE_RADII[shape]), face: [52, 50] as Point }]),
+) as Record<MascotShape, ShapeArt>;
 
 /**
- * The one face every shape wears: two dark ovals, about 1 : 2.2, tilted 15
- * degrees clockwise, the right one a little higher. Same size, same spacing,
- * on every shape; only the face's anchor moves.
+ * The resting eye, as a half-size in box units (the app icon draws its
+ * capsules from these): a rounded bar about 0.19 R wide and 0.41 R tall.
  */
 export const EYES = {
-  rx: 4.8,
-  ry: 10.5,
-  tilt: 15,
-  /** Each eye's offset from the face anchor. */
-  left: [-10, 1.5] as Point,
-  right: [10, -1.5] as Point,
+  rx: (0.19 * BODY.unit) / 2,
+  ry: (0.41 * BODY.unit) / 2,
+  tilt: -13,
 } as const;

@@ -126,8 +126,15 @@ solo or on an organization server
 
 ### A mascot on your desktop
 
-Put a bot on the desktop and it stands there in its own window: it reacts
-while its bot works, shows replies in a balloon, and takes your messages.
+Put a bot on the desktop and it stands there in its own window, anywhere on
+any screen, right into a corner: it reacts beside itself while its bot works,
+shows replies in a chat bubble that opens on the side with room (with the
+app's composer: clip, model chip, voice button), and takes your messages.
+Right-click it to talk, call, open it in the app, switch it to another bot,
+play a move, or hide it for an hour. Click it to start a voice call: live
+captions and the call's status show beside it. Hover it for quick chat, voice
+and an activity tray (Allow or Stop what its bot is doing), or press
+Control+Option+Space anywhere to call, mute, or hold to talk.
 Characters: **Owl**, **Shapes** (thirteen shapes) and **Trombi**, the paperclip.
 Premium skins (Gold, Neon, Holo, Galaxy, Molten and more) come with their own
 effects and moves.
@@ -162,12 +169,21 @@ effects and moves.
   ([docs/routine-schedules.md](docs/routine-schedules.md)). The card says
   when the routine runs: every hour, every weekday, or once. Active stays
   the switch. A paused or finished routine says so after the schedule. On an
-  organization server a routine runs with its owner's credentials and is paid
-  by its owner.
+  organization server a routine always acts in its owner's name, with no
+  permission to give or take back, runs with its owner's credentials and is
+  paid by its owner. In the routine modal an admin can choose any active
+  person it runs as, and a team manager a person of their teams, among the
+  people who may run the bot; the card says "Runs as Name", each change is
+  in the admin activity log, and a person who has not signed in yet gets
+  the routine once they do. Run now starts one run at once without touching
+  the schedule (the bot's owner, the person it runs as or an admin), and
+  the details window shows the schedule beside the instructions.
 - **Nudge.** In a conversation with a person, or in a group, the button at
   the right of the composer sends a nudge. A bot conversation does not show
-  it. The windows of the people involved come forward and shake, and a line
-  in the thread says the nudge was sent. While the wait runs, the button
+  it. The windows of the people involved come forward and shake, with the
+  classic "wizz" sound on the receiving computer (Settings > Appearance >
+  Nudge sound turns it off), and a line in the thread says the nudge was
+  sent. While the wait runs, the button
   stays gray and the explanation is in the tooltip.
 - **Engine slash commands.** Type `/` to list Sagax's own commands and the
   engine's (Claude Code commands and skills, Codex skills), per bot, even in a
@@ -195,9 +211,9 @@ effects and moves.
   run on pi, Codex, Grok, Kimi, Qwen, Droid, Hermes, OpenCode, and on Claude
   Code when the server answers the Anthropic protocol. On an organization
   server, the models on your own computer serve your own bots by default
-  through the desktop app, on every engine above except Claude Code, which
-  needs the Anthropic protocol. Sharing them with other people stays off
-  until you turn it on. The server's own local models are never offered.
+  through the desktop app, on every engine above, Claude Code included when
+  that local server answers the Anthropic protocol (otherwise its row stays
+  greyed). Sharing them with other people stays off until you turn it on. The server's own local models are never offered.
 - **Desktop bridge.** In server mode the desktop app is the bridge to your PC:
   bots working for you run their tools (shell, files, browser, computer use,
   Local VM) on your own computer, and their network traffic leaves through it,
@@ -206,6 +222,12 @@ effects and moves.
 - **Admin controls.** Admins see every bot, force-stop or delete any of them,
   and read the organization's activity log. Profiles, names and avatars come
   from Perspicax.
+- **People's labels.** Give yourself a label such as "CTO" or "Dispatch" and it
+  shows beside your name in everyone's sidebar, like a bot's label; an admin
+  or your team manager can set it for you.
+- **Who is here.** A green, amber or grey dot on each person shows whether
+  they are online, away or offline ("last seen 2 h ago"), and anyone can
+  hide theirs in Settings > Privacy.
 
 <table>
 <tr>

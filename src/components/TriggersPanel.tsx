@@ -301,11 +301,11 @@ function TriggerRow({
   hasCredential: boolean;
   command: string;
   working: string | null;
-  copied: "command" | "link" | null;
+  copied: "command" | "token" | null;
   ingressAvailable: boolean;
   onToggle: () => void;
   onDelete: () => void;
-  onCopy: (copy: "command" | "link", replace: boolean) => void;
+  onCopy: (copy: "command" | "token", replace: boolean) => void;
   onEdit: () => void;
   onOpenChat: (threadId: string) => void;
 }) {
@@ -347,11 +347,11 @@ function TriggerRow({
         <button
           type="button"
           disabled={busy || (!hasCredential && !ingressAvailable)}
-          onClick={() => onCopy("link", false)}
+          onClick={() => onCopy("command", !hasCredential && !webhook.tokenPending)}
           className="flex items-center gap-1.5 rounded-lg bg-control/70 px-2.5 py-1.5 text-[12px] font-medium text-ink hover:bg-raised-hover disabled:opacity-40"
         >
-          {copied === "link" ? <Check size={13} className="text-success" /> : working === `${webhook.id}:command` ? <Loader2 size={13} className="animate-spin" /> : <Link2 size={13} />}
-          {copied === "link" ? t("triggers.copied") : t("triggers.copyLink")}
+          {copied === "command" ? <Check size={13} className="text-success" /> : working === `${webhook.id}:command` ? <Loader2 size={13} className="animate-spin" /> : hasCredential ? <Copy size={13} /> : <Link2 size={13} />}
+          {copied === "command" ? t("triggers.copied") : t(hasCredential ? "triggers.copyCommand" : webhook.tokenPending ? "triggers.showToken" : "triggers.regenerateToken")}
         </button>
         <Switch
           checked={webhook.enabled}
@@ -374,15 +374,24 @@ function TriggerRow({
             <span className="font-medium text-ink">{t("routines.drawer.runsOn")}:</span> {t(webhook.runOn === "cloud" ? "triggers.cloudVm" : "routines.runsOn.local")}
           </p>
           <p><span className="font-medium text-ink">{t("triggers.pendingTasks")}</span> {t("triggers.pendingTasksHelp", { count: webhook.maxPendingRuns ?? WEBHOOK_DEFAULT_MAX_PENDING_RUNS })}</p>
-          {hasCredential && (
-            <pre className="overflow-x-auto rounded-xl bg-inset p-3 font-mono text-[10.5px] whitespace-pre-wrap break-all text-ink-secondary">{command}</pre>
+          {hasCredential ? (
+            <>
+              <pre className="overflow-x-auto rounded-xl bg-inset p-3 font-mono text-[10.5px] whitespace-pre-wrap break-all text-ink-secondary">{command}</pre>
+              <p className="text-warning">{t("triggers.tokenOnce")}</p>
+            </>
+          ) : webhook.tokenPending ? (
+            <p className="rounded-xl border border-warning/30 bg-warning/10 px-3 py-2 text-ink">{t("triggers.tokenPendingBanner")}</p>
+          ) : (
+            <p>{t("triggers.tokenEnding", { last4: webhook.tokenLast4 ?? "" })}</p>
           )}
           <div className="flex flex-wrap gap-2">
-            <button type="button" disabled={busy || (!hasCredential && !ingressAvailable)} onClick={() => onCopy("command", false)} className="flex items-center gap-1.5 rounded-lg border border-hairline/50 px-3 py-1.5 text-[11.5px] font-medium text-ink hover:bg-raised disabled:opacity-40">
-              {copied === "command" ? <Check size={12} className="text-success" /> : <Copy size={12} />}{t(copied === "command" ? "triggers.copied" : "engineSetup.copyCommand")}
-            </button>
-            <button type="button" disabled={busy || !ingressAvailable} onClick={() => onCopy("link", true)} className="flex items-center gap-1.5 rounded-lg border border-hairline/50 px-3 py-1.5 text-[11.5px] font-medium text-ink hover:bg-raised disabled:opacity-40">
-              <RotateCw size={12} />{t("triggers.rotateUrl")}
+            {(hasCredential || webhook.tokenPending) && (
+              <button type="button" disabled={busy || (!hasCredential && !ingressAvailable)} onClick={() => onCopy("command", false)} className="flex items-center gap-1.5 rounded-lg border border-hairline/50 px-3 py-1.5 text-[11.5px] font-medium text-ink hover:bg-raised disabled:opacity-40">
+                {copied === "command" ? <Check size={12} className="text-success" /> : <Copy size={12} />}{t(copied === "command" ? "triggers.copied" : hasCredential ? "engineSetup.copyCommand" : "triggers.showToken")}
+              </button>
+            )}
+            <button type="button" disabled={busy || !ingressAvailable} onClick={() => onCopy("command", true)} className="flex items-center gap-1.5 rounded-lg border border-hairline/50 px-3 py-1.5 text-[11.5px] font-medium text-ink hover:bg-raised disabled:opacity-40">
+              <RotateCw size={12} />{t("triggers.regenerateToken")}
             </button>
             <button type="button" disabled={busy} onClick={onEdit} className="flex items-center gap-1.5 rounded-lg border border-hairline/50 px-3 py-1.5 text-[11.5px] font-medium text-ink hover:bg-raised disabled:opacity-40">
               <Pencil size={12} />{t("triggers.editSettings")}

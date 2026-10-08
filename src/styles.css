@@ -129,6 +129,8 @@
   --animate-msg-in: msg-in 0.18s cubic-bezier(0.22, 1, 0.36, 1);
   --animate-call-dock-in: call-dock-in 0.22s cubic-bezier(0.22, 1, 0.36, 1);
   --animate-call-dock-out: call-dock-out 0.18s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  --animate-card-fade-in: card-fade-in 0.2s cubic-bezier(0.22, 1, 0.36, 1) both;
+  --animate-card-fade-out: card-fade-out 0.2s cubic-bezier(0.22, 1, 0.36, 1) forwards;
   --animate-shimmer: shimmer 2s linear infinite;
   --animate-status-pulse: status-pulse 1.6s steps(2, jump-none) infinite;
   /* onboarding: a block of copy or a row arriving in a beat; `.stagger`
@@ -257,6 +259,7 @@
   /* ink carried by a filled accent / danger surface (see the rule at the
      bottom of this file, which is what makes them take effect) */
   --color-accent-ink: #111111;
+  --color-unread: #3c76f4;
   --color-danger-ink: #ffffff;
   /* ink carried by the user's own bubble. A hex rather than the ink token so
      the contrast check can measure it; every dark skin repeats its ink here. */
@@ -281,6 +284,32 @@
   --app-topbar-height: 56px;
   --app-frame-gap: 8px;
   --app-chat-min-width: 360px;
+  /* Mascot plinth: a disc behind a character where it is previewed, and a drop
+     shadow on light skins so a white character reads on a light surface. Dark
+     skins take the lighter-disc rule just below and no shadow. Light skins set
+     the plinth and the two shadow colours; see the rules at the end of the file. */
+  --color-mascot-plinth: #2e2e2e;
+  --mascot-shadow-color: transparent;
+  --mascot-shadow-wide: transparent;
+  --mascot-filter: none;
+}
+
+/* The unread dot follows the skin's accent (--color-unread: var(--color-accent)
+   in each skin), except in the skins whose accent is a neutral grey (Midnight,
+   Graphite, Linen): there it read as a plain white spot with no meaning, so
+   they set the Pulsatrix blue instead. */
+@utility bg-unread {
+  background-color: var(--color-unread);
+}
+
+/* A dark skin's plinth is a notch lighter than its card; a light skin overrides it with a hex. */
+[data-skin] {
+  --color-mascot-plinth: color-mix(in srgb, #ffffff 9%, var(--color-card));
+}
+
+/* Light skins: the character wears a soft drop shadow (colour from the skin). */
+:is([data-skin="pulsatrix-light"], [data-skin="atelier"], [data-skin="lagoon"], [data-skin="linen"], [data-skin="daylight"], [data-skin="retro98"], [data-skin="meadow"]) {
+  --mascot-filter: drop-shadow(0 1px 2px var(--mascot-shadow-color)) drop-shadow(0 3px 8px var(--mascot-shadow-wide));
 }
 
 /* The popover tokens, resolved per skin context. `@theme` puts them on
@@ -370,6 +399,7 @@
   --color-ink-tertiary: #8d99b5;   /* quiet text; clears 4.5:1 on raised-hover */
 
   --color-accent: #3c76f4;
+  --color-unread: var(--color-accent);
   --color-accent-border: #4f86f7;
   --color-accent-text: #c8e4ff;
   --color-focus: #4f86f7;
@@ -409,7 +439,7 @@
 
    --color-accent is v3's own --accent-brand, --color-accent-border and
    --color-focus are its --accent-brand-hover/--ring (identical in v3).
-   --color-danger is v3's --destructive verbatim; its fill is dark enough
+   --color-danger is v3's --destructive, darkened one step so its text clears 4.5:1 on its own 15% pill tint; its fill is dark enough
    that white clears AA outright, unlike Pulsatrix's own red, so danger-ink
    stays v3's own --destructive-fg instead of borrowing the app's ink.
    Success and warning are not top-level v3 tokens, so they are drawn from
@@ -429,6 +459,9 @@
    ───────────────────────────────────────────────────────────────────────── */
 [data-skin="pulsatrix-light"] {
   --code-color-scheme: light;
+  --color-mascot-plinth: #7f8cab;   /* mid-tone disc behind a light character (3:1 for #f4f4f4) */
+  --mascot-shadow-color: rgba(20,24,40,0.35);
+  --mascot-shadow-wide: rgba(20,24,40,0.18);
   --color-app: #eef2f8;
   --color-panel: #f6f8fb;
   --color-raised: #ffffff;
@@ -456,6 +489,7 @@
   --color-ink-tertiary: #4f5868;   /* = ink-secondary: the light ground leaves no room below it */
 
   --color-accent: #2f62dd;
+  --color-unread: var(--color-accent);
   --color-accent-border: #3c76f4;
   --color-accent-text: #2652bd;     /* darkened from accent for 4.5:1 on the app ground */
   --color-focus: #2652bd;          /* 3:1 on control too, where a focused field paints its border */
@@ -519,6 +553,7 @@
   --color-ink-secondary: #fcfcfc99;
   --color-ink-tertiary: #fcfcfc90;
   --color-accent: #d6d6d6;
+  --color-unread: #3c76f4;
   --color-accent-border: #a3a3a3;
   --color-accent-text: #e8e8e8;
   --color-focus: #bdbdbd;    /* = @theme default: unchanged */
@@ -551,6 +586,9 @@
    ───────────────────────────────────────────────────────────────────────── */
 [data-skin="atelier"] {
   --code-color-scheme: light;
+  --color-mascot-plinth: #8c806c;   /* mid-tone disc behind a light character (3:1 for #f4f4f4) */
+  --mascot-shadow-color: rgba(40,30,16,0.35);
+  --mascot-shadow-wide: rgba(40,30,16,0.18);
   --color-app: #f5f1eb;           /* outermost ground */
   --color-panel: #fbf8f2;         /* sidebar */
   --color-raised: #ffffff;        /* content — raised means lighter here */
@@ -580,6 +618,7 @@
 
   /* Two accent tones: the fill carries white, the text stands on white. */
   --color-accent: #a05f25;        /* #b06a2c darkened → 5.05:1 */
+  --color-unread: var(--color-accent);
   --color-accent-border: #b06a2c; /* the original tone lives on as the border */
   --color-accent-text: #96551f;   /* for links on a light ground — 5.81:1 */
   --color-focus: #96551f;         /* the ring rides the accent, not Grok blue */
@@ -649,6 +688,7 @@
 
   /* Brass. Bright fill, dark lettering — the inversion described above. */
   --color-accent: #d99a3e;
+  --color-unread: var(--color-accent);
   --color-accent-border: #e8b25e;
   --color-accent-text: #e0a44c;   /* 8.6:1 on the ground, for links */
   --color-focus: #e0a44c;         /* the ring rides the accent, not Grok blue */
@@ -687,6 +727,9 @@
    ───────────────────────────────────────────────────────────────────────── */
 [data-skin="lagoon"] {
   --code-color-scheme: light;
+  --color-mascot-plinth: #6f8f8c;   /* mid-tone disc behind a light character (3:1 for #f4f4f4) */
+  --mascot-shadow-color: rgba(12,36,34,0.35);
+  --mascot-shadow-wide: rgba(12,36,34,0.18);
   /* The tint is the point, so it is carried by the surfaces, not by a button:
      the ground sits 13 points of green-blue above its red channel, roughly
      three times Atelier's cream cast, which is what makes the skin read as
@@ -723,6 +766,7 @@
   --color-ink-tertiary: #4b5655;
 
   --color-accent: #11736d;        /* deep teal, carries white at 5.68:1 */
+  --color-unread: var(--color-accent);
   --color-accent-border: #14807a;
   --color-accent-text: #0d5f5a;   /* 7.5:1 on a card */
   --color-focus: #0d5f5a;         /* the ring rides the accent, not Grok blue */
@@ -779,6 +823,7 @@
   --color-ink-tertiary: #9fa4ad;
 
   --color-accent: #d0d4da;
+  --color-unread: #3c76f4;
   --color-accent-border: #9aa3ad;
   --color-accent-text: #e4e7ec;
   --color-focus: #b3b8c2;
@@ -808,6 +853,9 @@
    ───────────────────────────────────────────────────────────────────────── */
 [data-skin="linen"] {
   --code-color-scheme: light;
+  --color-mascot-plinth: #848c9b;   /* mid-tone disc behind a light character (3:1 for #f4f4f4) */
+  --mascot-shadow-color: rgba(20,24,36,0.35);
+  --mascot-shadow-wide: rgba(20,24,36,0.18);
   --color-app: #eceff3;
   --color-panel: #f5f6f8;
   --color-raised: #ffffff;
@@ -833,6 +881,7 @@
   --color-ink-tertiary: #515863;   /* = ink-secondary: the hover and selected washes leave no room below it */
 
   --color-accent: #2a2a2a;
+  --color-unread: #3c76f4;
   --color-accent-border: #3a3a3a;
   --color-accent-text: #2a2a2a;
   --color-focus: #2a2a2a;
@@ -888,6 +937,7 @@
   --color-ink-tertiary: #a49ca8;
 
   --color-accent: #9474a3;   /* #765683 measured 2.6:1 as a check mark or icon on a card; lifted to 3:1 on raised-hover */
+  --color-unread: var(--color-accent);
   --color-accent-border: #9670a3;
   --color-accent-text: #c49bd2;
   --color-focus: #c49bd2;
@@ -923,6 +973,9 @@
    ───────────────────────────────────────────────────────────────────────── */
 [data-skin="daylight"] {
   --code-color-scheme: light;
+  --color-mascot-plinth: #858585;   /* mid-tone disc behind a light character (3:1 for #f4f4f4) */
+  --mascot-shadow-color: rgba(20,20,20,0.35);
+  --mascot-shadow-wide: rgba(20,20,20,0.18);
   --color-app: #fcfcfc;           /* the thread */
   --color-panel: #f7f7f7;         /* sidebar, one step down from the thread */
   --color-raised: #e1e1e1;
@@ -953,6 +1006,7 @@
      unread dot it is mostly used for, not for a filled button's label. The
      fill is darkened until white clears AA; the dot keeps reading as blue. */
   --color-accent: #2a2a2a;
+  --color-unread: var(--color-accent);
   --color-accent-border: #3a3a3a;
   --color-accent-text: #2a2a2a;
   --color-focus: #2a2a2a;
@@ -991,6 +1045,9 @@
    ───────────────────────────────────────────────────────────────────────── */
 [data-skin="retro98"] {
   --code-color-scheme: light;
+  --color-mascot-plinth: #6e6e6e;   /* mid-tone disc behind a light character (3:1 for #f4f4f4) */
+  --mascot-shadow-color: rgba(0,0,0,0.35);
+  --mascot-shadow-wide: rgba(0,0,0,0.18);
   --color-app: #ffffff;           /* a window's white client area */
   --color-panel: #c0c0c0;         /* the silver chrome */
   --color-sidebar: #c0c0c0;              /* = panel: the silver chrome */
@@ -1016,6 +1073,7 @@
   --color-ink-tertiary: #3c3c3c;   /* = ink-secondary, as on the other light skins */
 
   --color-accent: #000080;        /* the era's selection navy */
+  --color-unread: var(--color-accent);
   --color-accent-border: #000080;
   --color-accent-text: #000080;
   --color-focus: #000000;
@@ -1050,6 +1108,9 @@
 [data-skin="meadow"] {
   --app-glow: none;
   --code-color-scheme: light;
+  --color-mascot-plinth: #7c917e;   /* mid-tone disc behind a light character (3:1 for #f4f4f4) */
+  --mascot-shadow-color: rgba(16,32,20,0.35);
+  --mascot-shadow-wide: rgba(16,32,20,0.18);
   --color-app: #ffffff;           /* the thread */
   --color-panel: #f6f8f6;         /* sidebar */
   --color-sidebar: #f6f8f6;              /* = panel: unchanged */
@@ -1072,6 +1133,7 @@
   --color-ink-tertiary: #4d5a52;   /* = ink-secondary: the selected wash leaves no room below it */
 
   --color-accent: #1a7a48;
+  --color-unread: var(--color-accent);
   --color-accent-border: #1f8a52;
   --color-accent-text: #176b3f;
   --color-focus: #1a7a48;
@@ -1660,6 +1722,16 @@ body {
   from { height: var(--call-dock-h); margin-bottom: 8px; opacity: 1; }
   to { height: 0; margin-bottom: 0; opacity: 0; }
 }
+/* the call pill's card: Settings and Transcript cross-fade in place while
+   the card goes from one height to the other (VoiceModeBar.tsx) */
+@keyframes card-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes card-fade-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
 /* streaming caret: a true typing blink (step, not fade) */
 @keyframes caret-blink {
   0%, 100% { opacity: 1; }
@@ -1772,7 +1844,7 @@ body {
   color: transparent;
 }
 @media (prefers-reduced-motion: reduce) {
-  .animate-caret, .animate-msg-in, .animate-shimmer, .animate-pop-in, .animate-pop-out, .animate-call-dock-in { animation: none; }
+  .animate-caret, .animate-msg-in, .animate-shimmer, .animate-pop-in, .animate-pop-out, .animate-call-dock-in, .animate-card-fade-in, .animate-card-fade-out { animation: none; }
   .animate-status-pulse { animation: none; opacity: 0.6; }
   .thinking-shimmer { background: none; color: var(--color-ink-secondary); }
   .turn-mascot-in, .turn-mascot-out, .turn-answer { animation: none; }
@@ -1797,6 +1869,8 @@ html[data-animations-paused] *::after {
 :root[data-reduced-motion="true"] .animate-pop-in,
 :root[data-reduced-motion="true"] .animate-pop-out,
 :root[data-reduced-motion="true"] .animate-call-dock-in,
+:root[data-reduced-motion="true"] .animate-card-fade-in,
+:root[data-reduced-motion="true"] .animate-card-fade-out,
 :root[data-reduced-motion="true"] .welcome-card * {
   animation: none !important;
   transition: none !important;
@@ -2600,6 +2674,42 @@ button:disabled.bg-danger {
 }
 @media (prefers-reduced-motion: reduce) {
   [data-testid="turn-access-chip"] { transition: none; }
+}
+
+/* ── Mascot plinth ────────────────────────────────────────────────────────
+   Every character root (shape, owl, Bunbu, Trombi) takes the skin's drop
+   shadow, which is "none" on dark skins. The plinth is a disc in
+   --color-mascot-plinth behind a preview or a thumbnail, so a white
+   character reads on a light surface: a flat one and a shaded one alike. The
+   editor lives in floating-bots/, so its thumbnails are reached by their data
+   attributes. A hairline outlines the disc without touching a selection ring
+   (that one is a box-shadow). */
+:is(.shape-mascot, [data-owl], .bunbu-mascot, .trombi-avatar) {
+  filter: var(--mascot-filter, none);
+}
+.mascot-plinth {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9999px;
+  background-color: var(--color-mascot-plinth);
+  outline: 1px solid color-mix(in srgb, var(--color-ink) 18%, transparent);
+  outline-offset: -1px;
+}
+[data-mascot-look-editor] [data-character-option] > span:first-child,
+[data-mascot-look-editor] .skin-card > span:first-child {
+  border-radius: 9999px;
+  background-color: var(--color-mascot-plinth);
+  outline: 1px solid color-mix(in srgb, var(--color-ink) 18%, transparent);
+  outline-offset: -1px;
+}
+[data-mascot-look-editor] [data-character-shape] {
+  background-color: var(--color-mascot-plinth);
+  outline: 1px solid color-mix(in srgb, var(--color-ink) 18%, transparent);
+  outline-offset: -1px;
+}
+[data-mascot-look-editor] [data-character-shape]:hover {
+  background-color: color-mix(in srgb, var(--color-ink) 8%, var(--color-mascot-plinth));
 }
 
 /* Window drag regions. The whole top strip of the window moves the window:

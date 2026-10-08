@@ -102,7 +102,7 @@ export function ComputerScreen({
         )}
         {showsStateChip(state) && (
           <span data-power={state} className="pointer-events-none absolute left-2 top-2 flex items-center gap-1.5 rounded-full bg-black/55 px-2 py-0.5 text-[11px] text-white">
-            <span aria-hidden="true" className={cn("size-1.5 rounded-full", state === "paused" || state === "starting" ? "bg-warning" : state === "error" ? "bg-danger" : "bg-white/50")} />
+            <span aria-hidden="true" className={cn("size-1.5 rounded-full", state === "paused" || state === "starting" ? "bg-accent/50" : state === "error" ? "bg-danger" : "bg-white/50")} />
             {screenStateLabel(state)}
           </span>
         )}

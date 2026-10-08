@@ -35,6 +35,15 @@ export const FLOAT_SIZE = Object.freeze({ width: 156, height: 172 });
  * Kept equal by the window-frame test.
  */
 export const FLOAT_HOME = Object.freeze({ width: 352, height: 716 });
+/**
+ * The character's own box in the FLOAT_HOME window (window coordinates): what
+ * must stay on screen. The rest of the window is transparent room (for the
+ * chat, hops and spread wings) and may hang off the screen's edge, so the
+ * mascot itself can stand right in a corner. The page reports its real box
+ * (`floating-bots:body`); this is the box until it does. Kept equal to
+ * `homeBody` in window-frame.ts by the window-frame test.
+ */
+export const FLOAT_BODY = Object.freeze({ x: 177, y: 535, width: 120, height: 120 });
 export const FLOAT_MIN = Object.freeze({ width: 60, height: 60 });
 /** Room for the mascot and a resized, moved balloon (the balloon itself caps at about 60 % of the work area). */
 export const FLOAT_MAX = Object.freeze({ width: 1100, height: 1100 });
@@ -46,6 +55,8 @@ const MAX_RELOADS = 3;
 const RELOAD_DELAY_MS = 800;
 /** A page that has not said it is ready after this long is reloaded. */
 export const READY_TIMEOUT_MS = 12_000;
+/** A drag's path (where the pointer took the window, unclamped) is forgotten after a pause this long. */
+const DRAG_IDLE_MS = 400;
 /** A move is saved once the window has stood still this long (macOS reports every step of a move). */
 export const REMEMBER_DELAY_MS = 500;
 
@@ -87,6 +98,102 @@ export function floatingDefaultBounds(primaryWorkArea, index = 0, size = FLOAT_H
   };
 }
 
+/**
+ * Keeps the character fully visible and nothing more: the window moves so
+ * that `body` (the character's box, in window coordinates) lies inside one
+ * display's work area, the one it overlaps most, else the nearest. The
+ * window's transparent room may hang off the screen, so the character can
+ * stand in any corner or along any edge of any display.
+ */
+export function clampBodyToDisplays(bounds, body, workAreas) {
+  if (!workAreas.length) return { ...bounds };
+  const box = { x: bounds.x + body.x, y: bounds.y + body.y, width: body.width, height: body.height };
+  const placed = clampToDisplays(box, workAreas);
+  return { x: Math.round(bounds.x + placed.x - box.x), y: Math.round(bounds.y + placed.y - box.y), width: bounds.width, height: bounds.height };
+}
+
+/**
+ * macOS (with "Displays have separate Spaces", its default) snaps a window
+ * back when more than about a fifth of it reaches onto another display while
+ * most of it is on the first: the move is undone a moment later. So there
+ * the window's empty room may hang past a screen's edge into nothing, but
+ * only this far onto a neighbouring display; past that the window (and the
+ * character with it) stays on its own side of the seam.
+ */
+export const SEAM_SHARE = 0.18;
+export function keepOffNeighbours(bounds, body, displays) {
+  const box = { x: bounds.x + body.x, y: bounds.y + body.y, width: body.width, height: body.height };
+  const centerX = box.x + box.width / 2;
+  const centerY = box.y + box.height / 2;
+  const own = displays.find((d) => centerX >= d.x && centerX < d.x + d.width && centerY >= d.y && centerY < d.y + d.height);
+  if (!own) return { ...bounds };
+  let { x, y } = bounds;
+  const slackX = Math.floor(bounds.width * SEAM_SHARE);
+  const slackY = Math.floor(bounds.height * SEAM_SHARE);
+  for (const other of displays) {
+    if (other === own) continue;
+    const overX = Math.min(x + bounds.width, other.x + other.width) - Math.max(x, other.x);
+    const overY = Math.min(y + bounds.height, other.y + other.height) - Math.max(y, other.y);
+    if (overX <= 0 || overY <= 0) continue;
+    // the neighbour beside the character's display (left or right) or above or below it
+    const beside = other.x >= own.x + own.width || other.x + other.width <= own.x;
+    if (beside && overX > slackX) x += other.x > own.x ? -(overX - slackX) : overX - slackX;
+    else if (!beside && overY > slackY) y += other.y > own.y ? -(overY - slackY) : overY - slackY;
+  }
+  return { ...bounds, x: Math.round(x), y: Math.round(y) };
+}
+
+/**
+ * How far a window of this size may reach from the display under the
+ * character, on each side where a neighbouring display touches it (macOS):
+ * that display's edge plus the share macOS lets through. Free sides are left
+ * out. Null when no neighbour limits it.
+ */
+export function windowLimits(body, size, displays) {
+  const centerX = body.x + body.width / 2;
+  const centerY = body.y + body.height / 2;
+  const own = displays.find((d) => centerX >= d.x && centerX < d.x + d.width && centerY >= d.y && centerY < d.y + d.height);
+  if (!own) return null;
+  const slackX = Math.floor(size.width * SEAM_SHARE);
+  const slackY = Math.floor(size.height * SEAM_SHARE);
+  const limits = {};
+  for (const other of displays) {
+    if (other === own) continue;
+    const overlapsY = other.y < own.y + own.height && other.y + other.height > own.y;
+    const overlapsX = other.x < own.x + own.width && other.x + other.width > own.x;
+    if (overlapsY && other.x + other.width <= own.x) limits.left = Math.max(limits.left ?? -Infinity, own.x - slackX);
+    if (overlapsY && other.x >= own.x + own.width) limits.right = Math.min(limits.right ?? Infinity, own.x + own.width + slackX);
+    if (overlapsX && other.y + other.height <= own.y) limits.top = Math.max(limits.top ?? -Infinity, own.y - slackY);
+    if (overlapsX && other.y >= own.y + own.height) limits.bottom = Math.min(limits.bottom ?? Infinity, own.y + own.height + slackY);
+  }
+  return Object.keys(limits).length ? limits : null;
+}
+
+/** The character's box as the page reports it: inside its window, a sane size, or null. */
+export function sanitizeBody(value, size) {
+  if (!value || typeof value !== "object") return null;
+  const { x, y, width, height } = value;
+  if (![x, y, width, height].every(isFiniteNumber) || width < 8 || height < 8) return null;
+  const left = clampNumber(Math.round(x), 0, Math.max(0, size.width - 8));
+  const top = clampNumber(Math.round(y), 0, Math.max(0, size.height - 8));
+  return {
+    x: left,
+    y: top,
+    width: Math.round(clampNumber(width, 8, size.width - left)),
+    height: Math.round(clampNumber(height, 8, size.height - top)),
+  };
+}
+
+/**
+ * Where the character's box lands after a resize that keeps one corner of
+ * the window in place: it keeps its distance to that corner.
+ */
+export function bodyAfterResize(body, from, to, anchor = {}) {
+  const x = anchor.x === "left" ? body.x : body.x + (to.width - from.width);
+  const y = anchor.y === "top" ? body.y : body.y + (to.height - from.height);
+  return sanitizeBody({ x, y, width: body.width, height: body.height }, to);
+}
+
 /* ---------------------------------------------------------------- payloads */
 
 export const REPLY_MAX = 4000;
@@ -100,9 +207,9 @@ const TASKS = new Set(["idle", "working", "waiting", "error"]);
 const LIVELINESS = new Set(["calm", "normal", "lively"]);
 const MAX_TOKENS = 1e9;
 const CHARACTERS = new Set(["owl", "shape", "trombi", "bunbu"]);
-const SHAPES = new Set(["circle", "cloud", "squircle", "sparkle", "clover", "bean", "flower", "drop", "pill", "pick", "house", "star", "hexagon"]);
-/** Shapes from the first set, renamed or replaced (shared/mascot-look.ts LEGACY_SHAPES). */
-const LEGACY_SHAPES = { blob: "bean", triangle: "pick" };
+const SHAPES = new Set(["circle", "bean", "squircle", "pill", "pick", "hexagon", "cloud", "drop"]);
+/** Shapes from earlier sets and the display names (shared/mascot-look.ts LEGACY_SHAPES). */
+const LEGACY_SHAPES = { blob: "bean", pebble: "bean", triangle: "pick", capsule: "pill", droplet: "drop", sparkle: "squircle", clover: "cloud", flower: "cloud", house: "hexagon", star: "hexagon" };
 const SHAPE_SKINS = new Set(["plain", "pastel", "glossy", "night", "outline", "gold", "neon", "chrome", "crystal", "circuit", "holo", "molten", "galaxy"]);
 const TROMBI_SKINS = new Set(["classic", "retro98", "gold", "neon", "chrome", "glitch", "holo", "molten"]);
 const BUNBU_SKINS = new Set(["plain", "pastel", "night", "plush", "velvet", "gold", "neon", "chrome", "crystal", "holo", "galaxy", "molten"]);
@@ -160,17 +267,51 @@ export const AVATAR_MAX = 400_000;
 const text = (value, max) => (typeof value === "string" ? value.slice(0, max) : undefined);
 const flag = (value) => value === true;
 
-function menuItems(value) {
+/** A menu item's id: "switch:" and a bot id fit. */
+export const MENU_ID_RE = /^[a-zA-Z0-9:_-]{1,80}$/;
+/** Items at the menu's top level, and in a submenu (the person's bots, a character's moves). */
+export const MENU_MAX = 16;
+export const SUBMENU_MAX = 32;
+/** A move asked of the mascot by name (a clip of clips.ts); the window checks it against its character's list. */
+export const MOVE_RE = /^[a-zA-Z]{1,24}$/;
+
+function menuItems(value, depth = 0) {
   if (!Array.isArray(value)) return [];
   return value
-    .slice(0, 8)
-    .filter((item) => item && typeof item === "object" && ID_RE.test(item.id) && typeof item.label === "string")
-    .map((item) => ({
-      id: item.id,
-      label: item.label.slice(0, 80),
-      ...(typeof item.checked === "boolean" ? { checked: item.checked } : {}),
-    }));
+    .slice(0, depth ? SUBMENU_MAX : MENU_MAX)
+    .filter((item) => item && typeof item === "object" && MENU_ID_RE.test(item.id) && typeof item.label === "string")
+    .map((item) => {
+      if (item.type === "separator") return { id: item.id, label: "", type: "separator" };
+      const items = depth === 0 && Array.isArray(item.items) ? menuItems(item.items, 1) : null;
+      return {
+        id: item.id,
+        label: item.label.slice(0, 80),
+        ...(typeof item.checked === "boolean" ? { checked: item.checked } : {}),
+        ...(item.enabled === false ? { enabled: false } : {}),
+        ...(items ? { items } : {}),
+      };
+    });
 }
+
+/**
+ * The native menu's template for the snapshot's items: separators, checks,
+ * greyed items and one level of submenus. `choose` gets the item's id.
+ */
+export function menuTemplate(items, choose) {
+  return items.map((item) => {
+    if (item.type === "separator") return { type: "separator" };
+    if (item.items) return { label: item.label, ...(item.enabled === false ? { enabled: false } : {}), submenu: menuTemplate(item.items, choose) };
+    return {
+      label: item.label,
+      ...(typeof item.checked === "boolean" ? { type: "checkbox", checked: item.checked } : {}),
+      ...(item.enabled === false ? { enabled: false } : {}),
+      click: () => choose(item.id),
+    };
+  });
+}
+
+/** Menu choices that bring the app's window forward (the brain then shows the thread, the settings, the composer). */
+const FOCUS_IDS = new Set(["open", "settings", "attach", "model"]);
 
 function avatar(value) {
   if (!value || typeof value !== "object") return null;
@@ -234,7 +375,32 @@ export function sanitizeCall(value) {
     previewing: value.previewing && typeof value.previewing.id === "string" && VOICE_ID_RE.test(value.previewing.id)
       ? { id: value.previewing.id, loading: flag(value.previewing.loading) }
       : null,
+    // live captions beside the mascot (the call settings' switch)
+    captions: value.captions !== false,
   };
+}
+
+/** A tray row's id: "a0".."a99" (an approval), "r0".."r99" (running work); the brain keeps what each stands for. */
+export const TRAY_ID_RE = /^[ar][0-9]{1,2}$/;
+export const TRAY_MAX = 8;
+
+/** The activity tray: short texts and opaque ids, nothing else. */
+export function sanitizeTray(value) {
+  if (!value || typeof value !== "object") return null;
+  const items = Array.isArray(value.items)
+    ? value.items
+        .filter((item) => item && typeof item === "object" && typeof item.id === "string" && TRAY_ID_RE.test(item.id) && (item.kind === "approval" || item.kind === "running"))
+        .slice(0, TRAY_MAX)
+        .map((item) => ({
+          id: item.id,
+          kind: item.kind,
+          title: text(item.title, 80) ?? "",
+          detail: text(item.detail, 140) ?? "",
+          canStop: flag(item.canStop),
+          canOpen: flag(item.canOpen),
+        }))
+    : [];
+  return { loading: flag(value.loading), items };
 }
 
 /**
@@ -304,6 +470,7 @@ export function sanitizeFloatingSnapshot(value) {
   const theme = appTheme(value.theme);
   if (theme) snapshot.theme = theme;
   snapshot.call = sanitizeCall(value.call);
+  snapshot.tray = sanitizeTray(value.tray);
   const balloon = value.balloon;
   if (balloon && typeof balloon === "object" && BALLOON_KINDS.has(balloon.kind)) {
     snapshot.balloon = {
@@ -327,6 +494,10 @@ export function sanitizeFloatingSnapshot(value) {
             label: text(balloon.input.label, 160) ?? "",
             placeholder: text(balloon.input.placeholder, 160) ?? "",
             send: text(balloon.input.send, 40) ?? "",
+            // the composer row's clip and model chip (labels only; both open the app's composer)
+            ...(typeof balloon.input.attach === "string" ? { attach: balloon.input.attach.slice(0, 80) } : {}),
+            ...(typeof balloon.input.model === "string" && balloon.input.model ? { model: balloon.input.model.slice(0, 80) } : {}),
+            ...(typeof balloon.input.modelTitle === "string" ? { modelTitle: balloon.input.modelTitle.slice(0, 160) } : {}),
           }
         : null,
     };
@@ -334,7 +505,8 @@ export function sanitizeFloatingSnapshot(value) {
   return snapshot;
 }
 
-const EVENT_TYPES = new Set(["click", "context", "dismiss", "open", "menu", "send", "play", "pet", "call"]);
+const EVENT_TYPES = new Set(["click", "context", "dismiss", "open", "menu", "send", "play", "pet", "call", "tray", "work"]);
+const WORK_ACTIONS = new Set(["allow", "stop", "open"]);
 const CALL_ACTIONS = new Set(["start", "end", "mute", "unmute", "hold", "resume", "interrupt", "retry", "talk", "release", "voices", "enroll", "forget", "preview", "settings", "call-settings"]);
 /** The settings a mascot's call may change, and how each is checked. */
 const CALL_PATCH = {
@@ -346,12 +518,15 @@ export const SEND_MAX = 4000;
 /** What a floating window may report back: a click, a menu choice, or typed text. */
 export function sanitizeFloatingEvent(value) {
   if (!value || typeof value !== "object" || !EVENT_TYPES.has(value.type)) return null;
-  if (value.type === "menu") return ID_RE.test(value.id ?? "") ? { type: "menu", id: value.id } : null;
+  if (value.type === "menu") return MENU_ID_RE.test(value.id ?? "") ? { type: "menu", id: value.id } : null;
   if (value.type === "send") {
     if (typeof value.text !== "string") return null;
     const typed = value.text.slice(0, SEND_MAX);
     return typed.trim() ? { type: "send", text: typed } : null;
   }
+  // the hover controls' bell, and a tray row's buttons (the brain checks the id against what it listed)
+  if (value.type === "tray") return typeof value.open === "boolean" ? { type: "tray", open: value.open } : null;
+  if (value.type === "work") return WORK_ACTIONS.has(value.action) && typeof value.id === "string" && TRAY_ID_RE.test(value.id) ? { type: "work", action: value.action, id: value.id } : null;
   if (value.type === "call") {
     if (!CALL_ACTIONS.has(value.action)) return null;
     if (value.action === "preview") return typeof value.voice === "string" && VOICE_ID_RE.test(value.voice) ? { type: "call", action: "preview", voice: value.voice } : null;
@@ -366,7 +541,11 @@ export function sanitizeFloatingEvent(value) {
   return { type: value.type };
 }
 
-/** Positions on disk: per display setup, per bot, the character's bottom-right corner. */
+/**
+ * Positions on disk: per display setup, per bot, a bottom-right corner. With
+ * `v: 2` it is the character's own box's; without, an older save of the
+ * window's corner.
+ */
 export function sanitizePositions(value) {
   const clean = {};
   if (!value || typeof value !== "object" || Array.isArray(value)) return clean;
@@ -374,7 +553,7 @@ export function sanitizePositions(value) {
     if (typeof signature !== "string" || signature.length > 512 || !bots || typeof bots !== "object") continue;
     const entry = {};
     for (const [botId, spot] of Object.entries(bots).slice(0, 64)) {
-      if (isBotId(botId) && spot && isFiniteNumber(spot.x) && isFiniteNumber(spot.y)) entry[botId] = { x: spot.x, y: spot.y };
+      if (isBotId(botId) && spot && isFiniteNumber(spot.x) && isFiniteNumber(spot.y)) entry[botId] = { x: spot.x, y: spot.y, ...(spot.v === 2 ? { v: 2 } : {}) };
     }
     clean[signature] = entry;
   }
@@ -405,6 +584,7 @@ export function createFloatingBotWindows(deps) {
   // Linux cannot forward pointer moves through an ignoring window, so there
   // the small window simply stays clickable rather than becoming unreachable.
   const clickThrough = (deps.platform ?? process.platform) !== "linux";
+  const seams = (deps.platform ?? process.platform) === "darwin";
   const log = deps.log ?? (() => {});
   /** botId -> { win, snapshot, onTop, autopilot } */
   const floats = new Map();
@@ -457,15 +637,38 @@ export function createFloatingBotWindows(deps) {
     if (main && !main.isDestroyed()) main.webContents.send(channel, payload);
   };
 
+  /** The character's box in its window: as the page reported it, else the home window's. */
+  const bodyOf = (entry) => {
+    if (entry.body) return entry.body;
+    const { width, height } = entry.win.getBounds();
+    return width === FLOAT_HOME.width && height === FLOAT_HOME.height ? FLOAT_BODY : null;
+  };
+  /** A window spot, moved so the character is fully on a screen (the whole window when its box is not known yet). */
+  const clampFor = (entry, bounds) => {
+    const body = entry ? bodyOf(entry) : null;
+    if (!body) return clampToDisplays(bounds, workAreas());
+    const placed = clampBodyToDisplays(bounds, body, workAreas());
+    if (!seams) return placed;
+    // macOS undoes a move that puts too much of the window on a neighbouring display
+    const displays = screen.getAllDisplays().map((display) => display.bounds ?? display.workArea);
+    return clampBodyToDisplays(keepOffNeighbours(placed, body, displays), body, workAreas());
+  };
+  /** The id a window speaks for now (a switch may have given it another bot). */
+  const idOf = (entry) => {
+    for (const [botId, candidate] of floats) if (candidate === entry) return botId;
+    return null;
+  };
+
   const remember = (botId) => {
     const entry = floats.get(botId);
     // the mascot flying off or wandering is not the person choosing a spot
     if (!live(entry) || entry.autopilot) return;
     const { x, y, width, height } = entry.win.getBounds();
+    const body = bodyOf(entry) ?? { x: 0, y: 0, width, height };
     const all = savedPositions();
     const key = signature();
-    // the character stands at the bottom-right corner whatever the balloon does
-    all[key] = { ...all[key], [botId]: { x: x + width, y: y + height } };
+    // the character's own corner, whatever the balloon and the window's room do
+    all[key] = { ...all[key], [botId]: { x: x + body.x + body.width, y: y + body.y + body.height, v: 2 } };
     try {
       deps.writePositions?.(all);
     } catch {
@@ -475,10 +678,13 @@ export function createFloatingBotWindows(deps) {
 
   const startBounds = (botId) => {
     const saved = savedPositions()[signature()]?.[botId];
+    // the spot kept for this display setup, exactly (a setup that changed starts from the default spot)
     const bounds = saved
-      ? { x: saved.x - FLOAT_HOME.width, y: saved.y - FLOAT_HOME.height, ...FLOAT_HOME }
+      ? saved.v === 2
+        ? { x: saved.x - FLOAT_BODY.x - FLOAT_BODY.width, y: saved.y - FLOAT_BODY.y - FLOAT_BODY.height, ...FLOAT_HOME }
+        : { x: saved.x - FLOAT_HOME.width, y: saved.y - FLOAT_HOME.height, ...FLOAT_HOME }
       : floatingDefaultBounds(screen.getPrimaryDisplay().workArea, floats.size);
-    return clampToDisplays(bounds, workAreas());
+    return clampBodyToDisplays(bounds, FLOAT_BODY, workAreas());
   };
 
   /** Move or size a window only when that changes something; a move alone keeps its size untouched. */
@@ -508,11 +714,17 @@ export function createFloatingBotWindows(deps) {
       return existing.win;
     }
     if (floats.size >= MAX_FLOATING) return null;
-    const options = assistantWindowOptions({ preload, bounds: startBounds(botId), title: "Floating bot", session: deps.session?.() ?? undefined });
-    // throttled when hidden or covered, so the 3D mascot stops drawing (and spending battery) there
-    const created = new BrowserWindow({ ...options, alwaysOnTop, webPreferences: { ...options.webPreferences, backgroundThrottling: true } });
+    const start = startBounds(botId);
+    const options = assistantWindowOptions({ preload, bounds: start, title: "Floating bot", session: deps.session?.() ?? undefined });
+    // throttled when hidden or covered, so the 3D mascot stops drawing (and spending battery) there;
+    // larger than the screen allowed, so macOS lets its transparent room hang past a screen's edge
+    // (above the menu bar too) while the character stands in a corner
+    const created = new BrowserWindow({ ...options, alwaysOnTop, enableLargerThanScreen: true, webPreferences: { ...options.webPreferences, backgroundThrottling: true } });
+    // a window created partly off screen may be pulled back on by the system: put it where it belongs
+    const made = created.getBounds();
+    if (made.x !== start.x || made.y !== start.y) created.setBounds(start);
     // interactive and focusable as last set, so a repeated request costs nothing (and never flickers)
-    const entry = { win: created, snapshot: existing?.snapshot ?? pending.get(botId) ?? null, onTop: alwaysOnTop, autopilot: false, interactive: !clickThrough, focusable: false };
+    const entry = { win: created, snapshot: existing?.snapshot ?? pending.get(botId) ?? null, onTop: alwaysOnTop, autopilot: false, interactive: !clickThrough, focusable: false, body: null };
     pending.delete(botId);
     floats.set(botId, entry);
     applyOnTop(created, alwaysOnTop);
@@ -526,22 +738,30 @@ export function createFloatingBotWindows(deps) {
     created.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
     created.webContents.on("will-navigate", (event) => event.preventDefault());
     created.once("ready-to-show", () => {
-      if (!created.isDestroyed()) created.showInactive();
+      if (created.isDestroyed()) return;
+      created.showInactive();
+      // showing a window partly off screen may pull it back on: the character goes back where it was left
+      const shown = created.getBounds();
+      if (shown.x !== start.x || shown.y !== start.y) created.setBounds({ ...shown, x: start.x, y: start.y });
     });
     // on macOS "moved" fires for every step of a move: save once it stops, never per frame
     created.on("moved", () => {
       clearTimeout(entry.rememberTimer);
       // a step of the mascot's own flight is not a spot to keep
       if (entry.autopilot) return;
-      entry.rememberTimer = setTimeout(() => remember(botId), REMEMBER_DELAY_MS);
+      entry.rememberTimer = setTimeout(() => {
+        const id = idOf(entry);
+        if (id) remember(id);
+      }, REMEMBER_DELAY_MS);
     });
     created.once("closed", () => {
       clearTimeout(entry.watchdog);
       clearTimeout(entry.rememberTimer);
-      if (floats.get(botId)?.win !== created) return;
-      floats.delete(botId);
+      const id = idOf(entry);
+      if (!id) return;
+      floats.delete(id);
       // closed from outside the brain (a window shortcut): the bot goes back in the app
-      if (!silent) notifyMain("floating-bots:closed", { botId });
+      if (!silent) notifyMain("floating-bots:closed", { botId: id });
     });
     keepAlive(botId, entry);
     void load(entry);
@@ -593,13 +813,12 @@ export function createFloatingBotWindows(deps) {
     }, READY_TIMEOUT_MS);
   }
 
-  /** A display was removed, added or resized: every mascot back inside what is left. */
+  /** A display was removed, added or resized: every character back inside what is left (its room may hang off). */
   const reclamp = () => {
-    const areas = workAreas();
     for (const [botId, entry] of floats) {
       if (!live(entry)) continue;
       const bounds = entry.win.getBounds();
-      const next = clampToDisplays(bounds, areas);
+      const next = clampFor(entry, bounds);
       if (next.x !== bounds.x || next.y !== bounds.y || next.width !== bounds.width || next.height !== bounds.height) {
         entry.win.setBounds(next);
         log(`floating bot ${botId}: moved back on screen after a display change`);
@@ -652,6 +871,20 @@ export function createFloatingBotWindows(deps) {
       applyOnTop(entry.win, request.on);
       return true;
     },
+    // "Switch bot": the window (and its spot) now stands for another bot; the brain sends that bot's state next
+    "floating-bots:rekey": (event, request) => {
+      if (!isMain(event) || !request || !isBotId(request.from) || !isBotId(request.to) || request.from === request.to) return false;
+      const entry = floats.get(request.from);
+      if (!live(entry) || floats.has(request.to)) return false;
+      floats.delete(request.from);
+      floats.set(request.to, entry);
+      entry.snapshot = pending.get(request.to) ?? null;
+      pending.delete(request.to);
+      if (entry.snapshot) entry.win.webContents.send("floating-bot:state", entry.snapshot);
+      // the new bot keeps this spot
+      remember(request.to);
+      return true;
+    },
     "floating-bots:list": (event) => {
       if (!isMain(event)) return [];
       return [...floats.keys()];
@@ -661,10 +894,14 @@ export function createFloatingBotWindows(deps) {
       if (!found || !delta || !isFiniteNumber(delta.dx) || !isFiniteNumber(delta.dy)) return null;
       const { win } = found.entry;
       const bounds = win.getBounds();
-      const next = clampToDisplays(
-        { ...bounds, x: bounds.x + clampNumber(delta.dx, -MAX_MOVE, MAX_MOVE), y: bounds.y + clampNumber(delta.dy, -MAX_MOVE, MAX_MOVE) },
-        workAreas(),
-      );
+      // A drag follows the pointer's own path, not the clamped spot: held at a screen's edge the
+      // character does not lose ground, and past a seam between displays it goes onto the next one
+      // (small steps from a clamped spot never would). A pause ends that path.
+      const now = Date.now();
+      const drag = found.entry.drag && now - found.entry.drag.at < DRAG_IDLE_MS ? found.entry.drag : { x: bounds.x, y: bounds.y };
+      const wanted = { x: drag.x + clampNumber(delta.dx, -MAX_MOVE, MAX_MOVE), y: drag.y + clampNumber(delta.dy, -MAX_MOVE, MAX_MOVE) };
+      found.entry.drag = { ...wanted, at: now };
+      const next = clampFor(found.entry, { ...bounds, ...wanted });
       place(win, next);
       return { x: next.x, y: next.y };
     },
@@ -672,7 +909,8 @@ export function createFloatingBotWindows(deps) {
       const found = senderFloat(event);
       if (!found || !point || !isFiniteNumber(point.x) || !isFiniteNumber(point.y)) return null;
       const { win } = found.entry;
-      const next = clampToDisplays({ ...win.getBounds(), x: Math.round(point.x), y: Math.round(point.y) }, workAreas());
+      found.entry.drag = null;
+      const next = clampFor(found.entry, { ...win.getBounds(), x: Math.round(point.x), y: Math.round(point.y) });
       place(win, next);
       return next;
     },
@@ -682,8 +920,10 @@ export function createFloatingBotWindows(deps) {
       const bounds = found.entry.win.getBounds();
       const areas = workAreas();
       if (!areas.length) return null;
-      // the display the window stands on: clamping a copy of it picks the same area main would
-      const clamped = clampToDisplays(bounds, areas);
+      // the display the character stands on (its box, else the window): clamping a copy picks the same area main would
+      const known = bodyOf(found.entry);
+      const box = known ? { x: bounds.x + known.x, y: bounds.y + known.y, width: known.width, height: known.height } : bounds;
+      const clamped = clampToDisplays(box, areas);
       const workArea = areas.find((area) =>
         clamped.x >= area.x && clamped.y >= area.y && clamped.x + clamped.width <= area.x + area.width && clamped.y + clamped.height <= area.y + area.height,
       ) ?? areas[0];
@@ -694,26 +934,61 @@ export function createFloatingBotWindows(deps) {
       } catch {
         /* no pointer to follow: the mascot looks ahead */
       }
-      return { bounds, workArea: { x: workArea.x, y: workArea.y, width: workArea.width, height: workArea.height }, cursor };
+      // on macOS, how far the window may reach next to a neighbouring display (its room then opens the other way)
+      const limits = seams && known ? windowLimits(box, bounds, screen.getAllDisplays().map((display) => display.bounds ?? display.workArea)) : null;
+      return { bounds, workArea: { x: workArea.x, y: workArea.y, width: workArea.width, height: workArea.height }, cursor, ...(known ? { body: box } : {}), ...(limits ? { limits } : {}) };
     },
     "floating-bots:resize": (event, size) => {
       const found = senderFloat(event);
       if (!found || !size || !isFiniteNumber(size.width) || !isFiniteNumber(size.height)) return null;
       const { win } = found.entry;
       const bounds = win.getBounds();
-      const width = Math.round(clampNumber(size.width, FLOAT_MIN.width, FLOAT_MAX.width));
-      const height = Math.round(clampNumber(size.height, FLOAT_MIN.height, FLOAT_MAX.height));
+      // never larger than the largest display's work area (macOS would cut it there anyway)
+      const areas = workAreas();
+      const most = { width: Math.max(FLOAT_MIN.width, ...areas.map((area) => area.width)), height: Math.max(FLOAT_MIN.height, ...areas.map((area) => area.height)) };
+      const width = Math.round(clampNumber(size.width, FLOAT_MIN.width, Math.min(FLOAT_MAX.width, most.width)));
+      const height = Math.round(clampNumber(size.height, FLOAT_MIN.height, Math.min(FLOAT_MAX.height, most.height)));
       // the character's corner stays where it was: by default the bottom-right (the window grows
       // up and to the left); a balloon flipped below or to the right asks for the other corner
       const fromLeft = size.anchorX === "left";
       const fromTop = size.anchorY === "top";
-      const next = clampToDisplays({
+      const sized = {
         x: fromLeft ? bounds.x : bounds.x + bounds.width - width,
         y: fromTop ? bounds.y : bounds.y + bounds.height - height,
         width,
         height,
-      }, workAreas());
+      };
+      // the character keeps its distance to that corner until the page reports where it really is
+      const body = bodyOf(found.entry);
+      found.entry.body = body ? bodyAfterResize(body, bounds, sized, { x: fromLeft ? "left" : "right", y: fromTop ? "top" : "bottom" }) : null;
+      // a drag's path was the window's old frame: the next step starts from this one
+      found.entry.drag = null;
+      const next = clampFor(found.entry, sized);
       place(win, next);
+      return next;
+    },
+    /*
+     * The page laid the window out again (the chat's room moved to another
+     * side of the character): the window takes this size and moves so the
+     * character stays exactly where it is on the screen.
+     */
+    "floating-bots:frame": (event, frame) => {
+      const found = senderFloat(event);
+      if (!found || !frame || !isFiniteNumber(frame.width) || !isFiniteNumber(frame.height)) return null;
+      const { entry } = found;
+      const bounds = entry.win.getBounds();
+      const size = {
+        width: Math.round(clampNumber(frame.width, FLOAT_MIN.width, FLOAT_MAX.width)),
+        height: Math.round(clampNumber(frame.height, FLOAT_MIN.height, FLOAT_MAX.height)),
+      };
+      const body = sanitizeBody(frame.body, size);
+      if (!body) return null;
+      // where it was drawn just before, as the page measured it (else what main last heard)
+      const was = sanitizeBody(frame.from, bounds) ?? bodyOf(entry) ?? body;
+      entry.body = body;
+      entry.drag = null;
+      const next = clampFor(entry, { x: bounds.x + was.x - body.x, y: bounds.y + was.y - body.y, ...size });
+      place(entry.win, next);
       return next;
     },
   };
@@ -753,22 +1028,26 @@ export function createFloatingBotWindows(deps) {
         /* the default zoom */
       }
       const point = menuPopupPoint(at, zoom, win.getBounds(), workAreas());
+      const entry = found.entry;
       const choose = (id) => {
-        if (id === "open") {
+        // a move is the mascot's own business: straight to its window, the brain has nothing to decide
+        if (id.startsWith("move:")) {
+          const clip = id.slice(5);
+          if (MOVE_RE.test(clip) && live(entry)) entry.win.webContents.send("floating-bot:move", clip);
+          return;
+        }
+        if (FOCUS_IDS.has(id)) {
           try {
             deps.focusMain?.();
           } catch {
             /* the brain still switches the thread */
           }
         }
-        // the bot id comes from which window asked, never from the payload
-        notifyMain("floating-bots:event", { botId: found.botId, event: { type: "menu", id } });
+        // the bot id comes from which window asked (now: a switch may have given it another), never from the payload
+        const botId = idOf(entry);
+        if (botId) notifyMain("floating-bots:event", { botId, event: { type: "menu", id } });
       };
-      const menu = deps.Menu.buildFromTemplate(items.map((item) => ({
-        label: item.label,
-        ...(typeof item.checked === "boolean" ? { type: "checkbox", checked: item.checked } : {}),
-        click: () => choose(item.id),
-      })));
+      const menu = deps.Menu.buildFromTemplate(menuTemplate(items, choose));
       menu.popup({ window: win, x: point.x, y: point.y });
     },
     // the call's levels, many times a second: straight to that bot's window, never kept
@@ -793,8 +1072,8 @@ export function createFloatingBotWindows(deps) {
       if (!found) return;
       const clean = sanitizeFloatingEvent(value);
       if (!clean) return;
-      // "Open in the app" brings the app forward from here: the window is not focused
-      if (clean.type === "open" || (clean.type === "menu" && clean.id === "open")) {
+      // "Open in the app" (and the settings, the composer's clip and model chip) bring the app forward from here: the window is not focused
+      if (clean.type === "open" || (clean.type === "menu" && FOCUS_IDS.has(clean.id)) || (clean.type === "work" && clean.action === "open")) {
         try {
           deps.focusMain?.();
         } catch {
@@ -831,6 +1110,13 @@ export function createFloatingBotWindows(deps) {
         /* keep the last state */
       }
     },
+    // where the character is drawn in its window: what main keeps on screen
+    "floating-bots:body": (event, value) => {
+      const found = senderFloat(event);
+      if (!found) return;
+      const body = sanitizeBody(value, found.entry.win.getBounds());
+      if (body) found.entry.body = body;
+    },
     "floating-bots:autopilot": (event, on) => {
       const found = senderFloat(event);
       if (!found || typeof on !== "boolean") return;
@@ -840,6 +1126,8 @@ export function createFloatingBotWindows(deps) {
     "floating-bots:moved": (event) => {
       const found = senderFloat(event);
       if (!found) return;
+      // the drag is over: the next one starts from where the window stands
+      found.entry.drag = null;
       clearTimeout(found.entry.rememberTimer);
       remember(found.botId);
     },

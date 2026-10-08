@@ -4,7 +4,8 @@
 // machine your bots can borrow.
 import { useRetroSkin } from "./RetroChromeHost";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
-import { FLOATING_LIVELINESS, floatingBotPrefs, setFloatingFlyAway, setFloatingLiveliness, subscribeFloatingBots, type FloatingLiveliness } from "@/lib/floating-bots";
+import { FLOATING_LIVELINESS, floatingBotPrefs, HOTKEY_CHOICES, hotkeyLabel, setFloatingFlyAway, setFloatingHotkey, setFloatingLiveliness, subscribeFloatingBots, type FloatingLiveliness, type HotkeyChoice } from "@/lib/floating-bots";
+import { useCallSettings, writeCallSettings } from "@/lib/voice-mode/call-settings";
 import { Archive, Coins, FlaskConical, KeyRound, Mail, Monitor, Palette, Plug, ScrollText, Search, ShieldCheck, TabletSmartphone, Terminal, Trophy, User, Users, X, Building2, Zap } from "lucide-react";
 import { AchievementsPage } from "./achievements/AchievementsPage";
 import { api, useStore, type AppSettingsSection, type ConfigStatus } from "@/state/store";
@@ -57,6 +58,7 @@ import { SettingsSubPage, SettingsSubPageRow } from "./SettingsSubPage";
 import { InitialsAvatar } from "./Avatar";
 import { profileInitials, profileLabel } from "./SidebarProfileMenu";
 import { ManagedProfileIdentity } from "./ManagedProfileIdentity";
+import { MyLabelField } from "./settings/MyLabelField";
 import { managedProfile } from "@/lib/profile-management";
 import { ThreadConcurrencySettings } from "./ThreadConcurrencySettings";
 import { AutomaticRecoverySettings } from "./AutomaticRecoverySettings";
@@ -67,7 +69,7 @@ import { WorkspaceBackupSettings } from "./WorkspaceBackupSettings";
 import { cn } from "@/lib/cn";
 import { setAdvancedMode, useAdvancedMode } from "@/lib/interface-mode";
 import { simpleHidesSettingsSection } from "@/lib/interface-visibility";
-import { setNotificationSounds, useNotificationSounds } from "@/lib/notification-preferences";
+import { setNotificationSounds, setNudgeSound, useNotificationSounds, useNudgeSound } from "@/lib/notification-preferences";
 import { setShowThreads, useShowThreads } from "@/lib/thread-preferences";
 import { parseSidebarDensity, setSidebarDensity, SIDEBAR_DENSITIES, useSidebarDensity, type SidebarDensity } from "@/lib/sidebar-preferences";
 import { currentPhonePairingTarget } from "@/lib/phone-pairing";
@@ -89,7 +91,7 @@ export const SECTIONS: Array<{
   { id: "general", labelKey: "settings.section.general", icon: User, keywords: ["profile", "name", "email", "about me", "about", "suggestions", "suggested", "memory", "updates", "effort", "new bots", "reasoning", "threads", "parallel", "concurrency", "cleanup", "retention", "event log", "event-log", "log size", "automatic recovery", "backup model", "fallback", "routines", "conversation", "schedule"] },
   { id: "organization", labelKey: "settings.section.organization", icon: Building2, keywords: ["company", "organization", "organisation", "sign in", "enroll", "managed", "models", "disconnect", "workspace", "cloud", "hosted", "vps", "server", "servers", "connect", "pair", "switch", "local"] },
   { id: "appearance", labelKey: "settings.section.appearance", icon: Palette, keywords: ["skin", "theme", "appearance", "advanced", "simple", "mode", "tools", "tool calls", "threads", "show threads", "hide threads", "sidebar", "hidden", "hide", "show", "density", "compact", "comfortable", "avatars", "display", "run", "this run", "run card", "commands", "notifications", "sound", "sounds", "mute", "silent", "chime", "mascot", "owl", "desktop", "fly", "floating", "app icon", "dock", "icon", "taskbar"] },
-  { id: "privacy", labelKey: "settings.section.privacy", icon: ShieldCheck, keywords: ["privacy", "read receipts", "seen", "vu", "confidentialité", "accusés de lecture"] },
+  { id: "privacy", labelKey: "settings.section.privacy", icon: ShieldCheck, keywords: ["privacy", "read receipts", "seen", "vu", "confidentialité", "accusés de lecture", "presence", "online", "away", "offline", "last seen", "status", "en ligne", "absent", "hors ligne", "privacidade"] },
   { id: "achievements", labelKey: "settings.section.achievements", icon: Trophy, keywords: ["achievements", "trophies", "trophy", "points", "gamerscore", "level", "unlock", "succès", "trophées"] },
   { id: "experimental", labelKey: "settings.section.experimental", icon: FlaskConical, keywords: ["early", "preview", "learn", "skill", "authoring", "browser", "profiles"] },
   { id: "connections", labelKey: "settings.section.connections", icon: KeyRound, keywords: ["keys", "api", "api key", "api keys", "connections", "composio", "box", "xai", "mistral", "vps", "router", "openrouter", "base url", "openai", "anthropic", "groq", "opencode", "provider"] },
@@ -197,10 +199,12 @@ function ProfileFields() {
   const { state } = useStore();
   const viewer = state.config?.viewer;
   const managed = managedProfile(viewer);
-  if (managed) return <ManagedProfileIdentity profile={managed} flat />;
-  if (viewer && !viewer.operator) return <SignedInIdentity name={viewer.name} email={viewer.email} />;
-  return <OperatorProfileFields />;
+  const identity = managed
+    ? <ManagedProfileIdentity profile={managed} flat />
+    : viewer && !viewer.operator ? <SignedInIdentity name={viewer.name} email={viewer.email} /> : <OperatorProfileFields />;
+  return <>{identity}<MyLabelField /></>;
 }
+
 
 function SignedInIdentity({ name, email }: { name: string; email: string }) {
   return (
@@ -517,6 +521,47 @@ function FloatingLivelinessRow() {
   );
 }
 
+/** Desktop mascots: the global call hotkey (press to call, again to mute, hold to talk), on unless switched off. */
+function FloatingHotkeyRow() {
+  const prefs = useSyncExternalStore(subscribeFloatingBots, floatingBotPrefs, floatingBotPrefs);
+  // the desktop app only: a browser has no global keys
+  if (typeof window === "undefined" || !(window.ogb?.floatingBots as { hotkey?: unknown } | undefined)?.hotkey) return null;
+  const mac = /Mac/.test(navigator.platform || navigator.userAgent);
+  return (
+    <SettingRow title={t("settings.floatingBots.hotkey.title")} subtitle={t("settings.floatingBots.hotkey.subtitle")}>
+      <div className="flex items-center gap-2">
+        <select
+          value={prefs.hotkeyKeys}
+          disabled={!prefs.hotkey}
+          aria-label={t("settings.floatingBots.hotkey.keys")}
+          onChange={(event) => setFloatingHotkey({ keys: event.target.value as HotkeyChoice })}
+          className="w-full max-w-[200px] rounded-lg border border-border bg-ink/[0.03] px-2.5 py-1.5 text-[13px] leading-[18px] text-ink focus:border-border-strong focus:outline-none disabled:opacity-50"
+        >
+          {HOTKEY_CHOICES.map((keys) => (
+            <option key={keys} value={keys}>{hotkeyLabel(keys, mac)}</option>
+          ))}
+        </select>
+        <Switch
+          checked={prefs.hotkey}
+          aria-label={t("settings.floatingBots.hotkey.title")}
+          onClick={() => setFloatingHotkey({ on: !prefs.hotkey })}
+        />
+      </div>
+    </SettingRow>
+  );
+}
+
+/** Desktop mascots: live captions beside the mascot during a call (a call setting, kept on this device). */
+function FloatingCaptionsRow() {
+  const call = useCallSettings();
+  const on = call.captions !== false;
+  return (
+    <SettingRow title={t("settings.floatingBots.captions.title")} subtitle={t("settings.floatingBots.captions.subtitle")}>
+      <Switch checked={on} aria-label={t("settings.floatingBots.captions.title")} onClick={() => writeCallSettings({ captions: !on })} />
+    </SettingRow>
+  );
+}
+
 function NotificationSoundsRow() {
   const enabled = useNotificationSounds();
   return (
@@ -525,6 +570,19 @@ function NotificationSoundsRow() {
         checked={enabled}
         aria-label={t("settings.notificationSounds.play")}
         onClick={() => setNotificationSounds(!enabled)}
+      />
+    </SettingRow>
+  );
+}
+
+function NudgeSoundRow() {
+  const enabled = useNudgeSound();
+  return (
+    <SettingRow title={t("settings.nudgeSound.title")} subtitle={t("settings.nudgeSound.short")}>
+      <Switch
+        checked={enabled}
+        aria-label={t("settings.nudgeSound.title")}
+        onClick={() => setNudgeSound(!enabled)}
       />
     </SettingRow>
   );
@@ -955,7 +1013,7 @@ export function SettingsModal() {
     dispatch({ type: "toggleAppSettings", open: false, section: "general" });
     dispatch({ type: "toggleLaunch", open: true, mode: "server" });
   }, [soloDesktop, state.appSettingsSection, dispatch]);
-  const availableSections = SECTIONS.filter((entry) => !remoteActive || entry.id === "companion" || entry.id === "appearance" || entry.id === "organization")
+  const availableSections = SECTIONS.filter((entry) => !remoteActive || entry.id === "companion" || entry.id === "appearance" || entry.id === "organization" || entry.id === "privacy")
     // the desktop app in "No server" mode has no organization to show; it
     // joins one from General > Server, which brings this section back
     .filter((entry) => entry.id !== "organization" || !soloDesktop)
@@ -1245,8 +1303,11 @@ export function SettingsModal() {
                   <ShowThreadsRow />
                   <SidebarHiddenSettings />
                   <NotificationSoundsRow />
+                  <NudgeSoundRow />
                   <FloatingFlyAwayRow />
                   <FloatingLivelinessRow />
+                  <FloatingHotkeyRow />
+                  <FloatingCaptionsRow />
                   {advanced && !remoteActive && editConfig && <ToolCallsRow />}
                   {advanced && <RunCardRow />}
                 </div>
@@ -1264,7 +1325,7 @@ export function SettingsModal() {
               <>
                 <p className="text-[13px] leading-[18px] text-ink-secondary">{t("settings.connections.subtitle")}</p>
                 {state.config?.composio.mode === "managed" ? (
-                  <div className="rounded-lg border border-success/25 bg-success/10 px-3 py-2 text-[13px] text-success">
+                  <div className="rounded-lg border border-accent/25 bg-accent/10 px-3 py-2 text-[13px] text-accent-text">
                     {t("settings.connections.ready")}
                   </div>
                 ) : null}

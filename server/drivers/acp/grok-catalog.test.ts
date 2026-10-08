@@ -3,11 +3,20 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { GrokAgentDriver, readGrokModelCatalog, STATIC_GROK_MODELS } from "./grok.ts";
+import { chmodSync, existsSync, readFileSync } from "node:fs";
+import { dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+import {
+  dismissGrokModelCampaigns, GrokAgentDriver, grokModelsFromInitialize, probeGrokModels, readGrokModelCatalog,
+  readGrokModelsCache, resetGrokLiveModels, STATIC_GROK_MODELS,
+} from "./grok.ts";
+
+const fakeCli = join(dirname(fileURLToPath(import.meta.url)), "../../testing/fake-acp-cli.ts");
 
 const scratchDirs: string[] = [];
 
 afterEach(() => {
+  resetGrokLiveModels();
   for (const dir of scratchDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
 
@@ -45,6 +54,7 @@ name = "MiniMax M3 4bit (oMLX)"
       default: "ollama-ornith-35b-bf16",
       options: [
         { id: "grok-4.7", label: "Grok 4.7", contextWindow: 500_000 },
+        { id: "grok-4.7-build-fast", label: "Grok 4.7 Fast" },
         { id: "grok-4.6", label: "Grok 4.6" },
         { id: "grok-4.5", label: "Grok 4.5" },
         { id: "ollama-ornith-35b-bf16", label: "ornith:35b-bf16 (Ollama)", custom: true },
@@ -66,7 +76,7 @@ name = "OK"
 `);
     const catalog = readGrokModelCatalog({ HOME: home });
     expect(catalog.default).toBe("grok-4.7");
-    expect(catalog.options.map((o) => o.id)).toEqual(["grok-4.7", "grok-4.6", "grok-4.5", "ok-model"]);
+    expect(catalog.options.map((o) => o.id)).toEqual(["grok-4.7", "grok-4.7-build-fast", "grok-4.6", "grok-4.5", "ok-model"]);
   });
 
   it("honors GROK_HOME over HOME", () => {
@@ -109,5 +119,97 @@ describe("GrokAgentDriver catalog", () => {
     } finally {
       await instance.dispose();
     }
+  });
+});
+
+/** The shape grok 1.0.50 writes to ~/.grok/models_cache.json (trimmed). */
+function writeModelsCache(home: string, ids: string[]) {
+  const models = Object.fromEntries(ids.map((id) => [id, { info: { id, model: id, name: id === "grok-4.7-build-fast" ? "Grok 4.7 Fast" : id, context_window: 256_000, hidden: false }, api_key: null }]));
+  writeFileSync(join(home, ".grok", "models_cache.json"), JSON.stringify({ fetched_at: "2026-10-08T15:02:13Z", grok_version: "1.0.50", origin: "https://cli-chat-proxy.grok.com/v1/models", models }));
+}
+
+describe("the Grok model list comes from the engine", () => {
+  it("reads the account catalog Grok cached, before the static list", () => {
+    const home = scratchConfig(`[model.local-glm]\nname = "GLM local"\n`);
+    writeModelsCache(home, ["grok-4.7", "grok-4.7-build-fast"]);
+    expect(readGrokModelsCache({ HOME: home })?.map((o) => o.id)).toEqual(["grok-4.7", "grok-4.7-build-fast"]);
+    const catalog = readGrokModelCatalog({ HOME: home });
+    expect(catalog.options.map((o) => o.id)).toEqual(["grok-4.7", "grok-4.7-build-fast", "local-glm"]);
+    expect(catalog.options.find((o) => o.id === "grok-4.7-build-fast")?.label).toBe("Grok 4.7 Fast");
+  });
+
+  it("prefers the engine's own initialize answer and keeps config blocks custom", () => {
+    const home = scratchConfig(`[model.local-glm]\nname = "GLM local"\n`);
+    writeModelsCache(home, ["grok-4.7", "grok-4.6", "grok-4.5"]);
+    const engine = grokModelsFromInitialize({ _meta: { modelState: { currentModelId: "grok-4.7", availableModels: [
+      { modelId: "grok-4.7", name: "Grok 4.7", _meta: { totalContextTokens: 500_000 } },
+      { modelId: "grok-4.7-build-fast", name: "Grok 4.7 Fast" },
+      { modelId: "local-glm", name: "GLM local" },
+    ] } } });
+    const catalog = readGrokModelCatalog({ HOME: home }, engine);
+    expect(catalog.options).toEqual([
+      { id: "grok-4.7", label: "Grok 4.7", contextWindow: 500_000 },
+      { id: "grok-4.7-build-fast", label: "Grok 4.7 Fast" },
+      { id: "local-glm", label: "GLM local", custom: true },
+    ]);
+    // a retired id the engine no longer lists is not offered
+    expect(catalog.options.map((o) => o.id)).not.toContain("grok-4.5");
+  });
+
+  it("asks the installed CLI once per short window and falls back when it cannot answer", async () => {
+    chmodSync(fakeCli, 0o755);
+    const home = scratchConfig("");
+    const env = { HOME: home, PATH: process.env.PATH, FAKE_ACP_SESSION_MODELS: "grok-4.7|Grok 4.7,grok-4.7-build-fast|Grok 4.7 Fast" };
+    let now = 1_000;
+    expect((await probeGrokModels(fakeCli, env, () => now))?.map((o) => o.id)).toEqual(["grok-4.7", "grok-4.7-build-fast"]);
+    // cached: a changed engine answer is not seen until the window passes
+    const changed = { ...env, FAKE_ACP_SESSION_MODELS: "grok-4.8" };
+    expect((await probeGrokModels(fakeCli, changed, () => now))?.map((o) => o.id)).toEqual(["grok-4.7", "grok-4.7-build-fast"]);
+    now += 31_000;
+    expect((await probeGrokModels(fakeCli, changed, () => now))?.map((o) => o.id)).toEqual(["grok-4.8"]);
+    expect(await probeGrokModels(join(home, "no-such-grok"), env)).toBeNull();
+  });
+
+  it("refreshes the picker list from a signed-in engine and drops what it does not offer", async () => {
+    chmodSync(fakeCli, 0o755);
+    const home = scratchConfig(`[model.local-glm]\nname = "GLM local"\n`);
+    writeFileSync(join(home, ".grok", "auth.json"), "{}");
+    const instance = await GrokAgentDriver.create({
+      instanceId: "grok-live", displayName: "Grok", enabled: true, config: { cli: fakeCli, fullAuto: false },
+      environment: { HOME: home, USERPROFILE: home, FAKE_ACP_SESSION_MODELS: "grok-4.7|Grok 4.7,grok-4.7-build-fast|Grok 4.7 Fast" },
+    });
+    try {
+      expect(instance.models.options.map((o) => o.id)).toEqual(["grok-4.7", "grok-4.7-build-fast", "local-glm"]);
+    } finally {
+      await instance.dispose();
+    }
+  });
+
+  it("does not ask a CLI that is not signed in: the static list stands", async () => {
+    chmodSync(fakeCli, 0o755);
+    const home = scratchConfig("");
+    const instance = await GrokAgentDriver.create({
+      instanceId: "grok-signed-out", displayName: "Grok", enabled: true, config: { cli: fakeCli, fullAuto: false },
+      environment: { HOME: home, USERPROFILE: home, FAKE_ACP_SESSION_MODELS: "grok-4.6,grok-4.5" },
+    });
+    try {
+      expect(instance.models.options.map((o) => o.id)).toEqual(STATIC_GROK_MODELS.options.map((o) => o.id));
+    } finally {
+      await instance.dispose();
+    }
+  });
+});
+
+describe("dismissGrokModelCampaigns", () => {
+  it("dismisses each model campaign the remote settings list, once, keeping other state", () => {
+    const home = scratchConfig("");
+    const grok = join(home, ".grok");
+    expect(dismissGrokModelCampaigns({ HOME: home })).toEqual([]);
+    expect(existsSync(join(grok, "campaigns_state.json"))).toBe(false);
+    writeFileSync(join(grok, "settings_cache.json"), JSON.stringify({ payload: JSON.stringify({ settings: { campaigns: [{ id: "grok-4.7-launch", models: { default: "grok-4.7" } }, { id: "no-models" }] } }), signature: "x" }));
+    writeFileSync(join(grok, "campaigns_state.json"), JSON.stringify({ dismissed_ids: ["grok-4.6-launch"], other: 1 }));
+    expect(dismissGrokModelCampaigns({ HOME: home })).toEqual(["grok-4.7-launch"]);
+    expect(JSON.parse(readFileSync(join(grok, "campaigns_state.json"), "utf8"))).toEqual({ dismissed_ids: ["grok-4.6-launch", "grok-4.7-launch"], other: 1 });
+    expect(dismissGrokModelCampaigns({ HOME: home })).toEqual([]);
   });
 });

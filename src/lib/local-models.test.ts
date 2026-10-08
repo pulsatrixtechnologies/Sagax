@@ -29,11 +29,17 @@ describe("which engines run a local model", () => {
     }
   });
 
-  it("lets Claude Code use a loopback server but not the computer link", () => {
+  it("lets Claude Code use a loopback server, and the computer link only when the desktop's probe passed", () => {
     expect(localModelUnavailable("claudeAgent", "loopback")).toBeNull();
     expect(localModelUnavailable("claudeAgent", "desktop")).toBe("anthropic");
+    expect(localModelUnavailable("claudeAgent", "desktop", false)).toBe("anthropic");
+    expect(localModelUnavailable("claudeAgent", "desktop", true)).toBeNull();
     expect(localRowUnavailable("claudeAgent", "deskab12cd8002::qwen3")).toBe("anthropic");
+    expect(localRowUnavailable("claudeAgent", "deskab12cd8002::qwen3", false)).toBe("anthropic");
+    expect(localRowUnavailable("claudeAgent", "deskab12cd8002::qwen3", true)).toBeNull();
     expect(localRowUnavailable("claudeAgent", "dwarfstar::qwen3")).toBeNull();
+    // The probe never opens another engine that keeps its own endpoint.
+    expect(localModelUnavailable("geminiAgent", "desktop", true)).toBe("engine");
   });
 
   it("refuses engines that keep their own endpoint", () => {
@@ -42,6 +48,13 @@ describe("which engines run a local model", () => {
       expect(runsLoopbackModels(kind)).toBe(false);
     }
     expect(runsLoopbackModels("piAgent")).toBe(true);
+  });
+
+  it("re-reads Grok's catalog when the picker opens in solo, which asks the engine for its models", () => {
+    // ModelPicker refreshes the rail engine's catalog on open when this holds;
+    // for Grok that refresh is the live model list (probeGrokModels).
+    expect(runsLoopbackModels("grokAgent")).toBe(true);
+    expect(localRowUnavailable("grokAgent", "desk8a1ada8002::qwen3.8-flash-next")).toBeNull();
   });
 });
 

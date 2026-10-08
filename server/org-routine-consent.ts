@@ -1,6 +1,10 @@
 // Routine delegations (slice 6, spec sections 4 "Délégation pour les
-// routines", 4 bis and 11): a person allows the routines that run as them to
-// act in their name while they are away. The permission is an ordinary
+// routines", 4 bis and 11): the routines that run as a person act in their
+// name while they are away. Since 2026-10-08 (JC) this is not a choice: the
+// delegation is issued automatically from the person's live sign-in (at
+// sign-in, while they keep using Sagax, and at a run that finds none), with
+// no consent step and no switch, and a routine is never paused for lack of
+// it while the account is active. The permission is an ordinary
 // `pulsa-bot` grant whose scope carries `pulsabot:routines`; Perspicax keeps
 // it 30 days, sliding, and each run renews it with one refresh. It lives in
 // the same sealed vault as the sign-in grants (`kind: "routines"`, one per
@@ -10,9 +14,14 @@
 //   - `prepare` is the admission of a run: a refresh at most every
 //     ROUTINE_CONSENT_RENEW_MS, one flight per principal; within the window
 //     a cached access token with at least 10 minutes left is reused;
-//   - a refusal (`invalid_grant`, a role that no longer signs in) drops the
-//     grant and ends the person's routines (`onEnded`), a transient failure
-//     keeps it and only skips the run;
+//   - `ensure` issues it from the person's sign-in access token
+//     (RoutineConsentsOptions.issue, an RFC 8693 exchange through the link),
+//     one flight per principal, retried after a minute on a failure;
+//   - a refused renewal (`invalid_grant`) drops the grant and the next run
+//     issues a new one; only a person Perspicax put out (back-channel
+//     logout, a disable, a role that no longer signs in) pauses their
+//     routines (`onEnded` with `person_out`); a transient failure only skips
+//     the run;
 //   - no token ever reaches a log line, an error or the wire.
 import { randomUUID } from "node:crypto";
 
@@ -48,7 +57,25 @@ export const ROUTINE_CONSENT_LIFE_MS = 30 * 86_400_000;
  * before the fetch started (a consent racing a poll is not undone). */
 export const ROUTINE_CONSENT_RECONCILE_SLACK_MS = 5_000;
 
-export type RoutineConsentEnd = "delegation_ended" | "delegation_revoked" | "person_out";
+/** Why a delegation ended. Only `person_out` pauses the person's routines;
+ * `delegation_ended` is issued again at the next run or sign-in. */
+export type RoutineConsentEnd = "delegation_ended" | "person_out";
+
+/** While the person uses Sagax, a session renewal also slides their
+ * delegation when it was last renewed this long ago. */
+export const ROUTINE_DELEGATION_KEEPALIVE_MS = 86_400_000;
+/** A failed issue is not tried again for this long (per person). */
+export const ROUTINE_DELEGATION_ISSUE_RETRY_MS = 60_000;
+/** A Perspicax that cannot issue one is asked again after this long. */
+export const ROUTINE_DELEGATION_UNSUPPORTED_RETRY_MS = 600_000;
+
+/** What issuing a delegation from a sign-in access token answered
+ * (server/perspicax-link.ts issueRoutineDelegation). */
+export type RoutineDelegationIssue =
+  | { ok: true; refreshToken: string; accessToken?: string; accessExpiresAt?: number }
+  | { ok: false; error: "unsupported" | "subject" | "link" | "rate_limited" | "unreachable"; retryAfterMs?: number };
+
+export type RoutineDelegationEnsure = "active" | "granted" | "unavailable";
 
 export type RoutineConsentStatus =
   | { state: "active"; consentedAt: number; renewedAt: number; expiresAt: number }
@@ -73,13 +100,22 @@ export interface RoutineConsentsOptions {
   log?: (line: string) => void;
   /** The person's routines stop (suspendFor, forget MCP entries, audit). */
   onEnded?: (principalId: string, reason: RoutineConsentEnd) => void;
-  /** The person consented: their suspended routines resume. */
+  /** The person's delegation is live again: their suspended routines resume. */
   onActive?: (principalId: string) => void;
+  /** Issues a delegation from a sign-in access token (the link's RFC 8693
+   * exchange). Absent: none is ever issued here. */
+  issue?: (subjectToken: string) => Promise<RoutineDelegationIssue>;
+  /** The person's live sign-in access token (IdpSessionManager.subjectToken). */
+  sessionSubject?: (principalId: string) => Promise<SubjectTokenOutcome>;
+  /** The person's Perspicax subject, null when they have none. */
+  subjectOf?: (principalId: string) => { iss: string; sub: string } | null;
   /** Where provider revocations go (the durable queue, idp-revocations.ts). */
   revocations?: RevocationSink;
 }
 
-type RefreshResult = "ok" | "ended" | "unreachable" | "rate_limited";
+/** `out`: the person no longer signs in (their role); `ended`: Perspicax
+ * ended that family only. */
+type RefreshResult = "ok" | "ended" | "out" | "unreachable" | "rate_limited";
 
 export class RoutineConsents {
   private readonly vault: IdpGrantVault;
@@ -100,6 +136,13 @@ export class RoutineConsents {
   /** principalId -> no renewal before this time (Perspicax rate limited it). */
   private readonly retryAt = new Map<string, number>();
   private readonly revocations: RevocationSink;
+  private readonly issue?: RoutineConsentsOptions["issue"];
+  private readonly sessionSubject?: RoutineConsentsOptions["sessionSubject"];
+  private readonly subjectOf?: RoutineConsentsOptions["subjectOf"];
+  /** principalId -> the issue in flight. */
+  private readonly issuing = new Map<string, Promise<RoutineDelegationEnsure>>();
+  /** principalId -> no new issue before this time. */
+  private readonly issueRetryAt = new Map<string, number>();
 
   constructor(options: RoutineConsentsOptions) {
     this.vault = options.vault;
@@ -111,6 +154,78 @@ export class RoutineConsents {
     this.onEnded = options.onEnded ?? (() => {});
     this.onActive = options.onActive ?? (() => {});
     this.revocations = options.revocations ?? immediateRevocations((token, hint) => this.rp.revokeToken(token, hint), this.log, "routine delegation");
+    this.issue = options.issue;
+    this.sessionSubject = options.sessionSubject;
+    this.subjectOf = options.subjectOf;
+  }
+
+  /** Make sure the person holds a delegation: issue one from `given` (a
+   * fresh sign-in access token) or their live session when they hold none.
+   * One flight per person; a failure waits a minute (ten when Perspicax
+   * cannot issue one) before the next try. Never throws. */
+  async ensure(principalId: string, given?: { token: string; expiresAt?: number }): Promise<RoutineDelegationEnsure> {
+    const grant = this.safeGrantOf(principalId);
+    if (grant === null) return "unavailable";
+    if (grant) return "active";
+    let flight = this.issuing.get(principalId);
+    if (!flight) {
+      const until = this.issueRetryAt.get(principalId);
+      if (until !== undefined && this.now() < until) return "unavailable";
+      flight = this.issueFor(principalId, given).catch((error: unknown) => {
+        this.log(`routine delegation: issue failed unexpectedly: ${error instanceof Error ? error.message : String(error)}`);
+        return "unavailable" as const;
+      }).finally(() => this.issuing.delete(principalId));
+      this.issuing.set(principalId, flight);
+    }
+    return flight;
+  }
+
+  /** The person keeps using Sagax (a sign-in, a session renewal): issue the
+   * delegation when they hold none, else slide it once a day. Never throws. */
+  async keepAlive(principalId: string, given?: { token: string; expiresAt?: number }): Promise<void> {
+    const grant = this.safeGrantOf(principalId);
+    if (grant === null) return;
+    if (!grant) {
+      await this.ensure(principalId, given);
+      return;
+    }
+    if (this.now() - grant.lastOkAt < ROUTINE_DELEGATION_KEEPALIVE_MS) return;
+    if (this.rateLimitedFor(principalId)) return;
+    await this.refreshWithin(principalId, grant);
+  }
+
+  private async issueFor(principalId: string, given?: { token: string; expiresAt?: number }): Promise<RoutineDelegationEnsure> {
+    const subject = this.subjectOf?.(principalId) ?? null;
+    const issue = this.issue;
+    if (!issue || !subject) return "unavailable";
+    let outcome: RoutineDelegationIssue | null = given?.token ? await issue(given.token) : null;
+    if (!outcome || (!outcome.ok && outcome.error === "subject")) {
+      const live = this.sessionSubject ? await this.sessionSubject(principalId) : null;
+      if (live?.ok) outcome = await issue(live.token);
+      else if (!outcome) {
+        // Nobody is signed in to issue it from: tried again later.
+        this.issueRetryAt.set(principalId, this.now() + ROUTINE_DELEGATION_ISSUE_RETRY_MS);
+        return "unavailable";
+      }
+    }
+    if (outcome.ok) {
+      try {
+        this.create({ principalId, iss: subject.iss, sub: subject.sub, refreshToken: outcome.refreshToken,
+          ...(outcome.accessToken && outcome.accessExpiresAt !== undefined ? { accessToken: outcome.accessToken, accessExpiresAt: outcome.accessExpiresAt } : {}) });
+      } catch (error) {
+        this.revokeAtProvider(outcome.refreshToken, "unkept");
+        this.log(`routine delegation: could not keep an issued grant: ${error instanceof Error ? error.message : String(error)}`);
+        this.issueRetryAt.set(principalId, this.now() + ROUTINE_DELEGATION_ISSUE_RETRY_MS);
+        return "unavailable";
+      }
+      return "granted";
+    }
+    const wait = outcome.error === "unsupported"
+      ? ROUTINE_DELEGATION_UNSUPPORTED_RETRY_MS
+      : Math.max(ROUTINE_DELEGATION_ISSUE_RETRY_MS, outcome.retryAfterMs ?? 0);
+    this.issueRetryAt.set(principalId, this.now() + wait);
+    this.log(`routine delegation: not issued (${outcome.error}); tried again later`);
+    return "unavailable";
   }
 
   /** How long the rate limit window of this person still lasts (0: none). */
@@ -171,37 +286,47 @@ export class RoutineConsents {
       this.revokeAtProvider(previous.refreshToken, "replaced");
     }
     this.stale.delete(input.principalId);
+    this.issueRetryAt.delete(input.principalId);
     if (input.accessToken && input.accessExpiresAt !== undefined) this.access.set(input.principalId, { token: input.accessToken, expiresAt: input.accessExpiresAt });
     else this.access.delete(input.principalId);
     this.onActive(input.principalId);
   }
 
-  /** The admission of a run: renews the delegation when due. Never throws. */
+  /** The admission of a run: issues the delegation when the person holds
+   * none, renews it when due. Never throws. */
   async prepare(principalId: string): Promise<RoutineConsentPrepare> {
     const grant = this.safeGrantOf(principalId);
     if (grant === null) return { ok: false, error: "unreachable" };
-    if (!grant) return { ok: false, error: "missing" };
+    if (!grant) return await this.ensure(principalId) === "unavailable" ? { ok: false, error: "missing" } : { ok: true };
     if (!this.stale.has(principalId) && this.now() - grant.refreshedAt < this.renewMs && this.usable(principalId)) return { ok: true };
     const waiting = this.rateLimitedFor(principalId);
     if (waiting) return { ok: false, error: "rate_limited", retryAfterMs: waiting };
     const result = await this.refreshWithin(principalId, grant);
     if (result === "ok") return { ok: true };
     if (result === "rate_limited") return { ok: false, error: "rate_limited", retryAfterMs: this.rateLimitedFor(principalId) || ROUTINE_CONSENT_RATE_LIMIT_MIN_MS };
-    return { ok: false, error: result === "ended" ? "ended" : "unreachable" };
+    if (result === "ended") {
+      // Perspicax ended that family: a new one is issued at once while the
+      // person is still in (a person put out never reaches this point).
+      if (this.safeGrantOf(principalId) === undefined && await this.ensure(principalId) !== "unavailable") return { ok: true };
+      return { ok: false, error: "ended" };
+    }
+    if (result === "out") return { ok: false, error: "ended" };
+    return { ok: false, error: "unreachable" };
   }
 
   /** The delegation's access token, the subject of a token exchange for the
    * routine's Perspicax tools (slice 5 shape). */
   async subjectToken(principalId: string): Promise<SubjectTokenOutcome> {
-    const grant = this.safeGrantOf(principalId);
+    let grant = this.safeGrantOf(principalId);
     if (grant === null) return { ok: false, error: "unreachable" };
+    if (!grant && await this.ensure(principalId) !== "unavailable") grant = this.safeGrantOf(principalId);
     if (!grant) return { ok: false, error: "no_session" };
     const cached = this.stale.has(principalId) ? undefined : this.usable(principalId);
     if (cached) return { ok: true, token: cached.token, expiresAt: cached.expiresAt };
     const waiting = this.rateLimitedFor(principalId);
     if (waiting) return { ok: false, error: "rate_limited", retryAfterMs: waiting };
     const result = await this.refreshWithin(principalId, grant);
-    if (result === "ended") return { ok: false, error: "ended" };
+    if (result === "ended" || result === "out") return { ok: false, error: "ended" };
     if (result === "rate_limited") return { ok: false, error: "rate_limited", retryAfterMs: this.rateLimitedFor(principalId) || ROUTINE_CONSENT_RATE_LIMIT_MIN_MS };
     const renewed = this.usable(principalId);
     if (result === "ok" && renewed) return { ok: true, token: renewed.token, expiresAt: renewed.expiresAt };
@@ -213,17 +338,6 @@ export class RoutineConsents {
   dropCache(principalId: string): void {
     this.access.delete(principalId);
     this.stale.add(principalId);
-  }
-
-  /** The person withdraws the permission from Sagax. */
-  revoke(principalId: string): boolean {
-    const grant = this.safeGrantOf(principalId);
-    if (!grant) return false;
-    this.safeDelete(grant.grantRef);
-    this.forget(principalId);
-    this.revokeAtProvider(grant.refreshToken, "revoked");
-    this.onEnded(principalId, "delegation_revoked");
-    return true;
   }
 
   /** Perspicax put the person out (back-channel logout, a directory disable):
@@ -337,8 +451,8 @@ export class RoutineConsents {
       if (outcome.accessToken) this.access.set(principalId, { token: outcome.accessToken, expiresAt: now + (outcome.expiresIn ?? 3600) * 1000 });
       if (outcome.identity && !this.applyIdentity(next, outcome.identity)) {
         this.revokeAtProvider(outcome.refreshToken, "role gone");
-        this.end(principalId, ref, "the role no longer signs in");
-        return "ended";
+        this.end(principalId, ref, "the role no longer signs in", "person_out");
+        return "out";
       }
       return "ok";
     }
@@ -378,11 +492,11 @@ export class RoutineConsents {
     return true;
   }
 
-  private end(principalId: string, ref: string, why: string): void {
+  private end(principalId: string, ref: string, why: string, reason: RoutineConsentEnd = "delegation_ended"): void {
     this.safeDelete(ref);
     this.forget(principalId);
     this.log(`routine delegation: ended (${why})`);
-    this.onEnded(principalId, "delegation_ended");
+    this.onEnded(principalId, reason);
   }
 
   private safeDelete(grantRef: string): void {

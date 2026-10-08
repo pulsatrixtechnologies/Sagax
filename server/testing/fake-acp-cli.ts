@@ -54,6 +54,17 @@
 //                     (a JSON array of lines) to Qwen's debug log for this
 //                     session, one line every FAKE_ACP_LOG_EVERY_MS (default
 //                     100), repeating the last, as Qwen does while it retries)
+//                   | voice (a spoken answer with a real CLI's timing,
+//                     docs/voice-mode-xai.md "Latency": initialize answers
+//                     FAKE_ACP_COLD_MS after process boot, session/new and
+//                     session/load|resume each take FAKE_ACP_LOAD_MS (MCP
+//                     servers reconnected, history read back), a prompt
+//                     waits FAKE_ACP_FIRST_TOKEN_MS, then streams
+//                     FAKE_ACP_VOICE_REPLY word by word FAKE_ACP_TOKEN_MS
+//                     apart. With FAKE_ACP_VOICE_TOOL=<tool>, each prompt
+//                     first calls that tool on the injected agents MCP
+//                     server and ends its reply with "mcp:<tool>:ok" or
+//                     "mcp:<tool>:error")
 //                   | lend-question (call list_shared_computers through the
 //                     injected agents MCP, ask a question card, call it again
 //                     once the card is answered, and reply
@@ -124,6 +135,17 @@
 //                        the first, silently) and records it; session/load
 //                        reports the recorded model, whatever the new profile
 //                        or -m asks for
+//   FAKE_ACP_GROK_CONFIG_MODELS=1  also offer every [model.<slug>] block of
+//                        $GROK_HOME/config.toml (else $HOME/.grok), as Grok
+//                        lists the blocks Sagax writes for local models
+//   Grok launch campaigns: with FAKE_ACP_SESSION_MODEL_STORE, a campaign in
+//                        <grok home>/settings_cache.json (payload.settings.
+//                        campaigns[{id, models:{default}}]) whose id is not in
+//                        campaigns_state.json dismissed_ids makes session/new
+//                        run its default, whatever the profile asks (Grok
+//                        1.0.46 and 1.0.50 signed in, fresh GROK_HOME)
+//   SAGAX_GROK_MODEL_PROBE=1  set by Sagax's model-list probe (initialize
+//                        only): this process is not counted or dumped
 //
 // With FAKE_ACP_DUMP and FAKE_ACP_MODES or FAKE_ACP_MODELS, every
 // session/prompt appends {"pid","sessionId","mode","model"} to
@@ -134,6 +156,7 @@
 // Keep this file dependency-free — it runs as a bare `node` subprocess.
 import { spawn } from "node:child_process";
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 
 const mode = process.env.FAKE_ACP_MODE ?? "happy";
 
@@ -245,13 +268,40 @@ const sessionModelStore = process.env.FAKE_ACP_SESSION_MODEL_STORE ?? "";
 const storedSessionModels = (): Record<string, string> => {
   try { return JSON.parse(readFileSync(sessionModelStore, "utf8")); } catch { return {}; }
 };
-const sessionModels = (current?: string) =>
-  acpModels.length ? { currentModelId: current ?? acpModels[0].modelId, availableModels: acpModels } : null;
+const fakeGrokHome = () => process.env.GROK_HOME || join(process.env.HOME ?? "", ".grok");
+const readJson = (path: string): any => {
+  try { return JSON.parse(readFileSync(path, "utf8")); } catch { return null; }
+};
+/** acpModels, plus the config blocks when FAKE_ACP_GROK_CONFIG_MODELS is set
+ * (read on every call: Sagax writes a block just before the turn). */
+const offeredModels = (): Array<{ modelId: string; name?: string }> => {
+  if (process.env.FAKE_ACP_GROK_CONFIG_MODELS !== "1") return acpModels;
+  let text = "";
+  try { text = readFileSync(join(fakeGrokHome(), "config.toml"), "utf8"); } catch {}
+  const slugs = [...text.matchAll(/^\[model\.(?:"([^"]+)"|([^\]]+))\]\s*$/gm)].map((match) => match[1] ?? match[2]);
+  return [...acpModels, ...slugs.filter((slug) => !acpModels.some((entry) => entry.modelId === slug)).map((modelId) => ({ modelId }))];
+};
+/** The model a not-dismissed launch campaign forces on session/new. */
+const campaignModel = (): string | undefined => {
+  const cache = readJson(join(fakeGrokHome(), "settings_cache.json"));
+  let payload: any = cache?.payload;
+  if (typeof payload === "string") { try { payload = JSON.parse(payload); } catch { payload = null; } }
+  const dismissed: unknown[] = readJson(join(fakeGrokHome(), "campaigns_state.json"))?.dismissed_ids ?? [];
+  const live = (payload?.settings?.campaigns ?? []).find((entry: any) => typeof entry?.models?.default === "string" && !dismissed.includes(entry.id));
+  return live?.models?.default;
+};
+const sessionModels = (current?: string) => {
+  const offered = offeredModels();
+  return offered.length ? { currentModelId: current ?? offered[0].modelId, availableModels: offered } : null;
+};
 /** Grok-shaped model of a new session: the profile's model when offered. */
 const newSessionModel = (params: any, sessionId: string): string | undefined => {
-  if (!sessionModelStore || !acpModels.length) return undefined;
+  const offered = offeredModels();
+  if (!sessionModelStore || !offered.length) return undefined;
   const wanted = params?._meta?.agentProfile?.model;
-  const model = acpModels.some((entry) => entry.modelId === wanted) ? wanted : acpModels[0].modelId;
+  const campaign = campaignModel();
+  const model = campaign && offered.some((entry) => entry.modelId === campaign) ? campaign
+    : offered.some((entry) => entry.modelId === wanted) ? wanted : offered[0].modelId;
   writeFileSync(sessionModelStore, JSON.stringify({ ...storedSessionModels(), [sessionId]: model }));
   return model;
 };
@@ -317,10 +367,11 @@ const dumpEnv = Object.fromEntries(
 // pid rides along so a test can tell a respawned process (new pid, fresh
 // dump) from a pooled one whose dump was never rewritten
 const dumpState: Record<string, unknown> = { argv, env: dumpEnv, pid: process.pid, cwd: process.cwd() };
-if (process.env.FAKE_ACP_DUMP) {
+const modelProbe = process.env.SAGAX_GROK_MODEL_PROBE === "1";
+if (process.env.FAKE_ACP_DUMP && !modelProbe) {
   writeFileSync(process.env.FAKE_ACP_DUMP, JSON.stringify(dumpState, null, 2));
 }
-if (process.env.FAKE_ACP_LAUNCH_COUNT_FILE) {
+if (process.env.FAKE_ACP_LAUNCH_COUNT_FILE && !modelProbe) {
   // count launched processes: read-increment-write, so a test can assert
   // how many children the driver spawned (a pooled session launches once)
   let launches = 0;
@@ -418,6 +469,7 @@ const resultAndConfigUpdates = (id: unknown, res: unknown, after: string, sessio
 };
 const rpcMethods: string[] = [];
 const recordMethod = (method: string) => {
+  if (modelProbe) return;
   rpcMethods.push(method);
   if (process.env.FAKE_ACP_RPC_DUMP) writeFileSync(process.env.FAKE_ACP_RPC_DUMP, JSON.stringify(rpcMethods));
   if (process.env.FAKE_ACP_RPC_APPEND_FILE) {
@@ -568,6 +620,16 @@ function playReasoningTurn() {
   out({ jsonrpc: "2.0", method: "session/update", params: { update: { sessionUpdate: "agent_thought_chunk", content: { text: " without ever producing an answer" } } } });
 }
 
+// voice mode: what a real agent spends before it answers each request
+const bootAt = Date.now();
+const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, Math.max(0, ms)));
+const envMs = (name: string) => Math.max(0, Number(process.env[name]) || 0);
+let voiceQueue: Promise<void> = Promise.resolve();
+async function voiceDelay(msg: any): Promise<void> {
+  if (msg.method === "initialize") await pause(bootAt + envMs("FAKE_ACP_COLD_MS") - Date.now());
+  else if (msg.method === "session/new" || msg.method === "session/load" || msg.method === "session/resume") await pause(envMs("FAKE_ACP_LOAD_MS"));
+}
+
 let buf = "";
 process.stdin.on("data", (c) => {
   buf += c;
@@ -582,7 +644,10 @@ process.stdin.on("data", (c) => {
     } catch {
       continue;
     }
-    handle(msg);
+    if (mode === "voice") {
+      // in order, each request after its own real-world cost
+      voiceQueue = voiceQueue.then(() => voiceDelay(msg)).then(() => { handle(msg); }, () => { handle(msg); });
+    } else handle(msg);
   }
 });
 
@@ -635,7 +700,7 @@ function handle(msg: any) {
             }
           : undefined,
         _meta: {
-          modelState: { currentModelId: "fake-acp-model" },
+          modelState: { currentModelId: "fake-acp-model", ...(offeredModels().length ? { availableModels: offeredModels() } : {}) },
           ...(process.env.FAKE_ACP_GROK_VERSION ? { grokShell: true, agentVersion: process.env.FAKE_ACP_GROK_VERSION } : {}),
         },
       });
@@ -695,7 +760,7 @@ function handle(msg: any) {
         break;
       }
       const cachedLiveLoad = process.env.FAKE_ACP_CACHED_LIVE_LOAD === "1" && liveSession === msg.params?.sessionId;
-      if (mode === "safe-agent-reads" && !cachedLiveLoad) {
+      if ((mode === "safe-agent-reads" || mode === "voice") && !cachedLiveLoad) {
         agentsMcp = (msg.params?.mcpServers ?? []).find((server: any) => server.name === "agents") ?? null;
       }
       if (process.env.FAKE_ACP_DUMP) {
@@ -863,6 +928,24 @@ function handle(msg: any) {
             : { stopReason: "end_turn", _meta: { inputTokens: 10, outputTokens: 5 } },
         );
       };
+      if (mode === "voice") {
+        void (async () => {
+          await pause(envMs("FAKE_ACP_FIRST_TOKEN_MS"));
+          let reply = process.env.FAKE_ACP_VOICE_REPLY || "Sure. It is sunny in Montreal today, with a high of twenty degrees and a light wind. Do you want the forecast for tomorrow too?";
+          const tool = process.env.FAKE_ACP_VOICE_TOOL;
+          if (tool) {
+            const ok = agentsMcp ? await driveMcp(agentsMcp, [{ name: tool, args: () => ({}) }], true).then(() => true, () => false) : false;
+            reply += ` mcp:${tool}:${ok ? "ok" : "error"}`;
+          }
+          const tokenMs = envMs("FAKE_ACP_TOKEN_MS");
+          for (const word of reply.match(/\S+\s*/g) ?? [reply]) {
+            out({ jsonrpc: "2.0", method: "session/update", params: { update: { sessionUpdate: "agent_message_chunk", content: { text: word } } } });
+            if (tokenMs) await pause(tokenMs);
+          }
+          complete();
+        })();
+        return;
+      }
       if (mode === "quiet-then-answer") {
         const lines: string[] = process.env.FAKE_ACP_QWEN_LOG ? JSON.parse(process.env.FAKE_ACP_QWEN_LOG) : [];
         let logTimer: ReturnType<typeof setInterval> | null = null;

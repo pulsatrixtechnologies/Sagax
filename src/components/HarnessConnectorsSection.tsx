@@ -114,7 +114,7 @@ export function HarnessConnectorsSection({ placement = "panel" }: { placement?: 
               <span
                 className={cn(
                   "shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium",
-                  connector.status === "connected" ? "bg-success/10 text-success"
+                  connector.status === "connected" ? "bg-accent/15 text-accent-text"
                     : connector.status === "needs_auth" ? "bg-warning/10 text-warning"
                       : "bg-hover text-ink-secondary",
                 )}

@@ -18,7 +18,16 @@ export interface FloatingMenuItem {
   id: string;
   label: string;
   checked?: boolean;
+  /** A line between groups (its label is not shown). */
+  type?: "separator";
+  /** Greyed out: shown, not chosen. */
+  enabled?: boolean;
+  /** A submenu (one level): "Switch bot", "Moves", the desktop options. */
+  items?: FloatingMenuItem[];
 }
+
+/** A menu item's id: "switch:" and a bot id fit. */
+export const MENU_ID = /^[a-zA-Z0-9:_-]{1,80}$/;
 
 export interface FloatingAvatar {
   /** A data: URL on the desktop (the window fetches nothing); the app's own URL in the browser overlay. */
@@ -43,7 +52,12 @@ export interface FloatingBalloon {
   open: string;
   /** The close button's accessible name. */
   close: string;
-  input: { label: string; placeholder: string; send: string } | null;
+  /**
+   * The composer row (the app's, at the balloon's scale): the field's label
+   * and hint, Send, and, when given, the clip's label and the model chip's
+   * text (both open the app's own composer on this thread).
+   */
+  input: { label: string; placeholder: string; send: string; attach?: string; model?: string; modelTitle?: string } | null;
 }
 
 /**
@@ -71,7 +85,32 @@ export interface FloatingCall {
   voicesError: string | null;
   enrollment: { state: "none" | "enrolled" | "failed" } | { state: "recording"; share: number };
   previewing: { id: string; loading: boolean } | null;
+  /** Live captions beside the mascot (the call settings' switch; on when absent). */
+  captions?: boolean;
 }
+
+/** A row of the mascot's activity tray: an approval its bot waits on, or work it runs (tray.ts). */
+export interface FloatingTrayItem {
+  /** Opaque ("a0", "r1"): the brain keeps what it stands for. */
+  id: string;
+  kind: "approval" | "running";
+  title: string;
+  detail: string;
+  /** Stop shows (an approval's Stop declines it). */
+  canStop: boolean;
+  /** The row opens its thread in the app. */
+  canOpen: boolean;
+}
+
+/** The activity tray, while it is open. */
+export interface FloatingTray {
+  loading: boolean;
+  items: FloatingTrayItem[];
+}
+
+/** A tray row's buttons: Allow (an approval), Stop, or open its thread in the app. */
+export type FloatingWorkAction = "allow" | "stop" | "open";
+export const TRAY_ID = /^[ar][0-9]{1,2}$/;
 
 /** What the mascot's call controls ask of the brain. */
 export type FloatingCallAction =
@@ -124,6 +163,8 @@ export interface FloatingSnapshot {
   theme?: FloatingTheme;
   /** The live voice call with this bot, when there is one. */
   call?: FloatingCall | null;
+  /** The activity tray, while it is open (the hover controls' bell). */
+  tray?: FloatingTray | null;
 }
 
 
@@ -135,7 +176,11 @@ export type FloatingEvent =
   | { type: "click" | "context" | "dismiss" | "open" | "play" | "pet" }
   | { type: "menu"; id: string }
   | { type: "send"; text: string }
-  | { type: "call"; action: FloatingCallAction; voice?: string; patch?: Record<string, string | number | boolean> };
+  | { type: "call"; action: FloatingCallAction; voice?: string; patch?: Record<string, string | number | boolean> }
+  /** The hover controls' bell: open or close the activity tray. */
+  | { type: "tray"; open: boolean }
+  /** A tray row's button. */
+  | { type: "work"; action: FloatingWorkAction; id: string };
 
 export interface FloatingRect {
   x: number;
@@ -149,6 +194,10 @@ export interface FloatingGeometry {
   bounds: FloatingRect;
   workArea: FloatingRect;
   cursor: { x: number; y: number } | null;
+  /** The character's own box on the screen, once the page has reported it (main keeps it on a display). */
+  body?: FloatingRect;
+  /** How far the window may reach (macOS, next to a neighbouring display); absent sides are free. */
+  limits?: { left?: number; right?: number; top?: number; bottom?: number } | null;
 }
 
 /** window.floatingBotWindow, from electron/floating-bot-preload.cjs. */
@@ -162,6 +211,10 @@ export interface FloatingWindowBridge {
   moved(): void;
   /** Size the window to what is drawn, keeping the character's corner in place (bottom-right unless said otherwise). */
   resize(width: number, height: number, anchor?: { x: "left" | "right"; y: "top" | "bottom" }): Promise<unknown>;
+  /** Where the character is drawn in the window: main keeps that box on screen (optional: an older preload lacks it). */
+  setBody?(rect: FloatingRect): void;
+  /** A new layout of the window: this size, moved so the character stays put on the screen (optional: an older preload lacks it). */
+  frame?(width: number, height: number, body: FloatingRect, from?: FloatingRect): Promise<FloatingRect | null>;
   setInteractive(on: boolean): void;
   setFocusable(on: boolean): void;
   send(event: FloatingEvent): void;
@@ -171,6 +224,8 @@ export interface FloatingWindowBridge {
   popupMenu?(x: number, y: number): void;
   /** The call's levels (optional: an older preload lacks it). */
   onLevel?(callback: (levels: FloatingCallLevels) => void): () => void;
+  /** A move chosen in the native menu's "Moves" (optional: an older preload lacks it). */
+  onMove?(callback: (clip: string) => void): () => void;
 }
 
 /** window.ogb.floatingBots, from electron/preload.cjs (the local main page only). */
@@ -186,9 +241,14 @@ export interface FloatingBotsBridge {
   onClosed(cb: (value: { botId: string }) => void): () => void;
   /** A window is ready but has no state: send it again (optional: an older preload lacks it). */
   onWant?(cb: (value: { botId: string }) => void): () => void;
+  /** "Switch bot": that window now stands for another bot, in place (optional: an older preload lacks it). */
+  rekey?(fromId: string, toId: string): Promise<boolean>;
+  /** The mascot's call hotkey: on or off, its keys, and whether holds are read (optional: an older preload lacks it). */
+  hotkey?(config: { enabled: boolean; accelerator: string; hold: boolean }): Promise<{ registered: string | null; conflict: boolean } | null>;
+  /** The hotkey was pressed: a tap, a hold or the release of a hold (optional: an older preload lacks it). */
+  onHotkey?(cb: (value: { kind: string }) => void): () => void;
 }
 
-const ID = /^[a-zA-Z0-9:_-]{1,64}$/;
 const POSES = new Set<FloatingPose>(["idle", "think", "speak", "celebrate", "alert", "sleep"]);
 const TASKS = new Set<MascotTask>(["idle", "working", "waiting", "error"]);
 
@@ -219,7 +279,7 @@ export function isFloatingSnapshot(value: unknown): value is FloatingSnapshot {
     typeof snapshot.name === "string" &&
     POSES.has(snapshot.pose as FloatingPose) &&
     Array.isArray(snapshot.menu) &&
-    snapshot.menu.every((item) => item && ID.test(item.id) && typeof item.label === "string")
+    snapshot.menu.every((item) => item && MENU_ID.test(item.id) && typeof item.label === "string" && (item.items === undefined || Array.isArray(item.items)))
   );
 }
 
@@ -228,7 +288,9 @@ export function isFloatingEvent(value: unknown): value is FloatingEvent {
   if (!value || typeof value !== "object") return false;
   const event = value as { type?: unknown; id?: unknown; text?: unknown; action?: unknown };
   if (event.type === "call") return CALL_ACTIONS.has(event.action as FloatingCallAction);
-  if (event.type === "menu") return typeof event.id === "string" && ID.test(event.id);
+  if (event.type === "menu") return typeof event.id === "string" && MENU_ID.test(event.id);
   if (event.type === "send") return typeof event.text === "string" && event.text.trim().length > 0;
+  if (event.type === "tray") return typeof (event as { open?: unknown }).open === "boolean";
+  if (event.type === "work") return (event.action === "allow" || event.action === "stop" || event.action === "open") && typeof event.id === "string" && TRAY_ID.test(event.id);
   return ["click", "context", "dismiss", "open", "play", "pet"].includes(event.type as string);
 }

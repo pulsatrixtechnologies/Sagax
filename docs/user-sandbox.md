@@ -223,6 +223,15 @@ engines above needs it, and the two refused ones would bring their own
 service login into it.
 
 Shell, files and pages then go through `sagax-environment`.
+
+The engine CLIs therefore live in the Sagax server image, not in this one:
+`engines.lock.json` pins them and an organization build (`ENGINE_SET=all`,
+Perspicax's `build-push.sh`) installs every one of them there
+([Engines baked into a server image](custom-engines.md#engines-baked-into-a-server-image)).
+`deploy/sandbox/Dockerfile` carries no engine. Being installed does not lift
+the rule above: an engine that cannot withhold its own tools (Droid, Cursor
+Agent, Antigravity, a custom ACP agent) is still refused on an organization
+server.
 `scripts/smoke-host-tools.ts` starts the real Claude Code CLI with the
 driver's flags (no model request) and checks its tool list has no `Bash`.
 `scripts/verify-org-host-tools.ts <engine>` drives a real ACP CLI through

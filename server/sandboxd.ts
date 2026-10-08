@@ -62,7 +62,7 @@ export function createSandboxdHandler(service: SandboxService, verifier: Sandbox
         return send(res, 200, { instance: service.config.instance, egress: service.egress, maxRunning: service.config.maxRunning, idleMinutes: service.config.idleStopMs / 60_000 });
       }
       if (method === "GET" && url.pathname === "/v1/sandboxes") return send(res, 200, { sandboxes: await service.list() });
-      const match = /^\/v1\/sandboxes\/([a-f0-9]{32})(?:\/(ensure|stop|exec|pause|resume|stats))?$/.exec(url.pathname);
+      const match = /^\/v1\/sandboxes\/([a-f0-9]{32})(?:\/(ensure|stop|exec|pause|resume|stats|used))?$/.exec(url.pathname);
       if (!match) return send(res, 404, { error: "not found" });
       const key = match[1]!;
       const action = match[2];
@@ -71,6 +71,7 @@ export function createSandboxdHandler(service: SandboxService, verifier: Sandbox
       if (method === "POST" && action === "stop") return send(res, 200, await service.stop(key));
       if (method === "POST" && action === "pause") return send(res, 200, await service.pause(key));
       if (method === "POST" && action === "resume") return send(res, 200, await service.resume(key));
+      if (method === "POST" && action === "used") return send(res, 200, await service.markUsed(key));
       if (method === "GET" && action === "stats") return send(res, 200, await service.stats(key));
       if (method === "DELETE" && !action) {
         return send(res, 200, await service.remove(key, { keepWorkspace: url.searchParams.get("keepWorkspace") === "1" }));

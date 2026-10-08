@@ -336,7 +336,7 @@ export function ApiKeyRow({
   return (
     <div data-api-key-row={section}>
       <div className="mb-1.5 flex items-center gap-2 text-[13px] text-ink-secondary">
-        <span className={cn("size-1.5 rounded-full", configured || included ? "bg-success" : "bg-raised-hover")} />
+        <span className={cn("size-1.5 rounded-full", configured || included ? "bg-accent" : "bg-raised-hover")} />
         <span>{credential.label}</span>
         {credential.optional && (
           <span className="rounded bg-control px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-ink-secondary">
@@ -471,7 +471,7 @@ export function VpsConnection() {
   return (
     <div>
       <div className="mb-1.5 flex items-center gap-2 text-[13px] text-ink-secondary">
-        <span className={cn("size-1.5 rounded-full", configured ? "bg-success" : "bg-raised-hover")} />
+        <span className={cn("size-1.5 rounded-full", configured ? "bg-accent" : "bg-raised-hover")} />
         <span>{t("keys.vps.label")}</span>
         <span className="rounded bg-control px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-ink-secondary">
           {t("keys.optional")}

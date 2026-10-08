@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, useState, useSyncExternalStore, type Componen
 import { Check, ChevronDown, CircleHelp, Copy } from "lucide-react";
 import { activeLocale, t } from "@/lib/i18n";
 import { cn } from "@/lib/cn";
+import { SWITCH_OFF, SWITCH_ON, SWITCH_THUMB_OFF, SWITCH_THUMB_ON } from "@/lib/status-tones";
 
 export function Switch({
   checked,
@@ -16,14 +17,14 @@ export function Switch({
       aria-checked={checked}
       className={cn(
         "relative h-5 w-11 shrink-0 rounded-full transition-colors enabled:hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40 motion-reduce:transition-none",
-        checked ? "bg-success" : "bg-ink/10",
+        checked ? SWITCH_ON : SWITCH_OFF,
         className,
       )}
     >
       <span
         className={cn(
-          "absolute left-0.5 top-1/2 h-4 w-[26px] -translate-y-1/2 rounded-full bg-ink transition-transform motion-reduce:transition-none",
-          checked ? "translate-x-[14px]" : "translate-x-0",
+          "absolute left-0.5 top-1/2 h-4 w-[26px] -translate-y-1/2 rounded-full transition-transform motion-reduce:transition-none",
+          checked ? `translate-x-[14px] ${SWITCH_THUMB_ON}` : `translate-x-0 ${SWITCH_THUMB_OFF}`,
         )}
       />
     </button>

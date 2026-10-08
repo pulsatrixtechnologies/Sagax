@@ -22,6 +22,7 @@ import { PlaceIcon } from "./PlaceIcon";
 import { ScreenFrame } from "./ScreenFrame";
 import { effectivePlace, placeLabelKey } from "@/lib/place";
 import { ThreadChip } from "./ThreadChip";
+import { withoutDeadThreadChips } from "@/lib/dead-thread-chips";
 import { ToolActivity } from "./ToolActivity";
 import { ThreadRefText } from "./ThreadRefs";
 import { TurnPresence } from "./TurnPresence";
@@ -32,6 +33,7 @@ import { viewerActorId } from "@/lib/viewer";
 import { viewerIsOrgAdmin, viewerOwnsGroup } from "@/lib/group-owner";
 import { PersonAvatar, RoomPersonLabel } from "./MessageAuthor";
 import { peopleDmPeer } from "@/lib/people-dm";
+import { PersonLabelTag } from "./LabelTag";
 import { groupNudgeTarget } from "@/lib/group-nudge";
 import { continuesRun, personDisplayName, personInitials, roomAuthor, runCorners } from "@/lib/room-authors";
 import { botIdOfParticipant, messageParticipant, seenRows, type ThreadReads } from "@/lib/read-receipts";
@@ -234,6 +236,7 @@ export const Transcript = memo(function Transcript({
 }) {
   const { state, dispatch } = useStore();
   const showToolCalls = showToolCallsEnabled(state.config);
+  const owners = useMemo(() => ({ bots: state.bots, groups: state.groups }), [state.bots, state.groups]);
   const memberOf = (id?: string) => members.find((b) => b.id === id);
   const pairChannel = Boolean(group.dm) && !group.peopleDm;
   // Bot-to-bot lines become one chip per run first. A shared room's replies
@@ -242,7 +245,7 @@ export const Transcript = memo(function Transcript({
   const items = useMemo(() => {
     const plan = voiceCallPlan(transcript);
     const seen = new Set<string>();
-    const visible = messages.filter((message) =>
+    const visible = withoutDeadThreadChips(messages, owners).filter((message) =>
       message.kind !== "activity" || roomActivityVisible(message, showToolCalls));
     const collapsed = collapseBotExchanges(visible, {
       pairChannel,
@@ -272,7 +275,7 @@ export const Transcript = memo(function Transcript({
     }
     flush();
     return listed;
-  }, [messages, showToolCalls, pairChannel, members, transcript]);
+  }, [messages, showToolCalls, pairChannel, members, transcript, owners]);
   const windowIds = useMemo(() => new Set(messages.map((message) => message.id)), [messages]);
   // Seen by: each participant once, under the last line they have read.
   const seen = useMemo(() => {
@@ -1161,8 +1164,9 @@ export function GroupView({ group: stored }: { group: Group }) {
               title={t("personPanel.open", { name: peer.name })}
               aria-label={t("personPanel.open", { name: peer.name })}
             >
-              <PersonAvatar avatarUrl={peer.avatarUrl} initials={peer.initials} size={24} />
+              <PersonAvatar avatarUrl={peer.avatarUrl} initials={peer.initials} size={24} presenceId={peer.id} presenceRing="border-elevated" />
               <span className="truncate text-[14px] font-medium leading-5 text-ink">{peer.name}</span>
+              <PersonLabelTag principalId={peer.id} tone="surface" className="max-w-[40%] shrink" />
             </button>
           ) : group.dm ? (
             <span className="flex min-w-0 items-center gap-2 rounded-full border-[0.5px] border-hairline-weak bg-elevated py-[7.5px] pl-[7.5px] pr-[13.5px]">

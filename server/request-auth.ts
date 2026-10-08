@@ -317,6 +317,11 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   { methods: ["POST"], path: /^\/api\/me\/achievements\/events$/ },
   { methods: ["PUT"], path: /^\/api\/me\/achievements\/settings$/ },
   { methods: ["GET"], path: /^\/api\/achievements\/public$/ },
+  // People's custom labels (server/routes/person-labels.ts): everyone reads
+  // them; the handler lets a person change their own, an organization admin
+  // anyone's and a team manager their team's people.
+  { methods: ["GET"], path: /^\/api\/people\/labels$/ },
+  { methods: ["PUT"], path: /^\/api\/people\/pr_[0-9a-f-]{36}\/label$/ },
   // The bot settings of the phone's Settings sheet (auto-review default, time
   // zone): the person's own on an organization server; on a solo server the
   // handler lets only the owner change the server's.
@@ -459,6 +464,11 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   // Shake that person's Sagax (server/routes/nudges.ts). The handler checks
   // the person and the 5 minute cooldown.
   { methods: ["POST"], path: /^\/api\/nudges$/ },
+  // Who of the organization is online, away or offline, and this app's
+  // heartbeat (server/routes/presence.ts). The handler answers a person of
+  // the directory only: not a service account, not another issuer.
+  { methods: ["GET"], path: /^\/api\/org\/presence$/, feature: "orgDirectory" },
+  { methods: ["POST"], path: /^\/api\/presence\/heartbeat$/, feature: "orgDirectory" },
   // Organization server: a group's owner deletes it (server/group-ownership.ts);
   // the route refuses a client session anywhere else.
   { methods: ["DELETE"], path: /^\/api\/groups\/[\w-]+$/ },
@@ -478,6 +488,8 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   { methods: ["POST"], path: /^\/api\/bots\/[\w-]+\/voice\/(?:prepare|speak|transcribe|stream|call)$/ },
   // routines: a scheduled message; the input carries no cwd or permission field
   { methods: ["GET"], path: /^\/api\/routines$/ },
+  // the routine modal's "Runs as" choices (server/routine-run-as.ts)
+  { methods: ["GET"], path: /^\/api\/routines\/run-as-options$/ },
   { methods: ["POST"], path: /^\/api\/routines$/ },
   { methods: ["PATCH", "DELETE"], path: /^\/api\/routines\/[\w-]+$/ },
   { methods: ["POST"], path: /^\/api\/routines\/[\w-]+\/run$/ },
@@ -535,6 +547,10 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   // A person's own engines: what their own turns run on, and their own
   // subscription sign-in (server/principal-engine-logins.ts).
   { methods: ["GET"], path: /^\/api\/me\/engines$/, feature: "orgDirectory" },
+  // A person's own plan windows (5-hour, weekly) read from their own
+  // subscription logins only (server/plan-usage.ts orgPlanAccounts). On a
+  // solo server this path stays admin.
+  { methods: ["GET"], path: /^\/api\/plan-usage$/, feature: "orgDirectory" },
   // The server's engines and their models (Model providers, the model
   // picker): a member's copy drops the server's own account, CLI paths and
   // install details (memberInstanceView in server/index.ts). Changes stay admin.
@@ -558,7 +574,7 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   // (server/harness-commands.ts): names, descriptions and hints only.
   { methods: ["GET"], path: /^\/api\/bots\/[\w-]+\/harness-commands$/ },
   // Slice 6: the caller's own routine delegation (allow, status, revoke).
-  { methods: ["GET", "POST", "DELETE"], path: /^\/api\/org\/routine-delegation$/, feature: "orgDirectory" },
+  { methods: ["GET"], path: /^\/api\/org\/routine-delegation$/, feature: "orgDirectory" },
   // Slice 8: a person copies their own bots from a solo Sagax (the handler
   // checks the session, the caller's right to create bots and the copy).
   { methods: ["POST"], path: /^\/api\/org\/import$/, feature: "orgDirectory" },

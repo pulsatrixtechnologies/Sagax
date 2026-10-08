@@ -6,10 +6,19 @@ import {
   floatBot,
   floatingBotPrefs,
   floatingBots,
+  floatingShown,
   isBotFloating,
+  nextFloatingReturn,
+  SNOOZE_MS,
+  snoozeFloatingBot,
+  switchFloatingBot,
   MAX_FLOATING_BOTS,
   nextLiveliness,
   readFloatingBotPrefs,
+  setFloatingHotkey,
+  hotkeyLabel,
+  HOTKEY_CHOICES,
+  DEFAULT_HOTKEY,
   readFloatingBots,
   resetFloatingBotsForTests,
   setFloatingFlyAway,
@@ -44,6 +53,42 @@ describe("floating bots: the per-device list", () => {
     expect(isBotFloating("bot_a")).toBe(false);
     expect(readFloatingBots(storage)).toEqual([]);
     expect(changes).toBe(2);
+  });
+
+  it("hides a mascot for an hour and brings it back by itself (the right-click menu)", () => {
+    const storage = memoryStorage();
+    floatBot("bot_a", storage);
+    floatBot("bot_b", storage);
+    const now = 1_000_000;
+    snoozeFloatingBot("bot_a", now + SNOOZE_MS, storage);
+    expect(SNOOZE_MS).toBe(3_600_000);
+    // still on the list (its place and settings kept), just not shown until then
+    const saved = readFloatingBots(storage);
+    expect(saved[0]).toEqual({ id: "bot_a", top: true, hiddenUntil: now + SNOOZE_MS });
+    expect(floatingShown(saved[0], now)).toBe(false);
+    expect(floatingShown(saved[0], now + SNOOZE_MS)).toBe(true);
+    expect(floatingShown(saved[1], now)).toBe(true);
+    expect(nextFloatingReturn(saved, now)).toBe(now + SNOOZE_MS);
+    expect(nextFloatingReturn(saved, now + SNOOZE_MS)).toBeNull();
+    // a bot not on the desktop, or a time that is not one, changes nothing
+    snoozeFloatingBot("bot_z", now, storage);
+    snoozeFloatingBot("bot_b", Number.NaN, storage);
+    expect(readFloatingBots(storage)[1]).toEqual({ id: "bot_b", top: true });
+  });
+
+  it("switches a mascot to another bot in place (the right-click menu's Switch bot)", () => {
+    const storage = memoryStorage();
+    floatBot("bot_a", storage);
+    floatBot("bot_b", storage);
+    setFloatingBotOnTop("bot_a", false, storage);
+    snoozeFloatingBot("bot_a", 5, storage);
+    expect(switchFloatingBot("bot_a", "bot_c", storage)).toBe(true);
+    // same place in the list, same always-on-top choice, shown
+    expect(readFloatingBots(storage)).toEqual([{ id: "bot_c", top: false }, { id: "bot_b", top: true }]);
+    // not onto a bot that already floats, nor from one that does not, nor to a bad id
+    expect(switchFloatingBot("bot_c", "bot_b", storage)).toBe(false);
+    expect(switchFloatingBot("bot_x", "bot_d", storage)).toBe(false);
+    expect(switchFloatingBot("bot_c", "bad id", storage)).toBe(false);
   });
 
   it("keeps several bots, their always-on-top choice and their in-app spot", () => {
@@ -103,35 +148,53 @@ describe("floating bots: the per-device list", () => {
 describe("floating bots: the fly-away setting", () => {
   it("is on by default and survives a reload once switched off", () => {
     const storage = memoryStorage();
-    expect(readFloatingBotPrefs(storage)).toEqual({ flyAway: true, liveliness: "normal" });
+    expect(readFloatingBotPrefs(storage)).toEqual({ flyAway: true, liveliness: "normal", hotkey: true, hotkeyKeys: "Control+Alt+Space" });
     let changes = 0;
     subscribeFloatingBots(() => (changes += 1));
     setFloatingFlyAway(false, storage);
     setFloatingFlyAway(false, storage);
     expect(floatingBotPrefs().flyAway).toBe(false);
     expect(changes).toBe(1);
-    expect(readFloatingBotPrefs(storage)).toEqual({ flyAway: false, liveliness: "normal" });
+    expect(readFloatingBotPrefs(storage)).toEqual({ flyAway: false, liveliness: "normal", hotkey: true, hotkeyKeys: "Control+Alt+Space" });
     setFloatingFlyAway(true, storage);
-    expect(readFloatingBotPrefs(storage)).toEqual({ flyAway: true, liveliness: "normal" });
+    expect(readFloatingBotPrefs(storage)).toEqual({ flyAway: true, liveliness: "normal", hotkey: true, hotkeyKeys: "Control+Alt+Space" });
   });
 
   it("reads a broken or missing record as the default", () => {
     const storage = memoryStorage();
     storage.setItem("omb.floatingBots.prefs.v1", "{nope");
-    expect(readFloatingBotPrefs(storage)).toEqual({ flyAway: true, liveliness: "normal" });
+    expect(readFloatingBotPrefs(storage)).toEqual({ flyAway: true, liveliness: "normal", hotkey: true, hotkeyKeys: "Control+Alt+Space" });
     storage.setItem("omb.floatingBots.prefs.v1", JSON.stringify({ flyAway: "no" }));
-    expect(readFloatingBotPrefs(storage)).toEqual({ flyAway: true, liveliness: "normal" });
-    expect(readFloatingBotPrefs(undefined)).toEqual({ flyAway: true, liveliness: "normal" });
+    expect(readFloatingBotPrefs(storage)).toEqual({ flyAway: true, liveliness: "normal", hotkey: true, hotkeyKeys: "Control+Alt+Space" });
+    expect(readFloatingBotPrefs(undefined)).toEqual({ flyAway: true, liveliness: "normal", hotkey: true, hotkeyKeys: "Control+Alt+Space" });
   });
 
   it("keeps an activity level, cycled by the menu, and ignores an unknown one", () => {
     const storage = memoryStorage();
     setFloatingLiveliness("lively", storage);
-    expect(readFloatingBotPrefs(storage)).toEqual({ flyAway: true, liveliness: "lively" });
+    expect(readFloatingBotPrefs(storage)).toEqual({ flyAway: true, liveliness: "lively", hotkey: true, hotkeyKeys: "Control+Alt+Space" });
     setFloatingLiveliness("wild" as never, storage);
     expect(readFloatingBotPrefs(storage).liveliness).toBe("lively");
     expect(nextLiveliness("calm")).toBe("normal");
     expect(nextLiveliness("lively")).toBe("calm");
+  });
+
+  it("keeps the call hotkey on by default, its keys among the choices", () => {
+    const storage = memoryStorage();
+    setFloatingHotkey({ on: false }, storage);
+    expect(readFloatingBotPrefs(storage)).toMatchObject({ hotkey: false, hotkeyKeys: "Control+Alt+Space" });
+    setFloatingHotkey({ on: true, keys: "Alt+Shift+Space" }, storage);
+    expect(readFloatingBotPrefs(storage)).toMatchObject({ hotkey: true, hotkeyKeys: "Alt+Shift+Space" });
+    setFloatingHotkey({ keys: "Command+Q" as never }, storage);
+    expect(readFloatingBotPrefs(storage).hotkeyKeys).toBe("Alt+Shift+Space");
+    storage.setItem("omb.floatingBots.prefs.v1", JSON.stringify({ hotkeyKeys: "F1" }));
+    expect(readFloatingBotPrefs(storage)).toMatchObject({ hotkey: true, hotkeyKeys: "Control+Alt+Space" });
+    expect(HOTKEY_CHOICES).toContain(DEFAULT_HOTKEY);
+  });
+
+  it("names the hotkey as each system does", () => {
+    expect(hotkeyLabel("Control+Alt+Space", true)).toBe("Control+Option+Space");
+    expect(hotkeyLabel("Control+Alt+Space", false)).toBe("Ctrl+Alt+Space");
   });
 
   it("keeps three.js out of every chunk but the floating mascot's", () => {

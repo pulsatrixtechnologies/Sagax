@@ -240,6 +240,16 @@ const PAIRS = [
   ]),
   ["--color-accent-text", "--color-accent/10", 4.5, "--color-card"],
   ["--color-accent-text", "--color-accent/15", 4.5, "--color-card"],
+  // On, active, connected, paused, waiting and scheduled wear this tint
+  // (`bg-accent/15 text-accent-text`), on a card or on the panel, never the
+  // success green or the warning amber (their own tints are held above).
+  ["--color-accent-text", "--color-accent/15", 4.5, "--color-panel"],
+  // The standard switch, on: an `accent` track (never the success green) with
+  // an `accent-border` ring and an `accent-ink` thumb (4.5:1 on the track,
+  // paired above). The track is a UI component, so 3:1 against every surface
+  // a switch sits on, through its ring: Dusk's muted accent fill alone is
+  // 2.4:1 on raised.
+  ...["--color-panel", "--color-card", "--color-raised"].map((s) => ["--color-accent-border", s, 3]),
   // The accent as a glyph: check marks, the active-row tick, toggles and
   // the accent icons on menus and cards. A glyph is held to 3:1.
   ...["--color-app", "--color-panel", "--color-card", "--color-menu", "--color-raised-hover", "--color-composer"].map((s) => ["--color-accent", s, 3]),
@@ -414,6 +424,39 @@ export function checkContrast(css, { verbose = false } = {}) {
       // Without the class a popover is just its parent context.
       const tokens = POPOVER ? resolve(POPOVER, parent, inline) : parent;
       report(id, label, measure(tokens, POPOVER_PAIRS));
+    }
+  }
+
+  // Mascots. The Neutral white character (shared/mascot-colors.ts) is
+  // near-white, so on a light surface alone it has no contrast to speak of;
+  // every preview and thumbnail therefore sits on a mid-tone plinth
+  // (--color-mascot-plinth) and the silhouette has to clear 3:1 against it
+  // (WCAG 1.4.11, a graphic object). The plinth itself has to be seen against
+  // the surfaces it lands on; on a dark skin it is a notch lighter than the
+  // card. The white-on-surface figures are printed for the record (the
+  // "before"); they are not gated, the plinth is the fix.
+  const mascotWhite = /white:\s*"(#[0-9a-fA-F]{6})"/.exec(readFileSync(join(dirname(fileURLToPath(import.meta.url)), "..", "shared", "mascot-colors.ts"), "utf8"))?.[1];
+  if (!mascotWhite) {
+    failed = true;
+    out.push("✗ mascot: cannot find the Neutral white in shared/mascot-colors.ts");
+  }
+  for (const [id, raw] of skins) {
+    if (!mascotWhite) break;
+    const tokens = { ...resolve({ ...base, ...raw }, {}, inline), "--mascot-white": parseHex(mascotWhite) };
+    const light = (raw["--code-color-scheme"] ?? base["--code-color-scheme"]) === "light";
+    const pairs = light
+      ? [["--mascot-white", "--color-mascot-plinth", 3], ["--color-mascot-plinth", "--color-card", 1.5], ["--color-mascot-plinth", "--color-inset", 1.5]]
+      : [["--color-mascot-plinth", "--color-card", 1.05]];
+    if (light && !(raw["--mascot-shadow-color"] ?? "").startsWith("rgba(")) {
+      failed = true;
+      failingPairs++;
+      out.push(`✗ ${id} mascot: a light skin sets no --mascot-shadow-color`);
+    }
+    report(id, "mascot", measure(tokens, pairs));
+    if (light) {
+      const alone = ["--color-app", "--color-panel", "--color-card", "--color-inset"].map((s) => `${s.slice(8)} ${contrast(tokens["--mascot-white"], tokens[s])?.toFixed(2)}`).join(", ");
+      const onPlinth = contrast(tokens["--mascot-white"], tokens["--color-mascot-plinth"]);
+      out.push(`  ${id} mascot white alone: ${alone}; on plinth ${onPlinth?.toFixed(2)}:1`);
     }
   }
 

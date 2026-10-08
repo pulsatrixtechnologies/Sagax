@@ -232,6 +232,10 @@ export interface OidcGrantKeeper {
   createRoutineDelegation?(input: { principalId: string; iss: string; sub: string; refreshToken: string; accessToken?: string; accessExpiresAt?: number }): void;
   /** Slice 6: the principal of a live session, or null when it is gone. */
   sessionPrincipal?(sessionId: string): string | null;
+  /** 2026-10-08: a person signed in (web, desktop or phone). Their routine
+   * delegation is issued from this access token when they hold none, with
+   * no consent step (RoutineConsents.keepAlive). Fire and forget. */
+  signedIn?(input: { principalId: string; accessToken?: string; accessExpiresAt?: number }): void;
 }
 
 /** The browser binding cookie of a sign-in or delegation flow: the same
@@ -578,6 +582,16 @@ export function createOidcLoginRoutes(deps: OidcLoginDeps) {
       return true;
     }
     const idp = { iss: identity.iss, sub: identity.sub, ...(identity.role ? { role: identity.role } : {}), grantRef };
+    try {
+      deps.grants.signedIn?.({
+        principalId: principal.id,
+        ...(outcome.grant.accessToken && outcome.grant.accessExpiresAt !== undefined
+          ? { accessToken: outcome.grant.accessToken, accessExpiresAt: outcome.grant.accessExpiresAt }
+          : {}),
+      });
+    } catch (error) {
+      log(`oidc sign-in: the routine delegation could not start: ${error instanceof Error ? error.message : String(error)}`);
+    }
     if (native) {
       const pairing = deps.openPairing({
         principalId: principal.id,

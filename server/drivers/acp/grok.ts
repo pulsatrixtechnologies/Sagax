@@ -3,6 +3,7 @@
 // (~/.grok/auth.json), NOT the xAI API key (that driver is drivers/grok.ts).
 // The generic protocol runtime lives in acp/core.ts; this file is only the
 // per-harness quirks. Verified against grok 1.0.0.
+import { spawn } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
@@ -15,16 +16,129 @@ import { createAcpDriver, type AcpSupport } from "./core.ts";
 import { grokHostToolArgs, grokOrgAgentProfile } from "../host-tools.ts";
 import { allowsTool, canUseMcpServer, narrowsNativeTools, parseToolScope } from "../../../shared/tool-scope.ts";
 
+/** Fallback only, for when the engine cannot be asked (not installed, or no
+ * answer). Grok 1.0.46 and 1.0.50 signed in to grok.com offer exactly these
+ * four (`grok models`, ~/.grok/models_cache.json, verified 2026-10-08). */
 export const STATIC_GROK_MODELS: ModelCatalog = {
   default: "grok-4.7",
   options: [
     { id: "grok-4.7", label: "Grok 4.7", contextWindow: 500_000 },
+    { id: "grok-4.7-build-fast", label: "Grok 4.7 Fast" },
     { id: "grok-4.6", label: "Grok 4.6" },
     { id: "grok-4.5", label: "Grok 4.5" },
   ],
 };
 
 const SLUG = /^[a-z0-9][a-z0-9._-]*$/i;
+
+type GrokCloudModel = ModelCatalog["options"][number];
+
+function grokHome(env: Record<string, string | undefined>): string {
+  return env.GROK_HOME || harnessHome("grok", env);
+}
+
+/** The account catalog Grok itself caches (`models_cache.json`, written from
+ * cli-chat-proxy.grok.com/v1/models). Null when absent or unreadable. */
+export function readGrokModelsCache(env: Record<string, string | undefined> = process.env): GrokCloudModel[] | null {
+  let raw: unknown;
+  try {
+    raw = JSON.parse(readFileSync(join(grokHome(env), "models_cache.json"), "utf8"));
+  } catch {
+    return null;
+  }
+  const models = (raw as { models?: unknown } | null)?.models;
+  if (!models || typeof models !== "object" || Array.isArray(models)) return null;
+  const out: GrokCloudModel[] = [];
+  for (const [id, entry] of Object.entries(models as Record<string, unknown>)) {
+    const info = (entry as { info?: { name?: unknown; hidden?: unknown; context_window?: unknown } } | null)?.info;
+    if (!SLUG.test(id) || info?.hidden === true) continue;
+    const contextWindow = typeof info?.context_window === "number" && info.context_window > 0 ? info.context_window : undefined;
+    out.push({ id, label: typeof info?.name === "string" && info.name.trim() ? info.name.trim() : id, ...(contextWindow ? { contextWindow } : {}) });
+  }
+  return out.length ? out : null;
+}
+
+/** What the engine answers in ACP `initialize` (`_meta.modelState`): every
+ * model it would run, cloud and config blocks alike. */
+export function grokModelsFromInitialize(init: unknown): GrokCloudModel[] | null {
+  const available = (init as { _meta?: { modelState?: { availableModels?: unknown } } } | null)?._meta?.modelState?.availableModels;
+  if (!Array.isArray(available)) return null;
+  const out: GrokCloudModel[] = [];
+  for (const entry of available as Array<{ modelId?: unknown; name?: unknown; _meta?: { totalContextTokens?: unknown } }>) {
+    if (typeof entry?.modelId !== "string" || !SLUG.test(entry.modelId)) continue;
+    const window = entry._meta?.totalContextTokens;
+    out.push({
+      id: entry.modelId,
+      label: typeof entry.name === "string" && entry.name.trim() ? entry.name.trim() : entry.modelId,
+      ...(typeof window === "number" && window > 0 ? { contextWindow: window } : {}),
+    });
+  }
+  return out.length ? out : null;
+}
+
+const LIVE_MODELS_TTL_MS = 30_000;
+const LIVE_MODELS_TIMEOUT_MS = 5_000;
+const liveModels = new Map<string, { at: number; models: GrokCloudModel[] | null }>();
+
+/** Test hook. */
+export function resetGrokLiveModels(): void {
+  liveModels.clear();
+}
+
+/** Ask the installed CLI which models it offers: spawn `grok agent stdio`,
+ * read `initialize`, stop it. No session, no prompt. Cached briefly so a
+ * picker opened twice in a row asks once. Null when the CLI cannot answer. */
+export async function probeGrokModels(
+  cli: string,
+  env: Record<string, string | undefined>,
+  now: () => number = Date.now,
+): Promise<GrokCloudModel[] | null> {
+  const key = `${cli}\0${grokHome(env)}`;
+  const cached = liveModels.get(key);
+  if (cached && now() - cached.at < LIVE_MODELS_TTL_MS) return cached.models;
+  const models = await new Promise<GrokCloudModel[] | null>((done) => {
+    let settled = false;
+    let child: ReturnType<typeof spawn>;
+    const finish = (value: GrokCloudModel[] | null) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      try { child?.kill(); } catch { /* already gone */ }
+      done(value);
+    };
+    const timer = setTimeout(() => finish(null), LIVE_MODELS_TIMEOUT_MS);
+    try {
+      // SAGAX_GROK_MODEL_PROBE marks this child for the test fake; Grok ignores it.
+      child = spawn(cli, ["agent", "--no-leader", "stdio"], {
+        env: { ...env, SAGAX_GROK_MODEL_PROBE: "1" }, stdio: ["pipe", "pipe", "ignore"],
+      });
+    } catch {
+      finish(null);
+      return;
+    }
+    child.on("error", () => finish(null));
+    child.on("exit", () => finish(null));
+    let buffer = "";
+    child.stdout?.on("data", (chunk: Buffer) => {
+      buffer += chunk.toString("utf8");
+      let newline: number;
+      while ((newline = buffer.indexOf("\n")) >= 0) {
+        const line = buffer.slice(0, newline);
+        buffer = buffer.slice(newline + 1);
+        try {
+          const message = JSON.parse(line);
+          if (message?.id === 1) finish(message.error ? null : grokModelsFromInitialize(message.result));
+        } catch { /* not a protocol line */ }
+      }
+    });
+    child.stdin?.on("error", () => finish(null));
+    child.stdin?.write(`${JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: 1, clientCapabilities: {} } })}\n`);
+  });
+  // A failed probe is not cached: the next picker open asks again.
+  if (models) liveModels.set(key, { at: now(), models });
+  return models;
+}
+
 
 function unquote(raw: string): string {
   const value = raw.trim();
@@ -34,18 +148,34 @@ function unquote(raw: string): string {
   return value;
 }
 
-/** Local slugs from ~/.grok/config.toml, plus the cloud defaults.
- *  `grok -m <slug>` already accepts these; the picker just didn't list them. */
-export function readGrokModelCatalog(env: Record<string, string | undefined> = process.env): ModelCatalog {
-  const path = join(env.GROK_HOME || harnessHome("grok", env), "config.toml");
+/** The models Grok offers, then local slugs from ~/.grok/config.toml.
+ *  `engine` is the CLI's own answer (initialize); without it, the account
+ *  catalog Grok cached; without that, the static list. Config blocks are
+ *  marked custom whichever source listed them. */
+export function readGrokModelCatalog(
+  env: Record<string, string | undefined> = process.env,
+  engine?: GrokCloudModel[] | null,
+): ModelCatalog {
+  const path = join(grokHome(env), "config.toml");
   let text = "";
   try {
     text = readFileSync(path, "utf8");
   } catch {
-    return STATIC_GROK_MODELS;
+    text = "";
   }
+  const declared = new Set<string>();
+  for (const line of text.split(/\r?\n/)) {
+    const stripped = line.trim();
+    if (!stripped.startsWith("[model.") || !stripped.endsWith("]")) continue;
+    let inner = stripped.slice("[model.".length, -1);
+    if (inner.startsWith('"') && inner.endsWith('"')) inner = inner.slice(1, -1);
+    declared.add(inner);
+  }
+  const cloud = engine?.filter((model) => !declared.has(model.id)) ?? [];
+  const offered = cloud.length ? cloud : readGrokModelsCache(env) ?? STATIC_GROK_MODELS.options;
+  if (!text && offered === STATIC_GROK_MODELS.options) return STATIC_GROK_MODELS;
 
-  const options = STATIC_GROK_MODELS.options.map((o) => ({ ...o }));
+  const options: ModelCatalog["options"] = offered.map((o) => ({ ...o }));
   const seen = new Set(options.map((o) => o.id));
   let configuredDefault: string | null = null;
   let current: { slug: string; name?: string } | null = null;
@@ -90,10 +220,54 @@ export function readGrokModelCatalog(env: Record<string, string | undefined> = p
   }
   flush();
 
+  const fallbackDefault = seen.has(STATIC_GROK_MODELS.default) ? STATIC_GROK_MODELS.default : options[0]?.id ?? STATIC_GROK_MODELS.default;
   return {
-    default: configuredDefault && seen.has(configuredDefault) ? configuredDefault : STATIC_GROK_MODELS.default,
+    default: configuredDefault && seen.has(configuredDefault) ? configuredDefault : fallbackDefault,
     options,
   };
+}
+
+/** Grok's remote settings can run a "launch campaign" that makes every new
+ * session start on the launched model (settings.campaigns:
+ * [{id:"grok-4.7-launch", models:{default:"grok-4.7"}}]) until the TUI user
+ * dismisses it. It outranks `-m` and the ACP profile's model: verified with
+ * grok 1.0.46 and 1.0.50 signed in to grok.com, in a fresh GROK_HOME,
+ * session/new asked for grok-4.5 (or a local slug) and ran grok-4.7. A fresh
+ * home is exactly what an organization person gets, so every pick ran
+ * grok-4.7 there. Grok reads the dismissed ids on each session/new, so
+ * writing them before the session opens is enough. Returns the ids added. */
+export function dismissGrokModelCampaigns(env: Record<string, string | undefined>): string[] {
+  const home = grokHome(env);
+  let campaigns: unknown;
+  try {
+    const cache = JSON.parse(readFileSync(join(home, "settings_cache.json"), "utf8")) as { payload?: unknown };
+    const payload = typeof cache.payload === "string" ? JSON.parse(cache.payload) : cache.payload;
+    campaigns = (payload as { settings?: { campaigns?: unknown } } | null)?.settings?.campaigns;
+  } catch {
+    return [];
+  }
+  if (!Array.isArray(campaigns)) return [];
+  const ids = campaigns
+    .filter((entry) => typeof entry?.id === "string" && entry.id.length <= 200 && entry.models && typeof entry.models === "object")
+    .map((entry) => entry.id as string);
+  if (!ids.length) return [];
+  const statePath = join(home, "campaigns_state.json");
+  let state: { dismissed_ids?: unknown; [key: string]: unknown } = {};
+  try {
+    const parsed = JSON.parse(readFileSync(statePath, "utf8"));
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) state = parsed;
+  } catch {
+    state = {};
+  }
+  const dismissed = Array.isArray(state.dismissed_ids) ? state.dismissed_ids.filter((id): id is string => typeof id === "string") : [];
+  const added = ids.filter((id) => !dismissed.includes(id));
+  if (!added.length) return [];
+  try {
+    writeFileSync(statePath, JSON.stringify({ ...state, dismissed_ids: [...dismissed, ...added] }));
+  } catch {
+    return [];
+  }
+  return added;
 }
 
 function suggestGrokSlug(host: string, model: string, taken: Set<string>): string {
@@ -349,11 +523,23 @@ const support: AcpSupport = {
   images: true,
   acceptsUnadvertisedImages: grokAcceptsUnadvertisedImages,
   models: STATIC_GROK_MODELS,
-  resolveModels: (env) => mergeLocalInject(readGrokModelCatalog(env), env),
+  // The engine's own answer (initialize), refreshed when the picker opens
+  // and cached briefly; Grok's cached account catalog, then the static list,
+  // only when the CLI cannot answer. A CLI that is not signed in lists only
+  // its bundled fallback (grok 1.0.50: grok-4.6 and grok-4.5), not what the
+  // account offers, so it is not asked.
+  resolveModels: async (env, config) => mergeLocalInject(readGrokModelCatalog(
+    env,
+    existsSync(join(grokHome(env), "auth.json")) ? await probeGrokModels(config.cli, env) : null,
+  ), env),
   // Grok's accepted levels vary by model and the CLI validates lazily — a
   // rejected level only logs and falls back. Offer the intersection shared
   // by every model in this driver's picker; notably, grok-4.5 rejects xhigh.
   effortLevels: ["low", "medium", "high"],
+  // A voice call warms the process when it is accepted (initialize,
+  // authenticate, session/load with no prompt): the first spoken turn is a
+  // bare session/prompt (docs/voice-mode-xai.md, "Latency").
+  warmSession: true,
   // Organization servers only spawn this driver when a turn sets
   // withholdHostTools. spawnArgs and the ACP profile below do the withholding.
   withholdsHostTools: true,
@@ -409,6 +595,10 @@ const support: AcpSupport = {
   },
 
   toolScopeSessionParams: (turn, init, hasMcp, { config, env, cwd }) => {
+    // These turns pin the model in the profile and never send set_model, so
+    // a launch campaign would silently replace every pick (see
+    // dismissGrokModelCampaigns). Runs right before session/new and load.
+    if (turn.model) dismissGrokModelCampaigns(env);
     if (turn.withholdHostTools === true) {
       // Name-only profile, not the 1.0.41 toolConfig registry. A selected
       // model is pinned here so configureSession does not call set_model,
@@ -436,7 +626,7 @@ const support: AcpSupport = {
 
   // -m on argv is necessary but not sufficient: session/new still starts on
   // [models].default. Pin the slug over the wire, same as Hermes/Droid.
-  async configureSession({ request, sessionId, turn, currentModelId, notice }) {
+  async configureSession({ request, sessionId, turn, currentModelId, sessionModels, notice }) {
     if (turn.toolScope !== undefined) {
       const available = new Set([
         ...(turn.integrations?.agents ? ["agents"] : []), ...(turn.integrations?.composio ? ["composio"] : []),
@@ -481,10 +671,16 @@ const support: AcpSupport = {
         return;
       }
       if (currentModelId !== turn.model) {
-        // A fresh session that still runs another model is Grok's own answer:
-        // it does not offer this id (it falls back to its default silently).
-        // Say so once and send the prompt on the model Grok runs.
-        notice?.(`Grok does not offer ${turn.model}, so this conversation uses ${currentModelId}. Choose another model for this bot to stop seeing this.`);
+        // A fresh session that still runs another model. Say so once per
+        // conversation and send the prompt on the model Grok runs. Only an
+        // id missing from the session's own list is one Grok does not
+        // offer; a local slug Sagax declared (ensureGrokInjectSlug) is in
+        // that list. An offered id replaced anyway is Grok overriding the
+        // pick (a launch campaign that could not be dismissed).
+        const offered = sessionModels.some((model) => model.modelId === turn.model);
+        notice?.(offered
+          ? `Grok ran this conversation on ${currentModelId} instead of ${turn.model}.`
+          : `Grok does not offer ${turn.model}, so this conversation uses ${currentModelId}. Choose another model for this bot to stop seeing this.`);
         return { model: currentModelId };
       }
       return;

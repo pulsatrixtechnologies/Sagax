@@ -41,6 +41,18 @@ function modelLabel(instance: InstanceInfo | undefined, model: string): string {
   return instance?.models.options.find((option) => option.id === model)?.label ?? model;
 }
 
+/** Asked by the desktop mascot's balloon (FloatingBots.tsx): `detail.botId`'s composer chip opens its picker. */
+export const COMPOSER_MODEL_EVENT = "omb:composer-model";
+
+/**
+ * What the composer's model chip reads for a bot (its model, and its effort
+ * when set), for the desktop mascot's balloon, which shows the same chip.
+ */
+export function composerModelLabel(instances: readonly InstanceInfo[], selection: Bot["modelSelection"]): string {
+  const active = instances.find((instance) => instance.instanceId === selection.instanceId);
+  return [modelLabel(active, selection.model), selection.effort ? effortLabel(selection.effort) : ""].filter(Boolean).join(" ");
+}
+
 function modelProvider(instance: InstanceInfo | undefined, model: string): string | undefined {
   return instance?.models.options.find((option) => option.id === model)?.provider;
 }
@@ -792,8 +804,8 @@ export function ModelPicker({
 
   const pick = (instance: InstanceInfo, model: string) => {
     if (bot.busy || instance.policy) return;
-    if (instance.models.options.some((option) => option.id === model && (option.local || isDesktopModelId(option.id)))
-      && localRowUnavailable(instance.driverKind, model)) return;
+    const localRow = instance.models.options.find((option) => option.id === model && (option.local || isDesktopModelId(option.id)));
+    if (localRow && localRowUnavailable(instance.driverKind, model, localRow.anthropic)) return;
     if (viewerLocal) {
       saveViewerChoice(dispatch, bot.id, { model: { instanceId: instance.instanceId, model } });
       setOpen(false);
@@ -833,7 +845,7 @@ export function ModelPicker({
   const filteredLocal = filterCustomModels(localRows, query);
   const unavailableText = (id: string): string | undefined => {
     if (!railInstance || !localIds.has(id)) return undefined;
-    const reason = localRowUnavailable(railInstance.driverKind, id);
+    const reason = localRowUnavailable(railInstance.driverKind, id, localRows.find((option) => option.id === id)?.anthropic);
     if (!reason) return undefined;
     return reason === "anthropic" ? t("model.localUnavailable.anthropic") : t("model.localUnavailable.engine", { engine: railInstance.displayName });
   };
@@ -911,6 +923,18 @@ export function ModelPicker({
       return next;
     });
   };
+
+  // the desktop mascot's model chip: the app comes forward and this chip opens
+  const toggleRef = useRef(toggle);
+  toggleRef.current = toggle;
+  useEffect(() => {
+    if (!inComposer) return;
+    const onModel = (event: Event) => {
+      if ((event as CustomEvent<{ botId?: string }>).detail?.botId === bot.id) toggleRef.current();
+    };
+    window.addEventListener(COMPOSER_MODEL_EVENT, onModel);
+    return () => window.removeEventListener(COMPOSER_MODEL_EVENT, onModel);
+  }, [inComposer, bot.id]);
 
   const trigger = inComposer ? (
     <button data-tour="model"
