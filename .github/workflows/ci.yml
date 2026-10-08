@@ -50,6 +50,7 @@ jobs:
       actions: read
     outputs:
       runtime: ${{ steps.scope.outputs.runtime }}
+      mobile: ${{ steps.scope.outputs.mobile }}
       vitest_os: ${{ steps.scope.outputs.vitest_os }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

@@ -4,6 +4,7 @@
 // the only clean slate is a second bot. A task is a real boundary — its
 // own transcript and its own provider session — so sensitive work, a
 // long job and a quick question can sit side by side under one agent.
+import { copyText } from "@/lib/copy-text";
 import { Fragment, useEffect, useRef, useState } from "react";
 import { Archive, ArchiveRestore, BellOff, Check, ChevronLeft, Clock, FolderInput, Link2, Loader2, MessagesSquare, MoreHorizontal, Pencil, Pin, PinOff, Plus, RefreshCw, Search, Trash2 } from "lucide-react";
 import { api, currentTaskBot, useStore, type Bot, type BotProject, type Group, type Task } from "@/state/store";
@@ -620,9 +621,8 @@ export function TaskPicker({ bot, initialOpen = false }: { bot: Bot; initialOpen
   const projectIds = projects.map((project) => project.id);
   const threadActions: PickerThreadActions = {
     onCopyLink: (threadId) => {
-      navigator.clipboard?.writeText(threadRefUrl({ botId: bot.id, threadId })).catch(() => {
-        // clipboard write rejected: the link stays available to copy again
-      });
+      // a refused write leaves the link available to copy again
+      void copyText(threadRefUrl({ botId: bot.id, threadId }));
     },
     onRegenerateTitle: llmThreadTitlesEnabled(state.config)
       ? (threadId, onSettled) => dispatch({ type: "regenerateTaskTitle", botId: bot.id, threadId, onSettled })

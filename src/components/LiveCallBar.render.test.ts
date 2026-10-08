@@ -148,12 +148,6 @@ describe("LiveCallSettings", () => {
     expect(markup).not.toContain("Marin (default)");
   });
 
-  it("says the key stays on the Cloud when the chat is on the person's Cloud", () => {
-    const markup = renderOnCloud(createElement(LiveCallSettings, { onClose: vi.fn() }));
-    expect(markup).toContain(CLOUD_DISCLOSURE);
-    expect(markup).not.toContain("stays on your computer");
-  });
-
   it("takes focus when it opens, so Escape closes it", () => {
     const onClose = vi.fn();
     let tree!: ReactElement<{ ref: (node: unknown) => void; onKeyDown: (event: unknown) => void }>;

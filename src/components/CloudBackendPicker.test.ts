@@ -28,11 +28,6 @@ describe("CloudBackendPicker", () => {
     expect(picker()).toContain("Self-hosted VPS");
   });
 
-  it("is hidden on My Cloud", () => {
-    fixture.config = { cloudHome: true };
-    expect(picker()).toBe("");
-  });
-
   it.each(["box", "vps"] as const)("offers both backends whichever is chosen (%s)", (value) => {
     const markup = picker(value);
     expect(markup).toContain("Boat");

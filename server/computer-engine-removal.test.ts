@@ -166,6 +166,9 @@ describe("moving saved bots off the engine", () => {
     const store = new Store(newBotDefault);
     // The first conversation has no level of its own: it follows the bot's.
     const bot = store.createBot({ modelSelection: { instanceId: "computer", model: "claude-fable-5" } }, { seedMessages: false });
+    // Sagax starts a new bot's thread on its own Approve for me level; this
+    // case is about a thread with none, so it is cleared here.
+    store.patchTask(bot.id, bot.threadId, { approvalMode: undefined, autoApprove: undefined });
     store.patchBot(bot.id, { approvalMode: "full", alwaysAllow: ["Bash(ls:*)"] });
     const elsewhere = bot.threadId;
     store.patchTask(bot.id, elsewhere, { modelSelection: { instanceId: "codex", model: "codex-model" } });
@@ -190,6 +193,8 @@ describe("moving saved bots off the engine", () => {
   it("tells a moved conversation that follows the bot's level that it is now Ask", () => {
     const store = new Store(newBotDefault);
     const bot = store.createBot({ modelSelection: { instanceId: "computer", model: "claude-fable-5" } }, { seedMessages: false });
+    // As above: a thread with no level of its own, which Sagax never starts with.
+    store.patchTask(bot.id, bot.threadId, { approvalMode: undefined, autoApprove: undefined });
     store.patchBot(bot.id, { approvalMode: "full" });
     const first = bot.threadId;
     // A newer conversation becomes the open one; the first keeps following the bot.

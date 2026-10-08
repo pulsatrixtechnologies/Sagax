@@ -3,17 +3,24 @@ import { appendFileSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+// The native apps build from ios/ and android/ alone (Sagax keeps them; upstream
+// removed its own in 0.1.97), so a server or renderer change cannot move a
+// mobile result. The workflow and this selector run them too.
+const MOBILE_PATHS = /^(?:ios\/|android\/|\.github\/workflows\/ci\.yml$|scripts\/ci-scope\.mjs$|\.gitattributes$)/;
+
 export function selectCiScope(files) {
   let runtime = false;
-  if (!Array.isArray(files) || files.length === 0) return { runtime: true };
+  let mobile = false;
+  if (!Array.isArray(files) || files.length === 0) return { runtime: true, mobile: true };
   for (const file of files) {
     if (typeof file !== "string" || file.split("/").some((part) => !part || part === "." || part === "..")) {
-      return { runtime: true };
+      return { runtime: true, mobile: true };
     }
+    if (MOBILE_PATHS.test(file)) mobile = true;
     if (/^(?:[^/]+\.md|docs\/.+\.md|\.github\/FUNDING\.yml)$/.test(file)) continue;
     runtime = true;
   }
-  return { runtime };
+  return { runtime, mobile };
 }
 
 /** True when two package.json texts differ only in the top-level "version"
@@ -41,7 +48,7 @@ export function selectPushScope(files, show) {
   const scope = selectCiScope(files);
   if (scope.runtime && files.length === 1 && files[0] === "package.json") {
     try {
-      if (versionOnlyPackageJson(show("before", "package.json"), show("after", "package.json"))) return { runtime: false };
+      if (versionOnlyPackageJson(show("before", "package.json"), show("after", "package.json"))) return { runtime: false, mobile: false };
     } catch { /* unreadable: run everything */ }
   }
   return scope;
@@ -82,7 +89,7 @@ async function previousCommitGreen(sha) {
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  let scope = { runtime: true };
+  let scope = { runtime: true, mobile: true };
   let vitestOs = ALL_OS;
   if (process.env.GITHUB_EVENT_NAME === "pull_request") {
     try {
@@ -119,6 +126,6 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   }
   appendFileSync(
     process.env.GITHUB_OUTPUT,
-    `runtime=${scope.runtime}\nvitest_os=${JSON.stringify(vitestOs)}\n`,
+    `runtime=${scope.runtime}\nmobile=${scope.mobile}\nvitest_os=${JSON.stringify(vitestOs)}\n`,
   );
 }

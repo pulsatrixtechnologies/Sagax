@@ -254,7 +254,7 @@ describe("CodexDriver turns (fake app-server)", () => {
   // `filters` table (codex-cli 0.160), so their own rules are extended in kind.
   it("keeps a person's shell filters and adds the gate pattern as an exclude filter", async () => {
     const dump = join(scratch, "shell-filters.json"); process.env.FAKE_CODEX_DUMP = dump;
-    const policy = { inherit: "all", filters: { "USER_SECRET_*": "exclude", "KEEP_*": "include", "omb_gate_config_*": "include" } };
+    const policy = { inherit: "all", filters: { "USER_SECRET_*": "exclude", "KEEP_*": "include", "sagax_gate_config_*": "include" } };
     await create({ mode: "resume", environment: { HOME: scratch, CODEX_HOME: join(scratch, ".codex"),
       FAKE_CODEX_MCP_OVERRIDES: "1", FAKE_CODEX_SHELL_ENVIRONMENT_POLICY: JSON.stringify(policy) } });
     for (const resumeCursor of [undefined, "old-session"]) {
@@ -1417,7 +1417,8 @@ process.stdout.write(JSON.stringify({jsonrpc:'2.0',id:m.id,result})+'\\n');});`)
     expect(seen.argv).toContain("features.shell_snapshot=false");
     expect(seen.calls.find((call: { method: string }) => call.method === "thread/start").params.config["shell_environment_policy.exclude"]).toEqual([
       "USER_SECRET_*", "SAGAX_REMOTE_MCP_CONFIG_*",
-      "ELECTRON_RUN_AS_NODE", "GITHUB_PERSONAL_ACCESS_TOKEN", "SAGAX_COMMS_TOKEN", "SAGAX_CONNECTORS_TOKEN", "SAGAX_PHONE_TOKEN", "OVERRIDDEN",
+      // sorted: the Sagax names sort after OVERRIDDEN (upstream's OMB_ names sorted before it)
+      "ELECTRON_RUN_AS_NODE", "GITHUB_PERSONAL_ACCESS_TOKEN", "OVERRIDDEN", "SAGAX_COMMS_TOKEN", "SAGAX_CONNECTORS_TOKEN", "SAGAX_PHONE_TOKEN",
     ]);
   });
 

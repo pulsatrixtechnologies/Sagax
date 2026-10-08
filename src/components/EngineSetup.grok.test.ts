@@ -72,8 +72,8 @@ describe("signed out: the in-app code", () => {
   });
 
   it.each([
+    // Sagax has no My Cloud (OMB Cloud removed), so its row is gone.
     ["a desktop paired to another server", pairedDesktop, false],
-    ["My Cloud in the desktop app's window", desktop, true],
   ] as const)("never hands %s a terminal command", (_where, ogb, cloudHome) => {
     const html = render(signedOut, ogb, cloudHome);
     expect(html).toContain('data-device-sign-in="grok"');
@@ -84,7 +84,6 @@ describe("signed out: the in-app code", () => {
 describe("Grok cannot run here: an xAI key instead", () => {
   it.each([
     ["a server's page in a browser", undefined, false],
-    ["My Cloud in the desktop app's window", desktop, true],
   ] as const)("says so in one line with one action on %s", (_where, ogb, cloudHome) => {
     const html = render(missing, ogb, cloudHome);
     expect(grokKeyInstead(missing, cloudHome)).toBe(true);

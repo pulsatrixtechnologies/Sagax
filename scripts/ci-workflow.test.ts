@@ -74,11 +74,12 @@ describe("CI concurrency", () => {
     expect(workflow.jobs.vitest["timeout-minutes"]).toBe("${{ matrix.os == 'ubuntu-latest' && 20 || 35 }}");
   });
 
-  it("keeps each PR to one macOS job", () => {
+  it("keeps each PR to one macOS job unless native code changed", () => {
     const macosJobs = Object.entries(workflow.jobs as Record<string, { "runs-on": string; strategy?: { matrix?: { os?: unknown } } }>)
       .filter(([, job]) => job["runs-on"] === "macos-latest" || JSON.stringify(job.strategy?.matrix?.os ?? "").includes("macos"))
       .map(([name]) => name);
-    expect(macosJobs.sort()).toEqual(["electron-smokes"]);
+    // Sagax keeps its native apps: the iOS build runs only when ios/ changed.
+    expect(macosJobs.sort()).toEqual(["electron-smokes", "ios"]);
     const smokes = workflow.jobs["electron-smokes"].steps.map((step: { run?: string }) => step.run);
     expect(smokes).toContain("pnpm test:packaged-server");
   });
@@ -160,7 +161,7 @@ describe("CI concurrency", () => {
     expect(workflow.jobs.static.steps[0].with["fetch-depth"]).toBe(0);
     expect(workflow.jobs.static.steps.find((step: { id?: string }) => step.id === "scope").run).toBe("node scripts/ci-scope.mjs");
     expect(workflow.jobs.static.outputs).toEqual({
-      runtime: "${{ steps.scope.outputs.runtime }}",
+      runtime: "${{ steps.scope.outputs.runtime }}", mobile: "${{ steps.scope.outputs.mobile }}",
       vitest_os: "${{ steps.scope.outputs.vitest_os }}",
     });
     expect(workflow.jobs.static.steps.some((step: { run?: string }) =>
@@ -184,7 +185,7 @@ describe("CI concurrency", () => {
         continue;
       }
       expect(job.needs).toBe("static");
-      expect(job.if).toBe("needs.static.outputs.runtime == 'true'");
+      expect(job.if).toBe(`needs.static.outputs.${["ios", "android"].includes(name) ? "mobile" : "runtime"} == 'true'`);
     }
   });
 

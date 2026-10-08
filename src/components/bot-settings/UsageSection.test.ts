@@ -29,7 +29,8 @@ describe("bot settings usage card", () => {
       bot: bot({ input: 12_000, cachedInput: 10_000, output: 500, costUsd: 0.25, turns: 3 }),
     })));
     for (const english of ["Usage", "All bots", "Turns", "Cost "]) expect(shown).not.toContain(english);
-    for (const german of ["Nutzung", "Alle Bots", "Neue Tokens", "Kosten"]) expect(shown).toContain(german);
+    // Sagax reads its bot panel keys (botPanel.usage.*): German "Verbrauch".
+    for (const german of ["Verbrauch", "Alle Bots", "Neue Tokens", "Kosten"]) expect(shown).toContain(german);
   });
 
   it("labels a fresh-token figure as new tokens, as the Usage screen does", () => {

@@ -136,6 +136,9 @@ export function toolLabel(tool?: string, input?: string, hints?: ToolHints): str
   // "create linear comment".
   const composio = composioActionPhrase(name);
   if (!server) return composio ?? name.replace(/_/g, " ");
+  // Composio's own slug already names the app ("create linear comment"):
+  // "in Composio" would name the broker, not where the action lands.
+  if (server === "composio" && composio) return composio;
   const described = describeApproval(tool, input, hints);
   const action = described.action ?? composio ?? name.replace(/_+/g, " ");
   return described.product ? t("approval.phrase.inProduct", { action, product: described.product }) : action;

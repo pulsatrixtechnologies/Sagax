@@ -524,6 +524,14 @@ export function qrToString(text: string): string {
   return out;
 }
 
+function pairPathAtRoot(link: string): boolean {
+  try {
+    return new URL(link).pathname === "/pair";
+  } catch {
+    return false;
+  }
+}
+
 async function mintPairing(port: number, options: { label?: string; client?: boolean; publicUrl?: string; phone?: "ios" | "android" }): Promise<string> {
   const request: { label?: string; scopes?: string[] } = {};
   if (options.label) request.label = options.label;
@@ -543,7 +551,10 @@ async function mintPairing(port: number, options: { label?: string; client?: boo
   // credential simply has no invite: the web link still works, so an upgrade
   // is never required to pair a browser.
   const name = typeof body.serverName === "string" ? body.serverName : undefined;
-  const fallbackAddress = typeof body.url === "string" ? originOf(body.url) : null;
+  // Only a web link at the origin's own /pair names the address a phone
+  // dials: one behind a path (a proxy prefix) would send the phone to the
+  // proxy's root, so it gets no invite (upstream #2262).
+  const fallbackAddress = typeof body.url === "string" && pairPathAtRoot(body.url) ? originOf(body.url) : null;
   const invite = (options.publicUrl && typeof body.credential === "string"
     ? phonePairingLink({ address: options.publicUrl, token: body.credential, name })
     : null)
