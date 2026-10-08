@@ -152,23 +152,26 @@ posixOnly("engine hooks e2e (fake Claude honouring the settings hooks)", () => {
 });
 
 posixOnly("engine hooks e2e: compaction", () => {
-  const h = harness("compact", {}, { FAKE_CLAUDE_COMPACT: "1" });
+  const h = harness("compact", {}, { FAKE_CLAUDE_COMPACT: "1", FAKE_CLAUDE_COMPACT_AT: "tool" });
 
-  it("records the compaction in the transcript and hands the latest digests back to the engine as plain-text context", async () => {
+  it("hides the engine's own compaction, even mid tool call, and hands the latest digests back as plain-text context", async () => {
     const bot = await h.runTurn();
-    // the fake ran PreCompact then SessionStart(compact) at the start of its
-    // SECOND turn; run one more turn so the first turn's digest exists first
-    expect((await h.api("POST", `/api/bots/${bot.id}/messages`, { text: "and again, after compaction" })).status).toBe(202);
+    // the fake compacts on its SECOND turn, while the first tool call is in
+    // flight; one more turn so the first turn's digest exists first
+    expect((await h.api("POST", `/api/bots/${bot.id}/messages`, { text: "and again" })).status).toBe(202);
     await h.waitFor(async () => {
       const b = await h.getBot(bot.id);
       return !b.busy && b.messages.filter((m: Msg) => m.kind === "digest").length >= 2;
     }, "the second turn to settle with its digest");
     const after = await h.getBot(bot.id);
-    const chips: Msg[] = after.messages.filter((m: Msg) => m.kind === "activity" && m.tool?.name.startsWith("context compact"));
-    expect(chips.map((m) => m.tool!.name)).toEqual([
-      "context compaction started (auto)",
-      "context compacted — re-sent the last 1 digest",
-    ]);
+    // nothing about a compaction reaches the chat: no row, no chip, no notice
+    expect(after.messages.filter((m: Msg) => m.kind === "compaction")).toEqual([]);
+    expect(JSON.stringify(after.messages.filter((m: Msg) => m.role === "bot"))).not.toMatch(/compact/i);
+    // the tool call in flight during the compaction finished normally
+    const secondTurnTools: Msg[] = after.messages.filter((m: Msg) => m.kind === "activity" && m.tool).slice(-2);
+    expect(secondTurnTools.map((m) => m.tool!.name)).toEqual(["Bash", "Read"]);
+    for (const row of secondTurnTools) expect(row.tool!.fullResult).toBe(true);
+    expect(after.messages.filter((m: Msg) => m.kind === "digest").at(-1)!.digest!.hookCoverage).toBe("full");
     // the fake echoes what SessionStart's stdout gave it, which must be the
     // first turn's digest line
     const replies: Msg[] = after.messages.filter((m: Msg) => m.role === "bot" && m.kind === "text" && m.text);

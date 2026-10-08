@@ -156,6 +156,8 @@ interface AcpTurn {
     usagePeak: number | null;
     usageLast: number | null;
     usageCompacted: boolean;
+    /** The context window the agent reports beside `used` (ACP `size`). */
+    usageSize?: number | null;
   };
   acknowledge: () => void;
   asks: Map<string, AcpAskFinish>;
@@ -1444,6 +1446,8 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
               }
               if (current.state.usagePeak === null || used > current.state.usagePeak) current.state.usagePeak = used;
               current.state.usageLast = used;
+              const size = u.size ?? u.usage?.size;
+              if (typeof size === "number" && size > 0) current.state.usageSize = size;
               break;
             }
           }
@@ -2200,6 +2204,10 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
                 ...(cachedRead !== null
                   ? { cachedInput: exclusive ? cachedRead : Math.min(cachedRead, input) }
                   : {}),
+                // What fills the window now, so Sagax folds the thread before
+                // the agent compacts it on its own (server/context-budget.ts).
+                ...(state.usageLast !== null && state.usageLast > 0 ? { contextTokens: state.usageLast } : {}),
+                ...(state.usageSize ? { contextWindow: state.usageSize } : {}),
               });
             }
             const reason = result?.stopReason;

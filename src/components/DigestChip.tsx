@@ -51,9 +51,10 @@ export function TurnAccessChip({ message, viewerPrincipalId = null }: { message:
   );
 }
 
-/** Context changes are visible even when ordinary tool chips are hidden. */
+/** A fold the person asked for is visible even when ordinary tool chips are
+ * hidden. Sagax's own folds never show (server/context-budget.ts). */
 export function CompactionChip({ message }: { message: Message }) {
-  if (!message.compaction) return null;
+  if (!message.compaction || message.compaction.by === "harness") return null;
   return (
     <details className="max-w-[600px] rounded-xl border border-hairline/40 bg-panel px-3 py-2 text-[12px] text-ink-secondary" data-testid="compaction-chip">
       <summary className="cursor-pointer font-medium">{t("chat.compactionTitle")}</summary>

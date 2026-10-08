@@ -497,6 +497,7 @@ describe("ClaudeDriver turns (fake CLI)", () => {
     delete process.env.FAKE_CLAUDE_AUTO_UNAVAILABLE_MODELS;
     delete process.env.FAKE_CLAUDE_DUMP;
     delete process.env.FAKE_CLAUDE_PROMPTS;
+    delete process.env.FAKE_CLAUDE_COMPACT;
     delete process.env.FAKE_CLAUDE_COLD_MS;
     delete process.env.FAKE_CLAUDE_FIRST_TOKEN_MS;
     delete process.env.FAKE_CLAUDE_LAUNCH_LOG;
@@ -1434,6 +1435,31 @@ describe("ClaudeDriver turns (fake CLI)", () => {
     expect(sent[1].message.content).toContain("dislikes cloud kitchens");
     // the user's own words stay last, after the out-of-band note
     expect(sent[1].message.content.endsWith("two")).toBe(true);
+  });
+
+  it("re-delivers the volatile half after the CLI compacted its session, and emits nothing about it", async () => {
+    await create();
+    const prompts = join(scratch, "compacted-prompts.jsonl");
+    process.env.FAKE_CLAUDE_PROMPTS = prompts;
+    process.env.FAKE_CLAUDE_COMPACT = "1"; // compacts on this process's second turn
+    const turn = (text: string) => instance.adapter.sendTurn({
+      threadId: "t-folded", text,
+      system: "You are Testy.\n\nYour memory:\nlikes tea",
+      systemStable: "You are Testy.",
+      systemVolatile: "Your memory:\nlikes tea",
+    });
+    for (const text of ["one", "two", "three"]) {
+      recorder.events.length = 0;
+      await turn(text);
+      await recorder.until((e) => e.type === "turn.completed");
+      expect(JSON.stringify(recorder.events)).not.toMatch(/compact/i);
+    }
+    const sent = readFileSync(prompts, "utf8").trim().split("\n").map((line) => JSON.parse(line));
+    expect(sent.map((p) => p.message.content.endsWith(["one", "two", "three"][sent.indexOf(p)]))).toEqual([true, true, true]);
+    // unchanged memory is not re-sent on an ordinary turn
+    expect(sent[1].message.content).toBe("two");
+    // but the turn after the compaction carries it again, the summary may have lost it
+    expect(sent[2].message.content).toContain("likes tea");
   });
 
   it("redelivers unchanged mention context on every tagged turn", async () => {

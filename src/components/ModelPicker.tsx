@@ -25,9 +25,10 @@ import { cn } from "@/lib/cn";
 import { useMenuMotion } from "./MenuMotion";
 import { useAdvancedMode } from "@/lib/interface-mode";
 import { t } from "@/lib/i18n";
-import { myTurnsText, reloadMyEngines, useMyEngines, usePerspicaxOrg } from "@/lib/perspicax-org";
+import { reloadMyEngines, useMyEngines, usePerspicaxOrg } from "@/lib/perspicax-org";
 import { orgEngineState } from "@/lib/model-payers";
 import { ModelPickerPayers } from "./ModelPickerPayers";
+import { paysWithText } from "./EngineConnect";
 import { COMPACT_SQUARE } from "@/lib/compact-chip";
 import { saveViewerBotOverride } from "@/lib/viewer-bot-overrides";
 import type { ViewerBotOverridePatch } from "../../shared/viewer-bot-overrides";
@@ -37,6 +38,18 @@ const COMPACT_MODEL_COUNT = 5;
 
 function modelLabel(instance: InstanceInfo | undefined, model: string): string {
   return instance?.models.options.find((option) => option.id === model)?.label ?? model;
+}
+
+/** Asked by the desktop mascot's balloon (FloatingBots.tsx): `detail.botId`'s composer chip opens its picker. */
+export const COMPOSER_MODEL_EVENT = "omb:composer-model";
+
+/**
+ * What the composer's model chip reads for a bot (its model, and its effort
+ * when set), for the desktop mascot's balloon, which shows the same chip.
+ */
+export function composerModelLabel(instances: readonly InstanceInfo[], selection: Bot["modelSelection"]): string {
+  const active = instances.find((instance) => instance.instanceId === selection.instanceId);
+  return [modelLabel(active, selection.model), selection.effort ? effortLabel(selection.effort) : ""].filter(Boolean).join(" ");
 }
 
 function modelProvider(instance: InstanceInfo | undefined, model: string): string | undefined {
@@ -910,6 +923,18 @@ export function ModelPicker({
     });
   };
 
+  // the desktop mascot's model chip: the app comes forward and this chip opens
+  const toggleRef = useRef(toggle);
+  toggleRef.current = toggle;
+  useEffect(() => {
+    if (!inComposer) return;
+    const onModel = (event: Event) => {
+      if ((event as CustomEvent<{ botId?: string }>).detail?.botId === bot.id) toggleRef.current();
+    };
+    window.addEventListener(COMPOSER_MODEL_EVENT, onModel);
+    return () => window.removeEventListener(COMPOSER_MODEL_EVENT, onModel);
+  }, [inComposer, bot.id]);
+
   const trigger = inComposer ? (
     <button data-tour="model"
       ref={triggerRef}
@@ -1014,7 +1039,7 @@ export function ModelPicker({
           <h2 id={modal ? "model-picker-title" : undefined} className={cn("truncate font-semibold text-ink", modal ? "text-[16px]" : "text-[14px]")}>
             {signInFamily(railInstance) ? SIGN_IN_FAMILY_LABEL[signInFamily(railInstance)!] : railInstance.displayName}
           </h2>
-          {railEngine && !modal && <div data-my-turns={railEngine.myTurns} className="truncate text-[11px] text-ink-secondary">{myTurnsText(railEngine)}</div>}
+          {railEngine && !modal && <div data-my-turns={railEngine.myTurns} className="truncate text-[11px] text-ink-secondary">{paysWithText(railEngine)}</div>}
         </div>
         <div className={cn("flex shrink-0 items-center gap-1", modal && "pr-10")}>
           <button

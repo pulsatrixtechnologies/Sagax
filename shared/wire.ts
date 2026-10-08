@@ -607,9 +607,11 @@ export interface WireMessage {
   /** emoji reactions; by = "user" or a member botId. */
   reactions?: Array<{ emoji: string; by: string }>;
   /** comm chips: "Messaged @X", linking to the bot-bot channel. */
-  comm?: { groupId: string; threadId?: string; withBotId: string; withName: string; withColor: string };
+  /** `gone` is stamped at read time when the channel thread no longer exists. */
+  comm?: { groupId: string; threadId?: string; withBotId: string; withName: string; withColor: string; gone?: boolean };
   /** thread chips: "Opened thread #Title on @X". */
-  threadRef?: { botId: string; threadId: string; title: string };
+  /** `gone` is stamped at read time when the target thread no longer exists. */
+  threadRef?: { botId: string; threadId: string; title: string; gone?: boolean };
   /** user messages waiting in the steer-queue while the bot is mid-turn. */
   queued?: boolean;
   /** A parallel task this line belongs to (shared/parallel-tasks.ts): the
@@ -882,12 +884,30 @@ export interface BotAssignedSkillsWire {
   skills: string[];
 }
 
+/** One participant's read position on a thread: the newest message they
+ * have seen, and when (server/read-receipts.ts). */
+export interface ThreadReadPosition {
+  messageId: string;
+  at: number;
+}
+
+/** GET /api/threads/<id>/read: the positions this viewer may see, keyed by
+ * participant id, and which participant is the viewer (null: nobody). */
+export interface ThreadReadsResponse {
+  reads: Record<string, ThreadReadPosition>;
+  self: string | null;
+}
+
 export type ServerFrame =
   | { kind: "sections"; sections: string[] }
   | { kind: "bot.queued"; queues: BotQueuedMessages }
   | { kind: "message"; threadId: string; message: WireMessage }
   | { kind: "message.patch"; threadId: string; message: WireMessage }
   | { kind: "thread"; threadId: string; activeLeafId: string }
+  /** A read position moved (server/read-receipts.ts): `participantId` is a
+   * person's principal id or `bot:<botId>`. `reset` alone (no participant)
+   * means someone's read receipt choice changed: fetch the positions again. */
+  | { kind: "thread.read"; threadId: string; participantId?: string; read?: ThreadReadPosition; reset?: true }
   | { kind: "bot"; bot: WireBot }
   | { kind: "group"; group: WireGroup }
   | { kind: "notify"; notification: Notification }

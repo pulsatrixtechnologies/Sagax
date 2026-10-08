@@ -262,8 +262,11 @@
   color: #000 !important;
   font-weight: normal !important;
 }
+/* Quiet text reads from the skin's own tokens, not the era's #808080: that
+   grey is Windows' DISABLED text and measured 2.2:1 on the silver face and
+   4.0:1 on white (pnpm check:contrast holds the tokens to 4.5:1). */
 [data-skin="retro98"] [data-sidebar] [data-sidebar-bot-row] .text-sidebar-ink-secondary {
-  color: #808080 !important;
+  color: var(--color-sidebar-ink-secondary) !important;
 }
 [data-skin="retro98"] [data-sidebar] [data-sidebar-bot-row]:hover {
   background: transparent !important;
@@ -453,7 +456,7 @@
 }
 [data-skin="retro98"] [data-app-shell] main [role="log"] > div > div.text-center {
   padding: 2px 0 !important;
-  color: #808080 !important;
+  color: var(--color-ink-tertiary) !important;
 }
 [data-skin="retro98"] [data-app-shell] main > div.relative.flex-1 > div.absolute.bottom-0 {
   position: static !important;
@@ -490,7 +493,7 @@
   content: attr(data-retro-time);
   order: -1;
   flex: 1 1 auto;
-  color: #808080;
+  color: var(--color-ink-tertiary);
 }
 [data-skin="retro98"] [data-retro-author] > div {
   flex-basis: 100%;
@@ -779,10 +782,10 @@
 }
 [data-skin="retro98"] input::placeholder,
 [data-skin="retro98"] textarea::placeholder {
-  color: #808080 !important;
+  color: var(--color-ink-tertiary) !important;
 }
 [data-skin="retro98"] .mention-editor-placeholder {
-  color: #808080;
+  color: var(--color-ink-tertiary);
 }
 /* a search box that wraps its input: the wrapper is the field */
 [data-skin="retro98"] :is(div, label):has(> svg.lucide-search + input) {
@@ -985,6 +988,7 @@
 }
 [data-skin="retro98"] .app-docked-panel > div.h-12 {
   height: 20px !important;
+  min-height: 0 !important;
   margin: 0 0 2px;
   padding: 0 2px !important;
   background: linear-gradient(90deg, #000080, #1084d0);

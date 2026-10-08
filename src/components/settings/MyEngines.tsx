@@ -52,7 +52,12 @@ export function ManageMyKeysLink({ issuer }: { issuer: string }) {
 
 /** One engine's own subscription sign-in for the signed-in person (Claude,
  * Codex, Grok Build, Kimi Code): sign in, paste the code or follow the link, sign out. */
-export function MyEngineAccess({ engine, onChanged = () => { void reloadMyEngines(); } }: { engine: MyEngine; onChanged?: () => void }) {
+export function MyEngineAccess({ engine, label, onChanged = () => { void reloadMyEngines(); } }: {
+  engine: MyEngine;
+  /** The sign-in button's text ("Connect Grok"). */
+  label?: string;
+  onChanged?: () => void;
+}) {
   const [login, setLogin] = useState<LoginState | null>(null);
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
@@ -147,7 +152,7 @@ export function MyEngineAccess({ engine, onChanged = () => { void reloadMyEngine
         ) : (
           <button type="button" className="ui-button flex items-center gap-1.5" disabled={busy || login !== null} onClick={() => void signIn()}>
             {busy ? <Loader2 size={12} className="animate-spin" aria-hidden="true" /> : null}
-            {t("myEngines.signIn")}
+            {label ?? t("myEngines.signIn")}
           </button>
         )}
       </div>

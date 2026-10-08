@@ -88,6 +88,8 @@ export interface MascotOptions {
 export type MascotInput =
   | { type: "tick"; now: number }
   | { type: "play"; now: number }
+  /** A move the person picked by name (the "Moves" menu): that clip, now. */
+  | { type: "move"; now: number; clip: MascotActivity }
   | { type: "pet"; now: number }
   | { type: "drag"; now: number; on: boolean }
   | { type: "task"; now: number; task: MascotTask }
@@ -275,6 +277,16 @@ function onPlay(state: MascotState, now: number, options: MascotOptions): Step {
   return { state: become({ ...base, lastEmote: emote }, emote, now, options), effects: [{ type: "hearts" }] };
 }
 
+/**
+ * A move picked from the menu: played at once, whatever is under way (but not
+ * while dragged, walking, flying or away), even under reduced motion (the
+ * clip itself plays its reduced form). An untimed clip is not a move.
+ */
+function onMove(state: MascotState, clip: MascotActivity, now: number, options: MascotOptions): Step {
+  if (!isTimed(clip) || state.away || state.activity === "drag" || state.activity === "walk" || state.activity === "fly") return same(state);
+  return same(become({ ...state, lastInteraction: now, lastEmote: clip }, clip, now, options));
+}
+
 function onPet(state: MascotState, now: number, options: MascotOptions): Step {
   if (state.away || state.activity === "drag" || state.activity === "walk" || state.activity === "fly") return same(state);
   const pets = [...recent(state.pets, now, 6000), now];
@@ -311,6 +323,8 @@ export function stepMascot(state: MascotState, input: MascotInput, options: Masc
       return land(state, now, options);
     case "play":
       return onPlay(state, now, options);
+    case "move":
+      return onMove(state, input.clip, now, options);
     case "pet":
       return onPet(state, now, options);
     case "cursor":

@@ -1126,6 +1126,10 @@ type ClaudeUserMessage = {
 /** Claude's stream-json input accepts the same image source blocks as the
  * Anthropic Messages API. Keep the old string form for text-only turns so a
  * CLI update cannot disturb the overwhelmingly common path. */
+/** A value no real volatile half can equal: after the CLI compacts its
+ * session, the next turn's volatile half always counts as changed. */
+const COMPACTED_VOLATILE = "\u0000compacted";
+
 /** How a mid-session change to the volatile half of the system prompt
  * reaches a model whose process was launched with the old copy. The CLI's
  * own out-of-band convention inside a user turn, and it costs one short
@@ -1859,7 +1863,8 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
           emit({ ...base(threadId, turnId), type: "session.started", sessionId: live.sessionId, model: live.sessionModel ?? null });
         }
         const volatile = turn.systemVolatile ?? "";
-        const message = volatile === live.volatile && !turn.mentionTurn
+        const unchanged = volatile === live.volatile || (live.volatile === COMPACTED_VOLATILE && !volatile.trim());
+        const message = unchanged && !turn.mentionTurn
           ? promptMsg
           : claudeUserMessage(withVolatileNote(turn.text, volatile), turn.images);
         live.volatile = volatile;
@@ -2234,6 +2239,12 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
                 held.continuationSilence.unref?.();
               }
               emit({ ...base(threadId, currentTurnId()), type: "session.started", sessionId: o.session_id, model: o.model, ...(retry.rebuilt ? { rebuilt: true } : {}) });
+            } else if (o.subtype === "compact_boundary") {
+              // The CLI compacted its own session. Nothing reaches the chat
+              // (the harness hides compactions); what the summary may have
+              // dropped is the volatile half of the prompt (memory, roster)
+              // that rode an earlier turn, so the next turn delivers it again.
+              session.volatile = COMPACTED_VOLATILE;
             } else if (o.subtype === "thinking_tokens") {
               emit({ ...base(threadId, currentTurnId()), type: "item.updated", itemType: "reasoning", tokens: o.estimated_tokens });
             }

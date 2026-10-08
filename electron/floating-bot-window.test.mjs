@@ -2,7 +2,18 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   AVATAR_MAX,
+  bodyAfterResize,
+  clampBodyToDisplays,
   createFloatingBotWindows,
+  FLOAT_BODY,
+  FLOAT_HOME,
+  keepOffNeighbours,
+  MENU_MAX,
+  SEAM_SHARE,
+  windowLimits,
+  menuTemplate,
+  sanitizeBody,
+  SUBMENU_MAX,
   FLOAT_MAX,
   FLOATING_QUERY,
   floatingDefaultBounds,
@@ -383,7 +394,8 @@ describe("floating bots: positions and screens", () => {
     first.emit("floating-bots:moved", from);
     const spot = win.getBounds();
     const key = displaySignature([PRIMARY]);
-    expect(first.saved.positions[key].bot_a).toEqual({ x: spot.x + spot.width, y: spot.y + spot.height });
+    // the character's own corner, marked as such (v 2)
+    expect(first.saved.positions[key].bot_a).toEqual({ x: spot.x + FLOAT_BODY.x + FLOAT_BODY.width, y: spot.y + FLOAT_BODY.y + FLOAT_BODY.height, v: 2 });
 
     const again = setup({ positions: first.saved.positions });
     expect(again.open("bot_a").win.getBounds()).toMatchObject({ x: spot.x, y: spot.y });
@@ -394,11 +406,13 @@ describe("floating bots: positions and screens", () => {
     const { win, from } = open("bot_a");
     const home = win.getBounds();
     const geometry = invoke("floating-bots:geometry", from);
-    expect(geometry).toEqual({ bounds: home, workArea: PRIMARY.workArea, cursor: { x: 700, y: 400 } });
+    const bodyAt = (b) => ({ x: b.x + FLOAT_BODY.x, y: b.y + FLOAT_BODY.y, width: FLOAT_BODY.width, height: FLOAT_BODY.height });
+    // on macOS, how far the window may reach toward the second display (to the primary's right)
+    expect(geometry).toEqual({ bounds: home, workArea: PRIMARY.workArea, cursor: { x: 700, y: 400 }, body: bodyAt(home), limits: { right: 1440 + Math.floor(FLOAT_HOME.width * SEAM_SHARE) } });
     emit("floating-bots:autopilot", from, true);
-    // a flight cannot leave the screens (the window is the quick chat's room, so a spot keeps its y only while that room fits)
-    expect(invoke("floating-bots:move-to", from, { x: -5000, y: 100 })).toMatchObject({ x: 0, y: 100 });
-    expect(invoke("floating-bots:move-to", from, { x: 100, y: -900 })).toMatchObject({ x: 100, y: PRIMARY.workArea.y });
+    // a flight cannot take the character off the screens (the window's empty room may hang off)
+    expect(invoke("floating-bots:move-to", from, { x: -5000, y: 100 })).toMatchObject({ x: -FLOAT_BODY.x, y: 100 });
+    expect(invoke("floating-bots:move-to", from, { x: 100, y: -900 })).toMatchObject({ x: 100, y: PRIMARY.workArea.y - FLOAT_BODY.y });
     win.events.get("moved")?.forEach((fn) => fn());
     emit("floating-bots:moved", from);
     expect(saved.positions).toBeUndefined();
@@ -418,8 +432,116 @@ describe("floating bots: positions and screens", () => {
     const key = displaySignature([PRIMARY, SECOND]);
     const { open } = setup({ displays: [PRIMARY, SECOND], positions: { [key]: { bot_a: { x: 99999, y: -5000 } } } });
     const bounds = open("bot_a").win.getBounds();
-    expect(bounds.x + bounds.width).toBeLessThanOrEqual(SECOND.workArea.x + SECOND.workArea.width);
-    expect(bounds.y).toBeGreaterThanOrEqual(SECOND.workArea.y);
+    // the character is fully on the second display (its room may hang off)
+    expect(bounds.x + FLOAT_BODY.x + FLOAT_BODY.width).toBeLessThanOrEqual(SECOND.workArea.x + SECOND.workArea.width);
+    expect(bounds.y + FLOAT_BODY.y).toBeGreaterThanOrEqual(SECOND.workArea.y);
+  });
+
+  it("lets the character stand in any corner of any display, its room hanging off, and puts it back there exactly", () => {
+    // (macOS keeps the room off a neighbouring display: the next test)
+    const first = setup({ displays: [PRIMARY, SECOND], platform: "win32" });
+    const { win, from } = first.open("bot_a");
+    const corners = [
+      { x: PRIMARY.workArea.x, y: PRIMARY.workArea.y },
+      { x: PRIMARY.workArea.x + PRIMARY.workArea.width - FLOAT_BODY.width, y: PRIMARY.workArea.y + PRIMARY.workArea.height - FLOAT_BODY.height },
+      { x: SECOND.workArea.x + SECOND.workArea.width - FLOAT_BODY.width, y: SECOND.workArea.y },
+      { x: SECOND.workArea.x, y: SECOND.workArea.y + SECOND.workArea.height - FLOAT_BODY.height },
+    ];
+    // dragged past each corner (never toward the other display): it stops with the character exactly in it
+    const past = [{ x: -50, y: -50 }, { x: 0, y: 50 }, { x: 50, y: -50 }, { x: 0, y: 50 }];
+    corners.forEach((corner, index) => {
+      first.invoke("floating-bots:move-to", from, { x: corner.x - FLOAT_BODY.x + past[index].x, y: corner.y - FLOAT_BODY.y + past[index].y });
+      const at = win.getBounds();
+      expect({ x: at.x + FLOAT_BODY.x, y: at.y + FLOAT_BODY.y }).toEqual(corner);
+    });
+    // the top-left corner of the primary display: the window's room hangs off the screen
+    first.invoke("floating-bots:move-to", from, { x: -2000, y: -2000 });
+    const spot = win.getBounds();
+    expect(spot.x).toBeLessThan(PRIMARY.workArea.x);
+    expect(spot.y).toBeLessThan(PRIMARY.workArea.y);
+    first.emit("floating-bots:moved", from);
+    // a restart with the same displays: exactly there, no snap back to a default spot
+    const again = setup({ displays: [PRIMARY, SECOND], positions: first.saved.positions, platform: "win32" });
+    expect(again.open("bot_a").win.getBounds()).toMatchObject({ x: spot.x, y: spot.y });
+    // that display setup gone: the default spot on what is there
+    const other = setup({ displays: [SECOND], positions: first.saved.positions });
+    const fallback = other.open("bot_a").win.getBounds();
+    expect(fallback.x + FLOAT_BODY.x).toBeGreaterThanOrEqual(SECOND.workArea.x);
+  });
+
+  it("on macOS keeps the window's room off a neighbouring display (macOS would undo the move), never off a free edge", () => {
+    const { open, invoke, emit } = setup({ displays: [PRIMARY, SECOND] });
+    const { win, from } = open("bot_a");
+    // the second display's left edge is the seam with the primary: the room (above and to the left) would reach onto it
+    invoke("floating-bots:move-to", from, { x: SECOND.workArea.x - FLOAT_BODY.x - 50, y: 100 });
+    const b = win.getBounds();
+    const onPrimary = PRIMARY.bounds.x + PRIMARY.bounds.width - b.x;
+    expect(onPrimary).toBeLessThanOrEqual(Math.floor(FLOAT_HOME.width * SEAM_SHARE));
+    expect(b.x + FLOAT_BODY.x).toBeGreaterThan(SECOND.workArea.x);
+    // with the chat's room on its right (the window's character near its left), the character reaches the seam itself
+    const body = { x: 56, y: 535, width: 120, height: 120 };
+    emit("floating-bots:body", from, body);
+    invoke("floating-bots:move-to", from, { x: SECOND.workArea.x - body.x - 50, y: 100 });
+    expect(win.getBounds().x + body.x).toBe(SECOND.workArea.x);
+    // a free edge (nothing past it): the room hangs off as far as it needs
+    invoke("floating-bots:move-to", from, { x: SECOND.workArea.x + SECOND.workArea.width, y: 100 });
+    expect(win.getBounds().x + body.x + body.width).toBe(SECOND.workArea.x + SECOND.workArea.width);
+    expect(keepOffNeighbours({ x: 100, y: 100, width: 352, height: 716 }, FLOAT_BODY, [PRIMARY.bounds, SECOND.bounds])).toEqual({ x: 100, y: 100, width: 352, height: 716 });
+    // the limits the page gets, to open the window's room away from the seam: only where a display touches
+    const size = { width: 352, height: 716 };
+    expect(windowLimits({ x: 1500, y: 300, width: 120, height: 120 }, size, [PRIMARY.bounds, SECOND.bounds])).toEqual({ left: 1440 - 63 });
+    expect(windowLimits({ x: 300, y: 300, width: 120, height: 120 }, size, [PRIMARY.bounds])).toBeNull();
+    const below = { x: 0, y: 900, width: 1440, height: 900 };
+    expect(windowLimits({ x: 300, y: 300, width: 120, height: 120 }, size, [PRIMARY.bounds, below])).toEqual({ bottom: 900 + Math.floor(716 * SEAM_SHARE) });
+  });
+
+  it("reads an older save (the window's corner) as before", () => {
+    const key = displaySignature([PRIMARY]);
+    const { open } = setup({ positions: { [key]: { bot_a: { x: 900, y: 800 } } } });
+    expect(open("bot_a").win.getBounds()).toMatchObject({ x: 900 - FLOAT_HOME.width, y: 800 - FLOAT_HOME.height });
+  });
+
+  it("keeps on screen the box the page reports, and a new layout keeps the character where it stands", () => {
+    const { open, emit, invoke } = setup();
+    const { win, from } = open("bot_a");
+    // the chat's room now below and to the right: the character is near the window's top-left corner
+    const body = { x: 56, y: 71, width: 120, height: 120 };
+    const before = win.getBounds();
+    const placed = invoke("floating-bots:frame", from, { width: FLOAT_HOME.width, height: FLOAT_HOME.height, body });
+    expect(placed.x + body.x).toBe(before.x + FLOAT_BODY.x);
+    expect(placed.y + body.y).toBe(before.y + FLOAT_BODY.y);
+    // from now on that box is what stays on screen
+    invoke("floating-bots:move-to", from, { x: 5000, y: 5000 });
+    const end = win.getBounds();
+    expect(end.x + body.x + body.width).toBe(PRIMARY.workArea.x + PRIMARY.workArea.width);
+    expect(end.y + body.y + body.height).toBe(PRIMARY.workArea.y + PRIMARY.workArea.height);
+    // the page says where the character was drawn just before: that is what stays put
+    invoke("floating-bots:move-to", from, { x: 400, y: 0 });
+    const at = win.getBounds();
+    const moved = invoke("floating-bots:frame", from, { width: FLOAT_HOME.width, height: FLOAT_HOME.height, body: FLOAT_BODY, from: { x: 100, y: 90, width: 120, height: 120 } });
+    expect(moved.x + FLOAT_BODY.x).toBe(at.x + 100);
+    expect(moved.y + FLOAT_BODY.y).toBe(at.y + 90);
+    // a box reported outside its window, or of no size, is refused
+    emit("floating-bots:body", from, { x: 5000, y: 5000, width: 120, height: 120 });
+    emit("floating-bots:body", from, { x: 1, y: 1, width: 0, height: 120 });
+    expect(invoke("floating-bots:frame", from, { width: 300, height: 300, body: null })).toBeNull();
+    expect(invoke("floating-bots:frame", { sender: {} }, { width: 300, height: 300, body })).toBeNull();
+  });
+
+  it("clamps only the character's box, the nearest display's when it is off every screen", () => {
+    const areas = [PRIMARY.workArea, SECOND.workArea];
+    const body = { x: 177, y: 535, width: 120, height: 120 };
+    // right in the top-left corner of the primary, the window above and left of the screen
+    expect(clampBodyToDisplays({ x: -400, y: -900, width: 352, height: 716 }, body, areas)).toMatchObject({ x: -177, y: 25 - 535 });
+    // past the far edge of the second display
+    expect(clampBodyToDisplays({ x: 9000, y: 9000, width: 352, height: 716 }, body, areas)).toMatchObject({ x: 3360 - 297, y: 1040 - 655 });
+    // inside: untouched
+    expect(clampBodyToDisplays({ x: 600, y: 100, width: 352, height: 716 }, body, areas)).toMatchObject({ x: 600, y: 100 });
+    expect(sanitizeBody({ x: 10, y: 10, width: 999, height: 20 }, { width: 100, height: 100 })).toEqual({ x: 10, y: 10, width: 90, height: 20 });
+    expect(sanitizeBody({ x: "1", y: 1, width: 20, height: 20 }, { width: 100, height: 100 })).toBeNull();
+    // a window that grows up and to the left: the box keeps its distance to the bottom-right corner
+    expect(bodyAfterResize(body, { width: 352, height: 716 }, { width: 500, height: 800 })).toEqual({ x: 325, y: 619, width: 120, height: 120 });
+    expect(bodyAfterResize(body, { width: 352, height: 716 }, { width: 500, height: 800 }, { x: "left", y: "top" })).toEqual(body);
   });
 
   it("grows a window from the mascot's corner: bottom-right, or the one the balloon opened away from", () => {
@@ -435,7 +557,8 @@ describe("floating bots: positions and screens", () => {
     const { invoke, open } = setup();
     const { win, from } = open("bot_a");
     invoke("floating-bots:move-by", from, { dx: -1e9, dy: -1e9 });
-    expect(win.bounds).toMatchObject({ x: PRIMARY.workArea.x, y: PRIMARY.workArea.y });
+    // the character in the corner, the window's room past the screen's edge
+    expect(win.bounds).toMatchObject({ x: PRIMARY.workArea.x - FLOAT_BODY.x, y: PRIMARY.workArea.y - FLOAT_BODY.y });
     expect(invoke("floating-bots:move-by", from, { dx: Number.NaN, dy: 0 })).toBeNull();
     invoke("floating-bots:resize", from, { width: 99999, height: 99999 });
     expect(win.bounds.width).toBeLessThanOrEqual(FLOAT_MAX.width);
@@ -475,7 +598,7 @@ describe("floating bots: payload validation", () => {
       balloon: { ...SNAPSHOT.balloon, kind: "chat", text: "y".repeat(9000), asked: "z".repeat(900) },
     });
     expect(clean).toMatchObject({ locale: "en", color: "blue", skin: "none", sparkle: 0 });
-    expect(clean.menu).toHaveLength(8);
+    expect(clean.menu).toHaveLength(MENU_MAX);
     expect(clean.menu[0].label.length).toBe(80);
     expect(clean.balloon.text.length).toBe(4000);
     expect(clean.balloon.asked.length).toBe(300);
@@ -642,6 +765,118 @@ describe("floating bots: the menu opens at the pointer", () => {
   });
 });
 
+describe("floating bots: the mascot's right-click menu", () => {
+  const MENU = [
+    { id: "balloon", label: "Talk" },
+    { id: "call", label: "Start a voice call" },
+    { id: "open", label: "Open in Sagax" },
+    { id: "sep-1", label: "", type: "separator" },
+    { id: "switch", label: "Switch bot", items: [{ id: "switch:bot_a", label: "Ada", checked: true }, { id: "switch:bot_b", label: "Bo" }, { id: "switch:bot_c", label: "Cy", enabled: false }] },
+    { id: "moves", label: "Moves", items: [{ id: "move:wave", label: "Wave" }, { id: "move:dance", label: "Dance" }] },
+    { id: "sep-2", label: "", type: "separator" },
+    { id: "snooze", label: "Hide for 1 hour" },
+    { id: "dock", label: "Hide" },
+    { id: "sep-3", label: "", type: "separator" },
+    { id: "options", label: "On the desktop", items: [{ id: "top", label: "Always on top", checked: true }] },
+    { id: "settings", label: "Settings" },
+  ];
+  const popMenu = () => {
+    const popup = vi.fn();
+    let template = null;
+    const Menu = { buildFromTemplate: vi.fn((items) => { template = items; return { popup }; }) };
+    const ctx = setup({ Menu });
+    const a = ctx.open("bot_a");
+    ctx.emit("floating-bots:update", ctx.fromMain, { botId: "bot_a", snapshot: { ...SNAPSHOT, menu: MENU } });
+    ctx.emit("floating-bots:menu", a.from, { x: 10, y: 10 });
+    return { ...ctx, a, popup, template: () => template };
+  };
+  const sentToBrain = (fake) => fake.main.webContents.sent.filter(([channel]) => channel === "floating-bots:event").map(([, value]) => value.event.id);
+
+  it("passes the balloon's composer row labels, bounded, and nothing else", () => {
+    const clean = sanitizeFloatingSnapshot({ ...SNAPSHOT, balloon: { ...SNAPSHOT.balloon, input: { ...SNAPSHOT.balloon.input, attach: "Joindre", model: "m".repeat(200), modelTitle: "t", url: "https://x" } } });
+    expect(clean.balloon.input).toEqual({ label: "Message", placeholder: "Écrire", send: "Envoyer", attach: "Joindre", model: "m".repeat(80), modelTitle: "t" });
+    const none = sanitizeFloatingSnapshot({ ...SNAPSHOT, balloon: { ...SNAPSHOT.balloon, input: { ...SNAPSHOT.balloon.input, attach: 3, model: "" } } });
+    expect(none.balloon.input).toEqual({ label: "Message", placeholder: "Écrire", send: "Envoyer" });
+  });
+
+  it("brings the app forward for the balloon's clip and model chip, then tells the brain", () => {
+    const { open, emit, fake, focusMain } = setup();
+    const { from } = open("bot_a");
+    emit("floating-bots:event", from, { type: "menu", id: "attach" });
+    emit("floating-bots:event", from, { type: "menu", id: "model" });
+    expect(focusMain).toHaveBeenCalledTimes(2);
+    expect(fake.main.webContents.sent.slice(-2).map(([, value]) => value.event.id)).toEqual(["attach", "model"]);
+  });
+
+  it("keeps separators, greyed items and one level of submenus, bounded", () => {
+    const clean = sanitizeFloatingSnapshot({ ...SNAPSHOT, menu: MENU }).menu;
+    expect(clean).toEqual(MENU);
+    const deep = sanitizeFloatingSnapshot({ ...SNAPSHOT, menu: [{ id: "a", label: "A", items: [{ id: "b", label: "B", items: [{ id: "c", label: "C" }] }] }] }).menu;
+    // no submenu inside a submenu
+    expect(deep[0].items[0]).toEqual({ id: "b", label: "B" });
+    const many = sanitizeFloatingSnapshot({ ...SNAPSHOT, menu: [{ id: "switch", label: "Switch", items: Array.from({ length: 50 }, (_, i) => ({ id: `switch:b${i}`, label: "x" })) }] }).menu;
+    expect(many[0].items).toHaveLength(SUBMENU_MAX);
+    // a menu id may carry a 64-character bot id
+    expect(sanitizeFloatingEvent({ type: "menu", id: `switch:${"b".repeat(64)}` })).toEqual({ type: "menu", id: `switch:${"b".repeat(64)}` });
+    expect(sanitizeFloatingEvent({ type: "menu", id: "x".repeat(81) })).toBeNull();
+  });
+
+  it("builds the native menu with its separators, submenus and greyed items", () => {
+    const choose = vi.fn();
+    const template = menuTemplate(sanitizeFloatingSnapshot({ ...SNAPSHOT, menu: MENU }).menu, choose);
+    expect(template.map((item) => item.type === "separator" ? "-" : item.label)).toEqual(["Talk", "Start a voice call", "Open in Sagax", "-", "Switch bot", "Moves", "-", "Hide for 1 hour", "Hide", "-", "On the desktop", "Settings"]);
+    expect(template[4].submenu.map((item) => item.label)).toEqual(["Ada", "Bo", "Cy"]);
+    expect(template[4].submenu[0]).toMatchObject({ type: "checkbox", checked: true });
+    expect(template[4].submenu[2]).toMatchObject({ enabled: false });
+    template[4].submenu[1].click();
+    expect(choose).toHaveBeenCalledWith("switch:bot_b");
+  });
+
+  it("sends each choice to the brain for this window's bot, and brings the app forward for Open and Settings", () => {
+    const { template, fake, focusMain } = popMenu();
+    const items = template();
+    for (const label of ["Talk", "Start a voice call", "Hide for 1 hour", "Hide"]) items.find((item) => item.label === label).click();
+    expect(focusMain).not.toHaveBeenCalled();
+    items.find((item) => item.label === "Open in Sagax").click();
+    expect(focusMain).toHaveBeenCalledTimes(1);
+    items.find((item) => item.label === "Settings").click();
+    expect(focusMain).toHaveBeenCalledTimes(2);
+    items.find((item) => item.label === "Switch bot").submenu[1].click();
+    expect(sentToBrain(fake)).toEqual(["balloon", "call", "snooze", "dock", "open", "settings", "switch:bot_b"]);
+  });
+
+  it("plays a move in the mascot's own window, without the brain", () => {
+    const { template, fake, a } = popMenu();
+    template().find((item) => item.label === "Moves").submenu[1].click();
+    expect(a.win.webContents.sent.at(-1)).toEqual(["floating-bot:move", "dance"]);
+    expect(sentToBrain(fake)).toEqual([]);
+  });
+
+  it("switches a window to another bot in place: same spot, the new bot's state, and its later choices", () => {
+    const { invoke, emit, fromMain, fake, controller, a, template, saved } = popMenu();
+    const spot = a.win.getBounds();
+    emit("floating-bots:update", fromMain, { botId: "bot_b", snapshot: { ...SNAPSHOT, name: "Bo" } });
+    expect(invoke("floating-bots:rekey", fromMain, { from: "bot_a", to: "bot_b" })).toBe(true);
+    expect(controller.window("bot_b")).toBe(a.win);
+    expect(controller.window("bot_a")).toBeNull();
+    expect(a.win.getBounds()).toEqual(spot);
+    // the state kept for the new bot reaches the window at once, and the new bot keeps the spot
+    expect(a.win.webContents.sent.at(-1)[1]).toMatchObject({ name: "Bo" });
+    expect(Object.values(saved.positions)[0].bot_b).toBeDefined();
+    // a choice in a menu opened before the switch speaks for the new bot
+    template().find((item) => item.label === "Talk").click();
+    expect(fake.main.webContents.sent.at(-1)).toEqual(["floating-bots:event", { botId: "bot_b", event: { type: "menu", id: "balloon" } }]);
+    // only the app page, a known window, a free id
+    expect(invoke("floating-bots:rekey", a.from, { from: "bot_b", to: "bot_c" })).toBe(false);
+    expect(invoke("floating-bots:rekey", fromMain, { from: "nope", to: "bot_c" })).toBe(false);
+    invoke("floating-bots:open", fromMain, { botId: "bot_c" });
+    expect(invoke("floating-bots:rekey", fromMain, { from: "bot_b", to: "bot_c" })).toBe(false);
+    // closed from outside after a switch: the brain hears of the new bot
+    a.win.destroy();
+    expect(fake.main.webContents.sent.at(-1)).toEqual(["floating-bots:closed", { botId: "bot_b" }]);
+  });
+});
+
 describe("the desktop window's mascot look", () => {
   it("knows every shape and Trombi skin, and maps older names like the app", () => {
     for (const skin of SHAPE_SKINS) expect(mascotLook({ character: "shape", skins: { shape: skin } }).skins.shape).toBe(skin);
@@ -671,7 +906,7 @@ describe("floating bots: a smooth chat", () => {
       expect(saved.positions).toBeUndefined();
       vi.advanceTimersByTime(REMEMBER_DELAY_MS);
       const spot = win.getBounds();
-      expect(Object.values(saved.positions)[0].bot_a).toEqual({ x: spot.x + spot.width, y: spot.y + spot.height });
+      expect(Object.values(saved.positions)[0].bot_a).toEqual({ x: spot.x + FLOAT_BODY.x + FLOAT_BODY.width, y: spot.y + FLOAT_BODY.y + FLOAT_BODY.height, v: 2 });
     } finally {
       vi.useRealTimers();
     }
@@ -728,5 +963,30 @@ describe("floating bots: a smooth chat", () => {
     expect(appTheme({ skin: "dusk", accent: "#abcdef", extra: 1 })).toEqual({ skin: "dusk", accent: "#abcdef" });
     // main's list is the app's list
     expect([...APP_SKINS].sort()).toEqual([...SKIN_IDS].sort());
+  });
+});
+
+describe("floating bots: a drag follows the pointer's path", () => {
+  it("crosses onto the next display in small steps, and loses no ground held at an edge", () => {
+    const { open, invoke, emit } = setup({ displays: [PRIMARY, SECOND] });
+    const { win, from } = open("bot_a");
+    const bodyX = () => win.getBounds().x + FLOAT_BODY.x;
+    // to the primary's right edge (the second display is past it), then on in 10 px steps
+    invoke("floating-bots:move-to", from, { x: PRIMARY.workArea.x + PRIMARY.workArea.width - FLOAT_BODY.x - FLOAT_BODY.width, y: 200 });
+    emit("floating-bots:moved", from);
+    for (let i = 0; i < 6; i += 1) invoke("floating-bots:move-by", from, { dx: 10, dy: 0 });
+    // held at the seam while it is still mostly on the primary
+    expect(bodyX() + FLOAT_BODY.width).toBe(PRIMARY.workArea.x + PRIMARY.workArea.width);
+    for (let i = 0; i < 6; i += 1) invoke("floating-bots:move-by", from, { dx: 10, dy: 0 });
+    // past the middle of its box: on the second display
+    expect(bodyX()).toBeGreaterThanOrEqual(SECOND.workArea.x);
+    // back the way it came: it follows the pointer again at once
+    for (let i = 0; i < 12; i += 1) invoke("floating-bots:move-by", from, { dx: -10, dy: 0 });
+    expect(bodyX() + FLOAT_BODY.width).toBe(PRIMARY.workArea.x + PRIMARY.workArea.width);
+    // the drag ended: the next one starts from where the window stands
+    emit("floating-bots:moved", from);
+    const at = bodyX();
+    invoke("floating-bots:move-by", from, { dx: -10, dy: 0 });
+    expect(bodyX()).toBe(at - 10);
   });
 });
