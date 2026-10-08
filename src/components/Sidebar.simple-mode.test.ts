@@ -113,11 +113,26 @@ describe("bot-first sidebar", () => {
     }
   });
 
-  it.each(densities)("keeps selection separate from expansion in %s density", (density) => {
+  it.each(densities)("lists nothing under the bot with threads on in %s density", (density) => {
     fixture.state.selectedId = bot.id;
     const markup = renderToStaticMarkup(createElement(BotListItem, rowProps(density)));
+    // no thread rows, folders, activity rows, "My conversations" heading, or toggle
     expect(markup).not.toContain("data-sidebar-thread-row");
-    if (density !== "icons") expect(markup).toContain('aria-label="Expand Atlas threads" aria-expanded="false"');
+    expect(markup).not.toContain("data-sidebar-folder-row");
+    expect(markup).not.toContain("data-sidebar-activity-row");
+    expect(markup).not.toContain("data-sidebar-bot-activity");
+    expect(markup).not.toContain("data-sidebar-my-threads");
+    expect(markup).not.toContain("My conversations");
+    expect(markup).not.toContain("Idle history");
+    expect(markup).not.toContain("Quiet folder");
+    expect(markup).not.toContain("Atlas threads");
+    // the row itself still says a sibling waits, and that something is unread
+    expect(markup).toContain('data-testid="waiting-dot"');
+    if (density !== "icons") {
+      expect(markup).toContain('aria-current="page"');
+      expect(markup).toContain('aria-label="Unread threads"');
+      expect(markup).toContain('aria-label="New thread"');
+    }
   });
 
   it.each(densities)("hides thread browsing and creation but keeps attention accessible in %s density", (density) => {
@@ -163,13 +178,6 @@ describe("bot-first sidebar", () => {
     expect(disabled).not.toContain("New thread");
   });
 
-  it("reveals a matching sole thread when searching a bot", () => {
-    const single = { ...bot, projects: [], tasks: [bot.tasks![0]], unread: false };
-    const markup = renderToStaticMarkup(createElement(BotListItem, {
-      bot: single, density: "comfortable", query: "last selected", onMenu: vi.fn(),
-    }));
-    expect(markup).toContain('data-sidebar-thread-row="last-selected"');
-  });
 
   it("does not change group collaboration histories or creation", () => {
     fixture.showThreads = false;
