@@ -246,4 +246,33 @@ for (const skinId of ["daylight", "meadow"]) {
   if (!bubbleFailed) console.log(`✓ ${skinId} bubble — editor, controls and paired fills above 4.5:1`);
 }
 
+// Mascots on light skins. The Neutral white character (shared/mascot-colors.ts)
+// is near-white, so on a light surface alone it has no contrast to speak of;
+// every preview and thumbnail therefore sits on a mid-tone plinth
+// (--color-mascot-plinth), and the silhouette has to clear 3:1 against it
+// (WCAG 1.4.11, a graphic object). The plinth itself must be seen against the
+// surfaces it lands on. The white-on-surface figures are printed for the
+// record: they are the "before" and are not gated, since the plinth is the fix.
+const mascotWhite = readFileSync(join(root, "shared/mascot-colors.ts"), "utf8").match(/white:\s*"(#[0-9a-fA-F]{6})"/)?.[1];
+if (!mascotWhite) {
+  failed = true;
+  console.log("✗ mascot — cannot find the Neutral white in shared/mascot-colors.ts");
+}
+const MASCOT_SURFACES = ["--color-app", "--color-panel", "--color-card", "--color-inset"];
+for (const [id, tokens] of skins) {
+  if (tokens["--code-color-scheme"] !== "light" || !mascotWhite) continue;
+  const plinth = tokens["--color-mascot-plinth"];
+  const problems = [];
+  const alone = MASCOT_SURFACES.map((s) => `${s.slice(8)} ${contrast(mascotWhite, tokens[s])?.toFixed(2)}`).join(", ");
+  const onPlinth = contrast(mascotWhite, plinth ?? "");
+  if (onPlinth === null || onPlinth < 3) problems.push(`white on plinth ${onPlinth?.toFixed(2) ?? "unmeasurable"}:1 (needs 3:1)`);
+  for (const s of ["--color-card", "--color-inset"]) {
+    const ratio = contrast(plinth ?? "", tokens[s]);
+    if (ratio === null || ratio < 1.5) problems.push(`plinth on ${s} ${ratio?.toFixed(2) ?? "unmeasurable"}:1 (needs 1.5:1)`);
+  }
+  if (!/rgba\(/.test(tokens["--mascot-shadow-color"] ?? "")) problems.push("no --mascot-shadow-color on a light skin");
+  if (problems.length) failed = true;
+  console.log(`${problems.length ? "✗" : "✓"} ${id} mascot — white alone: ${alone}; on plinth ${onPlinth?.toFixed(2)}:1${problems.length ? "; " + problems.join("; ") : ""}`);
+}
+
 process.exit(failed ? 1 : 0);

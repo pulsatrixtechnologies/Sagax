@@ -263,7 +263,26 @@
   --app-topbar-height: 56px;
   --app-frame-gap: 8px;
   --app-chat-min-width: 360px;
+  /* Mascot plinth: a disc behind a character where it is previewed, and a drop
+     shadow on light skins so a white character reads on a light surface. Dark
+     skins take the lighter-disc rule just below and no shadow. Light skins set
+     the plinth and the two shadow colours; see the rules at the end of the file. */
+  --color-mascot-plinth: #2e2e2e;
+  --mascot-shadow-color: transparent;
+  --mascot-shadow-wide: transparent;
+  --mascot-filter: none;
 }
+
+/* A dark skin's plinth is a notch lighter than its card; a light skin overrides it with a hex. */
+[data-skin] {
+  --color-mascot-plinth: color-mix(in srgb, #ffffff 9%, var(--color-card));
+}
+
+/* Light skins: the character wears a soft drop shadow (colour from the skin). */
+:is([data-skin="pulsatrix-light"], [data-skin="atelier"], [data-skin="lagoon"], [data-skin="linen"], [data-skin="daylight"], [data-skin="retro98"], [data-skin="meadow"]) {
+  --mascot-filter: drop-shadow(0 1px 2px var(--mascot-shadow-color)) drop-shadow(0 3px 8px var(--mascot-shadow-wide));
+}
+
 
 /* ── Pulsatrix ─────────────────────────────────────────────────────────────
    Pulsatrix v3's own dark palette (console/src/index.css), carried over
@@ -370,6 +389,9 @@
    ───────────────────────────────────────────────────────────────────────── */
 [data-skin="pulsatrix-light"] {
   --code-color-scheme: light;
+  --color-mascot-plinth: #7f8cab;   /* mid-tone disc behind a light character (3:1 for #f4f4f4) */
+  --mascot-shadow-color: rgba(20,24,40,0.35);
+  --mascot-shadow-wide: rgba(20,24,40,0.18);
   --color-app: #eef2f8;
   --color-panel: #f6f8fb;
   --color-raised: #ffffff;
@@ -490,6 +512,9 @@
    ───────────────────────────────────────────────────────────────────────── */
 [data-skin="atelier"] {
   --code-color-scheme: light;
+  --color-mascot-plinth: #8c806c;   /* mid-tone disc behind a light character (3:1 for #f4f4f4) */
+  --mascot-shadow-color: rgba(40,30,16,0.35);
+  --mascot-shadow-wide: rgba(40,30,16,0.18);
   --color-app: #f5f1eb;           /* outermost ground */
   --color-panel: #fbf8f2;         /* sidebar */
   --color-raised: #ffffff;        /* content — raised means lighter here */
@@ -624,6 +649,9 @@
    ───────────────────────────────────────────────────────────────────────── */
 [data-skin="lagoon"] {
   --code-color-scheme: light;
+  --color-mascot-plinth: #6f8f8c;   /* mid-tone disc behind a light character (3:1 for #f4f4f4) */
+  --mascot-shadow-color: rgba(12,36,34,0.35);
+  --mascot-shadow-wide: rgba(12,36,34,0.18);
   /* The tint is the point, so it is carried by the surfaces, not by a button:
      the ground sits 13 points of green-blue above its red channel, roughly
      three times Atelier's cream cast, which is what makes the skin read as
@@ -743,6 +771,9 @@
    ───────────────────────────────────────────────────────────────────────── */
 [data-skin="linen"] {
   --code-color-scheme: light;
+  --color-mascot-plinth: #848c9b;   /* mid-tone disc behind a light character (3:1 for #f4f4f4) */
+  --mascot-shadow-color: rgba(20,24,36,0.35);
+  --mascot-shadow-wide: rgba(20,24,36,0.18);
   --color-app: #eceff3;
   --color-panel: #f5f6f8;
   --color-raised: #ffffff;
@@ -856,6 +887,9 @@
    ───────────────────────────────────────────────────────────────────────── */
 [data-skin="daylight"] {
   --code-color-scheme: light;
+  --color-mascot-plinth: #858585;   /* mid-tone disc behind a light character (3:1 for #f4f4f4) */
+  --mascot-shadow-color: rgba(20,20,20,0.35);
+  --mascot-shadow-wide: rgba(20,20,20,0.18);
   --color-app: #fcfcfc;           /* the thread */
   --color-panel: #f7f7f7;         /* sidebar, one step down from the thread */
   --color-raised: #e1e1e1;
@@ -923,6 +957,9 @@
    ───────────────────────────────────────────────────────────────────────── */
 [data-skin="retro98"] {
   --code-color-scheme: light;
+  --color-mascot-plinth: #6e6e6e;   /* mid-tone disc behind a light character (3:1 for #f4f4f4) */
+  --mascot-shadow-color: rgba(0,0,0,0.35);
+  --mascot-shadow-wide: rgba(0,0,0,0.18);
   --color-app: #ffffff;           /* a window's white client area */
   --color-panel: #c0c0c0;         /* the silver chrome */
   --color-sidebar: #c0c0c0;              /* = panel: the silver chrome */
@@ -981,6 +1018,9 @@
 [data-skin="meadow"] {
   --app-glow: none;
   --code-color-scheme: light;
+  --color-mascot-plinth: #7c917e;   /* mid-tone disc behind a light character (3:1 for #f4f4f4) */
+  --mascot-shadow-color: rgba(16,32,20,0.35);
+  --mascot-shadow-wide: rgba(16,32,20,0.18);
   --color-app: #ffffff;           /* the thread */
   --color-panel: #f6f8f6;         /* sidebar */
   --color-sidebar: #f6f8f6;              /* = panel: unchanged */
@@ -2530,4 +2570,40 @@ button:disabled.bg-danger {
 }
 @media (prefers-reduced-motion: reduce) {
   [data-testid="turn-access-chip"] { transition: none; }
+}
+
+/* ── Mascot plinth ────────────────────────────────────────────────────────
+   Every character root (shape, owl, Bunbu, Trombi) takes the skin's drop
+   shadow, which is "none" on dark skins. The plinth is a disc in
+   --color-mascot-plinth behind a preview or a thumbnail, so a white
+   character reads on a light surface: a flat one and a shaded one alike. The
+   editor lives in floating-bots/, so its thumbnails are reached by their data
+   attributes. A hairline outlines the disc without touching a selection ring
+   (that one is a box-shadow). */
+:is(.shape-mascot, [data-owl], .bunbu-mascot, .trombi-avatar) {
+  filter: var(--mascot-filter, none);
+}
+.mascot-plinth {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9999px;
+  background-color: var(--color-mascot-plinth);
+  outline: 1px solid color-mix(in srgb, var(--color-ink) 18%, transparent);
+  outline-offset: -1px;
+}
+[data-mascot-look-editor] [data-character-option] > span:first-child,
+[data-mascot-look-editor] .skin-card > span:first-child {
+  border-radius: 9999px;
+  background-color: var(--color-mascot-plinth);
+  outline: 1px solid color-mix(in srgb, var(--color-ink) 18%, transparent);
+  outline-offset: -1px;
+}
+[data-mascot-look-editor] [data-character-shape] {
+  background-color: var(--color-mascot-plinth);
+  outline: 1px solid color-mix(in srgb, var(--color-ink) 18%, transparent);
+  outline-offset: -1px;
+}
+[data-mascot-look-editor] [data-character-shape]:hover {
+  background-color: color-mix(in srgb, var(--color-ink) 8%, var(--color-mascot-plinth));
 }

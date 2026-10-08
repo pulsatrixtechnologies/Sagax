@@ -789,7 +789,7 @@ const MessagesList = memo(function MessagesList({
     <>
       {messages.length === 0 && !bot.busy && (
         <div className="flex flex-1 flex-col items-center justify-center gap-3 py-24 text-center">
-          <BotAvatar bot={bot} state="idle" size={64} motion="none" motionKey={0} animated={false} />
+          <span className="mascot-plinth p-3"><BotAvatar bot={bot} state="idle" size={64} motion="none" motionKey={0} animated={false} /></span>
           <RenameTitle
             value={bot.name}
             onCommit={(name) => {
