@@ -1,7 +1,7 @@
 // Settings > Model providers on an organization server: the person's own
-// access on each engine card (who pays for their turns, their own
-// subscription sign-in, one link to their keys; the separate "My
-// subscriptions and keys" card is gone since 2026-10-02), and,
+// access on each engine card (one "Pays with" line, Connect or Disconnect,
+// a small link to their keys while no subscription is signed in; the
+// separate "My subscriptions and keys" card is gone since 2026-10-02), and,
 // while Connected apps is switched off, the read-only status of their Claude
 // account's connectors.
 import { createElement } from "react";
@@ -81,7 +81,7 @@ describe("Model providers on an organization server", () => {
     expect(await render()).toContain("Gérer mes clés dans Perspicax");
   });
 
-  it("puts who pays and my own sign-in on each engine card, lists no engine missing from the server", async () => {
+  it("puts one status line and one Connect or Disconnect on each engine card, lists no engine missing from the server", async () => {
     orgFixture();
     const html = await render();
     expect(html).toContain('data-engine-card="claude"');
@@ -89,11 +89,16 @@ describe("Model providers on an organization server", () => {
     expect(html).not.toContain('data-engine-card="grok"');
     expect(html).not.toContain("Not installed on this server");
     expect(html).toContain('data-my-turns="subscription"');
-    expect(html).toContain("Your turns use your subscription");
+    expect(html).toContain("Pays with: your subscription");
     expect(html).toContain('data-my-turns="none"');
-    expect(html).toContain("Signed in with your own subscription.");
-    expect(html).toContain("Sign out");
-    expect(html).toContain("Sign in with my subscription");
+    expect(html).toContain("Not connected");
+    expect(html).toContain(">Disconnect<");
+    expect(html).toContain("Connect ChatGPT");
+    // no payer chain on the card
+    expect(html).not.toContain("Who pays for your turns");
+    expect(html).not.toContain("data-payer=");
+    expect(html).not.toContain("Your turns use");
+    expect(html).not.toContain("Device-code login");
     // the server's own account serves no one's turns here and is not shown
     expect(html).not.toContain("server-login@example.test");
   });
@@ -109,8 +114,8 @@ describe("Model providers on an organization server", () => {
     const html = await render();
     expect(html).toContain('data-member-engine="claude"');
     expect(html).toContain('data-member-engine="codex"');
-    expect(html).toContain("Signed in with your own subscription.");
-    expect(html).toContain("Sign in with my subscription");
+    expect(html).toContain(">Disconnect<");
+    expect(html).toContain("Connect ChatGPT");
     expect(html).toContain("Sign in with your own Claude or Codex subscription");
     expect(html.match(/data-my-keys-link/g)).toHaveLength(1);
     // nothing of the server's engine to change
@@ -129,7 +134,8 @@ describe("Model providers on an organization server", () => {
     expect(html).toContain("server-login@example.test");
     expect(html).toContain('data-engine-card="grok"');
     expect(html).not.toContain("data-my-turns");
-    expect(html).not.toContain("Sign in with my subscription");
+    expect(html).not.toContain("data-engine-connect=");
+    expect(html).not.toContain("Pays with:");
   });
 
   it("offers no sign-in for an engine without a personal subscription", async () => {

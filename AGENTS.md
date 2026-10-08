@@ -71,11 +71,18 @@ Covered by `src/components/SettingsModal.orgCleanup.test.ts`,
   apps steps. The claude.ai connectors status then shows in Settings > Model
   providers (`HarnessConnectorsSection placement="settings"`).
 - A person's own access lives on each engine card of Settings > Model
-  providers (organization server only, 2026-10-02): who pays for their
-  turns, their own Claude/Codex subscription sign-in (`MyEngineAccess`), one
-  "Manage my keys in Perspicax" link; no separate "My subscriptions and
-  keys" card, no engine missing from the server, never the server's own
-  account (it serves no one's turns there).
+  providers (organization server only, 2026-10-02) and is minimal
+  (2026-10-08, `EngineConnect.tsx`, the same card in the model picker): one
+  status line on what pays today ("Pays with: your subscription", "...your
+  key in Perspicax", "...the organization key", or "Not connected"), one
+  button ("Connect ChatGPT", "Connect Claude", ...) or "Connected" with
+  Disconnect, and a small "Manage my keys in Perspicax" link while no
+  subscription is signed in on an engine whose provider key Perspicax can
+  hold. No payer list, no warnings, no explanatory paragraph; the
+  device-code hint shows only after a failed ChatGPT sign-in that did not
+  already say it. No separate "My subscriptions and keys" card, no engine
+  missing from the server, never the server's own account (it serves no
+  one's turns there).
 - A member (not an admin) reads `GET /api/instances` (client scope on an
   organization server, `memberInstanceView`): the engines and their models
   without the server's account, sign-in, CLI paths or install details, so
@@ -273,6 +280,52 @@ someone else (`src/lib/group-nudge.ts`). A bot uses `nudgePerson` or
 `src/components/GroupView.test.ts`. The server image must be installed
 before an organization server accepts `{ groupId }`.
 
+## Seen by: read receipts (2026-10-08)
+
+Who has seen a message, people and bots (JC, 2026-10-08). Keep these rules,
+covered by `server/read-receipts.test.ts`, `server/read-receipts.e2e.test.ts`,
+`src/lib/read-receipts.test.ts`, `src/components/SeenBy.test.ts` and
+`src/components/GroupView.seenBy.test.ts`:
+
+- Model (`server/read-receipts.ts`): one position per participant per thread,
+  `readUpTo[participantId] = { messageId, at }`, in the `thread_reads` table
+  of `messages.db` (`server/message-db.ts`); a thread without rows has no
+  receipts (no migration) and its rows go with the thread. A person is their
+  principal id (lowercase), a bot is `bot:<botId>`. `Store.markRead` only
+  moves a position forward, onto a message of that thread, and emits the
+  `thread.read` store change, broadcast as the `thread.read` frame. Never the
+  transcript, the canonical event log (`bus.publish` tees to it, so it is not
+  used) nor the admin audit.
+- A person: `POST /api/threads/<id>/read { messageId }` from the renderer
+  (`useReportRead` in `src/lib/read-receipts-feed.ts`): the last stored
+  `[data-mid]` row on screen, debounced, only while the window has focus and
+  is visible. `GET` answers `{ reads, self }` filtered for the viewer. In a
+  room only its listed people, owner or creator leave one (403
+  `not_member`); a bot-to-bot channel has none; the usual thread gates
+  (bot visibility, private threads, people DMs) answer 404 first. Client
+  scope and the companion allowlist carry both methods.
+- A bot: set by the server at prompt build, before `sendTurn`
+  (`noteBotRead`). A direct turn: the newest of the person's lines the turn
+  carries (`userMessage` and drained queue lines); a card continuation, the
+  newest text line of the context it resumes. A room turn: the newest text
+  line of `roomContextRows` (never a digest or a teammate's report: a summary
+  is not seeing it), marked once the turn is dispatched. A line steered into
+  a running turn counts when the next prompt carries it. Delivery to a peer
+  bot through ask_bot keeps its own receipt (`peerDeliveryReceipt`).
+- Privacy: in a conversation between two people, a person whose preference
+  `sagax.readReceipts.v1` is `off` (Settings > Privacy > Send read receipts,
+  organization server only, synced through `/api/me/preferences`) is shown
+  to nobody, sees nobody's, and leaves no new position. Rooms and bots always
+  show. Changing the choice sends `{ kind: "thread.read", threadId, reset }`
+  to those conversations so clients fetch again.
+- UI: a room or a people DM draws a `SeenByRow` (16px overlapping avatars,
+  oldest reader first, on the viewer's side under their own line, tooltip
+  "Seen by Alice at 14:02, Cryptic at 14:03") under the newest drawn bubble
+  at or before each position that the reader did not write; the viewer is
+  never drawn. A 1:1 with a bot draws only a `SeenCaption` ("Seen", or "Seen
+  at 14:03" a minute or more later) under the last line the bot consumed,
+  until it answers below it.
+
 ## Launch flow (desktop)
 
 First run on the desktop app's own window opens the launch screen
@@ -364,13 +417,14 @@ status on the left, account, scope, models, effort and payers on the right,
 a bottom sheet on a narrow window; focus stays inside and Escape closes it.
 `contained` (the bot settings dialog) keeps the label and the pill and opens
 the same modal. Thread scope and Effort stay out of that modal. Effort stays
-on its own card. On an organization server it shows the speaker's payer order
-(`src/lib/model-payers.ts`: subscription, key in Perspicax, organization
-key, as `server/engine-credentials.ts` decides; the payer used now is the
-server's `myTurns`, never recomputed; a routine thread shows the owner's
-credentials) and signs in their own subscription through `/api/me/engines/<id>/login`
-(`ModelPickerPayers.tsx`), never the server's engine login; the server's
-local models are not offered. Tests: `ModelPicker.interaction.test.ts`,
+on its own card. On an organization server it shows the speaker's engine
+card, the same minimal one as Settings (`ModelPickerPayers.tsx` around
+`EngineConnect.tsx`, 2026-10-08): one "Pays with" line from the server's
+`myTurns` (the order of `server/engine-credentials.ts`, never recomputed
+and no longer drawn as a list; a routine thread shows the owner's
+credentials), one Connect button or Connected with Disconnect, signing in
+their own subscription through `/api/me/engines/<id>/login`, never the
+server's engine login; the server's local models are not offered. Tests: `ModelPicker.interaction.test.ts`,
 `src/lib/model-payers.test.ts`; real Electron: `scripts/verify-server-mode.ts`
 (org) and `pnpm exec electron scripts/smoke-approval-modes.cjs --model-ui-only`
 (solo).
@@ -838,6 +892,30 @@ it. Keep these rules, each covered by `server/desktop-bridge*.test.ts`,
 A change under `server/` needs the server image redeployed; under `electron/`
 a desktop rebuild.
 
+## Bot files for the Perspicax console (2026-10-08)
+
+The Perspicax console's file browser reads a bot's files through the
+organization admin API (`server/org-admin-files.ts`, under
+`/api/org/admin/files/<bot>/*`, the console assertion as the only
+credential; `docs/verification/perspicax-sign-in.md`). Slice 1 is read only:
+roots, list, stat, read (128 KiB) and download (100 MiB). Keep these rules,
+each covered by `server/org-admin-files.test.ts` or
+`server/org-admin.e2e.test.ts` (S7-G):
+
+- Managers in reach and admins only (the bots route's `botInReach`); a bot
+  out of reach is 404, never 403.
+- Never a host path on the wire: roots are ids (`workspace`, `tasks`,
+  `project`, `attachments`, `sandbox`, `desktop`), paths are relative to
+  them, attachments are named by their opaque thread-file id.
+- The project folder is served only when it lies inside the data folder.
+  The people's server environments and a person's own computer (desktop
+  bridge) are listed as unavailable: the server never opens them for the
+  console.
+- No `.`, `..`, empty segment, backslash or NUL; every segment is walked
+  with lstat and a link anywhere is refused; reads open with O_NOFOLLOW.
+- Each read and download is a `bot.files.read` or `bot.files.download` row
+  of the admin activity log (category `bot`, actor the console person).
+
 ## A person's own connections, plugins and skills (organization mode, 2026-10-02)
 
 Owner report: on GOX nobody could add the GitHub MCP, log into GitHub or
@@ -982,8 +1060,11 @@ these rules, each covered by `server/harness-connectors.test.ts` or
   approval flow. An engine tool denial blocks host built-ins, never them.
 - Connected apps (or Model providers while Connected apps is off) shows them read-only (`GET /api/me/harness-connectors`, the
   caller's own account only, no email or URL) with a link to
-  claude.ai/customize/connectors; an admin turns them off with
-  `PUT /api/harness-connectors/settings` (`config.harnessConnectors.claudeAi`).
+  claude.ai/customize/connectors. Always on: there is no server switch (the
+  admin checkbox and `config.harnessConnectors.claudeAi` are retired, a stored
+  false is ignored, `PUT /api/harness-connectors/settings` is a no-op kept for
+  older clients). `SAGAX_CLAUDE_ALLOW` is a separate thing (standing tool allow
+  rules, see docs/self-hosting.md) and stays.
 - Codex: ChatGPT connectors need Codex's own ChatGPT login, which Sagax's
   ChatGPT plan mode and API keys do not have, so Codex turns get none.
 
@@ -1136,6 +1217,44 @@ person). Keep these rules, each covered by `server/parallel-tasks.test.ts`,
   Agent step (`tool.parentItemId` from `parent_tool_use_id`) with its
   request and report, and a running task takes a message (steer). Claude's
   own sub-agents cannot be steered or stopped apart from their turn.
+
+## Context compaction is Sagax's, and invisible (2026-10-08)
+
+- Sagax folds a long thread itself, between turns, before the engine would
+  compact its own session: `compactConversation` in `server/index.ts`, with
+  the budget in `server/context-budget.ts` (80% of the window, and 10% under
+  `nativeCompactionPoint`: Claude's `--autocompact` window, Codex 90%,
+  Gemini CLI 50%, Qwen 83.5%, pi window less 16384, other ACP agents 80%).
+  The engines that are handed the stored transcript every turn (the OpenAI
+  chat drivers) are folded as soon as the replay (`context.rebuildBytes`)
+  would drop a message and the kept turns fit beside the summary.
+- The fold keeps the two latest exchanges and the incoming request word for
+  word and summarizes the rest with the engine's tool-free `generateText`
+  (bounded, with a deterministic fallback). The summary is the thread's
+  memory of its older turns: `TaskRecord.contextSummaries` (server-private,
+  never on the wire), anchored to the last context message it saw, so an
+  edit further back (another branch) never inherits it. No chat row, no
+  unread, no toast. The next turn starts a new engine session with the
+  system prompt rebuilt as on every turn (memory, recall, roster), the
+  summary and the latest turns, under `COMPACTED_PREAMBLE`
+  (`server/turn-context.ts`): a continuation, never "the user switched this
+  bot over to you".
+- `/compact` (the person's own) still writes a visible `kind: "compaction"`
+  row; older threads may hold harness rows from before, which the web chat
+  no longer draws (`CompactionChip` returns nothing for `by: "harness"`).
+- An engine that still compacts on its own (a single very long turn) is
+  hidden too: Claude's PreCompact and SessionStart(compact) hooks only log,
+  and SessionStart hands back the latest digests plus Sagax's summary; the
+  Claude driver re-delivers the volatile prompt half after a
+  `compact_boundary`; Codex `contextCompaction` items and pi compaction
+  events never reach the chat; ACP quiet notices never say "compressing".
+  ACP agents now report `contextTokens`/`contextWindow` from `usage_update`.
+- Debugging only (never in the app): `context.autoCompact: false` turns
+  Sagax's fold off for every bot, `context.autoCompactOffBots: [botId]` for
+  one. Server log lines start with `[context]`.
+- Tests: `server/context-compaction.e2e.test.ts`,
+  `server/context-compaction-replay.e2e.test.ts`, the compaction block of
+  `server/hooks.e2e.test.ts` (mid tool call), `server/context-budget.test.ts`.
 
 ## Person panel and hidden sidebar entries
 

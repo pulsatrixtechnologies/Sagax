@@ -50,6 +50,13 @@ describe("DigestChip", () => {
     expect(html).toContain("&lt;script&gt;");
     expect(html).not.toContain("<script>");
   });
+  it("never shows a fold Sagax made on its own, only one the person asked for", () => {
+    const html = renderToStaticMarkup(createElement(CompactionChip, { message: {
+      id: "context", role: "bot", kind: "compaction", at: 1,
+      compaction: { summary: "Older turns", firstKeptId: "kept", foldedThroughId: "old", tokensBefore: 1, by: "harness" },
+    } }));
+    expect(html).toBe("");
+  });
   it("shows total counts rather than only the truncated sample", () => {
     const html = renderToStaticMarkup(createElement(DigestChip, { message }));
     expect(html).toContain("Did 19 tool calls · 5 files changed");

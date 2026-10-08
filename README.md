@@ -63,7 +63,8 @@ Sagax is made by Pulsatrix Technologies inc. It is based on OpenMausBot (see
 - **Groups with people and bots.** A group chat holds people and bots side by
   side. Mention a bot to ask it, or let the group's lead answer. Each group
   keeps a shared memory its bots read and update. Only the group's owner
-  changes its settings.
+  changes its settings. Small avatars under a message show who has seen it,
+  people and bots alike (a bot has seen what its turn read).
 - **Private threads.** On an organization server, a conversation with a shared
   bot is private to you; group chats are the only shared conversations.
 - **Memory.** Each bot keeps plain Markdown notes, editable in its panel, with
@@ -184,7 +185,8 @@ effects and moves.
 - **Shared bots and who pays.** Share a bot with people or Perspicax teams.
   The person who speaks pays for the turn: their own subscription first, then
   their own key in Perspicax, then the organization's key. Each engine card in
-  Settings > Model providers shows what pays for your turns.
+  Settings > Model providers shows one line on what pays today ("Pays with:
+  your subscription") and one Connect or Disconnect button.
 - **Engines and keys.** Each engine signs in with its own command. On an
   organization server, Grok signs in with the grok CLI. A person can save
   more than one GitHub key. Local models (DwarfStar, llama-server, Ollama,

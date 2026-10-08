@@ -44,6 +44,21 @@ describe("context replay", () => {
     expect(JSON.stringify(result.transcript)).not.toContain("obsolete request");
   });
 
+  it("applies a record kept off the chat on the branch that holds its anchor", () => {
+    const history = entries(["old", "old reply", "keep", "reply", "incoming"]);
+    const record = { id: "ctx-1", anchorId: "4", firstKeptId: "2", foldedThroughId: "1", summary: "older turns", by: "harness" as const, tokensBefore: 10 };
+    const applied = selectReplay(history, { compaction: record });
+    expect(applied.compacted).toBe(2);
+    expect(applied.transcript[0]).toMatchObject({ id: "ctx-1", role: "assistant" });
+    expect(applied.transcript[0]!.text).toContain("older turns");
+    expect(applied.transcript.map(entry => entry.text)).not.toContain("old");
+    // The private record has no message, so it is never claimed as one.
+    expect(applied.representedIds).not.toContain("ctx-1");
+    // An edit earlier in the thread is another branch: the anchor is gone.
+    const edited = entries(["old", "old reply", "keep", "reply"]).concat({ id: "edited", role: "user", text: "incoming, edited" });
+    expect(selectReplay(edited, { compaction: record }).compacted).toBe(0);
+  });
+
   it("finds the compaction boundary before excluding the turn's own request", () => {
     const result = selectReplay(entries(["old", "reply", "current", ""]), {
       excludedIds: new Set(["2"]), compaction: { id: "3", firstKeptId: "2", foldedThroughId: "1", summary: "old summary", by: "person", tokensBefore: 1 },

@@ -11,6 +11,8 @@
 //   S7-E  approvals: owner cards to the owner, admin cards to admins; a console
 //         decision resumes the waiting turn once
 //   S7-F  the audit: rights, org, approval, people rows, paged
+//   S7-G  a bot's files (read only): roots, list, read, download, the path
+//         refusals, the reach, the audit rows
 import { spawn, type ChildProcess } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { connect, type Socket } from "node:net";
@@ -228,7 +230,7 @@ posixOnly("Perspicax organization, slice 7: the console admin API", () => {
     // a person this server never saw
     expect((await admin("GET", "approvals", { sub: "01J9S7NOBODY000000000000N", role: "employee" })).body.code).toBe("unknown_person");
     // the admin API is listed in the health capabilities
-    expect((await api("GET", "/api/health", alice)).body.capabilities).toMatchObject({ orgAdminApi: 1 });
+    expect((await api("GET", "/api/health", alice)).body.capabilities).toMatchObject({ orgAdminApi: 1, orgAdminFiles: 1 });
     // unknown path and wrong method
     expect((await admin("GET", "nope", ALICE)).status).toBe(404);
     expect((await admin("DELETE", "bots", ALICE)).status).toBe(405);
@@ -385,4 +387,38 @@ posixOnly("Perspicax organization, slice 7: the console admin API", () => {
     // a disabled person is refused
     expect((await admin("GET", "approvals", DAVE)).body.code).toBe("person_disabled");
   }, 40_000);
+
+  it("S7-G: a bot's files, read only, for an admin and a manager in reach", async () => {
+    const workspace = join(home, ".sagax", "workspaces", bots.z!.id);
+    mkdirSync(join(workspace, "out"), { recursive: true });
+    writeFileSync(join(workspace, "out", "notes.txt"), "zed notes\n");
+    const roots = await admin("GET", `files/${bots.z!.id}/roots`, ALICE);
+    expect(roots.status, roots.text).toBe(200);
+    expect(roots.body.bot).toEqual({ id: bots.z!.id, name: "Zed" });
+    expect(roots.body.roots).toContainEqual({ id: "workspace", available: true });
+    expect(roots.body.roots).toContainEqual({ id: "sandbox", available: false, reason: "person_environment" });
+    expect(roots.body.roots).toContainEqual({ id: "desktop", available: false, reason: "own_computer" });
+    expect(roots.text).not.toContain(home);
+    const list = await admin("GET", `files/${bots.z!.id}/list?root=workspace&path=out`, ALICE);
+    expect(list.body.entries).toEqual([expect.objectContaining({ name: "notes.txt", path: "out/notes.txt", type: "file", size: 10 })]);
+    const read = await admin("GET", `files/${bots.z!.id}/read?root=workspace&path=out%2Fnotes.txt`, ALICE);
+    expect(read.body).toMatchObject({ text: "zed notes\n", binary: false, eof: true });
+    const download = await admin("GET", `files/${bots.z!.id}/download?root=workspace&path=out%2Fnotes.txt`, MONA);
+    expect(download.status).toBe(200);
+    expect(download.text).toBe("zed notes\n");
+    expect(download.headers.get("content-disposition")).toContain("notes.txt");
+    expect((await admin("GET", `files/${bots.z!.id}/read?root=workspace&path=..%2F${bots.w!.id}%2FMEMORY.md`, ALICE)).body.code).toBe("bad_path");
+    // mona reaches Z (carol is in T), never W; bob is an employee
+    expect((await admin("GET", `files/${bots.w!.id}/roots`, MONA)).status).toBe(404);
+    expect((await admin("GET", `files/${bots.z!.id}/roots`, BOB)).body.code).toBe("forbidden_role");
+    const rows = await waitFor(async () => {
+      const list = (await admin("GET", "audit", ALICE)).body.rows as Array<any> | undefined;
+      return list?.some((row) => row.action === "bot.files.download") ? list : null;
+    });
+    expect(rows.find((row) => row.action === "bot.files.download")).toMatchObject({
+      category: "bot", actor: { kind: "person", principalId: ids.mona, via: "console" },
+      target: { kind: "bot", id: bots.z!.id, name: "Zed" }, after: { root: "workspace", path: "out/notes.txt", bytes: 10 },
+    });
+    expect(rows.find((row) => row.action === "bot.files.read")).toMatchObject({ actor: { principalId: ids.alice } });
+  }, 30_000);
 });
