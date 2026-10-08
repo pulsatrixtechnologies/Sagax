@@ -35,16 +35,7 @@ import { formatPoints } from "./achievements/AchievementsPage";
 import { usePublicAchievement } from "@/lib/public-achievements";
 import { useCaptionChrome, useMacInsetChrome } from "./DesktopCapabilities";
 import { useOrgDirectory } from "./GroupPeoplePicker";
-
-const PANEL_WIDTH_KEY = "omb-settings-panel-width";
-
-function panelWidth(): number {
-  try {
-    const stored = Number(localStorage.getItem(PANEL_WIDTH_KEY));
-    if (Number.isFinite(stored) && stored >= 320 && stored <= 720) return stored;
-  } catch { /* default width */ }
-  return 360;
-}
+import { DockedPanelResizeHandle, useDockedPanelWidth } from "./DockedPanelResize";
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -80,6 +71,7 @@ export function PersonPanel({ personId, directory: given }: { personId: string; 
   const achievementRows = publicCard ? publicMemberRows(publicCard.unlocked) : [];
   const [tab, setTab] = useState<"profile" | "achievements">("profile");
   const tabs = ["profile", "achievements"] as const;
+  const dockedPanel = useDockedPanelWidth();
   const close = () => dispatch({ type: "openPersonPanel", personId: null });
 
   return (
@@ -87,10 +79,11 @@ export function PersonPanel({ personId, directory: given }: { personId: string; 
       role="dialog"
       aria-labelledby="person-panel-title"
       data-person-panel={personId}
-      style={{ width: panelWidth() }}
+      style={{ width: dockedPanel.width }}
       className="app-docked-panel animate-panel-in relative flex h-full min-w-0 shrink-0 flex-col border-l-[0.5px] border-hairline-weak bg-app outline-none max-lg:absolute max-lg:inset-0 max-lg:z-40 max-lg:w-auto"
       onKeyDown={(event) => { if (event.key === "Escape") close(); }}
     >
+      <DockedPanelResizeHandle label={t("computer.resizeAria")} panel={dockedPanel} />
       {(macInset || browser) && <div className="content-topbar-strip" />}
       <div className={cn("content-topbar relative flex h-12 shrink-0 items-center justify-end px-3", padClass)}>
         <button type="button" onClick={close} aria-label={t("personPanel.close")} title={t("personPanel.close")} className={CIRCLE_BUTTON}>

@@ -3,6 +3,7 @@
 // bot-settings/; this dialog owns only the fetches (overview, system-prompt,
 // history) and which accordion row is expanded.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { DockedPanelResizeHandle, useDockedPanelWidth } from "./DockedPanelResize";
 import { Bug, ChevronDown, ChevronLeft, PanelRight, Search } from "lucide-react";
 
 import { api, useStore, visibleMessages, type Bot } from "@/state/store";
@@ -59,19 +60,6 @@ function sectionMatches(entry: (typeof BOT_SECTIONS)[number], query: string): bo
   return [entry.label, sectionLabel(entry), ...entry.keywords].some((part) => part.toLowerCase().includes(query));
 }
 
-const SETTINGS_WIDTH_KEY = "omb-settings-panel-width";
-const SETTINGS_MIN_WIDTH = 320;
-const SETTINGS_MAX_WIDTH = 720;
-const SETTINGS_DEFAULT_WIDTH = 360;
-
-function readSettingsWidth(): number {
-  try {
-    const stored = Number(localStorage.getItem(SETTINGS_WIDTH_KEY));
-    if (Number.isFinite(stored) && stored >= SETTINGS_MIN_WIDTH && stored <= SETTINGS_MAX_WIDTH) return stored;
-  } catch { /* default width */ }
-  return SETTINGS_DEFAULT_WIDTH;
-}
-
 export function BotSettingsDialog({ bot, onOpenVmWorkspace }: {
   bot: Bot;
   onOpenVmWorkspace?: (botId: string) => void;
@@ -121,8 +109,7 @@ export function BotSettingsDialog({ bot, onOpenVmWorkspace }: {
     dispatch({ type: "toggleSettings", open: false });
     dispatch({ type: "toggleComputer", open: false });
   };
-  const [settingsWidth, setSettingsWidth] = useState(readSettingsWidth);
-  const settingsResize = useRef<{ x: number; width: number; current: number } | null>(null);
+  const dockedPanel = useDockedPanelWidth();
   const q = query.trim().toLowerCase();
   // Slack is offered only where the server has an Admin page to link to
   // (a hosted organisation workspace); otherwise its row does not exist.
@@ -417,47 +404,10 @@ export function BotSettingsDialog({ bot, onOpenVmWorkspace }: {
         role="dialog"
         aria-labelledby="bot-settings-title"
         tabIndex={-1}
-        style={{ width: settingsWidth }}
+        style={{ width: dockedPanel.width }}
         className="app-docked-panel animate-panel-in relative flex h-full min-w-0 shrink-0 flex-col border-l-[0.5px] border-hairline-weak bg-app outline-none max-lg:absolute max-lg:inset-0 max-lg:z-40 max-lg:w-auto"
       >
-        <div
-          role="separator"
-          aria-orientation="vertical"
-          aria-label="Resize settings"
-          aria-valuemin={SETTINGS_MIN_WIDTH}
-          aria-valuemax={SETTINGS_MAX_WIDTH}
-          aria-valuenow={settingsWidth}
-          tabIndex={0}
-          onPointerDown={(event) => {
-            settingsResize.current = { x: event.clientX, width: settingsWidth, current: settingsWidth };
-            event.currentTarget.setPointerCapture(event.pointerId);
-          }}
-          onPointerMove={(event) => {
-            const from = settingsResize.current;
-            if (!from) return;
-            const next = Math.min(SETTINGS_MAX_WIDTH, Math.max(SETTINGS_MIN_WIDTH, from.width + (from.x - event.clientX)));
-            settingsResize.current = { ...from, current: next };
-            setSettingsWidth(next);
-          }}
-          onPointerUp={(event) => {
-            const width = settingsResize.current?.current;
-            if (width == null) return;
-            settingsResize.current = null;
-            event.currentTarget.releasePointerCapture(event.pointerId);
-            try { localStorage.setItem(SETTINGS_WIDTH_KEY, String(width)); } catch { /* session only */ }
-          }}
-          onKeyDown={(event) => {
-            const delta = event.key === "ArrowLeft" ? 24 : event.key === "ArrowRight" ? -24 : 0;
-            if (!delta) return;
-            event.preventDefault();
-            setSettingsWidth((current) => {
-              const next = Math.min(SETTINGS_MAX_WIDTH, Math.max(SETTINGS_MIN_WIDTH, current + delta));
-              try { localStorage.setItem(SETTINGS_WIDTH_KEY, String(next)); } catch { /* session only */ }
-              return next;
-            });
-          }}
-          className="app-resize-handle -left-[3px] hidden lg:block"
-        />
+        <DockedPanelResizeHandle label="Resize settings" panel={dockedPanel} />
         {(macInset || browser) && <div className="content-topbar-strip" />}
         {/* Top bar: only the controls, the way Grok Bot's panel opens. On
             Windows it drops below the caption buttons (padClass). */}
