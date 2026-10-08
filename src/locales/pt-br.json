@@ -1980,5 +1980,6 @@
   "presence.seen.days": "há {count} d",
   "presence.hiddenSelf": "{state} (oculto para os outros)",
   "settings.privacy.presence.title": "Mostrar quando estou online",
-  "settings.privacy.presence.subtitle": "As pessoas da sua organização veem um ponto verde, âmbar ou cinza na sua foto. Desativado: você aparece offline para todos, sem horário de última atividade."
+  "settings.privacy.presence.subtitle": "As pessoas da sua organização veem um ponto verde, âmbar ou cinza na sua foto. Desativado: você aparece offline para todos, sem horário de última atividade.",
+  "voiceMode.call.advanced": "Avançado"
 }
