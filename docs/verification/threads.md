@@ -57,7 +57,8 @@ switching and Stop can be exercised without a real provider or account.
     expanding the thread tree. Its separate chevron controls the tree. Repeat
     in Comfortable, Compact, and the Icons view (history is in the header in
     Icons view).
-12. In **Settings → Appearance**, turn **Show threads** off. Bot trees, folder
+12. Show threads is on for a fresh profile (nothing stored); a person who
+    turned it off keeps it off. In **Settings → Appearance**, turn **Show threads** off. Bot trees, folder
     creation, the bot context menu's new-thread actions, and **All threads**
     disappear; the selected transcript, model, queues, and running jobs remain.
     Group/channel histories are unchanged. Background working, queued, unread,
