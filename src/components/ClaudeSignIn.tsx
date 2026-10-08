@@ -188,7 +188,7 @@ export function ClaudeSignIn({ instanceId, base: baseOverride, onSignedIn }: {
           className="flex w-full items-center justify-center gap-2 rounded-lg bg-accent px-3 py-2 text-[12.5px] font-semibold text-accent-ink hover:brightness-110 disabled:opacity-50"
         >
           {busy === "start" ? <Loader2 size={14} className="animate-spin" /> : <LogIn size={14} />}
-          {busy === "start" ? t("engineSetup.claude.starting") : t("engineSetup.claude.start")}
+          {busy === "start" ? t("engineSetup.claude.starting") : t("engineConnect.connect", { name: "Claude" })}
         </button>
       ) : null}
       {error ? <p role="alert" className="text-[12px] text-danger">{error}</p> : null}

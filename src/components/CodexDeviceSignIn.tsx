@@ -44,6 +44,13 @@ export function chatgptPlanLink(value: string | null): string | null {
   } catch { return null; }
 }
 
+/** The device-code hint shows only once a sign-in failed, and not when the
+ * failure already says it (server/drivers/codex-device-auth.ts). */
+export function deviceCodeHintShown(auth: Pick<DeviceSignInStatus, "phase" | "message"> | null, error: string | null): boolean {
+  if (auth?.phase !== "failed" && !error) return false;
+  return !/device.?code/i.test(`${auth?.message ?? ""} ${error ?? ""}`);
+}
+
 const chatgptButton = "flex w-full items-center justify-center gap-2 rounded-lg border border-black/20 bg-white px-3 py-2 text-[12.5px] font-semibold text-black hover:opacity-85 disabled:opacity-50";
 
 export function DeviceSignInProgress({ auth, browserPkce = false }: { auth: DeviceSignInStatus; browserPkce?: boolean }) {
@@ -209,7 +216,9 @@ export function CodexDeviceSignIn({ instanceId, browserPkce = false, base: baseO
         </button>
       )}
       {error && <p role="alert" className="text-[12px] text-danger">{error}</p>}
-      {!browserPkce && <p className="text-[11px] leading-relaxed text-ink-secondary">{t("engineSetup.device.enableHint")}</p>}
+      {!browserPkce && deviceCodeHintShown(auth, error) && (
+        <p className="text-[11px] leading-relaxed text-ink-secondary">{t("engineSetup.device.enableHint")}</p>
+      )}
     </div>
   );
 }
