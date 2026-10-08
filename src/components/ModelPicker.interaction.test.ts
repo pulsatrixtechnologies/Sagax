@@ -477,7 +477,7 @@ describe("on an organization server", () => {
     expect(menu(render(bot("gemini", "gemini-pro")).html)).not.toContain("data-model-host-tools");
   });
 
-  it("lists the person's own computer under Local, pickable on Codex and greyed on Claude Code", () => {
+  it("lists the person's own computer under Local, pickable on Codex and greyed on Claude Code when the server does not speak the Anthropic protocol", () => {
     fixture.org = orgOf("member");
     fixture.myEngines = [engine()];
     const desk = [
@@ -507,11 +507,29 @@ describe("on an organization server", () => {
     html = menu(claudeOpen.html);
     expect(html).toContain("data-model-local-group");
     expect(html).toContain("data-model-unavailable");
-    expect(html).toContain("Claude Code cannot run a model from your computer here");
+    expect(html).toContain("This local server does not speak the Anthropic protocol.");
     const greyed = claudeOpen.nodes.find((node) => node.props.option && (node.props.option as { id: string }).id === desk[0]!.id)!;
     expect(greyed.props.unavailable).toBeTruthy();
     (greyed.props.onPick as () => void)();
     expect(fixture.dispatch).not.toHaveBeenCalled();
+  });
+
+  it("lets Claude Code pick the person's own computer's model once the desktop probe saw the Anthropic protocol", () => {
+    fixture.org = orgOf("member");
+    fixture.myEngines = [engine()];
+    const desk = [
+      { id: "deskab12cd8002::qwen3.8-flash-next-chat", label: "DwarfStar: Qwen3.8 Flash Next (qwen3.8-flash-next-chat)", custom: true, local: true, anthropic: true },
+      { id: "deskab12cd9337::gguf", label: "llama-server: gguf", custom: true, local: true },
+    ];
+    fixture.instances = [claude({ state: "available", version: "2.1.300", authenticated: true }, [...official, ...desk])];
+    const claudeOpen = open(bot("claude", "claude-opus-5-5"));
+    const html = menu(claudeOpen.html);
+    expect(html).toContain("data-model-local-group");
+    const node = (id: string) => claudeOpen.nodes.find((n) => n.props.option && (n.props.option as { id: string }).id === id)!;
+    expect(node(desk[0]!.id).props.unavailable).toBeFalsy();
+    expect(node(desk[1]!.id).props.unavailable).toBe("This local server does not speak the Anthropic protocol.");
+    (node(desk[0]!.id).props.onPick as () => void)();
+    expect(fixture.dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: "setModel", selection: expect.objectContaining({ instanceId: "claude", model: desk[0]!.id }) }));
   });
 
   it("shows Connected and Disconnect once the person's subscription is signed in, for an admin too", () => {
