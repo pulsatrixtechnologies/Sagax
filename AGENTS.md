@@ -387,8 +387,8 @@ model in the chip clears it (a pin). Rules:
   come in as data. The table holds id patterns per engine family and tier,
   never ids; a pick is always a model the engine lists now and the models.dev
   catalogue knows (`ModelCatalogStore`, read with `fetchDisabled`, no fetch).
-- Orchestration (a person's turn, an ordinary room round): the `top` tier on
-  the bot's own engine when the payer can use it, else on the next engine of
+- Orchestration (a person's turn, an ordinary room round): the `top` tier
+  (on Claude: Fable first, then Opus; Fable 5.1 is the strongest) on the bot's own engine when the payer can use it, else on the next engine of
   `ENGINE_ORDER` (Claude, Codex, Grok Build, Gemini, Kimi, pi, then by id).
 - Worker (a peer hop: `delegate_bot`, `ask_bot`, `start_thread`, a fresh
   `coordinate_bots` hop; a routine run; a parallel task a bot opens; a goal

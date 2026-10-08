@@ -169,7 +169,7 @@ describe("the tier table", () => {
 
 describe("modelForTier", () => {
   it("picks per tier on Claude", () => {
-    expect(modelForTier(claude, "top", catalog)?.id).toBe("claude-opus-5-5");
+    expect(modelForTier(claude, "top", catalog)?.id).toBe("claude-fable-5-1");
     expect(modelForTier(claude, "coding", catalog)?.id).toBe("claude-sonnet-5-5");
     expect(modelForTier(claude, "fast", catalog)?.id).toBe("claude-haiku-4-5");
     expect(modelForTier(claude, "vision", catalog)?.id).toBe("claude-sonnet-5-5");
@@ -199,17 +199,17 @@ describe("modelForTier", () => {
   });
 
   it("skips a refused model", () => {
-    expect(modelForTier(claude, "top", catalog, [{ instanceId: "claude", model: "claude-opus-5-5" }])?.id).toBe("claude-opus-5");
+    expect(modelForTier(claude, "top", catalog, [{ instanceId: "claude", model: "claude-fable-5-1" }])?.id).toBe("claude-opus-5-5");
   });
 });
 
 describe("pickOrchestrationModel", () => {
   it("takes the strongest model on the bot's own engine and keeps its effort", () => {
     const pick = pickOrchestrationModel({ base: claudeBase, engines: [codex, grok, claude], catalog });
-    expect(pick.selection).toEqual({ instanceId: "claude", model: "claude-opus-5-5", effort: "high" });
+    expect(pick.selection).toEqual({ instanceId: "claude", model: "claude-fable-5-1", effort: "high" });
     expect(pick.reason).toBe("strongest-own");
     expect(pick.role).toBe("orchestration");
-    expect(explainPick(pick)).toBe("Auto: Claude Opus 5.5 for this bot, because it is the strongest general model your subscription can run on Claude Code, the engine this bot runs on.");
+    expect(explainPick(pick)).toBe("Auto: Claude Fable 5.1 for this bot, because it is the strongest general model your subscription can run on Claude Code, the engine this bot runs on.");
   });
 
   it("moves to the next engine the payer can use when the bot's own is not", () => {
@@ -250,7 +250,7 @@ describe("pickWorkerModel", () => {
 
   it("sends deep reasoning to the top tier", () => {
     const pick = pickWorkerModel({ base: claudeBase, engines: [claude], catalog, task: { text: "Plan the migration strategy and weigh the trade-offs" } });
-    expect(pick.selection.model).toBe("claude-opus-5-5");
+    expect(pick.selection.model).toBe("claude-fable-5-1");
   });
 
   it("uses the target's role", () => {
@@ -309,8 +309,10 @@ describe("with the shipped catalogue and the drivers' own model lists", () => {
   };
   const claudeReal: AutoEngine = { ...claude, models: { default: "claude-sonnet-5", options: claude.models.options.filter((option) => option.id !== "claude-unlisted-9") } };
 
-  it("picks Claude Opus 5.5 to orchestrate a Claude bot", () => {
-    expect(pickOrchestrationModel({ base: claudeBase, engines: [claudeReal], catalog: real }).modelLabel).toBe("Claude Opus 5.5");
+  it("picks Claude Fable 5.1 to orchestrate a Claude bot, Opus 5.5 when Fable is not listed", () => {
+    expect(pickOrchestrationModel({ base: claudeBase, engines: [claudeReal], catalog: real }).modelLabel).toBe("Claude Fable 5.1");
+    const noFable: AutoEngine = { ...claudeReal, models: { default: "claude-sonnet-5", options: claudeReal.models.options.filter((option) => !option.id.includes("fable")) } };
+    expect(pickOrchestrationModel({ base: claudeBase, engines: [noFable], catalog: real }).modelLabel).toBe("Claude Opus 5.5");
   });
 
   it("picks Haiku for a quick task", () => {

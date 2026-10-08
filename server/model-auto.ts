@@ -40,7 +40,8 @@ export type ModelFamily = "anthropic" | "openai" | "xai" | "google" | "moonshot"
  * now and the catalogue knows, newest release first. */
 export const TIER_TABLE: Readonly<Record<ModelFamily, Readonly<Record<Tier, readonly RegExp[]>>>> = {
   anthropic: {
-    top: [/opus/, /fable/],
+    // Fable is above Opus (Anthropic's strongest model).
+    top: [/fable/, /opus/],
     coding: [/sonnet/, /opus/],
     fast: [/haiku/, /sonnet/],
     long: [/sonnet/, /opus/],

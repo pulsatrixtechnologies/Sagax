@@ -9,7 +9,7 @@ import type { Message } from "@/state/store";
 afterEach(() => { setLocale("en"); });
 
 const orchestration: AutoModelRecord = {
-  instanceId: "claude", model: "claude-opus-5-5", engineLabel: "Claude Code", modelLabel: "Claude Opus 5.5",
+  instanceId: "claude", model: "claude-fable-5-1", engineLabel: "Claude Code", modelLabel: "Claude Fable 5.1",
   role: "orchestration", tier: "top", reason: "strongest-own", via: "subscription", at: 1,
 };
 const worker: AutoModelRecord = {
@@ -19,14 +19,14 @@ const worker: AutoModelRecord = {
 
 describe("Auto words", () => {
   it("labels the chip", () => {
-    expect(autoChipLabel(orchestration)).toBe("Auto · Claude Opus 5.5");
+    expect(autoChipLabel(orchestration)).toBe("Auto · Claude Fable 5.1");
     expect(autoChipLabel(null)).toBe("Auto");
   });
 
   it("says why in one sentence, per reason and payer", () => {
-    expect(autoReasonSentence(orchestration)).toBe("Auto: Claude Opus 5.5 for this bot, because it is the strongest general model your subscription can run on Claude Code, the engine this bot runs on.");
+    expect(autoReasonSentence(orchestration)).toBe("Auto: Claude Fable 5.1 for this bot, because it is the strongest general model your subscription can run on Claude Code, the engine this bot runs on.");
     expect(autoReasonSentence({ ...orchestration, reason: "strongest-other", engineLabel: "Codex", fromEngineLabel: "Claude Code", via: "org-key" }))
-      .toBe("Auto: Claude Opus 5.5 for this bot, because Claude Code is not available for this turn and Codex is the next engine the organization's key can pay for.");
+      .toBe("Auto: Claude Fable 5.1 for this bot, because Claude Code is not available for this turn and Codex is the next engine the organization's key can pay for.");
     expect(autoReasonSentence({ ...orchestration, reason: "base", via: undefined })).toContain("no other model is available");
   });
 

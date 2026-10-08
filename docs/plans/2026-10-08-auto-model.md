@@ -60,7 +60,7 @@ Class to tier: reasoning to `top`; coding, automation and general to `coding` (s
 quick to `fast`; long-reading and large-context to `long`; vision to `vision`.
 
 Tier to model: `TIER_TABLE` in `server/model-auto.ts`, per engine family, lists id patterns, never
-ids (anthropic: top opus then fable, coding sonnet then opus, fast haiku; openai: top astra then
+ids (anthropic: top fable then opus (Fable 5.1 is Anthropic's strongest model), coding sonnet then opus, fast haiku; openai: top astra then
 sol, coding codex then sol then terra, fast luna, mini, spark; xai: top plain grok, fast `fast` or
 `mini`; google: top pro, fast flash-lite then flash; moonshot: top k3, coding for-coding, fast
 highspeed). A pattern only matches what the engine lists right now AND what the catalogue
@@ -90,7 +90,7 @@ turn is remembered for 30 minutes for that payer, engine and model, so the next 
 
 ## Orchestration rule
 
-"Auto: Claude Opus 5.5 for this bot, because it is the strongest general model your subscription
+"Auto: Claude Fable 5.1 for this bot, because it is the strongest general model your subscription
 can run on Claude Code, the engine this bot runs on." The `top` tier on the bot's own engine when
 the payer can use it, else on the first engine of the order the payer can use.
 
