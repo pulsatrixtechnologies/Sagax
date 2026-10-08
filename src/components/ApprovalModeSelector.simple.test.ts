@@ -3,19 +3,19 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ApprovalMode } from "../../shared/approval-mode";
 
-vi.mock("@/lib/interface-mode", () => ({ useAdvancedMode: () => false, setAdvancedMode: () => {} }));
-const fixture = vi.hoisted(() => ({ open: false }));
+const fixture = vi.hoisted(() => ({ open: false, advanced: false }));
+vi.mock("@/lib/interface-mode", () => ({ useAdvancedMode: () => fixture.advanced, setAdvancedMode: () => {} }));
 vi.mock("react", async (original) => ({
   ...await original<typeof import("react")>(),
   useState: () => [fixture.open, (next: boolean | ((current: boolean) => boolean)) => {
     fixture.open = typeof next === "function" ? next(fixture.open) : next;
   }],
 }));
-import { ApprovalModeSelector, nextMenuIndex } from "./ApprovalModeSelector";
+import { ApprovalModeSelector } from "./ApprovalModeSelector";
 
 type Node = ReactElement<{
   children?: ReactNode; onClick?: () => void; disabled?: boolean; title?: string; role?: string;
-  "data-approval-choice"?: string; "data-approval-chip"?: boolean; "aria-pressed"?: boolean; "aria-checked"?: boolean;
+  "data-approval-choice"?: string; "data-approval-mode"?: string; "aria-pressed"?: boolean; "aria-checked"?: boolean;
 }>;
 function nodes(value: ReactNode): Node[] {
   if (!isValidElement(value)) return [];
@@ -33,93 +33,63 @@ function render(approvalMode: ApprovalMode | undefined, { driverKind = "codex", 
   }
   const html = renderToStaticMarkup(createElement(Capture));
   const all = nodes(tree);
-  return { html, nodes: all, onSelect, chip: all.find((node) => node.props["data-approval-chip"]) };
+  return { html, nodes: all, onSelect };
 }
 
-beforeEach(() => { fixture.open = false; });
+beforeEach(() => { fixture.open = false; fixture.advanced = false; });
 
-describe("simple approval chip in the composer", () => {
-  it("is one chip with the current mode, never the two cards", () => {
-    const view = render("auto");
-    expect(view.chip).toBeDefined();
-    expect(view.html).toContain("Decide for me");
-    expect(view.html).not.toContain("Ask me first");
-    expect(view.html).not.toContain('role="menu"');
-    expect(view.html).not.toContain("data-approval-choice");
-    expect(view.html).toContain('aria-haspopup="menu"');
-    expect(view.html).toContain("lucide-chevron-down");
-    expect(view.html).not.toContain("data-approval-unset");
-    expect(render("ask").html).toContain("Ask me first");
+function inMode(advanced: boolean, ...args: Parameters<typeof render>) {
+  fixture.advanced = advanced;
+  try {
+    return render(...args);
+  } finally {
+    fixture.advanced = false;
+  }
+}
+
+// JC, 2026-10-08: the chat bar is the same in both modes, and the one that
+// stays is Advanced's. The composer control renders identically whatever
+// the mode: the icon, then the full menu.
+describe("approval control in the composer, Simple and Advanced alike", () => {
+  it.each([undefined, "ask", "auto", "full", "custom"] as const)("renders the Advanced icon in Simple mode (%s)", (mode) => {
+    const simple = inMode(false, mode);
+    expect(simple.html).toBe(inMode(true, mode).html);
+    expect(simple.html).not.toContain("data-approval-simple");
+    expect(simple.html).not.toContain("data-approval-choice");
+    expect(simple.html).not.toContain("Ask me first");
+    expect(simple.html).not.toContain("Decide for me");
+    expect(simple.html).toContain('aria-haspopup="menu"');
   });
 
-  it("opens a menu with both modes, the current one checked, and applies a pick", () => {
-    const first = render("ask");
-    first.chip!.props.onClick!();
-    expect(fixture.open).toBe(true);
-    const open = render("ask", {}, first.onSelect);
-    expect(open.html).toContain('role="menu"');
-    expect(open.html).toContain("The bot stops and asks before it acts.");
-    expect(open.html).toContain("The bot acts, and checks in when unsure.");
-    expect(open.html).not.toContain("Full access");
-    const ask = open.nodes.find((node) => node.props["data-approval-choice"] === "ask")!;
-    const decide = open.nodes.find((node) => node.props["data-approval-choice"] === "auto")!;
-    expect(ask.props.role).toBe("menuitemradio");
-    expect(ask.props["aria-checked"]).toBe(true);
-    expect(decide.props["aria-checked"]).toBe(false);
-    decide.props.onClick!();
-    expect(first.onSelect).toHaveBeenCalledExactlyOnceWith("auto");
-    expect(fixture.open).toBe(false);
+  it("shows a warning sign for Full access in Simple mode", () => {
+    expect(inMode(false, "full").html).toContain("lucide-triangle-alert");
   });
 
-  it("marks a bot with no saved level with a dot on the default", () => {
-    const view = render(undefined);
-    expect(view.html).toContain("data-approval-unset");
-    expect(view.html).toContain("Ask me first");
-    expect(view.chip!.props.title).toBe("No level chosen yet. The bot uses this default until you pick one.");
-  });
-
-  it("names a saved custom level and leaves both choices unchecked", () => {
+  it("opens the same full menu in Simple mode and applies a pick", () => {
     fixture.open = true;
-    const view = render("full");
-    expect(view.html).toContain("Custom level");
-    expect(view.html).toContain("A custom level is saved.");
-    expect(view.nodes.filter((node) => node.props["data-approval-choice"]).every((node) => node.props["aria-checked"] === false)).toBe(true);
-    view.nodes.find((node) => node.props["data-approval-choice"] === "ask")!.props.onClick!();
-    expect(view.onSelect).toHaveBeenCalledExactlyOnceWith("ask");
-  });
-
-  it("is disabled with the busy reason while the bot works, and shows no menu", () => {
+    const advanced = inMode(true, "ask");
     fixture.open = true;
-    const view = render("ask", { disabled: true });
-    expect(view.chip!.props.disabled).toBe(true);
-    expect(view.chip!.props.title).toBe("Stop this bot's turn before changing its approval level");
-    expect(view.html).not.toContain('role="menu"');
+    const simple = inMode(false, "ask");
+    expect(simple.html).toBe(advanced.html);
+    expect(simple.html).toContain('role="menu"');
+    const rows = simple.nodes.filter((node) => node.props["data-approval-mode"]).map((node) => node.props["data-approval-mode"]);
+    expect(rows).toEqual(advanced.nodes.filter((node) => node.props["data-approval-mode"]).map((node) => node.props["data-approval-mode"]));
+    expect(rows).toContain("full");
+    simple.nodes.find((node) => node.props["data-approval-mode"] === "auto")!.props.onClick!();
+    expect(simple.onSelect).toHaveBeenCalledExactlyOnceWith("auto");
   });
 
-  it("offers only ask when the engine has no auto mode", () => {
-    fixture.open = true;
-    const view = render("ask", { driverKind: "antigravityAgent" });
-    expect(view.html).toContain('data-approval-choice="ask"');
-    expect(view.html).not.toContain('data-approval-choice="auto"');
-    expect(view.html).not.toContain("Decide for me");
-  });
-
-  it("moves through the rows with the arrows, Home and End", () => {
-    expect(nextMenuIndex(-1, 2, "ArrowDown")).toBe(0);
-    expect(nextMenuIndex(0, 2, "ArrowDown")).toBe(1);
-    expect(nextMenuIndex(1, 2, "ArrowDown")).toBe(0);
-    expect(nextMenuIndex(0, 2, "ArrowUp")).toBe(1);
-    expect(nextMenuIndex(1, 2, "Home")).toBe(0);
-    expect(nextMenuIndex(0, 2, "End")).toBe(1);
-    expect(nextMenuIndex(0, 2, "a")).toBeNull();
-    expect(nextMenuIndex(0, 0, "ArrowDown")).toBeNull();
+  it("is disabled with the busy reason while the bot works, in both modes", () => {
+    const simple = inMode(false, "ask", { disabled: true });
+    expect(simple.html).toBe(inMode(true, "ask", { disabled: true }).html);
+    expect(simple.html).toContain('title="Stop this bot&#x27;s turn before changing its approval level"');
   });
 });
 
 describe("simple approval choices in bot settings", () => {
   it("stacks ask and decide, keeps the saved one pressed, and applies a click", () => {
     const view = render("ask", { wide: true });
-    expect(view.chip).toBeUndefined();
+    expect(view.html).toContain("data-approval-simple");
     const ask = view.nodes.find((node) => node.props["data-approval-choice"] === "ask")!;
     const decide = view.nodes.find((node) => node.props["data-approval-choice"] === "auto")!;
     expect(ask.props["aria-pressed"]).toBe(true);

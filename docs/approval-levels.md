@@ -15,16 +15,13 @@ Access, OMB also applies its own configuration tools without another approval.
 | **Full access** | Enables the provider's permissive mode for commands, edits, and selected-computer actions, including potentially destructive or sensitive work. Residual native permission prompts are answered for you. OMB profile changes, routine actions, team setup, bot deletion, and enabled skill authoring apply without a second approval. Peer-review prompts are skipped within the bot's authorized scope. Delegation uses the receiving bot's setting, never the sender's — except from a Primary Bot, whose level flows down (below). Actual questions and missing credentials still need your input. |
 | **Custom (`config.toml`)** | Codex only. Sagax reads and reapplies the effective approval and sandbox settings from your Codex configuration. |
 
-In Simple mode (Settings, Appearance, "Advanced mode" off) the composer shows
-the level as a chip left of the model chip: **Ask me first** (Ask for
-approval) or **Decide for me** (Approve for me). The chip opens a menu with
-both choices and a one-line description each; a pick applies at once, with
-the same warnings as the full menu. Decide is absent for an engine with no
-automatic mode. Another saved level reads **Custom level** and stays until
-one of the two is picked. A bot with no saved level shows the default with a
-dot. The chip is disabled while the bot works. Bot settings stack the same
-two choices. Advanced mode keeps the icon left of the message field and the
-full menu.
+The composer is the same in Simple and Advanced mode (Settings, Appearance,
+"Advanced mode"): the level is the icon left of the message field (a warning
+sign for Full access), and it opens the full menu above. A pick applies at
+once, with the warnings below; the level cannot change while the bot works. Only
+bot settings differ: in Simple mode they stack two choices, **Ask me first**
+(Ask for approval) and **Decide for me** (Approve for me), and another saved
+level stays until one of the two is picked.
 
 Full access is an elevated-risk standing approval. Full and Custom can only be
 enabled from a packaged local desktop app, where the choice crosses a private

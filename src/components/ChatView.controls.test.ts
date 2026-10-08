@@ -41,6 +41,7 @@ vi.mock("./ApprovalModeSelector", () => ({ ApprovalModeSelector: (props: Compone
 } }));
 
 const { ChatView, ErrorRow, NewConversationInstead, claudeUpdateTarget } = await import("./ChatView");
+const { setAdvancedMode } = await import("@/lib/interface-mode");
 afterAll(() => vi.unstubAllGlobals());
 
 const bot: Bot = {
@@ -57,17 +58,35 @@ describe("thread control placement", () => {
     expect(markup).toMatch(/<textarea[^>]*disabled=""[^>]*aria-busy="true"/);
     expect(markup).not.toContain("Finish group setup");
   });
-  it("puts the simple approval chip in the composer row, left of the model chip", () => {
-    const markup = renderToStaticMarkup(createElement(ChatView, { bot: { ...bot, busy: false } }));
-    expect(markup).not.toContain("data-composer-approval");
-    const rowAt = markup.indexOf("data-composer-row");
-    const approvalAt = markup.indexOf("data-test-approval-control");
-    expect(rowAt).toBeGreaterThan(-1);
-    expect(approvalAt).toBeGreaterThan(markup.indexOf("<textarea"));
-    expect(approvalAt).toBeGreaterThan(markup.indexOf("data-composer-actions"));
-    expect(approvalAt).toBeLessThan(markup.indexOf("data-test-model-control"));
-    expect(fixture.approval).toMatchObject({ align: "right" });
-    expect(markup.slice(rowAt)).toContain("Message Pepper");
+  // JC, 2026-10-08: one chat bar for both modes, Advanced's.
+  it("renders the same composer row in Simple and Advanced mode", () => {
+    const composerOf = (advanced: boolean) => {
+      setAdvancedMode(advanced);
+      fixture.approval = null;
+      const markup = renderToStaticMarkup(createElement(ChatView, { bot: { ...bot, busy: false } }));
+      const props = fixture.approval;
+      const start = markup.indexOf('data-tour="composer"');
+      const end = markup.indexOf('data-testid="citation-toolbar"');
+      expect(start).toBeGreaterThan(-1);
+      expect(end).toBeGreaterThan(start);
+      return { row: markup.slice(start, end), props };
+    };
+    try {
+      const simple = composerOf(false);
+      const advanced = composerOf(true);
+      expect(simple.row).toBe(advanced.row);
+      expect(simple.props).toMatchObject({ align: "left" });
+      expect(Object.keys(simple.props ?? {})).toEqual(Object.keys(advanced.props ?? {}));
+      // paperclip, approval icon, the message field, then the model chip
+      const row = simple.row;
+      expect(row).not.toContain("data-composer-approval");
+      expect(row.indexOf('aria-label="Attach a file"')).toBeGreaterThan(-1);
+      expect(row.indexOf("data-test-approval-control")).toBeGreaterThan(row.indexOf('aria-label="Attach a file"'));
+      expect(row.indexOf("data-test-approval-control")).toBeLessThan(row.indexOf("<textarea"));
+      expect(row.indexOf("data-test-model-control")).toBeGreaterThan(row.indexOf("data-composer-actions"));
+    } finally {
+      setAdvancedMode(false);
+    }
   });
 
   it("offers trusted modes in the composer without requiring a Full bot default", () => {
