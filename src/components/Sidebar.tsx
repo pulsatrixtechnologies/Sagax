@@ -2136,19 +2136,7 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
   const browser = capabilities.host.label === "Browser";
   // macOS owns inset traffic lights; Windows hides the native bar and draws
   // caption buttons over the header's right end. Either way this top row is
-  // the window's drag handle (ChatView/GroupView headers do the same).
-  const draggableChrome = macInset || capabilities.windowChrome === "win-caption";
-  // SAFETY: Electron's documented -webkit-app-region CSS property is not in
-  // React's CSSProperties type, but the renderer accepts it as an inline style.
-  const windowDragStyle = draggableChrome
-    ? ({ WebkitAppRegion: "drag" } as React.CSSProperties)
-    : undefined;
-  // SAFETY: Same Electron-only CSS property as windowDragStyle; interactive
-  // buttons must explicitly opt out of the draggable title-bar region.
-  const windowNoDragStyle = draggableChrome
-    ? ({ WebkitAppRegion: "no-drag" } as React.CSSProperties)
-    : undefined;
-
+  // the window's drag handle (`.window-drag`, see styles.css).
   const q: string = "";
 
   const viewerId = orgViewerId(state);
@@ -2373,7 +2361,7 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
           round New button; the edge collapses it, see the separator). macOS owns inset traffic lights above the
           brand row; the whole head is the window's drag handle there and on
           Windows, with every control opted out. */}
-      <div data-sidebar-head style={windowDragStyle} className="shrink-0">
+      <div data-sidebar-head className="window-drag shrink-0">
         {(macInset || browser) && (
           <div className={cn("flex h-9 items-center", density === "icons" ? "justify-center" : "px-4")} aria-hidden={browser ? true : undefined}>
             {browser && (
@@ -2386,7 +2374,7 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
           </div>
         )}
         {density === "icons" ? (
-          <div className="flex flex-col items-center gap-2 px-2 pb-2 pt-1" style={windowNoDragStyle}>
+          <div className="flex flex-col items-center gap-2 px-2 pb-2 pt-1 window-no-drag">
             <button
               type="button"
               data-sidebar-search
@@ -2420,7 +2408,7 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
                   <span className="truncate text-[16px] font-semibold leading-5 tracking-[-0.01em]">{APP_NAME}</span>
                 </span>
               )}
-              <span className="ml-auto flex shrink-0 items-center gap-2" style={windowNoDragStyle}>
+              <span className="ml-auto flex shrink-0 items-center gap-2 window-no-drag">
                 <button
                   type="button"
                   data-sidebar-search

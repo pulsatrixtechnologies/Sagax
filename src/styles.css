@@ -2606,4 +2606,23 @@ button:disabled.bg-danger {
 }
 [data-mascot-look-editor] [data-character-shape]:hover {
   background-color: color-mix(in srgb, var(--color-ink) 8%, var(--color-mascot-plinth));
+=======
+/* Window drag regions. The whole top strip of the window moves the window:
+   the sidebar head, the chat/group header, every docked panel header
+   (`.content-topbar`) and the strip above them that reserves the macOS
+   traffic lights. Every interactive control inside them opts out, or it
+   would never see a click. Blink resolves -webkit-app-region per element,
+   so a no-drag button inside a drag row is subtracted from it. A double
+   click on the empty strip is the platform default (macOS zoom). Without
+   Electron the property is inert. */
+.window-drag,
+.content-topbar,
+.content-topbar-strip {
+  -webkit-app-region: drag;
+}
+.window-no-drag,
+.app-resize-handle,
+:is(.window-drag, .content-topbar) :is(button, a[href], input, select, textarea, summary, label, [role="button"], [role="menuitem"], [role="separator"], [role="combobox"], [role="tab"], [contenteditable="true"]) {
+  -webkit-app-region: no-drag;
+>>>>>>> origin/main
 }
