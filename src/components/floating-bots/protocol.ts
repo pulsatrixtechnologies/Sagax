@@ -87,6 +87,29 @@ export interface FloatingCall {
   previewing: { id: string; loading: boolean } | null;
 }
 
+/** A row of the mascot's activity tray: an approval its bot waits on, or work it runs (tray.ts). */
+export interface FloatingTrayItem {
+  /** Opaque ("a0", "r1"): the brain keeps what it stands for. */
+  id: string;
+  kind: "approval" | "running";
+  title: string;
+  detail: string;
+  /** Stop shows (an approval's Stop declines it). */
+  canStop: boolean;
+  /** The row opens its thread in the app. */
+  canOpen: boolean;
+}
+
+/** The activity tray, while it is open. */
+export interface FloatingTray {
+  loading: boolean;
+  items: FloatingTrayItem[];
+}
+
+/** A tray row's buttons: Allow (an approval), Stop, or open its thread in the app. */
+export type FloatingWorkAction = "allow" | "stop" | "open";
+export const TRAY_ID = /^[ar][0-9]{1,2}$/;
+
 /** What the mascot's call controls ask of the brain. */
 export type FloatingCallAction =
   | "start" | "end" | "mute" | "unmute" | "hold" | "resume" | "interrupt" | "retry"
@@ -138,6 +161,8 @@ export interface FloatingSnapshot {
   theme?: FloatingTheme;
   /** The live voice call with this bot, when there is one. */
   call?: FloatingCall | null;
+  /** The activity tray, while it is open (the hover controls' bell). */
+  tray?: FloatingTray | null;
 }
 
 
@@ -149,7 +174,11 @@ export type FloatingEvent =
   | { type: "click" | "context" | "dismiss" | "open" | "play" | "pet" }
   | { type: "menu"; id: string }
   | { type: "send"; text: string }
-  | { type: "call"; action: FloatingCallAction; voice?: string; patch?: Record<string, string | number | boolean> };
+  | { type: "call"; action: FloatingCallAction; voice?: string; patch?: Record<string, string | number | boolean> }
+  /** The hover controls' bell: open or close the activity tray. */
+  | { type: "tray"; open: boolean }
+  /** A tray row's button. */
+  | { type: "work"; action: FloatingWorkAction; id: string };
 
 export interface FloatingRect {
   x: number;
@@ -255,5 +284,7 @@ export function isFloatingEvent(value: unknown): value is FloatingEvent {
   if (event.type === "call") return CALL_ACTIONS.has(event.action as FloatingCallAction);
   if (event.type === "menu") return typeof event.id === "string" && MENU_ID.test(event.id);
   if (event.type === "send") return typeof event.text === "string" && event.text.trim().length > 0;
+  if (event.type === "tray") return typeof (event as { open?: unknown }).open === "boolean";
+  if (event.type === "work") return (event.action === "allow" || event.action === "stop" || event.action === "open") && typeof event.id === "string" && TRAY_ID.test(event.id);
   return ["click", "context", "dismiss", "open", "play", "pet"].includes(event.type as string);
 }
