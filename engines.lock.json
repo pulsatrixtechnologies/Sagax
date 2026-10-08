@@ -185,7 +185,6 @@
     { "id": "mistral", "name": "Mistral", "drivers": ["mistral"], "reason": "Calls the Mistral API; needs a key only." },
     { "id": "cerebras", "name": "Cerebras", "drivers": ["cerebras"], "reason": "Calls the Cerebras API; needs a key only." },
     { "id": "minimax", "name": "MiniMax", "drivers": ["minimax"], "reason": "Calls the MiniMax API; needs a key only." },
-    { "id": "boat", "name": "Boat (cloud computer)", "drivers": ["boxAgent"], "reason": "Runs on the bot's own cloud computer, not on this server." },
     { "id": "custom", "name": "Custom ACP agent", "drivers": ["customAcp"], "reason": "Whatever command its owner configures (docs/custom-engines.md)." }
   ]
 }
