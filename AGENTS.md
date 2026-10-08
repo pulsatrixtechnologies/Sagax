@@ -1884,10 +1884,13 @@ rules, each covered by `shared/achievements-catalog.test.ts`,
   default, and leaves out anyone who turned "Show my points to colleagues"
   off. Unlock percentages show only
   with five people or more.
-- Visibility (2026-10-08). The left sidebar never shows an achievement title
-  or points, for anyone: not on the viewer's account row, not on people
-  rows. Titles and points show only in a person's detail (the person panel,
-  from a people row or a DM header, the viewer's own included) and on
+- Visibility (2026-10-08, corrected). People rows in the sidebar never show an
+  achievement title or points. The viewer's own account row at the bottom
+  does: title then points under the name, each only while its switch is on,
+  the name centred beside the avatar with both off, and the active routines
+  badge always at the right edge of the row, centred (never under the name).
+  Titles and points also show in a person's detail (the person panel, from a
+  people row or a DM header, the viewer's own included) and on
   Settings > Achievements. Two switches there, same style, stored in the
   person's settings on the server (so every device follows): "Show my
   points" (`showPoints`) and "Show my title" (`showTitle`, a missing flag
