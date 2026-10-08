@@ -7220,8 +7220,8 @@ const sandboxControlHolds = new SandboxControlHolds();
 // Cloud boot can revoke sessions before routes are registered. Create the
 // viewer manager before installing any revocation callbacks.
 const desktopViewer = createDesktopViewer({
-  // voice mode's live call (server/voice-mode.ts GET /voice/listen)
-  acceptsUpgrade: (path) => /^\/api\/bots\/[\w-]+\/voice\/listen$/.test(path),
+  // voice mode's live call (server/voice-mode.ts GET /voice/listen and /voice/speech)
+  acceptsUpgrade: (path) => /^\/api\/bots\/[\w-]+\/voice\/(?:listen|speech)$/.test(path),
   target: (id, auth) => {
     if (id === SANDBOX_VIEWER_TARGET) {
       // The caller's own server environment desktop, never anyone else's.
@@ -22051,6 +22051,7 @@ ROUTES.push(createVoiceModeRoutes({
     transcribe: grokVoice.transcribe,
     synthesizeStream: grokVoice.synthesizeStream,
     openTranscription: (key, options, handlers) => grokVoice.openTranscriptionStream(key, options, handlers),
+    openSpeech: (key, options, handlers) => grokVoice.openSpeechStream(key, options, handlers),
     warm: (key) => void grokVoice.listVoices(key).catch(() => {}),
   },
   upgrade: (req) => desktopViewer.upgradeOf(req),

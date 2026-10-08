@@ -2,7 +2,11 @@
 // (server/tts/grok.ts): GET /v1/tts/voices, POST /v1/tts (MP3, or raw PCM
 // streamed in chunks for a live call), POST /v1/stt and the streaming speech
 // to text WebSocket (wss://.../v1/stt: transcript.created, then a final
-// transcript after each {"type":"finalize"}). Every other path is recorded
+// transcript after each {"type":"finalize"}) and the streaming text to speech
+// WebSocket (wss://.../v1/tts: text.delta and text.done in, base64 PCM
+// audio.delta then audio.done out, text.clear answered by audio.clear; the
+// `speech` controls refuse, delay, drop or fail it for the stability tests).
+// Every other path is recorded
 // and refused, so a check can prove voice mode never asked xAI to answer
 // (no chat, responses or realtime agent endpoint).
 // It records what each request carried (never answering with the key) so a
@@ -27,6 +31,22 @@ export interface FakeXaiRequest {
   query?: Record<string, string>;
   audioBytes?: number;
   finalizes?: number;
+  /** the text to speech socket: each utterance's text (text.done), in order */
+  utterances?: string[];
+  /** the text to speech socket: text.clear received */
+  clears?: number;
+}
+
+/** Live switches of the fake text to speech socket (tests change them). */
+export interface FakeSpeechControls {
+  /** refuse the upgrade (the socket never opens) */
+  refuse: boolean;
+  /** hold the upgrade this long (a slow or distant xAI) */
+  openDelayMs: number;
+  /** drop the connection right after this many more utterances start (then 0: off) */
+  dropAfter: number;
+  /** answer the next utterance with an error frame */
+  errorNext: boolean;
 }
 
 /** Paths a voice call may use. Anything else (chat, responses, realtime)
@@ -45,6 +65,9 @@ export interface FakeXaiOptions {
   sttConfidence?: number;
   /** seconds of tone per streamed sentence */
   ttsSeconds?: number;
+  /** ms between two 0.1 s chunks of streamed speech (20: five times real
+   * time; 100: real time) */
+  ttsChunkMs?: number;
   /** interim words while audio streams in, like xAI's interim results: the
    * next transcript's words, one per `msPerWord` of audio, each sent
    * `latencyMs` after the audio that completes it */
@@ -57,6 +80,7 @@ export interface FakeXaiOptions {
 export interface FakeXaiVoice {
   url: string;
   requests: FakeXaiRequest[];
+  speech: FakeSpeechControls;
   close(): Promise<void>;
 }
 
@@ -104,6 +128,7 @@ function tonePcm(seconds: number): Buffer {
 
 export async function startFakeXaiVoice(options: FakeXaiOptions = {}): Promise<FakeXaiVoice> {
   const requests: FakeXaiRequest[] = [];
+  const speech: FakeSpeechControls = { refuse: false, openDelayMs: 0, dropAfter: 0, errorNext: false };
   const transcripts = [...(options.transcripts ?? [])];
   const server: Server = createServer((req, res) => {
     const chunks: Buffer[] = [];
@@ -112,6 +137,12 @@ export async function startFakeXaiVoice(options: FakeXaiOptions = {}): Promise<F
       const body = Buffer.concat(chunks);
       const path = (req.url ?? "").split("?")[0]!;
       // for the check in another process (the Electron side); not recorded
+      if (req.method === "POST" && path === "/__speech") {
+        try { Object.assign(speech, JSON.parse(body.toString("utf8"))); } catch { /* ignored */ }
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify(speech));
+        return;
+      }
       if (req.method === "GET" && path === "/__requests") {
         res.writeHead(200, { "content-type": "application/json" });
         res.end(JSON.stringify(requests));
@@ -142,7 +173,7 @@ export async function startFakeXaiVoice(options: FakeXaiOptions = {}): Promise<F
             if (at >= audio.length) { res.end(); return; }
             res.write(audio.subarray(at, at + chunk));
             at += chunk;
-            setTimeout(next, 20);
+            setTimeout(next, options.ttsChunkMs ?? 20);
           };
           setTimeout(next, options.ttsFirstChunkMs ?? 120);
           return;
@@ -171,6 +202,15 @@ export async function startFakeXaiVoice(options: FakeXaiOptions = {}): Promise<F
       query: Object.fromEntries(url.searchParams), audioBytes: 0, finalizes: 0,
     };
     requests.push(record);
+    if (url.pathname === "/v1/tts") {
+      record.utterances = [];
+      record.clears = 0;
+      if (speech.refuse) { socket.destroy(); return; }
+      const accept = () => sockets.handleUpgrade(req, socket, head, (ws) => serveSpeech(ws, record));
+      if (speech.openDelayMs) setTimeout(accept, speech.openDelayMs);
+      else accept();
+      return;
+    }
     if (url.pathname !== "/v1/stt") { socket.destroy(); return; }
     sockets.handleUpgrade(req, socket, head, (ws) => {
       ws.send(JSON.stringify({ type: "transcript.created" }));
@@ -212,6 +252,60 @@ export async function startFakeXaiVoice(options: FakeXaiOptions = {}): Promise<F
       });
     });
   });
+  /** One text to speech socket: utterances one after the other, as xAI. */
+  function serveSpeech(ws: import("ws").WebSocket, record: FakeXaiRequest): void {
+    let text = "";
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const stop = () => {
+      if (timer) clearTimeout(timer);
+      timer = null;
+    };
+    const say = (json: Record<string, unknown>) => {
+      if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(json));
+    };
+    ws.on("close", stop);
+    ws.on("message", (data, binary) => {
+      if (binary) return;
+      let message: { type?: string; delta?: string } = {};
+      try { message = JSON.parse(String(data)) as typeof message; } catch { return; }
+      if (message.type === "text.delta") text += message.delta ?? "";
+      else if (message.type === "text.clear") {
+        record.clears = (record.clears ?? 0) + 1;
+        stop();
+        text = "";
+        say({ type: "audio.clear" });
+      } else if (message.type === "text.done") {
+        record.utterances!.push(text);
+        text = "";
+        if (speech.errorNext) {
+          speech.errorNext = false;
+          say({ type: "error", message: "fake synthesis error" });
+          return;
+        }
+        if (speech.dropAfter > 0 && --speech.dropAfter === 0) {
+          ws.terminate();
+          return;
+        }
+        // made like the POST: a first chunk after a delay, then the rest
+        const audio = tonePcm(options.ttsSeconds ?? 0.6);
+        const chunk = 4800;
+        let at = 0;
+        const next = () => {
+          if (ws.readyState !== ws.OPEN) return;
+          if (at >= audio.length) {
+            timer = null;
+            say({ type: "audio.done", trace_id: "fake" });
+            return;
+          }
+          say({ type: "audio.delta", delta: audio.subarray(at, at + chunk).toString("base64") });
+          at += chunk;
+          timer = setTimeout(next, options.ttsChunkMs ?? 20);
+        };
+        timer = setTimeout(next, options.ttsFirstChunkMs ?? 120);
+      }
+    });
+  }
+
   if (options.newConnectionMs) {
     const handshake = options.newConnectionMs;
     server.on("connection", (socket) => {
@@ -225,6 +319,7 @@ export async function startFakeXaiVoice(options: FakeXaiOptions = {}): Promise<F
   return {
     url: `http://127.0.0.1:${address.port}`,
     requests,
+    speech,
     close: () => new Promise<void>((resolve) => {
       for (const client of sockets.clients) client.terminate();
       sockets.close();
