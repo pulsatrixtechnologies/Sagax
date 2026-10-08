@@ -680,7 +680,7 @@ export function FloatingBotView({ snapshot: given, onEvent, mover, interactive, 
     const here = point(event);
     const dx = here.x - start.x;
     const dy = here.y - start.y;
-    if (!start.moved && Math.hypot(dx, dy) < DRAG_SLOP) return;
+    if (!start.moved && !isDrag(dx, dy, DRAG_SLOP)) return;
     if (!start.moved) {
       clearTimeout(start.timer);
       dispatch({ type: "drag", now: now(), on: true });
@@ -704,7 +704,10 @@ export function FloatingBotView({ snapshot: given, onEvent, mover, interactive, 
       // cuts the bot's voice while it speaks; a second click soon after opens the app
       const gesture = clickGesture(lastClick.current, now());
       lastClick.current = gesture === "double" ? null : now();
-      for (const event of eventsForClick(gesture)) onEvent(event);
+      const click = mascotClick({ moved: false, menu: false, onCall: Boolean(snapshot.call), botAudible: Boolean(snapshot.call?.botAudible), canCall: Boolean(snapshot.hints.call), gesture });
+      if (click === "call") onEvent({ type: "call", action: "start" });
+      else if (click === "interrupt") onEvent({ type: "call", action: "interrupt" });
+      else if (click === "chat" || click === "open") for (const event of eventsForClick(gesture)) onEvent(event);
     }
     if (!hovering.current) interactive?.(false);
   };
