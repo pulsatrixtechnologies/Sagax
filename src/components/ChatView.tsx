@@ -73,6 +73,7 @@ import { ApprovalCard, approvalCardStaysInChat } from "./ApprovalCard";
 import { OwnerSettled, OwnerWait } from "./OwnerWait";
 import { QuestionCard } from "./QuestionCard";
 import { Composer } from "./Composer";
+import { ChatErrorBanner } from "./ChatErrorBanner";
 import { ChatFindBar } from "./ChatFindBar";
 import { ReplyQuote } from "./ReplyQuote";
 import { ConnectorCard } from "./ConnectorCard";
@@ -187,8 +188,9 @@ function useDrawnBots(bots: readonly Bot[]): readonly Bot[] {
   return cache.current.bots;
 }
 
-/** Hover/focus-revealed copy control shared by user + bot bubbles. */
-function CopyButton({ text, className }: { text: string; className?: string }) {
+/** Hover/focus-revealed copy control shared by user + bot bubbles. Rooms use
+ * the same button beside a message. */
+export function CopyButton({ text, className }: { text: string; className?: string }) {
   const { state, copy } = useCopyFeedback(text);
   const label = t(state === "copied" ? "chat.copyMessageDone" : state === "failed" ? "chat.copyMessageFailed" : "chat.copyMessage");
   return (
@@ -351,8 +353,8 @@ export function FailedTurnRow({ tool, engine, onRetry, botId, threadId }: {
 }
 
 /** One bad markdown node must not white-screen the app — the transcript
- * degrades to a plain-text bubble instead. */
-class MessageBoundary extends Component<{ children: ReactNode; fallbackText: string }, { failed: boolean }> {
+ * degrades to a plain-text bubble instead. Rooms use the same boundary. */
+export class MessageBoundary extends Component<{ children: ReactNode; fallbackText: string }, { failed: boolean }> {
   state = { failed: false };
   static getDerivedStateFromError() {
     return { failed: true };
@@ -395,6 +397,7 @@ function BubbleEditor({
     <div className="w-full max-w-[min(42rem,78%)] rounded-2xl border border-hairline/40 bg-bubble-user px-4 py-3">
       <textarea
         ref={ref}
+        dir="auto"
         value={draft}
         onChange={(e) => setDraft(e.target.value)}
         onKeyDown={(e) => {
@@ -1162,7 +1165,7 @@ function PinnedBanner({
           title={t("chat.pinnedJump")}
         >
           <span className="shrink-0 text-[11.5px] font-medium text-accent">{sender}</span>
-          <span className="truncate text-[12.5px] text-ink-secondary">{text}</span>
+          <span dir="auto" className="truncate text-[12.5px] text-ink-secondary">{text}</span>
         </button>
         {onUnpin && <button
           onClick={onUnpin}
@@ -1487,14 +1490,7 @@ export function ChatView({ bot: profile }: { bot: Bot }) {
       </div>}
       {findOpen && <ChatFindBar threadId={bot.threadId} onClose={() => setFindOpen(false)} />}
 
-      {/* Error banner */}
-      {state.error && (
-        <div className="w-full px-5">
-          <div className="mb-2 rounded-lg border border-danger/30 bg-danger/10 px-3 py-2 text-[13px] text-danger">
-            {state.error}
-          </div>
-        </div>
-      )}
+      <ChatErrorBanner message={state.error} onDismiss={() => dispatch({ type: "error", message: null })} />
       {state.notice && (
         <div className="w-full px-5">
           <div role="status" className="mb-2 rounded-lg border border-hairline/40 bg-panel px-3 py-2 text-[13px] text-ink-secondary">

@@ -5709,5 +5709,12 @@
   "call.live.disclosureCloud": "A Live call sends your voice to OpenAI, along with the chat's recent messages, the bot's answers and the details of any approval it asks for. The OpenAI key stays on My Cloud.",
   "call.live.device.web": "a web browser",
   "screenLoad.failed": "This screen couldn’t load. Reload the window to open it.",
-  "screenLoad.reload": "Reload"
+  "screenLoad.reload": "Reload",
+  "sidebar.servers": "Servers",
+  "sidebar.switchServer": "Switch server: {name}",
+  "sidebar.switchServerError": "Could not open the server list. Try the Server menu.",
+  "chat.error.dismiss": "Dismiss",
+  "composer.mention.everyoneOne": "1 bot in this chat",
+  "composer.mention.everyoneMany": "{count} bots in this chat",
+  "attention.titleCount": "Active Threads, {count}"
 }

@@ -38,10 +38,16 @@ import { StatusActivityRow } from "@/components/StatusActivityRow";
 import { mausInk, normalizeState } from "@/lib/mascot";
 import { defaultResponderName, effectiveDefaultResponder, groupResponseHint, jevRoomRoutingOn } from "@/lib/group-routing";
 import { ChatMarkdown } from "./ChatMarkdown";
-import { FailedTurnRow } from "./ChatView";
+import { CopyButton, FailedTurnRow, MessageBoundary } from "./ChatView";
+import { MessageActions, messageActionClass } from "./MessageActions";
+import { RawMarkdownView, RawToggleAction } from "./RawMarkdownToggle";
+import { SpeakButton } from "./SpeakButton";
+import { useSpeech } from "@/lib/tts/useSpeech";
+import { localSystemVoiceActive } from "@/lib/local-voice";
 import { botEngine, failedTurnCause } from "@/lib/failed-turn";
 import { CitationSelectionToolbar, SentCitations } from "./CitationUI";
 import { Composer } from "./Composer";
+import { ChatErrorBanner } from "./ChatErrorBanner";
 import { ChatFindBar } from "./ChatFindBar";
 import { ConversationTurnLimit } from "./ConversationTurnLimit";
 import { GroupTaskPicker, ThreadReturnLink } from "./TaskPicker";
@@ -190,7 +196,7 @@ function PinToggle({ group, message }: { group: Group; message: Message }) {
         })
       }
       aria-label={pinned ? t("chat.unpinMessage") : t("chat.pinMessage")}
-      className="rounded-md p-1.5 text-ink-secondary opacity-0 transition-opacity hover:bg-raised hover:text-ink focus-visible:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100 touch:opacity-70"
+      className={messageActionClass}
       title={pinned ? t("chat.unpinHint") : t("room.pinHint")}
     >
       {pinned ? <PinOff size={14} /> : <Pin size={14} />}
@@ -199,6 +205,203 @@ function PinToggle({ group, message }: { group: Group; message: Message }) {
 }
 
 const NO_PEOPLE: ReadonlyMap<string, OrgDirectoryPerson> = new Map();
+
+/** Same limits as a 1:1 user bubble (ChatView). */
+const USER_COLLAPSE_CHARS = 600;
+const USER_COLLAPSE_LINES = 8;
+
+/** One room text message: the same actions as a 1:1 bubble, and a boundary
+ * so a bad markdown node stays inside this row. */
+function RoomTextMessage({
+  group,
+  message: m,
+  members,
+  transcript,
+  emerging,
+  eager,
+  mine,
+  joinsAbove,
+  joinsBelow,
+  onReply,
+}: {
+  group: Group;
+  message: Message;
+  members: Bot[];
+  transcript: Message[];
+  emerging: boolean;
+  eager: boolean;
+  /** Your own line: the end side, in your bubble (src/lib/room-authors.ts). */
+  mine: boolean;
+  /** Part of a run of lines by one author: the corners join. */
+  joinsAbove: boolean;
+  joinsBelow: boolean;
+  onReply: (message: Message) => void;
+}) {
+  const { state, dispatch } = useStore();
+  const user = m.role === "user";
+  const cited = user && m.text ? splitTranscriptCitations(m.text) : null;
+  const attachments = user && m.text ? splitTranscriptAttachments(cited?.display ?? m.text) : null;
+  const display = attachments?.display ?? m.text ?? "";
+  const [expanded, setExpanded] = useState(false);
+  const [viewRaw, setViewRaw] = useState(false);
+  const speech = useSpeech();
+  const speaking = speech.messageId === m.id && speech.status !== "idle";
+  const focus = state.focusMessage;
+  const focusedSearch = focus?.messageId === m.id && Boolean(focus.matchText) && focus.threadId === group.threadId;
+  const collapsible = user && !expanded && (display.length > USER_COLLAPSE_CHARS || display.split("\n").length > USER_COLLAPSE_LINES);
+  useEffect(() => {
+    if (focusedSearch && collapsible) setExpanded(true);
+  }, [focusedSearch, collapsible, focus?.nonce]);
+  const speakerBot = members.find((member) => member.id === m.from?.botId);
+  const botText = m.text ?? "";
+  return (
+    <div
+      data-author={mine ? "self" : user ? "person" : "bot"}
+      className={cn("group flex w-full flex-col", mine ? "items-end" : "items-start", joinsAbove && "-mt-2")}
+    >
+      <div className={cn("flex w-full items-end gap-1.5", mine ? "justify-end" : "justify-start")}>
+        {mine && (
+          <MessageActions side="user">
+            {Boolean(display.trim()) && <CopyButton text={display} className="opacity-100" />}
+            <button
+              type="button"
+              onClick={() => onReply(m)}
+              aria-label={t("chat.replyToMessage")}
+              title={t("chat.reply")}
+              className={messageActionClass}
+            >
+              <MessageSquareReply size={14} />
+            </button>
+            <PinToggle group={group} message={m} />
+          </MessageActions>
+        )}
+        <div
+          data-chat-bubble
+          className={cn(
+            "rounded-[18px] text-[13px] leading-5",
+            !user && m.text && prefersWideBubble(m.text) ? "w-full max-w-[min(94%,780px,calc(100%-82px))]" : "w-fit max-w-[min(80%,560px,calc(100%-82px))]",
+            !user && emerging && "turn-answer",
+            // A bot message that is only attachments is just the files: no bubble.
+            !user && !m.text?.trim() && !m.replyToId && m.attachments?.length
+              ? "text-ink"
+              : mine
+                ? "chat-text whitespace-pre-wrap bg-bubble-user px-3 py-[7px] text-ink"
+                : user
+                  ? "chat-text whitespace-pre-wrap bg-raised px-3 py-[7px] text-ink ring-1 ring-inset ring-hairline/40"
+                  : "bg-card px-3 py-[7px] text-ink",
+            runCorners(mine ? "end" : "start", joinsAbove, joinsBelow),
+          )}
+          title={new Date(m.at).toLocaleString()}
+        >
+          {m.replyToId && (() => {
+            const target = transcript.find((candidate) => candidate.id === m.replyToId);
+            return target ? (
+              <div className="mb-2">
+                <ReplyQuote
+                  message={target}
+                  fallbackName={t("room.fallbackBot")}
+                  compact
+                  onJump={() =>
+                    dispatch({ type: "focusMessage", threadId: group.threadId, messageId: target.id })
+                  }
+                />
+              </div>
+            ) : null;
+          })()}
+          {user ? (
+            <>
+              {attachments && <AttachmentGallery images={attachments.images} files={attachments.files} message={{ threadId: group.threadId, messageId: m.id }} eager={eager} className={!attachments.display ? "mb-0" : undefined} />}
+              <div
+                className={cn(collapsible && "max-h-40 overflow-hidden [mask-image:linear-gradient(to_bottom,black_60%,transparent)]")}
+                data-citation-source={m.id}
+                data-citation-owner-type="group"
+                data-citation-owner={group.id}
+                data-citation-thread={group.threadId}
+              >
+                <ThreadRefText text={display} peers={members} everyone={!group.dm} />
+              </div>
+              {cited && <SentCitations
+                citations={cited.citations}
+                onNavigate={async (citation: CitationAttachment) => {
+                  if (citation.source.ownerType !== "group" || !group.messages.some((candidate) => candidate.id === citation.source.messageId)) return false;
+                  dispatch({ type: "focusMessage", threadId: group.threadId, messageId: citation.source.messageId });
+                  return highlightCitationSource(citation);
+                }}
+              />}
+              {m.via === "api" && (
+                <div className="mt-1 text-[11px] text-ink-secondary">Sent through the API, not typed here</div>
+              )}
+              {collapsible && (
+                <button type="button" onClick={() => setExpanded(true)} className="mt-1 text-[12.5px] text-ink-secondary hover:text-ink">
+                  {t("chat.showFull")}
+                </button>
+              )}
+              {expanded && (
+                <button type="button" onClick={() => setExpanded(false)} className="mt-1 text-[12.5px] text-ink-secondary hover:text-ink">
+                  {t("chat.showLess")}
+                </button>
+              )}
+            </>
+          ) : (
+            <MessageBoundary key={viewRaw ? "raw" : "rendered"} fallbackText={botText || t("chat.generatedImage")}>
+              {(m.attachments ?? []).some((attachment) => attachment.kind === "audio") && (
+                <div className={cn("flex flex-col", (m.text || (m.attachments ?? []).some((attachment) => attachment.kind === "image")) && "mb-2")}>
+                  {m.attachments!.filter((attachment): attachment is VoiceNoteAttachment => attachment.kind === "audio").map((note) => (
+                    <VoiceNoteBubble key={note.path} attachment={note} />
+                  ))}
+                </div>
+              )}
+              <MessageAttachmentGallery text={botText} attachments={m.attachments} message={{ threadId: group.threadId, messageId: m.id }} className={m.text ? undefined : "mb-0"} eager={eager} />
+              {viewRaw && botText ? (
+                <div data-citation-source={m.id} data-citation-owner-type="group" data-citation-owner={group.id} data-citation-thread={group.threadId}><RawMarkdownView text={botText} /></div>
+              ) : botText ? (
+                <div data-citation-source={m.id} data-citation-owner-type="group" data-citation-owner={group.id} data-citation-thread={group.threadId}><ChatMarkdown text={botText} mentionPeers={members} everyone={!group.dm} message={{ threadId: group.threadId, messageId: m.id }} /></div>
+              ) : null}
+            </MessageBoundary>
+          )}
+        </div>
+        {!mine && user && (
+          <MessageActions side="bot">
+            {Boolean(display.trim()) && <CopyButton text={display} className="opacity-100" />}
+            <button
+              type="button"
+              onClick={() => onReply(m)}
+              aria-label={t("chat.replyToMessage")}
+              title={t("chat.reply")}
+              className={messageActionClass}
+            >
+              <MessageSquareReply size={14} />
+            </button>
+            <PinToggle group={group} message={m} />
+          </MessageActions>
+        )}
+        {!user && (
+          <MessageActions side="bot" forceOpen={viewRaw || speaking}>
+            {botText && <CopyButton text={botText} className="opacity-100" />}
+            {botText && <RawToggleAction active={viewRaw} onToggle={() => setViewRaw((raw) => !raw)} className="opacity-100" />}
+            {botText && (
+              <SpeakButton text={botText} botId={speakerBot?.id} messageId={m.id} voiceId={speakerBot?.voice} tts={state.config?.tts} localVoice={localSystemVoiceActive()} className="opacity-100" />
+            )}
+            <button
+              type="button"
+              onClick={() => onReply(m)}
+              aria-label={t("chat.replyToMessage")}
+              title={t("chat.reply")}
+              className={messageActionClass}
+            >
+              <MessageSquareReply size={14} />
+            </button>
+            <PinToggle group={group} message={m} />
+          </MessageActions>
+        )}
+        <span className="self-end pb-1 text-[11px] tabular-nums text-ink-tertiary opacity-0 transition-opacity group-hover:opacity-100">
+          {formatTime(m.at)}
+        </span>
+      </div>
+      {!user && m.routedBy && <RoutedByLine routedBy={m.routedBy} />}
+    </div>
+  );
+}
 
 export const Transcript = memo(function Transcript({
   group,
@@ -351,8 +554,6 @@ export const Transcript = memo(function Transcript({
         }
         const m = item.message;
         const user = m.role === "user";
-        const cited = user && m.text ? splitTranscriptCitations(m.text) : null;
-        const attachments = user && m.text ? splitTranscriptAttachments(cited?.display ?? m.text) : null;
         const { author, joinsAbove, joinsBelow } = runs[i]!;
         const newCluster = !joinsAbove;
         // Your own lines sit on the end side; everyone else's on the start side.
@@ -385,12 +586,16 @@ export const Transcript = memo(function Transcript({
             <ConnectorCard botId={m.from.botId} threadId={group.threadId} message={m} />
           ) : m.kind === "options" && m.card?.requestId && m.card.questionRequest ? (
             <div className="flex justify-start">
-              <QuestionCard threadId={group.threadId} bot={memberOf(m.from?.botId)} message={m} />
+              <MessageBoundary fallbackText={m.card.subtitle || m.card.title || ""}>
+                <QuestionCard threadId={group.threadId} bot={memberOf(m.from?.botId)} message={m} />
+              </MessageBoundary>
             </div>
           ) : m.kind === "options" && m.card?.requestId && m.card.tool ? (
             approvalCardStaysInChat(m.card) ? (
               <div className="flex justify-start">
-                <ApprovalCard bot={memberOf(m.from?.botId)} message={m} threadId={group.threadId} />
+                <MessageBoundary fallbackText={m.card.subtitle || m.card.title || ""}>
+                  <ApprovalCard bot={memberOf(m.from?.botId)} message={m} threadId={group.threadId} />
+                </MessageBoundary>
               </div>
             ) : null
           ) : m.kind === "options" && m.card && m.from?.botId ? (
@@ -398,7 +603,9 @@ export const Transcript = memo(function Transcript({
             // through to null: invisible on screen, and the asking bot sat
             // there until its 15-minute timeout answered for you
             <div className="flex justify-start">
-              <OptionCard botId={m.from.botId} threadId={group.threadId} groupId={group.id} message={m} />
+              <MessageBoundary fallbackText={m.card.subtitle || m.card.title || ""}>
+                <OptionCard botId={m.from.botId} threadId={group.threadId} groupId={group.id} message={m} />
+              </MessageBoundary>
             </div>
           ) : m.kind === "access" && m.access ? (
             <div className="flex justify-start">
@@ -436,115 +643,18 @@ export const Transcript = memo(function Transcript({
           ) : m.kind === "nudge" && m.nudge ? (
             <NudgeLine note={m.nudge} />
           ) : m.kind === "text" && (m.text || m.attachments?.length) ? (
-            <div
-              data-author={mine ? "self" : person ? "person" : "bot"}
-              className={cn("group flex w-full flex-col", mine ? "items-end" : "items-start", joinsAbove && "-mt-2")}
-            >
-              <div className={cn("flex w-full items-end gap-1.5", mine ? "justify-end" : "justify-start")}>
-                {mine && (
-                  <>
-                    <button
-                      type="button"
-                      onClick={() => onReply(m)}
-                      aria-label={t("chat.replyToMessage")}
-                      title={t("chat.reply")}
-                      className="rounded-md p-1.5 text-ink-secondary opacity-0 transition-opacity hover:bg-raised hover:text-ink focus-visible:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100 touch:opacity-70"
-                    >
-                      <MessageSquareReply size={14} />
-                    </button>
-                    <PinToggle group={group} message={m} />
-                  </>
-                )}
-                <div
-                  data-chat-bubble
-                  className={cn(
-                    "rounded-[18px] text-[13px] leading-5",
-                    !user && m.text && prefersWideBubble(m.text) ? "w-full max-w-[min(94%,780px,calc(100%-82px))]" : "w-fit max-w-[min(80%,560px,calc(100%-82px))]",
-                    !user && m.id === emergingId && "turn-answer",
-                    // A bot message that is only attachments is just the files: no bubble.
-                    !user && !m.text?.trim() && !m.replyToId && m.attachments?.length
-                      ? "text-ink"
-                      : mine
-                        ? "chat-text whitespace-pre-wrap bg-bubble-user px-3 py-[7px] text-ink"
-                        : user
-                          ? "chat-text whitespace-pre-wrap bg-raised px-3 py-[7px] text-ink ring-1 ring-inset ring-hairline/40"
-                          : "bg-card px-3 py-[7px] text-ink",
-                    runCorners(mine ? "end" : "start", joinsAbove, joinsBelow),
-                  )}
-                  title={new Date(m.at).toLocaleString()}
-                >
-                  {m.replyToId && (() => {
-                    const target = transcript.find((candidate) => candidate.id === m.replyToId);
-                    return target ? (
-                      <div className="mb-2">
-                        <ReplyQuote
-                          message={target}
-                          fallbackName={t("room.fallbackBot")}
-                          compact
-                          onJump={() =>
-                            dispatch({ type: "focusMessage", threadId: group.threadId, messageId: target.id })
-                          }
-                        />
-                      </div>
-                    ) : null;
-                  })()}
-                  {user ? (
-                    <>
-                      {attachments && <AttachmentGallery images={attachments.images} files={attachments.files} message={{ threadId: group.threadId, messageId: m.id }} eager={m.id === newestMessageId || m.id === newestUserMessageId} className={!attachments.display ? "mb-0" : undefined} />}
-                      <div
-                        data-citation-source={m.id}
-                        data-citation-owner-type="group"
-                        data-citation-owner={group.id}
-                        data-citation-thread={group.threadId}
-                      >
-                        <ThreadRefText text={attachments?.display ?? m.text ?? ""} peers={members} everyone={!group.dm} />
-                      </div>
-                      {cited && <SentCitations
-                        citations={cited.citations}
-                        onNavigate={async (citation: CitationAttachment) => {
-                          if (citation.source.ownerType !== "group" || !group.messages.some((candidate) => candidate.id === citation.source.messageId)) return false;
-                          dispatch({ type: "focusMessage", threadId: group.threadId, messageId: citation.source.messageId });
-                          return highlightCitationSource(citation);
-                        }}
-                      />}
-                      {m.via === "api" && (
-                        <div className="mt-1 text-[11px] text-ink-secondary">Sent through the API, not typed here</div>
-                      )}
-                    </>
-                  ) : (
-                    <>
-                      {(m.attachments ?? []).some((attachment) => attachment.kind === "audio") && (
-                        <div className={cn("flex flex-col", (m.text || (m.attachments ?? []).some((attachment) => attachment.kind === "image")) && "mb-2")}>
-                          {m.attachments!.filter((attachment): attachment is VoiceNoteAttachment => attachment.kind === "audio").map((note) => (
-                            <VoiceNoteBubble key={note.path} attachment={note} />
-                          ))}
-                        </div>
-                      )}
-                      <MessageAttachmentGallery text={m.text ?? ""} attachments={m.attachments} message={{ threadId: group.threadId, messageId: m.id }} className={m.text ? undefined : "mb-0"} eager={m.id === newestMessageId || m.id === newestUserMessageId} />
-                      {m.text ? <div data-citation-source={m.id} data-citation-owner-type="group" data-citation-owner={group.id} data-citation-thread={group.threadId}><ChatMarkdown text={m.text} mentionPeers={members} everyone={!group.dm} message={{ threadId: group.threadId, messageId: m.id }} /></div> : null}
-                    </>
-                  )}
-                </div>
-                {!mine && (
-                  <>
-                    <button
-                      type="button"
-                      onClick={() => onReply(m)}
-                      aria-label={t("chat.replyToMessage")}
-                      title={t("chat.reply")}
-                      className="rounded-md p-1.5 text-ink-secondary opacity-0 transition-opacity hover:bg-raised hover:text-ink focus-visible:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100 touch:opacity-70"
-                    >
-                      <MessageSquareReply size={14} />
-                    </button>
-                    <PinToggle group={group} message={m} />
-                  </>
-                )}
-                <span className="self-end pb-1 text-[11px] tabular-nums text-ink-tertiary opacity-0 transition-opacity group-hover:opacity-100">
-                  {formatTime(m.at)}
-                </span>
-              </div>
-              {!user && m.routedBy && <RoutedByLine routedBy={m.routedBy} />}
-            </div>
+            <RoomTextMessage
+              group={group}
+              message={m}
+              members={members}
+              transcript={transcript}
+              emerging={m.id === emergingId}
+              eager={m.id === newestMessageId || m.id === newestUserMessageId}
+              mine={mine}
+              joinsAbove={joinsAbove}
+              joinsBelow={joinsBelow}
+              onReply={onReply}
+            />
           ) : null;
         if (!row) return null;
         return (
@@ -1054,6 +1164,7 @@ export function GroupView({ group: stored }: { group: Group }) {
       <div className="content-card-body flex min-h-0 flex-1 flex-col">
       <ThreadReturnLink ownerId={group.id} threadId={group.threadId} />
       {findOpen && <ChatFindBar threadId={group.threadId} onClose={() => setFindOpen(false)} />}
+      <ChatErrorBanner message={state.error} onDismiss={() => dispatch({ type: "error", message: null })} />
 
       {/* An Auto room answers like lead mode while the decision model is off: say so, once. */}
       {!group.dm && !remoteClient && state.config && group.defaultResponder.kind === "auto" && !jevRoomRoutingOn(state.config) && (
@@ -1077,6 +1188,7 @@ export function GroupView({ group: stored }: { group: Group }) {
           <div className="mb-1 rounded-lg border border-hairline/40 bg-panel p-2">
             <textarea
               autoFocus
+              dir="auto"
               value={bulletinDraft}
               onChange={(e) => setBulletinDraft(e.target.value)}
               onBlur={saveBulletin}
@@ -1100,7 +1212,7 @@ export function GroupView({ group: stored }: { group: Group }) {
             title={t("room.bulletin.title")}
           >
             <Pin size={12} className="shrink-0 text-ink-secondary" />
-            <span className={cn("truncate text-[12.5px]", group.bulletin ? "text-ink-secondary" : "text-ink-tertiary")}>
+            <span dir="auto" className={cn("truncate text-[12.5px]", group.bulletin ? "text-ink-secondary" : "text-ink-tertiary")}>
               {group.bulletin.split("\n")[0] || (remoteClient ? t("room.bulletin.none") : t("room.bulletin.add"))}
             </span>
           </button>
@@ -1123,7 +1235,7 @@ export function GroupView({ group: stored }: { group: Group }) {
                 title={t("chat.pinnedJump")}
               >
                 <span className="shrink-0 text-[11.5px] font-medium text-accent">{sender}</span>
-                <span className="truncate text-[12.5px] text-ink-secondary">{text}</span>
+                <span dir="auto" className="truncate text-[12.5px] text-ink-secondary">{text}</span>
               </button>
               <button
                 onClick={() => dispatch({ type: "patchGroup", groupId: group.id, patch: { pinnedMessageId: "" } })}

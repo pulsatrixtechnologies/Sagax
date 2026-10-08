@@ -8,7 +8,7 @@ const INDEX = readFileSync(new URL("../../server/index.ts", import.meta.url), "u
 const EXACT: Record<string, number> = {
   // Internal harness routes have no server/routes module yet; moving them out is the follow-up that lowers this.
   // Counted on Sagax's server/index.ts, which keeps its own routes (organization, Perspicax, MCP sign-in) there.
-  'path === "/': 185,
+  'path === "/': 182,
   "path.match(": 94,
   "path.startsWith(": 14,
   ".exec(path)": 23,
