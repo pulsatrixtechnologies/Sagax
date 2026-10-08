@@ -5486,5 +5486,16 @@
   "seen.someone": "Someone",
   "settings.section.privacy": "Privacy",
   "settings.privacy.readReceipts.title": "Send read receipts",
-  "settings.privacy.readReceipts.subtitle": "In conversations with other people, let them see when you have read their messages. When off, you do not see theirs either. Group chats and bots always show who has seen a message."
+  "settings.privacy.readReceipts.subtitle": "In conversations with other people, let them see when you have read their messages. When off, you do not see theirs either. Group chats and bots always show who has seen a message.",
+  "presence.online": "Online",
+  "presence.away": "Away",
+  "presence.offline": "Offline",
+  "presence.offlineSeen": "Offline, last seen {when}",
+  "presence.seen.justNow": "just now",
+  "presence.seen.minutes": "{count} min ago",
+  "presence.seen.hours": "{count} h ago",
+  "presence.seen.days": "{count} d ago",
+  "presence.hiddenSelf": "{state} (hidden from others)",
+  "settings.privacy.presence.title": "Show when I am online",
+  "settings.privacy.presence.subtitle": "People in your organization see a green, amber or grey dot on your picture. Off: you appear offline to everyone, with no last-seen time."
 }

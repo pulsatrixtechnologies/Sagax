@@ -7439,7 +7439,18 @@
       "floatingBots.menu.hideMascot": "ac20a57bfde0bbc40bfe70895eb1cfacc944aaff06ca784053623c569b3e1b3d",
       "floatingBots.menu.options": "b1e0eb2c3cf5a82c94c958558d4bf66ff9e3cecab859c86ec56d79193f50b5fd",
       "floatingBots.menu.settings": "7a04083baf8daa20973e671fc0138a81a70c797ef1f28b77e78edbd1acbc57bc",
-      "floatingBots.modelChip": "4fb8ccdef50ea88195b99e332486d77be9f9c022f8d9757812775cb2a8bd99db"
+      "floatingBots.modelChip": "4fb8ccdef50ea88195b99e332486d77be9f9c022f8d9757812775cb2a8bd99db",
+      "presence.online": "0d21bd52022ca7f7e97109d28d327da1e68cc0bedd9713b2dc2b49d3aa104392",
+      "presence.away": "af16c830c510082f56bd99e3eecb0762309fbf31d47f59fd4d25f81c32d4f0c9",
+      "presence.offline": "a1794783aab72d205dc532b1170d1be63ebdce8816b57c21acb451c15dab969a",
+      "presence.offlineSeen": "d8bb04473640a6388843f70d65f735866accba1d2c1770cfa1822e31781cfadc",
+      "presence.seen.justNow": "7ddb44d8a533a7535d85cedddf35d7f3414632ad4e10a0d7ca697723e1d97993",
+      "presence.seen.minutes": "6bf264f3fc92ac66510a3b9279e1c08391841c9e78bd0e9bbe3ea6d624feb426",
+      "presence.seen.hours": "921c58d212da7c71a8e606a344084ab5acabcbb86ddcf9196a4454e7aaf93090",
+      "presence.seen.days": "c49aff4201091a5f51c854936c17a03f1c9c70e7e8cf6dd6ac01e4c4a47d4738",
+      "presence.hiddenSelf": "43ca8da1db8f3d1591300a7c02a459684ab0bb1fc3b9334dbd4cd0631d61de7b",
+      "settings.privacy.presence.title": "f06f37a55ecf6d888c4590e710b43981de22da2cf62d8e61bb45e08a8f772f20",
+      "settings.privacy.presence.subtitle": "87102855e81f639418ef8ca73e6cf005cc10645f8dfc580aaf2c4f54de344d6e"
     },
     "hi": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",
@@ -13126,7 +13137,18 @@
       "floatingBots.menu.hideMascot": "ac20a57bfde0bbc40bfe70895eb1cfacc944aaff06ca784053623c569b3e1b3d",
       "floatingBots.menu.options": "b1e0eb2c3cf5a82c94c958558d4bf66ff9e3cecab859c86ec56d79193f50b5fd",
       "floatingBots.menu.settings": "7a04083baf8daa20973e671fc0138a81a70c797ef1f28b77e78edbd1acbc57bc",
-      "floatingBots.modelChip": "4fb8ccdef50ea88195b99e332486d77be9f9c022f8d9757812775cb2a8bd99db"
+      "floatingBots.modelChip": "4fb8ccdef50ea88195b99e332486d77be9f9c022f8d9757812775cb2a8bd99db",
+      "presence.online": "0d21bd52022ca7f7e97109d28d327da1e68cc0bedd9713b2dc2b49d3aa104392",
+      "presence.away": "af16c830c510082f56bd99e3eecb0762309fbf31d47f59fd4d25f81c32d4f0c9",
+      "presence.offline": "a1794783aab72d205dc532b1170d1be63ebdce8816b57c21acb451c15dab969a",
+      "presence.offlineSeen": "d8bb04473640a6388843f70d65f735866accba1d2c1770cfa1822e31781cfadc",
+      "presence.seen.justNow": "7ddb44d8a533a7535d85cedddf35d7f3414632ad4e10a0d7ca697723e1d97993",
+      "presence.seen.minutes": "6bf264f3fc92ac66510a3b9279e1c08391841c9e78bd0e9bbe3ea6d624feb426",
+      "presence.seen.hours": "921c58d212da7c71a8e606a344084ab5acabcbb86ddcf9196a4454e7aaf93090",
+      "presence.seen.days": "c49aff4201091a5f51c854936c17a03f1c9c70e7e8cf6dd6ac01e4c4a47d4738",
+      "presence.hiddenSelf": "43ca8da1db8f3d1591300a7c02a459684ab0bb1fc3b9334dbd4cd0631d61de7b",
+      "settings.privacy.presence.title": "f06f37a55ecf6d888c4590e710b43981de22da2cf62d8e61bb45e08a8f772f20",
+      "settings.privacy.presence.subtitle": "87102855e81f639418ef8ca73e6cf005cc10645f8dfc580aaf2c4f54de344d6e"
     },
     "uk": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",

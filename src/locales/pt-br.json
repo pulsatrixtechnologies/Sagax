@@ -1969,5 +1969,16 @@
   "floatingBots.menu.hideMascot": "Ocultar",
   "floatingBots.menu.options": "Na área de trabalho",
   "floatingBots.menu.settings": "Configurações…",
-  "floatingBots.modelChip": "Trocar o modelo no app"
+  "floatingBots.modelChip": "Trocar o modelo no app",
+  "presence.online": "Online",
+  "presence.away": "Ausente",
+  "presence.offline": "Offline",
+  "presence.offlineSeen": "Offline, visto {when}",
+  "presence.seen.justNow": "agora mesmo",
+  "presence.seen.minutes": "há {count} min",
+  "presence.seen.hours": "há {count} h",
+  "presence.seen.days": "há {count} d",
+  "presence.hiddenSelf": "{state} (oculto para os outros)",
+  "settings.privacy.presence.title": "Mostrar quando estou online",
+  "settings.privacy.presence.subtitle": "As pessoas da sua organização veem um ponto verde, âmbar ou cinza na sua foto. Desativado: você aparece offline para todos, sem horário de última atividade."
 }
