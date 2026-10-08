@@ -5368,7 +5368,7 @@ describe("harness HTTP API", () => {
     }
   });
 
-  it("keeps Full and Custom bots on Codex when the paired model route changes providers", async () => {
+  it("keeps the permission mode and approvals of Full and Custom bots when a model switch changes providers", async () => {
     const isolatedHome = mkdtempSync(join(tmpdir(), "omb-trusted-mode-model-"));
     const isolatedData = join(isolatedHome, ".sagax");
     const isolatedStatic = join(isolatedHome, "static");
@@ -5397,6 +5397,7 @@ describe("harness HTTP API", () => {
       createdAt: index + 1,
       approvalMode,
       autoApprove: false,
+      alwaysAllow: ["Read"],
     }));
     writeFileSync(join(isolatedData, "bots.json"), JSON.stringify(trustedBots));
 
@@ -5436,57 +5437,50 @@ describe("harness HTTP API", () => {
       const claude = instances.find((instance: { instanceId: string }) => instance.instanceId === "claude");
       const targetSelection = { instanceId: claude.instanceId, model: claude.models.default };
 
+      const botNow = async (id: string) => (await isolatedApi("GET", "/api/bots?messages=0")).body.bots.find(
+        (candidate: { id: string }) => candidate.id === id,
+      );
       for (const seeded of trustedBots) {
-        const rejected = await isolatedApi("PATCH", `/api/bots/${seeded.id}/model`, targetSelection);
-        expect(rejected.status, seeded.approvalMode).toBe(400);
-        expect(rejected.body.error).toMatch(/requires choosing Ask first/i);
-        const scoped = await isolatedApi("PATCH", `/api/bots/${seeded.id}/tasks/${seeded.threadId}`, {
-          modelSelection: targetSelection, updateBotDefault: true, approvalMode: "ask",
+        // The bot-level route: the provider changes, nothing else does.
+        const viaBot = await isolatedApi("PATCH", `/api/bots/${seeded.id}/model`, targetSelection);
+        expect(viaBot.status, seeded.approvalMode).toBe(200);
+        const after = await botNow(seeded.id);
+        expect(after, seeded.approvalMode).toMatchObject({
+          modelSelection: targetSelection, approvalMode: seeded.approvalMode, autoApprove: false, alwaysAllow: ["Read"],
         });
-        expect(scoped.status, seeded.approvalMode).toBe(seeded.approvalMode === "custom" ? 403 : 400);
-        expect(scoped.body.error).toMatch(/Custom approval|resetApprovalToAsk/i);
-        const unchanged = (await isolatedApi("GET", "/api/bots?messages=0")).body.bots.find(
-          (candidate: { id: string }) => candidate.id === seeded.id,
-        );
-        expect(unchanged).toMatchObject({
-          approvalMode: seeded.approvalMode,
-          modelSelection: seeded.modelSelection,
-        });
-        expect(unchanged.tasks.find((task: { threadId: string }) => task.threadId === seeded.threadId).modelSelection).toEqual(seeded.modelSelection);
+        expect(after.tasks.find((task: { threadId: string }) => task.threadId === seeded.threadId))
+          .toMatchObject({ modelSelection: targetSelection, followsBotModel: true });
       }
 
       const full = trustedBots.find(candidate => candidate.approvalMode === "full")!;
       const sibling = (await isolatedApi("POST", `/api/bots/${full.id}/tasks`, { title: "Follows the bot" })).body.task;
-      for (const body of [
-        { resetApprovalToAsk: true },
-        { modelSelection: targetSelection, resetApprovalToAsk: "yes" },
-        { modelSelection: targetSelection, resetApprovalToAsk: true, approvalMode: "auto" },
-        { modelSelection: targetSelection, resetApprovalToAsk: true, updateBotDefault: "yes" },
-        { modelSelection: { ...targetSelection, effort: "turbo" }, resetApprovalToAsk: true },
-      ]) {
-        expect((await isolatedApi("PATCH", `/api/bots/${full.id}/tasks/${full.threadId}`, body)).status).toBe(400);
-      }
-      const sameProvider = await isolatedApi("PATCH", `/api/bots/${full.id}/tasks/${full.threadId}`, {
-        modelSelection: { ...full.modelSelection, model: "another-model" },
-      });
-      expect(sameProvider.status).toBe(200);
-      expect(sameProvider.body.task.approvalMode ?? sameProvider.body.bot.approvalMode).toBe("full");
+      // The thread-level route, back to Codex and then to Claude with the
+      // bot's default: no reset flag exists, and the level never moves.
+      const levelOf = async (threadId: string) => {
+        const { approvalMode, autoApprove, alwaysAllow } = (await botNow(full.id)).tasks
+          .find((task: { threadId: string }) => task.threadId === threadId);
+        return { approvalMode, autoApprove, alwaysAllow };
+      };
+      const levelBefore = await levelOf(full.threadId);
+      const siblingBefore = await levelOf(sibling.threadId);
+      const threadOnly = await isolatedApi("PATCH", `/api/bots/${full.id}/tasks/${full.threadId}`, { modelSelection: full.modelSelection });
+      expect(threadOnly.status).toBe(200);
+      expect(threadOnly.body.task).toMatchObject({ modelSelection: full.modelSelection });
+      expect(await levelOf(full.threadId)).toEqual(levelBefore);
       const switched = await isolatedApi("PATCH", `/api/bots/${full.id}/tasks/${full.threadId}`, {
-        modelSelection: targetSelection, updateBotDefault: true, resetApprovalToAsk: true,
+        modelSelection: targetSelection, updateBotDefault: true,
       });
       expect(switched.status).toBe(200);
-      expect(switched.body.bot).toMatchObject({ modelSelection: targetSelection, approvalMode: "ask", autoApprove: false });
-      expect(switched.body.task).toMatchObject({ modelSelection: targetSelection, approvalMode: "ask", alwaysAllow: [] });
-      // The sibling follows the bot onto Claude. Its Full access belonged to
-      // Codex, so it goes back to Ask in the same write, never rides along.
+      expect(switched.body.bot).toMatchObject({ modelSelection: targetSelection, approvalMode: "full", autoApprove: false, alwaysAllow: ["Read"] });
+      expect(switched.body.task).toMatchObject({ modelSelection: targetSelection });
+      expect(await levelOf(full.threadId)).toEqual(levelBefore);
+      expect(await levelOf(sibling.threadId)).toEqual(siblingBefore);
       expect(switched.body.bot.tasks.find((task: { threadId: string }) => task.threadId === sibling.threadId))
-        .toMatchObject({ modelSelection: targetSelection, followsBotModel: true, approvalMode: "ask", alwaysAllow: [] });
-      const created = await isolatedApi("POST", `/api/bots/${full.id}/tasks`, { title: "New defaults" });
-      expect(created.body.task).toMatchObject({ modelSelection: targetSelection, approvalMode: "ask" });
-      const refusedCustom = trustedBots.find(candidate => candidate.approvalMode === "custom")!;
-      expect((await isolatedApi("PATCH", `/api/bots/${refusedCustom.id}/tasks/${refusedCustom.threadId}`, {
+        .toMatchObject({ modelSelection: targetSelection, followsBotModel: true });
+      // The retired reset flag is no longer a thread setting.
+      expect((await isolatedApi("PATCH", `/api/bots/${full.id}/tasks/${full.threadId}`, {
         modelSelection: targetSelection, resetApprovalToAsk: true,
-      })).status).toBe(403);
+      })).status).toBe(400);
 
       // A loopback-capable bot must not escape a restrictive Custom config
       // by changing another idle bot to Ask/Auto. Leaving Custom is a trusted

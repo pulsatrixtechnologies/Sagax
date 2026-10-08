@@ -527,8 +527,7 @@ credentials), one Connect button or Connected with Disconnect, signing in
 their own subscription through `/api/me/engines/<id>/login`, never the
 server's engine login; the server's local models are not offered. Tests: `ModelPicker.interaction.test.ts`,
 `src/lib/model-payers.test.ts`; real Electron: `scripts/verify-server-mode.ts`
-(org) and `pnpm exec electron scripts/smoke-approval-modes.cjs --model-ui-only`
-(solo).
+(org).
 
 ### Local models in the picker
 

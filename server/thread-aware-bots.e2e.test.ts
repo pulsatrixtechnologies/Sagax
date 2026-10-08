@@ -388,7 +388,7 @@ describe("start_thread on yourself", () => {
       expect(fresh.body.task).toMatchObject({ modelSelection: sonnet, approvalMode: "edits" });
       const retired = { instanceId: "retired", model: "old-model" };
       expect((await api("PATCH", `/api/bots/${pm.id}/tasks/${fresh.body.task.threadId}`,
-        { modelSelection: retired, resetApprovalToAsk: true })).status).toBe(200);
+        { modelSelection: retired })).status).toBe(200);
       const elsewhere = await api("POST", "/api/internal/threads", { title: "Retired engine", message: "go" },
         await mintedToken(pm.id, fresh.body.task.threadId));
       expect(elsewhere.status).toBe(201);

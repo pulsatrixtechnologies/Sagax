@@ -230,7 +230,6 @@ export function LocalNewBotDialog({ defaultsMode = false, onClose, section, onCr
       if (action.type === "updateBot" && action.botId === draft.id) draft.patch(action.patch);
       else if (action.type === "setModel" && action.botId === draft.id) {
         draft.setModel(action.selection);
-        if (action.resetApprovalToAsk) draft.patch({ approvalMode: "ask" });
       } else if (action.type === "routinePatched") { /* Applied by the draft transport. */ }
       else if (action.type === "toggleSettings") { /* Editor links stay inside this dialog. */ }
       else parent.dispatch(action);

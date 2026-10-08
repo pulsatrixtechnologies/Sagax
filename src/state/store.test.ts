@@ -126,6 +126,19 @@ describe("independent bot threads", () => {
     expect(updated.bots[0]?.tasks?.[1]).toEqual(bot.tasks?.[1]);
   });
 
+  it("keeps the permission mode and approvals when a pick changes providers, for the thread and for the bot default", () => {
+    const claude = { instanceId: "claude", model: "claude-sonnet-5" };
+    const thread = reducer(start(), { type: "setModel", botId: bot.id, threadId: "first", selection: claude });
+    expect(thread.bots[0]?.tasks?.[0]).toMatchObject({ modelSelection: claude, approvalMode: "auto", alwaysAllow: ["Read"] });
+    const everywhere = reducer(start(), { type: "setModel", botId: bot.id, threadId: "first", selection: claude, updateBotDefault: true });
+    expect(everywhere.bots[0]?.tasks?.[0]).toMatchObject({ modelSelection: claude, approvalMode: "auto", alwaysAllow: ["Read"] });
+    expect(everywhere.bots[0]?.tasks?.[1]).toMatchObject({ approvalMode: "ask" });
+    expect(everywhere.bots[0]?.approvalMode).toBe(bot.approvalMode);
+    const botOnly = reducer(start(), { type: "setModel", botId: bot.id, selection: claude });
+    expect(botOnly.bots[0]).toMatchObject({ modelSelection: claude, approvalMode: bot.approvalMode });
+    expect(botOnly.bots[0]?.tasks?.[0]).toMatchObject({ approvalMode: "auto", alwaysAllow: ["Read"] });
+  });
+
   it("does not persist request-only model scope on a task", () => {
     const updated = reducer(start(), { type: "updateTask", botId: bot.id, threadId: "first", patch: { modelSelection: bot.modelSelection, updateBotDefault: true } });
     expect(updated.bots[0]?.tasks?.[0]).not.toHaveProperty("updateBotDefault");
