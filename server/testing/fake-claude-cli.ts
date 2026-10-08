@@ -80,6 +80,8 @@
 //                      hooks (trigger auto), then the SessionStart hooks with
 //                      source "compact", and treat whatever SessionStart's
 //                      stdout said as context by echoing it into the reply.
+//   FAKE_CLAUDE_COMPACT_AT tool: play that compaction while the turn's
+//                      first scripted tool call is in flight instead.
 //   FAKE_CLAUDE_TURN_STATE path of a counter file shared by fresh CLI
 //                      processes, so FAKE_CLAUDE_COMPACT's "second turn"
 //                      survives a respawn between turns.
@@ -950,18 +952,27 @@ const playReply = (prompt: JsonValue, mcpNote: string) => {
     writeFileSync(process.env.FAKE_CLAUDE_TURN_STATE, String(n + 1));
   }
   turnsPlayed += 1;
-  if (process.env.FAKE_CLAUDE_COMPACT === "1" && turnsPlayed >= 2) {
+  // The CLI's compaction: PreCompact, the stream's compact_boundary frame,
+  // then SessionStart(compact), whose stdout becomes context (echoed here).
+  const compactNow = () => {
     runHooks("PreCompact", { trigger: "auto" });
+    out({ type: "system", subtype: "compact_boundary", session_id: "fake-session", compact_metadata: { trigger: "auto", pre_tokens: 190_000 } });
     const context = runHooks("SessionStart", { source: "compact" });
     if (context.trim()) replyParts = [`${context.trim()}\n\n${replyParts[0] ?? ""}`, ...replyParts.slice(1)];
-  }
+  };
+  // FAKE_CLAUDE_COMPACT_AT=tool plays it while the first scripted tool call
+  // is in flight (after its tool_use, before its tool_result).
+  const compactMidTool = process.env.FAKE_CLAUDE_COMPACT === "1" && turnsPlayed >= 2 && process.env.FAKE_CLAUDE_COMPACT_AT === "tool";
+  if (process.env.FAKE_CLAUDE_COMPACT === "1" && turnsPlayed >= 2 && !compactMidTool) compactNow();
   const usage = { input_tokens: 10, cache_read_input_tokens: 2, output_tokens: 5 };
   if (scriptedToolCalls) {
     // scripted calls come first, each settled before the reply text
     // A call with `parent` is a sub-agent's (parent_tool_use_id); the
     // parent's own result waits until its sub-agent's calls are done, the
     // way an Agent call settles after the work it started.
+    let compactPending = compactMidTool;
     const settle = (call: ScriptedToolCall, id: string) => {
+      if (compactPending) { compactPending = false; compactNow(); }
       out({ type: "user", ...(call.parent ? { parent_tool_use_id: call.parent } : {}), message: { content: [{ type: "tool_result", tool_use_id: id, is_error: !call.ok, content: call.output }] } });
       runHooks("PostToolUse", { tool_name: call.name, tool_input: call.input, tool_response: call.output, tool_use_id: id });
     };

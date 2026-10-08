@@ -476,6 +476,15 @@ describe("ACP turns (fake CLI)", () => {
     expect(await send("turn 5")).toBe("turn 5");
   });
 
+  it("reports the agent's current context size and window so Sagax folds before the agent compacts", async () => {
+    const { usage, send } = await usageThread("context-size");
+    usage(90000, 120000);
+    recorder.events.length = 0;
+    await send("turn 1");
+    const reported = recorder.events.filter((event) => event.type === "thread.token-usage.updated").at(-1);
+    expect(reported).toMatchObject({ contextTokens: 120000, contextWindow: 200000 });
+  });
+
   it("keeps the split through an ordinary context dip", async () => {
     const { usage, send } = await usageThread("ordinary-dip");
     usage(108641);

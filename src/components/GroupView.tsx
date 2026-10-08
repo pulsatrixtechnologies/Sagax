@@ -635,7 +635,7 @@ export const Transcript = memo(function Transcript({
           ) : m.kind === "screen" ? (
             <ScreenFrame threadId={group.threadId} message={m} />
           ) : m.kind === "compaction" ? (
-            <CompactionChip message={m} />
+            m.compaction?.by === "harness" ? null : <CompactionChip message={m} />
           ) : m.kind === "digest" ? (
             showToolCalls
               ? <DigestChip message={m} viewerPrincipalId={state.config?.viewer?.principalId ?? null} />
