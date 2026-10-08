@@ -166,8 +166,15 @@ effects and moves.
   ([docs/routine-schedules.md](docs/routine-schedules.md)). The card says
   when the routine runs: every hour, every weekday, or once. Active stays
   the switch. A paused or finished routine says so after the schedule. On an
-  organization server a routine runs with its owner's credentials and is paid
-  by its owner.
+  organization server a routine always acts in its owner's name, with no
+  permission to give or take back, runs with its owner's credentials and is
+  paid by its owner. In the routine modal an admin can choose any active
+  person it runs as, and a team manager a person of their teams, among the
+  people who may run the bot; the card says "Runs as Name", each change is
+  in the admin activity log, and a person who has not signed in yet gets
+  the routine once they do. Run now starts one run at once without touching
+  the schedule (the bot's owner, the person it runs as or an admin), and
+  the details window shows the schedule beside the instructions.
 - **Nudge.** In a conversation with a person, or in a group, the button at
   the right of the composer sends a nudge. A bot conversation does not show
   it. The windows of the people involved come forward and shake, with the

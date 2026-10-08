@@ -269,6 +269,10 @@ export interface IdpSessionManagerOptions {
   /** Where provider revocations go (the durable queue, idp-revocations.ts);
    * without one, each is a single call now. */
   revocations?: RevocationSink;
+  /** A sign-in grant was renewed: the person keeps using Sagax (their
+   * routine delegation slides with it, org-routine-consent.ts keepAlive).
+   * `access` is the fresh access token (memory only). */
+  onRenewed?: (subject: { iss: string; sub: string }, access?: { token: string; expiresAt: number }) => void;
 }
 
 /** The Perspicax role claim as a known role, or undefined. */
@@ -327,9 +331,11 @@ export class IdpSessionManager {
   /** No refresh of a grant before `until` (memory only): a minute after a
    * transient failure, max(60 s, Retry-After) after a rate limit. */
   private readonly gates = new Map<string, { until: number; rateLimited: boolean }>();
+  private readonly onRenewed?: IdpSessionManagerOptions["onRenewed"];
 
   constructor(options: IdpSessionManagerOptions) {
     this.teamNames = options.teamNames;
+    this.onRenewed = options.onRenewed;
     this.vault = options.vault;
     this.rp = options.rp;
     this.sessions = options.sessions;
@@ -555,6 +561,13 @@ export class IdpSessionManager {
         return;
       }
       if (outcome.identity) this.applyIdentity(next, outcome.identity);
+      if (this.onRenewed) {
+        try {
+          if (this.vault.get(ref)) this.onRenewed({ iss: next.iss, sub: next.sub }, this.access.get(ref));
+        } catch (error) {
+          this.log(`idp: the renewal hook failed: ${error instanceof Error ? error.message : String(error)}`);
+        }
+      }
       return;
     }
     if (!current) return;

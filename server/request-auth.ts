@@ -483,6 +483,8 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   { methods: ["POST"], path: /^\/api\/bots\/[\w-]+\/voice\/(?:prepare|speak|transcribe|stream|call)$/ },
   // routines: a scheduled message; the input carries no cwd or permission field
   { methods: ["GET"], path: /^\/api\/routines$/ },
+  // the routine modal's "Runs as" choices (server/routine-run-as.ts)
+  { methods: ["GET"], path: /^\/api\/routines\/run-as-options$/ },
   { methods: ["POST"], path: /^\/api\/routines$/ },
   { methods: ["PATCH", "DELETE"], path: /^\/api\/routines\/[\w-]+$/ },
   { methods: ["POST"], path: /^\/api\/routines\/[\w-]+\/run$/ },
@@ -567,7 +569,7 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   // (server/harness-commands.ts): names, descriptions and hints only.
   { methods: ["GET"], path: /^\/api\/bots\/[\w-]+\/harness-commands$/ },
   // Slice 6: the caller's own routine delegation (allow, status, revoke).
-  { methods: ["GET", "POST", "DELETE"], path: /^\/api\/org\/routine-delegation$/, feature: "orgDirectory" },
+  { methods: ["GET"], path: /^\/api\/org\/routine-delegation$/, feature: "orgDirectory" },
   // Slice 8: a person copies their own bots from a solo Sagax (the handler
   // checks the session, the caller's right to create bots and the copy).
   { methods: ["POST"], path: /^\/api\/org\/import$/, feature: "orgDirectory" },

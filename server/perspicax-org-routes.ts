@@ -12,9 +12,10 @@
 //                             The answer lists labels and hints, never a token.
 //   GET   /api/org/approvals  approvals waiting for an organization admin
 //                             (server commands of members' bots)
-//   GET, POST, DELETE /api/org/routine-delegation
-//                             the caller's own routine delegation (slice 6):
-//                             status, start the Perspicax consent, revoke
+//   GET   /api/org/routine-delegation
+//                             the caller's own routine delegation (slice 6),
+//                             read-only: since 2026-10-08 it is issued
+//                             automatically, with no consent and no revoke
 //
 // Registered before the interim organization routes, which answer only in
 // solo mode (server/org-routes.ts).
@@ -132,17 +133,6 @@ export interface RoutineDelegationRouteDeps {
   status(principalId: string): { state: "active"; consentedAt: number; renewedAt: number; expiresAt: number } | { state: "none" };
   /** The caller's enabled routines that are suspended now. */
   suspendedCount(principalId: string): number;
-  /** Start the consent at Perspicax: the authorization URL and the flow
-   * binding cookie, or why it cannot start. */
-  start(input: { principalId: string; sessionId: string }): Promise<{ ok: true; authorizationUrl: string; cookie: string } | { ok: false; status: number; error: string; code: string }>;
-  revoke(principalId: string): boolean;
-}
-
-/** `<issuer>/console/me/access#sagax`: the person's own access page in the
- * Perspicax console (self-service, no admin rights needed), where they revoke
- * their routine delegation. */
-export function routineDelegationManageUrl(issuer: string): string {
-  return `${issuer.replace(/\/+$/, "")}/console/me/access#sagax`;
 }
 
 /** `<issuer>/console/users/<sub>`: a person's page in the Perspicax console,
@@ -259,30 +249,19 @@ export function createPerspicaxOrgRoutes(deps: PerspicaxOrgRouteDeps): RouteHand
       res.setHeader("cache-control", "no-store");
       return json(res, 200, { approvals: deps.pendingAdminApprovals() });
     }
-    if (path === "/api/org/routine-delegation" && (method === "GET" || method === "POST" || method === "DELETE")) {
+    if (path === "/api/org/routine-delegation" && method === "GET") {
       res.setHeader("cache-control", "no-store");
-      if (auth.kind !== "session") return json(res, 401, { error: "Sign in with Pulsatrix to allow your routines.", code: "session_required" });
+      if (auth.kind !== "session") return json(res, 401, { error: "Sign in with Pulsatrix to see your routine access.", code: "session_required" });
       const principalId = auth.session.principalId?.trim();
       if (!principalId || !auth.session.idp || !deps.routineDelegation) {
         return json(res, 403, { error: "Routine delegation needs a person signed in with Pulsatrix.", code: "identity_perspicax" });
       }
       const routines = deps.routineDelegation;
-      if (method === "GET") {
-        return json(res, 200, {
-          ...routines.status(principalId),
-          suspended: routines.suspendedCount(principalId),
-          // Where the delegation is revoked: the person's own access page
-          // in the Perspicax console, the same address for everyone.
-          manageUrl: routineDelegationManageUrl(deps.issuer),
-          // Whose status this is: the browser asks each person once.
-          principalId,
-        });
-      }
-      if (method === "DELETE") return json(res, 200, { revoked: routines.revoke(principalId) });
-      const started = await routines.start({ principalId, sessionId: auth.session.id });
-      if (!started.ok) return json(res, started.status, { error: started.error, code: started.code });
-      res.setHeader("set-cookie", started.cookie);
-      return json(res, 200, { authorizationUrl: started.authorizationUrl });
+      return json(res, 200, {
+        ...routines.status(principalId),
+        suspended: routines.suspendedCount(principalId),
+        principalId,
+      });
     }
     // The interim invitation and creation routes do not exist here.
     if (path === "/api/org" || path.startsWith("/api/org/invites")) {

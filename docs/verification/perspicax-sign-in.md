@@ -463,23 +463,34 @@ pnpm exec vitest run server/org-routine-consent.test.ts server/routines.test.ts 
   server/perspicax-mcp.test.ts server/authz.test.ts server/request-auth.test.ts \
   server/org-routines.e2e.test.ts server/org-mcp.e2e.test.ts server/org-sharing.e2e.test.ts \
   server/oidc-session.e2e.test.ts server/routine-delegation.e2e.test.ts \
-  src/components/settings/MyRoutineDelegation.test.ts
+  server/perspicax-link.test.ts server/oidc-login.test.ts \
+  src/components/routines/RoutineOwnerName.test.ts
 pnpm -s i18n:check
 ```
 
 The fake provider now issues routine delegation families
 (`scope` with `pulsabot:routines`, a refresh token that survives the
 person's sign-outs), lists `routine_delegation` per person in the
-directory, and revokes a family from its fake console.
+directory, and revokes a family from its fake console. Since 2026-10-08 it
+also issues a delegation family by token exchange through the link
+(`requested_token_type` refresh token, the marker scope), the change Sagax
+needs from Perspicax; `tamper.noDelegationExchange` answers like Perspicax up
+to 1.8.13 (`invalid_request`).
 `SAGAX_ROUTINE_RENEW_SECONDS` shortens the renewal window for tests.
 
 - `server/org-routine-consent.test.ts`: one delegation per person (a new
-  consent revokes the previous one), the renewal reused for its window and
+  one revokes the previous one), the renewal reused for its window and
   refreshed once for concurrent runs, a refusal ending the delegation with
-  one notice, a transient failure skipping the run, the refreshed claims,
-  reconciliation with the directory, the delegation's access token as the
-  token exchange subject, a revoke from Sagax, a person out, and no token in
-  plain text. The consent's refusals (`routines_subject`, `binding`,
+  one notice, a transient failure skipping the run, the refreshed claims
+  (a role that no longer signs in is `person_out`), reconciliation with the
+  directory, the delegation's access token as the token exchange subject, no
+  revoke from Sagax, a person out, and no token in plain text; and
+  ("routines always act in their owner's name") the delegation issued at a
+  run from the live session, at sign-in from its access token (one flight),
+  again at once after Perspicax ended the family, the fallback to the live
+  session, a skipped run (never paused) when nobody is signed in or
+  Perspicax cannot issue it, nothing for a person who is out, and the daily
+  slide while the person uses Sagax. The legacy consent callback's refusals (`routines_subject`, `binding`,
   `routines_session`, 401 without a session) are in
   `server/oidc-login.test.ts` and `server/org-routines.e2e.test.ts`; the
   solo server's 403 `identity_perspicax` is checked by hand (S6-12). Who gets
@@ -492,15 +503,17 @@ directory, and revokes a family from its fake console.
   durable revocation queue.
 - `server/routines.test.ts` ("slice 6: routines in their person's name"):
   `runAs` from the creator and moved by a work-field edit, snapshotted on the
-  run, a refused run suspending its routine once (`delegation_missing`,
-  `delegation_revoked`, `no_right`, `person_out`), a transient refusal
-  failing without suspending, a consent resuming from now.
-- `server/org-routines.e2e.test.ts` (real server): consent, scenario D (the
-  routine runs while alice has no session, on her key and her delegation),
-  renewal reused within the window, Perspicax unreachable (skipped, not
-  suspended), revoke from Sagax (one card, consent resumes), revoke from
-  the console seen through the directory, a consent finished as another
-  account, bob's routine on alice's bot (runs as bob on alice's key, then
+  run, a refused run suspending its routine once (`no_right`,
+  `person_out`), a transient refusal failing without suspending, a new
+  delegation resuming from now, and a routine paused for a delegation before
+  2026-10-08 resuming from now at load.
+- `server/org-routines.e2e.test.ts` (real server): the delegation issued at
+  sign-in with no consent and a read-only route, scenario D (the routine
+  runs while alice has no session, on her key and her delegation), renewal
+  reused within the window, Perspicax unreachable (skipped, not suspended),
+  a console revoke never pausing the routine (the next run gets a new
+  delegation), a Perspicax that cannot issue one (skipped, never paused, no
+  card), bob's routine on alice's bot (runs as bob on alice's key, then
   `no_right`), a room goal, a disable pausing `person_out`, and no refresh
   or access token written in clear.
 
@@ -511,17 +524,18 @@ Same setup as slice 5, with the slice 6 connector build, the accounts
 routines on cron `* * * * *` (a stand-in for scenario D's hourly routine).
 Walk S6-1 to S6-13 of the slice 6 acceptance:
 
-1. Settings > Organization > "Routines en mon nom" shows "Non autorisé";
-   "Autoriser mes routines à agir en mon nom" goes through the Perspicax
-   sign-in (the notice names Sagax) and back with the toast and the dates.
+1. alice signs in: no consent page, no card; `token_issued` detail
+   `routine delegation` appears in the Perspicax journal right after her
+   sign-in (needs the Perspicax change of 2026-10-08).
 2. alice signs out everywhere; her routine R1 on X still runs within 90 s,
    on her owner key, with MCP rows under alice and `token_refreshed`
    detail `routine delegation`.
 3. `root` disables alice: R1 `person_out` within 10 s, the held run
-   cancelled; re-enabling keeps it suspended until she consents again.
-4. Revoke from Sagax, then from the console Members page (a manager of a
-   team alice belongs to; others get 404 or 403): one card each, no run
-   afterwards, "Reconnecter mes routines" for alice only.
+   cancelled; once re-enabled, her next sign-in issues a new delegation
+   and R1 resumes.
+4. There is no revoke in Sagax. Until Perspicax removes its revoke (Mon
+   accès, Members), a revoke there never pauses R1: the next run issues a
+   new delegation from alice's session, with no card.
 5. bob's routine on X runs as bob and never under alice; losing `run`
    pauses it `no_right`; a member-owned bot's server command still waits
    for an admin approval.

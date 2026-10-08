@@ -232,6 +232,19 @@ export type ExchangeResult =
    * link token was refused even after re-reading the file. */
   | { ok: false; error: "not_held" | "subject" | "link" | "rate_limited" | "unreachable" };
 
+/** 2026-10-08 (JC): a routine always acts in its owner's name. The linked
+ * server turns the person's live sign-in access token into their routine
+ * delegation (RFC 8693 asking a refresh token with the marker), with no
+ * consent step. */
+export const REFRESH_TOKEN_TYPE = "urn:ietf:params:oauth:token-type:refresh_token";
+export const ROUTINE_DELEGATION_EXCHANGE_SCOPE = "openid profile email offline_access pulsabot:routines";
+export type RoutineDelegationIssue =
+  | { ok: true; refreshToken: string; accessToken?: string; accessExpiresAt?: number }
+  /** unsupported: this Perspicax cannot issue one without a consent (it
+   * refuses a refresh token as the requested type); subject: the sign-in
+   * token was refused; link: the link token was refused. */
+  | { ok: false; error: "unsupported" | "subject" | "link" | "rate_limited" | "unreachable"; retryAfterMs?: number };
+
 export interface PerspicaxDirectoryOptions {
   /** SAGAX_PERSPICAX_ISSUER: the subjects' `iss`. */
   issuer: string;
@@ -464,6 +477,104 @@ export class PerspicaxDirectory {
     const seconds = typeof expiresIn === "number" && Number.isFinite(expiresIn) && expiresIn > 0 ? Math.min(expiresIn, 900) : 0;
     if (!seconds) return { ok: false, error: "unreachable" };
     return { ok: true, token, expiresAt: this.now() + seconds * 1000 };
+  }
+
+  /** The person's routine delegation, issued from their live sign-in
+   * access token (REFRESH_TOKEN_TYPE, the marker scope, the server's own
+   * origin as the resource). Authenticated by the link; a 401 re-reads the
+   * link file once. Never logs a token. */
+  async issueRoutineDelegation(subjectToken: string): Promise<RoutineDelegationIssue> {
+    let link = this.link ?? this.readLink();
+    if (!link) return { ok: false, error: "link" };
+    const bodyFor = (current: PerspicaxLink) => new URLSearchParams({
+      grant_type: TOKEN_EXCHANGE_GRANT,
+      subject_token: subjectToken,
+      subject_token_type: ACCESS_TOKEN_TYPE,
+      requested_token_type: REFRESH_TOKEN_TYPE,
+      scope: ROUTINE_DELEGATION_EXCHANGE_SCOPE,
+      resource: current.origin,
+    }).toString();
+    const call = (current: PerspicaxLink) => this.fetcher(`${this.options.serverBase.replace(/\/+$/, "")}/oauth/token`, {
+      method: "POST",
+      redirect: "error",
+      signal: AbortSignal.timeout(EXCHANGE_TIMEOUT_MS),
+      headers: { accept: "application/json", "content-type": "application/x-www-form-urlencoded", authorization: this.basic(current) },
+      body: bodyFor(current),
+    });
+    let response: Response;
+    try {
+      response = await call(link);
+      if (response.status === 401) {
+        void response.body?.cancel().catch(() => {});
+        const again = this.readLink();
+        if (!again) return { ok: false, error: "link" };
+        link = again;
+        response = await call(link);
+        if (response.status === 401) {
+          void response.body?.cancel().catch(() => {});
+          return { ok: false, error: "link" };
+        }
+      }
+    } catch {
+      return { ok: false, error: "unreachable" };
+    }
+    if (response.status === 429) {
+      const seconds = Number(response.headers.get("retry-after"));
+      void response.body?.cancel().catch(() => {});
+      return { ok: false, error: "rate_limited", ...(Number.isFinite(seconds) && seconds > 0 ? { retryAfterMs: Math.min(seconds, 600) * 1000 } : {}) };
+    }
+    let text: string | null;
+    try {
+      text = await readLimited(response, EXCHANGE_MAX_BYTES);
+    } catch {
+      return { ok: false, error: "unreachable" };
+    }
+    let parsed: Record<string, unknown> = {};
+    try {
+      const value: unknown = text === null ? null : JSON.parse(text);
+      if (value && typeof value === "object" && !Array.isArray(value)) parsed = value as Record<string, unknown>;
+    } catch {
+      /* not JSON */
+    }
+    if (response.status === 400) {
+      if (parsed.error === "invalid_grant") return { ok: false, error: "subject" };
+      // An older Perspicax: only an access token may be requested.
+      if (parsed.error === "invalid_request" || parsed.error === "invalid_scope" || parsed.error === "invalid_target" || parsed.error === "unsupported_grant_type") return { ok: false, error: "unsupported" };
+      return { ok: false, error: "unreachable" };
+    }
+    if (response.status !== 200) return { ok: false, error: "unreachable" };
+    const refreshToken = parsed.refresh_token;
+    const accessToken = parsed.access_token;
+    const valid = (token: unknown): token is string => typeof token === "string" && token.length > 0 && token.length <= 4096 && !/\s/.test(token);
+    if (!valid(refreshToken)) return { ok: false, error: "unsupported" };
+    const scope = typeof parsed.scope === "string" ? parsed.scope.split(" ") : [];
+    if (!scope.includes("pulsabot:routines")) {
+      // A refresh token without the marker is not a delegation: it must not live on.
+      void this.revokeRefresh(refreshToken, link);
+      return { ok: false, error: "unsupported" };
+    }
+    const seconds = typeof parsed.expires_in === "number" && Number.isFinite(parsed.expires_in) && parsed.expires_in > 0 ? parsed.expires_in : 0;
+    return {
+      ok: true,
+      refreshToken,
+      ...(valid(accessToken) && seconds ? { accessToken, accessExpiresAt: this.now() + seconds * 1000 } : {}),
+    };
+  }
+
+  /** Best effort RFC 7009 of a refresh token this server will not keep. */
+  private async revokeRefresh(token: string, link: PerspicaxLink): Promise<void> {
+    try {
+      const response = await this.fetcher(`${this.options.serverBase.replace(/\/+$/, "")}/oauth/revoke`, {
+        method: "POST",
+        redirect: "error",
+        signal: AbortSignal.timeout(EXCHANGE_TIMEOUT_MS),
+        headers: { "content-type": "application/x-www-form-urlencoded", authorization: this.basic(link) },
+        body: new URLSearchParams({ token, token_type_hint: "refresh_token" }).toString(),
+      });
+      void response.body?.cancel().catch(() => {});
+    } catch {
+      /* best effort */
+    }
   }
 
   /** Slice 5 (contract 2): revoke an exchanged token (RFC 7009) with the
