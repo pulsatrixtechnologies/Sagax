@@ -16,7 +16,7 @@ import { rm as removeDirectory } from "node:fs/promises";
 import { hostname, userInfo } from "node:os";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { ToolResults, TOOL_RESULT_MAX_CHARS } from "./tool-results.ts";
-import { extname, join } from "node:path";
+import { extname, join, sep } from "node:path";
 import { authorizeExternalRuntime, externalRuntimeIsActive, type ExternalRuntimeGrant } from "./external-runtime.ts";
 
 import { z } from "zod";
@@ -396,6 +396,7 @@ import {
   memorySourceLabel,
   searchMemoryFiles,
   SESSION_SEARCH_SYSTEM_PROMPT,
+  TASK_WORKSPACES_DIR,
   workspaceDir,
 } from "./workspace.ts";
 import { listMemoryTopics, memoryDate, readMemoryFile, readMemoryTopic, writeMemoryFile, writeMemoryTopic } from "./workspace.ts";
@@ -733,6 +734,7 @@ import { deleteGroupMemory, groupMemoryEnabled, groupMemorySystemPrompt, updateG
 import type { OrgRecord } from "./org-record.ts";
 import { createOidcLoginRoutes, identityConfigFromEnv, identityDescriptor, INTERIM_SIGNIN_REFUSAL, isInterimSignInRoute, MANAGED_PROFILE_REFUSAL, oidcBindingCookie, oidcSessionFields, profileManagement, writesManagedProfile } from "./oidc-login.ts";
 import { OidcRelyingParty } from "./oidc-rp.ts";
+import type { BotAttachment, BotFileRoot } from "./org-admin-files.ts";
 import { createOrgAdminRoutes, type AccessKind, type AdminApproval, type AdminBot, type AdminBotReach, type AdminPerson, type ApprovalAnswer, type ApprovalType, type OrgAdminViewer } from "./org-admin-routes.ts";
 import { RevocationQueue } from "./idp-revocations.ts";
 import { IDP_REFRESH_WAIT_MS, IDP_SWEEP_INTERVAL_MS, IdpGrantVault, IdpSessionManager, refreshAfterMs, resolveIdpVaultKey, settledWithin } from "./idp-session.ts";
@@ -22282,13 +22284,70 @@ function orgAdminBots(): Array<{ bot: AdminBot; reach: AdminBotReach }> {
         createdAt: typeof bot.createdAt === "number" ? bot.createdAt : null,
         lastActivityAt: lastActivity,
       },
-      reach: {
-        ownerPrincipalId: facts.ownerPrincipalId,
-        grantTargets: facts.grants.map((grant) => grant.target),
-        sectionMemberTargets: shared ? shared.members.map((member) => member.target) : [],
-      },
+      reach: orgBotReach(bot),
     };
   });
+}
+
+/** What a manager's reach is checked against for one bot (the bots route
+ * and the files routes of the console's admin API). */
+function orgBotReach(bot: BotRecord): AdminBotReach {
+  const facts = botFacts(bot);
+  const sectionName = sectionKey(bot.section);
+  const record = sectionName && sectionChannels ? sectionChannels.byName(sectionName) : undefined;
+  const shared = record && facts.sections?.length ? record : undefined;
+  return {
+    ownerPrincipalId: facts.ownerPrincipalId,
+    grantTargets: facts.grants.map((grant) => grant.target),
+    sectionMemberTargets: shared ? shared.members.map((member) => member.target) : [],
+  };
+}
+
+/** A path inside this server's data folder (real paths), for the project
+ * folder root of the console's file browser: a working folder elsewhere on
+ * the host is never browsed from Perspicax. */
+function insideDataDir(path: string): boolean {
+  try {
+    const root = realpathSync(DATA_DIR);
+    const real = realpathSync(path);
+    return real === root || real.startsWith(root.endsWith(sep) ? root : root + sep);
+  } catch {
+    return false;
+  }
+}
+
+/** The roots of a bot's files for the console's file browser
+ * (server/org-admin-files.ts); never a path on the wire. */
+function orgBotFileRoots(bot: BotRecord): BotFileRoot[] {
+  const folder = (id: "workspace" | "tasks", dir: string): BotFileRoot => existsSync(dir) ? { id, kind: "folder", dir } : { id, kind: "unavailable", reason: "not_created" };
+  const project: BotFileRoot = !bot.cwd
+    ? { id: "project", kind: "unavailable", reason: "not_set" }
+    : !existsSync(bot.cwd)
+      ? { id: "project", kind: "unavailable", reason: "not_created" }
+      : insideDataDir(bot.cwd) ? { id: "project", kind: "folder", dir: bot.cwd } : { id: "project", kind: "unavailable", reason: "outside_server_data" };
+  return [
+    folder("workspace", workspaceDir(bot.id)),
+    folder("tasks", join(TASK_WORKSPACES_DIR, bot.id)),
+    project,
+    { id: "attachments", kind: "attachments", dir: ATTACHMENTS_DIR },
+    { id: "sandbox", kind: "unavailable", reason: "person_environment" },
+    { id: "desktop", kind: "unavailable", reason: "own_computer" },
+  ];
+}
+
+/** The uploads and attach_file outputs of every conversation of a bot. */
+async function orgBotAttachments(bot: BotRecord): Promise<BotAttachment[]> {
+  const threads = [...new Set([bot.threadId, ...store.tasks(bot.id).map((task) => task.threadId)])];
+  const out: BotAttachment[] = [];
+  for (const threadId of threads) {
+    const refs = threadFileRefsFor(threadId).filter((ref) => ref.source === "upload" || ref.source === "attachment");
+    if (!refs.length) continue;
+    const files = await listThreadFiles(refs, (ref) => statMessageFile(ref.path, threadFileRoots(threadId, ref))).catch(() => []);
+    for (const file of files) {
+      if (file.available && file.localPath) out.push({ id: file.id, name: file.name, at: file.at, localPath: file.localPath });
+    }
+  }
+  return out;
 }
 
 /** Slice 7: the console's admin API (server/org-admin-routes.ts), answered
@@ -22316,6 +22375,30 @@ const orgAdmin = createOrgAdminRoutes({
   approvalsFor: (viewer) => pendingApprovalsFor(viewer),
   answer: answerCardFromConsole,
   audit: (input) => readOrgAuditPage(DATA_DIR, input),
+  // The console's file browser (Perspicax 2026-10-08, slice 1: read only).
+  files: {
+    reach: (botId) => {
+      const bot = store.bot(botId);
+      return bot ? orgBotReach(bot) : null;
+    },
+    botFiles: (botId) => {
+      const bot = store.bot(botId);
+      return bot ? { name: bot.name, roots: orgBotFileRoots(bot) } : null;
+    },
+    attachments: async (botId) => {
+      const bot = store.bot(botId);
+      return bot ? orgBotAttachments(bot) : [];
+    },
+    record: (principalId, entry) => {
+      appendAdminAction(DATA_DIR, {
+        category: "bot",
+        action: entry.action,
+        target: { kind: "bot", id: entry.botId, name: entry.botName },
+        after: { root: entry.root, path: entry.path, bytes: entry.bytes },
+        actor: { kind: "person", principalId, via: "console" },
+      });
+    },
+  },
 });
 ROUTES.push(createDeciderRoutes({ decider }));
 ROUTES.push(createAntigravityLeftoverRoutes({
@@ -31247,7 +31330,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         guardedMessages: 1, guardedRequests: 1, guardedFullAccess: 1, guardedOnBehalfOf: 1,
         ...(sharedWorkspaceFullAccessEnabled() ? { sharedWorkspaceFullAccess: 1 } : {}),
         // Slice 7: /api/org/admin/* answers the Perspicax console.
-        ...(IDENTITY.kind === "perspicax" ? { orgAdminApi: 1 } : {}),
+        ...(IDENTITY.kind === "perspicax" ? { orgAdminApi: 1, orgAdminFiles: 1 } : {}),
       };
       if (detail === "app") return json(res, 200, { ...HEALTH_IDENTITY });
       if (detail === "capabilities") return json(res, 200, { ...HEALTH_IDENTITY, capabilities });
