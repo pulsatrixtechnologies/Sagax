@@ -160,6 +160,19 @@ export class UserSandboxManager {
     return this.status(principalId);
   }
 
+  /** The person is on a voice call (its heartbeat): count it as use of
+   * their environment, so the provisioner's idle stop never takes it away
+   * mid-call. Best effort; starts nothing, and never for a person signed out. */
+  async markUsed(principalId: string): Promise<boolean> {
+    if (this.pending.has(principalId)) return false;
+    try {
+      await this.options.client.markUsed(this.keyFor(principalId));
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   /** Commands in flight in the person's environment right now. */
   async busy(principalId: string): Promise<number> {
     try { return (await this.options.client.status(this.keyFor(principalId))).busy; } catch { return 0; }

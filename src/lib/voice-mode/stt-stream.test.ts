@@ -103,3 +103,33 @@ describe("LiveTranscriber finalize", () => {
     expect(await transcriber.finishHeard()).toEqual({ text: "call Max", confidence: 0.3 });
   });
 });
+
+describe("a final chunk xAI sends again", () => {
+  it("a chunk already closed and resent after the finalize is kept once (never the sentence twice)", async () => {
+    const { socket, transcriber, speak } = await ears();
+    const partials: string[] = [];
+    transcriber.onPartial((text) => partials.push(text));
+    socket.onFinalize = (s) => setTimeout(() => s.transcript("Yeah, but I always thought it.", true, true), 2);
+    speak();
+    socket.transcript("Yeah, but I always thought it.", true, false);
+    expect((await transcriber.finishHeard()).text).toBe("Yeah, but I always thought it.");
+    expect(partials.every((text) => text === "Yeah, but I always thought it.")).toBe(true);
+  });
+
+  it("the whole utterance resent as one chunk is not appended to itself", async () => {
+    const { socket, transcriber, speak } = await ears();
+    socket.onFinalize = (s) => setTimeout(() => s.transcript("call Max about the invoice", true, true), 2);
+    speak();
+    socket.transcript("call Max", true, false);
+    socket.transcript("about the invoice", true, false);
+    expect((await transcriber.finishHeard()).text).toBe("call Max about the invoice");
+  });
+
+  it("the person's own short repeat stays ('no, no')", async () => {
+    const { socket, transcriber, speak } = await ears();
+    socket.onFinalize = (s) => setTimeout(() => s.transcript("no, no", true, true), 2);
+    speak();
+    socket.transcript("no, no", true, false);
+    expect((await transcriber.finishHeard()).text).toBe("no, no no, no");
+  });
+});

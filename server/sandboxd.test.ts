@@ -98,6 +98,7 @@ describe("sandboxd authorization", () => {
     expect(docker.execs[0]!.exec.User).toBe("1000:1000");
     expect(docker.execs[0]!.exec.Cmd.slice(0, 4)).toEqual(["timeout", "-k", "2", "120"]);
     await expect(client.exec(sandboxKey, { argv: ["true"], env: { PATH: "/evil" } })).rejects.toBeInstanceOf(SandboxdRequestError);
+    expect((await client.markUsed(sandboxKey)).state).toBe("running");
     expect((await client.remove(sandboxKey)).state).toBe("missing");
   });
 

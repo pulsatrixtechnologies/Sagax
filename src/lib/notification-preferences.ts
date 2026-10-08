@@ -74,3 +74,50 @@ export function setNotificationSounds(enabled: boolean): void {
 export function useNotificationSounds(): boolean {
   return useSyncExternalStore(subscribe, notificationSoundsEnabled, () => true);
 }
+
+// Nudge sound: whether a RECEIVED nudge plays its sound on THIS computer.
+// Same storage rules as the notification sounds above; on by default.
+export const NUDGE_SOUND_KEY = "omb-nudge-sound";
+let nudgeSessionChoice: boolean | undefined;
+
+export function nudgeSoundEnabled(): boolean {
+  if (nudgeSessionChoice !== undefined) return nudgeSessionChoice;
+  try {
+    return storage()?.getItem(NUDGE_SOUND_KEY) !== "0";
+  } catch {
+    return true;
+  }
+}
+
+function onNudgeStorage(event: StorageEvent) {
+  if (event.key !== NUDGE_SOUND_KEY && event.key !== null) return;
+  if (event.storageArea && event.storageArea !== storage()) return;
+  nudgeSessionChoice = undefined;
+  notify();
+}
+
+function subscribeNudge(listener: () => void): () => void {
+  listeners.add(listener);
+  if (typeof window !== "undefined") window.addEventListener("storage", onNudgeStorage);
+  return () => {
+    listeners.delete(listener);
+    if (typeof window !== "undefined") window.removeEventListener("storage", onNudgeStorage);
+  };
+}
+
+export function setNudgeSound(enabled: boolean): void {
+  nudgeSessionChoice = enabled;
+  try {
+    const local = storage();
+    const value = enabled ? "1" : "0";
+    local?.setItem(NUDGE_SOUND_KEY, value);
+    if (local?.getItem(NUDGE_SOUND_KEY) === value) nudgeSessionChoice = undefined;
+  } catch {
+    // The visible setting still changes for this session when storage is full.
+  }
+  notify();
+}
+
+export function useNudgeSound(): boolean {
+  return useSyncExternalStore(subscribeNudge, nudgeSoundEnabled, () => true);
+}
