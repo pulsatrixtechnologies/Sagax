@@ -119,6 +119,24 @@ export function spokenLines(messages: readonly Message[]): SpokenLine[] {
   return lines;
 }
 
+/** The live call bar's bubbles (the last `limit` text lines of the call),
+ * by the card's rule: a `continues` turn is the whole sentence, so it takes
+ * the place of the fragment sent just before it. Without it, a turn sent
+ * early on its stable words and sent again whole showed twice: the fragment's
+ * bubble, then the whole sentence repeating it. */
+export function callBarLines(messages: readonly Message[], limit = 8): Message[] {
+  const lines: Message[] = [];
+  for (const message of messages) {
+    if (message.kind !== "text" || !message.text?.trim()) continue;
+    if (message.role === "user" && message.voiceCall?.continues && lines.at(-1)?.role === "user") {
+      lines[lines.length - 1] = message;
+      continue;
+    }
+    lines.push(message);
+  }
+  return lines.slice(-limit);
+}
+
 /** m:ss, minutes padded (`00:34`). An hour or more is h:mm:ss. */
 export function formatVoiceCallDuration(ms: number): string {
   const total = Math.max(0, Math.round(ms / 1000));

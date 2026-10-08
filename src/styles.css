@@ -129,6 +129,8 @@
   --animate-msg-in: msg-in 0.18s cubic-bezier(0.22, 1, 0.36, 1);
   --animate-call-dock-in: call-dock-in 0.22s cubic-bezier(0.22, 1, 0.36, 1);
   --animate-call-dock-out: call-dock-out 0.18s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  --animate-card-fade-in: card-fade-in 0.2s cubic-bezier(0.22, 1, 0.36, 1) both;
+  --animate-card-fade-out: card-fade-out 0.2s cubic-bezier(0.22, 1, 0.36, 1) forwards;
   --animate-shimmer: shimmer 2s linear infinite;
   --animate-status-pulse: status-pulse 1.6s steps(2, jump-none) infinite;
   /* onboarding: a block of copy or a row arriving in a beat; `.stagger`
@@ -1660,6 +1662,16 @@ body {
   from { height: var(--call-dock-h); margin-bottom: 8px; opacity: 1; }
   to { height: 0; margin-bottom: 0; opacity: 0; }
 }
+/* the call pill's card: Settings and Transcript cross-fade in place while
+   the card goes from one height to the other (VoiceModeBar.tsx) */
+@keyframes card-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes card-fade-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
 /* streaming caret: a true typing blink (step, not fade) */
 @keyframes caret-blink {
   0%, 100% { opacity: 1; }
@@ -1772,7 +1784,7 @@ body {
   color: transparent;
 }
 @media (prefers-reduced-motion: reduce) {
-  .animate-caret, .animate-msg-in, .animate-shimmer, .animate-pop-in, .animate-pop-out, .animate-call-dock-in { animation: none; }
+  .animate-caret, .animate-msg-in, .animate-shimmer, .animate-pop-in, .animate-pop-out, .animate-call-dock-in, .animate-card-fade-in, .animate-card-fade-out { animation: none; }
   .animate-status-pulse { animation: none; opacity: 0.6; }
   .thinking-shimmer { background: none; color: var(--color-ink-secondary); }
   .turn-mascot-in, .turn-mascot-out, .turn-answer { animation: none; }
@@ -1797,6 +1809,8 @@ html[data-animations-paused] *::after {
 :root[data-reduced-motion="true"] .animate-pop-in,
 :root[data-reduced-motion="true"] .animate-pop-out,
 :root[data-reduced-motion="true"] .animate-call-dock-in,
+:root[data-reduced-motion="true"] .animate-card-fade-in,
+:root[data-reduced-motion="true"] .animate-card-fade-out,
 :root[data-reduced-motion="true"] .welcome-card * {
   animation: none !important;
   transition: none !important;

@@ -9,6 +9,7 @@
 // (POST /voice/transcribe), the call keeps working.
 import { encodeWav, TARGET_RATE, toPcm16 } from "./audio";
 import { transcribeVoiceMode, voiceModeListenUrl } from "./api";
+import { normalizedWords } from "./latency";
 
 export interface LiveTranscriberOptions {
   botId: string;
@@ -32,6 +33,8 @@ interface Utterance {
   ended: boolean;
   /** the lowest confidence xAI gave a final chunk of it, when it gives one */
   confidence?: number;
+  /** the last final chunk kept (a resend of it is not new words) */
+  lastChunk?: string;
   resolve?: (words: Heard) => void;
   timer?: ReturnType<typeof setTimeout>;
 }
@@ -43,6 +46,19 @@ export interface Heard {
 }
 
 type Frame = { type: "ready" } | { type: "transcript"; text: string; final: boolean; speechFinal: boolean; confidence?: number } | { type: "error"; message: string };
+
+/** After a finalize xAI can send again a final chunk it had already closed
+ * (then the rest). Appended, that resend doubled the sentence ("Yeah, but I
+ * always thought it. Yeah, but I always thought it."), and the turn sent
+ * early on its stable words was then sent again as the doubled text. A
+ * final chunk of three words or more that repeats the last chunk kept, or the
+ * whole utterance so far, is that resend; a short one ("no, no") is the
+ * person's own words. */
+export function resentChunk(utterance: { text: string; lastChunk?: string }, chunk: string): boolean {
+  const words = normalizedWords(chunk).join(" ");
+  if (words.split(" ").length < 3 || !utterance.text.trim()) return false;
+  return words === normalizedWords(utterance.lastChunk ?? "").join(" ") || words === normalizedWords(utterance.text).join(" ");
+}
 
 export class LiveTranscriber {
   private socket: WebSocket | null = null;
@@ -242,7 +258,8 @@ export class LiveTranscriber {
       if (!utterance.discard) for (const fn of Array.from(this.partialWatchers)) fn(`${utterance.text} ${frame.text}`.trim());
       return;
     }
-    if (frame.text.trim()) {
+    if (frame.text.trim() && !resentChunk(utterance, frame.text)) {
+      utterance.lastChunk = frame.text.trim();
       utterance.text = `${utterance.text} ${frame.text.trim()}`.trim();
       if (typeof frame.confidence === "number") utterance.confidence = Math.min(utterance.confidence ?? 1, frame.confidence);
     }

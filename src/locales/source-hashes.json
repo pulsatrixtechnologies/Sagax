@@ -6535,6 +6535,7 @@
       "voiceMode.call.forget": "7e3a992acce8320eb34706e991f52e2817d32ff60fa6f36310f7706ef889b96e",
       "voiceMode.call.earcons": "bd2597c633c6141c42af1a777acb8c921e91867a33969a9f58aefc5d71fb5982",
       "voiceMode.call.thinkingCue": "398de6b7811c9c559ef7f6f039cbda7d09385a489e1a6dc757d025d831c8346c",
+      "voiceMode.call.advanced": "9f088dbebd6c3c70a5ddbc2c943b11e4ca9acea5757b0b4f2b32479f0dbb747e",
       "voiceMode.call.latency": "9b9fc68c1456b6bc0d0418d6afdcb4192eff130e92fc97ec418338ecf8e5f12f",
       "voiceMode.call.voiceIsolation": "7939f77577fe06c317c82f5aa320c03706c7b2929e3c35a0c03615390850250f",
       "place.cloudOrg": "fb1927092ea27067b3e961bf0ddcb5e5538250f9794bd1ebeb85411ec0df3768",
@@ -13054,7 +13055,8 @@
       "seen.someone": "864c855e3d64399dc06fa30ebb75526c2c2e73db7216b16a3d4cf03e8a52ec3b",
       "settings.section.privacy": "54a57c3147c49f33de5898b87084ad2b14c4ab308f762454bf92aca907478ad5",
       "settings.privacy.readReceipts.title": "b037590d42808754244f7cc7ebe552758f05ff0035220726c0fe345bd9cd4953",
-      "settings.privacy.readReceipts.subtitle": "48961f606dfc7a5e02b2138f1e0b3294b63bb614176860157111b48f7953356b"
+      "settings.privacy.readReceipts.subtitle": "48961f606dfc7a5e02b2138f1e0b3294b63bb614176860157111b48f7953356b",
+      "voiceMode.call.advanced": "9f088dbebd6c3c70a5ddbc2c943b11e4ca9acea5757b0b4f2b32479f0dbb747e"
     },
     "uk": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",

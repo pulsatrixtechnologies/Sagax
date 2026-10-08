@@ -1933,5 +1933,6 @@
   "seen.someone": "Alguém",
   "settings.section.privacy": "Privacidade",
   "settings.privacy.readReceipts.title": "Enviar confirmações de leitura",
-  "settings.privacy.readReceipts.subtitle": "Em conversas com outras pessoas, mostre quando você leu as mensagens delas. Desativado, você também não vê as delas. Grupos e bots sempre mostram quem viu uma mensagem."
+  "settings.privacy.readReceipts.subtitle": "Em conversas com outras pessoas, mostre quando você leu as mensagens delas. Desativado, você também não vê as delas. Grupos e bots sempre mostram quem viu uma mensagem.",
+  "voiceMode.call.advanced": "Avançado"
 }

@@ -298,7 +298,7 @@ export function VoiceCallDock({ bot }: { bot: Bot }) {
   }, [live]);
   if (live) {
     return (
-      <div ref={dock} className="animate-call-dock-in relative z-20 mb-2 h-12 px-3" data-voice-call-dock>
+      <div ref={dock} className="animate-call-dock-in relative z-20 mb-2 h-16 px-3" data-voice-call-dock>
         <div className="pointer-events-none absolute inset-x-3 top-0">
           <LiveCall bot={bot} />
         </div>

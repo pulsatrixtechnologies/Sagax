@@ -24,6 +24,7 @@ import type { CallState } from "@/lib/voice-mode/call-machine";
 import { readVoiceModeSettings } from "@/lib/voice-mode/settings";
 import { publishLiveCall, retractLiveCall, useLiveCall, type LiveCallData, type LiveCallMetrics } from "@/lib/voice-mode/live-call-store";
 import { noteVoiceCallEnded, noteVoiceCallRunning } from "@/lib/voice-call-clock";
+import { callBarLines } from "@/lib/voice-call-transcript";
 import { t } from "@/lib/i18n";
 import { isRoutineApproval, isSkillApproval, pendingApprovals, spokenApprovalPrompt } from "../PendingApproval";
 import { VoiceModeBar, type VoiceAccessCard } from "./VoiceModeBar";
@@ -307,7 +308,7 @@ export function LiveCallEngine({ bot }: { bot: Bot }) {
 
   // ── what every surface shows ─────────────────────────────────────────
   const [startedAt] = useState(() => Date.now());
-  const lines = messages.filter((m) => m.kind === "text" && m.text?.trim()).slice(-8);
+  const lines = callBarLines(messages);
   const transcriptKey = lines.map((m) => `${m.id}:${m.text!.length}:${interrupted.has(m.id) ? 1 : 0}:${unheard.get(m.id)?.length ?? 0}`).join("|");
   const transcript = useMemo(
     () => lines.map((m) => ({

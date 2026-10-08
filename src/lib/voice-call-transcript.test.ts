@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { Message } from "@/state/store";
 import type { CollapsedItem } from "@/lib/bot-exchange";
 import {
+  callBarLines,
   foldCollapsedEntry,
   foldVoiceMessage,
   formatVoiceCallDuration,
@@ -101,5 +102,35 @@ describe("voice call transcript", () => {
     const pieces = foldCollapsedEntry(entry, plan, seen);
     expect(pieces.map((piece) => piece.kind)).toEqual(["card"]);
     if (pieces[0]?.kind === "card") expect(pieces[0].card.messages.map((message) => message.id)).toEqual(["u", "b"]);
+  });
+});
+
+describe("the live call bar's bubbles", () => {
+  it("a turn sent early on its stable words, then whole (continues), is one bubble: never the fragment, then the fragment again inside the whole", () => {
+    const messages = [
+      line("b0", "bot", "Go on.", 1_000),
+      line("u1", "user", "Yeah, but I always thought it.", 2_000, { voiceCall: { callId: "c", utteranceId: "x1" } }),
+      line("u2", "user", "Yeah, but I always thought it was free.", 3_000, { voiceCall: { callId: "c", utteranceId: "x2", continues: true } }),
+      line("b1", "bot", "It is not.", 4_000),
+    ];
+    expect(callBarLines(messages).map((m) => m.text)).toEqual(["Go on.", "Yeah, but I always thought it was free.", "It is not."]);
+    expect(callBarLines(messages).map((m) => m.id)).toEqual(["b0", "u2", "b1"]);
+  });
+
+  it("matches the thread card's lines (spokenLines) and keeps the last eight", () => {
+    const messages = Array.from({ length: 12 }, (_, i) => line(`m${i}`, i % 2 ? "bot" : "user", `line ${i}`, i));
+    expect(callBarLines(messages).map((m) => m.id)).toEqual(spokenLines(messages).slice(-8).map((l) => l.id));
+    expect(callBarLines(messages)).toHaveLength(8);
+  });
+
+  it("a continues turn after a bot line is a bubble of its own; activity rows and empty text never show", () => {
+    const messages = [
+      line("u1", "user", "first", 1),
+      line("b1", "bot", "answer", 2),
+      line("u2", "user", "more", 3, { voiceCall: { callId: "c", continues: true } }),
+      { id: "a", role: "bot", kind: "activity", text: "tool", at: 4 } as Message,
+      line("e", "bot", "  ", 5),
+    ];
+    expect(callBarLines(messages).map((m) => m.id)).toEqual(["u1", "b1", "u2"]);
   });
 });

@@ -1,10 +1,14 @@
-// The voice bar's settings (the gear): Voice, Speed and Language, then the
-// call's own settings on this computer (hands-free or push to talk, "Only my
-// voice" with its enrollment, call sounds). Stateless:
-// the bar holds which list is open and what the voices are, so this draws
-// the same thing for the same props and the tests can read it directly.
+// The voice bar's settings (the gear): Voice, Speed and Language, then an
+// Advanced zone, closed by default and remembered with the call's settings,
+// that holds the rest of the call's own settings on this computer (hands-free
+// or push to talk, end of turn, "Only my voice" with its enrollment, call
+// sounds, the soft tone). Stateless and hook-free: the bar holds which list is
+// open and what the voices are, so this draws the same thing for the same
+// props and the tests can read it directly. The Advanced zone opens with a
+// height motion done in CSS (grid rows 0fr to 1fr), so it needs no
+// measuring here and its content never reflows.
 import type { ReactNode } from "react";
-import { Check, ChevronDown, Loader2, Play, Square } from "lucide-react";
+import { Check, ChevronDown, ChevronRight, Loader2, Play, Square } from "lucide-react";
 
 import { CALL_PAUSES, type CallSettings } from "@/lib/voice-mode/call-settings";
 import { LATENCY_STAGES, type LatencyStage } from "@/lib/voice-mode/latency";
@@ -13,6 +17,7 @@ import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
 import type { VoiceOption } from "@/lib/voice-mode/api";
 import { languageLabel, speedLabel } from "@/lib/voice-mode/settings";
+import { SwitchRow } from "../SettingsPrimitives";
 import { VOICE_MODE_LANGUAGES, VOICE_MODE_SPEEDS, type VoiceModeSettings } from "../../../shared/voice-mode";
 
 export type VoiceModeList = "voice" | "speed" | "language";
@@ -41,12 +46,12 @@ export interface VoiceModeSettingsPanelProps {
   latency?: Partial<Record<LatencyStage | "total", number>> | null;
 }
 
-function Toggle({ label, checked, onChange, data }: { label: string; checked: boolean; onChange(next: boolean): void; data: string }) {
+/** An on/off row: the app's standard switch (SettingsPrimitives). */
+function Toggle({ label, description, checked, onChange, data }: { label: string; description?: string; checked: boolean; onChange(next: boolean): void; data: string }) {
   return (
-    <label className="flex cursor-pointer items-center justify-between gap-3 py-1.5">
-      <span className="text-[13px] text-ink-secondary">{label}</span>
-      <input type="checkbox" role="switch" checked={checked} onChange={(event) => onChange(event.target.checked)} data-voice-toggle={data} className="size-4 accent-[var(--color-accent)]" />
-    </label>
+    <div className="py-1.5" data-voice-toggle={data}>
+      <SwitchRow label={label} description={description} checked={checked} onChange={onChange} className="text-ink-secondary" />
+    </div>
   );
 }
 
@@ -54,7 +59,7 @@ function CallSection({ call, enrollment, onCallChange, onEnroll, onForget }: Req
   const recording = enrollment.state === "recording";
   const mac = typeof navigator !== "undefined" && /Mac/i.test(navigator.platform || navigator.userAgent);
   return (
-    <div className="mt-1 border-t border-hairline/50 pt-1.5" data-voice-call-settings>
+    <div className="pt-0.5" data-voice-call-settings>
       <div className="flex items-center justify-between gap-3 py-1.5">
         <span className="text-[13px] text-ink-secondary">{t("voiceMode.call.input")}</span>
         <div className="flex rounded-lg bg-raised p-0.5 text-[12.5px]" role="radiogroup" aria-label={t("voiceMode.call.input")}>
@@ -92,11 +97,10 @@ function CallSection({ call, enrollment, onCallChange, onEnroll, onForget }: Req
         </div>
       </div>
       <p className="pb-1 text-[11.5px] leading-snug text-ink-tertiary">{t("voiceMode.call.pauseHelp")}</p>
-      <Toggle label={t("voiceMode.call.onlyMyVoice")} checked={call.onlyMyVoice && enrollment.state === "enrolled"} data="only-my-voice" onChange={(onlyMyVoice) => {
+      <Toggle label={t("voiceMode.call.onlyMyVoice")} description={t("voiceMode.call.onlyMyVoiceHelp")} checked={call.onlyMyVoice && enrollment.state === "enrolled"} data="only-my-voice" onChange={(onlyMyVoice) => {
         if (onlyMyVoice && enrollment.state !== "enrolled") onEnroll();
         else onCallChange({ onlyMyVoice });
       }} />
-      <p className="pb-1 text-[11.5px] leading-snug text-ink-tertiary">{t("voiceMode.call.onlyMyVoiceHelp")}</p>
       <div className="flex flex-wrap items-center gap-2 pb-1.5" data-voice-enrollment={enrollment.state}>
         {recording ? (
           <div className="flex w-full flex-col gap-1">
@@ -136,6 +140,39 @@ function LatencyLine({ latency }: { latency: NonNullable<VoiceModeSettingsPanelP
       <code className="block break-words pb-1 text-[11px] leading-snug text-ink-tertiary">
         {stages.map((stage) => `${stage} ${latency[stage]}`).join(" \u00b7 ")}
       </code>
+    </div>
+  );
+}
+
+/** The Advanced zone: a disclosure row, then its rows growing out of it.
+ * Closed, the rows stay laid out at their width (no reflow when it opens)
+ * but are inert and hidden from assistive technology. */
+function Advanced({ open, onToggle, children }: { open: boolean; onToggle(): void; children: ReactNode }) {
+  const id = "voice-call-advanced";
+  return (
+    <div className="mt-1 border-t border-hairline/50 pt-1" data-voice-advanced={open ? "open" : "closed"}>
+      <button
+        type="button"
+        aria-expanded={open}
+        aria-controls={id}
+        data-voice-advanced-toggle
+        onClick={onToggle}
+        className="flex w-full items-center justify-between gap-3 rounded-lg py-1.5 text-left text-[13px] text-ink-secondary hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+      >
+        <span>{t("voiceMode.call.advanced")}</span>
+        <ChevronRight size={14} className={cn("shrink-0 transition-transform duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none", open && "rotate-90")} />
+      </button>
+      <div
+        id={id}
+        className={cn(
+          "grid transition-[grid-template-rows,opacity] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none",
+          open ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0",
+        )}
+        data-voice-advanced-body
+        {...(open ? {} : { inert: true, "aria-hidden": true })}
+      >
+        <div className="min-h-0 overflow-hidden">{children}</div>
+      </div>
     </div>
   );
 }
@@ -236,11 +273,13 @@ export function VoiceModeSettingsPanel(props: VoiceModeSettingsPanelProps) {
           ))}
         </ul>
       )}
-      {call && enrollment && onCallChange && onEnroll && onForget && (
-        <CallSection call={call} enrollment={enrollment} onCallChange={onCallChange} onEnroll={onEnroll} onForget={onForget} />
-      )}
-      {props.latency && (
-        <LatencyLine latency={props.latency} />
+      {call && enrollment && onCallChange && onEnroll && onForget ? (
+        <Advanced open={call.advancedOpen} onToggle={() => onCallChange({ advancedOpen: !call.advancedOpen })}>
+          <CallSection call={call} enrollment={enrollment} onCallChange={onCallChange} onEnroll={onEnroll} onForget={onForget} />
+          {props.latency && <LatencyLine latency={props.latency} />}
+        </Advanced>
+      ) : (
+        props.latency && <LatencyLine latency={props.latency} />
       )}
     </div>
   );

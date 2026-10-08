@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 
 vi.hoisted(() => {
@@ -38,5 +39,26 @@ describe("the call's states, as on a phone", () => {
     expect(formatCallTime(9_999)).toBe("0:09");
     expect(formatCallTime(83_000)).toBe("1:23");
     expect(formatCallTime(3_723_000)).toBe("1:02:03");
+  });
+});
+
+describe("the bar's transcript and its card motion", () => {
+  const live = readFileSync(new URL("./LiveCall.tsx", import.meta.url), "utf8");
+  const bar = readFileSync(new URL("./VoiceModeBar.tsx", import.meta.url), "utf8");
+
+  it("draws the call's lines by the card's rule: a turn sent again whole replaces its early fragment (no duplicate bubble)", () => {
+    expect(live).toContain("const lines = callBarLines(messages);");
+    expect(live).not.toMatch(/messages\.filter\(\(m\) => m\.kind === "text" && m\.text\?\.trim\(\)\)\.slice\(-8\)/);
+  });
+
+  it("closing keeps drawing the panel it had while the card folds, out of reach; a card that closes under reduced motion goes at once", () => {
+    expect(bar).toMatch(/if \(cardKey !== null\) heldPanel\.current = panel;/);
+    expect(bar).toContain("{...cardMotion.exitProps}");
+    // the leaving picture of a cross-fade is never drawn when motion is reduced
+    expect(bar).toContain("!reducedMotion() ? lastPanel : null");
+  });
+
+  it("the card's content keeps its width while its clip animates: the scroller is inside the measured card, the measured card inside the shell", () => {
+    expect(bar).toMatch(/<div ref=\{shell\}[^>]*data-voice-card-motion[^>]*>\s*<div ref=\{card\}[^>]*data-voice-card>\s*<div ref=\{scroller\}/);
   });
 });

@@ -67,23 +67,39 @@ describe("the voice call pill", () => {
     expect(render("speaking", {}, true)).toMatch(/data-voice-status[^>]*>Muted</);
   });
 
-  it("collapsed: a compact centered rounded pill, the End button red", () => {
+  it("collapsed: a centered rounded pill of the reference's size (64px row, 12px padding, 40px avatar and buttons, 18px icons), the End button red", () => {
     const html = render("listening");
     const pill = classOf(html, "data-voice-pill");
-    expect(pill).toContain("rounded-full");
+    // a pill: every corner is half the 64px row
+    expect(pill).toContain("rounded-t-[32px]");
+    expect(pill).toContain("rounded-b-[32px]");
     expect(pill).toContain("mx-auto");
     expect(pill).toContain("max-w-[420px]");
     expect(pill).toContain("@container/callpill");
-    expect(classOf(html, "data-voice-pill-row")).toContain("h-12");
+    const row = classOf(html, "data-voice-pill-row");
+    expect(row).toContain("h-16");
+    expect(row).toContain("px-3");
+    expect(row).toContain("gap-2");
+    expect(html).toMatch(/data-voice-avatar[^>]*><span[^>]*style="width:40px;height:40px/);
+    for (const control of ["data-voice-gear", "data-voice-transcript-toggle", "data-voice-mute", "data-voice-end"]) {
+      const button = new RegExp(`<button[^>]*\\b${control}(?![\\w-])[^>]*>(<svg[^>]*>)`).exec(html);
+      expect(classOf(html, control), control).toContain("size-10");
+      expect(button?.[1], control).toMatch(/width="18" height="18"/);
+    }
     expect(classOf(html, "data-voice-end")).toContain("bg-danger");
-    expect(html).toContain("<canvas");
+    // the waveform: 4px dots, 32px tall
+    expect(html).toMatch(/<canvas class="block h-8 w-full text-ink"/);
+    const source = readFileSync(new URL("./VoiceModeBar.tsx", import.meta.url), "utf8");
+    expect(source).toContain("const RADIUS = 2; // a dot is 4px wide");
+    expect(source).toMatch(/context\.arc\(offset \+ i \* COLUMN, middle \+ row \* ROW, RADIUS,/);
   });
 
   it("narrow: the waveform gives way first, the controls never shrink", () => {
     const html = render("speaking");
     const wave = classOf(html, "data-voice-waveform");
     expect(wave).toMatch(/(^| )hidden( |$)/);
-    expect(wave).toContain("@[17.5rem]/callpill:block");
+    // 4 round 40px controls, the 40px avatar, gaps and padding take 264px
+    expect(wave).toContain("@[21rem]/callpill:block");
     expect(wave).toContain("min-w-0");
     expect(wave).toContain("flex-1");
     expect(classOf(html, "data-voice-controls")).toContain("shrink-0");
@@ -97,7 +113,8 @@ describe("the voice call pill", () => {
     expect(html).toContain('data-voice-panel="alert"');
     expect(html.indexOf("data-voice-controls")).toBeLessThan(html.indexOf("data-voice-card"));
     expect(classOf(html, "data-voice-callbar-panels")).toMatch(/max-h-\[min\(55vh,360px\)\].*overflow-y-auto/);
-    expect(classOf(html, "data-voice-pill")).toContain("rounded-[22px]");
+    expect(classOf(html, "data-voice-pill")).toContain("rounded-b-[22px]");
+    expect(classOf(html, "data-voice-pill")).toContain("rounded-t-[32px]");
   });
 });
 
@@ -110,7 +127,7 @@ describe("the pill's expanded card", () => {
   it("transcript: the person's lines on the right, the bot's on the left, the button active, timer and state in the header", () => {
     const html = render("listening", { transcript, defaultPanel: "transcript" });
     expect(html).toContain('data-voice-panel="transcript"');
-    expect(classOf(html, "data-voice-pill")).toContain("rounded-[22px]");
+    expect(classOf(html, "data-voice-pill")).toContain("rounded-b-[22px]");
     expect(html).toMatch(/aria-expanded="true"[^>]*data-voice-transcript-toggle/);
     expect(classOf(html, "data-voice-transcript-toggle")).toContain("bg-ink");
     expect(html).toMatch(/data-voice-line="you"[^>]*>Testing testing testing</);
@@ -153,6 +170,58 @@ describe("the pill's expanded card", () => {
   });
 });
 
+describe("the card's motion", () => {
+  const source = readFileSync(new URL("./VoiceModeBar.tsx", import.meta.url), "utf8");
+  const motion = readFileSync(new URL("../MenuMotion.tsx", import.meta.url), "utf8");
+
+  it("the card sits in a clipping shell under the row that animates height and opacity like the menus (200 ms, same easing, none when motion is reduced)", () => {
+    const html = render("listening", { defaultPanel: "transcript", transcript: [{ id: "1", who: "you", text: "Hi" }] });
+    const shell = classOf(html, "data-voice-card-motion");
+    expect(shell).toContain("overflow-hidden");
+    expect(shell).toContain("transition-[height,opacity]");
+    expect(shell).toContain("duration-200");
+    expect(shell).toContain("ease-[cubic-bezier(0.22,1,0.36,1)]");
+    expect(shell).toContain("motion-reduce:transition-none");
+    expect(motion).toMatch(/export const MENU_MOTION_MS = 200;/);
+    // shell, then the card, then its scroller: the row is outside it and never moves
+    const order = ["data-voice-pill-row", "data-voice-card-motion", "data-voice-card=", "data-voice-callbar-panels", 'data-voice-card-body="transcript"'].map((a) => html.indexOf(a));
+    expect(order.every((index) => index > 0), String(order)).toBe(true);
+    expect(order).toEqual([...order].sort((a, b) => a - b));
+    // the pill's corners move only between finite radii, with the card
+    const pill = classOf(html, "data-voice-pill");
+    expect(pill).toContain("transition-[border-radius]");
+    expect(pill).toContain("duration-200");
+    expect(pill).toContain("ease-[cubic-bezier(0.22,1,0.36,1)]");
+    expect(pill).not.toContain("rounded-full");
+  });
+
+  it("measures the final height once, reveals it, then releases it; the transcript is on its last line before it shows", () => {
+    expect(source).toContain('useHeightReveal(expanded, shell, card, cardKey, panel === "transcript" ? toLastLine : toTop)');
+    // the reveal measures the content (never the clipping shell), and releases the height afterwards
+    expect(motion).toMatch(/const to = closing \? 0 : \(content\.current\?\.offsetHeight \?\? 0\)/);
+    expect(motion).toMatch(/if \(opening \|\| switching\) before\.current\?\.\(\);[\s\S]*box\.style\.height = `\$\{to\}px`/);
+    expect(motion).toMatch(/release\.current = window\.setTimeout\(\(\) => \{[\s\S]*box\.style\.height = "";/);
+    // following the conversation happens before paint too
+    expect(source).toMatch(/useLayoutEffect\(\(\) => \{\s*if \(transcriptOpen\) toLastLine\(\);/);
+  });
+
+  it("Settings to Transcript cross-fades in place: the old panel fades out over the new one, out of reach", () => {
+    expect(source).toMatch(/setLeaving\(panel && lastPanel && !reducedMotion\(\) \? lastPanel : null\)/);
+    expect(source).toMatch(/<div aria-hidden inert className="animate-card-fade-out pointer-events-none absolute inset-x-0 top-0[^"]*" data-voice-card-leaving=\{leaving\}>/);
+    expect(source).toContain('className={leaving ? "animate-card-fade-in" : undefined}');
+    const css = readFileSync(new URL("../../styles.css", import.meta.url), "utf8");
+    expect(css).toContain("--animate-card-fade-in: card-fade-in 0.2s cubic-bezier(0.22, 1, 0.36, 1) both;");
+    expect(css).toMatch(/@media \(prefers-reduced-motion: reduce\) \{\s*\.animate-caret[^}]*\.animate-card-fade-in, \.animate-card-fade-out \{ animation: none; \}/);
+    expect(css).toContain(':root[data-reduced-motion="true"] .animate-card-fade-out,');
+  });
+
+  it("closed, nothing of the card is drawn", () => {
+    const html = render("listening");
+    expect(html).not.toContain("data-voice-card-motion");
+    expect(html).not.toContain("data-voice-card-leaving");
+  });
+});
+
 describe("where the bar lives", () => {
   it("ChatView puts it first in the banner stack, under the name chip; the overlay is the older call only", () => {
     const chat = readFileSync(new URL("../ChatView.tsx", import.meta.url), "utf8");
@@ -163,7 +232,7 @@ describe("where the bar lives", () => {
     expect(overlay).toContain("voiceMode?.available === true) return null");
     // the collapsed pill keeps its own small row; the card hangs over the thread
     const dock = view.slice(view.indexOf("export function VoiceCallDock"), view.indexOf("/** The older call: the macOS"));
-    expect(dock).toMatch(/className="animate-call-dock-in relative z-20 mb-2 h-12 px-3" data-voice-call-dock/);
+    expect(dock).toMatch(/className="animate-call-dock-in relative z-20 mb-2 h-16 px-3" data-voice-call-dock/);
     expect(dock).toContain('className="pointer-events-none absolute inset-x-3 top-0"');
   });
 

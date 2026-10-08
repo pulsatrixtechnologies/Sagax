@@ -297,8 +297,9 @@ app.whenReady().then(async () => {
   })()`);
   const checkPill = async (label) => {
     const box = await pillBox();
-    check(`${label}: the pill is centered under the name chip, compact, with at least 12px each side`, Boolean(box) && box.center <= 2 && box.left >= 11.5 && box.right >= 11.5 && box.top >= box.chipBottom && box.height <= 50, JSON.stringify(box));
+    check(`${label}: the pill is centered under the name chip, compact, with at least 12px each side`, Boolean(box) && box.center <= 2 && box.left >= 11.5 && box.right >= 11.5 && box.top >= box.chipBottom && box.height >= 62 && box.height <= 70, JSON.stringify(box));
   };
+  await wait(400); // the card's fold back (200 ms) is over
   await checkPill("wide");
 
   const other = (await xaiRequests()).filter((r) => !["/v1/tts", "/v1/tts/voices", "/v1/stt"].includes(r.path));
@@ -319,11 +320,61 @@ app.whenReady().then(async () => {
     await wait(500);
     writeFileSync(path.join(shotDir, name), (await win.webContents.capturePage()).toPNG());
   };
+  // The card's motion, frame by frame: `action` runs in the page, then each
+  // animation frame for 450 ms records the pill row, the card's clip
+  // (height, opacity) and how far the transcript is from its last line.
+  // With VERIFY_SHOT_DIR, screenshots are taken while it plays.
+  const sampleCard = async (action, frames = "") => {
+    const sampling = win.webContents.executeJavaScript(`new Promise((resolve) => {
+      const samples = [];
+      const start = performance.now();
+      const tick = () => {
+        const row = document.querySelector("[data-voice-pill-row]")?.getBoundingClientRect();
+        const shell = document.querySelector("[data-voice-card-motion]");
+        const scroller = document.querySelector("[data-voice-callbar-panels]");
+        samples.push({
+          t: Math.round(performance.now() - start), rowTop: row?.top, rowHeight: row?.height,
+          h: shell ? Math.round(shell.getBoundingClientRect().height * 10) / 10 : 0,
+          opacity: shell ? Number(getComputedStyle(shell).opacity) : 0,
+          adv: Math.round((document.querySelector("[data-voice-advanced-body]")?.getBoundingClientRect().height ?? 0) * 10) / 10,
+          fromEnd: scroller && document.querySelector("[data-voice-card-body=transcript]") ? Math.round(scroller.scrollHeight - scroller.clientHeight - scroller.scrollTop) : null,
+        });
+        if (performance.now() - start < 450) requestAnimationFrame(tick); else resolve(samples);
+      };
+      ${action};
+      requestAnimationFrame(tick);
+    })`);
+    if (shotDir && frames) {
+      const started = Date.now();
+      for (let i = 0; i < 8; i++) {
+        const png = (await win.webContents.capturePage()).toPNG();
+        writeFileSync(path.join(shotDir, `${frames}-${String(i).padStart(2, "0")}-${Date.now() - started}ms.png`), png);
+      }
+    }
+    return sampling;
+  };
+  const rowStill = (samples) => samples.every((s) => s.rowTop === samples[0].rowTop && s.rowHeight === samples[0].rowHeight);
+  const brief = (samples) => samples.map((s) => `${s.t}:${s.h}/${s.opacity.toFixed(2)}${s.fromEnd === null ? "" : `/${s.fromEnd}`}`).join(" ");
   for (const [size, w] of [["wide", width], ["narrow", 530]]) {
     win.setContentSize(w, height);
     await wait(600);
     if (size === "narrow") await checkPill("narrow (530px)");
     await shoot(`voice-pill-${size}-collapsed.png`);
+    if (size === "wide") {
+      const open = await sampleCard(`document.querySelector("[data-voice-transcript-toggle]").click()`, "open-transcript");
+      const final = open.at(-1).h;
+      const grows = open.every((s, i) => i === 0 || s.h >= open[i - 1].h - 0.5);
+      check("the transcript card grows from the row's bottom edge to its measured height, the row never moving", rowStill(open) && grows && open[0].h < final * 0.5 && final > 40 && open.at(-1).opacity === 1, brief(open));
+      check("the transcript is on its last line before it shows (no visible scroll jump)", open.filter((s) => s.h > 0).every((s) => s.fromEnd !== null && s.fromEnd <= 1), brief(open));
+      await wait(200);
+      const swap = await sampleCard(`document.querySelector("[data-voice-gear]").click()`, "swap-to-settings");
+      const floor = Math.min(final, swap.at(-1).h) - 1;
+      check("Transcript to Settings cross-fades in place, never folding to zero", rowStill(swap) && swap.every((s) => s.h >= floor), brief(swap));
+      const fold = await sampleCard(`document.querySelector("[data-voice-gear]").click()`, "close-settings");
+      const shrinks = fold.every((s, i) => i === 0 || s.h <= fold[i - 1].h + 0.5);
+      check("closing folds the card back into the row, the row never moving", rowStill(fold) && shrinks && fold.at(-1).h === 0, brief(fold));
+      await wait(200);
+    }
     await click("[data-voice-transcript-toggle]");
     const lines = await win.webContents.executeJavaScript(`[...document.querySelectorAll("[data-voice-line]")].map((el) => el.dataset.voiceLine)`);
     check(`${size}: the transcript opens as bubbles, the person on the right, the bot on the left`, lines.includes("you") && lines.includes("bot"), JSON.stringify(lines));
@@ -332,6 +383,20 @@ app.whenReady().then(async () => {
     const panel = await win.webContents.executeJavaScript(`document.querySelector("[data-voice-bar]")?.dataset.voicePanel`);
     check(`${size}: Settings swaps the card to Voice, Speed and Language`, panel === "settings", String(panel));
     await shoot(`voice-pill-${size}-settings.png`);
+    if (size === "wide") {
+      // Advanced (closed by default) opens inside the card: the card follows
+      // its height smoothly, the row never moving.
+      const before = await win.webContents.executeJavaScript(`document.querySelector("[data-voice-advanced]")?.dataset.voiceAdvanced`);
+      const grow = await sampleCard(`document.querySelector("[data-voice-advanced-toggle]").click()`, "advanced-open");
+      const opened = await win.webContents.executeJavaScript(`document.querySelector("[data-voice-advanced]")?.dataset.voiceAdvanced`);
+      // the zone itself grows over several frames; the card follows it up to its own cap (then scrolls)
+      const steady = grow.every((s, i) => i === 0 || (s.h >= grow[i - 1].h - 0.5 && s.adv >= grow[i - 1].adv - 0.5));
+      const switches = await win.webContents.executeJavaScript(`["only-my-voice", "earcons", "thinking-cue"].every((d) => document.querySelector('[data-voice-advanced-body] [data-voice-toggle="' + d + '"] [role=switch]')) && !document.querySelector('[data-voice-settings] input[type=checkbox]')`);
+      check("Advanced is closed by default and opens smoothly inside the card, its on/off rows as switches", before === "closed" && opened === "open" && switches && rowStill(grow) && steady && grow[0].adv < 1 && grow.at(-1).adv > 80 && grow.filter((s, i) => i > 0 && s.adv > grow[i - 1].adv + 0.5).length >= 4, grow.map((s) => `${s.t}:${s.h}/${s.adv}`).join(" "));
+      await shoot("voice-pill-wide-settings-advanced.png");
+      await click("[data-voice-advanced-toggle]");
+      await wait(300);
+    }
     await win.webContents.executeJavaScript(`document.body.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true })); true`);
     const outside = await until("a click outside to close the card", async () => win.webContents.executeJavaScript(`document.querySelector("[data-voice-bar]")?.dataset.voicePanel === "none"`), 3_000).catch(() => false);
     check(`${size}: a click outside folds the card back`, outside);

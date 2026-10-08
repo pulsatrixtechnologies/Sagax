@@ -108,7 +108,7 @@ describe("VoiceModeSettingsPanel", () => {
 });
 
 describe("the live call's settings in the panel", () => {
-  const call = { input: "auto" as const, onlyMyVoice: true, earcons: true, thinkingCue: true, pause: "normal" as const };
+  const call = { input: "auto" as const, onlyMyVoice: true, earcons: true, thinkingCue: true, pause: "normal" as const, advancedOpen: true };
 
   it("offers hands-free or push to talk, Only my voice with its enrollment, and call sounds", () => {
     const markup = html(props({ call, enrollment: { state: "none" }, onCallChange: vi.fn(), onEnroll: vi.fn(), onForget: vi.fn() }));
@@ -119,7 +119,7 @@ describe("the live call's settings in the panel", () => {
     expect(markup).toContain("Record my voice");
     expect(markup).toContain("Call sounds");
     // not enrolled: the switch is off even though the setting is on
-    expect(markup).toMatch(/data-voice-toggle="only-my-voice"(?![^>]*checked)/);
+    expect(markup).toMatch(/data-voice-toggle="only-my-voice"[\s\S]*?role="switch" aria-checked="false"/);
     expect(markup).toContain('data-voice-enrollment="none"');
   });
 
@@ -127,8 +127,9 @@ describe("the live call's settings in the panel", () => {
     const onEnroll = vi.fn();
     const onCallChange = vi.fn();
     const tree = elements(VoiceModeSettingsPanel(props({ call, enrollment: { state: "none" }, onCallChange, onEnroll, onForget: vi.fn() })));
-    const toggle = tree.find((el) => el.props["data-voice-toggle"] === "only-my-voice")!;
-    (toggle.props.onChange as (e: { target: { checked: boolean } }) => void)({ target: { checked: true } });
+    const row = tree.find((el) => el.props["data-voice-toggle"] === "only-my-voice")!;
+    const toggle = elements(row).find((el) => el.props.role === "switch")!;
+    (toggle.props.onClick as () => void)();
     expect(onEnroll).toHaveBeenCalledTimes(1);
     expect(onCallChange).not.toHaveBeenCalled();
     const enrolled = html(props({ call, enrollment: { state: "enrolled" }, onCallChange, onEnroll, onForget: vi.fn() }));
@@ -151,6 +152,61 @@ describe("the live call's settings in the panel", () => {
     const markup = html(props({ call, enrollment: { state: "recording", share: 0.42 }, onCallChange: vi.fn(), onEnroll: vi.fn(), onForget: vi.fn() }));
     expect(markup).toContain("42%");
     expect(markup).not.toContain("data-voice-enroll=");
+  });
+
+  it("Voice, Speed and Language stay in view; every other row is in Advanced, closed by default", () => {
+    const closed = { ...call, advancedOpen: false };
+    const markup = html(props({ call: closed, enrollment: { state: "none" }, onCallChange: vi.fn(), onEnroll: vi.fn(), onForget: vi.fn() }));
+    expect(markup).toContain('data-voice-advanced="closed"');
+    expect(markup).toMatch(/aria-expanded="false"[^>]*data-voice-advanced-toggle[^>]*>.*Advanced/);
+    // closed: still laid out (no reflow when it opens) but out of reach
+    const body = /<div[^>]*data-voice-advanced-body[^>]*>/.exec(markup)![0];
+    expect(body).toContain("grid-rows-[0fr]");
+    expect(body).toContain('inert=""');
+    expect(body).toContain('aria-hidden="true"');
+    expect(body).toContain("transition-[grid-template-rows,opacity]");
+    expect(body).toContain("duration-200");
+    expect(body).toContain("motion-reduce:transition-none");
+    const [voice, speed, language, advanced] = ['data-voice-list="voice"', 'data-voice-list="speed"', 'data-voice-list="language"', "data-voice-advanced-toggle"].map((a) => markup.indexOf(a));
+    expect(voice).toBeLessThan(speed);
+    expect(speed).toBeLessThan(language);
+    expect(language).toBeLessThan(advanced);
+    // Microphone, End of turn, Only my voice and its recording, Call sounds, the soft tone: all inside
+    const inside = markup.slice(markup.indexOf("data-voice-advanced-body"));
+    for (const row of ['data-voice-input="auto"', 'data-voice-input="push"', 'data-voice-pause="patient"', "End of turn", 'data-voice-toggle="only-my-voice"', "data-voice-enroll", 'data-voice-toggle="earcons"', 'data-voice-toggle="thinking-cue"']) {
+      expect(inside, row).toContain(row);
+      expect(markup.indexOf(row), row).toBeGreaterThan(advanced);
+    }
+  });
+
+  it("opens Advanced and remembers it with the call's settings; open, its rows are reachable", () => {
+    const onCallChange = vi.fn();
+    const tree = elements(VoiceModeSettingsPanel(props({ call: { ...call, advancedOpen: false }, enrollment: { state: "none" }, onCallChange, onEnroll: vi.fn(), onForget: vi.fn() })));
+    (tree.find((el) => "data-voice-advanced-toggle" in el.props)!.props.onClick as () => void)();
+    expect(onCallChange).toHaveBeenCalledWith({ advancedOpen: true });
+    const open = html(props({ call, enrollment: { state: "none" }, onCallChange, onEnroll: vi.fn(), onForget: vi.fn() }));
+    const body = /<div[^>]*data-voice-advanced-body[^>]*>/.exec(open)![0];
+    expect(body).toContain("grid-rows-[1fr]");
+    expect(body).not.toContain("inert");
+    expect(open).toMatch(/aria-expanded="true"[^>]*data-voice-advanced-toggle/);
+    const close = elements(VoiceModeSettingsPanel(props({ call, enrollment: { state: "none" }, onCallChange, onEnroll: vi.fn(), onForget: vi.fn() })));
+    (close.find((el) => "data-voice-advanced-toggle" in el.props)!.props.onClick as () => void)();
+    expect(onCallChange).toHaveBeenLastCalledWith({ advancedOpen: false });
+  });
+
+  it("Only my voice, Call sounds and the soft tone are the app's standard switches, not checkboxes", () => {
+    const onCallChange = vi.fn();
+    const markup = html(props({ call: { ...call, earcons: false }, enrollment: { state: "enrolled" }, onCallChange, onEnroll: vi.fn(), onForget: vi.fn() }));
+    expect(markup).not.toContain('type="checkbox"');
+    expect(markup).toMatch(/data-voice-toggle="only-my-voice"[\s\S]*?role="switch" aria-checked="true"/);
+    expect(markup).toMatch(/data-voice-toggle="earcons"[\s\S]*?role="switch" aria-checked="false"/);
+    expect(markup).toMatch(/data-voice-toggle="thinking-cue"[\s\S]*?role="switch" aria-checked="true"/);
+    // the description sits under its switch's label
+    expect(markup).toMatch(/data-voice-toggle="only-my-voice"[\s\S]*?Only my voice[\s\S]*?text-\[12px\][^>]*>[^<]+</);
+    const tree = elements(VoiceModeSettingsPanel(props({ call: { ...call, earcons: false }, enrollment: { state: "enrolled" }, onCallChange, onEnroll: vi.fn(), onForget: vi.fn() })));
+    const sounds = elements(tree.find((el) => el.props["data-voice-toggle"] === "earcons")).find((el) => el.props.role === "switch")!;
+    (sounds.props.onClick as () => void)();
+    expect(onCallChange).toHaveBeenCalledWith({ earcons: true });
   });
 
   it("without the call's props the panel is the voice only (previews outside a call)", () => {

@@ -5,7 +5,7 @@
 // socket cannot open.
 import { describe, expect, it, vi } from "vitest";
 
-import { VoiceCall, callAudioConstraints, isNoiseFragment, resampler, stablePartial, THINKING_CUE_MS, type BargeInMetrics, type TurnMetrics, type VoiceCallOptions } from "./call";
+import { VoiceCall, callAudioConstraints, continuedTurn, isNoiseFragment, resampler, stablePartial, THINKING_CUE_MS, type BargeInMetrics, type TurnMetrics, type VoiceCallOptions } from "./call";
 import { DEFAULT_CALL_SETTINGS, type CallSettings } from "./call-settings";
 import type { PcmPlayer, Sentence } from "./player";
 import type { SpeakerEmbedder } from "./speaker-id";
@@ -187,6 +187,19 @@ async function setup(options: Setup = {}) {
   const settle = () => new Promise((r) => setTimeout(r, 30));
   return { call, player, feed, settle, utterances, interrupts, metrics, rejected, speech, track, upload, clock: () => clock, socket: () => FakeSocket.last! };
 }
+
+describe("a turn that carries on the one sent before", () => {
+  it("joins the fragment and the new words", () => {
+    expect(continuedTurn("Yeah, but I always", "thought it was free.")).toBe("Yeah, but I always thought it was free.");
+  });
+
+  it("new words that already hold the fragment are the whole sentence alone, never the fragment twice", () => {
+    expect(continuedTurn("Yeah, but I always thought it.", "Yeah, but I always thought it.")).toBe("Yeah, but I always thought it.");
+    expect(continuedTurn("Yeah, but I always thought it.", "yeah but I always thought it was free")).toBe("yeah but I always thought it was free");
+    // the same first word is not the same fragment
+    expect(continuedTurn("Yeah", "Yeahs are fine")).toBe("Yeah Yeahs are fine");
+  });
+});
 
 describe("noise fragments", () => {
   it("drops a lone short token no one says alone, keeps real short answers and numbers", () => {
