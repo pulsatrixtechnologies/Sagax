@@ -113,7 +113,7 @@ export function SetupSteps({ steps }: { steps: SetupStep[] }) {
 
 function StateChip({ label, tone }: { label: string; tone: "ok" | "bad" | "idle" }) {
   return (
-    <span className={cn("rounded-full px-2.5 py-0.5 text-[12px]", tone === "ok" ? "bg-success/15 text-success" : tone === "bad" ? "bg-danger/10 text-danger" : "bg-control text-ink-secondary")}>{label}</span>
+    <span className={cn("rounded-full px-2.5 py-0.5 text-[12px]", tone === "ok" ? "bg-accent/15 text-accent-text" : tone === "bad" ? "bg-danger/10 text-danger" : "bg-control text-ink-secondary")}>{label}</span>
   );
 }
 

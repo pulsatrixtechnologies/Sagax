@@ -2,7 +2,7 @@
 // grouped by rarity (Common, Rare, Epic, Legendary) and colors grouped by
 // palette (Vivid, Pastel, Deep, Neon, Neutral). The popover opens on the tab
 // of the current choice and follows it when it changes elsewhere (Reset).
-import { MASCOT_COLOR_GROUPS, mascotColorGroup, mascotColorsIn, type MascotColorGroup, type MascotColorName } from "../../../shared/mascot-colors";
+import { MASCOT_COLOR_GROUPS, mascotColorGroup, paletteSwatches, type MascotColorGroup, type MascotColorName } from "../../../shared/mascot-colors";
 import type { SkinTier } from "../../../shared/mascot-look";
 
 /** The rarity tabs, in order. */
@@ -34,9 +34,15 @@ export interface ColorTab {
   colors: MascotColorName[];
 }
 
-/** The palette tabs, each with its colors in the swatch row's order. */
-export function colorTabs(): ColorTab[] {
-  return MASCOT_COLOR_GROUPS.map((group) => ({ group, colors: mascotColorsIn(group) }));
+/** The palette tabs, each with its colors in the swatch row's order; `groups` narrows them (Clay is for Shapes). */
+export function colorTabs(groups: readonly MascotColorGroup[] = MASCOT_COLOR_GROUPS): ColorTab[] {
+  return MASCOT_COLOR_GROUPS.filter((group) => groups.includes(group)).map((group) => ({ group, colors: paletteSwatches(group) }));
+}
+
+/** The palettes a character offers: Clay only for Shapes, or for a bot that already wears a Clay color. */
+export function colorGroupsFor(character: string, color: string | null | undefined): MascotColorGroup[] {
+  const own = mascotColorGroup(color);
+  return MASCOT_COLOR_GROUPS.filter((group) => group !== "clay" || character === "shape" || own === "clay");
 }
 
 /** The palette tab the picker opens on: the current color's own (an unknown color opens Vivid). */

@@ -8,7 +8,8 @@
 import type { LiveCallData } from "@/lib/voice-mode/live-call-store";
 import type { CallSettings } from "@/lib/voice-mode/call-settings";
 import type { VoiceModeSettings } from "../../../shared/voice-mode";
-import type { FloatingCall, FloatingCallAction, FloatingCallLevels } from "./protocol";
+import type { CallPhase } from "@/lib/voice-mode/call-machine";
+import type { FloatingCall, FloatingCallAction, FloatingCallLevels, FloatingPose } from "./protocol";
 
 /** What the mascot's settings card shows besides the settings themselves (the brain keeps it). */
 export interface MascotCallPanel {
@@ -40,7 +41,21 @@ export function mascotCallSnapshot(live: LiveCallData, panel: MascotCallPanel, s
     voicesError: panel.voicesError,
     enrollment: panel.enrollment.state === "none" && live.call.enrolled ? { state: "enrolled" } : panel.enrollment,
     previewing: panel.previewing,
+    captions: callSettings.captions !== false,
   };
+}
+
+/**
+ * The mascot's pose for a call's phase, from its existing poses (the status
+ * chip beside it names the phase): it talks while its bot's voice does,
+ * thinks while the answer is written, dozes on hold, and listens otherwise.
+ * A celebration or an alert of its own wins while it lasts.
+ */
+export function callPose(phase: CallPhase, own: FloatingPose): FloatingPose {
+  if (phase === "speaking") return "speak";
+  if (phase === "thinking") return "think";
+  if (phase === "held") return "sleep";
+  return own === "celebrate" || own === "alert" ? own : "idle";
 }
 
 /** How loud an analyser is now, 0..1 (the same scale as the app's waveform). */

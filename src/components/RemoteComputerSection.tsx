@@ -114,8 +114,8 @@ export function RemoteComputerSection() {
         <p className="text-[13px] text-ink-secondary">{t("remote.client.desktopOnly")}</p>
       ) : state.active ? (
         <div className="flex flex-col gap-4">
-          <div className="flex items-start gap-3 rounded-lg border border-success/25 bg-success/10 px-3 py-3">
-            <Laptop size={18} className="mt-0.5 shrink-0 text-success" />
+          <div className="flex items-start gap-3 rounded-lg border border-accent/25 bg-accent/10 px-3 py-3">
+            <Laptop size={18} className="mt-0.5 shrink-0 text-accent-text" />
             <div className="min-w-0">
               <div className="text-[14px] font-medium text-ink">
                 {t("remote.client.connected", { name: state.serverName || t("remote.client.fallbackName") })}

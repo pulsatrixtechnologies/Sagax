@@ -143,7 +143,7 @@ export function VisibilitySection({ bot }: { bot: Bot }) {
       )}
       <p className="text-[11.5px] leading-relaxed text-ink-secondary">{t("botSettings.visibility.rooms")}</p>
       {mixed.length > 0 && (
-        <div className="flex flex-col gap-2 rounded-lg border border-warning/25 bg-warning/5 px-3 py-2 text-[12px] leading-relaxed text-ink-secondary" data-visibility-mixed-rooms>
+        <div className="flex flex-col gap-2 rounded-lg border border-accent/25 bg-accent/10 px-3 py-2 text-[12px] leading-relaxed text-ink-secondary" data-visibility-mixed-rooms>
           <p>{t("botSettings.visibility.mixedRooms", { rooms: mixed.map((room) => JSON.stringify(room.name)).join(", ") })}</p>
           <div className="flex flex-wrap gap-2">
             {mixed.map((room) => (

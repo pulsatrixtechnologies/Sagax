@@ -70,7 +70,7 @@ export function SandboxDesktopModal({ title, state, controls, busy = false, onCl
         <div className="flex flex-wrap items-center gap-2 border-b border-hairline px-3 py-2">
           <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-ink">{title}</span>
           <span data-power={state} className="flex items-center gap-1.5 rounded-full bg-control px-2 py-0.5 text-[11px] text-ink-secondary">
-            <span aria-hidden="true" className={cn("size-1.5 rounded-full", state === "running" ? "bg-success" : state === "paused" || state === "starting" ? "bg-warning" : state === "error" ? "bg-danger" : "bg-ink-secondary/50")} />
+            <span aria-hidden="true" className={cn("size-1.5 rounded-full", state === "running" ? "bg-accent" : state === "paused" || state === "starting" ? "bg-accent/50" : state === "error" ? "bg-danger" : "bg-ink-secondary/50")} />
             {screenStateLabel(state)}
             <span aria-hidden="true">·</span>
             {control ? <Hand size={11} aria-hidden="true" /> : <Eye size={11} aria-hidden="true" />}

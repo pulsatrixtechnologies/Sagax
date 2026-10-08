@@ -63,7 +63,7 @@ export function SidebarSectionHeader({
       )}
       {attention && attention.working > 0 && (
         <span aria-hidden="true" className="flex size-4 items-center justify-center">
-          <span className="size-1.5 animate-pulse rounded-full bg-success" />
+          <span className="size-1.5 animate-pulse rounded-full bg-accent" />
         </span>
       )}
       {attentionLabel && <span className="sr-only">{attentionLabel}</span>}

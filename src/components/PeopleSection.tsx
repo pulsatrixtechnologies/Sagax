@@ -274,7 +274,7 @@ export function PeopleSection() {
   if (membership?.authority === "portal") return <PortalPeople people={people} />;
   return (
     <Card collapsible cardId="people.list" title={t("people.title")} subtitle={t("people.subtitle")} summary={cardCount("people", people.length)}>
-      {emailOffered === false && <p className="mb-3 rounded-lg border border-warning/25 bg-warning/5 px-3 py-2 text-[12.5px] text-ink-secondary">{t(membership?.pairingCodes === false ? "people.portalSignIn" : "people.notHosted")}</p>}
+      {emailOffered === false && <p className="mb-3 rounded-lg border border-accent/25 bg-accent/10 px-3 py-2 text-[12.5px] text-ink-secondary">{t(membership?.pairingCodes === false ? "people.portalSignIn" : "people.notHosted")}</p>}
       <form className="flex flex-wrap items-center gap-2" onSubmit={(event) => { event.preventDefault(); void invite(); }}>
         <input
           value={draft}

@@ -88,6 +88,9 @@ export interface DelegationReceipt {
   approvalSource?: "user" | "system";
   /** the peer's reply on success; the failure name otherwise (bounded) */
   result?: string;
+  /** Auto: the model the worker ran on and the class of work
+   * (docs/plans/2026-10-08-auto-model.md). Absent when the worker is pinned. */
+  workerModel?: { engine: string; model: string; taskClass?: string };
   finishedAt: number;
 }
 

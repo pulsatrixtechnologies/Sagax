@@ -10,7 +10,7 @@ import "./network-guard.ts";
 import { groupOwnerId, groupPatchOwnerRefusal, mayDeleteGroup, ownsGroup, type GroupActor } from "./group-ownership.ts";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
-import { existsSync, readFileSync, realpathSync, rmSync, mkdirSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync, rmSync, mkdirSync, statSync } from "node:fs";
 import { writeFileAtomic } from "./atomic.ts";
 import { rm as removeDirectory } from "node:fs/promises";
 import { hostname, userInfo } from "node:os";
@@ -249,6 +249,9 @@ import {
 } from "./contracts.ts";
 import { RETRY_MAX_ATTEMPTS } from "./drivers/retry.ts";
 import { recoveryCapabilityError } from "./automatic-recovery.ts";
+import { ModelCatalogStore } from "./model-catalog/catalog.ts";
+import { attachmentsInText, autoModelRecord, bareModelId, explainPick, familyOfModel, isModelRefusal, nextInChain, pickOrchestrationModel, pickWorkerModel, type AutoChainEntry, type AutoEngine, type AutoPick, type CatalogFacts } from "./model-auto.ts";
+import type { AutoModelRecord } from "../shared/auto-model.ts";
 import { decodeGeneratedImage } from "./generated-image.ts";
 import {
   MAX_MCP_SERVERS,
@@ -4370,7 +4373,7 @@ function checkedModelSelection(
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
     return { ok: false, status: 400, error: "modelSelection must be an object" };
   }
-  const value = raw as { instanceId?: unknown; model?: unknown; effort?: unknown; variant?: unknown };
+  const value = raw as { instanceId?: unknown; model?: unknown; effort?: unknown; variant?: unknown; auto?: unknown };
   if (typeof value.instanceId !== "string" || !value.instanceId.trim()) {
     return { ok: false, status: 400, error: "modelSelection.instanceId is required" };
   }
@@ -4382,6 +4385,11 @@ function checkedModelSelection(
     model: value.model.trim(),
   };
   if (hostedModels && !hostedModels.allows(selection)) return { ok: false, status: 400, error: hostedModels.error() };
+  // Auto (docs/plans/2026-10-08-auto-model.md): only true is stored.
+  if (value.auto !== undefined && value.auto !== true && value.auto !== false) {
+    return { ok: false, status: 400, error: "modelSelection.auto must be a boolean" };
+  }
+  if (value.auto === true) selection.auto = true;
   if (value.effort !== undefined) {
     if (!isEffortLevel(value.effort)) {
       return { ok: false, status: 400, error: `effort "${String(value.effort)}" is not recognized` };
@@ -4400,6 +4408,7 @@ function checkedModelSelection(
   const changed = current && (
     selection.instanceId !== current.selection.instanceId ||
     selection.model !== current.selection.model ||
+    selection.auto !== current.selection.auto ||
     selection.effort !== current.selection.effort ||
     selection.variant !== current.selection.variant
   );
@@ -10034,6 +10043,10 @@ bus.subscribe((event: RuntimeEvent) => {
     case "runtime.error": {
       // A stop the person asked for is not a row in the chat.
       if (event.message.trim() === "turn stopped") break;
+      // Auto: a model the engine refused is skipped for this payer for a
+      // while; the engine's own error still shows below.
+      const autoRan = autoTurnsByThread.get(event.threadId);
+      if (autoRan && isModelRefusal(event.message)) rememberAutoRefusal(autoRan.payer, autoRan.entry);
       // Organization server: a key-backed engine whose provider refused the
       // key gets the key_refused card, not the generic error row.
       const refusedInstance = bot ? registry.get(event.providerInstanceId ?? bot.modelSelection.instanceId) : null;
@@ -11042,6 +11055,7 @@ function finalizeDelegationWatch(
   // bot's check/wait_delegation must see a terminal state even when the
   // channel or target is gone.
   if (watched.taskId && watched.sourceThreadId) {
+    const worker = store.taskByThread(watched.toBotId, threadId)?.autoModel;
     recordDelegationReceipt({
       id: watched.taskId,
       sourceThreadId: watched.sourceThreadId,
@@ -11049,6 +11063,7 @@ function finalizeDelegationWatch(
       toBotName: store.bot(watched.toBotId)?.name ?? watched.toBotId,
       status: ok ? "done" : "failed",
       result: ok ? reply : failureName,
+      ...(worker?.role === "worker" ? { workerModel: { engine: worker.engineLabel, model: worker.modelLabel, ...(worker.taskClass ? { taskClass: worker.taskClass } : {}) } } : {}),
     });
   }
   if (watched.oneWay) {
@@ -11655,7 +11670,7 @@ async function startParallelTask(input: {
     await startTurn(bot.id, brief, {
       threadId: child.threadId, userMessage, excludeMessageIds: [userMessage.id],
       sender: input.sender, trigger: input.trigger, speaker: input.speaker,
-      ...(input.byBot ? { unattended: isUnattended(bot.id, input.threadId) } : {}),
+      ...(input.byBot ? { unattended: isUnattended(bot.id, input.threadId), autoWorker: true } : {}),
       onTurnSettled: () => settleParallelFallback(child.threadId),
     });
   } catch (error) {
@@ -12315,6 +12330,12 @@ async function startTurn(
     compactOnly?: boolean;
     /** Harness-only: never follow a backup failure with another attempt. */
     automaticRecoveryAttempted?: boolean;
+    /** Auto: this turn is work a bot handed out (a parallel task it opened). */
+    autoWorker?: boolean;
+    /** Auto: models a refusal took out of this turn's pick. */
+    autoSkip?: AutoChainEntry[];
+    /** Auto: this turn already climbed the fallback chain once. */
+    autoRetried?: boolean;
     /** Cursor into this bot's ordered startup-only backups. */
     automaticRecoveryIndex?: number;
     /** Queue receipts outlive the dispatch acknowledgment until this exact turn settles. */
@@ -12373,6 +12394,39 @@ async function startTurn(
       );
       if (selection !== bot.modelSelection) bot = { ...bot, modelSelection: selection };
     }
+  }
+  // Auto (docs/plans/2026-10-08-auto-model.md): this turn's model. A
+  // person's turn runs on the orchestration model; work a bot handed out
+  // (a peer hop, a routine, a parallel task it opened) on the model its
+  // class of work calls for; a continuation keeps the thread's last pick.
+  // The stored bot and thread keep Auto and their base model.
+  let autoTurn: { pick: AutoPick; payer: string } | null = null;
+  let autoContinuing = false;
+  /** The thread's own selection (Auto and its base) before the pick replaced it. */
+  const autoBaseSelection = bot.modelSelection;
+  if (bot.modelSelection.auto === true) {
+    const autoPeerAsk = opts?.peerAsk ?? (opts?.editedMessageId ? undefined : opts?.userMessage?.peerAsk);
+    const autoSpeaker = resolveTurnSpeaker({
+      speaker: opts?.speaker,
+      sender: opts?.sender ?? (opts?.editedMessageId ? undefined : opts?.userMessage?.sender),
+      peerAsk: autoPeerAsk,
+      trigger: opts?.trigger,
+      automationSource: opts?.automationSource,
+    });
+    // A fresh coordinate_bots hop rides a card continuation but is new work.
+    const freshAutoHop = Boolean(opts?.coordination && !opts.coordination.resumed);
+    autoContinuing = !freshAutoHop && Boolean(opts?.cardContinuation || opts?.computerSelectionContinuation || opts?.compactOnly || opts?.warmOnly);
+    const worker = Boolean(autoPeerAsk) || (opts?.commsDepth ?? 0) > 0 || opts?.automationSource !== undefined || opts?.autoWorker === true;
+    autoTurn = autoPickForTurn({
+      bot, threadId, speaker: autoSpeaker, text,
+      role: autoContinuing && !opts?.autoSkip?.length ? "continue" : worker ? "worker" : "orchestration",
+      fallback: worker ? "worker" : "orchestration",
+      // A guest's turn on a Cloud home only goes to an engine that confines it.
+      guestConfined: cloudGuestDriven(threadId) || cloudGuestDrivenHandoff(opts?.coordination?.id),
+      ...(opts?.autoSkip ? { skip: opts.autoSkip } : {}),
+    });
+    // Recorded on the task once the turn is admitted (below), never before.
+    if (autoTurn) bot = { ...bot, modelSelection: autoTurn.pick.selection };
   }
   // Routines and legacy peer delivery already have their own completion
   // owners. Only ordinary chats opt into this scheduler; its child turns
@@ -12541,6 +12595,7 @@ async function startTurn(
           sendId: opts?.sendId,
           peerAsk: opts?.peerAsk,
           sender: opts?.sender,
+          ...(opts?.peerAsk && autoTurn?.pick.role === "worker" ? { autoModel: autoModelRecord(autoTurn.pick, Date.now()) } : {}),
           ...(opts?.voiceCall ? { voiceCall: opts.voiceCall } : {}),
           ...(opts?.via ? { via: opts.via } : {}),
           ...(opts?.relayed ? { relayed: true } : {}),
@@ -12628,6 +12683,20 @@ async function startTurn(
   const recoveryUserMessageId = opts?.coordination
     ? store.activePath(threadId).findLast(m => m.role === "user" && m.kind === "text")?.id
     : userMessage.id;
+  // Auto: the pick is this thread's now that the turn is admitted, and
+  // work handed out gets its activity row (which model, and why).
+  if (autoTurn) {
+    store.patchTask(bot.id, threadId, { autoModel: autoModelRecord(autoTurn.pick, Date.now()) });
+    autoTurnsByThread.set(threadId, { payer: autoTurn.payer, entry: { instanceId: autoTurn.pick.selection.instanceId, model: autoTurn.pick.selection.model } });
+    if (autoTurn.pick.role === "worker" && !warmOnly && !autoContinuing) {
+      store.appendMessage(threadId, {
+        role: "bot",
+        kind: "activity",
+        autoModel: autoModelRecord(autoTurn.pick, Date.now()),
+        tool: { name: `notice: ${explainPick(autoTurn.pick)}`, ok: true },
+      });
+    }
+  } else autoTurnsByThread.delete(threadId);
   // Admitted: every refusal above has passed and no other turn runs on this
   // thread, so this is the one moment the ledger's "who asked" may change.
   if (!warmOnly && opts?.trigger) turnTriggers.set(threadId, opts.trigger);
@@ -13947,6 +14016,33 @@ async function startTurn(
         }
       }
       let message = e instanceof Error ? e.message : String(e);
+      // Auto: an engine that refused to start this pick is skipped for this
+      // payer, and the turn climbs the fallback chain once. A second
+      // refusal is the engine's own error, below.
+      if (mayRecover && autoTurn) {
+        const refused = { instanceId, model };
+        // Only a real "this model is not yours" is remembered; a network
+        // blip or a rate limit is not held against the model.
+        if (isModelRefusal(message)) rememberAutoRefusal(autoTurn.payer, refused);
+        const next = opts?.autoRetried ? null : nextInChain(autoTurn.pick, refused);
+        if (next && !directRequestOwners.get(threadId)?.stopped && !hasQueuedSteeredMessages(bot.id, threadId) &&
+            store.activePath(threadId).findLast(m => m.role === "user" && m.kind === "text")?.id === recoveryUserMessageId) {
+          store.setTaskActivity(bot.id, threadId, "idle");
+          directTurnBots.delete(threadId);
+          store.appendMessage(threadId, { role: "bot", kind: "activity", tool: {
+            name: `notice: Auto: ${engineDisplayName(instance)} could not start ${autoTurn.pick.modelLabel}. Trying the next model once.`, ok: true,
+          } });
+          try {
+            await startTurn(bot.id, text, { ...opts, threadId, userMessage, editedMessageId: undefined,
+              autoRetried: true, autoSkip: [...(opts?.autoSkip ?? []), refused] });
+            directFollowupSettlers.delete(dispatchClaimId);
+            directCoordinationSettlers.delete(dispatchClaimId);
+            return;
+          } catch (failure) {
+            message += ` Auto could not start the next model: ${failure instanceof Error ? failure.message : String(failure)}`;
+          }
+        }
+      }
       const current = store.projectBotForTask(bot.id, threadId);
       const backups = cfg.automaticRecovery?.enabled
         ? current?.fallback?.length ? current.fallback : cfg.automaticRecovery.backup ? [cfg.automaticRecovery.backup] : []
@@ -13957,7 +14053,9 @@ async function startTurn(
       const backup = backups[nextIndex];
       if (mayRecover && backup && current && (!opts?.cardContinuation || opts.coordination) &&
           !directRequestOwners.get(threadId)?.stopped && !hasQueuedSteeredMessages(bot.id, threadId) &&
-          JSON.stringify(current.modelSelection) === JSON.stringify(bot.modelSelection) &&
+          // Unchanged since this turn began: an Auto turn compares the thread's
+          // own selection (Auto and its base), not the pick it ran on.
+          JSON.stringify(current.modelSelection) === JSON.stringify(autoTurn ? autoBaseSelection : bot.modelSelection) &&
           (backup.instanceId !== instanceId || backup.model !== model) &&
           store.activePath(threadId).findLast(m => m.role === "user" && m.kind === "text")?.id === recoveryUserMessageId) {
         // No await between releasing the failed attempt and admitting its
@@ -15674,9 +15772,22 @@ async function runGroupMemberTurn(
   const preparedApprovalMode = roomTurnApprovalMode(bot, threadId, orchestration);
   const preparedSelection = { ...bot.modelSelection };
   const preparedComposio = bot.composio;
-  const instance = registry.get(bot.modelSelection.instanceId);
+  // Auto (docs/plans/2026-10-08-auto-model.md): a goal run's step or a room
+  // hand-off is work handed out (worker pick on its text); an ordinary
+  // round runs on the orchestration model. The bot keeps its base model.
+  const roomAutoSpeakerId = store.activePath(threadId).findLast((message) => message.role === "user" && message.sender?.id)?.sender?.id;
+  const roomAuto = bot.modelSelection.auto === true ? autoPickForTurn({
+    bot, threadId,
+    speaker: roomAutoSpeakerId ? { origin: "person", principalId: roomAutoSpeakerId } : roomRoutineSpeaker(threadId) ?? { origin: "operator" },
+    role: orchestration ? "worker" : "orchestration",
+    text: [operation?.goalRun?.goal, orchestration?.turnInstructions].filter(Boolean).join("\n"),
+  }) : null;
+  const roomSelection = roomAuto?.pick.selection ?? bot.modelSelection;
+  /** The selection this room turn runs: the Auto pick while the bot is still on Auto. */
+  const roomTurnSelection = (ready: BotRecord): ModelSelection => roomAuto && ready.modelSelection.auto === true ? roomSelection : ready.modelSelection;
+  const instance = registry.get(roomSelection.instanceId);
   const userName = cfg.profile?.name?.trim() || "User";
-  if (providerInstancesChanging.has(bot.modelSelection.instanceId)) {
+  if (providerInstancesChanging.has(roomSelection.instanceId)) {
     onDispatchError?.(`${bot.name}'s provider account is being updated — try again shortly`);
     return true;
   }
@@ -15790,7 +15901,7 @@ async function runGroupMemberTurn(
   // A workspace at its monthly spend limit rechecks the cap at execution time
   // for every room, goal, queued, calendar, and chained-mention turn.
   assertWithinBudget(cfg, DATA_DIR);
-  assertModelVariantSupported(preparedSelection, instance.adapter.capabilities);
+  assertModelVariantSupported(roomTurnSelection(bot), instance.adapter.capabilities);
   const integrations: NonNullable<Parameters<typeof instance.adapter.sendTurn>[0]["integrations"]> = {};
   const skillAuthoring =
     skillAuthoringEnabled(cfg) &&
@@ -15932,8 +16043,9 @@ async function runGroupMemberTurn(
     : Boolean(readyGroup && store.groupTaskByThread(readyGroup.id, threadId));
   if (!readyGroup || !stillOwnsThread || !readyGroup.memberIds.includes(readyBot.id)) return false;
   const setupChanged =
-    registry.get(readyBot.modelSelection.instanceId) !== instance ||
+    registry.get(roomTurnSelection(readyBot).instanceId) !== instance ||
     roomTurnApprovalMode(readyBot, threadId, orchestration) !== preparedApprovalMode ||
+    readyBot.modelSelection.auto !== preparedSelection.auto ||
     readyBot.modelSelection.instanceId !== preparedSelection.instanceId ||
     readyBot.modelSelection.model !== preparedSelection.model ||
     readyBot.modelSelection.effort !== preparedSelection.effort ||
@@ -16502,13 +16614,13 @@ async function runGroupMemberTurn(
         mcpFromUserConfig: claudeUserMcpEnabled(cfg) && !managedPolicy.restrictsMcp(),
         claudeAiConnectors: claudeAiConnectorsFor(readyBot, instance, roomSpeaker, roomTurnAccess?.via),
         ...pluginDirsFor(readyBot, instance),
-        ...(instance.instanceId === readyBot.modelSelection.instanceId
-          ? memberTurnSelection(readyBot.modelSelection)
+        ...(instance.instanceId === roomTurnSelection(readyBot).instanceId
+          ? memberTurnSelection(roomTurnSelection(readyBot))
           : { model: instance.models.default }),
       });
     };
     guardTurnDispatch(withDesktopModelPerson(roomPlace.principal, () => Promise.resolve().then(() => {
-      const selectedModel = instance.instanceId === readyBot.modelSelection.instanceId ? readyBot.modelSelection.model : instance.models.default;
+      const selectedModel = instance.instanceId === roomTurnSelection(readyBot).instanceId ? roomTurnSelection(readyBot).model : instance.models.default;
       if (IDENTITY.kind === "perspicax") desktopLocalModels.assertAvailable(roomPlace.principal, selectedModel, instance.driverKind);
       return IDENTITY.kind === "perspicax" ? orgTurnAccess(threadId, readyBot, instance, roomSpeaker).then(sendRoomTurn) : sendRoomTurn(undefined);
     })), () => abandoned || Boolean(isCancelled?.()), async () => {
@@ -19033,7 +19145,11 @@ function persistMcpServers(next: Record<string, unknown>): void {
 // The existing CLI probes (each instance's snapshot), cached for a minute so
 // a turn never waits on one: an organization turn on an engine whose CLI is
 // missing gets the engine_missing card, and GET /api/health lists them.
-interface EngineProbe { instanceId: string; driver: string; installed: boolean; version?: string; at: number; /** from the startup self-check: never stale */ pinned?: boolean }
+interface EngineProbe { instanceId: string; driver: string; installed: boolean; version?: string; at: number;
+  /** from the startup self-check: never stale */
+  pinned?: boolean;
+  /** Available and not signed out: a solo Auto pick may move a turn here. */
+  ready?: boolean }
 let engineProbes = new Map<string, EngineProbe>();
 let engineProbeFlight: Promise<void> | null = null;
 const ENGINE_PROBE_TTL_MS = 60_000;
@@ -19069,7 +19185,7 @@ function probeEngines(): Promise<void> {
         return;
       }
       const live = entry.live;
-      let snapshot: { state: string; reason?: string; version?: string | null };
+      let snapshot: { state: string; reason?: string; version?: string | null; authenticated?: boolean };
       try {
         snapshot = await Promise.race([
           live.snapshot(),
@@ -19079,7 +19195,8 @@ function probeEngines(): Promise<void> {
         snapshot = { state: "unknown", reason: error instanceof Error ? error.message : String(error) };
       }
       const installed = snapshot.state === "available" || !CLI_MISSING.test(snapshot.reason ?? "");
-      next.set(live.instanceId, { instanceId: live.instanceId, driver: live.driverKind, installed, ...(snapshot.version ? { version: snapshot.version } : {}), at });
+      const ready = snapshot.state === "available" && snapshot.authenticated !== false;
+      next.set(live.instanceId, { instanceId: live.instanceId, driver: live.driverKind, installed, ready, ...(snapshot.version ? { version: snapshot.version } : {}), at });
     }));
     engineProbes = next;
   })().finally(() => { engineProbeFlight = null; });
@@ -19155,6 +19272,174 @@ function orgEngineInput(bot: BotRecord, instance: { instanceId: string; driverKi
 function orgPersonFacts(person: { subject?: { iss: string; sub: string }; disabledAt?: unknown } | null | undefined): { sub?: string; disabled?: true } {
   const sub = IDENTITY.kind === "perspicax" && person?.subject?.iss === IDENTITY.issuer ? person.subject.sub : undefined;
   return { ...(sub ? { sub } : {}), ...(person?.disabledAt !== undefined && person?.disabledAt !== null ? { disabled: true as const } : {}) };
+}
+// ── Auto model (docs/plans/2026-10-08-auto-model.md) ────────────────────
+// The catalogue is read from our cache, OpenCode's or the shipped snapshot;
+// Auto never fetches (no phone-home).
+const autoModelCatalog = new ModelCatalogStore({ dataDir: DATA_DIR, fetchDisabled: true });
+const AUTO_CATALOG_PROVIDERS: Readonly<Record<string, readonly string[]>> = {
+  anthropic: ["anthropic"], openai: ["openai"], xai: ["xai"], google: ["google"], moonshot: ["moonshotai"],
+};
+const autoCatalogMemo = new Map<string, CatalogFacts | null>();
+/** What models.dev knows of a model an engine lists: first under its
+ * family's own provider, then anywhere (providers by id, so it is stable). */
+function autoCatalogLookup(driverKind: string, modelId: string): CatalogFacts | undefined {
+  const memoKey = `${driverKind}\u0000${modelId}`;
+  const memo = autoCatalogMemo.get(memoKey);
+  if (memo !== undefined) return memo ?? undefined;
+  const providers = autoModelCatalog.get().providers;
+  const bare = bareModelId(modelId);
+  const ids = [bare, `kimi-${bare}`];
+  const family = familyOfModel(driverKind, modelId);
+  const order = [...(family ? AUTO_CATALOG_PROVIDERS[family] ?? [] : []), ...Object.keys(providers).sort()];
+  let facts: CatalogFacts | null = null;
+  outer: for (const providerId of order) {
+    const models = providers[providerId]?.models;
+    if (!models) continue;
+    for (const id of ids) {
+      const row = models[id];
+      if (!row) continue;
+      facts = {
+        name: row.name,
+        reasoning: row.reasoning,
+        vision: row.modalities.input.includes("image"),
+        ...(row.limit?.context ? { context: row.limit.context } : {}),
+        ...(row.cost?.input !== undefined ? { costInput: row.cost.input } : {}),
+        ...(row.cost?.output !== undefined ? { costOutput: row.cost.output } : {}),
+        ...(row.release_date ? { releaseDate: row.release_date } : {}),
+      };
+      break outer;
+    }
+  }
+  autoCatalogMemo.set(memoKey, facts);
+  return facts ?? undefined;
+}
+/** The thread's running Auto pick and its payer, for the refusal memory. */
+const autoTurnsByThread = new Map<string, { payer: string; entry: AutoChainEntry }>();
+/** Models a refusal took out, per payer, for 30 minutes. */
+const AUTO_REFUSAL_TTL_MS = 30 * 60_000;
+const autoRefusals = new Map<string, number>();
+function autoPayerKey(bot: BotRecord, speaker: TurnSpeaker): string {
+  if (IDENTITY.kind !== "perspicax") return "server";
+  return turnPayer({ speaker, owner: { principalId: effectiveBotOwner(bot) }, peerOwnerPrincipalId: peerOwnerPrincipal(speaker) }).principalId.toLowerCase() || "unknown";
+}
+function rememberAutoRefusal(payer: string, entry: AutoChainEntry): void {
+  autoRefusals.set(`${payer}\u0000${entry.instanceId}\u0000${entry.model}`, Date.now() + AUTO_REFUSAL_TTL_MS);
+}
+function autoRefusalsFor(payer: string): AutoChainEntry[] {
+  const now = Date.now();
+  const out: AutoChainEntry[] = [];
+  for (const [key, until] of autoRefusals) {
+    if (until <= now) { autoRefusals.delete(key); continue; }
+    const [who, instanceId, model] = key.split("\u0000");
+    if (who === payer && instanceId && model) out.push({ instanceId, model });
+  }
+  return out;
+}
+/** The engines this turn's payer can use, as Auto sees them. The bot's own
+ * engine counts while its availability is unknown; another engine only when
+ * it is known to work, the payer can pay for it, and moving there keeps the
+ * bot's approval level, tools and workspace. */
+function autoEnginesFor(bot: BotRecord, speaker: TurnSpeaker, guestConfined = false): AutoEngine[] {
+  const base = registry.get(bot.modelSelection.instanceId);
+  const mode = approvalModeFor(bot);
+  const engines: AutoEngine[] = [];
+  // Solo: which engines are signed in comes from the probe cache; a stale
+  // or empty cache refreshes in the background and counts as unknown.
+  if (IDENTITY.kind !== "perspicax" && (!engineProbes.size || [...engineProbes.values()].some((probe) => Date.now() - probe.at > ENGINE_PROBE_TTL_MS))) {
+    void probeEngines().catch(() => {});
+  }
+  for (const instance of registry.instances()) {
+    if (!instance.enabled || providerInstancesChanging.has(instance.instanceId) || policyModelRefusal(instance)) continue;
+    // A guest's turn on a Cloud home runs only on an engine that confines it.
+    if (guestConfined && instance.adapter.capabilities.guestTurns !== "confined") continue;
+    const own = instance.instanceId === base?.instanceId;
+    if (!own) {
+      if (!base) continue;
+      if (instance.adapter.capabilities.remoteAgent === true) continue;
+      if (modelSwitchNeedsAsk(mode, base.driverKind, instance.driverKind)) continue;
+      if (recoveryCapabilityError(
+        { driverKind: base.driverKind, capabilities: base.adapter.capabilities },
+        { driverKind: instance.driverKind, capabilities: instance.adapter.capabilities })) continue;
+      if (IDENTITY.kind === "perspicax") {
+        if (instance.adapter.capabilities.withholdsHostTools !== true) continue;
+      } else if (engineProbes.get(instance.instanceId)?.ready !== true) continue;
+    }
+    let via: AutoEngine["via"] = "server";
+    if (IDENTITY.kind === "perspicax") {
+      const plan = resolveEngineAccess(orgEngineInput(bot, instance, speaker));
+      if (!plan.ok) continue;
+      via = plan.via;
+    }
+    const options = instance.models.options.filter((option) => !option.custom &&
+      (!hostedModels || hostedModels.allows({ instanceId: instance.instanceId, model: option.id })));
+    engines.push({
+      instanceId: instance.instanceId,
+      driverKind: instance.driverKind,
+      displayName: engineDisplayName(instance),
+      models: { default: instance.models.default, options },
+      ...(instance.adapter.capabilities.effortLevels ? { effortLevels: instance.adapter.capabilities.effortLevels } : {}),
+      via,
+    });
+  }
+  return engines;
+}
+/** Whether a recorded pick can still run for this payer. */
+function autoRecordUsable(record: AutoModelRecord | undefined, engines: readonly AutoEngine[], skip: readonly AutoChainEntry[]): boolean {
+  if (!record) return false;
+  if (skip.some((entry) => entry.instanceId === record.instanceId && entry.model === record.model)) return false;
+  return engines.some((engine) => engine.instanceId === record.instanceId && engine.models.options.some((option) => option.id === record.model));
+}
+/** The pick for one turn of a bot on Auto, or null when the bot is pinned.
+ * A continuation keeps the thread's last pick while it can still run. */
+function autoPickForTurn(input: {
+  bot: BotRecord;
+  threadId: string;
+  speaker: TurnSpeaker;
+  role: "orchestration" | "worker" | "continue";
+  /** A continuation with no usable earlier pick: what kind of turn it is. */
+  fallback?: "orchestration" | "worker";
+  /** A guest drives this turn on a Cloud home. */
+  guestConfined?: boolean;
+  text: string;
+  skip?: readonly AutoChainEntry[];
+}): { pick: AutoPick; payer: string } | null {
+  const { bot } = input;
+  if (bot.modelSelection.auto !== true) return null;
+  const payer = autoPayerKey(bot, input.speaker);
+  const skip = [...autoRefusalsFor(payer), ...(input.skip ?? [])];
+  const engines = autoEnginesFor(bot, input.speaker, input.guestConfined === true);
+  const request = { base: bot.modelSelection, engines, catalog: autoCatalogLookup, skip };
+  if (input.role === "continue") {
+    const record = store.taskByThread(bot.id, input.threadId)?.autoModel;
+    if (record && autoRecordUsable(record, engines, skip)) {
+      const engine = engines.find((candidate) => candidate.instanceId === record.instanceId)!;
+      const selection: ModelSelection = { instanceId: record.instanceId, model: record.model };
+      if (record.instanceId === bot.modelSelection.instanceId && bot.modelSelection.effort && engine.effortLevels?.includes(bot.modelSelection.effort)) {
+        selection.effort = bot.modelSelection.effort;
+      }
+      return {
+        payer,
+        pick: {
+          role: record.role, selection, engineLabel: record.engineLabel, modelLabel: record.modelLabel, tier: record.tier,
+          ...(record.taskClass ? { taskClass: record.taskClass } : {}), reason: record.reason,
+          ...(record.via ? { via: record.via } : {}), ...(record.fromEngineLabel ? { fromEngineLabel: record.fromEngineLabel } : {}),
+          chain: [{ instanceId: record.instanceId, model: record.model }, { instanceId: bot.modelSelection.instanceId, model: bot.modelSelection.model }],
+        },
+      };
+    }
+  }
+  if (input.role === "worker" || (input.role === "continue" && input.fallback === "worker")) {
+    const role = [bot.title, bot.soul?.slice(0, 2_000)].filter(Boolean).join("\n");
+    const parsed = attachmentsInText(input.text);
+    const attachments = parsed.attachments.map((item) => {
+      let bytes: number | undefined;
+      try { bytes = item.path ? statSync(item.path).size : undefined; } catch { bytes = undefined; }
+      return { kind: item.kind, ...(item.name ? { name: item.name } : {}), ...(bytes !== undefined ? { bytes } : {}) };
+    });
+    return { payer, pick: pickWorkerModel({ ...request, task: { text: parsed.text, attachments, ...(role ? { role } : {}) } }) };
+  }
+  return { payer, pick: pickOrchestrationModel(request) };
 }
 /** A refused turn: why, and whose credentials it needed. */
 type OrgAccessRefusal = { reason: EngineAccessRefusal; cause?: NoAccessCause; payer?: "speaker" | "owner"; payerPrincipalId?: string; routine?: true };
@@ -24984,6 +25269,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
             }
             return json(res, 200, {
               status: receipt.status, toBotName: receipt.toBotName, result: receipt.result ?? "",
+              ...(receipt.workerModel ? { workerModel: receipt.workerModel } : {}),
               ...(receipt.approvalOutcome ? {
                 approvalOutcome: receipt.approvalOutcome, approvalSource: receipt.approvalSource,
               } : {}),
@@ -25698,6 +25984,9 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         let selection: ModelSelection;
         if (body.modelSelection === undefined) {
           selection = await defaultSelection();
+          // A Primary Bot on Auto makes specialists on Auto too.
+          const chiefSelection = store.projectBotForTask(chief.id, fromThreadId)?.modelSelection ?? chief.modelSelection;
+          if (chiefSelection.auto === true && selection.instanceId) selection = { ...selection, auto: true };
         } else {
           const checked = checkedModelSelection(body.modelSelection, undefined, true);
           if (!checked.ok) return json(res, checked.status, { error: checked.error });
@@ -26558,8 +26847,20 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         credential: webhookCredential(ingress.baseUrl, created.webhook.endpointId, created.secret),
       });
     }
-    let webhookMatch = path.match(/^\/api\/webhooks\/([\w-]+)\/(rotate|test)$/);
+    let webhookMatch = path.match(/^\/api\/webhooks\/([\w-]+)\/(rotate|test|reveal)$/);
     if (webhookMatch && method === "POST") {
+      if (webhookMatch[2] === "reveal") {
+        // The one-time copy of a token generated at start for a webhook that
+        // predates the bearer rule. A second call finds nothing to reveal.
+        const revealed = webhooks.revealPendingToken(webhookMatch[1]);
+        if (!revealed) return json(res, 404, { error: "no token to reveal" });
+        const ingress = webhookIngressStatus();
+        return json(res, 200, {
+          webhook: revealed.webhook,
+          ingress,
+          credential: webhookCredential(ingress.baseUrl, revealed.webhook.endpointId, revealed.secret),
+        });
+      }
       if (webhookMatch[2] === "test") {
         const result = webhooks.test(webhookMatch[1], await readBody(req));
         return result ? json(res, 202, result) : json(res, 404, { error: "no such webhook" });
@@ -28767,6 +29068,15 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       const visible = wireBot(bot);
       broadcast({ kind: "bot", bot: visible });
       return json(res, 200, { bot: visible });
+    }
+    // Auto (docs/plans/2026-10-08-auto-model.md): the model this person's
+    // next turn with the bot would run on, and the one sentence saying why.
+    m = path.match(/^\/api\/bots\/([\w-]+)\/auto-model$/);
+    if (m && method === "GET") {
+      const bot = requestedTaskBot(m[1], url.searchParams.get("threadId") ?? undefined);
+      if (bot.modelSelection.auto !== true) return json(res, 200, { auto: false });
+      const turn = autoPickForTurn({ bot, threadId: bot.threadId, speaker: speakerFor(auth), role: "orchestration", text: "" });
+      return json(res, 200, { auto: true, pick: turn ? autoModelRecord(turn.pick, Date.now()) : null, explanation: turn ? explainPick(turn.pick) : "" });
     }
     m = path.match(/^\/api\/bots\/([\w-]+)\/command-allowlist(?:\/([\w-]+))?$/);
     if (m && ["GET", "POST", "DELETE"].includes(method)) {

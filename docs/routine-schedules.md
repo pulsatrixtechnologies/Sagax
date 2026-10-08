@@ -78,3 +78,31 @@ use an appropriate event/webhook workflow instead of a fake weekly schedule.
 Cron series are edited through the routine editor rather than calendar dragging,
 which could otherwise ambiguously change an entire expression. Dense calendar
 projections are bounded per day; Run logs remain the source of actual outcomes.
+
+## Webhooks: always a bearer token
+
+Webhooks are the way to start a routine-style task from an event outside the
+app (a build finishing, a payment arriving) instead of faking a schedule. The
+receiver listens on its own port (`SAGAX_WEBHOOK_PORT`, default the app port
+plus one) and every webhook needs a bearer token; there is no unauthenticated
+mode.
+
+```sh
+curl -X POST https://<your-host>/hooks/<endpoint-id> \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{"task":"Check the failed build"}'
+```
+
+- The token is created with the webhook and shown **once** in the editor, with
+  a copy button. Afterwards only its last 4 characters are shown. **Regenerate**
+  asks for confirmation and the old token stops working immediately.
+- The token is read only from the `Authorization` header. A token in the URL
+  path, the query string or the body is refused with `401`, and so is a missing
+  or wrong one. The answer never says which part was wrong.
+- A source that fails authentication 10 times in a minute gets `429` until the
+  minute has passed.
+- Upgrading: a webhook created before this rule gets a new token when the
+  server starts, and its old URL (the secret used to be part of the path) stops
+  working. Open the webhook in the editor and copy the token once ("This
+  webhook now needs a bearer token; copy it here"), then update each sender.

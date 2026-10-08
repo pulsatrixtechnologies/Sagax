@@ -2,6 +2,7 @@
 // (MascotLookEditor.tsx) and the desktop mascot's "Moves" menu offer the
 // same list, with the same names.
 import type { LocaleKey } from "@/locales";
+import type { ShapeMove } from "@/components/shape-engine";
 import { MAUS_WING_MOTIONS } from "@/lib/mascot";
 import type { MascotLook } from "../../../shared/mascot-look";
 import type { MascotActivity } from "./behavior";
@@ -27,7 +28,26 @@ export const OWL_MOVE_FX: Record<OwlMove, MascotActivity> = {
   hoot: "hoot",
 };
 
-export const MOVE_LABEL: Partial<Record<MascotActivity, LocaleKey>> = {
+/** The fourteen Shapes moves' names. */
+export const SHAPE_MOVE_LABEL = {
+  thinking: "mascot.shapeMove.thinking",
+  wink: "mascot.shapeMove.wink",
+  wide: "mascot.shapeMove.wide",
+  alert: "mascot.shapeMove.alert",
+  notify: "mascot.shapeMove.notify",
+  exclaim: "mascot.shapeMove.exclaim",
+  sleep: "mascot.shapeMove.sleep",
+  egg: "mascot.shapeMove.egg",
+  hexagon: "mascot.shapeMove.hexagon",
+  play: "mascot.shapeMove.play",
+  orbit: "mascot.shapeMove.orbit",
+  swirl: "mascot.shapeMove.swirl",
+  burst: "mascot.shapeMove.burst",
+  comet: "mascot.shapeMove.comet",
+} satisfies Record<ShapeMove, LocaleKey>;
+
+export const MOVE_LABEL: Partial<Record<string, LocaleKey>> = {
+  ...SHAPE_MOVE_LABEL,
   wave: "floatingBots.move.wave",
   dance: "floatingBots.move.dance",
   jump: "floatingBots.move.jump",
@@ -38,8 +58,8 @@ export const MOVE_LABEL: Partial<Record<MascotActivity, LocaleKey>> = {
 
 export interface CharacterMove {
   id: string;
-  /** The behavior clip that plays it. */
-  clip: MascotActivity;
+  /** The behavior clip that plays it, or a Shapes move. */
+  clip: string;
   label: LocaleKey;
   /** The owl's wing move, for the popover's own preview. */
   owl?: OwlMove;

@@ -52,6 +52,7 @@ import { showToolCallsEnabled, skillAuthoringEnabled } from "@/lib/feature-flags
 import { normalizeState, stateForBot } from "@/lib/mascot";
 import { mascotRowAnimated } from "@/lib/mascot-animate";
 import { peerLine, type PeerLine } from "@/lib/peer-message";
+import { autoWorkerLine } from "@/lib/auto-model";
 import { showWorkingDots } from "@/lib/turn-tail";
 import { liveActivityLabel } from "@/lib/live-activity";
 import { ChatMarkdown } from "./ChatMarkdown";
@@ -403,7 +404,7 @@ function Bubble({
       data-retro-time={formatTime(message.at)}
       data-retro-role={user ? "user" : "bot"}
     >
-      {peer && <PeerLabel peer={peer} />}
+      {peer && <PeerLabel peer={peer} autoModel={message.autoModel} />}
       {user && <OtherAuthorLabel message={message} />}
       <div className={cn("flex w-full items-center gap-1.5", user ? "justify-end" : "justify-start")}>
         {user && (
@@ -635,7 +636,7 @@ function Bubble({
  * same shape as a room's cluster label. Looked up by id, then by name for
  * rows that predate Message.peerAsk; a peer since renamed or deleted still
  * shows the name the line carries. */
-function PeerLabel({ peer }: { peer: PeerLine }) {
+function PeerLabel({ peer, autoModel }: { peer: PeerLine; autoModel?: Message["autoModel"] }) {
   const { state } = useStore();
   const author =
     state.bots.find((b) => b.id === peer.botId) ?? state.bots.find((b) => b.name === peer.name);
@@ -657,6 +658,10 @@ function PeerLabel({ peer }: { peer: PeerLine }) {
       />
       <span className="text-[11px] font-medium text-ink-secondary">{peer.name}</span>
       <span className="text-[11px] text-ink-tertiary">· {how}</span>
+      {/* Auto: the model this delegated work runs on, and its class. */}
+      {autoModel?.role === "worker" && (
+        <span data-peer-auto-model className="min-w-0 truncate text-[11px] text-ink-tertiary">· {autoWorkerLine(autoModel)}</span>
+      )}
     </div>
   );
 }
@@ -791,7 +796,7 @@ const MessagesList = memo(function MessagesList({
     <>
       {messages.length === 0 && !bot.busy && (
         <div className="flex flex-1 flex-col items-center justify-center gap-3 py-24 text-center">
-          <BotAvatar bot={bot} state="idle" size={64} motion="none" motionKey={0} animated={false} />
+          <span className="mascot-plinth p-3"><BotAvatar bot={bot} state="idle" size={64} motion="none" motionKey={0} animated={false} /></span>
           <RenameTitle
             value={bot.name}
             onCommit={(name) => {

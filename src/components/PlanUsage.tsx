@@ -53,7 +53,7 @@ function dueResetDeadlines(report: PlanUsageReport, now: number, seen: Set<strin
 function usageTone(used: number): string {
   if (used >= 90) return "bg-danger";
   if (used >= 70) return "bg-warning";
-  return "bg-success";
+  return "bg-accent";
 }
 
 function windowLabel(label: string): string {

@@ -460,6 +460,13 @@ const bridge = {
     rekey: (fromId, toId) => ipcRenderer.invoke("floating-bots:rekey", { from: String(fromId), to: String(toId) }),
     update: (botId, snapshot) => ipcRenderer.send("floating-bots:update", { botId: String(botId), snapshot }),
     level: (botId, levels) => ipcRenderer.send("floating-bots:level", { botId: String(botId), levels }),
+    // the mascot's call hotkey (electron/mascot-hotkey.mjs): on or off, its keys, whether holds are read
+    hotkey: config => ipcRenderer.invoke("floating-bots:hotkey", config && typeof config === "object" ? { enabled: config.enabled === true, accelerator: String(config.accelerator ?? ""), hold: config.hold === true } : { enabled: false }),
+    onHotkey: cb => {
+      const handler = (_event, value) => cb(value);
+      ipcRenderer.on("floating-bots:hotkey", handler);
+      return () => ipcRenderer.removeListener("floating-bots:hotkey", handler);
+    },
     onWant: cb => {
       const handler = (_event, value) => cb(value);
       ipcRenderer.on("floating-bots:want", handler);

@@ -97,7 +97,7 @@ export function SoulField({
         )}
       </div>
       {info?.drift && (
-        <div className="mb-2 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-[12px] text-ink">
+        <div className="mb-2 rounded-lg border border-warning/40 bg-warning/10 p-3 text-[12px] text-ink">
           <div className="font-medium">{t("botPanel.soul.drift")}</div>
           <div className="mt-1 text-ink-secondary">
             {t("botPanel.soul.driftHelp")} <span className="break-all">{info.file}</span>

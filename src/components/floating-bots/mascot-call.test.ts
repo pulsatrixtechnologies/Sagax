@@ -10,7 +10,7 @@ import { DEFAULT_VOICE_MODE_SETTINGS } from "../../../shared/voice-mode";
 import { Balloon } from "./Balloon";
 import { FloatingBotView } from "./FloatingBotView";
 import { MascotCallCardView, MascotCallPill, pushLevel } from "./MascotCall";
-import { callLevels, mascotCallSnapshot, NO_PANEL, runMascotCallEvent, type MascotCallDeps } from "./mascot-call";
+import { callLevels, callPose, mascotCallSnapshot, NO_PANEL, runMascotCallEvent, type MascotCallDeps } from "./mascot-call";
 import { isFloatingEvent, mascotFields, type FloatingCall, type FloatingSnapshot } from "./protocol";
 
 function fakeCall(enrolled = false) {
@@ -202,5 +202,45 @@ describe("the mascot's call pill", () => {
     const props = { botId: "bot_a", name: "Sagax", balloon, retro: false, side: { below: false, right: false }, room: { x: 0, y: 0, w: 480, h: 400 }, onEvent: () => undefined, hover: () => undefined, pinLabel: "" };
     expect(renderToStaticMarkup(createElement(Balloon, { ...props, callLabel: "Call Sagax" }))).toContain('aria-label="Call Sagax"');
     expect(renderToStaticMarkup(createElement(Balloon, props))).not.toContain("data-call-start");
+  });
+
+  it("each phase takes one of the mascot's poses; its own celebration or alert wins while listening", () => {
+    expect(callPose("speaking", "idle")).toBe("speak");
+    expect(callPose("thinking", "celebrate")).toBe("think");
+    expect(callPose("held", "idle")).toBe("sleep");
+    expect(callPose("listening", "think")).toBe("idle");
+    expect(callPose("hearing", "alert")).toBe("alert");
+    expect(callPose("connecting", "celebrate")).toBe("celebrate");
+  });
+
+  it("captions beside the mascot follow the call settings' switch, with the phase's chip", () => {
+    expect(mascotCallSnapshot(liveFor("bot_a", "speaking"), NO_PANEL, DEFAULT_VOICE_MODE_SETTINGS, DEFAULT_CALL_SETTINGS).captions).toBe(true);
+    expect(mascotCallSnapshot(liveFor("bot_a", "speaking"), NO_PANEL, DEFAULT_VOICE_MODE_SETTINGS, { ...DEFAULT_CALL_SETTINGS, captions: false }).captions).toBe(false);
+    const mover = { coords: "screen" as const, moveBy: () => undefined, moved: () => undefined };
+    const html = renderToStaticMarkup(createElement(FloatingBotView, { snapshot: snapshot({ call: { ...CALL, captions: true } }), onEvent: () => undefined, mover }));
+    expect(html).toContain("data-voice-captions");
+    expect(html).toContain("data-caption-chip");
+    expect(html).toContain("data-caption-line");
+    const off = renderToStaticMarkup(createElement(FloatingBotView, { snapshot: snapshot({ call: { ...CALL, captions: false } }), onEvent: () => undefined, mover }));
+    expect(off).toContain("data-caption-chip");
+    expect(off).not.toContain("data-caption-line");
+  });
+
+  it("the hover controls are drawn beside the character, hidden until hovered; the tray where the chat goes", () => {
+    const mover = { coords: "screen" as const, moveBy: () => undefined, moved: () => undefined };
+    const html = renderToStaticMarkup(createElement(FloatingBotView, { snapshot: snapshot({}), onEvent: () => undefined, mover }));
+    expect(html).toContain('class="fb-controls"');
+    expect(html).not.toMatch(/fb-controls"[^>]*data-shown/);
+    const tray = renderToStaticMarkup(createElement(FloatingBotView, { snapshot: snapshot({ tray: { loading: false, items: [{ id: "a0", kind: "approval", title: "Needs you: click", detail: "Export", canStop: true, canOpen: true }] } }), onEvent: () => undefined, mover }));
+    expect(tray).toContain("data-tray-allow");
+    expect(tray).toContain("data-tray-stop");
+    expect(tray).toContain("Needs you: click");
+  });
+
+  it("the window's new events are understood by the brain", () => {
+    expect(isFloatingEvent({ type: "tray", open: true })).toBe(true);
+    expect(isFloatingEvent({ type: "tray" })).toBe(false);
+    expect(isFloatingEvent({ type: "work", action: "allow", id: "a0" })).toBe(true);
+    expect(isFloatingEvent({ type: "work", action: "allow", id: "thread:1" })).toBe(false);
   });
 });

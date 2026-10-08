@@ -207,9 +207,9 @@ const TASKS = new Set(["idle", "working", "waiting", "error"]);
 const LIVELINESS = new Set(["calm", "normal", "lively"]);
 const MAX_TOKENS = 1e9;
 const CHARACTERS = new Set(["owl", "shape", "trombi", "bunbu"]);
-const SHAPES = new Set(["circle", "cloud", "squircle", "sparkle", "clover", "bean", "flower", "drop", "pill", "pick", "house", "star", "hexagon"]);
-/** Shapes from the first set, renamed or replaced (shared/mascot-look.ts LEGACY_SHAPES). */
-const LEGACY_SHAPES = { blob: "bean", triangle: "pick" };
+const SHAPES = new Set(["circle", "bean", "squircle", "pill", "pick", "hexagon", "cloud", "drop"]);
+/** Shapes from earlier sets and the display names (shared/mascot-look.ts LEGACY_SHAPES). */
+const LEGACY_SHAPES = { blob: "bean", pebble: "bean", triangle: "pick", capsule: "pill", droplet: "drop", sparkle: "squircle", clover: "cloud", flower: "cloud", house: "hexagon", star: "hexagon" };
 const SHAPE_SKINS = new Set(["plain", "pastel", "glossy", "night", "outline", "gold", "neon", "chrome", "crystal", "circuit", "holo", "molten", "galaxy"]);
 const TROMBI_SKINS = new Set(["classic", "retro98", "gold", "neon", "chrome", "glitch", "holo", "molten"]);
 const BUNBU_SKINS = new Set(["plain", "pastel", "night", "plush", "velvet", "gold", "neon", "chrome", "crystal", "holo", "galaxy", "molten"]);
@@ -375,7 +375,32 @@ export function sanitizeCall(value) {
     previewing: value.previewing && typeof value.previewing.id === "string" && VOICE_ID_RE.test(value.previewing.id)
       ? { id: value.previewing.id, loading: flag(value.previewing.loading) }
       : null,
+    // live captions beside the mascot (the call settings' switch)
+    captions: value.captions !== false,
   };
+}
+
+/** A tray row's id: "a0".."a99" (an approval), "r0".."r99" (running work); the brain keeps what each stands for. */
+export const TRAY_ID_RE = /^[ar][0-9]{1,2}$/;
+export const TRAY_MAX = 8;
+
+/** The activity tray: short texts and opaque ids, nothing else. */
+export function sanitizeTray(value) {
+  if (!value || typeof value !== "object") return null;
+  const items = Array.isArray(value.items)
+    ? value.items
+        .filter((item) => item && typeof item === "object" && typeof item.id === "string" && TRAY_ID_RE.test(item.id) && (item.kind === "approval" || item.kind === "running"))
+        .slice(0, TRAY_MAX)
+        .map((item) => ({
+          id: item.id,
+          kind: item.kind,
+          title: text(item.title, 80) ?? "",
+          detail: text(item.detail, 140) ?? "",
+          canStop: flag(item.canStop),
+          canOpen: flag(item.canOpen),
+        }))
+    : [];
+  return { loading: flag(value.loading), items };
 }
 
 /**
@@ -445,6 +470,7 @@ export function sanitizeFloatingSnapshot(value) {
   const theme = appTheme(value.theme);
   if (theme) snapshot.theme = theme;
   snapshot.call = sanitizeCall(value.call);
+  snapshot.tray = sanitizeTray(value.tray);
   const balloon = value.balloon;
   if (balloon && typeof balloon === "object" && BALLOON_KINDS.has(balloon.kind)) {
     snapshot.balloon = {
@@ -479,7 +505,8 @@ export function sanitizeFloatingSnapshot(value) {
   return snapshot;
 }
 
-const EVENT_TYPES = new Set(["click", "context", "dismiss", "open", "menu", "send", "play", "pet", "call"]);
+const EVENT_TYPES = new Set(["click", "context", "dismiss", "open", "menu", "send", "play", "pet", "call", "tray", "work"]);
+const WORK_ACTIONS = new Set(["allow", "stop", "open"]);
 const CALL_ACTIONS = new Set(["start", "end", "mute", "unmute", "hold", "resume", "interrupt", "retry", "talk", "release", "voices", "enroll", "forget", "preview", "settings", "call-settings"]);
 /** The settings a mascot's call may change, and how each is checked. */
 const CALL_PATCH = {
@@ -497,6 +524,9 @@ export function sanitizeFloatingEvent(value) {
     const typed = value.text.slice(0, SEND_MAX);
     return typed.trim() ? { type: "send", text: typed } : null;
   }
+  // the hover controls' bell, and a tray row's buttons (the brain checks the id against what it listed)
+  if (value.type === "tray") return typeof value.open === "boolean" ? { type: "tray", open: value.open } : null;
+  if (value.type === "work") return WORK_ACTIONS.has(value.action) && typeof value.id === "string" && TRAY_ID_RE.test(value.id) ? { type: "work", action: value.action, id: value.id } : null;
   if (value.type === "call") {
     if (!CALL_ACTIONS.has(value.action)) return null;
     if (value.action === "preview") return typeof value.voice === "string" && VOICE_ID_RE.test(value.voice) ? { type: "call", action: "preview", voice: value.voice } : null;
@@ -1043,7 +1073,7 @@ export function createFloatingBotWindows(deps) {
       const clean = sanitizeFloatingEvent(value);
       if (!clean) return;
       // "Open in the app" (and the settings, the composer's clip and model chip) bring the app forward from here: the window is not focused
-      if (clean.type === "open" || (clean.type === "menu" && FOCUS_IDS.has(clean.id))) {
+      if (clean.type === "open" || (clean.type === "menu" && FOCUS_IDS.has(clean.id)) || (clean.type === "work" && clean.action === "open")) {
         try {
           deps.focusMain?.();
         } catch {

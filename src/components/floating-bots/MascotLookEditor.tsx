@@ -7,7 +7,7 @@
 //   preview, and plays the moves and the equip animation. Then that
 //   character's own options:
 //     Owl: color, skin
-//     Shapes: shape, color, shape skin
+//     Shapes: shape (8), color (with the Clay palette), shape skin (Clay first)
 //     Trombi: Trombi skin
 //     Bunbu: color, Bunbu skin
 //   Colors show one palette at a time (Vivid, Pastel, Deep, Neon, Neutral),
@@ -15,7 +15,7 @@
 //   opening on the current choice (editor-tabs.ts). Skin cards preview the
 //   skin animated; the Shape grid previews the current color and skin still.
 //   Section titles stay on top while their options scroll (sticky).
-//   Moves: that character's moves only, each with its skin's effect
+//   Moves: that character's moves only (Shapes: its fourteen), each with its skin's effect
 //
 // Each character keeps its own skin, so switching and back finds it again.
 // Loaded lazily with the popover.
@@ -35,8 +35,7 @@ import { ShapeMascot } from "@/components/ShapeMascot";
 import { SkinnedTrombi } from "@/components/skin-fx/SkinnedTrombi";
 import { BunbuMascot } from "@/components/BunbuMascot";
 import "@/components/skin-fx/skin-fx.css";
-import type { MascotActivity } from "./behavior";
-import { colorTabFor, colorTabs, nextTab, skinTabFor, skinTierTabs } from "./editor-tabs";
+import { colorGroupsFor, colorTabFor, colorTabs, nextTab, skinTabFor, skinTierTabs } from "./editor-tabs";
 import { MASCOTS, SHAPE_CHOICES } from "./mascots";
 import { characterMoves, type OwlMove } from "./moves";
 
@@ -52,8 +51,8 @@ export interface MascotLookEditorProps {
   onPatch: (patch: MascotLookPatch) => void;
   /** The owl's wing moves also play on the bot's avatars across the app. */
   onOwlMove?: (move: Exclude<MausMotion, "none">) => void;
-  /** A shape's or Trombi's move, played by the bot's avatar above (the preview). */
-  onMove?: (clip: MascotActivity) => void;
+  /** A character's move (a Shapes move, a Trombi or Bunbu clip), played by the bot's avatar above (the preview). */
+  onMove?: (clip: string) => void;
 }
 
 export const CHARACTER_LABEL = {
@@ -65,22 +64,19 @@ export const CHARACTER_LABEL = {
 
 export const SHAPE_LABEL = {
   circle: "mascot.shape.circle",
-  cloud: "mascot.shape.cloud",
+  bean: "mascot.shape.pebble",
   squircle: "mascot.shape.squircle",
-  sparkle: "mascot.shape.sparkle",
-  clover: "mascot.shape.clover",
-  bean: "mascot.shape.bean",
-  flower: "mascot.shape.flower",
-  drop: "mascot.shape.drop",
-  pill: "mascot.shape.pill",
-  pick: "mascot.shape.pick",
-  house: "mascot.shape.house",
-  star: "mascot.shape.star",
+  pill: "mascot.shape.capsule",
+  pick: "mascot.shape.triangle",
   hexagon: "mascot.shape.hexagon",
+  cloud: "mascot.shape.cloud",
+  drop: "mascot.shape.droplet",
 } satisfies Record<MascotShape, LocaleKey>;
 
+export { SHAPE_MOVE_LABEL } from "./moves";
+
 export const SHAPE_SKIN_LABEL = {
-  plain: "mascot.shapeSkin.plain",
+  plain: "mascot.shapeSkin.clay",
   pastel: "mascot.shapeSkin.pastel",
   glossy: "mascot.shapeSkin.glossy",
   night: "mascot.shapeSkin.night",
@@ -150,6 +146,7 @@ export const COLOR_GROUP_LABEL = {
   deep: "mascot.color.group.deep",
   neon: "mascot.color.group.neon",
   neutral: "mascot.color.group.neutral",
+  clay: "mascot.color.group.clay",
 } satisfies Record<MascotColorGroup, LocaleKey>;
 
 // A section's title row stays on top while its options scroll under it, so a
@@ -299,8 +296,8 @@ function SkinPicker<S extends string>({ skins, tierOf, selected, labelOf, idPref
 }
 
 /** The bot colors, one palette at a time; opens on the current color's palette. */
-function ColorPicker({ color, disabled, onSelect }: { color: MausColor; disabled?: boolean; onSelect: (color: MausColor) => void }) {
-  const tabs = colorTabs();
+function ColorPicker({ color, groups, disabled, onSelect }: { color: MausColor; groups: readonly MascotColorGroup[]; disabled?: boolean; onSelect: (color: MausColor) => void }) {
+  const tabs = colorTabs(groups);
   const [tab, setTab] = useState<MascotColorGroup>(() => colorTabFor(color));
   const followed = useRef(color);
   useEffect(() => {
@@ -362,10 +359,10 @@ export default function MascotLookEditor({ bot, disabled, onPatch: savePatch, on
   };
   const setLook = (next: Partial<MascotLook>) => onPatch({ mascotLook: { ...look, ...next, skins: { ...look.skins, ...next.skins } } });
 
-  const colors = <ColorPicker color={bot.color} disabled={disabled} onSelect={(color) => onPatch({ color })} />;
+  const colors = <ColorPicker color={bot.color} groups={colorGroupsFor(look.character, bot.color)} disabled={disabled} onSelect={(color) => onPatch({ color })} />;
 
   // the same moves, with the same names, as the desktop mascot's "Moves" menu (moves.ts)
-  const moves: { id: string; label: string; clip: MascotActivity; owl?: OwlMove }[] = characterMoves(look).map((move) => ({ ...move, label: t(move.label) }));
+  const moves: { id: string; label: string; clip: string; owl?: OwlMove }[] = characterMoves(look).map((move) => ({ ...move, label: t(move.label) }));
 
   return (
     <div data-mascot-look-editor="">
@@ -413,8 +410,8 @@ export default function MascotLookEditor({ bot, disabled, onPatch: savePatch, on
       {look.character === "shape" && (
         <div data-character-options="shape">
           <SectionHead title={t("floatingBots.mascot.shape")} />
-          {/* 13 shapes on two rows; each previews the current color and skin, still and cheap */}
-          <div className="grid grid-cols-7 gap-1" role="radiogroup" aria-label={t("floatingBots.mascot.shape")}>
+          {/* 8 shapes on two rows; each previews the current color and skin, still and cheap */}
+          <div className="grid grid-cols-4 gap-1" role="radiogroup" aria-label={t("floatingBots.mascot.shape")}>
             {SHAPE_CHOICES.map((shape) => (
               <button
                 key={shape}

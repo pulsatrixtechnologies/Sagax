@@ -17,7 +17,7 @@ const CATALOG_PROBE_FOLDER = ["", "providers", "opencode", "discovery"].join(sep
 const turnCalls = (path: string) => jsonLines(path).filter((call) => !String(call.cwd ?? "").endsWith(CATALOG_PROBE_FOLDER));
 
 async function withRecoveryFixture(
-  options: { enabled?: boolean; method?: string; error?: unknown; afterOutput?: boolean; backupFails?: boolean; gated?: boolean; scripted?: boolean },
+  options: { enabled?: boolean; method?: string; error?: unknown; afterOutput?: boolean; backupFails?: boolean; gated?: boolean; scripted?: boolean; claudeAuth?: "in" | "out" },
   check: (fixture: {
     api: (method: string, path: string, body?: unknown, expectedStatus?: number) => Promise<any>;
     control: (...args: string[]) => Promise<any>;
@@ -75,6 +75,7 @@ async function withRecoveryFixture(
       ...config.instances.claude.environment,
       FAKE_CLAUDE_PROMPTS: backupFile, FAKE_CLAUDE_TOOL_CALLS: "[]",
       FAKE_CLAUDE_MODE: options.backupFails ? "not-logged-in" : "happy",
+      ...(options.claudeAuth ? { FAKE_CLAUDE_AUTH: options.claudeAuth } : {}),
     };
     config.automaticRecovery = { enabled: options.enabled !== false, backup };
     writeFileSync(configPath, JSON.stringify(config));
@@ -152,6 +153,31 @@ it("recovers once on the same thread with its history and permissions, leaving t
     expect(after.tasks.find((entry: any) => entry.threadId === sibling.threadId).modelSelection).toEqual(primary);
     await control("messages", "--bot", bot.id, "--task", threadId, "--limit", "20");
     evidence.push({ beforeTask, task, messages, receipt });
+  });
+}, 90_000);
+
+it("falls back to the configured backup when an Auto bot's fallback chain is spent", async () => {
+  // Claude reports signed out, so Auto cannot move the turn there itself:
+  // the chain is the bot's own engine only. The configured backup still runs.
+  await withRecoveryFixture({ claudeAuth: "out" }, async ({ api, control, calls, backupPrompts, evidence }) => {
+    const { bot } = await control("new-bot", "--name", "Auto recovers");
+    const threadId = bot.activeTaskId;
+    await api("PATCH", `/api/bots/${bot.id}/tasks/${threadId}`, { modelSelection: { ...primary, auto: true }, updateBotDefault: true, approvalMode: "ask" });
+    const text = "AUTO_CHAIN_SPENT_RECOVER_4K";
+    await control("send", "--bot", bot.id, "--task", threadId, "--text", text);
+    expect((await control("wait", "--bot", bot.id, "--task", threadId, "--timeout", "30")).status).toBe("settled");
+    expect(calls().filter((call) => call.method === "initialize.error").length).toBeGreaterThanOrEqual(1);
+    expect(backupPrompts()).toHaveLength(1);
+    const messages = (await api("GET", `/api/threads/${threadId}/messages?limit=100`)).messages as any[];
+    evidence.push({ messages });
+    expect(messages.filter((message) => message.tool?.name?.startsWith("recovery:"))).toHaveLength(1);
+    expect(messages.findLast((message) => message.role === "bot" && message.kind === "text")).toMatchObject({
+      text: "hello from fake claude", turnSucceeded: true,
+    });
+    const after = (await api("GET", "/api/bots")).bots.find((entry: any) => entry.id === bot.id);
+    // The bot keeps Auto; the thread that recovered is pinned to the backup, as for any bot.
+    expect(after.modelSelection).toEqual({ ...primary, auto: true });
+    expect(after.tasks.find((task: any) => task.threadId === threadId).modelSelection).toEqual(backup);
   });
 }, 90_000);
 

@@ -4,7 +4,8 @@
 // machine your bots can borrow.
 import { useRetroSkin } from "./RetroChromeHost";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
-import { FLOATING_LIVELINESS, floatingBotPrefs, setFloatingFlyAway, setFloatingLiveliness, subscribeFloatingBots, type FloatingLiveliness } from "@/lib/floating-bots";
+import { FLOATING_LIVELINESS, floatingBotPrefs, HOTKEY_CHOICES, hotkeyLabel, setFloatingFlyAway, setFloatingHotkey, setFloatingLiveliness, subscribeFloatingBots, type FloatingLiveliness, type HotkeyChoice } from "@/lib/floating-bots";
+import { useCallSettings, writeCallSettings } from "@/lib/voice-mode/call-settings";
 import { Archive, Coins, FlaskConical, KeyRound, Mail, Monitor, Palette, Plug, ScrollText, Search, ShieldCheck, TabletSmartphone, Terminal, Trophy, User, Users, X, Building2, Zap } from "lucide-react";
 import { AchievementsPage } from "./achievements/AchievementsPage";
 import { api, useStore, type AppSettingsSection, type ConfigStatus } from "@/state/store";
@@ -516,6 +517,47 @@ function FloatingLivelinessRow() {
           <option key={level} value={level}>{t(`settings.floatingBots.liveliness.${level}`)}</option>
         ))}
       </select>
+    </SettingRow>
+  );
+}
+
+/** Desktop mascots: the global call hotkey (press to call, again to mute, hold to talk), on unless switched off. */
+function FloatingHotkeyRow() {
+  const prefs = useSyncExternalStore(subscribeFloatingBots, floatingBotPrefs, floatingBotPrefs);
+  // the desktop app only: a browser has no global keys
+  if (typeof window === "undefined" || !(window.ogb?.floatingBots as { hotkey?: unknown } | undefined)?.hotkey) return null;
+  const mac = /Mac/.test(navigator.platform || navigator.userAgent);
+  return (
+    <SettingRow title={t("settings.floatingBots.hotkey.title")} subtitle={t("settings.floatingBots.hotkey.subtitle")}>
+      <div className="flex items-center gap-2">
+        <select
+          value={prefs.hotkeyKeys}
+          disabled={!prefs.hotkey}
+          aria-label={t("settings.floatingBots.hotkey.keys")}
+          onChange={(event) => setFloatingHotkey({ keys: event.target.value as HotkeyChoice })}
+          className="w-full max-w-[200px] rounded-lg border border-border bg-ink/[0.03] px-2.5 py-1.5 text-[13px] leading-[18px] text-ink focus:border-border-strong focus:outline-none disabled:opacity-50"
+        >
+          {HOTKEY_CHOICES.map((keys) => (
+            <option key={keys} value={keys}>{hotkeyLabel(keys, mac)}</option>
+          ))}
+        </select>
+        <Switch
+          checked={prefs.hotkey}
+          aria-label={t("settings.floatingBots.hotkey.title")}
+          onClick={() => setFloatingHotkey({ on: !prefs.hotkey })}
+        />
+      </div>
+    </SettingRow>
+  );
+}
+
+/** Desktop mascots: live captions beside the mascot during a call (a call setting, kept on this device). */
+function FloatingCaptionsRow() {
+  const call = useCallSettings();
+  const on = call.captions !== false;
+  return (
+    <SettingRow title={t("settings.floatingBots.captions.title")} subtitle={t("settings.floatingBots.captions.subtitle")}>
+      <Switch checked={on} aria-label={t("settings.floatingBots.captions.title")} onClick={() => writeCallSettings({ captions: !on })} />
     </SettingRow>
   );
 }
@@ -1264,6 +1306,8 @@ export function SettingsModal() {
                   <NudgeSoundRow />
                   <FloatingFlyAwayRow />
                   <FloatingLivelinessRow />
+                  <FloatingHotkeyRow />
+                  <FloatingCaptionsRow />
                   {advanced && !remoteActive && editConfig && <ToolCallsRow />}
                   {advanced && <RunCardRow />}
                 </div>
@@ -1281,7 +1325,7 @@ export function SettingsModal() {
               <>
                 <p className="text-[13px] leading-[18px] text-ink-secondary">{t("settings.connections.subtitle")}</p>
                 {state.config?.composio.mode === "managed" ? (
-                  <div className="rounded-lg border border-success/25 bg-success/10 px-3 py-2 text-[13px] text-success">
+                  <div className="rounded-lg border border-accent/25 bg-accent/10 px-3 py-2 text-[13px] text-accent-text">
                     {t("settings.connections.ready")}
                   </div>
                 ) : null}

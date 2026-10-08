@@ -10,6 +10,7 @@ import { recordEvents } from "../../testing/events.ts";
 import { GeminiAgentDriver } from "./gemini.ts";
 import { acpNativeIncomingLogMessage } from "./core.ts";
 import { GrokAgentDriver, grokInheritedProfile, grokToolScopeProfile } from "./grok.ts";
+import { clearDesktopInjectHosts, upsertDesktopInjectHost } from "../local-inject.ts";
 
 const cli = join(dirname(fileURLToPath(import.meta.url)), "../../testing/fake-acp-cli.ts");
 const directories: string[] = [];
@@ -227,4 +228,75 @@ it("passes an unknown Grok model to the engine and runs on the engine's answer w
   expect(notices[0]).toMatchObject({ message: expect.stringContaining("Grok does not offer grok-9-preview, so this conversation uses grok-4.7") });
   expect(JSON.stringify(notices)).not.toMatch(/new conversation/i);
   expect(f.recorder.events.find(event => event.type === "session.started")).toMatchObject({ model: "grok-4.7" });
+});
+
+// Grok's remote "launch campaign" (settings.campaigns) makes session/new run
+// the launched model whatever the profile asks, in any Grok home where it was
+// never dismissed: every fresh organization home. Verified with grok 1.0.46
+// and 1.0.50 signed in. Sagax dismisses it before the session opens.
+const launchCampaign = (home: string) => writeFileSync(join(home, ".grok", "settings_cache.json"), JSON.stringify({
+  payload: JSON.stringify({ settings: { campaigns: [{ id: "grok-4.7-launch", models: { default: "grok-4.7" } }] } }), signature: "fixture",
+}));
+
+it("runs an offered Grok model on an organization turn despite a launch campaign, with no notice", async () => {
+  const store = join(mkdtempSync(join(tmpdir(), "omb-grok-campaign-")), "models.json"); directories.push(dirname(store));
+  const f = await fixture(GrokAgentDriver, {
+    FAKE_ACP_SESSION_MODELS: "grok-4.7,grok-4.7-build-fast,grok-4.6,grok-4.5", FAKE_ACP_SESSION_MODEL_STORE: store, FAKE_ACP_DUMP_PROMPT: "1",
+  });
+  const home = dirname(f.dump);
+  launchCampaign(home);
+  for (const model of ["grok-4.5", "grok-4.6", "grok-4.7-build-fast"]) {
+    const { turnId } = await f.instance.adapter.sendTurn({ threadId: "campaign", text: "test", model, withholdHostTools: true });
+    await f.recorder.until(event => event.type === "turn.completed" && event.turnId === turnId);
+    expect(f.recorder.events.find(event => event.type === "session.started" && event.turnId === turnId)).toMatchObject({ model });
+    expect(JSON.parse(readFileSync(store, "utf8"))["fake-acp-session"]).toBe(model);
+  }
+  expect(f.recorder.events.filter(event => event.type === "runtime.notice")).toEqual([]);
+  expect(f.recorder.events.filter(event => event.type === "runtime.error")).toEqual([]);
+  expect(JSON.parse(readFileSync(join(home, ".grok", "campaigns_state.json"), "utf8")).dismissed_ids).toEqual(["grok-4.7-launch"]);
+});
+
+it("runs a local model on Grok through the [model.x] block it declares, accepted without a notice", async () => {
+  const store = join(mkdtempSync(join(tmpdir(), "omb-grok-local-")), "models.json"); directories.push(dirname(store));
+  upsertDesktopInjectHost({ id: "desk8a1ada8002", label: "DwarfStar", baseUrl: "http://127.0.0.1:45999/d/desk8a1ada8002/v1" });
+  try {
+    const f = await fixture(GrokAgentDriver, {
+      FAKE_ACP_SESSION_MODELS: "grok-4.7,grok-4.6", FAKE_ACP_SESSION_MODEL_STORE: store, FAKE_ACP_GROK_CONFIG_MODELS: "1", FAKE_ACP_DUMP_PROMPT: "1",
+    });
+    const home = dirname(f.dump);
+    launchCampaign(home);
+    const { turnId } = await f.instance.adapter.sendTurn({ threadId: "local", text: "test", model: "desk8a1ada8002::qwen3.8-flash-next", withholdHostTools: true });
+    await f.recorder.until(event => event.type === "turn.completed" && event.turnId === turnId);
+    const config = readFileSync(join(home, ".grok", "config.toml"), "utf8");
+    expect(config).toContain('[model."desk8a1ada8002-qwen3.8-flash-next"]');
+    expect(config).toContain('model = "qwen3.8-flash-next"');
+    // the desktop link: the server's loopback proxy for that computer
+    expect(config).toContain('base_url = "http://127.0.0.1:45999/d/desk8a1ada8002/v1"');
+    const argv = JSON.parse(readFileSync(f.dump, "utf8")).argv as string[];
+    expect(argv[argv.indexOf("-m") + 1]).toBe("desk8a1ada8002-qwen3.8-flash-next");
+    expect(JSON.parse(readFileSync(`${f.dump}.session.json`, "utf8"))._meta.agentProfile.model).toBe("desk8a1ada8002-qwen3.8-flash-next");
+    expect(JSON.parse(readFileSync(store, "utf8"))["fake-acp-session"]).toBe("desk8a1ada8002-qwen3.8-flash-next");
+    expect(f.recorder.events.find(event => event.type === "turn.completed" && event.turnId === turnId)).toMatchObject({ ok: true });
+    expect(f.recorder.events.filter(event => event.type === "runtime.notice")).toEqual([]);
+  } finally {
+    clearDesktopInjectHosts();
+  }
+});
+
+it("shows the unknown-model notice once per conversation, even when the process changes", async () => {
+  const store = join(mkdtempSync(join(tmpdir(), "omb-grok-once-")), "models.json"); directories.push(dirname(store));
+  const f = await fixture(GrokAgentDriver, { FAKE_ACP_SESSION_MODELS: "grok-4.7,grok-4.6", FAKE_ACP_SESSION_MODEL_STORE: store });
+  // a new effort is a new spawn contract, so each turn gets a new process
+  for (const effort of ["low", "medium", "high"] as const) {
+    const { turnId } = await f.instance.adapter.sendTurn({ threadId: "once", text: "test", model: "grok-9-preview", effort, withholdHostTools: true });
+    await f.recorder.until(event => event.type === "turn.completed" && event.turnId === turnId);
+  }
+  expect(Number(readFileSync(f.launches, "utf8"))).toBe(3);
+  const notices = f.recorder.events.filter(event => event.type === "runtime.notice");
+  expect(notices).toHaveLength(1);
+  expect(notices[0]).toMatchObject({ message: expect.stringContaining("Grok does not offer grok-9-preview") });
+  // another conversation still hears it
+  const other = await f.instance.adapter.sendTurn({ threadId: "other", text: "test", model: "grok-9-preview", withholdHostTools: true });
+  await f.recorder.until(event => event.type === "turn.completed" && event.turnId === other.turnId);
+  expect(f.recorder.events.filter(event => event.type === "runtime.notice")).toHaveLength(2);
 });

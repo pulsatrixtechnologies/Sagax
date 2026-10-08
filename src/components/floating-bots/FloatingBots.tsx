@@ -8,7 +8,9 @@
 // app: the floating windows never hold a session.
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { reportAchievement } from "@/lib/achievements";
-import { openThread, useStore, useStreaming, type Bot } from "@/state/store";
+import { api, openThread, useStore, useStreaming, type Bot } from "@/state/store";
+import { loadBotActivity, type BotActivityList } from "@/lib/bot-activity";
+import { pendingApprovals } from "@/components/PendingApproval";
 import { activeLocale, t } from "@/lib/i18n";
 import { brand } from "@/lib/brand";
 import { useRetroSkin } from "@/components/RetroChromeHost";
@@ -50,12 +52,14 @@ import { isFloatingEvent, type FloatingAvatar, type FloatingBotsBridge, type Flo
 import { currentCall, endCall, startCall, useOnCall } from "@/lib/call";
 import { speaker } from "@/lib/tts";
 import { fetchVoiceModeVoices, useVoiceModeAvailable } from "@/lib/voice-mode/api";
-import { notifyCallSettings, useCallSettings, writeCallSettings } from "@/lib/voice-mode/call-settings";
+import { notifyCallSettings, readCallSettings, useCallSettings, writeCallSettings } from "@/lib/voice-mode/call-settings";
 import { liveCallNow, useLiveCall } from "@/lib/voice-mode/live-call-store";
 import { readVoiceModeSettings, useVoiceModeSettings, writeVoiceModeSettings } from "@/lib/voice-mode/settings";
 import { forgetVoiceprint } from "@/lib/voice-mode/speaker-id";
-import { callLevels, mascotCallSnapshot, NO_PANEL, runMascotCallEvent, type MascotCallDeps, type MascotCallPanel } from "./mascot-call";
-import { characterMoves } from "./moves";
+import { callLevels, callPose, mascotCallSnapshot, NO_PANEL, runMascotCallEvent, type MascotCallDeps, type MascotCallPanel } from "./mascot-call";
+import { hotkeyAction, hotkeyBot, hotkeyConfig, type HotkeyKind } from "./hotkey";
+import { buildTray, type TrayApproval, type TrayTarget } from "./tray";
+import { characterMoves, isMoveClip } from "./moves";
 import { COMPOSER_ATTACH_EVENT } from "@/components/Composer";
 import { COMPOSER_MODEL_EVENT, composerModelLabel } from "@/components/ModelPicker";
 
@@ -255,6 +259,42 @@ export function FloatingBots() {
   const callableRef = useRef(callable);
   callableRef.current = callable;
   const callOnMascot = live && floated.some(({ bot }) => bot.id === live.botId) ? live.botId : null;
+
+  /* ---------------------------------------------- the activity tray */
+
+  // One tray at a time (the hover controls' bell): this bot's running work and the approvals it waits on
+  const [trayFor, setTrayFor] = useState<string | null>(null);
+  const [trayData, setTrayData] = useState<{ botId: string; list: BotActivityList | null; approvals: TrayApproval[]; loading: boolean } | null>(null);
+  const trayTargets = useRef(new Map<string, TrayTarget>());
+  const trayBot = trayFor ? state.bots.find((candidate) => candidate.id === trayFor) : undefined;
+  const traySignature = trayBot ? `${trayBot.threadId}:${(trayBot.tasks ?? []).map((task) => `${task.threadId}:${task.busy ? 1 : 0}:${task.activity ?? ""}:${task.updatedAt ?? 0}`).join("|")}:${trayBot.messages.length}` : "";
+  useEffect(() => {
+    if (!trayFor) {
+      setTrayData(null);
+      return;
+    }
+    let alive = true;
+    setTrayData((current) => (current?.botId === trayFor ? current : { botId: trayFor, list: null, approvals: [], loading: true }));
+    const load = async () => {
+      const bot = stateRef.current.bots.find((candidate) => candidate.id === trayFor);
+      if (!bot) return;
+      // approvals on the thread on screen (already loaded), then the other threads that wait on the person
+      const approvals: TrayApproval[] = pendingApprovals(bot.messages).map((pending) => ({ threadId: bot.threadId, requestId: pending.requestId, tool: pending.tool, detail: pending.detail ?? "" }));
+      const waiting = (bot.tasks ?? []).filter((task) => task.activity === "waiting-on-you" && task.threadId !== bot.threadId).slice(0, 4);
+      const pages = await Promise.all(waiting.map((task) => api<{ messages?: Parameters<typeof pendingApprovals>[0] }>(`/api/threads/${encodeURIComponent(task.threadId)}/messages?limit=60`).then(
+        (page) => pendingApprovals(page.messages ?? []).map((pending) => ({ threadId: task.threadId, requestId: pending.requestId, tool: pending.tool, detail: pending.detail ?? "" })),
+        () => [] as TrayApproval[],
+      )));
+      const list = await loadBotActivity(api, trayFor, { limit: 50 }).catch(() => null);
+      if (alive) setTrayData({ botId: trayFor, list, approvals: [...approvals, ...pages.flat()], loading: false });
+    };
+    void load();
+    const timer = setInterval(() => void load(), 4000);
+    return () => {
+      alive = false;
+      clearInterval(timer);
+    };
+  }, [trayFor, traySignature]);
   // the call's levels, a few times a frame-second, to the mascot on the line (its waveform and bounce)
   useEffect(() => {
     if (!callOnMascot) return;
@@ -402,8 +442,30 @@ export function FloatingBots() {
       runMascotCallEvent(botId, event.action, event, callDeps(botId));
       return;
     }
+    if (event.type === "tray") {
+      // the tray opens where the chat goes: one or the other
+      if (event.open) patch(botId, { open: false });
+      setTrayFor((current) => (event.open ? botId : current === botId ? null : current));
+      return;
+    }
+    if (event.type === "work") {
+      // only what the brain listed for this bot's tray
+      const target = trayFor === botId ? trayTargets.current.get(event.id) : undefined;
+      if (!target) return;
+      if (event.action === "open" && target.threadId) {
+        setTrayFor(null);
+        openThread(dispatch, { botId: target.botId, threadId: target.threadId }, stateRef.current);
+      } else if (target.kind === "approval" && (event.action === "allow" || event.action === "stop")) {
+        dispatch({ type: "decideRequest", threadId: target.threadId, requestId: target.requestId, behavior: event.action === "allow" ? "allow" : "deny", message: event.action === "stop" ? "Denied by the user." : undefined });
+      } else if (target.kind === "running" && event.action === "stop" && target.canStop && target.threadId) {
+        dispatch({ type: "interrupt", botId: target.botId, threadId: target.threadId });
+      }
+      return;
+    }
     const session = sessionsRef.current[botId] ?? newFloatingSession();
     const openInApp = () => openThread(dispatch, { botId, threadId: session.threadId ?? bot.threadId }, stateRef.current);
+    // the chat opening puts this bot's tray away (they share the room above the mascot)
+    if ((event.type === "click" && !session.open) || (event.type === "menu" && event.id === "balloon" && !session.open)) setTrayFor((current) => (current === botId ? null : current));
     switch (event.type) {
       case "click":
         patch(botId, { open: !session.open });
@@ -456,7 +518,54 @@ export function FloatingBots() {
       default:
         break;
     }
-  }, [bridge, callDeps, cheer, dispatch, patch, send, switchMascot]);
+  }, [bridge, callDeps, cheer, dispatch, patch, send, switchMascot, trayFor]);
+
+  /* ------------------------------------------------- the call hotkey */
+
+  // Main owns the key (electron/mascot-hotkey.mjs): on while the setting is and a mascot is shown,
+  // reading holds only when they mean push to talk on this mascot's call
+  const shownIds = floated.map(({ bot }) => bot.id);
+  const shownRef = useRef(shownIds);
+  shownRef.current = shownIds;
+  // a key nobody can use is not taken from other apps: only while voice mode serves that mascot's bot
+  const keyBot = hotkeyBot(shownIds, onCall);
+  const hotkeyWish = hotkeyConfig({ enabled: prefs.hotkey, accelerator: prefs.hotkeyKeys, botId: keyBot && callable[keyBot] === true ? keyBot : null, callBot: onCall, push: callSettings.input === "push" });
+  const hotkeyKey = `${hotkeyWish.enabled}:${hotkeyWish.accelerator}:${hotkeyWish.hold}`;
+  useEffect(() => {
+    if (!bridge?.hotkey) return;
+    void bridge.hotkey(hotkeyWish).catch(() => undefined);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bridge, hotkeyKey]);
+  useEffect(() => () => void bridge?.hotkey?.({ enabled: false, accelerator: prefs.hotkeyKeys, hold: false }).catch(() => undefined), [bridge]);
+  const talking = useRef<string | null>(null);
+  useEffect(() => {
+    if (!bridge?.onHotkey) return;
+    return bridge.onHotkey((value) => {
+      const kind = value?.kind as HotkeyKind | undefined;
+      if (kind !== "tap" && kind !== "hold" && kind !== "release") return;
+      const callBot = currentCall();
+      const botId = hotkeyBot(shownRef.current, callBot);
+      const liveNow = liveCallNow();
+      const action = hotkeyAction(kind, {
+        enabled: floatingBotPrefs().hotkey,
+        botId,
+        canCall: botId ? callableRef.current[botId] === true : false,
+        callBot,
+        muted: Boolean(liveNow && liveNow.botId === callBot && liveNow.state.muted),
+        push: readCallSettings().input === "push",
+        talking: talking.current !== null,
+      });
+      if (action === "release") {
+        const bot = talking.current;
+        talking.current = null;
+        if (bot) runMascotCallEvent(bot, "release", {}, callDeps(bot));
+        return;
+      }
+      if (action === "none" || !botId) return;
+      if (action === "talk") talking.current = botId;
+      runMascotCallEvent(botId, action, {}, callDeps(botId));
+    });
+  }, [bridge, callDeps]);
 
   /* ------------------------------------------------------------ desktop */
 
@@ -495,7 +604,8 @@ export function FloatingBots() {
         menu: {
           call: thisCall ? "end" : canCall ? "start" : null,
           bots: switchable,
-          moves: characterMoves(bot.mascotLook ?? undefined).map((move) => ({ clip: move.clip, label: t(move.label) })),
+          // only the moves the desktop mascot can play (a behavior clip; Shapes moves play in the popover preview)
+          moves: characterMoves(bot.mascotLook ?? undefined).filter((move) => isMoveClip(move.clip)).map((move) => ({ clip: move.clip, label: t(move.label) })),
         },
       }),
     };
@@ -504,9 +614,14 @@ export function FloatingBots() {
     if (canCall) item.snapshot.hints = { ...item.snapshot.hints, call: t("floatingBots.call", { name: bot.name }) };
     if (thisCall) {
       item.snapshot.call = mascotCallSnapshot(thisCall, callPanel, voiceSettings, callSettings);
-      // the mascot talks while its bot's voice does, and thinks while it writes
-      item.snapshot.pose = thisCall.state.phase === "speaking" ? "speak" : thisCall.state.phase === "thinking" ? "think" : item.snapshot.pose === "celebrate" || item.snapshot.pose === "alert" ? item.snapshot.pose : "idle";
+      // the mascot takes the pose of the call's phase (its status chip names it)
+      item.snapshot.pose = callPose(thisCall.state.phase, item.snapshot.pose);
     }
+    if (trayFor === bot.id && trayData?.botId === bot.id) {
+      const built = buildTray({ botId: bot.id, list: trayData.list, approvals: trayData.approvals, loading: trayData.loading, now: Date.now(), title: (tool) => t("floatingBots.tray.needsYou", { tool }) });
+      trayTargets.current = built.targets;
+      item.snapshot.tray = built.tray;
+    } else if (trayFor === bot.id) item.snapshot.tray = { loading: true, items: [] };
     return item;
   });
 
