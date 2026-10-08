@@ -57,8 +57,42 @@ export function modelIdsFromPayload(payload) {
   return ids;
 }
 
+/**
+ * Display facts a server may add to /v1/models (DwarfStar, OpenRouter-style
+ * rows): `name` and `context_length`. Only ids that modelIdsFromPayload keeps
+ * get a row, so an embedding model never comes back through here.
+ */
+export function modelDetailsFromPayload(payload) {
+  const records = Array.isArray(payload)
+    ? payload
+    : payload && typeof payload === "object" && Array.isArray(payload.data)
+      ? payload.data
+      : payload && typeof payload === "object" && Array.isArray(payload.models)
+        ? payload.models
+        : [];
+  const keep = new Set(modelIdsFromPayload(payload));
+  const details = [];
+  for (const record of records) {
+    if (!record || typeof record !== "object") continue;
+    const id = record.id ?? record.name;
+    if (typeof id !== "string" || !keep.has(id)) continue;
+    // oxlint-disable-next-line no-control-regex -- strip control characters from a model name
+    const name = typeof record.name === "string" ? record.name.replace(/[\u0000-\u001f\u007f]/g, "").trim().slice(0, 80) : "";
+    const raw = record.context_length ?? record.top_provider?.context_length;
+    const contextLength = Number.isSafeInteger(raw) && raw > 0 && raw <= 100_000_000 ? raw : undefined;
+    details.push({ id, ...(name && name !== id ? { name } : {}), ...(contextLength ? { contextLength } : {}) });
+  }
+  return details;
+}
+
 /** Probe one loopback base. Returns model ids, or null when it does not answer. */
 export async function probeLoopbackModels(base, fetchImpl = globalThis.fetch) {
+  const probed = await probeLoopbackCatalog(base, fetchImpl);
+  return probed ? probed.models : null;
+}
+
+/** Probe one loopback base. Returns ids and display details, or null when it does not answer. */
+export async function probeLoopbackCatalog(base, fetchImpl = globalThis.fetch) {
   const normalized = normalizeLoopbackBase(base);
   if (!normalized) return null;
   try {
@@ -69,7 +103,8 @@ export async function probeLoopbackModels(base, fetchImpl = globalThis.fetch) {
       signal: AbortSignal.timeout(1200),
     });
     if (!response.ok) return null;
-    return modelIdsFromPayload(await response.json());
+    const payload = await response.json();
+    return { models: modelIdsFromPayload(payload), details: modelDetailsFromPayload(payload) };
   } catch {
     return null;
   }

@@ -375,6 +375,37 @@ local models are not offered. Tests: `ModelPicker.interaction.test.ts`,
 (org) and `pnpm exec electron scripts/smoke-approval-modes.cjs --model-ui-only`
 (solo).
 
+### Local models in the picker
+
+Local rows (`host::model` inject ids, `local: true` on the option) show under
+a Local group below the engine's own models, in Simple and Advanced
+(`src/lib/local-models.ts`). Labels read "DwarfStar: Qwen3.8 Flash Next" from
+the server's `/v1/models` `name` (the id is added when several ids share one
+name) and `context_length` becomes `contextWindow`.
+
+- Which engines run them: `shared/local-model-engines.ts`. pi, Codex, Grok
+  CLI, Kimi, Qwen, Droid, Hermes and OpenCode take an OpenAI-compatible base
+  URL. Claude Code runs a loopback row (solo: the server answers
+  `/v1/messages`, as DwarfStar, Ollama, LM Studio and llama-server do) but not
+  a desktop row: the bridge carries `/v1/models` and `/v1/chat/completions`
+  only, and there is no protocol proxy. Any other engine keeps its own
+  endpoint. The picker greys a row the engine cannot run, with one line
+  saying why, and `DesktopLocalModels.assertAvailable` refuses it at turn time.
+- Solo: `server/drivers/local-inject.ts` `LOCAL_HOSTS` probes the same ports
+  as the desktop (`shared/desktop-local-models.ts` `SEED_ENDPOINTS`).
+- Organization server: only the person's own computer counts
+  (`isDesktopModelId`); the server's own loopback models are never offered.
+  The desktop probes every 15 s and publishes ids, labels and details, never
+  URLs (`electron/desktop-bridge.mjs`). Own bots may use them by default
+  (`expose` defaults on when the person never chose); `share` stays off until
+  turned on. A failed probe is not cached.
+- Refresh on open: the picker calls `refreshLocalModelsOnOpen` (10 s fresh
+  window). Solo re-reads the engine's catalog; server mode calls
+  `ogb.serverMode.refreshLocalModels()` (IPC `server-mode:refresh-local-models`,
+  5 s fresh window in the bridge), then reloads `/api/instances`.
+- Tests: `src/lib/local-models.test.ts`, `server/desktop-local-models.test.ts`,
+  `server/drivers/local-inject.test.ts`, `electron/local-models.node-test.mjs`.
+
 ## Bot actions
 
 A bot calls the same function as the button or the route (`act` in the

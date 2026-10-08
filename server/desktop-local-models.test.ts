@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { desktopModelApiKey, withDesktopModelPerson } from "./desktop-model-grant.ts";
-import { DESKTOP_MODEL_UNAVAILABLE, DesktopLocalModels, injectHostId } from "./desktop-local-models.ts";
+import { DESKTOP_MODEL_UNAVAILABLE, DESKTOP_MODEL_WRONG_ENGINE, DesktopLocalModels, injectHostId } from "./desktop-local-models.ts";
 import type { DesktopBridgeOperation } from "./desktop-bridge.ts";
 import {
   applyOpenAIInject,
@@ -63,11 +63,17 @@ async function post(port: number, hostId: string, token: string, path = "/chat/c
 }
 
 describe("desktop local models", () => {
-  it("keeps both switches off until the person turns them on", async () => {
-    const { service } = await start();
+  it("lets the person's own bots use their computer by default and keeps sharing off", async () => {
+    const { service, bridge } = await start();
     const view = service.read("pr_owner");
-    expect(view.expose).toBe(false);
+    expect(view.expose).toBe(true);
     expect(view.share).toBe(false);
+    // Never toggled: the desktop's first publish is enough for the owner only.
+    bridge.online.add("pr_owner");
+    expect(service.publish("pr_owner", { endpoints: [{ id: "desk8002", label: "DwarfStar", models: ["qwen3"] }] }).ok).toBe(true);
+    expect(service.modelsFor("pr_owner").map((row) => row.label)).toEqual(["DwarfStar: qwen3"]);
+    expect(service.modelsFor("pr_other")).toEqual([]);
+    expect(service.modelsFor(null)).toEqual([]);
     expect(view.endpoints.map((row) => row.id)).toEqual(expect.arrayContaining(["desk8002", "desk9337", "desk9338", "desk11434"]));
     const refused = service.update("pr_owner", { endpoints: [{ label: "nope", baseUrl: "http://10.1.2.3:8002/v1" }] });
     expect(refused.ok).toBe(false);
@@ -99,7 +105,7 @@ describe("desktop local models", () => {
     expect(bridge.calls[0]?.operation).toMatchObject({ action: "local_model", endpoint: "desk8002", http_method: "POST", http_path: "/chat/completions" });
     expect(bridge.calls[0]?.operation.url).toBeUndefined();
     expect(JSON.stringify(bridge.calls[0]?.operation)).not.toContain("8002/v1");
-    expect(service.modelsFor(other)[0]?.label).toBe("qwen3 (Mac, DwarfStar)");
+    expect(service.modelsFor(other)[0]?.label).toBe("DwarfStar (Mac): qwen3");
     expect(injectHostId(owner, "desk8002")).not.toBe(injectHostId(other, "desk8002"));
   });
 
@@ -129,6 +135,49 @@ describe("desktop local models", () => {
     });
     expect(messages.status).toBe(404);
     expect(bridge.calls).toHaveLength(0);
+  });
+
+  it("labels the DwarfStar catalog by name and keeps its context window", async () => {
+    const { service, bridge } = await start();
+    const owner = "pr_owner";
+    bridge.online.add(owner);
+    const models = ["qwen3.8-flash-next", "qwen3.8-flash-next-chat", "qwen3.8-flash-next-reasoner", "solo-name"];
+    const details = [
+      ...models.slice(0, 3).map((id) => ({ id, name: "Qwen3.8 Flash Next", contextLength: 262144 })),
+      { id: "solo-name", name: "Solo Model" },
+    ];
+    expect(service.publish(owner, { endpoints: [{ id: "desk8002", label: "DwarfStar", models, details }] }).ok).toBe(true);
+    const rows = service.modelsFor(owner);
+    expect(rows.map((row) => row.label)).toEqual([
+      "DwarfStar: Qwen3.8 Flash Next (qwen3.8-flash-next)",
+      "DwarfStar: Qwen3.8 Flash Next (qwen3.8-flash-next-chat)",
+      "DwarfStar: Qwen3.8 Flash Next (qwen3.8-flash-next-reasoner)",
+      "DwarfStar: Solo Model",
+    ]);
+    expect(rows[0]?.contextWindow).toBe(262144);
+    expect(rows[3]?.contextWindow).toBeUndefined();
+    const [instance] = service.overlay([{ models: { default: "cloud", options: [{ id: "cloud", label: "Cloud" }] as { id: string; label: string; custom?: boolean; local?: boolean }[] } }], owner);
+    const local = instance!.models.options.filter((option) => option.local);
+    expect(local).toHaveLength(4);
+    expect(local.every((option) => option.custom === true)).toBe(true);
+    // An unknown detail field refuses the catalog; a plain id list (an older desktop) still works.
+    expect(service.publish(owner, { endpoints: [{ id: "desk8002", label: "DwarfStar", models, details: [{ id: models[0], url: "http://127.0.0.1:8002/v1" }] }] }).ok).toBe(false);
+    expect(service.publish(owner, { endpoints: [{ id: "desk8002", label: "DwarfStar", models: ["qwen3"] }] }).ok).toBe(true);
+    expect(service.modelsFor(owner).map((row) => row.label)).toEqual(["DwarfStar: qwen3"]);
+  });
+
+  it("refuses a desktop model on an engine that cannot reach it, before the turn starts", async () => {
+    const { service, bridge } = await start();
+    const owner = "pr_owner";
+    bridge.online.add(owner);
+    service.publish(owner, { endpoints: [{ id: "desk8002", label: "DwarfStar", models: ["qwen3"] }] });
+    const modelId = encodeInjectId(injectHostId(owner, "desk8002"), "qwen3");
+    expect(() => service.assertAvailable(owner, modelId, "claudeAgent")).toThrow(DESKTOP_MODEL_WRONG_ENGINE);
+    expect(() => service.assertAvailable(owner, modelId, "geminiAgent")).toThrow(DESKTOP_MODEL_WRONG_ENGINE);
+    for (const kind of ["piAgent", "codex", "grokAgent", "kimiAgent", "opencodeGo"]) {
+      expect(() => service.assertAvailable(owner, modelId, kind)).not.toThrow();
+    }
+    expect(() => service.assertAvailable(owner, "claude-sonnet-5", "claudeAgent")).not.toThrow();
   });
 
   it("hides an offline desktop and fails the turn as unavailable", async () => {

@@ -583,6 +583,10 @@ export interface ModelCatalog {
     label: string;
     custom?: boolean;
     loaded?: boolean;
+    /** A model served on a local machine (a `host::model` inject row): this
+     * server's loopback, or the person's own computer through the desktop
+     * bridge. The picker lists these under Local (shared/local-model-engines.ts). */
+    local?: boolean;
     /** upstream provider id (e.g. "zai", "nous") when the engine can report
      * it — the picker shows it as a muted badge so BYOK duplicates of the
      * same model id stay distinguishable. */

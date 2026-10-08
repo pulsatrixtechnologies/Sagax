@@ -369,6 +369,40 @@ describe("the picker opens as a modal like Settings", () => {
   });
 });
 
+describe("local models in solo", () => {
+  it("lists DwarfStar under Local next to Claude's own models and drops the separate entry", () => {
+    const ds4 = [
+      { id: "dwarfstar::qwen3.8-flash-next", label: "DwarfStar: Qwen3.8 Flash Next (qwen3.8-flash-next)", custom: true, local: true, contextWindow: 262144 },
+      { id: "dwarfstar::qwen3.8-flash-next-chat", label: "DwarfStar: Qwen3.8 Flash Next (qwen3.8-flash-next-chat)", custom: true, local: true, contextWindow: 262144 },
+    ];
+    fixture.instances = [claude({ state: "available", version: "2.1.300", authenticated: true }, [...official, ...ds4])];
+    const onClaude = bot("claude", "claude-opus-5-5");
+    const opened = open(onClaude);
+    const html = menu(opened.html);
+    expect(html).toContain(">Opus 5.5<");
+    expect(html).toContain("data-model-local-group");
+    expect(html).toContain("DwarfStar: Qwen3.8 Flash Next (qwen3.8-flash-next-chat)");
+    // Claude Code talks to a loopback server that answers /v1/messages.
+    expect(html).not.toContain("data-model-unavailable");
+    expect(html).not.toContain("data-model-local-entry");
+    const row = opened.nodes.find((node) => node.props.option && (node.props.option as { id: string }).id === ds4[1]!.id)!;
+    (row.props.onPick as () => void)();
+    expect(fixture.dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: "setModel", selection: expect.objectContaining({ model: ds4[1]!.id }) }));
+  });
+
+  it("greys a local row on an engine that keeps its own endpoint", () => {
+    const gemini: InstanceInfo = {
+      instanceId: "gemini", driverKind: "geminiAgent", displayName: "Gemini", access: "subscription",
+      snapshot: { state: "available", authenticated: true },
+      models: { default: "gemini-pro", options: [{ id: "gemini-pro", label: "Gemini Pro" }, { id: "dwarfstar::qwen3.8-flash-next", label: "DwarfStar: Qwen3.8 Flash Next", custom: true, local: true }] },
+    };
+    fixture.instances = [gemini];
+    const html = menu(open(bot("gemini", "gemini-pro")).html);
+    expect(html).toContain("data-model-unavailable");
+    expect(html).toContain("Gemini cannot run a local model.");
+  });
+});
+
 describe("on an organization server", () => {
   const issuer = "https://px.example.test";
   const orgOf = (viewerRole: "admin" | "member") => ({
@@ -443,6 +477,43 @@ describe("on an organization server", () => {
     expect(html).toContain("Gemini runs its own tools on the Sagax server.");
     rail(opened)!.props.onSelect(grok);
     expect(menu(render(bot("gemini", "gemini-pro")).html)).not.toContain("data-model-host-tools");
+  });
+
+  it("lists the person's own computer under Local, pickable on Codex and greyed on Claude Code", () => {
+    fixture.org = orgOf("member");
+    fixture.myEngines = [engine()];
+    const desk = [
+      { id: "deskab12cd8002::qwen3.8-flash-next-chat", label: "DwarfStar: Qwen3.8 Flash Next (qwen3.8-flash-next-chat)", custom: true, local: true },
+    ];
+    // The server's own loopback model never shows on an organization server.
+    const serverLoopback = { id: "ollama::qwen3", label: "Ollama: qwen3", custom: true, local: true };
+    const codexDesk: InstanceInfo = { ...codex, models: { ...codex.models, options: [...codex.models.options, ...desk, serverLoopback] } };
+    fixture.instances = [claude({ state: "available", version: "2.1.300", authenticated: true }, [...official, ...desk, serverLoopback]), codexDesk];
+    const onCodex = bot("codex", "gpt-5.6");
+    const opened = open(onCodex);
+    let html = menu(opened.html);
+    expect(html).toContain("data-model-local-group");
+    expect(html).toContain(">Local<");
+    expect(html).toContain("DwarfStar: Qwen3.8 Flash Next (qwen3.8-flash-next-chat)");
+    expect(html).not.toContain("Ollama: qwen3");
+    expect(html).not.toContain("data-model-unavailable");
+    expect(html).not.toContain("data-model-local-hidden");
+    expect(html).not.toContain("data-model-local-entry");
+    const row = opened.nodes.find((node) => node.props.option && (node.props.option as { id: string }).id === desk[0]!.id)!;
+    (row.props.onPick as () => void)();
+    expect(fixture.dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: "setModel", selection: expect.objectContaining({ instanceId: "codex", model: desk[0]!.id }) }));
+
+    fixture.dispatch = vi.fn();
+    const onClaude = bot("claude", "claude-opus-5-5");
+    const claudeOpen = open(onClaude);
+    html = menu(claudeOpen.html);
+    expect(html).toContain("data-model-local-group");
+    expect(html).toContain("data-model-unavailable");
+    expect(html).toContain("Claude Code cannot run a model from your computer here");
+    const greyed = claudeOpen.nodes.find((node) => node.props.option && (node.props.option as { id: string }).id === desk[0]!.id)!;
+    expect(greyed.props.unavailable).toBeTruthy();
+    (greyed.props.onPick as () => void)();
+    expect(fixture.dispatch).not.toHaveBeenCalled();
   });
 
   it("follows the server's answer for an admin too: no server row, the subscription first once signed in", () => {
