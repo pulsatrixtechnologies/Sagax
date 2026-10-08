@@ -990,8 +990,11 @@ these rules, each covered by `server/harness-connectors.test.ts` or
   approval flow. An engine tool denial blocks host built-ins, never them.
 - Connected apps (or Model providers while Connected apps is off) shows them read-only (`GET /api/me/harness-connectors`, the
   caller's own account only, no email or URL) with a link to
-  claude.ai/customize/connectors; an admin turns them off with
-  `PUT /api/harness-connectors/settings` (`config.harnessConnectors.claudeAi`).
+  claude.ai/customize/connectors. Always on: there is no server switch (the
+  admin checkbox and `config.harnessConnectors.claudeAi` are retired, a stored
+  false is ignored, `PUT /api/harness-connectors/settings` is a no-op kept for
+  older clients). `SAGAX_CLAUDE_ALLOW` is a separate thing (standing tool allow
+  rules, see docs/self-hosting.md) and stays.
 - Codex: ChatGPT connectors need Codex's own ChatGPT login, which Sagax's
   ChatGPT plan mode and API keys do not have, so Codex turns get none.
 
