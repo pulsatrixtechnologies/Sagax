@@ -3651,5 +3651,7 @@
   "approvalMode.simple.askHint": "Le bot s'arrête et vous demande avant d'agir.",
   "approvalMode.simple.decide": "Décider pour moi",
   "approvalMode.simple.decideHint": "Le bot agit et vous consulte s'il hésite.",
-  "approvalMode.simple.custom": "Un niveau personnalisé est enregistré. Il reste jusqu'à votre choix."
+  "approvalMode.simple.custom": "Un niveau personnalisé est enregistré. Il reste jusqu'à votre choix.",
+  "approvalMode.simple.customChip": "Niveau personnalisé",
+  "approvalMode.simple.unset": "Aucun niveau choisi. Le bot utilise ce réglage par défaut jusqu'à votre choix."
 }

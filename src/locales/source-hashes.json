@@ -7384,7 +7384,9 @@
       "approvalMode.simple.askHint": "bc259e2182d9fb7004828528f198df10ba682036ac27185fcd3d4199f30d5bb6",
       "approvalMode.simple.decide": "4e7e48517877de0b9786ae73d40296fbc566bcc7ce778a1cee690a3bc51bdf0e",
       "approvalMode.simple.decideHint": "79c6c2f01653ce756e70c621846253d796c688817ef083029ca3699c2db07f92",
-      "approvalMode.simple.custom": "4eb2e86fd814cf021e68d1424af8bc8aae4417f8a2d8a6a37cef2c7775e19ff1"
+      "approvalMode.simple.custom": "4eb2e86fd814cf021e68d1424af8bc8aae4417f8a2d8a6a37cef2c7775e19ff1",
+      "approvalMode.simple.customChip": "36306d9dd4e83d5d925f1d41a9b26120f0cec57fa927852ef03d53fec248d034",
+      "approvalMode.simple.unset": "4b49670558d9c027b5b9c2380dba061d86ac9b8345917db4e0820ed0412e036e"
     },
     "hi": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",
@@ -13013,7 +13015,9 @@
       "approvalMode.simple.askHint": "bc259e2182d9fb7004828528f198df10ba682036ac27185fcd3d4199f30d5bb6",
       "approvalMode.simple.decide": "4e7e48517877de0b9786ae73d40296fbc566bcc7ce778a1cee690a3bc51bdf0e",
       "approvalMode.simple.decideHint": "79c6c2f01653ce756e70c621846253d796c688817ef083029ca3699c2db07f92",
-      "approvalMode.simple.custom": "4eb2e86fd814cf021e68d1424af8bc8aae4417f8a2d8a6a37cef2c7775e19ff1"
+      "approvalMode.simple.custom": "4eb2e86fd814cf021e68d1424af8bc8aae4417f8a2d8a6a37cef2c7775e19ff1",
+      "approvalMode.simple.customChip": "36306d9dd4e83d5d925f1d41a9b26120f0cec57fa927852ef03d53fec248d034",
+      "approvalMode.simple.unset": "4b49670558d9c027b5b9c2380dba061d86ac9b8345917db4e0820ed0412e036e"
     },
     "uk": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",
