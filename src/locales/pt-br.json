@@ -1941,5 +1941,16 @@
   "achievements.settings.showTitle": "Mostrar meu título",
   "achievements.settings.showTitleHint": "O título que você escolheu, no seu cartão e onde os colegas o veem. A barra lateral nunca mostra títulos.",
   "settings.nudgeSound.title": "Som do nudge",
-  "settings.nudgeSound.short": "Tocar um som neste computador quando alguém enviar um nudge para você."
+  "settings.nudgeSound.short": "Tocar um som neste computador quando alguém enviar um nudge para você.",
+  "floatingBots.menu.talk": "Conversar",
+  "floatingBots.menu.closeChat": "Fechar o balão",
+  "floatingBots.menu.startCall": "Iniciar uma chamada de voz",
+  "floatingBots.menu.openIn": "Abrir no {app}",
+  "floatingBots.menu.switch": "Trocar de bot",
+  "floatingBots.menu.moves": "Movimentos",
+  "floatingBots.menu.snooze": "Ocultar por 1 hora",
+  "floatingBots.menu.hideMascot": "Ocultar",
+  "floatingBots.menu.options": "Na área de trabalho",
+  "floatingBots.menu.settings": "Configurações…",
+  "floatingBots.modelChip": "Trocar o modelo no app"
 }
