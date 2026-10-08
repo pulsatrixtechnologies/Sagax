@@ -577,6 +577,38 @@ name) and `context_length` becomes `contextWindow`.
 - Tests: `src/lib/local-models.test.ts`, `server/desktop-local-models.test.ts`,
   `server/drivers/local-inject.test.ts`, `electron/local-models.node-test.mjs`.
 
+### Grok models and local models on Grok (2026-10-08)
+
+- The Grok list comes from the engine: `probeGrokModels` spawns
+  `grok agent --no-leader stdio`, reads `initialize` `_meta.modelState.
+  availableModels` and stops it (no session, no prompt), cached 30 s; the
+  picker re-reads it on open in solo. A CLI without `auth.json` in its Grok
+  home is not asked (it lists only its bundled fallback). Fallbacks, in
+  order: Grok's own `models_cache.json`, then `STATIC_GROK_MODELS`. Grok
+  1.0.46 and 1.0.50 signed in offer grok-4.7, grok-4.7-build-fast (Grok 4.7
+  Fast), grok-4.6 and grok-4.5. `[model.x]` blocks stay custom rows.
+- Launch campaigns: Grok's remote settings can carry
+  `campaigns: [{id: "grok-4.7-launch", models: {default: "grok-4.7"}}]`. Until
+  dismissed in the Grok home's `campaigns_state.json`, every session/new runs
+  that model whatever `-m` or the ACP profile asks (verified on 1.0.46 and
+  1.0.50 in a fresh home, the state of every organization person). Profile
+  turns (organization, narrowed native tools) never send set_model, so
+  `dismissGrokModelCampaigns` writes the dismissal before each session/new
+  (Grok rereads it per session).
+- Local models on Grok: `ensureGrokInjectSlug` writes `[model."<host>-<model>"]`
+  with `base_url` (solo: the loopback server; organization: the server's
+  proxy for the person's computer, `/d/<desk id>/v1`) into the turn's Grok
+  home, and the slug rides `-m` and the profile. Grok lists the block in the
+  session's models, so it is accepted.
+- The "does not offer" notice is for an id missing from the session's own
+  list, shown once per conversation (`threadNotices` in `acp/core.ts`), not
+  once per process. Real CLI check: a fresh Grok home on the subscription,
+  picks grok-4.5, grok-4.6, a desk model; before the fix all three ran
+  grok-4.7 with the notice, after it each ran as picked and the desk turn
+  reached the fake model server.
+- Tests: `server/drivers/acp/grok-catalog.test.ts`,
+  `server/drivers/acp/tool-scope.test.ts` (campaign, local model, notice once).
+
 ## Bot actions
 
 A bot calls the same function as the button or the route (`act` in the

@@ -747,6 +747,8 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
       // A call's warm in flight per thread (warmOnly): a real turn waits
       // for it instead of racing it on the same process.
       const warming = new Map<string, Promise<void>>();
+      // The last configureSession notice shown per thread (see notice below).
+      const threadNotices = new Map<string, string>();
       // Closing removes a session from the pool, not its native writer lease.
       // Retain every closing Qwen child until its process tree is gone, even
       // when Stop or a failed turn lets another turn start during cleanup.
@@ -2163,9 +2165,12 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
                     : [],
                   currentModelId: session.sessionConfigResult?.models?.currentModelId,
                   notice: (message) => {
-                    // once per live session, like the fallback notice above
-                    if (session.fallbackNotice === message) return;
+                    // once per conversation: a model switch opens a new
+                    // process (a new session record), so the live session
+                    // alone would repeat it on every turn
+                    if (session.fallbackNotice === message || threadNotices.get(threadId) === message) return;
                     session.fallbackNotice = message;
+                    threadNotices.set(threadId, message);
                     emit({ ...base(threadId, turnId), type: "runtime.notice", message });
                   },
                 });

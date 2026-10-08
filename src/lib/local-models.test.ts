@@ -49,6 +49,13 @@ describe("which engines run a local model", () => {
     }
     expect(runsLoopbackModels("piAgent")).toBe(true);
   });
+
+  it("re-reads Grok's catalog when the picker opens in solo, which asks the engine for its models", () => {
+    // ModelPicker refreshes the rail engine's catalog on open when this holds;
+    // for Grok that refresh is the live model list (probeGrokModels).
+    expect(runsLoopbackModels("grokAgent")).toBe(true);
+    expect(localRowUnavailable("grokAgent", "desk8a1ada8002::qwen3.8-flash-next")).toBeNull();
+  });
 });
 
 describe("local model labels", () => {
