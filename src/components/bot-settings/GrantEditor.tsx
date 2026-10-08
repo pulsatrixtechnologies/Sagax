@@ -16,6 +16,7 @@ import {
   type OrgDirectory,
   type WireGrant,
 } from "@/lib/perspicax-org";
+import { PresenceDot } from "../PresenceDot";
 
 const LEVEL_KEY = {
   use: "botSettings.sharing.level.use",
@@ -158,7 +159,9 @@ export function GrantEditor({ botId, ownerId, initialGrants, initialAdminister, 
               {candidates.map((candidate) => (
                 <li key={candidate.target} className="flex min-w-0 items-center justify-between gap-3 py-2">
                   <div className="flex min-w-0 items-center gap-2">
-                    {candidate.kind === "team" && <Users size={13} aria-hidden="true" className="shrink-0 text-ink-secondary" />}
+                    {candidate.kind === "team"
+                      ? <Users size={13} aria-hidden="true" className="shrink-0 text-ink-secondary" />
+                      : <PresenceDot principalId={candidate.target.slice("user:".length)} className="shrink-0" ringClassName="border-card" sizeClassName="size-2.5" />}
                     <div className="min-w-0">
                       <div className="truncate text-[13px] text-ink">{candidate.label}</div>
                       <div className="truncate text-[12px] text-ink-secondary">

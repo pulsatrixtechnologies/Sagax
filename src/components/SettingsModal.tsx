@@ -91,7 +91,7 @@ export const SECTIONS: Array<{
   { id: "general", labelKey: "settings.section.general", icon: User, keywords: ["profile", "name", "email", "about me", "about", "suggestions", "suggested", "memory", "updates", "effort", "new bots", "reasoning", "threads", "parallel", "concurrency", "cleanup", "retention", "event log", "event-log", "log size", "automatic recovery", "backup model", "fallback", "routines", "conversation", "schedule"] },
   { id: "organization", labelKey: "settings.section.organization", icon: Building2, keywords: ["company", "organization", "organisation", "sign in", "enroll", "managed", "models", "disconnect", "workspace", "cloud", "hosted", "vps", "server", "servers", "connect", "pair", "switch", "local"] },
   { id: "appearance", labelKey: "settings.section.appearance", icon: Palette, keywords: ["skin", "theme", "appearance", "advanced", "simple", "mode", "tools", "tool calls", "threads", "show threads", "hide threads", "sidebar", "hidden", "hide", "show", "density", "compact", "comfortable", "avatars", "display", "run", "this run", "run card", "commands", "notifications", "sound", "sounds", "mute", "silent", "chime", "mascot", "owl", "desktop", "fly", "floating", "app icon", "dock", "icon", "taskbar"] },
-  { id: "privacy", labelKey: "settings.section.privacy", icon: ShieldCheck, keywords: ["privacy", "read receipts", "seen", "vu", "confidentialité", "accusés de lecture"] },
+  { id: "privacy", labelKey: "settings.section.privacy", icon: ShieldCheck, keywords: ["privacy", "read receipts", "seen", "vu", "confidentialité", "accusés de lecture", "presence", "online", "away", "offline", "last seen", "status", "en ligne", "absent", "hors ligne", "privacidade"] },
   { id: "achievements", labelKey: "settings.section.achievements", icon: Trophy, keywords: ["achievements", "trophies", "trophy", "points", "gamerscore", "level", "unlock", "succès", "trophées"] },
   { id: "experimental", labelKey: "settings.section.experimental", icon: FlaskConical, keywords: ["early", "preview", "learn", "skill", "authoring", "browser", "profiles"] },
   { id: "connections", labelKey: "settings.section.connections", icon: KeyRound, keywords: ["keys", "api", "api key", "api keys", "connections", "composio", "box", "xai", "mistral", "vps", "router", "openrouter", "base url", "openai", "anthropic", "groq", "opencode", "provider"] },
@@ -969,7 +969,7 @@ export function SettingsModal() {
     dispatch({ type: "toggleAppSettings", open: false, section: "general" });
     dispatch({ type: "toggleLaunch", open: true, mode: "server" });
   }, [soloDesktop, state.appSettingsSection, dispatch]);
-  const availableSections = SECTIONS.filter((entry) => !remoteActive || entry.id === "companion" || entry.id === "appearance" || entry.id === "organization")
+  const availableSections = SECTIONS.filter((entry) => !remoteActive || entry.id === "companion" || entry.id === "appearance" || entry.id === "organization" || entry.id === "privacy")
     // the desktop app in "No server" mode has no organization to show; it
     // joins one from General > Server, which brings this section back
     .filter((entry) => entry.id !== "organization" || !soloDesktop)

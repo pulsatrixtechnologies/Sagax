@@ -33,6 +33,7 @@ import {
 } from "lucide-react";
 
 import { InitialsAvatar } from "./Avatar";
+import { PresenceDot, presenceDotSize } from "./PresenceDot";
 import { AboutDialog } from "./AboutDialog";
 import { SidebarPopoverMenu, type SidebarMenuItem } from "./SidebarPopoverMenu";
 import { ShortcutHint } from "./ShortcutHint";
@@ -287,6 +288,7 @@ export function SidebarProfileMenu({ avatarOnly = false, places = [] }: {
   places?: SidebarMenuItem[];
 }) {
   const { state, dispatch } = useStore();
+  const selfPrincipalId = viewerActorId(state.config);
   const update = useUpdateItem();
   const [aboutOpen, setAboutOpen] = useState(false);
   const triggerRef = useRef<HTMLSpanElement>(null);
@@ -342,13 +344,15 @@ export function SidebarProfileMenu({ avatarOnly = false, places = [] }: {
   const placeAttention = places.some((item) => item.attention);
 
   const avatar = (size: number) => (
-    // the footer avatar, always in its real colours
-    <span className="flex shrink-0 rounded-full">
+    // the footer avatar, always in its real colours, with your own presence
+    // (organization server: your real state, "hidden from others" when hidden)
+    <span className="relative flex shrink-0 rounded-full">
       {profile?.avatarUrl ? (
         <img src={profile.avatarUrl} alt="" style={{ width: size, height: size }} className="rounded-full object-cover" />
       ) : (
         <InitialsAvatar initials={initials} size={size} />
       )}
+      <PresenceDot principalId={selfPrincipalId} className="absolute -bottom-0.5 -right-0.5" ringClassName="border-sidebar" sizeClassName={presenceDotSize(size)} />
     </span>
   );
 
