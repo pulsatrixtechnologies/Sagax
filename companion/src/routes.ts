@@ -361,6 +361,9 @@ const ALLOWED: ReadonlyArray<{ method: string; path: RegExp }> = [
   { method: "GET", path: /^\/api\/threads\/[\w-]+\/messages\/[\w-]+\/image$/ },
   MESSAGE_FILE_ROUTE,
   { method: "POST", path: /^\/api\/threads\/[\w-]+\/messages\/[\w-]+\/reactions$/ },
+  // read receipts: who has seen what, and this person's own position
+  { method: "GET", path: /^\/api\/threads\/[\w-]+\/read$/ },
+  { method: "POST", path: /^\/api\/threads\/[\w-]+\/read$/ },
   { method: "GET", path: /^\/api\/threads\/[\w-]+\/export$/ },
   { method: "POST", path: /^\/api\/threads\/[\w-]+\/respond$/ },
   { method: "GET", path: /^\/api\/search$/ },

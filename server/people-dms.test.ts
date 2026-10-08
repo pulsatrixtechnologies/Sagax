@@ -46,6 +46,8 @@ describe("people dm rules", () => {
     expect(peopleDmRouteRefusal("GET", "/api/threads/t1/messages")).toBeNull();
     expect(peopleDmRouteRefusal("POST", "/api/groups/g1/messages")).toBeNull();
     expect(peopleDmRouteRefusal("POST", "/api/groups/g1/read")).toBeNull();
+    expect(peopleDmRouteRefusal("POST", "/api/threads/t1/read")).toBeNull();
+    expect(peopleDmRouteRefusal("GET", "/api/threads/t1/read")).toBeNull();
     expect(peopleDmRouteRefusal("POST", "/api/groups/g1/tasks")).not.toBeNull();
     expect(peopleDmRouteRefusal("DELETE", "/api/groups/g1")).not.toBeNull();
     expect(peopleDmRouteRefusal("PUT", "/api/groups/g1/memory")).not.toBeNull();

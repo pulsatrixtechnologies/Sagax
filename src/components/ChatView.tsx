@@ -1,5 +1,8 @@
 import { Component, createContext, memo, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type Dispatch, type ReactNode } from "react";
 import { useCopyFeedback } from "@/lib/copy-text";
+import { botSeenCaption, messageParticipant, seenCaption as seenCaptionText, seenTooltip } from "@/lib/read-receipts";
+import { useReportRead, useThreadReads } from "@/lib/read-receipts-feed";
+import { SeenCaption } from "./SeenBy";
 import {
   AlertTriangle,
   ArrowDown,
@@ -867,6 +870,7 @@ const MessagesList = memo(function MessagesList({
   onSubmitEdit,
   onRegenerate,
   onReply,
+  seen,
 }: {
   messages: Message[];
   /** Active-branch messages, including ones outside the mounted window. */
@@ -886,6 +890,8 @@ const MessagesList = memo(function MessagesList({
   onSubmitEdit: (id: string, text: string) => void;
   onRegenerate: () => void;
   onReply: (message: Message) => void;
+  /** The bot's "Seen" caption, under the last message it consumed. */
+  seen?: { messageId: string; text: string; title: string } | null;
 }) {
   // Sagax's extras below (access cards, bot-to-bot exchange chips, who is
   // viewing) read the store; the rows inside stay memoized on ChatRows.
@@ -1127,6 +1133,7 @@ const MessagesList = memo(function MessagesList({
           <div key={m.id} className="contents" data-mid={m.id}>
             {newDay && <TranscriptDate at={m.at} />}
             {row}
+            {seen?.messageId === m.id && <SeenCaption text={seen.text} title={seen.title} />}
           </div>
         );
       })}
@@ -1233,6 +1240,27 @@ export function ChatView({ bot: profile }: { bot: Bot }) {
   const messages = useMemo(() => visibleMessages({ messages: allMessages, activeLeafId }), [allMessages, activeLeafId]);
   // edit versions, reply targets, the Retry row: once per list, not per row
   const lookups = useMemo(() => transcriptLookups(allMessages, messages), [allMessages, messages]);
+  // Seen (src/lib/read-receipts.ts): under the last message this bot's turn
+  // consumed, until it answers; and this person's own position while the
+  // window has focus.
+  const threadReads = useThreadReads(bot.threadId);
+  const seenCaption = useMemo(() => {
+    const byId = new Map(messages.map((message) => [message.id, message]));
+    const anchorable = new Set(messages.filter((message) => message.role === "user" && message.kind === "text").map((message) => message.id));
+    const place = botSeenCaption({
+      order: messages,
+      anchorable,
+      reads: threadReads.reads,
+      botId: bot.id,
+      authorOf: (id) => {
+        const message = byId.get(id);
+        return message ? messageParticipant(message, bot.id) : null;
+      },
+    });
+    const sent = place ? byId.get(place.messageId) : undefined;
+    if (!place || !sent) return null;
+    return { messageId: place.messageId, text: seenCaptionText(sent.at, place.at, formatTime), title: seenTooltip([{ name: bot.name, at: place.at }], formatTime) };
+  }, [messages, threadReads.reads, bot.id, bot.name]);
   // The bot's run in the current ask — every command it ran, the control-CLI
   // ones verified — for the run card. Saving mirrors the /learn gate: the
   // flag, an engine with the agents tools, and a bot that can take a message
@@ -1273,6 +1301,8 @@ export function ChatView({ bot: profile }: { bot: Bot }) {
     messages,
     pinOn: [bot.busy, composerDock.pad],
   });
+  // Seen (src/lib/read-receipts.ts): this person's own position while the window has focus.
+  useReportRead(bot.threadId, scrollRef, messages.at(-1)?.id);
 
   const lastBotTextId = useMemo(
     () => [...messages].reverse().find((m) => m.role === "bot" && m.kind === "text")?.id,
@@ -1573,6 +1603,7 @@ export function ChatView({ bot: profile }: { bot: Bot }) {
               onSubmitEdit={submitEdit}
               onRegenerate={regenerate}
               onReply={selectReply}
+              seen={seenCaption}
             />
             </ConversationGalleryProvider>
           </ChatRowsContext.Provider>

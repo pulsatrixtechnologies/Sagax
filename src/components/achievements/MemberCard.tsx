@@ -1,17 +1,14 @@
 // The member card: a quiet profile blade (avatar, name, chosen title, points,
-// then the achievement list). Your sidebar row opens it. A colleague's row
-// opens the same blade from the public card, which only has unlocked ids.
-// The list scrolls inside the card. It does not live in the sidebar column.
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { createPortal } from "react-dom";
+// then the achievement list), and its panel variant under a person's name in
+// the person panel. A colleague's card comes from the public card, which only
+// has unlocked ids. The list scrolls inside the card. The sidebar never shows
+// titles or points (AGENTS.md, Achievements).
 import { Trophy } from "lucide-react";
 import { ACHIEVEMENTS, achievementById } from "../../../shared/achievements-catalog";
-import type { AchievementItemState, AchievementSnapshot, PublicAchievementCard } from "../../../shared/achievements";
+import type { AchievementItemState, AchievementSnapshot } from "../../../shared/achievements";
 import { localized } from "@/lib/achievements";
 import { t } from "@/lib/i18n";
 import { PersonAvatar } from "../MessageAuthor";
-import { formatPoints } from "./AchievementsPage";
-import { PointsPill } from "./Gamertag";
 import { achievementIcon } from "./icons";
 import "./achievements.css";
 
@@ -77,22 +74,6 @@ export function achievementTitleName(titleId: string | undefined): string | null
   return null;
 }
 
-export function MemberTitleButton({ title, onOpen, footer = false }: { title: string; onOpen: () => void; footer?: boolean }) {
-  return (
-    <button
-      type="button"
-      data-member-title=""
-      className={`min-w-0 truncate rounded-md px-1 text-left text-sidebar-ink-secondary hover:bg-sidebar-hover hover:text-sidebar-ink ${footer ? "text-[13px] leading-[18px]" : "text-[11px] leading-4"}`}
-      onClick={(event) => {
-        event.stopPropagation();
-        onOpen();
-      }}
-    >
-      {title}
-    </button>
-  );
-}
-
 function MemberCardList({ rows }: { rows: readonly MemberCardRow[] }) {
   return (
     <ul className="member-card-list" aria-label={t("achievements.menu")}>
@@ -146,6 +127,8 @@ export function MemberCard({
   return (
     <div className={variant === "panel" ? "member-card member-card-panel" : "member-card"} data-member-card="" data-member-variant={variant}>
       {variant === "blade" ? (
+        // align-items: center (achievements.css): with no title and no
+        // points, the name sits centred beside the avatar.
         <div className="member-card-head">
           <PersonAvatar avatarUrl={avatarUrl} initials={initials} size={40} />
           <div className="min-w-0 flex-1">
@@ -181,143 +164,5 @@ export function MemberCard({
         </button>
       )}
     </div>
-  );
-}
-
-function useAnchoredDismiss(
-  open: boolean,
-  anchorRef: { readonly current: HTMLElement | null },
-  cardRef: { readonly current: HTMLElement | null },
-  close: () => void,
-) {
-  const closeRef = useRef(close);
-  closeRef.current = close;
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key !== "Escape" || event.defaultPrevented || event.isComposing) return;
-      event.preventDefault();
-      closeRef.current();
-    };
-    const onDown = (event: PointerEvent) => {
-      const target = event.target as Node | null;
-      if (target && (anchorRef.current?.contains(target) || cardRef.current?.contains(target))) return;
-      closeRef.current();
-    };
-    window.addEventListener("keydown", onKey);
-    window.addEventListener("pointerdown", onDown);
-    return () => {
-      window.removeEventListener("keydown", onKey);
-      window.removeEventListener("pointerdown", onDown);
-    };
-  }, [open, anchorRef, cardRef]);
-}
-
-/** The blade, fixed to the sidebar row so the scrolling list does not clip it. */
-export function AnchoredMemberCard({
-  open,
-  anchorRef,
-  onClose,
-  ...card
-}: {
-  open: boolean;
-  anchorRef: { readonly current: HTMLElement | null };
-  onClose: () => void;
-} & Parameters<typeof MemberCard>[0]) {
-  const cardRef = useRef<HTMLDivElement>(null);
-  const [place, setPlace] = useState<{ top?: number; bottom?: number; left: number } | null>(null);
-  useAnchoredDismiss(open, anchorRef, cardRef, onClose);
-  useLayoutEffect(() => {
-    if (!open) return;
-    const placeCard = () => {
-      const anchor = anchorRef.current?.getBoundingClientRect();
-      if (!anchor || typeof window === "undefined") return;
-      const width = 300;
-      const left = Math.max(8, Math.min(anchor.left, window.innerWidth - width - 8));
-      const spaceBelow = window.innerHeight - anchor.bottom;
-      const next: { top?: number; bottom?: number; left: number } = spaceBelow < 220 && anchor.top > spaceBelow
-        ? { bottom: window.innerHeight - anchor.top + 6, left }
-        : { top: anchor.bottom + 6, left };
-      setPlace((prev) => (prev && prev.top === next.top && prev.bottom === next.bottom && prev.left === next.left ? prev : next));
-    };
-    placeCard();
-    window.addEventListener("resize", placeCard);
-    window.addEventListener("scroll", placeCard, { capture: true, passive: true });
-    return () => {
-      window.removeEventListener("resize", placeCard);
-      window.removeEventListener("scroll", placeCard, { capture: true });
-    };
-  }, [open, anchorRef]);
-  if (!open || !place || typeof document === "undefined") return null;
-  return createPortal(
-    <div
-      ref={cardRef}
-      role="dialog"
-      aria-label={t("achievements.menu")}
-      data-member-card-popover=""
-      style={{ position: "fixed", zIndex: 60, left: place.left, top: place.top, bottom: place.bottom }}
-    >
-      <MemberCard {...card} />
-    </div>,
-    document.body,
-  );
-}
-
-/** Title and points on one line. Either one opens the card. Nothing, when both are absent. */
-export function MemberAchievementLine({
-  title,
-  pointsText,
-  label,
-  card,
-}: {
-  title: string | null;
-  pointsText: string | null;
-  label: string;
-  card: Parameters<typeof MemberCard>[0];
-}) {
-  const [open, setOpen] = useState(false);
-  const anchorRef = useRef<HTMLDivElement>(null);
-  const toggle = () => setOpen((value) => !value);
-  if (!title && !pointsText) return null;
-  return (
-    <>
-      <div ref={anchorRef} className="flex min-w-0 items-center gap-1" data-member-line="">
-        {title ? <MemberTitleButton title={title} onOpen={toggle} /> : null}
-        {pointsText ? <PointsPill text={pointsText} label={label} onOpen={toggle} /> : null}
-      </div>
-      <AnchoredMemberCard open={open} anchorRef={anchorRef} onClose={() => setOpen(false)} {...card} />
-    </>
-  );
-}
-
-/** A colleague's second line. The caller already knows the card is public. */
-export function ColleagueAchievementLine({
-  card,
-  name,
-  initials,
-  avatarUrl,
-}: {
-  card: PublicAchievementCard;
-  name: string;
-  initials: string;
-  avatarUrl?: string;
-}) {
-  const title = achievementTitleName(card.title);
-  const pointsText = formatPoints(card.points);
-  return (
-    <MemberAchievementLine
-      title={title}
-      pointsText={pointsText}
-      label={t("achievements.colleaguePoints", { points: pointsText })}
-      card={{
-        name,
-        initials,
-        avatarUrl,
-        title,
-        pointsText,
-        level: card.level,
-        rows: publicMemberRows(card.unlocked),
-      }}
-    />
   );
 }

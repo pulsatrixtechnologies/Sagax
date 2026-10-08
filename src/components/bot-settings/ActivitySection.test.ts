@@ -227,11 +227,18 @@ describe("history and errors with both sections hidden", () => {
     const html = renderToStaticMarkup(createElement(PanelSections, props()));
     expect(html).toContain('data-activity-history="all"');
     expect(html).toContain(">History<");
-    expect(html).toContain("text-ink-tertiary");
+    expect(html).not.toContain("text-ink-tertiary");
     expect(html).not.toContain("data-bot-settings-section");
+    // the row is the shared SectionHeader, not copied classes: its button
+    // markup is byte-identical to a Coding/Activity header's
+    const header = (h: string) => /<button[^>]*>/.exec(h)![0].replace(/ data-activity-history="[^"]*"/, "");
+    expect(header(html)).toBe(header(renderToStaticMarkup(createElement(SectionHeader, { icon: null, title: "x", name: "coding", onOpenHistory: () => {} }))));
+    expect(html).toContain('<h2 class="flex">');
     const onOpenHistory = vi.fn();
-    const row = PanelSections(props({ onOpenHistory })) as unknown as { props: { onClick: () => void } };
-    row.props.onClick();
+    const row = PanelSections(props({ onOpenHistory })) as unknown as { props: { children: { type: unknown; props: { name: string; onOpenHistory: (f: string) => void } } } };
+    expect(row.props.children.type).toBe(SectionHeader);
+    expect(row.props.children.props.name).toBe("all");
+    row.props.children.props.onOpenHistory("coding");
     expect(onOpenHistory).toHaveBeenCalledWith("coding");
     // a section is drawn: its title opens the history, no extra row
     const routine = job("run:r1", { kind: "routine", status: "running", endedAt: undefined });

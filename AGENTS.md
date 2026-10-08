@@ -280,6 +280,52 @@ someone else (`src/lib/group-nudge.ts`). A bot uses `nudgePerson` or
 `src/components/GroupView.test.ts`. The server image must be installed
 before an organization server accepts `{ groupId }`.
 
+## Seen by: read receipts (2026-10-08)
+
+Who has seen a message, people and bots (JC, 2026-10-08). Keep these rules,
+covered by `server/read-receipts.test.ts`, `server/read-receipts.e2e.test.ts`,
+`src/lib/read-receipts.test.ts`, `src/components/SeenBy.test.ts` and
+`src/components/GroupView.seenBy.test.ts`:
+
+- Model (`server/read-receipts.ts`): one position per participant per thread,
+  `readUpTo[participantId] = { messageId, at }`, in the `thread_reads` table
+  of `messages.db` (`server/message-db.ts`); a thread without rows has no
+  receipts (no migration) and its rows go with the thread. A person is their
+  principal id (lowercase), a bot is `bot:<botId>`. `Store.markRead` only
+  moves a position forward, onto a message of that thread, and emits the
+  `thread.read` store change, broadcast as the `thread.read` frame. Never the
+  transcript, the canonical event log (`bus.publish` tees to it, so it is not
+  used) nor the admin audit.
+- A person: `POST /api/threads/<id>/read { messageId }` from the renderer
+  (`useReportRead` in `src/lib/read-receipts-feed.ts`): the last stored
+  `[data-mid]` row on screen, debounced, only while the window has focus and
+  is visible. `GET` answers `{ reads, self }` filtered for the viewer. In a
+  room only its listed people, owner or creator leave one (403
+  `not_member`); a bot-to-bot channel has none; the usual thread gates
+  (bot visibility, private threads, people DMs) answer 404 first. Client
+  scope and the companion allowlist carry both methods.
+- A bot: set by the server at prompt build, before `sendTurn`
+  (`noteBotRead`). A direct turn: the newest of the person's lines the turn
+  carries (`userMessage` and drained queue lines); a card continuation, the
+  newest text line of the context it resumes. A room turn: the newest text
+  line of `roomContextRows` (never a digest or a teammate's report: a summary
+  is not seeing it), marked once the turn is dispatched. A line steered into
+  a running turn counts when the next prompt carries it. Delivery to a peer
+  bot through ask_bot keeps its own receipt (`peerDeliveryReceipt`).
+- Privacy: in a conversation between two people, a person whose preference
+  `sagax.readReceipts.v1` is `off` (Settings > Privacy > Send read receipts,
+  organization server only, synced through `/api/me/preferences`) is shown
+  to nobody, sees nobody's, and leaves no new position. Rooms and bots always
+  show. Changing the choice sends `{ kind: "thread.read", threadId, reset }`
+  to those conversations so clients fetch again.
+- UI: a room or a people DM draws a `SeenByRow` (16px overlapping avatars,
+  oldest reader first, on the viewer's side under their own line, tooltip
+  "Seen by Alice at 14:02, Cryptic at 14:03") under the newest drawn bubble
+  at or before each position that the reader did not write; the viewer is
+  never drawn. A 1:1 with a bot draws only a `SeenCaption` ("Seen", or "Seen
+  at 14:03" a minute or more later) under the last line the bot consumed,
+  until it answers below it.
+
 ## Launch flow (desktop)
 
 First run on the desktop app's own window opens the launch screen
@@ -846,6 +892,30 @@ it. Keep these rules, each covered by `server/desktop-bridge*.test.ts`,
 A change under `server/` needs the server image redeployed; under `electron/`
 a desktop rebuild.
 
+## Bot files for the Perspicax console (2026-10-08)
+
+The Perspicax console's file browser reads a bot's files through the
+organization admin API (`server/org-admin-files.ts`, under
+`/api/org/admin/files/<bot>/*`, the console assertion as the only
+credential; `docs/verification/perspicax-sign-in.md`). Slice 1 is read only:
+roots, list, stat, read (128 KiB) and download (100 MiB). Keep these rules,
+each covered by `server/org-admin-files.test.ts` or
+`server/org-admin.e2e.test.ts` (S7-G):
+
+- Managers in reach and admins only (the bots route's `botInReach`); a bot
+  out of reach is 404, never 403.
+- Never a host path on the wire: roots are ids (`workspace`, `tasks`,
+  `project`, `attachments`, `sandbox`, `desktop`), paths are relative to
+  them, attachments are named by their opaque thread-file id.
+- The project folder is served only when it lies inside the data folder.
+  The people's server environments and a person's own computer (desktop
+  bridge) are listed as unavailable: the server never opens them for the
+  console.
+- No `.`, `..`, empty segment, backslash or NUL; every segment is walked
+  with lstat and a link anywhere is refused; reads open with O_NOFOLLOW.
+- Each read and download is a `bot.files.read` or `bot.files.download` row
+  of the admin activity log (category `bot`, actor the console person).
+
 ## A person's own connections, plugins and skills (organization mode, 2026-10-02)
 
 Owner report: on GOX nobody could add the GitHub MCP, log into GitHub or
@@ -990,8 +1060,11 @@ these rules, each covered by `server/harness-connectors.test.ts` or
   approval flow. An engine tool denial blocks host built-ins, never them.
 - Connected apps (or Model providers while Connected apps is off) shows them read-only (`GET /api/me/harness-connectors`, the
   caller's own account only, no email or URL) with a link to
-  claude.ai/customize/connectors; an admin turns them off with
-  `PUT /api/harness-connectors/settings` (`config.harnessConnectors.claudeAi`).
+  claude.ai/customize/connectors. Always on: there is no server switch (the
+  admin checkbox and `config.harnessConnectors.claudeAi` are retired, a stored
+  false is ignored, `PUT /api/harness-connectors/settings` is a no-op kept for
+  older clients). `SAGAX_CLAUDE_ALLOW` is a separate thing (standing tool allow
+  rules, see docs/self-hosting.md) and stays.
 - Codex: ChatGPT connectors need Codex's own ChatGPT login, which Sagax's
   ChatGPT plan mode and API keys do not have, so Codex turns get none.
 
@@ -1284,6 +1357,47 @@ peer threads reached the whole organization. Keep these rules, covered by
   operator, so such a bot is in the operator's scope, not shut out.
 - A solo server sets no scope and is unchanged.
 
+## Skins and contrast (2026-10-08)
+
+Skins are blocks of tokens in `src/styles.css` (`[data-skin="x"]`), listed
+in `src/lib/skins.ts`: Pulsatrix, Pulsatrix Light, Midnight, Atelier,
+Foundry, Lagoon, Graphite, Linen, Dusk, Daylight, Hibou 98 (`retro98`, plus
+its structural `src/styles/retro98.css`) and Meadow. Each skin is one mode
+(light or dark); there is no separate light/dark switch per skin.
+
+- Never hard-code a colour in a component. Fix a failing pair in the skin
+  block (or in `retro98.css` for Hibou 98), never in the `.tsx`.
+- Every popover, menu, picker, sheet and floating card wears
+  `popover-surface` next to its background class. The class points the
+  generic tokens (`ink`, `ink-secondary`, `ink-tertiary`, `panel`, `inset`,
+  `hairline`, `raised`) back at the `--color-popover-*` set, which each skin
+  resolves once at its root. Without it a popover opened from a band that
+  re-points `ink` (Pulsatrix Light's navy `.content-topbar`, the inverted
+  bubbles of Daylight and Meadow) inherits the band's light ink onto a
+  white card: the thread picker measured 1.11:1 that way.
+- New popover code paints from the popover tokens directly: `bg-popover`,
+  `text-popover-ink`, `text-popover-ink-secondary`,
+  `placeholder:text-popover-placeholder`, `bg-popover-field`,
+  `border-popover-border` (a field outline, 3:1), `border-popover-hairline`,
+  `bg-popover-hover`, `text-popover-accent`. `TaskPicker` is the reference.
+- Targets, measured on the surface the thing is actually drawn on: 4.5:1
+  for text (body and secondary alike, placeholders included), 3:1 for
+  icons, check marks, the focus ring and field borders, a just-perceptible
+  step for decorative hairlines and surface-on-surface fills.
+- `pnpm check:contrast` (`scripts/check-skin-contrast.mjs`) measures every
+  skin at its root and inside every context that re-declares tokens (a
+  `[data-skin="x"] .class { … }` band, `.popover-surface`, the bubble
+  `@scope` blocks), including translucent washes (`hover`, `selected`,
+  status tints like `bg-danger/10`) composited over what they sit on. It
+  runs inside `pnpm test:unit` via `src/lib/popover-contrast.test.ts`. A new
+  band or a new token pair goes in that script, not in a one-off test.
+- Run it after touching any palette value. For the real app, launch the
+  harness
+  (`node --experimental-strip-types scripts/control-omb.ts ui launch`), set
+  the skin with `ui eval --js "localStorage.setItem('omb-skin','<id>');
+  location.reload()"`, open the surface, and screenshot or measure its
+  computed colours with `ui eval`.
+
 ## Account menu
 
 Team map and Automations open from the account row at the foot of the
@@ -1292,9 +1406,18 @@ pair. Archived bots, when there are any, sit above the pair. Connected
 apps and Templates stay rows above that row when their experimental flags
 are on (`SidebarPlaces`). Your phone and Help Center are not in the menu.
 The phone stays in Settings and on the collapsed rail. Docs stay on About.
-A failed automation still dots the closed account row. The guided tour's
+The row is the avatar and the name, and under the name a quiet line with the
+routines icon (`CalendarClock`, as in the bot panel's Routines section) and
+the count of the viewer's active routines (`src/lib/active-routines.ts`:
+the Active switch on, not suspended, a next run still due, on a bot the
+viewer owns). The count opens Automations and follows routine frames live.
+At zero the line is gone and the name sits centred beside the avatar. A
+failed automation no longer dots the row: it tints the count red and keeps
+its dot on the Automations item in the menu; a place in the menu that asks
+for attention still dots the closed row. The guided tour's
 `tools` anchor sits on the places stack, or on the foot when that stack is
-empty. Tests: `SidebarProfileMenu.test.ts`, `Sidebar.header.test.ts`.
+empty. Tests: `SidebarProfileMenu.test.ts`, `SidebarProfileMenu.footer.test.ts`,
+`src/lib/active-routines.test.ts`, `Sidebar.header.test.ts`.
 
 The guided tour (`GuidedTour.tsx`) never starts by itself: not after the
 welcome flow, not on a new bot, not per version. It runs only when opened on
@@ -1444,6 +1567,25 @@ rules, each covered by `shared/achievements-catalog.test.ts`,
   default, and leaves out anyone who turned "Show my points to colleagues"
   off. Unlock percentages show only
   with five people or more.
+- Visibility (2026-10-08). The left sidebar never shows an achievement title
+  or points, for anyone: not on the viewer's account row, not on people
+  rows. Titles and points show only in a person's detail (the person panel,
+  from a people row or a DM header, the viewer's own included) and on
+  Settings > Achievements. Two switches there, same style, stored in the
+  person's settings on the server (so every device follows): "Show my
+  points" (`showPoints`) and "Show my title" (`showTitle`, a missing flag
+  means on). Each is the person's own choice for everyone who looks:
+  `publicPoints` leaves `points` and `level`, or `title`, off their card,
+  and the person panel draws only what the card carries. With neither, no
+  line sits under the name; the member card centres the name beside the
+  avatar. Settings > Achievements itself and the unlock toasts are
+  unchanged by these switches. Tests: `server/achievements.test.ts`,
+  `src/lib/public-achievements.test.ts`, `PersonPanel.test.ts`,
+  `achievements-ui.test.ts`, `SidebarProfileMenu.footer.test.ts`.
+- People rows in the sidebar sit at the bot rows' inset (`pl-2`) with thread
+  mode on or off and carry no thread chevron, like bot rows since #152; only
+  room rows keep the thread-mode `pl-6` for their chevron
+  (`Sidebar.simple-mode.test.ts`).
 - The toast never shows while the person types, one at a time, its chime
   follows Notification sounds, and reduced motion stills it.
 
