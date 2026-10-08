@@ -374,7 +374,7 @@ describe("cloud computer inventory UI", () => {
     ]) {
       setLocale(locale);
       expect(renderCard({ instances: [ownedCloudComputer] }))
-        .toContain(`bg-success/15 text-success">${running}</span>`);
+        .toContain(`bg-accent/15 text-accent-text">${running}</span>`);
       expect(renderCard({ instances: [{ ...ownedCloudComputer, state: "archived" }] }))
         .toContain(`bg-control text-ink-secondary">${sleeping}</span>`);
       const translatedPlan = cloudComputerActionPlan("delete", ownedCloudComputer);
@@ -528,7 +528,7 @@ describe("VPS computer inventory UI", () => {
   it("keeps running and paused VPS badge colors when labels are translated", () => {
     setLocale("pt-br");
     const running = renderCard({ instances: [ownedVps] });
-    expect(running).toContain('bg-success/15 text-success">Em execução</span>');
+    expect(running).toContain('bg-accent/15 text-accent-text">Em execução</span>');
     expect(running).toContain("Remover");
     expect(running).not.toContain(">Remove</button>");
     expect(renderCard({ instances: [{ ...ownedVps, state: "paused" }] }))
@@ -539,7 +539,7 @@ describe("VPS computer inventory UI", () => {
 describe("Settings → Computers", () => {
   afterEach(() => { storeFixture.config = null; });
   // Settings cards are collapsible here: the title is the first span of the card's toggle.
-  const cards = () => [...renderToStaticMarkup(createElement(LocalComputerSection)).matchAll(/<button type="button" aria-expanded="[a-z]+"[^>]*><span class="flex min-w-0 items-center gap-2"><span class="truncate">([^<]+)<\/span>/g)].map((match) => match[1]);
+  const cards = () => [...renderToStaticMarkup(createElement(LocalComputerSection)).matchAll(/<button type="button" aria-expanded="[a-z]+"[^>]*><span class="min-w-0 truncate">([^<]+)<\/span>/g)].map((match) => match[1]);
 
   it("sets up a Local VM on a desktop or self-hosted server", () => {
     expect(cards()).toEqual(expect.arrayContaining(["Local VM", "Setup"]));
