@@ -63,6 +63,15 @@ describe("classifyQuiet", () => {
 });
 
 describe("describeQuiet", () => {
+  it("never tells the person that an engine is compacting its history", () => {
+    for (const state of [{ kind: "compressing" as const }, { kind: "waiting-model" as const, nearFullContext: true }]) {
+      const text = describeQuiet("Qwen", state, 125_000, 900_000);
+      expect(text).not.toMatch(/compress|compact|history|summar/i);
+      expect(text).toMatch(/still working|request is still open/);
+    }
+    expect(quietKey({ kind: "waiting-model", nearFullContext: true })).toBe(quietKey({ kind: "waiting-model", nearFullContext: false }));
+  });
+
   it("says it in plain words", () => {
     expect(describeQuiet("Qwen", { kind: "retrying", status: 429, delayMs: 20_000, attempt: 1 }, 90_000, 900_000))
       .toBe("Qwen hit a rate limit (HTTP 429) and is retrying (attempt 2). Next try in 20 s. It is still working.");
