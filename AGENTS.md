@@ -1058,10 +1058,10 @@ Electron restart (no HMR); launch-test them before committing.
   Main sanitizes `call`, its events and their settings patches. Measured in
   `verify-mascot-chat.mjs` (call leg); the app's call: `verify-voice-mode.ts`.
 - Mascot mode, slice 2 (ChatGPT Pets style). A plain click on the idle
-  character starts the call (`mascotClick` in `hover-controls.ts`: a press
+  character opens the chat balloon and never starts a call (the hover call
+  button and the hotkey do; `mascotClick` in `hover-controls.ts`: a press
   that travels `DRAG_SLOP` is a drag, a long press or right click is the
-  menu, a double click opens the app, a click on a call never ends it; no
-  voice mode for the bot: the chat bubble as before). Hover controls (quick
+  menu, a double click opens the app, a click on a call never ends it). Hover controls (quick
   chat, voice, activity) sit in the effects' lane (`MascotHoverControls`),
   shown `HOVER_IN_MS` after the pointer arrives and kept `HOVER_OUT_MS`
   after it leaves (`hoverControlsShown`), without a fade under reduced

@@ -1,4 +1,8 @@
+import { type ReactElement, type ReactNode } from "react";
 import { describe, expect, it } from "vitest";
+import { MascotHoverControls } from "./MascotControls";
+import { hotkeyAction, type HotkeyContext } from "./hotkey";
+import type { FloatingEvent } from "./protocol";
 import { DRAG_SLOP, HOVER_IN_MS, HOVER_OUT_MS, hoverControlsShown, isDrag, mascotClick } from "./hover-controls";
 
 describe("hoverControlsShown", () => {
@@ -42,14 +46,11 @@ describe("click or drag", () => {
 });
 
 describe("mascotClick", () => {
-  const base = { moved: false, menu: false, onCall: false, botAudible: false, canCall: true, gesture: "single" as const };
+  const base = { moved: false, menu: false, onCall: false, botAudible: false, gesture: "single" as const };
 
-  it("a plain click on the idle character opens the call", () => {
-    expect(mascotClick(base)).toBe("call");
-  });
-
-  it("without voice mode for the bot it opens the chat bubble, as before", () => {
-    expect(mascotClick({ ...base, canCall: false })).toBe("chat");
+  it("a plain click on the idle character opens the chat bubble and never starts a call", () => {
+    expect(mascotClick(base)).toBe("chat");
+    expect(mascotClick(base)).not.toBe("call");
   });
 
   it("a drag or a long press that opened the menu does nothing else", () => {
@@ -66,5 +67,39 @@ describe("mascotClick", () => {
   it("a double click opens the app", () => {
     expect(mascotClick({ ...base, gesture: "double" })).toBe("open");
     expect(mascotClick({ ...base, onCall: true, gesture: "double" })).toBe("open");
+  });
+});
+
+describe("the call stays reachable without a click on the character", () => {
+  type Props = { "data-control"?: string; onClick?: () => void; children?: ReactNode };
+  const find = (node: ReactNode, control: string): ReactElement<Props> | undefined => {
+    if (!node || typeof node !== "object") return undefined;
+    if (Array.isArray(node)) {
+      for (const child of node) { const hit = find(child, control); if (hit) return hit; }
+      return undefined;
+    }
+    const element = node as ReactElement<Props>;
+    if (element.props?.["data-control"] === control) return element;
+    return find(element.props?.children, control);
+  };
+  const lane = { x: 0, y: 0, width: 40, height: 100 };
+
+  it("the hover call button starts the call, and hangs up on a call", () => {
+    const events: FloatingEvent[] = [];
+    const render = (onCall: boolean) => MascotHoverControls({ lane, side: "right", shown: true, reduced: false, chatOpen: false, trayOpen: false, canCall: true, onCall, onEvent: (event) => events.push(event), hover: () => undefined, name: "Sagax" });
+    find(render(false), "voice")?.props.onClick?.();
+    find(render(true), "voice")?.props.onClick?.();
+    expect(events).toEqual([{ type: "call", action: "start" }, { type: "call", action: "end" }]);
+  });
+
+  it("the hover chat button opens the chat and never calls", () => {
+    const events: FloatingEvent[] = [];
+    find(MascotHoverControls({ lane, side: "right", shown: true, reduced: false, chatOpen: false, trayOpen: false, canCall: true, onCall: false, onEvent: (event) => events.push(event), hover: () => undefined, name: "Sagax" }), "chat")?.props.onClick?.();
+    expect(events).toEqual([{ type: "click" }]);
+  });
+
+  it("the Control+Option+Space hotkey still starts the call", () => {
+    const idle: HotkeyContext = { enabled: true, botId: "ada", canCall: true, callBot: null, muted: false, push: false, talking: false };
+    expect(hotkeyAction("tap", idle)).toBe("start");
   });
 });
