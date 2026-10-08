@@ -1,7 +1,11 @@
 // The profile row at the very bottom of the sidebar, and the menu it opens.
 //
-// The row is an avatar and a full name, and the achievement line under the
-// name shares that same rounded highlight. The menu leads with Team map and
+// The row is an avatar and a full name. Under the name, a quiet line counts
+// the viewer's active routines (the routines icon and a number); it opens
+// Automations and shares the row's rounded highlight. With no active routine
+// the line is gone and the name sits centred beside the avatar. The sidebar
+// never shows achievement titles or points: those live in a person's detail
+// and on Settings > Achievements. The menu leads with Team map and
 // Automations, then a hairline, then settings. Archived bots, when there
 // are any, sit above that pair with their own hairline. Your phone and
 // Help Center are not in this menu: the phone stays in Settings and on
@@ -11,10 +15,12 @@
 //
 // The update entry is the one item that reports progress in place, so it
 // keeps the menu open and re-labels itself as it works. A failed automation
-// dots this row while the menu is closed.
+// tints the routines count red while the menu is closed, and keeps its dot
+// on the Automations item inside the menu.
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   ArrowDownToLine,
+  CalendarClock,
   CalendarDays,
   Check,
   Info,
@@ -36,9 +42,8 @@ import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
 import { useAchievements } from "@/lib/achievements";
 import { isRoutineProblemRun } from "@/lib/routines";
-import { Gamertag, gamertagText } from "./achievements/Gamertag";
-import { achievementTitleName, AnchoredMemberCard, memberCardRows, MemberTitleButton } from "./achievements/MemberCard";
-import { formatPoints } from "./achievements/AchievementsPage";
+import { activeRoutineCount } from "@/lib/active-routines";
+import { viewerActorId } from "@/lib/viewer";
 
 /** "Milind Soni" → "MS", "milind" → "M", "you@x.dev" → "Y", unset → "?" */
 export function profileInitials(profile?: { name?: string; email?: string }): string {
@@ -290,14 +295,10 @@ export function SidebarProfileMenu({ avatarOnly = false, places = [] }: {
   const triggerRef = useRef<HTMLSpanElement>(null);
   const achievements = useAchievements();
   const openAchievements = () => dispatch({ type: "toggleAppSettings", open: true, section: "achievements" });
-  const [cardOpen, setCardOpen] = useState(false);
-  const lineRef = useRef<HTMLDivElement>(null);
-  const snapshot = achievements.snapshot;
-  // points stay behind showPoints. The title is separate: no title, no gap.
-  const pointsText = gamertagText({ status: achievements.status, points: snapshot?.points, showPoints: snapshot?.settings.showPoints });
-  const titleName = achievements.status === "ready" ? achievementTitleName(snapshot?.settings.title) : null;
-  const showLine = Boolean(titleName || pointsText);
-  const toggleCard = () => setCardOpen((open) => !open);
+  // No title and no points here, ever: the line under the name counts the
+  // viewer's active routines, and is gone at zero.
+  const activeRoutines = activeRoutineCount(state.routines, state.bots, viewerActorId(state.config));
+  const showLine = activeRoutines > 0;
 
   const profile = state.config?.profile;
   const viewer = state.config?.viewer;
@@ -339,8 +340,9 @@ export function SidebarProfileMenu({ avatarOnly = false, places = [] }: {
   });
   const items = footerMenuItems(places, profileItems);
   const noteworthy = update && updateNoteworthy(update.phase, update.pending) ? update : null;
-  // an item in the menu asking for attention while the menu is folded away
-  const placeAttention = places.some((item) => item.attention) || routineAttention;
+  // a place in the menu asking for attention while the menu is folded away
+  // (a failed automation tints the routines count instead)
+  const placeAttention = places.some((item) => item.attention);
 
   const avatar = (size: number) => (
     // the footer avatar, always in its real colours
@@ -353,7 +355,7 @@ export function SidebarProfileMenu({ avatarOnly = false, places = [] }: {
     </span>
   );
 
-  // The points open the achievement card, so they stay outside the menu
+  // The routines count opens Automations, so it stays outside the menu
   // button. The highlight is the wrapper around both, one rounded block.
   const accountRow = (
     <SidebarPopoverMenu
@@ -414,14 +416,35 @@ export function SidebarProfileMenu({ avatarOnly = false, places = [] }: {
       )}
     />
   );
-  const achievementLine = showLine && !avatarOnly && snapshot ? (
-    // 46px lines the title glyph up with the name: 40px avatar, 10px gap,
-    // minus the title button's 4px padding. Points alone stay at 50px
-    // because the trophy already cancels its own padding. The pull-up
-    // sits the line a few pixels closer to the name, without collapsing it.
-    <div ref={lineRef} className={cn("-mt-[21px] flex min-w-0 items-center gap-1", titleName ? "pl-[46px]" : "pl-[50px]")} data-member-line="">
-      {titleName && <MemberTitleButton title={titleName} onOpen={toggleCard} footer />}
-      {pointsText && <Gamertag onOpen={toggleCard} iconSize={13} footer />}
+  const routinesLabel = t(
+    routineAttention
+      ? (activeRoutines === 1 ? "sidebar.profile.activeRoutinesOneAttention" : "sidebar.profile.activeRoutinesAttention")
+      : (activeRoutines === 1 ? "sidebar.profile.activeRoutinesOne" : "sidebar.profile.activeRoutines"),
+    { count: activeRoutines },
+  );
+  const routinesLine = showLine && !avatarOnly ? (
+    // 46px lines the icon up with the name: 40px avatar, 10px gap, minus the
+    // button's 4px padding. The pull-up sits the line a few pixels closer to
+    // the name, without collapsing it.
+    <div className="-mt-[21px] flex min-w-0 items-center pl-[46px]" data-routines-line="">
+      <button
+        type="button"
+        data-active-routines={activeRoutines}
+        data-attention={routineAttention ? "" : undefined}
+        title={routinesLabel}
+        aria-label={routinesLabel}
+        onClick={(event) => {
+          event.stopPropagation();
+          dispatch({ type: "showRoutines" });
+        }}
+        className={cn(
+          "inline-flex shrink-0 items-center gap-1 rounded-md px-1 text-[13px] leading-[18px] tabular-nums hover:bg-sidebar-hover",
+          routineAttention ? "text-danger" : "text-sidebar-ink-secondary hover:text-sidebar-ink",
+        )}
+      >
+        <CalendarClock size={13} strokeWidth={2.2} aria-hidden="true" />
+        <span>{activeRoutines}</span>
+      </button>
     </div>
   ) : null;
 
@@ -433,26 +456,8 @@ export function SidebarProfileMenu({ avatarOnly = false, places = [] }: {
           className="rounded-lg px-2 py-1.5 transition-colors hover:bg-sidebar-hover has-[[aria-expanded=true]]:bg-sidebar-hover"
         >
           {accountRow}
-          {achievementLine}
+          {routinesLine}
         </div>
-      )}
-      {cardOpen && snapshot && (
-        <AnchoredMemberCard
-          open
-          anchorRef={lineRef}
-          onClose={() => setCardOpen(false)}
-          name={name}
-          initials={initials}
-          avatarUrl={profile?.avatarUrl}
-          title={titleName}
-          pointsText={formatPoints(snapshot.points)}
-          level={snapshot.level.level}
-          rows={memberCardRows(snapshot)}
-          onOpenPage={() => {
-            setCardOpen(false);
-            openAchievements();
-          }}
-        />
       )}
       <AboutDialog open={aboutOpen} onClose={() => setAboutOpen(false)} />
     </div>

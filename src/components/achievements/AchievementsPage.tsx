@@ -10,6 +10,7 @@ import { Flame, Lock, Trophy } from "lucide-react";
 import { ACHIEVEMENTS } from "../../../shared/achievements-catalog";
 import { ACHIEVEMENT_CATEGORIES, rarityForPoints, type AchievementCategory, type AchievementDefinition, type AchievementItemState } from "../../../shared/achievements";
 import { loadAchievements, localized, reportAchievement, rewardLabel, saveAchievementSettings, useAchievements } from "@/lib/achievements";
+import { forgetPublicAchievements } from "@/lib/public-achievements";
 import { requestNotificationPermission } from "@/lib/notify";
 import { activeLocale, t } from "@/lib/i18n";
 import { cn } from "@/lib/cn";
@@ -93,6 +94,12 @@ function AchievementCard({ item, state }: { item: AchievementDefinition; state?:
   );
 }
 
+/** A setting that changes what colleagues see on this person's card: save it,
+ * then ask the server for the cards again so every panel follows. */
+function saveCardSetting(patch: Parameters<typeof saveAchievementSettings>[0]): void {
+  void saveAchievementSettings(patch).then(forgetPublicAchievements);
+}
+
 export function AchievementsPage() {
   const { status, snapshot } = useAchievements();
   const [category, setCategory] = useState<AchievementCategory | "all">("all");
@@ -150,7 +157,7 @@ export function AchievementsPage() {
             {t("achievements.titleLabel")}
             <select
               value={snapshot.settings.title ?? ""}
-              onChange={(event) => void saveAchievementSettings({ title: event.target.value || null })}
+              onChange={(event) => saveCardSetting({ title: event.target.value || null })}
               className="rounded-lg border border-border bg-ink/[0.03] px-2 py-1 text-[12px] text-ink"
             >
               <option value="">{t("achievements.titleNone")}</option>
@@ -239,7 +246,10 @@ export function AchievementsPage() {
 
       <section className="rounded-[14px] border-[0.5px] border-border py-1">
         <SettingRow title={t("achievements.settings.showPoints")} subtitle={t("achievements.settings.showPointsHint")}>
-          <Switch checked={snapshot.settings.showPoints} aria-label={t("achievements.settings.showPoints")} onClick={() => void saveAchievementSettings({ showPoints: !snapshot.settings.showPoints })} />
+          <Switch checked={snapshot.settings.showPoints} aria-label={t("achievements.settings.showPoints")} onClick={() => saveCardSetting({ showPoints: !snapshot.settings.showPoints })} />
+        </SettingRow>
+        <SettingRow title={t("achievements.settings.showTitle")} subtitle={t("achievements.settings.showTitleHint")}>
+          <Switch checked={snapshot.settings.showTitle !== false} aria-label={t("achievements.settings.showTitle")} onClick={() => saveCardSetting({ showTitle: snapshot.settings.showTitle === false })} />
         </SettingRow>
         <SettingRow title={t("achievements.settings.toasts")} subtitle={t("achievements.settings.toastsHint")}>
           <Switch checked={snapshot.settings.toasts} aria-label={t("achievements.settings.toasts")} onClick={() => void saveAchievementSettings({ toasts: !snapshot.settings.toasts })} />
@@ -256,7 +266,7 @@ export function AchievementsPage() {
           />
         </SettingRow>
         <SettingRow title={t("achievements.settings.public")} subtitle={t("achievements.settings.publicHint")}>
-          <Switch checked={snapshot.settings.public} aria-label={t("achievements.settings.public")} onClick={() => void saveAchievementSettings({ public: !snapshot.settings.public })} />
+          <Switch checked={snapshot.settings.public} aria-label={t("achievements.settings.public")} onClick={() => saveCardSetting({ public: !snapshot.settings.public })} />
         </SettingRow>
       </section>
     </div>

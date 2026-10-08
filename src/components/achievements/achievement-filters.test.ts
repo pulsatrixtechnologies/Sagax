@@ -207,6 +207,6 @@ function snapshot(): AchievementSnapshot {
     rewards: [],
     recent: [],
     items: [],
-    settings: { showPoints: false, toasts: true, native: false, public: false },
+    settings: { showPoints: false, showTitle: true, toasts: true, native: false, public: false },
   };
 }

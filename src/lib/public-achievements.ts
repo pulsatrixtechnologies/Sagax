@@ -34,18 +34,20 @@ function cleanUnlock(value: unknown): AchievementUnlock | null {
 }
 
 /** A public card, or null when the payload is not one. An older server that
- * only sent points and level still counts: the list is then empty. */
+ * only sent points and level still counts: the list is then empty. A card
+ * without points (the person turned "Show my points" off) still counts when
+ * it carries its list. */
 export function cleanPublicCard(value: unknown): PublicAchievementCard | null {
   if (!value || typeof value !== "object") return null;
   const card = value as Partial<PublicAchievementCard>;
-  if (typeof card.points !== "number" || typeof card.level !== "number") return null;
+  const scored = typeof card.points === "number" && typeof card.level === "number";
+  if (!scored && !Array.isArray(card.unlocked)) return null;
   const unlocked = Array.isArray(card.unlocked) ? card.unlocked.flatMap((item) => {
     const row = cleanUnlock(item);
     return row ? [row] : [];
   }) : [];
   return {
-    points: card.points,
-    level: card.level,
+    ...(scored ? { points: card.points, level: card.level } : {}),
     ...(typeof card.title === "string" && card.title ? { title: card.title } : {}),
     unlocked,
   };
@@ -75,6 +77,14 @@ async function flush(): Promise<void> {
     for (const id of ids) if (!Object.hasOwn(cache, id)) cache[id] = null;
   }
   emit();
+}
+
+/** Forget every card: the viewer changed what their own card shows, so the
+ * next look asks the server again. */
+export function forgetPublicAchievements(): void {
+  const ids = Object.keys(cache);
+  cache = {};
+  for (const id of ids) schedule(id);
 }
 
 /** The person's public card, or null while it is loading or they keep it private. */

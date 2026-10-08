@@ -4,7 +4,8 @@
 // them, hide or show them in your sidebar, and for an admin, their page in
 // the Perspicax console). Nothing from a private thread shows here.
 // A public achievement card puts the chosen title and the score under the
-// name. The Achievements tab lists only what that card carried. A private
+// name, each only when the person left it on ("Show my title", "Show my
+// points"); with neither, nothing sits under the name. The Achievements tab lists only what that card carried. A private
 // card stays a private note: nobody reads another person's record.
 import { useState } from "react";
 import { ExternalLink, EyeOff, Eye, Mail, MessageSquare, PanelRight, Trophy, Users } from "lucide-react";
@@ -76,7 +77,9 @@ export function PersonPanel({ personId, directory: given }: { personId: string; 
   const isHidden = hidden.items.some((item) => hiddenKey(item.kind, item.id) === hiddenKey("person", personId));
   const publicCard = usePublicAchievement(personId);
   const titleName = publicCard ? achievementTitleName(publicCard.title) : null;
-  const pointsText = publicCard ? formatPoints(publicCard.points) : null;
+  // the person's own "Show my points" / "Show my title": the server leaves
+  // what they hid off the card, for everyone, the viewer included
+  const pointsText = publicCard?.points !== undefined ? formatPoints(publicCard.points) : null;
   const achievementRows = publicCard ? publicMemberRows(publicCard.unlocked) : [];
   const [tab, setTab] = useState<"profile" | "achievements">("profile");
   const tabs = ["profile", "achievements"] as const;

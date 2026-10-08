@@ -93,6 +93,35 @@ describe("PersonPanel", () => {
     expect(html).not.toContain("data-member-variant=\"blade\"");
   });
 
+  it("follows the person's own Show my title and Show my points choices", () => {
+    // the server leaves off the card what the person hid (server/achievements.ts)
+    resetPublicAchievementsForTests({
+      pr_ada: { points: 220, level: 3, unlocked: [{ id: "hello-bot", points: 10, unlockedAt: 1 }] },
+    });
+    const noTitle = render();
+    const lineAt = noTitle.indexOf("data-member-line");
+    expect(lineAt).toBeGreaterThan(-1);
+    expect(noTitle).not.toContain("data-member-title");
+    expect(noTitle.slice(lineAt, noTitle.indexOf("</div>", lineAt))).toContain(">220<");
+    resetPublicAchievementsForTests({
+      pr_ada: { title: "rookie", unlocked: [{ id: "hello-bot", points: 10, unlockedAt: 1 }] },
+    });
+    const noPoints = render();
+    expect(noPoints).toContain("data-member-title");
+    expect(noPoints).toContain("Rookie");
+    expect(noPoints).not.toContain("data-member-points");
+    // both hidden: no line under the name at all, the list stays on its tab
+    resetPublicAchievementsForTests({
+      pr_ada: { unlocked: [{ id: "hello-bot", points: 10, unlockedAt: 1 }] },
+    });
+    const bare = render();
+    expect(bare).not.toContain("data-member-line");
+    expect(bare).not.toContain("data-member-points");
+    expect(bare).not.toContain("Rookie");
+    expect(bare).toContain('data-achievement="hello-bot"');
+    expect(bare).not.toContain("This person keeps their achievements private.");
+  });
+
   it("keeps a private card off the name line and says so on the achievements tab", () => {
     const html = render();
     expect(html).not.toContain("data-member-line");

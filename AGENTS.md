@@ -1246,9 +1246,18 @@ pair. Archived bots, when there are any, sit above the pair. Connected
 apps and Templates stay rows above that row when their experimental flags
 are on (`SidebarPlaces`). Your phone and Help Center are not in the menu.
 The phone stays in Settings and on the collapsed rail. Docs stay on About.
-A failed automation still dots the closed account row. The guided tour's
+The row is the avatar and the name, and under the name a quiet line with the
+routines icon (`CalendarClock`, as in the bot panel's Routines section) and
+the count of the viewer's active routines (`src/lib/active-routines.ts`:
+the Active switch on, not suspended, a next run still due, on a bot the
+viewer owns). The count opens Automations and follows routine frames live.
+At zero the line is gone and the name sits centred beside the avatar. A
+failed automation no longer dots the row: it tints the count red and keeps
+its dot on the Automations item in the menu; a place in the menu that asks
+for attention still dots the closed row. The guided tour's
 `tools` anchor sits on the places stack, or on the foot when that stack is
-empty. Tests: `SidebarProfileMenu.test.ts`, `Sidebar.header.test.ts`.
+empty. Tests: `SidebarProfileMenu.test.ts`, `SidebarProfileMenu.footer.test.ts`,
+`src/lib/active-routines.test.ts`, `Sidebar.header.test.ts`.
 
 The guided tour (`GuidedTour.tsx`) never starts by itself: not after the
 welcome flow, not on a new bot, not per version. It runs only when opened on
@@ -1398,6 +1407,21 @@ rules, each covered by `shared/achievements-catalog.test.ts`,
   default, and leaves out anyone who turned "Show my points to colleagues"
   off. Unlock percentages show only
   with five people or more.
+- Visibility (2026-10-08). The left sidebar never shows an achievement title
+  or points, for anyone: not on the viewer's account row, not on people
+  rows. Titles and points show only in a person's detail (the person panel,
+  from a people row or a DM header, the viewer's own included) and on
+  Settings > Achievements. Two switches there, same style, stored in the
+  person's settings on the server (so every device follows): "Show my
+  points" (`showPoints`) and "Show my title" (`showTitle`, a missing flag
+  means on). Each is the person's own choice for everyone who looks:
+  `publicPoints` leaves `points` and `level`, or `title`, off their card,
+  and the person panel draws only what the card carries. With neither, no
+  line sits under the name; the member card centres the name beside the
+  avatar. Settings > Achievements itself and the unlock toasts are
+  unchanged by these switches. Tests: `server/achievements.test.ts`,
+  `src/lib/public-achievements.test.ts`, `PersonPanel.test.ts`,
+  `achievements-ui.test.ts`, `SidebarProfileMenu.footer.test.ts`.
 - The toast never shows while the person types, one at a time, its chime
   follows Notification sounds, and reduced motion stills it.
 

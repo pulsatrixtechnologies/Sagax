@@ -35,7 +35,7 @@ function snapshot(partial: Partial<AchievementSnapshot> = {}): AchievementSnapsh
     rewards: [],
     recent: [],
     items: ACHIEVEMENTS.map((item) => ({ id: item.id, current: 0, target: 1 })),
-    settings: { showPoints: true, toasts: true, native: false, public: false },
+    settings: { showPoints: true, showTitle: true, toasts: true, native: false, public: false },
     ...partial,
   };
 }
@@ -134,7 +134,7 @@ describe("events and unlocks", () => {
   });
 
   it("keeps quiet when the person turned the banners off", () => {
-    resetAchievementsForTests({ status: "ready", snapshot: snapshot({ settings: { showPoints: true, toasts: false, native: false, public: false } }) });
+    resetAchievementsForTests({ status: "ready", snapshot: snapshot({ settings: { showPoints: true, showTitle: true, toasts: false, native: false, public: false } }) });
     setAchievementsFetcher(async () => json(200, snapshot()));
     receiveAchievementsFrame({ unlocked: [{ id: "konami", points: 50, unlockedAt: 1 }] });
     expect(achievementToasts.snapshot().queue).toEqual([]);

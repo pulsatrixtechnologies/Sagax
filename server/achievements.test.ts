@@ -125,7 +125,7 @@ describe("achievement engine", () => {
     });
     expect(open[BOB]).toEqual({ points: 0, level: 1, unlocked: [] });
     expect(open[ADA]!.unlocked.map((item) => item.id)).not.toContain("konami");
-    expect(store.updateSettings(ADA, { public: true, showPoints: false, title: "rookie", tzOffset: -240, junk: 1 })).toEqual({ showPoints: false, toasts: true, native: false, public: true, title: "rookie", tzOffset: -240 });
+    expect(store.updateSettings(ADA, { public: true, showPoints: true, title: "rookie", tzOffset: -240, junk: 1 })).toEqual({ showPoints: true, showTitle: true, toasts: true, native: false, public: true, title: "rookie", tzOffset: -240 });
     // a title not unlocked is refused; public false is an opt-out
     const bob = store.updateSettings(BOB, { public: false, title: "platinum" });
     expect(bob.public).toBe(false);
@@ -158,6 +158,46 @@ describe("achievement engine", () => {
     store.remove(ADA);
     expect(readFileSync(join(dir, "achievements.json"), "utf8")).not.toContain(ADA);
     expect(() => store.snapshot("../etc")).toThrow(/not a person/);
+  });
+
+  it("leaves the points and the title off the public card when the person hides them, and syncs the choice", () => {
+    const { dir, store } = setup();
+    store.record(ADA, [{ type: "message.sent" }], "server");
+    store.updateSettings(ADA, { title: "rookie" });
+    expect(store.snapshot(ADA).settings).toMatchObject({ showPoints: true, showTitle: true, title: "rookie" });
+    expect(store.publicPoints([ADA])[ADA]).toMatchObject({ points: 5, level: 1, title: "rookie" });
+    // "Show my title" off: the title stays chosen, but off the card
+    expect(store.updateSettings(ADA, { showTitle: false })).toMatchObject({ showTitle: false, showPoints: true, title: "rookie" });
+    const untitled = store.publicPoints([ADA])[ADA]!;
+    expect(untitled).toMatchObject({ points: 5, level: 1 });
+    expect(untitled.title).toBeUndefined();
+    // "Show my points" off too: no total, no level, the list stays
+    store.updateSettings(ADA, { showPoints: false });
+    const bare = store.publicPoints([ADA])[ADA]!;
+    expect(bare.points).toBeUndefined();
+    expect(bare.level).toBeUndefined();
+    expect(bare.title).toBeUndefined();
+    expect(bare.unlocked.map((item) => item.id)).toEqual(["first-words"]);
+    // a non-boolean is ignored, the stored choice stays
+    expect(store.updateSettings(ADA, { showTitle: "no" }).showTitle).toBe(false);
+    // every device reads the same choice from the file
+    store.flush();
+    const again = createAchievementStore({ dataDir: dir, persistDelayMs: 0 });
+    expect(again.snapshot(ADA).settings).toMatchObject({ showPoints: false, showTitle: false, title: "rookie" });
+    // back on: both return
+    again.updateSettings(ADA, { showPoints: true, showTitle: true });
+    expect(again.publicPoints([ADA])[ADA]).toMatchObject({ points: 5, level: 1, title: "rookie" });
+  });
+
+  it("treats a record without showTitle as shown", () => {
+    const dir = mkdtempSync(join(tmpdir(), "sagax-achievements-"));
+    writeFileSync(join(dir, "achievements.json"), `${JSON.stringify({
+      version: 1,
+      people: { [ADA]: { settings: { showPoints: true, toasts: true, native: false, public: true, title: "rookie" }, migrated: true, unlocked: { "first-words": 1 }, updatedAt: 1 } },
+    })}\n`);
+    const store = createAchievementStore({ dataDir: dir, persistDelayMs: 0 });
+    expect(store.snapshot(ADA).settings.showTitle).toBe(true);
+    expect(store.publicPoints([ADA])[ADA]).toMatchObject({ points: 5, title: "rookie" });
   });
 
   it("shows unlock percentages only with enough people", () => {

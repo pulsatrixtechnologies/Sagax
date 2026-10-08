@@ -13,8 +13,9 @@
 //
 // Private: a person reads only their own record. Others see a card (points,
 // the chosen title id, unlocked achievement ids) by default. An explicit off
-// ("Show my points to colleagues") stays private (publicPoints). Locked ids
-// stay off that card.
+// ("Show my points to colleagues") stays private (publicPoints). "Show my
+// points" and "Show my title" off leave the total and the title off that card
+// (the person's own choice, for everyone who looks). Locked ids stay off it.
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { ACHIEVEMENTS } from "../shared/achievements-catalog.ts";
@@ -59,7 +60,7 @@ export interface AchievementEvent {
 }
 
 // `public` is shared unless the stored record says false. A missing flag is not an opt-out.
-export const DEFAULT_ACHIEVEMENT_SETTINGS: AchievementSettings = Object.freeze({ showPoints: true, toasts: true, native: false, public: true });
+export const DEFAULT_ACHIEVEMENT_SETTINGS: AchievementSettings = Object.freeze({ showPoints: true, showTitle: true, toasts: true, native: false, public: true });
 
 interface PersonRecord extends AchievementProgress {
   settings: AchievementSettings;
@@ -132,7 +133,7 @@ export function cleanSettings(input: unknown, base: AchievementSettings = DEFAUL
   const out: AchievementSettings = { ...base };
   if (!input || typeof input !== "object" || Array.isArray(input)) return out;
   const value = input as Record<string, unknown>;
-  for (const key of ["showPoints", "toasts", "native", "public"] as const) if (typeof value[key] === "boolean") out[key] = value[key] as boolean;
+  for (const key of ["showPoints", "showTitle", "toasts", "native", "public"] as const) if (typeof value[key] === "boolean") out[key] = value[key] as boolean;
   if (value.title === null) delete out.title;
   else if (typeof value.title === "string" && /^[a-z0-9-]{1,40}$/.test(value.title)) out.title = value.title;
   if (typeof value.tzOffset === "number" && Number.isInteger(value.tzOffset) && Math.abs(value.tzOffset) <= 14 * 60) out.tzOffset = value.tzOffset;
@@ -355,10 +356,11 @@ export function createAchievementStore(options: AchievementStoreOptions): Achiev
           const unlockedAt = record.unlocked[item.id];
           return typeof unlockedAt === "number" ? [{ id: item.id, points: item.points, unlockedAt }] : [];
         });
+        // "Show my points" / "Show my title" off: the person's own choice,
+        // for everyone who looks. A record without the flag shows both.
         out[id] = {
-          points,
-          level: levelFor(points).level,
-          ...(record.settings.title ? { title: record.settings.title } : {}),
+          ...(record.settings.showPoints !== false ? { points, level: levelFor(points).level } : {}),
+          ...(record.settings.title && record.settings.showTitle !== false ? { title: record.settings.title } : {}),
           unlocked,
         };
       }

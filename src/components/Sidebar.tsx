@@ -51,8 +51,6 @@ import { PrimaryBotPicker } from "./PrimaryBotPicker";
 import { useOrgPeople, usePerspicaxOrg } from "@/lib/perspicax-org";
 import { peopleDmPeer } from "@/lib/people-dm";
 import { nudgeLineText } from "@/lib/nudge-line";
-import { usePublicAchievement } from "@/lib/public-achievements";
-import { ColleagueAchievementLine } from "./achievements/MemberCard";
 import { Eye, UserRound } from "lucide-react";
 import { entriesToUnhide, hiddenKey, hiddenKeySet, hideFromSidebar, showInSidebar, useSidebarHidden } from "@/lib/sidebar-hidden";
 import { groupHiddenKey, hiddenSidebarRows, withoutHiddenEntries } from "@/lib/sidebar-hidden-entries";
@@ -345,9 +343,7 @@ export function GroupListItem({
   const orgPeople = useOrgPeople();
   const peer = peopleDmPeer(group, viewerActorId(state.config), orgPeople);
   const rowName = peer?.name ?? group.name;
-  // A colleague's title and points, only when they made the card public.
-  // Icons have no room for the line; the person panel still shows it.
-  const publicCard = usePublicAchievement(peer && density !== "icons" ? peer.id : null);
+  // No achievement title or points here: they live in the person panel.
   const previewShown = !expanded && (!quiet || groupStatus);
   return (
     <>
@@ -378,7 +374,7 @@ export function GroupListItem({
         density !== "icons" && (showThreads ? "pl-6" : "pl-2"),
         selected && !expanded ? "bg-sidebar-selected" : "hover:bg-sidebar-hover",
       )}
-      title={density === "icons" ? rowName : publicCard && previewShown ? groupPreview(group, state.bots, viewerActorId(state.config)) : undefined}
+      title={density === "icons" ? rowName : undefined}
       aria-label={density === "icons" ? rowName : undefined}
       data-people-dm={peer ? peer.id : undefined}
     >
@@ -391,7 +387,7 @@ export function GroupListItem({
           {selected && last && !expanded && <span className="shrink-0 text-[12px] leading-4 text-sidebar-ink-secondary">{formatTime(last.at)}</span>}
           {(expanded || (quiet && !groupStatus)) && group.unread && <span className="size-1.5 shrink-0 rounded-full bg-accent" aria-label={t("task.unreadMany")} />}
         </div>
-        {publicCard ? <span className="block h-[18px]" aria-hidden="true" /> : previewShown && <div className="flex items-center justify-between gap-2">
+        {previewShown && <div className="flex items-center justify-between gap-2">
           <span className="truncate text-[13px] leading-[18px] text-sidebar-ink-secondary">{groupPreview(group, state.bots, viewerActorId(state.config))}</span>
           {group.unread && <span className="size-2 shrink-0 rounded-full bg-accent" />}
         </div>}
@@ -407,26 +403,6 @@ export function GroupListItem({
     {!group.dm && !group.peopleDm && density !== "icons" && <button type="button" disabled={roomBusy} aria-label={t("task.newShort")} title={t(roomBusy ? "task.newBusy" : "task.newShort")}
       onClick={() => { setThreadsOpen(true); dispatch({ type: "newGroupTask", groupId: group.id }); }}
       className="pointer-events-none absolute right-1 top-1/2 flex size-7 -translate-y-1/2 items-center justify-center rounded text-sidebar-ink-secondary opacity-0 hover:bg-sidebar-hover hover:text-sidebar-ink disabled:opacity-40 group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100 max-md:pointer-events-auto max-md:opacity-70 touch:pointer-events-auto touch:opacity-70 touch:disabled:opacity-40"><Plus size={14} /></button>}
-    {publicCard && peer && (
-      <div
-        className={cn(
-          "pointer-events-none absolute inset-0 flex items-center",
-          density === "compact" ? "gap-2 py-1.5 pr-9" : "gap-2 py-2 pr-2",
-          showThreads ? "pl-6" : "pl-2",
-        )}
-      >
-        <span className={cn("shrink-0", density === "compact" ? "size-7" : "size-9")} aria-hidden="true" />
-        <span className="flex min-w-0 flex-1 flex-col">
-          <span className="h-5" aria-hidden="true" />
-          <span className="pointer-events-auto flex h-[18px] min-w-0 items-center gap-2">
-            <span className="min-w-0 flex-1">
-              <ColleagueAchievementLine card={publicCard} name={rowName} initials={peer.initials} avatarUrl={peer.avatarUrl} />
-            </span>
-            {previewShown && group.unread && <span className="size-2 shrink-0 rounded-full bg-accent" />}
-          </span>
-        </span>
-      </div>
-    )}
     </div>
     {expanded && <GroupThreadList group={group} selected={selected} density={density} query={group.name.toLowerCase().includes(query.toLowerCase()) ? "" : query} />}
     </>
