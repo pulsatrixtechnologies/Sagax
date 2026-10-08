@@ -3154,6 +3154,30 @@ describe("slice 6: routines in their person's name", () => {
     expect(new RoutineManager(h.options).listRoutines().find((r) => r.id === routine.id)?.runAs).toBe("pr_bob");
   });
 
+  it("an explicit run-as choice wins over the creator and the editor, and the run acts as that person", () => {
+    const h = harness(start);
+    const routine = h.manager.create(input, undefined, { actorPrincipalId: "pr_alice", runAs: "pr_bob" });
+    expect(routine.runAs).toBe("pr_bob");
+    // a schedule edit with the choice moves nothing else; a work edit by the
+    // admin keeps the chosen person
+    expect(h.manager.update(routine.id, { prompt: "Another report" }, undefined, { actorPrincipalId: "pr_alice", runAs: "pr_bob" })?.runAs).toBe("pr_bob");
+    expect(h.manager.update(routine.id, { name: "Renamed" }, undefined, { actorPrincipalId: "pr_alice", runAs: "pr_carol" })?.runAs).toBe("pr_carol");
+    expect(h.manager.runNow(routine.id)?.runAs).toBe("pr_carol");
+  });
+
+  it("a newly chosen person clears the pause of the previous one", async () => {
+    const h = withAdmission(() => ({ ok: false, error: "Bob can no longer run this bot's routines", suspend: "no_right" }));
+    const routine = h.manager.create(input, undefined, { actorPrincipalId: "pr_alice", runAs: "pr_bob" });
+    h.setNow(routine.nextRunAt!);
+    await h.manager.tick();
+    expect(h.manager.listRoutines()[0].suspended?.reason).toBe("no_right");
+    // a schedule-only edit without a choice keeps the pause
+    expect(h.manager.update(routine.id, { name: "Same" }, undefined, { actorPrincipalId: "pr_alice" })?.suspended?.reason).toBe("no_right");
+    const chosen = h.manager.update(routine.id, { name: "Carol's" }, undefined, { actorPrincipalId: "pr_alice", runAs: "pr_carol" });
+    expect(chosen?.suspended).toBeUndefined();
+    expect(chosen?.runAs).toBe("pr_carol");
+  });
+
   it("snapshots runAs on the run and drops malformed values on load", () => {
     const h = harness(start);
     const routine = h.manager.create(input, undefined, { actorPrincipalId: "pr_alice" });

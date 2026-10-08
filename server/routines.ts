@@ -389,6 +389,11 @@ export interface RoutineManagerOptions {
   onResumed?: (routine: Routine) => void;
 }
 
+/** Slice 6: who writes a routine. `actorPrincipalId`: the signed-in person
+ * (D5: whoever rewrites the work runs it); `runAs`: the person chosen in the
+ * routine modal, already authorized by the route, which wins. */
+export interface RoutineWriteMeta { actorPrincipalId?: string; runAs?: string }
+
 /** Slice 6: routine fields whose edit moves runAs to the editor. */
 const WORK_FIELDS = ["prompt", "botId", "groupId", "target", "attachments"] as const;
 
@@ -1163,7 +1168,7 @@ export class RoutineManager {
     return run ? cloneRun(run) : null;
   }
 
-  create(input: RoutineInput, request?: RoutineRequestCommitFor<"create">, meta?: { actorPrincipalId?: string }): Routine {
+  create(input: RoutineInput, request?: RoutineRequestCommitFor<"create">, meta?: RoutineWriteMeta): Routine {
     if (request) {
       const receipt = this.matchingRoutineRequestReceipt(request);
       if (receipt) {
@@ -1185,7 +1190,7 @@ export class RoutineManager {
       // Only a confirmed chat card supplies `request`; the public calendar
       // API cannot choose an arbitrary transcript as a reporting target.
       sourceThreadId: request?.threadId,
-      ...(meta?.actorPrincipalId ? { runAs: meta.actorPrincipalId } : {}),
+      ...(meta?.runAs || meta?.actorPrincipalId ? { runAs: meta.runAs || meta.actorPrincipalId } : {}),
       nextRunAt,
       createdAt: at,
       updatedAt: at,
@@ -1203,7 +1208,7 @@ export class RoutineManager {
     id: string,
     patch: Partial<RoutineInput>,
     request?: RoutineRequestCommitFor<"update" | "pause" | "resume">,
-    meta?: { actorPrincipalId?: string },
+    meta?: RoutineWriteMeta,
   ): Routine | null {
     if (request) {
       const receipt = this.matchingRoutineRequestReceipt(request);
@@ -1245,7 +1250,9 @@ export class RoutineManager {
     // Slice 6 (D5): whoever rewrites the work is the person it runs as.
     const workChanged = WORK_FIELDS.some((field) =>
       JSON.stringify((clean as Record<string, unknown>)[field] ?? null) !== JSON.stringify((routine as unknown as Record<string, unknown>)[field] ?? null));
-    const actor = workChanged ? meta?.actorPrincipalId : undefined;
+    // An explicit choice (the routine modal, server/routine-run-as.ts) wins
+    // over the editor; the route checked who may make it.
+    const actor = meta?.runAs || (workChanged ? meta?.actorPrincipalId : undefined);
     const discardResults = this.applyResultsInput(destination, patch.resultsThreadId);
     const cancelledRuns: RoutineRun[] = [];
     this.commitMutation(() => {
@@ -1264,8 +1271,12 @@ export class RoutineManager {
         delete routine.timeoutMinutes;
       }
       if (actor) {
+        const moved = routine.runAs !== actor;
         routine.runAs = actor;
         if (routine.suspended?.reason === "no_right") delete routine.suspended;
+        // A person chosen in the modal is active and may run the bot (the
+        // route checked it): a pause of the previous person no longer holds.
+        if (meta?.runAs && moved) delete routine.suspended;
       }
       if (patch.enabled === false) {
         for (const run of this.runs) {
