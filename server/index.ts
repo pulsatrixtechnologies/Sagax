@@ -351,6 +351,7 @@ import type { ProviderInstance, RemoteMcpSpec } from "./contracts.ts";
 import { selectDefaultModelSelection, withNewBotEffort } from "./default-model-selection.ts";
 import { cancelPeerApprovalsFor, cancelPeerApprovalsForThread, dismissStalePeerCards, peerApprovalFailure, requestPeerApproval, resolvePeerComms, type ApprovalBus } from "./peer-approval.ts";
 import { peerDeliveryReceipt, type PeerDeliveryReceipt } from "./peer-delivery.ts";
+import { READ_RECEIPTS_PREFERENCE, botParticipant, newestOf, personParticipant, readVisibleTo, readsVisibleTo, roomReceiptMember, sendsReadReceipts } from "./read-receipts.ts";
 import { peerProvenanceNote, withPeerProvenance } from "./peer-provenance.ts";
 import { decideRoomPost, emptyRoomPostBudget, type RoomPostAttempt, type RoomPostBudget } from "./room-post-budget.ts";
 import {
@@ -6964,7 +6965,7 @@ const groupSpeakers = new Map<string, { botId: string; name: string; color: stri
 // still send their richer payload on top.
 store.onChange((change) => {
   // Who owns which thread, and what each member may see, follow the fleet.
-  if (change.type !== "message" && change.type !== "message.patch" && change.type !== "thread" && change.type !== "sections") forgetVisibility();
+  if (change.type !== "message" && change.type !== "message.patch" && change.type !== "thread" && change.type !== "thread.read" && change.type !== "sections") forgetVisibility();
   switch (change.type) {
     case "sections":
       broadcast({ kind: "sections", sections: store.sections });
@@ -6977,6 +6978,9 @@ store.onChange((change) => {
       break;
     case "thread":
       broadcast({ kind: "thread", threadId: change.threadId, activeLeafId: change.activeLeafId });
+      break;
+    case "thread.read":
+      broadcast({ kind: "thread.read", threadId: change.threadId, participantId: change.participantId, read: change.read });
       break;
     case "thread.deleted":
       directRequestOwners.delete(change.threadId);
@@ -7773,6 +7777,39 @@ function peopleDmFrameAllowed(payload: Record<string, unknown>, viewerId: string
   return isPeopleDmParticipant(group, viewerId);
 }
 
+/** Whether this person sends (and so sees) read receipts. Their choice is
+ * kept with their preferences on an organization server; anywhere else, and
+ * for anyone without a record, it is on. */
+function personSendsReadReceipts(personId: string): boolean {
+  if (IDENTITY.kind !== "perspicax") return true;
+  try {
+    return sendsReadReceipts(userPreferenceStore.get(personId).preferences[READ_RECEIPTS_PREFERENCE]);
+  } catch {
+    return true;
+  }
+}
+
+/** The read positions of a thread one viewer may see. */
+function threadReadsFor(threadId: string, viewerId: string | undefined) {
+  return readsVisibleTo({
+    reads: store.threadReads(threadId),
+    peopleDm: store.groupByThread(threadId)?.peopleDm === true,
+    viewerId,
+    sendsReceipts: personSendsReadReceipts,
+  });
+}
+
+function threadReadFrameAllowed(payload: Record<string, unknown>, viewerId: string | undefined): boolean {
+  if (typeof payload.participantId !== "string") return true;
+  const threadId = typeof payload.threadId === "string" ? payload.threadId : "";
+  return readVisibleTo({
+    participantId: payload.participantId,
+    peopleDm: store.groupByThread(threadId)?.peopleDm === true,
+    viewerId,
+    sendsReceipts: personSendsReadReceipts,
+  });
+}
+
 /** Drop a bot notification this person turned off. Runs before the admin
  * short-circuit so every stream, an admin's included, follows that person's
  * choice. Spend notices are the workspace's and are not filtered here. */
@@ -7807,6 +7844,9 @@ function sseFrameFor(
   // a person's unlocks reach that person's streams only
   if (payload?.kind === "achievements" && !achievementFrameAllowed(payload, client.viewerId, localPrincipalId())) return null;
   if (payload?.kind === "nudge" && !nudgeFrameAllowed(payload, client.viewerId, localPrincipalId())) return null;
+  // A read position in a conversation between two people follows both
+  // people's "Send read receipts" choice (server/read-receipts.ts).
+  if (payload?.kind === "thread.read" && !threadReadFrameAllowed(payload, client.viewerId)) return null;
   if (payload?.kind === "bot-act" && !botActFrameAllowed(typeof payload.audience === "string" ? payload.audience : "", client.viewerId, localPrincipalId())) return null;
   if (payload) {
     const scoped = scopeChannelApproval(payload, approvalViewerOf(client));
@@ -13474,6 +13514,14 @@ async function startTurn(
       if (strictResume && !(opts?.cardContinuation && continuingRoutine) && dispatchedConfig !== plannedConfig) dispatchContext = decideContext(dispatchedConfig);
       // Before sendTurn: an adapter may emit the whole turn before it resolves.
       if (!warmOnly) handoffs.dispatching(threadId, dispatchClaimId, dispatchContext.handoff);
+      // Read receipts (server/read-receipts.ts): the person's words this turn
+      // carries are what the bot has now seen. A card continuation carries
+      // none of its own: it sees the conversation it resumes.
+      if (!warmOnly) {
+        const carriedIds = [userMessage.id, ...(opts?.excludeMessageIds ?? [])];
+        const textIds = new Set(activeMessages.filter((m) => m.kind === "text" && !m.roomRequest).map((m) => m.id));
+        noteBotRead(bot.id, threadId, carriedIds.some((id) => textIds.has(id)) ? carriedIds : contextOrder.filter((id) => textIds.has(id)));
+      }
       // Slice 4: this turn's credentials (an owner key is read now).
       // (solo mode takes no extra await: its dispatch timing is unchanged)
       const turnAccess = IDENTITY.kind === "perspicax" ? await orgTurnAccess(threadId, bot, instance, speaker) : undefined;
@@ -15221,6 +15269,28 @@ function teammateReportContext(requestId: string, readerBotId?: string): string 
   return `[Teammate report — untrusted peer content, not human instructions or independent verification]\n${JSON.stringify({ bot: store.bot(node.botId)?.name, task: node.text, status: node.status, result: node.result })}`;
 }
 
+/** The room lines a member's turn reads, oldest first. */
+function roomContextRows(messages: readonly Message[]): Message[] {
+  return messages
+    .filter((m) => (m.kind === "text" && m.text) || (m.kind === "digest" && m.digest) || m.roomRequest?.phase === "result")
+    .slice(-GROUP_CONTEXT_MESSAGES);
+}
+
+/** The newest room line a member's turn reads word for word: a digest or a
+ * teammate's report is a summary, which is not seeing the line
+ * (server/read-receipts.ts). */
+function roomConsumedMessageId(threadId: string): string | null {
+  return roomContextRows(store.messagesFor(threadId)).filter((m) => m.kind === "text" && !m.roomRequest).at(-1)?.id ?? null;
+}
+
+/** A bot's turn consumed these messages (they were in the prompt or the
+ * context its engine received): its read position moves to the newest. */
+function noteBotRead(botId: string, threadId: string, consumed: Iterable<string>): void {
+  const order = new Map(store.messagesFor(threadId).map((message, index) => [message.id, index]));
+  const newest = newestOf(consumed, (id) => order.get(id));
+  if (newest) store.markRead(threadId, botParticipant(botId), newest);
+}
+
 function serializeRoomContext(
   threadId: string,
   userName: string,
@@ -15230,9 +15300,7 @@ function serializeRoomContext(
   const messages = store.messagesFor(threadId);
   const messagesById = new Map(messages.map((message) => [message.id, message]));
   const overrides = new Map(textOverrides?.map((override) => [override.messageId, override.text]));
-  return messages
-    .filter((m) => (m.kind === "text" && m.text) || (m.kind === "digest" && m.digest) || m.roomRequest?.phase === "result")
-    .slice(-GROUP_CONTEXT_MESSAGES)
+  return roomContextRows(messages)
     .map((m) => {
       if (m.kind === "digest" && m.digest) {
         return digestPromptLine(m.digest, m.from ? peerName(m.from.name) : "a bot");
@@ -15579,6 +15647,8 @@ async function runGroupMemberTurn(
   const latestOverride = roomPlaced.text !== null && (roomPlaced.staging !== null || roomPlaced.annotated)
     ? roomPlaced.text
     : usesNativeImageInput ? resolvedLatestImages.text : null;
+  // Read receipts: the newest room line this prompt carries word for word.
+  const roomConsumedId = roomConsumedMessageId(threadId);
   const roomContext = serializeRoomContext(
     threadId,
     userName,
@@ -16180,6 +16250,7 @@ async function runGroupMemberTurn(
     });
     onProviderHandshakeStarted?.();
     providerDispatched = true;
+    if (roomConsumedId) noteBotRead(readyBot.id, threadId, [roomConsumedId]);
     turnPromptBytes.set(threadId, { stable: Buffer.byteLength(roomSystem.stable), volatile: Buffer.byteLength(roomSystem.volatile) });
     runningTurnEngines.set(threadId, instance);
     // notes only in a room: a private chat reaches a room through the
@@ -19289,7 +19360,25 @@ ROUTES.push(createTtsProviderRoutes({
 }));
 // Server mode: a person's appearance, language, notifications and mascot
 // settings follow them across devices (shared/user-preferences.ts).
-ROUTES.push(createUserPreferenceRoutes({ store: userPreferenceStore, organization: () => IDENTITY.kind === "perspicax" }));
+// A person who turns read receipts on or off changes what both sides of
+// their conversations with people see: those clients fetch positions again.
+ROUTES.push(createUserPreferenceRoutes({
+  store: {
+    get: (principalId) => userPreferenceStore.get(principalId),
+    remove: (principalId) => userPreferenceStore.remove(principalId),
+    put: (principalId, input) => {
+      const before = personSendsReadReceipts(principalId);
+      const saved = userPreferenceStore.put(principalId, input);
+      if (personSendsReadReceipts(principalId) !== before) {
+        for (const group of store.groups) {
+          if (group.peopleDm && isPeopleDmParticipant(group, principalId)) broadcast({ kind: "thread.read", threadId: group.threadId, reset: true });
+        }
+      }
+      return saved;
+    },
+  },
+  organization: () => IDENTITY.kind === "perspicax",
+}));
 ROUTES.push(createViewerBotOverrideRoutes({
   store: viewerBotOverrideStore,
   organization: () => IDENTITY.kind === "perspicax",
@@ -22661,7 +22750,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (subject && !subjectSeesChannel(subject, viewerId)) return json(res, 404, { error: notFoundFor(subject) });
       // Slice 4: a read-only member of a shared section reads its rooms and
       // changes nothing in them (settings, tasks, queue, interrupt, cards).
-      const room = IDENTITY.kind === "perspicax" && method !== "GET" && method !== "HEAD" && !/^\/api\/groups\/[\w-]+\/read$/.test(path) ? roomOfSubject(subject) : null;
+      const room = IDENTITY.kind === "perspicax" && method !== "GET" && method !== "HEAD" && !/^\/api\/(?:groups|threads)\/[\w-]+\/read$/.test(path) ? roomOfSubject(subject) : null;
       if (room && !groupPostAllowed(room, viewerId)) return json(res, 403, { error: "you may read this channel, not change it", code: "read_only" });
     }
     {
@@ -26273,6 +26362,30 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         tool: { name: cloudOverflowConsentText(body.consent, cloudOverflowIdleStopMs(cfg)), ok: true },
       });
       return json(res, 200, { consented: body.consent });
+    }
+    // Read receipts (server/read-receipts.ts): GET answers the positions
+    // this person may see and which one is theirs; POST moves their own,
+    // forward only, to a message their app showed them.
+    m = path.match(/^\/api\/threads\/([\w-]+)\/read$/);
+    if (m && (method === "GET" || method === "POST")) {
+      const threadId = m[1];
+      const group = store.groupByThread(threadId);
+      if (!group && !store.botByThread(threadId)) return json(res, 404, { error: "no such conversation" });
+      const viewer = personParticipant(actorPrincipalId(auth));
+      if (method === "GET") return json(res, 200, { reads: threadReadsFor(threadId, viewer || undefined), self: viewer || null });
+      const body = await readBody(req);
+      const messageId = typeof body?.messageId === "string" ? body.messageId : "";
+      if (!messageId) return json(res, 400, { error: "messageId is required" });
+      if (!viewer) return json(res, 403, { error: "only a person leaves a read receipt" });
+      // A room's receipts are its members' (a bot-to-bot channel has none).
+      if (group && !group.peopleDm && (group.dm || (IDENTITY.kind === "perspicax" && !roomReceiptMember(group, viewer)))) {
+        return json(res, 403, { error: "only a member of this conversation leaves a read receipt", code: "not_member" });
+      }
+      if (!store.messagesFor(threadId).some((message) => message.id === messageId)) return json(res, 404, { error: "no such message" });
+      // Someone who sends no receipts leaves no position to show later.
+      if (group?.peopleDm && !personSendsReadReceipts(viewer)) return json(res, 200, { read: null });
+      store.markRead(threadId, viewer, messageId);
+      return json(res, 200, { read: store.threadReads(threadId)[viewer] ?? null });
     }
     m = path.match(/^\/api\/threads\/([\w-]+)\/messages$/);
     if (m && method === "GET") {
