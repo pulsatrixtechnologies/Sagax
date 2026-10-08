@@ -1,7 +1,10 @@
 // Voice mode's live call routes end to end over real sockets: the page's
 // streaming speech to text (GET /voice/listen, a WebSocket through the same
 // upgrade gate as the desktop viewer) and the streamed speech of one sentence
-// (POST /voice/stream), against a loopback fake of xAI. The key stays on the
+// (POST /voice/stream), and the streaming voice of a whole call
+// (GET /voice/speech: clauses in, PCM out, over xAI's text to speech
+// WebSocket, with barge-in, a dropped socket and a refused one), against a
+// loopback fake of xAI. The key stays on the
 // server, and xAI is only ears and a voice: no chat, responses or realtime
 // agent endpoint is ever called during a call.
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
@@ -27,6 +30,7 @@ let xai: FakeXaiVoice;
 let server: Server;
 let origin = "";
 const usage: VoiceUsage[] = [];
+const speechLog: string[] = [];
 
 beforeAll(async () => {
   xai = await startFakeXaiVoice({ transcripts: ["first turn", "second turn"], sttFinalizeMs: 30, ttsFirstChunkMs: 40, ttsSeconds: 0.3, sttConfidence: 0.92 });
@@ -36,7 +40,7 @@ beforeAll(async () => {
   const viewer = createDesktopViewer({
     target: () => undefined,
     live: () => true,
-    acceptsUpgrade: (path) => /^\/api\/bots\/[\w-]+\/voice\/listen$/.test(path),
+    acceptsUpgrade: (path) => /^\/api\/bots\/[\w-]+\/voice\/(?:listen|speech)$/.test(path),
   });
   const route = createVoiceModeRoutes({
     organization: false,
@@ -51,7 +55,9 @@ beforeAll(async () => {
       transcribe: grok.transcribe,
       synthesizeStream: grok.synthesizeStream,
       openTranscription: (key, options, handlers) => grok.openTranscriptionStream(key, options, handlers),
+      openSpeech: (key, options, handlers) => grok.openSpeechStream(key, options, handlers),
     },
+    log: (line) => speechLog.push(line),
     upgrade: (req) => viewer.upgradeOf(req),
     utterances: (text) => (text.startsWith("```") ? [] : [text.replace(/\*\*/g, "")]),
     recordUsage: (entry) => { usage.push(entry); },
@@ -76,12 +82,16 @@ afterAll(async () => {
   await xai?.close();
 });
 
-function open(path: string, headers: Record<string, string> = {}): Promise<{ ws: WebSocket; frames: Array<Record<string, unknown>> }> {
+function open(path: string, headers: Record<string, string> = {}): Promise<{ ws: WebSocket; frames: Array<Record<string, unknown>>; audio: number[] }> {
   return new Promise((resolve, reject) => {
     const ws = new WebSocket(`${origin.replace("http", "ws")}${path}`, { headers: { origin, ...headers } });
     const frames: Array<Record<string, unknown>> = [];
-    ws.on("message", (data) => frames.push(JSON.parse(String(data)) as Record<string, unknown>));
-    ws.once("open", () => resolve({ ws, frames }));
+    const audio: number[] = [];
+    ws.on("message", (data, binary) => {
+      if (binary) audio.push((data as Buffer).length);
+      else frames.push(JSON.parse(String(data)) as Record<string, unknown>);
+    });
+    ws.once("open", () => resolve({ ws, frames, audio }));
     ws.once("unexpected-response", (_req, res) => reject(new Error(`HTTP ${res.statusCode}`)));
     ws.once("error", reject);
   });
@@ -167,6 +177,73 @@ describe("voice mode live call (streaming)", () => {
       method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text: "```js\nx()\n```" }),
     });
     expect(res.status).toBe(204);
+  });
+
+  it("streaming voice: one xAI socket for the call, each clause's PCM between start and done", async () => {
+    const { ws, frames, audio } = await open("/api/bots/b-cryptic/voice/speech?language=fr&voice=ara&speed=1.25&threadId=t-1");
+    await until("ready", () => frames.find((f) => f.type === "ready"));
+    expect(frames[0]).toEqual({ type: "ready", sampleRate: 24_000 });
+    const started = Date.now();
+    ws.send(JSON.stringify({ type: "say", id: "c1", text: "**Bonjour** Ada," }));
+    ws.send(JSON.stringify({ type: "say", id: "c2", text: "voici la suite." }));
+    await until("first audio", () => audio.length > 0);
+    expect(Date.now() - started).toBeLessThan(600);
+    await until("both done", () => frames.filter((f) => f.type === "done").length === 2);
+    expect(frames.slice(1).map((f) => `${f.type}:${f.id}`)).toEqual(["start:c1", "done:c1", "start:c2", "done:c2"]);
+    expect(audio.reduce((a, b) => a + b, 0)).toBe(2 * Math.round(24_000 * 0.3) * 2);
+    const socket = xai.requests.find((r) => r.websocket && r.path === "/v1/tts")!;
+    expect(socket.authorization).toBe(`Bearer ${KEY}`);
+    expect(socket.query).toMatchObject({ language: "fr", voice: "ara", speed: "1.25", codec: "pcm", sample_rate: "24000", optimize_streaming_latency: "2" });
+    // made speakable on the server, like POST /voice/stream
+    expect(socket.utterances).toEqual(["Bonjour Ada,", "voici la suite."]);
+    expect(usage.filter((u) => u.model === "grok-tts").slice(-2).map((u) => u.input)).toEqual([12, 15]);
+    ws.close();
+    expect(JSON.stringify(frames)).not.toContain(KEY.slice(6, 14));
+  });
+
+  it("streaming voice barge-in: the clause speaking is cleared at xAI (text.clear), the socket carries on", async () => {
+    const { ws, frames, audio } = await open("/api/bots/b-cryptic/voice/speech?language=en");
+    await until("ready", () => frames.find((f) => f.type === "ready"));
+    ws.send(JSON.stringify({ type: "say", id: "c1", text: "A long answer that the person cuts." }));
+    ws.send(JSON.stringify({ type: "say", id: "c2", text: "Never said." }));
+    await until("first audio", () => audio.length > 0);
+    ws.send(JSON.stringify({ type: "cancel", id: "c2" }));
+    ws.send(JSON.stringify({ type: "cancel", id: "c1" }));
+    await until("cleared", () => frames.filter((f) => f.type === "done").length === 2);
+    const socket = xai.requests.filter((r) => r.websocket && r.path === "/v1/tts").at(-1)!;
+    expect(socket.clears).toBe(1);
+    const heard = audio.length;
+    await new Promise((r) => setTimeout(r, 150));
+    expect(audio.length).toBe(heard);
+    ws.send(JSON.stringify({ type: "say", id: "c3", text: "The next answer." }));
+    await until("next done", () => frames.some((f) => f.type === "done" && f.id === "c3"));
+    expect(socket.utterances).toEqual(["A long answer that the person cuts.", "The next answer."]);
+    ws.close();
+  });
+
+  it("streaming voice: a dropped xAI socket fails the clause, then reconnects for the next one", async () => {
+    const { ws, frames } = await open("/api/bots/b-cryptic/voice/speech?language=en");
+    await until("ready", () => frames.find((f) => f.type === "ready"));
+    const before = xai.requests.filter((r) => r.websocket && r.path === "/v1/tts").length;
+    xai.speech.dropAfter = 1;
+    ws.send(JSON.stringify({ type: "say", id: "c1", text: "Dropped." }));
+    await until("error", () => frames.find((f) => f.type === "error"));
+    expect(frames.find((f) => f.type === "error")).toEqual({ type: "error", ids: ["c1"] });
+    await until("reconnected", () => xai.requests.filter((r) => r.websocket && r.path === "/v1/tts").length === before + 1, 3000);
+    ws.send(JSON.stringify({ type: "say", id: "c2", text: "After the drop." }));
+    await until("spoken after the reconnect", () => frames.some((f) => f.type === "done" && f.id === "c2"), 3000);
+    ws.close();
+  });
+
+  it("streaming voice: an xAI socket that does not open is refused (502), so the page speaks over POST", async () => {
+    xai.speech.refuse = true;
+    try {
+      await expect(open("/api/bots/b-cryptic/voice/speech?language=en")).rejects.toThrow(/502/);
+    } finally {
+      xai.speech.refuse = false;
+    }
+    await expect(open("/api/bots/b-cryptic/voice/speech?language=en", { origin: "https://evil.example" })).rejects.toThrow(/403/);
+    expect(speechLog).toEqual([]);
   });
 
   it("never asks xAI to answer: only speech to text and text to speech endpoints were called", () => {

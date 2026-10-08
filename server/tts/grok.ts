@@ -270,3 +270,111 @@ export function openTranscriptionStream(
     },
   };
 }
+
+/** What xAI's streaming text to speech socket says back. */
+export interface SpeechStreamHandlers {
+  /** raw 16-bit little-endian PCM at VOICE_STREAM_RATE */
+  onAudio(pcm: Uint8Array): void;
+  /** the utterance's audio is complete (`audio.done`) */
+  onDone(): void;
+  /** the utterance was cancelled (`audio.clear`, after `text.clear`) */
+  onCleared(): void;
+  onError(message: string): void;
+  onClose(): void;
+}
+
+export interface SpeechStream {
+  /** resolves once the socket is open (xAI takes text from then on) */
+  ready: Promise<void>;
+  /** one utterance: its text (`text.delta`), then `text.done` */
+  speak(text: string): void;
+  /** cancel the utterance in progress (`text.clear`); xAI answers `audio.clear` */
+  clear(): void;
+  close(): void;
+}
+
+/** How hard xAI trades quality at chunk boundaries for an earlier first
+ * chunk: 2 is its lowest time to first audio. */
+export const SPEECH_STREAM_LATENCY = 2;
+
+/** Streaming text to speech for a live call: one socket per call, one
+ * utterance per clause of the bot's answer, raw PCM back as base64
+ * `audio.delta` frames. The socket stays open between utterances, and
+ * `text.clear` cancels the one playing without a reconnect (barge-in).
+ * Voice, speed and language are fixed when it opens.
+ * https://docs.x.ai/developers/model-capabilities/audio/text-to-speech#streaming-tts-websocket */
+export function openSpeechStream(
+  key: string,
+  options: { voice?: string; speed?: number; language?: string },
+  handlers: SpeechStreamHandlers,
+  Socket: HeaderWebSocket = WebSocket as unknown as HeaderWebSocket,
+): SpeechStream {
+  const query = new URLSearchParams({
+    language: options.language || "auto",
+    codec: "pcm",
+    sample_rate: String(VOICE_STREAM_RATE),
+    optimize_streaming_latency: String(SPEECH_STREAM_LATENCY),
+  });
+  if (options.voice) query.set("voice", options.voice);
+  if (typeof options.speed === "number" && options.speed !== 1) query.set("speed", String(options.speed));
+  const url = `${API.replace(/^http/, "ws")}/tts?${query}`;
+  let socket: WebSocket;
+  let closed = false;
+  let resolveReady!: () => void;
+  let rejectReady!: (error: Error) => void;
+  const ready = new Promise<void>((resolve, reject) => {
+    resolveReady = resolve;
+    rejectReady = reject;
+  });
+  ready.catch(() => {});
+  const end = () => {
+    if (closed) return;
+    closed = true;
+    rejectReady(new Error("closed"));
+    try { socket?.close(); } catch { /* already closed */ }
+    handlers.onClose();
+  };
+  try {
+    socket = new Socket(url, { headers: { authorization: `Bearer ${key}` } });
+  } catch {
+    queueMicrotask(() => {
+      handlers.onError("Could not reach Grok voice. Check your connection.");
+      end();
+    });
+    return { ready, speak() {}, clear() {}, close() {} };
+  }
+  socket.binaryType = "arraybuffer";
+  socket.addEventListener("open", () => resolveReady());
+  socket.addEventListener("message", (event: MessageEvent) => {
+    if (typeof event.data !== "string") return;
+    let frame: Record<string, unknown>;
+    try { frame = JSON.parse(event.data) as Record<string, unknown>; } catch { return; }
+    if (frame.type === "audio.delta" && typeof frame.delta === "string") {
+      const pcm = Buffer.from(frame.delta, "base64");
+      if (pcm.byteLength) handlers.onAudio(new Uint8Array(pcm.buffer, pcm.byteOffset, pcm.byteLength));
+    } else if (frame.type === "audio.done") handlers.onDone();
+    else if (frame.type === "audio.clear") handlers.onCleared();
+    // xAI's message may echo request details; never pass it on verbatim
+    else if (frame.type === "error") handlers.onError("Grok text to speech reported an error.");
+  });
+  socket.addEventListener("error", () => {
+    if (closed) return;
+    handlers.onError("Could not reach Grok voice. Check your connection.");
+    end();
+  });
+  socket.addEventListener("close", end);
+  const send = (message: Record<string, unknown>) => {
+    if (!closed && socket.readyState === 1) socket.send(JSON.stringify(message));
+  };
+  return {
+    ready,
+    speak(text) {
+      send({ type: "text.delta", delta: text });
+      send({ type: "text.done" });
+    },
+    clear() {
+      send({ type: "text.clear" });
+    },
+    close: end,
+  };
+}

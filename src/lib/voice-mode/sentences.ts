@@ -9,7 +9,10 @@
 // fence is skipped (the server's speakable text drops code anyway). The first
 // sentence may be cut early at a comma once it has about six words, to start
 // speaking sooner; later short sentences are joined to the next one, so a reply of
-// many short lines is not many requests.
+// many short lines is not many requests. With the streaming voice
+// (`streamingClauses`, speech-stream.ts) there is no character wait: the
+// first clause goes at its first comma once it has two words, since the
+// voice socket is already open and starts on it at once.
 
 import { speakableSentence } from "./spoken";
 
@@ -25,7 +28,12 @@ export interface SentenceStreamOptions {
   firstClauseChars?: number;
   /** a sentence is never longer than this (cut at a space) */
   maxChars?: number;
+  /** the first sentence is cut at a comma only once it has this many words */
+  firstClauseWords?: number;
 }
+
+/** The streaming voice's splitting: clause boundaries, no character wait. */
+export const STREAMING_CLAUSES: SentenceStreamOptions = { firstClauseChars: 0, firstClauseWords: 2 };
 
 export class SentenceStream {
   private consumed = 0;
@@ -34,6 +42,7 @@ export class SentenceStream {
   private readonly minChars: number;
   private readonly firstClauseChars: number;
   private readonly maxChars: number;
+  private readonly firstClauseWords: number;
 
   constructor(options: SentenceStreamOptions = {}) {
     this.minChars = options.minChars ?? 28;
@@ -41,6 +50,7 @@ export class SentenceStream {
     // (docs/voice-mode-xai.md, "Latency")
     this.firstClauseChars = options.firstClauseChars ?? 36;
     this.maxChars = options.maxChars ?? 380;
+    this.firstClauseWords = options.firstClauseWords ?? 0;
   }
 
   /** Characters of the text already turned into sentences. */
@@ -124,10 +134,14 @@ export class SentenceStream {
         }
         return i + 1;
       }
-      if (first && ch === "," && i >= this.firstClauseChars && next !== undefined && /\s/.test(next)) return i + 1;
+      if (first && ch === "," && i >= this.firstClauseChars && next !== undefined && /\s/.test(next) && this.words(scan.slice(0, i)) >= this.firstClauseWords) return i + 1;
       if (i >= this.maxChars && /\s/.test(ch)) return i + 1;
     }
     return fence >= 0 ? fence : -1;
+  }
+
+  private words(text: string): number {
+    return text.match(/[\p{L}\p{N}]+/gu)?.length ?? 0;
   }
 
   private abbreviation(text: string, dot: number): boolean {

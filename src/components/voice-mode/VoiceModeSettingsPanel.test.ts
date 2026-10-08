@@ -108,7 +108,7 @@ describe("VoiceModeSettingsPanel", () => {
 });
 
 describe("the live call's settings in the panel", () => {
-  const call = { input: "auto" as const, onlyMyVoice: true, earcons: true, thinkingCue: true, pause: "normal" as const, advancedOpen: true };
+  const call = { input: "auto" as const, onlyMyVoice: true, earcons: true, thinkingCue: true, pause: "normal" as const, advancedOpen: true, streamingVoice: true, fasterEndOfTurn: true };
 
   it("offers hands-free or push to talk, Only my voice with its enrollment, and call sounds", () => {
     const markup = html(props({ call, enrollment: { state: "none" }, onCallChange: vi.fn(), onEnroll: vi.fn(), onForget: vi.fn() }));
@@ -146,6 +146,22 @@ describe("the live call's settings in the panel", () => {
     const tree = elements(VoiceModeSettingsPanel(props({ call, enrollment: { state: "none" }, onCallChange, onEnroll: vi.fn(), onForget: vi.fn() })));
     (tree.find((el) => el.props["data-voice-pause"] === "patient")!.props.onClick as () => void)();
     expect(onCallChange).toHaveBeenCalledWith({ pause: "patient" });
+  });
+
+  it("offers Streaming voice and Faster end of turn under Advanced, both on by default", () => {
+    const onCallChange = vi.fn();
+    const markup = html(props({ call, enrollment: { state: "none" }, onCallChange, onEnroll: vi.fn(), onForget: vi.fn() }));
+    expect(markup).toContain("Streaming voice");
+    expect(markup).toContain("Faster end of turn");
+    expect(markup).toMatch(/data-voice-advanced-body[\s\S]*data-voice-toggle="streaming-voice"/);
+    expect(markup).toMatch(/data-voice-toggle="streaming-voice"[\s\S]*?role="switch" aria-checked="true"/);
+    expect(markup).toMatch(/data-voice-toggle="faster-end-of-turn"[\s\S]*?role="switch" aria-checked="true"/);
+    const tree = elements(VoiceModeSettingsPanel(props({ call, enrollment: { state: "none" }, onCallChange, onEnroll: vi.fn(), onForget: vi.fn() })));
+    for (const data of ["streaming-voice", "faster-end-of-turn"]) {
+      const row = tree.find((el) => el.props["data-voice-toggle"] === data)!;
+      (elements(row).find((el) => el.props.role === "switch")!.props.onClick as () => void)();
+    }
+    expect(onCallChange.mock.calls).toEqual([[{ streamingVoice: false }], [{ fasterEndOfTurn: false }]]);
   });
 
   it("shows the enrollment's progress while recording", () => {

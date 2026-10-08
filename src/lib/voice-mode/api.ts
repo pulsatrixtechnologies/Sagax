@@ -246,3 +246,10 @@ export function forgetVoiceModeStatus(): void {
   checks.clear();
   notifyChecks();
 }
+
+/** The live call's streaming voice socket (GET /voice/speech): the voice,
+ * speed and language are fixed for the socket. */
+export function voiceModeSpeechUrl(botId: string, settings: Pick<VoiceModeSettings, "voice" | "speed" | "language">, threadId?: string, origin = typeof location === "undefined" ? "http://localhost" : location.origin): string {
+  const query = new URLSearchParams({ language: settings.language, speed: String(settings.speed), ...(settings.voice ? { voice: settings.voice } : {}), ...(threadId ? { threadId } : {}) });
+  return `${origin.replace(/^http/, "ws")}${base(botId)}/speech?${query}`;
+}

@@ -6,7 +6,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { VoiceCall, callAudioConstraints, continuedTurn, isNoiseFragment, resampler, stablePartial, THINKING_CUE_MS, type BargeInMetrics, type TurnMetrics, type VoiceCallOptions } from "./call";
-import { DEFAULT_CALL_SETTINGS, type CallSettings } from "./call-settings";
+import { cleanCallSettings, DEFAULT_CALL_SETTINGS, type CallSettings } from "./call-settings";
 import type { PcmPlayer, Sentence } from "./player";
 import type { SpeakerEmbedder } from "./speaker-id";
 import { voiceprintOf } from "./speaker-id";
@@ -184,8 +184,16 @@ async function setup(options: Setup = {}) {
       await call.settled();
     }
   };
+  /** frames as given (a voice with a pitch), their probability in frame[0] */
+  const feedFrames = async (frames: Float32Array[]) => {
+    for (const f of frames) {
+      clock += 32;
+      call.frame(f);
+      await call.settled();
+    }
+  };
   const settle = () => new Promise((r) => setTimeout(r, 30));
-  return { call, player, feed, settle, utterances, interrupts, metrics, rejected, speech, track, upload, clock: () => clock, socket: () => FakeSocket.last! };
+  return { call, player, feed, feedFrames, settle, utterances, interrupts, metrics, rejected, speech, track, upload, clock: () => clock, socket: () => FakeSocket.last! };
 }
 
 describe("a turn that carries on the one sent before", () => {
@@ -626,5 +634,135 @@ describe("latency (docs/voice-mode-xai.md, Latency)", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+/** A voice-like turn for the contour: `n` frames gliding from `from` to `to`
+ * Hz while the level goes from `a` to `b`; the VAD's probability rides in
+ * frame[0] like `frame()`. */
+function voice(n: number, from: number, to: number, a: number, b: number, probability = 0.95): Float32Array[] {
+  let phase = 0;
+  return Array.from({ length: n }, (_, k) => {
+    const t = n === 1 ? 1 : k / (n - 1);
+    const hz = from * (to / from) ** t;
+    const level = a + (b - a) * t;
+    const out = new Float32Array(VAD_FRAME);
+    for (let i = 0; i < VAD_FRAME; i++) {
+      phase += (2 * Math.PI * hz) / 16_000;
+      out[i] = level * (Math.sin(phase) + 0.5 * Math.sin(2 * phase)) / 1.5;
+    }
+    out[0] = probability / 1000;
+    return out;
+  });
+}
+
+describe("faster end of turn (docs/voice-mode-xai.md, Latency)", () => {
+  it("a falling, fading voice ends the turn on the short window, no punctuation needed", async () => {
+    const t = await setup({ transcripts: ["I want the report for Montreal"] });
+    await t.feedFrames(voice(30, 175, 170, 0.2, 0.2));
+    await t.feedFrames(voice(12, 190, 130, 0.25, 0.05));
+    await t.feed(0.02, 0.001, 25);
+    await t.settle();
+    const turn = t.utterances[0]!.metrics;
+    expect(turn.endedAt - turn.stoppedAt).toBeLessThanOrEqual(384);
+    expect(turn).toMatchObject({ earlyEnd: true, contourEnd: true });
+  });
+
+  it("switched off, or in Patient, the same voice waits the usual endpoint", async () => {
+    for (const settings of [{ fasterEndOfTurn: false }, { pause: "patient" as const }]) {
+      const t = await setup({ transcripts: ["I want the report for Montreal"], settings });
+      await t.feedFrames(voice(30, 175, 170, 0.2, 0.2));
+      await t.feedFrames(voice(12, 190, 130, 0.25, 0.05));
+      await t.feed(0.02, 0.001, 40);
+      await t.settle();
+      const turn = t.utterances[0]!.metrics;
+      expect(turn.endedAt - turn.stoppedAt, JSON.stringify(settings)).toBeGreaterThanOrEqual(700);
+      expect(turn.contourEnd).toBeUndefined();
+    }
+  });
+
+  it("a wrong cut costs nothing: speaking again within 600 ms continues the turn, even over the bot's first words", async () => {
+    const t = await setup({ transcripts: ["I want the report", "for Montreal and Quebec"] });
+    await t.feedFrames(voice(30, 175, 170, 0.2, 0.2));
+    await t.feedFrames(voice(12, 190, 130, 0.25, 0.05));
+    await t.feed(0.02, 0.001, 11);
+    await t.settle();
+    expect(t.utterances.map((u) => u.text)).toEqual(["I want the report"]);
+    expect(t.utterances[0]!.metrics.contourEnd).toBe(true);
+    // the bot's answer already speaks
+    t.call.setBotBusy(true);
+    t.call.replyProgress("Sure, here is the report. ");
+    expect(t.call.current.botAudible).toBe(true);
+    // the person goes on 300 ms after the cut
+    await t.feed(0.02, 0.001, 8);
+    await t.feed(0.95, 0.3, 30);
+    expect(t.player.cancels).toBeGreaterThanOrEqual(1);
+    expect(t.interrupts).toHaveLength(1);
+    await t.feed(0.02, 0.001, 25);
+    await t.settle();
+    const last = t.utterances.at(-1)!;
+    expect(last.text).toBe("I want the report for Montreal and Quebec");
+    expect(last.continues).toBe(true);
+    // a continuation, not an interruption of the bot
+    expect(last.interrupted).toBe(false);
+  });
+
+  it("after 600 ms, talking over the bot is an ordinary barge-in", async () => {
+    const t = await setup({ transcripts: ["I want the report", "no wait"] });
+    await t.feedFrames(voice(30, 175, 170, 0.2, 0.2));
+    await t.feedFrames(voice(12, 190, 130, 0.25, 0.05));
+    await t.feed(0.02, 0.001, 11);
+    await t.settle();
+    t.call.setBotBusy(true);
+    t.call.replyProgress("Sure, here is the report. ");
+    await t.feed(0.02, 0.001, 25);
+    await t.feed(0.95, 0.3, 30);
+    await t.feed(0.02, 0.001, 25);
+    await t.settle();
+    expect(t.utterances.at(-1)).toMatchObject({ text: "no wait", interrupted: true });
+    expect(t.utterances.at(-1)!.continues).toBeUndefined();
+  });
+});
+
+describe("streaming voice in the call (speech-stream.ts)", () => {
+  it("speaks over the socket from the first clause, no 36 character wait, and closes it on hang-up", async () => {
+    const said: string[] = [];
+    const socket = {
+      streaming: true,
+      connect: vi.fn(async () => true),
+      speak: vi.fn(async (_b: string, text: string) => {
+        said.push(text);
+        return { body: new ReadableStream<Uint8Array>(), sampleRate: 24_000 };
+      }),
+      close: vi.fn(),
+    };
+    const t = await setup({ options: { speech: undefined, speechSocket: socket as never } });
+    expect(socket.connect).toHaveBeenCalledTimes(1);
+    t.call.replyProgress("Bien sûr, ");
+    expect(said).toEqual(["Bien sûr,"]);
+    expect(t.speech).not.toHaveBeenCalled();
+    t.call.end();
+    expect(socket.close).toHaveBeenCalledTimes(1);
+  });
+
+  it("once the socket fell back, POST speaks with the usual clause wait", async () => {
+    const socket = { streaming: false, connect: vi.fn(async () => false), speak: vi.fn(), close: vi.fn() };
+    const t = await setup({ options: { speech: undefined, speechSocket: socket as never } });
+    t.call.replyProgress("Bien sûr, ");
+    expect(socket.speak).not.toHaveBeenCalled();
+  });
+
+  it("switched off: no socket is opened", async () => {
+    const t = await setup({ settings: { streamingVoice: false }, options: { speech: undefined } });
+    expect((t.call as unknown as { speechSocket: unknown }).speechSocket).toBeNull();
+  });
+});
+
+describe("the two Advanced switches", () => {
+  it("are on by default, also for settings saved before they existed, and keep an explicit off", () => {
+    expect(DEFAULT_CALL_SETTINGS).toMatchObject({ streamingVoice: true, fasterEndOfTurn: true });
+    expect(cleanCallSettings({ input: "auto", pause: "short" })).toMatchObject({ streamingVoice: true, fasterEndOfTurn: true, pause: "short" });
+    expect(cleanCallSettings({ streamingVoice: false, fasterEndOfTurn: false })).toMatchObject({ streamingVoice: false, fasterEndOfTurn: false });
+    expect(cleanCallSettings({ streamingVoice: "yes" })).toMatchObject({ streamingVoice: true });
   });
 });

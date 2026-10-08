@@ -883,10 +883,31 @@ fake xAI: `scripts/verify-voice-mode.ts`. Details: `docs/voice-mode-xai.md`.
   on the computer (onnxruntime-web, models in `src/lib/voice-mode/models/`,
   served from the app's bundle, never a CDN); a turn streams over
   `GET /voice/listen` (WebSocket, same origin only, bridged to xAI streaming
-  speech to text) and the answer is spoken sentence by sentence through
-  `POST /voice/stream` (raw PCM). Barge-in ducks then cancels the bot's voice
-  and interrupts its running turn. Tests: `call-logic.test.ts`, `call.test.ts`,
-  `models.test.ts`, `server/voice-call.e2e.test.ts`.
+  speech to text) and the answer is spoken clause by clause over one
+  `GET /voice/speech` socket for the call ("Streaming voice", Advanced, on by
+  default: `speech-stream.ts`, `server/voice-speech-session.ts`, xAI's
+  `wss://api.x.ai/v1/tts` with `optimize_streaming_latency=2`, no 36
+  character wait for the first clause, `text.clear` on a cancel), or
+  sentence by sentence through `POST /voice/stream` (raw PCM) when it is off
+  or fails. Keep its nets: ready within 1.5 s, two errors in a call, a close
+  or the server's `fallback` (after 3 reconnects with a 250, 750, 2000 ms
+  backoff) switch the call to POST for good, logged once; a clause failed
+  before any audio is spoken over POST, one cut mid-way is never said twice.
+  Barge-in ducks then cancels the bot's voice and interrupts its running
+  turn. Tests: `call-logic.test.ts`, `call.test.ts`, `speech-stream.test.ts`,
+  `models.test.ts`, `server/voice-speech-session.test.ts`,
+  `server/voice-call.e2e.test.ts`.
+- "Faster end of turn" (Advanced, on by default; never in Patient nor push
+  to talk): `prosody.ts` reads the pitch and energy of the last 400 ms
+  before a silence on the computer; a falling, fading or clearly rising
+  contour ends the turn on the short confident window (352 ms in Normal)
+  without punctuation, a flat contour on a filler keeps the long delay, a
+  French linking word on a finished contour waits half of `incompleteMs`.
+  Keep the nets: every frame of the short window under Silero 0.15 (never
+  mid-word), and a person who speaks again within 600 ms of a turn ended on
+  its contour continues it (`CONTOUR_CONTINUATION_MS`), even over the bot's
+  first words. Tests: `prosody.test.ts`, `call.test.ts` ("faster end of
+  turn").
 - Call turns carry `voiceCall` (Message.voiceCall); the server adds the
   hidden "Phone call" volatile section (`server/voice-call-prompt.ts`), never
   stored as the person's text. The call speaks only `spokenPart` of an answer,
