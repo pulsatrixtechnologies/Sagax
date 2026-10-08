@@ -3,9 +3,10 @@
 // a turn withholds them (SendTurnInput.withholdHostTools) and shell and files
 // go through the person's server environment instead
 // (server/user-sandbox-tools.ts, docs/user-sandbox.md).
-import { chmodSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, lstatSync, mkdirSync, readFileSync, readlinkSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
+import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 
 import { allowsTool, parseToolScope } from "../../shared/tool-scope.ts";
 import { DATA_DIR } from "../config.ts";
@@ -384,6 +385,77 @@ export const DROID_HOST_TOOLS: readonly string[] = [
  * model Execute, Read, Edit and the rest with them) and its ACP session
  * takes no tool selection, so nothing withholds these tools there. */
 
+/** Hermes Agent 0.21.5 (v2026.9.24) tools that act on this machine, as
+ * `hermes acp` offered them to the model (the `hermes-acp` toolset). */
+export const HERMES_HOST_TOOLS: readonly string[] = [
+  "terminal", "process_manage", "process", "read_file", "write_file", "patch", "search_files",
+  "execute_code", "delegate_task", "vision_analyze", "web_search", "web_extract",
+  "skills_list", "skill_view", "skill_manage", "memory", "session_search", "manage_connections", "cronjob",
+  "browser_navigate", "browser_snapshot", "browser_click", "browser_type", "browser_scroll", "browser_back",
+  "browser_press", "browser_get_images", "browser_vision", "browser_console", "browser_cdp", "browser_dialog",
+  "browser_vault_list", "browser_vault_unlock", "browser_vault_fill", "browser_vault_save_login",
+  "browser_vault_enter_code", "browser_exec", "computer_use", "image_generate", "text_to_speech",
+];
+
+/** Hermes toolsets a withheld turn turns off (agent.disabled_toolsets),
+ * beside the empty `platform_toolsets.acp` list that enables none. */
+export const HERMES_HOST_TOOLSETS: readonly string[] = [
+  "terminal", "file", "web", "search", "x_search", "browser", "code_execution", "delegation", "vision",
+  "video", "image_gen", "video_gen", "computer_use", "skills", "memory", "session_search", "cronjob", "tts",
+  "connections", "project", "bot_room", "desktop_ui", "setup", "kanban", "homeassistant", "debugging",
+  "safe", "coding", "context_engine", "spotify", "discord", "discord_admin", "yuanbao", "feishu_doc", "feishu_drive",
+];
+
+/** The Hermes configuration of a withheld turn, from the server's own:
+ * same model and providers; no toolset for ACP (an explicit empty list
+ * enables none, so only the MCP servers Sagax passes in session/new
+ * remain), every host toolset disabled, no MCP server, hook, plugin or
+ * skill directory of the configuration. */
+export function hermesOrgConfig(source: string): string {
+  let config: Record<string, unknown> = {};
+  try {
+    const parsed = parseYaml(source) as unknown;
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) config = parsed as Record<string, unknown>;
+  } catch {
+    throw new Error("Hermes's config.yaml could not be read, so its tools cannot be held back on this server.");
+  }
+  const agent = config.agent && typeof config.agent === "object" && !Array.isArray(config.agent) ? config.agent as Record<string, unknown> : {};
+  const next: Record<string, unknown> = {
+    ...config,
+    platform_toolsets: { acp: [] },
+    agent: { ...agent, disabled_toolsets: [...HERMES_HOST_TOOLSETS] },
+    hooks_auto_accept: false,
+  };
+  for (const key of ["mcp_servers", "hooks", "plugins", "skills", "toolsets", "custom_toolsets", "terminal", "browser"]) delete next[key];
+  return stringifyYaml(next);
+}
+
+/** Points a withheld Hermes turn at a home Sagax owns
+ * (`<data>/engine-policies/hermes-org`): its config.yaml is hermesOrgConfig
+ * of the server's; `.env` and `auth.json` are links to the server's, so a
+ * key or a login is used where it is, never copied. */
+export function hermesHostToolEnv(env: Record<string, string | undefined>, withhold: boolean, sourceHome: string): void {
+  if (!withhold) return;
+  const home = join(DATA_DIR, "engine-policies", "hermes-org");
+  mkdirSync(home, { recursive: true, mode: 0o700 });
+  let source = "";
+  try { source = readFileSync(join(sourceHome, "config.yaml"), "utf8"); } catch { source = ""; }
+  const config = hermesOrgConfig(source);
+  const path = join(home, "config.yaml");
+  let current: string | null = null;
+  try { current = readFileSync(path, "utf8"); } catch { current = null; }
+  if (current !== config) writeFileSync(path, config, { mode: 0o600 });
+  for (const name of [".env", "auth.json"]) {
+    const link = join(home, name), target = join(sourceHome, name);
+    let existing: string | null = null;
+    try { existing = lstatSync(link).isSymbolicLink() ? readlinkSync(link) : "not-a-link"; } catch { existing = null; }
+    if (existing === target) continue;
+    if (existing !== null) rmSync(link, { force: true });
+    if (existsSync(target)) symlinkSync(target, link);
+  }
+  env.HERMES_HOME = home;
+}
+
 /** Host tool names per ACP engine, as each real CLI offered them to the
  * model (scripts/verify-org-host-tools.ts). */
 export const HOST_TOOL_NAMES_BY_ENGINE: Readonly<Record<string, readonly string[]>> = {
@@ -392,4 +464,5 @@ export const HOST_TOOL_NAMES_BY_ENGINE: Readonly<Record<string, readonly string[
   kimi: KIMI_HOST_TOOLS,
   opencode: OPENCODE_HOST_TOOLS,
   droid: DROID_HOST_TOOLS,
+  hermes: HERMES_HOST_TOOLS,
 };

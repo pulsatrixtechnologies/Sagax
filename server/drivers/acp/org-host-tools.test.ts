@@ -5,21 +5,23 @@
 // auto-accept. The real CLIs are checked by scripts/verify-org-host-tools.ts
 // (AGENTS.md "Engines on an organization server"); this pins the driver side
 // against the scripted ACP peer.
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
+import { parse as parseYaml } from "yaml";
 
 import { ensureDirs } from "../../config.ts";
 import type { ProviderDriver, ProviderInstance } from "../../contracts.ts";
 import { removeTempDir } from "../../testing/cleanup.ts";
 import { recordEvents } from "../../testing/events.ts";
 import {
-  acpHostToolRequest, GEMINI_HOST_TOOLS, KIMI_HOST_TOOLS, OPENCODE_HOST_PERMISSIONS, QWEN_HOST_TOOLS, QWEN_KEPT_TOOLS, sagaxMcpServerNames, withheldWorkspace,
+  acpHostToolRequest, GEMINI_HOST_TOOLS, hermesOrgConfig, HERMES_HOST_TOOLSETS, KIMI_HOST_TOOLS, OPENCODE_HOST_PERMISSIONS, QWEN_HOST_TOOLS, QWEN_KEPT_TOOLS, sagaxMcpServerNames, withheldWorkspace,
 } from "../host-tools.ts";
 import type { AcpConfig } from "./core.ts";
 import { GeminiAgentDriver } from "./gemini.ts";
+import { HermesAgentDriver } from "./hermes.ts";
 import { KimiAgentDriver } from "./kimi.ts";
 import { createOpenCodeDriver } from "./opencode-go.ts";
 import { QwenAgentDriver } from "./qwen.ts";
@@ -118,11 +120,38 @@ describe("organization server: each admitted ACP engine withholds its own tools"
     expect(real(org.cwd)).toBe(real(withheldWorkspace()));
   });
 
+  it("Hermes Agent: a home of Sagax's whose config enables no ACP toolset and disables every host one", async () => {
+    const f = await fixture(HermesAgentDriver, {});
+    mkdirSync(join(f.home, ".hermes"), { recursive: true });
+    writeFileSync(join(f.home, ".hermes", "config.yaml"), [
+      "model:", "  default: fixture", "  provider: custom",
+      "mcp_servers:", "  ambient:", "    command: touch", "    args: [/tmp/never]",
+      "hooks:", "  pre_tool_call:", "    - command: touch /tmp/never",
+      "platform_toolsets:", "  acp: [hermes-acp]", "",
+    ].join("\n"));
+    writeFileSync(join(f.home, ".hermes", ".env"), "FIXTURE=1\n");
+    const org = await turn(f, true);
+    expect(org.env.HERMES_HOME).not.toBe(join(f.home, ".hermes"));
+    const config = parseYaml(readFileSync(join(org.env.HERMES_HOME!, "config.yaml"), "utf8"));
+    expect(config.platform_toolsets).toEqual({ acp: [] });
+    expect(config.agent.disabled_toolsets).toEqual([...HERMES_HOST_TOOLSETS]);
+    expect(config.mcp_servers).toBeUndefined();
+    expect(config.hooks).toBeUndefined();
+    expect(config.model).toEqual({ default: "fixture", provider: "custom" });
+    expect(readFileSync(join(org.env.HERMES_HOME!, ".env"), "utf8")).toBe("FIXTURE=1\n");
+    expect(real(org.cwd)).toBe(real(withheldWorkspace()));
+  });
+
+  it("refuses a Hermes configuration it cannot read rather than run it unchanged", () => {
+    expect(() => hermesOrgConfig("model: [unclosed")).toThrow(/cannot be held back/);
+  });
+
   it.each([
     ["Gemini CLI", GeminiAgentDriver],
     ["Qwen Code", QwenAgentDriver],
     ["Kimi Code", KimiAgentDriver],
     ["OpenCode", OpenCodeDriver],
+    ["Hermes Agent", HermesAgentDriver],
   ] as const)("%s: a request to run a command on the server is declined, even in Full access", async (_name, driver) => {
     const f = await fixture(driver, { FAKE_ACP_MODE: "permission" });
     // no approvalMode with fullAuto: the path that accepts every request
