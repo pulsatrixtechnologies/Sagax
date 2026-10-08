@@ -6,9 +6,9 @@
 # model); deploy/docker-compose.yml puts Caddy in the same network namespace
 # to terminate TLS and authentication at the edge.
 #
-#   docker build -t openmausbot .
-#   docker build --build-arg ENGINES="@anthropic-ai/claude-code @openai/codex" -t openmausbot .
-#   docker build --build-arg ENGINES="@anthropic-ai/claude-code@2.1.288 @openai/codex@0.160.0 @earendil-works/pi-coding-agent@1.0.1 @google/gemini-cli@0.62.0 @moonshot-ai/kimi-code@2.1.1" --build-arg NATIVE_ENGINES=grok -t openmausbot .
+#   docker build -t openmausbot .                                   (no engine CLI: the public image)
+#   docker build --build-arg ENGINE_SET=all -t openmausbot .        (every engine of engines.lock.json: an organization server)
+#   docker build --build-arg ENGINE_SET="claude codex grok" -t openmausbot .
 #
 # /run/sagax-sandboxd: the provisioner's shared key (docs/user-sandbox.md);
 # an empty named volume mounted there inherits this owner.
@@ -53,46 +53,30 @@ RUN apt-get update \
   && useradd --create-home --home-dir /data --shell /bin/bash maus \
   && install -d -o maus -g maus -m 0750 /run/sagax-sandboxd
 WORKDIR /app
-COPY --from=build --chown=maus:maus /src/dist-server ./dist-server
-COPY --from=build --chown=maus:maus /src/dist ./dist
-# Optional engine CLIs baked into the image (space-separated npm packages).
-# Pin versions for a reproducible image, for example the organization set:
-#   @anthropic-ai/claude-code@2.1.288 @openai/codex@0.160.0
-#   @earendil-works/pi-coding-agent@1.0.1 @google/gemini-cli@0.62.0
-#   @moonshot-ai/kimi-code@2.1.1
+# The engine CLIs, pinned in ONE place: engines.lock.json (versions, npm
+# packages, native downloads with their SHA-256, the Python engine's source
+# archive). scripts/install-engines.mjs installs the selection, checks that
+# each one starts (`<cli> --version`) and writes the manifest the server's
+# startup self-check reads (server/engines-self-check.ts). Before the app's
+# own files so a code change does not reinstall the engines.
+#   ENGINE_SET      none (default: the public image carries no engine), all
+#                   (every engine of the lock: what Perspicax's build-push.sh
+#                   passes for an organization server), open (only the
+#                   redistributable ones), or engine ids ("claude codex").
+#   ENGINES         legacy override: npm specs installed instead of the lock's
+#                   npm engines ("none" drops them).
+#   NATIVE_ENGINES  legacy override: native engine ids of the lock (grok,
+#                   cursor) instead of the selected ones ("none" drops them).
+# Proprietary CLIs (Claude Code, Droid, Cursor) are installed only by an
+# image built for your own servers; docs/custom-engines.md lists each licence.
+ARG ENGINE_SET=none
 ARG ENGINES=""
-RUN if [ -n "$ENGINES" ]; then npm install -g $ENGINES && npm cache clean --force; fi
-# Optional engines that ship as a native binary, not an npm package
-# (space-separated names; empty skips). `grok`: Grok Build, xAI's coding CLI
-# (github.com/xai-org/grok-build, Apache-2.0), the release binary its official
-# installer (https://x.ai/cli/install.sh) downloads, pinned by version and
-# SHA-256. xAI publishes no checksum file: the hashes below were taken from
-# the artifacts whose MD5 matched the origin bucket's x-goog-hash. Bump
-# GROK_VERSION and both hashes together.
 ARG NATIVE_ENGINES=""
-ARG GROK_VERSION=1.0.46
-ARG GROK_SHA256_ARM64=69a7bdf9eb570435ac381213ff4648e5f31dc4e7546313758a7744fd54d8639f
-ARG GROK_SHA256_AMD64=0cc2a4aa40c2bf2a7a2c7933a738ea09b7c9fdafd200b53705e1d411617cd70f
 ARG TARGETARCH
-RUN set -eu; for engine in $NATIVE_ENGINES; do \
-    case "$engine" in \
-      grok) \
-        case "$TARGETARCH" in \
-          arm64) platform=linux-aarch64; sum="$GROK_SHA256_ARM64" ;; \
-          amd64) platform=linux-x86_64; sum="$GROK_SHA256_AMD64" ;; \
-          *) echo "grok: unsupported architecture $TARGETARCH" >&2; exit 1 ;; \
-        esac; \
-        curl -fsSL --proto '=https' -o /tmp/grok.gz "https://x.ai/cli/grok-${GROK_VERSION}-${platform}.gz"; \
-        echo "$sum  /tmp/grok.gz" | sha256sum -c -; \
-        install -d /opt/grok; \
-        gzip -dc /tmp/grok.gz > "/opt/grok/grok-${GROK_VERSION}"; \
-        rm -f /tmp/grok.gz; \
-        chmod 0755 "/opt/grok/grok-${GROK_VERSION}"; \
-        ln -sf "/opt/grok/grok-${GROK_VERSION}" /usr/local/bin/grok; \
-        grok --version ;; \
-      *) echo "unknown native engine: $engine" >&2; exit 1 ;; \
-    esac; \
-  done
+COPY engines.lock.json scripts/install-engines.mjs /app/engines/
+RUN node /app/engines/install-engines.mjs --lock /app/engines/engines.lock.json --manifest /app/engines/manifest.json \
+  && npm cache clean --force \
+  && rm -rf /root/.npm /root/.cache /tmp/*
 # The bots' browser (docs/plans/browser-engine.md): the pinned agent-browser
 # and a Chrome for Testing with its libraries, so a server bot can browse.
 # Pin here and in server/browser-engine-release.ts together.
@@ -112,6 +96,9 @@ RUN npm install -g agent-browser@${AGENT_BROWSER_VERSION} \
        && ln -s /opt/openmausbot-browser/.agent-browser/browsers/chrome-*/chrome /opt/openmausbot-browser/chrome; \
      fi \
   && agent-browser --version
+# The app itself last: a code change rebuilds only these layers.
+COPY --from=build --chown=maus:maus /src/dist-server ./dist-server
+COPY --from=build --chown=maus:maus /src/dist ./dist
 # Keep the baked-in browser outside both root's private home and /data,
 # which may be an existing mounted volume. Session state still lives in HOME.
 ENV HOME=/data \
@@ -120,6 +107,7 @@ ENV HOME=/data \
     OMB_STATIC_DIR=/app/dist \
     OMB_PORT=8799 \
     OMB_WEBHOOK_PORT=8800 \
+    SAGAX_ENGINES_MANIFEST=/app/engines/manifest.json \
     NODE_ENV=production
 VOLUME ["/data"]
 USER maus
