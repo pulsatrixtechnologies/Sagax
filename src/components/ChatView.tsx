@@ -971,7 +971,9 @@ const MessagesList = memo(function MessagesList({
                 ? <DigestChip message={m} viewerPrincipalId={state.config?.viewer?.principalId ?? null} />
                 : <TurnAccessChip message={m} viewerPrincipalId={state.config?.viewer?.principalId ?? null} />;
             case "compaction":
-              return <CompactionChip message={m} />;
+              // Sagax's own folds are invisible (older threads still hold
+              // them as rows); only a fold the person asked for shows.
+              return m.compaction?.by === "harness" ? null : <CompactionChip message={m} />;
             case "screen":
               return m.png ? <ScreenFrame png={m.png} mime={m.mime} /> : null;
             default:

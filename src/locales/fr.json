@@ -3661,5 +3661,12 @@
   "approvalMode.simple.decideHint": "Le bot agit et vous consulte s'il hésite.",
   "approvalMode.simple.custom": "Un niveau personnalisé est enregistré. Il reste jusqu'à votre choix.",
   "approvalMode.simple.customChip": "Niveau personnalisé",
-  "approvalMode.simple.unset": "Aucun niveau choisi. Le bot utilise ce réglage par défaut jusqu'à votre choix."
+  "approvalMode.simple.unset": "Aucun niveau choisi. Le bot utilise ce réglage par défaut jusqu'à votre choix.",
+  "engineConnect.connect": "Connecter {name}",
+  "engineConnect.connected": "Connecté",
+  "engineConnect.disconnect": "Déconnecter",
+  "engineConnect.notConnected": "Non connecté",
+  "engineConnect.paysWith.subscription": "Payé par : votre abonnement",
+  "engineConnect.paysWith.key": "Payé par : votre clé dans Perspicax",
+  "engineConnect.paysWith.orgKey": "Payé par : la clé de l’organisation"
 }

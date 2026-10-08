@@ -25,6 +25,11 @@ export interface TurnContextInput {
   externallyUpdated: boolean;
   /** transcript-replay drivers get history via SendTurnInput.transcript instead */
   replaysNatively: boolean;
+  /** Sagax folded the older turns into a summary (server/context-budget.ts):
+   * the same bot, the same person, the same conversation, in a new session.
+   * Told as a continuation, never as a hand-over or a rewind, so the bot
+   * carries on as if nothing happened. */
+  compacted?: boolean;
 }
 
 /** Does this engine need the thread replayed to it? True when a DIFFERENT
@@ -53,6 +58,8 @@ const REWOUND_PREAMBLE =
   "[The user rewound this conversation (edited a message or switched to another version). Everything before this point was replaced by the following history:]";
 const FRESH_PREAMBLE =
   "[You are joining this conversation mid-thread (the user switched this bot over to you). The conversation so far:]";
+const COMPACTED_PREAMBLE =
+  "[This is your ongoing conversation with this user. Its older turns are condensed into the summary below; the latest turns follow word for word. Continue exactly where you left off, and do not mention the summary:]";
 const EXTERNAL_UPDATE_PREAMBLE =
   "[This conversation received an update outside your provider session. The complete current history follows so you can use that update in your next response:]";
 
@@ -92,12 +99,13 @@ export function buildTurnContext(input: TurnContextInput): {
   resume: boolean;
 } {
   const { text, transcript, rewound, fresh, externallyUpdated, replaysNatively } = input;
-  const resume = !rewound && !fresh && !externallyUpdated;
+  const compacted = input.compacted === true;
+  const resume = !rewound && !fresh && !externallyUpdated && !compacted;
   const replay = !resume && !replaysNatively && transcript.length > 0;
   if (!replay) return { turnText: text, resume };
   return {
     turnText: [
-      rewound ? REWOUND_PREAMBLE : externallyUpdated ? EXTERNAL_UPDATE_PREAMBLE : FRESH_PREAMBLE,
+      rewound ? REWOUND_PREAMBLE : externallyUpdated ? EXTERNAL_UPDATE_PREAMBLE : fresh ? FRESH_PREAMBLE : COMPACTED_PREAMBLE,
       "",
       ...transcript.map((m) => `${m.role === "user" ? "User" : "Assistant"}: ${m.text}`),
       "",
