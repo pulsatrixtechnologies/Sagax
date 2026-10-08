@@ -54,7 +54,7 @@ const PROMPT = 8;
 const bot = (id: string, name: string) => ({ id, name, hidden: false, modelSelection: { instanceId: "claude", model: "m" } }) as unknown as Bot;
 const webhook = (id: string, extra: Partial<WebhookTrigger> = {}): WebhookTrigger => ({
   id, endpointId: `ep-${id}`, name: "GitHub", prompt: "", botId: "scout", runOn: "maus", enabled: true,
-  createdAt: 1, updatedAt: 1, deliveryCount: 4, lastReceivedAt: Date.now() - 5 * 60_000, ...extra,
+  createdAt: 1, updatedAt: 1, deliveryCount: 4, lastReceivedAt: Date.now() - 5 * 60_000, tokenLast4: "k3Yz", ...extra,
 });
 
 type Props = { children?: ReactNode; [key: string]: unknown };
@@ -111,7 +111,7 @@ describe("Triggers pop-up", () => {
     fixture.overrides.set(BOT, "atlas");
     fixture.overrides.set(PROMPT, "  Summarize the failed build.  ");
     const created = webhook("w1", { name: "GitHub", botId: "atlas" });
-    fixture.api.mockResolvedValue({ webhook: created, credential: { endpointUrl: "e", secret: "s", url: "https://hooks.example/w1" } });
+    fixture.api.mockResolvedValue({ webhook: created, credential: { endpointUrl: "https://hooks.example/w1", token: "whsec_w1", command: `curl -X POST https://hooks.example/w1 -H "Authorization: Bearer whsec_w1"` } });
     const { nodes: tree } = render();
     const form = tree.find((node) => node.props["data-trigger-builder"] !== undefined)!;
     (form.props.onSubmit as (event: { preventDefault: () => void }) => void)({ preventDefault: () => {} });
@@ -135,9 +135,9 @@ describe("Triggers pop-up", () => {
     expect(TRIGGER_SOURCES.map((source) => source.id)).toEqual(["link", "typeform", "zapier", "github", "stripe", "custom"]);
   });
 
-  it("lists triggers as name → bot with deliveries, Copy link and an on/off switch", async () => {
+  it("lists triggers as name → bot with deliveries, Copy command and an on/off switch", async () => {
     fixture.webhooks = [webhook("w1"), webhook("w2", { name: "Stripe", enabled: false, botId: "atlas", lastReceivedAt: undefined, deliveryCount: 0 })];
-    fixture.overrides.set(CREDENTIALS, { w1: { endpointUrl: "e", secret: "s", url: "https://hooks.example/w1" } });
+    fixture.overrides.set(CREDENTIALS, { w1: { endpointUrl: "https://hooks.example/w1", token: "whsec_w1", command: `curl -X POST https://hooks.example/w1 -H "Authorization: Bearer whsec_w1"` } });
     const writeText = vi.fn().mockResolvedValue(undefined);
     vi.stubGlobal("navigator", { clipboard: { writeText } });
     const { html, nodes: tree } = render();
@@ -146,18 +146,23 @@ describe("Triggers pop-up", () => {
     expect(html).toMatch(/GitHub<\/span>.*Scout<\/span>/);
     expect(html).toContain("4 received · last 5m ago");
     expect(html).toContain("Nothing received yet");
-    expect(html.match(/Copy link/g)).toHaveLength(2);
+    // w1 holds a freshly shown token: Copy command twice (row and details).
+    // w2 shows only the last 4 characters and a Regenerate button, no token.
+    expect(html.match(/Copy command/g)).toHaveLength(2);
+    expect(html).toContain("Bearer token ending in");
+    expect(html).toContain("Copy it now. The full token is shown only this once.");
+    expect(html).not.toContain("whsec_w2");
     expect(html).toMatch(/aria-label="GitHub on or off" type="button" role="switch" aria-checked="true"/);
     expect(html).toMatch(/aria-label="Stripe on or off" type="button" role="switch" aria-checked="false"/);
     expect(html).toContain("Advanced options");
-    expect(html).toContain("Rotate private URL");
+    expect(html).toContain("Regenerate token");
     expect(html).toContain("Recent deliveries");
 
     const rows = tree.filter((node) => (node.props.webhook as WebhookTrigger | undefined)?.id);
     const first = rows.find((node) => (node.props.webhook as WebhookTrigger).id === "w1")!;
-    (first.props.onCopy as (copy: "link" | "command", replace: boolean) => void)("link", false);
+    (first.props.onCopy as (copy: "token" | "command", replace: boolean) => void)("command", false);
     await flush();
-    expect(writeText).toHaveBeenCalledWith("https://hooks.example/w1");
+    expect(writeText).toHaveBeenCalledWith('curl -X POST https://hooks.example/w1 -H "Authorization: Bearer whsec_w1"');
     expect(fixture.api).not.toHaveBeenCalled();
 
     fixture.api.mockResolvedValue({ webhook: { ...(fixture.webhooks[1] as WebhookTrigger), enabled: true } });
@@ -178,8 +183,9 @@ describe("Triggers pop-up", () => {
     fixture.webhooks = [webhook("w1"), webhook("w2", { name: "Stripe" })];
     fixture.overrides.set(1, "w1:command");
     const { html } = render();
-    // Copy link, switch, copy command, rotate, edit and delete on both rows.
-    expect(html.match(/ disabled=""/g)).toHaveLength(12);
+    // Primary button, switch, regenerate, edit and delete on both rows (no
+    // token is on screen, so there is no copy-command button).
+    expect(html.match(/ disabled=""/g)).toHaveLength(10);
   });
 
   it("serializes copy, rotation and other mutations before a pending response returns", async () => {
@@ -190,7 +196,7 @@ describe("Triggers pop-up", () => {
     vi.stubGlobal("navigator", { clipboard: { writeText } });
     const { nodes: tree } = render();
     const rows = tree.filter((node) => (node.props.webhook as WebhookTrigger | undefined)?.id);
-    const copy = (index: number) => (rows[index]!.props.onCopy as (kind: "link", replace: boolean) => void)("link", false);
+    const copy = (index: number) => (rows[index]!.props.onCopy as (kind: "command", replace: boolean) => void)("command", true);
     copy(0);
     copy(1);
     copy(0);
@@ -198,38 +204,72 @@ describe("Triggers pop-up", () => {
     (rows[1]!.props.onDelete as () => void)();
     expect(fixture.api).toHaveBeenCalledOnce();
     expect(writeText).not.toHaveBeenCalled();
-    resolveRotation({ webhook: fixture.webhooks[0], credential: { endpointUrl: "e1", secret: "s1", url: "https://hooks.example/w1" } });
+    resolveRotation({ webhook: fixture.webhooks[0], credential: { endpointUrl: "https://hooks.example/w1", token: "whsec_w1", command: `curl -X POST https://hooks.example/w1 -H "Authorization: Bearer whsec_w1"` } });
     await flush();
-    expect(writeText).toHaveBeenCalledWith("https://hooks.example/w1");
+    expect(writeText).toHaveBeenCalledWith('curl -X POST https://hooks.example/w1 -H "Authorization: Bearer whsec_w1"');
 
-    fixture.api.mockResolvedValueOnce({ webhook: fixture.webhooks[1], credential: { endpointUrl: "e2", secret: "s2", url: "https://hooks.example/w2" } });
+    fixture.api.mockResolvedValueOnce({ webhook: fixture.webhooks[1], credential: { endpointUrl: "https://hooks.example/w2", token: "whsec_w2", command: `curl -X POST https://hooks.example/w2 -H "Authorization: Bearer whsec_w2"` } });
     copy(1);
     await flush();
     expect(fixture.api).toHaveBeenCalledTimes(2);
-    expect(writeText).toHaveBeenLastCalledWith("https://hooks.example/w2");
+    expect(writeText).toHaveBeenLastCalledWith('curl -X POST https://hooks.example/w2 -H "Authorization: Bearer whsec_w2"');
   });
 
   it("releases the mutation guard after failure or cancelling a rotation", async () => {
     fixture.webhooks = [webhook("w1")];
     fixture.api.mockRejectedValueOnce(new Error("Offline"));
     const writeText = vi.fn().mockResolvedValue(undefined);
-    const confirm = vi.fn(() => false);
+    const confirm = vi.fn().mockReturnValueOnce(true).mockReturnValueOnce(false).mockReturnValue(true);
     vi.stubGlobal("navigator", { clipboard: { writeText } });
     vi.stubGlobal("window", { confirm });
     const row = render().nodes.find((node) => (node.props.webhook as WebhookTrigger | undefined)?.id === "w1")!;
-    const copy = row.props.onCopy as (kind: "link", replace: boolean) => void;
-    copy("link", false);
+    const copy = row.props.onCopy as (kind: "command", replace: boolean) => void;
+    copy("command", true);
     await flush();
-    copy("link", true);
+    copy("command", true);
     await flush();
-    expect(confirm).toHaveBeenCalledOnce();
+    expect(confirm).toHaveBeenCalledTimes(2);
     expect(fixture.api).toHaveBeenCalledOnce();
 
-    fixture.api.mockResolvedValueOnce({ webhook: fixture.webhooks[0], credential: { endpointUrl: "e", secret: "s", url: "https://hooks.example/w1" } });
-    copy("link", false);
+    fixture.api.mockResolvedValueOnce({ webhook: fixture.webhooks[0], credential: { endpointUrl: "https://hooks.example/w1", token: "whsec_w1", command: `curl -X POST https://hooks.example/w1 -H "Authorization: Bearer whsec_w1"` } });
+    copy("command", true);
     await flush();
     expect(fixture.api).toHaveBeenCalledTimes(2);
-    expect(writeText).toHaveBeenCalledWith("https://hooks.example/w1");
+    expect(writeText).toHaveBeenCalledWith('curl -X POST https://hooks.example/w1 -H "Authorization: Bearer whsec_w1"');
+  });
+
+  it("shows only the last 4 characters of a copied token and asks before regenerating", async () => {
+    fixture.webhooks = [webhook("w1")];
+    const confirm = vi.fn(() => false);
+    vi.stubGlobal("window", { confirm });
+    vi.stubGlobal("navigator", { clipboard: { writeText: vi.fn() } });
+    const { html, nodes: tree } = render();
+    expect(html).toContain("Bearer token ending in k3Yz");
+    expect(html).not.toContain("whsec_");
+    const row = tree.find((node) => (node.props.webhook as WebhookTrigger | undefined)?.id === "w1")!;
+    (row.props.onCopy as (kind: "command", replace: boolean) => void)("command", true);
+    await flush();
+    expect(confirm).toHaveBeenCalledOnce();
+    expect(String(confirm.mock.calls[0]).toLowerCase()).toContain("stops working immediately");
+    expect(fixture.api).not.toHaveBeenCalled();
+  });
+
+  it("hands a start-up migrated token over once through reveal, without confirming or rotating", async () => {
+    fixture.webhooks = [webhook("w1", { tokenPending: true })];
+    const confirm = vi.fn(() => true);
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal("window", { confirm });
+    vi.stubGlobal("navigator", { clipboard: { writeText } });
+    const { html, nodes: tree } = render();
+    expect(html).toContain("This webhook now needs a bearer token; copy it here.");
+    expect(html).toContain("Show token");
+    fixture.api.mockResolvedValueOnce({ webhook: fixture.webhooks[0], credential: { endpointUrl: "https://hooks.example/w1", token: "whsec_w1", command: "curl-command" } });
+    const row = tree.find((node) => (node.props.webhook as WebhookTrigger | undefined)?.id === "w1")!;
+    (row.props.onCopy as (kind: "command", replace: boolean) => void)("command", false);
+    await flush();
+    expect(confirm).not.toHaveBeenCalled();
+    expect(fixture.api).toHaveBeenCalledWith("/api/webhooks/w1/reveal", { method: "POST" });
+    expect(writeText).toHaveBeenCalledWith("curl-command");
   });
 
   it("uses existing translated actions and English fallback keys for the new details", () => {
@@ -237,8 +277,8 @@ describe("Triggers pop-up", () => {
     setLocale("de");
     const { html } = render();
     expect(html).toContain(t("common.delete"));
-    expect(html).toContain(t("engineSetup.copyCommand"));
-    expect(html).toContain(t("triggers.rotateUrl"));
+    expect(html).toContain(t("triggers.regenerateToken"));
+    expect(html).toContain("k3Yz");
     expect(html).not.toContain(">Delete</button>");
     expect(html).not.toContain(">Copy command</button>");
   });

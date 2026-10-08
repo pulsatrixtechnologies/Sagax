@@ -262,7 +262,7 @@ describe("WebhookManager", () => {
     const { webhook, secret } = create(h.manager);
     const rotated = h.manager.rotateSecret(webhook.id)!;
 
-    expect(() => h.manager.receive(webhook.endpointId, secret, { payload: {} })).toThrow("Invalid webhook");
+    expect(() => h.manager.receive(webhook.endpointId, secret, { payload: {} })).toThrow("Unauthorized");
     expect(h.manager.receive(webhook.endpointId, rotated.secret, { payload: {} }).runId).toBe("run-1");
 
     h.manager.update(webhook.id, { enabled: false });
@@ -335,5 +335,97 @@ describe("WebhookManager", () => {
       h.manager.receive(webhook.endpointId, secret, { payload: { index }, eventName: "push", deliveryId: `delivery-${index}` });
     }
     expect(() => h.manager.receive(webhook.endpointId, secret, { payload: { overflow: true }, eventName: "push" })).toThrow("rate limit");
+  });
+});
+
+describe("bearer token on every webhook", () => {
+  it("generates a 32-byte base64url token at creation and keeps its last 4 characters", () => {
+    const h = harness();
+    const created = create(h.manager);
+    const body = created.secret.replace(/^whsec_/, "");
+    expect(body).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    expect(Buffer.from(body, "base64url")).toHaveLength(32);
+    expect(created.webhook.tokenLast4).toBe(created.secret.slice(-4));
+    expect(h.manager.list()[0]?.tokenLast4).toBe(created.secret.slice(-4));
+    // the list never carries more than the last 4 characters
+    expect(JSON.stringify(h.manager.list())).not.toContain(created.secret.slice(-8));
+  });
+
+  it("stores only a hash on disk", () => {
+    const h = harness();
+    const created = create(h.manager);
+    const disk = readFileSync(h.file, "utf8");
+    expect(disk).not.toContain(created.secret);
+    expect(disk).toMatch(/"secretHash": "[a-f0-9]{64}"/);
+    expect(disk).not.toContain("pendingToken");
+  });
+
+  it("refuses an empty or wrong token", () => {
+    const h = harness();
+    const { webhook } = create(h.manager);
+    expect(h.manager.authorize(webhook.endpointId, "")).toBe(false);
+    expect(h.manager.authorize(webhook.endpointId, "whsec_wrong")).toBe(false);
+    expect(() => h.manager.receive(webhook.endpointId, "", { payload: {} })).toThrow("Unauthorized");
+    expect(h.queued).toHaveLength(0);
+  });
+
+  it("regenerating invalidates the old token at once and updates the last 4", () => {
+    const h = harness();
+    const { webhook, secret } = create(h.manager);
+    const rotated = h.manager.rotateSecret(webhook.id)!;
+    expect(rotated.secret).not.toBe(secret);
+    expect(rotated.webhook.tokenLast4).toBe(rotated.secret.slice(-4));
+    expect(h.manager.authorize(webhook.endpointId, secret)).toBe(false);
+    expect(h.manager.authorize(webhook.endpointId, rotated.secret)).toBe(true);
+    expect(readFileSync(h.file, "utf8")).not.toContain(rotated.secret);
+  });
+
+  describe("a webhook stored before the bearer rule", () => {
+    function legacy() {
+      const h = harness();
+      const { webhook, secret } = create(h.manager);
+      const disk = JSON.parse(readFileSync(h.file, "utf8")) as { webhooks: Array<Record<string, unknown>> };
+      delete disk.webhooks[0]!.tokenLast4;
+      writeFileSync(h.file, JSON.stringify(disk));
+      return { h, webhook, oldSecret: secret, reloaded: new WebhookManager(h.options) };
+    }
+
+    it("gets a new token at start and the old secret stops working", () => {
+      const { webhook, oldSecret, reloaded } = legacy();
+      const [migrated] = reloaded.list();
+      expect(migrated?.tokenLast4).toMatch(/^.{4}$/);
+      expect(migrated?.tokenPending).toBe(true);
+      expect(reloaded.authorize(webhook.endpointId, oldSecret)).toBe(false);
+    });
+
+    it("reveals the new token exactly once, then forgets the plaintext", () => {
+      const { h, webhook, reloaded } = legacy();
+      const revealed = reloaded.revealPendingToken(webhook.id)!;
+      expect(revealed.secret.slice(-4)).toBe(reloaded.list()[0]?.tokenLast4);
+      expect(reloaded.authorize(webhook.endpointId, revealed.secret)).toBe(true);
+      expect(reloaded.list()[0]?.tokenPending).toBeUndefined();
+      expect(reloaded.revealPendingToken(webhook.id)).toBeNull();
+      expect(readFileSync(h.file, "utf8")).not.toContain(revealed.secret);
+      // a restart keeps the revealed token and does not migrate again
+      const again = new WebhookManager(h.options);
+      expect(again.authorize(webhook.endpointId, revealed.secret)).toBe(true);
+    });
+
+    it("keeps the migrated token across a restart until it is revealed, with a 0600 file", () => {
+      const { h, webhook, reloaded } = legacy();
+      const restarted = new WebhookManager(h.options);
+      expect(restarted.list()[0]?.tokenPending).toBe(true);
+      expect(restarted.revealPendingToken(webhook.id)).not.toBeNull();
+      if (process.platform !== "win32") expect(statSync(h.file).mode & 0o777).toBe(0o600);
+      expect(reloaded.list()).toHaveLength(1);
+    });
+
+    it("never reveals a token that was created or regenerated normally", () => {
+      const h = harness();
+      const { webhook } = create(h.manager);
+      expect(h.manager.revealPendingToken(webhook.id)).toBeNull();
+      h.manager.rotateSecret(webhook.id);
+      expect(h.manager.revealPendingToken(webhook.id)).toBeNull();
+    });
   });
 });

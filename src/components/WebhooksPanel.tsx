@@ -22,12 +22,7 @@ import {
 import { BotAvatar } from "@/components/Avatar";
 import { cn } from "@/lib/cn";
 import type { RoutineRun, RoutineRunOn } from "@/lib/routines";
-import {
-  loadWebhookCredentials,
-  removeWebhookCredential,
-  saveWebhookCredential,
-  webhookCredentialStore,
-} from "@/lib/webhook-credentials";
+import { purgeStoredWebhookCredentials, webhookCredentialStore } from "@/lib/webhook-credentials";
 import { WEBHOOK_DEFAULT_MAX_PENDING_RUNS, WEBHOOK_MAX_PENDING_RUNS_LIMIT, webhookActivationDefaults, webhookMaxPendingRunsInput, type WebhookAttempt, type WebhookCredential, type WebhookTrigger, type WebhookTriggerInput } from "@/lib/webhooks";
 import { api, useStore, type Bot } from "@/state/store";
 
@@ -77,7 +72,12 @@ export function outcomeLabel(outcome: WebhookAttempt["outcome"], run?: RoutineRu
 }
 
 export function terminalCommand(credential: WebhookCredential) {
-  return `curl -sS '${credential.url}' --json '{"task":"A customer wrote: This app saved me hours. Write a short thank-you reply."}'`;
+  return credential.command;
+}
+
+/** What a webhook shows once its full token is no longer on screen. */
+export function maskedToken(webhook: Pick<WebhookTrigger, "tokenLast4">): string {
+  return `whsec_\u2022\u2022\u2022\u2022${webhook.tokenLast4 ?? ""}`;
 }
 
 export function WebhookEditor({ webhook, bots, onClose, onCredential }: { webhook?: WebhookTrigger; bots: Bot[]; onClose: () => void; onCredential: (credential: WebhookCredential, webhookId: string) => void }) {
@@ -205,20 +205,21 @@ export function webhookActivity(webhook: WebhookTrigger, webhookAttempts: Webhoo
   return [...attempts, ...legacy].sort((a, b) => b.at - a.at).slice(0, 30);
 }
 
-/** Pause/enable, delete, and the private-URL copy, shared by the Automations
- * page's Webhooks tab and the Triggers pop-up. `copy: "link"` puts the
- * private URL itself on the clipboard; the default is the terminal command. */
+/** Pause/enable, delete, and the bearer-token copy, shared by the Automations
+ * page's Webhooks tab and the Triggers pop-up. The full token exists in the
+ * browser only right after it is created, regenerated or revealed (memory
+ * only, never stored); `copy: "token"` puts the bare token on the clipboard,
+ * the default is the whole curl command. */
 export function useWebhookActions() {
   const { dispatch } = useStore();
-  const [credentials, setCredentials] = useState<Record<string, WebhookCredential>>(() =>
-    loadWebhookCredentials(webhookCredentialStore()),
-  );
+  const [credentials, setCredentials] = useState<Record<string, WebhookCredential>>({});
+  useEffect(() => purgeStoredWebhookCredentials(webhookCredentialStore()), []);
   const [working, setWorking] = useState<string | null>(null);
   // A second click can arrive before React paints the shared disabled state.
   // Claim synchronously, so rotations cannot race and save a revoked URL.
   const workingRef = useRef(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
-  const [copiedKind, setCopiedKind] = useState<"command" | "link">("command");
+  const [copiedKind, setCopiedKind] = useState<"command" | "token">("command");
   const [error, setError] = useState("");
 
   const invoke = async (webhook: WebhookTrigger, action: "toggle" | "delete") => {
@@ -231,7 +232,6 @@ export function useWebhookActions() {
         if (!window.confirm(`Delete “${webhook.name}”? Existing thread history will stay available.`)) return;
         await api(`/api/webhooks/${webhook.id}`, { method: "DELETE" });
         dispatch({ type: "webhookDeleted", webhookId: webhook.id });
-        removeWebhookCredential(webhookCredentialStore(), webhook.id);
         setCredentials((current) => {
           const next = { ...current };
           delete next[webhook.id];
@@ -251,23 +251,26 @@ export function useWebhookActions() {
     }
   };
 
-  const createAndCopyCommand = async (webhook: WebhookTrigger, replace = false, copy: "command" | "link" = "command") => {
+  const createAndCopyCommand = async (webhook: WebhookTrigger, replace = false, copy: "command" | "token" = "command") => {
     if (workingRef.current) return;
     workingRef.current = true;
     setWorking(`${webhook.id}:command`);
     setError("");
     try {
-      if (replace && !window.confirm("Replace this private URL? Every previously copied command will stop working.")) return;
       let credential = replace ? undefined : credentials[webhook.id];
       if (!credential) {
-        const response = await api(`/api/webhooks/${webhook.id}/rotate`, { method: "POST" });
+        // A token generated at server start for an older webhook is handed
+        // over once, with nothing to invalidate. Any other way to get a full
+        // token is a regeneration: the current one stops working at once.
+        const reveal = Boolean(webhook.tokenPending) && !replace;
+        if (!reveal && !window.confirm("Regenerate this token? The current token stops working immediately, so every sender using it must be updated.")) return;
+        const response = await api(`/api/webhooks/${webhook.id}/${reveal ? "reveal" : "rotate"}`, { method: "POST" });
         credential = response.credential;
         dispatch({ type: "webhookPatched", webhook: response.webhook });
         setCredentials((current) => ({ ...current, [webhook.id]: credential! }));
-        saveWebhookCredential(webhookCredentialStore(), webhook.id, credential!);
       }
-      if (!credential) throw new Error("Could not create a terminal command");
-      await navigator.clipboard.writeText(copy === "link" ? credential.url : terminalCommand(credential));
+      if (!credential) throw new Error("Could not create a bearer token");
+      await navigator.clipboard.writeText(copy === "token" ? credential.token : terminalCommand(credential));
       setCopiedId(webhook.id);
       setCopiedKind(copy);
       setTimeout(() => setCopiedId((current) => current === webhook.id ? null : current), 1_800);
@@ -280,7 +283,6 @@ export function useWebhookActions() {
   };
 
   const rememberCredential = (webhookId: string, credential: WebhookCredential) => {
-    saveWebhookCredential(webhookCredentialStore(), webhookId, credential);
     setCredentials((current) => ({ ...current, [webhookId]: credential }));
   };
 
@@ -300,7 +302,7 @@ export function WebhooksPanel({
 }) {
   const { state, dispatch } = useStore();
   const [editor, setEditor] = useState<WebhookTrigger | "new" | null>(null);
-  const { credentials, setCredentials, working, copiedId, error, setError, invoke, createAndCopyCommand } = useWebhookActions();
+  const { credentials, setCredentials, working, copiedId, copiedKind, error, setError, invoke, createAndCopyCommand } = useWebhookActions();
   const [selectedId, setSelectedId] = useState<string | null>(state.webhooks[0]?.id ?? null);
   const [tab, setTab] = useState<"setup" | "activity">("setup");
 
@@ -389,16 +391,22 @@ export function WebhooksPanel({
                 <div className="px-5 py-6 md:px-7">
                   <div className="max-w-[720px]">
                     <h4 className="text-[14px] font-semibold text-ink">Send a task</h4>
-                    <p className="mt-1 text-[11.5px] leading-relaxed text-ink-secondary">Copy this command into Terminal and press Return. It starts a real task in {selectedBot?.name ?? "this MAUS"}&apos;s chat; edit the task text for whatever you want done.</p>
+                    <p className="mt-1 text-[11.5px] leading-relaxed text-ink-secondary">Every request needs this webhook&apos;s bearer token in an <code className="text-ink">Authorization</code> header. Copy this command into Terminal and press Return; it starts a real task in {selectedBot?.name ?? "this MAUS"}&apos;s chat. Send the task text in the request body.</p>
                     {credential ? (
                       <div className="mt-4 overflow-hidden rounded-xl border border-hairline/45 bg-inset">
-                        <div className="flex items-center justify-between border-b border-hairline/45 px-3.5 py-2"><span className="text-[9.5px] font-medium uppercase tracking-wider text-ink-secondary">Terminal</span><div className="flex items-center gap-1"><button onClick={() => void createAndCopyCommand(selected)} className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[10.5px] font-medium text-ink-secondary hover:bg-raised hover:text-ink">{copiedId === selected.id ? <Check size={12} className="text-success" /> : <Copy size={12} />}{copiedId === selected.id ? "Copied" : "Copy command"}</button><button onClick={() => void createAndCopyCommand(selected, true)} className="rounded-lg p-1.5 text-ink-secondary hover:bg-raised hover:text-ink" title="Rotate private URL"><RotateCw size={12} /></button></div></div>
+                        <div className="flex items-center justify-between border-b border-hairline/45 px-3.5 py-2"><span className="text-[9.5px] font-medium uppercase tracking-wider text-ink-secondary">Terminal</span><div className="flex items-center gap-1"><button onClick={() => void createAndCopyCommand(selected)} className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[10.5px] font-medium text-ink-secondary hover:bg-raised hover:text-ink">{copiedId === selected.id && copiedKind === "command" ? <Check size={12} className="text-success" /> : <Copy size={12} />}{copiedId === selected.id && copiedKind === "command" ? "Copied" : "Copy command"}</button><button onClick={() => void createAndCopyCommand(selected, false, "token")} className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[10.5px] font-medium text-ink-secondary hover:bg-raised hover:text-ink">{copiedId === selected.id && copiedKind === "token" ? <Check size={12} className="text-success" /> : <Copy size={12} />}{copiedId === selected.id && copiedKind === "token" ? "Copied" : "Copy token"}</button><button onClick={() => void createAndCopyCommand(selected, true)} className="rounded-lg p-1.5 text-ink-secondary hover:bg-raised hover:text-ink" title="Regenerate token"><RotateCw size={12} /></button></div></div>
                         <pre className="overflow-x-auto p-4 font-mono text-[11px] leading-relaxed whitespace-pre-wrap break-all text-ink-secondary">{command}</pre>
+                        <p className="border-t border-hairline/45 px-3.5 py-2 text-[10.5px] leading-relaxed text-warning">Copy it now. The full token is shown only this once; afterwards only its last 4 characters ({selected.tokenLast4}) stay visible.</p>
+                      </div>
+                    ) : selected.tokenPending ? (
+                      <div className="mt-4">
+                        <p className="max-w-[560px] rounded-xl border border-warning/30 bg-warning/10 px-3.5 py-3 text-[11px] leading-relaxed text-ink">This webhook now needs a bearer token; copy it here. Its old URL no longer works, so update every sender once you have the token. It is shown a single time.</p>
+                        <button disabled={Boolean(working) || !ingress?.available} onClick={() => void createAndCopyCommand(selected)} className="mt-3 flex items-center gap-2 rounded-xl bg-accent px-3.5 py-2.5 text-[12px] font-medium text-accent-ink hover:brightness-110 disabled:opacity-40">{working === `${selected.id}:command` ? <Loader2 size={14} className="animate-spin" /> : <Copy size={14} />}Show token and copy command</button>
                       </div>
                     ) : (
                       <div className="mt-4">
-                        <p className="max-w-[560px] text-[10.5px] leading-relaxed text-ink-secondary">The private URL is shown once. Generate a replacement to copy your webhook command; any older command for this webhook will stop working.</p>
-                        <button disabled={Boolean(working) || !ingress?.available} onClick={() => void createAndCopyCommand(selected)} className="mt-3 flex items-center gap-2 rounded-xl bg-accent px-3.5 py-2.5 text-[12px] font-medium text-accent-ink hover:brightness-110 disabled:opacity-40">{working === `${selected.id}:command` ? <Loader2 size={14} className="animate-spin" /> : <RotateCw size={14} />}Generate new private URL</button>
+                        <p className="max-w-[560px] text-[11px] leading-relaxed text-ink-secondary">Token <code className="text-ink">{maskedToken(selected)}</code>. The full token was shown once, when it was created. Regenerate it to get a new one; the current token stops working immediately.</p>
+                        <button disabled={Boolean(working) || !ingress?.available} onClick={() => void createAndCopyCommand(selected, true)} className="mt-3 flex items-center gap-2 rounded-xl bg-accent px-3.5 py-2.5 text-[12px] font-medium text-accent-ink hover:brightness-110 disabled:opacity-40">{working === `${selected.id}:command` ? <Loader2 size={14} className="animate-spin" /> : <RotateCw size={14} />}Regenerate token</button>
                       </div>
                     )}
                     <div className="mt-3 flex items-start gap-2 text-[10.5px] leading-relaxed text-ink-secondary"><Laptop size={12} className="mt-0.5 shrink-0" /><span>Keep Sagax open so it can receive requests.</span></div>
@@ -431,7 +439,7 @@ export function WebhooksPanel({
           </div>
         )}
       </div>
-      {editor && <WebhookEditor webhook={editor === "new" ? undefined : editor} bots={bots} onClose={() => setEditor(null)} onCredential={(newCredential, webhookId) => { saveWebhookCredential(webhookCredentialStore(), webhookId, newCredential); setCredentials((current) => ({ ...current, [webhookId]: newCredential })); setSelectedId(webhookId); setTab("setup"); }} />}
+      {editor && <WebhookEditor webhook={editor === "new" ? undefined : editor} bots={bots} onClose={() => setEditor(null)} onCredential={(newCredential, webhookId) => { setCredentials((current) => ({ ...current, [webhookId]: newCredential })); setSelectedId(webhookId); setTab("setup"); }} />}
     </div>
   );
 }
