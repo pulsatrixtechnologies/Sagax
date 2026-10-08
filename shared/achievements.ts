@@ -167,8 +167,12 @@ export interface AchievementDefinition {
 /* ------------------------------------------------------------------ */
 
 export interface AchievementSettings {
-  /** The trophy line under the name in the sidebar. */
+  /** My points, wherever my card shows them (my own card, colleagues' view of
+   * it). The sidebar never shows points. On unless this record stored false. */
   showPoints: boolean;
+  /** My chosen title, wherever my card shows it, the same way as showPoints.
+   * Missing on an older record means on. */
+  showTitle: boolean;
   /** The in-app unlock toast. */
   toasts: boolean;
   /** A system notification when an unlock lands while the app is in the background. */
@@ -193,9 +197,11 @@ export interface AchievementUnlock {
  * here: no locked ids, no secret names, no progress.
  */
 export interface PublicAchievementCard {
-  points: number;
-  level: number;
-  /** The title id they chose. Absent when they chose none. */
+  /** Absent when they turned "Show my points" off. */
+  points?: number;
+  /** Absent with the points. */
+  level?: number;
+  /** The title id they chose. Absent when they chose none or turned "Show my title" off. */
   title?: string;
   /** Unlocked achievements only, catalog order. */
   unlocked: AchievementUnlock[];
