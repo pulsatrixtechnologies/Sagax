@@ -9,7 +9,11 @@
 import { Component, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ErrorInfo, type ReactNode } from "react";
 import { OwlAvatar } from "@/components/OwlAvatar";
 import { FloatingBotView, MASCOT_SIZE, MASCOT_STAGE, OWL_BOX, type FloatingMover, type MascotLayout } from "./FloatingBotView";
-import { placeChat } from "./placement";
+import { effectSide, placeChat, sideWithin, type WindowLimits } from "./placement";
+import { homeBody } from "./window-frame";
+
+/** The home window's size (electron/floating-bot-window.mjs FLOAT_HOME), when main did not say. */
+const FLOAT_HOME_SIZE = { width: 352, height: 716 };
 import { createWindowPilot } from "./pilot";
 import type { BalloonSide } from "./Balloon";
 import { isFloatingSnapshot, mascotFields, type FloatingEvent, type FloatingSnapshot, type FloatingWindowBridge } from "./protocol";
@@ -46,10 +50,15 @@ export function bodyRectIn(root: HTMLElement | null): Rect | null {
 const sameRect = (a: Rect | null, b: Rect | null) => Boolean(a && b && a.x === b.x && a.y === b.y && a.width === b.width && a.height === b.height);
 
 /** The layout for where the character stands now: the chat's side (the window's corner) and its room. */
-export function layoutFor(geometry: { body?: Rect; workArea: Rect } | null): MascotLayout | null {
+export function layoutFor(geometry: { body?: Rect; workArea: Rect; bounds?: Rect; limits?: WindowLimits | null } | null): MascotLayout | null {
   if (!geometry?.body) return null;
-  const chat = placeChat({ body: geometry.body, workArea: geometry.workArea, stage: MASCOT_STAGE, owl: OWL_BOX });
-  return { side: chat.side, chat };
+  const first = placeChat({ body: geometry.body, workArea: geometry.workArea, stage: MASCOT_STAGE, owl: OWL_BOX });
+  // next to a neighbouring display (macOS), the window's room must open away from the seam
+  const size = geometry.bounds ? { width: geometry.bounds.width, height: geometry.bounds.height } : FLOAT_HOME_SIZE;
+  const force = sideWithin({ side: first.side, body: geometry.body, homeBody: (side) => homeBody(MASCOT_STAGE, OWL_BOX, size, side), size, limits: geometry.limits });
+  const chat = force.below === undefined && force.right === undefined ? first : placeChat({ body: geometry.body, workArea: geometry.workArea, stage: MASCOT_STAGE, owl: OWL_BOX, force });
+  // the effects beside the character, on the side away from the chat that the screen leaves room on
+  return { side: chat.side, chat, fx: effectSide({ body: geometry.body, workArea: geometry.workArea, chatSide: chat.side }) };
 }
 
 const sameLayout = (a: MascotLayout | null, b: MascotLayout | null) =>
@@ -197,6 +206,8 @@ export function FloatingBotWindow({ bridge = typeof window === "undefined" ? und
     // main knows the character's box now: where it stands decides the chat's side
     if (first) relayoutRef.current();
   }, [bridge]);
+  const reportBodyRef = useRef(reportBody);
+  reportBodyRef.current = reportBody;
   useEffect(() => {
     window.addEventListener("resize", reportBody);
     return () => window.removeEventListener("resize", reportBody);
@@ -283,17 +294,23 @@ export function FloatingBotWindow({ bridge = typeof window === "undefined" ? und
   }, [bridge]);
   // the mascot flies its own window off while its bot works, and back; a walk that ends re-reads the layout
   const relayoutRef = useRef<() => void>(() => undefined);
+  const flipFrom = useRef<Rect | null>(null);
   const pilot = useMemo(() => createWindowPilot(bridge ? { ...bridge, moved: () => {
     bridge.moved();
     relayoutRef.current();
   } } : undefined), [bridge]);
   const relayout = useCallback(() => {
     if (!pilot || frame.current.dragging) return;
+    // main reads the layout from where the character is drawn now
+    reportBodyRef.current();
     void pilot.geometry().then((geometry) => {
       const next = layoutFor(geometry);
       if (!next || frame.current.dragging || sameLayout(next, layoutRef.current)) return;
       const before = layoutRef.current?.side ?? { below: false, right: false };
       const flips = before.below !== next.side.below || before.right !== next.side.right;
+      // where the character is drawn now, before the window moves to its new corner (main keeps it there)
+      reportBodyRef.current();
+      flipFrom.current = bodyRectIn(root.current);
       // the window moves to its new corner with the page hidden for that frame
       if (flips && bridge?.frame) setRelaying(true);
       onSide(next.side);
@@ -313,7 +330,9 @@ export function FloatingBotWindow({ bridge = typeof window === "undefined" ? und
       return;
     }
     const size = frame.current.size ?? { width: window.innerWidth, height: window.innerHeight };
-    void bridge.frame(size.width, size.height, rect).then(
+    const from = flipFrom.current;
+    flipFrom.current = null;
+    void bridge.frame(size.width, size.height, rect, from ?? undefined).then(
       () => {
         body.current = rect;
         setRelaying(false);

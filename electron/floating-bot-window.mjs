@@ -55,6 +55,8 @@ const MAX_RELOADS = 3;
 const RELOAD_DELAY_MS = 800;
 /** A page that has not said it is ready after this long is reloaded. */
 export const READY_TIMEOUT_MS = 12_000;
+/** A drag's path (where the pointer took the window, unclamped) is forgotten after a pause this long. */
+const DRAG_IDLE_MS = 400;
 /** A move is saved once the window has stood still this long (macOS reports every step of a move). */
 export const REMEMBER_DELAY_MS = 500;
 
@@ -108,6 +110,63 @@ export function clampBodyToDisplays(bounds, body, workAreas) {
   const box = { x: bounds.x + body.x, y: bounds.y + body.y, width: body.width, height: body.height };
   const placed = clampToDisplays(box, workAreas);
   return { x: Math.round(bounds.x + placed.x - box.x), y: Math.round(bounds.y + placed.y - box.y), width: bounds.width, height: bounds.height };
+}
+
+/**
+ * macOS (with "Displays have separate Spaces", its default) snaps a window
+ * back when more than about a fifth of it reaches onto another display while
+ * most of it is on the first: the move is undone a moment later. So there
+ * the window's empty room may hang past a screen's edge into nothing, but
+ * only this far onto a neighbouring display; past that the window (and the
+ * character with it) stays on its own side of the seam.
+ */
+export const SEAM_SHARE = 0.18;
+export function keepOffNeighbours(bounds, body, displays) {
+  const box = { x: bounds.x + body.x, y: bounds.y + body.y, width: body.width, height: body.height };
+  const centerX = box.x + box.width / 2;
+  const centerY = box.y + box.height / 2;
+  const own = displays.find((d) => centerX >= d.x && centerX < d.x + d.width && centerY >= d.y && centerY < d.y + d.height);
+  if (!own) return { ...bounds };
+  let { x, y } = bounds;
+  const slackX = Math.floor(bounds.width * SEAM_SHARE);
+  const slackY = Math.floor(bounds.height * SEAM_SHARE);
+  for (const other of displays) {
+    if (other === own) continue;
+    const overX = Math.min(x + bounds.width, other.x + other.width) - Math.max(x, other.x);
+    const overY = Math.min(y + bounds.height, other.y + other.height) - Math.max(y, other.y);
+    if (overX <= 0 || overY <= 0) continue;
+    // the neighbour beside the character's display (left or right) or above or below it
+    const beside = other.x >= own.x + own.width || other.x + other.width <= own.x;
+    if (beside && overX > slackX) x += other.x > own.x ? -(overX - slackX) : overX - slackX;
+    else if (!beside && overY > slackY) y += other.y > own.y ? -(overY - slackY) : overY - slackY;
+  }
+  return { ...bounds, x: Math.round(x), y: Math.round(y) };
+}
+
+/**
+ * How far a window of this size may reach from the display under the
+ * character, on each side where a neighbouring display touches it (macOS):
+ * that display's edge plus the share macOS lets through. Free sides are left
+ * out. Null when no neighbour limits it.
+ */
+export function windowLimits(body, size, displays) {
+  const centerX = body.x + body.width / 2;
+  const centerY = body.y + body.height / 2;
+  const own = displays.find((d) => centerX >= d.x && centerX < d.x + d.width && centerY >= d.y && centerY < d.y + d.height);
+  if (!own) return null;
+  const slackX = Math.floor(size.width * SEAM_SHARE);
+  const slackY = Math.floor(size.height * SEAM_SHARE);
+  const limits = {};
+  for (const other of displays) {
+    if (other === own) continue;
+    const overlapsY = other.y < own.y + own.height && other.y + other.height > own.y;
+    const overlapsX = other.x < own.x + own.width && other.x + other.width > own.x;
+    if (overlapsY && other.x + other.width <= own.x) limits.left = Math.max(limits.left ?? -Infinity, own.x - slackX);
+    if (overlapsY && other.x >= own.x + own.width) limits.right = Math.min(limits.right ?? Infinity, own.x + own.width + slackX);
+    if (overlapsX && other.y + other.height <= own.y) limits.top = Math.max(limits.top ?? -Infinity, own.y - slackY);
+    if (overlapsX && other.y >= own.y + own.height) limits.bottom = Math.min(limits.bottom ?? Infinity, own.y + own.height + slackY);
+  }
+  return Object.keys(limits).length ? limits : null;
 }
 
 /** The character's box as the page reports it: inside its window, a sane size, or null. */
@@ -495,6 +554,7 @@ export function createFloatingBotWindows(deps) {
   // Linux cannot forward pointer moves through an ignoring window, so there
   // the small window simply stays clickable rather than becoming unreachable.
   const clickThrough = (deps.platform ?? process.platform) !== "linux";
+  const seams = (deps.platform ?? process.platform) === "darwin";
   const log = deps.log ?? (() => {});
   /** botId -> { win, snapshot, onTop, autopilot } */
   const floats = new Map();
@@ -556,7 +616,12 @@ export function createFloatingBotWindows(deps) {
   /** A window spot, moved so the character is fully on a screen (the whole window when its box is not known yet). */
   const clampFor = (entry, bounds) => {
     const body = entry ? bodyOf(entry) : null;
-    return body ? clampBodyToDisplays(bounds, body, workAreas()) : clampToDisplays(bounds, workAreas());
+    if (!body) return clampToDisplays(bounds, workAreas());
+    const placed = clampBodyToDisplays(bounds, body, workAreas());
+    if (!seams) return placed;
+    // macOS undoes a move that puts too much of the window on a neighbouring display
+    const displays = screen.getAllDisplays().map((display) => display.bounds ?? display.workArea);
+    return clampBodyToDisplays(keepOffNeighbours(placed, body, displays), body, workAreas());
   };
   /** The id a window speaks for now (a switch may have given it another bot). */
   const idOf = (entry) => {
@@ -619,9 +684,15 @@ export function createFloatingBotWindows(deps) {
       return existing.win;
     }
     if (floats.size >= MAX_FLOATING) return null;
-    const options = assistantWindowOptions({ preload, bounds: startBounds(botId), title: "Floating bot", session: deps.session?.() ?? undefined });
-    // throttled when hidden or covered, so the 3D mascot stops drawing (and spending battery) there
-    const created = new BrowserWindow({ ...options, alwaysOnTop, webPreferences: { ...options.webPreferences, backgroundThrottling: true } });
+    const start = startBounds(botId);
+    const options = assistantWindowOptions({ preload, bounds: start, title: "Floating bot", session: deps.session?.() ?? undefined });
+    // throttled when hidden or covered, so the 3D mascot stops drawing (and spending battery) there;
+    // larger than the screen allowed, so macOS lets its transparent room hang past a screen's edge
+    // (above the menu bar too) while the character stands in a corner
+    const created = new BrowserWindow({ ...options, alwaysOnTop, enableLargerThanScreen: true, webPreferences: { ...options.webPreferences, backgroundThrottling: true } });
+    // a window created partly off screen may be pulled back on by the system: put it where it belongs
+    const made = created.getBounds();
+    if (made.x !== start.x || made.y !== start.y) created.setBounds(start);
     // interactive and focusable as last set, so a repeated request costs nothing (and never flickers)
     const entry = { win: created, snapshot: existing?.snapshot ?? pending.get(botId) ?? null, onTop: alwaysOnTop, autopilot: false, interactive: !clickThrough, focusable: false, body: null };
     pending.delete(botId);
@@ -637,7 +708,11 @@ export function createFloatingBotWindows(deps) {
     created.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
     created.webContents.on("will-navigate", (event) => event.preventDefault());
     created.once("ready-to-show", () => {
-      if (!created.isDestroyed()) created.showInactive();
+      if (created.isDestroyed()) return;
+      created.showInactive();
+      // showing a window partly off screen may pull it back on: the character goes back where it was left
+      const shown = created.getBounds();
+      if (shown.x !== start.x || shown.y !== start.y) created.setBounds({ ...shown, x: start.x, y: start.y });
     });
     // on macOS "moved" fires for every step of a move: save once it stops, never per frame
     created.on("moved", () => {
@@ -789,7 +864,14 @@ export function createFloatingBotWindows(deps) {
       if (!found || !delta || !isFiniteNumber(delta.dx) || !isFiniteNumber(delta.dy)) return null;
       const { win } = found.entry;
       const bounds = win.getBounds();
-      const next = clampFor(found.entry, { ...bounds, x: bounds.x + clampNumber(delta.dx, -MAX_MOVE, MAX_MOVE), y: bounds.y + clampNumber(delta.dy, -MAX_MOVE, MAX_MOVE) });
+      // A drag follows the pointer's own path, not the clamped spot: held at a screen's edge the
+      // character does not lose ground, and past a seam between displays it goes onto the next one
+      // (small steps from a clamped spot never would). A pause ends that path.
+      const now = Date.now();
+      const drag = found.entry.drag && now - found.entry.drag.at < DRAG_IDLE_MS ? found.entry.drag : { x: bounds.x, y: bounds.y };
+      const wanted = { x: drag.x + clampNumber(delta.dx, -MAX_MOVE, MAX_MOVE), y: drag.y + clampNumber(delta.dy, -MAX_MOVE, MAX_MOVE) };
+      found.entry.drag = { ...wanted, at: now };
+      const next = clampFor(found.entry, { ...bounds, ...wanted });
       place(win, next);
       return { x: next.x, y: next.y };
     },
@@ -797,6 +879,7 @@ export function createFloatingBotWindows(deps) {
       const found = senderFloat(event);
       if (!found || !point || !isFiniteNumber(point.x) || !isFiniteNumber(point.y)) return null;
       const { win } = found.entry;
+      found.entry.drag = null;
       const next = clampFor(found.entry, { ...win.getBounds(), x: Math.round(point.x), y: Math.round(point.y) });
       place(win, next);
       return next;
@@ -821,7 +904,9 @@ export function createFloatingBotWindows(deps) {
       } catch {
         /* no pointer to follow: the mascot looks ahead */
       }
-      return { bounds, workArea: { x: workArea.x, y: workArea.y, width: workArea.width, height: workArea.height }, cursor, ...(known ? { body: box } : {}) };
+      // on macOS, how far the window may reach next to a neighbouring display (its room then opens the other way)
+      const limits = seams && known ? windowLimits(box, bounds, screen.getAllDisplays().map((display) => display.bounds ?? display.workArea)) : null;
+      return { bounds, workArea: { x: workArea.x, y: workArea.y, width: workArea.width, height: workArea.height }, cursor, ...(known ? { body: box } : {}), ...(limits ? { limits } : {}) };
     },
     "floating-bots:resize": (event, size) => {
       const found = senderFloat(event);
@@ -846,6 +931,8 @@ export function createFloatingBotWindows(deps) {
       // the character keeps its distance to that corner until the page reports where it really is
       const body = bodyOf(found.entry);
       found.entry.body = body ? bodyAfterResize(body, bounds, sized, { x: fromLeft ? "left" : "right", y: fromTop ? "top" : "bottom" }) : null;
+      // a drag's path was the window's old frame: the next step starts from this one
+      found.entry.drag = null;
       const next = clampFor(found.entry, sized);
       place(win, next);
       return next;
@@ -866,8 +953,10 @@ export function createFloatingBotWindows(deps) {
       };
       const body = sanitizeBody(frame.body, size);
       if (!body) return null;
-      const was = bodyOf(entry) ?? body;
+      // where it was drawn just before, as the page measured it (else what main last heard)
+      const was = sanitizeBody(frame.from, bounds) ?? bodyOf(entry) ?? body;
       entry.body = body;
+      entry.drag = null;
       const next = clampFor(entry, { x: bounds.x + was.x - body.x, y: bounds.y + was.y - body.y, ...size });
       place(entry.win, next);
       return next;
@@ -1007,6 +1096,8 @@ export function createFloatingBotWindows(deps) {
     "floating-bots:moved": (event) => {
       const found = senderFloat(event);
       if (!found) return;
+      // the drag is over: the next one starts from where the window stands
+      found.entry.drag = null;
       clearTimeout(found.entry.rememberTimer);
       remember(found.botId);
     },

@@ -757,63 +757,109 @@ html[data-floating-bot] #root {
   100% { opacity: 0; transform: translateY(40px) rotate(320deg); }
 }
 
-/* ─── effects anchored to the character's head ────────────────────────── */
-/* The box is the character's own (FloatingBotView), so the effects scale with
-   it and stay inside the window's room; --hx and --hy are the head's middle. */
+/* ─── effects beside the character, never over it ─────────────────────── */
+/* The box is a lane of the stage's transparent room (FloatingBotView,
+   placement.ts effectLane): to the character's right or left, as tall as
+   its box, or above its head when neither side has room on the screen.
+   --hy is the head's height in the character's box, so a sign sits level
+   with the head. Signs pop in with the app's curve; floats ease out. */
 .fb-root .fb-fx {
-  --hx: 61%;
   --hy: 30%;
+  --fx-ease: cubic-bezier(0.22, 1, 0.36, 1);
   position: absolute;
   z-index: 3;
   pointer-events: none;
 }
-.fb-root .fb-fx[data-character="shape"] {
-  --hx: 50%;
-  --hy: 44%;
+.fb-root .fb-fx[data-character="shape"] { --hy: 44%; }
+.fb-root .fb-fx[data-character="trombi"] { --hy: 22%; }
+.fb-root .fb-fx[data-character="bunbu"] { --hy: 40%; }
+.fb-root .fb-fx .fb-emote {
+  top: calc(var(--hy) - 22%);
+  right: auto;
+  white-space: nowrap;
+  animation: fb-sign-in 0.24s var(--fx-ease) both;
 }
-.fb-root .fb-fx[data-character="trombi"] {
-  --hx: 52%;
-  --hy: 22%;
-}
-.fb-root .fb-fx[data-character="bunbu"] {
-  --hx: 50%;
-  --hy: 40%;
-}
+/* the thought dots sit under a sign, never on it */
 .fb-root .fb-fx .fb-thought {
-  top: calc(var(--hy) - 26%);
-  left: calc(var(--hx) - 36%);
+  top: calc(var(--hy) + 4%);
 }
 .fb-root .fb-fx .fb-zzz {
-  top: calc(var(--hy) - 16%);
+  top: calc(var(--hy) - 10%);
   right: auto;
-  left: calc(var(--hx) + 8%);
 }
 .fb-root .fb-fx .fb-zzz span {
   animation-name: fb-zzz-near;
-}
-.fb-root .fb-fx .fb-emote {
-  top: calc(var(--hy) - 30%);
-  right: auto;
-  left: calc(var(--hx) + 2%);
+  animation-timing-function: var(--fx-ease);
 }
 .fb-root .fb-fx .fb-burst {
-  inset: auto;
-  top: calc(var(--hy) - 24%);
-  left: calc(var(--hx) - 32%);
-  width: 64%;
+  inset: auto 0 auto 0;
+  top: calc(var(--hy) - 4%);
 }
 .fb-root .fb-fx .fb-burst span {
   top: 0;
-  left: calc(var(--i) * 100% / var(--n));
+  left: calc(var(--i) * (100% - 14px) / max(1, var(--n) - 1));
   animation-name: fb-float-near;
+  animation-timing-function: var(--fx-ease);
 }
 .fb-root .fb-fx .fb-confetti span {
   top: calc(var(--hy) - 10%);
+  left: calc(var(--i) * (100% - 5px) / 13);
+}
+/* to the right: everything starts at the character's side and drifts away from it */
+.fb-root .fb-fx[data-side="right"] .fb-emote,
+.fb-root .fb-fx[data-side="right"] .fb-thought,
+.fb-root .fb-fx[data-side="right"] .fb-zzz {
+  left: 0;
+}
+/* to the left: the same, mirrored */
+.fb-root .fb-fx[data-side="left"] .fb-emote,
+.fb-root .fb-fx[data-side="left"] .fb-zzz {
+  right: 0;
+  left: auto;
+}
+.fb-root .fb-fx[data-side="left"] .fb-thought {
+  right: 0;
+  left: auto;
+  flex-direction: row-reverse;
+}
+.fb-root .fb-fx[data-side="left"] .fb-zzz span {
+  right: 0;
+  animation-name: fb-zzz-left;
+}
+/* above the head: centered, everything sits on the lane's floor */
+.fb-root .fb-fx[data-side="above"] .fb-emote,
+.fb-root .fb-fx[data-side="above"] .fb-thought,
+.fb-root .fb-fx[data-side="above"] .fb-zzz {
+  top: auto;
+  bottom: 4px;
+  left: 50%;
+  translate: -50% 0;
+}
+.fb-root .fb-fx[data-side="above"] .fb-burst {
+  top: auto;
+  bottom: 0;
+}
+.fb-root .fb-fx[data-side="above"] .fb-confetti span {
+  top: auto;
+  bottom: 0;
+}
+.fb-root .fb-fx .fb-sparkle {
+  top: calc(var(--hy) - 10%);
+  left: 50%;
+}
+@keyframes fb-sign-in {
+  from { opacity: 0; transform: translateY(4px) scale(0.9); }
+  to { opacity: 1; transform: none; }
 }
 @keyframes fb-zzz-near {
   0% { opacity: 0; transform: translate(0, 0); }
   30% { opacity: 0.9; }
   100% { opacity: 0; transform: translate(12px, -28px); }
+}
+@keyframes fb-zzz-left {
+  0% { opacity: 0; transform: translate(0, 0); }
+  30% { opacity: 0.9; }
+  100% { opacity: 0; transform: translate(-12px, -28px); }
 }
 @keyframes fb-float-near {
   0% { opacity: 0; transform: translateY(0) scale(0.6); }

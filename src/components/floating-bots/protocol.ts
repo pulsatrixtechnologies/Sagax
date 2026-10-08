@@ -165,6 +165,8 @@ export interface FloatingGeometry {
   cursor: { x: number; y: number } | null;
   /** The character's own box on the screen, once the page has reported it (main keeps it on a display). */
   body?: FloatingRect;
+  /** How far the window may reach (macOS, next to a neighbouring display); absent sides are free. */
+  limits?: { left?: number; right?: number; top?: number; bottom?: number } | null;
 }
 
 /** window.floatingBotWindow, from electron/floating-bot-preload.cjs. */
@@ -181,7 +183,7 @@ export interface FloatingWindowBridge {
   /** Where the character is drawn in the window: main keeps that box on screen (optional: an older preload lacks it). */
   setBody?(rect: FloatingRect): void;
   /** A new layout of the window: this size, moved so the character stays put on the screen (optional: an older preload lacks it). */
-  frame?(width: number, height: number, body: FloatingRect): Promise<FloatingRect | null>;
+  frame?(width: number, height: number, body: FloatingRect, from?: FloatingRect): Promise<FloatingRect | null>;
   setInteractive(on: boolean): void;
   setFocusable(on: boolean): void;
   send(event: FloatingEvent): void;

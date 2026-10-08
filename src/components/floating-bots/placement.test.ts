@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { mascotStage } from "./fit";
-import { BALLOON_SCREEN_SHARE, effectLane, effectSide, EFFECT_LANE, placeChat } from "./placement";
+import { BALLOON_SCREEN_SHARE, effectLane, effectSide, EFFECT_LANE, placeChat, sideWithin } from "./placement";
+import { homeBody } from "./window-frame";
 import { balloonSize, BALLOON_MIN } from "./Balloon";
 import { CHAT_BALLOON } from "./window-frame";
 
@@ -53,8 +54,9 @@ describe("the chat beside the mascot: which side, how much room", () => {
     expect(there.room.w).toBe(SECOND.x + 1500 - OWL.left + STAGE.width + 6 - SECOND.x);
     // a balloon the person made bigger than the room shrinks to it; a small one keeps its size
     expect(balloonSize({ w: 900, h: 900 }, { w: 500, h: 400 })).toEqual({ width: 500, height: 400, maxWidth: 500, maxHeight: 400 });
-    expect(balloonSize({}, { w: 2000, h: 2000 })).toEqual({ maxWidth: 480, maxHeight: CHAT_BALLOON.h });
-    expect(balloonSize({}, { w: 10, h: 10 })).toEqual({ maxWidth: BALLOON_MIN.w, maxHeight: BALLOON_MIN.h });
+    // the quick chat: the width its window holds, as tall as its content up to the quick chat's height
+    expect(balloonSize({}, { w: 2000, h: 2000 })).toEqual({ width: CHAT_BALLOON.w, maxWidth: CHAT_BALLOON.w, maxHeight: CHAT_BALLOON.h });
+    expect(balloonSize({}, { w: 10, h: 10 })).toEqual({ width: BALLOON_MIN.w, maxWidth: BALLOON_MIN.w, maxHeight: BALLOON_MIN.h });
   });
 });
 
@@ -91,9 +93,55 @@ describe("the desktop window's layout from where the character stands", () => {
     expect(layoutFor({ workArea: AREA })).toBeNull();
     const corner = layoutFor({ workArea: AREA, body: body(AREA.x, AREA.y) })!;
     expect(corner.side).toEqual({ below: true, right: true });
+    // the chat to its right and no room to its left: the effects share the right, above the chat (they sit beside the head)
+    expect(corner.fx).toBe("right");
+    expect(layoutFor({ workArea: AREA, body: body(800, 600) })!.fx).toBe("right");
+    expect(layoutFor({ workArea: AREA, body: body(right - 120, 600) })!.fx).toBe("left");
     // the balloon may be dragged away by what the room leaves past the quick chat
     const room = chatRoomFor(corner.chat!);
     expect(room).toEqual({ x: room.w - CHAT_BALLOON.w, y: room.h - CHAT_BALLOON.h, w: corner.chat!.room.w, h: corner.chat!.room.h });
     expect(chatRoomFor({ side: { below: false, right: false }, room: { w: 100, h: 100 }, shift: 0 })).toMatchObject({ x: 0, y: 0 });
+  });
+});
+
+describe("next to a neighbouring display (macOS)", () => {
+  const size = { width: 352, height: 716 };
+  const home = (side: { below: boolean; right: boolean }) => homeBody(STAGE, OWL, size, side);
+
+  it("opens the window's room away from the seam, so the character can stand right at it", () => {
+    // the character at the left edge of a display whose left neighbour limits the window to 63 px past the seam
+    const seamX = 3440;
+    const limits = { left: seamX - 63 };
+    const at = body(seamX, 600);
+    expect(sideWithin({ side: { below: false, right: false }, body: at, homeBody: home, size, limits })).toEqual({ right: true });
+    // already opening to the right: nothing to force
+    expect(sideWithin({ side: { below: false, right: true }, body: at, homeBody: home, size, limits })).toEqual({});
+    // a limit above (a display on top): the room opens below
+    expect(sideWithin({ side: { below: false, right: false }, body: body(1200, 30), homeBody: home, size, limits: { top: -63 } })).toEqual({ below: true });
+    // no limits (Windows, Linux, a free edge): the rule of the room on screen alone
+    expect(sideWithin({ side: { below: false, right: false }, body: at, homeBody: home, size, limits: null })).toEqual({});
+    // forced, the chat's room is that side's
+    const forced = placeChat({ body: body(seamX + 200, 600), workArea: { x: seamX, y: 188, width: 1800, height: 1130 }, stage: STAGE, owl: OWL, force: { right: true } });
+    expect(forced.side.right).toBe(true);
+  });
+
+  it("lets the layout use them: the room flips off the seam", async () => {
+    const { layoutFor } = await import("./FloatingBotWindow");
+    const area = { x: 3440, y: 188, width: 1800, height: 1130 };
+    const layout = layoutFor({ workArea: area, body: body(3554, 900), bounds: { x: 3377, y: 365, width: 352, height: 716 }, limits: { left: 3440 - 63 } })!;
+    expect(layout.side).toEqual({ below: false, right: true });
+  });
+});
+
+describe("held at a seam", () => {
+  it("turns the room away when main holds the window right at the limit, so the next drag reaches the seam", () => {
+    const size = { width: 400, height: 716 };
+    const home = (side: { below: boolean; right: boolean }) => homeBody(STAGE, OWL, size, side);
+    const limit = 3440 - Math.floor(400 * 0.18);
+    // the window pinned at the limit: its room opens to the right now
+    const pinnedX = limit + home({ below: false, right: false }).x;
+    expect(sideWithin({ side: { below: false, right: false }, body: body(pinnedX, 600), homeBody: home, size, limits: { left: limit } })).toEqual({ right: true });
+    // well clear of it: nothing changes
+    expect(sideWithin({ side: { below: false, right: false }, body: body(pinnedX + 40, 600), homeBody: home, size, limits: { left: limit } })).toEqual({});
   });
 });

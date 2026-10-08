@@ -26,10 +26,12 @@ contextBridge.exposeInMainWorld("floatingBotWindow", {
     ? { x: finite(rect.x), y: finite(rect.y), width: finite(rect.width), height: finite(rect.height) }
     : null),
   // a new layout of the window (the chat's room on another side): the character stays put on screen
-  frame: (width, height, rect) => ipcRenderer.invoke("floating-bots:frame", {
+  frame: (width, height, rect, from) => ipcRenderer.invoke("floating-bots:frame", {
     width: finite(width),
     height: finite(height),
     body: rect && typeof rect === "object" ? { x: finite(rect.x), y: finite(rect.y), width: finite(rect.width), height: finite(rect.height) } : null,
+    // where the character was drawn just before (main moves the window so it stays there)
+    from: from && typeof from === "object" ? { x: finite(from.x), y: finite(from.y), width: finite(from.width), height: finite(from.height) } : null,
   }),
   setInteractive: (on) => ipcRenderer.send("floating-bots:set-interactive", on === true),
   setFocusable: (on) => ipcRenderer.send("floating-bots:set-focusable", on === true),

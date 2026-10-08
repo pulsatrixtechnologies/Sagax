@@ -81,8 +81,8 @@ export function resizeBalloon(start: { w: number; h: number }, delta: { x: numbe
 
 /** The gap the root's flex layout keeps between the docked balloon and the mascot's stage, px. */
 export const BALLOON_GAP = 8;
-/** How far the balloon may overlap the character's box before it covers its face, px. */
-export const FACE_INSET = 12;
+/** How far the balloon may overlap the character's box, px: none, it comes right up to it and never covers it. */
+export const FACE_INSET = 0;
 
 /**
  * What the balloon must not cover: the character's box in its stage (the
@@ -174,13 +174,18 @@ export interface BalloonProps {
   closing?: boolean;
 }
 
-/** The balloon's size: the person's (the grip), else as its content wants, never more than the room on its display. */
-export function balloonSize(place: BalloonPlace, room: { w: number; h: number }): { width?: number; height?: number; maxWidth: number; maxHeight: number } {
-  const maxWidth = Math.max(BALLOON_MIN.w, Math.min(place.w ?? BALLOON_MAX_W, room.w));
+/**
+ * The balloon's size: the person's (the grip), else the quick chat's width
+ * (the room its window holds) and as tall as its content up to the quick
+ * chat's height; never more than the room on its display. Past that it
+ * scrolls inside (a wide code block or table scrolls on its own).
+ */
+export function balloonSize(place: BalloonPlace, room: { w: number; h: number }): { width: number; height?: number; maxWidth: number; maxHeight: number } {
+  const maxWidth = Math.max(BALLOON_MIN.w, Math.min(place.w ?? CHAT_BALLOON.w, room.w));
   const maxHeight = Math.max(BALLOON_MIN.h, Math.min(place.h ?? CHAT_BALLOON.h, room.h));
   return {
-    ...(place.w ? { width: Math.min(place.w, maxWidth) } : {}),
-    ...(place.h ? { height: Math.min(place.h, maxHeight) } : {}),
+    width: maxWidth,
+    ...(place.h ? { height: maxHeight } : {}),
     maxWidth,
     maxHeight,
   };
