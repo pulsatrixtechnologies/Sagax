@@ -1,7 +1,7 @@
 // Small pieces the three Plugins views share: the icon, the status word and
 // the page header with its back arrow.
 import type { ReactNode } from "react";
-import { ArrowLeft, BookOpen, ServerCog, X } from "lucide-react";
+import { ArrowLeft, BookOpen, Puzzle, ServerCog, X } from "lucide-react";
 
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
@@ -14,6 +14,13 @@ export function PluginIcon({ item, className = "size-10" }: { item: Pick<PluginI
     return (
       <div className={cn("flex shrink-0 items-center justify-center rounded-xl bg-raised text-ink-secondary", className)}>
         <BookOpen size={18} aria-hidden="true" />
+      </div>
+    );
+  }
+  if (item.kind === "plugin") {
+    return (
+      <div className={cn("flex shrink-0 items-center justify-center rounded-xl bg-accent/15 text-accent-text", className)}>
+        <Puzzle size={18} aria-hidden="true" />
       </div>
     );
   }

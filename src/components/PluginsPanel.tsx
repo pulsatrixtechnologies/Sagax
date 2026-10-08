@@ -16,7 +16,7 @@ import { api, useStore } from "@/state/store";
 import { t } from "@/lib/i18n";
 import { managedConnectorUnavailableReason } from "../../shared/connector-availability";
 import type { SkillsLibrarySkillWire } from "../../shared/wire";
-import { buildPluginItems, type PluginFilter, type PluginItem } from "@/lib/plugins-model";
+import { buildPluginItems, marketplacePluginKey, type PluginFilter, type PluginItem } from "@/lib/plugins-model";
 import {
   ClaudeMcpSwitch,
   McpAuthLine,
@@ -41,9 +41,19 @@ import {
 } from "./plugins/connected-apps";
 import { ConnectAppsView } from "./plugins/ConnectAppsView";
 import { ManageView } from "./plugins/ManageView";
+import { MarketplacesSection } from "./plugins/MarketplacesSection";
+import { PluginStatusLabel } from "./plugins/PluginParts";
 import { AddAccountButton, PluginDetailView, SignInButton, type DetailAccount, type PluginDetailProps } from "./plugins/PluginDetailView";
 
 export * from "./plugins/connected-apps";
+
+interface MarketplaceListing {
+  name: string;
+  source: string;
+  ref?: string;
+  description?: string;
+  plugins: Array<{ name: string; description?: string; version?: string; category?: string; installed: boolean; servers: string[]; skills: string[] }>;
+}
 
 interface FeaturedListing { id: string; name: string; description: string; url: string; domain: string; auth: string; installed?: boolean }
 
@@ -72,6 +82,10 @@ export function PluginsPanel() {
   const [installing, setInstalling] = useState<string | null>(null);
   const [panelError, setPanelError] = useState<string | null>(null);
   const [aliasDraft, setAliasDraft] = useState("");
+  const [marketplaces, setMarketplaces] = useState<MarketplaceListing[] | null>(null);
+  const [marketBusy, setMarketBusy] = useState<string | null>(null);
+  const [marketError, setMarketError] = useState<string | null>(null);
+  const [panelNotice, setPanelNotice] = useState<string | null>(null);
 
   const loadFeatured = useCallback(() => api("/api/plugins/search")
     .then((result) => setFeatured(result.featured ?? []))
@@ -80,10 +94,15 @@ export function PluginsPanel() {
     .then((result) => setSkills(result.skills ?? []))
     // the skills library is an option: off, there are no private skills
     .catch(() => setSkills([])), []);
+  const loadMarketplaces = useCallback(() => api("/api/marketplaces")
+    .then((result) => setMarketplaces(result.marketplaces ?? []))
+    // only an admin or this computer's owner manages marketplaces
+    .catch(() => setMarketplaces([])), []);
   useEffect(() => {
     void loadFeatured();
     void loadSkills();
-  }, [loadFeatured, loadSkills]);
+    void loadMarketplaces();
+  }, [loadFeatured, loadSkills, loadMarketplaces]);
 
   const close = useCallback(() => dispatch({ type: "togglePlugins", open: false }), [dispatch]);
   const back = useCallback(() => setPage((current) => current.page === "detail" ? { page: current.from } : { page: "main" }), []);
@@ -135,13 +154,15 @@ export function PluginsPanel() {
     servers: mcp.servers,
     featured,
     skills,
-  }), [apps.cards, apps.status, mcp.servers, featured, skills]);
+    marketplaces,
+  }), [apps.cards, apps.status, mcp.servers, featured, skills, marketplaces]);
 
   const refreshAll = () => {
     void apps.loadConnectionInventory(true);
     void mcp.load(true);
     void loadFeatured();
     void loadSkills();
+    void loadMarketplaces();
   };
   const refreshing = apps.refreshing || mcp.busy === "load";
 
@@ -163,7 +184,79 @@ export function PluginsPanel() {
     }
   };
 
+  const marketAction = async (busy: string, work: () => Promise<unknown>): Promise<boolean> => {
+    setMarketBusy(busy);
+    setMarketError(null);
+    try {
+      await work();
+      return true;
+    } catch (cause) {
+      setMarketError(cause instanceof Error ? cause.message : String(cause));
+      return false;
+    } finally {
+      setMarketBusy(null);
+    }
+  };
+  const addMarketplace = (source: string, ref: string) => marketAction("add", async () => {
+    const result = await api("/api/marketplaces", { method: "POST", body: JSON.stringify({ source, ...(ref ? { ref } : {}) }) });
+    setMarketplaces(result.marketplaces ?? []);
+  });
+  const refreshMarketplace = (name: string) => void marketAction(`refresh:${name}`, async () => {
+    const result = await api(`/api/marketplaces/${encodeURIComponent(name)}/refresh`, { method: "POST", body: "{}" });
+    setMarketplaces(result.marketplaces ?? []);
+  });
+  const removeMarketplace = (name: string) => {
+    if (!window.confirm(t("connectApps.market.removeConfirm", { name }))) return;
+    void marketAction(`remove:${name}`, async () => {
+      const result = await api(`/api/marketplaces/${encodeURIComponent(name)}`, { method: "DELETE" });
+      setMarketplaces(result.marketplaces ?? []);
+      if (filter === `source:${name}`) setFilter("all");
+    });
+  };
+  /** Add on a marketplace plugin: its MCP servers and skills, for every bot. */
+  const installPlugin = async (item: PluginItem) => {
+    const [plugin, marketplace] = item.id.split("@") as [string, string];
+    setInstalling(item.id);
+    setPanelError(null);
+    setPanelNotice(null);
+    try {
+      const result = await api(`/api/marketplaces/${encodeURIComponent(marketplace)}/plugins/${encodeURIComponent(plugin)}`, { method: "POST", body: "{}" });
+      setMarketplaces(result.marketplaces ?? []);
+      await Promise.all([mcp.load(), loadSkills()]);
+      const skipped: string[] = Array.isArray(result.skipped) ? result.skipped : [];
+      if (skipped.length) setPanelNotice(t("connectApps.plugin.skipped", { parts: skipped.join("; ") }));
+      setPage((current) => ({ page: "detail", key: marketplacePluginKey(marketplace, plugin), from: current.page === "manage" ? "manage" : "main" }));
+    } catch (cause) {
+      setPanelError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setInstalling(null);
+    }
+  };
+  const uninstallPlugin = async (item: PluginItem) => {
+    const [plugin, marketplace] = item.id.split("@") as [string, string];
+    if (!window.confirm(t("connectApps.plugin.uninstallConfirm", { name: plugin }))) return;
+    setInstalling(item.id);
+    setPanelError(null);
+    try {
+      const result = await api(`/api/marketplaces/${encodeURIComponent(marketplace)}/plugins/${encodeURIComponent(plugin)}`, { method: "DELETE" });
+      setMarketplaces(result.marketplaces ?? []);
+      await Promise.all([mcp.load(), loadSkills()]);
+    } catch (cause) {
+      setPanelError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setInstalling(null);
+    }
+  };
+
   const renderAction = (item: PluginItem) => {
+    if (item.kind === "plugin") {
+      if (item.installed) return null;
+      return (
+        <button type="button" disabled={installing !== null} onClick={() => void installPlugin(item)} className="ui-button min-w-[76px] disabled:opacity-40">
+          {installing === item.id ? <Loader2 size={13} className="mx-auto animate-spin" /> : t("connectApps.action.add")}
+        </button>
+      );
+    }
     if (item.kind === "featured") {
       return (
         <button type="button" disabled={installing !== null} onClick={() => void installFeatured(item)} className="ui-button min-w-[76px] disabled:opacity-40">
@@ -184,8 +277,11 @@ export function PluginsPanel() {
     ? botsMissingConnectedApps(state.bots, state.instances)
     : [];
   const appsError = apps.error ? (typeof apps.error === "string" ? apps.error : t(apps.error.key)) : null;
-  const errorBanner = (panelError || appsError) && (
-    <div role="alert" className="mx-6 mt-2 rounded-lg bg-danger/10 px-3 py-2 text-[12px] text-danger sm:mx-8">{panelError ?? appsError}</div>
+  const errorBanner = (
+    <>
+      {(panelError || appsError) && <div role="alert" className="mx-6 mt-2 rounded-lg bg-danger/10 px-3 py-2 text-[12px] text-danger sm:mx-8">{panelError ?? appsError}</div>}
+      {panelNotice && <div role="status" className="mx-6 mt-2 rounded-lg bg-warning/10 px-3 py-2 text-[12px] text-warning sm:mx-8">{panelNotice}</div>}
+    </>
   );
 
   const notices = (
@@ -238,7 +334,7 @@ export function PluginsPanel() {
 
   const detailItem = page.page === "detail" ? items.find((item) => item.key === page.key) : undefined;
   // An item that went away (uninstalled, or removed elsewhere) leaves its page.
-  const detailMissing = page.page === "detail" && !detailItem && mcp.servers !== null && apps.cards !== null && skills !== null;
+  const detailMissing = page.page === "detail" && !detailItem && mcp.servers !== null && apps.cards !== null && skills !== null && marketplaces !== null;
   useEffect(() => {
     if (detailMissing) back();
   }, [detailMissing, back]);
@@ -248,7 +344,7 @@ export function PluginsPanel() {
     content = (
       <ManageView
         items={items}
-        countLabel={(item) => countLabel(item, apps, mcp.servers)}
+        countLabel={(item) => countLabel(item, apps, mcp.servers, marketplaces)}
         sourceLabel={pluginSourceLabel}
         onBack={back}
         onClose={close}
@@ -268,6 +364,14 @@ export function PluginsPanel() {
           </>
         )}
       >
+        <MarketplacesSection
+          marketplaces={marketplaces}
+          busy={marketBusy}
+          error={marketError}
+          onAdd={addMarketplace}
+          onRefresh={refreshMarketplace}
+          onRemove={removeMarketplace}
+        />
         <section className="mt-6">
           <h3 className="mb-2 text-[13px] font-semibold text-ink">{t("connectApps.manage.settings")}</h3>
           <ClaudeMcpSwitch />
@@ -281,6 +385,7 @@ export function PluginsPanel() {
     content = (
       <PluginDetailView
         {...detailProps(detailItem, { apps, mcp, skills, aliasDraft, setAliasDraft, reloadSkills: loadSkills, bots: state.bots, instances: state.instances,
+          items, marketplaces, installing, openItem, uninstallPlugin: (item) => void uninstallPlugin(item),
           openBotAccess: (botId) => {
             close();
             dispatch({ type: "toggleSettings", open: true, botId, section: "access" });
@@ -310,6 +415,7 @@ export function PluginsPanel() {
           }
         }}
         sourceLabel={pluginSourceLabel}
+        extraSources={(marketplaces ?? []).map((market) => market.name)}
         refreshing={refreshing}
         onRefresh={refreshAll}
         onClose={close}
@@ -406,7 +512,12 @@ function AliasForm({ apps, slug, name, draft, onDraft, hasAccounts }: {
 }
 
 /** Installed card subline: what the plugin brings. */
-function countLabel(item: PluginItem, apps: ConnectedApps, servers: McpServerListing[] | null): string {
+function countLabel(item: PluginItem, apps: ConnectedApps, servers: McpServerListing[] | null, marketplaces: MarketplaceListing[] | null): string {
+  if (item.kind === "plugin") {
+    const [plugin, marketplace] = item.id.split("@");
+    const entry = marketplaces?.find((market) => market.name === marketplace)?.plugins.find((candidate) => candidate.name === plugin);
+    return t("connectApps.count.plugin", { servers: entry?.servers.length ?? 0, skills: entry?.skills.length ?? 0 });
+  }
   if (item.kind === "app") {
     const count = apps.status[item.id]?.accounts?.length ?? 0;
     if (count === 0) return t("connectApps.count.connectorOne");
@@ -427,6 +538,11 @@ interface DetailContext {
   bots: ReturnType<typeof useStore>["state"]["bots"];
   instances: ReturnType<typeof useStore>["state"]["instances"];
   openBotAccess: (botId: string) => void;
+  items: PluginItem[];
+  marketplaces: MarketplaceListing[] | null;
+  installing: string | null;
+  openItem: (item: PluginItem) => void;
+  uninstallPlugin: (item: PluginItem) => void;
 }
 
 type DetailBase = Omit<PluginDetailProps, "onBack" | "onClose">;
@@ -434,6 +550,7 @@ type DetailBase = Omit<PluginDetailProps, "onBack" | "onClose">;
 function detailProps(item: PluginItem, context: DetailContext): DetailBase {
   if (item.kind === "app") return appDetail(item, context);
   if (item.kind === "skill") return skillDetail(item, context);
+  if (item.kind === "plugin") return pluginDetail(item, context);
   return mcpDetail(item, context);
 }
 
@@ -591,6 +708,50 @@ function mcpDetail(item: PluginItem, { mcp }: DetailContext): DetailBase {
         <McpMessages mcp={mcp} />
         {mcp.editing === name && <McpServerEditor mcp={mcp} />}
       </>
+    ),
+  };
+}
+
+/** A marketplace plugin: what it brought, each one a link to its own page. */
+function pluginDetail(item: PluginItem, { items, marketplaces, installing, openItem, uninstallPlugin }: DetailContext): DetailBase {
+  const [plugin, marketplace] = item.id.split("@") as [string, string];
+  const market = marketplaces?.find((entry) => entry.name === marketplace);
+  const entry = market?.plugins.find((candidate) => candidate.name === plugin);
+  const children = items.filter((candidate) => candidate.parent === item.key);
+  return {
+    item,
+    subtitle: `${market?.source ?? marketplace}${item.version ? ` · ${item.version}` : ""}`,
+    busy: installing !== null,
+    onUninstall: () => uninstallPlugin(item),
+    details: [
+      { label: t("connectApps.detail.source"), value: marketplace },
+      ...(item.version ? [{ label: t("connectApps.detail.version"), value: item.version }] : []),
+      { label: t("connectApps.plugin.connectors"), value: String(entry?.servers.length ?? 0) },
+      { label: t("connectApps.filter.skills"), value: String(entry?.skills.length ?? 0) },
+    ],
+    children: (
+      <section className="rounded-2xl border border-border bg-card px-4 py-3.5 sm:px-5">
+        <h3 className="mb-1 text-[13px] font-semibold text-ink">{t("connectApps.plugin.brings")}</h3>
+        {item.description && <p className="mb-2 text-[12.5px] leading-relaxed text-ink-secondary">{item.description}</p>}
+        {children.length === 0 ? (
+          <p className="text-[12px] text-ink-secondary">{t("connectApps.plugin.bringsNothing")}</p>
+        ) : (
+          <ul className="divide-y divide-hairline/60">
+            {children.map((child) => (
+              <li key={child.key}>
+                <button type="button" onClick={() => openItem(child)} className="flex w-full items-center gap-3 py-2 text-left hover:text-ink">
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-[13px] text-ink">{child.name}</span>
+                    <span className="block truncate text-[11px] text-ink-secondary">{child.kind === "skill" ? t("connectApps.filter.skills") : t("connectApps.filter.mcp")}</span>
+                  </span>
+                  <PluginStatusLabel status={child.status} />
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+        <p className="mt-2 text-[11.5px] text-ink-secondary">{t("connectApps.plugin.note")}</p>
+      </section>
     ),
   };
 }

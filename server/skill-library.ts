@@ -6,7 +6,7 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { basename, join } from "node:path";
 import { createHash } from "node:crypto";
 import { EventEmitter } from "node:events";
-import { mkdirSync } from "node:fs";
+import { mkdirSync, rmSync } from "node:fs";
 import { z } from "zod";
 
 import { writeFileAtomic } from "./atomic.ts";
@@ -396,4 +396,23 @@ export function setLibrarySkillReviewState(
   writeSkillLibraryIndex(root, index);
   skillLibraryEvents.emit("invalidate", { kind: "review-state", name });
   return librarySkillListing(root, entry);
+}
+
+/** Remove a library skill that came from `source` (a marketplace plugin
+ * being uninstalled). A skill of the same name from anywhere else is kept. */
+export function removeLibrarySkillFrom(
+  name: string,
+  source: string,
+  root: string = skillsLibraryRoot(),
+): { removed: boolean } | { error: string } {
+  if (!isSkillName(name)) return { error: "invalid skill name" };
+  const indexRead = readSkillLibraryIndexState(root);
+  if ("error" in indexRead) return indexRead;
+  const entry = indexRead.index[name];
+  if (!entry || entry.source !== source) return { removed: false };
+  delete indexRead.index[name];
+  writeSkillLibraryIndex(root, indexRead.index);
+  rmSync(librarySkillDirectory(root, name), { recursive: true, force: true });
+  skillLibraryEvents.emit("invalidate", { kind: "remove", name });
+  return { removed: true };
 }
