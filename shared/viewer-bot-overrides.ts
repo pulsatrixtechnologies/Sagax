@@ -64,6 +64,8 @@ export function applyViewerModelOverride(
     const changed = override.model.instanceId !== selection.instanceId || override.model.model !== selection.model;
     next.instanceId = override.model.instanceId;
     next.model = override.model.model;
+    // This person pinned a model: the owner's Auto does not apply to them.
+    delete next.auto;
     if (changed) delete next.variant;
   }
   if (override.effort !== undefined) {

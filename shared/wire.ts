@@ -33,6 +33,7 @@ import type { RuntimeEvent } from "./runtime-events.ts";
 import type { Notification } from "./notification.ts";
 import type { Routine, RoutineRun } from "./routines.ts";
 import type { WebhookAttempt, WebhookTrigger } from "./webhooks.ts";
+import type { AutoModelRecord } from "./auto-model.ts";
 
 /** Reasoning-effort levels, ascending. A union of everything any engine
  * accepts; each driver declares the subset its CLI will take. Lives here
@@ -54,6 +55,11 @@ export interface ModelSelection {
   effort?: EffortLevel;
   /** Explicit model-specific variant. Omitted leaves the native session alone. */
   variant?: string;
+  /** Auto (docs/plans/2026-10-08-auto-model.md): each turn picks its model.
+   * instanceId and model stay the bot's own engine and fallback model, so a
+   * path or client that does not know Auto still runs a valid model. Only
+   * true is stored; picking a model in the chip clears it. */
+  auto?: true;
 }
 
 /** Which cloud computer backs computer: "cloud"; absent means Boat. */
@@ -161,6 +167,8 @@ export interface WireTask {
   snoozedUntil?: number;
   /** Defaults are copied when a task is created. */
   modelSelection?: ModelSelection;
+  /** Auto: the model the last turn here ran on, and why. Server-derived. */
+  autoModel?: AutoModelRecord;
   approvalMode?: ApprovalMode;
   autoApprove?: boolean;
   alwaysAllow?: string[];
@@ -602,6 +610,9 @@ export interface WireMessage {
   /** Set on the user-role line another bot delivered into this bot's own
    * conversation (ask_bot, start_thread). */
   peerAsk?: { botId: string; name: string; unattended?: boolean };
+  /** Auto: the model this delivered work ran on, and why (the delegation
+   * card and the worker's activity row). Clients that do not know it ignore it. */
+  autoModel?: AutoModelRecord;
   /** emoji reactions; by = "user" or a member botId. */
   reactions?: Array<{ emoji: string; by: string }>;
   /** comm chips: "Messaged @X", linking to the bot-bot channel. */

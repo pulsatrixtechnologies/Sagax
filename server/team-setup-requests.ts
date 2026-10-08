@@ -19,13 +19,13 @@ const FIELD_LABELS: Record<string, string> = { name: "Name", title: "Title", des
 // configured variant shows a before value that hides the setting changing
 // under it.
 const modelSelectionText = (selection: ModelSelection) =>
-  `${selection.instanceId}/${selection.model}${selection.variant ? ` (variant ${selection.variant})` : " (no variant)"}${selection.effort ? ` (effort ${selection.effort})` : ""}`;
+  `${selection.auto ? "Auto, on " : ""}${selection.instanceId}/${selection.model}${selection.variant ? ` (variant ${selection.variant})` : " (no variant)"}${selection.effort ? ` (effort ${selection.effort})` : ""}`;
 const fieldsSchema = z.object({
   chiefOfStaff: z.boolean().optional(),
   name: z.string().optional(), title: z.string().optional(), description: z.string().optional(), soul: z.string().optional(),
   cwd: z.string().optional(),
   section: z.string().trim().max(60).refine(fitsOnOneLine).refine((value) => redactSecretsInText(value) === value, "Team names cannot contain credentials").optional(),
-  modelSelection: z.object({ instanceId: z.string().trim().min(1), model: z.string().trim().min(1), effort: z.string().optional(), variant: z.string().optional() }).strict().optional(),
+  modelSelection: z.object({ instanceId: z.string().trim().min(1), model: z.string().trim().min(1), effort: z.string().optional(), variant: z.string().optional(), auto: z.boolean().optional() }).strict().optional(),
 }).strict();
 const planSchema = z.object({
   reason: z.string().trim().min(1).max(500),
@@ -152,7 +152,9 @@ export class TeamSetupRequestService {
       result.cwd = checked.cwd ?? "";
     }
     if (modelSelection) {
-      const selection = modelSelection as ModelSelection;
+      // Auto: only true is stored (shared/wire.ts ModelSelection.auto).
+      const { auto, ...pinned } = modelSelection as ModelSelection & { auto?: boolean };
+      const selection: ModelSelection = auto === true ? { ...pinned, auto: true } : pinned;
       const error = this.options.validateModel(selection, current);
       if (error) throw new TeamSetupError(error);
       result.modelSelection = selection;
@@ -225,6 +227,11 @@ export class TeamSetupRequestService {
     const operations: TeamSetupOperation[] = [...combined.values()].map((operation) => {
       const target = operation.action === "update" ? this.options.store.bot(operation.botId) : undefined;
       const fields = this.fields({ ...operation.fields, section: operation.fields.section ?? target?.section ?? chief.section ?? "" }, target ?? undefined);
+      // A Primary Bot on Auto creates its specialists on Auto (the card
+      // reads "Auto, on <engine/model>"); the model it named stays the base.
+      if (operation.action === "create" && chief.modelSelection.auto === true && fields.modelSelection) {
+        fields.modelSelection = { ...fields.modelSelection, auto: true };
+      }
       return { action: operation.action, botId: operation.action === "create" ? newId() : operation.botId,
         ...(operation.action === "create" ? { threadId: newId() } : {}),
         fields,

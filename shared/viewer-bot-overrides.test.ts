@@ -35,6 +35,12 @@ describe("cross-owner model write", () => {
 });
 
 describe("viewer turn selection", () => {
+  it("lets a viewer's pinned model win over the owner's Auto, and keeps Auto otherwise", () => {
+    const auto: ModelSelection = { instanceId: "claude", model: "opus", auto: true };
+    expect(applyViewerModelOverride(auto, { model: { instanceId: "codex", model: "gpt" }, updatedAt: 1 }, () => true)).toEqual({ instanceId: "codex", model: "gpt" });
+    expect(applyViewerModelOverride(auto, { effort: null, updatedAt: 1 }, () => true).auto).toBe(true);
+  });
+
   it("uses the override and leaves the bot selection untouched", () => {
     const before = { ...selection };
     const next = applyViewerModelOverride(selection, {

@@ -730,7 +730,12 @@ export async function callTool(name: string, args: Json, context: ToolCallContex
     const query = new URLSearchParams({ fromBotId: BOT_ID, fromThreadId: THREAD_ID, wait_ms: String(waitMs) });
     const r = await api(`/api/internal/delegations/${encodeURIComponent(taskId)}?${query.toString()}`);
     const who = typeof r.toBotName === "string" && r.toBotName ? `@${r.toBotName}` : "the peer";
-    if (r.status === "done") return { text: `${who} finished task ${taskId}:\n${String(r.result || "(no reply text)")}` };
+    // Auto: which model the worker ran on (docs/plans/2026-10-08-auto-model.md).
+    const workerModel = (r.workerModel && typeof r.workerModel === "object" ? r.workerModel : {}) as { engine?: unknown; model?: unknown; taskClass?: unknown };
+    const worker = typeof workerModel.model === "string"
+      ? ` (worker: ${typeof workerModel.engine === "string" ? `${workerModel.engine} ` : ""}${workerModel.model}${typeof workerModel.taskClass === "string" ? `, ${workerModel.taskClass}` : ""})`
+      : "";
+    if (r.status === "done") return { text: `${who} finished task ${taskId}${worker}:\n${String(r.result || "(no reply text)")}` };
     if (r.status === "queued") {
       const why = r.targetStatus === "waiting-on-user"
         ? ` ${who} is waiting on the user, so it goes through after they answer.`

@@ -83,6 +83,22 @@ describe("reviewed Chief team setup", () => {
     expect(card.detail).toContain("Loses approval levels: edits.");
     expect(card.detail).toContain("Gains approval levels: custom.");
   });
+  it("creates specialists on Auto when the Primary Bot is on Auto, and lets a plan set Auto", async () => {
+    const h = harness();
+    h.chief.modelSelection = { instanceId: "claude", model: "opus", auto: true };
+    const card = h.propose([specialist("Mira", "Engineering")]);
+    expect(card.detail).toContain("Auto, on claude/sonnet");
+    expect((await h.resolve(card.requestId))?.result.state).toBe("applied");
+    expect(h.store.bots.find((bot) => bot.name === "Mira")?.modelSelection).toEqual({ instanceId: "claude", model: "sonnet", auto: true });
+
+    const pinned = harness();
+    const plain = pinned.propose([specialist("Noor", "Engineering")]);
+    expect(plain.detail).not.toContain("Auto");
+    const asked = pinned.propose([{ action: "update", botId: pinned.peer.id, fields: { modelSelection: { instanceId: "claude", model: "sonnet", auto: true } } }]);
+    expect(asked.detail).toContain("Auto, on claude/sonnet");
+    const off = pinned.propose([{ action: "update", botId: pinned.peer.id, fields: { modelSelection: { instanceId: "claude", model: "opus", auto: false } } }]);
+    expect(off.detail).not.toContain("Auto,");
+  });
   it("renders nothing extra for a model-only change on the same engine", () => {
     const h = harness({ claude: { driverKind: "claudeAgent", agentsMcp: true } });
     const card = h.propose([{ action: "update", botId: h.peer.id, fields: { modelSelection: { instanceId: "claude", model: "opus" } } }]);
